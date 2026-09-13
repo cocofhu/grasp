@@ -154,6 +154,8 @@
       "frontmatter.ts",
       "highlightJson.ts",
       "homeParticleMesh.ts",
+      "hoverInkDirective.ts",
+      "hoverInkGeometry.ts",
       "htmlPreviewSandbox.ts",
       "i18n.ts",
       "idleScrollbar.ts",
@@ -189,6 +191,6 @@
     "pm": 7,
     "project": 4,
     "run": 54,
-    "shared": 39
+    "shared": 41
   }
 }
