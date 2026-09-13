@@ -49,12 +49,12 @@ set +a
 : "${GRASP_GATEWAY_PORT:=8899}"
 : "${GRASP_SANDBOX_GATEWAY_URL:=http://127.0.0.1:${GRASP_GATEWAY_PORT}}"
 : "${GRASP_DEPLOYMENT_MODE:=local-demo}"
-: "${GRASP_IMAGE:=ghcr.io/cocofhu/grasp:0.5.4}"
-: "${SANDBOX_GATEWAY_IMAGE:=ghcr.io/cocofhu/sandbox-gateway:0.5.4}"
+: "${GRASP_IMAGE:=ghcr.io/cocofhu/grasp:1.0.0}"
+: "${SANDBOX_GATEWAY_IMAGE:=ghcr.io/cocofhu/sandbox-gateway:1.0.0}"
 : "${SANDBOX_GATEWAY_API_KEY:=grasp-local-demo}"
 
 # One published sandbox image (five CLIs inside; runtime AGENT_PROVIDER picks).
-: "${SANDBOX_IMAGE:=ghcr.io/cocofhu/universal-sandbox:0.5.4}"
+: "${SANDBOX_IMAGE:=ghcr.io/cocofhu/universal-sandbox:1.0.0}"
 # Release compose must pin Grasp to GHCR; empty would fall through to
 # universal-sandbox:local inside the container.
 if [[ -z "${GRASP_SANDBOX_IMAGE:-}" ]]; then

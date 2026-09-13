@@ -4,6 +4,19 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+## 1.0.0 — 2026-09-14
+
+- First stable public release (not a beta / prerelease tag).
+- Hover-ink landing cover on nav and buttons (#593); keep icon/label from
+  shifting after left-edge overflow, leave, or Vue class patch (#595–#597).
+- Split status bar into Token / run-zone KPI cards (#594).
+- Artifacts: pack by run (#586) and page loading states (#588).
+- README: demo video, screenshots, star history (#584–#587, #590, #591).
+- Replace private/internal host fixtures with example.com (#592).
+- Freeze Approve opening hint copy (#589).
+- Default `./start.sh` / `.env.example` / `compose.release.yaml` pins GHCR
+  images to `*:1.0.0`.
+
 ## 0.5.4 — 2026-09-13
 
 - Revert high-contrast origin-fill button hover (#576 / #581); restore prior

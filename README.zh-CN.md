@@ -173,7 +173,7 @@ cd grasp
 - 默认账号仅用于本地演示；共享或生产环境必须配置自己的鉴权用户。
 - ACP API Key 与 Git 凭据应配置在项目或 Agent env，不应提交到仓库。
 - 发布环境建议使用 digest 固定镜像，参考 [Release images and smoke](CONTRIBUTING.md#release-images-and-smoke)。
-- 项目仍处于 Beta 阶段，请在实际环境中完成安全评估、备份和容量验证。
+- 1.0.0 为首个稳定公开发布版本。请在实际环境中完成安全评估、备份和容量验证。
 - **反向代理 Host：** 临时审批分享链接按本请求的 `Host` 铸造（不信任客户端 `X-Forwarded-Host`）。代理须保留浏览器原始 Host（如 nginx `proxy_set_header Host $host`）；TLS 终止时正确转发 `X-Forwarded-Proto`。详见 [`SECURITY.md`](SECURITY.md)。
 - **数据库与附件同生命周期：** 发布 Compose 把 SQLite（`./.localdata/db`）和附件（`./.localdata/app-data`）分开挂载。备份和清理要成对进行（若自定义了 `GRASP_BLOBS_ROOT` 也要一起带上）；否则 Run 输入可能仍引用 `blob:`，而 `GET /api/blobs/:id` 返回 404。历史孤儿只在 UI 里显示为永久占位，本版本不提供孤儿扫描。详见 [快速开始 · 数据库与附件](docs/content/guide/quick-start.md#数据库与附件同生命周期备份--清理)。
 
