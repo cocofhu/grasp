@@ -1,82 +1,30 @@
 # Grasp
 
-**An FSM for coding agents — visual states humans can approve in parallel.**
+Over the past two years, as large models got stronger, I explored widely and shipped **150+** personal projects. Two problems kept getting in the way:
 
-Most multi-agent setups hide the path inside a conversation: one chat, one happy path, and a human who must re-prompt when something fails. Grasp makes the path a **finite state machine**. You design success, failure, and rollback on a canvas; agents run those states in Docker sandboxes; humans only enter at explicit gates — and they approve from a clarified spec and a `page.html` preview, not a transcript.
+1. **Multi-project switching is expensive** — bouncing between IDEs, with run state and context hard to keep straight;
+2. **Parallel agent work is hard to read** — models dump long walls of text, burying what actually matters, so understanding costs a lot of time.
+
+So I built Grasp: one platform for all your projects, and visual requirement clarification that turns agent verbosity into something you can grasp at a glance — raising human throughput. It also plugs into multiple agent backends, such as Cursor, CodeBuddy, and Claude Code.
 
 [Website](https://www.approving-ai.com/) · [Quick start](https://www.approving-ai.com/en/guide/quick-start/) · [Contributing](CONTRIBUTING.md) · [Configuration](server/CONFIGURATION.md) · [Gateway](GATEWAY.md)
 
 **English | [简体中文](README.zh-CN.md)**
 
-[![CI Server](https://github.com/cocofhu/approving/actions/workflows/ci-server.yml/badge.svg)](https://github.com/cocofhu/approving/actions/workflows/ci-server.yml)
-[![CI Web](https://github.com/cocofhu/approving/actions/workflows/ci-web.yml/badge.svg)](https://github.com/cocofhu/approving/actions/workflows/ci-web.yml)
-[![CI Sandbox](https://github.com/cocofhu/approving/actions/workflows/ci-sandbox.yml/badge.svg)](https://github.com/cocofhu/approving/actions/workflows/ci-sandbox.yml)
-[![CI Gateway](https://github.com/cocofhu/approving/actions/workflows/ci-gateway.yml/badge.svg)](https://github.com/cocofhu/approving/actions/workflows/ci-gateway.yml)
+[![CI Server](https://github.com/cocofhu/grasp/actions/workflows/ci-server.yml/badge.svg)](https://github.com/cocofhu/grasp/actions/workflows/ci-server.yml)
+[![CI Web](https://github.com/cocofhu/grasp/actions/workflows/ci-web.yml/badge.svg)](https://github.com/cocofhu/grasp/actions/workflows/ci-web.yml)
+[![CI Sandbox](https://github.com/cocofhu/grasp/actions/workflows/ci-sandbox.yml/badge.svg)](https://github.com/cocofhu/grasp/actions/workflows/ci-sandbox.yml)
+[![CI Gateway](https://github.com/cocofhu/grasp/actions/workflows/ci-gateway.yml/badge.svg)](https://github.com/cocofhu/grasp/actions/workflows/ci-gateway.yml)
+[![Commits](https://img.shields.io/github/commit-activity/t/cocofhu/grasp)](https://github.com/cocofhu/grasp/commits/main)
 
-[![coverage-web](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fapproving%2Fcoverage-badges%2Fcoverage-web.json)](https://github.com/cocofhu/approving/actions/workflows/ci-web.yml)
-[![coverage-sandbox](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fapproving%2Fcoverage-badges%2Fcoverage-sandbox.json)](https://github.com/cocofhu/approving/actions/workflows/ci-sandbox.yml)
-[![coverage-server](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fapproving%2Fcoverage-badges%2Fcoverage-server.json)](https://github.com/cocofhu/approving/actions/workflows/ci-server.yml)
-[![coverage-gateway](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fapproving%2Fcoverage-badges%2Fcoverage-gateway.json)](https://github.com/cocofhu/approving/actions/workflows/ci-gateway.yml)
+[![coverage-web](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fgrasp%2Fcoverage-badges%2Fcoverage-web.json)](https://github.com/cocofhu/grasp/actions/workflows/ci-web.yml)
+[![coverage-sandbox](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fgrasp%2Fcoverage-badges%2Fcoverage-sandbox.json)](https://github.com/cocofhu/grasp/actions/workflows/ci-sandbox.yml)
+[![coverage-server](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fgrasp%2Fcoverage-badges%2Fcoverage-server.json)](https://github.com/cocofhu/grasp/actions/workflows/ci-server.yml)
+[![coverage-gateway](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fgrasp%2Fcoverage-badges%2Fcoverage-gateway.json)](https://github.com/cocofhu/grasp/actions/workflows/ci-gateway.yml)
 
-> Grasp is currently a public beta. It requires a Linux host with Docker Compose. Default startup only needs Grasp + Gateway; the single `universal-sandbox` image is pulled once.
+## Demo
 
-## Why an FSM — not another agent chat
-
-A single coding agent can finish one task. String several together and three things break:
-
-- the **path** lives in prompts, so nobody can reuse, audit, or recover it;
-- **failure** means “ask again”, not a designed rollback to a checkpoint;
-- **humans** cannot keep up once many runs are waiting — unless each pending state is visual and structured.
-
-Grasp’s bet: agents are fast; the workflow must still be a machine you designed.
-
-```text
-                    ┌──── fail / rollback (restore checkpoint) ────┐
-                    ▼                                              │
-One sentence → Grasp → Visual page.html → Human gate → Implement → Test → Review → PR
-     ▲                    ▲                    │
-     └──── revise ────────┴────────────────────┘
-```
-
-Nodes are states. Edges are transitions (`success` / `fail` / `rollback`) with optional `when` guards. Checkpoints snapshot variables so a retry is a state change, not a new chat.
-
-## What is different
-
-### 1. Design the path first
-
-Build the machine on a Vue Flow canvas: Input, Grasp, role agents, Visual, Branch, Human gate, App preview, Output.
-
-- **Success / fail / rollback** are first-class edges, not comments in a prompt.
-- **`when` guards** and **Branch** (if / else-if / else) route on artifacts, JSON fields, and outputs.
-- **Checkpoints** mark safe re-entry; rollback restores the variable snapshot and injects the error.
-- A **state trace** records enter / exit / transition / rollback — the run is inspectable.
-
-This is the opposite of a one-shot agent: the path exists before anyone types a goal.
-
-### 2. Humans are states, not spectators
-
-When a step needs a decision, the FSM **stops**. The gate appears in the inbox and on the run. Reviewers confirm from structured artifacts — a clarified requirement, a plan, a `page.html` preview — then the machine continues on the edge you drew.
-
-They do not follow every tool call. Many runs can sit at different gates at once; people scan visuals and approve in parallel.
-
-### 3. Visual clarification makes each state graspable
-
-Home starts a **pre-dev Grasp** from one sentence (or a screenshot / doc). That node is a multi-turn ReAct with no prompt template: the user speaks first, the agent aligns requirements, and it only `ask_question` on a real decision.
-
-Two deliverables finish the node:
-
-1. `clarified_requirement.json` — structured WHAT
-2. `plan.json` — a short, two-level plan
-
-Optional: research, proposals, a live app preview, and a self-contained `page.html` grounded in the existing frontend. Gates render the page in an iframe, so the pending state is something you can *see*.
-
-### 4. Artifacts fire the transitions
-
-Each run has an isolated artifact MCP. Agents write with `write_artifact`, `set_*`, `node_complete`. The engine does not advance because the model “felt done” — required artifacts must exist (and `when` expressions can read them). Handoffs are contracts, not pasted chat.
-
-### 5. Execution is sandboxed, backends are swappable
-
-Agent states run in Docker through the vendored `sandbox-gateway`. One workflow can mix Cursor, Claude Code, CodeBuddy, Trae, and OpenCode. Credentials stay in Agent env, not in platform images.
+https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
 
 ## Core capabilities
 
@@ -123,8 +71,8 @@ Draw the fail and rollback edges on the same canvas. The next failure should fol
 The default path pulls published GHCR images and does not build them locally:
 
 ```bash
-git clone https://github.com/cocofhu/approving.git
-cd approving
+git clone https://github.com/cocofhu/grasp.git
+cd grasp
 ./start.sh -d
 ```
 

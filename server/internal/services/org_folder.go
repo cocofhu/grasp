@@ -22,16 +22,16 @@ const (
 )
 
 var (
-	ErrOrgFolderTooLarge         = errors.New("文件夹包超过 64MiB 上限")
-	ErrOrgFolderMissingManifest  = errors.New("ZIP 缺少 folder.json，无法识别为文件夹包")
-	ErrOrgFolderSingleAgent      = errors.New("这是单 Agent ZIP，组级导入仅接受文件夹包，请改用顶栏「导入」")
-	ErrOrgFolderInvalidKind      = errors.New("folder.json kind 无效，须为 org-folder")
-	ErrOrgFolderBadSchema        = errors.New("不支持的 folder.json schemaVersion")
-	ErrOrgFolderGroupNotFound    = errors.New("组不存在")
-	ErrOrgFolderInvalidZip       = errors.New("ZIP 格式非法或已损坏")
-	ErrOrgFolderRootAgentJSON    = errors.New("文件夹包根目录不得包含 agent.json")
-	ErrOrgFolderNestedZip        = errors.New("文件夹包不得包含嵌套 ZIP")
-	ErrOrgFolderTargetNotFound   = errors.New("目标组不存在")
+	ErrOrgFolderTooLarge        = errors.New("文件夹包超过 64MiB 上限")
+	ErrOrgFolderMissingManifest = errors.New("ZIP 缺少 folder.json，无法识别为文件夹包")
+	ErrOrgFolderSingleAgent     = errors.New("这是单 Agent ZIP，组级导入仅接受文件夹包，请改用顶栏「导入」")
+	ErrOrgFolderInvalidKind     = errors.New("folder.json kind 无效，须为 org-folder")
+	ErrOrgFolderBadSchema       = errors.New("不支持的 folder.json schemaVersion")
+	ErrOrgFolderGroupNotFound   = errors.New("组不存在")
+	ErrOrgFolderInvalidZip      = errors.New("ZIP 格式非法或已损坏")
+	ErrOrgFolderRootAgentJSON   = errors.New("文件夹包根目录不得包含 agent.json")
+	ErrOrgFolderNestedZip       = errors.New("文件夹包不得包含嵌套 ZIP")
+	ErrOrgFolderTargetNotFound  = errors.New("目标组不存在")
 )
 
 // orgFolderJSON is the root folder.json inside a folder export ZIP.
@@ -579,6 +579,12 @@ func copyDir(src, dst string) error {
 		}
 		return os.WriteFile(target, data, 0o644)
 	})
+}
+
+// SanitizeDownloadFilename sanitizes names for Content-Disposition and zip paths
+// (ASCII word chars, CJK unified, hyphen, space); unsafe separators become '_'.
+func SanitizeDownloadFilename(name string) string {
+	return sanitizeDownloadFilename(name)
 }
 
 // sanitizeDownloadFilename mirrors web/src/lib/workflowIO.ts sanitizeFilename

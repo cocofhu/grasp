@@ -167,6 +167,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.PATCH("/runs/:id/priority", h.UpdateRunPriority)
 		api.GET("/runs/:id/variables", h.RunVariables)
 		api.GET("/runs/:id/artifacts", h.RunArtifacts)
+		api.GET("/runs/:id/artifacts/pack", h.PackRunArtifacts)
 		api.GET("/runs/:id/logs/export", h.ExportRunLogs)
 		api.GET("/runs/:id/inbox-context", h.RunInboxContext)
 		api.GET("/runs/:id/nodes/:nodeId/events", h.NodeEvents)

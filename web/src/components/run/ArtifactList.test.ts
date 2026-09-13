@@ -1,19 +1,37 @@
 // @vitest-environment happy-dom
 import { createI18n } from 'vue-i18n'
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { Artifact } from '@/lib/shared/types'
 import ArtifactList from './ArtifactList.vue'
 
-function artifact(name: string, id = name): Artifact {
+const packRunArtifacts = vi.fn()
+const downloadZip = vi.fn()
+const toastError = vi.fn()
+
+vi.mock('@/lib/api/api', () => ({
+  api: {
+    packRunArtifacts: (...args: unknown[]) => packRunArtifacts(...args),
+  },
+}))
+
+vi.mock('@/lib/agent/agentIO', () => ({
+  downloadZip: (...args: unknown[]) => downloadZip(...args),
+}))
+
+vi.mock('@/lib/composables/useToast', () => ({
+  useToast: () => ({ success: vi.fn(), error: toastError }),
+}))
+
+function artifact(name: string, id = name, runId = 'run-1'): Artifact {
   return {
     id,
     name,
     kind: 'json',
     nodeId: 'research',
-    runId: 'run-1',
+    runId,
     workflowName: 'wf',
     sizeBytes: 10,
     createdAt: '2026-07-18T00:00:00Z',
@@ -38,6 +56,12 @@ function mountList(props: Partial<InstanceType<typeof ArtifactList>['$props']> =
 }
 
 describe('ArtifactList', () => {
+  afterEach(() => {
+    packRunArtifacts.mockReset()
+    downloadZip.mockReset()
+    toastError.mockReset()
+  })
+
   it('renders friendly names with technical filenames in run scope', () => {
     const wrapper = mountList()
     expect(wrapper.text()).toContain('调研')
@@ -126,6 +150,84 @@ describe('ArtifactList', () => {
 
     await rowFor('feedback_index.json').trigger('click')
     expect((wrapper.emitted('select')![0][0] as Artifact).name).toBe('feedback_index.json')
+    wrapper.unmount()
+  })
+
+  it('scope=run has no pack button; scope=platform shows pack', () => {
+    const arts = [artifact('research.json')]
+    const run = mountList({ artifacts: arts, scope: 'run' })
+    expect(run.find('[data-testid="artifact-run-pack"]').exists()).toBe(false)
+    run.unmount()
+
+    const platform = mountList({
+      artifacts: arts,
+      scope: 'platform',
+      runSections: [{ runId: 'run-1', runTitle: 'Demo', items: arts }] as any,
+    })
+    const pack = platform.get('[data-testid="artifact-run-pack"]')
+    expect(pack.text()).toContain('打包')
+    expect(pack.attributes('aria-label')).toBe('打包')
+    platform.unmount()
+  })
+
+  it('pack click does not change activeId or collapse, and downloads zip', async () => {
+    const arts = [artifact('research.json')]
+    packRunArtifacts.mockResolvedValue({ blob: new Blob(['x']), filename: 'Demo-artifacts.zip' })
+    const wrapper = mountList({
+      artifacts: arts,
+      scope: 'platform',
+      activeId: 'research.json',
+      runSections: [{ runId: 'run-1', runTitle: 'Demo', items: arts }] as any,
+    })
+    const fold = wrapper.get('.ui-fold')
+    expect(fold.classes()).toContain('is-open')
+    await wrapper.get('[data-testid="artifact-run-pack"]').trigger('click')
+    expect(packRunArtifacts).toHaveBeenCalledWith('run-1')
+    expect(downloadZip).toHaveBeenCalled()
+    expect(wrapper.emitted('select')).toBeFalsy()
+    expect(wrapper.props('activeId')).toBe('research.json')
+    expect(fold.classes()).toContain('is-open')
+    wrapper.unmount()
+  })
+
+  it('empty run pack button is disabled; pack failure toasts without download', async () => {
+    const other = artifact('plan.json', 'p2', 'run-2')
+    const emptySec = { runId: 'run-empty', runTitle: 'Empty', items: [] as Artifact[] }
+    const filled = { runId: 'run-2', runTitle: 'Filled', items: [other] }
+    const wrapper = mountList({
+      artifacts: [other],
+      scope: 'platform',
+      runSections: [emptySec, filled] as any,
+    })
+    const emptyPack = wrapper.findAll('[data-testid="artifact-run-pack"]').find(
+      (b) => b.attributes('data-run-id') === 'run-empty',
+    )!
+    expect(emptyPack.attributes('disabled')).toBeDefined()
+
+    packRunArtifacts.mockRejectedValue(new Error('boom'))
+    const filledPack = wrapper.findAll('[data-testid="artifact-run-pack"]').find(
+      (b) => b.attributes('data-run-id') === 'run-2',
+    )!
+    await filledPack.trigger('click')
+    await Promise.resolve()
+    expect(toastError).toHaveBeenCalled()
+    expect(downloadZip).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('pack remains available when run section is collapsed', async () => {
+    const arts = [artifact('research.json')]
+    packRunArtifacts.mockResolvedValue({ blob: new Blob(['x']), filename: 'x.zip' })
+    const wrapper = mountList({
+      artifacts: arts,
+      scope: 'platform',
+      runSections: [{ runId: 'run-1', runTitle: 'Demo', items: arts }] as any,
+    })
+    const foldBtn = wrapper.findAll('button').find((b) => b.text().includes('Demo'))!
+    await foldBtn.trigger('click')
+    expect(wrapper.get('.ui-fold').classes()).not.toContain('is-open')
+    await wrapper.get('[data-testid="artifact-run-pack"]').trigger('click')
+    expect(packRunArtifacts).toHaveBeenCalledWith('run-1')
     wrapper.unmount()
   })
 })

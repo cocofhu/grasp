@@ -1,82 +1,33 @@
 # Grasp
 
-**用 FSM 编排 coding agent：看得见的路径、可回滚的失败、人一眼看懂再批。**
+**[English](README.md) | 简体中文**
+近两年，随着大模型能力持续增强，我开始尝试多方面的探索，大约做过 150+ 个个人项目。在开发过程中，我遇到最大问题是：
 
-多数多 Agent 方案把路径藏在对话里：一条聊天、一条幸福路径，失败了只能重问。Grasp 把路径做成**有限状态机**。你在画布上设计成功、失败与回滚；Agent 在 Docker 沙箱里跑这些状态；人只在显式门禁进入——审批看的是澄清规格和 `page.html` 预览，而不是整段对话。
+1、多项目切换成本高——IDE 来回跳，运行状态、上下文也难管齐；
+2、并行开发读不懂 Agent——模型总是一大段一大段往外倒，真正关键的信息反而被淹没，需要花大量的时间理解。
+
+于是我做了 Grasp：把多项目收进同一个平台管理，用可视化的需求澄清，把 Agent 冗长输出收成你能一眼看懂的表达，从而抬高「人」这一侧的吞吐。我们也支持接入多种 Agent 后端，例如 Cursor、CodeBuddy、Claude Code 等。
+
+
 
 [项目站](https://www.approving-ai.com/) · [快速开始](https://www.approving-ai.com/guide/quick-start/) · [贡献指南](CONTRIBUTING.md) · [配置](server/CONFIGURATION.md)
 
-**[English](README.md) | 简体中文**
 
-[![CI Server](https://github.com/cocofhu/approving/actions/workflows/ci-server.yml/badge.svg)](https://github.com/cocofhu/approving/actions/workflows/ci-server.yml)
-[![CI Web](https://github.com/cocofhu/approving/actions/workflows/ci-web.yml/badge.svg)](https://github.com/cocofhu/approving/actions/workflows/ci-web.yml)
-[![CI Sandbox](https://github.com/cocofhu/approving/actions/workflows/ci-sandbox.yml/badge.svg)](https://github.com/cocofhu/approving/actions/workflows/ci-sandbox.yml)
-[![CI Gateway](https://github.com/cocofhu/approving/actions/workflows/ci-gateway.yml/badge.svg)](https://github.com/cocofhu/approving/actions/workflows/ci-gateway.yml)
 
-[![coverage-web](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fapproving%2Fcoverage-badges%2Fcoverage-web.json)](https://github.com/cocofhu/approving/actions/workflows/ci-web.yml)
-[![coverage-sandbox](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fapproving%2Fcoverage-badges%2Fcoverage-sandbox.json)](https://github.com/cocofhu/approving/actions/workflows/ci-sandbox.yml)
-[![coverage-server](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fapproving%2Fcoverage-badges%2Fcoverage-server.json)](https://github.com/cocofhu/approving/actions/workflows/ci-server.yml)
-[![coverage-gateway](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fapproving%2Fcoverage-badges%2Fcoverage-gateway.json)](https://github.com/cocofhu/approving/actions/workflows/ci-gateway.yml)
+[![CI Server](https://github.com/cocofhu/grasp/actions/workflows/ci-server.yml/badge.svg)](https://github.com/cocofhu/grasp/actions/workflows/ci-server.yml)
+[![CI Web](https://github.com/cocofhu/grasp/actions/workflows/ci-web.yml/badge.svg)](https://github.com/cocofhu/grasp/actions/workflows/ci-web.yml)
+[![CI Sandbox](https://github.com/cocofhu/grasp/actions/workflows/ci-sandbox.yml/badge.svg)](https://github.com/cocofhu/grasp/actions/workflows/ci-sandbox.yml)
+[![CI Gateway](https://github.com/cocofhu/grasp/actions/workflows/ci-gateway.yml/badge.svg)](https://github.com/cocofhu/grasp/actions/workflows/ci-gateway.yml)
+[![Commits](https://img.shields.io/github/commit-activity/t/cocofhu/grasp)](https://github.com/cocofhu/grasp/commits/main)
 
-> 当前版本为公开 Beta。需要 Linux 宿主和 Docker Compose。默认起栈只需 Grasp 与 Gateway；沙箱只有一张 `universal-sandbox` 镜像，拉取一次即可。
+[![coverage-web](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fgrasp%2Fcoverage-badges%2Fcoverage-web.json)](https://github.com/cocofhu/grasp/actions/workflows/ci-web.yml)
+[![coverage-sandbox](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fgrasp%2Fcoverage-badges%2Fcoverage-sandbox.json)](https://github.com/cocofhu/grasp/actions/workflows/ci-sandbox.yml)
+[![coverage-server](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fgrasp%2Fcoverage-badges%2Fcoverage-server.json)](https://github.com/cocofhu/grasp/actions/workflows/ci-server.yml)
+[![coverage-gateway](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fgrasp%2Fcoverage-badges%2Fcoverage-gateway.json)](https://github.com/cocofhu/grasp/actions/workflows/ci-gateway.yml)
 
-## 为什么是 FSM，而不是又一个 Agent 对话
+## 演示
 
-单 Agent 擅长完成一次任务。把多个 Agent 串起来之后，三件事会一起坏：
-
-- **路径**活在 Prompt 里，无法复用、审计、恢复；
-- **失败**等于「再问一遍」，而不是回到设计好的 checkpoint；
-- **人**跟不上并行中的多条 run——除非每个待审状态都是可视化、结构化的。
-
-Grasp 的赌注：Agent 可以很快，但工作流必须是一台你设计过的机器。
-
-```text
-                    ┌──── 失败 / 回滚（恢复 checkpoint）────┐
-                    ▼                                       │
-一句话 → Grasp → 视觉 page.html → 人工门禁 → 实现 → 测试 → 评审 → PR
-   ▲                 ▲                    │
-   └──── 退回修改 ───┴────────────────────┘
-```
-
-节点即状态。边即转移（`success` / `fail` / `rollback`），可加 `when` 守卫。Checkpoint 会快照变量，重试是一次状态迁移，而不是新开一轮聊天。
-
-## 差异化在哪里
-
-### 1. 先设计路径
-
-在 Vue Flow 画布上组装机器：Input、Grasp、角色 Agent、Visual、Branch、人工门禁、应用预览、Output。
-
-- **成功 / 失败 / 回滚**是一等边，不是 Prompt 里的备注。
-- **`when` 守卫**和 **Branch**（if / else-if / else）按产物、JSON 字段和输出分流。
-- **Checkpoint** 标记可安全重入的点；回滚恢复变量快照并注入错误上下文。
-- **状态轨迹**记录进入 / 退出 / 转移 / 回滚——一次 run 可被审查。
-
-这和一次性 Agent 相反：路径在有人说出目标之前就已经存在。
-
-### 2. 人是状态，不是旁观者
-
-某一步需要决策时，FSM **停住**。门禁出现在收件箱和运行详情。审批人对照结构化产物——澄清规格、计划、`page.html` 预览——确认后，机器沿你画好的边继续。
-
-他们不必跟踪每一次工具调用。多条 run 可以停在不同门禁；人扫一眼可视化产物，并行审批。
-
-### 3. 可视化澄清让每个状态都看得懂
-
-首页用一句话（或截图 / 文档）启动一次**开发前 Grasp**。该节点是不限轮次的 ReAct：没有 Prompt 模板，用户先说目标，Agent 用工具对齐需求，只在真正有分歧时 `ask_question`。
-
-节点结束必须交出：
-
-1. `clarified_requirement.json` — 结构化的 WHAT
-2. `plan.json` — 最多两级的短计划
-
-可选：调研、方案、可运行预览，以及贴合现有前端的自包含 `page.html`。门禁用 iframe 渲染页面，待审状态是可以*看见*的。
-
-### 4. 产物驱动转移
-
-每次 run 有隔离的 artifact MCP。Agent 用 `write_artifact`、`set_*`、`node_complete` 写入。引擎不会因为模型「觉得做完了」就往前走——必要产物必须存在（`when` 也可以读这些产物）。交接是契约，不是粘贴对话。
-
-### 5. 沙箱执行，后端可换
-
-Agent 状态通过内置 `sandbox-gateway` 在 Docker 中运行。同一条工作流可混用 Cursor、Claude Code、CodeBuddy、Trae、OpenCode。密钥留在 Agent env，不进平台镜像。
+https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
 
 ## 核心能力
 
@@ -123,8 +74,8 @@ Agent 状态通过内置 `sandbox-gateway` 在 Docker 中运行。同一条工�
 默认路径直接拉取已发布的 GHCR 镜像，无需本地构建：
 
 ```bash
-git clone https://github.com/cocofhu/approving.git
-cd approving
+git clone https://github.com/cocofhu/grasp.git
+cd grasp
 ./start.sh -d
 ```
 

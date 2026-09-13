@@ -277,6 +277,7 @@ describe('api req helpers', () => {
     ).resolves.toMatchObject({ total: 1 })
     await expect(api.artifactContent('art')).resolves.toMatchObject({ id: 'art' })
     expect(api.artifactDownloadUrl('art')).toContain('/api/artifacts/art/download')
+    expect(api.packRunArtifactsUrl('run-1')).toContain('/api/runs/run-1/artifacts/pack')
     await expect(api.deleteArtifact('art')).resolves.toBeUndefined()
 
     await expect(api.nodeEvents('r1', 'n1')).resolves.toEqual({ events: [], live: false })
@@ -457,6 +458,24 @@ describe('api.patchWorkflowHomeVisibility', () => {
     const call = fetchMock.mock.calls[fetchMock.mock.calls.length - 1]
     const body = JSON.parse(String(call?.[1]?.body))
     expect(body.title).toBe('用户第一句话')
+  })
+
+  it('packRunArtifacts downloads zip with credentials and filename', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(new Blob(['PK']), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/zip',
+          'Content-Disposition': 'attachment; filename="Demo-artifacts.zip"',
+        },
+      }),
+    )
+    const result = await api.packRunArtifacts('run-1')
+    expect(result.filename).toBe('Demo-artifacts.zip')
+    expect(result.blob).toBeInstanceOf(Blob)
+    const call = fetchMock.mock.calls[0]
+    expect(String(call?.[0])).toContain('/runs/run-1/artifacts/pack')
+    expect(call?.[1]).toMatchObject({ credentials: 'include' })
   })
 })
 
