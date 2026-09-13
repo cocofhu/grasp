@@ -288,10 +288,15 @@ html.light .app-sidebar-card {
   .toolbar-inline-row {
     @apply py-2.5;
   }
+  /*
+   * Sidebar nav-item (plan g2.1): landing-point hover ink replaces hover:bg-elevated.
+   * Active elevated base stays; ink uses the same elevated fill token.
+   */
   .nav-item {
     @apply flex items-center gap-2.5 px-3 py-[9px] text-sm text-txt2 transition
-      hover:bg-elevated hover:text-txt;
+      hover:text-txt;
     border-radius: 10px !important;
+    --hover-ink-color: rgb(var(--c-elevated));
   }
   .nav-item.active {
     @apply bg-elevated font-semibold text-txt;
@@ -544,6 +549,43 @@ html.light .app-sidebar-card {
   .token-usage-tip {
     transition: none !important;
     transform: none !important;
+  }
+}
+
+/* ---------- Hover ink: landing-point solid cover (plan g1 / g2) ---------- */
+.hover-ink-host {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.hover-ink-host > .hover-ink {
+  position: absolute;
+  left: var(--ink-x, 50%);
+  top: var(--ink-y, 50%);
+  width: var(--ink-d, 0px);
+  height: var(--ink-d, 0px);
+  margin: calc(var(--ink-d, 0px) / -2) 0 0 calc(var(--ink-d, 0px) / -2);
+  border-radius: 50%;
+  background: var(--hover-ink-color, rgb(var(--c-elevated)));
+  transform: scale(0);
+  transition: transform 350ms var(--ease-out-expo);
+  pointer-events: none;
+  z-index: 0;
+}
+.hover-ink-host.is-hover-ink > .hover-ink {
+  transform: scale(1);
+}
+.hover-ink-host.is-leave-ink > .hover-ink {
+  transform: scale(0);
+}
+/* Content / icons / badges stay above the ink layer (plan g1.2). */
+.hover-ink-host > :not(.hover-ink) {
+  position: relative;
+  z-index: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hover-ink-host > .hover-ink {
+    transition: none;
   }
 }
 

@@ -20,11 +20,12 @@ const cls = computed(() => {
     'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-medium outline-none disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-base'
   // Height tokens: sm=h-6 (24px), md=h-9 (36px). Vertical padding no longer drives height.
   const sizes = props.size === 'sm' ? 'h-6 px-2.5 text-xs' : 'h-9 px-3.5 text-sm'
+  // Hover fill moved to --hover-ink-color + v-hover-ink (plan g2.2); keep non-fill hover tokens.
   const variants: Record<string, string> = {
-    primary: 'bg-accent text-white hover:bg-accent-2 shadow-glow',
-    ghost: 'text-txt2 hover:bg-elevated hover:text-txt',
-    outline: 'border border-line bg-surface text-txt hover:border-line-strong hover:bg-elevated',
-    danger: 'border border-err/40 bg-err/10 text-err hover:bg-err/20',
+    primary: 'bg-accent text-white shadow-glow',
+    ghost: 'text-txt2 hover:text-txt',
+    outline: 'border border-line bg-surface text-txt hover:border-line-strong',
+    danger: 'border border-err/40 bg-err/10 text-err',
     subtle: 'bg-elevated text-txt2 hover:text-txt',
   }
   const press =
@@ -32,11 +33,34 @@ const cls = computed(() => {
   return [base, sizes, variants[props.variant], press, props.block ? 'w-full' : '']
 })
 
+const inkColor = computed(() => {
+  // Matches former hover:bg-* tokens (plan g2.2).
+  switch (props.variant) {
+    case 'primary':
+      return 'rgb(var(--c-accent-2))'
+    case 'danger':
+      return 'rgb(var(--c-err) / 0.2)'
+    case 'subtle':
+      return 'rgb(var(--c-overlay))'
+    case 'ghost':
+    case 'outline':
+    default:
+      return 'rgb(var(--c-elevated))'
+  }
+})
+
 const isDisabled = computed(() => props.disabled || props.loading)
+const inkEnabled = computed(() => !isDisabled.value)
 </script>
 
 <template>
-  <button :class="cls" :disabled="isDisabled" :aria-busy="loading ? 'true' : undefined">
+  <button
+    v-hover-ink="{ enabled: inkEnabled }"
+    :class="cls"
+    :style="{ '--hover-ink-color': inkColor }"
+    :disabled="isDisabled"
+    :aria-busy="loading ? 'true' : undefined"
+  >
     <AppSpinner v-if="loading" :size="size === 'sm' ? 12 : 14" />
     <Icon v-else-if="icon" :name="icon" :size="size === 'sm' ? 14 : 16" />
     <slot />

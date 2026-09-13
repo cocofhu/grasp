@@ -249,6 +249,7 @@ const settingsItems = settingsNavItems
     <!-- Settings chrome: back to home + category list (plan g2.2) -->
     <div v-if="settingsChrome" key="settings" class="nav-chrome-pane mb-3" data-testid="nav-settings-chrome">
       <RouterLink
+        v-hover-ink
         to="/dashboard"
         class="nav-item mb-2 text-txt3"
         data-testid="nav-back-home"
@@ -265,6 +266,7 @@ const settingsItems = settingsNavItems
           {{ t(item.groupKey) }}
         </div>
         <RouterLink
+          v-hover-ink
           :to="settingsLinkTo(item)"
           class="nav-item mb-0.5"
           :class="{ active: isSettingsItemActive(item) }"
@@ -288,6 +290,7 @@ const settingsItems = settingsNavItems
       <RouterLink
         v-for="item in primaryGroup.items"
         :key="item.to"
+        v-hover-ink
         :to="item.to"
         class="nav-item mb-0.5"
         :class="{ active: isActive(item.to) }"

@@ -4,6 +4,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
+import { vHoverInk } from '@/lib/shared/hoverInkDirective'
 import AppButton from './AppButton.vue'
 
 function mountBtn(props: Record<string, unknown> = {}, slot = '保存') {
@@ -15,7 +16,11 @@ function mountBtn(props: Record<string, unknown> = {}, slot = '保存') {
   return mount(AppButton, {
     props,
     slots: { default: slot },
-    global: { plugins: [i18n], stubs: { Icon: true } },
+    global: {
+      plugins: [i18n],
+      stubs: { Icon: true },
+      directives: { 'hover-ink': vHoverInk },
+    },
   })
 }
 
@@ -78,6 +83,33 @@ describe('AppButton', () => {
     loading.unmount()
     const disabled = mountBtn({ disabled: true })
     expect(disabled.classes()).not.toContain('ui-pressable')
+    disabled.unmount()
+  })
+
+  it('uses hover-ink host instead of hover:bg-* fill (plan g2.2)', () => {
+    const idle = mountBtn({ variant: 'primary' })
+    expect(idle.classes()).toContain('hover-ink-host')
+    expect(idle.classes().join(' ')).not.toMatch(/hover:bg-/)
+    expect(idle.element.style.getPropertyValue('--hover-ink-color')).toContain('--c-accent-2')
+    expect(idle.find('.hover-ink').exists()).toBe(true)
+    idle.unmount()
+
+    const ghost = mountBtn({ variant: 'ghost' })
+    expect(ghost.element.style.getPropertyValue('--hover-ink-color')).toContain('--c-elevated')
+    ghost.unmount()
+
+    const danger = mountBtn({ variant: 'danger' })
+    expect(danger.element.style.getPropertyValue('--hover-ink-color')).toContain('--c-err')
+    danger.unmount()
+  })
+
+  it('does not enable hover-ink when disabled or loading (plan g1.3 / g2.3)', () => {
+    const loading = mountBtn({ loading: true })
+    expect(loading.attributes('aria-busy')).toBe('true')
+    expect(loading.attributes('disabled')).toBeDefined()
+    loading.unmount()
+    const disabled = mountBtn({ disabled: true })
+    expect(disabled.attributes('disabled')).toBeDefined()
     disabled.unmount()
   })
 })

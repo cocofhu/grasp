@@ -6,6 +6,7 @@ import { nextTick, reactive } from 'vue'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import nav from '@/locales/zh-CN/nav.json'
+import { vHoverInk } from '@/lib/shared/hoverInkDirective'
 
 const routeState = reactive({ path: '/dashboard', query: {} as Record<string, unknown>, meta: {} as Record<string, unknown> })
 
@@ -116,7 +117,11 @@ function mountNav() {
     messages: { 'zh-CN': { ...common, ...pages, ...nav } },
   })
   return mount(AppSidebarNav, {
-    global: { plugins: [i18n], stubs: { Icon: true } },
+    global: {
+      plugins: [i18n],
+      stubs: { Icon: true },
+      directives: { 'hover-ink': vHoverInk },
+    },
   })
 }
 
@@ -383,5 +388,24 @@ describe('AppSidebarNav', () => {
     expect(src).toMatch(/translateX/)
     expect(src).toMatch(/prefers-reduced-motion:\s*reduce/)
     expect(src).toMatch(/chromeHasMounted/)
+  })
+
+  it('workspace and settings nav-items use v-hover-ink (plan g2.1 / g2.3)', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'AppSidebarNav.vue'), 'utf8')
+    expect(src).toMatch(/v-hover-ink/)
+    // All three nav-item RouterLinks carry the directive.
+    expect([...src.matchAll(/v-hover-ink/g)].length).toBeGreaterThanOrEqual(3)
+
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../../styles/global.css'),
+      'utf8',
+    )
+    expect(css).toMatch(/\.nav-item\s*\{[^}]*--hover-ink-color:\s*rgb\(var\(--c-elevated\)\)/s)
+    expect(css).not.toMatch(/\.nav-item\s*\{[^}]*hover:bg-elevated/s)
+    expect(css).toMatch(/\.hover-ink-host\s*>\s*:not\(\.hover-ink\)/)
+    expect(css).toMatch(/transition:\s*transform\s*350ms/)
   })
 })

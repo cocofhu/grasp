@@ -1,0 +1,123 @@
+// @vitest-environment happy-dom
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { createApp, nextTick, ref } from 'vue'
+import { isHoverInkBlocked, vHoverInk } from './hoverInkDirective'
+
+function mountButton(opts: { enabled?: boolean; disabled?: boolean; busy?: boolean } = {}) {
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const enabled = ref(opts.enabled !== false)
+  let template = `<button type="button" v-hover-ink="{ enabled }">Go</button>`
+  if (opts.disabled) {
+    template = `<button type="button" v-hover-ink="{ enabled }" disabled>Go</button>`
+  } else if (opts.busy) {
+    template = `<button type="button" v-hover-ink="{ enabled }" aria-busy="true">Go</button>`
+  }
+  const app = createApp({
+    setup() {
+      return { enabled }
+    },
+    template,
+  })
+  app.directive('hover-ink', vHoverInk)
+  app.mount(host)
+  const btn = host.querySelector('button') as HTMLButtonElement
+  return { host, app, btn, enabled }
+}
+
+describe('vHoverInk directive (plan g1.2 / g1.3)', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query.includes('hover: hover') && query.includes('pointer: fine'),
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    )
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    document.body.innerHTML = ''
+  })
+
+  it('injects ink layer under content and expands from landing point', async () => {
+    const { host, app, btn } = mountButton()
+    await nextTick()
+    const ink = btn.querySelector(':scope > .hover-ink') as HTMLElement
+    expect(ink).toBeTruthy()
+    expect(btn.classList.contains('hover-ink-host')).toBe(true)
+
+    Object.defineProperty(btn, 'getBoundingClientRect', {
+      value: () => ({
+        left: 10,
+        top: 20,
+        width: 100,
+        height: 40,
+        right: 110,
+        bottom: 60,
+        x: 10,
+        y: 20,
+        toJSON: () => ({}),
+      }),
+    })
+
+    btn.dispatchEvent(
+      new PointerEvent('pointerenter', { clientX: 30, clientY: 30, pointerType: 'mouse', bubbles: true }),
+    )
+    expect(btn.classList.contains('is-hover-ink')).toBe(true)
+    expect(btn.style.getPropertyValue('--ink-x')).toBe('20px')
+    expect(btn.style.getPropertyValue('--ink-y')).toBe('10px')
+    expect(btn.style.getPropertyValue('--ink-d')).toBe(`${Math.hypot(80, 30) * 2}px`)
+
+    btn.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }))
+    expect(btn.classList.contains('is-hover-ink')).toBe(false)
+    expect(btn.classList.contains('is-leave-ink')).toBe(true)
+
+    app.unmount()
+    host.remove()
+  })
+
+  it('ignores disabled, loading (aria-busy), and touch pointers', async () => {
+    const disabled = mountButton({ disabled: true })
+    await nextTick()
+    disabled.btn.dispatchEvent(
+      new PointerEvent('pointerenter', { clientX: 1, clientY: 1, pointerType: 'mouse', bubbles: true }),
+    )
+    expect(disabled.btn.classList.contains('is-hover-ink')).toBe(false)
+    disabled.app.unmount()
+    disabled.host.remove()
+
+    const busy = mountButton({ busy: true })
+    await nextTick()
+    busy.btn.dispatchEvent(
+      new PointerEvent('pointerenter', { clientX: 1, clientY: 1, pointerType: 'mouse', bubbles: true }),
+    )
+    expect(busy.btn.classList.contains('is-hover-ink')).toBe(false)
+    busy.app.unmount()
+    busy.host.remove()
+
+    const touch = mountButton()
+    await nextTick()
+    touch.btn.dispatchEvent(
+      new PointerEvent('pointerenter', { clientX: 1, clientY: 1, pointerType: 'touch', bubbles: true }),
+    )
+    expect(touch.btn.classList.contains('is-hover-ink')).toBe(false)
+    touch.app.unmount()
+    touch.host.remove()
+  })
+
+  it('isHoverInkBlocked reads disabled / aria-busy / binding', () => {
+    const el = document.createElement('button')
+    el.disabled = true
+    expect(isHoverInkBlocked(el)).toBe(true)
+    el.disabled = false
+    el.setAttribute('aria-busy', 'true')
+    expect(isHoverInkBlocked(el)).toBe(true)
+    el.removeAttribute('aria-busy')
+    expect(isHoverInkBlocked(el, { value: false } as never)).toBe(true)
+    expect(isHoverInkBlocked(el, { value: { enabled: false } } as never)).toBe(true)
+    expect(isHoverInkBlocked(el)).toBe(false)
+  })
+})
