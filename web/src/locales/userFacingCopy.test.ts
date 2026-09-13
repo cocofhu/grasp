@@ -79,6 +79,8 @@ describe('user-facing copy remediation keys', () => {
     expect(zh.global.t('pages.projectDetail.pm.failUnknownDesc')).not.toMatch(/无法归入/)
   })
 
+  // Freeze contract: Approve opening hint stays exact zh「请先描述目标…」(en existing).
+  // Scope is this placeholder only — skipInputPlaceholder is intentionally not locked here.
   it('approve empty chat asks the user to state the goal first', () => {
     expect(zh.global.t('pages.clarify.approveInputPlaceholder')).toBe('请先描述目标…')
     expect(en.global.t('pages.clarify.approveInputPlaceholder')).toMatch(/goal first/i)
