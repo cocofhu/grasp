@@ -29,6 +29,32 @@
 
 https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
 
+## 截图
+
+<p align="center">
+  <img src="media/screenshots/workflow-canvas.webp" alt="Grasp 工作流画布" width="100%" />
+  <br />
+  <sub>在一个画布里编排多项目、多 Agent 的开发流程。</sub>
+</p>
+
+<p align="center">
+  <img src="media/screenshots/artifact-review.webp" alt="Grasp 运行产物审查" width="100%" />
+  <br />
+  <sub>把 Agent 输出整理成结构化产物，方便快速审查。</sub>
+</p>
+
+<p align="center">
+  <img src="media/screenshots/agent-studio.webp" alt="Grasp Agent Studio" width="100%" />
+  <br />
+  <sub>在同一平台管理项目、Agent 后端和运行配置。</sub>
+</p>
+
+<p align="center">
+  <img src="media/screenshots/token-analytics.webp" alt="Grasp 用量统计" width="100%" />
+  <br />
+  <sub>统计多项目、多模型的 Token 用量和成本分布。</sub>
+</p>
+
 ## 核心能力
 
 | 能力 | 在 FSM 里的位置 |
@@ -168,3 +194,13 @@ cd grasp
 ## 许可证
 
 [MIT](LICENSE) © 2026 cocofhu
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=cocofhu%2Fgrasp&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=cocofhu/grasp&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=cocofhu/grasp&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=cocofhu/grasp&type=date&legend=top-left" />
+ </picture>
+</a>

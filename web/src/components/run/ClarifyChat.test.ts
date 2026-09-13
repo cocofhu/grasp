@@ -389,11 +389,15 @@ describe('ClarifyChat', () => {
 
   it('uses approve first-speaker placeholder and empty hint', () => {
     const wrapper = mountChat({ nodeType: 'approve', turns: null })
+    const openingHint = '请先描述目标…'
     expect(wrapper.find('[data-testid="clarify-input"]').attributes('placeholder')).toBe(
-      '请先描述目标…',
+      openingHint,
     )
+    // Same opening hint only as placeholder — not copied into empty-hint / scroller (g2.2).
     expect(wrapper.find('[data-testid="clarify-approve-empty-hint"]').text()).toContain('先说明本次要做的目标')
+    expect(wrapper.find('[data-testid="clarify-approve-empty-hint"]').text()).not.toContain(openingHint)
     expect(wrapper.find('[data-testid="clarify-scroller"]').text()).toContain('共 0 条')
+    expect(wrapper.find('[data-testid="clarify-scroller"]').text()).not.toContain(openingHint)
     wrapper.unmount()
   })
 
