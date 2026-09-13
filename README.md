@@ -46,6 +46,12 @@ https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
   <sub>Manage projects, agent backends, and run configuration in one platform.</sub>
 </p>
 
+<p align="center">
+  <img src="media/screenshots/token-analytics.webp" alt="Grasp token analytics" width="100%" />
+  <br />
+  <sub>Track token usage and cost distribution across projects and models.</sub>
+</p>
+
 ## Core capabilities
 
 | Capability | In the FSM |

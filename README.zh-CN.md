@@ -49,6 +49,12 @@ https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
   <sub>在同一平台管理项目、Agent 后端和运行配置。</sub>
 </p>
 
+<p align="center">
+  <img src="media/screenshots/token-analytics.webp" alt="Grasp 用量统计" width="100%" />
+  <br />
+  <sub>统计多项目、多模型的 Token 用量和成本分布。</sub>
+</p>
+
 ## 核心能力
 
 | 能力 | 在 FSM 里的位置 |
