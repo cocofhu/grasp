@@ -1481,7 +1481,7 @@ describe('ClarifyChat', () => {
    */
   describe('long URL wrap (Demo after / plan g3)', () => {
     const LONG_URL =
-      'http://approving.k3s.cc/api/blobs/333932fedb2e4ce9a1b7c8d0e2f4567890abcdef1234567890abcdef1234'
+      'http://blobs.example.com/api/blobs/333932fedb2e4ce9a1b7c8d0e2f4567890abcdef1234567890abcdef1234'
 
     it('human bubble uses .md; rendered link keeps full href (g3.1/f1)', () => {
       const wrapper = mountChat({

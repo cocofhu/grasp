@@ -160,13 +160,13 @@ rm -f "$HOME/gh.last" "$HOME/gh.token" "$HOME/glab.last" "$TMP/root/.git-credent
 GITHUB_TOKEN=""
 GITLAB_TOKEN="gl_only"
 GITHUB_URL=""
-GITLAB_URL="https://git.cocofhu.cc"
-GIT_REPOS="api|https://git.cocofhu.cc/team/api.git|main"
+GITLAB_URL="https://git.example.com"
+GIT_REPOS="api|https://git.example.com/team/api.git|main"
 GIT_CLONE_URL=""
 _GIT_CRED_RESET=0
 configure_git_credentials
-grep -q 'oauth2:gl_only@git.cocofhu.cc' "$TMP/root/.git-credentials"
-grep -q 'argv:auth login --hostname git.cocofhu.cc --token gl_only' "$HOME/glab.last"
+grep -q 'oauth2:gl_only@git.example.com' "$TMP/root/.git-credentials"
+grep -q 'argv:auth login --hostname git.example.com --token gl_only' "$HOME/glab.last"
 if [ -f "$HOME/gh.last" ]; then
   echo "FAIL: GitLab-only should not invoke gh" >&2
   exit 1
