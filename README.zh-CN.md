@@ -27,9 +27,7 @@
 
 ## 演示
 
-![Grasp 演示](media/grasp-demo.gif)
-
-[查看压缩 MP4](media/grasp-demo.mp4)
+https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
 
 ## 核心能力
 

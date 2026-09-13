@@ -24,9 +24,7 @@ So I built Grasp: one platform for all your projects, and visual requirement cla
 
 ## Demo
 
-![Grasp demo](media/grasp-demo.gif)
-
-[Watch compressed MP4](media/grasp-demo.mp4)
+https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
 
 ## Core capabilities
 
