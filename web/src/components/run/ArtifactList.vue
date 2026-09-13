@@ -8,6 +8,9 @@ import {
   artifactFriendlyNameKey,
   artifactTechnicalDisplayName,
 } from '@/lib/run/reactArtifactPreview'
+import { downloadZip } from '@/lib/agent/agentIO'
+import { api } from '@/lib/api/api'
+import { useToast } from '@/lib/composables/useToast'
 import { isFeedbackArtifactName } from './StructuredArtifactView.vue'
 import type { Artifact } from '@/lib/shared/types'
 import type { RunSection } from '@/lib/run/artifactGroups'
@@ -46,9 +49,11 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const toast = useToast()
 
 const artFilter = ref('')
 const collapsedRuns = ref<Set<string>>(new Set())
+const packingRuns = ref<Set<string>>(new Set())
 const scrollEl = ref<HTMLElement | null>(null)
 // A long review produces one product per round; left flat they would bury the
 // actual deliverables, so the ledger gets its own collapsed group.
@@ -151,6 +156,10 @@ function isRunCollapsed(runId: string): boolean {
   return collapsedRuns.value.has(runId)
 }
 
+function isPacking(runId: string): boolean {
+  return packingRuns.value.has(runId)
+}
+
 function toggleRun(runId: string) {
   const next = new Set(collapsedRuns.value)
   if (next.has(runId)) next.delete(runId)
@@ -173,6 +182,25 @@ function runCountLabel(sec: RunSection): string {
   if (!q) return String(sec.items.length)
   const matched = sec.items.filter((a) => matchArt(a, label)).length
   return `${matched}/${sec.items.length}`
+}
+
+async function packRun(sec: RunSection, event: Event) {
+  event.stopPropagation()
+  event.preventDefault()
+  if (!sec.items.length || isPacking(sec.runId)) return
+  const next = new Set(packingRuns.value)
+  next.add(sec.runId)
+  packingRuns.value = next
+  try {
+    const { blob, filename } = await api.packRunArtifacts(sec.runId)
+    downloadZip(blob, filename)
+  } catch {
+    toast.error(t('pages.artifactList.packFailed'))
+  } finally {
+    const done = new Set(packingRuns.value)
+    done.delete(sec.runId)
+    packingRuns.value = done
+  }
 }
 
 function onSearchInput(event: Event) {
@@ -272,21 +300,38 @@ watch(
 
       <template v-else-if="scope === 'platform' && runSections.length">
         <div v-for="sec in visibleRunSections" :key="sec.runId" class="mb-3 last:mb-0">
-          <button
-            type="button"
-            class="mb-1 flex w-full items-center gap-1.5 px-2 py-1 text-left text-[12px] font-normal text-txt3 transition hover:text-txt2"
-            :class="isRunCollapsed(sec.runId) ? 'collapsed' : ''"
-            @click="toggleRun(sec.runId)"
-          >
-            <Icon
-              name="chevron-down"
-              :size="12"
-              class="ui-fold-chevron shrink-0 text-txt3"
-              :class="isRunCollapsed(sec.runId) ? '-rotate-90' : ''"
-            />
-            <span class="min-w-0 flex-1 truncate" :title="runLabel(sec)">{{ runLabel(sec) }}</span>
-            <span class="shrink-0 text-[10px] tabular-nums text-txt3">{{ runCountLabel(sec) }}</span>
-          </button>
+          <div class="mb-1 flex w-full items-center gap-1.5 px-1 py-0.5">
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 items-center gap-1.5 px-1 py-1 text-left text-[12px] font-normal text-txt3 transition hover:text-txt2"
+              :class="isRunCollapsed(sec.runId) ? 'collapsed' : ''"
+              :aria-expanded="!isRunCollapsed(sec.runId)"
+              @click="toggleRun(sec.runId)"
+            >
+              <Icon
+                name="chevron-down"
+                :size="12"
+                class="ui-fold-chevron shrink-0 text-txt3"
+                :class="isRunCollapsed(sec.runId) ? '-rotate-90' : ''"
+              />
+              <span class="min-w-0 flex-1 truncate" :title="runLabel(sec)">{{ runLabel(sec) }}</span>
+              <span class="shrink-0 text-[10px] tabular-nums text-txt3">{{ runCountLabel(sec) }}</span>
+            </button>
+            <button
+              type="button"
+              class="inline-flex shrink-0 items-center gap-1 rounded-md border border-accent/45 bg-accent-dim px-2 py-0.5 text-[11px] leading-4 text-accent-2 transition hover:border-accent-2 hover:text-txt disabled:cursor-not-allowed disabled:opacity-45"
+              :class="isPacking(sec.runId) ? 'opacity-80' : ''"
+              data-testid="artifact-run-pack"
+              :data-run-id="sec.runId"
+              :disabled="!sec.items.length || isPacking(sec.runId)"
+              :title="!sec.items.length ? t('pages.artifactList.packEmptyDisabled') : undefined"
+              :aria-label="isPacking(sec.runId) ? t('pages.artifactList.packing') : t('pages.artifactList.pack')"
+              @click="packRun(sec, $event)"
+            >
+              <Icon name="download" :size="12" class="shrink-0" />
+              <span>{{ isPacking(sec.runId) ? t('pages.artifactList.packing') : t('pages.artifactList.pack') }}</span>
+            </button>
+          </div>
           <div class="ui-fold" :class="{ 'is-open': !isRunCollapsed(sec.runId) }">
             <div class="ui-fold-inner">
             <button

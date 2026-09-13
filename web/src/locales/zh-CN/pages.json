@@ -3451,7 +3451,11 @@
       "noMatchingArtifacts": "无匹配产物",
       "expandAll": "展开",
       "collapseAll": "折叠",
-      "feedbackGroup": "人工反馈台账"
+      "feedbackGroup": "人工反馈台账",
+      "pack": "打包",
+      "packing": "打包中…",
+      "packFailed": "打包失败，请重试",
+      "packEmptyDisabled": "该 Run 暂无产物"
     },
     "artifactPreview": {
       "emptyHint": "选择左侧产物查看内容(平台存储,可下载)",

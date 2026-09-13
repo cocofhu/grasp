@@ -31,6 +31,9 @@ const pageTotal = ref(0)
 const page = ref(1)
 const pageLoading = ref(false)
 let pageLoadGen = 0
+/** First paint + reloadGroups window — true before onMounted so empty groups never flash. */
+const groupsLoading = ref(true)
+let groupsLoadGen = 0
 const workflows = ref<Workflow[]>([])
 const workflowsMap = computed(() => {
   const map = new Map<string, { name: string }>()
@@ -47,6 +50,13 @@ const {
   shouldAutoSelectArtifact,
   selectGroup,
 } = useArtifactGroupSelection(groupArtifacts, selected, workflowsMap)
+
+/** Dual-track surface: groups and/or paginated list loading. */
+const surfaceBusy = computed(() => groupsLoading.value || pageLoading.value)
+/** Prefer RefreshStrip when any group/list rows are already on screen. */
+const hasCachedSurface = computed(
+  () => groups.value.length > 0 || pageArtifacts.value.length > 0,
+)
 
 const activeArtifact = ref<Artifact | null>(null)
 const previewArtifacts = ref<Artifact[]>([])
@@ -288,23 +298,46 @@ async function onArtifactDeleted(id: string) {
   if (isMobile.value && !activeArtifact.value) mobileStep.value = 'list'
 }
 
+function onSurfaceRetry() {
+  if (groupsLoading.value) {
+    void reloadGroups()
+    return
+  }
+  void loadPageArtifacts({ showLoading: true })
+}
+
 async function reloadGroups() {
+  const gen = ++groupsLoadGen
+  groupsLoading.value = true
+  let failedNoCache = false
   try {
     const pid = selectedProject.value || undefined
     const [arts, wfs] = await Promise.all([
       api.listArtifacts({ projectId: pid }),
       api.listWorkflows({ projectId: pid }),
     ])
+    if (gen !== groupsLoadGen) return
     groupArtifacts.value = isPaginated(arts)
       ? (Array.isArray(arts.items) ? arts.items : [])
       : (Array.isArray(arts) ? arts : [])
     // Defend for…of in workflowsMap: never assign a non-array (e.g. unexpected payload shape)
     workflows.value = Array.isArray(wfs) ? wfs : []
   } catch {
-    groupArtifacts.value = []
-    workflows.value = []
+    if (gen !== groupsLoadGen) return
+    // Keep prior groups/list on failure; only treat as hard-fail when nothing to show.
+    if (!groupArtifacts.value.length && !pageArtifacts.value.length) {
+      failedNoCache = true
+    }
   }
-  await loadPageArtifacts({ showLoading: true })
+  if (gen !== groupsLoadGen) return
+  if (failedNoCache) {
+    // Leave groupsLoading true so HardLoadLayer stuck+retry stays (not success empty).
+    return
+  }
+  // Start list load before clearing groupsLoading to avoid a no-overlay gap.
+  const pagePromise = loadPageArtifacts({ showLoading: true })
+  if (gen === groupsLoadGen) groupsLoading.value = false
+  await pagePromise
 }
 
 watch(selectedProject, () => {
@@ -345,15 +378,15 @@ onMounted(async () => {
 
     <div
       class="card relative flex min-h-0 flex-1 flex-col overflow-hidden"
-      :aria-busy="pageLoading ? 'true' : 'false'"
+      :aria-busy="surfaceBusy ? 'true' : 'false'"
     >
-      <RefreshStrip v-if="pageLoading && pageArtifacts.length" />
+      <RefreshStrip v-if="surfaceBusy && hasCachedSurface" />
       <HardLoadLayer
-        v-else-if="pageLoading && !pageArtifacts.length"
+        v-else-if="surfaceBusy && !hasCachedSurface"
         :overlay="true"
         :stuck-after-ms="10_000"
         :stage="t('common.loading.label')"
-        @retry="loadPageArtifacts({ showLoading: true })"
+        @retry="onSurfaceRetry"
       />
       <div class="flex min-h-0 flex-1" :class="isMobile ? 'flex-col' : ''">
         <aside
@@ -378,10 +411,16 @@ onMounted(async () => {
             />
           </div>
           <div class="scroll-area min-h-0 flex-1 overflow-y-auto p-1.5">
-            <div v-if="!groups.length" class="px-2 py-8 text-center text-[12px] text-txt3">
+            <div
+              v-if="!groups.length && !surfaceBusy"
+              class="px-2 py-8 text-center text-[12px] text-txt3"
+            >
               {{ t('common.empty.noMatchingGroups') }}
             </div>
-            <div v-else-if="!visibleWfGroups.length" class="px-2 py-8 text-center text-[12px] text-txt3">
+            <div
+              v-else-if="groups.length && !visibleWfGroups.length"
+              class="px-2 py-8 text-center text-[12px] text-txt3"
+            >
               {{ t('pages.artifacts.noMatchingWorkflows') }}
             </div>
             <template v-else>
@@ -436,7 +475,7 @@ onMounted(async () => {
                 :match-total="pageTotal"
                 :header-title="activeGroupTitle"
                 :header-subtitle="t('pages.artifacts.headerSubtitle')"
-                :empty-text="listEmptyText"
+                :empty-text="surfaceBusy ? '' : listEmptyText"
                 class="min-h-0 flex-1"
                 @select="selectArtifact"
                 @update:search="onSearchUpdate"
