@@ -570,7 +570,10 @@ html.light .app-sidebar-card {
   transform: scale(0);
   transition: transform 350ms var(--ease-out-expo);
   pointer-events: none;
-  z-index: 0;
+  /* Below bare text nodes too (review v1 / plan g1.2): element children get
+     z-index:1, but AppButton default slot is often raw text and would sit under
+     a z-index:0 positioned ink layer. Host isolation keeps -1 above the bg. */
+  z-index: -1;
 }
 .hover-ink-host.is-hover-ink > .hover-ink {
   transform: scale(1);

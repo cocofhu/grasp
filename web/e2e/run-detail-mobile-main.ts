@@ -5,6 +5,7 @@ import { i18n } from '../src/lib/shared/i18n'
 import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { installIdleScrollbar } from '../src/lib/shared/idleScrollbar'
 import { setTheme } from '../src/lib/shared/theme'
+import { vHoverInk } from '../src/lib/shared/hoverInkDirective'
 import StatusPill from '../src/components/ui/StatusPill.vue'
 import AppButton from '../src/components/ui/AppButton.vue'
 import Icon from '../src/components/ui/Icon.vue'
@@ -195,6 +196,7 @@ async function bootstrap() {
   await router.push('/')
 
   createApp({ render: () => h(RouterView) })
+    .directive('hover-ink', vHoverInk)
     .use(i18n)
     .use(router)
     .mount('#app')

@@ -405,6 +405,8 @@ describe('AppSidebarNav', () => {
     )
     expect(css).toMatch(/\.nav-item\s*\{[^}]*--hover-ink-color:\s*rgb\(var\(--c-elevated\)\)/s)
     expect(css).not.toMatch(/\.nav-item\s*\{[^}]*hover:bg-elevated/s)
+    // review v1: ink under bare text via z-index:-1
+    expect(css).toMatch(/\.hover-ink-host\s*>\s*\.hover-ink\s*\{[^}]*z-index:\s*-1/s)
     expect(css).toMatch(/\.hover-ink-host\s*>\s*:not\(\.hover-ink\)/)
     expect(css).toMatch(/transition:\s*transform\s*350ms/)
   })

@@ -4,6 +4,7 @@ import { i18n } from '../src/lib/shared/i18n'
 import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { setTheme } from '../src/lib/shared/theme'
 import { normalizeAgentName, validateAgentName } from '../src/lib/agent/agentIO'
+import { vHoverInk } from '../src/lib/shared/hoverInkDirective'
 import AppModal from '../src/components/ui/AppModal.vue'
 import AppButton from '../src/components/ui/AppButton.vue'
 
@@ -135,6 +136,7 @@ async function boot() {
         ])
     },
   })
+  app.directive('hover-ink', vHoverInk)
   app.use(i18n)
   app.mount('#app')
 }

@@ -34,14 +34,13 @@ const cls = computed(() => {
 })
 
 const inkColor = computed(() => {
-  // Matches former hover:bg-* tokens (plan g2.2).
+  // Matches former hover:bg-* tokens (plan g2.2). subtle never had hover:bg-*
+  // so it keeps text-only hover and does not set an ink color (review v2).
   switch (props.variant) {
     case 'primary':
       return 'rgb(var(--c-accent-2))'
     case 'danger':
       return 'rgb(var(--c-err) / 0.2)'
-    case 'subtle':
-      return 'rgb(var(--c-overlay))'
     case 'ghost':
     case 'outline':
     default:
@@ -50,19 +49,21 @@ const inkColor = computed(() => {
 })
 
 const isDisabled = computed(() => props.disabled || props.loading)
-const inkEnabled = computed(() => !isDisabled.value)
+/** subtle had no hover fill before; skip ink (review v2 / plan g2.2). */
+const inkEnabled = computed(() => !isDisabled.value && props.variant !== 'subtle')
 </script>
 
 <template>
   <button
     v-hover-ink="{ enabled: inkEnabled }"
     :class="cls"
-    :style="{ '--hover-ink-color': inkColor }"
+    :style="inkEnabled ? { '--hover-ink-color': inkColor } : undefined"
     :disabled="isDisabled"
     :aria-busy="loading ? 'true' : undefined"
   >
     <AppSpinner v-if="loading" :size="size === 'sm' ? 12 : 14" />
     <Icon v-else-if="icon" :name="icon" :size="size === 'sm' ? 14 : 16" />
-    <slot />
+    <!-- Wrap bare text slot so content stacking stays explicit (plan g1.2 / review v1). -->
+    <span class="relative z-[1]"><slot /></span>
   </button>
 </template>

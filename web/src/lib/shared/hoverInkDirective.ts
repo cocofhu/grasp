@@ -79,9 +79,19 @@ function bindHoverInk(el: HTMLElement, binding: DirectiveBinding) {
     retract(el)
   }
 
+  // Window blur / tab hide: treat as leave so ink does not stick (edge_cases / review v4).
+  const onBlurOrHide = () => {
+    retract(el)
+  }
+  const onVisibility = () => {
+    if (document.visibilityState === 'hidden') retract(el)
+  }
+
   el.addEventListener('pointerenter', onEnter)
   el.addEventListener('pointerleave', onLeave)
   el.addEventListener('pointercancel', onLeave)
+  window.addEventListener('blur', onBlurOrHide)
+  document.addEventListener('visibilitychange', onVisibility)
 
   stateMap.set(el, {
     binding,
@@ -89,6 +99,8 @@ function bindHoverInk(el: HTMLElement, binding: DirectiveBinding) {
       el.removeEventListener('pointerenter', onEnter)
       el.removeEventListener('pointerleave', onLeave)
       el.removeEventListener('pointercancel', onLeave)
+      window.removeEventListener('blur', onBlurOrHide)
+      document.removeEventListener('visibilitychange', onVisibility)
       retract(el)
       stateMap.delete(el)
     },

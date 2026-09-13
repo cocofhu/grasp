@@ -103,6 +103,26 @@ describe('AppButton', () => {
     danger.unmount()
   })
 
+  it('subtle skips hover-ink fill (review v2 / plan g2.2)', () => {
+    const subtle = mountBtn({ variant: 'subtle' }, 'Subtle')
+    // Directive still mounts host, but binding.enabled is false so no fill color / expand.
+    expect(subtle.classes().join(' ')).not.toMatch(/hover:bg-/)
+    expect(subtle.element.style.getPropertyValue('--hover-ink-color')).toBe('')
+    subtle.unmount()
+  })
+
+  it('keeps bare text slot above ink stacking (plan g1.2 / review v1)', () => {
+    const idle = mountBtn({ variant: 'primary' }, 'Primary')
+    const face = idle.find('span.relative')
+    expect(face.exists()).toBe(true)
+    expect(face.text()).toBe('Primary')
+    expect(face.classes()).toContain('relative')
+    expect(face.classes()).toContain('z-[1]')
+    const ink = idle.find('.hover-ink')
+    expect(ink.exists()).toBe(true)
+    idle.unmount()
+  })
+
   it('does not enable hover-ink when disabled or loading (plan g1.3 / g2.3)', () => {
     const loading = mountBtn({ loading: true })
     expect(loading.attributes('aria-busy')).toBe('true')

@@ -48,6 +48,15 @@ describe('vHoverInk directive (plan g1.2 / g1.3)', () => {
     const ink = btn.querySelector(':scope > .hover-ink') as HTMLElement
     expect(ink).toBeTruthy()
     expect(btn.classList.contains('hover-ink-host')).toBe(true)
+    // review v1 / plan g1.2: stylesheet puts ink at z-index:-1 under isolation
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../../styles/global.css'),
+      'utf8',
+    )
+    expect(css).toMatch(/\.hover-ink-host\s*>\s*\.hover-ink\s*\{[^}]*z-index:\s*-1/s)
 
     Object.defineProperty(btn, 'getBoundingClientRect', {
       value: () => ({
@@ -70,10 +79,49 @@ describe('vHoverInk directive (plan g1.2 / g1.3)', () => {
     expect(btn.style.getPropertyValue('--ink-x')).toBe('20px')
     expect(btn.style.getPropertyValue('--ink-y')).toBe('10px')
     expect(btn.style.getPropertyValue('--ink-d')).toBe(`${Math.hypot(80, 30) * 2}px`)
+    // Bare text node remains in the host; ink does not remove/replace content.
+    expect(btn.textContent).toContain('Go')
 
     btn.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }))
     expect(btn.classList.contains('is-hover-ink')).toBe(false)
     expect(btn.classList.contains('is-leave-ink')).toBe(true)
+
+    app.unmount()
+    host.remove()
+  })
+
+  it('retracts on window blur and visibility hidden (review v4 / edge_cases)', async () => {
+    const { host, app, btn } = mountButton()
+    await nextTick()
+    Object.defineProperty(btn, 'getBoundingClientRect', {
+      value: () => ({
+        left: 0,
+        top: 0,
+        width: 80,
+        height: 32,
+        right: 80,
+        bottom: 32,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    })
+    btn.dispatchEvent(
+      new PointerEvent('pointerenter', { clientX: 10, clientY: 10, pointerType: 'mouse', bubbles: true }),
+    )
+    expect(btn.classList.contains('is-hover-ink')).toBe(true)
+
+    window.dispatchEvent(new Event('blur'))
+    expect(btn.classList.contains('is-hover-ink')).toBe(false)
+    expect(btn.classList.contains('is-leave-ink')).toBe(true)
+
+    btn.dispatchEvent(
+      new PointerEvent('pointerenter', { clientX: 10, clientY: 10, pointerType: 'mouse', bubbles: true }),
+    )
+    expect(btn.classList.contains('is-hover-ink')).toBe(true)
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(btn.classList.contains('is-hover-ink')).toBe(false)
 
     app.unmount()
     host.remove()
