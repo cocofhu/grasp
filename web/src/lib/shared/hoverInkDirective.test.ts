@@ -168,4 +168,48 @@ describe('vHoverInk directive (plan g1.2 / g1.3)', () => {
     expect(isHoverInkBlocked(el, { value: { enabled: false } } as never)).toBe(true)
     expect(isHoverInkBlocked(el)).toBe(false)
   })
+
+  it('clips ink without scroll-origin shift on left-edge landing (plan g1.1 / g1.2 / g2.2)', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../../styles/global.css'),
+      'utf8',
+    )
+    // Host must use overflow:clip so a left-overflow ink circle cannot pull scrollLeft.
+    expect(css).toMatch(/\.hover-ink-host\s*\{[^}]*overflow:\s*clip/s)
+    expect(css).not.toMatch(/\.hover-ink-host\s*\{[^}]*overflow:\s*hidden/s)
+
+    const { host, app, btn } = mountButton()
+    await nextTick()
+    Object.defineProperty(btn, 'getBoundingClientRect', {
+      value: () => ({
+        left: 40,
+        top: 10,
+        width: 120,
+        height: 36,
+        right: 160,
+        bottom: 46,
+        x: 40,
+        y: 10,
+        toJSON: () => ({}),
+      }),
+    })
+
+    const beforeLeft = btn.getBoundingClientRect().left
+    // Max left overflow: pointer near the host's left edge.
+    btn.dispatchEvent(
+      new PointerEvent('pointerenter', { clientX: 42, clientY: 28, pointerType: 'mouse', bubbles: true }),
+    )
+    expect(btn.classList.contains('is-hover-ink')).toBe(true)
+    expect(btn.style.getPropertyValue('--ink-x')).toBe('2px')
+    const d = Number.parseFloat(btn.style.getPropertyValue('--ink-d'))
+    expect(d).toBeGreaterThan(120)
+    expect(btn.scrollLeft).toBe(0)
+    expect(btn.getBoundingClientRect().left).toBe(beforeLeft)
+
+    app.unmount()
+    host.remove()
+  })
 })

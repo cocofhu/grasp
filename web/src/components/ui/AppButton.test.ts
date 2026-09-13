@@ -132,4 +132,70 @@ describe('AppButton', () => {
     expect(disabled.attributes('disabled')).toBeDefined()
     disabled.unmount()
   })
+
+  it('does not shift content after left-edge hover-ink (plan g2.2)', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const { nextTick } = await import('vue')
+    const { vi } = await import('vitest')
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../../styles/global.css'),
+      'utf8',
+    )
+    expect(css).toMatch(/\.hover-ink-host\s*\{[^}]*overflow:\s*clip/s)
+
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query.includes('hover: hover') && query.includes('pointer: fine'),
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    )
+
+    const wrapper = mountBtn({ variant: 'primary' }, '保存')
+    await nextTick()
+    const btn = wrapper.element as HTMLElement
+    Object.defineProperty(btn, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        left: 20,
+        top: 20,
+        width: 96,
+        height: 36,
+        right: 116,
+        bottom: 56,
+        x: 20,
+        y: 20,
+        toJSON: () => ({}),
+      }),
+    })
+    const face = wrapper.find('span.relative').element as HTMLElement
+    Object.defineProperty(face, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        left: 36,
+        top: 28,
+        width: 32,
+        height: 20,
+        right: 68,
+        bottom: 48,
+        x: 36,
+        y: 28,
+        toJSON: () => ({}),
+      }),
+    })
+    const before = face.getBoundingClientRect().left
+    btn.dispatchEvent(
+      new PointerEvent('pointerenter', { clientX: 22, clientY: 38, pointerType: 'mouse', bubbles: true }),
+    )
+    expect(btn.classList.contains('is-hover-ink')).toBe(true)
+    expect(btn.scrollLeft).toBe(0)
+    expect(face.getBoundingClientRect().left).toBe(before)
+
+    wrapper.unmount()
+    vi.unstubAllGlobals()
+  })
 })

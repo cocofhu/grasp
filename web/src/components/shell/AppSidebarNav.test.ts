@@ -410,4 +410,96 @@ describe('AppSidebarNav', () => {
     expect(css).toMatch(/\.hover-ink-host\s*>\s*:not\(\.hover-ink\)/)
     expect(css).toMatch(/transition:\s*transform\s*350ms/)
   })
+
+  it('keeps active workspace nav icons left-aligned after left-edge ink (plan g2.1)', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../../styles/global.css'),
+      'utf8',
+    )
+    // Active only elevates fill/weight — no horizontal padding/margin that would skew icons.
+    expect(css).toMatch(/\.nav-item\.active\s*\{[^}]*bg-elevated[^}]*font-semibold/s)
+    expect(css).not.toMatch(/\.nav-item\.active\s*\{[^}]*(?:pl-|pr-|ml-|mr-|translateX|padding-left|margin-left)/s)
+    expect(css).toMatch(/\.hover-ink-host\s*\{[^}]*overflow:\s*clip/s)
+
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query.includes('hover: hover') && query.includes('pointer: fine'),
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    )
+
+    routeState.path = '/dashboard'
+    const wrapper = mountNav()
+    await flushPromises()
+    const chrome = wrapper.find('[data-testid="nav-workspace-chrome"]')
+    const links = chrome.findAll('a.nav-item')
+    expect(links.length).toBeGreaterThanOrEqual(2)
+
+    const active = links.find((l) => l.classes().includes('active'))
+    const idle = links.find((l) => !l.classes().includes('active'))
+    expect(active).toBeTruthy()
+    expect(idle).toBeTruthy()
+
+    const activeEl = active!.element as HTMLElement
+    const idleEl = idle!.element as HTMLElement
+    for (const el of [activeEl, idleEl]) {
+      Object.defineProperty(el, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => ({
+          left: 12,
+          top: 40,
+          width: 180,
+          height: 36,
+          right: 192,
+          bottom: 76,
+          x: 12,
+          y: 40,
+          toJSON: () => ({}),
+        }),
+      })
+    }
+
+    const iconLeft = (el: HTMLElement) => {
+      const icon = el.querySelector('[data-icon], .icon, svg, i, span') as HTMLElement | null
+      // Stubbed Icon has no layout; measure first non-ink child box via style contract.
+      const child = [...el.children].find((c) => !c.classList.contains('hover-ink')) as HTMLElement
+      expect(child).toBeTruthy()
+      Object.defineProperty(child, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => ({
+          left: 24,
+          top: 48,
+          width: 17,
+          height: 17,
+          right: 41,
+          bottom: 65,
+          x: 24,
+          y: 48,
+          toJSON: () => ({}),
+        }),
+      })
+      return (icon ?? child).getBoundingClientRect().left
+    }
+
+    const beforeActive = iconLeft(activeEl)
+    const beforeIdle = iconLeft(idleEl)
+    expect(Math.abs(beforeActive - beforeIdle)).toBeLessThanOrEqual(1)
+
+    activeEl.dispatchEvent(
+      new PointerEvent('pointerenter', { clientX: 14, clientY: 58, pointerType: 'mouse', bubbles: true }),
+    )
+    expect(activeEl.classList.contains('is-hover-ink')).toBe(true)
+    expect(activeEl.scrollLeft).toBe(0)
+    expect(Math.abs(iconLeft(activeEl) - iconLeft(idleEl))).toBeLessThanOrEqual(1)
+
+    wrapper.unmount()
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
 })

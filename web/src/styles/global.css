@@ -555,7 +555,14 @@ html.light .app-sidebar-card {
 /* ---------- Hover ink: landing-point solid cover (plan g1 / g2) ---------- */
 .hover-ink-host {
   position: relative;
-  overflow: hidden;
+  /*
+   * overflow:clip (plan g1.2): ink circle uses negative margin and may extend
+   * past the left edge. The previous overflow hidden value creates a scroll
+   * container whose origin shifts to that left overflow, so flex content
+   * (icon+label) visually jumps right on click/hover. clip still rounds the
+   * ink to the host radius but does not establish a scrollable overflow area.
+   */
+  overflow: clip;
   isolation: isolate;
 }
 .hover-ink-host > .hover-ink {
