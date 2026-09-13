@@ -57,6 +57,11 @@ describe('vHoverInk directive (plan g1.2 / g1.3)', () => {
       'utf8',
     )
     expect(css).toMatch(/\.hover-ink-host\s*>\s*\.hover-ink\s*\{[^}]*z-index:\s*-1/s)
+    // plan g1.1: center with translate, never negative-margin layout box
+    expect(css).toMatch(
+      /\.hover-ink-host\s*>\s*\.hover-ink\s*\{[^}]*transform:\s*translate\(-50%,\s*-50%\)\s*scale\(0\)/s,
+    )
+    expect(css).not.toMatch(/margin:\s*calc\(\s*var\(--ink-d/)
 
     Object.defineProperty(btn, 'getBoundingClientRect', {
       value: () => ({
@@ -88,6 +93,43 @@ describe('vHoverInk directive (plan g1.2 / g1.3)', () => {
 
     app.unmount()
     host.remove()
+  })
+
+  it('collapses --ink-d after leave so the layout box cannot stick (plan g1.2)', async () => {
+    vi.useFakeTimers()
+    const { host, app, btn } = mountButton()
+    await nextTick()
+    Object.defineProperty(btn, 'getBoundingClientRect', {
+      value: () => ({
+        left: 0,
+        top: 0,
+        width: 100,
+        height: 40,
+        right: 100,
+        bottom: 40,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    })
+
+    btn.dispatchEvent(
+      new PointerEvent('pointerenter', { clientX: 2, clientY: 20, pointerType: 'mouse', bubbles: true }),
+    )
+    const d = btn.style.getPropertyValue('--ink-d')
+    expect(Number.parseFloat(d)).toBeGreaterThan(100)
+
+    btn.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }))
+    // Still large during leave animation…
+    expect(btn.style.getPropertyValue('--ink-d')).toBe(d)
+    // …then collapses after HOVER_INK_DURATION_MS (plan g1.2).
+    const { HOVER_INK_DURATION_MS } = await import('./hoverInkGeometry')
+    vi.advanceTimersByTime(HOVER_INK_DURATION_MS)
+    expect(btn.style.getPropertyValue('--ink-d')).toBe('0px')
+
+    app.unmount()
+    host.remove()
+    vi.useRealTimers()
   })
 
   it('retracts on window blur and visibility hidden (review v4 / edge_cases)', async () => {
@@ -180,6 +222,9 @@ describe('vHoverInk directive (plan g1.2 / g1.3)', () => {
     // Host must use overflow:clip so a left-overflow ink circle cannot pull scrollLeft.
     expect(css).toMatch(/\.hover-ink-host\s*\{[^}]*overflow:\s*clip/s)
     expect(css).not.toMatch(/\.hover-ink-host\s*\{[^}]*overflow:\s*hidden/s)
+    // plan g1.1: no negative-margin centering (that left-extends the layout box).
+    expect(css).not.toMatch(/margin:\s*calc\(\s*var\(--ink-d/)
+    expect(css).toMatch(/translate\(-50%,\s*-50%\)\s*scale\(0\)/)
 
     const { host, app, btn } = mountButton()
     await nextTick()

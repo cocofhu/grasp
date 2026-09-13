@@ -409,6 +409,9 @@ describe('AppSidebarNav', () => {
     expect(css).toMatch(/\.hover-ink-host\s*>\s*\.hover-ink\s*\{[^}]*z-index:\s*-1/s)
     expect(css).toMatch(/\.hover-ink-host\s*>\s*:not\(\.hover-ink\)/)
     expect(css).toMatch(/transition:\s*transform\s*350ms/)
+    // plan g1.1 / g1.3: shared transform centering (workspace + settings), no neg-margin box
+    expect(css).toMatch(/translate\(-50%,\s*-50%\)\s*scale\(0\)/)
+    expect(css).not.toMatch(/margin:\s*calc\(\s*var\(--ink-d/)
   })
 
   it('keeps active workspace nav icons left-aligned after left-edge ink (plan g2.1)', async () => {
@@ -423,6 +426,7 @@ describe('AppSidebarNav', () => {
     expect(css).toMatch(/\.nav-item\.active\s*\{[^}]*bg-elevated[^}]*font-semibold/s)
     expect(css).not.toMatch(/\.nav-item\.active\s*\{[^}]*(?:pl-|pr-|ml-|mr-|translateX|padding-left|margin-left)/s)
     expect(css).toMatch(/\.hover-ink-host\s*\{[^}]*overflow:\s*clip/s)
+    expect(css).not.toMatch(/margin:\s*calc\(\s*var\(--ink-d/)
 
     vi.stubGlobal(
       'matchMedia',
@@ -497,6 +501,74 @@ describe('AppSidebarNav', () => {
     expect(activeEl.classList.contains('is-hover-ink')).toBe(true)
     expect(activeEl.scrollLeft).toBe(0)
     expect(Math.abs(iconLeft(activeEl) - iconLeft(idleEl))).toBeLessThanOrEqual(1)
+
+    // plan g1.2 / g2.1: leave must collapse --ink-d (sticky-shift root cause)
+    const d = Number.parseFloat(activeEl.style.getPropertyValue('--ink-d'))
+    expect(d).toBeGreaterThan(0)
+    activeEl.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }))
+    expect(activeEl.classList.contains('is-hover-ink')).toBe(false)
+    const { HOVER_INK_DURATION_MS } = await import('@/lib/shared/hoverInkGeometry')
+    await vi.advanceTimersByTimeAsync(HOVER_INK_DURATION_MS)
+    expect(activeEl.style.getPropertyValue('--ink-d')).toBe('0px')
+    expect(Math.abs(iconLeft(activeEl) - iconLeft(idleEl))).toBeLessThanOrEqual(1)
+
+    wrapper.unmount()
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it('settings chrome retract collapses ink box after leave (plan g1.3 / g2.2)', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query.includes('hover: hover') && query.includes('pointer: fine'),
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    )
+
+    routeState.path = '/settings'
+    routeState.meta = { settingsSection: 'general' }
+    const wrapper = mountNav()
+    await flushPromises()
+    // allow settings chrome mount animation
+    await vi.advanceTimersByTimeAsync(400)
+    await nextTick()
+
+    const chrome = wrapper.find('[data-testid="nav-settings-chrome"]')
+    expect(chrome.exists()).toBe(true)
+    const items = chrome.findAll('a.nav-item')
+    expect(items.length).toBeGreaterThanOrEqual(2)
+
+    const target = (items.find((l) => l.attributes('data-testid') === 'nav-back-home') ?? items[0])
+      .element as HTMLElement
+    Object.defineProperty(target, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        left: 12,
+        top: 80,
+        width: 180,
+        height: 36,
+        right: 192,
+        bottom: 116,
+        x: 12,
+        y: 80,
+        toJSON: () => ({}),
+      }),
+    })
+
+    target.dispatchEvent(
+      new PointerEvent('pointerenter', { clientX: 14, clientY: 98, pointerType: 'mouse', bubbles: true }),
+    )
+    expect(target.classList.contains('is-hover-ink')).toBe(true)
+    expect(Number.parseFloat(target.style.getPropertyValue('--ink-d'))).toBeGreaterThan(100)
+
+    target.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }))
+    const { HOVER_INK_DURATION_MS } = await import('@/lib/shared/hoverInkGeometry')
+    await vi.advanceTimersByTimeAsync(HOVER_INK_DURATION_MS)
+    expect(target.style.getPropertyValue('--ink-d')).toBe('0px')
+    expect(target.scrollLeft).toBe(0)
 
     wrapper.unmount()
     vi.unstubAllGlobals()

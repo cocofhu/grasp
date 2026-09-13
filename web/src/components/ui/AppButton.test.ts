@@ -144,6 +144,9 @@ describe('AppButton', () => {
       'utf8',
     )
     expect(css).toMatch(/\.hover-ink-host\s*\{[^}]*overflow:\s*clip/s)
+    // plan g1.1: transform centering, not negative-margin layout box
+    expect(css).not.toMatch(/margin:\s*calc\(\s*var\(--ink-d/)
+    expect(css).toMatch(/translate\(-50%,\s*-50%\)/)
 
     vi.stubGlobal(
       'matchMedia',

@@ -72,6 +72,7 @@ test.describe('hover-ink scroll-shift fix', () => {
             iconLeft: r.left,
             scrollLeft: a.scrollLeft,
             overflow: getComputedStyle(a).overflow,
+            inkD: a.style.getPropertyValue('--ink-d'),
           }
         })
       })
@@ -112,24 +113,46 @@ test.describe('hover-ink scroll-shift fix', () => {
       fullPage: false,
     })
 
-    // Click through 待办 / 运行 / 设置 and assert alignment each time.
-    const paths = ['/gates', '/runs', '/settings'] as const
-    const pageIds = ['page-gates', 'page-runs', 'page-settings'] as const
+    // plan g2.1: click 「运行」, pointerleave, icon left vs 「开始」 ≤ 1px (real geometry).
+    const runsLink = page.locator('[data-testid="nav-workspace-chrome"] a.nav-item').nth(2)
+    const runsBox = await runsLink.boundingBox()
+    expect(runsBox).toBeTruthy()
+    await page.mouse.click(runsBox!.x + 2, runsBox!.y + runsBox!.height / 2)
+    await expect(page.getByTestId('page-runs')).toBeVisible({ timeout: PAGE_READY_MS })
+    await page.waitForTimeout(100)
+    // Leave the item so ink retracts; sticky shift must not remain.
+    await page.mouse.move(runsBox!.x + runsBox!.width + 40, runsBox!.y + runsBox!.height / 2)
+    await page.waitForTimeout(400)
+
+    const afterRunsLeave = await measure()
+    expect(afterRunsLeave).not.toBeNull()
+    const runsRow = afterRunsLeave!.find((x) => x.active)
+    const homeRow = afterRunsLeave!.find((x) => !x.active)
+    expect(runsRow).toBeTruthy()
+    expect(homeRow).toBeTruthy()
+    expect(Math.abs(runsRow!.iconLeft - homeRow!.iconLeft)).toBeLessThanOrEqual(1)
+    expect(runsRow!.inkD === '' || runsRow!.inkD === '0px').toBe(true)
+
+    await page.screenshot({
+      path: path.join(shotDir, 'hover-ink-after-runs-leave.png'),
+      fullPage: false,
+    })
+
+    // Click through 待办 / 设置; leave after each click (sticky-shift contract).
+    const paths = ['/gates', '/settings'] as const
+    const pageIds = ['page-gates', 'page-settings'] as const
     for (let i = 0; i < paths.length; i++) {
       const link = page.locator(`[data-testid="nav-workspace-chrome"] a.nav-item[href="${paths[i]}"]`)
-      // memory history may use data-to; fall back to text order
       const target =
         (await link.count()) > 0
           ? link
-          : page.locator('[data-testid="nav-workspace-chrome"] a.nav-item').nth(i + 1)
+          : page.locator('[data-testid="nav-workspace-chrome"] a.nav-item').nth(paths[i] === '/gates' ? 1 : 3)
       const b = await target.boundingBox()
       expect(b).toBeTruthy()
       await page.mouse.click(b!.x + 2, b!.y + b!.height / 2)
       await expect(page.getByTestId(pageIds[i])).toBeVisible({ timeout: PAGE_READY_MS })
       await page.waitForTimeout(100)
 
-      const m = await measure()
-      expect(m).not.toBeNull()
       if (paths[i] === '/settings') {
         // settings chrome replaces workspace nav — skip workspace measure
         await page.screenshot({
@@ -138,6 +161,12 @@ test.describe('hover-ink scroll-shift fix', () => {
         })
         continue
       }
+
+      await page.mouse.move(b!.x + b!.width + 40, b!.y + b!.height / 2)
+      await page.waitForTimeout(400)
+
+      const m = await measure()
+      expect(m).not.toBeNull()
       expect(m!.every((x) => x.scrollLeft === 0)).toBe(true)
       const act = m!.find((x) => x.active)
       const idl = m!.find((x) => !x.active)
@@ -150,11 +179,60 @@ test.describe('hover-ink scroll-shift fix', () => {
       })
     }
 
-    // Settings chrome: back-home left-edge hover must not create scroll-origin shift.
-    // Allow slightly looser absolute delta than workspace (chrome slide may still settle),
-    // but overflow:clip + scrollLeft=0 is the hard contract for plan g1.2 / g2.1.
+    // plan g2.2: settings chrome — click General, leave, real icon offset ≤ 1px vs siblings / self.
     await expect(page.getByTestId('nav-settings-chrome')).toBeVisible()
     await page.waitForTimeout(350)
+
+    const measureSettings = async () =>
+      page.evaluate(() => {
+        const chrome = document.querySelector('[data-testid="nav-settings-chrome"]')
+        if (!chrome) return null
+        // Exclude back-home: different density/classes; compare category rows only.
+        const links = [...chrome.querySelectorAll('a.nav-item:not([data-testid="nav-back-home"])')] as HTMLAnchorElement[]
+        return links.map((a) => {
+          const icon = a.querySelector('svg, [class*="icon"], i') as HTMLElement | null
+          if (!icon) return null
+          const host = a.getBoundingClientRect()
+          const ir = icon.getBoundingClientRect()
+          return {
+            text: (a.textContent || '').trim(),
+            active: a.classList.contains('active'),
+            iconLeft: ir.left,
+            offset: ir.left - host.left,
+            scrollLeft: a.scrollLeft,
+            inkD: a.style.getPropertyValue('--ink-d'),
+          }
+        }).filter(Boolean) as Array<{
+          text: string
+          active: boolean
+          iconLeft: number
+          offset: number
+          scrollLeft: number
+          inkD: string
+        }>
+      })
+
+    const beforeSettings = await measureSettings()
+    expect(beforeSettings).not.toBeNull()
+    expect(beforeSettings!.length).toBeGreaterThanOrEqual(2)
+    const baselineOffset = beforeSettings![0].offset
+    expect(beforeSettings!.every((x) => Math.abs(x.offset - baselineOffset) <= 1)).toBe(true)
+
+    const general = page.locator('[data-testid="nav-settings-chrome"] a.nav-item').filter({ hasText: '通用' })
+    const gBox = await general.boundingBox()
+    expect(gBox).toBeTruthy()
+    await page.mouse.click(gBox!.x + 2, gBox!.y + gBox!.height / 2)
+    await page.waitForTimeout(100)
+    await page.mouse.move(gBox!.x + gBox!.width + 40, gBox!.y + gBox!.height / 2)
+    await page.waitForTimeout(400)
+    const afterGeneral = await measureSettings()
+    expect(afterGeneral).not.toBeNull()
+    const clicked = afterGeneral!.find((x) => x.text.includes('通用')) ?? afterGeneral!.find((x) => x.active)
+    expect(clicked).toBeTruthy()
+    expect(Math.abs(clicked!.offset - baselineOffset)).toBeLessThanOrEqual(1)
+    expect(afterGeneral!.every((x) => Math.abs(x.offset - baselineOffset) <= 1)).toBe(true)
+    expect(clicked!.inkD === '' || clicked!.inkD === '0px').toBe(true)
+
     const back = page.getByTestId('nav-back-home')
     const backBox = await back.boundingBox()
     expect(backBox).toBeTruthy()
@@ -169,19 +247,24 @@ test.describe('hover-ink scroll-shift fix', () => {
       }
     })
     expect(backBefore.overflow).toBe('clip')
+    // Left-edge hover then leave without navigating away (move back into chrome first).
     await page.mouse.move(backBox!.x + 2, backBox!.y + backBox!.height / 2)
-    await page.waitForTimeout(120)
-    const backAfter = await back.evaluate((el) => {
+    await page.waitForTimeout(80)
+    await page.mouse.move(backBox!.x + backBox!.width + 40, backBox!.y + backBox!.height / 2)
+    await page.waitForTimeout(400)
+    const backAfterLeave = await back.evaluate((el) => {
       const icon = el.querySelector('svg')
       if (!icon) throw new Error('back-home svg missing')
       const host = el.getBoundingClientRect()
       return {
         offset: icon.getBoundingClientRect().left - host.left,
         scrollLeft: (el as HTMLElement).scrollLeft,
+        inkD: (el as HTMLElement).style.getPropertyValue('--ink-d'),
       }
     })
-    expect(backAfter.scrollLeft).toBe(0)
-    expect(Math.abs(backAfter.offset - backBefore.offset)).toBeLessThanOrEqual(1)
+    expect(backAfterLeave.scrollLeft).toBe(0)
+    expect(Math.abs(backAfterLeave.offset - backBefore.offset)).toBeLessThanOrEqual(1)
+    expect(backAfterLeave.inkD === '' || backAfterLeave.inkD === '0px').toBe(true)
 
     await page.screenshot({
       path: path.join(shotDir, 'hover-ink-settings-chrome.png'),
@@ -216,15 +299,17 @@ test.describe('hover-ink scroll-shift fix', () => {
             top: var(--ink-y, 50%);
             width: var(--ink-d, 0px);
             height: var(--ink-d, 0px);
-            margin: calc(var(--ink-d, 0px) / -2) 0 0 calc(var(--ink-d, 0px) / -2);
+            margin: 0;
             border-radius: 50%;
             background: rgb(var(--c-elevated));
-            transform: scale(0);
+            transform: translate(-50%, -50%) scale(0);
+            transform-origin: center;
             transition: transform 350ms var(--ease-out-expo);
             pointer-events: none;
             z-index: -1;
           }
-          .hover-ink-host.is-hover-ink > .hover-ink { transform: scale(1); }
+          .hover-ink-host.is-hover-ink > .hover-ink { transform: translate(-50%, -50%) scale(1); }
+          .hover-ink-host.is-leave-ink > .hover-ink { transform: translate(-50%, -50%) scale(0); }
           .hover-ink-host > :not(.hover-ink) { position: relative; z-index: 1; }
         </style>
       </head>
@@ -235,7 +320,6 @@ test.describe('hover-ink scroll-shift fix', () => {
         </button>
         <script>
           const btn = document.getElementById('btn');
-          const ink = btn.querySelector('.hover-ink');
           btn.addEventListener('pointerenter', (e) => {
             const r = btn.getBoundingClientRect();
             const x = e.clientX - r.left;
@@ -249,7 +333,15 @@ test.describe('hover-ink scroll-shift fix', () => {
             btn.style.setProperty('--ink-x', x + 'px');
             btn.style.setProperty('--ink-y', y + 'px');
             btn.style.setProperty('--ink-d', d + 'px');
+            btn.classList.remove('is-leave-ink');
             btn.classList.add('is-hover-ink');
+          });
+          btn.addEventListener('pointerleave', () => {
+            btn.classList.remove('is-hover-ink');
+            btn.classList.add('is-leave-ink');
+            setTimeout(() => {
+              if (!btn.classList.contains('is-hover-ink')) btn.style.setProperty('--ink-d', '0px');
+            }, 350);
           });
         </script>
       </body>
@@ -267,6 +359,13 @@ test.describe('hover-ink scroll-shift fix', () => {
     const scrollLeft = await btn.evaluate((el) => (el as HTMLElement).scrollLeft)
     expect(scrollLeft).toBe(0)
     expect(Math.abs(after - before)).toBeLessThanOrEqual(1)
+
+    await page.mouse.move(box!.x + box!.width + 40, box!.y + box!.height / 2)
+    await page.waitForTimeout(400)
+    const afterLeave = await label.evaluate((el) => el.getBoundingClientRect().left)
+    expect(Math.abs(afterLeave - before)).toBeLessThanOrEqual(1)
+    const inkD = await btn.evaluate((el) => (el as HTMLElement).style.getPropertyValue('--ink-d'))
+    expect(inkD === '' || inkD === '0px').toBe(true)
 
     await page.screenshot({
       path: path.join(shotDir, 'hover-ink-appbutton-left.png'),

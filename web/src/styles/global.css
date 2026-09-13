@@ -556,11 +556,10 @@ html.light .app-sidebar-card {
 .hover-ink-host {
   position: relative;
   /*
-   * overflow:clip (plan g1.2): ink circle uses negative margin and may extend
-   * past the left edge. The previous overflow hidden value creates a scroll
-   * container whose origin shifts to that left overflow, so flex content
-   * (icon+label) visually jumps right on click/hover. clip still rounds the
-   * ink to the host radius but does not establish a scrollable overflow area.
+   * overflow:clip: keep ink painted inside the host radius without creating a
+   * scroll container (the previous overflow hidden value shifted scroll origin).
+   * Centering uses transform — NOT negative margin — so the ink layout box
+   * never extends left of the landing point (sticky shift after click/leave).
    */
   overflow: clip;
   isolation: isolate;
@@ -571,10 +570,12 @@ html.light .app-sidebar-card {
   top: var(--ink-y, 50%);
   width: var(--ink-d, 0px);
   height: var(--ink-d, 0px);
-  margin: calc(var(--ink-d, 0px) / -2) 0 0 calc(var(--ink-d, 0px) / -2);
+  /* plan g1.1: no negative-margin layout box; center with translate only */
+  margin: 0;
   border-radius: 50%;
   background: var(--hover-ink-color, rgb(var(--c-elevated)));
-  transform: scale(0);
+  transform: translate(-50%, -50%) scale(0);
+  transform-origin: center;
   transition: transform 350ms var(--ease-out-expo);
   pointer-events: none;
   /* Below bare text nodes too (review v1 / plan g1.2): element children get
@@ -583,10 +584,10 @@ html.light .app-sidebar-card {
   z-index: -1;
 }
 .hover-ink-host.is-hover-ink > .hover-ink {
-  transform: scale(1);
+  transform: translate(-50%, -50%) scale(1);
 }
 .hover-ink-host.is-leave-ink > .hover-ink {
-  transform: scale(0);
+  transform: translate(-50%, -50%) scale(0);
 }
 /* Content / icons / badges stay above the ink layer (plan g1.2). */
 .hover-ink-host > :not(.hover-ink) {

@@ -1,5 +1,5 @@
 import type { Directive, DirectiveBinding } from 'vue'
-import { canHoverInk, farthestCornerDiameter } from './hoverInkGeometry'
+import { canHoverInk, farthestCornerDiameter, HOVER_INK_DURATION_MS } from './hoverInkGeometry'
 
 const INK_CLASS = 'hover-ink'
 const HOST_CLASS = 'hover-ink-host'
@@ -9,6 +9,7 @@ const LEAVE_CLASS = 'is-leave-ink'
 type HoverInkState = {
   cleanup: () => void
   binding: DirectiveBinding
+  collapseTimer?: ReturnType<typeof setTimeout>
 }
 
 const stateMap = new WeakMap<HTMLElement, HoverInkState>()
@@ -36,7 +37,16 @@ export function isHoverInkBlocked(el: HTMLElement, binding?: DirectiveBinding): 
   return false
 }
 
+function clearCollapseTimer(el: HTMLElement) {
+  const st = stateMap.get(el)
+  if (st?.collapseTimer != null) {
+    clearTimeout(st.collapseTimer)
+    st.collapseTimer = undefined
+  }
+}
+
 function placeInk(el: HTMLElement, clientX: number, clientY: number) {
+  clearCollapseTimer(el)
   const rect = el.getBoundingClientRect()
   const x = clientX - rect.left
   const y = clientY - rect.top
@@ -47,13 +57,28 @@ function placeInk(el: HTMLElement, clientX: number, clientY: number) {
 }
 
 function expand(el: HTMLElement) {
+  clearCollapseTimer(el)
   el.classList.remove(LEAVE_CLASS)
   el.classList.add(HOVER_CLASS)
 }
 
+/** Hide paint, then collapse --ink-d so the layout box cannot stick (plan g1.2). */
 function retract(el: HTMLElement) {
   el.classList.remove(HOVER_CLASS)
   el.classList.add(LEAVE_CLASS)
+  clearCollapseTimer(el)
+  const st = stateMap.get(el)
+  const collapse = () => {
+    // Only collapse if still left (not re-entered).
+    if (el.classList.contains(HOVER_CLASS)) return
+    el.style.setProperty('--ink-d', '0px')
+    if (st) st.collapseTimer = undefined
+  }
+  if (st) {
+    st.collapseTimer = setTimeout(collapse, HOVER_INK_DURATION_MS)
+  } else {
+    collapse()
+  }
 }
 
 function bindHoverInk(el: HTMLElement, binding: DirectiveBinding) {
@@ -101,7 +126,10 @@ function bindHoverInk(el: HTMLElement, binding: DirectiveBinding) {
       el.removeEventListener('pointercancel', onLeave)
       window.removeEventListener('blur', onBlurOrHide)
       document.removeEventListener('visibilitychange', onVisibility)
-      retract(el)
+      clearCollapseTimer(el)
+      el.classList.remove(HOVER_CLASS)
+      el.classList.add(LEAVE_CLASS)
+      el.style.setProperty('--ink-d', '0px')
       stateMap.delete(el)
     },
   })
