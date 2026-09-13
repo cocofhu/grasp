@@ -121,6 +121,13 @@ func (s *ArtifactService) ByRun(runID string) []models.Artifact {
 	return arts
 }
 
+// ByRunWithContent returns all artifacts for a run including Content (for pack/download).
+func (s *ArtifactService) ByRunWithContent(runID string) []models.Artifact {
+	var arts []models.Artifact
+	s.db.Where("run_id = ?", runID).Order("created_at").Find(&arts)
+	return arts
+}
+
 // DeleteForRuns removes artifacts belonging to ephemeral internal checks.
 // Callers must supply server-minted run IDs rather than user input.
 func (s *ArtifactService) DeleteForRuns(runIDs ...string) error {

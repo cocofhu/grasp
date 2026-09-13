@@ -3451,7 +3451,11 @@
       "noMatchingArtifacts": "No matching artifacts",
       "expandAll": "Expand",
       "collapseAll": "Collapse",
-      "feedbackGroup": "Human feedback ledger"
+      "feedbackGroup": "Human feedback ledger",
+      "pack": "Pack",
+      "packing": "Packing…",
+      "packFailed": "Pack failed. Please try again.",
+      "packEmptyDisabled": "No artifacts in this run"
     },
     "artifactPreview": {
       "emptyHint": "Select an artifact on the left to view (platform storage, downloadable)",

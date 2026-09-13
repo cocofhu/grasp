@@ -9,6 +9,23 @@ import {
 import { apiState, BASE, blobContentUrl, origin, redirectToLogin, req } from '../httpCore'
 import type { PaginatedResponse } from '../apiTypes'
 
+function filenameFromContentDisposition(header: string | null, fallback: string): string {
+  if (!header) return fallback
+  const star = /filename\*=(?:UTF-8''|utf-8'')([^;]+)/i.exec(header)
+  if (star?.[1]) {
+    try {
+      return decodeURIComponent(star[1])
+    } catch {
+      /* ignore */
+    }
+  }
+  const quoted = /filename="([^"]+)"/i.exec(header)
+  if (quoted?.[1]) return quoted[1]
+  const plain = /filename=([^;]+)/i.exec(header)
+  if (plain?.[1]) return plain[1].trim()
+  return fallback
+}
+
 export const artifactsClient = {
   listArtifacts: (params?: {
     page?: number
@@ -36,6 +53,33 @@ export const artifactsClient = {
   artifactContent: (id: string, opts?: { signal?: AbortSignal }) =>
     req<Artifact>(`/artifacts/${id}/content`, opts?.signal ? { signal: opts.signal } : undefined),
   artifactDownloadUrl: (id: string) => `${origin()}/api/artifacts/${id}/download`,
+  /** Session pack download for one Run's artifacts (platform Artifacts page). */
+  packRunArtifactsUrl: (runId: string) => `${origin()}/api/runs/${encodeURIComponent(runId)}/artifacts/pack`,
+  packRunArtifacts: async (runId: string): Promise<{ blob: Blob; filename: string }> => {
+    const res = await fetch(`${BASE}/runs/${encodeURIComponent(runId)}/artifacts/pack`, {
+      credentials: 'include',
+    })
+    if (res.status === 401) {
+      redirectToLogin()
+      throw Object.assign(new Error('unauthorized'), { status: 401 })
+    }
+    if (!res.ok) {
+      let msg = `${res.status} pack failed`
+      try {
+        const body = await res.json()
+        if (body?.error) msg = body.error
+      } catch {
+        // non-JSON
+      }
+      throw Object.assign(new Error(msg), { status: res.status })
+    }
+    const blob = await res.blob()
+    const filename = filenameFromContentDisposition(
+      res.headers.get('Content-Disposition'),
+      `${runId}-artifacts.zip`,
+    )
+    return { blob, filename }
+  },
   blobContentUrl,
   // DELETE returns 204 No Content — must not go through req()'s unconditional res.json().
   deleteArtifact: async (id: string): Promise<void> => {

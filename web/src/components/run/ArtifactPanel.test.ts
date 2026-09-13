@@ -84,4 +84,22 @@ describe('ArtifactPanel', () => {
     expect(wrapper.emitted('deleted')).toEqual([['a1']])
     wrapper.unmount()
   })
+
+  it('run-detail ArtifactPanel (scope=run) does not render pack button', async () => {
+    const i18n = createI18n({
+      legacy: false,
+      locale: 'zh-CN',
+      messages: { 'zh-CN': { ...common, ...pages } },
+    })
+    const wrapper = mount(ArtifactPanel, {
+      props: { artifacts, scope: 'run' },
+      global: {
+        plugins: [i18n],
+        stubs: { ArtifactPreview: PreviewStub, Icon: true },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="artifact-run-pack"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
 })
