@@ -574,4 +574,40 @@ describe('AppSidebarNav', () => {
     vi.unstubAllGlobals()
     vi.useRealTimers()
   })
+
+  it('keeps hover-ink host and ink node after route-driven active class patch', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../../styles/global.css'),
+      'utf8',
+    )
+    expect(css).toMatch(/(?:^|\n)\.hover-ink\s*\{[^}]*position:\s*absolute/s)
+
+    routeState.path = '/dashboard'
+    const wrapper = mountNav()
+    await flushPromises()
+
+    const chrome = wrapper.find('[data-testid="nav-workspace-chrome"]')
+    const dashboard = chrome.find('[data-to="/dashboard"]').element as HTMLElement
+    const gates = chrome.find('[data-to="/gates"]').element as HTMLElement
+    expect(dashboard.classList.contains('hover-ink-host')).toBe(true)
+    expect((dashboard.firstElementChild as HTMLElement | null)?.classList.contains('hover-ink')).toBe(true)
+
+    routeState.path = '/gates'
+    await flushPromises()
+    await nextTick()
+
+    const nextActive = chrome.find('a.nav-item.active').element as HTMLElement
+    expect(nextActive).toBe(gates)
+    expect(nextActive.classList.contains('active')).toBe(true)
+    expect(nextActive.classList.contains('hover-ink-host')).toBe(true)
+    expect((nextActive.firstElementChild as HTMLElement | null)?.classList.contains('hover-ink')).toBe(true)
+    expect(dashboard.classList.contains('hover-ink-host')).toBe(true)
+    expect((dashboard.firstElementChild as HTMLElement | null)?.classList.contains('hover-ink')).toBe(true)
+
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
 })

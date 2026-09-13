@@ -553,6 +553,11 @@ html.light .app-sidebar-card {
 }
 
 /* ---------- Hover ink: landing-point solid cover (plan g1 / g2) ---------- */
+/* Base rule so a lost host class can never make the ink an in-flow flex item. */
+.hover-ink {
+  position: absolute;
+  pointer-events: none;
+}
 .hover-ink-host {
   position: relative;
   /*

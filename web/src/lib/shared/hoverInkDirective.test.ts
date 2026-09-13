@@ -211,6 +211,55 @@ describe('vHoverInk directive (plan g1.2 / g1.3)', () => {
     expect(isHoverInkBlocked(el)).toBe(false)
   })
 
+  it('restores host/ink classes after Vue patchClass overwrites a bound class', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const extra = ref('')
+    const app = createApp({
+      setup() {
+        return { extra }
+      },
+      template: `<button type="button" class="nav-item" :class="extra" v-hover-ink>Go</button>`,
+    })
+    app.directive('hover-ink', vHoverInk)
+    app.mount(host)
+    const btn = host.querySelector('button') as HTMLButtonElement
+    await nextTick()
+
+    Object.defineProperty(btn, 'getBoundingClientRect', {
+      value: () => ({
+        left: 0,
+        top: 0,
+        width: 100,
+        height: 40,
+        right: 100,
+        bottom: 40,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    })
+
+    btn.dispatchEvent(
+      new PointerEvent('pointerenter', { clientX: 8, clientY: 20, pointerType: 'mouse', bubbles: true }),
+    )
+    expect(btn.classList.contains('hover-ink-host')).toBe(true)
+    expect(btn.classList.contains('is-hover-ink')).toBe(true)
+    expect((btn.firstElementChild as HTMLElement | null)?.classList.contains('hover-ink')).toBe(true)
+
+    extra.value = 'active'
+    await nextTick()
+
+    expect(btn.classList.contains('hover-ink-host')).toBe(true)
+    expect(btn.classList.contains('is-hover-ink')).toBe(true)
+    expect(btn.classList.contains('active')).toBe(true)
+    expect((btn.firstElementChild as HTMLElement | null)?.classList.contains('hover-ink')).toBe(true)
+    expect(btn.querySelectorAll(':scope > .hover-ink').length).toBe(1)
+
+    app.unmount()
+    host.remove()
+  })
+
   it('clips ink without scroll-origin shift on left-edge landing (plan g1.1 / g1.2 / g2.2)', async () => {
     const { readFileSync } = await import('node:fs')
     const { dirname, join } = await import('node:path')
@@ -222,6 +271,8 @@ describe('vHoverInk directive (plan g1.2 / g1.3)', () => {
     // Host must use overflow:clip so a left-overflow ink circle cannot pull scrollLeft.
     expect(css).toMatch(/\.hover-ink-host\s*\{[^}]*overflow:\s*clip/s)
     expect(css).not.toMatch(/\.hover-ink-host\s*\{[^}]*overflow:\s*hidden/s)
+    // Standalone base rule: ink stays out of flow even if the host class is wiped.
+    expect(css).toMatch(/(?:^|\n)\.hover-ink\s*\{[^}]*position:\s*absolute/s)
     // plan g1.1: no negative-margin centering (that left-extends the layout box).
     expect(css).not.toMatch(/margin:\s*calc\(\s*var\(--ink-d/)
     expect(css).toMatch(/translate\(-50%,\s*-50%\)\s*scale\(0\)/)

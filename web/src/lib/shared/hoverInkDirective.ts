@@ -6,9 +6,12 @@ const HOST_CLASS = 'hover-ink-host'
 const HOVER_CLASS = 'is-hover-ink'
 const LEAVE_CLASS = 'is-leave-ink'
 
+type HoverInkPhase = 'idle' | 'hover' | 'leave'
+
 type HoverInkState = {
   cleanup: () => void
   binding: DirectiveBinding
+  phase: HoverInkPhase
   collapseTimer?: ReturnType<typeof setTimeout>
 }
 
@@ -45,6 +48,16 @@ function clearCollapseTimer(el: HTMLElement) {
   }
 }
 
+/** Re-apply imperative host/ink DOM after Vue's patchClass overwrites className. */
+function restoreHostState(el: HTMLElement) {
+  el.classList.add(HOST_CLASS)
+  ensureInk(el)
+  const st = stateMap.get(el)
+  if (!st) return
+  el.classList.toggle(HOVER_CLASS, st.phase === 'hover')
+  el.classList.toggle(LEAVE_CLASS, st.phase === 'leave')
+}
+
 function placeInk(el: HTMLElement, clientX: number, clientY: number) {
   clearCollapseTimer(el)
   const rect = el.getBoundingClientRect()
@@ -58,19 +71,20 @@ function placeInk(el: HTMLElement, clientX: number, clientY: number) {
 
 function expand(el: HTMLElement) {
   clearCollapseTimer(el)
-  el.classList.remove(LEAVE_CLASS)
-  el.classList.add(HOVER_CLASS)
+  const st = stateMap.get(el)
+  if (st) st.phase = 'hover'
+  restoreHostState(el)
 }
 
 /** Hide paint, then collapse --ink-d so the layout box cannot stick (plan g1.2). */
 function retract(el: HTMLElement) {
-  el.classList.remove(HOVER_CLASS)
-  el.classList.add(LEAVE_CLASS)
-  clearCollapseTimer(el)
   const st = stateMap.get(el)
+  if (st) st.phase = 'leave'
+  restoreHostState(el)
+  clearCollapseTimer(el)
   const collapse = () => {
     // Only collapse if still left (not re-entered).
-    if (el.classList.contains(HOVER_CLASS)) return
+    if (st?.phase === 'hover') return
     el.style.setProperty('--ink-d', '0px')
     if (st) st.collapseTimer = undefined
   }
@@ -85,11 +99,9 @@ function bindHoverInk(el: HTMLElement, binding: DirectiveBinding) {
   const existing = stateMap.get(el)
   if (existing) {
     existing.binding = binding
+    restoreHostState(el)
     return
   }
-
-  el.classList.add(HOST_CLASS)
-  ensureInk(el)
 
   const onEnter = (ev: PointerEvent) => {
     if (!canHoverInk()) return
@@ -120,6 +132,7 @@ function bindHoverInk(el: HTMLElement, binding: DirectiveBinding) {
 
   stateMap.set(el, {
     binding,
+    phase: 'idle',
     cleanup: () => {
       el.removeEventListener('pointerenter', onEnter)
       el.removeEventListener('pointerleave', onLeave)
@@ -133,6 +146,7 @@ function bindHoverInk(el: HTMLElement, binding: DirectiveBinding) {
       stateMap.delete(el)
     },
   })
+  restoreHostState(el)
 }
 
 /** Vue directive: landing-point solid circle hover cover (plan g1). */
@@ -141,9 +155,14 @@ export const vHoverInk: Directive = {
     bindHoverInk(el as HTMLElement, binding)
   },
   updated(el, binding) {
-    const st = stateMap.get(el as HTMLElement)
-    if (st) st.binding = binding
-    else bindHoverInk(el as HTMLElement, binding)
+    const host = el as HTMLElement
+    const st = stateMap.get(host)
+    if (st) {
+      st.binding = binding
+      restoreHostState(host)
+    } else {
+      bindHoverInk(host, binding)
+    }
   },
   unmounted(el) {
     const host = el as HTMLElement
