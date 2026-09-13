@@ -26,6 +26,26 @@ So I built Grasp: one platform for all your projects, and visual requirement cla
 
 https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
 
+## Screenshots
+
+<p align="center">
+  <img src="media/screenshots/workflow-canvas.webp" alt="Grasp workflow canvas" width="100%" />
+  <br />
+  <sub>Orchestrate multi-project, multi-agent development on one canvas.</sub>
+</p>
+
+<p align="center">
+  <img src="media/screenshots/artifact-review.webp" alt="Grasp artifact review" width="100%" />
+  <br />
+  <sub>Turn agent output into structured artifacts that are quick to review.</sub>
+</p>
+
+<p align="center">
+  <img src="media/screenshots/agent-studio.webp" alt="Grasp Agent Studio" width="100%" />
+  <br />
+  <sub>Manage projects, agent backends, and run configuration in one platform.</sub>
+</p>
+
 ## Core capabilities
 
 | Capability | In the FSM |
