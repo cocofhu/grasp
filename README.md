@@ -185,3 +185,13 @@ Issues and pull requests are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md),
 ## License
 
 [MIT](LICENSE) © 2026 cocofhu
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=cocofhu%2Fgrasp&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=cocofhu/grasp&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=cocofhu/grasp&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=cocofhu/grasp&type=date&legend=top-left" />
+ </picture>
+</a>
