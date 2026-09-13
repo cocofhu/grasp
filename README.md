@@ -22,6 +22,12 @@ So I built Grasp: one platform for all your projects, and visual requirement cla
 [![coverage-server](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fgrasp%2Fcoverage-badges%2Fcoverage-server.json)](https://github.com/cocofhu/grasp/actions/workflows/ci-server.yml)
 [![coverage-gateway](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fgrasp%2Fcoverage-badges%2Fcoverage-gateway.json)](https://github.com/cocofhu/grasp/actions/workflows/ci-gateway.yml)
 
+## Demo
+
+![Grasp demo](media/grasp-demo.gif)
+
+[Watch compressed MP4](media/grasp-demo.mp4)
+
 ## Core capabilities
 
 | Capability | In the FSM |

@@ -27,9 +27,9 @@
 
 ## 演示
 
-<video src="media/grasp-demo.mp4" controls muted playsinline></video>
+![Grasp 演示](media/grasp-demo.gif)
 
-[查看演示视频](media/grasp-demo.mp4)
+[查看压缩 MP4](media/grasp-demo.mp4)
 
 ## 核心能力
 
