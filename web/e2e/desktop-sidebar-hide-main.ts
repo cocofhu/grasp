@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { i18n } from '../src/lib/shared/i18n'
 import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { installIdleScrollbar } from '../src/lib/shared/idleScrollbar'
+import { vHoverInk } from '../src/lib/shared/hoverInkDirective'
 import AppShell from '../src/components/shell/AppShell.vue'
 import { useAuth } from '../src/lib/composables/useAuth'
 
@@ -33,12 +34,11 @@ async function bootstrap() {
   })
   await router.push(start)
 
-  createApp({
+  const app = createApp({
     render: () => h(AppShell, null, { default: () => h(RouterView) }),
   })
-    .use(i18n)
-    .use(router)
-    .mount('#app')
+  app.directive('hover-ink', vHoverInk)
+  app.use(i18n).use(router).mount('#app')
 }
 
 void bootstrap()
