@@ -33,25 +33,33 @@ const useCompact = computed(() => {
 /** Sidebar/drawer compact tips Teleport above the trigger to escape overflow-hidden. */
 const usePortaledCompactTip = computed(() => props.variant === 'compact')
 
-const compactTrigger = ref<HTMLElement | null>(null)
+type CompactZone = 'token' | 'run'
+
+const activeCompactZone = ref<CompactZone | null>(null)
+const compactTokenTrigger = ref<HTMLElement | null>(null)
+const compactRunTrigger = ref<HTMLElement | null>(null)
 const compactTip = ref<HTMLElement | null>(null)
-const compactTipHovered = ref(false)
-const compactTipFocused = ref(false)
-/** Hide Teleport tip after click until pointer leaves (plan g1.1). */
+/** Hide Teleport tip after click until pointer leaves (plan g1.3). */
 const suppressCompactTip = ref(false)
 const compactTipStyle = ref<FixedOverlayAboveStyle | null>(null)
+
+const compactAnchor = computed(() => {
+  if (activeCompactZone.value === 'token') return compactTokenTrigger.value
+  if (activeCompactZone.value === 'run') return compactRunTrigger.value
+  return null
+})
 
 const compactTipVisible = computed(
   () =>
     usePortaledCompactTip.value &&
     !suppressCompactTip.value &&
-    (compactTipHovered.value || compactTipFocused.value),
+    activeCompactZone.value != null,
 )
 
 async function repositionCompactTip() {
   if (!compactTipVisible.value) return
   await nextTick()
-  compactTipStyle.value = await placeFixedOverlayAbove(compactTrigger.value, compactTip.value, {
+  compactTipStyle.value = await placeFixedOverlayAbove(compactAnchor.value, compactTip.value, {
     align: 'center',
     gap: 8,
   })
@@ -60,7 +68,7 @@ async function repositionCompactTip() {
 const { start: startCompactTipListeners, stop: stopCompactTipListeners } =
   useFixedOverlayAboveListeners(compactTipVisible, repositionCompactTip)
 
-watch(compactTipVisible, async (visible) => {
+watch([compactTipVisible, activeCompactZone], async ([visible]) => {
   if (visible) {
     startCompactTipListeners()
     await repositionCompactTip()
@@ -88,10 +96,17 @@ function statsAria(label: string): string {
   return `${label} · ${t('shell.statusMetrics.openStats')}`
 }
 
+function tokenZoneAria(): string {
+  return `${t('shell.statusMetrics.tokens')}: ${fmtFull(cumulative.value)} · ${t('shell.statusMetrics.today')}: ${fmtFull(today.value)} · ${t('shell.statusMetrics.openStats')}`
+}
+
+function runZoneAria(): string {
+  return `${t('shell.statusMetrics.running')}: ${running.value} · ${t('shell.statusMetrics.queued')}: ${queued.value} · ${t('shell.statusMetrics.openStats')}`
+}
+
 function goToStats() {
   suppressCompactTip.value = true
-  compactTipHovered.value = false
-  compactTipFocused.value = false
+  activeCompactZone.value = null
   void router.push({ name: 'stats' })
 }
 
@@ -99,6 +114,22 @@ function onActivateKey(ev: KeyboardEvent) {
   if (ev.key !== 'Enter' && ev.key !== ' ') return
   ev.preventDefault()
   goToStats()
+}
+
+function onCompactZoneEnter(zone: CompactZone) {
+  suppressCompactTip.value = false
+  activeCompactZone.value = zone
+}
+
+function onCompactStripLeave() {
+  activeCompactZone.value = null
+  suppressCompactTip.value = false
+}
+
+function onCompactStripFocusOut(ev: FocusEvent) {
+  const root = ev.currentTarget as HTMLElement
+  if (root.contains(ev.relatedTarget as Node | null)) return
+  activeCompactZone.value = null
 }
 </script>
 
@@ -126,10 +157,14 @@ function onActivateKey(ev: KeyboardEvent) {
         </svg>
         <span class="sm-val text-xs leading-none text-txt">{{ fmtCompactTokenCount(cumulative) }}</span>
         <span
-          class="rounded-md sm-tip pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 hidden -translate-x-1/2 whitespace-nowrap border border-line-strong bg-overlay px-2.5 py-1.5 text-left font-sans text-xs leading-snug text-txt2 shadow-card"
+          class="sm-tip sm-kpi pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 hidden min-w-[200px] -translate-x-1/2 border border-line-strong bg-surface px-3 py-2.5 text-left font-sans shadow-card"
           role="tooltip"
         >
-          {{ t('shell.statusMetrics.tokens') }}: <span class="font-mono">{{ fmtFull(cumulative) }}</span>
+          <div class="sm-kpi-title">{{ t('shell.statusMetrics.tokens') }}</div>
+          <div class="sm-kpi-row">
+            <span class="sm-kpi-lab">{{ t('shell.statusMetrics.tokens') }}</span>
+            <span class="sm-kpi-num font-mono tabular-nums">{{ fmtFull(cumulative) }}</span>
+          </div>
         </span>
       </button>
       <span class="mx-0.5 h-3.5 w-px shrink-0 bg-line-strong" aria-hidden="true" />
@@ -149,10 +184,14 @@ function onActivateKey(ev: KeyboardEvent) {
         </svg>
         <span class="sm-val text-xs leading-none text-txt">{{ fmtCompactTokenCount(today) }}</span>
         <span
-          class="rounded-md sm-tip pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 hidden -translate-x-1/2 whitespace-nowrap border border-line-strong bg-overlay px-2.5 py-1.5 text-left font-sans text-xs leading-snug text-txt2 shadow-card"
+          class="sm-tip sm-kpi pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 hidden min-w-[200px] -translate-x-1/2 border border-line-strong bg-surface px-3 py-2.5 text-left font-sans shadow-card"
           role="tooltip"
         >
-          {{ t('shell.statusMetrics.today') }}: <span class="font-mono">{{ fmtFull(today) }}</span>
+          <div class="sm-kpi-title">{{ t('shell.statusMetrics.today') }}</div>
+          <div class="sm-kpi-row">
+            <span class="sm-kpi-lab">{{ t('shell.statusMetrics.today') }}</span>
+            <span class="sm-kpi-num font-mono tabular-nums">{{ fmtFull(today) }}</span>
+          </div>
         </span>
       </button>
       <span class="mx-0.5 h-3.5 w-px shrink-0 bg-line-strong" aria-hidden="true" />
@@ -171,10 +210,14 @@ function onActivateKey(ev: KeyboardEvent) {
         </svg>
         <span class="sm-val text-xs leading-none text-txt">{{ running }}</span>
         <span
-          class="rounded-md sm-tip pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 hidden -translate-x-1/2 whitespace-nowrap border border-line-strong bg-overlay px-2.5 py-1.5 text-left font-sans text-xs leading-snug text-txt2 shadow-card"
+          class="sm-tip sm-kpi pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 hidden min-w-[160px] -translate-x-1/2 border border-line-strong bg-surface px-3 py-2.5 text-left font-sans shadow-card"
           role="tooltip"
         >
-          {{ t('shell.statusMetrics.running') }}: <span class="font-mono">{{ running }}</span>
+          <div class="sm-kpi-title">{{ t('shell.statusMetrics.running') }}</div>
+          <div class="sm-kpi-row">
+            <span class="sm-kpi-lab">{{ t('shell.statusMetrics.running') }}</span>
+            <span class="sm-kpi-num font-mono tabular-nums">{{ running }}</span>
+          </div>
         </span>
       </button>
       <span class="mx-0.5 h-3.5 w-px shrink-0 bg-line-strong" aria-hidden="true" />
@@ -192,40 +235,80 @@ function onActivateKey(ev: KeyboardEvent) {
         </svg>
         <span class="sm-val text-xs leading-none text-txt">{{ queued }}</span>
         <span
-          class="rounded-md sm-tip pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 hidden -translate-x-1/2 whitespace-nowrap border border-line-strong bg-overlay px-2.5 py-1.5 text-left font-sans text-xs leading-snug text-txt2 shadow-card"
+          class="sm-tip sm-kpi pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 hidden min-w-[160px] -translate-x-1/2 border border-line-strong bg-surface px-3 py-2.5 text-left font-sans shadow-card"
           role="tooltip"
         >
-          {{ t('shell.statusMetrics.queued') }}: <span class="font-mono">{{ queued }}</span>
+          <div class="sm-kpi-title">{{ t('shell.statusMetrics.queued') }}</div>
+          <div class="sm-kpi-row">
+            <span class="sm-kpi-lab">{{ t('shell.statusMetrics.queued') }}</span>
+            <span class="sm-kpi-num font-mono tabular-nums">{{ queued }}</span>
+          </div>
         </span>
       </button>
     </template>
 
-    <!-- Narrow &lt;md: Token · RUN/Q; today only in tip -->
-    <button
+    <!-- Narrow &lt;md / sidebar: Token zone | run zone; partitioned KPI tips -->
+    <div
       v-else
-      ref="compactTrigger"
-      type="button"
-      class="sm-item sm-compact relative inline-flex w-full items-center gap-2 rounded-md border-0 bg-elevated px-2 py-1.5 text-[11px] text-inherit hover:bg-elevated hover:text-txt focus-visible:bg-elevated focus-visible:text-txt focus-visible:outline-none"
+      class="sm-compact relative inline-flex w-full items-center gap-0 rounded-md border-0 bg-elevated px-1 py-0.5 text-[11px] text-inherit"
       :class="suppressCompactTip ? 'tip-suppressed' : ''"
       data-testid="status-metrics-compact"
-      :aria-label="t('shell.statusMetrics.compactAria')"
-      @click="goToStats"
-      @keydown="onActivateKey"
-      @blur="compactTipFocused = false"
-      @focus="compactTipFocused = true"
-      @mouseenter="suppressCompactTip = false; compactTipHovered = true"
-      @mouseleave="compactTipHovered = false; suppressCompactTip = false"
+      @mouseleave="onCompactStripLeave"
+      @focusout="onCompactStripFocusOut"
     >
-      <span class="inline-flex items-center gap-1.5">
+      <button
+        ref="compactTokenTrigger"
+        type="button"
+        class="sm-item sm-zone relative inline-flex flex-1 items-center gap-1.5 rounded-md border-0 bg-transparent px-1.5 py-1 text-inherit hover:bg-surface hover:text-txt focus-visible:bg-surface focus-visible:text-txt focus-visible:outline-none"
+        data-testid="status-metrics-compact-token"
+        :aria-label="tokenZoneAria()"
+        @click="goToStats"
+        @keydown="onActivateKey"
+        @mouseenter="onCompactZoneEnter('token')"
+        @focus="onCompactZoneEnter('token')"
+      >
         <svg class="sm-ico block h-[13px] w-[13px] shrink-0 text-txt3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <ellipse cx="12" cy="6.6" rx="7.2" ry="3.1" />
           <path d="M4.8 6.6v4.7c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1V6.6" />
           <path d="M4.8 11.5v4.7c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1v-4.7" />
         </svg>
         <span class="sm-val text-[11px] font-semibold leading-none text-txt">{{ fmtCompactTokenCount(cumulative) }}</span>
-      </span>
-      <span class="h-3 w-px shrink-0 bg-line-strong opacity-90" aria-hidden="true" />
-      <span class="inline-flex items-center gap-1.5">
+        <span
+          v-if="!usePortaledCompactTip"
+          class="sm-tip sm-kpi pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 hidden min-w-[220px] -translate-x-1/2 border border-line-strong bg-surface px-3 py-2.5 text-left font-sans shadow-card"
+          role="tooltip"
+          data-testid="status-metrics-compact-token-tip"
+        >
+          <div class="sm-kpi-title">
+            <svg class="sm-kpi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <ellipse cx="12" cy="6.6" rx="7.2" ry="3.1" />
+              <path d="M4.8 6.6v4.7c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1V6.6" />
+              <path d="M4.8 11.5v4.7c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1v-4.7" />
+            </svg>
+            {{ t('shell.statusMetrics.cardTokenTitle') }}
+          </div>
+          <div class="sm-kpi-row">
+            <span class="sm-kpi-lab">{{ t('shell.statusMetrics.tokens') }}</span>
+            <span class="sm-kpi-num font-mono tabular-nums">{{ fmtFull(cumulative) }}</span>
+          </div>
+          <div class="sm-kpi-row">
+            <span class="sm-kpi-lab">{{ t('shell.statusMetrics.today') }}</span>
+            <span class="sm-kpi-num font-mono tabular-nums">{{ fmtFull(today) }}</span>
+          </div>
+        </span>
+      </button>
+      <span class="mx-0.5 h-3 w-px shrink-0 bg-line-strong opacity-90" aria-hidden="true" />
+      <button
+        ref="compactRunTrigger"
+        type="button"
+        class="sm-item sm-zone relative inline-flex flex-1 items-center gap-1.5 rounded-md border-0 bg-transparent px-1.5 py-1 text-inherit hover:bg-surface hover:text-txt focus-visible:bg-surface focus-visible:text-txt focus-visible:outline-none"
+        data-testid="status-metrics-compact-run"
+        :aria-label="runZoneAria()"
+        @click="goToStats"
+        @keydown="onActivateKey"
+        @mouseenter="onCompactZoneEnter('run')"
+        @focus="onCompactZoneEnter('run')"
+      >
         <svg class="sm-ico block h-[13px] w-[13px] shrink-0 text-txt3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="8.2" />
           <path d="M10.3 8.7l5.4 3.3-5.4 3.3z" />
@@ -236,33 +319,77 @@ function onActivateKey(ev: KeyboardEvent) {
           <path d="M4 7.2h16M4 12h11.5M4 16.8h7" />
         </svg>
         <span class="sm-val text-[11px] font-semibold leading-none text-txt">{{ queued }}</span>
-      </span>
-      <span
-        v-if="!usePortaledCompactTip"
-        class="rounded-md sm-tip pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 hidden min-w-[180px] -translate-x-1/2 border border-line-strong bg-overlay px-2.5 py-2 text-left font-sans text-xs leading-snug text-txt2 shadow-card"
-        role="tooltip"
-      >
-        <div>{{ t('shell.statusMetrics.tokens') }}: <span class="font-mono">{{ fmtFull(cumulative) }}</span></div>
-        <div>{{ t('shell.statusMetrics.today') }}: <span class="font-mono">{{ fmtFull(today) }}</span></div>
-        <div>{{ t('shell.statusMetrics.running') }}: <span class="font-mono">{{ running }}</span></div>
-        <div>{{ t('shell.statusMetrics.queued') }}: <span class="font-mono">{{ queued }}</span></div>
-      </span>
-    </button>
+        <span
+          v-if="!usePortaledCompactTip"
+          class="sm-tip sm-kpi pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 hidden min-w-[180px] -translate-x-1/2 border border-line-strong bg-surface px-3 py-2.5 text-left font-sans shadow-card"
+          role="tooltip"
+          data-testid="status-metrics-compact-run-tip"
+        >
+          <div class="sm-kpi-title">
+            <svg class="sm-kpi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="8.2" />
+              <path d="M10.3 8.7l5.4 3.3-5.4 3.3z" />
+            </svg>
+            {{ t('shell.statusMetrics.cardRunTitle') }}
+          </div>
+          <div class="sm-kpi-row">
+            <span class="sm-kpi-lab">{{ t('shell.statusMetrics.running') }}</span>
+            <span class="sm-kpi-num font-mono tabular-nums">{{ running }}</span>
+          </div>
+          <div class="sm-kpi-row">
+            <span class="sm-kpi-lab">{{ t('shell.statusMetrics.queued') }}</span>
+            <span class="sm-kpi-num font-mono tabular-nums">{{ queued }}</span>
+          </div>
+        </span>
+      </button>
+    </div>
 
     <Teleport v-if="usePortaledCompactTip" to="body">
       <div
         v-show="compactTipVisible"
         ref="compactTip"
-        class="rounded-md sm-tip pointer-events-none z-[60] min-w-[180px] border border-line-strong bg-overlay px-2.5 py-2 text-left font-sans text-xs leading-snug text-txt2 shadow-card"
+        class="sm-tip sm-kpi pointer-events-none z-[60] min-w-[220px] border border-line-strong bg-surface px-3 py-2.5 text-left font-sans shadow-card"
         role="tooltip"
         data-testid="status-metrics-compact-tip"
+        :data-zone="activeCompactZone ?? undefined"
         data-placement="above"
         :style="compactTipStyle ?? undefined"
       >
-        <div>{{ t('shell.statusMetrics.tokens') }}: <span class="font-mono">{{ fmtFull(cumulative) }}</span></div>
-        <div>{{ t('shell.statusMetrics.today') }}: <span class="font-mono">{{ fmtFull(today) }}</span></div>
-        <div>{{ t('shell.statusMetrics.running') }}: <span class="font-mono">{{ running }}</span></div>
-        <div>{{ t('shell.statusMetrics.queued') }}: <span class="font-mono">{{ queued }}</span></div>
+        <template v-if="activeCompactZone === 'token'">
+          <div class="sm-kpi-title">
+            <svg class="sm-kpi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <ellipse cx="12" cy="6.6" rx="7.2" ry="3.1" />
+              <path d="M4.8 6.6v4.7c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1V6.6" />
+              <path d="M4.8 11.5v4.7c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1v-4.7" />
+            </svg>
+            {{ t('shell.statusMetrics.cardTokenTitle') }}
+          </div>
+          <div class="sm-kpi-row">
+            <span class="sm-kpi-lab">{{ t('shell.statusMetrics.tokens') }}</span>
+            <span class="sm-kpi-num font-mono tabular-nums">{{ fmtFull(cumulative) }}</span>
+          </div>
+          <div class="sm-kpi-row">
+            <span class="sm-kpi-lab">{{ t('shell.statusMetrics.today') }}</span>
+            <span class="sm-kpi-num font-mono tabular-nums">{{ fmtFull(today) }}</span>
+          </div>
+        </template>
+        <template v-else-if="activeCompactZone === 'run'">
+          <div class="sm-kpi-title">
+            <svg class="sm-kpi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="8.2" />
+              <path d="M10.3 8.7l5.4 3.3-5.4 3.3z" />
+            </svg>
+            {{ t('shell.statusMetrics.cardRunTitle') }}
+          </div>
+          <div class="sm-kpi-row">
+            <span class="sm-kpi-lab">{{ t('shell.statusMetrics.running') }}</span>
+            <span class="sm-kpi-num font-mono tabular-nums">{{ running }}</span>
+          </div>
+          <div class="sm-kpi-row">
+            <span class="sm-kpi-lab">{{ t('shell.statusMetrics.queued') }}</span>
+            <span class="sm-kpi-num font-mono tabular-nums">{{ queued }}</span>
+          </div>
+        </template>
       </div>
     </Teleport>
   </div>
@@ -279,9 +406,48 @@ function onActivateKey(ev: KeyboardEvent) {
 .sm-item.tip-open .sm-tip {
   display: block;
 }
-.sm-item.tip-suppressed .sm-tip,
-.sm-item.tip-suppressed:hover .sm-tip,
-.sm-item.tip-suppressed:focus-visible .sm-tip {
+.sm-compact.tip-suppressed .sm-tip,
+.sm-compact.tip-suppressed .sm-item:hover .sm-tip,
+.sm-compact.tip-suppressed .sm-item:focus-visible .sm-tip {
   display: none;
+}
+.sm-kpi {
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+}
+.sm-kpi-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.2;
+  color: rgb(var(--c-txt2));
+}
+.sm-kpi-ico {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  color: rgb(var(--c-txt3));
+}
+.sm-kpi-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+}
+.sm-kpi-row + .sm-kpi-row {
+  border-top: 1px solid rgb(var(--c-line));
+}
+.sm-kpi-lab {
+  font-size: 12px;
+  color: rgb(var(--c-txt2));
+}
+.sm-kpi-num {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: rgb(var(--c-txt));
 }
 </style>

@@ -64,6 +64,8 @@
       "running": "Running",
       "queued": "Queued",
       "compactAria": "Platform status summary, open statistics",
+      "cardTokenTitle": "Token",
+      "cardRunTitle": "Runs",
       "openStats": "Open statistics"
     }
   }

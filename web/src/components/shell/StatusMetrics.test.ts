@@ -140,17 +140,24 @@ describe('StatusMetrics', () => {
     w.unmount()
   })
 
-  it('renders Token·RUN/Q summary under md (plan g2.4)', async () => {
+  it('renders Token·RUN/Q two-zone strip under md (plan g1.1)', async () => {
     isMobile.value = true
     const { w } = await mountMetrics()
     await flushPromises()
     expect(w.find('[data-testid="status-metrics-compact"]').exists()).toBe(true)
     expect(w.find('[data-testid="status-metrics-tokens"]').exists()).toBe(false)
     const compact = w.find('[data-testid="status-metrics-compact"]')
-    // g1.1: elevated strip + semibold values for sidebar readability
+    // g1.1: elevated strip container + two zone buttons (not nested buttons)
     expect(compact.classes()).toContain('bg-elevated')
     expect(compact.classes()).toContain('sm-compact')
-    expect(compact.find('.sm-val').classes()).toContain('font-semibold')
+    expect(compact.element.tagName.toLowerCase()).toBe('div')
+    const tokenZone = w.find('[data-testid="status-metrics-compact-token"]')
+    const runZone = w.find('[data-testid="status-metrics-compact-run"]')
+    expect(tokenZone.exists()).toBe(true)
+    expect(runZone.exists()).toBe(true)
+    expect(tokenZone.element.tagName.toLowerCase()).toBe('button')
+    expect(runZone.element.tagName.toLowerCase()).toBe('button')
+    expect(tokenZone.find('.sm-val').classes()).toContain('font-semibold')
     const text = compact.text()
     expect(text).toMatch(/1\.24M/)
     expect(text).toMatch(/3/)
@@ -158,50 +165,75 @@ describe('StatusMetrics', () => {
     w.unmount()
   })
 
-  it('desktop tips are single-line label: value with exact counts (plan g1.1/g1.2)', async () => {
+  it('desktop tips are partitioned KPI cards with only that metric (plan g2.1)', async () => {
     const { w } = await mountMetrics()
     await flushPromises()
     const tips = {
-      tokens: w.find('[data-testid="status-metrics-tokens"] .sm-tip').text(),
-      today: w.find('[data-testid="status-metrics-today"] .sm-tip').text(),
-      running: w.find('[data-testid="status-metrics-running"] .sm-tip').text(),
-      queued: w.find('[data-testid="status-metrics-queued"] .sm-tip').text(),
+      tokens: w.find('[data-testid="status-metrics-tokens"] .sm-tip'),
+      today: w.find('[data-testid="status-metrics-today"] .sm-tip'),
+      running: w.find('[data-testid="status-metrics-running"] .sm-tip'),
+      queued: w.find('[data-testid="status-metrics-queued"] .sm-tip'),
     }
-    expect(tips.tokens).toMatch(/累计 Token:\s*1,240,582/)
-    expect(tips.today).toMatch(/今日 Token:\s*4,812/)
+    expect(tips.tokens.classes()).toContain('sm-kpi')
+    expect(tips.tokens.text()).toMatch(/累计 Token/)
+    expect(tips.tokens.text()).toMatch(/1,240,582/)
+    expect(tips.tokens.text()).not.toMatch(/今日 Token/)
+    expect(tips.tokens.text()).not.toMatch(/执行中/)
+    expect(tips.tokens.text()).not.toMatch(/排队/)
+
+    expect(tips.today.text()).toMatch(/今日 Token/)
+    expect(tips.today.text()).toMatch(/4,812/)
+    expect(tips.today.text()).not.toMatch(/累计 Token/)
     expect(w.find('[data-testid="status-metrics-today"]').attributes('aria-label')).toMatch(/今日 Token:\s*4,812/)
-    expect(tips.running).toMatch(/执行中:\s*3/)
-    expect(tips.queued).toMatch(/排队:\s*5/)
+
+    expect(tips.running.text()).toMatch(/执行中/)
+    expect(tips.running.text()).toMatch(/\b3\b/)
+    expect(tips.running.text()).not.toMatch(/排队/)
+    expect(tips.running.text()).not.toMatch(/Token/)
+
+    expect(tips.queued.text()).toMatch(/排队/)
+    expect(tips.queued.text()).toMatch(/\b5\b/)
+    expect(tips.queued.text()).not.toMatch(/执行中/)
+
     for (const tip of Object.values(tips)) {
-      expect(tip).not.toMatch(/完整值/)
-      expect(tip).not.toMatch(/totalTokens/i)
-      expect(tip).not.toContain('/5m')
-      expect(tip).not.toMatch(/\d{2}:\d{2}/)
+      expect(tip.text()).not.toMatch(/完整值/)
+      expect(tip.text()).not.toMatch(/totalTokens/i)
+      expect(tip.text()).not.toContain('/5m')
+      expect(tip.text()).not.toMatch(/\d{2}:\d{2}/)
     }
-    expect(w.find('[data-testid="status-metrics-tokens"] .sm-tip').classes()).not.toContain('min-w-[210px]')
     w.unmount()
   })
 
-  it('compact tip is four label: value rows aligned with desktop (plan g2.3)', async () => {
+  it('compact token tip has only Token rows; run tip only run rows (plan g1.2)', async () => {
     isMobile.value = true
     const { w } = await mountMetrics()
     await flushPromises()
-    const tip = w.find('[data-testid="status-metrics-compact"] .sm-tip')
-    const lines = tip.findAll('div').map((d) => d.text())
-    expect(lines).toHaveLength(4)
-    expect(lines[0]).toMatch(/累计 Token:\s*1,240,582/)
-    expect(lines[1]).toMatch(/今日 Token:\s*4,812/)
-    expect(lines[2]).toMatch(/执行中:\s*3/)
-    expect(lines[3]).toMatch(/排队:\s*5/)
-    const tipText = tip.text()
-    expect(tipText).not.toMatch(/完整值/)
-    expect(tipText).not.toContain('/5m')
-    expect(tipText).not.toMatch(/5 分钟|速率|峰值/)
-    expect(tipText).not.toMatch(/窄屏摘要|完整值|totalTokens/i)
+    const tokenTip = w.find('[data-testid="status-metrics-compact-token-tip"]')
+    const runTip = w.find('[data-testid="status-metrics-compact-run-tip"]')
+    expect(tokenTip.exists()).toBe(true)
+    expect(runTip.exists()).toBe(true)
+    expect(tokenTip.classes()).toContain('sm-kpi')
+    expect(tokenTip.text()).toMatch(/Token/)
+    expect(tokenTip.text()).toMatch(/累计 Token/)
+    expect(tokenTip.text()).toMatch(/1,240,582/)
+    expect(tokenTip.text()).toMatch(/今日 Token/)
+    expect(tokenTip.text()).toMatch(/4,812/)
+    expect(tokenTip.text()).not.toMatch(/执行中/)
+    expect(tokenTip.text()).not.toMatch(/排队/)
+
+    expect(runTip.text()).toMatch(/运行/)
+    expect(runTip.text()).toMatch(/执行中/)
+    expect(runTip.text()).toMatch(/\b3\b/)
+    expect(runTip.text()).toMatch(/排队/)
+    expect(runTip.text()).toMatch(/\b5\b/)
+    expect(runTip.text()).not.toMatch(/累计 Token/)
+    expect(runTip.text()).not.toMatch(/今日 Token/)
+    expect(runTip.text()).not.toMatch(/完整值/)
+    expect(runTip.text()).not.toContain('/5m')
     w.unmount()
   })
 
-  it('sidebar compact variant teleports tip above trigger on hover (g1.1/g1.3)', async () => {
+  it('sidebar compact teleports zone tip above trigger on hover (g1.1/g1.3)', async () => {
     const clip = document.createElement('div')
     clip.style.overflow = 'hidden'
     clip.style.height = '120px'
@@ -217,35 +249,63 @@ describe('StatusMetrics', () => {
     })
     await flushPromises()
 
-    const trigger = w.find('[data-testid="status-metrics-compact"]')
-    expect(trigger.find('.sm-tip').exists()).toBe(false)
-    expect(trigger.attributes('aria-label')).toMatch(/进入统计/)
+    const strip = w.find('[data-testid="status-metrics-compact"]')
+    expect(strip.element.tagName.toLowerCase()).toBe('div')
+    expect(strip.find('.sm-tip').exists()).toBe(false)
+    const tokenZone = w.find('[data-testid="status-metrics-compact-token"]')
+    const runZone = w.find('[data-testid="status-metrics-compact-run"]')
+    expect(tokenZone.attributes('aria-label')).toMatch(/进入统计/)
+    expect(runZone.attributes('aria-label')).toMatch(/进入统计/)
 
-    vi.spyOn(trigger.element as HTMLElement, 'getBoundingClientRect').mockReturnValue({
+    vi.spyOn(tokenZone.element as HTMLElement, 'getBoundingClientRect').mockReturnValue({
       top: 320,
       left: 24,
-      right: 200,
+      right: 100,
       bottom: 352,
-      width: 176,
+      width: 76,
       height: 32,
       x: 24,
       y: 320,
       toJSON: () => ({}),
     } as DOMRect)
+    vi.spyOn(runZone.element as HTMLElement, 'getBoundingClientRect').mockReturnValue({
+      top: 320,
+      left: 110,
+      right: 200,
+      bottom: 352,
+      width: 90,
+      height: 32,
+      x: 110,
+      y: 320,
+      toJSON: () => ({}),
+    } as DOMRect)
 
-    await trigger.trigger('mouseenter')
+    await tokenZone.trigger('mouseenter')
     await flushPromises()
     await nextTick()
 
     const tip = document.body.querySelector('[data-testid="status-metrics-compact-tip"]') as HTMLElement
     expect(tip).toBeTruthy()
     expect(tip.getAttribute('data-placement')).toBe('above')
+    expect(tip.getAttribute('data-zone')).toBe('token')
     expect(tip.style.position).toBe('fixed')
-    expect(tip.textContent).toMatch(/累计 Token:\s*1,240,582/)
-    expect(tip.textContent).toMatch(/排队:\s*5/)
+    expect(tip.textContent).toMatch(/累计 Token/)
+    expect(tip.textContent).toMatch(/1,240,582/)
+    expect(tip.textContent).toMatch(/今日 Token/)
+    expect(tip.textContent).not.toMatch(/执行中/)
+    expect(tip.textContent).not.toMatch(/排队/)
     expect(Number.parseInt(tip.style.top, 10)).toBeLessThan(320)
 
-    await trigger.trigger('click')
+    await runZone.trigger('mouseenter')
+    await flushPromises()
+    await nextTick()
+    expect(tip.getAttribute('data-zone')).toBe('run')
+    expect(tip.textContent).toMatch(/执行中/)
+    expect(tip.textContent).toMatch(/排队/)
+    expect(tip.textContent).not.toMatch(/累计 Token/)
+    expect(tip.textContent).not.toMatch(/今日 Token/)
+
+    await runZone.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('stats')
     const afterClick = document.body.querySelector(
@@ -258,14 +318,14 @@ describe('StatusMetrics', () => {
     document.body.innerHTML = ''
   })
 
-  it('click compact navigates to stats and closes teleport tip (plan g1.1)', async () => {
+  it('click compact zone navigates to stats and closes teleport tip (plan g1.3)', async () => {
     const { w, router } = await mountMetrics({ variant: 'compact' })
     await flushPromises()
-    const compact = w.find('[data-testid="status-metrics-compact"]')
-    await compact.trigger('mouseenter')
+    const tokenZone = w.find('[data-testid="status-metrics-compact-token"]')
+    await tokenZone.trigger('mouseenter')
     await flushPromises()
     expect(document.body.querySelector('[data-testid="status-metrics-compact-tip"]')).toBeTruthy()
-    await compact.trigger('click')
+    await tokenZone.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('stats')
     expect(router.currentRoute.value.path).toBe('/stats')
@@ -274,23 +334,23 @@ describe('StatusMetrics', () => {
     w.unmount()
   })
 
-  it('Enter/Space on compact navigates to stats (plan g1.1)', async () => {
+  it('Enter/Space on compact zones navigates to stats (plan g1.1)', async () => {
     const { w, router } = await mountMetrics({ variant: 'compact' })
     await flushPromises()
-    await w.find('[data-testid="status-metrics-compact"]').trigger('keydown', { key: 'Enter' })
+    await w.find('[data-testid="status-metrics-compact-token"]').trigger('keydown', { key: 'Enter' })
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('stats')
     w.unmount()
 
     const again = await mountMetrics({ variant: 'compact' })
     await flushPromises()
-    await again.w.find('[data-testid="status-metrics-compact"]').trigger('keydown', { key: ' ' })
+    await again.w.find('[data-testid="status-metrics-compact-run"]').trigger('keydown', { key: ' ' })
     await flushPromises()
     expect(again.router.currentRoute.value.name).toBe('stats')
     again.w.unmount()
   })
 
-  it('desktop four items navigate to stats instead of pinning tip (plan g1.2)', async () => {
+  it('desktop four items navigate to stats instead of pinning tip (plan g2.1)', async () => {
     const ids = [
       'status-metrics-tokens',
       'status-metrics-today',
@@ -331,10 +391,14 @@ describe('StatusMetrics', () => {
     })
     const { w } = await mountMetrics()
     await flushPromises()
-    expect(w.find('[data-testid="status-metrics-running"] .sm-tip').text()).toMatch(/执行中:\s*0/)
-    expect(w.find('[data-testid="status-metrics-queued"] .sm-tip').text()).toMatch(/排队:\s*0/)
-    expect(w.find('[data-testid="status-metrics-tokens"] .sm-tip').text()).toMatch(/累计 Token:\s*0/)
-    expect(w.find('[data-testid="status-metrics-today"] .sm-tip').text()).toMatch(/今日 Token:\s*0/)
+    expect(w.find('[data-testid="status-metrics-running"] .sm-tip').text()).toMatch(/执行中/)
+    expect(w.find('[data-testid="status-metrics-running"] .sm-kpi-num').text()).toBe('0')
+    expect(w.find('[data-testid="status-metrics-queued"] .sm-tip').text()).toMatch(/排队/)
+    expect(w.find('[data-testid="status-metrics-queued"] .sm-kpi-num').text()).toBe('0')
+    expect(w.find('[data-testid="status-metrics-tokens"] .sm-tip').text()).toMatch(/累计 Token/)
+    expect(w.find('[data-testid="status-metrics-tokens"] .sm-kpi-num').text()).toBe('0')
+    expect(w.find('[data-testid="status-metrics-today"] .sm-tip').text()).toMatch(/今日 Token/)
+    expect(w.find('[data-testid="status-metrics-today"] .sm-kpi-num').text()).toBe('0')
     w.unmount()
   })
 

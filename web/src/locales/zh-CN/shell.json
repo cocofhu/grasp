@@ -64,6 +64,8 @@
       "running": "执行中",
       "queued": "排队",
       "compactAria": "平台状态摘要，进入统计",
+      "cardTokenTitle": "Token",
+      "cardRunTitle": "运行",
       "openStats": "进入统计"
     }
   }

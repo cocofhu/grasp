@@ -173,7 +173,8 @@ describe('radius zero clearance', () => {
 
   it('StatusMetrics compact strip uses control 8px rounded-md', () => {
     const src = read('components/shell/StatusMetrics.vue')
-    const compact = src.match(/<button[\s\S]*?data-testid="status-metrics-compact"[\s\S]*?>/)?.[0]
+    // g1.1: compact is a container (not a single button); bar surface keeps 8px
+    const compact = src.match(/<(?:div|button)[\s\S]*?data-testid="status-metrics-compact"[\s\S]*?>/)?.[0]
     expect(compact).toBeTruthy()
     expect(compact!).toMatch(/\brounded-md\b/)
   })
