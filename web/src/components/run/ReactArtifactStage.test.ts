@@ -105,6 +105,7 @@ describe('ReactArtifactStage', () => {
     })
     expect(wrapper.get('[data-testid="react-artifact-tab-preview"]').attributes('aria-selected')).toBe('true')
     expect(wrapper.get('[data-testid="react-artifact-preview-empty"]').text()).toContain('尚未选择产物')
+    expect(wrapper.get('[data-testid="react-artifact-preview-empty"]').text()).toContain('自动出现')
     expect(wrapper.find('[data-testid="hard-load-layer"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="artifact-preview"]').exists()).toBe(false)
     await wrapper.get('[data-testid="react-artifact-card-research.json"]').trigger('click')
@@ -244,8 +245,11 @@ describe('ReactArtifactStage', () => {
     expect(wrapper.get('[data-testid="react-artifact-tab-research.json"]').attributes('aria-selected')).toBe('true')
     await wrapper.setProps({ artifacts: [note, page], previewArtifact: 'page.html' })
     await flushPromises()
-    expect(wrapper.find('[data-testid="react-artifact-tab-page.html"]').exists()).toBe(false)
+    // Pin must still appear on the tab bar (g2.1); focus stays on the open tab.
+    expect(wrapper.find('[data-testid="react-artifact-tab-page.html"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="react-artifact-tab-research.json"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('[data-testid="react-artifact-tab-page.html"]').attributes('aria-selected')).toBe('false')
+    expect(wrapper.get('[data-testid="react-artifact-tab-unread-page.html"]').attributes('data-unread')).toBe('new')
     wrapper.unmount()
   })
 
@@ -758,7 +762,8 @@ describe('ReactArtifactStage', () => {
     )
     expect(wrapper.find('[data-testid="react-artifact-tab-page.html"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="react-artifact-card-brand-row-preview.html"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="react-artifact-card-a.html"]').exists()).toBe(false)
+    // react/approve grid lists all visible products (incl. older own-node HTML).
+    expect(wrapper.find('[data-testid="react-artifact-card-a.html"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -1158,5 +1163,170 @@ describe('ReactArtifactStage', () => {
     expect(wrapper.get('[data-testid="react-artifact-tab-research.json"]').attributes('aria-selected')).toBe('true')
     wrapper.unmount()
     resetStageOpenStateForTests()
+  })
+
+  it('auto-pins clarified_requirement and plan on approve without set_artifact_preview (g1.1 / g1.2)', async () => {
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [],
+        runId: 'run-auto-pin',
+        nodeId: 'approve_1',
+        nodeType: 'approve',
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    const clarified = art({
+      id: 'c1',
+      name: 'clarified_requirement.json',
+      kind: 'json',
+      nodeId: 'approve_1',
+      revision: 1,
+    })
+    await wrapper.setProps({ artifacts: [clarified] })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="react-artifact-tab-clarified_requirement.json"]').attributes('aria-selected')).toBe(
+      'true',
+    )
+    const plan = art({ id: 'p1', name: 'plan.json', kind: 'json', nodeId: 'approve_1', revision: 1 })
+    await wrapper.setProps({ artifacts: [clarified, plan] })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="react-artifact-tab-clarified_requirement.json"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="react-artifact-tab-plan.json"]').exists()).toBe(true)
+    // Already viewing clarified — plan pins with unread, does not steal focus (g2.1).
+    expect(wrapper.get('[data-testid="react-artifact-tab-clarified_requirement.json"]').attributes('aria-selected')).toBe(
+      'true',
+    )
+    expect(wrapper.get('[data-testid="react-artifact-tab-unread-plan.json"]').attributes('data-unread')).toBe('new')
+    wrapper.unmount()
+  })
+
+  it('focuses the latest auto-pinned artifact when still on empty/grid (g2.1)', async () => {
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [],
+        runId: 'run-auto-idle',
+        nodeId: 'approve_1',
+        nodeType: 'approve',
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    const clarified = art({
+      id: 'c1',
+      name: 'clarified_requirement.json',
+      kind: 'json',
+      nodeId: 'approve_1',
+    })
+    const plan = art({ id: 'p1', name: 'plan.json', kind: 'json', nodeId: 'approve_1' })
+    await wrapper.setProps({ artifacts: [clarified, plan] })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="react-artifact-tab-clarified_requirement.json"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="react-artifact-tab-plan.json"]').attributes('aria-selected')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('marks updated tabs without stealing focus, and reopens closed tabs on change (g1.2 / g1.3 / g2.1)', async () => {
+    const clarified = art({
+      id: 'c1',
+      name: 'clarified_requirement.json',
+      kind: 'json',
+      nodeId: 'approve_1',
+      revision: 1,
+      updatedAt: 't1',
+    })
+    const plan = art({
+      id: 'p1',
+      name: 'plan.json',
+      kind: 'json',
+      nodeId: 'approve_1',
+      revision: 1,
+      updatedAt: 't1',
+    })
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [clarified, plan],
+        runId: 'run-auto-unread',
+        nodeId: 'approve_1',
+        nodeType: 'approve',
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    // Seed fingerprints with both present; open clarified manually.
+    await wrapper.get('[data-testid="react-artifact-tab-grid"]').trigger('click')
+    await wrapper.get('[data-testid="react-artifact-card-clarified_requirement.json"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="react-artifact-tab-clarified_requirement.json"]').attributes('aria-selected')).toBe(
+      'true',
+    )
+    await wrapper.setProps({
+      artifacts: [clarified, { ...plan, revision: 2, updatedAt: 't2', sizeBytes: 40 }],
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="react-artifact-tab-plan.json"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="react-artifact-tab-clarified_requirement.json"]').attributes('aria-selected')).toBe(
+      'true',
+    )
+    expect(wrapper.get('[data-testid="react-artifact-tab-unread-plan.json"]').attributes('data-unread')).toBe('updated')
+    await wrapper.get('[data-testid="react-artifact-tab-plan.json"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="react-artifact-tab-unread-plan.json"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="react-artifact-tab-close-plan.json"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="react-artifact-tab-plan.json"]').exists()).toBe(false)
+    await wrapper.setProps({
+      artifacts: [
+        clarified,
+        { ...plan, revision: 3, updatedAt: 't3', sizeBytes: 50 },
+      ],
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="react-artifact-tab-plan.json"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="react-artifact-tab-unread-plan.json"]').attributes('data-unread')).toBe('updated')
+    wrapper.unmount()
+  })
+
+  it('does not auto-pin internal names and keeps custom HTML reopenable from the grid (g1.1 / g2.2)', async () => {
+    const demo = art({
+      id: 'd1',
+      name: 'brand-row-preview.html',
+      kind: 'html',
+      nodeId: 'react_1',
+      content: '<html>demo</html>',
+    })
+    const complete = art({ id: 'n1', name: 'node_complete.json', kind: 'json', nodeId: 'react_1' })
+    const feedback = art({ id: 'f1', name: 'feedback_index.json', kind: 'json', nodeId: 'react_1' })
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [demo, complete, feedback],
+        runId: 'run-auto-grid',
+        run: {
+          id: 'run-auto-grid',
+          nodes: [{ id: 'react_1', type: 'react', label: '澄清', position: { x: 0, y: 0 }, config: {} }],
+        } as any,
+        nodeId: 'react_1',
+        nodeType: 'react',
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="react-artifact-tab-node_complete.json"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-artifact-tab-feedback_index.json"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-artifact-card-brand-row-preview.html"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="react-artifact-tab-close-brand-row-preview.html"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="react-artifact-card-brand-row-preview.html"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="react-artifact-card-brand-row-preview.html"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="react-artifact-tab-brand-row-preview.html"]').attributes('aria-selected')).toBe(
+      'true',
+    )
+    wrapper.unmount()
   })
 })

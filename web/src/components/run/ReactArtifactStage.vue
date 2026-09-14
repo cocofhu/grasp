@@ -25,9 +25,15 @@ import {
   artifactFriendlyNameKey,
   artifactKindLabelKey,
   artifactTechnicalDisplayName,
+  buildArtifactFingerprintMap,
   buildStageCardThumb,
+  clearStageTabUnread,
   closeStagePreviewTab,
+  diffArtifactFingerprints,
   findArtifactByName,
+  isAutoPinStageNode,
+  isVisibleAutoPinArtifact,
+  markStageTabUnread,
   nextTabAfterClose,
   openStagePreviewTab,
   previewTabId,
@@ -46,10 +52,13 @@ import {
   restoreStageOpenState,
   saveStageOpenState,
   shouldActivatePinnedPreview,
-  stageGridArtifactsWithPin,
+  shouldFocusPinnedOrAutoTab,
+  stageGridArtifactsForNode,
   wantsTextSummaryThumb,
+  type ArtifactFingerprintMap,
   type ReactStageRemoteKind,
   type StageCardThumb,
+  type StageTabUnreadKind,
   type VisualPageVersionChoice,
 } from '@/lib/run/reactArtifactPreview'
 
@@ -127,6 +136,10 @@ const activeTab = ref(initialOpen?.activeTab || REACT_STAGE_TAB_PREVIEW)
  *  Also set when session open-state restore succeeds so pin auto-activate loses to refresh restore. */
 const userMoved = ref(!!initialOpen)
 const openNames = ref<string[]>(initialOpen?.openNames || [])
+/** Session-local 「新 / 已更新」 marks on non-active preview tabs. */
+const tabUnread = ref<Record<string, StageTabUnreadKind>>({})
+/** Seeded fingerprint map for react/approve auto-pin; null until first observe. */
+const autoPinFingerprints = ref<ArtifactFingerprintMap | null>(null)
 const summaryThumbs = ref<Record<string, StageCardThumb>>({})
 const novncOpen = ref(!!initialOpen?.novncOpen)
 const sandboxId = ref<number | null>(null)
@@ -214,8 +227,14 @@ const effectivePin = computed(() =>
     nodeId: props.nodeId,
   }),
 )
+const autoPinEnabled = computed(() => isAutoPinStageNode(resolvedNodeType.value))
 const gridArtifacts = computed(() =>
-  stageGridArtifactsWithPin(stageArtifacts.value, props.run, effectivePin.value),
+  stageGridArtifactsForNode(
+    stageArtifacts.value,
+    props.run,
+    effectivePin.value,
+    resolvedNodeType.value,
+  ),
 )
 const canOpenNovnc = computed(() => effectiveRemoteKind.value !== 'off')
 const showingNovnc = computed(() => activeTab.value === REACT_STAGE_TAB_NOVNC)
@@ -359,6 +378,16 @@ function activatePreview(name: string) {
   if (!art) return
   openNames.value = openStagePreviewTab(openNames.value, art.name)
   activeTab.value = previewTabId(art.name)
+  tabUnread.value = clearStageTabUnread(tabUnread.value, art.name)
+}
+
+function ensurePreviewTab(name: string, unread?: StageTabUnreadKind) {
+  const art = findArtifactByName(stageArtifacts.value, name)
+  if (!art) return
+  openNames.value = openStagePreviewTab(openNames.value, art.name)
+  if (unread && previewTabName(activeTab.value) !== art.name) {
+    tabUnread.value = markStageTabUnread(tabUnread.value, art.name, unread)
+  }
 }
 
 function openArtifact(a: Artifact) {
@@ -384,6 +413,11 @@ function selectPreviewChromeTab() {
 function selectPreviewTab(name: string) {
   markUserMoved()
   activeTab.value = previewTabId(name)
+  tabUnread.value = clearStageTabUnread(tabUnread.value, name)
+}
+
+function tabUnreadKind(name: string): StageTabUnreadKind | null {
+  return tabUnread.value[name] || null
 }
 
 function closePreview(name: string) {
@@ -437,18 +471,96 @@ watch(
         activeTab.value = nextTabAfterClose(openNames.value, gone, activeTab.value, novncOpen.value)
       }
       openNames.value = kept
+      const nextUnread = { ...tabUnread.value }
+      for (const key of Object.keys(nextUnread)) {
+        if (!nameSet.has(key)) delete nextUnread[key]
+      }
+      tabUnread.value = nextUnread
     }
-    if (
-      shouldActivatePinnedPreview(
-        pin,
-        names,
-        prev?.[0],
-        prev?.[1] !== undefined ? [...prev[1]] : undefined,
-        userMoved.value,
+    const pinName = String(pin || '').trim()
+    if (!pinName || !nameSet.has(pinName)) return
+    // Detect pin/appearance events without letting userMoved suppress the signal.
+    const pinEvent = shouldActivatePinnedPreview(
+      pinName,
+      names,
+      prev?.[0],
+      prev?.[1] !== undefined ? [...prev[1]] : undefined,
+      false,
+    )
+    if (!pinEvent) return
+    const canFocus = shouldFocusPinnedOrAutoTab({
+      userMoved: userMoved.value,
+      activeTab: activeTab.value,
+    })
+    if (canFocus) {
+      activatePreview(pinName)
+      return
+    }
+    // Mid-session only: never re-open a restored-closed pin on first paint.
+    if (prev !== undefined) {
+      ensurePreviewTab(pinName, 'new')
+    }
+  },
+  { immediate: true },
+)
+
+/** react/approve: auto-pin visible own-node artifacts on create/overwrite. */
+watch(
+  () => {
+    if (!autoPinEnabled.value) return 'off'
+    const own = String(props.nodeId || '').trim()
+    const fps = stageArtifacts.value
+      .filter(
+        (a) =>
+          isVisibleAutoPinArtifact(a, stageArtifacts.value) &&
+          isOwnNodeArtifact(a, own || undefined),
       )
-    ) {
-      activatePreview(pin)
+      .map((a) => `${a.name}\0${artifactFingerprint(a)}`)
+      .join('\n')
+    return `${props.runId}\0${props.nodeId}\0${fps}`
+  },
+  (key, prevKey) => {
+    if (!autoPinEnabled.value) {
+      autoPinFingerprints.value = null
+      return
     }
+    const own = String(props.nodeId || '').trim()
+    const visible = stageArtifacts.value.filter(
+      (a) =>
+        isVisibleAutoPinArtifact(a, stageArtifacts.value) &&
+        isOwnNodeArtifact(a, own || undefined),
+    )
+    const nextMap = buildArtifactFingerprintMap(visible)
+    const scope = key.split('\0').slice(0, 2).join('\0')
+    const prevScope = prevKey ? prevKey.split('\0').slice(0, 2).join('\0') : ''
+    const prevMap = autoPinFingerprints.value
+    autoPinFingerprints.value = nextMap
+    // First observation or run/node switch: seed only (do not open every existing product).
+    if (!prevMap || scope !== prevScope) return
+    const { created, updated } = diffArtifactFingerprints(prevMap, nextMap)
+    if (!created.length && !updated.length) return
+
+    const pinName = String(effectivePin.value || '').trim()
+    const changed = [...created, ...updated]
+    for (const name of created) {
+      ensurePreviewTab(name, 'new')
+    }
+    for (const name of updated) {
+      ensurePreviewTab(name, 'updated')
+    }
+
+    const canFocus = shouldFocusPinnedOrAutoTab({
+      userMoved: userMoved.value,
+      activeTab: activeTab.value,
+      onlyIdle: true,
+    })
+    if (!canFocus) return
+    // Prefer explicit set_artifact_preview pin when it is among this batch.
+    const focusName =
+      (pinName && changed.includes(pinName) ? pinName : '') ||
+      changed[changed.length - 1] ||
+      ''
+    if (focusName) activatePreview(focusName)
   },
   { immediate: true },
 )
@@ -524,6 +636,8 @@ watch(
       activeTab.value = REACT_STAGE_TAB_PREVIEW
       novncOpen.value = false
       userMoved.value = false
+      tabUnread.value = {}
+      autoPinFingerprints.value = null
       return
     }
     if (
@@ -537,7 +651,9 @@ watch(
       activeTab.value = REACT_STAGE_TAB_PREVIEW
       novncOpen.value = false
       userMoved.value = false
+      tabUnread.value = {}
     }
+    autoPinFingerprints.value = null
   },
 )
 
@@ -675,6 +791,16 @@ onBeforeUnmount(() => {
         >
           <Icon :name="kindIcon[artifactByName(name)?.kind || ''] || 'doc'" :size="13" />
           <span class="truncate">{{ artifactTitle(artifactByName(name)) }}</span>
+          <span
+            v-if="tabUnreadKind(name)"
+            class="shrink-0 rounded border border-line px-1 py-px text-[10px] leading-none text-txt2"
+            :data-testid="'react-artifact-tab-unread-' + name"
+            :data-unread="tabUnreadKind(name)"
+          >{{
+            tabUnreadKind(name) === 'new'
+              ? t('pages.reactArtifactStage.tabBadgeNew')
+              : t('pages.reactArtifactStage.tabBadgeUpdated')
+          }}</span>
         </button>
         <button
           type="button"

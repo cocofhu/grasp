@@ -479,6 +479,138 @@ export function artifactFingerprint(a: Artifact | null | undefined): string {
   return `${a.id}:${a.updatedAt || ''}:${a.revision ?? ''}:${a.sizeBytes}:${a.content?.length ?? ''}`
 }
 
+/** react / approve stages auto-pin visible own-node artifacts on create/update. */
+export function isAutoPinStageNode(type: string | null | undefined): boolean {
+  return isClarifyInteractive(type)
+}
+
+/**
+ * User-reviewable stage artifacts: drop process files, feedback, historical
+ * mirrors, and same-preview visual_{node}.page.html aliases.
+ */
+export function isVisibleAutoPinArtifact(
+  artifact: Pick<Artifact, 'name' | 'id' | 'nodeId'> | null | undefined,
+  artifacts: Pick<Artifact, 'name' | 'nodeId'>[] = [],
+): boolean {
+  if (!artifact) return false
+  const name = String(artifact.name || '').trim()
+  if (!name) return false
+  if (name === NODE_COMPLETE_ARTIFACT || isFeedbackStageArtifactName(name)) return false
+  if (isHistoricalStageArtifact(artifact)) return false
+  if (isIterSnapshotName(name)) return false
+  if (isSamePreviewVisualCopy(artifact, artifacts)) return false
+  return true
+}
+
+/** Visible products shown on the react/approve pipeline grid (incl. custom names). */
+export function filterVisibleStageArtifacts(artifacts: Artifact[]): Artifact[] {
+  return artifacts.filter((a) => isVisibleAutoPinArtifact(a, artifacts))
+}
+
+/**
+ * Grid cards for the current stage node.
+ * react/approve: every visible product (so custom HTML stays reopenable).
+ * Other nodes: known contract products + effective pin.
+ */
+export function stageGridArtifactsForNode(
+  artifacts: Artifact[],
+  run?: Run | null,
+  pin?: string | null,
+  nodeType?: string | null,
+): Artifact[] {
+  if (isAutoPinStageNode(nodeType)) {
+    return filterVisibleStageArtifacts(artifacts)
+  }
+  return stageGridArtifactsWithPin(artifacts, run, pin)
+}
+
+export type ArtifactFingerprintMap = Record<string, string>
+
+export function buildArtifactFingerprintMap(
+  artifacts: Pick<Artifact, 'name' | 'id' | 'updatedAt' | 'revision' | 'sizeBytes' | 'content'>[],
+): ArtifactFingerprintMap {
+  const out: ArtifactFingerprintMap = {}
+  for (const a of artifacts) {
+    const name = String(a.name || '').trim()
+    if (!name) continue
+    out[name] = artifactFingerprint(a as Artifact)
+  }
+  return out
+}
+
+export type ArtifactFingerprintDiff = {
+  created: string[]
+  updated: string[]
+}
+
+/** Diff name→fingerprint maps; created = first seen, updated = fingerprint changed. */
+export function diffArtifactFingerprints(
+  prev: ArtifactFingerprintMap | null | undefined,
+  next: ArtifactFingerprintMap,
+): ArtifactFingerprintDiff {
+  const created: string[] = []
+  const updated: string[] = []
+  if (!prev) return { created, updated }
+  for (const [name, fp] of Object.entries(next)) {
+    if (!(name in prev)) {
+      created.push(name)
+      continue
+    }
+    if (prev[name] !== fp) updated.push(name)
+  }
+  return { created, updated }
+}
+
+export type StageTabUnreadKind = 'new' | 'updated'
+
+/** Idle chrome tabs where auto-pin / pin may steal focus without interrupting reading. */
+export function isIdleStageTab(activeTab: string | null | undefined): boolean {
+  const tab = String(activeTab || '').trim()
+  return tab === REACT_STAGE_TAB_GRID || tab === REACT_STAGE_TAB_PREVIEW
+}
+
+/**
+ * Whether to switch focus after ensuring a tab is open.
+ * Idle chrome (empty/grid) always allows focus.
+ * Auto-pin (onlyIdle) never yanks an already-open preview/remote tab.
+ * Explicit set_artifact_preview may steal until the user has moved tabs.
+ */
+export function shouldFocusPinnedOrAutoTab(opts: {
+  userMoved: boolean
+  activeTab: string
+  /** When true, only empty/grid may take focus (fingerprint auto-pin). */
+  onlyIdle?: boolean
+}): boolean {
+  if (isIdleStageTab(opts.activeTab)) return true
+  if (opts.onlyIdle) return false
+  return !opts.userMoved
+}
+
+export function markStageTabUnread(
+  marks: Record<string, StageTabUnreadKind>,
+  name: string,
+  kind: StageTabUnreadKind,
+): Record<string, StageTabUnreadKind> {
+  const n = String(name || '').trim()
+  if (!n) return marks
+  const prev = marks[n]
+  // Prefer sticky "new" until the tab is opened; do not downgrade to "updated".
+  if (prev === 'new' && kind === 'updated') return marks
+  if (prev === kind) return marks
+  return { ...marks, [n]: kind }
+}
+
+export function clearStageTabUnread(
+  marks: Record<string, StageTabUnreadKind>,
+  name: string,
+): Record<string, StageTabUnreadKind> {
+  const n = String(name || '').trim()
+  if (!n || !(n in marks)) return marks
+  const next = { ...marks }
+  delete next[n]
+  return next
+}
+
 /** Card thumb: text peep for known JSON / visual HTML; HtmlPreview for other grid HTML. */
 export type StageCardThumb =
   | { kind: 'text'; title: string; summary: string }

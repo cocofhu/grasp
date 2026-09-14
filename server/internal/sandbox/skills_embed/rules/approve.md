@@ -43,11 +43,13 @@ demoHtml 运行于 Gates HtmlPreview 的 sandbox iframe(sandbox="allow-scripts a
 
 需要完整 SPA、持久化或真实浏览器能力时,用 `set_preview` 登记沙箱端口或外部 URL(产物舞台应用预览 Tab),不要在 srcdoc 中硬做,也不得引导恢复 allow-same-origin。
 
-## 产物舞台预览(可选)
+## 产物舞台预览
 
-- 当需要在提问卡片之外给人看一份完整页面、文案稿或示意图时:先 `write_artifact(name, content, kind)`,再立刻 `set_artifact_preview(name)` 钉到 ReAct 预览 Tab。
+- 平台会在可见产物**新建或覆盖写入**后自动钉到预览 Tab(并标「新 / 已更新」);**不必**每次写入都调用 `set_artifact_preview` 才能让人看到。
+- `set_artifact_preview(name)` 用于**主动聚焦**「请看这一份」(空态/网格下优先切到该 Tab);不是可见性的前提。
+- 当需要在提问卡片之外给人看一份完整页面、文案稿或示意图时:先 `write_artifact(name, content, kind)`;需要点名聚焦时再立刻 `set_artifact_preview(name)`。
 - 与 `ask_question.demoHtml` 的分工:**选项级并排对比**用 `demoHtml`;**独立成稿、需要热更新或取点标注**用产物舞台。
-- 可多次调用 `set_artifact_preview` 切换预览;同名再次 `write_artifact` 后预览会热更新。
+- 可多次调用 `set_artifact_preview` 切换焦点;同名再次 `write_artifact` 后预览会热更新,已关闭的 Tab 会在变更时重新打开。
 - 不要改仓库。需求规格本身仍只能用 `set_clarified_requirement`,不要把它写成普通产物文件。
 
 ## 强制交付 1:set_clarified_requirement
@@ -81,7 +83,7 @@ demoHtml 运行于 Gates HtmlPreview 的 sandbox iframe(sandbox="allow-scripts a
 
 - `set_research`:结构化调研结论(`summary` 必填;问题/发现至少一类非空)。
 - `set_proposals`:**仅当存在至少两个方向不同、取舍有意义的候选、且需要用户在其中择一时才调用**;写入 ≥2 个候选(可标一个 `recommended`)。方向已唯一、用户已拍板、或澄清/计划足以推进时**禁止调用**——尤其禁止写入仅 1 条且标推荐/已选定的「伪选择」凑产物。独立 proposal 节点仍须强制交付;本约束只约束 Approve 可选路径。与 `ask_question`「禁止为问而问」同理:无真实分歧则不生成选择任务。
-- `write_artifact` 写入 `page.html`(kind=`html`):单文件自包含 HTML,CSS/JS 全部内联,禁止外链与 Web Storage;写完立刻 `set_artifact_preview("page.html")`。
+- `write_artifact` 写入 `page.html`(kind=`html`):单文件自包含 HTML,CSS/JS 全部内联,禁止外链与 Web Storage;写完后平台会自动钉 Tab,需要主动聚焦时再 `set_artifact_preview("page.html")`。
 - `set_preview(port?, url?, label?)`:登记可运行应用预览(沙箱端口或已部署 http(s) URL,恰好其一)。**不是完成条件**,成功后不会结束本节点(与 app_preview 不同)。沙箱内须 `setsid`/`nohup` 真后台、监听 `0.0.0.0:<port>`(不要 docker、不要只绑 127.0.0.1);已部署地址用 `set_preview(url=...)`。仍不要把本节点当成实现节点去改仓库。
 
 ## 结束条件

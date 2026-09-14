@@ -46,8 +46,18 @@ import {
   resolveEffectivePreviewPin,
   resolveStageRemoteKind,
   stageGridArtifactsWithPin,
+  stageGridArtifactsForNode,
   stageOpenStateStorageKey,
   wantsTextSummaryThumb,
+  isAutoPinStageNode,
+  isVisibleAutoPinArtifact,
+  filterVisibleStageArtifacts,
+  buildArtifactFingerprintMap,
+  diffArtifactFingerprints,
+  isIdleStageTab,
+  shouldFocusPinnedOrAutoTab,
+  markStageTabUnread,
+  clearStageTabUnread,
 } from './reactArtifactPreview'
 
 function art(partial: Partial<Artifact> & Pick<Artifact, 'id' | 'name'>): Artifact {
@@ -258,6 +268,104 @@ describe('reactArtifactPreview helpers', () => {
     expect(nextTabAfterClose(['a.html', 'b.md'], 'a.html', previewTabId('b.md'))).toBe(previewTabId('b.md'))
     expect(nextTabAfterClose(['a.html'], 'a.html', previewTabId('a.html'), true)).toBe(REACT_STAGE_TAB_NOVNC)
     expect(nextTabAfterClose(['a.html'], 'a.html', REACT_STAGE_TAB_NOVNC)).toBe(REACT_STAGE_TAB_NOVNC)
+  })
+
+  it('diffs fingerprints for create/update and filters auto-pin visibility (g1.1)', () => {
+    expect(isAutoPinStageNode('react')).toBe(true)
+    expect(isAutoPinStageNode('approve')).toBe(true)
+    expect(isAutoPinStageNode('visual')).toBe(false)
+    const research = art({ id: 'r', name: 'research.json', kind: 'json', nodeId: 'approve_1' })
+    const complete = art({ id: 'n', name: 'node_complete.json', kind: 'json', nodeId: 'approve_1' })
+    const feedback = art({ id: 'f', name: 'feedback.clarify.x.json', kind: 'json', nodeId: 'approve_1' })
+    const index = art({ id: 'i', name: 'feedback_index.json', kind: 'json', nodeId: 'approve_1' })
+    const page = art({ id: 'p', name: 'page.html', kind: 'html', nodeId: 'visual_1' })
+    const alias = art({ id: 'a', name: visualNodePageName('visual_1'), kind: 'html', nodeId: 'visual_1' })
+    const hist = art({
+      id: historicalStageArtifactId('visual_1', 1),
+      name: 'page.html#iter-1',
+      kind: 'html',
+      nodeId: 'visual_1',
+    })
+    const demo = art({ id: 'd', name: 'brand-row-preview.html', kind: 'html', nodeId: 'approve_1' })
+    const list = [research, complete, feedback, index, page, alias, hist, demo]
+    expect(filterVisibleStageArtifacts(list).map((a) => a.name)).toEqual([
+      'research.json',
+      'page.html',
+      'brand-row-preview.html',
+    ])
+    expect(isVisibleAutoPinArtifact(complete, list)).toBe(false)
+    expect(isVisibleAutoPinArtifact(feedback, list)).toBe(false)
+    expect(isVisibleAutoPinArtifact(alias, list)).toBe(false)
+    expect(isVisibleAutoPinArtifact(hist, list)).toBe(false)
+
+    const prev = buildArtifactFingerprintMap([research, demo])
+    const next = buildArtifactFingerprintMap([
+      { ...research, revision: 2, updatedAt: 't2', sizeBytes: 99 },
+      demo,
+      art({ id: 'p1', name: 'plan.json', kind: 'json', nodeId: 'approve_1' }),
+    ])
+    expect(diffArtifactFingerprints(null, next)).toEqual({ created: [], updated: [] })
+    expect(diffArtifactFingerprints(prev, next)).toEqual({
+      created: ['plan.json'],
+      updated: ['research.json'],
+    })
+  })
+
+  it('keeps unread marks and idle focus helpers for auto-pin (g1.3 / g2.1)', () => {
+    expect(isIdleStageTab(REACT_STAGE_TAB_GRID)).toBe(true)
+    expect(isIdleStageTab(REACT_STAGE_TAB_PREVIEW)).toBe(true)
+    expect(isIdleStageTab(previewTabId('plan.json'))).toBe(false)
+    expect(isIdleStageTab(REACT_STAGE_TAB_NOVNC)).toBe(false)
+    expect(shouldFocusPinnedOrAutoTab({ userMoved: false, activeTab: previewTabId('a') })).toBe(true)
+    expect(
+      shouldFocusPinnedOrAutoTab({
+        userMoved: true,
+        activeTab: REACT_STAGE_TAB_GRID,
+        onlyIdle: true,
+      }),
+    ).toBe(true)
+    expect(
+      shouldFocusPinnedOrAutoTab({
+        userMoved: false,
+        activeTab: previewTabId('a'),
+        onlyIdle: true,
+      }),
+    ).toBe(false)
+    expect(
+      shouldFocusPinnedOrAutoTab({
+        userMoved: true,
+        activeTab: previewTabId('a'),
+      }),
+    ).toBe(false)
+    let marks = markStageTabUnread({}, 'plan.json', 'new')
+    marks = markStageTabUnread(marks, 'plan.json', 'updated')
+    expect(marks['plan.json']).toBe('new')
+    marks = markStageTabUnread(marks, 'research.json', 'updated')
+    expect(marks['research.json']).toBe('updated')
+    marks = clearStageTabUnread(marks, 'plan.json')
+    expect(marks['plan.json']).toBeUndefined()
+  })
+
+  it('shows all visible products on react/approve grids including custom names (g1.2 / f5)', () => {
+    const run = {
+      nodes: [{ id: 'approve_1', type: 'approve', label: 'Approve', position: { x: 0, y: 0 }, config: {} }],
+    } as unknown as Run
+    const requirement = art({
+      id: 'c',
+      name: 'clarified_requirement.json',
+      kind: 'json',
+      nodeId: 'approve_1',
+    })
+    const demo = art({ id: 'd', name: 'brand-row-preview.html', kind: 'html', nodeId: 'approve_1' })
+    const complete = art({ id: 'n', name: 'node_complete.json', kind: 'json', nodeId: 'approve_1' })
+    expect(
+      stageGridArtifactsForNode([requirement, demo, complete], run, '', 'approve').map((a) => a.name),
+    ).toEqual(['clarified_requirement.json', 'brand-row-preview.html'])
+    expect(
+      stageGridArtifactsForNode([requirement, demo, complete], run, 'brand-row-preview.html', 'visual').map(
+        (a) => a.name,
+      ),
+    ).toEqual(['clarified_requirement.json', 'brand-row-preview.html'])
   })
 
   it('patches previewArtifact without replacing turns', () => {

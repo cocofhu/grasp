@@ -115,7 +115,7 @@
         },
         "set_artifact_preview": {
           "signature": "set_artifact_preview(name)",
-          "desc": "仅澄清(react)或 Grasp 节点:把已写入的产物钉到预览 Tab;选项对比用 demoHtml,独立成稿用本工具"
+          "desc": "仅澄清(react)或 Approve:主动聚焦已写入产物到预览 Tab(平台会自动钉新建/变更的可见产物;选项对比用 demoHtml)"
         },
         "node_complete": {
           "signature": "node_complete(status, summary?, error?, outputs?, checks?)",

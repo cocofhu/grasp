@@ -31,11 +31,13 @@ demoHtml 运行于 Gates HtmlPreview 的 sandbox iframe(sandbox="allow-scripts a
 
 需要完整 SPA、持久化或真实浏览器能力时,改走 app_preview(noVNC),不要在 srcdoc 中硬做,也不得引导恢复 allow-same-origin。
 
-## 产物舞台预览(可选)
+## 产物舞台预览
 
-- 当需要在提问卡片之外给人看一份完整页面、文案稿或示意图时:先 `write_artifact(name, content, kind)`,再立刻 `set_artifact_preview(name)` 钉到 ReAct 预览 Tab。
+- 平台会在可见产物**新建或覆盖写入**后自动钉到预览 Tab(并标「新 / 已更新」);**不必**每次写入都调用 `set_artifact_preview` 才能让人看到。
+- `set_artifact_preview(name)` 用于**主动聚焦**「请看这一份」(空态/网格下优先切到该 Tab);不是可见性的前提。
+- 当需要在提问卡片之外给人看一份完整页面、文案稿或示意图时:先 `write_artifact(name, content, kind)`;需要点名聚焦时再立刻 `set_artifact_preview(name)`。
 - 与 `ask_question.demoHtml` 的分工:**选项级并排对比**用 `demoHtml`;**独立成稿、需要热更新或取点标注**用产物舞台。
-- 可多次调用 `set_artifact_preview` 切换预览;同名再次 `write_artifact` 后预览会热更新。
+- 可多次调用 `set_artifact_preview` 切换焦点;同名再次 `write_artifact` 后预览会热更新,已关闭的 Tab 会在变更时重新打开。
 - 不要改仓库。需求规格本身仍只能用 `set_clarified_requirement`,不要把它写成普通产物文件。
 
 ## 唯一交付:set_clarified_requirement
