@@ -4,6 +4,17 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+## 1.0.1 — 2026-09-14
+
+- **Fix:** ReAct empty-fail Retry was a dead click — wrappers never forwarded
+  `retry-last`; also stop duplicating the optimistic retry slot (#600).
+- **Fix:** Persist ACP `error_text` / `prompt_done{failed}` on clarify, open,
+  and revise turns so the failure card shows provider errors (quota / 4xx)
+  instead of a blank “no output” bubble (#600).
+- **Fix:** Keep AppButton slotted inline icons on one row (#599).
+- Default `./start.sh` / `.env.example` / `compose.release.yaml` pins GHCR
+  images to `*:1.0.1`.
+
 ## 1.0.0 — 2026-09-14
 
 - First stable public release (not a beta / prerelease tag).
