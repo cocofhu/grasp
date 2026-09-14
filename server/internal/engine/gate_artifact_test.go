@@ -9,36 +9,6 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-func TestRecordPageRevision(t *testing.T) {
-	outs := map[string]any{"page": "<p>v1</p>"}
-	recordPageRevision(outs, "<p>v2</p>")
-	hist, _ := outs[pageHistoryOutputKey].([]string)
-	if len(hist) != 1 || hist[0] != "<p>v1</p>" {
-		t.Fatalf("first overwrite history=%v", outs[pageHistoryOutputKey])
-	}
-	if got, _ := outs["page"].(string); got != "<p>v2</p>" {
-		t.Fatalf("page=%q", got)
-	}
-
-	recordPageRevision(outs, "<p>v2</p>")
-	hist, _ = outs[pageHistoryOutputKey].([]string)
-	if len(hist) != 1 {
-		t.Fatalf("identical write must not mint a version: %v", hist)
-	}
-
-	recordPageRevision(outs, "<p>v3</p>")
-	hist, _ = outs[pageHistoryOutputKey].([]string)
-	if len(hist) != 2 || hist[0] != "<p>v1</p>" || hist[1] != "<p>v2</p>" {
-		t.Fatalf("second overwrite history=%v", hist)
-	}
-
-	empty := map[string]any{}
-	recordPageRevision(empty, "<p>first</p>")
-	if empty[pageHistoryOutputKey] != nil {
-		t.Fatalf("empty previous must not create history: %v", empty)
-	}
-}
-
 func TestArtifactETagWithAndWithoutUpdatedAt(t *testing.T) {
 	withTime := ArtifactETag("body", 4, time.Unix(100, 0))
 	if withTime == "" || withTime == ArtifactETag("body", 4, time.Time{}) {
@@ -183,8 +153,7 @@ func TestSaveGateArtifactRecordsPageHistory(t *testing.T) {
 	if got, _ := sr.Outputs["page"].(string); got != newHTML {
 		t.Fatalf("outputs.page=%q", got)
 	}
-	hist := pageHistorySlice(sr.Outputs[pageHistoryOutputKey])
-	if len(hist) != 1 || hist[0] != oldHTML {
-		t.Fatalf("page_history=%v", sr.Outputs[pageHistoryOutputKey])
+	if _, ok := sr.Outputs["page_history"]; ok {
+		t.Fatalf("page_history must not be written: %v", sr.Outputs["page_history"])
 	}
 }

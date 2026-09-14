@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import type { Artifact, Run } from '@/lib/shared/types'
 import {
   REACT_STAGE_TAB_GRID,
@@ -14,17 +14,15 @@ import {
   canAnnotateStageArtifact,
   expandStageArtifacts,
   extractVisualHtmlSummary,
+  buildArtifactVersionChoices,
   filterStageGridArtifacts,
-  isKnownStageGridArtifact,
   historicalStageArtifactId,
   inboxStageRemoteKind,
+  isBookkeepingArtifact,
   isSamePreviewVisualCopy,
   isVisualPreviewArtifactName,
-  listVisualPageVersionChoices,
   loadStageOpenState,
-  pageHistoryEntries,
   parseStructuredArtifactSummary,
-  resolveVisualPagePreviewArtifact,
   restoreStageOpenState,
   resetStageOpenStateForTests,
   saveStageOpenState,
@@ -153,76 +151,22 @@ describe('reactArtifactPreview helpers', () => {
     expect(expandStageArtifacts([alias]).map((a) => a.name)).toEqual([visualNodePageName('visual_1')])
   })
 
-  it('maps v-axis to outputs.page and does not substitute latest html for missing snapshots', () => {
-    const live = art({ id: 'live', name: 'page.html', nodeId: 'visual_1', content: '<p>new</p>' })
-    const run = {
-      nodeExecutions: {
-        visual_1: [
-          { nodeId: 'visual_1', iteration: 1, status: 'completed', outputs: {} },
-          { nodeId: 'visual_1', iteration: 2, status: 'completed', outputs: { page: '<p>mid</p>' } },
-          { nodeId: 'visual_1', iteration: 3, status: 'waiting_human', outputs: { page: '<p>new</p>' } },
-        ],
-      },
-    } as unknown as Run
-    const choices = listVisualPageVersionChoices(run, live)
-    expect(choices).toHaveLength(3)
-    expect(choices[0]).toMatchObject({ index: 1, latest: false, available: false, html: '' })
-    expect(choices[1]).toMatchObject({ index: 2, latest: false, available: true, html: '<p>mid</p>' })
-    expect(choices[2]).toMatchObject({ index: 3, latest: true, available: true, html: '' })
-    const v2 = resolveVisualPagePreviewArtifact(live, choices[1])
-    expect(v2.content).toBe('<p>mid</p>')
-    expect(v2.id).toBe(historicalStageArtifactId('visual_1', 2))
-    const missing = resolveVisualPagePreviewArtifact(live, choices[0])
-    expect(missing).toBe(live)
-    const latest = resolveVisualPagePreviewArtifact(live, choices[2])
-    expect(latest).toBe(live)
-    expect(listVisualPageVersionChoices(run, art({ id: 'j', name: 'node_complete.json', kind: 'json', nodeId: 'visual_1' }))).toEqual([])
-  })
-
-  it('expands page_history from a single visual execution into version choices', () => {
-    const live = art({ id: 'live', name: 'page.html', nodeId: 'visual_1', content: '<p>v3</p>' })
-    const run = {
-      nodeExecutions: {
-        visual_1: [
-          {
-            nodeId: 'visual_1',
-            iteration: 1,
-            status: 'waiting_human',
-            outputs: { page: '<p>v3</p>', page_history: ['<p>v1</p>', '<p>v2</p>'] },
-          },
-        ],
-      },
-    } as unknown as Run
-    expect(pageHistoryEntries({ page_history: ['<p>v1</p>', 1, ''] })).toEqual(['<p>v1</p>'])
-    const choices = listVisualPageVersionChoices(run, live)
-    expect(choices).toHaveLength(3)
-    expect(choices[0]).toMatchObject({ index: 1, latest: false, available: true, html: '<p>v1</p>' })
-    expect(choices[1]).toMatchObject({ index: 2, latest: false, available: true, html: '<p>v2</p>' })
-    expect(choices[2]).toMatchObject({ index: 3, latest: true, available: true, html: '' })
-    expect(resolveVisualPagePreviewArtifact(live, choices[0]).content).toBe('<p>v1</p>')
-    expect(resolveVisualPagePreviewArtifact(live, choices[2])).toBe(live)
-  })
-
-  it('keeps prior visual iterations and appends page_history on the latest run', () => {
-    const live = art({ id: 'live', name: 'page.html', nodeId: 'visual_1', content: '<p>new</p>' })
-    const run = {
-      nodeExecutions: {
-        visual_1: [
-          { nodeId: 'visual_1', iteration: 1, status: 'completed', outputs: { page: '<p>old</p>' } },
-          {
-            nodeId: 'visual_1',
-            iteration: 2,
-            status: 'waiting_human',
-            outputs: { page: '<p>new</p>', page_history: ['<p>mid</p>'] },
-          },
-        ],
-      },
-    } as unknown as Run
-    const choices = listVisualPageVersionChoices(run, live)
-    expect(choices.map((c) => ({ index: c.index, latest: c.latest, html: c.html }))).toEqual([
-      { index: 1, latest: false, html: '<p>old</p>' },
-      { index: 2, latest: false, html: '<p>mid</p>' },
-      { index: 3, latest: true, html: '' },
+  it('builds version choices from archived snapshots plus the live revision', () => {
+    const archived = [
+      { artifactId: 'live', revision: 1, nodeId: 'visual_1', sizeBytes: 8, createdAt: 't1' },
+      { artifactId: 'live', revision: 2, nodeId: 'visual_1', sizeBytes: 9, createdAt: 't2' },
+    ]
+    const choices = buildArtifactVersionChoices(3, archived)
+    expect(choices).toEqual([
+      { index: 1, revision: 1, latest: false, available: true },
+      { index: 2, revision: 2, latest: false, available: true },
+      { index: 3, revision: 3, latest: true, available: true },
+    ])
+    expect(buildArtifactVersionChoices(1, [])).toEqual([
+      { index: 1, revision: 1, latest: true, available: true },
+    ])
+    expect(buildArtifactVersionChoices(2, [{ artifactId: 'x', revision: 2, nodeId: 'n', sizeBytes: 1, createdAt: 't' }])).toEqual([
+      { index: 2, revision: 2, latest: true, available: true },
     ])
   })
 
@@ -513,13 +457,15 @@ describe('reactArtifactPreview helpers', () => {
     expect(latestOwnNodeHtmlName([newer], '')).toBe('')
   })
 
-  it('keeps known contract products on the pipeline grid and drops process artifacts', () => {
+  it('hides bookkeeping artifacts and keeps agent-written products on the pipeline grid', () => {
     const run = {
       nodes: [
         { id: 'visual_bqc5', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} },
         { id: 'react_ymx0', type: 'react', label: '澄清', position: { x: 0, y: 0 }, config: {} },
         { id: 'research', type: 'research', label: '调研', position: { x: 0, y: 0 }, config: {} },
         { id: 'clarify', type: 'react', label: '需求', position: { x: 0, y: 0 }, config: {} },
+        { id: 'approve_7gl6', type: 'approve', label: 'Approve', position: { x: 0, y: 0 }, config: {} },
+        { id: 'human_gate_x1', type: 'human_gate', label: '门禁', position: { x: 0, y: 0 }, config: {} },
       ],
     } as unknown as Run
     const research = art({ id: 'r', name: 'research.json', kind: 'json', nodeId: 'research' })
@@ -530,6 +476,7 @@ describe('reactArtifactPreview helpers', () => {
       nodeId: 'clarify',
     })
     const page = art({ id: 'p', name: 'page.html', kind: 'html', nodeId: 'visual_bqc5' })
+    const approvePage = art({ id: 'ap', name: 'page.html', kind: 'html', nodeId: 'approve_7gl6' })
     const hist = art({
       id: historicalStageArtifactId('visual_bqc5', 1),
       name: 'page.html#iter-1',
@@ -538,28 +485,87 @@ describe('reactArtifactPreview helpers', () => {
     })
     const complete = art({ id: 'n', name: 'node_complete.json', kind: 'json', nodeId: 'visual_bqc5' })
     const feedback = art({ id: 'f', name: 'feedback_index.json', kind: 'json', nodeId: 'react_ymx0' })
+    const feedbackRound = art({
+      id: 'fr',
+      name: 'feedback.clarify.approve_7gl6.i1.json',
+      kind: 'json',
+      nodeId: 'approve_7gl6',
+    })
+    const runError = art({ id: 're', name: 'run_error.json', kind: 'json', nodeId: 'approve_7gl6' })
+    const annotations = art({
+      id: 'pa',
+      name: 'preview_annotations.json',
+      kind: 'json',
+      nodeId: 'human_gate_x1',
+    })
     const copy = art({ id: 'v', name: visualNodePageName('visual_bqc5'), kind: 'html', nodeId: 'visual_bqc5' })
+    const otherCopy = art({
+      id: 'vo',
+      name: visualNodePageName('visual_other'),
+      kind: 'html',
+      nodeId: 'visual_other',
+    })
+    const gateBody = art({ id: 'gm', name: 'human_gate_x1.md', kind: 'markdown', nodeId: 'human_gate_x1' })
+    const designMd = art({ id: 'dm', name: 'design.md', kind: 'markdown', nodeId: 'approve_7gl6' })
     const demo = art({ id: 'd', name: 'brand-row-preview.html', kind: 'html', nodeId: 'react_ymx0' })
-    const reactPage = art({ id: 'rp', name: 'page.html', kind: 'html', nodeId: 'react_ymx0' })
+    const screenshot = art({
+      id: 's',
+      name: 'screenshot-home.html',
+      kind: 'html',
+      nodeId: 'approve_7gl6',
+    })
     const names = filterStageGridArtifacts(
-      [research, requirement, page, hist, complete, feedback, copy, demo, reactPage],
+      [
+        research,
+        requirement,
+        page,
+        approvePage,
+        hist,
+        complete,
+        feedback,
+        feedbackRound,
+        runError,
+        annotations,
+        copy,
+        otherCopy,
+        gateBody,
+        designMd,
+        demo,
+        screenshot,
+      ],
       run,
     ).map((a) => a.name)
-    expect(names).toEqual(['research.json', 'clarified_requirement.json', 'page.html', 'page.html#iter-1'])
-    expect(isKnownStageGridArtifact(complete, run)).toBe(false)
-    expect(isKnownStageGridArtifact(demo, run)).toBe(false)
-    expect(isKnownStageGridArtifact(page)).toBe(true)
-    expect(isKnownStageGridArtifact(reactPage, run)).toBe(false)
+    expect(names).toEqual([
+      'research.json',
+      'clarified_requirement.json',
+      'page.html',
+      'page.html',
+      'page.html#iter-1',
+      'design.md',
+      'brand-row-preview.html',
+      'screenshot-home.html',
+    ])
+    expect(isBookkeepingArtifact(complete, run)).toBe(true)
+    expect(isBookkeepingArtifact(feedbackRound, run)).toBe(true)
+    expect(isBookkeepingArtifact(runError, run)).toBe(true)
+    expect(isBookkeepingArtifact(annotations, run)).toBe(true)
+    expect(isBookkeepingArtifact(copy, run)).toBe(true)
+    expect(isBookkeepingArtifact(otherCopy, run)).toBe(true)
+    expect(isBookkeepingArtifact(gateBody, run)).toBe(true)
+    expect(isBookkeepingArtifact(designMd, run)).toBe(false)
+    expect(isBookkeepingArtifact(demo, run)).toBe(false)
+    expect(isBookkeepingArtifact(approvePage, run)).toBe(false)
+    expect(isBookkeepingArtifact(page)).toBe(false)
     expect(
       stageGridArtifactsWithPin(
-        [research, requirement, page, complete, feedback, copy, demo, reactPage],
+        [research, requirement, page, complete, feedback, copy, demo],
         run,
         'brand-row-preview.html',
       ).map((a) => a.name),
     ).toEqual(['research.json', 'clarified_requirement.json', 'page.html', 'brand-row-preview.html'])
     expect(
       stageGridArtifactsWithPin([research, requirement, page, demo], run, 'page.html').map((a) => a.name),
-    ).toEqual(['research.json', 'clarified_requirement.json', 'page.html'])
+    ).toEqual(['research.json', 'clarified_requirement.json', 'page.html', 'brand-row-preview.html'])
   })
 
   it('maps every reserved product to the shared friendly display-name keys', () => {

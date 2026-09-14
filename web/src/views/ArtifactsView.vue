@@ -218,7 +218,6 @@ watch(
     try {
       const run = await api.getRun(runId)
       previewArtifacts.value = Array.isArray(run.artifacts) ? run.artifacts : []
-      // Keep full Run so ArtifactPreview can listVisualPageVersionChoices (g1.1 / g1.2).
       previewRun.value = run
     } catch {
       // Run detail unavailable: still preview list content, no version chip (f3).

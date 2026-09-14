@@ -243,7 +243,7 @@ func TestSetTestResultValidatesScreenshotArtifacts(t *testing.T) {
 
 	// Seed via upload_image_artifact (artifact-upload CLI path); write_artifact
 	// must not be used for images (see TestWriteArtifactKindValidation).
-	if _, err := h.UploadImageArtifact(runID, tok, "tst", "shot-1.png", "PNGDATA"); err != nil {
+	if _, err := h.UploadImageArtifact(runID, tok, "tst", "shot-1.png", pngB64()); err != nil {
 		t.Fatalf("seed screenshot: %v", err)
 	}
 

@@ -215,6 +215,8 @@ describe('api req helpers', () => {
         jsonResponse({ items: [{ id: 'art' }], total: 1, page: 1, pageSize: 20, hasMore: false }),
       )
       .mockResolvedValueOnce(jsonResponse({ id: 'art', content: 'x' }))
+      .mockResolvedValueOnce(jsonResponse([{ artifactId: 'art', revision: 1, nodeId: 'n', sizeBytes: 1, createdAt: 't' }]))
+      .mockResolvedValueOnce(jsonResponse({ artifactId: 'art', revision: 1, content: 'old' }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(jsonResponse({ events: [], live: false }))
       .mockResolvedValueOnce(jsonResponse({ events: [], nextCursor: '', hasMore: false }))
@@ -276,6 +278,8 @@ describe('api req helpers', () => {
       api.listArtifacts({ page: 1, pageSize: 20, groupBy: 'run', wf: 'w' }),
     ).resolves.toMatchObject({ total: 1 })
     await expect(api.artifactContent('art')).resolves.toMatchObject({ id: 'art' })
+    await expect(api.artifactVersions('art')).resolves.toMatchObject([{ revision: 1 }])
+    await expect(api.artifactVersionContent('art', 1)).resolves.toMatchObject({ content: 'old' })
     expect(api.artifactDownloadUrl('art')).toContain('/api/artifacts/art/download')
     expect(api.packRunArtifactsUrl('run-1')).toContain('/api/runs/run-1/artifacts/pack')
     await expect(api.deleteArtifact('art')).resolves.toBeUndefined()

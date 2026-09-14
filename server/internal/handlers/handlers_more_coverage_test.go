@@ -98,6 +98,51 @@ func TestArtifactContentReturnsETag(t *testing.T) {
 	}
 }
 
+func TestArtifactVersionListAndContent(t *testing.T) {
+	hn := newHarness(t)
+	if _, err := hn.h.Arts.Save("run-ver", "node", mcp.ResearchArtifactName, "json", `{"v":1}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hn.h.Arts.Save("run-ver", "node", mcp.ResearchArtifactName, "json", `{"v":2}`); err != nil {
+		t.Fatal(err)
+	}
+	var art models.Artifact
+	if err := hn.db.Where("run_id = ? AND name = ?", "run-ver", mcp.ResearchArtifactName).First(&art).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	missing := hn.do(http.MethodGet, "/api/artifacts/missing/versions", nil)
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("missing versions: %d", missing.Code)
+	}
+	list := hn.do(http.MethodGet, "/api/artifacts/"+art.ID+"/versions", nil)
+	if list.Code != http.StatusOK {
+		t.Fatalf("versions: %d %s", list.Code, list.Body.String())
+	}
+	if !strings.Contains(list.Body.String(), `"revision":1`) {
+		t.Fatalf("versions body=%s", list.Body.String())
+	}
+	if strings.Contains(list.Body.String(), `"content"`) {
+		t.Fatalf("version list must omit content: %s", list.Body.String())
+	}
+
+	badRev := hn.do(http.MethodGet, "/api/artifacts/"+art.ID+"/versions/x/content", nil)
+	if badRev.Code != http.StatusBadRequest {
+		t.Fatalf("bad rev: %d", badRev.Code)
+	}
+	gone := hn.do(http.MethodGet, "/api/artifacts/"+art.ID+"/versions/9/content", nil)
+	if gone.Code != http.StatusNotFound {
+		t.Fatalf("missing rev: %d", gone.Code)
+	}
+	body := hn.do(http.MethodGet, "/api/artifacts/"+art.ID+"/versions/1/content", nil)
+	if body.Code != http.StatusOK {
+		t.Fatalf("version content: %d %s", body.Code, body.Body.String())
+	}
+	if !strings.Contains(body.Body.String(), `"content":"{\"v\":1}"`) && !strings.Contains(body.Body.String(), `"v":1`) {
+		t.Fatalf("version content body=%s", body.Body.String())
+	}
+}
+
 func TestListGatePrimaryArtifactsBadRun(t *testing.T) {
 	hn := newHarness(t)
 	w := hn.do(http.MethodGet, "/api/runs/missing/gates/gate/primary-artifacts", nil)

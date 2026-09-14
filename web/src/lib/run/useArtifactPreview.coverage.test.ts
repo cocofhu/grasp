@@ -7,6 +7,8 @@ import type { Artifact } from '@/lib/shared/types'
 
 const mocks = vi.hoisted(() => ({
   artifactContent: vi.fn(),
+  artifactVersions: vi.fn(async () => []),
+  artifactVersionContent: vi.fn(),
   artifactDownloadUrl: vi.fn((id: string) => `/api/artifacts/${id}/download`),
   deleteArtifact: vi.fn(),
   publicArtifactContent: vi.fn(),
@@ -25,6 +27,8 @@ vi.mock('vue-i18n', async (importOriginal) => ({
 vi.mock('@/lib/api/api', () => ({
   api: {
     artifactContent: mocks.artifactContent,
+    artifactVersions: mocks.artifactVersions,
+    artifactVersionContent: mocks.artifactVersionContent,
     artifactDownloadUrl: mocks.artifactDownloadUrl,
     deleteArtifact: mocks.deleteArtifact,
   },
@@ -83,6 +87,15 @@ describe('useArtifactPreview coverage', () => {
   beforeEach(() => {
     for (const fn of Object.values(mocks)) (fn as ReturnType<typeof vi.fn>).mockReset()
     mocks.artifactContent.mockResolvedValue({ content: 'loaded' })
+    mocks.artifactVersions.mockResolvedValue([])
+    mocks.artifactVersionContent.mockResolvedValue({
+      artifactId: 'page',
+      revision: 1,
+      nodeId: 'n1',
+      sizeBytes: 8,
+      createdAt: 't1',
+      content: '<h1>old</h1>',
+    })
     mocks.publicArtifactContent.mockResolvedValue({ content: 'cHVibGlj' })
     mocks.artifactDownloadUrl.mockImplementation((id: string) => `/api/artifacts/${id}/download`)
     mocks.deleteArtifact.mockResolvedValue({ status: 'ok' })
@@ -222,41 +235,40 @@ describe('useArtifactPreview coverage', () => {
     app.unmount()
   })
 
-  it('drives version choice, labels, and menu outside-click behavior', async () => {
-    const run = {
-      nodes: [{ id: 'n1', type: 'visual' }],
-      nodeExecutions: {
-        n1: [
-          { nodeId: 'n1', status: 'completed', iteration: 1, outputs: { page: '<h1>old</h1>' } },
-          { nodeId: 'n1', status: 'completed', iteration: 2, outputs: { page: '<h1>new</h1>' } },
-        ],
-      },
-    } as never
-    const { preview, app } = mountPreview({
-      artifact: artifact({ id: 'page', name: 'page.html', kind: 'html', nodeId: 'n1', content: '<h1>new</h1>' }),
-      run,
+  it('drives version choice and historical labels from the versions API', async () => {
+    mocks.artifactVersions.mockResolvedValueOnce([
+      { artifactId: 'page', revision: 1, nodeId: 'n1', sizeBytes: 8, createdAt: 't1' },
+    ])
+    mocks.artifactVersionContent.mockResolvedValueOnce({
+      artifactId: 'page',
+      revision: 1,
+      nodeId: 'n1',
+      sizeBytes: 8,
+      createdAt: 't1',
+      content: '<h1>old</h1>',
     })
-    await nextTick()
+    const { preview, app } = mountPreview({
+      artifact: artifact({
+        id: 'page',
+        name: 'page.html',
+        kind: 'html',
+        nodeId: 'n1',
+        content: '<h1>new</h1>',
+        revision: 2,
+      }),
+    })
+    await flushPromises()
     expect(preview.showVersionChip.value).toBe(true)
     expect(preview.selectedChoice.value?.latest).toBe(true)
     expect(preview.currentChipLabel.value).toContain('versionChipLatest')
     const old = preview.versionChoices.value[0]!
-    preview.selectVersion({ ...old, available: false })
+    await preview.selectVersion({ ...old, available: false })
     expect(preview.selectedChoice.value?.latest).toBe(true)
-    preview.selectVersion(old)
-    await nextTick()
+    await preview.selectVersion(old)
+    await flushPromises()
     expect(preview.viewingHistorical.value).toBe(true)
     expect(preview.versionChipLabel(old)).toContain('versionChip')
     expect(preview.showDelete.value).toBe(false)
-
-    preview.toggleVersionMenu()
-    preview.onVersionMenuDocClick({
-      target: { closest: () => ({}) },
-    } as unknown as MouseEvent)
-    expect(preview.versionMenuOpen.value).toBe(true)
-    preview.onVersionMenuDocClick({ target: document.body } as unknown as MouseEvent)
-    expect(preview.versionMenuOpen.value).toBe(false)
-    preview.onVersionMenuDocClick({ target: document.body } as unknown as MouseEvent)
     app.unmount()
   })
 

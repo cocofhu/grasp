@@ -52,6 +52,31 @@ export const artifactsClient = {
   },
   artifactContent: (id: string, opts?: { signal?: AbortSignal }) =>
     req<Artifact>(`/artifacts/${id}/content`, opts?.signal ? { signal: opts.signal } : undefined),
+  artifactVersions: (id: string, opts?: { signal?: AbortSignal }) =>
+    req<
+      Array<{
+        artifactId: string
+        runId?: string
+        nodeId: string
+        revision: number
+        kind?: string
+        sizeBytes: number
+        createdAt: string
+      }>
+    >(`/artifacts/${id}/versions`, opts?.signal ? { signal: opts.signal } : undefined),
+  artifactVersionContent: (id: string, rev: number, opts?: { signal?: AbortSignal }) =>
+    req<{
+      artifactId: string
+      revision: number
+      nodeId: string
+      kind?: string
+      sizeBytes: number
+      createdAt: string
+      content: string
+    }>(
+      `/artifacts/${id}/versions/${rev}/content`,
+      opts?.signal ? { signal: opts.signal } : undefined,
+    ),
   artifactDownloadUrl: (id: string) => `${origin()}/api/artifacts/${id}/download`,
   /** Session pack download for one Run's artifacts (platform Artifacts page). */
   packRunArtifactsUrl: (runId: string) => `${origin()}/api/runs/${encodeURIComponent(runId)}/artifacts/pack`,

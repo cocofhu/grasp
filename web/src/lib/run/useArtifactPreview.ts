@@ -1,7 +1,7 @@
 /**
  * Artifact preview: branch routing, version chip, load/export/delete orchestration.
  */
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
 import { useReviewAnnotate } from '@/lib/inbox/reviewAnnotate'
@@ -10,10 +10,9 @@ import { isImagePreviewArtifact, resolveArtifactPreviewBranch } from '@/componen
 import {
   artifactFingerprint,
   isHistoricalStageArtifact,
-  listVisualPageVersionChoices,
-  resolveVisualPagePreviewArtifact,
-  type VisualPageVersionChoice,
+  type ArtifactVersionChoice,
 } from '@/lib/run/reactArtifactPreview'
+import { useArtifactVersions } from '@/lib/run/useArtifactVersions'
 import { renderMarkdown } from '@/lib/shared/markdown'
 import { isJsonArtifact, parseJsonState } from '@/lib/shared/highlightJson'
 import { fmtTime } from '@/lib/shared/format'
@@ -35,6 +34,7 @@ export interface ArtifactPreviewProps {
   hideCopy?: boolean
   hideZoom?: boolean
   hideExport?: boolean
+  hideVersionChip?: boolean
   annotatable?: boolean
   /** When set, load content via public review-share token instead of session API. */
   shareToken?: string
@@ -76,31 +76,32 @@ const structuredExportRootInline = ref<HTMLElement | null>(null)
 const structuredExportRootZoom = ref<HTMLElement | null>(null)
 const exporting = ref(false)
 
-/** page.html version chip (g2.1): aligned with ReactArtifactStage. */
-const versionMenuOpen = ref(false)
+const versions = useArtifactVersions()
 const selectedVersionIndex = ref<number | null>(null)
 
-const versionChoices = computed(() =>
-  listVisualPageVersionChoices(props.run, props.artifact),
+const versionChoices = computed(() => versions.choicesFor(props.artifact))
+const showVersionChip = computed(
+  () => !props.hideVersionChip && !props.shareToken && versionChoices.value.length >= 2,
 )
-const showVersionChip = computed(() => versionChoices.value.length >= 2)
 
-const selectedChoice = computed((): VisualPageVersionChoice | null => {
+const selectedChoice = computed((): ArtifactVersionChoice | null => {
   const choices = versionChoices.value
   if (!choices.length) return null
   const picked = selectedVersionIndex.value
   return choices.find((c) => c.index === picked) || choices[choices.length - 1]
 })
 
-/** Live list row vs historical snapshot resolved for preview (g2.1 / g2.2). */
 const displayArtifact = computed(() => {
   if (!props.artifact) return null
-  return resolveVisualPagePreviewArtifact(props.artifact, selectedChoice.value)
+  return versions.resolveVersionedArtifact(props.artifact, selectedChoice.value)
 })
 
-const viewingHistorical = computed(() => isHistoricalStageArtifact(displayArtifact.value))
+const viewingHistorical = computed(() => {
+  const sel = selectedChoice.value
+  return !!sel && !sel.latest
+})
 
-function versionChipLabel(choice: VisualPageVersionChoice): string {
+function versionChipLabel(choice: ArtifactVersionChoice): string {
   if (choice.latest) return t('pages.reactArtifactStage.versionChipLatest', { n: choice.index })
   return t('pages.reactArtifactStage.versionChip', { n: choice.index })
 }
@@ -110,39 +111,40 @@ const currentChipLabel = computed(() => {
   return sel ? versionChipLabel(sel) : ''
 })
 
-function selectVersion(choice: VisualPageVersionChoice) {
+async function selectVersion(choice: ArtifactVersionChoice) {
   if (!choice.available) return
+  const a = props.artifact
+  if (a && !choice.latest) {
+    try {
+      await versions.ensureVersionContent(a.id, choice.revision)
+    } catch {
+      return
+    }
+  }
   selectedVersionIndex.value = choice.index
-  versionMenuOpen.value = false
-}
-
-function toggleVersionMenu() {
-  versionMenuOpen.value = !versionMenuOpen.value
-}
-
-function onVersionMenuDocClick(e: MouseEvent) {
-  if (!versionMenuOpen.value) return
-  const el = e.target as HTMLElement | null
-  if (el?.closest?.('[data-testid="artifact-preview-version-chip"]')) return
-  versionMenuOpen.value = false
 }
 
 watch(
-  () =>
-    `${props.artifact?.id || ''}|${versionChoices.value.map((c) => `${c.index}:${c.available ? '1' : '0'}`).join(',')}`,
+  () => `${props.artifact?.id || ''}:${props.artifact?.revision ?? ''}`,
   () => {
     selectedVersionIndex.value = null
-    versionMenuOpen.value = false
-    const choices = versionChoices.value
-    if (choices.length < 2) return
-    const latest = choices[choices.length - 1]
-    if (latest?.available) selectedVersionIndex.value = latest.index
+    const id = props.artifact?.id
+    if (!id || props.shareToken) return
+    void versions.ensureVersions(id, undefined, true).then(() => {
+      const choices = versions.choicesFor(props.artifact)
+      const latest = choices[choices.length - 1]
+      if (latest?.available) selectedVersionIndex.value = latest.index
+    })
   },
+  { immediate: true },
 )
 
-const activeContent = computed(() =>
-  displayArtifact.value ? contentCache.value[displayArtifact.value.id] ?? '' : '',
-)
+const activeContent = computed(() => {
+  const a = displayArtifact.value
+  if (!a) return ''
+  if (viewingHistorical.value && typeof a.content === 'string') return a.content
+  return contentCache.value[a.id] ?? (typeof a.content === 'string' ? a.content : '')
+})
 const activeIsHtml = computed(() => displayArtifact.value?.kind === 'html')
 const activeIsJson = computed(() => isJsonArtifact(displayArtifact.value))
 
@@ -320,8 +322,11 @@ async function copyContent() {
 function download() {
   const a = displayArtifact.value
   if (!a) return
-  // Historical snapshots only exist in-memory; download from cached content (g2.2 read-only).
-  if (isHistoricalStageArtifact(a) && typeof contentCache.value[a.id] === 'string') {
+  // Historical snapshots are fetched on demand; download from cached content.
+  if (
+    (viewingHistorical.value || isHistoricalStageArtifact(a)) &&
+    typeof contentCache.value[a.id] === 'string'
+  ) {
     const blob = new Blob([contentCache.value[a.id]], { type: 'text/html;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -413,7 +418,8 @@ watch(
   () => {
     const a = displayArtifact.value
     if (!a) return ''
-    return artifactFingerprint(a)
+    const sel = selectedChoice.value
+    return `${artifactFingerprint(a)}:${sel && !sel.latest ? sel.revision : 'live'}`
   },
   (fp, prev) => {
     // Same content/version fingerprint: skip reload so iframe / StructuredArtifactView stay mounted (g2.2).
@@ -443,14 +449,12 @@ watch(
   { immediate: true },
 )
 
-onMounted(() => document.addEventListener('click', onVersionMenuDocClick))
 onBeforeUnmount(() => {
   contentLoadAbort?.abort()
   contentLoadAbort = null
   contentLoadGen++
   imageLoadGen++
   revokeImageBlob()
-  document.removeEventListener('click', onVersionMenuDocClick)
 })
 
   return {
@@ -475,7 +479,6 @@ onBeforeUnmount(() => {
   structuredExportRootInline,
   structuredExportRootZoom,
   exporting,
-  versionMenuOpen,
   selectedVersionIndex,
   versionChoices,
   showVersionChip,
@@ -485,8 +488,6 @@ onBeforeUnmount(() => {
   versionChipLabel,
   currentChipLabel,
   selectVersion,
-  toggleVersionMenu,
-  onVersionMenuDocClick,
   activeContent,
   activeIsHtml,
   activeIsJson,

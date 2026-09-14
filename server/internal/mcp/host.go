@@ -10,10 +10,12 @@ package mcp
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 
@@ -469,6 +471,13 @@ func (h *Host) UploadImageArtifact(runID, token, nodeID, name, content string) (
 	}
 	if content == "" {
 		return "", fmt.Errorf("upload_image_artifact: content 不能为空")
+	}
+	raw, err := base64.StdEncoding.DecodeString(content)
+	if err != nil {
+		return "", fmt.Errorf("upload_image_artifact: content 不是合法 base64")
+	}
+	if mime := http.DetectContentType(raw); !strings.HasPrefix(mime, "image/") {
+		return "", fmt.Errorf("upload_image_artifact: 只接受图片，检测到 %s；HTML/文本产物请改用 write_artifact", mime)
 	}
 	if strings.TrimSpace(nodeID) == "" {
 		nodeID = "artifact-upload"

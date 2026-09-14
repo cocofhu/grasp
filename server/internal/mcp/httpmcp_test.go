@@ -456,3 +456,29 @@ func TestApproveNodePreDevTools(t *testing.T) {
 		t.Fatal("set_implementation_result must stay blocked on approve")
 	}
 }
+
+func TestUploadImageArtifactSniffsContent(t *testing.T) {
+	store := &memStore{}
+	h := NewHost(store)
+	runID := "sniff-run"
+	tok := h.RegisterRun(runID)
+	h.SetActiveNode(runID, "tst", "test")
+
+	ok, err := h.UploadImageArtifact(runID, tok, "tst", "shot.png", pngB64())
+	if err != nil || ok == "" {
+		t.Fatalf("png header should pass: id=%q err=%v", ok, err)
+	}
+	if got := store.kindOf(runID, "shot.png"); got != "image" {
+		t.Fatalf("kind=%q", got)
+	}
+
+	_, err = h.UploadImageArtifact(runID, tok, "tst", "page-as-shot.png", htmlB64())
+	if err == nil || !strings.Contains(err.Error(), "write_artifact") {
+		t.Fatalf("html upload should be rejected with write_artifact hint, got %v", err)
+	}
+
+	_, err = h.UploadImageArtifact(runID, tok, "tst", "bad.png", "not-base64!!!")
+	if err == nil || !strings.Contains(err.Error(), "base64") {
+		t.Fatalf("invalid base64 should be rejected, got %v", err)
+	}
+}

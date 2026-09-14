@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/services"
@@ -57,6 +58,44 @@ func (h *Handlers) ArtifactContent(c *gin.Context) {
 	}
 	c.Header("ETag", etag)
 	c.JSON(http.StatusOK, out)
+}
+
+// ArtifactVersions lists archived snapshots for one artifact (metadata only).
+func (h *Handlers) ArtifactVersions(c *gin.Context) {
+	a, ok := h.Arts.GetByID(c.Param("id"))
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	c.JSON(http.StatusOK, h.Arts.ListVersions(a.ID))
+}
+
+// ArtifactVersionContent returns one archived snapshot including its content.
+func (h *Handlers) ArtifactVersionContent(c *gin.Context) {
+	a, ok := h.Arts.GetByID(c.Param("id"))
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	rev, err := strconv.Atoi(c.Param("rev"))
+	if err != nil || rev < 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid revision"})
+		return
+	}
+	ver, ok := h.Arts.GetVersion(a.ID, rev)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"artifactId": ver.ArtifactID,
+		"revision":   ver.Revision,
+		"nodeId":     ver.NodeID,
+		"kind":       ver.Kind,
+		"sizeBytes":  ver.SizeBytes,
+		"createdAt":  ver.CreatedAt,
+		"content":    ver.Content,
+	})
 }
 
 func (h *Handlers) DownloadArtifact(c *gin.Context) {

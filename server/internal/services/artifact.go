@@ -48,15 +48,28 @@ func (s *ArtifactService) Save(runID, nodeID, name, kind, content string) (strin
 	// Replace an existing same-named artifact within the run (idempotent writes).
 	var existing models.Artifact
 	if err := s.db.Where("run_id = ? AND name = ?", runID, name).First(&existing).Error; err == nil {
+		if existing.Revision < 1 {
+			existing.Revision = 1
+		}
+		// Content-identical re-saves (finalizeVisual / liftProduct) bump the
+		// timestamp for ETag banners but must not create a version row.
+		if existing.Content != content {
+			ver := models.ArtifactVersion{
+				ArtifactID: existing.ID, RunID: existing.RunID, NodeID: existing.NodeID,
+				Revision: existing.Revision, Kind: existing.Kind,
+				SizeBytes: existing.SizeBytes, Content: existing.Content,
+				CreatedAt: existing.UpdatedAt,
+			}
+			if err := s.db.Create(&ver).Error; err != nil {
+				return "", err
+			}
+			existing.Revision++
+		}
 		existing.Content = content
 		existing.Kind = kind
 		existing.NodeID = nodeID
 		existing.SizeBytes = len(content)
 		existing.UpdatedAt = now
-		if existing.Revision < 1 {
-			existing.Revision = 1
-		}
-		existing.Revision++
 		if err := s.db.Save(&existing).Error; err != nil {
 			return "", err
 		}
@@ -109,7 +122,17 @@ func (s *ArtifactService) Delete(runID, name string) error {
 	if runID == "" || name == "" {
 		return nil
 	}
-	return s.db.Where("run_id = ? AND name = ?", runID, name).Delete(&models.Artifact{}).Error
+	var existing models.Artifact
+	if err := s.db.Where("run_id = ? AND name = ?", runID, name).First(&existing).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	if err := s.deleteVersionsForArtifact(existing.ID); err != nil {
+		return err
+	}
+	return s.db.Delete(&existing).Error
 }
 
 var _ mcp.ArtifactDeleter = (*ArtifactService)(nil)
@@ -133,6 +156,9 @@ func (s *ArtifactService) ByRunWithContent(runID string) []models.Artifact {
 func (s *ArtifactService) DeleteForRuns(runIDs ...string) error {
 	if len(runIDs) == 0 {
 		return nil
+	}
+	if err := s.db.Where("run_id IN ?", runIDs).Delete(&models.ArtifactVersion{}).Error; err != nil {
+		return err
 	}
 	return s.db.Delete(&models.Artifact{}, "run_id IN ?", runIDs).Error
 }
@@ -253,5 +279,31 @@ func (s *ArtifactService) DeleteByID(id string) error {
 	if err == nil && !containsString(terminalRunStatuses, run.Status) {
 		return fmt.Errorf("%w (status %q; allowed: completed, failed, cancelled)", ErrArtifactRunNotTerminal, run.Status)
 	}
+	if err := s.deleteVersionsForArtifact(id); err != nil {
+		return err
+	}
 	return s.db.Delete(&models.Artifact{}, "id = ?", id).Error
+}
+
+func (s *ArtifactService) deleteVersionsForArtifact(artifactID string) error {
+	if artifactID == "" {
+		return nil
+	}
+	return s.db.Where("artifact_id = ?", artifactID).Delete(&models.ArtifactVersion{}).Error
+}
+
+// ListVersions returns archived snapshots for an artifact (no content).
+func (s *ArtifactService) ListVersions(artifactID string) []models.ArtifactVersion {
+	var vers []models.ArtifactVersion
+	s.db.Where("artifact_id = ?", artifactID).Omit("Content").Order("revision").Find(&vers)
+	return vers
+}
+
+// GetVersion returns one archived snapshot including content.
+func (s *ArtifactService) GetVersion(artifactID string, revision int) (models.ArtifactVersion, bool) {
+	var v models.ArtifactVersion
+	if err := s.db.Where("artifact_id = ? AND revision = ?", artifactID, revision).First(&v).Error; err != nil {
+		return models.ArtifactVersion{}, false
+	}
+	return v, true
 }

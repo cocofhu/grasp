@@ -327,6 +327,22 @@ type Artifact struct {
 	RunTitle string `gorm:"->;column:run_title" json:"runTitle,omitempty"`
 }
 
+// ArtifactVersion is a superseded Artifact.Content snapshot. One row per
+// same-name overwrite; the live Artifact row is always the highest revision.
+type ArtifactVersion struct {
+	ID         uint   `gorm:"primaryKey" json:"-"`
+	ArtifactID string `gorm:"index:idx_artver_art_rev,priority:1" json:"artifactId"`
+	RunID      string `gorm:"index" json:"runId"`
+	// NodeID is the node that wrote THIS version, not the one that replaced it.
+	NodeID    string `json:"nodeId"`
+	Revision  int    `gorm:"index:idx_artver_art_rev,priority:2" json:"revision"`
+	Kind      string `json:"kind"`
+	SizeBytes int    `json:"sizeBytes"`
+	Content   string `json:"-"`
+	// CreatedAt is when this version was superseded (the old row's UpdatedAt).
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 // Gate is a pending human decision (set when a human_gate node pauses).
 // Iteration is the per-node execution index this gate belongs to, so a run that
 // loops back onto the same gate opens a fresh decision each time (each visit is
@@ -744,7 +760,7 @@ func AllModels() []any {
 	return []any{
 		&Project{},
 		&WorkflowDef{}, &WorkflowVersion{}, &Run{}, &StateRun{},
-		&RunVariable{}, &Artifact{}, &Gate{}, &ReactConversation{},
+		&RunVariable{}, &Artifact{}, &ArtifactVersion{}, &Gate{}, &ReactConversation{},
 		&Sandbox{}, &SandboxLog{}, &Setting{}, &Session{}, &WorkflowAPIKey{},
 		&RunPreviewPort{}, &PreviewIssue{}, &FeedbackEvent{},
 		&ProjectMemoryItem{}, &ChatThread{}, &ChatMessage{}, &ChatTurnDraft{},

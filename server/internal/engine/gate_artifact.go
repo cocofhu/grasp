@@ -248,7 +248,7 @@ func (e *Engine) syncUpstreamOutputs(c *execCtx, gate *models.Gate, gateNode *mo
 		outKey = gatenode.ArtifactToOutputKey[norm.Name]
 	}
 	if outKey == "page" || norm.Name == "page.html" {
-		recordPageRevision(outs, norm.Content)
+		outs["page"] = norm.Content
 	} else if outKey != "" {
 		outs[outKey] = norm.Rendered
 		jsonKey := norm.JSONKey
@@ -284,45 +284,6 @@ func artifactETag(content string, size int) string {
 func artifactETagWithTime(content string, t time.Time) string {
 	sum := sha256.Sum256([]byte(content))
 	return fmt.Sprintf("W/\"%d-%s\"", t.UnixNano(), hex.EncodeToString(sum[:8]))
-}
-
-// pageHistoryOutputKey stores previous page.html snapshots on StateRun.Outputs
-// so each distinct write is a selectable preview version (not only FSM iterations).
-const pageHistoryOutputKey = "page_history"
-
-func pageHistorySlice(v any) []string {
-	switch x := v.(type) {
-	case []string:
-		out := make([]string, len(x))
-		copy(out, x)
-		return out
-	case []any:
-		out := make([]string, 0, len(x))
-		for _, item := range x {
-			s, ok := item.(string)
-			if !ok || strings.TrimSpace(s) == "" {
-				continue
-			}
-			out = append(out, s)
-		}
-		return out
-	default:
-		return nil
-	}
-}
-
-// recordPageRevision appends the previous outputs.page before overwriting it.
-// Identical or empty previous content is skipped so no-op writes do not mint versions.
-func recordPageRevision(outs map[string]any, newContent string) {
-	oldPage, _ := outs["page"].(string)
-	if strings.TrimSpace(oldPage) != "" && oldPage != newContent {
-		hist := pageHistorySlice(outs[pageHistoryOutputKey])
-		if n := len(hist); n == 0 || hist[n-1] != oldPage {
-			hist = append(hist, oldPage)
-			outs[pageHistoryOutputKey] = hist
-		}
-	}
-	outs["page"] = newContent
 }
 
 // ArtifactETag returns the concurrency token for an artifact payload.
@@ -380,7 +341,7 @@ func (e *Engine) syncAfterPrimaryArtifactWrite(runID, nodeID, name, content, kin
 		outs = map[string]any{}
 	}
 	if outKey == "page" || name == "page.html" {
-		recordPageRevision(outs, content)
+		outs["page"] = content
 	} else {
 		// Structured products: keep raw JSON + rendered markdown when possible.
 		outs[outKey+"_json"] = content

@@ -4,11 +4,13 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-import type { Artifact, Run } from '@/lib/shared/types'
+import type { Artifact } from '@/lib/shared/types'
 import ArtifactPreview from './ArtifactPreview.vue'
 
 const apiMocks = vi.hoisted(() => ({
   artifactContent: vi.fn(),
+  artifactVersions: vi.fn(),
+  artifactVersionContent: vi.fn(),
   artifactDownloadUrl: vi.fn((id: string) => `http://test/api/artifacts/${id}/download`),
   deleteArtifact: vi.fn(),
 }))
@@ -20,6 +22,8 @@ vi.mock('@/lib/api/api', async () => {
     api: {
       ...actual.api,
       artifactContent: apiMocks.artifactContent,
+      artifactVersions: apiMocks.artifactVersions,
+      artifactVersionContent: apiMocks.artifactVersionContent,
       artifactDownloadUrl: apiMocks.artifactDownloadUrl,
       deleteArtifact: apiMocks.deleteArtifact,
     },
@@ -37,38 +41,9 @@ function art(partial: Partial<Artifact> & Pick<Artifact, 'id' | 'name'>): Artifa
     runId: 'run-1',
     sizeBytes: 10,
     createdAt: '2026-08-10T12:00:00Z',
+    revision: 1,
     ...partial,
   } as Artifact
-}
-
-function multiVersionRun(): Run {
-  return {
-    id: 'run-1',
-    nodes: [{ id: 'visual_1', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} }],
-    nodeExecutions: {
-      visual_1: [
-        { nodeId: 'visual_1', iteration: 1, status: 'completed', outputs: { page: '<p>old</p>' } },
-        { nodeId: 'visual_1', iteration: 2, status: 'waiting_human', outputs: { page: '<p>new</p>' } },
-      ],
-    },
-  } as unknown as Run
-}
-
-function pageHistoryRun(): Run {
-  return {
-    id: 'run-1',
-    nodes: [{ id: 'visual_1', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} }],
-    nodeExecutions: {
-      visual_1: [
-        {
-          nodeId: 'visual_1',
-          iteration: 1,
-          status: 'waiting_human',
-          outputs: { page: '<p>v2</p>', page_history: ['<p>v1</p>'] },
-        },
-      ],
-    },
-  } as unknown as Run
 }
 
 function mountPreview(artifact: Artifact | null, extra: Record<string, unknown> = {}) {
@@ -79,9 +54,11 @@ function mountPreview(artifact: Artifact | null, extra: Record<string, unknown> 
   })
   return mount(ArtifactPreview, {
     props: { artifact, scope: 'platform', ...extra },
+    attachTo: document.body,
     global: {
       plugins: [i18n],
       stubs: {
+        Teleport: false,
         Icon: true,
         HtmlPreview: {
           props: ['html', 'inspectable'],
@@ -105,8 +82,7 @@ function mountPreview(artifact: Artifact | null, extra: Record<string, unknown> 
   })
 }
 
-/** g3.1: ArtifactPreview page.html version chip (plan leaf evidence). */
-describe('ArtifactPreview page.html version switch (g2 / g3.1)', () => {
+describe('ArtifactPreview version switch', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     apiMocks.artifactContent.mockImplementation(async (id: string) => ({
@@ -115,15 +91,28 @@ describe('ArtifactPreview page.html version switch (g2 / g3.1)', () => {
       kind: 'html',
       content: '<p>new</p>',
     }))
+    apiMocks.artifactVersions.mockResolvedValue([])
+    apiMocks.artifactVersionContent.mockResolvedValue({
+      artifactId: 'live',
+      revision: 1,
+      nodeId: 'visual_1',
+      sizeBytes: 8,
+      createdAt: 't1',
+      content: '<p>old</p>',
+    })
   })
 
   afterEach(() => {
+    document.body.innerHTML = ''
     vi.restoreAllMocks()
   })
 
-  it('shows version chip for ≥2 choices and switches historical HTML (g2.1)', async () => {
-    const live = art({ id: 'live', name: 'page.html', content: '<p>new</p>' })
-    const wrapper = mountPreview(live, { run: multiVersionRun() })
+  it('shows version chip for ≥2 revisions and switches historical content', async () => {
+    apiMocks.artifactVersions.mockResolvedValue([
+      { artifactId: 'live', revision: 1, nodeId: 'visual_1', sizeBytes: 8, createdAt: 't1' },
+    ])
+    const live = art({ id: 'live', name: 'page.html', content: '<p>new</p>', revision: 2 })
+    const wrapper = mountPreview(live)
     await flushPromises()
 
     expect(wrapper.get('[data-testid="artifact-preview-version-chip-btn"]').text()).toContain('v2 · 最新')
@@ -131,17 +120,21 @@ describe('ArtifactPreview page.html version switch (g2 / g3.1)', () => {
 
     await wrapper.get('[data-testid="artifact-preview-version-chip-btn"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="artifact-preview-version-option-v1"]').text()).toBe('v1')
-    expect(wrapper.get('[data-testid="artifact-preview-version-option-v2"]').text()).toContain('v2 · 最新')
+    expect(document.querySelector('[data-testid="artifact-preview-version-option-v1"]')?.textContent).toBe('v1')
+    expect(document.querySelector('[data-testid="artifact-preview-version-option-v2"]')?.textContent).toContain(
+      'v2 · 最新',
+    )
 
-    await wrapper.get('[data-testid="artifact-preview-version-option-v1"]').trigger('click')
+    ;(document.querySelector('[data-testid="artifact-preview-version-option-v1"]') as HTMLButtonElement).click()
     await flushPromises()
+    expect(apiMocks.artifactVersionContent).toHaveBeenCalledWith('live', 1, undefined)
     expect(wrapper.get('[data-testid="html-preview-stub"]').text()).toBe('<p>old</p>')
     expect(wrapper.find('[data-testid="artifact-preview-historical-readonly"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="artifact-preview-delete"]').exists()).toBe(false)
 
     await wrapper.get('[data-testid="artifact-preview-version-chip-btn"]').trigger('click')
-    await wrapper.get('[data-testid="artifact-preview-version-option-v2"]').trigger('click')
+    await flushPromises()
+    ;(document.querySelector('[data-testid="artifact-preview-version-option-v2"]') as HTMLButtonElement).click()
     await flushPromises()
     expect(wrapper.get('[data-testid="html-preview-stub"]').text()).toBe('<p>new</p>')
     expect(wrapper.find('[data-testid="artifact-preview-historical-readonly"]').exists()).toBe(false)
@@ -149,80 +142,47 @@ describe('ArtifactPreview page.html version switch (g2 / g3.1)', () => {
     wrapper.unmount()
   })
 
-  it('hides chip for single version (g2.2)', async () => {
-    const live = art({ id: 'live', name: 'page.html', content: '<p>only</p>' })
-    const run = {
-      id: 'run-1',
-      nodes: [{ id: 'visual_1', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} }],
-      nodeExecutions: {
-        visual_1: [{ nodeId: 'visual_1', iteration: 1, status: 'completed', outputs: { page: '<p>only</p>' } }],
-      },
-    } as unknown as Run
-    const wrapper = mountPreview(live, { run })
+  it('hides chip for a single revision', async () => {
+    const live = art({ id: 'live', name: 'page.html', content: '<p>only</p>', revision: 1 })
+    const wrapper = mountPreview(live)
     await flushPromises()
     expect(wrapper.find('[data-testid="artifact-preview-version-chip"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="html-preview-stub"]').text()).toBe('<p>only</p>')
     wrapper.unmount()
   })
 
-  it('does not show chip for non-page.html artifacts (g3.2)', async () => {
+  it('shows the version chip for plan.json when archived revisions exist', async () => {
+    apiMocks.artifactVersions.mockResolvedValue([
+      { artifactId: 'j1', revision: 1, nodeId: 'plan', sizeBytes: 8, createdAt: 't1' },
+    ])
+    apiMocks.artifactVersionContent.mockResolvedValue({
+      artifactId: 'j1',
+      revision: 1,
+      nodeId: 'plan',
+      sizeBytes: 8,
+      createdAt: 't1',
+      content: JSON.stringify({ title: '旧计划', goals: [] }),
+    })
     const json = art({
       id: 'j1',
       name: 'plan.json',
       kind: 'json',
+      revision: 2,
       content: JSON.stringify({ title: '计划', goals: [] }),
     })
-    const wrapper = mountPreview(json, { run: multiVersionRun() })
+    const wrapper = mountPreview(json)
     await flushPromises()
-    expect(wrapper.find('[data-testid="artifact-preview-version-chip"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="artifact-preview-version-chip"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('degrades without chip when run is null (g1.1 load failure)', async () => {
-    const live = art({ id: 'live', name: 'page.html', content: '<p>fallback</p>' })
-    const wrapper = mountPreview(live, { run: null })
+  it('hides the chip when version list fetch fails', async () => {
+    apiMocks.artifactVersions.mockRejectedValue(new Error('offline'))
+    const live = art({ id: 'live', name: 'page.html', content: '<p>fallback</p>', revision: 3 })
+    const wrapper = mountPreview(live)
     await flushPromises()
     expect(wrapper.find('[data-testid="artifact-preview-version-chip"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="html-preview-stub"]').text()).toBe('<p>fallback</p>')
-    wrapper.unmount()
-  })
-
-  it('supports page_history versions and keeps historical inspectable=off (g2.2)', async () => {
-    const live = art({ id: 'live', name: 'page.html', content: '<p>v2</p>' })
-    const wrapper = mountPreview(live, { run: pageHistoryRun(), annotatable: true })
-    await flushPromises()
-    expect(wrapper.get('[data-testid="artifact-preview-version-chip-btn"]').text()).toContain('v2 · 最新')
-    expect(wrapper.get('[data-testid="html-preview-stub"]').attributes('data-inspectable')).toBe('0')
-
-    await wrapper.get('[data-testid="artifact-preview-version-chip-btn"]').trigger('click')
-    await wrapper.get('[data-testid="artifact-preview-version-option-v1"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.get('[data-testid="html-preview-stub"]').text()).toBe('<p>v1</p>')
-    expect(wrapper.get('[data-testid="html-preview-stub"]').attributes('data-inspectable')).toBe('0')
-    expect(wrapper.find('[data-testid="artifact-preview-delete"]').exists()).toBe(false)
-    wrapper.unmount()
-  })
-
-  it('disables unavailable historical option (g2.2)', async () => {
-    const live = art({ id: 'live', name: 'page.html', content: '<p>new</p>' })
-    const run = {
-      id: 'run-1',
-      nodes: [{ id: 'visual_1', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} }],
-      nodeExecutions: {
-        visual_1: [
-          { nodeId: 'visual_1', iteration: 1, status: 'completed', outputs: {} },
-          { nodeId: 'visual_1', iteration: 2, status: 'waiting_human', outputs: { page: '<p>new</p>' } },
-        ],
-      },
-    } as unknown as Run
-    const wrapper = mountPreview(live, { run })
-    await flushPromises()
-    await wrapper.get('[data-testid="artifact-preview-version-chip-btn"]').trigger('click')
-    const missing = wrapper.get('[data-testid="artifact-preview-version-option-v1"]')
-    expect(missing.attributes('disabled')).toBeDefined()
-    await missing.trigger('click')
-    await flushPromises()
-    expect(wrapper.get('[data-testid="html-preview-stub"]').text()).toBe('<p>new</p>')
     wrapper.unmount()
   })
 })

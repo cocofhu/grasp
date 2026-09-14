@@ -1,9 +1,18 @@
 package mcp
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 )
+
+func pngB64() string {
+	return base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\n"))
+}
+
+func htmlB64() string {
+	return base64.StdEncoding.EncodeToString([]byte("<!doctype html>"))
+}
 
 func TestExpectedKindForReservedName(t *testing.T) {
 	cases := []struct {
@@ -240,7 +249,7 @@ func TestUploadImageArtifactChannel(t *testing.T) {
 	}
 
 	// upload_image_artifact succeeds (simulates artifact-upload CLI).
-	okResp := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"upload_image_artifact","arguments":{"name":"shot-e2e.png","content":"BASE64PNG"}}}`)
+	okResp := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"upload_image_artifact","arguments":{"name":"shot-e2e.png","content":"`+pngB64()+`"}}}`)
 	if okResp["result"].(map[string]any)["isError"] == true {
 		t.Fatalf("upload_image_artifact failed: %v", okResp)
 	}
@@ -274,7 +283,7 @@ func TestUploadImageArtifactChannel(t *testing.T) {
 	}
 
 	// Wrong token rejected.
-	if _, err := h.UploadImageArtifact(runID, "wrong-token", "tst", "nope.png", "PNG"); err == nil {
+	if _, err := h.UploadImageArtifact(runID, "wrong-token", "tst", "nope.png", pngB64()); err == nil {
 		t.Fatal("unauthorized upload should fail")
 	}
 }

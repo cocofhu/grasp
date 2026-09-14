@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import HtmlPreview from '@/components/ui/HtmlPreview.vue'
 import ArtifactPreview from '@/components/run/ArtifactPreview.vue'
+import ArtifactVersionSelect from '@/components/ui/ArtifactVersionSelect.vue'
 import NovncPreviewPanel from '@/components/run/NovncPreviewPanel.vue'
 import AppPreviewPanel from '@/components/run/AppPreviewPanel.vue'
 import PublicAppPreviewPanel from '@/components/run/PublicAppPreviewPanel.vue'
@@ -43,12 +44,10 @@ import {
   expandStageArtifacts,
   isHistoricalStageArtifact,
   isOwnNodeArtifact,
-  listVisualPageVersionChoices,
   loadStageOpenState,
   parseHistoricalStageArtifact,
   resolveEffectivePreviewPin,
   resolveStageRemoteKind,
-  resolveVisualPagePreviewArtifact,
   restoreStageOpenState,
   saveStageOpenState,
   shouldActivatePinnedPreview,
@@ -59,8 +58,9 @@ import {
   type ReactStageRemoteKind,
   type StageCardThumb,
   type StageTabUnreadKind,
-  type VisualPageVersionChoice,
+  type ArtifactVersionChoice,
 } from '@/lib/run/reactArtifactPreview'
+import { useArtifactVersions } from '@/lib/run/useArtifactVersions'
 
 const props = withDefaults(
   defineProps<{
@@ -147,8 +147,8 @@ const sandboxLoading = ref(false)
 let summaryThumbGen = 0
 let summaryThumbAbort: AbortController | null = null
 const summaryThumbFp: Record<string, string> = {}
-const versionMenuFor = ref<string | null>(null)
 const selectedVersionIndex = ref<Record<string, number>>({})
+const versions = useArtifactVersions()
 
 const resolvedRemoteKind = computed(() =>
   resolveStageRemoteKind({
@@ -256,10 +256,15 @@ const remoteTabLabel = computed(() =>
 )
 
 function artifactAnnotatable(a: Artifact | null): boolean {
+  if (!a) return false
+  const sel = selectedVersion(a)
+  if (sel && !sel.latest) return false
   return canAnnotateStageArtifact(!!props.annotatable, a, props.nodeId)
 }
 
 function artifactReadonly(a: Artifact): boolean {
+  const sel = selectedVersion(a)
+  if (sel && !sel.latest) return true
   return !isOwnNodeArtifact(a, props.nodeId) || isHistoricalStageArtifact(a)
 }
 
@@ -272,22 +277,22 @@ function artifactTitle(a: Artifact | null | undefined): string {
   return a.name.replace(/#iter-\d+$/, '') || a.name
 }
 
-function versionChoices(a: Artifact): VisualPageVersionChoice[] {
-  return listVisualPageVersionChoices(props.run, a)
+function versionChoices(a: Artifact): ArtifactVersionChoice[] {
+  return versions.choicesFor(a)
 }
 
 function showVersionChip(a: Artifact): boolean {
   return versionChoices(a).length >= 2
 }
 
-function selectedVersion(a: Artifact): VisualPageVersionChoice | null {
+function selectedVersion(a: Artifact): ArtifactVersionChoice | null {
   const choices = versionChoices(a)
   if (!choices.length) return null
   const picked = selectedVersionIndex.value[a.name]
   return choices.find((c) => c.index === picked) || choices[choices.length - 1]
 }
 
-function versionChipLabel(choice: VisualPageVersionChoice): string {
+function versionChipLabel(choice: ArtifactVersionChoice): string {
   if (choice.latest) return t('pages.reactArtifactStage.versionChipLatest', { n: choice.index })
   return t('pages.reactArtifactStage.versionChip', { n: choice.index })
 }
@@ -299,25 +304,20 @@ function currentChipLabel(a: Artifact): string {
 
 function resolvedArtifact(a: Artifact | null): Artifact | null {
   if (!a) return null
-  return resolveVisualPagePreviewArtifact(a, selectedVersion(a))
+  return versions.resolveVersionedArtifact(a, selectedVersion(a))
 }
 
-function selectVersion(a: Artifact, choice: VisualPageVersionChoice) {
+async function selectVersion(a: Artifact, choice: ArtifactVersionChoice) {
   if (!choice.available) return
+  if (!choice.latest) {
+    try {
+      await versions.ensureVersionContent(a.id, choice.revision)
+    } catch {
+      return
+    }
+  }
   selectedVersionIndex.value = { ...selectedVersionIndex.value, [a.name]: choice.index }
-  versionMenuFor.value = null
   activatePreview(a.name)
-}
-
-function toggleVersionMenu(name: string) {
-  versionMenuFor.value = versionMenuFor.value === name ? null : name
-}
-
-function onVersionMenuDocClick(e: MouseEvent) {
-  if (!versionMenuFor.value) return
-  const el = e.target as HTMLElement | null
-  if (el?.closest?.('[data-testid="react-artifact-version-chip"]')) return
-  versionMenuFor.value = null
 }
 
 const kindIcon: Record<string, string> = {
@@ -512,7 +512,7 @@ watch(
     const fps = stageArtifacts.value
       .filter(
         (a) =>
-          isVisibleAutoPinArtifact(a, stageArtifacts.value) &&
+          isVisibleAutoPinArtifact(a, stageArtifacts.value, props.run) &&
           isOwnNodeArtifact(a, own || undefined),
       )
       .map((a) => `${a.name}\0${artifactFingerprint(a)}`)
@@ -527,7 +527,7 @@ watch(
     const own = String(props.nodeId || '').trim()
     const visible = stageArtifacts.value.filter(
       (a) =>
-        isVisibleAutoPinArtifact(a, stageArtifacts.value) &&
+        isVisibleAutoPinArtifact(a, stageArtifacts.value, props.run) &&
         isOwnNodeArtifact(a, own || undefined),
     )
     const nextMap = buildArtifactFingerprintMap(visible)
@@ -703,6 +703,16 @@ watch(
 )
 
 watch(
+  () => stageArtifacts.value.map((a) => `${a.id}:${a.revision ?? ''}`).join('|'),
+  () => {
+    for (const a of stageArtifacts.value) {
+      if (a.id) void versions.ensureVersions(a.id, undefined, true)
+    }
+  },
+  { immediate: true },
+)
+
+watch(
   () =>
     stageArtifacts.value
       .map((a) => `${a.name}:${versionChoices(a).map((c) => `${c.index}:${c.available ? '1' : '0'}`).join(',')}`)
@@ -723,12 +733,10 @@ watch(
   },
 )
 
-onMounted(() => document.addEventListener('click', onVersionMenuDocClick))
 onBeforeUnmount(() => {
   stopApprovePreviewProbe()
   summaryThumbGen++
   summaryThumbAbort?.abort()
-  document.removeEventListener('click', onVersionMenuDocClick)
 })
 </script>
 
@@ -921,52 +929,19 @@ onBeforeUnmount(() => {
             </div>
             <div class="mt-0.5 flex items-center justify-between gap-1">
               <div class="min-w-0 truncate text-[11px] text-txt3">{{ metaLine(a) }}</div>
-              <div
+              <ArtifactVersionSelect
                 v-if="showVersionChip(a)"
-                class="relative shrink-0"
-                data-testid="react-artifact-version-chip"
-                @click.stop
-              >
-                <button
-                  type="button"
-                  class="rounded-md inline-flex items-center gap-0.5 border border-line bg-elevated px-1.5 py-px text-[10px] text-txt2 hover:border-line-strong hover:text-txt"
-                  :class="{ 'border-accent/60 text-txt': versionMenuFor === a.name }"
-                  :aria-expanded="versionMenuFor === a.name ? 'true' : 'false'"
-                  aria-haspopup="listbox"
-                  :aria-label="t('pages.reactArtifactStage.versionMenu')"
-                  :data-testid="'react-artifact-version-chip-btn-' + a.name"
-                  @click.stop="toggleVersionMenu(a.name)"
-                >
-                  <span>{{ currentChipLabel(a) }}</span>
-                </button>
-                <div
-                  v-if="versionMenuFor === a.name"
-                  role="listbox"
-                  class="rounded-lg absolute right-0 bottom-full z-20 mb-1 min-w-[7.5rem] border border-line bg-surface py-0.5"
-                  data-testid="react-artifact-version-menu"
-                >
-                  <button
-                    v-for="choice in versionChoices(a)"
-                    :key="choice.index"
-                    type="button"
-                    role="option"
-                    class="flex w-full items-center px-2.5 py-1.5 text-left text-[11px] transition"
-                    :class="
-                      !choice.available
-                        ? 'cursor-not-allowed text-txt3 opacity-45'
-                        : selectedVersion(a)?.index === choice.index
-                          ? 'bg-accent-dim text-txt'
-                          : 'text-txt2 hover:bg-elevated'
-                    "
-                    :aria-selected="selectedVersion(a)?.index === choice.index ? 'true' : 'false'"
-                    :disabled="!choice.available"
-                    :data-testid="'react-artifact-version-option-v' + choice.index"
-                    @click.stop="selectVersion(a, choice)"
-                  >
-                    {{ versionChipLabel(choice) }}
-                  </button>
-                </div>
-              </div>
+                :choices="versionChoices(a)"
+                :selected-index="selectedVersion(a)?.index"
+                :current-label="currentChipLabel(a)"
+                :menu-aria-label="t('pages.reactArtifactStage.versionMenu')"
+                chip-test-id="react-artifact-version-chip"
+                :button-test-id="'react-artifact-version-chip-btn-' + a.name"
+                menu-test-id="react-artifact-version-menu"
+                option-test-id-prefix="react-artifact-version-option-v"
+                :label-for="versionChipLabel"
+                @select="selectVersion(a, $event)"
+              />
             </div>
           </div>
         </div>
@@ -996,8 +971,9 @@ onBeforeUnmount(() => {
         :artifacts="stageArtifacts"
         :run-id="runId"
         hide-delete
+        hide-version-chip
         :share-token="token"
-        :annotatable="artifactAnnotatable(resolvedArtifact(artifactByName(name)))"
+        :annotatable="artifactAnnotatable(artifactByName(name))"
         class="min-h-0 flex-1"
       />
     </div>

@@ -9,6 +9,7 @@ import HtmlPreview from '../ui/HtmlPreview.vue'
 import StructuredArtifactView from './StructuredArtifactView.vue'
 import SelectionAddToChat from './SelectionAddToChat.vue'
 
+import ArtifactVersionSelect from '@/components/ui/ArtifactVersionSelect.vue'
 import { useArtifactPreview } from '@/lib/run/useArtifactPreview'
 import {
   artifactFriendlyNameKey,
@@ -25,6 +26,7 @@ const props = withDefaults(defineProps<ArtifactPreviewProps>(), {
   hideCopy: false,
   hideZoom: false,
   hideExport: false,
+  hideVersionChip: false,
   annotatable: false,
   shareToken: '',
 })
@@ -52,7 +54,6 @@ const {
   structuredExportRootInline,
   structuredExportRootZoom,
   exporting,
-  versionMenuOpen,
   selectedVersionIndex,
   versionChoices,
   showVersionChip,
@@ -62,8 +63,6 @@ const {
   versionChipLabel,
   currentChipLabel,
   selectVersion,
-  toggleVersionMenu,
-  onVersionMenuDocClick,
   activeContent,
   activeIsHtml,
   activeIsJson,
@@ -121,51 +120,19 @@ const modalTitle = computed(() =>
         {{ displayName }}
         <span v-if="friendlyName" class="ml-1.5 text-[10px] font-normal text-txt3">{{ technicalName }}</span>
       </span>
-      <div
+      <ArtifactVersionSelect
         v-if="showVersionChip"
-        class="relative shrink-0"
-        data-testid="artifact-preview-version-chip"
-      >
-        <button
-          type="button"
-          class="rounded-md inline-flex items-center gap-0.5 border border-line bg-elevated px-1.5 py-px text-[10px] text-txt2 hover:border-line-strong hover:text-txt"
-          :class="{ 'border-accent/60 text-txt': versionMenuOpen }"
-          :aria-expanded="versionMenuOpen ? 'true' : 'false'"
-          aria-haspopup="listbox"
-          :aria-label="t('pages.reactArtifactStage.versionMenu')"
-          data-testid="artifact-preview-version-chip-btn"
-          @click.stop="toggleVersionMenu"
-        >
-          <span>{{ currentChipLabel }}</span>
-        </button>
-        <div
-          v-if="versionMenuOpen"
-          role="listbox"
-          class="rounded-lg absolute right-0 top-full z-20 mt-1 min-w-[7.5rem] border border-line bg-surface py-0.5"
-          data-testid="artifact-preview-version-menu"
-        >
-          <button
-            v-for="choice in versionChoices"
-            :key="choice.index"
-            type="button"
-            role="option"
-            class="flex w-full items-center px-2.5 py-1.5 text-left text-[11px] transition"
-            :class="
-              !choice.available
-                ? 'cursor-not-allowed text-txt3 opacity-45'
-                : selectedChoice?.index === choice.index
-                  ? 'bg-accent-dim text-txt'
-                  : 'text-txt2 hover:bg-elevated'
-            "
-            :aria-selected="selectedChoice?.index === choice.index ? 'true' : 'false'"
-            :disabled="!choice.available"
-            :data-testid="'artifact-preview-version-option-v' + choice.index"
-            @click.stop="selectVersion(choice)"
-          >
-            {{ versionChipLabel(choice) }}
-          </button>
-        </div>
-      </div>
+        :choices="versionChoices"
+        :selected-index="selectedChoice?.index"
+        :current-label="currentChipLabel"
+        :menu-aria-label="t('pages.reactArtifactStage.versionMenu')"
+        chip-test-id="artifact-preview-version-chip"
+        button-test-id="artifact-preview-version-chip-btn"
+        menu-test-id="artifact-preview-version-menu"
+        option-test-id-prefix="artifact-preview-version-option-v"
+        :label-for="versionChipLabel"
+        @select="selectVersion"
+      />
       <span
         v-if="viewingHistorical"
         class="rounded-md shrink-0 border border-line px-1 py-px text-[10px] text-txt3"

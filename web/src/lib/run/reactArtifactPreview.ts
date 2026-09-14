@@ -1,12 +1,19 @@
-import type { Artifact, NodeRun, Run, WFNode } from '@/lib/shared/types'
+import type { Artifact, Run, WFNode } from '@/lib/shared/types'
 import { productArtifactName } from '@/lib/run/productNodeArtifacts'
-import { OUTPUT_KEY_TO_ARTIFACT } from '@/lib/run/structuredArtifacts'
 import { isClarifyInteractive } from '@/lib/shared/clarifyInteractive'
 
-const KNOWN_STAGE_GRID_NAMES = new Set(Object.values(OUTPUT_KEY_TO_ARTIFACT))
 const NODE_COMPLETE_ARTIFACT = 'node_complete.json'
 const FEEDBACK_INDEX_NAME = 'feedback_index.json'
 const FEEDBACK_PREFIX = 'feedback.'
+const RUN_ERROR_ARTIFACT = 'run_error.json'
+const PREVIEW_ANNOTATIONS_ARTIFACT = 'preview_annotations.json'
+
+const BOOKKEEPING_EXACT_NAMES = new Set([
+  NODE_COMPLETE_ARTIFACT,
+  FEEDBACK_INDEX_NAME,
+  RUN_ERROR_ARTIFACT,
+  PREVIEW_ANNOTATIONS_ARTIFACT,
+])
 
 export const REACT_STAGE_TAB_GRID = 'grid'
 /** Chrome “产物预览” empty surface (distinct from per-artifact `preview:` tabs). */
@@ -73,14 +80,6 @@ export function parseVisualNodePageName(name: string | null | undefined): string
   return nodeId
 }
 
-export function visualPageOwnerNodeId(artifact: Pick<Artifact, 'name' | 'nodeId'> | null | undefined): string {
-  if (!artifact) return ''
-  const fromName = parseVisualNodePageName(artifact.name)
-  if (fromName) return fromName
-  if (artifact.name === visualProductPageName()) return String(artifact.nodeId || '').trim()
-  return ''
-}
-
 /** Hide `{nodeId}.page.html` when page.html from the same visual node is also in the grid. */
 export function isSamePreviewVisualCopy(
   artifact: Pick<Artifact, 'name' | 'nodeId'>,
@@ -93,78 +92,38 @@ export function isSamePreviewVisualCopy(
   return String(page.nodeId || '').trim() === owner
 }
 
-export function listVisualNodeRuns(run: Run | null | undefined, nodeId: string | null | undefined): NodeRun[] {
-  if (!run || !nodeId) return []
-  return (run.nodeExecutions?.[nodeId] || [])
-    .filter((nodeRun) => nodeRun.status === 'completed' || nodeRun.status === 'waiting_human')
-    .sort((a, b) => (a.iteration ?? 0) - (b.iteration ?? 0))
+export type ArtifactVersionMeta = {
+  artifactId: string
+  revision: number
+  nodeId: string
+  sizeBytes: number
+  createdAt: string
 }
 
-export function listVisualPageVersions(run: Run | null | undefined, nodeId: string | null | undefined): NodeRun[] {
-  return listVisualNodeRuns(run, nodeId).filter(
-    (nodeRun) => typeof nodeRun.outputs?.page === 'string' && nodeRun.outputs.page.trim().length > 0,
-  )
-}
-
-export type VisualPageVersionChoice = {
+export type ArtifactVersionChoice = {
   index: number
-  iteration: number
+  revision: number
   latest: boolean
   available: boolean
-  html: string
 }
 
-export function pageHistoryEntries(outputs: Record<string, unknown> | null | undefined): string[] {
-  const raw = outputs?.page_history
-  if (!Array.isArray(raw)) return []
-  return raw.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-}
-
-/** User-visible v1..vN: prior visual iterations, plus each page.html overwrite on the latest run. */
-export function listVisualPageVersionChoices(
-  run: Run | null | undefined,
-  artifact: Pick<Artifact, 'name' | 'nodeId' | 'kind'> | null | undefined,
-): VisualPageVersionChoice[] {
-  if (!run || !artifact) return []
-  if (artifact.kind && artifact.kind !== 'html') return []
-  const nodeId = visualPageOwnerNodeId(artifact)
-  if (!nodeId) return []
-  const runs = listVisualNodeRuns(run, nodeId)
-  if (!runs.length) return []
-  const raw: Omit<VisualPageVersionChoice, 'index'>[] = []
-  runs.forEach((nodeRun, i) => {
-    const latestRun = i === runs.length - 1
-    const iteration = nodeRun.iteration ?? i + 1
-    for (const html of pageHistoryEntries(nodeRun.outputs)) {
-      raw.push({ iteration, latest: false, available: true, html })
-    }
-    const page = String(nodeRun.outputs?.page || '')
-    if (latestRun) {
-      raw.push({ iteration, latest: true, available: true, html: '' })
-      return
-    }
-    raw.push({
-      iteration,
-      latest: false,
-      available: page.trim().length > 0,
-      html: page,
-    })
-  })
-  return raw.map((choice, i) => ({ ...choice, index: i + 1 }))
-}
-
-export function resolveVisualPagePreviewArtifact(
-  artifact: Artifact,
-  choice: VisualPageVersionChoice | null | undefined,
-): Artifact {
-  if (!choice || choice.latest || !choice.available) return artifact
-  const nodeId = visualPageOwnerNodeId(artifact)
-  return {
-    ...artifact,
-    id: historicalStageArtifactId(nodeId || artifact.nodeId, choice.index),
-    content: choice.html,
-    sizeBytes: choice.html.length,
+/** Live row + archived snapshots → user-visible v1..vN (live is always last). */
+export function buildArtifactVersionChoices(
+  liveRevision: number,
+  archived: ArtifactVersionMeta[] | null | undefined,
+): ArtifactVersionChoice[] {
+  const live = artifactRevision({ revision: liveRevision })
+  const seen = new Set<number>()
+  const choices: ArtifactVersionChoice[] = []
+  for (const row of archived || []) {
+    const rev = artifactRevision(row)
+    if (rev === live || seen.has(rev)) continue
+    seen.add(rev)
+    choices.push({ index: rev, revision: rev, latest: false, available: true })
   }
+  choices.sort((a, b) => a.revision - b.revision)
+  choices.push({ index: live, revision: live, latest: true, available: true })
+  return choices
 }
 
 /**
@@ -193,33 +152,34 @@ function isFeedbackStageArtifactName(name: string): boolean {
   return name === FEEDBACK_INDEX_NAME || name.startsWith(FEEDBACK_PREFIX)
 }
 
-function producerNodeType(run: Run | null | undefined, nodeId: string | null | undefined): string {
-  const id = String(nodeId || '').trim()
-  if (!id || !run?.nodes?.length) return ''
-  return String(run.nodes.find((n) => n.id === id)?.type || '').trim()
+function isHumanGateBodySnapshot(
+  name: string,
+  run?: Run | null,
+): boolean {
+  if (!name.endsWith('.md') || !run?.nodes?.length) return false
+  const nodeId = name.slice(0, -'.md'.length)
+  if (!nodeId) return false
+  return run.nodes.some((n) => n.id === nodeId && n.type === 'human_gate')
 }
 
-/** Known contract products for the pipeline grid (manifest names + visual page.html). */
-export function isKnownStageGridArtifact(
-  artifact: Pick<Artifact, 'name' | 'kind' | 'nodeId'> | null | undefined,
+/** Platform bookkeeping — hidden from the pipeline grid. Everything else stays. */
+export function isBookkeepingArtifact(
+  artifact: Pick<Artifact, 'name' | 'nodeId'> | null | undefined,
   run?: Run | null,
 ): boolean {
   if (!artifact) return false
   const name = String(artifact.name || '').trim()
-  if (!name || name === NODE_COMPLETE_ARTIFACT || isFeedbackStageArtifactName(name)) return false
+  if (!name) return false
   const base = gridArtifactBaseName(name)
-  if (!KNOWN_STAGE_GRID_NAMES.has(base)) return false
-  if (base !== visualProductPageName()) return true
-  const type = producerNodeType(run, artifact.nodeId)
-  if (type) return type === 'visual'
-  // run present but producer unknown → deny; no run → allow (call sites without graph).
-  if (run?.nodes?.length) return false
-  return true
+  if (BOOKKEEPING_EXACT_NAMES.has(base) || isFeedbackStageArtifactName(base)) return true
+  if (parseVisualNodePageName(base)) return true
+  if (isHumanGateBodySnapshot(base, run)) return true
+  return false
 }
 
 /** Pipeline-grid subset; preview tabs / pins still use the unfiltered stage list. */
 export function filterStageGridArtifacts(artifacts: Artifact[], run?: Run | null): Artifact[] {
-  return artifacts.filter((a) => isKnownStageGridArtifact(a, run))
+  return artifacts.filter((a) => !isBookkeepingArtifact(a, run))
 }
 
 /**
@@ -491,11 +451,12 @@ export function isAutoPinStageNode(type: string | null | undefined): boolean {
 export function isVisibleAutoPinArtifact(
   artifact: Pick<Artifact, 'name' | 'id' | 'nodeId'> | null | undefined,
   artifacts: Pick<Artifact, 'name' | 'nodeId'>[] = [],
+  run?: Run | null,
 ): boolean {
   if (!artifact) return false
   const name = String(artifact.name || '').trim()
   if (!name) return false
-  if (name === NODE_COMPLETE_ARTIFACT || isFeedbackStageArtifactName(name)) return false
+  if (isBookkeepingArtifact(artifact, run)) return false
   if (isHistoricalStageArtifact(artifact)) return false
   if (isIterSnapshotName(name)) return false
   if (isSamePreviewVisualCopy(artifact, artifacts)) return false
@@ -503,8 +464,8 @@ export function isVisibleAutoPinArtifact(
 }
 
 /** Visible products shown on the react/approve pipeline grid (incl. custom names). */
-export function filterVisibleStageArtifacts(artifacts: Artifact[]): Artifact[] {
-  return artifacts.filter((a) => isVisibleAutoPinArtifact(a, artifacts))
+export function filterVisibleStageArtifacts(artifacts: Artifact[], run?: Run | null): Artifact[] {
+  return artifacts.filter((a) => isVisibleAutoPinArtifact(a, artifacts, run))
 }
 
 /**
@@ -519,7 +480,7 @@ export function stageGridArtifactsForNode(
   nodeType?: string | null,
 ): Artifact[] {
   if (isAutoPinStageNode(nodeType)) {
-    return filterVisibleStageArtifacts(artifacts)
+    return filterVisibleStageArtifacts(artifacts, run)
   }
   return stageGridArtifactsWithPin(artifacts, run, pin)
 }

@@ -29,6 +29,15 @@ vi.mock('@/lib/api/api', () => ({
     })),
     getRunNodeSandbox: vi.fn(async () => ({ id: 42 })),
     nodePreviews: vi.fn(async () => ({ ports: [] })),
+    artifactVersions: vi.fn(async () => []),
+    artifactVersionContent: vi.fn(async () => ({
+      artifactId: 'live',
+      revision: 1,
+      nodeId: 'visual_1',
+      sizeBytes: 8,
+      createdAt: '2026-08-01T00:00:00Z',
+      content: '<p>old</p>',
+    })),
   },
 }))
 
@@ -88,11 +97,41 @@ describe('ReactArtifactStage', () => {
     vi.mocked(api.artifactContent).mockImplementation(async () =>
       art({ id: 'thumb', name: 'thumb.html', kind: 'html', content: '<html>thumb</html>' }),
     )
+    vi.mocked(api.artifactVersions).mockResolvedValue([])
+    vi.mocked(api.artifactVersionContent).mockResolvedValue({
+      artifactId: 'live',
+      revision: 1,
+      nodeId: 'visual_1',
+      sizeBytes: 8,
+      createdAt: '2026-08-01T00:00:00Z',
+      content: '<p>old</p>',
+    })
     vi.mocked(api.nodePreviews).mockResolvedValue({ ports: [] })
   })
   afterEach(() => {
     resetStageOpenStateForTests(':run-')
+    document.body.innerHTML = ''
   })
+
+  function mockTwoVersions(v1Content = '<p>old</p>') {
+    vi.mocked(api.artifactVersions).mockResolvedValue([
+      {
+        artifactId: 'live',
+        revision: 1,
+        nodeId: 'visual_1',
+        sizeBytes: v1Content.length,
+        createdAt: '2026-08-01T00:00:00Z',
+      },
+    ])
+    vi.mocked(api.artifactVersionContent).mockResolvedValue({
+      artifactId: 'live',
+      revision: 1,
+      nodeId: 'visual_1',
+      sizeBytes: v1Content.length,
+      createdAt: '2026-08-01T00:00:00Z',
+      content: v1Content,
+    })
+  }
 
   it('defaults to chrome preview empty, then opens a named preview tab on card click (g2.1)', async () => {
     const wrapper = mount(ReactArtifactStage, {
@@ -496,7 +535,15 @@ describe('ReactArtifactStage', () => {
   })
 
   it('merges visual page snapshots onto one page.html card with a footer version chip', async () => {
-    const live = art({ id: 'live', name: 'page.html', kind: 'html', nodeId: 'visual_1', content: '<p>new</p>' })
+    mockTwoVersions('<p>old</p>')
+    const live = art({
+      id: 'live',
+      name: 'page.html',
+      kind: 'html',
+      nodeId: 'visual_1',
+      content: '<p>new</p>',
+      revision: 2,
+    })
     const alias = art({
       id: 'alias',
       name: 'visual_1.page.html',
@@ -534,7 +581,8 @@ describe('ReactArtifactStage', () => {
         annotatable: true,
         remoteKind: 'off',
       },
-      global: { plugins: [i18n()], stubs },
+      global: { plugins: [i18n()], stubs: { ...stubs, Teleport: false } },
+      attachTo: document.body,
     })
     await flushPromises()
     expect(wrapper.find('[data-testid="react-artifact-card-page.html"]').exists()).toBe(true)
@@ -548,15 +596,18 @@ describe('ReactArtifactStage', () => {
     expect(wrapper.find('[data-testid="react-artifact-card-iteration"]').exists()).toBe(false)
     await wrapper.get('[data-testid="react-artifact-version-chip-btn-page.html"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="react-artifact-version-option-v1"]').text()).toBe('v1')
-    expect(wrapper.get('[data-testid="react-artifact-version-option-v2"]').text()).toContain('v2 · 最新')
-    await wrapper.get('[data-testid="react-artifact-version-option-v1"]').trigger('click')
+    expect(document.querySelector('[data-testid="react-artifact-version-option-v1"]')?.textContent).toBe('v1')
+    expect(document.querySelector('[data-testid="react-artifact-version-option-v2"]')?.textContent).toContain(
+      'v2 · 最新',
+    )
+    ;(document.querySelector('[data-testid="react-artifact-version-option-v1"]') as HTMLButtonElement).click()
     await flushPromises()
     expect(wrapper.findAll('[data-testid="react-artifact-card-page.html"]').length).toBe(1)
     expect(wrapper.get('[data-testid="artifact-preview"]').text()).toBe('page.html|off|<p>old</p>')
     await wrapper.get('[data-testid="react-artifact-tab-grid"]').trigger('click')
     await wrapper.get('[data-testid="react-artifact-version-chip-btn-page.html"]').trigger('click')
-    await wrapper.get('[data-testid="react-artifact-version-option-v2"]').trigger('click')
+    await flushPromises()
+    ;(document.querySelector('[data-testid="react-artifact-version-option-v2"]') as HTMLButtonElement).click()
     await flushPromises()
     expect(wrapper.get('[data-testid="artifact-preview"]').text()).toBe('page.html|on|<p>new</p>')
     wrapper.unmount()
@@ -589,8 +640,16 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('shows the version chip when one visual execution has page_history from review edits', async () => {
-    const live = art({ id: 'live', name: 'page.html', kind: 'html', nodeId: 'visual_1', content: '<p>v2</p>' })
+  it('shows the version chip when archived snapshots exist for any product', async () => {
+    mockTwoVersions('<p>v1</p>')
+    const live = art({
+      id: 'live',
+      name: 'page.html',
+      kind: 'html',
+      nodeId: 'visual_1',
+      content: '<p>v2</p>',
+      revision: 2,
+    })
     const wrapper = mount(ReactArtifactStage, {
       props: {
         artifacts: [live],
@@ -598,70 +657,48 @@ describe('ReactArtifactStage', () => {
         run: {
           id: 'run-1',
           nodes: [{ id: 'visual_1', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} }],
-          nodeExecutions: {
-            visual_1: [
-              {
-                nodeId: 'visual_1',
-                iteration: 1,
-                status: 'waiting_human',
-                outputs: { page: '<p>v2</p>', page_history: ['<p>v1</p>'] },
-              },
-            ],
-          },
         } as any,
         nodeId: 'visual_1',
         annotatable: true,
         remoteKind: 'off',
       },
-      global: { plugins: [i18n()], stubs },
+      global: { plugins: [i18n()], stubs: { ...stubs, Teleport: false } },
+      attachTo: document.body,
     })
     await flushPromises()
     expect(wrapper.findAll('[data-testid="react-artifact-card-page.html"]').length).toBe(1)
     expect(wrapper.get('[data-testid="react-artifact-version-chip-btn-page.html"]').text()).toContain('v2 · 最新')
     await wrapper.get('[data-testid="react-artifact-version-chip-btn-page.html"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="react-artifact-version-option-v1"]').text()).toBe('v1')
-    await wrapper.get('[data-testid="react-artifact-version-option-v1"]').trigger('click')
+    expect(document.querySelector('[data-testid="react-artifact-version-option-v1"]')?.textContent).toBe('v1')
+    ;(document.querySelector('[data-testid="react-artifact-version-option-v1"]') as HTMLButtonElement).click()
     await flushPromises()
     expect(wrapper.get('[data-testid="artifact-preview"]').text()).toBe('page.html|off|<p>v1</p>')
     wrapper.unmount()
   })
 
-  it('disables a missing snapshot menu item instead of previewing latest html', async () => {
-    const live = art({ id: 'live', name: 'page.html', kind: 'html', nodeId: 'visual_1', content: '<p>new</p>' })
+  it('keeps approve page.html and agent-named HTML on the pipeline grid', async () => {
+    const approvePage = art({ id: 'ap', name: 'page.html', kind: 'html', nodeId: 'approve_7gl6' })
+    const demo = art({ id: 'd', name: 'brand-row-preview.html', kind: 'html', nodeId: 'approve_7gl6' })
+    const complete = art({ id: 'nc', name: 'node_complete.json', kind: 'json', nodeId: 'approve_7gl6' })
     const wrapper = mount(ReactArtifactStage, {
       props: {
-        artifacts: [live],
+        artifacts: [approvePage, demo, complete],
         runId: 'run-1',
         run: {
           id: 'run-1',
-          nodes: [{ id: 'visual_1', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} }],
-          nodeExecutions: {
-            visual_1: [
-              { nodeId: 'visual_1', iteration: 1, status: 'completed', outputs: {} },
-              { nodeId: 'visual_1', iteration: 2, status: 'waiting_human', outputs: { page: '<p>new</p>' } },
-            ],
-          },
+          nodes: [{ id: 'approve_7gl6', type: 'approve', label: 'Approve', position: { x: 0, y: 0 }, config: {} }],
         } as any,
-        nodeId: 'visual_1',
-        annotatable: true,
+        nodeId: 'approve_7gl6',
+        nodeType: 'approve',
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },
     })
     await flushPromises()
-    await wrapper.get('[data-testid="react-artifact-version-chip-btn-page.html"]').trigger('click')
-    const missing = wrapper.get('[data-testid="react-artifact-version-option-v1"]')
-    expect(missing.attributes('disabled')).toBeDefined()
-    // default-open may already show latest page.html; close it first so we only
-    // assert the disabled option cannot open a preview on its own.
-    if (wrapper.find('[data-testid="react-artifact-tab-close-page.html"]').exists()) {
-      await wrapper.get('[data-testid="react-artifact-tab-close-page.html"]').trigger('click')
-      await flushPromises()
-    }
-    await missing.trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="artifact-preview"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-artifact-card-page.html"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="react-artifact-card-brand-row-preview.html"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="react-artifact-card-node_complete.json"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -892,7 +929,7 @@ describe('ReactArtifactStage', () => {
     expect(wrapper.find('[data-testid="react-artifact-card-node_complete.json"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="react-artifact-card-feedback_index.json"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="react-artifact-card-visual_bqc5.page.html"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="react-artifact-card-brand-row-preview.html"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-artifact-card-brand-row-preview.html"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="react-artifact-tab-page.html"]').attributes('aria-selected')).toBe('true')
     wrapper.unmount()
   })

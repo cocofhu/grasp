@@ -163,9 +163,8 @@ func TestWriteArtifactSyncsOutputsAndPendingBodyMd(t *testing.T) {
 	if got, _ := sr.Outputs["page"].(string); got != newHTML {
 		t.Fatalf("outputs.page not synced: %q", got)
 	}
-	hist := pageHistorySlice(sr.Outputs[pageHistoryOutputKey])
-	if len(hist) != 1 || hist[0] != oldHTML {
-		t.Fatalf("page_history after first overwrite=%v", sr.Outputs[pageHistoryOutputKey])
+	if _, ok := sr.Outputs["page_history"]; ok {
+		t.Fatalf("page_history must not be written: %v", sr.Outputs["page_history"])
 	}
 
 	newerHTML := "<!doctype html><html><body>newer-live</body></html>"
@@ -178,9 +177,8 @@ func TestWriteArtifactSyncsOutputsAndPendingBodyMd(t *testing.T) {
 	if got, _ := sr.Outputs["page"].(string); got != newerHTML {
 		t.Fatalf("outputs.page after second write: %q", got)
 	}
-	hist = pageHistorySlice(sr.Outputs[pageHistoryOutputKey])
-	if len(hist) != 2 || hist[0] != oldHTML || hist[1] != newHTML {
-		t.Fatalf("page_history after second overwrite=%v", sr.Outputs[pageHistoryOutputKey])
+	if _, ok := sr.Outputs["page_history"]; ok {
+		t.Fatalf("page_history must not be written after second overwrite: %v", sr.Outputs["page_history"])
 	}
 	var gate models.Gate
 	if err := db.Where("run_id = ? AND node_id = ?", runID, "gate").First(&gate).Error; err != nil {
