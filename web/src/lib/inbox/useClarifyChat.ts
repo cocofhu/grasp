@@ -1208,9 +1208,11 @@ function applyReviewFrame(frame: {
         existingHuman?.role === 'human' &&
         existingAgent?.role === 'agent' &&
         (existingHuman.text || '') === humanText &&
+        // An agent slot with no content yet is this turn's slot — including the
+        // already-streaming one retryLastFailed / refresh-resume opened
+        // optimistically, which must not be duplicated.
         (isRetryableFailedAgent(existingAgent) ||
-          (!existingAgent.streaming &&
-            !(existingAgent.text || '').trim() &&
+          (!(existingAgent.text || '').trim() &&
             !(existingAgent.thought || '').trim()))
       ) {
         existingHuman.images = images ?? existingHuman.images

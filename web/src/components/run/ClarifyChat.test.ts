@@ -1953,6 +1953,32 @@ describe('ClarifyChat', () => {
       wrapper.unmount()
     })
 
+    it('turn_begin reuses the optimistic retry slot instead of duplicating the turn', async () => {
+      const wrapper = mountChat({
+        turns: [
+          { role: 'human', text: '这个按钮有问题', at: 't1' },
+          { role: 'agent', text: '', at: 't2' },
+        ],
+      })
+      await wrapper.get('[data-testid="clarify-empty-fail-retry"]').trigger('click')
+
+      // Pump answers the retry: queue_state(busy) then turn_begin for the same human.
+      const vm = wrapper.vm as unknown as {
+        applyReviewFrame: (f: Record<string, unknown>) => void
+      }
+      vm.applyReviewFrame({
+        event: 'turn_begin',
+        nodeId: 'react-1',
+        item: { id: 'q1', text: '这个按钮有问题' },
+      })
+      await flushPromises()
+
+      // One live slot, and the human bubble is not re-rendered a second time.
+      expect(wrapper.findAll('[data-testid="clarify-busy-placeholder"]')).toHaveLength(1)
+      expect(wrapper.text().split('这个按钮有问题').length - 1).toBe(1)
+      wrapper.unmount()
+    })
+
     it('live empty turn_done keeps failure card (plan g1.1)', async () => {
       const wrapper = mountChat({ draft: '做登录' })
       const vm = wrapper.vm as unknown as {

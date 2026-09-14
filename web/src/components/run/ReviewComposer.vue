@@ -103,6 +103,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[]): void
+  (e: 'retry-last'): void
   (e: 'finish'): void
   (e: 'cancel'): void
   (e: 'queue-remove', itemId: string | undefined, index: number): void
@@ -251,6 +252,7 @@ function onConfirm() {
       :send-label="mode === 'clarify' ? t('pages.reviewComposer.sendClarify') : undefined"
       :confirm-error="confirmError"
       @send="(text, images, anns) => emit('send', text, images, anns)"
+      @retry-last="emit('retry-last')"
       @finish="emit('finish')"
       @cancel="emit('cancel')"
       @queue-remove="(itemId, index) => emit('queue-remove', itemId, index)"

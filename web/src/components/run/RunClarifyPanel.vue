@@ -52,6 +52,7 @@ const emit = defineEmits<{
   'update:draft': [v: string]
   'update:attachments': [v: ClarifyImage[]]
   send: [text: string, images: ClarifyImage[], annotations: ReactAnnotation[]]
+  'retry-last': []
   finish: []
   cancel: []
   'queue-remove': [itemId: string | undefined, index: number]
@@ -161,6 +162,7 @@ defineExpose({
         @update:draft="emit('update:draft', $event)"
         @update:attachments="emit('update:attachments', $event)"
         @send="(text: string, images: ClarifyImage[], anns: ReactAnnotation[]) => emit('send', text, images, anns)"
+        @retry-last="emit('retry-last')"
         @finish="emit('finish')"
         @cancel="emit('cancel')"
         @queue-remove="(itemId, index) => emit('queue-remove', itemId, index)"
