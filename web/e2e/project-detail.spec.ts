@@ -191,6 +191,21 @@ test.describe('ProjectDetailView 流水线操作列', () => {
     await expect(page.getByRole('button', { name: '导入' })).toBeVisible()
     await expect(page.getByRole('button', { name: /新建工作流/ })).toBeVisible()
 
+    // 新建工作流与导入等高对齐，且箭头未换行撑高按钮 (plan g1.2 / g1.3 / f2)
+    const importBox = await page.getByRole('button', { name: '导入' }).boundingBox()
+    const newButton = page.getByTestId('new-workflow-button')
+    const newBox = await newButton.boundingBox()
+    expect(importBox && newBox).toBeTruthy()
+    expect(newBox!.height).toBe(importBox!.height)
+    expect(newBox!.y).toBe(importBox!.y)
+    const contentOverflow = await newButton.evaluate((el) => ({
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+    }))
+    expect(contentOverflow.scrollHeight).toBeLessThanOrEqual(contentOverflow.clientHeight + 1)
+    // plus + chevron-down 两个内联图标与文字同行
+    await expect(newButton.locator('svg')).toHaveCount(2)
+
     const actionCell = table.locator('tbody tr').first().locator('td').last()
     await expect(actionCell.getByRole('button', { name: '编辑' })).toBeVisible()
     await expect(actionCell.getByRole('button', { name: '运行' })).toBeVisible()

@@ -64,6 +64,6 @@ const inkEnabled = computed(() => !isDisabled.value && props.variant !== 'subtle
     <AppSpinner v-if="loading" :size="size === 'sm' ? 12 : 14" />
     <Icon v-else-if="icon" :name="icon" :size="size === 'sm' ? 14 : 16" />
     <!-- Wrap bare text slot so content stacking stays explicit (plan g1.2 / review v1). -->
-    <span class="relative z-[1]"><slot /></span>
+    <span class="relative z-[1] inline-flex items-center gap-1.5"><slot /></span>
   </button>
 </template>

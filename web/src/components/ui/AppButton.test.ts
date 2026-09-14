@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { createI18n } from 'vue-i18n'
 import { mount } from '@vue/test-utils'
+import { h } from 'vue'
 import { describe, expect, it } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
@@ -121,6 +122,37 @@ describe('AppButton', () => {
     const ink = idle.find('.hover-ink')
     expect(ink.exists()).toBe(true)
     idle.unmount()
+  })
+
+  it('flows slot inline icons in one centered row so they cannot wrap (plan g1.2)', () => {
+    const i18n = createI18n({
+      legacy: false,
+      locale: 'zh-CN',
+      messages: { 'zh-CN': { ...common, ...pages } },
+    })
+    const wrapper = mount(AppButton, {
+      props: { variant: 'primary', icon: 'plus' },
+      slots: {
+        default: () => [
+          h('span', { 'data-slot-label': '' }, '新建工作流'),
+          h('svg', { 'data-slot-icon': '' }),
+        ],
+      },
+      global: {
+        plugins: [i18n],
+        stubs: { Icon: true },
+        directives: { 'hover-ink': vHoverInk },
+      },
+    })
+    const face = wrapper.find('span.relative')
+    expect(face.classes()).toContain('relative')
+    expect(face.classes()).toContain('z-[1]')
+    expect(face.classes()).toContain('inline-flex')
+    expect(face.classes()).toContain('items-center')
+    expect(face.classes()).toContain('gap-1.5')
+    expect(face.find('[data-slot-label]').exists()).toBe(true)
+    expect(face.find('[data-slot-icon]').exists()).toBe(true)
+    wrapper.unmount()
   })
 
   it('does not enable hover-ink when disabled or loading (plan g1.3 / g2.3)', () => {
