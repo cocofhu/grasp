@@ -28,6 +28,11 @@ type turnAction struct {
 	dropConn  bool   // close the WS mid-turn without prompt_done -> ErrConnClosed
 	stall     bool   // send nothing and never prompt_done -> ErrChatIdle (with a small idle timeout)
 	sendError string // emit {op:error} -> a non-retryable agent error
+	// oneshot-style provider failure: error_text frame then prompt_done{stopReason:failed}.
+	// Distinct from sendError, which uses the top-level {op:error} envelope the
+	// legacy fake path exercised (and which ChatStructured already turns into a Go error).
+	errorText string
+	failed    bool
 }
 
 // chatFunc returns the action for the turn-th chat on a given sandbox (0-based).
@@ -158,6 +163,17 @@ func (b *fakeBridge) applyTurn(conn *websocket.Conn, act turnAction) bool {
 	}
 	if act.narration != "" {
 		_ = conn.WriteJSON(agentMessageFrame(act.narration))
+	}
+	if act.errorText != "" {
+		_ = conn.WriteJSON(map[string]any{"op": "event", "data": map[string]any{
+			"type": "error_text", "text": act.errorText,
+		}})
+	}
+	if act.failed {
+		_ = conn.WriteJSON(map[string]any{"op": "event", "data": map[string]any{
+			"type": "prompt_done", "stopReason": "failed",
+		}})
+		return true
 	}
 	_ = conn.WriteJSON(promptDoneFrame())
 	return true

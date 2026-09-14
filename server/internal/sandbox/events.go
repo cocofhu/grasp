@@ -40,6 +40,31 @@ type ChatResult struct {
 	// persisted to snapshots; they only drive the live running/idle indicator.
 	Busy    bool `json:"-"`
 	BusySet bool `json:"-"`
+
+	// ErrorText collects provider/CLI error bodies from {op:event,data.type:
+	// "error_text"} frames (quota exhaustion, HTTP 4xx/5xx). Non-empty means
+	// the turn failed even when the bridge still emitted prompt_done.
+	ErrorText string `json:"errorText,omitempty"`
+	// Failed is set when prompt_done.stopReason == "failed".
+	Failed bool `json:"-"`
+}
+
+// appendErrorText records a provider/bridge error body on the turn. Multiple
+// fragments are joined with newlines so a later error_text frame does not
+// erase an earlier op:"error" message (or vice versa).
+func (r *ChatResult) appendErrorText(s string) {
+	if r == nil {
+		return
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return
+	}
+	if r.ErrorText == "" {
+		r.ErrorText = s
+		return
+	}
+	r.ErrorText += "\n" + s
 }
 
 type ACPPlan struct {

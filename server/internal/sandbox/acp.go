@@ -437,6 +437,7 @@ func (c *ACPClient) ChatStructured(ctx context.Context, text string, images []mo
 			case "error":
 				errMsg := parseErrorMessage(raw)
 				c.lg.Warn().Str("err", errMsg).Msg("acp chat error event")
+				result.appendErrorText(errMsg)
 				if hasContent(result) {
 					return result, nil
 				}
@@ -510,6 +511,7 @@ func (c *ACPClient) ChatStream(ctx context.Context, text string, images []models
 				if onEvent != nil {
 					onEvent(raw)
 				}
+				result.appendErrorText(errMsg)
 				if hasContent(result) {
 					return result, nil
 				}
@@ -576,10 +578,12 @@ func (c *ACPClient) ChatStreamResult(ctx context.Context, text string, images []
 					}
 				}
 			case "error":
+				errMsg := parseErrorMessage(raw)
+				result.appendErrorText(errMsg)
 				if hasContent(result) {
 					return result, nil
 				}
-				return nil, fmt.Errorf("acp error: %s", parseErrorMessage(raw))
+				return nil, fmt.Errorf("acp error: %s", errMsg)
 			}
 		case <-idleC:
 			c.lg.Warn().Dur("idle", c.idleTimeout).Msg("acp chat idle timeout")
@@ -633,9 +637,11 @@ func (c *ACPClient) dispatchEventData(raw json.RawMessage, result *ChatResult) b
 	}
 
 	var ev struct {
-		Type   string          `json:"type"`
-		Update json.RawMessage `json:"update"`
-		Usage  json.RawMessage `json:"usage"`
+		Type       string          `json:"type"`
+		Update     json.RawMessage `json:"update"`
+		Usage      json.RawMessage `json:"usage"`
+		Text       string          `json:"text"`
+		StopReason string          `json:"stopReason"`
 	}
 	if err := json.Unmarshal(envelope.Data, &ev); err != nil {
 		c.lg.Warn().Err(err).Msg("malformed event data")
@@ -656,8 +662,20 @@ func (c *ACPClient) dispatchEventData(raw json.RawMessage, result *ChatResult) b
 				result.Usage = models.AddTokenUsage(result.Usage, u)
 				result.UsageByModel = models.AddTokenUsageByModel(result.UsageByModel, byModel)
 			}
+			if strings.EqualFold(strings.TrimSpace(ev.StopReason), "failed") {
+				result.Failed = true
+			}
 		}
 		return true
+	}
+	if ev.Type == "error_text" {
+		// oneshot provider surfaces model/CLI failures as raw error_text frames
+		// before prompt_done{stopReason:failed}. Capture the body so React can
+		// show it instead of an empty agent bubble.
+		if result != nil {
+			result.appendErrorText(ev.Text)
+		}
+		return false
 	}
 	if ev.Type == "session_update" && len(ev.Update) > 0 {
 		kind, flat := normalizeSessionUpdate(ev.Update)

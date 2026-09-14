@@ -305,7 +305,8 @@ func isRetryableEmptyOrFailedAgent(m models.ReactMessage) bool {
 	if t == "" {
 		return true
 	}
-	return strings.Contains(t, "澄清回复失败") ||
+	return strings.Contains(t, "澄清开场失败") ||
+		strings.Contains(t, "澄清回复失败") ||
 		strings.Contains(t, "澄清会话已失效") ||
 		strings.Contains(t, "复审修改失败")
 }

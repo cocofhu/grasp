@@ -44,6 +44,14 @@ func (c *acpProvider) ReactOpen(ctx context.Context, req NodeReq) ReactTurn {
 					return ReactTurn{Msg: res.Narration, Questions: qs, Events: events, Usage: usage, UsageByModel: usageByModel}
 				}
 
+				// Provider failed after prompt_done (quota / 4xx): keep the
+				// dialogue open with the real error instead of silently finishing.
+				if fail := chatFailure(res); fail != "" {
+					msg := withFailureBanner(res.Narration, "澄清开场失败", fail)
+					events = append(events, models.AcpEvent{Kind: "message", Text: "react open chat failed: " + fail})
+					return ReactTurn{Msg: msg, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel}
+				}
+
 				// No human dialogue happened yet, so there is nothing to induce.
 				return c.finishReact(ctx, req, reactKey(req), sess, res.Narration, nil, events, usage, usageByModel, false)
 			}
@@ -195,6 +203,18 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 		return ReactTurn{Msg: narration, Questions: qs, Events: events, Usage: usage, UsageByModel: usageByModel}
 	}
 
+	// Provider failed after prompt_done (quota / 4xx): surface the real error
+	// on the failure card and keep the dialogue open for Retry.
+	if fail := chatFailure(res); fail != "" {
+		msg := withFailureBanner(narration, "澄清回复失败", fail)
+		if req.NodeType == "approve" {
+			c.host.ClearOutcome(req.RunID, req.NodeID)
+		}
+		events = c.snapshotEvents(ctx, sess.sb, events)
+		events = append(events, models.AcpEvent{Kind: "message", Text: "react reply chat failed: " + fail})
+		return ReactTurn{Msg: msg, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel}
+	}
+
 	if !force && !reactCapReached(req, history) {
 		// Empty narration with no questions: keep the dialogue open as an empty
 		// failure (plan g2.2) — do not Done / finishReact / node-failed.
@@ -274,6 +294,12 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 	absorbChat(&usage, &usageByModel, &events, res)
 
 	c.host.TakePendingQuestions(req.RunID, req.NodeID)
+
+	if fail := chatFailure(res); fail != "" {
+		msg := withFailureBanner(res.Narration, "复审修改失败", fail)
+		events = append(events, models.AcpEvent{Kind: "message", Text: "review revise chat failed: " + fail})
+		return ReactTurn{Msg: msg, Done: false, Err: errors.New(fail), Events: events, Usage: usage, UsageByModel: usageByModel}
+	}
 
 	if _, serr := c.ensureRequiredProducts(ctx, req, sess.acp, &events, &usage, &usageByModel); serr != nil {
 		log.Warn().Err(serr).Str("node", req.NodeID).Msg("review revise ensure product failed")
@@ -555,10 +581,51 @@ func approveHasOpenedTurn(history []models.ReactMessage) bool {
 	return false
 }
 
+// chatFailureMaxLen caps provider error bodies so a long stderr dump cannot
+// blow up the persisted React conversation JSON.
+const chatFailureMaxLen = 2000
+
+// chatFailure returns the provider-side failure text when the bridge reported
+// prompt_done but the turn actually failed (stopReason=failed and/or an
+// error_text body). Empty means the turn completed normally.
+func chatFailure(res *sandbox.ChatResult) string {
+	if res == nil {
+		return ""
+	}
+	text := strings.TrimSpace(res.ErrorText)
+	if !res.Failed && text == "" {
+		return ""
+	}
+	if text == "" {
+		text = "stopReason=failed"
+	}
+	return truncateChatFailure(text)
+}
+
+func truncateChatFailure(s string) string {
+	if len(s) <= chatFailureMaxLen {
+		return s
+	}
+	return s[:chatFailureMaxLen] + "…"
+}
+
+// withFailureBanner builds "(<prefix>:<fail>)", appending after any narration
+// so a partial reply is preserved rather than replaced.
+func withFailureBanner(narration, prefix, fail string) string {
+	banner := "(" + prefix + ":" + fail + ")"
+	n := strings.TrimSpace(narration)
+	if n == "" {
+		return banner
+	}
+	return n + "\n" + banner
+}
+
 func isApproveFailedOpenText(text string) bool {
 	s := strings.TrimSpace(text)
 	switch {
 	case s == "(已中断)":
+		return true
+	case strings.HasPrefix(s, "(澄清开场失败:"):
 		return true
 	case strings.HasPrefix(s, "(澄清回复失败:"):
 		return true

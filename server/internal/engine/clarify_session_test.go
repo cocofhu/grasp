@@ -228,6 +228,13 @@ func TestLastRetryableHuman(t *testing.T) {
 	if !ok || text != "做登录" {
 		t.Fatalf("fail banner: ok=%v text=%q", ok, text)
 	}
+	text, _, _, ok = lastRetryableHuman([]models.ReactMessage{
+		{Role: "human", Text: "做登录"},
+		{Role: "agent", Text: "(澄清开场失败:quota exhausted)"},
+	})
+	if !ok || text != "做登录" {
+		t.Fatalf("open fail banner: ok=%v text=%q", ok, text)
+	}
 	_, _, _, ok = lastRetryableHuman([]models.ReactMessage{
 		{Role: "human", Text: "做登录"},
 		{Role: "agent", Text: "正常正文"},
