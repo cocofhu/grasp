@@ -272,7 +272,7 @@ defineExpose({ placeCardNear })
       </button>
       <button
         type="button"
-        class="bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-2 disabled:cursor-not-allowed disabled:opacity-45"
+        class="bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-45"
         :disabled="!canSubmit"
         data-testid="comment-pin-save"
         @click="onSave"

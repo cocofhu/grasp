@@ -71,7 +71,7 @@ const sendDisabled = computed(
       <button
         v-if="s.showHotReject"
         type="button"
-        class="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md bg-accent px-2.5 text-xs font-semibold text-white hover:bg-accent-2 disabled:cursor-not-allowed disabled:opacity-50"
+        class="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md bg-accent px-2.5 text-xs font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
         data-testid="review-composer-send"
         :disabled="sendDisabled"
         @click="s.sendHotReject"

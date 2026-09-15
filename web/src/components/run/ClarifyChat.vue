@@ -596,7 +596,7 @@ const {
 
                     <button
                       v-if="!isLastCard"
-                      class="inline-flex items-center gap-0.5 rounded-md bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:bg-accent-2"
+                      class="inline-flex items-center gap-0.5 rounded-md bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:bg-accent-hover"
                       @click="nextCard"
                     >
                       {{ translate('pages.clarify.next') }} <Icon name="chevron-right" :size="13" />
@@ -612,7 +612,7 @@ const {
                         <Icon name="check" :size="12" /> {{ translate('pages.clarify.applyRecommended') }}
                       </button>
                       <button
-                        class="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:bg-accent-2 disabled:opacity-50"
+                        class="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:bg-accent-hover disabled:opacity-50"
                         :disabled="!someAnswered || thinking"
                         @click="submitChoices"
                       >
@@ -715,7 +715,7 @@ const {
                 <div class="mt-3 flex justify-end">
                   <button
                     type="button"
-                    class="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:bg-accent-2 disabled:opacity-50"
+                    class="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:bg-accent-hover disabled:opacity-50"
                     :disabled="!formCanSubmit"
                     data-testid="clarify-form-submit"
                     @click="submitForms"
@@ -904,7 +904,7 @@ const {
           <button
             v-if="sendLabel"
             type="button"
-            class="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md bg-accent px-2.5 text-xs font-semibold text-white hover:bg-accent-2 disabled:opacity-50"
+            class="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md bg-accent px-2.5 text-xs font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
             data-testid="clarify-send-label"
             :disabled="!draft.trim() && !attachments.length && !annotations.length"
             @click="send"
@@ -914,7 +914,7 @@ const {
           <button
             v-else
             type="button"
-            class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md bg-accent text-white hover:bg-accent-2 disabled:opacity-50"
+            class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
             data-testid="clarify-send-icon"
             :disabled="!draft.trim() && !attachments.length && !annotations.length"
             @click="send"

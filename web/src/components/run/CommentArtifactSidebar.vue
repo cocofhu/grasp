@@ -151,7 +151,7 @@ function switchTab(name: 'comments' | 'artifact') {
       >{{ previewText }}</pre>
       <button
         type="button"
-        class="w-full bg-accent px-3 py-2 text-xs font-medium text-white hover:bg-accent-2 disabled:cursor-not-allowed disabled:opacity-45"
+        class="w-full bg-accent px-3 py-2 text-xs font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-45"
         :disabled="!canWrite"
         data-testid="comment-artifact-write"
         @click="emit('write')"

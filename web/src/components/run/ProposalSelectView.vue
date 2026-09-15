@@ -220,7 +220,7 @@ function pick() {
           <div v-if="!resolvedId && !readonly && needsChoice" class="mt-3 flex justify-end max-md:justify-stretch">
             <button
               class="inline-flex items-center justify-center gap-1.5 rounded-md px-3.5 text-sm font-medium transition md:py-2 max-md:min-h-[44px] max-md:w-full"
-              :class="cur.recommended ? 'bg-accent text-white hover:opacity-90' : 'bg-ok/15 text-ok hover:bg-ok/25'"
+              :class="cur.recommended ? 'bg-accent text-white hover:bg-accent-hover' : 'bg-ok/15 text-ok hover:bg-ok/25'"
             :disabled="disabled"
             @click="pick()"
             >

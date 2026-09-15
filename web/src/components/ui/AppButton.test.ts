@@ -91,7 +91,8 @@ describe('AppButton', () => {
     const idle = mountBtn({ variant: 'primary' })
     expect(idle.classes()).toContain('hover-ink-host')
     expect(idle.classes().join(' ')).not.toMatch(/hover:bg-/)
-    expect(idle.element.style.getPropertyValue('--hover-ink-color')).toContain('--c-accent-2')
+    expect(idle.element.style.getPropertyValue('--hover-ink-color')).toContain('--c-accent-hover')
+    expect(idle.element.style.getPropertyValue('--hover-ink-color')).not.toContain('--c-accent-2')
     expect(idle.find('.hover-ink').exists()).toBe(true)
     idle.unmount()
 
@@ -102,6 +103,18 @@ describe('AppButton', () => {
     const danger = mountBtn({ variant: 'danger' })
     expect(danger.element.style.getPropertyValue('--hover-ink-color')).toContain('--c-err')
     danger.unmount()
+  })
+
+  it('defines --c-accent-hover for both dark and light themes (plan g1.1)', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../../styles/global.css'),
+      'utf8',
+    )
+    expect(css).toMatch(/--c-accent-hover:\s*167 139 250/)
+    expect(css).toMatch(/--c-accent-hover:\s*84 36 216/)
   })
 
   it('subtle skips hover-ink fill (review v2 / plan g2.2)', () => {

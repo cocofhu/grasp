@@ -525,7 +525,7 @@ defineExpose({
         <button
           v-if="canEditActive"
           type="button"
-          class="inline-flex items-center gap-1.5 bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-2 disabled:cursor-not-allowed disabled:opacity-45"
+          class="inline-flex items-center gap-1.5 bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-45"
           :disabled="!isDirty || saving"
           data-testid="gate-artifact-save"
           @click="save"
@@ -755,7 +755,7 @@ defineExpose({
             <p v-if="loadError" class="max-w-[42ch] text-[11px] text-err">{{ loadError }}</p>
             <button
               type="button"
-              class="mt-1 bg-accent px-3.5 py-1.5 text-xs font-medium text-white hover:bg-accent-2"
+              class="mt-1 bg-accent px-3.5 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
               data-testid="gate-preview-retry"
               @click="emit('retry-load')"
             >

@@ -163,7 +163,7 @@ watch(visible, (isVisible) => {
       </div>
       <button
         type="button"
-        class="enlarge-btn inline-flex shrink-0 items-center gap-1.5 rounded-md bg-accent px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-accent-2"
+        class="enlarge-btn inline-flex shrink-0 items-center gap-1.5 rounded-md bg-accent px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-accent-hover"
         data-testid="upstream-enlarge"
         :title="enlargeLabel"
         :aria-label="enlargeLabel"

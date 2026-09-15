@@ -319,7 +319,7 @@ const listFadeKey = computed(() =>
       </div>
       <div class="flex shrink-0 gap-2">
         <button
-          class="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-accent-2 disabled:opacity-45"
+          class="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-accent-hover disabled:opacity-45"
           :disabled="processingLock"
           @click="applyListUpdate()"
         >

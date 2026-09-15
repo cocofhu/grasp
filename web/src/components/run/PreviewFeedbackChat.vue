@@ -363,7 +363,7 @@ defineExpose({
         <span class="text-[10px] text-txt3">{{ t(copyKey('hint')) }}</span>
         <button
           type="button"
-          class="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-accent/90 disabled:opacity-50"
+          class="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-accent-hover disabled:opacity-50"
           :disabled="!canSubmit"
           @click="() => send()"
         >

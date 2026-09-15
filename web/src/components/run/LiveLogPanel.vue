@@ -426,7 +426,7 @@ watch(
         <button
           type="button"
           data-testid="retry-rehydrate"
-          class="rounded-lg inline-flex items-center gap-1 border border-transparent bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:bg-accent-2"
+          class="rounded-lg inline-flex items-center gap-1 border border-transparent bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:bg-accent-hover"
           @click="emit('retry-rehydrate')"
         >
           {{ t('pages.liveLog.rehydrate.retry') }}

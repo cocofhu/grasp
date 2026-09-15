@@ -19,6 +19,8 @@
   --c-txt3: 110 110 120;
   --c-accent: 123 97 255;
   --c-accent-2: 129 140 248;
+  /* Solid accent button hover fill — brand purple hue (#A78BFA), brighter than accent-2 */
+  --c-accent-hover: 167 139 250;
   --c-accent-dim: 31 31 54;
   --c-ok: 52 211 153;
   --c-warn: 251 191 36;
@@ -59,6 +61,8 @@ html.light {
   --c-txt3: 161 161 170;
   --c-accent: 123 97 255;
   --c-accent-2: 79 70 229;
+  /* Solid accent button hover fill — brand purple hue (#5424D8), deeper than accent-2 */
+  --c-accent-hover: 84 36 216;
   --c-accent-dim: 238 240 255;
   --c-ok: 22 163 74;
   --c-warn: 217 119 6;

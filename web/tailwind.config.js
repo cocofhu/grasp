@@ -30,6 +30,7 @@ export default {
         txt3: 'rgb(var(--c-txt3) / <alpha-value>)',
         accent: '#7B61FF',
         'accent-2': 'rgb(var(--c-accent-2) / <alpha-value>)',
+        'accent-hover': 'rgb(var(--c-accent-hover) / <alpha-value>)',
         'accent-dim': 'rgb(var(--c-accent-dim) / <alpha-value>)',
         ok: 'rgb(var(--c-ok) / <alpha-value>)',
         warn: 'rgb(var(--c-warn) / <alpha-value>)',

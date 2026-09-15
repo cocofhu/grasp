@@ -38,7 +38,7 @@ const inkColor = computed(() => {
   // so it keeps text-only hover and does not set an ink color (review v2).
   switch (props.variant) {
     case 'primary':
-      return 'rgb(var(--c-accent-2))'
+      return 'rgb(var(--c-accent-hover))'
     case 'danger':
       return 'rgb(var(--c-err) / 0.2)'
     case 'ghost':

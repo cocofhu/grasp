@@ -655,7 +655,7 @@ onBeforeUnmount(() => {
                   v-if="row.preview"
                   type="button"
                   data-testid="sandbox-vnc-open-preview"
-                  class="rounded-md border border-accent bg-accent px-2 py-0.5 text-[11px] text-white hover:brightness-110"
+                  class="rounded-md border border-accent bg-accent px-2 py-0.5 text-[11px] text-white transition hover:bg-accent-hover"
                   @click="openSandboxVncPreview(detailView.id)"
                 >{{ t('pages.sandboxes.detail.proxy.openPreview') }}</button>
               </span>

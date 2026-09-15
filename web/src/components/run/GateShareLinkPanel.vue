@@ -365,7 +365,7 @@ function close() {
 
         <button
           type="button"
-          class="rounded-md inline-flex min-h-11 w-full items-center justify-center gap-2 bg-accent px-3 text-sm font-medium text-white hover:bg-accent-2 disabled:opacity-45"
+          class="rounded-md inline-flex min-h-11 w-full items-center justify-center gap-2 bg-accent px-3 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-45"
           data-testid="gate-share-create"
           :disabled="busy"
           :aria-busy="busy ? 'true' : undefined"
@@ -419,7 +419,7 @@ function close() {
         <div class="flex flex-wrap gap-2">
           <button
             type="button"
-            class="rounded-md inline-flex min-h-11 items-center gap-1.5 bg-accent px-3 text-xs font-medium text-white hover:bg-accent-2 disabled:opacity-45"
+            class="rounded-md inline-flex min-h-11 items-center gap-1.5 bg-accent px-3 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-45"
             data-testid="gate-share-copy"
             :disabled="busy || !copyAllowed"
             :aria-busy="busy ? 'true' : undefined"
