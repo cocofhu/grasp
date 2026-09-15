@@ -7,6 +7,7 @@
       "agentOrg.ts",
       "agentStudioDraft.ts",
       "agentTeamWizard.ts",
+      "agentTemplateOptions.ts",
       "backendAuthGuide.ts",
       "gitCredentialAnalysis.ts",
       "openCodeCatalog.ts",
@@ -186,7 +187,7 @@
     ]
   },
   "totals": {
-    "agent": 17,
+    "agent": 18,
     "api": 3,
     "composables": 17,
     "inbox": 22,
