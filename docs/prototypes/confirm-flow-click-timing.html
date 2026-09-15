@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>点击流转：动画 + 待办消失</title>
+  <style>
+    :root { --c-base:247 248 250; --c-txt:26 35 50; --c-txt2:90 102 120; --c-txt3:140 150 165; --c-line:228 232 238; --c-ok:34 166 111; --c-accent:124 92 252; }
+    *{box-sizing:border-box} body{margin:0;padding:18px;font-family:ui-sans-serif,system-ui,sans-serif;background:rgb(var(--c-base));color:rgb(var(--c-txt))}
+    .wrap{max-width:1080px;margin:0 auto} h1{font-size:18px;margin:0 0 6px}
+    .lead{font-size:13px;color:rgb(var(--c-txt2));margin:0 0 14px;line-height:1.55}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+    .chip{border:1px solid rgb(var(--c-line));background:#fff;border-radius:999px;padding:6px 12px;font-size:12px;cursor:pointer}
+    .chip.on{border-color:rgb(var(--c-accent));color:rgb(var(--c-accent));background:rgb(var(--c-accent)/.08);font-weight:650}
+    .layout{display:grid;grid-template-columns:300px 1fr;gap:14px;min-height:520px}
+    .pane{background:#fff;border:1px solid rgb(var(--c-line));border-radius:14px;overflow:hidden;position:relative}
+    .inbox{padding:16px}.card{border:1.5px solid rgb(var(--c-accent)/.45);border-radius:14px;padding:12px 14px}
+    .card.leaving{animation:card-out 320ms both}.empty{display:none;padding:28px;text-align:center;color:rgb(var(--c-txt3))}.empty.show{display:block}
+    .thinking{display:none;padding:0 16px 10px;font-size:12px;color:rgb(var(--c-txt3))}.thinking.show{display:flex}
+    .composer{border-top:1px solid rgb(var(--c-line));padding:12px}
+    .btn-ok{background:rgb(var(--c-ok));color:#fff;border:0;border-radius:8px;height:36px;padding:0 14px;cursor:pointer}
+    .overlay{position:absolute;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:rgb(var(--c-base)/.92);opacity:0;visibility:hidden}
+    .overlay.is-play,.overlay.is-hold{visibility:visible;opacity:1}
+    .log{margin-top:12px;font-size:12px;color:rgb(var(--c-txt3))} .log b{color:rgb(var(--c-txt2))}
+    @keyframes card-out{to{opacity:0;transform:translateY(-8px) scale(.98)}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>确认并流转 · 点击即动画，待办卡同时消失</h1>
+    <p class="lead">点绿色按钮后待办卡立刻消失并播动画；后台 node_complete 可晚到，不再二次触发。</p>
+    <div class="toolbar">
+      <button class="chip on" id="modeGood" type="button">正确：点击即动画，待办消失</button>
+      <button class="chip" id="modeBad" type="button">错误（现状）：等 node_complete 才动画，待办还在</button>
+      <button class="chip" id="reset" type="button">重播</button>
+    </div>
+    <div class="layout">
+      <aside class="pane inbox">
+        <div id="card" class="card"><h3>需求对齐</h3><span id="status">正在回复中</span></div>
+        <div id="empty" class="empty"><b>暂无待办</b></div>
+      </aside>
+      <section class="pane desk">
+        <div id="thinking" class="thinking">Agent 正在思考下一轮…</div>
+        <div class="composer" id="composer">
+          <button class="btn-ok" id="confirm" type="button">✓ 确认并流转</button>
+          <div class="log" id="log">时序：等待点击</div>
+        </div>
+        <div id="overlay" class="overlay" data-phase="idle"><div>已确认并流转</div></div>
+      </section>
+    </div>
+  </div>
+  <script>
+    var mode='good', busy=false, timers=[];
+    function later(fn,ms){var id=setTimeout(fn,ms);timers.push(id);return id}
+    function clearTimers(){while(timers.length)clearTimeout(timers.pop())}
+    function $(id){return document.getElementById(id)}
+    function setMode(next){mode=next;$('modeGood').classList.toggle('on',next==='good');$('modeBad').classList.toggle('on',next==='bad');reset()}
+    function playOverlay(){var ov=$('overlay');ov.className='overlay is-play';ov.setAttribute('data-phase','play');later(function(){ov.classList.add('is-hold');ov.setAttribute('data-phase','hold')},620);later(function(){ov.className='overlay';ov.setAttribute('data-phase','idle')},1700)}
+    function leaveInbox(){var card=$('card');card.classList.add('leaving');later(function(){card.style.display='none';$('empty').classList.add('show')},280)}
+    function reset(){busy=false;clearTimers();$('overlay').className='overlay';$('overlay').setAttribute('data-phase','idle');var card=$('card');card.style.display='';card.classList.remove('leaving');$('empty').classList.remove('show');$('thinking').classList.remove('show');$('composer').style.display='';$('confirm').disabled=false;$('log').textContent=mode==='good'?'时序：等待点击 · 正确路径不等 node_complete':'时序：等待点击 · 错误路径'}
+    function confirmFlow(){if(busy)return;busy=true;$('confirm').disabled=true;if(mode==='good'){$('log').innerHTML='<b>t=0 点击</b> → 立刻播动画 → 待办卡消失';playOverlay();leaveInbox();$('composer').style.display='none';return}$('thinking').classList.add('show');$('log').innerHTML='<b>t=0 点击</b> → 待办卡仍在';later(function(){$('thinking').classList.remove('show');$('log').innerHTML+='<br><b>t=2.4s node_complete</b>';playOverlay();leaveInbox();$('composer').style.display='none'},2400)}
+    $('modeGood').onclick=function(){setMode('good')};$('modeBad').onclick=function(){setMode('bad')};$('reset').onclick=reset;$('confirm').onclick=confirmFlow;
+  </script>
+</body>
+</html>

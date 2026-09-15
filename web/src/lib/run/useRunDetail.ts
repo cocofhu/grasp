@@ -577,12 +577,10 @@ async function onGateResolve(action: string, form: Record<string, any> = {}) {
   gateSubmitting.value = true
   gateError.value = null
   const positive = action === 'pass' || action === 'approve'
+  // Click intent: play overlay before resume returns (plan g1.1).
+  if (positive) void playConfirmFlowCeremony(gateApprovalRef.value)
   try {
     await api.resumeGate(runId.value, run.value.gate.nodeId, action, form)
-    // Play success ceremony before refresh unmounts the desk (g2.2 / g2.3).
-    if (positive) {
-      await playConfirmFlowCeremony(gateApprovalRef.value)
-    }
     toast.success(positive ? t('pages.gateApproval.approveSuccess') : t('pages.gateApproval.rejectSuccess'))
   } catch (e: any) {
     // Surface the backend rejection (e.g. a required form field, or the run
@@ -611,14 +609,14 @@ async function onClarifySend(
       ? mergeStagedAppPreviewPick(annotations)
       : annotations
   if (anns !== annotations) lastStagedAppPreviewPick.value = null
-  let forceOk = false
+  // Click intent: play overlay before wrap-up HTTP (plan g1.1); never wait for forceOk/done.
+  if (force) void playConfirmFlowCeremony(reviewChatRef.value)
   try {
     if (retryLast) {
       await api.reactReply(runId.value, nodeId, text, images, force, anns, true)
     } else {
       await api.reactReply(runId.value, nodeId, text, images, force, anns)
     }
-    forceOk = force
   } catch (e: any) {
     // Re-sync below so the UI reflects the real state (e.g. the dialogue has
     // already completed) instead of leaving the input enabled to re-click.
@@ -632,8 +630,6 @@ async function onClarifySend(
   // Force finish still needs a snapshot refresh.
   if (force) {
     lastStagedAppPreviewPick.value = null
-    // Success ceremony before loadRun flips done (g2.1 / g2.3); failure keeps error bar only (g3.1).
-    if (forceOk) await playConfirmFlowCeremony(reviewChatRef.value)
     await loadRun(false)
   }
 }

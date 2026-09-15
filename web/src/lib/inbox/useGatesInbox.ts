@@ -1645,26 +1645,25 @@ async function onResolve(action: string, form: Record<string, any> = {}) {
   const submittedItem = g
   const prevList = listItems.value.slice()
   const positive = action === 'pass' || action === 'approve'
+  // Leave pending at confirm click — do not wait for resume/network (plan g1.2).
+  // Positive path: start overlay on click (g1.1); do not await before leave.
+  if (positive) void playConfirmFlowCeremony(gateApprovalRef.value)
+  removeListItemLocally(submittedKey)
+  selectActiveAfterRemove(prevList, submittedKey)
+  if (!active.value) {
+    activeRun.value = null
+    activeRunLoadError.value = false
+  }
   try {
     await api.resumeGate(g.runId, g.nodeId, action, form)
-    // Keep desk mounted through success ceremony (g2.2 / g2.3), then leave pending.
-    if (positive) {
-      await playConfirmFlowCeremony(gateApprovalRef.value)
-    }
   } catch {
+    restoreListItemLocally(submittedItem, prevList)
     rollbackProcessingIntent(submittedItem)
     // Reclaim for retry unless a newer neighbor confirm already owns the selection.
     if (!isProcessingIntent(active.value)) {
       active.value = submittedItem
     }
     return
-  }
-  // Leave pending only after success (+ ceremony for green confirm).
-  removeListItemLocally(submittedKey)
-  selectActiveAfterRemove(prevList, submittedKey)
-  if (!active.value) {
-    activeRun.value = null
-    activeRunLoadError.value = false
   }
   try {
     await refresh({ source: 'submit', mode: 'force' })
@@ -1745,6 +1744,15 @@ async function onClarifySend(
   const prevList = force ? listItems.value.slice() : null
   if (force) {
     beginProcessingIntent(it)
+    // Click intent: play overlay + leave pending before wrap-up HTTP (plan g1.1 / g1.2).
+    // Do not wait for reactReply — Approve wrap-up can take far longer than ~3s.
+    void playConfirmFlowCeremony(reviewChatRef.value)
+    removeListItemLocally(submittedKey)
+    selectActiveAfterRemove(prevList!, submittedKey)
+    if (!active.value) {
+      activeRun.value = null
+      activeRunLoadError.value = false
+    }
   }
   // Always merge a staged pick when present (Approve may gain app preview mid-session).
   const mergedAnnotations =
@@ -1774,6 +1782,7 @@ async function onClarifySend(
     if (force) {
       // Align with RunDetail: bottom status bar, not toast.
       clarifyConfirmError.value = msg
+      restoreListItemLocally(submittedItem, prevList!)
       rollbackProcessingIntent(submittedItem)
       // Reclaim for retry unless a newer neighbor confirm already owns the selection.
       if (!isProcessingIntent(active.value)) {
@@ -1787,17 +1796,8 @@ async function onClarifySend(
   }
   const finished = force && ok
 
-  // Force-finish: play ceremony while desk still mounted, then leave pending (g2.1 / g2.3).
+  // Force-finish: already left locally; sync counts and re-drop lagging ghosts.
   if (force) {
-    if (ok) {
-      await playConfirmFlowCeremony(reviewChatRef.value)
-      removeListItemLocally(submittedKey)
-      selectActiveAfterRemove(prevList!, submittedKey)
-      if (!active.value) {
-        activeRun.value = null
-        activeRunLoadError.value = false
-      }
-    }
     let stillThere = true
     try {
       showProcessedBanner.value = false
