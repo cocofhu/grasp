@@ -1864,6 +1864,150 @@ describe('ClarifyChat', () => {
     })
   })
 
+  // plan g1.1 / g1.2 / g2.1 — option button + history recommended chip wrap (screenshot path labels)
+  describe('option label and recommended chip wrap (g1.1/g1.2/g2.1)', () => {
+    const longPathLabel =
+      '不挂 /；数据盘挂 /data，再 bind-mount 到 /root/.cache、/root/.npm、/root/.m2、/root/go/pkg/mod、/var/lib/docker、/var/lib/'
+    const noSpacePath =
+      '/root/.cache/very-long-continuous-token-without-spaces-that-must-break-inside-card'
+
+    it('interactive option label wraps with min-w-0 flex-1 overflow-wrap:anywhere (g1.1/g2.1)', () => {
+      const wrapper = mountChat({
+        turns: [
+          {
+            role: 'agent',
+            text: '',
+            at: '2026-09-15T00:00:00Z',
+            questions: [
+              {
+                id: 'q-disk',
+                prompt: 'CVM 数据盘怎么挂？',
+                options: [
+                  { id: 'bind', label: longPathLabel, recommended: true },
+                  { id: 'root', label: '直接挂 /' },
+                ],
+              },
+            ],
+          },
+        ],
+      })
+      const labels = wrapper.findAll('[data-testid="clarify-option-label"]')
+      expect(labels.length).toBeGreaterThanOrEqual(1)
+      const longLabel = labels.find((el) => el.text() === longPathLabel)
+      expect(longLabel).toBeTruthy()
+      expect(longLabel!.classes()).toEqual(expect.arrayContaining(['min-w-0', 'flex-1', 'break-words']))
+      expect(longLabel!.classes().join(' ')).toMatch(/overflow-wrap:anywhere/)
+
+      const prompt = wrapper.find('[data-testid="clarify-question-prompt"]')
+      expect(prompt.exists()).toBe(true)
+      expect(prompt.classes()).toEqual(expect.arrayContaining(['min-w-0', 'flex-1', 'break-words']))
+      expect(prompt.classes().join(' ')).toMatch(/overflow-wrap:anywhere/)
+
+      const shortLabel = labels.find((el) => el.text() === '直接挂 /')
+      expect(shortLabel).toBeTruthy()
+      expect(shortLabel!.text()).toBe('直接挂 /')
+      expect(shortLabel!.classes()).toEqual(expect.arrayContaining(['min-w-0', 'flex-1', 'break-words']))
+      wrapper.unmount()
+    })
+
+    it('no-space path option label still gets overflow-wrap:anywhere (g2.1/f3)', () => {
+      const wrapper = mountChat({
+        turns: [
+          {
+            role: 'agent',
+            text: '',
+            at: '2026-09-15T00:00:00Z',
+            questions: [
+              {
+                id: 'q-path',
+                prompt: '缓存目录',
+                options: [{ id: 'p1', label: noSpacePath, recommended: true }],
+              },
+            ],
+          },
+        ],
+      })
+      const label = wrapper.find('[data-testid="clarify-option-label"]')
+      expect(label.text()).toBe(noSpacePath)
+      expect(label.classes().join(' ')).toMatch(/overflow-wrap:anywhere/)
+      expect(label.classes()).toEqual(expect.arrayContaining(['min-w-0', 'flex-1', 'break-words']))
+      wrapper.unmount()
+    })
+
+    it('history recommended chip wraps with max-w-full overflow-wrap:anywhere (g1.2/g2.1)', () => {
+      const wrapper = mountChat({
+        turns: [
+          {
+            role: 'agent',
+            text: '',
+            at: '2026-09-15T00:00:00Z',
+            questions: [
+              {
+                id: 'q-disk',
+                prompt: 'CVM 数据盘怎么挂？',
+                options: [
+                  { id: 'bind', label: longPathLabel, recommended: true },
+                  { id: 'root', label: '直接挂 /' },
+                ],
+              },
+            ],
+          },
+          {
+            role: 'human',
+            text: `我的选择:\n- CVM 数据盘怎么挂？ → ${longPathLabel}`,
+            at: '2026-09-15T00:01:00Z',
+          },
+        ],
+      })
+      const chip = wrapper.find('[data-testid="clarify-recommended-chip"]')
+      expect(chip.exists()).toBe(true)
+      expect(chip.text()).toContain(longPathLabel)
+      expect(chip.classes()).toEqual(
+        expect.arrayContaining(['max-w-full', 'min-w-0', 'break-words', 'inline-flex']),
+      )
+      expect(chip.classes().join(' ')).toMatch(/overflow-wrap:anywhere/)
+      // interactive option buttons gone in readonly history
+      expect(wrapper.find('[data-testid="clarify-option-btn"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('short option still fully visible and selectable (g2.1)', async () => {
+      const wrapper = mountChat({
+        turns: [
+          {
+            role: 'agent',
+            text: '',
+            at: '2026-09-15T00:00:00Z',
+            questions: [
+              {
+                id: 'q1',
+                prompt: '选择部署方式',
+                options: [
+                  { id: 'k8s', label: 'Kubernetes', recommended: true },
+                  { id: 'vm', label: '虚拟机' },
+                ],
+              },
+            ],
+          },
+        ],
+      })
+      const short = wrapper
+        .findAll('[data-testid="clarify-option-label"]')
+        .find((el) => el.text() === 'Kubernetes')
+      expect(short).toBeTruthy()
+      expect(short!.text()).toBe('Kubernetes')
+      await wrapper.findAll('[data-testid="clarify-option-btn"]')[0]!.trigger('click')
+      await flushPromises()
+      const submitBtn = wrapper.findAll('button').find((b) => b.text().includes('确认选择'))
+      expect(submitBtn).toBeTruthy()
+      await submitBtn!.trigger('click')
+      await flushPromises()
+      expect(wrapper.emitted('send')).toBeTruthy()
+      expect(String(wrapper.emitted('send')![0][0])).toContain('Kubernetes')
+      wrapper.unmount()
+    })
+  })
+
   describe('empty fail card + retry (plan g1.1 / g1.2 / g2.3)', () => {
     it('persisted empty agent shows failure card and retry (plan g1.1)', () => {
       const wrapper = mountChat({
