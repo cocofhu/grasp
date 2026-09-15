@@ -428,10 +428,12 @@ describe('useClarifyChat actions', () => {
   })
 
   it('supports finish and confirm flows and releases validation on errors', async () => {
-    const clarify = withChat()
+    const clarify = withChat({ nodeType: 'grasp' })
     clarify.chat.finishEarly()
     expect(clarify.emit).toHaveBeenCalledWith('finish')
-    expect(clarify.chat.thinking.value).toBe(true)
+    // Confirm-flow uses validating chrome, not thinking placeholder (plan g2.1).
+    expect(clarify.chat.validating.value).toBe(true)
+    expect(clarify.chat.thinking.value).toBe(false)
     clarify.chat.finishEarly()
     expect(clarify.emit).toHaveBeenCalledTimes(1)
     clarify.app.unmount()

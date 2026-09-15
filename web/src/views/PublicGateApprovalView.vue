@@ -817,13 +817,12 @@ function markLinkInvalid(status?: string) {
 
 async function applyDecideResult(kind: 'confirm' | 'reject', res: PublicGateDecideResult) {
   if (res.status === 'confirmed' || (res.alreadyProcessed && kind === 'confirm' && isReview.value)) {
-    await playConfirmFlowCeremony(shellRef.value ?? chatRef.value)
+    // Overlay already started on click; do not wait for decide success to play (g1.1).
     doneKind.value = 'confirmed'
     clearHash()
     return
   }
   if (res.status === 'approved' || (res.alreadyProcessed && kind === 'confirm' && !isReview.value)) {
-    await playConfirmFlowCeremony(shellRef.value ?? chatRef.value)
     doneKind.value = 'approved'
     clearHash()
     return
@@ -893,6 +892,8 @@ async function submitFinal(kind: 'confirm' | 'reject') {
   submitting.value = true
   pendingKind.value = kind
   errorText.value = ''
+  // Click intent: play overlay before decide HTTP (plan g1.1); not after node_complete.
+  if (kind === 'confirm') void playConfirmFlowCeremony(shellRef.value ?? chatRef.value)
   stopPoll()
   abortPreview()
   decideAbort?.abort()

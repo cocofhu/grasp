@@ -280,11 +280,10 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
-  // An approve node confirms in clarify mode (not reviewMode), where the only
-  // spinner is `thinking`. The server can reject the confirm (open questions /
-  // unfinished wrap-up) and the dialogue stays open, so props.done never flips —
-  // without releasing the spinner the user is stranded on「正在思考下一轮」.
-  it('approve confirm rejection releases the thinking placeholder and shows why', async () => {
+  // Approve confirm-flow uses validating chrome (not thinking「正在思考下一轮」).
+  // Server can reject wrap-up; releasing validating + showing confirmError lets
+  // the user retry without being stranded on a fake next-turn chat state (g2.1/g2.2).
+  it('approve confirm rejection releases validating chrome and shows why', async () => {
     const wrapper = mountChat({
       nodeType: 'approve',
       turns: [{ role: 'agent', text: '要做登录吗', at: '2026-08-21T17:00:00+08:00' }],
@@ -292,13 +291,14 @@ describe('ClarifyChat', () => {
     const confirmBtn = wrapper.find('[data-testid="clarify-confirm-flow"]')
     await confirmBtn.trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('Agent 正在思考下一轮')
+    expect(wrapper.text()).toContain('校验中…')
+    expect(wrapper.text()).not.toContain('Agent 正在思考下一轮')
     expect((confirmBtn.element as HTMLButtonElement).disabled).toBe(true)
 
     await wrapper.setProps({ confirmError: '仍有待确认问题或收尾未完成，无法确认并流转' })
     await flushPromises()
 
-    expect(wrapper.text()).not.toContain('Agent 正在思考下一轮')
+    expect(wrapper.text()).not.toContain('校验中…')
     expect(wrapper.find('[data-testid="clarify-confirm-error"]').text()).toContain(
       '无法确认并流转',
     )

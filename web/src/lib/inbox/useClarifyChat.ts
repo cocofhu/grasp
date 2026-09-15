@@ -144,6 +144,8 @@ const showDoneChrome = computed(
 async function playConfirmCeremony(): Promise<void> {
   confirmFlowPlayedForDone = true
   if (!confirmFlow) return
+  // Same click may play from finishEarly and again from parent force — keep one play (g1.1).
+  if (confirmFlow.playing.value) return
   await confirmFlow.play()
 }
 // SandboxChat-aligned pending-send queue (clarify + review). Items live ONLY in
@@ -685,11 +687,8 @@ watch(
     if (d) {
       thinking.value = false
       validating.value = false
-      // Success path: play overlay once, then reveal done chrome (g2.1 / g2.3).
-      if (!confirmFlowPlayedForDone && confirmFlow && !confirmFlow.playing.value) {
-        confirmFlowPlayedForDone = true
-        void confirmFlow.play()
-      }
+      // Overlay is owned by the click path (finishEarly / parent force). Never
+      // auto-play on done/node_complete (plan g1.1) — that caused the #613 regression.
     } else {
       confirmFlowPlayedForDone = false
       confirmFlow?.reset()
@@ -1143,6 +1142,17 @@ function finishEarly() {
   if (props.reviewMode) {
     if (validating.value || confirmDisabled.value) return
     validating.value = true
+    // Click intent: play overlay immediately; parent force must not wait for done (g1.1).
+    void playConfirmCeremony()
+    emit('finish')
+    void scrollBottom()
+    return
+  }
+  // Grasp / confirm-flow: hide thinking placeholder — overlay is the main feedback (g2.1).
+  if (useConfirmFlowAction.value) {
+    if (validating.value || confirmDisabled.value) return
+    validating.value = true
+    void playConfirmCeremony()
     emit('finish')
     void scrollBottom()
     return

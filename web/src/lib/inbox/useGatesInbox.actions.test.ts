@@ -319,7 +319,7 @@ describe('useGatesInbox actions', () => {
     app.unmount()
   })
 
-  it('resolves gates after success ceremony and keeps desk on rejection (g2.2 / g3.1)', async () => {
+  it('resolves gates after click leave and restores desk on rejection (g1.2 / g2.2)', async () => {
     const { inbox, app } = await withInbox()
     const submitted = inbox.active.value!
     await inbox.onResolve('pass', { note: 'ok' })
@@ -335,11 +335,11 @@ describe('useGatesInbox actions', () => {
     mocks.restoreItemLocally.mockClear()
     mocks.removeItemLocally.mockClear()
     await inbox.onResolve('revise')
-    // Failure: desk stays; no optimistic remove/restore (g3.1).
+    // Failure after optimistic leave: card restored for retry (g2.2).
     expect(inbox.listItems.value[0]?.runId).toBe('run-gate')
     expect(inbox.active.value?.runId).toBe('run-gate')
-    expect(mocks.restoreItemLocally).not.toHaveBeenCalled()
-    expect(mocks.removeItemLocally).not.toHaveBeenCalled()
+    expect(mocks.restoreItemLocally).toHaveBeenCalled()
+    expect(mocks.removeItemLocally).toHaveBeenCalled()
 
     await inbox.onResolve('pass')
     inbox.active.value = clarifyItem()

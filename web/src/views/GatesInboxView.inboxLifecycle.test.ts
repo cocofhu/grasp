@@ -710,7 +710,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     wrapper.unmount()
   })
 
-  it('processing lock: confirm stays until success; other pending selectable while in-flight', async () => {
+  it('processing lock: confirm leaves immediately; other pending selectable while in-flight', async () => {
     const a = gateItem('a')
     const b = gateItem('b')
     const c = gateItem('c')
@@ -732,20 +732,22 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     const resolveClick = wrapper.get('[data-testid="resolve-btn"]').trigger('click')
     await flushPromises()
 
-    // Desk stays mounted through in-flight resume; ceremony + leave happen after success.
-    expect(wrapper.text()).toContain('Gate a')
+    // Intent leave: a gone before resume returns; neighbor b selected/fetched.
+    expect(wrapper.text()).not.toContain('Gate a')
     expect(wrapper.text()).toContain('Gate b')
-    expect(wrapper.text()).toContain('Gate c')
+    expect(inboxCallsFor('run-b', 'gate-b', 1).length).toBeGreaterThan(0)
 
     const buttonsC = wrapper.findAll('button').filter((btn) => btn.text().includes('Gate c'))
     expect(buttonsC.length).toBeGreaterThan(0)
     expect(buttonsC[0].attributes('disabled')).toBeUndefined()
+    const bCallsBefore = inboxCallsFor('run-b', 'gate-b', 1).length
     await buttonsC[0].trigger('click')
     await flushPromises()
 
     // Per-triple gate: c is not in-flight — user may switch while a's resume pending.
     expect(inboxCallsFor('run-c', 'gate-c', 1).length).toBeGreaterThan(0)
     expect(wrapper.text()).toContain('Gate c')
+    expect(inboxCallsFor('run-b', 'gate-b', 1).length).toBe(bCallsBefore)
 
     list = [b, c]
     releaseResume({ status: 'ok' })
@@ -759,7 +761,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     wrapper.unmount()
   })
 
-  it('plan g1.2: clarify force stays listed until reactReply succeeds', async () => {
+  it('plan g1.2: clarify force leaves pending before reactReply resolves', async () => {
     const a = clarifyItem('a')
     const b = clarifyItem('b')
     let list: InboxItem[] = [a, b]
@@ -781,12 +783,11 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
     await nextTick()
 
-    // Stay on desk until API success + ceremony; neighbor remains selectable.
-    expect(wrapper.text()).toContain('Clarify a')
+    // Leave at confirm initiation — list drops a; neighbor b is selected (its composer may mount).
+    expect(wrapper.text()).not.toContain('Clarify a')
     expect(wrapper.text()).toContain('Clarify b')
-    const buttonsB = wrapper.findAll('button').filter((btn) => btn.text().includes('Clarify b'))
-    expect(buttonsB.length).toBeGreaterThan(0)
-    expect(buttonsB[0].attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).toContain('Run #b')
+    expect(wrapper.text()).not.toContain('Run #a')
 
     list = [b]
     releaseReply({ status: 'ok' })
@@ -848,8 +849,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
     await nextTick()
 
-    // Stay listed until success; processing intent already short-circuits this triple.
-    expect(wrapper.text()).toContain('Approve 1')
+    // First Approve left pending while reactReply(force) is still in flight.
+    expect(wrapper.text()).not.toContain('Approve 1')
 
     // Engine advances: second Approve enters the list during the lock window.
     list = [approve2]
@@ -903,8 +904,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
     await nextTick()
 
-    // A stays until success; B remains selectable while A's reactReply hangs.
-    expect(wrapper.text()).toContain('Clarify a')
+    // A left; B selected while A's reactReply still hangs.
+    expect(wrapper.text()).not.toContain('Clarify a')
     expect(wrapper.text()).toContain('Clarify b')
     expect(mocks.reactReply).toHaveBeenCalledTimes(1)
     expect(mocks.reactReply).toHaveBeenNthCalledWith(
@@ -916,12 +917,6 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       true,
       [],
     )
-
-    const buttonsB = wrapper.findAll('button').filter((btn) => btn.text().includes('Clarify b'))
-    expect(buttonsB.length).toBeGreaterThan(0)
-    await buttonsB[0]!.trigger('click')
-    await flushPromises()
-    await nextTick()
 
     // Neighbor confirm must actually call reactReply — not silent-return on global lock.
     const finishB = wrapper.get('[data-testid="clarify-send"]').trigger('click')
@@ -938,8 +933,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       true,
       [],
     )
-    expect(wrapper.text()).toContain('Clarify a')
-    expect(wrapper.text()).toContain('Clarify b')
+    expect(wrapper.text()).not.toContain('Clarify b')
 
     list = []
     replyResolvers[0]!({ status: 'ok' })
@@ -977,15 +971,9 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
 
     expect(wrapper.text()).toContain('Clarify b')
-    expect(wrapper.text()).toContain('Clarify a')
+    expect(wrapper.text()).not.toContain('Clarify a')
 
-    const buttonsBPending = wrapper.findAll('button').filter((btn) => btn.text().includes('Clarify b'))
-    expect(buttonsBPending.length).toBeGreaterThan(0)
-    await buttonsBPending[0]!.trigger('click')
-    await flushPromises()
-    await nextTick()
-
-    // A fails while B is selected — A stays listed for retry and unlocks the page.
+    // A fails while B was briefly selected — restore A for retry and unlock the page.
     rejectA(new Error('confirm blew up'))
     await finishA.catch(() => {})
     await flushPromises()
@@ -1273,8 +1261,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     const resolveClick = wrapper.get('[data-testid="resolve-btn"]').trigger('click')
     await flushPromises()
 
-    // Desk stays until success; refresh stays disabled while locked.
-    expect(wrapper.text()).toContain('Gate a')
+    // Intent leave already selected neighbor; refresh stays disabled while locked.
+    expect(wrapper.text()).not.toContain('Gate a')
     expect(wrapper.text()).toContain('Gate b')
 
     const refreshBtn = wrapper.findAll('button').find((btn) => btn.text().includes('刷新'))

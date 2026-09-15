@@ -801,7 +801,7 @@ const {
     <div v-if="showDoneChrome" class="border-t border-line p-3 text-center text-[12px] text-ok">
       <Icon name="check" :size="13" class="-mt-0.5 mr-1 inline" />{{ translate('pages.clarify.done') }}
     </div>
-    <!-- Success ceremony in flight: keep composer mounted-off until hold→done (g2.3). -->
+    <!-- Success ceremony in flight after done: keep composer mounted-off until hold→done (g2.3). -->
     <div
       v-else-if="done"
       class="border-t border-line p-3 text-center text-[12px] text-txt3"
