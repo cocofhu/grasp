@@ -43,6 +43,7 @@ var OutputKeyToArtifact = map[string]string{
 	"review":                "review.json",
 	"test_result":           "test_result.json",
 	"proposal":              "proposal.json",
+	"preflight":             "preflight.json",
 }
 
 // ArtifactToOutputKey is the inverse of OutputKeyToArtifact (first key wins).

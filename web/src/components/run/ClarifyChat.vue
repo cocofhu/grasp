@@ -108,6 +108,7 @@ const {
   onComposerKeydown,
   removeAnnotation,
   isActiveTurn,
+  isActiveFormTurn,
   isSelected,
   toggle,
   answered,
@@ -119,6 +120,11 @@ const {
   pick,
   submitChoices,
   parseChoiceSummary,
+  submitForms,
+  parseFormSummary,
+  formFieldKey,
+  fieldWhy,
+  formInputType,
   choiceRowsForAgentTurn,
   selectedLabelsForQuestion,
   selectedDemoForInteractive,
@@ -190,6 +196,10 @@ const {
   activeQuestions,
   someAnswered,
   hasRecommended,
+  activeForms,
+  formValues,
+  formNotice,
+  formCanSubmit,
   step,
   curQuestion,
   isFirstCard,
@@ -324,6 +334,30 @@ const {
                     data-testid="clarify-choice-answer"
                   >{{ a }}</span>
                 </div>
+              </div>
+            </div>
+          </div>
+          <!-- submitted form summary → structured cards (plaintext values, including passwords) -->
+          <div
+            v-else-if="t.role === 'human' && parseFormSummary(t.text)"
+            class="min-w-0 max-w-full rounded-lg border border-n-ci/30 bg-n-ci/5 px-3 py-2"
+            data-testid="clarify-form-summary"
+          >
+            <div class="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-txt2">
+              <Icon name="ci" :size="12" class="text-n-ci" /> {{ translate('pages.clarify.myForm') }}
+            </div>
+            <div class="min-w-0 max-w-full space-y-1.5">
+              <div
+                v-for="(row, ri) in parseFormSummary(t.text)!"
+                :key="ri"
+                class="min-w-0 max-w-full rounded-md border border-line bg-surface/70 px-2.5 py-1.5"
+                data-testid="clarify-form-row"
+              >
+                <div class="mb-1 min-w-0 max-w-full break-words text-[11px] leading-snug text-txt3 [overflow-wrap:anywhere]">{{ row.label }}</div>
+                <div
+                  class="min-w-0 max-w-full break-words font-mono text-[12px] text-txt [overflow-wrap:anywhere] whitespace-pre-wrap"
+                  data-testid="clarify-form-value"
+                >{{ row.value }}</div>
               </div>
             </div>
           </div>
@@ -634,6 +668,84 @@ const {
                     highlighted
                     selected
                   />
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- Structured forms (ask_form / preflight). Latest unanswered turn is interactive;
+               earlier turns render read-only. Label only (no internal name); hover shows why. -->
+          <template v-if="t.role === 'agent' && t.forms && t.forms.length">
+            <div v-if="isActiveFormTurn(i)" class="mt-2" data-testid="clarify-form-card">
+              <div class="relative rounded-xl border border-n-ci/25 bg-n-ci/5 p-3">
+                <div
+                  v-for="(form, fi) in activeForms"
+                  :key="fi"
+                  class="mb-3 last:mb-0"
+                >
+                  <div v-if="form.title" class="mb-2 flex items-center gap-1.5 text-[13px] font-medium text-txt">
+                    <Icon name="ci" :size="13" class="shrink-0 text-n-ci" />
+                    <span>{{ form.title }}</span>
+                  </div>
+                  <div class="space-y-2.5">
+                    <label
+                      v-for="f in form.fields"
+                      :key="f.name"
+                      class="block"
+                      data-testid="clarify-form-field"
+                    >
+                      <span
+                        class="mb-1 block text-[12px] text-txt2"
+                        :title="fieldWhy(f) || undefined"
+                      >{{ f.label }}</span>
+                      <input
+                        v-model="formValues[formFieldKey(fi, f.name)]"
+                        :type="formInputType(f)"
+                        class="input h-[34px] w-full rounded-lg border border-line bg-surface px-2.5 text-[12px] text-txt placeholder:text-txt3 focus:border-n-ci/50 focus:ring-0"
+                        :placeholder="f.placeholder || ''"
+                        autocomplete="off"
+                        data-testid="clarify-form-input"
+                      />
+                    </label>
+                  </div>
+                </div>
+                <div v-if="formNotice" class="mt-2 text-[11px] text-warn" data-testid="clarify-form-notice">
+                  {{ formNotice }}
+                </div>
+                <div class="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:bg-accent-2 disabled:opacity-50"
+                    :disabled="!formCanSubmit"
+                    data-testid="clarify-form-submit"
+                    @click="submitForms"
+                  >
+                    <Icon name="send" :size="12" /> {{ translate('pages.clarify.submitForm') }}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div
+              v-else
+              class="mt-2 rounded-lg border border-n-ci/20 bg-n-ci/5 px-3 py-2"
+              data-testid="clarify-form-readonly"
+            >
+              <div class="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-txt3">
+                <Icon name="ci" :size="12" class="text-n-ci" />
+                {{ translate('pages.clarify.formsThisRound', { n: t.forms.length }) }}
+                <span class="ml-1 inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] font-normal text-txt3">
+                  {{ translate('pages.clarify.readonly') }}
+                </span>
+              </div>
+              <div v-for="(form, fi) in t.forms" :key="fi" class="mb-2 last:mb-0">
+                <div v-if="form.title" class="mb-1 text-[12px] text-txt2">{{ form.title }}</div>
+                <div
+                  v-for="f in form.fields"
+                  :key="f.name"
+                  class="mb-1 text-[12px] text-txt3"
+                  :title="fieldWhy(f) || undefined"
+                >
+                  {{ f.label }}
                 </div>
               </div>
             </div>

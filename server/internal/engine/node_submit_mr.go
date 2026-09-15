@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -267,6 +268,32 @@ func (e *Engine) exportBranchVar(c *execCtx, outputs map[string]any) {
 	e.persistVar(c.run.ID, "branches", br)
 }
 
+// exportPreflightVars writes each preflight.json field name→value (plaintext,
+// including passwords) into run vars. Does not mutate SandboxEnv.
+func (e *Engine) exportPreflightVars(c *execCtx) {
+	content, ok := e.store.Get(c.run.ID, mcp.PreflightArtifactName)
+	if !ok {
+		return
+	}
+	var doc struct {
+		Fields []struct {
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		} `json:"fields"`
+	}
+	if json.Unmarshal([]byte(content), &doc) != nil {
+		return
+	}
+	for _, f := range doc.Fields {
+		name := strings.TrimSpace(f.Name)
+		if name == "" {
+			continue
+		}
+		c.setVar(name, f.Value)
+		e.persistVar(c.run.ID, name, f.Value)
+	}
+}
+
 func firstNonEmptyStr(a, b string) string {
 	if strings.TrimSpace(a) != "" {
 		return a
@@ -287,6 +314,9 @@ func (e *Engine) finalizeAgentProducts(c *execCtx, node *models.Node, res runtim
 		oc := e.finalizeProducts(c, node, res, required, nodereg.OptionalProducts(node.Type))
 		if node.Type == "implement" && oc.status == "completed" {
 			e.exportBranchVar(c, oc.outputs)
+		}
+		if node.Type == "preflight" && oc.status == "completed" {
+			e.exportPreflightVars(c)
 		}
 		return oc
 	}

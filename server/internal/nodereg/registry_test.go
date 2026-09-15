@@ -73,8 +73,8 @@ func TestEmbeddedRules(t *testing.T) {
 }
 
 func TestClarifyInteractive(t *testing.T) {
-	if !ClarifyInteractive("react") || !ClarifyInteractive("approve") {
-		t.Fatal("react and approve should be clarify-interactive")
+	if !ClarifyInteractive("react") || !ClarifyInteractive("approve") || !ClarifyInteractive("preflight") {
+		t.Fatal("react, approve and preflight should be clarify-interactive")
 	}
 	if ClarifyInteractive("agent") || ClarifyInteractive("plan") || ClarifyInteractive("research") {
 		t.Fatal("agent/plan/research must not be clarify-interactive")
@@ -100,7 +100,7 @@ func TestRequiredProductsApprove(t *testing.T) {
 
 // frontendNodeTypes mirrors web/src/lib/types.ts NodeType union.
 var frontendNodeTypes = []string{
-	"input", "output", "react", "agent", "approve", "plan", "implement",
+	"input", "output", "react", "preflight", "agent", "approve", "plan", "implement",
 	"research", "test", "review", "proposal", "proposal_select",
 	"submit_mr", "visual", "human_gate", "app_preview", "branch", "set_var",
 }
@@ -121,7 +121,7 @@ func TestRegistryCoversFrontendNodeTypes(t *testing.T) {
 }
 
 func TestStructuredNodesHaveRendererAndTool(t *testing.T) {
-	for _, typ := range []string{"react", "research", "test", "review", "proposal", "implement"} {
+	for _, typ := range []string{"react", "preflight", "research", "test", "review", "proposal", "implement"} {
 		s, ok := Get(typ)
 		if !ok {
 			t.Fatalf("missing %s", typ)
@@ -151,6 +151,9 @@ func TestPromptContractText(t *testing.T) {
 	if PromptContractText(nil, "approve", "", "") == "" {
 		t.Fatal("approve contract")
 	}
+	if PromptContractText(nil, "preflight", "", "") == "" {
+		t.Fatal("preflight contract")
+	}
 	if PromptContractText(nil, "agent", "", "") != "" {
 		t.Fatal("agent should have no fixed contract")
 	}
@@ -167,7 +170,7 @@ func TestReviewCapableDefaults(t *testing.T) {
 			t.Fatalf("%s DefaultReviewVar = %q, want review", typ, DefaultReviewVar(typ))
 		}
 	}
-	for _, typ := range []string{"test", "react", "agent", "approve", "human_gate", "proposal_select", "input", "nope"} {
+	for _, typ := range []string{"test", "react", "preflight", "agent", "approve", "human_gate", "proposal_select", "input", "nope"} {
 		if ReviewCapable(typ) {
 			t.Fatalf("%s must not be review-capable", typ)
 		}

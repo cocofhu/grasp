@@ -134,6 +134,41 @@
       },
       "help": "### Grasp\n\nOne multi-turn ReAct dialogue for **pre-dev work**. This node configures an Agent and a timeout (default 30 minutes): **no prompt template**, **no round cap**, and no auto-clarify / conditional injection. The platform injects run inputs and waits for the user to state the goal first; the agent then uses tools to align requirements and only `ask_question` when there is a real decision.\n\n**Two mandatory deliverables** (both required to finish — not a single unique delivery):\n1. `set_clarified_requirement` → `clarified_requirement.json` (`open_questions` must be empty)\n2. `set_plan` → `plan.json` (at most two levels: goal → sub-goal; when writing the design zone, include all six sections or explicit 不涉及, optional Mermaid diagrams)\n\n**Optional** (shown if present, missing does not fail): `set_research`; `set_proposals` (**only when ≥2 distinct alternatives need a user pick**; no single-candidate pseudo-choice); `write_artifact` for `page.html`; `set_preview` to register a running app (sandbox port or external url — not a completion condition, does not end this node).\n\nIf a skill pack says “unique delivery” or forbids those tools, **platform rule `rules/approve.md` wins**. Do not write implementation code or change the repo."
     },
+    "preflight": {
+      "label": "Preflight",
+      "desc": "Check execution environment against plan/repo/vars; collect gaps via choices or plaintext forms, then set_preflight before the agent completes",
+      "fields": {
+        "agent_profile": {
+          "label": "Agent (user-defined · Agent Studio)"
+        },
+        "prompt": {
+          "label": "Prompt template",
+          "placeholder": "Check execution environment against plan/repo/vars…"
+        },
+        "max_rounds": {
+          "label": "Max rounds",
+          "placeholder": "6"
+        },
+        "timeout": {
+          "label": "Timeout (minutes)"
+        },
+        "conditional_prompt": {
+          "label": "Conditional injection (append prompt when a global variable exists)"
+        }
+      },
+      "outputs": {
+        "preflight": {
+          "desc": "Environment checklist (preflight.json render)"
+        },
+        "preflight_json": {
+          "desc": "Raw preflight JSON"
+        },
+        "transcript": {
+          "desc": "Full conversation transcript"
+        }
+      },
+      "help": "### Preflight\n\nCheck **execution environment** needed by later implement/test steps against upstream plan, repo, and vars.\n\n**Mandatory deliverable**: call `set_preflight` to write `preflight.json` (summary, confirmed=true; fields may be empty for no-gap; passwords plaintext). Missing or incomplete checklist blocks finish.\n\n**Gaps**: finite options via `ask_question`; free text via `ask_form` (type text|url only; passwords as plaintext text). Forms show human labels only; hover explains the plan gap. Form submit enters the dialogue and **does not** replace set_preflight.\n\n**No gaps**: write confirmed with empty fields, then `node_complete` — no inbox wait.\n\n**No 「Confirm & continue」** on this node; the agent calls `node_complete` after the gate passes. Confirmed fields are exported as plaintext run vars; SandboxEnv is unchanged."
+    },
     "agent": {
       "label": "Generic",
       "desc": "Run a user-defined agent (design/code/review, etc.) in sandbox with artifacts",

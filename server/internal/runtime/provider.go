@@ -182,6 +182,7 @@ type NodeResult struct {
 type ReactTurn struct {
 	Msg       string
 	Questions []models.ReactQuestion
+	Forms     []models.ReactForm
 	Done      bool
 	Result    NodeResult        // populated when Done (outputs/git)
 	Events    []models.AcpEvent // this turn's event log (live/persisted timeline)

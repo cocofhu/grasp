@@ -17,7 +17,7 @@ const visualPageName = "page.html"
 // clarify dialogue (ask_question + waiting_human inbox), as opposed to an
 // autonomous agent or a post-run review phase.
 func ClarifyInteractive(nodeType string) bool {
-	return nodeType == "react" || nodeType == "approve"
+	return nodeType == "react" || nodeType == "approve" || nodeType == "preflight"
 }
 
 // RequiredProducts returns the structured/visual deliverables that must exist

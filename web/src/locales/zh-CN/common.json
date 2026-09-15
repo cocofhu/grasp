@@ -231,6 +231,7 @@
       "testResult": "测试结果",
       "review": "评审结论",
       "implementationResult": "实现结果",
+      "preflight": "环境确认",
       "pagePreview": "网页预览",
       "artifact": "产物",
       "textOutput": "文本输出",

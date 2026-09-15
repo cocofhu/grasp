@@ -47,6 +47,12 @@ type AgentPrompts struct {
 	// as ask_question so the user resolves every one. Supports the `{items}`
 	// placeholder for the unresolved-question list.
 	ClarifiedOpenQuestionsRetry string `json:"clarifiedOpenQuestionsRetry,omitempty"`
+	// PreflightContract is appended to a preflight node: env checklist via
+	// set_preflight; passwords plaintext; ask_form/ask_question for gaps.
+	PreflightContract string `json:"preflightContract,omitempty"`
+	// PreflightRetry is the re-prompt when preflight.json is missing or not
+	// confirmed. Supports `{reason}`.
+	PreflightRetry string `json:"preflightRetry,omitempty"`
 	// ImplementResultContract is appended to an implement node: after finishing
 	// the plan it must summarize the work via set_implementation_result.
 	ImplementResultContract string `json:"implementResultContract,omitempty"`
@@ -125,6 +131,8 @@ const (
 	DefaultMRContract                   = "\n\n## 合并请求契约(强制)\n你是提交 MR 节点,目标是让源分支 `{source}` 能干净地合入目标分支 `{target}` 并存在一个对应的合并请求（MR/PR）。当已有 open 单可复用、工作已合入、或源相对目标已无差异且可解释时,目标亦视为已满足（幂等成功）。工作区根 `/root/workspace` 不是仓库,**先 `cd` 进目标仓目录(`/root/workspace/<name>/`)再执行以下所有 `git` 与对应 CLI（`glab`/`gh`）命令**。请依次完成:\n1. **对齐目标分支并解冲突**:`git fetch origin {target}`,把 `origin/{target}` 合入当前源分支(merge 或 rebase 均可),**逐个解决所有冲突**后 `git add` 已解决文件并提交。\n2. **推送**:`git push origin {source}`(源分支)。**无论后续能否自动建单,都必须先完成本步。**\n3. **按远端主机选型创建/复用合并请求**(按主机与环境变量匹配,不按 Token 有无或 CLI 轮询)。**强制操作顺序**:list open → create（仅当无 open）→ 若 create 非零则解析幂等错误 → list merged/view → `node_complete`。**create 非零退出不得直接判 failed。**\n   - **GitLab**（远端主机为 gitlab.com,或与 `GITLAB_URL` 主机一致）:\n     1) 先 `glab mr list --source-branch {source} --target-branch {target} --state opened`（或等价）查 open;命中则复用其 Web URL,**跳过新建**。\n     2) 无 open 时再 `glab mr create --source-branch {source} --target-branch {target} --fill --yes`。\n     3) create 若因 already exists / No commits between / 已无差异等同类原因失败:**不得直接 failed**;转入查询 open（若有）或 merged 单,再按步骤 4 幂等成功规则结束。\n   - **GitHub**（远端主机为 github.com,或与 `GITHUB_URL` 主机一致,含 GHE）:\n     1) 先 `gh pr list --base {target} --head {source} --state open` 查 open;命中则复用其 Web URL,**跳过新建**。\n     2) 无 open 时再 `gh pr create --base {target} --head {source} --fill`。\n     3) create 若因 already exists / No commits between / 已无差异等同类原因失败:**不得直接 failed**;转入查询 open 或 merged（`gh pr list --state merged` / `gh pr view`）,再按步骤 4 幂等成功规则结束;成功时 PR Web URL 写入同一字段 `outputs.mr_url`。\n   - **匹配不上**（如 Gitea 等）或不支持自动建单:不要假装已建单。\n   凭据由沙箱提供（`GITLAB_*` / `GITHUB_*`）;需预装对应 CLI（`glab` / `gh`）。\n4. **标记完成**（幂等成功优先于「建单 CLI 非零即失败」）:\n   - **幂等 success**（调用 `node_complete`(status=success)）:\n     - **open 复用**:同源→目标已有 open PR/MR → 复用该 Web URL 写入 `outputs.mr_url`,summary 说明复用已有 open 单。\n     - **已合并无新提交**:PR/MR 已合并且当前源相对目标无新提交可建单（含 create 报 No commits between / already exists 后查得 merged）→ success;优先将已合并单 Web URL 写入 `outputs.mr_url`;查不到 URL 时允许空 `mr_url`,summary 须说明已合入/无新提交而跳过新建。\n     - **无历史单已同步**:源相对目标已无差异,且 open/merged 均无同源→目标单 → 允许 success 且 `mr_url` 可空,summary 须说明无差异且无历史单可复用。\n   - **失败**（调用 `node_complete`(status=failed)）:\n     - **closed 未合并**:仅有 closed（未合并）单且当前无新提交可再建单 → failed;不得仅因存在 closed URL 而 success。\n     - **真失败**:无法 push、鉴权/权限失败、冲突未解决、缺少 `glab`/`gh`、托管商不支持自动建单、其它非幂等建单错误 → failed。\n     - 真失败时:`summary`/`error` 必须显式包含「冲突已解决」「源分支已推送」(步骤 1–2 已完成时),并说明建单/CLI/托管商/权限等原因。**不采用**「推送成功即可 success、mr_url 可空」(上列幂等 success 路径除外)。\n   - **`outputs.mr_url` 与 summary**:有 open 必填该 URL;已合并优先填合并单 URL;查不到或无历史单可空;summary 区分复用已有 open / 已合入跳过 / 无差异无历史单跳过 / 失败原因。\n平台不再代验推送/MR/冲突——以你的 node_complete 为准。\n"
 	DefaultStructuredRetry              = "【必须完成】本节点尚未写入结构化产物 `{name}`,这是本节点尚未写入的强制交付,缺它即判失败。现在立即调用 `{tool}` 工具写入它(内容为本节点应产出的结论),不要再提问、不要输出其它内容——只需完成这次调用。"
 	DefaultClarifiedOpenQuestionsRetry  = "【必须澄清】你写入的需求里仍有以下待确认问题没有和用户敲定:\n{items}\n澄清节点是门禁,不能带着未确认的问题结束。请现在用 `ask_question` 工具把这些问题逐一抛给用户做选择(每个问题给出候选选项),等用户确认后再重新调用 `set_clarified_requirement` 更新结论并清空 open_questions。不要直接结束澄清,也不要替用户擅自拍板。"
+	DefaultPreflightContract            = "\n\n## 环境确认契约(强制)\n你是环境确认(preflight)节点:对照计划/仓库/已有 vars 推断运行所需环境项(地址、账号、密码、密钥、端口等)。**唯一结构化交付**是调用 `set_preflight` 写入 `preflight.json`。\n\n**必填**:`summary`(非空)、`confirmed=true`;`fields[]` 每项 `name`+`value` 明文(密码也是明文,无 secret/password 类型);`unresolved` 必须为空或不传。`fields` 可为空数组(无缺口直通)。\n\n**可选字段**(有则写):`label`、`verified`、`verification`(sandbox_probe|user_attested|mixed)、`source`(form|choice|chat)、`notes`。\n\n**流程**:\n1. 无缺口:`set_preflight(confirmed=true, fields=[])` → `node_complete`。不要为问而问。\n2. 有缺口:有限选项用 `ask_question`;需用户键入用 `ask_form`(type 仅 text|url;密码用 text 明文)。调用后立即结束本轮等待用户。\n3. 尽量在沙箱核验(探测连通/登录等);不能核验时用 user_attested 并写 notes。\n4. 确认后 `set_preflight` → `node_complete`。**表单提交不能代替 set_preflight**;禁止用 `write_artifact` 写 `preflight.json`。\n5. 本节点隐藏「确认并流转」:由你调用 `node_complete` 结束。完成后平台把 fields 明文写入运行 vars,不改 SandboxEnv。\n"
+	DefaultPreflightRetry               = "【必须完成】环境确认尚未就绪:{reason}。请继续用 `ask_question`/`ask_form` 采集缺口,在沙箱核验后调用 `set_preflight`(confirmed=true, unresolved 为空),再 `node_complete`。不要用 write_artifact 伪造 preflight.json;表单提交不能代替 set_preflight。\n"
 	DefaultVisualContract               = "\n\n## 视觉网页契约(强制)\n你是视觉网页节点,唯一交付是一个**单文件、自包含**的网页 `page.html`。当需求涉及既有前端修改时,必须先只读检查现有业务 UI,再在真实页面骨架中呈现**改后目标态**,供人在「人工门禁」里确认后再开工。不得从零编造与业务无关的通用 demo。\n\n### 怎么交付(只有一种方式)\n**只调用 `write_artifact` 工具写入产物**:name 传 `page.html`,content 传完整 HTML,kind 传 `html`。\n**严禁在项目/工作区里写任何文件**——不要 `echo >`、不要新建/修改/格式化仓库文件、不要 `git add`/暂存/提交,以免污染仓库改动。运行时注入的仓库平级布局(如 `/root/workspace/<name>/`)仅用于**只读定位**源码,不构成任何写入授权。平台会把该产物登记为本次运行产物并用 iframe 预览。最终必须存在名为 `page.html` 的产物,否则判定为失败。\n\n### 有既有前端基线时(强制)\n需求指向仓库中已有页面或组件时,生成前必须先只读定位目标路由、页面组件、共享组件、全局样式与设计令牌、布局、业务文案与关键状态,再开始生成。然后在真实页面骨架中应用本次修改,默认只展示改后目标态。须复用现有信息架构、导航、组件外观、颜色、字号、间距、圆角、阴影、信息密度与业务文案;需求涉及的表单、筛选、弹层、切换等关键交互应可在 sandbox 中演示。桌面与移动端要求存在时须具备相应响应式表现。不要套用通用仪表盘或无关设计,不要强制附加与业务页面无关的演示外壳,也不要默认做固定的「修改前/修改后」分屏;仅当需求本身要求比较时才加入切换或并排视图。\n\n### 无既有前端基线时(降级)\n无法定位目标页面或缺少足够视觉依据时:优先沿用仓库中的全局设计系统与可用令牌,克制且一致地补全无法验证的部分;不得臆造不可验证的业务数据或页面结构,也不得声称与现网完全一致。仍须产出完整、可直接审批的页面,而不是说明文档或线框占位。\n\n### 硬性要求\n1. 一个完整的 HTML 文档(以 `<!doctype html>` 开头,含 `<html><head><body>`)。\n2. **所有** CSS 写进 `<style>`、所有 JS 写进 `<script>`,**全部内联**在这一个文件内。\n3. **不引用任何外部资源**(不要外链 CSS/JS/字体/图片 CDN);如需图形用内联 SVG 或 CSS 绘制。\n4. 只产出这一个 `page.html`;不得把密钥、令牌或可用凭据写入页面。\n\n### page.html 运行环境(强制)\npage.html 运行于 Gates HtmlPreview 的 sandbox iframe(sandbox=\"allow-scripts allow-forms\",无 allow-same-origin,文档为 opaque origin)。\n禁止:读取/写入 localStorage、sessionStorage;禁止:依赖 cookie 或同源 Web Storage 的持久化/登录态。\n需要完整 SPA、持久化或真实浏览器能力时,改走 app_preview(noVNC),不要在 srcdoc 中硬做,也不得引导恢复 allow-same-origin。\n"
 	DefaultPreviewContract              = "\n\n## 应用预览契约(强制)\n你是应用预览节点。本节点唯一交付是成功调用 `set_preview(port?, url?, label?)`:**port 与 url 必须恰好提供其一**(可多次登记多项);**不要调用 set_test_result**,本节点无结构化 JSON 产物。沙箱内没有 Docker,**不要用 `docker`/`docker compose`**。\n\n**两条合法路径,选一条;不要混用,也不要为了走 port 而在沙箱里反代外部站点。**\n\n### A. 外部 URL(已部署环境)\n若应用已在远程环境运行(dsh-station / staging / 其它已部署地址),直接:\n`set_preview(url=\"http(s)://host[:port]/path\", label=\"…\")`\n- url 必须是绝对 http/https 地址(可含端口与路径)\n- 平台**不做服务端探测**;审批页 iframe 直连该 URL,取点可能降级\n- **禁止**在沙箱内再起反向代理、本地 `dsh web` 或其它本地服务来「满足 port」\n\n### B. 沙箱内原生端口\n若要在本沙箱启动应用:用 `setsid`/`nohup` **真后台**原生启动(如 `npm run dev`、`go run`、`python -m ...`),禁止前台占住 Agent 会话。必须监听 `0.0.0.0:<port>`(不要只绑 `127.0.0.1`;服务在根路径 `/`),再 `set_preview(port, label?)`。示例:\n```\nsetsid npm run dev -- --host 0.0.0.0 --port 8080 > /tmp/app-8080.log 2>&1 < /dev/null &\necho $! > /tmp/app-8080.pid\n```\nVite 加 `--host 0.0.0.0`;Node/Express `app.listen(port, '0.0.0.0')`;Python `--host 0.0.0.0`。调用 `set_preview(port)` 时平台会校验端口可达并对监听进程做 setsid 脱钩保活;不可达则工具失败,可修复后重试。应用**照常服务在根路径 `/` 即可**——平台代理会透明地把资源和链接改写到预览子路径下。\n\n**预览是门禁**:`set_preview` 成功后(url 路径登记即成功;port 路径须探测可达)平台立即结束生产相并进入 parked 复审 ReAct——**不要死等会话自然结束,也不要依赖 node_complete 才进门禁**。结束/Cancel Agent 会话不会拆掉预览服务。未成功注册时平台按 max_rounds(默认 3)同会话催促,超限仍无则节点失败。\n"
 	DefaultPreviewDirectContract        = "\n\n## 节点配置:direct_preview(IP 直连)\n本节点已开启 IP 直连预览,覆盖上文「平台子路径反代 / noVNC 取点」约定:\n1. 环境变量 `PREVIEW_PORT` 是平台预映射的端口(Docker 1:1 / K8s Service 同号)。必须监听 `0.0.0.0:$PREVIEW_PORT`(Vite `--port $PREVIEW_PORT --host 0.0.0.0`),再 `set_preview(port=数字($PREVIEW_PORT))`。\n2. 应用服务在根路径 `/`。审批人浏览器将直连该地址,不要改 base href,不要依赖平台 `/preview/...` 改写。\n3. 平台在沙箱入站口自动向 HTML 注入 `<script src=\"$PREVIEW_PICK_SCRIPT_URL\"></script>`，不要改业务 HTML / origin / base href。仅当预览页仍提示未加载取点脚本时，再在 HTML 入口补上该 script（旧沙箱镜像兜底）。\n"
@@ -258,6 +266,26 @@ func (p *AgentPrompts) ClarifiedOpenQuestionsRetryFor(items []string) string {
 		b.WriteString("\n")
 	}
 	return strings.ReplaceAll(tmpl, "{items}", strings.TrimRight(b.String(), "\n"))
+}
+
+// PreflightContractText returns the preflight-node contract. Nil-safe.
+func (p *AgentPrompts) PreflightContractText() string {
+	if p == nil {
+		return DefaultPreflightContract
+	}
+	return contractText(p.PreflightContract, DefaultPreflightContract)
+}
+
+// PreflightRetryText returns the preflight gate re-prompt with {reason}.
+func (p *AgentPrompts) PreflightRetryText(reason string) string {
+	tmpl := DefaultPreflightRetry
+	if p != nil && strings.TrimSpace(p.PreflightRetry) != "" {
+		tmpl = p.PreflightRetry
+	}
+	if strings.TrimSpace(reason) == "" {
+		reason = "preflight.json 未就绪"
+	}
+	return strings.ReplaceAll(tmpl, "{reason}", reason)
 }
 
 // ImplementResultContractText returns the implement-node result contract.

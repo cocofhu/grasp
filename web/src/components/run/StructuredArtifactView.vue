@@ -8,6 +8,7 @@ const STRUCTURED_ARTIFACT_NAMES = new Set([
   'implementation_result.json',
   'test_result.json',
   'review.json',
+  'preflight.json',
 ])
 
 // Feedback ledger products are matched by prefix. New ReAct products use one
@@ -35,6 +36,7 @@ import TestResultView from './product/TestResultView.vue'
 import ReviewView from './product/ReviewView.vue'
 import ImplementationResultView from './product/ImplementationResultView.vue'
 import FeedbackLedgerView from './product/FeedbackLedgerView.vue'
+import PreflightView from './product/PreflightView.vue'
 
 import type { Artifact } from '@/lib/shared/types'
 
@@ -59,6 +61,7 @@ const isFeedback = computed(() => isFeedbackArtifactName(props.name))
 
 <template>
   <ClarifiedRequirementView v-if="name === 'clarified_requirement.json'" :doc="doc" :accent="accent" />
+  <PreflightView v-else-if="name === 'preflight.json'" :doc="doc" :accent="accent" />
   <PlanView v-else-if="name === 'plan.json'" :doc="doc" :accent="accent" :artifacts="artifacts" />
   <ImplementationResultView v-else-if="name === 'implementation_result.json'" :doc="doc" :accent="accent" />
   <ResearchView v-else-if="name === 'research.json'" :doc="doc" :accent="accent" />

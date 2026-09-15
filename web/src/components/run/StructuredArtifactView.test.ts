@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { isFeedbackArtifactName, isStructuredArtifactName } from './StructuredArtifactView.vue'
 
 describe('isStructuredArtifactName', () => {
-  it('matches the 8 reserved structured JSON artifact names', () => {
+  it('matches the reserved structured JSON artifact names', () => {
     const names = [
       'clarified_requirement.json',
       'research.json',
@@ -12,6 +12,7 @@ describe('isStructuredArtifactName', () => {
       'implementation_result.json',
       'test_result.json',
       'review.json',
+      'preflight.json',
     ]
     for (const name of names) {
       expect(isStructuredArtifactName(name)).toBe(true)

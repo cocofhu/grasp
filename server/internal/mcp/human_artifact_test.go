@@ -92,6 +92,11 @@ func TestValidateHumanArtifactContent_allStructured(t *testing.T) {
 			`{"title":"P","goals":[{"title":"G1","subgoals":[{"title":"S1"}]}]}`,
 			"plan",
 		},
+		{
+			PreflightArtifactName,
+			`{"summary":"env ready","confirmed":true,"fields":[{"name":"db_host","value":"localhost"}]}`,
+			"preflight",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -586,6 +586,7 @@ const FRIENDLY_NAME_KEYS: Record<string, string> = {
   'test_result.json': 'common.gateBodyLabels.testResult',
   'review.json': 'common.gateBodyLabels.review',
   'implementation_result.json': 'common.gateBodyLabels.implementationResult',
+  'preflight.json': 'common.gateBodyLabels.preflight',
 }
 
 /** page.html and same-content visual_{node}.page.html share one friendly label. */

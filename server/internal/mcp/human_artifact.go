@@ -145,6 +145,19 @@ func ValidateHumanArtifactContent(name, content string) (HumanArtifactNormalized
 		out.Rendered = structured.RenderImplementationResultMarkdown(out.Content)
 		out.JSONKey = "implementation_result_json"
 		return out, nil
+	case PreflightArtifactName:
+		doc, err := structured.ParsePreflight(jsonToArgs(content))
+		if err != nil {
+			return out, err
+		}
+		b, err := json.MarshalIndent(doc, "", "  ")
+		if err != nil {
+			return out, err
+		}
+		out.Content = string(b)
+		out.Rendered = structured.RenderPreflightMarkdown(out.Content)
+		out.JSONKey = "preflight_json"
+		return out, nil
 	case PlanArtifactName:
 		doc, err := parsePlan(jsonToArgs(content))
 		if err != nil {

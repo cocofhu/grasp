@@ -19,18 +19,23 @@ func TestPlatformRuleServiceSeedAndPriority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 10 {
-		t.Fatalf("rule files = %d, want 10", len(files))
+	if len(files) != 11 {
+		t.Fatalf("rule files = %d, want 11", len(files))
 	}
-	foundApprove := false
+	foundApprove, foundPreflight := false, false
 	for _, f := range files {
 		if f == "approve.md" {
 			foundApprove = true
-			break
+		}
+		if f == "preflight.md" {
+			foundPreflight = true
 		}
 	}
 	if !foundApprove {
 		t.Fatal("expected approve.md in platform rule files")
+	}
+	if !foundPreflight {
+		t.Fatal("expected preflight.md in platform rule files")
 	}
 	for _, f := range files {
 		if _, err := os.Stat(filepath.Join(global, f)); err != nil {

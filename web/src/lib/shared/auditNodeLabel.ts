@@ -8,6 +8,7 @@ const AUDIT_STAGE_LABEL: Record<string, string> = {
   visual: '视觉',
   react: '需求澄清',
   approve: 'Grasp',
+  preflight: '环境确认',
   plan: '计划',
   implement: '实现',
   test: '测试',

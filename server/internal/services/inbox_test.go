@@ -310,6 +310,9 @@ func TestClarifyInboxKind(t *testing.T) {
 	if got := clarifyInboxKind(&models.Node{Type: "approve"}); got != "clarify" {
 		t.Fatalf("approve → %q", got)
 	}
+	if got := clarifyInboxKind(&models.Node{Type: "preflight"}); got != "preflight" {
+		t.Fatalf("preflight → %q", got)
+	}
 	if got := clarifyInboxKind(&models.Node{Type: "research"}); got != "review" {
 		t.Fatalf("research → %q", got)
 	}

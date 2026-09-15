@@ -17,6 +17,7 @@ var reservedArtifactExpectedKind = map[string]string{
 	TestResultArtifactName:               "json",
 	ReviewArtifactName:                   "json",
 	ImplementationResultArtifactName:     "json",
+	PreflightArtifactName:                "json",
 	NodeOutcomeArtifactName:              "json",
 	FeedbackIndexArtifactName:            "json",
 }

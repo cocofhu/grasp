@@ -134,6 +134,41 @@
       },
       "help": "### Grasp\n\n一次多轮 ReAct 对话完成**开发前工作**。本节点配置 Agent 与超时(默认 30 分钟):**没有 Prompt 模板**、**不限制轮次**、也没有自动澄清 / 条件注入。开场由平台注入运行输入并等待用户先描述目标;Agent 用工具对齐需求,仅在真实分歧时 `ask_question`。\n\n**两份强制交付**(都写完才能结束,不是「唯一交付」):\n1. `set_clarified_requirement` → `clarified_requirement.json`(open_questions 必须为空)\n2. `set_plan` → `plan.json`(最多两级:大目标→小目标;写入设计区时六节齐全,无内容显式「不涉及」,可挂 Mermaid diagram)\n\n**可选**(有则展示,缺不失败):`set_research`;`set_proposals`(**仅当 ≥2 个可区分候选需用户择一时才写**;禁止单候选伪选择);`write_artifact` 写入 `page.html`;`set_preview` 登记可运行应用(沙箱 port 或外部 url,不是完成条件、不会结束本节点)。\n\n若角色包声明「唯一交付」或禁止上述工具,**以平台规则 `rules/approve.md` 为准**。不要写实现代码、不要改仓库。"
     },
+    "preflight": {
+      "label": "环境确认",
+      "desc": "对照计划/仓库/变量核对执行环境;有缺口则选择题或明文表单采集,经 set_preflight 写入清单后由 Agent 完成",
+      "fields": {
+        "agent_profile": {
+          "label": "Agent(用户定义 · Agent 管理)"
+        },
+        "prompt": {
+          "label": "Prompt 模板",
+          "placeholder": "对照计划/仓库/变量核对执行环境…"
+        },
+        "max_rounds": {
+          "label": "最大轮次",
+          "placeholder": "6"
+        },
+        "timeout": {
+          "label": "超时(分钟)"
+        },
+        "conditional_prompt": {
+          "label": "条件注入(存在某全局变量时追加提示词)"
+        }
+      },
+      "outputs": {
+        "preflight": {
+          "desc": "环境确认清单(preflight.json 渲染)"
+        },
+        "preflight_json": {
+          "desc": "环境确认原始 JSON"
+        },
+        "transcript": {
+          "desc": "完整对话记录"
+        }
+      },
+      "help": "### 环境确认(preflight)\n\n对照上游计划、仓库与已有变量,核对后续实现/测试所需的**执行环境**。\n\n**唯一交付(强制)**:调用 `set_preflight` 写入 `preflight.json`(summary、confirmed=true;fields 可空表示无缺口;密码明文)。未写入或门禁不通过则不能结束。\n\n**有缺口**:有限选项用 `ask_question`;需手填用 `ask_form`(type 仅 text|url,密码也用 text 明文)。表单只显示可读标签,悬停说明计划缺口;提交进入对话,**不能代替** set_preflight。\n\n**无缺口**:写 confirmed 空 fields 后直接 `node_complete`,不进待审批。\n\n**本节点不展示「确认并流转」**;门禁通过后由 Agent 调用 `node_complete`。完成后字段明文写入运行 vars,不改沙箱 OS env。"
+    },
     "agent": {
       "label": "通用",
       "desc": "自主执行用户定义的 Agent(设计/编码/评审等);沙箱执行、产物",

@@ -49,6 +49,10 @@
           "signature": "ask_question(questions)",
           "desc": "Clarify (react) nodes only: ask structured multiple-choice questions (options may be marked recommended; at most one for single-select, one or more for multi-select)"
         },
+        "ask_form": {
+          "signature": "ask_form(fields|forms, title?)",
+          "desc": "Preflight only: show a plaintext form (text|url; passwords as text). Hover why explains the plan gap. Submit enters the dialogue — does not replace set_preflight"
+        },
         "set_plan": {
           "signature": "set_plan(goals, architecture?, data_design?, interfaces?, components?, interaction?, test_design?)",
           "desc": "Plan/Grasp: write a two-level plan; optional six SDD sections (use 不涉及 when N/A) + Mermaid diagrams"
@@ -68,6 +72,14 @@
         "get_clarified_requirement": {
           "signature": "get_clarified_requirement() -> clarified_requirement.json",
           "desc": "Read the structured clarified requirement"
+        },
+        "set_preflight": {
+          "signature": "set_preflight(summary, confirmed, fields?, unresolved?)",
+          "desc": "Preflight only: write the confirmed environment checklist to preflight.json (passwords plaintext; fields may be empty for no-gap)"
+        },
+        "get_preflight": {
+          "signature": "get_preflight() -> preflight.json",
+          "desc": "Read the environment checklist for this run"
         },
         "set_research": {
           "signature": "set_research(summary, questions?, findings?, …)",

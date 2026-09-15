@@ -34,14 +34,14 @@ func (c *acpProvider) ReactOpen(ctx context.Context, req NodeReq) ReactTurn {
 			cancel()
 			if err == nil {
 				sess := c.parkReactSession(req, sb, acp, home)
-				qs := c.host.TakePendingQuestions(req.RunID, req.NodeID)
+				pending := takeClarifyPending(c.host, req.RunID, req.NodeID)
 				var usage *models.TokenUsage
 				var usageByModel models.TokenUsageByModel
 				var events []models.AcpEvent
 				absorbChat(&usage, &usageByModel, &events, res)
 
-				if len(qs) > 0 {
-					return ReactTurn{Msg: res.Narration, Questions: qs, Events: events, Usage: usage, UsageByModel: usageByModel}
+				if pending.any() {
+					return ReactTurn{Msg: res.Narration, Questions: pending.Questions, Forms: pending.Forms, Events: events, Usage: usage, UsageByModel: usageByModel}
 				}
 
 				// Provider failed after prompt_done (quota / 4xx): keep the
@@ -96,7 +96,7 @@ func (c *acpProvider) rehydrateReact(ctx context.Context, req NodeReq, history [
 		sb, acp, home, err := c.openSandbox(ctx, req)
 		if err == nil {
 			if req.NodeType == "approve" && !approveHasOpenedTurn(history) {
-				c.host.TakePendingQuestions(req.RunID, req.NodeID)
+				_ = takeClarifyPending(c.host, req.RunID, req.NodeID)
 				sess := c.parkReactSession(req, sb, acp, home)
 				log.Info().Str("run", req.RunID).Str("node", req.NodeID).
 					Msg("approve session rehydrated without priming chat")
@@ -107,7 +107,7 @@ func (c *acpProvider) rehydrateReact(ctx context.Context, req NodeReq, history [
 			cancel()
 			if err == nil {
 
-				c.host.TakePendingQuestions(req.RunID, req.NodeID)
+				_ = takeClarifyPending(c.host, req.RunID, req.NodeID)
 				sess := c.parkReactSession(req, sb, acp, home)
 				log.Info().Str("run", req.RunID).Str("node", req.NodeID).
 					Msg("react session rehydrated in a fresh sandbox")
@@ -197,10 +197,10 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 	absorbChat(&usage, &usageByModel, &events, res)
 	narration := res.Narration
 
-	qs := c.host.TakePendingQuestions(req.RunID, req.NodeID)
+	pending := takeClarifyPending(c.host, req.RunID, req.NodeID)
 
-	if len(qs) > 0 {
-		return ReactTurn{Msg: narration, Questions: qs, Events: events, Usage: usage, UsageByModel: usageByModel}
+	if pending.any() {
+		return ReactTurn{Msg: narration, Questions: pending.Questions, Forms: pending.Forms, Events: events, Usage: usage, UsageByModel: usageByModel}
 	}
 
 	// Provider failed after prompt_done (quota / 4xx): surface the real error
@@ -237,6 +237,21 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 			events = append(events, ge...)
 			usage = models.AddTokenUsage(usage, gu)
 			usageByModel = models.AddTokenUsageByModel(usageByModel, gum)
+		}
+		if req.NodeType == "preflight" {
+			if gp, msg, ge, gu, gum, ok := c.enforcePreflightGate(ctx, req, sess); ok {
+				events = append(events, ge...)
+				usage = models.AddTokenUsage(usage, gu)
+				usageByModel = models.AddTokenUsageByModel(usageByModel, gum)
+				if strings.TrimSpace(msg) == "" {
+					msg = narration
+				}
+				return ReactTurn{Msg: msg, Questions: gp.Questions, Forms: gp.Forms, Events: events, Usage: usage, UsageByModel: usageByModel}
+			} else if gu != nil || gum != nil {
+				events = append(events, ge...)
+				usage = models.AddTokenUsage(usage, gu)
+				usageByModel = models.AddTokenUsageByModel(usageByModel, gum)
+			}
 		}
 	}
 	if !force && req.NodeType == "approve" {
@@ -293,7 +308,7 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 	var events []models.AcpEvent
 	absorbChat(&usage, &usageByModel, &events, res)
 
-	c.host.TakePendingQuestions(req.RunID, req.NodeID)
+	_ = takeClarifyPending(c.host, req.RunID, req.NodeID)
 
 	if fail := chatFailure(res); fail != "" {
 		msg := withFailureBanner(res.Narration, "复审修改失败", fail)
@@ -365,7 +380,7 @@ func (c *acpProvider) ReconcileOnConfirm(ctx context.Context, req NodeReq) React
 		return ReactTurn{}
 	}
 	absorbChat(&usage, &usageByModel, &events, res)
-	c.host.TakePendingQuestions(req.RunID, req.NodeID)
+	_ = takeClarifyPending(c.host, req.RunID, req.NodeID)
 
 	agentSummary := c.confirmSummaryTurn(ctx, req, sess, &events, &usage, &usageByModel)
 	events = c.snapshotEvents(ctx, sess.sb, events)
@@ -397,7 +412,7 @@ func (c *acpProvider) confirmSummaryTurn(ctx context.Context, req NodeReq, sess 
 	absorbChat(usage, usageByModel, events, res)
 	// The summary turn must not resurrect the dialogue: a stray ask_question
 	// here would otherwise leak into the next node's pending questions.
-	c.host.TakePendingQuestions(req.RunID, req.NodeID)
+	_ = takeClarifyPending(c.host, req.RunID, req.NodeID)
 
 	agentSummary := parseAgentSummary(res.Narration)
 	if agentSummary == "" {
@@ -442,15 +457,57 @@ func (c *acpProvider) enforceOpenQuestionsGate(ctx context.Context, req NodeReq,
 	var usageByModel models.TokenUsageByModel
 	var events []models.AcpEvent
 	absorbChat(&usage, &usageByModel, &events, res)
-	qs := c.host.TakePendingQuestions(req.RunID, req.NodeID)
-	if len(qs) == 0 {
+	pending := takeClarifyPending(c.host, req.RunID, req.NodeID)
+	if !pending.any() {
 
 		log.Warn().Str("run", req.RunID).Str("node", req.NodeID).
 			Int("open_questions", len(open)).
 			Msg("react open-questions gate: agent declined to ask; finishing with unresolved notes")
 		return nil, "", events, usage, usageByModel, false
 	}
-	return qs, res.Narration, events, usage, usageByModel, true
+	return pending.Questions, res.Narration, events, usage, usageByModel, true
+}
+
+// enforcePreflightGate keeps a preflight node open until preflight.json exists
+// and is confirmed with empty unresolved. Missing / incomplete product →
+// re-prompt (agent may ask_form / ask_question / set_preflight). ok=true when
+// new human interaction was raised or the gate still blocks finish.
+func (c *acpProvider) enforcePreflightGate(ctx context.Context, req NodeReq, sess *reactSession) (clarifyPending, string, []models.AcpEvent, *models.TokenUsage, models.TokenUsageByModel, bool) {
+	content, err := c.host.ReadArtifact(req.RunID, req.Token, mcp.PreflightArtifactName)
+	reason := ""
+	if err != nil {
+		reason = "尚无 preflight.json"
+	} else if inc := mcp.PreflightIncomplete(content); inc != "" {
+		reason = inc
+	} else {
+		return clarifyPending{}, "", nil, nil, nil, false
+	}
+	prompt := c.agentPrompts(req).PreflightRetryText(reason)
+	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
+	res, err := c.streamChat(chatCtx, sess.acp, req, prompt, nil)
+	cancel()
+	if err != nil {
+		log.Warn().Err(err).Str("node", req.NodeID).Msg("preflight gate re-prompt failed")
+		return clarifyPending{}, "", nil, nil, nil, false
+	}
+	var usage *models.TokenUsage
+	var usageByModel models.TokenUsageByModel
+	var events []models.AcpEvent
+	absorbChat(&usage, &usageByModel, &events, res)
+	pending := takeClarifyPending(c.host, req.RunID, req.NodeID)
+	if pending.any() {
+		return pending, res.Narration, events, usage, usageByModel, true
+	}
+	// Re-check: agent may have set_preflight without asking again.
+	content, err = c.host.ReadArtifact(req.RunID, req.Token, mcp.PreflightArtifactName)
+	if err == nil && mcp.PreflightIncomplete(content) == "" {
+		return clarifyPending{}, "", events, usage, usageByModel, false
+	}
+	log.Warn().Str("run", req.RunID).Str("node", req.NodeID).Str("reason", reason).
+		Msg("preflight gate: still incomplete after re-prompt; keeping dialogue open")
+	// Keep open with empty pending — engine sees Done=false via force path only;
+	// return ok=true with narration so ReactReply does not finish.
+	return clarifyPending{}, res.Narration, events, usage, usageByModel, true
 }
 
 // finishReact runs the shared completion path for a react node: ensure the
@@ -465,18 +522,33 @@ func (c *acpProvider) enforceOpenQuestionsGate(ctx context.Context, req NodeReq,
 // and cannot come between the reconcile turn and the outcome gate.
 func (c *acpProvider) finishReact(ctx context.Context, req NodeReq, key string, sess *reactSession, narration string, history []models.ReactMessage, events []models.AcpEvent, usage *models.TokenUsage, usageByModel models.TokenUsageByModel, wantSummary bool) ReactTurn {
 
-	if qs, err := c.ensureRequiredProducts(ctx, req, sess.acp, &events, &usage, &usageByModel); len(qs) > 0 {
+	if pending, err := c.ensureRequiredProducts(ctx, req, sess.acp, &events, &usage, &usageByModel); pending.any() {
 		msg := narration
-		return ReactTurn{Msg: msg, Questions: qs, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel}
+		return ReactTurn{Msg: msg, Questions: pending.Questions, Forms: pending.Forms, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel}
 	} else if err != nil {
 		events = c.snapshotEvents(ctx, sess.sb, events)
 		c.closeSession(key)
 		return ReactTurn{Done: true, Err: err, Msg: err.Error(), Events: events, Usage: usage,
 			Result: NodeResult{Events: events, Usage: usage, UsageByModel: usageByModel}}
 	}
-	qs, err := c.ensureOutcome(ctx, req, sess.acp, &events, &usage, &usageByModel)
-	if len(qs) > 0 {
-		return ReactTurn{Msg: narration, Questions: qs, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel}
+	if req.NodeType == "preflight" {
+		if gp, msg, ge, gu, gum, ok := c.enforcePreflightGate(ctx, req, sess); ok {
+			events = append(events, ge...)
+			usage = models.AddTokenUsage(usage, gu)
+			usageByModel = models.AddTokenUsageByModel(usageByModel, gum)
+			if strings.TrimSpace(msg) == "" {
+				msg = narration
+			}
+			return ReactTurn{Msg: msg, Questions: gp.Questions, Forms: gp.Forms, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel}
+		} else if gu != nil || gum != nil {
+			events = append(events, ge...)
+			usage = models.AddTokenUsage(usage, gu)
+			usageByModel = models.AddTokenUsageByModel(usageByModel, gum)
+		}
+	}
+	pending, err := c.ensureOutcome(ctx, req, sess.acp, &events, &usage, &usageByModel)
+	if pending.any() {
+		return ReactTurn{Msg: narration, Questions: pending.Questions, Forms: pending.Forms, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel}
 	}
 	if err != nil {
 		events = c.snapshotEvents(ctx, sess.sb, events)
@@ -542,7 +614,7 @@ func (c *acpProvider) parkReactSession(req NodeReq, sb *sandbox.Sandbox, acp *sa
 // user's first message has none.
 func reactHistoryHasDialogue(history []models.ReactMessage) bool {
 	for _, m := range history {
-		if strings.TrimSpace(m.Text) != "" || len(m.Questions) > 0 || len(m.Images) > 0 {
+		if strings.TrimSpace(m.Text) != "" || len(m.Questions) > 0 || len(m.Forms) > 0 || len(m.Images) > 0 {
 			return true
 		}
 	}

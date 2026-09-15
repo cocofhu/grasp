@@ -96,7 +96,7 @@ export function downloadJson(filename: string, data: unknown) {
 /** Collect agent_profile references from agent-class nodes. */
 export function collectAgentProfiles(nodes: WFNode[]): string[] {
   const agentTypes = new Set([
-    'react', 'approve', 'agent', 'plan', 'implement', 'research', 'test', 'review', 'proposal', 'submit_mr', 'visual', 'app_preview',
+    'react', 'approve', 'preflight', 'agent', 'plan', 'implement', 'research', 'test', 'review', 'proposal', 'submit_mr', 'visual', 'app_preview',
   ])
   const out = new Set<string>()
   for (const n of nodes) {

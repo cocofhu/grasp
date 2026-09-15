@@ -12,6 +12,24 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// clarifyPending is human-facing interaction raised mid-turn (ask_question /
+// ask_form). Either field nonempty means the dialogue must stay open.
+type clarifyPending struct {
+	Questions []models.ReactQuestion
+	Forms     []models.ReactForm
+}
+
+func (p clarifyPending) any() bool {
+	return len(p.Questions) > 0 || len(p.Forms) > 0
+}
+
+func takeClarifyPending(h *mcp.Host, runID, nodeID string) clarifyPending {
+	return clarifyPending{
+		Questions: h.TakePendingQuestions(runID, nodeID),
+		Forms:     h.TakePendingForms(runID, nodeID),
+	}
+}
+
 // ensureOutcome re-prompts the agent to call node_complete when the mark is
 // still missing (best-effort; engine fails closed if ultimately absent).
 // Aligns with ensureStructured: when Host memory HasOutcome is false, first
@@ -19,7 +37,7 @@ import (
 // For react nodes, a pending ask_question raised during the re-prompt aborts
 // the completion push and returns those questions (caller must not discard).
 // Non-react callers keep the prior discard-and-continue semantics.
-func (c *acpProvider) ensureOutcome(ctx context.Context, req NodeReq, acp *sandbox.ACPClient, events *[]models.AcpEvent, usage **models.TokenUsage, byModel *models.TokenUsageByModel) ([]models.ReactQuestion, error) {
+func (c *acpProvider) ensureOutcome(ctx context.Context, req NodeReq, acp *sandbox.ACPClient, events *[]models.AcpEvent, usage **models.TokenUsage, byModel *models.TokenUsageByModel) (clarifyPending, error) {
 	outcomeReady := func() bool {
 		if c.host.HasOutcome(req.RunID, req.NodeID) {
 			return true
@@ -27,17 +45,17 @@ func (c *acpProvider) ensureOutcome(ctx context.Context, req NodeReq, acp *sandb
 		return c.host.RestoreOutcomeFromArtifact(req.RunID, req.NodeID)
 	}
 	if outcomeReady() {
-		return nil, nil
+		return clarifyPending{}, nil
 	}
 	for i := 0; i <= producesRetry; i++ {
 		if outcomeReady() {
-			return nil, nil
+			return clarifyPending{}, nil
 		}
 		if i == producesRetry {
 			log.Warn().Str("run", req.RunID).Str("node", req.NodeID).
 				Int("retries", producesRetry).
 				Msg("node_complete still missing after re-prompt; engine will fail closed")
-			return nil, nil
+			return clarifyPending{}, nil
 		}
 		prompt := c.agentPrompts(req).OutcomeRetryText()
 		chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
@@ -49,15 +67,15 @@ func (c *acpProvider) ensureOutcome(ctx context.Context, req NodeReq, acp *sandb
 			// to fail-closed below.
 			log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).
 				Msg("node_complete re-prompt failed")
-			return nil, fmt.Errorf("agent chat: %w", err)
+			return clarifyPending{}, fmt.Errorf("agent chat: %w", err)
 		}
 		absorbChat(usage, byModel, events, res)
-		qs := c.host.TakePendingQuestions(req.RunID, req.NodeID)
-		if len(qs) > 0 && nodereg.ClarifyInteractive(req.NodeType) {
-			return qs, nil
+		pending := takeClarifyPending(c.host, req.RunID, req.NodeID)
+		if pending.any() && nodereg.ClarifyInteractive(req.NodeType) {
+			return pending, nil
 		}
 	}
-	return nil, nil
+	return clarifyPending{}, nil
 }
 
 // ensureStructured makes a framework node's reserved structured product exist
@@ -67,23 +85,23 @@ func (c *acpProvider) ensureOutcome(ctx context.Context, req NodeReq, acp *sandb
 // Intermediate turns are folded into events. Unlike the old produces path
 // there is no workspace harvest — structured products are written only
 // through MCP.
-// For react/approve nodes, a pending ask_question raised during the re-prompt
-// aborts the StructuredRetry push and returns those questions. Other callers
-// keep discard-and-continue semantics.
-func (c *acpProvider) ensureStructured(ctx context.Context, req NodeReq, acp *sandbox.ACPClient, name, tool string, events *[]models.AcpEvent, usage **models.TokenUsage, byModel *models.TokenUsageByModel) ([]models.ReactQuestion, error) {
+// For react/approve/preflight nodes, a pending ask_question/ask_form raised
+// during the re-prompt aborts the StructuredRetry push and returns those
+// interactions. Other callers keep discard-and-continue semantics.
+func (c *acpProvider) ensureStructured(ctx context.Context, req NodeReq, acp *sandbox.ACPClient, name, tool string, events *[]models.AcpEvent, usage **models.TokenUsage, byModel *models.TokenUsageByModel) (clarifyPending, error) {
 	satisfied := func() bool {
 		return artifactOwnedByNode(c.host, req.RunID, req.Token, req.NodeID, name)
 	}
 	for i := 0; i <= producesRetry; i++ {
 		if satisfied() {
-			return nil, nil
+			return clarifyPending{}, nil
 		}
 		if i == producesRetry {
 			log.Warn().Str("run", req.RunID).Str("node", req.NodeID).
 				Str("artifact", name).Str("tool", tool).
 				Int("retries", producesRetry).
 				Msg("structured product still missing after re-prompt; engine will fail closed")
-			return nil, nil
+			return clarifyPending{}, nil
 		}
 		prompt := c.agentPrompts(req).StructuredRetryFor(name, tool)
 		chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
@@ -92,16 +110,16 @@ func (c *acpProvider) ensureStructured(ctx context.Context, req NodeReq, acp *sa
 		if err != nil {
 			log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).
 				Str("artifact", name).Msg("structured product re-prompt failed")
-			return nil, fmt.Errorf("agent chat: %w", err)
+			return clarifyPending{}, fmt.Errorf("agent chat: %w", err)
 		}
 		absorbChat(usage, byModel, events, res)
-		qs := c.host.TakePendingQuestions(req.RunID, req.NodeID)
-		if len(qs) > 0 && nodereg.ClarifyInteractive(req.NodeType) {
-			return qs, nil
+		pending := takeClarifyPending(c.host, req.RunID, req.NodeID)
+		if pending.any() && nodereg.ClarifyInteractive(req.NodeType) {
+			return pending, nil
 		}
 
 	}
-	return nil, nil
+	return clarifyPending{}, nil
 }
 
 // artifactOwnedByNode reports whether name exists and its last writer is nodeID.
@@ -121,14 +139,14 @@ func artifactOwnedByNode(host *mcp.Host, runID, token, nodeID, name string) bool
 
 // ensureRequiredProducts re-prompts until every RequiredProducts artifact is
 // owned by the current node (not merely present under the same name).
-func (c *acpProvider) ensureRequiredProducts(ctx context.Context, req NodeReq, acp *sandbox.ACPClient, events *[]models.AcpEvent, usage **models.TokenUsage, byModel *models.TokenUsageByModel) ([]models.ReactQuestion, error) {
+func (c *acpProvider) ensureRequiredProducts(ctx context.Context, req NodeReq, acp *sandbox.ACPClient, events *[]models.AcpEvent, usage **models.TokenUsage, byModel *models.TokenUsageByModel) (clarifyPending, error) {
 	for _, p := range nodereg.RequiredProducts(req.NodeType) {
-		qs, err := c.ensureStructured(ctx, req, acp, p.ArtifactName, p.SetTool, events, usage, byModel)
-		if len(qs) > 0 || err != nil {
-			return qs, err
+		pending, err := c.ensureStructured(ctx, req, acp, p.ArtifactName, p.SetTool, events, usage, byModel)
+		if pending.any() || err != nil {
+			return pending, err
 		}
 	}
-	return nil, nil
+	return clarifyPending{}, nil
 }
 
 // ensurePlanComplete drives an implement node's run plan to completion. It
@@ -199,7 +217,7 @@ func (c *acpProvider) ensurePreviewRegistered(ctx context.Context, req NodeReq, 
 			return fmt.Errorf("agent chat: %w", err)
 		}
 		absorbChat(usage, byModel, events, res)
-		c.host.TakePendingQuestions(req.RunID, req.NodeID)
+		_ = takeClarifyPending(c.host, req.RunID, req.NodeID)
 	}
 	if !c.host.HasPreviewPorts(req.RunID, req.NodeID) {
 		return fmt.Errorf("预览契约未满足:未调用 set_preview")
@@ -210,7 +228,7 @@ func (c *acpProvider) ensurePreviewRegistered(ctx context.Context, req NodeReq, 
 // nodeNeedsOutcome reports whether this node type must call node_complete.
 func nodeNeedsOutcome(nodeType string) bool {
 	switch nodeType {
-	case "agent", "plan", "implement", "react", "approve", "research", "proposal",
+	case "agent", "plan", "implement", "react", "approve", "preflight", "research", "proposal",
 		"test", "review", "submit_mr", "visual":
 		return true
 

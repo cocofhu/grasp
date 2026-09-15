@@ -65,6 +65,16 @@
       "reviewVar": "review"
     },
     {
+      "type": "preflight",
+      "label": "环境确认",
+      "category": "Agent",
+      "outputKey": "preflight",
+      "artifactName": "preflight.json",
+      "outputJsonKey": "preflight_json",
+      "setTool": "set_preflight",
+      "ruleFile": "rules/preflight.md"
+    },
+    {
       "type": "proposal",
       "label": "方案",
       "category": "Agent",
@@ -141,6 +151,7 @@
     "implementation_result": "implementation_result.json",
     "page": "page.html",
     "plan": "plan.json",
+    "preflight": "preflight.json",
     "proposal": "proposal.json",
     "proposals": "proposals.json",
     "research": "research.json",
@@ -151,6 +162,7 @@
     "clarified_requirement.json": "clarified_requirement_json",
     "implementation_result.json": "implementation_result_json",
     "plan.json": "plan_json",
+    "preflight.json": "preflight_json",
     "proposal.json": "proposal_json",
     "proposals.json": "proposals_json",
     "research.json": "research_json",

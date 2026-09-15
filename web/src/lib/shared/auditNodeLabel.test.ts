@@ -38,6 +38,7 @@ describe('formatAuditNodeName (g2.1 / g2.2 Demo labels)', () => {
     expect(formatAuditNodeTitle('app_preview_12ab')).toBe('预览 · 12ab')
     expect(formatAuditNodeTitle('react_qnlc')).toBe('需求澄清 · qnlc')
     expect(formatAuditNodeTitle('approve_ab12')).toBe('Grasp · ab12')
+    expect(formatAuditNodeTitle('preflight_x9k2')).toBe('环境确认 · x9k2')
     expect(formatAuditNodeTitle('submit_mr_9k2a')).toBe('提交 MR · 9k2a')
     expect(formatAuditNodeTitle('proposal_select_pgna')).toBe('方案确认 · pgna')
   })

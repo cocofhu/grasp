@@ -23,6 +23,7 @@ var auditConclusionByStem = map[string]conclusionMeta{
 	"test_result":           {object: "测试结论", artifact: TestResultArtifactName},
 	"review":                {object: "评审结论", artifact: ReviewArtifactName},
 	"implementation_result": {object: "实现结论", artifact: ImplementationResultArtifactName},
+	"preflight":             {object: "环境确认", artifact: PreflightArtifactName},
 }
 
 // FormatMCPAuditSummary builds a verb+object Summary for a newly written MCP
@@ -68,6 +69,8 @@ func formatMCPAuditAction(tool string, args map[string]any) string {
 		return "节点完成 · " + st
 	case "ask_question":
 		return "提出问题"
+	case "ask_form":
+		return "提出表单"
 	case "list_run_history":
 		return "读取运行历史"
 	case "get_history_detail":

@@ -50,6 +50,7 @@ alwaysApply: true
 | 测试 test | `set_test_result` | `get_test_result` |
 | 评审 review | `set_review` | `get_review` |
 | 实现 implement | `set_implementation_result` | `get_implementation_result` |
+| 环境确认 preflight | `set_preflight` | `get_preflight` |
 | 应用预览 app_preview | `set_preview`(强制) | — |
 
 - 这些工具只在其对应节点类型可用(Approve 还可选 `set_preview`);编号/状态由平台生成,无需自填 id。

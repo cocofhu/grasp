@@ -231,6 +231,7 @@
       "testResult": "Test result",
       "review": "Review",
       "implementationResult": "Implementation result",
+      "preflight": "Preflight",
       "pagePreview": "Web preview",
       "artifact": "Artifact",
       "textOutput": "Text output",

@@ -78,6 +78,8 @@ type Host struct {
 	// right after the react turn returns and persists them on the agent
 	// message; they never outlive the turn that produced them.
 	pending map[string]map[string][]models.ReactQuestion
+	// pendingForms holds ask_form payloads for preflight (mirror of pending).
+	pendingForms map[string]map[string][]models.ReactForm
 	// calls buffers the built-in MCP tool invocations made during a node's
 	// execution, keyed runID -> nodeID. The engine drains them (TakeMcpCalls)
 	// in saveState so each StateRun row carries its own tool-call trace.
@@ -152,6 +154,7 @@ func NewHost(store Store) *Host {
 		activeType:   map[string]string{},
 		activeReview: map[string]bool{},
 		pending:      map[string]map[string][]models.ReactQuestion{},
+		pendingForms: map[string]map[string][]models.ReactForm{},
 		calls:        map[string]map[string][]models.McpCall{},
 		previewMem:   map[string][]PreviewPort{},
 		outcomes:     map[string]map[string]NodeOutcome{},
@@ -353,6 +356,30 @@ func (h *Host) TakePendingQuestions(runID, nodeID string) []models.ReactQuestion
 	qs := byNode[nodeID]
 	delete(byNode, nodeID)
 	return qs
+}
+
+// SetPendingForms records plaintext forms the agent raised this turn via
+// ask_form for (runID, nodeID). Replaces any prior pending set for that node.
+func (h *Host) SetPendingForms(runID, nodeID string, forms []models.ReactForm) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.pendingForms[runID] == nil {
+		h.pendingForms[runID] = map[string][]models.ReactForm{}
+	}
+	h.pendingForms[runID][nodeID] = forms
+}
+
+// TakePendingForms returns and clears pending forms for (runID, nodeID).
+func (h *Host) TakePendingForms(runID, nodeID string) []models.ReactForm {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	byNode := h.pendingForms[runID]
+	if byNode == nil {
+		return nil
+	}
+	forms := byNode[nodeID]
+	delete(byNode, nodeID)
+	return forms
 }
 
 // RegisterRun provisions a scoped endpoint for a run and returns its token.

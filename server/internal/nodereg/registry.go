@@ -53,6 +53,7 @@ const (
 	PromptVisual
 	PromptAppPreview
 	PromptApprove
+	PromptPreflight
 )
 
 // RenderKind selects the markdown renderer for a structured product.
@@ -67,6 +68,7 @@ const (
 	RenderReview
 	RenderImplementationResult
 	RenderPlan
+	RenderPreflight
 )
 
 // Spec describes one workflow node type.
@@ -154,6 +156,15 @@ var registry = map[string]Spec{
 		Render:        RenderClarifiedRequirement,
 		EmbeddedRules: []string{"rules/react.md"},
 		Prompt:        PromptReact,
+	},
+	"preflight": {
+		Type: "preflight", Label: "环境确认", Category: "Agent", Exec: ExecReact,
+		ArtifactName:  mcp.PreflightArtifactName,
+		OutputKey:     "preflight",
+		SetTool:       "set_preflight",
+		Render:        RenderPreflight,
+		EmbeddedRules: []string{"rules/preflight.md"},
+		Prompt:        PromptPreflight,
 	},
 	"research": {
 		Type: "research", Label: "调研", Category: "Agent", Exec: ExecStructured,
@@ -279,6 +290,8 @@ func Renderer(kind RenderKind) func(string) string {
 		return mcp.RenderImplementationResultMarkdown
 	case RenderPlan:
 		return mcp.RenderPlanMarkdown
+	case RenderPreflight:
+		return mcp.RenderPreflightMarkdown
 	default:
 		return nil
 	}
@@ -313,6 +326,8 @@ func PromptContractText(p *models.AgentPrompts, nodeType, sourceBranch, targetBr
 		return p.PreviewContractText()
 	case PromptApprove:
 		return p.ApproveContractText()
+	case PromptPreflight:
+		return p.PreflightContractText()
 	default:
 		return ""
 	}

@@ -12,6 +12,7 @@ import type { NodeRun, NodeRunStatus, NodeType, Run, TokenUsage, TokenUsageByMod
 const HUMAN_WAIT_TYPES: ReadonlySet<NodeType> = new Set([
   'human_gate',
   'react',
+  'preflight',
   'app_preview',
 ])
 

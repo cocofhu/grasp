@@ -22,6 +22,8 @@ import type {
   ClarifyImage,
   ReactQuestion,
   ReactOption,
+  ReactForm,
+  ReactFormField,
   ReactAnnotation,
   AcpEvent,
 } from '@/lib/shared/types'
@@ -311,6 +313,9 @@ onBeforeUnmount(() => {
 /** Legacy zh-CN prefix for messages persisted before i18n. */
 const LEGACY_CHOICE_PREFIX = '我的选择:'
 const choicePrefix = computed(() => translate('pages.clarify.choicePrefix'))
+/** Legacy zh-CN form-summary prefix. */
+const LEGACY_FORM_PREFIX = '我的填写:'
+const formPrefix = computed(() => translate('pages.clarify.formPrefix'))
 /** Skip-envelope first line (zh / en) — not a choice reply. */
 const LEGACY_SKIP_PREFIX = '回答已跳过'
 const LEGACY_SKIP_USER_LABEL = '用户回复'
@@ -331,6 +336,20 @@ function stripChoicePrefix(text: string): string {
 
 function isChoiceReply(text: string): boolean {
   return !!text && textHasChoicePrefix(text)
+}
+
+function textHasFormPrefix(text: string): boolean {
+  return text.startsWith(formPrefix.value) || text.startsWith(LEGACY_FORM_PREFIX)
+}
+
+function stripFormPrefix(text: string): string {
+  if (text.startsWith(formPrefix.value)) return text.slice(formPrefix.value.length)
+  if (text.startsWith(LEGACY_FORM_PREFIX)) return text.slice(LEGACY_FORM_PREFIX.length)
+  return text
+}
+
+function isFormReply(text: string): boolean {
+  return !!text && textHasFormPrefix(text)
 }
 
 function textHasSkipPrefix(text: string): boolean {
@@ -360,7 +379,7 @@ function closesQuestionRound(
   images?: ClarifyImage[] | null,
   anns?: ReactAnnotation[] | null,
 ): boolean {
-  if (isChoiceReply(text) || isSkipReply(text)) return true
+  if (isChoiceReply(text) || isFormReply(text) || isSkipReply(text)) return true
   if ((images?.length || 0) > 0 || (anns?.length || 0) > 0) return true
   return !!(text || '').trim()
 }
@@ -370,6 +389,15 @@ function latestQuestionTurnIndex(turnList: ClarifyTurn[]): number {
   for (let i = turnList.length - 1; i >= 0; i--) {
     const t = turnList[i]
     if (t.role === 'agent' && t.questions?.length) return i
+  }
+  return -1
+}
+
+/** Index of the latest agent turn that raised ask_form forms. */
+function latestFormTurnIndex(turnList: ClarifyTurn[]): number {
+  for (let i = turnList.length - 1; i >= 0; i--) {
+    const t = turnList[i]
+    if (t.role === 'agent' && t.forms?.length) return i
   }
   return -1
 }
@@ -415,8 +443,37 @@ const pendingQuestionsOpen = computed(
     !latestQuestionAnswered.value,
 )
 
+const latestFormIdx = computed(() => latestFormTurnIndex(persistedTurns.value))
+
+const latestForms = computed<ReactForm[]>(() => {
+  const idx = latestFormIdx.value
+  if (idx < 0) return []
+  return persistedTurns.value[idx].forms ?? []
+})
+
+const latestFormAnswered = computed(() => {
+  const list = answerTranscript()
+  const fIdx = latestFormTurnIndex(list)
+  if (fIdx < 0) return latestForms.value.length === 0
+  if (hasHumanReplyAfter(list, fIdx)) return true
+  return queued.value.some((q) => closesQuestionRound(q.text, q.images, q.annotations))
+})
+
+/** Unanswered ask_form round — composer free-text send wraps as skip envelope. */
+const pendingFormsOpen = computed(
+  () =>
+    !props.done &&
+    !!props.active &&
+    latestForms.value.length > 0 &&
+    !latestFormAnswered.value,
+)
+
+const pendingInteractiveOpen = computed(
+  () => pendingQuestionsOpen.value || pendingFormsOpen.value,
+)
+
 const inputPlaceholder = computed(() => {
-  if (pendingQuestionsOpen.value) return translate('pages.clarify.skipInputPlaceholder')
+  if (pendingInteractiveOpen.value) return translate('pages.clarify.skipInputPlaceholder')
   if (props.reviewMode) return translate('pages.clarify.reviewInputPlaceholder')
   if (props.nodeType === 'approve') return translate('pages.clarify.approveInputPlaceholder')
   return translate('pages.clarify.inputPlaceholder')
@@ -734,12 +791,14 @@ function prepareComposerSend(
     return null
   }
   let outText = text
-  if (pendingQuestionsOpen.value) {
+  if (pendingInteractiveOpen.value) {
     outText = formatSkipReply(text)
     sel.value = {}
     other.value = {}
     otherChecked.value = {}
     step.value = 0
+    formValues.value = {}
+    formNotice.value = null
   }
   return { text: outText, images: imgs, annotations: anns }
 }
@@ -785,8 +844,115 @@ const activeQuestions = computed<ReactQuestion[]>(() => {
   return latestQuestions.value
 })
 
+const activeForms = computed<ReactForm[]>(() => {
+  if (props.done || !props.active || thinking.value) return []
+  if (latestFormAnswered.value) return []
+  return latestForms.value
+})
+
+/** Keyed by `${formIndex}:${fieldName}` — plaintext values (never masked). */
+const formValues = ref<Record<string, string>>({})
+const formNotice = ref<string | null>(null)
+
+function formFieldKey(formIndex: number, name: string): string {
+  return `${formIndex}:${name}`
+}
+
+function fieldWhy(f: ReactFormField): string {
+  return (f.why || f.reason || '').trim()
+}
+
+/** Input type for ask_form: text|url only — never password. */
+function formInputType(f: ReactFormField): 'text' | 'url' {
+  return String(f.type || '').toLowerCase() === 'url' ? 'url' : 'text'
+}
+
+function seedFormValues(forms: ReactForm[]) {
+  const next: Record<string, string> = {}
+  forms.forEach((form, fi) => {
+    for (const f of form.fields || []) {
+      const k = formFieldKey(fi, f.name)
+      next[k] = formValues.value[k] ?? (f.value || '')
+    }
+  })
+  formValues.value = next
+}
+
+watch(
+  () =>
+    activeForms.value
+      .map((f, i) => `${i}:${(f.fields || []).map((x) => x.name).join(',')}`)
+      .join('|'),
+  (key) => {
+    formNotice.value = null
+    if (!key) {
+      formValues.value = {}
+      return
+    }
+    seedFormValues(activeForms.value)
+  },
+)
+
+function formFieldsFilled(forms: ReactForm[]): boolean {
+  for (let fi = 0; fi < forms.length; fi++) {
+    for (const f of forms[fi].fields || []) {
+      if (!(formValues.value[formFieldKey(fi, f.name)] || '').trim()) return false
+    }
+  }
+  return forms.some((f) => (f.fields || []).length > 0)
+}
+
+const formCanSubmit = computed(
+  () => activeForms.value.length > 0 && formFieldsFilled(activeForms.value) && !thinking.value,
+)
+
+function submitForms() {
+  const forms = activeForms.value
+  if (!forms.length || thinking.value) return
+  if (!formFieldsFilled(forms)) {
+    formNotice.value = translate('pages.clarify.formEmptyNotice')
+    return
+  }
+  formNotice.value = null
+  const lines: string[] = []
+  forms.forEach((form, fi) => {
+    for (const f of form.fields || []) {
+      const label = (f.label || f.name || '').trim() || f.name
+      const val = (formValues.value[formFieldKey(fi, f.name)] || '').trim()
+      lines.push(`- ${label} → ${val}`)
+    }
+  })
+  const text = formPrefix.value + '\n' + lines.join('\n')
+  formValues.value = {}
+  sendMessage(text)
+}
+
+interface FormRow {
+  label: string
+  value: string
+}
+function parseFormSummary(text: string): FormRow[] | null {
+  if (!text || !textHasFormPrefix(text)) return null
+  const bodyText = stripFormPrefix(text)
+  const rows: FormRow[] = []
+  for (const raw of bodyText.split('\n')) {
+    const line = raw.trim()
+    if (!line.startsWith('- ')) continue
+    const body = line.slice(2)
+    const idx = body.indexOf('→')
+    if (idx === -1) continue
+    const label = body.slice(0, idx).trim()
+    const value = body.slice(idx + 1).trim()
+    if (label) rows.push({ label, value })
+  }
+  return rows.length ? rows : null
+}
+
 function isActiveTurn(i: number): boolean {
   return activeQuestions.value.length > 0 && i === latestQuestionIdx.value
+}
+function isActiveFormTurn(i: number): boolean {
+  return activeForms.value.length > 0 && i === latestFormIdx.value
 }
 function isSelected(qidStr: string, oid: string): boolean {
   return (sel.value[qidStr] || []).includes(oid)
@@ -1458,6 +1624,7 @@ function retryLastFailed() {
     formatSkipReply,
     closesQuestionRound,
     latestQuestionTurnIndex,
+    latestFormTurnIndex,
     hasHumanReplyAfter,
     imagePreviewLabel,
     openImagePreview,
@@ -1472,6 +1639,7 @@ function retryLastFailed() {
     onComposerKeydown,
     removeAnnotation,
     isActiveTurn,
+    isActiveFormTurn,
     isSelected,
     toggle,
     answered,
@@ -1483,6 +1651,11 @@ function retryLastFailed() {
     pick,
     submitChoices,
     parseChoiceSummary,
+    submitForms,
+    parseFormSummary,
+    formFieldKey,
+    fieldWhy,
+    formInputType,
     choiceRowsForAgentTurn,
     selectedLabelsForQuestion,
     selectedDemoForInteractive,
@@ -1543,6 +1716,8 @@ function retryLastFailed() {
     AUTO_GROW_MAX,
     LEGACY_CHOICE_PREFIX,
     choicePrefix,
+    LEGACY_FORM_PREFIX,
+    formPrefix,
     LEGACY_SKIP_PREFIX,
     LEGACY_SKIP_USER_LABEL,
     SKIP_PREFIX_EN,
@@ -1553,6 +1728,11 @@ function retryLastFailed() {
     latestQuestions,
     latestQuestionAnswered,
     pendingQuestionsOpen,
+    latestFormIdx,
+    latestForms,
+    latestFormAnswered,
+    pendingFormsOpen,
+    pendingInteractiveOpen,
     displayTurns,
     attachNotice,
     queueNotice,
@@ -1570,6 +1750,10 @@ function retryLastFailed() {
     activeQuestions,
     someAnswered,
     hasRecommended,
+    activeForms,
+    formValues,
+    formNotice,
+    formCanSubmit,
     step,
     curQuestion,
     isFirstCard,

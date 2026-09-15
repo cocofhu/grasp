@@ -3,6 +3,7 @@ export type NodeType =
   | 'output'
   | 'react'
   | 'approve'
+  | 'preflight'
   | 'agent'
   | 'plan'
   | 'implement'
@@ -697,6 +698,26 @@ export interface ReactQuestion {
   allowMultiple?: boolean
 }
 
+/** One plaintext form field from ask_form (preflight). Type is text|url only. */
+export interface ReactFormField {
+  name: string
+  label: string
+  /** text | url only — never password; passwords use plaintext text. */
+  type?: string
+  placeholder?: string
+  value?: string
+  required?: boolean
+  /** Hover reason (plan gap); agents may also send `reason`. */
+  why?: string
+  reason?: string
+}
+
+/** One plaintext env-collection form raised via ask_form (preflight). */
+export interface ReactForm {
+  title?: string
+  fields: ReactFormField[]
+}
+
 // ReactAnnotation is one precise reference a human pins to a review turn:
 // a JSON path into a structured product (jsonPath), a DOM CSS selector into a
 // visual page (selector), and/or a paragraph quote excerpt from product text.
@@ -723,6 +744,9 @@ export interface ClarifyTurn {
   // Structured choice questions the agent raised this turn (ask_question MCP
   // tool). The UI renders the latest such turn as selectable cards.
   questions?: ReactQuestion[]
+  // Plaintext env-collection forms the agent raised this turn (ask_form MCP
+  // tool, preflight). Persisted like questions so the inbox can re-render.
+  forms?: ReactForm[]
   // Precise field/element annotations the human attached this review turn.
   annotations?: ReactAnnotation[]
   /** Agent turn stopped mid-stream by 轮级 Cancel; partial text retained. */
@@ -801,7 +825,7 @@ export interface ClarifyInboxItem {
    * `app_preview` = application preview waiting for confirm & continue.
    * Older backends may omit this; UI falls back to clarify.
    */
-  kind?: 'clarify' | 'review' | 'app_preview'
+  kind?: 'clarify' | 'review' | 'app_preview' | 'preflight'
   /**
    * `starting` = the node's sandbox is still booting: no transcript yet and no
    * reply accepted, so the card renders as a loading row.

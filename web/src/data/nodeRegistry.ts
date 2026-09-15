@@ -78,6 +78,30 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
     defaults: { timeout: 30 },
     help: 'nodes.approve.help',
   },
+  preflight: {
+    type: 'preflight',
+    label: 'nodes.preflight.label',
+    desc: 'nodes.preflight.desc',
+    icon: 'ci',
+    color: 'text-n-ci',
+    category: 'nodes.categories.agent',
+    fields: [
+      { key: 'agent_profile', label: 'nodes.preflight.fields.agent_profile.label', type: 'select' },
+      { key: 'prompt', label: 'nodes.preflight.fields.prompt.label', type: 'prompt', placeholder: 'nodes.preflight.fields.prompt.placeholder' },
+      { key: 'max_rounds', label: 'nodes.preflight.fields.max_rounds.label', type: 'number', placeholder: 'nodes.preflight.fields.max_rounds.placeholder' },
+      { key: 'timeout', label: 'nodes.preflight.fields.timeout.label', type: 'duration', optional: true },
+      { key: 'conditional_prompt', label: 'nodes.preflight.fields.conditional_prompt.label', type: 'conditional', optional: true },
+    ],
+    outputs: productOutputDefs('preflight', [
+      { key: 'transcript', desc: 'nodes.preflight.outputs.transcript.desc' },
+    ]),
+    defaults: {
+      max_rounds: 6,
+      prompt:
+        '对照计划/仓库/变量核对执行环境。有缺口用 ask_question 或 ask_form;确认后 set_preflight 再 node_complete。无缺口则写 confirmed 空 fields 直通。密码明文。\n{{vars.feature}}',
+    },
+    help: 'nodes.preflight.help',
+  },
   agent: {
     type: 'agent',
     label: 'nodes.agent.label',
@@ -386,7 +410,7 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
 
 export const PALETTE_GROUPS: { title: string; types: NodeType[] }[] = [
   { title: 'nodes.palette.control', types: ['input', 'output', 'set_var', 'branch'] },
-  { title: 'nodes.palette.agent', types: ['approve', 'react', 'research', 'proposal', 'plan', 'implement', 'app_preview', 'test', 'review', 'submit_mr', 'visual'] },
+  { title: 'nodes.palette.agent', types: ['approve', 'react', 'preflight', 'research', 'proposal', 'plan', 'implement', 'app_preview', 'test', 'review', 'submit_mr', 'visual'] },
   { title: 'nodes.palette.collaboration', types: ['human_gate', 'proposal_select'] },
 ]
 
@@ -415,6 +439,7 @@ export function nodeColorHex(type: NodeType): string {
     output: '#34D399',
     react: '#22D3EE',
     approve: '#10B981',
+    preflight: '#2DD4BF',
     agent: '#A78BFA',
     plan: '#818CF8',
     implement: '#8B5CF6',

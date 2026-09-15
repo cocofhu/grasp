@@ -59,7 +59,7 @@ func TestValidateAgentProfilesProject(t *testing.T) {
 	})
 
 	t.Run("covers all agent_profile node types not only agent", func(t *testing.T) {
-		types := []string{"react", "agent", "approve", "plan", "implement", "research", "test", "review", "proposal", "submit_mr", "visual", "app_preview"}
+		types := []string{"react", "preflight", "agent", "approve", "plan", "implement", "research", "test", "review", "proposal", "submit_mr", "visual", "app_preview"}
 		for _, typ := range types {
 			g := models.Graph{Nodes: []models.Node{
 				{ID: "n", Type: typ, Label: typ, Config: map[string]any{"agent_profile": "ghost"}},

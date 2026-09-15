@@ -423,6 +423,10 @@ type ReactMessage struct {
 	// turn where the agent asked nothing structured — an agent turn with no
 	// questions signals the clarification is finished.
 	Questions []ReactQuestion `json:"questions,omitempty"`
+	// Forms are plaintext env-collection forms raised via ask_form (preflight).
+	// Persisted like Questions so the inbox can re-render after refresh. A turn
+	// with Forms (or Questions) keeps the dialogue paused for human input.
+	Forms []ReactForm `json:"forms,omitempty"`
 	// Annotations are the precise references a human attached to this turn
 	// during a post-run ReAct review: a JSON path into a structured product
 	// (e.g. functional_requirements[f3].priority) or a DOM CSS selector into a
@@ -515,6 +519,25 @@ type ReactQuestion struct {
 	Prompt        string        `json:"prompt"`
 	Options       []ReactOption `json:"options"`
 	AllowMultiple bool          `json:"allowMultiple,omitempty"`
+}
+
+// ReactForm is one plaintext form the agent raised via ask_form (preflight).
+type ReactForm struct {
+	Title  string           `json:"title,omitempty"`
+	Fields []ReactFormField `json:"fields"`
+}
+
+// ReactFormField is one input in a ReactForm. Type is text|url only (default text);
+// passwords are ordinary plaintext — no password type / secret flag.
+type ReactFormField struct {
+	Name        string `json:"name"`
+	Label       string `json:"label"`
+	Type        string `json:"type,omitempty"` // text|url
+	Placeholder string `json:"placeholder,omitempty"`
+	Value       string `json:"value,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+	// Why is the hover reason (plan gap explanation); agents may send "why" or "reason".
+	Why string `json:"why,omitempty"`
 }
 
 // ReactOption is one selectable answer of a ReactQuestion.

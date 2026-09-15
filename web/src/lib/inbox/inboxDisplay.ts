@@ -12,17 +12,18 @@ export function inboxSecondaryLine(it: Pick<InboxItem, 'workflowName' | 'runId' 
   return `${it.workflowName} · ${inboxRunLabel(it)}`
 }
 
-/** i18n key for the list badge: gate / clarify / review / app_preview / starting / replying. */
+/** i18n key for the list badge: gate / clarify / review / app_preview / preflight / starting / replying. */
 export type InboxBadgeLabelKey =
   | 'pages.gatesInbox.gateType'
   | 'pages.gatesInbox.clarifyType'
   | 'pages.gatesInbox.reviewType'
   | 'pages.gatesInbox.previewType'
+  | 'pages.gatesInbox.preflightType'
   | 'pages.gatesInbox.startingType'
   | 'pages.gatesInbox.replyingType'
 
-/** Visual tone for icon/badge chips (Demo: warn / preview-blue / review-green / clarify-cyan / amber). */
-export type InboxBadgeTone = 'gate' | 'preview' | 'review' | 'clarify' | 'replying'
+/** Visual tone for icon/badge chips (Demo: warn / preview-blue / review-green / clarify-cyan / preflight-teal / amber). */
+export type InboxBadgeTone = 'gate' | 'preview' | 'review' | 'clarify' | 'preflight' | 'replying'
 
 export type InboxStateItem = Pick<InboxItem, 'type'> & { kind?: string; state?: string }
 
@@ -49,7 +50,7 @@ export function isInboxProgressItem(
 
 /**
  * List badge copy key by inbox semantics.
- * Priority: starting > replying > type (gate / app_preview / review / clarify).
+ * Priority: starting > replying > type (gate / app_preview / review / preflight / clarify).
  */
 export function inboxBadgeLabelKey(
   it: InboxStateItem,
@@ -59,6 +60,7 @@ export function inboxBadgeLabelKey(
   if (it.type === 'gate') return 'pages.gatesInbox.gateType'
   if (it.kind === 'app_preview') return 'pages.gatesInbox.previewType'
   if (it.kind === 'review') return 'pages.gatesInbox.reviewType'
+  if (it.kind === 'preflight') return 'pages.gatesInbox.preflightType'
   return 'pages.gatesInbox.clarifyType'
 }
 
@@ -68,6 +70,7 @@ export function inboxBadgeTone(it: InboxStateItem): InboxBadgeTone {
   if (it.type === 'gate') return 'gate'
   if (it.kind === 'app_preview') return 'preview'
   if (it.kind === 'review') return 'review'
+  if (it.kind === 'preflight') return 'preflight'
   return 'clarify'
 }
 
@@ -111,6 +114,8 @@ export function inboxIconToneClass(tone: InboxBadgeTone): string {
       return 'bg-info/15 text-info'
     case 'review':
       return 'bg-n-review/15 text-n-review'
+    case 'preflight':
+      return 'bg-n-ci/15 text-n-ci'
     case 'replying':
       return 'bg-n-artifact/15 text-n-artifact'
     default:
@@ -127,6 +132,8 @@ export function inboxBadgeToneClass(tone: InboxBadgeTone): string {
       return 'border-info/30 bg-info/10 text-info'
     case 'review':
       return 'border-n-review/30 bg-n-review/10 text-n-review'
+    case 'preflight':
+      return 'border-n-ci/30 bg-n-ci/10 text-n-ci'
     case 'replying':
       return 'border-n-artifact/35 bg-n-artifact/10 text-n-artifact'
     default:

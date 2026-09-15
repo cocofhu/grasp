@@ -37,6 +37,9 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 		if aname == "" {
 			return "error: 'name' is required", true
 		}
+		if strings.TrimSpace(aname) == PreflightArtifactName {
+			return "write_artifact failed: preflight.json 只能通过 set_preflight 写入,不能用 write_artifact 伪造", true
+		}
 		id, err := h.WriteArtifact(runID, token, h.ActiveNode(runID), aname, content, kind)
 		if err != nil {
 			return "write_artifact failed: " + err.Error(), true
@@ -63,8 +66,9 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 		// autonomous agent runs (no human is watching) so a node cannot stall
 		// waiting for a choice that will never be surfaced. During a review the
 		// human IS present, so any review-phase node may raise follow-up choices.
-		if h.ActiveNodeType(runID) != "react" && h.ActiveNodeType(runID) != "approve" && !h.InReviewPhase(runID) {
-			return "ask_question 仅在澄清(react/approve)节点或复审阶段可用,当前节点不支持;请直接给出结论。", true
+		active := h.ActiveNodeType(runID)
+		if active != "react" && active != "approve" && active != "preflight" && !h.InReviewPhase(runID) {
+			return "ask_question 仅在澄清(react/approve)/环境确认(preflight)节点或复审阶段可用,当前节点不支持;请直接给出结论。", true
 		}
 		qs := parseQuestions(args["questions"])
 		if len(qs) == 0 {
@@ -72,6 +76,23 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 		}
 		h.SetPendingQuestions(runID, h.ActiveNode(runID), qs)
 		return fmt.Sprintf("ok: 已记录 %d 个问题并展示给用户。请结束本轮回复,等待用户在界面完成选择后再继续。", len(qs)), false
+	case "ask_form":
+		if !h.authorize(runID, token) {
+			return "ask_form failed: " + ErrUnauthorized.Error(), true
+		}
+		if !toolAllowed(h.ActiveNodeType(runID), "ask_form") {
+			return toolDeniedMsg("ask_form"), true
+		}
+		forms := parseForms(args)
+		if len(forms) == 0 {
+			return "ask_form failed: 'fields' 为空或格式不正确(每项需要 name+label; type 仅 text|url)", true
+		}
+		h.SetPendingForms(runID, h.ActiveNode(runID), forms)
+		nFields := 0
+		for _, f := range forms {
+			nFields += len(f.Fields)
+		}
+		return fmt.Sprintf("ok: 已记录表单(%d 个字段)并展示给用户。请结束本轮回复,等待用户填写后再继续。", nFields), false
 	case "set_plan":
 		if !h.authorize(runID, token) {
 			return "set_plan failed: " + ErrUnauthorized.Error(), true
@@ -216,6 +237,12 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 			"ok: 已写入实现结果")
 	case "get_implementation_result":
 		return h.structuredGet(runID, token, "get_implementation_result", structured.ImplementationResultArtifactName)
+	case "set_preflight":
+		doc, err := structured.ParsePreflight(args)
+		return h.structuredSet(runID, token, "set_preflight", "preflight", structured.PreflightArtifactName, doc, err,
+			fmt.Sprintf("ok: 已写入环境确认(%d 个字段)", len(doc.Fields)))
+	case "get_preflight":
+		return h.structuredGet(runID, token, "get_preflight", structured.PreflightArtifactName)
 	case "set_preview":
 		if !h.authorize(runID, token) {
 			return "set_preview failed: " + ErrUnauthorized.Error(), true
@@ -252,7 +279,7 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 			return "set_artifact_preview failed: " + ErrUnauthorized.Error(), true
 		}
 		if !toolAllowed(h.ActiveNodeType(runID), "set_artifact_preview") {
-			return "set_artifact_preview 仅在澄清(react)或 Approve 节点可用,当前节点不支持。", true
+			return "set_artifact_preview 仅在澄清(react)、Approve 或环境确认(preflight)节点可用,当前节点不支持。", true
 		}
 		aname := strings.TrimSpace(asString(args["name"]))
 		if aname == "" {
@@ -360,8 +387,12 @@ func (h *Host) structuredSet(runID, token, tool, nodeType, name string, doc any,
 // artifact names / renderers.
 func toolAllowed(active, tool string) bool {
 	switch tool {
-	case "ask_question", "set_artifact_preview", "set_clarified_requirement":
+	case "ask_question", "set_artifact_preview":
+		return active == "react" || active == "approve" || active == "preflight"
+	case "set_clarified_requirement":
 		return active == "react" || active == "approve"
+	case "ask_form", "set_preflight":
+		return active == "preflight"
 	case "set_plan":
 		return active == "plan" || active == "approve"
 	case "set_research":
@@ -389,6 +420,10 @@ func toolDeniedMsg(tool string) string {
 		return "set_research 仅在调研(research)或 Approve 节点可用,当前节点不支持。"
 	case "set_proposals":
 		return "set_proposals 仅在方案(proposal)或 Approve 节点可用,当前节点不支持。"
+	case "set_preflight":
+		return "set_preflight 仅在环境确认(preflight)节点可用,当前节点不支持。"
+	case "ask_form":
+		return "ask_form 仅在环境确认(preflight)节点可用,当前节点不支持。"
 	default:
 		return tool + " 当前节点不支持。"
 	}
@@ -484,6 +519,81 @@ func parseQuestions(v any) []models.ReactQuestion {
 			}
 		}
 		out = append(out, q)
+	}
+	return out
+}
+
+// parseForms coerces ask_form arguments into ReactForm(s). Accepts either
+// top-level fields[] (one form) or forms[] of {title?, fields[]}. Type is
+// text|url only (default text). Each field requires name+label.
+func parseForms(args map[string]any) []models.ReactForm {
+	if args == nil {
+		return nil
+	}
+	if raw, ok := args["forms"].([]any); ok && len(raw) > 0 {
+		out := make([]models.ReactForm, 0, len(raw))
+		for _, item := range raw {
+			m, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			f := models.ReactForm{Title: strings.TrimSpace(asString(m["title"]))}
+			f.Fields = parseFormFields(m["fields"])
+			if len(f.Fields) == 0 {
+				continue
+			}
+			out = append(out, f)
+		}
+		return out
+	}
+	fields := parseFormFields(args["fields"])
+	if len(fields) == 0 {
+		return nil
+	}
+	return []models.ReactForm{{
+		Title:  strings.TrimSpace(asString(args["title"])),
+		Fields: fields,
+	}}
+}
+
+func parseFormFields(v any) []models.ReactFormField {
+	raw, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]models.ReactFormField, 0, len(raw))
+	for _, item := range raw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := strings.TrimSpace(asString(m["name"]))
+		label := strings.TrimSpace(asString(m["label"]))
+		if name == "" || label == "" {
+			continue
+		}
+		typ := strings.ToLower(strings.TrimSpace(asString(m["type"])))
+		switch typ {
+		case "", "text":
+			typ = "text"
+		case "url":
+			// ok
+		default:
+			continue // reject password and other types
+		}
+		why := strings.TrimSpace(asString(m["why"]))
+		if why == "" {
+			why = strings.TrimSpace(asString(m["reason"]))
+		}
+		out = append(out, models.ReactFormField{
+			Name:        name,
+			Label:       label,
+			Type:        typ,
+			Placeholder: strings.TrimSpace(asString(m["placeholder"])),
+			Value:       asString(m["value"]),
+			Required:    asBool(m["required"]),
+			Why:         why,
+		})
 	}
 	return out
 }
@@ -626,7 +736,7 @@ func artifactTools() []map[string]any {
 		},
 		{
 			"name": "ask_question",
-			"description": "仅澄清(react)或 Approve 节点可用:向用户提出结构化的选择题(问题+候选选项),界面会渲染成单选/多选卡片让用户点选。" +
+			"description": "仅澄清(react)、Approve 或环境确认(preflight)节点可用:向用户提出结构化的选择题(问题+候选选项),界面会渲染成单选/多选卡片让用户点选。" +
 				"当需要用户在有限选项中做决定时使用;调用后应结束本轮回复,等待用户完成选择。" +
 				"澄清是门禁:任何还不确定、需要用户拍板的点都必须用本工具让用户确认,不能留成未决问题就结束。" +
 				"只有当信息已充分、没有任何待确认问题时,才不要调用本工具,直接调用 set_clarified_requirement 收敛结论——届时视为澄清结束。",
@@ -661,6 +771,37 @@ func artifactTools() []map[string]any {
 					},
 				},
 				"required": []string{"questions"},
+			},
+		},
+		{
+			"name": "ask_form",
+			"description": "仅环境确认(preflight)节点可用:向用户展示明文表单采集环境值(如地址、账号、密码)。" +
+				"fields 每项需 name+label;type 仅 text|url(默认 text,密码也用 text 明文,无 password 类型);" +
+				"可选 required/placeholder/value/why(悬停说明计划缺口)。调用后应结束本轮回复,等待用户填写。" +
+				"表单提交只进入对话,不能代替 set_preflight。",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"title": strProp("可选:表单标题"),
+					"fields": map[string]any{
+						"type":        "array",
+						"description": "表单字段",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"name":        strProp("字段名(导出到 vars 的键)"),
+								"label":       strProp("给人看的标签"),
+								"type":        strProp("text|url,默认 text;密码用 text 明文"),
+								"required":    map[string]any{"type": "boolean", "description": "可选:是否必填"},
+								"placeholder": strProp("可选:占位提示"),
+								"value":       strProp("可选:预填值(明文)"),
+								"why":         strProp("可选:悬停说明为何要填(计划缺口)"),
+							},
+							"required": []string{"name", "label"},
+						},
+					},
+				},
+				"required": []string{"fields"},
 			},
 		},
 		{
@@ -1022,6 +1163,39 @@ func artifactTools() []map[string]any {
 		},
 		getTool("get_implementation_result", "读取本次运行的实现结果(implementation_result.json)。"),
 		{
+			"name": "set_preflight",
+			"description": "仅环境确认(preflight)节点可用:写入已确认的环境清单(preflight.json)。" +
+				"必填 summary、confirmed=true;fields[] 每项 name+value 明文(可为空数组表示无缺口);" +
+				"unresolved 必须为空。密码与其它值一律明文。表单提交不能代替本工具。写完后调用 node_complete。",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"summary":   strProp("核对摘要"),
+					"confirmed": map[string]any{"type": "boolean", "description": "必须为 true"},
+					"fields": map[string]any{
+						"type":        "array",
+						"description": "环境字段(可空);每项 name+value 必填明文",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"name":         strProp("变量名"),
+								"label":        strProp("可选:显示标签"),
+								"value":        strProp("确认值(明文,含密码)"),
+								"verified":     map[string]any{"type": "boolean", "description": "可选:是否已核验"},
+								"verification": strProp("可选:sandbox_probe|user_attested|mixed"),
+								"source":       strProp("可选:form|choice|chat"),
+								"notes":        strProp("可选:核验说明"),
+							},
+							"required": []string{"name", "value"},
+						},
+					},
+					"unresolved": strList("结束时必须为空"),
+				},
+				"required": []string{"summary", "confirmed"},
+			},
+		},
+		getTool("get_preflight", "读取本次运行的环境确认清单(preflight.json)。"),
+		{
 			"name": "set_preview",
 			"description": "仅 app_preview 或 Approve 节点可用:注册沙箱内应用预览端口或外部 http(s) URL。" +
 				"参数 port? 与 url? 二选一(恰好其一);label(可选)用于 UI 标签。可多次调用注册多项;同 port 或同规范化 url 再次调用可更新 label。外部 URL 由浏览器 iframe 直连,不做服务端探测,取点可能降级。" +
@@ -1037,7 +1211,7 @@ func artifactTools() []map[string]any {
 		},
 		{
 			"name": "set_artifact_preview",
-			"description": "仅澄清(react)或 Approve 节点可用:把已写入的产物钉到 ReAct 界面预览 Tab。" +
+			"description": "仅澄清(react)、Approve 或环境确认(preflight)节点可用:把已写入的产物钉到 ReAct 界面预览 Tab。" +
 				"参数 name 为 list_artifacts / write_artifact 中的产物名,必须已存在。可多次调用切换预览;同名再次 write_artifact 后预览会热更新。" +
 				"与 ask_question.demoHtml 分工:选项级并排对比用 demoHtml;独立成稿、需热更新或取点标注用本工具。",
 			"inputSchema": map[string]any{

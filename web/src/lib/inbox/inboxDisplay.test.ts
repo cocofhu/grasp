@@ -57,6 +57,12 @@ describe('inboxBadgeLabelKey', () => {
     )
   })
 
+  it('maps preflight kind to preflightType (env confirmation)', () => {
+    expect(inboxBadgeLabelKey({ type: 'clarify', kind: 'preflight' })).toBe(
+      'pages.gatesInbox.preflightType',
+    )
+  })
+
   it('falls back to clarifyType when kind omitted', () => {
     expect(inboxBadgeLabelKey({ type: 'clarify' })).toBe('pages.gatesInbox.clarifyType')
   })
@@ -144,6 +150,7 @@ describe('inboxBadgeTone', () => {
     expect(inboxBadgeTone({ type: 'gate' })).toBe('gate')
     expect(inboxBadgeTone({ type: 'clarify', kind: 'app_preview' })).toBe('preview')
     expect(inboxBadgeTone({ type: 'clarify', kind: 'review' })).toBe('review')
+    expect(inboxBadgeTone({ type: 'clarify', kind: 'preflight' })).toBe('preflight')
     expect(inboxBadgeTone({ type: 'clarify', kind: 'clarify' })).toBe('clarify')
     expect(inboxBadgeTone({ type: 'clarify', kind: 'clarify', state: 'replying' })).toBe('replying')
     expect(inboxBadgeTone({ type: 'clarify', kind: 'clarify', state: 'starting' })).toBe('clarify')

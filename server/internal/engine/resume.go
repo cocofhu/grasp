@@ -507,14 +507,14 @@ func (e *Engine) reactReply(runID, nodeID, humanText string, images []models.Pro
 	req := e.nodeReq(c, node)
 	t := e.provider.ReactReply(context.Background(), req, conv.Messages, effective, images, force)
 	agentMsg := models.ReactMessage{Role: "agent", Text: t.Msg,
-		At: time.Now().Format(time.RFC3339), Questions: t.Questions}
+		At: time.Now().Format(time.RFC3339), Questions: t.Questions, Forms: t.Forms}
 	conv.Messages = append(conv.Messages, agentMsg)
 
 	// Auto-clarify: if this node runs in auto mode and the agent asked more
 	// questions, keep answering with the recommended option set (all recommended
 	// for multi-select, or the first as fallback) instead of pausing for another
 	// human reply.
-	if !force && !t.Done && len(t.Questions) > 0 && e.autoReactEnabled(c, node) {
+	if !force && !t.Done && len(t.Questions) > 0 && len(t.Forms) == 0 && e.autoReactEnabled(c, node) {
 		t = e.autoAdvanceReact(c, node, &conv, req, t)
 	}
 

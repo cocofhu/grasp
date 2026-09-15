@@ -749,7 +749,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 
 	agentMsg := models.ReactMessage{
 		Role: "agent", Text: t.Msg, At: time.Now().Format(time.RFC3339),
-		Questions: t.Questions, Interrupted: interrupted,
+		Questions: t.Questions, Forms: t.Forms, Interrupted: interrupted,
 	}
 	if interrupted && strings.TrimSpace(agentMsg.Text) == "" {
 		agentMsg.Text = "(已中断)"
@@ -769,7 +769,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 
 	// Auto-clarify: recommended options while auto_var is on.
 	// autoAdvanceReact already appends human/agent turns to conv.
-	if !force && !t.Done && len(t.Questions) > 0 && e.autoReactEnabled(c, node) {
+	if !force && !t.Done && len(t.Questions) > 0 && len(t.Forms) == 0 && e.autoReactEnabled(c, node) {
 		t = e.autoAdvanceReact(c, node, &conv, req, t)
 	}
 
@@ -899,7 +899,7 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 
 	agentMsg := models.ReactMessage{
 		Role: "agent", Text: t.Msg, At: time.Now().Format(time.RFC3339),
-		Questions: t.Questions, Interrupted: interrupted,
+		Questions: t.Questions, Forms: t.Forms, Interrupted: interrupted,
 	}
 	if interrupted && strings.TrimSpace(agentMsg.Text) == "" && t.Err != nil {
 		agentMsg.Text = "(已中断)"

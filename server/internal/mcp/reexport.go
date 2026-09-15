@@ -12,6 +12,7 @@ const (
 	TestResultArtifactName           = s.TestResultArtifactName
 	ReviewArtifactName               = s.ReviewArtifactName
 	ImplementationResultArtifactName = s.ImplementationResultArtifactName
+	PreflightArtifactName            = s.PreflightArtifactName
 )
 
 type ProposalChoice = s.ProposalChoice
@@ -25,6 +26,8 @@ var (
 	RenderTestResultMarkdown           = s.RenderTestResultMarkdown
 	RenderReviewMarkdown               = s.RenderReviewMarkdown
 	RenderImplementationResultMarkdown = s.RenderImplementationResultMarkdown
+	RenderPreflightMarkdown            = s.RenderPreflightMarkdown
+	PreflightIncomplete                = s.PreflightIncomplete
 	ProposalChoices                    = s.ProposalChoices
 	SelectProposal                     = s.SelectProposal
 	TestFailedCount                    = s.TestFailedCount

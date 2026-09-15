@@ -86,8 +86,8 @@ func TestMCPDispatcher(t *testing.T) {
 	// tools/list: 7 core + 2 history + 12 structured + set_preview + set_artifact_preview.
 	list := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
 	tools, _ := list["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 24 {
-		t.Fatalf("expected 24 tools, got %d", len(tools))
+	if len(tools) != 27 {
+		t.Fatalf("expected 27 tools, got %d", len(tools))
 	}
 
 	// tools/call write_artifact

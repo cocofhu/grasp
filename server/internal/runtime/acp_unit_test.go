@@ -94,7 +94,7 @@ func TestPureHelpers(t *testing.T) {
 func TestStructuredProduct(t *testing.T) {
 	cases := map[string]string{"plan": mcp.PlanArtifactName, "implement": mcp.ImplementationResultArtifactName,
 		"research": mcp.ResearchArtifactName, "test": mcp.TestResultArtifactName, "review": mcp.ReviewArtifactName,
-		"proposal": mcp.ProposalsArtifactName, "agent": ""}
+		"proposal": mcp.ProposalsArtifactName, "preflight": mcp.PreflightArtifactName, "agent": ""}
 	for nt, want := range cases {
 		name, _ := nodereg.StructuredProduct(nt)
 		if name != want {

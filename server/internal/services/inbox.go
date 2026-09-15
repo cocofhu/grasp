@@ -139,7 +139,7 @@ func gateInboxItem(g models.Gate, meta runInboxMeta) GateInboxItem {
 // or "app_preview" (application preview waiting for confirm & continue).
 type ClarifyInboxItem struct {
 	Type string `json:"type"`
-	Kind string `json:"kind"` // clarify | review | app_preview
+	Kind string `json:"kind"` // clarify | review | app_preview | preflight
 	// State is "starting" while the node's sandbox is still booting (no
 	// conversation yet, so no transcript and no reply accepted). "replying"
 	// means the item is parked at waiting_human and the review/clarify session
@@ -173,7 +173,7 @@ func IsShareableReviewSession(node *models.Node) bool {
 }
 
 // clarifyInboxKind returns badge semantic for a waiting_human conversation.
-// react → clarify; app_preview → app_preview (distinct from generic review);
+// react/approve → clarify; preflight → preflight; app_preview → app_preview;
 // other ReviewCapable product nodes → review; default clarify.
 func clarifyInboxKind(node *models.Node) string {
 	if node == nil {
@@ -181,6 +181,9 @@ func clarifyInboxKind(node *models.Node) string {
 	}
 	if node.Type == "app_preview" {
 		return "app_preview"
+	}
+	if node.Type == "preflight" {
+		return "preflight"
 	}
 	if node.Type != "react" && node.Type != "approve" && nodereg.ReviewCapable(node.Type) {
 		return "review"

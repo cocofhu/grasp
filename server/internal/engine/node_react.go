@@ -39,16 +39,16 @@ func (e *Engine) execReactEnter(c *execCtx, node *models.Node) nodeOutcome {
 			}
 		}
 		msgs := []models.ReactMessage{}
-		skipEmpty := node.Type == "approve" && strings.TrimSpace(t.Msg) == "" && len(t.Questions) == 0
+		skipEmpty := node.Type == "approve" && strings.TrimSpace(t.Msg) == "" && len(t.Questions) == 0 && len(t.Forms) == 0
 		if !skipEmpty {
 			msgs = []models.ReactMessage{{Role: "agent", Text: t.Msg,
-				At: time.Now().Format(time.RFC3339), Questions: t.Questions}}
+				At: time.Now().Format(time.RFC3339), Questions: t.Questions, Forms: t.Forms}}
 		}
 		conv = models.ReactConversation{RunID: c.run.ID, NodeID: node.ID, Iteration: iter, Done: t.Done,
 			Messages: msgs}
 		logDB(e.db.Create(&conv), c.run.ID, "create react conversation")
 
-		if !t.Done && len(t.Questions) > 0 && e.autoReactEnabled(c, node) {
+		if !t.Done && len(t.Questions) > 0 && len(t.Forms) == 0 && e.autoReactEnabled(c, node) {
 			t = e.autoAdvanceReact(c, node, &conv, req, t)
 		}
 		if t.Done {
@@ -107,7 +107,7 @@ func (e *Engine) autoAdvanceReact(c *execCtx, node *models.Node, conv *models.Re
 		acc = models.AddTokenUsage(acc, t.Usage)
 		accBy = models.AddTokenUsageByModel(accBy, t.UsageByModel)
 		agentMsg := models.ReactMessage{Role: "agent", Text: t.Msg,
-			At: time.Now().Format(time.RFC3339), Questions: t.Questions}
+			At: time.Now().Format(time.RFC3339), Questions: t.Questions, Forms: t.Forms}
 		conv.Messages = append(conv.Messages, agentMsg)
 		conv.Done = t.Done
 		logDB(e.db.Save(conv), c.run.ID, "auto react round")

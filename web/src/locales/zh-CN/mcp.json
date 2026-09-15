@@ -49,6 +49,10 @@
           "signature": "ask_question(questions)",
           "desc": "仅澄清(react)节点:向用户提出结构化选择题(选项可标 recommended;单选最多 1 个,多选应 1 个或多个)"
         },
+        "ask_form": {
+          "signature": "ask_form(fields|forms, title?)",
+          "desc": "仅环境确认(preflight):向用户展示明文表单(text|url;密码也用 text);悬停 why 说明计划缺口;提交进入对话,不能代替 set_preflight"
+        },
         "set_plan": {
           "signature": "set_plan(goals, architecture?, data_design?, interfaces?, components?, interaction?, test_design?)",
           "desc": "仅计划(plan)/Grasp:写入两级计划;可选六节设计区(无内容写「不涉及」)+Mermaid diagram"
@@ -68,6 +72,14 @@
         "get_clarified_requirement": {
           "signature": "get_clarified_requirement() -> clarified_requirement.json",
           "desc": "读取结构化需求澄清结论"
+        },
+        "set_preflight": {
+          "signature": "set_preflight(summary, confirmed, fields?, unresolved?)",
+          "desc": "仅环境确认(preflight):写入已确认环境清单 preflight.json(密码明文;fields 可空表示无缺口)"
+        },
+        "get_preflight": {
+          "signature": "get_preflight() -> preflight.json",
+          "desc": "读取本次运行的环境确认清单"
         },
         "set_research": {
           "signature": "set_research(summary, questions?, findings?, …)",

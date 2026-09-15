@@ -114,7 +114,7 @@ func (e FeedbackEvent) HasSubstance() bool {
 		return true
 	}
 	for _, t := range e.Turns {
-		if strings.TrimSpace(t.Text) != "" || len(t.Questions) > 0 ||
+		if strings.TrimSpace(t.Text) != "" || len(t.Questions) > 0 || len(t.Forms) > 0 ||
 			len(t.Annotations) > 0 || len(t.Images) > 0 {
 			return true
 		}
