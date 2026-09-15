@@ -503,7 +503,10 @@ const {
                     <div :key="step">
                       <div class="mb-2 flex items-center gap-1.5 text-[13px] font-medium text-txt">
                         <Icon name="chat" :size="13" class="shrink-0 text-n-clarify" />
-                        <span>{{ curQuestion.prompt }}</span>
+                        <span
+                          class="min-w-0 flex-1 break-words [overflow-wrap:anywhere]"
+                          data-testid="clarify-question-prompt"
+                        >{{ curQuestion.prompt }}</span>
                         <span class="ml-auto shrink-0 rounded border border-line px-1.5 py-0.5 text-[10px] font-normal text-txt3">{{ curQuestion.allowMultiple ? translate('pages.clarify.multiple') : translate('pages.clarify.single') }}</span>
                       </div>
                       <div class="space-y-1.5">
@@ -513,6 +516,7 @@ const {
                           type="button"
                           class="flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-[12px] transition-colors"
                           :class="isSelected(curQuestion.id, o.id) ? 'border-accent bg-accent-dim/60 text-txt' : 'border-line bg-surface text-txt2 hover:border-line-strong'"
+                          data-testid="clarify-option-btn"
                           @click="pick(curQuestion, o.id)"
                         >
                           <span
@@ -524,7 +528,10 @@ const {
                           >
                             <Icon v-if="isSelected(curQuestion.id, o.id)" name="check" :size="10" />
                           </span>
-                          <span>{{ o.label }}</span>
+                          <span
+                            class="min-w-0 flex-1 break-words [overflow-wrap:anywhere]"
+                            data-testid="clarify-option-label"
+                          >{{ o.label }}</span>
                           <span
                             v-if="o.recommended"
                             class="ml-auto shrink-0 rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-2"
@@ -638,12 +645,13 @@ const {
                 :key="qi"
                 class="mb-3 last:mb-0"
               >
-                <div class="mb-1.5 text-[12px] leading-snug text-txt2">
+                <div class="mb-1.5 min-w-0 max-w-full text-[12px] leading-snug text-txt2 [overflow-wrap:anywhere]">
                   <span class="text-txt3">{{ qi + 1 }}.</span> {{ q.prompt }}
                   <span
                     v-for="o in q.options.filter((op) => op.recommended)"
                     :key="o.id"
-                    class="ml-1 inline-flex rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-2"
+                    class="ml-1 inline-flex max-w-full min-w-0 break-words rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-2 [overflow-wrap:anywhere]"
+                    data-testid="clarify-recommended-chip"
                   >{{ translate('pages.clarify.recommendedLabel', { label: o.label }) }}</span>
                 </div>
                 <div v-if="demoOptionsOf(q).length" class="mt-1.5">
