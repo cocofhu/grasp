@@ -86,7 +86,7 @@
     "run": [
       "acpUnpack.ts",
       "applyLiveWsAcpPage.ts",
-      "graspFirstPipeline.ts",
+      "approveFirstPipeline.ts",
       "artifactGroups.ts",
       "busySeedRetry.ts",
       "canvasLayout.ts",
@@ -94,6 +94,7 @@
       "dialogueAcpDelivery.ts",
       "draftIdb.ts",
       "exportStructuredArtifact.ts",
+      "graspFirstPipeline.ts",
       "homeApproveHandoff.ts",
       "homeComposerDraft.ts",
       "isVisualHtmlCard.ts",
@@ -191,7 +192,7 @@
     "inbox": 22,
     "pm": 7,
     "project": 4,
-    "run": 55,
+    "run": 56,
     "shared": 41
   }
 }

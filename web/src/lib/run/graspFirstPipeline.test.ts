@@ -40,6 +40,24 @@ describe('isGraspFirstPipeline', () => {
     ).toBe(true)
   })
 
+  it('matches input → grasp (canonical type)', () => {
+    expect(
+      isGraspFirstPipeline(
+        graph(
+          [
+            { id: 'in', type: 'input' },
+            { id: 'g', type: 'grasp' },
+            { id: 'out', type: 'output' },
+          ],
+          [
+            { source: 'in', target: 'g' },
+            { source: 'g', target: 'out' },
+          ],
+        ),
+      ),
+    ).toBe(true)
+  })
+
   it('rejects input → react', () => {
     expect(
       isGraspFirstPipeline(
