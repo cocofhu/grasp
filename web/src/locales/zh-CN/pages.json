@@ -2873,7 +2873,6 @@
     },
     "reactArtifactStage": {
       "pipelineTab": "流水线产物",
-      "previewTab": "产物预览",
       "closeTab": "关闭",
       "novncTab": "noVNC",
       "novncCardTitle": "远程桌面",
@@ -2885,8 +2884,6 @@
       "iterationBadge": "第 {n} 次",
       "iterationName": "{name} · 第 {n} 次",
       "novncMissing": "当前节点没有可用沙箱，无法打开 noVNC。",
-      "previewEmptyTitle": "尚未选择产物",
-      "previewEmpty": "写入的可见产物会自动出现在上方 Tab；也可从「流水线产物」点选，或用 set_artifact_preview 主动聚焦某一份。",
       "tabBadgeNew": "新",
       "tabBadgeUpdated": "已更新",
       "gridEmpty": "本次运行还没有产物",

@@ -40,6 +40,7 @@ import {
   nextTabAfterClose,
   openStagePreviewTab,
   previewTabId,
+  coalesceStageTab,
   approveStageRemoteKind,
   resolveEffectivePreviewPin,
   resolveStageRemoteKind,
@@ -208,7 +209,7 @@ describe('reactArtifactPreview helpers', () => {
     expect(openStagePreviewTab(['a.html', 'b.md'], 'a.html')).toEqual(['a.html', 'b.md'])
     expect(closeStagePreviewTab(['a.html', 'b.md'], 'a.html')).toEqual(['b.md'])
     expect(nextTabAfterClose(['a.html', 'b.md'], 'b.md', previewTabId('b.md'))).toBe(previewTabId('a.html'))
-    expect(nextTabAfterClose(['a.html'], 'a.html', previewTabId('a.html'))).toBe(REACT_STAGE_TAB_PREVIEW)
+    expect(nextTabAfterClose(['a.html'], 'a.html', previewTabId('a.html'))).toBe(REACT_STAGE_TAB_GRID)
     expect(nextTabAfterClose(['a.html', 'b.md'], 'a.html', previewTabId('b.md'))).toBe(previewTabId('b.md'))
     expect(nextTabAfterClose(['a.html'], 'a.html', previewTabId('a.html'), true)).toBe(REACT_STAGE_TAB_NOVNC)
     expect(nextTabAfterClose(['a.html'], 'a.html', REACT_STAGE_TAB_NOVNC)).toBe(REACT_STAGE_TAB_NOVNC)
@@ -701,6 +702,28 @@ describe('reactArtifactPreview helpers', () => {
           ['page.html'],
         ),
       ).toBeNull()
+    })
+
+    it('coalesces legacy chrome preview id to pipeline grid (g1.3)', () => {
+      expect(coalesceStageTab(REACT_STAGE_TAB_PREVIEW)).toBe(REACT_STAGE_TAB_GRID)
+      expect(coalesceStageTab('')).toBe(REACT_STAGE_TAB_GRID)
+      expect(coalesceStageTab(previewTabId('a.html'))).toBe(previewTabId('a.html'))
+      expect(
+        restoreStageOpenState(
+          { openNames: [], activeTab: REACT_STAGE_TAB_PREVIEW, novncOpen: false },
+          ['page.html'],
+        ),
+      ).toBeNull()
+      expect(
+        restoreStageOpenState(
+          { openNames: ['page.html'], activeTab: REACT_STAGE_TAB_PREVIEW, novncOpen: false },
+          ['page.html'],
+        ),
+      ).toEqual({
+        openNames: ['page.html'],
+        activeTab: REACT_STAGE_TAB_GRID,
+        novncOpen: false,
+      })
     })
   })
 })

@@ -20,7 +20,6 @@ import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import type { Artifact, ReactAnnotation, Run } from '@/lib/shared/types'
 import {
   REACT_STAGE_TAB_GRID,
-  REACT_STAGE_TAB_PREVIEW,
   REACT_STAGE_TAB_NOVNC,
   approveStageRemoteKind,
   artifactFriendlyNameKey,
@@ -130,8 +129,8 @@ const initialOpen = restoreStageOpenState(
   loadStageOpenState(props.runId, props.nodeId),
   (props.artifacts || []).map((a) => a.name),
 )
-/** Default to chrome preview empty so connecting→ready does not flash the pipeline grid. */
-const activeTab = ref(initialOpen?.activeTab || REACT_STAGE_TAB_PREVIEW)
+/** Default to pipeline artifacts grid (no standalone preview chrome Tab). */
+const activeTab = ref(initialOpen?.activeTab || REACT_STAGE_TAB_GRID)
 /** True after the user picks a grid tab, card, preview tab, or noVNC — auto-open must not steal focus.
  *  Also set when session open-state restore succeeds so pin auto-activate loses to refresh restore. */
 const userMoved = ref(!!initialOpen)
@@ -400,16 +399,6 @@ function selectGridTab() {
   activeTab.value = REACT_STAGE_TAB_GRID
 }
 
-/** Chrome「产物预览」：无打开卡片时为空态；已有打开卡片则聚焦最近一张。 */
-function selectPreviewChromeTab() {
-  markUserMoved()
-  if (openNames.value.length) {
-    activeTab.value = previewTabId(openNames.value[openNames.value.length - 1])
-    return
-  }
-  activeTab.value = REACT_STAGE_TAB_PREVIEW
-}
-
 function selectPreviewTab(name: string) {
   markUserMoved()
   activeTab.value = previewTabId(name)
@@ -446,7 +435,7 @@ function closeNovnc() {
     activeTab.value = previewTabId(openNames.value[openNames.value.length - 1])
     return
   }
-  activeTab.value = REACT_STAGE_TAB_PREVIEW
+  activeTab.value = REACT_STAGE_TAB_GRID
 }
 
 function onRemotePick(payload: AppPreviewPickPayload) {
@@ -454,7 +443,6 @@ function onRemotePick(payload: AppPreviewPickPayload) {
 }
 
 const showingGrid = computed(() => activeTab.value === REACT_STAGE_TAB_GRID)
-const showingPreviewEmpty = computed(() => activeTab.value === REACT_STAGE_TAB_PREVIEW)
 const activePreviewName = computed(() => previewTabName(activeTab.value))
 
 watch(
@@ -633,7 +621,7 @@ watch(
     const nid = String(props.nodeId || '').trim()
     if (!rid || !nid) {
       openNames.value = []
-      activeTab.value = REACT_STAGE_TAB_PREVIEW
+      activeTab.value = REACT_STAGE_TAB_GRID
       novncOpen.value = false
       userMoved.value = false
       tabUnread.value = {}
@@ -648,7 +636,7 @@ watch(
       )
     ) {
       openNames.value = []
-      activeTab.value = REACT_STAGE_TAB_PREVIEW
+      activeTab.value = REACT_STAGE_TAB_GRID
       novncOpen.value = false
       userMoved.value = false
       tabUnread.value = {}
@@ -666,17 +654,14 @@ watch(
         novncOpen.value = false
         activeTab.value = openNames.value.length
           ? previewTabId(openNames.value[openNames.value.length - 1])
-          : REACT_STAGE_TAB_PREVIEW
+          : REACT_STAGE_TAB_GRID
       }
       return
     }
     // Show the remote tab once kind is live; never steal focus after the user moved.
     novncOpen.value = true
     if (userMoved.value) return
-    if (
-      activeTab.value === REACT_STAGE_TAB_GRID ||
-      activeTab.value === REACT_STAGE_TAB_PREVIEW
-    ) {
+    if (activeTab.value === REACT_STAGE_TAB_GRID) {
       activeTab.value = REACT_STAGE_TAB_NOVNC
     }
   },
@@ -762,22 +747,6 @@ onBeforeUnmount(() => {
       >
         <Icon name="dashboard" :size="13" />
         <span class="truncate">{{ t('pages.reactArtifactStage.pipelineTab') }}</span>
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="inline-flex max-w-[200px] items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] transition max-md:px-2 max-md:py-0.5 max-md:text-[11px]"
-        :class="
-          showingPreviewEmpty
-            ? 'bg-elevated text-txt'
-            : 'text-txt3 hover:bg-elevated/60 hover:text-txt2'
-        "
-        :aria-selected="showingPreviewEmpty ? 'true' : 'false'"
-        data-testid="react-artifact-tab-preview"
-        @click="selectPreviewChromeTab"
-      >
-        <Icon name="artifact" :size="13" />
-        <span class="truncate">{{ t('pages.reactArtifactStage.previewTab') }}</span>
       </button>
       <div
         v-for="name in openNames"
@@ -946,16 +915,6 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
-    </div>
-
-    <div
-      v-show="showingPreviewEmpty"
-      class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center"
-      data-testid="react-artifact-preview-empty"
-    >
-      <Icon name="artifact" :size="26" class="opacity-40" />
-      <p class="text-[13px] font-medium text-txt">{{ t('pages.reactArtifactStage.previewEmptyTitle') }}</p>
-      <p class="max-w-[360px] text-[12px] text-txt3">{{ t('pages.reactArtifactStage.previewEmpty') }}</p>
     </div>
 
     <div

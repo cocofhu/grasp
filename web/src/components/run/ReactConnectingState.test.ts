@@ -127,60 +127,27 @@ describe('ReactConnectingState', () => {
     expect(wrapper.text()).not.toContain('正在启动 Agent…')
   })
 
-  it('stage chrome defaults to clickable preview tab with HardLoadLayer (g1.1 g1.2 g1.3)', () => {
+  it('stage chrome only shows pipeline artifacts skeleton (g1.2)', () => {
     const wrapper = mountStage('zh-CN')
     expect(wrapper.get('[data-testid="react-connecting-stage"]').attributes('aria-busy')).toBe('true')
     const pipeline = wrapper.get('[data-testid="react-connecting-tab-pipeline"]')
-    const preview = wrapper.get('[data-testid="react-connecting-tab-preview"]')
     expect(pipeline.element.tagName).toBe('BUTTON')
-    expect(preview.element.tagName).toBe('BUTTON')
     expect(pipeline.attributes('role')).toBe('tab')
-    expect(preview.attributes('role')).toBe('tab')
-    expect(pipeline.attributes('aria-selected')).toBe('false')
-    expect(preview.attributes('aria-selected')).toBe('true')
-    expect(preview.text()).toContain('产物预览')
-    expect(wrapper.get('[data-testid="hard-load-layer"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="hard-load-stage"]').text()).toContain('加载产物内容')
-    expect(wrapper.text()).not.toContain('正在连接 Agent…')
-    expect(wrapper.find('[data-testid="hard-load-retry"]').exists()).toBe(false)
-  })
-
-  it('stage chrome English defaults to Artifact preview HardLoadLayer (g1.3)', () => {
-    const wrapper = mountStage('en')
-    expect(wrapper.get('[data-testid="react-connecting-tab-preview"]').attributes('aria-selected')).toBe('true')
-    expect(wrapper.get('[data-testid="react-connecting-tab-preview"]').text()).toContain('Artifact preview')
-    expect(wrapper.get('[data-testid="hard-load-stage"]').text()).toMatch(/Loading artifact/i)
-  })
-
-  it('pipeline tab keeps content skeleton without HardLoadLayer (g1.1 f2)', async () => {
-    const wrapper = mountStage('zh-CN')
-    await wrapper.get('[data-testid="react-connecting-tab-pipeline"]').trigger('click')
-    await nextTick()
-    expect(wrapper.get('[data-testid="react-connecting-tab-pipeline"]').attributes('aria-selected')).toBe('true')
-    expect(wrapper.get('[data-testid="react-connecting-tab-preview"]').attributes('aria-selected')).toBe('false')
+    expect(pipeline.attributes('aria-selected')).toBe('true')
+    expect(pipeline.text()).toContain('流水线产物')
+    expect(wrapper.find('[data-testid="react-connecting-tab-preview"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="hard-load-layer"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="react-connecting-pipeline-skeleton"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="react-connecting-pipeline-skeleton"] .animate-pulse').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('正在连接 Agent…')
   })
 
-  it('keeps pipeline selection until remount (g1 f3)', async () => {
-    const wrapper = mountStage('zh-CN')
-    await wrapper.get('[data-testid="react-connecting-tab-pipeline"]').trigger('click')
-    await nextTick()
+  it('stage chrome English only shows Pipeline artifacts (g1.2)', () => {
+    const wrapper = mountStage('en')
     expect(wrapper.get('[data-testid="react-connecting-tab-pipeline"]').attributes('aria-selected')).toBe('true')
-    await wrapper.vm.$forceUpdate()
-    await nextTick()
-    expect(wrapper.get('[data-testid="react-connecting-tab-pipeline"]').attributes('aria-selected')).toBe('true')
-  })
-
-  it('does not show stuck or retry within 10s on connecting HardLoadLayer (g1.2 f5)', async () => {
-    vi.useFakeTimers()
-    const wrapper = mountStage('zh-CN')
-    expect(wrapper.find('[data-testid="hard-load-layer"]').exists()).toBe(true)
-    vi.advanceTimersByTime(10_000)
-    await nextTick()
-    expect(wrapper.find('[data-testid="hard-load-stuck"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="hard-load-retry"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="react-connecting-tab-pipeline"]').text()).toContain('Pipeline artifacts')
+    expect(wrapper.find('[data-testid="react-connecting-tab-preview"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="hard-load-layer"]').exists()).toBe(false)
   })
 
   it('sidebar connecting stays ClarifyBootLoader without preview tabs (f6)', () => {

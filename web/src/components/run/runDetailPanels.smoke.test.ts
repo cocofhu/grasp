@@ -143,7 +143,7 @@ describe('Run detail panel shells (Demo entry assembly)', () => {
       },
     })
     expect(clarify.find('[data-testid="react-artifact-tab-grid"]').exists()).toBe(true)
-    expect(clarify.find('[data-testid="react-artifact-tab-preview"]').exists()).toBe(true)
+    expect(clarify.find('[data-testid="react-artifact-tab-preview"]').exists()).toBe(false)
     expect(clarify.find('[data-testid="react-artifact-card-novnc"]').exists()).toBe(true)
     const stage = clarify.findComponent(ReactArtifactStage)
     expect(stage.props('annotatable')).toBe(true)
@@ -226,13 +226,12 @@ describe('Run detail panel shells (Demo entry assembly)', () => {
     expect(clarify.find('[data-testid="react-connecting-stage"]').exists()).toBe(true)
     expect(clarify.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(true)
     expect(clarify.find('[data-testid="react-connecting-confirm"]').exists()).toBe(false)
-    // plan g2.2: connecting stage restores clickable preview tab + HardLoadLayer
+    // plan g2.2: connecting stage only shows pipeline artifacts skeleton (no preview chrome Tab)
     expect(clarify.get('[data-testid="react-connecting-tab-pipeline"]').text()).toContain('流水线产物')
-    expect(clarify.get('[data-testid="react-connecting-tab-preview"]').text()).toContain('产物预览')
-    expect(clarify.get('[data-testid="react-connecting-tab-preview"]').attributes('aria-selected')).toBe('true')
-    expect(clarify.get('[data-testid="hard-load-layer"]').exists()).toBe(true)
-    expect(clarify.get('[data-testid="hard-load-stage"]').text()).toContain('加载产物内容')
-    expect(clarify.find('[data-testid="hard-load-retry"]').exists()).toBe(false)
+    expect(clarify.get('[data-testid="react-connecting-tab-pipeline"]').attributes('aria-selected')).toBe('true')
+    expect(clarify.find('[data-testid="react-connecting-tab-preview"]').exists()).toBe(false)
+    expect(clarify.find('[data-testid="hard-load-layer"]').exists()).toBe(false)
+    expect(clarify.get('[data-testid="react-connecting-pipeline-skeleton"]').exists()).toBe(true)
 
     const review = mount(RunReviewPanel, {
       props: {
@@ -253,7 +252,8 @@ describe('Run detail panel shells (Demo entry assembly)', () => {
     expect(review.find('[data-testid="react-connecting-stage"]').exists()).toBe(true)
     expect(review.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(true)
     expect((review.get('[data-testid="react-connecting-confirm"]').element as HTMLButtonElement).disabled).toBe(true)
-    expect(review.get('[data-testid="react-connecting-tab-preview"]').text()).toContain('产物预览')
-    expect(review.get('[data-testid="hard-load-layer"]').exists()).toBe(true)
+    expect(review.find('[data-testid="react-connecting-tab-preview"]').exists()).toBe(false)
+    expect(review.find('[data-testid="hard-load-layer"]').exists()).toBe(false)
+    expect(review.get('[data-testid="react-connecting-pipeline-skeleton"]').exists()).toBe(true)
   })
 })
