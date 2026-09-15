@@ -39,7 +39,8 @@ describe('PublicGateApproval height chain to clarify-scroller (g1.2 / g2)', () =
   it('workbench and sidebar keep min-h-0 flex chain', () => {
     expect(viewSrc).toMatch(/data-testid="public-gate-workbench"/)
     expect(viewSrc).toMatch(/class="flex min-h-0 flex-1 flex-col"[^>]*data-testid="public-gate-workbench"/)
-    expect(viewSrc).toMatch(/<ReviewShell\s+class="min-h-0 flex-1"/)
+    // ref= may sit between tag and class (shellRef for confirm ceremony).
+    expect(viewSrc).toMatch(/<ReviewShell[\s\S]*?class="min-h-0 flex-1"/)
     expect(viewSrc).toMatch(/data-testid="public-gate-sidebar"/)
     expect(viewSrc).toMatch(/class="flex h-full min-h-0 flex-col"[^>]*data-testid="public-gate-sidebar"/)
     // Chat host wrapper (ClarifyChat is multi-root; fallthrough class is ignored)
@@ -71,7 +72,8 @@ describe('PublicGateApproval height chain to clarify-scroller (g1.2 / g2)', () =
   })
 
   it('ReviewShell sidebar/stage preserve min-h-0 overflow chain (g1.2 / g2.2)', () => {
-    expect(shellSrc).toMatch(/class="flex h-full min-h-0"/)
+    // relative + overflow-hidden required so ConfirmFlowOverlay clips to desk (not app chrome).
+    expect(shellSrc).toMatch(/class="relative flex h-full min-h-0 overflow-hidden"/)
     expect(shellSrc).toMatch(/data-testid="review-shell-stage"/)
     expect(shellSrc).toMatch(/flex min-h-0 flex-1 flex-col overflow-hidden/)
     expect(shellSrc).toMatch(/data-testid="review-shell-sidebar"/)
