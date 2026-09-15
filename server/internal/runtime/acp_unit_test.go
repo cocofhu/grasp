@@ -132,6 +132,51 @@ func TestArtifactOwnedByNode(t *testing.T) {
 	}
 }
 
+func TestApproveProductsSettled(t *testing.T) {
+	store := newMemStore()
+	host := mcp.NewHost(store)
+	tok := host.RegisterRun("r")
+	t.Cleanup(func() { host.UnregisterRun("r") })
+	p := newACPProvider(host, Options{}).(*acpProvider)
+	req := NodeReq{RunID: "r", NodeID: "n", NodeType: "approve", Token: tok}
+
+	if p.approveProductsSettled(req) {
+		t.Fatal("missing artifacts must not be settled")
+	}
+	if _, err := host.WriteArtifact("r", tok, "n", mcp.ClarifiedRequirementArtifactName,
+		mcp.MinimalValidClarifiedRequirementJSON, "json"); err != nil {
+		t.Fatal(err)
+	}
+	if p.approveProductsSettled(req) {
+		t.Fatal("clarified requirement alone must not be settled")
+	}
+	if _, err := host.WriteArtifact("r", tok, "n", mcp.PlanArtifactName,
+		`{"goals":[{"id":"g1","title":"目标"}]}`, "json"); err != nil {
+		t.Fatal(err)
+	}
+	if !p.approveProductsSettled(req) {
+		t.Fatal("both products with empty open_questions must be settled")
+	}
+
+	openReq := strings.Replace(mcp.MinimalValidClarifiedRequirementJSON,
+		`"constraints": ["仅邮箱登录"]`,
+		`"constraints": ["仅邮箱登录"], "open_questions": ["还要不要短信?"]`, 1)
+	if _, err := host.WriteArtifact("r", tok, "n", mcp.ClarifiedRequirementArtifactName, openReq, "json"); err != nil {
+		t.Fatal(err)
+	}
+	if p.approveProductsSettled(req) {
+		t.Fatal("non-empty open_questions must not be settled")
+	}
+
+	if _, err := host.WriteArtifact("r", tok, "n", mcp.ClarifiedRequirementArtifactName,
+		`{not-json`, "json"); err != nil {
+		t.Fatal(err)
+	}
+	if p.approveProductsSettled(req) {
+		t.Fatal("unparseable clarified requirement must not be settled")
+	}
+}
+
 func TestConditionalInjection(t *testing.T) {
 	req := NodeReq{Config: map[string]any{"conditional_prompt": map[string]any{"when_var": "flag", "text": "EXTRA"}}, Vars: map[string]any{}}
 	if got := conditionalInjection(req); got != "" {
