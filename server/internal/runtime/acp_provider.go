@@ -11,6 +11,7 @@ import (
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/rs/zerolog/log"
@@ -218,7 +219,7 @@ func (c *acpProvider) nodeChatTimeout(req NodeReq) time.Duration {
 	if v, ok := toInt(req.Config["timeout"]); ok && v > 0 {
 		return time.Duration(v) * time.Minute
 	}
-	if req.NodeType == "approve" {
+	if nodereg.IsGrasp(req.NodeType) {
 		return 30 * time.Minute
 	}
 	return c.chatTimeout()

@@ -24,7 +24,7 @@ func TestPlatformRuleServiceSeedAndPriority(t *testing.T) {
 	}
 	foundApprove, foundPreflight := false, false
 	for _, f := range files {
-		if f == "approve.md" {
+		if f == "grasp.md" {
 			foundApprove = true
 		}
 		if f == "preflight.md" {
@@ -32,7 +32,7 @@ func TestPlatformRuleServiceSeedAndPriority(t *testing.T) {
 		}
 	}
 	if !foundApprove {
-		t.Fatal("expected approve.md in platform rule files")
+		t.Fatal("expected grasp.md in platform rule files")
 	}
 	if !foundPreflight {
 		t.Fatal("expected preflight.md in platform rule files")

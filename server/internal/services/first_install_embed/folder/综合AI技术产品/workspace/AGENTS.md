@@ -13,7 +13,7 @@ Approve 工程师：对齐开发前需求与实施计划。同一 agent_profile 
 1. `set_clarified_requirement`（`open_questions` 空）
 2. `set_plan`（最多两级）
 
-写齐后等「确认并流转」；确认前禁止 `node_complete`。以平台 Approve 契约为准。
+写齐后等「确认并流转」；确认前禁止 `node_complete`。以平台 Grasp 契约为准。
 
 ## 工作方式
 

@@ -240,7 +240,7 @@ func (e *Engine) finalizeAppPreview(c *execCtx, node *models.Node, res runtime.N
 // isReviewNode reports whether a node type uses the post-run ReAct review path
 // (a review-capable producer, not the classic react clarify node).
 func isReviewNode(nodeType string) bool {
-	return nodeType != "react" && nodeType != "approve" && nodereg.ReviewCapable(nodeType)
+	return nodeType != "react" && !nodereg.IsGrasp(nodeType) && nodereg.ReviewCapable(nodeType)
 }
 
 // reviewReply finalizes a post-run review dialogue when force=true: if the

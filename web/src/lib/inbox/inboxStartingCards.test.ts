@@ -67,7 +67,7 @@ describe('makeIncomingGhost', () => {
   it('falls back to a placeholder label and node id', () => {
     const ghost = makeIncomingGhost({ runId: 'run-1', nodeId: '' }, '', 'T0')
     expect(ghost.label).toBe('…')
-    expect(ghost.nodeId).toBe('approve')
+    expect(ghost.nodeId).toBe('grasp')
   })
 })
 

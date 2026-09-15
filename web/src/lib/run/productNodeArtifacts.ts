@@ -18,6 +18,11 @@ type ProductEntry = {
 
 const products = manifest.products as ProductEntry[]
 
+/** Canonical registry type: historical approve graphs resolve to grasp. */
+function canonicalProductType(nodeType: string): string {
+  return nodeType === 'approve' ? 'grasp' : nodeType
+}
+
 function primaryArtifactName(p: ProductEntry): string | undefined {
   if (p.artifactName) return p.artifactName
   const required = p.artifacts?.find((a) => a.required)
@@ -40,14 +45,14 @@ export const PRODUCT_ARTIFACT_BY_TYPE: Record<string, string> = {
 export const PRODUCT_NODE_TYPES: string[] = Object.keys(PRODUCT_ARTIFACT_BY_TYPE)
 
 export function productArtifactName(nodeType: string): string | undefined {
-  return PRODUCT_ARTIFACT_BY_TYPE[nodeType]
+  return PRODUCT_ARTIFACT_BY_TYPE[canonicalProductType(nodeType)]
 }
 
 export type ProductArtifactSpec = { name: string; required: boolean; outputKey?: string }
 
-/** All reserved deliverables for a node type (Approve lists several). */
+/** All reserved deliverables for a node type (Grasp lists several). */
 export function productArtifactsForType(nodeType: string): ProductArtifactSpec[] {
-  const entry = products.find((p) => p.type === nodeType)
+  const entry = products.find((p) => p.type === canonicalProductType(nodeType))
   if (entry?.artifacts?.length) {
     return entry.artifacts
       .filter((a) => a.artifactName)

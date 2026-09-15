@@ -86,7 +86,7 @@
     "run": [
       "acpUnpack.ts",
       "applyLiveWsAcpPage.ts",
-      "approveFirstPipeline.ts",
+      "graspFirstPipeline.ts",
       "artifactGroups.ts",
       "busySeedRetry.ts",
       "canvasLayout.ts",

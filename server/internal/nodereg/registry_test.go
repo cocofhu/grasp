@@ -66,25 +66,38 @@ func TestEmbeddedRules(t *testing.T) {
 	if len(EmbeddedRuleFiles("branch")) != 0 {
 		t.Fatal("branch should have no embedded rules")
 	}
-	approve := EmbeddedRuleFiles("approve")
-	if len(approve) != 1 || approve[0] != "rules/approve.md" {
-		t.Fatalf("approve rules: %v", approve)
+	grasp := EmbeddedRuleFiles("grasp")
+	if len(grasp) != 1 || grasp[0] != "rules/grasp.md" {
+		t.Fatalf("grasp rules: %v", grasp)
+	}
+	alias := EmbeddedRuleFiles("approve")
+	if len(alias) != 1 || alias[0] != "rules/grasp.md" {
+		t.Fatalf("approve alias rules: %v", alias)
+	}
+}
+
+func TestIsGrasp(t *testing.T) {
+	if !IsGrasp("grasp") || !IsGrasp("approve") {
+		t.Fatal("grasp and approve should be IsGrasp")
+	}
+	if IsGrasp("react") || IsGrasp("human_gate") {
+		t.Fatal("react/human_gate must not be IsGrasp")
 	}
 }
 
 func TestClarifyInteractive(t *testing.T) {
-	if !ClarifyInteractive("react") || !ClarifyInteractive("approve") || !ClarifyInteractive("preflight") {
-		t.Fatal("react, approve and preflight should be clarify-interactive")
+	if !ClarifyInteractive("react") || !ClarifyInteractive("approve") || !ClarifyInteractive("grasp") || !ClarifyInteractive("preflight") {
+		t.Fatal("react, grasp/approve and preflight should be clarify-interactive")
 	}
 	if ClarifyInteractive("agent") || ClarifyInteractive("plan") || ClarifyInteractive("research") {
 		t.Fatal("agent/plan/research must not be clarify-interactive")
 	}
 }
 
-func TestRequiredProductsApprove(t *testing.T) {
-	req := RequiredProducts("approve")
+func TestRequiredProductsGrasp(t *testing.T) {
+	req := RequiredProducts("grasp")
 	if len(req) != 2 {
-		t.Fatalf("RequiredProducts(approve) len=%d want 2", len(req))
+		t.Fatalf("RequiredProducts(grasp) len=%d want 2", len(req))
 	}
 	if req[0].ArtifactName != mcp.ClarifiedRequirementArtifactName || req[0].SetTool != "set_clarified_requirement" {
 		t.Fatalf("first required = %+v", req[0])
@@ -92,15 +105,15 @@ func TestRequiredProductsApprove(t *testing.T) {
 	if req[1].ArtifactName != mcp.PlanArtifactName || req[1].SetTool != "set_plan" {
 		t.Fatalf("second required = %+v", req[1])
 	}
-	opt := OptionalProducts("approve")
+	opt := OptionalProducts("grasp")
 	if len(opt) != 3 {
-		t.Fatalf("OptionalProducts(approve) len=%d want 3", len(opt))
+		t.Fatalf("OptionalProducts(grasp) len=%d want 3", len(opt))
 	}
 }
 
 // frontendNodeTypes mirrors web/src/lib/types.ts NodeType union.
 var frontendNodeTypes = []string{
-	"input", "output", "react", "preflight", "agent", "approve", "plan", "implement",
+	"input", "output", "react", "preflight", "agent", "grasp", "plan", "implement",
 	"research", "test", "review", "proposal", "proposal_select",
 	"submit_mr", "visual", "human_gate", "app_preview", "branch", "set_var",
 }

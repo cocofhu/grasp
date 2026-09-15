@@ -496,7 +496,7 @@ func assertDefaultWorkflowGraph(t *testing.T, g models.Graph) {
 	for _, n := range g.Nodes {
 		byID[n.ID] = n
 	}
-	for _, id := range []string{"input_d3s1", "approve_7gl6", "implement_qnlc", "test_7qy3", "review_hfqm", "submit_mr_i46x", "output_mh48"} {
+	for _, id := range []string{"input_d3s1", "grasp_7gl6", "implement_qnlc", "test_7qy3", "review_hfqm", "submit_mr_i46x", "output_mh48"} {
 		if _, ok := byID[id]; !ok {
 			t.Fatalf("missing node %s", id)
 		}

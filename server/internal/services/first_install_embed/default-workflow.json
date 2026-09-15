@@ -137,8 +137,8 @@
         }
       },
       {
-        "id": "approve_7gl6",
-        "type": "approve",
+        "id": "grasp_7gl6",
+        "type": "grasp",
         "label": "需求对齐",
         "position": {
           "x": 1249.8326616061438,
@@ -166,12 +166,12 @@
       {
         "id": "e_htv9i",
         "source": "input_d3s1",
-        "target": "approve_7gl6",
+        "target": "grasp_7gl6",
         "kind": "success"
       },
       {
         "id": "e_0d9ma",
-        "source": "approve_7gl6",
+        "source": "grasp_7gl6",
         "target": "implement_qnlc",
         "kind": "success"
       }

@@ -107,7 +107,7 @@ func (e *Engine) pauseStillPending(runID string, node *models.Node) bool {
 			return true
 		}
 		return !gate.Resolved
-	case "react", "approve", "preflight":
+	case "react", "grasp", "approve", "preflight":
 		var conv models.ReactConversation
 		if err := e.db.Where("run_id = ? AND node_id = ?", runID, node.ID).
 			Order("iteration desc, id desc").First(&conv).Error; err != nil {

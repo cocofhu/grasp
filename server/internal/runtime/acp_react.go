@@ -8,13 +8,14 @@ import (
 
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/rs/zerolog/log"
 )
 
 // ReactOpen launches a sandbox and parks the session. React nodes also run an
 // opening LLM turn (which can itself finish via finishReact when the agent
-// asks nothing). Approve parks without chatting — the first LLM turn is the
+// asks nothing). Grasp parks without chatting — the first LLM turn is the
 // user's first message, injected in ReactReply.
 func (c *acpProvider) ReactOpen(ctx context.Context, req NodeReq) ReactTurn {
 	n := c.sandboxAttempts()
@@ -24,7 +25,7 @@ func (c *acpProvider) ReactOpen(ctx context.Context, req NodeReq) ReactTurn {
 		c.host.ClearOutcome(req.RunID, req.NodeID)
 		sb, acp, home, err := c.openSandbox(ctx, req)
 		if err == nil {
-			if req.NodeType == "approve" {
+			if nodereg.IsGrasp(req.NodeType) {
 				c.parkReactSession(req, sb, acp, home)
 				return ReactTurn{}
 			}
@@ -95,7 +96,7 @@ func (c *acpProvider) rehydrateReact(ctx context.Context, req NodeReq, history [
 	for attempt := 1; ; attempt++ {
 		sb, acp, home, err := c.openSandbox(ctx, req)
 		if err == nil {
-			if req.NodeType == "approve" && !approveHasOpenedTurn(history) {
+			if nodereg.IsGrasp(req.NodeType) && !approveHasOpenedTurn(history) {
 				_ = takeClarifyPending(c.host, req.RunID, req.NodeID)
 				sess := c.parkReactSession(req, sb, acp, home)
 				log.Info().Str("run", req.RunID).Str("node", req.NodeID).
@@ -168,15 +169,15 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 		prompt = c.buildReactOpenPrompt(req, c.upstreamArtifacts(req)) + "\n\n## 用户消息\n" + strings.TrimRight(human, "\n")
 		chatImages = mergePromptImages(req.PromptImages, images)
 		if force {
-			prompt = models.DefaultApproveConfirmSuffix + "\n\n" + prompt
+			prompt = models.DefaultGraspConfirmSuffix + "\n\n" + prompt
 		}
 	} else if force {
 		// Human confirmed: reconcile products against the transcript before the
 		// node wraps up. Approve additionally names its two products and demands
 		// node_complete (phased contract).
 		confirm := models.DefaultReactConfirmSuffix
-		if req.NodeType == "approve" {
-			confirm = models.DefaultApproveConfirmSuffix
+		if nodereg.IsGrasp(req.NodeType) {
+			confirm = models.DefaultGraspConfirmSuffix
 		}
 		prompt = confirm + "\n\n" + strings.TrimRight(human, "\n")
 	}
@@ -207,7 +208,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 	// on the failure card and keep the dialogue open for Retry.
 	if fail := chatFailure(res); fail != "" {
 		msg := withFailureBanner(narration, "澄清回复失败", fail)
-		if req.NodeType == "approve" {
+		if nodereg.IsGrasp(req.NodeType) {
 			c.host.ClearOutcome(req.RunID, req.NodeID)
 		}
 		events = c.snapshotEvents(ctx, sess.sb, events)
@@ -219,7 +220,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 		// Empty narration with no questions: keep the dialogue open as an empty
 		// failure (plan g2.2) — do not Done / finishReact / node-failed.
 		if strings.TrimSpace(narration) == "" {
-			if req.NodeType == "approve" {
+			if nodereg.IsGrasp(req.NodeType) {
 				c.host.ClearOutcome(req.RunID, req.NodeID)
 			}
 			events = c.snapshotEvents(ctx, sess.sb, events)
@@ -254,7 +255,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 			}
 		}
 	}
-	if !force && req.NodeType == "approve" {
+	if !force && nodereg.IsGrasp(req.NodeType) {
 		c.host.ClearOutcome(req.RunID, req.NodeID)
 		events = c.snapshotEvents(ctx, sess.sb, events)
 		return ReactTurn{Msg: narration, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel}
@@ -572,8 +573,8 @@ func (c *acpProvider) finishReact(ctx context.Context, req NodeReq, key string, 
 
 func (c *acpProvider) buildReactOpenPrompt(req NodeReq, seeded []string) string {
 	p := c.buildAgentPrompt(req, seeded)
-	if req.NodeType == "approve" {
-		return p + models.DefaultApproveOpenSuffix
+	if nodereg.IsGrasp(req.NodeType) {
+		return p + models.DefaultGraspOpenSuffix
 	}
 	return p + c.agentPrompts(req).ReactOpenSuffixText()
 }
@@ -625,7 +626,7 @@ func reactHistoryHasDialogue(history []models.ReactMessage) bool {
 // LLM turn. Failed / interrupted agent bubbles do not count — retry must still
 // receive the open contract (ReactOpen never chatted).
 func approveInjectOpenPrompt(req NodeReq, history []models.ReactMessage) bool {
-	if req.NodeType != "approve" {
+	if !nodereg.IsGrasp(req.NodeType) {
 		return false
 	}
 	prior := history
@@ -739,7 +740,7 @@ func ReactCapReached(req NodeReq, history []models.ReactMessage) bool {
 // config.max_rounds on old graphs is ignored. Product write retries in
 // ensureRequiredProducts still use their own default and are unrelated.
 func reactCapReached(req NodeReq, history []models.ReactMessage) bool {
-	if req.NodeType == "approve" {
+	if nodereg.IsGrasp(req.NodeType) {
 		return false
 	}
 	humanTurns := 1

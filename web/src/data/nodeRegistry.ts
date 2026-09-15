@@ -61,22 +61,40 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
     defaults: { max_rounds: 6, prompt: '针对以下需求提出澄清问题,直到信息充分,再调用 set_clarified_requirement 写入结构化需求:\n{{vars.feature}}' },
     help: 'nodes.react.help',
   },
-  approve: {
-    type: 'approve',
-    label: 'nodes.approve.label',
-    desc: 'nodes.approve.desc',
+  grasp: {
+    type: 'grasp',
+    label: 'nodes.grasp.label',
+    desc: 'nodes.grasp.desc',
     icon: 'check',
     color: 'text-n-clarify',
     category: 'nodes.categories.agent',
     fields: [
-      { key: 'agent_profile', label: 'nodes.approve.fields.agent_profile.label', type: 'select' },
-      { key: 'timeout', label: 'nodes.approve.fields.timeout.label', type: 'duration', optional: true },
+      { key: 'agent_profile', label: 'nodes.grasp.fields.agent_profile.label', type: 'select' },
+      { key: 'timeout', label: 'nodes.grasp.fields.timeout.label', type: 'duration', optional: true },
     ],
-    outputs: productOutputDefs('approve', [
-      { key: 'transcript', desc: 'nodes.approve.outputs.transcript.desc' },
+    outputs: productOutputDefs('grasp', [
+      { key: 'transcript', desc: 'nodes.grasp.outputs.transcript.desc' },
     ]),
     defaults: { timeout: 30 },
-    help: 'nodes.approve.help',
+    help: 'nodes.grasp.help',
+  },
+  // Historical type string — same inspector as grasp so old graphs still open.
+  approve: {
+    type: 'approve',
+    label: 'nodes.grasp.label',
+    desc: 'nodes.grasp.desc',
+    icon: 'check',
+    color: 'text-n-clarify',
+    category: 'nodes.categories.agent',
+    fields: [
+      { key: 'agent_profile', label: 'nodes.grasp.fields.agent_profile.label', type: 'select' },
+      { key: 'timeout', label: 'nodes.grasp.fields.timeout.label', type: 'duration', optional: true },
+    ],
+    outputs: productOutputDefs('grasp', [
+      { key: 'transcript', desc: 'nodes.grasp.outputs.transcript.desc' },
+    ]),
+    defaults: { timeout: 30 },
+    help: 'nodes.grasp.help',
   },
   preflight: {
     type: 'preflight',
@@ -410,7 +428,7 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
 
 export const PALETTE_GROUPS: { title: string; types: NodeType[] }[] = [
   { title: 'nodes.palette.control', types: ['input', 'output', 'set_var', 'branch'] },
-  { title: 'nodes.palette.agent', types: ['approve', 'react', 'preflight', 'research', 'proposal', 'plan', 'implement', 'app_preview', 'test', 'review', 'submit_mr', 'visual'] },
+  { title: 'nodes.palette.agent', types: ['grasp', 'react', 'preflight', 'research', 'proposal', 'plan', 'implement', 'app_preview', 'test', 'review', 'submit_mr', 'visual'] },
   { title: 'nodes.palette.collaboration', types: ['human_gate', 'proposal_select'] },
 ]
 
@@ -438,6 +456,7 @@ export function nodeColorHex(type: NodeType): string {
     input: '#94A3B8',
     output: '#34D399',
     react: '#22D3EE',
+    grasp: '#10B981',
     approve: '#10B981',
     preflight: '#2DD4BF',
     agent: '#A78BFA',

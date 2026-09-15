@@ -7,8 +7,8 @@ import (
 )
 
 func TestSetPreviewAllowed(t *testing.T) {
-	if !SetPreviewAllowed("app_preview") || !SetPreviewAllowed("approve") {
-		t.Fatal("expected app_preview and approve")
+	if !SetPreviewAllowed("app_preview") || !SetPreviewAllowed("approve") || !SetPreviewAllowed("grasp") {
+		t.Fatal("expected app_preview, grasp, and approve alias")
 	}
 	if SetPreviewAllowed("implement") || SetPreviewAllowed("react") || SetPreviewAllowed("") {
 		t.Fatal("other node types must not get set_preview")

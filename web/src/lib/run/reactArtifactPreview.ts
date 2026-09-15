@@ -1,6 +1,6 @@
 import type { Artifact, Run, WFNode } from '@/lib/shared/types'
 import { productArtifactName } from '@/lib/run/productNodeArtifacts'
-import { isClarifyInteractive } from '@/lib/shared/clarifyInteractive'
+import { isClarifyInteractive, isGrasp } from '@/lib/shared/clarifyInteractive'
 
 const NODE_COMPLETE_ARTIFACT = 'node_complete.json'
 const FEEDBACK_INDEX_NAME = 'feedback_index.json'
@@ -358,12 +358,12 @@ export function resolveEffectivePreviewPin(opts: {
   return ''
 }
 
-/** Dedicated app_preview nodes always expose the remote app tab. Approve does not. */
+/** Dedicated app_preview nodes always expose the remote app tab. Grasp does not. */
 export function isAppPreviewRemoteNode(type: string | null | undefined): boolean {
   return type === 'app_preview'
 }
 
-/** Approve only upgrades to app after set_preview registers a port/URL. */
+/** Grasp only upgrades to app after set_preview registers a port/URL. */
 export function approveStageRemoteKind(hasRegisteredPreview: boolean): ReactStageRemoteKind {
   return hasRegisteredPreview ? 'app' : 'off'
 }
@@ -377,14 +377,14 @@ export function inboxStageRemoteKind(opts: {
   appPreview: boolean
   run?: Run | null
   nodeId?: string | null
-  /** When the active node is approve: true once set_preview has registered ports/URLs. */
+  /** When the active node is Grasp: true once set_preview has registered ports/URLs. */
   hasRegisteredPreview?: boolean
 }): ReactStageRemoteKind {
   if (opts.appPreview) return 'app'
   const n = opts.run?.nodes?.find((node: WFNode) => node.id === opts.nodeId)
   if (isAppPreviewRemoteNode(n?.type)) return 'app'
-  // Approve is clarify-interactive but must not default to sandbox/app without a registration.
-  if (n?.type === 'approve') return approveStageRemoteKind(!!opts.hasRegisteredPreview)
+  // Grasp is clarify-interactive but must not default to sandbox/app without a registration.
+  if (isGrasp(n?.type)) return approveStageRemoteKind(!!opts.hasRegisteredPreview)
   if (isClarifyInteractiveGraphNode(opts.run, opts.nodeId)) return 'sandbox'
   return 'off'
 }
@@ -439,7 +439,7 @@ export function artifactFingerprint(a: Artifact | null | undefined): string {
   return `${a.id}:${a.updatedAt || ''}:${a.revision ?? ''}:${a.sizeBytes}:${a.content?.length ?? ''}`
 }
 
-/** react / approve stages auto-pin visible own-node artifacts on create/update. */
+/** react / Grasp stages auto-pin visible own-node artifacts on create/update. */
 export function isAutoPinStageNode(type: string | null | undefined): boolean {
   return isClarifyInteractive(type)
 }

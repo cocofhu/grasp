@@ -127,7 +127,7 @@
         },
         "set_artifact_preview": {
           "signature": "set_artifact_preview(name)",
-          "desc": "react/approve: focus an existing artifact tab (platform auto-pins new/changed visible artifacts; use demoHtml for option-by-option compare)"
+          "desc": "react/grasp: focus an existing artifact tab (platform auto-pins new/changed visible artifacts; use demoHtml for option-by-option compare)"
         },
         "node_complete": {
           "signature": "node_complete(status, summary?, error?, outputs?, checks?)",

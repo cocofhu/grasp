@@ -21,8 +21,25 @@ func TestToolAllowedPreflight(t *testing.T) {
 	if toolAllowed("preflight", "set_clarified_requirement") {
 		t.Fatal("set_clarified_requirement must not be allowed on preflight")
 	}
-	if toolAllowed("approve", "ask_form") {
-		t.Fatal("ask_form must not be allowed on approve")
+	if toolAllowed("approve", "ask_form") || toolAllowed("grasp", "ask_form") {
+		t.Fatal("ask_form must not be allowed on grasp/approve")
+	}
+}
+
+func TestToolAllowedGraspAlias(t *testing.T) {
+	for _, typ := range []string{"grasp", "approve"} {
+		if !toolAllowed(typ, "set_plan") || !toolAllowed(typ, "set_clarified_requirement") {
+			t.Fatalf("set_plan/set_clarified_requirement must allow %s", typ)
+		}
+		if !toolAllowed(typ, "set_research") || !toolAllowed(typ, "set_proposals") {
+			t.Fatalf("optional set_* must allow %s", typ)
+		}
+		if !toolAllowed(typ, "ask_question") || !toolAllowed(typ, "set_artifact_preview") {
+			t.Fatalf("ask_question/set_artifact_preview must allow %s", typ)
+		}
+	}
+	if toolAllowed("human_gate", "set_plan") || toolAllowed("react", "set_plan") {
+		t.Fatal("set_plan must stay blocked on human_gate/react")
 	}
 }
 

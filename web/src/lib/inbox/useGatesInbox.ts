@@ -433,7 +433,7 @@ function mergeIncomingGhost(items: InboxItem[]): InboxItem[] {
  */
 let incomingGhostConfirmInFlight = ''
 async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: string }) {
-  const nodeId = target.nodeId || 'approve'
+  const nodeId = target.nodeId || 'grasp'
   const key = `${target.runId}:${nodeId}`
   // loadList / starting-poll can call this every few seconds for the same deep
   // link; one in-flight check is enough.
@@ -443,7 +443,7 @@ async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: 
     const run = await api.getRun(target.runId)
     // A newer navigation may have re-armed a different target while we awaited.
     const cur = incomingTarget()
-    if (!cur || `${cur.runId}:${cur.nodeId || 'approve'}` !== key) return
+    if (!cur || `${cur.runId}:${cur.nodeId || 'grasp'}` !== key) return
     if (isStartFailedRun(run, nodeId)) {
       const ghost =
         incomingGhost.value && itemKey(incomingGhost.value) === key
@@ -1546,7 +1546,7 @@ const clarifyComposerIteration = computed(() => activeClarify.value?.iteration ?
 const clarifyComposerTurns = computed(() => activeClarify.value?.turns ?? [])
 const clarifyComposerDone = computed(() => activeClarify.value?.done ?? false)
 const clarifyComposerNodeType = computed(
-  () => inboxStageNodeType.value || (activeHomeSeed.value ? 'approve' : ''),
+  () => inboxStageNodeType.value || (activeHomeSeed.value ? 'grasp' : ''),
 )
 
 const inboxClarifyStageKind = computed(() => (activeRunLoadError.value ? 'loadFailed' : 'pending'))

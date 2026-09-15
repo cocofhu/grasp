@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/nodereg"
 )
 
 var gateBodyNodeRef = regexp.MustCompile(`\{\{\s*nodes\.([^.}\s]+)\.outputs\.`)
@@ -70,7 +71,7 @@ func (s *RunService) IsStartingApprove(runID, nodeID string, iteration int) bool
 		Order("id desc").First(&sr).Error; err != nil {
 		return false
 	}
-	return sr.NodeType == "approve" && sr.Status == "running"
+	return nodereg.IsGrasp(sr.NodeType) && sr.Status == "running"
 }
 
 func (s *RunService) isPendingClarification(runID, nodeID string, iteration int) bool {

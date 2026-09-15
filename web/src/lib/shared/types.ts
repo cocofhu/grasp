@@ -2,7 +2,8 @@ export type NodeType =
   | 'input'
   | 'output'
   | 'react'
-  | 'approve'
+  | 'grasp'
+  | 'approve' // historical alias of grasp
   | 'preflight'
   | 'agent'
   | 'plan'

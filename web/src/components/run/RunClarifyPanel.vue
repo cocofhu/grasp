@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isGrasp } from '@/lib/shared/clarifyInteractive'
 /**
  * Run 详情「澄清」面板壳：OpenDesign 产物舞台 + ReAct 聊天。
  */
@@ -76,7 +77,7 @@ const artifacts = computed(() => props.run?.artifacts || [])
 const previewArtifact = computed(() => props.clarify?.previewArtifact || '')
 const nodeType = computed(() => props.run?.nodes?.find((n) => n.id === props.nodeId)?.type || '')
 // Approve defaults to off; ReactArtifactStage silently probes previews and upgrades to app when registered.
-const remoteKind = computed(() => (nodeType.value === 'approve' ? 'off' : 'sandbox'))
+const remoteKind = computed(() => (isGrasp(nodeType.value) ? 'off' : 'sandbox'))
 
 function onRemotePick(payload: AppPreviewPickPayload) {
   if (!props.inputActive) return

@@ -45,6 +45,7 @@ import {
   CLARIFY_AUTO_GROW_MIN,
 } from '@/lib/inbox/composerAutoGrow'
 import type { Ref } from 'vue'
+import { isGrasp } from '@/lib/shared/clarifyInteractive'
 
 /** Element-level clone so queue rows never share annotation object refs with composer. */
 function cloneReactAnnotations(anns?: ReactAnnotation[] | null): ReactAnnotation[] {
@@ -137,14 +138,14 @@ const liveTurns = ref<ClarifyTurn[]>([])
 const showApproveEmptyHint = computed(
   () =>
     !props.reviewMode &&
-    props.nodeType === 'approve' &&
+    isGrasp(props.nodeType) &&
     persistedTurns.value.length === 0 &&
     liveTurns.value.length === 0 &&
     queued.value.length === 0 &&
     !seedHumanTurn.value,
 )
 const useConfirmFlowAction = computed(
-  () => props.reviewMode || props.nodeType === 'approve' || !!props.forceConfirmFlow,
+  () => props.reviewMode || isGrasp(props.nodeType) || !!props.forceConfirmFlow,
 )
 
 function humanMatchesSeed(t: ClarifyTurn, seed: ClarifyTurn): boolean {
@@ -475,7 +476,7 @@ const pendingInteractiveOpen = computed(
 const inputPlaceholder = computed(() => {
   if (pendingInteractiveOpen.value) return translate('pages.clarify.skipInputPlaceholder')
   if (props.reviewMode) return translate('pages.clarify.reviewInputPlaceholder')
-  if (props.nodeType === 'approve') return translate('pages.clarify.approveInputPlaceholder')
+  if (isGrasp(props.nodeType)) return translate('pages.clarify.approveInputPlaceholder')
   return translate('pages.clarify.inputPlaceholder')
 })
 

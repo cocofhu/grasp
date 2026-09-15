@@ -410,50 +410,54 @@ func TestSetArtifactPreview(t *testing.T) {
 }
 
 func TestApproveNodePreDevTools(t *testing.T) {
-	store := &memStore{}
-	h := NewHost(store)
-	runID := "run-approve"
-	tok := h.RegisterRun(runID)
-	h.SetActiveNode(runID, "pre", "approve")
+	for _, nodeType := range []string{"approve", "grasp"} {
+		t.Run(nodeType, func(t *testing.T) {
+			store := &memStore{}
+			h := NewHost(store)
+			runID := "run-" + nodeType
+			tok := h.RegisterRun(runID)
+			h.SetActiveNode(runID, "pre", nodeType)
 
-	aq := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ask_question","arguments":{"questions":[{"prompt":"选哪个?","options":[{"label":"A"},{"label":"B"}]}]}}}`)
-	if _, isErr := toolText(t, aq); isErr {
-		t.Fatalf("ask_question should work on approve: %v", aq)
-	}
+			aq := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ask_question","arguments":{"questions":[{"prompt":"选哪个?","options":[{"label":"A"},{"label":"B"}]}]}}}`)
+			if _, isErr := toolText(t, aq); isErr {
+				t.Fatalf("ask_question should work on %s: %v", nodeType, aq)
+			}
 
-	okArgs := `{
+			okArgs := `{
 		"title":"登录需求","summary":"用户可用邮箱验证码登录","background":"需要安全登录入口",
 		"goals":["完成邮箱验证码登录"],"in_scope":["邮箱验证码登录"],"out_of_scope":["第三方 OAuth"],
 		"functional_requirements":[{"title":"验证码登录","detail":"用户输入邮箱与验证码完成登录","acceptance_criteria":["5 分钟有效"]}],
 		"assumptions":["用户已有邮箱"],"dependencies":["邮件发送服务可用"],"constraints":"仅邮箱"
 	}`
-	cr := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"set_clarified_requirement","arguments":`+okArgs+`}}`)
-	if _, isErr := toolText(t, cr); isErr {
-		t.Fatalf("set_clarified_requirement on approve: %v", cr)
-	}
-	plan := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"set_plan","arguments":{"goals":[{"title":"G1","subgoals":[{"title":"S1"}]}]}}}`)
-	if _, isErr := toolText(t, plan); isErr {
-		t.Fatalf("set_plan on approve: %v", plan)
-	}
-	res := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"set_research","arguments":{"summary":"调研概述","findings":[{"title":"F1","detail":"d"}]}}}`)
-	if _, isErr := toolText(t, res); isErr {
-		t.Fatalf("set_research on approve: %v", res)
-	}
-	pr := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"set_proposals","arguments":{"context":"选型","proposals":[{"title":"A"}]}}}`)
-	if _, isErr := toolText(t, pr); isErr {
-		t.Fatalf("set_proposals on approve: %v", pr)
-	}
-	if _, err := h.WriteArtifact(runID, tok, "pre", "page.html", "<!doctype html><html></html>", "html"); err != nil {
-		t.Fatal(err)
-	}
-	prev := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"set_artifact_preview","arguments":{"name":"page.html"}}}`)
-	if _, isErr := toolText(t, prev); isErr {
-		t.Fatalf("set_artifact_preview on approve: %v", prev)
-	}
+			cr := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"set_clarified_requirement","arguments":`+okArgs+`}}`)
+			if _, isErr := toolText(t, cr); isErr {
+				t.Fatalf("set_clarified_requirement on %s: %v", nodeType, cr)
+			}
+			plan := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"set_plan","arguments":{"goals":[{"title":"G1","subgoals":[{"title":"S1"}]}]}}}`)
+			if _, isErr := toolText(t, plan); isErr {
+				t.Fatalf("set_plan on %s: %v", nodeType, plan)
+			}
+			res := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"set_research","arguments":{"summary":"调研概述","findings":[{"title":"F1","detail":"d"}]}}}`)
+			if _, isErr := toolText(t, res); isErr {
+				t.Fatalf("set_research on %s: %v", nodeType, res)
+			}
+			pr := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"set_proposals","arguments":{"context":"选型","proposals":[{"title":"A"}]}}}`)
+			if _, isErr := toolText(t, pr); isErr {
+				t.Fatalf("set_proposals on %s: %v", nodeType, pr)
+			}
+			if _, err := h.WriteArtifact(runID, tok, "pre", "page.html", "<!doctype html><html></html>", "html"); err != nil {
+				t.Fatal(err)
+			}
+			prev := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"set_artifact_preview","arguments":{"name":"page.html"}}}`)
+			if _, isErr := toolText(t, prev); isErr {
+				t.Fatalf("set_artifact_preview on %s: %v", nodeType, prev)
+			}
 
-	impl := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"set_implementation_result","arguments":{"summary":"x"}}}`)
-	if _, isErr := toolText(t, impl); !isErr {
-		t.Fatal("set_implementation_result must stay blocked on approve")
+			impl := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"set_implementation_result","arguments":{"summary":"x"}}}`)
+			if _, isErr := toolText(t, impl); !isErr {
+				t.Fatalf("set_implementation_result must stay blocked on %s", nodeType)
+			}
+		})
 	}
 }
 

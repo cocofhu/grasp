@@ -81,14 +81,14 @@ func (e *Engine) WaitAgentReact(ctx context.Context, deadline time.Time) bool {
 func (e *Engine) countActiveAgentReact() int {
 	var n int64
 	e.db.Model(&models.StateRun{}).
-		Where("status = ? AND node_type IN ?", "running", []string{"agent", "react", "approve"}).
+		Where("status = ? AND node_type IN ?", "running", []string{"agent", "react", "grasp", "approve"}).
 		Count(&n)
 	return int(n)
 }
 
 func (e *Engine) forceCancelActiveAgentReact() int {
 	var states []models.StateRun
-	if err := e.db.Where("status = ? AND node_type IN ?", "running", []string{"agent", "react", "approve"}).
+	if err := e.db.Where("status = ? AND node_type IN ?", "running", []string{"agent", "react", "grasp", "approve"}).
 		Find(&states).Error; err != nil {
 		log.Error().Err(err).Msg("force cancel agent/react: query failed")
 		return 0

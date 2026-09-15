@@ -9,6 +9,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/rs/zerolog/log"
 )
@@ -59,7 +60,7 @@ func (e *Engine) nodeReq(c *execCtx, node *models.Node) runtime.NodeReq {
 		cfg["conditional_prompt"] = merged
 	}
 
-	if node.Type == "approve" {
+	if nodereg.IsGrasp(node.Type) {
 		delete(cfg, "prompt")
 		delete(cfg, "max_rounds")
 		delete(cfg, "auto_var")
@@ -78,7 +79,7 @@ func (e *Engine) nodeReq(c *execCtx, node *models.Node) runtime.NodeReq {
 		e.host.ResetPreviewReady(c.run.ID, node.ID)
 	}
 	promptImages := collectPromptVarImages(c, promptScanTemplates(node.Config)...)
-	if node.Type == "approve" {
+	if nodereg.IsGrasp(node.Type) {
 		promptImages = collectAllVarImages(c)
 	}
 	req := runtime.NodeReq{RunID: c.run.ID, WorkflowID: c.run.WorkflowID, WorkflowName: c.run.WorkflowName,

@@ -89,51 +89,6 @@
       },
       "help": "### Clarify (react)\n\nMulti-turn ReAct dialogue to turn vague requirements into a **structured requirement**.\n\n**Mandatory deliverable**: call `set_clarified_requirement` to write `clarified_requirement.json`. Node fails if missing.\n\n**Questions**: use `ask_question` with optional `recommended` options (at most one for single-select; one or more for multi-select). Unmarked falls back to the first option in auto mode.\n\n**Auto-clarify**: when auto variable is true, platform auto-selects recommended options each round until done or max rounds.\n\n**Auto artifact**: only the reserved JSON `clarified_requirement.json` is auto-written; it can be shown structurally and gated with `exists(\"clarified_requirement.json\")` / `json(\"clarified_requirement.json\").field`.\n\n**Conditional injection**: append extra prompt when a configured global variable exists (e.g. after gate backfill)."
     },
-    "approve": {
-      "label": "Grasp",
-      "desc": "One ReAct dialogue for pre-dev work: no prompt template, unlimited rounds; user speaks first, then the agent uses tools; mandatory clarified requirement + plan",
-      "fields": {
-        "agent_profile": {
-          "label": "Agent (user-defined · Agent Studio)"
-        },
-        "timeout": {
-          "label": "Timeout (minutes)"
-        }
-      },
-      "outputs": {
-        "clarified_requirement": {
-          "desc": "Structured clarified requirement (clarified_requirement.json render)"
-        },
-        "clarified_requirement_json": {
-          "desc": "Raw clarified requirement JSON"
-        },
-        "plan": {
-          "desc": "Structured plan (plan.json render)"
-        },
-        "plan_json": {
-          "desc": "Raw plan JSON"
-        },
-        "research": {
-          "desc": "Optional research (research.json render)"
-        },
-        "research_json": {
-          "desc": "Optional raw research JSON"
-        },
-        "proposals": {
-          "desc": "Optional proposals (proposals.json render)"
-        },
-        "proposals_json": {
-          "desc": "Optional raw proposals JSON"
-        },
-        "page": {
-          "desc": "Optional visual page (page.html)"
-        },
-        "transcript": {
-          "desc": "Full conversation transcript"
-        }
-      },
-      "help": "### Grasp\n\nOne multi-turn ReAct dialogue for **pre-dev work**. This node configures an Agent and a timeout (default 30 minutes): **no prompt template**, **no round cap**, and no auto-clarify / conditional injection. The platform injects run inputs and waits for the user to state the goal first; the agent then uses tools to align requirements and only `ask_question` when there is a real decision.\n\n**Two mandatory deliverables** (both required to finish — not a single unique delivery):\n1. `set_clarified_requirement` → `clarified_requirement.json` (`open_questions` must be empty)\n2. `set_plan` → `plan.json` (at most two levels: goal → sub-goal; when writing the design zone, include all six sections or explicit 不涉及, optional Mermaid diagrams)\n\n**Optional** (shown if present, missing does not fail): `set_research`; `set_proposals` (**only when ≥2 distinct alternatives need a user pick**; no single-candidate pseudo-choice); `write_artifact` for `page.html`; `set_preview` to register a running app (sandbox port or external url — not a completion condition, does not end this node).\n\nIf a skill pack says “unique delivery” or forbids those tools, **platform rule `rules/approve.md` wins**. Do not write implementation code or change the repo."
-    },
     "preflight": {
       "label": "Preflight",
       "desc": "Check execution environment against plan/repo/vars; collect gaps via choices or plaintext forms, then set_preflight before the agent completes",
@@ -651,6 +606,51 @@
           "desc": "Updated global variable snapshot"
         }
       }
+    },
+    "grasp": {
+      "label": "Grasp",
+      "desc": "One ReAct dialogue for pre-dev work: no prompt template, unlimited rounds; user speaks first, then the agent uses tools; mandatory clarified requirement + plan",
+      "fields": {
+        "agent_profile": {
+          "label": "Agent (user-defined · Agent Studio)"
+        },
+        "timeout": {
+          "label": "Timeout (minutes)"
+        }
+      },
+      "outputs": {
+        "clarified_requirement": {
+          "desc": "Structured clarified requirement (clarified_requirement.json render)"
+        },
+        "clarified_requirement_json": {
+          "desc": "Raw clarified requirement JSON"
+        },
+        "plan": {
+          "desc": "Structured plan (plan.json render)"
+        },
+        "plan_json": {
+          "desc": "Raw plan JSON"
+        },
+        "research": {
+          "desc": "Optional research (research.json render)"
+        },
+        "research_json": {
+          "desc": "Optional raw research JSON"
+        },
+        "proposals": {
+          "desc": "Optional proposals (proposals.json render)"
+        },
+        "proposals_json": {
+          "desc": "Optional raw proposals JSON"
+        },
+        "page": {
+          "desc": "Optional visual page (page.html)"
+        },
+        "transcript": {
+          "desc": "Full conversation transcript"
+        }
+      },
+      "help": "### Grasp\n\nOne multi-turn ReAct dialogue for **pre-dev work**. This node configures an Agent and a timeout (default 30 minutes): **no prompt template**, **no round cap**, and no auto-clarify / conditional injection. The platform injects run inputs and waits for the user to state the goal first; the agent then uses tools to align requirements and only `ask_question` when there is a real decision.\n\n**Two mandatory deliverables** (both required to finish — not a single unique delivery):\n1. `set_clarified_requirement` → `clarified_requirement.json` (`open_questions` must be empty)\n2. `set_plan` → `plan.json` (at most two levels: goal → sub-goal; when writing the design zone, include all six sections or explicit 不涉及, optional Mermaid diagrams)\n\n**Optional** (shown if present, missing does not fail): `set_research`; `set_proposals` (**only when ≥2 distinct alternatives need a user pick**; no single-candidate pseudo-choice); `write_artifact` for `page.html`; `set_preview` to register a running app (sandbox port or external url — not a completion condition, does not end this node).\n\nIf a skill pack says “unique delivery” or forbids those tools, **platform rule `rules/grasp.md` wins**. Do not write implementation code or change the repo."
     }
   }
 }

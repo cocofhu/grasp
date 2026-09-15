@@ -8,6 +8,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/runtime"
 )
 
@@ -39,7 +40,7 @@ func (e *Engine) execReactEnter(c *execCtx, node *models.Node) nodeOutcome {
 			}
 		}
 		msgs := []models.ReactMessage{}
-		skipEmpty := node.Type == "approve" && strings.TrimSpace(t.Msg) == "" && len(t.Questions) == 0 && len(t.Forms) == 0
+		skipEmpty := nodereg.IsGrasp(node.Type) && strings.TrimSpace(t.Msg) == "" && len(t.Questions) == 0 && len(t.Forms) == 0
 		if !skipEmpty {
 			msgs = []models.ReactMessage{{Role: "agent", Text: t.Msg,
 				At: time.Now().Format(time.RFC3339), Questions: t.Questions, Forms: t.Forms}}
@@ -70,7 +71,7 @@ func (e *Engine) execReactEnter(c *execCtx, node *models.Node) nodeOutcome {
 // name is optional; when unset the node is always interactive. Approve has no
 // auto-clarify config; leftover auto_var on old graphs is ignored.
 func (e *Engine) autoReactEnabled(c *execCtx, node *models.Node) bool {
-	if node != nil && node.Type == "approve" {
+	if node != nil && nodereg.IsGrasp(node.Type) {
 		return false
 	}
 	autoVar := strings.TrimSpace(str(node.Config["auto_var"]))

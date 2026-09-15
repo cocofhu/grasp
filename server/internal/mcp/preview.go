@@ -16,14 +16,21 @@ const (
 	PreviewKindURL  = "url"
 )
 
-// SetPreviewAllowed reports whether set_preview may run on this node type.
-// app_preview requires it; approve may register a live app as an optional preview
-// without parking the ReAct session.
-func SetPreviewAllowed(nodeType string) bool {
-	return nodeType == "app_preview" || nodeType == "approve"
+// isGrasp reports whether nodeType is the Grasp pre-dev node (canonical
+// "grasp" or historical alias "approve"). Kept local to avoid an mcp↔nodereg
+// import cycle.
+func isGrasp(nodeType string) bool {
+	return nodeType == "grasp" || nodeType == "approve"
 }
 
-// PreviewPort is a registered preview endpoint for an app_preview or approve node.
+// SetPreviewAllowed reports whether set_preview may run on this node type.
+// app_preview requires it; Grasp may register a live app as an optional preview
+// without parking the ReAct session.
+func SetPreviewAllowed(nodeType string) bool {
+	return nodeType == "app_preview" || isGrasp(nodeType)
+}
+
+// PreviewPort is a registered preview endpoint for an app_preview or Grasp node.
 type PreviewPort struct {
 	RunID       string `json:"runId"`
 	NodeID      string `json:"nodeId"`

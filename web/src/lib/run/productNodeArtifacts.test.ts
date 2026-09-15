@@ -10,9 +10,9 @@ describe('productNodeArtifacts', () => {
   })
 
   it('lists Approve required + optional products', () => {
-    expect(PRODUCT_NODE_TYPES).toContain('approve')
-    expect(productArtifactName('approve')).toBe('clarified_requirement.json')
-    const arts = productArtifactsForType('approve')
+    expect(PRODUCT_NODE_TYPES).toContain('grasp')
+    expect(productArtifactName('grasp')).toBe('clarified_requirement.json')
+    const arts = productArtifactsForType('grasp')
     expect(arts.filter((a) => a.required).map((a) => a.name)).toEqual([
       'clarified_requirement.json',
       'plan.json',
@@ -25,7 +25,7 @@ describe('productNodeArtifacts', () => {
   it('includes outputKey for single-product and multi-product types', () => {
     expect(productArtifactsForType('plan')[0]?.outputKey).toBe('plan')
     expect(productArtifactsForType('research')[0]?.outputKey).toBe('research')
-    expect(productArtifactsForType('approve').map((a) => a.outputKey)).toEqual([
+    expect(productArtifactsForType('grasp').map((a) => a.outputKey)).toEqual([
       'clarified_requirement',
       'plan',
       'research',

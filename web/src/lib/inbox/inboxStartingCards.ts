@@ -1,3 +1,4 @@
+import { isGrasp } from '@/lib/shared/clarifyInteractive'
 import { isStartingInboxItem } from '@/lib/inbox/inboxDisplay'
 import { clipRunTitle } from '@/lib/run/runTitle'
 import type { ClarifyInboxItem, InboxItem, Run } from '@/lib/shared/types'
@@ -31,7 +32,7 @@ export function makeIncomingGhost(
     type: 'clarify',
     state: 'starting',
     runId: target.runId,
-    nodeId: target.nodeId || 'approve',
+    nodeId: target.nodeId || 'grasp',
     iteration: 1,
     workflowName: '',
     runTitle: label,
@@ -60,7 +61,7 @@ export function isStartFailedRun(
   if (nodeStatus === 'failed' || nodeStatus === 'cancelled') return true
   if (nodeStatus !== undefined) return false
 
-  const approveIds = (run.nodes || []).filter((n) => n.type === 'approve').map((n) => n.id)
+  const approveIds = (run.nodes || []).filter((n) => isGrasp(n.type)).map((n) => n.id)
   for (const id of approveIds) {
     const st = run.nodeRuns?.[id]?.status
     if (st === 'failed' || st === 'cancelled') return true
@@ -103,7 +104,7 @@ export function isApproveStillStarting(
     if (hinted === 'running') return true
   }
 
-  const approveIds = (run.nodes || []).filter((n) => n.type === 'approve').map((n) => n.id)
+  const approveIds = (run.nodes || []).filter((n) => isGrasp(n.type)).map((n) => n.id)
   if (approveIds.length > 0) {
     let sawApprove = false
     for (const id of approveIds) {

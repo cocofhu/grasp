@@ -7,6 +7,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/rs/zerolog/log"
 )
 
@@ -45,7 +46,7 @@ func (e *Engine) releaseApproveFirstMessageLatch(runID string) {
 // node (loop-back / resume) can retry. Cancel / ResumeFrom also release the
 // latch so a new visit with an empty transcript can re-claim.
 func (e *Engine) fireApproveFirstMessage(c *execCtx, node *models.Node) {
-	if c == nil || c.run == nil || node == nil || node.Type != "approve" {
+	if c == nil || c.run == nil || node == nil || !nodereg.IsGrasp(node.Type) {
 		return
 	}
 	msg := c.run.FirstMessage

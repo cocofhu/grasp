@@ -15,7 +15,7 @@ func (c *acpProvider) buildAgentPrompt(req NodeReq, seeded []string) string {
 	if sys := str2(req.Config["system"]); sys != "" {
 		b.WriteString(sys + "\n\n")
 	}
-	if req.NodeType == "approve" {
+	if nodereg.IsGrasp(req.NodeType) {
 		b.WriteString(approveInputSeed(req))
 	} else {
 		b.WriteString(str2(req.Config["prompt"]))
@@ -104,7 +104,7 @@ func approveInputSeed(req NodeReq) string {
 // the VisualContract still forbids writing, formatting, or committing repo files.
 func nodeTouchesRepos(nodeType string) bool {
 	switch nodeType {
-	case "agent", "implement", "review", "test", "submit_mr", "research", "app_preview", "approve", "visual":
+	case "agent", "implement", "review", "test", "submit_mr", "research", "app_preview", "grasp", "approve", "visual":
 		return true
 	default:
 		return false
@@ -116,7 +116,7 @@ func nodeTouchesRepos(nodeType string) bool {
 // already interpolated by the engine (nodeReq) before reaching here.
 // Approve has no conditional injection; leftover config is ignored.
 func conditionalInjection(req NodeReq) string {
-	if req.NodeType == "approve" {
+	if nodereg.IsGrasp(req.NodeType) {
 		return ""
 	}
 	cp, ok := req.Config["conditional_prompt"].(map[string]any)

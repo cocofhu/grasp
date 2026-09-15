@@ -70,10 +70,10 @@ type AgentPrompts struct {
 	// VisualContract is appended to a visual node: its sole deliverable is a
 	// single self-contained HTML page (inline CSS/JS, no external resources).
 	VisualContract string `json:"visualContract,omitempty"`
-	// ApproveContract is appended to an approve node: two required deliveries
+	// GraspContract is appended to a Grasp node: two required deliveries
 	// (clarified requirement + plan) plus optional research/visual/proposal tools.
 	// Ending is phased: forbid node_complete until human「确认并流转」, then require it.
-	ApproveContract string `json:"approveContract,omitempty"`
+	GraspContract string `json:"graspContract,omitempty"`
 	// PreviewContract is appended to an app_preview node: register a preview
 	// via set_preview(port) or set_preview(url) (exactly one).
 	PreviewContract string `json:"previewContract,omitempty"`
@@ -93,7 +93,7 @@ type AgentPrompts struct {
 	ReviewCommitWrapUp string `json:"reviewCommitWrapUp,omitempty"`
 	// ReviewConfirmReconcile is sent to a review-capable producer on
 	// 「确认并流转」: reconcile the structured products against the transcript
-	// before the node advances. Approve uses ApproveConfirmSuffix instead.
+	// before the node advances. Grasp uses GraspConfirmSuffix instead.
 	ReviewConfirmReconcile string `json:"reviewConfirmReconcile,omitempty"`
 	// ConfirmSummaryContract is the hidden summary turn sent right after the
 	// reconcile turn: induce the whole dialogue into one JSON agentSummary.
@@ -107,16 +107,16 @@ const (
 	DefaultUpstreamArtifactsHeader = "\n\n## 上游产物(只读输入)\n以下产物由上游节点产出,请用 `read_artifact` MCP 工具按名读取(它们不在工作区,不要去文件系统找):\n"
 	DefaultProducesContract        = "\n## 产物契约(强制)\n完成前必须在工作目录(/root/workspace)写出文件 `{name}`,这是本节点的强制产物;未写出将判定为失败。\n"
 	DefaultReactOpenSuffix         = "\n\n这是一次多轮澄清对话:先提出需要澄清的关键问题,等待我的回复后再继续,不要一次性给出最终结论。"
-	DefaultApproveOpenSuffix       = "\n\n这是一次多轮 ReAct 对话:用户已发出目标,请用手上的工具阅读仓库/产物、对齐需求并写入澄清与计划。只有存在真实分歧、需要用户拍板时才调用 ask_question;禁止编造空泛开场选择题(例如「修缺陷/新功能/重构」这类为问而问)。信息充分时写入 set_* 产物并等待用户确认并流转;未点「确认并流转」前禁止 node_complete。"
+	DefaultGraspOpenSuffix       = "\n\n这是一次多轮 ReAct 对话:用户已发出目标,请用手上的工具阅读仓库/产物、对齐需求并写入澄清与计划。只有存在真实分歧、需要用户拍板时才调用 ask_question;禁止编造空泛开场选择题(例如「修缺陷/新功能/重构」这类为问而问)。信息充分时写入 set_* 产物并等待用户确认并流转;未点「确认并流转」前禁止 node_complete。"
 	// DefaultReactConfirmSuffix is injected on classic react clarify force
 	// (「确认并流转」/「结束澄清」) turns. It names no specific set_* tool because a
 	// react node's deliverable comes from its own contract; the shared clause is
 	// reconciling products against the transcript before wrapping up.
 	DefaultReactConfirmSuffix = "【确认流转】用户已点击确认,澄清到此结束。请按顺序做两件事:\n1. 通读本节点的完整聊天记录,据此补充或修正你已写入的产物:把历次已确认的结论落进产物,清掉与对话相矛盾的旧内容。\n2. **在本回合内**按本节点契约完成收尾并调用 `node_complete`——这一步不能省略,也不能留到下一回合。\n\n禁止提问:不要再提问、不要调用 ask_question;信息不足就按对话中已有的结论定稿。"
-	// DefaultApproveConfirmSuffix is injected on Approve force(「确认并流转」) turns:
+	// DefaultGraspConfirmSuffix is injected on Approve force(「确认并流转」) turns:
 	// after human confirm, reconcile the required products against the whole
 	// transcript, then call node_complete.
-	DefaultApproveConfirmSuffix = "【确认流转】用户已点击「确认并流转」,审批到此结束。请按顺序做两件事:\n1. 通读本节点的完整聊天记录,据此补充或修正 `set_clarified_requirement` 与 `set_plan`(`open_questions` 必须为空):把历次已确认的结论落进产物,清掉与对话相矛盾的旧内容。\n2. **在本回合内**调用 `node_complete` 结束本节点——这一步不能省略,也不能留到下一回合。\n\n禁止提问:不要再提问、不要调用 ask_question;信息不足就按对话中已有的结论定稿。"
+	DefaultGraspConfirmSuffix = "【确认流转】用户已点击「确认并流转」,审批到此结束。请按顺序做两件事:\n1. 通读本节点的完整聊天记录,据此补充或修正 `set_clarified_requirement` 与 `set_plan`(`open_questions` 必须为空):把历次已确认的结论落进产物,清掉与对话相矛盾的旧内容。\n2. **在本回合内**调用 `node_complete` 结束本节点——这一步不能省略,也不能留到下一回合。\n\n禁止提问:不要再提问、不要调用 ask_question;信息不足就按对话中已有的结论定稿。"
 	DefaultProducesRetry        = "【必须完成】本节点尚未写入声明的产物 `{name}`,这是唯一未完成的强制要求。现在立即调用 write_artifact 工具写入 `{name}`(内容为本次澄清得到的结论),不要再提问、不要输出其它内容、不要给出解释——只需完成这次写入。"
 	DefaultPlanContract         = "\n\n## 计划契约(强制)\n你是计划节点,唯一交付是调用 `set_plan` 工具写入一份最多两级(大目标→小目标)的结构化计划;不要写代码、改仓库或写其它产物文件。\n\n**goals(强制)**:`goals[]` 大目标,每个可含 `subgoals[]` 小目标(叶子,不可再嵌套);每项 `title`(可选 `detail`);状态由平台初始化为 pending。\n\n**设计区(写入时完整性约定)**:可选字段 `architecture` / `data_design` / `interfaces` / `components` / `interaction` / `test_design`。一旦写入设计区,六节应齐全;某节无实质内容时显式写「不涉及」(summary/test_design 字符串,或 interfaces/components 用 `[{name:\"不涉及\",…}]`),禁止静默省略导致实现猜测。纯 goals-only 旧计划仍合法,不必强行带六节键。\n\n**图按需、非强制**:`architecture`/`data_design`/`interaction` 可挂 `diagrams[]`(及兼容单数 `diagram`);`interfaces`/`components` 项亦可选同结构。图对象含 `kind`/`title`/`scope`/`format?`/`source`/`fallback_artifact?`/`caption?`(有对象则 source 必填)。一等 kind:activity/flowchart/sequence/er。涉及活动/业务流/时序/数据时尽量都提供以便审批;未涉及的种类不必出;多子模块按需补图并写 scope。**禁止「必须同时提交四种图否则失败」**。缺可选图种不拒回。前端同节多图用节内小 Tab(不是左目录+右画布)。\n\n**实质 data_design 硬门禁**:当 `data_design.summary`(去空白)不是「不涉及」/「N/A」时,必须提供至少一张 ER(`diagrams[]` 中 kind=er,或兼容单数 diagram)、至少 1 个 `entities[]`,且每个实体至少 1 个结构化 `fields[]`(每项 `name`+`type` 必填;可选 `pk`/`nullable`/`fk`/`description`);仅 legacy `attributes` 不足以通过。流程:调用 set_plan → 解析与硬门禁 → 入库 → PlanView 展示。set_plan 调用成功即完成本节点。\n"
 	DefaultImplementContract    = "\n\n## 实现契约(强制)\n你是实现节点:先用 `get_plan` 读取计划,按大目标→小目标逐项落地。**进度标记是硬性要求**:每开始一项先调用 `update_plan_status(id, \"in_progress\")`,该项做完立即调用 `update_plan_status(id, \"done\")`。平台仅凭这些状态判断完成度——只把代码写好却不标记,会被判为未完成并反复催促。结束前必须让所有叶子项都为 `done`。\n"
@@ -138,11 +138,11 @@ const (
 	DefaultPreviewDirectContract        = "\n\n## 节点配置:direct_preview(IP 直连)\n本节点已开启 IP 直连预览,覆盖上文「平台子路径反代 / noVNC 取点」约定:\n1. 环境变量 `PREVIEW_PORT` 是平台预映射的端口(Docker 1:1 / K8s Service 同号)。必须监听 `0.0.0.0:$PREVIEW_PORT`(Vite `--port $PREVIEW_PORT --host 0.0.0.0`),再 `set_preview(port=数字($PREVIEW_PORT))`。\n2. 应用服务在根路径 `/`。审批人浏览器将直连该地址,不要改 base href,不要依赖平台 `/preview/...` 改写。\n3. 平台在沙箱入站口自动向 HTML 注入 `<script src=\"$PREVIEW_PICK_SCRIPT_URL\"></script>`，不要改业务 HTML / origin / base href。仅当预览页仍提示未加载取点脚本时，再在 HTML 入口补上该 script（旧沙箱镜像兜底）。\n"
 	DefaultPreviewDirectManualContract  = "\n\n## 节点配置:direct_preview(IP 直连)\n本节点已开启 IP 直连预览,覆盖上文「平台子路径反代 / noVNC 取点」约定:\n1. 环境变量 `PREVIEW_PORT` 是平台预映射的端口(Docker 1:1 / K8s Service 同号)。必须监听 `0.0.0.0:$PREVIEW_PORT`(Vite `--port $PREVIEW_PORT --host 0.0.0.0`),再 `set_preview(port=数字($PREVIEW_PORT))`。\n2. 应用服务在根路径 `/`。审批人浏览器将直连该地址,不要改 base href,不要依赖平台 `/preview/...` 改写。\n3. 本节点已关闭自动注入。每个 HTML 入口(Vite 即 `index.html`)必须包含 `<script src=\"$PREVIEW_PICK_SCRIPT_URL\"></script>`，以便审批页取点标注并显示地址栏。不要改应用 origin / base href。\n"
 	DefaultPreviewRetry                 = "【必须完成】你尚未成功调用 `set_preview`。请立即用 `set_preview(port?, url?, label?)` 登记预览(**port 与 url 恰好其一**):\n- 已有远程/已部署地址:直接 `set_preview(url=\"http(s)://…\")`,不要在沙箱起反代或本地服务,也不要改用 port。\n- 若在本沙箱启动应用:用 `setsid`/`nohup` **真后台**原生启动(不要用 docker、不要前台占会话),监听 `0.0.0.0:<port>`(不能只绑 127.0.0.1;服务在根路径 `/`),再 `set_preview(port)`。端口不可达时工具会失败,修复后可重试。"
-	DefaultApproveContract              = "\n\n## Approve 契约(强制)\n你是 Approve 节点:用多轮 ReAct 对话完成开发前工作。**两份强制交付**(都要写入,不是「唯一交付」;完成标记见下方结束时序):\n1. `set_clarified_requirement` 写入完整需求规格(`open_questions` 必须为空);\n2. `set_plan` 写入最多两级(大目标→小目标)的结构化计划。\n\n若 Agent profile 角色包声明「唯一交付」或禁止 `set_plan`/`set_clarified_requirement`,以本平台契约为准:本节点允许并要求同时写澄清与计划。\n\n用户先说明目标后再行动。建议顺序:用工具对齐需求(可穿插提问与可选调研/视觉/方案),再 `set_plan`,然后等待用户确认并流转。不要在用户发言前编造空泛选择题。不要写实现代码、不要改仓库。\n\n### 澄清(强制)\n**必填字段**:`title`、`summary`、`background`、`goals[]`(≥1)、`in_scope[]`(≥1)、`out_of_scope[]`(≥1)、`functional_requirements[]`(≥1;每条含 `title`+`detail`+≥1 `acceptance_criteria`;`priority` 取 must|should|could,缺省 must)、`assumptions[]`/`dependencies[]`/`constraints[]`(各≥1;无实质内容时写明确「无额外…(已与用户确认)」,禁止省略键)。\n**可选字段**(有则写):`success_metrics`、`personas`、`user_scenarios`、`non_functional_requirements`、`external_interfaces`、`data_entities`、`business_rules`、`edge_cases`、`limitations`、`risks`、`glossary`。\n**禁止**:排期/里程碑/交付日期。需求规格只能用 `set_clarified_requirement`。\n**澄清是门禁**:任何还不确定、需要用户拍板的点,都必须通过 `ask_question` 让用户做选择,不能把疑问塞进 `open_questions` 就结束。选项可标 `recommended`(单选每题最多 1 个;多选应标记 1 个或多个)。调用 `set_clarified_requirement` 时 `open_questions` 必须为空。\n\n### 计划(强制)\n调用 `set_plan`:`goals[]` 大目标,每个可含 `subgoals[]` 小目标(叶子,不可再嵌套);每项 `title`(可选 `detail`);状态由平台初始化为 pending。\n\n**设计区完整性**:若写入设计区,须带齐六节 `architecture`/`data_design`/`interfaces`/`components`/`interaction`/`test_design`;无内容显式「不涉及」。图按需、非强制:architecture/data_design/interaction 可挂 `diagrams[]`(及兼容单数 `diagram`,source 必填);interfaces/components 项亦可选同结构。一等 kind:activity/flowchart/sequence/er——涉及则尽量都提供便于审批,缺可选图种不失败;禁止「必须四种图」。前端同节多图用节内小 Tab(不是左目录)。纯 goals 亦可,不必强行加六节键。进度与 plan_coverage 只计 goals 叶子,设计节不计。\n\n**实质 data_design 硬门禁**:当 `data_design.summary`(去空白)不是「不涉及」/「N/A」时,必须提供至少一张 ER(`diagrams[]` 中 kind=er 或兼容单数 diagram)、至少 1 个 `entities[]`,且每个实体至少 1 个结构化 `fields[]`(每项 `name`+`type` 必填;可选 `pk`/`nullable`/`fk`/`description`);仅 legacy `attributes` 不足以通过。流程:调用 set_plan → 解析与硬门禁 → 入库 → PlanView 展示。\n\n### 可选工具(有助于拍板,不是完成条件)\n- `set_research` 写入调研结论;\n- `set_proposals`:**仅当存在至少两个方向不同、取舍有意义的候选且需要用户择一时才调用**;写入 ≥2 个候选。方向已唯一、用户已拍板、或澄清/计划足以推进时**禁止调用**(尤其禁止写入仅 1 条且标推荐/已选定的「伪选择」)。独立 proposal 节点仍须强制交付;本约束仅针对 Approve 可选路径。与 `ask_question`「禁止为问而问」同理。\n- `write_artifact` 写入 `page.html`(kind=`html`,单文件自包含,禁止外链与 Web Storage),立刻 `set_artifact_preview` 钉到预览 Tab。\n- 可运行应用(沙箱端口或已部署 URL):`set_preview(port?, url?, label?)`(port 与 url 恰好其一)。**不是完成条件**,成功后**不会**结束本节点(与 app_preview 不同)。沙箱内须 `setsid`/`nohup` 真后台、监听 `0.0.0.0:<port>`(不要 docker、不要只绑 127.0.0.1),再 `set_preview(port)`;已部署地址用 `set_preview(url=...)`(iframe 直连,无服务端探测)。\n给人看的预览材料也可用 `write_artifact` + `set_artifact_preview`;选项级并排对比用 `ask_question.demoHtml`(sandbox iframe,无 allow-same-origin)。\n\n### 结束时序(强制)\n- **确认前**(用户未点「确认并流转」):可写澄清与计划,但**禁止**调用 `node_complete`;即使误调,引擎也会清除标记并继续等待确认。\n- **确认后**(用户已点「确认并流转」):基于已知信息立刻补齐两份强制产物(`open_questions` 为空),再调用 `node_complete`;缺产物或未标记则无法完成流转。\n下文「完成标记契约」仅在确认后阶段生效;确认前不要用 `node_complete` 自行结束。\n"
+	DefaultGraspContract              = "\n\n## Grasp 契约(强制)\n你是 Grasp 节点:用多轮 ReAct 对话完成开发前工作。**两份强制交付**(都要写入,不是「唯一交付」;完成标记见下方结束时序):\n1. `set_clarified_requirement` 写入完整需求规格(`open_questions` 必须为空);\n2. `set_plan` 写入最多两级(大目标→小目标)的结构化计划。\n\n若 Agent profile 角色包声明「唯一交付」或禁止 `set_plan`/`set_clarified_requirement`,以本平台契约为准:本节点允许并要求同时写澄清与计划。\n\n用户先说明目标后再行动。建议顺序:用工具对齐需求(可穿插提问与可选调研/视觉/方案),再 `set_plan`,然后等待用户确认并流转。不要在用户发言前编造空泛选择题。不要写实现代码、不要改仓库。\n\n### 澄清(强制)\n**必填字段**:`title`、`summary`、`background`、`goals[]`(≥1)、`in_scope[]`(≥1)、`out_of_scope[]`(≥1)、`functional_requirements[]`(≥1;每条含 `title`+`detail`+≥1 `acceptance_criteria`;`priority` 取 must|should|could,缺省 must)、`assumptions[]`/`dependencies[]`/`constraints[]`(各≥1;无实质内容时写明确「无额外…(已与用户确认)」,禁止省略键)。\n**可选字段**(有则写):`success_metrics`、`personas`、`user_scenarios`、`non_functional_requirements`、`external_interfaces`、`data_entities`、`business_rules`、`edge_cases`、`limitations`、`risks`、`glossary`。\n**禁止**:排期/里程碑/交付日期。需求规格只能用 `set_clarified_requirement`。\n**澄清是门禁**:任何还不确定、需要用户拍板的点,都必须通过 `ask_question` 让用户做选择,不能把疑问塞进 `open_questions` 就结束。选项可标 `recommended`(单选每题最多 1 个;多选应标记 1 个或多个)。调用 `set_clarified_requirement` 时 `open_questions` 必须为空。\n\n### 计划(强制)\n调用 `set_plan`:`goals[]` 大目标,每个可含 `subgoals[]` 小目标(叶子,不可再嵌套);每项 `title`(可选 `detail`);状态由平台初始化为 pending。\n\n**设计区完整性**:若写入设计区,须带齐六节 `architecture`/`data_design`/`interfaces`/`components`/`interaction`/`test_design`;无内容显式「不涉及」。图按需、非强制:architecture/data_design/interaction 可挂 `diagrams[]`(及兼容单数 `diagram`,source 必填);interfaces/components 项亦可选同结构。一等 kind:activity/flowchart/sequence/er——涉及则尽量都提供便于审批,缺可选图种不失败;禁止「必须四种图」。前端同节多图用节内小 Tab(不是左目录)。纯 goals 亦可,不必强行加六节键。进度与 plan_coverage 只计 goals 叶子,设计节不计。\n\n**实质 data_design 硬门禁**:当 `data_design.summary`(去空白)不是「不涉及」/「N/A」时,必须提供至少一张 ER(`diagrams[]` 中 kind=er 或兼容单数 diagram)、至少 1 个 `entities[]`,且每个实体至少 1 个结构化 `fields[]`(每项 `name`+`type` 必填;可选 `pk`/`nullable`/`fk`/`description`);仅 legacy `attributes` 不足以通过。流程:调用 set_plan → 解析与硬门禁 → 入库 → PlanView 展示。\n\n### 可选工具(有助于拍板,不是完成条件)\n- `set_research` 写入调研结论;\n- `set_proposals`:**仅当存在至少两个方向不同、取舍有意义的候选且需要用户择一时才调用**;写入 ≥2 个候选。方向已唯一、用户已拍板、或澄清/计划足以推进时**禁止调用**(尤其禁止写入仅 1 条且标推荐/已选定的「伪选择」)。独立 proposal 节点仍须强制交付;本约束仅针对 Grasp 可选路径。与 `ask_question`「禁止为问而问」同理。\n- `write_artifact` 写入 `page.html`(kind=`html`,单文件自包含,禁止外链与 Web Storage),立刻 `set_artifact_preview` 钉到预览 Tab。\n- 可运行应用(沙箱端口或已部署 URL):`set_preview(port?, url?, label?)`(port 与 url 恰好其一)。**不是完成条件**,成功后**不会**结束本节点(与 app_preview 不同)。沙箱内须 `setsid`/`nohup` 真后台、监听 `0.0.0.0:<port>`(不要 docker、不要只绑 127.0.0.1),再 `set_preview(port)`;已部署地址用 `set_preview(url=...)`(iframe 直连,无服务端探测)。\n给人看的预览材料也可用 `write_artifact` + `set_artifact_preview`;选项级并排对比用 `ask_question.demoHtml`(sandbox iframe,无 allow-same-origin)。\n\n### 结束时序(强制)\n- **确认前**(用户未点「确认并流转」):可写澄清与计划,但**禁止**调用 `node_complete`;即使误调,引擎也会清除标记并继续等待确认。\n- **确认后**(用户已点「确认并流转」):基于已知信息立刻补齐两份强制产物(`open_questions` 为空),再调用 `node_complete`;缺产物或未标记则无法完成流转。\n下文「完成标记契约」仅在确认后阶段生效;确认前不要用 `node_complete` 自行结束。\n"
 	DefaultOutcomeContract              = "\n\n## 完成标记契约(强制)\n结束本节点前**必须**调用 `node_complete` 标记结果:`status` 取 `success` 或 `failed`;可选 `summary` / `error` / `outputs` / `checks`。写完产物(`set_*` / `write_artifact`)后再调用。未标记将被判定为节点失败。平台先做默认校验(产物/门禁等),通过后才可能做业务 RPC 校验。若需启动长期服务(web / dsh / Harness / 被测应用等),必须用 `setsid`/`nohup` 放入独立会话并重定向日志,禁止前台或未脱钩的命令占住 Agent 回合;不要为收尾杀掉这些进程。\n"
 	DefaultOutcomeRetry                 = "【必须完成】你尚未调用 `node_complete` 标记本节点完成结果,这是强制要求。现在立即调用 `node_complete(status=\"success\"|\"failed\", summary?, error?, outputs?)`,不要再提问或输出其它内容——只需完成这次调用。\n"
 	// DefaultReviewConfirmReconcile is the review-side counterpart of
-	// DefaultApproveConfirmSuffix: a review producer's node_complete already
+	// DefaultGraspConfirmSuffix: a review producer's node_complete already
 	// happened in its production phase, so the confirm turn only reconciles
 	// products against the transcript.
 	DefaultReviewConfirmReconcile = "【确认流转】用户已点击「确认并流转」,复审到此结束。请通读本节点的完整聊天记录,据此补充或修正你已写入的结构化产物:用对应的 `set_*` / `write_artifact` 工具重新写入完整内容,把历次人工反馈已确认的结论落进产物,清掉与对话相矛盾的旧内容。\n- 不要提问、不要调用 ask_question。\n- 不要调用 `node_complete`(本节点的完成由平台在流转时处理)。\n- 若核对后确认无需修改,回一句说明即可,不要空写产物。"
@@ -348,13 +348,13 @@ func (p *AgentPrompts) VisualContractText() string {
 	return DefaultVisualContract
 }
 
-// ApproveContractText returns the approve-node contract (two required
+// GraspContractText returns the Grasp-node contract (two required
 // deliveries: clarified requirement + plan). Nil-safe.
-func (p *AgentPrompts) ApproveContractText() string {
-	if p != nil && strings.TrimSpace(p.ApproveContract) != "" {
-		return p.ApproveContract
+func (p *AgentPrompts) GraspContractText() string {
+	if p != nil && strings.TrimSpace(p.GraspContract) != "" {
+		return p.GraspContract
 	}
-	return DefaultApproveContract
+	return DefaultGraspContract
 }
 
 // PreviewContractText returns the app_preview-node contract clause or the default.

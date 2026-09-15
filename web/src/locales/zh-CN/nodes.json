@@ -89,51 +89,6 @@
       },
       "help": "### 需求澄清(react)\n\n与人多轮 ReAct 对话,把模糊需求澄清为**结构化需求**。\n\n**唯一交付(强制)**:调用 `set_clarified_requirement` 写入 `clarified_requirement.json`(功能需求、非功能需求、约束、范围外、待定问题)。未写入则节点失败。\n\n**提问**:用 `ask_question` 向人提出选择题;选项可标 `recommended` 推荐(单选每题最多 1 个;多选应标记 1 个或多个),界面高亮推荐项、便于确认;未标记时自动模式回退该题首项。\n\n**自动澄清**:配置「自动澄清变量」且其为真时,平台不等人工——每轮自动选推荐选项(无推荐则取第一个)回复,直到澄清结束或达到最大轮次。运行页也提供「采用推荐」按钮,可一键按推荐项填选并提交。\n\n**自动产物**:仅自动生成保留 JSON `clarified_requirement.json`,可直接结构化展示,并用 `exists(\"clarified_requirement.json\")` / `json(\"clarified_requirement.json\").字段` 做分支判断。\n\n**条件注入**:配置「条件注入」后,当指定全局变量存在且非空时,把附加提示词追加到 Prompt 末尾(常用于门禁回填后重进本节点)。"
     },
-    "approve": {
-      "label": "Grasp",
-      "desc": "一次 ReAct 对话完成开发前工作:无 Prompt 模板、不限轮次,用户先发目标后 Agent 用工具对齐;强制产出澄清需求与实施计划",
-      "fields": {
-        "agent_profile": {
-          "label": "Agent(用户定义 · Agent 管理)"
-        },
-        "timeout": {
-          "label": "超时(分钟)"
-        }
-      },
-      "outputs": {
-        "clarified_requirement": {
-          "desc": "结构化需求澄清结论(clarified_requirement.json 渲染)"
-        },
-        "clarified_requirement_json": {
-          "desc": "结构化需求原始 JSON"
-        },
-        "plan": {
-          "desc": "结构化计划(plan.json 渲染)"
-        },
-        "plan_json": {
-          "desc": "计划原始 JSON"
-        },
-        "research": {
-          "desc": "可选调研结论(research.json 渲染)"
-        },
-        "research_json": {
-          "desc": "可选调研原始 JSON"
-        },
-        "proposals": {
-          "desc": "可选候选方案(proposals.json 渲染)"
-        },
-        "proposals_json": {
-          "desc": "可选方案原始 JSON"
-        },
-        "page": {
-          "desc": "可选视觉网页(page.html)"
-        },
-        "transcript": {
-          "desc": "完整对话记录"
-        }
-      },
-      "help": "### Grasp\n\n一次多轮 ReAct 对话完成**开发前工作**。本节点配置 Agent 与超时(默认 30 分钟):**没有 Prompt 模板**、**不限制轮次**、也没有自动澄清 / 条件注入。开场由平台注入运行输入并等待用户先描述目标;Agent 用工具对齐需求,仅在真实分歧时 `ask_question`。\n\n**两份强制交付**(都写完才能结束,不是「唯一交付」):\n1. `set_clarified_requirement` → `clarified_requirement.json`(open_questions 必须为空)\n2. `set_plan` → `plan.json`(最多两级:大目标→小目标;写入设计区时六节齐全,无内容显式「不涉及」,可挂 Mermaid diagram)\n\n**可选**(有则展示,缺不失败):`set_research`;`set_proposals`(**仅当 ≥2 个可区分候选需用户择一时才写**;禁止单候选伪选择);`write_artifact` 写入 `page.html`;`set_preview` 登记可运行应用(沙箱 port 或外部 url,不是完成条件、不会结束本节点)。\n\n若角色包声明「唯一交付」或禁止上述工具,**以平台规则 `rules/approve.md` 为准**。不要写实现代码、不要改仓库。"
-    },
     "preflight": {
       "label": "环境确认",
       "desc": "对照计划/仓库/变量核对执行环境;有缺口则选择题或明文表单采集,经 set_preflight 写入清单后由 Agent 完成",
@@ -651,6 +606,51 @@
           "desc": "更新后的全局变量快照"
         }
       }
+    },
+    "grasp": {
+      "label": "Grasp",
+      "desc": "一次 ReAct 对话完成开发前工作:无 Prompt 模板、不限轮次,用户先发目标后 Agent 用工具对齐;强制产出澄清需求与实施计划",
+      "fields": {
+        "agent_profile": {
+          "label": "Agent(用户定义 · Agent 管理)"
+        },
+        "timeout": {
+          "label": "超时(分钟)"
+        }
+      },
+      "outputs": {
+        "clarified_requirement": {
+          "desc": "结构化需求澄清结论(clarified_requirement.json 渲染)"
+        },
+        "clarified_requirement_json": {
+          "desc": "结构化需求原始 JSON"
+        },
+        "plan": {
+          "desc": "结构化计划(plan.json 渲染)"
+        },
+        "plan_json": {
+          "desc": "计划原始 JSON"
+        },
+        "research": {
+          "desc": "可选调研结论(research.json 渲染)"
+        },
+        "research_json": {
+          "desc": "可选调研原始 JSON"
+        },
+        "proposals": {
+          "desc": "可选候选方案(proposals.json 渲染)"
+        },
+        "proposals_json": {
+          "desc": "可选方案原始 JSON"
+        },
+        "page": {
+          "desc": "可选视觉网页(page.html)"
+        },
+        "transcript": {
+          "desc": "完整对话记录"
+        }
+      },
+      "help": "### Grasp\n\n一次多轮 ReAct 对话完成**开发前工作**。本节点配置 Agent 与超时(默认 30 分钟):**没有 Prompt 模板**、**不限制轮次**、也没有自动澄清 / 条件注入。开场由平台注入运行输入并等待用户先描述目标;Agent 用工具对齐需求,仅在真实分歧时 `ask_question`。\n\n**两份强制交付**(都写完才能结束,不是「唯一交付」):\n1. `set_clarified_requirement` → `clarified_requirement.json`(open_questions 必须为空)\n2. `set_plan` → `plan.json`(最多两级:大目标→小目标;写入设计区时六节齐全,无内容显式「不涉及」,可挂 Mermaid diagram)\n\n**可选**(有则展示,缺不失败):`set_research`;`set_proposals`(**仅当 ≥2 个可区分候选需用户择一时才写**;禁止单候选伪选择);`write_artifact` 写入 `page.html`;`set_preview` 登记可运行应用(沙箱 port 或外部 url,不是完成条件、不会结束本节点)。\n\n若角色包声明「唯一交付」或禁止上述工具,**以平台规则 `rules/grasp.md` 为准**。不要写实现代码、不要改仓库。"
     }
   }
 }

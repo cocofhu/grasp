@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isGrasp } from '@/lib/shared/clarifyInteractive'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
@@ -179,7 +180,7 @@ function stopApprovePreviewProbe() {
 }
 
 async function probeApprovePreviews() {
-  if (resolvedNodeType.value !== 'approve') return
+  if (!isGrasp(resolvedNodeType.value)) return
   const rid = String(props.runId || '').trim()
   const nid = String(props.nodeId || '').trim()
   if (!rid || !nid) {
@@ -204,7 +205,7 @@ watch(
   () => {
     stopApprovePreviewProbe()
     approvePreviewRegistered.value = false
-    if (resolvedNodeType.value !== 'approve') return
+    if (!isGrasp(resolvedNodeType.value)) return
     void probeApprovePreviews()
     approveProbeTimer = setInterval(() => void probeApprovePreviews(), APPROVE_PREVIEW_POLL_MS)
   },
@@ -212,7 +213,7 @@ watch(
 )
 
 const effectiveRemoteKind = computed(() => {
-  if (resolvedNodeType.value === 'approve') {
+  if (isGrasp(resolvedNodeType.value)) {
     return approveStageRemoteKind(approvePreviewRegistered.value)
   }
   return resolvedRemoteKind.value
@@ -662,7 +663,7 @@ watch(
   (kind) => {
     if (kind !== 'app' && kind !== 'public') {
       // Drop an empty Approve app tab if registration disappears.
-      if (resolvedNodeType.value === 'approve' && novncOpen.value && activeTab.value === REACT_STAGE_TAB_NOVNC) {
+      if (isGrasp(resolvedNodeType.value) && novncOpen.value && activeTab.value === REACT_STAGE_TAB_NOVNC) {
         novncOpen.value = false
         activeTab.value = openNames.value.length
           ? previewTabId(openNames.value[openNames.value.length - 1])

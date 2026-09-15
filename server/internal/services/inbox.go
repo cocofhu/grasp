@@ -29,7 +29,7 @@ func reactAutoEnabled(node *models.Node, vars map[string]any) bool {
 	if node == nil {
 		return false
 	}
-	if node.Type == "approve" {
+	if nodereg.IsGrasp(node.Type) {
 		return false
 	}
 	autoVar := strings.TrimSpace(configStr(node.Config["auto_var"]))
@@ -185,7 +185,7 @@ func clarifyInboxKind(node *models.Node) string {
 	if node.Type == "preflight" {
 		return "preflight"
 	}
-	if node.Type != "react" && node.Type != "approve" && nodereg.ReviewCapable(node.Type) {
+	if node.Type != "react" && !nodereg.IsGrasp(node.Type) && nodereg.ReviewCapable(node.Type) {
 		return "review"
 	}
 	return "clarify"
@@ -405,7 +405,7 @@ func (s *RunService) pendingClarifications(tags []string) []ClarifyInboxItem {
 	return out
 }
 
-// startingApproves lists approve nodes whose sandbox is still booting: the
+// startingApproves lists Grasp nodes whose sandbox is still booting: the
 // StateRun row is already "running" (written the moment the FSM enters the node)
 // but no conversation exists yet, so pendingClarifications cannot see them. They
 // surface as loading cards so an approval appears in the inbox the instant the
@@ -414,8 +414,8 @@ func (s *RunService) startingApproves(tags []string) []ClarifyInboxItem {
 	var states []models.StateRun
 	s.db.Model(&models.StateRun{}).
 		Joins("JOIN runs ON runs.id = state_runs.run_id").
-		Where("state_runs.node_type = ? AND state_runs.status = ? AND runs.status NOT IN ?",
-			"approve", "running", terminalRunStatuses).
+		Where("state_runs.node_type IN ? AND state_runs.status = ? AND runs.status NOT IN ?",
+			[]string{"grasp", "approve"}, "running", terminalRunStatuses).
 		Scopes(func(db *gorm.DB) *gorm.DB { return applyRunTagsFilter(db, "runs.tags", tags) }).
 		Order("state_runs.id asc").
 		Find(&states)

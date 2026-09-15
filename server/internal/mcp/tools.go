@@ -67,8 +67,8 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 		// waiting for a choice that will never be surfaced. During a review the
 		// human IS present, so any review-phase node may raise follow-up choices.
 		active := h.ActiveNodeType(runID)
-		if active != "react" && active != "approve" && active != "preflight" && !h.InReviewPhase(runID) {
-			return "ask_question 仅在澄清(react/approve)/环境确认(preflight)节点或复审阶段可用,当前节点不支持;请直接给出结论。", true
+		if active != "react" && !isGrasp(active) && active != "preflight" && !h.InReviewPhase(runID) {
+			return "ask_question 仅在澄清(react)/Grasp/环境确认(preflight)节点或复审阶段可用,当前节点不支持;请直接给出结论。", true
 		}
 		qs := parseQuestions(args["questions"])
 		if len(qs) == 0 {
@@ -99,7 +99,7 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 		}
 		// Plan-only: writing the plan is the plan node's sole capability.
 		if !toolAllowed(h.ActiveNodeType(runID), "set_plan") {
-			return "set_plan 仅在计划(plan)或 Approve 节点可用,当前节点不支持。", true
+			return "set_plan 仅在计划(plan)或 Grasp 节点可用,当前节点不支持。", true
 		}
 		doc, err := parsePlan(args)
 		if err != nil {
@@ -148,7 +148,7 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 			return "update_plan_status failed: 未找到计划项 id=" + id, true
 		}
 		b, _ := json.MarshalIndent(doc, "", "  ")
-		// Status backfill must not steal authorship: Approve/plan product
+		// Status backfill must not steal authorship: Grasp/plan product
 		// panels bind plan.json by writer nodeId. implement is only marking
 		// progress on the existing run-scoped plan.
 		writer := h.artifactWriterNode(runID, token, PlanArtifactName)
@@ -248,7 +248,7 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 			return "set_preview failed: " + ErrUnauthorized.Error(), true
 		}
 		if !SetPreviewAllowed(h.ActiveNodeType(runID)) {
-			return "set_preview 仅在 app_preview 或 Approve 节点可用,当前节点不支持。", true
+			return "set_preview 仅在 app_preview 或 Grasp 节点可用,当前节点不支持。", true
 		}
 		portRaw, hasPort := args["port"]
 		urlRaw := strings.TrimSpace(asString(args["url"]))
@@ -279,7 +279,7 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 			return "set_artifact_preview failed: " + ErrUnauthorized.Error(), true
 		}
 		if !toolAllowed(h.ActiveNodeType(runID), "set_artifact_preview") {
-			return "set_artifact_preview 仅在澄清(react)、Approve 或环境确认(preflight)节点可用,当前节点不支持。", true
+			return "set_artifact_preview 仅在澄清(react)、Grasp 或环境确认(preflight)节点可用,当前节点不支持。", true
 		}
 		aname := strings.TrimSpace(asString(args["name"]))
 		if aname == "" {
@@ -388,17 +388,17 @@ func (h *Host) structuredSet(runID, token, tool, nodeType, name string, doc any,
 func toolAllowed(active, tool string) bool {
 	switch tool {
 	case "ask_question", "set_artifact_preview":
-		return active == "react" || active == "approve" || active == "preflight"
+		return active == "react" || isGrasp(active) || active == "preflight"
 	case "set_clarified_requirement":
-		return active == "react" || active == "approve"
+		return active == "react" || isGrasp(active)
 	case "ask_form", "set_preflight":
 		return active == "preflight"
 	case "set_plan":
-		return active == "plan" || active == "approve"
+		return active == "plan" || isGrasp(active)
 	case "set_research":
-		return active == "research" || active == "approve"
+		return active == "research" || isGrasp(active)
 	case "set_proposals":
-		return active == "proposal" || active == "approve"
+		return active == "proposal" || isGrasp(active)
 	case "set_test_result":
 		return active == "test"
 	case "set_review":
@@ -413,13 +413,13 @@ func toolAllowed(active, tool string) bool {
 func toolDeniedMsg(tool string) string {
 	switch tool {
 	case "set_clarified_requirement":
-		return "set_clarified_requirement 仅在澄清(react)或 Approve 节点可用,当前节点不支持。"
+		return "set_clarified_requirement 仅在澄清(react)或 Grasp 节点可用,当前节点不支持。"
 	case "set_plan":
-		return "set_plan 仅在计划(plan)或 Approve 节点可用,当前节点不支持。"
+		return "set_plan 仅在计划(plan)或 Grasp 节点可用,当前节点不支持。"
 	case "set_research":
-		return "set_research 仅在调研(research)或 Approve 节点可用,当前节点不支持。"
+		return "set_research 仅在调研(research)或 Grasp 节点可用,当前节点不支持。"
 	case "set_proposals":
-		return "set_proposals 仅在方案(proposal)或 Approve 节点可用,当前节点不支持。"
+		return "set_proposals 仅在方案(proposal)或 Grasp 节点可用,当前节点不支持。"
 	case "set_preflight":
 		return "set_preflight 仅在环境确认(preflight)节点可用,当前节点不支持。"
 	case "ask_form":
@@ -736,7 +736,7 @@ func artifactTools() []map[string]any {
 		},
 		{
 			"name": "ask_question",
-			"description": "仅澄清(react)、Approve 或环境确认(preflight)节点可用:向用户提出结构化的选择题(问题+候选选项),界面会渲染成单选/多选卡片让用户点选。" +
+			"description": "仅澄清(react)、Grasp 或环境确认(preflight)节点可用:向用户提出结构化的选择题(问题+候选选项),界面会渲染成单选/多选卡片让用户点选。" +
 				"当需要用户在有限选项中做决定时使用;调用后应结束本轮回复,等待用户完成选择。" +
 				"澄清是门禁:任何还不确定、需要用户拍板的点都必须用本工具让用户确认,不能留成未决问题就结束。" +
 				"只有当信息已充分、没有任何待确认问题时,才不要调用本工具,直接调用 set_clarified_requirement 收敛结论——届时视为澄清结束。",
@@ -806,14 +806,14 @@ func artifactTools() []map[string]any {
 		},
 		{
 			"name": "set_plan",
-			"description": "仅计划(plan)或 Approve 节点可用:写入本次运行的全局结构化计划。计划最多两级:大目标 goals[] → 小目标 subgoals[](小目标是叶子,其下不能再有子目标)。" +
+			"description": "仅计划(plan)或 Grasp 节点可用:写入本次运行的全局结构化计划。计划最多两级:大目标 goals[] → 小目标 subgoals[](小目标是叶子,其下不能再有子目标)。" +
 				"可选 SDD 设计区(architecture/data_design/interfaces/components/interaction/test_design);写入设计区时应六节齐全,无内容用「不涉及」占位。" +
 				"图按需、非强制:architecture/data_design/interaction 可挂 diagrams[](及兼容单数 diagram);interfaces/components 项亦可选同结构。" +
 				"一等图种 activity/flowchart/sequence/er——涉及活动/业务流/时序/数据时尽量都提供便于审批,缺可选图种不失败;禁止「必须四种图」。多子模块按需补图并写 scope。" +
 				"前端同节多图用节内小 Tab(不是左目录+右画布)。" +
 				"当 data_design.summary 非「不涉及」/N/A 时(实质数据设计),必须提供至少一张 ER(diagrams[] 中 kind=er 或兼容单数 diagram)、至少 1 个实体,且每个实体至少 1 个结构化 fields[](name+type 必填;可选 pk/nullable/fk/description);仅 legacy attributes 不足以通过。" +
 				"流程:Agent 调用 set_plan → 解析与硬门禁 → 入库 → PlanView 展示。存量仅 goals 的计划仍合法。" +
-				"在计划节点这是唯一交付;在 Approve 节点这是两份强制交付之一(另一份是 set_clarified_requirement)。不要写代码或改仓库。",
+				"在计划节点这是唯一交付;在 Grasp 节点这是两份强制交付之一(另一份是 set_clarified_requirement)。不要写代码或改仓库。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -957,8 +957,8 @@ func artifactTools() []map[string]any {
 		},
 		{
 			"name": "set_clarified_requirement",
-			"description": "仅澄清(react)或 Approve 节点可用:写入结构化需求规格(对齐 ISO/IEC/IEEE 29148 SRS 与 PRD 子集)。" +
-				"在澄清节点这是唯一结构化交付;在 Approve 节点这是两份强制交付之一(另一份是 set_plan)。信息充分后调用它。" +
+			"description": "仅澄清(react)或 Grasp 节点可用:写入结构化需求规格(对齐 ISO/IEC/IEEE 29148 SRS 与 PRD 子集)。" +
+				"在澄清节点这是唯一结构化交付;在 Grasp 节点这是两份强制交付之一(另一份是 set_plan)。信息充分后调用它。" +
 				"视觉/文案预览材料应 write_artifact 后立刻 set_artifact_preview,不要把需求规格写成普通产物文件。" +
 				"澄清是门禁:调用前所有不确定的点都应已通过 ask_question 让用户确认,open_questions 必须为空,否则平台会驳回并要求继续澄清。" +
 				"禁止写入排期/里程碑/交付日期,禁止写入技术选型、架构或详细 API/DB 设计(留给调研/方案节点)。",
@@ -1032,8 +1032,8 @@ func artifactTools() []map[string]any {
 		getTool("get_clarified_requirement", "读取本次运行的需求澄清结论(clarified_requirement.json)。"),
 		{
 			"name": "set_research",
-			"description": "仅调研(research)或 Approve 节点可用:写入结构化的技术调研结论(technical spike)。" +
-				"在调研节点这是唯一交付;在 Approve 节点为可选(有助于拍板,不是完成条件)。",
+			"description": "仅调研(research)或 Grasp 节点可用:写入结构化的技术调研结论(technical spike)。" +
+				"在调研节点这是唯一交付;在 Grasp 节点为可选(有助于拍板,不是完成条件)。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1057,9 +1057,9 @@ func artifactTools() []map[string]any {
 		getTool("get_research", "读取本次运行的调研结论(research.json)。"),
 		{
 			"name": "set_proposals",
-			"description": "仅方案(proposal)或 Approve 节点可用:写入结构化的候选方案集(对齐 ADR/MADR 与设计文档),可含多个方案供后续确认。" +
+			"description": "仅方案(proposal)或 Grasp 节点可用:写入结构化的候选方案集(对齐 ADR/MADR 与设计文档),可含多个方案供后续确认。" +
 				"在方案节点这是唯一交付(至少 1 个候选即可)。" +
-				"在 Approve 节点为可选且**非凑产物**:仅当存在至少两个方向不同、取舍有意义的候选且需要用户择一时才调用(写入 ≥2 个);无真实分歧则不要调用,禁止单候选「伪选择」。",
+				"在 Grasp 节点为可选且**非凑产物**:仅当存在至少两个方向不同、取舍有意义的候选且需要用户择一时才调用(写入 ≥2 个);无真实分歧则不要调用,禁止单候选「伪选择」。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1197,9 +1197,9 @@ func artifactTools() []map[string]any {
 		getTool("get_preflight", "读取本次运行的环境确认清单(preflight.json)。"),
 		{
 			"name": "set_preview",
-			"description": "仅 app_preview 或 Approve 节点可用:注册沙箱内应用预览端口或外部 http(s) URL。" +
+			"description": "仅 app_preview 或 Grasp 节点可用:注册沙箱内应用预览端口或外部 http(s) URL。" +
 				"参数 port? 与 url? 二选一(恰好其一);label(可选)用于 UI 标签。可多次调用注册多项;同 port 或同规范化 url 再次调用可更新 label。外部 URL 由浏览器 iframe 直连,不做服务端探测,取点可能降级。" +
-				"在 Approve 上这是可选预览,不是完成条件,成功后不会结束本节点。",
+				"在 Grasp 上这是可选预览,不是完成条件,成功后不会结束本节点。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1211,7 +1211,7 @@ func artifactTools() []map[string]any {
 		},
 		{
 			"name": "set_artifact_preview",
-			"description": "仅澄清(react)、Approve 或环境确认(preflight)节点可用:把已写入的产物钉到 ReAct 界面预览 Tab。" +
+			"description": "仅澄清(react)、Grasp 或环境确认(preflight)节点可用:把已写入的产物钉到 ReAct 界面预览 Tab。" +
 				"参数 name 为 list_artifacts / write_artifact 中的产物名,必须已存在。可多次调用切换预览;同名再次 write_artifact 后预览会热更新。" +
 				"与 ask_question.demoHtml 分工:选项级并排对比用 demoHtml;独立成稿、需热更新或取点标注用本工具。",
 			"inputSchema": map[string]any{

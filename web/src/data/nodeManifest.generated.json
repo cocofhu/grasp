@@ -1,10 +1,10 @@
 {
   "products": [
     {
-      "type": "approve",
+      "type": "grasp",
       "label": "Grasp",
       "category": "Agent",
-      "ruleFile": "rules/approve.md",
+      "ruleFile": "rules/grasp.md",
       "artifacts": [
         {
           "artifactName": "clarified_requirement.json",

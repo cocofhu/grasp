@@ -228,7 +228,7 @@ func (c *acpProvider) ensurePreviewRegistered(ctx context.Context, req NodeReq, 
 // nodeNeedsOutcome reports whether this node type must call node_complete.
 func nodeNeedsOutcome(nodeType string) bool {
 	switch nodeType {
-	case "agent", "plan", "implement", "react", "approve", "preflight", "research", "proposal",
+	case "agent", "plan", "implement", "react", "grasp", "approve", "preflight", "research", "proposal",
 		"test", "review", "submit_mr", "visual":
 		return true
 

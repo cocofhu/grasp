@@ -52,7 +52,7 @@ const (
 	PromptSubmitMR
 	PromptVisual
 	PromptAppPreview
-	PromptApprove
+	PromptGrasp
 	PromptPreflight
 )
 
@@ -101,7 +101,7 @@ type Spec struct {
 	ReviewVar string
 
 	// Products lists reserved deliverables when a node writes more than one
-	// (Approve). Empty ⇒ fall back to ArtifactName/SetTool/OutputKey/Render.
+	// (Grasp). Empty ⇒ fall back to ArtifactName/SetTool/OutputKey/Render.
 	Products []ProductRef
 }
 
@@ -125,11 +125,11 @@ var registry = map[string]Spec{
 	"agent": {
 		Type: "agent", Label: "通用", Category: "Agent", Exec: ExecAgent,
 	},
-	"approve": {
-		Type: "approve", Label: "Grasp", Category: "Agent", Exec: ExecReact,
-		EmbeddedRules: []string{"rules/approve.md"},
-		Prompt:        PromptApprove,
-		Products:      approveProducts(),
+	"grasp": {
+		Type: "grasp", Label: "Grasp", Category: "Agent", Exec: ExecReact,
+		EmbeddedRules: []string{"rules/grasp.md"},
+		Prompt:        PromptGrasp,
+		Products:      graspProducts(),
 	},
 	"plan": {
 		Type: "plan", Label: "计划", Category: "Agent", Exec: ExecPlan,
@@ -231,9 +231,25 @@ var registry = map[string]Spec{
 	},
 }
 
-// Get returns the spec for a node type.
+// IsGrasp reports whether nodeType is the Grasp pre-dev node (canonical
+// "grasp" or historical alias "approve").
+func IsGrasp(nodeType string) bool {
+	return nodeType == "grasp" || nodeType == "approve"
+}
+
+// CanonicalType returns the registry key for a node type, mapping the
+// historical approve alias onto grasp.
+func CanonicalType(nodeType string) string {
+	if nodeType == "approve" {
+		return "grasp"
+	}
+	return nodeType
+}
+
+// Get returns the spec for a node type. Historical type "approve" resolves to
+// the grasp spec so persisted graphs keep working.
 func Get(nodeType string) (Spec, bool) {
-	s, ok := registry[nodeType]
+	s, ok := registry[CanonicalType(nodeType)]
 	return s, ok
 }
 
@@ -324,8 +340,8 @@ func PromptContractText(p *models.AgentPrompts, nodeType, sourceBranch, targetBr
 		return p.VisualContractText()
 	case PromptAppPreview:
 		return p.PreviewContractText()
-	case PromptApprove:
-		return p.ApproveContractText()
+	case PromptGrasp:
+		return p.GraspContractText()
 	case PromptPreflight:
 		return p.PreflightContractText()
 	default:

@@ -1,9 +1,9 @@
 ---
-description: Approve 一站式开发前节点(澄清+计划)
+description: Grasp 一站式开发前节点(澄清+计划)
 alwaysApply: false
 ---
 
-# Approve 节点
+# Grasp 节点
 
 本节点是**交互式 ReAct 开发前节点**:与人协作完成需求澄清与实施计划。角色包(如 ClarifyAgent / PlanAgent)若声明「唯一交付」或禁止 `set_plan` / `set_clarified_requirement`,**以本平台规则为准**——本节点允许并要求同时写入澄清与计划。
 

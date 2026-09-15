@@ -16,7 +16,7 @@ func TestAgentPromptsRemainingContracts(t *testing.T) {
 	if nilP.VisualContractText() == "" || nilP.PreviewContractText() == "" || nilP.PreviewRetryText() == "" {
 		t.Fatal("nil visual/preview")
 	}
-	if nilP.ApproveContractText() == "" {
+	if nilP.GraspContractText() == "" {
 		t.Fatal("nil approve contract")
 	}
 	if nilP.PreflightContractText() == "" || nilP.PreflightRetryText("x") == "" {
@@ -39,11 +39,17 @@ func TestAgentPromptsRemainingContracts(t *testing.T) {
 	if p.VisualContractText() != "V" || p.PreviewContractText() != "P" || p.PreviewRetryText() != "R" {
 		t.Fatal("overrides")
 	}
-	p.ApproveContract = "AC"
-	if p.ApproveContractText() != "AC" {
+	p.GraspContract = "AC"
+	if p.GraspContractText() != "AC" {
 		t.Fatal("approve override")
 	}
-	gotApprove := (&AgentPrompts{}).ApproveContractText()
+	gotApprove := (&AgentPrompts{}).GraspContractText()
+	if strings.Contains(gotApprove, "你是 Approve 节点") || strings.Contains(gotApprove, "## Approve 契约") {
+		t.Fatal("DefaultGraspContract must not identify as Approve node")
+	}
+	if !strings.Contains(gotApprove, "你是 Grasp 节点") {
+		t.Fatal("DefaultGraspContract must identify as Grasp node")
+	}
 	for _, want := range []string{
 		"两份强制交付", "set_clarified_requirement", "set_plan", "不是「唯一交付」", "用户先说明目标",
 		"至少两个方向不同", "禁止调用", "伪选择",
@@ -51,31 +57,31 @@ func TestAgentPromptsRemainingContracts(t *testing.T) {
 		"结束时序", "确认前", "确认后", "node_complete",
 	} {
 		if !strings.Contains(gotApprove, want) {
-			t.Fatalf("DefaultApproveContract missing %q\n%s", want, gotApprove)
+			t.Fatalf("DefaultGraspContract missing %q\n%s", want, gotApprove)
 		}
 	}
 	if strings.Contains(gotApprove, "可跳过确认自行") || strings.Contains(gotApprove, "平台会结束本节点") {
-		t.Fatal("DefaultApproveContract must not imply skip-confirm or platform-ends-without-node_complete")
+		t.Fatal("DefaultGraspContract must not imply skip-confirm or platform-ends-without-node_complete")
 	}
-	if !strings.Contains(DefaultApproveOpenSuffix, "真实分歧") {
-		t.Fatal("DefaultApproveOpenSuffix")
+	if !strings.Contains(DefaultGraspOpenSuffix, "真实分歧") {
+		t.Fatal("DefaultGraspOpenSuffix")
 	}
-	if strings.Contains(DefaultApproveOpenSuffix, "第一回合必须调用 ask_question") {
-		t.Fatal("DefaultApproveOpenSuffix must not force first-turn ask_question")
+	if strings.Contains(DefaultGraspOpenSuffix, "第一回合必须调用 ask_question") {
+		t.Fatal("DefaultGraspOpenSuffix must not force first-turn ask_question")
 	}
-	if strings.Contains(DefaultApproveOpenSuffix, "可直接 set_* 并 node_complete") {
-		t.Fatal("DefaultApproveOpenSuffix must not auto node_complete")
+	if strings.Contains(DefaultGraspOpenSuffix, "可直接 set_* 并 node_complete") {
+		t.Fatal("DefaultGraspOpenSuffix must not auto node_complete")
 	}
-	if !strings.Contains(DefaultApproveOpenSuffix, "确认并流转") {
-		t.Fatal("DefaultApproveOpenSuffix must wait for human confirm")
+	if !strings.Contains(DefaultGraspOpenSuffix, "确认并流转") {
+		t.Fatal("DefaultGraspOpenSuffix must wait for human confirm")
 	}
-	if !strings.Contains(DefaultApproveOpenSuffix, "未点「确认并流转」前禁止 node_complete") {
-		t.Fatal("DefaultApproveOpenSuffix must forbid node_complete before confirm")
+	if !strings.Contains(DefaultGraspOpenSuffix, "未点「确认并流转」前禁止 node_complete") {
+		t.Fatal("DefaultGraspOpenSuffix must forbid node_complete before confirm")
 	}
 	for _, want := range []string{"确认流转", "set_clarified_requirement", "set_plan", "node_complete",
 		"不要再提问", "完整聊天记录", "补充或修正"} {
-		if !strings.Contains(DefaultApproveConfirmSuffix, want) {
-			t.Fatalf("DefaultApproveConfirmSuffix missing %q\n%s", want, DefaultApproveConfirmSuffix)
+		if !strings.Contains(DefaultGraspConfirmSuffix, want) {
+			t.Fatalf("DefaultGraspConfirmSuffix missing %q\n%s", want, DefaultGraspConfirmSuffix)
 		}
 	}
 	if nilP.OutcomeContractText() == "" || nilP.OutcomeRetryText() == "" {
@@ -154,7 +160,7 @@ func TestConfirmTimePromptsSplitReconcileFromSummary(t *testing.T) {
 		t.Fatal("DefaultReactConfirmSuffix must not demand a plan a react node never writes")
 	}
 	// The retired per-turn contract must not creep back into any confirm prompt.
-	for _, p := range []string{DefaultApproveConfirmSuffix, DefaultReactConfirmSuffix, reconcile} {
+	for _, p := range []string{DefaultGraspConfirmSuffix, DefaultReactConfirmSuffix, reconcile} {
 		if strings.Contains(p, "agentSummary") {
 			t.Fatalf("reconcile prompts must not carry the summary contract\n%s", p)
 		}
