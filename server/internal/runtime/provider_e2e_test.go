@@ -736,9 +736,80 @@ func TestReactApproveForceCompletesWithOutcome(t *testing.T) {
 		}
 	}
 	prompt := mgr.bridge(0).promptAt(1)
+	for _, want := range []string{"确认流转", "node_complete", "set_clarified_requirement", "set_plan",
+		"平台已核对", "不要重复写入产物"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("force prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
+// TestReactApproveForceOmitsReadyNoteWhenProductsIncomplete: missing plan or
+// leftover open_questions keep the confirm prompt at the full reconcile wording.
+func TestReactApproveForceOmitsReadyNoteWhenProductsIncomplete(t *testing.T) {
+	p, _, _, mgr, req := approveSetup(t, func(int) chatFunc {
+		return func(turn int) turnAction {
+			if turn == 0 {
+				return turnAction{narration: "aligned", produces: map[string]string{
+					mcp.ClarifiedRequirementArtifactName: mcp.MinimalValidClarifiedRequirementJSON,
+				}}
+			}
+			return turnAction{narration: "finishing", produces: approveProduces(), outcome: true}
+		}
+	})
+	_ = p.ReactOpen(context.Background(), req)
+	hist := []models.ReactMessage{{Role: "human", Text: "做登录"}}
+	idle := p.ReactReply(context.Background(), req, hist, "做登录", nil, false)
+	if idle.Done {
+		t.Fatal("pre-confirm reply must stay open")
+	}
+	hist = append(hist,
+		models.ReactMessage{Role: "agent", Text: idle.Msg},
+		models.ReactMessage{Role: "human", Text: "确认并流转"},
+	)
+	force := p.ReactReply(context.Background(), req, hist, "确认并流转", nil, true)
+	if force.Err != nil {
+		t.Fatalf("force: %v", force.Err)
+	}
+	prompt := mgr.bridge(0).promptAt(1)
+	if strings.Contains(prompt, "平台已核对") {
+		t.Fatalf("incomplete products must not get the ready note:\n%s", prompt)
+	}
 	for _, want := range []string{"确认流转", "node_complete", "set_clarified_requirement", "set_plan"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("force prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
+// TestReactApproveFirstForceInjectsReadyNoteWhenAlreadySettled: first-message
+// confirm (open-prompt + force) still appends the skip-rewrite note when the
+// store already holds both products.
+func TestReactApproveFirstForceInjectsReadyNoteWhenAlreadySettled(t *testing.T) {
+	p, host, _, mgr, req := approveSetup(t, func(int) chatFunc {
+		return func(int) turnAction {
+			return turnAction{narration: "finishing", produces: approveProduces(), outcome: true}
+		}
+	})
+	tok := req.Token
+	if _, err := host.WriteArtifact(req.RunID, tok, req.NodeID, mcp.ClarifiedRequirementArtifactName,
+		mcp.MinimalValidClarifiedRequirementJSON, "json"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := host.WriteArtifact(req.RunID, tok, req.NodeID, mcp.PlanArtifactName,
+		`{"goals":[{"id":"g1","title":"目标"}]}`, "json"); err != nil {
+		t.Fatal(err)
+	}
+	_ = p.ReactOpen(context.Background(), req)
+	hist := []models.ReactMessage{{Role: "human", Text: "确认并流转"}}
+	force := p.ReactReply(context.Background(), req, hist, "确认并流转", nil, true)
+	if force.Err != nil {
+		t.Fatalf("force: %v", force.Err)
+	}
+	prompt := mgr.bridge(0).promptAt(0)
+	for _, want := range []string{"确认流转", "平台已核对", "不要重复写入产物", "## 用户消息"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("first-message force prompt missing %q:\n%s", want, prompt)
 		}
 	}
 }

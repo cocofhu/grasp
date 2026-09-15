@@ -79,9 +79,17 @@ func TestAgentPromptsRemainingContracts(t *testing.T) {
 		t.Fatal("DefaultGraspOpenSuffix must forbid node_complete before confirm")
 	}
 	for _, want := range []string{"确认流转", "set_clarified_requirement", "set_plan", "node_complete",
-		"不要再提问", "完整聊天记录", "补充或修正"} {
+		"不要再提问", "完整聊天记录", "补充或修正", "不要空写产物"} {
 		if !strings.Contains(DefaultGraspConfirmSuffix, want) {
 			t.Fatalf("DefaultGraspConfirmSuffix missing %q\n%s", want, DefaultGraspConfirmSuffix)
+		}
+	}
+	if strings.Contains(DefaultGraspConfirmSuffix, "`open_questions` 必须为空") {
+		t.Fatal("DefaultGraspConfirmSuffix must not demand an unconditional open_questions wipe")
+	}
+	for _, want := range []string{"平台已核对", "不要重复写入产物", "node_complete"} {
+		if !strings.Contains(DefaultGraspConfirmProductsReadyNote, want) {
+			t.Fatalf("DefaultGraspConfirmProductsReadyNote missing %q\n%s", want, DefaultGraspConfirmProductsReadyNote)
 		}
 	}
 	if nilP.OutcomeContractText() == "" || nilP.OutcomeRetryText() == "" {
@@ -151,7 +159,7 @@ func TestConfirmTimePromptsSplitReconcileFromSummary(t *testing.T) {
 
 	// The react counterpart names no set_* tool (a react node's deliverable comes
 	// from its own contract) but must still reconcile and wrap up.
-	for _, want := range []string{"确认流转", "完整聊天记录", "补充或修正", "不要再提问"} {
+	for _, want := range []string{"确认流转", "完整聊天记录", "补充或修正", "不要再提问", "不要空写产物"} {
 		if !strings.Contains(DefaultReactConfirmSuffix, want) {
 			t.Fatalf("DefaultReactConfirmSuffix missing %q\n%s", want, DefaultReactConfirmSuffix)
 		}
