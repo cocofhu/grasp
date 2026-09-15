@@ -47,7 +47,7 @@
         },
         "ask_question": {
           "signature": "ask_question(questions)",
-          "desc": "仅澄清(react)节点:向用户提出结构化选择题(选项可标 recommended;单选最多 1 个,多选应 1 个或多个)"
+          "desc": "仅澄清(react)、Grasp 或环境确认(preflight):向用户提出结构化选择题(选项可标 recommended;单选最多 1 个,多选应 1 个或多个)"
         },
         "ask_form": {
           "signature": "ask_form(fields|forms, title?)",
@@ -67,7 +67,7 @@
         },
         "set_clarified_requirement": {
           "signature": "set_clarified_requirement(title, summary, background, goals, in_scope, out_of_scope, functional_requirements, assumptions, dependencies, constraints, …)",
-          "desc": "仅澄清(react)节点:写入完整需求规格 clarified_requirement.json(无排期/技术方案)"
+          "desc": "仅澄清(react)或 Grasp:写入完整需求规格 clarified_requirement.json(无排期/技术方案)"
         },
         "get_clarified_requirement": {
           "signature": "get_clarified_requirement() -> clarified_requirement.json",
@@ -83,7 +83,7 @@
         },
         "set_research": {
           "signature": "set_research(summary, questions?, findings?, …)",
-          "desc": "仅调研(research)节点:写入结构化调研 research.json"
+          "desc": "仅调研(research)或 Grasp:写入结构化调研 research.json"
         },
         "get_research": {
           "signature": "get_research() -> research.json",
@@ -127,7 +127,7 @@
         },
         "set_artifact_preview": {
           "signature": "set_artifact_preview(name)",
-          "desc": "仅澄清(react)或 Approve:主动聚焦已写入产物到预览 Tab(平台会自动钉新建/变更的可见产物;选项对比用 demoHtml)"
+          "desc": "仅澄清(react)、Grasp 或环境确认(preflight):主动聚焦已写入产物到预览 Tab(平台会自动钉新建/变更的可见产物;选项对比用 demoHtml)"
         },
         "node_complete": {
           "signature": "node_complete(status, summary?, error?, outputs?, checks?)",

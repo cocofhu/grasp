@@ -47,7 +47,7 @@
         },
         "ask_question": {
           "signature": "ask_question(questions)",
-          "desc": "Clarify (react) nodes only: ask structured multiple-choice questions (options may be marked recommended; at most one for single-select, one or more for multi-select)"
+          "desc": "Clarify (react), Grasp, or preflight: ask structured multiple-choice questions (options may be marked recommended; at most one for single-select, one or more for multi-select)"
         },
         "ask_form": {
           "signature": "ask_form(fields|forms, title?)",
@@ -67,7 +67,7 @@
         },
         "set_clarified_requirement": {
           "signature": "set_clarified_requirement(title, summary, background, goals, in_scope, out_of_scope, functional_requirements, assumptions, dependencies, constraints, …)",
-          "desc": "Clarify (react) node only: write a full requirements spec to clarified_requirement.json (no timeline / tech design)"
+          "desc": "Clarify (react) or Grasp: write a full requirements spec to clarified_requirement.json (no timeline / tech design)"
         },
         "get_clarified_requirement": {
           "signature": "get_clarified_requirement() -> clarified_requirement.json",
@@ -83,7 +83,7 @@
         },
         "set_research": {
           "signature": "set_research(summary, questions?, findings?, …)",
-          "desc": "Research node only: write structured research to research.json"
+          "desc": "Research or Grasp: write structured research to research.json"
         },
         "get_research": {
           "signature": "get_research() -> research.json",
@@ -127,7 +127,7 @@
         },
         "set_artifact_preview": {
           "signature": "set_artifact_preview(name)",
-          "desc": "react/approve: focus an existing artifact tab (platform auto-pins new/changed visible artifacts; use demoHtml for option-by-option compare)"
+          "desc": "react/Grasp/preflight: focus an existing artifact tab (platform auto-pins new/changed visible artifacts; use demoHtml for option-by-option compare)"
         },
         "node_complete": {
           "signature": "node_complete(status, summary?, error?, outputs?, checks?)",

@@ -1,9 +1,9 @@
 ---
-description: Approve 一站式开发前节点(澄清+计划)
+description: Grasp 一站式开发前节点(澄清+计划)
 alwaysApply: false
 ---
 
-# Approve 节点
+# Grasp 节点
 
 本节点是**交互式 ReAct 开发前节点**:与人协作完成需求澄清与实施计划。角色包(如 ClarifyAgent / PlanAgent)若声明「唯一交付」或禁止 `set_plan` / `set_clarified_requirement`,**以本平台规则为准**——本节点允许并要求同时写入澄清与计划。
 
@@ -82,7 +82,7 @@ demoHtml 运行于 Gates HtmlPreview 的 sandbox iframe(sandbox="allow-scripts a
 有助于拍板时再用;未写入不导致节点失败:
 
 - `set_research`:结构化调研结论(`summary` 必填;问题/发现至少一类非空)。
-- `set_proposals`:**仅当存在至少两个方向不同、取舍有意义的候选、且需要用户在其中择一时才调用**;写入 ≥2 个候选(可标一个 `recommended`)。方向已唯一、用户已拍板、或澄清/计划足以推进时**禁止调用**——尤其禁止写入仅 1 条且标推荐/已选定的「伪选择」凑产物。独立 proposal 节点仍须强制交付;本约束只约束 Approve 可选路径。与 `ask_question`「禁止为问而问」同理:无真实分歧则不生成选择任务。
+- `set_proposals`:**仅当存在至少两个方向不同、取舍有意义的候选、且需要用户在其中择一时才调用**;写入 ≥2 个候选(可标一个 `recommended`)。方向已唯一、用户已拍板、或澄清/计划足以推进时**禁止调用**——尤其禁止写入仅 1 条且标推荐/已选定的「伪选择」凑产物。独立 proposal 节点仍须强制交付;本约束只约束 Grasp 可选路径。与 `ask_question`「禁止为问而问」同理:无真实分歧则不生成选择任务。
 - `write_artifact` 写入 `page.html`(kind=`html`):单文件自包含 HTML,CSS/JS 全部内联,禁止外链与 Web Storage;写完后平台会自动钉 Tab,需要主动聚焦时再 `set_artifact_preview("page.html")`。
 - `set_preview(port?, url?, label?)`:登记可运行应用预览(沙箱端口或已部署 http(s) URL,恰好其一)。**不是完成条件**,成功后不会结束本节点(与 app_preview 不同)。沙箱内须 `setsid`/`nohup` 真后台、监听 `0.0.0.0:<port>`(不要 docker、不要只绑 127.0.0.1);已部署地址用 `set_preview(url=...)`。仍不要把本节点当成实现节点去改仓库。
 

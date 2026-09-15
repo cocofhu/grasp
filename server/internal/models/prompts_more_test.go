@@ -45,6 +45,7 @@ func TestAgentPromptsRemainingContracts(t *testing.T) {
 	}
 	gotApprove := (&AgentPrompts{}).ApproveContractText()
 	for _, want := range []string{
+		"Grasp 契约", "你是 Grasp 节点",
 		"两份强制交付", "set_clarified_requirement", "set_plan", "不是「唯一交付」", "用户先说明目标",
 		"至少两个方向不同", "禁止调用", "伪选择",
 		"set_preview", "不会", "结束本节点",
@@ -52,6 +53,11 @@ func TestAgentPromptsRemainingContracts(t *testing.T) {
 	} {
 		if !strings.Contains(gotApprove, want) {
 			t.Fatalf("DefaultApproveContract missing %q\n%s", want, gotApprove)
+		}
+	}
+	for _, forbid := range []string{"Approve 契约", "你是 Approve 节点", "Approve 节点"} {
+		if strings.Contains(gotApprove, forbid) {
+			t.Fatalf("DefaultApproveContract must not use display name %q\n%s", forbid, gotApprove)
 		}
 	}
 	if strings.Contains(gotApprove, "可跳过确认自行") || strings.Contains(gotApprove, "平台会结束本节点") {
