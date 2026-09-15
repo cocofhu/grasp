@@ -168,17 +168,15 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 		prompt = c.buildReactOpenPrompt(req, c.upstreamArtifacts(req)) + "\n\n## 用户消息\n" + strings.TrimRight(human, "\n")
 		chatImages = mergePromptImages(req.PromptImages, images)
 		if force {
-			prompt = models.DefaultApproveConfirmSuffix + "\n\n" + prompt
+			prompt = c.reactConfirmPrefix(req) + "\n\n" + prompt
 		}
 	} else if force {
 		// Human confirmed: reconcile products against the transcript before the
 		// node wraps up. Approve additionally names its two products and demands
-		// node_complete (phased contract).
-		confirm := models.DefaultReactConfirmSuffix
-		if req.NodeType == "approve" {
-			confirm = models.DefaultApproveConfirmSuffix
-		}
-		prompt = confirm + "\n\n" + strings.TrimRight(human, "\n")
+		// node_complete (phased contract). When both products are already in
+		// the store, the prefix also tells the agent a no-op rewrite is
+		// unnecessary.
+		prompt = c.reactConfirmPrefix(req) + "\n\n" + strings.TrimRight(human, "\n")
 	}
 	res, err := c.streamChat(chatCtx, sess.acp, req, prompt, chatImages)
 	if err != nil {
@@ -421,6 +419,36 @@ func (c *acpProvider) confirmSummaryTurn(ctx context.Context, req NodeReq, sess 
 			Msg("confirm summary missing or unparseable")
 	}
 	return agentSummary
+}
+
+// reactConfirmPrefix is the force-turn instruction prepended to the human
+// message. Approve names its two products and requires node_complete; when
+// those products are already settled it also appends the skip-rewrite note.
+func (c *acpProvider) reactConfirmPrefix(req NodeReq) string {
+	if req.NodeType != "approve" {
+		return models.DefaultReactConfirmSuffix
+	}
+	confirm := models.DefaultApproveConfirmSuffix
+	if c.approveProductsSettled(req) {
+		confirm += models.DefaultApproveConfirmProductsReadyNote
+	}
+	return confirm
+}
+
+// approveProductsSettled reports whether the store already holds both
+// Approve deliverables with no leftover open_questions. Missing or
+// unparseable artifacts return false so the confirm prompt stays at the
+// full "补齐或修正" wording.
+func (c *acpProvider) approveProductsSettled(req NodeReq) bool {
+	if c == nil || c.host == nil {
+		return false
+	}
+	cr, err := c.host.ReadArtifact(req.RunID, req.Token, mcp.ClarifiedRequirementArtifactName)
+	if err != nil || !json.Valid([]byte(cr)) || len(mcp.ClarifiedOpenQuestions(cr)) > 0 {
+		return false
+	}
+	pl, err := c.host.ReadArtifact(req.RunID, req.Token, mcp.PlanArtifactName)
+	return err == nil && json.Valid([]byte(pl))
 }
 
 // enforceOpenQuestionsGate implements the clarification gate: when the agent
