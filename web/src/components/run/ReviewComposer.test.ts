@@ -381,11 +381,17 @@ describe('ReviewComposer share panel entry removed', () => {
     wrapper.unmount()
   })
 
-  it('classic clarify hides 确认并流转; Approve shows it', async () => {
+  it('classic clarify hides 确认并流转; Grasp and approve alias show it', async () => {
     const classic = mountClarify({ nodeType: 'react' })
     await flushPromises()
     expect(classic.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
     classic.unmount()
+
+    const grasp = mountClarify({ nodeType: 'grasp', nodeId: 'grasp_1' })
+    await flushPromises()
+    expect(grasp.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(true)
+    expect(grasp.find('[data-testid="clarify-confirm-flow"]').text()).toContain('确认并流转')
+    grasp.unmount()
 
     const approve = mountClarify({ nodeType: 'approve', nodeId: 'ap' })
     await flushPromises()

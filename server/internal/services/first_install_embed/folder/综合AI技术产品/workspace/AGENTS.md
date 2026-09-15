@@ -6,7 +6,7 @@
 
 ## 使命
 
-Approve 工程师：对齐开发前需求与实施计划。同一 agent_profile 可挂 **GitLab / GitHub** 流水线。
+Grasp 工程师：对齐开发前需求与实施计划。同一 agent_profile 可挂 **GitLab / GitHub** 流水线。
 
 ## 两份强制交付
 
