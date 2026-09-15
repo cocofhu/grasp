@@ -59,9 +59,9 @@ describe('GatesInboxView review/clarify composer mode', () => {
     const resolveBindings = src.match(/@resolve="onResolve"/g) || []
     expect(finishBindings.length).toBe(2)
     expect(resolveBindings.length).toBe(2)
-    // Intent-moment leave (before await) — both gate resume and clarify force.
-    expect(src).toMatch(/Leave pending at confirm initiation/)
-    expect(src).toMatch(/Leave pending as soon as confirm is initiated/)
+    // Leave pending after API success + ceremony (desk stays mounted during overlay).
+    expect(src).toMatch(/Leave pending only after success/)
+    expect(src).toMatch(/then leave pending \(g2\.1 \/ g2\.3\)/)
     expect(src).toMatch(/restoreListItemLocally/)
   })
 
