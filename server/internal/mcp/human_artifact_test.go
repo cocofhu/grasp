@@ -133,3 +133,9 @@ func TestValidateHumanArtifactContent_proposalNeedsTitleOrSummary(t *testing.T) 
 		t.Fatal("expected title/summary required")
 	}
 }
+
+func TestValidateHumanArtifactContent_preflightMustBeConfirmed(t *testing.T) {
+	if _, err := ValidateHumanArtifactContent(PreflightArtifactName, `{"summary":"s","confirmed":false}`); err == nil {
+		t.Fatal("unconfirmed preflight should fail")
+	}
+}

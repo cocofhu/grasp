@@ -154,6 +154,23 @@ func TestFormatMCPAuditSummary_CommonTools(t *testing.T) {
 			want: "提出问题",
 		},
 		{
+			name: "ask_form",
+			tool: "ask_form",
+			args: map[string]any{"fields": []any{map[string]any{"name": "db_url", "label": "库地址"}}},
+			want: "提出表单",
+		},
+		{
+			name: "set_preflight",
+			tool: "set_preflight",
+			args: map[string]any{"summary": "secret env", "confirmed": true},
+			want: "写入环境确认 preflight.json",
+		},
+		{
+			name: "get_preflight",
+			tool: "get_preflight",
+			want: "读取环境确认",
+		},
+		{
 			name: "set_preview label",
 			tool: "set_preview",
 			args: map[string]any{"port": float64(8080), "label": "前端"},

@@ -190,6 +190,15 @@ func TestAgentPromptsNilSafeDefaults(t *testing.T) {
 	if p.ProposalContractText() != DefaultProposalContract {
 		t.Error("ProposalContractText nil")
 	}
+	if p.PreflightContractText() != DefaultPreflightContract {
+		t.Error("PreflightContractText nil")
+	}
+	if got := p.PreflightRetryText("need db"); !strings.Contains(got, "need db") {
+		t.Errorf("PreflightRetryText nil: %q", got)
+	}
+	if got := p.PreflightRetryText(""); !strings.Contains(got, "preflight.json 未就绪") {
+		t.Errorf("PreflightRetryText empty reason: %q", got)
+	}
 }
 
 func TestAgentPromptsContractOverrides(t *testing.T) {
@@ -202,6 +211,8 @@ func TestAgentPromptsContractOverrides(t *testing.T) {
 		TestContract:                 "TEST",
 		ReviewContract:               "REV",
 		ProposalContract:             "PROP",
+		PreflightContract:            "PRE",
+		PreflightRetry:               "PF {reason}",
 		ProducesRetry:                "RETRY {name}",
 		PlanIncompleteRetry:          "MISS {items}",
 	}
@@ -214,6 +225,8 @@ func TestAgentPromptsContractOverrides(t *testing.T) {
 		p.TestContractText():                    "TEST",
 		p.ReviewContractText():                  "REV",
 		p.ProposalContractText():                "PROP",
+		p.PreflightContractText():               "PRE",
+		p.PreflightRetryText("gap"):             "PF gap",
 		p.ProducesRetryFor("f.md"):              "RETRY f.md",
 		p.PlanIncompleteRetryFor([]string{"a"}): "MISS - a",
 	}

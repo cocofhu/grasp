@@ -19,6 +19,9 @@ func TestAgentPromptsRemainingContracts(t *testing.T) {
 	if nilP.ApproveContractText() == "" {
 		t.Fatal("nil approve contract")
 	}
+	if nilP.PreflightContractText() == "" || nilP.PreflightRetryText("x") == "" {
+		t.Fatal("nil preflight")
+	}
 
 	p := &AgentPrompts{
 		ClarifiedOpenQuestionsRetry: "Q:{items}",

@@ -49,8 +49,26 @@ func TestParsePreflight(t *testing.T) {
 	}); err == nil {
 		t.Fatal("bad verification should fail")
 	}
+	if _, err := ParsePreflight(map[string]any{
+		"summary": "s", "confirmed": true,
+		"fields": []any{map[string]any{"name": "a", "value": "b", "source": "nope"}},
+	}); err == nil {
+		t.Fatal("bad source should fail")
+	}
 	if _, err := ParsePreflight(map[string]any{"summary": "", "confirmed": true}); err == nil {
 		t.Fatal("empty summary should fail")
+	}
+	doc2, err := ParsePreflight(map[string]any{
+		"summary": "mixed", "confirmed": true, "unresolved": []any{"  "},
+		"fields": []any{map[string]any{
+			"name": "pw", "value": "s3cret!", "verification": "MIXED", "source": "CHAT", "notes": "attested",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc2.Fields[0].Verification != "mixed" || doc2.Fields[0].Source != "chat" || doc2.Unresolved != nil {
+		t.Fatalf("norm: %+v", doc2)
 	}
 }
 
@@ -74,6 +92,21 @@ func TestPreflightIncompleteAndRender(t *testing.T) {
 	}
 	if RenderPreflightMarkdown(`{bad`) != `{bad` {
 		t.Fatal("raw on parse error")
+	}
+	if PreflightIncomplete(`{"summary":"","confirmed":true}`) == "" {
+		t.Fatal("empty summary incomplete")
+	}
+	if PreflightIncomplete(`{"summary":"s","confirmed":true,"fields":[{"name":"","value":"v"}]}`) == "" {
+		t.Fatal("missing field name incomplete")
+	}
+	unconf := `{"summary":"wait","confirmed":false,"fields":[{"name":"k","value":"v","notes":"n","verification":"sandbox_probe","source":"choice"}],"unresolved":["need db"]}`
+	md2 := RenderPreflightMarkdown(unconf)
+	if !containsAll(md2, "未确认", "wait", "k", "v", "sandbox_probe", "choice", "n", "未决项") {
+		t.Fatalf("unconfirmed render: %s", md2)
+	}
+	plain := RenderPreflightMarkdown(`{"summary":"s","confirmed":true,"fields":[{"name":"only","value":"x"}]}`)
+	if !containsAll(plain, "only", "x", "已确认") {
+		t.Fatalf("plain render: %s", plain)
 	}
 }
 
