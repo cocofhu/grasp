@@ -59,9 +59,9 @@ describe('GatesInboxView review/clarify composer mode', () => {
     const resolveBindings = src.match(/@resolve="onResolve"/g) || []
     expect(finishBindings.length).toBe(2)
     expect(resolveBindings.length).toBe(2)
-    // Leave pending after API success + ceremony (desk stays mounted during overlay).
-    expect(src).toMatch(/Leave pending only after success/)
-    expect(src).toMatch(/then leave pending \(g2\.1 \/ g2\.3\)/)
+    // Leave pending on confirm click (plan g1.1 / g1.2); restore on wrap-up failure (g2.2).
+    expect(src).toMatch(/Leave pending at confirm click/)
+    expect(src).toMatch(/play overlay \+ leave pending before wrap-up HTTP/)
     expect(src).toMatch(/restoreListItemLocally/)
   })
 
