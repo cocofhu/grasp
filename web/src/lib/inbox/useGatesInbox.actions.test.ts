@@ -319,7 +319,7 @@ describe('useGatesInbox actions', () => {
     app.unmount()
   })
 
-  it('resolves gates optimistically and restores rejected submissions', async () => {
+  it('resolves gates after success ceremony and keeps desk on rejection (g2.2 / g3.1)', async () => {
     const { inbox, app } = await withInbox()
     const submitted = inbox.active.value!
     await inbox.onResolve('pass', { note: 'ok' })
@@ -332,10 +332,14 @@ describe('useGatesInbox actions', () => {
     inbox.active.value = submitted
     inbox.unmarkProcessed(submitted)
     mocks.resumeGate.mockRejectedValueOnce(new Error('validation failed'))
+    mocks.restoreItemLocally.mockClear()
+    mocks.removeItemLocally.mockClear()
     await inbox.onResolve('revise')
+    // Failure: desk stays; no optimistic remove/restore (g3.1).
     expect(inbox.listItems.value[0]?.runId).toBe('run-gate')
     expect(inbox.active.value?.runId).toBe('run-gate')
-    expect(mocks.restoreItemLocally).toHaveBeenCalledWith(submitted)
+    expect(mocks.restoreItemLocally).not.toHaveBeenCalled()
+    expect(mocks.removeItemLocally).not.toHaveBeenCalled()
 
     await inbox.onResolve('pass')
     inbox.active.value = clarifyItem()

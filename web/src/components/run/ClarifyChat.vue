@@ -79,6 +79,7 @@ defineExpose({
   discardLastQueued: chat.discardLastQueued,
   isSessionBusy: chat.isSessionBusy,
   reorderQueuedItems: chat.reorderQueuedItems,
+  playConfirmCeremony: chat.playConfirmCeremony,
 })
 
 const {
@@ -130,6 +131,9 @@ const {
   selectedDemoForInteractive,
   send,
   finishEarly,
+  playConfirmCeremony,
+  showDoneChrome,
+  confirmFlowPlaying,
   cancelReview,
   discardLastQueued,
   forceAuthoritativeIdle,
@@ -794,9 +798,16 @@ const {
     </button>
     </div>
 
-    <div v-if="done" class="border-t border-line p-3 text-center text-[12px] text-ok">
+    <div v-if="showDoneChrome" class="border-t border-line p-3 text-center text-[12px] text-ok">
       <Icon name="check" :size="13" class="-mt-0.5 mr-1 inline" />{{ translate('pages.clarify.done') }}
     </div>
+    <!-- Success ceremony in flight: keep composer mounted-off until hold→done (g2.3). -->
+    <div
+      v-else-if="done"
+      class="border-t border-line p-3 text-center text-[12px] text-txt3"
+      data-testid="clarify-confirm-ceremony"
+      aria-live="polite"
+    />
     <div v-else-if="!active && !coldSession" class="border-t border-line p-3 text-center text-[12px] text-txt3">
       <Icon name="close" :size="13" class="-mt-0.5 mr-1 inline" />{{ translate('pages.clarify.closed') }}
     </div>

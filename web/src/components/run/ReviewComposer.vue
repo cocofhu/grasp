@@ -128,6 +128,7 @@ const chatRef = ref<{
   cancelReview: () => void
   discardLastQueued: () => void
   isSessionBusy?: () => boolean
+  playConfirmCeremony?: () => Promise<void>
 } | null>(null)
 
 defineExpose({
@@ -159,6 +160,7 @@ defineExpose({
    * Hosts gate soft-refresh on this — must not be missing through the composer (g1.3).
    */
   isSessionBusy: () => !!chatRef.value?.isSessionBusy?.(),
+  playConfirmCeremony: () => chatRef.value?.playConfirmCeremony?.() ?? Promise.resolve(),
 })
 
 const { t } = useI18n()

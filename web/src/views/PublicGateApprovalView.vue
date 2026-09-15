@@ -39,6 +39,7 @@ import {
   type PublicGateQueueItem,
 } from '@/lib/inbox/gateShareLink'
 import { isClarifyInteractive } from '@/lib/shared/clarifyInteractive'
+import { playConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import type { AcpEvent, Artifact, ClarifyImage, ClarifyTurn, NodeType, ReactAnnotation, Run } from '@/lib/shared/types'
 
 const PUBLIC_SHARE_RUN_ID = 'public-share'
@@ -54,6 +55,7 @@ type PublicChatRef = {
   applyReviewFrame?: (frame: Record<string, unknown>) => boolean | void
   applyAcpEvents?: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
   isSessionBusy?: () => boolean
+  playConfirmCeremony?: () => Promise<void>
 }
 
 const POLL_MS = 2000
@@ -88,6 +90,7 @@ const draft = ref('')
 const attachments = ref<ClarifyImage[]>([])
 const annotations = ref<ReactAnnotation[]>([])
 const chatRef = ref<PublicChatRef | null>(null)
+const shellRef = ref<{ playConfirmCeremony?: () => Promise<void> } | null>(null)
 const replyInFlight = ref(false)
 const pendingReplyText = ref('')
 
@@ -814,11 +817,13 @@ function markLinkInvalid(status?: string) {
 
 async function applyDecideResult(kind: 'confirm' | 'reject', res: PublicGateDecideResult) {
   if (res.status === 'confirmed' || (res.alreadyProcessed && kind === 'confirm' && isReview.value)) {
+    await playConfirmFlowCeremony(shellRef.value ?? chatRef.value)
     doneKind.value = 'confirmed'
     clearHash()
     return
   }
   if (res.status === 'approved' || (res.alreadyProcessed && kind === 'confirm' && !isReview.value)) {
+    await playConfirmFlowCeremony(shellRef.value ?? chatRef.value)
     doneKind.value = 'approved'
     clearHash()
     return
@@ -1256,6 +1261,7 @@ defineExpose({ loadPreview, loadUpstreamFull, openUpstreamModal })
 
     <div v-else class="flex min-h-0 flex-1 flex-col" data-testid="public-gate-workbench">
       <ReviewShell
+        ref="shellRef"
         class="min-h-0 flex-1"
         :mobile="isMobile"
         :sidebar-width="400"

@@ -136,6 +136,7 @@ const {
         :sidebar-width="400"
         :drawer-height="320"
         :storage-key="REVIEW_SHELL_WIDTH_KEY_APPROVAL"
+        :host-confirm-flow="false"
       >
         <template #stage>
           <div

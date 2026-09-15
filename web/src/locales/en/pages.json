@@ -2837,6 +2837,8 @@
       "confirmFlowTitle": "Accept the current persisted product and continue (no Agent)",
       "confirmFlowHint": "Accept the current persisted product and continue (no Agent)",
       "confirmFlowPrompt": "Accept the current persisted product and continue (no Agent)",
+      "confirmFlowOverlayTitle": "Confirmed & continued",
+      "confirmFlowOverlaySub": "Continuing to the next node",
       "validating": "Validating…",
       "demoEnlarge": "Enlarge",
       "demoSelected": "Selected",

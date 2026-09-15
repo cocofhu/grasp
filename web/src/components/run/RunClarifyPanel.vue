@@ -65,12 +65,17 @@ const annotations = defineModel<ReactAnnotation[]>('annotations', { default: () 
 const { t } = useI18n()
 const toast = useToast()
 
+const reviewShellRef = ref<{
+  playConfirmCeremony?: () => Promise<void>
+} | null>(null)
+
 const reviewChatRef = ref<{
   applyReviewFrame?: (frame: any) => boolean | void
   applyAcpEvents?: (events: any[] | undefined, nodeId?: string) => boolean | void
   discardLastQueued?: () => void
   isSessionBusy?: () => boolean
   isChatReady?: () => boolean
+  playConfirmCeremony?: () => Promise<void>
 } | null>(null)
 
 const artifacts = computed(() => props.run?.artifacts || [])
@@ -97,6 +102,14 @@ defineExpose({
   discardLastQueued: () => reviewChatRef.value?.discardLastQueued?.(),
   isSessionBusy: () => !!reviewChatRef.value?.isSessionBusy?.(),
   isChatReady: () => !!reviewChatRef.value?.isChatReady?.(),
+  playConfirmCeremony: async () => {
+    // Prefer chat so confirmFlowPlayedForDone is set (avoids double-play on done).
+    if (reviewChatRef.value?.playConfirmCeremony) {
+      await reviewChatRef.value.playConfirmCeremony()
+      return
+    }
+    await reviewShellRef.value?.playConfirmCeremony?.()
+  },
 })
 </script>
 
@@ -123,6 +136,7 @@ defineExpose({
   </div>
   <ReviewShell
     v-else
+    ref="reviewShellRef"
     class="h-full min-h-0"
     :mobile="mobile"
     :sidebar-width="REVIEW_SIDEBAR"

@@ -32,6 +32,7 @@ import { pickDefaultTimelineNodeId } from '@/lib/run/runStats'
 import { useRunDetailLiveLog } from '@/lib/run/useRunDetailLiveLog'
 import { useRunDetailWs } from '@/lib/run/useRunDetailWs'
 import { useRunDetailSelection } from '@/lib/run/useRunDetailSelection'
+import { playConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import type { AcpEvent, NodeRun, NodeRunStatus, Run, Workflow } from '@/lib/shared/types'
 import { isClearlyInvalidRunRouteId } from '@/lib/pm/pmCitationShape'
 import type { RunPriority } from '@/components/ui/PrioritySegmented.vue'
@@ -107,11 +108,13 @@ const reviewChatRef = ref<{
   discardLastQueued?: () => void
   isSessionBusy?: () => boolean
   isChatReady?: () => boolean
+  playConfirmCeremony?: () => Promise<void>
 } | null>(null)
 
 const gateApprovalRef = ref<{
   applyReviewFrame?: (frame: any) => void
   applyAcpEvents?: (events: AcpEvent[] | undefined) => boolean | void
+  playConfirmCeremony?: () => Promise<void>
 } | null>(null)
 
 const ACTIVE = ['queued', 'running', 'waiting_human']
@@ -573,9 +576,13 @@ async function onGateResolve(action: string, form: Record<string, any> = {}) {
   if (!run.value.gate || gateSubmitting.value) return
   gateSubmitting.value = true
   gateError.value = null
+  const positive = action === 'pass' || action === 'approve'
   try {
     await api.resumeGate(runId.value, run.value.gate.nodeId, action, form)
-    const positive = action === 'pass' || action === 'approve'
+    // Play success ceremony before refresh unmounts the desk (g2.2 / g2.3).
+    if (positive) {
+      await playConfirmFlowCeremony(gateApprovalRef.value)
+    }
     toast.success(positive ? t('pages.gateApproval.approveSuccess') : t('pages.gateApproval.rejectSuccess'))
   } catch (e: any) {
     // Surface the backend rejection (e.g. a required form field, or the run
@@ -604,12 +611,14 @@ async function onClarifySend(
       ? mergeStagedAppPreviewPick(annotations)
       : annotations
   if (anns !== annotations) lastStagedAppPreviewPick.value = null
+  let forceOk = false
   try {
     if (retryLast) {
       await api.reactReply(runId.value, nodeId, text, images, force, anns, true)
     } else {
       await api.reactReply(runId.value, nodeId, text, images, force, anns)
     }
+    forceOk = force
   } catch (e: any) {
     // Re-sync below so the UI reflects the real state (e.g. the dialogue has
     // already completed) instead of leaving the input enabled to re-click.
@@ -623,6 +632,8 @@ async function onClarifySend(
   // Force finish still needs a snapshot refresh.
   if (force) {
     lastStagedAppPreviewPick.value = null
+    // Success ceremony before loadRun flips done (g2.1 / g2.3); failure keeps error bar only (g3.1).
+    if (forceOk) await playConfirmFlowCeremony(reviewChatRef.value)
     await loadRun(false)
   }
 }

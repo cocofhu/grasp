@@ -46,6 +46,7 @@ import {
 } from '@/lib/inbox/composerAutoGrow'
 import type { Ref } from 'vue'
 import { isGrasp } from '@/lib/shared/clarifyInteractive'
+import { useConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 
 /** Element-level clone so queue rows never share annotation object refs with composer. */
 function cloneReactAnnotations(anns?: ReactAnnotation[] | null): ReactAnnotation[] {
@@ -130,6 +131,21 @@ const persistedTurns = computed(() => props.turns ?? [])
 const thinking = ref(false)
 /** Review confirm mid-state: re-validating product (not Agent thinking). */
 const validating = ref(false)
+/** Success overlay host from ReviewShell (g2.1); optional in unit mounts. */
+const confirmFlow = useConfirmFlowCeremony()
+/** True after we ran (or parent ran) the success ceremony for the current done cycle. */
+let confirmFlowPlayedForDone = false
+const confirmFlowPlaying = computed(() => !!confirmFlow?.playing.value)
+/** Hold done footer until check draw finishes (g2.3). */
+const showDoneChrome = computed(
+  () => !!props.done && !confirmFlowPlaying.value,
+)
+
+async function playConfirmCeremony(): Promise<void> {
+  confirmFlowPlayedForDone = true
+  if (!confirmFlow) return
+  await confirmFlow.play()
+}
 // SandboxChat-aligned pending-send queue (clarify + review). Items live ONLY in
 // the bottom panel until turn_begin materializes transcript bubbles.
 const queued = ref<QueueItem[]>([])
@@ -669,6 +685,14 @@ watch(
     if (d) {
       thinking.value = false
       validating.value = false
+      // Success path: play overlay once, then reveal done chrome (g2.1 / g2.3).
+      if (!confirmFlowPlayedForDone && confirmFlow && !confirmFlow.playing.value) {
+        confirmFlowPlayedForDone = true
+        void confirmFlow.play()
+      }
+    } else {
+      confirmFlowPlayedForDone = false
+      confirmFlow?.reset()
     }
   },
 )
@@ -1662,6 +1686,9 @@ function retryLastFailed() {
     selectedDemoForInteractive,
     send,
     finishEarly,
+    playConfirmCeremony,
+    showDoneChrome,
+    confirmFlowPlaying,
     cancelReview,
     discardLastQueued,
     forceAuthoritativeIdle,

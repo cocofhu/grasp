@@ -14,6 +14,8 @@ import GateApprovalTitle from './gateApproval/GateApprovalTitle.vue'
 import GateApprovalMobileFill from './gateApproval/GateApprovalMobileFill.vue'
 import GateApprovalContentFit from './gateApproval/GateApprovalContentFit.vue'
 import GateApprovalDesktopBody from './gateApproval/GateApprovalDesktopBody.vue'
+import ConfirmFlowOverlay from './ConfirmFlowOverlay.vue'
+import { provideConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import { useGateApproval } from '@/lib/inbox/useGateApproval'
 
 const props = defineProps<{
@@ -31,6 +33,12 @@ const emit = defineEmits<{
   (e: 'react-revised'): void
   (e: 'open-share'): void
 }>()
+
+/** One overlay host for all gate layouts (desktop / content-fit / mobile). */
+const confirmFlow = provideConfirmFlowCeremony()
+const confirmFlowPhase = confirmFlow.phase
+const confirmFlowReduce = confirmFlow.reduceMotion
+const confirmFlowToken = confirmFlow.playToken
 
 const {
   useMobileFillRemaining,
@@ -59,15 +67,23 @@ defineExpose({
   reactText,
   reactQueued,
   editReactQueuedItem,
+  playConfirmCeremony: () => confirmFlow.play(),
 })
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col">
+  <div class="relative flex h-full min-h-0 flex-col overflow-hidden">
     <GateApprovalTitle v-if="!compact" />
-    <GateApprovalMobileFill v-if="useMobileFillRemaining" />
-    <GateApprovalContentFit v-else-if="useReviewShellLayout" />
-    <GateApprovalDesktopBody v-else />
+    <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      <GateApprovalMobileFill v-if="useMobileFillRemaining" />
+      <GateApprovalContentFit v-else-if="useReviewShellLayout" />
+      <GateApprovalDesktopBody v-else />
+      <ConfirmFlowOverlay
+        :phase="confirmFlowPhase"
+        :reduce-motion="confirmFlowReduce"
+        :play-token="confirmFlowToken"
+      />
+    </div>
     <SelectionAddToChat
       v-if="selectionQuoteEnabled"
       :enabled="selectionQuoteEnabled"

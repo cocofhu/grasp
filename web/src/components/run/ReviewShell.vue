@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import ConfirmFlowOverlay from '@/components/run/ConfirmFlowOverlay.vue'
+import { provideConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 
 /**
  * Shared review layout: annotatable product stage + review sidebar.
@@ -10,6 +12,7 @@ import { useI18n } from 'vue-i18n'
  * optionally persisted per storageKey.
  * Narrow: vertical with a bottom drawer (draggable height); no horizontal sash.
  * Mobile drawer clamps to [handle hit min, shell height] so it can fill top/bottom.
+ * Hosts ConfirmFlowOverlay over stage+sidebar only (not app chrome / node rail).
  */
 
 const SIDEBAR_MIN = 240
@@ -32,16 +35,32 @@ const props = withDefaults(
     drawerHeight?: number
     /** localStorage key for scene-isolated width persistence. */
     storageKey?: string
+    /**
+     * When false, parent hosts ConfirmFlowOverlay (GateApproval).
+     * Default true for clarify/review shells.
+     */
+    hostConfirmFlow?: boolean
   }>(),
   {
     mobile: false,
     sidebarWidth: 400,
     drawerHeight: 280,
     storageKey: '',
+    hostConfirmFlow: true,
   },
 )
 
 const { t } = useI18n()
+
+const confirmFlow = props.hostConfirmFlow ? provideConfirmFlowCeremony() : null
+const confirmFlowPhase = confirmFlow?.phase
+const confirmFlowReduce = confirmFlow?.reduceMotion
+const confirmFlowToken = confirmFlow?.playToken
+
+defineExpose({
+  playConfirmCeremony: () => confirmFlow?.play() ?? Promise.resolve(),
+  confirmFlowCeremony: confirmFlow,
+})
 
 const shellRef = ref<HTMLElement | null>(null)
 const sashDragging = ref(false)
@@ -284,7 +303,7 @@ onBeforeUnmount(() => {
 <template>
   <div
     ref="shellRef"
-    class="flex h-full min-h-0"
+    class="relative flex h-full min-h-0 overflow-hidden"
     :class="[
       mobile ? 'flex-col' : 'flex-row',
       sashDragging || drawerDragging ? 'select-none' : '',
@@ -355,6 +374,13 @@ onBeforeUnmount(() => {
         <slot name="sidebar" />
       </div>
     </aside>
+
+    <ConfirmFlowOverlay
+      v-if="hostConfirmFlow && confirmFlowPhase"
+      :phase="confirmFlowPhase"
+      :reduce-motion="confirmFlowReduce"
+      :play-token="confirmFlowToken"
+    />
   </div>
 </template>
 

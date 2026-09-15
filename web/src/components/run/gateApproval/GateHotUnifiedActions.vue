@@ -100,7 +100,11 @@ const sendDisabled = computed(
         @click="s.onComposerPass"
       >
         <Icon name="check" :size="14" />
-        {{ t('pages.clarify.confirmFlow') }}
+        {{
+          s.actionSubmitting && s.resolved === s.passAction?.id
+            ? t('pages.clarify.validating')
+            : t('pages.clarify.confirmFlow')
+        }}
       </button>
     </template>
   </ComposerShell>

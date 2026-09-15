@@ -2837,6 +2837,8 @@
       "confirmFlowTitle": "接受当前已落盘产物并流转（不触发 Agent）",
       "confirmFlowHint": "接受当前已落盘产物并流转（不触发 Agent）",
       "confirmFlowPrompt": "接受当前已落盘产物并流转（不触发 Agent）",
+      "confirmFlowOverlayTitle": "已确认并流转",
+      "confirmFlowOverlaySub": "进入下一节点",
       "validating": "校验中…",
       "demoEnlarge": "放大",
       "demoSelected": "已选",
