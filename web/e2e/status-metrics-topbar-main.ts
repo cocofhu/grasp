@@ -103,6 +103,13 @@ async function bootstrap() {
             h('div', { 'data-testid': 'token-analytics-page' }, 'TokenAnalyticsView stub'),
         },
       },
+      {
+        path: '/runs',
+        name: 'runs',
+        component: {
+          render: () => h('div', { 'data-testid': 'run-list-page' }, 'RunListView stub'),
+        },
+      },
     ],
   })
   await router.push('/')

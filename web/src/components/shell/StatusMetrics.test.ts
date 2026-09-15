@@ -39,6 +39,11 @@ function makeRouter() {
         name: 'stats',
         component: { template: '<div data-testid="token-analytics-page" />' },
       },
+      {
+        path: '/runs',
+        name: 'runs',
+        component: { template: '<div data-testid="run-list-page" />' },
+      },
     ],
   })
 }
@@ -255,7 +260,8 @@ describe('StatusMetrics', () => {
     const tokenZone = w.find('[data-testid="status-metrics-compact-token"]')
     const runZone = w.find('[data-testid="status-metrics-compact-run"]')
     expect(tokenZone.attributes('aria-label')).toMatch(/进入统计/)
-    expect(runZone.attributes('aria-label')).toMatch(/进入统计/)
+    expect(runZone.attributes('aria-label')).toMatch(/进入运行/)
+    expect(runZone.attributes('aria-label')).not.toMatch(/进入统计/)
 
     vi.spyOn(tokenZone.element as HTMLElement, 'getBoundingClientRect').mockReturnValue({
       top: 320,
@@ -307,7 +313,9 @@ describe('StatusMetrics', () => {
 
     await runZone.trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.name).toBe('stats')
+    // plan g1.1 / g2.1: compact-run → name=runs
+    expect(router.currentRoute.value.name).toBe('runs')
+    expect(router.currentRoute.value.path).toBe('/runs')
     const afterClick = document.body.querySelector(
       '[data-testid="status-metrics-compact-tip"]',
     ) as HTMLElement | null
@@ -318,7 +326,7 @@ describe('StatusMetrics', () => {
     document.body.innerHTML = ''
   })
 
-  it('click compact zone navigates to stats and closes teleport tip (plan g1.3)', async () => {
+  it('click compact token navigates to stats; run zone to runs (plan g1.1/g1.2/g1.3)', async () => {
     const { w, router } = await mountMetrics({ variant: 'compact' })
     await flushPromises()
     const tokenZone = w.find('[data-testid="status-metrics-compact-token"]')
@@ -331,10 +339,18 @@ describe('StatusMetrics', () => {
     expect(router.currentRoute.value.path).toBe('/stats')
     const tip = document.body.querySelector('[data-testid="status-metrics-compact-tip"]') as HTMLElement | null
     expect(tip == null || (tip as HTMLElement).style.display === 'none' || getComputedStyle(tip).display === 'none').toBe(true)
+
+    await router.push('/')
+    await flushPromises()
+    const runZone = w.find('[data-testid="status-metrics-compact-run"]')
+    await runZone.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('runs')
+    expect(router.currentRoute.value.path).toBe('/runs')
     w.unmount()
   })
 
-  it('Enter/Space on compact zones navigates to stats (plan g1.1)', async () => {
+  it('Enter/Space: token→stats, run→runs (plan g1.1/g2.1)', async () => {
     const { w, router } = await mountMetrics({ variant: 'compact' })
     await flushPromises()
     await w.find('[data-testid="status-metrics-compact-token"]').trigger('keydown', { key: 'Enter' })
@@ -346,18 +362,14 @@ describe('StatusMetrics', () => {
     await flushPromises()
     await again.w.find('[data-testid="status-metrics-compact-run"]').trigger('keydown', { key: ' ' })
     await flushPromises()
-    expect(again.router.currentRoute.value.name).toBe('stats')
+    expect(again.router.currentRoute.value.name).toBe('runs')
+    expect(again.router.currentRoute.value.path).toBe('/runs')
     again.w.unmount()
   })
 
-  it('desktop four items navigate to stats instead of pinning tip (plan g2.1)', async () => {
-    const ids = [
-      'status-metrics-tokens',
-      'status-metrics-today',
-      'status-metrics-running',
-      'status-metrics-queued',
-    ] as const
-    for (const id of ids) {
+  it('desktop: token/today→stats; running/queued→runs (plan g1.1/g1.2/g2.1)', async () => {
+    const statsIds = ['status-metrics-tokens', 'status-metrics-today'] as const
+    for (const id of statsIds) {
       const { w, router } = await mountMetrics()
       await flushPromises()
       expect(w.find(`[data-testid="${id}"]`).attributes('aria-label')).toMatch(/进入统计/)
@@ -367,9 +379,23 @@ describe('StatusMetrics', () => {
       expect(w.find(`[data-testid="${id}"]`).classes()).not.toContain('tip-open')
       w.unmount()
     }
+    const runIds = ['status-metrics-running', 'status-metrics-queued'] as const
+    for (const id of runIds) {
+      const { w, router } = await mountMetrics()
+      await flushPromises()
+      const aria = w.find(`[data-testid="${id}"]`).attributes('aria-label') ?? ''
+      expect(aria).toMatch(/进入运行/)
+      expect(aria).not.toMatch(/进入统计/)
+      await w.find(`[data-testid="${id}"]`).trigger('click')
+      await flushPromises()
+      expect(router.currentRoute.value.name).toBe('runs')
+      expect(router.currentRoute.value.path).toBe('/runs')
+      expect(w.find(`[data-testid="${id}"]`).classes()).not.toContain('tip-open')
+      w.unmount()
+    }
   })
 
-  it('stays on stats when already there (plan g1.1)', async () => {
+  it('stays on stats when already there for token click (plan g1.2)', async () => {
     const { w, router } = await mountMetrics()
     await router.push({ name: 'stats' })
     await flushPromises()
@@ -377,6 +403,28 @@ describe('StatusMetrics', () => {
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('stats')
     expect(router.currentRoute.value.path).toBe('/stats')
+    w.unmount()
+  })
+
+  it('from stats, run zone navigates to runs (edge)', async () => {
+    const { w, router } = await mountMetrics()
+    await router.push({ name: 'stats' })
+    await flushPromises()
+    await w.find('[data-testid="status-metrics-running"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('runs')
+    expect(router.currentRoute.value.path).toBe('/runs')
+    w.unmount()
+  })
+
+  it('stays on runs when already there for run click (edge)', async () => {
+    const { w, router } = await mountMetrics()
+    await router.push({ name: 'runs' })
+    await flushPromises()
+    await w.find('[data-testid="status-metrics-queued"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('runs')
+    expect(router.currentRoute.value.path).toBe('/runs')
     w.unmount()
   })
 

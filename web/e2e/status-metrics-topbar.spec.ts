@@ -60,8 +60,8 @@ test.describe('StatusMetrics topbar E2E', () => {
     await expect(todayTip).not.toContainText('/5m')
 
     await page.getByTestId('status-metrics-running').click()
-    await expect(page).toHaveURL(/#\/stats/)
-    await expect(page.getByTestId('token-analytics-page')).toBeVisible()
+    await expect(page).toHaveURL(/#\/runs/)
+    await expect(page.getByTestId('run-list-page')).toBeVisible()
 
     const shot = path.join(testInfo.outputDir, 'desktop-five-metrics.png')
     await page.locator('header').screenshot({ path: shot })
@@ -105,9 +105,10 @@ test.describe('StatusMetrics topbar E2E', () => {
     await expect(runTip).not.toContainText('累计 Token')
     await expect(runTip).not.toContainText('今日 Token')
 
+    // plan g2.2: compact-run → #/runs
     await runZone.click()
-    await expect(page).toHaveURL(/#\/stats/)
-    await expect(page.getByTestId('token-analytics-page')).toBeVisible()
+    await expect(page).toHaveURL(/#\/runs/)
+    await expect(page.getByTestId('run-list-page')).toBeVisible()
     await expect(runTip).toBeHidden()
 
     await page.screenshot({
@@ -130,7 +131,7 @@ test.describe('StatusMetrics topbar E2E', () => {
     })
   })
 
-  test('metrics click navigates to stats (plan g2.2)', async ({ page }) => {
+  test('token metrics click navigates to stats; run metrics to runs (plan g2.2)', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 })
     await page.goto('/status-metrics-topbar.html')
     await expect(page.getByTestId('status-metrics')).toBeVisible({ timeout: 15_000 })
@@ -140,5 +141,12 @@ test.describe('StatusMetrics topbar E2E', () => {
     await page.getByTestId('status-metrics-tokens').click()
     await expect(page).toHaveURL(/#\/stats/)
     await expect(page.getByTestId('token-analytics-page')).toBeVisible()
+
+    await page.getByTestId('status-metrics-queued').click()
+    await expect(page).toHaveURL(/#\/runs/)
+    await expect(page.getByTestId('run-list-page')).toBeVisible()
+    await page.getByTestId('status-metrics-running').click()
+    await expect(page).toHaveURL(/#\/runs/)
+    await expect(page.getByTestId('run-list-page')).toBeVisible()
   })
 })

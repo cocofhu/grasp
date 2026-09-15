@@ -96,12 +96,16 @@ function statsAria(label: string): string {
   return `${label} · ${t('shell.statusMetrics.openStats')}`
 }
 
+function runsAria(label: string): string {
+  return `${label} · ${t('shell.statusMetrics.openRuns')}`
+}
+
 function tokenZoneAria(): string {
   return `${t('shell.statusMetrics.tokens')}: ${fmtFull(cumulative.value)} · ${t('shell.statusMetrics.today')}: ${fmtFull(today.value)} · ${t('shell.statusMetrics.openStats')}`
 }
 
 function runZoneAria(): string {
-  return `${t('shell.statusMetrics.running')}: ${running.value} · ${t('shell.statusMetrics.queued')}: ${queued.value} · ${t('shell.statusMetrics.openStats')}`
+  return `${t('shell.statusMetrics.running')}: ${running.value} · ${t('shell.statusMetrics.queued')}: ${queued.value} · ${t('shell.statusMetrics.openRuns')}`
 }
 
 function goToStats() {
@@ -110,10 +114,18 @@ function goToStats() {
   void router.push({ name: 'stats' })
 }
 
-function onActivateKey(ev: KeyboardEvent) {
+/** plan g1.1: run-zone hotspots navigate to name=runs (not stats). */
+function goToRuns() {
+  suppressCompactTip.value = true
+  activeCompactZone.value = null
+  void router.push({ name: 'runs' })
+}
+
+function onActivateKey(ev: KeyboardEvent, dest: 'stats' | 'runs' = 'stats') {
   if (ev.key !== 'Enter' && ev.key !== ' ') return
   ev.preventDefault()
-  goToStats()
+  if (dest === 'runs') goToRuns()
+  else goToStats()
 }
 
 function onCompactZoneEnter(zone: CompactZone) {
@@ -200,9 +212,9 @@ function onCompactStripFocusOut(ev: FocusEvent) {
         type="button"
         class="sm-item relative inline-flex items-center gap-1.5 border-0 bg-transparent px-1.5 py-1 text-inherit hover:bg-elevated hover:text-txt focus-visible:bg-elevated focus-visible:text-txt focus-visible:outline-none"
         data-testid="status-metrics-running"
-        :aria-label="statsAria(t('shell.statusMetrics.running'))"
-        @click="goToStats"
-        @keydown="onActivateKey"
+        :aria-label="runsAria(t('shell.statusMetrics.running'))"
+        @click="goToRuns"
+        @keydown="onActivateKey($event, 'runs')"
       >
         <svg class="sm-ico block h-3.5 w-3.5 shrink-0 text-txt3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="8.2" />
@@ -226,9 +238,9 @@ function onCompactStripFocusOut(ev: FocusEvent) {
         type="button"
         class="sm-item relative inline-flex items-center gap-1.5 border-0 bg-transparent px-1.5 py-1 text-inherit hover:bg-elevated hover:text-txt focus-visible:bg-elevated focus-visible:text-txt focus-visible:outline-none"
         data-testid="status-metrics-queued"
-        :aria-label="statsAria(t('shell.statusMetrics.queued'))"
-        @click="goToStats"
-        @keydown="onActivateKey"
+        :aria-label="runsAria(t('shell.statusMetrics.queued'))"
+        @click="goToRuns"
+        @keydown="onActivateKey($event, 'runs')"
       >
         <svg class="sm-ico block h-3.5 w-3.5 shrink-0 text-txt3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M4 7.2h16M4 12h11.5M4 16.8h7" />
@@ -304,8 +316,8 @@ function onCompactStripFocusOut(ev: FocusEvent) {
         class="sm-item sm-zone relative inline-flex flex-1 items-center gap-1.5 rounded-md border-0 bg-transparent px-1.5 py-1 text-inherit hover:bg-surface hover:text-txt focus-visible:bg-surface focus-visible:text-txt focus-visible:outline-none"
         data-testid="status-metrics-compact-run"
         :aria-label="runZoneAria()"
-        @click="goToStats"
-        @keydown="onActivateKey"
+        @click="goToRuns"
+        @keydown="onActivateKey($event, 'runs')"
         @mouseenter="onCompactZoneEnter('run')"
         @focus="onCompactZoneEnter('run')"
       >
