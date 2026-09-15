@@ -5,6 +5,7 @@ import { flushPromises } from '@vue/test-utils'
 
 const mocks = vi.hoisted(() => ({
   createAgent: vi.fn(),
+  listAgentTeamTemplates: vi.fn(async () => ({ items: [] })),
   inheritedEnv: [{ k: 'GIT_REPOS', v: 'repo|https://example.test/repo.git' }],
 }))
 
@@ -13,7 +14,10 @@ vi.mock('vue-i18n', () => ({
 }))
 
 vi.mock('@/lib/api/api', () => ({
-  api: { createAgent: mocks.createAgent },
+  api: {
+    createAgent: mocks.createAgent,
+    listAgentTeamTemplates: () => mocks.listAgentTeamTemplates(),
+  },
 }))
 
 vi.mock('@/lib/agent/useInheritedGitEnv', () => ({

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "acpBackend": "cursor",
+  "mcp": [
+    {
+      "name": "artifact-store",
+      "url": "${GRASP_ARTIFACT_URL}",
+      "headers": {
+        "Authorization": "Bearer ${GRASP_ARTIFACT_TOKEN}"
+      }
+    }
+  ],
+  "name": "PreflightAgent",
+  "env": {
+    "GIT_REPOS": "${vars.repos}"
+  }
+}

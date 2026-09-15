@@ -72,6 +72,11 @@ export type WizardDraft = {
   step: number
   name: string
   description: string
+  /**
+   * Role pack id for POST /agents templateId.
+   * Empty / "blank" = generic agent (default rule). Selection never rewrites name (plan g1.4).
+   */
+  templateId: string
   /** apiKey (OpenCode BYOK) or cli (coding-CLI vendor). */
   startPath: StartPath
   acpBackend: WizardBackendId
@@ -140,6 +145,7 @@ export function freshDraft(): WizardDraft {
     step: 0,
     name: '',
     description: '',
+    templateId: 'blank',
     startPath: 'apiKey',
     acpBackend: APIKEY_BACKEND,
     cliBackend: CLI_BACKEND_DEFAULT,
@@ -156,6 +162,12 @@ export function freshDraft(): WizardDraft {
     prompts: emptyPrompts(),
     skipped: {},
   }
+}
+
+/** True when a role pack template is selected (not blank). */
+export function hasRoleTemplate(draft: WizardDraft): boolean {
+  const id = (draft.templateId || 'blank').trim()
+  return id !== '' && id !== 'blank'
 }
 
 export function configRootFor(backend: WizardBackendId): string {
@@ -286,6 +298,16 @@ export function stripAuthKeysFromEnv(env: WizardKV[], backend: WizardBackendId):
 
 function collectFiles(draft: WizardDraft): AgentFile[] {
   const files: AgentFile[] = []
+  // Role template: backend copies embed workspace; only attach custom auth config if any.
+  if (hasRoleTemplate(draft)) {
+    if (draft.authMode === 'customConfig') {
+      const parsed = parseCustomConfigJson(draft.customConfigContent)
+      if (parsed.ok && parsed.normalized) {
+        files.push({ path: agentConfigRelPath(draft.acpBackend), content: parsed.normalized })
+      }
+    }
+    return files
+  }
   const name = draft.name.trim() || 'agent'
   const ruleContent =
     draft.rulesEdited && draft.rulesContent.trim()
@@ -319,8 +341,10 @@ function collectFiles(draft: WizardDraft): AgentFile[] {
 }
 
 /** Assemble POST /agents payload. Skip Rules still writes default rule; Skip Prompts omits prompts.
- * Token-class keys are always stripped from env (write them in Project shared Agent config). */
-export function assembleCreatePayload(draft: WizardDraft): Agent {
+ * Token-class keys are always stripped from env (write them in Project shared Agent config).
+ * When templateId is set (not blank), payload includes templateId and omits default identity files
+ * so the server can copy the embed pack (plan g2.1). */
+export function assembleCreatePayload(draft: WizardDraft): Agent & { templateId?: string } {
   const name = normalizeAgentName(draft.name)
   const prompts = draftPromptsToApi(draft.prompts, !!draft.skipped.prompts)
   const envDraft: WizardDraft = {
@@ -332,11 +356,14 @@ export function assembleCreatePayload(draft: WizardDraft): Agent {
     ),
   }
   const env = stripTokenKeysFromRecord(normalizeWizardRegions(envDraft))
+  const useTemplate = hasRoleTemplate(draft)
+  const files = collectFiles(draft)
   return {
     name,
     acpBackend: draft.acpBackend || APIKEY_BACKEND,
     ...(draft.gitCredentialType ? { gitCredentialType: draft.gitCredentialType } : {}),
-    files: collectFiles(draft),
+    ...(useTemplate ? { templateId: draft.templateId.trim() } : {}),
+    files,
     mcp: draft.mcp.filter((m) => m.name.trim()).map(draftMcpToApi),
     env,
     layout: {
@@ -389,8 +416,15 @@ export function buildReviewSummary(draft: WizardDraft): ReviewSummaryItem[] {
   const authConfigured = authViaKey || authViaConfig
   const apiKeySkipped = !!draft.skipped.apiKey || !authConfigured
 
+  const templateDetail = hasRoleTemplate(draft) ? draft.templateId.trim() : 'blank'
   const items: ReviewSummaryItem[] = [
     { key: 'name', kind: 'ok', labelKey: 'pages.agentStudio.wizard.review.name', detail: name },
+    {
+      key: 'template',
+      kind: 'ok',
+      labelKey: 'pages.agentStudio.wizard.review.template',
+      detail: templateDetail,
+    },
     {
       key: 'acp',
       kind: 'ok',

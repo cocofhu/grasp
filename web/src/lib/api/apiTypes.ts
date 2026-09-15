@@ -113,6 +113,8 @@ export interface Agent {
   name: string
   /** Single home project; empty/undefined = unbound (artifact-store only). */
   projectId?: string
+  /** Optional embedded role pack id (e.g. test / preflight); omit for blank. */
+  templateId?: string
   acpBackend?: 'cursor' | 'claude_code' | 'codebuddy' | 'trae' | 'opencode'
   gitCredentialType?: 'github_https' | 'gitlab_https' | 'ssh'
   /** known_hosts literal (may contain newlines); no ${vars.*}. */

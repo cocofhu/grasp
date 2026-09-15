@@ -1,7 +1,7 @@
 /**
  * Agent create wizard UI orchestration (step machine in agentCreateWizard.ts).
  */
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, type Agent } from '@/lib/api/api'
 import {
@@ -15,6 +15,7 @@ import {
   buildReviewSummary,
   freshDraft,
   hasPathDeps,
+  hasRoleTemplate,
   kvToRec,
   parseCustomConfigJson,
   stripAuthKeysFromEnv,
@@ -25,6 +26,8 @@ import {
   type WizardDraft,
   type WizardStepId,
 } from '@/lib/agent/agentCreateWizard'
+import { buildTemplateOptions } from '@/lib/agent/agentTemplateOptions'
+import type { AgentTemplateOption } from '@/components/agent/AgentTemplateSelect.vue'
 import { backendForStartPath } from '@/lib/shared/startPath'
 import { authGuideFor, defaultSettingsPlaceholder, hasAuthKeyConfigured } from '@/lib/agent/backendAuthGuide'
 import type { GitCredentialType } from '@/lib/agent/gitCredentialAnalysis'
@@ -68,6 +71,56 @@ const customConfigError = ref(false)
 const openCodeBaseError = ref(false)
 const openCodeModelError = ref(false)
 const customConfigDraft = ref('')
+const templateOptions = ref<AgentTemplateOption[]>([])
+
+const showDescField = computed(() => !hasRoleTemplate(draft.value))
+const templateHint = computed(() => {
+  const id = (draft.value.templateId || 'blank').trim()
+  if (id === 'blank') return t('pages.agentStudio.wizard.basics.templateHintBlank')
+  const opt = templateOptions.value.find((o) => o.id === id)
+  if (!opt) return t('pages.agentStudio.wizard.basics.templateHintPack', { name: id })
+  return t('pages.agentStudio.wizard.basics.templateHintPack', {
+    name: opt.subtitle || opt.name,
+  })
+})
+
+async function loadTemplates() {
+  try {
+    const res = await api.listAgentTeamTemplates()
+    templateOptions.value = buildTemplateOptions(
+      res.items || [],
+      t('pages.agentStudio.wizard.basics.templateBlank'),
+      t('pages.agentStudio.wizard.basics.templateBlankSub'),
+    )
+  } catch {
+    // Offline / API miss: still offer blank + pinned packs so UI is usable.
+    templateOptions.value = buildTemplateOptions(
+      [
+        { id: 'test', embedName: 'TestAgent', roleLabelZh: '测试工程师', summary: '测试验证' },
+        {
+          id: 'preflight',
+          embedName: 'PreflightAgent',
+          roleLabelZh: '环境确认工程师',
+          summary: '环境确认',
+        },
+      ],
+      t('pages.agentStudio.wizard.basics.templateBlank'),
+      t('pages.agentStudio.wizard.basics.templateBlankSub'),
+    )
+  }
+}
+
+onMounted(() => {
+  void loadTemplates()
+})
+
+function onTemplateSelect(id: string) {
+  // plan g1.4 — template change must not rewrite draft.name
+  draft.value.templateId = id
+  if (hasRoleTemplate(draft.value)) {
+    draft.value.description = ''
+  }
+}
 
 const currentStep = computed(() => WIZARD_STEPS[draft.value.step])
 const progressPct = computed(() => ((draft.value.step + 1) / WIZARD_STEPS.length) * 100)
@@ -115,6 +168,7 @@ watch(
       openCodeBaseError.value = false
       openCodeModelError.value = false
       stepAnimKey.value++
+      void loadTemplates()
       nextTick(() => {
         document.getElementById('wiz-name-input')?.focus()
       })
@@ -406,6 +460,10 @@ function chipClass(kind: string) {
   primaryAuthKey,
   primaryAuthAlt,
   headSub,
+  templateOptions,
+  showDescField,
+  templateHint,
+  onTemplateSelect,
   close,
   upsertEnv,
   selectRegion,

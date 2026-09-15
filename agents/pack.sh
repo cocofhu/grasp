@@ -31,6 +31,7 @@ ALL_AGENTS=(
   ReviewAgent
   VisualAgent
   PreviewAgent
+  PreflightAgent
 )
 
 die() { echo "error: $*" >&2; exit 1; }

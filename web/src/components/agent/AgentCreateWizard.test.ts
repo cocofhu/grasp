@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { createI18n } from 'vue-i18n'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import commonZh from '@/locales/zh-CN/common.json'
 import pagesZh from '@/locales/zh-CN/pages.json'
@@ -24,6 +24,18 @@ const getProjectSharedAgentConfig = vi.fn(async (_projectId?: string) => ({
 vi.mock('@/lib/api/api', () => ({
   api: {
     createAgent: (payload: unknown) => createAgent(payload),
+    listAgentTeamTemplates: async () => ({
+      items: [
+        { id: 'test', embedName: 'TestAgent', roleLabelZh: '测试工程师', summary: '测试验证' },
+        {
+          id: 'preflight',
+          embedName: 'PreflightAgent',
+          roleLabelZh: '环境确认工程师',
+          summary: '环境确认',
+        },
+        { id: 'implement', embedName: 'ImplementAgent', roleLabelZh: '实现工程师', summary: '实现' },
+      ],
+    }),
     listProjectRunTags: (projectId: string) => listProjectRunTags(projectId),
     getProjectSharedAgentConfig: (projectId: string) => getProjectSharedAgentConfig(projectId),
     openCodeProviders: async () => ({ providers: [] }),
@@ -321,6 +333,65 @@ describe('AgentCreateWizard 5-step IA', () => {
     )
     expect(international?.getAttribute('aria-checked')).toBe('true')
     expect(document.body.textContent).toContain('www.trae.ai · intl')
+    wrapper.unmount()
+  })
+
+  // plan g3.1 — search test; name unchanged; posts templateId
+  it('template dropdown: pick test keeps name qa-1 and posts templateId', async () => {
+    const i18n = createI18n({
+      legacy: false,
+      locale: 'zh-CN',
+      messages: {
+        'zh-CN': { ...commonZh, ...pagesZh },
+        en: { ...commonEn, ...pagesEn },
+      },
+    })
+    const wrapper = mount(AgentCreateWizard, {
+      attachTo: document.body,
+      props: { open: true, existingNames: [] },
+      global: { plugins: [i18n], stubs: { Teleport: false } },
+    })
+    await flushPromises()
+    fillName('qa-1')
+    await wrapper.vm.$nextTick()
+    expect((document.body.querySelector('#wiz-name-input') as HTMLInputElement).value).toBe('qa-1')
+
+    const trigger = document.body.querySelector(
+      '[data-testid="agent-template-select-trigger"]',
+    ) as HTMLButtonElement
+    trigger.click()
+    await flushPromises()
+    const search = document.body.querySelector(
+      '[data-testid="agent-template-select-search"]',
+    ) as HTMLInputElement
+    search.value = '测试'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    const testOpt = document.body.querySelector(
+      '[data-testid="agent-template-select-option-test"]',
+    ) as HTMLElement
+    expect(testOpt).toBeTruthy()
+    testOpt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect((document.body.querySelector('#wiz-name-input') as HTMLInputElement).value).toBe('qa-1')
+    expect(document.body.textContent).not.toContain('职责 / 用途简述')
+
+    buttonByText('下一步').click()
+    await wrapper.vm.$nextTick()
+    buttonByText('下一步').click()
+    await wrapper.vm.$nextTick()
+    buttonByText('跳过').click()
+    await wrapper.vm.$nextTick()
+    buttonByText('下一步').click()
+    await wrapper.vm.$nextTick()
+    buttonByText('创建并进入 Studio').click()
+    await vi.waitFor(() => {
+      expect(createAgent).toHaveBeenCalled()
+    })
+    const payload = createAgent.mock.calls.at(-1)?.[0] as { name: string; templateId?: string }
+    expect(payload.name).toBe('qa-1')
+    expect(payload.templateId).toBe('test')
     wrapper.unmount()
   })
 })

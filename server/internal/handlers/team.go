@@ -75,9 +75,10 @@ func (h *Handlers) RetryAgentTeamBootstrap(c *gin.Context) {
 }
 
 // ListAgentTeamTemplates handles GET /api/agent-teams/templates.
+// Includes solo extras (preflight); bootstrap roster stays 1 PM + 9.
 func (h *Handlers) ListAgentTeamTemplates(c *gin.Context) {
 	if h.Team == nil {
-		c.JSON(http.StatusOK, gin.H{"items": services.TeamEngineerTemplates})
+		c.JSON(http.StatusOK, gin.H{"items": services.AllCreateTemplates()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"items": h.Team.ListTemplates()})

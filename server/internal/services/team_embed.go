@@ -25,7 +25,7 @@ type TeamRoleTemplate struct {
 // TeamPMEmbedName is the embedded PM Leader package under team_embed/.
 const TeamPMEmbedName = "PMAgent"
 
-// TeamEngineerTemplates is the fixed 9-role pipeline roster.
+// TeamEngineerTemplates is the fixed 9-role pipeline roster (team bootstrap).
 var TeamEngineerTemplates = []TeamRoleTemplate{
 	{ID: "research", EmbedName: "ResearchAgent", RoleLabelZH: "调研工程师", Summary: "技术与竞品调研"},
 	{ID: "plan", EmbedName: "PlanAgent", RoleLabelZH: "计划工程师", Summary: "拆解实现计划"},
@@ -38,20 +38,42 @@ var TeamEngineerTemplates = []TeamRoleTemplate{
 	{ID: "preview", EmbedName: "PreviewAgent", RoleLabelZH: "变更摘要视觉工程师", Summary: "变更摘要视觉预览"},
 }
 
-// TeamEmbedPackageNames lists all packages under team_embed/ (PM + 9 engineers).
+// SoloExtraTemplates are available for single-agent create / template list,
+// but are not part of the 1 PM + 9 team bootstrap roster.
+var SoloExtraTemplates = []TeamRoleTemplate{
+	{ID: "preflight", EmbedName: "PreflightAgent", RoleLabelZH: "环境确认工程师", Summary: "环境确认"},
+}
+
+// TeamEmbedPackageNames lists all packages under team_embed/ (PM + 9 + solo extras).
 func TeamEmbedPackageNames() []string {
-	out := make([]string, 0, 1+len(TeamEngineerTemplates))
+	out := make([]string, 0, 1+len(TeamEngineerTemplates)+len(SoloExtraTemplates))
 	out = append(out, TeamPMEmbedName)
 	for _, r := range TeamEngineerTemplates {
+		out = append(out, r.EmbedName)
+	}
+	for _, r := range SoloExtraTemplates {
 		out = append(out, r.EmbedName)
 	}
 	return out
 }
 
-// TeamRoleByID returns a template by id.
+// AllCreateTemplates returns engineer roles plus solo extras (for GET templates / create).
+func AllCreateTemplates() []TeamRoleTemplate {
+	out := make([]TeamRoleTemplate, 0, len(TeamEngineerTemplates)+len(SoloExtraTemplates))
+	out = append(out, TeamEngineerTemplates...)
+	out = append(out, SoloExtraTemplates...)
+	return out
+}
+
+// TeamRoleByID returns a template by id (bootstrap roster or solo extras).
 func TeamRoleByID(id string) (TeamRoleTemplate, bool) {
 	id = strings.TrimSpace(id)
 	for _, t := range TeamEngineerTemplates {
+		if t.ID == id {
+			return t, true
+		}
+	}
+	for _, t := range SoloExtraTemplates {
 		if t.ID == id {
 			return t, true
 		}
@@ -111,6 +133,64 @@ func loadTeamAgentTemplate(embedName string) (Agent, error) {
 		Layout:     layout,
 		Prompts:    cfg.Prompts,
 	}, nil
+}
+
+// LoadTeamAgentTemplate loads an embedded pack by folder name (e.g. TestAgent).
+func LoadTeamAgentTemplate(embedName string) (Agent, error) {
+	return loadTeamAgentTemplate(embedName)
+}
+
+// ApplyCreateTemplate overlays an embedded role pack onto a new Agent.
+// Workspace files come from the pack; any client-supplied files (e.g. auth config)
+// are merged on top. Request env/MCP/backend overlay pack defaults.
+func ApplyCreateTemplate(templateID string, agent *Agent) error {
+	role, ok := TeamRoleByID(templateID)
+	if !ok {
+		return fmt.Errorf("unknown templateId %s", templateID)
+	}
+	tmpl, err := loadTeamAgentTemplate(role.EmbedName)
+	if err != nil {
+		return err
+	}
+	extras := agent.Files
+	agent.Files = tmpl.Files
+	for _, f := range extras {
+		if strings.TrimSpace(f.Path) == "" {
+			continue
+		}
+		agent.Files = upsertAgentFile(agent.Files, f.Path, f.Content)
+	}
+	if len(agent.MCP) == 0 {
+		agent.MCP = tmpl.MCP
+	}
+	mergedEnv := map[string]string{}
+	for k, v := range tmpl.Env {
+		mergedEnv[k] = v
+	}
+	for k, v := range agent.Env {
+		k = strings.TrimSpace(k)
+		if k != "" {
+			mergedEnv[k] = v
+		}
+	}
+	agent.Env = mergedEnv
+	if strings.TrimSpace(agent.AcpBackend) == "" {
+		agent.AcpBackend = tmpl.AcpBackend
+	}
+	if strings.TrimSpace(agent.Layout.ConfigRoot) == "" && strings.TrimSpace(tmpl.Layout.ConfigRoot) != "" {
+		agent.Layout.ConfigRoot = tmpl.Layout.ConfigRoot
+	}
+	if strings.TrimSpace(agent.Layout.WorkspaceDir) == "" {
+		if strings.TrimSpace(tmpl.Layout.WorkspaceDir) != "" {
+			agent.Layout.WorkspaceDir = tmpl.Layout.WorkspaceDir
+		} else {
+			agent.Layout.WorkspaceDir = DefaultWorkspaceDir
+		}
+	}
+	if agent.Prompts == nil && tmpl.Prompts != nil {
+		agent.Prompts = tmpl.Prompts
+	}
+	return nil
 }
 
 func readTeamEmbedWorkspaceFiles(root string) ([]AgentFile, error) {

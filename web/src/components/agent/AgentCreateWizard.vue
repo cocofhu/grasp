@@ -5,6 +5,7 @@ import AgentGitGuide from '@/components/agent/AgentGitGuide.vue'
 import EnvCredentialHelpModal from '@/components/agent/EnvCredentialHelpModal.vue'
 import WizardApiKeyStepPanel from '@/components/agent/WizardApiKeyStepPanel.vue'
 import WizardAcpStartPathPanel from '@/components/agent/WizardAcpStartPathPanel.vue'
+import AgentTemplateSelect from '@/components/agent/AgentTemplateSelect.vue'
 
 import { kvToRec } from '@/lib/agent/agentCreateWizard'
 import { useAgentCreateWizard } from '@/lib/agent/useAgentCreateWizard'
@@ -38,6 +39,10 @@ const {
   primaryAuthKey,
   primaryAuthAlt,
   headSub,
+  templateOptions,
+  showDescField,
+  templateHint,
+  onTemplateSelect,
   close,
   upsertEnv,
   selectRegion,
@@ -146,7 +151,20 @@ const {
                     />
                     <p v-if="nameError" class="mt-1.5 text-[12px] text-err">{{ nameError }}</p>
                   </label>
-                  <label class="block">
+                  <!-- plan g1 — pipeline-style template dropdown; name stays independent (g1.4) -->
+                  <div class="mb-4 block max-w-[38rem]">
+                    <span class="mb-1.5 block text-[12px] font-medium text-txt2">
+                      {{ t('pages.agentStudio.wizard.basics.templateLabel') }}
+                    </span>
+                    <AgentTemplateSelect
+                      :options="templateOptions"
+                      :model-value="draft.templateId"
+                      :disabled="creating"
+                      @update:model-value="onTemplateSelect"
+                    />
+                    <p class="mt-1.5 text-[11px] text-txt3">{{ templateHint }}</p>
+                  </div>
+                  <label v-if="showDescField" class="block">
                     <span class="mb-1.5 block text-[12px] font-medium text-txt2">
                       {{ t('pages.agentStudio.wizard.basics.descLabel') }}
                     </span>

@@ -2503,10 +2503,17 @@
           "review": "Confirm"
         },
         "basics": {
-          "meta": "A name is enough to create; an optional blurb becomes the default Rule preface.",
+          "meta": "A name is enough to create; optional blurb for blank templates. Pick a template from the dropdown — it never changes the name.",
           "descLabel": "Role / purpose",
           "descPlaceholder": "e.g. Reviews PRs and checks style…",
-          "descHint": "Optional. When set, it is prepended to the default alwaysApply rule."
+          "descHint": "Optional. When set, it is prepended to the default alwaysApply rule.",
+          "templateLabel": "Template",
+          "templateSearch": "Search templates…",
+          "templateEmpty": "No matching templates",
+          "templateBlank": "Blank",
+          "templateBlankSub": "Default identity Rule",
+          "templateHintBlank": "Blank: writes the default identity Rule.",
+          "templateHintPack": "Will apply {name}."
         },
         "acp": {
           "meta": "Choose how to start: a model-vendor API key, or a coding-CLI vendor account. CodeBuddy and Trae also require a China or International site; International is the default.",
@@ -2613,6 +2620,7 @@
         "review": {
           "meta": "Review the summary, then create once. Cancel/close does not persist. Configure MCP / Rules and other capabilities later in Studio.",
           "name": "Name",
+          "template": "Template",
           "acp": "Agent",
           "apiKeyConfigured": "API Key · configured",
           "apiKeySkipped": "API Key · not set",

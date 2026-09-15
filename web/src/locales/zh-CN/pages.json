@@ -2503,10 +2503,17 @@
           "review": "确认创建"
         },
         "basics": {
-          "meta": "填写名称即可创建；职责简述可选，将写入默认 Rule 前言。",
+          "meta": "填写名称即可创建；职责简述可选。模板用下拉选择，不会改名称。",
           "descLabel": "职责 / 用途简述",
           "descPlaceholder": "例如：负责代码评审与风格检查…",
-          "descHint": "可留空。有值时写入自动生成的默认 alwaysApply 规则前言。"
+          "descHint": "可留空。有值时写入自动生成的默认 alwaysApply 规则前言。",
+          "templateLabel": "模板",
+          "templateSearch": "搜索模板…",
+          "templateEmpty": "没有匹配的模板",
+          "templateBlank": "空白",
+          "templateBlankSub": "通用身份 Rule",
+          "templateHintBlank": "空白：写入默认 identity Rule。",
+          "templateHintPack": "将套用 {name}。"
         },
         "acp": {
           "meta": "先选启动方式：用模型厂商的 API Key，或用编码 CLI 的厂商账号。CodeBuddy 与 Trae 还需选择国内站或国际站，默认国际站。",
@@ -2613,6 +2620,7 @@
         "review": {
           "meta": "确认摘要后一次性创建。取消或关闭不会落库。MCP / Rules 等能力可在创建后于 Studio 配置。",
           "name": "名称",
+          "template": "模板",
           "acp": "Agent",
           "apiKeyConfigured": "API Key · 已配置",
           "apiKeySkipped": "API Key · 未配置",

@@ -729,6 +729,59 @@ func TestAgentEndpoints(t *testing.T) {
 	if w := h.do("POST", "/api/agents", map[string]any{"name": "a1"}); w.Code != 409 {
 		t.Fatalf("conflict: %d", w.Code)
 	}
+	// plan g2.1 / g3.2 — optional templateId copies TestAgent / PreflightAgent workspace
+	if w := h.do("POST", "/api/agents", map[string]any{
+		"name": "qa-test", "templateId": "test", "acpBackend": "cursor",
+	}); w.Code != 201 {
+		t.Fatalf("create test template: %d %s", w.Code, w.Body)
+	}
+	if w := h.do("GET", "/api/agents/qa-test", nil); w.Code != 200 {
+		t.Fatalf("get qa-test: %d", w.Code)
+	} else {
+		var body map[string]any
+		_ = json.Unmarshal(w.Body.Bytes(), &body)
+		files, _ := body["files"].([]any)
+		if len(files) == 0 {
+			t.Fatal("qa-test should have template files")
+		}
+	}
+	if w := h.do("POST", "/api/agents", map[string]any{
+		"name": "qa-pf", "templateId": "preflight",
+	}); w.Code != 201 {
+		t.Fatalf("create preflight template: %d %s", w.Code, w.Body)
+	}
+	if w := h.do("POST", "/api/agents", map[string]any{
+		"name": "bad-tpl", "templateId": "nope",
+	}); w.Code != 400 {
+		t.Fatalf("unknown templateId: %d", w.Code)
+	}
+	// Blank regression: no templateId still works
+	if w := h.do("POST", "/api/agents", map[string]any{"name": "blank-ok"}); w.Code != 201 {
+		t.Fatalf("blank create: %d %s", w.Code, w.Body)
+	}
+	// Templates list includes preflight; engineer roster conceptually still 9 via bootstrap
+	if w := h.do("GET", "/api/agent-teams/templates", nil); w.Code != 200 {
+		t.Fatalf("templates: %d", w.Code)
+	} else {
+		var body struct {
+			Items []struct {
+				ID string `json:"id"`
+			} `json:"items"`
+		}
+		_ = json.Unmarshal(w.Body.Bytes(), &body)
+		var hasPF, hasTest bool
+		for _, it := range body.Items {
+			if it.ID == "preflight" {
+				hasPF = true
+			}
+			if it.ID == "test" {
+				hasTest = true
+			}
+		}
+		if !hasPF || !hasTest {
+			t.Fatalf("templates missing preflight/test: %+v", body.Items)
+		}
+	}
 	if w := h.do("GET", "/api/agents/a1", nil); w.Code != 200 {
 		t.Fatalf("get: %d", w.Code)
 	}

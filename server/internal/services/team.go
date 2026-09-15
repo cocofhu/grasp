@@ -112,11 +112,10 @@ func NewTeamService(projects *ProjectService, skills *AgentService, org *OrgServ
 	}
 }
 
-// ListTemplates returns the fixed engineer role catalog.
+// ListTemplates returns engineer roles plus solo create extras (e.g. preflight).
+// Team bootstrap still uses TeamEngineerTemplates only (1 PM + 9).
 func (s *TeamService) ListTemplates() []TeamRoleTemplate {
-	out := make([]TeamRoleTemplate, len(TeamEngineerTemplates))
-	copy(out, TeamEngineerTemplates)
-	return out
+	return AllCreateTemplates()
 }
 
 // GetSession returns a bootstrap session by id.

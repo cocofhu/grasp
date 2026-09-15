@@ -27,6 +27,7 @@ func (h *Handlers) GetAgent(c *gin.Context) {
 type agentBody struct {
 	Name              string               `json:"name"`
 	ProjectID         *string              `json:"projectId"`
+	TemplateID        string               `json:"templateId"`
 	AcpBackend        string               `json:"acpBackend"`
 	GitCredentialType string               `json:"gitCredentialType"`
 	GitSshKnownHosts  string               `json:"gitSshKnownHosts"`
@@ -77,6 +78,7 @@ func (h *Handlers) validateAgentProjectBinding(agent services.Agent) error {
 }
 
 // CreateAgent registers a new user-defined Agent.
+// Optional templateId copies an embedded role pack workspace (name stays client-supplied).
 func (h *Handlers) CreateAgent(c *gin.Context) {
 	var b agentBody
 	if err := c.ShouldBindJSON(&b); err != nil {
@@ -93,6 +95,14 @@ func (h *Handlers) CreateAgent(c *gin.Context) {
 		return
 	}
 	agent := b.toAgent(name, "")
+
+	templateID := strings.TrimSpace(b.TemplateID)
+	if templateID != "" {
+		if err := services.ApplyCreateTemplate(templateID, &agent); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
 
 	if len(agent.MCP) == 0 {
 		agent.MCP = services.DefaultPlatformMCP()
