@@ -181,4 +181,22 @@ describe('DashboardView home chat layout', () => {
     expect(prioritySrc).toMatch(/zIndex:\s*'60'/)
     expect(prioritySrc).toMatch(/addEventListener\('scroll', onScrollOrResize, true\)/)
   })
+
+  // plan g1 / g2 — whole-rail enter: no loading copy; immediate 420ms group rise; reduced-motion
+  it('reveals pipeline rail as one enter group without loading copy or post-success wait', () => {
+    expect(src).not.toMatch(/data-testid="home-pipelines-loading"/)
+    expect(src).not.toMatch(/v-else-if="loading"/)
+    expect(src).toMatch(/data-testid="home-pipeline-enter"/)
+    expect(src).toMatch(/home-pipeline-enter--ready/)
+    expect(src).toMatch(/pipelineRailRevealed/)
+    expect(src).toMatch(/prev === true && now === false && !loadError/)
+    expect(src).toMatch(/animation:\s*home-pipeline-rail-enter 420ms cubic-bezier\(0\.16,\s*1,\s*0\.3,\s*1\)/)
+    expect(src).not.toMatch(/nth-child\([^)]+\)[^{]*animation-delay|animation-delay:[^;]+nth-child/)
+    expect(src).not.toMatch(/DEFAULT_MIN_VISIBLE|SHOW_AFTER|minVisible|min-visible|show-after/)
+    expect(src).toMatch(/pipelineRailRevealed\.value = true/)
+    expect(src).not.toMatch(/pipelineRailRevealed\.value = false/)
+    expect(src).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.home-pipeline-enter[\s\S]*animation:\s*none/,
+    )
+  })
 })

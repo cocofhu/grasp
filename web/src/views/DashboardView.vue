@@ -75,6 +75,8 @@ const pipelineFadeLeft = ref(false)
 const pipelineFadeRight = ref(false)
 const pipelineOverflows = ref(false)
 let pipelineStripObserver: ResizeObserver | null = null
+/** First successful load reveal for the home pipeline rail (plan g1 / g2.2). */
+const pipelineRailRevealed = ref(false)
 const phVisible = ref('')
 const phCursor = ref(false)
 let phTimer: ReturnType<typeof setTimeout> | null = null
@@ -445,6 +447,18 @@ watch(
   }),
 )
 
+// plan g1.2 — loading true→false with no error: reveal rail on that update (no post-success wait)
+watch(loading, (now, prev) => {
+  if (prev === true && now === false && !loadError.value) {
+    pipelineRailRevealed.value = true
+  }
+})
+
+function onPipelineEnterAnimationEnd(e: AnimationEvent) {
+  if (e.target !== e.currentTarget) return
+  syncPipelineNav()
+}
+
 onMounted(() => {
   nextTick(() => {
     autoGrow()
@@ -640,140 +654,147 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
-      <div v-else-if="loading" class="mt-10 text-sm text-txt3" data-testid="home-pipelines-loading">
-        {{ t('pages.board.loading') }}
-      </div>
-
-      <div v-else-if="!pipelines.length" class="mt-10 text-center" data-testid="home-pipelines-empty">
-        <p class="text-sm text-txt3">{{ t('pages.dashboard.noPipelines') }}</p>
-        <button
-          type="button"
-          class="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] text-txt2 hover:bg-elevated"
-          data-testid="home-go-projects"
-          @click="goProjects"
-        >
-          {{ t('pages.dashboard.goProjects') }}
-        </button>
-      </div>
-
+      <!-- plan g1: wait blank (no loading copy); reveal whole rail+add together on first success -->
       <div
-        v-if="!loadError"
-        class="home-pipeline-rail-wrap w-full"
-        :class="{
-          'mt-10': loading || pipelines.length > 0,
-          'mt-4': !loading && pipelines.length === 0,
-          'home-pipeline-rail-wrap--has-left': pipelineFadeLeft,
-          'home-pipeline-rail-wrap--has-right': pipelineFadeRight,
-        }"
-        data-testid="home-pipeline-rail-wrap"
+        v-else-if="pipelineRailRevealed"
+        class="home-pipeline-enter home-pipeline-enter--ready w-full"
+        data-testid="home-pipeline-enter"
+        @animationend="onPipelineEnterAnimationEnd"
       >
-        <button
-          type="button"
-          class="home-pipeline-nav home-pipeline-nav--prev"
-          data-testid="home-pipeline-scroll-prev"
-          :disabled="!pipelineCanScrollPrev"
-          :aria-label="t('pages.dashboard.scrollLeft')"
-          :title="t('pages.dashboard.scrollLeft')"
-          @click="scrollPipelineByDir(-1)"
-        >
-          <Icon name="chevron-left" :size="16" />
-        </button>
-        <div class="home-pipeline-fade home-pipeline-fade--left" aria-hidden="true" />
-        <div class="home-pipeline-fade home-pipeline-fade--right" aria-hidden="true" />
-
         <div
-          ref="pipelineCardsEl"
-          class="home-pipeline-rail flex w-full gap-3 pb-1"
-          :class="{ 'home-pipeline-rail--overflow': pipelineOverflows }"
-          data-testid="home-pipeline-cards"
-          tabindex="0"
-          role="list"
-          @scroll.passive="syncPipelineNav"
-          @wheel="onPipelineWheel"
+          v-if="!pipelines.length"
+          class="mt-10 text-center"
+          data-testid="home-pipelines-empty"
         >
-          <div
-            v-for="p in pipelines"
-            :key="p.id"
-            tabindex="0"
-            role="listitem"
-            class="home-shell__card w-48 shrink-0 overflow-hidden rounded-lg border border-line p-0 text-left"
-            :class="p.id === selected?.id ? 'home-shell__card--selected' : 'hover:border-line-strong'"
-            :data-testid="`home-pipeline-card-${p.id}`"
-            @click="onPipelineCardClick(p.id)"
-            @keydown.enter.space.prevent="selectPipeline(p.id)"
-            @contextmenu="onPipelineContextMenu($event, p)"
-            @pointerdown="onPipelinePointerDown($event, p)"
-            @pointermove="onPipelinePointerMove"
-            @pointerup="clearLongPress"
-            @pointercancel="clearLongPress"
-            @pointerleave="clearLongPress"
-          >
-            <button
-              type="button"
-              class="home-pipeline-more absolute right-2 top-2 z-[1] flex h-7 w-7 items-center justify-center rounded-lg text-txt2"
-              :aria-label="t('pages.dashboard.pipelineMenu.more')"
-              :title="t('pages.dashboard.pipelineMenu.more')"
-              :data-testid="`home-pipeline-more-${p.id}`"
-              @click="onPipelineMore($event, p)"
-            >
-              <Icon name="more" :size="16" />
-            </button>
-            <div class="home-shell__card-top flex h-20 items-center justify-center">
-              <span class="flex items-center gap-1.5">
-                <span class="h-2 w-2 bg-txt3" />
-                <span class="h-px w-6 bg-line-strong" />
-                <span class="h-2.5 w-2.5 bg-accent" />
-                <span class="h-px w-6 bg-line-strong" />
-                <span class="h-2 w-2 bg-txt3" />
-              </span>
-            </div>
-            <div class="px-3 py-2.5">
-              <div
-                class="truncate text-[13px] font-medium text-txt"
-                :title="p.name"
-                data-testid="home-pipeline-card-name"
-              >{{ p.name }}</div>
-              <div
-                v-if="p.projectName"
-                class="mt-0.5 truncate text-[11px] text-txt2"
-                :title="p.projectName"
-                :data-testid="`home-pipeline-card-project-${p.id}`"
-              >{{ p.projectName }}</div>
-              <div
-                class="mt-0.5 line-clamp-2 text-[11px] text-txt3"
-                :title="p.description || t('pages.dashboard.cardFallback')"
-              >
-                {{ p.description || t('pages.dashboard.cardFallback') }}
-              </div>
-            </div>
-          </div>
+          <p class="text-sm text-txt3">{{ t('pages.dashboard.noPipelines') }}</p>
           <button
             type="button"
-            role="listitem"
-            class="home-shell__card home-shell__card--add w-48 shrink-0"
-            data-testid="home-new-workflow"
-            @click="openCreateBaseline"
-            @contextmenu.prevent
-            @pointerdown.stop
+            class="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] text-txt2 hover:bg-elevated"
+            data-testid="home-go-projects"
+            @click="goProjects"
           >
-            <span class="home-shell__card-plus" aria-hidden="true">
-              <Icon name="plus" :size="16" />
-            </span>
-            <span class="home-shell__card-add-label">{{ t('pages.dashboard.create.addCard') }}</span>
+            {{ t('pages.dashboard.goProjects') }}
           </button>
         </div>
 
-        <button
-          type="button"
-          class="home-pipeline-nav home-pipeline-nav--next"
-          data-testid="home-pipeline-scroll-next"
-          :disabled="!pipelineCanScrollNext"
-          :aria-label="t('pages.dashboard.scrollRight')"
-          :title="t('pages.dashboard.scrollRight')"
-          @click="scrollPipelineByDir(1)"
+        <div
+          class="home-pipeline-rail-wrap w-full"
+          :class="{
+            'mt-10': pipelines.length > 0,
+            'mt-4': pipelines.length === 0,
+            'home-pipeline-rail-wrap--has-left': pipelineFadeLeft,
+            'home-pipeline-rail-wrap--has-right': pipelineFadeRight,
+          }"
+          data-testid="home-pipeline-rail-wrap"
         >
-          <Icon name="chevron-right" :size="16" />
-        </button>
+          <button
+            type="button"
+            class="home-pipeline-nav home-pipeline-nav--prev"
+            data-testid="home-pipeline-scroll-prev"
+            :disabled="!pipelineCanScrollPrev"
+            :aria-label="t('pages.dashboard.scrollLeft')"
+            :title="t('pages.dashboard.scrollLeft')"
+            @click="scrollPipelineByDir(-1)"
+          >
+            <Icon name="chevron-left" :size="16" />
+          </button>
+          <div class="home-pipeline-fade home-pipeline-fade--left" aria-hidden="true" />
+          <div class="home-pipeline-fade home-pipeline-fade--right" aria-hidden="true" />
+
+          <div
+            ref="pipelineCardsEl"
+            class="home-pipeline-rail flex w-full gap-3 pb-1"
+            :class="{ 'home-pipeline-rail--overflow': pipelineOverflows }"
+            data-testid="home-pipeline-cards"
+            tabindex="0"
+            role="list"
+            @scroll.passive="syncPipelineNav"
+            @wheel="onPipelineWheel"
+          >
+            <div
+              v-for="p in pipelines"
+              :key="p.id"
+              tabindex="0"
+              role="listitem"
+              class="home-shell__card w-48 shrink-0 overflow-hidden rounded-lg border border-line p-0 text-left"
+              :class="p.id === selected?.id ? 'home-shell__card--selected' : 'hover:border-line-strong'"
+              :data-testid="`home-pipeline-card-${p.id}`"
+              @click="onPipelineCardClick(p.id)"
+              @keydown.enter.space.prevent="selectPipeline(p.id)"
+              @contextmenu="onPipelineContextMenu($event, p)"
+              @pointerdown="onPipelinePointerDown($event, p)"
+              @pointermove="onPipelinePointerMove"
+              @pointerup="clearLongPress"
+              @pointercancel="clearLongPress"
+              @pointerleave="clearLongPress"
+            >
+              <button
+                type="button"
+                class="home-pipeline-more absolute right-2 top-2 z-[1] flex h-7 w-7 items-center justify-center rounded-lg text-txt2"
+                :aria-label="t('pages.dashboard.pipelineMenu.more')"
+                :title="t('pages.dashboard.pipelineMenu.more')"
+                :data-testid="`home-pipeline-more-${p.id}`"
+                @click="onPipelineMore($event, p)"
+              >
+                <Icon name="more" :size="16" />
+              </button>
+              <div class="home-shell__card-top flex h-20 items-center justify-center">
+                <span class="flex items-center gap-1.5">
+                  <span class="h-2 w-2 bg-txt3" />
+                  <span class="h-px w-6 bg-line-strong" />
+                  <span class="h-2.5 w-2.5 bg-accent" />
+                  <span class="h-px w-6 bg-line-strong" />
+                  <span class="h-2 w-2 bg-txt3" />
+                </span>
+              </div>
+              <div class="px-3 py-2.5">
+                <div
+                  class="truncate text-[13px] font-medium text-txt"
+                  :title="p.name"
+                  data-testid="home-pipeline-card-name"
+                >{{ p.name }}</div>
+                <div
+                  v-if="p.projectName"
+                  class="mt-0.5 truncate text-[11px] text-txt2"
+                  :title="p.projectName"
+                  :data-testid="`home-pipeline-card-project-${p.id}`"
+                >{{ p.projectName }}</div>
+                <div
+                  class="mt-0.5 line-clamp-2 text-[11px] text-txt3"
+                  :title="p.description || t('pages.dashboard.cardFallback')"
+                >
+                  {{ p.description || t('pages.dashboard.cardFallback') }}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              role="listitem"
+              class="home-shell__card home-shell__card--add w-48 shrink-0"
+              data-testid="home-new-workflow"
+              @click="openCreateBaseline"
+              @contextmenu.prevent
+              @pointerdown.stop
+            >
+              <span class="home-shell__card-plus" aria-hidden="true">
+                <Icon name="plus" :size="16" />
+              </span>
+              <span class="home-shell__card-add-label">{{ t('pages.dashboard.create.addCard') }}</span>
+            </button>
+          </div>
+
+          <button
+            type="button"
+            class="home-pipeline-nav home-pipeline-nav--next"
+            data-testid="home-pipeline-scroll-next"
+            :disabled="!pipelineCanScrollNext"
+            :aria-label="t('pages.dashboard.scrollRight')"
+            :title="t('pages.dashboard.scrollRight')"
+            @click="scrollPipelineByDir(1)"
+          >
+            <Icon name="chevron-right" :size="16" />
+          </button>
+        </div>
       </div>
     </div>
 
@@ -1090,6 +1111,25 @@ onBeforeUnmount(() => {
   position: relative;
 }
 
+/* plan g1.2 / g1.3 — whole-rail enter: 420ms opacity + translateY, no per-card delay */
+.home-pipeline-enter {
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+}
+
+.home-pipeline-enter--ready {
+  animation: home-pipeline-rail-enter 420ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  pointer-events: auto;
+}
+
+@keyframes home-pipeline-rail-enter {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .home-pipeline-rail {
   justify-content: center;
   overflow-x: auto;
@@ -1207,7 +1247,7 @@ onBeforeUnmount(() => {
   }
 }
 
-/* g1.3 — prefers-reduced-motion */
+/* g1.3 / g2.3 — prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
   .home-hint {
     animation: none !important;
@@ -1226,6 +1266,14 @@ onBeforeUnmount(() => {
 
   .home-pipeline-rail {
     scroll-behavior: auto;
+  }
+
+  .home-pipeline-enter,
+  .home-pipeline-enter--ready {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    pointer-events: auto;
   }
 
   .home-shell__card--add,

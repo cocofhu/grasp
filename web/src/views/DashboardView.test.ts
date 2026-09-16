@@ -1159,4 +1159,139 @@ describe('DashboardView home composer', () => {
     )
     wrapper.unmount()
   })
+
+  // plan g1.1 — wait blank: no loading copy, cards, or add card
+  it('plan g1.1 — while pipelines load, composer stays and rail stays blank', async () => {
+    let resolveList!: (value: Workflow[]) => void
+    mocks.listWorkflows.mockImplementation(
+      () => new Promise<Workflow[]>((resolve) => { resolveList = resolve }),
+    )
+    const wrapper = mountDashboard()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="home-composer"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="home-pipelines-loading"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-pipeline-enter"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-new-workflow"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-pipeline-cards"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toMatch(/加载中/)
+
+    resolveList([approveWf])
+    await flushPromises()
+    // plan g1.2 — same settle: enter group ready with cards + add
+    const enter = wrapper.get('[data-testid="home-pipeline-enter"]')
+    expect(enter.classes()).toContain('home-pipeline-enter--ready')
+    expect(enter.find('[data-testid="home-pipeline-card-wf-ap"]').exists()).toBe(true)
+    expect(enter.find('[data-testid="home-new-workflow"]').exists()).toBe(true)
+    expect(dashboardSource).not.toMatch(/setTimeout\([^)]*pipelineRail|minVisible|SHOW_AFTER/)
+    wrapper.unmount()
+  })
+
+  // plan g1.3 — many cards share the same group enter (no per-card delay in source)
+  it('plan g1.3 — many pipeline cards share one enter group without nth-child delays', async () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({
+      ...approveWf,
+      id: `wf-many-${i}`,
+      name: `流水线 ${i + 1}`,
+    }))
+    mocks.listWorkflows.mockResolvedValue(many)
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const enter = wrapper.get('[data-testid="home-pipeline-enter"]')
+    expect(enter.findAll('[data-testid^="home-pipeline-card-wf-many-"]').filter(
+      (n) => /^home-pipeline-card-wf-many-\d+$/.test(n.attributes('data-testid') || ''),
+    ).length).toBe(8)
+    expect(enter.find('[data-testid="home-new-workflow"]').exists()).toBe(true)
+    expect(dashboardSource).not.toMatch(/nth-child\([^)]+\)[^{]*\{[^}]*animation-delay/)
+    expect(dashboardSource).toMatch(/home-pipeline-rail-enter 420ms/)
+    wrapper.unmount()
+  })
+
+  // plan g2.1 — empty list: empty copy + add card in the same enter group
+  it('plan g2.1 — empty pipelines reveal empty state and add card together', async () => {
+    mocks.listWorkflows.mockResolvedValue([])
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const enter = wrapper.get('[data-testid="home-pipeline-enter"]')
+    expect(enter.find('[data-testid="home-pipelines-empty"]').exists()).toBe(true)
+    expect(enter.find('[data-testid="home-new-workflow"]').exists()).toBe(true)
+    expect(enter.classes()).toContain('home-pipeline-enter--ready')
+    wrapper.unmount()
+  })
+
+  // plan g2.1 — failure then retry plays enter once on success
+  it('plan g2.1 — load error hides rail; retry success reveals enter group', async () => {
+    mocks.listWorkflows.mockRejectedValueOnce(new Error('network down'))
+    const wrapper = mountDashboard()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="dashboard-load-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="home-pipeline-enter"]').exists()).toBe(false)
+
+    mocks.listWorkflows.mockResolvedValue([approveWf])
+    await wrapper.get('[data-testid="dashboard-retry"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="dashboard-load-error"]').exists()).toBe(false)
+    const enter = wrapper.get('[data-testid="home-pipeline-enter"]')
+    expect(enter.classes()).toContain('home-pipeline-enter--ready')
+    expect(enter.find('[data-testid="home-pipeline-card-wf-ap"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  // plan g2.2 — reloadAfterCreate keeps revealed rail (no reset of pipelineRailRevealed)
+  it('plan g2.2 — reloadAfterCreate keeps enter group mounted without resetting reveal', async () => {
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const enterBefore = wrapper.get('[data-testid="home-pipeline-enter"]').element
+    expect(dashboardSource).not.toMatch(/pipelineRailRevealed\.value = false/)
+
+    const created = {
+      ...approveWf,
+      id: 'wf-reload-keep',
+      name: '刷新保持',
+    }
+    mocks.createWorkflowFromBaseline.mockResolvedValue(created)
+    mocks.listWorkflows.mockResolvedValue([approveWf, created])
+    await wrapper.get('[data-testid="home-new-workflow"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="home-create-workflow-name"]').setValue('刷新保持')
+    const url = wrapper.find('input[placeholder*="https"]')
+    await url.setValue('https://github.com/org/reload-keep')
+    await flushPromises()
+    await wrapper.get('[data-testid="home-create-submit"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="home-pipeline-enter"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="home-pipeline-enter"]').element).toBe(enterBefore)
+    expect(wrapper.find('[data-testid="home-pipeline-card-wf-reload-keep"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  // plan g2.2 — hide does not remount enter group
+  it('plan g2.2 — hidePipelineFromHome updates cards without remounting enter group', async () => {
+    const second = {
+      ...approveWf,
+      id: 'wf-keep',
+      name: '保留卡',
+      projectId: 'proj-2',
+    }
+    mocks.listWorkflows.mockResolvedValue([approveWf, second])
+    mocks.listProjects.mockResolvedValue([
+      { id: 'proj-1', name: '综合项目组', description: '', variables: [] },
+      { id: 'proj-2', name: 'SkillHub', description: '', variables: [] },
+    ])
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const enterBefore = wrapper.get('[data-testid="home-pipeline-enter"]').element
+    await wrapper.get('[data-testid="home-pipeline-card-wf-ap"]').trigger('contextmenu')
+    await teleported('home-pipeline-menu-hide').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="home-pipeline-card-wf-ap"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-pipeline-enter"]').element).toBe(enterBefore)
+    wrapper.unmount()
+  })
+
+  // plan g2.3 — reduced-motion rules cover the enter classes (source)
+  it('plan g2.3 — prefers-reduced-motion disables pipeline enter animation', () => {
+    expect(dashboardSource).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.home-pipeline-enter--ready[\s\S]*animation:\s*none/,
+    )
+  })
 })
