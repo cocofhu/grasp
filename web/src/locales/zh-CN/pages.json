@@ -2792,7 +2792,7 @@
       "choicePrefix": "我的选择:",
       "skipPrefix": "回答已跳过",
       "skipUserReplyLabel": "用户回复",
-      "skipInputPlaceholder": "直接发送（含只发图片）将跳过本轮提问；Agent 会收到「回答已跳过」和附件，不会采用推荐/默认项…",
+      "skipInputPlaceholder": "发送即跳过本轮提问，不采用推荐项…",
       "questionsThisRound": "本轮提问 · {n} 题",
       "recommended": "推荐",
       "recommendedLabel": "推荐: {label}",

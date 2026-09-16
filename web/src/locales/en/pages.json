@@ -2792,7 +2792,7 @@
       "choicePrefix": "My choices:",
       "skipPrefix": "Answers skipped",
       "skipUserReplyLabel": "User reply",
-      "skipInputPlaceholder": "Send text and/or images to skip this round; the agent gets an “Answers skipped” envelope plus attachments — not recommended/default options…",
+      "skipInputPlaceholder": "Sending skips this round — recommended/default options won't be used…",
       "questionsThisRound": "Questions this turn · {n}",
       "recommended": "Recommended",
       "recommendedLabel": "Recommended: {label}",
