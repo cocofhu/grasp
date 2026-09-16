@@ -47,4 +47,31 @@ describe('useProjectContext', () => {
     ctx2.setProject('')
     expect(replace).toHaveBeenCalledWith({ query: {} })
   })
+
+  it('writes URL projectId into storage when already present (plan g1.2)', () => {
+    route.query = { projectId: 'proj-b', run: 'run-1' }
+    writeStoredProjectId('proj-a')
+    const ctx = useProjectContext()
+    ctx.ensureHydrated()
+    expect(localStorage.getItem(PROJECT_CONTEXT_STORAGE_KEY)).toBe('proj-b')
+    expect(replace).not.toHaveBeenCalled()
+  })
+
+  it('does not hydrate stored project over a deep-link wait (plan g1.2)', () => {
+    writeStoredProjectId('proj-a')
+    route.query = { run: 'run-1', node: 'n1' }
+    const ctx = useProjectContext()
+    ctx.ensureHydrated()
+    expect(replace).not.toHaveBeenCalled()
+    expect(ctx.selected.value).toBe('')
+    expect(localStorage.getItem(PROJECT_CONTEXT_STORAGE_KEY)).toBe('proj-a')
+  })
+
+  it('still hydrates stored project when there is no ?run= deep link', () => {
+    writeStoredProjectId('proj-a')
+    route.query = { wf: 'wf-1' }
+    const ctx = useProjectContext()
+    ctx.ensureHydrated()
+    expect(replace).toHaveBeenCalledWith({ query: { wf: 'wf-1', projectId: 'proj-a' } })
+  })
 })

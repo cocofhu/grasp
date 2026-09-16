@@ -336,7 +336,10 @@ describe('useHomeApproveChat', () => {
     })
     // The engine delivers the message once the approve node parks.
     expect(mocks.reactReply).not.toHaveBeenCalled()
-    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-1', node: 'ap' } })
+    expect(mocks.push).toHaveBeenCalledWith({
+      path: '/gates',
+      query: { run: 'run-1', node: 'ap', projectId: 'proj-1' },
+    })
   })
 
   it('carries attachments on the first message and navigates to inbox', async () => {
@@ -353,7 +356,10 @@ describe('useHomeApproveChat', () => {
       },
     })
     expect(mocks.reactReply).not.toHaveBeenCalled()
-    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-1', node: 'ap' } })
+    expect(mocks.push).toHaveBeenCalledWith({
+      path: '/gates',
+      query: { run: 'run-1', node: 'ap', projectId: 'proj-1' },
+    })
   })
 
   it('opens inbox immediately without polling for the Approve park', async () => {
@@ -364,9 +370,40 @@ describe('useHomeApproveChat', () => {
     chat.draft.value = '附图说明'
     void chat.send()
     await flushPromises()
-    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-1', node: 'ap' } })
+    expect(mocks.push).toHaveBeenCalledWith({
+      path: '/gates',
+      query: { run: 'run-1', node: 'ap', projectId: 'proj-1' },
+    })
     expect(mocks.getRun).not.toHaveBeenCalled()
     expect(mocks.reactReply).not.toHaveBeenCalled()
+  })
+
+  it('goGates writes the current workflow projectId dynamically (plan g1.1)', async () => {
+    mocks.listWorkflows.mockResolvedValue([approveWf, approveWfB])
+    const chat = withSetup(() => useHomeApproveChat())
+    await chat.load()
+    chat.selectPipeline('wf-lite')
+    chat.draft.value = '跨项目提交'
+    await chat.send()
+    await nextTick()
+    expect(mocks.push).toHaveBeenCalledWith({
+      path: '/gates',
+      query: { run: 'run-1', node: 'ap', projectId: 'proj-2' },
+    })
+  })
+
+  it('goGates omits projectId when the workflow has none (plan g1.1 / g2.3)', async () => {
+    mocks.listWorkflows.mockResolvedValue([{ ...approveWf, projectId: undefined }, reactWf])
+    const chat = withSetup(() => useHomeApproveChat())
+    await chat.load()
+    chat.draft.value = '无项目流水线'
+    await chat.send()
+    await nextTick()
+    expect(mocks.push).toHaveBeenCalledWith({
+      path: '/gates',
+      query: { run: 'run-1', node: 'ap' },
+    })
+    expect(mocks.push.mock.calls[0][0].query).not.toHaveProperty('projectId')
   })
 
   it('navigates even when the home view unmounts mid-send', async () => {
@@ -394,7 +431,10 @@ describe('useHomeApproveChat', () => {
       title: '卸载后仍要跳转',
       firstMessage: { text: '卸载后仍要跳转', images: [] },
     })
-    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-1', node: 'ap' } })
+    expect(mocks.push).toHaveBeenCalledWith({
+      path: '/gates',
+      query: { run: 'run-1', node: 'ap', projectId: 'proj-1' },
+    })
   })
 
   it('opens the launch modal when required ask fields are empty', async () => {

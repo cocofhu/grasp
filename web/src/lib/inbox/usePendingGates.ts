@@ -79,11 +79,39 @@ let refreshGeneration = 0
 let abortCtrl: AbortController | null = null
 
 async function fetchPeek(signal?: AbortSignal): Promise<{ items: InboxItem[]; total: number }> {
-  const data = await api.listGates({ page: 1, pageSize: 20, signal })
+  // Align with GatesInbox loadList: use the live URL filter set (plan g2.2).
+  // Do not hard-code project/wf/tag — read whatever is currently in the query.
+  const filters = readPeekFiltersFromLocation()
+  const data = await api.listGates({
+    page: 1,
+    pageSize: 20,
+    signal,
+    wf: filters.wf,
+    projectId: filters.projectId,
+    tag: filters.tag,
+  })
   if (isPaginated(data)) {
     return { items: data.items, total: data.total }
   }
   return { items: data, total: data.length }
+}
+
+/** URL `?wf=&projectId=&tag=` — same source of truth as the inbox page filters. */
+function readPeekFiltersFromLocation(): {
+  wf?: string
+  projectId?: string
+  tag?: string
+} {
+  if (typeof window === 'undefined') return {}
+  try {
+    const q = new URLSearchParams(window.location.search)
+    const wf = q.get('wf')?.trim() || undefined
+    const projectId = q.get('projectId')?.trim() || undefined
+    const tag = q.get('tag')?.trim() || undefined
+    return { wf, projectId, tag }
+  } catch {
+    return {}
+  }
 }
 
 function setPending(remote: InboxItem[], total: number) {

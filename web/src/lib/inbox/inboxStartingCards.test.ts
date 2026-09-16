@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isApproveAwaitingHuman,
   isApproveStillStarting,
   isStartFailedRun,
   makeIncomingGhost,
@@ -213,5 +214,52 @@ describe('vanishedStartingRows', () => {
 
   it('reports nothing on the first load, when there is no previous list', () => {
     expect(vanishedStartingRows([], [clarify()], keyOf)).toEqual([])
+  })
+})
+
+describe('isApproveAwaitingHuman', () => {
+  it('is true while the approve node is parked at waiting_human (plan g2.1)', () => {
+    expect(
+      isApproveAwaitingHuman(
+        {
+          status: 'waiting_human',
+          nodeRuns: { ap: { nodeId: 'ap', status: 'waiting_human' } },
+        } as unknown as Run,
+        'ap',
+      ),
+    ).toBe(true)
+  })
+
+  it('is false once the approve left pending or the run finished', () => {
+    expect(
+      isApproveAwaitingHuman(
+        {
+          status: 'running',
+          nodeRuns: {
+            ap: { nodeId: 'ap', status: 'completed' },
+            implement: { nodeId: 'implement', status: 'running' },
+          },
+        } as unknown as Run,
+        'ap',
+      ),
+    ).toBe(false)
+    expect(isApproveAwaitingHuman({ status: 'completed' } as Run, 'ap')).toBe(false)
+    expect(isApproveAwaitingHuman({ status: 'failed' } as Run, 'ap')).toBe(false)
+  })
+
+  it('resolves via graph approve nodes when the hinted id misses', () => {
+    expect(
+      isApproveAwaitingHuman(
+        {
+          status: 'waiting_human',
+          nodes: [
+            { id: 'in', type: 'input' },
+            { id: 'approve_x', type: 'approve' },
+          ],
+          nodeRuns: { approve_x: { nodeId: 'approve_x', status: 'waiting_human' } },
+        } as unknown as Run,
+        'ap',
+      ),
+    ).toBe(true)
   })
 })

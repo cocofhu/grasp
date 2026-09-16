@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InboxItem } from '@/lib/shared/types'
 
@@ -319,5 +320,40 @@ describe('usePendingGates', () => {
     expect(pg.hasPendingUpdate.value).toBe(false)
     pg.patchItemReplying('run-1:node-1', false)
     expect('state' in pg.displayedItems.value[0] ? pg.displayedItems.value[0].state : undefined).toBeUndefined()
+  })
+
+  it('peek passes live URL wf/projectId/tag to listGates (plan g2.2)', async () => {
+    const prev = window.location.search
+    window.history.replaceState({}, '', '/gates?wf=wf-1&projectId=proj-b&tag=urgent')
+    vi.mocked(api.listGates).mockClear()
+    vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
+    const pg = usePendingGates()
+    await pg.peek({ source: 'sidebar-poll' })
+    expect(api.listGates).toHaveBeenCalledWith(
+      expect.objectContaining({
+        page: 1,
+        pageSize: 20,
+        wf: 'wf-1',
+        projectId: 'proj-b',
+        tag: 'urgent',
+      }),
+    )
+    window.history.replaceState({}, '', prev || '/')
+  })
+
+  it('peek omits filter keys when the URL has none (plan g2.2 / g2.3)', async () => {
+    const prev = window.location.search
+    window.history.replaceState({}, '', '/gates')
+    vi.mocked(api.listGates).mockClear()
+    vi.mocked(api.listGates).mockResolvedValueOnce(paged([], 0))
+    await usePendingGates().peek()
+    expect(api.listGates).toHaveBeenCalledWith(
+      expect.objectContaining({
+        wf: undefined,
+        projectId: undefined,
+        tag: undefined,
+      }),
+    )
+    window.history.replaceState({}, '', prev || '/')
   })
 })

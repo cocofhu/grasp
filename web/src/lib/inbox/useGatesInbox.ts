@@ -30,6 +30,7 @@ import {
   pickNextActiveAfterRemove,
 } from '@/lib/inbox/inboxActiveSelection'
 import {
+  isApproveAwaitingHuman,
   isApproveStillStarting,
   isStartFailedRun,
   makeIncomingGhost,
@@ -422,6 +423,11 @@ function mergeIncomingGhost(items: InboxItem[]): InboxItem[] {
   // Cold refresh / reopen with ?run= after the approval already left pending:
   // confirm against the run before keeping a "启动中" ghost forever.
   void confirmIncomingGhostStillNeeded(t)
+  // Prefer a parked deep-link pin (plan g2.1) over rebuilding a starting card.
+  const pinned = incomingGhost.value
+  if (pinned && pinned.runId === t.runId && !isStartingInboxItem(pinned)) {
+    return [pinned, ...items]
+  }
   const seed = peekHomeApproveHandoff() || homeSeed.value
   const ghost = makeIncomingGhost(t, String(seed?.text || ''))
   incomingGhost.value = ghost
@@ -432,6 +438,10 @@ function mergeIncomingGhost(items: InboxItem[]): InboxItem[] {
  * Drop (or fail) a client-only starting ghost when the run is no longer booting.
  * Without this, a stale `?run=&node=` after successful flow keeps rebuilding
  * an empty "启动中" card on every loadList.
+ *
+ * When the approve has parked (`waiting_human`) but the current filters omit the
+ * row, pin it from an unfiltered peek so the deep-link target stays visible
+ * until it truly leaves pending (plan g2.1).
  */
 let incomingGhostConfirmInFlight = ''
 async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: string }) {
@@ -458,6 +468,37 @@ async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: 
       return
     }
     if (isApproveStillStarting(run, nodeId)) return
+
+    // Parked but maybe filtered out of loadList — pin the real pending row
+    // and keep armed so later filtered loadList passes still merge it (g2.1).
+    if (isApproveAwaitingHuman(run, nodeId)) {
+      try {
+        const data = await api.listGates({ page: 1, pageSize: 100 })
+        if (!incomingArmed.value) return
+        const curAfter = incomingTarget()
+        if (!curAfter || `${curAfter.runId}:${curAfter.nodeId || 'grasp'}` !== key) return
+        const rows = isPaginated(data) ? data.items : data
+        const hit = rows.find((it) => it.runId === target.runId)
+        if (hit) {
+          incomingGhost.value = hit
+          const hitKey = itemKey(hit)
+          if (!listItems.value.some((it) => itemKey(it) === hitKey)) {
+            const withoutStartingGhost = listItems.value.filter(
+              (it) => !(it.runId === target.runId && isStartingInboxItem(it)),
+            )
+            listItems.value = [hit, ...withoutStartingGhost]
+            listTotal.value = Math.max(listTotal.value, listItems.value.length)
+          }
+          if (!processingLock.value) ensureValidActive()
+          return
+        }
+      } catch {
+        // Transient unfiltered peek failure: keep the ghost; next load retries.
+      }
+      // Still pending but not yet listed — keep armed so the deep link stays.
+      return
+    }
+
     incomingArmed.value = false
     incomingGhost.value = null
     queryWaitGen++ // stop waitForQueryItem from polling a dead deep link
@@ -648,9 +689,16 @@ async function waitForQueryItem() {
     if (gen !== queryWaitGen) return
     if (selectFromQuery()) applyHomeHandoff()
     else selectFromHandoff()
-    // Done once the real row is selected, or once a starting card is up and the
-    // bounded starting poll owns the rest of the wait (no second loop).
-    if (active.value && (!incomingGhost.value || activeStarting.value)) return
+    // Done once the real row is selected, a starting card is up (bounded poll
+    // owns the rest), or a parked deep-link pin replaced the starting ghost.
+    if (
+      active.value &&
+      (!incomingGhost.value ||
+        activeStarting.value ||
+        !isStartingInboxItem(incomingGhost.value))
+    ) {
+      return
+    }
     await new Promise((r) => setTimeout(r, 400))
     if (gen !== queryWaitGen) return
     await loadList()

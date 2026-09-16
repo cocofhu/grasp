@@ -435,6 +435,41 @@ describe('GatesInboxView starting approvals', () => {
     wrapper.unmount()
   })
 
+  it('pins a parked deep-link row when filtered list omits it (plan g2.1 / g2.3)', async () => {
+    // Stored/filter project is proj-a; the deep-linked run belongs to proj-b and
+    // only appears on an unfiltered listGates. Identity is runId+nodeId.
+    routeState.query = { run: 'run-1', node: 'n1' }
+    filterState.projectSelected!.value = 'proj-a'
+    const parked = parkedItem()
+    parked.runId = 'run-1'
+    parked.nodeId = 'n1'
+    // Filtered loadList (with projectId) returns empty; unfiltered pin peek returns the row.
+    mocks.listGates.mockImplementation(async (params?: { projectId?: string }) => {
+      if (params?.projectId) return paged([])
+      return paged([parked])
+    })
+    mocks.getRun.mockResolvedValue({
+      id: 'run-1',
+      status: 'waiting_human',
+      nodeRuns: { n1: { nodeId: 'n1', status: 'waiting_human' } },
+    })
+    mocks.inboxContext.mockResolvedValue({
+      ...parkedContext,
+      clarify: { ...parkedContext.clarify, nodeId: 'n1' },
+    })
+    const wrapper = mountInbox()
+    await flushPromises()
+    await nextTick()
+    await flushPromises()
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(true)
+    })
+    expect(wrapper.find('[data-testid="inbox-item-card"]').attributes('data-starting')).not.toBe(
+      'true',
+    )
+    wrapper.unmount()
+  })
+
   it('leaves a live starting card alone when it merely drops out of a filtered page', async () => {
     mocks.listGates.mockResolvedValue(paged([startingItem()]))
     mocks.inboxContext.mockResolvedValue(startingContext)

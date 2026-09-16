@@ -368,10 +368,14 @@ export function useHomeApproveChat() {
   }
 
   function goGates(runId: string, nodeId?: string) {
-    return router.push({
-      path: '/gates',
-      query: nodeId ? { run: runId, node: nodeId } : { run: runId },
-    })
+    // Align inbox filters to the pipeline being started (plan g1.1). Use the
+    // workflow object's projectId only — never a hard-coded project name/UUID.
+    const wf = selected.value || launchTarget.value
+    const projectId = (wf?.projectId || '').trim()
+    const query: Record<string, string> = { run: runId }
+    if (nodeId) query.node = nodeId
+    if (projectId) query.projectId = projectId
+    return router.push({ path: '/gates', query })
   }
 
   /**

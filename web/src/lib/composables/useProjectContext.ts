@@ -58,10 +58,22 @@ export function useProjectContext() {
     },
   })
 
-  /** Call once on mount of platform list pages to restore stored project into URL. */
+  /**
+   * Call once on mount of platform list pages to restore stored project into URL.
+   * When deep-linking with `?run=` (inbox wait), do not write a stored project
+   * over filters that may belong to a different run (plan g1.2). Match by id
+   * presence of `?run=` / `?projectId=`, never by project name.
+   */
   function ensureHydrated() {
     if (typeof route.query.projectId === 'string') {
       writeStoredProjectId(route.query.projectId)
+      return
+    }
+    const deepLinkRun =
+      typeof route.query.run === 'string' ? route.query.run.trim() : ''
+    if (deepLinkRun) {
+      // Waiting on a specific run: keep current (possibly empty) project filter
+      // so a stored proj-a cannot filter out a just-submitted proj-b pipeline.
       return
     }
     const stored = readStoredProjectId()

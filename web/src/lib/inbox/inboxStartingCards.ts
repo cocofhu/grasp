@@ -126,6 +126,30 @@ export function isApproveStillStarting(
 }
 
 /**
+ * Whether the deep-linked approve/gate is still waiting for a human (parked).
+ * Used to pin `?run=&node=` after boot when the filtered list omits the row
+ * (cross-project / wf / tag mismatch) — only leave once the node left pending.
+ */
+export function isApproveAwaitingHuman(
+  run: Pick<Run, 'status'> & { nodeRuns?: Run['nodeRuns']; nodes?: Run['nodes'] },
+  nodeId: string,
+): boolean {
+  if (run.status === 'failed' || run.status === 'cancelled' || run.status === 'completed') {
+    return false
+  }
+
+  const hinted = nodeRunStatus(run, nodeId)
+  if (hinted === 'waiting_human') return true
+  if (hinted !== undefined) return false
+
+  const approveIds = (run.nodes || []).filter((n) => isGrasp(n.type)).map((n) => n.id)
+  for (const id of approveIds) {
+    if (nodeRunStatus(run, id) === 'waiting_human') return true
+  }
+  return run.status === 'waiting_human'
+}
+
+/**
  * Starting rows present in `before` but gone from `after`. Each one still needs
  * a run check before it counts as a failure: a filter or page change drops live
  * rows too. `ignoreKey` skips the client-side ghost, which is not a server row.
