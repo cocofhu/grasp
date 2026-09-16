@@ -79,11 +79,13 @@ defineExpose({
   isSessionBusy: () => !!reviewChatRef.value?.isSessionBusy?.(),
   isChatReady: () => !!reviewChatRef.value?.isChatReady?.(),
   playConfirmCeremony: async () => {
-    if (reviewChatRef.value?.playConfirmCeremony) {
-      await reviewChatRef.value.playConfirmCeremony()
+    // Prefer ReviewShell host — chat inject often misses slotted provide (plan g1.2).
+    void reviewChatRef.value?.playConfirmCeremony?.()
+    if (reviewShellRef.value?.playConfirmCeremony) {
+      await reviewShellRef.value.playConfirmCeremony()
       return
     }
-    await reviewShellRef.value?.playConfirmCeremony?.()
+    await reviewChatRef.value?.playConfirmCeremony?.()
   },
 })
 </script>

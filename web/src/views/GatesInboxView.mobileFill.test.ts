@@ -170,9 +170,9 @@ describe('GatesInboxView list first-load tri-state (plan g1 / g2 / g3.2)', () =>
 
     const desktop = src.slice(src.indexOf('<!-- Desktop three-zone'))
     // Content with rows first; empty-path order is skeleton → error → EmptyState.
-    expect(desktop.indexOf('v-else-if="!isMobile && listItems.length"')).toBeGreaterThan(-1)
+    expect(desktop.indexOf('v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold)"')).toBeGreaterThan(-1)
     expect(desktop.indexOf('v-else-if="!isMobile && showListSkeleton"')).toBeGreaterThan(
-      desktop.indexOf('v-else-if="!isMobile && listItems.length"'),
+      desktop.indexOf('v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold)"'),
     )
     expect(desktop.indexOf('v-else-if="!isMobile && showListError"')).toBeGreaterThan(
       desktop.indexOf('v-else-if="!isMobile && showListSkeleton"'),

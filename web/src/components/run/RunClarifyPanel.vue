@@ -103,12 +103,15 @@ defineExpose({
   isSessionBusy: () => !!reviewChatRef.value?.isSessionBusy?.(),
   isChatReady: () => !!reviewChatRef.value?.isChatReady?.(),
   playConfirmCeremony: async () => {
-    // Prefer chat so confirmFlowPlayedForDone is set (avoids double-play on done).
-    if (reviewChatRef.value?.playConfirmCeremony) {
-      await reviewChatRef.value.playConfirmCeremony()
+    // Overlay mounts on ReviewShell. ClarifyChat inject misses slotted provide, so
+    // preferring chat no-ops and never reaches the host (plan g1.1 / g1.2).
+    // Mark chat cycle first (confirmFlowPlayedForDone), then play the real host.
+    void reviewChatRef.value?.playConfirmCeremony?.()
+    if (reviewShellRef.value?.playConfirmCeremony) {
+      await reviewShellRef.value.playConfirmCeremony()
       return
     }
-    await reviewShellRef.value?.playConfirmCeremony?.()
+    await reviewChatRef.value?.playConfirmCeremony?.()
   },
 })
 </script>

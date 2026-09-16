@@ -10,6 +10,7 @@ import InboxPendingCard from '@/components/inbox/InboxPendingCard.vue'
 import InboxStartFailedPane from '@/components/inbox/InboxStartFailedPane.vue'
 import ReviewShell from '@/components/run/ReviewShell.vue'
 import ReviewComposer from '@/components/run/ReviewComposer.vue'
+import ConfirmFlowOverlay from '@/components/run/ConfirmFlowOverlay.vue'
 import ArtifactLoadingPane from '@/components/run/ArtifactLoadingPane.vue'
 import ClarifyProductStage from '@/components/run/ClarifyProductStage.vue'
 import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
@@ -126,6 +127,11 @@ const {
   listEl,
   gateApprovalRef,
   reviewChatRef,
+  reviewShellRef,
+  confirmFlowDeskHold,
+  inboxConfirmFlowPhase,
+  inboxConfirmFlowReduce,
+  inboxConfirmFlowToken,
   pendingAcpFrames,
   projectFilterOpen,
   pipelineFilterOpen,
@@ -408,8 +414,8 @@ const listFadeKey = computed(() =>
     </template>
 
     <!-- Mobile detail view -->
-    <div v-else-if="isMobile && mobileView === 'detail' && active" class="card flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div class="flex shrink-0 items-center justify-end gap-3 border-b border-line px-4 py-2">
+    <div v-else-if="isMobile && mobileView === 'detail' && (active || confirmFlowDeskHold)" class="card relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div v-if="active" class="flex shrink-0 items-center justify-end gap-3 border-b border-line px-4 py-2">
         <button
           v-if="isShareableInboxItem(active)"
           type="button"
@@ -424,7 +430,8 @@ const listFadeKey = computed(() =>
           {{ t('common.buttons.openRunDetail') }}
         </button>
       </div>
-      <div class="flex min-h-0 flex-1 flex-col">
+      <div class="relative flex min-h-0 flex-1 flex-col">
+        <template v-if="active">
         <ArtifactLoadingPane v-if="activeRunLoading && active.type === 'gate'" message-key="pages.gatesInbox.loadingRun" />
             <GateApproval
           v-else-if="active.type === 'gate'"
@@ -441,11 +448,13 @@ const listFadeKey = computed(() =>
         <InboxStartFailedPane v-else-if="startFailedActive" @dismiss="dismissStartFailure" />
         <ReviewShell
           v-else-if="showClarifyReviewShell"
+          ref="reviewShellRef"
           :key="active.runId + active.nodeId"
           class="min-h-0 flex-1"
           mobile
           :sidebar-width="400"
           :storage-key="REVIEW_SHELL_WIDTH_KEY_APPROVAL"
+          :host-confirm-flow="false"
         >
           <template #stage>
             <ReactConnectingState
@@ -511,13 +520,19 @@ const listFadeKey = computed(() =>
           :loading="activeRunLoading"
           @retry="retryActiveRun"
         />
+        </template>
+        <ConfirmFlowOverlay
+          :phase="inboxConfirmFlowPhase"
+          :reduce-motion="inboxConfirmFlowReduce"
+          :play-token="inboxConfirmFlowToken"
+        />
       </div>
     </div>
 
     <!-- Desktop three-zone: list | product stage + review sidebar (via GateApproval/ReviewShell).
          items-stretch so detail card + review sidebar fill remaining viewport height (no page void under card). -->
     <div
-      v-else-if="!isMobile && listItems.length"
+      v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold)"
       class="grid min-h-0 flex-1 grid-cols-[320px_1fr] items-stretch gap-4"
       :class="showListRefresh ? 'opacity-[0.55]' : ''"
     >
@@ -542,8 +557,9 @@ const listFadeKey = computed(() =>
         <Pagination v-if="listTotal > PAGE_SIZE" v-model:page="listPage" :page-size="PAGE_SIZE" :total="listTotal" />
       </div>
 
-      <div v-if="active" class="flex h-full min-h-0 min-w-0 flex-col">
-        <div class="card flex h-full min-h-0 w-full flex-col overflow-hidden">
+      <div v-if="active || confirmFlowDeskHold" class="relative flex h-full min-h-0 min-w-0 flex-col">
+        <div class="card relative flex h-full min-h-0 w-full flex-col overflow-hidden">
+          <template v-if="active">
           <div class="flex shrink-0 items-center justify-between border-b border-line px-4 py-2.5">
             <span class="text-xs text-txt3">Run #{{ active.runId.replace('run-', '') }} · {{ active.nodeId }}</span>
             <button class="text-xs text-accent-2 hover:underline" @click="router.push('/runs/' + active.runId)">
@@ -569,10 +585,12 @@ const listFadeKey = computed(() =>
             <InboxStartFailedPane v-else-if="startFailedActive" @dismiss="dismissStartFailure" />
             <ReviewShell
               v-else-if="showClarifyReviewShell"
+              ref="reviewShellRef"
               :key="active.runId + active.nodeId"
               class="min-h-0 flex-1"
               :sidebar-width="400"
               :storage-key="REVIEW_SHELL_WIDTH_KEY_APPROVAL"
+              :host-confirm-flow="false"
             >
               <template #stage>
                 <ReactConnectingState
@@ -639,6 +657,12 @@ const listFadeKey = computed(() =>
               @retry="retryActiveRun"
             />
           </div>
+          </template>
+          <ConfirmFlowOverlay
+            :phase="inboxConfirmFlowPhase"
+            :reduce-motion="inboxConfirmFlowReduce"
+            :play-token="inboxConfirmFlowToken"
+          />
         </div>
       </div>
     </div>

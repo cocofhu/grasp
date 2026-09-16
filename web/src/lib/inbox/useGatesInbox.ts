@@ -48,7 +48,7 @@ import { isNodeEventsUnavailable } from '@/lib/run/nodeEventsResponse'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { useToast } from '@/lib/composables/useToast'
 import { inboxShareKind, isHumanGateInboxItem, isShareableInboxItem } from '@/lib/inbox/gateShareLink'
-import { playConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
+import { createConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import {
   consumeHomeApproveHandoff,
   homeApproveHandoffMatchesRun,
@@ -120,6 +120,8 @@ const mobileView = ref<'list' | 'detail'>('list')
 const listScrollTop = ref(0)
 const listEl = ref<HTMLElement | null>(null)
 const gateApprovalRef = ref<InstanceType<typeof GateApproval> | null>(null)
+/** ReviewShell hosts ConfirmFlowOverlay for run-detail panels; inbox plays page-level ceremony. */
+const reviewShellRef = ref<{ playConfirmCeremony?: () => Promise<void> } | null>(null)
 const reviewChatRef = ref<{
   applyReviewFrame?: (frame: any) => boolean | void
   applyAcpEvents?: (events: any[] | undefined, nodeId?: string) => boolean | void
@@ -127,6 +129,23 @@ const reviewChatRef = ref<{
   isSessionBusy?: () => boolean
   playConfirmCeremony?: () => Promise<void>
 } | null>(null)
+/**
+ * Page-level ceremony — survives active switch / shell remount so the overlay stays
+ * visible after the list card leaves (plan g1.2). Child inject often misses slotted provide.
+ */
+const inboxConfirmFlow = createConfirmFlowCeremony()
+/**
+ * Keep the desk column mounted while the overlay plays after the last card leaves
+ * (listItems empty would otherwise tear down the host via v-if).
+ */
+const confirmFlowDeskHold = ref(false)
+
+function playInboxConfirmFlowCeremony(): Promise<void> {
+  confirmFlowDeskHold.value = true
+  return inboxConfirmFlow.play().finally(() => {
+    confirmFlowDeskHold.value = false
+  })
+}
 /**
  * Review/clarify WS frames that arrived while ClarifyChat was unmounted
  * (hard loadActiveRun nulls activeRun → ReviewComposer gone). Flushed after mount.
@@ -1646,8 +1665,9 @@ async function onResolve(action: string, form: Record<string, any> = {}) {
   const prevList = listItems.value.slice()
   const positive = action === 'pass' || action === 'approve'
   // Leave pending at confirm click — do not wait for resume/network (plan g1.2).
-  // Positive path: start overlay on click (g1.1); do not await before leave.
-  if (positive) void playConfirmFlowCeremony(gateApprovalRef.value)
+  // Positive path: start page-level overlay on click (g1.1); do not await before leave.
+  // Page-level host survives selectActiveAfterRemove / shell remount (g1.2).
+  if (positive) void playInboxConfirmFlowCeremony()
   removeListItemLocally(submittedKey)
   selectActiveAfterRemove(prevList, submittedKey)
   if (!active.value) {
@@ -1657,6 +1677,8 @@ async function onResolve(action: string, form: Record<string, any> = {}) {
   try {
     await api.resumeGate(g.runId, g.nodeId, action, form)
   } catch {
+    confirmFlowDeskHold.value = false
+    inboxConfirmFlow.reset()
     restoreListItemLocally(submittedItem, prevList)
     rollbackProcessingIntent(submittedItem)
     // Reclaim for retry unless a newer neighbor confirm already owns the selection.
@@ -1745,8 +1767,8 @@ async function onClarifySend(
   if (force) {
     beginProcessingIntent(it)
     // Click intent: play overlay + leave pending before wrap-up HTTP (plan g1.1 / g1.2).
-    // Do not wait for reactReply — Approve wrap-up can take far longer than ~3s.
-    void playConfirmFlowCeremony(reviewChatRef.value)
+    // Page-level host (not chat inject / shell remount) — do not await reactReply.
+    void playInboxConfirmFlowCeremony()
     removeListItemLocally(submittedKey)
     selectActiveAfterRemove(prevList!, submittedKey)
     if (!active.value) {
@@ -1782,6 +1804,8 @@ async function onClarifySend(
     if (force) {
       // Align with RunDetail: bottom status bar, not toast.
       clarifyConfirmError.value = msg
+      confirmFlowDeskHold.value = false
+      inboxConfirmFlow.reset()
       restoreListItemLocally(submittedItem, prevList!)
       rollbackProcessingIntent(submittedItem)
       // Reclaim for retry unless a newer neighbor confirm already owns the selection.
@@ -1917,6 +1941,8 @@ onUnmounted(() => {
   window.removeEventListener('focus', onFocus)
   closeActiveRunWs()
   for (const triple of [...inboxContextAborts.keys()]) abortInboxContext(triple)
+  confirmFlowDeskHold.value = false
+  inboxConfirmFlow.reset()
 })
 
 function itemTitle(it: InboxItem) {
@@ -2033,7 +2059,13 @@ function itemSecondary(it: InboxItem) {
     listScrollTop,
     listEl,
     gateApprovalRef,
+    reviewShellRef,
     reviewChatRef,
+    confirmFlowDeskHold,
+    inboxConfirmFlow,
+    inboxConfirmFlowPhase: inboxConfirmFlow.phase,
+    inboxConfirmFlowReduce: inboxConfirmFlow.reduceMotion,
+    inboxConfirmFlowToken: inboxConfirmFlow.playToken,
     pendingAcpFrames,
     projectFilterOpen,
     pipelineFilterOpen,
