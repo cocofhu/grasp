@@ -1,5 +1,9 @@
 # Grasp
 
+<p align="center">
+  <img src="media/grasp-logo-banner.png" alt="Grasp — See agent work at a glance" width="480" />
+</p>
+
 Over the past two years, as large models got stronger, I explored widely and shipped **150+** personal projects. Two problems kept getting in the way:
 
 1. **Multi-project switching is expensive** — bouncing between IDEs, with run state and context hard to keep straight;
@@ -21,6 +25,8 @@ So I built Grasp: one platform for all your projects, and visual requirement cla
 [![coverage-sandbox](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fgrasp%2Fcoverage-badges%2Fcoverage-sandbox.json)](https://github.com/cocofhu/grasp/actions/workflows/ci-sandbox.yml)
 [![coverage-server](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fgrasp%2Fcoverage-badges%2Fcoverage-server.json)](https://github.com/cocofhu/grasp/actions/workflows/ci-server.yml)
 [![coverage-gateway](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fgrasp%2Fcoverage-badges%2Fcoverage-gateway.json)](https://github.com/cocofhu/grasp/actions/workflows/ci-gateway.yml)
+
+<a href="https://trendshift.io/repositories/95319?utm_source=trendshift-badge&utm_medium=badge&utm_campaign=badge-trendshift-95319" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/95319/daily?language=Go" alt="cocofhu/grasp | Trendshift" width="250" height="55"/></a>
 
 ## Demo
 

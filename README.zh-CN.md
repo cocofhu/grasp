@@ -1,5 +1,9 @@
 # Grasp
 
+<p align="center">
+  <img src="media/grasp-logo-banner.png" alt="Grasp — See agent work at a glance" width="480" />
+</p>
+
 **[English](README.md) | 简体中文**
 近两年，随着大模型能力持续增强，我开始尝试多方面的探索，大约做过 150+ 个个人项目。在开发过程中，我遇到最大问题是：
 
@@ -24,6 +28,8 @@
 [![coverage-sandbox](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fgrasp%2Fcoverage-badges%2Fcoverage-sandbox.json)](https://github.com/cocofhu/grasp/actions/workflows/ci-sandbox.yml)
 [![coverage-server](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fgrasp%2Fcoverage-badges%2Fcoverage-server.json)](https://github.com/cocofhu/grasp/actions/workflows/ci-server.yml)
 [![coverage-gateway](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcocofhu%2Fgrasp%2Fcoverage-badges%2Fcoverage-gateway.json)](https://github.com/cocofhu/grasp/actions/workflows/ci-gateway.yml)
+
+<a href="https://trendshift.io/repositories/95319?utm_source=trendshift-badge&utm_medium=badge&utm_campaign=badge-trendshift-95319" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/95319/daily?language=Go" alt="cocofhu/grasp | Trendshift" width="250" height="55"/></a>
 
 ## 演示
 

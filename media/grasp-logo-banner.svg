@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="220" viewBox="0 0 720 220" role="img" aria-label="Grasp">
+  <title>Grasp</title>
+  <defs>
+    <style>
+      .name { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-weight: 700; font-size: 56px; letter-spacing: -0.03em; }
+      .tag  { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-weight: 400; font-size: 22px; letter-spacing: 0.01em; }
+    </style>
+  </defs>
+
+  <!-- Banner -->
+  <rect x="0" y="0" width="720" height="220" rx="36" ry="36" fill="#121214"/>
+
+  <!-- Icon: opposing grips around a purple core (grasp / at-a-glance) -->
+  <g transform="translate(92,110)">
+    <!-- left grip -->
+    <path d="M-48 -34 C-58 -18 -58 18 -48 34" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+    <path d="M-34 -26 C-42 -14 -42 14 -34 26" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+    <!-- right grip -->
+    <path d="M48 -34 C58 -18 58 18 48 34" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+    <path d="M34 -26 C42 -14 42 14 34 26" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+    <!-- core -->
+    <rect x="-18" y="-18" width="36" height="36" rx="8" ry="8" transform="rotate(45)" fill="#7B61FF"/>
+  </g>
+
+  <!-- Wordmark + tagline -->
+  <text class="name" x="178" y="108" fill="#FFFFFF">Grasp</text>
+  <text class="tag"  x="180" y="148" fill="#888888">See agent work at a glance</text>
+</svg>
