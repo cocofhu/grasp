@@ -663,7 +663,7 @@ describe('DashboardView home composer', () => {
       firstMessage: { text: '把登录做清楚', images: [] },
     })
     expect(mocks.reactReply).not.toHaveBeenCalled()
-    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap' } })
+    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap', projectId: 'proj-1' } })
     wrapper.unmount()
   })
 
@@ -837,7 +837,7 @@ describe('DashboardView home composer', () => {
       },
     })
     expect(mocks.reactReply).not.toHaveBeenCalled()
-    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap' } })
+    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap', projectId: 'proj-1' } })
     wrapper.unmount()
     vi.unstubAllGlobals()
   })
