@@ -246,7 +246,8 @@ describe('PlanView', () => {
   })
 
   it('falls back to source when mermaid render fails', async () => {
-    mermaidRender.mockRejectedValueOnce(new Error('boom'))
+    // Permanent rejection: MermaidDiagram retries once, then falls back.
+    mermaidRender.mockRejectedValue(new Error('boom'))
     const doc: PlanDoc = {
       architecture: {
         summary: 'arch',
