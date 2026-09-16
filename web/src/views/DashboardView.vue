@@ -756,7 +756,9 @@ onBeforeUnmount(() => {
             @contextmenu.prevent
             @pointerdown.stop
           >
-            <span class="home-shell__card-plus" aria-hidden="true">+</span>
+            <span class="home-shell__card-plus" aria-hidden="true">
+              <Icon name="plus" :size="20" />
+            </span>
             <span class="home-shell__card-add-label">{{ t('pages.dashboard.create.addCard') }}</span>
           </button>
         </div>
@@ -1020,9 +1022,10 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
-  line-height: 1;
   transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.home-shell__card-plus > svg {
+  display: block;
 }
 .home-shell__card--add:hover .home-shell__card-plus {
   transform: rotate(90deg) scale(1.06);

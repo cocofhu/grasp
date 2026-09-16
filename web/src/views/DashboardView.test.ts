@@ -1006,6 +1006,36 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
+  // plan g3.1 — the plus is an SVG icon whose ink is geometrically centered in the square,
+  // so flex centering no longer depends on the text glyph baseline (font-independent).
+  it('renders the new-workflow plus as a centered svg icon instead of a text glyph', async () => {
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const plus = wrapper.get('[data-testid="home-new-workflow"] .home-shell__card-plus')
+    // no text node => no font baseline to push the glyph off-center
+    expect(plus.text().trim()).toBe('')
+
+    const svg = plus.get('svg')
+    expect(svg.attributes('width')).toBe('20')
+    expect(svg.attributes('height')).toBe('20')
+    const viewBox = svg.attributes('viewBox') ?? ''
+    const [vbX, vbY, vbW, vbH] = viewBox.split(/\s+/).map(Number)
+    expect(vbW).toBe(vbH)
+    expect(vbX + vbW / 2).toBe(vbY + vbH / 2)
+
+    // each stroke of the plus is centered on the viewBox center
+    const d = svg.get('path').attributes('d') ?? ''
+    const vertical = d.match(/M(\d+) (\d+)v(\d+)/)
+    const horizontal = d.match(/M(\d+) (\d+)h(\d+)/)
+    expect(vertical).not.toBeNull()
+    expect(horizontal).not.toBeNull()
+    const vMid = { x: Number(vertical![1]), y: Number(vertical![2]) + Number(vertical![3]) / 2 }
+    const hMid = { x: Number(horizontal![1]) + Number(horizontal![3]) / 2, y: Number(horizontal![2]) }
+    expect(vMid).toEqual({ x: vbX + vbW / 2, y: vbY + vbH / 2 })
+    expect(hMid).toEqual(vMid)
+    wrapper.unmount()
+  })
+
   // plan g1.2 — empty pipeline list still offers the same plus card
   it('keeps the new-workflow card when the home pipeline list is empty', async () => {
     mocks.listWorkflows.mockResolvedValue([])
