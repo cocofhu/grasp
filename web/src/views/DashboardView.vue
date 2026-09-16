@@ -757,7 +757,7 @@ onBeforeUnmount(() => {
             @pointerdown.stop
           >
             <span class="home-shell__card-plus" aria-hidden="true">
-              <Icon name="plus" :size="20" />
+              <Icon name="plus" :size="16" />
             </span>
             <span class="home-shell__card-add-label">{{ t('pages.dashboard.create.addCard') }}</span>
           </button>

@@ -51,6 +51,7 @@ import { HOME_COMPOSER_DRAFT_KEY } from '@/lib/run/homeComposerDraft'
 import { HOME_PRIORITY_MEMORY_KEY } from '@/lib/run/useHomeApproveChat'
 import { setBrandSettings } from '@/lib/composables/useBrandSettings'
 import DashboardView from './DashboardView.vue'
+import dashboardSource from './DashboardView.vue?raw'
 
 const HomePreviewAppModalStub = {
   props: ['open', 'title', 'width'],
@@ -1016,8 +1017,9 @@ describe('DashboardView home composer', () => {
     expect(plus.text().trim()).toBe('')
 
     const svg = plus.get('svg')
-    expect(svg.attributes('width')).toBe('20')
-    expect(svg.attributes('height')).toBe('20')
+    // size matches sibling plus icons (e.g. home-composer-plus) so the ink is not enlarged
+    expect(svg.attributes('width')).toBe('16')
+    expect(svg.attributes('height')).toBe('16')
     const viewBox = svg.attributes('viewBox') ?? ''
     const [vbX, vbY, vbW, vbH] = viewBox.split(/\s+/).map(Number)
     expect(vbW).toBe(vbH)
@@ -1033,6 +1035,14 @@ describe('DashboardView home composer', () => {
     const hMid = { x: Number(horizontal![1]) + Number(horizontal![3]) / 2, y: Number(horizontal![2]) }
     expect(vMid).toEqual({ x: vbX + vbW / 2, y: vbY + vbH / 2 })
     expect(hMid).toEqual(vMid)
+
+    // the flex box still centers its svg child geometrically (no font baseline involved)
+    expect(svg.element.parentElement).toBe(plus.element)
+    const css = dashboardSource
+    expect(css).toMatch(/\.home-shell__card-plus\s*\{[^}]*display:\s*flex[^}]*\}/)
+    expect(css).toMatch(/\.home-shell__card-plus\s*\{[^}]*align-items:\s*center[^}]*\}/)
+    expect(css).toMatch(/\.home-shell__card-plus\s*\{[^}]*justify-content:\s*center[^}]*\}/)
+    expect(css).toMatch(/\.home-shell__card-plus\s*>\s*svg\s*\{[^}]*display:\s*block[^}]*\}/)
     wrapper.unmount()
   })
 
