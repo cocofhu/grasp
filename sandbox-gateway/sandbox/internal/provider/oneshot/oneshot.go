@@ -16,7 +16,9 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	"backend/internal/provider"
 )
@@ -172,9 +174,9 @@ func (p *Provider) Open(procCtx, _ context.Context, opts provider.OpenOptions,
 		fsRoot:  fsRoot,
 		// Seed from the parent environment so the child keeps HOME/PATH/etc.
 		// (needed to locate the CLI's login/config), then normalize auth vars.
-		env:     p.c.AuthEnv(os.Environ()),
-		onEvent: onEvent,
-		done:    make(chan struct{}),
+		env:      p.c.AuthEnv(os.Environ()),
+		onEvent:  onEvent,
+		done:     make(chan struct{}),
 		cumUsage: map[string]provider.TokenUsage{},
 	}
 	s.sessionID = opts.ResumeSessionID
@@ -333,28 +335,53 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 	cmd.Env = e.env
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	stdout, err := cmd.StdoutPipe()
+	// Own both output pipes instead of using StdoutPipe / an io.Writer Stderr:
+	// handing exec *os.File ends keeps it from copying the streams in internal
+	// goroutines that cmd.Wait blocks on, and keeps the read ends pollable so a
+	// pipe a leaked descendant still holds can be abandoned (see joinOutputs).
+	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {
 		return turnOutcome{stopReason: "failed"}, err
 	}
+	stderrR, stderrW, err := os.Pipe()
+	if err != nil {
+		closeFiles(stdoutR, stdoutW)
+		return turnOutcome{stopReason: "failed"}, err
+	}
+	cmd.Stdout = stdoutW
+	cmd.Stderr = stderrW
 	tail := newStderrTail(64 * 1024)
-	cmd.Stderr = tail
 
 	var stdin io.WriteCloser
 	if e.c.PromptViaStdin() {
 		if stdin, err = cmd.StdinPipe(); err != nil {
+			closeFiles(stdoutR, stdoutW, stderrR, stderrW)
 			return turnOutcome{stopReason: "failed"}, err
 		}
 	}
 	if err := cmd.Start(); err != nil {
+		closeFiles(stdoutR, stdoutW, stderrR, stderrW)
 		return turnOutcome{stopReason: "failed"}, err
 	}
-	// Cancel → SIGKILL the process group (negative pgid).
+	// The child holds its own copies now; drop the parent's write ends or even a
+	// well-behaved CLI's pipes would never reach EOF.
+	closeFiles(stdoutW, stderrW)
+	// Cancel → SIGKILL the process group (negative pgid). Disarmed as soon as the
+	// CLI is known to be gone: signalling the group after that only reaches the
+	// children it left behind, e.g. a service the agent started for a preview.
 	killCh := make(chan struct{})
-	defer close(killCh)
+	var killerOff sync.Once
+	disarmKiller := func() { killerOff.Do(func() { close(killCh) }) }
+	defer disarmKiller()
 	go func() {
 		select {
 		case <-turnCtx.Done():
+			// Ties go to the disarm side.
+			select {
+			case <-killCh:
+				return
+			default:
+			}
 			if cmd.Process != nil {
 				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 			}
@@ -371,6 +398,7 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 			_ = stdin.Close()
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
+			closeFiles(stdoutR, stderrR)
 			return turnOutcome{stopReason: "failed"}, fmt.Errorf("oneshot: agent %q 图片附件需要 StdinEncoder", e.c.AgentName())
 		}
 		stdinDone = make(chan struct{})
@@ -414,21 +442,27 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 	}
 
 	var streamErr error
-	if whole, ok := e.c.(WholeOutputCodec); ok {
-		// Whole-document mode: drain stdout, parse once (pretty-printed JSON).
-		buf, rerr := io.ReadAll(stdout)
-		if rerr != nil {
-			streamErr = fmt.Errorf("oneshot: read stdout: %w", rerr)
-		} else {
-			apply(whole.ParseAll(buf))
+	stdoutPipe := newOutPipe(stdoutR, outputDrainGrace)
+	stderrPipe := newOutPipe(stderrR, outputDrainGrace)
+	stderrPipe.start(func(r io.Reader) { _, _ = io.Copy(tail, r) })
+	stdoutPipe.start(func(r io.Reader) {
+		if whole, ok := e.c.(WholeOutputCodec); ok {
+			// Whole-document mode: drain stdout, parse once (pretty-printed JSON).
+			buf, rerr := io.ReadAll(r)
+			if len(buf) > 0 {
+				apply(whole.ParseAll(buf))
+			}
+			if rerr != nil {
+				streamErr = fmt.Errorf("oneshot: read stdout: %w", rerr)
+			}
+			return
 		}
-	} else {
 		// Per-turn parser: stateful codecs get a fresh instance each turn.
 		var parser LineParser = e.c
 		if sf, ok := e.c.(StatefulCodec); ok {
 			parser = sf.NewTurnParser(e.opts)
 		}
-		sc := bufio.NewScanner(stdout)
+		sc := bufio.NewScanner(r)
 		sc.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024)
 		for sc.Scan() {
 			line := sc.Bytes()
@@ -440,8 +474,23 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 		if serr := sc.Err(); serr != nil {
 			streamErr = fmt.Errorf("oneshot: scan stdout: %w", serr)
 		}
-	}
+	})
+
+	// The turn ends when the CLI process exits, never when its pipes reach EOF:
+	// a service the agent started during the turn inherits the write ends, so
+	// EOF can be arbitrarily far away (or never come at all).
 	waitErr := cmd.Wait()
+	disarmKiller()
+	stdoutPipe.startDraining()
+	stderrPipe.startDraining()
+	leakedOut, leakedErr := stdoutPipe.join(), stderrPipe.join()
+	if leakedOut || leakedErr {
+		log.Printf("oneshot: agent=%s 已退出但输出管道仍被其后代进程持有，单次读取超过 %s 后放弃（本回合可能在前台或未重定向地起了常驻服务，正确写法：setsid nohup cmd </dev/null >log 2>&1 &）",
+			e.c.AgentName(), outputDrainGrace)
+		if errors.Is(streamErr, os.ErrDeadlineExceeded) {
+			streamErr = nil
+		}
+	}
 	if stdinDone != nil {
 		<-stdinDone
 	}
@@ -577,6 +626,97 @@ func (e *engine) emit(ev map[string]any) {
 		return
 	}
 	e.onEvent(b)
+}
+
+// --- child output pipes ----------------------------------------------------
+
+// outputDrainGrace bounds a single read on a CLI's stdout / stderr once the
+// process itself exited. A var so tests can shrink it.
+var outputDrainGrace = 2 * time.Second
+
+// outPipe is the parent's read end of one child output stream, plus the
+// goroutine consuming it.
+type outPipe struct {
+	f     *os.File
+	grace time.Duration
+	done  chan struct{}
+
+	draining atomic.Bool
+	timedOut atomic.Bool
+}
+
+func newOutPipe(f *os.File, grace time.Duration) *outPipe {
+	return &outPipe{f: f, grace: grace, done: make(chan struct{})}
+}
+
+// start consumes the pipe in its own goroutine so the turn is bounded by the CLI
+// process exiting rather than by the pipe reaching EOF.
+func (p *outPipe) start(consume func(io.Reader)) {
+	go func() {
+		defer close(p.done)
+		consume(&graceReader{p: p})
+	}()
+}
+
+// startDraining arms a deadline per read now that the CLI process is gone. Only
+// time spent blocked *in a read* counts against the grace, so a consumer that is
+// merely slow (parsing, or emitting to a stalled websocket) is never mistaken
+// for one waiting on a write end some leaked descendant kept open.
+func (p *outPipe) startDraining() {
+	p.draining.Store(true)
+	if err := p.f.SetReadDeadline(time.Now().Add(p.grace)); err != nil {
+		// No deadline support: closing is the only way to unblock the consumer.
+		log.Printf("oneshot: 管道 %s 不支持读超时，直接关闭: %v", p.f.Name(), err)
+		_ = p.f.Close()
+	}
+}
+
+// join waits for the consumer and reports whether the pipe had to be abandoned,
+// i.e. a descendant of the CLI leaked the write end and the trailing output is
+// lost. An abandoned pipe keeps being drained to io.Discard in the background:
+// the process still holding the write end is usually a service meant to outlive
+// the turn, and closing the read end under it would kill it with SIGPIPE on its
+// next line of output.
+func (p *outPipe) join() bool {
+	<-p.done
+	if !p.timedOut.Load() {
+		_ = p.f.Close()
+		return false
+	}
+	if err := p.f.SetReadDeadline(time.Time{}); err != nil {
+		_ = p.f.Close()
+		return true
+	}
+	go func() {
+		_, _ = io.Copy(io.Discard, p.f)
+		_ = p.f.Close()
+	}()
+	return true
+}
+
+// graceReader re-arms the per-read deadline while draining and records whether a
+// read ever hit it.
+type graceReader struct{ p *outPipe }
+
+func (g *graceReader) Read(b []byte) (int, error) {
+	if g.p.draining.Load() {
+		if err := g.p.f.SetReadDeadline(time.Now().Add(g.p.grace)); err != nil {
+			return 0, err
+		}
+	}
+	n, err := g.p.f.Read(b)
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		g.p.timedOut.Store(true)
+	}
+	return n, err
+}
+
+func closeFiles(files ...*os.File) {
+	for _, f := range files {
+		if err := f.Close(); err != nil {
+			log.Printf("oneshot: close %s: %v", f.Name(), err)
+		}
+	}
 }
 
 // --- helpers ---------------------------------------------------------------

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"backend/internal/provider"
 )
@@ -263,6 +264,112 @@ func TestOneShotStatefulParserFreshPerTurn(t *testing.T) {
 	// No assertion on counter value directly (parser is internal); the test
 	// passing without panic and both turns producing "1","2","3" proves the
 	// per-turn parser path is exercised.
+}
+
+// leakFake models the failure that hung whole sessions: the CLI exits, but a
+// service it started during the turn (here `sleep`) keeps the inherited stdout
+// write end open, so the pipe never reaches EOF.
+type leakFake struct{ baseFake }
+
+func (leakFake) Args(_ provider.OpenOptions, _, _ string) []string {
+	return []string{"sh", "-c", `printf '%s\n' 'text:serving' 'done'; sleep 30 & exit 0`}
+}
+
+func (leakFake) ParseLine(line []byte) ParseResult {
+	s := string(line)
+	switch {
+	case strings.HasPrefix(s, "text:"):
+		return ParseResult{Msgs: []Msg{{Kind: KindText, Text: strings.TrimPrefix(s, "text:")}}}
+	case s == "done":
+		return ParseResult{StopReason: "end_turn"}
+	}
+	return ParseResult{}
+}
+
+func TestOneShotTurnEndsOnProcessExitNotPipeEOF(t *testing.T) {
+	defer func(d time.Duration) { outputDrainGrace = d }(outputDrainGrace)
+	outputDrainGrace = 100 * time.Millisecond
+
+	var mu sync.Mutex
+	var frames []map[string]any
+	onEvent := func(b json.RawMessage) {
+		var m map[string]any
+		if json.Unmarshal(b, &m) == nil {
+			mu.Lock()
+			frames = append(frames, m)
+			mu.Unlock()
+		}
+	}
+	sess, err := NewProvider(leakFake{}).Open(context.Background(), context.Background(),
+		provider.OpenOptions{Cwd: t.TempDir()}, onEvent, nil)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer sess.Close()
+
+	start := time.Now()
+	res, err := sess.Prompt(context.Background(), "start the server", nil)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	if elapsed > 5*time.Second {
+		t.Fatalf("turn waited for pipe EOF instead of process exit: %s", elapsed)
+	}
+	if res.StopReason != "end_turn" {
+		t.Fatalf("stop=%q, want end_turn (abandoning the pipe is not a turn failure)", res.StopReason)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if txt, ok := firstText(frames); !ok || txt != "serving" {
+		t.Fatalf("output before the leak was dropped: %q ok=%v", txt, ok)
+	}
+}
+
+// slowConsumerFake exits promptly and leaks nothing; the turn is slow only
+// because the event sink is (Broadcast allows seconds per stalled websocket).
+// The drain grace must not be spent on that: no output may be dropped.
+type slowConsumerFake struct{ baseFake }
+
+func (slowConsumerFake) Args(_ provider.OpenOptions, _, _ string) []string {
+	return []string{"sh", "-c", `printf '%s\n' 'text:a' 'text:b' 'sid:S9' 'done'`}
+}
+
+func (slowConsumerFake) ParseLine(line []byte) ParseResult {
+	s := string(line)
+	switch {
+	case strings.HasPrefix(s, "sid:"):
+		return ParseResult{SessionID: strings.TrimPrefix(s, "sid:")}
+	case strings.HasPrefix(s, "text:"):
+		return ParseResult{Msgs: []Msg{{Kind: KindText, Text: strings.TrimPrefix(s, "text:")}}}
+	case s == "done":
+		return ParseResult{StopReason: "end_turn"}
+	}
+	return ParseResult{}
+}
+
+func TestOneShotSlowEventSinkKeepsTrailingOutput(t *testing.T) {
+	defer func(d time.Duration) { outputDrainGrace = d }(outputDrainGrace)
+	outputDrainGrace = 50 * time.Millisecond
+
+	sess, err := NewProvider(slowConsumerFake{}).Open(context.Background(), context.Background(),
+		provider.OpenOptions{Cwd: t.TempDir()},
+		func(json.RawMessage) { time.Sleep(200 * time.Millisecond) }, nil)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer sess.Close()
+
+	res, err := sess.Prompt(context.Background(), "hi", nil)
+	if err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	if res.StopReason != "end_turn" {
+		t.Fatalf("stop=%q: trailing lines were dropped while the sink was busy", res.StopReason)
+	}
+	if sess.SessionID() != "S9" {
+		t.Fatalf("sid=%q, want S9 (resume pointer must survive a slow sink)", sess.SessionID())
+	}
 }
 
 // capturePromptFake records the prompt text passed to Args (attachments land as paths).
