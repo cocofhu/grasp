@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"text/template"
 	"time"
 
 	"sandbox-gateway/internal/driver"
@@ -701,6 +702,54 @@ func TestEndpointsDiscoverFillsInternalFromOptions(t *testing.T) {
 	}
 }
 
+func TestContainerIPWithoutLegacyField(t *testing.T) {
+	for _, network := range []string{"", "sbx-net"} {
+		t.Run("network="+network, func(t *testing.T) {
+			d := New(Options{Network: network})
+			// Docker 29 inspect has per-network addresses but no top-level IPAddress.
+			data := map[string]any{"NetworkSettings": map[string]any{
+				"Networks": map[string]any{
+					"bridge":  map[string]any{"IPAddress": "172.17.0.4"},
+					"sbx-net": map[string]any{"IPAddress": "10.8.0.12"},
+				},
+			}}
+			d.run = func(_ context.Context, _ time.Duration, args ...string) (string, error) {
+				tmpl, err := template.New("inspect").Option("missingkey=error").Parse(inspectFormat(args))
+				if err != nil {
+					return "", err
+				}
+				var out strings.Builder
+				err = tmpl.Execute(&out, data)
+				return out.String(), err
+			}
+			want := "172.17.0.4"
+			if network != "" {
+				want = "10.8.0.12"
+			}
+			got, err := d.containerIP(context.Background(), "test")
+			if err != nil || got != want {
+				t.Fatalf("containerIP = %q, %v; want %q", got, err, want)
+			}
+		})
+	}
+}
+
+func TestContainerIPInspectFailure(t *testing.T) {
+	for _, network := range []string{"", "sbx-net"} {
+		t.Run("network="+network, func(t *testing.T) {
+			d := New(Options{Network: network})
+			inspectErr := errors.New("daemon unavailable")
+			d.run = func(context.Context, time.Duration, ...string) (string, error) {
+				return "", inspectErr
+			}
+			_, err := d.containerIP(context.Background(), "test")
+			if !errors.Is(err, inspectErr) {
+				t.Fatalf("want inspect error, got %v", err)
+			}
+		})
+	}
+}
+
 func TestEndpointsMissingInternalIPFails(t *testing.T) {
 	d := New(Options{InternalPorts: []int{9222, 6080}})
 	d.run = func(ctx context.Context, timeout time.Duration, args ...string) (string, error) {
@@ -879,7 +928,8 @@ func TestPreviewExactPort(t *testing.T) {
 }
 
 func TestAllocatePreviewPortExhausted(t *testing.T) {
-	d := New(Options{BindIP: "not-a-bind-ip"})
+	// Fail address parsing immediately, without repeated DNS lookups.
+	d := New(Options{BindIP: "127.0.0.1:invalid"})
 	if _, err := d.allocatePreviewPort(); err == nil {
 		t.Fatal("want pool exhausted")
 	}

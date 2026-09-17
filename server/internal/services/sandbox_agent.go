@@ -246,6 +246,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 		IncludeArtifactStore: false,
 		MCP:                  specs,
 		OpenCode:             backend == runtime.BackendOpenCode,
+		Codex:                backend == runtime.BackendCodex,
 		BrowserMCP:           runtime.EnvEnabled(env["BROWSER_MCP"]),
 		Settings:             runtime.CodeBuddySettingsForEnv(backend, env),
 		OpenCodeConfig:       ocDoc,
@@ -260,6 +261,9 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 
 	env["AGENT_PROVIDER"] = string(backend)
 	env["CONFIG_ROOT"] = agent.Layout.ConfigRoot
+	if backend == runtime.BackendCodex {
+		env["CODEX_HOME"] = agent.Layout.ConfigRoot
+	}
 	env["GRASP_PROJECT_ID"] = projectID
 	env["GRASP_THREAD_ID"] = threadID
 	env["GRASP_RUN_ID"] = runID

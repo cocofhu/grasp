@@ -283,7 +283,7 @@ function goNext() {
   if (creating.value) return
   const step = currentStep.value
   if (step.id === 'projectName' && !validateProjectNameStep()) return
-  if (step.id === 'apiKey' && !draft.value.apiKey.trim()) {
+  if (step.id === 'apiKey' && draft.value.acpBackend !== 'codex' && !draft.value.apiKey.trim()) {
     keyError.value = true
     toast.error(t('pages.onboarding.toastNeedKey'))
     return
@@ -333,7 +333,7 @@ async function runBootstrap(projectId: string, body: ReturnType<typeof assembleB
 }
 
 async function submitBootstrap() {
-  if (!draft.value.apiKey.trim()) {
+  if (draft.value.acpBackend !== 'codex' && !draft.value.apiKey.trim()) {
     keyError.value = true
     toast.error(t('pages.onboarding.toastNeedKey'))
     return
@@ -701,6 +701,8 @@ async function submitBootstrap() {
                 </template>
 
                 <template v-else-if="currentStep.id === 'apiKey'">
+                  <p v-if="draft.acpBackend === 'codex'" class="mt-2 text-sm text-accent-2">复用 Grasp 服务端的本机 Codex 登录。本机已运行 codex login 且服务端已设置 GRASP_CODEX_AUTH_FILE 时，无需填写 API Key，可直接下一步。</p>
+                  <template v-else>
                   <p class="mt-2 text-[13px] text-txt2">{{ t('pages.onboarding.apiKey.meta') }}</p>
                   <div class="rounded-lg mt-3 border border-accent/35 bg-accent-dim px-3 py-2 text-[12px] text-accent-2">
                     <code>{{ primaryAuthKey }}</code>
@@ -749,6 +751,7 @@ async function submitBootstrap() {
                     <p class="mt-1.5 text-[11px] text-txt3">{{ t('pages.onboarding.apiKey.hint') }}</p>
                     <p v-if="keyError" class="mt-1 text-[12px] text-err">{{ t('pages.onboarding.apiKey.required') }}</p>
                   </label>
+                  </template>
                 </template>
 
                 <template v-else-if="currentStep.id === 'git'">
@@ -991,7 +994,7 @@ async function submitBootstrap() {
                     <span class="rounded-lg border border-ok/35 bg-ok/10 px-2 py-1 text-ok">{{ t('pages.onboarding.review.agentsChip') }}</span>
                     <span class="rounded-lg border border-ok/35 bg-ok/10 px-2 py-1 text-ok">{{ t('pages.onboarding.review.wfChip') }}</span>
                   </div>
-                  <p v-if="!draft.apiKey.trim()" class="mt-3 text-[12px] text-warn">{{ t('pages.onboarding.review.needKey') }}</p>
+                  <p v-if="draft.acpBackend !== 'codex' && !draft.apiKey.trim()" class="mt-3 text-[12px] text-warn">{{ t('pages.onboarding.review.needKey') }}</p>
                   <p class="mt-3 text-[12px] text-txt3" data-testid="onboarding-review-hint">{{ reviewFeatureHint }}</p>
                   <p v-if="createError" class="mt-2 text-[12px] text-err">{{ createError }}</p>
                 </template>

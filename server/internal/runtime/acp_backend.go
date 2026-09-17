@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/sandbox"
+
 	"github.com/rs/zerolog/log"
 )
 
@@ -19,6 +21,7 @@ const (
 	BackendCodeBuddy  AcpBackend = "codebuddy"
 	BackendTrae       AcpBackend = "trae"
 	BackendOpenCode   AcpBackend = "opencode"
+	BackendCodex      AcpBackend = "codex"
 )
 
 // Region / site env keys written by Agent Studio or set manually.
@@ -63,6 +66,8 @@ func CodeBuddySettingsForEnv(backend AcpBackend, env map[string]string) map[stri
 // DefaultConfigRoot returns the protocol default config root for a backend.
 func DefaultConfigRoot(b AcpBackend) string {
 	switch NormalizeBackend(string(b)) {
+	case BackendCodex:
+		return "/root/.codex"
 	case BackendClaudeCode:
 		return "/root/.claude"
 	case BackendCodeBuddy:
@@ -79,7 +84,7 @@ func DefaultConfigRoot(b AcpBackend) string {
 // NormalizeBackend coerces unknown/empty values to cursor for backward compat.
 func NormalizeBackend(raw string) AcpBackend {
 	switch AcpBackend(strings.TrimSpace(raw)) {
-	case BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode:
+	case BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode, BackendCodex:
 		return AcpBackend(strings.TrimSpace(raw))
 	default:
 		return BackendCursor
@@ -102,6 +107,8 @@ type authSpec struct {
 
 func authSpecFor(b AcpBackend) authSpec {
 	switch b {
+	case BackendCodex:
+		return authSpec{agentKeys: []string{"OPENAI_API_KEY", "CODEX_API_KEY"}, cliKey: "OPENAI_API_KEY"}
 	case BackendClaudeCode:
 		return authSpec{
 			agentKeys: []string{"GRASP_CLAUDE_API_KEY", "ANTHROPIC_API_KEY"},
@@ -201,6 +208,12 @@ func ResolveAuthWorkDir(agentWorkDir, sharedWorkDir string, backend AcpBackend) 
 // When settings.json exists in either layer, the auth gate passes without requiring
 // Env keys; content is left to the backend/CLI.
 func PrepareAuthEnv(backend AcpBackend, env map[string]string, workDirSrc string, sharedWorkDir ...string) (map[string]string, error) {
+	if backend == BackendCodex && strings.TrimSpace(os.Getenv("GRASP_CODEX_AUTH_FILE")) != "" {
+		if _, err := sandbox.ReadCodexLocalAuth(); err != nil {
+			return nil, err
+		}
+		return mergeAuthEnv(backend, env, false)
+	}
 	base := ""
 	if len(sharedWorkDir) > 0 {
 		base = sharedWorkDir[0]
@@ -425,6 +438,8 @@ func firstNonEmpty(vals ...string) string {
 // AgentRuntimeLabel is the capabilities.agent.runtime string for logging.
 func AgentRuntimeLabel(b AcpBackend) string {
 	switch b {
+	case BackendCodex:
+		return "codex-cli"
 	case BackendClaudeCode:
 		return "claude-code-acp"
 	case BackendCodeBuddy:

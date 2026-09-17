@@ -115,7 +115,7 @@ export interface Agent {
   projectId?: string
   /** Optional embedded role pack id (e.g. test / preflight); omit for blank. */
   templateId?: string
-  acpBackend?: 'cursor' | 'claude_code' | 'codebuddy' | 'trae' | 'opencode'
+  acpBackend?: 'cursor' | 'claude_code' | 'codebuddy' | 'trae' | 'opencode' | 'codex'
   gitCredentialType?: 'github_https' | 'gitlab_https' | 'ssh'
   /** known_hosts literal (may contain newlines); no ${vars.*}. */
   gitSshKnownHosts?: string

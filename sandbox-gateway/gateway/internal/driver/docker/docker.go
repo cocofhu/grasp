@@ -428,16 +428,11 @@ func (d *Driver) withInternalEndpoints(ctx context.Context, name string, eps map
 }
 
 func (d *Driver) containerIP(ctx context.Context, name string) (string, error) {
-	out, err := d.run(ctx, 10*time.Second, "inspect", "--format", "{{.NetworkSettings.IPAddress}}", name)
-	if err != nil {
-		return "", fmt.Errorf("docker inspect container IP: %w", err)
-	}
-	if ip := strings.TrimSpace(out); ip != "" {
-		return ip, nil
-	}
+	// Read per-network addresses: newer Docker engines no longer expose the
+	// legacy NetworkSettings.IPAddress field, even on the default bridge.
 	if d.network != "" {
 		format := fmt.Sprintf(`{{(index .NetworkSettings.Networks %q).IPAddress}}`, d.network)
-		out, err = d.run(ctx, 10*time.Second, "inspect", "--format", format, name)
+		out, err := d.run(ctx, 10*time.Second, "inspect", "--format", format, name)
 		if err != nil {
 			return "", fmt.Errorf("docker inspect network %q IP: %w", d.network, err)
 		}
@@ -445,7 +440,7 @@ func (d *Driver) containerIP(ctx context.Context, name string) (string, error) {
 			return ip, nil
 		}
 	}
-	out, err = d.run(ctx, 10*time.Second, "inspect", "--format",
+	out, err := d.run(ctx, 10*time.Second, "inspect", "--format",
 		`{{range $n, $v := .NetworkSettings.Networks}}{{if $v.IPAddress}}{{$v.IPAddress}}{{"\n"}}{{end}}{{end}}`, name)
 	if err != nil {
 		return "", fmt.Errorf("docker inspect networks IP: %w", err)

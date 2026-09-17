@@ -14,6 +14,7 @@ func TestNormalizeAcpBackend(t *testing.T) {
 		"codebuddy":   AcpBackendCodeBuddy,
 		"trae":        AcpBackendTrae,
 		"opencode":    AcpBackendOpenCode,
+		"codex":       AcpBackendCodex,
 		"":            AcpBackendCursor,
 		"  trae  ":    AcpBackendTrae,
 		"CURSOR":      AcpBackendCursor, // case-sensitive; unknown → cursor
@@ -33,6 +34,7 @@ func TestDefaultConfigRootForBackend(t *testing.T) {
 		AcpBackendCodeBuddy:  "/root/.codebuddy",
 		AcpBackendTrae:       "/root/.trae",
 		AcpBackendOpenCode:   "/root/.config/opencode",
+		AcpBackendCodex:      "/root/.codex",
 		"unknown":            "/root/.cursor",
 	}
 	for backend, want := range cases {

@@ -6,8 +6,8 @@ import (
 
 // knownSandboxBackends are acpBackend values that accept an optional
 // GRASP_SANDBOX_IMAGE_<BACKEND> override. The published image is one
-// universal-sandbox that ships all five CLIs.
-var knownSandboxBackends = []string{"cursor", "claude_code", "codebuddy", "trae", "opencode"}
+// universal-sandbox that ships the supported CLIs.
+var knownSandboxBackends = []string{"cursor", "claude_code", "codebuddy", "trae", "opencode", "codex"}
 
 // DefaultSandboxImage is the local tag built from sandbox-gateway/sandbox
 // (see ./start.sh sandbox). backend is ignored: one image serves every

@@ -219,6 +219,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 		IncludeArtifactStore: hasArtifactStoreSpec(specs),
 		MCP:                  specs,
 		OpenCode:             backend == runtime.BackendOpenCode,
+		Codex:                backend == runtime.BackendCodex,
 		BrowserMCP:           runtime.EnvEnabled(env["BROWSER_MCP"]),
 		Settings:             runtime.CodeBuddySettingsForEnv(backend, env),
 		OpenCodeConfig:       ocDoc,
@@ -233,6 +234,9 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 
 	env["AGENT_PROVIDER"] = string(backend)
 	env["CONFIG_ROOT"] = agent.Layout.ConfigRoot
+	if backend == runtime.BackendCodex {
+		env["CODEX_HOME"] = agent.Layout.ConfigRoot
+	}
 	// remote-dev parity: PASSWORD / ROOT_PASSWORD / CURSOR_ACP_PASSWORD so
 	// code-server (8744) and ACP bridge (8765) accept the same secret for
 	// proxied auto-login and direct host:port access.
@@ -400,6 +404,7 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 	if s.mgr != nil {
 		if home, err := sandbox.BuildConfigHome(sandbox.ConfigHomeSpec{
 			WorkDirSrc:           s.skills.WorkDir(row.Profile),
+			Codex:                runtime.NormalizeBackend(agent.AcpBackend) == runtime.BackendCodex,
 			IncludeArtifactStore: hasArtifactStoreSpec(specs),
 			MCP:                  specs,
 			AgentName:            row.Profile,

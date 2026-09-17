@@ -43,6 +43,13 @@ function mountPanel(overrides: Record<string, unknown> = {}) {
 }
 
 describe('WizardApiKeyStepPanel custom config editor', () => {
+  it('explains local Codex login without asking for credentials or JSON config', () => {
+    const wrapper = mountPanel({ acpBackend: 'codex', configRoot: '/root/.codex', authGuide: authGuideFor('codex') })
+    expect(wrapper.text()).toContain('GRASP_CODEX_AUTH_FILE')
+    expect(wrapper.find('input[type="password"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="custom-config-editor"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('gives CodeEditor host an explicit height so Monaco can layout', () => {
     const wrapper = mountPanel()
     const host = wrapper.get('[data-test="custom-config-editor-host"]')

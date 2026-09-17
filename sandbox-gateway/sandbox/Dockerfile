@@ -317,7 +317,7 @@ RUN chmod +x /startup.sh
 # ── Agent 安装层 ──────────────────────────────────────────────────────────
 # 默认预装五个对外 CLI；运行时 AGENT_PROVIDER 单活（未设置时回落 cursor）。
 # 本地打薄镜像：--build-arg AGENT_PROVIDERS=cursor
-ARG AGENT_PROVIDERS=cursor,claude_code,codebuddy,trae,opencode
+ARG AGENT_PROVIDERS=cursor,claude_code,codebuddy,trae,opencode,codex
 ARG AGENT_OPTIONAL_PROVIDERS=trae
 ARG AGENT_INSTALL_CMD=
 COPY scripts/install-agent.sh /usr/local/bin/install-agent.sh

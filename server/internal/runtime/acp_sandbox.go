@@ -364,6 +364,9 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	}
 	layout := c.agentLayout(profile, agentCfg)
 	env["CONFIG_ROOT"] = layout.ConfigRoot
+	if c.backend == BackendCodex {
+		env["CODEX_HOME"] = layout.ConfigRoot
+	}
 
 	sandbox.ApplyPasswords(env, req.Token)
 	spec := sandbox.Spec{
@@ -372,6 +375,9 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		ConfigHome:   c.buildConfigHome(req, env),
 		ConfigRoot:   layout.ConfigRoot,
 		WorkspaceDir: layout.WorkspaceDir,
+	}
+	if c.backend == BackendCodex && spec.ConfigHome == "" {
+		return sandbox.Spec{}, fmt.Errorf("Codex config home could not be prepared")
 	}
 	// SSH: meta literal preferred; env fallback already vars-expanded above.
 	key := agentCfg.GitSshPrivateKey
