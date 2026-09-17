@@ -108,12 +108,13 @@ const (
 	AcpBackendCodeBuddy  = "codebuddy"
 	AcpBackendTrae       = "trae"
 	AcpBackendOpenCode   = "opencode"
+	AcpBackendCodex      = "codex"
 )
 
 // NormalizeAcpBackend coerces unknown/empty values to cursor.
 func NormalizeAcpBackend(raw string) string {
 	switch strings.TrimSpace(raw) {
-	case AcpBackendCursor, AcpBackendClaudeCode, AcpBackendCodeBuddy, AcpBackendTrae, AcpBackendOpenCode:
+	case AcpBackendCursor, AcpBackendClaudeCode, AcpBackendCodeBuddy, AcpBackendTrae, AcpBackendOpenCode, AcpBackendCodex:
 		return strings.TrimSpace(raw)
 	default:
 		return AcpBackendCursor
@@ -143,6 +144,8 @@ func normalizeGitCredentialType(raw string) string {
 // DefaultConfigRootForBackend returns the protocol default config root.
 func DefaultConfigRootForBackend(backend string) string {
 	switch NormalizeAcpBackend(backend) {
+	case AcpBackendCodex:
+		return "/root/.codex"
 	case AcpBackendClaudeCode:
 		return "/root/.claude"
 	case AcpBackendCodeBuddy:

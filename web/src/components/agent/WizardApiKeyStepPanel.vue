@@ -63,6 +63,10 @@ function setMode(mode: WizardAuthMode) {
 
 <template>
   <div>
+    <div v-if="acpBackend === 'codex'" class="mb-3 rounded-lg border border-accent/30 p-3 text-sm">
+      Codex CLI 复用 Grasp 服务端的本机登录。已配置 GRASP_CODEX_AUTH_FILE 时，可跳过本页，无需粘贴登录令牌或 API Key。登录失效后，请在服务端运行 codex login 并重新创建沙箱。
+    </div>
+    <template v-else>
     <p class="sec-meta">{{ t('pages.agentStudio.wizard.apiKey.meta') }}</p>
     <div class="mb-3 rounded-lg border border-accent/30 bg-accent-dim/40 px-3 py-2.5 text-[12px] leading-5 text-txt2">
       {{
@@ -212,5 +216,6 @@ function setMode(mode: WizardAuthMode) {
         </p>
       </label>
     </div>
+    </template>
   </div>
 </template>

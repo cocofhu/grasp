@@ -314,7 +314,7 @@
           },
           "cli": {
             "title": "用编码 CLI 账号",
-            "desc": "使用 Cursor / Claude Code / CodeBuddy / Trae 各自的 CLI 账号与密钥，模型由该 CLI 决定。"
+            "desc": "使用 Cursor / Claude Code / CodeBuddy / Trae / Codex CLI 账号，模型由该 CLI 决定。Codex 可复用服务端本机登录。"
           }
         },
         "cliLabel": "选择 CLI 后端",

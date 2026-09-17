@@ -4,7 +4,7 @@
 
 ## 执行后端(ExecProvider)
 
-支持五类 ACP 后端(`cursor` / `claude_code` / `codebuddy` / `trae` / `opencode`),由 Agent 卡片
+支持六类执行后端(`cursor` / `claude_code` / `codebuddy` / `trae` / `opencode` / `codex`),由 Agent 卡片
 `agent.json` 的 `acpBackend` 字段选择;`ProviderRegistry` 按 Agent profile (`agent_profile`) 路由到
 对应 Provider。统一沙箱镜像内 `acp-bridge` 按 `AGENT_PROVIDER` 单活启动 bridge(:8765)。
 兼容期容器内 `acp-gateway` / `cursor-acp` 为指向 `acp-bridge` 的软链(计划 0.2.0 移除)。
@@ -16,6 +16,8 @@
 `GRASP_EXEC_PROVIDER` 已废弃(读取时 WARN,不影响路由);请改用 Agent `acpBackend`。
 
 ### 真实沙箱链路(多后端)
+
+Codex CLI 可复用服务端本机的登录：显式设置 `GRASP_CODEX_AUTH_FILE`，并使用包含 Codex 的沙箱镜像。前端选择“Codex CLI（本机登录）”后可跳过 API Key。详见 [Codex 本机登录接入](../docs/CODEX-LOCAL.md)。
 
 ```
 engine → ProviderRegistry → baseACPProvider → sandbox-gateway REST(创建统一镜像沙箱)

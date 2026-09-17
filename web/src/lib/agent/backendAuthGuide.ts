@@ -130,6 +130,7 @@ export const BACKEND_AUTH_HINTS: Record<
   BackendId,
   { key: string; alt?: string; note: string }
 > = {
+  codex: { key: 'OPENAI_API_KEY', alt: 'CODEX_API_KEY', note: '可留空：复用 Grasp 服务端配置的本机 Codex 登录（GRASP_CODEX_AUTH_FILE）' },
   cursor: { key: 'GRASP_CURSOR_API_KEY', alt: 'CURSOR_API_KEY', note: 'Cursor ACP 鉴权' },
   claude_code: {
     key: 'GRASP_CLAUDE_API_KEY',
@@ -155,6 +156,7 @@ export const BACKEND_AUTH_HINTS: Record<
 
 /** Resolve apply guide for the current Backend (+ CodeBuddy/Trae site when applicable). */
 export function authGuideFor(backend: BackendId, region = ''): BackendAuthGuide {
+  if (backend === 'codex') return { backend, keys: [], pathStepKeys: [], links: [] }
   if (backend === 'cursor') return CURSOR_GUIDE
   if (backend === 'claude_code') return CLAUDE_GUIDE
   if (backend === 'trae') return TRAE_GUIDE

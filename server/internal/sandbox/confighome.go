@@ -48,6 +48,8 @@ type ConfigHomeSpec struct {
 	// OpenCode enables OpenCode-native MCP configuration. OpenCode does not read
 	// mcp.json, so the same servers must also be translated into opencode.json.
 	OpenCode bool
+	// Codex enables native config and explicitly opted-in local login reuse.
+	Codex bool
 	// BrowserMCP registers the sandbox's headed Chromium as chrome-devtools.
 	// Putting it in the generated files keeps the later SSH seed from erasing
 	// the startup script's best-effort mcp.json registration.
@@ -188,6 +190,12 @@ func BuildConfigHome(spec ConfigHomeSpec) (string, error) {
 			openCodeConfig["mcp"] = mcp
 		}
 		if err := writeMergedOpenCodeJSON(dir, openCodeConfig); err != nil {
+			return "", err
+		}
+	}
+	if spec.Codex {
+		if err := writeCodexConfigHome(dir, mcpSpecs); err != nil {
+			_ = os.RemoveAll(dir)
 			return "", err
 		}
 	}

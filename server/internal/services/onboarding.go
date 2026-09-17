@@ -206,7 +206,12 @@ func (s *OnboardingService) Bootstrap(projectID string, req OnboardingBootstrapR
 	}
 	apiKey := strings.TrimSpace(req.APIKey)
 	if apiKey == "" {
-		return OnboardingBootstrapResult{}, ErrOnboardingAPIKeyRequired
+		if NormalizeAcpBackend(req.AcpBackend) != AcpBackendCodex {
+			return OnboardingBootstrapResult{}, ErrOnboardingAPIKeyRequired
+		}
+		if _, err := runtime.PrepareAuthEnv(runtime.BackendCodex, nil, ""); err != nil {
+			return OnboardingBootstrapResult{}, err
+		}
 	}
 	proj, ok := s.Projects.Get(projectID)
 	if !ok {
@@ -388,6 +393,8 @@ func boolOrDefault(p *bool, def bool) bool {
 
 func primaryAuthEnvKey(backend string) string {
 	switch NormalizeAcpBackend(backend) {
+	case AcpBackendCodex:
+		return "OPENAI_API_KEY"
 	case AcpBackendClaudeCode:
 		return "GRASP_CLAUDE_API_KEY"
 	case AcpBackendCodeBuddy:

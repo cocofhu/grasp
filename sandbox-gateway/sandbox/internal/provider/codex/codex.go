@@ -1,6 +1,6 @@
 // Package codex drives the Codex CLI in non-interactive JSON mode
-// (`codex exec --json`). Codex wraps each event in a {"msg":{"type":...}}
-// envelope; this codec unwraps it into the unified taxonomy. Multi-turn
+// (`codex exec --json`). Current thread/turn/item events and legacy msg
+// envelopes are mapped into the unified taxonomy. Multi-turn
 // continuity uses `codex exec resume <session-id>`.
 package codex
 
@@ -84,9 +84,12 @@ type tokenCnt struct {
 }
 
 func (codec) ParseLine(line []byte) oneshot.ParseResult {
+	if result, ok := parseExecEvent(line); ok {
+		return result
+	}
 	var e envelope
 	if err := json.Unmarshal(line, &e); err != nil {
-		log.Printf("codex: skip non-json line: %v (snippet=%q)", err, truncateForLog(line, 120))
+		log.Printf("codex: skip non-json line: %v", err)
 		return oneshot.ParseResult{}
 	}
 	m := e.Msg

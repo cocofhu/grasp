@@ -42,6 +42,7 @@ func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) string
 		IncludeArtifactStore: hasArtifactStore(specs),
 		MCP:                  specs,
 		OpenCode:             c.backend == BackendOpenCode,
+		Codex:                c.backend == BackendCodex,
 		BrowserMCP:           EnvEnabled(env["BROWSER_MCP"]),
 		Settings:             CodeBuddySettingsForEnv(c.backend, env),
 		OpenCodeConfig: OpenCodeConfigForEnvWithCatalog(

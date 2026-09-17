@@ -314,7 +314,7 @@
           },
           "cli": {
             "title": "Use a coding-CLI account",
-            "desc": "Use the Cursor / Claude Code / CodeBuddy / Trae CLI account and key; that CLI decides the model."
+            "desc": "Use a Cursor / Claude Code / CodeBuddy / Trae / Codex CLI account. Codex can reuse the server host's local login."
           }
         },
         "cliLabel": "Choose a CLI backend",

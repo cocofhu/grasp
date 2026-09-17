@@ -10,13 +10,14 @@ import {
 } from './regionPolicy'
 
 describe('region policy', () => {
-  it('lists five backends including OpenCode', () => {
+  it('lists six backends including Codex', () => {
     expect(ACP_BACKENDS.map((b) => b.id)).toEqual([
       'cursor',
       'claude_code',
       'codebuddy',
       'trae',
       'opencode',
+      'codex',
     ])
   })
 
