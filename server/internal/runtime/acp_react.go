@@ -23,6 +23,9 @@ func (c *acpProvider) ReactOpen(ctx context.Context, req NodeReq) ReactTurn {
 	for attempt := 1; ; attempt++ {
 
 		c.host.ClearOutcome(req.RunID, req.NodeID)
+		if nodereg.IsGrasp(req.NodeType) {
+			c.host.SetOutcomeAllowed(req.RunID, false)
+		}
 		sb, acp, home, err := c.openSandbox(ctx, req)
 		if err == nil {
 			if nodereg.IsGrasp(req.NodeType) {
@@ -163,6 +166,11 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 
 	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
 	defer cancel()
+	// Grasp Phase2 (force): expose node_complete before the confirm turn so
+	// tools/list includes it and tools/call can succeed. Phase1 keeps it hidden.
+	if nodereg.IsGrasp(req.NodeType) {
+		c.host.SetOutcomeAllowed(req.RunID, force)
+	}
 	prompt := human
 	chatImages := images
 	if approveInjectOpenPrompt(req, history) {

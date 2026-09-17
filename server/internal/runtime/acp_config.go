@@ -40,6 +40,7 @@ func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) string
 		WorkDirSrc:           c.workDir(profile),
 		EmbeddedRules:        nodereg.EmbeddedRuleFiles(req.NodeType),
 		IncludeArtifactStore: hasArtifactStore(specs),
+		OmitOutcomeRule:      nodereg.IsGrasp(req.NodeType),
 		MCP:                  specs,
 		OpenCode:             c.backend == BackendOpenCode,
 		BrowserMCP:           EnvEnabled(env["BROWSER_MCP"]),

@@ -114,11 +114,15 @@ func TestApproveClearsPrematureNodeComplete(t *testing.T) {
 	}
 	waitReactPause(t, db, run.ID, "predev")
 	eng.host.SetActiveNode(run.ID, "predev", "approve")
+	// Temporarily open the tool surface so the seed can plant a mark; Phase1
+	// then closes it again before !force ClearOutcome (defense-in-depth).
+	eng.host.SetOutcomeAllowed(run.ID, true)
 	st, resp := eng.host.ServeRPC(run.ID, run.McpToken, []byte(
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"node_complete","arguments":{"status":"success","summary":"premature"}}}`))
 	if st != 200 {
 		t.Fatalf("seed outcome: status=%d resp=%s", st, resp)
 	}
+	eng.host.SetOutcomeAllowed(run.ID, false)
 	if !eng.host.HasOutcome(run.ID, "predev") {
 		t.Fatal("expected premature mark before !force reply")
 	}

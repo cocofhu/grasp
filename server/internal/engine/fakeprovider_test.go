@@ -524,7 +524,11 @@ func (f *fakeProvider) ReactReply(ctx context.Context, req runtime.NodeReq, hist
 		// Mirror real acpProvider: discard premature node_complete so !force
 		// cannot complete the node (ClearOutcome + Done=false).
 		f.host.ClearOutcome(req.RunID, req.NodeID)
+		f.host.SetOutcomeAllowed(req.RunID, false)
 		return runtime.ReactTurn{Msg: "信息已充分。", Done: false, Result: runtime.NodeResult{OutputMd: content, Outputs: out}}
+	}
+	if req.NodeType == "approve" || req.NodeType == "grasp" {
+		f.host.SetOutcomeAllowed(req.RunID, true)
 	}
 	f.emitOutcome(req, nil)
 	turn := runtime.ReactTurn{Msg: "信息已充分。", Done: true,

@@ -299,6 +299,10 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 		}
 		return fmt.Sprintf("ok: 已设置产物预览 %q", aname), false
 	case "node_complete":
+		// Grasp Phase1: treat as unknown — do not teach the confirm-after flow.
+		if h.hideNodeComplete(runID) {
+			return "unknown tool: node_complete", true
+		}
 		return h.nodeComplete(runID, token, args)
 	default:
 		return "unknown tool: " + name, true

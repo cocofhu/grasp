@@ -584,6 +584,9 @@ func TestReactApproveFirstReplyInjectsContract(t *testing.T) {
 	if strings.Contains(prompt, "本轮输出契约") {
 		t.Fatal("opening approve turn must not append dual-write contract")
 	}
+	if strings.Contains(prompt, "node_complete") {
+		t.Fatalf("Phase1 first reply must not mention node_complete:\n%s", prompt)
+	}
 	if reply.Done {
 		t.Fatal("ordinary approve reply must not finish")
 	}
@@ -729,6 +732,12 @@ func TestReactApproveForceCompletesWithOutcome(t *testing.T) {
 	}
 	if !host.HasOutcome(req.RunID, req.NodeID) {
 		t.Fatal("force path must keep node_complete mark")
+	}
+	if host.ToolsListGeneration(req.RunID) < 1 {
+		t.Fatal("force path must bump tools list generation (list_changed signal)")
+	}
+	if !host.OutcomeAllowed(req.RunID) {
+		t.Fatal("force path must leave outcome tool allowed")
 	}
 	for _, name := range []string{mcp.ClarifiedRequirementArtifactName, mcp.PlanArtifactName} {
 		if _, ok := store.Get("run-r", name); !ok {

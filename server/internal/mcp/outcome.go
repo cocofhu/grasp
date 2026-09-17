@@ -194,6 +194,66 @@ func (h *Host) ClearOutcome(runID, nodeID string) {
 	h.clearOutcomeArtifact(runID)
 }
 
+// SetOutcomeAllowed controls whether Grasp may see/call node_complete for this
+// run. Flipping the flag bumps ToolsListGeneration (list_changed signal).
+// Non-Grasp nodes ignore the flag and always expose the tool.
+func (h *Host) SetOutcomeAllowed(runID string, allowed bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	prev := h.outcomeAllowed[runID]
+	if prev == allowed {
+		return
+	}
+	h.outcomeAllowed[runID] = allowed
+	h.toolsListGen[runID]++
+	log.Info().Str("run_id", runID).Bool("allowed", allowed).
+		Int("tools_list_gen", h.toolsListGen[runID]).
+		Msg("grasp outcome tool surface refreshed")
+}
+
+// OutcomeAllowed reports whether Grasp Phase2 has opened the outcome tool for
+// this run. Defaults to false (Phase1 zero-visibility).
+func (h *Host) OutcomeAllowed(runID string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.outcomeAllowed[runID]
+}
+
+// ToolsListGeneration is a monotonic counter bumped when the Grasp outcome
+// tool surface changes. Tests (and future SSE clients) treat a bump as a
+// tools/list_changed refresh signal.
+func (h *Host) ToolsListGeneration(runID string) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.toolsListGen[runID]
+}
+
+// hideNodeComplete reports whether tools/list and tools/call must treat
+// node_complete as absent for this run (Grasp Phase1 only).
+func (h *Host) hideNodeComplete(runID string) bool {
+	if !isGrasp(h.ActiveNodeType(runID)) {
+		return false
+	}
+	return !h.OutcomeAllowed(runID)
+}
+
+// listedTools returns the MCP tools/list payload, omitting node_complete when
+// Grasp Phase1 must not know about it.
+func (h *Host) listedTools(runID string) []map[string]any {
+	all := artifactTools()
+	if !h.hideNodeComplete(runID) {
+		return all
+	}
+	out := make([]map[string]any, 0, len(all))
+	for _, t := range all {
+		if name, _ := t["name"].(string); name == "node_complete" {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
 // clearOutcomeArtifact drops the audit node_complete.json when the store
 // supports deletion (production ArtifactService). No-op for stores that do not.
 func (h *Host) clearOutcomeArtifact(runID string) {

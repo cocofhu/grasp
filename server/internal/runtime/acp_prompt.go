@@ -41,7 +41,9 @@ func (c *acpProvider) buildAgentPrompt(req NodeReq, seeded []string) string {
 		b.WriteString(prompts.ProducesContractFor(produces))
 	}
 
-	if nodeNeedsOutcome(req.NodeType) {
+	// Grasp Phase1 must not see the outcome contract (or the tool name). Phase2
+	// ConfirmSuffix / OutcomeRetry introduce node_complete after human confirm.
+	if nodeNeedsOutcome(req.NodeType) && !nodereg.IsGrasp(req.NodeType) {
 		b.WriteString(prompts.OutcomeContractText())
 	}
 

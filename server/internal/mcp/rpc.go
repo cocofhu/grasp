@@ -76,7 +76,7 @@ func (h *Host) ServeRPC(runID, token string, body []byte) (status int, resp []by
 	case "ping":
 		return h.ok(req, map[string]any{})
 	case "tools/list":
-		return h.ok(req, map[string]any{"tools": artifactTools()})
+		return h.ok(req, map[string]any{"tools": h.listedTools(runID)})
 	case "tools/call":
 		return h.callTool(runID, token, req)
 	default:

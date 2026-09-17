@@ -280,6 +280,16 @@ func TestApprovePromptIgnoresTemplateAndInjectsVars(t *testing.T) {
 	if strings.Contains(got, "CONDITIONAL_INJECT_XYZ") {
 		t.Fatal("approve must ignore leftover conditional_prompt")
 	}
+	if strings.Contains(got, "node_complete") {
+		t.Fatalf("Grasp Phase1 system prompt must not mention node_complete:\n%s", got)
+	}
+	if strings.Contains(got, "完成标记契约") {
+		t.Fatalf("Grasp Phase1 must not append OutcomeContract:\n%s", got)
+	}
+	impl := p.buildAgentPrompt(NodeReq{NodeType: "implement", Config: map[string]any{"prompt": "P"}}, nil)
+	if !strings.Contains(impl, "node_complete") {
+		t.Fatal("implement prompt must still include OutcomeContract")
+	}
 }
 
 // stubHistory feeds the host the two run-scoped reads FeedbackBrief needs.

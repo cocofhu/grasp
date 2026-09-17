@@ -54,11 +54,14 @@ func TestAgentPromptsRemainingContracts(t *testing.T) {
 		"两份强制交付", "set_clarified_requirement", "set_plan", "不是「唯一交付」", "用户先说明目标",
 		"至少两个方向不同", "禁止调用", "伪选择",
 		"set_preview", "不会", "结束本节点",
-		"结束时序", "确认前", "确认后", "node_complete",
+		"结束条件", "等待用户确认并流转",
 	} {
 		if !strings.Contains(gotApprove, want) {
 			t.Fatalf("DefaultGraspContract missing %q\n%s", want, gotApprove)
 		}
+	}
+	if strings.Contains(gotApprove, "node_complete") {
+		t.Fatal("DefaultGraspContract Phase1 must not mention node_complete")
 	}
 	if strings.Contains(gotApprove, "可跳过确认自行") || strings.Contains(gotApprove, "平台会结束本节点") {
 		t.Fatal("DefaultGraspContract must not imply skip-confirm or platform-ends-without-node_complete")
@@ -69,14 +72,11 @@ func TestAgentPromptsRemainingContracts(t *testing.T) {
 	if strings.Contains(DefaultGraspOpenSuffix, "第一回合必须调用 ask_question") {
 		t.Fatal("DefaultGraspOpenSuffix must not force first-turn ask_question")
 	}
-	if strings.Contains(DefaultGraspOpenSuffix, "可直接 set_* 并 node_complete") {
-		t.Fatal("DefaultGraspOpenSuffix must not auto node_complete")
+	if strings.Contains(DefaultGraspOpenSuffix, "node_complete") {
+		t.Fatal("DefaultGraspOpenSuffix Phase1 must not mention node_complete")
 	}
 	if !strings.Contains(DefaultGraspOpenSuffix, "确认并流转") {
 		t.Fatal("DefaultGraspOpenSuffix must wait for human confirm")
-	}
-	if !strings.Contains(DefaultGraspOpenSuffix, "未点「确认并流转」前禁止 node_complete") {
-		t.Fatal("DefaultGraspOpenSuffix must forbid node_complete before confirm")
 	}
 	for _, want := range []string{"确认流转", "set_clarified_requirement", "set_plan", "node_complete",
 		"不要再提问", "完整聊天记录", "补充或修正", "不要空写产物"} {

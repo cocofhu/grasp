@@ -113,6 +113,13 @@ type Host struct {
 	// outcomes buffers node_complete marks keyed runID -> nodeID. The engine
 	// drains them via TakeOutcome after the agent turn (destructive).
 	outcomes map[string]map[string]NodeOutcome
+	// outcomeAllowed gates Grasp Phase1 visibility of node_complete: when the
+	// active node is Grasp/approve and this flag is false, tools/list omits the
+	// tool and tools/call treats it as unknown. Non-Grasp nodes ignore the flag.
+	// toolsListGen increments whenever the flag flips so tests (and future SSE
+	// clients) can observe a tools/list_changed refresh signal.
+	outcomeAllowed map[string]bool
+	toolsListGen   map[string]int
 	// outcomeValidator is DefaultThenRPC (see ChainedOutcomeValidator). Nil
 	// means DefaultOutcomeValidator only.
 	outcomeValidator OutcomeValidator
@@ -149,16 +156,18 @@ type ActiveNodeSource func(runID string) (nodeID, nodeType string, ok bool)
 // NewHost builds a host backed by the given store.
 func NewHost(store Store) *Host {
 	return &Host{
-		tokens:       map[string]string{},
-		active:       map[string]string{},
-		activeType:   map[string]string{},
-		activeReview: map[string]bool{},
-		pending:      map[string]map[string][]models.ReactQuestion{},
-		pendingForms: map[string]map[string][]models.ReactForm{},
-		calls:        map[string]map[string][]models.McpCall{},
-		previewMem:   map[string][]PreviewPort{},
-		outcomes:     map[string]map[string]NodeOutcome{},
-		store:        store,
+		tokens:         map[string]string{},
+		active:         map[string]string{},
+		activeType:     map[string]string{},
+		activeReview:   map[string]bool{},
+		pending:        map[string]map[string][]models.ReactQuestion{},
+		pendingForms:   map[string]map[string][]models.ReactForm{},
+		calls:          map[string]map[string][]models.McpCall{},
+		previewMem:     map[string][]PreviewPort{},
+		outcomes:       map[string]map[string]NodeOutcome{},
+		outcomeAllowed: map[string]bool{},
+		toolsListGen:   map[string]int{},
+		store:          store,
 		outcomeValidator: ChainedOutcomeValidator{
 			Default: DefaultOutcomeValidator{},
 		},

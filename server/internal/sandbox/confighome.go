@@ -41,6 +41,10 @@ type ConfigHomeSpec struct {
 	// when the Agent has opted into the artifact-store MCP (convention-first):
 	// the platform never auto-injects it.
 	IncludeArtifactStore bool
+	// OmitOutcomeRule strips the「完成标记」section from artifact-store.md.
+	// Used for Grasp Phase1 so the always-on rule file never names the outcome
+	// tool; Phase2 introduces it via ConfirmSuffix / OutcomeRetry instead.
+	OmitOutcomeRule bool
 	// MCP are the MCP servers (from the Agent config, with the reserved
 	// artifact-store entry already resolved to its run-scoped URL+token by the
 	// runtime) written into mcp.json.
@@ -123,6 +127,9 @@ func BuildConfigHome(spec ConfigHomeSpec) (string, error) {
 		b, err := resolvePlatformRule(name, spec.AgentName, spec.ProfilesRoot, spec.GlobalRulesDir)
 		if err != nil {
 			return "", fmt.Errorf("resolve platform rule %s: %w", name, err)
+		}
+		if spec.OmitOutcomeRule && name == "rules/artifact-store.md" {
+			b = stripOutcomeRuleSection(b)
 		}
 		if err := os.WriteFile(filepath.Join(dir, name), b, 0o644); err != nil {
 			return "", err
@@ -310,6 +317,23 @@ func asStringAnyMap(v any) map[string]any {
 	default:
 		return nil
 	}
+}
+
+// stripOutcomeRuleSection removes the「完成标记」section from artifact-store.md
+// so Grasp Phase1 never sees the outcome tool name in always-on rules.
+func stripOutcomeRuleSection(b []byte) []byte {
+	const heading = "## 完成标记"
+	s := string(b)
+	i := strings.Index(s, heading)
+	if i < 0 {
+		return b
+	}
+	rest := s[i+len(heading):]
+	next := strings.Index(rest, "\n## ")
+	if next < 0 {
+		return []byte(strings.TrimRight(s[:i], "\n") + "\n")
+	}
+	return []byte(s[:i] + rest[next+1:])
 }
 
 // EmbeddedRuleBasenames returns sorted basenames of all embedded platform rules
