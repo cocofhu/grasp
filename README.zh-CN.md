@@ -187,6 +187,14 @@ cd grasp
 - [安全策略](SECURITY.md)
 - [支持渠道](SUPPORT.md)
 
+## 交流群
+
+扫描下方 QQ 二维码加入 GRASP 沟通群（群号 `1125858134`）。
+
+<p align="center">
+  <img src="docs/community-qq-qr.png" alt="GRASP 沟通群二维码" width="280" />
+</p>
+
 ## 参与贡献
 
 欢迎提交 Issue 和 Pull Request。请先阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md)、[`AGENTS.md`](AGENTS.md) 与 [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)。

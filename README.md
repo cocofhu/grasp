@@ -184,6 +184,14 @@ Module-specific lint, test, coverage, and E2E commands are documented in [`AGENT
 - [Security policy](SECURITY.md)
 - [Support](SUPPORT.md)
 
+## Community
+
+Scan the QQ QR code below to join the GRASP community group (`1125858134`).
+
+<p align="center">
+  <img src="docs/community-qq-qr.png" alt="GRASP QQ community group QR code" width="280" />
+</p>
+
 ## Contributing
 
 Issues and pull requests are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md), [`AGENTS.md`](AGENTS.md), and [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) before contributing.
