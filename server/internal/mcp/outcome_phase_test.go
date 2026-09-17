@@ -107,7 +107,9 @@ func TestListedToolsJSONRoundTrip(t *testing.T) {
 	if st != 200 {
 		t.Fatalf("status=%d resp=%s", st, resp)
 	}
-	if strings.Contains(string(resp), `"name":"node_complete"`) {
-		t.Fatal("Phase1 ServeRPC tools/list must not serialize node_complete")
+	// Zero-visibility: the token must not appear anywhere in the list payload
+	// (including other tools' descriptions), not only as a tool name entry.
+	if strings.Contains(string(resp), "node_complete") {
+		t.Fatal("Phase1 ServeRPC tools/list must not contain the string node_complete")
 	}
 }

@@ -1170,7 +1170,7 @@ func artifactTools() []map[string]any {
 			"name": "set_preflight",
 			"description": "仅环境确认(preflight)节点可用:写入已确认的环境清单(preflight.json)。" +
 				"必填 summary、confirmed=true;fields[] 每项 name+value 明文(可为空数组表示无缺口);" +
-				"unresolved 必须为空。密码与其它值一律明文。表单提交不能代替本工具。写完后调用 node_complete。",
+				"unresolved 必须为空。密码与其它值一律明文。表单提交不能代替本工具。写完后按本节点完成标记契约收尾。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
