@@ -48,6 +48,7 @@ describe('usePendingGates', () => {
   beforeEach(async () => {
     vi.mocked(api.listGates).mockReset()
     vi.mocked(api.listGates).mockResolvedValue(paged([]))
+    usePendingGates().clearVisibleMembership()
     await usePendingGates().refresh({ mode: 'force' })
   })
 
@@ -355,5 +356,51 @@ describe('usePendingGates', () => {
       }),
     )
     window.history.replaceState({}, '', prev || '/')
+  })
+
+  it('peek does not set hasPendingUpdate when listItems already has the new key (plan g1.1 / g4.1)', async () => {
+    vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
+    const pg = usePendingGates()
+    await pg.refresh({ mode: 'force' })
+    // Visible list already includes gate-2 (e.g. starting poll / loadList wrote it).
+    pg.syncDisplayedBaseline([gate('1'), gate('2')])
+
+    vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1'), gate('2')], 2))
+    await pg.peek({ source: 'sidebar-poll' })
+
+    expect(pg.hasPendingUpdate.value).toBe(false)
+    expect(pg.pendingMeta.value).toBeNull()
+    expect(pg.displayedItems.value.map((it) => it.nodeId).sort()).toEqual(['node-1', 'node-2'])
+  })
+
+  it('syncDisplayedBaseline clears a stale banner when visible membership matches remote (plan g2.1 / g4.2)', async () => {
+    vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
+    const pg = usePendingGates()
+    await pg.refresh({ mode: 'force' })
+
+    vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1'), gate('2')], 2))
+    await pg.peek({ source: 'sidebar-poll' })
+    expect(pg.hasPendingUpdate.value).toBe(true)
+    expect(pg.pendingMeta.value).toEqual({ added: 1, removed: 0 })
+
+    // loadList already pulled the new row into the visible list — sync closes banner.
+    pg.syncDisplayedBaseline([gate('1'), gate('2')])
+    expect(pg.hasPendingUpdate.value).toBe(false)
+    expect(pg.pendingMeta.value).toBeNull()
+    expect(pg.displayedItems.value).toHaveLength(2)
+  })
+
+  it('page-N visible keys alone do not count as removals against page-1 peek (plan g1.1)', async () => {
+    vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
+    const pg = usePendingGates()
+    await pg.refresh({ mode: 'force' })
+    // User is on another page that shows gate-9; peek still returns page 1.
+    pg.syncDisplayedBaseline([gate('9')])
+
+    vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
+    await pg.peek({ source: 'sidebar-poll' })
+
+    expect(pg.hasPendingUpdate.value).toBe(false)
+    expect(pg.pendingMeta.value).toBeNull()
   })
 })

@@ -34,20 +34,6 @@ export function itemKey(it: InboxItem): string {
   return `${it.runId}:${it.nodeId}`
 }
 
-function diffKeys(displayed: InboxItem[], remote: InboxItem[]): PendingMeta {
-  const displayedSet = new Set(displayed.map(itemKey))
-  const remoteSet = new Set(remote.map(itemKey))
-  let added = 0
-  let removed = 0
-  for (const k of remoteSet) {
-    if (!displayedSet.has(k)) added++
-  }
-  for (const k of displayedSet) {
-    if (!remoteSet.has(k)) removed++
-  }
-  return { added, removed }
-}
-
 function errorMessage(err: unknown): string {
   if (err instanceof Error && err.message) return err.message
   return String(err || 'load failed')
@@ -63,6 +49,35 @@ const lastRefreshSource = ref<RefreshSource | null>(null)
 const lastPeekAt = ref(0)
 const error = ref<string | null>(null)
 const ariaBusy = ref(false)
+/**
+ * Keys currently rendered on the Gates inbox page (listItems). Set by
+ * syncDisplayedBaseline after each successful loadList; cleared on unmount.
+ * Null means "inbox not mounted" — peek falls back to displayedItems only.
+ */
+let visibleMembershipKeys: Set<string> | null = null
+
+/**
+ * Membership diff for the 待刷新 banner.
+ * "Added" is relative to the applied peek snapshot ∪ the inbox page's visible
+ * listKeys (plan g1.1) so loadList/starting-poll rows are not re-flagged.
+ * "Removed" only considers displayedItems — page-N visible keys must not count
+ * as removals against the page-1 peek window.
+ */
+function diffMembership(remote: InboxItem[]): PendingMeta {
+  const displayedSet = new Set(displayedItems.value.map(itemKey))
+  const remoteSet = new Set(remote.map(itemKey))
+  const visible = visibleMembershipKeys
+  let added = 0
+  let removed = 0
+  for (const k of remoteSet) {
+    if (displayedSet.has(k) || (visible != null && visible.has(k))) continue
+    added++
+  }
+  for (const k of displayedSet) {
+    if (!remoteSet.has(k)) removed++
+  }
+  return { added, removed }
+}
 
 // Backward-compatible alias: list UI binds to displayedItems.
 const items = displayedItems
@@ -117,17 +132,32 @@ function readPeekFiltersFromLocation(): {
 function setPending(remote: InboxItem[], total: number) {
   remoteItems.value = remote
   totalCount.value = total
-  const meta = diffKeys(displayedItems.value, remote)
+  const meta = diffMembership(remote)
   if (meta.added > 0 || meta.removed > 0) {
     hasPendingUpdate.value = true
     pendingMeta.value = meta
     return
   }
-  // Same membership: merge badge-level state (replying) in place. Do not treat
-  // session busy as an add/remove — that would hang the 待刷新 banner.
+  // Same membership: fold visible∩remote into displayed, then merge badge-level
+  // state (replying) in place. Do not treat session busy as an add/remove.
   hasPendingUpdate.value = false
   pendingMeta.value = null
+  adoptVisibleRemoteIntoDisplayed(remote)
   displayedItems.value = mergeInboxReplyingFromRemote(displayedItems.value, remote, itemKey)
+}
+
+/** Pull remote rows the visible inbox already shows into the applied snapshot. */
+function adoptVisibleRemoteIntoDisplayed(remote: InboxItem[]): void {
+  const visible = visibleMembershipKeys
+  if (!visible || !visible.size) return
+  const displayedKeys = new Set(displayedItems.value.map(itemKey))
+  const missing = remote.filter((it) => {
+    const k = itemKey(it)
+    return visible.has(k) && !displayedKeys.has(k)
+  })
+  if (missing.length) {
+    displayedItems.value = [...displayedItems.value, ...missing]
+  }
 }
 
 /** Patch one visible/sidebar card's sessionBusy-derived state without peek diffs. */
@@ -155,14 +185,55 @@ function applyRemoteToDisplayed(remote: InboxItem[], total: number) {
 }
 
 function syncPendingMetaFromDiff() {
-  const meta = diffKeys(displayedItems.value, remoteItems.value)
+  const meta = diffMembership(remoteItems.value)
   if (meta.added > 0 || meta.removed > 0) {
     hasPendingUpdate.value = true
     pendingMeta.value = meta
   } else {
+    // Empty membership diff: close banner state without inventing "added N" (g2.1).
     hasPendingUpdate.value = false
     pendingMeta.value = null
   }
+}
+
+/**
+ * After the inbox page successfully loads/refreshes its visible list, adopt
+ * those keys as the peek baseline so subsequent peeks do not re-flag them as
+ * "新增" (plan g1.2). Also rewrites displayedItems for keys already present in
+ * the remote peek snapshot.
+ */
+function syncDisplayedBaseline(visible: InboxItem[]): void {
+  visibleMembershipKeys = new Set(visible.map(itemKey))
+  const remoteByKey = new Map(remoteItems.value.map((it) => [itemKey(it), it]))
+  const displayedKeys = new Set(displayedItems.value.map(itemKey))
+  const adopted: InboxItem[] = []
+  for (const it of visible) {
+    const k = itemKey(it)
+    if (displayedKeys.has(k)) continue
+    // Only pull remote∩visible into displayed — never inflate with page-only
+    // rows (that would look like "removed" against the page-1 peek window).
+    const remoteRow = remoteByKey.get(k)
+    if (!remoteRow) continue
+    adopted.push(remoteRow)
+    displayedKeys.add(k)
+  }
+  if (adopted.length) {
+    displayedItems.value = [...displayedItems.value, ...adopted]
+  }
+  syncPendingMetaFromDiff()
+  // When membership matches, still merge badge-level state from remote.
+  if (!hasPendingUpdate.value && remoteItems.value.length) {
+    displayedItems.value = mergeInboxReplyingFromRemote(
+      displayedItems.value,
+      remoteItems.value,
+      itemKey,
+    )
+  }
+}
+
+/** Inbox page left — stop using listItems as a peek baseline. */
+function clearVisibleMembership(): void {
+  visibleMembershipKeys = null
 }
 
 function syncAriaBusy() {
@@ -320,6 +391,8 @@ export function usePendingGates() {
     removeItemLocally,
     restoreItemLocally,
     patchItemReplying,
+    syncDisplayedBaseline,
+    clearVisibleMembership,
     itemKey,
   }
 }

@@ -75,6 +75,8 @@ const {
   removeItemLocally,
   restoreItemLocally,
   patchItemReplying,
+  syncDisplayedBaseline,
+  clearVisibleMembership,
   hasPendingUpdate,
   pendingMeta,
   lastPeekAt,
@@ -815,6 +817,8 @@ async function loadList({ showLoading = false }: { showLoading?: boolean } = {})
     reconcileProcessedWithList(rows)
     // Independent loadList success path: repair invalid selection (no Run # - shell).
     if (!processingLock.value) ensureValidActive()
+    // Align peek banner baseline with the visible list (plan g1.2 / g2.1).
+    syncDisplayedBaseline(listItems.value)
   } catch (err) {
     if (gen !== listLoadGeneration) return
     /* keep previous list on transient failure; surface error when nothing to show */
@@ -1991,6 +1995,7 @@ onUnmounted(() => {
   for (const triple of [...inboxContextAborts.keys()]) abortInboxContext(triple)
   confirmFlowDeskHold.value = false
   inboxConfirmFlow.reset()
+  clearVisibleMembership()
 })
 
 function itemTitle(it: InboxItem) {

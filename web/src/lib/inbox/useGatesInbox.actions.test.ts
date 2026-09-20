@@ -46,6 +46,8 @@ const mocks = vi.hoisted(() => ({
   removeItemLocally: vi.fn(),
   restoreItemLocally: vi.fn(),
   patchItemReplying: vi.fn(),
+  syncDisplayedBaseline: vi.fn(),
+  clearVisibleMembership: vi.fn(),
   hydrateProject: vi.fn(),
   toastSuccess: vi.fn(),
   toastWarn: vi.fn(),
@@ -99,6 +101,8 @@ vi.mock('@/lib/inbox/usePendingGates', () => ({
     removeItemLocally: mocks.removeItemLocally,
     restoreItemLocally: mocks.restoreItemLocally,
     patchItemReplying: mocks.patchItemReplying,
+    syncDisplayedBaseline: mocks.syncDisplayedBaseline,
+    clearVisibleMembership: mocks.clearVisibleMembership,
     hasPendingUpdate: shared.hasPendingUpdate,
     pendingMeta: shared.pendingMeta,
     lastPeekAt: shared.lastPeekAt,
@@ -276,6 +280,10 @@ describe('useGatesInbox actions', () => {
     expect(inbox.isActive(inbox.active.value!)).toBe(true)
     expect(inbox.showListSkeleton.value).toBe(false)
     expect(inbox.showListError.value).toBe(false)
+    // plan g1.2: successful loadList syncs peek baseline from visible listItems
+    expect(mocks.syncDisplayedBaseline).toHaveBeenCalled()
+    const synced = mocks.syncDisplayedBaseline.mock.calls.at(-1)?.[0] as InboxItem[]
+    expect(synced.map((it) => it.runId).sort()).toEqual(['run-chat', 'run-gate'])
 
     shared.selected.value = 'wf-1'
     shared.selectedProject.value = 'project-1'
