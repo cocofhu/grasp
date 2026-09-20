@@ -4,6 +4,32 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+## 1.1.0 — 2026-09-20
+
+- **Preflight node:** env-confirmation Agent node with `ask_form` and vars
+  export (#604); create-wizard template dropdown plus PreflightAgent pack
+  (#611).
+- **Approve identity:** rename the Approve node type to `grasp` so confirm-flow
+  uses the canonical type (#607). Grasp/approve Phase1 hides `node_complete`
+  until the user confirms (#628).
+- **Artifacts:** auto-pin visible products to preview tabs on create/update
+  (#602); show agent products, sniff image uploads, and version overwrites
+  (#603).
+- **Confirm flow:** success overlay with a single-path check draw (#613);
+  page-level host and click-overlay fixes (#614, #616).
+- **Fix:** one-shot turns end on process exit, not pipe EOF — leftover child
+  processes no longer hang the session (#619).
+- **Fix:** Plan mermaid diagrams render serially (#622).
+- Home pipeline rail rise-on-settle (#621); StatusMetrics run zone routes to
+  `/runs` (#612).
+- Web polish: artifact version menu, clarify labels, inbox deep-links,
+  skip-round placeholder, new-workflow plus centering, brand-purple button
+  hover (#608–#610, #615, #617, #618).
+- README brand banner / Trendshift badge / QQ community QR (#623, #625);
+  ignore the whole `data/` runtime root (#620).
+- Default `./start.sh` / `.env.example` / `compose.release.yaml` pins GHCR
+  images to `*:1.1.0`.
+
 ## 1.0.1 — 2026-09-14
 
 - **Fix:** ReAct empty-fail Retry was a dead click — wrappers never forwarded
