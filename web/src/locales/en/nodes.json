@@ -39,6 +39,10 @@
         "results": {
           "label": "Final result sources",
           "help": "Select upstream products as output card sources; drag to reorder. Each source can only be added once."
+        },
+        "auto_leftover_draft": {
+          "label": "Auto-write leftover requirement draft",
+          "help": "When on, if this run still has leftover test defects or review findings/action items, create one summary requirement draft in the project (with pipeline and run context). Off by default."
         }
       },
       "outputs": {

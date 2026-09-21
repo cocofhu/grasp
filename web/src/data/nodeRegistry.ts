@@ -33,12 +33,19 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
     category: 'nodes.categories.control',
     fields: [
       { key: 'results', label: 'nodes.output.fields.results.label', type: 'output_sources', help: 'nodes.output.fields.results.help', optional: true },
+      {
+        key: 'auto_leftover_draft',
+        label: 'nodes.output.fields.auto_leftover_draft.label',
+        type: 'switch',
+        optional: true,
+        help: 'nodes.output.fields.auto_leftover_draft.help',
+      },
     ],
     outputs: [
       { key: 'outputCards', desc: 'nodes.output.outputs.outputCards.desc' },
       { key: 'results', desc: 'nodes.output.outputs.results.desc' },
     ],
-    defaults: {},
+    defaults: { auto_leftover_draft: false },
   },
   react: {
     type: 'react',
