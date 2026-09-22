@@ -42,7 +42,7 @@
         },
         "auto_leftover_draft": {
           "label": "Auto-write leftover requirement draft",
-          "help": "When on, if this run still has leftover test defects or review findings/action items, create one summary requirement draft in the project (with pipeline and run context). Off by default."
+          "help": "When on, if this run still has leftovers (test defects, failed cases, review findings/action items, or open clarify questions), create one self-contained requirement draft in the project with the requirement spec and full leftover text; it remains usable after the original pipeline is deleted. Off by default."
         }
       },
       "outputs": {

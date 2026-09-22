@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 )
@@ -19,14 +20,24 @@ const (
 	leftoverDraftErrKey   = "leftoverDraftError"
 	autoLeftoverDraftKey  = "auto_leftover_draft"
 
-	testResultJSONKey = "test_result_json"
-	reviewJSONKey     = "review_json"
+	testResultJSONKey           = "test_result_json"
+	reviewJSONKey               = "review_json"
+	clarifiedRequirementJSONKey = "clarified_requirement_json"
+	clarifiedRequirementKey     = "clarified_requirement"
+	planJSONKey                 = "plan_json"
+	implementationResultJSONKey = "implementation_result_json"
+
+	leftoverKindDefect       = "defect"
+	leftoverKindFailedCase   = "failed_case"
+	leftoverKindFinding      = "finding"
+	leftoverKindActionItem   = "action_item"
+	leftoverKindOpenQuestion = "open_question"
 )
 
-// leftoverItem is one non-blocking leftover from test defects or review
-// findings / action_items (plan g2.2).
+// leftoverItem is one non-blocking leftover from test defects / failed cases,
+// review findings / action_items, or clarified open_questions.
 type leftoverItem struct {
-	Kind       string // defect | finding | action_item
+	Kind       string // defect | failed_case | finding | action_item | open_question
 	NodeID     string
 	NodeLabel  string
 	Title      string
@@ -43,6 +54,21 @@ type leftoverBundle struct {
 	TestSkipped    int
 	TestNodeCount  int
 	ReviewVerdicts map[string]string // nodeID → verdict
+}
+
+type clarifiedSpecSnap struct {
+	NodeID    string
+	NodeLabel string
+	Markdown  string
+}
+
+type leftoverBodyParts struct {
+	background string
+	spec       string
+	leftovers  string
+	plan       string
+	delivered  string
+	sourceNote string
 }
 
 func configTruthyAny(v any) bool {
@@ -68,8 +94,18 @@ func autoLeftoverDraftEnabled(cfg map[string]any) bool {
 	return configTruthyAny(cfg[autoLeftoverDraftKey])
 }
 
-// collectLeftovers scans all test/review nodes with JSON snapshots in this run
-// (independent of output card source checkboxes). Malformed JSON is skipped.
+func nodeLabel(n models.Node) string {
+	label := strings.TrimSpace(n.Label)
+	if label == "" {
+		return n.ID
+	}
+	return label
+}
+
+// collectLeftovers scans test/review/react/grasp nodes with JSON snapshots in
+// this run (independent of output card source checkboxes). Malformed JSON is
+// skipped per node. skipped cases are counted as context only and do not count
+// as leftover items.
 func collectLeftovers(c *execCtx) leftoverBundle {
 	out := leftoverBundle{ReviewVerdicts: map[string]string{}}
 	if c == nil || c.graph.Nodes == nil {
@@ -80,10 +116,7 @@ func collectLeftovers(c *execCtx) leftoverBundle {
 		if outs == nil {
 			continue
 		}
-		label := strings.TrimSpace(n.Label)
-		if label == "" {
-			label = n.ID
-		}
+		label := nodeLabel(n)
 		switch n.Type {
 		case "test":
 			raw, _ := outs[testResultJSONKey].(string)
@@ -110,6 +143,19 @@ func collectLeftovers(c *execCtx) leftoverBundle {
 				out.ReviewVerdicts[n.ID] = verdict
 			}
 			out.Items = append(out.Items, items...)
+		case "react", "grasp":
+			raw, _ := outs[clarifiedRequirementJSONKey].(string)
+			if strings.TrimSpace(raw) == "" {
+				continue
+			}
+			for _, q := range mcp.ClarifiedOpenQuestions(raw) {
+				out.Items = append(out.Items, leftoverItem{
+					Kind:      leftoverKindOpenQuestion,
+					NodeID:    n.ID,
+					NodeLabel: label,
+					Title:     q,
+				})
+			}
 		}
 	}
 	return out
@@ -124,7 +170,9 @@ func parseTestLeftovers(raw, nodeID, label string) (items []leftoverItem, skippe
 		} `json:"defects"`
 		Skipped int `json:"skipped"`
 		Cases   []struct {
+			Name   string `json:"name"`
 			Status string `json:"status"`
+			Detail string `json:"detail"`
 		} `json:"cases"`
 	}
 	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
@@ -145,7 +193,7 @@ func parseTestLeftovers(raw, nodeID, label string) (items []leftoverItem, skippe
 			continue
 		}
 		items = append(items, leftoverItem{
-			Kind:      "defect",
+			Kind:      leftoverKindDefect,
 			NodeID:    nodeID,
 			NodeLabel: label,
 			Title:     title,
@@ -153,13 +201,30 @@ func parseTestLeftovers(raw, nodeID, label string) (items []leftoverItem, skippe
 			Detail:    strings.TrimSpace(d.Detail),
 		})
 	}
+	for _, c := range doc.Cases {
+		status := strings.TrimSpace(c.Status)
+		if !strings.EqualFold(status, "failed") && !strings.EqualFold(status, "fail") {
+			continue
+		}
+		name := strings.TrimSpace(c.Name)
+		if name == "" {
+			name = "(未命名用例)"
+		}
+		items = append(items, leftoverItem{
+			Kind:      leftoverKindFailedCase,
+			NodeID:    nodeID,
+			NodeLabel: label,
+			Title:     name,
+			Detail:    strings.TrimSpace(c.Detail),
+		})
+	}
 	return items, skipped, true
 }
 
 func parseReviewLeftovers(raw, nodeID, label string) (items []leftoverItem, verdict string, ok bool) {
 	var doc struct {
-		Verdict     string          `json:"verdict"`
-		Findings    []struct {
+		Verdict  string `json:"verdict"`
+		Findings []struct {
 			Title      string `json:"title"`
 			Severity   string `json:"severity"`
 			Detail     string `json:"detail"`
@@ -179,7 +244,7 @@ func parseReviewLeftovers(raw, nodeID, label string) (items []leftoverItem, verd
 			continue
 		}
 		items = append(items, leftoverItem{
-			Kind:       "finding",
+			Kind:       leftoverKindFinding,
 			NodeID:     nodeID,
 			NodeLabel:  label,
 			Title:      title,
@@ -193,7 +258,7 @@ func parseReviewLeftovers(raw, nodeID, label string) (items []leftoverItem, verd
 	}
 	for _, s := range parseFlexStringList(doc.ActionItems) {
 		items = append(items, leftoverItem{
-			Kind:      "action_item",
+			Kind:      leftoverKindActionItem,
 			NodeID:    nodeID,
 			NodeLabel: label,
 			Title:     s,
@@ -295,7 +360,59 @@ func formatStartedAt(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
-func formatInputsSummary(inputs map[string]any) string {
+func clarifiedJSONUsable(raw string) bool {
+	var doc struct {
+		Summary string `json:"summary"`
+	}
+	if json.Unmarshal([]byte(raw), &doc) != nil {
+		return false
+	}
+	return strings.TrimSpace(doc.Summary) != ""
+}
+
+// snapshotClarifiedSpecs walks react/grasp nodes in graph order and copies each
+// clarified requirement into readable Markdown (JSON render preferred).
+func snapshotClarifiedSpecs(c *execCtx) []clarifiedSpecSnap {
+	if c == nil || c.graph.Nodes == nil {
+		return nil
+	}
+	var out []clarifiedSpecSnap
+	for _, n := range c.graph.Nodes {
+		if n.Type != "react" && n.Type != "grasp" {
+			continue
+		}
+		outs := c.nodeOutputs[n.ID]
+		if outs == nil {
+			continue
+		}
+		label := nodeLabel(n)
+		rawJSON, _ := outs[clarifiedRequirementJSONKey].(string)
+		rawJSON = strings.TrimSpace(rawJSON)
+		if rawJSON != "" && clarifiedJSONUsable(rawJSON) {
+			out = append(out, clarifiedSpecSnap{
+				NodeID:    n.ID,
+				NodeLabel: label,
+				Markdown:  strings.TrimSpace(mcp.RenderClarifiedRequirementMarkdown(rawJSON)),
+			})
+			continue
+		}
+		// JSON missing/unusable: fall back to rendered text output for this node.
+		text, _ := outs[clarifiedRequirementKey].(string)
+		text = strings.TrimSpace(text)
+		if text != "" {
+			out = append(out, clarifiedSpecSnap{
+				NodeID:    n.ID,
+				NodeLabel: label,
+				Markdown:  text,
+			})
+		}
+	}
+	return out
+}
+
+// formatInputsFull writes run inputs in key order without the old 120-rune
+// truncation, preserving embedded newlines.
+func formatInputsFull(inputs map[string]any) string {
 	if len(inputs) == 0 {
 		return ""
 	}
@@ -307,70 +424,86 @@ func formatInputsSummary(inputs map[string]any) string {
 	var b strings.Builder
 	for _, k := range keys {
 		v := models.VarDisplayText(inputs[k])
-		v = strings.ReplaceAll(strings.TrimSpace(v), "\n", " ")
-		if utf8.RuneCountInString(v) > 120 {
-			v = truncateRunes(v, 120)
+		b.WriteString(fmt.Sprintf("### `%s`\n\n", k))
+		if strings.TrimSpace(v) == "" {
+			b.WriteString("(空)\n\n")
+			continue
 		}
-		b.WriteString(fmt.Sprintf("- `%s`: %s\n", k, v))
+		b.WriteString(v)
+		if !strings.HasSuffix(v, "\n") {
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func buildLeftoverDraftBody(c *execCtx, bundle leftoverBundle) string {
+func buildSpecSection(c *execCtx) string {
+	specs := snapshotClarifiedSpecs(c)
 	var b strings.Builder
-	wfName := strings.TrimSpace(c.run.WorkflowName)
-	if wfName == "" {
-		wfName = "(未命名)"
+	if len(specs) > 0 {
+		b.WriteString("## 需求规格\n\n")
+		b.WriteString("下列规格已从本 Run 节点输出快照拷贝；后续执行只读本文，不回查原流水线或原 Run。\n\n")
+		for _, s := range specs {
+			b.WriteString(fmt.Sprintf("### 节点 `%s`（%s）\n\n", s.NodeID, s.NodeLabel))
+			b.WriteString(s.Markdown)
+			if !strings.HasSuffix(s.Markdown, "\n") {
+				b.WriteString("\n")
+			}
+			b.WriteString("\n")
+		}
+		return strings.TrimRight(b.String(), "\n") + "\n"
 	}
-	b.WriteString("## 背景\n\n")
-	b.WriteString("流水线已跑到结束节点，测试/评审门禁已放行，但仍有未处理遗留。")
-	b.WriteString("本草稿由结束节点开关「自动写入遗留需求草稿」生成，供后续排期；不代表门禁失败。\n\n")
-
-	b.WriteString("## 流水线与 Run 上下文\n\n")
-	b.WriteString(fmt.Sprintf("- **流水线名**: %s\n", wfName))
-	b.WriteString(fmt.Sprintf("- **流水线 ID**: `%s`\n", strings.TrimSpace(c.run.WorkflowID)))
-	b.WriteString(fmt.Sprintf("- **版本**: %d\n", c.run.WorkflowVersion))
-	b.WriteString(fmt.Sprintf("- **Run ID**: `%s`\n", c.run.ID))
-	b.WriteString(fmt.Sprintf("- **触发方式**: %s\n", formatTrigger(c.run.Trigger)))
-	b.WriteString(fmt.Sprintf("- **开始时间**: %s\n", formatStartedAt(c.run.StartedAt)))
-	if bundle.TestSkipped > 0 {
-		b.WriteString(fmt.Sprintf("- **测试 skipped 计数（上下文，非遗留条目）**: %d\n", bundle.TestSkipped))
-	}
-	if summary := formatInputsSummary(c.run.Inputs); summary != "" {
-		b.WriteString("\n### 输入摘要\n\n")
+	b.WriteString("## 原始需求输入\n\n")
+	b.WriteString("本次运行没有可用的结构化澄清需求产物；下列为运行输入全文（**未经结构化澄清**）。\n\n")
+	if summary := formatInputsFull(c.run.Inputs); summary != "" {
 		b.WriteString(summary)
 		b.WriteString("\n")
+	} else {
+		b.WriteString("本次运行未留下结构化需求或原始输入。\n")
 	}
-	b.WriteString("\n")
+	return strings.TrimRight(b.String(), "\n") + "\n"
+}
 
-	// Group by node for test defects / review leftovers.
-	testByNode := map[string][]leftoverItem{}
+func buildLeftoversSection(bundle leftoverBundle) string {
+	var b strings.Builder
+	b.WriteString("## 仍须完成\n\n")
+	b.WriteString("后续执行必须处理下列各项；验收为该条描述的问题已解决，或该未决问题已有明确决定。\n\n")
+
+	testDefects := map[string][]leftoverItem{}
+	failedCases := map[string][]leftoverItem{}
 	reviewByNode := map[string][]leftoverItem{}
+	openQs := map[string][]leftoverItem{}
 	nodeOrder := []string{}
 	seen := map[string]bool{}
-	for _, it := range bundle.Items {
-		if !seen[it.NodeID] {
-			seen[it.NodeID] = true
-			nodeOrder = append(nodeOrder, it.NodeID)
+	remember := func(id string) {
+		if !seen[id] {
+			seen[id] = true
+			nodeOrder = append(nodeOrder, id)
 		}
+	}
+	for _, it := range bundle.Items {
+		remember(it.NodeID)
 		switch it.Kind {
-		case "defect":
-			testByNode[it.NodeID] = append(testByNode[it.NodeID], it)
+		case leftoverKindDefect:
+			testDefects[it.NodeID] = append(testDefects[it.NodeID], it)
+		case leftoverKindFailedCase:
+			failedCases[it.NodeID] = append(failedCases[it.NodeID], it)
+		case leftoverKindOpenQuestion:
+			openQs[it.NodeID] = append(openQs[it.NodeID], it)
 		default:
 			reviewByNode[it.NodeID] = append(reviewByNode[it.NodeID], it)
 		}
 	}
 
-	hasTest := len(testByNode) > 0
-	hasReview := len(reviewByNode) > 0
-	if hasTest {
-		b.WriteString("## 测试缺陷\n\n")
+	if len(testDefects) > 0 {
+		b.WriteString("### 测试缺陷\n\n")
 		for _, nid := range nodeOrder {
-			items := testByNode[nid]
+			items := testDefects[nid]
 			if len(items) == 0 {
 				continue
 			}
-			b.WriteString(fmt.Sprintf("### 节点 `%s`（%s）\n\n", nid, items[0].NodeLabel))
+			b.WriteString(fmt.Sprintf("#### 节点 `%s`（%s）\n\n", nid, items[0].NodeLabel))
 			for _, it := range items {
 				sev := it.Severity
 				if sev == "" {
@@ -380,12 +513,31 @@ func buildLeftoverDraftBody(c *execCtx, bundle leftoverBundle) string {
 				if it.Detail != "" {
 					b.WriteString(fmt.Sprintf("  - %s\n", it.Detail))
 				}
+				b.WriteString("  - 后续执行必须处理该项。\n")
 			}
 			b.WriteString("\n")
 		}
 	}
-	if hasReview {
-		b.WriteString("## 评审意见与待办\n\n")
+	if len(failedCases) > 0 {
+		b.WriteString("### 失败的测试用例\n\n")
+		for _, nid := range nodeOrder {
+			items := failedCases[nid]
+			if len(items) == 0 {
+				continue
+			}
+			b.WriteString(fmt.Sprintf("#### 节点 `%s`（%s）\n\n", nid, items[0].NodeLabel))
+			for _, it := range items {
+				b.WriteString(fmt.Sprintf("- **%s**\n", it.Title))
+				if it.Detail != "" {
+					b.WriteString(fmt.Sprintf("  - %s\n", it.Detail))
+				}
+				b.WriteString("  - 后续执行必须处理该项。\n")
+			}
+			b.WriteString("\n")
+		}
+	}
+	if len(reviewByNode) > 0 {
+		b.WriteString("### 评审意见与待办\n\n")
 		for _, nid := range nodeOrder {
 			items := reviewByNode[nid]
 			if len(items) == 0 {
@@ -395,13 +547,14 @@ func buildLeftoverDraftBody(c *execCtx, bundle leftoverBundle) string {
 			if verdict == "" {
 				verdict = items[0].Verdict
 			}
-			b.WriteString(fmt.Sprintf("### 节点 `%s`（%s）\n\n", nid, items[0].NodeLabel))
+			b.WriteString(fmt.Sprintf("#### 节点 `%s`（%s）\n\n", nid, items[0].NodeLabel))
 			if verdict != "" {
-				b.WriteString(fmt.Sprintf("- **verdict**: `%s`\n", verdict))
+				b.WriteString(fmt.Sprintf("- **评审结论 (verdict)**: `%s`\n", verdict))
 			}
 			for _, it := range items {
-				if it.Kind == "action_item" {
+				if it.Kind == leftoverKindActionItem {
 					b.WriteString(fmt.Sprintf("- **待办**: %s\n", it.Title))
+					b.WriteString("  - 后续执行必须处理该项。\n")
 					continue
 				}
 				sev := it.Severity
@@ -423,25 +576,207 @@ func buildLeftoverDraftBody(c *execCtx, bundle leftoverBundle) string {
 				if it.Suggestion != "" {
 					b.WriteString(fmt.Sprintf("  - 建议: %s\n", it.Suggestion))
 				}
+				b.WriteString("  - 后续执行必须处理该项。\n")
 			}
 			b.WriteString("\n")
 		}
 	}
-
-	body := strings.TrimRight(b.String(), "\n") + "\n"
-	if utf8.RuneCountInString(body) > services.MaxRequirementDraftBodyRunes {
-		note := "\n\n> （正文已截断：超出需求草稿长度上限。）\n"
-		max := services.MaxRequirementDraftBodyRunes - utf8.RuneCountInString(note)
-		if max < 0 {
-			max = 0
+	if len(openQs) > 0 {
+		b.WriteString("### 未决澄清问题\n\n")
+		for _, nid := range nodeOrder {
+			items := openQs[nid]
+			if len(items) == 0 {
+				continue
+			}
+			b.WriteString(fmt.Sprintf("#### 节点 `%s`（%s）\n\n", nid, items[0].NodeLabel))
+			for _, it := range items {
+				b.WriteString(fmt.Sprintf("- %s\n", it.Title))
+				b.WriteString("  - 后续执行必须处理该项（需有明确决定）。\n")
+			}
+			b.WriteString("\n")
 		}
-		body = truncateRunes(body, max) + note
 	}
-	return body
+	if bundle.TestSkipped > 0 {
+		b.WriteString(fmt.Sprintf("> 测试 skipped 计数（仅上下文，不算遗留）: %d\n\n", bundle.TestSkipped))
+	}
+	return strings.TrimRight(b.String(), "\n") + "\n"
+}
+
+func formatPlanHighlights(raw string) string {
+	var doc struct {
+		Title string `json:"title"`
+		Goals []struct {
+			Title    string `json:"title"`
+			Subgoals []struct {
+				Title string `json:"title"`
+			} `json:"subgoals"`
+		} `json:"goals"`
+	}
+	if json.Unmarshal([]byte(raw), &doc) != nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## 原计划要点\n\n")
+	b.WriteString("> 以下仅为历史对照，新执行可以重做计划，**不是**本次需求的验收依据。\n\n")
+	if t := strings.TrimSpace(doc.Title); t != "" {
+		b.WriteString(fmt.Sprintf("- **计划标题**: %s\n", t))
+	}
+	if len(doc.Goals) == 0 {
+		b.WriteString("- （计划中无目标标题）\n")
+	} else {
+		for _, g := range doc.Goals {
+			title := strings.TrimSpace(g.Title)
+			if title == "" {
+				continue
+			}
+			b.WriteString(fmt.Sprintf("- %s\n", title))
+			for _, sg := range g.Subgoals {
+				st := strings.TrimSpace(sg.Title)
+				if st == "" {
+					continue
+				}
+				b.WriteString(fmt.Sprintf("  - %s\n", st))
+			}
+		}
+	}
+	return strings.TrimRight(b.String(), "\n") + "\n"
+}
+
+func formatDeliveredSummary(raw string) string {
+	var doc struct {
+		Summary string `json:"summary"`
+	}
+	if json.Unmarshal([]byte(raw), &doc) != nil {
+		return ""
+	}
+	summary := strings.TrimSpace(doc.Summary)
+	if summary == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## 已交付说明\n\n")
+	b.WriteString("> 以下仅为历史对照，**不是**执行依据；不包含差分或文件清单。\n\n")
+	b.WriteString(summary)
+	b.WriteString("\n")
+	return b.String()
+}
+
+func snapshotOptionalExtras(c *execCtx) (planSection, deliveredSection string) {
+	if c == nil || c.graph.Nodes == nil {
+		return "", ""
+	}
+	for _, n := range c.graph.Nodes {
+		outs := c.nodeOutputs[n.ID]
+		if outs == nil {
+			continue
+		}
+		if planSection == "" {
+			if raw, _ := outs[planJSONKey].(string); strings.TrimSpace(raw) != "" {
+				planSection = formatPlanHighlights(raw)
+			}
+		}
+		if deliveredSection == "" {
+			if raw, _ := outs[implementationResultJSONKey].(string); strings.TrimSpace(raw) != "" {
+				deliveredSection = formatDeliveredSummary(raw)
+			}
+		}
+		if planSection != "" && deliveredSection != "" {
+			break
+		}
+	}
+	return planSection, deliveredSection
+}
+
+func buildSourceNote(c *execCtx, bundle leftoverBundle) string {
+	wfName := strings.TrimSpace(c.run.WorkflowName)
+	if wfName == "" {
+		wfName = "(未命名)"
+	}
+	var b strings.Builder
+	b.WriteString("## 来源注记\n\n")
+	b.WriteString("下列标识仅供人回顾，**不是**执行依据；标识失效后，上方需求规格与遗留仍完整有效。")
+	b.WriteString("请勿以「打开原 Run / 原流水线」作为获取需求的必要步骤。\n\n")
+	b.WriteString(fmt.Sprintf("- **流水线名**: %s\n", wfName))
+	if id := strings.TrimSpace(c.run.WorkflowID); id != "" {
+		b.WriteString(fmt.Sprintf("- **流水线 ID**（可选）: `%s`\n", id))
+	}
+	b.WriteString(fmt.Sprintf("- **版本**: %d\n", c.run.WorkflowVersion))
+	b.WriteString(fmt.Sprintf("- **Run ID**（可选）: `%s`\n", c.run.ID))
+	b.WriteString(fmt.Sprintf("- **触发方式**: %s\n", formatTrigger(c.run.Trigger)))
+	b.WriteString(fmt.Sprintf("- **开始时间**: %s\n", formatStartedAt(c.run.StartedAt)))
+	if bundle.TestSkipped > 0 {
+		b.WriteString(fmt.Sprintf("- **测试 skipped 计数（上下文）**: %d\n", bundle.TestSkipped))
+	}
+	return strings.TrimRight(b.String(), "\n") + "\n"
+}
+
+func joinBodyParts(parts ...string) string {
+	var b strings.Builder
+	for _, p := range parts {
+		p = strings.TrimRight(p, "\n")
+		if p == "" {
+			continue
+		}
+		b.WriteString(p)
+		b.WriteString("\n\n")
+	}
+	return strings.TrimRight(b.String(), "\n") + "\n"
+}
+
+func assembleLeftoverBody(parts leftoverBodyParts) string {
+	ideal := joinBodyParts(parts.background, parts.spec, parts.leftovers, parts.plan, parts.delivered, parts.sourceNote)
+	max := services.MaxRequirementDraftBodyRunes
+	truncNote := "\n\n> （正文已截断：超出需求草稿长度上限。优先保留需求规格与遗留全文。）\n"
+	if utf8.RuneCountInString(ideal) <= max {
+		return ideal
+	}
+
+	// Priority: drop source note, then plan/delivered, then shrink the spec while
+	// keeping leftovers (so a leftover title and requirement overview remain).
+	withoutNote := joinBodyParts(parts.background, parts.spec, parts.leftovers, parts.plan, parts.delivered)
+	if with := strings.TrimRight(withoutNote, "\n") + truncNote; utf8.RuneCountInString(with) <= max {
+		return with
+	}
+
+	core := joinBodyParts(parts.background, parts.spec, parts.leftovers)
+	if with := strings.TrimRight(core, "\n") + truncNote; utf8.RuneCountInString(with) <= max {
+		return with
+	}
+
+	fixed := joinBodyParts(parts.background, parts.leftovers)
+	fixedWithNote := strings.TrimRight(fixed, "\n") + truncNote
+	budget := max - utf8.RuneCountInString(fixedWithNote) - 2 // room for blank line around spec
+	if budget < 64 {
+		// Extremely tight: keep background start + leftovers + note.
+		budget = max - utf8.RuneCountInString(strings.TrimRight(parts.leftovers, "\n")+truncNote) - 2
+		if budget < 0 {
+			budget = 0
+		}
+		shrunkBg := truncateRunes(parts.background, budget)
+		return strings.TrimRight(joinBodyParts(shrunkBg, parts.leftovers), "\n") + truncNote
+	}
+	shrunkSpec := truncateRunes(parts.spec, budget)
+	return strings.TrimRight(joinBodyParts(parts.background, shrunkSpec, parts.leftovers), "\n") + truncNote
+}
+
+func buildLeftoverDraftBody(c *execCtx, bundle leftoverBundle) string {
+	planSec, deliveredSec := snapshotOptionalExtras(c)
+	parts := leftoverBodyParts{
+		background: "## 背景\n\n" +
+			"流水线已跑到结束节点，测试/评审门禁已放行，但仍有未处理遗留。" +
+			"本草稿由结束节点开关「自动写入遗留需求草稿」生成，是一份**自包含需求文档**：" +
+			"正文含需求规格（或完整原始输入）与遗留全文，原流水线及其全部 Run 删除后仍可当作后续执行的需求输入，不依赖回查原执行。\n",
+		spec:       buildSpecSection(c),
+		leftovers:  buildLeftoversSection(bundle),
+		plan:       planSec,
+		delivered:  deliveredSec,
+		sourceNote: buildSourceNote(c, bundle),
+	}
+	return assembleLeftoverBody(parts)
 }
 
 // priorLeftoverDraftID returns a leftoverDraftId written by an earlier
-// iteration of this output node in the same run (plan g3.4).
+// iteration of this output node in the same run.
 func (e *Engine) priorLeftoverDraftID(runID, nodeID string) string {
 	if e == nil || e.db == nil || runID == "" || nodeID == "" {
 		return ""
