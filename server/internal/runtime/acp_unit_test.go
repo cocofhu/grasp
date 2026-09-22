@@ -155,7 +155,7 @@ func TestApproveProductsSettled(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !p.approveProductsSettled(req) {
-		t.Fatal("both products with empty open_questions must be settled")
+		t.Fatal("both products with work_kind=feature and empty open_questions must be settled")
 	}
 
 	openReq := strings.Replace(mcp.MinimalValidClarifiedRequirementJSON,

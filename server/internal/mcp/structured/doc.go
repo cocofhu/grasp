@@ -183,6 +183,8 @@ type clarifiedRequirementDoc struct {
 	Title                     string          `json:"title,omitempty"`
 	Summary                   string          `json:"summary"`
 	Background                string          `json:"background,omitempty"`
+	// WorkKind is bug|feature|other. Required for Grasp; optional for independent react.
+	WorkKind                  string          `json:"work_kind,omitempty"`
 	Goals                     flexStrings     `json:"goals,omitempty"`
 	SuccessMetrics            flexStrings     `json:"success_metrics,omitempty"`
 	InScope                   flexStrings     `json:"in_scope,omitempty"`
@@ -238,6 +240,7 @@ func ParseClarifiedRequirement(args map[string]any) (clarifiedRequirementDoc, er
 	doc.Title = strings.TrimSpace(doc.Title)
 	doc.Summary = strings.TrimSpace(doc.Summary)
 	doc.Background = strings.TrimSpace(doc.Background)
+	doc.WorkKind = NormalizeWorkKind(doc.WorkKind)
 	if doc.Title == "" {
 		return doc, errors.New("title 不能为空")
 	}
@@ -246,6 +249,10 @@ func ParseClarifiedRequirement(args map[string]any) (clarifiedRequirementDoc, er
 	}
 	if doc.Background == "" {
 		return doc, errors.New("background 不能为空")
+	}
+	// work_kind is optional for independent react; when present must be valid.
+	if doc.WorkKind != "" && !ValidWorkKind(doc.WorkKind) {
+		return doc, errors.New("work_kind 须为 bug、feature 或 other")
 	}
 
 	var err error
@@ -464,6 +471,10 @@ func RenderClarifiedRequirementMarkdown(content string) string {
 	}
 	b.WriteString("#### 概述\n")
 	b.WriteString(doc.Summary + "\n")
+	if wk := NormalizeWorkKind(doc.WorkKind); wk != "" {
+		b.WriteString("\n#### 工作类型\n")
+		b.WriteString(wk + "\n")
+	}
 	if doc.Background != "" {
 		b.WriteString("\n#### 背景\n")
 		b.WriteString(doc.Background + "\n")

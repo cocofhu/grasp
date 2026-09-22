@@ -3512,6 +3512,7 @@
     "product": {
       "clarifiedRequirement": {
         "background": "背景",
+        "workKind": "工作类型",
         "goals": "目标",
         "successMetrics": "成功指标",
         "inScope": "范围内",
@@ -3541,6 +3542,23 @@
         "recommendation": "建议",
         "followUps": "后续任务",
         "references": "参考"
+      },
+      "rootCause": {
+        "summary": "概述",
+        "symptom": "现象",
+        "expected": "期望",
+        "actual": "实际",
+        "expectedActual": "期望与实际",
+        "gap": "差异",
+        "reproduction": "复现",
+        "impact": "影响",
+        "rootCause": "根因",
+        "evidence": "证据",
+        "ruledOut": "已排除",
+        "contributingFactors": "促成因素",
+        "affectedScope": "影响范围",
+        "causalChain": "因果链",
+        "diagrams": "图示"
       },
       "preflight": {
         "filename": "preflight.json",

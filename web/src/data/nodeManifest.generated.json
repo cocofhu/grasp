@@ -28,6 +28,13 @@
           "required": false
         },
         {
+          "artifactName": "root_cause.json",
+          "outputKey": "root_cause",
+          "outputJsonKey": "root_cause_json",
+          "setTool": "set_root_cause",
+          "required": false
+        },
+        {
           "artifactName": "proposals.json",
           "outputKey": "proposals",
           "outputJsonKey": "proposals_json",
@@ -156,6 +163,7 @@
     "proposals": "proposals.json",
     "research": "research.json",
     "review": "review.json",
+    "root_cause": "root_cause.json",
     "test_result": "test_result.json"
   },
   "artifactToOutputJSON": {
@@ -167,6 +175,7 @@
     "proposals.json": "proposals_json",
     "research.json": "research_json",
     "review.json": "review_json",
+    "root_cause.json": "root_cause_json",
     "test_result.json": "test_result_json"
   }
 }

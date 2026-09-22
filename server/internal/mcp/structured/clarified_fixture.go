@@ -7,6 +7,7 @@ const MinimalValidClarifiedRequirementJSON = `{
   "title": "登录",
   "summary": "用户可用邮箱验证码登录",
   "background": "需要安全登录入口",
+  "work_kind": "feature",
   "goals": ["完成邮箱验证码登录"],
   "in_scope": ["邮箱验证码登录"],
   "out_of_scope": ["第三方 OAuth"],

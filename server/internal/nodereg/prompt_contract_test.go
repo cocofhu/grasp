@@ -20,7 +20,7 @@ func TestPromptContractTextAllKinds(t *testing.T) {
 		t.Fatal("plan override")
 	}
 	for _, kind := range []RenderKind{
-		RenderClarifiedRequirement, RenderResearch, RenderProposals,
+		RenderClarifiedRequirement, RenderResearch, RenderRootCause, RenderProposals,
 		RenderTestResult, RenderReview, RenderImplementationResult, RenderPreflight, RenderKind(99),
 	} {
 		_ = Renderer(kind)

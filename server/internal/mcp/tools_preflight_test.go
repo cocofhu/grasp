@@ -34,6 +34,9 @@ func TestToolAllowedGraspAlias(t *testing.T) {
 		if !toolAllowed(typ, "set_research") || !toolAllowed(typ, "set_proposals") {
 			t.Fatalf("optional set_* must allow %s", typ)
 		}
+		if !toolAllowed(typ, "set_root_cause") {
+			t.Fatalf("set_root_cause must allow %s", typ)
+		}
 		if !toolAllowed(typ, "ask_question") || !toolAllowed(typ, "set_artifact_preview") {
 			t.Fatalf("ask_question/set_artifact_preview must allow %s", typ)
 		}

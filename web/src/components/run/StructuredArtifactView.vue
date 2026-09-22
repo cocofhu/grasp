@@ -2,6 +2,7 @@
 const STRUCTURED_ARTIFACT_NAMES = new Set([
   'clarified_requirement.json',
   'research.json',
+  'root_cause.json',
   'proposals.json',
   'proposal.json',
   'plan.json',
@@ -32,6 +33,7 @@ import PlanView from './PlanView.vue'
 import ProposalSelectView from './ProposalSelectView.vue'
 import ClarifiedRequirementView from './product/ClarifiedRequirementView.vue'
 import ResearchView from './product/ResearchView.vue'
+import RootCauseView from './product/RootCauseView.vue'
 import TestResultView from './product/TestResultView.vue'
 import ReviewView from './product/ReviewView.vue'
 import ImplementationResultView from './product/ImplementationResultView.vue'
@@ -65,6 +67,7 @@ const isFeedback = computed(() => isFeedbackArtifactName(props.name))
   <PlanView v-else-if="name === 'plan.json'" :doc="doc" :accent="accent" :artifacts="artifacts" />
   <ImplementationResultView v-else-if="name === 'implementation_result.json'" :doc="doc" :accent="accent" />
   <ResearchView v-else-if="name === 'research.json'" :doc="doc" :accent="accent" />
+  <RootCauseView v-else-if="name === 'root_cause.json'" :doc="doc" :accent="accent" :artifacts="artifacts" />
   <TestResultView
     v-else-if="name === 'test_result.json'"
     :doc="doc"

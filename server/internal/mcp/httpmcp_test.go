@@ -83,11 +83,11 @@ func TestMCPDispatcher(t *testing.T) {
 		t.Fatalf("initialize result missing protocolVersion: %v", init)
 	}
 
-	// tools/list: 7 core + 2 history + 12 structured + set_preview + set_artifact_preview.
+	// tools/list: 7 core + 2 history + 14 structured + set_preview + set_artifact_preview.
 	list := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
 	tools, _ := list["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 27 {
-		t.Fatalf("expected 27 tools, got %d", len(tools))
+	if len(tools) != 29 {
+		t.Fatalf("expected 29 tools, got %d", len(tools))
 	}
 
 	// tools/call write_artifact
@@ -424,7 +424,7 @@ func TestApproveNodePreDevTools(t *testing.T) {
 			}
 
 			okArgs := `{
-		"title":"登录需求","summary":"用户可用邮箱验证码登录","background":"需要安全登录入口",
+		"title":"登录需求","summary":"用户可用邮箱验证码登录","background":"需要安全登录入口","work_kind":"feature",
 		"goals":["完成邮箱验证码登录"],"in_scope":["邮箱验证码登录"],"out_of_scope":["第三方 OAuth"],
 		"functional_requirements":[{"title":"验证码登录","detail":"用户输入邮箱与验证码完成登录","acceptance_criteria":["5 分钟有效"]}],
 		"assumptions":["用户已有邮箱"],"dependencies":["邮件发送服务可用"],"constraints":"仅邮箱"

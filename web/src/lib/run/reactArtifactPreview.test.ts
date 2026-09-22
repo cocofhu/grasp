@@ -571,6 +571,7 @@ describe('reactArtifactPreview helpers', () => {
 
   it('maps every reserved product to the shared friendly display-name keys', () => {
     expect(artifactFriendlyNameKey('research.json')).toBe('common.gateBodyLabels.research')
+    expect(artifactFriendlyNameKey('root_cause.json')).toBe('common.gateBodyLabels.rootCause')
     expect(artifactFriendlyNameKey('clarified_requirement.json')).toBe(
       'common.gateBodyLabels.clarifiedRequirement',
     )

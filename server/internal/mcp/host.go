@@ -557,6 +557,25 @@ func (h *Host) ReadArtifact(runID, token, name string) (string, error) {
 	return content, nil
 }
 
+// deleteArtifactIfPresent drops name when the store supports ArtifactDeleter.
+// Used to clear leftover root_cause.json after work_kind leaves bug.
+func (h *Host) deleteArtifactIfPresent(runID, token, name string) {
+	if !h.authorize(runID, token) {
+		return
+	}
+	h.DeleteArtifact(runID, name)
+}
+
+// DeleteArtifact removes a stored artifact by name when the store supports it.
+// No-op when unauthorized capability is missing or the name is absent.
+func (h *Host) DeleteArtifact(runID, name string) {
+	d, ok := h.store.(ArtifactDeleter)
+	if !ok {
+		return
+	}
+	_ = d.Delete(runID, name)
+}
+
 // ListArtifacts lists products of the current run only, with the per-round
 // feedback ledger folded behind its index.
 func (h *Host) ListArtifacts(runID, token string) ([]ArtifactInfo, error) {

@@ -445,9 +445,9 @@ func (c *acpProvider) reactConfirmPrefix(req NodeReq) string {
 }
 
 // approveProductsSettled reports whether the store already holds both
-// Approve deliverables with no leftover open_questions. Missing or
-// unparseable artifacts return false so the confirm prompt stays at the
-// full "补齐或修正" wording.
+// Approve deliverables with no leftover open_questions, and work_kind /
+// root_cause consistency when applicable. Missing or unparseable artifacts
+// return false so the confirm prompt stays at the full "补齐或修正" wording.
 func (c *acpProvider) approveProductsSettled(req NodeReq) bool {
 	if c == nil || c.host == nil {
 		return false
@@ -457,7 +457,25 @@ func (c *acpProvider) approveProductsSettled(req NodeReq) bool {
 		return false
 	}
 	pl, err := c.host.ReadArtifact(req.RunID, req.Token, mcp.PlanArtifactName)
-	return err == nil && json.Valid([]byte(pl))
+	if err != nil || !json.Valid([]byte(pl)) {
+		return false
+	}
+	wk := mcp.ClarifiedWorkKind(cr)
+	if wk == "" {
+		return false
+	}
+	hasRC := artifactOwnedByNode(c.host, req.RunID, req.Token, req.NodeID, mcp.RootCauseArtifactName)
+	if wk == "bug" {
+		if !hasRC {
+			return false
+		}
+		raw, rerr := c.host.ReadArtifact(req.RunID, req.Token, mcp.RootCauseArtifactName)
+		if rerr != nil || parseRootCauseJSON(raw) != nil {
+			return false
+		}
+		return true
+	}
+	return !artifactPresent(c.host, req.RunID, req.Token, mcp.RootCauseArtifactName)
 }
 
 // enforceOpenQuestionsGate implements the clarification gate: when the agent

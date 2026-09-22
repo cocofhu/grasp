@@ -18,7 +18,7 @@ describe('productNodeArtifacts', () => {
       'plan.json',
     ])
     expect(arts.filter((a) => !a.required).map((a) => a.name)).toEqual(
-      expect.arrayContaining(['research.json', 'proposals.json', 'page.html']),
+      expect.arrayContaining(['research.json', 'root_cause.json', 'proposals.json', 'page.html']),
     )
   })
 
@@ -29,6 +29,7 @@ describe('productNodeArtifacts', () => {
       'clarified_requirement',
       'plan',
       'research',
+      'root_cause',
       'proposals',
       'page',
     ])

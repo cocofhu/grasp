@@ -12,6 +12,7 @@ var reservedArtifactExpectedKind = map[string]string{
 	PlanArtifactName:                     "json",
 	ClarifiedRequirementArtifactName:     "json",
 	ResearchArtifactName:                 "json",
+	RootCauseArtifactName:                "json",
 	ProposalsArtifactName:                "json",
 	ProposalArtifactName:                 "json",
 	TestResultArtifactName:               "json",

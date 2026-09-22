@@ -3512,6 +3512,7 @@
     "product": {
       "clarifiedRequirement": {
         "background": "Background",
+        "workKind": "Work kind",
         "goals": "Goals",
         "successMetrics": "Success metrics",
         "inScope": "In scope",
@@ -3541,6 +3542,23 @@
         "recommendation": "Recommendation",
         "followUps": "Follow-ups",
         "references": "References"
+      },
+      "rootCause": {
+        "summary": "Summary",
+        "symptom": "Symptom",
+        "expected": "Expected",
+        "actual": "Actual",
+        "expectedActual": "Expected vs actual",
+        "gap": "Gap",
+        "reproduction": "Reproduction",
+        "impact": "Impact",
+        "rootCause": "Root cause",
+        "evidence": "Evidence",
+        "ruledOut": "Ruled out",
+        "contributingFactors": "Contributing factors",
+        "affectedScope": "Affected scope",
+        "causalChain": "Causal chain",
+        "diagrams": "Diagrams"
       },
       "preflight": {
         "filename": "preflight.json",

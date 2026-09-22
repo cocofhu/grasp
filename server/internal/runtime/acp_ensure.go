@@ -2,10 +2,12 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/mcp/structured"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -146,7 +148,95 @@ func (c *acpProvider) ensureRequiredProducts(ctx context.Context, req NodeReq, a
 			return pending, err
 		}
 	}
+	if nodereg.IsGrasp(req.NodeType) {
+		return c.ensureRootCauseConsistency(ctx, req, acp, events, usage, byModel)
+	}
 	return clarifyPending{}, nil
+}
+
+// ensureRootCauseConsistency enforces Grasp work_kind ↔ root_cause.json rules.
+// root_cause is never a permanent Required product: only bug runs need it;
+// non-bug runs must not keep it.
+func (c *acpProvider) ensureRootCauseConsistency(ctx context.Context, req NodeReq, acp *sandbox.ACPClient, events *[]models.AcpEvent, usage **models.TokenUsage, byModel *models.TokenUsageByModel) (clarifyPending, error) {
+	reason := func() string {
+		cr, err := c.host.ReadArtifact(req.RunID, req.Token, mcp.ClarifiedRequirementArtifactName)
+		if err != nil {
+			return "" // required clarified product handled separately
+		}
+		wk := mcp.ClarifiedWorkKind(cr)
+		hasRC := artifactOwnedByNode(c.host, req.RunID, req.Token, req.NodeID, mcp.RootCauseArtifactName)
+		if wk == "" {
+			return "Grasp 清需求缺少 work_kind(bug|feature|other)。请立即调用 set_clarified_requirement 补上工作类型;若为 bug 还需 set_root_cause 写入 root_cause.json。"
+		}
+		if wk == "bug" {
+			if !hasRC {
+				return "工作类型为 bug,尚未写入 root_cause.json。请立即调用 set_root_cause 提交通过校验的根因报告(含证据与至少一张图),不要写成 page.html。"
+			}
+			raw, rerr := c.host.ReadArtifact(req.RunID, req.Token, mcp.RootCauseArtifactName)
+			if rerr != nil {
+				return "工作类型为 bug,但 root_cause.json 无法读取。请重新调用 set_root_cause。"
+			}
+			if perr := parseRootCauseJSON(raw); perr != nil {
+				return "root_cause.json 未通过校验:" + perr.Error() + "。请用 set_root_cause 重新写入合法报告。"
+			}
+			return ""
+		}
+		// feature|other: leftover report blocks confirm.
+		if hasRC || artifactPresent(c.host, req.RunID, req.Token, mcp.RootCauseArtifactName) {
+			c.host.DeleteArtifact(req.RunID, mcp.RootCauseArtifactName)
+			if artifactPresent(c.host, req.RunID, req.Token, mcp.RootCauseArtifactName) {
+				return "工作类型为 " + wk + ",不得保留 root_cause.json。请把 work_kind 保持为非 bug,并去掉根因产物(重新 set_clarified_requirement 为非 bug 时平台会尝试清除;若仍在请勿再写 set_root_cause)。"
+			}
+		}
+		return ""
+	}
+
+	for i := 0; i <= producesRetry; i++ {
+		msg := reason()
+		if msg == "" {
+			return clarifyPending{}, nil
+		}
+		if i == producesRetry {
+			log.Warn().Str("run", req.RunID).Str("node", req.NodeID).
+				Str("reason", msg).
+				Msg("root_cause consistency still failing after re-prompt")
+			return clarifyPending{}, fmt.Errorf("%s", msg)
+		}
+		chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
+		res, err := c.streamChat(chatCtx, acp, req, "【必须完成】"+msg, nil)
+		cancel()
+		if err != nil {
+			return clarifyPending{}, fmt.Errorf("agent chat: %w", err)
+		}
+		absorbChat(usage, byModel, events, res)
+		pending := takeClarifyPending(c.host, req.RunID, req.NodeID)
+		if pending.any() && nodereg.ClarifyInteractive(req.NodeType) {
+			return pending, nil
+		}
+	}
+	return clarifyPending{}, nil
+}
+
+func artifactPresent(host *mcp.Host, runID, token, name string) bool {
+	infos, err := host.ListArtifacts(runID, token)
+	if err != nil {
+		return false
+	}
+	for _, info := range infos {
+		if info.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func parseRootCauseJSON(raw string) error {
+	var args map[string]any
+	if err := json.Unmarshal([]byte(raw), &args); err != nil {
+		return err
+	}
+	_, err := structured.ParseRootCause(args)
+	return err
 }
 
 // ensurePlanComplete drives an implement node's run plan to completion. It

@@ -89,6 +89,14 @@
           "signature": "get_research() -> research.json",
           "desc": "读取结构化调研结论"
         },
+        "set_root_cause": {
+          "signature": "set_root_cause(title, summary, symptom, expected, actual, …)",
+          "desc": "仅 Grasp:当清需求 work_kind 为 bug 时写入 root_cause.json(根因报告 JSON,非 page.html)"
+        },
+        "get_root_cause": {
+          "signature": "get_root_cause() -> root_cause.json",
+          "desc": "读取问题根因 JSON"
+        },
         "set_proposals": {
           "signature": "set_proposals(context, proposals)",
           "desc": "方案节点强制交付;Grasp 仅在真实多方案分歧(≥2)时可选写入,禁止单候选伪选择"

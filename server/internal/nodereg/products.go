@@ -80,6 +80,15 @@ func graspProducts() []ProductRef {
 			Required:     false,
 		},
 		{
+			// Conditionally required when clarified work_kind=bug; never permanent
+			// Required so non-bug Grasp runs are not blocked.
+			ArtifactName: mcp.RootCauseArtifactName,
+			OutputKey:    "root_cause",
+			SetTool:      "set_root_cause",
+			Render:       RenderRootCause,
+			Required:     false,
+		},
+		{
 			ArtifactName: mcp.ProposalsArtifactName,
 			OutputKey:    "proposals",
 			SetTool:      "set_proposals",

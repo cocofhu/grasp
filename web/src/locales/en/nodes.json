@@ -641,6 +641,12 @@
         "research_json": {
           "desc": "Optional raw research JSON"
         },
+        "root_cause": {
+          "desc": "Root cause for bug runs (root_cause.json render)"
+        },
+        "root_cause_json": {
+          "desc": "Optional raw root cause JSON"
+        },
         "proposals": {
           "desc": "Optional proposals (proposals.json render)"
         },
@@ -654,7 +660,7 @@
           "desc": "Full conversation transcript"
         }
       },
-      "help": "### Grasp\n\nOne multi-turn ReAct dialogue for **pre-dev work**. This node configures an Agent and a timeout (default 30 minutes): **no prompt template**, **no round cap**, and no auto-clarify / conditional injection. The platform injects run inputs and waits for the user to state the goal first; the agent then uses tools to align requirements and only `ask_question` when there is a real decision.\n\n**Two mandatory deliverables** (both required to finish — not a single unique delivery):\n1. `set_clarified_requirement` → `clarified_requirement.json` (`open_questions` must be empty)\n2. `set_plan` → `plan.json` (at most two levels: goal → sub-goal; when writing the design zone, include all six sections or explicit 不涉及, optional Mermaid diagrams)\n\n**Optional** (shown if present, missing does not fail): `set_research`; `set_proposals` (**only when ≥2 distinct alternatives need a user pick**; no single-candidate pseudo-choice); `write_artifact` for `page.html`; `set_preview` to register a running app (sandbox port or external url — not a completion condition, does not end this node).\n\nIf a skill pack says “unique delivery” or forbids those tools, **platform rule `rules/grasp.md` wins**. Do not write implementation code or change the repo."
+      "help": "### Grasp\n\nOne multi-turn ReAct dialogue for **pre-dev work**. This node configures an Agent and a timeout (default 30 minutes): **no prompt template**, **no round cap**, and no auto-clarify / conditional injection. The platform injects run inputs and waits for the user to state the goal first; the agent then uses tools to align requirements and only `ask_question` when there is a real decision.\n\n**Two mandatory deliverables** (both required to finish — not a single unique delivery):\n1. `set_clarified_requirement` → `clarified_requirement.json` (`open_questions` must be empty; includes `work_kind`)\n2. `set_plan` → `plan.json` (at most two levels: goal → sub-goal; when writing the design zone, include all six sections or explicit 不涉及, optional Mermaid diagrams)\n\n**Bug-only extra deliverable**: when `work_kind` is `bug`, `set_root_cause` → `root_cause.json` (structured JSON, **not** `page.html` or generic `write_artifact`); non-bug runs must not keep this artifact.\n\n**Optional** (shown if present, missing does not fail): `set_research`; `set_proposals` (**only when ≥2 distinct alternatives need a user pick**; no single-candidate pseudo-choice); `write_artifact` for `page.html`; `set_preview` to register a running app (sandbox port or external url — not a completion condition, does not end this node).\n\nIf a skill pack says “unique delivery” or forbids those tools, **platform rule `rules/grasp.md` wins**. Do not write implementation code or change the repo."
     }
   }
 }

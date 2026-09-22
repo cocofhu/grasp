@@ -7,6 +7,7 @@ import s "github.com/cocofhu/grasp/internal/mcp/structured"
 const (
 	ClarifiedRequirementArtifactName = s.ClarifiedRequirementArtifactName
 	ResearchArtifactName             = s.ResearchArtifactName
+	RootCauseArtifactName            = s.RootCauseArtifactName
 	ProposalsArtifactName            = s.ProposalsArtifactName
 	ProposalArtifactName             = s.ProposalArtifactName
 	TestResultArtifactName           = s.TestResultArtifactName
@@ -19,8 +20,10 @@ type ProposalChoice = s.ProposalChoice
 
 var (
 	ClarifiedOpenQuestions             = s.ClarifiedOpenQuestions
+	ClarifiedWorkKind                  = s.ClarifiedWorkKind
 	RenderClarifiedRequirementMarkdown = s.RenderClarifiedRequirementMarkdown
 	RenderResearchMarkdown             = s.RenderResearchMarkdown
+	RenderRootCauseMarkdown            = s.RenderRootCauseMarkdown
 	RenderProposalsMarkdown            = s.RenderProposalsMarkdown
 	RenderProposalMarkdown             = s.RenderProposalMarkdown
 	RenderTestResultMarkdown           = s.RenderTestResultMarkdown

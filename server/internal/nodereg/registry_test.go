@@ -106,8 +106,8 @@ func TestRequiredProductsGrasp(t *testing.T) {
 		t.Fatalf("second required = %+v", req[1])
 	}
 	opt := OptionalProducts("grasp")
-	if len(opt) != 3 {
-		t.Fatalf("OptionalProducts(grasp) len=%d want 3", len(opt))
+	if len(opt) != 4 {
+		t.Fatalf("OptionalProducts(grasp) len=%d want 4", len(opt))
 	}
 }
 

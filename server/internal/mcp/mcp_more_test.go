@@ -47,6 +47,45 @@ func TestResearchTestImplementTools(t *testing.T) {
 	}
 }
 
+func TestRootCauseTools(t *testing.T) {
+	store := &memStore{}
+	h := NewHost(store)
+	runID := "r-rc"
+	tok := h.RegisterRun(runID)
+
+	h.SetActiveNode(runID, "g", "grasp")
+	// Non-bug clarified blocks set_root_cause.
+	crArgs := MinimalValidClarifiedRequirementJSON
+	call(t, h, runID, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"set_clarified_requirement","arguments":`+crArgs+`}}`)
+	rcArgs := `{
+		"title":"登录按钮无响应","summary":"点击无请求","symptom":"无反应","expected":"发起请求",
+		"actual":"无请求","reproduction":["打开页","点击"],"impact":"无法登录",
+		"root_cause":"按钮未绑定 click 处理器导致点击被忽略",
+		"evidence":[{"title":"监听缺失","detail":"模板无 @click"}],
+		"diagrams":[{"kind":"flowchart","title":"失败路径","source":"flowchart TD\n  A-->B"}]
+	}`
+	if _, isErr := toolText(t, call(t, h, runID, tok, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"set_root_cause","arguments":`+rcArgs+`}}`)); !isErr {
+		t.Fatal("set_root_cause should reject when work_kind=feature")
+	}
+
+	bugCR := strings.Replace(crArgs, `"work_kind": "feature"`, `"work_kind": "bug"`, 1)
+	call(t, h, runID, tok, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"set_clarified_requirement","arguments":`+bugCR+`}}`)
+	if _, isErr := toolText(t, call(t, h, runID, tok, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"set_root_cause","arguments":`+rcArgs+`}}`)); isErr {
+		t.Fatal("set_root_cause should succeed for bug")
+	}
+	if _, ok := store.Get(runID, RootCauseArtifactName); !ok {
+		t.Fatal("root_cause.json not written")
+	}
+	if _, isErr := toolText(t, call(t, h, runID, tok, `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"get_root_cause","arguments":{}}}`)); isErr {
+		t.Fatal("get_root_cause errored")
+	}
+
+	h.SetActiveNode(runID, "r", "react")
+	if _, isErr := toolText(t, call(t, h, runID, tok, `{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"set_root_cause","arguments":`+rcArgs+`}}`)); !isErr {
+		t.Fatal("set_root_cause must be grasp-only")
+	}
+}
+
 // TestCallToolErrorBranches exercises the guard/error branches of callTool that
 // the happy-path tests don't reach: auth, node-type gating, empty/invalid args,
 // and the update_plan_status state machine.

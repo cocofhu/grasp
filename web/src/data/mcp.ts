@@ -43,6 +43,8 @@ export const BUILTIN_MCPS: McpServer[] = [
       { name: 'get_preflight', signatureKey: 'mcp.artifactStore.tools.get_preflight.signature', descKey: 'mcp.artifactStore.tools.get_preflight.desc', io: 'read' },
       { name: 'set_research', signatureKey: 'mcp.artifactStore.tools.set_research.signature', descKey: 'mcp.artifactStore.tools.set_research.desc', io: 'write' },
       { name: 'get_research', signatureKey: 'mcp.artifactStore.tools.get_research.signature', descKey: 'mcp.artifactStore.tools.get_research.desc', io: 'read' },
+      { name: 'set_root_cause', signatureKey: 'mcp.artifactStore.tools.set_root_cause.signature', descKey: 'mcp.artifactStore.tools.set_root_cause.desc', io: 'write' },
+      { name: 'get_root_cause', signatureKey: 'mcp.artifactStore.tools.get_root_cause.signature', descKey: 'mcp.artifactStore.tools.get_root_cause.desc', io: 'read' },
       { name: 'set_proposals', signatureKey: 'mcp.artifactStore.tools.set_proposals.signature', descKey: 'mcp.artifactStore.tools.set_proposals.desc', io: 'write' },
       { name: 'get_proposals', signatureKey: 'mcp.artifactStore.tools.get_proposals.signature', descKey: 'mcp.artifactStore.tools.get_proposals.desc', io: 'read' },
       { name: 'set_test_result', signatureKey: 'mcp.artifactStore.tools.set_test_result.signature', descKey: 'mcp.artifactStore.tools.set_test_result.desc', io: 'write' },

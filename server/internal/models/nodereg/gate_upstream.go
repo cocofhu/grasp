@@ -40,6 +40,7 @@ var OutputKeyToArtifact = map[string]string{
 	"plan":                  "plan.json",
 	"proposals":             "proposals.json",
 	"research":              "research.json",
+	"root_cause":            "root_cause.json",
 	"review":                "review.json",
 	"test_result":           "test_result.json",
 	"proposal":              "proposal.json",

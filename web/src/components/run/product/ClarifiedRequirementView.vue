@@ -36,6 +36,7 @@ export type ClarifiedRequirementDoc = {
   title?: string
   summary?: string
   background?: string
+  work_kind?: string
   goals?: string[]
   success_metrics?: string[]
   in_scope?: string[]
@@ -72,6 +73,15 @@ const { t } = useI18n()
       <div class="flex items-start gap-1 text-[12px] leading-relaxed text-txt2">
         <span class="min-w-0 flex-1" data-json-path="summary" data-label="概述">{{ doc.summary }}</span>
         <AnnotateBtn json-path="summary" label="概述" />
+      </div>
+      <div v-if="doc.work_kind" class="mt-2 flex items-center gap-1.5 text-[11px] text-txt3">
+        <span class="font-semibold uppercase tracking-wider">{{ t('pages.product.clarifiedRequirement.workKind') }}</span>
+        <code
+          class="rounded bg-base px-1.5 py-0.5 font-mono text-[10px] text-txt2"
+          data-json-path="work_kind"
+          :data-label="t('pages.product.clarifiedRequirement.workKind')"
+        >{{ doc.work_kind }}</code>
+        <AnnotateBtn json-path="work_kind" :label="t('pages.product.clarifiedRequirement.workKind')" />
       </div>
     </div>
 

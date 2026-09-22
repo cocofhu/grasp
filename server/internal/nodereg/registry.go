@@ -63,6 +63,7 @@ const (
 	RenderNone RenderKind = iota
 	RenderClarifiedRequirement
 	RenderResearch
+	RenderRootCause
 	RenderProposals
 	RenderTestResult
 	RenderReview
@@ -296,6 +297,8 @@ func Renderer(kind RenderKind) func(string) string {
 		return mcp.RenderClarifiedRequirementMarkdown
 	case RenderResearch:
 		return mcp.RenderResearchMarkdown
+	case RenderRootCause:
+		return mcp.RenderRootCauseMarkdown
 	case RenderProposals:
 		return mcp.RenderProposalsMarkdown
 	case RenderTestResult:

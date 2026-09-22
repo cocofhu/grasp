@@ -89,6 +89,14 @@
           "signature": "get_research() -> research.json",
           "desc": "Read structured research findings"
         },
+        "set_root_cause": {
+          "signature": "set_root_cause(title, summary, symptom, expected, actual, …)",
+          "desc": "Grasp only: when clarified work_kind is bug, write root_cause.json (JSON report, not page.html)"
+        },
+        "get_root_cause": {
+          "signature": "get_root_cause() -> root_cause.json",
+          "desc": "Read root cause JSON"
+        },
         "set_proposals": {
           "signature": "set_proposals(context, proposals)",
           "desc": "Mandatory on proposal nodes; on Grasp only when ≥2 real alternatives (no single-candidate pseudo-choice)"

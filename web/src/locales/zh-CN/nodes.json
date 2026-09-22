@@ -641,6 +641,12 @@
         "research_json": {
           "desc": "可选调研原始 JSON"
         },
+        "root_cause": {
+          "desc": "Bug 时的问题根因(root_cause.json 渲染)"
+        },
+        "root_cause_json": {
+          "desc": "可选根因原始 JSON"
+        },
         "proposals": {
           "desc": "可选候选方案(proposals.json 渲染)"
         },
@@ -654,7 +660,7 @@
           "desc": "完整对话记录"
         }
       },
-      "help": "### Grasp\n\n一次多轮 ReAct 对话完成**开发前工作**。本节点配置 Agent 与超时(默认 30 分钟):**没有 Prompt 模板**、**不限制轮次**、也没有自动澄清 / 条件注入。开场由平台注入运行输入并等待用户先描述目标;Agent 用工具对齐需求,仅在真实分歧时 `ask_question`。\n\n**两份强制交付**(都写完才能结束,不是「唯一交付」):\n1. `set_clarified_requirement` → `clarified_requirement.json`(open_questions 必须为空)\n2. `set_plan` → `plan.json`(最多两级:大目标→小目标;写入设计区时六节齐全,无内容显式「不涉及」,可挂 Mermaid diagram)\n\n**可选**(有则展示,缺不失败):`set_research`;`set_proposals`(**仅当 ≥2 个可区分候选需用户择一时才写**;禁止单候选伪选择);`write_artifact` 写入 `page.html`;`set_preview` 登记可运行应用(沙箱 port 或外部 url,不是完成条件、不会结束本节点)。\n\n若角色包声明「唯一交付」或禁止上述工具,**以平台规则 `rules/grasp.md` 为准**。不要写实现代码、不要改仓库。"
+      "help": "### Grasp\n\n一次多轮 ReAct 对话完成**开发前工作**。本节点配置 Agent 与超时(默认 30 分钟):**没有 Prompt 模板**、**不限制轮次**、也没有自动澄清 / 条件注入。开场由平台注入运行输入并等待用户先描述目标;Agent 用工具对齐需求,仅在真实分歧时 `ask_question`。\n\n**两份强制交付**(都写完才能结束,不是「唯一交付」):\n1. `set_clarified_requirement` → `clarified_requirement.json`(open_questions 必须为空;含 work_kind)\n2. `set_plan` → `plan.json`(最多两级:大目标→小目标;写入设计区时六节齐全,无内容显式「不涉及」,可挂 Mermaid diagram)\n\n**Bug 附加交付**:当 work_kind=bug 时须 `set_root_cause` → `root_cause.json`(结构化 JSON,**不是** page.html 或 write_artifact);非 bug 不得保留该产物。\n\n**可选**(有则展示,缺不失败):`set_research`;`set_proposals`(**仅当 ≥2 个可区分候选需用户择一时才写**;禁止单候选伪选择);`write_artifact` 写入 `page.html`;`set_preview` 登记可运行应用(沙箱 port 或外部 url,不是完成条件、不会结束本节点)。\n\n若角色包声明「唯一交付」或禁止上述工具,**以平台规则 `rules/grasp.md` 为准**。不要写实现代码、不要改仓库。"
     }
   }
 }

@@ -51,7 +51,8 @@ func TestAgentPromptsRemainingContracts(t *testing.T) {
 		t.Fatal("DefaultGraspContract must identify as Grasp node")
 	}
 	for _, want := range []string{
-		"两份强制交付", "set_clarified_requirement", "set_plan", "不是「唯一交付」", "用户先说明目标",
+		"两份常驻强制交付", "set_clarified_requirement", "set_plan", "不是「唯一交付」", "用户先说明目标",
+		"work_kind", "set_root_cause", "root_cause.json",
 		"至少两个方向不同", "禁止调用", "伪选择",
 		"set_preview", "不会", "结束本节点",
 		"结束条件", "等待用户确认并流转",

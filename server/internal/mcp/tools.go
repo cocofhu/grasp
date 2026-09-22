@@ -193,8 +193,16 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 		return out, false
 	case "set_clarified_requirement":
 		doc, err := structured.ParseClarifiedRequirement(args)
-		return h.structuredSet(runID, token, "set_clarified_requirement", "react", structured.ClarifiedRequirementArtifactName, doc, err,
+		if err == nil && isGrasp(h.ActiveNodeType(runID)) && doc.WorkKind == "" {
+			err = fmt.Errorf("Grasp 写入清需求时 work_kind 必填(bug|feature|other)")
+		}
+		msg, isErr := h.structuredSet(runID, token, "set_clarified_requirement", "react", structured.ClarifiedRequirementArtifactName, doc, err,
 			fmt.Sprintf("ok: 已写入需求(%d 目标 / %d 条功能需求)", len(doc.Goals), len(doc.FunctionalRequirements)))
+		if !isErr && isGrasp(h.ActiveNodeType(runID)) && doc.WorkKind != "" && doc.WorkKind != structured.WorkKindBug {
+			// Non-bug Grasp runs must not keep a leftover root_cause.json.
+			h.deleteArtifactIfPresent(runID, token, structured.RootCauseArtifactName)
+		}
+		return msg, isErr
 	case "get_clarified_requirement":
 		return h.structuredGet(runID, token, "get_clarified_requirement", structured.ClarifiedRequirementArtifactName)
 	case "set_research":
@@ -203,6 +211,19 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 			fmt.Sprintf("ok: 已写入调研(%d 问 / %d 发现)", len(doc.Questions), len(doc.Findings)))
 	case "get_research":
 		return h.structuredGet(runID, token, "get_research", structured.ResearchArtifactName)
+	case "set_root_cause":
+		doc, err := structured.ParseRootCause(args)
+		if err == nil {
+			if cr, rerr := h.ReadArtifact(runID, token, structured.ClarifiedRequirementArtifactName); rerr == nil {
+				if wk := structured.ClarifiedWorkKind(cr); wk != "" && wk != structured.WorkKindBug {
+					err = fmt.Errorf("工作类型为 %s,不能写入 root_cause.json", wk)
+				}
+			}
+		}
+		return h.structuredSet(runID, token, "set_root_cause", "grasp", structured.RootCauseArtifactName, doc, err,
+			fmt.Sprintf("ok: 已写入根因报告(%d 证据 / %d 图)", len(doc.Evidence), len(doc.Diagrams)))
+	case "get_root_cause":
+		return h.structuredGet(runID, token, "get_root_cause", structured.RootCauseArtifactName)
 	case "set_proposals":
 		doc, err := structured.ParseProposals(args)
 		return h.structuredSet(runID, token, "set_proposals", "proposal", structured.ProposalsArtifactName, doc, err,
@@ -401,6 +422,8 @@ func toolAllowed(active, tool string) bool {
 		return active == "plan" || isGrasp(active)
 	case "set_research":
 		return active == "research" || isGrasp(active)
+	case "set_root_cause":
+		return isGrasp(active)
 	case "set_proposals":
 		return active == "proposal" || isGrasp(active)
 	case "set_test_result":
@@ -422,6 +445,8 @@ func toolDeniedMsg(tool string) string {
 		return "set_plan 仅在计划(plan)或 Grasp 节点可用,当前节点不支持。"
 	case "set_research":
 		return "set_research 仅在调研(research)或 Grasp 节点可用,当前节点不支持。"
+	case "set_root_cause":
+		return "set_root_cause 仅在 Grasp 节点可用,当前节点不支持。"
 	case "set_proposals":
 		return "set_proposals 仅在方案(proposal)或 Grasp 节点可用,当前节点不支持。"
 	case "set_preflight":
@@ -972,6 +997,7 @@ func artifactTools() []map[string]any {
 					"title":           strProp("需求标题"),
 					"summary":         strProp("需求整体概述(1-3 句)"),
 					"background":      strProp("背景与问题陈述"),
+					"work_kind":       strProp("工作类型 bug|feature|other;Grasp 必填,独立澄清节点可缺省"),
 					"goals":           strList("产品/功能目标(至少 1 条)"),
 					"success_metrics": strList("可选:成功指标"),
 					"in_scope":        strList("范围内事项(至少 1 条)"),
@@ -1034,6 +1060,47 @@ func artifactTools() []map[string]any {
 			},
 		},
 		getTool("get_clarified_requirement", "读取本次运行的需求澄清结论(clarified_requirement.json)。"),
+		{
+			"name": "set_root_cause",
+			"description": "仅 Grasp(含历史 approve 别名)可用:提交一份问题根因 JSON(root_cause.json)。" +
+				"仅当清需求 work_kind 为 bug(或尚未写入清需求)时可写;非 bug 直接拒绝。" +
+				"必填 title/summary/symptom/expected/actual/reproduction/impact/root_cause/evidence/diagrams。" +
+				"根因须是原因说明,不接受只有符号名;不接受修复步骤、补丁或日期字段。图源按计划图同一套 Mermaid 11 规则校验。" +
+				"普通 write_artifact 或 page.html 都不算交付。",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"title":       strProp("报告标题,也是卡片摘录标题"),
+					"summary":     strProp("一段话概述,也是卡片摘录正文"),
+					"symptom":     strProp("观察到的现象"),
+					"expected":    strProp("期望行为"),
+					"actual":      strProp("实际行为"),
+					"reproduction": strList("复现步骤(至少一步)"),
+					"impact":      strProp("影响谁、影响什么"),
+					"root_cause":  strProp("为什么会出现,不能只有符号名"),
+					"evidence": objList("支撑根因的文字证据(至少 1 条)", map[string]any{
+						"title":  strProp("证据标题"),
+						"detail": strProp("证据详情"),
+					}, "title", "detail"),
+					"diagrams": objList("至少一张图;图种 flowchart|sequence|activity|chart|other", map[string]any{
+						"kind":    strProp("flowchart|sequence|activity|chart|other"),
+						"title":   strProp("与 caption 至少有一个非空"),
+						"format":  strProp("缺省 mermaid"),
+						"source":  strProp("非空图源"),
+						"caption": strProp("可选图注"),
+					}, "source"),
+					"ruled_out":             strList("可选:已排除的假设"),
+					"contributing_factors":  strList("可选:促成因素"),
+					"affected_scope":        strProp("可选:影响范围"),
+					"causal_chain":          strProp("可选:一句话补充图示的因果链"),
+				},
+				"required": []string{
+					"title", "summary", "symptom", "expected", "actual",
+					"reproduction", "impact", "root_cause", "evidence", "diagrams",
+				},
+			},
+		},
+		getTool("get_root_cause", "读回当前运行已写入的根因 JSON(root_cause.json),供前端渲染与本节点复核。"),
 		{
 			"name": "set_research",
 			"description": "仅调研(research)或 Grasp 节点可用:写入结构化的技术调研结论(technical spike)。" +

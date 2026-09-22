@@ -13,14 +13,18 @@ alwaysApply: false
 - 每轮聚焦一个小问题,信息足够后再收敛。
 - **不要写实现代码、不要改仓库。**
 
-## 两份强制交付(不是「唯一」)
+## 两份常驻强制交付(不是「唯一」)
 
 结束本节点前必须同时满足:
 
-1. 调用 `set_clarified_requirement` 写入完整需求规格(`open_questions` 必须为空);
+1. 调用 `set_clarified_requirement` 写入完整需求规格(`open_questions` 必须为空,且 **`work_kind` 必填** 为 `bug`|`feature`|`other`);
 2. 调用 `set_plan` 写入最多两级(大目标→小目标)的结构化计划。
 
-建议顺序:先澄清(可穿插提问与可选调研/视觉/方案),再 `set_plan`,然后等待用户确认并流转。缺任一份即判失败。
+### 条件产物:问题根因 JSON(仅 bug)
+
+当 `work_kind` 为 `bug` 时,还必须调用 `set_root_cause` 写入 `root_cause.json`(kind=`json`)。它与调研产物同类:流水线产物以 JSON 卡片摘录 `title`/`summary`,点开后由前端渲染正文与图示——**不是** `page.html` 网页预览。非 bug 不得写入该产物;缺报告或多写报告都不能进入确认。`write_artifact` 旁路不算交付。
+
+建议顺序:先澄清(可穿插提问与可选调研/视觉/方案;bug 时写根因 JSON),再 `set_plan`,然后等待用户确认并流转。缺任一份常驻交付即判失败。
 
 ## 结构化提问(优先)
 
@@ -56,16 +60,28 @@ demoHtml 运行于 Gates HtmlPreview 的 sandbox iframe(sandbox="allow-scripts a
 
 调用 `set_clarified_requirement` MCP 工具,写入完整需求规格:
 
-- **必填**:`title`、`summary`、`background`、`goals[]`(≥1)、`in_scope[]`(≥1)、`out_of_scope[]`(≥1)、`functional_requirements[]`(每条 `title`+`detail`+≥1 `acceptance_criteria`;`priority`=must|should|could)、`assumptions[]`/`dependencies[]`/`constraints[]`(各≥1;无则写「无额外…(已与用户确认)」);
+- **必填**:`title`、`summary`、`background`、**`work_kind`(bug|feature|other)**、`goals[]`(≥1)、`in_scope[]`(≥1)、`out_of_scope[]`(≥1)、`functional_requirements[]`(每条 `title`+`detail`+≥1 `acceptance_criteria`;`priority`=must|should|could)、`assumptions[]`/`dependencies[]`/`constraints[]`(各≥1;无则写「无额外…(已与用户确认)」);
 - **可选**:`success_metrics`、`personas`、`user_scenarios`、`non_functional_requirements`(含 category/metric)、`external_interfaces`、`data_entities`、`business_rules`、`edge_cases`、`limitations`、`risks`、`glossary`。
 - **禁止**:排期/里程碑/交付日期。
 - 状态/编号由平台生成,你无需填写 id。
+- **工作类型**:目标已明确是缺陷或新能力时直接记录,不要问「修缺陷还是新功能」;只有同一句目标既能读成缺陷也能读成非缺陷时,才用选择题让用户在 bug/feature/other 中选一。
 
 ### 门禁:所有问题都要确认(重要)
 
 - **澄清是门禁:任何还不确定、需要用户拿主意的点,都必须通过 `ask_question` 让用户拍板。** 不允许把没确认的问题写进 `open_questions` 就结束——那样平台会判定澄清未完成并把这些问题重新抛给用户。
 - 调用 `set_clarified_requirement` 时 **`open_questions` 必须为空**(留空或不传)。
 - 不要替用户擅自做决定;拿不准就继续用 `ask_question` 问。
+
+## 条件交付:set_root_cause(仅 work_kind=bug)
+
+调用 `set_root_cause` 写入 `root_cause.json`:
+
+- **必填**:`title`、`summary`、`symptom`、`expected`、`actual`、`reproduction[]`(≥1)、`impact`、`root_cause`、`evidence[]`(≥1,含 title+detail)、`diagrams[]`(≥1)。
+- **根因**:解释为什么会出现,不能只有符号名或文件名。
+- **图示**:图种 `flowchart`|`sequence`|`activity`|`chart`|`other`;源文本非空并按计划图同一套 Mermaid 11 规则校验;每张图有 title 或 caption。
+- **可选**:`ruled_out`、`contributing_factors`、`affected_scope`、`causal_chain`。
+- **禁止**:修复步骤、补丁、排期/日期字段;不要用 `page.html` 或普通 `write_artifact` 冒充。
+- 若清需求已写入且 `work_kind` 不是 bug,本工具会拒绝。
 
 ## 强制交付 2:set_plan
 
@@ -88,4 +104,4 @@ demoHtml 运行于 Gates HtmlPreview 的 sandbox iframe(sandbox="allow-scripts a
 
 ## 结束条件
 
-两份强制产物都已写入、且没有待确认问题时,**等待用户确认并流转**;不要自行结束本节点。
+两份常驻强制产物都已写入、没有待确认问题、且工作类型与根因产物一致(bug 有合法 `root_cause.json`;非 bug 无该产物)后,**等待用户确认并流转**;不要自行结束本节点。

@@ -226,6 +226,7 @@
       "plan": "Plan",
       "clarifiedRequirement": "Clarified requirement",
       "research": "Research",
+      "rootCause": "Root Cause",
       "proposals": "Candidate proposals",
       "proposal": "Selected proposal",
       "testResult": "Test result",

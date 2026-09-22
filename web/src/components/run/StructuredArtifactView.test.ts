@@ -6,6 +6,7 @@ describe('isStructuredArtifactName', () => {
     const names = [
       'clarified_requirement.json',
       'research.json',
+      'root_cause.json',
       'proposals.json',
       'proposal.json',
       'plan.json',

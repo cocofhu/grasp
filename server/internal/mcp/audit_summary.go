@@ -16,6 +16,7 @@ type conclusionMeta struct {
 
 var auditConclusionByStem = map[string]conclusionMeta{
 	"research":              {object: "调研结论", artifact: ResearchArtifactName},
+	"root_cause":            {object: "问题根因", artifact: RootCauseArtifactName},
 	"proposals":             {object: "方案结论", artifact: ProposalsArtifactName},
 	"proposal":              {object: "方案结论", artifact: ProposalArtifactName},
 	"clarified_requirement": {object: "澄清需求结论", artifact: ClarifiedRequirementArtifactName},

@@ -72,6 +72,19 @@ func ValidateHumanArtifactContent(name, content string) (HumanArtifactNormalized
 		out.Rendered = structured.RenderResearchMarkdown(out.Content)
 		out.JSONKey = "research_json"
 		return out, nil
+	case RootCauseArtifactName:
+		doc, err := structured.ParseRootCause(jsonToArgs(content))
+		if err != nil {
+			return out, err
+		}
+		b, err := json.MarshalIndent(doc, "", "  ")
+		if err != nil {
+			return out, err
+		}
+		out.Content = string(b)
+		out.Rendered = structured.RenderRootCauseMarkdown(out.Content)
+		out.JSONKey = "root_cause_json"
+		return out, nil
 	case ProposalsArtifactName:
 		doc, err := structured.ParseProposals(jsonToArgs(content))
 		if err != nil {

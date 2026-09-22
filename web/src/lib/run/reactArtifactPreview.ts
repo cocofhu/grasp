@@ -593,6 +593,7 @@ const FRIENDLY_NAME_KEYS: Record<string, string> = {
   'plan.json': 'common.gateBodyLabels.plan',
   'clarified_requirement.json': 'common.gateBodyLabels.clarifiedRequirement',
   'research.json': 'common.gateBodyLabels.research',
+  'root_cause.json': 'common.gateBodyLabels.rootCause',
   'proposals.json': 'common.gateBodyLabels.proposals',
   'proposal.json': 'common.gateBodyLabels.proposal',
   'test_result.json': 'common.gateBodyLabels.testResult',
