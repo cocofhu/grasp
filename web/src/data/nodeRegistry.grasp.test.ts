@@ -26,6 +26,8 @@ describe('grasp node inspector', () => {
       'plan_json',
       'research',
       'research_json',
+      'root_cause',
+      'root_cause_json',
       'proposals',
       'proposals_json',
       'page',
