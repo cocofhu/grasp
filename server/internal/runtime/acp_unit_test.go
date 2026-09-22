@@ -175,6 +175,46 @@ func TestApproveProductsSettled(t *testing.T) {
 	if p.approveProductsSettled(req) {
 		t.Fatal("unparseable clarified requirement must not be settled")
 	}
+
+	// Restore plan + feature CR so work_kind flip cases start from a known state.
+	if _, err := host.WriteArtifact("r", tok, "n", mcp.PlanArtifactName,
+		`{"goals":[{"id":"g1","title":"目标"}]}`, "json"); err != nil {
+		t.Fatal(err)
+	}
+	bugCR := strings.Replace(mcp.MinimalValidClarifiedRequirementJSON,
+		`"work_kind": "feature"`, `"work_kind": "bug"`, 1)
+	if _, err := host.WriteArtifact("r", tok, "n", mcp.ClarifiedRequirementArtifactName, bugCR, "json"); err != nil {
+		t.Fatal(err)
+	}
+	if p.approveProductsSettled(req) {
+		t.Fatal("work_kind=bug without root_cause.json must not be settled")
+	}
+	rc := `{
+		"title":"登录按钮无响应","summary":"点击无请求","symptom":"无反应","expected":"发起请求",
+		"actual":"无请求","reproduction":["打开页","点击"],"impact":"无法登录",
+		"root_cause":"按钮未绑定 click 处理器导致点击被忽略",
+		"evidence":[{"title":"监听缺失","detail":"模板无 @click"}],
+		"diagrams":[{"kind":"flowchart","title":"失败路径","source":"flowchart TD\n  A-->B"}]
+	}`
+	if _, err := host.WriteArtifact("r", tok, "n", mcp.RootCauseArtifactName, rc, "json"); err != nil {
+		t.Fatal(err)
+	}
+	if !p.approveProductsSettled(req) {
+		t.Fatal("work_kind=bug with valid root_cause.json must be settled")
+	}
+
+	// Flip back to feature while leftover root_cause remains → not settled.
+	if _, err := host.WriteArtifact("r", tok, "n", mcp.ClarifiedRequirementArtifactName,
+		mcp.MinimalValidClarifiedRequirementJSON, "json"); err != nil {
+		t.Fatal(err)
+	}
+	if p.approveProductsSettled(req) {
+		t.Fatal("non-bug with leftover root_cause.json must not be settled")
+	}
+	host.DeleteArtifact("r", mcp.RootCauseArtifactName)
+	if !p.approveProductsSettled(req) {
+		t.Fatal("non-bug without root_cause.json must be settled")
+	}
 }
 
 func TestConditionalInjection(t *testing.T) {
