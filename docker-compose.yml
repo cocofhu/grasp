@@ -35,6 +35,9 @@ services:
       # 任意已有网关的 URL;GRASP_GATEWAY_MANAGED=1 时 start.sh 会在本地托管一个。
       GRASP_SANDBOX_GATEWAY_URL: ${GRASP_SANDBOX_GATEWAY_URL:-http://127.0.0.1:8899}
       GRASP_SANDBOX_GATEWAY_API_KEY: ${SANDBOX_GATEWAY_API_KEY:-grasp-local-demo}
+      # start.sh 导出的演示账号。不传进容器时 auth.users 为空，登录一律失败。
+      GRASP_DEPLOYMENT_MODE: ${GRASP_DEPLOYMENT_MODE:-local-demo}
+      GRASP_AUTH_USERS: ${GRASP_AUTH_USERS:-}
       # 渠道凭据 AES 主密钥(也可写在 server/config.yaml 的 security.secrets_key)。
       # .env 里设了就会覆盖 YAML;未设则走配置文件。
       GRASP_SECRETS_KEY: ${GRASP_SECRETS_KEY:-}

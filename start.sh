@@ -212,6 +212,7 @@ up_dev() {
     echo "started (dev/source)"
     echo "—— API http://localhost:${GRASP_PORT}/api/health  UI http://localhost:5173"
     echo "—— gateway http://127.0.0.1:${GRASP_GATEWAY_PORT}/healthz"
+    echo "—— login   admin / demo1234  (local-demo)"
   else
     echo "starting dev stack (foreground) — UI http://localhost:5173"
     "${COMPOSE[@]}" -f "$DEV_COMPOSE_FILE" up --build
