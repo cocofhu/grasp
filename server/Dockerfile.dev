@@ -3,7 +3,13 @@
 #
 # 后端不再直连 Docker:沙箱由 sandbox-gateway 经 REST 创建、数据面走 SSH
 # (server/internal/sandbox/manager.go),因此本镜像不需要 docker CLI / docker.sock。
+#
+# 运行阶段与生产 Dockerfile 一样需要 node:set_plan / set_root_cause 用
+# mermaidvalidate 调 Mermaid 11.x parse()。只拷贝官方二进制;其 ldd 依赖
+# (libc / libstdc++ / libgcc) 已在 golang bookworm 底包里。
+FROM node:20-bookworm-slim AS nodebin
 FROM golang:1.25-bookworm
+COPY --from=nodebin /usr/local/bin/node /usr/local/bin/node
 
 # 国内环境直连 proxy.golang.org 经常超时,换成七牛 goproxy.cn;GOSUMDB 换成 Google
 # 中国区镜像,否则校验和查询仍会走回被墙的 sum.golang.org。
