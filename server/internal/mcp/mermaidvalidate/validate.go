@@ -20,9 +20,8 @@ import (
 var bundleMJS []byte
 
 var (
-	nodeOnce   sync.Once
+	nodeMu     sync.Mutex
 	nodePath   string
-	nodeErr    error
 	bundleOnce sync.Once
 	bundleFile string
 	bundleErr  error
@@ -69,20 +68,25 @@ func Check(source string) error {
 	return errors.New(msg)
 }
 
+// lookUpNode resolves the node binary once a path is known. A miss is not
+// cached: the first LookPath failure must not stick for the process lifetime
+// after node is installed or GRASP_NODE is set.
 func lookUpNode() (string, error) {
-	nodeOnce.Do(func() {
-		if p := os.Getenv("GRASP_NODE"); p != "" {
-			nodePath = p
-			return
-		}
-		p, err := exec.LookPath("node")
-		if err != nil {
-			nodeErr = err
-			return
-		}
+	nodeMu.Lock()
+	defer nodeMu.Unlock()
+	if nodePath != "" {
+		return nodePath, nil
+	}
+	if p := os.Getenv("GRASP_NODE"); p != "" {
 		nodePath = p
-	})
-	return nodePath, nodeErr
+		return nodePath, nil
+	}
+	p, err := exec.LookPath("node")
+	if err != nil {
+		return "", err
+	}
+	nodePath = p
+	return nodePath, nil
 }
 
 func materializeBundle() (string, error) {
