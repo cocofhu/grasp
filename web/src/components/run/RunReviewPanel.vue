@@ -97,6 +97,7 @@ defineExpose({
     :mobile="mobile"
     :sidebar-width="REVIEW_SIDEBAR"
     :storage-key="REVIEW_SHELL_WIDTH_KEY_REVIEW"
+    card-panes
   >
     <template #stage>
       <ReactConnectingState v-if="!clarify" mode="stage" />

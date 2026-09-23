@@ -217,6 +217,17 @@ watch(
       <p v-if="requireModel" class="mt-1 text-[11px] text-err" data-test="opencode-model-required">
         {{ t('pages.agentStudio.openCode.modelRequired') }}
       </p>
+      <details
+        class="mt-1 rounded-md border border-dashed border-line bg-base px-3 py-2"
+        data-test="opencode-advanced"
+      >
+        <summary class="cursor-pointer text-[11px] text-accent">
+          {{ t('pages.agentStudio.openCode.advancedSummary') }}
+        </summary>
+        <p class="mt-1.5 text-[11px] leading-5 text-txt3">
+          {{ t('pages.agentStudio.openCode.advancedHint') }}
+        </p>
+      </details>
     </div>
     <label class="block">
       <span class="mb-1.5 block text-[12px] font-medium text-txt2">

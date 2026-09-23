@@ -110,6 +110,18 @@ const wf = reactive<Workflow>({
 })
 const { fields: askFieldsComputed } = useWorkflowAskInputs(wf)
 
+/** Project-detail Tab query key for the pipelines list (see PROJECT_TABS in useProjectDetail). */
+const PROJECT_WORKFLOWS_TAB = 'workflows'
+
+/** Back to the owning project's pipelines Tab, or the project list when unowned. */
+function goBackToProject() {
+  if (wf.projectId) {
+    router.push(`/projects/${wf.projectId}?tab=${PROJECT_WORKFLOWS_TAB}`)
+    return
+  }
+  router.push('/projects')
+}
+
 const saving = ref(false)
 const running = ref(false)
 const errorMsg = ref('')
@@ -543,7 +555,8 @@ function deleteEdge() {
       <button
         type="button"
         class="flex min-h-11 items-center gap-1 text-[13px] text-txt3 hover:text-txt"
-        @click="router.push(wf.projectId ? '/projects/' + wf.projectId : '/projects')"
+        data-testid="workflow-editor-back"
+        @click="goBackToProject"
       >
         <Icon name="arrow-left" :size="15" />{{ t('pages.sandboxConsole.back') }}
       </button>
@@ -584,7 +597,7 @@ function deleteEdge() {
   <div v-else class="flex h-full flex-col bg-base">
     <!-- toolbar -->
     <header class="flex min-h-14 shrink-0 items-center gap-3 border-b border-line bg-surface px-4 py-2">
-      <button class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-txt2 hover:bg-elevated hover:text-txt" @click="router.push(wf.projectId ? '/projects/' + wf.projectId : '/projects')">
+      <button class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-txt2 hover:bg-elevated hover:text-txt" data-testid="workflow-editor-back" @click="goBackToProject">
         <Icon name="arrow-left" :size="18" />
       </button>
       <Icon name="workflow" :size="18" class="shrink-0 text-accent-2" />

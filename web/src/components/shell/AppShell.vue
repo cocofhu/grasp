@@ -91,13 +91,12 @@ onUnmounted(() => stopShutdownPolling())
 
 <template>
   <div
-    class="relative flex h-screen w-screen overflow-hidden text-txt"
-    :class="full ? 'bg-base' : 'app-shell-dotgrid'"
+    class="app-shell-dotgrid relative flex h-screen w-screen overflow-hidden text-txt"
     :data-testid="full ? 'app-shell-full' : 'app-shell-workspace'"
   >
     <div
       class="hidden h-full min-h-0 shrink-0 md:flex"
-      :class="!full && !sidebarHidden ? 'py-[14px] pl-[14px]' : ''"
+      :class="!sidebarHidden ? 'py-[14px] pl-[14px]' : ''"
       data-testid="app-shell-sidebar-slot"
     >
       <AppSidebar />

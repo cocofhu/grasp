@@ -40,6 +40,12 @@ const props = withDefaults(
      * Default true for clarify/review shells.
      */
     hostConfirmFlow?: boolean
+    /**
+     * Run Detail: give the stage (「流水线产物」) and sidebar (「Agent交互」)
+     * the shared floating-card look (shell radius + border + shadow + gap).
+     * Inbox/GateApproval keep the flush layout.
+     */
+    cardPanes?: boolean
   }>(),
   {
     mobile: false,
@@ -47,6 +53,7 @@ const props = withDefaults(
     drawerHeight: 280,
     storageKey: '',
     hostConfirmFlow: true,
+    cardPanes: false,
   },
 )
 
@@ -306,13 +313,17 @@ onBeforeUnmount(() => {
     class="relative flex h-full min-h-0 overflow-hidden"
     :class="[
       mobile ? 'flex-col' : 'flex-row',
+      cardPanes && !mobile ? 'gap-2 p-2' : '',
       sashDragging || drawerDragging ? 'select-none' : '',
     ]"
     data-testid="review-shell"
   >
     <section
       class="flex min-h-0 flex-1 flex-col overflow-hidden"
-      :class="mobile ? 'min-w-0 border-b border-line' : 'review-shell-stage'"
+      :class="[
+        mobile ? 'min-w-0 border-b border-line' : 'review-shell-stage',
+        cardPanes && !mobile ? 'rounded-lg border border-line bg-base shadow-card' : '',
+      ]"
       data-testid="review-shell-stage"
     >
       <slot name="stage" />
@@ -339,7 +350,10 @@ onBeforeUnmount(() => {
 
     <aside
       class="flex min-h-0 flex-col bg-surface"
-      :class="mobile ? 'w-full shrink-0' : 'shrink-0'"
+      :class="[
+        mobile ? 'w-full shrink-0' : 'shrink-0',
+        cardPanes && !mobile ? 'rounded-lg border border-line shadow-card' : '',
+      ]"
       :style="
         mobile
           ? {

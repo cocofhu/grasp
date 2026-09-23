@@ -10,7 +10,7 @@ import {
 } from '@/lib/inbox/reviewLayoutBudget'
 
 function mountShell(
-  props: { mobile?: boolean; sidebarWidth?: number; storageKey?: string } = {},
+  props: { mobile?: boolean; sidebarWidth?: number; storageKey?: string; cardPanes?: boolean } = {},
 ) {
   const i18n = createI18n({
     legacy: false,
@@ -64,7 +64,7 @@ function drawerHeightStyle(wrapper: ReturnType<typeof mountShell>): string {
 }
 
 function mountMobileShell(
-  props: { drawerHeight?: number } = {},
+  props: { drawerHeight?: number; cardPanes?: boolean } = {},
   shellHeight = 600,
 ) {
   Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
@@ -122,6 +122,33 @@ describe('ReviewShell sidebar width', () => {
     expect(sidebarWidthStyle(w)).toMatch(/width:\s*400px/)
     expect(w.find('[data-testid="review-shell-drawer-handle"]').exists()).toBe(false)
     expect(w.find('[data-testid="review-shell-sash"]').exists()).toBe(true)
+    w.unmount()
+  })
+
+  // plan_coverage: g3.1 — run detail panes get the shared card look; g3.2 — sash kept
+  it('cardPanes gives stage/sidebar the shared card look and keeps the sash (plan g3.1 / g3.2)', () => {
+    const w = mountShell({ cardPanes: true })
+    const root = w.get('[data-testid="review-shell"]')
+    expect(root.classes()).toContain('gap-2')
+    expect(root.classes()).toContain('p-2')
+    const stage = w.get('[data-testid="review-shell-stage"]')
+    expect(stage.classes()).toContain('rounded-lg')
+    expect(stage.classes()).toContain('border')
+    expect(stage.classes()).toContain('shadow-card')
+    const aside = w.get('[data-testid="review-shell-sidebar"]')
+    expect(aside.classes()).toContain('rounded-lg')
+    expect(aside.classes()).toContain('shadow-card')
+    expect(w.find('[data-testid="review-shell-sash"]').exists()).toBe(true)
+    w.unmount()
+  })
+
+  // plan_coverage: g3.1 — mobile drawer keeps its flush handle layout
+  it('cardPanes is skipped on the mobile drawer (plan g3.1)', () => {
+    const w = mountMobileShell({ cardPanes: true })
+    const stage = w.get('[data-testid="review-shell-stage"]')
+    expect(stage.classes()).not.toContain('rounded-lg')
+    expect(w.get('[data-testid="review-shell-sidebar"]').classes()).not.toContain('shadow-card')
+    expect(w.find('[data-testid="review-shell-drawer-handle"]').exists()).toBe(true)
     w.unmount()
   })
 

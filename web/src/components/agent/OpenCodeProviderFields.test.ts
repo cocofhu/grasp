@@ -216,4 +216,29 @@ describe('OpenCodeProviderFields', () => {
     expect(wrapper.find('[data-test="app-select-option-custom"]').exists()).toBe(true)
     wrapper.unmount()
   })
+
+  // plan g1.1: the env var name belongs in code, not in the default-visible label.
+  it('labels the model field without the env var name', async () => {
+    const wrapper = mountFields()
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('ACP_BRIDGE_MODEL')
+    expect(
+      wrapper.get('[data-test="opencode-model"] [data-test="app-select-trigger"]').attributes('aria-label'),
+    ).toBe('模型')
+    wrapper.unmount()
+  })
+
+  // plan g2.1: slash ids and prefix completion live in an advanced note that is
+  // collapsed by default, on both desktop and mobile (native <details>).
+  it('keeps technical details in a collapsed advanced note', async () => {
+    const wrapper = mountFields()
+    await flushPromises()
+    const adv = wrapper.get('[data-test="opencode-advanced"]')
+    expect(adv.attributes('open')).toBeUndefined()
+    expect(adv.element.tagName.toLowerCase()).toBe('details')
+    expect(adv.text()).toContain('高级说明')
+    expect(adv.text()).toContain('厂商前缀')
+    expect(adv.text()).toContain('deepseek/deepseek-flash')
+    wrapper.unmount()
+  })
 })

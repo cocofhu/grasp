@@ -213,14 +213,33 @@ describe('AppShell (no topbar + floating ball)', () => {
     wrapper.unmount()
   })
 
-  it('full pages skip dotted canvas and sidebar pad (plan g3.1)', () => {
+  it('full pages keep dotted canvas and sidebar pad (plan g1.2 / g1.3)', () => {
     routeState.meta = { full: true }
     const wrapper = mountShell()
     expect(wrapper.find('[data-testid="app-shell-full"]').exists()).toBe(true)
-    expect(wrapper.find('.app-shell-dotgrid').exists()).toBe(false)
+    expect(wrapper.find('.app-shell-dotgrid').exists()).toBe(true)
     const slot = wrapper.find('[data-testid="app-shell-sidebar-slot"]')
-    expect(slot.classes()).not.toContain('py-[14px]')
+    expect(slot.classes()).toContain('py-[14px]')
+    expect(slot.classes()).toContain('pl-[14px]')
     wrapper.unmount()
+  })
+
+  // plan_coverage: g2.1 — workspace ⇄ full share identical shell classes → no in-place flip
+  it('workspace and full shells render the same canvas + sidebar pad (plan g2.1)', () => {
+    const workspace = mountShell()
+    routeState.meta = { full: true }
+    const fullShell = mountShell()
+    const workspaceRoot = workspace.find('[data-testid="app-shell-workspace"]')
+    const fullRoot = fullShell.find('[data-testid="app-shell-full"]')
+    expect(fullRoot.classes().sort()).toEqual(workspaceRoot.classes().sort())
+    expect(fullRoot.classes()).toContain('app-shell-dotgrid')
+    const workspaceSlot = workspace.find('[data-testid="app-shell-sidebar-slot"]')
+    const fullSlot = fullShell.find('[data-testid="app-shell-sidebar-slot"]')
+    expect(fullSlot.classes().sort()).toEqual(workspaceSlot.classes().sort())
+    expect(fullSlot.classes()).toContain('py-[14px]')
+    expect(fullSlot.classes()).toContain('pl-[14px]')
+    workspace.unmount()
+    fullShell.unmount()
   })
 
   it('mobile drawer stays md:hidden (g3.2 source lock)', () => {

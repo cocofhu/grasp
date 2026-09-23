@@ -7,9 +7,11 @@ import pages from '@/locales/zh-CN/pages.json'
 import shell from '@/locales/zh-CN/shell.json'
 import { __resetSidebarHiddenForTests } from '@/lib/shared/sidebarHidden'
 
+const routeState = { path: '/dashboard', meta: {} as Record<string, unknown> }
+
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
-  useRoute: () => ({ path: '/dashboard', meta: {} }),
+  useRoute: () => routeState,
   RouterLink: { template: '<a><slot /></a>' },
 }))
 
@@ -45,9 +47,12 @@ function mountSidebar() {
 describe('AppSidebar', () => {
   beforeEach(() => {
     __resetSidebarHiddenForTests()
+    routeState.path = '/dashboard'
+    routeState.meta = {}
   })
   afterEach(() => {
     __resetSidebarHiddenForTests()
+    routeState.meta = {}
   })
 
   it('renders brand, nav stubs, and chrome controls (g1.2)', () => {
@@ -134,6 +139,20 @@ describe('AppSidebar', () => {
     expect(aside.classes()).not.toContain('border-r')
     expect(aside.classes()).toContain('overflow-visible')
     expect(aside.classes()).not.toContain('overflow-hidden')
+    const card = wrapper.find('[data-testid="app-sidebar-card"]')
+    expect(card.classes()).toContain('app-sidebar-card')
+    expect(card.classes()).toContain('bg-surface')
+    wrapper.unmount()
+  })
+
+  it('full pages keep the same floating card (plan g1.1)', () => {
+    routeState.meta = { full: true }
+    const wrapper = mountSidebar()
+    const aside = wrapper.find('[data-testid="app-desktop-sidebar"]')
+    expect(aside.attributes('data-floating')).toBe('true')
+    expect(aside.classes()).not.toContain('border-r')
+    expect(aside.classes()).not.toContain('bg-surface')
+    expect(aside.classes()).toContain('overflow-visible')
     const card = wrapper.find('[data-testid="app-sidebar-card"]')
     expect(card.classes()).toContain('app-sidebar-card')
     expect(card.classes()).toContain('bg-surface')

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppSidebarNav from './AppSidebarNav.vue'
 import BrandLogo from './BrandLogo.vue'
@@ -16,10 +16,7 @@ import {
 
 const { t } = useI18n()
 const router = useRouter()
-const route = useRoute()
 const { user, clearUser } = useAuth()
-
-const floating = computed(() => route.meta.full !== true)
 
 const initials = computed(() => {
   const name = user.value?.username || '?'
@@ -49,18 +46,15 @@ async function onHideNav() {
     :class="
       sidebarHidden
         ? 'w-0 border-r-0 overflow-hidden'
-        : floating
-          ? 'w-[232px] overflow-visible'
-          : 'w-[232px] overflow-hidden border-r border-line bg-surface'
+        : 'w-[232px] overflow-visible'
     "
     data-testid="app-desktop-sidebar"
-    :data-floating="floating && !sidebarHidden ? 'true' : 'false'"
+    :data-floating="sidebarHidden ? 'false' : 'true'"
     :aria-hidden="sidebarHidden ? 'true' : undefined"
     :inert="sidebarHidden"
   >
     <div
-      class="flex h-full w-[232px] min-w-[232px] flex-col"
-      :class="floating ? 'app-sidebar-card bg-surface' : ''"
+      class="app-sidebar-card flex h-full w-[232px] min-w-[232px] flex-col bg-surface"
       data-testid="app-sidebar-card"
     >
       <div

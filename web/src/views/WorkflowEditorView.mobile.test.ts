@@ -123,7 +123,7 @@ async function mountEditor() {
   )
   await flushPromises()
   await nextTick()
-  return wrapper
+  return { wrapper, router }
 }
 
 describe('WorkflowEditorView mobile desktop-recommend', () => {
@@ -138,7 +138,7 @@ describe('WorkflowEditorView mobile desktop-recommend', () => {
   })
 
   it('shows desktop recommend first and expands a read-only node list without canvas', async () => {
-    const wrapper = await mountEditor()
+    const { wrapper } = await mountEditor()
     expect(wrapper.find('[data-testid="workflow-editor-mobile"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('推荐在桌面编辑')
     expect(wrapper.find('[data-testid="workflow-canvas-stub"]').exists()).toBe(false)
@@ -156,17 +156,51 @@ describe('WorkflowEditorView mobile desktop-recommend', () => {
 
   it('empty node list is readable and desktop still mounts the canvas', async () => {
     apiMocks.getWorkflow.mockResolvedValue({ ...MOCK_WF, nodes: [] })
-    const mobile = await mountEditor()
+    const { wrapper: mobile } = await mountEditor()
     await mobile.get('[data-testid="workflow-editor-peek"]').trigger('click')
     await flushPromises()
     expect(mobile.text()).toContain('当前流程没有节点')
     mobile.unmount()
 
     breakpointMocks.isMobile.value = false
-    const desktop = await mountEditor()
+    const { wrapper: desktop } = await mountEditor()
     expect(desktop.find('[data-testid="workflow-editor-mobile"]').exists()).toBe(false)
     expect(desktop.find('[data-testid="workflow-canvas-stub"]').exists()).toBe(true)
     expect(desktop.find('[data-testid="node-palette-stub"]').exists()).toBe(true)
     desktop.unmount()
+  })
+})
+
+describe('WorkflowEditorView back navigation', () => {
+  afterEach(() => {
+    vi.clearAllMocks()
+    document.body.innerHTML = ''
+  })
+
+  async function backTarget(isMobile: boolean, wf: Record<string, unknown>) {
+    breakpointMocks.isMobile.value = isMobile
+    apiMocks.getWorkflow.mockResolvedValue(wf)
+    const { wrapper, router } = await mountEditor()
+    const push = vi.spyOn(router, 'push')
+    await wrapper.get('[data-testid="workflow-editor-back"]').trigger('click')
+    await flushPromises()
+    const target = push.mock.calls[0]?.[0]
+    wrapper.unmount()
+    return target
+  }
+
+  it('desktop back lands on the owning project pipelines Tab', async () => {
+    const target = await backTarget(false, { ...MOCK_WF, projectId: 'proj-1' })
+    expect(target).toBe('/projects/proj-1?tab=workflows')
+  })
+
+  it('mobile back lands on the owning project pipelines Tab', async () => {
+    const target = await backTarget(true, { ...MOCK_WF, projectId: 'proj-1' })
+    expect(target).toBe('/projects/proj-1?tab=workflows')
+  })
+
+  it('falls back to the project list when the workflow has no projectId', async () => {
+    const target = await backTarget(false, { ...MOCK_WF })
+    expect(target).toBe('/projects')
   })
 })

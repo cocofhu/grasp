@@ -144,6 +144,7 @@ defineExpose({
     :mobile="mobile"
     :sidebar-width="REVIEW_SIDEBAR"
     :storage-key="REVIEW_SHELL_WIDTH_KEY_CLARIFY"
+    card-panes
   >
     <template #stage>
       <ReactConnectingState v-if="!clarify" mode="stage" />
