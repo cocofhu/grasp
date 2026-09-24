@@ -25,6 +25,7 @@ const nodeId = String(route.params.nodeId || '')
 const phase = ref<'connecting' | 'ready' | 'expired' | 'network'>('connecting')
 const token = ref('')
 const chatRef = ref<ChatRef | null>(null)
+let announced = false
 
 function takeTicket(): string {
   const ticket = parseEmbedTicketFromHash(window.location.hash)
@@ -61,6 +62,11 @@ async function connect() {
 }
 
 function onStatus(status: string) {
+  // The page queues picks until the chat can take them.
+  if (status === 'active' && !announced && window.parent !== window) {
+    announced = true
+    window.parent.postMessage({ type: EMBED_READY_MESSAGE }, parentOrigin())
+  }
   if (status === 'invalid' || status === 'expired' || status === 'revoked') {
     clearEmbedSession(runId, nodeId)
     token.value = ''
@@ -82,7 +88,6 @@ function onMessage(e: MessageEvent) {
 
 onMounted(() => {
   window.addEventListener('message', onMessage)
-  if (window.parent !== window) window.parent.postMessage({ type: EMBED_READY_MESSAGE }, parentOrigin())
   void connect()
 })
 onUnmounted(() => window.removeEventListener('message', onMessage))
