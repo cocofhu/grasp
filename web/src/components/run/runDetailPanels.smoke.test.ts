@@ -8,6 +8,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
+import { useClarifyDraft } from '@/lib/inbox/useClarifyDraft'
 import type { Gate, NodeRun, Run, WFNode } from '@/lib/shared/types'
 import RunGatePanel from './RunGatePanel.vue'
 import RunLogPanel from './RunLogPanel.vue'
@@ -191,6 +192,55 @@ describe('Run detail panel shells (Demo entry assembly)', () => {
     expect(review.exists()).toBe(true)
     await flushPromises()
     review.unmount()
+  })
+
+  it('clarify preview picks keep the element context for the agent', async () => {
+    const pick = {
+      selector: 'body > ul > li:nth-of-type(2) > button',
+      tagName: 'BUTTON',
+      text: 'Buy pro',
+      outerHTML: '<button class="buy">Buy pro</button>',
+      url: 'http://10.0.0.5:18080/',
+    }
+    const clarify = mount(RunClarifyPanel, {
+      props: {
+        sandboxFailed: false,
+        nodeLabel: '澄清',
+        nodeId: 'pick-node',
+        clarify: { nodeId: 'pick-node', turns: [], done: false },
+        runId: 'run-pick',
+        run: stubRun,
+        draft: '',
+        attachments: [],
+        inputActive: true,
+        selStatus: 'waiting_human',
+      },
+      global: {
+        plugins: [i18n()],
+        stubs: {
+          ...heavyStubs,
+          ReviewShell: defineComponent({ template: '<div><slot name="stage" /></div>' }),
+          ReactArtifactStage: defineComponent({
+            emits: ['pick'],
+            setup: (_, { emit }) => ({ fire: () => emit('pick', pick) }),
+            template: '<button data-testid="stage-pick" @click="fire">pick</button>',
+          }),
+        },
+      },
+    })
+    await clarify.get('[data-testid="stage-pick"]').trigger('click')
+    const { annotations } = useClarifyDraft('run-pick', () => 'pick-node')
+    expect(annotations.value).toEqual([
+      {
+        selector: pick.selector,
+        url: pick.url,
+        label: '/ · body > ul > li:nth-of-type(2) > button',
+        tagName: 'button',
+        text: 'Buy pro',
+        outerHTML: pick.outerHTML,
+      },
+    ])
+    clarify.unmount()
   })
 
   it('keeps clarify and review shells mounted while their sessions connect', () => {

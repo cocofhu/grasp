@@ -10,6 +10,13 @@ export const DIRECT_PREVIEW_INSPECT = 'direct-preview-inspect'
 export const DIRECT_PREVIEW_NAV = 'direct-preview-nav'
 /** Parent asks the page to re-announce ready; answers with DIRECT_PREVIEW_READY. */
 export const DIRECT_PREVIEW_PING = 'direct-preview-ping'
+/**
+ * Grasp frame hello. Until the page receives it from its parent, the in-page
+ * Pick bar keeps picks local (standalone window or an unknown embedder).
+ */
+export const DIRECT_PREVIEW_HOST = 'direct-preview-host'
+/** Page reports that its own Pick toggle turned inspect mode on/off. */
+export const DIRECT_PREVIEW_INSPECT_STATE = 'direct-preview-inspect-state'
 
 export type DirectPreviewNavAction = 'back' | 'forward' | 'reload'
 
@@ -28,12 +35,25 @@ export type DirectPreviewPickedMessage = {
   selector: string
   tagName: string
   outerHTML: string
+  text?: string
   url?: string
 }
 
 export type DirectPreviewCanceledMessage = {
   type: typeof DIRECT_PREVIEW_CANCELED
 }
+
+export type DirectPreviewInspectStateMessage = {
+  type: typeof DIRECT_PREVIEW_INSPECT_STATE
+  on: boolean
+}
+
+export type DirectPreviewMessage =
+  | DirectPreviewReadyMessage
+  | DirectPreviewUrlMessage
+  | DirectPreviewPickedMessage
+  | DirectPreviewCanceledMessage
+  | DirectPreviewInspectStateMessage
 
 export function iframeOrigin(directUrl: string): string {
   try {
@@ -165,9 +185,7 @@ export function resolveDirectPreviewGoto(directUrl: string, input: string): stri
   return next.href
 }
 
-export function parseDirectPreviewMessage(
-  data: unknown,
-): DirectPreviewReadyMessage | DirectPreviewUrlMessage | DirectPreviewPickedMessage | DirectPreviewCanceledMessage | null {
+export function parseDirectPreviewMessage(data: unknown): DirectPreviewMessage | null {
   if (!data || typeof data !== 'object') return null
   const msg = data as Record<string, unknown>
   const type = msg.type
@@ -179,13 +197,17 @@ export function parseDirectPreviewMessage(
   if (type === DIRECT_PREVIEW_CANCELED) {
     return { type: DIRECT_PREVIEW_CANCELED }
   }
+  if (type === DIRECT_PREVIEW_INSPECT_STATE) {
+    return { type: DIRECT_PREVIEW_INSPECT_STATE, on: msg.on === true }
+  }
   if (type === DIRECT_PREVIEW_PICKED) {
     const selector = typeof msg.selector === 'string' ? msg.selector : ''
     const tagName = typeof msg.tagName === 'string' ? msg.tagName : ''
     const outerHTML = typeof msg.outerHTML === 'string' ? msg.outerHTML : ''
     if (!selector && !tagName) return null
     const url = typeof msg.url === 'string' ? msg.url : undefined
-    return { type: DIRECT_PREVIEW_PICKED, selector, tagName, outerHTML, url }
+    const text = typeof msg.text === 'string' && msg.text ? msg.text : undefined
+    return { type: DIRECT_PREVIEW_PICKED, selector, tagName, outerHTML, text, url }
   }
   return null
 }

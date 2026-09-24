@@ -18,7 +18,7 @@ import {
   writeSharedOuterSashMem,
 } from '@/lib/inbox/reviewLayoutBudget'
 import { addClarifyAnnotation, useClarifyDraft } from '@/lib/inbox/useClarifyDraft'
-import { previewPickLabel, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
+import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { resolveNodeDisplayLabelFromNode } from '@/lib/run/resolveNodeDisplayLabel'
 import { applyPreviewArtifactName } from '@/lib/run/reactArtifactPreview'
 import {
@@ -264,12 +264,7 @@ function onAppPreviewReviewPick(payload: AppPreviewPickPayload) {
   const rid = run.value?.id
   const nid = selNode.value?.id
   if (!rid || !nid) return
-  const url = (payload.url || '').trim()
-  const result = addClarifyAnnotation(rid, nid, {
-    selector: payload.selector,
-    url: url || undefined,
-    label: previewPickLabel(url, payload.selector, payload.tagName),
-  })
+  const result = addClarifyAnnotation(rid, nid, previewPickAnnotation(payload))
   if (result === 'duplicate') toast.warn(t('pages.reviewComposer.alreadyAdded'))
   // Added to pending chips — clear staged so send won't double-attach.
   lastStagedAppPreviewPick.value = null
@@ -288,14 +283,7 @@ function mergeStagedAppPreviewPick(
   ) {
     return annotations
   }
-  return [
-    ...annotations,
-    {
-      selector: staged.selector,
-      url: url || undefined,
-      label: previewPickLabel(url, staged.selector, staged.tagName),
-    },
-  ]
+  return [...annotations, previewPickAnnotation(staged)]
 }
 
 const live = useRunDetailLiveLog({

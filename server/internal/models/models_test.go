@@ -457,3 +457,47 @@ func TestRenderAnnotations(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderAnnotationsPickContext(t *testing.T) {
+	got := RenderAnnotations([]ReactAnnotation{
+		{
+			Selector:  "main > section:nth-of-type(2) > h2",
+			URL:       "http://10.0.0.5:5173/pricing",
+			TagName:   "h2",
+			Text:      "  Choose\n your   plan ",
+			OuterHTML: "<h2 class=\"title\">\n  Choose your plan\n</h2>",
+		},
+		{Selector: "#only-tag", TagName: "button"},
+	})
+	for _, part := range []string{
+		"页面 URL: http://10.0.0.5:5173/pricing",
+		"标签: h2 · 可见文本: 「Choose your plan」",
+		"HTML: <h2 class=\"title\"> Choose your plan </h2>",
+		"`#only-tag`",
+		"标签: button\n",
+	} {
+		if !strings.Contains(got, part) {
+			t.Fatalf("missing %q in:\n%s", part, got)
+		}
+	}
+	if strings.Contains(got, "可见文本: 「」") || strings.Count(got, "HTML:") != 1 {
+		t.Fatalf("empty pick fields should be omitted:\n%s", got)
+	}
+}
+
+func TestRenderAnnotationsClipsPickContext(t *testing.T) {
+	longText := strings.Repeat("字", annotationTextMaxRunes+50)
+	longHTML := "<div>" + strings.Repeat("x", annotationHTMLMaxRunes*2) + "</div>"
+	got := RenderAnnotations([]ReactAnnotation{{Selector: "#big", Text: longText, OuterHTML: longHTML}})
+	if !strings.Contains(got, "「"+strings.Repeat("字", annotationTextMaxRunes)+"…」") {
+		t.Fatalf("text not clipped to %d runes:\n%s", annotationTextMaxRunes, got)
+	}
+	if strings.Contains(got, strings.Repeat("字", annotationTextMaxRunes+1)) {
+		t.Fatal("text longer than the clamp leaked into the prompt")
+	}
+	htmlLine := got[strings.Index(got, "HTML: ")+len("HTML: "):]
+	htmlLine = strings.TrimSuffix(htmlLine, "\n")
+	if n := len([]rune(htmlLine)); n != annotationHTMLMaxRunes+1 {
+		t.Fatalf("html runes=%d want %d", n, annotationHTMLMaxRunes+1)
+	}
+}

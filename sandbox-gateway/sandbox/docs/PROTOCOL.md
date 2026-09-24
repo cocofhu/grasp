@@ -268,6 +268,13 @@ IP 直连预览时审批页 iframe 的 origin 是 `http://<sandbox-ip>:$PREVIEW_
   经典 `<script>` 早于 iframe `load` 事件),SPA 跳转再发 `direct-preview-url`。
   父页可发 `direct-preview-ping` 要求重播 ready;判定「未加载脚本」须以
   ping 也无应答为准,不能只看 `load` 时序。
+- 脚本在页内画 Pick 操作条(Shadow DOM),新窗口直接打开也可用。收到**来自
+  `parent`** 的 `direct-preview-host` 之前按独立窗口处理:点选暂存在页内
+  (最多 20 条,存 `sessionStorage`,同标签页整页跳转后仍在),不发给任何父页。
+  收到后进入嵌入模式:每次点选发 `direct-preview-picked`
+  (`selector` / `tagName` / `text` 截断 120 字 / `outerHTML` 截断 1024 字 / `url`),
+  页内不留列表;握手前暂存的点选随即补发。页内开关变化发
+  `direct-preview-inspect-state {on}`;父页仍可用 `direct-preview-inspect` 控制。
 - 回环(应用 ← 注入进程)走 OUTPUT,不进 PREROUTING,不会环。
 - 注入进程**不得**听 `PREVIEW_PORT`(平台 `KeepalivePort` 按该口找应用进程)。
 - 进程挂了必须拆规则或立刻拉起:箱外 `ProbeHTTPPort` 打的是发布口,会走 REDIRECT;

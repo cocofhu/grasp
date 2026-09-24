@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { toPreviewDocumentURL } from '@/lib/shared/previewDocumentOrigin'
 import {
+  DIRECT_PREVIEW_HOST,
   DIRECT_PREVIEW_INSPECT,
   DIRECT_PREVIEW_NAV,
   DIRECT_PREVIEW_PING,
@@ -29,9 +30,9 @@ const props = withDefaults(
   { title: 'preview', embedUrl: '' },
 )
 
+// Each in-page pick becomes a chat annotation chip right away; the chips are the pending list.
 const emit = defineEmits<{
   (e: 'pick', payload: AppPreviewPickPayload): void
-  (e: 'staged-pick', payload: AppPreviewPickPayload | null): void
 }>()
 
 const { t } = useI18n()
@@ -56,7 +57,6 @@ const inspectToggleLabel = computed(() =>
 const scriptReady = ref(false)
 const scriptTip = ref(false)
 const inlineTip = ref<string | null>(null)
-const picked = ref<AppPreviewPickPayload | null>(null)
 const iframeRef = ref<HTMLIFrameElement | null>(null)
 let waitTimer: ReturnType<typeof setTimeout> | null = null
 let readySeq = 0
@@ -81,6 +81,7 @@ function clearWait() {
 }
 
 function pingFrame() {
+  postToFrame({ type: DIRECT_PREVIEW_HOST })
   postToFrame({ type: DIRECT_PREVIEW_PING })
 }
 
@@ -112,6 +113,8 @@ function onIframeLoad() {
     scriptReady.value = true
     scriptTip.value = false
     clearWait()
+    // Each new document starts standalone until it hears from us.
+    postToFrame({ type: DIRECT_PREVIEW_HOST })
     return
   }
   scriptReady.value = false
@@ -136,16 +139,18 @@ function onMessage(event: MessageEvent) {
     inspect.value = false
     return
   }
+  if (parsed.type === 'direct-preview-inspect-state') {
+    inspect.value = parsed.on
+    return
+  }
   if (parsed.type === 'direct-preview-picked') {
-    inspect.value = false
-    const payload: AppPreviewPickPayload = {
+    emit('pick', {
       selector: parsed.selector,
       tagName: parsed.tagName,
       outerHTML: parsed.outerHTML,
+      text: parsed.text,
       url: parsed.url,
-    }
-    picked.value = payload
-    emit('staged-pick', payload)
+    })
   }
 }
 
@@ -180,23 +185,12 @@ function toggleInspect() {
   postToFrame({ type: DIRECT_PREVIEW_INSPECT, on: next })
 }
 
-function usePick() {
-  if (!picked.value) return
-  emit('pick', picked.value)
-}
-
-function clearPick() {
-  picked.value = null
-  emit('staged-pick', null)
-}
-
 watch(
   () => [(props.embedUrl || '').trim(), props.directUrl] as const,
   ([embed, direct]) => {
     const next = embed ? toPreviewDocumentURL(embed) : direct
     frameSrc.value = next
     address.value = next
-    picked.value = null
     armScriptWait()
   },
 )
@@ -297,41 +291,5 @@ onUnmounted(() => {
       data-testid="app-preview-direct-frame"
       @load="onIframeLoad"
     />
-    <div
-      v-if="picked"
-      class="shrink-0 border-t border-line bg-elevated px-3 py-2"
-      data-testid="direct-preview-pick-result"
-    >
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="text-[11px] text-txt2">{{ t('pages.appPreview.novnc.pickedLabel') }}</span>
-        <span class="text-[10px] lowercase text-txt3">{{ t('pages.appPreview.novnc.selectorLabel') }}</span>
-        <code class="max-w-full break-all text-[11px] text-ok" data-testid="direct-preview-pick-selector">{{
-          picked.selector
-        }}</code>
-        <span class="text-[10px] lowercase text-txt3">{{ t('pages.appPreview.novnc.urlLabel') }}</span>
-        <code class="max-w-full break-all text-[11px] text-info" data-testid="direct-preview-pick-url">{{
-          picked.url || ''
-        }}</code>
-        <span class="ml-auto flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            class="rounded bg-ok/15 px-2 py-1 text-[11px] font-medium text-ok hover:bg-ok/25"
-            data-testid="direct-preview-use-pick"
-            @click="usePick"
-          >
-            {{ t('pages.appPreview.novnc.usePick') }}
-          </button>
-          <button
-            type="button"
-            class="rounded px-2 py-1 text-[11px] text-txt2 hover:bg-overlay hover:text-txt"
-            :title="t('pages.appPreview.novnc.clearPick')"
-            data-testid="direct-preview-clear-pick"
-            @click="clearPick"
-          >
-            {{ t('pages.appPreview.novnc.clearPick') }}
-          </button>
-        </span>
-      </div>
-    </div>
   </div>
 </template>

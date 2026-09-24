@@ -234,7 +234,6 @@ function selectPreview(key: string) {
           :embed-url="previewEmbedUrl(p)"
           :title="previewTabLabel(p)"
           @pick="onPick"
-          @staged-pick="onStagedPick"
         />
         <NovncPreviewPanel
           v-if="vncConnPort != null"

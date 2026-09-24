@@ -15,7 +15,7 @@ import { REVIEW_SHELL_WIDTH_KEY_APPROVAL } from '@/lib/inbox/reviewLayoutBudget'
 import { reapplyThemeChrome } from '@/lib/shared/theme'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { provideReviewAnnotate } from '@/lib/inbox/reviewAnnotate'
-import { previewPickLabel } from '@/lib/shared/previewPickUrl'
+import { previewPickAnnotation } from '@/lib/shared/previewPickUrl'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
@@ -990,12 +990,7 @@ function onHtmlPick(payload: { selector: string; tagName: string }) {
 
 function onAppPreviewPick(payload: AppPreviewPickPayload) {
   if (!isActive.value || !reactAlive.value) return
-  const label = previewPickLabel(payload.url || '', payload.selector, payload.tagName)
-  const next: ReactAnnotation = {
-    selector: payload.selector,
-    label,
-    quote: payload.outerHTML?.slice?.(0, 240) || undefined,
-  }
+  const next: ReactAnnotation = previewPickAnnotation(payload)
   if (annotations.value.some((a) => a.selector === next.selector && a.label === next.label)) return
   annotations.value = [...annotations.value, next]
 }
