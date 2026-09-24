@@ -2,12 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Window } from 'happy-dom'
 import { afterEach, describe, expect, it } from 'vitest'
-import {
-  DIRECT_PREVIEW_HOST,
-  DIRECT_PREVIEW_INSPECT,
-  DIRECT_PREVIEW_INSPECT_STATE,
-  DIRECT_PREVIEW_PICKED,
-} from './directPreviewPick'
+import { EMBED_PICK_MESSAGE, EMBED_READY_MESSAGE } from '@/lib/inbox/embedChat'
 import { PICK_HTML_MAX, PICK_TEXT_MAX } from './previewPickUrl'
 
 const repo = resolve(__dirname, '../../../..')
@@ -17,41 +12,55 @@ const COPIES = [
   'sandbox-gateway/sandbox/internal/previewinject/preview-pick.js',
 ]
 const SCRIPT = readFileSync(resolve(repo, COPIES[0]), 'utf8')
+const GRASP = 'https://grasp.example'
 
 type Msg = Record<string, unknown> & { type: string }
 type Page = {
   win: Window
-  sent: Msg[]
-  parent: { postMessage: (m: Msg) => void }
   shadow: ShadowRoot
-  fromParent: (data: Msg, source?: unknown) => void
+  fetched: string[]
   toggle: () => void
   click: (selector: string) => void
   listItems: () => string[]
+  frame: () => HTMLIFrameElement | null
+  chatButton: () => HTMLButtonElement
+  drawerOpen: () => boolean
+  /** Messages the drawer iframe received, after it reports ready. */
+  drawerReady: (origin?: string) => Msg[]
 }
 
 const opened: Window[] = []
 
-function openPage(body: string, opts: { embeddedFrame?: boolean; stored?: string | null } = {}): Page {
-  const win = new Window({ url: 'http://10.0.0.5:5173/pricing', settings: { navigator: { userAgent: 'test' } } })
+type EmbedReply = { origin: string; runId: string; nodeId: string } | null
+
+function openPage(
+  body: string,
+  opts: { stored?: string | null; hash?: string; embedReply?: EmbedReply; savedEmbed?: string } = {},
+): Page {
+  const win = new Window({
+    url: `http://10.0.0.5:5173/pricing${opts.hash || ''}`,
+    settings: { navigator: { userAgent: 'test' }, disableIframePageLoading: true },
+  })
   opened.push(win)
   win.document.body.innerHTML = body
   if (opts.stored) win.sessionStorage.setItem('__grasp_preview_picks', opts.stored)
-  const sent: Msg[] = []
-  const parent = { postMessage: (m: Msg) => void sent.push(m) }
-  if (opts.embeddedFrame !== false) Object.defineProperty(win, 'parent', { value: parent, configurable: true })
+  if (opts.savedEmbed) win.sessionStorage.setItem('__grasp_embed', opts.savedEmbed)
+  const fetched: string[] = []
+  ;(win as unknown as { fetch: (u: string) => Promise<unknown> }).fetch = async (u: string) => {
+    fetched.push(u)
+    const reply = opts.embedReply
+    return { ok: !!reply, json: async () => reply }
+  }
   win.eval(SCRIPT)
   const host = win.document.querySelector('grasp-preview-pick')
   if (!host?.shadowRoot) throw new Error('pick bar not mounted')
   const shadow = host.shadowRoot as unknown as ShadowRoot
+  const inbox: Msg[] = []
+  const frame = () => shadow.querySelector('iframe') as HTMLIFrameElement | null
   return {
     win,
-    sent,
-    parent,
     shadow,
-    fromParent(data, source = parent) {
-      win.dispatchEvent(new win.MessageEvent('message', { data, source: source as never }))
-    },
+    fetched,
     toggle() {
       ;(shadow.querySelector('[data-role="toggle"]') as HTMLButtonElement).click()
     },
@@ -61,10 +70,23 @@ function openPage(body: string, opts: { embeddedFrame?: boolean; stored?: string
     listItems() {
       return Array.from(shadow.querySelectorAll('[data-role="list"] code')).map((c) => c.textContent || '')
     },
+    frame,
+    chatButton: () => shadow.querySelector('[data-role="chat"]') as HTMLButtonElement,
+    drawerOpen: () => !(shadow.querySelector('[data-role="drawer"]') as HTMLElement).hidden,
+    drawerReady(origin = GRASP) {
+      const f = frame()
+      if (!f) throw new Error('no drawer')
+      const fake = { postMessage: (m: Msg, target: string) => void inbox.push({ ...m, target }) }
+      Object.defineProperty(f, 'contentWindow', { value: fake, configurable: true })
+      win.dispatchEvent(
+        new win.MessageEvent('message', { data: { type: EMBED_READY_MESSAGE }, origin, source: fake as never }),
+      )
+      return inbox
+    },
   }
 }
 
-const picks = (p: Page) => p.sent.filter((m) => m.type === DIRECT_PREVIEW_PICKED)
+const settle = () => new Promise((r) => setTimeout(r, 0))
 
 afterEach(async () => {
   for (const w of opened.splice(0)) await w.happyDOM.close()
@@ -93,7 +115,6 @@ describe('preview-pick.js standalone window', () => {
       'p · b',
       'a · about',
     ])
-    expect(picks(p)).toHaveLength(0)
     expect(p.win.location.pathname).toBe('/pricing')
   })
 
@@ -119,14 +140,6 @@ describe('preview-pick.js standalone window', () => {
     expect(next.listItems()).toEqual(['a · about'])
     ;(next.shadow.querySelector('button[data-index="0"]') as HTMLButtonElement).click()
     expect(next.win.sessionStorage.getItem('__grasp_preview_picks')).toBeNull()
-  })
-
-  it('hands stored picks to Grasp and forgets them once embedded', () => {
-    const stored = JSON.stringify([{ selector: '#go', tagName: 'a', text: 'about', outerHTML: '<a>', url: 'http://x/' }])
-    const p = openPage(body, { stored })
-    p.fromParent({ type: DIRECT_PREVIEW_HOST })
-    expect(picks(p)).toEqual([expect.objectContaining({ selector: '#go' })])
-    expect(p.win.sessionStorage.getItem('__grasp_preview_picks')).toBeNull()
   })
 
   it('ignores corrupt stored picks', () => {
@@ -164,81 +177,84 @@ describe('preview-pick.js standalone window', () => {
   it('clips visible text and outerHTML', () => {
     const long = 'x'.repeat(PICK_HTML_MAX + 200)
     const p = openPage(`<div id="big">${long}</div>`)
-    p.fromParent({ type: DIRECT_PREVIEW_HOST })
-    p.fromParent({ type: DIRECT_PREVIEW_INSPECT, on: true })
+    p.toggle()
     p.click('#big')
-    const [msg] = picks(p)
-    expect(msg.text).toBe('x'.repeat(PICK_TEXT_MAX) + '…')
-    expect((msg.outerHTML as string).length).toBe(PICK_HTML_MAX + 1)
+    const [item] = JSON.parse(p.win.sessionStorage.getItem('__grasp_preview_picks') || '[]')
+    expect(item.text).toBe('x'.repeat(PICK_TEXT_MAX) + '…')
+    expect((item.outerHTML as string).length).toBe(PICK_HTML_MAX + 1)
   })
 })
 
-describe('preview-pick.js inside the Grasp frame', () => {
+describe('preview-pick.js chat drawer', () => {
   const body = '<main><h2>Plan</h2><button id="buy">Buy</button></main>'
+  const hash = '#__grasp_embed&run=run-1&node=ap1&ticket=tk1'
+  const reply = { origin: GRASP, runId: 'run-1', nodeId: 'ap1' }
 
-  it('stays standalone until the parent says hello', () => {
+  it('has no chat without a ticket or a saved drawer', async () => {
     const p = openPage(body)
-    p.toggle()
-    p.click('#buy')
-    expect(picks(p)).toHaveLength(0)
-    expect(p.listItems()).toEqual(['button · Buy'])
+    await settle()
+    expect(p.fetched).toEqual([])
+    expect(p.chatButton().hidden).toBe(true)
+    expect(p.frame()).toBeNull()
   })
 
-  it('ignores a hello that does not come from its parent', () => {
-    const p = openPage(body)
-    p.fromParent({ type: DIRECT_PREVIEW_HOST }, { postMessage() {} })
-    p.toggle()
-    p.click('#buy')
-    expect(picks(p)).toHaveLength(0)
+  it('checks the ticket with Grasp, strips it from the URL and opens the drawer', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    expect(p.win.location.hash).toBe('')
+    await settle()
+    expect(p.fetched).toEqual(['/__grasp/embed-origin?ticket=tk1&node=ap1'])
+    expect(p.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#ticket=tk1`)
+    expect(p.chatButton().hidden).toBe(false)
+    expect(p.drawerOpen()).toBe(true)
+    expect(JSON.parse(p.win.sessionStorage.getItem('__grasp_embed') || '{}')).toMatchObject({ origin: GRASP, run: 'run-1', node: 'ap1' })
+    expect(p.win.sessionStorage.getItem('__grasp_embed')).not.toContain('tk1')
   })
 
-  it('never embeds when opened as a top-level window', () => {
-    const p = openPage(body, { embeddedFrame: false })
-    p.fromParent({ type: DIRECT_PREVIEW_HOST }, p.win)
-    p.toggle()
-    p.click('#buy')
-    expect(p.listItems()).toEqual(['button · Buy'])
+  it('stays without a drawer when Grasp does not vouch for the ticket', async () => {
+    for (const bad of [null, { ...reply, runId: 'run-2' }, { ...reply, origin: 'https://grasp.example/x' }]) {
+      const p = openPage(body, { hash, embedReply: bad })
+      await settle()
+      expect(p.frame(), JSON.stringify(bad)).toBeNull()
+      expect(p.win.sessionStorage.getItem('__grasp_embed')).toBeNull()
+    }
   })
 
-  it('posts every pick to the parent, keeps pick mode on and keeps no local list', () => {
-    const p = openPage(body)
-    p.fromParent({ type: DIRECT_PREVIEW_HOST })
+  it('reopens the saved drawer on a later page load without a ticket', async () => {
+    const saved = JSON.stringify({ origin: GRASP, run: 'run-1', node: 'ap1', open: false })
+    const p = openPage(body, { savedEmbed: saved })
+    await settle()
+    expect(p.fetched).toEqual([])
+    expect(p.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat`)
+    expect(p.drawerOpen()).toBe(false)
+    p.chatButton().click()
+    expect(p.drawerOpen()).toBe(true)
+    expect(JSON.parse(p.win.sessionStorage.getItem('__grasp_embed') || '{}').open).toBe(true)
+  })
+
+  it('holds picks until the drawer is ready, then sends them to the Grasp origin only', async () => {
+    const stored = JSON.stringify([{ selector: '#old', tagName: 'a', text: 'old', outerHTML: '<a>', url: 'http://x/' }])
+    const p = openPage(body, { hash, embedReply: reply, stored })
+    await settle()
+    expect(p.win.sessionStorage.getItem('__grasp_preview_picks')).toBeNull()
     p.toggle()
+    p.click('#buy')
+    expect(p.listItems()).toEqual([])
+
+    expect(p.drawerReady('https://evil.example')).toEqual([])
+    const inbox = p.drawerReady()
+    expect(inbox.map((m) => [m.type, (m.payload as { selector: string }).selector, m.target])).toEqual([
+      [EMBED_PICK_MESSAGE, '#old', GRASP],
+      [EMBED_PICK_MESSAGE, '#buy', GRASP],
+    ])
     p.click('h2')
-    p.click('#buy')
-
-    expect(picks(p)).toEqual([
-      {
-        type: DIRECT_PREVIEW_PICKED,
-        selector: 'body > main > h2',
-        tagName: 'h2',
-        text: 'Plan',
-        outerHTML: '<h2>Plan</h2>',
-        url: 'http://10.0.0.5:5173/pricing',
-      },
-      expect.objectContaining({ selector: '#buy', tagName: 'button', text: 'Buy' }),
-    ])
-    expect(p.listItems()).toHaveLength(0)
-    expect(p.sent.filter((m) => m.type === DIRECT_PREVIEW_INSPECT_STATE)).toEqual([
-      { type: DIRECT_PREVIEW_INSPECT_STATE, on: true },
-    ])
-  })
-
-  it('hands picks staged before the hello over to the parent', () => {
-    const p = openPage(body)
-    p.toggle()
-    p.click('#buy')
-    p.fromParent({ type: DIRECT_PREVIEW_HOST })
-    expect(picks(p)).toEqual([expect.objectContaining({ selector: '#buy' })])
-    expect(p.listItems()).toHaveLength(0)
-  })
-
-  it('outer inspect toggle drives pick mode without echoing state back', () => {
-    const p = openPage(body)
-    p.fromParent({ type: DIRECT_PREVIEW_HOST })
-    p.fromParent({ type: DIRECT_PREVIEW_INSPECT, on: true })
-    p.click('#buy')
-    expect(picks(p)).toHaveLength(1)
-    expect(p.sent.some((m) => m.type === DIRECT_PREVIEW_INSPECT_STATE)).toBe(false)
+    expect(inbox.at(-1)?.payload).toEqual({
+      selector: 'body > main > h2',
+      tagName: 'h2',
+      text: 'Plan',
+      outerHTML: '<h2>Plan</h2>',
+      url: 'http://10.0.0.5:5173/pricing',
+    })
+    const notice = p.shadow.querySelector('[data-role="notice"]') as HTMLElement
+    expect(notice.textContent).toBe('Added to the Grasp chat')
   })
 })

@@ -35,13 +35,9 @@ func TestPreviewPickScript(t *testing.T) {
 	}
 	body := w.Body.String()
 	for _, needle := range []string{
-		"direct-preview-ready",
-		"direct-preview-url",
-		"direct-preview-picked",
-		"direct-preview-canceled",
-		"direct-preview-inspect",
-		"direct-preview-nav",
-		"direct-preview-ping",
+		"grasp-embed:pick",
+		"grasp-embed:ready",
+		"/__grasp/embed-origin",
 	} {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("script missing %q", needle)

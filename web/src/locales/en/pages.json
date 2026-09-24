@@ -2933,9 +2933,6 @@
       "connectionLost": "Preview connection lost",
       "sandboxRecycled": "Sandbox recycled; preview unavailable",
       "directOpenTab": "Open in new tab",
-      "directScriptMissing": "Pick script is not loaded. Direct preview needs same-origin /__grasp/preview-pick.js (rebuild the sandbox image that includes preview-inject).",
-      "directGotoInvalid": "Navigation is limited to the same preview origin.",
-      "directAddressPlaceholder": "http://IP:port/",
       "externalUrlHint": "External URL opens directly; pick-annotate is unavailable on cross-origin sites.",
       "novnc": {
         "back": "Back",
@@ -2986,7 +2983,10 @@
           "open": "Open",
           "resolved": "Resolved"
         }
-      }
+      },
+      "directLauncherHint": "Direct preview opens in a new tab. Use the Chat button at the bottom right of the page to pick elements and talk to the agent there.",
+      "directChatUnavailable": "The preview opened without the chat drawer this time. Continue the conversation here.",
+      "directPopupBlocked": "The browser blocked the new tab. Click here to open the preview."
     },
     "gateApproval": {
       "reactRevise": {

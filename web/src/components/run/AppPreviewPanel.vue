@@ -5,7 +5,7 @@ import { api, type PreviewPort } from '@/lib/api/api'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { isUrlPreview, previewTabKey, previewTabLabel } from '@/lib/shared/previewTabKey'
 import NovncPreviewPanel from './NovncPreviewPanel.vue'
-import DirectPreviewFrame from './DirectPreviewFrame.vue'
+import DirectPreviewLauncher from './DirectPreviewLauncher.vue'
 import ExternalUrlPreviewFrame from './ExternalUrlPreviewFrame.vue'
 import PreviewFeedbackChat from './PreviewFeedbackChat.vue'
 import RefreshStrip from './RefreshStrip.vue'
@@ -218,13 +218,12 @@ function selectPreview(key: string) {
           :url="(p.url || '').trim()"
           :title="previewTabLabel(p)"
         />
-        <DirectPreviewFrame
+        <DirectPreviewLauncher
           v-for="p in ports.filter((x) => isDirectPort(x))"
           v-show="activeKey === previewTabKey(p)"
           :key="`direct-${previewTabKey(p)}`"
           :direct-url="p.directUrl || ''"
-          :title="previewTabLabel(p)"
-          @pick="onPick"
+          :issue-ticket="() => api.embedTicket(runId, nodeId)"
         />
         <NovncPreviewPanel
           v-if="vncConnPort != null"

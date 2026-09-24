@@ -33,7 +33,10 @@ func main() {
 		os.Exit(2)
 	}
 	fmt.Fprintf(os.Stderr, "preview-inject: listen %s → %s script %s\n", opt.Listen, opt.Upstream, opt.ScriptURL)
-	h := previewinject.NewHandler(upstream, opt.ScriptURL)
+	h := previewinject.NewHandlerWithEmbed(upstream, opt.ScriptURL, previewinject.EmbedLookup{
+		RunURL: os.Getenv("GRASP_ARTIFACT_URL"),
+		Token:  os.Getenv("GRASP_ARTIFACT_TOKEN"),
+	})
 	if err := http.ListenAndServe(opt.Listen, h); err != nil {
 		fmt.Fprintf(os.Stderr, "preview-inject: %v\n", err)
 		os.Exit(1)

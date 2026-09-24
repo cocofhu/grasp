@@ -97,7 +97,7 @@ func TestProxy_ServesSameOriginScript(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status=%d", resp.StatusCode)
 	}
-	if !strings.Contains(string(body), "direct-preview-ready") {
+	if !strings.Contains(string(body), "grasp-embed:pick") {
 		t.Fatalf("script body: %s", body[:min(len(body), 80)])
 	}
 }

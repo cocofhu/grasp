@@ -26,6 +26,13 @@ export function embedChatPath(runId: string, nodeId: string): string {
   return `/embed/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/chat`
 }
 
+/** Direct preview URL carrying a drawer ticket for the in-page pick script (preview-pick.js). */
+export function directPreviewEmbedUrl(directUrl: string, t: EmbedTicket): string {
+  const base = directUrl.split('#')[0]
+  const q = new URLSearchParams({ run: t.runId, node: t.nodeId, ticket: t.ticket })
+  return `${base}#__grasp_embed&${q.toString()}`
+}
+
 export function parseEmbedTicketFromHash(hash: string): string {
   const raw = (hash || '').replace(/^#/, '')
   return new URLSearchParams(raw).get('ticket')?.trim() || ''

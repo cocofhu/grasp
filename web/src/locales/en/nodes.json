@@ -556,7 +556,7 @@
         },
         "direct_preview": {
           "label": "Direct IP preview",
-          "help": "When on, the browser opens http://IP:port/. An in-sandbox proxy injects the pick script and leaves relative and root-absolute paths unchanged."
+          "help": "When on, the preview opens http://IP:port/ in a new tab. An in-sandbox proxy injects the pick script and leaves relative and root-absolute paths unchanged; the Chat button at the bottom right talks to the agent from inside the preview."
         },
         "auto_inject": {
           "label": "Auto-inject pick script",
@@ -623,7 +623,7 @@
         },
         "direct_preview": {
           "label": "Direct IP preview",
-          "help": "When on, preview opens http://IP:port/ instead of noVNC. The in-sandbox proxy inserts the pick script and does not rewrite app paths. Default off."
+          "help": "When on, the preview opens http://IP:port/ in a new tab instead of noVNC. The in-sandbox proxy inserts the pick script and does not rewrite app paths; the Chat button at the bottom right talks to the agent from inside the preview. Default off."
         },
         "auto_inject": {
           "label": "Auto-inject pick script",

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   EMBED_PICK_MESSAGE,
   clearEmbedSession,
+  directPreviewEmbedUrl,
   embedChatPath,
   loadEmbedSession,
   parseEmbedPickMessage,
@@ -20,6 +21,8 @@ describe('embedChat', () => {
     expect(parseEmbedTicketFromHash('#ticket=abc')).toBe('abc')
     expect(parseEmbedTicketFromHash('#t=abc')).toBe('')
     expect(parseEmbedTicketFromHash('')).toBe('')
+    const t = { ticket: 'a b', runId: 'r', nodeId: 'n', expiresAt: '' }
+    expect(directPreviewEmbedUrl('http://10.0.0.5:18080/x#old', t)).toBe('http://10.0.0.5:18080/x#__grasp_embed&run=r&node=n&ticket=a+b')
   })
 
   it('keeps the drawer token per run/node and drops it once expired', () => {

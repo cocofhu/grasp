@@ -13,6 +13,7 @@ vi.mock('@novnc/novnc/lib/rfb.js', () => ({
 
 const apiMocks = vi.hoisted(() => ({
   nodePreviews: vi.fn(),
+  embedTicket: vi.fn(),
 }))
 
 vi.mock('@/lib/api/api', async () => {
@@ -22,6 +23,7 @@ vi.mock('@/lib/api/api', async () => {
     api: {
       ...actual.api,
       nodePreviews: apiMocks.nodePreviews,
+      embedTicket: apiMocks.embedTicket,
     },
   }
 })
@@ -161,7 +163,7 @@ describe('AppPreviewPanel', () => {
     wrapper.unmount()
   })
 
-  it('direct mode iframes directUrl and skips noVNC', async () => {
+  it('direct mode opens a new tab carrying a drawer ticket instead of embedding', async () => {
     apiMocks.nodePreviews.mockResolvedValue({
       ports: [
         {
@@ -175,11 +177,19 @@ describe('AppPreviewPanel', () => {
     const wrapper = mountPanel()
     await flushPromises()
     expect(wrapper.find('[data-testid="novnc-stub"]').exists()).toBe(false)
-    const frame = wrapper.get('[data-testid="app-preview-direct-frame"]')
-    expect(frame.attributes('src')).toBe('http://127.0.0.1:18081/')
-    expect(wrapper.find('[data-testid="direct-preview-inspect"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="direct-preview-address"]').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('IP 直连预览不支持取点标注')
+    expect(wrapper.find('iframe').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="direct-preview-address"]').text()).toBe('http://127.0.0.1:18081/')
+
+    const tab = { opener: {} as unknown, closed: false, location: { href: '' } }
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window)
+    apiMocks.embedTicket.mockResolvedValue({ ticket: 'tk', runId: 'run-1', nodeId: 'preview-1', expiresAt: '' })
+    await wrapper.get('[data-testid="app-preview-direct-open"]').trigger('click')
+    await flushPromises()
+    expect(openSpy).toHaveBeenCalledWith('about:blank', '_blank')
+    expect(apiMocks.embedTicket).toHaveBeenCalledWith('run-1', 'preview-1')
+    expect(tab.opener).toBeNull()
+    expect(tab.location.href).toBe('http://127.0.0.1:18081/#__grasp_embed&run=run-1&node=preview-1&ticket=tk')
+    openSpy.mockRestore()
     wrapper.unmount()
   })
 
@@ -201,7 +211,7 @@ describe('AppPreviewPanel', () => {
     const frame = wrapper.get('[data-testid="app-preview-external-url-frame"]')
     expect(frame.find('iframe').attributes('src')).toBe('https://staging.example.com:8443/app')
     expect(wrapper.text()).toContain('外部 URL 直连预览')
-    expect(wrapper.find('[data-testid="direct-preview-inspect"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="app-preview-direct-open"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
