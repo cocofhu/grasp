@@ -34,7 +34,6 @@ const { t } = useI18n()
 const activeKey = ref<string | null>(null)
 const activePort = ref<number | null>(null)
 const vncWsUrl = ref('')
-const apiIframeUrl = ref('')
 const ticketBusy = ref(false)
 const ticketError = ref('')
 const linkInactive = ref(false)
@@ -98,7 +97,6 @@ async function exchangeTicket() {
   const gen = ++ticketGen
   ticketAbort = new AbortController()
   vncWsUrl.value = ''
-  apiIframeUrl.value = ''
   ticketError.value = ''
   linkInactive.value = false
 
@@ -118,8 +116,7 @@ async function exchangeTicket() {
 
   ticketBusy.value = true
   try {
-    const purpose = 'vnc'
-    const res = await publicGateApi.previewTicket(props.token, port, purpose, ticketAbort.signal)
+    const res = await publicGateApi.previewTicket(props.token, port, 'vnc', ticketAbort.signal)
     if (gen !== ticketGen) return
     if (res.status && res.status !== 'active') {
       linkInactive.value = true
@@ -130,12 +127,7 @@ async function exchangeTicket() {
       ticketError.value = t('pages.publicGate.appPreviewUnavailable')
       return
     }
-    if (purpose === 'api') {
-      apiIframeUrl.value =
-        (res.iframePath || `/public/gate-approvals/preview-api/${res.ticket}/`).trim()
-    } else {
-      vncWsUrl.value = publicPreviewVncWsUrl(res.ticket, res.wsPath)
-    }
+    vncWsUrl.value = publicPreviewVncWsUrl(res.ticket, res.wsPath)
   } catch (e: any) {
     if (gen !== ticketGen || isAbortError(e) || ticketAbort.signal.aborted) return
     const status = e?.body?.status || e?.status
@@ -260,7 +252,7 @@ function retry() {
           <p>{{ t('pages.publicGate.appPreviewLinkInactive') }}</p>
         </div>
         <div
-          v-else-if="ticketError && !vncWsUrl && !apiIframeUrl && !activeIsDirect"
+          v-else-if="ticketError && !vncWsUrl && !activeIsDirect"
           class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-base/90 px-6 text-center text-sm text-txt3"
           data-testid="public-gate-app-preview-error"
         >
