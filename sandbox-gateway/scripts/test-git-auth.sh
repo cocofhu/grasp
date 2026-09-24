@@ -20,6 +20,8 @@ touch "$GIT_CONFIG_GLOBAL"
 export PATH="$HOME/bin:$PATH"
 
 # Fake gh/glab: record argv + stdin token; succeed unless FAIL_*=1.
+# gh 2.96 refuses to store credentials while a token env var is non-empty, so the
+# mock does too. Success therefore requires gh_auth_login to clear them in the child.
 cat >"$HOME/bin/gh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -27,6 +29,21 @@ set -euo pipefail
 mkdir -p "$HOME"
 printf 'argv:%s\n' "$*" >"$HOME/gh.last"
 cat >"$HOME/gh.token"
+: >"$HOME/gh.env"
+blocked=""
+for v in GITHUB_TOKEN GH_TOKEN GITHUB_ENTERPRISE_TOKEN GH_ENTERPRISE_TOKEN; do
+  if [ -n "${!v:-}" ]; then
+    printf '%s=set\n' "$v" >>"$HOME/gh.env"
+    blocked=1
+  else
+    printf '%s=cleared\n' "$v" >>"$HOME/gh.env"
+  fi
+done
+if [ -n "$blocked" ]; then
+  echo "The value of the GITHUB_TOKEN environment variable is being used for authentication." >&2
+  echo "To have GitHub CLI store credentials instead, first clear the value from the environment." >&2
+  exit 1
+fi
 if [ "${FAIL_GH:-0}" = "1" ]; then
   echo "mock gh: forced failure" >&2
   exit 1
@@ -56,7 +73,20 @@ mkdir -p "$TMP/root"
 # shellcheck disable=SC1091
 source "$TMP/git-auth.sh"
 
-# gh 成功路径必须带明文持久化；glab 必须写配置文件且不得走密钥环。
+# gh 成功路径必须带明文持久化，且子进程不得继承 token 环境变量
+#（gh 2.96 在 GITHUB_TOKEN/GH_TOKEN 仍导出时拒绝写入 hosts.yml）。
+# glab 必须写配置文件且不得走密钥环。
+assert_gh_plaintext_login() {
+  local host="$1"
+  grep -q "argv:auth login --hostname ${host} --with-token --insecure-storage" "$HOME/gh.last" \
+    || { echo "FAIL: gh auth login for ${host} must use --with-token --insecure-storage" >&2; exit 1; }
+  local v
+  for v in GITHUB_TOKEN GH_TOKEN GITHUB_ENTERPRISE_TOKEN GH_ENTERPRISE_TOKEN; do
+    grep -qx "${v}=cleared" "$HOME/gh.env" \
+      || { echo "FAIL: gh child still inherits ${v}; gh 2.96 will not write hosts.yml" >&2; exit 1; }
+  done
+}
+
 assert_glab_file_store() {
   local host="$1"
   local token="$2"
@@ -68,24 +98,31 @@ assert_glab_file_store() {
   fi
 }
 
+# Export the way the sandbox does. gh 2.96 will not write hosts.yml while any of
+# these is non-empty in the gh process; gh_auth_login must clear them and keep
+# the token on stdin only.
+export GITHUB_TOKEN GH_TOKEN GITHUB_ENTERPRISE_TOKEN GH_ENTERPRISE_TOKEN
 GITHUB_TOKEN="ghp_test_token"
+GH_TOKEN="gh_env_should_not_leak"
+GITHUB_ENTERPRISE_TOKEN="ghe_env_should_not_leak"
+GH_ENTERPRISE_TOKEN="ghee_env_should_not_leak"
 GITLAB_TOKEN=""
 GITHUB_URL=""
 GITLAB_URL=""
-rm -f "$TMP/root/.git-credentials" "$HOME/gh.last" "$HOME/gh.token"
+rm -f "$TMP/root/.git-credentials" "$HOME/gh.last" "$HOME/gh.token" "$HOME/gh.env"
 
 setup_https_credentials "https://github.com/cocofhu/approving.git"
 grep -q 'x-access-token:ghp_test_token@github.com' "$TMP/root/.git-credentials"
-grep -q 'argv:auth login --hostname github.com --with-token --insecure-storage' "$HOME/gh.last"
+assert_gh_plaintext_login github.com
 grep -qx 'ghp_test_token' "$HOME/gh.token"
-echo "OK: github.com HTTPS + gh auth login"
+echo "OK: github.com HTTPS + gh auth login (token env cleared in gh child)"
 
 rm -f "$HOME/gh.last" "$HOME/gh.token" "$TMP/root/.git-credentials"
 GITHUB_TOKEN="ghe_token"
 GITHUB_URL="https://ghe.example.com"
 setup_https_credentials "https://ghe.example.com/org/repo.git"
 grep -q 'x-access-token:ghe_token@ghe.example.com' "$TMP/root/.git-credentials"
-grep -q 'argv:auth login --hostname ghe.example.com --with-token --insecure-storage' "$HOME/gh.last"
+assert_gh_plaintext_login ghe.example.com
 echo "OK: GITHUB_URL self-hosted + gh auth login"
 
 rm -f "$HOME/gh.last" "$HOME/gh.token" "$TMP/root/.git-credentials"
@@ -93,7 +130,7 @@ GITHUB_TOKEN="bare_token"
 GITHUB_URL=""
 setup_bare_github_credentials
 grep -q 'x-access-token:bare_token@github.com' "$TMP/root/.git-credentials"
-grep -q 'argv:auth login --hostname github.com --with-token --insecure-storage' "$HOME/gh.last"
+assert_gh_plaintext_login github.com
 echo "OK: bare GITHUB_TOKEN defaults to github.com"
 
 rm -f "$HOME/glab.last" "$TMP/root/.git-credentials"
@@ -115,7 +152,7 @@ gh_fail_out="$TMP/gh-fail.out"
 gh_fail_err="$TMP/gh-fail.err"
 setup_https_credentials "https://github.com/cocofhu/approving.git" >"$gh_fail_out" 2>"$gh_fail_err"
 grep -q 'x-access-token:still_ok@github.com' "$TMP/root/.git-credentials"
-grep -q 'argv:auth login --hostname github.com --with-token --insecure-storage' "$HOME/gh.last"
+assert_gh_plaintext_login github.com
 grep -q 'gh: 自动登录失败' "$gh_fail_err"
 if grep -q 'still_ok' "$gh_fail_out" "$gh_fail_err"; then
   echo "FAIL: gh failure path must not print the token" >&2
@@ -164,7 +201,7 @@ configure_git_credentials
 grep -q 'oauth2:gl_dual@gitlab.com' "$TMP/root/.git-credentials"
 grep -q 'x-access-token:gh_dual@github.com' "$TMP/root/.git-credentials"
 assert_glab_file_store gitlab.com gl_dual
-grep -q 'argv:auth login --hostname github.com --with-token --insecure-storage' "$HOME/gh.last"
+assert_gh_plaintext_login github.com
 echo "OK: dual tokens + GitLab clone configures both platforms"
 
 # Dual tokens: cloning GitHub still configures GitLab.
@@ -179,7 +216,7 @@ _GIT_CRED_RESET=0
 configure_git_credentials
 grep -q 'x-access-token:gh_dual@github.com' "$TMP/root/.git-credentials"
 grep -q 'oauth2:gl_dual@gitlab.com' "$TMP/root/.git-credentials"
-grep -q 'argv:auth login --hostname github.com --with-token --insecure-storage' "$HOME/gh.last"
+assert_gh_plaintext_login github.com
 assert_glab_file_store gitlab.com gl_dual
 echo "OK: dual tokens + GitHub clone configures both platforms"
 
@@ -229,7 +266,7 @@ GIT_CLONE_URL=""
 _GIT_CRED_RESET=0
 configure_git_credentials
 grep -q 'x-access-token:gh_only@github.com' "$TMP/root/.git-credentials"
-grep -q 'argv:auth login --hostname github.com --with-token --insecure-storage' "$HOME/gh.last"
+assert_gh_plaintext_login github.com
 if [ -f "$HOME/glab.last" ]; then
   echo "FAIL: GitHub-only should not invoke glab" >&2
   exit 1
