@@ -35,7 +35,7 @@ import {
   type GatePrimaryProductRef,
 } from '@/lib/inbox/gateUpstream'
 import type { ClarifyImage, Gate, GateShareInboxStatus, Run, ReactAnnotation } from '@/lib/shared/types'
-import { previewPickLabel } from '@/lib/shared/previewPickUrl'
+import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { REVERT_ACTION_IDS, POSITIVE_ACTION_IDS } from '@/components/run/gateApproval/gateApprovalActions'
 import { gateApprovalKey } from '@/components/run/gateApproval/gateApprovalContext'
 import { type PlanDoc } from '@/components/run/PlanView.vue'
@@ -362,22 +362,10 @@ async function onWriteCommentArtifact() {
 }
 
 /** VNC/app_preview pick payload uses outerHTML (no imageDataUrl); url is page href at pick. */
-function onAppPreviewPick(payload: {
-  selector: string
-  tagName: string
-  outerHTML: string
-  url?: string
-}) {
+function onAppPreviewPick(payload: AppPreviewPickPayload) {
   pickedSelector.value = payload.selector
   pickedElementImage.value = null
-  if (canReactRevise.value) {
-    const url = (payload.url || '').trim()
-    pushReactAnnotation({
-      selector: payload.selector,
-      url: url || undefined,
-      label: previewPickLabel(url, payload.selector, payload.tagName),
-    })
-  }
+  if (canReactRevise.value) pushReactAnnotation(previewPickAnnotation(payload))
 }
 
 function clearHtmlPreviewPick() {

@@ -443,6 +443,8 @@ type ReactMessage struct {
 // Quote (paragraph excerpt from a text selection) may be set; Note carries the
 // human's instruction for that spot. Truncated marks soft-capped quotes.
 // URL is the page location.href at DOM pick time (SPA navigations).
+// TagName / Text / OuterHTML describe a picked DOM element so the agent can
+// tell repeated components apart; they are clipped when rendered.
 type ReactAnnotation struct {
 	JSONPath  string `json:"jsonPath,omitempty"`
 	Selector  string `json:"selector,omitempty"`
@@ -451,6 +453,40 @@ type ReactAnnotation struct {
 	Note      string `json:"note,omitempty"`
 	Quote     string `json:"quote,omitempty"`
 	Truncated bool   `json:"truncated,omitempty"`
+	TagName   string `json:"tagName,omitempty"`
+	Text      string `json:"text,omitempty"`
+	OuterHTML string `json:"outerHTML,omitempty"`
+}
+
+// Match web PICK_TEXT_MAX / PICK_HTML_MAX; clients are not trusted to clip.
+const (
+	annotationTextMaxRunes = 120
+	annotationHTMLMaxRunes = 1024
+)
+
+func clipRunes(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max]) + "…"
+}
+
+func writePickContext(b *strings.Builder, a ReactAnnotation) {
+	tag := strings.TrimSpace(a.TagName)
+	text := clipRunes(strings.Join(strings.Fields(a.Text), " "), annotationTextMaxRunes)
+	switch {
+	case tag != "" && text != "":
+		fmt.Fprintf(b, "   标签: %s · 可见文本: 「%s」\n", tag, text)
+	case tag != "":
+		fmt.Fprintf(b, "   标签: %s\n", tag)
+	case text != "":
+		fmt.Fprintf(b, "   可见文本: 「%s」\n", text)
+	}
+	if html := strings.TrimSpace(a.OuterHTML); html != "" {
+		html = clipRunes(strings.Join(strings.Fields(html), " "), annotationHTMLMaxRunes)
+		fmt.Fprintf(b, "   HTML: %s\n", html)
+	}
 }
 
 // RenderAnnotations renders review annotations into a structured prompt block
@@ -495,8 +531,11 @@ func RenderAnnotations(anns []ReactAnnotation) string {
 				b.WriteString(" (已截断)")
 			}
 			fmt.Fprintf(&b, " → %s\n", note)
-			if kind == "页面元素" && pageURL != "" {
-				fmt.Fprintf(&b, "   页面 URL: %s\n", pageURL)
+			if kind == "页面元素" {
+				if pageURL != "" {
+					fmt.Fprintf(&b, "   页面 URL: %s\n", pageURL)
+				}
+				writePickContext(&b, a)
 			}
 			continue
 		}
@@ -505,8 +544,11 @@ func RenderAnnotations(anns []ReactAnnotation) string {
 			continue
 		}
 		fmt.Fprintf(&b, "%d. [%s] `%s`%s → %s\n", i+1, kind, ref, label, note)
-		if kind == "页面元素" && pageURL != "" {
-			fmt.Fprintf(&b, "   页面 URL: %s\n", pageURL)
+		if kind == "页面元素" {
+			if pageURL != "" {
+				fmt.Fprintf(&b, "   页面 URL: %s\n", pageURL)
+			}
+			writePickContext(&b, a)
 		}
 	}
 	return b.String()

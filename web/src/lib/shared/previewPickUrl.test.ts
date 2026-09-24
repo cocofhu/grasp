@@ -1,6 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { previewPickLabel, previewPickPath } from './previewPickUrl'
+import {
+  PICK_HTML_MAX,
+  PICK_TEXT_MAX,
+  previewPickAnnotation,
+  previewPickLabel,
+  previewPickPath,
+} from './previewPickUrl'
 
 describe('previewPickPath', () => {
   it('extracts pathname+search+hash', () => {
@@ -30,5 +36,42 @@ describe('previewPickLabel', () => {
 
   it('falls back to selector when url missing', () => {
     expect(previewPickLabel('', '#hero', 'div')).toBe('#hero')
+  })
+})
+
+describe('previewPickAnnotation', () => {
+  it('carries the element context the agent needs', () => {
+    expect(
+      previewPickAnnotation({
+        selector: 'main > h2',
+        tagName: 'H2',
+        text: ' Choose \n your plan ',
+        outerHTML: '<h2>Choose your plan</h2>',
+        url: ' http://10.0.0.5:5173/pricing ',
+      }),
+    ).toEqual({
+      selector: 'main > h2',
+      url: 'http://10.0.0.5:5173/pricing',
+      label: '/pricing · main > h2',
+      tagName: 'h2',
+      text: 'Choose your plan',
+      outerHTML: '<h2>Choose your plan</h2>',
+    })
+  })
+
+  it('omits empty fields and clips long ones', () => {
+    const ann = previewPickAnnotation({
+      selector: '#big',
+      tagName: 'div',
+      text: 'x'.repeat(PICK_TEXT_MAX + 5),
+      outerHTML: 'y'.repeat(PICK_HTML_MAX + 5),
+    })
+    expect(ann.url).toBeUndefined()
+    expect(ann.text).toBe('x'.repeat(PICK_TEXT_MAX) + '…')
+    expect(ann.outerHTML).toBe('y'.repeat(PICK_HTML_MAX) + '…')
+    expect(previewPickAnnotation({ selector: '#a', tagName: '', outerHTML: '' })).toEqual({
+      selector: '#a',
+      label: '#a',
+    })
   })
 })
