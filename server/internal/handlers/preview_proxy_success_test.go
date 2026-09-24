@@ -39,6 +39,7 @@ func TestPreviewProxySuccess(t *testing.T) {
 
 	w := &closeNotifyRecorder{ResponseRecorder: httptest.NewRecorder(), notify: make(chan bool)}
 	req := httptest.NewRequest(http.MethodGet, "/preview/run-px/n1/9090/", nil)
+	req.Host = "pv.example.com"
 	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: hn.cookie})
 	hn.r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -51,10 +52,12 @@ func TestPreviewProxySuccess(t *testing.T) {
 
 func TestPreviewProxyRewritesOtherProjectLoginCookies(t *testing.T) {
 	hn := newHarness(t)
+	var upstreamCookie string
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/login" {
 			t.Errorf("upstream path = %q, want /login", r.URL.Path)
 		}
+		upstreamCookie = r.Header.Get("Cookie")
 		http.SetCookie(w, &http.Cookie{
 			Name: "shop_session", Value: "abc", Path: "/", Domain: "preview.invalid", HttpOnly: true,
 		})
@@ -76,7 +79,9 @@ func TestPreviewProxyRewritesOtherProjectLoginCookies(t *testing.T) {
 
 	w := &closeNotifyRecorder{ResponseRecorder: httptest.NewRecorder(), notify: make(chan bool)}
 	req := httptest.NewRequest(http.MethodPost, "/preview/run-px/n1/9090/login", nil)
+	req.Host = "pv.example.com"
 	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: hn.cookie})
+	req.AddCookie(&http.Cookie{Name: "pv.shop_session", Value: "kept"})
 	hn.r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("proxy: %d %s", w.Code, w.Body.String())
@@ -94,11 +99,32 @@ func TestPreviewProxyRewritesOtherProjectLoginCookies(t *testing.T) {
 			t.Fatalf("cookie path not scoped to this preview: %q", v)
 		}
 	}
-	if !strings.Contains(vals[0], "shop_session=") || !strings.Contains(vals[1], "remember_me=") {
-		t.Fatalf("expected both login cookies preserved by name, got %v", vals)
+	if !strings.Contains(vals[0], "pv.shop_session=") || !strings.Contains(vals[1], "pv.remember_me=") {
+		t.Fatalf("expected both login cookies under the same prefix, got %v", vals)
+	}
+	if strings.Contains(upstreamCookie, auth.CookieName) {
+		t.Fatalf("upstream must not see platform session, cookie=%q", upstreamCookie)
+	}
+	if !strings.Contains(upstreamCookie, "shop_session=kept") {
+		t.Fatalf("upstream must receive the app session with the prefix removed, cookie=%q", upstreamCookie)
 	}
 	if strings.Contains(w.Body.String(), "Path=/") && !strings.Contains(w.Body.String(), "/preview/") {
 		t.Fatalf("html should be re-anchored: %s", w.Body.String())
+	}
+}
+
+func TestPreviewProxyRedirectsApprovalHost(t *testing.T) {
+	hn := newHarness(t)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/preview/run-px/n1/9090/home", nil)
+	req.Host = "app.example.com"
+	hn.r.ServeHTTP(w, req)
+	if w.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("want 307 got %d %s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if loc != "http://pv.app.example.com/preview/run-px/n1/9090/home" {
+		t.Fatalf("location = %q", loc)
 	}
 }
 
@@ -110,6 +136,7 @@ func TestPreviewProxyNotRegistered(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/preview/run-x/n/9090/", nil)
+	req.Host = "pv.example.com"
 	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: hn.cookie})
 	hn.r.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {

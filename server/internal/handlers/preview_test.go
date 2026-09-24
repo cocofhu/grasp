@@ -116,9 +116,9 @@ func TestPreviewModifyResponse_RewritesEverySetCookie(t *testing.T) {
 		t.Fatalf("Domain must be stripped from every cookie: %v", vals)
 	}
 	want := []string{
-		"shop_session=abc; Path=/preview/run-1/node_a/9090/; HttpOnly; SameSite=Lax",
-		"remember_me=yes; Path=/preview/run-1/node_a/9090/account; Secure",
-		"bare=1; Path=/preview/run-1/node_a/9090/",
+		"pv.shop_session=abc; Path=/preview/run-1/node_a/9090/; HttpOnly; SameSite=Lax",
+		"pv.remember_me=yes; Path=/preview/run-1/node_a/9090/account; Secure",
+		"pv.bare=1; Path=/preview/run-1/node_a/9090/",
 	}
 	for i, w := range want {
 		if vals[i] != w {
@@ -151,6 +151,22 @@ func TestPreviewModifyResponse_SkipsNonHTMLAndUpgrade(t *testing.T) {
 	up.Header.Set("Content-Type", "text/html")
 	if err := previewModifyResponse(prefix)(up); err != nil {
 		t.Fatalf("modify upgrade: %v", err)
+	}
+}
+
+func TestPreviewSessionLimitsMentionHostCookiesAndRootFetch(t *testing.T) {
+	if !strings.Contains(previewSessionLimits, "__Host-") {
+		t.Fatal("limits must name __Host- cookies")
+	}
+	if !strings.Contains(previewSessionLimits, "fetch('/login')") {
+		t.Fatal("limits must name root-absolute script requests")
+	}
+	raw := rewritePreviewSetCookie("__Host-sid=abc; Path=/", "/preview/run-1/node_a/9090/", false)
+	if !strings.HasPrefix(raw, previewCookiePrefix+"__Host-sid=") {
+		t.Fatalf("host cookie must take the same name prefix, got %q", raw)
+	}
+	if !strings.Contains(raw, "Path=/preview/run-1/node_a/9090/") {
+		t.Fatalf("host cookie must take the same path scope, got %q", raw)
 	}
 }
 

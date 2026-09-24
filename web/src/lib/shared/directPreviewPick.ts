@@ -1,3 +1,5 @@
+import { toPreviewDocumentURL } from './previewDocumentOrigin'
+
 /** postMessage types for IP-direct preview cooperative pick.js. */
 
 export const DIRECT_PREVIEW_READY = 'direct-preview-ready'
@@ -67,53 +69,63 @@ function previewPrefix(embedUrl: string): string {
   return path.endsWith('/') ? path : `${path}/`
 }
 
-function pageOrigin(): string {
-  try {
-    return globalThis.location?.origin || ''
-  } catch {
-    return ''
-  }
+function embedDocument(embedUrl: string): { origin: string; prefix: string } | null {
+  const raw = (embedUrl || '').trim()
+  if (!raw) return null
+  const abs = isSameOriginPreviewPath(raw) ? toPreviewDocumentURL(raw) : raw
+  const origin = iframeOrigin(abs)
+  const prefix = previewPrefix(abs)
+  if (!origin || !prefix) return null
+  return { origin, prefix }
 }
 
 /** targetOrigin for postMessage into the preview iframe. */
 export function previewFrameMessageOrigin(embedUrl: string, directUrl: string): string {
-  if (isSameOriginPreviewPath(embedUrl)) return pageOrigin()
-  return iframeOrigin((embedUrl || '').trim() || directUrl)
-}
-
-/** Accept pick/ready messages from the embedded document's origin. */
-export function acceptsPreviewFrameMessage(embedUrl: string, directUrl: string, origin: string): boolean {
-  if (!origin) return false
-  if (isSameOriginPreviewPath(embedUrl)) {
-    const page = pageOrigin()
-    if (page && origin === page) return true
-  }
-  return isDirectPreviewOrigin(directUrl || embedUrl, origin)
-}
-
-function joinPreviewPath(prefix: string, pathname: string, search = '', hash = ''): string {
-  const base = previewPrefix(prefix)
-  if (!base) return ''
-  const path = pathname === '/' ? '' : pathname.replace(/^\//, '')
-  return `${base}${path}${search}${hash}`
+  const doc = embedDocument(embedUrl)
+  if (doc) return doc.origin
+  return iframeOrigin(directUrl)
 }
 
 /**
- * Address-bar navigation while the window is on the same-origin preview prefix.
- * App-origin URLs are mapped onto that prefix so the iframe never leaves it.
+ * Accept pick/ready messages only from the embedded document's origin.
+ * An embed never falls back to the approval page origin or the direct app origin.
+ */
+export function acceptsPreviewFrameMessage(embedUrl: string, directUrl: string, origin: string): boolean {
+  if (!origin) return false
+  const want = previewFrameMessageOrigin(embedUrl, directUrl)
+  return !!want && origin === want
+}
+
+/** Only the current iframe may drive the address bar and pick state. */
+export function isCurrentPreviewFrameSource(
+  source: MessageEventSource | null,
+  frame: Window | null | undefined,
+): boolean {
+  return !!frame && source === frame
+}
+
+function absolutePreviewURL(origin: string, prefix: string, pathname: string, search = '', hash = ''): string {
+  const path = pathname === '/' ? '' : pathname.replace(/^\//, '')
+  return `${origin}${prefix}${path}${search}${hash}`
+}
+
+/**
+ * Address-bar navigation while the window is on the preview document host.
+ * App-origin URLs are mapped onto that host so the iframe never returns to the
+ * approval origin or the raw app origin.
  */
 export function resolvePreviewFrameGoto(embedUrl: string, directUrl: string, input: string): string | null {
   const embed = (embedUrl || '').trim()
-  if (!isSameOriginPreviewPath(embed)) {
+  const doc = embedDocument(embed)
+  if (!doc) {
     return resolveDirectPreviewGoto(directUrl || embed, input)
   }
-  const prefix = previewPrefix(embed)
-  if (!prefix) return null
+  const { origin, prefix } = doc
   const raw = (input || '').trim()
   if (!raw) return null
   if (raw.startsWith('/') && !raw.startsWith('//')) {
-    if (raw === prefix.slice(0, -1) || raw.startsWith(prefix)) return raw
-    return joinPreviewPath(prefix, raw)
+    if (raw === prefix.slice(0, -1) || raw.startsWith(prefix)) return `${origin}${raw.startsWith('/') ? raw : `/${raw}`}`
+    return absolutePreviewURL(origin, prefix, raw)
   }
   let next: URL
   try {
@@ -124,14 +136,14 @@ export function resolvePreviewFrameGoto(embedUrl: string, directUrl: string, inp
   if (next.protocol !== 'http:' && next.protocol !== 'https:') return null
   const appOrigin = iframeOrigin(directUrl)
   if (appOrigin && next.origin === appOrigin) {
-    return joinPreviewPath(prefix, next.pathname, next.search, next.hash)
+    return absolutePreviewURL(origin, prefix, next.pathname, next.search, next.hash)
   }
-  const page = pageOrigin()
-  if (page && next.origin === page) {
+  if (next.origin === origin) {
     const path = `${next.pathname}${next.search}${next.hash}`
     if (path === prefix.slice(0, -1) || next.pathname.startsWith(prefix) || path.startsWith(prefix)) {
-      return path
+      return `${origin}${path}`
     }
+    return absolutePreviewURL(origin, prefix, next.pathname, next.search, next.hash)
   }
   return null
 }

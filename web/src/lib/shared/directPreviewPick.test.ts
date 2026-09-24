@@ -4,12 +4,14 @@ import {
   DIRECT_PREVIEW_READY,
   acceptsPreviewFrameMessage,
   iframeOrigin,
+  isCurrentPreviewFrameSource,
   isDirectPreviewOrigin,
   isSameOriginPreviewPath,
   parseDirectPreviewMessage,
   resolveDirectPreviewGoto,
   resolvePreviewFrameGoto,
 } from './directPreviewPick'
+import { toPreviewDocumentURL } from './previewDocumentOrigin'
 
 describe('directPreviewPick', () => {
   it('iframeOrigin parses http URL', () => {
@@ -24,31 +26,41 @@ describe('directPreviewPick', () => {
     expect(isDirectPreviewOrigin(url, 'https://127.0.0.1:18081')).toBe(false)
   })
 
-  it('resolvePreviewFrameGoto stays under the same-origin preview prefix', () => {
-    const embed = '/preview/run-1/node-a/18081/'
+  it('resolvePreviewFrameGoto stays on the preview document host', () => {
+    const page = { protocol: 'http:', hostname: 'app.example.com', port: '' }
+    const embed = toPreviewDocumentURL('/preview/run-1/node-a/18081/', page)
     const direct = 'http://10.0.0.8:18081/'
-    expect(isSameOriginPreviewPath(embed)).toBe(true)
-    expect(isSameOriginPreviewPath('http://10.0.0.8:18081/')).toBe(false)
-    expect(resolvePreviewFrameGoto(embed, direct, '/dash')).toBe('/preview/run-1/node-a/18081/dash')
+    expect(embed).toBe('http://pv.app.example.com/preview/run-1/node-a/18081/')
+    expect(new URL(embed).origin).not.toBe('http://app.example.com')
+    expect(isSameOriginPreviewPath('/preview/run-1/node-a/18081/')).toBe(true)
+    expect(isSameOriginPreviewPath(embed)).toBe(false)
+    expect(resolvePreviewFrameGoto(embed, direct, '/dash')).toBe(
+      'http://pv.app.example.com/preview/run-1/node-a/18081/dash',
+    )
     expect(resolvePreviewFrameGoto(embed, direct, '/preview/run-1/node-a/18081/home')).toBe(
-      '/preview/run-1/node-a/18081/home',
+      'http://pv.app.example.com/preview/run-1/node-a/18081/home',
     )
     expect(resolvePreviewFrameGoto(embed, direct, 'http://10.0.0.8:18081/account?x=1')).toBe(
-      '/preview/run-1/node-a/18081/account?x=1',
+      'http://pv.app.example.com/preview/run-1/node-a/18081/account?x=1',
     )
     expect(resolvePreviewFrameGoto(embed, direct, 'http://evil.example/')).toBeNull()
+    expect(resolvePreviewFrameGoto(embed, direct, 'http://app.example.com/preview/run-1/node-a/18081/home')).toBeNull()
     expect(resolvePreviewFrameGoto('', direct, '/dash')).toBe('http://10.0.0.8:18081/dash')
   })
 
-  it('acceptsPreviewFrameMessage allows the approval origin for a same-origin embed', () => {
-    const embed = '/preview/run-1/node-a/18081/'
+  it('acceptsPreviewFrameMessage only from the preview document origin', () => {
+    const embed = 'http://pv.app.example.com/preview/run-1/node-a/18081/'
     const direct = 'http://10.0.0.8:18081/'
-    const page = globalThis.location?.origin || ''
-    if (page) {
-      expect(acceptsPreviewFrameMessage(embed, direct, page)).toBe(true)
-    }
+    expect(acceptsPreviewFrameMessage(embed, direct, 'http://pv.app.example.com')).toBe(true)
+    expect(acceptsPreviewFrameMessage(embed, direct, 'http://app.example.com')).toBe(false)
+    expect(acceptsPreviewFrameMessage(embed, direct, 'http://10.0.0.8:18081')).toBe(false)
     expect(acceptsPreviewFrameMessage(embed, direct, 'http://evil.example')).toBe(false)
     expect(acceptsPreviewFrameMessage('', direct, 'http://10.0.0.8:18081')).toBe(true)
+    const frame = {} as Window
+    const other = {} as Window
+    expect(isCurrentPreviewFrameSource(frame, frame)).toBe(true)
+    expect(isCurrentPreviewFrameSource(other, frame)).toBe(false)
+    expect(isCurrentPreviewFrameSource(null, frame)).toBe(false)
   })
 
   it('resolveDirectPreviewGoto keeps same origin', () => {

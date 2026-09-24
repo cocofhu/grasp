@@ -161,7 +161,7 @@ describe('AppPreviewPanel', () => {
     wrapper.unmount()
   })
 
-  it('direct mode iframes same-origin /preview and keeps new-tab on the app origin', async () => {
+  it('direct mode iframes the preview host and keeps new-tab on the app origin', async () => {
     apiMocks.nodePreviews.mockResolvedValue({
       ports: [
         {
@@ -177,7 +177,9 @@ describe('AppPreviewPanel', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="novnc-stub"]').exists()).toBe(false)
     const frame = wrapper.get('[data-testid="app-preview-direct-frame"]')
-    expect(frame.attributes('src')).toBe('/preview/run-1/preview-1/18081/')
+    const src = frame.attributes('src') || ''
+    expect(new URL(src).origin).not.toBe(window.location.origin)
+    expect(src).toContain('/preview/run-1/preview-1/18081/')
     expect(wrapper.get('[data-testid="app-preview-direct-open"]').attributes('href')).toBe(
       'http://127.0.0.1:18081/',
     )

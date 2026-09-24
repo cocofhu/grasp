@@ -322,8 +322,9 @@ func New(h *handlers.Handlers) *gin.Engine {
 	sandboxRoutes.Any("/sandbox-bridge/:id/*path", h.SandboxACPProxy)
 	sandboxRoutes.Any("/sandbox-acp/:id/*path", h.SandboxACPProxy)
 
-	// Preview proxy is intentionally outside SandboxRedirectMiddleware: iframe
-	// requests cannot carry cf_session; runId+nodeId+port acts as the credential.
+	// Preview proxy is intentionally outside SandboxRedirectMiddleware. The
+	// document is served on a different host from the approval page. Cookies
+	// without the preview name prefix (including cf_session) are not forwarded.
 	r.Any("/preview/:runId/:nodeId/:port/*path", h.PreviewProxy)
 
 	// Cooperative pick.js for IP-direct iframe preview (public static).
@@ -451,7 +452,7 @@ func publicGateMiddleware() gin.HandlerFunc {
 		// Do not apply DENY / frame-ancestors 'none' on that path.
 		if !strings.Contains(c.Request.URL.Path, "/preview-api/") {
 			c.Header("X-Frame-Options", "DENY")
-			c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+			c.Header("Content-Security-Policy", handlers.PublicGateCSP(c.Request.Host))
 		}
 		c.Writer.Header().Del("Access-Control-Allow-Origin")
 		c.Writer.Header().Del("Access-Control-Allow-Methods")

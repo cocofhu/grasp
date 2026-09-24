@@ -258,6 +258,9 @@ func (h *Handlers) PublicPreviewVNC(c *gin.Context) {
 // Must remain embeddable in same-origin public-page iframes (no DENY / frame-ancestors none).
 func (h *Handlers) PublicPreviewAPIProxy(c *gin.Context) {
 	applyPublicPreviewAPIHeaders(c)
+	if redirectOffApprovalOrigin(c) {
+		return
+	}
 	if h.GateShare == nil || h.GateShareTickets == nil || h.MCP == nil || h.Preview == nil {
 		c.String(http.StatusServiceUnavailable, "preview unavailable")
 		return
@@ -316,7 +319,8 @@ func (h *Handlers) PublicPreviewAPIProxy(c *gin.Context) {
 	prefix := fmt.Sprintf("/public/gate-approvals/preview-api/%s/", ticket)
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.FlushInterval = 100 * time.Millisecond
-	proxy.ModifyResponse = publicPreviewAPIModifyResponse(prefix)
+	publicHost := requestPublicHost(c)
+	proxy.ModifyResponse = publicPreviewAPIModifyResponse(prefix, approvalFrameAncestors(publicHost), shouldPartitionPreviewCookies(c.Request, publicHost))
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		log.Warn().Err(err).Int("port", port).Msg("public preview-api upstream unreachable")
 		w.WriteHeader(http.StatusBadGateway)
@@ -330,11 +334,8 @@ func (h *Handlers) PublicPreviewAPIProxy(c *gin.Context) {
 	c.Request.URL.Path = path
 	c.Request.Header.Set("Accept-Encoding", "identity")
 
-	publicHost := c.Request.Host
-	if fh := c.GetHeader("X-Forwarded-Host"); fh != "" {
-		publicHost = fh
-	}
 	c.Request.Header.Set("X-Forwarded-Host", publicHost)
+	forwardPreviewCookies(c.Request)
 	c.Request.Header.Set("X-Forwarded-Prefix", strings.TrimRight(prefix, "/"))
 	proto := c.GetHeader("X-Forwarded-Proto")
 	if proto == "" {
@@ -442,21 +443,14 @@ func applyPublicPreviewAPIHeaders(c *gin.Context) {
 }
 
 // publicPreviewAPIModifyResponse rewrites HTML under the opaque ticket prefix and
-// strips upstream framing headers that would block same-origin iframe embedding.
-func publicPreviewAPIModifyResponse(prefix string) func(*http.Response) error {
-	inner := previewModifyResponse(prefix)
+// allows the approval origin (not the preview document itself) to frame it.
+func publicPreviewAPIModifyResponse(prefix, frameAncestors string, partition bool) func(*http.Response) error {
+	inner := previewModifyResponseOpts(prefix, frameAncestors, partition)
 	return func(resp *http.Response) error {
 		if err := inner(resp); err != nil {
 			return err
 		}
 		resp.Header.Del("X-Frame-Options")
-		csp := resp.Header.Get("Content-Security-Policy")
-		cleaned := stripCSPDirective(csp, "frame-ancestors")
-		if cleaned == "" {
-			resp.Header.Set("Content-Security-Policy", "frame-ancestors 'self'")
-		} else {
-			resp.Header.Set("Content-Security-Policy", cleaned+"; frame-ancestors 'self'")
-		}
 		return nil
 	}
 }

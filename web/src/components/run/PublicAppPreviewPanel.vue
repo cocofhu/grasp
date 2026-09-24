@@ -9,6 +9,7 @@ import {
   publicPreviewVncWsUrl,
   type PublicPreviewPort,
 } from '@/lib/inbox/gateShareLink'
+import { toPreviewDocumentURL } from '@/lib/shared/previewDocumentOrigin'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
 
@@ -133,7 +134,7 @@ async function exchangeTicket() {
         ticketError.value = t('pages.publicGate.appPreviewUnavailable')
         return
       }
-      embedPath.value = path
+      embedPath.value = toPreviewDocumentURL(path)
       return
     }
     if (!res.ticket) {

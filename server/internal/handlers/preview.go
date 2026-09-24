@@ -62,6 +62,11 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 		c.String(http.StatusBadRequest, "bad port")
 		return
 	}
+	// The preview document must not share the approval origin. Browsers that
+	// open /preview on the approval host are sent to the preview host first.
+	if redirectOffApprovalOrigin(c) {
+		return
+	}
 	if h.MCP == nil || h.Preview == nil {
 		c.String(http.StatusServiceUnavailable, "preview unavailable")
 		return
@@ -115,7 +120,8 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.FlushInterval = 100 * time.Millisecond
-	proxy.ModifyResponse = previewModifyResponse(prefix)
+	publicHost := requestPublicHost(c)
+	proxy.ModifyResponse = previewModifyResponseOpts(prefix, approvalFrameAncestors(publicHost), shouldPartitionPreviewCookies(c.Request, publicHost))
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		log.Warn().Err(err).Str("runId", runID).Str("nodeId", nodeID).Int("port", port).
 			Msg("preview upstream unreachable")
@@ -133,11 +139,9 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 	// bodies (a gzipped body can't be sub_filtered without decoding first).
 	c.Request.Header.Set("Accept-Encoding", "identity")
 
-	publicHost := c.Request.Host
-	if fh := c.GetHeader("X-Forwarded-Host"); fh != "" {
-		publicHost = fh
-	}
 	c.Request.Header.Set("X-Forwarded-Host", publicHost)
+	// Only this preview's cookies go upstream. The platform session has no prefix.
+	forwardPreviewCookies(c.Request)
 	c.Request.Header.Set("X-Forwarded-Prefix", strings.TrimRight(prefix, "/"))
 	proto := c.GetHeader("X-Forwarded-Proto")
 	if proto == "" {
@@ -166,15 +170,25 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 // JS/CSS bodies are intentionally left untouched to avoid corrupting bundles;
 // once the entry HTML points at the right asset URLs, Vite/webpack chunks load
 // relative to their own module URL and resolve correctly.
+//
+// Limits (previewSessionLimits): a cookie whose name still starts with __Host-
+// is dropped by the browser when Path is not /, and this proxy does not grow a
+// second path for that prefix. Root-absolute script calls such as fetch("/login")
+// are not rewritten, so they do not travel through this preview.
 func previewModifyResponse(prefix string) func(*http.Response) error {
+	return previewModifyResponseOpts(prefix, "", false)
+}
+
+func previewModifyResponseOpts(prefix, frameAncestors string, partition bool) func(*http.Response) error {
 	return func(resp *http.Response) error {
 		// Never touch a protocol switch (WebSocket/HMR upgrade).
 		if resp.StatusCode == http.StatusSwitchingProtocols {
 			return nil
 		}
 
-		// Every Set-Cookie, regardless of name: drop Domain and scope Path to this preview.
-		rewritePreviewSetCookies(resp, prefix)
+		// Every Set-Cookie, same rule: prefix the name, drop Domain, scope Path.
+		rewritePreviewSetCookies(resp, prefix, partition)
+		applyPreviewFraming(resp, frameAncestors)
 
 		// Re-anchor redirects to a root-absolute path.
 		if loc := resp.Header.Get("Location"); loc != "" {
@@ -221,10 +235,10 @@ func previewModifyResponse(prefix string) func(*http.Response) error {
 }
 
 // rewritePreviewSetCookies applies one rule to every upstream Set-Cookie:
-// remove Domain (host-only on the approval site) and scope Path under prefix
-// so the session is sent only with this preview, not the rest of the site.
-// Cookie names are not inspected.
-func rewritePreviewSetCookies(resp *http.Response, prefix string) {
+// prefix the name, remove Domain (host-only on the preview host), and scope
+// Path under prefix so the session is sent only with this preview.
+// Cookie names are not inspected; the prefix is the same for every cookie.
+func rewritePreviewSetCookies(resp *http.Response, prefix string, partition bool) {
 	if resp == nil {
 		return
 	}
@@ -234,13 +248,19 @@ func rewritePreviewSetCookies(resp *http.Response, prefix string) {
 	}
 	resp.Header.Del("Set-Cookie")
 	for _, v := range vals {
-		resp.Header.Add("Set-Cookie", rewritePreviewSetCookie(v, prefix))
+		resp.Header.Add("Set-Cookie", rewritePreviewSetCookie(v, prefix, partition))
 	}
 }
 
-func rewritePreviewSetCookie(raw, prefix string) string {
+func rewritePreviewSetCookie(raw, prefix string, partition bool) string {
 	parts := strings.Split(raw, ";")
 	nameVal := strings.TrimSpace(parts[0])
+	if name, value, ok := strings.Cut(nameVal, "="); ok {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			nameVal = previewCookiePrefix + name + "=" + value
+		}
+	}
 	attrs := make([]string, 0, len(parts))
 	pathSeen := false
 	for _, p := range parts[1:] {
@@ -249,10 +269,14 @@ func rewritePreviewSetCookie(raw, prefix string) string {
 			continue
 		}
 		key, _, _ := strings.Cut(p, "=")
-		if strings.EqualFold(strings.TrimSpace(key), "domain") {
+		key = strings.TrimSpace(key)
+		if strings.EqualFold(key, "domain") {
 			continue
 		}
-		if strings.EqualFold(strings.TrimSpace(key), "path") {
+		if partition && (strings.EqualFold(key, "samesite") || strings.EqualFold(key, "secure") || strings.EqualFold(key, "partitioned")) {
+			continue
+		}
+		if strings.EqualFold(key, "path") {
 			pathSeen = true
 			_, val, _ := strings.Cut(p, "=")
 			attrs = append(attrs, "Path="+scopePreviewCookiePath(strings.Trim(strings.TrimSpace(val), `"`), prefix))
@@ -263,10 +287,31 @@ func rewritePreviewSetCookie(raw, prefix string) string {
 	if !pathSeen {
 		attrs = append(attrs, "Path="+scopePreviewCookiePath("/", prefix))
 	}
+	if partition {
+		attrs = append(attrs, "SameSite=None", "Secure", "Partitioned")
+	}
 	if len(attrs) == 0 {
 		return nameVal
 	}
 	return nameVal + "; " + strings.Join(attrs, "; ")
+}
+
+func applyPreviewFraming(resp *http.Response, ancestors string) {
+	if resp == nil {
+		return
+	}
+	resp.Header.Del("X-Frame-Options")
+	ancestors = strings.TrimSpace(ancestors)
+	if ancestors == "" {
+		return
+	}
+	csp := stripCSPDirective(resp.Header.Get("Content-Security-Policy"), "frame-ancestors")
+	directive := "frame-ancestors " + ancestors
+	if csp == "" {
+		resp.Header.Set("Content-Security-Policy", directive)
+	} else {
+		resp.Header.Set("Content-Security-Policy", csp+"; "+directive)
+	}
 }
 
 func scopePreviewCookiePath(orig, prefix string) string {

@@ -8,6 +8,8 @@ import DirectPreviewFrame from './DirectPreviewFrame.vue'
 
 const DIRECT = 'http://127.0.0.1:18081/'
 
+let frameSource: Window | null = null
+
 function mountFrame(opts: { answerPing?: boolean } = {}) {
   const i18n = createI18n({
     legacy: false,
@@ -29,11 +31,16 @@ function mountFrame(opts: { answerPing?: boolean } = {}) {
   })
   const iframe = wrapper.get('[data-testid="app-preview-direct-frame"]').element as HTMLIFrameElement
   Object.defineProperty(iframe, 'contentWindow', { value: fakeWin, configurable: true })
+  frameSource = fakeWin as unknown as Window
   return { wrapper, posted, fakeWin }
 }
 
-function dispatchFromPreview(data: unknown, origin = 'http://127.0.0.1:18081') {
-  window.dispatchEvent(new MessageEvent('message', { data, origin }))
+function dispatchFromPreview(
+  data: unknown,
+  origin = 'http://127.0.0.1:18081',
+  source: MessageEventSource | null = frameSource,
+) {
+  window.dispatchEvent(new MessageEvent('message', { data, origin, source }))
 }
 
 describe('DirectPreviewFrame', () => {
@@ -68,7 +75,7 @@ describe('DirectPreviewFrame', () => {
     wrapper.unmount()
   })
 
-  it('same-origin embed keeps the iframe on /preview and the new tab on the app origin', async () => {
+  it('preview embed uses a different host and keeps the new tab on the app origin', async () => {
     const i18n = createI18n({
       legacy: false,
       locale: 'zh-CN',
@@ -82,16 +89,17 @@ describe('DirectPreviewFrame', () => {
       },
       global: { plugins: [i18n] },
     })
-    expect(wrapper.get('[data-testid="app-preview-direct-frame"]').attributes('src')).toBe(
-      '/preview/run-1/preview-1/18081/',
-    )
+    const src = wrapper.get('[data-testid="app-preview-direct-frame"]').attributes('src') || ''
+    expect(new URL(src).origin).not.toBe(window.location.origin)
+    expect(new URL(src).hostname.startsWith('pv.')).toBe(true)
+    expect(src).toContain('/preview/run-1/preview-1/18081/')
     expect(wrapper.get('[data-testid="app-preview-direct-open"]').attributes('href')).toBe(DIRECT)
     await wrapper.get('[data-testid="direct-preview-address"]').setValue('http://127.0.0.1:18081/home')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    expect(wrapper.get('[data-testid="app-preview-direct-frame"]').attributes('src')).toBe(
-      '/preview/run-1/preview-1/18081/home',
-    )
+    const next = wrapper.get('[data-testid="app-preview-direct-frame"]').attributes('src') || ''
+    expect(new URL(next).origin).toBe(new URL(src).origin)
+    expect(next).toContain('/preview/run-1/preview-1/18081/home')
     wrapper.unmount()
   })
 
@@ -172,6 +180,18 @@ describe('DirectPreviewFrame', () => {
     vi.advanceTimersByTime(3000)
     await flushPromises()
     expect(wrapper.get('[data-testid="direct-preview-tip"]').text()).toMatch(/未加载取点脚本/)
+    wrapper.unmount()
+  })
+
+  it('ignores pick messages from another frame even on the same origin', async () => {
+    const { wrapper } = mountFrame()
+    dispatchFromPreview(
+      { type: 'direct-preview-picked', selector: 'button', tagName: 'button', outerHTML: '<button>' },
+      'http://127.0.0.1:18081',
+      {} as MessageEventSource,
+    )
+    await flushPromises()
+    expect(wrapper.find('[data-testid="direct-preview-pick-result"]').exists()).toBe(false)
     wrapper.unmount()
   })
 

@@ -3,6 +3,7 @@ import { computed, ref, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, type PreviewPort } from '@/lib/api/api'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
+import { toPreviewDocumentURL } from '@/lib/shared/previewDocumentOrigin'
 import { isUrlPreview, previewTabKey, previewTabLabel } from '@/lib/shared/previewTabKey'
 import NovncPreviewPanel from './NovncPreviewPanel.vue'
 import DirectPreviewFrame from './DirectPreviewFrame.vue'
@@ -43,11 +44,11 @@ function isDirectPort(p: PreviewPort): boolean {
   return p.mode === 'direct' && !!(p.directUrl || '').trim()
 }
 
-/** Window iframe stays on the approval origin so session cookies are first-party. */
+/** Window iframe uses the preview host so the app is not same-origin with the approval page. */
 function previewEmbedUrl(p: PreviewPort): string {
   const proxy = (p.proxyUrl || '').trim()
-  if (proxy) return proxy
-  return `/preview/${props.runId}/${props.nodeId}/${p.port}/`
+  const path = proxy || `/preview/${props.runId}/${props.nodeId}/${p.port}/`
+  return toPreviewDocumentURL(path)
 }
 
 function isVncPort(p: PreviewPort): boolean {

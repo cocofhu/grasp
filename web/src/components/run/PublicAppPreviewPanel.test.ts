@@ -5,6 +5,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
+import { toPreviewDocumentURL } from '@/lib/shared/previewDocumentOrigin'
 import PublicAppPreviewPanel from './PublicAppPreviewPanel.vue'
 
 const shareMocks = vi.hoisted(() => ({
@@ -85,7 +86,7 @@ describe('PublicAppPreviewPanel', () => {
     w.unmount()
   })
 
-  it('direct port window uses the same-origin ticket path', async () => {
+  it('direct port window uses the preview-host ticket path', async () => {
     const i18n = createI18n({
       legacy: false,
       locale: 'zh-CN',
@@ -119,7 +120,10 @@ describe('PublicAppPreviewPanel', () => {
       expect.any(AbortSignal),
     )
     const stub = w.get('[data-testid="public-gate-app-preview-api"]')
-    expect(stub.attributes('data-embed')).toBe('/public/gate-approvals/preview-api/tix/')
+    expect(stub.attributes('data-embed')).toBe(
+      toPreviewDocumentURL('/public/gate-approvals/preview-api/tix/'),
+    )
+    expect(new URL(stub.attributes('data-embed') || '').origin).not.toBe(window.location.origin)
     expect(stub.attributes('data-direct')).toBe('http://10.0.0.8:18081/')
     w.unmount()
   })

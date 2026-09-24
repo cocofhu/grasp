@@ -2,11 +2,13 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
+import { toPreviewDocumentURL } from '@/lib/shared/previewDocumentOrigin'
 import {
   DIRECT_PREVIEW_INSPECT,
   DIRECT_PREVIEW_NAV,
   DIRECT_PREVIEW_PING,
   acceptsPreviewFrameMessage,
+  isCurrentPreviewFrameSource,
   parseDirectPreviewMessage,
   previewFrameMessageOrigin,
   resolvePreviewFrameGoto,
@@ -20,7 +22,7 @@ const props = withDefaults(
   defineProps<{
     /** App origin (http://IP:port/). New tab keeps this so top-level login still works. */
     directUrl: string
-    /** Same-origin preview path (`/preview/.../`). When set, the iframe loads this instead. */
+    /** Preview-channel path or absolute URL. The iframe loads it on the preview host, not the approval origin. */
     embedUrl?: string
     title?: string
   }>(),
@@ -35,7 +37,9 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 function initialFrameUrl(): string {
-  return (props.embedUrl || '').trim() || props.directUrl
+  const embed = (props.embedUrl || '').trim()
+  if (embed) return toPreviewDocumentURL(embed)
+  return props.directUrl
 }
 
 const frameSrc = ref(initialFrameUrl())
@@ -116,6 +120,7 @@ function onIframeLoad() {
 }
 
 function onMessage(event: MessageEvent) {
+  if (!isCurrentPreviewFrameSource(event.source, iframeRef.value?.contentWindow)) return
   if (!acceptsPreviewFrameMessage(props.embedUrl || '', props.directUrl, event.origin)) return
   const parsed = parseDirectPreviewMessage(event.data)
   if (!parsed) return
@@ -188,7 +193,7 @@ function clearPick() {
 watch(
   () => [(props.embedUrl || '').trim(), props.directUrl] as const,
   ([embed, direct]) => {
-    const next = embed || direct
+    const next = embed ? toPreviewDocumentURL(embed) : direct
     frameSrc.value = next
     address.value = next
     picked.value = null

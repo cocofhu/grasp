@@ -62,6 +62,8 @@ export default defineConfig(({ command }) => {
       // host: true binds 0.0.0.0 so the platform preview proxy (which dials the
       // container's bridge IP) can reach the dev server, not just loopback.
       host: true,
+      // Preview iframes load pv.<host> so the app is not same-origin with this page.
+      allowedHosts: true,
       port,
       // Dev convenience: proxy API calls to the local backend so the SPA works
       // same-origin without needing VITE_API_BASE. Override the target via env if
@@ -83,7 +85,26 @@ export default defineConfig(({ command }) => {
         '/sandbox-acp/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },
         // App preview reverse-proxy lives at /preview/:runId/:nodeId/:port/* (outside
         // /api). Without this, Vite dev swallows iframe requests and returns SPA HTML.
-        '/preview/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },
+        '/preview/': {
+          target: process.env.VITE_API_PROXY || 'http://localhost:8080',
+          changeOrigin: true,
+          ws: true,
+          configure: (proxy) => {
+            proxy.on('proxyReq', (proxyReq, req) => {
+              if (req.headers.host) proxyReq.setHeader('X-Forwarded-Host', req.headers.host)
+            })
+          },
+        },
+        '/public/gate-approvals/preview-api/': {
+          target: process.env.VITE_API_PROXY || 'http://localhost:8080',
+          changeOrigin: true,
+          ws: true,
+          configure: (proxy) => {
+            proxy.on('proxyReq', (proxyReq, req) => {
+              if (req.headers.host) proxyReq.setHeader('X-Forwarded-Host', req.headers.host)
+            })
+          },
+        },
         '/preview-vnc/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },
         '/preview-pick.js': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true },
       },

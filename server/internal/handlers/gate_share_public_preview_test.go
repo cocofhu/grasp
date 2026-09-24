@@ -65,7 +65,7 @@ func TestPublicPreviewAPIProxyAllowsSameOriginFraming(t *testing.T) {
 
 	w := &closeNotifyRecorder{ResponseRecorder: httptest.NewRecorder(), notify: make(chan bool)}
 	req := httptest.NewRequest(http.MethodGet, "/public/gate-approvals/preview-api/"+ticket+"/", nil)
-	req.Host = publicHost
+	req.Host = "pv." + publicHost
 	hn.r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("proxy: %d %s", w.Code, w.Body.String())
@@ -77,8 +77,8 @@ func TestPublicPreviewAPIProxyAllowsSameOriginFraming(t *testing.T) {
 	if strings.Contains(csp, "frame-ancestors 'none'") || strings.Contains(csp, `frame-ancestors "none"`) {
 		t.Fatalf("API proxy must not keep frame-ancestors none: %q", csp)
 	}
-	if !strings.Contains(csp, "frame-ancestors 'self'") {
-		t.Fatalf("API proxy should allow same-origin framing, csp=%q", csp)
+	if !strings.Contains(csp, "frame-ancestors http://"+publicHost) {
+		t.Fatalf("API proxy should allow the approval origin to frame the preview host, csp=%q", csp)
 	}
 	if !strings.Contains(w.Body.String(), "api-ok") {
 		t.Fatalf("expected upstream body: %s", w.Body.String())

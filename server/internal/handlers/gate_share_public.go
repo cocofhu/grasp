@@ -835,10 +835,8 @@ func applyPublicSecurityHeaders(c *gin.Context) {
 	c.Header("Referrer-Policy", "no-referrer")
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("X-Frame-Options", "DENY")
-	c.Header("Content-Security-Policy", publicGateCSP)
+	c.Header("Content-Security-Policy", PublicGateCSP(c.Request.Host))
 	c.Writer.Header().Del("Access-Control-Allow-Origin")
 	c.Writer.Header().Del("Access-Control-Allow-Methods")
 	c.Writer.Header().Del("Access-Control-Allow-Headers")
 }
-
-const publicGateCSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"

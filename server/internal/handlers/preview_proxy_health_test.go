@@ -25,6 +25,7 @@ func TestPreviewProxySandboxRecycled(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/preview/run-d/n/3000/", nil)
+	req.Host = "pv.example.com"
 	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: hn.cookie})
 	hn.r.ServeHTTP(w, req)
 	if w.Code != http.StatusGone {
@@ -49,6 +50,7 @@ func TestPreviewProxyUnhealthy(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/preview/run-u/n/3000/", nil)
+	req.Host = "pv.example.com"
 	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: hn.cookie})
 	hn.r.ServeHTTP(w, req)
 	if w.Code != http.StatusServiceUnavailable {

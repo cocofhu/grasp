@@ -54,6 +54,7 @@ func TestPreviewProxyUnavailable(t *testing.T) {
 	// Preview nil → 503
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/preview/r/n/3000/", nil)
+	req.Host = "pv.example.com"
 	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: hn.cookie})
 	hn.r.ServeHTTP(w, req)
 	if w.Code != http.StatusServiceUnavailable {
