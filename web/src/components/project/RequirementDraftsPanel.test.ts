@@ -555,4 +555,123 @@ describe('RequirementDraftsPanel', () => {
     expect(w.find('[data-testid="requirement-drafts-findbar"]').isVisible()).toBe(true)
     w.unmount()
   })
+
+  it('shows the schedule block expanded by default (g1.2)', async () => {
+    const w = mountPanel()
+    await flushPromises()
+    await switchToEdit(w)
+    await w.get('[data-testid="requirement-drafts-item-rd-1"]').trigger('click')
+    await nextTick()
+    const toggle = w.get('[data-testid="requirement-drafts-schedule-toggle"]')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(toggle.text()).toContain('排期（即时保存）')
+    expect(w.get('[data-testid="requirement-drafts-schedule-toggle"] .rd-schedule-arrow').classes()).toContain(
+      'is-open',
+    )
+    expect(w.get('[data-testid="requirement-drafts-schedule-kind"]').isVisible()).toBe(true)
+    expect(w.get('[data-testid="requirement-drafts-schedule-due"]').isVisible()).toBe(true)
+    w.unmount()
+  })
+
+  it('collapses and re-expands schedule fields from the title row (g1.2/g2.1)', async () => {
+    const w = mountPanel()
+    await flushPromises()
+    await switchToEdit(w)
+    await w.get('[data-testid="requirement-drafts-item-rd-1"]').trigger('click')
+    await nextTick()
+    await w.get('[data-testid="requirement-drafts-schedule-toggle"]').trigger('click')
+    await nextTick()
+    expect(
+      w.get('[data-testid="requirement-drafts-schedule-toggle"]').attributes('aria-expanded'),
+    ).toBe('false')
+    expect(
+      w.get('[data-testid="requirement-drafts-schedule-toggle"] .rd-schedule-arrow').classes(),
+    ).not.toContain('is-open')
+    expect(w.get('[data-testid="requirement-drafts-schedule-kind"]').isVisible()).toBe(false)
+    expect(w.get('[data-testid="requirement-drafts-schedule-start"]').isVisible()).toBe(false)
+    expect(w.get('[data-testid="requirement-drafts-schedule-due"]').isVisible()).toBe(false)
+    expect(w.get('[data-testid="requirement-drafts-schedule-progress"]').isVisible()).toBe(false)
+    await w.get('[data-testid="requirement-drafts-schedule-toggle"]').trigger('click')
+    await nextTick()
+    expect(
+      w.get('[data-testid="requirement-drafts-schedule-toggle"]').attributes('aria-expanded'),
+    ).toBe('true')
+    expect(w.get('[data-testid="requirement-drafts-schedule-kind"]').isVisible()).toBe(true)
+    w.unmount()
+  })
+
+  it('collapsing the schedule block does not patch or dirty the draft (f4)', async () => {
+    const w = mountPanel()
+    await flushPromises()
+    await switchToEdit(w)
+    await w.get('[data-testid="requirement-drafts-item-rd-1"]').trigger('click')
+    await nextTick()
+    await w.get('[data-testid="requirement-drafts-title"]').setValue('未保存标题')
+    await w.get('[data-testid="requirement-drafts-schedule-toggle"]').trigger('click')
+    await flushPromises()
+    expect(apiMocks.patchRequirementDraftSchedule).not.toHaveBeenCalled()
+    expect(w.find('[data-testid="requirement-drafts-dirty-chip"]').exists()).toBe(true)
+    expect(w.get('[data-testid="requirement-drafts-title"]').element).toHaveProperty(
+      'value',
+      '未保存标题',
+    )
+    w.unmount()
+  })
+
+  it('resets schedule collapse to expanded when switching drafts (f2)', async () => {
+    const w = mountPanel()
+    await flushPromises()
+    await switchToEdit(w)
+    await w.get('[data-testid="requirement-drafts-item-rd-1"]').trigger('click')
+    await nextTick()
+    await w.get('[data-testid="requirement-drafts-schedule-toggle"]').trigger('click')
+    await nextTick()
+    expect(
+      w.get('[data-testid="requirement-drafts-schedule-toggle"]').attributes('aria-expanded'),
+    ).toBe('false')
+    await w.get('[data-testid="requirement-drafts-item-rd-2"]').trigger('click')
+    await nextTick()
+    expect(
+      w.get('[data-testid="requirement-drafts-schedule-toggle"]').attributes('aria-expanded'),
+    ).toBe('true')
+    expect(w.get('[data-testid="requirement-drafts-schedule-kind"]').isVisible()).toBe(true)
+    w.unmount()
+  })
+
+  it('keeps the schedule error visible across collapse and expand (edge)', async () => {
+    apiMocks.patchRequirementDraftSchedule.mockRejectedValue(
+      new Error('due date must not be before start date'),
+    )
+    const w = mountPanel()
+    await flushPromises()
+    await switchToEdit(w)
+    await w.get('[data-testid="requirement-drafts-item-rd-1"]').trigger('click')
+    await nextTick()
+    await w.get('[data-testid="requirement-drafts-schedule-due"]').setValue('2026-07-01')
+    await w.get('[data-testid="requirement-drafts-schedule-due"]').trigger('change')
+    await flushPromises()
+    expect(w.get('[data-testid="requirement-drafts-schedule-error"]').text()).toContain(
+      '截止日不能早于开始日',
+    )
+    await w.get('[data-testid="requirement-drafts-schedule-toggle"]').trigger('click')
+    await nextTick()
+    expect(w.find('[data-testid="requirement-drafts-schedule-error"]').exists()).toBe(true)
+    await w.get('[data-testid="requirement-drafts-schedule-toggle"]').trigger('click')
+    await nextTick()
+    expect(w.get('[data-testid="requirement-drafts-schedule-error"]').isVisible()).toBe(true)
+    w.unmount()
+  })
+
+  it('collapses the schedule block on a narrow viewport (n2)', async () => {
+    mockMatchMedia(true)
+    const w = mountPanel()
+    await flushPromises()
+    await switchToEdit(w)
+    await w.get('[data-testid="requirement-drafts-item-rd-1"]').trigger('click')
+    await nextTick()
+    await w.get('[data-testid="requirement-drafts-schedule-toggle"]').trigger('click')
+    await nextTick()
+    expect(w.get('[data-testid="requirement-drafts-schedule-kind"]').isVisible()).toBe(false)
+    w.unmount()
+  })
 })

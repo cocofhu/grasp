@@ -513,6 +513,8 @@
         "milestoneDueRequired": "A milestone date is required to create.",
         "scheduleBlockTitle": "Schedule (saves immediately)",
         "scheduleHint": "Dates, progress, and parent save immediately; title and body still need Save.",
+        "collapseSchedule": "Collapse schedule",
+        "expandSchedule": "Expand schedule",
         "scheduleSaved": "Schedule updated",
         "startAtLabel": "Start",
         "dueAtLabel": "Due",

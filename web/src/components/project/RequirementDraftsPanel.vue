@@ -49,6 +49,7 @@ const {
   findOpen,
   findQuery,
   previewCollapsed,
+  scheduleCollapsed,
   mobilePane,
   splitRatio,
   sashDragging,
@@ -119,6 +120,7 @@ const {
   closeFind,
   runFindNext,
   togglePreviewCollapsed,
+  toggleScheduleCollapsed,
   onSashDown,
   syncOverlayScroll,
   onSrcScroll,
@@ -396,13 +398,34 @@ defineExpose({
               class="rounded-lg rd-schedule mb-4 border border-accent bg-surface p-3"
               data-testid="requirement-drafts-schedule-block"
             >
-              <div class="mb-2 text-[13px] font-medium text-txt">
-                {{ t('pages.projectDetail.requirementDrafts.scheduleBlockTitle') }}
-              </div>
-              <p class="mb-3 text-[11px] text-txt3">
-                {{ t('pages.projectDetail.requirementDrafts.scheduleHint') }}
-              </p>
-              <div class="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                class="rd-schedule-head mb-2 flex w-full items-center justify-between gap-2 text-left"
+                data-testid="requirement-drafts-schedule-toggle"
+                :aria-expanded="!scheduleCollapsed"
+                :title="
+                  scheduleCollapsed
+                    ? t('pages.projectDetail.requirementDrafts.expandSchedule')
+                    : t('pages.projectDetail.requirementDrafts.collapseSchedule')
+                "
+                @click="toggleScheduleCollapsed"
+              >
+                <span class="text-[13px] font-medium text-txt">
+                  {{ t('pages.projectDetail.requirementDrafts.scheduleBlockTitle') }}
+                </span>
+                <span
+                  class="rd-schedule-arrow text-txt3"
+                  :class="{ 'is-open': !scheduleCollapsed }"
+                  aria-hidden="true"
+                >
+                  ▾
+                </span>
+              </button>
+              <div v-show="!scheduleCollapsed">
+                <p class="mb-3 text-[11px] text-txt3">
+                  {{ t('pages.projectDetail.requirementDrafts.scheduleHint') }}
+                </p>
+                <div class="grid gap-3 sm:grid-cols-2">
                 <label class="block text-xs text-txt2">
                   {{ t('pages.projectDetail.requirementDrafts.kindLabel') }}
                   <select
@@ -472,6 +495,7 @@ defineExpose({
                     </option>
                   </select>
                 </label>
+              </div>
               </div>
               <div
                 v-if="scheduleError"
@@ -1295,6 +1319,29 @@ defineExpose({
 }
 .rd-schedule {
   border-radius: 12px;
+}
+.rd-schedule-head {
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  border-radius: 8px;
+}
+.rd-schedule-head:hover .rd-schedule-arrow {
+  color: rgb(var(--c-txt));
+}
+.rd-schedule-head:focus-visible {
+  outline: 2px solid rgb(var(--c-accent));
+  outline-offset: 2px;
+}
+.rd-schedule-arrow {
+  display: inline-block;
+  font-size: 12px;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+.rd-schedule-arrow.is-open {
+  transform: rotate(180deg);
 }
 .rd-gantt-name {
   width: 220px;

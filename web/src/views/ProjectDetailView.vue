@@ -771,14 +771,14 @@ const onboardingEmptyDesc = computed(() =>
         <!-- Desktop table -->
         <div v-else class="overflow-hidden rounded-lg border border-line">
           <div class="scroll-area overflow-x-auto">
-            <table class="w-full text-left text-sm">
+            <table class="w-full min-w-[1080px] text-left text-sm" data-testid="workflows-desktop-table">
               <thead class="bg-elevated text-xs text-txt3">
                 <tr>
-                  <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.colName') }}</th>
-                  <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.colStatus') }}</th>
-                  <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.notify.colPolicy') }}</th>
-                  <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.homeVisibility.col') }}</th>
-                  <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.colUpdated') }}</th>
+                  <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.colName') }}</th>
+                  <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.colStatus') }}</th>
+                  <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.notify.colPolicy') }}</th>
+                  <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.homeVisibility.col') }}</th>
+                  <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.colUpdated') }}</th>
                   <th class="px-3 py-2 text-right font-medium whitespace-nowrap">{{ t('common.table.actions') }}</th>
                 </tr>
               </thead>
@@ -894,8 +894,8 @@ const onboardingEmptyDesc = computed(() =>
                     </div>
                   </td>
                   <td class="px-3 py-2.5 text-txt3">{{ fmtTime(w.updatedAt) }}</td>
-                  <td class="px-3 py-2.5" @click.stop>
-                    <div class="flex flex-wrap items-center justify-end gap-1">
+                  <td class="px-3 py-2.5" @click.stop data-testid="wf-actions-cell">
+                    <div class="flex items-center justify-end gap-1 whitespace-nowrap" data-testid="wf-actions-group">
                       <button
                         type="button"
                         class="whitespace-nowrap rounded-md px-2 py-1 text-xs text-txt2 hover:bg-overlay hover:text-txt"

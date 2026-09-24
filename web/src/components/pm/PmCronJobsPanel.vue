@@ -138,15 +138,15 @@ onMounted(() => void load())
         <table class="w-full min-w-[720px] text-left text-sm">
           <thead class="bg-elevated text-xs text-txt3">
             <tr>
-              <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colName') }}</th>
-              <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colAgent') }}</th>
-              <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colSchedule') }}</th>
-              <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colEnabled') }}</th>
-              <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colDeliver') }}</th>
-              <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colNextRun') }}</th>
-              <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colLastRun') }}</th>
-              <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colStatus') }}</th>
-              <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colActions') }}</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colName') }}</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colAgent') }}</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colSchedule') }}</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colEnabled') }}</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colDeliver') }}</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colNextRun') }}</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colLastRun') }}</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colStatus') }}</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colActions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -193,19 +193,19 @@ onMounted(() => void load())
       />
       <div v-else class="overflow-hidden rounded-lg border border-line">
         <div class="scroll-area overflow-x-auto">
-          <table class="w-full text-left text-sm">
+          <table class="w-full min-w-[720px] text-left text-sm" data-testid="cron-table">
             <thead class="bg-elevated text-xs text-txt3">
               <tr>
-                <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colName') }}</th>
-                <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colAgent') }}</th>
-                <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colSchedule') }}</th>
-                <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colEnabled') }}</th>
-                <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colDeliver') }}</th>
-                <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colNextRun') }}</th>
-                <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colLastRun') }}</th>
-                <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colStatus') }}</th>
-                <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colLastError') }}</th>
-                <th class="px-3 py-2 font-medium">{{ t('pages.projectDetail.cron.colActions') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colName') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colAgent') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colSchedule') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colEnabled') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colDeliver') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colNextRun') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colLastRun') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colStatus') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colLastError') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colActions') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -232,7 +232,7 @@ onMounted(() => void load())
                       :aria-label="t('pages.projectDetail.cron.deliverLabel')"
                       @update:model-value="onDeliverToggle(job, $event)"
                     />
-                    <span class="text-xs text-txt3">{{ t('pages.projectDetail.cron.deliverLabel') }}</span>
+                    <span class="text-xs text-txt3 whitespace-nowrap">{{ t('pages.projectDetail.cron.deliverLabel') }}</span>
                   </label>
                 </td>
                 <td class="px-3 py-2.5 text-txt3">{{ job.nextRunAt ? fmtTime(job.nextRunAt) : '—' }}</td>
@@ -247,7 +247,7 @@ onMounted(() => void load())
                 <td class="px-3 py-2.5 text-right">
                   <button
                     type="button"
-                    class="text-[11px] text-err disabled:cursor-not-allowed disabled:opacity-40"
+                    class="whitespace-nowrap text-[11px] text-err disabled:cursor-not-allowed disabled:opacity-40"
                     data-testid="project-cron-delete"
                     :disabled="deletingId === job.id || togglingIds.includes(job.id)"
                     @click="removeJob(job.id)"

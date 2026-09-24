@@ -513,6 +513,8 @@
         "milestoneDueRequired": "里程碑必须填写日期才能创建。",
         "scheduleBlockTitle": "排期（即时保存）",
         "scheduleHint": "改日期/进度/父级会立即落库；标题与正文仍需点保存。",
+        "collapseSchedule": "收起排期",
+        "expandSchedule": "展开排期",
         "scheduleSaved": "排期已更新",
         "startAtLabel": "开始日",
         "dueAtLabel": "截止日",

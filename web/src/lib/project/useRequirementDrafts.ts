@@ -89,6 +89,7 @@ const highlightHtml = ref(' ')
 const findOpen = ref(false)
 const findQuery = ref('')
 const previewCollapsed = ref(false)
+const scheduleCollapsed = ref(false)
 const mobilePane = ref<'src' | 'prev'>('src')
 const splitRatio = ref(0.5)
 const sashDragging = ref(false)
@@ -364,6 +365,7 @@ function selectDraft(id: string, opts?: { discardBuffer?: boolean }) {
     selectedId.value = null
     return
   }
+  if (selectedId.value !== id) scheduleCollapsed.value = false
   selectedId.value = id
   if (opts?.discardBuffer !== false) {
     editTitle.value = d.title
@@ -650,6 +652,10 @@ function togglePreviewCollapsed() {
   previewCollapsed.value = !previewCollapsed.value
 }
 
+function toggleScheduleCollapsed() {
+  scheduleCollapsed.value = !scheduleCollapsed.value
+}
+
 function onSashDown(e: MouseEvent) {
   if (isMobile.value || previewCollapsed.value) return
   e.preventDefault()
@@ -768,6 +774,7 @@ watch(
     selectedId.value = null
     editTitle.value = ''
     editBody.value = ''
+    scheduleCollapsed.value = false
     applySavedBaseline('', '')
     void loadList()
   },
@@ -846,6 +853,7 @@ onBeforeUnmount(() => {
   findOpen,
   findQuery,
   previewCollapsed,
+  scheduleCollapsed,
   mobilePane,
   splitRatio,
   sashDragging,
@@ -916,6 +924,7 @@ onBeforeUnmount(() => {
   closeFind,
   runFindNext,
   togglePreviewCollapsed,
+  toggleScheduleCollapsed,
   onSashDown,
   syncOverlayScroll,
   onSrcScroll,
