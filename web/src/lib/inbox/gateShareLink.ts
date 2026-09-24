@@ -768,9 +768,10 @@ export const publicGateApi = {
         [GATE_SHARE_REQUEST_HEADER]: '1',
       },
     }).then(async (res) => {
-      const body = await readJson<EmbedTicket & { error?: string; message?: string }>(res)
-      if (!res.ok) {
-        throw Object.assign(new Error(body.message || body.error || `${res.status}`), {
+      const body = await readJson<EmbedTicket & { status?: string; error?: string; message?: string }>(res)
+      // A spent or revoked link answers 200 with a status and no ticket.
+      if (!res.ok || !body.ticket) {
+        throw Object.assign(new Error(body.message || body.error || body.status || `${res.status}`), {
           status: res.status,
           body,
         })

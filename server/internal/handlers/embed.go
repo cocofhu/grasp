@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"os"
@@ -218,12 +219,11 @@ func (h *Handlers) RedeemEmbedSession(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
 		return
 	}
-	claims, ok := h.Embed.RedeemTicket(body.Ticket)
-	if !ok {
+	claims, token, exp, err := h.Embed.ExchangeTicket(body.Ticket)
+	if errors.Is(err, embed.ErrTicketSpent) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_ticket"})
 		return
 	}
-	token, exp, err := h.Embed.CreateSession(*claims)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "session failed"})
 		return
