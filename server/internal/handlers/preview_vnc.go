@@ -65,8 +65,8 @@ func (h *Handlers) PreviewVNC(c *gin.Context) {
 		c.String(http.StatusBadGateway, "preview host invalid")
 		return
 	}
-	// Navigate Chromium inside the sandbox to loopback so traffic never leaves
-	// the sandbox network namespace (isolation).
+	// Stay on the sandbox loopback so iptables sends this port through preview-inject.
+	// The browser origin remains http://127.0.0.1:<port>/, so app paths are unchanged.
 	navigateURL := fmt.Sprintf("http://127.0.0.1:%d/", port)
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)

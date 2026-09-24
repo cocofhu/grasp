@@ -1269,7 +1269,7 @@ func artifactTools() []map[string]any {
 		{
 			"name": "set_preview",
 			"description": "仅 app_preview 或 Grasp 节点可用:注册沙箱内应用预览端口或外部 http(s) URL。" +
-				"参数 port? 与 url? 二选一(恰好其一);label(可选)用于 UI 标签。可多次调用注册多项;同 port 或同规范化 url 再次调用可更新 label。外部 URL 由浏览器 iframe 直连,不做服务端探测,取点可能降级。" +
+				"参数 port? 与 url? 二选一(恰好其一);label(可选)用于 UI 标签。只登记审批人要看的前端页面;后端 API、数据库等端口不要登记(页面会自己调用),除非用户明确要求。确有多个前端(如用户端 + 管理端)时可多次调用分别登记;同 port 或同规范化 url 再次调用可更新 label。外部 URL 由浏览器 iframe 直连,不做服务端探测,取点可能降级。" +
 				"在 Grasp 上这是可选预览,不是完成条件,成功后不会结束本节点。",
 			"inputSchema": map[string]any{
 				"type": "object",

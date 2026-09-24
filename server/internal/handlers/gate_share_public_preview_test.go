@@ -31,9 +31,21 @@ func TestPublicPreviewAPIProxyAllowsSameOriginFraming(t *testing.T) {
 	preview := services.NewPreviewService(hn.db, nil)
 	hn.h.Preview = preview
 	hn.host.SetPreviewStore(preview)
+	hn.host.SetPreviewSandboxOps(preview)
+	var run models.Run
+	if err := hn.db.Where("id = ?", "run-ap-api").First(&run).Error; err != nil {
+		t.Fatal(err)
+	}
+	if n := run.Graph.FindNode("app_preview_api"); n != nil {
+		n.Config = map[string]any{"direct_preview": true}
+	}
+	if err := hn.db.Save(&run).Error; err != nil {
+		t.Fatal(err)
+	}
 	_ = preview.UpsertPreviewPort(mcp.PreviewPort{
 		RunID: "run-ap-api", NodeID: "app_preview_api", Port: 8080, Label: "API · 8080",
 		Host: up.URL, Healthy: true, RegisteredAt: time.Now(),
+		Mode: "direct", DirectURL: "http://127.0.0.1:8080/",
 	})
 
 	ticketRes := parseJSON(t, hn.doPublic(http.MethodPost, "/public/gate-approvals/preview-ticket", map[string]any{

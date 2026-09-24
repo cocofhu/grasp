@@ -34,7 +34,6 @@ const { t } = useI18n()
 const activeKey = ref<string | null>(null)
 const activePort = ref<number | null>(null)
 const vncWsUrl = ref('')
-const apiIframeUrl = ref('')
 const ticketBusy = ref(false)
 const ticketError = ref('')
 const linkInactive = ref(false)
@@ -52,11 +51,6 @@ function isUrlPreview(p: PublicPreviewPort): boolean {
 function publicTabKey(p: PublicPreviewPort): string {
   if (isUrlPreview(p)) return `url:${(p.url || p.directUrl || '').trim()}`
   return `port:${p.port}`
-}
-
-function isApiPort(p: PublicPreviewPort): boolean {
-  if ((p.mode || '').toLowerCase() === 'api') return true
-  return (p.label || '').toLowerCase().includes('api')
 }
 
 function isDirectPort(p: PublicPreviewPort): boolean {
@@ -83,7 +77,6 @@ const activeMeta = computed(
   () => sortedPorts.value.find((p) => publicTabKey(p) === activeKey.value) || null,
 )
 const activeIsUrl = computed(() => (activeMeta.value ? isUrlPreview(activeMeta.value) : false))
-const activeIsApi = computed(() => (activeMeta.value ? isApiPort(activeMeta.value) : false))
 const activeIsDirect = computed(() => (activeMeta.value ? isDirectPort(activeMeta.value) : false))
 const activeDirectUrl = computed(() => {
   if (!activeMeta.value) return ''
@@ -104,7 +97,6 @@ async function exchangeTicket() {
   const gen = ++ticketGen
   ticketAbort = new AbortController()
   vncWsUrl.value = ''
-  apiIframeUrl.value = ''
   ticketError.value = ''
   linkInactive.value = false
 
@@ -124,8 +116,7 @@ async function exchangeTicket() {
 
   ticketBusy.value = true
   try {
-    const purpose = isApiPort(meta) ? 'api' : 'vnc'
-    const res = await publicGateApi.previewTicket(props.token, port, purpose, ticketAbort.signal)
+    const res = await publicGateApi.previewTicket(props.token, port, 'vnc', ticketAbort.signal)
     if (gen !== ticketGen) return
     if (res.status && res.status !== 'active') {
       linkInactive.value = true
@@ -136,12 +127,7 @@ async function exchangeTicket() {
       ticketError.value = t('pages.publicGate.appPreviewUnavailable')
       return
     }
-    if (purpose === 'api') {
-      apiIframeUrl.value =
-        (res.iframePath || `/public/gate-approvals/preview-api/${res.ticket}/`).trim()
-    } else {
-      vncWsUrl.value = publicPreviewVncWsUrl(res.ticket, res.wsPath)
-    }
+    vncWsUrl.value = publicPreviewVncWsUrl(res.ticket, res.wsPath)
   } catch (e: any) {
     if (gen !== ticketGen || isAbortError(e) || ticketAbort.signal.aborted) return
     const status = e?.body?.status || e?.status
@@ -266,7 +252,7 @@ function retry() {
           <p>{{ t('pages.publicGate.appPreviewLinkInactive') }}</p>
         </div>
         <div
-          v-else-if="ticketError && !vncWsUrl && !apiIframeUrl && !activeIsDirect"
+          v-else-if="ticketError && !vncWsUrl && !activeIsDirect"
           class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-base/90 px-6 text-center text-sm text-txt3"
           data-testid="public-gate-app-preview-error"
         >
@@ -290,11 +276,12 @@ function retry() {
           v-else-if="activeIsDirect && activeDirectUrl"
           :direct-url="activeDirectUrl"
           :title="activeMeta ? tabLabel(activeMeta) : 'preview'"
+          data-testid="public-gate-app-preview-api"
           @pick="onPick"
           @staged-pick="onStagedPick"
         />
         <NovncPreviewPanel
-          v-else-if="!activeIsApi && vncWsUrl"
+          v-else-if="vncWsUrl"
           :key="`public-vnc-${activePort}-${vncWsUrl}`"
           :ws-url="vncWsUrl"
           :port="activePort ?? undefined"
@@ -302,14 +289,6 @@ function retry() {
           @pick="onPick"
           @staged-pick="onStagedPick"
           @reconnect-request="retry"
-        />
-        <iframe
-          v-else-if="activeIsApi && apiIframeUrl"
-          :key="`public-api-${activePort}`"
-          :src="apiIframeUrl"
-          class="h-full w-full border-0 bg-base"
-          :title="activeMeta ? tabLabel(activeMeta) : 'API'"
-          data-testid="public-gate-app-preview-api"
         />
         <div
           v-else-if="ticketBusy"

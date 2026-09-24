@@ -3,9 +3,16 @@ import { NODE_DEFS } from './nodeRegistry'
 import { productOutputDefs } from '@/lib/run/productNodeArtifacts'
 
 describe('grasp node inspector', () => {
-  it('configures agent_profile and timeout', () => {
-    expect(NODE_DEFS.grasp.fields.map((f) => f.key)).toEqual(['agent_profile', 'timeout'])
-    expect(NODE_DEFS.grasp.defaults).toEqual({ timeout: 30 })
+  it('configures agent, timeout, and direct preview switches', () => {
+    expect(NODE_DEFS.grasp.fields.map((f) => f.key)).toEqual([
+      'agent_profile',
+      'timeout',
+      'direct_preview',
+      'auto_inject',
+    ])
+    expect(NODE_DEFS.grasp.defaults).toEqual({ timeout: 30, direct_preview: false, auto_inject: true })
+    expect(NODE_DEFS.approve.fields.map((f) => f.key)).toEqual(NODE_DEFS.grasp.fields.map((f) => f.key))
+    expect(NODE_DEFS.approve.defaults).toEqual(NODE_DEFS.grasp.defaults)
   })
 
   it('has no leftover inspector knobs', () => {

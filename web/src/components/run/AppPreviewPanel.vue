@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, type PreviewPort } from '@/lib/api/api'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
@@ -39,21 +39,34 @@ const pickedSelector = ref('')
 let portsGen = 0
 let portsAbort: AbortController | null = null
 
-/** API Tab uses PreviewProxy iframe; all other ports use noVNC. */
-function isApiPort(p: PreviewPort): boolean {
-  const label = (p.label || '').trim().toLowerCase()
-  return label.includes('api')
-}
-
 function isDirectPort(p: PreviewPort): boolean {
   return p.mode === 'direct' && !!(p.directUrl || '').trim()
 }
 
+function isVncPort(p: PreviewPort): boolean {
+  return !isUrlPreview(p) && !isDirectPort(p)
+}
+
 const activePort = ref<number | null>(null)
+const vncPorts = computed(() => ports.value.filter(isVncPort))
+const activeVnc = computed(() => vncPorts.value.find((p) => previewTabKey(p) === activeKey.value) || null)
+/** Port the single noVNC socket is bound to; changing it reconnects. */
+const vncConnPort = ref<number | null>(null)
+/** Last VNC port shown; kept while a direct/url tab is active so we do not navigate away. */
+const vncTargetPort = ref<number | null>(null)
 
 function syncActivePort() {
   const current = ports.value.find((p) => previewTabKey(p) === activeKey.value)
   activePort.value = current && !isUrlPreview(current) ? current.port : null
+  const vnc = vncPorts.value
+  if (!vnc.length) {
+    vncConnPort.value = null
+    vncTargetPort.value = null
+    return
+  }
+  if (activeVnc.value) vncTargetPort.value = activeVnc.value.port
+  else if (!vnc.some((p) => p.port === vncTargetPort.value)) vncTargetPort.value = vnc[0].port
+  if (!vnc.some((p) => p.port === vncConnPort.value)) vncConnPort.value = vncTargetPort.value
 }
 
 function onPick(payload: AppPreviewPickPayload) {
@@ -214,27 +227,17 @@ function selectPreview(key: string) {
           @pick="onPick"
           @staged-pick="onStagedPick"
         />
-        <keep-alive :max="ports.length">
-          <NovncPreviewPanel
-            v-for="p in ports.filter((x) => !isUrlPreview(x) && !isApiPort(x) && !isDirectPort(x))"
-            v-show="activeKey === previewTabKey(p)"
-            :key="`vnc-${previewTabKey(p)}`"
-            :run-id="runId"
-            :node-id="nodeId"
-            :port="p.port"
-            fill
-            :compact="compact"
-            @pick="onPick"
-            @staged-pick="onStagedPick"
-          />
-        </keep-alive>
-        <iframe
-          v-for="p in ports.filter((x) => isApiPort(x) && !isDirectPort(x) && !isUrlPreview(x))"
-          v-show="activeKey === previewTabKey(p)"
-          :key="`api-${previewTabKey(p)}`"
-          :src="p.proxyUrl"
-          class="h-full w-full border-0 bg-base"
-          :title="previewTabLabel(p)"
+        <NovncPreviewPanel
+          v-if="vncConnPort != null"
+          v-show="!!activeVnc"
+          :run-id="runId"
+          :node-id="nodeId"
+          :port="vncConnPort"
+          :target-port="vncTargetPort ?? undefined"
+          fill
+          :compact="compact"
+          @pick="onPick"
+          @staged-pick="onStagedPick"
         />
       </div>
       <PreviewFeedbackChat

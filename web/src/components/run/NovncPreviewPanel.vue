@@ -26,6 +26,11 @@ const props = withDefaults(
     runId?: string
     nodeId?: string
     port?: number
+    /**
+     * Port to show on the sandbox desktop when it differs from `port`. The sandbox
+     * keeps one preview tab, so sibling ports share this connection and navigate.
+     */
+    targetPort?: number
     /** Optional absolute ws(s) URL (public ticket channel); overrides run/node/port. */
     wsUrl?: string
     /** Console mode: sandbox-scoped WS (mutually exclusive with preview triple). */
@@ -212,6 +217,7 @@ function handleCtrlText(data: string) {
       clearPreviewWarnTimer()
       status.value = 'live'
       if (typeof msg.url === 'string' && msg.url) address.value = msg.url
+      if (props.targetPort && props.targetPort !== props.port) gotoTargetPort()
       break
     case 'picked':
       inlineTip.value = null
@@ -458,6 +464,13 @@ function openAddress() {
   sendCtrl({ type: 'navigate', action: 'goto', url })
 }
 
+function gotoTargetPort() {
+  const port = props.targetPort || props.port
+  if (!port) return
+  address.value = `http://127.0.0.1:${port}/`
+  sendCtrl({ type: 'navigate', action: 'goto', url: address.value })
+}
+
 function usePick() {
   if (picked.value) emit('pick', picked.value)
 }
@@ -493,6 +506,16 @@ async function toggleFullscreen() {
 watch(
   () => [props.runId, props.nodeId, props.port, props.sandboxId, props.wsUrl],
   () => reconnect(),
+)
+
+watch(
+  () => props.targetPort,
+  (next, prev) => {
+    if (!next || next === prev) return
+    if (picked.value) clearPick()
+    else if (inspect.value) clearInspect('target-port')
+    if (status.value === 'live') gotoTargetPort()
+  },
 )
 
 onMounted(() => {

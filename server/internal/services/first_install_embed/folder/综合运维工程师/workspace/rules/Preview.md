@@ -13,3 +13,4 @@ alwaysApply: true
 
 读澄清/实现/`branches`（禁止默认 main）→ 后台启动（可 Docker）→ 看目标屏 → `set_preview(port=…, label="…")`。
 禁止远程集群/CI 预览 URL；禁止前台占死会话。
+只登记审批人要看的前端页面端口；后端 API、数据库等端口不要登记，除非用户明确要求。

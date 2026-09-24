@@ -79,9 +79,11 @@ func (h *Handlers) PublicPreviewTicket(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "port_not_registered", "message": "预览端口未注册"})
 		return
 	}
-	wantPurpose := matched.Mode
+	wantPurpose := gateshare.PreviewPurposeVNC
+	if strings.TrimSpace(matched.DirectURL) != "" {
+		wantPurpose = gateshare.PreviewPurposeAPI
+	}
 	if purpose != wantPurpose {
-		// Allow client to omit/mismatch; server binds to registered mode.
 		purpose = wantPurpose
 	}
 	ticket, exp, err := h.GateShareTickets.Issue(

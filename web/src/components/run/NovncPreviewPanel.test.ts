@@ -192,6 +192,24 @@ describe('NovncPreviewPanel', () => {
     wrapper.unmount()
   })
 
+  it('targetPort navigates the shared session instead of reconnecting', async () => {
+    const gotos = () =>
+      MockWebSocket.instances.flatMap((ws) =>
+        ws.sent
+          .map((s) => JSON.parse(s) as { type?: string; action?: string; url?: string })
+          .filter((m) => m.type === 'navigate' && m.action === 'goto')
+          .map((m) => m.url),
+      )
+    const wrapper = mountNovnc({ targetPort: 8080 })
+    await flushPromises()
+    expect(gotos()).toEqual(['http://127.0.0.1:8080/'])
+    await wrapper.setProps({ targetPort: 5173 })
+    await flushPromises()
+    expect(gotos()).toEqual(['http://127.0.0.1:8080/', 'http://127.0.0.1:5173/'])
+    expect(MockWebSocket.instances).toHaveLength(1)
+    wrapper.unmount()
+  })
+
   it('renders console mode address bar', async () => {
     const wrapper = mountNovnc({ sandboxId: 42, runId: undefined, nodeId: undefined, port: undefined })
     await flushPromises()

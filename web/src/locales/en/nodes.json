@@ -556,7 +556,7 @@
         },
         "direct_preview": {
           "label": "Direct IP preview",
-          "help": "When on, the review iframe loads http://IP:port/ and skips noVNC / path-prefix proxy."
+          "help": "When on, the browser opens http://IP:port/. An in-sandbox proxy injects the pick script and leaves relative and root-absolute paths unchanged."
         },
         "auto_inject": {
           "label": "Auto-inject pick script",
@@ -578,7 +578,7 @@
           "desc": "true when set_preview is healthy"
         }
       },
-      "help": "### App preview (app_preview)\n\nAgent builds/starts the app in sandbox or registers a deployed external URL via `set_preview(port?, url?, label?)` (exactly one of port or url). After at least one successful registration the node enters preview review (**no Gate**). External http(s) URLs (port allowed) open in a browser iframe directly with no server-side probe; pick-annotate may be degraded. While waiting for human confirm it appears in the **Pending approvals** inbox (badge 「App Preview」) and can also be handled from the run-detail review tab: both support pick annotate → add to chat, and in-place edits when an approval session is available, then Confirm & continue on a single success exit; finishing either side clears both pending surfaces.\n\n**Direct IP preview** (node switch `direct_preview`, default off): when on, the browser iframes `http://IP:port/` and skips noVNC / path-prefix proxy. **Auto-inject** (`auto_inject`, default on): the sandbox inserts `$PREVIEW_PICK_SCRIPT_URL` into inbound HTML so pick-annotate works without editing the app; turn off to add the script tag yourself. Off for direct preview keeps the existing noVNC pick flow.\n\n**Same interaction as human gate**: both use pick + chat + Confirm & continue; both appear in Pending approvals with distinct badges. Missing Approve/Reject is not a bug — Confirm & continue is the end action.\n\n**The app must listen on `0.0.0.0:<port>`** (not just 127.0.0.1): the preview is reverse-proxied via the container's bridge IP, so a loopback-only bind is unreachable and the preview goes blank (502).\n\nCanvas footnote: 「Confirm & continue · inbox」; subtitle 「Pick annotate · Await confirmation」. Legacy pass/fail edges are silently compatible (confirm injects action=pass)."
+      "help": "### App preview (app_preview)\n\nAgent builds/starts the app in sandbox or registers a deployed external URL via `set_preview(port?, url?, label?)` (exactly one of port or url). After at least one successful registration the node enters preview review (**no Gate**). External http(s) URLs (port allowed) open in a browser iframe directly with no server-side probe; pick-annotate may be degraded. While waiting for human confirm it appears in the **Pending approvals** inbox (badge 「App Preview」) and can also be handled from the run-detail review tab: both support pick annotate → add to chat, and in-place edits when an approval session is available, then Confirm & continue on a single success exit; finishing either side clears both pending surfaces.\n\n**Direct IP preview** (node switch `direct_preview`, default off): on opens `http://IP:port/`, off uses noVNC. Direct traffic enters an in-sandbox proxy that only inserts the pick script and does not rewrite paths. **Auto-inject** (`auto_inject`, default on): the sandbox inserts `$PREVIEW_PICK_SCRIPT_URL` into inbound HTML so pick-annotate works without editing the app; turn off to add the script tag yourself. Off for direct preview keeps the existing noVNC pick flow.\n\n**Same interaction as human gate**: both use pick + chat + Confirm & continue; both appear in Pending approvals with distinct badges. Missing Approve/Reject is not a bug — Confirm & continue is the end action.\n\n**The app must listen on `0.0.0.0:<port>`** (not just 127.0.0.1): the preview is reverse-proxied via the container's bridge IP, so a loopback-only bind is unreachable and the preview goes blank (502).\n\nCanvas footnote: 「Confirm & continue · inbox」; subtitle 「Pick annotate · Await confirmation」. Legacy pass/fail edges are silently compatible (confirm injects action=pass)."
     },
     "branch": {
       "label": "Branch",
@@ -620,6 +620,14 @@
         },
         "timeout": {
           "label": "Timeout (minutes)"
+        },
+        "direct_preview": {
+          "label": "Direct IP preview",
+          "help": "When on, preview opens http://IP:port/ instead of noVNC. The in-sandbox proxy inserts the pick script and does not rewrite app paths. Default off."
+        },
+        "auto_inject": {
+          "label": "Auto-inject pick script",
+          "help": "On direct IP preview, the sandbox injects preview-pick.js into inbound HTML so the app source stays unchanged. Turn off to add the script tag yourself (old images / CSP nonce). Default on."
         }
       },
       "outputs": {
@@ -660,7 +668,7 @@
           "desc": "Full conversation transcript"
         }
       },
-      "help": "### Grasp\n\nOne multi-turn ReAct dialogue for **pre-dev work**. This node configures an Agent and a timeout (default 30 minutes): **no prompt template**, **no round cap**, and no auto-clarify / conditional injection. The platform injects run inputs and waits for the user to state the goal first; the agent then uses tools to align requirements and only `ask_question` when there is a real decision.\n\n**Two mandatory deliverables** (both required to finish — not a single unique delivery):\n1. `set_clarified_requirement` → `clarified_requirement.json` (`open_questions` must be empty; includes `work_kind`)\n2. `set_plan` → `plan.json` (at most two levels: goal → sub-goal; when writing the design zone, include all six sections or explicit 不涉及, optional Mermaid diagrams)\n\n**Bug-only extra deliverable**: when `work_kind` is `bug`, `set_root_cause` → `root_cause.json` (structured JSON, **not** `page.html` or generic `write_artifact`); non-bug runs must not keep this artifact.\n\n**Optional** (shown if present, missing does not fail): `set_research`; `set_proposals` (**only when ≥2 distinct alternatives need a user pick**; no single-candidate pseudo-choice); `write_artifact` for `page.html`; `set_preview` to register a running app (sandbox port or external url — not a completion condition, does not end this node).\n\nIf a skill pack says “unique delivery” or forbids those tools, **platform rule `rules/grasp.md` wins**. Do not write implementation code or change the repo."
+      "help": "### Grasp\n\nOne multi-turn ReAct dialogue for **pre-dev work**. This node configures an Agent, a timeout (default 30 minutes), **direct IP preview** (`direct_preview`, default off), and **auto-inject** (`auto_inject`, default on): **no prompt template**, **no round cap**, and no auto-clarify / conditional injection. With direct preview off, `set_preview` uses noVNC; with it on, the browser opens `http://IP:port/`. The in-sandbox proxy inserts the pick script, so the app source and its paths stay unchanged. The platform injects run inputs and waits for the user to state the goal first; the agent then uses tools to align requirements and only `ask_question` when there is a real decision.\n\n**Two mandatory deliverables** (both required to finish — not a single unique delivery):\n1. `set_clarified_requirement` → `clarified_requirement.json` (`open_questions` must be empty; includes `work_kind`)\n2. `set_plan` → `plan.json` (at most two levels: goal → sub-goal; when writing the design zone, include all six sections or explicit 不涉及, optional Mermaid diagrams)\n\n**Bug-only extra deliverable**: when `work_kind` is `bug`, `set_root_cause` → `root_cause.json` (structured JSON, **not** `page.html` or generic `write_artifact`); non-bug runs must not keep this artifact.\n\n**Optional** (shown if present, missing does not fail): `set_research`; `set_proposals` (**only when ≥2 distinct alternatives need a user pick**; no single-candidate pseudo-choice); `write_artifact` for `page.html`; `set_preview` to register a running app (sandbox port or external url — not a completion condition, does not end this node).\n\nIf a skill pack says “unique delivery” or forbids those tools, **platform rule `rules/grasp.md` wins**. Do not write implementation code or change the repo."
     }
   }
 }

@@ -171,10 +171,8 @@ func normalizePreviewPurpose(p string) string {
 	}
 }
 
-// InferPreviewMode returns "api" when label suggests an API port, else "vnc".
+// InferPreviewMode is always remote desktop. Port-direct iframes are chosen by
+// the node switch (directUrl), not by the port label.
 func InferPreviewMode(label string) string {
-	if strings.Contains(strings.ToLower(strings.TrimSpace(label)), "api") {
-		return PreviewPurposeAPI
-	}
 	return PreviewPurposeVNC
 }
