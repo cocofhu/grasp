@@ -129,28 +129,25 @@ func TestEmbedSessionFlow(t *testing.T) {
 		t.Fatalf("replay: %d", w.Code)
 	}
 
-	if w := hn.doEmbed(http.MethodGet, "/embed-api/runs/run-emb", nil, bearerHeader(token)); w.Code != http.StatusOK {
-		t.Fatalf("get run: %d %s", w.Code, w.Body.String())
-	} else if w.Header().Get("Access-Control-Allow-Origin") != "" {
-		t.Fatalf("embed API must not send CORS headers")
+	// The drawer token drives the share-link chat endpoints for this node.
+	prev := parseJSON(t, hn.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token}))
+	if prev["status"] != models.ShareLinkStateActive || prev["kind"] != models.ShareLinkKindReview {
+		t.Fatalf("preview with drawer token: %+v", prev)
 	}
-	if w := hn.doEmbed(http.MethodGet, "/embed-api/runs/run-emb", nil, nil); w.Code != http.StatusUnauthorized {
-		t.Fatalf("no bearer: %d", w.Code)
-	}
-	if w := hn.doEmbed(http.MethodGet, "/embed-api/runs/run-emb-other", nil, bearerHeader(token)); w.Code != http.StatusUnauthorized {
-		t.Fatalf("other run: %d", w.Code)
-	}
-	if w := hn.doEmbed(http.MethodPost, "/embed-api/runs/run-emb/react/other-node/cancel", nil, bearerHeader(token)); w.Code != http.StatusUnauthorized {
-		t.Fatalf("other node: %d", w.Code)
-	}
-	// The drawer token is not a platform session.
 	if w := hn.doEmbed(http.MethodGet, "/api/runs/run-emb", nil, bearerHeader(token)); w.Code != http.StatusUnauthorized {
 		t.Fatalf("api with drawer token: %d", w.Code)
 	}
+	dec := parseJSON(t, hn.doPublic(http.MethodPost, "/public/gate-approvals/decide", map[string]any{
+		"token": token, "action": "approve", "nonce": "x",
+	}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost}))
+	if dec["status"] != "invalid" {
+		t.Fatalf("decide with drawer token: %+v", dec)
+	}
 
 	hn.db.Model(&models.Run{}).Where("id = ?", "run-emb").Update("status", "completed")
-	if w := hn.doEmbed(http.MethodGet, "/embed-api/runs/run-emb", nil, bearerHeader(token)); w.Code != http.StatusUnauthorized {
-		t.Fatalf("finished run: %d", w.Code)
+	after := parseJSON(t, hn.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token}))
+	if after["status"] == models.ShareLinkStateActive {
+		t.Fatalf("finished run still active: %+v", after)
 	}
 }
 
@@ -244,10 +241,6 @@ func TestPublicEmbedTicketFlow(t *testing.T) {
 	if prev["status"] != models.ShareLinkStateActive {
 		t.Fatalf("preview with drawer token: %+v", prev)
 	}
-	// A share drawer token is not a logged-in drawer token.
-	if w := hn.doEmbed(http.MethodGet, "/embed-api/runs/run-emb-pub", nil, bearerHeader(token)); w.Code != http.StatusUnauthorized {
-		t.Fatalf("share token on embed-api: %d", w.Code)
-	}
 	// It can neither decide nor mint more credentials.
 	dec := parseJSON(t, hn.doPublic(http.MethodPost, "/public/gate-approvals/decide", map[string]any{
 		"token": token, "action": "approve", "nonce": "x",
@@ -277,7 +270,7 @@ func TestPublicEmbedTicketFlow(t *testing.T) {
 	}
 }
 
-func TestEmbedRunEventsFirstFrameAuth(t *testing.T) {
+func TestPublicEventsAcceptDrawerToken(t *testing.T) {
 	hn := newHarness(t)
 	seedAppPreviewReview(t, hn, "run-emb-ws", "ap1")
 	seedDirectPreview(t, hn, "run-emb-ws", "ap1")
@@ -285,18 +278,13 @@ func TestEmbedRunEventsFirstFrameAuth(t *testing.T) {
 
 	srv := httptest.NewServer(hn.r)
 	t.Cleanup(srv.Close)
-	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/embed-api/runs/run-emb-ws/events"
-	origin := http.Header{"Origin": {srv.URL}}
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/public/gate-approvals/events"
 
-	if _, _, err := websocket.DefaultDialer.Dial(wsURL, http.Header{"Origin": {"http://127.0.0.1:18080"}}); err == nil {
-		t.Fatal("cross-origin upgrade accepted")
-	}
-
-	bad, _, err := websocket.DefaultDialer.Dial(wsURL, origin)
+	bad, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = bad.WriteJSON(map[string]string{"token": "gse_" + strings.Repeat("0", 32), "nodeId": "ap1"})
+	_ = bad.WriteJSON(map[string]string{"token": "gse_" + strings.Repeat("0", 32)})
 	var m map[string]any
 	_ = bad.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if err := bad.ReadJSON(&m); err != nil || m["type"] != "error" {
@@ -304,15 +292,15 @@ func TestEmbedRunEventsFirstFrameAuth(t *testing.T) {
 	}
 	bad.Close()
 
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, origin)
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	_ = conn.WriteJSON(map[string]string{"token": token, "nodeId": "ap1"})
+	_ = conn.WriteJSON(map[string]string{"token": token})
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	m = nil
-	if err := conn.ReadJSON(&m); err != nil || m["type"] != "snapshot" {
-		t.Fatalf("snapshot: %v %+v", err, m)
+	if err := conn.ReadJSON(&m); err != nil || m["type"] != "ready" {
+		t.Fatalf("ready: %v %+v", err, m)
 	}
 }

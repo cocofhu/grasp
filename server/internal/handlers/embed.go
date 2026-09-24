@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/url"
 	"os"
@@ -12,21 +11,15 @@ import (
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
-	"github.com/rs/zerolog/log"
 )
 
-const (
-	// headerEmbedRequest must accompany ticket redemption; a cross-site form
-	// cannot set it, and a cross-origin fetch that sets it needs a preflight
-	// this server never grants.
-	headerEmbedRequest = "X-Grasp-Embed"
-
-	embedClaimsKey         = "embed_claims"
-	embedEventsAuthTimeout = 10 * time.Second
-)
+// headerEmbedRequest must accompany ticket redemption; a cross-site form
+// cannot set it, and a cross-origin fetch that sets it needs a preflight this
+// server never grants.
+const headerEmbedRequest = "X-Grasp-Embed"
 
 type embedTicketResponse struct {
 	Ticket    string    `json:"ticket"`
@@ -83,7 +76,7 @@ func (h *Handlers) embedTargetReady(runID, nodeID string) (int, string) {
 		return http.StatusConflict, "run finished"
 	}
 	n := run.Graph.FindNode(nodeID)
-	if n == nil || !mcp.SetPreviewAllowed(n.Type) {
+	if n == nil || !mcp.SetPreviewAllowed(n.Type) || !services.IsShareableReviewSession(n) {
 		return http.StatusBadRequest, "node has no preview chat"
 	}
 	if len(h.directPreviewOrigins(runID, nodeID)) == 0 {
@@ -242,83 +235,6 @@ func (h *Handlers) RedeemEmbedSession(c *gin.Context) {
 		"nodeId":    claims.NodeID,
 		"expiresAt": exp,
 	})
-}
-
-// sessionEmbedClaims validates a logged-in drawer token for runID (and
-// nodeID when non-empty). Share drawer tokens use the public API instead.
-func (h *Handlers) sessionEmbedClaims(token, runID, nodeID string) (*embed.Claims, bool) {
-	if h.Embed == nil {
-		return nil, false
-	}
-	claims, ok := h.Embed.LookupSession(token)
-	if !ok || claims.Kind != models.EmbedKindSession || claims.RunID != runID {
-		return nil, false
-	}
-	if nodeID != "" && claims.NodeID != nodeID {
-		return nil, false
-	}
-	if run, ok := h.Runs.Get(runID); !ok || terminalRunStatus(run.Status) {
-		return nil, false
-	}
-	return claims, true
-}
-
-// EmbedAuth guards /embed-api/runs/:id/... with a drawer bearer token bound
-// to that run and node, then acts as the user who minted the ticket.
-func (h *Handlers) EmbedAuth() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Header("Cache-Control", "no-store")
-		claims, ok := h.sessionEmbedClaims(bearer(c.GetHeader("Authorization")), c.Param("id"), c.Param("nodeId"))
-		if !ok {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "embed_session_invalid"})
-			return
-		}
-		c.Set(embedClaimsKey, claims)
-		c.Set("auth_username", claims.Username)
-		c.Next()
-	}
-}
-
-var embedUpgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		u, err := url.Parse(r.Header.Get("Origin"))
-		return err == nil && u.Host != "" && strings.EqualFold(u.Host, r.Host)
-	},
-}
-
-type embedEventsAuth struct {
-	Token  string `json:"token"`
-	NodeID string `json:"nodeId"`
-}
-
-// EmbedRunEvents is RunEvents for the drawer: the token arrives as the first
-// frame (never in the URL) and the stream is read-only.
-// GET /embed-api/runs/:id/events
-func (h *Handlers) EmbedRunEvents(c *gin.Context) {
-	runID := c.Param("id")
-	conn, err := embedUpgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		log.Debug().Str("run_id", runID).Err(err).Msg("embed events websocket upgrade failed")
-		return
-	}
-	defer conn.Close()
-
-	_ = conn.SetReadDeadline(time.Now().Add(embedEventsAuthTimeout))
-	_, data, err := conn.ReadMessage()
-	if err != nil {
-		return
-	}
-	var auth embedEventsAuth
-	if json.Unmarshal(data, &auth) != nil {
-		_ = conn.WriteJSON(gin.H{"type": "error", "status": "invalid"})
-		return
-	}
-	if _, ok := h.sessionEmbedClaims(auth.Token, runID, strings.TrimSpace(auth.NodeID)); !ok {
-		_ = conn.WriteJSON(gin.H{"type": "error", "status": "invalid"})
-		return
-	}
-	_ = conn.SetReadDeadline(time.Time{})
-	h.streamRunEvents(conn, runID, false)
 }
 
 // EmbedChatPage serves the SPA for the drawer. Only the node's registered

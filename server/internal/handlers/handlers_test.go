@@ -85,12 +85,16 @@ func newHarness(t *testing.T) *harness {
 	gateShareTickets := gateshare.NewTicketStore(db)
 	gateShareSessions := gateshare.NewPreviewSessionHub()
 	embedStore := embed.NewStore(db)
-	gateShareSvc.SetEmbedLookup(func(token string) (string, bool) {
+	gateShareSvc.SetEmbedLookup(func(token string) (gateshare.EmbedRef, bool) {
 		c, ok := embedStore.LookupSession(token)
-		if !ok || c.Kind != models.EmbedKindShare {
-			return "", false
+		if !ok {
+			return gateshare.EmbedRef{}, false
 		}
-		return c.ShareTokenHash, true
+		ref := gateshare.EmbedRef{RunID: c.RunID, NodeID: c.NodeID, ExpiresAt: c.ExpiresAt}
+		if c.Kind == models.EmbedKindShare {
+			ref.ShareTokenHash = c.ShareTokenHash
+		}
+		return ref, true
 	})
 	gateShareSvc.SetInvalidationHook(func(tokenHashes []string) {
 		for _, th := range tokenHashes {

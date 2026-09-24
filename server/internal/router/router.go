@@ -266,19 +266,10 @@ func New(h *handlers.Handlers) *gin.Engine {
 	r.GET("/mcp/runs/:runId/embed-origin", h.MCPEmbedOrigin)
 
 	// Preview-page chat drawer (outside /api: no cf_session, which a cross-site
-	// iframe never carries). Tickets are redeemed for a run/node-bound bearer.
+	// iframe never carries). A ticket is redeemed for a run/node-bound bearer
+	// that the /public/gate-approvals chat endpoints accept.
 	r.GET("/embed/runs/:runId/nodes/:nodeId/chat", h.EmbedChatPage)
 	r.POST("/embed-api/session", h.RedeemEmbedSession)
-	r.GET("/embed-api/runs/:id/events", h.EmbedRunEvents)
-	emb := r.Group("/embed-api/runs/:id", h.EmbedAuth())
-	{
-		emb.GET("", h.GetRun)
-		emb.GET("/nodes/:nodeId/events", h.NodeEvents)
-		emb.POST("/react/:nodeId/reply", h.ReactReply)
-		emb.POST("/react/:nodeId/cancel", h.ReactCancel)
-		emb.POST("/react/:nodeId/queue/remove", h.ReactQueueRemove)
-		emb.POST("/react/:nodeId/queue/reorder", h.ReactQueueReorder)
-	}
 
 	// Project-scoped PM MCP hosts (outside /api).
 	r.POST("/mcp/pm/:projectId", h.PMMCPRPC)
