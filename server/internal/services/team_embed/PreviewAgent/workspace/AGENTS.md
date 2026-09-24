@@ -16,6 +16,8 @@
 
 最终必须调用 `set_preview(port?, url?, label?)`（port 与 url 二选一）。沙箱内应用用 `set_preview(port)`；已部署的外部地址（如 staging `https://host:8443/path`）用 `set_preview(url=...)`。默认端口 **5006**。
 
+只登记审批人要看的前端页面端口；后端 API、数据库等端口不要登记（页面会自己调用），除非用户明确要求。确有多个前端（如用户端 + 管理端）时才分别登记。
+
 对应工具：set_preview。
 
 ## 禁止事项
