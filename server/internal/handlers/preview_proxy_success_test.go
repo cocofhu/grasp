@@ -102,6 +102,9 @@ func TestPreviewProxyRewritesOtherProjectLoginCookies(t *testing.T) {
 	if !strings.Contains(vals[0], "pv.shop_session=") || !strings.Contains(vals[1], "pv.remember_me=") {
 		t.Fatalf("expected both login cookies under the same prefix, got %v", vals)
 	}
+	if strings.Contains(strings.Join(vals, "\n"), "Partitioned") {
+		t.Fatalf("same-site preview host must not partition: %v", vals)
+	}
 	if strings.Contains(upstreamCookie, auth.CookieName) {
 		t.Fatalf("upstream must not see platform session, cookie=%q", upstreamCookie)
 	}
@@ -110,6 +113,81 @@ func TestPreviewProxyRewritesOtherProjectLoginCookies(t *testing.T) {
 	}
 	if strings.Contains(w.Body.String(), "Path=/") && !strings.Contains(w.Body.String(), "/preview/") {
 		t.Fatalf("html should be re-anchored: %s", w.Body.String())
+	}
+}
+
+func TestPreviewProxyPartitionsLoopbackSameOriginLogin(t *testing.T) {
+	hn := newHarness(t)
+	var upstreamCookie string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCookie = r.Header.Get("Cookie")
+		http.SetCookie(w, &http.Cookie{Name: "shop_session", Value: "abc", Path: "/"})
+		http.SetCookie(w, &http.Cookie{Name: "cart_id", Value: "c1", Path: "/"})
+		w.Header().Set("Location", "/home")
+		w.WriteHeader(http.StatusFound)
+	}))
+	t.Cleanup(up.Close)
+
+	preview := services.NewPreviewService(hn.db, nil)
+	hn.h.Preview = preview
+	hn.host.SetPreviewStore(preview)
+	_ = preview.UpsertPreviewPort(mcp.PreviewPort{
+		RunID: "run-e2e", NodeID: "n1", Port: 9090, Label: "shop",
+		Host: up.URL, Healthy: true, RegisteredAt: time.Now(),
+	})
+
+	w := &closeNotifyRecorder{ResponseRecorder: httptest.NewRecorder(), notify: make(chan bool)}
+	req := httptest.NewRequest(http.MethodPost, "/preview/run-e2e/n1/9090/login", nil)
+	req.Host = "pv.127.0.0.1.localhost:18081"
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: hn.cookie})
+	req.AddCookie(&http.Cookie{Name: "pv.shop_session", Value: "kept"})
+	hn.r.ServeHTTP(w, req)
+	if w.Code != http.StatusFound {
+		t.Fatalf("proxy: %d %s", w.Code, w.Body.String())
+	}
+	vals := w.Result().Header.Values("Set-Cookie")
+	if len(vals) != 2 {
+		t.Fatalf("cookie count = %d, want 2: %v", len(vals), vals)
+	}
+	for _, v := range vals {
+		for _, want := range []string{"SameSite=None", "Secure", "Partitioned", "Path=/preview/run-e2e/n1/9090/"} {
+			if !strings.Contains(v, want) {
+				t.Fatalf("cookie %q missing %q", v, want)
+			}
+		}
+		if !strings.HasPrefix(v, "pv.") {
+			t.Fatalf("cookie %q missing shared prefix", v)
+		}
+	}
+	if strings.Contains(upstreamCookie, auth.CookieName) {
+		t.Fatalf("upstream must not see platform session, cookie=%q", upstreamCookie)
+	}
+	if !strings.Contains(upstreamCookie, "shop_session=kept") {
+		t.Fatalf("upstream must receive the app session, cookie=%q", upstreamCookie)
+	}
+}
+
+func TestPreviewProxyRedirectsLoopbackToLocalhostName(t *testing.T) {
+	hn := newHarness(t)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/preview/run-px/n1/9090/home", nil)
+	req.Host = "127.0.0.1:18081"
+	hn.r.ServeHTTP(w, req)
+	if w.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("want 307 got %d %s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if loc != "http://pv.127.0.0.1.localhost:18081/preview/run-px/n1/9090/home" {
+		t.Fatalf("location = %q", loc)
+	}
+
+	w2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/preview/run-px/n1/9090/home", nil)
+	req2.Host = "localhost:18082"
+	hn.r.ServeHTTP(w2, req2)
+	if got := w2.Header().Get("Location"); got != "http://pv.localhost:18082/preview/run-px/n1/9090/home" {
+		t.Fatalf("localhost location = %q", got)
 	}
 }
 

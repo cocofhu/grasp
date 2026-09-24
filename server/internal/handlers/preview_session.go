@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -29,7 +30,12 @@ const previewSessionLimits = "" +
 	"still starts with __Host-; this proxy does not add a separate carrier for " +
 	"that reserved prefix. Root-absolute script requests such as fetch('/login') " +
 	"are not rewritten, so they never enter the preview channel and do not carry " +
-	"the preview session."
+	"the preview session. When the preview host is cross-site from the approval " +
+	"page and the origin is trustworthy (https, localhost, *.localhost, or " +
+	"loopback), every Set-Cookie also receives SameSite=None; Secure; Partitioned, " +
+	"including same-origin form posts inside the iframe. Those attributes are not " +
+	"chosen per cookie name. A non-loopback IP served over http via sslip.io is " +
+	"not a trustworthy origin, so those attributes are not added there."
 
 func requestPublicHost(c *gin.Context) string {
 	if c == nil || c.Request == nil {
@@ -82,8 +88,12 @@ func isPreviewDocumentHost(hostport string) bool {
 }
 
 // toPreviewDocumentHost maps the approval host onto the preview document host.
-// DNS names become pv.<host>. Raw IPs become pv.<ip>.sslip.io so the name
-// still resolves to that address without a cookie-name branch.
+// A registrable DNS name becomes pv.<host>, which stays same-site.
+// Loopback addresses become pv.<ip>.localhost so the name still resolves to
+// this machine and is a trustworthy origin (Chromium treats *.localhost as
+// secure). sslip.io is not trustworthy on http, so a Lax cookie set in that
+// cross-site iframe is dropped. Other raw IPs stay on pv.<ip>.sslip.io.
+// localhost itself becomes pv.localhost. None of this branches on a cookie name.
 func toPreviewDocumentHost(hostport string) string {
 	name, port := splitHostPortLoose(hostport)
 	if name == "" {
@@ -93,6 +103,9 @@ func toPreviewDocumentHost(hostport string) string {
 		return joinHostPort(name, port)
 	}
 	if ip := net.ParseIP(name); ip != nil {
+		if ip.IsLoopback() {
+			return joinHostPort(loopbackPreviewHostname(ip), port)
+		}
 		if v4 := ip.To4(); v4 != nil {
 			return joinHostPort(previewHostLabel+"."+v4.String()+".sslip.io", port)
 		}
@@ -100,6 +113,20 @@ func toPreviewDocumentHost(hostport string) string {
 		return joinHostPort(previewHostLabel+"."+dashed+".sslip.io", port)
 	}
 	return joinHostPort(previewHostLabel+"."+name, port)
+}
+
+// loopbackPreviewHostname is a *.localhost name. Chromium resolves it to
+// loopback and treats it as a secure context, unlike pv.<ip>.sslip.io.
+func loopbackPreviewHostname(ip net.IP) string {
+	if v4 := ip.To4(); v4 != nil {
+		return previewHostLabel + "." + v4.String() + ".localhost"
+	}
+	ip = ip.To16()
+	parts := make([]string, 8)
+	for i := 0; i < 8; i++ {
+		parts[i] = strconv.FormatInt(int64(ip[i*2])<<8|int64(ip[i*2+1]), 16)
+	}
+	return previewHostLabel + ".v6-" + strings.Join(parts, "-") + ".localhost"
 }
 
 // approvalHostFromPreview is the approval host a preview document may be framed by.
@@ -110,13 +137,54 @@ func approvalHostFromPreview(previewHostport string) string {
 		return joinHostPort(name, port)
 	}
 	rest := name[len(previewHostLabel)+1:]
-	if strings.HasSuffix(strings.ToLower(rest), ".sslip.io") {
-		core := rest[:len(rest)-len(".sslip.io")]
-		if ip := net.ParseIP(core); ip != nil {
-			return joinHostPort(ip.String(), port)
-		}
+	lowerRest := strings.ToLower(rest)
+	if parent, ok := approvalHostFromPreviewLabel(lowerRest, rest); ok {
+		return joinHostPort(parent, port)
 	}
 	return joinHostPort(rest, port)
+}
+
+// approvalHostFromPreviewLabel reverses a pv.<label> suffix when the label
+// encodes an IP (sslip.io or *.localhost). The original label case is only
+// needed when the suffix match uses the raw rest.
+func approvalHostFromPreviewLabel(lowerRest, rest string) (string, bool) {
+	if strings.HasSuffix(lowerRest, ".sslip.io") {
+		core := rest[:len(rest)-len(".sslip.io")]
+		if ip := net.ParseIP(core); ip != nil {
+			return ip.String(), true
+		}
+	}
+	if strings.HasSuffix(lowerRest, ".localhost") {
+		core := rest[:len(rest)-len(".localhost")]
+		if ip := net.ParseIP(core); ip != nil {
+			return ip.String(), true
+		}
+		if ip := parseV6PreviewLabel(core); ip != nil {
+			return ip.String(), true
+		}
+	}
+	return "", false
+}
+
+func parseV6PreviewLabel(core string) net.IP {
+	lower := strings.ToLower(core)
+	if !strings.HasPrefix(lower, "v6-") {
+		return nil
+	}
+	groups := strings.Split(lower[len("v6-"):], "-")
+	if len(groups) != 8 {
+		return nil
+	}
+	ip := make(net.IP, 16)
+	for i, g := range groups {
+		n, err := strconv.ParseInt(g, 16, 32)
+		if err != nil || n < 0 || n > 0xffff {
+			return nil
+		}
+		ip[i*2] = byte(n >> 8)
+		ip[i*2+1] = byte(n)
+	}
+	return ip
 }
 
 func approvalFrameAncestors(publicHost string) string {
@@ -138,7 +206,7 @@ func safeCSPHost(host string) bool {
 	for _, r := range host {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-		case r == '.', r == '-', r == ':', r == '_':
+		case r == '.', r == '-', r == ':', r == '_', r == '[', r == ']':
 		default:
 			return false
 		}
@@ -218,14 +286,55 @@ func forwardPreviewCookies(req *http.Request) {
 	req.Header.Set("Cookie", strings.Join(kept, "; "))
 }
 
+// shouldPartitionPreviewCookies reports whether every Set-Cookie on this
+// response must be stored as a partitioned third-party cookie.
+//
+// A login form inside the preview iframe posts to the preview host itself, so
+// Sec-Fetch-Site is same-origin. The iframe is still a third-party context
+// when that host is cross-site from the approval page (pv.localhost versus
+// localhost, or pv.<loopback>.localhost versus 127.0.0.1). Chromium drops a
+// default Lax cookie in that context. The same SameSite=None; Secure;
+// Partitioned attributes are added to every cookie, and only when the origin
+// is trustworthy enough for the browser to keep a Secure cookie.
 func shouldPartitionPreviewCookies(r *http.Request, publicHost string) bool {
-	if r == nil || !strings.EqualFold(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site")), "cross-site") {
+	if !previewHostCrossSite(publicHost) {
 		return false
 	}
-	if r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") {
+	return previewHostTrustworthy(r, publicHost)
+}
+
+// previewHostCrossSite is true when the preview document host is not same-site
+// with the approval host it was derived from. pv.app.example.com is same-site
+// with app.example.com and must keep Lax cookies. pv.localhost is not same-site
+// with localhost in Chromium (localhost is a public suffix).
+func previewHostCrossSite(publicHost string) bool {
+	name, _ := splitHostPortLoose(publicHost)
+	lower := strings.ToLower(name)
+	if !strings.HasPrefix(lower, previewHostLabel+".") {
+		return false
+	}
+	rest := lower[len(previewHostLabel)+1:]
+	if rest == "localhost" || strings.HasSuffix(rest, ".localhost") {
+		return true
+	}
+	if strings.HasSuffix(rest, ".sslip.io") {
+		return true
+	}
+	// A single-label parent (pv.intranet) is its own site.
+	return !strings.Contains(rest, ".")
+}
+
+func previewHostTrustworthy(r *http.Request, publicHost string) bool {
+	if r != nil && (r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")) {
 		return true
 	}
 	name, _ := splitHostPortLoose(publicHost)
 	h := strings.ToLower(name)
-	return h == "localhost" || strings.HasSuffix(h, ".localhost") || h == "127.0.0.1"
+	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
+		return true
+	}
+	if ip := net.ParseIP(h); ip != nil && ip.IsLoopback() {
+		return true
+	}
+	return false
 }

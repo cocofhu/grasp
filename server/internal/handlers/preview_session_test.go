@@ -22,6 +22,15 @@ func TestToPreviewDocumentHost(t *testing.T) {
 	if got := toPreviewDocumentHost("10.0.0.8:18081"); got != "pv.10.0.0.8.sslip.io:18081" {
 		t.Fatalf("ipv4 = %q", got)
 	}
+	if got := toPreviewDocumentHost("127.0.0.1:18081"); got != "pv.127.0.0.1.localhost:18081" {
+		t.Fatalf("loopback ipv4 = %q", got)
+	}
+	if got := toPreviewDocumentHost("localhost:18082"); got != "pv.localhost:18082" {
+		t.Fatalf("localhost = %q", got)
+	}
+	if got := toPreviewDocumentHost("[::1]:18081"); got != "pv.v6-0-0-0-0-0-0-0-1.localhost:18081" {
+		t.Fatalf("loopback ipv6 = %q", got)
+	}
 	if !isPreviewDocumentHost("pv.app.example.com:8443") || isPreviewDocumentHost("app.example.com") {
 		t.Fatal("preview host detection")
 	}
@@ -31,6 +40,68 @@ func TestToPreviewDocumentHost(t *testing.T) {
 	}
 	if parent := approvalHostFromPreview("pv.10.0.0.8.sslip.io:18081"); parent != "10.0.0.8:18081" {
 		t.Fatalf("ip parent = %q", parent)
+	}
+	if parent := approvalHostFromPreview("pv.127.0.0.1.localhost:18081"); parent != "127.0.0.1:18081" {
+		t.Fatalf("loopback parent = %q", parent)
+	}
+	if parent := approvalHostFromPreview("pv.localhost:18082"); parent != "localhost:18082" {
+		t.Fatalf("localhost parent = %q", parent)
+	}
+	if parent := approvalHostFromPreview("pv.v6-0-0-0-0-0-0-0-1.localhost:18081"); parent != "[::1]:18081" {
+		t.Fatalf("ipv6 parent = %q", parent)
+	}
+}
+
+func TestShouldPartitionSameOriginLoginOnCrossSitePreview(t *testing.T) {
+	loopback := httptest.NewRequest(http.MethodPost, "http://pv.127.0.0.1.localhost:18081/preview/run-e2e/n1/9090/login", nil)
+	loopback.Host = "pv.127.0.0.1.localhost:18081"
+	loopback.Header.Set("Sec-Fetch-Site", "same-origin")
+	if !shouldPartitionPreviewCookies(loopback, loopback.Host) {
+		t.Fatal("loopback preview must partition a same-origin login post")
+	}
+	local := httptest.NewRequest(http.MethodPost, "http://pv.localhost:18082/preview/run-e2e/n1/9090/login", nil)
+	local.Host = "pv.localhost:18082"
+	local.Header.Set("Sec-Fetch-Site", "same-origin")
+	if !shouldPartitionPreviewCookies(local, local.Host) {
+		t.Fatal("localhost preview must partition a same-origin login post")
+	}
+	sameSite := httptest.NewRequest(http.MethodPost, "http://pv.app.example.com/login", nil)
+	sameSite.Host = "pv.app.example.com"
+	sameSite.Header.Set("Sec-Fetch-Site", "same-origin")
+	if shouldPartitionPreviewCookies(sameSite, sameSite.Host) {
+		t.Fatal("same-site DNS preview must keep Lax cookies")
+	}
+	plainIP := httptest.NewRequest(http.MethodPost, "http://pv.10.0.0.8.sslip.io:18081/login", nil)
+	plainIP.Host = "pv.10.0.0.8.sslip.io:18081"
+	plainIP.Header.Set("Sec-Fetch-Site", "same-origin")
+	if shouldPartitionPreviewCookies(plainIP, plainIP.Host) {
+		t.Fatal("http sslip.io is not trustworthy; do not add Secure")
+	}
+	plainIP.Header.Set("X-Forwarded-Proto", "https")
+	if !shouldPartitionPreviewCookies(plainIP, plainIP.Host) {
+		t.Fatal("https sslip.io must partition even when the form post is same-origin")
+	}
+
+	const prefix = "/preview/run-e2e/n1/9090/"
+	raw := rewritePreviewSetCookie("shop_session=abc; Path=/; HttpOnly; SameSite=Lax", prefix, true)
+	for _, want := range []string{
+		"pv.shop_session=abc",
+		"Path=/preview/run-e2e/n1/9090/",
+		"HttpOnly",
+		"SameSite=None",
+		"Secure",
+		"Partitioned",
+	} {
+		if !strings.Contains(raw, want) {
+			t.Fatalf("cookie %q missing %q", raw, want)
+		}
+	}
+	if strings.Contains(raw, "SameSite=Lax") {
+		t.Fatalf("Lax must be replaced: %q", raw)
+	}
+	other := rewritePreviewSetCookie("remember_me=yes; Path=/account", prefix, true)
+	if !strings.Contains(other, "pv.remember_me=yes") || !strings.Contains(other, "Partitioned") || !strings.Contains(other, "Path=/preview/run-e2e/n1/9090/account") {
+		t.Fatalf("second cookie = %q", other)
 	}
 }
 
