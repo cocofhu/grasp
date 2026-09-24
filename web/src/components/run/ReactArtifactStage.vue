@@ -213,6 +213,7 @@ watch(
 
 const effectiveRemoteKind = computed(() => {
   if (isGrasp(resolvedNodeType.value)) {
+    if (resolvedRemoteKind.value === 'public') return props.ports?.length ? 'public' : 'off'
     return approveStageRemoteKind(approvePreviewRegistered.value)
   }
   return resolvedRemoteKind.value

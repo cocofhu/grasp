@@ -35,6 +35,11 @@ const flushInterval = 100 * time.Millisecond
 // status. Grasp ProbeHTTPPort treats any HTTP response as healthy; a
 // 502 here would make set_preview succeed before the app is listening.
 func NewHandler(upstream *url.URL, scriptURL string) http.Handler {
+	return NewHandlerWithEmbed(upstream, scriptURL, EmbedLookup{})
+}
+
+// NewHandlerWithEmbed is NewHandler plus EmbedOriginPath for the chat drawer.
+func NewHandlerWithEmbed(upstream *url.URL, scriptURL string, embed EmbedLookup) http.Handler {
 	if upstream == nil {
 		panic("previewinject: nil upstream")
 	}
@@ -55,6 +60,10 @@ func NewHandler(upstream *url.URL, scriptURL string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == ScriptPath {
 			servePickScript(w, r)
+			return
+		}
+		if r.URL.Path == EmbedOriginPath {
+			embed.serve(w, r)
 			return
 		}
 		proxy.ServeHTTP(w, r)

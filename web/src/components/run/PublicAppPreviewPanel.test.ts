@@ -8,6 +8,7 @@ import PublicAppPreviewPanel from './PublicAppPreviewPanel.vue'
 
 const shareMocks = vi.hoisted(() => ({
   createPreviewTicket: vi.fn(),
+  embedTicket: vi.fn(),
 }))
 
 vi.mock('@/lib/inbox/gateShareLink', async () => {
@@ -18,6 +19,7 @@ vi.mock('@/lib/inbox/gateShareLink', async () => {
     publicGateApi: {
       ...actual.publicGateApi,
       createPreviewTicket: shareMocks.createPreviewTicket,
+      embedTicket: shareMocks.embedTicket,
     },
   }
 })
@@ -47,7 +49,6 @@ describe('PublicAppPreviewPanel', () => {
         plugins: [i18n],
         stubs: {
           NovncPreviewPanel: true,
-          DirectPreviewFrame: true,
           ExternalUrlPreviewFrame: true,
         },
       },
@@ -73,6 +74,28 @@ describe('PublicAppPreviewPanel', () => {
     })
     await flushPromises()
     expect(w.html().length).toBeGreaterThan(10)
+    w.unmount()
+  })
+
+  it('opens a direct port in a new tab with a drawer ticket from the share link', async () => {
+    const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
+    shareMocks.embedTicket.mockResolvedValue({ ticket: 'tk', runId: 'run-1', nodeId: 'ap1', expiresAt: '' })
+    const tab = { opener: {} as unknown, closed: false, location: { href: '' } }
+    const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window)
+    const w = mount(PublicAppPreviewPanel, {
+      props: {
+        token: 'share-token',
+        ports: [{ port: 18080, label: 'web', kind: 'http', directUrl: 'http://10.0.0.5:18080/' }],
+        active: true,
+      },
+      global: { plugins: [i18n], stubs: { NovncPreviewPanel: true } },
+    })
+    await flushPromises()
+    await w.get('[data-testid="app-preview-direct-open"]').trigger('click')
+    await flushPromises()
+    expect(shareMocks.embedTicket).toHaveBeenCalledWith('share-token')
+    expect(tab.location.href).toBe('http://10.0.0.5:18080/#__grasp_embed&run=run-1&node=ap1&ticket=tk&theme=dark')
+    open.mockRestore()
     w.unmount()
   })
 })

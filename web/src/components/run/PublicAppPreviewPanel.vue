@@ -2,7 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import NovncPreviewPanel from '@/components/run/NovncPreviewPanel.vue'
-import DirectPreviewFrame from '@/components/run/DirectPreviewFrame.vue'
+import DirectPreviewLauncher from '@/components/run/DirectPreviewLauncher.vue'
 import ExternalUrlPreviewFrame from '@/components/run/ExternalUrlPreviewFrame.vue'
 import {
   publicGateApi,
@@ -272,12 +272,11 @@ function retry() {
           :url="activeDirectUrl"
           :title="activeMeta ? tabLabel(activeMeta) : 'preview'"
         />
-        <DirectPreviewFrame
+        <DirectPreviewLauncher
           v-else-if="activeIsDirect && activeDirectUrl"
           :direct-url="activeDirectUrl"
-          :title="activeMeta ? tabLabel(activeMeta) : 'preview'"
+          :issue-ticket="active ? () => publicGateApi.embedTicket(token) : undefined"
           data-testid="public-gate-app-preview-api"
-          @pick="onPick"
         />
         <NovncPreviewPanel
           v-else-if="vncWsUrl"

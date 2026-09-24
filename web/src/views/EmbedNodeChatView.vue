@@ -9,11 +9,14 @@ import {
   clearEmbedSession,
   loadEmbedSession,
   parseEmbedPickMessage,
+  parseEmbedThemeFromHash,
+  parseEmbedThemeMessage,
   parseEmbedTicketFromHash,
   redeemEmbedTicket,
   saveEmbedSession,
 } from '@/lib/inbox/embedChat'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
+import { setThemeOverride } from '@/lib/shared/theme'
 
 type ChatRef = { addPick?: (payload: AppPreviewPickPayload) => void }
 
@@ -27,15 +30,18 @@ const token = ref('')
 const chatRef = ref<ChatRef | null>(null)
 let announced = false
 
-function takeTicket(): string {
-  const ticket = parseEmbedTicketFromHash(window.location.hash)
-  if (ticket) history.replaceState(history.state, '', `${window.location.pathname}${window.location.search}`)
-  return ticket
+function takeHash(): string {
+  const hash = window.location.hash
+  if (hash) history.replaceState(history.state, '', `${window.location.pathname}${window.location.search}`)
+  return hash
 }
 
 async function connect() {
   phase.value = 'connecting'
-  const ticket = takeTicket()
+  const hash = takeHash()
+  const theme = parseEmbedThemeFromHash(hash)
+  if (theme) setThemeOverride(theme)
+  const ticket = parseEmbedTicketFromHash(hash)
   if (ticket) {
     try {
       const s = await redeemEmbedTicket(ticket, runId, nodeId)
@@ -82,6 +88,11 @@ function onMessage(e: MessageEvent) {
   if (window.parent === window || e.source !== window.parent) return
   const origin = window.location.ancestorOrigins?.[0]
   if (origin && e.origin !== origin) return
+  const theme = parseEmbedThemeMessage(e.data)
+  if (theme) {
+    setThemeOverride(theme)
+    return
+  }
   const pick = parseEmbedPickMessage(e.data)
   if (pick) chatRef.value?.addPick?.(pick)
 }
@@ -90,7 +101,10 @@ onMounted(() => {
   window.addEventListener('message', onMessage)
   void connect()
 })
-onUnmounted(() => window.removeEventListener('message', onMessage))
+onUnmounted(() => {
+  window.removeEventListener('message', onMessage)
+  setThemeOverride(null)
+})
 </script>
 
 <template>

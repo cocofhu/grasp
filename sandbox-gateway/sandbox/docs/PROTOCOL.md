@@ -250,9 +250,9 @@ loopback 导航是两条路径,互不替代。
 
 ### 5.5 直连预览 HTML 注入(可选,`PREVIEW_DIRECT`)
 
-IP 直连预览时审批页 iframe 的 origin 是 `http://<sandbox-ip>:$PREVIEW_PORT/`,
-父页无法跨源注入脚本。参考实现在**沙箱内**做入站 HTML 注入,不改网关发布面、
-不改应用监听口、不加 `<base>`:
+IP 直连预览只在新标签页打开 `http://<sandbox-ip>:$PREVIEW_PORT/`,Grasp 页面不再
+iframe 内嵌它。跨源页面无法由 Grasp 注入脚本,参考实现在**沙箱内**做入站 HTML 注入,
+不改网关发布面、不改应用监听口、不加 `<base>`:
 
 - 平台注入 `PREVIEW_DIRECT=1`、`PREVIEW_PORT`。自动注入开启时
   `PREVIEW_PICK_SCRIPT_URL=/__grasp/preview-pick.js`(同域相对路径)。
@@ -264,17 +264,27 @@ IP 直连预览时审批页 iframe 的 origin 是 `http://<sandbox-ip>:$PREVIEW_
   `<script src="/__grasp/preview-pick.js">`。不得注入
   `http://localhost:8080/preview-pick.js`:审批人浏览器 origin 是
   `http://IP:PREVIEW_PORT/`,打不开 Grasp 的 loopback。
-- 脚本用 `postMessage` 向父页发 `direct-preview-ready`(每次文档加载一次,
-  经典 `<script>` 早于 iframe `load` 事件),SPA 跳转再发 `direct-preview-url`。
-  父页可发 `direct-preview-ping` 要求重播 ready;判定「未加载脚本」须以
-  ping 也无应答为准,不能只看 `load` 时序。
-- 脚本在页内画 Pick 操作条(Shadow DOM),新窗口直接打开也可用。收到**来自
-  `parent`** 的 `direct-preview-host` 之前按独立窗口处理:点选暂存在页内
-  (最多 20 条,存 `sessionStorage`,同标签页整页跳转后仍在),不发给任何父页。
-  收到后进入嵌入模式:每次点选发 `direct-preview-picked`
-  (`selector` / `tagName` / `text` 截断 120 字 / `outerHTML` 截断 1024 字 / `url`),
-  页内不留列表;握手前暂存的点选随即补发。页内开关变化发
-  `direct-preview-inspect-state {on}`;父页仍可用 `direct-preview-inspect` 控制。
+- 脚本在页内画 Pick 操作条(Shadow DOM)。没有对话抽屉时,点选暂存在页内
+  (最多 20 条,存 `sessionStorage`,同标签页整页跳转后仍在)。
+- **对话抽屉**:Grasp 打开预览时在片段里带一次性票据
+  `#__grasp_embed&run=<runId>&node=<nodeId>&ticket=<ticket>&theme=<dark|light>`(票据 60 秒,只能兑换一次;
+  `theme` 是打开时 Grasp 的主题)。
+  脚本读到后立即从地址栏去掉,再请求同域 `GET /__grasp/embed-origin?ticket=&node=`。
+  注入层用沙箱环境里的 `GRASP_ARTIFACT_URL` / `GRASP_ARTIFACT_TOKEN` 调
+  `GET <GRASP_ARTIFACT_URL>/embed-origin?ticket=&nodeId=`(Bearer run token,不消耗票据),
+  只在 Grasp 确认后返回 `{origin, runId, nodeId}`;缺凭证、票据无效或 origin 不是纯
+  `http(s)://host[:port]` 时一律 404,脚本退回无抽屉模式。抽屉的 origin 只信这一步的
+  结果,不信 URL。
+- 抽屉是 Shadow DOM 里右侧的 iframe:`<origin>/embed/runs/<runId>/nodes/<nodeId>/chat#ticket=<ticket>&theme=<theme>`。
+  该页用票据换对话凭证后存在自己的 `sessionStorage`;`{origin, run, node, open, theme}` 存在应用页的
+  `sessionStorage`(不含票据),整页跳转后不带票据重建抽屉。
+- 抽屉就绪后发 `grasp-embed:ready`(仅认 `source` 为抽屉 iframe 且 `origin` 相符);之后每次
+  点选以 `{type:'grasp-embed:pick', payload:{selector, tagName, text(≤120), outerHTML(≤1024), url}}`
+  发往抽屉 origin,页内不留列表。就绪前的点选和抽屉出现前暂存的点选排队补发。
+- 抽屉标题栏可切换深/浅色:操作条和抽屉一起换,并向抽屉发 `{type:'grasp-embed:theme', theme}`
+  (就绪时也发一次)。抽屉页只跟随显示,不改用户在 Grasp 里保存的主题。
+- 抽屉只能对话,不能确认/驳回;这些仍在 Grasp 页面完成。应用自带 CSP 的 `frame-src`
+  不允许 Grasp origin 时抽屉加载不出来。
 - 回环(应用 ← 注入进程)走 OUTPUT,不进 PREROUTING,不会环。
 - 注入进程**不得**听 `PREVIEW_PORT`(平台 `KeepalivePort` 按该口找应用进程)。
 - 进程挂了必须拆规则或立刻拉起:箱外 `ProbeHTTPPort` 打的是发布口,会走 REDIRECT;

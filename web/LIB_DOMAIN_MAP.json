@@ -154,7 +154,6 @@
       "compositeText.ts",
       "copyToClipboard.ts",
       "demoScrollbar.ts",
-      "directPreviewPick.ts",
       "format.ts",
       "frontmatter.ts",
       "highlightJson.ts",
@@ -196,6 +195,6 @@
     "pm": 7,
     "project": 4,
     "run": 56,
-    "shared": 41
+    "shared": 40
   }
 }

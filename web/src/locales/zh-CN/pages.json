@@ -2933,9 +2933,6 @@
       "connectionLost": "预览连接已断开",
       "sandboxRecycled": "沙箱已回收,预览不可用",
       "directOpenTab": "新标签打开",
-      "directScriptMissing": "应用页未加载取点脚本。直连预览需同域 /__grasp/preview-pick.js（请使用含 preview-inject 的新沙箱镜像）。",
-      "directGotoInvalid": "只能跳转到同一预览 origin 的地址。",
-      "directAddressPlaceholder": "http://IP:port/",
       "externalUrlHint": "外部 URL 直连预览；跨域站点不支持取点标注。",
       "novnc": {
         "back": "后退",
@@ -2986,7 +2983,10 @@
           "open": "待处理",
           "resolved": "已解决"
         }
-      }
+      },
+      "directLauncherHint": "直连预览在新标签中打开。页面右下角有「对话」按钮，可在预览里取点并与 Agent 交互。",
+      "directChatUnavailable": "预览已打开，但这次没法附带对话抽屉，请回到这里继续对话。",
+      "directPopupBlocked": "浏览器拦截了新标签，请点这里打开预览。"
     },
     "gateApproval": {
       "reactRevise": {

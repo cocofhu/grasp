@@ -17,7 +17,10 @@ function initial(): ThemeName {
 
 export const theme = ref<ThemeName>(initial())
 
+let override: ThemeName | null = null
+
 function apply(t: ThemeName) {
+  t = override ?? t
   const root = document.documentElement
   root.classList.toggle('light', t === 'light')
   root.style.colorScheme = t
@@ -42,6 +45,15 @@ export function applyPublicLightChrome(): void {
   const root = document.documentElement
   root.classList.add('light')
   root.style.colorScheme = 'light'
+}
+
+/**
+ * Embedded pages follow the host page's theme. The override wins over the
+ * persisted theme without writing grasp-theme; null goes back to it.
+ */
+export function setThemeOverride(t: ThemeName | null): void {
+  override = t
+  apply(theme.value)
 }
 
 /** Re-apply persisted/default theme after leaving a public page. */

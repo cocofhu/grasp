@@ -1,4 +1,5 @@
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
+import type { ThemeName } from '@/lib/shared/theme'
 
 /** Must match server handlers.headerEmbedRequest. */
 const EMBED_REQUEST_HEADER = 'X-Grasp-Embed'
@@ -6,6 +7,7 @@ const STORAGE_PREFIX = 'grasp.embed.'
 
 export const EMBED_PICK_MESSAGE = 'grasp-embed:pick'
 export const EMBED_READY_MESSAGE = 'grasp-embed:ready'
+export const EMBED_THEME_MESSAGE = 'grasp-embed:theme'
 
 export type EmbedTicket = {
   ticket: string
@@ -26,9 +28,33 @@ export function embedChatPath(runId: string, nodeId: string): string {
   return `/embed/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/chat`
 }
 
+/** Direct preview URL carrying a drawer ticket for the in-page pick script (preview-pick.js). */
+export function directPreviewEmbedUrl(directUrl: string, t: EmbedTicket, theme: ThemeName): string {
+  const base = directUrl.split('#')[0]
+  const q = new URLSearchParams({ run: t.runId, node: t.nodeId, ticket: t.ticket, theme })
+  return `${base}#__grasp_embed&${q.toString()}`
+}
+
+function hashParams(hash: string): URLSearchParams {
+  return new URLSearchParams((hash || '').replace(/^#/, ''))
+}
+
 export function parseEmbedTicketFromHash(hash: string): string {
-  const raw = (hash || '').replace(/^#/, '')
-  return new URLSearchParams(raw).get('ticket')?.trim() || ''
+  return hashParams(hash).get('ticket')?.trim() || ''
+}
+
+function asTheme(v: unknown): ThemeName | null {
+  return v === 'dark' || v === 'light' ? v : null
+}
+
+export function parseEmbedThemeFromHash(hash: string): ThemeName | null {
+  return asTheme(hashParams(hash).get('theme'))
+}
+
+export function parseEmbedThemeMessage(data: unknown): ThemeName | null {
+  if (!data || typeof data !== 'object') return null
+  const m = data as { type?: unknown; theme?: unknown }
+  return m.type === EMBED_THEME_MESSAGE ? asTheme(m.theme) : null
 }
 
 function storageKey(runId: string, nodeId: string): string {

@@ -3,15 +3,13 @@
   if (window.__graspPreviewPick) return;
   window.__graspPreviewPick = true;
 
-  var READY = 'direct-preview-ready';
-  var URL_MSG = 'direct-preview-url';
-  var PICKED = 'direct-preview-picked';
-  var CANCELED = 'direct-preview-canceled';
-  var INSPECT = 'direct-preview-inspect';
-  var INSPECT_STATE = 'direct-preview-inspect-state';
-  var NAV = 'direct-preview-nav';
-  var PING = 'direct-preview-ping';
-  var HOST = 'direct-preview-host';
+  // Drawer page protocol (web/src/lib/inbox/embedChat.ts).
+  var EMBED_PICK = 'grasp-embed:pick';
+  var EMBED_READY = 'grasp-embed:ready';
+  var EMBED_THEME = 'grasp-embed:theme';
+  var EMBED_HASH = '__grasp_embed';
+  var EMBED_ORIGIN_PATH = '/__grasp/embed-origin';
+  var EMBED_STORE_KEY = '__grasp_embed';
 
   var MAX_ITEMS = 20;
   var MAX_TEXT = 120;
@@ -28,6 +26,11 @@
         full: '最多 ' + MAX_ITEMS + ' 个，请先移除一些',
         added: '已添加到 Grasp 对话框',
         empty: '点「取点」后点击页面元素',
+        chat: '对话',
+        chatTitle: 'Grasp · Agent 对话',
+        close: '收起对话',
+        toLight: '切换到浅色',
+        toDark: '切换到深色',
       }
     : {
         pick: 'Pick',
@@ -37,16 +40,13 @@
         full: 'Up to ' + MAX_ITEMS + ' picks. Remove some first.',
         added: 'Added to the Grasp chat',
         empty: 'Turn on Pick, then click an element',
+        chat: 'Chat',
+        chatTitle: 'Grasp · Agent chat',
+        close: 'Hide chat',
+        toLight: 'Switch to light',
+        toDark: 'Switch to dark',
       };
 
-  var hasParent = false;
-  try {
-    hasParent = window.parent && window.parent !== window;
-  } catch (e) {}
-
-  // Embedded only after the Grasp frame says hello; any other embedder is treated
-  // as a standalone window so picks never leave the page for an unknown parent.
-  var embedded = false;
   var enabled = false;
   var hoverEl = null;
   var styleEl = null;
@@ -54,6 +54,11 @@
   var host = null;
   var ui = null;
   var noticeTimer = null;
+  // Chat drawer: set once Grasp vouches for the origin behind this tab's ticket.
+  var drawer = null;
+  var drawerOpen = false;
+  var drawerReady = false;
+  var outbox = [];
 
   // Standalone picks survive full page loads within this tab (multi-page apps).
   function loadItems() {
@@ -72,29 +77,12 @@
     } catch (e) {}
   }
 
-  function post(msg) {
-    if (!hasParent) return;
-    // Always '*' : HTTPS Grasp embedding http://IP:port often strips
-    // document.referrer (strict-origin-when-cross-origin), and a wrong
-    // targetOrigin fails silently with no exception.
-    try {
-      parent.postMessage(msg, '*');
-    } catch (e) {}
-  }
-
   function currentUrl() {
     try {
       return location.href;
     } catch (e) {
       return '';
     }
-  }
-
-  function postUrl(type) {
-    if (host) mountBar();
-    var u = currentUrl();
-    if (!u) return;
-    post({ type: type || URL_MSG, url: u });
   }
 
   function escId(id) {
@@ -180,18 +168,22 @@
     return p.indexOf(host) >= 0;
   }
 
+  var DRAWER_W = 420;
   var BAR_CSS =
     ':host{all:initial}' +
     '.bar{position:fixed;right:16px;bottom:16px;z-index:2147483647;max-width:320px;' +
     'font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e5e7eb;' +
     'background:#111827;border:1px solid #374151;border-radius:10px;' +
     'box-shadow:0 6px 24px rgba(0,0,0,.35);padding:6px}' +
+    '.bar.shift{right:' + (DRAWER_W + 16) + 'px}' +
     '.row{display:flex;align-items:center;gap:6px}' +
     'button{font:inherit;color:inherit;background:transparent;border:0;cursor:pointer;border-radius:6px;padding:4px 8px}' +
     'button:hover{background:#1f2937}' +
     'button:focus-visible{outline:2px solid #3b82f6;outline-offset:1px}' +
     '.toggle{background:#1f2937;font-weight:600}' +
     '.toggle[aria-pressed="true"]{background:#064e3b;color:#6ee7b7}' +
+    '.chat{background:#312e81;color:#e0e7ff;font-weight:600}' +
+    '.chat[aria-expanded="true"]{background:#4338ca}' +
     '.count{color:#9ca3af}' +
     '.list{list-style:none;margin:6px 0 0;padding:0;max-height:220px;overflow:auto}' +
     '.list li{display:flex;align-items:center;gap:6px;padding:3px 2px;border-top:1px solid #1f2937}' +
@@ -200,6 +192,22 @@
     '.list button{color:#9ca3af;padding:2px 6px}' +
     '.notice{margin-top:4px;color:#fbbf24}' +
     '.notice.ok{color:#6ee7b7}' +
+    '.drawer{position:fixed;top:0;right:0;bottom:0;width:' + DRAWER_W + 'px;max-width:100vw;z-index:2147483646;' +
+    'display:flex;flex-direction:column;background:#0b0b0c;border-left:1px solid #374151;' +
+    'box-shadow:-8px 0 24px rgba(0,0,0,.35);font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e5e7eb}' +
+    '.dhead{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-bottom:1px solid #1f2937}' +
+    '.dhead span{flex:1;font-weight:600}' +
+    '.drawer iframe{flex:1;min-height:0;width:100%;border:0;background:#0b0b0c}' +
+    '.bar.light{color:#18181b;background:#fff;border-color:#e4e4e7;box-shadow:0 6px 24px rgba(16,24,40,.12)}' +
+    '.light button:hover{background:#f4f4f5}' +
+    '.light .toggle{background:#f4f4f5}' +
+    '.light .toggle[aria-pressed="true"]{background:#dcfce7;color:#15803d}' +
+    '.light .chat{background:#eef0ff;color:#4f46e5}' +
+    '.light .chat[aria-expanded="true"]{background:#dcdcfe}' +
+    '.drawer.light{color:#18181b;background:#fafafb;border-left-color:#e4e4e7;box-shadow:-8px 0 24px rgba(16,24,40,.12)}' +
+    '.drawer.light .dhead{border-bottom-color:#e4e4e7}' +
+    '.drawer.light iframe{background:#fafafb}' +
+    '@media (max-width:' + (DRAWER_W * 2) + 'px){.bar.shift{right:16px;bottom:auto;top:44px}}' +
     '[hidden]{display:none!important}';
 
   function mountBar() {
@@ -215,9 +223,15 @@
     var shadow = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
     shadow.innerHTML =
       '<style>' + BAR_CSS + '</style>' +
-      '<div class="bar" part="bar">' +
+      '<div class="drawer" data-role="drawer" hidden>' +
+      '<div class="dhead"><span data-role="drawer-title"></span>' +
+      '<button type="button" data-role="drawer-theme"></button>' +
+      '<button type="button" data-role="drawer-close">×</button></div>' +
+      '</div>' +
+      '<div class="bar" part="bar" data-role="bar">' +
       '<div class="row">' +
       '<button type="button" class="toggle" data-role="toggle" aria-pressed="false"></button>' +
+      '<button type="button" class="chat" data-role="chat" aria-expanded="false" hidden></button>' +
       '<span class="count" data-role="count"></span>' +
       '</div>' +
       '<ul class="list" data-role="list"></ul>' +
@@ -225,15 +239,38 @@
       '</div>';
     ui = {
       shadow: shadow,
+      bar: shadow.querySelector('[data-role="bar"]'),
       toggle: shadow.querySelector('[data-role="toggle"]'),
+      chat: shadow.querySelector('[data-role="chat"]'),
       count: shadow.querySelector('[data-role="count"]'),
       list: shadow.querySelector('[data-role="list"]'),
       notice: shadow.querySelector('[data-role="notice"]'),
+      drawer: shadow.querySelector('[data-role="drawer"]'),
+      theme: shadow.querySelector('[data-role="drawer-theme"]'),
     };
+    shadow.querySelector('[data-role="drawer-title"]').textContent = T.chatTitle;
+    var closeBtn = shadow.querySelector('[data-role="drawer-close"]');
+    closeBtn.setAttribute('aria-label', T.close);
+    closeBtn.title = T.close;
     ui.toggle.addEventListener('click', function (ev) {
       ev.preventDefault();
       ev.stopPropagation();
-      setEnabled(!enabled, true);
+      setEnabled(!enabled);
+    });
+    ui.chat.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      setDrawerOpen(!drawerOpen);
+    });
+    ui.theme.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      setDrawerTheme(drawerTheme() === 'light' ? 'dark' : 'light');
+    });
+    closeBtn.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      setDrawerOpen(false);
     });
     ui.list.addEventListener('click', function (ev) {
       var btn = ev.target && ev.target.closest ? ev.target.closest('button[data-index]') : null;
@@ -245,6 +282,7 @@
       render();
     });
     root.appendChild(host);
+    if (drawer) attachDrawer();
     render();
   }
 
@@ -252,10 +290,20 @@
     if (!ui) return;
     ui.toggle.textContent = enabled ? T.picking : T.pick;
     ui.toggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
-    ui.count.textContent = embedded ? '' : items.length ? T.picked + ' ' + items.length : T.empty;
-    ui.list.hidden = embedded || !items.length;
+    ui.chat.hidden = !drawer;
+    ui.chat.textContent = T.chat;
+    ui.chat.setAttribute('aria-expanded', drawerOpen ? 'true' : 'false');
+    ui.drawer.hidden = !drawerOpen;
+    var light = drawerTheme() === 'light';
+    ui.drawer.className = light ? 'drawer light' : 'drawer';
+    ui.bar.className = 'bar' + (drawerOpen ? ' shift' : '') + (light ? ' light' : '');
+    ui.theme.textContent = light ? '☾' : '☀';
+    ui.theme.setAttribute('aria-label', light ? T.toDark : T.toLight);
+    ui.theme.title = light ? T.toDark : T.toLight;
+    ui.count.textContent = drawer ? '' : items.length ? T.picked + ' ' + items.length : T.empty;
+    ui.list.hidden = !!drawer || !items.length;
     ui.list.textContent = '';
-    if (embedded) return;
+    if (drawer) return;
     items.forEach(function (it, i) {
       var li = document.createElement('li');
       var code = document.createElement('code');
@@ -283,10 +331,8 @@
     }, 2500);
   }
 
-  function setEnabled(on, announce) {
-    var next = !!on;
-    var changed = next !== enabled;
-    enabled = next;
+  function setEnabled(on) {
+    enabled = !!on;
     ensureStyle();
     clearHover();
     var root = document.documentElement;
@@ -295,7 +341,152 @@
       else root.classList.remove('__hp-inspecting');
     }
     render();
-    if (announce && changed) post({ type: INSPECT_STATE, on: enabled });
+  }
+
+  function setDrawerOpen(on) {
+    drawerOpen = !!on && !!drawer;
+    if (drawer) {
+      drawer.embed.open = drawerOpen;
+      saveEmbed(drawer.embed);
+    }
+    render();
+  }
+
+  // ---- chat drawer ----
+
+  function drawerTheme() {
+    return drawer && drawer.embed.theme === 'light' ? 'light' : 'dark';
+  }
+
+  function postTheme() {
+    if (!drawer || !drawer.frame.contentWindow) return;
+    try {
+      drawer.frame.contentWindow.postMessage({ type: EMBED_THEME, theme: drawerTheme() }, drawer.origin);
+    } catch (e) {}
+  }
+
+  function setDrawerTheme(t) {
+    if (!drawer) return;
+    drawer.embed.theme = t;
+    saveEmbed(drawer.embed);
+    postTheme();
+    render();
+  }
+
+  function readEmbedFragment() {
+    var raw = '';
+    try {
+      raw = (location.hash || '').replace(/^#/, '');
+    } catch (e) {
+      return null;
+    }
+    if (!raw) return null;
+    var q = new URLSearchParams(raw);
+    if (!q.has(EMBED_HASH)) return null;
+    var got = {
+      run: q.get('run') || '',
+      node: q.get('node') || '',
+      ticket: q.get('ticket') || '',
+      theme: q.get('theme') === 'light' ? 'light' : 'dark',
+    };
+    try {
+      // The ticket must not linger in the address bar, history or the app's router.
+      history.replaceState(history.state, '', location.pathname + location.search);
+    } catch (e) {}
+    return got.run && got.node && got.ticket ? got : null;
+  }
+
+  function loadEmbed() {
+    try {
+      var v = JSON.parse(sessionStorage.getItem(EMBED_STORE_KEY) || 'null');
+      if (v && typeof v.origin === 'string' && typeof v.run === 'string' && typeof v.node === 'string') return v;
+    } catch (e) {}
+    return null;
+  }
+
+  function saveEmbed(v) {
+    try {
+      sessionStorage.setItem(EMBED_STORE_KEY, JSON.stringify(v));
+    } catch (e) {}
+  }
+
+  function chatSrc(e, ticket) {
+    var src =
+      e.origin +
+      '/embed/runs/' +
+      encodeURIComponent(e.run) +
+      '/nodes/' +
+      encodeURIComponent(e.node) +
+      '/chat';
+    var q = new URLSearchParams();
+    if (ticket) q.set('ticket', ticket);
+    q.set('theme', e.theme === 'light' ? 'light' : 'dark');
+    return src + '#' + q.toString();
+  }
+
+  function attachDrawer() {
+    if (!ui || !drawer || drawer.frame.parentNode === ui.drawer) return;
+    ui.drawer.appendChild(drawer.frame);
+  }
+
+  function startDrawer(e, ticket) {
+    var frame = document.createElement('iframe');
+    frame.title = T.chatTitle;
+    frame.setAttribute('referrerpolicy', 'no-referrer');
+    frame.setAttribute('allow', 'clipboard-write');
+    frame.src = chatSrc(e, ticket);
+    drawer = { origin: e.origin, frame: frame, embed: e };
+    drawerOpen = !!e.open;
+    drawerReady = false;
+    // Picks staged before the drawer existed move to the Grasp chat.
+    outbox = outbox.concat(items);
+    items = [];
+    saveItems();
+    attachDrawer();
+    render();
+  }
+
+  function sendPick(item) {
+    if (!drawerReady || !drawer.frame.contentWindow) {
+      outbox.push(item);
+      return;
+    }
+    try {
+      drawer.frame.contentWindow.postMessage({ type: EMBED_PICK, payload: item }, drawer.origin);
+    } catch (e) {}
+  }
+
+  function flushOutbox() {
+    var queued = outbox;
+    outbox = [];
+    queued.forEach(sendPick);
+  }
+
+  function resumeDrawer() {
+    var saved = loadEmbed();
+    if (saved && !drawer) startDrawer(saved, '');
+  }
+
+  function bootDrawer() {
+    var frag = readEmbedFragment();
+    if (!frag || typeof fetch !== 'function') {
+      resumeDrawer();
+      return;
+    }
+    var q = '?ticket=' + encodeURIComponent(frag.ticket) + '&node=' + encodeURIComponent(frag.node);
+    fetch(EMBED_ORIGIN_PATH + q, { credentials: 'omit', cache: 'no-store' })
+      .then(function (res) {
+        return res.ok ? res.json() : null;
+      })
+      .then(function (v) {
+        if (!v || v.runId !== frag.run || v.nodeId !== frag.node || !/^https?:\/\/[^/?#]+$/.test(v.origin || '')) {
+          resumeDrawer();
+          return;
+        }
+        startDrawer({ origin: v.origin, run: frag.run, node: frag.node, open: true, theme: frag.theme }, frag.ticket);
+        setDrawerOpen(true);
+      })
+      .catch(resumeDrawer);
   }
 
   function onMove(ev) {
@@ -311,17 +502,6 @@
     hoverEl.classList.add('__hp-inspect-hover');
   }
 
-  function postPicked(item) {
-    post({
-      type: PICKED,
-      selector: item.selector,
-      tagName: item.tagName,
-      text: item.text,
-      outerHTML: item.outerHTML,
-      url: item.url,
-    });
-  }
-
   function onClick(ev) {
     if (!enabled) return;
     var t = ev.target;
@@ -330,8 +510,9 @@
     ev.stopPropagation();
     clearHover();
     var item = describe(t);
-    if (embedded) {
-      postPicked(item);
+    if (drawer) {
+      sendPick(item);
+      setDrawerOpen(true);
       notice(T.added, true);
       return;
     }
@@ -352,80 +533,33 @@
     if (ev.key !== 'Escape' && ev.key !== 'Esc') return;
     ev.preventDefault();
     ev.stopPropagation();
-    setEnabled(false, false);
-    post({ type: CANCELED });
+    setEnabled(false);
   }
 
   window.addEventListener('message', function (ev) {
-    if (!hasParent || ev.source !== window.parent) return;
+    if (!drawer || ev.source !== drawer.frame.contentWindow || ev.origin !== drawer.origin) return;
     var data = ev.data;
-    if (!data || typeof data !== 'object') return;
-    if (data.type === HOST) {
-      if (!embedded) {
-        embedded = true;
-        // Picks made before the handshake move to the Grasp chat.
-        items.forEach(postPicked);
-        items = [];
-        saveItems();
-        render();
-      }
-      postUrl(READY);
-      return;
-    }
-    if (data.type === PING) {
-      postUrl(READY);
-      return;
-    }
-    if (data.type === INSPECT) {
-      setEnabled(!!data.on, false);
-      return;
-    }
-    if (data.type === NAV) {
-      var action = data.action;
-      try {
-        if (action === 'back') history.back();
-        else if (action === 'forward') history.forward();
-        else if (action === 'reload') location.reload();
-      } catch (e) {}
-    }
+    if (!data || typeof data !== 'object' || data.type !== EMBED_READY) return;
+    drawerReady = true;
+    postTheme();
+    flushOutbox();
   });
 
   document.addEventListener('mousemove', onMove, true);
   document.addEventListener('click', onClick, true);
   document.addEventListener('keydown', onKeydown, true);
-  window.addEventListener('popstate', function () {
-    postUrl();
-  });
-  window.addEventListener('hashchange', function () {
-    postUrl();
-  });
-
+  window.addEventListener('popstate', mountBar);
+  window.addEventListener('hashchange', mountBar);
   try {
     var push = history.pushState;
     history.pushState = function () {
       var r = push.apply(this, arguments);
-      postUrl();
-      return r;
-    };
-    var replace = history.replaceState;
-    history.replaceState = function () {
-      var r = replace.apply(this, arguments);
-      postUrl();
+      if (host) mountBar();
       return r;
     };
   } catch (e) {}
 
+  bootDrawer();
   if (document.body) mountBar();
   else document.addEventListener('DOMContentLoaded', mountBar);
-
-  postUrl(READY);
-  // Parent may arm its wait on iframe "load", which fires after this script.
-  // Re-announce so a late listener still clears the missing-script tip.
-  if (document.readyState === 'complete') {
-    postUrl(READY);
-  } else {
-    window.addEventListener('load', function () {
-      postUrl(READY);
-    });
-  }
 })();

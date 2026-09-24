@@ -1,6 +1,7 @@
 package embed
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -52,12 +53,15 @@ func TestTicketPeekRedeemOnce(t *testing.T) {
 	if _, ok := s.PeekTicket(ticket); !ok {
 		t.Fatal("peek must not consume")
 	}
-	got, ok := s.RedeemTicket(ticket)
-	if !ok || got.Username != "admin" || got.RunID != "run-1" {
-		t.Fatalf("redeem ok=%v %+v", ok, got)
+	got, token, _, err := s.ExchangeTicket(ticket)
+	if err != nil || got.Username != "admin" || got.RunID != "run-1" || !IsSessionToken(token) {
+		t.Fatalf("exchange err=%v %+v", err, got)
 	}
-	if _, ok := s.RedeemTicket(ticket); ok {
-		t.Fatal("ticket redeemed twice")
+	if sess, ok := s.LookupSession(token); !ok || sess.NodeID != "grasp1" {
+		t.Fatalf("session ok=%v %+v", ok, sess)
+	}
+	if _, _, _, err := s.ExchangeTicket(ticket); !errors.Is(err, ErrTicketSpent) {
+		t.Fatalf("ticket redeemed twice: %v", err)
 	}
 	if _, ok := s.PeekTicket(ticket); ok {
 		t.Fatal("consumed ticket still peekable")
@@ -74,8 +78,28 @@ func TestTicketExpires(t *testing.T) {
 	if _, ok := s.PeekTicket(ticket); ok {
 		t.Fatal("expired ticket peekable")
 	}
-	if _, ok := s.RedeemTicket(ticket); ok {
-		t.Fatal("expired ticket redeemed")
+	if _, _, _, err := s.ExchangeTicket(ticket); !errors.Is(err, ErrTicketSpent) {
+		t.Fatalf("expired ticket redeemed: %v", err)
+	}
+}
+
+func TestExchangeKeepsTicketWhenSessionInsertFails(t *testing.T) {
+	s := newTestStore(t)
+	ticket, _, err := s.IssueTicket(sessionClaims())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.Migrator().DropTable(&models.EmbedSession{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := s.ExchangeTicket(ticket); err == nil || errors.Is(err, ErrTicketSpent) {
+		t.Fatalf("want insert failure, got %v", err)
+	}
+	if err := s.db.AutoMigrate(&models.EmbedSession{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := s.ExchangeTicket(ticket); err != nil {
+		t.Fatalf("ticket lost after failed insert: %v", err)
 	}
 }
 

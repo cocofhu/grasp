@@ -241,6 +241,11 @@ describe('gateShareLink additional coverage', () => {
     fetchMock.mockResolvedValueOnce(response({ message: 'ticket denied' }, 403))
     await expect(publicGateApi.previewTicket('token', 8080, 'api')).rejects.toThrow('ticket denied')
 
+    fetchMock.mockResolvedValueOnce(response({ status: 'active', ticket: 'et', runId: 'r', nodeId: 'n', expiresAt: '' }))
+    await expect(publicGateApi.embedTicket('token')).resolves.toMatchObject({ ticket: 'et', runId: 'r' })
+    fetchMock.mockResolvedValueOnce(response({ status: 'revoked' }))
+    await expect(publicGateApi.embedTicket('token')).rejects.toThrow('revoked')
+
     expect(publicPreviewVncWsUrl('a b')).toContain('?ticket=a%20b')
     expect(publicPreviewVncWsUrl('x', '/custom/ws?mode=vnc')).toContain('/custom/ws?mode=vnc&ticket=x')
     expect(publicPreviewVncWsUrl('x', ' ')).toContain('/public/gate-approvals/preview-vnc/ws?ticket=x')

@@ -101,4 +101,31 @@ describe('EmbedNodeChatView', () => {
       Object.defineProperty(window, 'parent', { value: window, configurable: true })
     }
   })
+
+  it('follows the preview page theme without saving it', async () => {
+    localStorage.setItem('grasp-theme', 'dark')
+    history.replaceState(null, '', '/embed/runs/run-1/nodes/ap1/chat#theme=light')
+    const parent = { postMessage: vi.fn() }
+    Object.defineProperty(window, 'parent', { value: parent, configurable: true })
+    const root = document.documentElement
+    try {
+      const w = mountView()
+      await flushPromises()
+      expect(window.location.hash).toBe('')
+      expect(root.classList.contains('light')).toBe(true)
+
+      window.dispatchEvent(
+        new MessageEvent('message', { data: { type: 'grasp-embed:theme', theme: 'dark' }, source: parent as never }),
+      )
+      expect(root.classList.contains('light')).toBe(false)
+      window.dispatchEvent(new MessageEvent('message', { data: { type: 'grasp-embed:theme', theme: 'light' } }))
+      expect(root.classList.contains('light')).toBe(false)
+      expect(localStorage.getItem('grasp-theme')).toBe('dark')
+
+      w.unmount()
+      expect(root.classList.contains('light')).toBe(false)
+    } finally {
+      Object.defineProperty(window, 'parent', { value: window, configurable: true })
+    }
+  })
 })
