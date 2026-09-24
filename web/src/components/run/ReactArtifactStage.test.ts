@@ -455,6 +455,27 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
+  it('shows public app preview for Approve from share ports without probing', async () => {
+    vi.mocked(api.nodePreviews).mockClear()
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json', nodeId: 'approve_1' })],
+        nodeType: 'approve',
+        remoteKind: 'public',
+        token: 't',
+        ports: [{ port: 18080, kind: 'port', mode: 'vnc', directUrl: 'http://10.0.0.5:18080/' }],
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    expect(api.nodePreviews).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="react-artifact-tab-novnc"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="public-app-preview-stub"]').exists()).toBe(true)
+    await wrapper.setProps({ ports: [] })
+    expect(wrapper.find('[data-testid="react-artifact-tab-novnc"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('does not steal focus when Approve ports arrive after userMoved (plan g2.2)', async () => {
     vi.useFakeTimers()
     vi.mocked(api.nodePreviews).mockResolvedValue({ ports: [] })

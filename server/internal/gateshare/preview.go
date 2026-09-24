@@ -198,13 +198,12 @@ func applyPreviewArtifacts(dto *PreviewDTO, visualHTML, structuredName, structur
 	}
 	dto.ProductKind = kind
 	dto.ProductName = name
-	if kind == ProductKindAppPreview {
-		if dto.ProductName == "" {
-			dto.ProductName = "app_preview"
-		}
-		if len(extras.Ports) > 0 {
-			dto.Ports = append([]PublicPreviewPort(nil), extras.Ports...)
-		}
+	if kind == ProductKindAppPreview && dto.ProductName == "" {
+		dto.ProductName = "app_preview"
+	}
+	// Grasp nodes may register a live preview next to their structured product.
+	if len(extras.Ports) > 0 {
+		dto.Ports = append([]PublicPreviewPort(nil), extras.Ports...)
 	}
 	if turns := SanitizeTurns(extras.Turns); len(turns) > 0 {
 		dto.Turns = turns
