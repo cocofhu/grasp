@@ -125,6 +125,8 @@ glab_auth_login() {
     local hostname="$1"
     local token="$2"
     command -v glab >/dev/null 2>&1 || return 0
+    # 默认写入 ~/.config/glab-cli/config.yml。不要加 --use-keyring：沙箱没有可用密钥环。
+    # 失败只记日志，不回滚已经写入的 git credential store，也不打印 token。
     if glab auth login --hostname "${hostname}" --token "${token}" --api-protocol https --git-protocol https; then
         echo "glab: 已使用 GITLAB_TOKEN 登录 ${hostname}"
     else
@@ -136,7 +138,15 @@ gh_auth_login() {
     local hostname="$1"
     local token="$2"
     command -v gh >/dev/null 2>&1 || return 0
-    if printf '%s\n' "${token}" | gh auth login --hostname "${hostname}" --with-token; then
+    # gh 2.96：GITHUB_TOKEN / GH_TOKEN 非空时拒绝把凭据写入配置（自建主机则是
+    # GH_ENTERPRISE_TOKEN / GITHUB_ENTERPRISE_TOKEN），--insecure-storage 也不会执行到落盘。
+    # 子进程清掉这些变量，token 只走标准输入，不进入 argv，也不写入本函数的日志。
+    # --insecure-storage: 沙箱无系统凭据库，明文落到 ~/.config/gh/hosts.yml，
+    # 后续不再携带上述变量的 shell 才能被 gh auth status 读成已登录。
+    if printf '%s\n' "${token}" | {
+        unset GITHUB_TOKEN GH_TOKEN GITHUB_ENTERPRISE_TOKEN GH_ENTERPRISE_TOKEN
+        gh auth login --hostname "${hostname}" --with-token --insecure-storage
+    }; then
         echo "gh: 已使用 GITHUB_TOKEN 登录 ${hostname}"
     else
         echo "gh: 自动登录失败，请检查 GITHUB_TOKEN 或稍后手动登录 ${hostname}" >&2
