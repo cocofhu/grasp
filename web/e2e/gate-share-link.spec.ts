@@ -397,7 +397,8 @@ test.describe('human_gate 临时审批链接', () => {
       timeout: 10_000,
     })
     await page.getByTestId('public-gate-app-preview-port-8080').click()
-    await expect(page.getByTestId('public-gate-app-preview-api').or(page.getByTestId('public-gate-app-preview-connecting'))).toBeVisible({
+    await expect(page.getByTestId('public-gate-app-preview-api')).toHaveCount(0)
+    await expect(page.getByTestId('novnc-inspect-toggle').or(page.getByTestId('public-gate-app-preview-retry')).or(page.getByTestId('public-gate-app-preview-connecting'))).toBeVisible({
       timeout: 10_000,
     })
     await expect(page.getByTestId('clarify-input')).toBeVisible()

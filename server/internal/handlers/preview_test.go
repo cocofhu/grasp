@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-
 )
 
 func htmlResponse(body string) *http.Response {

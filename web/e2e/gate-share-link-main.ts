@@ -216,7 +216,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
           actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
           ports: [
             { port: 5173, label: 'Web · 5173', mode: 'vnc' },
-            { port: 8080, label: 'API · 8080', mode: 'api' },
+            { port: 8080, label: 'API · 8080', mode: 'vnc' },
           ],
           turns: [{ role: 'agent', text: '应用预览已就绪（set_preview 可达）。公开页可远程与取点。', at: '2026-08-01T00:00:00Z' }],
         }),
@@ -253,7 +253,6 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     } catch {
       /* ignore */
     }
-    const mode = port === 8080 ? 'api' : 'vnc'
     const ticket = `e2e-ticket-${port}`
     return new Response(
       JSON.stringify({
@@ -261,9 +260,8 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
         ticket,
         expiresAt: new Date(Date.now() + 120_000).toISOString(),
         port,
-        mode,
-        wsPath: mode === 'vnc' ? '/public/gate-approvals/preview-vnc/ws' : undefined,
-        iframePath: mode === 'api' ? `/public/gate-approvals/preview-api/${ticket}/` : undefined,
+        mode: 'vnc',
+        wsPath: '/public/gate-approvals/preview-vnc/ws',
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } },
     )
