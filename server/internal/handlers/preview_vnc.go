@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/browser"
+	"github.com/cocofhu/grasp/internal/config"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -213,9 +214,19 @@ func previewHostIP(bridgeURL string) (string, error) {
 }
 
 // sandboxPreviewNavigateURL is the Grasp preview proxy as seen from inside the
-// sandbox. Loopback hosts are rewritten to host.docker.internal so Chromium
-// reaches the host Grasp process, which injects preview-pick.js.
+// sandbox. It uses mcp_advertise, the same base the sandbox already uses to
+// call back to Grasp: host.docker.internal on Docker, the in-cluster or ingress
+// URL on Kubernetes. When that config is empty, loopback request hosts fall
+// back to host.docker.internal.
 func sandboxPreviewNavigateURL(requestHost, runID, nodeID string, port int) string {
+	base := strings.TrimRight(config.EffectiveMCPAdvertise(), "/")
+	if base == "" {
+		base = loopbackPreviewAdvertise(requestHost)
+	}
+	return fmt.Sprintf("%s/preview/%s/%s/%d/", base, url.PathEscape(runID), url.PathEscape(nodeID), port)
+}
+
+func loopbackPreviewAdvertise(requestHost string) string {
 	name, p, err := net.SplitHostPort(strings.TrimSpace(requestHost))
 	if err != nil {
 		name = strings.TrimSpace(requestHost)
@@ -225,5 +236,5 @@ func sandboxPreviewNavigateURL(requestHost, runID, nodeID string, port int) stri
 	case "", "localhost", "127.0.0.1", "::1":
 		name = "host.docker.internal"
 	}
-	return fmt.Sprintf("http://%s/preview/%s/%s/%d/", net.JoinHostPort(name, p), url.PathEscape(runID), url.PathEscape(nodeID), port)
+	return "http://" + net.JoinHostPort(name, p)
 }

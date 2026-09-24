@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/cocofhu/grasp/internal/config"
 )
 
 func htmlResponse(body string) *http.Response {
@@ -15,6 +17,32 @@ func htmlResponse(body string) *http.Response {
 	}
 	resp.Header.Set("Content-Type", "text/html; charset=utf-8")
 	return resp
+}
+
+func TestSandboxPreviewNavigateURLUsesMCPAdvertise(t *testing.T) {
+	prev := config.GetConfig()
+	t.Cleanup(func() { config.StoreConfig(prev) })
+
+	config.StoreConfig(&config.Config{Server: config.ServerConfig{MCPAdvertise: "https://api.example.com"}})
+	got := sandboxPreviewNavigateURL("localhost:8080", "run/1", "node a", 8080)
+	want := "https://api.example.com/preview/run%2F1/node%20a/8080/"
+	if got != want {
+		t.Fatalf("k8s advertise: got %s", got)
+	}
+
+	config.StoreConfig(&config.Config{Server: config.ServerConfig{MCPAdvertise: "http://host.docker.internal:8080"}})
+	got = sandboxPreviewNavigateURL("ignored:1", "r", "n", 9)
+	want = "http://host.docker.internal:8080/preview/r/n/9/"
+	if got != want {
+		t.Fatalf("docker advertise: got %s", got)
+	}
+
+	config.StoreConfig(nil)
+	got = sandboxPreviewNavigateURL("127.0.0.1:8080", "r", "n", 9)
+	want = "http://host.docker.internal:8080/preview/r/n/9/"
+	if got != want {
+		t.Fatalf("loopback fallback: got %s", got)
+	}
 }
 
 func TestPreviewModifyResponse_RewritesHTML(t *testing.T) {
