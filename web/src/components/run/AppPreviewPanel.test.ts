@@ -28,9 +28,9 @@ vi.mock('@/lib/api/api', async () => {
 
 const NovncStub = defineComponent({
   name: 'NovncPreviewPanel',
-  props: { runId: String, nodeId: String, port: Number, fill: Boolean, compact: Boolean },
+  props: { runId: String, nodeId: String, port: Number, targetPort: Number, fill: Boolean, compact: Boolean },
   emits: ['pick'],
-  template: '<div data-testid="novnc-stub" :data-port="port" />',
+  template: '<div data-testid="novnc-stub" :data-port="port" :data-target-port="targetPort" />',
 })
 
 const FeedbackStub = defineComponent({
@@ -98,6 +98,21 @@ describe('AppPreviewPanel', () => {
     await flushPromises()
     expect(tabs[1].classes().some((c) => c.includes('accent'))).toBe(true)
     expect(tabs[0].classes().some((c) => c.includes('accent'))).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shares one noVNC connection across sandbox ports', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+    const stubs = () => wrapper.findAll('[data-testid="novnc-stub"]')
+    expect(stubs()).toHaveLength(1)
+    expect(stubs()[0].attributes('data-port')).toBe('5173')
+    expect(stubs()[0].attributes('data-target-port')).toBe('5173')
+    await wrapper.findAll('button').find((b) => b.text() === 'API')!.trigger('click')
+    await flushPromises()
+    expect(stubs()).toHaveLength(1)
+    expect(stubs()[0].attributes('data-port')).toBe('5173')
+    expect(stubs()[0].attributes('data-target-port')).toBe('8080')
     wrapper.unmount()
   })
 

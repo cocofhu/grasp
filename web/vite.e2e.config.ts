@@ -43,6 +43,7 @@ const mockSandboxDetail = {
 }
 
 let vncConnectCount = 0
+let vncLastGoto = ''
 /** Page boot calls /__e2e/opts so WS upgrades can honor delay/fail without relying on Referer. */
 let e2eOpts = { connectDelayMs: 0, fail: false }
 
@@ -69,7 +70,11 @@ function handleMockVncUpgrade(
       if (isBinary) return
       const text = typeof data === 'string' ? data : data.toString()
       try {
-        const msg = JSON.parse(text) as { type?: string; on?: boolean }
+        const msg = JSON.parse(text) as { type?: string; on?: boolean; action?: string; url?: string }
+        if (msg.type === 'navigate' && msg.action === 'goto') {
+          vncLastGoto = msg.url || ''
+          return
+        }
         if (msg.type !== 'inspect') return
         if (pendingPick != null) {
           clearTimeout(pendingPick)
@@ -199,6 +204,11 @@ export default defineConfig({
           if (_req.url === '/__e2e/vnc-connect-count') {
             res.setHeader('Content-Type', 'application/json')
             res.end(JSON.stringify({ count: vncConnectCount }))
+            return
+          }
+          if (_req.url === '/__e2e/vnc-last-goto') {
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ url: vncLastGoto }))
             return
           }
           next()
