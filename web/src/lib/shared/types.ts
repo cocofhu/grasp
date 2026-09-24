@@ -735,6 +735,10 @@ export interface ReactAnnotation {
   quote?: string
   /** True when quote was soft-truncated to the ~500-char limit. */
   truncated?: boolean
+  /** DOM pick context: lowercase tag, visible text excerpt, clipped outerHTML. */
+  tagName?: string
+  text?: string
+  outerHTML?: string
 }
 
 export interface ClarifyTurn {

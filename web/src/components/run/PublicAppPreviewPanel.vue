@@ -278,7 +278,6 @@ function retry() {
           :title="activeMeta ? tabLabel(activeMeta) : 'preview'"
           data-testid="public-gate-app-preview-api"
           @pick="onPick"
-          @staged-pick="onStagedPick"
         />
         <NovncPreviewPanel
           v-else-if="vncWsUrl"

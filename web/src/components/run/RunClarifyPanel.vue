@@ -17,7 +17,7 @@ import {
 } from '@/lib/inbox/reviewLayoutBudget'
 import { addClarifyAnnotation } from '@/lib/inbox/useClarifyDraft'
 import { useToast } from '@/lib/composables/useToast'
-import { previewPickLabel, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
+import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import type {
   ClarifyImage,
   ClarifyTurn,
@@ -86,12 +86,7 @@ const remoteKind = computed(() => (isGrasp(nodeType.value) ? 'off' : 'sandbox'))
 
 function onRemotePick(payload: AppPreviewPickPayload) {
   if (!props.inputActive) return
-  const url = (payload.url || '').trim()
-  const result = addClarifyAnnotation(props.runId, props.nodeId, {
-    selector: payload.selector,
-    url: url || undefined,
-    label: previewPickLabel(url, payload.selector, payload.tagName),
-  })
+  const result = addClarifyAnnotation(props.runId, props.nodeId, previewPickAnnotation(payload))
   if (result === 'duplicate') toast.warn(t('pages.reviewComposer.alreadyAdded'))
 }
 

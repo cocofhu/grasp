@@ -9,7 +9,7 @@ import { useTagFilter } from '@/lib/composables/useTagFilter'
 import { useProjectContext } from '@/lib/composables/useProjectContext'
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { addClarifyAnnotation, useClarifyDraft } from '@/lib/inbox/useClarifyDraft'
-import { previewPickLabel, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
+import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import {
   applyInboxReplyingState,
@@ -882,12 +882,7 @@ function onAppPreviewReviewPick(payload: AppPreviewPickPayload) {
   const rid = active.value?.type === 'clarify' ? active.value.runId : ''
   const nid = active.value?.type === 'clarify' ? active.value.nodeId : ''
   if (!rid || !nid) return
-  const url = (payload.url || '').trim()
-  const result = addClarifyAnnotation(rid, nid, {
-    selector: payload.selector,
-    url: url || undefined,
-    label: previewPickLabel(url, payload.selector, payload.tagName),
-  })
+  const result = addClarifyAnnotation(rid, nid, previewPickAnnotation(payload))
   if (result === 'duplicate') toast.warn(t('pages.reviewComposer.alreadyAdded'))
   lastStagedAppPreviewPick.value = null
 }
@@ -905,14 +900,7 @@ function mergeStagedAppPreviewPick(
   ) {
     return annotations
   }
-  return [
-    ...annotations,
-    {
-      selector: staged.selector,
-      url: url || undefined,
-      label: previewPickLabel(url, staged.selector, staged.tagName),
-    },
-  ]
+  return [...annotations, previewPickAnnotation(staged)]
 }
 
 const isClarifyEditing = computed(

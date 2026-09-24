@@ -97,7 +97,7 @@ describe('DirectPreviewFrame', () => {
     await flushPromises()
     vi.advanceTimersByTime(3000)
     await flushPromises()
-    expect(posted).toEqual([])
+    expect(posted).toEqual([{ type: 'direct-preview-host' }])
     expect(wrapper.find('[data-testid="direct-preview-tip"]').exists()).toBe(false)
     await wrapper.get('[data-testid="direct-preview-inspect"]').trigger('click')
     expect(wrapper.find('[data-testid="direct-preview-tip"]').exists()).toBe(false)
@@ -108,7 +108,7 @@ describe('DirectPreviewFrame', () => {
     const { wrapper, posted } = mountFrame({ answerPing: true })
     await wrapper.get('[data-testid="app-preview-direct-frame"]').trigger('load')
     await flushPromises()
-    expect(posted).toEqual([{ type: 'direct-preview-ping' }])
+    expect(posted).toEqual([{ type: 'direct-preview-host' }, { type: 'direct-preview-ping' }])
     vi.advanceTimersByTime(3000)
     await flushPromises()
     expect(wrapper.find('[data-testid="direct-preview-tip"]').exists()).toBe(false)
@@ -121,7 +121,7 @@ describe('DirectPreviewFrame', () => {
     const { wrapper, posted } = mountFrame()
     vi.advanceTimersByTime(2500)
     await flushPromises()
-    expect(posted).toEqual([{ type: 'direct-preview-ping' }])
+    expect(posted).toEqual([{ type: 'direct-preview-host' }, { type: 'direct-preview-ping' }])
     expect(wrapper.find('[data-testid="direct-preview-tip"]').exists()).toBe(false)
     dispatchFromPreview({ type: 'direct-preview-ready', url: DIRECT })
     await flushPromises()
@@ -155,24 +155,44 @@ describe('DirectPreviewFrame', () => {
       'http://evil.example',
     )
     await flushPromises()
+    expect(wrapper.emitted('pick')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('emits every in-page pick right away and stays in inspect mode', async () => {
+    const { wrapper } = mountFrame()
+    dispatchFromPreview({ type: 'direct-preview-ready', url: DIRECT })
+    await flushPromises()
+    await wrapper.get('[data-testid="direct-preview-inspect"]').trigger('click')
+    for (const selector of ['#ok', '#other']) {
+      dispatchFromPreview({
+        type: 'direct-preview-picked',
+        selector,
+        tagName: 'button',
+        text: 'OK',
+        outerHTML: `<button id="${selector.slice(1)}">`,
+        url: 'http://127.0.0.1:18081/a',
+      })
+    }
+    await flushPromises()
+    expect(wrapper.emitted('pick')?.map((e) => e[0])).toEqual([
+      { selector: '#ok', tagName: 'button', text: 'OK', outerHTML: '<button id="ok">', url: 'http://127.0.0.1:18081/a' },
+      expect.objectContaining({ selector: '#other' }),
+    ])
+    expect(wrapper.get('[data-testid="direct-preview-inspect"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.find('[data-testid="direct-preview-pick-result"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  it('stages pick and emits on use', async () => {
+  it('follows the page Pick bar toggle', async () => {
     const { wrapper } = mountFrame()
-    dispatchFromPreview({
-      type: 'direct-preview-picked',
-      selector: '#ok',
-      tagName: 'button',
-      outerHTML: '<button id="ok">',
-      url: 'http://127.0.0.1:18081/a',
-    })
+    const btn = wrapper.get('[data-testid="direct-preview-inspect"]')
+    dispatchFromPreview({ type: 'direct-preview-inspect-state', on: true })
     await flushPromises()
-    expect(wrapper.get('[data-testid="direct-preview-pick-selector"]').text()).toBe('#ok')
-    expect(wrapper.emitted('staged-pick')?.[0]?.[0]).toMatchObject({ selector: '#ok' })
-    await wrapper.get('[data-testid="direct-preview-use-pick"]').trigger('click')
-    expect(wrapper.emitted('pick')?.[0]?.[0]).toMatchObject({ selector: '#ok', url: 'http://127.0.0.1:18081/a' })
+    expect(btn.attributes('aria-pressed')).toBe('true')
+    dispatchFromPreview({ type: 'direct-preview-inspect-state', on: false })
+    await flushPromises()
+    expect(btn.attributes('aria-pressed')).toBe('false')
     wrapper.unmount()
   })
 
