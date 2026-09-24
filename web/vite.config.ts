@@ -86,6 +86,11 @@ export default defineConfig(({ command }) => {
         '/preview/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },
         '/preview-vnc/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },
         '/preview-pick.js': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true },
+        // No changeOrigin: ticket redemption and the share-link CSRF check
+        // require Origin host == Host. The trailing slash keeps the
+        // /public/gate-approvals SPA route on Vite.
+        '/embed-api/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080' },
+        '/public/gate-approvals/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', ws: true },
       },
     },
     // Mirror host/port for `vite preview` (static build) so a production-build

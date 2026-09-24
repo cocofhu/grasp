@@ -25,7 +25,9 @@ const AUTH_WHITELIST = new Set(['/auth/login', '/auth/logout', '/auth/me', '/hea
 export function redirectToLogin() {
   if (typeof window === 'undefined') return
   const path = window.location.pathname + window.location.search
-  if (path.startsWith('/login')) return
+  // Cookieless pages (share links, the preview-page drawer) must never bounce
+  // to login when the app shell's /api calls fire before the route resolves.
+  if (path.startsWith('/login') || path.startsWith('/public/') || path.startsWith('/embed/')) return
   const redirect = encodeURIComponent(path)
   window.location.assign(`/login?redirect=${redirect}`)
 }

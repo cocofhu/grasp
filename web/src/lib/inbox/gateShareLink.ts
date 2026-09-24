@@ -5,6 +5,7 @@ import {
   migrateSessionStorageKey,
   migrateSessionStoragePrefix,
 } from '@/lib/shared/migrateBrandStorage'
+import type { EmbedTicket } from '@/lib/inbox/embedChat'
 
 export const GATE_SHARE_TTL_TIERS = ['1h', '8h', '24h', '72h', '7d'] as const
 export type GateShareTTLTier = (typeof GATE_SHARE_TTL_TIERS)[number]
@@ -746,6 +747,28 @@ export const publicGateApi = {
       body: JSON.stringify({ port, purpose: purpose || 'vnc' }),
     }).then(async (res) => {
       const body = await readJson<PublicPreviewTicketResult>(res)
+      if (!res.ok) {
+        throw Object.assign(new Error(body.message || body.error || `${res.status}`), {
+          status: res.status,
+          body,
+        })
+      }
+      return body
+    })
+  },
+  /** One-shot ticket for the direct-preview chat drawer; needs reply permission. */
+  embedTicket(token: string, signal?: AbortSignal): Promise<EmbedTicket> {
+    return fetch('/public/gate-approvals/embed-ticket', {
+      method: 'POST',
+      credentials: 'omit',
+      signal,
+      headers: {
+        'Content-Type': 'application/json',
+        [GATE_SHARE_TOKEN_HEADER]: token,
+        [GATE_SHARE_REQUEST_HEADER]: '1',
+      },
+    }).then(async (res) => {
+      const body = await readJson<EmbedTicket & { error?: string; message?: string }>(res)
       if (!res.ok) {
         throw Object.assign(new Error(body.message || body.error || `${res.status}`), {
           status: res.status,

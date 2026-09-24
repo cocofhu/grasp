@@ -46,6 +46,8 @@ const props = withDefaults(
      * Inbox/GateApproval keep the flush layout.
      */
     cardPanes?: boolean
+    /** Sidebar only, full width (preview-page chat drawer). */
+    chatOnly?: boolean
   }>(),
   {
     mobile: false,
@@ -319,6 +321,7 @@ onBeforeUnmount(() => {
     data-testid="review-shell"
   >
     <section
+      v-if="!chatOnly"
       class="flex min-h-0 flex-1 flex-col overflow-hidden"
       :class="[
         mobile ? 'min-w-0 border-b border-line' : 'review-shell-stage',
@@ -330,7 +333,7 @@ onBeforeUnmount(() => {
     </section>
 
     <div
-      v-if="!mobile"
+      v-if="!mobile && !chatOnly"
       class="review-shell-sash relative shrink-0 cursor-col-resize bg-line transition-colors hover:bg-accent"
       :class="sashDragging ? 'bg-accent' : ''"
       role="separator"
@@ -351,11 +354,13 @@ onBeforeUnmount(() => {
     <aside
       class="flex min-h-0 flex-col bg-surface"
       :class="[
-        mobile ? 'w-full shrink-0' : 'shrink-0',
+        chatOnly ? 'min-w-0 flex-1' : mobile ? 'w-full shrink-0' : 'shrink-0',
         cardPanes && !mobile ? 'rounded-lg border border-line shadow-card' : '',
       ]"
       :style="
-        mobile
+        chatOnly
+          ? undefined
+          : mobile
           ? {
               height: `${height}px`,
               maxHeight: `${effectiveDrawerMax()}px`,
@@ -366,7 +371,7 @@ onBeforeUnmount(() => {
       data-testid="review-shell-sidebar"
     >
       <div
-        v-if="mobile"
+        v-if="mobile && !chatOnly"
         class="review-shell-drawer-handle relative flex shrink-0 cursor-ns-resize items-center justify-center gap-2 border-b border-line text-[11px] text-txt3"
         role="separator"
         aria-orientation="horizontal"
