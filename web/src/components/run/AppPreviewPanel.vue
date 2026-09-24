@@ -40,13 +40,7 @@ let portsGen = 0
 let portsAbort: AbortController | null = null
 
 function isDirectPort(p: PreviewPort): boolean {
-  return p.mode === 'direct' && !!(p.proxyUrl || p.directUrl || '').trim()
-}
-
-function proxyFrameURL(p: PreviewPort): string {
-  const path = (p.proxyUrl || '').trim() || (p.directUrl || '').trim()
-  if (!path || /^https?:/i.test(path) || typeof window === 'undefined') return path
-  return new URL(path, window.location.origin).href
+  return p.mode === 'direct' && !!(p.directUrl || '').trim()
 }
 
 const activePort = ref<number | null>(null)
@@ -209,7 +203,7 @@ function selectPreview(key: string) {
           v-for="p in ports.filter((x) => isDirectPort(x))"
           v-show="activeKey === previewTabKey(p)"
           :key="`direct-${previewTabKey(p)}`"
-          :direct-url="proxyFrameURL(p)"
+          :direct-url="p.directUrl || ''"
           :title="previewTabLabel(p)"
           @pick="onPick"
           @staged-pick="onStagedPick"

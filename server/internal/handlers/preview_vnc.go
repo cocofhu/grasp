@@ -5,16 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/browser"
-	"github.com/cocofhu/grasp/internal/config"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -68,8 +65,9 @@ func (h *Handlers) PreviewVNC(c *gin.Context) {
 		c.String(http.StatusBadGateway, "preview host invalid")
 		return
 	}
-	// Load the app through the Grasp preview proxy so the page gets preview-pick.js.
-	navigateURL := sandboxPreviewNavigateURL(c.Request.Host, runID, nodeID, port)
+	// Stay on the sandbox loopback so iptables sends this port through preview-inject.
+	// The browser origin remains http://127.0.0.1:<port>/, so app paths are unchanged.
+	navigateURL := fmt.Sprintf("http://127.0.0.1:%d/", port)
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -211,30 +209,4 @@ func previewHostIP(bridgeURL string) (string, error) {
 		return "", fmt.Errorf("empty host in %q", bridgeURL)
 	}
 	return host, nil
-}
-
-// sandboxPreviewNavigateURL is the Grasp preview proxy as seen from inside the
-// sandbox. It uses mcp_advertise, the same base the sandbox already uses to
-// call back to Grasp: host.docker.internal on Docker, the in-cluster or ingress
-// URL on Kubernetes. When that config is empty, loopback request hosts fall
-// back to host.docker.internal.
-func sandboxPreviewNavigateURL(requestHost, runID, nodeID string, port int) string {
-	base := strings.TrimRight(config.EffectiveMCPAdvertise(), "/")
-	if base == "" {
-		base = loopbackPreviewAdvertise(requestHost)
-	}
-	return fmt.Sprintf("%s/preview/%s/%s/%d/", base, url.PathEscape(runID), url.PathEscape(nodeID), port)
-}
-
-func loopbackPreviewAdvertise(requestHost string) string {
-	name, p, err := net.SplitHostPort(strings.TrimSpace(requestHost))
-	if err != nil {
-		name = strings.TrimSpace(requestHost)
-		p = "80"
-	}
-	switch strings.ToLower(strings.Trim(name, "[]")) {
-	case "", "localhost", "127.0.0.1", "::1":
-		name = "host.docker.internal"
-	}
-	return "http://" + net.JoinHostPort(name, p)
 }

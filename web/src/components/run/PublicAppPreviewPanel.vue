@@ -79,11 +79,6 @@ const activeMeta = computed(
 )
 const activeIsUrl = computed(() => (activeMeta.value ? isUrlPreview(activeMeta.value) : false))
 const activeIsDirect = computed(() => (activeMeta.value ? isDirectPort(activeMeta.value) : false))
-const proxyFrameURL = computed(() => {
-  const path = apiIframeUrl.value.trim()
-  if (!path || /^https?:/i.test(path) || typeof window === 'undefined') return path
-  return new URL(path, window.location.origin).href
-})
 const activeDirectUrl = computed(() => {
   if (!activeMeta.value) return ''
   if (isUrlPreview(activeMeta.value)) {
@@ -114,7 +109,7 @@ async function exchangeTicket() {
   if (props.mobile) return
   const meta = activeMeta.value
   if (!meta) return
-  if (isUrlPreview(meta)) {
+  if (isUrlPreview(meta) || isDirectPort(meta)) {
     ticketBusy.value = false
     return
   }
@@ -123,7 +118,7 @@ async function exchangeTicket() {
 
   ticketBusy.value = true
   try {
-    const purpose = isDirectPort(meta) ? 'api' : 'vnc'
+    const purpose = 'vnc'
     const res = await publicGateApi.previewTicket(props.token, port, purpose, ticketAbort.signal)
     if (gen !== ticketGen) return
     if (res.status && res.status !== 'active') {
@@ -286,8 +281,8 @@ function retry() {
           :title="activeMeta ? tabLabel(activeMeta) : 'preview'"
         />
         <DirectPreviewFrame
-          v-else-if="activeIsDirect && proxyFrameURL"
-          :direct-url="proxyFrameURL"
+          v-else-if="activeIsDirect && activeDirectUrl"
+          :direct-url="activeDirectUrl"
           :title="activeMeta ? tabLabel(activeMeta) : 'preview'"
           data-testid="public-gate-app-preview-api"
           @pick="onPick"

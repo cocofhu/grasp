@@ -153,7 +153,6 @@ describe('AppPreviewPanel', () => {
           port: 18081,
           label: '前端',
           mode: 'direct',
-          proxyUrl: '/preview/run-1/preview-1/18081/',
           directUrl: 'http://127.0.0.1:18081/',
         },
       ],
@@ -162,9 +161,7 @@ describe('AppPreviewPanel', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="novnc-stub"]').exists()).toBe(false)
     const frame = wrapper.get('[data-testid="app-preview-direct-frame"]')
-    expect(frame.attributes('src')).toBe(
-      new URL('/preview/run-1/preview-1/18081/', window.location.origin).href,
-    )
+    expect(frame.attributes('src')).toBe('http://127.0.0.1:18081/')
     expect(wrapper.find('[data-testid="direct-preview-inspect"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="direct-preview-address"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('IP 直连预览不支持取点标注')

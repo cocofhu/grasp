@@ -142,7 +142,7 @@ func (h *Handlers) PublicPreviewVNC(c *gin.Context) {
 		c.String(http.StatusBadGateway, "preview host invalid")
 		return
 	}
-	navigateURL := sandboxPreviewNavigateURL(c.Request.Host, claims.RunID, claims.NodeID, claims.Port)
+	navigateURL := fmt.Sprintf("http://127.0.0.1:%d/", claims.Port)
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {

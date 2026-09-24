@@ -556,7 +556,7 @@
         },
         "direct_preview": {
           "label": "IP 直连预览",
-          "help": "开启后用端口直连 iframe，不再用 noVNC。页面仍走预览代理并注入取点脚本。"
+          "help": "开启后浏览器打开 http://IP:端口/。沙箱内的透明代理注入取点脚本，不改应用的相对路径和根路径。"
         },
         "auto_inject": {
           "label": "自动注入",
@@ -578,7 +578,7 @@
           "desc": "set_preview 可达时为 true"
         }
       },
-      "help": "### 应用预览(app_preview)\n\nAgent 在沙箱内构建并启动应用,或登记已部署外部地址,调用 `set_preview(port?, url?, label?)`(port 与 url 二选一)注册预览;至少成功 1 次后进入预览复审(**不创建 Gate**)。外部 http(s) URL(可含端口)由浏览器 iframe 直连,不做服务端探测,取点可能降级。等待人工确认时会出现在侧栏**待审批**（徽章「应用预览」），也可在运行详情的复审 Tab 处理：两侧均可「取点标注 → 添加到聊天」并在审批会话可用时就地修改,满意后「确认并流转」沿单 success 出口前进；任一方完成后两侧待处理态同步清除。\n\n**IP 直连预览**(节点开关 `direct_preview`,默认关):开启后用端口直连 iframe,关闭则用 noVNC。两种预览都走平台预览代理,并由代理注入取点脚本。**自动注入**(开关 `auto_inject`,默认开):沙箱入站也可向 HTML 插入 `$PREVIEW_PICK_SCRIPT_URL`,无需改业务 HTML;关闭则须在入口手写 script。\n\n**与人工门禁交互一致**：两侧均为取点+对话+确认并流转；应用预览与门禁均进待审批，类型徽章可区分。无通过/退回不等于缺少审批——结束动作就是确认并流转。\n\n**应用须监听 `0.0.0.0:<port>`**(不能只绑 127.0.0.1):预览经容器网桥 IP 反向代理,只绑回环会连不上、预览白屏(502)。\n\n画布脚注「确认并流转 · 待审批」;副标题「取点标注 · 等待人工确认」。存量 pass/fail 边静默兼容(确认注入 action=pass)。未调用 set_preview 时按 max_rounds 同会话催促。"
+      "help": "### 应用预览(app_preview)\n\nAgent 在沙箱内构建并启动应用,或登记已部署外部地址,调用 `set_preview(port?, url?, label?)`(port 与 url 二选一)注册预览;至少成功 1 次后进入预览复审(**不创建 Gate**)。外部 http(s) URL(可含端口)由浏览器 iframe 直连,不做服务端探测,取点可能降级。等待人工确认时会出现在侧栏**待审批**（徽章「应用预览」），也可在运行详情的复审 Tab 处理：两侧均可「取点标注 → 添加到聊天」并在审批会话可用时就地修改,满意后「确认并流转」沿单 success 出口前进；任一方完成后两侧待处理态同步清除。\n\n**IP 直连预览**(节点开关 `direct_preview`,默认关):开启后浏览器打开 `http://IP:端口/`,关闭则用 noVNC。直连流量进沙箱内透明代理,只插入取点脚本,不改写相对路径和根路径。**自动注入**(开关 `auto_inject`,默认开):沙箱入站也可向 HTML 插入 `$PREVIEW_PICK_SCRIPT_URL`,无需改业务 HTML;关闭则须在入口手写 script。\n\n**与人工门禁交互一致**：两侧均为取点+对话+确认并流转；应用预览与门禁均进待审批，类型徽章可区分。无通过/退回不等于缺少审批——结束动作就是确认并流转。\n\n**应用须监听 `0.0.0.0:<port>`**(不能只绑 127.0.0.1):预览经容器网桥 IP 反向代理,只绑回环会连不上、预览白屏(502)。\n\n画布脚注「确认并流转 · 待审批」;副标题「取点标注 · 等待人工确认」。存量 pass/fail 边静默兼容(确认注入 action=pass)。未调用 set_preview 时按 max_rounds 同会话催促。"
     },
     "branch": {
       "label": "条件分支",
@@ -623,7 +623,7 @@
         },
         "direct_preview": {
           "label": "IP 直连预览",
-          "help": "开启后预览用端口直连 iframe，不再用 noVNC。页面仍走预览代理并注入取点脚本。默认关闭。"
+          "help": "开启后预览打开 http://IP:端口/，不再用 noVNC。取点脚本由沙箱内透明代理插入，不改应用路径。默认关闭。"
         },
         "auto_inject": {
           "label": "自动注入",
@@ -668,7 +668,7 @@
           "desc": "完整对话记录"
         }
       },
-      "help": "### Grasp\n\n一次多轮 ReAct 对话完成**开发前工作**。本节点配置 Agent、超时(默认 30 分钟)、**IP 直连预览**(`direct_preview`,默认关)和**自动注入**(`auto_inject`,默认开):**没有 Prompt 模板**、**不限制轮次**、也没有自动澄清 / 条件注入。关闭直连时 `set_preview` 用 noVNC,开启直连时用端口 iframe;两种预览都走预览代理并注入取点脚本,不必改业务 HTML。开场由平台注入运行输入并等待用户先描述目标;Agent 用工具对齐需求,仅在真实分歧时 `ask_question`。\n\n**两份强制交付**(都写完才能结束,不是「唯一交付」):\n1. `set_clarified_requirement` → `clarified_requirement.json`(open_questions 必须为空;含 work_kind)\n2. `set_plan` → `plan.json`(最多两级:大目标→小目标;写入设计区时六节齐全,无内容显式「不涉及」,可挂 Mermaid diagram)\n\n**Bug 附加交付**:当 work_kind=bug 时须 `set_root_cause` → `root_cause.json`(结构化 JSON,**不是** page.html 或 write_artifact);非 bug 不得保留该产物。\n\n**可选**(有则展示,缺不失败):`set_research`;`set_proposals`(**仅当 ≥2 个可区分候选需用户择一时才写**;禁止单候选伪选择);`write_artifact` 写入 `page.html`;`set_preview` 登记可运行应用(沙箱 port 或外部 url,不是完成条件、不会结束本节点)。\n\n若角色包声明「唯一交付」或禁止上述工具,**以平台规则 `rules/grasp.md` 为准**。不要写实现代码、不要改仓库。"
+      "help": "### Grasp\n\n一次多轮 ReAct 对话完成**开发前工作**。本节点配置 Agent、超时(默认 30 分钟)、**IP 直连预览**(`direct_preview`,默认关)和**自动注入**(`auto_inject`,默认开):**没有 Prompt 模板**、**不限制轮次**、也没有自动澄清 / 条件注入。关闭直连时 `set_preview` 用 noVNC,开启直连时打开 `http://IP:端口/`;取点脚本由沙箱内透明代理插入,不必改业务 HTML,也不改写路径。开场由平台注入运行输入并等待用户先描述目标;Agent 用工具对齐需求,仅在真实分歧时 `ask_question`。\n\n**两份强制交付**(都写完才能结束,不是「唯一交付」):\n1. `set_clarified_requirement` → `clarified_requirement.json`(open_questions 必须为空;含 work_kind)\n2. `set_plan` → `plan.json`(最多两级:大目标→小目标;写入设计区时六节齐全,无内容显式「不涉及」,可挂 Mermaid diagram)\n\n**Bug 附加交付**:当 work_kind=bug 时须 `set_root_cause` → `root_cause.json`(结构化 JSON,**不是** page.html 或 write_artifact);非 bug 不得保留该产物。\n\n**可选**(有则展示,缺不失败):`set_research`;`set_proposals`(**仅当 ≥2 个可区分候选需用户择一时才写**;禁止单候选伪选择);`write_artifact` 写入 `page.html`;`set_preview` 登记可运行应用(沙箱 port 或外部 url,不是完成条件、不会结束本节点)。\n\n若角色包声明「唯一交付」或禁止上述工具,**以平台规则 `rules/grasp.md` 为准**。不要写实现代码、不要改仓库。"
     }
   }
 }
