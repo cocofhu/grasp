@@ -6,6 +6,7 @@
   // Drawer page protocol (web/src/lib/inbox/embedChat.ts).
   var EMBED_PICK = 'grasp-embed:pick';
   var EMBED_READY = 'grasp-embed:ready';
+  var EMBED_THEME = 'grasp-embed:theme';
   var EMBED_HASH = '__grasp_embed';
   var EMBED_ORIGIN_PATH = '/__grasp/embed-origin';
   var EMBED_STORE_KEY = '__grasp_embed';
@@ -28,6 +29,8 @@
         chat: '对话',
         chatTitle: 'Grasp · Agent 对话',
         close: '收起对话',
+        toLight: '切换到浅色',
+        toDark: '切换到深色',
       }
     : {
         pick: 'Pick',
@@ -40,6 +43,8 @@
         chat: 'Chat',
         chatTitle: 'Grasp · Agent chat',
         close: 'Hide chat',
+        toLight: 'Switch to light',
+        toDark: 'Switch to dark',
       };
 
   var enabled = false;
@@ -191,8 +196,17 @@
     'display:flex;flex-direction:column;background:#0b0b0c;border-left:1px solid #374151;' +
     'box-shadow:-8px 0 24px rgba(0,0,0,.35);font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e5e7eb}' +
     '.dhead{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-bottom:1px solid #1f2937}' +
-    '.dhead span{font-weight:600}' +
+    '.dhead span{flex:1;font-weight:600}' +
     '.drawer iframe{flex:1;min-height:0;width:100%;border:0;background:#0b0b0c}' +
+    '.bar.light{color:#18181b;background:#fff;border-color:#e4e4e7;box-shadow:0 6px 24px rgba(16,24,40,.12)}' +
+    '.light button:hover{background:#f4f4f5}' +
+    '.light .toggle{background:#f4f4f5}' +
+    '.light .toggle[aria-pressed="true"]{background:#dcfce7;color:#15803d}' +
+    '.light .chat{background:#eef0ff;color:#4f46e5}' +
+    '.light .chat[aria-expanded="true"]{background:#dcdcfe}' +
+    '.drawer.light{color:#18181b;background:#fafafb;border-left-color:#e4e4e7;box-shadow:-8px 0 24px rgba(16,24,40,.12)}' +
+    '.drawer.light .dhead{border-bottom-color:#e4e4e7}' +
+    '.drawer.light iframe{background:#fafafb}' +
     '@media (max-width:' + (DRAWER_W * 2) + 'px){.bar.shift{right:16px;bottom:auto;top:44px}}' +
     '[hidden]{display:none!important}';
 
@@ -211,6 +225,7 @@
       '<style>' + BAR_CSS + '</style>' +
       '<div class="drawer" data-role="drawer" hidden>' +
       '<div class="dhead"><span data-role="drawer-title"></span>' +
+      '<button type="button" data-role="drawer-theme"></button>' +
       '<button type="button" data-role="drawer-close">×</button></div>' +
       '</div>' +
       '<div class="bar" part="bar" data-role="bar">' +
@@ -231,6 +246,7 @@
       list: shadow.querySelector('[data-role="list"]'),
       notice: shadow.querySelector('[data-role="notice"]'),
       drawer: shadow.querySelector('[data-role="drawer"]'),
+      theme: shadow.querySelector('[data-role="drawer-theme"]'),
     };
     shadow.querySelector('[data-role="drawer-title"]').textContent = T.chatTitle;
     var closeBtn = shadow.querySelector('[data-role="drawer-close"]');
@@ -245,6 +261,11 @@
       ev.preventDefault();
       ev.stopPropagation();
       setDrawerOpen(!drawerOpen);
+    });
+    ui.theme.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      setDrawerTheme(drawerTheme() === 'light' ? 'dark' : 'light');
     });
     closeBtn.addEventListener('click', function (ev) {
       ev.preventDefault();
@@ -273,7 +294,12 @@
     ui.chat.textContent = T.chat;
     ui.chat.setAttribute('aria-expanded', drawerOpen ? 'true' : 'false');
     ui.drawer.hidden = !drawerOpen;
-    ui.bar.className = drawerOpen ? 'bar shift' : 'bar';
+    var light = drawerTheme() === 'light';
+    ui.drawer.className = light ? 'drawer light' : 'drawer';
+    ui.bar.className = 'bar' + (drawerOpen ? ' shift' : '') + (light ? ' light' : '');
+    ui.theme.textContent = light ? '☾' : '☀';
+    ui.theme.setAttribute('aria-label', light ? T.toDark : T.toLight);
+    ui.theme.title = light ? T.toDark : T.toLight;
     ui.count.textContent = drawer ? '' : items.length ? T.picked + ' ' + items.length : T.empty;
     ui.list.hidden = !!drawer || !items.length;
     ui.list.textContent = '';
@@ -328,6 +354,25 @@
 
   // ---- chat drawer ----
 
+  function drawerTheme() {
+    return drawer && drawer.embed.theme === 'light' ? 'light' : 'dark';
+  }
+
+  function postTheme() {
+    if (!drawer || !drawer.frame.contentWindow) return;
+    try {
+      drawer.frame.contentWindow.postMessage({ type: EMBED_THEME, theme: drawerTheme() }, drawer.origin);
+    } catch (e) {}
+  }
+
+  function setDrawerTheme(t) {
+    if (!drawer) return;
+    drawer.embed.theme = t;
+    saveEmbed(drawer.embed);
+    postTheme();
+    render();
+  }
+
   function readEmbedFragment() {
     var raw = '';
     try {
@@ -338,7 +383,12 @@
     if (!raw) return null;
     var q = new URLSearchParams(raw);
     if (!q.has(EMBED_HASH)) return null;
-    var got = { run: q.get('run') || '', node: q.get('node') || '', ticket: q.get('ticket') || '' };
+    var got = {
+      run: q.get('run') || '',
+      node: q.get('node') || '',
+      ticket: q.get('ticket') || '',
+      theme: q.get('theme') === 'light' ? 'light' : 'dark',
+    };
     try {
       // The ticket must not linger in the address bar, history or the app's router.
       history.replaceState(history.state, '', location.pathname + location.search);
@@ -368,7 +418,10 @@
       '/nodes/' +
       encodeURIComponent(e.node) +
       '/chat';
-    return ticket ? src + '#ticket=' + encodeURIComponent(ticket) : src;
+    var q = new URLSearchParams();
+    if (ticket) q.set('ticket', ticket);
+    q.set('theme', e.theme === 'light' ? 'light' : 'dark');
+    return src + '#' + q.toString();
   }
 
   function attachDrawer() {
@@ -430,7 +483,7 @@
           resumeDrawer();
           return;
         }
-        startDrawer({ origin: v.origin, run: frag.run, node: frag.node, open: true }, frag.ticket);
+        startDrawer({ origin: v.origin, run: frag.run, node: frag.node, open: true, theme: frag.theme }, frag.ticket);
         setDrawerOpen(true);
       })
       .catch(resumeDrawer);
@@ -488,6 +541,7 @@
     var data = ev.data;
     if (!data || typeof data !== 'object' || data.type !== EMBED_READY) return;
     drawerReady = true;
+    postTheme();
     flushOutbox();
   });
 

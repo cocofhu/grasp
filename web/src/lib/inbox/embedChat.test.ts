@@ -2,11 +2,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   EMBED_PICK_MESSAGE,
+  EMBED_THEME_MESSAGE,
   clearEmbedSession,
   directPreviewEmbedUrl,
   embedChatPath,
   loadEmbedSession,
   parseEmbedPickMessage,
+  parseEmbedThemeFromHash,
+  parseEmbedThemeMessage,
   parseEmbedTicketFromHash,
   redeemEmbedTicket,
   saveEmbedSession,
@@ -22,7 +25,18 @@ describe('embedChat', () => {
     expect(parseEmbedTicketFromHash('#t=abc')).toBe('')
     expect(parseEmbedTicketFromHash('')).toBe('')
     const t = { ticket: 'a b', runId: 'r', nodeId: 'n', expiresAt: '' }
-    expect(directPreviewEmbedUrl('http://10.0.0.5:18080/x#old', t)).toBe('http://10.0.0.5:18080/x#__grasp_embed&run=r&node=n&ticket=a+b')
+    expect(directPreviewEmbedUrl('http://10.0.0.5:18080/x#old', t, 'light')).toBe(
+      'http://10.0.0.5:18080/x#__grasp_embed&run=r&node=n&ticket=a+b&theme=light',
+    )
+  })
+
+  it('reads the host theme from the fragment and from messages', () => {
+    expect(parseEmbedThemeFromHash('#ticket=a&theme=light')).toBe('light')
+    expect(parseEmbedThemeFromHash('#theme=dark')).toBe('dark')
+    expect(parseEmbedThemeFromHash('#theme=neon')).toBeNull()
+    expect(parseEmbedThemeMessage({ type: EMBED_THEME_MESSAGE, theme: 'light' })).toBe('light')
+    expect(parseEmbedThemeMessage({ type: EMBED_THEME_MESSAGE, theme: 'x' })).toBeNull()
+    expect(parseEmbedThemeMessage({ type: EMBED_PICK_MESSAGE, theme: 'light' })).toBeNull()
   })
 
   it('keeps the drawer token per run/node and drops it once expired', () => {

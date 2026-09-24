@@ -33,7 +33,7 @@ describe('DirectPreviewLauncher', () => {
     expect(tab.location.href).toBe('')
     resolve({ ticket: 't/1', runId: 'run-1', nodeId: 'ap1', expiresAt: '' })
     await flushPromises()
-    expect(tab.location.href).toBe(`${DIRECT}#__grasp_embed&run=run-1&node=ap1&ticket=t%2F1`)
+    expect(tab.location.href).toBe(`${DIRECT}#__grasp_embed&run=run-1&node=ap1&ticket=t%2F1&theme=dark`)
     expect(w.find('[data-testid="direct-preview-tip"]').exists()).toBe(false)
   })
 
@@ -62,7 +62,7 @@ describe('DirectPreviewLauncher', () => {
     await w.get('[data-testid="app-preview-direct-open"]').trigger('click')
     await flushPromises()
     const link = w.get('[data-testid="direct-preview-tip"]')
-    expect(link.attributes('href')).toBe(`${DIRECT}#__grasp_embed&run=r&node=n&ticket=tk`)
+    expect(link.attributes('href')).toBe(`${DIRECT}#__grasp_embed&run=r&node=n&ticket=tk&theme=dark`)
     expect(link.attributes('rel')).toBe('noopener')
   })
 })

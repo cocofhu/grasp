@@ -188,7 +188,7 @@ describe('AppPreviewPanel', () => {
     expect(openSpy).toHaveBeenCalledWith('about:blank', '_blank')
     expect(apiMocks.embedTicket).toHaveBeenCalledWith('run-1', 'preview-1')
     expect(tab.opener).toBeNull()
-    expect(tab.location.href).toBe('http://127.0.0.1:18081/#__grasp_embed&run=run-1&node=preview-1&ticket=tk')
+    expect(tab.location.href).toBe('http://127.0.0.1:18081/#__grasp_embed&run=run-1&node=preview-1&ticket=tk&theme=dark')
     openSpy.mockRestore()
     wrapper.unmount()
   })

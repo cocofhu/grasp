@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Window } from 'happy-dom'
 import { afterEach, describe, expect, it } from 'vitest'
-import { EMBED_PICK_MESSAGE, EMBED_READY_MESSAGE } from '@/lib/inbox/embedChat'
+import { EMBED_PICK_MESSAGE, EMBED_READY_MESSAGE, EMBED_THEME_MESSAGE } from '@/lib/inbox/embedChat'
 import { PICK_HTML_MAX, PICK_TEXT_MAX } from './previewPickUrl'
 
 const repo = resolve(__dirname, '../../../..')
@@ -203,7 +203,7 @@ describe('preview-pick.js chat drawer', () => {
     expect(p.win.location.hash).toBe('')
     await settle()
     expect(p.fetched).toEqual(['/__grasp/embed-origin?ticket=tk1&node=ap1'])
-    expect(p.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#ticket=tk1`)
+    expect(p.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#ticket=tk1&theme=dark`)
     expect(p.chatButton().hidden).toBe(false)
     expect(p.drawerOpen()).toBe(true)
     expect(JSON.parse(p.win.sessionStorage.getItem('__grasp_embed') || '{}')).toMatchObject({ origin: GRASP, run: 'run-1', node: 'ap1' })
@@ -224,7 +224,7 @@ describe('preview-pick.js chat drawer', () => {
     const p = openPage(body, { savedEmbed: saved })
     await settle()
     expect(p.fetched).toEqual([])
-    expect(p.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat`)
+    expect(p.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#theme=dark`)
     expect(p.drawerOpen()).toBe(false)
     p.chatButton().click()
     expect(p.drawerOpen()).toBe(true)
@@ -242,7 +242,8 @@ describe('preview-pick.js chat drawer', () => {
 
     expect(p.drawerReady('https://evil.example')).toEqual([])
     const inbox = p.drawerReady()
-    expect(inbox.map((m) => [m.type, (m.payload as { selector: string }).selector, m.target])).toEqual([
+    expect(inbox.map((m) => [m.type, (m.payload as { selector: string } | undefined)?.selector, m.target])).toEqual([
+      [EMBED_THEME_MESSAGE, undefined, GRASP],
       [EMBED_PICK_MESSAGE, '#old', GRASP],
       [EMBED_PICK_MESSAGE, '#buy', GRASP],
     ])
@@ -256,5 +257,23 @@ describe('preview-pick.js chat drawer', () => {
     })
     const notice = p.shadow.querySelector('[data-role="notice"]') as HTMLElement
     expect(notice.textContent).toBe('Added to the Grasp chat')
+  })
+
+  it('starts in the Grasp theme and switches the drawer and the chat together', async () => {
+    const p = openPage(body, { hash: `${hash}&theme=light`, embedReply: reply })
+    await settle()
+    const drawerEl = p.shadow.querySelector('[data-role="drawer"]') as HTMLElement
+    const themeBtn = p.shadow.querySelector('[data-role="drawer-theme"]') as HTMLButtonElement
+    expect(p.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#ticket=tk1&theme=light`)
+    expect(drawerEl.classList.contains('light')).toBe(true)
+    expect(themeBtn.getAttribute('aria-label')).toBe('Switch to dark')
+    const inbox = p.drawerReady()
+    expect(inbox).toEqual([{ type: EMBED_THEME_MESSAGE, theme: 'light', target: GRASP }])
+
+    themeBtn.click()
+    expect(drawerEl.classList.contains('light')).toBe(false)
+    expect(themeBtn.getAttribute('aria-label')).toBe('Switch to light')
+    expect(inbox.at(-1)).toEqual({ type: EMBED_THEME_MESSAGE, theme: 'dark', target: GRASP })
+    expect(JSON.parse(p.win.sessionStorage.getItem('__grasp_embed') || '{}').theme).toBe('dark')
   })
 })

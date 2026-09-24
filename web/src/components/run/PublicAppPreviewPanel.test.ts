@@ -94,7 +94,7 @@ describe('PublicAppPreviewPanel', () => {
     await w.get('[data-testid="app-preview-direct-open"]').trigger('click')
     await flushPromises()
     expect(shareMocks.embedTicket).toHaveBeenCalledWith('share-token')
-    expect(tab.location.href).toBe('http://10.0.0.5:18080/#__grasp_embed&run=run-1&node=ap1&ticket=tk')
+    expect(tab.location.href).toBe('http://10.0.0.5:18080/#__grasp_embed&run=run-1&node=ap1&ticket=tk&theme=dark')
     open.mockRestore()
     w.unmount()
   })
