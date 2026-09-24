@@ -78,7 +78,7 @@ import type { VueWrapper } from '@vue/test-utils'
 
 const mounted: VueWrapper[] = []
 
-function mountView(locale: 'zh-CN' | 'en' = 'zh-CN') {
+function mountView(locale: 'zh-CN' | 'en' = 'zh-CN', props: Record<string, unknown> = {}) {
   const i18n = createI18n({
     legacy: false,
     locale,
@@ -87,7 +87,7 @@ function mountView(locale: 'zh-CN' | 'en' = 'zh-CN') {
       en: { ...commonEn, ...pagesEn, ...shellEn },
     },
   })
-  const wrapper = mount(PublicGateApprovalView, { global: { plugins: [i18n] } })
+  const wrapper = mount(PublicGateApprovalView, { props, global: { plugins: [i18n] } })
   mounted.push(wrapper)
   return wrapper
 }
@@ -1315,5 +1315,67 @@ describe('PublicGateApprovalView workbench', () => {
     if (preview) preview.sessionBusy = true
     await flushPromises()
     expect((w.find('[data-testid="clarify-confirm-flow"]').element as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
+describe('PublicGateApprovalView chat-only drawer mode', () => {
+  const drawerToken = `gse_${'ab'.repeat(16)}`
+
+  it('drives the chat with the embed token and hides stage, chrome and decide', async () => {
+    window.location.hash = `#t=${'cc'.repeat(32)}`
+    mocks.preview.mockResolvedValue({
+      status: 'active',
+      kind: 'review',
+      nodeType: 'app_preview',
+      remainingSec: 3600,
+      reactSessionAlive: true,
+      productKind: 'app_preview',
+      actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
+      turns: [{ role: 'agent', text: '预览已就绪', at: '2026-08-01T00:00:00Z' }],
+    })
+    const w = mountView('zh-CN', { embedToken: drawerToken })
+    await flushPromises()
+    expect(mocks.preview.mock.calls[0][0]).toBe(drawerToken)
+    expect(mocks.artifacts).not.toHaveBeenCalled()
+    expect(w.find('[data-testid="public-gate-chrome"]').exists()).toBe(false)
+    expect(w.find('[data-testid="review-shell-stage"]').exists()).toBe(false)
+    expect(w.find('[data-testid="review-shell-sash"]').exists()).toBe(false)
+    expect(w.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
+    expect(w.find('[data-testid="public-gate-footer"]').exists()).toBe(false)
+    expect(w.find('[data-testid="clarify-input"]').exists()).toBe(true)
+    expect(w.emitted('status')?.at(-1)).toEqual(['active'])
+
+    ;(w.vm as unknown as { addPick: (p: unknown) => void }).addPick({
+      selector: 'button.buy',
+      tagName: 'BUTTON',
+      outerHTML: '<button class="buy">Buy</button>',
+      url: 'http://127.0.0.1:18080/cart',
+    })
+    await flushPromises()
+    expect(w.get('[data-testid="public-gate-sidebar"]').text()).toContain('/cart · button.buy')
+  })
+
+  it('cold drawer session offers no confirm and points back to Grasp', async () => {
+    mocks.preview.mockResolvedValue({
+      status: 'active',
+      kind: 'review',
+      nodeType: 'grasp',
+      remainingSec: 3600,
+      reactSessionAlive: false,
+      actions: { confirm: 'confirm', reply: 'reply' },
+      turns: [{ role: 'agent', text: '完成', at: '2026-08-01T00:00:00Z' }],
+    })
+    const w = mountView('zh-CN', { embedToken: drawerToken })
+    await flushPromises()
+    expect(w.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
+    expect(w.find('[data-testid="clarify-input"]').exists()).toBe(false)
+    expect(w.get('[data-testid="public-gate-cold-hint"]').text()).toContain('回到 Grasp')
+  })
+
+  it('reports a dead drawer token so the host can drop it', async () => {
+    mocks.preview.mockResolvedValue({ status: 'invalid' })
+    const w = mountView('zh-CN', { embedToken: drawerToken })
+    await flushPromises()
+    expect(w.emitted('status')?.at(-1)).toEqual(['invalid'])
   })
 })

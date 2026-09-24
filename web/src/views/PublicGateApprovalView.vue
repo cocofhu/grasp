@@ -58,6 +58,13 @@ type PublicChatRef = {
   playConfirmCeremony?: () => Promise<void>
 }
 
+const props = defineProps<{
+  /** Chat-only drawer mode: the credential comes from the embed session instead of `#t=`. */
+  embedToken?: string
+}>()
+const emit = defineEmits<{ status: [status: string] }>()
+const chatOnly = computed(() => !!props.embedToken)
+
 const POLL_MS = 2000
 const IDLE_POLL_MS = 10_000
 const REMAINING_TICK_MS = 15_000
@@ -150,6 +157,7 @@ const showReactOnlyDeadend = computed(
   () => isActive.value && !doneKind.value && isReactOnly.value && !reactAlive.value,
 )
 const coldHintText = computed(() => {
+  if (chatOnly.value) return t('pages.embedChat.coldHint')
   if (isReactOnly.value) return t('pages.publicGate.sessionEndedHintReactOnly')
   return isReview.value ? t('pages.publicGate.sessionEndedHint') : t('pages.publicGate.sessionEndedHintGate')
 })
@@ -311,8 +319,12 @@ function abortArtifacts() {
   artifactsAbort = null
 }
 
+function readToken(): string {
+  return props.embedToken || parseShareTokenFromHash(window.location.hash)
+}
+
 async function loadPublicArtifacts(opts?: { silent?: boolean }) {
-  if (!isReview.value || !token.value) {
+  if (!isReview.value || !token.value || chatOnly.value) {
     publicArtifacts.value = []
     publicRunGraph.value = null
     return
@@ -401,7 +413,7 @@ async function loadPreview(opts?: { silent?: boolean; issueNonce?: boolean }) {
       if (attemptGen === previewGen) maybeStuck.value = true
     }, 10_000)
   }
-  const tok = parseShareTokenFromHash(window.location.hash)
+  const tok = readToken()
   token.value = tok
   if (!tok) {
     if (attemptGen !== previewGen) return
@@ -471,7 +483,7 @@ function abortUpstream() {
 }
 
 async function loadUpstreamFull() {
-  const tok = token.value || parseShareTokenFromHash(window.location.hash)
+  const tok = token.value || readToken()
   if (!tok || !hasUpstream.value) return
   if (upstreamLoaded.value || upstreamLoading.value) return
   abortUpstream()
@@ -1009,7 +1021,7 @@ function canPoll(): boolean {
   )
 }
 function onHashChange() {
-  if (doneKind.value || submitting.value) return
+  if (chatOnly.value || doneKind.value || submitting.value) return
   void loadPreview()
 }
 function noteIdlePoll(sameContent: boolean) {
@@ -1123,7 +1135,14 @@ onUnmounted(() => {
   reapplyThemeChrome()
 })
 
-defineExpose({ loadPreview, loadUpstreamFull, openUpstreamModal })
+watch(
+  () => preview.value?.status,
+  (next) => {
+    if (next) emit('status', next)
+  },
+)
+
+defineExpose({ loadPreview, loadUpstreamFull, openUpstreamModal, addPick: onAppPreviewPick })
 </script>
 
 <template>
@@ -1133,6 +1152,7 @@ defineExpose({ loadPreview, loadUpstreamFull, openUpstreamModal })
     :aria-busy="(!ready || loading || submitting) ? 'true' : 'false'"
   >
     <header
+      v-if="!chatOnly"
       class="flex shrink-0 items-center justify-between border-b border-line bg-surface text-txt"
       :class="isMobile ? 'px-3 py-1.5' : 'px-4 py-2'"
       data-testid="public-gate-chrome"
@@ -1259,6 +1279,7 @@ defineExpose({ loadPreview, loadUpstreamFull, openUpstreamModal })
       <ReviewShell
         ref="shellRef"
         class="min-h-0 flex-1"
+        :chat-only="chatOnly"
         :mobile="isMobile"
         :sidebar-width="400"
         :storage-key="REVIEW_SHELL_WIDTH_KEY_APPROVAL"
@@ -1383,10 +1404,10 @@ defineExpose({ loadPreview, loadUpstreamFull, openUpstreamModal })
                   :node-type="preview?.nodeType"
                   :done="false"
                   :active="canReply"
-                  :cold-session="!canReply"
-                  :can-pass="showConfirm || linkInvalid"
+                  :cold-session="!chatOnly && !canReply"
+                  :can-pass="!chatOnly && (showConfirm || linkInvalid)"
                   :pass-disabled="confirmDisabled"
-                  :force-confirm="showConfirm || linkInvalid"
+                  :force-confirm="!chatOnly && (showConfirm || linkInvalid)"
                   :confirm-error="errorText || null"
                   @send="onSend"
                   @finish="onComposerFinish"
@@ -1401,7 +1422,7 @@ defineExpose({ loadPreview, loadUpstreamFull, openUpstreamModal })
       </ReviewShell>
 
       <footer
-        v-if="!isReview && (showDecideFields || canReject)"
+        v-if="!chatOnly && !isReview && (showDecideFields || canReject)"
         class="flex shrink-0 flex-col gap-2 border-t border-line bg-surface md:flex-row md:items-center"
         :class="isMobile ? 'px-3 py-2' : 'px-4 py-2.5'"
         data-testid="public-gate-footer"

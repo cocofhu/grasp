@@ -13,6 +13,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/PublicGateApprovalView.vue'),
     meta: { titleKey: 'route.publicGateApproval', public: true, bare: true },
   },
+  {
+    path: '/embed/runs/:runId/nodes/:nodeId/chat',
+    name: 'embed-node-chat',
+    component: () => import('@/views/EmbedNodeChatView.vue'),
+    meta: { titleKey: 'route.embedChat', public: true, bare: true },
+  },
   { path: '/', redirect: '/dashboard' },
   { path: '/dashboard', name: 'dashboard', component: () => import('@/views/DashboardView.vue'), meta: { titleKey: 'route.dashboard' } },
   { path: '/stats', name: 'stats', component: () => import('@/views/TokenAnalyticsView.vue'), meta: { titleKey: 'route.stats' } },

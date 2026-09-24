@@ -7,6 +7,7 @@ import type {
   ReactAnnotation,
 } from '../../shared/types'
 import type { InboxContextResponse } from '../../inbox/inboxContext'
+import type { EmbedTicket } from '../../inbox/embedChat'
 import { apiState, BASE, origin, req, wsUrl } from '../httpCore'
 import type {
   EventPaginatedResponse,
@@ -357,4 +358,7 @@ export const runsClient = {
     req<{ status: string }>(`/runs/${runId}/nodes/${nodeId}/preview-issues/${issueId}`, {
       method: 'DELETE',
     }),
+  /** One-shot ticket for the direct-preview chat drawer (see lib/inbox/embedChat). */
+  embedTicket: (runId: string, nodeId: string) =>
+    req<EmbedTicket>(`/runs/${runId}/nodes/${nodeId}/embed-ticket`, { method: 'POST' }),
 }

@@ -20,6 +20,7 @@
     "settings": "Settings",
     "platformRules": "Platform rules",
     "login": "Login",
-    "publicGateApproval": "One-time external decision"
+    "publicGateApproval": "One-time external decision",
+    "embedChat": "Preview chat"
   }
 }
