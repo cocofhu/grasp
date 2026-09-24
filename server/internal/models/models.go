@@ -835,6 +835,8 @@ func AllModels() []any {
 		&GateShareLink{},
 		&GateShareNonce{},
 		&GateSharePreviewTicket{},
+		&EmbedTicket{},
+		&EmbedSession{},
 		&RequirementDraft{},
 		&NotificationRead{},
 		&NotificationBaseline{},

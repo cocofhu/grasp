@@ -49,7 +49,7 @@ func (h *Handlers) PublicGateEvents(c *gin.Context) {
 		return
 	}
 	token := strings.TrimSpace(auth.Token)
-	if token == "" || !gateshare.ValidTokenShape(token) {
+	if token == "" || !gateshare.ValidCredentialShape(token) {
 		_ = conn.WriteJSON(gin.H{"type": "error", "status": "invalid"})
 		return
 	}

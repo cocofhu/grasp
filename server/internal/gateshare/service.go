@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/embed"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 
@@ -69,9 +70,37 @@ type LinkInvalidationHook func(tokenHashes []string)
 
 // Service manages GateShareLink lifecycle.
 type Service struct {
-	db               *gorm.DB
-	audit            *services.ProjectAuditService
-	onInvalidate     LinkInvalidationHook
+	db           *gorm.DB
+	audit        *services.ProjectAuditService
+	onInvalidate LinkInvalidationHook
+	embedLookup  EmbedLookup
+}
+
+// EmbedRef is what a chat-drawer bearer token stands for: the share link it
+// was minted from, or (logged-in drawer) the run/node review session itself.
+type EmbedRef struct {
+	ShareTokenHash string
+	RunID          string
+	NodeID         string
+	ExpiresAt      time.Time
+}
+
+// EmbedLookup resolves a chat-drawer bearer token.
+type EmbedLookup func(token string) (EmbedRef, bool)
+
+// SetEmbedLookup lets LookupByToken accept drawer bearer tokens.
+func (s *Service) SetEmbedLookup(f EmbedLookup) {
+	if s == nil {
+		return
+	}
+	s.embedLookup = f
+}
+
+// ValidCredentialShape accepts a share token or a drawer bearer token. Only
+// chat endpoints use it; decide / ticket endpoints keep ValidTokenShape so a
+// drawer token can never approve or mint further credentials.
+func ValidCredentialShape(s string) bool {
+	return ValidTokenShape(s) || embed.IsSessionToken(s)
 }
 
 // NewService builds the share-link service.
@@ -459,11 +488,24 @@ func (s *Service) RevokeUnusedForNode(runID, nodeID string) {
 }
 
 // LookupByToken hashes the token, loads by unique hash, then constant-time compares.
+// A drawer bearer token resolves through SetEmbedLookup to the same link.
 func (s *Service) LookupByToken(token string) (*LookupResult, string, error) {
-	if !ValidTokenShape(token) {
+	var hash string
+	switch {
+	case ValidTokenShape(token):
+		hash = HashToken(token)
+	case embed.IsSessionToken(token) && s.embedLookup != nil:
+		ref, ok := s.embedLookup(token)
+		if !ok {
+			return nil, models.ShareLinkStateNone, ErrTokenInvalid
+		}
+		if ref.ShareTokenHash == "" {
+			return s.lookupRunNodeReview(ref, HashToken(token))
+		}
+		hash = ref.ShareTokenHash
+	default:
 		return nil, models.ShareLinkStateNone, ErrTokenInvalid
 	}
-	hash := HashToken(token)
 	var link models.GateShareLink
 	if err := s.db.Where("token_hash = ?", hash).First(&link).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -525,6 +567,40 @@ func (s *Service) LookupByToken(token string) (*LookupResult, string, error) {
 		}
 	}
 	return res, st, nil
+}
+
+// lookupRunNodeReview backs a logged-in drawer token with a review link that
+// exists only in memory: full reply permission, the latest conversation, and
+// the same demotion rules as a stored review link. It has no ID, so it can
+// never be consumed by decide.
+func (s *Service) lookupRunNodeReview(ref EmbedRef, tokenHash string) (*LookupResult, string, error) {
+	var run models.Run
+	if err := s.db.First(&run, "id = ?", ref.RunID).Error; err != nil {
+		return nil, models.ShareLinkStateNone, ErrTokenInvalid
+	}
+	node := run.Graph.FindNode(ref.NodeID)
+	if !services.IsShareableReviewSession(node) {
+		return nil, models.ShareLinkStateNone, ErrTokenInvalid
+	}
+	var conv models.ReactConversation
+	if err := s.db.Where("run_id = ? AND node_id = ?", ref.RunID, ref.NodeID).
+		Order("iteration desc, id desc").First(&conv).Error; err != nil {
+		return nil, models.ShareLinkStateNone, ErrTokenInvalid
+	}
+	link := models.GateShareLink{
+		RunID:            ref.RunID,
+		NodeID:           ref.NodeID,
+		Iteration:        conv.Iteration,
+		Kind:             models.ShareLinkKindReview,
+		PermissionPreset: models.SharePermissionFull,
+		TokenHash:        tokenHash,
+		ExpiresAt:        ref.ExpiresAt,
+	}
+	st := models.ShareLinkStateActive
+	if terminalRun(run.Status) || conv.Done || run.Status != "waiting_human" {
+		st = models.ShareLinkStateUsed
+	}
+	return &LookupResult{Link: link, Kind: models.ShareLinkKindReview, Run: run, Node: node}, st, nil
 }
 
 // ConsumeCAS marks the link used iff still active. RowsAffected==0 → already consumed/revoked/expired.

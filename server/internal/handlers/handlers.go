@@ -10,6 +10,7 @@ import (
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/browser"
 	"github.com/cocofhu/grasp/internal/contextmcp"
+	"github.com/cocofhu/grasp/internal/embed"
 	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/mcp"
@@ -63,6 +64,8 @@ type Handlers struct {
 	GateShareTickets  *gateshare.TicketStore
 	GateShareSessions *gateshare.PreviewSessionHub
 	GateShareLimiter  *gateshare.IPLimiter
+	// Embed backs the preview-page chat drawer (tickets + bearer sessions).
+	Embed *embed.Store
 	// PublicAdvertise is the browser-facing base for QQ/preview deep links.
 	// Gate/review share URLs mint from Request.Host instead. Public CSRF
 	// compares Origin/Referer to this request's Host (never client
