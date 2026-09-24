@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/embed"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 
@@ -69,9 +70,29 @@ type LinkInvalidationHook func(tokenHashes []string)
 
 // Service manages GateShareLink lifecycle.
 type Service struct {
-	db               *gorm.DB
-	audit            *services.ProjectAuditService
-	onInvalidate     LinkInvalidationHook
+	db           *gorm.DB
+	audit        *services.ProjectAuditService
+	onInvalidate LinkInvalidationHook
+	embedLookup  EmbedLookup
+}
+
+// EmbedLookup resolves a chat-drawer bearer token to the share link token hash
+// it was minted from.
+type EmbedLookup func(token string) (tokenHash string, ok bool)
+
+// SetEmbedLookup lets LookupByToken accept drawer bearer tokens.
+func (s *Service) SetEmbedLookup(f EmbedLookup) {
+	if s == nil {
+		return
+	}
+	s.embedLookup = f
+}
+
+// ValidCredentialShape accepts a share token or a drawer bearer token. Only
+// chat endpoints use it; decide / ticket endpoints keep ValidTokenShape so a
+// drawer token can never approve or mint further credentials.
+func ValidCredentialShape(s string) bool {
+	return ValidTokenShape(s) || embed.IsSessionToken(s)
 }
 
 // NewService builds the share-link service.
@@ -459,11 +480,21 @@ func (s *Service) RevokeUnusedForNode(runID, nodeID string) {
 }
 
 // LookupByToken hashes the token, loads by unique hash, then constant-time compares.
+// A drawer bearer token resolves through SetEmbedLookup to the same link.
 func (s *Service) LookupByToken(token string) (*LookupResult, string, error) {
-	if !ValidTokenShape(token) {
+	var hash string
+	switch {
+	case ValidTokenShape(token):
+		hash = HashToken(token)
+	case embed.IsSessionToken(token) && s.embedLookup != nil:
+		h, ok := s.embedLookup(token)
+		if !ok {
+			return nil, models.ShareLinkStateNone, ErrTokenInvalid
+		}
+		hash = h
+	default:
 		return nil, models.ShareLinkStateNone, ErrTokenInvalid
 	}
-	hash := HashToken(token)
 	var link models.GateShareLink
 	if err := s.db.Where("token_hash = ?", hash).First(&link).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

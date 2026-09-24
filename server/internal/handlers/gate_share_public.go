@@ -70,7 +70,7 @@ func (h *Handlers) PublicGatePreview(c *gin.Context) {
 		return
 	}
 	token := strings.TrimSpace(c.GetHeader(headerShareToken))
-	if token == "" || !gateshare.ValidTokenShape(token) {
+	if token == "" || !gateshare.ValidCredentialShape(token) {
 		c.JSON(http.StatusOK, gin.H{"status": "invalid"})
 		return
 	}
@@ -180,7 +180,7 @@ func (h *Handlers) PublicGateReply(c *gin.Context) {
 		return
 	}
 	token := strings.TrimSpace(body.Token)
-	if token == "" || !gateshare.ValidTokenShape(token) {
+	if token == "" || !gateshare.ValidCredentialShape(token) {
 		c.JSON(http.StatusOK, gin.H{"status": "invalid"})
 		return
 	}
@@ -236,7 +236,7 @@ func (h *Handlers) PublicGateCancel(c *gin.Context) {
 		return
 	}
 	token := strings.TrimSpace(body.Token)
-	if token == "" || !gateshare.ValidTokenShape(token) {
+	if token == "" || !gateshare.ValidCredentialShape(token) {
 		c.JSON(http.StatusOK, gin.H{"status": "invalid"})
 		return
 	}
@@ -310,7 +310,7 @@ func (h *Handlers) PublicGateQueueRemove(c *gin.Context) {
 		return
 	}
 	token := strings.TrimSpace(body.Token)
-	if token == "" || !gateshare.ValidTokenShape(token) {
+	if token == "" || !gateshare.ValidCredentialShape(token) {
 		c.JSON(http.StatusOK, gin.H{"status": "invalid"})
 		return
 	}
@@ -357,7 +357,7 @@ func (h *Handlers) PublicGateQueueReorder(c *gin.Context) {
 		return
 	}
 	token := strings.TrimSpace(body.Token)
-	if token == "" || !gateshare.ValidTokenShape(token) {
+	if token == "" || !gateshare.ValidCredentialShape(token) {
 		c.JSON(http.StatusOK, gin.H{"status": "invalid"})
 		return
 	}

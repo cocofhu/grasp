@@ -17,6 +17,7 @@ import (
 	"github.com/cocofhu/grasp/internal/auth"
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/database"
+	"github.com/cocofhu/grasp/internal/embed"
 	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/handlers"
@@ -83,10 +84,19 @@ func newHarness(t *testing.T) *harness {
 	gateShareSvc := gateshare.NewService(db, auditSvc)
 	gateShareTickets := gateshare.NewTicketStore(db)
 	gateShareSessions := gateshare.NewPreviewSessionHub()
+	embedStore := embed.NewStore(db)
+	gateShareSvc.SetEmbedLookup(func(token string) (string, bool) {
+		c, ok := embedStore.LookupSession(token)
+		if !ok || c.Kind != models.EmbedKindShare {
+			return "", false
+		}
+		return c.ShareTokenHash, true
+	})
 	gateShareSvc.SetInvalidationHook(func(tokenHashes []string) {
 		for _, th := range tokenHashes {
 			gateShareTickets.InvalidateByTokenHash(th)
 		}
+		embedStore.InvalidateShare(tokenHashes...)
 		gateShareSessions.KickMany(tokenHashes)
 	})
 	eng.SetShareRevoker(gateShareSvc)
@@ -133,6 +143,7 @@ func newHarness(t *testing.T) *harness {
 		GateShareTickets:  gateShareTickets,
 		GateShareSessions: gateShareSessions,
 		GateShareLimiter:  gateshare.NewIPLimiter(),
+		Embed:             embedStore,
 		PublicAdvertise:   "http://example.test",
 	}
 	hn := &harness{r: router.New(h), h: h, db: db, host: host, auth: authSvc, fg: fg}

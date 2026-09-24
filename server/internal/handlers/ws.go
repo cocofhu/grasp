@@ -47,7 +47,12 @@ func (h *Handlers) RunEvents(c *gin.Context) {
 		return
 	}
 	defer conn.Close()
+	h.streamRunEvents(conn, runID, true)
+}
 
+// streamRunEvents sends the snapshot and relays broker frames until the
+// client disconnects. Control frames are handled only when allowControl.
+func (h *Handlers) streamRunEvents(conn *websocket.Conn, runID string, allowControl bool) {
 	ch, unsub := h.Eng.Broker().Subscribe(runID)
 	defer unsub()
 
@@ -69,7 +74,9 @@ func (h *Handlers) RunEvents(c *gin.Context) {
 				_ = conn.Close()
 				return
 			}
-			h.handleRunWSControl(runID, data)
+			if allowControl {
+				h.handleRunWSControl(runID, data)
+			}
 		}
 	}()
 

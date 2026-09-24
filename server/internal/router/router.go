@@ -174,6 +174,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/runs/:id/nodes/:nodeId/sandbox-log", h.NodeSandboxLog)
 		api.GET("/runs/:id/nodes/:nodeId/sandbox", h.RunNodeSandbox)
 		api.GET("/runs/:id/nodes/:nodeId/previews", h.ListNodePreviews)
+		api.POST("/runs/:id/nodes/:nodeId/embed-ticket", h.CreateEmbedTicket)
 		api.GET("/runs/:id/nodes/:nodeId/preview-issues", h.ListPreviewIssues)
 		api.POST("/runs/:id/nodes/:nodeId/preview-issues", h.CreatePreviewIssue)
 		api.DELETE("/runs/:id/nodes/:nodeId/preview-issues/:issueId", h.DeletePreviewIssue)
@@ -262,6 +263,22 @@ func New(h *handlers.Handlers) *gin.Engine {
 	r.POST("/mcp/runs/:runId", h.MCPRPC)
 	r.GET("/mcp/runs/:runId", h.MCPRPC)
 	r.DELETE("/mcp/runs/:runId", h.MCPRPC)
+	r.GET("/mcp/runs/:runId/embed-origin", h.MCPEmbedOrigin)
+
+	// Preview-page chat drawer (outside /api: no cf_session, which a cross-site
+	// iframe never carries). Tickets are redeemed for a run/node-bound bearer.
+	r.GET("/embed/runs/:runId/nodes/:nodeId/chat", h.EmbedChatPage)
+	r.POST("/embed-api/session", h.RedeemEmbedSession)
+	r.GET("/embed-api/runs/:id/events", h.EmbedRunEvents)
+	emb := r.Group("/embed-api/runs/:id", h.EmbedAuth())
+	{
+		emb.GET("", h.GetRun)
+		emb.GET("/nodes/:nodeId/events", h.NodeEvents)
+		emb.POST("/react/:nodeId/reply", h.ReactReply)
+		emb.POST("/react/:nodeId/cancel", h.ReactCancel)
+		emb.POST("/react/:nodeId/queue/remove", h.ReactQueueRemove)
+		emb.POST("/react/:nodeId/queue/reorder", h.ReactQueueReorder)
+	}
 
 	// Project-scoped PM MCP hosts (outside /api).
 	r.POST("/mcp/pm/:projectId", h.PMMCPRPC)
@@ -347,6 +364,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		pub.GET("/upstream", h.PublicGateUpstream)
 		pub.GET("/events", h.PublicGateEvents)
 		pub.POST("/preview-ticket", h.PublicPreviewTicket)
+		pub.POST("/embed-ticket", h.PublicEmbedTicket)
 		pub.GET("/preview-vnc/ws", h.PublicPreviewVNC)
 		pub.Any("/preview-api/:ticket/*path", h.PublicPreviewAPIProxy)
 		pub.POST("/decide", h.PublicGateDecide)
@@ -359,6 +377,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		pub.OPTIONS("/artifacts/:name/content", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 		pub.OPTIONS("/upstream", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 		pub.OPTIONS("/preview-ticket", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+		pub.OPTIONS("/embed-ticket", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 		pub.OPTIONS("/decide", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 		pub.OPTIONS("/reply", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 		pub.OPTIONS("/cancel", func(c *gin.Context) { c.Status(http.StatusNoContent) })
@@ -381,6 +400,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 			strings.HasPrefix(p, "/sandbox-vnc/") ||
 			strings.HasPrefix(p, "/preview/") ||
 			strings.HasPrefix(p, "/preview-vnc/") ||
+			strings.HasPrefix(p, "/embed-api/") ||
 			strings.HasPrefix(p, "/public/gate-approvals") {
 			// /mcp/ covers both /mcp/runs/ and /mcp/pm/
 			c.String(http.StatusNotFound, "not found: %s", p)
@@ -426,7 +446,8 @@ func errorLogger() gin.HandlerFunc {
 
 func cors() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if strings.HasPrefix(c.Request.URL.Path, "/public/gate-approvals") {
+		p := c.Request.URL.Path
+		if strings.HasPrefix(p, "/public/gate-approvals") || strings.HasPrefix(p, "/embed-api/") || strings.HasPrefix(p, "/embed/") {
 			c.Next()
 			return
 		}

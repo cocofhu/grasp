@@ -26,6 +26,7 @@ import (
 	"github.com/cocofhu/grasp/internal/contextmcp"
 	"github.com/cocofhu/grasp/internal/crypto"
 	"github.com/cocofhu/grasp/internal/database"
+	"github.com/cocofhu/grasp/internal/embed"
 	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/handlers"
@@ -234,10 +235,19 @@ func main() {
 	gateShareSvc := gateshare.NewService(db, auditSvc)
 	gateShareTickets := gateshare.NewTicketStore(db)
 	gateShareSessions := gateshare.NewPreviewSessionHub()
+	embedStore := embed.NewStore(db)
+	gateShareSvc.SetEmbedLookup(func(token string) (string, bool) {
+		c, ok := embedStore.LookupSession(token)
+		if !ok || c.Kind != models.EmbedKindShare {
+			return "", false
+		}
+		return c.ShareTokenHash, true
+	})
 	gateShareSvc.SetInvalidationHook(func(tokenHashes []string) {
 		for _, th := range tokenHashes {
 			gateShareTickets.InvalidateByTokenHash(th)
 		}
+		embedStore.InvalidateShare(tokenHashes...)
 		gateShareSessions.KickMany(tokenHashes)
 	})
 	eng.SetShareRevoker(gateShareSvc)
@@ -475,6 +485,7 @@ func main() {
 		GateShare:         gateShareSvc,
 		GateShareNonces:   gateshare.NewNonceStore(db),
 		GateShareTickets:  gateShareTickets,
+		Embed:             embedStore,
 		GateShareSessions: gateShareSessions,
 		GateShareLimiter:  gateshare.NewIPLimiter(),
 		PublicAdvertise:   cfg.Server.PublicAdvertise,
