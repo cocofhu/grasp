@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { defineComponent } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -8,6 +9,7 @@ import PublicAppPreviewPanel from './PublicAppPreviewPanel.vue'
 
 const shareMocks = vi.hoisted(() => ({
   createPreviewTicket: vi.fn(),
+  previewTicket: vi.fn(),
 }))
 
 vi.mock('@/lib/inbox/gateShareLink', async () => {
@@ -18,6 +20,7 @@ vi.mock('@/lib/inbox/gateShareLink', async () => {
     publicGateApi: {
       ...actual.publicGateApi,
       createPreviewTicket: shareMocks.createPreviewTicket,
+      previewTicket: shareMocks.previewTicket,
     },
   }
 })
@@ -28,6 +31,12 @@ describe('PublicAppPreviewPanel', () => {
       ticket: 'tix',
       wsPath: '/vnc',
       iframeUrl: 'http://example.test/preview',
+    })
+    shareMocks.previewTicket.mockResolvedValue({
+      status: 'active',
+      ticket: 'tix',
+      wsPath: '/vnc',
+      iframePath: '/public/gate-approvals/preview-api/tix/',
     })
   })
 
@@ -73,6 +82,45 @@ describe('PublicAppPreviewPanel', () => {
     })
     await flushPromises()
     expect(w.html().length).toBeGreaterThan(10)
+    w.unmount()
+  })
+
+  it('direct port window uses the same-origin ticket path', async () => {
+    const i18n = createI18n({
+      legacy: false,
+      locale: 'zh-CN',
+      messages: { 'zh-CN': { ...common, ...pages } },
+    })
+    const DirectStub = defineComponent({
+      name: 'DirectPreviewFrame',
+      props: { directUrl: String, embedUrl: String },
+      template: '<div data-testid="direct-stub" :data-direct="directUrl" :data-embed="embedUrl" />',
+    })
+    const w = mount(PublicAppPreviewPanel, {
+      props: {
+        token: 'share-token',
+        ports: [{ port: 18081, label: 'shop', directUrl: 'http://10.0.0.8:18081/' }],
+        active: true,
+      },
+      global: {
+        plugins: [i18n],
+        stubs: {
+          NovncPreviewPanel: true,
+          DirectPreviewFrame: DirectStub,
+          ExternalUrlPreviewFrame: true,
+        },
+      },
+    })
+    await flushPromises()
+    expect(shareMocks.previewTicket).toHaveBeenCalledWith(
+      'share-token',
+      18081,
+      'api',
+      expect.any(AbortSignal),
+    )
+    const stub = w.get('[data-testid="public-gate-app-preview-api"]')
+    expect(stub.attributes('data-embed')).toBe('/public/gate-approvals/preview-api/tix/')
+    expect(stub.attributes('data-direct')).toBe('http://10.0.0.8:18081/')
     w.unmount()
   })
 })

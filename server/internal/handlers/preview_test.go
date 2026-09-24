@@ -93,6 +93,44 @@ func TestPreviewModifyResponse_RewritesLocation(t *testing.T) {
 	}
 }
 
+func TestPreviewModifyResponse_RewritesEverySetCookie(t *testing.T) {
+	const prefix = "/preview/run-1/node_a/9090/"
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+	}
+	resp.Header.Set("Content-Type", "application/json")
+	resp.Header.Add("Set-Cookie", "shop_session=abc; Path=/; Domain=preview.invalid; HttpOnly; SameSite=Lax")
+	resp.Header.Add("Set-Cookie", "remember_me=yes; Path=/account; Secure")
+	resp.Header.Add("Set-Cookie", "bare=1")
+	if err := previewModifyResponse(prefix)(resp); err != nil {
+		t.Fatalf("modify: %v", err)
+	}
+	vals := resp.Header.Values("Set-Cookie")
+	if len(vals) != 3 {
+		t.Fatalf("cookie count = %d, want 3: %v", len(vals), vals)
+	}
+	joined := strings.Join(vals, "\n")
+	if strings.Contains(strings.ToLower(joined), "domain=") {
+		t.Fatalf("Domain must be stripped from every cookie: %v", vals)
+	}
+	want := []string{
+		"shop_session=abc; Path=/preview/run-1/node_a/9090/; HttpOnly; SameSite=Lax",
+		"remember_me=yes; Path=/preview/run-1/node_a/9090/account; Secure",
+		"bare=1; Path=/preview/run-1/node_a/9090/",
+	}
+	for i, w := range want {
+		if vals[i] != w {
+			t.Fatalf("cookie[%d]=%q want %q", i, vals[i], w)
+		}
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != `{"ok":true}` {
+		t.Fatalf("non-html body must stay intact, got %s", body)
+	}
+}
+
 func TestPreviewModifyResponse_SkipsNonHTMLAndUpgrade(t *testing.T) {
 	const prefix = "/preview/run-1/node_a/9090/"
 

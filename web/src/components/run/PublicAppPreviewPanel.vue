@@ -34,6 +34,7 @@ const { t } = useI18n()
 const activeKey = ref<string | null>(null)
 const activePort = ref<number | null>(null)
 const vncWsUrl = ref('')
+const embedPath = ref('')
 const ticketBusy = ref(false)
 const ticketError = ref('')
 const linkInactive = ref(false)
@@ -97,6 +98,7 @@ async function exchangeTicket() {
   const gen = ++ticketGen
   ticketAbort = new AbortController()
   vncWsUrl.value = ''
+  embedPath.value = ''
   ticketError.value = ''
   linkInactive.value = false
 
@@ -107,20 +109,31 @@ async function exchangeTicket() {
   if (props.mobile) return
   const meta = activeMeta.value
   if (!meta) return
-  if (isUrlPreview(meta) || isDirectPort(meta)) {
+  if (isUrlPreview(meta)) {
     ticketBusy.value = false
     return
   }
   const port = meta.port
   if (port <= 0) return
+  const direct = !!(meta.directUrl || '').trim()
+  const purpose = direct ? 'api' : 'vnc'
 
   ticketBusy.value = true
   try {
-    const res = await publicGateApi.previewTicket(props.token, port, 'vnc', ticketAbort.signal)
+    const res = await publicGateApi.previewTicket(props.token, port, purpose, ticketAbort.signal)
     if (gen !== ticketGen) return
     if (res.status && res.status !== 'active') {
       linkInactive.value = true
       ticketError.value = t('pages.publicGate.appPreviewLinkInactive')
+      return
+    }
+    if (purpose === 'api') {
+      const path = (res.iframePath || '').trim()
+      if (!path) {
+        ticketError.value = t('pages.publicGate.appPreviewUnavailable')
+        return
+      }
+      embedPath.value = path
       return
     }
     if (!res.ticket) {
@@ -252,7 +265,7 @@ function retry() {
           <p>{{ t('pages.publicGate.appPreviewLinkInactive') }}</p>
         </div>
         <div
-          v-else-if="ticketError && !vncWsUrl && !activeIsDirect"
+          v-else-if="ticketError && !vncWsUrl && !embedPath && !activeIsUrl"
           class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-base/90 px-6 text-center text-sm text-txt3"
           data-testid="public-gate-app-preview-error"
         >
@@ -273,8 +286,9 @@ function retry() {
           :title="activeMeta ? tabLabel(activeMeta) : 'preview'"
         />
         <DirectPreviewFrame
-          v-else-if="activeIsDirect && activeDirectUrl"
+          v-else-if="activeIsDirect && activeDirectUrl && embedPath"
           :direct-url="activeDirectUrl"
+          :embed-url="embedPath"
           :title="activeMeta ? tabLabel(activeMeta) : 'preview'"
           data-testid="public-gate-app-preview-api"
           @pick="onPick"

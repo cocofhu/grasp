@@ -68,6 +68,33 @@ describe('DirectPreviewFrame', () => {
     wrapper.unmount()
   })
 
+  it('same-origin embed keeps the iframe on /preview and the new tab on the app origin', async () => {
+    const i18n = createI18n({
+      legacy: false,
+      locale: 'zh-CN',
+      messages: { 'zh-CN': { ...common, ...pages } },
+    })
+    const wrapper = mount(DirectPreviewFrame, {
+      props: {
+        directUrl: DIRECT,
+        embedUrl: '/preview/run-1/preview-1/18081/',
+        title: '前端',
+      },
+      global: { plugins: [i18n] },
+    })
+    expect(wrapper.get('[data-testid="app-preview-direct-frame"]').attributes('src')).toBe(
+      '/preview/run-1/preview-1/18081/',
+    )
+    expect(wrapper.get('[data-testid="app-preview-direct-open"]').attributes('href')).toBe(DIRECT)
+    await wrapper.get('[data-testid="direct-preview-address"]').setValue('http://127.0.0.1:18081/home')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="app-preview-direct-frame"]').attributes('src')).toBe(
+      '/preview/run-1/preview-1/18081/home',
+    )
+    wrapper.unmount()
+  })
+
   it('navigates iframe src for same-origin goto', async () => {
     const { wrapper } = mountFrame()
     await wrapper.get('[data-testid="direct-preview-address"]').setValue('/dash')

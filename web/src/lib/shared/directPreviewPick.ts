@@ -46,6 +46,96 @@ export function isDirectPreviewOrigin(directUrl: string, origin: string): boolea
   return !!want && origin === want
 }
 
+/** Root-absolute preview mount (`/preview/.../`), not protocol-relative. */
+export function isSameOriginPreviewPath(embedUrl: string): boolean {
+  const raw = (embedUrl || '').trim()
+  return raw.startsWith('/') && !raw.startsWith('//')
+}
+
+function previewPrefix(embedUrl: string): string {
+  const raw = (embedUrl || '').trim()
+  if (!raw) return ''
+  let path = raw
+  if (!isSameOriginPreviewPath(raw)) {
+    try {
+      path = new URL(raw).pathname
+    } catch {
+      return ''
+    }
+  }
+  if (!path.startsWith('/')) return ''
+  return path.endsWith('/') ? path : `${path}/`
+}
+
+function pageOrigin(): string {
+  try {
+    return globalThis.location?.origin || ''
+  } catch {
+    return ''
+  }
+}
+
+/** targetOrigin for postMessage into the preview iframe. */
+export function previewFrameMessageOrigin(embedUrl: string, directUrl: string): string {
+  if (isSameOriginPreviewPath(embedUrl)) return pageOrigin()
+  return iframeOrigin((embedUrl || '').trim() || directUrl)
+}
+
+/** Accept pick/ready messages from the embedded document's origin. */
+export function acceptsPreviewFrameMessage(embedUrl: string, directUrl: string, origin: string): boolean {
+  if (!origin) return false
+  if (isSameOriginPreviewPath(embedUrl)) {
+    const page = pageOrigin()
+    if (page && origin === page) return true
+  }
+  return isDirectPreviewOrigin(directUrl || embedUrl, origin)
+}
+
+function joinPreviewPath(prefix: string, pathname: string, search = '', hash = ''): string {
+  const base = previewPrefix(prefix)
+  if (!base) return ''
+  const path = pathname === '/' ? '' : pathname.replace(/^\//, '')
+  return `${base}${path}${search}${hash}`
+}
+
+/**
+ * Address-bar navigation while the window is on the same-origin preview prefix.
+ * App-origin URLs are mapped onto that prefix so the iframe never leaves it.
+ */
+export function resolvePreviewFrameGoto(embedUrl: string, directUrl: string, input: string): string | null {
+  const embed = (embedUrl || '').trim()
+  if (!isSameOriginPreviewPath(embed)) {
+    return resolveDirectPreviewGoto(directUrl || embed, input)
+  }
+  const prefix = previewPrefix(embed)
+  if (!prefix) return null
+  const raw = (input || '').trim()
+  if (!raw) return null
+  if (raw.startsWith('/') && !raw.startsWith('//')) {
+    if (raw === prefix.slice(0, -1) || raw.startsWith(prefix)) return raw
+    return joinPreviewPath(prefix, raw)
+  }
+  let next: URL
+  try {
+    next = new URL(raw)
+  } catch {
+    return null
+  }
+  if (next.protocol !== 'http:' && next.protocol !== 'https:') return null
+  const appOrigin = iframeOrigin(directUrl)
+  if (appOrigin && next.origin === appOrigin) {
+    return joinPreviewPath(prefix, next.pathname, next.search, next.hash)
+  }
+  const page = pageOrigin()
+  if (page && next.origin === page) {
+    const path = `${next.pathname}${next.search}${next.hash}`
+    if (path === prefix.slice(0, -1) || next.pathname.startsWith(prefix) || path.startsWith(prefix)) {
+      return path
+    }
+  }
+  return null
+}
+
 /** Resolve address-bar input to a same-origin http(s) URL, or null. */
 export function resolveDirectPreviewGoto(directUrl: string, input: string): string | null {
   const origin = iframeOrigin(directUrl)

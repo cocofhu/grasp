@@ -173,6 +173,9 @@ func previewModifyResponse(prefix string) func(*http.Response) error {
 			return nil
 		}
 
+		// Every Set-Cookie, regardless of name: drop Domain and scope Path to this preview.
+		rewritePreviewSetCookies(resp, prefix)
+
 		// Re-anchor redirects to a root-absolute path.
 		if loc := resp.Header.Get("Location"); loc != "" {
 			if isRootAbsolute(loc) {
@@ -215,6 +218,73 @@ func previewModifyResponse(prefix string) func(*http.Response) error {
 		resp.Header.Del("Content-Encoding")
 		return nil
 	}
+}
+
+// rewritePreviewSetCookies applies one rule to every upstream Set-Cookie:
+// remove Domain (host-only on the approval site) and scope Path under prefix
+// so the session is sent only with this preview, not the rest of the site.
+// Cookie names are not inspected.
+func rewritePreviewSetCookies(resp *http.Response, prefix string) {
+	if resp == nil {
+		return
+	}
+	vals := resp.Header.Values("Set-Cookie")
+	if len(vals) == 0 {
+		return
+	}
+	resp.Header.Del("Set-Cookie")
+	for _, v := range vals {
+		resp.Header.Add("Set-Cookie", rewritePreviewSetCookie(v, prefix))
+	}
+}
+
+func rewritePreviewSetCookie(raw, prefix string) string {
+	parts := strings.Split(raw, ";")
+	nameVal := strings.TrimSpace(parts[0])
+	attrs := make([]string, 0, len(parts))
+	pathSeen := false
+	for _, p := range parts[1:] {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		key, _, _ := strings.Cut(p, "=")
+		if strings.EqualFold(strings.TrimSpace(key), "domain") {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(key), "path") {
+			pathSeen = true
+			_, val, _ := strings.Cut(p, "=")
+			attrs = append(attrs, "Path="+scopePreviewCookiePath(strings.Trim(strings.TrimSpace(val), `"`), prefix))
+			continue
+		}
+		attrs = append(attrs, p)
+	}
+	if !pathSeen {
+		attrs = append(attrs, "Path="+scopePreviewCookiePath("/", prefix))
+	}
+	if len(attrs) == 0 {
+		return nameVal
+	}
+	return nameVal + "; " + strings.Join(attrs, "; ")
+}
+
+func scopePreviewCookiePath(orig, prefix string) string {
+	base := strings.TrimRight(prefix, "/")
+	if base == "" {
+		base = "/"
+	}
+	orig = strings.TrimSpace(orig)
+	if orig == "" || orig == "/" {
+		return base + "/"
+	}
+	if !strings.HasPrefix(orig, "/") {
+		orig = "/" + orig
+	}
+	if orig == base || strings.HasPrefix(orig, base+"/") {
+		return orig
+	}
+	return base + orig
 }
 
 // isRootAbsolute reports whether p is a root-absolute path ("/x") rather than a

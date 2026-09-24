@@ -43,6 +43,13 @@ function isDirectPort(p: PreviewPort): boolean {
   return p.mode === 'direct' && !!(p.directUrl || '').trim()
 }
 
+/** Window iframe stays on the approval origin so session cookies are first-party. */
+function previewEmbedUrl(p: PreviewPort): string {
+  const proxy = (p.proxyUrl || '').trim()
+  if (proxy) return proxy
+  return `/preview/${props.runId}/${props.nodeId}/${p.port}/`
+}
+
 function isVncPort(p: PreviewPort): boolean {
   return !isUrlPreview(p) && !isDirectPort(p)
 }
@@ -223,6 +230,7 @@ function selectPreview(key: string) {
           v-show="activeKey === previewTabKey(p)"
           :key="`direct-${previewTabKey(p)}`"
           :direct-url="p.directUrl || ''"
+          :embed-url="previewEmbedUrl(p)"
           :title="previewTabLabel(p)"
           @pick="onPick"
           @staged-pick="onStagedPick"

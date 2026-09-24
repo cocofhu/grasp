@@ -6,10 +6,10 @@ import {
   DIRECT_PREVIEW_INSPECT,
   DIRECT_PREVIEW_NAV,
   DIRECT_PREVIEW_PING,
-  iframeOrigin,
-  isDirectPreviewOrigin,
+  acceptsPreviewFrameMessage,
   parseDirectPreviewMessage,
-  resolveDirectPreviewGoto,
+  previewFrameMessageOrigin,
+  resolvePreviewFrameGoto,
   type DirectPreviewNavAction,
 } from '@/lib/shared/directPreviewPick'
 
@@ -18,10 +18,13 @@ const PING_GRACE_MS = 500
 
 const props = withDefaults(
   defineProps<{
+    /** App origin (http://IP:port/). New tab keeps this so top-level login still works. */
     directUrl: string
+    /** Same-origin preview path (`/preview/.../`). When set, the iframe loads this instead. */
+    embedUrl?: string
     title?: string
   }>(),
-  { title: 'preview' },
+  { title: 'preview', embedUrl: '' },
 )
 
 const emit = defineEmits<{
@@ -30,8 +33,18 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const frameSrc = ref(props.directUrl)
-const address = ref(props.directUrl)
+
+function initialFrameUrl(): string {
+  return (props.embedUrl || '').trim() || props.directUrl
+}
+
+const frameSrc = ref(initialFrameUrl())
+const address = ref(initialFrameUrl())
+const openHref = computed(() => {
+  const direct = (props.directUrl || '').trim()
+  if (/^https?:\/\//i.test(direct)) return direct
+  return frameSrc.value
+})
 const inspect = ref(false)
 const inspectToggleLabel = computed(() =>
   t(inspect.value ? 'pages.appPreview.novnc.cancelInspect' : 'pages.appPreview.novnc.inspect'),
@@ -46,7 +59,7 @@ let readySeq = 0
 let loadedSeq = 0
 
 function originOf(): string {
-  return iframeOrigin(props.directUrl)
+  return previewFrameMessageOrigin(props.embedUrl || '', props.directUrl)
 }
 
 function postToFrame(msg: Record<string, unknown>) {
@@ -103,7 +116,7 @@ function onIframeLoad() {
 }
 
 function onMessage(event: MessageEvent) {
-  if (!isDirectPreviewOrigin(props.directUrl, event.origin)) return
+  if (!acceptsPreviewFrameMessage(props.embedUrl || '', props.directUrl, event.origin)) return
   const parsed = parseDirectPreviewMessage(event.data)
   if (!parsed) return
   if (parsed.type === 'direct-preview-ready' || parsed.type === 'direct-preview-url') {
@@ -137,7 +150,7 @@ function nav(action: DirectPreviewNavAction) {
 
 function openAddress() {
   inlineTip.value = null
-  const next = resolveDirectPreviewGoto(props.directUrl, address.value)
+  const next = resolvePreviewFrameGoto(props.embedUrl || '', props.directUrl, address.value)
   if (!next) {
     inlineTip.value = t('pages.appPreview.directGotoInvalid')
     return
@@ -173,10 +186,11 @@ function clearPick() {
 }
 
 watch(
-  () => props.directUrl,
-  (url) => {
-    frameSrc.value = url
-    address.value = url
+  () => [(props.embedUrl || '').trim(), props.directUrl] as const,
+  ([embed, direct]) => {
+    const next = embed || direct
+    frameSrc.value = next
+    address.value = next
     picked.value = null
     armScriptWait()
   },
@@ -254,7 +268,7 @@ onUnmounted(() => {
         {{ inspectToggleLabel }}
       </button>
       <a
-        :href="frameSrc"
+        :href="openHref"
         target="_blank"
         rel="noopener noreferrer"
         class="text-[11px] text-accent hover:underline"
