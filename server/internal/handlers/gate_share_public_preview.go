@@ -79,9 +79,11 @@ func (h *Handlers) PublicPreviewTicket(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "port_not_registered", "message": "预览端口未注册"})
 		return
 	}
-	wantPurpose := matched.Mode
+	wantPurpose := gateshare.PreviewPurposeVNC
+	if strings.TrimSpace(matched.DirectURL) != "" {
+		wantPurpose = gateshare.PreviewPurposeAPI
+	}
 	if purpose != wantPurpose {
-		// Allow client to omit/mismatch; server binds to registered mode.
 		purpose = wantPurpose
 	}
 	ticket, exp, err := h.GateShareTickets.Issue(
@@ -140,7 +142,7 @@ func (h *Handlers) PublicPreviewVNC(c *gin.Context) {
 		c.String(http.StatusBadGateway, "preview host invalid")
 		return
 	}
-	navigateURL := fmt.Sprintf("http://127.0.0.1:%d/", claims.Port)
+	navigateURL := sandboxPreviewNavigateURL(c.Request.Host, claims.RunID, claims.NodeID, claims.Port)
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {

@@ -38,6 +38,7 @@ var (
 	reRootAbsDbl = regexp.MustCompile(`(\s(?:src|href|action|poster|data-src)=")/([^/"][^"]*|)"`)
 	reRootAbsSgl = regexp.MustCompile(`(\s(?:src|href|action|poster|data-src)=')/([^/'][^']*|)'`)
 	reHeadOpen   = regexp.MustCompile(`(?i)<head[^>]*>`)
+	reBodyClose  = regexp.MustCompile(`(?i)</body>`)
 	reHtmlOpen   = regexp.MustCompile(`(?i)<html[^>]*>`)
 	reHasBase    = regexp.MustCompile(`(?i)<base\s`)
 )
@@ -205,6 +206,15 @@ func previewModifyResponse(prefix string) func(*http.Response) error {
 				html = html[:loc[1]] + baseTag + html[loc[1]:]
 			} else {
 				html = baseTag + html
+			}
+		}
+		// Inject after the root-absolute rewrite so this src stays on the Grasp origin.
+		const pickTag = `<script src="/preview-pick.js"></script>`
+		if !strings.Contains(html, `src="/preview-pick.js"`) {
+			if loc := reBodyClose.FindStringIndex(html); loc != nil {
+				html = html[:loc[0]] + pickTag + html[loc[0]:]
+			} else {
+				html += pickTag
 			}
 		}
 

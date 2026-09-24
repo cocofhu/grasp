@@ -54,11 +54,6 @@ function publicTabKey(p: PublicPreviewPort): string {
   return `port:${p.port}`
 }
 
-function isApiPort(p: PublicPreviewPort): boolean {
-  if ((p.mode || '').toLowerCase() === 'api') return true
-  return (p.label || '').toLowerCase().includes('api')
-}
-
 function isDirectPort(p: PublicPreviewPort): boolean {
   if (isUrlPreview(p)) return true
   return !!(p.directUrl || '').trim()
@@ -83,8 +78,12 @@ const activeMeta = computed(
   () => sortedPorts.value.find((p) => publicTabKey(p) === activeKey.value) || null,
 )
 const activeIsUrl = computed(() => (activeMeta.value ? isUrlPreview(activeMeta.value) : false))
-const activeIsApi = computed(() => (activeMeta.value ? isApiPort(activeMeta.value) : false))
 const activeIsDirect = computed(() => (activeMeta.value ? isDirectPort(activeMeta.value) : false))
+const proxyFrameURL = computed(() => {
+  const path = apiIframeUrl.value.trim()
+  if (!path || /^https?:/i.test(path) || typeof window === 'undefined') return path
+  return new URL(path, window.location.origin).href
+})
 const activeDirectUrl = computed(() => {
   if (!activeMeta.value) return ''
   if (isUrlPreview(activeMeta.value)) {
@@ -115,7 +114,7 @@ async function exchangeTicket() {
   if (props.mobile) return
   const meta = activeMeta.value
   if (!meta) return
-  if (isUrlPreview(meta) || isDirectPort(meta)) {
+  if (isUrlPreview(meta)) {
     ticketBusy.value = false
     return
   }
@@ -124,7 +123,7 @@ async function exchangeTicket() {
 
   ticketBusy.value = true
   try {
-    const purpose = isApiPort(meta) ? 'api' : 'vnc'
+    const purpose = isDirectPort(meta) ? 'api' : 'vnc'
     const res = await publicGateApi.previewTicket(props.token, port, purpose, ticketAbort.signal)
     if (gen !== ticketGen) return
     if (res.status && res.status !== 'active') {
@@ -287,14 +286,15 @@ function retry() {
           :title="activeMeta ? tabLabel(activeMeta) : 'preview'"
         />
         <DirectPreviewFrame
-          v-else-if="activeIsDirect && activeDirectUrl"
-          :direct-url="activeDirectUrl"
+          v-else-if="activeIsDirect && proxyFrameURL"
+          :direct-url="proxyFrameURL"
           :title="activeMeta ? tabLabel(activeMeta) : 'preview'"
+          data-testid="public-gate-app-preview-api"
           @pick="onPick"
           @staged-pick="onStagedPick"
         />
         <NovncPreviewPanel
-          v-else-if="!activeIsApi && vncWsUrl"
+          v-else-if="vncWsUrl"
           :key="`public-vnc-${activePort}-${vncWsUrl}`"
           :ws-url="vncWsUrl"
           :port="activePort ?? undefined"
@@ -302,14 +302,6 @@ function retry() {
           @pick="onPick"
           @staged-pick="onStagedPick"
           @reconnect-request="retry"
-        />
-        <iframe
-          v-else-if="activeIsApi && apiIframeUrl"
-          :key="`public-api-${activePort}`"
-          :src="apiIframeUrl"
-          class="h-full w-full border-0 bg-base"
-          :title="activeMeta ? tabLabel(activeMeta) : 'API'"
-          data-testid="public-gate-app-preview-api"
         />
         <div
           v-else-if="ticketBusy"

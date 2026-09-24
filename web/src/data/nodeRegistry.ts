@@ -78,11 +78,13 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
     fields: [
       { key: 'agent_profile', label: 'nodes.grasp.fields.agent_profile.label', type: 'select' },
       { key: 'timeout', label: 'nodes.grasp.fields.timeout.label', type: 'duration', optional: true },
+      { key: 'direct_preview', label: 'nodes.grasp.fields.direct_preview.label', type: 'switch', optional: true, help: 'nodes.grasp.fields.direct_preview.help' },
+      { key: 'auto_inject', label: 'nodes.grasp.fields.auto_inject.label', type: 'switch', optional: true, help: 'nodes.grasp.fields.auto_inject.help' },
     ],
     outputs: productOutputDefs('grasp', [
       { key: 'transcript', desc: 'nodes.grasp.outputs.transcript.desc' },
     ]),
-    defaults: { timeout: 30 },
+    defaults: { timeout: 30, direct_preview: false, auto_inject: true },
     help: 'nodes.grasp.help',
   },
   // Historical type string — same inspector as grasp so old graphs still open.
@@ -96,11 +98,13 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
     fields: [
       { key: 'agent_profile', label: 'nodes.grasp.fields.agent_profile.label', type: 'select' },
       { key: 'timeout', label: 'nodes.grasp.fields.timeout.label', type: 'duration', optional: true },
+      { key: 'direct_preview', label: 'nodes.grasp.fields.direct_preview.label', type: 'switch', optional: true, help: 'nodes.grasp.fields.direct_preview.help' },
+      { key: 'auto_inject', label: 'nodes.grasp.fields.auto_inject.label', type: 'switch', optional: true, help: 'nodes.grasp.fields.auto_inject.help' },
     ],
     outputs: productOutputDefs('grasp', [
       { key: 'transcript', desc: 'nodes.grasp.outputs.transcript.desc' },
     ]),
-    defaults: { timeout: 30 },
+    defaults: { timeout: 30, direct_preview: false, auto_inject: true },
     help: 'nodes.grasp.help',
   },
   preflight: {

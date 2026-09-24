@@ -65,6 +65,13 @@ func TestPreviewModifyResponse_RewritesHTML(t *testing.T) {
 		t.Fatalf("absolute href should be untouched: %s", got)
 	}
 
+	if strings.Count(got, `<script src="/preview-pick.js"></script>`) != 1 {
+		t.Fatalf("pick script not injected once: %s", got)
+	}
+	if strings.Contains(got, prefix+"preview-pick.js") {
+		t.Fatalf("pick script src was rewritten under the prefix: %s", got)
+	}
+
 	// Content-Length reflects the rewritten body.
 	if resp.Header.Get("Content-Length") == "" {
 		t.Fatalf("Content-Length not set")

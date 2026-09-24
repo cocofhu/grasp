@@ -26,18 +26,22 @@ test.describe('AppPreviewPanel noVNC', () => {
     await expect(page.locator('code', { hasText: '#demo-title' })).toBeVisible({ timeout: 5_000 })
   })
 
-  test('API Tab 使用 iframe 且无可见 noVNC 控件', async ({ page }) => {
+  test('API Tab 同样使用 noVNC', async ({ page }) => {
     await page.getByRole('button', { name: 'API' }).click()
-    await expect(page.locator('iframe')).toBeVisible()
-    await expect(page.getByRole('button', { name: '取点标注' })).toBeHidden()
-    await expect(page.getByText('已连接')).toBeHidden()
+    await expect(page.locator('iframe')).toBeHidden()
+    await expect(page.getByRole('button', { name: '取点标注' })).toBeVisible()
+    await expect(page.getByText('已连接')).toBeVisible({ timeout: 10_000 })
   })
 
   test('切回前端 Tab 复用 keep-alive 连接', async ({ page }) => {
     await expect(page.getByText('已连接')).toBeVisible({ timeout: 10_000 })
+    await page.getByRole('button', { name: 'API' }).click()
+    await expect(page.getByText('已连接')).toBeVisible({ timeout: 10_000 })
+    await page.getByRole('button', { name: '前端' }).click()
+    await expect(page.getByText('已连接')).toBeVisible({ timeout: 10_000 })
     const beforeCount = await vncConnectCount(page)
     await page.getByRole('button', { name: 'API' }).click()
-    await expect(page.locator('iframe')).toBeVisible()
+    await expect(page.getByText('已连接')).toBeVisible({ timeout: 10_000 })
     await page.getByRole('button', { name: '前端' }).click()
     await expect(page.locator('iframe')).toBeHidden()
     await expect(page.getByText('已连接')).toBeVisible({ timeout: 10_000 })
@@ -47,11 +51,15 @@ test.describe('AppPreviewPanel noVNC', () => {
 
   test('10 次前端↔API 切换后刷新仍可连接', async ({ page }) => {
     await expect(page.getByText('已连接')).toBeVisible({ timeout: 10_000 })
+    await page.getByRole('button', { name: 'API' }).click()
+    await expect(page.getByText('已连接')).toBeVisible({ timeout: 10_000 })
+    await page.getByRole('button', { name: '前端' }).click()
+    await expect(page.getByText('已连接')).toBeVisible({ timeout: 10_000 })
     const beforeCount = await vncConnectCount(page)
 
     for (let i = 0; i < 10; i++) {
       await page.getByRole('button', { name: 'API' }).click()
-      await expect(page.locator('iframe')).toBeVisible()
+      await expect(page.getByText('已连接')).toBeVisible({ timeout: 10_000 })
       await page.getByRole('button', { name: '前端' }).click()
       await expect(page.getByText('已连接')).toBeVisible({ timeout: 10_000 })
     }
@@ -84,7 +92,8 @@ test.describe('AppPreviewPanel noVNC', () => {
     await expect(fps).toContainText('FPS')
 
     await page.getByRole('button', { name: 'API' }).click()
-    await expect(fps).toBeHidden()
+    await expect(page.getByText('已连接')).toBeVisible({ timeout: 10_000 })
+    await expect(fps).toBeVisible()
 
     await page.getByRole('button', { name: '前端' }).click()
     await expect(page.getByText('已连接')).toBeVisible({ timeout: 10_000 })

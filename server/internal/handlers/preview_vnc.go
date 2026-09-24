@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,9 +67,8 @@ func (h *Handlers) PreviewVNC(c *gin.Context) {
 		c.String(http.StatusBadGateway, "preview host invalid")
 		return
 	}
-	// Navigate Chromium inside the sandbox to loopback so traffic never leaves
-	// the sandbox network namespace (isolation).
-	navigateURL := fmt.Sprintf("http://127.0.0.1:%d/", port)
+	// Load the app through the Grasp preview proxy so the page gets preview-pick.js.
+	navigateURL := sandboxPreviewNavigateURL(c.Request.Host, runID, nodeID, port)
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -209,4 +210,20 @@ func previewHostIP(bridgeURL string) (string, error) {
 		return "", fmt.Errorf("empty host in %q", bridgeURL)
 	}
 	return host, nil
+}
+
+// sandboxPreviewNavigateURL is the Grasp preview proxy as seen from inside the
+// sandbox. Loopback hosts are rewritten to host.docker.internal so Chromium
+// reaches the host Grasp process, which injects preview-pick.js.
+func sandboxPreviewNavigateURL(requestHost, runID, nodeID string, port int) string {
+	name, p, err := net.SplitHostPort(strings.TrimSpace(requestHost))
+	if err != nil {
+		name = strings.TrimSpace(requestHost)
+		p = "80"
+	}
+	switch strings.ToLower(strings.Trim(name, "[]")) {
+	case "", "localhost", "127.0.0.1", "::1":
+		name = "host.docker.internal"
+	}
+	return fmt.Sprintf("http://%s/preview/%s/%s/%d/", net.JoinHostPort(name, p), url.PathEscape(runID), url.PathEscape(nodeID), port)
 }

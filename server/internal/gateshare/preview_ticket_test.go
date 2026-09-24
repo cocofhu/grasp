@@ -43,7 +43,7 @@ func TestTicketStoreIssueLookupInvalidate(t *testing.T) {
 }
 
 func TestInferPreviewMode(t *testing.T) {
-	if InferPreviewMode("API · 8080") != PreviewPurposeAPI {
+	if InferPreviewMode("API · 8080") != PreviewPurposeVNC {
 		t.Fatal("api")
 	}
 	if InferPreviewMode("Web · 5173") != PreviewPurposeVNC {

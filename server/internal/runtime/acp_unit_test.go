@@ -463,6 +463,16 @@ func TestTestNodePromptExtras(t *testing.T) {
 		}
 	})
 
+	t.Run("grasp direct_preview extras", func(t *testing.T) {
+		got := p.buildAgentPrompt(NodeReq{
+			NodeType: "grasp",
+			Config:   map[string]any{"direct_preview": true},
+		}, nil)
+		if !strings.Contains(got, "direct_preview") || !strings.Contains(got, "PREVIEW_PORT") || !strings.Contains(got, "PREVIEW_PICK_SCRIPT_URL") {
+			t.Errorf("expected grasp direct_preview injection: %q", got)
+		}
+	})
+
 	t.Run("direct_preview off no extras", func(t *testing.T) {
 		got := p.buildAgentPrompt(NodeReq{
 			NodeType: "app_preview",
@@ -556,6 +566,14 @@ func TestApplyAppPreviewEnv(t *testing.T) {
 	applyAppPreviewEnv(approve, "approve", nil, "http://app.example")
 	if approve["VNC_PREVIEW"] != "1" || approve["PREVIEW_DIRECT"] != "" {
 		t.Fatalf("approve default vnc: %v", approve)
+	}
+	graspDirect := map[string]string{}
+	applyAppPreviewEnv(graspDirect, "grasp", map[string]any{"direct_preview": true}, "http://app.example")
+	if graspDirect["PREVIEW_DIRECT"] != "1" || graspDirect["VNC_PREVIEW"] != "" || graspDirect["PREVIEW_AUTO_INJECT"] != "1" {
+		t.Fatalf("grasp direct: %v", graspDirect)
+	}
+	if graspDirect["PREVIEW_PICK_SCRIPT_URL"] != "/__grasp/preview-pick.js" {
+		t.Fatalf("grasp pick script: %v", graspDirect)
 	}
 	off := map[string]string{"VNC_PREVIEW": "0"}
 	applyAppPreviewEnv(off, "approve", nil, "http://app.example")

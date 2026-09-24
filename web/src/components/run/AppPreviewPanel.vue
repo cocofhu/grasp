@@ -39,14 +39,14 @@ const pickedSelector = ref('')
 let portsGen = 0
 let portsAbort: AbortController | null = null
 
-/** API Tab uses PreviewProxy iframe; all other ports use noVNC. */
-function isApiPort(p: PreviewPort): boolean {
-  const label = (p.label || '').trim().toLowerCase()
-  return label.includes('api')
+function isDirectPort(p: PreviewPort): boolean {
+  return p.mode === 'direct' && !!(p.proxyUrl || p.directUrl || '').trim()
 }
 
-function isDirectPort(p: PreviewPort): boolean {
-  return p.mode === 'direct' && !!(p.directUrl || '').trim()
+function proxyFrameURL(p: PreviewPort): string {
+  const path = (p.proxyUrl || '').trim() || (p.directUrl || '').trim()
+  if (!path || /^https?:/i.test(path) || typeof window === 'undefined') return path
+  return new URL(path, window.location.origin).href
 }
 
 const activePort = ref<number | null>(null)
@@ -209,14 +209,14 @@ function selectPreview(key: string) {
           v-for="p in ports.filter((x) => isDirectPort(x))"
           v-show="activeKey === previewTabKey(p)"
           :key="`direct-${previewTabKey(p)}`"
-          :direct-url="p.directUrl || ''"
+          :direct-url="proxyFrameURL(p)"
           :title="previewTabLabel(p)"
           @pick="onPick"
           @staged-pick="onStagedPick"
         />
         <keep-alive :max="ports.length">
           <NovncPreviewPanel
-            v-for="p in ports.filter((x) => !isUrlPreview(x) && !isApiPort(x) && !isDirectPort(x))"
+            v-for="p in ports.filter((x) => !isUrlPreview(x) && !isDirectPort(x))"
             v-show="activeKey === previewTabKey(p)"
             :key="`vnc-${previewTabKey(p)}`"
             :run-id="runId"
@@ -228,14 +228,6 @@ function selectPreview(key: string) {
             @staged-pick="onStagedPick"
           />
         </keep-alive>
-        <iframe
-          v-for="p in ports.filter((x) => isApiPort(x) && !isDirectPort(x) && !isUrlPreview(x))"
-          v-show="activeKey === previewTabKey(p)"
-          :key="`api-${previewTabKey(p)}`"
-          :src="p.proxyUrl"
-          class="h-full w-full border-0 bg-base"
-          :title="previewTabLabel(p)"
-        />
       </div>
       <PreviewFeedbackChat
         v-if="!compact && showFeedback"
