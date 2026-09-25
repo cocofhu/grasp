@@ -3,6 +3,7 @@ package mcp
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/cocofhu/grasp/internal/pagebridge"
 )
@@ -125,5 +126,125 @@ func TestPageResultUnconfirmedAndErrors(t *testing.T) {
 	b.res = pagebridge.Result{OK: false, Error: "页面已变化"}
 	if txt, isErr = toolText(t, call(t, h, "r1", tok, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"page_click","arguments":{"index":1,"state_id":"old"}}}`)); !isErr || !strings.Contains(txt, "页面已变化") {
 		t.Fatalf("txt=%q", txt)
+	}
+}
+
+func TestPageCommandArgs(t *testing.T) {
+	long := strings.Repeat("字", pageInputMaxRunes+1)
+	cases := []struct {
+		name string
+		args map[string]any
+		want map[string]any
+		bad  string
+	}{
+		{name: "page_state", args: map[string]any{}, want: map[string]any{}},
+		{name: "page_input", args: map[string]any{"index": 2.0, "state_id": " s "}, bad: "text"},
+		{name: "page_input", args: map[string]any{"index": 2.0, "state_id": "s", "text": long}, bad: "过长"},
+		{name: "page_input", args: map[string]any{"index": 2.0}, bad: "state_id"},
+		{name: "page_input", args: map[string]any{"index": 2.0, "state_id": "s", "text": ""}, want: map[string]any{"index": 2, "stateId": "s", "text": ""}},
+		{name: "page_select", args: map[string]any{"index": 1.0, "state_id": "s"}, bad: "option"},
+		{name: "page_select", args: map[string]any{"state_id": "s", "option": "Pro"}, bad: "index"},
+		{name: "page_select", args: map[string]any{"index": 1.0, "state_id": "s", "option": " Pro "}, want: map[string]any{"index": 1, "stateId": "s", "option": "Pro"}},
+		{name: "page_scroll", args: map[string]any{}, want: map[string]any{"down": true, "pages": 1.0}},
+		{name: "page_scroll", args: map[string]any{"down": false, "pages": 50.0}, want: map[string]any{"down": false, "pages": 10.0}},
+		{name: "page_scroll", args: map[string]any{"pages": 0.0}, want: map[string]any{"down": true, "pages": 0.1}},
+		{name: "page_scroll", args: map[string]any{"index": 3.0}, bad: "state_id"},
+		{name: "page_scroll", args: map[string]any{"index": 3.0, "state_id": "s"}, want: map[string]any{"down": true, "pages": 1.0, "index": 3, "stateId": "s"}},
+		{name: "page_hover", args: map[string]any{}, bad: "unknown"},
+		{name: "page_click", args: map[string]any{"index": 2e6, "state_id": "s"}, bad: "index"},
+	}
+	for _, c := range cases {
+		cmd, err := pageCommand(c.name, c.args)
+		if c.bad != "" {
+			if err == nil || !strings.Contains(err.Error(), c.bad) {
+				t.Errorf("%s %v: err=%v, want %q", c.name, c.args, err, c.bad)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s %v: %v", c.name, c.args, err)
+			continue
+		}
+		if len(cmd.Args) != len(c.want) {
+			t.Errorf("%s args=%v want %v", c.name, cmd.Args, c.want)
+		}
+		for k, v := range c.want {
+			if cmd.Args[k] != v {
+				t.Errorf("%s args[%s]=%v want %v", c.name, k, cmd.Args[k], v)
+			}
+		}
+	}
+}
+
+func TestFormatPageResultBranches(t *testing.T) {
+	txt, isErr := formatPageResult("page_click", pagebridge.Result{Unconfirmed: true}, pagebridge.ErrLost)
+	if !isErr || !strings.Contains(txt, "结果无法确认") || !strings.Contains(txt, "page_state") {
+		t.Fatalf("lost: %q %v", txt, isErr)
+	}
+	txt, isErr = formatPageResult("page_click", pagebridge.Result{}, nil)
+	if !isErr || !strings.Contains(txt, "页面没有执行该操作") {
+		t.Fatalf("empty failure: %q %v", txt, isErr)
+	}
+	txt, isErr = formatPageResult("page_click", pagebridge.Result{OK: true, Note: "已点击"}, nil)
+	if isErr || txt != "ok: 已点击" {
+		t.Fatalf("ok without state: %q %v", txt, isErr)
+	}
+	big := strings.Repeat("页", pageContentMaxBytes)
+	txt, _ = formatPageResult("page_state", pagebridge.Result{OK: true, State: map[string]any{"stateId": "s", "content": big}}, nil)
+	if !strings.Contains(txt, "已截断") || len(txt) > pageContentMaxBytes+2048 || !utf8.ValidString(txt) {
+		t.Fatalf("truncation: len=%d", len(txt))
+	}
+	if strings.Contains(txt, "url:") || strings.Contains(txt, "title:") {
+		t.Fatal("empty url/title should be omitted")
+	}
+	txt, _ = formatPageResult("page_state", pagebridge.Result{OK: true, State: map[string]any{"stateId": "s", "content": "x", "truncated": true}}, nil)
+	if !strings.Contains(txt, "已截断") {
+		t.Fatalf("page-reported truncation: %q", txt)
+	}
+}
+
+func TestPageToolGuards(t *testing.T) {
+	h, tok, b := pageHost(t, "grasp", true)
+	txt, isErr := toolText(t, call(t, h, "r1", tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"page_hover","arguments":{}}}`))
+	if !isErr {
+		t.Fatalf("unknown page tool: %q", txt)
+	}
+	if got, isErr := h.runPageTool("r1", "wrong", "page_state", nil); !isErr || !strings.Contains(got, "failed") {
+		t.Fatalf("bad token: %q", got)
+	}
+	h.SetActiveNode("r1", "i1", "implement")
+	if got, isErr := h.runPageTool("r1", tok, "page_state", nil); !isErr || !strings.Contains(got, "不支持") {
+		t.Fatalf("implement node: %q", got)
+	}
+	h.SetActiveNode("r1", "g1", "grasp")
+	h.SetPageBridge(nil)
+	if got, isErr := h.runPageTool("r1", tok, "page_state", nil); !isErr || !strings.Contains(got, "不可用") {
+		t.Fatalf("no bridge: %q", got)
+	}
+	if listedNames(t, h, tok)["page_state"] {
+		t.Fatal("page tools listed without a bridge")
+	}
+	if len(b.calls) != 0 {
+		t.Fatal("guards reached the page")
+	}
+	if got := redactToolArgs("page_click", map[string]any{"text": "x"}); got["text"] != "x" {
+		t.Fatal("only page_input is redacted")
+	}
+	if got := redactToolArgs("page_input", map[string]any{"index": 1.0}); len(got) != 1 {
+		t.Fatalf("no text to redact: %v", got)
+	}
+}
+
+func TestPageToolAuditLabels(t *testing.T) {
+	for tool, want := range map[string]string{
+		"page_state":  "读取预览页面",
+		"page_click":  "点击预览页元素",
+		"page_input":  "填写预览页输入框",
+		"page_select": "选择预览页下拉项",
+		"page_scroll": "滚动预览页",
+	} {
+		if got := formatMCPAuditAction(tool, map[string]any{"text": "secret"}); got != want {
+			t.Errorf("%s: %q", tool, got)
+		}
 	}
 }
