@@ -201,16 +201,17 @@ func (h *Handlers) PublicGateReply(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "empty_reply", "message": "请填写修订意见或标注后再发送"})
 		return
 	}
+	owner := h.publicTurnOwner(token)
 	kind := publicShareKind(lookup)
 	if kind == models.ShareLinkKindReview {
-		if err := h.Eng.ReactReply(lookup.Link.RunID, lookup.Link.NodeID, text, body.Images, body.Annotations, false); err != nil {
+		if err := h.Eng.ReactReplyAs(owner, lookup.Link.RunID, lookup.Link.NodeID, text, body.Images, body.Annotations, false); err != nil {
 			h.writePublicReactErr(c, err)
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "accepted", "kind": models.ShareLinkKindReview})
 		return
 	}
-	if err := h.Eng.GateReactRevise(lookup.Link.RunID, lookup.Link.NodeID, text, body.Images, body.Annotations); err != nil {
+	if err := h.Eng.GateReactReviseAs(owner, lookup.Link.RunID, lookup.Link.NodeID, text, body.Images, body.Annotations); err != nil {
 		h.writePublicReactErr(c, err)
 		return
 	}

@@ -116,6 +116,7 @@ func (h *Host) callTool(runID, token string, req rpcRequest) (int, []byte) {
 		args = map[string]any{}
 	}
 	text, isErr := h.runTool(runID, token, p.Name, args)
+	args = redactToolArgs(p.Name, args)
 	if isErr {
 		// Tool failures are surfaced to the agent in the result text and recorded
 		// on the node trace below, but were invisible server-side; log them so

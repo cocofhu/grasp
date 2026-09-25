@@ -369,6 +369,11 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 // Requires the upstream session to be alive; otherwise the caller should fall
 // back to a normal reject.
 func (e *Engine) GateReactRevise(runID, gateNodeID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) error {
+	return e.GateReactReviseAs("", runID, gateNodeID, text, images, annotations)
+}
+
+// GateReactReviseAs is GateReactRevise sent by owner (a pagebridge owner id).
+func (e *Engine) GateReactReviseAs(owner, runID, gateNodeID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) error {
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
 	}
@@ -387,7 +392,7 @@ func (e *Engine) GateReactRevise(runID, gateNodeID, text string, images []models
 	if !ok || !rp.HasLiveSession(runID, producerID) {
 		return errors.New("上游会话已不存在,请改用普通打回(冷启动)")
 	}
-	_, err = e.EnqueueReviewTurn(runID, producerID, text, images, annotations, "gate", gateNodeID)
+	_, err = e.EnqueueReviewTurnAs(owner, runID, producerID, text, images, annotations, "gate", gateNodeID)
 	return err
 }
 

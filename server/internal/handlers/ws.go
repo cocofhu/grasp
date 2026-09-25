@@ -8,6 +8,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/nodereg"
+	"github.com/cocofhu/grasp/internal/pagebridge"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -33,10 +34,13 @@ var upgrader = websocket.Upgrader{
 // review_chat with gateNodeId set enqueues via GateReactRevise semantics;
 // otherwise via node-inline EnqueueReviewTurn.
 func (h *Handlers) RunEvents(c *gin.Context) {
+	owner := ""
 	if h.Auth != nil {
-		if _, ok := h.Auth.RequireSession(c); !ok {
+		sess, ok := h.Auth.RequireSession(c)
+		if !ok {
 			return
 		}
+		owner = pagebridge.UserOwner(sess.Username)
 	}
 	runID := c.Param("id")
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -47,39 +51,49 @@ func (h *Handlers) RunEvents(c *gin.Context) {
 		return
 	}
 	defer conn.Close()
+	w := &wsWriter{conn: conn}
 
 	ch, unsub := h.Eng.Broker().Subscribe(runID)
 	defer unsub()
 
 	// Send a snapshot of the current run on connect.
 	if run, ok := h.Runs.Get(runID); ok {
-		_ = conn.WriteJSON(gin.H{"type": "snapshot", "run": h.runDetailDTO(run)})
+		if b, err := json.Marshal(gin.H{"type": "snapshot", "run": h.runDetailDTO(run)}); err == nil {
+			_ = w.write(b)
+		}
 	}
 	// Re-emit authoritative queue/busy so refresh can resume mid-stream.
 	h.Eng.BroadcastReviewSessions(runID)
+	if h.PageBridge != nil && owner != "" {
+		defer h.PageBridge.Watch(runID, owner, w.write)()
+	}
 
 	ping := time.NewTicker(25 * time.Second)
 	defer ping.Stop()
 
 	// Reader pump: detect disconnect + handle review control frames.
+	readDone := make(chan struct{})
 	go func() {
+		defer close(readDone)
 		for {
 			_, data, err := conn.ReadMessage()
 			if err != nil {
 				_ = conn.Close()
 				return
 			}
-			h.handleRunWSControl(runID, data)
+			h.handleRunWSControl(runID, owner, data)
 		}
 	}()
 
 	for {
 		select {
+		case <-readDone:
+			return
 		case msg, open := <-ch:
 			if !open {
 				return
 			}
-			if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+			if err := w.write(msg); err != nil {
 				return
 			}
 		case <-ping.C:
@@ -90,7 +104,7 @@ func (h *Handlers) RunEvents(c *gin.Context) {
 	}
 }
 
-func (h *Handlers) handleRunWSControl(runID string, data []byte) {
+func (h *Handlers) handleRunWSControl(runID, owner string, data []byte) {
 	var m struct {
 		Type        string                   `json:"type"`
 		NodeID      string                   `json:"nodeId"`
@@ -130,7 +144,7 @@ func (h *Handlers) handleRunWSControl(runID string, data []byte) {
 		}
 		gateID := strings.TrimSpace(m.GateNodeID)
 		if gateID != "" {
-			if err := h.Eng.GateReactRevise(runID, gateID, m.Content, m.Images, m.Annotations); err != nil {
+			if err := h.Eng.GateReactReviseAs(owner, runID, gateID, m.Content, m.Images, m.Annotations); err != nil {
 				h.publishReviewWSError(runID, nodeID, err.Error())
 			}
 			return
@@ -138,13 +152,13 @@ func (h *Handlers) handleRunWSControl(runID string, data []byte) {
 		// Classic react → clarify FIFO; review-capable nodes → review FIFO.
 		if run, ok := h.Runs.Get(runID); ok {
 			if n := run.Graph.FindNode(nodeID); n != nil && nodereg.ClarifyInteractive(n.Type) {
-				if _, err := h.Eng.EnqueueClarifyTurn(runID, nodeID, m.Content, m.Images, m.Annotations); err != nil {
+				if _, err := h.Eng.EnqueueClarifyTurnAs(owner, runID, nodeID, m.Content, m.Images, m.Annotations); err != nil {
 					h.publishReviewWSError(runID, nodeID, err.Error())
 				}
 				return
 			}
 		}
-		if _, err := h.Eng.EnqueueReviewTurn(runID, nodeID, m.Content, m.Images, m.Annotations, "node", ""); err != nil {
+		if _, err := h.Eng.EnqueueReviewTurnAs(owner, runID, nodeID, m.Content, m.Images, m.Annotations, "node", ""); err != nil {
 			h.publishReviewWSError(runID, nodeID, err.Error())
 		}
 	}

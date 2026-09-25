@@ -368,16 +368,26 @@ func (e *Engine) snapshotPreviewIssues(c *execCtx, runID, nodeID string) error {
 // Non-force clarify and review turns enqueue onto the platform FIFO and return
 // immediately (SandboxChat-aligned); human/agent bubbles materialize on turn_begin.
 func (e *Engine) ReactReply(runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, force bool) error {
-	return e.reactReply(runID, nodeID, humanText, images, annotations, force, false)
+	return e.ReactReplyAs("", runID, nodeID, humanText, images, annotations, force)
+}
+
+// ReactReplyAs is ReactReply sent by owner (a pagebridge owner id).
+func (e *Engine) ReactReplyAs(owner, runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, force bool) error {
+	return e.reactReply(owner, runID, nodeID, humanText, images, annotations, force, false)
 }
 
 // ReactReplyRetryLast covers the last human turn after an empty/failed agent
 // reply without inserting another human row (plan g2.1).
 func (e *Engine) ReactReplyRetryLast(runID, nodeID string) error {
-	return e.reactReply(runID, nodeID, "", nil, nil, false, true)
+	return e.ReactReplyRetryLastAs("", runID, nodeID)
 }
 
-func (e *Engine) reactReply(runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, force, retryLast bool) error {
+// ReactReplyRetryLastAs is ReactReplyRetryLast sent by owner.
+func (e *Engine) ReactReplyRetryLastAs(owner, runID, nodeID string) error {
+	return e.reactReply(owner, runID, nodeID, "", nil, nil, false, true)
+}
+
+func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, force, retryLast bool) error {
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
 	}
@@ -410,7 +420,7 @@ func (e *Engine) reactReply(runID, nodeID, humanText string, images []models.Pro
 					if convPeek.Done {
 						return errors.New("react already done")
 					}
-					_, err := e.EnqueueReviewTurn(runID, nodeID, humanText, images, annotations, "node", "")
+					_, err := e.EnqueueReviewTurnAs(owner, runID, nodeID, humanText, images, annotations, "node", "")
 					return err
 				}
 				// Review force (确认并流转): only when ready (no active turn, empty queue).
@@ -429,10 +439,10 @@ func (e *Engine) reactReply(runID, nodeID, humanText string, images []models.Pro
 					return errors.New("react already done")
 				}
 				if retryLast {
-					_, err := e.EnqueueClarifyRetryLast(runID, nodeID)
+					_, err := e.enqueueClarifyRetryLast(owner, runID, nodeID)
 					return err
 				}
-				_, err := e.EnqueueClarifyTurn(runID, nodeID, humanText, images, annotations)
+				_, err := e.EnqueueClarifyTurnAs(owner, runID, nodeID, humanText, images, annotations)
 				return err
 			} else if nodereg.ClarifyInteractive(n.Type) && force {
 				// Clarify force finish: only when session idle (no in-flight / queue).

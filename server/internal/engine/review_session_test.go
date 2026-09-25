@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -257,4 +258,56 @@ func TestQueueSnapshotIncludesAnnotationsAndImages(t *testing.T) {
 	close(hold)
 	_ = eng.CancelReviewSession(run.ID, "prop")
 	_ = eng.waitReviewReadyForTest(run.ID, "prop", 5*time.Second)
+}
+
+// TestActivePageTurnOwner: page tools route by who sent the running turn, and
+// the turn's done channel closes on Cancel so pending page commands stop.
+func TestActivePageTurnOwner(t *testing.T) {
+	eng, db, provider := setupReviewEngine(t, true)
+	hold := make(chan struct{})
+	provider.reviseHold = hold
+
+	run, err := eng.StartRun("review-wf", map[string]any{"idea": "登录"}, "test")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitReactPause(t, db, run.ID, "prop")
+	waitRunStatus(t, db, run.ID, "waiting_human")
+
+	if _, _, ok := eng.ActivePageTurn(run.ID, "prop"); ok {
+		t.Fatal("no turn yet")
+	}
+	if _, err := eng.EnqueueReviewTurnAs("user:alice", run.ID, "prop", "帮我登录", nil, nil, "node", ""); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	var owner string
+	var done <-chan struct{}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var ok bool
+		if owner, done, ok = eng.ActivePageTurn(run.ID, "prop"); ok {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if owner != "user:alice" || done == nil {
+		t.Fatalf("owner=%q done=%v", owner, done)
+	}
+	snap, _ := eng.ReviewSessionSnapshotFor(run.ID, "prop")
+	if b, _ := json.Marshal(snap); strings.Contains(string(b), "alice") {
+		t.Fatalf("owner leaked into snapshot: %s", b)
+	}
+	if err := eng.CancelReviewSession(run.ID, "prop"); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("done not closed on cancel")
+	}
+	close(hold)
+	_ = eng.waitReviewReadyForTest(run.ID, "prop", 5*time.Second)
+	if _, _, ok := eng.ActivePageTurn(run.ID, "prop"); ok {
+		t.Fatal("turn should be gone")
+	}
 }

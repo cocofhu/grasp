@@ -49,6 +49,9 @@ type reviewQueueItem struct {
 	// RetryLast re-runs the last human without inserting another human row
 	// (cover-this-turn after empty/failed agent).
 	RetryLast bool
+	// Owner is who sent the turn (pagebridge owner id). Page tools act only on
+	// this person's page. Never exposed in frames.
+	Owner string
 }
 
 // reviewSession is the platform-authoritative controller for one parked
@@ -64,6 +67,7 @@ type reviewSession struct {
 	waiting  int
 	active   *reviewQueueItem
 	cancelFn context.CancelFunc
+	turnDone <-chan struct{}
 	pumping  bool
 	// cancelRequested is set by Cancel; the active turn saves partial narration
 	// as interrupted when the provider returns.
@@ -240,18 +244,49 @@ func (e *Engine) BroadcastReviewSessions(runID string) {
 // returns immediately with the new waiting count. Serial pump starts if idle.
 // Both ReactReply(force=false) and GateReactRevise share this entry (FR5).
 func (e *Engine) EnqueueReviewTurn(runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string) (waiting int, err error) {
-	return e.enqueueReactTurn(runID, producerID, text, images, annotations, source, gateNodeID, sessionKindReview, false)
+	return e.EnqueueReviewTurnAs("", runID, producerID, text, images, annotations, source, gateNodeID)
+}
+
+// EnqueueReviewTurnAs is EnqueueReviewTurn sent by owner (a pagebridge owner id).
+func (e *Engine) EnqueueReviewTurnAs(owner, runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string) (waiting int, err error) {
+	return e.enqueueReactTurn(runID, producerID, text, images, annotations, source, gateNodeID, sessionKindReview, false, owner)
 }
 
 // EnqueueClarifyTurn queues a classic react (需求澄清) turn onto the same platform
 // FIFO / WS frame protocol as review, returning immediately.
 func (e *Engine) EnqueueClarifyTurn(runID, nodeID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) (waiting int, err error) {
-	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, false)
+	return e.EnqueueClarifyTurnAs("", runID, nodeID, text, images, annotations)
+}
+
+// EnqueueClarifyTurnAs is EnqueueClarifyTurn sent by owner (a pagebridge owner id).
+func (e *Engine) EnqueueClarifyTurnAs(owner, runID, nodeID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) (waiting int, err error) {
+	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, false, owner)
+}
+
+// ActivePageTurn reports who sent the turn running on a node and a channel
+// closed when it ends or is cancelled.
+func (e *Engine) ActivePageTurn(runID, nodeID string) (owner string, done <-chan struct{}, ok bool) {
+	e.reviewMu.Lock()
+	s := e.reviewSess[e.reviewSessionKey(runID, nodeID)]
+	e.reviewMu.Unlock()
+	if s == nil {
+		return "", nil, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active == nil || s.active.Owner == "" {
+		return "", nil, false
+	}
+	return s.active.Owner, s.turnDone, true
 }
 
 // EnqueueClarifyRetryLast re-runs the latest human turn without inserting a new
 // human row. Last agent must be empty/failed (or absent after a lone human).
 func (e *Engine) EnqueueClarifyRetryLast(runID, nodeID string) (waiting int, err error) {
+	return e.enqueueClarifyRetryLast("", runID, nodeID)
+}
+
+func (e *Engine) enqueueClarifyRetryLast(owner, runID, nodeID string) (waiting int, err error) {
 	var conv models.ReactConversation
 	if err := e.db.Where("run_id = ? AND node_id = ?", runID, nodeID).
 		Order("iteration desc, id desc").First(&conv).Error; err != nil {
@@ -264,7 +299,7 @@ func (e *Engine) EnqueueClarifyRetryLast(runID, nodeID string) (waiting int, err
 	if !ok {
 		return 0, errors.New("没有可重试的上一轮用户消息")
 	}
-	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, true)
+	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, true, owner)
 }
 
 // lastRetryableHuman finds the latest human whose following agent (if any) is
@@ -311,7 +346,7 @@ func isRetryableEmptyOrFailedAgent(m models.ReactMessage) bool {
 		strings.Contains(t, "复审修改失败")
 }
 
-func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string, kind sessionKind, retryLast bool) (waiting int, err error) {
+func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string, kind sessionKind, retryLast bool, owner string) (waiting int, err error) {
 	if e.IsHalted() {
 		return 0, errors.New("server is shutting down")
 	}
@@ -332,6 +367,7 @@ func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []model
 		Source:      source,
 		GateNodeID:  gateNodeID,
 		RetryLast:   retryLast,
+		Owner:       owner,
 	}
 
 	choiceDup := models.IsChoiceReply(text)
@@ -632,6 +668,7 @@ func (e *Engine) pumpReviewSession(s *reviewSession) {
 		s.cancelRequested = false
 		ctx, cancel := context.WithCancel(context.Background())
 		s.cancelFn = cancel
+		s.turnDone = ctx.Done()
 		s.mu.Unlock()
 
 		e.publishReview(s.runID, s.producerID, "queue_state", map[string]any{
@@ -664,6 +701,7 @@ func (e *Engine) pumpReviewSession(s *reviewSession) {
 		s.mu.Lock()
 		s.active = nil
 		s.cancelFn = nil
+		s.turnDone = nil
 		wasCancel := s.cancelRequested || interrupted
 		s.cancelRequested = false
 		s.mu.Unlock()

@@ -6,15 +6,23 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/embed"
 	"github.com/cocofhu/grasp/internal/gateshare"
+	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/pagebridge"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
 )
 
-const publicEventsAuthTimeout = 5 * time.Second
+const (
+	publicEventsAuthTimeout = 5 * time.Second
+	// publicEventsReadLimit bounds client frames; page_result carries a
+	// truncated page state.
+	publicEventsReadLimit = 256 << 10
+)
 
 type publicEventsAuth struct {
 	Token string `json:"token"`
@@ -80,21 +88,37 @@ func (h *Handlers) PublicGateEvents(c *gin.Context) {
 		return
 	}
 	h.seedPublicDialogue(conn, lookup, producerID)
+	w := &wsWriter{conn: conn}
+
+	// Only drawer tokens may offer their page to the agent; a share-link
+	// workbench is not a preview page.
+	var pc *pagebridge.Conn
+	if h.PageBridge != nil && embed.IsSessionToken(token) && lookup.Node != nil && mcp.SetPreviewAllowed(lookup.Node.Type) {
+		pc = h.PageBridge.Attach(pagebridge.Key{RunID: runID, NodeID: producerID, Owner: h.publicTurnOwner(token)}, w.write)
+		defer pc.Detach()
+	}
+	conn.SetReadLimit(publicEventsReadLimit)
 
 	ping := time.NewTicker(25 * time.Second)
 	defer ping.Stop()
 
+	readDone := make(chan struct{})
 	go func() {
+		defer close(readDone)
 		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
 				_ = conn.Close()
 				return
 			}
+			handlePublicPageFrame(pc, data)
 		}
 	}()
 
 	for {
 		select {
+		case <-readDone:
+			return
 		case msg, open := <-ch:
 			if !open {
 				return
@@ -103,7 +127,7 @@ func (h *Handlers) PublicGateEvents(c *gin.Context) {
 			if !ok {
 				continue
 			}
-			if err := conn.WriteMessage(websocket.TextMessage, out); err != nil {
+			if err := w.write(out); err != nil {
 				return
 			}
 		case <-ping.C:

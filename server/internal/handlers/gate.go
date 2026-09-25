@@ -133,9 +133,9 @@ func (h *Handlers) ReactReply(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "retryLast cannot be combined with force"})
 			return
 		}
-		err = h.Eng.ReactReplyRetryLast(runID, nodeID)
+		err = h.Eng.ReactReplyRetryLastAs(sessionTurnOwner(c), runID, nodeID)
 	} else {
-		err = h.Eng.ReactReply(runID, nodeID, b.Text, b.Images, b.Annotations, b.Force)
+		err = h.Eng.ReactReplyAs(sessionTurnOwner(c), runID, nodeID, b.Text, b.Images, b.Annotations, b.Force)
 	}
 	if err != nil {
 		_ = c.Error(err)
@@ -197,7 +197,7 @@ func (h *Handlers) GateReactRevise(c *gin.Context) {
 		return
 	}
 	runID, gateNodeID := c.Param("id"), c.Param("nodeId")
-	if err := h.Eng.GateReactRevise(runID, gateNodeID, b.Text, b.Images, b.Annotations); err != nil {
+	if err := h.Eng.GateReactReviseAs(sessionTurnOwner(c), runID, gateNodeID, b.Text, b.Images, b.Annotations); err != nil {
 		_ = c.Error(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

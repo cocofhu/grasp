@@ -18,6 +18,9 @@ import (
 // records the trace). Splitting dispatch from transport keeps every tool's
 // in/out observable in one place.
 func (h *Host) runTool(runID, token, name string, args map[string]any) (string, bool) {
+	if isPageTool(name) {
+		return h.runPageTool(runID, token, name, args)
+	}
 	switch name {
 	case "upload_image_artifact":
 		aname := asString(args["name"])
