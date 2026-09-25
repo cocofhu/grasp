@@ -8,6 +8,13 @@ const STORAGE_PREFIX = 'grasp.embed.'
 export const EMBED_PICK_MESSAGE = 'grasp-embed:pick'
 export const EMBED_READY_MESSAGE = 'grasp-embed:ready'
 export const EMBED_THEME_MESSAGE = 'grasp-embed:theme'
+/** Page ↔ drawer: capability announce / stop (page → drawer), toggle state (drawer → page). */
+export const EMBED_CONTROL_MESSAGE = 'grasp-embed:control'
+/** Drawer → page: run a page command. */
+export const EMBED_CMD_MESSAGE = 'grasp-embed:cmd'
+/** Page → drawer: result of a page command. */
+export const EMBED_CMD_RESULT_MESSAGE = 'grasp-embed:cmd-result'
+export const PAGE_CONTROL_CAP = 'page-control'
 
 export type EmbedTicket = {
   ticket: string
@@ -106,6 +113,66 @@ export async function redeemEmbedTicket(ticket: string, runId: string, nodeId: s
   const body = (await res.json()) as RedeemResponse
   if (!body.token || body.runId !== runId || body.nodeId !== nodeId) return null
   return { token: body.token, expiresAt: body.expiresAt }
+}
+
+export type EmbedControlMessage = { caps?: string[]; tab?: string; stop?: boolean }
+
+export function parseEmbedControlMessage(data: unknown): EmbedControlMessage | null {
+  if (!data || typeof data !== 'object') return null
+  const m = data as { type?: unknown; caps?: unknown; tab?: unknown; stop?: unknown }
+  if (m.type !== EMBED_CONTROL_MESSAGE) return null
+  const out: EmbedControlMessage = {}
+  if (Array.isArray(m.caps)) out.caps = m.caps.filter((c): c is string => typeof c === 'string')
+  if (typeof m.tab === 'string') out.tab = m.tab
+  if (m.stop === true) out.stop = true
+  return out
+}
+
+export type EmbedCmdResult = {
+  nonce: string
+  ok: boolean
+  error?: string
+  note?: string
+  state?: Record<string, unknown>
+}
+
+export function parseEmbedCmdResult(data: unknown): EmbedCmdResult | null {
+  if (!data || typeof data !== 'object') return null
+  const m = data as Record<string, unknown>
+  if (m.type !== EMBED_CMD_RESULT_MESSAGE || typeof m.nonce !== 'string' || !m.nonce) return null
+  const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
+  const state = m.state && typeof m.state === 'object' && !Array.isArray(m.state) ? (m.state as Record<string, unknown>) : undefined
+  return { nonce: m.nonce, ok: m.ok === true, error: str(m.error), note: str(m.note), state }
+}
+
+function pageControlKey(runId: string, nodeId: string): string {
+  return `${STORAGE_PREFIX}pagectl.${runId}.${nodeId}`
+}
+
+/**
+ * Toggle is kept per browser tab: tab is the page's per-tab id, so a tab that
+ * inherited a copy of sessionStorage (window.open) starts with control off.
+ */
+export function loadPageControl(runId: string, nodeId: string, tab: string): boolean {
+  try {
+    const raw = sessionStorage.getItem(pageControlKey(runId, nodeId))
+    if (!raw) return false
+    const s = JSON.parse(raw) as { on?: unknown; tab?: unknown }
+    if (s.on === true && typeof s.tab === 'string' && s.tab && s.tab === tab) return true
+    sessionStorage.removeItem(pageControlKey(runId, nodeId))
+    return false
+  } catch {
+    return false
+  }
+}
+
+export function savePageControl(runId: string, nodeId: string, tab: string, on: boolean): void {
+  try {
+    if (on && tab) sessionStorage.setItem(pageControlKey(runId, nodeId), JSON.stringify({ on: true, tab }))
+    else sessionStorage.removeItem(pageControlKey(runId, nodeId))
+  } catch {
+    // Storage blocked: the toggle lasts until reload.
+  }
 }
 
 /** Validate a pick relayed by the preview page before it becomes an annotation. */

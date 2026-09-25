@@ -58,6 +58,7 @@ import {
 } from '@/lib/run/homeApproveHandoff'
 import type GateApproval from '@/components/run/GateApproval.vue'
 import type { AcpEvent, Gate, GateInboxItem, GateShareInboxStatus, InboxItem, Run } from '@/lib/shared/types'
+import type { PageControlState } from '@/lib/inbox/embedPageControl'
 
 export function useGatesInbox() {
 
@@ -1028,6 +1029,8 @@ let activeRunWsRunId = ''
  * Used to gate softRefresh while clarify session is mid-turn (g3.2 / review v3).
  */
 const clarifyLiveBusy = ref(false)
+/** This user's page-control state per node of the active run (page_control_state frames). */
+const pageControlByNode = ref<Record<string, PageControlState>>({})
 /** True once thought/message rails were applied to a dialogue surface (seed or live). */
 let dialogueRailsFilled = false
 /** True once a live WS ACP frame applied content (stops seed retry per f2). */
@@ -1059,6 +1062,7 @@ function closeActiveRunWs() {
   activeRunWs = undefined
   activeRunWsRunId = ''
   clarifyLiveBusy.value = false
+  pageControlByNode.value = {}
   dialogueRailsFilled = false
   dialogueLiveIncremental = false
   pendingReviewFrames = []
@@ -1336,6 +1340,16 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
     try {
       m = JSON.parse(String(ev.data))
     } catch {
+      return
+    }
+    if (m.type === 'page_control_state') {
+      const st = (m as { state?: unknown }).state
+      if (m.nodeId) {
+        pageControlByNode.value = {
+          ...pageControlByNode.value,
+          [m.nodeId]: st === 'online' || st === 'paused' ? st : 'offline',
+        }
+      }
       return
     }
     // WS connect snapshot may carry reactSessions before BroadcastReviewSessions.
@@ -2143,6 +2157,7 @@ function itemSecondary(it: InboxItem) {
     activeRunLoadError,
     activeRunWsRunId,
     clarifyLiveBusy,
+    pageControlByNode,
     dialogueRailsFilled,
     dialogueLiveIncremental,
     busySeedRetry,

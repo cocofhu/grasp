@@ -400,3 +400,19 @@ describe('ReviewComposer share panel entry removed', () => {
     approve.unmount()
   })
 })
+
+describe('ReviewComposer page control status', () => {
+  it('shows this user\'s page-control state only once it is known', async () => {
+    const hidden = mountClarify()
+    await flushPromises()
+    expect(hidden.find('[data-testid="page-control-status"]').exists()).toBe(false)
+    hidden.unmount()
+
+    const paused = mountClarify({ pageControl: 'paused' })
+    await flushPromises()
+    expect(paused.get('[data-testid="page-control-status"]').text()).toContain('已暂停')
+    await paused.setProps({ pageControl: 'offline' })
+    expect(paused.get('[data-testid="page-control-status"]').text()).toContain('未连接')
+    paused.unmount()
+  })
+})

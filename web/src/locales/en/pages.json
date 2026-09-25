@@ -3823,7 +3823,18 @@
       "expiredTitle": "This chat has disconnected",
       "expiredHint": "Reopen the preview from Grasp to continue the conversation.",
       "networkError": "Could not reach Grasp. Check the connection and try again.",
-      "coldHint": "The agent session has ended. Continue the review in Grasp."
+      "coldHint": "The agent session has ended. Continue the review in Grasp.",
+      "pageControl": {
+        "toggle": "Let the agent operate this page",
+        "privacy": "While on, page content the agent reads appears in this conversation and other participants can see it. Use a test account.",
+        "unsupported": "The preview page script is out of date. Restart the preview to use this.",
+        "status": {
+          "online": "Page control: connected",
+          "transferred": "Page control: moved to another tab",
+          "paused": "Page control: paused (preview page is in the background)",
+          "offline": "Page control: not connected"
+        }
+      }
     }
   }
 }

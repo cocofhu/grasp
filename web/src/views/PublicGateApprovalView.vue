@@ -62,7 +62,14 @@ const props = defineProps<{
   /** Chat-only drawer mode: the credential comes from the embed session instead of `#t=`. */
   embedToken?: string
 }>()
-const emit = defineEmits<{ status: [status: string] }>()
+const emit = defineEmits<{
+  status: [status: string]
+  /** Events socket authenticated (fires again after every reconnect). */
+  'events-ready': []
+  'events-closed': []
+  /** page_* frames for the drawer's page control. */
+  'page-frame': [frame: Record<string, unknown>]
+}>()
 const chatOnly = computed(() => !!props.embedToken)
 
 const POLL_MS = 2000
@@ -693,7 +700,15 @@ function handlePublicWsMessage(raw: string) {
     return
   }
   const typ = String(m.type || '')
-  if (typ === 'ready' || typ === 'error') return
+  if (typ === 'ready') {
+    emit('events-ready')
+    return
+  }
+  if (typ === 'error') return
+  if (typ.startsWith('page_')) {
+    emit('page-frame', m)
+    return
+  }
   if (typ === 'review') {
     // ACP buffered before this turn started belongs to an earlier turn.
     if (m.event === 'turn_begin') pendingPublicAcp = null
@@ -750,6 +765,7 @@ function connectPublicEvents() {
   socket.onclose = () => {
     if (publicWs !== socket) return
     publicWs = undefined
+    emit('events-closed')
     publicWsReconnect.onClose()
   }
 }
@@ -1173,7 +1189,19 @@ watch(
   },
 )
 
-defineExpose({ loadPreview, loadUpstreamFull, openUpstreamModal, addPick: onAppPreviewPick })
+/** Send a frame on the events socket; false when it is not open. */
+function sendEventsFrame(frame: Record<string, unknown>): boolean {
+  const ws = publicWs
+  if (!ws || ws.readyState !== 1 /* OPEN */) return false
+  try {
+    ws.send(JSON.stringify(frame))
+    return true
+  } catch {
+    return false
+  }
+}
+
+defineExpose({ loadPreview, loadUpstreamFull, openUpstreamModal, addPick: onAppPreviewPick, sendEventsFrame })
 </script>
 
 <template>
