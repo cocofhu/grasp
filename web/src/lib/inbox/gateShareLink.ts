@@ -451,6 +451,10 @@ export function mergePublicGatePreview(
   keepSparseField(merged, prev, next, 'turns', 'turnsHash')
   // Silent polls may omit nonce; never drop the last usable one.
   if (!next.nonce && prev.nonce) merged.nonce = prev.nonce
+  // Session state is omitempty on the wire: absent means idle, never "unchanged".
+  merged.sessionBusy = !!next.sessionBusy
+  merged.waiting = next.waiting || 0
+  merged.queueItems = next.queueItems
   if (!next.sessionBusy) {
     merged.liveEvents = undefined
     // Sparse idle payloads often omit activeItem; drop stale in-flight pointer.

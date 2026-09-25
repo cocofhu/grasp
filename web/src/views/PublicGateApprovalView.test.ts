@@ -523,6 +523,31 @@ describe('PublicGateApprovalView workbench', () => {
     expect(w.find('[data-testid="clarify-stream-caret"]').exists()).toBe(true)
   })
 
+  it('does not paint ACP buffered before a turn into that turn', async () => {
+    window.location.hash = `#t=${'de'.repeat(32)}`
+    mocks.preview.mockResolvedValue({
+      status: 'active',
+      kind: 'review',
+      nonce: 'n-stale',
+      reactSessionAlive: true,
+      actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
+      turns: [{ role: 'agent', text: '请复审', at: '2026-08-01T00:00:00Z' }],
+    })
+    const w = mountView()
+    await flushPromises()
+    await flushPromises()
+    const sock = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
+    sock.emit({ type: 'acp', nodeId: 'public-gate', events: [{ kind: 'message', text: '上一轮的回复' }] })
+    await flushPromises()
+    sock.emit({ type: 'review', event: 'turn_begin', nodeId: 'public-gate', item: { id: 'i1', text: '新问题' } })
+    await flushPromises()
+    expect(w.text()).toContain('新问题')
+    expect(w.text()).not.toContain('上一轮的回复')
+    sock.emit({ type: 'acp', nodeId: 'public-gate', events: [{ kind: 'message', text: '这一轮的回复' }] })
+    await flushPromises()
+    expect(w.text()).toContain('这一轮的回复')
+  })
+
   it('public poll/WS queueItems keep annotations badge and refill on edit (plan g1/f4)', async () => {
     window.location.hash = `#t=${'ee'.repeat(32)}`
     mocks.preview.mockResolvedValue({

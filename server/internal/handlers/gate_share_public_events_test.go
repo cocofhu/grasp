@@ -1,6 +1,7 @@
 package handlers_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/gateshare"
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/gorilla/websocket"
 )
 
@@ -88,6 +91,54 @@ func TestPublicGateEventsWSStreamsSanitizedAcp(t *testing.T) {
 	}
 	if !sawAcp || !sawReview {
 		t.Fatalf("sawAcp=%v sawReview=%v", sawAcp, sawReview)
+	}
+}
+
+// lastTurnProvider keeps serving the previous turn's snapshot, as the sandbox
+// event log does once a turn has finished.
+type lastTurnProvider struct{ fakeProvider }
+
+func (lastTurnProvider) LiveNodeEvents(ctx context.Context, runID, nodeID string) ([]models.AcpEvent, bool, error) {
+	return []models.AcpEvent{{Kind: "message", Text: "上一轮的回复"}}, true, nil
+}
+
+func TestPublicGateEventsWSSkipsStaleSeedWhenIdle(t *testing.T) {
+	h := newHarness(t)
+	old := h.h.Eng
+	eng := engine.New(h.db, lastTurnProvider{}, h.host, h.h.Arts, 5)
+	h.h.Eng = eng
+	t.Cleanup(func() {
+		eng.Close()
+		h.h.Eng = old
+	})
+	seedInboxReview(t, h, "run-pub-idle", "research-idle", true)
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-pub-idle/reviews/research-idle/share-link", map[string]any{"ttlTier": "24h"}))
+	url, _ := created["url"].(string)
+	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
+
+	srv := httptest.NewServer(h.r)
+	defer srv.Close()
+	c, _, err := websocket.DefaultDialer.Dial(wsURL(srv.URL, "/public/gate-approvals/events"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if err := c.WriteJSON(map[string]any{"token": token}); err != nil {
+		t.Fatalf("auth: %v", err)
+	}
+	if _, ready, err := c.ReadMessage(); err != nil || !strings.Contains(string(ready), `"type":"ready"`) {
+		t.Fatalf("ready: %v %s", err, ready)
+	}
+	_ = c.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+	for {
+		_, msg, err := c.ReadMessage()
+		if err != nil {
+			break
+		}
+		if strings.Contains(string(msg), "上一轮的回复") {
+			t.Fatalf("idle session seeded the previous turn: %s", msg)
+		}
 	}
 }
 
