@@ -124,6 +124,36 @@ afterEach(() => {
 })
 
 describe('PublicGateApprovalView workbench', () => {
+  it('waits out a 429 on first load instead of showing a network error', async () => {
+    vi.useFakeTimers()
+    try {
+      mocks.preview
+        .mockRejectedValueOnce(Object.assign(new Error('rate_limited'), { status: 429 }))
+        .mockResolvedValue({
+          status: 'active',
+          kind: 'review',
+          remainingSec: 3600,
+          reactSessionAlive: true,
+          turns: [{ role: 'agent', text: '已恢复', at: '2026-08-01T00:00:00Z' }],
+        })
+      const w = mountView('zh-CN', { embedToken: 'cd'.repeat(32) })
+      await flushPromises()
+      expect(w.find('[data-testid="public-gate-network-error"]').exists()).toBe(false)
+      expect(w.find('[data-testid="public-gate-loading"]').exists()).toBe(true)
+      expect(mocks.preview).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(9_000)
+      expect(mocks.preview).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1_000)
+      await flushPromises()
+      expect(mocks.preview.mock.calls.length).toBeGreaterThanOrEqual(2)
+      expect(w.find('[data-testid="public-gate-network-error"]').exists()).toBe(false)
+      expect(w.find('[data-testid="public-gate-loading"]').exists()).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('switches language from the top-right control and persists it', async () => {
     const w = mountSharedLocaleView('zh-CN')
     await flushPromises()
