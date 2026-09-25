@@ -19,6 +19,10 @@ const ListenPort = 17980
 // URL is unreachable from their browser.
 const ScriptPath = "/__grasp/preview-pick.js"
 
+// PageControlPath serves the agent page-control executor; preview-pick.js
+// loads it next to itself on demand.
+const PageControlPath = "/__grasp/page-control.js"
+
 var (
 	reBodyClose      = regexp.MustCompile(`(?i)</body>`)
 	reHTMLClose      = regexp.MustCompile(`(?i)</html>`)

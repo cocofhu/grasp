@@ -15,7 +15,8 @@
     "assert:novnc-http": "node scripts/assert-no-novnc-secure-context.mjs",
     "assert:brand": "node ../scripts/assert-no-approving-brand.mjs",
     "measure:lcp": "node scripts/measure-lcp.mjs",
-    "measure:lcp2": "node scripts/measure-lcp2.mjs"
+    "measure:lcp2": "node scripts/measure-lcp2.mjs",
+    "build:page-control": "node scripts/build-page-control.mjs"
   },
   "dependencies": {
     "@novnc/novnc": "^1.5.0",
@@ -39,6 +40,7 @@
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
+    "@page-agent/page-controller": "1.12.4",
     "@playwright/test": "^1.61.1",
     "@vitejs/plugin-vue": "^5.2.1",
     "@vitest/coverage-v8": "^4.1.11",

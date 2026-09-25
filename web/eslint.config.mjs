@@ -5,7 +5,7 @@ import { defineConfigWithVueTs, vueTsConfigs } from '@vue/eslint-config-typescri
 // rules are off so CI can gate on errors without a huge backlog.
 export default defineConfigWithVueTs(
   {
-    ignores: ['dist/**', 'coverage/**', 'e2e/**', 'node_modules/**'],
+    ignores: ['dist/**', 'coverage/**', 'e2e/**', 'node_modules/**', 'public/page-control.js'],
   },
   pluginVue.configs['flat/essential'],
   vueTsConfigs.recommended,

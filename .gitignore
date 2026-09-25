@@ -1,6 +1,7 @@
 # --- Node / frontend ---
 web/node_modules/
 web/dist/
+web/dist-page-control/
 docs/node_modules/
 docs/public/
 docs/.deploy_git/

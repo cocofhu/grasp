@@ -336,6 +336,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 
 	// Cooperative pick.js for IP-direct iframe preview (public static).
 	r.GET("/preview-pick.js", h.PreviewPickScript)
+	r.GET("/page-control.js", h.PageControlScript)
 
 	// VNC preview (WebSocket): noVNC RFB proxy + CDP Pick/navigate control.
 	r.GET("/preview-vnc/:runId/:nodeId/:port/ws", h.PreviewVNC)

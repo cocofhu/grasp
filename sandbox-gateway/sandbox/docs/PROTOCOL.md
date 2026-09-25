@@ -264,6 +264,9 @@ iframe 内嵌它。跨源页面无法由 Grasp 注入脚本,参考实现在**沙
   `<script src="/__grasp/preview-pick.js">`。不得注入
   `http://localhost:8080/preview-pick.js`:审批人浏览器 origin 是
   `http://IP:PREVIEW_PORT/`,打不开 Grasp 的 loopback。
+- 注入层同时在 `/__grasp/page-control.js` 返回页面操作执行器。用户在抽屉里打开
+  「允许 Agent 操作页面」后,`preview-pick.js` 才按需加载它(与自身同目录),
+  不注入到 HTML。两份脚本都由 `server/internal/handlers` 下的同名文件同步。
 - 脚本在页内画 Pick 操作条(Shadow DOM)。没有对话抽屉时,点选暂存在页内
   (最多 20 条,存 `sessionStorage`,同标签页整页跳转后仍在)。
 - **对话抽屉**:Grasp 打开预览时在片段里带一次性票据
