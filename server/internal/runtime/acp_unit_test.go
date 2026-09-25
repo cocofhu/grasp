@@ -504,6 +504,11 @@ func TestPreviewNodePromptExtras(t *testing.T) {
 	if !strings.Contains(got, "旧沙箱镜像") {
 		t.Errorf("expected old-image fallback: %q", got)
 	}
+	for _, want := range []string{"page_state", "stateId", "不可信数据", "验证码"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected page control guidance %q: %q", want, got)
+		}
+	}
 
 	manual := p.buildAgentPrompt(NodeReq{
 		NodeType: "app_preview",
@@ -514,6 +519,9 @@ func TestPreviewNodePromptExtras(t *testing.T) {
 	}
 	if strings.Contains(manual, "自动向 HTML 注入") {
 		t.Errorf("manual must not claim auto-inject: %q", manual)
+	}
+	if !strings.Contains(manual, "page_state") {
+		t.Errorf("manual inject still gets page control guidance: %q", manual)
 	}
 
 	off := p.buildAgentPrompt(NodeReq{
