@@ -68,6 +68,7 @@ function createMask() {
   const onMove = (e: Event) => {
     const d = (e as CustomEvent<{ x: number; y: number }>).detail
     if (!d) return
+    if (!cursor.hidden) mount()
     pos.tx = d.x
     pos.ty = d.y
     if (!frame) frame = requestAnimationFrame(step)
@@ -86,7 +87,6 @@ function createMask() {
 
   return {
     host,
-    cursor,
     /** Shows the pointer in the middle of the viewport, or hides it. */
     arm(on: boolean) {
       if (on && cursor.hidden) {
