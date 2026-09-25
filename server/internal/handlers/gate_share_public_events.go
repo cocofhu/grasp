@@ -119,7 +119,9 @@ func (h *Handlers) seedPublicDialogue(conn *websocket.Conn, lookup *gateshare.Lo
 		return
 	}
 	runID := lookup.Link.RunID
+	busy := false
 	if snap, ok := h.Eng.ReviewSessionSnapshotFor(runID, producerID); ok {
+		busy = snap.Busy || snap.Waiting > 0
 		payload := map[string]any{
 			"type":    "review",
 			"runId":   runID,
@@ -138,6 +140,14 @@ func (h *Handlers) seedPublicDialogue(conn *websocket.Conn, lookup *gateshare.Lo
 				_ = conn.WriteMessage(websocket.TextMessage, out)
 			}
 		}
+	} else if h.Eng.HasLiveReviewSession(runID, producerID) {
+		waiting, thinking := h.Eng.ReviewSessionState(runID, producerID)
+		busy = thinking || waiting > 0
+	}
+	// Idle sessions still hold the last turn's snapshot; seeding it would
+	// paint the previous reply into the next turn's bubble.
+	if !busy {
+		return
 	}
 	if ev := h.publicLiveACP(runID, producerID); len(ev) > 0 {
 		raw, err := json.Marshal(map[string]any{

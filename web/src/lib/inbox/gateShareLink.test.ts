@@ -200,6 +200,20 @@ describe('gateShareLink helpers', () => {
       { status: 'active', sessionBusy: false, remainingSec: 1 },
     )
     expect(idle.liveEvents).toBeUndefined()
+
+    // The server omits false/zero session fields; absent must read as idle.
+    const busyPrev = {
+      ...prev,
+      sessionBusy: true,
+      waiting: 2,
+      queueItems: [{ id: 'q1', text: '下一条' }],
+      activeItem: { id: 'a1', text: '当前' },
+    }
+    const omitted = mergePublicGatePreview(busyPrev, { status: 'active', remainingSec: 1 })
+    expect(omitted.sessionBusy).toBe(false)
+    expect(omitted.waiting).toBe(0)
+    expect(omitted.queueItems).toBeUndefined()
+    expect(omitted.activeItem).toBeUndefined()
   })
 
   it('remainingSecFromExpiresAt prefers expiresAt over stale remainingSec (plan g2.1)', () => {

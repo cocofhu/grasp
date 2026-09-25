@@ -667,6 +667,8 @@ function handlePublicWsMessage(raw: string) {
   const typ = String(m.type || '')
   if (typ === 'ready' || typ === 'error') return
   if (typ === 'review') {
+    // ACP buffered before this turn started belongs to an earlier turn.
+    if (m.event === 'turn_begin') pendingPublicAcp = null
     chatRef.value?.applyReviewFrame?.(m)
     flushPendingPublicAcp()
     refreshLocalChatBusy()
