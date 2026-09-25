@@ -319,18 +319,22 @@
   }
 
   function resizeFrom(start, dx, dy) {
-    var dir = start.dir;
+    var dir = start.dir || '';
+    var east = dir.indexOf('e') >= 0;
+    var south = dir.indexOf('s') >= 0;
+    var west = dir.indexOf('w') >= 0;
+    var north = dir.indexOf('n') >= 0;
     var x = start.x;
     var y = start.y;
     var w = start.w;
     var h = start.h;
-    if (dir.indexOf('e') >= 0) w = start.w + dx;
-    if (dir.indexOf('s') >= 0) h = start.h + dy;
-    if (dir.indexOf('w') >= 0) {
+    if (east) w = start.w + dx;
+    if (south) h = start.h + dy;
+    if (west) {
       w = start.w - dx;
       x = start.x + dx;
     }
-    if (dir.indexOf('n') >= 0) {
+    if (north) {
       h = start.h - dy;
       y = start.y + dy;
     }
@@ -338,14 +342,34 @@
     var minW = v.vw > 0 && v.vw < MIN_W ? v.vw : MIN_W;
     var minH = v.vh > 0 && v.vh < MIN_H ? v.vh : MIN_H;
     if (w < minW) {
-      if (dir.indexOf('w') >= 0) x = start.x + (start.w - minW);
+      if (west) x = start.x + (start.w - minW);
       w = minW;
     }
     if (h < minH) {
-      if (dir.indexOf('n') >= 0) y = start.y + (start.h - minH);
+      if (north) y = start.y + (start.h - minH);
       h = minH;
     }
-    return clampBox({ x: x, y: y, w: w, h: h });
+    // Stop on the viewport edge that is being dragged. The opposite edge stays
+    // put; clampBox would slide it inward and the window would jump larger.
+    if (east && v.vw > 0 && w > v.vw - x) w = v.vw - x;
+    if (west && x < 0) {
+      w = w + x;
+      x = 0;
+    }
+    if (south && v.vh > 0 && h > v.vh - y) h = v.vh - y;
+    if (north && y < 0) {
+      h = h + y;
+      y = 0;
+    }
+    var right = start.x + start.w;
+    var bottom = start.y + start.h;
+    w = Math.round(w);
+    h = Math.round(h);
+    if (west) x = Math.round(right) - w;
+    else x = Math.round(x);
+    if (north) y = Math.round(bottom) - h;
+    else y = Math.round(y);
+    return { x: x, y: y, w: w, h: h };
   }
 
   function onPointerMove(ev) {
@@ -405,11 +429,11 @@
   }
 
   function onViewportResize() {
-    if (!ui) return;
-    var before = box.x + ',' + box.y + ',' + box.w + ',' + box.h;
-    box = clampBox(box);
+    if (!ui || drag) return;
+    // Pull the window into the current viewport for display only. The size
+    // written on pointerup stays in the session, so a larger viewport can restore it.
+    box = drawer ? boxFromEmbed(drawer.embed) : clampBox(box);
     applyBox();
-    if (drawer && before !== box.x + ',' + box.y + ',' + box.w + ',' + box.h) persistBox();
   }
 
   function mountBar() {

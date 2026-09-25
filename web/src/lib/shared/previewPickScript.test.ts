@@ -404,6 +404,52 @@ describe('preview-pick.js floating chat window', () => {
     expect(short.y + short.h).toBe(narrow.y + narrow.h)
   })
 
+  it('stops an outward resize on the viewport edge without moving the opposite side', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    const before = geom(p)
+    const { vw, vh } = view(p)
+    expect(before.x).toBeGreaterThan(0)
+    expect(before.y).toBeGreaterThan(0)
+    const east = p.shadow.querySelector('[data-dir="e"]') as HTMLElement
+    const south = p.shadow.querySelector('[data-dir="s"]') as HTMLElement
+    drag(p, east, { x: before.x + before.w, y: before.y + 40 }, { x: before.x + before.w + 4000, y: before.y + 40 })
+    const wide = geom(p)
+    expect(wide.x).toBe(before.x)
+    expect(wide.y).toBe(before.y)
+    expect(wide.w).toBe(vw - before.x)
+    expect(wide.h).toBe(before.h)
+    expect(wide.x + wide.w).toBeLessThanOrEqual(vw)
+
+    drag(p, south, { x: wide.x + 40, y: wide.y + wide.h }, { x: wide.x + 40, y: wide.y + wide.h + 4000 })
+    const tall = geom(p)
+    expect(tall.x).toBe(wide.x)
+    expect(tall.y).toBe(wide.y)
+    expect(tall.w).toBe(wide.w)
+    expect(tall.h).toBe(vh - wide.y)
+    expect(tall.y + tall.h).toBeLessThanOrEqual(vh)
+
+    const placed = openPage(body, {
+      savedEmbed: JSON.stringify({ ...savedBase, x: 120, y: 80, width: 400, height: 360 }),
+    })
+    await settle()
+    const origin = geom(placed)
+    const west = placed.shadow.querySelector('[data-dir="w"]') as HTMLElement
+    const north = placed.shadow.querySelector('[data-dir="n"]') as HTMLElement
+    drag(placed, west, { x: origin.x, y: origin.y + 40 }, { x: origin.x - 4000, y: origin.y + 40 })
+    const left = geom(placed)
+    expect(left.x).toBe(0)
+    expect(left.x + left.w).toBe(origin.x + origin.w)
+    expect(left.y).toBe(origin.y)
+    expect(left.h).toBe(origin.h)
+    drag(placed, north, { x: left.x + 40, y: left.y }, { x: left.x + 40, y: left.y - 4000 })
+    const up = geom(placed)
+    expect(up.y).toBe(0)
+    expect(up.y + up.h).toBe(left.y + left.h)
+    expect(up.x).toBe(left.x)
+    expect(up.w).toBe(left.w)
+  })
+
   it('keeps resize inside the viewport and follows the pointer across the iframe until release', async () => {
     const saved = JSON.stringify({ ...savedBase, x: 0, y: 0, width: 400, height: 400 })
     const p = openPage(body, { savedEmbed: saved })
@@ -449,6 +495,30 @@ describe('preview-pick.js floating chat window', () => {
     again.chatButton().click()
     expect(again.drawerOpen()).toBe(true)
     expect(geom(again)).toMatchObject({ x: placed.x, y: placed.y, w: placed.w, h: placed.h })
+  })
+
+  it('pulls the window into a smaller viewport without overwriting the saved size', async () => {
+    const saved = { ...savedBase, x: 100, y: 40, width: 500, height: 400 }
+    const p = openPage(body, { savedEmbed: JSON.stringify(saved) })
+    await settle()
+    expect(geom(p)).toMatchObject({ x: 100, y: 40, w: 500, h: 400 })
+    const stored = p.win.sessionStorage.getItem('__grasp_embed')
+    const de = p.win.document.documentElement
+    Object.defineProperty(de, 'clientWidth', { configurable: true, get: () => 360 })
+    Object.defineProperty(de, 'clientHeight', { configurable: true, get: () => 280 })
+    p.win.dispatchEvent(new p.win.Event('resize'))
+    const shrunk = geom(p)
+    expect(shrunk.x).toBe(0)
+    expect(shrunk.y).toBe(0)
+    expect(shrunk.w).toBe(360)
+    expect(shrunk.h).toBe(280)
+    expect(p.win.sessionStorage.getItem('__grasp_embed')).toBe(stored)
+
+    Object.defineProperty(de, 'clientWidth', { configurable: true, get: () => 1280 })
+    Object.defineProperty(de, 'clientHeight', { configurable: true, get: () => 800 })
+    p.win.dispatchEvent(new p.win.Event('resize'))
+    expect(geom(p)).toMatchObject({ x: 100, y: 40, w: 500, h: 400 })
+    expect(p.win.sessionStorage.getItem('__grasp_embed')).toBe(stored)
   })
 
   it('uses the default place and size when session fields are missing or illegal', async () => {
