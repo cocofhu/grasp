@@ -277,3 +277,269 @@ describe('preview-pick.js chat drawer', () => {
     expect(JSON.parse(p.win.sessionStorage.getItem('__grasp_embed') || '{}').theme).toBe('dark')
   })
 })
+
+describe('preview-pick.js floating chat window', () => {
+  const body = '<main><h2>Plan</h2><button id="buy">Buy</button></main>'
+  const hash = '#__grasp_embed&run=run-1&node=ap1&ticket=tk1'
+  const reply = { origin: GRASP, runId: 'run-1', nodeId: 'ap1' }
+  const savedBase = { origin: GRASP, run: 'run-1', node: 'ap1', open: true, theme: 'dark' }
+
+  function geom(p: Page) {
+    const el = p.shadow.querySelector('[data-role="drawer"]') as HTMLElement
+    return {
+      el,
+      x: Number.parseInt(el.style.left, 10),
+      y: Number.parseInt(el.style.top, 10),
+      w: Number.parseInt(el.style.width, 10),
+      h: Number.parseInt(el.style.height, 10),
+    }
+  }
+
+  function view(p: Page) {
+    const de = p.win.document.documentElement
+    const win = p.win as unknown as { innerWidth: number; innerHeight: number }
+    return {
+      vw: de.clientWidth || win.innerWidth,
+      vh: de.clientHeight || win.innerHeight,
+    }
+  }
+
+  function fire(p: Page, type: string, target: EventTarget, x: number, y: number) {
+    const Ev = (p.win as unknown as { PointerEvent: typeof PointerEvent }).PointerEvent
+    target.dispatchEvent(
+      new Ev(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, button: 0 }),
+    )
+  }
+
+  function drag(p: Page, target: EventTarget, from: { x: number; y: number }, to: { x: number; y: number }) {
+    fire(p, 'pointerdown', target, from.x, from.y)
+    fire(p, 'pointermove', p.win, to.x, to.y)
+    fire(p, 'pointerup', p.win, to.x, to.y)
+  }
+
+  it('opens a rounded Grasp card on the right at the default size', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    const { vw, vh } = view(p)
+    expect(vw).toBeGreaterThan(420)
+    expect(vh).toBeGreaterThan(400)
+    const g = geom(p)
+    const css = p.shadow.querySelector('style')?.textContent || ''
+    expect(p.shadow.querySelector('[data-role="drawer-title"]')?.textContent).toBe('Grasp')
+    expect(css).toContain('border-radius:22px')
+    expect(g.w).toBe(420)
+    expect(g.h).toBe(Math.round(vh * 0.7))
+    expect(g.x).toBe(vw - 420 - 28)
+    expect(g.y).toBe(72)
+    expect(g.x + g.w).toBeLessThanOrEqual(vw)
+    expect(g.y + g.h).toBeLessThanOrEqual(vh)
+    expect(p.drawerOpen()).toBe(true)
+  })
+
+  it('drags from the title bar and keeps the window inside the viewport', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    const head = p.shadow.querySelector('[data-role="drawer-head"]') as HTMLElement
+    const before = geom(p)
+    drag(p, head, { x: 800, y: 100 }, { x: 700, y: 160 })
+    const moved = geom(p)
+    expect(moved.x).toBe(before.x - 100)
+    expect(moved.y).toBe(before.y + 60)
+    expect(moved.w).toBe(before.w)
+    expect(moved.h).toBe(before.h)
+
+    drag(p, head, { x: 0, y: 0 }, { x: -5000, y: -5000 })
+    const pinned = geom(p)
+    expect(pinned.x).toBe(0)
+    expect(pinned.y).toBe(0)
+
+    const { vw, vh } = view(p)
+    drag(p, head, { x: 0, y: 0 }, { x: 8000, y: 8000 })
+    const far = geom(p)
+    expect(far.x).toBe(vw - far.w)
+    expect(far.y).toBe(vh - far.h)
+    expect(far.el.classList.contains('light')).toBe(false)
+    expect(p.drawerOpen()).toBe(true)
+  })
+
+  it('does not treat title-bar drags as theme or collapse clicks', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    const theme = p.shadow.querySelector('[data-role="drawer-theme"]') as HTMLButtonElement
+    const close = p.shadow.querySelector('[data-role="drawer-close"]') as HTMLButtonElement
+    const before = geom(p)
+    fire(p, 'pointerdown', theme, before.x + before.w - 20, before.y + 32)
+    fire(p, 'pointermove', p.win, before.x, before.y + 120)
+    fire(p, 'pointerup', p.win, before.x, before.y + 120)
+    expect(geom(p)).toMatchObject({ x: before.x, y: before.y, w: before.w, h: before.h })
+    fire(p, 'pointerdown', close, before.x + before.w - 20, before.y + 32)
+    fire(p, 'pointermove', p.win, 10, 10)
+    fire(p, 'pointerup', p.win, 10, 10)
+    expect(p.drawerOpen()).toBe(true)
+    expect(geom(p).el.classList.contains('light')).toBe(false)
+  })
+
+  it('resizes from a corner and stops at 320 by 240', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    const se = p.shadow.querySelector('[data-dir="se"]') as HTMLElement
+    const west = p.shadow.querySelector('[data-dir="w"]') as HTMLElement
+    const north = p.shadow.querySelector('[data-dir="n"]') as HTMLElement
+    const before = geom(p)
+    drag(p, se, { x: 900, y: 400 }, { x: 880, y: 370 })
+    const shrunk = geom(p)
+    expect(shrunk.w).toBe(before.w - 20)
+    expect(shrunk.h).toBe(before.h - 30)
+    expect(shrunk.x).toBe(before.x)
+    expect(shrunk.y).toBe(before.y)
+
+    const mid = geom(p)
+    drag(p, west, { x: mid.x, y: mid.y + 40 }, { x: mid.x + 5000, y: mid.y + 40 })
+    const narrow = geom(p)
+    expect(narrow.w).toBe(320)
+    expect(narrow.x + narrow.w).toBe(mid.x + mid.w)
+    drag(p, north, { x: narrow.x + 40, y: narrow.y }, { x: narrow.x + 40, y: narrow.y + 5000 })
+    const short = geom(p)
+    expect(short.h).toBe(240)
+    expect(short.y + short.h).toBe(narrow.y + narrow.h)
+  })
+
+  it('stops an outward resize on the viewport edge without moving the opposite side', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    const before = geom(p)
+    const { vw, vh } = view(p)
+    expect(before.x).toBeGreaterThan(0)
+    expect(before.y).toBeGreaterThan(0)
+    const east = p.shadow.querySelector('[data-dir="e"]') as HTMLElement
+    const south = p.shadow.querySelector('[data-dir="s"]') as HTMLElement
+    drag(p, east, { x: before.x + before.w, y: before.y + 40 }, { x: before.x + before.w + 4000, y: before.y + 40 })
+    const wide = geom(p)
+    expect(wide.x).toBe(before.x)
+    expect(wide.y).toBe(before.y)
+    expect(wide.w).toBe(vw - before.x)
+    expect(wide.h).toBe(before.h)
+    expect(wide.x + wide.w).toBeLessThanOrEqual(vw)
+
+    drag(p, south, { x: wide.x + 40, y: wide.y + wide.h }, { x: wide.x + 40, y: wide.y + wide.h + 4000 })
+    const tall = geom(p)
+    expect(tall.x).toBe(wide.x)
+    expect(tall.y).toBe(wide.y)
+    expect(tall.w).toBe(wide.w)
+    expect(tall.h).toBe(vh - wide.y)
+    expect(tall.y + tall.h).toBeLessThanOrEqual(vh)
+
+    const placed = openPage(body, {
+      savedEmbed: JSON.stringify({ ...savedBase, x: 120, y: 80, width: 400, height: 360 }),
+    })
+    await settle()
+    const origin = geom(placed)
+    const west = placed.shadow.querySelector('[data-dir="w"]') as HTMLElement
+    const north = placed.shadow.querySelector('[data-dir="n"]') as HTMLElement
+    drag(placed, west, { x: origin.x, y: origin.y + 40 }, { x: origin.x - 4000, y: origin.y + 40 })
+    const left = geom(placed)
+    expect(left.x).toBe(0)
+    expect(left.x + left.w).toBe(origin.x + origin.w)
+    expect(left.y).toBe(origin.y)
+    expect(left.h).toBe(origin.h)
+    drag(placed, north, { x: left.x + 40, y: left.y }, { x: left.x + 40, y: left.y - 4000 })
+    const up = geom(placed)
+    expect(up.y).toBe(0)
+    expect(up.y + up.h).toBe(left.y + left.h)
+    expect(up.x).toBe(left.x)
+    expect(up.w).toBe(left.w)
+  })
+
+  it('keeps resize inside the viewport and follows the pointer across the iframe until release', async () => {
+    const saved = JSON.stringify({ ...savedBase, x: 0, y: 0, width: 400, height: 400 })
+    const p = openPage(body, { savedEmbed: saved })
+    await settle()
+    const east = p.shadow.querySelector('[data-dir="e"]') as HTMLElement
+    const frame = p.frame()
+    expect(frame).not.toBeNull()
+    fire(p, 'pointerdown', east, 400, 200)
+    expect(frame?.style.pointerEvents).toBe('none')
+    fire(p, 'pointermove', p.win, 400 + 20000, 200)
+    const { vw, vh } = view(p)
+    const grown = geom(p)
+    expect(grown.x).toBe(0)
+    expect(grown.w).toBe(vw)
+    expect(grown.x + grown.w).toBeLessThanOrEqual(vw)
+    expect(grown.y + grown.h).toBeLessThanOrEqual(vh)
+    fire(p, 'pointerup', p.win, 400 + 20000, 200)
+    expect(frame?.style.pointerEvents).toBe('')
+    expect(geom(p).w).toBe(vw)
+  })
+
+  it('remembers position and size in the tab session and restores them', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    const head = p.shadow.querySelector('[data-role="drawer-head"]') as HTMLElement
+    const before = geom(p)
+    drag(p, head, { x: 500, y: 100 }, { x: 420, y: 140 })
+    const placed = geom(p)
+    const stored = JSON.parse(p.win.sessionStorage.getItem('__grasp_embed') || '{}')
+    expect(stored).toMatchObject({ x: placed.x, y: placed.y, width: placed.w, height: placed.h })
+    expect(placed.x).toBe(before.x - 80)
+    expect(placed.y).toBe(before.y + 40)
+
+    ;(p.shadow.querySelector('[data-role="drawer-close"]') as HTMLButtonElement).click()
+    expect(p.drawerOpen()).toBe(false)
+    const afterClose = JSON.parse(p.win.sessionStorage.getItem('__grasp_embed') || '{}')
+    expect(afterClose).toMatchObject({ open: false, x: placed.x, y: placed.y, width: placed.w, height: placed.h })
+
+    const again = openPage(body, { savedEmbed: JSON.stringify(afterClose) })
+    await settle()
+    expect(again.drawerOpen()).toBe(false)
+    expect(geom(again)).toMatchObject({ x: placed.x, y: placed.y, w: placed.w, h: placed.h })
+    again.chatButton().click()
+    expect(again.drawerOpen()).toBe(true)
+    expect(geom(again)).toMatchObject({ x: placed.x, y: placed.y, w: placed.w, h: placed.h })
+  })
+
+  it('pulls the window into a smaller viewport without overwriting the saved size', async () => {
+    const saved = { ...savedBase, x: 100, y: 40, width: 500, height: 400 }
+    const p = openPage(body, { savedEmbed: JSON.stringify(saved) })
+    await settle()
+    expect(geom(p)).toMatchObject({ x: 100, y: 40, w: 500, h: 400 })
+    const stored = p.win.sessionStorage.getItem('__grasp_embed')
+    const de = p.win.document.documentElement
+    Object.defineProperty(de, 'clientWidth', { configurable: true, get: () => 360 })
+    Object.defineProperty(de, 'clientHeight', { configurable: true, get: () => 280 })
+    p.win.dispatchEvent(new p.win.Event('resize'))
+    const shrunk = geom(p)
+    expect(shrunk.x).toBe(0)
+    expect(shrunk.y).toBe(0)
+    expect(shrunk.w).toBe(360)
+    expect(shrunk.h).toBe(280)
+    expect(p.win.sessionStorage.getItem('__grasp_embed')).toBe(stored)
+
+    Object.defineProperty(de, 'clientWidth', { configurable: true, get: () => 1280 })
+    Object.defineProperty(de, 'clientHeight', { configurable: true, get: () => 800 })
+    p.win.dispatchEvent(new p.win.Event('resize'))
+    expect(geom(p)).toMatchObject({ x: 100, y: 40, w: 500, h: 400 })
+    expect(p.win.sessionStorage.getItem('__grasp_embed')).toBe(stored)
+  })
+
+  it('uses the default place and size when session fields are missing or illegal', async () => {
+    const fresh = openPage(body, { hash, embedReply: reply })
+    await settle()
+    const defaults = geom(fresh)
+
+    const missing = openPage(body, { savedEmbed: JSON.stringify(savedBase) })
+    await settle()
+    expect(geom(missing)).toMatchObject({ x: defaults.x, y: defaults.y, w: defaults.w, h: defaults.h })
+
+    const illegal = openPage(body, {
+      savedEmbed: JSON.stringify({ ...savedBase, x: '12', y: false, width: 'wide', height: -5 }),
+    })
+    await settle()
+    expect(geom(illegal)).toMatchObject({ x: defaults.x, y: defaults.y, w: defaults.w, h: defaults.h })
+
+    const tiny = openPage(body, {
+      savedEmbed: JSON.stringify({ ...savedBase, x: 16, y: 20, width: 100, height: 80 }),
+    })
+    await settle()
+    expect(geom(tiny)).toMatchObject({ x: 16, y: 20, w: 320, h: 240 })
+  })
+})
