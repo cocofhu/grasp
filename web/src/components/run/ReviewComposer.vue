@@ -10,6 +10,8 @@ import PendingSendQueuePanel, { type PendingQueueRow } from './PendingSendQueueP
 import type { ClarifyTurn, ClarifyImage, ReactAnnotation, AcpEvent } from '@/lib/shared/types'
 import { isGrasp } from '@/lib/shared/clarifyInteractive'
 import AnnotationChip from './AnnotationChip.vue'
+import PageControlStatus from './PageControlStatus.vue'
+import type { PageControlState } from '@/lib/inbox/embedPageControl'
 
 /**
  * Thin mode wrapper around ClarifyChat / a gate-local composer.
@@ -70,6 +72,8 @@ const props = withDefaults(
     interrupted?: boolean
     /** ISO when turn completed normally — drives restrained「已完成」footnote. */
     streamCompletedAt?: string | null
+    /** This user's preview-page control state; unset hides the line. */
+    pageControl?: PageControlState
   }>(),
   {
     iteration: 1,
@@ -232,8 +236,12 @@ function onConfirm() {
     class="flex h-full min-h-0 flex-col"
     data-testid="review-composer-shell"
   >
+    <div v-if="pageControl" class="shrink-0 border-b border-line px-3 py-1.5">
+      <PageControlStatus :state="pageControl" />
+    </div>
     <ClarifyChat
       ref="chatRef"
+      class="min-h-0 flex-1"
       :run-id="runId || ''"
       :node-id="nodeId || ''"
       :iteration="iteration"

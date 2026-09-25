@@ -3823,7 +3823,18 @@
       "expiredTitle": "对话已断开",
       "expiredHint": "请从 Grasp 重新打开预览，以继续对话。",
       "networkError": "无法连接 Grasp，请检查网络后重试。",
-      "coldHint": "Agent 会话已结束，请回到 Grasp 继续处理。"
+      "coldHint": "Agent 会话已结束，请回到 Grasp 继续处理。",
+      "pageControl": {
+        "toggle": "允许 Agent 操作页面",
+        "privacy": "开启后，Agent 读取到的页面内容会出现在本会话中，其他参与者也能看到。建议使用测试账号。",
+        "unsupported": "预览页脚本版本过旧，重启预览后可用。",
+        "status": {
+          "online": "页面操作：已连接",
+          "transferred": "页面操作：控制已转到另一个标签页",
+          "paused": "页面操作：已暂停（预览页不在前台）",
+          "offline": "页面操作：未连接"
+        }
+      }
     }
   }
 }

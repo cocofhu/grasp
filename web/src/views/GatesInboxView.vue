@@ -215,7 +215,14 @@ const {
   isHumanGateInboxItem,
   inboxShareKind,
   REVIEW_SHELL_WIDTH_KEY_APPROVAL,
+  pageControlByNode,
 } = useGatesInbox()
+
+/** Page-control state for the chat in view; empty until this user has turned it on in a drawer. */
+const inboxPageControl = computed(() => {
+  const map = pageControlByNode.value
+  return map[clarifyComposerNodeId.value || ''] ?? Object.values(map)[0] ?? undefined
+})
 
 /** Whole-list fade when filter/page changes (g3.2). */
 const listFadeKey = computed(() =>
@@ -500,6 +507,7 @@ const listFadeKey = computed(() =>
               :done="clarifyComposerDone"
               :active="clarifyInputActive"
               :confirm-error="clarifyConfirmError"
+              :page-control="inboxPageControl"
               @send="onClarifySend"
               @retry-last="onClarifyRetryLast"
               @finish="onClarifyFinish"
@@ -636,6 +644,7 @@ const listFadeKey = computed(() =>
                   :done="clarifyComposerDone"
                   :active="clarifyInputActive"
                   :confirm-error="clarifyConfirmError"
+                  :page-control="inboxPageControl"
                   @send="onClarifySend"
                   @retry-last="onClarifyRetryLast"
                   @finish="onClarifyFinish"

@@ -29,6 +29,7 @@ class FakeWebSocket {
   onopen: ((ev?: unknown) => void) | null = null
   onmessage: ((ev: { data: string }) => void) | null = null
   onclose: (() => void) | null = null
+  readyState = 1
   sent: string[] = []
   constructor(url: string) {
     this.url = url
@@ -1375,6 +1376,35 @@ describe('PublicGateApprovalView workbench', () => {
 
 describe('PublicGateApprovalView chat-only drawer mode', () => {
   const drawerToken = `gse_${'ab'.repeat(16)}`
+
+  it('hands page frames to the drawer and sends its frames on the events socket', async () => {
+    mocks.preview.mockResolvedValue({
+      status: 'active',
+      kind: 'review',
+      nodeType: 'app_preview',
+      remainingSec: 3600,
+      reactSessionAlive: true,
+      productKind: 'app_preview',
+      actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
+      turns: [{ role: 'agent', text: '预览已就绪', at: '2026-08-01T00:00:00Z' }],
+    })
+    const w = mountView('zh-CN', { embedToken: drawerToken })
+    await flushPromises()
+    const sock = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
+    sock.emit({ type: 'ready' })
+    sock.emit({ type: 'page_cmd', id: 'c1', action: 'state' })
+    expect(w.emitted('events-ready')).toHaveLength(1)
+    expect(w.emitted('page-frame')?.[0]?.[0]).toEqual({ type: 'page_cmd', id: 'c1', action: 'state' })
+
+    const vm = w.vm as unknown as { sendEventsFrame: (f: Record<string, unknown>) => boolean }
+    expect(vm.sendEventsFrame({ type: 'page_control', on: true, visible: true })).toBe(true)
+    expect(JSON.parse(sock.sent.at(-1)!)).toEqual({ type: 'page_control', on: true, visible: true })
+    sock.readyState = 3
+    expect(vm.sendEventsFrame({ type: 'page_control', on: false, visible: true })).toBe(false)
+    const closedBefore = w.emitted('events-closed')?.length ?? 0
+    sock.close()
+    expect(w.emitted('events-closed')).toHaveLength(closedBefore + 1)
+  })
 
   it('drives the chat with the embed token and hides stage, chrome and decide', async () => {
     window.location.hash = `#t=${'cc'.repeat(32)}`

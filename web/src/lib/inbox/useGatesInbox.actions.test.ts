@@ -608,6 +608,19 @@ describe('useGatesInbox actions', () => {
     app.unmount()
   })
 
+  it('tracks this user\'s page-control state per node from the run socket', async () => {
+    const { inbox, app } = await withInbox()
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    socket.message({ type: 'page_control_state', nodeId: 'producer', state: 'online' })
+    expect(inbox.pageControlByNode.value).toEqual({ producer: 'online' })
+    socket.message({ type: 'page_control_state', nodeId: 'producer', state: 'weird' })
+    expect(inbox.pageControlByNode.value).toEqual({ producer: 'offline' })
+    socket.message({ type: 'page_control_state', state: 'online' })
+    expect(inbox.pageControlByNode.value).toEqual({ producer: 'offline' })
+    app.unmount()
+  })
+
   it('buffers dialogue frames until child surfaces mount', async () => {
     const { inbox, app } = await withInbox()
     inbox.active.value = inbox.listItems.value[1]!
