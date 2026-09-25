@@ -133,6 +133,26 @@
           "signature": "set_preview(port?, url?, label?)",
           "desc": "app_preview or Grasp: register sandbox port or external http(s) URL (exactly one); URL may include a port; iframe direct, no server probe. On Grasp this is optional and does not end the node"
         },
+        "page_state": {
+          "signature": "page_state() -> stateId + page content",
+          "desc": "Direct preview, after the user turns on \"Let the agent operate this page\" in the drawer: read the preview page the requester is looking at (URL, title, text, numbered interactive elements); content is returned as untrusted data"
+        },
+        "page_click": {
+          "signature": "page_click(index, state_id)",
+          "desc": "Click an element on the preview page and return the new state once the page settles; stale state ids are rejected"
+        },
+        "page_input": {
+          "signature": "page_input(index, state_id, text)",
+          "desc": "Fill a preview page input; password fields are never echoed and text is left out of audit and traces"
+        },
+        "page_select": {
+          "signature": "page_select(index, state_id, option)",
+          "desc": "Select a dropdown option on the preview page by its visible text"
+        },
+        "page_scroll": {
+          "signature": "page_scroll(down?, pages?, index?, state_id?)",
+          "desc": "Scroll the preview page or a scrollable area and return the new state"
+        },
         "set_artifact_preview": {
           "signature": "set_artifact_preview(name)",
           "desc": "react/grasp: focus an existing artifact tab (platform auto-pins new/changed visible artifacts; use demoHtml for option-by-option compare)"

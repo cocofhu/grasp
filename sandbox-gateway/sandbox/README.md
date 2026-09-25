@@ -37,7 +37,7 @@ sandbox/
 
 - 镜像预装 **Playwright Chromium**（`PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`，版本 `1.61.1`）及系统依赖与 CJK 字体，`npx playwright test` / 无头浏览器验收开箱即用；项目 pin 其它版本时 `npx playwright install chromium` 会按需再拉。
 - 设 `VNC_PREVIEW=1` 启动 **headed Chromium on Xvfb + x11vnc + websockify** 预览栈：箱内 CDP `9222`、noVNC `6080`（无应用层鉴权，**不** publish 到宿主/LB）。用户经 Grasp `/sandbox-vnc/:id/ws` 与 `/preview-vnc/.../ws`（Auth 开启时须 Session）。默认关闭，避免普通场景吃 headed Chromium 资源。
-- 设 `PREVIEW_DIRECT=1`（且有 `PREVIEW_PORT`）启动 **直连预览 HTML 注入**：应用仍听 `0.0.0.0:$PREVIEW_PORT`，入站经 iptables REDIRECT 到箱内 `17980` 的 `preview-inject`，只给 `text/html` 插入同域 `<script src="/__grasp/preview-pick.js">`（由注入层自己提供，不依赖 Grasp 的 `localhost` 地址）。浏览器 origin 仍是 `http://IP:PREVIEW_PORT/`。无 iptables / 非 privileged 时打日志跳过，不拖垮启动。旧镜像没有该进程时，Agent 仍可手写 script 兜底。仅覆盖 `PREVIEW_PORT`，额外 `set_preview` 口不会注入。HTTPS / CSP nonce / `strict-dynamic` / 仅 IPv6 不在此层处理。
+- 设 `PREVIEW_DIRECT=1`（且有 `PREVIEW_PORT`）启动 **直连预览 HTML 注入**：应用仍听 `0.0.0.0:$PREVIEW_PORT`，入站经 iptables REDIRECT 到箱内 `17980` 的 `preview-inject`，只给 `text/html` 插入同域 `<script src="/__grasp/preview-pick.js">`（由注入层自己提供，不依赖 Grasp 的 `localhost` 地址）。浏览器 origin 仍是 `http://IP:PREVIEW_PORT/`。无 iptables / 非 privileged 时打日志跳过，不拖垮启动。旧镜像没有该进程时，Agent 仍可手写 script 兜底。注入层同时提供 `/__grasp/page-control.js`（Agent 页面操作执行器），只在用户于抽屉打开「允许 Agent 操作页面」后由 `preview-pick.js` 按需加载。仅覆盖 `PREVIEW_PORT`，额外 `set_preview` 口不会注入。HTTPS / CSP nonce / `strict-dynamic` / 仅 IPv6 不在此层处理。
 
 ## 浏览器 MCP（可选）
 

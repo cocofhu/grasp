@@ -232,7 +232,7 @@ func previewNodePromptExtras(req NodeReq) string {
 		return ""
 	}
 	if !configDefaultOn(req.Config["auto_inject"]) {
-		return models.DefaultPreviewDirectManualContract
+		return models.DefaultPreviewDirectManualContract + models.DefaultPreviewPageControlContract
 	}
-	return models.DefaultPreviewDirectContract
+	return models.DefaultPreviewDirectContract + models.DefaultPreviewPageControlContract
 }

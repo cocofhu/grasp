@@ -3,7 +3,7 @@ import { BUILTIN_MCPS } from './mcp'
 import { i18n } from '@/lib/shared/i18n'
 import { loadLocaleMessages } from '@/lib/shared/loadLocaleMessages'
 
-const ARTIFACT_TOOL_COUNT = 29
+const ARTIFACT_TOOL_COUNT = 34
 const ARTIFACT_REQUIRED_TOOLS = ['list_run_history', 'get_history_detail', 'node_complete', 'set_artifact_preview', 'set_preflight', 'get_preflight', 'ask_form', 'set_root_cause', 'get_root_cause'] as const
 
 const CATALOG = [
