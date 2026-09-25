@@ -945,10 +945,20 @@
 
   function setControl(on) {
     control.on = !!on;
-    if (!control.on) abortPending();
-    // Warm the executor so the first command does not pay for the download.
-    else loadExec().catch(function () {});
+    if (!control.on) {
+      abortPending();
+      armExec(control.exec);
+    } else {
+      // Loading early also keeps the first command from waiting on the download.
+      loadExec()
+        .then(armExec)
+        .catch(function () {});
+    }
     render();
+  }
+
+  function armExec(ex) {
+    if (ex && ex.setArmed) ex.setArmed(control.on);
   }
 
   function stopControl() {

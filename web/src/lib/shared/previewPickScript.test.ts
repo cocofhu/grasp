@@ -580,13 +580,14 @@ describe('preview-pick.js page control', () => {
   async function ready(opts: { run?: Run; tab?: string; broadcast?: boolean } = {}) {
     const p = openPage(body, { savedEmbed: saved, tab: opts.tab, broadcast: opts.broadcast })
     const created: { hideOwnUi: (h: boolean) => void }[] = []
+    const armed: boolean[] = []
     if (opts.run) {
       const run = opts.run
       ;(p.win as unknown as Record<string, unknown>).__graspPageControl = {
         version: 1,
         create: (o: { hideOwnUi: (h: boolean) => void }) => {
           created.push(o)
-          return { run }
+          return { run, setArmed: (on: boolean) => armed.push(on) }
         },
       }
     }
@@ -598,7 +599,7 @@ describe('preview-pick.js page control', () => {
         new p.win.MessageEvent('message', { data, origin: GRASP, source: p.frame()?.contentWindow as never }),
       )
     const banner = () => p.shadow.querySelector('[data-role="agent"]') as HTMLElement
-    return { p, inbox, send, banner, created }
+    return { p, inbox, send, banner, created, armed }
   }
 
   const results = (inbox: Msg[]) => inbox.filter((m) => m.type === EMBED_CMD_RESULT_MESSAGE)
@@ -693,6 +694,27 @@ describe('preview-pick.js page control', () => {
     expect(signals[1].aborted).toBe(true)
     expect(banner().hidden).toBe(true)
     expect(inbox).toContainEqual(expect.objectContaining({ type: EMBED_CONTROL_MESSAGE, stop: true }))
+  })
+
+  it('shows the agent pointer while control is on and hides it on off and stop', async () => {
+    const { p, send, armed } = await ready({ run: async () => ({ ok: true }) })
+    send({ type: EMBED_CONTROL_MESSAGE, on: true })
+    await settle()
+    expect(armed).toEqual([true])
+    send({ type: EMBED_CONTROL_MESSAGE, on: false })
+    expect(armed).toEqual([true, false])
+    send({ type: EMBED_CONTROL_MESSAGE, on: true })
+    await settle()
+    ;(p.shadow.querySelector('[data-role="agent-stop"]') as HTMLButtonElement).click()
+    expect(armed).toEqual([true, false, true, false])
+  })
+
+  it('keeps the pointer hidden when control turns off before the executor loads', async () => {
+    const { send, armed } = await ready({ run: async () => ({ ok: true }) })
+    send({ type: EMBED_CONTROL_MESSAGE, on: true })
+    send({ type: EMBED_CONTROL_MESSAGE, on: false })
+    await settle()
+    expect(armed).toEqual([false])
   })
 
   it('loads the executor next to itself and reports a blocked load', async () => {
