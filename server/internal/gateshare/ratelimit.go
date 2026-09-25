@@ -8,7 +8,10 @@ import (
 const (
 	publicRateWindow = time.Minute
 	publicRateMax    = 30
-	ipLimiterGCAt    = 64
+	// An open chat polls every 2s plus a 1.5s seed loop while a turn starts
+	// (~70/min); a share page and its drawer, or viewers behind one NAT, share it.
+	PreviewRateMax = 180
+	ipLimiterGCAt  = 64
 
 	RateBucketPreview = "preview"
 	RateBucketDecide  = "decide"
@@ -57,11 +60,18 @@ func (l *IPLimiter) AllowBucket(ip, bucket string) bool {
 		l.byKey[key] = &ipWindow{start: now, count: 1}
 		return true
 	}
-	if w.count >= publicRateMax {
+	if w.count >= bucketMax(bucket) {
 		return false
 	}
 	w.count++
 	return true
+}
+
+func bucketMax(bucket string) int {
+	if bucket == "" || bucket == RateBucketPreview {
+		return PreviewRateMax
+	}
+	return publicRateMax
 }
 
 func (l *IPLimiter) gcExpiredLocked(now time.Time) {

@@ -67,6 +67,7 @@ const chatOnly = computed(() => !!props.embedToken)
 
 const POLL_MS = 2000
 const IDLE_POLL_MS = 10_000
+const RATE_LIMIT_COOLDOWN_MS = 10_000
 const REMAINING_TICK_MS = 15_000
 const NONCE_TTL_MS = 15 * 60 * 1000
 const NONCE_REFRESH_BEFORE_MS = 2 * 60 * 1000
@@ -123,6 +124,20 @@ function clearStuckTimer() {
     stuckTimer = null
   }
   maybeStuck.value = false
+}
+
+let rateLimitedUntil = 0
+let rateLimitRetryTimer: ReturnType<typeof setTimeout> | null = null
+
+function isRateLimited(e: unknown): boolean {
+  return (e as { status?: number } | null)?.status === 429
+}
+
+function clearRateLimitRetry() {
+  if (rateLimitRetryTimer != null) {
+    clearTimeout(rateLimitRetryTimer)
+    rateLimitRetryTimer = null
+  }
 }
 
 function abortPreview() {
@@ -397,6 +412,9 @@ async function loadPublicArtifacts(opts?: { silent?: boolean }) {
 
 async function loadPreview(opts?: { silent?: boolean; issueNonce?: boolean }) {
   if (doneKind.value) return
+  // Every poller shares one per-IP budget; hammering while limited only extends the lockout.
+  if (opts?.silent && Date.now() < rateLimitedUntil) return
+  clearRateLimitRetry()
   const attemptGen = ++previewGen
   abortPreview()
   previewAbort = new AbortController()
@@ -458,7 +476,17 @@ async function loadPreview(opts?: { silent?: boolean; issueNonce?: boolean }) {
     }
   } catch (e) {
     if (attemptGen !== previewGen || isAbortError(e)) return
-    if (!opts?.silent) {
+    if (isRateLimited(e)) {
+      rateLimitedUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS
+      noteIdlePoll(true)
+      if (!opts?.silent) {
+        clearStuckTimer()
+        rateLimitRetryTimer = setTimeout(() => {
+          rateLimitRetryTimer = null
+          void loadPreview(opts)
+        }, RATE_LIMIT_COOLDOWN_MS)
+      }
+    } else if (!opts?.silent) {
       preview.value = null
       networkFailed.value = true
       errorText.value = t('pages.publicGate.networkError')
@@ -466,7 +494,7 @@ async function loadPreview(opts?: { silent?: boolean; issueNonce?: boolean }) {
       noteIdlePoll(true)
     }
   } finally {
-    if (attemptGen === previewGen) {
+    if (attemptGen === previewGen && rateLimitRetryTimer == null) {
       loading.value = false
       clearStuckTimer()
     }
@@ -1124,6 +1152,7 @@ onMounted(async () => {
   connectPublicEvents()
 })
 onUnmounted(() => {
+  clearRateLimitRetry()
   stopPoll()
   stopRemainingTick()
   stopPublicEvents()

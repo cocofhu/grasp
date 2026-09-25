@@ -327,7 +327,7 @@ func TestGateSharePublicSecurityHeadersCSRFAndRateLimit(t *testing.T) {
 
 	// Rate limit
 	limited := false
-	for i := 0; i < 40; i++ {
+	for i := 0; i < gateshare.PreviewRateMax+10; i++ {
 		w := h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token})
 		if w.Code == http.StatusTooManyRequests {
 			limited = true
@@ -352,7 +352,7 @@ func TestGateSharePreviewPollDoesNotStarveDecide(t *testing.T) {
 
 	unk := strings.Repeat("ab", 32)
 	limited := false
-	for i := 0; i < 40; i++ {
+	for i := 0; i < gateshare.PreviewRateMax+10; i++ {
 		w := h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: unk})
 		if w.Code == http.StatusTooManyRequests {
 			limited = true
