@@ -28,6 +28,7 @@
         empty: '点「取点」后点击页面元素',
         chat: '对话',
         chatTitle: 'Grasp · Agent 对话',
+        brand: 'Grasp',
         close: '收起对话',
         toLight: '切换到浅色',
         toDark: '切换到深色',
@@ -42,6 +43,7 @@
         empty: 'Turn on Pick, then click an element',
         chat: 'Chat',
         chatTitle: 'Grasp · Agent chat',
+        brand: 'Grasp',
         close: 'Hide chat',
         toLight: 'Switch to light',
         toDark: 'Switch to dark',
@@ -168,14 +170,20 @@
     return p.indexOf(host) >= 0;
   }
 
-  var DRAWER_W = 420;
+  var MIN_W = 320;
+  var MIN_H = 240;
+  var DEFAULT_W = 420;
+  var DEFAULT_Y = 72;
+  var DEFAULT_MARGIN_X = 28;
+  var box = { x: 0, y: DEFAULT_Y, w: DEFAULT_W, h: MIN_H };
+  var drag = null;
+
   var BAR_CSS =
     ':host{all:initial}' +
     '.bar{position:fixed;right:16px;bottom:16px;z-index:2147483647;max-width:320px;' +
     'font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e5e7eb;' +
     'background:#111827;border:1px solid #374151;border-radius:10px;' +
     'box-shadow:0 6px 24px rgba(0,0,0,.35);padding:6px}' +
-    '.bar.shift{right:' + (DRAWER_W + 16) + 'px}' +
     '.row{display:flex;align-items:center;gap:6px}' +
     'button{font:inherit;color:inherit;background:transparent;border:0;cursor:pointer;border-radius:6px;padding:4px 8px}' +
     'button:hover{background:#1f2937}' +
@@ -192,23 +200,217 @@
     '.list button{color:#9ca3af;padding:2px 6px}' +
     '.notice{margin-top:4px;color:#fbbf24}' +
     '.notice.ok{color:#6ee7b7}' +
-    '.drawer{position:fixed;top:0;right:0;bottom:0;width:' + DRAWER_W + 'px;max-width:100vw;z-index:2147483646;' +
-    'display:flex;flex-direction:column;background:#0b0b0c;border-left:1px solid #374151;' +
-    'box-shadow:-8px 0 24px rgba(0,0,0,.35);font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e5e7eb}' +
-    '.dhead{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-bottom:1px solid #1f2937}' +
-    '.dhead span{flex:1;font-weight:600}' +
-    '.drawer iframe{flex:1;min-height:0;width:100%;border:0;background:#0b0b0c}' +
+    '.drawer{position:fixed;z-index:2147483646;display:flex;flex-direction:column;overflow:hidden;' +
+    'background:#0b0b0c;border-radius:22px;box-shadow:0 16px 40px rgba(0,0,0,.35);' +
+    'font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e5e7eb}' +
+    '.dhead{display:flex;align-items:center;gap:8px;height:64px;padding:0 16px 0 22px;flex:none;' +
+    'cursor:grab;user-select:none;touch-action:none}' +
+    '.dhead span{flex:1;min-width:0;font-size:28px;font-weight:650;letter-spacing:-0.03em;line-height:1;color:#a5b4fc}' +
+    '.dhead button{width:36px;height:36px;padding:0;display:grid;place-items:center;flex:none;' +
+    'border:1px solid #374151;border-radius:8px;background:#111827}' +
+    '.drawer iframe{flex:1;min-height:0;width:auto;margin:0 14px 14px;border:0;border-radius:14px;background:#0b0b0c}' +
+    '.edge{position:absolute;touch-action:none;z-index:3}' +
+    '.edge.n,.edge.s{left:14px;right:14px;height:8px;cursor:ns-resize}' +
+    '.edge.n{top:0}.edge.s{bottom:0}' +
+    '.edge.e,.edge.w{top:14px;bottom:14px;width:8px;cursor:ew-resize}' +
+    '.edge.e{right:0}.edge.w{left:0}' +
+    '.edge.nw,.edge.ne,.edge.sw,.edge.se{width:14px;height:14px}' +
+    '.edge.nw{top:0;left:0;cursor:nwse-resize}' +
+    '.edge.ne{top:0;right:0;cursor:nesw-resize}' +
+    '.edge.sw{bottom:0;left:0;cursor:nesw-resize}' +
+    '.edge.se{bottom:0;right:0;cursor:nwse-resize}' +
     '.bar.light{color:#18181b;background:#fff;border-color:#e4e4e7;box-shadow:0 6px 24px rgba(16,24,40,.12)}' +
     '.light button:hover{background:#f4f4f5}' +
     '.light .toggle{background:#f4f4f5}' +
     '.light .toggle[aria-pressed="true"]{background:#dcfce7;color:#15803d}' +
     '.light .chat{background:#eef0ff;color:#4f46e5}' +
     '.light .chat[aria-expanded="true"]{background:#dcdcfe}' +
-    '.drawer.light{color:#18181b;background:#fafafb;border-left-color:#e4e4e7;box-shadow:-8px 0 24px rgba(16,24,40,.12)}' +
-    '.drawer.light .dhead{border-bottom-color:#e4e4e7}' +
+    '.drawer.light{color:#18181b;background:#fff;box-shadow:0 16px 40px rgba(16,24,40,.12)}' +
+    '.drawer.light .dhead span{color:#4f46e5}' +
+    '.drawer.light .dhead button{border-color:#e4e4e7;background:#fff;color:#3f3f46}' +
     '.drawer.light iframe{background:#fafafb}' +
-    '@media (max-width:' + (DRAWER_W * 2) + 'px){.bar.shift{right:16px;bottom:auto;top:44px}}' +
     '[hidden]{display:none!important}';
+
+  function viewport() {
+    var de = document.documentElement;
+    var vw = (de && de.clientWidth) || window.innerWidth || 0;
+    var vh = (de && de.clientHeight) || window.innerHeight || 0;
+    return { vw: vw, vh: vh };
+  }
+
+  function finiteNum(v) {
+    return typeof v === 'number' && isFinite(v) ? v : null;
+  }
+
+  function clampBox(b) {
+    var v = viewport();
+    var maxW = v.vw > 0 ? v.vw : MIN_W;
+    var maxH = v.vh > 0 ? v.vh : MIN_H;
+    var minW = v.vw > 0 && v.vw < MIN_W ? v.vw : MIN_W;
+    var minH = v.vh > 0 && v.vh < MIN_H ? v.vh : MIN_H;
+    var w = b.w;
+    var h = b.h;
+    if (!(typeof w === 'number' && isFinite(w))) w = DEFAULT_W;
+    if (!(typeof h === 'number' && isFinite(h))) h = minH;
+    if (w < minW) w = minW;
+    if (h < minH) h = minH;
+    if (w > maxW) w = maxW;
+    if (h > maxH) h = maxH;
+    var x = b.x;
+    var y = b.y;
+    if (!(typeof x === 'number' && isFinite(x))) x = 0;
+    if (!(typeof y === 'number' && isFinite(y))) y = 0;
+    var maxX = Math.max(0, (v.vw || w) - w);
+    var maxY = Math.max(0, (v.vh || h) - h);
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x > maxX) x = maxX;
+    if (y > maxY) y = maxY;
+    return { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) };
+  }
+
+  function defaultBox() {
+    var v = viewport();
+    return clampBox({
+      x: (v.vw || DEFAULT_W) - DEFAULT_W - DEFAULT_MARGIN_X,
+      y: DEFAULT_Y,
+      w: DEFAULT_W,
+      h: Math.round((v.vh || 800) * 0.7),
+    });
+  }
+
+  function boxFromEmbed(e) {
+    var d = defaultBox();
+    if (!e) return d;
+    var x = finiteNum(e.x);
+    var y = finiteNum(e.y);
+    var w = finiteNum(e.width);
+    var h = finiteNum(e.height);
+    if (w != null && w <= 0) w = null;
+    if (h != null && h <= 0) h = null;
+    return clampBox({
+      x: x == null ? d.x : x,
+      y: y == null ? d.y : y,
+      w: w == null ? d.w : w,
+      h: h == null ? d.h : h,
+    });
+  }
+
+  function applyBox() {
+    if (!ui) return;
+    ui.drawer.style.left = box.x + 'px';
+    ui.drawer.style.top = box.y + 'px';
+    ui.drawer.style.width = box.w + 'px';
+    ui.drawer.style.height = box.h + 'px';
+  }
+
+  function persistBox() {
+    if (!drawer) return;
+    drawer.embed.x = box.x;
+    drawer.embed.y = box.y;
+    drawer.embed.width = box.w;
+    drawer.embed.height = box.h;
+    saveEmbed(drawer.embed);
+  }
+
+  function setFramePassthrough(on) {
+    if (!drawer || !drawer.frame) return;
+    drawer.frame.style.pointerEvents = on ? 'none' : '';
+  }
+
+  function resizeFrom(start, dx, dy) {
+    var dir = start.dir;
+    var x = start.x;
+    var y = start.y;
+    var w = start.w;
+    var h = start.h;
+    if (dir.indexOf('e') >= 0) w = start.w + dx;
+    if (dir.indexOf('s') >= 0) h = start.h + dy;
+    if (dir.indexOf('w') >= 0) {
+      w = start.w - dx;
+      x = start.x + dx;
+    }
+    if (dir.indexOf('n') >= 0) {
+      h = start.h - dy;
+      y = start.y + dy;
+    }
+    var v = viewport();
+    var minW = v.vw > 0 && v.vw < MIN_W ? v.vw : MIN_W;
+    var minH = v.vh > 0 && v.vh < MIN_H ? v.vh : MIN_H;
+    if (w < minW) {
+      if (dir.indexOf('w') >= 0) x = start.x + (start.w - minW);
+      w = minW;
+    }
+    if (h < minH) {
+      if (dir.indexOf('n') >= 0) y = start.y + (start.h - minH);
+      h = minH;
+    }
+    return clampBox({ x: x, y: y, w: w, h: h });
+  }
+
+  function onPointerMove(ev) {
+    if (!drag) return;
+    var dx = ev.clientX - drag.sx;
+    var dy = ev.clientY - drag.sy;
+    if (drag.kind === 'move') box = clampBox({ x: drag.x + dx, y: drag.y + dy, w: drag.w, h: drag.h });
+    else box = resizeFrom(drag, dx, dy);
+    applyBox();
+  }
+
+  function endDrag() {
+    if (!drag) return;
+    drag = null;
+    setFramePassthrough(false);
+    window.removeEventListener('pointermove', onPointerMove, true);
+    window.removeEventListener('pointerup', endDrag, true);
+    window.removeEventListener('pointercancel', endDrag, true);
+    persistBox();
+  }
+
+  function beginDrag(ev, kind, dir) {
+    if (!drawerOpen || drag) return;
+    if (ev.button != null && ev.button !== 0) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    drag = {
+      kind: kind,
+      dir: dir || '',
+      sx: ev.clientX,
+      sy: ev.clientY,
+      x: box.x,
+      y: box.y,
+      w: box.w,
+      h: box.h,
+    };
+    setFramePassthrough(true);
+    try {
+      if (ev.currentTarget && ev.currentTarget.setPointerCapture && ev.pointerId != null) {
+        ev.currentTarget.setPointerCapture(ev.pointerId);
+      }
+    } catch (e) {}
+    window.addEventListener('pointermove', onPointerMove, true);
+    window.addEventListener('pointerup', endDrag, true);
+    window.addEventListener('pointercancel', endDrag, true);
+  }
+
+  function onHeadPointerDown(ev) {
+    var t = ev.target;
+    if (t && t.closest && t.closest('button')) return;
+    beginDrag(ev, 'move', '');
+  }
+
+  function onEdgePointerDown(ev) {
+    var dir = ev.currentTarget && ev.currentTarget.getAttribute ? ev.currentTarget.getAttribute('data-dir') : '';
+    beginDrag(ev, 'resize', dir || '');
+  }
+
+  function onViewportResize() {
+    if (!ui) return;
+    var before = box.x + ',' + box.y + ',' + box.w + ',' + box.h;
+    box = clampBox(box);
+    applyBox();
+    if (drawer && before !== box.x + ',' + box.y + ',' + box.w + ',' + box.h) persistBox();
+  }
 
   function mountBar() {
     var root = document.body || document.documentElement;
@@ -224,9 +426,17 @@
     shadow.innerHTML =
       '<style>' + BAR_CSS + '</style>' +
       '<div class="drawer" data-role="drawer" hidden>' +
-      '<div class="dhead"><span data-role="drawer-title"></span>' +
+      '<div class="dhead" data-role="drawer-head"><span data-role="drawer-title"></span>' +
       '<button type="button" data-role="drawer-theme"></button>' +
-      '<button type="button" data-role="drawer-close">×</button></div>' +
+      '<button type="button" data-role="drawer-close" class="close">' +
+      '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
+      '<rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor"/>' +
+      '<path d="M6 2.5v11M9.2 6.2 7.4 8l1.8 1.8" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '</svg></button></div>' +
+      '<div class="edge n" data-dir="n"></div><div class="edge s" data-dir="s"></div>' +
+      '<div class="edge e" data-dir="e"></div><div class="edge w" data-dir="w"></div>' +
+      '<div class="edge nw" data-dir="nw"></div><div class="edge ne" data-dir="ne"></div>' +
+      '<div class="edge sw" data-dir="sw"></div><div class="edge se" data-dir="se"></div>' +
       '</div>' +
       '<div class="bar" part="bar" data-role="bar">' +
       '<div class="row">' +
@@ -248,7 +458,12 @@
       drawer: shadow.querySelector('[data-role="drawer"]'),
       theme: shadow.querySelector('[data-role="drawer-theme"]'),
     };
-    shadow.querySelector('[data-role="drawer-title"]').textContent = T.chatTitle;
+    shadow.querySelector('[data-role="drawer-title"]').textContent = T.brand;
+    var head = shadow.querySelector('[data-role="drawer-head"]');
+    head.addEventListener('pointerdown', onHeadPointerDown);
+    Array.prototype.forEach.call(shadow.querySelectorAll('.edge'), function (edge) {
+      edge.addEventListener('pointerdown', onEdgePointerDown);
+    });
     var closeBtn = shadow.querySelector('[data-role="drawer-close"]');
     closeBtn.setAttribute('aria-label', T.close);
     closeBtn.title = T.close;
@@ -282,6 +497,7 @@
       render();
     });
     root.appendChild(host);
+    if (!drawer) box = defaultBox();
     if (drawer) attachDrawer();
     render();
   }
@@ -296,7 +512,8 @@
     ui.drawer.hidden = !drawerOpen;
     var light = drawerTheme() === 'light';
     ui.drawer.className = light ? 'drawer light' : 'drawer';
-    ui.bar.className = 'bar' + (drawerOpen ? ' shift' : '') + (light ? ' light' : '');
+    ui.bar.className = 'bar' + (light ? ' light' : '');
+    applyBox();
     ui.theme.textContent = light ? '☾' : '☀';
     ui.theme.setAttribute('aria-label', light ? T.toDark : T.toLight);
     ui.theme.title = light ? T.toDark : T.toLight;
@@ -430,6 +647,7 @@
   }
 
   function startDrawer(e, ticket) {
+    box = boxFromEmbed(e);
     var frame = document.createElement('iframe');
     frame.title = T.chatTitle;
     frame.setAttribute('referrerpolicy', 'no-referrer');
@@ -545,6 +763,7 @@
     flushOutbox();
   });
 
+  window.addEventListener('resize', onViewportResize);
   document.addEventListener('mousemove', onMove, true);
   document.addEventListener('click', onClick, true);
   document.addEventListener('keydown', onKeydown, true);
