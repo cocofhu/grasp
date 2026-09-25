@@ -1517,6 +1517,9 @@ function applyAcpEvents(events: AcpEvent[] | undefined, nodeId?: string): boolea
     if (ev.kind === 'message' && ev.text) msg = ev.text
     if (ev.kind === 'thought' && ev.text) thought = ev.text
   }
+  // Until the new prompt emits output, live snapshots still hold the previous
+  // turn; message rails never clear, so accepting one would stick in this bubble.
+  if (msg !== agent.text && msg.trim() && msg.trim() === lastSettledAgentText(agent)) return true
   // Keep thought / message on separate rails — never msg||thought overwrite.
   agent.thought = thought
   agent.text = msg
@@ -1526,6 +1529,16 @@ function applyAcpEvents(events: AcpEvent[] | undefined, nodeId?: string): boolea
   // Stick-gated only — never force-drag while user scrolled up.
   void scrollBottom()
   return true
+}
+
+function lastSettledAgentText(live: ClarifyTurn): string {
+  const list = displayTurns.value
+  for (let i = list.length - 1; i >= 0; i--) {
+    const t = list[i]
+    if (t.role !== 'agent' || t === live || t.streaming) continue
+    return (t.text || '').trim()
+  }
+  return ''
 }
 
 /** Live agent bubble has visible message body (text or coalesced markdown). */
