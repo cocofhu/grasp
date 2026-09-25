@@ -132,6 +132,9 @@ type Host struct {
 	// projectAudit records structured, redacted MCP tool calls into project audit.
 	// Nil ⇒ no project audit (debug McpCalls still recorded separately).
 	projectAudit ProjectAuditHook
+	// pageBridge runs page_* tools on the turn owner's direct preview page.
+	// Nil ⇒ page tools are unlisted and fail.
+	pageBridge PageBridge
 }
 
 // AfterWriteFunc is called after WriteArtifact successfully persists content.

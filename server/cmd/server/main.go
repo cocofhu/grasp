@@ -35,6 +35,7 @@ import (
 	"github.com/cocofhu/grasp/internal/memorymcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/opencodecatalog"
+	"github.com/cocofhu/grasp/internal/pagebridge"
 	"github.com/cocofhu/grasp/internal/pmmcp"
 	"github.com/cocofhu/grasp/internal/router"
 	"github.com/cocofhu/grasp/internal/runtime"
@@ -232,6 +233,8 @@ func main() {
 	eng.SetAuditRecorder(func(rec services.AuditRecord) {
 		auditSvc.Record(rec)
 	})
+	pageHub := pagebridge.NewHub()
+	host.SetPageBridge(&pagebridge.Router{Hub: pageHub, Turns: eng})
 	gateShareSvc := gateshare.NewService(db, auditSvc)
 	gateShareTickets := gateshare.NewTicketStore(db)
 	gateShareSessions := gateshare.NewPreviewSessionHub()
@@ -490,6 +493,7 @@ func main() {
 		GateShareNonces:   gateshare.NewNonceStore(db),
 		GateShareTickets:  gateShareTickets,
 		Embed:             embedStore,
+		PageBridge:        pageHub,
 		GateShareSessions: gateShareSessions,
 		GateShareLimiter:  gateshare.NewIPLimiter(),
 		PublicAdvertise:   cfg.Server.PublicAdvertise,

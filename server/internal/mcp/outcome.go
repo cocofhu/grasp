@@ -241,6 +241,9 @@ func (h *Host) hideNodeComplete(runID string) bool {
 // Grasp Phase1 must not know about it.
 func (h *Host) listedTools(runID string) []map[string]any {
 	all := artifactTools()
+	if h.pageToolsListed(runID) {
+		all = append(all, pageTools()...)
+	}
 	if !h.hideNodeComplete(runID) {
 		return all
 	}

@@ -87,6 +87,16 @@ func formatMCPAuditAction(tool string, args map[string]any) string {
 			return "注册预览 · 端口 " + port
 		}
 		return "注册预览"
+	case "page_state":
+		return "读取预览页面"
+	case "page_click":
+		return "点击预览页元素"
+	case "page_input":
+		return "填写预览页输入框"
+	case "page_select":
+		return "选择预览页下拉项"
+	case "page_scroll":
+		return "滚动预览页"
 	case "update_plan_status":
 		if st := whitelistArg(args, "status"); st != "" {
 			return "更新计划状态 · " + st

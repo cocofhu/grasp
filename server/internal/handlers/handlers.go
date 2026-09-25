@@ -16,6 +16,7 @@ import (
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/memorymcp"
 	"github.com/cocofhu/grasp/internal/opencodecatalog"
+	"github.com/cocofhu/grasp/internal/pagebridge"
 	"github.com/cocofhu/grasp/internal/pmmcp"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/schedulermcp"
@@ -66,6 +67,8 @@ type Handlers struct {
 	GateShareLimiter  *gateshare.IPLimiter
 	// Embed backs the preview-page chat drawer (tickets + bearer sessions).
 	Embed *embed.Store
+	// PageBridge relays page_* tool commands to drawers that allow them.
+	PageBridge *pagebridge.Hub
 	// PublicAdvertise is the browser-facing base for QQ/preview deep links.
 	// Gate/review share URLs mint from Request.Host instead. Public CSRF
 	// compares Origin/Referer to this request's Host (never client
