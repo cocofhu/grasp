@@ -612,6 +612,30 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
+  it('keeps the previous reply out of the next live bubble', () => {
+    const { chat, app } = withChat({
+      turns: [
+        { role: 'human', text: 'first', at: '1' },
+        { role: 'agent', text: '上一轮的回复', at: '2' },
+      ],
+    })
+    chat.applyReviewFrame({ event: 'turn_begin', item: { text: 'second' } })
+    const agent = chat.liveTurns.value.at(-1)!
+    chat.applyAcpEvents([
+      { kind: 'thought', text: '旧思考' },
+      { kind: 'message', text: '上一轮的回复' },
+    ])
+    expect(agent.text).toBe('')
+    expect(agent.thought).toBe('')
+
+    chat.applyAcpEvents([{ kind: 'thought', text: '新思考' }])
+    chat.applyAcpEvents([{ kind: 'message', text: '新回复' }])
+    chat.applyAcpEvents([{ kind: 'message', text: '上一轮的回复' }])
+    expect(agent.thought).toBe('新思考')
+    expect(agent.text).toBe('新回复')
+    app.unmount()
+  })
+
   it('clears live bubbles when persisted turns catch up', async () => {
     const { chat, app, props } = withChat()
     chat.applyReviewFrame({ event: 'turn_begin', item: { text: 'hello' } })
