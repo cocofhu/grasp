@@ -2,7 +2,15 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Window } from 'happy-dom'
 import { afterEach, describe, expect, it } from 'vitest'
-import { EMBED_PICK_MESSAGE, EMBED_READY_MESSAGE, EMBED_THEME_MESSAGE } from '@/lib/inbox/embedChat'
+import {
+  EMBED_CMD_MESSAGE,
+  EMBED_CMD_RESULT_MESSAGE,
+  EMBED_CONTROL_MESSAGE,
+  EMBED_PICK_MESSAGE,
+  EMBED_READY_MESSAGE,
+  EMBED_THEME_MESSAGE,
+  PAGE_CONTROL_CAP,
+} from '@/lib/inbox/embedChat'
 import { PICK_HTML_MAX, PICK_TEXT_MAX } from './previewPickUrl'
 
 const repo = resolve(__dirname, '../../../..')
@@ -30,21 +38,40 @@ type Page = {
 }
 
 const opened: Window[] = []
+const channels: BroadcastChannel[] = []
+
+/** Node's BroadcastChannel, shared by every test window, closed after each test. */
+class TestChannel extends BroadcastChannel {
+  constructor(name: string) {
+    super(name)
+    ;(this as unknown as { unref?: () => void }).unref?.()
+    channels.push(this)
+  }
+}
 
 type EmbedReply = { origin: string; runId: string; nodeId: string } | null
 
 function openPage(
   body: string,
-  opts: { stored?: string | null; hash?: string; embedReply?: EmbedReply; savedEmbed?: string } = {},
+  opts: {
+    stored?: string | null
+    hash?: string
+    embedReply?: EmbedReply
+    savedEmbed?: string
+    tab?: string
+    broadcast?: boolean
+  } = {},
 ): Page {
   const win = new Window({
     url: `http://10.0.0.5:5173/pricing${opts.hash || ''}`,
-    settings: { navigator: { userAgent: 'test' }, disableIframePageLoading: true },
+    settings: { navigator: { userAgent: 'test' }, disableIframePageLoading: true, disableJavaScriptFileLoading: true },
   })
   opened.push(win)
   win.document.body.innerHTML = body
   if (opts.stored) win.sessionStorage.setItem('__grasp_preview_picks', opts.stored)
   if (opts.savedEmbed) win.sessionStorage.setItem('__grasp_embed', opts.savedEmbed)
+  if (opts.tab) win.sessionStorage.setItem('__grasp_tab', opts.tab)
+  if (opts.broadcast) (win as unknown as Record<string, unknown>).BroadcastChannel = TestChannel
   const fetched: string[] = []
   ;(win as unknown as { fetch: (u: string) => Promise<unknown> }).fetch = async (u: string) => {
     fetched.push(u)
@@ -89,6 +116,7 @@ function openPage(
 const settle = () => new Promise((r) => setTimeout(r, 0))
 
 afterEach(async () => {
+  for (const c of channels.splice(0)) c.close()
   for (const w of opened.splice(0)) await w.happyDOM.close()
 })
 
@@ -541,5 +569,153 @@ describe('preview-pick.js floating chat window', () => {
     })
     await settle()
     expect(geom(tiny)).toMatchObject({ x: 16, y: 20, w: 320, h: 240 })
+  })
+})
+
+describe('preview-pick.js page control', () => {
+  const body = '<main><button id="buy">Buy</button></main>'
+  const saved = JSON.stringify({ origin: GRASP, run: 'run-1', node: 'ap1', open: true, theme: 'dark' })
+  type Run = (cmd: { action: string; args: Record<string, unknown> }, signal?: AbortSignal) => Promise<unknown>
+
+  async function ready(opts: { run?: Run; tab?: string; broadcast?: boolean } = {}) {
+    const p = openPage(body, { savedEmbed: saved, tab: opts.tab, broadcast: opts.broadcast })
+    const created: { hideOwnUi: (h: boolean) => void }[] = []
+    if (opts.run) {
+      const run = opts.run
+      ;(p.win as unknown as Record<string, unknown>).__graspPageControl = {
+        version: 1,
+        create: (o: { hideOwnUi: (h: boolean) => void }) => {
+          created.push(o)
+          return { run }
+        },
+      }
+    }
+    await settle()
+    const inbox = p.drawerReady()
+    await new Promise((r) => setTimeout(r, 200))
+    const send = (data: Msg) =>
+      p.win.dispatchEvent(
+        new p.win.MessageEvent('message', { data, origin: GRASP, source: p.frame()?.contentWindow as never }),
+      )
+    const banner = () => p.shadow.querySelector('[data-role="agent"]') as HTMLElement
+    return { p, inbox, send, banner, created }
+  }
+
+  const results = (inbox: Msg[]) => inbox.filter((m) => m.type === EMBED_CMD_RESULT_MESSAGE)
+
+  it('announces page control with a tab id after the drawer is ready', async () => {
+    const { inbox, p } = await ready()
+    const hello = inbox.find((m) => m.type === EMBED_CONTROL_MESSAGE)
+    expect(hello).toMatchObject({ caps: [PAGE_CONTROL_CAP], target: GRASP })
+    expect(hello?.tab).toMatch(/^[0-9a-f]{16}$/)
+    expect(p.win.sessionStorage.getItem('__grasp_tab')).toBe(hello?.tab)
+  })
+
+  it('keeps the tab id across reloads of the same tab', async () => {
+    const { inbox } = await ready({ tab: 'abcdabcdabcdabcd' })
+    expect(inbox.find((m) => m.type === EMBED_CONTROL_MESSAGE)?.tab).toBe('abcdabcdabcdabcd')
+  })
+
+  it('gives a tab opened from a live tab (copied session) its own id', async () => {
+    const first = await ready({ tab: 'abcdabcdabcdabcd', broadcast: true })
+    expect(first.inbox.find((m) => m.type === EMBED_CONTROL_MESSAGE)?.tab).toBe('abcdabcdabcdabcd')
+    const copy = await ready({ tab: 'abcdabcdabcdabcd', broadcast: true })
+    const tab = copy.inbox.find((m) => m.type === EMBED_CONTROL_MESSAGE)?.tab
+    expect(tab).toMatch(/^[0-9a-f]{16}$/)
+    expect(tab).not.toBe('abcdabcdabcdabcd')
+    expect(copy.p.win.sessionStorage.getItem('__grasp_tab')).toBe(tab)
+  })
+
+  it('refuses commands until the drawer turns control on', async () => {
+    const { inbox, send, banner } = await ready({ run: async () => ({ ok: true }) })
+    expect(banner().hidden).toBe(true)
+    send({ type: EMBED_CMD_MESSAGE, nonce: 'n1', action: 'state', args: {} })
+    await settle()
+    expect(results(inbox)).toEqual([
+      expect.objectContaining({ nonce: 'n1', ok: false, error: '用户没有开启页面操作' }),
+    ])
+  })
+
+  it('runs commands through the executor, shows the banner and blocks picking meanwhile', async () => {
+    let release: (v: unknown) => void = () => {}
+    const seen: unknown[] = []
+    const { p, inbox, send, banner, created } = await ready({
+      run: (cmd) => {
+        seen.push(cmd)
+        return new Promise((r) => (release = r))
+      },
+    })
+    send({ type: EMBED_CONTROL_MESSAGE, on: true })
+    await settle()
+    expect(banner().hidden).toBe(false)
+    p.toggle()
+    expect(p.shadow.querySelector('[data-role="toggle"]')?.getAttribute('aria-pressed')).toBe('true')
+
+    send({ type: EMBED_CMD_MESSAGE, nonce: 'n2', action: 'click', args: { index: 3, stateId: 's1' } })
+    await settle()
+    expect(seen).toEqual([{ action: 'click', args: { index: 3, stateId: 's1' } }])
+    expect(banner().className).toContain('busy')
+    const toggle = p.shadow.querySelector('[data-role="toggle"]') as HTMLButtonElement
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(toggle.disabled).toBe(true)
+
+    created[0].hideOwnUi(true)
+    expect((p.win.document.querySelector('grasp-preview-pick') as unknown as HTMLElement).style.display).toBe('none')
+    created[0].hideOwnUi(false)
+
+    release({ ok: true, note: '已点击', state: { stateId: 's2', content: '[0]<button >Buy />' } })
+    await settle()
+    await settle()
+    expect(results(inbox)).toEqual([
+      expect.objectContaining({ nonce: 'n2', ok: true, note: '已点击', state: expect.objectContaining({ stateId: 's2' }) }),
+    ])
+    expect(banner().className).toBe('agent')
+    expect(toggle.disabled).toBe(false)
+  })
+
+  it('aborts a command on cancel and on stop, and tells the drawer about stop', async () => {
+    const signals: AbortSignal[] = []
+    const { p, inbox, send, banner } = await ready({
+      run: (_cmd, signal) => {
+        if (signal) signals.push(signal)
+        return new Promise((r) => signal?.addEventListener('abort', () => r({ ok: false, error: '操作已取消' })))
+      },
+    })
+    send({ type: EMBED_CONTROL_MESSAGE, on: true })
+    send({ type: EMBED_CMD_MESSAGE, nonce: 'a', action: 'state', args: {} })
+    await settle()
+    send({ type: EMBED_CMD_MESSAGE, nonce: 'a', action: 'cancel' })
+    expect(signals[0].aborted).toBe(true)
+
+    send({ type: EMBED_CMD_MESSAGE, nonce: 'b', action: 'state', args: {} })
+    await settle()
+    ;(p.shadow.querySelector('[data-role="agent-stop"]') as HTMLButtonElement).click()
+    expect(signals[1].aborted).toBe(true)
+    expect(banner().hidden).toBe(true)
+    expect(inbox).toContainEqual(expect.objectContaining({ type: EMBED_CONTROL_MESSAGE, stop: true }))
+  })
+
+  it('loads the executor next to itself and reports a blocked load', async () => {
+    const { p, inbox, send } = await ready()
+    send({ type: EMBED_CONTROL_MESSAGE, on: true })
+    const script = p.win.document.querySelector('script[data-grasp-page-control]') as unknown as HTMLScriptElement
+    expect(script.getAttribute('src')).toBe('/__grasp/page-control.js')
+    send({ type: EMBED_CMD_MESSAGE, nonce: 'c', action: 'state', args: {} })
+    script.dispatchEvent(new p.win.Event('error') as unknown as Event)
+    await settle()
+    await settle()
+    expect(results(inbox)).toEqual([expect.objectContaining({ nonce: 'c', ok: false, error: expect.stringContaining('CSP') })])
+  })
+
+  it('ignores control messages from other origins', async () => {
+    const { p, banner } = await ready({ run: async () => ({ ok: true }) })
+    p.win.dispatchEvent(
+      new p.win.MessageEvent('message', {
+        data: { type: EMBED_CONTROL_MESSAGE, on: true },
+        origin: 'https://evil.example',
+        source: p.frame()?.contentWindow as never,
+      }),
+    )
+    expect(banner().hidden).toBe(true)
   })
 })

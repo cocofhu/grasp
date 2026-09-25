@@ -18,6 +18,9 @@ import (
 //go:embed preview-pick.js
 var pickScript []byte
 
+//go:embed page-control.js
+var pageControlScript []byte
+
 var errUnsupportedEncoding = errors.New("unsupported content-encoding")
 
 const flushInterval = 100 * time.Millisecond
@@ -59,7 +62,11 @@ func NewHandlerWithEmbed(upstream *url.URL, scriptURL string, embed EmbedLookup)
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == ScriptPath {
-			servePickScript(w, r)
+			serveScript(w, pickScript)
+			return
+		}
+		if r.URL.Path == PageControlPath {
+			serveScript(w, pageControlScript)
 			return
 		}
 		if r.URL.Path == EmbedOriginPath {
@@ -70,11 +77,11 @@ func NewHandlerWithEmbed(upstream *url.URL, scriptURL string, embed EmbedLookup)
 	})
 }
 
-func servePickScript(w http.ResponseWriter, _ *http.Request) {
+func serveScript(w http.ResponseWriter, body []byte) {
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(pickScript)
+	_, _ = w.Write(body)
 }
 
 func closeOnUpstreamError(w http.ResponseWriter, _ *http.Request, _ error) {

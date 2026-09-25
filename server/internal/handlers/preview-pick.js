@@ -2,6 +2,7 @@
 (function () {
   if (window.__graspPreviewPick) return;
   window.__graspPreviewPick = true;
+  var scriptSrc = (document.currentScript && document.currentScript.src) || '';
 
   // Drawer page protocol (web/src/lib/inbox/embedChat.ts).
   var EMBED_PICK = 'grasp-embed:pick';
@@ -10,6 +11,14 @@
   var EMBED_HASH = '__grasp_embed';
   var EMBED_ORIGIN_PATH = '/__grasp/embed-origin';
   var EMBED_STORE_KEY = '__grasp_embed';
+  var EMBED_CONTROL = 'grasp-embed:control';
+  var EMBED_CMD = 'grasp-embed:cmd';
+  var EMBED_CMD_RESULT = 'grasp-embed:cmd-result';
+  var PAGE_CONTROL_CAP = 'page-control';
+  var TAB_KEY = '__grasp_tab';
+  var TAB_CHANNEL = '__grasp_tabs';
+  var TAB_PROBE_MS = 150;
+  var EXEC_SCRIPT = 'page-control.js';
 
   var MAX_ITEMS = 20;
   var MAX_TEXT = 120;
@@ -32,6 +41,9 @@
         close: '收起对话',
         toLight: '切换到浅色',
         toDark: '切换到深色',
+        agentOn: 'Agent 可操作此页面',
+        agentBusy: 'Agent 正在操作…',
+        stop: '停止',
       }
     : {
         pick: 'Pick',
@@ -47,6 +59,9 @@
         close: 'Hide chat',
         toLight: 'Switch to light',
         toDark: 'Switch to dark',
+        agentOn: 'Agent can operate this page',
+        agentBusy: 'Agent is operating…',
+        stop: 'Stop',
       };
 
   var enabled = false;
@@ -61,6 +76,10 @@
   var drawerOpen = false;
   var drawerReady = false;
   var outbox = [];
+  // Agent page control, switched on from the drawer.
+  var control = { on: false, busy: 0, exec: null, loading: null, pending: {} };
+  var tabId = '';
+  var tabReady = resolveTab();
 
   // Standalone picks survive full page loads within this tab (multi-page apps).
   function loadItems() {
@@ -229,6 +248,14 @@
     '.drawer.light .dhead span{color:#4f46e5}' +
     '.drawer.light .dhead button{border-color:#e4e4e7;background:#fff;color:#3f3f46}' +
     '.drawer.light iframe{background:#fafafb}' +
+    '.agent{position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:2147483647;' +
+    'display:flex;align-items:center;gap:8px;padding:4px 4px 4px 12px;border-radius:999px;' +
+    'font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e0e7ff;background:#312e81;' +
+    'border:1px solid #4338ca;box-shadow:0 6px 24px rgba(0,0,0,.3)}' +
+    '.agent.busy{background:#4338ca}' +
+    '.agent button{background:#1e1b4b;color:#fff;font-weight:600;border-radius:999px;padding:3px 10px}' +
+    '.agent button:hover{background:#111827}' +
+    'button:disabled{opacity:.5;cursor:not-allowed}' +
     '[hidden]{display:none!important}';
 
   function viewport() {
@@ -446,6 +473,7 @@
     }
     host = document.createElement('grasp-preview-pick');
     host.setAttribute('data-grasp-preview-pick', '');
+    host.setAttribute('data-page-agent-not-interactive', '');
     var shadow = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
     shadow.innerHTML =
       '<style>' + BAR_CSS + '</style>' +
@@ -462,6 +490,8 @@
       '<div class="edge nw" data-dir="nw"></div><div class="edge ne" data-dir="ne"></div>' +
       '<div class="edge sw" data-dir="sw"></div><div class="edge se" data-dir="se"></div>' +
       '</div>' +
+      '<div class="agent" data-role="agent" role="status" hidden><span data-role="agent-text"></span>' +
+      '<button type="button" data-role="agent-stop"></button></div>' +
       '<div class="bar" part="bar" data-role="bar">' +
       '<div class="row">' +
       '<button type="button" class="toggle" data-role="toggle" aria-pressed="false"></button>' +
@@ -481,7 +511,15 @@
       notice: shadow.querySelector('[data-role="notice"]'),
       drawer: shadow.querySelector('[data-role="drawer"]'),
       theme: shadow.querySelector('[data-role="drawer-theme"]'),
+      agent: shadow.querySelector('[data-role="agent"]'),
+      agentText: shadow.querySelector('[data-role="agent-text"]'),
+      agentStop: shadow.querySelector('[data-role="agent-stop"]'),
     };
+    ui.agentStop.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      stopControl();
+    });
     shadow.querySelector('[data-role="drawer-title"]').textContent = T.brand;
     var head = shadow.querySelector('[data-role="drawer-head"]');
     head.addEventListener('pointerdown', onHeadPointerDown);
@@ -530,6 +568,11 @@
     if (!ui) return;
     ui.toggle.textContent = enabled ? T.picking : T.pick;
     ui.toggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    ui.toggle.disabled = control.busy > 0;
+    ui.agent.hidden = !control.on;
+    ui.agent.className = control.busy > 0 ? 'agent busy' : 'agent';
+    ui.agentText.textContent = control.busy > 0 ? T.agentBusy : T.agentOn;
+    ui.agentStop.textContent = T.stop;
     ui.chat.hidden = !drawer;
     ui.chat.textContent = T.chat;
     ui.chat.setAttribute('aria-expanded', drawerOpen ? 'true' : 'false');
@@ -573,6 +616,8 @@
   }
 
   function setEnabled(on) {
+    // Picking would swallow the agent's clicks.
+    if (on && control.busy > 0) return;
     enabled = !!on;
     ensureStyle();
     clearHover();
@@ -778,13 +823,197 @@
     setEnabled(false);
   }
 
+  // ---- agent page control ----
+
+  function randomHex() {
+    var b = new Uint8Array(8);
+    try {
+      crypto.getRandomValues(b);
+    } catch (e) {
+      for (var i = 0; i < b.length; i++) b[i] = Math.floor(Math.random() * 256);
+    }
+    return Array.prototype.map
+      .call(b, function (x) {
+        return (x < 16 ? '0' : '') + x.toString(16);
+      })
+      .join('');
+  }
+
+  // A tab opened from this one starts with a copy of sessionStorage, so the id
+  // is only kept when no other live tab answers for it.
+  function resolveTab() {
+    var id = '';
+    try {
+      id = sessionStorage.getItem(TAB_KEY) || '';
+    } catch (e) {}
+    var fresh = function () {
+      id = randomHex();
+      try {
+        sessionStorage.setItem(TAB_KEY, id);
+      } catch (e) {}
+    };
+    if (typeof BroadcastChannel !== 'function') {
+      if (!id) fresh();
+      tabId = id;
+      return Promise.resolve();
+    }
+    var ch = new BroadcastChannel(TAB_CHANNEL);
+    var me = randomHex();
+    var taken = false;
+    ch.onmessage = function (ev) {
+      var d = ev.data || {};
+      if (d.from === me) return;
+      if (d.kind === 'who' && d.tab && d.tab === (tabId || id)) ch.postMessage({ kind: 'mine', tab: d.tab, to: d.from, from: me });
+      else if (d.kind === 'mine' && d.to === me) taken = true;
+    };
+    if (!id) {
+      fresh();
+      tabId = id;
+      return Promise.resolve();
+    }
+    ch.postMessage({ kind: 'who', tab: id, from: me });
+    return new Promise(function (resolve) {
+      setTimeout(function () {
+        if (taken) fresh();
+        tabId = id;
+        resolve();
+      }, TAB_PROBE_MS);
+    });
+  }
+
+  function postDrawer(msg) {
+    if (!drawer || !drawer.frame.contentWindow) return;
+    try {
+      drawer.frame.contentWindow.postMessage(msg, drawer.origin);
+    } catch (e) {}
+  }
+
+  function execSrc() {
+    if (/preview-pick\.js([?#].*)?$/.test(scriptSrc)) return scriptSrc.replace(/preview-pick\.js([?#].*)?$/, EXEC_SCRIPT);
+    return '/__grasp/' + EXEC_SCRIPT;
+  }
+
+  function makeExec(api) {
+    return api.create({
+      hideOwnUi: function (hidden) {
+        if (host) host.style.display = hidden ? 'none' : '';
+      },
+    });
+  }
+
+  function loadExec() {
+    if (control.exec) return Promise.resolve(control.exec);
+    if (control.loading) return control.loading;
+    control.loading = new Promise(function (resolve, reject) {
+      var api = window.__graspPageControl;
+      if (api && api.version === 1) {
+        resolve(makeExec(api));
+        return;
+      }
+      var s = document.createElement('script');
+      s.src = execSrc();
+      s.async = true;
+      s.setAttribute('data-grasp-page-control', '');
+      s.onload = function () {
+        var a = window.__graspPageControl;
+        if (a && a.version === 1) resolve(makeExec(a));
+        else reject(new Error('页面操作脚本版本不匹配,请用户刷新预览页'));
+      };
+      s.onerror = function () {
+        reject(new Error('无法加载页面操作脚本(可能被页面的内容安全策略 CSP 拦截)'));
+      };
+      (document.head || document.documentElement).appendChild(s);
+    }).then(
+      function (x) {
+        control.exec = x;
+        return x;
+      },
+      function (e) {
+        control.loading = null;
+        throw e;
+      },
+    );
+    return control.loading;
+  }
+
+  function abortPending() {
+    for (var k in control.pending) {
+      var ac = control.pending[k];
+      if (ac && ac.abort) ac.abort();
+    }
+  }
+
+  function setControl(on) {
+    control.on = !!on;
+    if (!control.on) abortPending();
+    // Warm the executor so the first command does not pay for the download.
+    else loadExec().catch(function () {});
+    render();
+  }
+
+  function stopControl() {
+    setControl(false);
+    postDrawer({ type: EMBED_CONTROL, stop: true });
+  }
+
+  function replyCmd(nonce, r) {
+    r = r || {};
+    postDrawer({ type: EMBED_CMD_RESULT, nonce: nonce, ok: !!r.ok, error: r.error, note: r.note, state: r.state });
+  }
+
+  function onCmd(d) {
+    var nonce = typeof d.nonce === 'string' ? d.nonce : '';
+    if (!nonce) return;
+    if (d.action === 'cancel') {
+      var c = control.pending[nonce];
+      if (c && c.abort) c.abort();
+      return;
+    }
+    if (!control.on) {
+      replyCmd(nonce, { ok: false, error: '用户没有开启页面操作' });
+      return;
+    }
+    if (enabled) setEnabled(false);
+    var ac = typeof AbortController === 'function' ? new AbortController() : true;
+    control.pending[nonce] = ac;
+    control.busy++;
+    render();
+    var args = d.args && typeof d.args === 'object' ? d.args : {};
+    loadExec()
+      .then(function (ex) {
+        return ex.run({ action: String(d.action || ''), args: args }, ac === true ? undefined : ac.signal);
+      })
+      .then(
+        function (r) {
+          replyCmd(nonce, r);
+        },
+        function (e) {
+          replyCmd(nonce, { ok: false, error: String((e && e.message) || e) });
+        },
+      )
+      .then(function () {
+        delete control.pending[nonce];
+        control.busy--;
+        render();
+      });
+  }
+
   window.addEventListener('message', function (ev) {
     if (!drawer || ev.source !== drawer.frame.contentWindow || ev.origin !== drawer.origin) return;
     var data = ev.data;
-    if (!data || typeof data !== 'object' || data.type !== EMBED_READY) return;
-    drawerReady = true;
-    postTheme();
-    flushOutbox();
+    if (!data || typeof data !== 'object') return;
+    if (data.type === EMBED_READY) {
+      drawerReady = true;
+      postTheme();
+      flushOutbox();
+      tabReady.then(function () {
+        postDrawer({ type: EMBED_CONTROL, caps: [PAGE_CONTROL_CAP], tab: tabId });
+      });
+    } else if (data.type === EMBED_CONTROL && typeof data.on === 'boolean') {
+      setControl(data.on);
+    } else if (data.type === EMBED_CMD) {
+      onCmd(data);
+    }
   });
 
   window.addEventListener('resize', onViewportResize);

@@ -39,7 +39,7 @@ var (
 	ErrNoOwner   = errors.New("这一轮不是由用户在对话里发起的,不能操作页面")
 	ErrOffline   = errors.New("用户没有打开允许 Agent 操作的直连预览页(或已关闭开关);请在回复里请用户在预览页抽屉打开「允许 Agent 操作页面」")
 	ErrPaused    = errors.New("用户已切到其他标签页,预览页暂停操作;请在回复里请用户切回预览页后再继续")
-	ErrTimeout   = errors.New("页面没有在规定时间内返回结果,操作结果未知;请先调用 page_state 确认页面现状")
+	ErrTimeout   = errors.New("页面没有在规定时间内返回结果,操作结果未知;页面可能弹出了 alert/confirm 等对话框,需要用户手动关闭。请先调用 page_state 确认页面现状,仍无响应时请用户查看预览页")
 	ErrStopped   = errors.New("用户停止了页面操作")
 	ErrCancelled = errors.New("本轮已取消,页面操作已停止")
 	ErrLost      = errors.New("页面在操作过程中断开且没有恢复,操作结果无法确认")
