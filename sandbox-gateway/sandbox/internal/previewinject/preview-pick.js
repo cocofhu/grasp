@@ -72,6 +72,9 @@
   var drawerReady = false;
   // The drawer reported its session invalid, expired or revoked.
   var sessionDead = false;
+  // Custom no-ticket bubble: open only while the gate is hovered or focused.
+  var tipHover = false;
+  var tipFocus = false;
   var outbox = [];
   // Agent page control, switched on from the drawer.
   var control = { on: false, busy: 0, exec: null, loading: null, pending: {} };
@@ -247,7 +250,20 @@
     '.agent button{background:#1e1b4b;color:#fff;font-weight:600;border-radius:999px;padding:3px 10px}' +
     '.agent button:hover{background:#111827}' +
     'button:disabled{opacity:.5;cursor:not-allowed;pointer-events:none}' +
-    '[data-role="gate"][title]:not([title=""]){cursor:not-allowed}' +
+    '[data-role="gate"]{position:relative}' +
+    '[data-role="gate"].locked{cursor:not-allowed}' +
+    '[data-role="gate"].locked:focus-visible{outline:2px solid #3b82f6;outline-offset:2px}' +
+    '.tip{position:absolute;right:0;bottom:calc(100% + 10px);z-index:2;box-sizing:border-box;' +
+    'width:max-content;max-width:min(220px,calc(100vw - 32px));padding:8px 10px;border-radius:12px;' +
+    'background:#111827;color:#e5e7eb;border:1px solid #374151;' +
+    'box-shadow:0 6px 24px rgba(0,0,0,.35);white-space:normal;overflow-wrap:break-word;' +
+    'pointer-events:none;text-align:start}' +
+    '.tip::before,.tip::after{content:"";position:absolute;top:100%;border-style:solid;border-color:transparent}' +
+    '.tip::before{right:21px;border-width:7px;border-top-color:#374151}' +
+    '.tip::after{right:22px;border-width:6px;border-top-color:#111827}' +
+    '.bar.light .tip{background:#fff;color:#18181b;border-color:#e4e4e7;box-shadow:0 6px 24px rgba(16,24,40,.12)}' +
+    '.bar.light .tip::before{border-top-color:#e4e4e7}' +
+    '.bar.light .tip::after{border-top-color:#fff}' +
     '[hidden]{display:none!important}';
 
   function viewport() {
@@ -487,6 +503,7 @@
       '<div class="bar" part="bar" data-role="bar">' +
       '<div class="row">' +
       '<span class="row" data-role="gate">' +
+      '<span class="tip" data-role="ticket-tip" role="tooltip" id="grasp-ticket-tip" hidden></span>' +
       '<button type="button" class="toggle" data-role="toggle" aria-pressed="false"></button>' +
       '<button type="button" class="chat" data-role="chat" aria-expanded="false"></button>' +
       '</span>' +
@@ -497,6 +514,7 @@
       shadow: shadow,
       bar: shadow.querySelector('[data-role="bar"]'),
       gate: shadow.querySelector('[data-role="gate"]'),
+      tip: shadow.querySelector('[data-role="ticket-tip"]'),
       toggle: shadow.querySelector('[data-role="toggle"]'),
       chat: shadow.querySelector('[data-role="chat"]'),
       notice: shadow.querySelector('[data-role="notice"]'),
@@ -535,6 +553,23 @@
       ev.stopPropagation();
       setDrawerTheme(drawerTheme() === 'light' ? 'dark' : 'light');
     });
+    ui.gate.addEventListener('mouseenter', function () {
+      tipHover = true;
+      syncTicketTip();
+    });
+    ui.gate.addEventListener('mouseleave', function () {
+      tipHover = false;
+      syncTicketTip();
+    });
+    ui.gate.addEventListener('focusin', function () {
+      tipFocus = true;
+      syncTicketTip();
+    });
+    ui.gate.addEventListener('focusout', function (ev) {
+      if (ev.relatedTarget && ui.gate.contains(ev.relatedTarget)) return;
+      tipFocus = false;
+      syncTicketTip();
+    });
     closeBtn.addEventListener('click', function (ev) {
       ev.preventDefault();
       ev.stopPropagation();
@@ -546,12 +581,34 @@
     render();
   }
 
+  function syncTicketTip() {
+    if (!ui) return;
+    var ok = usable();
+    ui.gate.removeAttribute('title');
+    if (ok) {
+      ui.gate.className = 'row';
+      ui.gate.removeAttribute('tabindex');
+      ui.gate.removeAttribute('aria-describedby');
+      ui.tip.textContent = '';
+      ui.tip.hidden = true;
+      ui.tip.className = 'tip';
+      return;
+    }
+    ui.gate.className = 'row locked';
+    ui.gate.setAttribute('tabindex', '0');
+    ui.gate.setAttribute('aria-describedby', 'grasp-ticket-tip');
+    ui.tip.textContent = T.needTicket;
+    var show = tipHover || tipFocus;
+    ui.tip.hidden = !show;
+    ui.tip.className = show ? 'tip on' : 'tip';
+  }
+
   function render() {
     if (!ui) return;
     ui.toggle.textContent = enabled ? T.picking : T.pick;
     ui.toggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
     var ok = usable();
-    ui.gate.title = ok ? '' : T.needTicket;
+    syncTicketTip();
     ui.toggle.disabled = !ok || control.busy > 0;
     ui.agent.hidden = !control.on;
     ui.agent.className = control.busy > 0 ? 'agent busy' : 'agent';

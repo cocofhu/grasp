@@ -133,13 +133,28 @@ describe('preview-pick.js without a ticket', () => {
     const p = openPage(body)
     await settle()
     const pick = p.shadow.querySelector('[data-role="toggle"]') as HTMLButtonElement
+    const gate = p.shadow.querySelector('[data-role="gate"]') as HTMLElement
+    const tip = p.shadow.querySelector('[data-role="ticket-tip"]') as HTMLElement
+    const hint = 'Reopen from the preview page in Grasp to get a new ticket.'
     expect(pick.hidden).toBe(false)
     expect(pick.disabled).toBe(true)
     expect(p.chatButton().hidden).toBe(false)
     expect(p.chatButton().disabled).toBe(true)
-    expect((p.shadow.querySelector('[data-role="gate"]') as HTMLElement).title).toBe(
-      'Reopen from the preview page in Grasp to get a new ticket.',
-    )
+    expect(gate.title).toBe('')
+    expect(gate.getAttribute('aria-describedby')).toBe('grasp-ticket-tip')
+    expect(tip.getAttribute('role')).toBe('tooltip')
+    expect(tip.textContent).toBe(hint)
+    expect(tip.hidden).toBe(true)
+    gate.dispatchEvent(new p.win.MouseEvent('mouseenter', { bubbles: true }))
+    expect(tip.hidden).toBe(false)
+    expect(tip.textContent).toBe(hint)
+    expect(tip.className).toBe('tip on')
+    gate.dispatchEvent(new p.win.MouseEvent('mouseleave', { bubbles: true }))
+    expect(tip.hidden).toBe(true)
+    gate.dispatchEvent(new p.win.FocusEvent('focusin', { bubbles: true }))
+    expect(tip.hidden).toBe(false)
+    gate.dispatchEvent(new p.win.FocusEvent('focusout', { bubbles: true }))
+    expect(tip.hidden).toBe(true)
     p.toggle()
     p.click('h2')
     expect(pick.getAttribute('aria-pressed')).toBe('false')
@@ -151,10 +166,17 @@ describe('preview-pick.js without a ticket', () => {
     await settle()
     const pick = p.shadow.querySelector('[data-role="toggle"]') as HTMLButtonElement
     const gate = p.shadow.querySelector('[data-role="gate"]') as HTMLElement
+    const tip = p.shadow.querySelector('[data-role="ticket-tip"]') as HTMLElement
     p.chatButton().click()
     p.drawerReady()
     expect(pick.disabled).toBe(false)
     expect(gate.title).toBe('')
+    expect(tip.hidden).toBe(true)
+    expect(tip.textContent).toBe('')
+    gate.dispatchEvent(new p.win.MouseEvent('mouseenter', { bubbles: true }))
+    expect(tip.hidden).toBe(true)
+    expect(tip.textContent).toBe('')
+    gate.dispatchEvent(new p.win.MouseEvent('mouseleave', { bubbles: true }))
     p.toggle()
     expect(pick.getAttribute('aria-pressed')).toBe('true')
 
@@ -170,7 +192,14 @@ describe('preview-pick.js without a ticket', () => {
     expect(pick.getAttribute('aria-pressed')).toBe('false')
     expect(p.chatButton().disabled).toBe(true)
     expect(p.drawerOpen()).toBe(false)
-    expect(gate.title).toMatch(/new ticket/)
+    expect(gate.title).toBe('')
+    expect(tip.hidden).toBe(true)
+    expect(tip.textContent).toMatch(/new ticket/)
+    gate.dispatchEvent(new p.win.MouseEvent('mouseenter', { bubbles: true }))
+    expect(tip.hidden).toBe(false)
+    expect(tip.textContent).toBe('Reopen from the preview page in Grasp to get a new ticket.')
+    gate.dispatchEvent(new p.win.MouseEvent('mouseleave', { bubbles: true }))
+    expect(tip.hidden).toBe(true)
   })
 })
 
