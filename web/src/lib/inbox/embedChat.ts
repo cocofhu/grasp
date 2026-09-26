@@ -72,8 +72,8 @@ function storageKey(runId: string, nodeId: string): string {
 
 export function loadEmbedSession(runId: string, nodeId: string, now = Date.now()): EmbedSession | null {
   try {
-    // localStorage, not sessionStorage: a new tab opened at the bare preview
-    // address must still redeem into the same drawer session.
+    // localStorage, not sessionStorage: a new tab at the same preview address
+    // reuses the drawer session instead of needing a fresh ticket.
     const raw = localStorage.getItem(storageKey(runId, nodeId))
     if (!raw) return null
     const s = JSON.parse(raw) as Partial<EmbedSession>

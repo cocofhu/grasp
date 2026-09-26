@@ -17,7 +17,6 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 const (
@@ -134,54 +133,7 @@ func (s *Store) IssueTicket(c Claims) (string, time.Time, error) {
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	s.remember(c)
 	return ticket, exp, nil
-}
-
-// remember keeps the last successful opener so a bare preview URL can mint
-// another ticket for the same origin. Failure here does not undo the ticket.
-func (s *Store) remember(c Claims) {
-	if s == nil || s.db == nil {
-		return
-	}
-	row := models.EmbedAnchor{
-		Kind:           c.Kind,
-		RunID:          strings.TrimSpace(c.RunID),
-		NodeID:         strings.TrimSpace(c.NodeID),
-		Username:       strings.TrimSpace(c.Username),
-		ShareTokenHash: strings.TrimSpace(c.ShareTokenHash),
-		GraspOrigin:    strings.TrimRight(strings.TrimSpace(c.GraspOrigin), "/"),
-		UpdatedAt:      s.now(),
-	}
-	_ = s.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "run_id"}, {Name: "node_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"kind", "username", "share_token_hash", "grasp_origin", "updated_at"}),
-	}).Create(&row).Error
-}
-
-// BootTicket mints a fresh one-shot ticket for the origin and user that last
-// opened this preview from Grasp. ErrTicketSpent when nothing was recorded.
-func (s *Store) BootTicket(runID, nodeID string) (string, time.Time, string, error) {
-	if s == nil || s.db == nil {
-		return "", time.Time{}, "", errors.New("embed store unavailable")
-	}
-	var row models.EmbedAnchor
-	err := s.db.Where("run_id = ? AND node_id = ?", strings.TrimSpace(runID), strings.TrimSpace(nodeID)).First(&row).Error
-	if err != nil {
-		return "", time.Time{}, "", ErrTicketSpent
-	}
-	ticket, exp, err := s.IssueTicket(Claims{
-		Kind:           row.Kind,
-		RunID:          row.RunID,
-		NodeID:         row.NodeID,
-		Username:       row.Username,
-		ShareTokenHash: row.ShareTokenHash,
-		GraspOrigin:    row.GraspOrigin,
-	})
-	if err != nil {
-		return "", time.Time{}, "", err
-	}
-	return ticket, exp, row.GraspOrigin, nil
 }
 
 func ticketClaims(row models.EmbedTicket) *Claims {
@@ -335,7 +287,6 @@ func (s *Store) InvalidateRun(runID string) {
 	}
 	_ = s.db.Where("run_id = ?", runID).Delete(&models.EmbedTicket{}).Error
 	_ = s.db.Where("run_id = ?", runID).Delete(&models.EmbedSession{}).Error
-	_ = s.db.Where("run_id = ?", runID).Delete(&models.EmbedAnchor{}).Error
 }
 
 // InvalidateShare drops sessions derived from a share link token hash.
@@ -345,5 +296,4 @@ func (s *Store) InvalidateShare(tokenHashes ...string) {
 	}
 	_ = s.db.Where("share_token_hash IN ?", tokenHashes).Delete(&models.EmbedTicket{}).Error
 	_ = s.db.Where("share_token_hash IN ?", tokenHashes).Delete(&models.EmbedSession{}).Error
-	_ = s.db.Where("share_token_hash IN ?", tokenHashes).Delete(&models.EmbedAnchor{}).Error
 }

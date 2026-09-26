@@ -2984,7 +2984,7 @@
           "resolved": "Resolved"
         }
       },
-      "directLauncherHint": "Click the address or Open in new tab to include the agent chat. After that, opening this address directly (a new tab, or again later) reconnects the same agent.",
+      "directLauncherHint": "Click the address or Open in new tab to include the agent chat. Opening the address directly leaves Pick and Chat disabled until you reopen it from here.",
       "directChatUnavailable": "The preview opened without the chat drawer this time. Continue the conversation here.",
       "directPopupBlocked": "The browser blocked the new tab. Click here to open the preview."
     },

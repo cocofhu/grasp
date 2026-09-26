@@ -264,7 +264,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 	r.GET("/mcp/runs/:runId", h.MCPRPC)
 	r.DELETE("/mcp/runs/:runId", h.MCPRPC)
 	r.GET("/mcp/runs/:runId/embed-origin", h.MCPEmbedOrigin)
-	r.POST("/mcp/runs/:runId/embed-boot", h.MCPEmbedBoot)
 
 	// Preview-page chat drawer (outside /api: no cf_session, which a cross-site
 	// iframe never carries). A ticket is redeemed for a run/node-bound bearer

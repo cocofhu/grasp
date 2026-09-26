@@ -280,11 +280,11 @@ iframe 内嵌它。跨源页面无法由 Grasp 注入脚本,参考实现在**沙
   结果,不信 URL。
 - 抽屉是 Shadow DOM 里右侧的 iframe:`<origin>/embed/runs/<runId>/nodes/<nodeId>/chat#ticket=<ticket>&theme=<theme>`。
   该页用票据换对话凭证后存在自己的 `localStorage`;`{origin, run, node, open, theme}` 存在应用页的
-  `localStorage`(不含票据)。整页跳转、新标签和关掉再打开同一地址都会重建抽屉。
-- **直接打开预览地址**:地址栏没有票据时,脚本 `POST /__grasp/embed-boot`。注入层用 run token
-  `POST <GRASP_ARTIFACT_URL>/embed-boot?nodeId=<GRASP_NODE_ID>`,Grasp 按「上次从 Grasp 打开这个预览」
-  记下的 origin 和用户再签发一张一次性票据。从未从 Grasp 打开过、或 origin 不合法时 404,脚本退回无抽屉模式
-  (右下角「对话」按钮置灰)。这样手输或收藏 `http://IP:port/` 仍能连上 Agent;票据仍是一次性的,预览页本身换不到长期凭证。
+  `localStorage`(不含票据)。同一浏览器里整页跳转、新标签和关掉再打开同一地址都会用已存凭证重建抽屉。
+- **直接打开预览地址**:地址栏没有票据、也没有同一浏览器里仍有效的抽屉凭证时,不建抽屉,也不会自己去要票据。
+  右下角「取点」「对话」照常显示但禁用,悬停提示从 Grasp 预览页重新打开。票据只由登录后的 Grasp 在点击地址或
+  「新标签打开」时签发。抽屉凭证失效(过期、撤销)时向页面发 `{type:'grasp-embed:session', ok:false}`,
+  页面同样置灰两个按钮并收起抽屉。
 - 抽屉就绪后发 `grasp-embed:ready`(仅认 `source` 为抽屉 iframe 且 `origin` 相符);之后每次
   点选以 `{type:'grasp-embed:pick', payload:{selector, tagName, text(≤120), outerHTML(≤1024), url}}`
   发往抽屉 origin,页内不留列表。就绪前的点选和抽屉出现前暂存的点选排队补发。

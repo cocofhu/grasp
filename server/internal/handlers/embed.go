@@ -285,35 +285,3 @@ func (h *Handlers) MCPEmbedOrigin(c *gin.Context) {
 		"nodeId": claims.NodeID,
 	})
 }
-
-// MCPEmbedBoot mints a drawer ticket for the origin that last opened this
-// preview from Grasp. The sandbox calls it when someone opens the bare
-// preview address, which has no ticket in the URL.
-// POST /mcp/runs/:runId/embed-boot?nodeId=
-func (h *Handlers) MCPEmbedBoot(c *gin.Context) {
-	runID := c.Param("runId")
-	if h.MCP == nil || !h.MCP.AuthorizeRun(runID, bearer(c.GetHeader("Authorization"))) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-		return
-	}
-	if h.Embed == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "embed unavailable"})
-		return
-	}
-	nodeID := strings.TrimSpace(c.Query("nodeId"))
-	if code, msg := h.embedTargetReady(runID, nodeID); code != 0 {
-		c.JSON(code, gin.H{"error": msg})
-		return
-	}
-	ticket, _, origin, err := h.Embed.BootTicket(runID, nodeID)
-	if err != nil || strings.TrimSpace(ticket) == "" || strings.TrimSpace(origin) == "" {
-		c.JSON(http.StatusNotFound, gin.H{"error": "no drawer"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"origin": origin,
-		"runId":  runID,
-		"nodeId": nodeID,
-		"ticket": ticket,
-	})
-}

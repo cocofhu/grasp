@@ -11,7 +11,6 @@
   var EMBED_THEME = 'grasp-embed:theme';
   var EMBED_HASH = '__grasp_embed';
   var EMBED_ORIGIN_PATH = '/__grasp/embed-origin';
-  var EMBED_BOOT_PATH = '/__grasp/embed-boot';
   var EMBED_STORE_KEY = '__grasp_embed';
   var EMBED_CONTROL = 'grasp-embed:control';
   var EMBED_CMD = 'grasp-embed:cmd';
@@ -727,39 +726,10 @@
     if (saved && !drawer) startDrawer(saved, '');
   }
 
-  // A bare preview address has no ticket. Grasp mints one for the origin that
-  // last opened this preview, so the drawer (and agent page control) still connect.
-  function acceptBoot(v) {
-    if (!v || typeof v.ticket !== 'string' || !v.ticket) return false;
-    if (typeof v.runId !== 'string' || !v.runId || typeof v.nodeId !== 'string' || !v.nodeId) return false;
-    if (!/^https?:\/\/[^/?#]+$/.test(v.origin || '')) return false;
-    var saved = loadEmbed();
-    var theme = saved && saved.theme === 'light' ? 'light' : 'dark';
-    startDrawer({ origin: v.origin, run: v.runId, node: v.nodeId, open: true, theme: theme }, v.ticket);
-    setDrawerOpen(true);
-    return true;
-  }
-
-  function resumeOrBoot() {
-    if (drawer || typeof fetch !== 'function') {
-      resumeDrawer();
-      return;
-    }
-    fetch(EMBED_BOOT_PATH, { method: 'POST', credentials: 'omit', cache: 'no-store' })
-      .then(function (res) {
-        return res.ok ? res.json() : null;
-      })
-      .then(function (v) {
-        if (drawer || acceptBoot(v)) return;
-        resumeDrawer();
-      })
-      .catch(resumeDrawer);
-  }
-
   function bootDrawer() {
     var frag = readEmbedFragment();
     if (!frag || typeof fetch !== 'function') {
-      resumeOrBoot();
+      resumeDrawer();
       return;
     }
     var q = '?ticket=' + encodeURIComponent(frag.ticket) + '&node=' + encodeURIComponent(frag.node);
@@ -769,13 +739,13 @@
       })
       .then(function (v) {
         if (!v || v.runId !== frag.run || v.nodeId !== frag.node || !/^https?:\/\/[^/?#]+$/.test(v.origin || '')) {
-          resumeOrBoot();
+          resumeDrawer();
           return;
         }
         startDrawer({ origin: v.origin, run: frag.run, node: frag.node, open: true, theme: frag.theme }, frag.ticket);
         setDrawerOpen(true);
       })
-      .catch(resumeOrBoot);
+      .catch(resumeDrawer);
   }
 
   function onMove(ev) {

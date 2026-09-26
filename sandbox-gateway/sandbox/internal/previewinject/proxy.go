@@ -73,10 +73,6 @@ func NewHandlerWithEmbed(upstream *url.URL, scriptURL string, embed EmbedLookup)
 			embed.serve(w, r)
 			return
 		}
-		if r.URL.Path == EmbedBootPath {
-			embed.serveBoot(w, r)
-			return
-		}
 		proxy.ServeHTTP(w, r)
 	})
 }

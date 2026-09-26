@@ -25,20 +25,6 @@ type EmbedTicket struct {
 	CreatedAt      time.Time  `json:"-"`
 }
 
-// EmbedAnchor remembers the last browser that opened this preview from Grasp,
-// so a later visit to the bare preview address can mint a fresh drawer ticket
-// for that same origin and user. It holds no secret.
-type EmbedAnchor struct {
-	ID             uint      `gorm:"primaryKey" json:"-"`
-	RunID          string    `gorm:"uniqueIndex:idx_embed_anchor,priority:1;size:64;not null" json:"-"`
-	NodeID         string    `gorm:"uniqueIndex:idx_embed_anchor,priority:2;size:128;not null" json:"-"`
-	Kind           string    `gorm:"size:16;not null" json:"-"`
-	Username       string    `gorm:"size:128" json:"-"`
-	ShareTokenHash string    `gorm:"index;size:64" json:"-"`
-	GraspOrigin    string    `gorm:"size:512;not null" json:"-"`
-	UpdatedAt      time.Time `json:"-"`
-}
-
 // EmbedSession is the bearer credential the chat drawer holds after redeeming
 // an EmbedTicket. Only its hash is stored.
 type EmbedSession struct {

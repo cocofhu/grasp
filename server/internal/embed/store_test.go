@@ -21,7 +21,7 @@ func newTestStore(t *testing.T) *Store {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.EmbedTicket{}, &models.EmbedSession{}, &models.EmbedAnchor{}); err != nil {
+	if err := db.AutoMigrate(&models.EmbedTicket{}, &models.EmbedSession{}); err != nil {
 		t.Fatal(err)
 	}
 	return NewStore(db)
@@ -154,28 +154,6 @@ func TestShareSessionInvalidateByHash(t *testing.T) {
 	s.InvalidateShare("h1")
 	if _, ok := s.LookupSession(token); ok {
 		t.Fatal("share session survived link invalidation")
-	}
-}
-
-func TestBootTicketRepeatsTheLastOpener(t *testing.T) {
-	s := newTestStore(t)
-	if _, _, _, err := s.BootTicket("run-1", "grasp1"); !errors.Is(err, ErrTicketSpent) {
-		t.Fatalf("boot before any open: %v", err)
-	}
-	if _, _, err := s.IssueTicket(sessionClaims()); err != nil {
-		t.Fatal(err)
-	}
-	ticket, _, origin, err := s.BootTicket("run-1", "grasp1")
-	if err != nil || origin != "http://grasp.example" || !ValidTicketShape(ticket) {
-		t.Fatalf("boot ticket=%q origin=%q err=%v", ticket, origin, err)
-	}
-	peek, ok := s.PeekTicket(ticket)
-	if !ok || peek.Username != "admin" || peek.GraspOrigin != origin {
-		t.Fatalf("peek ok=%v %+v", ok, peek)
-	}
-	s.InvalidateRun("run-1")
-	if _, _, _, err := s.BootTicket("run-1", "grasp1"); !errors.Is(err, ErrTicketSpent) {
-		t.Fatalf("anchor survived run invalidation: %v", err)
 	}
 }
 

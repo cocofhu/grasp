@@ -36,7 +36,6 @@ func main() {
 	h := previewinject.NewHandlerWithEmbed(upstream, opt.ScriptURL, previewinject.EmbedLookup{
 		RunURL: os.Getenv("GRASP_ARTIFACT_URL"),
 		Token:  os.Getenv("GRASP_ARTIFACT_TOKEN"),
-		NodeID: os.Getenv("GRASP_NODE_ID"),
 	})
 	if err := http.ListenAndServe(opt.Listen, h); err != nil {
 		fmt.Fprintf(os.Stderr, "preview-inject: %v\n", err)

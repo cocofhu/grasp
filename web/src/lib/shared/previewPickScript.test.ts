@@ -182,21 +182,18 @@ describe('preview-pick.js chat drawer', () => {
   it('has no chat without a ticket or a saved drawer', async () => {
     const p = openPage(body)
     await settle()
-    expect(p.fetched).toEqual(['/__grasp/embed-boot'])
+    expect(p.fetched).toEqual([])
     expect(p.chatButton().hidden).toBe(false)
     expect(p.chatButton().disabled).toBe(true)
     expect(p.frame()).toBeNull()
   })
 
-  it('opens the drawer from the bare preview address once Grasp has connected', async () => {
-    const p = openPage(body, {
-      embedReply: { origin: GRASP, runId: 'run-1', nodeId: 'ap1', ticket: 'tk-boot' },
-    })
+  it('never asks for a ticket by itself on the bare preview address', async () => {
+    const p = openPage(body, { embedReply: { ...reply, ticket: 'tk-x' } })
     await settle()
-    expect(p.fetched).toEqual(['/__grasp/embed-boot'])
-    expect(p.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#ticket=tk-boot&theme=dark`)
-    expect(p.chatButton().disabled).toBe(false)
-    expect(p.drawerOpen()).toBe(true)
+    expect(p.fetched).toEqual([])
+    expect(p.frame()).toBeNull()
+    expect(p.chatButton().disabled).toBe(true)
   })
 
   it('checks the ticket with Grasp, strips it from the URL and opens the drawer', async () => {
@@ -224,7 +221,7 @@ describe('preview-pick.js chat drawer', () => {
     const saved = JSON.stringify({ origin: GRASP, run: 'run-1', node: 'ap1', open: false })
     const p = openPage(body, { savedEmbed: saved })
     await settle()
-    expect(p.fetched).toEqual(['/__grasp/embed-boot'])
+    expect(p.fetched).toEqual([])
     expect(p.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#theme=dark`)
     expect(p.drawerOpen()).toBe(false)
     p.chatButton().click()
