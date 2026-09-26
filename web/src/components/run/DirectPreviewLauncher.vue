@@ -42,10 +42,15 @@ async function open() {
 
 <template>
   <div class="flex h-full min-h-0 flex-col items-center justify-center gap-3 px-6 text-center" data-testid="app-preview-direct">
-    <code
-      class="max-w-full truncate rounded border border-line bg-base px-2 py-1 font-mono text-[12px] text-txt2"
+    <button
+      type="button"
+      class="max-w-full truncate rounded border border-line bg-base px-2 py-1 font-mono text-[12px] text-txt2 hover:border-accent hover:text-txt"
       data-testid="direct-preview-address"
-    >{{ directUrl }}</code>
+      :disabled="opening"
+      @click="open"
+    >
+      {{ directUrl }}
+    </button>
     <button
       type="button"
       class="inline-flex min-h-9 items-center rounded-md bg-accent px-3.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-60"

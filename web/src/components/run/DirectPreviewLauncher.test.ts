@@ -22,6 +22,15 @@ function fakeTab() {
 afterEach(() => vi.restoreAllMocks())
 
 describe('DirectPreviewLauncher', () => {
+  it('opens the shown address with the drawer ticket', async () => {
+    const tab = fakeTab()
+    vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window)
+    const w = mountLauncher(() => Promise.resolve({ ticket: 'tk', runId: 'run-1', nodeId: 'ap1', expiresAt: '' }))
+    await w.get('[data-testid="direct-preview-address"]').trigger('click')
+    await flushPromises()
+    expect(tab.location.href).toBe(`${DIRECT}#__grasp_embed&run=run-1&node=ap1&ticket=tk&theme=dark`)
+  })
+
   it('opens the tab inside the click, then sends it to the preview with the ticket', async () => {
     const tab = fakeTab()
     const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window)

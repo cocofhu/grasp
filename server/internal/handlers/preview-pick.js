@@ -7,6 +7,7 @@
   // Drawer page protocol (web/src/lib/inbox/embedChat.ts).
   var EMBED_PICK = 'grasp-embed:pick';
   var EMBED_READY = 'grasp-embed:ready';
+  var EMBED_SESSION = 'grasp-embed:session';
   var EMBED_THEME = 'grasp-embed:theme';
   var EMBED_HASH = '__grasp_embed';
   var EMBED_ORIGIN_PATH = '/__grasp/embed-origin';
@@ -30,13 +31,10 @@
     ? {
         pick: '取点',
         picking: '取点中 · Esc 退出',
-        picked: '已选',
-        remove: '移除',
-        full: '最多 ' + MAX_ITEMS + ' 个，请先移除一些',
         added: '已添加到 Grasp 对话框',
-        empty: '点「取点」后点击页面元素',
         chat: '对话',
         chatTitle: 'Grasp · Agent 对话',
+        needTicket: '需要从预览页跳转重新获得票据',
         brand: 'Grasp',
         close: '收起对话',
         toLight: '切换到浅色',
@@ -48,13 +46,10 @@
     : {
         pick: 'Pick',
         picking: 'Picking · Esc to stop',
-        picked: 'Picked',
-        remove: 'Remove',
-        full: 'Up to ' + MAX_ITEMS + ' picks. Remove some first.',
         added: 'Added to the Grasp chat',
-        empty: 'Turn on Pick, then click an element',
         chat: 'Chat',
         chatTitle: 'Grasp · Agent chat',
+        needTicket: 'Reopen from the preview page in Grasp to get a new ticket.',
         brand: 'Grasp',
         close: 'Hide chat',
         toLight: 'Switch to light',
@@ -75,13 +70,15 @@
   var drawer = null;
   var drawerOpen = false;
   var drawerReady = false;
+  // The drawer reported its session invalid, expired or revoked.
+  var sessionDead = false;
   var outbox = [];
   // Agent page control, switched on from the drawer.
   var control = { on: false, busy: 0, exec: null, loading: null, pending: {} };
   var tabId = '';
   var tabReady = resolveTab();
 
-  // Standalone picks survive full page loads within this tab (multi-page apps).
+  // Picks staged by older script versions; handed to the drawer once it exists.
   function loadItems() {
     try {
       var v = JSON.parse(sessionStorage.getItem(STORE_KEY) || '[]');
@@ -211,12 +208,6 @@
     '.toggle[aria-pressed="true"]{background:#064e3b;color:#6ee7b7}' +
     '.chat{background:#312e81;color:#e0e7ff;font-weight:600}' +
     '.chat[aria-expanded="true"]{background:#4338ca}' +
-    '.count{color:#9ca3af}' +
-    '.list{list-style:none;margin:6px 0 0;padding:0;max-height:220px;overflow:auto}' +
-    '.list li{display:flex;align-items:center;gap:6px;padding:3px 2px;border-top:1px solid #1f2937}' +
-    '.list code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' +
-    'font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#6ee7b7}' +
-    '.list button{color:#9ca3af;padding:2px 6px}' +
     '.notice{margin-top:4px;color:#fbbf24}' +
     '.notice.ok{color:#6ee7b7}' +
     '.drawer{position:fixed;z-index:2147483646;display:flex;flex-direction:column;overflow:hidden;' +
@@ -255,7 +246,8 @@
     '.agent.busy{background:#4338ca}' +
     '.agent button{background:#1e1b4b;color:#fff;font-weight:600;border-radius:999px;padding:3px 10px}' +
     '.agent button:hover{background:#111827}' +
-    'button:disabled{opacity:.5;cursor:not-allowed}' +
+    'button:disabled{opacity:.5;cursor:not-allowed;pointer-events:none}' +
+    '[data-role="gate"][title]:not([title=""]){cursor:not-allowed}' +
     '[hidden]{display:none!important}';
 
   function viewport() {
@@ -494,20 +486,19 @@
       '<button type="button" data-role="agent-stop"></button></div>' +
       '<div class="bar" part="bar" data-role="bar">' +
       '<div class="row">' +
+      '<span class="row" data-role="gate">' +
       '<button type="button" class="toggle" data-role="toggle" aria-pressed="false"></button>' +
-      '<button type="button" class="chat" data-role="chat" aria-expanded="false" hidden></button>' +
-      '<span class="count" data-role="count"></span>' +
+      '<button type="button" class="chat" data-role="chat" aria-expanded="false"></button>' +
+      '</span>' +
       '</div>' +
-      '<ul class="list" data-role="list"></ul>' +
       '<div class="notice" data-role="notice" role="status" hidden></div>' +
       '</div>';
     ui = {
       shadow: shadow,
       bar: shadow.querySelector('[data-role="bar"]'),
+      gate: shadow.querySelector('[data-role="gate"]'),
       toggle: shadow.querySelector('[data-role="toggle"]'),
       chat: shadow.querySelector('[data-role="chat"]'),
-      count: shadow.querySelector('[data-role="count"]'),
-      list: shadow.querySelector('[data-role="list"]'),
       notice: shadow.querySelector('[data-role="notice"]'),
       drawer: shadow.querySelector('[data-role="drawer"]'),
       theme: shadow.querySelector('[data-role="drawer-theme"]'),
@@ -549,15 +540,6 @@
       ev.stopPropagation();
       setDrawerOpen(false);
     });
-    ui.list.addEventListener('click', function (ev) {
-      var btn = ev.target && ev.target.closest ? ev.target.closest('button[data-index]') : null;
-      if (!btn) return;
-      ev.preventDefault();
-      ev.stopPropagation();
-      items.splice(Number(btn.getAttribute('data-index')), 1);
-      saveItems();
-      render();
-    });
     root.appendChild(host);
     if (!drawer) box = defaultBox();
     if (drawer) attachDrawer();
@@ -568,13 +550,16 @@
     if (!ui) return;
     ui.toggle.textContent = enabled ? T.picking : T.pick;
     ui.toggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
-    ui.toggle.disabled = control.busy > 0;
+    var ok = usable();
+    ui.gate.title = ok ? '' : T.needTicket;
+    ui.toggle.disabled = !ok || control.busy > 0;
     ui.agent.hidden = !control.on;
     ui.agent.className = control.busy > 0 ? 'agent busy' : 'agent';
     ui.agentText.textContent = control.busy > 0 ? T.agentBusy : T.agentOn;
     ui.agentStop.textContent = T.stop;
-    ui.chat.hidden = !drawer;
+    ui.chat.disabled = !ok;
     ui.chat.textContent = T.chat;
+    ui.chat.title = ok ? T.chatTitle : '';
     ui.chat.setAttribute('aria-expanded', drawerOpen ? 'true' : 'false');
     ui.drawer.hidden = !drawerOpen;
     var light = drawerTheme() === 'light';
@@ -584,24 +569,6 @@
     ui.theme.textContent = light ? '☾' : '☀';
     ui.theme.setAttribute('aria-label', light ? T.toDark : T.toLight);
     ui.theme.title = light ? T.toDark : T.toLight;
-    ui.count.textContent = drawer ? '' : items.length ? T.picked + ' ' + items.length : T.empty;
-    ui.list.hidden = !!drawer || !items.length;
-    ui.list.textContent = '';
-    if (drawer) return;
-    items.forEach(function (it, i) {
-      var li = document.createElement('li');
-      var code = document.createElement('code');
-      code.textContent = it.text ? it.tagName + ' · ' + it.text : it.selector;
-      code.title = it.selector + '\n' + it.url;
-      var rm = document.createElement('button');
-      rm.type = 'button';
-      rm.setAttribute('data-index', String(i));
-      rm.setAttribute('aria-label', T.remove + ' ' + it.selector);
-      rm.textContent = '×';
-      li.appendChild(code);
-      li.appendChild(rm);
-      ui.list.appendChild(li);
-    });
   }
 
   function notice(text, ok) {
@@ -615,9 +582,13 @@
     }, 2500);
   }
 
+  function usable() {
+    return !!drawer && !sessionDead;
+  }
+
   function setEnabled(on) {
     // Picking would swallow the agent's clicks.
-    if (on && control.busy > 0) return;
+    if (on && (control.busy > 0 || !usable())) return;
     enabled = !!on;
     ensureStyle();
     clearHover();
@@ -630,7 +601,7 @@
   }
 
   function setDrawerOpen(on) {
-    drawerOpen = !!on && !!drawer;
+    drawerOpen = !!on && usable();
     if (drawer) {
       drawer.embed.open = drawerOpen;
       saveEmbed(drawer.embed);
@@ -684,7 +655,7 @@
 
   function loadEmbed() {
     try {
-      var v = JSON.parse(sessionStorage.getItem(EMBED_STORE_KEY) || 'null');
+      var v = JSON.parse(localStorage.getItem(EMBED_STORE_KEY) || 'null');
       if (v && typeof v.origin === 'string' && typeof v.run === 'string' && typeof v.node === 'string') return v;
     } catch (e) {}
     return null;
@@ -692,7 +663,7 @@
 
   function saveEmbed(v) {
     try {
-      sessionStorage.setItem(EMBED_STORE_KEY, JSON.stringify(v));
+      localStorage.setItem(EMBED_STORE_KEY, JSON.stringify(v));
     } catch (e) {}
   }
 
@@ -725,6 +696,7 @@
     drawer = { origin: e.origin, frame: frame, embed: e };
     drawerOpen = !!e.open;
     drawerReady = false;
+    sessionDead = false;
     // Picks staged before the drawer existed move to the Grasp chat.
     outbox = outbox.concat(items);
     items = [];
@@ -797,22 +769,9 @@
     ev.stopPropagation();
     clearHover();
     var item = describe(t);
-    if (drawer) {
-      sendPick(item);
-      setDrawerOpen(true);
-      notice(T.added, true);
-      return;
-    }
-    for (var i = 0; i < items.length; i++) {
-      if (items[i].selector === item.selector && items[i].url === item.url) return;
-    }
-    if (items.length >= MAX_ITEMS) {
-      notice(T.full, false);
-      return;
-    }
-    items.push(item);
-    saveItems();
-    render();
+    sendPick(item);
+    setDrawerOpen(true);
+    notice(T.added, true);
   }
 
   function onKeydown(ev) {
@@ -1014,11 +973,19 @@
     if (!data || typeof data !== 'object') return;
     if (data.type === EMBED_READY) {
       drawerReady = true;
+      sessionDead = false;
+      render();
       postTheme();
       flushOutbox();
       tabReady.then(function () {
         postDrawer({ type: EMBED_CONTROL, caps: [PAGE_CONTROL_CAP], tab: tabId });
       });
+    } else if (data.type === EMBED_SESSION && data.ok === false) {
+      sessionDead = true;
+      drawerReady = false;
+      setEnabled(false);
+      setControl(false);
+      setDrawerOpen(false);
     } else if (data.type === EMBED_CONTROL && typeof data.on === 'boolean') {
       setControl(data.on);
     } else if (data.type === EMBED_CMD) {

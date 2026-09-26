@@ -15,7 +15,10 @@ import {
   saveEmbedSession,
 } from './embedChat'
 
-beforeEach(() => sessionStorage.clear())
+beforeEach(() => {
+  sessionStorage.clear()
+  localStorage.clear()
+})
 afterEach(() => vi.unstubAllGlobals())
 
 describe('embedChat', () => {
@@ -45,7 +48,7 @@ describe('embedChat', () => {
     expect(loadEmbedSession('r', 'n', now)?.token).toBe('gse_x')
     expect(loadEmbedSession('r', 'other', now)).toBeNull()
     expect(loadEmbedSession('r', 'n', Date.parse('2026-09-01T02:00:00Z'))).toBeNull()
-    expect(sessionStorage.length).toBe(0)
+    expect(localStorage.length).toBe(0)
 
     saveEmbedSession('r', 'n', { token: 'gse_y', expiresAt: '2026-09-01T01:00:00Z' })
     clearEmbedSession('r', 'n')

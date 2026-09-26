@@ -8,6 +8,7 @@ import {
   EMBED_CONTROL_MESSAGE,
   EMBED_PICK_MESSAGE,
   EMBED_READY_MESSAGE,
+  EMBED_SESSION_MESSAGE,
   EMBED_THEME_MESSAGE,
   PAGE_CONTROL_CAP,
 } from '@/lib/inbox/embedChat'
@@ -29,7 +30,6 @@ type Page = {
   fetched: string[]
   toggle: () => void
   click: (selector: string) => void
-  listItems: () => string[]
   frame: () => HTMLIFrameElement | null
   chatButton: () => HTMLButtonElement
   drawerOpen: () => boolean
@@ -49,7 +49,7 @@ class TestChannel extends BroadcastChannel {
   }
 }
 
-type EmbedReply = { origin: string; runId: string; nodeId: string } | null
+type EmbedReply = { origin: string; runId: string; nodeId: string; ticket?: string } | null
 
 function openPage(
   body: string,
@@ -69,7 +69,7 @@ function openPage(
   opened.push(win)
   win.document.body.innerHTML = body
   if (opts.stored) win.sessionStorage.setItem('__grasp_preview_picks', opts.stored)
-  if (opts.savedEmbed) win.sessionStorage.setItem('__grasp_embed', opts.savedEmbed)
+  if (opts.savedEmbed) win.localStorage.setItem('__grasp_embed', opts.savedEmbed)
   if (opts.tab) win.sessionStorage.setItem('__grasp_tab', opts.tab)
   if (opts.broadcast) (win as unknown as Record<string, unknown>).BroadcastChannel = TestChannel
   const fetched: string[] = []
@@ -93,9 +93,6 @@ function openPage(
     },
     click(selector) {
       ;(win.document.querySelector(selector) as unknown as HTMLElement).click()
-    },
-    listItems() {
-      return Array.from(shadow.querySelectorAll('[data-role="list"] code')).map((c) => c.textContent || '')
     },
     frame,
     chatButton: () => shadow.querySelector('[data-role="chat"]') as HTMLButtonElement,
@@ -128,88 +125,52 @@ describe('preview-pick.js copies', () => {
   })
 })
 
-describe('preview-pick.js standalone window', () => {
-  const body = '<main><h2 class="t">Choose   your\n plan</h2><p>a</p><p>b</p><a id="go" href="/about">about</a></main>'
+describe('preview-pick.js without a ticket', () => {
+  const body = '<main><h2 class="t">Choose   your\n plan</h2><p>a</p></main>'
+  const saved = JSON.stringify({ origin: GRASP, run: 'run-1', node: 'ap1', open: false })
 
-  it('mounts its own Pick bar and stages several picks without leaving the page', () => {
+  it('shows Pick and Chat disabled, with a hint to reopen from the preview page', async () => {
     const p = openPage(body)
+    await settle()
+    const pick = p.shadow.querySelector('[data-role="toggle"]') as HTMLButtonElement
+    expect(pick.hidden).toBe(false)
+    expect(pick.disabled).toBe(true)
+    expect(p.chatButton().hidden).toBe(false)
+    expect(p.chatButton().disabled).toBe(true)
+    expect((p.shadow.querySelector('[data-role="gate"]') as HTMLElement).title).toBe(
+      'Reopen from the preview page in Grasp to get a new ticket.',
+    )
     p.toggle()
     p.click('h2')
-    p.click('main > p:nth-of-type(2)')
-    p.click('#go')
-
-    expect(p.listItems()).toEqual([
-      'h2 · Choose your plan',
-      'p · b',
-      'a · about',
-    ])
-    expect(p.win.location.pathname).toBe('/pricing')
+    expect(pick.getAttribute('aria-pressed')).toBe('false')
+    expect(p.win.sessionStorage.getItem('__grasp_preview_picks')).toBeNull()
   })
 
-  it('removes a staged pick and ignores duplicates', () => {
-    const p = openPage(body)
+  it('greys out both again when the drawer reports its session gone', async () => {
+    const p = openPage(body, { savedEmbed: saved })
+    await settle()
+    const pick = p.shadow.querySelector('[data-role="toggle"]') as HTMLButtonElement
+    const gate = p.shadow.querySelector('[data-role="gate"]') as HTMLElement
+    p.chatButton().click()
+    p.drawerReady()
+    expect(pick.disabled).toBe(false)
+    expect(gate.title).toBe('')
     p.toggle()
-    p.click('h2')
-    p.click('h2')
-    p.click('#go')
-    expect(p.listItems()).toHaveLength(2)
-    ;(p.shadow.querySelector('button[data-index="0"]') as HTMLButtonElement).click()
-    expect(p.listItems()).toEqual(['a · about'])
-  })
+    expect(pick.getAttribute('aria-pressed')).toBe('true')
 
-  it('keeps staged picks across a full page load in the same tab', () => {
-    const first = openPage(body)
-    first.toggle()
-    first.click('#go')
-    const stored = first.win.sessionStorage.getItem('__grasp_preview_picks')
-    expect(stored).toContain('"selector":"#go"')
-
-    const next = openPage(body, { stored })
-    expect(next.listItems()).toEqual(['a · about'])
-    ;(next.shadow.querySelector('button[data-index="0"]') as HTMLButtonElement).click()
-    expect(next.win.sessionStorage.getItem('__grasp_preview_picks')).toBeNull()
-  })
-
-  it('ignores corrupt stored picks', () => {
-    const p = openPage(body, { stored: '{not json' })
-    expect(p.listItems()).toEqual([])
-  })
-
-  it('caps staged picks and says so', () => {
-    const many = Array.from({ length: 25 }, (_, i) => `<p id="p${i}">${i}</p>`).join('')
-    const p = openPage(many)
-    p.toggle()
-    for (let i = 0; i < 25; i++) p.click(`#p${i}`)
-    expect(p.listItems()).toHaveLength(20)
-    const notice = p.shadow.querySelector('[data-role="notice"]') as HTMLElement
-    expect(notice.hidden).toBe(false)
-    expect(notice.textContent).toMatch(/20/)
-  })
-
-  it('does not treat clicks on the bar itself as picks', () => {
-    const p = openPage(body)
-    p.toggle()
-    ;(p.win.document.querySelector('grasp-preview-pick') as unknown as HTMLElement).click()
-    expect(p.listItems()).toHaveLength(0)
-  })
-
-  it('Escape leaves pick mode', () => {
-    const p = openPage(body)
-    p.toggle()
-    p.win.document.dispatchEvent(new p.win.KeyboardEvent('keydown', { key: 'Escape' }))
-    p.click('h2')
-    expect(p.listItems()).toHaveLength(0)
-    expect(p.shadow.querySelector('[data-role="toggle"]')?.getAttribute('aria-pressed')).toBe('false')
-  })
-
-  it('clips visible text and outerHTML', () => {
-    const long = 'x'.repeat(PICK_HTML_MAX + 200)
-    const p = openPage(`<div id="big">${long}</div>`)
-    p.toggle()
-    p.click('#big')
-    const [item] = JSON.parse(p.win.sessionStorage.getItem('__grasp_preview_picks') || '[]')
-    expect(item.text).toBe('x'.repeat(PICK_TEXT_MAX) + '…')
-    expect((item.outerHTML as string).length).toBe(PICK_HTML_MAX + 1)
+    const f = p.frame()
+    p.win.dispatchEvent(
+      new p.win.MessageEvent('message', {
+        data: { type: EMBED_SESSION_MESSAGE, ok: false },
+        origin: GRASP,
+        source: f?.contentWindow as never,
+      }),
+    )
+    expect(pick.disabled).toBe(true)
+    expect(pick.getAttribute('aria-pressed')).toBe('false')
+    expect(p.chatButton().disabled).toBe(true)
+    expect(p.drawerOpen()).toBe(false)
+    expect(gate.title).toMatch(/new ticket/)
   })
 })
 
@@ -222,8 +183,17 @@ describe('preview-pick.js chat drawer', () => {
     const p = openPage(body)
     await settle()
     expect(p.fetched).toEqual([])
-    expect(p.chatButton().hidden).toBe(true)
+    expect(p.chatButton().hidden).toBe(false)
+    expect(p.chatButton().disabled).toBe(true)
     expect(p.frame()).toBeNull()
+  })
+
+  it('never asks for a ticket by itself on the bare preview address', async () => {
+    const p = openPage(body, { embedReply: { ...reply, ticket: 'tk-x' } })
+    await settle()
+    expect(p.fetched).toEqual([])
+    expect(p.frame()).toBeNull()
+    expect(p.chatButton().disabled).toBe(true)
   })
 
   it('checks the ticket with Grasp, strips it from the URL and opens the drawer', async () => {
@@ -234,8 +204,8 @@ describe('preview-pick.js chat drawer', () => {
     expect(p.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#ticket=tk1&theme=dark`)
     expect(p.chatButton().hidden).toBe(false)
     expect(p.drawerOpen()).toBe(true)
-    expect(JSON.parse(p.win.sessionStorage.getItem('__grasp_embed') || '{}')).toMatchObject({ origin: GRASP, run: 'run-1', node: 'ap1' })
-    expect(p.win.sessionStorage.getItem('__grasp_embed')).not.toContain('tk1')
+    expect(JSON.parse(p.win.localStorage.getItem('__grasp_embed') || '{}')).toMatchObject({ origin: GRASP, run: 'run-1', node: 'ap1' })
+    expect(p.win.localStorage.getItem('__grasp_embed')).not.toContain('tk1')
   })
 
   it('stays without a drawer when Grasp does not vouch for the ticket', async () => {
@@ -243,7 +213,7 @@ describe('preview-pick.js chat drawer', () => {
       const p = openPage(body, { hash, embedReply: bad })
       await settle()
       expect(p.frame(), JSON.stringify(bad)).toBeNull()
-      expect(p.win.sessionStorage.getItem('__grasp_embed')).toBeNull()
+      expect(p.win.localStorage.getItem('__grasp_embed')).toBeNull()
     }
   })
 
@@ -256,7 +226,7 @@ describe('preview-pick.js chat drawer', () => {
     expect(p.drawerOpen()).toBe(false)
     p.chatButton().click()
     expect(p.drawerOpen()).toBe(true)
-    expect(JSON.parse(p.win.sessionStorage.getItem('__grasp_embed') || '{}').open).toBe(true)
+    expect(JSON.parse(p.win.localStorage.getItem('__grasp_embed') || '{}').open).toBe(true)
   })
 
   it('holds picks until the drawer is ready, then sends them to the Grasp origin only', async () => {
@@ -266,7 +236,6 @@ describe('preview-pick.js chat drawer', () => {
     expect(p.win.sessionStorage.getItem('__grasp_preview_picks')).toBeNull()
     p.toggle()
     p.click('#buy')
-    expect(p.listItems()).toEqual([])
 
     expect(p.drawerReady('https://evil.example')).toEqual([])
     const inbox = p.drawerReady()
@@ -287,6 +256,25 @@ describe('preview-pick.js chat drawer', () => {
     expect(notice.textContent).toBe('Added to the Grasp chat')
   })
 
+  it('ignores clicks on the bar, leaves pick mode on Escape and clips long picks', async () => {
+    const long = 'x'.repeat(PICK_HTML_MAX + 200)
+    const p = openPage(`${body}<div id="big">${long}</div>`, { hash, embedReply: reply })
+    await settle()
+    const inbox = p.drawerReady()
+    const picks = () => inbox.filter((m) => m.type === EMBED_PICK_MESSAGE)
+    p.toggle()
+    ;(p.win.document.querySelector('grasp-preview-pick') as unknown as HTMLElement).click()
+    expect(picks()).toEqual([])
+    p.click('#big')
+    const item = picks()[0].payload as { text: string; outerHTML: string }
+    expect(item.text).toBe('x'.repeat(PICK_TEXT_MAX) + '…')
+    expect(item.outerHTML.length).toBe(PICK_HTML_MAX + 1)
+    p.win.document.dispatchEvent(new p.win.KeyboardEvent('keydown', { key: 'Escape' }))
+    p.click('h2')
+    expect(picks()).toHaveLength(1)
+    expect(p.shadow.querySelector('[data-role="toggle"]')?.getAttribute('aria-pressed')).toBe('false')
+  })
+
   it('starts in the Grasp theme and switches the drawer and the chat together', async () => {
     const p = openPage(body, { hash: `${hash}&theme=light`, embedReply: reply })
     await settle()
@@ -302,7 +290,7 @@ describe('preview-pick.js chat drawer', () => {
     expect(drawerEl.classList.contains('light')).toBe(false)
     expect(themeBtn.getAttribute('aria-label')).toBe('Switch to light')
     expect(inbox.at(-1)).toEqual({ type: EMBED_THEME_MESSAGE, theme: 'dark', target: GRASP })
-    expect(JSON.parse(p.win.sessionStorage.getItem('__grasp_embed') || '{}').theme).toBe('dark')
+    expect(JSON.parse(p.win.localStorage.getItem('__grasp_embed') || '{}').theme).toBe('dark')
   })
 })
 
@@ -506,14 +494,14 @@ describe('preview-pick.js floating chat window', () => {
     const before = geom(p)
     drag(p, head, { x: 500, y: 100 }, { x: 420, y: 140 })
     const placed = geom(p)
-    const stored = JSON.parse(p.win.sessionStorage.getItem('__grasp_embed') || '{}')
+    const stored = JSON.parse(p.win.localStorage.getItem('__grasp_embed') || '{}')
     expect(stored).toMatchObject({ x: placed.x, y: placed.y, width: placed.w, height: placed.h })
     expect(placed.x).toBe(before.x - 80)
     expect(placed.y).toBe(before.y + 40)
 
     ;(p.shadow.querySelector('[data-role="drawer-close"]') as HTMLButtonElement).click()
     expect(p.drawerOpen()).toBe(false)
-    const afterClose = JSON.parse(p.win.sessionStorage.getItem('__grasp_embed') || '{}')
+    const afterClose = JSON.parse(p.win.localStorage.getItem('__grasp_embed') || '{}')
     expect(afterClose).toMatchObject({ open: false, x: placed.x, y: placed.y, width: placed.w, height: placed.h })
 
     const again = openPage(body, { savedEmbed: JSON.stringify(afterClose) })
@@ -530,7 +518,7 @@ describe('preview-pick.js floating chat window', () => {
     const p = openPage(body, { savedEmbed: JSON.stringify(saved) })
     await settle()
     expect(geom(p)).toMatchObject({ x: 100, y: 40, w: 500, h: 400 })
-    const stored = p.win.sessionStorage.getItem('__grasp_embed')
+    const stored = p.win.localStorage.getItem('__grasp_embed')
     const de = p.win.document.documentElement
     Object.defineProperty(de, 'clientWidth', { configurable: true, get: () => 360 })
     Object.defineProperty(de, 'clientHeight', { configurable: true, get: () => 280 })
@@ -540,13 +528,13 @@ describe('preview-pick.js floating chat window', () => {
     expect(shrunk.y).toBe(0)
     expect(shrunk.w).toBe(360)
     expect(shrunk.h).toBe(280)
-    expect(p.win.sessionStorage.getItem('__grasp_embed')).toBe(stored)
+    expect(p.win.localStorage.getItem('__grasp_embed')).toBe(stored)
 
     Object.defineProperty(de, 'clientWidth', { configurable: true, get: () => 1280 })
     Object.defineProperty(de, 'clientHeight', { configurable: true, get: () => 800 })
     p.win.dispatchEvent(new p.win.Event('resize'))
     expect(geom(p)).toMatchObject({ x: 100, y: 40, w: 500, h: 400 })
-    expect(p.win.sessionStorage.getItem('__grasp_embed')).toBe(stored)
+    expect(p.win.localStorage.getItem('__grasp_embed')).toBe(stored)
   })
 
   it('uses the default place and size when session fields are missing or illegal', async () => {
