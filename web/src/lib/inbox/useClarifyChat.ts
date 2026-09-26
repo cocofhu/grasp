@@ -1412,6 +1412,9 @@ function applyReviewFrame(frame: {
     annotations?: ReactAnnotation[]
   }[]
   busy?: boolean
+  sandboxBusy?: boolean
+  sandboxDesynced?: boolean
+  sandboxRunningOpId?: string
   activeItem?: {
     id?: string
     text?: string
