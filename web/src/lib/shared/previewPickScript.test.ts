@@ -69,7 +69,7 @@ function openPage(
   opened.push(win)
   win.document.body.innerHTML = body
   if (opts.stored) win.sessionStorage.setItem('__grasp_preview_picks', opts.stored)
-  if (opts.savedEmbed) win.sessionStorage.setItem('__grasp_embed', opts.savedEmbed)
+  if (opts.savedEmbed) win.localStorage.setItem('__grasp_embed', opts.savedEmbed)
   if (opts.tab) win.sessionStorage.setItem('__grasp_tab', opts.tab)
   if (opts.broadcast) (win as unknown as Record<string, unknown>).BroadcastChannel = TestChannel
   const fetched: string[] = []
@@ -221,9 +221,21 @@ describe('preview-pick.js chat drawer', () => {
   it('has no chat without a ticket or a saved drawer', async () => {
     const p = openPage(body)
     await settle()
-    expect(p.fetched).toEqual([])
-    expect(p.chatButton().hidden).toBe(true)
+    expect(p.fetched).toEqual(['/__grasp/embed-boot'])
+    expect(p.chatButton().hidden).toBe(false)
+    expect(p.chatButton().disabled).toBe(true)
     expect(p.frame()).toBeNull()
+  })
+
+  it('opens the drawer from the bare preview address once Grasp has connected', async () => {
+    const p = openPage(body, {
+      embedReply: { origin: GRASP, runId: 'run-1', nodeId: 'ap1', ticket: 'tk-boot' },
+    })
+    await settle()
+    expect(p.fetched).toEqual(['/__grasp/embed-boot'])
+    expect(p.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#ticket=tk-boot&theme=dark`)
+    expect(p.chatButton().disabled).toBe(false)
+    expect(p.drawerOpen()).toBe(true)
   })
 
   it('checks the ticket with Grasp, strips it from the URL and opens the drawer', async () => {
@@ -234,8 +246,8 @@ describe('preview-pick.js chat drawer', () => {
     expect(p.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#ticket=tk1&theme=dark`)
     expect(p.chatButton().hidden).toBe(false)
     expect(p.drawerOpen()).toBe(true)
-    expect(JSON.parse(p.win.sessionStorage.getItem('__grasp_embed') || '{}')).toMatchObject({ origin: GRASP, run: 'run-1', node: 'ap1' })
-    expect(p.win.sessionStorage.getItem('__grasp_embed')).not.toContain('tk1')
+    expect(JSON.parse(p.win.localStorage.getItem('__grasp_embed') || '{}')).toMatchObject({ origin: GRASP, run: 'run-1', node: 'ap1' })
+    expect(p.win.localStorage.getItem('__grasp_embed')).not.toContain('tk1')
   })
 
   it('stays without a drawer when Grasp does not vouch for the ticket', async () => {
@@ -243,7 +255,7 @@ describe('preview-pick.js chat drawer', () => {
       const p = openPage(body, { hash, embedReply: bad })
       await settle()
       expect(p.frame(), JSON.stringify(bad)).toBeNull()
-      expect(p.win.sessionStorage.getItem('__grasp_embed')).toBeNull()
+      expect(p.win.localStorage.getItem('__grasp_embed')).toBeNull()
     }
   })
 
@@ -251,12 +263,12 @@ describe('preview-pick.js chat drawer', () => {
     const saved = JSON.stringify({ origin: GRASP, run: 'run-1', node: 'ap1', open: false })
     const p = openPage(body, { savedEmbed: saved })
     await settle()
-    expect(p.fetched).toEqual([])
+    expect(p.fetched).toEqual(['/__grasp/embed-boot'])
     expect(p.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#theme=dark`)
     expect(p.drawerOpen()).toBe(false)
     p.chatButton().click()
     expect(p.drawerOpen()).toBe(true)
-    expect(JSON.parse(p.win.sessionStorage.getItem('__grasp_embed') || '{}').open).toBe(true)
+    expect(JSON.parse(p.win.localStorage.getItem('__grasp_embed') || '{}').open).toBe(true)
   })
 
   it('holds picks until the drawer is ready, then sends them to the Grasp origin only', async () => {
@@ -302,7 +314,7 @@ describe('preview-pick.js chat drawer', () => {
     expect(drawerEl.classList.contains('light')).toBe(false)
     expect(themeBtn.getAttribute('aria-label')).toBe('Switch to light')
     expect(inbox.at(-1)).toEqual({ type: EMBED_THEME_MESSAGE, theme: 'dark', target: GRASP })
-    expect(JSON.parse(p.win.sessionStorage.getItem('__grasp_embed') || '{}').theme).toBe('dark')
+    expect(JSON.parse(p.win.localStorage.getItem('__grasp_embed') || '{}').theme).toBe('dark')
   })
 })
 
@@ -506,14 +518,14 @@ describe('preview-pick.js floating chat window', () => {
     const before = geom(p)
     drag(p, head, { x: 500, y: 100 }, { x: 420, y: 140 })
     const placed = geom(p)
-    const stored = JSON.parse(p.win.sessionStorage.getItem('__grasp_embed') || '{}')
+    const stored = JSON.parse(p.win.localStorage.getItem('__grasp_embed') || '{}')
     expect(stored).toMatchObject({ x: placed.x, y: placed.y, width: placed.w, height: placed.h })
     expect(placed.x).toBe(before.x - 80)
     expect(placed.y).toBe(before.y + 40)
 
     ;(p.shadow.querySelector('[data-role="drawer-close"]') as HTMLButtonElement).click()
     expect(p.drawerOpen()).toBe(false)
-    const afterClose = JSON.parse(p.win.sessionStorage.getItem('__grasp_embed') || '{}')
+    const afterClose = JSON.parse(p.win.localStorage.getItem('__grasp_embed') || '{}')
     expect(afterClose).toMatchObject({ open: false, x: placed.x, y: placed.y, width: placed.w, height: placed.h })
 
     const again = openPage(body, { savedEmbed: JSON.stringify(afterClose) })
@@ -530,7 +542,7 @@ describe('preview-pick.js floating chat window', () => {
     const p = openPage(body, { savedEmbed: JSON.stringify(saved) })
     await settle()
     expect(geom(p)).toMatchObject({ x: 100, y: 40, w: 500, h: 400 })
-    const stored = p.win.sessionStorage.getItem('__grasp_embed')
+    const stored = p.win.localStorage.getItem('__grasp_embed')
     const de = p.win.document.documentElement
     Object.defineProperty(de, 'clientWidth', { configurable: true, get: () => 360 })
     Object.defineProperty(de, 'clientHeight', { configurable: true, get: () => 280 })
@@ -540,13 +552,13 @@ describe('preview-pick.js floating chat window', () => {
     expect(shrunk.y).toBe(0)
     expect(shrunk.w).toBe(360)
     expect(shrunk.h).toBe(280)
-    expect(p.win.sessionStorage.getItem('__grasp_embed')).toBe(stored)
+    expect(p.win.localStorage.getItem('__grasp_embed')).toBe(stored)
 
     Object.defineProperty(de, 'clientWidth', { configurable: true, get: () => 1280 })
     Object.defineProperty(de, 'clientHeight', { configurable: true, get: () => 800 })
     p.win.dispatchEvent(new p.win.Event('resize'))
     expect(geom(p)).toMatchObject({ x: 100, y: 40, w: 500, h: 400 })
-    expect(p.win.sessionStorage.getItem('__grasp_embed')).toBe(stored)
+    expect(p.win.localStorage.getItem('__grasp_embed')).toBe(stored)
   })
 
   it('uses the default place and size when session fields are missing or illegal', async () => {

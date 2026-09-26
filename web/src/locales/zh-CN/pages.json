@@ -2984,7 +2984,7 @@
           "resolved": "已解决"
         }
       },
-      "directLauncherHint": "直连预览在新标签中打开。页面右下角有「对话」按钮，可在预览里取点并与 Agent 交互。",
+      "directLauncherHint": "点上面的地址或「新标签打开」会带上 Agent 对话。之后直接打开这个地址（新标签或关掉再开）也会连上同一个 Agent。",
       "directChatUnavailable": "预览已打开，但这次没法附带对话抽屉，请回到这里继续对话。",
       "directPopupBlocked": "浏览器拦截了新标签，请点这里打开预览。"
     },

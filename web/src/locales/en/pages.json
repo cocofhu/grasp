@@ -2984,7 +2984,7 @@
           "resolved": "Resolved"
         }
       },
-      "directLauncherHint": "Direct preview opens in a new tab. Use the Chat button at the bottom right of the page to pick elements and talk to the agent there.",
+      "directLauncherHint": "Click the address or Open in new tab to include the agent chat. After that, opening this address directly (a new tab, or again later) reconnects the same agent.",
       "directChatUnavailable": "The preview opened without the chat drawer this time. Continue the conversation here.",
       "directPopupBlocked": "The browser blocked the new tab. Click here to open the preview."
     },

@@ -15,6 +15,11 @@ import (
 // credentials instead.
 const EmbedOriginPath = "/__grasp/embed-origin"
 
+// EmbedBootPath mints a drawer ticket for the bare preview address. The page
+// calls it when the URL has no ticket; Grasp only answers after someone has
+// opened this preview from Grasp once.
+const EmbedBootPath = "/__grasp/embed-boot"
+
 const embedLookupTimeout = 5 * time.Second
 
 // EmbedLookup resolves drawer tickets against Grasp. A zero value (no run
@@ -24,6 +29,8 @@ type EmbedLookup struct {
 	// RunURL is GRASP_ARTIFACT_URL: <grasp>/mcp/runs/<runId>.
 	RunURL string
 	Token  string
+	// NodeID is GRASP_NODE_ID. The bare preview page does not know it.
+	NodeID string
 	Client *http.Client
 }
 
@@ -86,6 +93,76 @@ func (l EmbedLookup) lookup(r *http.Request, ticket, node string) (embedOrigin, 
 		return embedOrigin{}, false
 	}
 	return got, true
+}
+
+type embedBoot struct {
+	Origin string `json:"origin"`
+	RunID  string `json:"runId"`
+	NodeID string `json:"nodeId"`
+	Ticket string `json:"ticket"`
+}
+
+func (l EmbedLookup) serveBoot(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	node := strings.TrimSpace(l.NodeID)
+	if !l.configured() || node == "" {
+		http.NotFound(w, r)
+		return
+	}
+	got, ok := l.boot(r, node)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(got)
+}
+
+func (l EmbedLookup) boot(r *http.Request, node string) (embedBoot, bool) {
+	q := url.Values{"nodeId": {node}}
+	target := strings.TrimRight(strings.TrimSpace(l.RunURL), "/") + "/embed-boot?" + q.Encode()
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, target, nil)
+	if err != nil {
+		return embedBoot{}, false
+	}
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(l.Token))
+	client := l.Client
+	if client == nil {
+		client = &http.Client{Timeout: embedLookupTimeout}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return embedBoot{}, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return embedBoot{}, false
+	}
+	var got embedBoot
+	if json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&got) != nil {
+		return embedBoot{}, false
+	}
+	runID := runIDOf(l.RunURL)
+	if got.Ticket == "" || got.RunID != runID || got.NodeID != node || !validOrigin(got.Origin) {
+		return embedBoot{}, false
+	}
+	return got, true
+}
+
+func runIDOf(runURL string) string {
+	u, err := url.Parse(strings.TrimSpace(runURL))
+	if err != nil {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) == 0 {
+		return ""
+	}
+	return parts[len(parts)-1]
 }
 
 func validOrigin(s string) bool {

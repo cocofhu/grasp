@@ -91,6 +91,56 @@ func TestEmbedOriginRejects(t *testing.T) {
 	}
 }
 
+func TestEmbedBootAsksGraspWithRunToken(t *testing.T) {
+	var seen *http.Request
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("app"))
+	}))
+	t.Cleanup(up.Close)
+	g := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r
+		if r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer run-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(embedBoot{
+			Origin: "https://grasp.example", RunID: "run-1", NodeID: r.URL.Query().Get("nodeId"), Ticket: "abc",
+		})
+	}))
+	t.Cleanup(g.Close)
+	u, _ := url.Parse(up.URL)
+	p := httptest.NewServer(NewHandlerWithEmbed(u, scriptURL, EmbedLookup{
+		RunURL: g.URL + "/mcp/runs/run-1", Token: "run-token", NodeID: "ap1",
+	}))
+	t.Cleanup(p.Close)
+
+	req, _ := http.NewRequest(http.MethodPost, p.URL+EmbedBootPath, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var got embedBoot
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK || got.Ticket != "abc" || got.NodeID != "ap1" {
+		t.Fatalf("code=%d got=%+v", resp.StatusCode, got)
+	}
+	if seen.URL.Path != "/mcp/runs/run-1/embed-boot" || seen.URL.Query().Get("nodeId") != "ap1" {
+		t.Fatalf("upstream %s", seen.URL)
+	}
+
+	gotGet, err := http.Get(p.URL + EmbedBootPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotGet.Body.Close()
+	if gotGet.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("GET boot: %d", gotGet.StatusCode)
+	}
+}
+
 func TestEmbedOriginWithoutRunCredentials(t *testing.T) {
 	called := false
 	p := embedProxy(t, func(http.ResponseWriter, *http.Request) { called = true }, "")

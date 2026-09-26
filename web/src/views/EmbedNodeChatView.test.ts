@@ -33,6 +33,7 @@ function mountView() {
 
 beforeEach(() => {
   sessionStorage.clear()
+  localStorage.clear()
   mocks.redeem.mockReset()
   mocks.sendFrame.mockClear()
   history.replaceState(null, '', '/embed/runs/run-1/nodes/ap1/chat')

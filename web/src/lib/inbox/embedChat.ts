@@ -70,7 +70,9 @@ function storageKey(runId: string, nodeId: string): string {
 
 export function loadEmbedSession(runId: string, nodeId: string, now = Date.now()): EmbedSession | null {
   try {
-    const raw = sessionStorage.getItem(storageKey(runId, nodeId))
+    // localStorage, not sessionStorage: a new tab opened at the bare preview
+    // address must still redeem into the same drawer session.
+    const raw = localStorage.getItem(storageKey(runId, nodeId))
     if (!raw) return null
     const s = JSON.parse(raw) as Partial<EmbedSession>
     if (typeof s.token !== 'string' || !s.token || typeof s.expiresAt !== 'string') return null
@@ -86,7 +88,7 @@ export function loadEmbedSession(runId: string, nodeId: string, now = Date.now()
 
 export function saveEmbedSession(runId: string, nodeId: string, s: EmbedSession): void {
   try {
-    sessionStorage.setItem(storageKey(runId, nodeId), JSON.stringify(s))
+    localStorage.setItem(storageKey(runId, nodeId), JSON.stringify(s))
   } catch {
     // Storage blocked (third-party iframe policy): the session lasts until reload.
   }
@@ -94,7 +96,7 @@ export function saveEmbedSession(runId: string, nodeId: string, s: EmbedSession)
 
 export function clearEmbedSession(runId: string, nodeId: string): void {
   try {
-    sessionStorage.removeItem(storageKey(runId, nodeId))
+    localStorage.removeItem(storageKey(runId, nodeId))
   } catch {
     // ignore
   }

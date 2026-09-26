@@ -10,6 +10,7 @@
   var EMBED_THEME = 'grasp-embed:theme';
   var EMBED_HASH = '__grasp_embed';
   var EMBED_ORIGIN_PATH = '/__grasp/embed-origin';
+  var EMBED_BOOT_PATH = '/__grasp/embed-boot';
   var EMBED_STORE_KEY = '__grasp_embed';
   var EMBED_CONTROL = 'grasp-embed:control';
   var EMBED_CMD = 'grasp-embed:cmd';
@@ -37,6 +38,7 @@
         empty: '点「取点」后点击页面元素',
         chat: '对话',
         chatTitle: 'Grasp · Agent 对话',
+        chatOff: '从 Grasp 打开一次后，直接打开这个地址也能对话',
         brand: 'Grasp',
         close: '收起对话',
         toLight: '切换到浅色',
@@ -55,6 +57,7 @@
         empty: 'Turn on Pick, then click an element',
         chat: 'Chat',
         chatTitle: 'Grasp · Agent chat',
+        chatOff: 'Open this page from Grasp once. After that, this address includes the agent chat.',
         brand: 'Grasp',
         close: 'Hide chat',
         toLight: 'Switch to light',
@@ -573,8 +576,10 @@
     ui.agent.className = control.busy > 0 ? 'agent busy' : 'agent';
     ui.agentText.textContent = control.busy > 0 ? T.agentBusy : T.agentOn;
     ui.agentStop.textContent = T.stop;
-    ui.chat.hidden = !drawer;
+    ui.chat.hidden = false;
+    ui.chat.disabled = !drawer;
     ui.chat.textContent = T.chat;
+    ui.chat.title = drawer ? T.chatTitle : T.chatOff;
     ui.chat.setAttribute('aria-expanded', drawerOpen ? 'true' : 'false');
     ui.drawer.hidden = !drawerOpen;
     var light = drawerTheme() === 'light';
@@ -684,7 +689,7 @@
 
   function loadEmbed() {
     try {
-      var v = JSON.parse(sessionStorage.getItem(EMBED_STORE_KEY) || 'null');
+      var v = JSON.parse(localStorage.getItem(EMBED_STORE_KEY) || 'null');
       if (v && typeof v.origin === 'string' && typeof v.run === 'string' && typeof v.node === 'string') return v;
     } catch (e) {}
     return null;
@@ -692,7 +697,7 @@
 
   function saveEmbed(v) {
     try {
-      sessionStorage.setItem(EMBED_STORE_KEY, JSON.stringify(v));
+      localStorage.setItem(EMBED_STORE_KEY, JSON.stringify(v));
     } catch (e) {}
   }
 
@@ -754,10 +759,39 @@
     if (saved && !drawer) startDrawer(saved, '');
   }
 
+  // A bare preview address has no ticket. Grasp mints one for the origin that
+  // last opened this preview, so the drawer (and agent page control) still connect.
+  function acceptBoot(v) {
+    if (!v || typeof v.ticket !== 'string' || !v.ticket) return false;
+    if (typeof v.runId !== 'string' || !v.runId || typeof v.nodeId !== 'string' || !v.nodeId) return false;
+    if (!/^https?:\/\/[^/?#]+$/.test(v.origin || '')) return false;
+    var saved = loadEmbed();
+    var theme = saved && saved.theme === 'light' ? 'light' : 'dark';
+    startDrawer({ origin: v.origin, run: v.runId, node: v.nodeId, open: true, theme: theme }, v.ticket);
+    setDrawerOpen(true);
+    return true;
+  }
+
+  function resumeOrBoot() {
+    if (drawer || typeof fetch !== 'function') {
+      resumeDrawer();
+      return;
+    }
+    fetch(EMBED_BOOT_PATH, { method: 'POST', credentials: 'omit', cache: 'no-store' })
+      .then(function (res) {
+        return res.ok ? res.json() : null;
+      })
+      .then(function (v) {
+        if (drawer || acceptBoot(v)) return;
+        resumeDrawer();
+      })
+      .catch(resumeDrawer);
+  }
+
   function bootDrawer() {
     var frag = readEmbedFragment();
     if (!frag || typeof fetch !== 'function') {
-      resumeDrawer();
+      resumeOrBoot();
       return;
     }
     var q = '?ticket=' + encodeURIComponent(frag.ticket) + '&node=' + encodeURIComponent(frag.node);
@@ -767,13 +801,13 @@
       })
       .then(function (v) {
         if (!v || v.runId !== frag.run || v.nodeId !== frag.node || !/^https?:\/\/[^/?#]+$/.test(v.origin || '')) {
-          resumeDrawer();
+          resumeOrBoot();
           return;
         }
         startDrawer({ origin: v.origin, run: frag.run, node: frag.node, open: true, theme: frag.theme }, frag.ticket);
         setDrawerOpen(true);
       })
-      .catch(resumeDrawer);
+      .catch(resumeOrBoot);
   }
 
   function onMove(ev) {

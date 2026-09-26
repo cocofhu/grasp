@@ -200,6 +200,35 @@ func TestMCPEmbedOrigin(t *testing.T) {
 	}
 }
 
+func TestMCPEmbedBoot(t *testing.T) {
+	hn := newHarness(t)
+	seedAppPreviewReview(t, hn, "run-emb-boot", "ap1")
+	seedDirectPreview(t, hn, "run-emb-boot", "ap1")
+	tok := hn.host.RegisterRun("run-emb-boot")
+	path := "/mcp/runs/run-emb-boot/embed-boot?nodeId=ap1"
+
+	if w := hn.doEmbed(http.MethodPost, path, nil, bearerHeader(tok)); w.Code != http.StatusNotFound {
+		t.Fatalf("boot before any open: %d %s", w.Code, w.Body.String())
+	}
+	issueSessionTicket(t, hn, "run-emb-boot", "ap1")
+	if w := hn.doEmbed(http.MethodPost, path, nil, nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("no run token: %d", w.Code)
+	}
+	w := hn.doEmbed(http.MethodPost, path, nil, bearerHeader(tok))
+	if w.Code != http.StatusOK {
+		t.Fatalf("boot: %d %s", w.Code, w.Body.String())
+	}
+	body := parseJSON(t, w)
+	ticket, _ := body["ticket"].(string)
+	if body["origin"] != "http://example.com" || body["runId"] != "run-emb-boot" || body["nodeId"] != "ap1" || ticket == "" {
+		t.Fatalf("boot body: %+v", body)
+	}
+	redeem(t, hn, ticket)
+	if w := hn.doEmbed(http.MethodPost, "/mcp/runs/run-emb-boot/embed-boot?nodeId=other", nil, bearerHeader(tok)); w.Code != http.StatusBadRequest {
+		t.Fatalf("wrong node: %d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestEmbedTicketRecordsBrowserOrigin(t *testing.T) {
 	hn := newHarness(t)
 	seedAppPreviewReview(t, hn, "run-emb-origin", "ap1")
