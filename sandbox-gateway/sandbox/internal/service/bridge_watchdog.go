@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -118,10 +119,24 @@ func (b *Bridge) abortTimedOutTurn(p provider.Session, th *promptTurn, why strin
 	cause := fmt.Errorf("%w: %s，回合已被沙箱终止。若本轮在前台启动了常驻服务（如 go run / npm start），它可能随后退出，请改用 setsid nohup <cmd> </dev/null >log 2>&1 & 在后台重新拉起", provider.ErrTurnTimeout, why)
 	log.Printf("prompt %s oid=%s: 看门狗终止回合: %s", b.AgentLogPrefix(), th.opID, why)
 	th.timedOut.Store(true)
-	// Explain first: prompt_done is emitted inside Prompt, and clients stop reading at prompt_done.
-	b.Broadcast(eventEnvelope(map[string]any{"op": "raw", "type": "error_text", "text": cause.Error(), "opId": th.opID}, th.opID))
+	// Do not emit error_text here: Prompt may still return end_turn if the CLI
+	// already finished and only hung on exit. Real timeouts explain themselves
+	// in executePrompt (or the provider) before prompt_done.
 	th.cancelCause(cause)
 	if err := p.Cancel(); err != nil {
 		log.Printf("prompt %s oid=%s: 看门狗通知 Agent 取消失败: %v", b.AgentLogPrefix(), th.opID, err)
 	}
+}
+
+func timeoutCauseText(ctx context.Context) string {
+	if cause := context.Cause(ctx); cause != nil {
+		return cause.Error()
+	}
+	return "回合超时被终止"
+}
+
+// finishedBeforeExit is true when the agent already reported a successful
+// end_turn and only failed to exit (foreground service still holding the pipe).
+func finishedBeforeExit(stopReason string, err error) bool {
+	return err == nil && strings.EqualFold(strings.TrimSpace(stopReason), "end_turn")
 }

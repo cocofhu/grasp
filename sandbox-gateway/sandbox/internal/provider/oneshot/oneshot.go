@@ -288,6 +288,8 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 		} else {
 			res.stopReason = provider.StopReasonTimeout
 			err = cause
+			// Before prompt_done: clients stop reading once they see the boundary.
+			e.emit(map[string]any{"op": "raw", "type": "error_text", "text": cause.Error()})
 		}
 	}
 	if errors.Is(err, context.Canceled) && (res.stopReason == "" || res.stopReason == "failed") {

@@ -267,6 +267,27 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
+  it('review mode: orphan banner cancel emits cancel while FIFO is idle', async () => {
+    const wrapper = mountChat({ reviewMode: true })
+    const vm = wrapper.vm as unknown as { applyReviewFrame: (f: Record<string, unknown>) => void }
+    vm.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: true,
+      sandboxRunningOpId: 'oid-stuck',
+    })
+    await flushPromises()
+    const banner = wrapper.find('[data-testid="clarify-sandbox-orphan"]')
+    expect(banner.exists()).toBe(true)
+    expect(wrapper.find('[data-testid="clarify-review-cancel"]').exists()).toBe(false)
+    await wrapper.find('[data-testid="clarify-sandbox-orphan-cancel"]').trigger('click')
+    expect(wrapper.emitted('cancel')).toBeTruthy()
+    expect(wrapper.find('[data-testid="clarify-sandbox-orphan"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('review mode: sandbox_busy error offers abort-and-confirm', async () => {
     const wrapper = mountChat({
       reviewMode: true,

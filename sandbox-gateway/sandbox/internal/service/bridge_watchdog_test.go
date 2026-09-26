@@ -1,10 +1,13 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 	"time"
+
+	"backend/internal/provider"
 )
 
 func TestParseTurnLimit(t *testing.T) {
@@ -89,6 +92,35 @@ loop:
 	}
 	b.CancelPromptOp("op-A")
 	waitIdle(t, b)
+}
+
+// lingerSess already finished (end_turn) and is only waiting on process exit.
+type lingerSess struct{ stubSess }
+
+func (s *lingerSess) Prompt(ctx context.Context, _ string, _ []provider.PromptImage) (provider.TurnResult, error) {
+	<-ctx.Done()
+	return provider.TurnResult{StopReason: "end_turn"}, nil
+}
+
+func TestWatchdogDoesNotErrorAfterEndTurn(t *testing.T) {
+	b := newTestBridge(&lingerSess{stubSess: stubSess{id: "s1"}})
+	b.turnIdle, b.turnMax = 80*time.Millisecond, 0
+	c := dialBridge(t, b)
+
+	_ = b.ChatWithOpID("already done", "op-A", "chat", nil)
+	waitIdle(t, b)
+
+	_ = c.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+	for {
+		_, raw, err := c.ReadMessage()
+		if err != nil {
+			break
+		}
+		var f wsFrame
+		if json.Unmarshal(raw, &f) == nil && errorText(f) != "" {
+			t.Fatalf("lingering end_turn must not emit error_text: %q", errorText(f))
+		}
+	}
 }
 
 func TestWatchdogPerChatMaxDuration(t *testing.T) {

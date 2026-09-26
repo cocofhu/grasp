@@ -1179,7 +1179,11 @@ const confirmDisabled = computed(() => {
 })
 
 function cancelReview() {
-  if (props.done || !sessionBusy.value) return
+  if (props.done) return
+  const orphan = !!sandboxOrphan.value
+  // Orphan banner is shown only while the platform FIFO is idle, so sessionBusy
+  // is false — still emit cancel so the host aborts the sandbox turn.
+  if (!sessionBusy.value && !orphan) return
   // Review: clear local queue (matches CancelReviewSession clear-queue).
   // Clarify: keep local queue; authoritative queue_state will reconcile (Demo).
   if (props.reviewMode) {
@@ -1198,6 +1202,7 @@ function cancelReview() {
   streamPreview.reset()
   thoughtPreview.reset()
   thinking.value = queued.value.length > 0
+  if (orphan) sandboxOrphan.value = null
   emit('cancel')
   void scrollBottom()
 }

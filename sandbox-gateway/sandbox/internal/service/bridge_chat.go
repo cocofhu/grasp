@@ -180,8 +180,13 @@ func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item
 	stopReason := res.StopReason
 	if th.timedOut.Load() {
 		log.Printf("prompt %s oid=%s: 超时终止 stopReason=%q err=%v", b.AgentLogPrefix(), oid, stopReason, err)
+		if finishedBeforeExit(stopReason, err) {
+			return
+		}
 		if stopReason == "" {
-			// Transport returned without emitting prompt_done (e.g. ACP Call): close the turn for clients.
+			// Transport returned without emitting prompt_done (e.g. ACP Call):
+			// explain first — clients stop reading at prompt_done.
+			b.Broadcast(eventEnvelope(map[string]any{"op": "raw", "type": "error_text", "text": timeoutCauseText(turnCtx), "opId": oid}, oid))
 			b.Broadcast(eventEnvelope(map[string]any{
 				"type":       "prompt_done",
 				"sessionId":  p.SessionID(),

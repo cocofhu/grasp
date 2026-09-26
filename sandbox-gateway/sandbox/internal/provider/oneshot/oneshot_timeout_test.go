@@ -88,6 +88,25 @@ func lastPromptDone(frames []map[string]any) (string, bool) {
 	return "", false
 }
 
+func errorTextBeforeDone(frames []map[string]any) string {
+	done := -1
+	for i, f := range frames {
+		if f["type"] == "prompt_done" {
+			done = i
+		}
+	}
+	if done < 0 {
+		done = len(frames)
+	}
+	for i := done - 1; i >= 0; i-- {
+		if frames[i]["type"] == "error_text" {
+			s, _ := frames[i]["text"].(string)
+			return s
+		}
+	}
+	return ""
+}
+
 func TestOneShotWatchdogCauseReportsTimeout(t *testing.T) {
 	spawns := &atomic.Int32{}
 	// A resume pointer is set so a misclassified failure would trigger the
@@ -102,17 +121,23 @@ func TestOneShotWatchdogCauseReportsTimeout(t *testing.T) {
 	if got, ok := lastPromptDone(frames); !ok || got != provider.StopReasonTimeout {
 		t.Fatalf("prompt_done stopReason=%q ok=%v", got, ok)
 	}
+	if errorTextBeforeDone(frames) == "" {
+		t.Fatal("real timeout must emit error_text before prompt_done")
+	}
 	if n := spawns.Load(); n != 1 {
 		t.Fatalf("timeout must not fall back to a fresh session: spawned %d CLIs", n)
 	}
 }
 
 func TestOneShotWatchdogAfterFinalResultIsNotAFailure(t *testing.T) {
-	res, err, _ := runTimedOutTurn(t, hangFake{finished: true, spawns: &atomic.Int32{}}, "")
+	res, err, frames := runTimedOutTurn(t, hangFake{finished: true, spawns: &atomic.Int32{}}, "")
 	if err != nil {
 		t.Fatalf("err=%v, want nil once the CLI reported its result", err)
 	}
 	if res.StopReason != "end_turn" {
 		t.Fatalf("stop=%q want end_turn", res.StopReason)
+	}
+	if text := errorTextBeforeDone(frames); text != "" {
+		t.Fatalf("lingering CLI after end_turn must not emit timeout error_text, got %q", text)
 	}
 }
