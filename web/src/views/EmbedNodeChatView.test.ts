@@ -104,6 +104,26 @@ describe('EmbedNodeChatView', () => {
     }
   })
 
+  it('tells the preview page when there is no usable session, so it can grey out Pick and Chat', async () => {
+    const parent = { postMessage: vi.fn() }
+    Object.defineProperty(window, 'parent', { value: parent, configurable: true })
+    try {
+      const w = mountView()
+      await flushPromises()
+      expect(w.find('[data-testid="embed-chat-expired"]').exists()).toBe(true)
+      expect(parent.postMessage.mock.calls.map((c) => c[0])).toEqual([{ type: 'grasp-embed:session', ok: false }])
+
+      parent.postMessage.mockClear()
+      saveEmbedSession('run-1', 'ap1', { token: 'gse_e', expiresAt: '2099-01-01T00:00:00Z' })
+      const live = mountView()
+      await flushPromises()
+      await live.getComponent('[data-testid="chat-stub"]').vm.$emit('status', 'expired')
+      expect(parent.postMessage.mock.calls.map((c) => c[0])).toEqual([{ type: 'grasp-embed:session', ok: false }])
+    } finally {
+      Object.defineProperty(window, 'parent', { value: window, configurable: true })
+    }
+  })
+
   it('follows the preview page theme without saving it', async () => {
     localStorage.setItem('grasp-theme', 'dark')
     history.replaceState(null, '', '/embed/runs/run-1/nodes/ap1/chat#theme=light')

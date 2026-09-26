@@ -8,6 +8,8 @@ const STORAGE_PREFIX = 'grasp.embed.'
 export const EMBED_PICK_MESSAGE = 'grasp-embed:pick'
 export const EMBED_READY_MESSAGE = 'grasp-embed:ready'
 export const EMBED_THEME_MESSAGE = 'grasp-embed:theme'
+/** Drawer → page: `{ok:false}` when the drawer session is invalid, expired or revoked. */
+export const EMBED_SESSION_MESSAGE = 'grasp-embed:session'
 /** Page ↔ drawer: capability announce / stop (page → drawer), toggle state (drawer → page). */
 export const EMBED_CONTROL_MESSAGE = 'grasp-embed:control'
 /** Drawer → page: run a page command. */

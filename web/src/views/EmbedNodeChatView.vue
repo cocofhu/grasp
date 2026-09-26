@@ -8,6 +8,7 @@ import PageControlStatus from '@/components/run/PageControlStatus.vue'
 import PublicGateApprovalView from '@/views/PublicGateApprovalView.vue'
 import {
   EMBED_READY_MESSAGE,
+  EMBED_SESSION_MESSAGE,
   clearEmbedSession,
   loadEmbedSession,
   parseEmbedCmdResult,
@@ -82,7 +83,13 @@ async function connect() {
     phase.value = 'ready'
     return
   }
+  markExpired()
+}
+
+function markExpired() {
   phase.value = 'expired'
+  // The page greys out Pick and Chat until it is reopened with a new ticket.
+  if (window.parent !== window) window.parent.postMessage({ type: EMBED_SESSION_MESSAGE, ok: false }, parentOrigin())
 }
 
 function onStatus(status: string) {
@@ -96,7 +103,7 @@ function onStatus(status: string) {
     pageControl.reset()
     clearEmbedSession(runId, nodeId)
     token.value = ''
-    phase.value = 'expired'
+    markExpired()
   }
 }
 
