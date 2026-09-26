@@ -87,6 +87,7 @@ const {
   gateError,
   gateSubmitting,
   clarifyConfirmError,
+  clarifyConfirmCanAbort,
   onGateResolve,
   onClarifySend,
   onClarifyRetryLast,
@@ -94,6 +95,7 @@ const {
   onClarifyQueueRemove,
   onClarifyQueueReorder,
   onClarifyFinish,
+  onClarifyFinishAbort,
   canCancelRun,
   showCancelConfirm,
   cancellingRun,
@@ -746,10 +748,12 @@ const {
               v-model:annotations="clarifyAnnotations"
               :input-active="clarifyInputActive"
               :confirm-error="clarifyConfirmError"
+              :confirm-can-abort="clarifyConfirmCanAbort"
               :sel-status="selStatus"
               @send="onClarifySend"
               @retry-last="onClarifyRetryLast"
               @finish="onClarifyFinish"
+              @finish-abort="onClarifyFinishAbort"
               @cancel="onClarifyCancel"
               @queue-remove="(itemId) => onClarifyQueueRemove(itemId)"
               @queue-reorder="onClarifyQueueReorder"
@@ -767,10 +771,12 @@ const {
               v-model:annotations="clarifyAnnotations"
               :input-active="clarifyInputActive"
               :confirm-error="clarifyConfirmError"
+              :confirm-can-abort="clarifyConfirmCanAbort"
               :sel-status="selStatus"
               @send="onClarifySend"
               @retry-last="onClarifyRetryLast"
               @finish="onClarifyFinish"
+              @finish-abort="onClarifyFinishAbort"
               @cancel="onClarifyCancel"
               @queue-remove="(itemId) => onClarifyQueueRemove(itemId)"
               @queue-reorder="onClarifyQueueReorder"

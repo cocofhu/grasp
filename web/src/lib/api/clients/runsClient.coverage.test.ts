@@ -130,6 +130,7 @@ describe('runsClient request coverage', () => {
       force: false,
       annotations: [],
       retryLast: true,
+      abortRunning: false,
     })
     await runsClient.reactCancel('r', 'n')
     await runsClient.reactQueueRemove('r', 'n', 'q1')

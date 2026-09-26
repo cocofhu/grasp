@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -118,6 +119,9 @@ type reactReplyBody struct {
 	// RetryLast re-runs the latest human turn without inserting another human
 	// row (cover-this-turn retry after an empty/failed agent reply).
 	RetryLast bool `json:"retryLast"`
+	// AbortRunning, with Force, cancels a sandbox turn the platform no longer
+	// tracks (orphan CLI) before confirming. Without it a busy sandbox is 409.
+	AbortRunning bool `json:"abortRunning"`
 }
 
 func (h *Handlers) ReactReply(c *gin.Context) {
@@ -134,12 +138,13 @@ func (h *Handlers) ReactReply(c *gin.Context) {
 			return
 		}
 		err = h.Eng.ReactReplyRetryLastAs(sessionTurnOwner(c), runID, nodeID)
+	} else if b.Force {
+		err = h.Eng.ReactConfirmAs(sessionTurnOwner(c), runID, nodeID, b.Text, b.Images, b.Annotations, b.AbortRunning)
 	} else {
-		err = h.Eng.ReactReplyAs(sessionTurnOwner(c), runID, nodeID, b.Text, b.Images, b.Annotations, b.Force)
+		err = h.Eng.ReactReplyAs(sessionTurnOwner(c), runID, nodeID, b.Text, b.Images, b.Annotations, false)
 	}
 	if err != nil {
-		_ = c.Error(err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		writeReactReplyError(c, err)
 		return
 	}
 
@@ -341,4 +346,25 @@ func (h *Handlers) attachInboxReplying(items []any) {
 		waiting, thinking := h.Eng.ReviewSessionState(runID, nodeID)
 		return thinking || waiting > 0
 	})
+}
+
+// writeReactReplyError maps confirm-path errors: a sandbox still running an
+// orphan turn is 409 sandbox_busy so the UI can offer abort-and-confirm.
+func writeReactReplyError(c *gin.Context, err error) {
+	_ = c.Error(err)
+	var busy *engine.SandboxBusyError
+	if errors.As(err, &busy) {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":       busy.Error(),
+			"code":        "sandbox_busy",
+			"runningOpId": busy.RunningOpID,
+			"desynced":    busy.Desynced,
+		})
+		return
+	}
+	if errors.Is(err, engine.ErrSandboxBusy) {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "code": "sandbox_busy"})
+		return
+	}
+	c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 }

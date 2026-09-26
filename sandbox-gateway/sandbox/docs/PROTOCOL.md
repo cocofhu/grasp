@@ -95,12 +95,19 @@ WebSocket `/ws`,JSON 帧:
 
 - `→ {op:"connect", cwd?, fsRoot?, mcpServers?, autoPermission?}`
 - `← {op:"connected", sessionId, eventLog, totalTurns, hasMoreTurns, agent:{name,version}, ...}`
-- `→ {op:"chat", content, images?}` → 流式 `← {op:"event", data:{type:"session_update"|...}}`,
-  以轮次边界事件收尾(见下)。
+- `→ {op:"chat", content, images?, opId?, deadlineSec?}` → 流式
+  `← {op:"event", opId?, data:{type:"session_update"|...}}`,以轮次边界事件收尾(见下)。
+  `opId` 由客户端生成;沙箱在该轮的**每一帧** `event`(含 `prompt_begin`/`prompt_done`)
+  以及该轮的 `error` 上原样带回,客户端据此只认本轮的帧、忽略其它轮次的残留帧。
+  `deadlineSec` 可选,覆盖本轮的总时长上限(见 3.3)。
 - `← {op:"queue_state", busy, queue_length, queue_capacity, queue_entries, running?}` ——
   每次入队/出队以及**轮次开始/结束时**广播;`busy` 是**权威的会话忙/闲信号**
   (`true` 表示一次 `session/prompt` 正在处理中,`false` 表示当前空闲)。
-- `→ {op:"cancel"}` 取消当前轮。
+- `→ {op:"cancel", opId?}` 取消。不带 `opId`:取消当前轮并清空排队(旧语义)。带 `opId`:
+  只取消该轮——正在运行则中断它,仍在排队则移出队列。沙箱回
+  `← {op:"cancel_ack", opId, status}`,`status` 为 `cancelling`(运行中,随后以该轮
+  `prompt_done{stopReason:"cancelled"}` 收尾)、`removed`(已从队列移除)或
+  `unknown`(该轮已不存在),之后广播一次 `queue_state`。
 - `← {op:"error", message, agentExited?}`。
 - 历史回放:`GET /api/events?before=<turn>&limit=<n>` → `{events, hasMore}`。
 - 可选 `usage`:能力声明 `session.tokenUsage=true` 时,事件/连接负载携带用量字段。
@@ -113,7 +120,7 @@ WebSocket `/ws`,JSON 帧:
 
 - `← {op:"event", data:{type:"prompt_begin"}}` —— 本轮开始(可选;`busy` 随之翻为 `true`)。
 - `← {op:"event", data:{type:"prompt_done", stopReason}}` —— 本轮结束;`stopReason`
-  取值如 `end_turn` / `cancelled` / `max_tokens` 等。
+  取值如 `end_turn` / `cancelled` / `timeout`(沙箱看门狗终止)/ `max_tokens` 等。
 
 客户端可由 `queue_state.busy`(权威),或等价地由 `prompt_begin`/`prompt_done`
 这对边界,推导「运行中 / 空闲中」用于展示。注意:一轮长时间的工具调用期间**没有事件帧**
@@ -129,11 +136,21 @@ WebSocket `/ws`,JSON 帧:
 
 ### 3.3 超时语义(客户端策略,reference-only 默认值)
 
-以下三类超时都是**客户端策略**,不是沙箱通过协议下发的;沙箱侧只负责如实产出事件流与
-`prompt_done`:
+**沙箱侧看门狗(权威)**:沙箱对每一轮设两道上限,到点即终止 agent 进程并以
+`error_text` 事件说明原因、再发 `prompt_done{stopReason:"timeout"}` 收尾,保证任何一轮
+都会结束、队列不会被永久占住:
+
+- `SANDBOX_TURN_IDLE_TIMEOUT`(默认 `10m`):连续这么久没有任何事件帧;
+- `SANDBOX_TURN_MAX_DURATION`(默认 `60m`,可被 `chat.deadlineSec` 按轮覆盖):整轮总时长。
+
+取值为 Go duration(如 `90s`)或纯秒数,`0` 关闭。
+
+以下超时是**客户端策略**,作为沙箱看门狗之外的兜底:
 
 - **空闲超时**:对一轮设「无事件帧」看门狗——每收到一帧就重置计时器,窗口内无任何帧则
-  判定 agent/沙箱卡死并中止本轮。参考实现默认 120s(`chat_idle_timeout_seconds`),
+  判定 agent/沙箱卡死并中止本轮。参考实现默认 720s(`chat_idle_timeout_seconds`,需大于
+  沙箱空闲上限,让沙箱先动手)。客户端放弃时须发 `cancel{opId}` 并等待确认
+  (`cancel_ack` 或该轮 `prompt_done`),未确认则视为与沙箱失步、不得假定沙箱空闲。
   该错误视为**可重试**(换新沙箱重试,默认最多 3 次)。
 - **硬超时**:整轮 wall-clock 上限,即使持续产生事件也会到点切断。参考实现默认 600s
   (`agent_chat_timeout_seconds`),可按节点用 `chat_timeout` 覆盖;硬超时**不可重试**。

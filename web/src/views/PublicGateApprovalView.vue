@@ -92,6 +92,7 @@ const reviewerName = ref('')
 const submitting = ref(false)
 const pendingKind = ref<'confirm' | 'reject' | null>(null)
 const errorText = ref('')
+const confirmCanAbort = ref(false)
 const networkFailed = ref(false)
 const workbenchSeen = ref(false)
 const linkInvalid = ref(false)
@@ -805,6 +806,11 @@ function onComposerFinish() {
   void submitFinal('confirm')
 }
 
+function onComposerFinishAbort() {
+  if (!isReview.value && !auditReady()) return
+  void submitFinal('confirm', true)
+}
+
 type DecideFailure = {
   status?: number
   body?: { error?: string; status?: string; message?: string }
@@ -892,6 +898,13 @@ async function applyDecideResult(kind: 'confirm' | 'reject', res: PublicGateDeci
   }
   if (res.status === 'busy' || res.error === 'review_busy') {
     errorText.value = t('pages.publicGate.busy')
+    confirmCanAbort.value = false
+    await loadPreview({ silent: true })
+    return
+  }
+  if (res.status === 'sandbox_busy' || res.error === 'sandbox_busy' || res.code === 'sandbox_busy') {
+    errorText.value = t('pages.publicGate.sandboxBusy')
+    confirmCanAbort.value = true
     await loadPreview({ silent: true })
     return
   }
@@ -913,6 +926,7 @@ async function decideOnce(
   kind: 'confirm' | 'reject',
   nonce: string,
   signal: AbortSignal,
+  abortRunning = false,
 ): Promise<PublicGateDecideResult> {
   const action =
     kind === 'reject'
@@ -925,12 +939,13 @@ async function decideOnce(
       comment: isReview.value ? undefined : comment.value,
       name: isReview.value ? undefined : reviewerName.value,
       nonce,
+      abortRunning: abortRunning || undefined,
     },
     signal,
   )
 }
 
-async function submitFinal(kind: 'confirm' | 'reject') {
+async function submitFinal(kind: 'confirm' | 'reject', abortRunning = false) {
   if (!preview.value || submitting.value || (linkInvalid.value && kind === 'confirm')) return
   if (localChatBusy.value && kind === 'confirm') {
     errorText.value = t('pages.publicGate.busy')
@@ -950,6 +965,7 @@ async function submitFinal(kind: 'confirm' | 'reject') {
   submitting.value = true
   pendingKind.value = kind
   errorText.value = ''
+  if (!abortRunning) confirmCanAbort.value = false
   // Click intent: play overlay before decide HTTP (plan g1.1); not after node_complete.
   if (kind === 'confirm') void playConfirmFlowCeremony(shellRef.value ?? chatRef.value)
   stopPoll()
@@ -960,7 +976,7 @@ async function submitFinal(kind: 'confirm' | 'reject') {
   try {
     let res: PublicGateDecideResult
     try {
-      res = await decideOnce(kind, preview.value.nonce || lastKeptNonce, signal)
+      res = await decideOnce(kind, preview.value.nonce || lastKeptNonce, signal, abortRunning)
     } catch (e) {
       if (isAbortError(e)) return
       if (!isNonceError(e)) throw e
@@ -968,7 +984,7 @@ async function submitFinal(kind: 'confirm' | 'reject') {
       if (signal.aborted) return
       const nextNonce = preview.value?.nonce || lastKeptNonce
       if (!nextNonce) throw e
-      res = await decideOnce(kind, nextNonce, signal)
+      res = await decideOnce(kind, nextNonce, signal, abortRunning)
     }
     await applyDecideResult(kind, res)
   } catch (e) {
@@ -1468,8 +1484,10 @@ defineExpose({ loadPreview, loadUpstreamFull, openUpstreamModal, addPick: onAppP
                   :pass-disabled="confirmDisabled"
                   :force-confirm="!chatOnly && (showConfirm || linkInvalid)"
                   :confirm-error="errorText || null"
+                  :confirm-can-abort="confirmCanAbort"
                   @send="onSend"
                   @finish="onComposerFinish"
+                  @finish-abort="onComposerFinishAbort"
                   @cancel="onCancel"
                   @queue-remove="(itemId) => onQueueRemove(itemId)"
                   @queue-reorder="onQueueReorder"

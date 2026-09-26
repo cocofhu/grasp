@@ -75,6 +75,8 @@ export type ClarifyChatProps = {
   forceConfirmFlow?: boolean
   sendLabel?: string
   confirmError?: string | null
+  /** Host set this after a 409 sandbox_busy so the error bar offers abort+confirm. */
+  confirmCanAbort?: boolean
   nodeType?: string
   seedHumanText?: string
   seedHumanImages?: ClarifyImage[]
@@ -84,6 +86,7 @@ export type ClarifyChatEmit = {
   (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[]): void
   (e: 'retry-last'): void
   (e: 'finish'): void
+  (e: 'finish-abort'): void
   (e: 'cancel'): void
   (e: 'queue-remove', itemId: string | undefined, index: number): void
   (e: 'queue-reorder', itemIds: string[]): void
@@ -153,6 +156,8 @@ async function playConfirmCeremony(): Promise<void> {
 const queued = ref<QueueItem[]>([])
 /** In-flight turn bubbles (human + streaming agent) before props.turns catch up. */
 const liveTurns = ref<ClarifyTurn[]>([])
+/** Bridge-reported orphan turn (platform FIFO idle, sandbox still busy). */
+const sandboxOrphan = ref<{ runningOpId: string; desynced: boolean } | null>(null)
 const showApproveEmptyHint = computed(
   () =>
     !props.reviewMode &&
@@ -1137,6 +1142,11 @@ function send() {
 }
 // Clarify: force Agent wrap-up (disabled while thinking).
 // Review: accept store snapshot only when ready (not thinking / queue empty).
+function finishAbort() {
+  if (props.done || !props.confirmCanAbort) return
+  emit('finish-abort')
+}
+
 function finishEarly() {
   if (props.done || (!props.active && !props.coldSession)) return
   if (props.reviewMode) {
@@ -1169,7 +1179,11 @@ const confirmDisabled = computed(() => {
 })
 
 function cancelReview() {
-  if (props.done || !sessionBusy.value) return
+  if (props.done) return
+  const orphan = !!sandboxOrphan.value
+  // Orphan banner is shown only while the platform FIFO is idle, so sessionBusy
+  // is false — still emit cancel so the host aborts the sandbox turn.
+  if (!sessionBusy.value && !orphan) return
   // Review: clear local queue (matches CancelReviewSession clear-queue).
   // Clarify: keep local queue; authoritative queue_state will reconcile (Demo).
   if (props.reviewMode) {
@@ -1188,6 +1202,7 @@ function cancelReview() {
   streamPreview.reset()
   thoughtPreview.reset()
   thinking.value = queued.value.length > 0
+  if (orphan) sandboxOrphan.value = null
   emit('cancel')
   void scrollBottom()
 }
@@ -1235,6 +1250,36 @@ function settleAfterTurnEnd() {
   }
   thinking.value = queued.value.length > 0 || liveAgentIdx.value >= 0
 }
+
+function applySandboxOrphan(frame: {
+  sandboxBusy?: boolean
+  sandboxDesynced?: boolean
+  sandboxRunningOpId?: string
+}) {
+  const busy = !!frame.sandboxBusy || !!frame.sandboxDesynced
+  if (!busy) {
+    sandboxOrphan.value = null
+    return
+  }
+  sandboxOrphan.value = {
+    runningOpId: String(frame.sandboxRunningOpId || ''),
+    desynced: !!frame.sandboxDesynced,
+  }
+}
+
+const showSandboxOrphanBanner = computed(
+  () =>
+    !!sandboxOrphan.value &&
+    !thinking.value &&
+    queued.value.length === 0 &&
+    liveAgentIdx.value < 0 &&
+    !props.done,
+)
+
+const sandboxOrphanOpLabel = computed(() => {
+  const id = sandboxOrphan.value?.runningOpId
+  return id ? ` (${id})` : ''
+})
 
 /**
  * Reconcile local pending-send panel with platform-authoritative queue_state.
@@ -1492,6 +1537,7 @@ function applyReviewFrame(frame: {
         frame.busy,
         frame.activeItem ?? null,
       )
+      applySandboxOrphan(frame)
       break
   }
   void scrollBottom()
@@ -1709,6 +1755,7 @@ function retryLastFailed() {
     selectedDemoForInteractive,
     send,
     finishEarly,
+    finishAbort,
     playConfirmCeremony,
     showDoneChrome,
     confirmFlowPlaying,
@@ -1742,6 +1789,8 @@ function retryLastFailed() {
     useConfirmFlowAction,
     seedHumanTurn,
     liveAgentIdx,
+    showSandboxOrphanBanner,
+    sandboxOrphanOpLabel,
     liveStreamHtml,
     streamPreview,
     unsubStream,

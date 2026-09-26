@@ -373,7 +373,14 @@ func (e *Engine) ReactReply(runID, nodeID, humanText string, images []models.Pro
 
 // ReactReplyAs is ReactReply sent by owner (a pagebridge owner id).
 func (e *Engine) ReactReplyAs(owner, runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, force bool) error {
-	return e.reactReply(owner, runID, nodeID, humanText, images, annotations, force, false)
+	return e.reactReply(owner, runID, nodeID, humanText, images, annotations, force, false, false)
+}
+
+// ReactConfirmAs is ReactReplyAs(force=true). With abortRunning, an agent turn
+// the sandbox is still running outside the platform FIFO (ErrSandboxBusy) is
+// cancelled first instead of failing the confirm.
+func (e *Engine) ReactConfirmAs(owner, runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, abortRunning bool) error {
+	return e.reactReply(owner, runID, nodeID, humanText, images, annotations, true, false, abortRunning)
 }
 
 // ReactReplyRetryLast covers the last human turn after an empty/failed agent
@@ -384,10 +391,10 @@ func (e *Engine) ReactReplyRetryLast(runID, nodeID string) error {
 
 // ReactReplyRetryLastAs is ReactReplyRetryLast sent by owner.
 func (e *Engine) ReactReplyRetryLastAs(owner, runID, nodeID string) error {
-	return e.reactReply(owner, runID, nodeID, "", nil, nil, false, true)
+	return e.reactReply(owner, runID, nodeID, "", nil, nil, false, true, false)
 }
 
-func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, force, retryLast bool) error {
+func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, force, retryLast, abortRunning bool) error {
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
 	}
@@ -428,6 +435,9 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 				if !e.ReviewSessionReady(runID, nodeID) {
 					return errors.New("复审进行中或待发送队列非空,请先 Cancel 或等待完成后再确认")
 				}
+				if err := e.ensureSandboxIdleForConfirm(runID, nodeID, abortRunning); err != nil {
+					return err
+				}
 			} else if nodereg.ClarifyInteractive(n.Type) && !force {
 				// Classic clarify !force: same FIFO / WS / refresh-resume as review.
 				var convPeek models.ReactConversation
@@ -448,6 +458,9 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 				// Clarify force finish: only when session idle (no in-flight / queue).
 				if !e.ReviewSessionReady(runID, nodeID) {
 					return errors.New("澄清进行中或待发送队列非空,请先 Cancel 或等待完成后再结束")
+				}
+				if err := e.ensureSandboxIdleForConfirm(runID, nodeID, abortRunning); err != nil {
+					return err
 				}
 			}
 		}
@@ -517,7 +530,8 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	req := e.nodeReq(c, node)
 	t := e.provider.ReactReply(context.Background(), req, conv.Messages, effective, images, force)
 	agentMsg := models.ReactMessage{Role: "agent", Text: t.Msg,
-		At: time.Now().Format(time.RFC3339), Questions: t.Questions, Forms: t.Forms}
+		At: time.Now().Format(time.RFC3339), Questions: t.Questions, Forms: t.Forms,
+		Interrupted: t.Interrupted}
 	conv.Messages = append(conv.Messages, agentMsg)
 
 	// Auto-clarify: if this node runs in auto mode and the agent asked more
@@ -537,6 +551,9 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 		e.flushMcpCalls(runID, nodeID)
 		e.flushTokenUsage(runID, nodeID, t.Usage, t.UsageByModel)
 		e.broker.Publish(runID, jsonMsg("react", runID, nodeID))
+		if t.Interrupted {
+			return errConfirmTurnTimeout
+		}
 		return errors.New("仍有待确认问题或收尾未完成，无法确认并流转")
 	}
 

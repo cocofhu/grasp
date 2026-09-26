@@ -282,7 +282,7 @@ describe('useRunDetail actions', () => {
     await nextTick()
 
     await detail.onClarifySend('hello')
-    expect(mocks.reactReply).toHaveBeenCalledWith('run-1', 'n1', 'hello', [], false, [])
+    expect(mocks.reactReply).toHaveBeenCalledWith('run-1', 'n1', 'hello', [], false, [], false, false)
 
     // Failure rolls back the optimistic queued row and shows the error.
     const discardLastQueued = vi.fn()
@@ -295,7 +295,7 @@ describe('useRunDetail actions', () => {
     // Force finish refreshes the snapshot instead of rolling back.
     mocks.getRun.mockClear()
     await detail.onClarifySend('done', [], [], true)
-    expect(mocks.reactReply).toHaveBeenLastCalledWith('run-1', 'n1', 'done', [], true, [])
+    expect(mocks.reactReply).toHaveBeenLastCalledWith('run-1', 'n1', 'done', [], true, [], false, false)
     expect(mocks.getRun).toHaveBeenCalled()
 
     await detail.onClarifyCancel()

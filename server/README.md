@@ -215,7 +215,7 @@ Staging 示例:
 | `GRASP_SANDBOX_ENV` | — | 通用 `K=V,K2=V2` 环境变量,注入每个沙箱(厂商无关;**不含** ACP API Key) |
 | `GRASP_CURSOR_AUTH` | — | 可选(cursor 专用):挂载宿主 Cursor 配置目录(只读)复用 CLI 登录 |
 | `GRASP_AGENT_TIMEOUT_SEC` | `600` | 单轮 agent/react 回合硬超时(全局默认);单节点可在其 Agent 卡片填「超时(分钟)」单独放宽 |
-| `GRASP_CHAT_IDLE_SEC` | `600` | 回合内多久无事件即判卡死并中断 |
+| `GRASP_CHAT_IDLE_SEC` | `720` | 回合内多久无事件即判卡死并中断 |
 | `GRASP_MCP_ADVERTISE` | `http://host.docker.internal:<PORT>` | 沙箱内 agent/MCP 客户端回连 run 级 artifact-store MCP 的 base URL。K8s gateway 须改为沙箱可达且挂载 `/mcp` 的实例基址(如 `http://api.example.com`);勿用仅 SPA/无 `/mcp` 路由的入口域名。若误配 `spa.example.com`,加载配置与注入时会改写为 `api.example.com`(见 `RewriteMisconfiguredMCPAdvertise`) |
 | `GRASP_PROFILES_ROOT` | `data/profiles` | Agent profile 规则根(挂入 `{configRoot}/rules`) |
 

@@ -5,6 +5,7 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
+import { isSandboxBusyError } from '@/lib/api/httpCore'
 import { useToast } from '@/lib/composables/useToast'
 import {
   applyOuterSashMem,
@@ -423,6 +424,7 @@ function resetRunState(id: string) {
   manual.value = false
   gateError.value = null
   clarifyConfirmError.value = null
+  clarifyConfirmCanAbort.value = false
   resumeError.value = null
   resetDialogueState()
 }
@@ -560,6 +562,7 @@ function onArtifactDeleted(id: string) {
 const gateError = ref<string | null>(null)
 const gateSubmitting = ref(false)
 const clarifyConfirmError = ref<string | null>(null)
+const clarifyConfirmCanAbort = ref(false)
 async function onGateResolve(action: string, form: Record<string, any> = {}) {
   if (!run.value.gate || gateSubmitting.value) return
   gateSubmitting.value = true
@@ -586,11 +589,13 @@ async function onClarifySend(
   annotations: import('@/lib/shared/types').ReactAnnotation[] = [],
   force = false,
   retryLast = false,
+  abortRunning = false,
 ) {
   const conv = selClarify.value
   if (!conv || conv.done) return
   const nodeId = conv.nodeId
   clarifyConfirmError.value = null
+  if (!abortRunning) clarifyConfirmCanAbort.value = false
   // Demo: send may attach the latest staged pick even if user skipped「添加到聊天」.
   const anns =
     hasAppPreview.value && !force && !retryLast
@@ -603,7 +608,7 @@ async function onClarifySend(
     if (retryLast) {
       await api.reactReply(runId.value, nodeId, text, images, force, anns, true)
     } else {
-      await api.reactReply(runId.value, nodeId, text, images, force, anns)
+      await api.reactReply(runId.value, nodeId, text, images, force, anns, false, abortRunning)
     }
   } catch (e: any) {
     // Re-sync below so the UI reflects the real state (e.g. the dialogue has
@@ -612,7 +617,12 @@ async function onClarifySend(
     const msg = e?.message || t('pages.runDetail.gateError')
     // Non-force: roll back optimistic pending-send row so FR4 / send lock is not stuck.
     if (!force && !retryLast) reviewChatRef.value?.discardLastQueued?.()
-    clarifyConfirmError.value = msg
+    if (force && isSandboxBusyError(e)) {
+      clarifyConfirmCanAbort.value = true
+      clarifyConfirmError.value = t('pages.clarify.sandboxBusy')
+    } else {
+      clarifyConfirmError.value = msg
+    }
   }
   // Enqueue returns before the turn finishes — avoid wiping live bubbles.
   // Force finish still needs a snapshot refresh.
@@ -663,6 +673,13 @@ function onClarifyFinish() {
     ? t('pages.clarify.confirmFlowPrompt')
     : t('pages.runDetail.clarifyFinishPrompt')
   onClarifySend(prompt, [], [], true)
+}
+
+function onClarifyFinishAbort() {
+  const prompt = reviewActive.value
+    ? t('pages.clarify.confirmFlowPrompt')
+    : t('pages.runDetail.clarifyFinishPrompt')
+  onClarifySend(prompt, [], [], true, false, true)
 }
 const canCancelRun = computed(() => {
   const s = run.value?.status
@@ -1331,6 +1348,7 @@ function selectExecution(nodeId: string, idx: number) {
   gateError,
   gateSubmitting,
   clarifyConfirmError,
+  clarifyConfirmCanAbort,
   onGateResolve,
   onClarifySend,
   onClarifyRetryLast,
@@ -1338,6 +1356,7 @@ function selectExecution(nodeId: string, idx: number) {
   onClarifyQueueRemove,
   onClarifyQueueReorder,
   onClarifyFinish,
+  onClarifyFinishAbort,
   canCancelRun,
   showCancelConfirm,
   cancellingRun,

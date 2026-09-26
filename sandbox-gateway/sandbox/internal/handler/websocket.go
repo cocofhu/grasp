@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"backend/internal/acp"
 	"backend/internal/correl"
@@ -100,7 +101,11 @@ func WebSocket(bridge *service.Bridge) gin.HandlerFunc {
 					writeWSError(bridge, conn, acp.UserFacingAny(err))
 				}
 			case "cancel":
-				bridge.CancelPrompt()
+				var body struct {
+					OpID string `json:"opId"`
+				}
+				_ = json.Unmarshal(payload, &body)
+				bridge.CancelPromptOp(body.OpID)
 			case "restart_agent":
 				panel, err := bridge.RestartAgent()
 				if err != nil {
@@ -165,6 +170,8 @@ func handleChat(bridge *service.Bridge, payload []byte) (opID string, err error)
 		OpID    string                `json:"opId"`
 		ID      string                `json:"id"`
 		Images  []service.PromptImage `json:"images"`
+		// DeadlineSec overrides the bridge's total-duration limit for this turn.
+		DeadlineSec int `json:"deadlineSec"`
 	}
 	if err := json.Unmarshal(payload, &body); err != nil {
 		return "", err
@@ -187,7 +194,11 @@ func handleChat(bridge *service.Bridge, payload []byte) (opID string, err error)
 	if opID == "" {
 		opID = correl.ID()
 	}
-	err = bridge.ChatWithOpID(text, opID, act, body.Images)
+	var maxDuration time.Duration
+	if body.DeadlineSec > 0 {
+		maxDuration = time.Duration(body.DeadlineSec) * time.Second
+	}
+	err = bridge.ChatWithDeadline(text, opID, act, body.Images, maxDuration)
 	return opID, err
 }
 

@@ -38,8 +38,8 @@ func TestSetDefaults(t *testing.T) {
 	if c.Sandbox.AgentChatTimeoutSeconds != 600 {
 		t.Errorf("default timeout = %d, want 600", c.Sandbox.AgentChatTimeoutSeconds)
 	}
-	if c.Sandbox.ChatIdleTimeoutSeconds != 600 {
-		t.Errorf("default idle timeout = %d, want 600", c.Sandbox.ChatIdleTimeoutSeconds)
+	if c.Sandbox.ChatIdleTimeoutSeconds != 720 {
+		t.Errorf("default idle timeout = %d, want 720", c.Sandbox.ChatIdleTimeoutSeconds)
 	}
 	want := fmt.Sprintf("http://host.docker.internal:%d", c.Server.Port)
 	if c.Server.MCPAdvertise != want {

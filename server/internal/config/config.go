@@ -205,7 +205,9 @@ type SandboxConfig struct {
 	// sooner by ChatIdleTimeoutSeconds below.
 	AgentChatTimeoutSeconds int `yaml:"agent_chat_timeout_seconds"`
 	// ChatIdleTimeoutSeconds aborts a turn when no ACP event arrives within the
-	// window (agent/sandbox presumed stuck). 0 = default 600.
+	// window (agent/sandbox presumed stuck). 0 = default 720 — above the
+	// sandbox bridge watchdog (SANDBOX_TURN_IDLE_TIMEOUT, 10m) so the bridge,
+	// which can actually kill the turn, fires first.
 	ChatIdleTimeoutSeconds int `yaml:"chat_idle_timeout_seconds"`
 	// MaxAttempts caps how many times a node is (re)attempted on a retryable
 	// sandbox/ACP fault (create/ACP-ready/connect/mid-turn crash/idle). 0 = 3.
@@ -500,7 +502,7 @@ func setDefaults(c *Config) {
 		c.Sandbox.AgentChatTimeoutSeconds = 600
 	}
 	if c.Sandbox.ChatIdleTimeoutSeconds == 0 {
-		c.Sandbox.ChatIdleTimeoutSeconds = 600
+		c.Sandbox.ChatIdleTimeoutSeconds = 720
 	}
 	if c.Sandbox.MaxAttempts == 0 {
 		c.Sandbox.MaxAttempts = 3

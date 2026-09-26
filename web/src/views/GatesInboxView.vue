@@ -98,6 +98,7 @@ const {
   onClarifySend,
   onClarifyRetryLast,
   onClarifyFinish,
+  onClarifyFinishAbort,
   onClarifyCancel,
   onClarifyQueueRemove,
   onClarifyQueueReorder,
@@ -144,6 +145,7 @@ const {
   showListRefresh,
   listPanelBusy,
   clarifyConfirmError,
+  clarifyConfirmCanAbort,
   processedTriples,
   confirmedAbsentTriples,
   inboxContextAborts,
@@ -507,10 +509,12 @@ const listFadeKey = computed(() =>
               :done="clarifyComposerDone"
               :active="clarifyInputActive"
               :confirm-error="clarifyConfirmError"
+              :confirm-can-abort="clarifyConfirmCanAbort"
               :page-control="inboxPageControl"
               @send="onClarifySend"
               @retry-last="onClarifyRetryLast"
               @finish="onClarifyFinish"
+              @finish-abort="onClarifyFinishAbort"
               @cancel="onClarifyCancel"
               @queue-remove="(itemId) => onClarifyQueueRemove(itemId)"
               @queue-reorder="onClarifyQueueReorder"
@@ -644,10 +648,12 @@ const listFadeKey = computed(() =>
                   :done="clarifyComposerDone"
                   :active="clarifyInputActive"
                   :confirm-error="clarifyConfirmError"
+                  :confirm-can-abort="clarifyConfirmCanAbort"
                   :page-control="inboxPageControl"
                   @send="onClarifySend"
                   @retry-last="onClarifyRetryLast"
                   @finish="onClarifyFinish"
+                  @finish-abort="onClarifyFinishAbort"
                   @cancel="onClarifyCancel"
                   @queue-remove="(itemId) => onClarifyQueueRemove(itemId)"
                   @queue-reorder="onClarifyQueueReorder"

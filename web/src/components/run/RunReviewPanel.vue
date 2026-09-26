@@ -39,6 +39,7 @@ const props = defineProps<{
   annotations: ReactAnnotation[]
   inputActive: boolean
   confirmError?: string | null
+  confirmCanAbort?: boolean
   selStatus?: NodeRunStatus | string | null
 }>()
 
@@ -49,6 +50,7 @@ const emit = defineEmits<{
   send: [text: string, images: ClarifyImage[], annotations: ReactAnnotation[]]
   'retry-last': []
   finish: []
+  'finish-abort': []
   cancel: []
   'queue-remove': [itemId: string | undefined, index: number]
   'queue-reorder': [itemIds: string[]]
@@ -131,12 +133,14 @@ defineExpose({
         :done="clarify.done"
         :active="inputActive"
         :confirm-error="confirmError"
+        :confirm-can-abort="confirmCanAbort"
         @update:draft="emit('update:draft', $event)"
         @update:attachments="emit('update:attachments', $event)"
         @update:annotations="emit('update:annotations', $event)"
         @send="(text: string, images: ClarifyImage[], anns: ReactAnnotation[]) => emit('send', text, images, anns)"
         @retry-last="emit('retry-last')"
         @finish="emit('finish')"
+        @finish-abort="emit('finish-abort')"
         @cancel="emit('cancel')"
         @queue-remove="(itemId, index) => emit('queue-remove', itemId, index)"
         @queue-reorder="(itemIds) => emit('queue-reorder', itemIds)"

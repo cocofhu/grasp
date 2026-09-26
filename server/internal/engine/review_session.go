@@ -1020,6 +1020,9 @@ func (e *Engine) publishReview(runID, nodeID, event string, extra map[string]any
 	for k, v := range extra {
 		payload[k] = v
 	}
+	if event == "queue_state" {
+		e.attachSandboxState(runID, nodeID, payload)
+	}
 	msg, err := json.Marshal(payload)
 	if err != nil {
 		return
