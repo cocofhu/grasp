@@ -44,6 +44,14 @@ type fakeProvider struct {
 	approveWriteOptional bool
 	// reactForceStayOpen: force=true still returns Done:false (pending ask_question).
 	reactForceStayOpen bool
+	// reactInterrupted: force wrap-up returns Done:false + Interrupted (timeout).
+	reactInterrupted bool
+	// sandboxBusy / sandboxDesynced drive SessionBridgeInspector for confirm-gate tests.
+	sandboxBusy      bool
+	sandboxDesynced  bool
+	sandboxRunningOp string
+	abortOK          bool
+	abortCalls       int
 	// reactSetupErr, when set, makes ReactOpen fail with a sandbox setup error.
 	reactSetupErr error
 
@@ -441,8 +449,13 @@ func (f *fakeProvider) ReactReply(ctx context.Context, req runtime.NodeReq, hist
 	}
 	skip := f.reactSkipProduces
 	stayOpen := f.reactForceStayOpen
+	interrupted := f.reactInterrupted
 	hold := f.reactHold
 	f.mu.Unlock()
+	if interrupted {
+		return runtime.ReactTurn{Msg: "半截旁白", Done: false, Interrupted: true,
+			Events: []models.AcpEvent{{Kind: "message", Text: "idle-timeout"}}}
+	}
 	if hold != nil {
 		select {
 		case <-hold:
@@ -647,6 +660,31 @@ func (f *fakeProvider) RetireSession(runID, nodeID string) {
 
 // CancelSessionTurn is a no-op for the fake (no live ACP); optional interface.
 func (f *fakeProvider) CancelSessionTurn(runID, nodeID string) {}
+
+func (f *fakeProvider) SessionBridgeState(runID, nodeID string) (runtime.BridgeStatus, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.sandboxBusy && !f.sandboxDesynced {
+		return runtime.BridgeStatus{}, false
+	}
+	return runtime.BridgeStatus{
+		Known: true, Busy: f.sandboxBusy, Desynced: f.sandboxDesynced,
+		RunningOpID: f.sandboxRunningOp,
+	}, true
+}
+
+func (f *fakeProvider) AbortSessionTurn(runID, nodeID string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.abortCalls++
+	if !f.abortOK {
+		return false
+	}
+	f.sandboxBusy = false
+	f.sandboxDesynced = false
+	f.sandboxRunningOp = ""
+	return true
+}
 
 func kindOf(name string) string {
 	switch {

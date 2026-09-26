@@ -24,6 +24,7 @@ function mountChat(opts: {
   reviewMode?: boolean
   nodeType?: string
   confirmError?: string | null
+  confirmCanAbort?: boolean
   annotateEnabled?: boolean
   annotations?: ReactAnnotation[]
   attachments?: { data: string; mimeType: string; name?: string }[]
@@ -49,6 +50,7 @@ function mountChat(opts: {
       reviewMode: opts.reviewMode ?? false,
       nodeType: opts.nodeType ?? '',
       confirmError: opts.confirmError ?? null,
+      confirmCanAbort: opts.confirmCanAbort ?? false,
       annotateEnabled: opts.annotateEnabled ?? false,
       annotations: opts.annotations ?? [],
       attachments: opts.attachments ?? [],
@@ -262,6 +264,18 @@ describe('ClarifyChat', () => {
       '接受当前已落盘产物并流转（不触发 Agent）',
     )
     expect(wrapper.find('[data-testid="clarify-review-cancel"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('review mode: sandbox_busy error offers abort-and-confirm', async () => {
+    const wrapper = mountChat({
+      reviewMode: true,
+      confirmError: '沙箱中仍有未结束的 Agent 回合，确认会排在它后面。请先中止该回合再确认。',
+      confirmCanAbort: true,
+    })
+    expect(wrapper.find('[data-testid="clarify-abort-and-confirm"]').text()).toContain('中止当前回合并确认')
+    await wrapper.find('[data-testid="clarify-abort-and-confirm"]').trigger('click')
+    expect(wrapper.emitted('finish-abort')).toBeTruthy()
     wrapper.unmount()
   })
 

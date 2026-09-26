@@ -362,6 +362,8 @@ export type PublicGateDecideResult = {
   error?: string
   message?: string
   kind?: string
+  code?: string
+  runningOpId?: string
 }
 
 export type PublicGateReplyResult = {
@@ -570,6 +572,7 @@ export const publicGateApi = {
       comment?: string
       name?: string
       nonce: string
+      abortRunning?: boolean
     },
     signal?: AbortSignal,
   ): Promise<PublicGateDecideResult> {
@@ -584,6 +587,9 @@ export const publicGateApi = {
       body: JSON.stringify(payload),
     }).then(async (res) => {
       const body = await readJson<PublicGateDecideResult>(res)
+      if (body.status === 'sandbox_busy' || body.code === 'sandbox_busy') {
+        return { ...body, status: 'sandbox_busy' }
+      }
       if (!res.ok && res.status !== 409) {
         throw Object.assign(new Error(body.message || body.error || `${res.status}`), {
           status: res.status,

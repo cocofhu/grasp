@@ -203,6 +203,9 @@ type ReactTurn struct {
 	// Err is set when Done is true but the finish path failed (e.g. a re-prompt
 	// nudge hit the per-turn chat deadline). Distinct from SetupErr.
 	Err error
+	// Interrupted marks a turn that did not finish on its own (sandbox or
+	// platform timeout, cancel): Msg is partial and must not read as 已完成.
+	Interrupted bool
 }
 
 // ExecProvider runs the two user-defined agent node kinds.
@@ -258,6 +261,21 @@ type ReviewProvider interface {
 // Bridge session/cancel also clears the sandbox PromptQueue.
 type ReviewTurnCanceller interface {
 	CancelSessionTurn(runID, nodeID string)
+}
+
+// BridgeStatus is the sandbox bridge's own view of a parked session's turns.
+type BridgeStatus = sandbox.BridgeState
+
+// SessionBridgeInspector is an optional provider capability: read what the
+// sandbox bridge itself reports for a parked session (which can disagree with
+// the platform FIFO after a turn the platform gave up on) and abort the turn
+// the bridge is running.
+type SessionBridgeInspector interface {
+	// SessionBridgeState returns ok=false when no live session is parked.
+	SessionBridgeState(runID, nodeID string) (BridgeStatus, bool)
+	// AbortSessionTurn cancels the bridge's running turn and waits for the
+	// bridge to confirm; false when it did not.
+	AbortSessionTurn(runID, nodeID string) bool
 }
 
 // LiveEventSource is an optional provider capability: read a running node's

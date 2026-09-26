@@ -155,6 +155,31 @@ func (r *ProviderRegistry) CancelSessionTurn(runID, nodeID string) {
 	}
 }
 
+// SessionBridgeState returns the first backend's bridge view for a parked
+// session (sessions live on the backend that ran the producer).
+func (r *ProviderRegistry) SessionBridgeState(runID, nodeID string) (BridgeStatus, bool) {
+	for _, p := range r.providers {
+		if bi, ok := p.(SessionBridgeInspector); ok {
+			if st, hit := bi.SessionBridgeState(runID, nodeID); hit {
+				return st, true
+			}
+		}
+	}
+	return BridgeStatus{}, false
+}
+
+// AbortSessionTurn aborts the bridge turn on the backend holding the session.
+func (r *ProviderRegistry) AbortSessionTurn(runID, nodeID string) bool {
+	for _, p := range r.providers {
+		if bi, ok := p.(SessionBridgeInspector); ok {
+			if _, hit := bi.SessionBridgeState(runID, nodeID); hit {
+				return bi.AbortSessionTurn(runID, nodeID)
+			}
+		}
+	}
+	return true
+}
+
 func (r *ProviderRegistry) LiveNodeEvents(ctx context.Context, runID, nodeID string) ([]models.AcpEvent, bool, error) {
 	for _, p := range r.providers {
 		if src, ok := p.(LiveEventSource); ok {

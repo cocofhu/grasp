@@ -35,6 +35,7 @@ const props = withDefaults(
     forceConfirmFlow?: boolean
     sendLabel?: string
     confirmError?: string | null
+    confirmCanAbort?: boolean
     nodeType?: string
     seedHumanText?: string
     seedHumanImages?: ClarifyImage[]
@@ -49,6 +50,7 @@ const props = withDefaults(
     finishDisabled: false,
     forceConfirmFlow: false,
     confirmError: null,
+    confirmCanAbort: false,
     nodeType: '',
     turns: () => [],
     seedHumanText: '',
@@ -60,6 +62,7 @@ const emit = defineEmits<{
   (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[]): void
   (e: 'retry-last'): void
   (e: 'finish'): void
+  (e: 'finish-abort'): void
   (e: 'cancel'): void
   (e: 'queue-remove', itemId: string | undefined, index: number): void
   (e: 'queue-reorder', itemIds: string[]): void
@@ -131,6 +134,7 @@ const {
   selectedDemoForInteractive,
   send,
   finishEarly,
+  finishAbort,
   playConfirmCeremony,
   showDoneChrome,
   confirmFlowPlaying,
@@ -162,6 +166,8 @@ const {
   useConfirmFlowAction,
   seedHumanTurn,
   liveAgentIdx,
+  showSandboxOrphanBanner,
+  sandboxOrphanOpLabel,
   liveStreamHtml,
   streamPreview,
   unsubStream,
@@ -240,6 +246,25 @@ const {
       <div class="flex items-center gap-2 text-[11px] text-txt3">
         <Icon name="chat" :size="13" />
         {{ translate('pages.clarify.header', { n: displayTurns.length }) }}
+      </div>
+      <div
+        v-if="showSandboxOrphanBanner"
+        class="flex items-start gap-2 rounded-md border border-warn/40 bg-warn/10 px-2.5 py-2 text-[12px] text-txt"
+        data-testid="clarify-sandbox-orphan"
+        role="status"
+      >
+        <Icon name="alert" :size="13" class="mt-0.5 shrink-0 text-warn" />
+        <p class="min-w-0 flex-1 leading-relaxed">
+          {{ translate('pages.clarify.sandboxOrphanBanner', { op: sandboxOrphanOpLabel }) }}
+        </p>
+        <button
+          type="button"
+          class="shrink-0 rounded-md border border-line bg-elevated px-2 py-1 text-[11px] font-medium text-txt2 hover:border-line-strong"
+          data-testid="clarify-sandbox-orphan-cancel"
+          @click="cancelReview"
+        >
+          {{ translate('pages.clarify.sandboxOrphanCancel') }}
+        </button>
       </div>
       <p
         v-if="showApproveEmptyHint"
@@ -984,6 +1009,15 @@ const {
     >
       <Icon name="alert" :size="13" />
       <span class="min-w-0 flex-1 [overflow-wrap:anywhere]">{{ confirmError }}</span>
+      <button
+        v-if="confirmCanAbort"
+        type="button"
+        class="shrink-0 rounded-md bg-ok px-2 py-1 text-[11px] font-medium text-white hover:bg-ok/90"
+        data-testid="clarify-abort-and-confirm"
+        @click="finishAbort"
+      >
+        {{ translate('pages.clarify.abortAndConfirm') }}
+      </button>
     </div>
   </div>
 

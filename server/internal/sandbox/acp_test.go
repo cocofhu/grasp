@@ -327,7 +327,7 @@ func TestChatMessageWithImages(t *testing.T) {
 	msg := chatMessage("hi", []models.PromptImage{
 		{Data: "abc", MimeType: "image/png", Name: "photo.png"},
 		{Data: ""},
-	})
+	}, "")
 	imgs, ok := msg["images"].([]map[string]string)
 	if !ok || len(imgs) != 1 || imgs[0]["data"] != "abc" {
 		t.Fatalf("images = %v", msg["images"])
@@ -335,11 +335,11 @@ func TestChatMessageWithImages(t *testing.T) {
 	if imgs[0]["name"] != "photo.png" {
 		t.Fatalf("name = %q, want photo.png", imgs[0]["name"])
 	}
-	if plain := chatMessage("hi", nil); plain["images"] != nil {
+	if plain := chatMessage("hi", nil, ""); plain["images"] != nil {
 		t.Error("no images key expected for text-only chat")
 	}
 	// Missing name stays compatible with old clients (no name key).
-	anon := chatMessage("hi", []models.PromptImage{{Data: "x", MimeType: "image/png"}})
+	anon := chatMessage("hi", []models.PromptImage{{Data: "x", MimeType: "image/png"}}, "")
 	anonImgs := anon["images"].([]map[string]string)
 	if _, has := anonImgs[0]["name"]; has {
 		t.Error("empty Name should omit name key")

@@ -224,7 +224,7 @@ func (b *Bridge) Connect(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (p
 	defer handshakeCancel()
 
 	onEvent := func(ev json.RawMessage) {
-		b.Broadcast(map[string]any{"op": "event", "data": ev})
+		b.Broadcast(eventEnvelope(ev, b.touchActiveTurn()))
 	}
 	perm := func(ctx context.Context, rpcID json.RawMessage, raw json.RawMessage) (string, error) {
 		return b.permissionChooser(ctx, rpcID, raw)

@@ -47,6 +47,16 @@ type ChatResult struct {
 	ErrorText string `json:"errorText,omitempty"`
 	// Failed is set when prompt_done.stopReason == "failed".
 	Failed bool `json:"-"`
+
+	// OpID is the turn id this client sent with {op:chat}; the bridge echoes it
+	// on every frame of the turn.
+	OpID string `json:"-"`
+	// StopReason is prompt_done.stopReason (empty when the turn never finished).
+	StopReason string `json:"-"`
+	// Interrupted marks a turn that did not finish on its own: the bridge
+	// watchdog timed it out, it was cancelled, or this client gave up after its
+	// idle window. Narration is partial; ErrorText carries the reason.
+	Interrupted bool `json:"-"`
 }
 
 // appendErrorText records a provider/bridge error body on the turn. Multiple

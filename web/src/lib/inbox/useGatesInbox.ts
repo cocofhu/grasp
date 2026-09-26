@@ -3,6 +3,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { REVIEW_SHELL_WIDTH_KEY_APPROVAL } from '@/lib/inbox/reviewLayoutBudget'
 import { api, isPaginated } from '@/lib/api/api'
+import { isSandboxBusyError } from '@/lib/api/httpCore'
 import { adaptInboxContextToRun } from '@/lib/inbox/inboxContext'
 import { usePipelineFilter } from '@/lib/composables/usePipelineFilter'
 import { useTagFilter } from '@/lib/composables/useTagFilter'
@@ -216,6 +217,7 @@ const listPanelBusy = computed(
 )
 /** Review confirm validation failure (bottom status bar; replaces force-failure toast). */
 const clarifyConfirmError = ref<string | null>(null)
+const clarifyConfirmCanAbort = ref(false)
 
 /** Triples that left pending — never softRefresh/load inbox-context for these. */
 const processedTriples = new Set<string>()
@@ -1784,6 +1786,7 @@ function selectItem(it: InboxItem) {
   if (isItemCardDisabled(it)) return
   showProcessedBanner.value = false
   clarifyConfirmError.value = null
+  clarifyConfirmCanAbort.value = false
   active.value = it
 }
 
@@ -1807,6 +1810,7 @@ async function onClarifySend(
   annotations: import('@/lib/shared/types').ReactAnnotation[] = [],
   force = false,
   retryLast = false,
+  abortRunning = false,
 ) {
   const it = active.value
   if (!it || it.type !== 'clarify' || it.done) return
@@ -1834,6 +1838,7 @@ async function onClarifySend(
   const mergedAnnotations =
     !force && !retryLast ? mergeStagedAppPreviewPick(annotations) : annotations
   clarifyConfirmError.value = null
+  if (!abortRunning) clarifyConfirmCanAbort.value = false
   let ok = true
   try {
     if (retryLast) {
@@ -1847,14 +1852,17 @@ async function onClarifySend(
         true,
       )
     } else {
-      await api.reactReply(it.runId, it.nodeId, text, images, force, mergedAnnotations)
+      await api.reactReply(it.runId, it.nodeId, text, images, force, mergedAnnotations, false, abortRunning)
     }
     if (!force && !retryLast) lastStagedAppPreviewPick.value = null
   } catch (e: any) {
     ok = false
     /* refresh below to reflect real state */
     console.warn('reactReply failed', e?.message || e)
-    const msg = e?.message || t('pages.gatesInbox.reviewFinishFailed')
+    const msg = isSandboxBusyError(e)
+      ? t('pages.clarify.sandboxBusy')
+      : e?.message || t('pages.gatesInbox.reviewFinishFailed')
+    if (force && isSandboxBusyError(e)) clarifyConfirmCanAbort.value = true
     if (force) {
       // Align with RunDetail: bottom status bar, not toast.
       clarifyConfirmError.value = msg
@@ -1919,6 +1927,13 @@ function onClarifyFinish() {
     ? t('pages.clarify.confirmFlowPrompt')
     : t('pages.runDetail.clarifyFinishPrompt')
   onClarifySend(prompt, [], [], true)
+}
+
+function onClarifyFinishAbort() {
+  const prompt = reviewActive.value
+    ? t('pages.clarify.confirmFlowPrompt')
+    : t('pages.runDetail.clarifyFinishPrompt')
+  onClarifySend(prompt, [], [], true, false, true)
 }
 
 /** Cover-this-turn retry for empty/failure agent (plan g2.1). */
@@ -2085,6 +2100,7 @@ function itemSecondary(it: InboxItem) {
     onClarifySend,
     onClarifyRetryLast,
     onClarifyFinish,
+    onClarifyFinishAbort,
     onClarifyCancel,
     onClarifyQueueRemove,
     onClarifyQueueReorder,
@@ -2133,6 +2149,7 @@ function itemSecondary(it: InboxItem) {
     showListRefresh,
     listPanelBusy,
     clarifyConfirmError,
+    clarifyConfirmCanAbort,
     processedTriples,
     confirmedAbsentTriples,
     inboxContextAborts,

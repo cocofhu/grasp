@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/nodereg"
@@ -21,11 +22,12 @@ const (
 )
 
 type publicDecideBody struct {
-	Token   string `json:"token"`
-	Action  string `json:"action"`
-	Comment string `json:"comment"`
-	Name    string `json:"name"`
-	Nonce   string `json:"nonce"`
+	Token        string `json:"token"`
+	Action       string `json:"action"`
+	Comment      string `json:"comment"`
+	Name         string `json:"name"`
+	Nonce        string `json:"nonce"`
+	AbortRunning bool   `json:"abortRunning"`
 }
 
 type publicReplyBody struct {
@@ -468,7 +470,7 @@ func (h *Handlers) PublicGateDecide(c *gin.Context) {
 		return
 	}
 	if kind == models.ShareLinkKindReview {
-		h.publicReviewDecide(c, lookup, token, strings.TrimSpace(body.Action))
+		h.publicReviewDecide(c, lookup, token, strings.TrimSpace(body.Action), body.AbortRunning)
 		return
 	}
 	action := strings.TrimSpace(body.Action)
@@ -537,7 +539,7 @@ func publicShareKind(lookup *gateshare.LookupResult) string {
 	return models.ShareLinkKindHumanGate
 }
 
-func (h *Handlers) publicReviewDecide(c *gin.Context, lookup *gateshare.LookupResult, token, action string) {
+func (h *Handlers) publicReviewDecide(c *gin.Context, lookup *gateshare.LookupResult, token, action string, abortRunning bool) {
 	if action == "" {
 		action = "confirm"
 	}
@@ -545,8 +547,12 @@ func (h *Handlers) publicReviewDecide(c *gin.Context, lookup *gateshare.LookupRe
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported_action", "message": "复审公开页仅支持确认并流转"})
 		return
 	}
-	res, err := h.Eng.ResumeReviewExternal(h.GateShare, token, action)
+	res, err := h.Eng.ResumeReviewExternalOpts(h.GateShare, token, action, abortRunning)
 	if err != nil {
+		if errors.Is(err, engine.ErrSandboxBusy) {
+			writeReactReplyError(c, err)
+			return
+		}
 		if errors.Is(err, gateshare.ErrReviewBusy) {
 			c.JSON(http.StatusOK, gin.H{"status": "busy", "error": "review_busy", "message": "复审进行中，请稍后再试"})
 			return

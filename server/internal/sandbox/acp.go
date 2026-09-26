@@ -11,6 +11,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
@@ -58,8 +59,11 @@ func newIdleWatch(idle time.Duration) (<-chan time.Time, func(), func()) {
 // so the bridge's text-only path stays byte-identical (backward compatible).
 // When Name is set it is forwarded so MaterializeAttachments can keep the
 // original filename; omitting name preserves old-client compatibility.
-func chatMessage(text string, images []models.PromptImage) map[string]any {
+func chatMessage(text string, images []models.PromptImage, opID string) map[string]any {
 	msg := map[string]any{"op": "chat", "content": text}
+	if opID != "" {
+		msg["opId"] = opID
+	}
 	if len(images) > 0 {
 		imgs := make([]map[string]string, 0, len(images))
 		for _, im := range images {
@@ -117,6 +121,19 @@ type ACPClient struct {
 
 	eventCh chan json.RawMessage
 	done    chan struct{}
+
+	// opIDTagged latches once any frame arrives with an opId: the bridge
+	// attributes frames to turns, so untagged event frames are not ours.
+	opIDTagged atomic.Bool
+	// turnOpID is the opId of the chat currently in flight on this client
+	// ("" when none); lastDoneOpID the last one that ended with prompt_done.
+	turnOpID     atomic.Value
+	lastDoneOpID atomic.Value
+
+	// bridge mirrors the latest queue_state regardless of whether a chat is in
+	// flight, plus the local desync flag (cancel never acknowledged).
+	stateMu sync.Mutex
+	bridge  BridgeState
 }
 
 // NewACPClient builds a client targeting host:port (the published 8765).
@@ -400,68 +417,7 @@ func isAuthWarmupErr(err error) bool {
 // aggregates the whole turn's session_update stream into a ChatResult. ctx
 // controls the deadline.
 func (c *ACPClient) ChatStructured(ctx context.Context, text string, images []models.PromptImage) (*ChatResult, error) {
-	if !c.IsConnected() {
-		return nil, fmt.Errorf("%w: not connected", ErrConnClosed)
-	}
-	var err error
-	images, err = c.prepareImages(ctx, images)
-	if err != nil {
-		return nil, err
-	}
-	c.drainEvents()
-	if err := c.send(chatMessage(text, images)); err != nil {
-		return nil, fmt.Errorf("%w: send chat: %v", ErrConnClosed, err)
-	}
-
-	result := &ChatResult{}
-	idleC, idleReset, idleStop := newIdleWatch(c.idleTimeout)
-	defer idleStop()
-	for {
-		select {
-		case raw := <-c.eventCh:
-			idleReset()
-			op, _ := parseOpAndSession(raw)
-			switch op {
-			case "event":
-				if done := c.dispatchEventData(raw, result); done {
-					c.lg.Info().
-						Int("narration_bytes", len(result.Narration)).
-						Int("tools", len(result.ToolCalls)).
-						Msg("acp chat complete")
-					return result, nil
-				}
-			case "queue_state":
-				if busy, ok := parseQueueBusy(raw); ok {
-					result.Busy, result.BusySet = busy, true
-				}
-			case "error":
-				errMsg := parseErrorMessage(raw)
-				c.lg.Warn().Str("err", errMsg).Msg("acp chat error event")
-				result.appendErrorText(errMsg)
-				if hasContent(result) {
-					return result, nil
-				}
-				return nil, fmt.Errorf("acp error: %s", errMsg)
-			}
-		case <-idleC:
-			c.lg.Warn().Dur("idle", c.idleTimeout).Msg("acp chat idle timeout")
-			if hasContent(result) {
-				return result, nil
-			}
-			return nil, fmt.Errorf("%w after %s", ErrChatIdle, c.idleTimeout)
-		case <-ctx.Done():
-			c.lg.Warn().Err(ctx.Err()).Int("narration_bytes", len(result.Narration)).Msg("acp chat ctx done")
-			if hasContent(result) {
-				return result, nil
-			}
-			return nil, ctx.Err()
-		case <-c.done:
-			if hasContent(result) {
-				return result, nil
-			}
-			return nil, fmt.Errorf("%w during chat", ErrConnClosed)
-		}
-	}
+	return c.runTurn(ctx, text, images, nil, nil)
 }
 
 // ChatStream sends one prompt (with optional image attachments) and, in
@@ -471,138 +427,14 @@ func (c *ACPClient) ChatStructured(ctx context.Context, text string, images []mo
 // receives the full WS frame ({op:"event", data:{...}}). It returns when the
 // turn completes (prompt_done) or errors.
 func (c *ACPClient) ChatStream(ctx context.Context, text string, images []models.PromptImage, onEvent func(json.RawMessage)) (*ChatResult, error) {
-	if !c.IsConnected() {
-		return nil, fmt.Errorf("%w: not connected", ErrConnClosed)
-	}
-	var err error
-	images, err = c.prepareImages(ctx, images)
-	if err != nil {
-		return nil, err
-	}
-	c.drainEvents()
-	if err := c.send(chatMessage(text, images)); err != nil {
-		return nil, fmt.Errorf("%w: send chat: %v", ErrConnClosed, err)
-	}
-	result := &ChatResult{}
-	idleC, idleReset, idleStop := newIdleWatch(c.idleTimeout)
-	defer idleStop()
-	for {
-		select {
-		case raw := <-c.eventCh:
-			idleReset()
-			op, _ := parseOpAndSession(raw)
-			switch op {
-			case "event":
-				if onEvent != nil {
-					onEvent(raw)
-				}
-				if done := c.dispatchEventData(raw, result); done {
-					return result, nil
-				}
-			case "queue_state":
-				if busy, ok := parseQueueBusy(raw); ok {
-					result.Busy, result.BusySet = busy, true
-				}
-				if onEvent != nil {
-					onEvent(raw)
-				}
-			case "error":
-				errMsg := parseErrorMessage(raw)
-				if onEvent != nil {
-					onEvent(raw)
-				}
-				result.appendErrorText(errMsg)
-				if hasContent(result) {
-					return result, nil
-				}
-				return nil, fmt.Errorf("acp error: %s", errMsg)
-			}
-		case <-idleC:
-			c.lg.Warn().Dur("idle", c.idleTimeout).Msg("acp chat idle timeout")
-			if hasContent(result) {
-				return result, nil
-			}
-			return nil, fmt.Errorf("%w after %s", ErrChatIdle, c.idleTimeout)
-		case <-ctx.Done():
-			if hasContent(result) {
-				return result, nil
-			}
-			return nil, ctx.Err()
-		case <-c.done:
-			if hasContent(result) {
-				return result, nil
-			}
-			return nil, fmt.Errorf("%w during chat", ErrConnClosed)
-		}
-	}
+	return c.runTurn(ctx, text, images, onEvent, nil)
 }
 
 // ChatStreamResult is like ChatStructured but invokes onProgress with the
 // in-progress aggregated result after each event frame, enabling a live
 // preview of the turn (thought/plan/tool calls/narration) as it builds up.
 func (c *ACPClient) ChatStreamResult(ctx context.Context, text string, images []models.PromptImage, onProgress func(*ChatResult)) (*ChatResult, error) {
-	if !c.IsConnected() {
-		return nil, fmt.Errorf("%w: not connected", ErrConnClosed)
-	}
-	var err error
-	images, err = c.prepareImages(ctx, images)
-	if err != nil {
-		return nil, err
-	}
-	c.drainEvents()
-	if err := c.send(chatMessage(text, images)); err != nil {
-		return nil, fmt.Errorf("%w: send chat: %v", ErrConnClosed, err)
-	}
-	result := &ChatResult{}
-	idleC, idleReset, idleStop := newIdleWatch(c.idleTimeout)
-	defer idleStop()
-	for {
-		select {
-		case raw := <-c.eventCh:
-			idleReset()
-			op, _ := parseOpAndSession(raw)
-			switch op {
-			case "event":
-				done := c.dispatchEventData(raw, result)
-				if onProgress != nil {
-					onProgress(result)
-				}
-				if done {
-					return result, nil
-				}
-			case "queue_state":
-				if busy, ok := parseQueueBusy(raw); ok {
-					result.Busy, result.BusySet = busy, true
-					if onProgress != nil {
-						onProgress(result)
-					}
-				}
-			case "error":
-				errMsg := parseErrorMessage(raw)
-				result.appendErrorText(errMsg)
-				if hasContent(result) {
-					return result, nil
-				}
-				return nil, fmt.Errorf("acp error: %s", errMsg)
-			}
-		case <-idleC:
-			c.lg.Warn().Dur("idle", c.idleTimeout).Msg("acp chat idle timeout")
-			if hasContent(result) {
-				return result, nil
-			}
-			return nil, fmt.Errorf("%w after %s", ErrChatIdle, c.idleTimeout)
-		case <-ctx.Done():
-			if hasContent(result) {
-				return result, nil
-			}
-			return nil, ctx.Err()
-		case <-c.done:
-			if hasContent(result) {
-				return result, nil
-			}
-			return nil, fmt.Errorf("%w during chat", ErrConnClosed)
-		}
-	}
+	return c.runTurn(ctx, text, images, nil, onProgress)
 }
 
 func hasContent(r *ChatResult) bool {
@@ -662,8 +494,13 @@ func (c *ACPClient) dispatchEventData(raw json.RawMessage, result *ChatResult) b
 				result.Usage = models.AddTokenUsage(result.Usage, u)
 				result.UsageByModel = models.AddTokenUsageByModel(result.UsageByModel, byModel)
 			}
-			if strings.EqualFold(strings.TrimSpace(ev.StopReason), "failed") {
+			stop := strings.ToLower(strings.TrimSpace(ev.StopReason))
+			result.StopReason = stop
+			switch stop {
+			case "failed":
 				result.Failed = true
+			case stopReasonTimeout, "cancelled":
+				result.Interrupted = true
 			}
 		}
 		return true
@@ -749,6 +586,7 @@ func (c *ACPClient) readLoop() {
 			c.mu.Unlock()
 			return
 		}
+		c.observeQueueState(message)
 		select {
 		case c.eventCh <- json.RawMessage(message):
 		default:

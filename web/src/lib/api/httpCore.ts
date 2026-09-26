@@ -34,6 +34,12 @@ export function redirectToLogin() {
 
 export const apiState = reactive({ online: false, checked: false })
 
+/** 409 sandbox_busy: confirm would queue behind an orphan sandbox turn. */
+export function isSandboxBusyError(e: unknown): e is Error & { status?: number; code?: string; runningOpId?: string } {
+  if (!e || typeof e !== 'object') return false
+  return (e as { code?: string }).code === 'sandbox_busy'
+}
+
 export async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method ?? 'GET').toUpperCase()
   if (mutationsBlocked() && isMutationMethod(method)) {
@@ -69,13 +75,16 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
     }
     if (!isDraining()) apiState.online = false
     let msg = `${res.status} ${path}`
+    let extra: { code?: string; runningOpId?: string } = {}
     try {
       const body = await res.json()
       if (body?.error) msg = body.error
+      if (typeof body?.code === 'string') extra.code = body.code
+      if (typeof body?.runningOpId === 'string') extra.runningOpId = body.runningOpId
     } catch {
       // non-JSON error body; keep the status line
     }
-    throw Object.assign(new Error(msg), { status: res.status })
+    throw Object.assign(new Error(msg), { status: res.status, ...extra })
   }
   apiState.online = true
   return (await res.json()) as T

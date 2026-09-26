@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
@@ -196,6 +197,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 			Events: []models.AcpEvent{{
 				Kind: "message", Text: "react reply chat failed: " + err.Error(),
 			}},
+			Interrupted: isTurnTimeoutErr(err),
 		}
 	}
 	var usage *models.TokenUsage
@@ -219,7 +221,8 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 		}
 		events = c.snapshotEvents(ctx, sess.sb, events)
 		events = append(events, models.AcpEvent{Kind: "message", Text: "react reply chat failed: " + fail})
-		return ReactTurn{Msg: msg, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel}
+		return ReactTurn{Msg: msg, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel,
+			Interrupted: res.Interrupted}
 	}
 
 	if !force && !reactCapReached(req, history) {
@@ -353,6 +356,44 @@ func (c *acpProvider) CancelSessionTurn(runID, nodeID string) {
 	if sess != nil && sess.acp != nil {
 		_ = sess.acp.Cancel()
 	}
+}
+
+// abortTurnWait bounds how long AbortSessionTurn waits for the bridge.
+var abortTurnWait = 20 * time.Second
+
+func (c *acpProvider) liveACP(runID, nodeID string) *sandbox.ACPClient {
+	c.mu.Lock()
+	sess := c.sessions[runID+"|"+nodeID]
+	c.mu.Unlock()
+	if sess == nil || sess.acp == nil || !sess.acp.IsConnected() {
+		return nil
+	}
+	return sess.acp
+}
+
+// SessionBridgeState reports the bridge's mirrored queue_state for a parked
+// session. A chat in flight on the client counts as busy.
+func (c *acpProvider) SessionBridgeState(runID, nodeID string) (BridgeStatus, bool) {
+	a := c.liveACP(runID, nodeID)
+	if a == nil {
+		return BridgeStatus{}, false
+	}
+	st := a.BridgeState()
+	if a.TurnInFlight() {
+		st.Busy = true
+	}
+	return st, true
+}
+
+// AbortSessionTurn cancels whatever turn the parked session's bridge runs.
+func (c *acpProvider) AbortSessionTurn(runID, nodeID string) bool {
+	a := c.liveACP(runID, nodeID)
+	if a == nil {
+		return true
+	}
+	ok := a.AbortRunning(abortTurnWait)
+	log.Info().Str("run", runID).Str("node", nodeID).Bool("acked", ok).Msg("abort sandbox turn")
+	return ok
 }
 
 // ReconcileOnConfirm runs the confirm-time pair against a review producer's

@@ -37,7 +37,7 @@ configured on Agent meta env, not in this platform config table.
 | `GRASP_CURSOR_AUTH` | `sandbox.cursor_auth_path` | path | `Not set` | Sensitive, Deprecated | Deprecated Cursor authentication directory |
 | `GRASP_SANDBOX_ENV` | `sandbox.env` | key-value list | `Not set` | Sensitive | Generic environment injected into every sandbox |
 | `GRASP_AGENT_TIMEOUT_SEC` | `sandbox.agent_chat_timeout_seconds` | integer | `600` | Public | Overall timeout for one agent turn in seconds |
-| `GRASP_CHAT_IDLE_SEC` | `sandbox.chat_idle_timeout_seconds` | integer | `600` | Public | Idle timeout without ACP events in seconds |
+| `GRASP_CHAT_IDLE_SEC` | `sandbox.chat_idle_timeout_seconds` | integer | `720` | Public | Idle timeout without ACP events in seconds |
 | `GRASP_SANDBOX_MAX_ATTEMPTS` | `sandbox.sandbox_max_attempts` | integer | `3` | Public | Maximum attempts for retryable sandbox faults |
 | `GRASP_SANDBOX_RETRY_BACKOFF_SEC` | `sandbox.sandbox_retry_backoff_seconds` | integer | `2` | Public | Base sandbox retry backoff in seconds |
 | `GRASP_SANDBOX_CREATE_TIMEOUT_SEC` | `sandbox.sandbox_create_timeout_seconds` | integer | `1200` | Public | Timeout waiting for sandbox readiness in seconds |

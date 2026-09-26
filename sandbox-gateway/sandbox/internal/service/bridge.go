@@ -77,6 +77,10 @@ type Bridge struct {
 	// 用户指定的模型（环境变量 ACP_BRIDGE_MODEL 或 -model 参数）
 	model      string
 	modelFixed bool // 启动参数指定时锁定，前端不可切换
+
+	// 回合看门狗：连续无事件 turnIdle 或总时长超过 turnMax 即终止回合；0 表示不限。
+	turnIdle time.Duration
+	turnMax  time.Duration
 }
 
 // queuedPrompt：入队前 InMessage 核心字段（单会话 FIFO）。
@@ -85,6 +89,8 @@ type queuedPrompt struct {
 	OpID   string            // 入站消息 id（对齐 InMessage.ID，日志 oid=）
 	Action string            // 如 chat；预留与 Router 多 action 一致
 	Images []acp.PromptImage // 图片 / 文件附件（base64）
+	// MaxDuration 覆盖本回合的总时长上限（chat 帧 deadlineSec）；0 用 Bridge.turnMax。
+	MaxDuration time.Duration
 }
 
 // PromptImage 前端上传的图片附件（base64 编码），类型别名方便 handler 层引用。
@@ -92,19 +98,25 @@ type PromptImage = acp.PromptImage
 
 type promptTurn struct {
 	cancel       context.CancelFunc
-	fromUserStop atomic.Bool // true 表示由 Stop 触发，而非新消息顶替或 Agent 退出
+	cancelCause  context.CancelCauseFunc // 看门狗以 provider.ErrTurnTimeout 为 cause 终止回合
+	fromUserStop atomic.Bool             // true 表示由 Stop 触发，而非新消息顶替或 Agent 退出
+	timedOut     atomic.Bool             // true 表示由看门狗超时终止
+	lastActivity atomic.Int64            // 最近一次 provider 事件（UnixNano），看门狗 idle 计时用
 	opID         string      // 与 ws oid= / queue_entries 对齐，供 queue_state.running 展示
 	userText     string      // 当前 session/prompt 的用户文案快照（仅 UI）
 	imageCount   int         // 附带的图片数量（仅 UI 展示）
 }
 
 func NewBridge() *Bridge {
+	idle, max := turnLimitsFromEnv()
 	return &Bridge{
 		permWait:       make(map[string]chan string),
 		clients:        make(map[*websocket.Conn]*wsClient),
 		autoPermission: true,
 		evLog:          eventLog{},
 		eventSubs:      make(map[int]func(json.RawMessage)),
+		turnIdle:       idle,
+		turnMax:        max,
 	}
 }
 

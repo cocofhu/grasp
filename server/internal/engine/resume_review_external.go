@@ -13,6 +13,12 @@ import (
 // the bound inbox review via ReactReply(force=true). Busy / validation failures
 // roll back CAS so the token is not burned.
 func (e *Engine) ResumeReviewExternal(share *gateshare.Service, token, action string) (*ExternalResumeResult, error) {
+	return e.ResumeReviewExternalOpts(share, token, action, false)
+}
+
+// ResumeReviewExternalOpts is ResumeReviewExternal with abortRunning: cancel an
+// orphan sandbox turn before confirming (public 「中止当前回合并确认」).
+func (e *Engine) ResumeReviewExternalOpts(share *gateshare.Service, token, action string, abortRunning bool) (*ExternalResumeResult, error) {
 	if e.IsHalted() {
 		return nil, errors.New("server is shutting down")
 	}
@@ -60,6 +66,13 @@ func (e *Engine) ResumeReviewExternal(share *gateshare.Service, token, action st
 	if !e.ReviewSessionReady(lookup.Link.RunID, lookup.Link.NodeID) {
 		return &ExternalResumeResult{Status: "busy", Link: &lookup.Link}, gateshare.ErrReviewBusy
 	}
+	if err := e.ensureSandboxIdleForConfirm(lookup.Link.RunID, lookup.Link.NodeID, abortRunning); err != nil {
+		var busy *SandboxBusyError
+		if errors.As(err, &busy) {
+			return &ExternalResumeResult{Status: "sandbox_busy", Link: &lookup.Link}, err
+		}
+		return &ExternalResumeResult{Status: "busy", Link: &lookup.Link}, err
+	}
 
 	consumed, usedLink, err := share.ConsumeCAS(lookup.Link.ID, "confirm")
 	if err != nil {
@@ -86,9 +99,12 @@ func (e *Engine) ResumeReviewExternal(share *gateshare.Service, token, action st
 		return &ExternalResumeResult{Status: "busy", Link: usedLink}, gateshare.ErrReviewBusy
 	}
 
-	err = e.ReactReply(lookup.Link.RunID, lookup.Link.NodeID, "确认并流转", nil, nil, true)
+	err = e.ReactConfirmAs("", lookup.Link.RunID, lookup.Link.NodeID, "确认并流转", nil, nil, abortRunning)
 	if err != nil {
 		_ = share.RollbackConsume(usedLink.ID)
+		if errors.Is(err, ErrSandboxBusy) {
+			return &ExternalResumeResult{Status: "sandbox_busy", Link: usedLink}, err
+		}
 		if isReviewBusyError(err) || !e.ReviewSessionReady(lookup.Link.RunID, lookup.Link.NodeID) {
 			return &ExternalResumeResult{Status: "busy", Link: usedLink}, gateshare.ErrReviewBusy
 		}

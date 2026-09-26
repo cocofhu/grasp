@@ -55,6 +55,7 @@ const props = withDefaults(
     rejectLabel?: string
     /** Review confirm failure (bottom status bar via ClarifyChat). */
     confirmError?: string | null
+    confirmCanAbort?: boolean
     /** Home-chat first bubble before transcript lands. */
     seedHumanText?: string
     seedHumanImages?: ClarifyImage[]
@@ -93,6 +94,7 @@ const props = withDefaults(
     passLabel: '',
     rejectLabel: '',
     confirmError: null,
+    confirmCanAbort: false,
     seedHumanText: '',
     seedHumanImages: () => [],
     queued: () => [],
@@ -110,6 +112,7 @@ const emit = defineEmits<{
   (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[]): void
   (e: 'retry-last'): void
   (e: 'finish'): void
+  (e: 'finish-abort'): void
   (e: 'cancel'): void
   (e: 'queue-remove', itemId: string | undefined, index: number): void
   (e: 'queue-reorder', itemIds: string[]): void
@@ -262,9 +265,11 @@ function onConfirm() {
       :seed-human-images="seedHumanImages"
       :send-label="mode === 'clarify' ? t('pages.reviewComposer.sendClarify') : undefined"
       :confirm-error="confirmError"
+      :confirm-can-abort="confirmCanAbort"
       @send="(text, images, anns) => emit('send', text, images, anns)"
       @retry-last="emit('retry-last')"
       @finish="emit('finish')"
+      @finish-abort="emit('finish-abort')"
       @cancel="emit('cancel')"
       @queue-remove="(itemId, index) => emit('queue-remove', itemId, index)"
       @queue-reorder="(itemIds) => emit('queue-reorder', itemIds)"

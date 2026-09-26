@@ -68,6 +68,13 @@ func isChatTimeoutErr(err error) bool {
 	return errors.Is(err, context.DeadlineExceeded)
 }
 
+// isTurnTimeoutErr reports whether a chat ended because some timeout cut the
+// turn: the per-turn deadline, the platform idle window or the sandbox bridge
+// watchdog (ErrSandboxTurnTimeout wraps ErrChatIdle).
+func isTurnTimeoutErr(err error) bool {
+	return isChatTimeoutErr(err) || errors.Is(err, sandbox.ErrChatIdle)
+}
+
 // acpProvider is the ACP + Docker sandbox backend. Each agent/react node runs
 // in a fresh container launched from the preset image
 // (universal-sandbox:local). The in-container ACP agent is

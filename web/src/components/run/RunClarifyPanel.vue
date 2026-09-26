@@ -47,6 +47,7 @@ const props = defineProps<{
   selStatus?: NodeRunStatus | string | null
   /** Rejected「确认并流转」reason, surfaced so the chat can release its spinner. */
   confirmError?: string | null
+  confirmCanAbort?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -55,6 +56,7 @@ const emit = defineEmits<{
   send: [text: string, images: ClarifyImage[], annotations: ReactAnnotation[]]
   'retry-last': []
   finish: []
+  'finish-abort': []
   cancel: []
   'queue-remove': [itemId: string | undefined, index: number]
   'queue-reorder': [itemIds: string[]]
@@ -171,6 +173,7 @@ defineExpose({
         :done="clarify.done"
         :active="inputActive"
         :confirm-error="confirmError"
+        :confirm-can-abort="confirmCanAbort"
         annotate-enabled
         v-model:annotations="annotations"
         @update:draft="emit('update:draft', $event)"
@@ -178,6 +181,7 @@ defineExpose({
         @send="(text: string, images: ClarifyImage[], anns: ReactAnnotation[]) => emit('send', text, images, anns)"
         @retry-last="emit('retry-last')"
         @finish="emit('finish')"
+        @finish-abort="emit('finish-abort')"
         @cancel="emit('cancel')"
         @queue-remove="(itemId, index) => emit('queue-remove', itemId, index)"
         @queue-reorder="(itemIds) => emit('queue-reorder', itemIds)"

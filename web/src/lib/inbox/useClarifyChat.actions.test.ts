@@ -427,6 +427,33 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
+  it('shows sandbox orphan banner when FIFO is idle but the bridge is busy', () => {
+    const { chat, app, emit } = withChat()
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: true,
+      sandboxRunningOpId: 'oid-stuck',
+    })
+    expect(chat.showSandboxOrphanBanner.value).toBe(true)
+    expect(chat.sandboxOrphanOpLabel.value).toContain('oid-stuck')
+    chat.finishAbort()
+    expect(emit).not.toHaveBeenCalledWith('finish-abort')
+    app.unmount()
+  })
+
+  it('emits finish-abort when the host allows it', () => {
+    const { chat, app, emit, props } = withChat({ confirmCanAbort: true })
+    chat.finishAbort()
+    expect(emit).toHaveBeenCalledWith('finish-abort')
+    props.confirmCanAbort = false
+    chat.finishAbort()
+    expect(emit).toHaveBeenCalledTimes(1)
+    app.unmount()
+  })
+
   it('supports finish and confirm flows and releases validation on errors', async () => {
     const clarify = withChat({ nodeType: 'grasp' })
     clarify.chat.finishEarly()

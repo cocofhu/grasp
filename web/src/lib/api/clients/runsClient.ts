@@ -233,10 +233,11 @@ export const runsClient = {
     force = false,
     annotations: ReactAnnotation[] = [],
     retryLast = false,
+    abortRunning = false,
   ) =>
     req<{ status: string; waiting?: number }>(`/runs/${runId}/react/${nodeId}/reply`, {
       method: 'POST',
-      body: JSON.stringify({ text, images, force, annotations, retryLast }),
+      body: JSON.stringify({ text, images, force, annotations, retryLast, abortRunning }),
     }),
   /** 轮级 Cancel for node-inline review (clears FIFO + aborts active ACP turn). */
   reactCancel: (runId: string, nodeId: string) =>

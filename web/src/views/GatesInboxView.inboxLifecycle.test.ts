@@ -916,6 +916,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       [],
       true,
       [],
+      false,
+      false,
     )
 
     // Neighbor confirm must actually call reactReply — not silent-return on global lock.
@@ -932,6 +934,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       [],
       true,
       [],
+      false,
+      false,
     )
     expect(wrapper.text()).not.toContain('Clarify b')
 
@@ -1005,6 +1009,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       [],
       true,
       [],
+      false,
+      false,
     )
     expect(wrapper.text()).not.toContain('Clarify b')
     expect(wrapper.text()).toContain('Clarify a')
@@ -1069,6 +1075,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       [],
       false,
       [],
+      false,
+      false,
     )
     const ws = FakeWebSocket.instances.find((w) => w.url.includes('run-a'))
     expect(ws).toBeTruthy()
@@ -1116,6 +1124,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       [],
       true,
       [],
+      false,
+      false,
     )
     expect(inboxCallsFor('run-a', 'clarify-a', 1).length).toBe(afterReact)
     expect(wrapper.text()).toContain('Clarify b')

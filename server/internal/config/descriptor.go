@@ -43,7 +43,7 @@ func OptionDescriptors() []OptionDescriptor {
 		{Env: "GRASP_CURSOR_AUTH", YAML: "sandbox.cursor_auth_path", Type: "path", Sensitive: true, Deprecated: true, ZH: "已弃用的 Cursor 认证目录", EN: "Deprecated Cursor authentication directory"},
 		{Env: "GRASP_SANDBOX_ENV", YAML: "sandbox.env", Type: "key-value list", Sensitive: true, ZH: "注入所有沙箱的通用环境变量", EN: "Generic environment injected into every sandbox"},
 		{Env: "GRASP_AGENT_TIMEOUT_SEC", YAML: "sandbox.agent_chat_timeout_seconds", Type: "integer", Default: "600", ZH: "单次 Agent turn 总超时秒数", EN: "Overall timeout for one agent turn in seconds"},
-		{Env: "GRASP_CHAT_IDLE_SEC", YAML: "sandbox.chat_idle_timeout_seconds", Type: "integer", Default: "600", ZH: "无 ACP 事件的空闲超时秒数", EN: "Idle timeout without ACP events in seconds"},
+		{Env: "GRASP_CHAT_IDLE_SEC", YAML: "sandbox.chat_idle_timeout_seconds", Type: "integer", Default: "720", ZH: "无 ACP 事件的空闲超时秒数", EN: "Idle timeout without ACP events in seconds"},
 		{Env: "GRASP_SANDBOX_MAX_ATTEMPTS", YAML: "sandbox.sandbox_max_attempts", Type: "integer", Default: "3", ZH: "可重试沙箱故障的最大尝试次数", EN: "Maximum attempts for retryable sandbox faults"},
 		{Env: "GRASP_SANDBOX_RETRY_BACKOFF_SEC", YAML: "sandbox.sandbox_retry_backoff_seconds", Type: "integer", Default: "2", ZH: "沙箱重试基础退避秒数", EN: "Base sandbox retry backoff in seconds"},
 		{Env: "GRASP_SANDBOX_CREATE_TIMEOUT_SEC", YAML: "sandbox.sandbox_create_timeout_seconds", Type: "integer", Default: "1200", ZH: "等待沙箱就绪的超时秒数", EN: "Timeout waiting for sandbox readiness in seconds"},

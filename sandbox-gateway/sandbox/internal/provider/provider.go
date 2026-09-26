@@ -4,7 +4,18 @@
 // agent transports can be added without touching the WSP wire protocol.
 package provider
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrTurnTimeout is the cancel cause the bridge watchdog attaches to a turn ctx
+// it aborts (idle or total-duration limit). Transports that emit their own
+// prompt_done report StopReasonTimeout when context.Cause(ctx) matches it.
+var ErrTurnTimeout = errors.New("turn timeout")
+
+// StopReasonTimeout is the prompt_done stopReason for a watchdog-aborted turn.
+const StopReasonTimeout = "timeout"
 
 // PromptImage is a base64 image/file attachment sent with a user turn.
 type PromptImage struct {
