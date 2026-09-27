@@ -190,14 +190,6 @@ Module-specific lint, test, coverage, and E2E commands are documented in [`AGENT
 - [Security policy](SECURITY.md)
 - [Support](SUPPORT.md)
 
-## Community
-
-Scan the QQ QR code below to join the GRASP community group (`1125858134`).
-
-<p align="center">
-  <img src="docs/community-qq-qr.png" alt="GRASP QQ community group QR code" width="280" />
-</p>
-
 ## Contributing
 
 Issues and pull requests are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md), [`AGENTS.md`](AGENTS.md), and [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) before contributing.
@@ -205,13 +197,3 @@ Issues and pull requests are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md),
 ## License
 
 [MIT](LICENSE) © 2026 cocofhu
-
-## Star History
-
-<a href="https://www.star-history.com/?repos=cocofhu%2Fgrasp&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=cocofhu/grasp&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=cocofhu/grasp&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=cocofhu/grasp&type=date&legend=top-left" />
- </picture>
-</a>
