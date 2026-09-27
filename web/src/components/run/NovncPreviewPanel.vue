@@ -50,6 +50,8 @@ const consoleMode = computed(() => props.sandboxId != null && props.sandboxId > 
 const showInspect = computed(() => !consoleMode.value || props.inspectable)
 
 const canvasHost = ref<HTMLDivElement | null>(null)
+/** Preview pane with a definite box. Scale against this, not the canvas content. */
+const viewportEl = ref<HTMLDivElement | null>(null)
 const rootEl = ref<HTMLDivElement | null>(null)
 const isFullscreen = ref(false)
 const status = ref<'connecting' | 'live' | 'closed' | 'error'>('connecting')
@@ -74,12 +76,17 @@ let connectTimer: ReturnType<typeof setTimeout> | null = null
 const CONSOLE_CONNECT_TIMEOUT_MS = 20_000
 
 /**
- * Tab hide (v-show → display:none) collapses the canvas host to 0×0. With
+ * Tab hide (v-show → display:none) collapses the preview viewport to 0×0. With
  * scaleViewport, noVNC autoscales the canvas to 0px and may not recover when
- * the tab returns. Mirror SandboxConsole's "size > 0 then fit" pattern.
+ * the tab returns. A later growth from one positive size to another must also
+ * refit: noVNC skips _updateScale when the canvas host stays content-sized.
+ * Observe the viewport (definite box) and reassign scaleViewport whenever that
+ * box changes while still positive. g1.1 / g1.2.
  */
 let hostResizeObserver: ResizeObserver | null = null
-let hostWasZeroSize = true
+/** Last viewport size we already refit. 0 means collapsed or not yet fitted. */
+let lastFitWidth = 0
+let lastFitHeight = 0
 let restoreRafAttempts = 0
 const MAX_RESTORE_RAF_ATTEMPTS = 5
 
@@ -90,9 +97,14 @@ function clearConnectTimer() {
   }
 }
 
+function viewportBox(): { w: number; h: number } {
+  const el = viewportEl.value
+  return { w: el?.clientWidth ?? 0, h: el?.clientHeight ?? 0 }
+}
+
 function hostHasPositiveSize(): boolean {
-  const el = canvasHost.value
-  return !!el && el.clientWidth > 0 && el.clientHeight > 0
+  const { w, h } = viewportBox()
+  return w > 0 && h > 0
 }
 
 /** True when the demux socket is still open (session may still be recoverable). */
@@ -131,12 +143,19 @@ function restoreViewport(_reason: string) {
   }
 }
 
-function onHostResize() {
-  const positive = hostHasPositiveSize()
-  if (positive && hostWasZeroSize) {
-    restoreViewport('resize-from-zero')
+function onViewportResize() {
+  const { w, h } = viewportBox()
+  const positive = w > 0 && h > 0
+  if (!positive) {
+    // Next positive box, even the same pixel size as before hide, must refit.
+    lastFitWidth = 0
+    lastFitHeight = 0
+    return
   }
-  hostWasZeroSize = !positive
+  if (w === lastFitWidth && h === lastFitHeight) return
+  lastFitWidth = w
+  lastFitHeight = h
+  restoreViewport('viewport-resize')
 }
 
 function onDocumentVisibility() {
@@ -147,10 +166,17 @@ function onDocumentVisibility() {
 
 function setupHostResizeObserver() {
   if (typeof ResizeObserver === 'undefined') return
-  const el = canvasHost.value
+  const el = viewportEl.value
   if (!el || hostResizeObserver) return
-  hostWasZeroSize = !hostHasPositiveSize()
-  hostResizeObserver = new ResizeObserver(() => onHostResize())
+  const { w, h } = viewportBox()
+  if (w > 0 && h > 0) {
+    lastFitWidth = w
+    lastFitHeight = h
+  } else {
+    lastFitWidth = 0
+    lastFitHeight = 0
+  }
+  hostResizeObserver = new ResizeObserver(() => onViewportResize())
   hostResizeObserver.observe(el)
 }
 
@@ -405,6 +431,8 @@ function connect() {
       clearConnectTimer()
       if (status.value === 'connecting') status.value = 'live'
       fpsCounter.attach(rfb!)
+      // Layout may have settled before the socket opened; fit the current pane.
+      restoreViewport('connected')
     })
     rfb.addEventListener('disconnect', () => {
       if (disposed || status.value === 'error' || status.value === 'closed') return
@@ -523,7 +551,7 @@ onMounted(() => {
   document.addEventListener('visibilitychange', onDocumentVisibility)
   window.addEventListener('keydown', onKeydown)
   connect()
-  // Observe after connect so canvasHost is in the DOM; keep across reconnects.
+  // Observe the preview viewport (definite box), not the canvas content size.
   setupHostResizeObserver()
 })
 
@@ -708,7 +736,8 @@ onBeforeUnmount(() => {
     </div>
 
     <div
-      class="novnc-fs-viewport relative flex min-h-0 items-center justify-center overflow-hidden bg-base"
+      ref="viewportEl"
+      class="novnc-fs-viewport relative min-h-0 overflow-hidden bg-base"
       :class="[
         fill ? 'flex-1' : compact ? 'h-[280px]' : 'h-[420px]',
         showInspect && inspect ? 'cursor-crosshair' : '',
@@ -746,7 +775,7 @@ onBeforeUnmount(() => {
           {{ t('pages.appPreview.novnc.reconnect') }}
         </button>
       </div>
-      <div ref="canvasHost" class="novnc-canvas-host h-full w-full" />
+      <div ref="canvasHost" class="novnc-canvas-host absolute inset-0 h-full w-full" />
 
       <div
         v-if="!consoleMode && status === 'connecting'"

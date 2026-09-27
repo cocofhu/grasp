@@ -35,6 +35,7 @@ const rfbMocks = vi.hoisted(() => {
   const instances: Array<{
     scaleViewport: boolean
     scaleViewportSets: boolean[]
+    resizeSession: boolean
     disconnect: () => void
   }> = []
   return {
@@ -168,10 +169,14 @@ describe('NovncPreviewPanel', () => {
     vi.unstubAllGlobals()
   })
 
-  function setCanvasHostSize(wrapper: ReturnType<typeof mountNovnc>, w: number, h: number) {
-    const host = wrapper.find('.novnc-canvas-host').element as HTMLElement
-    Object.defineProperty(host, 'clientWidth', { configurable: true, get: () => w })
-    Object.defineProperty(host, 'clientHeight', { configurable: true, get: () => h })
+  function setPreviewBoxSize(wrapper: ReturnType<typeof mountNovnc>, w: number, h: number) {
+    // Scale tracks the preview viewport (definite box). Size the host too so
+    // noVNC's screen and the pane stay in lockstep in this jsdom-less setup.
+    for (const sel of ['.novnc-fs-viewport', '.novnc-canvas-host']) {
+      const el = wrapper.find(sel).element as HTMLElement
+      Object.defineProperty(el, 'clientWidth', { configurable: true, get: () => w })
+      Object.defineProperty(el, 'clientHeight', { configurable: true, get: () => h })
+    }
   }
 
   it('sets aria-busy while connecting', async () => {
@@ -474,15 +479,15 @@ describe('NovncPreviewPanel', () => {
     expect(rfb).toBeTruthy()
     expect(resizeObserverMocks.callbacks.length).toBeGreaterThan(0)
 
-    // Simulate v-show hide: host collapses to 0×0 (noVNC would autoscale to 0).
-    setCanvasHostSize(wrapper, 0, 0)
+    // Simulate v-show hide: viewport collapses to 0×0 (noVNC would autoscale to 0).
+    setPreviewBoxSize(wrapper, 0, 0)
     resizeObserverMocks.trigger()
     await flushPromises()
 
     const setsBefore = rfb!.scaleViewportSets.length
 
-    // Simulate tab return: host lays out again → restore must reassert scaleViewport.
-    setCanvasHostSize(wrapper, 800, 600)
+    // Simulate tab return: viewport lays out again → restore must reassert scaleViewport.
+    setPreviewBoxSize(wrapper, 800, 600)
     resizeObserverMocks.trigger()
     await flushPromises()
 
@@ -500,13 +505,13 @@ describe('NovncPreviewPanel', () => {
     const ws = MockWebSocket.instances[0]!
     expect(wrapper.text()).toMatch(/已连接|连接中/)
 
-    setCanvasHostSize(wrapper, 0, 0)
+    setPreviewBoxSize(wrapper, 0, 0)
     resizeObserverMocks.trigger()
     await flushPromises()
 
     // Session dies while hidden (WS closed); readyState no longer OPEN.
     ws.readyState = 3 // CLOSED
-    setCanvasHostSize(wrapper, 800, 600)
+    setPreviewBoxSize(wrapper, 800, 600)
     resizeObserverMocks.trigger()
     await flushPromises()
 
@@ -524,7 +529,7 @@ describe('NovncPreviewPanel', () => {
     const wrapper = mountNovnc()
     await flushPromises()
     const rfb = rfbMocks.last()!
-    setCanvasHostSize(wrapper, 640, 480)
+    setPreviewBoxSize(wrapper, 640, 480)
     const setsBefore = rfb.scaleViewportSets.length
 
     Object.defineProperty(document, 'visibilityState', {
@@ -537,6 +542,34 @@ describe('NovncPreviewPanel', () => {
     expect(rfb.scaleViewportSets.length).toBeGreaterThan(setsBefore)
     expect(rfb.scaleViewportSets[rfb.scaleViewportSets.length - 1]).toBe(true)
     expect(MockWebSocket.instances.length).toBe(1)
+    wrapper.unmount()
+  })
+
+  it('reasserts scaleViewport when a small positive viewport grows, without a new socket (g1.2/g2.1)', async () => {
+    const wrapper = mountNovnc()
+    await flushPromises()
+    const rfb = rfbMocks.last()
+    expect(rfb).toBeTruthy()
+    expect(resizeObserverMocks.callbacks.length).toBeGreaterThan(0)
+    const socketsBefore = MockWebSocket.instances.length
+
+    // Connection-time box is already positive (screenshot failure: ~538×302), not 0×0.
+    setPreviewBoxSize(wrapper, 538, 302)
+    resizeObserverMocks.trigger()
+    await flushPromises()
+    const setsAfterSmall = rfb!.scaleViewportSets.length
+    expect(setsAfterSmall).toBeGreaterThan(0)
+    expect(rfb!.scaleViewportSets[setsAfterSmall - 1]).toBe(true)
+
+    // Same session, pane grows to the full preview area. Must fit again.
+    setPreviewBoxSize(wrapper, 1932, 1279)
+    resizeObserverMocks.trigger()
+    await flushPromises()
+
+    expect(rfb!.scaleViewportSets.length).toBeGreaterThan(setsAfterSmall)
+    expect(rfb!.scaleViewportSets[rfb!.scaleViewportSets.length - 1]).toBe(true)
+    expect(rfb!.resizeSession).toBe(false)
+    expect(MockWebSocket.instances.length).toBe(socketsBefore)
     wrapper.unmount()
   })
 })
