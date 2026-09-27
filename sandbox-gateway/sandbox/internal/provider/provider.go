@@ -14,6 +14,11 @@ import (
 // prompt_done report StopReasonTimeout when context.Cause(ctx) matches it.
 var ErrTurnTimeout = errors.New("turn timeout")
 
+// ErrTurnRecover is the first idle abort. The process group is killed, but the
+// turn stays open: the bridge prompts the same session once more. Transports
+// must not emit error_text or prompt_done for this cause.
+var ErrTurnRecover = errors.New("turn recover")
+
 // StopReasonTimeout is the prompt_done stopReason for a watchdog-aborted turn.
 const StopReasonTimeout = "timeout"
 

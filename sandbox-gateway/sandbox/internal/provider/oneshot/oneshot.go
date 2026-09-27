@@ -281,6 +281,14 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 		e.mu.Unlock()
 		res, err = e.runOnce(ctx, text, images, "")
 	}
+	if cause := context.Cause(ctx); err != nil && errors.Is(cause, provider.ErrTurnRecover) {
+		// First idle: the bridge will prompt again. Do not close the user turn.
+		if res.stopReason == "end_turn" {
+			err = nil
+		} else {
+			return provider.TurnResult{StopReason: "recover"}, cause
+		}
+	}
 	if cause := context.Cause(ctx); err != nil && errors.Is(cause, provider.ErrTurnTimeout) {
 		if res.stopReason == "end_turn" {
 			// The CLI already reported its final result and only failed to exit.

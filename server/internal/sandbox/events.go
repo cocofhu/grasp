@@ -57,6 +57,27 @@ type ChatResult struct {
 	// watchdog timed it out, it was cancelled, or this client gave up after its
 	// idle window. Narration is partial; ErrorText carries the reason.
 	Interrupted bool `json:"-"`
+
+	// Segments are thought/narration sealed at a turn_segment boundary. The
+	// fields above stay the segment still being written.
+	Segments []ChatSegment `json:"-"`
+}
+
+// ChatSegment is one agent row already closed by a same-turn continuation.
+type ChatSegment struct {
+	Thought   string
+	Narration string
+}
+
+// sealSegment closes the current thought/narration so the next prompt is a
+// new agent row. An empty seal still records the boundary.
+func (r *ChatResult) sealSegment() {
+	if r == nil {
+		return
+	}
+	r.Segments = append(r.Segments, ChatSegment{Thought: r.Thought, Narration: r.Narration})
+	r.Thought = ""
+	r.Narration = ""
 }
 
 // appendErrorText records a provider/bridge error body on the turn. Multiple
@@ -205,6 +226,18 @@ func (r *ChatResult) AcpEvents() []models.AcpEvent {
 	}
 	var ev []models.AcpEvent
 	t := 0
+	for _, seg := range r.Segments {
+		if seg.Thought != "" {
+			ev = append(ev, models.AcpEvent{T: t, Kind: "thought", Text: seg.Thought})
+			t++
+		}
+		if seg.Narration != "" {
+			ev = append(ev, models.AcpEvent{T: t, Kind: "message", Text: textutil.TruncateBytes(seg.Narration, 8000, "…(truncated)")})
+			t++
+		}
+		ev = append(ev, models.AcpEvent{T: t, Kind: "segment"})
+		t++
+	}
 	if r.Thought != "" {
 		// ReAct / timeline / hard-refresh seed all consume this event: keep the
 		// full Thought so UIs never see …(truncated). Message narration still

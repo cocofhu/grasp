@@ -81,15 +81,18 @@ func watchdogTick(idle, max time.Duration) time.Duration {
 }
 
 // watchTurn aborts th once it has had no provider event for idle, or has run
-// longer than max. The turn ctx is cancelled with a provider.ErrTurnTimeout
-// cause so transports that emit their own prompt_done can report "timeout".
-// The returned func stops the watchdog.
+// longer than max. The first idle cancels with provider.ErrTurnRecover so the
+// bridge can resume once. A second idle, or the total-duration limit, cancels
+// with provider.ErrTurnTimeout.
 func (b *Bridge) watchTurn(p provider.Session, th *promptTurn, idle, max time.Duration) func() {
 	if idle <= 0 && max <= 0 {
 		return func() {}
 	}
 	stop := make(chan struct{})
-	start := time.Now()
+	start := th.started
+	if start.IsZero() {
+		start = time.Now()
+	}
 	go func() {
 		t := time.NewTicker(watchdogTick(idle, max))
 		defer t.Stop()
@@ -107,7 +110,9 @@ func (b *Bridge) watchTurn(p provider.Session, th *promptTurn, idle, max time.Du
 				if why == "" {
 					continue
 				}
-				b.abortTimedOutTurn(p, th, why)
+				// 总时长是硬停止。空闲第一次只续跑，不结束这一轮用户消息。
+				hard := max > 0 && now.Sub(start) >= max
+				b.abortTimedOutTurn(p, th, why, hard || th.continued.Load())
 				return
 			}
 		}
@@ -115,10 +120,18 @@ func (b *Bridge) watchTurn(p provider.Session, th *promptTurn, idle, max time.Du
 	return func() { close(stop) }
 }
 
-func (b *Bridge) abortTimedOutTurn(p provider.Session, th *promptTurn, why string) {
-	cause := fmt.Errorf("%w: %s，回合已被沙箱终止。若本轮在前台启动了常驻服务（如 go run / npm start），它可能随后退出，请改用 setsid nohup <cmd> </dev/null >log 2>&1 & 在后台重新拉起", provider.ErrTurnTimeout, why)
-	log.Printf("prompt %s oid=%s: 看门狗终止回合: %s", b.AgentLogPrefix(), th.opID, why)
-	th.timedOut.Store(true)
+func (b *Bridge) abortTimedOutTurn(p provider.Session, th *promptTurn, why string, hard bool) {
+	var cause error
+	if hard {
+		cause = fmt.Errorf("%w: %s，回合已停止", provider.ErrTurnTimeout, why)
+		th.timedOut.Store(true)
+		log.Printf("prompt %s oid=%s: 看门狗终止回合: %s", b.AgentLogPrefix(), th.opID, why)
+	} else {
+		cause = fmt.Errorf("%w: %s", provider.ErrTurnRecover, why)
+		th.recover.Store(true)
+		log.Printf("prompt %s oid=%s: 看门狗准备续跑: %s", b.AgentLogPrefix(), th.opID, why)
+	}
+	th.lastCause = cause.Error()
 	// Do not emit error_text here: Prompt may still return end_turn if the CLI
 	// already finished and only hung on exit. Real timeouts explain themselves
 	// in executePrompt (or the provider) before prompt_done.

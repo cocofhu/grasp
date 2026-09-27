@@ -436,6 +436,9 @@ type ReactMessage struct {
 	// Interrupted marks an agent turn that was stopped mid-stream by 轮级 Cancel.
 	// Partial narration is retained; the session stays parked for further edits.
 	Interrupted bool `json:"interrupted,omitempty"`
+	// Handoff marks an agent row that was sealed when the same user message
+	// continued once. It keeps its text and does not show a completion footnote.
+	Handoff bool `json:"handoff,omitempty"`
 }
 
 // ReactAnnotation is one precise reference a human attached to a review turn.

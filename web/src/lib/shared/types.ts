@@ -582,7 +582,7 @@ export interface NodeTypeDef {
 // ---- runs ----
 export interface AcpEvent {
   t: number // seconds offset
-  kind: 'message' | 'thought' | 'plan' | 'tool_call' | 'commands'
+  kind: 'message' | 'thought' | 'plan' | 'tool_call' | 'commands' | 'segment'
   title?: string
   text?: string
   status?: 'running' | 'completed' | 'failed'
@@ -758,6 +758,10 @@ export interface ClarifyTurn {
   interrupted?: boolean
   /** Live streaming agent bubble (not yet persisted). */
   streaming?: boolean
+  /**
+   * Earlier agent row of the same user message. Keeps its text, no「已完成」.
+   */
+  handoff?: boolean
   /**
    * Streaming / persisted agent thought (ACP kind=thought). Kept separate from
    * `text` so message arrival does not erase the thought block.

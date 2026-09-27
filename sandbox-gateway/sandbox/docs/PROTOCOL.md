@@ -136,12 +136,13 @@ WebSocket `/ws`,JSON 帧:
 
 ### 3.3 超时语义(客户端策略,reference-only 默认值)
 
-**沙箱侧看门狗(权威)**:沙箱对每一轮设两道上限,到点即终止 agent 进程并以
-`error_text` 事件说明原因、再发 `prompt_done{stopReason:"timeout"}` 收尾,保证任何一轮
-都会结束、队列不会被永久占住:
+**沙箱侧看门狗(权威)**:沙箱对每一轮设两道上限。空闲第一次不结束用户这条消息:
+杀掉当前进程组,发 `turn_segment`,再用同一会话 `--resume` 续跑一次(续跑说明只给 Agent,不出现在用户气泡里)。
+再空闲一次,或总时长到点,才以 `error_text` 说明原因、再发 `prompt_done{stopReason:"timeout"}` 收尾。
+给用户看的超时说明不包含后台拉起命令。
 
-- `SANDBOX_TURN_IDLE_TIMEOUT`(默认 `10m`):连续这么久没有任何事件帧;
-- `SANDBOX_TURN_MAX_DURATION`(默认 `60m`,可被 `chat.deadlineSec` 按轮覆盖):整轮总时长。
+- `SANDBOX_TURN_IDLE_TIMEOUT`(默认 `10m`):连续这么久没有任何事件帧;第一次续跑,第二次才超时;
+- `SANDBOX_TURN_MAX_DURATION`(默认 `60m`,可被 `chat.deadlineSec` 按轮覆盖):整轮总时长,到点直接超时。
 
 取值为 Go duration(如 `90s`)或纯秒数,`0` 关闭。
 

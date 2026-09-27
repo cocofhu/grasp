@@ -14,7 +14,7 @@ export function isFailureAssistantText(text?: string | null): boolean {
 /** Agent turn ended with no body, thought, or questions (idle empty slot). */
 export function isEmptyFailedAgent(t: ClarifyTurn | null | undefined): boolean {
   if (!t || t.role !== 'agent') return false
-  if (t.streaming || t.interrupted) return false
+  if (t.streaming || t.interrupted || t.handoff) return false
   if (t.questions?.length) return false
   return !(t.text || '').trim() && !(t.thought || '').trim()
 }
@@ -25,7 +25,7 @@ export function isEmptyFailedAgent(t: ClarifyTurn | null | undefined): boolean {
  */
 export function isRetryableFailedAgent(t: ClarifyTurn | null | undefined): boolean {
   if (!t || t.role !== 'agent') return false
-  if (t.streaming || t.interrupted) return false
+  if (t.streaming || t.interrupted || t.handoff) return false
   if (t.questions?.length) return false
   if (isEmptyFailedAgent(t)) return true
   return isFailureAssistantText(t.text)

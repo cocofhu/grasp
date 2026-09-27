@@ -486,6 +486,12 @@ func (c *ACPClient) dispatchEventData(raw json.RawMessage, result *ChatResult) b
 		result.RawEvents = append(result.RawEvents, dup)
 	}
 
+	if ev.Type == "turn_segment" {
+		if result != nil {
+			result.sealSegment()
+		}
+		return false
+	}
 	if ev.Type == "prompt_done" {
 		// Per-turn usage only — never session CumulativeUsage (cross-node reuse
 		// would otherwise bleed prior nodes into this turn).

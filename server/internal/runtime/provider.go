@@ -206,6 +206,9 @@ type ReactTurn struct {
 	// Interrupted marks a turn that did not finish on its own (sandbox or
 	// platform timeout, cancel): Msg is partial and must not read as 已完成.
 	Interrupted bool
+	// Handoffs are narrations sealed before a same-turn continuation. They are
+	// persisted as earlier agent rows; Msg is only the latest segment.
+	Handoffs []string
 }
 
 // ExecProvider runs the two user-defined agent node kinds.

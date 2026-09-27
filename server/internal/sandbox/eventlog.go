@@ -308,6 +308,12 @@ func dispatchFrame(raw json.RawMessage, result *ChatResult) {
 	if json.Unmarshal(data, &ev) != nil {
 		return
 	}
+	if ev.Type == "turn_segment" {
+		if result != nil {
+			result.sealSegment()
+		}
+		return
+	}
 	if ev.Type == "prompt_done" {
 		if result != nil {
 			// Event-log replay has no session bridge context; weak keys → unknown.

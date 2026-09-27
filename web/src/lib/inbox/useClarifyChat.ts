@@ -1547,6 +1547,78 @@ function applyReviewFrame(frame: {
 }
 
 /**
+ * A snapshot with a segment marker is one user message and several agent rows.
+ * Incremental single-message updates stay on the live row.
+ */
+function agentSegments(events: AcpEvent[]): { thought: string; message: string }[] | null {
+  let multi = false
+  const segs: { thought: string; message: string }[] = [{ thought: '', message: '' }]
+  let sawMessage = false
+  for (const ev of events) {
+    if (ev.kind === 'segment') {
+      segs.push({ thought: '', message: '' })
+      sawMessage = false
+      multi = true
+      continue
+    }
+    if (ev.kind === 'thought' && ev.text) {
+      if (sawMessage) {
+        segs.push({ thought: ev.text, message: '' })
+        sawMessage = false
+        multi = true
+      } else {
+        segs[segs.length - 1]!.thought = ev.text
+      }
+      continue
+    }
+    if (ev.kind === 'message' && ev.text) {
+      if (
+        ev.text.startsWith('react reply chat failed') ||
+        ev.text.startsWith('review revise chat failed')
+      ) {
+        continue
+      }
+      if (sawMessage) {
+        segs.push({ thought: '', message: ev.text })
+        multi = true
+      } else {
+        segs[segs.length - 1]!.message = ev.text
+      }
+      sawMessage = true
+    }
+  }
+  return multi ? segs : null
+}
+
+function applyAgentSegments(segs: { thought: string; message: string }[]) {
+  let first = liveAgentIdx.value
+  while (first > 0 && liveTurns.value[first - 1]?.role === 'agent') first--
+  while (liveTurns.value.length < first + segs.length) {
+    liveTurns.value.push({
+      role: 'agent',
+      text: '',
+      thought: '',
+      at: new Date().toISOString(),
+      streaming: true,
+    })
+  }
+  segs.forEach((seg, i) => {
+    const row = liveTurns.value[first + i]
+    if (!row || row.role !== 'agent') return
+    const last = i === segs.length - 1
+    row.thought = seg.thought
+    row.text = seg.message
+    row.streaming = last
+    row.handoff = !last
+    if (last) {
+      liveAgentIdx.value = first + i
+      messageReveal.setTarget(seg.message)
+      thoughtReveal.setTarget(seg.thought)
+    }
+  })
+}
+
+/**
  * Consume publishAcp events for the streaming agent bubble (dialogue surface).
  * Returns false when mounted but streaming slot is not ready — host must buffer
  * (hard-load / remount race; never silent-noop as applied).
@@ -1559,6 +1631,12 @@ function applyAcpEvents(events: AcpEvent[] | undefined, nodeId?: string): boolea
   if (liveAgentIdx.value < 0) return false
   const agent = liveTurns.value[liveAgentIdx.value]
   if (!agent) return false
+  const segs = agentSegments(events)
+  if (segs) {
+    applyAgentSegments(segs)
+    void scrollBottom()
+    return true
+  }
   let msg = agent.text
   let thought = agent.thought || ''
   for (const ev of events) {
@@ -1621,6 +1699,7 @@ function showTurnCompleted(t: ClarifyTurn): boolean {
   return (
     t.role === 'agent' &&
     !t.streaming &&
+    !t.handoff &&
     !t.interrupted &&
     !isRetryableFailedAgent(t) &&
     !!(t.text || t.thought)

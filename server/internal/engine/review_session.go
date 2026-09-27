@@ -785,6 +785,11 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 		interrupted = true
 	}
 
+	for _, text := range t.Handoffs {
+		conv.Messages = append(conv.Messages, models.ReactMessage{
+			Role: "agent", Text: text, At: time.Now().Format(time.RFC3339), Handoff: true,
+		})
+	}
 	agentMsg := models.ReactMessage{
 		Role: "agent", Text: t.Msg, At: time.Now().Format(time.RFC3339),
 		Questions: t.Questions, Forms: t.Forms, Interrupted: interrupted,
@@ -935,6 +940,11 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 		interrupted = true
 	}
 
+	for _, text := range t.Handoffs {
+		conv.Messages = append(conv.Messages, models.ReactMessage{
+			Role: "agent", Text: text, At: time.Now().Format(time.RFC3339), Handoff: true,
+		})
+	}
 	agentMsg := models.ReactMessage{
 		Role: "agent", Text: t.Msg, At: time.Now().Format(time.RFC3339),
 		Questions: t.Questions, Forms: t.Forms, Interrupted: interrupted,

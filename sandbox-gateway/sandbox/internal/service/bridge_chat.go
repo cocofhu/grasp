@@ -87,7 +87,7 @@ func (b *Bridge) pumpPromptQueue() {
 	}
 	turnCtx, cancelCause := context.WithCancelCause(ctx)
 	cancelTurn := func() { cancelCause(context.Canceled) }
-	th := &promptTurn{cancel: cancelTurn, cancelCause: cancelCause, opID: oid, userText: item.Text, imageCount: len(item.Images)}
+	th := &promptTurn{cancel: cancelTurn, cancelCause: cancelCause, opID: oid, userText: item.Text, imageCount: len(item.Images), started: time.Now()}
 	th.lastActivity.Store(time.Now().UnixNano())
 	b.activeTurn = th
 	b.turnMu.Unlock()
@@ -137,15 +137,52 @@ func (b *Bridge) pumpPromptQueue() {
 	go b.executePrompt(p, turnCtx, item, th, cancelTurn)
 }
 
-func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item queuedPrompt, th *promptTurn, cancelTurn context.CancelFunc) {
+// stallContinuePrompt is shown only to the agent. The user does not see it.
+const stallContinuePrompt = "上一段因为连续没有任何输出已被终止，前台进程已经退出。工作区里已经写好的文件都还在。如果需要常驻服务，请用 setsid nohup <命令> </dev/null >日志 2>&1 & 放到后台，再从中断的地方接着做完，不要从头开始。"
+
+func (b *Bridge) continueAfterStall(p provider.Session, item queuedPrompt, th *promptTurn) (provider.TurnResult, error) {
+	th.continued.Store(true)
+	th.recover.Store(false)
+	th.timedOut.Store(false)
+	b.Broadcast(eventEnvelope(map[string]any{
+		"type":      "turn_segment",
+		"sessionId": p.SessionID(),
+		"opId":      th.opID,
+	}, th.opID))
+
+	b.mu.Lock()
+	parent := b.agentCtx
+	b.mu.Unlock()
+	if parent == nil {
+		parent = context.Background()
+	}
+	turnCtx, cancelCause := context.WithCancelCause(parent)
+	cancelTurn := func() { cancelCause(context.Canceled) }
+	b.turnMu.Lock()
+	th.cancel = cancelTurn
+	th.cancelCause = cancelCause
+	b.turnMu.Unlock()
+	th.lastActivity.Store(time.Now().UnixNano())
+
+	idle, max := b.turnLimits(item)
+	stopWatch := b.watchTurn(p, th, idle, max)
+	res, err := p.Prompt(turnCtx, stallContinuePrompt, nil)
+	stopWatch()
+	return res, err
+}
+
+func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item queuedPrompt, th *promptTurn, _ context.CancelFunc) {
 	oid := th.opID
 	defer func() {
 		b.turnMu.Lock()
 		if b.activeTurn == th {
 			b.activeTurn = nil
 		}
+		stop := th.cancel
 		b.turnMu.Unlock()
-		cancelTurn()
+		if stop != nil {
+			stop()
+		}
 		b.recordUserTurnDone(item)
 		b.pumpPromptQueue()
 	}()
@@ -178,6 +215,18 @@ func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item
 	res, err := p.Prompt(turnCtx, text, images)
 	stopWatch()
 	stopReason := res.StopReason
+	// 已经正常收尾（只是子进程没退出）就不续跑，也不要杀掉预览服务。
+	if finishedBeforeExit(stopReason, err) {
+		return
+	}
+	if th.recover.Load() {
+		log.Printf("prompt %s oid=%s: 空闲后续跑一次", b.AgentLogPrefix(), oid)
+		res, err = b.continueAfterStall(p, item, th)
+		stopReason = res.StopReason
+		if finishedBeforeExit(stopReason, err) {
+			return
+		}
+	}
 	if th.timedOut.Load() {
 		log.Printf("prompt %s oid=%s: 超时终止 stopReason=%q err=%v", b.AgentLogPrefix(), oid, stopReason, err)
 		if finishedBeforeExit(stopReason, err) {
@@ -186,7 +235,11 @@ func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item
 		if stopReason == "" {
 			// Transport returned without emitting prompt_done (e.g. ACP Call):
 			// explain first — clients stop reading at prompt_done.
-			b.Broadcast(eventEnvelope(map[string]any{"op": "raw", "type": "error_text", "text": timeoutCauseText(turnCtx), "opId": oid}, oid))
+			text := th.lastCause
+			if text == "" {
+				text = timeoutCauseText(turnCtx)
+			}
+			b.Broadcast(eventEnvelope(map[string]any{"op": "raw", "type": "error_text", "text": text, "opId": oid}, oid))
 			b.Broadcast(eventEnvelope(map[string]any{
 				"type":       "prompt_done",
 				"sessionId":  p.SessionID(),

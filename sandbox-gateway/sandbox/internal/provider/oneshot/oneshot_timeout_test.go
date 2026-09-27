@@ -129,6 +129,49 @@ func TestOneShotWatchdogCauseReportsTimeout(t *testing.T) {
 	}
 }
 
+func TestOneShotRecoverDoesNotCloseTheTurn(t *testing.T) {
+	spawns := &atomic.Int32{}
+	var mu sync.Mutex
+	var frames []map[string]any
+	onEvent := func(b json.RawMessage) {
+		var m map[string]any
+		if json.Unmarshal(b, &m) == nil {
+			mu.Lock()
+			frames = append(frames, m)
+			mu.Unlock()
+		}
+	}
+	sess, err := NewProvider(hangFake{spawns: spawns}).Open(context.Background(), context.Background(),
+		provider.OpenOptions{Cwd: t.TempDir(), ResumeSessionID: "S0"}, onEvent, nil)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer sess.Close()
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	time.AfterFunc(300*time.Millisecond, func() {
+		cancel(fmt.Errorf("%w: idle", provider.ErrTurnRecover))
+	})
+	res, perr := sess.Prompt(ctx, "restart the server", nil)
+	if !errors.Is(perr, provider.ErrTurnRecover) {
+		t.Fatalf("err=%v, want ErrTurnRecover", perr)
+	}
+	if res.StopReason != "recover" {
+		t.Fatalf("stop=%q want recover", res.StopReason)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if _, ok := lastPromptDone(frames); ok {
+		t.Fatal("recover must not emit prompt_done")
+	}
+	if errorTextBeforeDone(frames) != "" {
+		t.Fatal("recover must not emit error_text")
+	}
+	if n := spawns.Load(); n != 1 {
+		t.Fatalf("recover must not start a fresh session: spawned %d CLIs", n)
+	}
+}
+
 func TestOneShotWatchdogAfterFinalResultIsNotAFailure(t *testing.T) {
 	res, err, frames := runTimedOutTurn(t, hangFake{finished: true, spawns: &atomic.Int32{}}, "")
 	if err != nil {

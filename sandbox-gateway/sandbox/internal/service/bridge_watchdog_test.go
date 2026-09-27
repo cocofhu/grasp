@@ -56,16 +56,52 @@ func TestWatchdogIdleEndsTurnAndPumpsNext(t *testing.T) {
 	_ = b.ChatWithOpID("hangs", "op-A", "chat", nil)
 	_ = b.ChatWithOpID("next", "op-B", "chat", nil)
 
+	seg := readUntil(t, c, func(f wsFrame) bool { return f.Op == "event" && dataType(f) == "turn_segment" })
+	if seg.OpID != "op-A" {
+		t.Fatalf("turn_segment=%+v", seg)
+	}
 	et := readUntil(t, c, func(f wsFrame) bool { return f.Op == "event" && errorText(f) != "" })
-	if et.OpID != "op-A" || !strings.Contains(errorText(et), "没有任何输出") {
+	if et.OpID != "op-A" || !strings.Contains(errorText(et), "没有任何输出") || !strings.Contains(errorText(et), "回合已停止") {
 		t.Fatalf("timeout explanation=%+v text=%q", et, errorText(et))
+	}
+	if strings.Contains(errorText(et), "setsid") || strings.Contains(errorText(et), "nohup") {
+		t.Fatalf("user-facing timeout must not include the restart hint: %q", errorText(et))
 	}
 	done := readUntil(t, c, func(f wsFrame) bool { return f.Op == "event" && dataType(f) == "prompt_done" })
 	if done.OpID != "op-A" || stopReasonOf(done) != "timeout" {
 		t.Fatalf("prompt_done=%+v stop=%q", done, stopReasonOf(done))
 	}
 	readUntil(t, c, func(f wsFrame) bool { return f.Op == "event" && dataType(f) == "prompt_begin" && f.OpID == "op-B" })
+	if n := sess.prompts.Load(); n < 2 {
+		t.Fatalf("first idle must resume once, prompts=%d", n)
+	}
 	b.CancelPromptOp("op-B")
+	waitIdle(t, b)
+}
+
+func TestWatchdogContinueDoesNotResetMaxDuration(t *testing.T) {
+	sess := &blockingSess{stubSess: stubSess{id: "s1"}}
+	b := newTestBridge(sess)
+	b.turnIdle, b.turnMax = 40*time.Millisecond, 130*time.Millisecond
+	c := dialBridge(t, b)
+
+	start := time.Now()
+	go func() {
+		for time.Since(start) < time.Second {
+			if sess.prompts.Load() >= 2 {
+				b.touchActiveTurn()
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}()
+	_ = b.ChatWithOpID("hangs", "op-A", "chat", nil)
+	et := readUntil(t, c, func(f wsFrame) bool { return f.Op == "event" && errorText(f) != "" })
+	if !strings.Contains(errorText(et), "总时长") {
+		t.Fatalf("continuation must still honor the original max, got %q", errorText(et))
+	}
+	if elapsed := time.Since(start); elapsed > 250*time.Millisecond {
+		t.Fatalf("max clock was reset across the resume: elapsed %s", elapsed)
+	}
 	waitIdle(t, b)
 }
 

@@ -405,6 +405,35 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
+  it('splits one user message into two agent rows when the turn continues', () => {
+    const { chat, app } = withChat()
+    chat.applyQueueState(1, [{ id: 'item-1', text: 'hello' }])
+    chat.applyReviewFrame({
+      event: 'turn_begin',
+      nodeId: 'node-1',
+      item: { id: 'item-1', text: 'hello' },
+    })
+    expect(chat.applyAcpEvents([
+      { kind: 'thought', text: '先看现状' },
+      { kind: 'message', text: '计划已经写好' },
+      { kind: 'segment' },
+      { kind: 'thought', text: '接着把服务放到后台' },
+      { kind: 'message', text: '已经继续做完' },
+    ])).toBe(true)
+
+    const turns = chat.liveTurns.value
+    expect(turns.map((t) => t.role)).toEqual(['human', 'agent', 'agent'])
+    expect(turns[1]?.text).toBe('计划已经写好')
+    expect(turns[1]?.handoff).toBe(true)
+    expect(turns[1]?.streaming).toBe(false)
+    expect(chat.showTurnCompleted(turns[1]!)).toBe(false)
+    expect(turns[2]?.text).toBe('已经继续做完')
+    expect(turns[2]?.thought).toBe('接着把服务放到后台')
+    expect(turns[2]?.streaming).toBe(true)
+    expect(chat.liveAgentIdx.value).toBe(2)
+    app.unmount()
+  })
+
   it('handles streamed errors, cancellation, ghost settlement and authoritative idle', () => {
     const { chat, app, emit } = withChat({ reviewMode: true })
     chat.sendMessage('queued')

@@ -205,11 +205,16 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 	var events []models.AcpEvent
 	absorbChat(&usage, &usageByModel, &events, res)
 	narration := res.Narration
+	handoffs := handoffNarrations(res)
+	withHandoffs := func(t ReactTurn) ReactTurn {
+		t.Handoffs = handoffs
+		return t
+	}
 
 	pending := takeClarifyPending(c.host, req.RunID, req.NodeID)
 
 	if pending.any() {
-		return ReactTurn{Msg: narration, Questions: pending.Questions, Forms: pending.Forms, Events: events, Usage: usage, UsageByModel: usageByModel}
+		return withHandoffs(ReactTurn{Msg: narration, Questions: pending.Questions, Forms: pending.Forms, Events: events, Usage: usage, UsageByModel: usageByModel})
 	}
 
 	// Provider failed after prompt_done (quota / 4xx): surface the real error
@@ -221,8 +226,8 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 		}
 		events = c.snapshotEvents(ctx, sess.sb, events)
 		events = append(events, models.AcpEvent{Kind: "message", Text: "react reply chat failed: " + fail})
-		return ReactTurn{Msg: msg, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel,
-			Interrupted: res.Interrupted}
+		return withHandoffs(ReactTurn{Msg: msg, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel,
+			Interrupted: res.Interrupted})
 	}
 
 	if !force && !reactCapReached(req, history) {
@@ -233,7 +238,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 				c.host.ClearOutcome(req.RunID, req.NodeID)
 			}
 			events = c.snapshotEvents(ctx, sess.sb, events)
-			return ReactTurn{Msg: narration, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel}
+			return withHandoffs(ReactTurn{Msg: narration, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel})
 		}
 		if gq, msg, ge, gu, gum, ok := c.enforceOpenQuestionsGate(ctx, req, sess); ok {
 			events = append(events, ge...)
@@ -242,7 +247,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 			if strings.TrimSpace(msg) == "" {
 				msg = narration
 			}
-			return ReactTurn{Msg: msg, Questions: gq, Events: events, Usage: usage, UsageByModel: usageByModel}
+			return withHandoffs(ReactTurn{Msg: msg, Questions: gq, Events: events, Usage: usage, UsageByModel: usageByModel})
 		} else if gu != nil || gum != nil {
 			events = append(events, ge...)
 			usage = models.AddTokenUsage(usage, gu)
@@ -256,7 +261,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 				if strings.TrimSpace(msg) == "" {
 					msg = narration
 				}
-				return ReactTurn{Msg: msg, Questions: gp.Questions, Forms: gp.Forms, Events: events, Usage: usage, UsageByModel: usageByModel}
+				return withHandoffs(ReactTurn{Msg: msg, Questions: gp.Questions, Forms: gp.Forms, Events: events, Usage: usage, UsageByModel: usageByModel})
 			} else if gu != nil || gum != nil {
 				events = append(events, ge...)
 				usage = models.AddTokenUsage(usage, gu)
@@ -267,11 +272,12 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 	if !force && nodereg.IsGrasp(req.NodeType) {
 		c.host.ClearOutcome(req.RunID, req.NodeID)
 		events = c.snapshotEvents(ctx, sess.sb, events)
-		return ReactTurn{Msg: narration, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel}
+		return withHandoffs(ReactTurn{Msg: narration, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel})
 	}
 	// The reconcile turn above closed the human dialogue, so the wrap-up may end
 	// with the hidden turn that induces the transcript into the ledger summary.
-	return c.finishReact(ctx, req, key, sess, narration, history, events, usage, usageByModel, true)
+	done := c.finishReact(ctx, req, key, sess, narration, history, events, usage, usageByModel, true)
+	return withHandoffs(done)
 }
 
 // ReviseInPlace sends one review turn to the parked session and keeps it alive.
@@ -317,20 +323,21 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 	var usageByModel models.TokenUsageByModel
 	var events []models.AcpEvent
 	absorbChat(&usage, &usageByModel, &events, res)
+	handoffs := handoffNarrations(res)
 
 	_ = takeClarifyPending(c.host, req.RunID, req.NodeID)
 
 	if fail := chatFailure(res); fail != "" {
 		msg := withFailureBanner(res.Narration, "复审修改失败", fail)
 		events = append(events, models.AcpEvent{Kind: "message", Text: "review revise chat failed: " + fail})
-		return ReactTurn{Msg: msg, Done: false, Err: errors.New(fail), Events: events, Usage: usage, UsageByModel: usageByModel}
+		return ReactTurn{Msg: msg, Done: false, Err: errors.New(fail), Events: events, Usage: usage, UsageByModel: usageByModel, Handoffs: handoffs}
 	}
 
 	if _, serr := c.ensureRequiredProducts(ctx, req, sess.acp, &events, &usage, &usageByModel); serr != nil {
 		log.Warn().Err(serr).Str("node", req.NodeID).Msg("review revise ensure product failed")
 	}
 	events = c.snapshotEvents(ctx, sess.sb, events)
-	return ReactTurn{Msg: res.Narration, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel}
+	return ReactTurn{Msg: res.Narration, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel, Handoffs: handoffs}
 }
 
 // HasLiveSession reports whether a parked review session is held for the node.
@@ -857,4 +864,22 @@ func reactCapReached(req NodeReq, history []models.ReactMessage) bool {
 // fullness is owned by ChatResult.AcpEvents (plan g1.2).
 func chatResultToEvents(res *sandbox.ChatResult) []models.AcpEvent {
 	return res.AcpEvents()
+}
+
+// handoffNarrations is the text already sealed by a same-turn continuation.
+// It comes from this turn's ChatResult, not the session event log, so an older
+// turn cannot be copied into the new row.
+func handoffNarrations(res *sandbox.ChatResult) []string {
+	if res == nil {
+		return nil
+	}
+	var out []string
+	for _, seg := range res.Segments {
+		text := strings.TrimSpace(seg.Narration)
+		if text == "" {
+			continue
+		}
+		out = append(out, text)
+	}
+	return out
 }
