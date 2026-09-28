@@ -12,6 +12,9 @@
   var EMBED_HASH = '__grasp_embed';
   var EMBED_ORIGIN_PATH = '/__grasp/embed-origin';
   var EMBED_STORE_KEY = '__grasp_embed';
+  // Survives a full-page redirect (the preview app sending the user to login)
+  // that would otherwise drop the ticket after it was stripped from the URL.
+  var EMBED_PENDING_KEY = '__grasp_embed_pending';
   var EMBED_CONTROL = 'grasp-embed:control';
   var EMBED_CMD = 'grasp-embed:cmd';
   var EMBED_CMD_RESULT = 'grasp-embed:cmd-result';
@@ -687,6 +690,31 @@
     render();
   }
 
+  function stashPending(got) {
+    try {
+      sessionStorage.setItem(
+        EMBED_PENDING_KEY,
+        JSON.stringify({ run: got.run, node: got.node, ticket: got.ticket, theme: got.theme }),
+      );
+    } catch (e) {}
+  }
+
+  function loadPending() {
+    try {
+      var v = JSON.parse(sessionStorage.getItem(EMBED_PENDING_KEY) || 'null');
+      if (v && v.run && v.node && v.ticket) {
+        return { run: String(v.run), node: String(v.node), ticket: String(v.ticket), theme: v.theme === 'light' ? 'light' : 'dark' };
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  function clearPending() {
+    try {
+      sessionStorage.removeItem(EMBED_PENDING_KEY);
+    } catch (e) {}
+  }
+
   function readEmbedFragment() {
     var raw = '';
     try {
@@ -703,11 +731,13 @@
       ticket: q.get('ticket') || '',
       theme: q.get('theme') === 'light' ? 'light' : 'dark',
     };
+    var ok = !!(got.run && got.node && got.ticket);
+    if (ok) stashPending(got);
     try {
       // The ticket must not linger in the address bar, history or the app's router.
       history.replaceState(history.state, '', location.pathname + location.search);
     } catch (e) {}
-    return got.run && got.node && got.ticket ? got : null;
+    return ok ? got : null;
   }
 
   function loadEmbed() {
@@ -784,7 +814,7 @@
   }
 
   function bootDrawer() {
-    var frag = readEmbedFragment();
+    var frag = readEmbedFragment() || loadPending();
     if (!frag || typeof fetch !== 'function') {
       resumeDrawer();
       return;
@@ -796,9 +826,12 @@
       })
       .then(function (v) {
         if (!v || v.runId !== frag.run || v.nodeId !== frag.node || !/^https?:\/\/[^/?#]+$/.test(v.origin || '')) {
+          clearPending();
           resumeDrawer();
           return;
         }
+        // Keep the pending ticket until the drawer reports a live session.
+        // A login redirect destroys this page before the iframe can redeem it.
         startDrawer({ origin: v.origin, run: frag.run, node: frag.node, open: true, theme: frag.theme }, frag.ticket);
         setDrawerOpen(true);
       })
@@ -1031,6 +1064,7 @@
     if (data.type === EMBED_READY) {
       drawerReady = true;
       sessionDead = false;
+      clearPending();
       render();
       postTheme();
       flushOutbox();
@@ -1039,6 +1073,7 @@
       });
     } else if (data.type === EMBED_SESSION && data.ok === false) {
       sessionDead = true;
+      clearPending();
       drawerReady = false;
       setEnabled(false);
       setControl(false);
