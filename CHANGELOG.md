@@ -4,6 +4,34 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+## 1.2.0 — 2026-09-28
+
+- **Agent page control:** server bridge, drawer relay, and page executor so
+  the agent can drive the preview (#656–#658); prompt and docs (#659);
+  page-agent pointer (#660); Pick and Chat stay grey without a live drawer
+  ticket (#661); custom no-ticket tooltip (#662).
+- **Direct preview:** in-page Pick bar (#646); drawer tickets and chat tokens
+  (#649); chat-only drawer (#650); chat drawer opened in a new tab (#651);
+  floating chat (#654).
+- **Requirement leftovers:** auto-write test/review leftovers to requirement
+  drafts (#633); root-cause JSON (#634); leftover drafts are self-contained
+  specs (#635).
+- **Preview:** noVNC and direct iframes go through the pick proxy (#640);
+  share polling no longer trips the public rate limit (#655); app preview
+  refits when the viewport grows (#666).
+- **Chat:** clear stale busy state so the last turn is not replayed into a
+  new bubble (#652); ignore the previous-turn ACP snapshot in the next live
+  bubble (#653); confirm-and-advance no longer hides behind a hung sandbox
+  turn (#663).
+- **Sandbox:** resume a silent turn once before timing out (#667).
+- **Inbox:** stop the false pending-update banner when the list is already
+  current (#632).
+- **Run detail:** stage and Agent sidebar lay flush instead of floating
+  cards; artifact tiles fill the stage without rounded corners (#668).
+- Floating nav on all routes (#641).
+- Default `./start.sh` / `.env.example` / `compose.release.yaml` pins GHCR
+  images to `*:1.2.0`.
+
 ## 1.1.0 — 2026-09-20
 
 - **Preflight node:** env-confirmation Agent node with `ask_form` and vars
