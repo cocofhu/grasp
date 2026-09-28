@@ -4,6 +4,7 @@ import { Window } from 'happy-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   EMBED_CMD_MESSAGE,
+  EMBED_ENLARGE_MESSAGE,
   EMBED_CMD_RESULT_MESSAGE,
   EMBED_CONTROL_MESSAGE,
   EMBED_PICK_MESSAGE,
@@ -247,16 +248,43 @@ describe('preview-pick.js chat drawer', () => {
     expect(p.win.sessionStorage.getItem('__grasp_embed_pending')).toBeNull()
   })
 
+  it('covers the preview screen while the chat enlarge modal is open', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    p.drawerReady()
+    const frame = p.frame()
+    const drawer = p.shadow.querySelector('[data-role="drawer"]') as HTMLElement
+    const box = drawer.getAttribute('style')
+    const send = (data: Record<string, unknown>) => {
+      p.win.dispatchEvent(
+        new p.win.MessageEvent('message', { data, origin: GRASP, source: frame?.contentWindow as never }),
+      )
+    }
+    send({ type: EMBED_ENLARGE_MESSAGE, open: true, title: '方案 A', html: '<p>demo</p>' })
+    const stage = p.shadow.querySelector('[data-role="stage"]') as HTMLElement
+    expect(stage).toBeTruthy()
+    expect(stage.querySelector('[data-role="stage-title"]')?.textContent).toBe('方案 A')
+    const frameEl = stage.querySelector('iframe')
+    expect(frameEl?.parentElement?.getAttribute('data-role')).toBe('stage-body')
+    expect(frameEl?.getAttribute('srcdoc')).toBe('<p>demo</p>')
+    expect(drawer.getAttribute('style')).toBe(box)
+    expect(drawer.className).not.toContain('screen')
+    send({ type: EMBED_ENLARGE_MESSAGE, open: false })
+    expect(p.shadow.querySelector('[data-role="stage"]')).toBeNull()
+    expect(drawer.getAttribute('style')).toBe(box)
+  })
+
   it('finishes the handshake after the preview app navigates to a new page', async () => {
-    const first = openPage(body, { hash, embedReply: reply })
+    const first = openPage(body, { hash: `${hash}&locale=en`, embedReply: reply })
     const pending = first.win.sessionStorage.getItem('__grasp_embed_pending')
     expect(first.win.location.hash).toBe('')
     expect(pending).toContain('tk1')
+    expect(JSON.parse(pending || '{}').locale).toBe('en')
     const next = openPage(body, { pending: pending || '', embedReply: reply })
     await settle()
     expect(next.win.location.hash).toBe('')
     expect(next.fetched).toEqual(['/__grasp/embed-origin?ticket=tk1&node=ap1'])
-    expect(next.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#ticket=tk1&theme=dark`)
+    expect(next.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#ticket=tk1&theme=dark&locale=en`)
     expect(next.drawerOpen()).toBe(true)
   })
 
@@ -329,11 +357,11 @@ describe('preview-pick.js chat drawer', () => {
   })
 
   it('starts in the Grasp theme and switches the drawer and the chat together', async () => {
-    const p = openPage(body, { hash: `${hash}&theme=light`, embedReply: reply })
+    const p = openPage(body, { hash: `${hash}&theme=light&locale=zh-CN`, embedReply: reply })
     await settle()
     const drawerEl = p.shadow.querySelector('[data-role="drawer"]') as HTMLElement
     const themeBtn = p.shadow.querySelector('[data-role="drawer-theme"]') as HTMLButtonElement
-    expect(p.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#ticket=tk1&theme=light`)
+    expect(p.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#ticket=tk1&theme=light&locale=zh-CN`)
     expect(drawerEl.classList.contains('light')).toBe(true)
     expect(themeBtn.getAttribute('aria-label')).toBe('Switch to dark')
     const inbox = p.drawerReady()

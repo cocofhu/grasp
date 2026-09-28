@@ -1377,6 +1377,59 @@ describe('PublicGateApprovalView workbench', () => {
 describe('PublicGateApprovalView chat-only drawer mode', () => {
   const drawerToken = `gse_${'ab'.repeat(16)}`
 
+  it('shows choice cards, form fields and the attachment, and skips instead of asking for a goal', async () => {
+    mocks.preview.mockResolvedValue({
+      status: 'active',
+      kind: 'review',
+      nodeType: 'grasp',
+      remainingSec: 3600,
+      reactSessionAlive: true,
+      actions: { reply: 'reply' },
+      turns: [
+        {
+          role: 'human',
+          text: '这个标题栏不好看',
+          at: '2026-08-01T00:00:00Z',
+          images: [
+            { ref: 'blob:abc123', mimeType: 'image/png', name: 'shot.png' },
+            { ref: 'http://127.0.0.1/x.png', mimeType: 'image/png' },
+          ],
+        },
+        {
+          role: 'agent',
+          text: '选一处',
+          at: '2026-08-01T00:01:00Z',
+          questions: [
+            {
+              id: 'which',
+              prompt: '哪条标题栏',
+              options: [{ id: 'drawer', label: '抽屉顶栏', recommended: true, demoHtml: '<p>preview</p>' }],
+            },
+          ],
+          forms: [{ title: '环境', fields: [{ name: 'host', label: '地址', type: 'url' }] }],
+        },
+      ],
+    })
+    const w = mountView('zh-CN', { embedToken: drawerToken })
+    await flushPromises()
+    expect(w.find('[data-testid="clarify-history-image-thumb"]').exists()).toBe(true)
+    expect(w.findAll('[data-testid="clarify-history-image-thumb"]')).toHaveLength(1)
+    expect(w.get('[data-testid="clarify-question-prompt"]').text()).toContain('哪条标题栏')
+    expect(w.get('[data-testid="clarify-form-card"]').text()).toContain('地址')
+    const input = w.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement
+    expect(input.placeholder).toContain('跳过本轮提问')
+    expect(input.placeholder).not.toContain('请先描述目标')
+  })
+
+  it('applies the opener locale without writing storage', async () => {
+    localStorage.setItem('grasp-locale', 'en')
+    mocks.preview.mockResolvedValue({ status: 'invalid' })
+    mountView('zh-CN', { embedToken: drawerToken, localeHint: 'zh-CN' })
+    await flushPromises()
+    expect(appLocale.value).toBe('zh-CN')
+    expect(localStorage.getItem('grasp-locale')).toBe('en')
+  })
+
   it('hands page frames to the drawer and sends its frames on the events socket', async () => {
     mocks.preview.mockResolvedValue({
       status: 'active',

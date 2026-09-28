@@ -53,7 +53,7 @@ vi.mock('./i18n', () => {
   }
 })
 
-import { applyPublicLocale, detectLocale, initLocale, setLocale, updateDocumentTitle, locale } from './locale'
+import { applyLocaleEphemeral, applyPublicLocale, detectLocale, initLocale, setLocale, updateDocumentTitle, locale } from './locale'
 import { loadLocaleMessages, prefetchLocale } from './loadLocaleMessages'
 import { i18n } from './i18n'
 
@@ -108,6 +108,14 @@ describe('locale', () => {
     await applyPublicLocale()
     expect(locale.value).toBe('en')
     expect(document.documentElement.lang).toBe('en')
+  })
+
+  it('applyLocaleEphemeral switches language without writing storage', async () => {
+    localStorage.setItem('grasp-locale', 'en')
+    await applyLocaleEphemeral('zh-CN')
+    expect(locale.value).toBe('zh-CN')
+    expect(document.documentElement.lang).toBe('zh-CN')
+    expect(localStorage.getItem('grasp-locale')).toBe('en')
   })
 
   it('updateDocumentTitle skips writing i18n keys when messages are empty', () => {

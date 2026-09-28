@@ -8,9 +8,12 @@ import {
   embedChatPath,
   loadEmbedSession,
   parseEmbedPickMessage,
+  parseEmbedLocaleFromHash,
   parseEmbedThemeFromHash,
   parseEmbedThemeMessage,
   parseEmbedTicketFromHash,
+  postEmbedEnlarge,
+  EMBED_ENLARGE_MESSAGE,
   redeemEmbedTicket,
   saveEmbedSession,
 } from './embedChat'
@@ -31,12 +34,41 @@ describe('embedChat', () => {
     expect(directPreviewEmbedUrl('http://10.0.0.5:18080/x#old', t, 'light')).toBe(
       'http://10.0.0.5:18080/x#__grasp_embed&run=r&node=n&ticket=a+b&theme=light',
     )
+    expect(directPreviewEmbedUrl('http://10.0.0.5:18080/x', t, 'dark', 'zh-CN')).toBe(
+      'http://10.0.0.5:18080/x#__grasp_embed&run=r&node=n&ticket=a+b&theme=dark&locale=zh-CN',
+    )
+  })
+
+  it('asks the preview page to cover the screen only from the embed drawer', () => {
+    const posted: unknown[] = []
+    const parent = {
+      postMessage: (msg: unknown) => {
+        posted.push(msg)
+      },
+    }
+    const original = window.parent
+    Object.defineProperty(window, 'parent', { configurable: true, value: parent })
+    window.history.replaceState(null, '', '/runs/r')
+    postEmbedEnlarge(true)
+    expect(posted).toEqual([])
+    window.history.replaceState(null, '', '/embed/runs/r/nodes/n/chat')
+    postEmbedEnlarge(true, { title: '方案 A', html: '<p>ok</p>' })
+    postEmbedEnlarge(false)
+    expect(posted).toEqual([
+      { type: EMBED_ENLARGE_MESSAGE, open: true, title: '方案 A', html: '<p>ok</p>' },
+      { type: EMBED_ENLARGE_MESSAGE, open: false },
+    ])
+    Object.defineProperty(window, 'parent', { configurable: true, value: original })
+    window.history.replaceState(null, '', '/')
   })
 
   it('reads the host theme from the fragment and from messages', () => {
     expect(parseEmbedThemeFromHash('#ticket=a&theme=light')).toBe('light')
     expect(parseEmbedThemeFromHash('#theme=dark')).toBe('dark')
     expect(parseEmbedThemeFromHash('#theme=neon')).toBeNull()
+    expect(parseEmbedLocaleFromHash('#locale=zh-CN')).toBe('zh-CN')
+    expect(parseEmbedLocaleFromHash('#locale=en')).toBe('en')
+    expect(parseEmbedLocaleFromHash('#locale=fr')).toBeNull()
     expect(parseEmbedThemeMessage({ type: EMBED_THEME_MESSAGE, theme: 'light' })).toBe('light')
     expect(parseEmbedThemeMessage({ type: EMBED_THEME_MESSAGE, theme: 'x' })).toBeNull()
     expect(parseEmbedThemeMessage({ type: EMBED_PICK_MESSAGE, theme: 'light' })).toBeNull()

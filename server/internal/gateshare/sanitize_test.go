@@ -53,6 +53,77 @@ func TestSanitizeQueueItemsKeepsAnnotationsDropsImages(t *testing.T) {
 	}
 }
 
+func TestSanitizeTurnsKeepsChoicesImagesAndForms(t *testing.T) {
+	msgs := []models.ReactMessage{
+		{
+			Role: "human",
+			Text: "看 http://127.0.0.1:8080/api/blobs/secret 和 blob:not-a-ref",
+			At:   "2026-09-28T00:00:00Z",
+			Images: []models.PromptImage{
+				{Ref: "blob:abc123", MimeType: "image/png", Name: "shot.png", SizeBytes: 12, Data: "AAAA"},
+				{Ref: "http://127.0.0.1/x.png", MimeType: "image/png"},
+				{Ref: "blob:../etc", MimeType: "image/png"},
+			},
+		},
+		{
+			Role: "agent",
+			Text: "选一处",
+			Questions: []models.ReactQuestion{{
+				ID:     "which",
+				Prompt: "哪条 http://10.1.2.3/secret",
+				Options: []models.ReactOption{{
+					ID:          "drawer",
+					Label:       "抽屉",
+					Recommended: true,
+					DemoHtml:    `<div>ok</div><a href="http://127.0.0.1:8080/api/runs/x">x</a>`,
+				}},
+			}},
+			Forms: []models.ReactForm{{
+				Title: "环境",
+				Fields: []models.ReactFormField{{
+					Name:        "host",
+					Label:       "地址",
+					Type:        "url",
+					Placeholder: "https://example.com",
+					Value:       "http://127.0.0.1:8080/api",
+					Required:    true,
+					Why:         "缺口",
+				}},
+			}},
+		},
+	}
+	turns := SanitizeTurns(msgs)
+	if len(turns) != 2 {
+		t.Fatalf("turns=%d", len(turns))
+	}
+	raw, err := json.Marshal(turns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	if strings.Contains(body, "127.0.0.1") || strings.Contains(body, "/api/runs") || strings.Contains(body, "AAAA") || strings.Contains(body, "blob:../") {
+		t.Fatalf("leak: %s", body)
+	}
+	if strings.Contains(turns[0].Text, "blob:") || !strings.Contains(turns[0].Text, "[redacted]") {
+		t.Fatalf("text: %s", turns[0].Text)
+	}
+	if len(turns[0].Images) != 1 || turns[0].Images[0].Ref != "blob:abc123" || turns[0].Images[0].MimeType != "image/png" || turns[0].Images[0].Name != "shot.png" {
+		t.Fatalf("images: %+v", turns[0].Images)
+	}
+	if len(turns[1].Questions) != 1 || turns[1].Questions[0].Options[0].Label != "抽屉" || !turns[1].Questions[0].Options[0].Recommended {
+		t.Fatalf("questions: %+v", turns[1].Questions)
+	}
+	if !strings.Contains(turns[1].Questions[0].Prompt, "[redacted]") {
+		t.Fatalf("prompt: %s", turns[1].Questions[0].Prompt)
+	}
+	if strings.Contains(turns[1].Questions[0].Options[0].DemoHtml, "127.0.0.1") || !strings.Contains(turns[1].Questions[0].Options[0].DemoHtml, "ok") {
+		t.Fatalf("demo: %s", turns[1].Questions[0].Options[0].DemoHtml)
+	}
+	if len(turns[1].Forms) != 1 || turns[1].Forms[0].Fields[0].Type != "url" || !strings.Contains(turns[1].Forms[0].Fields[0].Value, "[redacted]") {
+		t.Fatalf("forms: %+v", turns[1].Forms)
+	}
+}
+
 func TestSanitizeTurnsDropsIdentityAndCaps(t *testing.T) {
 	msgs := []models.ReactMessage{
 		{Role: "agent", Text: "请审阅 page.html，勿访问 http://10.1.2.3/api/runs/abc", At: "2026-08-01T00:00:00Z"},

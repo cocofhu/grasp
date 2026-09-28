@@ -241,6 +241,30 @@ export type PublicGatePreviewTurn = {
     mimeType?: string
     name?: string
     ref?: string
+    sizeBytes?: number
+  }>
+  questions?: Array<{
+    id?: string
+    prompt?: string
+    allowMultiple?: boolean
+    options?: Array<{
+      id?: string
+      label?: string
+      recommended?: boolean
+      demoHtml?: string
+    }>
+  }>
+  forms?: Array<{
+    title?: string
+    fields?: Array<{
+      name?: string
+      label?: string
+      type?: string
+      placeholder?: string
+      value?: string
+      required?: boolean
+      why?: string
+    }>
   }>
   annotations?: Array<{
     selector?: string

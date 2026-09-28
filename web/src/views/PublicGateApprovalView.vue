@@ -10,7 +10,7 @@ import ReviewComposer from '@/components/run/ReviewComposer.vue'
 import StructuredArtifactView from '@/components/run/StructuredArtifactView.vue'
 import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 import PublicAppPreviewPanel from '@/components/run/PublicAppPreviewPanel.vue'
-import { applyPublicLocale, locale, setLocale, type AppLocale } from '@/lib/shared/locale'
+import { applyLocaleEphemeral, applyPublicLocale, isAppLocale, locale, setLocale, type AppLocale } from '@/lib/shared/locale'
 import { REVIEW_SHELL_WIDTH_KEY_APPROVAL } from '@/lib/inbox/reviewLayoutBudget'
 import { reapplyThemeChrome } from '@/lib/shared/theme'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
@@ -36,11 +36,12 @@ import {
   type PublicGateDecideResult,
   type PublicGatePreview,
   type PublicGatePreviewKnown,
+  type PublicGatePreviewTurn,
   type PublicGateQueueItem,
 } from '@/lib/inbox/gateShareLink'
 import { isClarifyInteractive } from '@/lib/shared/clarifyInteractive'
 import { playConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
-import type { AcpEvent, Artifact, ClarifyImage, ClarifyTurn, NodeType, ReactAnnotation, Run } from '@/lib/shared/types'
+import type { AcpEvent, Artifact, ClarifyImage, ClarifyTurn, NodeType, ReactAnnotation, ReactForm, ReactQuestion, Run } from '@/lib/shared/types'
 
 const PUBLIC_SHARE_RUN_ID = 'public-share'
 
@@ -61,6 +62,8 @@ type PublicChatRef = {
 const props = defineProps<{
   /** Chat-only drawer mode: the credential comes from the embed session instead of `#t=`. */
   embedToken?: string
+  /** Opener language. Applied for this page only; not written to localStorage. */
+  localeHint?: AppLocale
 }>()
 const emit = defineEmits<{
   status: [status: string]
@@ -215,12 +218,69 @@ const inspectable = computed(
 )
 const usePublicArtifactStage = computed(() => isReview.value)
 const appPreviewPorts = computed(() => preview.value?.ports || [])
+
+function mapPreviewImages(images: PublicGatePreviewTurn['images']): ClarifyImage[] | undefined {
+  const out: ClarifyImage[] = []
+  for (const im of images || []) {
+    const ref = (im.ref || '').trim()
+    if (!/^blob:[A-Za-z0-9_-]+$/.test(ref)) continue
+    out.push({
+      ref,
+      mimeType: im.mimeType || 'application/octet-stream',
+      name: im.name,
+      sizeBytes: im.sizeBytes,
+    })
+  }
+  return out.length ? out : undefined
+}
+
+function mapPreviewQuestions(questions: PublicGatePreviewTurn['questions']): ReactQuestion[] | undefined {
+  const out: ReactQuestion[] = []
+  for (const q of questions || []) {
+    const id = (q.id || '').trim()
+    const options = (q.options || [])
+      .filter((o) => (o.id || '').trim() && (o.label || '').trim())
+      .map((o) => ({
+        id: (o.id || '').trim(),
+        label: o.label || '',
+        recommended: !!o.recommended,
+        ...(o.demoHtml ? { demoHtml: o.demoHtml } : {}),
+      }))
+    if (!id || !options.length) continue
+    out.push({ id, prompt: q.prompt || '', allowMultiple: !!q.allowMultiple, options })
+  }
+  return out.length ? out : undefined
+}
+
+function mapPreviewForms(forms: PublicGatePreviewTurn['forms']): ReactForm[] | undefined {
+  const out: ReactForm[] = []
+  for (const f of forms || []) {
+    const fields = (f.fields || [])
+      .filter((field) => (field.name || '').trim() && (field.label || '').trim())
+      .map((field) => ({
+        name: (field.name || '').trim(),
+        label: field.label || '',
+        type: field.type === 'url' ? 'url' : undefined,
+        placeholder: field.placeholder,
+        value: field.value,
+        required: !!field.required,
+        why: field.why,
+      }))
+    if (!fields.length) continue
+    out.push({ title: f.title, fields })
+  }
+  return out.length ? out : undefined
+}
+
 const turns = computed<ClarifyTurn[]>(() =>
   (preview.value?.turns || []).map((turn) => ({
     role: turn.role === 'human' ? 'human' : 'agent',
     text: turn.text || '',
     at: turn.at || '',
     interrupted: !!turn.interrupted,
+    images: mapPreviewImages(turn.images),
+    questions: mapPreviewQuestions(turn.questions),
+    forms: mapPreviewForms(turn.forms),
     annotations: (turn.annotations || []).map((a) => ({
       selector: a.selector,
       jsonPath: a.jsonPath,
@@ -1175,6 +1235,7 @@ watch(
 
 onMounted(async () => {
   await applyPublicLocale()
+  if (isAppLocale(props.localeHint)) await applyLocaleEphemeral(props.localeHint)
   ready.value = true
   await loadPreview()
   window.addEventListener('hashchange', onHashChange)
