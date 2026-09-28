@@ -146,8 +146,8 @@ func TestRunTurnCancelNoAckDesync(t *testing.T) {
 	var server *websocket.Conn
 	h, p := wsServer(t, func(conn *websocket.Conn, op string, _ map[string]any) {
 		connMu.Lock()
+		defer connMu.Unlock()
 		server = conn
-		connMu.Unlock()
 		if op == "connect" {
 			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "s"})
 		}
@@ -203,8 +203,8 @@ func TestBridgeStateMirror(t *testing.T) {
 	var server *websocket.Conn
 	h, p := wsServer(t, func(conn *websocket.Conn, op string, _ map[string]any) {
 		connMu.Lock()
+		defer connMu.Unlock()
 		server = conn
-		connMu.Unlock()
 		if op == "connect" {
 			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "s"})
 		}
