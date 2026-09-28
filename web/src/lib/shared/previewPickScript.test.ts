@@ -59,6 +59,7 @@ function openPage(
     embedReply?: EmbedReply
     savedEmbed?: string
     tab?: string
+    pending?: string
     broadcast?: boolean
   } = {},
 ): Page {
@@ -71,6 +72,7 @@ function openPage(
   if (opts.stored) win.sessionStorage.setItem('__grasp_preview_picks', opts.stored)
   if (opts.savedEmbed) win.localStorage.setItem('__grasp_embed', opts.savedEmbed)
   if (opts.tab) win.sessionStorage.setItem('__grasp_tab', opts.tab)
+  if (opts.pending) win.sessionStorage.setItem('__grasp_embed_pending', opts.pending)
   if (opts.broadcast) (win as unknown as Record<string, unknown>).BroadcastChannel = TestChannel
   const fetched: string[] = []
   ;(win as unknown as { fetch: (u: string) => Promise<unknown> }).fetch = async (u: string) => {
@@ -228,6 +230,11 @@ describe('preview-pick.js chat drawer', () => {
   it('checks the ticket with Grasp, strips it from the URL and opens the drawer', async () => {
     const p = openPage(body, { hash, embedReply: reply })
     expect(p.win.location.hash).toBe('')
+    expect(JSON.parse(p.win.sessionStorage.getItem('__grasp_embed_pending') || '{}')).toMatchObject({
+      run: 'run-1',
+      node: 'ap1',
+      ticket: 'tk1',
+    })
     await settle()
     expect(p.fetched).toEqual(['/__grasp/embed-origin?ticket=tk1&node=ap1'])
     expect(p.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#ticket=tk1&theme=dark`)
@@ -235,6 +242,22 @@ describe('preview-pick.js chat drawer', () => {
     expect(p.drawerOpen()).toBe(true)
     expect(JSON.parse(p.win.localStorage.getItem('__grasp_embed') || '{}')).toMatchObject({ origin: GRASP, run: 'run-1', node: 'ap1' })
     expect(p.win.localStorage.getItem('__grasp_embed')).not.toContain('tk1')
+    expect(p.win.sessionStorage.getItem('__grasp_embed_pending')).toContain('tk1')
+    p.drawerReady()
+    expect(p.win.sessionStorage.getItem('__grasp_embed_pending')).toBeNull()
+  })
+
+  it('finishes the handshake after the preview app navigates to a new page', async () => {
+    const first = openPage(body, { hash, embedReply: reply })
+    const pending = first.win.sessionStorage.getItem('__grasp_embed_pending')
+    expect(first.win.location.hash).toBe('')
+    expect(pending).toContain('tk1')
+    const next = openPage(body, { pending: pending || '', embedReply: reply })
+    await settle()
+    expect(next.win.location.hash).toBe('')
+    expect(next.fetched).toEqual(['/__grasp/embed-origin?ticket=tk1&node=ap1'])
+    expect(next.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#ticket=tk1&theme=dark`)
+    expect(next.drawerOpen()).toBe(true)
   })
 
   it('stays without a drawer when Grasp does not vouch for the ticket', async () => {
@@ -243,6 +266,7 @@ describe('preview-pick.js chat drawer', () => {
       await settle()
       expect(p.frame(), JSON.stringify(bad)).toBeNull()
       expect(p.win.localStorage.getItem('__grasp_embed')).toBeNull()
+      expect(p.win.sessionStorage.getItem('__grasp_embed_pending')).toBeNull()
     }
   })
 
