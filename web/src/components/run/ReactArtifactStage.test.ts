@@ -157,6 +157,45 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
+  it('keeps pipeline artifact cards compact instead of stretching the row (g1.1 / g1.2 / g2.2)', async () => {
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json' })],
+        runId: 'run-compact',
+        nodeId: 'clarify',
+        annotatable: true,
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+
+    const scroller = wrapper.get('[data-testid="react-artifact-grid"]')
+    expect(scroller.classes()).toEqual(expect.arrayContaining(['overflow-y-auto', 'p-4']))
+    expect(scroller.classes()).not.toContain('overflow-hidden')
+
+    const layout = scroller.get('.grid')
+    const layoutClass = layout.attributes('class') || ''
+    expect(layoutClass).not.toContain('auto-rows-fr')
+    expect(layoutClass).not.toContain('h-full')
+    expect(layoutClass).toContain('gap-3')
+    expect(layoutClass).toContain('minmax(176px,1fr)')
+
+    for (const id of ['react-artifact-card-novnc', 'react-artifact-card-research.json']) {
+      const card = wrapper.get(`[data-testid="${id}"]`)
+      const cardClass = card.attributes('class') || ''
+      expect(cardClass).toContain('rounded-lg')
+      expect(cardClass).toContain('border')
+      expect(cardClass).toContain('border-line')
+      expect(cardClass).toContain('hover:border-line-strong')
+      expect(cardClass).not.toContain('h-full')
+      const thumb = card.element.firstElementChild as HTMLElement
+      expect(thumb.className).toContain('h-[110px]')
+      expect(thumb.className).not.toContain('flex-1')
+    }
+
+    wrapper.unmount()
+  })
+
   it('adds another preview tab instead of replacing the open one', async () => {
     const wrapper = mount(ReactArtifactStage, {
       props: {

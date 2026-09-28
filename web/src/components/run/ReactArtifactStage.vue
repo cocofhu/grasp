@@ -825,7 +825,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div v-show="showingGrid" class="flex min-h-0 flex-1 flex-col overflow-hidden" data-testid="react-artifact-grid">
+    <div v-show="showingGrid" class="min-h-0 flex-1 overflow-y-auto p-4" data-testid="react-artifact-grid">
       <div
         v-if="!showGridCards"
         class="flex h-full min-h-[160px] flex-col items-center justify-center text-center text-[12px] text-txt3"
@@ -836,19 +836,19 @@ onBeforeUnmount(() => {
       </div>
       <div
         v-else
-        class="grid h-full min-h-0 grid-cols-[repeat(auto-fill,minmax(176px,1fr))] auto-rows-fr"
+        class="grid grid-cols-[repeat(auto-fill,minmax(176px,1fr))] gap-3"
       >
         <button
           v-if="canOpenNovnc"
           type="button"
-          class="flex h-full min-h-0 flex-col overflow-hidden border-b border-r border-line bg-surface text-left"
+          class="overflow-hidden rounded-lg border border-line bg-surface text-left transition hover:border-line-strong"
           data-testid="react-artifact-card-novnc"
           @click="openNovnc"
         >
-          <div class="relative flex min-h-[110px] flex-1 items-center justify-center overflow-hidden bg-elevated text-txt3">
+          <div class="relative flex h-[110px] items-center justify-center overflow-hidden bg-elevated text-txt3">
             <Icon name="globe" :size="28" class="opacity-50" />
           </div>
-          <div class="shrink-0 px-2.5 py-2">
+          <div class="px-2.5 py-2">
             <div class="truncate text-[12px] font-medium text-txt">{{ remoteCardTitle }}</div>
             <div class="mt-0.5 truncate text-[11px] text-txt3">{{ remoteCardMeta }}</div>
           </div>
@@ -858,12 +858,12 @@ onBeforeUnmount(() => {
           :key="a.id"
           role="button"
           tabindex="0"
-          class="flex h-full min-h-0 flex-col overflow-hidden border-b border-r border-line bg-surface text-left"
+          class="overflow-hidden rounded-lg border border-line bg-surface text-left transition hover:border-line-strong"
           :data-testid="'react-artifact-card-' + a.name"
           @click="openArtifact(a)"
           @keydown.enter.prevent="openArtifact(a)"
         >
-          <div class="relative min-h-[110px] flex-1 overflow-hidden bg-elevated">
+          <div class="relative h-[110px] overflow-hidden bg-elevated">
             <div
               v-if="textThumb(a)"
               class="pointer-events-none h-full overflow-hidden border-b border-line px-3 py-2.5"
@@ -889,7 +889,7 @@ onBeforeUnmount(() => {
               <Icon :name="kindIcon[a.kind] || 'artifact'" :size="28" class="opacity-50" />
             </div>
           </div>
-          <div class="shrink-0 px-2.5 py-2">
+          <div class="px-2.5 py-2">
             <div class="flex items-center gap-1.5">
               <div class="min-w-0 truncate text-[12px] font-medium text-txt" :title="artifactTitle(a)">{{ artifactTitle(a) }}</div>
               <span
