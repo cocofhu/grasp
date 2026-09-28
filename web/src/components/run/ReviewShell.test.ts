@@ -125,19 +125,20 @@ describe('ReviewShell sidebar width', () => {
     w.unmount()
   })
 
-  // plan_coverage: g3.1 — run detail panes get the shared card look; g3.2 — sash kept
-  it('cardPanes gives stage/sidebar the shared card look and keeps the sash (plan g3.1 / g3.2)', () => {
+  // plan_coverage: g3.1 — stage and sidebar stay flush; g3.2 — sash kept
+  it('cardPanes keeps stage and sidebar flush (plan g3.1 / g3.2)', () => {
     const w = mountShell({ cardPanes: true })
     const root = w.get('[data-testid="review-shell"]')
-    expect(root.classes()).toContain('gap-2')
-    expect(root.classes()).toContain('p-2')
+    expect(root.classes()).not.toContain('gap-2')
+    expect(root.classes()).not.toContain('p-2')
     const stage = w.get('[data-testid="review-shell-stage"]')
-    expect(stage.classes()).toContain('rounded-lg')
-    expect(stage.classes()).toContain('border')
-    expect(stage.classes()).toContain('shadow-card')
+    expect(stage.classes()).not.toContain('m-2')
+    expect(stage.classes()).not.toContain('rounded-lg')
+    expect(stage.classes()).not.toContain('shadow-card')
     const aside = w.get('[data-testid="review-shell-sidebar"]')
-    expect(aside.classes()).toContain('rounded-lg')
-    expect(aside.classes()).toContain('shadow-card')
+    expect(aside.classes()).not.toContain('rounded-lg')
+    expect(aside.classes()).not.toContain('border')
+    expect(aside.classes()).not.toContain('shadow-card')
     expect(w.find('[data-testid="review-shell-sash"]').exists()).toBe(true)
     w.unmount()
   })

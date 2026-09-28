@@ -41,9 +41,9 @@ const props = withDefaults(
      */
     hostConfirmFlow?: boolean
     /**
-     * Run Detail: give the stage (「流水线产物」) and sidebar (「Agent交互」)
-     * the shared floating-card look (shell radius + border + shadow + gap).
-     * Inbox/GateApproval keep the flush layout.
+     * Run Detail: stage (「流水线产物」) and sidebar (「Agent交互」) stay flush.
+     * Kept so existing callers can pass it; the floating-card chrome is off.
+     * Inbox/GateApproval keep the flush layout on both.
      */
     cardPanes?: boolean
     /** Sidebar only, full width (preview-page chat drawer). */
@@ -315,7 +315,6 @@ onBeforeUnmount(() => {
     class="relative flex h-full min-h-0 overflow-hidden"
     :class="[
       mobile ? 'flex-col' : 'flex-row',
-      cardPanes && !mobile ? 'gap-2 p-2' : '',
       sashDragging || drawerDragging ? 'select-none' : '',
     ]"
     data-testid="review-shell"
@@ -323,10 +322,7 @@ onBeforeUnmount(() => {
     <section
       v-if="!chatOnly"
       class="flex min-h-0 flex-1 flex-col overflow-hidden"
-      :class="[
-        mobile ? 'min-w-0 border-b border-line' : 'review-shell-stage',
-        cardPanes && !mobile ? 'rounded-lg border border-line bg-base shadow-card' : '',
-      ]"
+      :class="mobile ? 'min-w-0 border-b border-line' : 'review-shell-stage'"
       data-testid="review-shell-stage"
     >
       <slot name="stage" />
@@ -353,10 +349,7 @@ onBeforeUnmount(() => {
 
     <aside
       class="flex min-h-0 flex-col bg-surface"
-      :class="[
-        chatOnly ? 'min-w-0 flex-1' : mobile ? 'w-full shrink-0' : 'shrink-0',
-        cardPanes && !mobile ? 'rounded-lg border border-line shadow-card' : '',
-      ]"
+      :class="chatOnly ? 'min-w-0 flex-1' : mobile ? 'w-full shrink-0' : 'shrink-0'"
       :style="
         chatOnly
           ? undefined
