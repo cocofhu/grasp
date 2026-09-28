@@ -4,6 +4,15 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+## 1.2.1 — 2026-09-28
+
+- **Preview drawer:** compact Page Harness CoCo title bar (grip + PH badge +
+  ellipsis name, 48px toolbar) (#672).
+- **Direct preview:** keep the drawer ticket across a full-page redirect
+  (#670).
+- Default `./start.sh` / `.env.example` / `compose.release.yaml` pins GHCR
+  images to `*:1.2.1`.
+
 ## 1.2.0 — 2026-09-28
 
 - **Agent page control:** server bridge, drawer relay, and page executor so
