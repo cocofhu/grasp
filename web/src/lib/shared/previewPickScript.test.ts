@@ -386,7 +386,7 @@ describe('preview-pick.js floating chat window', () => {
     fire(p, 'pointerup', p.win, to.x, to.y)
   }
 
-  it('opens a rounded Grasp card on the right at the default size', async () => {
+  it('opens a rounded Page Harness CoCo card on the right at the default size', async () => {
     const p = openPage(body, { hash, embedReply: reply })
     await settle()
     const { vw, vh } = view(p)
@@ -394,7 +394,7 @@ describe('preview-pick.js floating chat window', () => {
     expect(vh).toBeGreaterThan(400)
     const g = geom(p)
     const css = p.shadow.querySelector('style')?.textContent || ''
-    expect(p.shadow.querySelector('[data-role="drawer-title"]')?.textContent).toBe('Grasp')
+    expect(p.shadow.querySelector('[data-role="drawer-title"]')?.textContent).toBe('Page Harness CoCo')
     expect(css).toContain('border-radius:22px')
     expect(g.w).toBe(420)
     expect(g.h).toBe(Math.round(vh * 0.7))
@@ -403,6 +403,28 @@ describe('preview-pick.js floating chat window', () => {
     expect(g.x + g.w).toBeLessThanOrEqual(vw)
     expect(g.y + g.h).toBeLessThanOrEqual(vh)
     expect(p.drawerOpen()).toBe(true)
+  })
+
+  it('renders the title bar as a compact Page Harness CoCo toolbar', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    const css = p.shadow.querySelector('style')?.textContent || ''
+    const title = p.shadow.querySelector('[data-role="drawer-title"]') as HTMLElement
+    const grip = p.shadow.querySelector('[data-role="drawer-grip"]')
+    const mark = p.shadow.querySelector('.mark')
+    const buttons = p.shadow.querySelectorAll('.dhead button')
+    expect(title.textContent).toBe('Page Harness CoCo')
+    expect(title.getAttribute('title')).toBe('Page Harness CoCo')
+    expect(grip).not.toBeNull()
+    expect(mark?.textContent).toBe('PH')
+    expect(buttons.length).toBe(2)
+    expect(css).toContain('.dhead{display:flex;align-items:center;gap:9px;height:48px')
+    expect(css).toContain('.dhead [data-role="drawer-title"]{flex:1;min-width:0;font-size:14px;font-weight:600')
+    expect(css).toContain('text-overflow:ellipsis')
+    expect(css).toContain('.dhead button{width:30px;height:30px')
+    expect(css).not.toContain('height:64px')
+    expect(css).not.toContain('font-size:28px')
+    expect(css).not.toContain('width:36px')
   })
 
   it('drags from the title bar and keeps the window inside the viewport', async () => {

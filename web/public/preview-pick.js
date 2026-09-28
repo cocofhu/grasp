@@ -29,6 +29,16 @@
   var MAX_HTML = 1024;
   var STORE_KEY = '__grasp_preview_picks';
 
+  var ICON_MOON =
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+  var ICON_SUN =
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4' +
+    'M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+
   var zh = /^zh/i.test((navigator.language || '') + '');
   var T = zh
     ? {
@@ -38,7 +48,7 @@
         chat: '对话',
         chatTitle: 'Grasp · Agent 对话',
         needTicket: '需要从预览页跳转重新获得票据',
-        brand: 'Grasp',
+        brand: 'Page Harness CoCo',
         close: '收起对话',
         toLight: '切换到浅色',
         toDark: '切换到深色',
@@ -53,7 +63,7 @@
         chat: 'Chat',
         chatTitle: 'Grasp · Agent chat',
         needTicket: 'Reopen from the preview page in Grasp to get a new ticket.',
-        brand: 'Grasp',
+        brand: 'Page Harness CoCo',
         close: 'Hide chat',
         toLight: 'Switch to light',
         toDark: 'Switch to dark',
@@ -219,11 +229,18 @@
     '.drawer{position:fixed;z-index:2147483646;display:flex;flex-direction:column;overflow:hidden;' +
     'background:#0b0b0c;border-radius:22px;box-shadow:0 16px 40px rgba(0,0,0,.35);' +
     'font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e5e7eb}' +
-    '.dhead{display:flex;align-items:center;gap:8px;height:64px;padding:0 16px 0 22px;flex:none;' +
+    '.dhead{display:flex;align-items:center;gap:9px;height:48px;padding:0 10px 0 14px;flex:none;' +
     'cursor:grab;user-select:none;touch-action:none}' +
-    '.dhead span{flex:1;min-width:0;font-size:28px;font-weight:650;letter-spacing:-0.03em;line-height:1;color:#a5b4fc}' +
-    '.dhead button{width:36px;height:36px;padding:0;display:grid;place-items:center;flex:none;' +
-    'border:1px solid #374151;border-radius:8px;background:#111827}' +
+    '.dhead:active{cursor:grabbing}' +
+    '.dhead .drag{display:grid;grid-template-columns:repeat(2,3px);grid-auto-rows:3px;gap:3px;' +
+    'opacity:.32;flex:none;color:inherit}' +
+    '.dhead .drag i{width:3px;height:3px;border-radius:50%;background:currentColor}' +
+    '.dhead .mark{width:22px;height:22px;border-radius:7px;flex:none;display:grid;place-items:center;' +
+    'background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:10px;font-weight:700;letter-spacing:.02em}' +
+    '.dhead [data-role="drawer-title"]{flex:1;min-width:0;font-size:14px;font-weight:600;letter-spacing:-0.01em;' +
+    'line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    '.dhead button{width:30px;height:30px;padding:0;display:grid;place-items:center;flex:none;' +
+    'border:1px solid #26262c;border-radius:9px;background:transparent;color:#9ca3af}' +
     '.drawer iframe{flex:1;min-height:0;width:auto;margin:0 14px 14px;border:0;border-radius:14px;background:#0b0b0c}' +
     '.edge{position:absolute;touch-action:none;z-index:3}' +
     '.edge.n,.edge.s{left:14px;right:14px;height:8px;cursor:ns-resize}' +
@@ -242,8 +259,7 @@
     '.light .chat{background:#eef0ff;color:#4f46e5}' +
     '.light .chat[aria-expanded="true"]{background:#dcdcfe}' +
     '.drawer.light{color:#18181b;background:#fff;box-shadow:0 16px 40px rgba(16,24,40,.12)}' +
-    '.drawer.light .dhead span{color:#4f46e5}' +
-    '.drawer.light .dhead button{border-color:#e4e4e7;background:#fff;color:#3f3f46}' +
+    '.drawer.light .dhead button{border-color:#e7e7ea;background:transparent;color:#52525b}' +
     '.drawer.light iframe{background:#fafafb}' +
     '.agent{position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:2147483647;' +
     'display:flex;align-items:center;gap:8px;padding:4px 4px 4px 12px;border-radius:999px;' +
@@ -489,7 +505,10 @@
     shadow.innerHTML =
       '<style>' + BAR_CSS + '</style>' +
       '<div class="drawer" data-role="drawer" hidden>' +
-      '<div class="dhead" data-role="drawer-head"><span data-role="drawer-title"></span>' +
+      '<div class="dhead" data-role="drawer-head">' +
+      '<span class="drag" data-role="drawer-grip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>' +
+      '<span class="mark" aria-hidden="true">PH</span>' +
+      '<span data-role="drawer-title"></span>' +
       '<button type="button" data-role="drawer-theme"></button>' +
       '<button type="button" data-role="drawer-close" class="close">' +
       '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
@@ -532,7 +551,9 @@
       ev.stopPropagation();
       stopControl();
     });
-    shadow.querySelector('[data-role="drawer-title"]').textContent = T.brand;
+    var titleEl = shadow.querySelector('[data-role="drawer-title"]');
+    titleEl.textContent = T.brand;
+    titleEl.title = T.brand;
     var head = shadow.querySelector('[data-role="drawer-head"]');
     head.addEventListener('pointerdown', onHeadPointerDown);
     Array.prototype.forEach.call(shadow.querySelectorAll('.edge'), function (edge) {
@@ -626,7 +647,7 @@
     ui.drawer.className = light ? 'drawer light' : 'drawer';
     ui.bar.className = 'bar' + (light ? ' light' : '');
     applyBox();
-    ui.theme.textContent = light ? '☾' : '☀';
+    ui.theme.innerHTML = light ? ICON_MOON : ICON_SUN;
     ui.theme.setAttribute('aria-label', light ? T.toDark : T.toLight);
     ui.theme.title = light ? T.toDark : T.toLight;
   }
