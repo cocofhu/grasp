@@ -36,6 +36,21 @@ function detectPublicLocale(): AppLocale {
   return 'en'
 }
 
+export function isAppLocale(v: unknown): v is AppLocale {
+  return v === 'zh-CN' || v === 'en'
+}
+
+/** Set the page language without writing localStorage. */
+export async function applyLocaleEphemeral(next: AppLocale): Promise<void> {
+  const sequence = ++localeChangeSequence
+  const messages = await loadLocaleMessages(next)
+  if (sequence !== localeChangeSequence) return
+  i18n.global.setLocaleMessage(next, messages)
+  i18n.global.locale.value = next
+  locale.value = next
+  applyHtmlLocale(next)
+}
+
 export async function applyPublicLocale(): Promise<void> {
   const saved = readLocaleStorage()
   const next = saved === 'zh-CN' || saved === 'en' ? saved : detectPublicLocale()

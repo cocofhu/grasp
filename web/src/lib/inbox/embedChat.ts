@@ -1,3 +1,4 @@
+import type { AppLocale } from '@/lib/shared/locale'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import type { ThemeName } from '@/lib/shared/theme'
 
@@ -16,6 +17,8 @@ export const EMBED_CONTROL_MESSAGE = 'grasp-embed:control'
 export const EMBED_CMD_MESSAGE = 'grasp-embed:cmd'
 /** Page → drawer: result of a page command. */
 export const EMBED_CMD_RESULT_MESSAGE = 'grasp-embed:cmd-result'
+/** Drawer → page: the enlarge modal should cover the preview viewport. */
+export const EMBED_ENLARGE_MESSAGE = 'grasp-embed:enlarge'
 export const PAGE_CONTROL_CAP = 'page-control'
 
 export type EmbedTicket = {
@@ -32,15 +35,39 @@ export type EmbedSession = {
 
 type RedeemResponse = EmbedSession & { kind?: string; runId?: string; nodeId?: string; error?: string }
 
+/** True when this page is the chat drawer framed by the preview page. */
+export function isEmbedDrawer(): boolean {
+  return typeof window !== 'undefined' && window.parent !== window && window.location.pathname.startsWith('/embed/')
+}
+
+/**
+ * Ask the preview page to show the enlarge layer on the screen.
+ * The chat drawer stays the size it already has. No-op on the approval page.
+ */
+export function postEmbedEnlarge(open: boolean, detail?: { title?: string; html?: string }): void {
+  if (!isEmbedDrawer()) return
+  const target = window.location.ancestorOrigins?.[0] || '*'
+  const msg: { type: string; open: boolean; title?: string; html?: string } = {
+    type: EMBED_ENLARGE_MESSAGE,
+    open: !!open,
+  }
+  if (open) {
+    msg.title = detail?.title || ''
+    msg.html = detail?.html || ''
+  }
+  window.parent.postMessage(msg, target)
+}
+
 /** Drawer page path; the ticket rides in the fragment so it never reaches a server log. */
 export function embedChatPath(runId: string, nodeId: string): string {
   return `/embed/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/chat`
 }
 
 /** Direct preview URL carrying a drawer ticket for the in-page pick script (preview-pick.js). */
-export function directPreviewEmbedUrl(directUrl: string, t: EmbedTicket, theme: ThemeName): string {
+export function directPreviewEmbedUrl(directUrl: string, t: EmbedTicket, theme: ThemeName, locale?: AppLocale): string {
   const base = directUrl.split('#')[0]
   const q = new URLSearchParams({ run: t.runId, node: t.nodeId, ticket: t.ticket, theme })
+  if (locale === 'zh-CN' || locale === 'en') q.set('locale', locale)
   return `${base}#__grasp_embed&${q.toString()}`
 }
 
@@ -58,6 +85,11 @@ function asTheme(v: unknown): ThemeName | null {
 
 export function parseEmbedThemeFromHash(hash: string): ThemeName | null {
   return asTheme(hashParams(hash).get('theme'))
+}
+
+export function parseEmbedLocaleFromHash(hash: string): AppLocale | null {
+  const locale = hashParams(hash).get('locale')
+  return locale === 'zh-CN' || locale === 'en' ? locale : null
 }
 
 export function parseEmbedThemeMessage(data: unknown): ThemeName | null {

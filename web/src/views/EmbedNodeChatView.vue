@@ -14,6 +14,7 @@ import {
   parseEmbedCmdResult,
   parseEmbedControlMessage,
   parseEmbedPickMessage,
+  parseEmbedLocaleFromHash,
   parseEmbedThemeFromHash,
   parseEmbedThemeMessage,
   parseEmbedTicketFromHash,
@@ -21,6 +22,7 @@ import {
   saveEmbedSession,
 } from '@/lib/inbox/embedChat'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
+import type { AppLocale } from '@/lib/shared/locale'
 import { setThemeOverride } from '@/lib/shared/theme'
 import { usePageControl } from '@/lib/inbox/embedPageControl'
 
@@ -36,6 +38,7 @@ const nodeId = String(route.params.nodeId || '')
 
 const phase = ref<'connecting' | 'ready' | 'expired' | 'network'>('connecting')
 const token = ref('')
+const embedLocale = ref<AppLocale | null>(null)
 const chatRef = ref<ChatRef | null>(null)
 let announced = false
 
@@ -58,6 +61,7 @@ function takeHash(): string {
 async function connect() {
   phase.value = 'connecting'
   const hash = takeHash()
+  embedLocale.value = parseEmbedLocaleFromHash(hash)
   const theme = parseEmbedThemeFromHash(hash)
   if (theme) setThemeOverride(theme)
   const ticket = parseEmbedTicketFromHash(hash)
@@ -177,6 +181,7 @@ onUnmounted(() => {
       ref="chatRef"
       class="min-h-0 flex-1"
       :embed-token="token"
+      :locale-hint="embedLocale || undefined"
       @status="onStatus"
       @events-ready="pageControl.onEventsReady"
       @events-closed="pageControl.onEventsClosed"

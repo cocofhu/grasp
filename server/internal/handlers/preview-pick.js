@@ -18,6 +18,7 @@
   var EMBED_CONTROL = 'grasp-embed:control';
   var EMBED_CMD = 'grasp-embed:cmd';
   var EMBED_CMD_RESULT = 'grasp-embed:cmd-result';
+  var EMBED_ENLARGE = 'grasp-embed:enlarge';
   var PAGE_CONTROL_CAP = 'page-control';
   var TAB_KEY = '__grasp_tab';
   var TAB_CHANNEL = '__grasp_tabs';
@@ -225,6 +226,21 @@
     '.dhead button{width:36px;height:36px;padding:0;display:grid;place-items:center;flex:none;' +
     'border:1px solid #374151;border-radius:8px;background:#111827}' +
     '.drawer iframe{flex:1;min-height:0;width:auto;margin:0 14px 14px;border:0;border-radius:14px;background:#0b0b0c}' +
+    '.stage{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:16px;' +
+    'font:15px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}' +
+    '.stage-back{position:absolute;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px)}' +
+    '.stage-card{position:relative;display:flex;flex-direction:column;width:100%;max-width:900px;' +
+    'height:min(88vh,calc(70vh + 96px));max-height:88vh;overflow:hidden;border-radius:12px;' +
+    'background:#111827;color:#e5e7eb;border:1px solid #374151;box-shadow:0 16px 40px rgba(0,0,0,.35)}' +
+    '.stage-head{display:flex;align-items:center;gap:8px;height:56px;padding:0 12px 0 20px;border-bottom:1px solid #374151;flex:none}' +
+    '.stage-title{flex:1;min-width:0;font-size:15px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+    '.stage-head button{width:32px;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:inherit;cursor:pointer;font-size:18px}' +
+    '.stage-head button:hover{background:#1f2937}' +
+    '.stage-body{min-height:0;flex:1;overflow-y:auto;padding:20px}' +
+    '.stage-body iframe{display:block;width:100%;height:70vh;border:0;background:#fff}' +
+    '.stage.light .stage-card{background:#fff;color:#18181b;border-color:#e4e4e7}' +
+    '.stage.light .stage-head{border-bottom-color:#e4e4e7}' +
+    '.stage.light .stage-head button:hover{background:#f4f4f5}' +
     '.edge{position:absolute;touch-action:none;z-index:3}' +
     '.edge.n,.edge.s{left:14px;right:14px;height:8px;cursor:ns-resize}' +
     '.edge.n{top:0}.edge.s{bottom:0}' +
@@ -526,6 +542,7 @@
       agent: shadow.querySelector('[data-role="agent"]'),
       agentText: shadow.querySelector('[data-role="agent-text"]'),
       agentStop: shadow.querySelector('[data-role="agent-stop"]'),
+      stage: null,
     };
     ui.agentStop.addEventListener('click', function (ev) {
       ev.preventDefault();
@@ -624,6 +641,7 @@
     ui.drawer.hidden = !drawerOpen;
     var light = drawerTheme() === 'light';
     ui.drawer.className = light ? 'drawer light' : 'drawer';
+    if (ui.stage) ui.stage.className = light ? 'stage light' : 'stage';
     ui.bar.className = 'bar' + (light ? ' light' : '');
     applyBox();
     ui.theme.textContent = light ? '☾' : '☀';
@@ -662,6 +680,7 @@
 
   function setDrawerOpen(on) {
     drawerOpen = !!on && usable();
+    if (!drawerOpen) hideStage();
     if (drawer) {
       drawer.embed.open = drawerOpen;
       saveEmbed(drawer.embed);
@@ -673,6 +692,41 @@
 
   function drawerTheme() {
     return drawer && drawer.embed.theme === 'light' ? 'light' : 'dark';
+  }
+
+  function hideStage() {
+    if (!ui || !ui.stage) return;
+    ui.stage.remove();
+    ui.stage = null;
+  }
+
+  function showStage(title, html) {
+    if (!ui || !ui.shadow) return;
+    var doc = typeof html === 'string' ? html : '';
+    if (doc.length > 1000000) doc = '';
+    if (!ui.stage) {
+      var stage = document.createElement('div');
+      stage.setAttribute('data-role', 'stage');
+      stage.innerHTML =
+        '<div class="stage-back" data-role="stage-back"></div>' +
+        '<div class="stage-card" role="dialog" aria-modal="true">' +
+        '<div class="stage-head"><div class="stage-title" data-role="stage-title"></div>' +
+        '<button type="button" data-role="stage-close">×</button></div>' +
+        '<div class="stage-body" data-role="stage-body">' +
+        '<iframe data-role="stage-frame" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer"></iframe>' +
+        '</div></div>';
+      stage.querySelector('[data-role="stage-back"]').addEventListener('click', hideStage);
+      stage.querySelector('[data-role="stage-close"]').addEventListener('click', function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        hideStage();
+      });
+      ui.shadow.appendChild(stage);
+      ui.stage = stage;
+    }
+    ui.stage.className = drawerTheme() === 'light' ? 'stage light' : 'stage';
+    ui.stage.querySelector('[data-role="stage-title"]').textContent = typeof title === 'string' ? title : '';
+    ui.stage.querySelector('[data-role="stage-frame"]').srcdoc = doc;
   }
 
   function postTheme() {
@@ -694,7 +748,7 @@
     try {
       sessionStorage.setItem(
         EMBED_PENDING_KEY,
-        JSON.stringify({ run: got.run, node: got.node, ticket: got.ticket, theme: got.theme }),
+        JSON.stringify({ run: got.run, node: got.node, ticket: got.ticket, theme: got.theme, locale: got.locale }),
       );
     } catch (e) {}
   }
@@ -703,7 +757,13 @@
     try {
       var v = JSON.parse(sessionStorage.getItem(EMBED_PENDING_KEY) || 'null');
       if (v && v.run && v.node && v.ticket) {
-        return { run: String(v.run), node: String(v.node), ticket: String(v.ticket), theme: v.theme === 'light' ? 'light' : 'dark' };
+        return {
+          run: String(v.run),
+          node: String(v.node),
+          ticket: String(v.ticket),
+          theme: v.theme === 'light' ? 'light' : 'dark',
+          locale: v.locale === 'en' || v.locale === 'zh-CN' ? v.locale : '',
+        };
       }
     } catch (e) {}
     return null;
@@ -730,6 +790,7 @@
       node: q.get('node') || '',
       ticket: q.get('ticket') || '',
       theme: q.get('theme') === 'light' ? 'light' : 'dark',
+      locale: q.get('locale') === 'en' || q.get('locale') === 'zh-CN' ? q.get('locale') : '',
     };
     var ok = !!(got.run && got.node && got.ticket);
     if (ok) stashPending(got);
@@ -765,6 +826,7 @@
     var q = new URLSearchParams();
     if (ticket) q.set('ticket', ticket);
     q.set('theme', e.theme === 'light' ? 'light' : 'dark');
+    if (e.locale === 'zh-CN' || e.locale === 'en') q.set('locale', e.locale);
     return src + '#' + q.toString();
   }
 
@@ -832,7 +894,7 @@
         }
         // Keep the pending ticket until the drawer reports a live session.
         // A login redirect destroys this page before the iframe can redeem it.
-        startDrawer({ origin: v.origin, run: frag.run, node: frag.node, open: true, theme: frag.theme }, frag.ticket);
+        startDrawer({ origin: v.origin, run: frag.run, node: frag.node, open: true, theme: frag.theme, locale: frag.locale }, frag.ticket);
         setDrawerOpen(true);
       })
       .catch(resumeDrawer);
@@ -865,6 +927,12 @@
   }
 
   function onKeydown(ev) {
+    if (ui && ui.stage && (ev.key === 'Escape' || ev.key === 'Esc')) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      hideStage();
+      return;
+    }
     if (!enabled) return;
     if (ev.key !== 'Escape' && ev.key !== 'Esc') return;
     ev.preventDefault();
@@ -1072,6 +1140,7 @@
         postDrawer({ type: EMBED_CONTROL, caps: [PAGE_CONTROL_CAP], tab: tabId });
       });
     } else if (data.type === EMBED_SESSION && data.ok === false) {
+      hideStage();
       sessionDead = true;
       clearPending();
       drawerReady = false;
@@ -1080,6 +1149,9 @@
       setDrawerOpen(false);
     } else if (data.type === EMBED_CONTROL && typeof data.on === 'boolean') {
       setControl(data.on);
+    } else if (data.type === EMBED_ENLARGE && typeof data.open === 'boolean') {
+      if (data.open && drawerOpen) showStage(data.title, data.html);
+      else hideStage();
     } else if (data.type === EMBED_CMD) {
       onCmd(data);
     }

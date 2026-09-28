@@ -19,6 +19,7 @@ import {
   buildInspectCommand,
   type InspectElementStyle,
 } from '@/lib/shared/htmlPreviewSandbox'
+import { isEmbedDrawer, postEmbedEnlarge } from '@/lib/inbox/embedChat'
 import Icon from './Icon.vue'
 import AppModal from './AppModal.vue'
 import CommentPinInspectCard from '../run/CommentPinInspectCard.vue'
@@ -116,6 +117,8 @@ const showGateShare = computed(() => typeof gateShareOpen === 'function' && !!ga
 const device = ref<'desktop' | 'mobile'>('desktop')
 const big = ref(false)
 const modalHtml = ref('')
+/** Enlarge is shown by the preview page, so the drawer iframe does not grow. */
+const embedEnlarged = ref(false)
 const iframeRef = ref<HTMLIFrameElement | null>(null)
 const toolbarRef = ref<HTMLElement | null>(null)
 const pinHostRef = ref<HTMLElement | null>(null)
@@ -269,11 +272,21 @@ const iframeMountKey = computed(
 )
 
 function openEnlarge() {
-  modalHtml.value = injectDemoScrollbarStyles(props.html)
+  const html = injectDemoScrollbarStyles(props.html)
+  if (isEmbedDrawer()) {
+    embedEnlarged.value = true
+    postEmbedEnlarge(true, { title: demoModalTitle.value, html })
+    return
+  }
+  modalHtml.value = html
   big.value = true
 }
 
 function closeEnlarge() {
+  if (embedEnlarged.value) {
+    embedEnlarged.value = false
+    postEmbedEnlarge(false)
+  }
   big.value = false
   modalHtml.value = ''
 }
@@ -408,6 +421,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('message', handlePreviewMessage)
   clearResizeTimeout()
   if (resizeRafId != null) cancelAnimationFrame(resizeRafId)
+  if (big.value || embedEnlarged.value) postEmbedEnlarge(false)
 })
 
 watch(

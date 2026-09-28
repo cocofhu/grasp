@@ -14,11 +14,14 @@ vi.mock('@/lib/inbox/embedChat', async () => {
 })
 vi.mock('@/views/PublicGateApprovalView.vue', () => ({
   default: defineComponent({
-    props: { embedToken: { type: String, default: '' } },
+    props: {
+      embedToken: { type: String, default: '' },
+      localeHint: { type: String, default: '' },
+    },
     emits: ['status', 'events-ready', 'events-closed', 'page-frame'],
     setup(props, { expose }) {
       expose({ addPick: vi.fn(), sendEventsFrame: mocks.sendFrame })
-      return () => h('div', { 'data-testid': 'chat-stub', 'data-token': props.embedToken })
+      return () => h('div', { 'data-testid': 'chat-stub', 'data-token': props.embedToken, 'data-locale': props.localeHint })
     },
   }),
 }))
@@ -50,6 +53,15 @@ describe('EmbedNodeChatView', () => {
     expect(window.location.hash).toBe('')
     expect(w.get('[data-testid="chat-stub"]').attributes('data-token')).toBe('gse_a')
     expect(loadEmbedSession('run-1', 'ap1')?.token).toBe('gse_a')
+  })
+
+  it('passes the opener locale to the chat without storing it', async () => {
+    history.replaceState(null, '', '/embed/runs/run-1/nodes/ap1/chat#ticket=tk1&locale=en')
+    mocks.redeem.mockResolvedValue({ token: 'gse_a', expiresAt: '2099-01-01T00:00:00Z' })
+    const w = mountView()
+    await flushPromises()
+    expect(w.get('[data-testid="chat-stub"]').attributes('data-locale')).toBe('en')
+    expect(localStorage.getItem('grasp-locale')).toBeNull()
   })
 
   it('reuses the stored token after a reload without a ticket', async () => {

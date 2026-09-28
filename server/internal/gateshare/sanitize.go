@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/models"
 )
 
@@ -18,15 +19,63 @@ const (
 	maxTurnRunes         = 4000
 	maxAnnotationRunes   = 400
 	maxUpstreamBytes     = 64 * 1024
+	maxQuestionOptions   = 12
+	maxFormFields        = 20
 )
 
 // PreviewTurn is a leak-free conversation turn for the public workbench.
+// Images are blob refs only (no bytes, no URLs). Questions and forms keep the
+// clarify cards the main transcript shows.
 type PreviewTurn struct {
-	Role         string              `json:"role"`
-	Text         string              `json:"text,omitempty"`
-	At           string              `json:"at,omitempty"`
-	Interrupted  bool                `json:"interrupted,omitempty"`
-	Annotations  []PreviewAnnotation `json:"annotations,omitempty"`
+	Role        string              `json:"role"`
+	Text        string              `json:"text,omitempty"`
+	At          string              `json:"at,omitempty"`
+	Interrupted bool                `json:"interrupted,omitempty"`
+	Annotations []PreviewAnnotation `json:"annotations,omitempty"`
+	Images      []PreviewImage      `json:"images,omitempty"`
+	Questions   []PreviewQuestion   `json:"questions,omitempty"`
+	Forms       []PreviewForm       `json:"forms,omitempty"`
+}
+
+// PreviewImage is an attachment the logged-in preview can load via /api/blobs.
+type PreviewImage struct {
+	Ref       string `json:"ref"`
+	MimeType  string `json:"mimeType"`
+	Name      string `json:"name,omitempty"`
+	SizeBytes int64  `json:"sizeBytes,omitempty"`
+}
+
+// PreviewQuestion is one ask_question card.
+type PreviewQuestion struct {
+	ID            string          `json:"id"`
+	Prompt        string          `json:"prompt"`
+	Options       []PreviewOption `json:"options"`
+	AllowMultiple bool            `json:"allowMultiple,omitempty"`
+}
+
+// PreviewOption is one choice. DemoHtml is sanitized visual HTML for the option preview.
+type PreviewOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Recommended bool   `json:"recommended,omitempty"`
+	DemoHtml    string `json:"demoHtml,omitempty"`
+}
+
+// PreviewForm is one ask_form card.
+type PreviewForm struct {
+	Title  string             `json:"title,omitempty"`
+	Fields []PreviewFormField `json:"fields"`
+}
+
+// PreviewFormField is one plaintext field. Type is text (empty) or url.
+type PreviewFormField struct {
+	Name        string `json:"name"`
+	Label       string `json:"label"`
+	Type        string `json:"type,omitempty"`
+	Placeholder string `json:"placeholder,omitempty"`
+	Value       string `json:"value,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+	Why         string `json:"why,omitempty"`
 }
 
 // PreviewAnnotation is a leak-free annotation chip (no blob URLs).
@@ -55,8 +104,9 @@ type PreviewActiveItem struct {
 }
 
 var (
-	leakyURLRe = regexp.MustCompile(`(?i)(?:blob:[^\s"'<>]*|/api/[^\s"'<>]*|/preview/[^\s"'<>]*|/sandbox[^\s"'<>]*|/v1/[^\s"'<>]*|https?://(?:localhost|127\.0\.0\.1|0\.0\.0\.0|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(?::\d+)?[^\s"'<>]*)`)
+	leakyURLRe     = regexp.MustCompile(`(?i)(?:blob:[^\s"'<>]*|/api/[^\s"'<>]*|/preview/[^\s"'<>]*|/sandbox[^\s"'<>]*|/v1/[^\s"'<>]*|https?://(?:localhost|127\.0\.0\.1|0\.0\.0\.0|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(?::\d+)?[^\s"'<>]*)`)
 	internalHostRe = regexp.MustCompile(`(?i)\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0)\b`)
+	mimeTypeRe     = regexp.MustCompile(`^[a-z0-9][a-z0-9.+-]{0,63}/[a-z0-9][a-z0-9.+-]{0,63}$`)
 )
 
 // SanitizeDescription redacts internal URLs / blob addresses from gate body text.
@@ -215,7 +265,8 @@ func sanitizeJSONValue(v any, depth int) any {
 }
 
 // SanitizeTurns redacts conversation history for the public ReAct sidebar.
-// Images / blob URLs are dropped; text and annotation chips are size-capped.
+// Inline bytes and raw URLs are dropped. Blob refs, choice cards and forms stay
+// so the preview drawer matches the run transcript. Text is size-capped.
 func SanitizeTurns(msgs []models.ReactMessage) []PreviewTurn {
 	if len(msgs) == 0 {
 		return nil
@@ -234,7 +285,16 @@ func SanitizeTurns(msgs []models.ReactMessage) []PreviewTurn {
 		if anns := sanitizeAnnotations(m.Annotations); len(anns) > 0 {
 			turn.Annotations = anns
 		}
-		if turn.Text == "" && len(turn.Annotations) == 0 && !turn.Interrupted {
+		if images := sanitizeImages(m.Images); len(images) > 0 {
+			turn.Images = images
+		}
+		if questions := sanitizeQuestions(m.Questions); len(questions) > 0 {
+			turn.Questions = questions
+		}
+		if forms := sanitizeForms(m.Forms); len(forms) > 0 {
+			turn.Forms = forms
+		}
+		if turn.Text == "" && len(turn.Annotations) == 0 && len(turn.Images) == 0 && len(turn.Questions) == 0 && len(turn.Forms) == 0 && !turn.Interrupted {
 			continue
 		}
 		out = append(out, turn)
@@ -366,6 +426,144 @@ func sanitizeAnnotations(anns []models.ReactAnnotation) []PreviewAnnotation {
 			continue
 		}
 		out = append(out, pa)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func sanitizeImages(images []models.PromptImage) []PreviewImage {
+	if len(images) == 0 {
+		return nil
+	}
+	out := make([]PreviewImage, 0, len(images))
+	for _, im := range images {
+		ref, err := blob.ParseRef(im.Ref)
+		if err != nil {
+			continue
+		}
+		item := PreviewImage{Ref: ref.String(), MimeType: sanitizeMime(im.MimeType)}
+		if name := capTurnText(SanitizeDescription(im.Name)); name != "" {
+			item.Name = name
+		}
+		if im.SizeBytes > 0 {
+			item.SizeBytes = im.SizeBytes
+		}
+		out = append(out, item)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func sanitizeMime(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if mimeTypeRe.MatchString(s) {
+		return s
+	}
+	return "application/octet-stream"
+}
+
+func sanitizeQuestions(qs []models.ReactQuestion) []PreviewQuestion {
+	if len(qs) == 0 {
+		return nil
+	}
+	out := make([]PreviewQuestion, 0, len(qs))
+	for _, q := range qs {
+		id := strings.TrimSpace(q.ID)
+		prompt := capTurnText(SanitizeDescription(q.Prompt))
+		opts := sanitizeOptions(q.Options)
+		if id == "" || prompt == "" || len(opts) == 0 {
+			continue
+		}
+		out = append(out, PreviewQuestion{
+			ID:            id,
+			Prompt:        prompt,
+			Options:       opts,
+			AllowMultiple: q.AllowMultiple,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func sanitizeOptions(opts []models.ReactOption) []PreviewOption {
+	if len(opts) == 0 {
+		return nil
+	}
+	if len(opts) > maxQuestionOptions {
+		opts = opts[:maxQuestionOptions]
+	}
+	out := make([]PreviewOption, 0, len(opts))
+	for _, o := range opts {
+		id := strings.TrimSpace(o.ID)
+		label := capTurnText(SanitizeDescription(o.Label))
+		if id == "" || label == "" {
+			continue
+		}
+		item := PreviewOption{ID: id, Label: label, Recommended: o.Recommended}
+		if html := SanitizeVisualHTML(o.DemoHtml); html != "" {
+			item.DemoHtml = html
+		}
+		out = append(out, item)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func sanitizeForms(forms []models.ReactForm) []PreviewForm {
+	if len(forms) == 0 {
+		return nil
+	}
+	out := make([]PreviewForm, 0, len(forms))
+	for _, f := range forms {
+		fields := sanitizeFormFields(f.Fields)
+		if len(fields) == 0 {
+			continue
+		}
+		out = append(out, PreviewForm{
+			Title:  capTurnText(SanitizeDescription(f.Title)),
+			Fields: fields,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func sanitizeFormFields(fields []models.ReactFormField) []PreviewFormField {
+	if len(fields) == 0 {
+		return nil
+	}
+	if len(fields) > maxFormFields {
+		fields = fields[:maxFormFields]
+	}
+	out := make([]PreviewFormField, 0, len(fields))
+	for _, f := range fields {
+		name := strings.TrimSpace(f.Name)
+		label := capTurnText(SanitizeDescription(f.Label))
+		if name == "" || label == "" {
+			continue
+		}
+		item := PreviewFormField{
+			Name:        name,
+			Label:       label,
+			Placeholder: capTurnText(SanitizeDescription(f.Placeholder)),
+			Value:       capTurnText(SanitizeDescription(f.Value)),
+			Required:    f.Required,
+			Why:         capTurnText(SanitizeDescription(f.Why)),
+		}
+		if strings.EqualFold(strings.TrimSpace(f.Type), "url") {
+			item.Type = "url"
+		}
+		out = append(out, item)
 	}
 	if len(out) == 0 {
 		return nil
