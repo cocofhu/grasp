@@ -41,6 +41,9 @@ func TestPreviewPickScript(t *testing.T) {
 		"grasp-embed:control",
 		"grasp-embed:cmd-result",
 		"page-control.js",
+		"data-role=\"artifact\"",
+		"/artifacts",
+		"setArtifactOpen",
 	} {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("script missing %q", needle)

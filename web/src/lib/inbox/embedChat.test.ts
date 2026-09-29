@@ -6,6 +6,7 @@ import {
   clearEmbedSession,
   directPreviewEmbedUrl,
   embedChatPath,
+  embedArtifactsPath,
   loadEmbedSession,
   parseEmbedPickMessage,
   parseEmbedThemeFromHash,
@@ -24,6 +25,7 @@ afterEach(() => vi.unstubAllGlobals())
 describe('embedChat', () => {
   it('builds the drawer path and reads the ticket from the fragment', () => {
     expect(embedChatPath('run-1', 'n/1')).toBe('/embed/runs/run-1/nodes/n%2F1/chat')
+    expect(embedArtifactsPath('run-1', 'n/1')).toBe('/embed/runs/run-1/nodes/n%2F1/artifacts')
     expect(parseEmbedTicketFromHash('#ticket=abc')).toBe('abc')
     expect(parseEmbedTicketFromHash('#t=abc')).toBe('')
     expect(parseEmbedTicketFromHash('')).toBe('')

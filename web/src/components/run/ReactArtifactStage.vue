@@ -76,6 +76,8 @@ const props = withDefaults(
     /** Enable 取点 / 划选 / ⤴ 标注 on the current node's artifacts. */
     annotatable?: boolean
     remoteKind?: ReactStageRemoteKind
+    /** Force-hide app / sandbox remote card and tab (artifact-only embed modal). */
+    hideAppPreview?: boolean
     token?: string
     ports?: PublicPreviewPort[]
     publicActive?: boolean
@@ -89,6 +91,7 @@ const props = withDefaults(
     nodeType: '',
     inlineContent: false,
     annotatable: false,
+    hideAppPreview: false,
     token: '',
     ports: () => [],
     publicActive: true,
@@ -200,10 +203,11 @@ async function probeApprovePreviews() {
 }
 
 watch(
-  () => `${resolvedNodeType.value}|${props.runId}|${props.nodeId}`,
+  () => `${resolvedNodeType.value}|${props.runId}|${props.nodeId}|${props.hideAppPreview}`,
   () => {
     stopApprovePreviewProbe()
     approvePreviewRegistered.value = false
+    if (props.hideAppPreview) return
     if (!isGrasp(resolvedNodeType.value)) return
     void probeApprovePreviews()
     approveProbeTimer = setInterval(() => void probeApprovePreviews(), APPROVE_PREVIEW_POLL_MS)
@@ -212,6 +216,7 @@ watch(
 )
 
 const effectiveRemoteKind = computed(() => {
+  if (props.hideAppPreview) return 'off'
   if (isGrasp(resolvedNodeType.value)) {
     if (resolvedRemoteKind.value === 'public') return props.ports?.length ? 'public' : 'off'
     return approveStageRemoteKind(approvePreviewRegistered.value)

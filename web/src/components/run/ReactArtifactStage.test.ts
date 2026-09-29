@@ -464,6 +464,40 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
+  it('honors hideAppPreview even when Approve ports are registered (artifact embed modal)', async () => {
+    vi.mocked(api.nodePreviews).mockClear()
+    vi.mocked(api.nodePreviews).mockResolvedValue({
+      ports: [
+        {
+          port: 5173,
+          label: '前端',
+          runId: 'run-approve-hide',
+          nodeId: 'approve_1',
+          proxyUrl: '/p',
+          healthy: true,
+        },
+      ],
+    })
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json', nodeId: 'approve_1' })],
+        runId: 'run-approve-hide',
+        nodeId: 'approve_1',
+        nodeType: 'approve',
+        hideAppPreview: true,
+        remoteKind: 'app',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    expect(api.nodePreviews).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="react-artifact-card-novnc"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-artifact-tab-novnc"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="app-preview-stub"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-artifact-card-research.json"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('shows app preview tab for Approve after silent probe finds ports (plan g2.2)', async () => {
     vi.mocked(api.nodePreviews).mockResolvedValue({
       ports: [

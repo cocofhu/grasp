@@ -32,7 +32,11 @@ type Page = {
   click: (selector: string) => void
   frame: () => HTMLIFrameElement | null
   chatButton: () => HTMLButtonElement
+  artifactButton: () => HTMLButtonElement
+  artifactMask: () => HTMLElement
+  artifactFrame: () => HTMLIFrameElement | null
   drawerOpen: () => boolean
+  artifactOpen: () => boolean
   /** Messages the drawer iframe received, after it reports ready. */
   drawerReady: (origin?: string) => Msg[]
 }
@@ -85,7 +89,8 @@ function openPage(
   if (!host?.shadowRoot) throw new Error('pick bar not mounted')
   const shadow = host.shadowRoot as unknown as ShadowRoot
   const inbox: Msg[] = []
-  const frame = () => shadow.querySelector('iframe') as HTMLIFrameElement | null
+  const frame = () =>
+    shadow.querySelector('[data-role="drawer"] iframe') as HTMLIFrameElement | null
   return {
     win,
     shadow,
@@ -98,7 +103,11 @@ function openPage(
     },
     frame,
     chatButton: () => shadow.querySelector('[data-role="chat"]') as HTMLButtonElement,
+    artifactButton: () => shadow.querySelector('[data-role="artifact"]') as HTMLButtonElement,
+    artifactMask: () => shadow.querySelector('[data-role="artifact-mask"]') as HTMLElement,
+    artifactFrame: () => shadow.querySelector('[data-role="artifact-modal"] iframe') as HTMLIFrameElement | null,
     drawerOpen: () => !(shadow.querySelector('[data-role="drawer"]') as HTMLElement).hidden,
+    artifactOpen: () => !(shadow.querySelector('[data-role="artifact-mask"]') as HTMLElement).hidden,
     drawerReady(origin = GRASP) {
       const f = frame()
       if (!f) throw new Error('no drawer')
@@ -140,6 +149,8 @@ describe('preview-pick.js without a ticket', () => {
     const hint = 'Reopen from the preview page in Grasp to get a new ticket.'
     expect(pick.hidden).toBe(false)
     expect(pick.disabled).toBe(true)
+    expect(p.artifactButton().hidden).toBe(false)
+    expect(p.artifactButton().disabled).toBe(true)
     expect(p.chatButton().hidden).toBe(false)
     expect(p.chatButton().disabled).toBe(true)
     expect(gate.title).toBe('')
@@ -344,6 +355,56 @@ describe('preview-pick.js chat drawer', () => {
     expect(themeBtn.getAttribute('aria-label')).toBe('Switch to light')
     expect(inbox.at(-1)).toEqual({ type: EMBED_THEME_MESSAGE, theme: 'dark', target: GRASP })
     expect(JSON.parse(p.win.localStorage.getItem('__grasp_embed') || '{}').theme).toBe('dark')
+  })
+})
+
+describe('preview-pick.js artifact modal', () => {
+  const body = '<main><h2>Plan</h2><button id="buy">Buy</button></main>'
+  const hash = '#__grasp_embed&run=run-1&node=ap1&ticket=tk1'
+  const reply = { origin: GRASP, runId: 'run-1', nodeId: 'ap1' }
+
+  it('keeps Artifact disabled until the chat drawer session is ready', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    expect(p.artifactButton().disabled).toBe(true)
+    expect(p.artifactOpen()).toBe(false)
+    p.artifactButton().click()
+    expect(p.artifactOpen()).toBe(false)
+    p.drawerReady()
+    expect(p.artifactButton().disabled).toBe(false)
+  })
+
+  it('opens an artifacts iframe modal without replacing the chat drawer', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    p.drawerReady()
+    expect(p.drawerOpen()).toBe(true)
+    p.artifactButton().click()
+    expect(p.artifactOpen()).toBe(true)
+    expect(p.artifactButton().getAttribute('aria-expanded')).toBe('true')
+    expect(p.artifactFrame()?.getAttribute('src')).toBe(
+      `${GRASP}/embed/runs/run-1/nodes/ap1/artifacts#theme=dark`,
+    )
+    expect(p.drawerOpen()).toBe(true)
+    expect(p.frame()?.getAttribute('src')).toContain('/chat#')
+  })
+
+  it('closes the artifact modal and leaves Pick/Chat state intact', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    p.drawerReady()
+    expect(p.drawerOpen()).toBe(true)
+    p.artifactButton().click()
+    expect(p.artifactOpen()).toBe(true)
+    ;(p.shadow.querySelector('[data-role="artifact-close"]') as HTMLButtonElement).click()
+    expect(p.artifactOpen()).toBe(false)
+    expect(p.artifactButton().getAttribute('aria-expanded')).toBe('false')
+    expect(p.drawerOpen()).toBe(true)
+    expect(p.chatButton().getAttribute('aria-expanded')).toBe('true')
+    const pick = p.shadow.querySelector('[data-role="toggle"]') as HTMLButtonElement
+    expect(pick.disabled).toBe(false)
+    p.toggle()
+    expect(pick.getAttribute('aria-pressed')).toBe('true')
   })
 })
 
