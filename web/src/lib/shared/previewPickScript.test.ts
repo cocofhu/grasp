@@ -440,33 +440,52 @@ describe('preview-pick.js artifact modal', () => {
     fire(p, 'pointerup', p.win, to.x, to.y)
   }
 
-  it('opens near the full viewport without the old 920×640 cap (g1.1)', async () => {
+  it('opens at 920×640 top-left on a large viewport (g1.1 / g3.1)', async () => {
     const p = openPage(body, { hash, embedReply: reply })
     await settle()
     p.drawerReady()
     const { vw, vh } = view(p)
-    expect(vw).toBeGreaterThan(920)
-    expect(vh).toBeGreaterThan(640)
+    expect(vw).toBeGreaterThan(920 + 56)
+    expect(vh).toBeGreaterThan(640 + 56)
     p.artifactButton().click()
     expect(p.artifactOpen()).toBe(true)
-    const css = p.shadow.querySelector('style')?.textContent || ''
-    expect(css).not.toContain('min(920px')
-    expect(css).not.toContain('min(640px')
     const g = artifactGeom(p)
-    expect(g.w).toBeGreaterThan(920)
-    expect(g.h).toBeGreaterThan(640)
-    expect(g.w).toBe(vw - 56)
-    expect(g.h).toBe(vh - 56)
+    expect(g.w).toBe(920)
+    expect(g.h).toBe(640)
     expect(g.x).toBe(28)
     expect(g.y).toBe(28)
     expect(g.x + g.w).toBeLessThanOrEqual(vw)
     expect(g.y + g.h).toBeLessThanOrEqual(vh)
   })
 
-  it('drags the title bar and resizes from edges, remembering size in-session (g1.2)', async () => {
+  it('clamps the default box inside a smaller viewport (g1.2 / g3.2)', async () => {
     const p = openPage(body, { hash, embedReply: reply })
     await settle()
     p.drawerReady()
+    const de = p.win.document.documentElement
+    Object.defineProperty(de, 'clientWidth', { configurable: true, get: () => 800 })
+    Object.defineProperty(de, 'clientHeight', { configurable: true, get: () => 500 })
+    p.artifactButton().click()
+    expect(p.artifactOpen()).toBe(true)
+    const g = artifactGeom(p)
+    const { vw, vh } = view(p)
+    expect(vw).toBe(800)
+    expect(vh).toBe(500)
+    expect(g.w).toBeLessThanOrEqual(vw)
+    expect(g.h).toBeLessThanOrEqual(vh)
+    expect(g.x).toBeGreaterThanOrEqual(0)
+    expect(g.y).toBeGreaterThanOrEqual(0)
+    expect(g.x + g.w).toBeLessThanOrEqual(vw)
+    expect(g.y + g.h).toBeLessThanOrEqual(vh)
+  })
+
+  it('drags and enlarges past 920×640, remembering size in-session (g2.1 / g3.3)', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    p.drawerReady()
+    const de = p.win.document.documentElement
+    Object.defineProperty(de, 'clientWidth', { configurable: true, get: () => 1400 })
+    Object.defineProperty(de, 'clientHeight', { configurable: true, get: () => 900 })
     p.artifactButton().click()
     const head = p.shadow.querySelector('[data-role="artifact-head"]') as HTMLElement
     const se = p.shadow.querySelector('[data-role="artifact-modal"] .edge.se') as HTMLElement
@@ -474,18 +493,20 @@ describe('preview-pick.js artifact modal', () => {
     expect(head).not.toBeNull()
     expect(se).not.toBeNull()
 
-    // Shrink first so there is room to move (default is near full viewport).
+    // 920×640 is a default, not a hard cap — enlarge past it.
     const before = artifactGeom(p)
+    expect(before.w).toBe(920)
+    expect(before.h).toBe(640)
     const rightEdge = before.x + before.w
     const bottomEdge = before.y + before.h
-    drag(p, se, { x: rightEdge - 2, y: bottomEdge - 2 }, { x: rightEdge - 202, y: bottomEdge - 162 })
+    drag(p, se, { x: rightEdge - 2, y: bottomEdge - 2 }, { x: rightEdge + 98, y: bottomEdge + 78 })
     const resized = artifactGeom(p)
     expect(resized.x).toBe(before.x)
     expect(resized.y).toBe(before.y)
-    expect(resized.w).toBe(before.w - 200)
-    expect(resized.h).toBe(before.h - 160)
-    expect(resized.w).toBeGreaterThanOrEqual(480)
-    expect(resized.h).toBeGreaterThanOrEqual(320)
+    expect(resized.w).toBe(before.w + 100)
+    expect(resized.h).toBe(before.h + 80)
+    expect(resized.w).toBeGreaterThan(920)
+    expect(resized.h).toBeGreaterThan(640)
 
     drag(p, head, { x: resized.x + 40, y: resized.y + 10 }, { x: resized.x + 80, y: resized.y + 50 })
     const moved = artifactGeom(p)
