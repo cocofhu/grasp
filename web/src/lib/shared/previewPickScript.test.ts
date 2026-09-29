@@ -407,6 +407,118 @@ describe('preview-pick.js artifact modal', () => {
     expect(pick.getAttribute('aria-pressed')).toBe('true')
   })
 
+  // plan g1.1 / g3.1: clicking the dimming mask must not hide the Artifacts window
+  it('keeps the artifact modal open when the mask outside the window is clicked (g1.1 / g3.1)', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    p.drawerReady()
+    expect(p.drawerOpen()).toBe(true)
+    p.artifactButton().click()
+    expect(p.artifactOpen()).toBe(true)
+    expect(p.artifactButton().getAttribute('aria-expanded')).toBe('true')
+    p.artifactMask().click()
+    expect(p.artifactOpen()).toBe(true)
+    expect(p.artifactButton().getAttribute('aria-expanded')).toBe('true')
+    expect(p.drawerOpen()).toBe(true)
+  })
+
+  // plan g1.2 / g3.1: title-bar close and bar toggle still dismiss the window
+  it('still closes via title-bar close and artifact bar toggle (g1.2 / g3.1)', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    p.drawerReady()
+    p.artifactButton().click()
+    expect(p.artifactOpen()).toBe(true)
+    ;(p.shadow.querySelector('[data-role="artifact-close"]') as HTMLButtonElement).click()
+    expect(p.artifactOpen()).toBe(false)
+    expect(p.artifactButton().getAttribute('aria-expanded')).toBe('false')
+
+    p.artifactButton().click()
+    expect(p.artifactOpen()).toBe(true)
+    p.artifactButton().click()
+    expect(p.artifactOpen()).toBe(false)
+    expect(p.artifactButton().getAttribute('aria-expanded')).toBe('false')
+  })
+
+  function artifactHeadColors(p: Page) {
+    const head = p.shadow.querySelector('[data-role="artifact-head"]') as HTMLElement
+    const title = p.shadow.querySelector('[data-role="artifact-title"]') as HTMLElement
+    const close = p.shadow.querySelector('[data-role="artifact-close"]') as HTMLButtonElement
+    const cs = (el: Element) => p.win.getComputedStyle(el as unknown as Element)
+    return {
+      headBg: cs(head).backgroundColor,
+      headColor: cs(head).color,
+      titleColor: cs(title).color,
+      closeColor: cs(close).color,
+      maskClass: p.artifactMask().className,
+    }
+  }
+
+  // plan g2.1 / g3.2: dark theme title bar matches drawer dark surface
+  it('uses a dark artifact title bar in dark theme (g2.1 / g3.2)', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    p.drawerReady()
+    p.artifactButton().click()
+    expect(p.artifactOpen()).toBe(true)
+    const c = artifactHeadColors(p)
+    expect(c.maskClass).toBe('mask')
+    // happy-dom returns stylesheet hex as-written
+    expect(c.headBg).toBe('#0b0b0c')
+    expect(c.headColor).toBe('#e5e7eb')
+    expect(c.titleColor).toBe('#e5e7eb')
+    expect(c.closeColor).toBe('#9ca3af')
+  })
+
+  // plan g2.2 / g3.2: light keeps white bar; live theme switch updates without closing
+  it('keeps a light title bar in light theme and updates live on theme toggle (g2.2 / g3.2)', async () => {
+    const p = openPage(body, { hash: `${hash}&theme=light`, embedReply: reply })
+    await settle()
+    p.drawerReady()
+    p.artifactButton().click()
+    expect(p.artifactOpen()).toBe(true)
+    let c = artifactHeadColors(p)
+    expect(c.maskClass).toBe('mask light')
+    expect(c.headBg).toBe('#fff')
+    expect(c.headColor).toBe('#18181b')
+    expect(c.closeColor).toBe('#71717a')
+
+    const themeBtn = p.shadow.querySelector('[data-role="drawer-theme"]') as HTMLButtonElement
+    themeBtn.click()
+    expect(p.artifactOpen()).toBe(true)
+    c = artifactHeadColors(p)
+    expect(c.maskClass).toBe('mask')
+    expect(c.headBg).toBe('#0b0b0c')
+    expect(c.headColor).toBe('#e5e7eb')
+
+    themeBtn.click()
+    expect(p.artifactOpen()).toBe(true)
+    c = artifactHeadColors(p)
+    expect(c.maskClass).toBe('mask light')
+    expect(c.headBg).toBe('#fff')
+  })
+
+  // plan g3.3: after close, drawer + pick remain usable
+  it('after closing artifacts, drawer and pick still work (g3.3)', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    p.drawerReady()
+    p.artifactButton().click()
+    expect(p.artifactOpen()).toBe(true)
+    p.artifactButton().click()
+    expect(p.artifactOpen()).toBe(false)
+    expect(p.drawerOpen()).toBe(true)
+    expect(p.chatButton().getAttribute('aria-expanded')).toBe('true')
+    const pick = p.shadow.querySelector('[data-role="toggle"]') as HTMLButtonElement
+    expect(pick.disabled).toBe(false)
+    p.toggle()
+    expect(pick.getAttribute('aria-pressed')).toBe('true')
+    p.chatButton().click()
+    expect(p.drawerOpen()).toBe(false)
+    p.chatButton().click()
+    expect(p.drawerOpen()).toBe(true)
+  })
+
   function artifactGeom(p: Page) {
     const el = p.shadow.querySelector('[data-role="artifact-modal"]') as HTMLElement
     return {
