@@ -19,6 +19,7 @@ import {
   historicalStageArtifactId,
   inboxStageRemoteKind,
   isBookkeepingArtifact,
+  isFeedbackArtifactName,
   isSamePreviewVisualCopy,
   isVisualPreviewArtifactName,
   loadStageOpenState,
@@ -219,6 +220,9 @@ describe('reactArtifactPreview helpers', () => {
     expect(isAutoPinStageNode('react')).toBe(true)
     expect(isAutoPinStageNode('approve')).toBe(true)
     expect(isAutoPinStageNode('visual')).toBe(false)
+    expect(isFeedbackArtifactName('feedback_index.json')).toBe(true)
+    expect(isFeedbackArtifactName('feedback.clarify.x.json')).toBe(true)
+    expect(isFeedbackArtifactName('clarified_requirement.json')).toBe(false)
     const research = art({ id: 'r', name: 'research.json', kind: 'json', nodeId: 'approve_1' })
     const complete = art({ id: 'n', name: 'node_complete.json', kind: 'json', nodeId: 'approve_1' })
     const feedback = art({ id: 'f', name: 'feedback.clarify.x.json', kind: 'json', nodeId: 'approve_1' })

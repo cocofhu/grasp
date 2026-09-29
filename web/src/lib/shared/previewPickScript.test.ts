@@ -406,6 +406,116 @@ describe('preview-pick.js artifact modal', () => {
     p.toggle()
     expect(pick.getAttribute('aria-pressed')).toBe('true')
   })
+
+  function artifactGeom(p: Page) {
+    const el = p.shadow.querySelector('[data-role="artifact-modal"]') as HTMLElement
+    return {
+      el,
+      x: Number.parseInt(el.style.left, 10),
+      y: Number.parseInt(el.style.top, 10),
+      w: Number.parseInt(el.style.width, 10),
+      h: Number.parseInt(el.style.height, 10),
+    }
+  }
+
+  function view(p: Page) {
+    const de = p.win.document.documentElement
+    const win = p.win as unknown as { innerWidth: number; innerHeight: number }
+    return {
+      vw: de.clientWidth || win.innerWidth,
+      vh: de.clientHeight || win.innerHeight,
+    }
+  }
+
+  function fire(p: Page, type: string, target: EventTarget, x: number, y: number) {
+    const Ev = (p.win as unknown as { PointerEvent: typeof PointerEvent }).PointerEvent
+    target.dispatchEvent(
+      new Ev(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, button: 0 }),
+    )
+  }
+
+  function drag(p: Page, target: EventTarget, from: { x: number; y: number }, to: { x: number; y: number }) {
+    fire(p, 'pointerdown', target, from.x, from.y)
+    fire(p, 'pointermove', p.win, to.x, to.y)
+    fire(p, 'pointerup', p.win, to.x, to.y)
+  }
+
+  it('opens near the full viewport without the old 920×640 cap (g1.1)', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    p.drawerReady()
+    const { vw, vh } = view(p)
+    expect(vw).toBeGreaterThan(920)
+    expect(vh).toBeGreaterThan(640)
+    p.artifactButton().click()
+    expect(p.artifactOpen()).toBe(true)
+    const css = p.shadow.querySelector('style')?.textContent || ''
+    expect(css).not.toContain('min(920px')
+    expect(css).not.toContain('min(640px')
+    const g = artifactGeom(p)
+    expect(g.w).toBeGreaterThan(920)
+    expect(g.h).toBeGreaterThan(640)
+    expect(g.w).toBe(vw - 56)
+    expect(g.h).toBe(vh - 56)
+    expect(g.x).toBe(28)
+    expect(g.y).toBe(28)
+    expect(g.x + g.w).toBeLessThanOrEqual(vw)
+    expect(g.y + g.h).toBeLessThanOrEqual(vh)
+  })
+
+  it('drags the title bar and resizes from edges, remembering size in-session (g1.2)', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    p.drawerReady()
+    p.artifactButton().click()
+    const head = p.shadow.querySelector('[data-role="artifact-head"]') as HTMLElement
+    const se = p.shadow.querySelector('[data-role="artifact-modal"] .edge.se') as HTMLElement
+    const close = p.shadow.querySelector('[data-role="artifact-close"]') as HTMLButtonElement
+    expect(head).not.toBeNull()
+    expect(se).not.toBeNull()
+
+    // Shrink first so there is room to move (default is near full viewport).
+    const before = artifactGeom(p)
+    const rightEdge = before.x + before.w
+    const bottomEdge = before.y + before.h
+    drag(p, se, { x: rightEdge - 2, y: bottomEdge - 2 }, { x: rightEdge - 202, y: bottomEdge - 162 })
+    const resized = artifactGeom(p)
+    expect(resized.x).toBe(before.x)
+    expect(resized.y).toBe(before.y)
+    expect(resized.w).toBe(before.w - 200)
+    expect(resized.h).toBe(before.h - 160)
+    expect(resized.w).toBeGreaterThanOrEqual(480)
+    expect(resized.h).toBeGreaterThanOrEqual(320)
+
+    drag(p, head, { x: resized.x + 40, y: resized.y + 10 }, { x: resized.x + 80, y: resized.y + 50 })
+    const moved = artifactGeom(p)
+    expect(moved.x).toBe(resized.x + 40)
+    expect(moved.y).toBe(resized.y + 40)
+    expect(moved.w).toBe(resized.w)
+    expect(moved.h).toBe(resized.h)
+
+    // Close button must not start a drag.
+    const mid = artifactGeom(p)
+    fire(p, 'pointerdown', close, mid.x + mid.w - 10, mid.y + 10)
+    fire(p, 'pointermove', p.win, mid.x + mid.w + 40, mid.y + 50)
+    fire(p, 'pointerup', p.win, mid.x + mid.w + 40, mid.y + 50)
+    expect(p.artifactOpen()).toBe(true)
+    const afterBtn = artifactGeom(p)
+    expect(afterBtn.x).toBe(mid.x)
+    expect(afterBtn.y).toBe(mid.y)
+    expect(afterBtn.w).toBe(mid.w)
+    expect(afterBtn.h).toBe(mid.h)
+
+    close.click()
+    expect(p.artifactOpen()).toBe(false)
+
+    p.artifactButton().click()
+    const reopened = artifactGeom(p)
+    expect(reopened.x).toBe(moved.x)
+    expect(reopened.y).toBe(moved.y)
+    expect(reopened.w).toBe(moved.w)
+    expect(reopened.h).toBe(moved.h)
+  })
 })
 
 describe('preview-pick.js floating chat window', () => {
@@ -534,9 +644,9 @@ describe('preview-pick.js floating chat window', () => {
   it('resizes from a corner and stops at 320 by 240', async () => {
     const p = openPage(body, { hash, embedReply: reply })
     await settle()
-    const se = p.shadow.querySelector('[data-dir="se"]') as HTMLElement
-    const west = p.shadow.querySelector('[data-dir="w"]') as HTMLElement
-    const north = p.shadow.querySelector('[data-dir="n"]') as HTMLElement
+    const se = p.shadow.querySelector('[data-role="drawer"] [data-dir="se"]') as HTMLElement
+    const west = p.shadow.querySelector('[data-role="drawer"] [data-dir="w"]') as HTMLElement
+    const north = p.shadow.querySelector('[data-role="drawer"] [data-dir="n"]') as HTMLElement
     const before = geom(p)
     drag(p, se, { x: 900, y: 400 }, { x: 880, y: 370 })
     const shrunk = geom(p)
@@ -563,8 +673,8 @@ describe('preview-pick.js floating chat window', () => {
     const { vw, vh } = view(p)
     expect(before.x).toBeGreaterThan(0)
     expect(before.y).toBeGreaterThan(0)
-    const east = p.shadow.querySelector('[data-dir="e"]') as HTMLElement
-    const south = p.shadow.querySelector('[data-dir="s"]') as HTMLElement
+    const east = p.shadow.querySelector('[data-role="drawer"] [data-dir="e"]') as HTMLElement
+    const south = p.shadow.querySelector('[data-role="drawer"] [data-dir="s"]') as HTMLElement
     drag(p, east, { x: before.x + before.w, y: before.y + 40 }, { x: before.x + before.w + 4000, y: before.y + 40 })
     const wide = geom(p)
     expect(wide.x).toBe(before.x)
@@ -586,8 +696,8 @@ describe('preview-pick.js floating chat window', () => {
     })
     await settle()
     const origin = geom(placed)
-    const west = placed.shadow.querySelector('[data-dir="w"]') as HTMLElement
-    const north = placed.shadow.querySelector('[data-dir="n"]') as HTMLElement
+    const west = placed.shadow.querySelector('[data-role="drawer"] [data-dir="w"]') as HTMLElement
+    const north = placed.shadow.querySelector('[data-role="drawer"] [data-dir="n"]') as HTMLElement
     drag(placed, west, { x: origin.x, y: origin.y + 40 }, { x: origin.x - 4000, y: origin.y + 40 })
     const left = geom(placed)
     expect(left.x).toBe(0)
@@ -606,7 +716,7 @@ describe('preview-pick.js floating chat window', () => {
     const saved = JSON.stringify({ ...savedBase, x: 0, y: 0, width: 400, height: 400 })
     const p = openPage(body, { savedEmbed: saved })
     await settle()
-    const east = p.shadow.querySelector('[data-dir="e"]') as HTMLElement
+    const east = p.shadow.querySelector('[data-role="drawer"] [data-dir="e"]') as HTMLElement
     const frame = p.frame()
     expect(frame).not.toBeNull()
     fire(p, 'pointerdown', east, 400, 200)
