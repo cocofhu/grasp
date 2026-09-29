@@ -40,6 +40,16 @@ describe('imgSrc', () => {
     expect(imgSrc({ data: 'QUJD', mimeType: 'image/png' })).toBe('data:image/png;base64,QUJD')
     expect(imgSrc({ mimeType: 'image/png' })).toBe('')
   })
+
+  it('prefers public gate url over blob ref (g2.1)', () => {
+    expect(
+      imgSrc({
+        url: '/public/gate-approvals/images/0?token=abc',
+        ref: 'blob:abc123',
+        mimeType: 'image/png',
+      }),
+    ).toBe('/public/gate-approvals/images/0?token=abc')
+  })
 })
 
 describe('chatImageSrc', () => {

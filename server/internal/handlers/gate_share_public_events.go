@@ -123,7 +123,7 @@ func (h *Handlers) PublicGateEvents(c *gin.Context) {
 			if !open {
 				return
 			}
-			out, ok := gateshare.FilterPublicBrokerFrame(msg, producerID)
+			out, ok := gateshare.FilterPublicBrokerFrame(msg, producerID, h.publicDialogueImageBase(runID, producerID))
 			if !ok {
 				continue
 			}
@@ -143,6 +143,7 @@ func (h *Handlers) seedPublicDialogue(conn *websocket.Conn, lookup *gateshare.Lo
 		return
 	}
 	runID := lookup.Link.RunID
+	imageBase := h.publicDialogueImageBase(runID, producerID)
 	busy := false
 	if snap, ok := h.Eng.ReviewSessionSnapshotFor(runID, producerID); ok {
 		busy = snap.Busy || snap.Waiting > 0
@@ -160,7 +161,7 @@ func (h *Handlers) seedPublicDialogue(conn *websocket.Conn, lookup *gateshare.Lo
 		}
 		raw, err := json.Marshal(payload)
 		if err == nil {
-			if out, ok := gateshare.FilterPublicBrokerFrame(raw, producerID); ok {
+			if out, ok := gateshare.FilterPublicBrokerFrame(raw, producerID, imageBase); ok {
 				_ = conn.WriteMessage(websocket.TextMessage, out)
 			}
 		}
@@ -182,9 +183,18 @@ func (h *Handlers) seedPublicDialogue(conn *websocket.Conn, lookup *gateshare.Lo
 			"busy":   true,
 		})
 		if err == nil {
-			if out, ok := gateshare.FilterPublicBrokerFrame(raw, producerID); ok {
+			if out, ok := gateshare.FilterPublicBrokerFrame(raw, producerID, imageBase); ok {
 				_ = conn.WriteMessage(websocket.TextMessage, out)
 			}
 		}
 	}
+}
+
+// publicDialogueImageBase returns how many opaque image indexes the persisted
+// dialogue turns already occupy, so WS queue/active frames continue the series.
+func (h *Handlers) publicDialogueImageBase(runID, producerID string) int {
+	if conv := h.publicConversation(runID, producerID); conv != nil {
+		return len(gateshare.DialogueImageCatalog(conv.Turns(), nil, nil))
+	}
+	return 0
 }

@@ -1,4 +1,4 @@
-import type { Artifact, ClarifyInboxItem, GateInboxItem, GateShareInboxStatus, InboxItem } from '@/lib/shared/types'
+import type { Artifact, ClarifyImage, ClarifyInboxItem, GateInboxItem, GateShareInboxStatus, InboxItem } from '@/lib/shared/types'
 import {
   GRASP_STORAGE_KEYS,
   LEGACY_STORAGE_KEYS,
@@ -231,17 +231,19 @@ export function shareStatusLabel(
   return t('pages.gatesInbox.share.stateNone')
 }
 
+export type PublicGatePreviewImage = {
+  mimeType?: string
+  name?: string
+  /** Opaque dialogue-scoped index for GET /public/gate-approvals/images/:index. */
+  index: number
+}
+
 export type PublicGatePreviewTurn = {
   role: 'agent' | 'human' | string
   text?: string
   at?: string
   interrupted?: boolean
-  images?: Array<{
-    data?: string
-    mimeType?: string
-    name?: string
-    ref?: string
-  }>
+  images?: PublicGatePreviewImage[]
   annotations?: Array<{
     selector?: string
     jsonPath?: string
@@ -505,7 +507,34 @@ export type PublicGatePreviewKnown = {
   issueNonce?: boolean
 }
 
-/** Unauthenticated public gate APIs. Token never goes in path/query. */
+/** Unauthenticated public gate APIs. Token goes in header except image URLs for <img src>. */
+export function publicGateImageUrl(token: string, index: number): string {
+  const tok = String(token || '').trim()
+  const idx = Number(index)
+  if (!tok || !Number.isFinite(idx) || idx < 0) return ''
+  return `/public/gate-approvals/images/${Math.floor(idx)}?token=${encodeURIComponent(tok)}`
+}
+
+/** Map leak-free preview image indexes onto ClarifyImage rows with a token URL. */
+export function mapPublicGateImages(
+  token: string,
+  images?: PublicGatePreviewImage[] | null,
+): ClarifyImage[] {
+  if (!images?.length) return []
+  const out: ClarifyImage[] = []
+  for (const im of images) {
+    if (im == null || typeof im.index !== 'number' || im.index < 0) continue
+    const url = publicGateImageUrl(token, im.index)
+    if (!url) continue
+    out.push({
+      mimeType: (im.mimeType || 'image/png').trim() || 'image/png',
+      name: im.name?.trim() || undefined,
+      url,
+    })
+  }
+  return out
+}
+
 export const publicGateApi = {
   eventsWsUrl(): string {
     return window.location.origin.replace(/^http/, 'ws') + '/public/gate-approvals/events'

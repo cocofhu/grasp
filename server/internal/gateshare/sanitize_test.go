@@ -13,7 +13,7 @@ func mustFuture() time.Time {
 	return time.Now().Add(24 * time.Hour)
 }
 
-func TestSanitizeQueueItemsKeepsAnnotationsDropsImages(t *testing.T) {
+func TestSanitizeQueueItemsKeepsAnnotationsAndImageIndexes(t *testing.T) {
 	items := SanitizeQueueItems([]map[string]any{
 		{
 			"id":   "q-ann",
@@ -26,7 +26,7 @@ func TestSanitizeQueueItemsKeepsAnnotationsDropsImages(t *testing.T) {
 					"url":      "http://127.0.0.1:8080/preview/x",
 				},
 			},
-			"images": []any{map[string]any{"url": "blob:http://127.0.0.1/abc", "mimeType": "image/png"}},
+			"images": []any{map[string]any{"url": "blob:http://127.0.0.1/abc", "ref": "blob:deadbeef01", "mimeType": "image/png", "name": "shot.png"}},
 		},
 		{
 			"id": "q-ann-only",
@@ -34,8 +34,12 @@ func TestSanitizeQueueItemsKeepsAnnotationsDropsImages(t *testing.T) {
 				{Selector: "#hero", Label: "仅标注"},
 			},
 		},
+		{
+			"id":     "q-img-only",
+			"images": []any{map[string]any{"ref": "blob:cafebabe02", "mimeType": "image/jpeg", "name": "only.jpg"}},
+		},
 	})
-	if len(items) != 2 {
+	if len(items) != 3 {
 		t.Fatalf("items=%d %+v", len(items), items)
 	}
 	if strings.Contains(items[0].Text, "10.1.2.3") {
@@ -44,12 +48,86 @@ func TestSanitizeQueueItemsKeepsAnnotationsDropsImages(t *testing.T) {
 	if len(items[0].Annotations) != 1 || items[0].Annotations[0].Selector != "#title" {
 		t.Fatalf("ann: %+v", items[0].Annotations)
 	}
+	if len(items[0].Images) != 1 || items[0].Images[0].Index != 0 || items[0].Images[0].Name != "shot.png" {
+		t.Fatalf("images: %+v", items[0].Images)
+	}
 	if len(items[1].Annotations) != 1 || items[1].Annotations[0].Label != "仅标注" {
 		t.Fatalf("ann-only: %+v", items[1])
 	}
+	if len(items[2].Images) != 1 || items[2].Images[0].Index != 1 || items[2].Text != "" {
+		t.Fatalf("img-only: %+v", items[2])
+	}
 	raw, _ := json.Marshal(items)
-	if strings.Contains(string(raw), "blob:") || strings.Contains(string(raw), "images") || strings.Contains(string(raw), "127.0.0.1") {
+	s := string(raw)
+	if strings.Contains(s, "blob:") || strings.Contains(s, "127.0.0.1") || strings.Contains(s, "/api/blobs") || strings.Contains(s, "deadbeef") {
 		t.Fatalf("queue sanitize leak: %s", raw)
+	}
+}
+
+func TestSanitizeTurnsKeepsOpaqueImageIndexes(t *testing.T) {
+	msgs := []models.ReactMessage{
+		{Role: "agent", Text: "请审阅 page.html，勿访问 http://10.1.2.3/api/runs/abc", At: "2026-08-01T00:00:00Z"},
+		{Role: "human", Text: "改标题", At: "2026-08-01T00:01:00Z", Annotations: []models.ReactAnnotation{
+			{Selector: "#title", Note: "改成交付确认", URL: "http://127.0.0.1:8080/preview/run-1/n/1/"},
+		}, Images: []models.PromptImage{
+			{Ref: "blob:aaa111", MimeType: "image/png", Name: "a.png"},
+			{Ref: "blob:bbb222", MimeType: "image/png", Name: "b.png"},
+		}},
+		{Role: "human", Text: "", At: "2026-08-01T00:02:00Z", Images: []models.PromptImage{
+			{Ref: "blob:ccc333", MimeType: "image/jpeg", Name: "only.jpg"},
+		}},
+		{Role: "system", Text: "should skip"},
+	}
+	turns := SanitizeTurns(msgs)
+	if len(turns) != 3 {
+		t.Fatalf("turns=%d %+v", len(turns), turns)
+	}
+	if strings.Contains(turns[0].Text, "10.1.2.3") || strings.Contains(turns[0].Text, "/api/runs") {
+		t.Fatalf("agent text leaked: %s", turns[0].Text)
+	}
+	if turns[1].Role != "human" || len(turns[1].Annotations) == 0 || turns[1].Annotations[0].Selector != "#title" {
+		t.Fatalf("human ann: %+v", turns[1])
+	}
+	if len(turns[1].Images) != 2 || turns[1].Images[0].Index != 0 || turns[1].Images[1].Index != 1 {
+		t.Fatalf("human images: %+v", turns[1].Images)
+	}
+	if turns[2].Text != "" || len(turns[2].Images) != 1 || turns[2].Images[0].Index != 2 {
+		t.Fatalf("image-only turn: %+v", turns[2])
+	}
+	raw, _ := json.Marshal(turns)
+	s := string(raw)
+	if strings.Contains(s, "blob:") || strings.Contains(s, "aaa111") || strings.Contains(s, "/api/blobs") || strings.Contains(s, "127.0.0.1") {
+		t.Fatalf("turns sanitize leak: %s", s)
+	}
+}
+
+func TestSanitizeTurnsAndCatalogAlignForBothSendDirections(t *testing.T) {
+	// Preview send + approve send land in the same conversation; preview copy must
+	// keep opaque indexes for both (g2.2).
+	msgs := []models.ReactMessage{
+		{Role: "human", Text: "预览页发的", Images: []models.PromptImage{
+			{Ref: "blob:preview01", MimeType: "image/png", Name: "from-preview.png"},
+		}},
+		{Role: "human", Text: "审批页发的", Images: []models.PromptImage{
+			{Ref: "blob:approve01", MimeType: "image/png", Name: "from-approve.png"},
+			{Ref: "blob:approve02", MimeType: "image/jpeg", Name: "from-approve-2.jpg"},
+		}},
+	}
+	turns, next := SanitizeTurnsFrom(msgs, 0)
+	if len(turns) != 2 || next != 3 {
+		t.Fatalf("turns=%d next=%d", len(turns), next)
+	}
+	if turns[0].Images[0].Index != 0 || turns[1].Images[0].Index != 1 || turns[1].Images[1].Index != 2 {
+		t.Fatalf("indexes: %+v %+v", turns[0].Images, turns[1].Images)
+	}
+	catalog := DialogueImageCatalog(msgs, nil, nil)
+	if len(catalog) != 3 || catalog[0].Name != "from-preview.png" || catalog[2].Name != "from-approve-2.jpg" {
+		t.Fatalf("catalog: %+v", catalog)
+	}
+	raw, _ := json.Marshal(turns)
+	s := string(raw)
+	if strings.Contains(s, "blob:") || strings.Contains(s, "preview01") || strings.Contains(s, "/api/blobs") {
+		t.Fatalf("leak: %s", s)
 	}
 }
 
@@ -300,12 +378,19 @@ func TestBuildReviewPreviewDTOIncludesQueueState(t *testing.T) {
 	if len(dto.ActiveItem.Annotations) != 1 || dto.ActiveItem.Annotations[0].Selector != "#hero" {
 		t.Fatalf("activeItem annotations: %+v", dto.ActiveItem)
 	}
+	// Order: turns (none) → active → queue, so active index 0, queue index 1.
+	if len(dto.ActiveItem.Images) != 1 || dto.ActiveItem.Images[0].Index != 0 {
+		t.Fatalf("active images: %+v", dto.ActiveItem.Images)
+	}
+	if len(dto.QueueItems[0].Images) != 1 || dto.QueueItems[0].Images[0].Index != 1 {
+		t.Fatalf("queue images indexes: %+v", dto.QueueItems[0].Images)
+	}
 	raw, _ := json.Marshal(dto)
 	if strings.Contains(string(raw), "blob:") || strings.Contains(string(raw), "127.0.0.1") {
 		t.Fatalf("activeItem leaked images/host: %s", raw)
 	}
-	if strings.Contains(string(raw), `"images"`) {
-		t.Fatalf("public queue/active must not leak images key: %s", raw)
+	if strings.Contains(string(raw), "/api/blobs") {
+		t.Fatalf("public queue/active must not leak blob paths: %s", raw)
 	}
 }
 

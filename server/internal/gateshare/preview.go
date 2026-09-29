@@ -205,8 +205,12 @@ func applyPreviewArtifacts(dto *PreviewDTO, visualHTML, structuredName, structur
 	if len(extras.Ports) > 0 {
 		dto.Ports = append([]PublicPreviewPort(nil), extras.Ports...)
 	}
-	if turns := SanitizeTurns(extras.Turns); len(turns) > 0 {
+	imageBase := 0
+	if turns, next := SanitizeTurnsFrom(extras.Turns, 0); len(turns) > 0 {
 		dto.Turns = turns
+		imageBase = next
+	} else {
+		imageBase = len(DialogueImageCatalog(extras.Turns, nil, nil))
 	}
 	// Open/poll path: summary only (no doc). Full upstream is on-demand.
 	if up := SanitizeUpstreamSummary(extras.UpstreamName, extras.UpstreamContent); up != nil {
@@ -214,11 +218,13 @@ func applyPreviewArtifacts(dto *PreviewDTO, visualHTML, structuredName, structur
 	}
 	alive := extras.ReactSessionAlive
 	dto.ReactSessionAlive = &alive
-	if items := SanitizeQueueItems(extras.QueueItems); len(items) > 0 {
-		dto.QueueItems = items
-	}
-	if ai := SanitizeActiveItem(extras.ActiveItem); ai != nil {
+	if ai, next := SanitizeActiveItemFrom(extras.ActiveItem, imageBase); ai != nil {
 		dto.ActiveItem = ai
+		imageBase = next
+	}
+	if items, next := SanitizeQueueItemsFrom(extras.QueueItems, imageBase); len(items) > 0 {
+		dto.QueueItems = items
+		_ = next
 	}
 	if extras.Waiting > 0 {
 		dto.Waiting = extras.Waiting

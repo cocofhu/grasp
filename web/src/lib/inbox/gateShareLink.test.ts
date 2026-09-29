@@ -6,6 +6,8 @@ import {
   formatRemainingSec,
   remainingSecFromExpiresAt,
   publicGateContentKey,
+  publicGateImageUrl,
+  mapPublicGateImages,
   shareStatusLabel,
   canCreateGateShare,
   isGateShareActive,
@@ -242,5 +244,24 @@ describe('gateShareLink helpers', () => {
     expect(publicGateContentKey({ ...base, liveEvents: [{ kind: 'message', text: '流' }] })).not.toBe(
       publicGateContentKey(base),
     )
+  })
+
+  it('maps opaque image indexes to token image URLs without blob paths (g2.1)', () => {
+    const token = 'a'.repeat(64)
+    expect(publicGateImageUrl(token, 0)).toBe(
+      `/public/gate-approvals/images/0?token=${encodeURIComponent(token)}`,
+    )
+    expect(publicGateImageUrl('', 0)).toBe('')
+    expect(publicGateImageUrl(token, -1)).toBe('')
+    const mapped = mapPublicGateImages(token, [
+      { index: 0, mimeType: 'image/png', name: 'a.png' },
+      { index: 2, mimeType: 'image/jpeg', name: 'b.jpg' },
+    ])
+    expect(mapped).toHaveLength(2)
+    expect(mapped[0]?.url).toContain('/public/gate-approvals/images/0?token=')
+    expect(mapped[0]?.url).not.toContain('blob:')
+    expect(mapped[0]?.url).not.toContain('/api/blobs')
+    expect(mapped[1]?.url).toContain('/images/2?')
+    expect(mapPublicGateImages(token, [])).toEqual([])
   })
 })

@@ -22,11 +22,21 @@ const (
 
 // PreviewTurn is a leak-free conversation turn for the public workbench.
 type PreviewTurn struct {
-	Role         string              `json:"role"`
-	Text         string              `json:"text,omitempty"`
-	At           string              `json:"at,omitempty"`
-	Interrupted  bool                `json:"interrupted,omitempty"`
-	Annotations  []PreviewAnnotation `json:"annotations,omitempty"`
+	Role        string              `json:"role"`
+	Text        string              `json:"text,omitempty"`
+	At          string              `json:"at,omitempty"`
+	Interrupted bool                `json:"interrupted,omitempty"`
+	Images      []PreviewImage      `json:"images,omitempty"`
+	Annotations []PreviewAnnotation `json:"annotations,omitempty"`
+}
+
+// PreviewImage is a leak-free image hint: mime, optional name, and an opaque
+// dialogue-scoped index used by the public token image route. No blob refs,
+// /api/blobs paths, internal hosts, or raw base64.
+type PreviewImage struct {
+	MimeType string `json:"mimeType,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Index    int    `json:"index"`
 }
 
 // PreviewAnnotation is a leak-free annotation chip (no blob URLs).
@@ -39,18 +49,20 @@ type PreviewAnnotation struct {
 }
 
 // PreviewQueueItem is a leak-free pending-send row for polling resume.
-// Annotations are kept (sanitized) so public refresh / WS reconcile can show
-// the 批注 badge and refill chips on re-edit; images stay dropped (same as ActiveItem).
+// Annotations and opaque image indexes are kept so public refresh / WS
+// reconcile can show 批注 badges, refill chips, and redraw attachments.
 type PreviewQueueItem struct {
 	ID          string              `json:"id,omitempty"`
 	Text        string              `json:"text,omitempty"`
+	Images      []PreviewImage      `json:"images,omitempty"`
 	Annotations []PreviewAnnotation `json:"annotations,omitempty"`
 }
 
-// PreviewActiveItem is a leak-free in-flight turn hint (no images / blob URLs).
+// PreviewActiveItem is a leak-free in-flight turn hint (opaque image indexes only).
 type PreviewActiveItem struct {
 	ID          string              `json:"id,omitempty"`
 	Text        string              `json:"text,omitempty"`
+	Images      []PreviewImage      `json:"images,omitempty"`
 	Annotations []PreviewAnnotation `json:"annotations,omitempty"`
 }
 
@@ -215,14 +227,22 @@ func sanitizeJSONValue(v any, depth int) any {
 }
 
 // SanitizeTurns redacts conversation history for the public ReAct sidebar.
-// Images / blob URLs are dropped; text and annotation chips are size-capped.
+// Image bytes / blob URLs are replaced with opaque dialogue-scoped indexes;
+// text and annotation chips are size-capped. Image-only human turns are kept.
 func SanitizeTurns(msgs []models.ReactMessage) []PreviewTurn {
+	turns, _ := SanitizeTurnsFrom(msgs, 0)
+	return turns
+}
+
+// SanitizeTurnsFrom is SanitizeTurns with a starting opaque image index.
+func SanitizeTurnsFrom(msgs []models.ReactMessage, imageBase int) ([]PreviewTurn, int) {
 	if len(msgs) == 0 {
-		return nil
+		return nil, imageBase
 	}
 	if len(msgs) > maxTurns {
 		msgs = msgs[len(msgs)-maxTurns:]
 	}
+	idx := imageBase
 	out := make([]PreviewTurn, 0, len(msgs))
 	for _, m := range msgs {
 		role := strings.ToLower(strings.TrimSpace(m.Role))
@@ -234,24 +254,33 @@ func SanitizeTurns(msgs []models.ReactMessage) []PreviewTurn {
 		if anns := sanitizeAnnotations(m.Annotations); len(anns) > 0 {
 			turn.Annotations = anns
 		}
-		if turn.Text == "" && len(turn.Annotations) == 0 && !turn.Interrupted {
+		if imgs := sanitizePromptImages(m.Images, &idx); len(imgs) > 0 {
+			turn.Images = imgs
+		}
+		if turn.Text == "" && len(turn.Annotations) == 0 && len(turn.Images) == 0 && !turn.Interrupted {
 			continue
 		}
 		out = append(out, turn)
 	}
 	if len(out) == 0 {
-		return nil
+		return nil, idx
 	}
-	return out
+	return out, idx
 }
 
 // SanitizeQueueItems redacts pending FIFO rows for the public ReAct sidebar.
-// Carries sanitized annotations (aligned with ActiveItem) so poll/WS waiting
-// rows keep 批注 badges and edit refill; drops images to avoid blob/URL leaks.
+// Carries sanitized annotations and opaque image indexes (aligned with ActiveItem).
 func SanitizeQueueItems(items []map[string]any) []PreviewQueueItem {
+	out, _ := SanitizeQueueItemsFrom(items, 0)
+	return out
+}
+
+// SanitizeQueueItemsFrom is SanitizeQueueItems with a starting opaque image index.
+func SanitizeQueueItemsFrom(items []map[string]any, imageBase int) ([]PreviewQueueItem, int) {
 	if len(items) == 0 {
-		return nil
+		return nil, imageBase
 	}
+	idx := imageBase
 	out := make([]PreviewQueueItem, 0, len(items))
 	for _, it := range items {
 		if it == nil {
@@ -262,37 +291,77 @@ func SanitizeQueueItems(items []map[string]any) []PreviewQueueItem {
 		text = capTurnText(SanitizeDescription(text))
 		id = strings.TrimSpace(id)
 		anns := annotationsFromAny(it["annotations"])
-		if id == "" && text == "" && len(anns) == 0 {
+		imgs := sanitizePromptImages(imagesFromAny(it["images"]), &idx)
+		if id == "" && text == "" && len(anns) == 0 && len(imgs) == 0 {
 			continue
 		}
 		item := PreviewQueueItem{ID: id, Text: text}
 		if len(anns) > 0 {
 			item.Annotations = anns
 		}
+		if len(imgs) > 0 {
+			item.Images = imgs
+		}
 		out = append(out, item)
 	}
 	if len(out) == 0 {
-		return nil
+		return nil, idx
 	}
-	return out
+	return out, idx
 }
 
-// SanitizeActiveItem redacts the in-flight turn for polling resume. Images are dropped.
+// SanitizeActiveItem redacts the in-flight turn for polling resume.
 func SanitizeActiveItem(m map[string]any) *PreviewActiveItem {
+	item, _ := SanitizeActiveItemFrom(m, 0)
+	return item
+}
+
+// SanitizeActiveItemFrom is SanitizeActiveItem with a starting opaque image index.
+func SanitizeActiveItemFrom(m map[string]any, imageBase int) (*PreviewActiveItem, int) {
 	if m == nil {
-		return nil
+		return nil, imageBase
 	}
+	idx := imageBase
 	id, _ := m["id"].(string)
 	text, _ := m["text"].(string)
 	item := &PreviewActiveItem{
 		ID:          strings.TrimSpace(id),
 		Text:        capTurnText(SanitizeDescription(text)),
 		Annotations: annotationsFromAny(m["annotations"]),
+		Images:      sanitizePromptImages(imagesFromAny(m["images"]), &idx),
 	}
-	if item.ID == "" && item.Text == "" && len(item.Annotations) == 0 {
-		return nil
+	if item.ID == "" && item.Text == "" && len(item.Annotations) == 0 && len(item.Images) == 0 {
+		return nil, idx
 	}
-	return item
+	return item, idx
+}
+
+// DialogueImageCatalog flattens conversation + in-flight session images in the
+// same order used when assigning opaque preview indexes (turns → active → queue).
+func DialogueImageCatalog(turns []models.ReactMessage, active map[string]any, queue []map[string]any) []models.PromptImage {
+	if len(turns) > maxTurns {
+		turns = turns[len(turns)-maxTurns:]
+	}
+	var out []models.PromptImage
+	for _, m := range turns {
+		role := strings.ToLower(strings.TrimSpace(m.Role))
+		if role != "agent" && role != "human" {
+			continue
+		}
+		if len(m.Images) > 0 {
+			out = append(out, m.Images...)
+		}
+	}
+	if active != nil {
+		out = append(out, imagesFromAny(active["images"])...)
+	}
+	for _, it := range queue {
+		if it == nil {
+			continue
+		}
+		out = append(out, imagesFromAny(it["images"])...)
+	}
+	return out
 }
 
 // annotationsFromAny parses ReactAnnotation slices from JSON-decoded maps or typed slices.
@@ -334,6 +403,94 @@ func annotationsFromAny(v any) []PreviewAnnotation {
 	default:
 		return nil
 	}
+}
+
+// imagesFromAny parses PromptImage slices from JSON-decoded maps or typed slices.
+func imagesFromAny(v any) []models.PromptImage {
+	switch imgs := v.(type) {
+	case []models.PromptImage:
+		if len(imgs) == 0 {
+			return nil
+		}
+		out := make([]models.PromptImage, len(imgs))
+		copy(out, imgs)
+		return out
+	case []any:
+		out := make([]models.PromptImage, 0, len(imgs))
+		for _, raw := range imgs {
+			am, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			pi := models.PromptImage{
+				MimeType: stringMapField(am, "mimeType"),
+				Name:     stringMapField(am, "name"),
+				Ref:      stringMapField(am, "ref"),
+				Data:     stringMapField(am, "data"),
+			}
+			if n, ok := am["sizeBytes"].(float64); ok && n > 0 {
+				pi.SizeBytes = int64(n)
+			}
+			// Keep a slot for any image-shaped map (engine uses ref; fixtures may
+			// only set url) so opaque indexes stay aligned with the catalog.
+			if pi.MimeType == "" && pi.Ref == "" && pi.Data == "" &&
+				stringMapField(am, "url") == "" && pi.Name == "" {
+				continue
+			}
+			if pi.MimeType == "" {
+				pi.MimeType = "image/png"
+			}
+			out = append(out, pi)
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func sanitizePromptImages(imgs []models.PromptImage, idx *int) []PreviewImage {
+	if len(imgs) == 0 || idx == nil {
+		return nil
+	}
+	out := make([]PreviewImage, 0, len(imgs))
+	for _, im := range imgs {
+		mime := strings.TrimSpace(im.MimeType)
+		if mime == "" {
+			mime = "image/png"
+		}
+		// Skip clearly non-image attachments from the public ReAct strip.
+		if !strings.HasPrefix(strings.ToLower(mime), "image/") {
+			*idx++
+			continue
+		}
+		name := safeImageName(im.Name)
+		out = append(out, PreviewImage{MimeType: mime, Name: name, Index: *idx})
+		*idx++
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func safeImageName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	name = safeArtifactName(name)
+	name = SanitizeDescription(name)
+	if utf8.RuneCountInString(name) > maxAnnotationRunes {
+		r := []rune(name)
+		name = string(r[:maxAnnotationRunes]) + "…"
+	}
+	if name == "" || leakyURLRe.MatchString(name) || internalHostRe.MatchString(name) {
+		return ""
+	}
+	return name
 }
 
 func capTurnText(text string) string {

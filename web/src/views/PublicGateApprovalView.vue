@@ -27,6 +27,7 @@ import { pickAcpRails } from '@/lib/run/pendingAcpBuffer'
 import {
   formatRemainingSec,
   mergePublicGatePreview,
+  mapPublicGateImages,
   parseShareTokenFromHash,
   publicGateApi,
   publicGateContentKey,
@@ -44,13 +45,21 @@ import type { AcpEvent, Artifact, ClarifyImage, ClarifyTurn, NodeType, ReactAnno
 
 const PUBLIC_SHARE_RUN_ID = 'public-share'
 
+/** Queue rows after opaque indexes are mapped to token image URLs. */
+type PublicChatQueueItem = {
+  id?: string
+  text?: string
+  images?: ClarifyImage[]
+  annotations?: ReactAnnotation[]
+}
+
 type PublicChatRef = {
   discardLastQueued?: () => void
   applyQueueState?: (
     waiting: number,
-    items: PublicGateQueueItem[] | null,
+    items: PublicChatQueueItem[] | null,
     busy?: boolean,
-    activeItem?: PublicGateActiveItem | null,
+    activeItem?: PublicChatQueueItem | null,
   ) => void
   applyReviewFrame?: (frame: Record<string, unknown>) => boolean | void
   applyAcpEvents?: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
@@ -221,6 +230,7 @@ const turns = computed<ClarifyTurn[]>(() =>
     text: turn.text || '',
     at: turn.at || '',
     interrupted: !!turn.interrupted,
+    images: mapPublicGateImages(token.value, turn.images),
     annotations: (turn.annotations || []).map((a) => ({
       selector: a.selector,
       jsonPath: a.jsonPath,
@@ -571,13 +581,25 @@ function turnsIncludeHumanText(text: string): boolean {
   return turns.value.some((turn) => turn.role === 'human' && (turn.text || '').trim() === want)
 }
 
+function mapPublicQueueItem(
+  item: PublicGateQueueItem | PublicGateActiveItem | null | undefined,
+): PublicChatQueueItem | null {
+  if (!item) return null
+  return {
+    id: item.id,
+    text: item.text,
+    images: mapPublicGateImages(token.value, item.images),
+    annotations: item.annotations,
+  }
+}
+
 function syncChatQueueFromPreview() {
   const chat = chatRef.value
   const p = preview.value
   if (!chat || !p || !isActive.value) return
   const waiting = typeof p.waiting === 'number' ? p.waiting : 0
-  const items = p.queueItems || []
-  const activeItem = p.activeItem || null
+  const items = (p.queueItems || []).map((it) => mapPublicQueueItem(it)!)
+  const activeItem = mapPublicQueueItem(p.activeItem || null)
   // sessionBusy/waiting are authoritative; do not let a stale merged activeItem
   // keep the chat sticky-busy after the server has gone idle.
   const busy = !!p.sessionBusy || waiting > 0
@@ -693,6 +715,22 @@ function applyPreviewLiveEvents() {
   deliverPublicAcp(toAcpEvents(preview.value?.liveEvents))
 }
 
+function rewritePublicFrameImages(frame: Record<string, unknown>): Record<string, unknown> {
+  const mapItem = (raw: unknown) => {
+    if (!raw || typeof raw !== 'object') return raw
+    const it = raw as PublicGateQueueItem
+    return {
+      ...it,
+      images: mapPublicGateImages(token.value, it.images as PublicGateQueueItem['images']),
+    }
+  }
+  const next = { ...frame }
+  if (next.item) next.item = mapItem(next.item)
+  if (next.activeItem) next.activeItem = mapItem(next.activeItem)
+  if (Array.isArray(next.items)) next.items = next.items.map(mapItem)
+  return next
+}
+
 function handlePublicWsMessage(raw: string) {
   let m: Record<string, unknown>
   try {
@@ -713,7 +751,7 @@ function handlePublicWsMessage(raw: string) {
   if (typ === 'review') {
     // ACP buffered before this turn started belongs to an earlier turn.
     if (m.event === 'turn_begin') pendingPublicAcp = null
-    chatRef.value?.applyReviewFrame?.(m)
+    chatRef.value?.applyReviewFrame?.(rewritePublicFrameImages(m))
     flushPendingPublicAcp()
     refreshLocalChatBusy()
     return

@@ -36,8 +36,9 @@ func SanitizeLiveEvents(events []models.AcpEvent) []PreviewLiveEvent {
 
 // FilterPublicBrokerFrame rewrites a run-broker payload for the public
 // workbench: only review/acp for producerID, strip runId, rewrite nodeId,
-// drop tool_call/plan and images.
-func FilterPublicBrokerFrame(raw []byte, producerID string) ([]byte, bool) {
+// drop tool_call/plan. Image bytes become opaque indexes starting at imageBase
+// (conversation turn image count) so poll and WS share one catalogue.
+func FilterPublicBrokerFrame(raw []byte, producerID string, imageBase int) ([]byte, bool) {
 	producerID = strings.TrimSpace(producerID)
 	if producerID == "" || len(raw) == 0 {
 		return nil, false
@@ -53,7 +54,7 @@ func FilterPublicBrokerFrame(raw []byte, producerID string) ([]byte, bool) {
 	}
 	switch strings.ToLower(strings.TrimSpace(typ)) {
 	case "review":
-		return marshalPublicReviewFrame(m)
+		return marshalPublicReviewFrame(m, imageBase)
 	case "acp":
 		return marshalPublicAcpFrame(m)
 	default:
@@ -61,7 +62,7 @@ func FilterPublicBrokerFrame(raw []byte, producerID string) ([]byte, bool) {
 	}
 }
 
-func marshalPublicReviewFrame(m map[string]any) ([]byte, bool) {
+func marshalPublicReviewFrame(m map[string]any, imageBase int) ([]byte, bool) {
 	event, _ := m["event"].(string)
 	event = strings.TrimSpace(event)
 	if event == "" {
@@ -84,14 +85,18 @@ func marshalPublicReviewFrame(m map[string]any) ([]byte, bool) {
 	if msg, _ := m["message"].(string); strings.TrimSpace(msg) != "" {
 		out["message"] = capTurnText(SanitizeDescription(msg))
 	}
-	if items := queueItemsFromAny(m["items"]); len(items) > 0 {
-		out["items"] = items
-	}
-	if ai := activeItemFromAny(m["activeItem"]); ai != nil {
+	idx := imageBase
+	if ai, next := activeItemFromAny(m["activeItem"], idx); ai != nil {
 		out["activeItem"] = ai
+		idx = next
 	}
-	if item := activeItemFromAny(m["item"]); item != nil {
+	if item, next := activeItemFromAny(m["item"], idx); item != nil {
 		out["item"] = item
+		idx = next
+	}
+	if items, next := queueItemsFromAny(m["items"], idx); len(items) > 0 {
+		out["items"] = items
+		_ = next
 	}
 	b, err := json.Marshal(out)
 	if err != nil {
@@ -137,10 +142,10 @@ func jsonNumber(v any) (float64, bool) {
 	}
 }
 
-func queueItemsFromAny(v any) []PreviewQueueItem {
+func queueItemsFromAny(v any, imageBase int) ([]PreviewQueueItem, int) {
 	switch items := v.(type) {
 	case []map[string]any:
-		return SanitizeQueueItems(items)
+		return SanitizeQueueItemsFrom(items, imageBase)
 	case []any:
 		parsed := make([]map[string]any, 0, len(items))
 		for _, raw := range items {
@@ -150,19 +155,19 @@ func queueItemsFromAny(v any) []PreviewQueueItem {
 			}
 			parsed = append(parsed, am)
 		}
-		return SanitizeQueueItems(parsed)
+		return SanitizeQueueItemsFrom(parsed, imageBase)
 	default:
-		return nil
+		return nil, imageBase
 	}
 }
 
-func activeItemFromAny(v any) map[string]any {
+func activeItemFromAny(v any, imageBase int) (map[string]any, int) {
 	switch item := v.(type) {
 	case map[string]any:
-		ai := SanitizeActiveItem(item)
-		return previewActiveItemMap(ai)
+		ai, next := SanitizeActiveItemFrom(item, imageBase)
+		return previewActiveItemMap(ai), next
 	default:
-		return nil
+		return nil, imageBase
 	}
 }
 
@@ -176,6 +181,9 @@ func previewActiveItemMap(ai *PreviewActiveItem) map[string]any {
 	}
 	if ai.Text != "" {
 		m["text"] = ai.Text
+	}
+	if len(ai.Images) > 0 {
+		m["images"] = ai.Images
 	}
 	if len(ai.Annotations) > 0 {
 		m["annotations"] = ai.Annotations
