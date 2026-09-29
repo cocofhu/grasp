@@ -170,11 +170,20 @@ func sandboxEchoesCompletedTurn(st runtime.BridgeStatus, completedOp string, com
 	if !completed || !(st.Busy || st.Desynced) {
 		return false
 	}
+	// review v1: turns still queued on the bridge have not started. Dropping
+	// busy here would let confirm run ahead of them.
+	if st.Waiting > 0 {
+		return false
+	}
 	running := strings.TrimSpace(st.RunningOpID)
 	done := strings.TrimSpace(st.LastDoneOpID)
 	completedOp = strings.TrimSpace(completedOp)
+	// review v1: an empty running op is unnamed busy/desync, not a lagging echo.
+	// finishTurn writes LastDoneOpID on prompt_done, so a matching lastDone alone
+	// must not clear Busy/Desynced. Only a non-empty running op that is the
+	// completed message (or that same lastDone turn) is the echo.
 	if running == "" {
-		return done != "" && (completedOp == "" || completedOp == done)
+		return false
 	}
 	if completedOp != "" && running == completedOp {
 		return true

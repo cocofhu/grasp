@@ -184,19 +184,59 @@ func TestEnsureSandboxIdleKeepsUnnamedDesync(t *testing.T) {
 	appendCompletedAgent(t, db, run.ID, models.ReactMessage{
 		Role: "agent", Text: "最新回复已落盘", OpID: "g-00fccbf7-0f2",
 	})
+	// review v1/v2: finishTurn already wrote lastDone. An empty running op
+	// with that same completed id is unnamed busy/desync, not a finished echo.
 	provider.sandboxBusy = true
 	provider.sandboxDesynced = true
+	provider.sandboxLastDone = "g-00fccbf7-0f2"
 
 	payload := map[string]any{"waiting": 0, "items": []any{}, "busy": false}
 	eng.attachSandboxState(run.ID, "clarify", payload)
 	if busy, _ := payload["sandboxBusy"].(bool); !busy {
-		t.Fatalf("plan g1.2: unnamed desync must stay busy so the UI can abort: %#v", payload)
+		t.Fatalf("plan g1.2 review v1: unnamed desync with lastDone set must stay sandboxBusy: %#v", payload)
+	}
+	if des, _ := payload["sandboxDesynced"].(bool); !des {
+		t.Fatalf("plan g1.2 review v1: unnamed desync must stay desynced: %#v", payload)
 	}
 	if _, ok := payload["sandboxRunningOpId"]; ok {
 		t.Fatalf("plan g1.2: unnamed desync has no op to point at: %#v", payload)
 	}
 	if err := eng.ensureSandboxIdleForConfirm(run.ID, "clarify", false); !errors.Is(err, ErrSandboxBusy) {
-		t.Fatalf("plan g1.2: unnamed desync must still block confirm, got %v", err)
+		t.Fatalf("plan g1.2 review v1: unnamed desync with lastDone set must still block confirm, got %v", err)
+	}
+}
+
+func TestAttachSandboxStateKeepsBusyWhileBridgeWaiting(t *testing.T) {
+	eng, db, provider := setupEngineGraphP(t, reactOnlyGraph())
+	run, err := eng.StartRun("wf", nil, "test")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitReactPause(t, db, run.ID, "clarify")
+	appendCompletedAgent(t, db, run.ID, models.ReactMessage{
+		Role: "agent", Text: "最新回复已落盘", OpID: "g-00fccbf7-0f2",
+	})
+	// review v1: Waiting > 0 means a turn is still queued. Matching the
+	// completed op must not drop the busy flag.
+	provider.sandboxBusy = true
+	provider.sandboxDesynced = true
+	provider.sandboxRunningOp = "g-00fccbf7-0f2"
+	provider.sandboxLastDone = "g-00fccbf7-0f2"
+	provider.sandboxWaiting = 1
+
+	payload := map[string]any{"waiting": 0, "items": []any{}, "busy": false}
+	eng.attachSandboxState(run.ID, "clarify", payload)
+	if busy, _ := payload["sandboxBusy"].(bool); !busy {
+		t.Fatalf("review v1: waiting sandbox queue must stay sandboxBusy: %#v", payload)
+	}
+	if payload["sandboxRunningOpId"] != "g-00fccbf7-0f2" {
+		t.Fatalf("review v1: waiting turn op = %#v", payload["sandboxRunningOpId"])
+	}
+	if w, _ := payload["sandboxWaiting"].(int); w != 1 {
+		t.Fatalf("review v1: sandboxWaiting = %#v", payload["sandboxWaiting"])
+	}
+	if err := eng.ensureSandboxIdleForConfirm(run.ID, "clarify", false); !errors.Is(err, ErrSandboxBusy) {
+		t.Fatalf("review v1: waiting sandbox queue must still block confirm, got %v", err)
 	}
 }
 

@@ -51,6 +51,7 @@ type fakeProvider struct {
 	sandboxDesynced  bool
 	sandboxRunningOp string
 	sandboxLastDone  string
+	sandboxWaiting   int
 	abortOK          bool
 	abortCalls       int
 	// reactSetupErr, when set, makes ReactOpen fail with a sandbox setup error.
@@ -671,6 +672,7 @@ func (f *fakeProvider) SessionBridgeState(runID, nodeID string) (runtime.BridgeS
 	return runtime.BridgeStatus{
 		Known: true, Busy: f.sandboxBusy, Desynced: f.sandboxDesynced,
 		RunningOpID: f.sandboxRunningOp, LastDoneOpID: f.sandboxLastDone,
+		Waiting: f.sandboxWaiting,
 	}, true
 }
 
@@ -685,6 +687,7 @@ func (f *fakeProvider) AbortSessionTurn(runID, nodeID string) bool {
 	f.sandboxDesynced = false
 	f.sandboxRunningOp = ""
 	f.sandboxLastDone = ""
+	f.sandboxWaiting = 0
 	return true
 }
 
