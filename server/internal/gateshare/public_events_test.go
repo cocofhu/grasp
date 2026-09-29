@@ -37,7 +37,7 @@ func TestFilterPublicBrokerFrameStripsRunAndRewritesNode(t *testing.T) {
 			map[string]any{"kind": "tool_call", "title": "write", "text": "leak"},
 		},
 	})
-	out, ok := FilterPublicBrokerFrame(raw, "research1")
+	out, ok := FilterPublicBrokerFrame(raw, "research1", 0)
 	if !ok {
 		t.Fatal("expected filtered frame")
 	}
@@ -52,7 +52,7 @@ func TestFilterPublicBrokerFrameStripsRunAndRewritesNode(t *testing.T) {
 		t.Fatalf("url leak: %s", s)
 	}
 
-	other, ok := FilterPublicBrokerFrame(raw, "other-node")
+	other, ok := FilterPublicBrokerFrame(raw, "other-node", 0)
 	if ok || other != nil {
 		t.Fatalf("other node must drop: ok=%v %s", ok, other)
 	}
@@ -67,19 +67,32 @@ func TestFilterPublicBrokerFrameReviewTurnBegin(t *testing.T) {
 		"item": map[string]any{
 			"id":     "q1",
 			"text":   "改成绿的",
-			"images": []any{map[string]any{"data": "AAAA", "mimeType": "image/png"}},
+			"images": []any{map[string]any{"data": "AAAA", "mimeType": "image/png", "name": "x.png"}},
 		},
 	})
-	out, ok := FilterPublicBrokerFrame(raw, "research1")
+	out, ok := FilterPublicBrokerFrame(raw, "research1", 2)
 	if !ok {
 		t.Fatal("expected review frame")
 	}
 	s := string(out)
-	if strings.Contains(s, "run-secret") || strings.Contains(s, "AAAA") || strings.Contains(s, "images") {
+	if strings.Contains(s, "run-secret") || strings.Contains(s, "AAAA") || strings.Contains(s, "blob:") {
 		t.Fatalf("leaked: %s", s)
 	}
 	if !strings.Contains(s, `"event":"turn_begin"`) || !strings.Contains(s, "改成绿的") {
 		t.Fatalf("payload: %s", s)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	item, _ := parsed["item"].(map[string]any)
+	imgs, _ := item["images"].([]any)
+	if len(imgs) != 1 {
+		t.Fatalf("item images: %+v", item)
+	}
+	im, _ := imgs[0].(map[string]any)
+	if im["index"] != float64(2) || im["name"] != "x.png" {
+		t.Fatalf("opaque image: %+v", im)
 	}
 }
 
@@ -98,16 +111,16 @@ func TestFilterPublicBrokerFrameQueueStateKeepsAnnotations(t *testing.T) {
 				"annotations": []any{
 					map[string]any{"selector": "#pub-hero", "label": "公共点", "jsonPath": "goals[0]"},
 				},
-				"images": []any{map[string]any{"data": "BBBB", "mimeType": "image/png"}},
+				"images": []any{map[string]any{"data": "BBBB", "mimeType": "image/png", "name": "q.png"}},
 			},
 		},
 	})
-	out, ok := FilterPublicBrokerFrame(raw, "research1")
+	out, ok := FilterPublicBrokerFrame(raw, "research1", 0)
 	if !ok {
 		t.Fatal("expected queue_state frame")
 	}
 	s := string(out)
-	if strings.Contains(s, "run-secret") || strings.Contains(s, "BBBB") || strings.Contains(s, "images") {
+	if strings.Contains(s, "run-secret") || strings.Contains(s, "BBBB") {
 		t.Fatalf("leaked: %s", s)
 	}
 	var parsed map[string]any
@@ -126,5 +139,16 @@ func TestFilterPublicBrokerFrameQueueStateKeepsAnnotations(t *testing.T) {
 	ann, _ := anns[0].(map[string]any)
 	if ann["selector"] != "#pub-hero" || ann["label"] != "公共点" {
 		t.Fatalf("ann fields: %+v", ann)
+	}
+	imgs, _ := row["images"].([]any)
+	if len(imgs) != 1 {
+		t.Fatalf("images missing: %+v", row)
+	}
+	im, _ := imgs[0].(map[string]any)
+	if im["index"] != float64(0) || im["name"] != "q.png" {
+		t.Fatalf("queue image index: %+v", im)
+	}
+	if strings.Contains(s, "blob:") || strings.Contains(s, "/api/blobs") {
+		t.Fatalf("image path leak: %s", s)
 	}
 }

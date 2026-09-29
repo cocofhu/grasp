@@ -668,6 +668,11 @@ export interface ClarifyImage {
   data?: string
   /** blob:{id} reference after server-side externalization. */
   ref?: string
+  /**
+   * Direct display URL (public gate opaque image route). Preferred by imgSrc
+   * over ref/data so preview workbench never embeds blob: or /api/blobs paths.
+   */
+  url?: string
   mimeType: string
   /** Original filename when known; forwarded through platform → ACP Bridge. */
   name?: string

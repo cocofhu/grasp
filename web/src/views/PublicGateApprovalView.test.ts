@@ -203,6 +203,43 @@ describe('PublicGateApprovalView workbench', () => {
     expect(w.find('[data-testid="html-preview-inspect-toggle"]').exists()).toBe(true)
   })
 
+  it('maps preview turn image indexes to token URLs after reload (g2.1)', async () => {
+    const token = 'bb'.repeat(32)
+    window.location.hash = `#t=${token}`
+    mocks.preview.mockResolvedValue({
+      status: 'active',
+      kind: 'review',
+      remainingSec: 3600,
+      nonce: 'n-img',
+      reactSessionAlive: true,
+      productKind: 'structured',
+      productName: 'research.json',
+      actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
+      structured: { name: 'research.json', title: '调研摘要', doc: { title: '调研摘要' } },
+      turns: [
+        { role: 'agent', text: '请复审', at: '2026-08-01T00:00:00Z' },
+        {
+          role: 'human',
+          text: '这里增加一个产物',
+          at: '2026-08-01T00:01:00Z',
+          images: [{ index: 0, mimeType: 'image/png', name: 'shot.png' }],
+        },
+      ],
+    })
+    const w = mountView()
+    await flushPromises()
+    const chat = w.getComponent(ClarifyChat)
+    const turns = chat.props('turns') as Array<{ role: string; text?: string; images?: Array<{ url?: string; name?: string }> }>
+    const human = turns.find((t) => t.role === 'human' && t.text === '这里增加一个产物')
+    expect(human?.images).toHaveLength(1)
+    expect(human?.images?.[0]?.name).toBe('shot.png')
+    expect(human?.images?.[0]?.url).toBe(
+      `/public/gate-approvals/images/0?token=${encodeURIComponent(token)}`,
+    )
+    expect(human?.images?.[0]?.url).not.toContain('blob:')
+    expect(human?.images?.[0]?.url).not.toContain('/api/blobs')
+  })
+
   it('review hot session has ReAct + composer confirm and no reject', async () => {
     window.location.hash = `#t=${'ee'.repeat(32)}`
     mocks.preview.mockResolvedValue({

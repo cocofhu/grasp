@@ -2,8 +2,10 @@ import type { ClarifyImage, CompositeText } from '@/lib/shared/types'
 import { blobContentUrl } from '../api/api'
 import { i18n } from './i18n'
 
-/** Prefer blob:{id} URL; fall back to legacy inline base64 data URL. */
+/** Prefer explicit url (public gate opaque image route), then blob:{id}, then data. */
 export function imgSrc(im: ClarifyImage): string {
+  const url = (im.url || '').trim()
+  if (url) return url
   const ref = (im.ref || '').trim()
   if (ref.startsWith('blob:')) {
     return blobContentUrl(ref)
