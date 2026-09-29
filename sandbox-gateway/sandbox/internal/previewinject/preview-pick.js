@@ -250,15 +250,16 @@
     'background:#f3f3f5;color:#18181b;border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.4);' +
     'font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}' +
     '.mhead{display:flex;align-items:center;gap:8px;height:40px;padding:0 8px 0 12px;flex:none;' +
-    'background:#fff;border-bottom:1px solid #e6e6ea;cursor:grab;user-select:none;touch-action:none}' +
+    'background:#0b0b0c;border-bottom:1px solid #26262c;color:#e5e7eb;' +
+    'cursor:grab;user-select:none;touch-action:none}' +
     '.mhead:active{cursor:grabbing}' +
     '.mhead .drag{display:grid;grid-template-columns:repeat(2,3px);grid-auto-rows:3px;gap:3px;' +
     'opacity:.35;flex:none;color:inherit}' +
     '.mhead .drag i{width:3px;height:3px;border-radius:50%;background:currentColor}' +
     '.mhead [data-role="artifact-title"]{flex:1;min-width:0;font-size:13px;font-weight:600}' +
     '.mhead button{width:28px;height:28px;padding:0;display:grid;place-items:center;flex:none;' +
-    'border:0;border-radius:6px;background:transparent;color:#71717a;font-size:16px;line-height:1;cursor:pointer}' +
-    '.mhead button:hover{background:#f4f4f5}' +
+    'border:0;border-radius:6px;background:transparent;color:#9ca3af;font-size:16px;line-height:1;cursor:pointer}' +
+    '.mhead button:hover{background:#1f2937;color:#e5e7eb}' +
     '.modal iframe{flex:1;min-height:0;width:100%;border:0;background:#f3f3f5}' +
     '.drawer{position:fixed;z-index:2147483646;display:flex;flex-direction:column;overflow:hidden;' +
     'background:#0b0b0c;border-radius:22px;box-shadow:0 16px 40px rgba(0,0,0,.35);' +
@@ -295,6 +296,9 @@
     '.light .chat{background:#eef0ff;color:#4f46e5}' +
     '.light .chat[aria-expanded="true"]{background:#dcdcfe}' +
     '.mask.light .modal{background:#f3f3f5;color:#18181b}' +
+    '.mask.light .mhead{background:#fff;border-bottom-color:#e6e6ea;color:#18181b}' +
+    '.mask.light .mhead button{color:#71717a}' +
+    '.mask.light .mhead button:hover{background:#f4f4f5;color:#71717a}' +
     '.drawer.light{color:#18181b;background:#fff;box-shadow:0 16px 40px rgba(16,24,40,.12)}' +
     '.drawer.light .dhead button{border-color:#e7e7ea;background:transparent;color:#52525b}' +
     '.drawer.light iframe{background:#fafafb}' +
@@ -819,9 +823,7 @@
       ev.stopPropagation();
       setArtifactOpen(false);
     });
-    ui.artifactMask.addEventListener('click', function (ev) {
-      if (ev.target === ui.artifactMask) setArtifactOpen(false);
-    });
+    // Keep the mask for dimming; do not close on outside click (explicit close / bar toggle only).
     ui.chat.addEventListener('click', function (ev) {
       ev.preventDefault();
       ev.stopPropagation();
