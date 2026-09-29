@@ -41,6 +41,11 @@ type BridgeState struct {
 	// BridgeState fills it so callers can tell a lagging echo of that turn
 	// from a different op the bridge still reports. Not a bridge frame field.
 	LastDoneOpID string
+	// InFlightOpID is the op this client has already entered in runTurn when
+	// the bridge mirror still echoes the previous turn (or has not named the
+	// new one). Not a bridge frame field. A non-empty value means callers
+	// must not treat Busy as a completed echo.
+	InFlightOpID string
 }
 
 // BridgeState returns the latest mirrored queue_state. A running turn this
@@ -62,7 +67,25 @@ func (c *ACPClient) BridgeState() BridgeState {
 
 // TurnInFlight reports whether a chat is currently running on this client.
 func (c *ACPClient) TurnInFlight() bool {
-	return loadOpID(&c.turnOpID) != ""
+	return c.InFlightOpID() != ""
+}
+
+// InFlightOpID is the op runTurn stored for the chat currently on this client
+// (empty when none). It is set before the bridge's queue_state switches off
+// the previous turn.
+func (c *ACPClient) InFlightOpID() string {
+	return loadOpID(&c.turnOpID)
+}
+
+// SeedBridgeForTest installs a connected client's bridge mirror and turn ids
+// without a websocket. inFlight is the op runTurn would have stored.
+func (c *ACPClient) SeedBridgeForTest(st BridgeState, lastDone, inFlight string) {
+	c.setConnected("test")
+	c.lastDoneOpID.Store(lastDone)
+	c.turnOpID.Store(inFlight)
+	c.stateMu.Lock()
+	c.bridge = st
+	c.stateMu.Unlock()
 }
 
 func loadOpID(v *atomic.Value) string {

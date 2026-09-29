@@ -481,6 +481,31 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
+  it('plan g1.2: unnamed sandbox desync keeps abort after a completed turn', () => {
+    const { chat, app, emit } = withChat({
+      turns: [
+        { role: 'human', text: '继续', at: '1' },
+        { role: 'agent', text: '最新回复已落盘', at: '2', opId: 'g-00fccbf7-0f2' },
+      ],
+    })
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: true,
+      sandboxDesynced: true,
+    })
+    expect(chat.showSandboxOrphanBanner.value).toBe(true)
+    expect(chat.sandboxOrphanOpLabel.value).toBe('')
+    const agent = chat.displayTurns.value.at(-1)!
+    expect(chat.showTurnCompleted(agent)).toBe(true)
+    expect(agent.interrupted).toBeFalsy()
+    chat.cancelReview()
+    expect(emit).toHaveBeenCalledWith('cancel')
+    app.unmount()
+  })
+
   it('plan g2.2: another unfinished sandbox turn keeps abort and completed history', () => {
     const { chat, app, emit } = withChat({
       turns: [

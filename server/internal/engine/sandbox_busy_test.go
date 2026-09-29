@@ -5,8 +5,21 @@ import (
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/runtime"
+	"github.com/cocofhu/grasp/internal/sandbox"
 	"gorm.io/gorm"
 )
+
+// inflightEchoProvider sends the confirm gate through a real ACPClient.
+// The fake that started the run still serves every other provider method.
+type inflightEchoProvider struct {
+	*fakeProvider
+	acp *sandbox.ACPClient
+}
+
+func (p *inflightEchoProvider) SessionBridgeState(runID, nodeID string) (runtime.BridgeStatus, bool) {
+	return runtime.ClientBridgeStatus(p.acp)
+}
 
 func TestEnsureSandboxIdleRejectsBusyConfirm(t *testing.T) {
 	eng, db, provider := setupEngineGraphP(t, reactOnlyGraph())
@@ -120,6 +133,70 @@ func TestAttachSandboxStateDropsMatchedCompletedTurn(t *testing.T) {
 	}
 	if err := eng.ensureSandboxIdleForConfirm(run.ID, "clarify", false); err != nil {
 		t.Fatalf("plan g1.1: confirm still sees the finished op: %v", err)
+	}
+}
+
+func TestEnsureSandboxIdleRejectsInFlightAfterCompletedEcho(t *testing.T) {
+	eng, db, provider := setupEngineGraphP(t, reactOnlyGraph())
+	run, err := eng.StartRun("wf", nil, "test")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitReactPause(t, db, run.ID, "clarify")
+	appendCompletedAgent(t, db, run.ID, models.ReactMessage{
+		Role: "agent", Text: "最新回复已落盘", OpID: "g-00fccbf7-0f2",
+	})
+	acp := sandbox.NewACPClient("127.0.0.1", 1)
+	// Bridge still echoes the finished op; the next chat has already entered runTurn.
+	acp.SeedBridgeForTest(sandbox.BridgeState{
+		Known: true, Busy: true, Desynced: true,
+		RunningOpID: "g-00fccbf7-0f2", Waiting: 0,
+	}, "g-00fccbf7-0f2", "g-next")
+	raw := acp.BridgeState()
+	if raw.Busy || raw.RunningOpID != "" || raw.Desynced {
+		t.Fatalf("plan g1.1: lastDone echo should look idle before the in-flight overlay: %+v", raw)
+	}
+	eng.provider = &inflightEchoProvider{fakeProvider: provider, acp: acp}
+
+	err = eng.ReactConfirmAs("", run.ID, "clarify", "确认并流转", nil, nil, false)
+	if !errors.Is(err, ErrSandboxBusy) {
+		t.Fatalf("plan g1.1: in-flight turn must still block confirm, got %v", err)
+	}
+	var busy *SandboxBusyError
+	if !errors.As(err, &busy) || busy.RunningOpID != "g-next" {
+		t.Fatalf("plan g1.1: want in-flight op g-next, got %+v", err)
+	}
+	provider.mu.Lock()
+	calls := provider.reactReplyCalls["clarify"]
+	provider.mu.Unlock()
+	if calls != 0 {
+		t.Fatalf("plan g1.1: confirm must not start while the next turn is in flight; reactReplyCalls=%d", calls)
+	}
+}
+
+func TestEnsureSandboxIdleKeepsUnnamedDesync(t *testing.T) {
+	eng, db, provider := setupEngineGraphP(t, reactOnlyGraph())
+	run, err := eng.StartRun("wf", nil, "test")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitReactPause(t, db, run.ID, "clarify")
+	appendCompletedAgent(t, db, run.ID, models.ReactMessage{
+		Role: "agent", Text: "最新回复已落盘", OpID: "g-00fccbf7-0f2",
+	})
+	provider.sandboxBusy = true
+	provider.sandboxDesynced = true
+
+	payload := map[string]any{"waiting": 0, "items": []any{}, "busy": false}
+	eng.attachSandboxState(run.ID, "clarify", payload)
+	if busy, _ := payload["sandboxBusy"].(bool); !busy {
+		t.Fatalf("plan g1.2: unnamed desync must stay busy so the UI can abort: %#v", payload)
+	}
+	if _, ok := payload["sandboxRunningOpId"]; ok {
+		t.Fatalf("plan g1.2: unnamed desync has no op to point at: %#v", payload)
+	}
+	if err := eng.ensureSandboxIdleForConfirm(run.ID, "clarify", false); !errors.Is(err, ErrSandboxBusy) {
+		t.Fatalf("plan g1.2: unnamed desync must still block confirm, got %v", err)
 	}
 }
 

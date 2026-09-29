@@ -1293,13 +1293,14 @@ const showSandboxOrphanBanner = computed(() => {
     return false
   }
   // plan g1.2: no live bubble and the latest bubble already completed —
-  // do not paint the interrupt banner for that same turn. A different
-  // unfinished sandbox op keeps the banner and the abort button.
+  // do not paint the interrupt banner when the bridge is echoing that same
+  // turn. A different op, or busy/desync with no op to point at, keeps the
+  // banner and the abort button so it matches a confirm the server still rejects.
   const completed = latestNormallyCompletedTurn()
   if (!completed) return true
   const running = sandboxOrphan.value.runningOpId
   const doneOp = completed.opId || ''
-  if (!running || (doneOp !== '' && running === doneOp)) return false
+  if (running !== '' && doneOp !== '' && running === doneOp) return false
   return true
 })
 

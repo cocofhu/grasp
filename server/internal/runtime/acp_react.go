@@ -406,15 +406,35 @@ func (c *acpProvider) liveACP(runID, nodeID string) *sandbox.ACPClient {
 }
 
 // SessionBridgeState reports the bridge's mirrored queue_state for a parked
-// session. A chat in flight on the client counts as busy.
+// session. A chat in flight on the client counts as busy, and its op is
+// written back when the bridge is still echoing the previous turn.
 func (c *acpProvider) SessionBridgeState(runID, nodeID string) (BridgeStatus, bool) {
 	a := c.liveACP(runID, nodeID)
 	if a == nil {
 		return BridgeStatus{}, false
 	}
+	return ClientBridgeStatus(a)
+}
+
+// ClientBridgeStatus is the bridge view for one live ACP client. BridgeState
+// clears a lagging echo of lastDone before the caller sees it; a turn this
+// client has already entered (turnOpID set) must stay busy, and the current
+// op is written back when the bridge op is empty or still that lastDone.
+func ClientBridgeStatus(a *sandbox.ACPClient) (BridgeStatus, bool) {
+	if a == nil || !a.IsConnected() {
+		return BridgeStatus{}, false
+	}
 	st := a.BridgeState()
-	if a.TurnInFlight() {
-		st.Busy = true
+	op := strings.TrimSpace(a.InFlightOpID())
+	if op == "" {
+		return st, true
+	}
+	st.Busy = true
+	st.InFlightOpID = op
+	running := strings.TrimSpace(st.RunningOpID)
+	done := strings.TrimSpace(st.LastDoneOpID)
+	if running == "" || running == done {
+		st.RunningOpID = op
 	}
 	return st, true
 }

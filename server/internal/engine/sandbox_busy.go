@@ -48,6 +48,8 @@ func (e *Engine) ensureSandboxIdleForConfirm(runID, nodeID string, abortRunning 
 		return nil
 	}
 	// A finished turn the bridge still echoes is not an orphan in front of confirm.
+	// A client turn already inside runTurn is not that echo: dropCompletedSandboxEcho
+	// leaves its Busy set (plan g1.1, review v1).
 	st = e.dropCompletedSandboxEcho(runID, nodeID, st)
 	if !(st.Busy || st.Desynced) {
 		return nil
@@ -159,6 +161,12 @@ func (e *Engine) latestNormallyCompletedAgentOp(runID, nodeID string) (opID stri
 }
 
 func sandboxEchoesCompletedTurn(st runtime.BridgeStatus, completedOp string, completed bool) bool {
+	// plan g1.1: the client already started the next chat. BridgeState may have
+	// cleared the previous op, but this Busy is the in-flight turn, not an echo
+	// of the persisted completion. Confirm must stay rejected.
+	if strings.TrimSpace(st.InFlightOpID) != "" {
+		return false
+	}
 	if !completed || !(st.Busy || st.Desynced) {
 		return false
 	}
