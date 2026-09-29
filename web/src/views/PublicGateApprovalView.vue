@@ -225,20 +225,51 @@ const inspectable = computed(
 const usePublicArtifactStage = computed(() => isReview.value)
 const appPreviewPorts = computed(() => preview.value?.ports || [])
 const turns = computed<ClarifyTurn[]>(() =>
-  (preview.value?.turns || []).map((turn) => ({
-    role: turn.role === 'human' ? 'human' : 'agent',
-    text: turn.text || '',
-    at: turn.at || '',
-    interrupted: !!turn.interrupted,
-    images: mapPublicGateImages(token.value, turn.images),
-    annotations: (turn.annotations || []).map((a) => ({
-      selector: a.selector,
-      jsonPath: a.jsonPath,
-      label: a.label,
-      note: a.note,
-      quote: a.quote,
-    })),
-  })),
+  (preview.value?.turns || []).map((turn) => {
+    const mapped: ClarifyTurn = {
+      role: turn.role === 'human' ? 'human' : 'agent',
+      text: turn.text || '',
+      at: turn.at || '',
+      interrupted: !!turn.interrupted,
+      images: mapPublicGateImages(token.value, turn.images),
+      annotations: (turn.annotations || []).map((a) => ({
+        selector: a.selector,
+        jsonPath: a.jsonPath,
+        label: a.label,
+        note: a.note,
+        quote: a.quote,
+      })),
+    }
+    // Only attach structured prompts when present so plain turns stay unchanged.
+    if (turn.questions?.length) {
+      mapped.questions = turn.questions.map((q) => ({
+        id: q.id,
+        prompt: q.prompt,
+        allowMultiple: q.allowMultiple,
+        options: (q.options || []).map((o) => ({
+          id: o.id,
+          label: o.label,
+          recommended: o.recommended,
+          demoHtml: o.demoHtml,
+        })),
+      }))
+    }
+    if (turn.forms?.length) {
+      mapped.forms = turn.forms.map((form) => ({
+        title: form.title,
+        fields: (form.fields || []).map((f) => ({
+          name: f.name,
+          label: f.label,
+          type: f.type,
+          placeholder: f.placeholder,
+          value: f.value,
+          required: f.required,
+          why: f.why,
+        })),
+      }))
+    }
+    return mapped
+  }),
 )
 const structuredDoc = computed(() => preview.value?.structured?.doc || structuredFallbackDoc())
 const upstreamDoc = computed(() => upstreamDocFull.value)
@@ -323,6 +354,21 @@ function patchClockAndNonce(prev: PublicGatePreview, next: PublicGatePreview) {
   if (next.expiresAt) prev.expiresAt = next.expiresAt
   if (typeof next.remainingSec === 'number') prev.remainingSec = next.remainingSec
   refreshRemainingLabel()
+}
+
+function turnsHaveStructuredPrompts(turns: PublicGatePreview['turns']): boolean {
+  return (turns || []).some((turn) => (turn.questions?.length || 0) > 0 || (turn.forms?.length || 0) > 0)
+}
+
+/** Drop choice/form cards so the composer can mount before they arrive. */
+function turnsWithoutStructuredPrompts(turns: PublicGatePreview['turns']): PublicGatePreview['turns'] {
+  return (turns || []).map((turn) => {
+    if (!turn.questions?.length && !turn.forms?.length) return turn
+    const rest = { ...turn }
+    delete rest.questions
+    delete rest.forms
+    return rest
+  })
 }
 
 function applyPreviewPayload(next: PublicGatePreview, silent: boolean) {
@@ -475,6 +521,16 @@ async function loadPreview(opts?: { silent?: boolean; issueNonce?: boolean }) {
           : undefined
     const next = await publicGateApi.preview(tok, signal, known)
     if (attemptGen !== previewGen) return
+    // Inbox mounts the composer first, then turns arrive, and the existing
+    // question/form watch preselects recommendations and seeds form values.
+    // This view only mounts the composer once loading ends, with turns already
+    // set — so hand it a card-free transcript for one tick, then the real one.
+    if (!opts?.silent && loading.value && turnsHaveStructuredPrompts(next.turns)) {
+      applyPreviewPayload({ ...next, turns: turnsWithoutStructuredPrompts(next.turns) }, false)
+      loading.value = false
+      await nextTick()
+      if (attemptGen !== previewGen) return
+    }
     const wroteTree = applyPreviewPayload(next, !!opts?.silent)
     if (next.status === 'active') workbenchSeen.value = true
     noteWorkbenchLinkInvalid(preview.value)

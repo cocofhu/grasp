@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import VChart from 'vue-echarts'
 import { registerECharts } from '@/components/charts/echartsSetup'
-import { statsTooltip } from '@/components/charts/chartTheme'
+import { rankTrackColor, statsTooltip } from '@/components/charts/chartTheme'
 import type { TokenStatsWorkflow } from '@/lib/shared/types'
 import { fmtCompactTokenCount, fmtTokenCount } from '@/lib/run/tokenUsage'
 
@@ -94,7 +94,7 @@ function rowChartOption(w: TokenStatsWorkflow) {
         barWidth: 8,
         itemStyle: { color: barColor(w), borderRadius: [0, 999, 999, 0] },
         showBackground: true,
-        backgroundStyle: { color: 'rgb(var(--c-elevated))' },
+        backgroundStyle: { color: rankTrackColor() },
       },
     ],
   }

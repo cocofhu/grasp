@@ -1494,6 +1494,146 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
     expect(w.get('[data-testid="public-gate-cold-hint"]').text()).toContain('回到 Grasp')
   })
 
+  it('plan g2: drawer renders inbox choice cards and submits the same envelope', async () => {
+    mocks.reply.mockResolvedValue({ status: 'ok' })
+    mocks.preview.mockResolvedValue({
+      status: 'active',
+      kind: 'review',
+      nodeType: 'grasp',
+      remainingSec: 3600,
+      reactSessionAlive: true,
+      actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
+      turns: [
+        {
+          role: 'agent',
+          text: '请在上面的选项里选',
+          at: '2026-08-01T00:00:00Z',
+          questions: [
+            {
+              id: 'q1',
+              prompt: '哪一块没显示全',
+              options: [
+                { id: 'title', label: '标题区', recommended: true, demoHtml: '<!doctype html><p>title-preview</p>' },
+                { id: 'body', label: '正文区' },
+              ],
+            },
+            {
+              id: 'q2',
+              prompt: '要不要保留推荐',
+              allowMultiple: true,
+              options: [
+                { id: 'keep', label: '保留', recommended: true },
+                { id: 'drop', label: '去掉' },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    const w = mountView('zh-CN', { embedToken: drawerToken })
+    await flushPromises()
+
+    expect(w.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
+    expect(w.get('[data-testid="clarify-question-prompt"]').text()).toContain('哪一块没显示全')
+    expect(w.text()).toContain('请在上面的选项里选')
+    expect(w.text()).toContain('1 / 2')
+    expect(w.text()).toContain('单选')
+    const labels = w.findAll('[data-testid="clarify-option-label"]').map((n) => n.text())
+    expect(labels).toEqual(['标题区', '正文区'])
+    expect(w.text()).toContain('推荐')
+    expect(w.find('[data-testid="clarify-other-input"]').exists()).toBe(true)
+    expect(w.get('[data-testid="clarify-input"]').attributes('placeholder')).toContain('跳过本轮提问')
+    expect(w.html()).toContain('title-preview')
+
+    const next = w.findAll('button').find((b) => b.text().includes('下一个'))
+    expect(next).toBeTruthy()
+    await next!.trigger('click')
+    expect(w.get('[data-testid="clarify-question-prompt"]').text()).toContain('要不要保留推荐')
+    expect(w.text()).toContain('多选')
+    expect(w.text()).toContain('采用推荐')
+    expect(w.text()).toContain('确认选择')
+
+    const confirmChoice = w.findAll('button').find((b) => b.text().includes('确认选择'))
+    expect(confirmChoice).toBeTruthy()
+    expect((confirmChoice!.element as HTMLButtonElement).disabled).toBe(false)
+    await confirmChoice!.trigger('click')
+    await flushPromises()
+    expect(mocks.reply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        token: drawerToken,
+        text: expect.stringMatching(/^我的选择:\n- 哪一块没显示全 → 标题区/),
+      }),
+    )
+  })
+
+  it('plan g2: drawer form uses the inbox fill envelope and plain turns stay plain', async () => {
+    mocks.reply.mockResolvedValue({ status: 'ok' })
+    mocks.preview.mockResolvedValue({
+      status: 'active',
+      kind: 'review',
+      nodeType: 'grasp',
+      remainingSec: 3600,
+      reactSessionAlive: true,
+      actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
+      turns: [
+        {
+          role: 'agent',
+          text: '',
+          at: '2026-08-01T00:00:00Z',
+          forms: [
+            {
+              title: '补环境',
+              fields: [{ name: 'host', label: '主机', type: 'text', value: 'preview.example', required: true }],
+            },
+          ],
+        },
+      ],
+    })
+    const w = mountView('zh-CN', { embedToken: drawerToken })
+    await flushPromises()
+    expect(w.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
+    expect(w.find('[data-testid="clarify-option-btn"]').exists()).toBe(false)
+    expect(w.find('[data-testid="clarify-form-card"]').exists()).toBe(true)
+    expect(w.get('[data-testid="clarify-input"]').attributes('placeholder')).toContain('跳过本轮提问')
+    await w.get('[data-testid="clarify-form-submit"]').trigger('click')
+    await flushPromises()
+    expect(mocks.reply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        token: drawerToken,
+        text: expect.stringContaining('我的填写:\n- 主机 → preview.example'),
+      }),
+    )
+
+    mocks.reply.mockClear()
+    mocks.preview.mockResolvedValue({
+      status: 'active',
+      kind: 'review',
+      nodeType: 'grasp',
+      remainingSec: 3600,
+      reactSessionAlive: true,
+      actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
+      turns: [
+        { role: 'agent', text: '普通说明', at: '2026-08-01T00:00:00Z' },
+        {
+          role: 'human',
+          text: '我的选择:\n- 哪一块没显示全 → 标题区',
+          at: '2026-08-01T00:01:00Z',
+          annotations: [{ selector: '#title', label: '标题批注', note: '改这里' }],
+        },
+      ],
+    })
+    const plain = mountView('zh-CN', { embedToken: drawerToken })
+    await flushPromises()
+    expect(plain.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
+    expect(plain.find('[data-testid="clarify-option-btn"]').exists()).toBe(false)
+    expect(plain.find('[data-testid="clarify-form-card"]').exists()).toBe(false)
+    expect(plain.get('[data-testid="clarify-input"]').attributes('placeholder')).toContain('请先描述目标')
+    expect(plain.text()).toContain('普通说明')
+    expect(plain.find('[data-testid="clarify-choice-summary"]').exists()).toBe(true)
+    expect(plain.get('[data-testid="clarify-choice-answer"]').text()).toContain('标题区')
+    expect(plain.text()).toContain('标题批注')
+  })
+
   it('reports a dead drawer token so the host can drop it', async () => {
     mocks.preview.mockResolvedValue({ status: 'invalid' })
     const w = mountView('zh-CN', { embedToken: drawerToken })

@@ -1,4 +1,4 @@
-import type { Artifact, ClarifyImage, ClarifyInboxItem, GateInboxItem, GateShareInboxStatus, InboxItem } from '@/lib/shared/types'
+import type { Artifact, ClarifyImage, ClarifyInboxItem, GateInboxItem, GateShareInboxStatus, InboxItem, ReactForm, ReactQuestion } from '@/lib/shared/types'
 import {
   GRASP_STORAGE_KEYS,
   LEGACY_STORAGE_KEYS,
@@ -253,6 +253,10 @@ export type PublicGatePreviewTurn = {
     url?: string
     truncated?: boolean
   }>
+  /** ask_question cards. Absent when the turn has none (sparse-poll hash stays stable). */
+  questions?: ReactQuestion[]
+  /** ask_form cards. Absent when the turn has none. */
+  forms?: ReactForm[]
 }
 
 export type PublicGateQueueItem = {
