@@ -8,6 +8,8 @@ import enCommon from '@/locales/en/common.json'
 import enPages from '@/locales/en/pages.json'
 import TokenModelRank from './TokenModelRank.vue'
 import { colorForModel } from './tokenModelColors'
+import { setTheme } from '@/lib/shared/theme'
+import { RANK_TRACK_DARK, RANK_TRACK_LIGHT } from '@/components/charts/chartTheme'
 
 vi.mock('vue-echarts', () => ({
   default: {
@@ -43,6 +45,16 @@ function expectNoFilledTagCopy(text: string) {
 function barColor(vm: unknown, idx: number) {
   const opts = (vm as { rowOptions: { series: { itemStyle: { color: string } }[] }[] }).rowOptions
   return opts[idx]?.series[0]?.itemStyle?.color
+}
+
+function trackColor(vm: unknown, idx: number) {
+  const opts = (vm as { rowOptions: { series: { backgroundStyle?: { color?: string } }[] }[] }).rowOptions
+  return String(opts[idx]?.series[0]?.backgroundStyle?.color ?? '')
+}
+
+function expectResolvedRgb(color: string) {
+  expect(color).toMatch(/^rgb\(\d+,\s*\d+,\s*\d+\)$/)
+  expect(color).not.toContain('var(')
 }
 
 const rankModels = [
@@ -233,6 +245,48 @@ describe('TokenModelRank unknown vs other (g3.3)', () => {
     expect(unk.find('.text-ok').exists()).toBe(true)
     expect(barColor(wrapper.vm, 0)).toBe('#34D399')
     expect(barColor(wrapper.vm, 0)).not.toBe('#71717A')
+    wrapper.unmount()
+  })
+})
+
+describe('TokenModelRank track color (g1.1/g1.2/g2.1)', () => {
+  it('backgroundStyle is theme rgb without var(), and fills stay #34D399 / #71717A / #A1A1AA (g2.2)', () => {
+    document.documentElement.style.removeProperty('--c-elevated')
+    document.documentElement.classList.remove('light')
+    setTheme('light')
+
+    const wrapper = mount(TokenModelRank, {
+      props: { models: rankModels },
+      global: { plugins: [i18nZh()] },
+    })
+
+    const light = trackColor(wrapper.vm, 0)
+    expectResolvedRgb(light)
+    expect(light.replace(/\s/g, '')).toBe(RANK_TRACK_LIGHT.replace(/\s/g, ''))
+    for (let i = 0; i < rankModels.length; i++) {
+      expect(trackColor(wrapper.vm, i).replace(/\s/g, '')).toBe(light.replace(/\s/g, ''))
+    }
+    expect(barColor(wrapper.vm, 0)).toBe('#34D399')
+    expect(barColor(wrapper.vm, 1)).toBe('#34D399')
+    expect(wrapper.find('[data-filled="1"] .text-ok').exists()).toBe(true)
+    expect(barColor(wrapper.vm, 2)).toBe('#71717A')
+    expect(barColor(wrapper.vm, 3)).toBe('#A1A1AA')
+
+    setTheme('dark')
+    const dark = trackColor(wrapper.vm, 0)
+    expectResolvedRgb(dark)
+    expect(dark.replace(/\s/g, '')).toBe(RANK_TRACK_DARK.replace(/\s/g, ''))
+    expect(dark.replace(/\s/g, '')).not.toBe(light.replace(/\s/g, ''))
+    expect(barColor(wrapper.vm, 0)).toBe('#34D399')
+
+    document.documentElement.style.setProperty('--c-elevated', '210 210 214')
+    setTheme('light')
+    const parsed = trackColor(wrapper.vm, 0)
+    expectResolvedRgb(parsed)
+    expect(parsed.replace(/\s/g, '')).toBe('rgb(210,210,214)')
+    expect(parsed).not.toContain('var(')
+
+    document.documentElement.style.removeProperty('--c-elevated')
     wrapper.unmount()
   })
 })

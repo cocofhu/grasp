@@ -9,7 +9,7 @@ import TokenDonutChart from './TokenDonutChart.vue'
 import TokenWorkflowRank from './TokenWorkflowRank.vue'
 import { TOKEN_SOURCE_COLORS } from './tokenStatsShared'
 import { setTheme } from '@/lib/shared/theme'
-import { pieTooltipFormatter } from '@/components/charts/chartTheme'
+import { pieTooltipFormatter, RANK_TRACK_DARK, RANK_TRACK_LIGHT } from '@/components/charts/chartTheme'
 
 vi.mock('vue-echarts', () => ({
   default: {
@@ -444,6 +444,68 @@ describe('Token charts (g2.3/g2.4)', () => {
     expect(pmDs!.borderDash).toEqual([5, 4])
     expect(wfDs!.borderDash).toBeUndefined()
     expect(String(pmDs!.backgroundColor)).not.toMatch(/245,\s*158,\s*11/)
+    wrapper.unmount()
+  })
+})
+
+describe('TokenWorkflowRank track color (g1.1/g1.2/g2.1)', () => {
+  const workflows = [
+    { workflowId: 'a', name: 'approve-main', total: 1_020_000, kind: 'workflow' as const },
+    { name: 'other', total: 20_000, other: true, kind: 'other' as const },
+  ]
+
+  function rowOption(vm: unknown, idx: number) {
+    const opts = (
+      vm as {
+        rowOptions: {
+          series: {
+            backgroundStyle?: { color?: string }
+            itemStyle?: { color?: { colorStops?: { color: string }[] } }
+          }[]
+        }[]
+      }
+    ).rowOptions
+    return opts[idx]!.series[0]!
+  }
+
+  it('backgroundStyle is theme rgb without var(); purple and other gradients stay (g2.2)', () => {
+    document.documentElement.style.removeProperty('--c-elevated')
+    document.documentElement.classList.remove('light')
+    setTheme('light')
+
+    const wrapper = mount(TokenWorkflowRank, {
+      props: { workflows },
+      global: { plugins: [i18n()] },
+    })
+
+    const light = String(rowOption(wrapper.vm, 0).backgroundStyle?.color)
+    expect(light).toMatch(/^rgb\(\d+,\s*\d+,\s*\d+\)$/)
+    expect(light).not.toContain('var(')
+    expect(light.replace(/\s/g, '')).toBe(RANK_TRACK_LIGHT.replace(/\s/g, ''))
+    expect(String(rowOption(wrapper.vm, 1).backgroundStyle?.color).replace(/\s/g, '')).toBe(
+      light.replace(/\s/g, ''),
+    )
+    expect(rowOption(wrapper.vm, 0).itemStyle?.color?.colorStops?.map((s) => s.color)).toEqual([
+      '#6d5cff',
+      '#9b8cff',
+    ])
+    expect(rowOption(wrapper.vm, 1).itemStyle?.color?.colorStops?.map((s) => s.color)).toEqual([
+      '#94a3b8',
+      '#cbd5e1',
+    ])
+
+    setTheme('dark')
+    const dark = String(rowOption(wrapper.vm, 0).backgroundStyle?.color)
+    expect(dark).toMatch(/^rgb\(\d+,\s*\d+,\s*\d+\)$/)
+    expect(dark).not.toContain('var(')
+    expect(dark.replace(/\s/g, '')).toBe(RANK_TRACK_DARK.replace(/\s/g, ''))
+    expect(dark.replace(/\s/g, '')).not.toBe(light.replace(/\s/g, ''))
+    expect(rowOption(wrapper.vm, 0).itemStyle?.color?.colorStops?.map((s) => s.color)).toEqual([
+      '#6d5cff',
+      '#9b8cff',
+    ])
+
+    document.documentElement.style.removeProperty('--c-elevated')
     wrapper.unmount()
   })
 })
