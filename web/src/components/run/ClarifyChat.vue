@@ -235,7 +235,12 @@ const {
 </script>
 
 <template>
-  <div class="flex h-full flex-col" data-review-composer>
+  <!--
+    Multi-root (image preview sibling): parent class fallthrough is ignored.
+    Bake min-h-0 flex-1 so page-control status + this column share shell height
+    and shrink-0 confirm footer is not clipped (plan g1.3).
+  -->
+  <div class="flex h-full min-h-0 flex-1 flex-col" data-review-composer>
     <div class="relative flex min-h-0 flex-1 flex-col">
     <div
       ref="scroller"

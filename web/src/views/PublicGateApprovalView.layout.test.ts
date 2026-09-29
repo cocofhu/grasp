@@ -92,6 +92,10 @@ describe('PublicGateApproval height chain to clarify-scroller (g1.2 / g2)', () =
     expect(chatSrc).toMatch(
       /class="shrink-0 border-t border-line p-3" data-testid="clarify-cold-actions"/,
     )
+    // Multi-root: fallthrough class is ignored — root must bake min-h-0 flex-1.
+    expect(chatSrc).toMatch(
+      /class="flex h-full min-h-0 flex-1 flex-col" data-review-composer/,
+    )
   })
 })
 
