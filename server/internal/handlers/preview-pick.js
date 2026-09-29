@@ -218,9 +218,11 @@
   var DEFAULT_MARGIN_X = 28;
   var box = { x: 0, y: DEFAULT_Y, w: DEFAULT_W, h: MIN_H };
   var drag = null;
-  // Artifact modal: near-viewport default; min 480×320; session-only geometry.
+  // Artifact modal: default 920×640 at top-left margin; min 480×320; session-only geometry.
   var ARTIFACT_MIN_W = 480;
   var ARTIFACT_MIN_H = 320;
+  var ARTIFACT_DEFAULT_W = 920;
+  var ARTIFACT_DEFAULT_H = 640;
   var ARTIFACT_MARGIN = 28;
   var artifactBox = null;
   var artifactDrag = null;
@@ -557,12 +559,11 @@
   }
 
   function artifactDefaultBox() {
-    var v = viewport();
     return clampArtifactBox({
       x: ARTIFACT_MARGIN,
       y: ARTIFACT_MARGIN,
-      w: Math.max(0, (v.vw || 0) - ARTIFACT_MARGIN * 2),
-      h: Math.max(0, (v.vh || 0) - ARTIFACT_MARGIN * 2),
+      w: ARTIFACT_DEFAULT_W,
+      h: ARTIFACT_DEFAULT_H,
     });
   }
 
