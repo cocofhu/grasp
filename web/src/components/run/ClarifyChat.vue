@@ -854,7 +854,8 @@ const {
         </template>
       </ComposerShell>
     </div>
-    <div v-else class="border-t border-line p-3">
+    <!-- Hot path: shrink-0 so confirm-flow stays inside fixed-height sidebar (plan g1.1). -->
+    <div v-else class="shrink-0 border-t border-line p-3" data-testid="clarify-hot-actions">
       <!-- pending-send queue panel (Demo / AgentChatTester): clarify + review -->
       <PendingSendQueuePanel
         :items="queued"
@@ -1001,9 +1002,10 @@ const {
         </template>
       </ComposerShell>
     </div>
+    <!-- Confirm error sits below the composer; shrink-0 keeps it from being clipped (plan g1.2). -->
     <div
       v-if="confirmError && !done"
-      class="flex items-center gap-1.5 border-t border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err"
+      class="flex shrink-0 items-center gap-1.5 border-t border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err"
       data-testid="clarify-confirm-error"
       role="alert"
     >
