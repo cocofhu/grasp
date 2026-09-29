@@ -45,6 +45,9 @@
         pick: '取点',
         picking: '取点中 · Esc 退出',
         added: '已添加到 Grasp 对话框',
+        artifact: '产物',
+        artifactTitle: '产物',
+        closeArtifact: '关闭产物',
         chat: '对话',
         chatTitle: 'Grasp · Agent 对话',
         needTicket: '需要从预览页跳转重新获得票据',
@@ -60,6 +63,9 @@
         pick: 'Pick',
         picking: 'Picking · Esc to stop',
         added: 'Added to the Grasp chat',
+        artifact: 'Artifact',
+        artifactTitle: 'Artifacts',
+        closeArtifact: 'Close artifacts',
         chat: 'Chat',
         chatTitle: 'Grasp · Agent chat',
         needTicket: 'Reopen from the preview page in Grasp to get a new ticket.',
@@ -83,6 +89,9 @@
   var drawer = null;
   var drawerOpen = false;
   var drawerReady = false;
+  // Artifact modal: separate iframe over the current preview page (not the chat drawer).
+  var artifactOpen = false;
+  var artifactFrame = null;
   // The drawer reported its session invalid, expired or revoked.
   var sessionDead = false;
   // Custom no-ticket bubble: open only while the gate is hovered or focused.
@@ -222,10 +231,24 @@
     'button:focus-visible{outline:2px solid #3b82f6;outline-offset:1px}' +
     '.toggle{background:#1f2937;font-weight:600}' +
     '.toggle[aria-pressed="true"]{background:#064e3b;color:#6ee7b7}' +
+    '.artifact{background:#1f2937;font-weight:600}' +
+    '.artifact[aria-expanded="true"]{background:#4338ca;color:#e0e7ff}' +
     '.chat{background:#312e81;color:#e0e7ff;font-weight:600}' +
     '.chat[aria-expanded="true"]{background:#4338ca}' +
     '.notice{margin-top:4px;color:#fbbf24}' +
     '.notice.ok{color:#6ee7b7}' +
+    '.mask{position:fixed;inset:0;z-index:2147483645;display:flex;align-items:center;justify-content:center;' +
+    'padding:28px;background:rgba(0,0,0,.45);box-sizing:border-box}' +
+    '.modal{width:min(920px,100%);height:min(640px,100%);display:flex;flex-direction:column;overflow:hidden;' +
+    'background:#f3f3f5;color:#18181b;border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.4);' +
+    'font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}' +
+    '.mhead{display:flex;align-items:center;gap:8px;height:40px;padding:0 10px 0 14px;flex:none;' +
+    'background:#fff;border-bottom:1px solid #e6e6ea}' +
+    '.mhead [data-role="artifact-title"]{flex:1;min-width:0;font-size:13px;font-weight:600}' +
+    '.mhead button{width:28px;height:28px;padding:0;display:grid;place-items:center;flex:none;' +
+    'border:0;border-radius:6px;background:transparent;color:#71717a;font-size:16px;line-height:1}' +
+    '.mhead button:hover{background:#f4f4f5}' +
+    '.modal iframe{flex:1;min-height:0;width:100%;border:0;background:#f3f3f5}' +
     '.drawer{position:fixed;z-index:2147483646;display:flex;flex-direction:column;overflow:hidden;' +
     'background:#0b0b0c;border-radius:22px;box-shadow:0 16px 40px rgba(0,0,0,.35);' +
     'font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e5e7eb}' +
@@ -256,8 +279,11 @@
     '.light button:hover{background:#f4f4f5}' +
     '.light .toggle{background:#f4f4f5}' +
     '.light .toggle[aria-pressed="true"]{background:#dcfce7;color:#15803d}' +
+    '.light .artifact{background:#f4f4f5}' +
+    '.light .artifact[aria-expanded="true"]{background:#dcdcfe;color:#4f46e5}' +
     '.light .chat{background:#eef0ff;color:#4f46e5}' +
     '.light .chat[aria-expanded="true"]{background:#dcdcfe}' +
+    '.mask.light .modal{background:#f3f3f5;color:#18181b}' +
     '.drawer.light{color:#18181b;background:#fff;box-shadow:0 16px 40px rgba(16,24,40,.12)}' +
     '.drawer.light .dhead button{border-color:#e7e7ea;background:transparent;color:#52525b}' +
     '.drawer.light iframe{background:#fafafb}' +
@@ -504,6 +530,12 @@
     var shadow = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
     shadow.innerHTML =
       '<style>' + BAR_CSS + '</style>' +
+      '<div class="mask" data-role="artifact-mask" hidden>' +
+      '<div class="modal" data-role="artifact-modal" role="dialog" aria-modal="true">' +
+      '<div class="mhead">' +
+      '<span data-role="artifact-title"></span>' +
+      '<button type="button" data-role="artifact-close" aria-label="">×</button>' +
+      '</div></div></div>' +
       '<div class="drawer" data-role="drawer" hidden>' +
       '<div class="dhead" data-role="drawer-head">' +
       '<span class="drag" data-role="drawer-grip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>' +
@@ -527,6 +559,7 @@
       '<span class="row" data-role="gate">' +
       '<span class="tip" data-role="ticket-tip" role="tooltip" id="grasp-ticket-tip" hidden></span>' +
       '<button type="button" class="toggle" data-role="toggle" aria-pressed="false"></button>' +
+      '<button type="button" class="artifact" data-role="artifact" aria-expanded="false"></button>' +
       '<button type="button" class="chat" data-role="chat" aria-expanded="false"></button>' +
       '</span>' +
       '</div>' +
@@ -538,6 +571,7 @@
       gate: shadow.querySelector('[data-role="gate"]'),
       tip: shadow.querySelector('[data-role="ticket-tip"]'),
       toggle: shadow.querySelector('[data-role="toggle"]'),
+      artifact: shadow.querySelector('[data-role="artifact"]'),
       chat: shadow.querySelector('[data-role="chat"]'),
       notice: shadow.querySelector('[data-role="notice"]'),
       drawer: shadow.querySelector('[data-role="drawer"]'),
@@ -545,6 +579,10 @@
       agent: shadow.querySelector('[data-role="agent"]'),
       agentText: shadow.querySelector('[data-role="agent-text"]'),
       agentStop: shadow.querySelector('[data-role="agent-stop"]'),
+      artifactMask: shadow.querySelector('[data-role="artifact-mask"]'),
+      artifactModal: shadow.querySelector('[data-role="artifact-modal"]'),
+      artifactTitle: shadow.querySelector('[data-role="artifact-title"]'),
+      artifactClose: shadow.querySelector('[data-role="artifact-close"]'),
     };
     ui.agentStop.addEventListener('click', function (ev) {
       ev.preventDefault();
@@ -554,6 +592,9 @@
     var titleEl = shadow.querySelector('[data-role="drawer-title"]');
     titleEl.textContent = T.brand;
     titleEl.title = T.brand;
+    ui.artifactTitle.textContent = T.artifactTitle;
+    ui.artifactClose.setAttribute('aria-label', T.closeArtifact);
+    ui.artifactClose.title = T.closeArtifact;
     var head = shadow.querySelector('[data-role="drawer-head"]');
     head.addEventListener('pointerdown', onHeadPointerDown);
     Array.prototype.forEach.call(shadow.querySelectorAll('.edge'), function (edge) {
@@ -566,6 +607,19 @@
       ev.preventDefault();
       ev.stopPropagation();
       setEnabled(!enabled);
+    });
+    ui.artifact.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      setArtifactOpen(!artifactOpen);
+    });
+    ui.artifactClose.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      setArtifactOpen(false);
+    });
+    ui.artifactMask.addEventListener('click', function (ev) {
+      if (ev.target === ui.artifactMask) setArtifactOpen(false);
     });
     ui.chat.addEventListener('click', function (ev) {
       ev.preventDefault();
@@ -638,6 +692,11 @@
     ui.agent.className = control.busy > 0 ? 'agent busy' : 'agent';
     ui.agentText.textContent = control.busy > 0 ? T.agentBusy : T.agentOn;
     ui.agentStop.textContent = T.stop;
+    ui.artifact.disabled = !ok || !drawerReady;
+    ui.artifact.textContent = T.artifact;
+    ui.artifact.title = ok && drawerReady ? T.artifactTitle : '';
+    ui.artifact.setAttribute('aria-expanded', artifactOpen ? 'true' : 'false');
+    ui.artifactMask.hidden = !artifactOpen;
     ui.chat.disabled = !ok;
     ui.chat.textContent = T.chat;
     ui.chat.title = ok ? T.chatTitle : '';
@@ -646,6 +705,7 @@
     var light = drawerTheme() === 'light';
     ui.drawer.className = light ? 'drawer light' : 'drawer';
     ui.bar.className = 'bar' + (light ? ' light' : '');
+    ui.artifactMask.className = light ? 'mask light' : 'mask';
     applyBox();
     ui.theme.innerHTML = light ? ICON_MOON : ICON_SUN;
     ui.theme.setAttribute('aria-label', light ? T.toDark : T.toLight);
@@ -690,6 +750,14 @@
     render();
   }
 
+  function setArtifactOpen(on) {
+    // Wait for the chat iframe to redeem the ticket so the artifact page can
+    // reuse the same localStorage session (tickets are one-shot).
+    artifactOpen = !!on && usable() && drawerReady;
+    if (artifactOpen) ensureArtifactFrame();
+    render();
+  }
+
   // ---- chat drawer ----
 
   function drawerTheme() {
@@ -697,10 +765,18 @@
   }
 
   function postTheme() {
-    if (!drawer || !drawer.frame.contentWindow) return;
-    try {
-      drawer.frame.contentWindow.postMessage({ type: EMBED_THEME, theme: drawerTheme() }, drawer.origin);
-    } catch (e) {}
+    if (!drawer) return;
+    var theme = drawerTheme();
+    if (drawer.frame && drawer.frame.contentWindow) {
+      try {
+        drawer.frame.contentWindow.postMessage({ type: EMBED_THEME, theme: theme }, drawer.origin);
+      } catch (e) {}
+    }
+    if (artifactFrame && artifactFrame.contentWindow) {
+      try {
+        artifactFrame.contentWindow.postMessage({ type: EMBED_THEME, theme: theme }, drawer.origin);
+      } catch (e) {}
+    }
   }
 
   function setDrawerTheme(t) {
@@ -787,6 +863,35 @@
     if (ticket) q.set('ticket', ticket);
     q.set('theme', e.theme === 'light' ? 'light' : 'dark');
     return src + '#' + q.toString();
+  }
+
+  function artifactsSrc(e) {
+    var src =
+      e.origin +
+      '/embed/runs/' +
+      encodeURIComponent(e.run) +
+      '/nodes/' +
+      encodeURIComponent(e.node) +
+      '/artifacts';
+    var q = new URLSearchParams();
+    q.set('theme', e.theme === 'light' ? 'light' : 'dark');
+    return src + '#' + q.toString();
+  }
+
+  function ensureArtifactFrame() {
+    if (!ui || !drawer) return;
+    if (!artifactFrame) {
+      artifactFrame = document.createElement('iframe');
+      artifactFrame.title = T.artifactTitle;
+      artifactFrame.setAttribute('referrerpolicy', 'no-referrer');
+      artifactFrame.setAttribute('allow', 'clipboard-write');
+      artifactFrame.src = artifactsSrc(drawer.embed);
+      ui.artifactModal.appendChild(artifactFrame);
+      return;
+    }
+    if (artifactFrame.parentNode !== ui.artifactModal) {
+      ui.artifactModal.appendChild(artifactFrame);
+    }
   }
 
   function attachDrawer() {
@@ -1099,6 +1204,7 @@
       setEnabled(false);
       setControl(false);
       setDrawerOpen(false);
+      setArtifactOpen(false);
     } else if (data.type === EMBED_CONTROL && typeof data.on === 'boolean') {
       setControl(data.on);
     } else if (data.type === EMBED_CMD) {

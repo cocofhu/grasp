@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>embed chat ready mock</title>
+  </head>
+  <body>
+    <p>mock chat</p>
+    <script>
+      parent.postMessage({ type: 'grasp-embed:ready' }, '*')
+    </script>
+  </body>
+</html>

@@ -21,6 +21,7 @@
     "platformRules": "Platform rules",
     "login": "Login",
     "publicGateApproval": "One-time external decision",
-    "embedChat": "Preview chat"
+    "embedChat": "Preview chat",
+    "embedArtifacts": "Preview artifacts"
   }
 }

@@ -3841,6 +3841,13 @@
           "offline": "Page control: not connected"
         }
       }
+    },
+    "embedArtifacts": {
+      "connecting": "Loading artifacts…",
+      "expiredTitle": "This artifact preview has disconnected",
+      "expiredHint": "Reopen the preview from Grasp to continue browsing artifacts.",
+      "networkError": "Could not reach Grasp. Check the connection and try again.",
+      "loadError": "Could not load artifacts. Try again shortly."
     }
   }
 }

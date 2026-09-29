@@ -1,9 +1,12 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { WebSocketServer } from 'ws'
+
+const previewPickJs = fileURLToPath(new URL('./public/preview-pick.js', import.meta.url))
 
 const mockPick = {
   selector: '#demo-title',
@@ -111,6 +114,11 @@ export default defineConfig({
       name: 'e2e-preview-mocks',
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
+          if (req.url?.split('?')[0] === '/preview-pick.js') {
+            res.setHeader('Content-Type', 'application/javascript; charset=utf-8')
+            res.end(readFileSync(previewPickJs))
+            return
+          }
           if (req.url?.startsWith('/__e2e/opts')) {
             try {
               const u = new URL(req.url, 'http://e2e.local')

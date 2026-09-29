@@ -37,6 +37,11 @@ export function embedChatPath(runId: string, nodeId: string): string {
   return `/embed/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/chat`
 }
 
+/** Artifact modal page path; reuses the same drawer session as chat. */
+export function embedArtifactsPath(runId: string, nodeId: string): string {
+  return `/embed/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/artifacts`
+}
+
 /** Direct preview URL carrying a drawer ticket for the in-page pick script (preview-pick.js). */
 export function directPreviewEmbedUrl(directUrl: string, t: EmbedTicket, theme: ThemeName): string {
   const base = directUrl.split('#')[0]

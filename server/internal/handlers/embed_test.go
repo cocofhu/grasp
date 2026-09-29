@@ -134,6 +134,13 @@ func TestEmbedSessionFlow(t *testing.T) {
 	if prev["status"] != models.ShareLinkStateActive || prev["kind"] != models.ShareLinkKindReview {
 		t.Fatalf("preview with drawer token: %+v", prev)
 	}
+	arts := parseJSON(t, hn.doPublic(http.MethodGet, "/public/gate-approvals/artifacts", nil, map[string]string{headerShareToken: token}))
+	if arts["status"] != models.ShareLinkStateActive {
+		t.Fatalf("artifacts with drawer token: %+v", arts)
+	}
+	if _, ok := arts["artifacts"]; !ok {
+		t.Fatalf("drawer token must list artifacts: %+v", arts)
+	}
 	if w := hn.doEmbed(http.MethodGet, "/api/runs/run-emb", nil, bearerHeader(token)); w.Code != http.StatusUnauthorized {
 		t.Fatalf("api with drawer token: %d", w.Code)
 	}
@@ -156,17 +163,22 @@ func TestEmbedChatPageFrameAncestors(t *testing.T) {
 	seedAppPreviewReview(t, hn, "run-emb-page", "ap1")
 	seedDirectPreview(t, hn, "run-emb-page", "ap1")
 
-	w := hn.doEmbed(http.MethodGet, "/embed/runs/run-emb-page/nodes/ap1/chat", nil, nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("page: %d", w.Code)
+	for _, path := range []string{
+		"/embed/runs/run-emb-page/nodes/ap1/chat",
+		"/embed/runs/run-emb-page/nodes/ap1/artifacts",
+	} {
+		w := hn.doEmbed(http.MethodGet, path, nil, nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s page: %d", path, w.Code)
+		}
+		if csp := w.Header().Get("Content-Security-Policy"); csp != "frame-ancestors http://127.0.0.1:18080" {
+			t.Fatalf("%s csp: %q", path, csp)
+		}
+		if w.Header().Get("X-Frame-Options") != "" {
+			t.Fatalf("%s must not set X-Frame-Options", path)
+		}
 	}
-	if csp := w.Header().Get("Content-Security-Policy"); csp != "frame-ancestors http://127.0.0.1:18080" {
-		t.Fatalf("csp: %q", csp)
-	}
-	if w.Header().Get("X-Frame-Options") != "" {
-		t.Fatal("drawer page must not set X-Frame-Options")
-	}
-	w = hn.doEmbed(http.MethodGet, "/embed/runs/run-emb-page/nodes/nope/chat", nil, nil)
+	w := hn.doEmbed(http.MethodGet, "/embed/runs/run-emb-page/nodes/nope/chat", nil, nil)
 	if csp := w.Header().Get("Content-Security-Policy"); csp != "frame-ancestors 'none'" {
 		t.Fatalf("unknown node csp: %q", csp)
 	}

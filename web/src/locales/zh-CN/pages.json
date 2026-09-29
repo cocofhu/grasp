@@ -3841,6 +3841,13 @@
           "offline": "页面操作：未连接"
         }
       }
+    },
+    "embedArtifacts": {
+      "connecting": "正在加载产物…",
+      "expiredTitle": "产物预览已断开",
+      "expiredHint": "请从 Grasp 重新打开预览，以继续查看产物。",
+      "networkError": "无法连接 Grasp，请检查网络后重试。",
+      "loadError": "产物加载失败，请稍后重试。"
     }
   }
 }

@@ -86,15 +86,17 @@ func (h *Handlers) PublicGateArtifactContent(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
-// publicReviewShareLookup validates a review share token for artifact routes.
-// human_gate and other kinds are rejected without leaking artifact scope.
+// publicReviewShareLookup validates a review share or drawer bearer token for
+// artifact routes. human_gate and other kinds are rejected without leaking
+// artifact scope. Drawer tokens are read-only here (decide / ticket keep
+// ValidTokenShape).
 func (h *Handlers) publicReviewShareLookup(c *gin.Context) (*gateshare.LookupResult, string, bool) {
 	if h.GateShare == nil || h.Eng == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "unavailable"})
 		return nil, "", false
 	}
 	token := strings.TrimSpace(c.GetHeader(headerShareToken))
-	if token == "" || !gateshare.ValidTokenShape(token) {
+	if token == "" || !gateshare.ValidCredentialShape(token) {
 		c.JSON(http.StatusOK, gin.H{"status": "invalid"})
 		return nil, "", false
 	}
