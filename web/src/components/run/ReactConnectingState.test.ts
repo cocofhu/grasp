@@ -29,7 +29,10 @@ function mountSidebar(locale: 'zh-CN' | 'en') {
   })
 }
 
-function mountStage(locale: 'zh-CN' | 'en' = 'zh-CN') {
+function mountStage(
+  locale: 'zh-CN' | 'en' = 'zh-CN',
+  props: { sandboxPhase?: string | null } = {},
+) {
   const i18n = locale === 'zh-CN'
     ? createI18n({
         legacy: false,
@@ -42,7 +45,7 @@ function mountStage(locale: 'zh-CN' | 'en' = 'zh-CN') {
         messages: { en: { ...enCommon, ...enPages } },
       })
   return mount(ReactConnectingState, {
-    props: { mode: 'stage' },
+    props: { mode: 'stage', ...props },
     global: { plugins: [i18n], stubs: { Icon: true } },
   })
 }
@@ -127,7 +130,8 @@ describe('ReactConnectingState', () => {
     expect(wrapper.text()).not.toContain('正在启动 Agent…')
   })
 
-  it('stage chrome only shows pipeline artifacts skeleton (g1.2)', () => {
+  // g1.1 / g1.2 / g2.1 / g3.2 / g4.1 / g4.2 — stage centered status (no skeleton)
+  it('stage chrome shows centered spinner and two-line copy without placeholders (g1.1 g1.2 g2.1 g3.2 g4.1 g4.2)', () => {
     const wrapper = mountStage('zh-CN')
     expect(wrapper.get('[data-testid="react-connecting-stage"]').attributes('aria-busy')).toBe('true')
     const pipeline = wrapper.get('[data-testid="react-connecting-tab-pipeline"]')
@@ -137,17 +141,73 @@ describe('ReactConnectingState', () => {
     expect(pipeline.text()).toContain('流水线产物')
     expect(wrapper.find('[data-testid="react-connecting-tab-preview"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="hard-load-layer"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="react-connecting-pipeline-skeleton"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="react-connecting-pipeline-skeleton"] .animate-pulse').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="react-connecting-pipeline-skeleton"]').exists()).toBe(false)
+    expect(wrapper.find('.animate-pulse').exists()).toBe(false)
+
+    const spinner = wrapper.get('[data-testid="react-connecting-stage-spinner"]')
+    expect(spinner.attributes('name')).toBe('spinner')
+    expect(spinner.attributes('size')).toBe('28')
+    expect(spinner.classes()).toContain('animate-spin')
+    expect(spinner.classes()).toContain('text-accent')
+
+    expect(wrapper.get('[data-testid="react-connecting-stage-title"]').text()).toBe('正在准备会话')
+    const hint = wrapper.get('[data-testid="react-connecting-stage-hint"]')
+    expect(hint.text()).toBe('产物会在会话就绪后出现在这里')
+    expect(hint.attributes('role')).toBe('status')
     expect(wrapper.text()).not.toContain('正在连接 Agent…')
   })
 
-  it('stage chrome English only shows Pipeline artifacts (g1.2)', () => {
-    const wrapper = mountStage('en')
-    expect(wrapper.get('[data-testid="react-connecting-tab-pipeline"]').attributes('aria-selected')).toBe('true')
-    expect(wrapper.get('[data-testid="react-connecting-tab-pipeline"]').text()).toContain('Pipeline artifacts')
-    expect(wrapper.find('[data-testid="react-connecting-tab-preview"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="hard-load-layer"]').exists()).toBe(false)
+  // g2.2 — pulling only swaps title
+  it('stage pulling swaps title only and keeps shared hint (g2.2)', () => {
+    const wrapper = mountStage('zh-CN', { sandboxPhase: 'pulling' })
+    expect(wrapper.get('[data-testid="react-connecting-stage-title"]').text()).toBe('正在拉取镜像')
+    expect(wrapper.get('[data-testid="react-connecting-stage-hint"]').text()).toBe(
+      '产物会在会话就绪后出现在这里',
+    )
+    expect(wrapper.text()).not.toContain('正在启动 Agent…')
+    expect(wrapper.text()).not.toContain('正在连接 Agent…')
+    expect(wrapper.text()).not.toContain('正在整理第一轮问题…')
+  })
+
+  it('stage chrome English shows Preparing / Pulling titles (g2.1 g2.2)', () => {
+    const ready = mountStage('en')
+    expect(ready.get('[data-testid="react-connecting-tab-pipeline"]').attributes('aria-selected')).toBe('true')
+    expect(ready.get('[data-testid="react-connecting-tab-pipeline"]').text()).toContain('Pipeline artifacts')
+    expect(ready.find('[data-testid="react-connecting-tab-preview"]').exists()).toBe(false)
+    expect(ready.find('[data-testid="hard-load-layer"]').exists()).toBe(false)
+    expect(ready.get('[data-testid="react-connecting-stage-title"]').text()).toBe('Preparing the session')
+    expect(ready.get('[data-testid="react-connecting-stage-hint"]').text()).toBe(
+      'Artifacts will appear here when the session is ready',
+    )
+
+    const pulling = mountStage('en', { sandboxPhase: 'pulling' })
+    expect(pulling.get('[data-testid="react-connecting-stage-title"]').text()).toBe('Pulling the image')
+    expect(pulling.get('[data-testid="react-connecting-stage-hint"]').text()).toBe(
+      'Artifacts will appear here when the session is ready',
+    )
+  })
+
+  // g3.1 — reduced motion stops stage spinner rotation
+  it('stage spinner does not rotate when reduced motion is preferred (g3.1)', async () => {
+    vi.spyOn(window, 'matchMedia').mockReturnValue({
+      matches: true,
+      media: '(prefers-reduced-motion: reduce)',
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })
+    const wrapper = mountStage('zh-CN')
+    await nextTick()
+    const spinner = wrapper.get('[data-testid="react-connecting-stage-spinner"]')
+    expect(spinner.classes()).not.toContain('animate-spin')
+    expect(wrapper.get('[data-testid="react-connecting-stage-title"]').text()).toBe('正在准备会话')
+    expect(wrapper.get('[data-testid="react-connecting-stage-hint"]').text()).toBe(
+      '产物会在会话就绪后出现在这里',
+    )
+    expect(wrapper.get('[data-testid="react-connecting-stage"]').attributes('aria-busy')).toBe('true')
   })
 
   it('sidebar connecting stays ClarifyBootLoader without preview tabs (f6)', () => {
