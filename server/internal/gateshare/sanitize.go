@@ -21,6 +21,8 @@ const (
 )
 
 // PreviewTurn is a leak-free conversation turn for the public workbench.
+// Questions and Forms are omitted when empty so turns without structured
+// prompts keep the same JSON (and sparse-poll hash) as before they existed.
 type PreviewTurn struct {
 	Role        string              `json:"role"`
 	Text        string              `json:"text,omitempty"`
@@ -28,6 +30,41 @@ type PreviewTurn struct {
 	Interrupted bool                `json:"interrupted,omitempty"`
 	Images      []PreviewImage      `json:"images,omitempty"`
 	Annotations []PreviewAnnotation `json:"annotations,omitempty"`
+	Questions   []PreviewQuestion   `json:"questions,omitempty"`
+	Forms       []PreviewForm       `json:"forms,omitempty"`
+}
+
+// PreviewQuestion is a leak-free ask_question card (id, prompt, options).
+type PreviewQuestion struct {
+	ID            string          `json:"id"`
+	Prompt        string          `json:"prompt"`
+	Options       []PreviewOption `json:"options"`
+	AllowMultiple bool            `json:"allowMultiple,omitempty"`
+}
+
+// PreviewOption is one choice. DemoHtml follows the public visual-page rules.
+type PreviewOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Recommended bool   `json:"recommended,omitempty"`
+	DemoHtml    string `json:"demoHtml,omitempty"`
+}
+
+// PreviewForm is a leak-free ask_form card.
+type PreviewForm struct {
+	Title  string             `json:"title,omitempty"`
+	Fields []PreviewFormField `json:"fields"`
+}
+
+// PreviewFormField is one plaintext input. Type stays text|url.
+type PreviewFormField struct {
+	Name        string `json:"name"`
+	Label       string `json:"label"`
+	Type        string `json:"type,omitempty"`
+	Placeholder string `json:"placeholder,omitempty"`
+	Value       string `json:"value,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+	Why         string `json:"why,omitempty"`
 }
 
 // PreviewImage is a leak-free image hint: mime, optional name, and an opaque
@@ -67,8 +104,10 @@ type PreviewActiveItem struct {
 }
 
 var (
-	leakyURLRe = regexp.MustCompile(`(?i)(?:blob:[^\s"'<>]*|/api/[^\s"'<>]*|/preview/[^\s"'<>]*|/sandbox[^\s"'<>]*|/v1/[^\s"'<>]*|https?://(?:localhost|127\.0\.0\.1|0\.0\.0\.0|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(?::\d+)?[^\s"'<>]*)`)
+	leakyURLRe     = regexp.MustCompile(`(?i)(?:blob:[^\s"'<>]*|/api/[^\s"'<>]*|/preview/[^\s"'<>]*|/sandbox[^\s"'<>]*|/v1/[^\s"'<>]*|https?://(?:localhost|127\.0\.0\.1|0\.0\.0\.0|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(?::\d+)?[^\s"'<>]*)`)
 	internalHostRe = regexp.MustCompile(`(?i)\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0)\b`)
+	// run IDs are "run-" plus the first 8 hex chars of a UUID (engine.StartRun).
+	runIDRe = regexp.MustCompile(`(?i)\brun-[0-9a-f]{8}\b`)
 )
 
 // SanitizeDescription redacts internal URLs / blob addresses from gate body text.
@@ -226,6 +265,121 @@ func sanitizeJSONValue(v any, depth int) any {
 	}
 }
 
+// sanitizeQuestionText redacts intranet addresses, blobs, and run IDs from
+// choice/form copy. It does not change SanitizeDescription, so ordinary turn
+// text keeps the previous rules.
+func sanitizeQuestionText(s string) string {
+	s = SanitizeDescription(s)
+	if s == "" {
+		return ""
+	}
+	return runIDRe.ReplaceAllString(s, "[redacted]")
+}
+
+// sanitizeDemoHTML applies the public visual-page size cap and address rules,
+// then strips run IDs. External stylesheet links stay.
+func sanitizeDemoHTML(html string) string {
+	html = SanitizeVisualHTML(html)
+	if html == "" {
+		return ""
+	}
+	return runIDRe.ReplaceAllString(html, "[redacted]")
+}
+
+func sanitizeQuestions(qs []models.ReactQuestion) []PreviewQuestion {
+	if len(qs) == 0 {
+		return nil
+	}
+	out := make([]PreviewQuestion, 0, len(qs))
+	for _, q := range qs {
+		opts := make([]PreviewOption, 0, len(q.Options))
+		for _, o := range q.Options {
+			label := sanitizeQuestionText(o.Label)
+			demo := sanitizeDemoHTML(o.DemoHtml)
+			id := strings.TrimSpace(o.ID)
+			if id == "" && label == "" && demo == "" {
+				continue
+			}
+			opt := PreviewOption{ID: id, Label: label, Recommended: o.Recommended}
+			if demo != "" {
+				opt.DemoHtml = demo
+			}
+			opts = append(opts, opt)
+		}
+		prompt := sanitizeQuestionText(q.Prompt)
+		id := strings.TrimSpace(q.ID)
+		if id == "" && prompt == "" && len(opts) == 0 {
+			continue
+		}
+		if len(opts) == 0 {
+			opts = []PreviewOption{}
+		}
+		out = append(out, PreviewQuestion{
+			ID:            id,
+			Prompt:        prompt,
+			Options:       opts,
+			AllowMultiple: q.AllowMultiple,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func sanitizeFormFieldType(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "url":
+		return "url"
+	case "text":
+		return "text"
+	default:
+		return ""
+	}
+}
+
+func sanitizeForms(forms []models.ReactForm) []PreviewForm {
+	if len(forms) == 0 {
+		return nil
+	}
+	out := make([]PreviewForm, 0, len(forms))
+	for _, f := range forms {
+		fields := make([]PreviewFormField, 0, len(f.Fields))
+		for _, field := range f.Fields {
+			name := sanitizeQuestionText(field.Name)
+			label := sanitizeQuestionText(field.Label)
+			placeholder := sanitizeQuestionText(field.Placeholder)
+			value := sanitizeQuestionText(field.Value)
+			why := sanitizeQuestionText(field.Why)
+			if name == "" && label == "" && placeholder == "" && value == "" && why == "" {
+				continue
+			}
+			pf := PreviewFormField{
+				Name:        name,
+				Label:       label,
+				Type:        sanitizeFormFieldType(field.Type),
+				Placeholder: placeholder,
+				Value:       value,
+				Required:    field.Required,
+				Why:         why,
+			}
+			fields = append(fields, pf)
+		}
+		title := sanitizeQuestionText(f.Title)
+		if title == "" && len(fields) == 0 {
+			continue
+		}
+		if len(fields) == 0 {
+			fields = []PreviewFormField{}
+		}
+		out = append(out, PreviewForm{Title: title, Fields: fields})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // SanitizeTurns redacts conversation history for the public ReAct sidebar.
 // Image bytes / blob URLs are replaced with opaque dialogue-scoped indexes;
 // text and annotation chips are size-capped. Image-only human turns are kept.
@@ -257,7 +411,14 @@ func SanitizeTurnsFrom(msgs []models.ReactMessage, imageBase int) ([]PreviewTurn
 		if imgs := sanitizePromptImages(m.Images, &idx); len(imgs) > 0 {
 			turn.Images = imgs
 		}
-		if turn.Text == "" && len(turn.Annotations) == 0 && len(turn.Images) == 0 && !turn.Interrupted {
+		if qs := sanitizeQuestions(m.Questions); len(qs) > 0 {
+			turn.Questions = qs
+		}
+		if forms := sanitizeForms(m.Forms); len(forms) > 0 {
+			turn.Forms = forms
+		}
+		// Keep a text-less turn when it still carries a choice card or form.
+		if turn.Text == "" && len(turn.Annotations) == 0 && len(turn.Images) == 0 && !turn.Interrupted && len(turn.Questions) == 0 && len(turn.Forms) == 0 {
 			continue
 		}
 		out = append(out, turn)
