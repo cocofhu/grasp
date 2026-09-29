@@ -276,12 +276,13 @@ describe('Run detail panel shells (Demo entry assembly)', () => {
     expect(clarify.find('[data-testid="react-connecting-stage"]').exists()).toBe(true)
     expect(clarify.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(true)
     expect(clarify.find('[data-testid="react-connecting-confirm"]').exists()).toBe(false)
-    // plan g2.2: connecting stage only shows pipeline artifacts skeleton (no preview chrome Tab)
+    // connecting stage: pipeline tab + centered status (no preview chrome Tab / skeleton)
     expect(clarify.get('[data-testid="react-connecting-tab-pipeline"]').text()).toContain('流水线产物')
     expect(clarify.get('[data-testid="react-connecting-tab-pipeline"]').attributes('aria-selected')).toBe('true')
     expect(clarify.find('[data-testid="react-connecting-tab-preview"]').exists()).toBe(false)
     expect(clarify.find('[data-testid="hard-load-layer"]').exists()).toBe(false)
-    expect(clarify.get('[data-testid="react-connecting-pipeline-skeleton"]').exists()).toBe(true)
+    expect(clarify.get('[data-testid="react-connecting-stage-body"]').exists()).toBe(true)
+    expect(clarify.get('[data-testid="react-connecting-stage-title"]').text()).toBe('正在准备会话')
 
     const review = mount(RunReviewPanel, {
       props: {
@@ -304,6 +305,7 @@ describe('Run detail panel shells (Demo entry assembly)', () => {
     expect((review.get('[data-testid="react-connecting-confirm"]').element as HTMLButtonElement).disabled).toBe(true)
     expect(review.find('[data-testid="react-connecting-tab-preview"]').exists()).toBe(false)
     expect(review.find('[data-testid="hard-load-layer"]').exists()).toBe(false)
-    expect(review.get('[data-testid="react-connecting-pipeline-skeleton"]').exists()).toBe(true)
+    expect(review.get('[data-testid="react-connecting-stage-body"]').exists()).toBe(true)
+    expect(review.get('[data-testid="react-connecting-stage-title"]').text()).toBe('正在准备会话')
   })
 })

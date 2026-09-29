@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import ClarifyBootLoader from './ClarifyBootLoader.vue'
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     mode?: 'stage' | 'sidebar'
     showConfirm?: boolean
@@ -18,6 +19,22 @@ withDefaults(
 )
 
 const { t } = useI18n()
+
+const isPulling = computed(() => (props.sandboxPhase || '').trim().toLowerCase() === 'pulling')
+
+const stageTitle = computed(() =>
+  isPulling.value
+    ? t('pages.clarify.connectingStagePullingTitle')
+    : t('pages.clarify.connectingStageTitle'),
+)
+
+/** Prefer JS gate so unit tests can assert spinner stops under matchMedia reduce. */
+const reduceMotion = ref(false)
+onMounted(() => {
+  reduceMotion.value = typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+})
 </script>
 
 <template>
@@ -43,15 +60,30 @@ const { t } = useI18n()
       </button>
     </div>
     <div
-      class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-5 text-center"
-      data-testid="react-connecting-pipeline-skeleton"
+      class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 py-7 text-center"
+      data-testid="react-connecting-stage-body"
     >
-      <div class="w-full max-w-[420px] space-y-2" aria-hidden="true">
-        <div class="h-28 animate-pulse rounded-md bg-elevated" />
-        <div class="h-2.5 w-4/5 animate-pulse rounded bg-elevated" />
-        <div class="h-2.5 w-1/2 animate-pulse rounded bg-elevated" />
-      </div>
-      <p class="text-[11px] text-txt3">{{ t('pages.clarify.connectingStageHint') }}</p>
+      <Icon
+        name="spinner"
+        :size="28"
+        class="text-accent"
+        :class="reduceMotion ? '' : 'animate-spin'"
+        aria-hidden="true"
+        data-testid="react-connecting-stage-spinner"
+      />
+      <p
+        class="mt-1.5 text-[13px] text-txt2"
+        data-testid="react-connecting-stage-title"
+      >
+        {{ stageTitle }}
+      </p>
+      <p
+        class="m-0 max-w-[260px] text-[12px] leading-[1.55] text-txt3"
+        role="status"
+        data-testid="react-connecting-stage-hint"
+      >
+        {{ t('pages.clarify.connectingStageHint') }}
+      </p>
     </div>
   </div>
 
