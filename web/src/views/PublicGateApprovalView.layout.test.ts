@@ -85,7 +85,17 @@ describe('PublicGateApproval height chain to clarify-scroller (g1.2 / g2)', () =
     expect(scrollerIdx).toBeGreaterThanOrEqual(0)
     const scrollerBlock = chatSrc.slice(Math.max(0, scrollerIdx - 160), scrollerIdx + 40)
     expect(scrollerBlock).toMatch(/\boverflow-y-auto\b/)
-    expect(chatSrc).toMatch(/border-t border-line p-3/)
+    // Hot + cold footers both refuse shrink so confirm-flow is not clipped (plan g1.1).
+    expect(chatSrc).toMatch(
+      /class="shrink-0 border-t border-line p-3" data-testid="clarify-hot-actions"/,
+    )
+    expect(chatSrc).toMatch(
+      /class="shrink-0 border-t border-line p-3" data-testid="clarify-cold-actions"/,
+    )
+    // Multi-root: fallthrough class is ignored — root must bake min-h-0 flex-1.
+    expect(chatSrc).toMatch(
+      /class="flex h-full min-h-0 flex-1 flex-col" data-review-composer/,
+    )
   })
 })
 
