@@ -37,17 +37,24 @@ type BridgeState struct {
 	// the bridge may still be running a turn this client gave up on. Cleared
 	// as soon as the bridge reports it is idle.
 	Desynced bool
+	// LastDoneOpID is the last turn this client saw finish (prompt_done).
+	// BridgeState fills it so callers can tell a lagging echo of that turn
+	// from a different op the bridge still reports. Not a bridge frame field.
+	LastDoneOpID string
 }
 
 // BridgeState returns the latest mirrored queue_state. A running turn this
 // client already saw finish is reported idle: the bridge sends prompt_done
-// before the matching queue_state, so the mirror briefly lags.
+// before the matching queue_state, so the mirror briefly lags. Desync left
+// over from that same op is cleared with it; a different op stays.
 func (c *ACPClient) BridgeState() BridgeState {
 	c.stateMu.Lock()
 	st := c.bridge
 	c.stateMu.Unlock()
-	if st.Busy && st.Waiting == 0 && st.RunningOpID != "" && st.RunningOpID == loadOpID(&c.lastDoneOpID) {
+	st.LastDoneOpID = loadOpID(&c.lastDoneOpID)
+	if st.Waiting == 0 && st.RunningOpID != "" && st.RunningOpID == st.LastDoneOpID {
 		st.Busy = false
+		st.Desynced = false
 		st.RunningOpID = ""
 	}
 	return st

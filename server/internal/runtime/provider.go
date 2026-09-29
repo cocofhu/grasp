@@ -209,6 +209,9 @@ type ReactTurn struct {
 	// Handoffs are narrations sealed before a same-turn continuation. They are
 	// persisted as earlier agent rows; Msg is only the latest segment.
 	Handoffs []string
+	// OpID is the sandbox turn id of this reply, persisted on the agent
+	// message so a later refresh can match it to the bridge.
+	OpID string
 }
 
 // ExecProvider runs the two user-defined agent node kinds.

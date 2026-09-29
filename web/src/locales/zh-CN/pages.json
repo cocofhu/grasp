@@ -2849,7 +2849,7 @@
       "confirmFlowOverlaySub": "进入下一节点",
       "sandboxBusy": "沙箱中仍有未结束的 Agent 回合，确认会排在它后面。请先中止该回合再确认。",
       "abortAndConfirm": "中止当前回合并确认",
-      "sandboxOrphanBanner": "沙箱中仍有回合在运行{op}。平台已把它视为中断，但沙箱还没结束。",
+      "sandboxOrphanBanner": "沙箱中还有一个平台不再跟踪的回合{op}，沙箱还没结束。",
       "sandboxOrphanCancel": "中止沙箱回合",
       "validating": "校验中…",
       "demoEnlarge": "放大",

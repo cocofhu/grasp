@@ -267,6 +267,60 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
+  it('plan g2.1: refresh of a completed turn hides the sandbox interrupt banner', async () => {
+    const wrapper = mountChat({
+      turns: [
+        { role: 'human', text: '继续', at: '1' },
+        { role: 'agent', text: '最新回复已落盘', at: '2', opId: 'g-00fccbf7-0f2' },
+      ],
+    })
+    const vm = wrapper.vm as unknown as { applyReviewFrame: (f: Record<string, unknown>) => void }
+    vm.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: true,
+      sandboxDesynced: true,
+      sandboxRunningOpId: 'g-00fccbf7-0f2',
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="clarify-sandbox-orphan"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('已完成')
+    expect(wrapper.text()).toContain('最新回复已落盘')
+    expect(wrapper.text()).not.toContain('平台已把它视为中断')
+    wrapper.unmount()
+  })
+
+  it('plan g2.2: a different unfinished turn keeps abort without rewriting history', async () => {
+    const wrapper = mountChat({
+      reviewMode: true,
+      turns: [
+        { role: 'human', text: '继续', at: '1' },
+        { role: 'agent', text: '历史已完成', at: '2', opId: 'g-done' },
+      ],
+    })
+    const vm = wrapper.vm as unknown as { applyReviewFrame: (f: Record<string, unknown>) => void }
+    vm.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: true,
+      sandboxRunningOpId: 'g-other',
+    })
+    await flushPromises()
+    const banner = wrapper.find('[data-testid="clarify-sandbox-orphan"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('g-other')
+    expect(banner.text()).toContain('不再跟踪')
+    expect(banner.text()).not.toContain('视为中断')
+    expect(wrapper.find('[data-testid="clarify-sandbox-orphan-cancel"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('已完成')
+    expect(wrapper.text()).toContain('历史已完成')
+    wrapper.unmount()
+  })
+
   it('review mode: orphan banner cancel emits cancel while FIFO is idle', async () => {
     const wrapper = mountChat({ reviewMode: true })
     const vm = wrapper.vm as unknown as { applyReviewFrame: (f: Record<string, unknown>) => void }

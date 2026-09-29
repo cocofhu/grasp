@@ -439,6 +439,10 @@ type ReactMessage struct {
 	// Handoff marks an agent row that was sealed when the same user message
 	// continued once. It keeps its text and does not show a completion footnote.
 	Handoff bool `json:"handoff,omitempty"`
+	// OpID is the sandbox turn id (g- + 12 hex) of this assistant reply.
+	// Refresh replay uses it to tell a finished turn from a different one
+	// the bridge still reports (plan g1.1).
+	OpID string `json:"opId,omitempty"`
 }
 
 // ReactAnnotation is one precise reference a human attached to a review turn.

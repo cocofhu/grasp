@@ -1267,14 +1267,41 @@ function applySandboxOrphan(frame: {
   }
 }
 
-const showSandboxOrphanBanner = computed(
-  () =>
-    !!sandboxOrphan.value &&
-    !thinking.value &&
-    queued.value.length === 0 &&
-    liveAgentIdx.value < 0 &&
-    !props.done,
-)
+/**
+ * Newest assistant bubble when it already finished normally.
+ * A handoff row is skipped; a human tail or an interrupted/empty agent is not.
+ */
+function latestNormallyCompletedTurn(): ClarifyTurn | null {
+  const list = displayTurns.value
+  for (let i = list.length - 1; i >= 0; i--) {
+    const t = list[i]
+    if (!t || t.role !== 'agent') return null
+    if (t.handoff) continue
+    return showTurnCompleted(t) ? t : null
+  }
+  return null
+}
+
+const showSandboxOrphanBanner = computed(() => {
+  if (
+    !sandboxOrphan.value ||
+    thinking.value ||
+    queued.value.length > 0 ||
+    liveAgentIdx.value >= 0 ||
+    props.done
+  ) {
+    return false
+  }
+  // plan g1.2: no live bubble and the latest bubble already completed —
+  // do not paint the interrupt banner for that same turn. A different
+  // unfinished sandbox op keeps the banner and the abort button.
+  const completed = latestNormallyCompletedTurn()
+  if (!completed) return true
+  const running = sandboxOrphan.value.runningOpId
+  const doneOp = completed.opId || ''
+  if (!running || (doneOp !== '' && running === doneOp)) return false
+  return true
+})
 
 const sandboxOrphanOpLabel = computed(() => {
   const id = sandboxOrphan.value?.runningOpId

@@ -18,7 +18,13 @@ import (
 // opening LLM turn (which can itself finish via finishReact when the agent
 // asks nothing). Grasp parks without chatting — the first LLM turn is the
 // user's first message, injected in ReactReply.
-func (c *acpProvider) ReactOpen(ctx context.Context, req NodeReq) ReactTurn {
+func (c *acpProvider) ReactOpen(ctx context.Context, req NodeReq) (out ReactTurn) {
+	var chatOp string
+	defer func() {
+		if out.OpID == "" && chatOp != "" {
+			out.OpID = chatOp
+		}
+	}()
 	n := c.sandboxAttempts()
 	seeded := c.upstreamArtifacts(req)
 	for attempt := 1; ; attempt++ {
@@ -38,6 +44,9 @@ func (c *acpProvider) ReactOpen(ctx context.Context, req NodeReq) ReactTurn {
 			res, err = c.streamChat(chatCtx, acp, req, c.buildReactOpenPrompt(req, seeded), req.PromptImages)
 			cancel()
 			if err == nil {
+				if res != nil && res.OpID != "" {
+					chatOp = res.OpID
+				}
 				sess := c.parkReactSession(req, sb, acp, home)
 				pending := takeClarifyPending(c.host, req.RunID, req.NodeID)
 				var usage *models.TokenUsage
@@ -139,7 +148,13 @@ func (c *acpProvider) rehydrateReact(ctx context.Context, req NodeReq, history [
 // agent raises no further questions (pending ask_question always pauses, even
 // under force/max_rounds). Only then is the produces contract ensured (with
 // re-prompting) and the sandbox torn down.
-func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []models.ReactMessage, human string, images []models.PromptImage, force bool) ReactTurn {
+func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []models.ReactMessage, human string, images []models.PromptImage, force bool) (out ReactTurn) {
+	var chatOp string
+	defer func() {
+		if out.OpID == "" && chatOp != "" {
+			out.OpID = chatOp
+		}
+	}()
 	key := reactKey(req)
 	c.mu.Lock()
 	sess := c.sessions[key]
@@ -189,6 +204,9 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 		prompt = c.reactConfirmPrefix(req) + "\n\n" + strings.TrimRight(human, "\n")
 	}
 	res, err := c.streamChat(chatCtx, sess.acp, req, prompt, chatImages)
+	if res != nil && res.OpID != "" {
+		chatOp = res.OpID
+	}
 	if err != nil {
 		log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).
 			Msg("react reply chat failed")
@@ -288,7 +306,13 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 // (keep editing)" and the approval-gate ReAct reject (against the upstream
 // producer's parked session). A dead/lost session is rebuilt from the
 // transcript, mirroring ReactReply.
-func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []models.ReactMessage, human string, images []models.PromptImage) ReactTurn {
+func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []models.ReactMessage, human string, images []models.PromptImage) (out ReactTurn) {
+	var chatOp string
+	defer func() {
+		if out.OpID == "" && chatOp != "" {
+			out.OpID = chatOp
+		}
+	}()
 	key := reactKey(req)
 	c.mu.Lock()
 	sess := c.sessions[key]
@@ -314,6 +338,9 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
 	res, err := c.streamChat(chatCtx, sess.acp, req, human, images)
 	cancel()
+	if res != nil && res.OpID != "" {
+		chatOp = res.OpID
+	}
 	if err != nil {
 		log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).Msg("review revise chat failed")
 		return ReactTurn{Msg: "(复审修改失败:" + err.Error() + ")", Err: err,

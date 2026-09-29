@@ -531,7 +531,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	t := e.provider.ReactReply(context.Background(), req, conv.Messages, effective, images, force)
 	agentMsg := models.ReactMessage{Role: "agent", Text: t.Msg,
 		At: time.Now().Format(time.RFC3339), Questions: t.Questions, Forms: t.Forms,
-		Interrupted: t.Interrupted}
+		Interrupted: t.Interrupted, OpID: t.OpID}
 	conv.Messages = append(conv.Messages, agentMsg)
 
 	// Auto-clarify: if this node runs in auto mode and the agent asked more

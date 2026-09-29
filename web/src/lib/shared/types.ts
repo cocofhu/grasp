@@ -761,6 +761,8 @@ export interface ClarifyTurn {
   annotations?: ReactAnnotation[]
   /** Agent turn stopped mid-stream by 轮级 Cancel; partial text retained. */
   interrupted?: boolean
+  /** Sandbox turn id persisted with this assistant reply (plan g1.1). */
+  opId?: string
   /** Live streaming agent bubble (not yet persisted). */
   streaming?: boolean
   /**

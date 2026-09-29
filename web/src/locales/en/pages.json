@@ -2849,7 +2849,7 @@
       "confirmFlowOverlaySub": "Continuing to the next node",
       "sandboxBusy": "The sandbox still has an Agent turn running. Confirm would queue behind it — abort that turn, then confirm.",
       "abortAndConfirm": "Abort current turn and confirm",
-      "sandboxOrphanBanner": "A sandbox turn is still running{op}. Grasp already treated it as interrupted, but the sandbox has not finished.",
+      "sandboxOrphanBanner": "The sandbox still has a turn the platform is no longer tracking{op}, and the sandbox has not finished.",
       "sandboxOrphanCancel": "Abort sandbox turn",
       "validating": "Validating…",
       "demoEnlarge": "Enlarge",
