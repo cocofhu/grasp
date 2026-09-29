@@ -724,11 +724,54 @@ describe('preview-pick.js floating chat window', () => {
     expect(buttons.length).toBe(2)
     expect(css).toContain('.dhead{display:flex;align-items:center;gap:9px;height:48px')
     expect(css).toContain('.dhead [data-role="drawer-title"]{flex:1;min-width:0;font-size:14px;font-weight:600')
+    expect(css).toContain('line-height:20px')
     expect(css).toContain('text-overflow:ellipsis')
     expect(css).toContain('.dhead button{width:30px;height:30px')
     expect(css).not.toContain('height:64px')
     expect(css).not.toContain('font-size:28px')
     expect(css).not.toContain('width:36px')
+  })
+
+  // g2.1: Page Harness CoCo ink stays inside the light title box; long names still ellipsize.
+  it('keeps the g in Page Harness CoCo inside the light title box', async () => {
+    const p = openPage(body, { hash: `${hash}&theme=light`, embedReply: reply })
+    await settle()
+    const drawer = p.shadow.querySelector('[data-role="drawer"]') as HTMLElement
+    const title = p.shadow.querySelector('[data-role="drawer-title"]') as HTMLElement
+    const css = p.shadow.querySelector('style')?.textContent || ''
+    const rule = css.match(/\.dhead \[data-role="drawer-title"\]\{([^}]+)\}/)?.[1] || ''
+    expect(drawer.classList.contains('light')).toBe(true)
+    expect(title.textContent).toBe('Page Harness CoCo')
+    expect(title.getAttribute('title')).toBe('Page Harness CoCo')
+    expect(rule).toContain('font-size:14px')
+    expect(rule).toContain('font-weight:600')
+    expect(rule).toContain('line-height:20px')
+    expect(rule).toContain('overflow:hidden')
+    expect(rule).toContain('white-space:nowrap')
+    expect(rule).toContain('text-overflow:ellipsis')
+    expect(css).toContain('.dhead{display:flex;align-items:center;gap:9px;height:48px')
+
+    const fontSize = Number(rule.match(/font-size:(\d+)px/)?.[1])
+    const lineHeight = Number(rule.match(/line-height:(\d+)px/)?.[1])
+    // At line-height equal to the 14px font size, "Page Harness CoCo" ink was 16.5px
+    // and the g descender sat 1px below the title box (root cause). Half-leading
+    // grows the line box equally above and below that em square.
+    const inkHeight = 16.5
+    const descenderPastBox = 1
+    const ascenderPastBox = 1.5
+    const halfLeading = (lineHeight - fontSize) / 2
+    const boxBottom = lineHeight
+    const inkBottom = fontSize + descenderPastBox + halfLeading
+    expect(lineHeight).toBeGreaterThanOrEqual(inkHeight)
+    expect(inkBottom).toBeLessThanOrEqual(boxBottom)
+    expect(ascenderPastBox - halfLeading).toBeLessThanOrEqual(0)
+
+    title.textContent = 'Page Harness CoCo with a long harness name that must stay on one line'
+    expect(title.textContent.startsWith('Page Harness CoCo')).toBe(true)
+    expect(rule).toContain('white-space:nowrap')
+    expect(rule).toContain('text-overflow:ellipsis')
+    expect(rule).toContain('overflow:hidden')
+    expect(css).not.toContain('height:64px')
   })
 
   it('drags from the title bar and keeps the window inside the viewport', async () => {

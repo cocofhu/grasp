@@ -273,7 +273,7 @@
     '.dhead .mark{width:22px;height:22px;border-radius:7px;flex:none;display:grid;place-items:center;' +
     'background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:10px;font-weight:700;letter-spacing:.02em}' +
     '.dhead [data-role="drawer-title"]{flex:1;min-width:0;font-size:14px;font-weight:600;letter-spacing:-0.01em;' +
-    'line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    'line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
     '.dhead button{width:30px;height:30px;padding:0;display:grid;place-items:center;flex:none;' +
     'border:1px solid #26262c;border-radius:9px;background:transparent;color:#9ca3af}' +
     '.drawer iframe{flex:1;min-height:0;width:auto;margin:0 14px 14px;border:0;border-radius:14px;background:#0b0b0c}' +
