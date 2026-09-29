@@ -64,12 +64,38 @@ type clarifiedSpecSnap struct {
 
 type leftoverBodyParts struct {
 	background string
-	spec       string
-	leftovers  string
-	plan       string
-	delivered  string
-	sourceNote string
+	// When non-empty, body uses 产物全文 (artifactSections for truncation) and
+	// skips the snapshot fallback fields below.
+	artifacts        string
+	artifactSections []string // ordered per-file sections without the H2 header
+	spec             string
+	leftovers        string
+	plan             string
+	delivered        string
+	sourceNote       string
 }
+
+// leftoverArtifactPreferredOrder is the fixed section order under 「产物全文」.
+// Missing files are omitted entirely; any other text artifact follows by name.
+var leftoverArtifactPreferredOrder = []string{
+	mcp.ClarifiedRequirementArtifactName,
+	mcp.RootCauseArtifactName,
+	mcp.PlanArtifactName,
+	mcp.ResearchArtifactName,
+	mcp.ProposalsArtifactName,
+	mcp.ProposalArtifactName,
+	mcp.PreflightArtifactName,
+	mcp.ImplementationResultArtifactName,
+	mcp.TestResultArtifactName,
+	mcp.ReviewArtifactName,
+	"page.html",
+}
+
+const (
+	leftoverArtifactsSectionTitle = "## 产物全文"
+	leftoverArtifactsSectionIntro = "下列产物已从本 Run 产物库按文件全文写入；后续执行只读本文，不回查原流水线或原 Run。\n"
+	leftoverPlanHistoryNote       = "以下为计划全文，仅为历史对照，不是本次验收依据。\n"
+)
 
 func configTruthyAny(v any) bool {
 	switch t := v.(type) {
@@ -687,6 +713,137 @@ func snapshotOptionalExtras(c *execCtx) (planSection, deliveredSection string) {
 	return planSection, deliveredSection
 }
 
+// isLeftoverDraftTextArtifact reports whether name should be copied into the
+// leftover draft body. Images and platform ledgers are excluded.
+func isLeftoverDraftTextArtifact(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	if mcp.IsFeedbackArtifactName(name) || name == mcp.NodeOutcomeArtifactName {
+		return false
+	}
+	return mcp.InferWriteArtifactKind(name) != "image"
+}
+
+// collectLeftoverTextArtifactNames lists text artifacts in preferred order,
+// then any remaining text names sorted lexicographically.
+func collectLeftoverTextArtifactNames(store mcp.Store, runID string) []string {
+	if store == nil || strings.TrimSpace(runID) == "" {
+		return nil
+	}
+	present := map[string]bool{}
+	for _, info := range store.List(runID) {
+		name := strings.TrimSpace(info.Name)
+		if !isLeftoverDraftTextArtifact(name) {
+			continue
+		}
+		present[name] = true
+	}
+	if len(present) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(present))
+	for _, name := range leftoverArtifactPreferredOrder {
+		if present[name] {
+			out = append(out, name)
+			delete(present, name)
+		}
+	}
+	extras := make([]string, 0, len(present))
+	for name := range present {
+		extras = append(extras, name)
+	}
+	sort.Strings(extras)
+	return append(out, extras...)
+}
+
+// renderLeftoverArtifactContent turns structured JSON into full Markdown when a
+// renderer exists; otherwise returns the original text (including page.html).
+// Parse/render failures fall back to the raw content so the file is not dropped.
+func renderLeftoverArtifactContent(name, content string) string {
+	switch name {
+	case mcp.ClarifiedRequirementArtifactName:
+		return strings.TrimSpace(mcp.RenderClarifiedRequirementMarkdown(content))
+	case mcp.RootCauseArtifactName:
+		return strings.TrimSpace(mcp.RenderRootCauseMarkdown(content))
+	case mcp.PlanArtifactName:
+		return strings.TrimSpace(mcp.RenderPlanMarkdown(content))
+	case mcp.ResearchArtifactName:
+		return strings.TrimSpace(mcp.RenderResearchMarkdown(content))
+	case mcp.ProposalsArtifactName:
+		return strings.TrimSpace(mcp.RenderProposalsMarkdown(content))
+	case mcp.ProposalArtifactName:
+		return strings.TrimSpace(mcp.RenderProposalMarkdown(content))
+	case mcp.PreflightArtifactName:
+		return strings.TrimSpace(mcp.RenderPreflightMarkdown(content))
+	case mcp.ImplementationResultArtifactName:
+		return strings.TrimSpace(mcp.RenderImplementationResultMarkdown(content))
+	case mcp.TestResultArtifactName:
+		return strings.TrimSpace(mcp.RenderTestResultMarkdown(content))
+	case mcp.ReviewArtifactName:
+		return strings.TrimSpace(mcp.RenderReviewMarkdown(content))
+	default:
+		return content
+	}
+}
+
+func formatOneArtifactSection(name, content string) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("### `%s`\n\n", name))
+	if name == mcp.PlanArtifactName {
+		b.WriteString(leftoverPlanHistoryNote)
+		b.WriteString("\n")
+	}
+	rendered := renderLeftoverArtifactContent(name, content)
+	b.WriteString(rendered)
+	if !strings.HasSuffix(rendered, "\n") {
+		b.WriteString("\n")
+	}
+	return strings.TrimRight(b.String(), "\n") + "\n"
+}
+
+func joinArtifactSections(sections []string) string {
+	if len(sections) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(leftoverArtifactsSectionTitle)
+	b.WriteString("\n\n")
+	b.WriteString(leftoverArtifactsSectionIntro)
+	b.WriteString("\n")
+	for _, sec := range sections {
+		sec = strings.TrimRight(sec, "\n")
+		if sec == "" {
+			continue
+		}
+		b.WriteString(sec)
+		b.WriteString("\n\n")
+	}
+	return strings.TrimRight(b.String(), "\n") + "\n"
+}
+
+// buildArtifactsSection lists run text artifacts and renders each in full.
+// Returns ("", nil) when the store has no eligible text files.
+func buildArtifactsSection(store mcp.Store, runID string) (section string, sections []string) {
+	names := collectLeftoverTextArtifactNames(store, runID)
+	if len(names) == 0 {
+		return "", nil
+	}
+	sections = make([]string, 0, len(names))
+	for _, name := range names {
+		content, ok := store.Get(runID, name)
+		if !ok {
+			continue
+		}
+		sections = append(sections, formatOneArtifactSection(name, content))
+	}
+	if len(sections) == 0 {
+		return "", nil
+	}
+	return joinArtifactSections(sections), sections
+}
+
 func buildSourceNote(c *execCtx, bundle leftoverBundle) string {
 	wfName := strings.TrimSpace(c.run.WorkflowName)
 	if wfName == "" {
@@ -694,7 +851,7 @@ func buildSourceNote(c *execCtx, bundle leftoverBundle) string {
 	}
 	var b strings.Builder
 	b.WriteString("## 来源注记\n\n")
-	b.WriteString("下列标识仅供人回顾，**不是**执行依据；标识失效后，上方需求规格与遗留仍完整有效。")
+	b.WriteString("下列标识仅供人回顾，**不是**执行依据；标识失效后，上方正文与遗留仍完整有效。")
 	b.WriteString("请勿以「打开原 Run / 原流水线」作为获取需求的必要步骤。\n\n")
 	b.WriteString(fmt.Sprintf("- **流水线名**: %s\n", wfName))
 	if id := strings.TrimSpace(c.run.WorkflowID); id != "" {
@@ -723,16 +880,67 @@ func joinBodyParts(parts ...string) string {
 	return strings.TrimRight(b.String(), "\n") + "\n"
 }
 
+func assembleArtifactsBodyTruncated(parts leftoverBodyParts, max int, truncNote string) string {
+	// Drop source note first.
+	withoutNote := joinBodyParts(parts.background, parts.artifacts, parts.leftovers)
+	if with := strings.TrimRight(withoutNote, "\n") + truncNote; utf8.RuneCountInString(with) <= max {
+		return with
+	}
+
+	// Then drop later artifact sections (keep earlier = clarified / root cause first).
+	sections := parts.artifactSections
+	for n := len(sections) - 1; n >= 1; n-- {
+		arts := joinArtifactSections(sections[:n])
+		core := joinBodyParts(parts.background, arts, parts.leftovers)
+		if with := strings.TrimRight(core, "\n") + truncNote; utf8.RuneCountInString(with) <= max {
+			return with
+		}
+	}
+
+	var first string
+	if len(sections) > 0 {
+		first = sections[0]
+	}
+	arts := joinArtifactSections([]string{first})
+	core := joinBodyParts(parts.background, arts, parts.leftovers)
+	if with := strings.TrimRight(core, "\n") + truncNote; utf8.RuneCountInString(with) <= max {
+		return with
+	}
+
+	fixed := joinBodyParts(parts.background, parts.leftovers)
+	fixedWithNote := strings.TrimRight(fixed, "\n") + truncNote
+	budget := max - utf8.RuneCountInString(fixedWithNote) - 2
+	if budget < 64 {
+		budget = max - utf8.RuneCountInString(strings.TrimRight(parts.leftovers, "\n")+truncNote) - 2
+		if budget < 0 {
+			budget = 0
+		}
+		shrunkBg := truncateRunes(parts.background, budget)
+		return strings.TrimRight(joinBodyParts(shrunkBg, parts.leftovers), "\n") + truncNote
+	}
+	shrunkArts := truncateRunes(arts, budget)
+	return strings.TrimRight(joinBodyParts(parts.background, shrunkArts, parts.leftovers), "\n") + truncNote
+}
+
 func assembleLeftoverBody(parts leftoverBodyParts) string {
-	ideal := joinBodyParts(parts.background, parts.spec, parts.leftovers, parts.plan, parts.delivered, parts.sourceNote)
+	var ideal string
+	if parts.artifacts != "" {
+		ideal = joinBodyParts(parts.background, parts.artifacts, parts.leftovers, parts.sourceNote)
+	} else {
+		ideal = joinBodyParts(parts.background, parts.spec, parts.leftovers, parts.plan, parts.delivered, parts.sourceNote)
+	}
 	max := services.MaxRequirementDraftBodyRunes
 	truncNote := "\n\n> （正文已截断：超出需求草稿长度上限。优先保留需求规格与遗留全文。）\n"
 	if utf8.RuneCountInString(ideal) <= max {
 		return ideal
 	}
 
-	// Priority: drop source note, then plan/delivered, then shrink the spec while
-	// keeping leftovers (so a leftover title and requirement overview remain).
+	if parts.artifacts != "" {
+		return assembleArtifactsBodyTruncated(parts, max, truncNote)
+	}
+
+	// Snapshot fallback: drop source note, then plan/delivered, then shrink spec
+	// while keeping leftovers (so a leftover title and requirement overview remain).
 	withoutNote := joinBodyParts(parts.background, parts.spec, parts.leftovers, parts.plan, parts.delivered)
 	if with := strings.TrimRight(withoutNote, "\n") + truncNote; utf8.RuneCountInString(with) <= max {
 		return with
@@ -759,18 +967,34 @@ func assembleLeftoverBody(parts leftoverBodyParts) string {
 	return strings.TrimRight(joinBodyParts(parts.background, shrunkSpec, parts.leftovers), "\n") + truncNote
 }
 
-func buildLeftoverDraftBody(c *execCtx, bundle leftoverBundle) string {
-	planSec, deliveredSec := snapshotOptionalExtras(c)
+func buildLeftoverDraftBody(c *execCtx, bundle leftoverBundle, store mcp.Store) string {
+	runID := ""
+	if c != nil && c.run != nil {
+		runID = c.run.ID
+	}
+	arts, sections := buildArtifactsSection(store, runID)
+
+	bg := "## 背景\n\n" +
+		"流水线已跑到结束节点，测试/评审门禁已放行，但仍有未处理遗留。" +
+		"本草稿由结束节点开关「自动写入遗留需求草稿」生成，是一份**自包含需求文档**："
+	if arts != "" {
+		bg += "正文含本次 Run 全部文本产物全文与遗留，原流水线及其全部 Run 删除后仍可当作后续执行的需求输入，不依赖回查原执行。\n"
+	} else {
+		bg += "正文含需求规格（或完整原始输入）与遗留全文，原流水线及其全部 Run 删除后仍可当作后续执行的需求输入，不依赖回查原执行。\n"
+	}
+
 	parts := leftoverBodyParts{
-		background: "## 背景\n\n" +
-			"流水线已跑到结束节点，测试/评审门禁已放行，但仍有未处理遗留。" +
-			"本草稿由结束节点开关「自动写入遗留需求草稿」生成，是一份**自包含需求文档**：" +
-			"正文含需求规格（或完整原始输入）与遗留全文，原流水线及其全部 Run 删除后仍可当作后续执行的需求输入，不依赖回查原执行。\n",
-		spec:       buildSpecSection(c),
-		leftovers:  buildLeftoversSection(bundle),
-		plan:       planSec,
-		delivered:  deliveredSec,
-		sourceNote: buildSourceNote(c, bundle),
+		background:       bg,
+		artifacts:        arts,
+		artifactSections: sections,
+		leftovers:        buildLeftoversSection(bundle),
+		sourceNote:       buildSourceNote(c, bundle),
+	}
+	if arts == "" {
+		planSec, deliveredSec := snapshotOptionalExtras(c)
+		parts.spec = buildSpecSection(c)
+		parts.plan = planSec
+		parts.delivered = deliveredSec
 	}
 	return assembleLeftoverBody(parts)
 }
@@ -823,7 +1047,7 @@ func (e *Engine) maybeWriteLeftoverDraft(c *execCtx, node *models.Node, outputs 
 	}
 
 	title := buildLeftoverDraftTitle(c.run.WorkflowName, c.run.ID)
-	body := buildLeftoverDraftBody(c, bundle)
+	body := buildLeftoverDraftBody(c, bundle, e.store)
 	drafts := services.NewRequirementDraftService(e.db)
 
 	created, err := drafts.Create(projectID, services.RequirementDraftCreateInput{

@@ -483,7 +483,7 @@ func TestBuildLeftoverDraftBodyTruncationPriority(t *testing.T) {
 			Title: "必须保留的遗留标题", Severity: "high", Detail: "d",
 		}},
 	}
-	body := buildLeftoverDraftBody(c, bundle)
+	body := buildLeftoverDraftBody(c, bundle, nil)
 	if n := utf8.RuneCountInString(body); n > services.MaxRequirementDraftBodyRunes {
 		t.Fatalf("body runes=%d over cap", n)
 	}
@@ -651,5 +651,317 @@ func TestAutoLeftoverDraftEnabled(t *testing.T) {
 	}
 	if autoLeftoverDraftEnabled(map[string]any{"auto_leftover_draft": false}) {
 		t.Fatal("false")
+	}
+}
+
+// leftoverArtifactFixtures are minimal but renderable structured products for
+// plan g1 / g2 coverage (acceptance criteria, root_cause text, plan detail).
+const (
+	leftoverFixtureClarified = `{
+		"title":"产物规格","summary":"产物库规格概述","background":"产物背景",
+		"goals":["产物目标"],"in_scope":["范围内"],"out_of_scope":["范围外"],
+		"functional_requirements":[{"title":"产物功能","detail":"功能说明","acceptance_criteria":["验收标准甲","验收标准乙"]}],
+		"assumptions":["假设"],"dependencies":["依赖"],"constraints":["约束"]
+	}`
+	leftoverFixtureRootCause = `{
+		"title":"根因标题","summary":"根因概述句",
+		"symptom":"现象描述","expected":"期望行为","actual":"实际行为",
+		"reproduction":["步骤一"],"impact":"影响谁",
+		"root_cause":"因为组稿不读产物库所以缺全文",
+		"evidence":[{"title":"证据一","detail":"store 未被调用"}],
+		"diagrams":[{"kind":"flowchart","title":"因果","source":"flowchart TD\n  A-->B"}]
+	}`
+	leftoverFixturePlan = `{
+		"title":"历史计划全文","architecture":{"summary":"仍在结束节点组装"},
+		"data_design":{"summary":"不涉及"},
+		"test_design":"补组稿回归",
+		"goals":[{"id":"g1","title":"大目标全文","detail":"目标说明应出现在草稿","subgoals":[{"id":"g1.1","title":"小目标","detail":"小目标说明"}]}]
+	}`
+	leftoverFixtureResearch = `{
+		"summary":"调研概述应写入","title":"调研标题",
+		"findings":[{"title":"发现一","detail":"详情"}],
+		"questions":[{"question":"Q1","answer":"A1"}]
+	}`
+)
+
+func TestExecOutputLeftoverFromArtifactStoreFullText(t *testing.T) {
+	// plan g1.1 / g1.2 / g1.3 / g2.1: three primary files in store, empty node
+	// outputs + empty inputs → 产物全文 with AC / root_cause / plan detail, ordered.
+	g := leftoverGraph(true)
+	eng, db, _ := setupEngineGraphP(t, g)
+	outs := map[string]map[string]any{
+		"test1": {"test_result_json": `{"summary":"s","defects":[{"title":"遗留缺陷甲","severity":"high","detail":"详"}]}`},
+	}
+	c, node := seedLeftoverRun(t, eng, "run-leftover-arts", g, outs)
+	c.run.Inputs = map[string]any{}
+	c.nodeOutputs = outs // no clarified/plan snapshots
+
+	for _, a := range []struct {
+		node, name, kind, body string
+	}{
+		{"react1", mcp.ClarifiedRequirementArtifactName, "json", leftoverFixtureClarified},
+		{"grasp1", mcp.RootCauseArtifactName, "json", leftoverFixtureRootCause},
+		{"plan1", mcp.PlanArtifactName, "json", leftoverFixturePlan},
+		// ledger + image must not appear
+		{"output", mcp.NodeOutcomeArtifactName, "json", `{"status":"success"}`},
+		{"gate", mcp.FeedbackIndexArtifactName, "json", `{"rounds":[]}`},
+		{"shot", "shot.png", "image", "not-a-real-png-binary"},
+	} {
+		if _, err := eng.store.Save(c.run.ID, a.node, a.name, a.kind, a.body); err != nil {
+			t.Fatalf("save %s: %v", a.name, err)
+		}
+	}
+
+	oc := eng.execOutput(c, node)
+	id, _ := oc.outputs[leftoverDraftIDKey].(string)
+	if id == "" {
+		t.Fatalf("missing draft: %#v", oc.outputs)
+	}
+	draft, err := services.NewRequirementDraftService(db).Get(models.DefaultProjectID, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := draft.BodyMarkdown
+
+	for _, needle := range []string{
+		"## 背景", "## 产物全文", "## 仍须完成", "## 来源注记",
+		"### `clarified_requirement.json`",
+		"### `root_cause.json`",
+		"### `plan.json`",
+		"验收标准甲", "验收标准乙", "产物功能",
+		"因为组稿不读产物库所以缺全文", "根因概述句",
+		"目标说明应出现在草稿", "仍在结束节点组装", "历史计划全文",
+		"以下为计划全文，仅为历史对照，不是本次验收依据",
+		"遗留缺陷甲",
+	} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("body missing %q:\n%s", needle, body)
+		}
+	}
+	for _, banned := range []string{
+		"本次运行未留下结构化需求或原始输入",
+		"## 原始需求输入",
+		"## 需求规格",
+		"## 原计划要点",
+		"node_complete.json",
+		"feedback_index.json",
+		"shot.png",
+		"not-a-real-png-binary",
+	} {
+		if strings.Contains(body, banned) {
+			t.Fatalf("body must not contain %q:\n%s", banned, body)
+		}
+	}
+
+	// Section order: background → artifacts (clarified, root_cause, plan) → leftovers → source
+	pos := func(s string) int {
+		i := strings.Index(body, s)
+		if i < 0 {
+			t.Fatalf("missing %q for order check", s)
+		}
+		return i
+	}
+	if !(pos("## 背景") < pos("## 产物全文") &&
+		pos("### `clarified_requirement.json`") < pos("### `root_cause.json`") &&
+		pos("### `root_cause.json`") < pos("### `plan.json`") &&
+		pos("### `plan.json`") < pos("## 仍须完成") &&
+		pos("## 仍须完成") < pos("## 来源注记")) {
+		t.Fatalf("section order wrong:\n%s", body)
+	}
+}
+
+func TestExecOutputLeftoverExtraArtifactsAndMissingSkipped(t *testing.T) {
+	// plan g1.3 / g2.2: research present → section written; missing root_cause skipped;
+	// image + ledgers excluded.
+	g := leftoverGraph(true)
+	eng, db, _ := setupEngineGraphP(t, g)
+	outs := map[string]map[string]any{
+		"test1": {"test_result_json": `{"summary":"s","defects":[{"title":"缺陷乙"}]}`},
+	}
+	c, node := seedLeftoverRun(t, eng, "run-leftover-extra", g, outs)
+	c.run.Inputs = map[string]any{}
+
+	for _, a := range []struct {
+		node, name, kind, body string
+	}{
+		{"react1", mcp.ClarifiedRequirementArtifactName, "json", leftoverFixtureClarified},
+		{"plan1", mcp.PlanArtifactName, "json", leftoverFixturePlan},
+		{"research1", mcp.ResearchArtifactName, "json", leftoverFixtureResearch},
+		{"output", mcp.NodeOutcomeArtifactName, "json", `{"status":"success"}`},
+		{"gate", "feedback.clarify.approve.i1.json", "json", `{"summary":"feedback round"}`},
+		{"shot", "ui.webp", "image", "WEBPBINARY"},
+		{"notes", "notes.md", "markdown", "# 自由笔记\n\n自由正文应保留\n"},
+	} {
+		if _, err := eng.store.Save(c.run.ID, a.node, a.name, a.kind, a.body); err != nil {
+			t.Fatalf("save %s: %v", a.name, err)
+		}
+	}
+
+	oc := eng.execOutput(c, node)
+	id, _ := oc.outputs[leftoverDraftIDKey].(string)
+	draft, err := services.NewRequirementDraftService(db).Get(models.DefaultProjectID, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := draft.BodyMarkdown
+
+	for _, needle := range []string{
+		"### `clarified_requirement.json`",
+		"### `plan.json`",
+		"### `research.json`",
+		"调研概述应写入",
+		"### `notes.md`",
+		"自由正文应保留",
+		"验收标准甲",
+	} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("body missing %q:\n%s", needle, body)
+		}
+	}
+	for _, banned := range []string{
+		"### `root_cause.json`",
+		"node_complete.json",
+		"feedback.clarify",
+		"ui.webp",
+		"WEBPBINARY",
+	} {
+		if strings.Contains(body, banned) {
+			t.Fatalf("body must not contain %q:\n%s", banned, body)
+		}
+	}
+
+	pos := func(s string) int { return strings.Index(body, s) }
+	if !(pos("### `clarified_requirement.json`") < pos("### `plan.json`") &&
+		pos("### `plan.json`") < pos("### `research.json`") &&
+		pos("### `research.json`") < pos("### `notes.md`")) {
+		t.Fatalf("artifact order wrong:\n%s", body)
+	}
+}
+
+func TestExecOutputLeftoverNoArtifactsKeepsSnapshotFallback(t *testing.T) {
+	// plan g2.3: no text artifacts → no 「产物全文」; snapshot specs / placeholder / long input.
+	t.Run("snapshot_spec", func(t *testing.T) {
+		g := leftoverGraphWithClarify(true)
+		eng, db, _ := setupEngineGraphP(t, g)
+		req := `{
+			"title":"快照规格","summary":"快照概述","background":"bg",
+			"goals":["快照目标"],"in_scope":["in"],"out_of_scope":["out"],
+			"functional_requirements":[{"title":"f","detail":"d","acceptance_criteria":["快照验收"]}],
+			"assumptions":["a"],"dependencies":["d"],"constraints":["c"]
+		}`
+		outs := map[string]map[string]any{
+			"react1": {"clarified_requirement_json": req},
+			"test1":  {"test_result_json": `{"summary":"s","defects":[{"title":"缺陷丙"}]}`},
+		}
+		c, node := seedLeftoverRun(t, eng, "run-leftover-snap", g, outs)
+		oc := eng.execOutput(c, node)
+		id, _ := oc.outputs[leftoverDraftIDKey].(string)
+		draft, _ := services.NewRequirementDraftService(db).Get(models.DefaultProjectID, id)
+		body := draft.BodyMarkdown
+		if strings.Contains(body, "## 产物全文") {
+			t.Fatalf("no artifacts should not write 产物全文:\n%s", body)
+		}
+		if !strings.Contains(body, "## 需求规格") || !strings.Contains(body, "快照验收") {
+			t.Fatalf("want snapshot spec:\n%s", body)
+		}
+	})
+
+	t.Run("empty_placeholder", func(t *testing.T) {
+		g := leftoverGraph(true)
+		eng, db, _ := setupEngineGraphP(t, g)
+		outs := map[string]map[string]any{
+			"test1": {"test_result_json": `{"summary":"s","defects":[{"title":"缺陷丁"}]}`},
+		}
+		c, node := seedLeftoverRun(t, eng, "run-leftover-ph", g, outs)
+		c.run.Inputs = map[string]any{}
+		oc := eng.execOutput(c, node)
+		id, _ := oc.outputs[leftoverDraftIDKey].(string)
+		draft, _ := services.NewRequirementDraftService(db).Get(models.DefaultProjectID, id)
+		body := draft.BodyMarkdown
+		if strings.Contains(body, "## 产物全文") {
+			t.Fatal("no 产物全文")
+		}
+		if !strings.Contains(body, "本次运行未留下结构化需求或原始输入") {
+			t.Fatalf("want placeholder:\n%s", body)
+		}
+	})
+
+	t.Run("long_input_preserved", func(t *testing.T) {
+		g := leftoverGraph(true)
+		eng, db, _ := setupEngineGraphP(t, g)
+		long := strings.Repeat("启动输入全文", 25) // >120 runes
+		if utf8.RuneCountInString(long) <= 120 {
+			t.Fatalf("fixture too short: %d", utf8.RuneCountInString(long))
+		}
+		outs := map[string]map[string]any{
+			"test1": {"test_result_json": `{"summary":"s","defects":[{"title":"缺陷戊"}]}`},
+		}
+		c, node := seedLeftoverRun(t, eng, "run-leftover-longin", g, outs)
+		c.run.Inputs = map[string]any{"feature": long}
+		oc := eng.execOutput(c, node)
+		id, _ := oc.outputs[leftoverDraftIDKey].(string)
+		draft, _ := services.NewRequirementDraftService(db).Get(models.DefaultProjectID, id)
+		body := draft.BodyMarkdown
+		if strings.Contains(body, "## 产物全文") {
+			t.Fatal("no 产物全文")
+		}
+		if !strings.Contains(body, long) {
+			t.Fatalf("long input must remain:\n%s", body)
+		}
+	})
+}
+
+func TestBuildLeftoverDraftBodyArtifactTruncation(t *testing.T) {
+	// plan g1 / F5: over cap with artifacts → drop source note / later sections; keep leftover title.
+	huge := strings.Repeat("概", services.MaxRequirementDraftBodyRunes) // alone already over cap
+	clarified := `{
+		"title":"超长规格","summary":"` + huge + `","background":"bg",
+		"goals":["目标"],"in_scope":["in"],"out_of_scope":["out"],
+		"functional_requirements":[{"title":"f","detail":"d","acceptance_criteria":["ac"]}],
+		"assumptions":["a"],"dependencies":["d"],"constraints":["c"]
+	}`
+	g := leftoverGraph(true)
+	eng, _, _ := setupEngineGraphP(t, g)
+	runID := "run-leftover-art-trunc"
+	c := &execCtx{
+		run: &models.Run{
+			ID: runID, WorkflowID: "wf", WorkflowName: "截断",
+			WorkflowVersion: 1, Trigger: "manual",
+			StartedAt: time.Date(2026, 9, 22, 1, 0, 0, 0, time.UTC),
+			Inputs:    map[string]any{},
+		},
+		graph:       g,
+		nodeOutputs: map[string]map[string]any{},
+	}
+	if _, err := eng.store.Save(runID, "r", mcp.ClarifiedRequirementArtifactName, "json", clarified); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.store.Save(runID, "p", mcp.PlanArtifactName, "json", leftoverFixturePlan); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.store.Save(runID, "x", mcp.ResearchArtifactName, "json", leftoverFixtureResearch); err != nil {
+		t.Fatal(err)
+	}
+	bundle := leftoverBundle{
+		Items: []leftoverItem{{
+			Kind: leftoverKindDefect, NodeID: "test1", NodeLabel: "集成测试",
+			Title: "必须保留的产物遗留标题", Severity: "high",
+		}},
+	}
+	body := buildLeftoverDraftBody(c, bundle, eng.store)
+	if n := utf8.RuneCountInString(body); n > services.MaxRequirementDraftBodyRunes {
+		t.Fatalf("body runes=%d over cap", n)
+	}
+	if !strings.Contains(body, "正文已截断") {
+		t.Fatalf("want trunc note")
+	}
+	if !strings.Contains(body, "必须保留的产物遗留标题") {
+		t.Fatalf("leftover title must remain")
+	}
+	if strings.Contains(body, "## 来源注记") {
+		t.Fatalf("source note should drop first")
+	}
+	if !strings.Contains(body, "## 产物全文") && !strings.Contains(body, "概述") {
+		t.Fatalf("want clarified remnant in body")
 	}
 }
