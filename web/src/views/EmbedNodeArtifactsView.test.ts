@@ -33,6 +33,7 @@ vi.mock('@/components/run/ReactArtifactStage.vue', () => ({
     name: 'ReactArtifactStage',
     props: {
       artifacts: { type: Array, default: () => [] },
+      previewArtifact: { type: String, default: '' },
       hideAppPreview: { type: Boolean, default: false },
       remoteKind: { type: String, default: '' },
       token: { type: String, default: '' },
@@ -47,6 +48,8 @@ vi.mock('@/components/run/ReactArtifactStage.vue', () => ({
           'data-remote': props.remoteKind,
           'data-token': props.token,
           'data-count': String((props.artifacts as unknown[]).length),
+          'data-pin': String(props.previewArtifact || ''),
+          'data-names': (props.artifacts as { name?: string }[]).map((a) => a.name).join(','),
         })
     },
   }),
@@ -116,6 +119,102 @@ describe('EmbedNodeArtifactsView', () => {
     await flushPromises()
     expect(w.find('[data-testid="embed-artifacts-expired"]').exists()).toBe(true)
     expect(w.find('[data-testid="stage-stub"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('filters feedback artifacts and does not default-pin them (g2.1/g2.2)', async () => {
+    saveEmbedSession('run-1', 'ap1', { token: 'gse_' + 'ab'.repeat(16), expiresAt: '2099-01-01T00:00:00Z' })
+    mocks.preview.mockResolvedValue({
+      status: 'active',
+      kind: 'review',
+      nodeType: 'approve',
+      productName: '',
+    })
+    mocks.artifacts.mockResolvedValue({
+      status: 'active',
+      artifacts: [
+        {
+          id: 'fb',
+          name: 'feedback.clarify.approve_7gl6.i1.json',
+          kind: 'json',
+          nodeId: 'ap1',
+          sizeBytes: 8,
+          createdAt: '2026-09-01T00:00:00Z',
+          revision: 1,
+        },
+        {
+          id: 'idx',
+          name: 'feedback_index.json',
+          kind: 'json',
+          nodeId: 'ap1',
+          sizeBytes: 4,
+          createdAt: '2026-09-01T00:00:00Z',
+          revision: 1,
+        },
+        {
+          id: 'a1',
+          name: 'clarified_requirement.json',
+          kind: 'json',
+          nodeId: 'ap1',
+          sizeBytes: 12,
+          createdAt: '2026-09-01T00:00:00Z',
+          revision: 1,
+        },
+      ],
+      nodes: [{ id: 'ap1', type: 'approve', label: 'Approve' }],
+    })
+    const w = mount(EmbedNodeArtifactsView, {
+      global: { plugins: [i18n()], stubs: { Icon: true } },
+    })
+    await flushPromises()
+    const stage = w.get('[data-testid="stage-stub"]')
+    expect(stage.attributes('data-count')).toBe('1')
+    expect(stage.attributes('data-names')).toBe('clarified_requirement.json')
+    expect(stage.attributes('data-pin')).toBe('clarified_requirement.json')
+    expect(stage.attributes('data-names')).not.toContain('feedback')
+    w.unmount()
+  })
+
+  it('shows empty pipeline products when only feedback remains (g2.2)', async () => {
+    saveEmbedSession('run-1', 'ap1', { token: 'gse_' + 'ab'.repeat(16), expiresAt: '2099-01-01T00:00:00Z' })
+    mocks.preview.mockResolvedValue({
+      status: 'active',
+      kind: 'review',
+      nodeType: 'approve',
+      productName: 'feedback_index.json',
+    })
+    mocks.artifacts.mockResolvedValue({
+      status: 'active',
+      artifacts: [
+        {
+          id: 'idx',
+          name: 'feedback_index.json',
+          kind: 'json',
+          nodeId: 'ap1',
+          sizeBytes: 4,
+          createdAt: '2026-09-01T00:00:00Z',
+          revision: 1,
+        },
+        {
+          id: 'fb',
+          name: 'feedback.clarify.x.json',
+          kind: 'json',
+          nodeId: 'ap1',
+          sizeBytes: 8,
+          createdAt: '2026-09-01T00:00:00Z',
+          revision: 1,
+        },
+      ],
+      nodes: [{ id: 'ap1', type: 'approve', label: 'Approve' }],
+    })
+    const w = mount(EmbedNodeArtifactsView, {
+      global: { plugins: [i18n()], stubs: { Icon: true } },
+    })
+    await flushPromises()
+    const stage = w.get('[data-testid="stage-stub"]')
+    expect(stage.attributes('data-count')).toBe('0')
+    expect(stage.attributes('data-pin')).toBe('')
+    expect(stage.attributes('data-names')).toBe('')
     w.unmount()
   })
 })

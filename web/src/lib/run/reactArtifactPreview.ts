@@ -156,6 +156,13 @@ function isFeedbackStageArtifactName(name: string): boolean {
   return name === FEEDBACK_INDEX_NAME || name.startsWith(FEEDBACK_PREFIX)
 }
 
+/** Preview / stage lists: feedback_index.json and feedback.* names. */
+export function isFeedbackArtifactName(name: string | null | undefined): boolean {
+  const n = String(name || '').trim()
+  if (!n) return false
+  return isFeedbackStageArtifactName(gridArtifactBaseName(n))
+}
+
 function isHumanGateBodySnapshot(
   name: string,
   run?: Run | null,

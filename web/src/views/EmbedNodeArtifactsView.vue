@@ -15,6 +15,7 @@ import {
 } from '@/lib/inbox/embedChat'
 import { publicGateApi, type PublicGatePreview } from '@/lib/inbox/gateShareLink'
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
+import { isFeedbackArtifactName } from '@/lib/run/reactArtifactPreview'
 import { setThemeOverride } from '@/lib/shared/theme'
 import type { Artifact, NodeType, Run } from '@/lib/shared/types'
 
@@ -38,10 +39,13 @@ let artifactsAbort: AbortController | null = null
 let previewAbort: AbortController | null = null
 
 const nodeType = computed(() => String(preview.value?.nodeType || '').trim())
+/** Preview Artifacts window: pipeline products only — drop feedback.* / feedback_index.json. */
+const stageArtifacts = computed(() => artifacts.value.filter((a) => !isFeedbackArtifactName(a.name)))
 const previewPin = computed(() => {
   const pin = preview.value?.productName || preview.value?.structured?.name || ''
-  if (pin && artifacts.value.some((a) => a.name === pin)) return pin
-  return artifacts.value[0]?.name || pin
+  if (pin && stageArtifacts.value.some((a) => a.name === pin)) return pin
+  // Never fall back to a feedback file when nothing is pinned.
+  return stageArtifacts.value[0]?.name || ''
 })
 
 function takeHash(): string {
@@ -170,7 +174,7 @@ async function refresh(opts: { silent: boolean }) {
           config: n.config || {},
         })),
         edges: [],
-        artifacts: artifacts.value,
+        artifacts: artifacts.value.filter((a) => !isFeedbackArtifactName(a.name)),
         vars: [],
         trace: [],
         priority: 'normal',
@@ -215,7 +219,7 @@ onUnmounted(() => {
     <ReactArtifactStage
       v-if="phase === 'ready' && token"
       class="min-h-0 flex-1"
-      :artifacts="artifacts"
+      :artifacts="stageArtifacts"
       :preview-artifact="previewPin"
       :run="runGraph"
       :node-id="nodeId"

@@ -218,6 +218,12 @@
   var DEFAULT_MARGIN_X = 28;
   var box = { x: 0, y: DEFAULT_Y, w: DEFAULT_W, h: MIN_H };
   var drag = null;
+  // Artifact modal: near-viewport default; min 480×320; session-only geometry.
+  var ARTIFACT_MIN_W = 480;
+  var ARTIFACT_MIN_H = 320;
+  var ARTIFACT_MARGIN = 28;
+  var artifactBox = null;
+  var artifactDrag = null;
 
   var BAR_CSS =
     ':host{all:initial}' +
@@ -237,16 +243,19 @@
     '.chat[aria-expanded="true"]{background:#4338ca}' +
     '.notice{margin-top:4px;color:#fbbf24}' +
     '.notice.ok{color:#6ee7b7}' +
-    '.mask{position:fixed;inset:0;z-index:2147483645;display:flex;align-items:center;justify-content:center;' +
-    'padding:28px;background:rgba(0,0,0,.45);box-sizing:border-box}' +
-    '.modal{width:min(920px,100%);height:min(640px,100%);display:flex;flex-direction:column;overflow:hidden;' +
+    '.mask{position:fixed;inset:0;z-index:2147483645;background:rgba(0,0,0,.45)}' +
+    '.modal{position:fixed;display:flex;flex-direction:column;overflow:hidden;min-width:0;' +
     'background:#f3f3f5;color:#18181b;border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.4);' +
     'font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}' +
-    '.mhead{display:flex;align-items:center;gap:8px;height:40px;padding:0 10px 0 14px;flex:none;' +
-    'background:#fff;border-bottom:1px solid #e6e6ea}' +
+    '.mhead{display:flex;align-items:center;gap:8px;height:40px;padding:0 8px 0 12px;flex:none;' +
+    'background:#fff;border-bottom:1px solid #e6e6ea;cursor:grab;user-select:none;touch-action:none}' +
+    '.mhead:active{cursor:grabbing}' +
+    '.mhead .drag{display:grid;grid-template-columns:repeat(2,3px);grid-auto-rows:3px;gap:3px;' +
+    'opacity:.35;flex:none;color:inherit}' +
+    '.mhead .drag i{width:3px;height:3px;border-radius:50%;background:currentColor}' +
     '.mhead [data-role="artifact-title"]{flex:1;min-width:0;font-size:13px;font-weight:600}' +
     '.mhead button{width:28px;height:28px;padding:0;display:grid;place-items:center;flex:none;' +
-    'border:0;border-radius:6px;background:transparent;color:#71717a;font-size:16px;line-height:1}' +
+    'border:0;border-radius:6px;background:transparent;color:#71717a;font-size:16px;line-height:1;cursor:pointer}' +
     '.mhead button:hover{background:#f4f4f5}' +
     '.modal iframe{flex:1;min-height:0;width:100%;border:0;background:#f3f3f5}' +
     '.drawer{position:fixed;z-index:2147483646;display:flex;flex-direction:column;overflow:hidden;' +
@@ -472,7 +481,7 @@
   }
 
   function beginDrag(ev, kind, dir) {
-    if (!drawerOpen || drag) return;
+    if (!drawerOpen || drag || artifactDrag) return;
     if (ev.button != null && ev.button !== 0) return;
     ev.preventDefault();
     ev.stopPropagation();
@@ -509,11 +518,191 @@
   }
 
   function onViewportResize() {
-    if (!ui || drag) return;
+    if (!ui || drag || artifactDrag) return;
     // Pull the window into the current viewport for display only. The size
     // written on pointerup stays in the session, so a larger viewport can restore it.
     box = drawer ? boxFromEmbed(drawer.embed) : clampBox(box);
     applyBox();
+    if (artifactOpen) {
+      artifactBox = clampArtifactBox(artifactBox || artifactDefaultBox());
+      applyArtifactBox();
+    }
+  }
+
+  function clampArtifactBox(b) {
+    var v = viewport();
+    var maxW = v.vw > 0 ? v.vw : ARTIFACT_MIN_W;
+    var maxH = v.vh > 0 ? v.vh : ARTIFACT_MIN_H;
+    var minW = v.vw > 0 && v.vw < ARTIFACT_MIN_W ? v.vw : ARTIFACT_MIN_W;
+    var minH = v.vh > 0 && v.vh < ARTIFACT_MIN_H ? v.vh : ARTIFACT_MIN_H;
+    var w = b && b.w;
+    var h = b && b.h;
+    if (!(typeof w === 'number' && isFinite(w))) w = Math.max(0, maxW - ARTIFACT_MARGIN * 2);
+    if (!(typeof h === 'number' && isFinite(h))) h = Math.max(0, maxH - ARTIFACT_MARGIN * 2);
+    if (w < minW) w = minW;
+    if (h < minH) h = minH;
+    if (w > maxW) w = maxW;
+    if (h > maxH) h = maxH;
+    var x = b && b.x;
+    var y = b && b.y;
+    if (!(typeof x === 'number' && isFinite(x))) x = ARTIFACT_MARGIN;
+    if (!(typeof y === 'number' && isFinite(y))) y = ARTIFACT_MARGIN;
+    var maxX = Math.max(0, (v.vw || w) - w);
+    var maxY = Math.max(0, (v.vh || h) - h);
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x > maxX) x = maxX;
+    if (y > maxY) y = maxY;
+    return { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) };
+  }
+
+  function artifactDefaultBox() {
+    var v = viewport();
+    return clampArtifactBox({
+      x: ARTIFACT_MARGIN,
+      y: ARTIFACT_MARGIN,
+      w: Math.max(0, (v.vw || 0) - ARTIFACT_MARGIN * 2),
+      h: Math.max(0, (v.vh || 0) - ARTIFACT_MARGIN * 2),
+    });
+  }
+
+  function applyArtifactBox() {
+    if (!ui || !ui.artifactModal) return;
+    var b = clampArtifactBox(artifactBox || artifactDefaultBox());
+    ui.artifactModal.style.left = b.x + 'px';
+    ui.artifactModal.style.top = b.y + 'px';
+    ui.artifactModal.style.width = b.w + 'px';
+    ui.artifactModal.style.height = b.h + 'px';
+  }
+
+  function setArtifactFramePassthrough(on) {
+    if (!artifactFrame) return;
+    artifactFrame.style.pointerEvents = on ? 'none' : '';
+  }
+
+  function artifactResizeFrom(start, dx, dy) {
+    var dir = start.dir || '';
+    var east = dir.indexOf('e') >= 0;
+    var south = dir.indexOf('s') >= 0;
+    var west = dir.indexOf('w') >= 0;
+    var north = dir.indexOf('n') >= 0;
+    var x = start.x;
+    var y = start.y;
+    var w = start.w;
+    var h = start.h;
+    if (east) w = start.w + dx;
+    if (south) h = start.h + dy;
+    if (west) {
+      w = start.w - dx;
+      x = start.x + dx;
+    }
+    if (north) {
+      h = start.h - dy;
+      y = start.y + dy;
+    }
+    var v = viewport();
+    var minW = v.vw > 0 && v.vw < ARTIFACT_MIN_W ? v.vw : ARTIFACT_MIN_W;
+    var minH = v.vh > 0 && v.vh < ARTIFACT_MIN_H ? v.vh : ARTIFACT_MIN_H;
+    if (w < minW) {
+      if (west) x = start.x + (start.w - minW);
+      w = minW;
+    }
+    if (h < minH) {
+      if (north) y = start.y + (start.h - minH);
+      h = minH;
+    }
+    if (east && v.vw > 0 && w > v.vw - x) w = v.vw - x;
+    if (west && x < 0) {
+      w = w + x;
+      x = 0;
+    }
+    if (south && v.vh > 0 && h > v.vh - y) h = v.vh - y;
+    if (north && y < 0) {
+      h = h + y;
+      y = 0;
+    }
+    var right = start.x + start.w;
+    var bottom = start.y + start.h;
+    w = Math.round(w);
+    h = Math.round(h);
+    if (west) x = Math.round(right) - w;
+    else x = Math.round(x);
+    if (north) y = Math.round(bottom) - h;
+    else y = Math.round(y);
+    return { x: x, y: y, w: w, h: h };
+  }
+
+  function onArtifactPointerMove(ev) {
+    if (!artifactDrag) return;
+    var dx = ev.clientX - artifactDrag.sx;
+    var dy = ev.clientY - artifactDrag.sy;
+    if (artifactDrag.kind === 'move') {
+      artifactBox = clampArtifactBox({
+        x: artifactDrag.x + dx,
+        y: artifactDrag.y + dy,
+        w: artifactDrag.w,
+        h: artifactDrag.h,
+      });
+    } else {
+      artifactBox = artifactResizeFrom(artifactDrag, dx, dy);
+    }
+    applyArtifactBox();
+  }
+
+  function endArtifactDrag() {
+    if (!artifactDrag) return;
+    artifactDrag = null;
+    setArtifactFramePassthrough(false);
+    window.removeEventListener('pointermove', onArtifactPointerMove, true);
+    window.removeEventListener('pointerup', endArtifactDrag, true);
+    window.removeEventListener('pointercancel', endArtifactDrag, true);
+    if (ui && ui.artifactModal) {
+      artifactBox = {
+        x: Number.parseInt(ui.artifactModal.style.left, 10) || 0,
+        y: Number.parseInt(ui.artifactModal.style.top, 10) || 0,
+        w: Number.parseInt(ui.artifactModal.style.width, 10) || 0,
+        h: Number.parseInt(ui.artifactModal.style.height, 10) || 0,
+      };
+      artifactBox = clampArtifactBox(artifactBox);
+    }
+  }
+
+  function beginArtifactDrag(ev, kind, dir) {
+    if (!artifactOpen || artifactDrag || drag) return;
+    if (ev.button != null && ev.button !== 0) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    var cur = clampArtifactBox(artifactBox || artifactDefaultBox());
+    artifactDrag = {
+      kind: kind,
+      dir: dir || '',
+      sx: ev.clientX,
+      sy: ev.clientY,
+      x: cur.x,
+      y: cur.y,
+      w: cur.w,
+      h: cur.h,
+    };
+    setArtifactFramePassthrough(true);
+    try {
+      if (ev.currentTarget && ev.currentTarget.setPointerCapture && ev.pointerId != null) {
+        ev.currentTarget.setPointerCapture(ev.pointerId);
+      }
+    } catch (e) {}
+    window.addEventListener('pointermove', onArtifactPointerMove, true);
+    window.addEventListener('pointerup', endArtifactDrag, true);
+    window.addEventListener('pointercancel', endArtifactDrag, true);
+  }
+
+  function onArtifactHeadPointerDown(ev) {
+    var t = ev.target;
+    if (t && t.closest && t.closest('button')) return;
+    beginArtifactDrag(ev, 'move', '');
+  }
+
+  function onArtifactEdgePointerDown(ev) {
+    var dir = ev.currentTarget && ev.currentTarget.getAttribute ? ev.currentTarget.getAttribute('data-dir') : '';
+    beginArtifactDrag(ev, 'resize', dir || '');
   }
 
   function mountBar() {
@@ -532,10 +721,16 @@
       '<style>' + BAR_CSS + '</style>' +
       '<div class="mask" data-role="artifact-mask" hidden>' +
       '<div class="modal" data-role="artifact-modal" role="dialog" aria-modal="true">' +
-      '<div class="mhead">' +
+      '<div class="mhead" data-role="artifact-head">' +
+      '<span class="drag" data-role="artifact-grip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>' +
       '<span data-role="artifact-title"></span>' +
       '<button type="button" data-role="artifact-close" aria-label="">×</button>' +
-      '</div></div></div>' +
+      '</div>' +
+      '<div class="edge n" data-dir="n"></div><div class="edge s" data-dir="s"></div>' +
+      '<div class="edge e" data-dir="e"></div><div class="edge w" data-dir="w"></div>' +
+      '<div class="edge nw" data-dir="nw"></div><div class="edge ne" data-dir="ne"></div>' +
+      '<div class="edge sw" data-dir="sw"></div><div class="edge se" data-dir="se"></div>' +
+      '</div></div>' +
       '<div class="drawer" data-role="drawer" hidden>' +
       '<div class="dhead" data-role="drawer-head">' +
       '<span class="drag" data-role="drawer-grip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>' +
@@ -597,8 +792,13 @@
     ui.artifactClose.title = T.closeArtifact;
     var head = shadow.querySelector('[data-role="drawer-head"]');
     head.addEventListener('pointerdown', onHeadPointerDown);
-    Array.prototype.forEach.call(shadow.querySelectorAll('.edge'), function (edge) {
+    Array.prototype.forEach.call(ui.drawer.querySelectorAll('.edge'), function (edge) {
       edge.addEventListener('pointerdown', onEdgePointerDown);
+    });
+    var artifactHead = shadow.querySelector('[data-role="artifact-head"]');
+    artifactHead.addEventListener('pointerdown', onArtifactHeadPointerDown);
+    Array.prototype.forEach.call(ui.artifactModal.querySelectorAll('.edge'), function (edge) {
+      edge.addEventListener('pointerdown', onArtifactEdgePointerDown);
     });
     var closeBtn = shadow.querySelector('[data-role="drawer-close"]');
     closeBtn.setAttribute('aria-label', T.close);
@@ -697,6 +897,7 @@
     ui.artifact.title = ok && drawerReady ? T.artifactTitle : '';
     ui.artifact.setAttribute('aria-expanded', artifactOpen ? 'true' : 'false');
     ui.artifactMask.hidden = !artifactOpen;
+    if (artifactOpen) applyArtifactBox();
     ui.chat.disabled = !ok;
     ui.chat.textContent = T.chat;
     ui.chat.title = ok ? T.chatTitle : '';
@@ -754,7 +955,11 @@
     // Wait for the chat iframe to redeem the ticket so the artifact page can
     // reuse the same localStorage session (tickets are one-shot).
     artifactOpen = !!on && usable() && drawerReady;
-    if (artifactOpen) ensureArtifactFrame();
+    if (artifactOpen) {
+      ensureArtifactFrame();
+      if (!artifactBox) artifactBox = artifactDefaultBox();
+      else artifactBox = clampArtifactBox(artifactBox);
+    }
     render();
   }
 
