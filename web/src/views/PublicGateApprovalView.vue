@@ -45,13 +45,21 @@ import type { AcpEvent, Artifact, ClarifyImage, ClarifyTurn, NodeType, ReactAnno
 
 const PUBLIC_SHARE_RUN_ID = 'public-share'
 
+/** Queue rows after opaque indexes are mapped to token image URLs. */
+type PublicChatQueueItem = {
+  id?: string
+  text?: string
+  images?: ClarifyImage[]
+  annotations?: ReactAnnotation[]
+}
+
 type PublicChatRef = {
   discardLastQueued?: () => void
   applyQueueState?: (
     waiting: number,
-    items: PublicGateQueueItem[] | null,
+    items: PublicChatQueueItem[] | null,
     busy?: boolean,
-    activeItem?: PublicGateActiveItem | null,
+    activeItem?: PublicChatQueueItem | null,
   ) => void
   applyReviewFrame?: (frame: Record<string, unknown>) => boolean | void
   applyAcpEvents?: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
@@ -573,7 +581,9 @@ function turnsIncludeHumanText(text: string): boolean {
   return turns.value.some((turn) => turn.role === 'human' && (turn.text || '').trim() === want)
 }
 
-function mapPublicQueueItem(item: PublicGateQueueItem | PublicGateActiveItem | null | undefined) {
+function mapPublicQueueItem(
+  item: PublicGateQueueItem | PublicGateActiveItem | null | undefined,
+): PublicChatQueueItem | null {
   if (!item) return null
   return {
     id: item.id,
