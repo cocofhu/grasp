@@ -442,3 +442,126 @@ func TestBuildReviewPreviewDTOClarifyCopyAndEmptyProduct(t *testing.T) {
 		t.Fatalf("review copy must not use clarify wording: %q", rev.Description)
 	}
 }
+
+func TestSanitizeTurnsPassesQuestionsAndForms(t *testing.T) {
+	huge := strings.Repeat("a", maxVisualHTMLBytes+32)
+	msgs := []models.ReactMessage{
+		{
+			Role: "agent",
+			Text: "请在上面的选项里选",
+			At:   "2026-08-01T00:00:00Z",
+			Questions: []models.ReactQuestion{{
+				ID:            "q1",
+				Prompt:        "哪一块没显示全？详见 http://10.1.2.3/api/runs/abc 与 run-abcdef12",
+				AllowMultiple: true,
+				Options: []models.ReactOption{
+					{
+						ID:          "title",
+						Label:       "标题 blob:deadbeef run-abcdef12",
+						Recommended: true,
+						DemoHtml:    `<link rel="stylesheet" href="https://cdn.example.com/app.css"><p>http://192.168.1.9/preview/x run-abcdef12</p>` + huge,
+					},
+					{ID: "body", Label: "正文"},
+				},
+			}},
+			Forms: []models.ReactForm{{
+				Title: "环境 http://127.0.0.1:8080/api/blobs/x",
+				Fields: []models.ReactFormField{{
+					Name:        "api",
+					Label:       "地址",
+					Type:        "url",
+					Placeholder: "见 run-abcdef12",
+					Value:       "blob:secret",
+					Required:    true,
+					Why:         "计划缺口",
+				}},
+			}},
+		},
+		{
+			Role: "agent",
+			Text: "",
+			At:   "2026-08-01T00:01:00Z",
+			Questions: []models.ReactQuestion{{
+				ID:     "q-empty",
+				Prompt: "只有选择题",
+				Options: []models.ReactOption{
+					{ID: "a", Label: "甲"},
+				},
+			}},
+		},
+		{
+			Role: "agent",
+			Text: "",
+			At:   "2026-08-01T00:02:00Z",
+			Forms: []models.ReactForm{{
+				Title: "只有表单",
+				Fields: []models.ReactFormField{{
+					Name:  "host",
+					Label: "主机",
+					Type:  "text",
+				}},
+			}},
+		},
+		{Role: "agent", Text: "", At: "2026-08-01T00:03:00Z"},
+	}
+	turns := SanitizeTurns(msgs)
+	if len(turns) != 3 {
+		t.Fatalf("turns=%d %+v", len(turns), turns)
+	}
+	q := turns[0].Questions
+	if len(q) != 1 || q[0].Prompt == "" || !q[0].AllowMultiple || len(q[0].Options) != 2 {
+		t.Fatalf("question: %+v", q)
+	}
+	if !q[0].Options[0].Recommended || q[0].Options[0].Label == "" || q[0].Options[1].Label != "正文" {
+		t.Fatalf("options: %+v", q[0].Options)
+	}
+	if len(turns[0].Forms) != 1 || turns[0].Forms[0].Title == "" || len(turns[0].Forms[0].Fields) != 1 {
+		t.Fatalf("forms: %+v", turns[0].Forms)
+	}
+	if turns[0].Forms[0].Fields[0].Type != "url" || !turns[0].Forms[0].Fields[0].Required {
+		t.Fatalf("field: %+v", turns[0].Forms[0].Fields[0])
+	}
+	if turns[1].Text != "" || len(turns[1].Questions) != 1 || turns[1].Questions[0].Prompt != "只有选择题" {
+		t.Fatalf("empty-text question dropped: %+v", turns[1])
+	}
+	if turns[2].Text != "" || len(turns[2].Forms) != 1 || turns[2].Forms[0].Title != "只有表单" {
+		t.Fatalf("empty-text form dropped: %+v", turns[2])
+	}
+	raw, _ := json.Marshal(turns)
+	s := string(raw)
+	for _, leak := range []string{"10.1.2.3", "192.168.1.9", "127.0.0.1", "blob:", "run-abcdef12", "/api/runs", "/api/blobs"} {
+		if strings.Contains(s, leak) {
+			t.Fatalf("question sanitize leak %q: %s", leak, s)
+		}
+	}
+	if !strings.Contains(s, "https://cdn.example.com/app.css") {
+		t.Fatalf("external stylesheet must stay: %s", s)
+	}
+	if !strings.Contains(q[0].Options[0].DemoHtml, "[redacted]") && !strings.Contains(q[0].Options[0].DemoHtml, "#") {
+		t.Fatalf("demo html should redact private address: %s", q[0].Options[0].DemoHtml)
+	}
+	if len(q[0].Options[0].DemoHtml) > maxVisualHTMLBytes {
+		t.Fatalf("demo html over visual cap: %d", len(q[0].Options[0].DemoHtml))
+	}
+	// No structured prompt: JSON and hash stay on the pre-question shape.
+	plain := SanitizeTurns([]models.ReactMessage{{
+		Role: "agent", Text: "请复审", At: "2026-08-01T00:00:00Z",
+	}})
+	plainRaw, _ := json.Marshal(plain)
+	const wantPlain = `[{"role":"agent","text":"请复审","at":"2026-08-01T00:00:00Z"}]`
+	if string(plainRaw) != wantPlain {
+		t.Fatalf("plain turn JSON changed: %s", plainRaw)
+	}
+	if strings.Contains(string(plainRaw), "questions") || strings.Contains(string(plainRaw), "forms") {
+		t.Fatalf("empty questions/forms must be omitted: %s", plainRaw)
+	}
+	withQ := SanitizeTurns([]models.ReactMessage{{
+		Role: "agent", Text: "请复审", At: "2026-08-01T00:00:00Z",
+		Questions: []models.ReactQuestion{{
+			ID: "q1", Prompt: "哪一块", Options: []models.ReactOption{{ID: "a", Label: "标题"}},
+		}},
+	}})
+	if HashTurns(plain) == HashTurns(withQ) {
+		t.Fatal("questions must change the sparse-poll turns hash")
+	}
+}
