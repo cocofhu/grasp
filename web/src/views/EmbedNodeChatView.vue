@@ -22,6 +22,7 @@ import {
 } from '@/lib/inbox/embedChat'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { setThemeOverride } from '@/lib/shared/theme'
+import { createEmbedLiveContext } from '@/lib/inbox/embedLiveContext'
 import { usePageControl } from '@/lib/inbox/embedPageControl'
 import {
   EMBED_LIVE_ACK_MESSAGE,
@@ -79,6 +80,8 @@ const liveNotice = ref('')
 function postToPage(msg: Record<string, unknown>) {
   if (window.parent !== window) window.parent.postMessage(msg, parentOrigin())
 }
+
+const pageContext = createEmbedLiveContext(postToPage)
 
 /** Tell the page whether Live is on and what sessions exist (connect / reconnect). */
 async function syncLive() {
@@ -203,6 +206,7 @@ function onMessage(e: MessageEvent) {
   if (window.parent === window || e.source !== window.parent) return
   const origin = window.location.ancestorOrigins?.[0]
   if (origin && e.origin !== origin) return
+  if (pageContext.onResult(e.data)) return
   const theme = parseEmbedThemeMessage(e.data)
   if (theme) {
     setThemeOverride(theme)
@@ -234,6 +238,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   window.removeEventListener('message', onMessage)
+  pageContext.dispose()
   pageControl.dispose()
   setThemeOverride(null)
 })
@@ -290,6 +295,7 @@ onUnmounted(() => {
       ref="chatRef"
       class="min-h-0 flex-1"
       :embed-token="token"
+      :request-page-context="pageContext.request"
       @status="onStatus"
       @events-ready="onEventsReady"
       @events-closed="pageControl.onEventsClosed"

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/handlers"
 	"github.com/cocofhu/grasp/internal/mcp"
@@ -95,6 +96,12 @@ func TestPublicLiveReactOnlyDeniesLiveWrites(t *testing.T) {
 	}, hdr)
 	if reply.Code != http.StatusForbidden || !strings.Contains(reply.Body.String(), "permission_denied") {
 		t.Fatalf("live reply: %d %s", reply.Code, reply.Body.String())
+	}
+	pageReply := h.doPublic(http.MethodPost, "/public/gate-approvals/reply", map[string]any{
+		"token": token, "live": models.LiveEvent{Op: models.LiveOpGenerate, SID: "page01", Scope: "page", Prompt: "给登录弹窗三个方案"},
+	}, hdr)
+	if pageReply.Code != http.StatusForbidden || !strings.Contains(pageReply.Body.String(), "permission_denied") {
+		t.Fatalf("page generation bypassed react_only: %d %s", pageReply.Code, pageReply.Body.String())
 	}
 	ctxReply := h.doPublic(http.MethodPost, "/public/gate-approvals/reply", map[string]any{
 		"token": token, "text": "标题再大点", "liveCtx": map[string]any{"sid": "sid001", "current": 1},
@@ -217,5 +224,103 @@ func TestLiveCapabilityForGraspEmbedAndAuthenticatedPreview(t *testing.T) {
 				t.Fatalf("drawer Live: %d %s", response.Code, response.Body.String())
 			}
 		})
+	}
+}
+
+type chatLiveCall struct {
+	human  string
+	images []models.PromptImage
+	err    error
+}
+
+type chatLiveProvider struct {
+	livePermissionProvider
+	calls chan chatLiveCall
+}
+
+func (p *chatLiveProvider) ReviseInPlace(_ context.Context, req runtime.NodeReq, _ []models.ReactMessage, human string, images []models.PromptImage) runtime.ReactTurn {
+	_, err := p.eng.ApplyLiveReport(req.RunID, req.NodeID, mcp.LiveReport{SID: "chat01", State: models.LiveStateReady,
+		File: "src/Dialog.vue", Variants: []models.LiveVariant{{N: 1, Label: "层级"}, {N: 2, Label: "紧凑"}, {N: 3, Label: "强调"}}})
+	p.calls <- chatLiveCall{human: human, images: images, err: err}
+	return runtime.ReactTurn{Msg: "请在页面上比较三个候选"}
+}
+
+func (p *chatLiveProvider) ReactReply(ctx context.Context, req runtime.NodeReq, history []models.ReactMessage, human string, images []models.PromptImage, _ bool) runtime.ReactTurn {
+	return p.ReviseInPlace(ctx, req, history, human, images)
+}
+
+func TestChatLiveGenerateThroughAuthenticatedAndEmbedReplies(t *testing.T) {
+	for _, nodeType := range []string{"app_preview", "grasp", "approve"} {
+		for _, entry := range []string{"authenticated", "embed"} {
+			t.Run(nodeType+"/"+entry, func(t *testing.T) {
+				h := newHarness(t)
+				runID, nodeID := "run-chat-live", "preview"
+				seedInboxReview(t, h, runID, nodeID, true)
+				var run models.Run
+				h.db.First(&run, "id = ?", runID)
+				run.Graph.FindNode(nodeID).Type = nodeType
+				h.db.Save(&run)
+				seedDirectPreview(t, h, runID, nodeID)
+				provider := &chatLiveProvider{calls: make(chan chatLiveCall, 1)}
+				eng := engine.New(h.db, provider, h.host, h.h.Arts, 5)
+				eng.SetBlobStore(blob.NewMemory())
+				provider.eng = eng
+				h.h.Eng = eng
+				t.Cleanup(eng.Close)
+				prompt := strings.Repeat("把登录弹窗改得更易读。", 12)
+				images := []models.PromptImage{{Data: "QUJD", MimeType: "image/png", Name: "reference.png"}}
+				annotations := []models.ReactAnnotation{{Selector: "#login-dialog", Text: "按钮需要更明显"}}
+				// Preserve ordinary composer support for attachment-only turns.
+				if nodeType == "grasp" {
+					prompt, annotations = "", nil
+				}
+				if nodeType == "approve" {
+					prompt, images = "", nil
+				}
+				body := map[string]any{"live": models.LiveEvent{Op: models.LiveOpGenerate, SID: "chat01", Scope: "page", Prompt: prompt, Count: 3}, "images": images, "annotations": annotations}
+				var code int
+				var response string
+				if entry == "embed" {
+					token, _ := redeem(t, h, issueSessionTicket(t, h, runID, nodeID))["token"].(string)
+					body["token"] = token
+					w := h.doPublic(http.MethodPost, "/public/gate-approvals/reply", body, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
+					code, response = w.Code, w.Body.String()
+				} else {
+					w := h.do(http.MethodPost, "/api/runs/"+runID+"/react/"+nodeID+"/reply", body)
+					code, response = w.Code, w.Body.String()
+				}
+				if code != http.StatusOK || !strings.Contains(response, `"live"`) {
+					t.Fatalf("chat generate: %d %s", code, response)
+				}
+				select {
+				case call := <-provider.calls:
+					if call.err != nil || !strings.Contains(call.human, "scope: page") || !strings.Contains(call.human, "等待用户选择") || !strings.Contains(call.human, prompt) {
+						t.Fatalf("agent did not receive page choices contract: %+v", call)
+					}
+					if len(call.images) != len(images) || (len(images) > 0 && (call.images[0].Data != "" || !strings.HasPrefix(call.images[0].Ref, "blob:"))) {
+						t.Fatalf("attachments lost or not externalized: %+v", call.images)
+					}
+					if len(annotations) > 0 && !strings.Contains(call.human, "按钮需要更明显") {
+						t.Fatalf("annotations omitted from agent prompt: %s", call.human)
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatal("Live chat turn did not reach agent")
+				}
+				var conv models.ReactConversation
+				h.db.Where("run_id = ? AND node_id = ?", runID, nodeID).First(&conv)
+				var human *models.ReactMessage
+				for i := range conv.Messages {
+					if conv.Messages[i].Role == "human" {
+						human = &conv.Messages[i]
+					}
+				}
+				if human == nil || human.Live == nil || human.Live.SID != "chat01" || human.Text == "" || (prompt != "" && human.Text != prompt) || len(human.Images) != len(images) || len(human.Annotations) != len(annotations) {
+					t.Fatalf("Live human turn lost context: %+v", human)
+				}
+				if conv.Done {
+					t.Fatal("candidate generation completed the dialogue before user selection")
+				}
+			})
+		}
 	}
 }

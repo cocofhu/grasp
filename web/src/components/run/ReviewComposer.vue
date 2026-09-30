@@ -24,6 +24,7 @@ import type { PageControlState } from '@/lib/inbox/embedPageControl'
 const props = withDefaults(
   defineProps<{
     mode: 'clarify' | 'review' | 'gate'
+    sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[]) => Promise<boolean>
     runId?: string
     nodeId?: string
     iteration?: number
@@ -263,6 +264,7 @@ function onConfirm() {
       :hide-finish="!canPass || (mode === 'clarify' && !isGrasp(nodeType) && !forceConfirm)"
       :seed-human-text="seedHumanText"
       :seed-human-images="seedHumanImages"
+      :send-request="sendRequest"
       :send-label="mode === 'clarify' ? t('pages.reviewComposer.sendClarify') : undefined"
       :confirm-error="confirmError"
       :confirm-can-abort="confirmCanAbort"
@@ -273,7 +275,9 @@ function onConfirm() {
       @cancel="emit('cancel')"
       @queue-remove="(itemId, index) => emit('queue-remove', itemId, index)"
       @queue-reorder="(itemIds) => emit('queue-reorder', itemIds)"
-    />
+    >
+      <template #composer-mode><slot name="composer-mode" /></template>
+    </ClarifyChat>
   </div>
 
   <!-- Gate: local composer with review-semantics sticky actions (send + confirm). -->

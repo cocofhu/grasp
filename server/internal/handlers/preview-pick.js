@@ -62,10 +62,10 @@
         agentOn: 'Agent 可操作此页面',
         agentBusy: 'Agent 正在操作…',
         stop: '停止',
-        live: 'Live 实时变体',
-        liveOn: 'Live · 开',
-        liveOff: 'Live · 关',
-        liveEnable: '开启 Live 实时变体：点选元素、圈画批注，生成设计候选',
+        live: 'Live 工具',
+        liveOn: 'Live 工具',
+        liveOff: 'Live 工具',
+        liveEnable: '打开 Live 工具：点选元素、圈画批注，生成局部设计候选',
         liveDisable: '关闭 Live 操作面板（保留已有候选）',
       }
     : {
@@ -85,10 +85,10 @@
         agentOn: 'Agent can operate this page',
         agentBusy: 'Agent is operating…',
         stop: 'Stop',
-        live: 'Live variants',
-        liveOn: 'Live · On',
-        liveOff: 'Live · Off',
-        liveEnable: 'Turn on Live variants: pick elements, annotate and generate designs',
+        live: 'Live tools',
+        liveOn: 'Live tools',
+        liveOff: 'Live tools',
+        liveEnable: 'Open Live tools: pick elements, annotate and generate local designs',
         liveDisable: 'Close Live controls (keep existing candidates)',
       };
 
@@ -1376,6 +1376,17 @@
   }
 
   function onLiveMessage(data) {
+    if (data.type === 'grasp-embed:live-context-request') {
+      var nonce = typeof data.nonce === 'string' ? data.nonce : '';
+      if (!nonce || nonce.length > 64) return;
+      var answer = function (ok) {
+        ok = ok && live.enabled && usable() && drawerReady;
+        postDrawer({ type: 'grasp-embed:live-context-result', nonce: nonce, ok: ok, url: ok ? currentUrl() : undefined });
+      };
+      if (!live.enabled || !usable() || !drawerReady) answer(false);
+      else loadLive().then(function () { answer(true); }, function () { answer(false); });
+      return;
+    }
     if (data.type === EMBED_LIVE_CAPS) {
       live.enabled = data.enabled === true;
       if (live.enabled && live.api) live.api.setEnabled(true);

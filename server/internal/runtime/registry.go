@@ -20,8 +20,10 @@ var errReviewUnsupported = errors.New("当前执行后端不支持 ReAct 复审"
 // Compile-time: the production provider must expose review capabilities so the
 // engine's type-assert to ReviewProvider succeeds in real deployments.
 var (
-	_ ExecProvider   = (*ProviderRegistry)(nil)
-	_ ReviewProvider = (*ProviderRegistry)(nil)
+	_ ExecProvider         = (*ProviderRegistry)(nil)
+	_ ReviewProvider       = (*ProviderRegistry)(nil)
+	_ LiveMarkerScanner    = (*ProviderRegistry)(nil)
+	_ LiveBaselinePreparer = (*ProviderRegistry)(nil)
 )
 
 // ProviderRegistry routes agent/react execution to the ExecProvider matching
@@ -43,6 +45,38 @@ func NewProviderRegistry(host *mcp.Host, opts Options) *ProviderRegistry {
 }
 
 func (r *ProviderRegistry) Name() string { return "registry" }
+
+func (r *ProviderRegistry) PrepareLiveBaseline(ctx context.Context, runID, nodeID string) error {
+	for _, p := range r.providers {
+		if rp, ok := p.(ReviewProvider); ok && rp.HasLiveSession(runID, nodeID) {
+			if prep, ok := p.(LiveBaselinePreparer); ok {
+				return prep.PrepareLiveBaseline(ctx, runID, nodeID)
+			}
+			return errors.New("当前执行后端不支持 Live 源码基线")
+		}
+	}
+	return errors.New("Live 预览会话不可用,请先恢复节点会话后重试")
+}
+
+func (r *ProviderRegistry) LiveMarkerSIDs(ctx context.Context, runID, nodeID string) ([]string, bool, error) {
+	for _, p := range r.providers {
+		if scanner, ok := p.(LiveMarkerScanner); ok {
+			sids, parked, err := scanner.LiveMarkerSIDs(ctx, runID, nodeID)
+			if parked || err != nil {
+				return sids, parked, err
+			}
+		}
+	}
+	return nil, false, nil
+}
+
+func (r *ProviderRegistry) InstallLiveGuard(ctx context.Context, runID, nodeID string) {
+	for _, p := range r.providers {
+		if scanner, ok := p.(LiveMarkerScanner); ok {
+			scanner.InstallLiveGuard(ctx, runID, nodeID)
+		}
+	}
+}
 
 func (r *ProviderRegistry) backendFor(req NodeReq) AcpBackend {
 	profile := models.AgentProfile(req.Config)

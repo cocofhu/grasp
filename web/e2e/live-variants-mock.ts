@@ -13,6 +13,7 @@ type Event = {
   action?: string
   prompt?: string
   count?: number
+  scope?: 'page'
   variant?: number
   position?: string
   params?: Record<string, unknown>
@@ -43,13 +44,14 @@ type Session = {
   attempts: number
   refined?: number[]
 }
-type Reply = { token?: string; live?: Event; text?: string; liveCtx?: { sid: string; current: number; params?: Record<string, unknown> } }
+type Reply = { images?: Array<{data?:string; mimeType?:string; name?:string}>; annotations?: Array<{selector?:string; label?:string; note?:string}>; token?: string; live?: Event; text?: string; liveCtx?: { sid: string; current: number; params?: Record<string, unknown> } }
 type State = {
+  permissionPreset?: 'full' | 'react_only'
   node: { type: string; config: { direct_preview: boolean; live_variants?: boolean } }
   source: string
   revision: number
   sessions: Session[]
-  messages: Array<{ id: string; text: string; live: { sid: string; op: string; variant?: number } }>
+  messages: Array<{ id: string; text: string; live?: { sid: string; op: string; variant?: number } }>
   requests: Reply[]
 }
 
@@ -171,14 +173,18 @@ function processReply(state: State, reply: Reply, res: ServerResponse) {
     // permission validation is exercised separately by engine/handler tests.
     ev = { op: reply.text?.includes('就用这个') ? 'accept' : 'refine', sid: reply.liveCtx.sid, variant: reply.liveCtx.current, params: reply.liveCtx.params }
   }
-  if (!ev) return json(res, { error: 'Live request required' }, 400)
+  if (!ev) {
+    state.messages.push({ id: String(state.messages.length + 1), text: reply.text || '附件反馈' })
+    json(res, { status: 'accepted' })
+    return
+  }
   const event = ev
   let session = state.sessions.find((s) => s.sid === event.sid)
   if (!session) {
     session = {
       sid: event.sid, mode: event.op === 'steer' ? 'steer' : event.op === 'insert' ? 'insert' : 'replace',
       state: 'generating', prompt: event.prompt, selector: event.element?.selector,
-      summary: event.element?.text, url: event.url, updatedAt: new Date().toISOString(), original: state.source, attempts: 0,
+      summary: event.element?.text || (event.scope === 'page' ? '页面候选' : undefined), url: event.url, updatedAt: new Date().toISOString(), original: state.source, attempts: 0,
     }
     state.sessions.push(session)
   }
@@ -208,6 +214,7 @@ export function handleLiveVariantsMock(req: IncomingMessage, res: ServerResponse
     states.delete(key)
     const state = stateFor(key)
     state.node = { type: url.searchParams.get('nodeType') || 'app_preview', config: { direct_preview: url.searchParams.get('direct') !== 'false' } }
+    if (url.searchParams.get('permission') === 'react_only') state.permissionPreset = 'react_only'
     if (url.searchParams.has('live')) state.node.config.live_variants = url.searchParams.get('live') !== 'false'
     json(res, publicState(state))
     return true
@@ -250,7 +257,7 @@ function handleLiveEntryApi(req: IncomingMessage, res: ServerResponse, url: URL)
       const key = entryKey(reply.token)
       if (!key) return json(res, { error: 'unknown token' }, 403)
       const state = stateFor(key)
-      if (!entryEnabled(state)) return json(res, { error: 'Live disabled' }, 403)
+      if (reply.live && (!entryEnabled(state) || state.permissionPreset === 'react_only')) return json(res, { error: 'Live disabled' }, 403)
       processReply(state, reply, res)
     })
     return true
@@ -265,7 +272,7 @@ function handleLiveEntryApi(req: IncomingMessage, res: ServerResponse, url: URL)
   if (url.pathname.endsWith('/preview')) {
     json(res, {
       status: 'active', kind: 'review', nodeType: state.node.type, title: 'Live direct preview',
-      remainingSec: 3600, nonce: 'live-entry', permissionPreset: 'full', reactSessionAlive: true,
+      remainingSec: 3600, nonce: 'live-entry', permissionPreset: state.permissionPreset || 'full', reactSessionAlive: true,
       sessionBusy: false, waiting: 0, queueItems: [], actions: { reply: 'reply', confirm: 'confirm' },
       turns: [
         { role: 'agent', text: '应用已启动，可在预览中使用 Live。', at: '2026-09-30T00:00:00Z' },

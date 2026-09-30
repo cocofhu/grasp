@@ -3844,6 +3844,11 @@
         }
       },
       "live": {
+        "candidateMode": "Page candidates",
+        "candidateHint": "Send a request to generate 3 preview candidates, then choose and accept. Open candidates use Chat to refine or accept the current version. Turning this off keeps candidates.",
+        "pendingCandidates": "An existing candidate set is working, needs recovery or is not visible. Wait, or recover/discard it first.",
+        "promptTooLong": "Page candidate requests are limited to 2000 characters. Shorten the request and retry.",
+        "previewUnavailable": "Preview Live tools are unavailable. Reopen the preview and retry.",
         "title": "Live variants",
         "ops": {
           "generate": "Generate variants",

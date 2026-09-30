@@ -13,6 +13,7 @@ import {
   PAGE_CONTROL_CAP,
 } from '@/lib/inbox/embedChat'
 import { PICK_HTML_MAX, PICK_TEXT_MAX } from './previewPickUrl'
+import { EMBED_LIVE_CONTEXT_REQUEST, EMBED_LIVE_CONTEXT_RESULT } from '../inbox/embedLiveContext'
 
 const repo = resolve(__dirname, '../../../..')
 const COPIES = [
@@ -1210,17 +1211,17 @@ describe('preview-pick.js Live overlay hook', () => {
     expect(liveButton().hidden).toBe(false)
     expect(liveButton().disabled).toBe(false)
     expect(liveButton().getAttribute('aria-pressed')).toBe('false')
-    expect(liveButton().getAttribute('aria-label')).toBe('Live variants')
-    expect(liveButton().textContent).toBe('Live · Off')
-    expect(liveButton().title).toContain('Turn on Live')
+    expect(liveButton().getAttribute('aria-label')).toBe('Live tools')
+    expect(liveButton().textContent).toBe('Live tools')
+    expect(liveButton().title).toContain('Open Live tools')
     liveButton().click()
     expect(fake.toggles).toBe(1)
     expect(liveButton().getAttribute('aria-pressed')).toBe('true')
-    expect(liveButton().textContent).toBe('Live · On')
+    expect(liveButton().textContent).toBe('Live tools')
     expect(liveButton().title).toContain('Close Live')
     liveButton().click()
     expect(liveButton().getAttribute('aria-pressed')).toBe('false')
-    expect(liveButton().textContent).toBe('Live · Off')
+    expect(liveButton().textContent).toBe('Live tools')
     expect(fake.opts!.post({ type: 'grasp-embed:live', op: 'discard', sid: 'sid001' })).toBe(true)
     expect(inbox.find((m) => m.type === 'grasp-embed:live')).toMatchObject({ op: 'discard', sid: 'sid001', target: GRASP })
     send({ type: 'grasp-embed:live-cmd', sid: 'sid001', cmd: 'goto', variant: 2 })
@@ -1246,6 +1247,85 @@ describe('preview-pick.js Live overlay hook', () => {
     await settle()
     const s = p.win.document.querySelector('script[data-grasp-live-overlay]') as unknown as HTMLScriptElement | null
     expect(s?.getAttribute('src')).toBe('/__grasp/live-overlay.js')
+  })
+
+  it('acknowledges the current page to chat once Live controls load without opening the picker', async () => {
+    const { p, send, inbox, fake } = await ready()
+    send({ type: 'grasp-embed:live-caps', enabled: true })
+    p.win.history.pushState({}, '', '/login?tab=design')
+    send({ type: EMBED_LIVE_CONTEXT_REQUEST, nonce: 'chat-start-1' })
+    await settle()
+    expect(inbox.filter((m) => m.type === EMBED_LIVE_CONTEXT_RESULT)).toEqual([
+      { type: EMBED_LIVE_CONTEXT_RESULT, nonce: 'chat-start-1', ok: true, url: 'http://10.0.0.5:5173/login?tab=design', target: GRASP },
+    ])
+    expect(fake.opts).not.toBeNull()
+    expect(fake.open).toBe(false)
+    expect(fake.toggles).toBe(0)
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(false)
+  })
+
+  it('does not expose the page URL to other origins, other frames, or invalid request nonces', async () => {
+    const { p, send, inbox } = await ready()
+    send({ type: 'grasp-embed:live-caps', enabled: true })
+    await settle()
+    for (const [origin, source] of [
+      ['https://evil.example', p.frame()?.contentWindow],
+      [GRASP, p.win],
+      [GRASP, null],
+    ] as const) {
+      p.win.dispatchEvent(new p.win.MessageEvent('message', { data: { type: EMBED_LIVE_CONTEXT_REQUEST, nonce: 'spoofed' }, origin, source: source as never }))
+    }
+    for (const nonce of [undefined, null, 123, '', 'x'.repeat(65)]) send({ type: EMBED_LIVE_CONTEXT_REQUEST, nonce })
+    await settle()
+    expect(inbox.filter((m) => m.type === EMBED_LIVE_CONTEXT_RESULT)).toEqual([])
+    send({ type: EMBED_LIVE_CONTEXT_REQUEST, nonce: 'x'.repeat(64) })
+    await settle()
+    expect(inbox.filter((m) => m.type === EMBED_LIVE_CONTEXT_RESULT)).toEqual([
+      expect.objectContaining({ nonce: 'x'.repeat(64), ok: true, target: GRASP }),
+    ])
+  })
+
+  it('refuses chat generation while Live capability is disabled', async () => {
+    const { send, inbox, fake } = await ready()
+    send({ type: EMBED_LIVE_CONTEXT_REQUEST, nonce: 'disabled' })
+    await settle()
+    expect(inbox.filter((m) => m.type === EMBED_LIVE_CONTEXT_RESULT)).toEqual([
+      { type: EMBED_LIVE_CONTEXT_RESULT, nonce: 'disabled', ok: false, url: undefined, target: GRASP },
+    ])
+    expect(fake.opts).toBeNull()
+  })
+
+  it('reports a failed overlay load to chat so a request cannot silently become ordinary text', async () => {
+    const { p, send, inbox } = await ready(false)
+    send({ type: 'grasp-embed:live-caps', enabled: true })
+    send({ type: EMBED_LIVE_CONTEXT_REQUEST, nonce: 'blocked-load' })
+    const script = p.win.document.querySelector('script[data-grasp-live-overlay]')
+    expect(script).not.toBeNull()
+    script!.dispatchEvent(new p.win.Event('error'))
+    await settle()
+    expect(inbox.filter((m) => m.type === EMBED_LIVE_CONTEXT_RESULT)).toEqual([
+      { type: EMBED_LIVE_CONTEXT_RESULT, nonce: 'blocked-load', ok: false, url: undefined, target: GRASP },
+    ])
+  })
+
+  it.each([
+    { type: 'grasp-embed:live-caps', enabled: false },
+    { type: EMBED_SESSION_MESSAGE, ok: false },
+  ])('does not acknowledge a pending load after capability or session loss: %j', async (revocation) => {
+    const { p, send, inbox } = await ready(false)
+    send({ type: 'grasp-embed:live-caps', enabled: true })
+    send({ type: EMBED_LIVE_CONTEXT_REQUEST, nonce: 'pending-load' })
+    send(revocation)
+    ;(p.win as unknown as Record<string, unknown>).__graspLiveOverlay = {
+      version: 1,
+      create: () => ({ onDrawer: () => {}, setEnabled: () => {}, isOpen: () => false }),
+    }
+    const script = p.win.document.querySelector('script[data-grasp-live-overlay]')
+    script!.dispatchEvent(new p.win.Event('load'))
+    await settle()
+    expect(inbox.filter((m) => m.type === EMBED_LIVE_CONTEXT_RESULT)).toEqual([
+      { type: EMBED_LIVE_CONTEXT_RESULT, nonce: 'pending-load', ok: false, url: undefined, target: GRASP },
+    ])
   })
 
   it('never picks the Live overlay itself', async () => {

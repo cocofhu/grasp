@@ -281,12 +281,12 @@ test.describe('Live entry on Grasp direct previews', () => {
       expect(await (await capability).json()).toMatchObject({ status: 'active', enabled: true, sessions: [] })
       await expect(drawer(page).getByTestId('clarify-input')).toBeVisible({ timeout: 15_000 })
       const liveSwitch = page.locator('grasp-preview-pick [data-role="live"]')
-      await expect(liveSwitch).toHaveAttribute('aria-label', 'Live 实时变体')
+      await expect(liveSwitch).toHaveAttribute('aria-label', 'Live 工具')
       await expect(liveSwitch).toHaveAttribute('aria-pressed', 'false')
-      await expect(liveSwitch).toHaveText('Live · 关')
+      await expect(liveSwitch).toHaveText('Live 工具')
       await liveSwitch.click()
       await expect(liveSwitch).toHaveAttribute('aria-pressed', 'true')
-      await expect(liveSwitch).toHaveText('Live · 开')
+      await expect(liveSwitch).toHaveText('Live 工具')
       await overlay(page).locator('[data-act="close"]').click()
       await expect(liveSwitch).toHaveAttribute('aria-pressed', 'false')
       await expect(overlay(page).locator('[data-act="pick"]')).toBeHidden()
@@ -307,12 +307,12 @@ test.describe('Live entry on Grasp direct previews', () => {
       await expect(page.locator('[data-grasp-variant="1"]')).toBeHidden()
       await expect(drawer(page).getByTestId('live-variant-viewing').last()).toContainText('2')
       await liveSwitch.click()
-      await expect(liveSwitch).toHaveText('Live · 关')
+      await expect(liveSwitch).toHaveText('Live 工具')
       await expect(overlay(page).locator('[data-act="pick"]')).toBeHidden()
       await expect(page.locator('[data-grasp-variant="2"]')).toBeVisible()
       expect((await state(page, key)).sessions.at(-1).state).toBe('ready')
       await liveSwitch.click()
-      await expect(liveSwitch).toHaveText('Live · 开')
+      await expect(liveSwitch).toHaveText('Live 工具')
       await expect(overlay(page).locator('[data-act="pick"]')).toBeVisible()
       await page.screenshot({ path: testInfo.outputPath(`live-${nodeType}-variants.png`), animations: 'disabled' })
       await drawer(page).getByTestId('clarify-input').fill('就用这个')
@@ -339,4 +339,140 @@ test.describe('Live entry on Grasp direct previews', () => {
       expect((await state(page, key)).requests).toEqual([])
     })
   }
+})
+
+test.describe('production Chat composer page candidates', () => {
+  async function entry(page: Page, key: string, options = '') {
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await page.evaluate(() => localStorage.removeItem('__grasp_embed')).catch(() => {})
+    await page.request.post(`${origin}/__e2e/live/reset?key=${key}&nodeType=grasp${options}`)
+    await page.goto(`${origin}/live-variants.html?key=${key}&tab=layout`)
+    await expect(drawer(page).getByTestId('clarify-input')).toBeVisible({ timeout: 15_000 })
+  }
+
+  async function attachReference(page: Page) {
+    await drawer(page).locator('input[type="file"]').setInputFiles({ name: 'reference.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNf8AAAAASUVORK5CYII=', 'base64') })
+    await expect(drawer(page).getByTestId('clarify-draft-image-thumb')).toBeVisible()
+  }
+
+  test('Chat switch generates 3 candidates without picking, syncs selection 2 and waits for Chat adoption', async ({ page }, testInfo) => {
+    const key = 'entry-composer'
+    await entry(page, key)
+    const mode = drawer(page).getByTestId('live-candidate-mode')
+    const tools = page.locator('grasp-preview-pick [data-role="live"]')
+    await expect(mode).toHaveAttribute('aria-checked', 'false')
+    await expect(tools).toHaveAttribute('aria-pressed', 'false')
+    await attachReference(page)
+    // A normal preview annotation, delivered through the authenticated parent.
+    // It does not select a Live target or open the Live tools panel.
+    await page.evaluate(() => {
+      const frame = document.querySelector('grasp-preview-pick')?.shadowRoot?.querySelector<HTMLIFrameElement>('[data-role="drawer"] iframe')
+      frame?.contentWindow?.postMessage({ type: 'grasp-embed:pick', payload: { selector: 'section#newsletter h2', tagName: 'H2', text: 'Newsletter original', outerHTML: '<h2>Newsletter original</h2>', url: location.href } }, location.origin)
+    })
+    await expect(drawer(page).getByTestId('clarify-annotation-chip')).toBeVisible()
+    await mode.click()
+    await expect(drawer(page).getByTestId('live-candidate-hint')).toContainText('3')
+    await drawer(page).getByTestId('clarify-input').fill('保留订阅交互，生成三个整页设计候选供我挑选')
+    await page.screenshot({ path: testInfo.outputPath('chat-page-candidates-switch.png'), animations: 'disabled' })
+    await drawer(page).getByTestId('public-gate-chat-host').screenshot({ path: testInfo.outputPath('chat-page-candidates-composer.png'), animations: 'disabled' })
+    const request = page.waitForRequest((item) => item.url().endsWith('/public/gate-approvals/reply') && item.postDataJSON()?.live?.scope === 'page')
+    await drawer(page).getByTestId('clarify-send-label').click()
+    const body = (await request).postDataJSON()
+    expect(body).toMatchObject({
+      text: '保留订阅交互，生成三个整页设计候选供我挑选',
+      live: { op: 'generate', scope: 'page', count: 3, url: `${origin}/live-variants.html?key=${key}&tab=layout` },
+      images: [{ name: 'reference.png', mimeType: 'image/png' }],
+      annotations: [{ selector: 'section#newsletter h2' }],
+    })
+    expect(body.live).not.toHaveProperty('element')
+    expect(body.live).not.toHaveProperty('action')
+    await expect(drawer(page).getByTestId('live-variant-card').last()).toHaveAttribute('data-state', 'ready')
+    await expect(page.locator('[data-grasp-variant]:not([data-grasp-variant="0"])')).toHaveCount(3)
+    await expect(overlay(page).locator('[data-act="next"]')).toBeVisible()
+    await expect(tools).toHaveAttribute('aria-pressed', 'false')
+    await expect(overlay(page).locator('[data-act="pick"]')).toBeHidden()
+    const generated = await state(page, key)
+    expect(generated.sessions).toHaveLength(1)
+    expect(generated.sessions[0].state).toBe('ready')
+    expect(generated.source).toContain('data-grasp-live')
+    await overlay(page).locator('[data-act="next"]').click()
+    await expect(page.locator('[data-grasp-variant="2"]')).toBeVisible()
+    await expect(drawer(page).getByTestId('live-variant-viewing').last()).toContainText('2')
+    // Turning the Chat send mode off does not close, accept or discard candidates.
+    await mode.click()
+    await expect(mode).toHaveAttribute('aria-checked', 'false')
+    await expect(page.locator('[data-grasp-variant="2"]')).toBeVisible()
+    expect((await state(page, key)).sessions[0].state).toBe('ready')
+    await page.screenshot({ path: testInfo.outputPath('chat-page-candidates-choose.png'), animations: 'disabled' })
+    await mode.click()
+    await drawer(page).getByTestId('clarify-input').fill('就用这个')
+    await drawer(page).getByTestId('clarify-send-label').click()
+    await expect(drawer(page).getByTestId('live-variant-card').last()).toHaveAttribute('data-state', 'accepted')
+    const final = await state(page, key)
+    expect(final.sessions).toHaveLength(1)
+    expect(final.requests.at(-1)).toMatchObject({ text: '就用这个', liveCtx: { sid: body.live.sid, current: 2 } })
+    expect(final.requests.at(-1)).not.toHaveProperty('live')
+    await expectCleanSource(page, key, 'Newsletter variant 2')
+  })
+
+  test('off sends ordinary Chat and never creates candidate source', async ({ page }) => {
+    const key = 'entry-composer-off'
+    await entry(page, key)
+    await expect(drawer(page).getByTestId('live-candidate-mode')).toHaveAttribute('aria-checked', 'false')
+    await drawer(page).getByTestId('clarify-input').fill('普通聊天，请解释页面结构')
+    await drawer(page).getByTestId('clarify-send-label').click()
+    await expect.poll(async () => (await state(page, key)).requests.length).toBe(1)
+    expect((await state(page, key)).requests[0]).toMatchObject({ text: '普通聊天，请解释页面结构', liveCtx: null })
+    expect((await state(page, key)).requests[0]).not.toHaveProperty('live')
+    expect((await state(page, key)).sessions).toEqual([])
+    expect((await state(page, key)).source).toBe(LIVE_ORIGINAL)
+  })
+
+  test('read-only and disabled previews do not expose candidate sending', async ({ page }) => {
+    for (const options of ['&permission=react_only', '&live=false']) {
+      const key = `entry-composer-${options.includes('permission') ? 'readonly' : 'disabled'}`
+      await entry(page, key, options)
+      await expect(drawer(page).getByTestId('live-candidate-mode')).toHaveCount(0)
+      await drawer(page).getByTestId('clarify-input').fill('普通只读回复')
+      await drawer(page).getByTestId('clarify-send-label').click()
+      await expect.poll(async () => (await state(page, key)).requests.length).toBe(1)
+      expect((await state(page, key)).requests[0]).not.toHaveProperty('live')
+    }
+  })
+
+  test('a rejected generate preserves draft, attachments and stable retry SID', async ({ page }) => {
+    const key = 'entry-composer-retry'
+    await entry(page, key)
+    let rejectedSid = ''
+    await page.route('**/public/gate-approvals/reply', async (route) => {
+      if (!rejectedSid) {
+        rejectedSid = route.request().postDataJSON().live.sid
+        await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'temporary outage' }) })
+      } else await route.continue()
+    })
+    await attachReference(page)
+    await drawer(page).getByTestId('live-candidate-mode').click()
+    await drawer(page).getByTestId('clarify-input').fill('保留这个需求与参考图')
+    await drawer(page).getByTestId('clarify-send-label').click()
+    await expect(drawer(page).getByTestId('clarify-confirm-error')).toContainText('temporary outage')
+    await expect(drawer(page).getByTestId('clarify-input')).toHaveValue('保留这个需求与参考图')
+    await expect(drawer(page).getByTestId('clarify-draft-image-thumb')).toBeVisible()
+    expect((await state(page, key)).requests).toEqual([])
+    await drawer(page).getByTestId('clarify-send-label').click()
+    await expect(drawer(page).getByTestId('live-variant-card').last()).toHaveAttribute('data-state', 'ready')
+    expect((await state(page, key)).requests[0].live.sid).toBe(rejectedSid)
+    await expect(drawer(page).getByTestId('clarify-input')).toHaveValue('')
+  })
+
+  test('unavailable page controls keep the request instead of silently sending ordinary Chat', async ({ page }) => {
+    const key = 'entry-composer-no-overlay'
+    await page.route('**/live-overlay.js', (route) => route.abort())
+    await entry(page, key)
+    await drawer(page).getByTestId('live-candidate-mode').click()
+    await drawer(page).getByTestId('clarify-input').fill('三个页面候选')
+    await drawer(page).getByTestId('clarify-send-label').click()
+    await expect(drawer(page).getByTestId('clarify-confirm-error')).toBeVisible()
+    await expect(drawer(page).getByTestId('clarify-input')).toHaveValue('三个页面候选')
+    expect((await state(page, key)).requests).toEqual([])
+  })
 })

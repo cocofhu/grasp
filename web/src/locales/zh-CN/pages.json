@@ -3844,6 +3844,11 @@
         }
       },
       "live": {
+        "candidateMode": "页面候选",
+        "candidateHint": "开启后发送需求，在预览生成 3 个候选，选择后再采用。已有候选时继续细化或采用当前版本；关闭不会删除候选。",
+        "pendingCandidates": "已有候选正在生成、等待恢复或尚未显示。请等待，或先恢复／放弃现有候选。",
+        "promptTooLong": "页面候选需求最多 2000 字，请精简后重试。",
+        "previewUnavailable": "预览 Live 工具不可用，请重新打开预览后重试。",
         "title": "Live 变体",
         "ops": {
           "generate": "生成变体",

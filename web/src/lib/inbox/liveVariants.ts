@@ -73,6 +73,7 @@ export type LiveElement = {
 export type LiveEvent = {
   op: LiveOp
   sid: string
+  scope?: 'page'
   action?: string
   prompt?: string
   count?: number
@@ -207,6 +208,10 @@ export function parseEmbedLiveMessage(data: unknown): EmbedLiveMessage | null {
   if (typeof m.op !== 'string' || !(LIVE_OPS as readonly string[]).includes(m.op)) return null
   const reqId = str(m.reqId, 64) || ''
   const ev: LiveEvent = { op: m.op as LiveOp, sid: m.sid }
+  if (m.scope !== undefined) {
+    if (m.scope !== 'page' || ev.op !== 'generate') return null
+    ev.scope = 'page'
+  }
   const action = str(m.action, 32)
   if (action) ev.action = action
   const prompt = str(m.prompt, 2000)

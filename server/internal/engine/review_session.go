@@ -804,7 +804,12 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 
 	req := e.nodeReq(c, node)
 	force := item.Force
-	t := e.provider.ReactReply(ctx, req, conv.Messages, item.Effective, item.Images, force)
+	var t runtime.ReactTurn
+	if err := e.prepareLiveTurn(ctx, s.runID, s.producerID, item); err != nil {
+		t = runtime.ReactTurn{Msg: "Live 初始化失败: " + err.Error(), Err: err}
+	} else {
+		t = e.provider.ReactReply(ctx, req, conv.Messages, item.Effective, item.Images, force)
+	}
 
 	s.mu.Lock()
 	cancelled := s.cancelRequested || ctx.Err() != nil
@@ -961,7 +966,12 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 	// this specific push-back moved.
 	beforeDigests := e.artifactDigests(s.runID, s.producerID)
 
-	t := rp.ReviseInPlace(ctx, req, conv.Messages, item.Effective, item.Images)
+	var t runtime.ReactTurn
+	if err := e.prepareLiveTurn(ctx, s.runID, s.producerID, item); err != nil {
+		t = runtime.ReactTurn{Msg: "Live 初始化失败: " + err.Error(), Err: err}
+	} else {
+		t = rp.ReviseInPlace(ctx, req, conv.Messages, item.Effective, item.Images)
+	}
 
 	s.mu.Lock()
 	cancelled := s.cancelRequested || ctx.Err() != nil

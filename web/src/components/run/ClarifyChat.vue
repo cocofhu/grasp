@@ -35,6 +35,7 @@ const props = withDefaults(
     /** Public adapters may expose confirm for a live react node. */
     forceConfirmFlow?: boolean
     sendLabel?: string
+    sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[]) => Promise<boolean>
     confirmError?: string | null
     confirmCanAbort?: boolean
     nodeType?: string
@@ -110,6 +111,7 @@ const {
   removeAttachment,
   sendMessage,
   sendFromComposer,
+  composerSending,
   onComposerKeydown,
   removeAnnotation,
   isActiveTurn,
@@ -933,6 +935,7 @@ const {
           />
         </template>
         <template #toolbar-start>
+          <slot name="composer-mode" />
           <button
             type="button"
             class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-line text-txt2 hover:border-line-strong disabled:opacity-50"
@@ -959,7 +962,7 @@ const {
             type="button"
             class="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md bg-accent px-2.5 text-xs font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
             data-testid="clarify-send-label"
-            :disabled="!draft.trim() && !attachments.length && !annotations.length"
+            :disabled="composerSending || (!draft.trim() && !attachments.length && !annotations.length)"
             @click="send"
           >
             <Icon name="send" :size="14" /> {{ sendLabel }}
@@ -969,7 +972,7 @@ const {
             type="button"
             class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
             data-testid="clarify-send-icon"
-            :disabled="!draft.trim() && !attachments.length && !annotations.length"
+            :disabled="composerSending || (!draft.trim() && !attachments.length && !annotations.length)"
             @click="send"
           >
             <Icon name="send" :size="14" />

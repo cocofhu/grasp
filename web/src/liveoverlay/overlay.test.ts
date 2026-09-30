@@ -213,6 +213,38 @@ describe('Live overlay', () => {
     }
   })
 
+  it('reports candidates missing from the rendered page even when some candidates mounted', () => {
+    vi.useFakeTimers()
+    try {
+      document.body.innerHTML = wrapperHtml()
+      make()
+      sessions([{ sid: 'sid001', state: 'ready', mode: 'replace', url: `${location.origin}/pricing`, variants: [{ n: 1 }, { n: 2 }, { n: 3 }], updatedAt: '1' }])
+      vi.advanceTimersByTime(6500)
+      expect(posted.filter((message) => message.op === 'mount_failed')).toEqual([
+        expect.objectContaining({ sid: 'sid001', error: 'reported variants not rendered: 3' }),
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('allows HMR to finish rendering all reported candidates during the grace period', async () => {
+    vi.useFakeTimers()
+    try {
+      document.body.innerHTML = wrapperHtml()
+      make()
+      sessions([{ sid: 'sid001', state: 'ready', mode: 'replace', url: `${location.origin}/pricing`, variants: [{ n: 1 }, { n: 2 }, { n: 3 }], updatedAt: '1' }])
+      await vi.advanceTimersByTimeAsync(2000)
+      document.getElementById('w')!.insertAdjacentHTML('beforeend', '<section data-grasp-variant="3" hidden>three</section>')
+      // Let the mutation observer rescan markup arriving after the ready frame.
+      await vi.advanceTimersByTimeAsync(6500)
+      expect(posted.some((message) => message.op === 'mount_failed')).toBe(false)
+      expect(q('[data-sw="sid001"] .count')?.textContent).toBe('1 / 3')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('points at sessions on other routes, steers, peeks and hides', () => {
     document.body.innerHTML = wrapperHtml()
     make()

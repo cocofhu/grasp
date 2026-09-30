@@ -897,3 +897,82 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 })
+
+describe('acknowledged composer transport', () => {
+  it('preserves draft, image and annotation on rejection without emitting an optimistic item', async () => {
+    const sendRequest = vi.fn().mockResolvedValue(false)
+    const { chat, models, emit, app } = withChat({ sendRequest })
+    models.draft.value = 'three designs'
+    models.attachments.value = [image()]
+    models.annotations.value = [annotation()]
+    expect(await chat.sendFromComposer()).toBe(false)
+    expect(sendRequest).toHaveBeenCalledWith('three designs', [image()], [annotation()])
+    expect(models.draft.value).toBe('three designs')
+    expect(models.attachments.value).toHaveLength(1)
+    expect(models.annotations.value).toHaveLength(1)
+    expect(chat.queued.value).toHaveLength(0)
+    expect(emit).not.toHaveBeenCalledWith('send', expect.anything(), expect.anything(), expect.anything())
+    app.unmount()
+  })
+
+  it('waits for acknowledgement, prevents double sends and keeps edits made while waiting', async () => {
+    let resolve!: (accepted: boolean) => void
+    const sendRequest = vi.fn(() => new Promise<boolean>((done) => { resolve = done }))
+    const { chat, models, app } = withChat({ sendRequest })
+    models.draft.value = 'first request'
+    models.attachments.value = [image()]
+    models.annotations.value = [annotation()]
+    const pending = chat.sendFromComposer()
+    expect(chat.composerSending.value).toBe(true)
+    expect(models.draft.value).toBe('first request')
+    expect(await chat.sendFromComposer()).toBe(false)
+    expect(sendRequest).toHaveBeenCalledTimes(1)
+    models.draft.value = 'next request'
+    models.attachments.value.push(image('next.png'))
+    models.annotations.value.push(annotation({ selector: '#next' }))
+    resolve(true)
+    expect(await pending).toBe(true)
+    expect(chat.composerSending.value).toBe(false)
+    expect(models.draft.value).toBe('next request')
+    expect(models.attachments.value).toHaveLength(2)
+    expect(models.annotations.value).toHaveLength(2)
+    app.unmount()
+  })
+
+  it('clears only the acknowledged snapshot', async () => {
+    const { chat, models, app } = withChat({ sendRequest: vi.fn().mockResolvedValue(true) })
+    models.draft.value = 'request'
+    models.attachments.value = [image()]
+    models.annotations.value = [annotation()]
+    expect(await chat.sendFromComposer()).toBe(true)
+    expect(models.draft.value).toBe('')
+    expect(models.attachments.value).toEqual([])
+    expect(models.annotations.value).toEqual([])
+    app.unmount()
+  })
+
+  it('keeps a queued target and draft when the draft cannot be sent before editing', async () => {
+    const { chat, models, app } = withChat({ sendRequest: vi.fn().mockResolvedValue(false) })
+    chat.applyQueueState(1, [{ id: 'target', text: 'queued' }], true)
+    models.draft.value = 'keep draft'
+    await chat.editQueuedItem(0)
+    expect(models.draft.value).toBe('keep draft')
+    expect(chat.queued.value.map((item) => item.id)).toEqual(['target'])
+    app.unmount()
+  })
+
+  it('never edits a different queue item when the original was consumed during acknowledgement', async () => {
+    let resolve!: (accepted: boolean) => void
+    const { chat, models, emit, app } = withChat({ sendRequest: () => new Promise<boolean>((done) => { resolve = done }) })
+    chat.applyQueueState(2, [{ id: 'target', text: 'target' }, { id: 'other', text: 'other' }], true)
+    models.draft.value = 'new request'
+    const editing = chat.editQueuedItem(0)
+    chat.applyQueueState(1, [{ id: 'other', text: 'other' }], true)
+    resolve(true)
+    await editing
+    expect(chat.queued.value.map((item) => item.id)).toEqual(['other'])
+    expect(models.draft.value).toBe('')
+    expect(emit).not.toHaveBeenCalledWith('queue-remove', 'other', 0)
+    app.unmount()
+  })
+})

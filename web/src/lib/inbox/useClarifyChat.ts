@@ -74,6 +74,8 @@ export type ClarifyChatProps = {
   finishDisabled?: boolean
   forceConfirmFlow?: boolean
   sendLabel?: string
+  /** Optional adapter transport: retain the composer until the request is accepted. */
+  sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[]) => Promise<boolean>
   confirmError?: string | null
   /** Host set this after a 409 sandbox_busy so the error bar offers abort+confirm. */
   confirmCanAbort?: boolean
@@ -578,13 +580,20 @@ function reorderQueuedItems(fromIndex: number, toIndex: number) {
   }
 }
 
-function editQueuedItem(index: number) {
+async function editQueuedItem(index: number) {
   if (index < 0 || index >= queued.value.length) return
+  const target = queued.value[index]
   queueNotice.value = null
 
   // Composer already has an unsent draft (text / attachments / annotation chips):
   // re-enqueue it first so chips are never discarded to unblock edit.
-  if (hasComposerDraft()) {
+  if (hasComposerDraft() && props.sendRequest) {
+    if (!await sendFromComposer()) return
+    // A new draft typed during acknowledgement must stay with its author.
+    if (hasComposerDraft()) return
+    index = queued.value.findIndex((item) => target.id ? item.id === target.id : item === target)
+    if (index < 0) return
+  } else if (hasComposerDraft()) {
     const t = draft.value.trim()
     const imgs = cloneClarifyImages(attachments.value)
     const anns = cloneReactAnnotations(annotations.value)
@@ -832,18 +841,40 @@ function prepareComposerSend(
   return { text: outText, images: imgs, annotations: anns }
 }
 
-function sendFromComposer() {
+const composerSending = ref(false)
+
+async function sendFromComposer(): Promise<boolean> {
+  if (composerSending.value) return false
   const t = draft.value.trim()
   const imgs = cloneClarifyImages(attachments.value)
   const anns = cloneReactAnnotations(annotations.value)
   const prepared = prepareComposerSend(t, imgs, anns)
-  if (!prepared) return
+  if (!prepared) return false
+  if (props.sendRequest) {
+    // Keep drafts and attachment references until an acknowledgement arrives.
+    // A new draft typed while awaiting the transport belongs to the next send.
+    const originalDraft = draft.value
+    const originalImages = attachments.value
+    const originalAnnotations = annotations.value
+    composerSending.value = true
+    try {
+      if (!await props.sendRequest(prepared.text, prepared.images, prepared.annotations)) return false
+      if (draft.value === originalDraft) draft.value = ''
+      if (attachments.value === originalImages && JSON.stringify(attachments.value) === JSON.stringify(imgs)) attachments.value = []
+      if (annotations.value === originalAnnotations && JSON.stringify(annotations.value) === JSON.stringify(anns)) annotations.value = []
+      attachNotice.value = null
+    } finally {
+      composerSending.value = false
+    }
+    return true
+  }
   draft.value = ''
   attachments.value = []
   annotations.value = []
   attachNotice.value = null
   // Always forward cloned images/annotations — skip only rewrites text.
   sendMessage(prepared.text, prepared.images, prepared.annotations)
+  return true
 }
 
 function onComposerKeydown(e: KeyboardEvent) {
@@ -1848,6 +1879,7 @@ function retryLastFailed() {
     sendMessage,
     prepareComposerSend,
     sendFromComposer,
+    composerSending,
     onComposerKeydown,
     removeAnnotation,
     isActiveTurn,

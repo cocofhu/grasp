@@ -112,8 +112,17 @@ func (e *Engine) reviewConvOpen(runID, nodeID string) error {
 // state, then queues the request as a review turn for the parked agent. A
 // repeated request (double click, refresh) returns the session unchanged.
 func (e *Engine) ReactLiveAs(owner, runID, nodeID string, ev models.LiveEvent) (*models.LiveSession, error) {
+	return e.ReactLiveWithAttachmentsAs(owner, runID, nodeID, ev, nil, nil)
+}
+
+// ReactLiveWithAttachmentsAs preserves attachments and annotations when the
+// chat composer sends a Live request instead of an ordinary reply.
+func (e *Engine) ReactLiveWithAttachmentsAs(owner, runID, nodeID string, ev models.LiveEvent, images []models.PromptImage, annotations []models.ReactAnnotation) (*models.LiveSession, error) {
 	if e.IsHalted() {
 		return nil, errors.New("server is shutting down")
+	}
+	if strings.TrimSpace(ev.Op) == models.LiveOpGenerate && strings.TrimSpace(ev.Scope) == "page" && strings.TrimSpace(ev.Prompt) == "" && (len(images) > 0 || len(annotations) > 0) {
+		ev.Prompt = "根据所附图片和标注，在页面中生成可比较的设计候选"
 	}
 	if err := ev.Normalize(); err != nil {
 		return nil, err
@@ -177,6 +186,10 @@ func (e *Engine) ReactLiveAs(owner, runID, nodeID string, ev models.LiveEvent) (
 	if err != nil {
 		return nil, err
 	}
+	images, err = blob.IngestPromptImages(context.Background(), e.blobs, images)
+	if err != nil {
+		return nil, fmt.Errorf("ingest attachments: %w", err)
+	}
 	if cur == nil && ev.Op != models.LiveOpSteer {
 		for _, o := range e.LiveSessions(runID, nodeID, true) {
 			if o.Mode != "steer" {
@@ -203,6 +216,8 @@ func (e *Engine) ReactLiveAs(owner, runID, nodeID string, ev models.LiveEvent) (
 		if ev.Element != nil {
 			sess.Selector = ev.Element.Selector
 			sess.Summary = models.LiveSummary(ev.Element)
+		} else if ev.Scope == "page" {
+			sess.Summary = "页面候选"
 		}
 	} else {
 		cp := *cur
@@ -230,13 +245,19 @@ func (e *Engine) ReactLiveAs(owner, runID, nodeID string, ev models.LiveEvent) (
 		return nil, err
 	}
 
+	effective := models.RenderLiveEvent(ev, sess)
+	if block := models.RenderAnnotations(annotations); block != "" {
+		effective += "\n" + block
+	}
 	item := &reviewQueueItem{
-		ID:        uuid.NewString(),
-		Text:      models.LiveEventText(ev, sess),
-		Effective: models.RenderLiveEvent(ev, sess),
-		Source:    "node",
-		Owner:     owner,
-		Live:      &models.LiveRef{SID: sess.ID, Op: ev.Op, Variant: ev.Variant},
+		ID:          uuid.NewString(),
+		Text:        models.LiveEventText(ev, sess),
+		Effective:   effective,
+		Images:      images,
+		Annotations: annotations,
+		Source:      "node",
+		Owner:       owner,
+		Live:        &models.LiveRef{SID: sess.ID, Op: ev.Op, Variant: ev.Variant},
 	}
 	if _, err := e.enqueueReviewItem(runID, nodeID, e.liveQueueKind(runID, nodeID), item); err != nil {
 		if prev != nil {
@@ -246,7 +267,6 @@ func (e *Engine) ReactLiveAs(owner, runID, nodeID string, ev models.LiveEvent) (
 		}
 		return nil, err
 	}
-	e.installLiveGuard(runID, nodeID)
 	e.publishLive(sess)
 	return sess, nil
 }
@@ -420,6 +440,9 @@ func (e *Engine) ApplyLiveReport(runID, nodeID string, u mcp.LiveReport) (*model
 	if err := models.CheckLiveReport(sess.State, u.State); err != nil {
 		return nil, err
 	}
+	if u.State == models.LiveStateDone && sess.Mode != "steer" {
+		return nil, errors.New("候选生成必须报告 ready 并等待用户采用或放弃")
+	}
 	if u.State == models.LiveStateRefining {
 		sess.RetryAccept = false
 		sess.Selected = chat.Current
@@ -455,6 +478,9 @@ func (e *Engine) ApplyLiveReport(runID, nodeID string, u mcp.LiveReport) (*model
 	}
 	if u.State == models.LiveStateReady && len(sess.Variants) == 0 && sess.Mode != "steer" {
 		return nil, errors.New("state=ready 时需要 variants(每个变体的编号与标签)")
+	}
+	if u.State == models.LiveStateReady && sess.Mode == "replace" && sess.Selector == "" && sess.Count >= models.LiveMinVariants && len(sess.Variants) < models.LiveMinVariants {
+		return nil, errors.New("页面候选至少需要两个变体供用户选择")
 	}
 	if err := e.db.Save(sess).Error; err != nil {
 		return nil, err
@@ -561,16 +587,24 @@ func (e *Engine) liveMarkerPresent(runID, nodeID, sid string) (present, scanned 
 	return false, true
 }
 
-func (e *Engine) installLiveGuard(runID, nodeID string) {
-	sc, ok := e.provider.(runtime.LiveMarkerScanner)
-	if !ok {
-		return
+// Prepare only when this queued generation actually starts: preceding ordinary
+// turns may still be cloning the repository. Never initialize during accept or
+// confirm, when a leftover marker must not become a new baseline.
+func (e *Engine) prepareLiveTurn(ctx context.Context, runID, nodeID string, item *reviewQueueItem) error {
+	if item.Live == nil || (item.Live.Op != models.LiveOpGenerate && item.Live.Op != models.LiveOpInsert && item.Live.Op != models.LiveOpSteer) {
+		return nil
 	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), liveScanTimeout)
-		defer cancel()
+	ctx, cancel := context.WithTimeout(ctx, liveScanTimeout)
+	defer cancel()
+	if prep, ok := e.provider.(runtime.LiveBaselinePreparer); ok {
+		if err := prep.PrepareLiveBaseline(ctx, runID, nodeID); err != nil {
+			return err
+		}
+	}
+	if sc, ok := e.provider.(runtime.LiveMarkerScanner); ok {
 		sc.InstallLiveGuard(ctx, runID, nodeID)
-	}()
+	}
+	return nil
 }
 
 // checkLiveClosed is the confirm gate: no open session, no marker in source.

@@ -212,6 +212,7 @@ type LiveMark struct {
 type LiveEvent struct {
 	Op       string         `json:"op"`
 	SID      string         `json:"sid"`
+	Scope    string         `json:"scope,omitempty"` // page: chat generation without a picked element
 	Action   string         `json:"action,omitempty"`
 	Prompt   string         `json:"prompt,omitempty"`
 	Count    int            `json:"count,omitempty"`
@@ -247,8 +248,15 @@ type LiveRef struct {
 func (ev *LiveEvent) Normalize() error {
 	ev.Op = strings.TrimSpace(ev.Op)
 	ev.SID = strings.TrimSpace(ev.SID)
+	ev.Scope = strings.TrimSpace(ev.Scope)
 	if !ValidLiveSID(ev.SID) {
 		return errors.New("Live 会话 id 无效")
+	}
+	if ev.Scope != "" && (ev.Scope != "page" || ev.Op != LiveOpGenerate) {
+		return errors.New("scope=page 仅用于从聊天生成页面候选")
+	}
+	if ev.Scope == "page" && len([]rune(strings.TrimSpace(ev.Prompt))) > livePromptMax {
+		return fmt.Errorf("页面候选需求最多 %d 字,请精简后重试", livePromptMax)
 	}
 	ev.Prompt = clipRunes(strings.TrimSpace(ev.Prompt), livePromptMax)
 	ev.Error = clipRunes(strings.TrimSpace(ev.Error), liveErrorMax)
@@ -278,7 +286,10 @@ func (ev *LiveEvent) Normalize() error {
 	}
 	switch ev.Op {
 	case LiveOpGenerate, LiveOpInsert:
-		if ev.Element == nil || ev.Element.Selector == "" {
+		if ev.Scope == "page" && ev.Prompt == "" {
+			return errors.New("请描述想在页面上比较的效果")
+		}
+		if (ev.Scope != "page" || ev.Element != nil) && (ev.Element == nil || ev.Element.Selector == "") {
 			return errors.New("缺少被选元素")
 		}
 		if ev.Action == "" {
@@ -484,6 +495,9 @@ func LiveEventText(ev LiveEvent, sess *LiveSession) string {
 	}
 	switch ev.Op {
 	case LiveOpGenerate:
+		if ev.Scope == "page" {
+			return ev.Prompt // Preserve the chat brief; the Live card supplies its status.
+		}
 		return withPrompt(fmt.Sprintf("Live · %s · %d 个变体 · %s", LiveActionLabel(ev.Action), ev.Count, target))
 	case LiveOpInsert:
 		pos := "之后"
@@ -517,6 +531,9 @@ func RenderLiveEvent(ev LiveEvent, sess *LiveSession) string {
 	switch ev.Op {
 	case LiveOpGenerate, LiveOpInsert:
 		fmt.Fprintf(&b, "- action: %s(%s)\n- count: %d\n", ev.Action, LiveActionLabel(ev.Action), ev.Count)
+		if ev.Scope == "page" {
+			b.WriteString("- scope: page(用户在聊天中开启了页面候选)\n- 根据本条需求、附件、标注及当前预览路由定位相关应用源码区域,无需用户先点选元素。必须在真实预览页面实际渲染指定数量的可切换候选,供用户比较选择;不能只回复文字方案,不能自动采用,生成完成后等待用户选择。包装只覆盖与需求相关的应用组件区域,不得复制 html/body、应用挂载节点(如 #app/#root)或注入的 Chat/Live 覆盖层;整页设计可以在应用源码组件内部生成页面内容候选。\n")
+		}
 		if ev.Op == LiveOpInsert {
 			fmt.Fprintf(&b, "- position: %s(相对下方锚点元素)\n", ev.Position)
 		}

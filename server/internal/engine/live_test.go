@@ -107,6 +107,53 @@ func TestLiveEnabledRequiresDirectAndSwitch(t *testing.T) {
 	}
 }
 
+func TestChatLiveRequiresChoicesAndDoesNotAutoComplete(t *testing.T) {
+	eng, _, p, runID := setupLive(t)
+	hold := make(chan struct{})
+	p.mu.Lock()
+	p.reviseHold = hold
+	p.mu.Unlock()
+	defer func() {
+		close(hold)
+		_ = eng.waitReviewReadyForTest(runID, "preview", 5*time.Second)
+	}()
+	ev := models.LiveEvent{Op: models.LiveOpGenerate, SID: "page01", Scope: "page", Prompt: "重新设计登录弹窗"}
+	if _, err := eng.ReactLiveWithAttachmentsAs("user:a", runID, "preview", ev, []models.PromptImage{{Data: "invalid!"}}, nil); err == nil {
+		t.Fatal("invalid attachment must fail before creating the session")
+	}
+	if sessions := eng.LiveSessions(runID, "preview", false); len(sessions) != 0 {
+		t.Fatalf("invalid attachment left a blocking session: %+v", sessions)
+	}
+	sess, err := eng.ReactLiveAs("user:a", runID, "preview", ev)
+	if err != nil || sess.Mode != "replace" || sess.Selector != "" || sess.Summary != "页面候选" {
+		t.Fatalf("page session: %+v, %v", sess, err)
+	}
+	if _, err := eng.ReactLiveAs("user:a", runID, "preview", ev); err != nil {
+		t.Fatalf("duplicate generate: %v", err)
+	}
+	second := ev
+	second.SID = "page02"
+	if _, err := eng.ReactLiveAs("user:a", runID, "preview", second); err == nil {
+		t.Fatal("chat generation bypassed one-open-session limit")
+	}
+	for _, report := range []mcp.LiveReport{
+		{SID: ev.SID, State: models.LiveStateDone},
+		{SID: ev.SID, State: models.LiveStateAccepted},
+		{SID: ev.SID, State: models.LiveStateReady},
+		{SID: ev.SID, State: models.LiveStateReady, Variants: []models.LiveVariant{{N: 1}}},
+	} {
+		if _, err := eng.ApplyLiveReport(runID, "preview", report); err == nil {
+			t.Fatalf("allowed completion without selectable candidates: %+v", report)
+		}
+	}
+	if _, err := eng.ApplyLiveReport(runID, "preview", mcp.LiveReport{SID: ev.SID, State: models.LiveStateReady, Variants: []models.LiveVariant{{N: 1}, {N: 2}, {N: 3}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.checkLiveClosed(runID, "preview"); !errors.Is(err, ErrLiveOpen) {
+		t.Fatalf("ready page candidates must wait for user selection: %v", err)
+	}
+}
+
 func TestLiveGenerateAcceptFlow(t *testing.T) {
 	eng, db, p, runID := setupLive(t)
 	agentReports(eng, p, func(human string) *mcp.LiveReport {

@@ -170,3 +170,115 @@ func TestLiveMarkerSIDsExcludesBuildOutput(t *testing.T) {
 		t.Fatalf("excluded generated markers should not block: %v %v %v", got, parked, err)
 	}
 }
+
+func TestLiveBaselineIgnoresTrackedExamplesAndStaysFixedAfterCommit(t *testing.T) {
+	restore := sandbox.SetExecHook(func(ctx context.Context, _ string, _ int, _ string, stdin io.Reader) ([]byte, error) {
+		cmd := exec.CommandContext(ctx, "bash", "-s")
+		cmd.Stdin = stdin
+		return cmd.CombinedOutput()
+	})
+	t.Cleanup(restore)
+	repo := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	write := func(path, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(repo, path), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git("init", "-q")
+	git("config", "user.name", "Live test")
+	git("config", "user.email", "live-test@example.invalid")
+	const examples = "# Guide\n<div data-grasp-live=\"sample01\">example</div>\n<div data-grasp-live={sessionId}>template</div>\n<div data-grasp-live =\n { 'sample02' }>multiline</div>\n"
+	const path = "Guide notes\nexamples.md"
+	write(path, examples)
+	write("App.vue", "<main>Before</main>\n")
+	git("add", ".")
+	git("commit", "-qm", "baseline with legitimate tool templates")
+	p := &acpProvider{sessions: map[string]*reactSession{"r|n": {sb: &sandbox.Sandbox{WorkspaceDir: repo}}}}
+	ctx := context.Background()
+	// The pre-fix whole-workspace scan cannot distinguish this legitimate source.
+	if _, _, err := p.LiveMarkerSIDs(ctx, "r", "n"); err == nil {
+		t.Fatal("without an explicit baseline, unresolved markers must fail closed")
+	}
+	// Dirty and untracked wrappers already present must never be whitelisted.
+	write("App.vue", `<main data-grasp-live="dirty01" />`)
+	write("New.vue", `<main data-grasp-live="newone01" />`)
+	if err := p.PrepareLiveBaseline(ctx, "r", "n"); err != nil {
+		t.Fatal(err)
+	}
+	assertScan := func(want []string) {
+		t.Helper()
+		got, parked, err := p.LiveMarkerSIDs(ctx, "r", "n")
+		if !parked || err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatalf("scan = %v, %v, %v; want %v", got, parked, err, want)
+		}
+	}
+	assertScan([]string{"dirty01", "newone01"})
+	write("App.vue", "<main>After</main>\n")
+	if err := os.Remove(filepath.Join(repo, "New.vue")); err != nil {
+		t.Fatal(err)
+	}
+	// Ordinary edits beside the original examples do not require deleting docs.
+	write(path, strings.Replace(examples, "# Guide", "# Better guide", 1))
+	assertScan(nil)
+	// Only changing the next line of a formatter-split value is still detected.
+	write(path, strings.Replace(examples, "'sample02'", "'actual02'", 1))
+	assertScan([]string{"actual02"})
+	// Counts matter: copying an existing example is a newly introduced marker.
+	write(path, examples+"<div data-grasp-live=\"sample01\">example</div>\n")
+	assertScan([]string{"sample01"})
+	git("add", ".")
+	git("-c", "core.hooksPath=/dev/null", "commit", "-qm", "simulate bypassing pre-commit")
+	if err := p.PrepareLiveBaseline(ctx, "r", "n"); err != nil {
+		t.Fatal(err)
+	}
+	assertScan([]string{"sample01"}) // later HEAD must not reset the frozen snapshot
+	write(path, examples)
+	assertScan(nil)
+}
+
+func TestLiveBaselineKeepsNonGitSourcesStrict(t *testing.T) {
+	restore := sandbox.SetExecHook(func(ctx context.Context, _ string, _ int, _ string, stdin io.Reader) ([]byte, error) {
+		cmd := exec.CommandContext(ctx, "bash", "-s")
+		cmd.Stdin = stdin
+		return cmd.CombinedOutput()
+	})
+	t.Cleanup(restore)
+	ws := t.TempDir()
+	if err := os.WriteFile(filepath.Join(ws, "page.html"), []byte(`<main data-grasp-live="nongit01" />`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := &acpProvider{sessions: map[string]*reactSession{"r|n": {sb: &sandbox.Sandbox{WorkspaceDir: ws}}}}
+	if err := p.PrepareLiveBaseline(context.Background(), "r", "n"); err != nil {
+		t.Fatal(err)
+	}
+	got, parked, err := p.LiveMarkerSIDs(context.Background(), "r", "n")
+	if !parked || err != nil || !reflect.DeepEqual(got, []string{"nongit01"}) {
+		t.Fatalf("non-Git marker escaped scan: %v %v %v", got, parked, err)
+	}
+}
+
+func TestLiveBaselineFailureCannotInitialize(t *testing.T) {
+	p := &acpProvider{sessions: map[string]*reactSession{"r|n": {sb: &sandbox.Sandbox{WorkspaceDir: t.TempDir()}}}}
+	restore := sandbox.SetExecHook(func(context.Context, string, int, string, io.Reader) ([]byte, error) {
+		return nil, io.ErrUnexpectedEOF
+	})
+	t.Cleanup(restore)
+	if err := p.PrepareLiveBaseline(context.Background(), "r", "n"); err == nil || p.sessions["r|n"].liveBaseline != nil {
+		t.Fatal("failed baseline read must not create a trusted snapshot")
+	}
+	if err := p.PrepareLiveBaseline(context.Background(), "other", "missing"); err == nil {
+		t.Fatal("missing parked session must not acquire a new baseline")
+	}
+	for _, out := range []string{"truncated", "\x00source\x00", "file\x00source"} {
+		if _, err := liveScanFiles(out); err == nil {
+			t.Fatalf("incomplete scan accepted: %q", out)
+		}
+	}
+}

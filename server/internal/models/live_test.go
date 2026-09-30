@@ -25,6 +25,7 @@ func TestValidLiveSID(t *testing.T) {
 
 func TestLiveEventNormalize(t *testing.T) {
 	ok := []LiveEvent{
+		{Op: LiveOpGenerate, SID: "sid001", Scope: "page", Prompt: "登录弹窗请给我三个方向"},
 		{Op: LiveOpGenerate, SID: "sid001", Action: "bolder", Element: liveEl()},
 		{Op: LiveOpGenerate, SID: "sid001", Prompt: "更醒目", Element: liveEl()},
 		{Op: LiveOpGenerate, SID: "sid001", Notes: []string{"标题太小"}, Element: liveEl()},
@@ -43,6 +44,12 @@ func TestLiveEventNormalize(t *testing.T) {
 		}
 	}
 	bad := []LiveEvent{
+		{Op: LiveOpGenerate, SID: "sid001", Scope: "page"},
+		{Op: LiveOpGenerate, SID: "sid001", Scope: "page", Prompt: strings.Repeat("改", livePromptMax+1)},
+		{Op: LiveOpGenerate, SID: "sid001", Scope: "page", Prompt: "改进", Element: &LiveElement{}},
+		{Op: LiveOpGenerate, SID: "sid001", Scope: "other", Prompt: "改进"},
+		{Op: LiveOpInsert, SID: "sid001", Scope: "page", Prompt: "改进", Position: "after"},
+		{Op: LiveOpSteer, SID: "sid001", Scope: "page", Prompt: "改进"},
 		{Op: LiveOpGenerate, SID: "x", Action: "bolder", Element: liveEl()},
 		{Op: LiveOpGenerate, SID: "sid001", Action: "bolder"},
 		{Op: LiveOpGenerate, SID: "sid001", Action: "nope", Element: liveEl()},
@@ -61,6 +68,22 @@ func TestLiveEventNormalize(t *testing.T) {
 		ev := ev
 		if err := ev.Normalize(); err == nil {
 			t.Errorf("bad case %d (%s): expected error", i, ev.Op)
+		}
+	}
+}
+
+func TestPageLivePromptRequiresRenderedChoices(t *testing.T) {
+	ev := LiveEvent{Op: LiveOpGenerate, SID: "page01", Scope: "page", Prompt: strings.Repeat("改善登录弹窗层级。", 20), URL: "http://preview.test/login"}
+	if err := ev.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	if ev.Count != 3 || ev.Element != nil || LiveEventText(ev, nil) != ev.Prompt {
+		t.Fatalf("chat request was truncated or given a fake element: %+v", ev)
+	}
+	prompt := RenderLiveEvent(ev, nil)
+	for _, want := range []string{"op: generate", "scope: page", "count: 3", "无需用户先点选元素", "真实预览页面实际渲染", "不能只回复文字方案", "不能自动采用", "等待用户选择", "不得复制 html/body", "http://preview.test/login", ev.Prompt} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("page request missing %q: %s", want, prompt)
 		}
 	}
 }
