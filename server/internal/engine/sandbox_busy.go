@@ -2,9 +2,11 @@ package engine
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 )
 
@@ -42,7 +44,14 @@ func (e *Engine) ensureSandboxIdleForConfirm(runID, nodeID string, abortRunning 
 		return nil
 	}
 	st, live := insp.SessionBridgeState(runID, nodeID)
-	if !live || !(st.Busy || st.Desynced) {
+	if !live {
+		return nil
+	}
+	// A finished turn the bridge still echoes is not an orphan in front of confirm.
+	// A client turn already inside runTurn is not that echo: dropCompletedSandboxEcho
+	// leaves its Busy set (plan g1.1, review v1).
+	st = e.dropCompletedSandboxEcho(runID, nodeID, st)
+	if !(st.Busy || st.Desynced) {
 		return nil
 	}
 	if !abortRunning {
@@ -73,10 +82,111 @@ func (e *Engine) attachSandboxState(runID, nodeID string, payload map[string]any
 	if !ok {
 		return
 	}
+	// plan g1.1: on an idle replay, a normally completed assistant turn whose
+	// op already matches the bridge must not be marked still running or
+	// interrupted. A different running op stays so it can be aborted.
+	if platformQueueIdle(payload) {
+		st = e.dropCompletedSandboxEcho(runID, nodeID, st)
+	}
 	payload["sandboxBusy"] = st.Busy
 	payload["sandboxDesynced"] = st.Desynced
 	payload["sandboxWaiting"] = st.Waiting
 	if st.RunningOpID != "" {
 		payload["sandboxRunningOpId"] = st.RunningOpID
 	}
+}
+
+func platformQueueIdle(payload map[string]any) bool {
+	if payload == nil {
+		return false
+	}
+	if busy, _ := payload["busy"].(bool); busy {
+		return false
+	}
+	if payload["activeItem"] != nil {
+		return false
+	}
+	waiting, ok := payload["waiting"]
+	if !ok {
+		return false
+	}
+	switch w := waiting.(type) {
+	case int:
+		return w == 0
+	case int64:
+		return w == 0
+	case float64:
+		return w == 0
+	default:
+		return false
+	}
+}
+
+// dropCompletedSandboxEcho clears busy/desync when the bridge op is the
+// assistant turn already persisted as a normal completion (plan g1.1).
+func (e *Engine) dropCompletedSandboxEcho(runID, nodeID string, st runtime.BridgeStatus) runtime.BridgeStatus {
+	completedOp, completed := e.latestNormallyCompletedAgentOp(runID, nodeID)
+	if !sandboxEchoesCompletedTurn(st, completedOp, completed) {
+		return st
+	}
+	st.Busy = false
+	st.Desynced = false
+	st.RunningOpID = ""
+	return st
+}
+
+// latestNormallyCompletedAgentOp reports the newest persisted assistant reply
+// when it finished normally. ok is false when the tail is a human, an
+// interrupt, a handoff-only row, or empty. opID may be empty on older rows.
+func (e *Engine) latestNormallyCompletedAgentOp(runID, nodeID string) (opID string, ok bool) {
+	var conv models.ReactConversation
+	if err := e.db.Where("run_id = ? AND node_id = ?", runID, nodeID).
+		Order("iteration desc, id desc").First(&conv).Error; err != nil {
+		return "", false
+	}
+	for i := len(conv.Messages) - 1; i >= 0; i-- {
+		m := conv.Messages[i]
+		if m.Role != "agent" {
+			return "", false
+		}
+		if m.Handoff {
+			continue
+		}
+		if m.Interrupted || strings.TrimSpace(m.Text) == "" {
+			return "", false
+		}
+		return strings.TrimSpace(m.OpID), true
+	}
+	return "", false
+}
+
+func sandboxEchoesCompletedTurn(st runtime.BridgeStatus, completedOp string, completed bool) bool {
+	// plan g1.1: the client already started the next chat. BridgeState may have
+	// cleared the previous op, but this Busy is the in-flight turn, not an echo
+	// of the persisted completion. Confirm must stay rejected.
+	if strings.TrimSpace(st.InFlightOpID) != "" {
+		return false
+	}
+	if !completed || !(st.Busy || st.Desynced) {
+		return false
+	}
+	// review v1: turns still queued on the bridge have not started. Dropping
+	// busy here would let confirm run ahead of them.
+	if st.Waiting > 0 {
+		return false
+	}
+	running := strings.TrimSpace(st.RunningOpID)
+	done := strings.TrimSpace(st.LastDoneOpID)
+	completedOp = strings.TrimSpace(completedOp)
+	// review v1: an empty running op is unnamed busy/desync, not a lagging echo.
+	// finishTurn writes LastDoneOpID on prompt_done, so a matching lastDone alone
+	// must not clear Busy/Desynced. Only a non-empty running op that is the
+	// completed message (or that same lastDone turn) is the echo.
+	if running == "" {
+		return false
+	}
+	if completedOp != "" && running == completedOp {
+		return true
+	}
+	return done != "" && running == done && (completedOp == "" || completedOp == done)
 }

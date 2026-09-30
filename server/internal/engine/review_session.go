@@ -793,6 +793,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	agentMsg := models.ReactMessage{
 		Role: "agent", Text: t.Msg, At: time.Now().Format(time.RFC3339),
 		Questions: t.Questions, Forms: t.Forms, Interrupted: interrupted,
+		OpID: t.OpID,
 	}
 	if interrupted && strings.TrimSpace(agentMsg.Text) == "" {
 		agentMsg.Text = "(已中断)"
@@ -948,6 +949,7 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 	agentMsg := models.ReactMessage{
 		Role: "agent", Text: t.Msg, At: time.Now().Format(time.RFC3339),
 		Questions: t.Questions, Forms: t.Forms, Interrupted: interrupted,
+		OpID: t.OpID,
 	}
 	if interrupted && strings.TrimSpace(agentMsg.Text) == "" && t.Err != nil {
 		agentMsg.Text = "(已中断)"

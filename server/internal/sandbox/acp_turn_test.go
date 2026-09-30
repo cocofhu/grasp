@@ -198,6 +198,39 @@ func TestRunTurnBridgeTimeout(t *testing.T) {
 	}
 }
 
+func TestBridgeStateFinishedOpIsNotRunning(t *testing.T) {
+	c := &ACPClient{}
+	c.lastDoneOpID.Store("g-00fccbf7-0f2")
+	c.stateMu.Lock()
+	c.bridge = BridgeState{
+		Known: true, Busy: true, Desynced: true,
+		RunningOpID: "g-00fccbf7-0f2", Waiting: 0,
+	}
+	c.stateMu.Unlock()
+	st := c.BridgeState()
+	if st.Busy || st.Desynced || st.RunningOpID != "" {
+		t.Fatalf("plan g1.1: finished op still live: %+v", st)
+	}
+	if st.LastDoneOpID != "g-00fccbf7-0f2" {
+		t.Fatalf("last done = %q", st.LastDoneOpID)
+	}
+}
+
+func TestBridgeStateOtherOpStaysOrphan(t *testing.T) {
+	c := &ACPClient{}
+	c.lastDoneOpID.Store("g-done")
+	c.stateMu.Lock()
+	c.bridge = BridgeState{
+		Known: true, Busy: true, Desynced: true,
+		RunningOpID: "g-other", Waiting: 0,
+	}
+	c.stateMu.Unlock()
+	st := c.BridgeState()
+	if !st.Busy || !st.Desynced || st.RunningOpID != "g-other" {
+		t.Fatalf("plan g2.2: other op cleared: %+v", st)
+	}
+}
+
 func TestBridgeStateMirror(t *testing.T) {
 	var connMu sync.Mutex
 	var server *websocket.Conn
