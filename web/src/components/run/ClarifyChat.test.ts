@@ -104,6 +104,20 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
+  it('shows the Live card instead of the text written for the agent', () => {
+    const at = '2026-07-18T00:00:00Z'
+    const turns: ClarifyTurn[] = [
+      { role: 'human', text: 'Live · 采用变体 1', at, live: { sid: 'sid001', op: 'accept', variant: 1, generated: true } },
+      { role: 'human', text: 'Live · 放弃变体,恢复原样', at, live: { sid: 'sid001', op: 'discard' } },
+      { role: 'human', text: '按钮再大一点', at, live: { sid: 'sid001', op: 'refine', variant: 2 } },
+    ]
+    const wrapper = mountChat({ turns })
+    expect(wrapper.findAll('[data-testid="live-variant-card"]')).toHaveLength(3)
+    expect(wrapper.text()).not.toContain('Live · ')
+    expect(wrapper.text()).toContain('按钮再大一点')
+    wrapper.unmount()
+  })
+
   it('shows done banner and hides composer when done', () => {
     const wrapper = mountChat({ done: true, turns: [{ role: 'agent', text: '完成', at: '2026-07-18T00:00:00Z' }] })
     expect(wrapper.text()).toMatch(/交互已完成|已完成/)

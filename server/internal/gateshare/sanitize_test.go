@@ -101,6 +101,17 @@ func TestSanitizeTurnsKeepsOpaqueImageIndexes(t *testing.T) {
 	}
 }
 
+func TestSanitizeTurnsKeepsLiveCardFields(t *testing.T) {
+	turns := SanitizeTurns([]models.ReactMessage{{Role: "human", Text: "Live · 继续改变体 2:按钮再大一点",
+		Live: &models.LiveRef{SID: "sid001", Op: models.LiveOpRefine, Variant: 2, Prompt: "按钮再大一点", Generated: true}}})
+	if len(turns) != 1 || turns[0].Live == nil {
+		t.Fatalf("turns=%+v", turns)
+	}
+	if got := *turns[0].Live; got.Prompt != "按钮再大一点" || !got.Generated || got.Variant != 2 {
+		t.Fatalf("live ref = %+v", got)
+	}
+}
+
 func TestSanitizeTurnsAndCatalogAlignForBothSendDirections(t *testing.T) {
 	// Preview send + approve send land in the same conversation; preview copy must
 	// keep opaque indexes for both (g2.2).

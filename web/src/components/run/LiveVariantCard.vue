@@ -9,7 +9,10 @@ import { LIVE_CARD_HOST, isLiveBusy, isLiveOpen, type LiveCmd } from '@/lib/inbo
  * comes from the host's Live store (the preview drawer); elsewhere the card
  * only names the request.
  */
-const props = defineProps<{ liveRef: { sid: string; op: string; variant?: number } }>()
+const props = defineProps<{ liveRef: { sid: string; op: string; variant?: number; prompt?: string } }>()
+
+/** Server summary for page-scope sessions (engine/live.go). */
+const PAGE_SUMMARY = '页面候选'
 
 const { t } = useI18n()
 const host = inject(LIVE_CARD_HOST, null)
@@ -20,6 +23,29 @@ const variants = computed(() => session.value?.variants ?? [])
 const state = computed(() => session.value?.state ?? '')
 const opKey = computed(() => (['generate', 'insert', 'steer', 'refine', 'accept', 'discard', 'mount_failed'].includes(props.liveRef.op) ? props.liveRef.op : 'generate'))
 const stateKey = computed(() => (state.value ? state.value : 'unknown'))
+/** `p「Sign in」` reads as markup; the quoted text alone names the element. */
+const target = computed(() => {
+  const s = session.value?.summary || ''
+  return s === PAGE_SUMMARY ? '' : s.replace(/^[\w-]+(?=「)/, '')
+})
+const headline = computed(() => {
+  const op = opKey.value
+  const n = props.liveRef.variant
+  if (op === 'generate' || op === 'insert') {
+    const count = session.value?.count || variants.value.length || 3
+    return t(`pages.embedChat.live.heads.${op}`, { n: count, target: target.value || t('pages.embedChat.live.heads.page') })
+  }
+  if (op === 'refine') return n ? t('pages.embedChat.live.heads.refine', { n }) : t('pages.embedChat.live.heads.refineMore')
+  if (op === 'accept') {
+    const label = variants.value.find((v) => v.n === n)?.label
+    return t('pages.embedChat.live.heads.accept', { n: n ?? '' }) + (label ? ` · ${label}` : '')
+  }
+  return t(`pages.embedChat.live.heads.${op}`)
+})
+/** Generate and insert name the element in the headline already. */
+const showTarget = computed(() => !!target.value && opKey.value !== 'generate' && opKey.value !== 'insert')
+/** "Ready" is implied by the controls below. */
+const showState = computed(() => !!session.value && !!state.value && state.value !== 'ready')
 const tone = computed(() => {
   if (state.value === 'failed') return 'bg-err'
   if (isLiveBusy(state.value)) return 'bg-warn animate-pulse'
@@ -54,19 +80,20 @@ function step(delta: number) {
     data-testid="live-variant-card"
     :data-state="stateKey"
   >
-    <div class="flex items-center gap-1.5 text-[11px] font-medium text-txt2">
-      <Icon name="sparkles" :size="12" class="text-accent" aria-hidden="true" />
-      <span>{{ t('pages.embedChat.live.title') }} · {{ t(`pages.embedChat.live.ops.${opKey}`) }}</span>
-      <span v-if="session" class="ml-auto inline-flex items-center gap-1 text-txt3" role="status" data-testid="live-variant-state">
+    <div class="flex items-center gap-1.5 text-[12px] font-medium text-txt">
+      <Icon name="sparkles" :size="12" class="shrink-0 text-accent" aria-hidden="true" />
+      <span class="min-w-0 truncate" :title="session?.selector || headline" data-testid="live-variant-headline">{{ headline }}</span>
+      <span v-if="showState" class="ml-auto inline-flex shrink-0 items-center gap-1 text-[11px] font-normal text-txt3" role="status" data-testid="live-variant-state">
         <span class="h-1.5 w-1.5 rounded-full" :class="tone" aria-hidden="true" />
         {{ t(`pages.embedChat.live.states.${stateKey}`) }}
       </span>
     </div>
-    <p v-if="session?.summary" class="m-0 mt-1 truncate text-[12px] text-txt" :title="session.selector">{{ session.summary }}</p>
+    <p v-if="liveRef.prompt" class="m-0 mt-1 whitespace-pre-wrap break-words text-[12px] leading-snug text-txt2" data-testid="live-variant-prompt">{{ liveRef.prompt }}</p>
+    <p v-if="showTarget" class="m-0 mt-1 truncate text-[11px] text-txt3" :title="session?.selector">{{ target }}</p>
     <p v-if="session?.state === 'failed' && session.error" class="m-0 mt-1 text-[11px] leading-snug text-err" data-testid="live-variant-error">
       {{ t('pages.embedChat.live.failed', { error: session.error }) }}
     </p>
-    <p v-else-if="session?.state === 'accepted' && session.selected" class="m-0 mt-1 text-[11px] text-txt3">
+    <p v-else-if="session?.state === 'accepted' && session.selected && opKey !== 'accept'" class="m-0 mt-1 text-[11px] text-txt3">
       {{ t('pages.embedChat.live.selected', { n: session.selected }) }}
     </p>
     <p v-if="failedSteer" class="m-0 mt-1 text-[11px] leading-snug text-txt3" data-testid="live-steer-partial">

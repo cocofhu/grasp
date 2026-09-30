@@ -4,6 +4,14 @@ import { LIVE_ORIGINAL } from './live-variants-mock'
 const origin = 'http://127.0.0.1:5174'
 const overlay = (page: Page) => page.locator('grasp-live-overlay')
 const drawer = (page: Page) => page.frameLocator('grasp-preview-pick [data-role="drawer"] iframe')
+const bar = (page: Page, role: string) => page.locator(`grasp-preview-pick [data-role="${role}"]`)
+
+/** Pick the newsletter with the bar's Pick and open the design form from the action card. */
+async function pickForDesign(page: Page) {
+  await bar(page, 'toggle').click()
+  await page.locator('#newsletter').click({ position: { x: 15, y: 15 } })
+  await overlay(page).locator('[data-act="to-design"]').click()
+}
 
 async function state(page: Page, key: string) {
   return (await page.request.get(`${origin}/__e2e/live/state?key=${key}`)).json()
@@ -14,15 +22,16 @@ async function open(page: Page, key: string) {
   await page.request.post(`${origin}/__e2e/live/reset?key=${key}`)
   await page.goto(`${origin}/live-variants.html?key=${key}`)
   await expect(drawer(page).getByTestId('live-drawer')).toBeVisible()
-  const button = page.locator('grasp-preview-pick [data-role="live"]')
-  await expect(button).toBeEnabled()
-  await button.click()
-  await expect(overlay(page).locator('[data-act="pick"]')).toBeVisible()
+  await expect(bar(page, 'insert')).toBeEnabled()
 }
 
 async function generate(page: Page, prompt = '', inserted = false) {
-  await overlay(page).locator(`[data-act="${inserted ? 'insert' : 'pick'}"]`).click()
-  await page.locator('#newsletter').click({ position: { x: 15, y: 15 } })
+  if (inserted) {
+    await bar(page, 'insert').click()
+    await page.locator('#newsletter').click({ position: { x: 15, y: 15 } })
+  } else {
+    await pickForDesign(page)
+  }
   if (prompt) await overlay(page).locator('[data-input="prompt"]').fill(prompt)
   await overlay(page).locator('[data-act="go"]').click()
   await expect(drawer(page).getByTestId('live-variant-card').last()).toHaveAttribute('data-state', 'ready')
@@ -76,10 +85,7 @@ test.describe('Live preview and Chat browser bridge', () => {
   test('drawings and positioned notes reach the agent request, and clearing keeps them out of the next generation', async ({ page }, testInfo) => {
     const key = 'annotations'
     await open(page, key)
-    const pick = async () => {
-      await overlay(page).locator('[data-act="pick"]').click()
-      await page.locator('#newsletter').click({ position: { x: 15, y: 15 } })
-    }
+    const pick = () => pickForDesign(page)
     await pick()
     await overlay(page).locator('[data-act="action"][data-v="animate"]').click()
     await expect(overlay(page).locator('[data-act="action"][data-v="animate"]')).toHaveAttribute('aria-pressed', 'true')
@@ -171,7 +177,21 @@ test.describe('Live preview and Chat browser bridge', () => {
     await expect(page.locator('[data-grasp-variant="0"]')).toBeVisible()
     await expect(page.locator('[data-grasp-variant="1"]')).toBeVisible()
     await expect(page.locator('[data-grasp-variant="2"]')).toBeVisible()
-    await drawer(page).getByTestId('live-variant-mode').click()
+    // Compare leaves the page layout alone and has one toolbar to leave it.
+    await expect(page.locator('[data-grasp-live]')).not.toHaveCSS('display', 'grid')
+    const compareBar = overlay(page).locator('[data-sw][data-compare]')
+    await expect(compareBar).toBeVisible()
+    await expect(overlay(page).locator('[data-tag]')).toHaveCount(4)
+    await overlay(page).locator('[data-tag][data-n="3"]').click()
+    await expect(overlay(page).locator('[data-tag][data-n="3"]')).toHaveAttribute('aria-pressed', 'true')
+    await page.keyboard.press('Escape')
+    await expect(compareBar).toBeHidden()
+    await expect(page.locator('[data-grasp-variant="1"]')).toBeHidden()
+    await expect(page.locator('[data-grasp-variant="3"]')).toBeVisible()
+    await overlay(page).locator('[data-act="compare"]').click()
+    await compareBar.locator('[data-act="inplace"]').click()
+    await expect(page.locator('[data-grasp-variant="0"]')).toBeHidden()
+    await expect(page.locator('[data-grasp-variant="3"]')).toBeVisible()
     await drawer(page).getByTestId('live-variant-chip').first().click()
     await tuneSecond(page)
     await drawer(page).getByTestId('live-variant-accept').click()
@@ -240,6 +260,7 @@ test.describe('Live preview and Chat browser bridge', () => {
     const key = 'steer-recovery'
     await open(page, key)
     const steer = async (chat: FrameLocator, prompt: string) => {
+      await bar(page, 'steer').click()
       await overlay(page).locator('[data-input="steer"]').fill(prompt)
       await overlay(page).locator('[data-act="steer"]').click()
       await expect(chat.getByTestId('live-variant-card').last()).toHaveAttribute('data-state', 'failed')
@@ -280,19 +301,18 @@ test.describe('Live entry on Grasp direct previews', () => {
       await expect(drawer(page).getByTestId('embed-chat-root')).toBeVisible({ timeout: 15_000 })
       expect(await (await capability).json()).toMatchObject({ status: 'active', enabled: true, sessions: [] })
       await expect(drawer(page).getByTestId('clarify-input')).toBeVisible({ timeout: 15_000 })
-      const liveSwitch = page.locator('grasp-preview-pick [data-role="live"]')
-      await expect(liveSwitch).toHaveAttribute('aria-label', 'Live 工具')
-      await expect(liveSwitch).toHaveAttribute('aria-pressed', 'false')
-      await expect(liveSwitch).toHaveText('Live 工具')
-      await liveSwitch.click()
-      await expect(liveSwitch).toHaveAttribute('aria-pressed', 'true')
-      await expect(liveSwitch).toHaveText('Live 工具')
-      await overlay(page).locator('[data-act="close"]').click()
-      await expect(liveSwitch).toHaveAttribute('aria-pressed', 'false')
-      await expect(overlay(page).locator('[data-act="pick"]')).toBeHidden()
-      await liveSwitch.click()
-      await overlay(page).locator('[data-act="pick"]').click()
+      await expect(bar(page, 'live')).toHaveCount(0)
+      await expect(bar(page, 'toggle')).toHaveAttribute('title', '点选元素：发到对话或生成设计候选')
+      await expect(bar(page, 'insert')).toBeVisible()
+      await expect(bar(page, 'steer')).toHaveText('整页调整')
+      await expect(bar(page, 'eye')).toBeHidden()
+      // The action card can still send the element to Chat as a plain pick.
+      await bar(page, 'toggle').click()
       await page.locator('#newsletter').click({ position: { x: 15, y: 15 } })
+      await expect(overlay(page).locator('[data-act="to-design"]')).toBeEnabled()
+      await overlay(page).locator('[data-act="to-chat"]').click()
+      await expect(drawer(page).getByTestId('clarify-annotation-chip')).toBeVisible()
+      await pickForDesign(page)
       await overlay(page).locator('[data-input="prompt"]').fill('保留订阅行为，给出三个更清晰的设计')
       await markSelection(page)
       await page.screenshot({ path: testInfo.outputPath(`live-${nodeType}-annotations.png`), animations: 'disabled' })
@@ -306,14 +326,17 @@ test.describe('Live entry on Grasp direct previews', () => {
       await expect(page.locator('[data-grasp-variant="2"]')).toBeVisible()
       await expect(page.locator('[data-grasp-variant="1"]')).toBeHidden()
       await expect(drawer(page).getByTestId('live-variant-viewing').last()).toContainText('2')
-      await liveSwitch.click()
-      await expect(liveSwitch).toHaveText('Live 工具')
-      await expect(overlay(page).locator('[data-act="pick"]')).toBeHidden()
+      // Hiding the candidate controls keeps the viewed candidate and the session.
+      const eye = bar(page, 'eye')
+      await expect(eye).toBeVisible()
+      await eye.click()
+      await expect(eye).toHaveAttribute('aria-pressed', 'true')
+      await expect(overlay(page).locator('[data-act="next"]')).toBeHidden()
       await expect(page.locator('[data-grasp-variant="2"]')).toBeVisible()
       expect((await state(page, key)).sessions.at(-1).state).toBe('ready')
-      await liveSwitch.click()
-      await expect(liveSwitch).toHaveText('Live 工具')
-      await expect(overlay(page).locator('[data-act="pick"]')).toBeVisible()
+      await eye.click()
+      await expect(eye).toHaveAttribute('aria-pressed', 'false')
+      await expect(overlay(page).locator('[data-act="next"]')).toBeVisible()
       await page.screenshot({ path: testInfo.outputPath(`live-${nodeType}-variants.png`), animations: 'disabled' })
       await drawer(page).getByTestId('clarify-input').fill('就用这个')
       await drawer(page).getByTestId('clarify-send-label').click()
@@ -334,7 +357,7 @@ test.describe('Live entry on Grasp direct previews', () => {
       await page.goto(`${origin}/live-variants.html?key=${key}`)
       await expect(drawer(page).getByTestId('clarify-input')).toBeVisible({ timeout: 15_000 })
       expect(await (await capability).json()).toMatchObject({ enabled: false })
-      await expect(page.locator('grasp-preview-pick [data-role="live"]')).toBeHidden()
+      for (const role of ['insert', 'steer', 'eye']) await expect(bar(page, role)).toBeHidden()
       await expect(overlay(page)).toHaveCount(0)
       expect((await state(page, key)).requests).toEqual([])
     })
@@ -366,7 +389,7 @@ test.describe('production Chat composer page candidates', () => {
     const key = 'entry-composer'
     await entry(page, key)
     const mode = drawer(page).getByTestId('live-candidate-mode')
-    const tools = page.locator('grasp-preview-pick [data-role="live"]')
+    const tools = bar(page, 'insert')
     await expect(drawer(page).getByTestId('page-collaboration-toggle')).toHaveAttribute('aria-expanded', 'false')
     await openControls(page)
     await expect(mode).toHaveAttribute('aria-checked', 'false')
@@ -400,7 +423,7 @@ test.describe('production Chat composer page candidates', () => {
     await expect(page.locator('[data-grasp-variant]:not([data-grasp-variant="0"])')).toHaveCount(3)
     await expect(overlay(page).locator('[data-act="next"]')).toBeVisible()
     await expect(tools).toHaveAttribute('aria-pressed', 'false')
-    await expect(overlay(page).locator('[data-act="pick"]')).toBeHidden()
+    await expect(overlay(page).locator('.panel')).toHaveCount(0)
     const generated = await state(page, key)
     expect(generated.sessions).toHaveLength(1)
     expect(generated.sessions[0].state).toBe('ready')

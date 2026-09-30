@@ -257,7 +257,7 @@ func (e *Engine) ReactLiveWithAttachmentsAs(owner, runID, nodeID string, ev mode
 		Annotations: annotations,
 		Source:      "node",
 		Owner:       owner,
-		Live:        &models.LiveRef{SID: sess.ID, Op: ev.Op, Variant: ev.Variant},
+		Live:        models.NewLiveRef(ev, sess.ID),
 	}
 	if _, err := e.enqueueReviewItem(runID, nodeID, e.liveQueueKind(runID, nodeID), item); err != nil {
 		if prev != nil {

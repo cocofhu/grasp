@@ -13,15 +13,26 @@ export type HostOpts = {
   notice: (text: string, ok?: boolean) => void
   /** Turn off preview-pick's own Pick mode. */
   stopPick: () => void
-  /** Re-render preview-pick's bar (Live button state). */
+  /** Hand a picked element to the chat drawer as a plain pick. */
+  sendToChat: (el: Element) => void
+  /** Re-render preview-pick's bar (insert / steer / eye state). */
   changed: () => void
   isOwnUi: (el: Element) => boolean
 }
 
 export type LiveOverlay = {
   onDrawer: (msg: unknown) => void
-  toggle: () => void
-  isOpen: () => boolean
+  /** Show the action card for an element picked with preview-pick's Pick. */
+  offer: (el: Element) => void
+  startInsert: () => void
+  cancelPick: () => void
+  isInserting: () => boolean
+  setSteerOpen: (on: boolean) => void
+  isSteerOpen: () => boolean
+  hasCandidates: () => boolean
+  setPeek: (on: boolean) => void
+  toggleHidden: () => void
+  isHidden: () => boolean
   setEnabled: (on: boolean) => void
   dispose: () => void
 }
@@ -45,6 +56,8 @@ type PickKind = 'replace' | 'insert'
 
 type Panel = {
   kind: PickKind
+  /** `choose` is the chat-or-design card; `design` is the generate form. */
+  stage: 'choose' | 'design'
   el: Element
   desc: LiveElement
   action: string
@@ -108,12 +121,25 @@ export function wrapperRect(w: Wrapper): DOMRect | null {
   return new DOMRect(l, t, r - l, b - t)
 }
 
+/** Theme matching the page background, or '' when the page paints none. */
+export function pageTheme(): 'light' | 'dark' | '' {
+  for (const el of [document.body, document.documentElement]) {
+    if (!el) continue
+    const m = getComputedStyle(el).backgroundColor.match(/rgba?\(([^)]*)\)/)
+    if (!m) continue
+    const [r, g, b, a = 1] = m[1].split(/[\s,/]+/).filter(Boolean).map(Number)
+    if (!a) continue
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.5 ? 'dark' : 'light'
+  }
+  return ''
+}
+
 export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverlay {
   let enabled = false
-  let open = false
+  let steerOpen = false
   let hidden = false
   let peek = false
-  let picking: PickKind | null = null
+  let inserting = false
   let hoverEl: Element | null = null
   let panel: Panel | null = null
   let steerText = ''
@@ -134,7 +160,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
   shadow.innerHTML =
     `<style>${OVERLAY_CSS}</style><div class="root">` +
     '<div data-layer="frames"></div><div data-layer="switchers"></div>' +
-    '<div data-layer="annotations"></div><div data-layer="panel"></div><div data-layer="hint"></div><div data-layer="bar"></div></div>'
+    '<div data-layer="annotations"></div><div data-layer="panel"></div><div data-layer="dock"></div></div>'
   const root = shadow.querySelector('.root') as HTMLElement
   const layer = (name: string) => shadow.querySelector(`[data-layer="${name}"]`) as HTMLElement
   const annotations = createAnnotations(layer('annotations'), T, () => renderPanel())
@@ -237,8 +263,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
         continue
       }
       if (v.mode === 'compare' && !hidden) {
-        const wide = (wrapperRect(w)?.width ?? 0) > window.innerWidth * 0.6
-        w.el.setAttribute('data-grasp-compare', wide ? 'stack' : 'grid')
+        w.el.setAttribute('data-grasp-compare', '')
         if (w.original) setVariantVisible(w.original, true)
         for (const x of w.variants) setVariantVisible(x.el, true)
       } else {
@@ -253,13 +278,16 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
   }
 
   function rescan() {
+    const had = wrappers.length > 0
     wrappers = scanWrappers()
+    if (!wrappers.length) hidden = false
     applyWrappers()
     syncViews()
     checkMounts()
     renderSwitchers()
-    renderBar()
+    renderDock()
     layout()
+    if (had !== wrappers.length > 0) opts.changed()
   }
 
   function checkMounts() {
@@ -296,48 +324,46 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
   // ---------- rendering ----------
 
   function themeClass() {
-    root.className = opts.theme() === 'light' ? 'root light' : 'root'
+    root.className = (pageTheme() || opts.theme()) === 'light' ? 'root light' : 'root'
   }
 
-  function renderBar() {
+  /** Steer composer and status hints, stacked just above preview-pick's bar. */
+  function renderDock(focusSteer = false) {
     themeClass()
-    const bar = layer('bar')
+    const dock = layer('dock')
     const focused = shadow.activeElement as HTMLInputElement | null
     const keepFocus = focused?.dataset?.input === 'steer' ? { start: focused.selectionStart, end: focused.selectionEnd } : null
-    if (!enabled || !open) {
-      bar.innerHTML = ''
-      layer('hint').innerHTML = ''
+    if (!enabled) {
+      dock.innerHTML = ''
       return
     }
-    const busy = [...sessions.values()].some((s) => BUSY.has(s.state)) || pending.size > 0
     const hasMic = !!(window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition ||
       !!(window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition
-    bar.innerHTML =
-      `<div class="bar" role="toolbar" aria-label="${esc(T.title)}">` +
-      `<span class="mark${busy ? ' busy' : ''}" aria-hidden="true">L</span>` +
-      `<button type="button" class="act" data-act="pick" aria-pressed="${picking === 'replace'}">${esc(T.pick)}</button>` +
-      `<button type="button" class="act" data-act="insert" aria-pressed="${picking === 'insert'}" title="${esc(T.insert)}" aria-label="${esc(T.insert)}">+</button>` +
-      `<button type="button" class="act" data-act="eye" aria-pressed="${hidden}" title="${esc(T.eye)}" aria-label="${esc(T.eye)}">👁</button>` +
-      '<span class="sep" aria-hidden="true"></span>' +
-      `<span class="steer"><input type="text" data-input="steer" placeholder="${esc(T.steer)}" aria-label="${esc(T.steer)}" value="${esc(steerText)}" />` +
-      (hasMic ? `<button type="button" data-act="mic" title="${esc(T.mic)}" aria-label="${esc(T.mic)}">🎤</button>` : '') +
-      `<button type="button" data-act="steer" aria-label="${esc(T.steerSend)}">↵</button></span>` +
-      `<button type="button" data-act="close" title="${esc(T.close)}" aria-label="${esc(T.close)}">✕</button>` +
-      '</div>'
-    if (keepFocus) {
-      const input = bar.querySelector<HTMLInputElement>('[data-input="steer"]')
+    const composer = steerOpen
+      ? `<div class="steer" role="group" aria-label="${esc(T.steer)}"><input type="text" data-input="steer" placeholder="${esc(T.steer)}" aria-label="${esc(T.steer)}" value="${esc(steerText)}" />` +
+        (hasMic ? `<button type="button" data-act="mic" title="${esc(T.mic)}" aria-label="${esc(T.mic)}">🎤</button>` : '') +
+        `<button type="button" data-act="steer" aria-label="${esc(T.steerSend)}">↵</button></div>`
+      : ''
+    const hint = hintHtml()
+    dock.innerHTML = hint || composer ? `<div class="dock">${hint}${composer}</div>` : ''
+    const restore = keepFocus || (focusSteer ? { start: steerText.length, end: steerText.length } : null)
+    if (restore) {
+      const input = dock.querySelector<HTMLInputElement>('[data-input="steer"]')
       if (input) {
         input.focus()
         try {
-          input.setSelectionRange(keepFocus.start, keepFocus.end)
+          input.setSelectionRange(restore.start, restore.end)
         } catch {
           // Some input types have no selection.
         }
       }
     }
+  }
+
+  function hintHtml(): string {
     const away = openSessions().filter((s) => !wrappers.some((w) => w.sid === s.sid) && pathOf(s.url) && pathOf(s.url) !== location.pathname)
     const failures = [...sessions.values()].filter((s) => s.state === 'failed' && !wrappers.some((w) => w.sid === s.sid))
-    layer('hint').innerHTML = failures.length
+    return failures.length
       ? `<div class="hint" role="status">${failures.map((s) =>
           `<div>${esc(T.failed)}${s.error ? `: ${esc(s.error)}` : ''} ` +
           (s.mode === 'steer' ? `<button type="button" data-act="retry" data-sid="${esc(s.sid)}">${esc(T.retry)}</button>` : '') +
@@ -347,19 +373,44 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       : away.length
       ? `<div class="hint" role="status">${esc(fmt(T.pending, { n: away.length, path: pathOf(away[0].url) }))} ` +
         `<button type="button" data-act="goto-url" data-sid="${esc(away[0].sid)}">→</button></div>`
-      : picking
-        ? `<div class="hint" role="status">${esc(picking === 'insert' ? T.insertPicking : T.picking)}</div>`
+      : inserting
+        ? `<div class="hint" role="status">${esc(T.insertPicking)}</div>`
         : ''
+  }
+
+  /** Why the element cannot get design candidates right now, if it cannot. */
+  function designBlocked(p: Panel): string {
+    if (p.kind === 'replace' && (p.el.closest('[data-grasp-live]') || openSessions().length)) return T.openOther
+    return ''
+  }
+
+  function targetHtml(p: Panel): string {
+    return `<div class="target" title="${esc(p.desc.selector)}">${esc(p.desc.tagName)}${p.desc.text ? ` · ${esc(p.desc.text.slice(0, 40))}` : ''}</div>`
   }
 
   function renderPanel() {
     const el = layer('panel')
-    annotations.setTarget(open && panel ? panel.el : null)
-    if (!panel || !open) {
+    annotations.setTarget(enabled && panel?.stage === 'design' ? panel.el : null)
+    if (!panel || !enabled) {
       el.innerHTML = ''
       return
     }
     const p = panel
+    if (p.stage === 'choose') {
+      const blocked = designBlocked(p)
+      el.innerHTML =
+        '<div class="panel choose" role="dialog" aria-modal="false">' +
+        targetHtml(p) +
+        '<div class="row">' +
+        `<button type="button" class="chip" data-act="to-chat">${esc(T.toChat)}</button>` +
+        `<button type="button" class="chip go" data-act="to-design"${blocked ? ' disabled' : ''}>${esc(T.toDesign)}</button>` +
+        `<button type="button" data-act="cancel-panel" title="${esc(T.cancel)}" aria-label="${esc(T.cancel)}">✕</button>` +
+        '</div>' +
+        (blocked ? `<div class="label" role="status">${esc(blocked)}</div>` : '') +
+        '</div>'
+      positionPanel()
+      return
+    }
     const chips = (p.kind === 'insert' ? ['freeform'] : ACTIONS)
       .map((a) => `<button type="button" class="chip" data-act="action" data-v="${a}" aria-pressed="${p.action === a}">${esc(T.actions[a] || a)}</button>`)
       .join('')
@@ -378,7 +429,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     const needPrompt = p.kind === 'insert' || p.action === 'freeform'
     el.innerHTML =
       '<div class="panel" role="dialog" aria-modal="false">' +
-      `<div class="target" title="${esc(p.desc.selector)}">${esc(p.desc.tagName)}${p.desc.text ? ` · ${esc(p.desc.text.slice(0, 40))}` : ''}</div>` +
+      targetHtml(p) +
       `<div class="chips" role="group">${chips}</div>` +
       pos +
       `<textarea data-input="prompt" rows="2" placeholder="${esc(needPrompt ? T.promptRequired : T.prompt)}" aria-label="${esc(T.prompt)}">${esc(p.prompt)}</textarea>` +
@@ -431,32 +482,39 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       const busy = isBusy(w.sid)
       const idx = w.variants.findIndex((x) => x.n === v.current)
       const cur = w.variants[idx]
-      frameHtml += `<div class="frame" data-frame="${esc(w.sid)}"></div>`
       if (busy) frameHtml += `<div class="shimmer" data-shimmer="${esc(w.sid)}"></div>`
-      if (v.mode === 'compare') {
-        const items = [...(w.original ? [{ n: 0, label: T.original }] : []), ...w.variants.map((x) => ({ n: x.n, label: x.label }))]
-        for (const it of items) {
-          html +=
-            `<div class="badge" data-badge="${esc(w.sid)}" data-n="${it.n}"><b>${it.n || '0'}${it.label ? ` · ${esc(it.label)}` : ''}</b>` +
-            (known && !busy
-              ? it.n === 0
-                ? `<button type="button" data-act="discard" data-sid="${esc(w.sid)}">${esc(T.keepOriginal)}</button>`
-                : s?.state === 'ready'
-                  ? `<button type="button" class="accept" data-act="accept" data-sid="${esc(w.sid)}" data-n="${it.n}">${esc(T.choose)}</button>`
-                  : canRetryAdoption(s) && s?.selected === it.n
-                    ? `<button type="button" class="accept" data-act="retry-accept" data-sid="${esc(w.sid)}">${esc(T.retryAccept)}</button>`
-                    : ''
-              : '') +
-            (it.n ? `<button type="button" data-act="inplace" data-sid="${esc(w.sid)}" data-n="${it.n}">${esc(T.viewInPlace)}</button>` : '') +
-            '</div>'
-        }
-        continue
-      }
       const status = s?.state === 'failed'
         ? `<span class="err" title="${esc(s.error || '')}">${esc(T.failed)}${s.error ? `: ${esc(s.error)}` : ''}</span>`
         : busy
           ? `<span class="state" role="status">${esc(stateLabel(s?.state || 'generating') || T.generating)}</span>`
           : ''
+      if (v.mode === 'compare') {
+        const items = [...(w.original ? [{ n: 0, label: T.original }] : []), ...w.variants.map((x) => ({ n: x.n, label: x.label }))]
+        for (const it of items) {
+          const sel = it.n === v.current
+          const text = it.n ? `${it.n}${it.label ? ` · ${it.label}` : ''}` : T.original
+          frameHtml += `<div class="cframe${sel ? ' sel' : ''}" data-cframe="${esc(w.sid)}" data-n="${it.n}"></div>`
+          html +=
+            `<button type="button" class="tag${sel ? ' sel' : ''}" data-tag="${esc(w.sid)}" data-act="select" data-sid="${esc(w.sid)}" data-n="${it.n}" ` +
+            `aria-pressed="${sel}" title="${esc(text)}">${esc(text)}</button>`
+        }
+        const backN = cur?.n ?? w.variants[0]?.n ?? 0
+        html +=
+          `<div class="sw" data-sw="${esc(w.sid)}" data-compare role="group" aria-label="${esc(T.comparing)}">` +
+          `<span class="count">${esc(T.comparing)}</span>` +
+          `<span class="lab">${esc(cur ? fmt(T.selected, { n: cur.label ? `${cur.n} · ${cur.label}` : cur.n }) : T.selectedOriginal)}</span>` +
+          status +
+          '<span class="sep" aria-hidden="true"></span>' +
+          `<button type="button" data-act="inplace" data-sid="${esc(w.sid)}" data-n="${backN}">${esc(T.backInPlace)}</button>` +
+          `<button type="button" data-act="discard" data-sid="${esc(w.sid)}" title="${esc(known ? T.discard : T.viewOnly)}"${busy || !known ? ' disabled' : ''}>${esc(T.discardAll)}</button>` +
+          (canRetryAdoption(s) && !busy
+            ? `<button type="button" class="accept" data-act="retry-accept" data-sid="${esc(w.sid)}">${esc(T.retryAccept)}</button>`
+            : `<button type="button" class="accept" data-act="accept" data-sid="${esc(w.sid)}" data-n="${cur?.n ?? ''}"${busy || !known || !cur || s?.state !== 'ready' ? ' disabled' : ''}>` +
+              `${esc(cur ? fmt(T.acceptN, { n: cur.n }) : T.accept)}</button>`) +
+          '</div>'
+        continue
+      }
+      frameHtml += `<div class="frame" data-frame="${esc(w.sid)}"></div>`
       html +=
         `<div class="sw" data-sw="${esc(w.sid)}" role="group" aria-label="${esc(T.title)}">` +
         `<button type="button" data-act="prev" data-sid="${esc(w.sid)}" aria-label="${esc(T.prev)}"${busy || w.variants.length < 2 ? ' disabled' : ''}>‹</button>` +
@@ -564,17 +622,21 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
         const r2 = new DOMRect(rect.left, rect.bottom + 10 + (sw.offsetHeight || 36), rect.width, 0)
         place(params, r2)
       }
-      shadow.querySelectorAll<HTMLElement>(`[data-badge="${w.sid}"]`).forEach((b) => {
-        const n = Number(b.dataset.n)
+      const candidateRect = (n: number) => {
         const el = n === 0 ? w.original : w.variants.find((x) => x.n === n)?.el
         const rc = el?.getBoundingClientRect()
-        if (!rc) {
+        return rc && (rc.width || rc.height) ? rc : null
+      }
+      shadow.querySelectorAll<HTMLElement>(`[data-cframe="${w.sid}"]`).forEach((f) => box(f, candidateRect(Number(f.dataset.n)), 2))
+      shadow.querySelectorAll<HTMLElement>(`[data-tag="${w.sid}"]`).forEach((b) => {
+        const rc = candidateRect(Number(b.dataset.n))
+        if (!rc || rc.bottom < 0 || rc.top > window.innerHeight) {
           b.style.display = 'none'
           return
         }
         b.style.display = ''
-        b.style.left = `${Math.max(8, rc.left)}px`
-        b.style.top = `${Math.max(8, rc.top - 30)}px`
+        b.style.left = `${Math.max(8, rc.left + 6)}px`
+        b.style.top = `${Math.max(8, rc.top + 6)}px`
       })
     }
     for (const s of sessions.values()) {
@@ -594,7 +656,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
 
   function renderAll() {
     mount()
-    renderBar()
+    renderDock()
     renderPanel()
     renderSwitchers()
     opts.changed()
@@ -602,17 +664,45 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
 
   // ---------- picking ----------
 
-  function setPicking(kind: PickKind | null) {
-    picking = kind
-    if (kind) {
+  function setInserting(on: boolean) {
+    const was = inserting
+    inserting = on
+    if (on) {
       opts.stopPick()
       panel = null
       renderPanel()
     }
     clearHover()
-    if (kind) document.documentElement.setAttribute('data-grasp-live-picking', '')
+    if (on) document.documentElement.setAttribute('data-grasp-live-picking', '')
     else document.documentElement.removeAttribute('data-grasp-live-picking')
-    renderBar()
+    renderDock()
+    if (was !== on) opts.changed()
+  }
+
+  function newPanel(kind: PickKind, el: Element): Panel {
+    return {
+      kind,
+      stage: kind === 'insert' ? 'design' : 'choose',
+      el,
+      desc: describeElement(el),
+      action: kind === 'insert' ? 'freeform' : 'bolder',
+      prompt: '',
+      notes: '',
+      count: 3,
+      mode: 'inplace',
+      position: 'after',
+    }
+  }
+
+  function offer(el: Element) {
+    if (!enabled) {
+      opts.sendToChat(el)
+      return
+    }
+    setInserting(false)
+    mount()
+    panel = newPanel('replace', el)
+    renderPanel()
   }
 
   function clearHover() {
@@ -629,9 +719,15 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     return el
   }
 
+  /** Clicks inside either shadow root report inner nodes that `closest()` cannot see past. */
+  function ownPath(path: EventTarget[]): boolean {
+    return path.some((n) => n === host || (n instanceof Element && opts.isOwnUi(n)))
+  }
+
   function onMove(ev: MouseEvent) {
-    if (!picking) return
-    const el = pickable(ev.composedPath ? ev.composedPath()[0] ?? ev.target : ev.target)
+    if (!inserting) return
+    const path = ev.composedPath ? ev.composedPath() : []
+    const el = ownPath(path) ? null : pickable(path[0] ?? ev.target)
     if (el === hoverEl) return
     clearHover()
     if (el) {
@@ -640,52 +736,56 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     }
   }
 
+  function selectCompared(target: EventTarget | null | undefined) {
+    const el = target as Element | null
+    if (!enabled || hidden || peek || !el || el.nodeType !== 1) return
+    for (const w of wrappers) {
+      const v = viewOf(w.sid, w)
+      if (v.mode !== 'compare') continue
+      const n = w.original?.contains(el) ? 0 : w.variants.find((x) => x.el.contains(el))?.n
+      if (n === undefined) continue
+      focusSid = w.sid
+      if (n !== v.current) setView(w.sid, { current: n })
+      return
+    }
+  }
+
   function onClick(ev: MouseEvent) {
-    if (!picking) return
     const path = ev.composedPath ? ev.composedPath() : []
-    if (path.includes(host)) return
+    if (ownPath(path)) return
+    if (!inserting) {
+      selectCompared(path[0] ?? ev.target)
+      return
+    }
     const el = pickable(path[0] ?? ev.target)
     if (!el) return
     ev.preventDefault()
     ev.stopPropagation()
-    const kind = picking
     clearHover()
-    const wrapperEl = el.closest('[data-grasp-live]')
-    setPicking(null)
-    if (wrapperEl && kind === 'replace') {
-      opts.notice(T.openOther)
-      return
-    }
-    if (kind === 'replace' && openSessions().some((s) => s.mode !== 'steer')) {
-      opts.notice(T.openOther)
-      return
-    }
-    panel = {
-      kind,
-      el,
-      desc: describeElement(el),
-      action: kind === 'insert' ? 'freeform' : 'bolder',
-      prompt: '',
-      notes: '',
-      count: 3,
-      mode: 'inplace',
-      position: 'after',
-    }
+    setInserting(false)
+    panel = newPanel('insert', el)
     renderPanel()
   }
 
   function onKeydown(ev: KeyboardEvent) {
-    if (!enabled || hidden) return
+    if (!enabled) return
     if (ev.key === 'Escape') {
-      if (picking) {
-        setPicking(null)
+      if (inserting) {
+        setInserting(false)
         ev.stopPropagation()
       } else if (panel) {
         panel = null
         renderPanel()
+      } else if (!hidden && !peek) {
+        const w = wrappers.find((x) => viewOf(x.sid, x).mode === 'compare')
+        if (w) {
+          exitCompare(w.sid)
+          ev.stopPropagation()
+        }
       }
       return
     }
+    if (hidden) return
     const inShadow = shadow.activeElement !== null
     if (isEditable(ev.target) && !inShadow) return
     if (isEditable(shadow.activeElement)) return
@@ -750,8 +850,10 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     if (request('steer', sid, { prompt: text, url: location.href })) {
       sessions.set(sid, { sid, mode: 'steer', state: 'generating', prompt: text, url: location.href })
       steerText = ''
+      steerOpen = false
       opts.notice(T.sent, true)
-      renderBar()
+      renderDock()
+      opts.changed()
     }
   }
 
@@ -765,6 +867,14 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     setView(sid, { current: next.n, mode: 'inplace' })
   }
 
+  /** Back to in-place, keeping the selected variant (the original falls back to the first). */
+  function exitCompare(sid: string) {
+    const w = wrappers.find((x) => x.sid === sid)
+    const v = viewOf(sid, w)
+    const current = v.current || w?.variants[0]?.n || v.current
+    setView(sid, { mode: 'inplace', current })
+  }
+
   function accept(sid: string, n: number) {
     if (isBusy(sid) || !n || sessions.get(sid)?.state !== 'ready') return
     const w = wrappers.find((x) => x.sid === sid)
@@ -774,7 +884,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       const s = sessions.get(sid)
       if (s) s.state = 'accepting'
       renderSwitchers()
-      renderBar()
+      renderDock()
     }
   }
 
@@ -788,7 +898,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       const s = sessions.get(sid)
       if (s) s.state = 'discarding'
       renderSwitchers()
-      renderBar()
+      renderDock()
     }
   }
 
@@ -841,7 +951,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       const said = e.results?.[0]?.[0]?.transcript || ''
       if (said) {
         steerText = (steerText ? `${steerText} ` : '') + said
-        renderBar()
+        renderDock()
       }
     }
     try {
@@ -853,23 +963,26 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
 
   // ---------- events ----------
 
-  let eyeDownAt = 0
-  shadow.addEventListener('pointerdown', (ev) => {
-    const t = (ev.target as Element).closest?.('[data-act="eye"]')
-    if (!t) return
-    eyeDownAt = Date.now()
-    peek = true
-    applyWrappers()
-    renderSwitchers()
-  })
-  const endPeek = () => {
-    if (!peek) return
-    peek = false
+  function setPeek(on: boolean) {
+    if (peek === on) return
+    peek = on
     applyWrappers()
     renderSwitchers()
   }
-  shadow.addEventListener('pointerup', endPeek)
-  shadow.addEventListener('pointerleave', endPeek, true)
+
+  function toggleHidden() {
+    hidden = !hidden
+    applyWrappers()
+    renderSwitchers()
+    renderDock()
+    opts.changed()
+  }
+
+  function setSteerOpen(on: boolean) {
+    steerOpen = on && enabled
+    renderDock(steerOpen)
+    opts.changed()
+  }
 
   shadow.addEventListener('click', (ev) => {
     const t = (ev.target as Element).closest?.('[data-act],[data-param]') as HTMLElement | null
@@ -886,22 +999,18 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     }
     if (sid) focusSid = sid
     switch (act) {
-      case 'pick':
-        setPicking(picking === 'replace' ? null : 'replace')
-        break
-      case 'insert':
-        setPicking(picking === 'insert' ? null : 'insert')
-        break
-      case 'eye':
-        if (Date.now() - eyeDownAt < 300) {
-          hidden = !hidden
-          applyWrappers()
-          renderSwitchers()
-          renderBar()
+      case 'to-chat':
+        if (panel) {
+          opts.sendToChat(panel.el)
+          panel = null
+          renderPanel()
         }
         break
-      case 'close':
-        setOpen(false)
+      case 'to-design':
+        if (panel && !designBlocked(panel)) {
+          panel.stage = 'design'
+          renderPanel()
+        }
         break
       case 'mic':
         startMic()
@@ -958,6 +1067,9 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
         break
       case 'inplace':
         setView(sid, { mode: 'inplace', ...(n ? { current: n } : {}) })
+        break
+      case 'select':
+        setView(sid, { current: n })
         break
       case 'accept':
         accept(sid, n)
@@ -1072,7 +1184,6 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       const n = typeof m.variant === 'number' ? m.variant : 0
       if (!sid) return
       focusSid = sid
-      if (!open) setOpen(true)
       switch (m.cmd) {
         case 'goto':
           if (n) setView(sid, { current: n, mode: 'inplace' })
@@ -1081,7 +1192,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
           setView(sid, { mode: 'compare' })
           break
         case 'inplace':
-          setView(sid, { mode: 'inplace' })
+          exitCompare(sid)
           break
         case 'accept':
           accept(sid, n || viewOf(sid).current)
@@ -1099,16 +1210,6 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     }
   }
 
-  function setOpen(on: boolean) {
-    open = on && enabled
-    if (!open) {
-      setPicking(null)
-      panel = null
-    }
-    if (open) rescan()
-    renderAll()
-  }
-
   function setEnabled(on: boolean) {
     enabled = on
     postedViews.clear()
@@ -1118,7 +1219,10 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       rescan()
     } else {
       observer.disconnect()
-      setOpen(false)
+      setInserting(false)
+      panel = null
+      steerOpen = false
+      renderAll()
       layer('switchers').innerHTML = ''
       layer('frames').innerHTML = ''
     }
@@ -1127,8 +1231,20 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
 
   return {
     onDrawer,
-    toggle: () => setOpen(!open),
-    isOpen: () => open,
+    offer,
+    startInsert: () => {
+      if (enabled) setInserting(true)
+    },
+    cancelPick: () => {
+      if (inserting) setInserting(false)
+    },
+    isInserting: () => inserting,
+    setSteerOpen,
+    isSteerOpen: () => steerOpen,
+    hasCandidates: () => enabled && wrappers.length > 0,
+    setPeek,
+    toggleHidden,
+    isHidden: () => hidden,
     setEnabled,
     dispose() {
       observer.disconnect()
@@ -1140,7 +1256,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       window.removeEventListener('scroll', scheduleLayout, true)
       window.removeEventListener('resize', scheduleLayout)
       window.removeEventListener('popstate', scheduleRescan)
-      setPicking(null)
+      setInserting(false)
       host.remove()
       pageStyle.remove()
     },

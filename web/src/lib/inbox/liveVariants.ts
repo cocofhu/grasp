@@ -57,7 +57,7 @@ export type LiveSession = {
   updatedAt?: string
 }
 
-export type LiveRef = { sid: string; op: LiveOp | string; variant?: number }
+export type LiveRef = { sid: string; op: LiveOp | string; variant?: number; prompt?: string; generated?: boolean }
 
 export type LiveElement = {
   selector: string
@@ -275,6 +275,9 @@ export function parseLiveRef(v: unknown): LiveRef | undefined {
   const out: LiveRef = { sid: r.sid, op: r.op }
   const variant = int(r.variant)
   if (variant) out.variant = variant
+  const prompt = str(r.prompt, 200)
+  if (prompt) out.prompt = prompt
+  if (r.generated === true) out.generated = true
   return out
 }
 

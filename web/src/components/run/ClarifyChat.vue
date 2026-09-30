@@ -60,6 +60,11 @@ const props = withDefaults(
   },
 )
 
+/** Live request text written for the agent; the Live card already tells the user. */
+function isLiveCardText(t: ClarifyTurn): boolean {
+  return !!t.live && (t.live.generated === true || /^Live · /.test(t.text || ''))
+}
+
 const emit = defineEmits<{
   (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[]): void
   (e: 'retry-last'): void
@@ -512,7 +517,7 @@ const {
           </template>
           <!-- Human free-text bubble (agent branch handled above; role narrowed to human) -->
           <div
-            v-else-if="t.text"
+            v-else-if="t.text && !isLiveCardText(t)"
             class="md rounded-lg border border-accent/30 bg-accent-dim/60 px-3 py-2 text-[13px] leading-relaxed text-txt"
             v-html="renderMarkdown(t.text)"
           />

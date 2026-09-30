@@ -263,6 +263,21 @@ func TestLiveEventText(t *testing.T) {
 	}
 }
 
+func TestNewLiveRef(t *testing.T) {
+	long := strings.Repeat("长", 300)
+	ref := NewLiveRef(LiveEvent{Op: LiveOpRefine, Variant: 2, Prompt: "  " + long + " "}, "sid001")
+	if ref.SID != "sid001" || ref.Op != LiveOpRefine || ref.Variant != 2 || !ref.Generated {
+		t.Fatalf("ref = %+v", ref)
+	}
+	if n := len([]rune(ref.Prompt)); n > liveRefPromptMax+1 || !strings.HasPrefix(ref.Prompt, "长") {
+		t.Fatalf("prompt not trimmed/clipped: %d runes", n)
+	}
+	page := NewLiveRef(LiveEvent{Op: LiveOpGenerate, Scope: "page", Prompt: "整页更紧凑"}, "sid002")
+	if page.Generated || page.Prompt != "" {
+		t.Fatalf("page brief is the message text itself: %+v", page)
+	}
+}
+
 func TestRenderLiveEvent(t *testing.T) {
 	el := liveEl()
 	el.Classes = []string{"card", "dark"}
