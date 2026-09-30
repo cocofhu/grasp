@@ -1414,7 +1414,7 @@
           "fullDesc": "热态可回复 / cancel / 确认（及驳回）。默认，兼容现状。",
           "react_only": "仅 ReAct 聊天",
           "reactOnlyChip": "仅 ReAct",
-          "react_onlyDesc": "可回复与 cancel；禁止确认 / 驳回流转。"
+          "react_onlyDesc": "可回复与 cancel；禁止确认 / 驳回流转，也不能操作 Live 变体。"
         },
         "regenInheritsHint": "Regen 将继承当前预设",
         "linkLabel": "分享链接",

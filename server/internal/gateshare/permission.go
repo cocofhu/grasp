@@ -11,6 +11,8 @@ const (
 	ActionReply  = "reply"
 	ActionCancel = "cancel"
 	ActionDecide = "decide"
+	// ActionLive is generate / accept / discard / steer (not a plain comment).
+	ActionLive = "live"
 )
 
 // ParsePermissionPreset validates a create-time preset. Empty → full (default).
@@ -38,14 +40,14 @@ func NormalizePermissionPreset(raw string) string {
 }
 
 // Allow reports whether preset permits the given public action.
-// full: reply + cancel + decide (current behavior).
-// react_only: reply + cancel only; all decide_* are denied.
+// full: reply + cancel + decide + live.
+// react_only: reply + cancel only; decide and Live writes are denied.
 func Allow(preset, action string) bool {
 	preset = NormalizePermissionPreset(preset)
 	switch strings.TrimSpace(action) {
 	case ActionReply, ActionCancel:
 		return true
-	case ActionDecide:
+	case ActionDecide, ActionLive:
 		return preset == models.SharePermissionFull
 	default:
 		return false

@@ -109,6 +109,20 @@ export function clearEmbedSession(runId: string, nodeId: string): void {
   }
 }
 
+/** Drop every drawer token. Call on main-app logout so a later browser user cannot reuse them. */
+export function clearAllEmbedSessions(): void {
+  try {
+    const keys: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith(STORAGE_PREFIX)) keys.push(k)
+    }
+    for (const k of keys) localStorage.removeItem(k)
+  } catch {
+    // ignore
+  }
+}
+
 /** Trade a one-shot ticket for a drawer token. Resolves null when the ticket is spent or unknown. */
 export async function redeemEmbedTicket(ticket: string, runId: string, nodeId: string): Promise<EmbedSession | null> {
   const res = await fetch('/embed-api/session', {

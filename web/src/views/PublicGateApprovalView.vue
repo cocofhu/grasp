@@ -206,6 +206,7 @@ const showConfirm = computed(() => {
 })
 const permissionPreset = computed(() => normalizePermissionPreset(preview.value?.permissionPreset))
 const isReactOnly = computed(() => permissionPreset.value === 'react_only')
+const canWriteLive = computed(() => !isReactOnly.value)
 const showReactOnlyDeadend = computed(
   () => isActive.value && !doneKind.value && isReactOnly.value && !reactAlive.value,
 )
@@ -1342,6 +1343,7 @@ function sendEventsFrame(frame: Record<string, unknown>): boolean {
 
 /** Forward one Live request from the preview page; resolves with the session. */
 async function sendLive(ev: LiveEvent): Promise<LiveSession | null> {
+  if (!canWriteLive.value) return null
   const res = await publicGateApi.reply({ token: token.value, text: '', live: ev })
   const session = live.apply(res.live)
   if (session) emit('live-session', session)
@@ -1358,6 +1360,7 @@ async function loadLiveSessions(): Promise<{ enabled: boolean; sessions: LiveSes
 }
 
 async function discardAllLive(): Promise<number> {
+  if (!canWriteLive.value) return 0
   const res = await publicGateApi.liveDiscardAll(token.value)
   return res.discarding ?? 0
 }

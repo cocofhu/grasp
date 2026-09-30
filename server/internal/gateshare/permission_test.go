@@ -37,6 +37,12 @@ func TestAllowAndFilterActions(t *testing.T) {
 	if !Allow(models.SharePermissionReactOnly, ActionReply) || !Allow(models.SharePermissionReactOnly, ActionCancel) {
 		t.Fatal("react_only should allow reply/cancel")
 	}
+	if Allow(models.SharePermissionReactOnly, ActionLive) {
+		t.Fatal("react_only must deny live writes")
+	}
+	if !Allow(models.SharePermissionFull, ActionLive) {
+		t.Fatal("full should allow live")
+	}
 	actions := map[string]string{
 		"approve": "approve",
 		"confirm": "approve",

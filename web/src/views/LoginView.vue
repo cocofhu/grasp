@@ -37,7 +37,7 @@ async function onSubmit() {
   try {
     const res = await authApi.login(username.value.trim(), password.value, redirectTarget.value)
     setUser({ username: res.username, expiresAt: res.expires_at })
-    await router.replace(res.redirect || redirectTarget.value)
+    await router.replace(authRedirectPath(res.redirect || redirectTarget.value))
   } catch (e: any) {
     const msg = e?.message || t('pages.login.loginFailed')
     if (msg.includes('429') || msg.includes('过于频繁') || msg.includes('Too many')) {

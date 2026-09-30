@@ -1414,7 +1414,7 @@
           "fullDesc": "Hot session: reply / cancel / confirm (and reject). Default; matches today’s behavior.",
           "react_only": "ReAct chat only",
           "reactOnlyChip": "ReAct only",
-          "react_onlyDesc": "Reply and cancel allowed; confirm / reject advance is blocked."
+          "react_onlyDesc": "Reply and cancel allowed; confirm / reject advance and Live variant writes are blocked."
         },
         "regenInheritsHint": "Regen inherits the current preset",
         "linkLabel": "Share link",

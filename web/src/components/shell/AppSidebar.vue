@@ -8,6 +8,7 @@ import ShellChromeControls from './ShellChromeControls.vue'
 import Icon from '../ui/Icon.vue'
 import { authApi } from '@/lib/api/api'
 import { useAuth } from '@/lib/composables/useAuth'
+import { clearAllEmbedSessions } from '@/lib/inbox/embedChat'
 import {
   focusDesktopNavControl,
   hideDesktopSidebar,
@@ -30,6 +31,7 @@ async function logout() {
     // ignore — cookie cleared server-side when possible
   }
   clearUser()
+  clearAllEmbedSessions()
   await router.push('/login')
 }
 

@@ -22,6 +22,10 @@ import (
 // source (a session not yet accepted or discarded, or leftover markers).
 var ErrLiveOpen = errors.New("还有未采用或放弃的 Live 变体,请先在预览页采用或放弃(或选择「全部放弃」)后再确认")
 
+// ErrLiveScanFailed blocks confirm when Live is on but the worktree cannot
+// be scanned. Fail closed so leftover data-grasp-live markers cannot ship.
+var ErrLiveScanFailed = errors.New("无法确认预览页 Live 标记已清除,请稍后重试确认")
+
 // ErrLiveDisabled means the node is not an IP-direct app_preview with Live on.
 var ErrLiveDisabled = errors.New("该节点未开启 Live 变体")
 
@@ -405,23 +409,25 @@ func (e *Engine) installLiveGuard(runID, nodeID string) {
 }
 
 // checkLiveClosed is the confirm gate: no open session, no marker in source.
+// Scan errors and a missing scanner fail closed while Live is enabled.
 func (e *Engine) checkLiveClosed(runID, nodeID string) error {
 	if !e.LiveEnabled(runID, nodeID) {
 		return nil
 	}
-	for _, s := range e.LiveSessions(runID, nodeID, true) {
-		if s.Mode != "steer" {
-			return ErrLiveOpen
-		}
+	if len(e.LiveSessions(runID, nodeID, true)) > 0 {
+		return ErrLiveOpen
 	}
 	sc, ok := e.provider.(runtime.LiveMarkerScanner)
 	if !ok {
-		return nil
+		return ErrLiveScanFailed
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), liveScanTimeout)
 	defer cancel()
 	sids, parked, err := sc.LiveMarkerSIDs(ctx, runID, nodeID)
-	if err == nil && parked && len(sids) > 0 {
+	if err != nil || !parked {
+		return ErrLiveScanFailed
+	}
+	if len(sids) > 0 {
 		return ErrLiveOpen
 	}
 	return nil

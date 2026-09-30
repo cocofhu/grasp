@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   EMBED_PICK_MESSAGE,
   EMBED_THEME_MESSAGE,
+  clearAllEmbedSessions,
   clearEmbedSession,
   directPreviewEmbedUrl,
   embedChatPath,
@@ -55,6 +56,14 @@ describe('embedChat', () => {
     saveEmbedSession('r', 'n', { token: 'gse_y', expiresAt: '2026-09-01T01:00:00Z' })
     clearEmbedSession('r', 'n')
     expect(loadEmbedSession('r', 'n', now)).toBeNull()
+
+    saveEmbedSession('r', 'n', { token: 'gse_z', expiresAt: '2026-09-01T01:00:00Z' })
+    saveEmbedSession('r2', 'n2', { token: 'gse_w', expiresAt: '2026-09-01T01:00:00Z' })
+    localStorage.setItem('unrelated', 'keep')
+    clearAllEmbedSessions()
+    expect(loadEmbedSession('r', 'n', now)).toBeNull()
+    expect(loadEmbedSession('r2', 'n2', now)).toBeNull()
+    expect(localStorage.getItem('unrelated')).toBe('keep')
   })
 
   it('redeems with the embed header and rejects a session for another node', async () => {

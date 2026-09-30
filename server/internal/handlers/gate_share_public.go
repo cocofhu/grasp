@@ -205,6 +205,10 @@ func (h *Handlers) PublicGateReply(c *gin.Context) {
 	owner := h.publicTurnOwner(token)
 	kind := publicShareKind(lookup)
 	if body.Live != nil {
+		if !gateshare.Allow(lookup.Link.PermissionPreset, gateshare.ActionLive) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "permission_denied", "message": "当前链接权限不允许操作 Live 变体"})
+			return
+		}
 		if kind != models.ShareLinkKindReview {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "live_unsupported", "message": "当前链接不支持 Live 变体"})
 			return
@@ -411,6 +415,10 @@ func (h *Handlers) writePublicReactErr(c *gin.Context, err error) {
 	}
 	if errors.Is(err, engine.ErrLiveOpen) {
 		c.JSON(http.StatusConflict, gin.H{"error": "live_open", "code": "live_open", "message": err.Error()})
+		return
+	}
+	if errors.Is(err, engine.ErrLiveScanFailed) {
+		c.JSON(http.StatusConflict, gin.H{"error": "live_scan_failed", "code": "live_scan_failed", "message": err.Error()})
 		return
 	}
 	msg := err.Error()

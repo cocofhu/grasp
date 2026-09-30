@@ -373,10 +373,36 @@ func TestLiveScanUnavailable(t *testing.T) {
 	if _, scanned := eng.liveMarkerPresent(runID, "preview", "sid"); scanned {
 		t.Fatal("scan error → not scanned")
 	}
-	if err := eng.checkLiveClosed(runID, "preview"); err != nil {
-		t.Fatalf("scan error must not block confirm: %v", err)
+	if err := eng.checkLiveClosed(runID, "preview"); !errors.Is(err, ErrLiveScanFailed) {
+		t.Fatalf("scan error must block confirm: %v", err)
+	}
+	p.mu.Lock()
+	p.liveScanErr = nil
+	p.liveNotParked = true
+	p.mu.Unlock()
+	if err := eng.checkLiveClosed(runID, "preview"); !errors.Is(err, ErrLiveScanFailed) {
+		t.Fatalf("not parked must block confirm: %v", err)
+	}
+	type scanless struct{ runtime.ExecProvider }
+	eng.provider = scanless{p}
+	p.mu.Lock()
+	p.liveNotParked = false
+	p.mu.Unlock()
+	if err := eng.checkLiveClosed(runID, "preview"); !errors.Is(err, ErrLiveScanFailed) {
+		t.Fatalf("missing scanner must block confirm: %v", err)
 	}
 	if clipString("abcdef", 3) != "abc" || clipString("ab", 3) != "ab" {
 		t.Fatal("clipString")
+	}
+}
+
+func TestCheckLiveClosedOpenSteer(t *testing.T) {
+	eng, db, p, runID := setupLive(t)
+	p.setLiveMarkers()
+	db.Create(&models.LiveSession{
+		ID: "steer01", RunID: runID, NodeID: "preview", Mode: "steer", State: models.LiveStateGenerating,
+	})
+	if err := eng.checkLiveClosed(runID, "preview"); !errors.Is(err, ErrLiveOpen) {
+		t.Fatalf("open steer err=%v, want ErrLiveOpen", err)
 	}
 }

@@ -123,8 +123,8 @@ func (h *Handlers) PublicLiveDiscardAll(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if !gateshare.Allow(lookup.Link.PermissionPreset, gateshare.ActionReply) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "permission_denied", "message": "当前链接权限不允许回复"})
+	if !gateshare.Allow(lookup.Link.PermissionPreset, gateshare.ActionLive) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "permission_denied", "message": "当前链接权限不允许操作 Live 变体"})
 		return
 	}
 	n, err := h.Eng.DiscardAllLiveAs(h.publicTurnOwner(body.Token), lookup.Link.RunID, lookup.Link.NodeID)

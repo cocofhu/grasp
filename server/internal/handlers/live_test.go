@@ -70,6 +70,34 @@ func TestPublicLiveSessionsHTTP(t *testing.T) {
 	}
 }
 
+func TestPublicLiveReactOnlyDeniesLiveWrites(t *testing.T) {
+	h := newHarness(t)
+	seedInboxReview(t, h, "run-live-ro", "research1", true)
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-live-ro/reviews/research1/share-link", map[string]any{
+		"ttlTier": "24h", "permissionPreset": "react_only",
+	}))
+	url, _ := created["url"].(string)
+	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
+	hdr := map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost}
+
+	d := h.doPublic(http.MethodPost, "/public/gate-approvals/live-discard-all", map[string]any{"token": token}, hdr)
+	if d.Code != http.StatusForbidden || !strings.Contains(d.Body.String(), "permission_denied") {
+		t.Fatalf("discard all: %d %s", d.Code, d.Body.String())
+	}
+	reply := h.doPublic(http.MethodPost, "/public/gate-approvals/reply", map[string]any{
+		"token": token, "live": map[string]any{"op": "discard", "sid": "sid001"},
+	}, hdr)
+	if reply.Code != http.StatusForbidden || !strings.Contains(reply.Body.String(), "permission_denied") {
+		t.Fatalf("live reply: %d %s", reply.Code, reply.Body.String())
+	}
+	ctxReply := h.doPublic(http.MethodPost, "/public/gate-approvals/reply", map[string]any{
+		"token": token, "text": "标题再大点", "liveCtx": map[string]any{"sid": "sid001", "current": 1},
+	}, hdr)
+	if ctxReply.Code == http.StatusForbidden {
+		t.Fatalf("ctx reply should stay allowed: %d %s", ctxReply.Code, ctxReply.Body.String())
+	}
+}
+
 func TestPublicLiveSessionStripsRunID(t *testing.T) {
 	m := handlers.HandlersPublicLiveSessionForTest()
 	if handlers.HandlersPublicLiveSessionForTest()["nodeId"] != nil {
