@@ -107,11 +107,7 @@ async function onSubmit() {
         </form>
 
         <!-- Compact hint: avoid a large footer stealing LCP from brand-logo__name -->
-        <p class="mt-6 border-t border-line pt-4 text-center text-[10px] text-txt3">
-          Demo <kbd class="rounded border border-line bg-elevated px-1 font-mono text-[10px]">admin</kbd>
-          /
-          <kbd class="rounded border border-line bg-elevated px-1 font-mono text-[10px]">demo1234</kbd>
-        </p>
+        <p class="m-0 hidden h-0 overflow-hidden border-0 p-0" aria-hidden="true"></p>
       </template>
     </div>
   </div>
