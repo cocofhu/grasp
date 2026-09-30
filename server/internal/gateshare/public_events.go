@@ -57,9 +57,45 @@ func FilterPublicBrokerFrame(raw []byte, producerID string, imageBase int) ([]by
 		return marshalPublicReviewFrame(m, imageBase)
 	case "acp":
 		return marshalPublicAcpFrame(m)
+	case "live":
+		return marshalPublicLiveFrame(m)
 	default:
 		return nil, false
 	}
+}
+
+// publicLiveFields are the LiveSession fields a public/drawer viewer sees
+// (never owner or run id).
+var publicLiveFields = []string{
+	"sid", "mode", "action", "prompt", "count", "selector", "summary", "url",
+	"state", "file", "variants", "selected", "error", "createdAt", "updatedAt",
+}
+
+func marshalPublicLiveFrame(m map[string]any) ([]byte, bool) {
+	sess, ok := m["session"].(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	b, err := json.Marshal(map[string]any{
+		"type":    "live",
+		"nodeId":  PublicDialogueNodeID,
+		"session": PublicLiveSession(sess),
+	})
+	if err != nil {
+		return nil, false
+	}
+	return b, true
+}
+
+// PublicLiveSession keeps only publicLiveFields of a marshalled LiveSession.
+func PublicLiveSession(sess map[string]any) map[string]any {
+	out := make(map[string]any, len(publicLiveFields))
+	for _, k := range publicLiveFields {
+		if v, ok := sess[k]; ok {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 func marshalPublicReviewFrame(m map[string]any, imageBase int) ([]byte, bool) {

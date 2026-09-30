@@ -32,6 +32,8 @@ type PreviewTurn struct {
 	Annotations []PreviewAnnotation `json:"annotations,omitempty"`
 	Questions   []PreviewQuestion   `json:"questions,omitempty"`
 	Forms       []PreviewForm       `json:"forms,omitempty"`
+	// Live points a human turn at its Live variant session (sid/op only).
+	Live *models.LiveRef `json:"live,omitempty"`
 }
 
 // PreviewQuestion is a leak-free ask_question card (id, prompt, options).
@@ -416,6 +418,9 @@ func SanitizeTurnsFrom(msgs []models.ReactMessage, imageBase int) ([]PreviewTurn
 		}
 		if forms := sanitizeForms(m.Forms); len(forms) > 0 {
 			turn.Forms = forms
+		}
+		if m.Live != nil && models.ValidLiveSID(m.Live.SID) {
+			turn.Live = &models.LiveRef{SID: m.Live.SID, Op: m.Live.Op, Variant: m.Live.Variant}
 		}
 		// Keep a text-less turn when it still carries a choice card or form.
 		if turn.Text == "" && len(turn.Annotations) == 0 && len(turn.Images) == 0 && !turn.Interrupted && len(turn.Questions) == 0 && len(turn.Forms) == 0 {

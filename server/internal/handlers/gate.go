@@ -122,6 +122,10 @@ type reactReplyBody struct {
 	// AbortRunning, with Force, cancels a sandbox turn the platform no longer
 	// tracks (orphan CLI) before confirming. Without it a busy sandbox is 409.
 	AbortRunning bool `json:"abortRunning"`
+	// Live is a Live variant request; LiveCtx rides on a plain message while
+	// a Live session is open (which variant "this" means).
+	Live    *models.LiveEvent `json:"live"`
+	LiveCtx *models.LiveCtx   `json:"liveCtx"`
 }
 
 func (h *Handlers) ReactReply(c *gin.Context) {
@@ -131,6 +135,15 @@ func (h *Handlers) ReactReply(c *gin.Context) {
 		return
 	}
 	runID, nodeID := c.Param("id"), c.Param("nodeId")
+	if b.Live != nil {
+		sess, err := h.Eng.ReactLiveAs(sessionTurnOwner(c), runID, nodeID, *b.Live)
+		if err != nil {
+			writeReactReplyError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "accepted", "live": sess})
+		return
+	}
 	var err error
 	if b.RetryLast {
 		if b.Force {
@@ -141,7 +154,7 @@ func (h *Handlers) ReactReply(c *gin.Context) {
 	} else if b.Force {
 		err = h.Eng.ReactConfirmAs(sessionTurnOwner(c), runID, nodeID, b.Text, b.Images, b.Annotations, b.AbortRunning)
 	} else {
-		err = h.Eng.ReactReplyAs(sessionTurnOwner(c), runID, nodeID, b.Text, b.Images, b.Annotations, false)
+		err = h.Eng.ReactReplyLiveCtxAs(sessionTurnOwner(c), runID, nodeID, b.Text, b.Images, b.Annotations, b.LiveCtx)
 	}
 	if err != nil {
 		writeReactReplyError(c, err)
@@ -360,6 +373,10 @@ func writeReactReplyError(c *gin.Context, err error) {
 			"runningOpId": busy.RunningOpID,
 			"desynced":    busy.Desynced,
 		})
+		return
+	}
+	if errors.Is(err, engine.ErrLiveOpen) {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "code": "live_open"})
 		return
 	}
 	if errors.Is(err, engine.ErrSandboxBusy) {

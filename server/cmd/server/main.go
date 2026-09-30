@@ -235,6 +235,7 @@ func main() {
 	})
 	pageHub := pagebridge.NewHub()
 	host.SetPageBridge(&pagebridge.Router{Hub: pageHub, Turns: eng})
+	host.SetLiveUpdater(eng)
 	gateShareSvc := gateshare.NewService(db, auditSvc)
 	gateShareTickets := gateshare.NewTicketStore(db)
 	gateShareSessions := gateshare.NewPreviewSessionHub()

@@ -244,6 +244,9 @@ func (h *Host) listedTools(runID string) []map[string]any {
 	if h.pageToolsListed(runID) {
 		all = append(all, pageTools()...)
 	}
+	if h.liveToolListed(runID) {
+		all = append(all, liveTools()...)
+	}
 	if !h.hideNodeComplete(runID) {
 		return all
 	}

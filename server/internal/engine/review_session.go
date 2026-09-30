@@ -52,6 +52,8 @@ type reviewQueueItem struct {
 	// Owner is who sent the turn (pagebridge owner id). Page tools act only on
 	// this person's page. Never exposed in frames.
 	Owner string
+	// Live marks a Live variant request; persisted on the human message.
+	Live *models.LiveRef
 }
 
 // reviewSession is the platform-authoritative controller for one parked
@@ -357,7 +359,6 @@ func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []model
 	if err != nil {
 		return 0, fmt.Errorf("ingest attachments: %w", err)
 	}
-	s := e.getOrCreateReviewSession(runID, producerID, kind)
 	item := &reviewQueueItem{
 		ID:          uuid.NewString(),
 		Text:        text,
@@ -369,7 +370,17 @@ func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []model
 		RetryLast:   retryLast,
 		Owner:       owner,
 	}
+	return e.enqueueReviewItem(runID, producerID, kind, item)
+}
 
+// enqueueReviewItem appends a built turn to the producer session FIFO and
+// starts the pump. Attachments must already be ingested.
+func (e *Engine) enqueueReviewItem(runID, producerID string, kind sessionKind, item *reviewQueueItem) (waiting int, err error) {
+	if e.IsHalted() {
+		return 0, errors.New("server is shutting down")
+	}
+	s := e.getOrCreateReviewSession(runID, producerID, kind)
+	retryLast, text := item.RetryLast, item.Text
 	choiceDup := models.IsChoiceReply(text)
 	if !retryLast && choiceDup && e.transcriptHasChoiceAfterLatestAsk(runID, producerID) {
 		return 0, errors.New("本轮选择题已提交,请等待回复")
@@ -914,7 +925,7 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 	now := time.Now().Format(time.RFC3339)
 	conv.Messages = append(conv.Messages, models.ReactMessage{
 		Role: "human", Text: item.Text, At: now,
-		Images: item.Images, Annotations: item.Annotations,
+		Images: item.Images, Annotations: item.Annotations, Live: item.Live,
 	})
 	logDB(e.db.Save(&conv), s.runID, "save review human turn (turn_begin)")
 
@@ -958,6 +969,9 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 	logDB(e.db.Save(&conv), s.runID, "save review agent turn")
 
 	e.flushMcpCalls(s.runID, s.producerID)
+	if item.Live != nil {
+		e.settleLiveAfterTurn(s.runID, s.producerID, item.Live.SID, interrupted)
+	}
 	e.flushTokenUsage(s.runID, s.producerID, t.Usage, t.UsageByModel)
 
 	if interrupted {

@@ -135,6 +135,8 @@ type Host struct {
 	// pageBridge runs page_* tools on the turn owner's direct preview page.
 	// Nil ⇒ page tools are unlisted and fail.
 	pageBridge PageBridge
+	// liveUpdater records live_update reports (Live variants on app_preview).
+	liveUpdater LiveUpdater
 }
 
 // AfterWriteFunc is called after WriteArtifact successfully persists content.

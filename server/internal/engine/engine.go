@@ -54,6 +54,9 @@ type Engine struct {
 	// double-submit (e.g. a page refresh re-enabling the confirm button while
 	// the first reply is still being processed by the slow sandbox agent)
 	// cannot both pass the "already done" guard and advance the FSM twice.
+	// liveMu serializes Live session state transitions.
+	liveMu sync.Mutex
+
 	resumeMu    sync.Mutex
 	resumeLocks map[string]*sync.Mutex
 

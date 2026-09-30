@@ -35,6 +35,10 @@ type publicReplyBody struct {
 	Text        string                   `json:"text"`
 	Annotations []models.ReactAnnotation `json:"annotations"`
 	Images      []models.PromptImage     `json:"images"`
+	// Live is a Live variant request from the preview page; LiveCtx rides on
+	// a plain message while a Live session is open.
+	Live    *models.LiveEvent `json:"live"`
+	LiveCtx *models.LiveCtx   `json:"liveCtx"`
 }
 
 type publicCancelBody struct {
@@ -198,15 +202,28 @@ func (h *Handlers) PublicGateReply(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "permission_denied", "message": "当前链接权限不允许回复"})
 		return
 	}
+	owner := h.publicTurnOwner(token)
+	kind := publicShareKind(lookup)
+	if body.Live != nil {
+		if kind != models.ShareLinkKindReview {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "live_unsupported", "message": "当前链接不支持 Live 变体"})
+			return
+		}
+		sess, err := h.Eng.ReactLiveAs(owner, lookup.Link.RunID, lookup.Link.NodeID, *body.Live)
+		if err != nil {
+			h.writePublicReactErr(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "accepted", "kind": models.ShareLinkKindReview, "live": sess})
+		return
+	}
 	text := strings.TrimSpace(body.Text)
 	if text == "" && len(body.Annotations) == 0 && len(body.Images) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "empty_reply", "message": "请填写修订意见或标注后再发送"})
 		return
 	}
-	owner := h.publicTurnOwner(token)
-	kind := publicShareKind(lookup)
 	if kind == models.ShareLinkKindReview {
-		if err := h.Eng.ReactReplyAs(owner, lookup.Link.RunID, lookup.Link.NodeID, text, body.Images, body.Annotations, false); err != nil {
+		if err := h.Eng.ReactReplyLiveCtxAs(owner, lookup.Link.RunID, lookup.Link.NodeID, text, body.Images, body.Annotations, body.LiveCtx); err != nil {
 			h.writePublicReactErr(c, err)
 			return
 		}
@@ -390,6 +407,10 @@ func (h *Handlers) PublicGateQueueReorder(c *gin.Context) {
 
 func (h *Handlers) writePublicReactErr(c *gin.Context, err error) {
 	if err == nil {
+		return
+	}
+	if errors.Is(err, engine.ErrLiveOpen) {
+		c.JSON(http.StatusConflict, gin.H{"error": "live_open", "code": "live_open", "message": err.Error()})
 		return
 	}
 	msg := err.Error()

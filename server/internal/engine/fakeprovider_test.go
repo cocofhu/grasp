@@ -152,6 +152,14 @@ type fakeProvider struct {
 	// reviseHold (test-only): when non-nil, ReviseInPlace blocks until the
 	// channel is closed (simulates a long in-flight turn for Cancel/ready tests).
 	reviseHold <-chan struct{}
+	// reviseHook (test-only): called with the human prompt on every
+	// ReviseInPlace, e.g. to simulate the agent calling live_update.
+	reviseHook func(req runtime.NodeReq, human string)
+	// Live marker scanner controls (test-only).
+	liveMarkers    []string
+	liveScanErr    error
+	liveNotParked  bool
+	liveGuardCalls int
 	// reactHold (test-only): same for ReactReply / clarify session Cancel.
 	reactHold <-chan struct{}
 }
@@ -574,7 +582,11 @@ func (f *fakeProvider) ReviseInPlace(ctx context.Context, req runtime.NodeReq, h
 		f.reviseCalls = map[string]int{}
 	}
 	f.reviseCalls[req.NodeID]++
+	hook := f.reviseHook
 	f.mu.Unlock()
+	if hook != nil {
+		hook(req, human)
+	}
 
 	if hold != nil {
 		select {
@@ -700,4 +712,25 @@ func kindOf(name string) string {
 	default:
 		return "markdown"
 	}
+}
+
+func (f *fakeProvider) LiveMarkerSIDs(_ context.Context, _, _ string) ([]string, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.liveNotParked {
+		return nil, false, nil
+	}
+	return append([]string(nil), f.liveMarkers...), true, f.liveScanErr
+}
+
+func (f *fakeProvider) InstallLiveGuard(_ context.Context, _, _ string) {
+	f.mu.Lock()
+	f.liveGuardCalls++
+	f.mu.Unlock()
+}
+
+func (f *fakeProvider) setLiveMarkers(sids ...string) {
+	f.mu.Lock()
+	f.liveMarkers = sids
+	f.mu.Unlock()
 }
