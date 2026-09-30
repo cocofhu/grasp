@@ -62,11 +62,11 @@
         agentOn: 'Agent 可操作此页面',
         agentBusy: 'Agent 正在操作…',
         stop: '停止',
-        live: 'Live 工具',
-        liveOn: 'Live 工具',
-        liveOff: 'Live 工具',
-        liveEnable: '打开 Live 工具：点选元素、圈画批注，生成局部设计候选',
-        liveDisable: '关闭 Live 操作面板（保留已有候选）',
+        pickDesign: '点选元素：发到对话或生成设计候选',
+        insert: '插入新区块：点选锚点元素，在它前后生成',
+        steer: '整页调整',
+        steerTitle: '用一句话调整整页',
+        eye: '按住看原版，点击隐藏候选',
       }
     : {
         pick: 'Pick',
@@ -85,11 +85,11 @@
         agentOn: 'Agent can operate this page',
         agentBusy: 'Agent is operating…',
         stop: 'Stop',
-        live: 'Live tools',
-        liveOn: 'Live tools',
-        liveOff: 'Live tools',
-        liveEnable: 'Open Live tools: pick elements, annotate and generate local designs',
-        liveDisable: 'Close Live controls (keep existing candidates)',
+        pickDesign: 'Pick an element: add it to chat or design variants',
+        insert: 'Insert a block: pick an anchor element to add before or after',
+        steer: 'Steer',
+        steerTitle: 'Adjust the whole page in one sentence',
+        eye: 'Hold to see the original, click to hide candidates',
       };
 
   var enabled = false;
@@ -247,7 +247,7 @@
 
   var BAR_CSS =
     ':host{all:initial}' +
-    '.bar{position:fixed;right:16px;bottom:16px;z-index:2147483647;max-width:320px;' +
+    '.bar{position:fixed;right:16px;bottom:16px;z-index:2147483647;max-width:min(480px,calc(100vw - 32px));' +
     'font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e5e7eb;' +
     'background:#111827;border:1px solid #374151;border-radius:10px;' +
     'box-shadow:0 6px 24px rgba(0,0,0,.35);padding:6px}' +
@@ -262,9 +262,9 @@
     '.chat{background:#312e81;color:#e0e7ff;font-weight:600}' +
     '.chat[aria-expanded="true"]{background:#4338ca}' +
     '.live{background:#1f2937;font-weight:600;color:#fbbf24}' +
-    '.live[aria-pressed="true"]{background:#78350f;color:#fde68a}' +
+    '.live[aria-pressed="true"],.live[aria-expanded="true"]{background:#78350f;color:#fde68a}' +
     '.light .live{background:#fef3c7;color:#92400e}' +
-    '.light .live[aria-pressed="true"]{background:#fde68a;color:#78350f}' +
+    '.light .live[aria-pressed="true"],.light .live[aria-expanded="true"]{background:#fde68a;color:#78350f}' +
     '.notice{margin-top:4px;color:#fbbf24}' +
     '.notice.ok{color:#6ee7b7}' +
     '.mask{position:fixed;inset:0;z-index:2147483645;background:rgba(0,0,0,.45)}' +
@@ -781,7 +781,9 @@
       '<span class="row" data-role="gate">' +
       '<span class="tip" data-role="ticket-tip" role="tooltip" id="grasp-ticket-tip" hidden></span>' +
       '<button type="button" class="toggle" data-role="toggle" aria-pressed="false"></button>' +
-      '<button type="button" class="live" data-role="live" aria-pressed="false" hidden></button>' +
+      '<button type="button" class="live" data-role="insert" aria-pressed="false" hidden>+</button>' +
+      '<button type="button" class="live" data-role="steer" aria-expanded="false" hidden></button>' +
+      '<button type="button" class="live" data-role="eye" aria-pressed="false" hidden>👁</button>' +
       '<button type="button" class="artifact" data-role="artifact" aria-expanded="false"></button>' +
       '<button type="button" class="chat" data-role="chat" aria-expanded="false"></button>' +
       '</span>' +
@@ -794,7 +796,9 @@
       gate: shadow.querySelector('[data-role="gate"]'),
       tip: shadow.querySelector('[data-role="ticket-tip"]'),
       toggle: shadow.querySelector('[data-role="toggle"]'),
-      live: shadow.querySelector('[data-role="live"]'),
+      insert: shadow.querySelector('[data-role="insert"]'),
+      steer: shadow.querySelector('[data-role="steer"]'),
+      eye: shadow.querySelector('[data-role="eye"]'),
       artifact: shadow.querySelector('[data-role="artifact"]'),
       chat: shadow.querySelector('[data-role="chat"]'),
       notice: shadow.querySelector('[data-role="notice"]'),
@@ -842,13 +846,34 @@
       ev.stopPropagation();
       setArtifactOpen(!artifactOpen);
     });
-    ui.live.addEventListener('click', function (ev) {
+    ui.insert.addEventListener('click', function (ev) {
       ev.preventDefault();
       ev.stopPropagation();
-      if (live.api) {
-        setEnabled(false);
-        live.api.toggle();
-      }
+      if (!liveUsable() || control.busy > 0) return;
+      if (live.api.isInserting()) live.api.cancelPick();
+      else live.api.startInsert();
+    });
+    ui.steer.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (liveUsable()) live.api.setSteerOpen(!live.api.isSteerOpen());
+    });
+    // Hold to peek at the original; a short click hides the candidates instead.
+    var eyeDownAt = 0;
+    var endPeek = function () {
+      if (live.api) live.api.setPeek(false);
+    };
+    ui.eye.addEventListener('pointerdown', function () {
+      eyeDownAt = Date.now();
+      if (live.api) live.api.setPeek(true);
+    });
+    ui.eye.addEventListener('pointerup', endPeek);
+    ui.eye.addEventListener('pointerleave', endPeek);
+    ui.eye.addEventListener('pointercancel', endPeek);
+    ui.eye.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (live.api && (ev.detail === 0 || Date.now() - eyeDownAt < 300)) live.api.toggleHidden();
     });
     ui.artifactClose.addEventListener('click', function (ev) {
       ev.preventDefault();
@@ -927,13 +952,23 @@
     ui.agent.className = control.busy > 0 ? 'agent busy' : 'agent';
     ui.agentText.textContent = control.busy > 0 ? T.agentBusy : T.agentOn;
     ui.agentStop.textContent = T.stop;
-    ui.live.hidden = !live.enabled;
-    var liveOpen = !!(live.api && live.api.isOpen());
-    ui.live.textContent = liveOpen ? T.liveOn : T.liveOff;
-    ui.live.title = liveOpen ? T.liveDisable : T.liveEnable;
-    ui.live.setAttribute('aria-label', T.live);
-    ui.live.disabled = !ok || !drawerReady || !live.api;
-    ui.live.setAttribute('aria-pressed', liveOpen ? 'true' : 'false');
+    var liveOn = !!(live.enabled && live.api);
+    var liveOk = liveUsable();
+    ui.toggle.title = liveOk ? T.pickDesign : '';
+    ui.insert.hidden = !liveOn;
+    ui.insert.disabled = !liveOk || control.busy > 0;
+    ui.insert.title = T.insert;
+    ui.insert.setAttribute('aria-label', T.insert);
+    ui.insert.setAttribute('aria-pressed', liveOn && live.api.isInserting() ? 'true' : 'false');
+    ui.steer.hidden = !liveOn;
+    ui.steer.disabled = !liveOk;
+    ui.steer.textContent = T.steer;
+    ui.steer.title = T.steerTitle;
+    ui.steer.setAttribute('aria-expanded', liveOn && live.api.isSteerOpen() ? 'true' : 'false');
+    ui.eye.hidden = !(liveOn && live.api.hasCandidates());
+    ui.eye.title = T.eye;
+    ui.eye.setAttribute('aria-label', T.eye);
+    ui.eye.setAttribute('aria-pressed', liveOn && live.api.isHidden() ? 'true' : 'false');
     ui.artifact.disabled = !ok || !drawerReady;
     ui.artifact.textContent = T.artifact;
     ui.artifact.title = ok && drawerReady ? T.artifactTitle : '';
@@ -970,9 +1005,14 @@
     return !!drawer && !sessionDead;
   }
 
+  function liveUsable() {
+    return !!(live.enabled && live.api) && usable() && drawerReady;
+  }
+
   function setEnabled(on) {
     // Picking would swallow the agent's clicks.
     if (on && (control.busy > 0 || !usable())) return;
+    if (on && live.api) live.api.cancelPick();
     enabled = !!on;
     ensureStyle();
     clearHover();
@@ -1231,8 +1271,16 @@
     ev.preventDefault();
     ev.stopPropagation();
     clearHover();
-    var item = describe(t);
-    sendPick(item);
+    if (liveUsable()) {
+      setEnabled(false);
+      live.api.offer(t);
+      return;
+    }
+    pickToChat(t);
+  }
+
+  function pickToChat(t) {
+    sendPick(describe(t));
     setDrawerOpen(true);
     notice(T.added, true);
   }
@@ -1327,6 +1375,7 @@
       stopPick: function () {
         setEnabled(false);
       },
+      sendToChat: pickToChat,
       changed: render,
       isOwnUi: function (el) {
         return !!(host && el && (el === host || host.contains(el)));
@@ -1345,7 +1394,7 @@
     if (live.loading) return live.loading;
     live.loading = new Promise(function (resolve, reject) {
       var api = window.__graspLiveOverlay;
-      if (api && api.version === 1) {
+      if (api && api.version === 2) {
         resolve(api);
         return;
       }
@@ -1355,7 +1404,7 @@
       s.setAttribute('data-grasp-live-overlay', '');
       s.onload = function () {
         var loaded = window.__graspLiveOverlay;
-        if (loaded && loaded.version === 1) resolve(loaded);
+        if (loaded && loaded.version === 2) resolve(loaded);
         else reject(new Error('live overlay missing'));
       };
       s.onerror = function () {
@@ -1495,6 +1544,7 @@
       return;
     }
     if (enabled) setEnabled(false);
+    if (live.api) live.api.cancelPick();
     var ac = typeof AbortController === 'function' ? new AbortController() : true;
     control.pending[nonce] = ac;
     control.busy++;

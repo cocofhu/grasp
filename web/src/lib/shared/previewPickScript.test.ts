@@ -1157,30 +1157,71 @@ describe('preview-pick.js Live overlay hook', () => {
   const body = '<main><section id="card">Dispatch</section></main>'
   const saved = JSON.stringify({ origin: GRASP, run: 'run-1', node: 'ap1', open: true, theme: 'dark' })
 
+  type HostOpts = {
+    post: (m: Record<string, unknown>) => boolean
+    stopPick: () => void
+    sendToChat: (el: Element) => void
+    theme: () => string
+    isOwnUi: (el: Element) => boolean
+    changed: () => void
+  }
   type FakeOverlay = {
     received: unknown[]
-    toggles: number
     enabled: boolean[]
-    open: boolean
-    opts: null | { post: (m: Record<string, unknown>) => boolean; stopPick: () => void; theme: () => string; isOwnUi: (el: Element) => boolean; changed: () => void }
+    offered: Element[]
+    inserting: boolean
+    cancels: number
+    steerOpen: boolean
+    candidates: boolean
+    hidden: boolean
+    peeks: boolean[]
+    opts: null | HostOpts
   }
 
   async function ready(install = true) {
     const p = openPage(body, { savedEmbed: saved })
-    const fake: FakeOverlay = { received: [], toggles: 0, enabled: [], open: false, opts: null }
+    const fake: FakeOverlay = {
+      received: [],
+      enabled: [],
+      offered: [],
+      inserting: false,
+      cancels: 0,
+      steerOpen: false,
+      candidates: false,
+      hidden: false,
+      peeks: [],
+      opts: null,
+    }
     if (install) {
       ;(p.win as unknown as Record<string, unknown>).__graspLiveOverlay = {
-        version: 1,
-        create: (o: FakeOverlay['opts']) => {
+        version: 2,
+        create: (o: HostOpts) => {
           fake.opts = o
           return {
             onDrawer: (m: unknown) => fake.received.push(m),
-            toggle: () => {
-              fake.toggles++
-              fake.open = !fake.open
-              o?.changed()
+            offer: (el: Element) => fake.offered.push(el),
+            startInsert: () => {
+              o.stopPick()
+              fake.inserting = true
+              o.changed()
             },
-            isOpen: () => fake.open,
+            cancelPick: () => {
+              fake.cancels++
+              fake.inserting = false
+            },
+            isInserting: () => fake.inserting,
+            setSteerOpen: (on: boolean) => {
+              fake.steerOpen = on
+              o.changed()
+            },
+            isSteerOpen: () => fake.steerOpen,
+            hasCandidates: () => fake.candidates,
+            setPeek: (on: boolean) => fake.peeks.push(on),
+            toggleHidden: () => {
+              fake.hidden = !fake.hidden
+              o.changed()
+            },
+            isHidden: () => fake.hidden,
             setEnabled: (on: boolean) => fake.enabled.push(on),
           }
         },
@@ -1190,38 +1231,36 @@ describe('preview-pick.js Live overlay hook', () => {
     const inbox = p.drawerReady()
     const send = (data: Msg) =>
       p.win.dispatchEvent(new p.win.MessageEvent('message', { data, origin: GRASP, source: p.frame()?.contentWindow as never }))
-    const liveButton = () => p.shadow.querySelector('[data-role="live"]') as HTMLButtonElement
-    return { p, inbox, send, fake, liveButton }
+    const btn = (role: string) => p.shadow.querySelector(`[data-role="${role}"]`) as HTMLButtonElement
+    return { p, inbox, send, fake, btn }
   }
 
+  const liveHidden = (btn: (role: string) => HTMLButtonElement) => ['insert', 'steer', 'eye'].map((r) => btn(r).hidden)
+
   it('stays hidden until the drawer says Live is on', async () => {
-    const { liveButton, fake } = await ready()
-    expect(liveButton().hidden).toBe(true)
+    const { btn, fake } = await ready()
+    expect(liveHidden(btn)).toEqual([true, true, true])
+    expect(btn('live')).toBeNull()
     expect(fake.opts).toBeNull()
   })
 
   it('loads the overlay, forwards drawer messages and posts through the drawer', async () => {
-    const { p, send, fake, liveButton, inbox } = await ready()
+    const { p, send, fake, btn, inbox } = await ready()
     send({ type: 'grasp-embed:live-sessions', replace: true, sessions: [] })
     send({ type: 'grasp-embed:live-caps', enabled: true })
     await settle()
     await settle()
     expect(fake.opts).not.toBeNull()
     expect(fake.received).toEqual([{ type: 'grasp-embed:live-sessions', replace: true, sessions: [] }])
-    expect(liveButton().hidden).toBe(false)
-    expect(liveButton().disabled).toBe(false)
-    expect(liveButton().getAttribute('aria-pressed')).toBe('false')
-    expect(liveButton().getAttribute('aria-label')).toBe('Live tools')
-    expect(liveButton().textContent).toBe('Live tools')
-    expect(liveButton().title).toContain('Open Live tools')
-    liveButton().click()
-    expect(fake.toggles).toBe(1)
-    expect(liveButton().getAttribute('aria-pressed')).toBe('true')
-    expect(liveButton().textContent).toBe('Live tools')
-    expect(liveButton().title).toContain('Close Live')
-    liveButton().click()
-    expect(liveButton().getAttribute('aria-pressed')).toBe('false')
-    expect(liveButton().textContent).toBe('Live tools')
+    // + and Steer show once Live loads; the eye waits for candidates on the page.
+    expect(liveHidden(btn)).toEqual([false, false, true])
+    expect(btn('insert').disabled).toBe(false)
+    expect(btn('insert').getAttribute('aria-label')).toContain('Insert')
+    expect(btn('steer').textContent).toBe('Steer')
+    expect(btn('toggle').title).toContain('design variants')
+    fake.candidates = true
+    fake.opts!.changed()
+    expect(btn('eye').hidden).toBe(false)
     expect(fake.opts!.post({ type: 'grasp-embed:live', op: 'discard', sid: 'sid001' })).toBe(true)
     expect(inbox.find((m) => m.type === 'grasp-embed:live')).toMatchObject({ op: 'discard', sid: 'sid001', target: GRASP })
     send({ type: 'grasp-embed:live-cmd', sid: 'sid001', cmd: 'goto', variant: 2 })
@@ -1232,7 +1271,7 @@ describe('preview-pick.js Live overlay hook', () => {
 
     send({ type: 'grasp-embed:live-caps', enabled: false })
     expect(fake.enabled).toEqual([false])
-    expect(liveButton().hidden).toBe(true)
+    expect(liveHidden(btn)).toEqual([true, true, true])
     send({ type: 'grasp-embed:live-caps', enabled: true })
     expect(fake.enabled).toEqual([false, true])
 
@@ -1259,9 +1298,67 @@ describe('preview-pick.js Live overlay hook', () => {
       { type: EMBED_LIVE_CONTEXT_RESULT, nonce: 'chat-start-1', ok: true, url: 'http://10.0.0.5:5173/login?tab=design', target: GRASP },
     ])
     expect(fake.opts).not.toBeNull()
-    expect(fake.open).toBe(false)
-    expect(fake.toggles).toBe(0)
+    expect(fake.offered).toEqual([])
+    expect(fake.inserting).toBe(false)
     expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(false)
+  })
+
+  async function liveReady() {
+    const r = await ready()
+    r.send({ type: 'grasp-embed:live-caps', enabled: true })
+    await settle()
+    return r
+  }
+
+  it('hands a picked element to the Live action card instead of sending it straight to chat', async () => {
+    const { p, fake, inbox } = await liveReady()
+    p.toggle()
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(true)
+    p.click('#card')
+    expect(fake.offered).toEqual([p.win.document.getElementById('card')])
+    expect(inbox.filter((m) => m.type === EMBED_PICK_MESSAGE)).toEqual([])
+    // One pick opens the card and leaves Pick mode.
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(false)
+    // The card's "Add to chat" uses the ordinary pick path.
+    fake.opts!.sendToChat(p.win.document.getElementById('card') as unknown as Element)
+    expect(inbox.filter((m) => m.type === EMBED_PICK_MESSAGE)).toEqual([
+      expect.objectContaining({ payload: expect.objectContaining({ selector: '#card', tagName: 'section' }), target: GRASP }),
+    ])
+    expect(p.drawerOpen()).toBe(true)
+  })
+
+  it('keeps Pick and insert mutually exclusive and drives Steer and the eye', async () => {
+    const { p, fake, btn } = await liveReady()
+    p.toggle()
+    btn('insert').click()
+    expect(fake.inserting).toBe(true)
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(false)
+    expect(btn('insert').getAttribute('aria-pressed')).toBe('true')
+    // Pick cancels an insert in progress.
+    p.toggle()
+    expect(fake.inserting).toBe(false)
+    expect(fake.cancels).toBeGreaterThan(0)
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(true)
+    p.toggle()
+    btn('insert').click()
+    btn('insert').click()
+    expect(fake.inserting).toBe(false)
+
+    btn('steer').click()
+    expect(fake.steerOpen).toBe(true)
+    expect(btn('steer').getAttribute('aria-expanded')).toBe('true')
+    btn('steer').click()
+    expect(fake.steerOpen).toBe(false)
+
+    fake.candidates = true
+    fake.opts!.changed()
+    const eye = btn('eye')
+    eye.dispatchEvent(new p.win.PointerEvent('pointerdown') as unknown as Event)
+    eye.dispatchEvent(new p.win.PointerEvent('pointerup') as unknown as Event)
+    expect(fake.peeks).toEqual([true, false])
+    eye.click()
+    expect(fake.hidden).toBe(true)
+    expect(eye.getAttribute('aria-pressed')).toBe('true')
   })
 
   it('does not expose the page URL to other origins, other frames, or invalid request nonces', async () => {
@@ -1317,8 +1414,8 @@ describe('preview-pick.js Live overlay hook', () => {
     send({ type: EMBED_LIVE_CONTEXT_REQUEST, nonce: 'pending-load' })
     send(revocation)
     ;(p.win as unknown as Record<string, unknown>).__graspLiveOverlay = {
-      version: 1,
-      create: () => ({ onDrawer: () => {}, setEnabled: () => {}, isOpen: () => false }),
+      version: 2,
+      create: () => ({ onDrawer: () => {}, setEnabled: () => {} }),
     }
     const script = p.win.document.querySelector('script[data-grasp-live-overlay]')
     script!.dispatchEvent(new p.win.Event('load'))

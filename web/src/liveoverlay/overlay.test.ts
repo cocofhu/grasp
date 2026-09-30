@@ -21,10 +21,16 @@ let overlay: LiveOverlay | null = null
 let posted: Posted[] = []
 let postOk = true
 const notices: string[] = []
+let toChat: Element[] = []
+let stopPick = vi.fn()
+let changed = vi.fn()
 
 function make() {
   posted = []
   notices.length = 0
+  toChat = []
+  stopPick = vi.fn()
+  changed = vi.fn()
   overlay = createOverlay(
     {
       post: (m) => {
@@ -34,8 +40,9 @@ function make() {
       },
       theme: () => 'dark',
       notice: (t) => void notices.push(t),
-      stopPick: vi.fn(),
-      changed: vi.fn(),
+      stopPick,
+      sendToChat: (el) => void toChat.push(el),
+      changed,
       isOwnUi: () => false,
     },
     T,
@@ -65,20 +72,38 @@ afterEach(() => {
 })
 
 describe('Live overlay', () => {
-  it('opens the bar, picks an element and sends generate', async () => {
+  it('has no toolbar of its own and offers chat or design for a picked element', () => {
     document.body.innerHTML = '<main><section id="card" class="c">Dispatch</section></main>'
     make()
-    overlay!.toggle()
-    expect(overlay!.isOpen()).toBe(true)
-    expect(q('.bar')).not.toBeNull()
-    ;(q('[data-act="pick"]') as HTMLButtonElement).click()
-    expect(document.documentElement.hasAttribute('data-grasp-live-picking')).toBe(true)
+    expect(q('.bar')).toBeNull()
+    expect(q('[data-act="pick"]')).toBeNull()
     const card = document.getElementById('card')!
     card.getBoundingClientRect = () => new DOMRect(10, 10, 300, 180)
-    card.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
-    expect(card.hasAttribute('data-grasp-live-hover')).toBe(true)
-    card.click()
-    expect(document.documentElement.hasAttribute('data-grasp-live-picking')).toBe(false)
+    overlay!.offer(card)
+    expect(q('.panel.choose .target')?.textContent).toContain('section')
+    expect(q('[data-act="go"]')).toBeNull()
+    ;(q('[data-act="to-chat"]') as HTMLButtonElement).click()
+    expect(toChat).toEqual([card])
+    expect(q('.panel')).toBeNull()
+    expect(posted).toEqual([])
+    overlay!.offer(card)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(q('.panel')).toBeNull()
+    // A disabled overlay falls back to a plain chat pick.
+    overlay!.setEnabled(false)
+    overlay!.offer(card)
+    expect(toChat).toEqual([card, card])
+    expect(q('.panel')).toBeNull()
+  })
+
+  it('designs a picked element and sends generate', async () => {
+    document.body.innerHTML = '<main><section id="card" class="c">Dispatch</section></main>'
+    make()
+    const card = document.getElementById('card')!
+    card.getBoundingClientRect = () => new DOMRect(10, 10, 300, 180)
+    overlay!.offer(card)
+    ;(q('[data-act="to-design"]') as HTMLButtonElement).click()
+    expect(q('.panel.choose')).toBeNull()
     expect(q('.panel')).not.toBeNull()
     ;(q('[data-act="action"][data-v="colorize"]') as HTMLButtonElement).click()
     ;(q('[data-act="count"][data-v="4"]') as HTMLButtonElement).click()
@@ -102,14 +127,27 @@ describe('Live overlay', () => {
 
   it('requires a prompt for freeform and insert, and supports Esc', () => {
     document.body.innerHTML = '<main><section id="card">x</section></main>'
-    document.getElementById('card')!.getBoundingClientRect = () => new DOMRect(10, 10, 300, 180)
+    const card = document.getElementById('card')!
+    card.getBoundingClientRect = () => new DOMRect(10, 10, 300, 180)
     make()
-    overlay!.toggle()
-    ;(q('[data-act="insert"]') as HTMLButtonElement).click()
+    overlay!.startInsert()
+    expect(overlay!.isInserting()).toBe(true)
+    expect(stopPick).toHaveBeenCalled()
+    expect(changed).toHaveBeenCalled()
+    expect(q('.dock .hint')?.textContent).toBe(T.insertPicking)
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     expect(document.documentElement.hasAttribute('data-grasp-live-picking')).toBe(false)
-    ;(q('[data-act="insert"]') as HTMLButtonElement).click()
-    document.getElementById('card')!.click()
+    expect(overlay!.isInserting()).toBe(false)
+    overlay!.startInsert()
+    overlay!.cancelPick()
+    expect(overlay!.isInserting()).toBe(false)
+    overlay!.startInsert()
+    expect(document.documentElement.hasAttribute('data-grasp-live-picking')).toBe(true)
+    card.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+    expect(card.hasAttribute('data-grasp-live-hover')).toBe(true)
+    card.click()
+    // Insert skips the chat-or-design card.
+    expect(q('.panel.choose')).toBeNull()
     ;(q('[data-act="pos"][data-v="before"]') as HTMLButtonElement).click()
     ;(q('[data-act="go"]') as HTMLButtonElement).click()
     expect(notices).toContain(T.promptRequired)
@@ -118,10 +156,37 @@ describe('Live overlay', () => {
     notes.dispatchEvent(new Event('input', { bubbles: true }))
     ;(q('[data-act="go"]') as HTMLButtonElement).click()
     expect(posted.find((m) => m.op === 'insert')).toMatchObject({ position: 'before', notes: ['加一个 FAQ'], action: 'freeform' })
-    ;(q('[data-act="pick"]') as HTMLButtonElement).click()
-    document.getElementById('card')!.click()
-    expect(notices).toContain(T.openOther)
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    // Another set is open: design is blocked, chat still works.
+    overlay!.offer(card)
+    const design = q('[data-act="to-design"]') as HTMLButtonElement
+    expect(design.disabled).toBe(true)
+    expect(q('.panel.choose')?.textContent).toContain(T.openOther)
+    design.click()
+    expect(q('.panel.choose')).not.toBeNull()
+    ;(q('[data-act="to-chat"]') as HTMLButtonElement).click()
+    expect(toChat).toEqual([card])
+  })
+
+  it('ignores clicks on the host bar while inserting', () => {
+    document.body.innerHTML = '<main><section id="card">x</section></main><div id="hostbar"><button id="plus">+</button></div>'
+    const hostBar = document.getElementById('hostbar')!
+    overlay = createOverlay(
+      {
+        post: () => true,
+        theme: () => 'dark',
+        notice: () => {},
+        stopPick: () => {},
+        sendToChat: () => {},
+        changed: () => {},
+        isOwnUi: (el) => el === hostBar || hostBar.contains(el),
+      },
+      T,
+    )
+    overlay.setEnabled(true)
+    overlay.startInsert()
+    document.getElementById('plus')!.click()
+    expect(overlay.isInserting()).toBe(true)
+    expect(q('.panel')).toBeNull()
   })
 
   it('shows a switcher for wrappers, switches, accepts with params and syncs state', async () => {
@@ -177,7 +242,6 @@ describe('Live overlay', () => {
     sessions([{ sid: 'sid001', state: 'ready', mode: 'replace', variants: [{ n: 1 }, { n: 2 }] }])
     expect(q('[data-sw="sid001"] .count')?.textContent).toBe('2 / 2')
     overlay!.onDrawer({ type: LIVE_CMD, sid: 'sid001', cmd: 'goto', variant: 1 })
-    expect(overlay!.isOpen()).toBe(true)
     expect(q('[data-sw="sid001"] .count')?.textContent).toBe('1 / 2')
     overlay!.onDrawer({ type: LIVE_CMD, sid: 'sid001', cmd: 'compare' })
     expect(document.getElementById('w')!.hasAttribute('data-grasp-compare')).toBe(true)
@@ -246,29 +310,44 @@ describe('Live overlay', () => {
   })
 
   it('points at sessions on other routes, steers, peeks and hides', () => {
-    document.body.innerHTML = wrapperHtml()
+    document.body.innerHTML = '<main id="m"></main>'
     make()
-    overlay!.toggle()
+    expect(overlay!.hasCandidates()).toBe(false)
+    document.getElementById('m')!.innerHTML = wrapperHtml()
+    changed.mockClear()
     sessions([
       { sid: 'sid001', state: 'ready', mode: 'replace', variants: [{ n: 1 }, { n: 2 }] },
       { sid: 'sid002', state: 'ready', mode: 'replace', url: `${location.origin}/about`, variants: [{ n: 1 }] },
     ])
-    expect(q('.hint')?.textContent).toContain('/about')
+    expect(overlay!.hasCandidates()).toBe(true)
+    expect(changed).toHaveBeenCalled()
+    expect(q('.dock .hint')?.textContent).toContain('/about')
+    expect(q('[data-input="steer"]')).toBeNull()
+    overlay!.setSteerOpen(true)
+    expect(overlay!.isSteerOpen()).toBe(true)
     const steer = q('[data-input="steer"]') as HTMLInputElement
+    expect(shadow().activeElement).toBe(steer)
     steer.value = '整体再紧凑一些'
     steer.dispatchEvent(new Event('input', { bubbles: true }))
     steer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     expect(posted.at(-1)).toMatchObject({ op: 'steer', prompt: '整体再紧凑一些' })
-    const eye = q('[data-act="eye"]') as HTMLButtonElement
-    eye.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }))
+    expect(overlay!.isSteerOpen()).toBe(false)
+    expect(q('[data-input="steer"]')).toBeNull()
+    overlay!.setPeek(true)
     const orig = document.querySelector<HTMLElement>('[data-grasp-variant="0"]')!
     expect(orig.hidden).toBe(false)
-    eye.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, composed: true }))
+    overlay!.setPeek(false)
     expect(orig.hidden).toBe(true)
-    eye.click()
+    overlay!.toggleHidden()
+    expect(overlay!.isHidden()).toBe(true)
     expect(q('[data-sw="sid001"]')).toBeNull()
-    ;(q('[data-act="close"]') as HTMLButtonElement).click()
-    expect(overlay!.isOpen()).toBe(false)
+    // Esc still closes a card while candidates are hidden.
+    overlay!.offer(document.querySelector('main')!)
+    expect(q('.panel.choose')).not.toBeNull()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(q('.panel')).toBeNull()
+    overlay!.toggleHidden()
+    expect(q('[data-sw="sid001"]')).not.toBeNull()
     postOk = false
     overlay!.onDrawer({ type: LIVE_CMD, sid: 'sid001', cmd: 'discard' })
     expect(notices).toContain(T.noDrawer)
@@ -289,7 +368,6 @@ describe('Live overlay', () => {
   it('offers retry and non-editing dismissal for a failed whole-page adjustment', () => {
     document.body.innerHTML = '<main>partial adjustment</main>'
     make()
-    overlay!.toggle()
     sessions([{ sid: 'steer01', mode: 'steer', state: 'failed', prompt: 'Make it quieter', url: `${location.origin}/pricing`, error: 'compile failed' }])
     expect(q('.hint')?.textContent).toContain(T.steerPartial)
     ;(q('[data-act="retry"]') as HTMLButtonElement).click()
@@ -309,7 +387,6 @@ describe('Live overlay', () => {
   it('retries interrupted adoption without a wrapper or replacing persisted params', () => {
     document.body.innerHTML = '<main>adopted markup pending cleanup</main>'
     make()
-    overlay!.toggle()
     sessions([{ sid: 'sid001', mode: 'replace', state: 'failed', selected: 2, retryAccept: true, error: 'cleanup interrupted' }])
     expect(q('[data-act="retry-accept"]')?.textContent).toBe(T.retryAccept)
     // Ordinary acceptance stays locked without a ready, mounted candidate.
