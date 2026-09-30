@@ -542,8 +542,17 @@ test.describe('production Chat composer page candidates', () => {
     await expect(toggle).toBeFocused()
     await toggle.press('Space')
     await expect(group).toBeVisible()
+    // Language options sit after the switches. Tab moves through them, and
+    // only leaving the last option closes the panel and returns to send.
+    const localeEn = chat.getByTestId('preview-chat-locale-en')
+    const localeZh = chat.getByTestId('preview-chat-locale-zh')
     await mode.focus()
     await mode.press('Tab')
+    await expect(localeEn).toBeFocused()
+    await expect(group).toBeVisible()
+    await localeEn.press('Tab')
+    await expect(localeZh).toBeFocused()
+    await localeZh.press('Tab')
     await expect(group).toBeHidden()
     await expect(send).toBeFocused()
     await openControls(page)
