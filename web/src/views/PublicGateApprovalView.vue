@@ -22,6 +22,7 @@ import { provideReviewAnnotate } from '@/lib/inbox/reviewAnnotate'
 import { previewPickAnnotation } from '@/lib/shared/previewPickUrl'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
+import { isFeedbackArtifactName } from '@/lib/run/reactArtifactPreview'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import {
   createBusySeedRetryController,
@@ -252,7 +253,7 @@ const publicStageArtifacts = computed<Artifact[]>(() => publicArtifacts.value)
 const publicPreviewName = computed(() => {
   const pin = preview.value?.productName || preview.value?.structured?.name || ''
   if (pin && publicStageArtifacts.value.some((a) => a.name === pin)) return pin
-  return publicStageArtifacts.value[0]?.name || pin
+  return publicStageArtifacts.value[0]?.name || ''
 })
 const productName = computed(() => preview.value?.productName || preview.value?.structured?.name || '')
 const inspectable = computed(
@@ -465,7 +466,8 @@ async function loadPublicArtifacts(opts?: { silent?: boolean }) {
       }
       return
     }
-    publicArtifacts.value = (res.artifacts || []).map((a) => ({
+    // Share links show pipeline products only — never the feedback ledger.
+    publicArtifacts.value = (res.artifacts || []).filter((a) => !isFeedbackArtifactName(a.name)).map((a) => ({
       id: a.id,
       name: a.name,
       kind: a.kind,

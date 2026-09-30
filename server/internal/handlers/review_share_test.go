@@ -588,6 +588,10 @@ func TestReviewSharePermissionPresetReactOnly(t *testing.T) {
 func TestReviewSharePublicArtifactsListAndContent(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-rev-arts", "research1", true)
+	feedbackNames := []string{"feedback.clarify.research1.r1.json", "feedback_index.json"}
+	for _, name := range feedbackNames {
+		h.h.Arts.Save("run-rev-arts", "research1", name, "json", `{"reviewer":"FEEDBACK-LEAK"}`)
+	}
 
 	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-arts/reviews/research1/share-link", map[string]any{"ttlTier": "24h"}))
 	url, _ := created["url"].(string)
@@ -611,6 +615,15 @@ func TestReviewSharePublicArtifactsListAndContent(t *testing.T) {
 	}
 	if !names["research.json"] || !names["page.html"] {
 		t.Fatalf("missing expected artifacts: %+v", names)
+	}
+	for _, name := range feedbackNames {
+		if names[name] {
+			t.Fatalf("public list leaked feedback artifact %q: %+v", name, names)
+		}
+		w := h.doPublic(http.MethodGet, "/public/gate-approvals/artifacts/"+name+"/content", nil, map[string]string{headerShareToken: token})
+		if w.Code != http.StatusNotFound || strings.Contains(w.Body.String(), "FEEDBACK-LEAK") {
+			t.Fatalf("feedback content %q must be not_found: %d %s", name, w.Code, w.Body.String())
+		}
 	}
 	if list["nodes"] == nil {
 		t.Fatal("expected sanitized graph nodes for stage filtering")
