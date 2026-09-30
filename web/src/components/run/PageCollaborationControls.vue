@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import { placeFixedOverlayAbove, useFixedOverlayAboveListeners, type FixedOverlayAboveStyle } from '@/lib/composables/useFixedOverlayAbove'
 
-withDefaults(defineProps<{ activeLabels?: string[] }>(), { activeLabels: () => [] })
+withDefaults(defineProps<{ activeLabels?: string[]; compact?: boolean }>(), { activeLabels: () => [], compact: false })
 const { t } = useI18n()
 const id = useId()
 const open = ref(false)
@@ -82,12 +82,16 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="mx-3 mb-1 mt-2 flex min-w-0 shrink-0 items-center gap-2" data-page-agent-not-interactive>
+  <div class="flex min-w-0 shrink-0 items-center gap-2" :class="compact ? '' : 'mx-3 mb-1 mt-2'" data-page-agent-not-interactive>
     <button
       ref="trigger"
       type="button"
-      class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-2 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-      :class="open || activeLabels.length ? 'border-accent/40 bg-accent-dim text-accent' : 'border-line bg-surface text-txt2 hover:border-line-strong hover:text-txt'"
+      class="relative inline-flex shrink-0 items-center justify-center rounded-md border text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+      :class="[
+        compact ? 'h-10 w-10' : 'h-8 gap-1.5 px-2',
+        open || activeLabels.length ? 'border-accent/40 bg-accent-dim text-accent' : 'border-line bg-surface text-txt2 hover:border-line-strong hover:text-txt',
+      ]"
+      :title="[t('pages.embedChat.pageCollaboration'), ...activeLabels].join(' · ')"
       :aria-label="t('pages.embedChat.pageCollaboration')"
       aria-haspopup="dialog"
       :aria-expanded="open"
@@ -96,12 +100,12 @@ onBeforeUnmount(() => {
       data-testid="page-collaboration-toggle"
       @click="open = !open"
     >
-      <Icon name="settings" :size="14" aria-hidden="true" />
-      <span>{{ t('pages.embedChat.pageCollaboration') }}</span>
-      <span v-if="activeLabels.length" class="rounded bg-accent/15 px-1 text-[10px] tabular-nums" aria-hidden="true">{{ activeLabels.length }}</span>
-      <Icon name="chevron-down" :size="12" :class="{ 'rotate-180': open }" aria-hidden="true" />
+      <Icon name="settings" :size="compact ? 16 : 14" aria-hidden="true" />
+      <span v-if="!compact">{{ t('pages.embedChat.pageCollaboration') }}</span>
+      <span v-if="activeLabels.length" class="rounded px-1 text-[10px] tabular-nums" :class="compact ? 'absolute -right-1 -top-1 bg-accent text-white' : 'bg-accent/15'" aria-hidden="true">{{ activeLabels.length }}</span>
+      <Icon v-if="!compact" name="chevron-down" :size="12" :class="{ 'rotate-180': open }" aria-hidden="true" />
     </button>
-    <span :id="`${id}-summary`" class="min-w-0 truncate text-[11px] text-txt3" :title="activeLabels.join(' · ')" role="status" data-testid="page-collaboration-summary">{{ activeLabels.join(' · ') }}</span>
+    <span :id="`${id}-summary`" :class="compact ? 'sr-only' : 'min-w-0 truncate text-[11px] text-txt3'" :title="activeLabels.join(' · ')" role="status" data-testid="page-collaboration-summary">{{ activeLabels.join(' · ') }}</span>
     <Teleport to="body">
       <section
         v-if="open"

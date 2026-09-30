@@ -1733,8 +1733,8 @@ defineExpose({
                   @queue-remove="(itemId) => onQueueRemove(itemId)"
                   @queue-reorder="onQueueReorder"
                 >
-                  <template #composer-controls>
-                    <PageCollaborationControls v-if="chatOnly && ($slots['page-control'] || showPageCandidateMode)" :active-labels="pageCollaborationActiveLabels">
+                  <template #composer-controls="{ compact }">
+                    <PageCollaborationControls v-if="chatOnly && ($slots['page-control'] || showPageCandidateMode)" :active-labels="pageCollaborationActiveLabels" :compact="compact">
                       <slot name="page-control" />
                       <div v-if="showPageCandidateMode" class="px-3 py-2" data-testid="live-candidate-control">
                         <label class="flex items-center justify-between gap-3 text-xs font-medium text-txt2">

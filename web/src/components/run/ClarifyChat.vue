@@ -833,7 +833,7 @@ const {
     </button>
     </div>
 
-    <slot name="composer-controls" />
+    <slot v-if="done || !active || coldSession" name="composer-controls" :compact="false" />
 
     <div v-if="showDoneChrome" class="border-t border-line p-3 text-center text-[12px] text-ok">
       <Icon name="check" :size="13" class="-mt-0.5 mr-1 inline" />{{ translate('pages.clarify.done') }}
@@ -946,6 +946,7 @@ const {
           >
             <Icon name="paperclip" :size="16" />
           </button>
+          <slot name="composer-controls" :compact="true" />
         </template>
         <template #toolbar-end>
           <button

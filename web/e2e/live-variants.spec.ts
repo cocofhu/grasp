@@ -492,7 +492,7 @@ test.describe('production Chat composer page candidates', () => {
     expect((await state(page, key)).requests).toEqual([])
   })
 
-  test('page collaboration menu supports keyboard and dismissal, fits narrow English Chat, and keeps switches independent', async ({ page }, testInfo) => {
+  test('attachment-adjacent page collaboration menu supports keyboard, narrow Chat and independent switches', async ({ page }, testInfo) => {
     await page.addInitScript(() => { if (!localStorage.getItem('grasp-locale')) localStorage.setItem('grasp-locale', 'en') })
     const key = 'entry-grouped-controls'
     await entry(page, key)
@@ -504,9 +504,23 @@ test.describe('production Chat composer page candidates', () => {
     const control = chat.getByTestId('page-control-toggle')
     const input = chat.getByTestId('clarify-input')
     const send = chat.getByTestId('clarify-send-label')
+    const attachment = chat.getByTestId('clarify-attach-btn')
+    const actions = chat.getByTestId('clarify-action-row')
+    async function closeByOutside() {
+      // The upward popup may cover the textarea. Click the history instead of
+      // forcing an intercepted input click, then restore the draft's focus.
+      await chat.getByTestId('public-gate-chat-host').click({ position: { x: 8, y: 8 } })
+      await expect(group).toBeHidden()
+      await input.focus()
+    }
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')
     await expect(group).toBeHidden()
     await expect(summary).toHaveText('')
+    await expect(summary).toHaveClass(/sr-only/)
+    await expect(toggle).toHaveAccessibleName('Page collaboration')
+    await expect(toggle).toHaveAttribute('title', /Page collaboration/)
+    await expect(actions.getByTestId('clarify-attach-btn')).toHaveCount(1)
+    await expect(actions.getByTestId('page-collaboration-toggle')).toHaveCount(1)
     const draft = 'Keep the subscription flow and generate three designs for me to choose.'
     await input.fill(draft)
     await toggle.focus()
@@ -531,9 +545,9 @@ test.describe('production Chat composer page candidates', () => {
     await mode.focus()
     await mode.press('Tab')
     await expect(group).toBeHidden()
-    await expect(input).toBeFocused()
+    await expect(send).toBeFocused()
     await openControls(page)
-    await input.click()
+    await closeByOutside()
     await expect(group).toBeHidden()
     await expect(input).toBeFocused()
     await expect(input).toHaveValue(draft)
@@ -567,9 +581,12 @@ test.describe('production Chat composer page candidates', () => {
     await expect(mode).toHaveAttribute('aria-checked', 'true')
     await expect(control).toHaveAttribute('aria-checked', 'false')
     await expect.poll(controlMessages).toEqual([expect.objectContaining({ on: true }), expect.objectContaining({ on: false })])
-    await input.click()
+    await closeByOutside()
     await expect(group).toBeHidden()
     await expect(summary).toContainText('Candidates')
+    await expect(toggle).toContainText('1')
+    await expect(toggle).toHaveAttribute('aria-describedby', await summary.getAttribute('id') || '')
+    await expect(toggle).toHaveAttribute('title', /Candidates/)
     await expect(input).toHaveValue(draft)
     await openControls(page)
     await expect(mode).toHaveAttribute('aria-checked', 'true')
@@ -592,10 +609,25 @@ test.describe('production Chat composer page candidates', () => {
       await expect.poll(async () => Math.round((await frame.boundingBox())!.width)).toBe(width)
     }
     for (const width of [350, 390, 500]) {
-      await input.click()
+      await closeByOutside()
       await resizeChat(width)
       await expect(toggle).toBeInViewport({ ratio: 1 })
-      await expect(summary).toBeVisible()
+      await expect(attachment).toBeInViewport({ ratio: 1 })
+      await expect(summary).toHaveClass(/sr-only/)
+      const alignment = await toggle.evaluate((element) => {
+        const row = element.closest('[data-testid="clarify-action-row"]')!
+        const attachment = row.querySelector('[data-testid="clarify-attach-btn"]')!
+        const button = element.getBoundingClientRect()
+        const attach = attachment.getBoundingClientRect()
+        return { sameRow: !!row, deltaY: Math.abs(button.top - attach.top), gap: button.left - attach.right, width: button.width, height: button.height, overflow: row.scrollWidth - row.clientWidth }
+      })
+      expect(alignment.sameRow).toBe(true)
+      expect(alignment.deltaY).toBeLessThanOrEqual(1)
+      expect(alignment.gap).toBeGreaterThanOrEqual(0)
+      expect(alignment.gap).toBeLessThanOrEqual(12)
+      expect(alignment.width).toBe(40)
+      expect(alignment.height).toBe(40)
+      expect(alignment.overflow).toBeLessThanOrEqual(1)
       await expect(send).toBeInViewport({ ratio: 1 })
       await expect(group).toBeHidden()
       await openControls(page)
@@ -618,22 +650,22 @@ test.describe('production Chat composer page candidates', () => {
       expect(dimensions.groupBottom).toBeLessThanOrEqual(dimensions.triggerTop)
       await expect(input).toHaveValue(draft)
     }
-    await input.click()
+    await closeByOutside()
     await resizeChat(350)
     await openControls(page)
-    await chat.getByTestId('public-gate-chat-host').screenshot({ path: testInfo.outputPath('page-collaboration-menu-narrow.png'), animations: 'disabled' })
+    await chat.getByTestId('public-gate-chat-host').screenshot({ path: testInfo.outputPath('page-collaboration-toolbar-narrow.png'), animations: 'disabled' })
 
     await page.evaluate(() => localStorage.setItem('grasp-locale', 'zh-CN'))
     await entry(page, 'entry-grouped-controls-zh')
     await resizeChat(500)
     await input.fill('保留订阅交互，给我三个页面候选，选好后再采用。')
     await expect(group).toBeHidden()
-    await chat.getByTestId('public-gate-chat-host').screenshot({ path: testInfo.outputPath('page-collaboration-menu-closed.png'), animations: 'disabled' })
+    await chat.getByTestId('clarify-input-row').screenshot({ path: testInfo.outputPath('page-collaboration-toolbar-closed.png'), animations: 'disabled' })
     await openControls(page)
     await expect(group).toHaveAccessibleName('页面协作')
     await mode.click()
-    await chat.getByTestId('public-gate-chat-host').screenshot({ path: testInfo.outputPath('page-collaboration-menu-open.png'), animations: 'disabled' })
-    await input.click()
+    await chat.getByTestId('public-gate-chat-host').screenshot({ path: testInfo.outputPath('page-collaboration-toolbar-open.png'), animations: 'disabled' })
+    await closeByOutside()
     await expect(summary).toContainText('页面候选')
     expect((await state(page, key)).requests).toEqual([])
   })
