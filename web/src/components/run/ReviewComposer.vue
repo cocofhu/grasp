@@ -276,7 +276,7 @@ function onConfirm() {
       @queue-remove="(itemId, index) => emit('queue-remove', itemId, index)"
       @queue-reorder="(itemIds) => emit('queue-reorder', itemIds)"
     >
-      <template #composer-mode><slot name="composer-mode" /></template>
+      <template #composer-controls><slot name="composer-controls" /></template>
     </ClarifyChat>
   </div>
 

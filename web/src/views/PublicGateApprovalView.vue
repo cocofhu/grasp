@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 
 import { useI18n } from 'vue-i18n'
 import HtmlPreview from '@/components/ui/HtmlPreview.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
+import PageCollaborationControls from '@/components/run/PageCollaborationControls.vue'
 import { liveRequestId, type EmbedLiveContext } from '@/lib/inbox/embedLiveContext'
 import Icon from '@/components/ui/Icon.vue'
 import AppModal from '@/components/ui/AppModal.vue'
@@ -218,6 +219,8 @@ const showPageCandidateMode = computed(() => chatOnly.value && live.store.enable
 const showReactOnlyDeadend = computed(
   () => isActive.value && !doneKind.value && isReactOnly.value && !reactAlive.value,
 )
+// Keep the page permission reachable when the composer is absent (loading/error/ended read-only chat).
+const composerUnavailable = computed(() => !ready.value || loading.value || networkFailed.value || !!doneKind.value || (!isActive.value && !workbenchSeen.value) || showReactOnlyDeadend.value)
 const coldHintText = computed(() => {
   if (chatOnly.value) return t('pages.embedChat.coldHint')
   if (isReactOnly.value) return t('pages.publicGate.sessionEndedHintReactOnly')
@@ -1507,6 +1510,10 @@ defineExpose({
       </div>
     </header>
 
+    <PageCollaborationControls v-if="chatOnly && $slots['page-control'] && composerUnavailable">
+      <slot name="page-control" />
+    </PageCollaborationControls>
+
     <div
       v-if="!ready || loading"
       class="flex flex-1 flex-col items-center justify-center gap-3 py-16 text-center"
@@ -1721,16 +1728,27 @@ defineExpose({
                   @queue-remove="(itemId) => onQueueRemove(itemId)"
                   @queue-reorder="onQueueReorder"
                 >
-                  <template #composer-mode>
-                    <div v-if="showPageCandidateMode" class="flex min-w-0 items-center gap-1.5" :title="t('pages.embedChat.live.candidateHint')">
-                      <AppSwitch v-model="pageCandidateMode" :disabled="replyInFlight" :aria-label="t('pages.embedChat.live.candidateMode')" data-testid="live-candidate-mode" />
-                      <span class="whitespace-nowrap text-[11px] text-txt2">{{ t('pages.embedChat.live.candidateMode') }}</span>
-                    </div>
+                  <template #composer-controls>
+                    <PageCollaborationControls v-if="chatOnly && ($slots['page-control'] || showPageCandidateMode)">
+                      <slot name="page-control" />
+                      <div v-if="showPageCandidateMode" class="px-3 py-2" data-testid="live-candidate-control">
+                        <label class="flex items-center justify-between gap-3 text-xs font-medium text-txt2">
+                          <span>{{ t('pages.embedChat.live.candidateMode') }}</span>
+                          <AppSwitch
+                            v-model="pageCandidateMode"
+                            :disabled="replyInFlight"
+                            :aria-label="t('pages.embedChat.live.candidateMode')"
+                            aria-describedby="live-candidate-hint"
+                            data-testid="live-candidate-mode"
+                          />
+                        </label>
+                        <p id="live-candidate-hint" class="m-0 mt-1 text-[11px] leading-snug text-txt3" data-testid="live-candidate-hint">
+                          {{ t(pageCandidateMode ? 'pages.embedChat.live.candidateHint' : 'pages.embedChat.live.candidateIntro') }}
+                        </p>
+                      </div>
+                    </PageCollaborationControls>
                   </template>
                 </ReviewComposer>
-                <p v-if="showPageCandidateMode && pageCandidateMode" class="shrink-0 px-3 pb-2 text-[11px] leading-snug text-txt3" data-testid="live-candidate-hint">
-                  {{ t('pages.embedChat.live.candidateHint') }}
-                </p>
               </div>
             </template>
           </div>

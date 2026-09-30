@@ -833,6 +833,8 @@ const {
     </button>
     </div>
 
+    <slot name="composer-controls" />
+
     <div v-if="showDoneChrome" class="border-t border-line p-3 text-center text-[12px] text-ok">
       <Icon name="check" :size="13" class="-mt-0.5 mr-1 inline" />{{ translate('pages.clarify.done') }}
     </div>
@@ -935,7 +937,6 @@ const {
           />
         </template>
         <template #toolbar-start>
-          <slot name="composer-mode" />
           <button
             type="button"
             class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-line text-txt2 hover:border-line-strong disabled:opacity-50"

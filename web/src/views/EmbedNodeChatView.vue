@@ -247,31 +247,6 @@ onUnmounted(() => {
 <template>
   <div class="flex h-screen flex-col overflow-hidden bg-base text-txt" data-testid="embed-chat-root">
     <div
-      v-if="phase === 'ready' && token && pageControlSupported !== null"
-      class="shrink-0 border-b border-line px-3 py-2"
-      data-page-agent-not-interactive
-      data-testid="page-control-bar"
-    >
-      <template v-if="pageControlSupported">
-        <label class="flex items-center justify-between gap-3 text-[12px] text-txt2">
-          <span>{{ t('pages.embedChat.pageControl.toggle') }}</span>
-          <AppSwitch
-            :model-value="pageControlOn"
-            :aria-label="t('pages.embedChat.pageControl.toggle')"
-            data-testid="page-control-toggle"
-            @update:model-value="pageControl.setEnabled"
-          />
-        </label>
-        <p v-if="!pageControlOn" class="m-0 mt-1 text-[11px] leading-snug text-txt3">
-          {{ t('pages.embedChat.pageControl.privacy') }}
-        </p>
-        <PageControlStatus v-else class="mt-1" :state="pageControlState" :active="pageControlActive" />
-      </template>
-      <p v-else class="m-0 text-[11px] leading-snug text-txt3" data-testid="page-control-unsupported">
-        {{ t('pages.embedChat.pageControl.unsupported') }}
-      </p>
-    </div>
-    <div
       v-if="phase === 'ready' && token && (liveOpenCount > 0 || liveNotice)"
       class="flex shrink-0 items-center gap-2 border-b border-line px-3 py-1.5 text-[11px] text-txt2"
       role="status"
@@ -302,7 +277,31 @@ onUnmounted(() => {
       @page-frame="pageControl.onServerFrame"
       @live-session="onLiveSession"
       @live-cmd="onLiveCmd"
-    />
+    >
+      <template v-if="pageControlSupported !== null" #page-control>
+        <div class="px-3 py-2" data-page-agent-not-interactive data-testid="page-control-bar">
+          <template v-if="pageControlSupported">
+            <label class="flex items-center justify-between gap-3 text-xs font-medium text-txt2">
+              <span>{{ t('pages.embedChat.pageControl.toggle') }}</span>
+              <AppSwitch
+                :model-value="pageControlOn"
+                :aria-label="t('pages.embedChat.pageControl.toggle')"
+                aria-describedby="embed-page-control-help"
+                data-testid="page-control-toggle"
+                @update:model-value="pageControl.setEnabled"
+              />
+            </label>
+            <p v-if="!pageControlOn" id="embed-page-control-help" class="m-0 mt-1 text-[11px] leading-snug text-txt3">
+              {{ t('pages.embedChat.pageControl.privacy') }}
+            </p>
+            <PageControlStatus v-else id="embed-page-control-help" class="mt-1" :state="pageControlState" :active="pageControlActive" />
+          </template>
+          <p v-else class="m-0 text-[11px] leading-snug text-txt3" data-testid="page-control-unsupported">
+            {{ t('pages.embedChat.pageControl.unsupported') }}
+          </p>
+        </div>
+      </template>
+    </PublicGateApprovalView>
     <div
       v-else-if="phase === 'connecting'"
       class="flex flex-1 flex-col items-center justify-center gap-3 text-center"

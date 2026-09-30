@@ -81,7 +81,7 @@ import type { VueWrapper } from '@vue/test-utils'
 
 const mounted: VueWrapper[] = []
 
-function mountView(locale: 'zh-CN' | 'en' = 'zh-CN', props: Record<string, unknown> = {}) {
+function mountView(locale: 'zh-CN' | 'en' = 'zh-CN', props: Record<string, unknown> = {}, slots: Record<string, string> = {}) {
   const i18n = createI18n({
     legacy: false,
     locale,
@@ -90,7 +90,7 @@ function mountView(locale: 'zh-CN' | 'en' = 'zh-CN', props: Record<string, unkno
       en: { ...commonEn, ...pagesEn, ...shellEn },
     },
   })
-  const wrapper = mount(PublicGateApprovalView, { props, global: { plugins: [i18n] } })
+  const wrapper = mount(PublicGateApprovalView, { props, slots, global: { plugins: [i18n] } })
   mounted.push(wrapper)
   return wrapper
 }
@@ -344,6 +344,39 @@ describe('PublicGateApprovalView workbench', () => {
     expect(w.get('[data-testid="public-gate-react-only-deadend"]').text()).toContain('禁止确认')
     expect(w.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
     expect(w.find('[data-testid="public-gate-cold-hint"]').exists()).toBe(false)
+  })
+
+  it('keeps page control reachable when an embedded read-only session ends or preview reload fails', async () => {
+    const preview = {
+      status: 'active', kind: 'review', nodeType: 'grasp', reactSessionAlive: true,
+      permissionPreset: 'react_only', actions: { reply: 'reply' }, turns: [],
+    }
+    mocks.preview.mockResolvedValue(preview)
+    const w = mountView('zh-CN', { embedToken: `gse_${'dc'.repeat(16)}` }, {
+      'page-control': '<button data-testid="permission-switch">Page permission</button>',
+    })
+    await flushPromises()
+    const permission = () => w.findAll('[data-testid="page-collaboration-controls"] [data-testid="permission-switch"]')
+    expect(permission()).toHaveLength(1)
+    expect(w.find('[data-testid="live-candidate-mode"]').exists()).toBe(false)
+
+    mocks.preview.mockResolvedValue({ ...preview, reactSessionAlive: false, actions: {} })
+    await (w.vm as unknown as { loadPreview: () => Promise<void> }).loadPreview()
+    await flushPromises()
+    expect(w.find('[data-testid="public-gate-react-only-deadend"]').exists()).toBe(true)
+    expect(permission()).toHaveLength(1)
+
+    mocks.preview.mockRejectedValue(new Error('network unavailable'))
+    await (w.vm as unknown as { loadPreview: () => Promise<void> }).loadPreview()
+    await flushPromises()
+    expect(w.find('[data-testid="public-gate-network-error"]').exists()).toBe(true)
+    expect(permission()).toHaveLength(1)
+
+    mocks.preview.mockResolvedValue(preview)
+    await w.get('[data-testid="public-gate-network-retry"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="clarify-input"]').exists()).toBe(true)
+    expect(permission()).toHaveLength(1)
   })
 
   it('react_only does not send Live writes', async () => {

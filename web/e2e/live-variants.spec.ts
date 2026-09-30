@@ -475,4 +475,101 @@ test.describe('production Chat composer page candidates', () => {
     await expect(drawer(page).getByTestId('clarify-input')).toHaveValue('三个页面候选')
     expect((await state(page, key)).requests).toEqual([])
   })
+
+  test('grouped page controls fit 350, 390 and 500px English Chat and remain independent without losing the draft', async ({ page }, testInfo) => {
+    await page.addInitScript(() => { if (!localStorage.getItem('grasp-locale')) localStorage.setItem('grasp-locale', 'en') })
+    const key = 'entry-grouped-controls'
+    await entry(page, key)
+    const chat = drawer(page)
+    const group = chat.getByTestId('page-collaboration-controls')
+    const mode = chat.getByTestId('live-candidate-mode')
+    const control = chat.getByTestId('page-control-toggle')
+    const input = chat.getByTestId('clarify-input')
+    const send = chat.getByTestId('clarify-send-label')
+    await expect(group).toHaveAccessibleName('Page collaboration')
+    await expect(group.getByTestId('live-candidate-mode')).toHaveCount(1)
+    await expect(group.getByTestId('page-control-toggle')).toHaveCount(1)
+    await expect(control).toHaveAttribute('aria-checked', 'false')
+    await expect(mode).toHaveAttribute('aria-checked', 'false')
+    const draft = 'Keep the subscription flow and generate three designs for me to choose.'
+    await input.fill(draft)
+    await page.evaluate(() => {
+      const captured: unknown[] = []
+      ;(window as Window & { groupedPageMessages?: unknown[] }).groupedPageMessages = captured
+      window.addEventListener('message', (event) => {
+        const frame = document.querySelector('grasp-preview-pick')?.shadowRoot?.querySelector<HTMLIFrameElement>('[data-role="drawer"] iframe')
+        if (event.source === frame?.contentWindow && event.origin === location.origin && event.data?.type === 'grasp-embed:control') captured.push(event.data)
+      })
+    })
+    const controlMessages = () => page.evaluate(() => (window as Window & { groupedPageMessages?: unknown[] }).groupedPageMessages || [])
+
+    await mode.click()
+    await expect(mode).toHaveAttribute('aria-checked', 'true')
+    await expect(control).toHaveAttribute('aria-checked', 'false')
+    await expect(chat.getByTestId('live-candidate-hint')).toContainText('3')
+    expect(await controlMessages()).toEqual([])
+    await control.click()
+    await expect(control).toHaveAttribute('aria-checked', 'true')
+    await expect(mode).toHaveAttribute('aria-checked', 'true')
+    await expect(chat.getByTestId('page-control-status')).toBeVisible()
+    await expect.poll(controlMessages).toEqual([expect.objectContaining({ on: true })])
+    await mode.click()
+    await expect(mode).toHaveAttribute('aria-checked', 'false')
+    await expect(control).toHaveAttribute('aria-checked', 'true')
+    expect(await controlMessages()).toEqual([expect.objectContaining({ on: true })])
+    await mode.click()
+    await control.click()
+    await expect(mode).toHaveAttribute('aria-checked', 'true')
+    await expect(control).toHaveAttribute('aria-checked', 'false')
+    await expect.poll(controlMessages).toEqual([expect.objectContaining({ on: true }), expect.objectContaining({ on: false })])
+    await expect(input).toHaveValue(draft)
+
+    // Resize the actual shipping drawer using its handle, rather than styling
+    // Vue or a surrogate group. The inner Chat viewport is exactly each width.
+    async function resizeChat(width: number) {
+      const frame = page.locator('grasp-preview-pick [data-role="drawer"] iframe')
+      const initial = await frame.boundingBox()
+      const edge = await page.locator('grasp-preview-pick [data-role="drawer"] .edge.w').boundingBox()
+      expect(initial).not.toBeNull()
+      expect(edge).not.toBeNull()
+      const x = edge!.x + edge!.width / 2
+      const y = edge!.y + edge!.height / 2
+      await page.mouse.move(x, y)
+      await page.mouse.down()
+      await page.mouse.move(x - (width - initial!.width), y, { steps: 4 })
+      await page.mouse.up()
+      await expect.poll(async () => Math.round((await frame.boundingBox())!.width)).toBe(width)
+    }
+    for (const width of [350, 390, 500]) {
+      await resizeChat(width)
+      await expect(send).toBeVisible()
+      await expect(send).toBeInViewport({ ratio: 1 })
+      await expect(mode).toBeInViewport({ ratio: 1 })
+      await expect(control).toBeInViewport({ ratio: 1 })
+      const dimensions = await group.evaluate((element) => ({
+        groupOverflow: element.scrollWidth - element.clientWidth,
+        pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        groupRight: element.getBoundingClientRect().right,
+        viewportWidth: innerWidth,
+      }))
+      expect(dimensions.groupOverflow).toBeLessThanOrEqual(1)
+      expect(dimensions.pageOverflow).toBeLessThanOrEqual(1)
+      expect(dimensions.groupRight).toBeLessThanOrEqual(dimensions.viewportWidth)
+      await expect(input).toHaveValue(draft)
+    }
+    await resizeChat(350)
+    await chat.getByTestId('public-gate-chat-host').screenshot({ path: testInfo.outputPath('grouped-page-controls-narrow.png'), animations: 'disabled' })
+
+    // The desktop deliverable shows the user's Chinese labels in the same real
+    // Chat. A fresh node also proves there is only one copy of each switch.
+    await page.evaluate(() => localStorage.setItem('grasp-locale', 'zh-CN'))
+    await entry(page, 'entry-grouped-controls-zh')
+    await expect(chat.getByTestId('page-collaboration-controls')).toHaveAccessibleName('页面协作')
+    await resizeChat(500)
+    await chat.getByTestId('live-candidate-mode').click()
+    await input.fill('保留订阅交互，给我三个页面候选，选好后再采用。')
+    await chat.getByTestId('public-gate-chat-host').screenshot({ path: testInfo.outputPath('grouped-page-controls-desktop.png'), animations: 'disabled' })
+    expect((await state(page, key)).requests).toEqual([])
+  })
+
 })
