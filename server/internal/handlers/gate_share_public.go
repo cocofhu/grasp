@@ -214,7 +214,7 @@ func (h *Handlers) PublicGateReply(c *gin.Context) {
 			h.writePublicReactErr(c, err)
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "accepted", "kind": models.ShareLinkKindReview, "live": sess})
+		c.JSON(http.StatusOK, gin.H{"status": "accepted", "kind": models.ShareLinkKindReview, "live": publicLiveSession(sess)})
 		return
 	}
 	text := strings.TrimSpace(body.Text)

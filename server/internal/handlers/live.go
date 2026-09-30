@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -33,6 +34,34 @@ func liveSessionsBody(h *Handlers, runID, nodeID string) gin.H {
 		sessions = []models.LiveSession{}
 	}
 	return gin.H{"enabled": h.Eng.LiveEnabled(runID, nodeID), "sessions": sessions}
+}
+
+// publicLiveSession strips run ids and owners from a session for share-link
+// and drawer viewers (same fields as the public live frame).
+func publicLiveSession(s *models.LiveSession) map[string]any {
+	if s == nil {
+		return nil
+	}
+	b, err := json.Marshal(s)
+	if err != nil {
+		return nil
+	}
+	var m map[string]any
+	if json.Unmarshal(b, &m) != nil {
+		return nil
+	}
+	return gateshare.PublicLiveSession(m)
+}
+
+func publicLiveSessionsBody(h *Handlers, runID, nodeID string) gin.H {
+	list := h.Eng.LiveSessions(runID, nodeID, false)
+	out := make([]map[string]any, 0, len(list))
+	for i := range list {
+		if m := publicLiveSession(&list[i]); m != nil {
+			out = append(out, m)
+		}
+	}
+	return gin.H{"status": "active", "enabled": h.Eng.LiveEnabled(runID, nodeID), "sessions": out}
 }
 
 // publicLiveLookup resolves an active review share/embed credential with
@@ -72,9 +101,7 @@ func (h *Handlers) PublicLiveSessions(c *gin.Context) {
 	if !ok {
 		return
 	}
-	body := liveSessionsBody(h, lookup.Link.RunID, lookup.Link.NodeID)
-	body["status"] = "active"
-	c.JSON(http.StatusOK, body)
+	c.JSON(http.StatusOK, publicLiveSessionsBody(h, lookup.Link.RunID, lookup.Link.NodeID))
 }
 
 // PublicLiveDiscardAll is LiveDiscardAll for a share link or drawer credential.

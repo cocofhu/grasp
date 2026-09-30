@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/cocofhu/grasp/internal/handlers"
 )
 
 func TestLiveSessionsHTTP(t *testing.T) {
@@ -65,5 +67,18 @@ func TestPublicLiveSessionsHTTP(t *testing.T) {
 	}, hdr)
 	if ctxReply.Code == http.StatusForbidden {
 		t.Fatalf("ctx reply: %d %s", ctxReply.Code, ctxReply.Body.String())
+	}
+}
+
+func TestPublicLiveSessionStripsRunID(t *testing.T) {
+	m := handlers.HandlersPublicLiveSessionForTest()
+	if handlers.HandlersPublicLiveSessionForTest()["nodeId"] != nil {
+		t.Fatal("nodeId leaked")
+	}
+	if _, ok := m["runId"]; ok {
+		t.Fatalf("runId leaked: %v", m)
+	}
+	if m["sid"] != "sid001" || m["state"] != "ready" {
+		t.Fatalf("fields: %v", m)
 	}
 }

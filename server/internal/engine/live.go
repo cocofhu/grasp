@@ -306,18 +306,32 @@ func (e *Engine) ApplyLiveReport(runID, nodeID string, u mcp.LiveReport) (*model
 // settleLiveAfterTurn resolves a session the agent left mid-transition (it
 // never called live_update) by looking at the markers in source.
 func (e *Engine) settleLiveAfterTurn(runID, nodeID, sid string, interrupted bool) {
+	pendingState := func() *models.LiveSession {
+		sess, err := e.liveSession(runID, nodeID, sid)
+		if err != nil || sess == nil {
+			return nil
+		}
+		switch sess.State {
+		case models.LiveStateGenerating, models.LiveStateRefining, models.LiveStateAccepting, models.LiveStateDiscarding:
+			return sess
+		}
+		return nil
+	}
+	e.liveMu.Lock()
+	before := pendingState()
+	e.liveMu.Unlock()
+	if before == nil {
+		return
+	}
+	// Scan without the lock: it is a sandbox round trip.
+	present, scanned := e.liveMarkerPresent(runID, nodeID, sid)
+
 	e.liveMu.Lock()
 	defer e.liveMu.Unlock()
-	sess, err := e.liveSession(runID, nodeID, sid)
-	if err != nil || sess == nil {
-		return
+	sess := pendingState()
+	if sess == nil || sess.State != before.State || !sess.UpdatedAt.Equal(before.UpdatedAt) {
+		return // moved on (a live_update or a new request) while we scanned
 	}
-	switch sess.State {
-	case models.LiveStateGenerating, models.LiveStateRefining, models.LiveStateAccepting, models.LiveStateDiscarding:
-	default:
-		return
-	}
-	present, scanned := e.liveMarkerPresent(runID, nodeID, sid)
 	next, msg := settleLiveState(sess, present, scanned, interrupted)
 	sess.State = next
 	sess.Error = msg
