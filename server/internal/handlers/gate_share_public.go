@@ -213,7 +213,7 @@ func (h *Handlers) PublicGateReply(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "live_unsupported", "message": "当前链接不支持 Live 变体"})
 			return
 		}
-		sess, err := h.Eng.ReactLiveAs(owner, lookup.Link.RunID, lookup.Link.NodeID, *body.Live)
+		sess, err := h.Eng.ReactLiveWithAttachmentsAs(owner, lookup.Link.RunID, lookup.Link.NodeID, *body.Live, body.Images, body.Annotations)
 		if err != nil {
 			h.writePublicReactErr(c, err)
 			return

@@ -2,6 +2,9 @@
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import HtmlPreview from '@/components/ui/HtmlPreview.vue'
+import AppSwitch from '@/components/ui/AppSwitch.vue'
+import PageCollaborationControls from '@/components/run/PageCollaborationControls.vue'
+import { liveRequestId, type EmbedLiveContext } from '@/lib/inbox/embedLiveContext'
 import Icon from '@/components/ui/Icon.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import LangSelect from '@/components/ui/LangSelect.vue'
@@ -45,6 +48,7 @@ import {
   createLiveStore,
   parseLiveRef,
   parseLiveSession,
+  isLiveOpen,
   type LiveCmd,
   type LiveEvent,
   type LiveSession,
@@ -80,6 +84,8 @@ type PublicChatRef = {
 const props = defineProps<{
   /** Chat-only drawer mode: the credential comes from the embed session instead of `#t=`. */
   embedToken?: string
+  pageControlEnabled?: boolean
+  requestPageContext?: () => Promise<EmbedLiveContext>
 }>()
 const emit = defineEmits<{
   status: [status: string]
@@ -139,6 +145,9 @@ const chatRef = ref<PublicChatRef | null>(null)
 const shellRef = ref<{ playConfirmCeremony?: () => Promise<void> } | null>(null)
 const replyInFlight = ref(false)
 const pendingReplyText = ref('')
+const pageCandidateMode = ref(false)
+// A retry of the same request keeps its session ID when the HTTP result is unknown.
+let candidateAttempt: { fingerprint: string; sid: string } | null = null
 
 let lastKeptNonce = ''
 let nonceIssuedAt = 0
@@ -207,9 +216,16 @@ const showConfirm = computed(() => {
 const permissionPreset = computed(() => normalizePermissionPreset(preview.value?.permissionPreset))
 const isReactOnly = computed(() => permissionPreset.value === 'react_only')
 const canWriteLive = computed(() => !isReactOnly.value)
+const showPageCandidateMode = computed(() => chatOnly.value && live.store.enabled && canWriteLive.value && canReply.value)
+const pageCollaborationActiveLabels = computed(() => [
+  ...(props.pageControlEnabled ? [t('pages.embedChat.pageControl.shortLabel')] : []),
+  ...(showPageCandidateMode.value && pageCandidateMode.value ? [t('pages.embedChat.live.candidateShortLabel')] : []),
+])
 const showReactOnlyDeadend = computed(
   () => isActive.value && !doneKind.value && isReactOnly.value && !reactAlive.value,
 )
+// Keep the page permission reachable when the composer is absent (loading/error/ended read-only chat).
+const composerUnavailable = computed(() => !ready.value || loading.value || networkFailed.value || !!doneKind.value || (!isActive.value && !workbenchSeen.value) || showReactOnlyDeadend.value)
 const coldHintText = computed(() => {
   if (chatOnly.value) return t('pages.embedChat.coldHint')
   if (isReactOnly.value) return t('pages.publicGate.sessionEndedHintReactOnly')
@@ -1124,29 +1140,86 @@ async function submitFinal(kind: 'confirm' | 'reject', abortRunning = false) {
   }
 }
 
-async function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotation[]) {
+async function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotation[], candidateIntent = true): Promise<boolean> {
+  if ((candidateIntent && replyInFlight.value) || linkInvalid.value) return false
   errorText.value = ''
   refreshLocalChatBusy()
   replyInFlight.value = true
   pendingReplyText.value = text.trim()
+  let candidate: LiveEvent | undefined
+  let accepted = false
   try {
-    await publicGateApi.reply({
+    // Snapshot the displayed variant and its parameters at send time.
+    const liveCtx = chatOnly.value ? live.activeCtx() : null
+    if (candidateIntent && chatOnly.value && pageCandidateMode.value) {
+      if (!showPageCandidateMode.value) throw new Error(t('pages.embedChat.live.previewUnavailable'))
+      if (liveCtx && live.store.sessions[liveCtx.sid]?.state !== 'ready') throw new Error(t('pages.embedChat.live.pendingCandidates'))
+    }
+    if (candidateIntent && chatOnly.value && pageCandidateMode.value && !liveCtx) {
+      if (Object.values(live.store.sessions).some((session) => isLiveOpen(session.state))) {
+        throw new Error(t('pages.embedChat.live.pendingCandidates'))
+      }
+      if (Array.from(text).length > 2000) throw new Error(t('pages.embedChat.live.promptTooLong'))
+      if (!props.requestPageContext) throw new Error(t('pages.embedChat.live.previewUnavailable'))
+      const context = await props.requestPageContext()
+      const fingerprint = JSON.stringify({ text, images, annotations: anns, url: context.url })
+      if (candidateAttempt?.fingerprint !== fingerprint) candidateAttempt = { fingerprint, sid: liveRequestId() }
+      candidate = { op: 'generate', scope: 'page', sid: candidateAttempt.sid, count: 3, prompt: text, url: context.url }
+    }
+    const result = await publicGateApi.reply({
       token: token.value,
       text,
       annotations: anns,
       images: images.map((im) => ({ data: im.data, mimeType: im.mimeType, name: im.name })),
-      liveCtx: chatOnly.value ? live.activeCtx() : null,
+      ...(candidate ? { live: candidate } : { liveCtx }),
     })
-    await loadPreview({ silent: true })
+    if (result.status !== 'accepted') {
+      if (['invalid', 'expired', 'revoked', 'used'].includes(result.status)) {
+        markLinkInvalid()
+        stopPoll()
+      }
+      throw new Error(result.message || result.error || t('pages.publicGate.replyFailed'))
+    }
+    const responseSession = candidate ? parseLiveSession(result.live) : null
+    if (candidate && (!responseSession || responseSession.sid !== candidate.sid)) throw new Error(t('pages.publicGate.replyFailed'))
+    accepted = true
+    if (candidate && responseSession) {
+      const session = live.apply(responseSession)
+      if (session) emit('live-session', session)
+      candidateAttempt = null
+    }
   } catch (e) {
-    chatRef.value?.discardLastQueued?.()
-    pendingReplyText.value = ''
-    errorText.value = e instanceof Error ? e.message : t('pages.publicGate.replyFailed')
+    // A lost response can still represent an accepted generate. Reconcile the
+    // stable session ID before leaving the original composer available to retry.
+    if (candidate) {
+      try {
+        const { sessions } = await loadLiveSessions()
+        const session = sessions.find((item) => item.sid === candidate?.sid)
+        if (session) {
+          accepted = true
+          candidateAttempt = null
+          emit('live-session', session)
+        }
+      } catch { /* Preserve the same ID and draft until the caller retries. */ }
+    }
+    if (!accepted) {
+      pendingReplyText.value = ''
+      errorText.value = e instanceof Error ? e.message : t('pages.publicGate.replyFailed')
+    }
   } finally {
+    // A refresh failure after acknowledgement must never turn into a resend.
+    if (accepted) {
+      try { await loadPreview({ silent: true }) } catch { /* Poll/events reconcile accepted replies. */ }
+    }
     replyInFlight.value = false
     await nextTick()
     syncChatQueueFromPreview()
   }
+  return accepted
+}
+
+async function onLegacySend(text: string, images: ClarifyImage[], anns: ReactAnnotation[]) {
+  if (!await onSend(text, images, anns, false)) chatRef.value?.discardLastQueued?.()
 }
 
 async function onCancel() {
@@ -1442,6 +1515,10 @@ defineExpose({
       </div>
     </header>
 
+    <PageCollaborationControls v-if="chatOnly && $slots['page-control'] && composerUnavailable" :active-labels="pageCollaborationActiveLabels">
+      <slot name="page-control" />
+    </PageCollaborationControls>
+
     <div
       v-if="!ready || loading"
       class="flex flex-1 flex-col items-center justify-center gap-3 py-16 text-center"
@@ -1632,6 +1709,7 @@ defineExpose({
                 <ReviewComposer
                   ref="chatRef"
                   :mode="composerMode"
+                  :send-request="chatOnly ? onSend : undefined"
                   run-id="public-share"
                   node-id="public-gate"
                   :iteration="1"
@@ -1648,13 +1726,34 @@ defineExpose({
                   :force-confirm="!chatOnly && (showConfirm || linkInvalid)"
                   :confirm-error="errorText || null"
                   :confirm-can-abort="confirmCanAbort"
-                  @send="onSend"
+                  @send="onLegacySend"
                   @finish="onComposerFinish"
                   @finish-abort="onComposerFinishAbort"
                   @cancel="onCancel"
                   @queue-remove="(itemId) => onQueueRemove(itemId)"
                   @queue-reorder="onQueueReorder"
-                />
+                >
+                  <template #composer-controls="{ compact }">
+                    <PageCollaborationControls v-if="chatOnly && ($slots['page-control'] || showPageCandidateMode)" :active-labels="pageCollaborationActiveLabels" :compact="compact">
+                      <slot name="page-control" />
+                      <div v-if="showPageCandidateMode" class="px-3 py-2" data-testid="live-candidate-control">
+                        <label class="flex items-center justify-between gap-3 text-xs font-medium text-txt2">
+                          <span>{{ t('pages.embedChat.live.candidateMode') }}</span>
+                          <AppSwitch
+                            v-model="pageCandidateMode"
+                            :disabled="replyInFlight"
+                            :aria-label="t('pages.embedChat.live.candidateMode')"
+                            aria-describedby="live-candidate-hint"
+                            data-testid="live-candidate-mode"
+                          />
+                        </label>
+                        <p id="live-candidate-hint" class="m-0 mt-1 text-[11px] leading-snug text-txt3" data-testid="live-candidate-hint">
+                          {{ t(pageCandidateMode ? 'pages.embedChat.live.candidateHint' : 'pages.embedChat.live.candidateIntro') }}
+                        </p>
+                      </div>
+                    </PageCollaborationControls>
+                  </template>
+                </ReviewComposer>
               </div>
             </template>
           </div>

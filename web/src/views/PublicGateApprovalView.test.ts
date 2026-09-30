@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   cancel: vi.fn(),
   queueRemove: vi.fn(),
   queueReorder: vi.fn(),
+  liveSessions: vi.fn(),
 }))
 
 class FakeWebSocket {
@@ -60,6 +61,7 @@ vi.mock('@/lib/inbox/gateShareLink', async () => {
       cancel: mocks.cancel,
       queueRemove: mocks.queueRemove,
       queueReorder: mocks.queueReorder,
+      liveSessions: mocks.liveSessions,
       eventsWsUrl: () => 'ws://test/public/gate-approvals/events',
     },
   }
@@ -79,7 +81,7 @@ import type { VueWrapper } from '@vue/test-utils'
 
 const mounted: VueWrapper[] = []
 
-function mountView(locale: 'zh-CN' | 'en' = 'zh-CN', props: Record<string, unknown> = {}) {
+function mountView(locale: 'zh-CN' | 'en' = 'zh-CN', props: Record<string, unknown> = {}, slots: Record<string, string> = {}) {
   const i18n = createI18n({
     legacy: false,
     locale,
@@ -88,7 +90,7 @@ function mountView(locale: 'zh-CN' | 'en' = 'zh-CN', props: Record<string, unkno
       en: { ...commonEn, ...pagesEn, ...shellEn },
     },
   })
-  const wrapper = mount(PublicGateApprovalView, { props, global: { plugins: [i18n] } })
+  const wrapper = mount(PublicGateApprovalView, { props, slots, global: { plugins: [i18n], stubs: { Teleport: !!props.embedToken } } })
   mounted.push(wrapper)
   return wrapper
 }
@@ -110,6 +112,9 @@ beforeEach(() => {
   mocks.artifacts.mockResolvedValue({ status: 'active', artifacts: [], nodes: [] })
   mocks.decide.mockReset()
   mocks.reply.mockReset()
+  mocks.reply.mockResolvedValue({ status: 'accepted' })
+  mocks.liveSessions.mockReset()
+  mocks.liveSessions.mockResolvedValue({ status: 'active', enabled: false, sessions: [] })
   mocks.cancel.mockReset()
   FakeWebSocket.instances = []
   vi.stubGlobal('WebSocket', FakeWebSocket)
@@ -339,6 +344,44 @@ describe('PublicGateApprovalView workbench', () => {
     expect(w.get('[data-testid="public-gate-react-only-deadend"]').text()).toContain('禁止确认')
     expect(w.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
     expect(w.find('[data-testid="public-gate-cold-hint"]').exists()).toBe(false)
+  })
+
+  it('keeps page control reachable when an embedded read-only session ends or preview reload fails', async () => {
+    const preview = {
+      status: 'active', kind: 'review', nodeType: 'grasp', reactSessionAlive: true,
+      permissionPreset: 'react_only', actions: { reply: 'reply' }, turns: [],
+    }
+    mocks.preview.mockResolvedValue(preview)
+    const w = mountView('zh-CN', { embedToken: `gse_${'dc'.repeat(16)}` }, {
+      'page-control': '<button data-testid="permission-switch">Page permission</button>',
+    })
+    await flushPromises()
+    async function expectPermissionReachable() {
+      const trigger = w.get('[data-testid="page-collaboration-toggle"]')
+      if (trigger.attributes('aria-expanded') !== 'true') await trigger.trigger('click')
+      await flushPromises()
+      expect(w.findAll('[data-testid="page-collaboration-controls"] [data-testid="permission-switch"]')).toHaveLength(1)
+    }
+    await expectPermissionReachable()
+    expect(w.find('[data-testid="live-candidate-mode"]').exists()).toBe(false)
+
+    mocks.preview.mockResolvedValue({ ...preview, reactSessionAlive: false, actions: {} })
+    await (w.vm as unknown as { loadPreview: () => Promise<void> }).loadPreview()
+    await flushPromises()
+    expect(w.find('[data-testid="public-gate-react-only-deadend"]').exists()).toBe(true)
+    await expectPermissionReachable()
+
+    mocks.preview.mockRejectedValue(new Error('network unavailable'))
+    await (w.vm as unknown as { loadPreview: () => Promise<void> }).loadPreview()
+    await flushPromises()
+    expect(w.find('[data-testid="public-gate-network-error"]').exists()).toBe(true)
+    await expectPermissionReachable()
+
+    mocks.preview.mockResolvedValue(preview)
+    await w.get('[data-testid="public-gate-network-retry"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="clarify-input"]').exists()).toBe(true)
+    await expectPermissionReachable()
   })
 
   it('react_only does not send Live writes', async () => {
@@ -1514,7 +1557,7 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
   })
 
   it('plan g2: drawer renders inbox choice cards and submits the same envelope', async () => {
-    mocks.reply.mockResolvedValue({ status: 'ok' })
+    mocks.reply.mockResolvedValue({ status: 'accepted' })
     mocks.preview.mockResolvedValue({
       status: 'active',
       kind: 'review',
@@ -1586,7 +1629,7 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
   })
 
   it('plan g2: drawer form uses the inbox fill envelope and plain turns stay plain', async () => {
-    mocks.reply.mockResolvedValue({ status: 'ok' })
+    mocks.reply.mockResolvedValue({ status: 'accepted' })
     mocks.preview.mockResolvedValue({
       status: 'active',
       kind: 'review',
@@ -1658,5 +1701,150 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
     const w = mountView('zh-CN', { embedToken: drawerToken })
     await flushPromises()
     expect(w.emitted('status')?.at(-1)).toEqual(['invalid'])
+  })
+})
+
+describe('embedded Chat page candidate mode', () => {
+  const token = `gse_${'ad'.repeat(16)}`
+  async function setup(options: { enabled?: boolean; permission?: string; sessions?: unknown[] } = {}) {
+    mocks.preview.mockResolvedValue({
+      status: 'active', kind: 'review', nodeType: 'grasp', reactSessionAlive: true,
+      permissionPreset: options.permission || 'full', actions: { reply: 'reply' },
+      turns: [{ role: 'agent', text: 'Preview ready' }],
+    })
+    mocks.liveSessions.mockResolvedValue({ status: 'active', enabled: options.enabled !== false, sessions: options.sessions || [] })
+    const requestPageContext = vi.fn().mockResolvedValue({ url: 'http://preview.test/settings?tab=layout' })
+    const wrapper = mountView('zh-CN', { embedToken: token, requestPageContext })
+    await flushPromises()
+    const vm = wrapper.vm as unknown as { loadLiveSessions: () => Promise<unknown>; setLiveView: (sid: string, view: unknown) => void }
+    await vm.loadLiveSessions()
+    await flushPromises()
+    const menu = wrapper.find('[data-testid="page-collaboration-toggle"]')
+    if (menu.exists()) {
+      await menu.trigger('click')
+      await flushPromises()
+    }
+    return { wrapper, vm, requestPageContext }
+  }
+
+  it('defaults off and normal Chat uses the original request shape', async () => {
+    const { wrapper, requestPageContext } = await setup()
+    expect(wrapper.get('[data-testid="live-candidate-mode"]').attributes('aria-checked')).toBe('false')
+    await wrapper.get('[data-testid="clarify-input"]').setValue('change the heading')
+    await wrapper.get('[data-testid="clarify-send-label"]').trigger('click')
+    await flushPromises()
+    expect(mocks.reply).toHaveBeenCalledWith(expect.objectContaining({ text: 'change the heading', liveCtx: null }))
+    expect(mocks.reply.mock.calls[0][0]).not.toHaveProperty('live')
+    expect(requestPageContext).not.toHaveBeenCalled()
+  })
+
+  it('generates three page candidates with the current preview URL, attachments and annotations', async () => {
+    const { wrapper, requestPageContext } = await setup()
+    mocks.reply.mockImplementation(async (request) => ({ status: 'accepted', live: { sid: request.live.sid, mode: 'replace', state: 'generating' } }))
+    await wrapper.get('[data-testid="live-candidate-mode"]').trigger('click')
+    const chat = wrapper.findComponent(ClarifyChat)
+    await chat.vm.$emit('update:attachments', [{ data: 'aGVsbG8=', mimeType: 'image/png', name: 'reference.png' }])
+    await chat.vm.$emit('update:annotations', [{ selector: '#title', label: 'Heading', note: 'Keep content' }])
+    await wrapper.get('[data-testid="clarify-input"]').setValue('give me three page designs')
+    await wrapper.get('[data-testid="clarify-send-label"]').trigger('click')
+    await flushPromises()
+    expect(requestPageContext).toHaveBeenCalledOnce()
+    expect(mocks.reply.mock.calls[0][0]).toMatchObject({
+      token, text: 'give me three page designs',
+      live: { op: 'generate', scope: 'page', count: 3, prompt: 'give me three page designs', url: 'http://preview.test/settings?tab=layout' },
+      images: [{ name: 'reference.png' }], annotations: [{ selector: '#title', note: 'Keep content' }],
+    })
+    expect(mocks.reply.mock.calls[0][0].live.sid).toMatch(/^[a-f0-9]{32}$/)
+    expect(mocks.reply.mock.calls[0][0]).not.toHaveProperty('liveCtx')
+    expect(wrapper.emitted('live-session')?.at(-1)?.[0]).toMatchObject({ state: 'generating' })
+    expect((wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('keeps the displayed candidate and frozen parameter context instead of creating another session', async () => {
+    const { wrapper, vm, requestPageContext } = await setup({ sessions: [{ sid: 'active-1', mode: 'replace', state: 'ready', variants: [{ n: 1 }, { n: 2 }] }] })
+    vm.setLiveView('active-1', { current: 2, mode: 'inplace', params: { gap: '32px' } })
+    await wrapper.get('[data-testid="live-candidate-mode"]').trigger('click')
+    await wrapper.get('[data-testid="clarify-input"]').setValue('就用这个')
+    await wrapper.get('[data-testid="clarify-send-label"]').trigger('click')
+    await flushPromises()
+    expect(mocks.reply.mock.calls[0][0]).toMatchObject({ text: '就用这个', liveCtx: { sid: 'active-1', current: 2, params: { gap: '32px' } } })
+    expect(mocks.reply.mock.calls[0][0]).not.toHaveProperty('live')
+    expect(requestPageContext).not.toHaveBeenCalled()
+  })
+
+  for (const state of ['generating', 'failed', 'ready']) {
+    it(`retains the draft when an existing ${state} session has no displayed candidate`, async () => {
+      const { wrapper } = await setup({ sessions: [{ sid: 'existing', mode: 'replace', state }] })
+      await wrapper.get('[data-testid="live-candidate-mode"]').trigger('click')
+      await wrapper.get('[data-testid="clarify-input"]').setValue('new requirement')
+      await wrapper.get('[data-testid="clarify-send-label"]').trigger('click')
+      await flushPromises()
+      expect(mocks.reply).not.toHaveBeenCalled()
+      expect((wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement).value).toBe('new requirement')
+      expect(wrapper.text()).toContain('已有候选')
+    })
+  }
+
+  it('keeps a stable session ID and the draft after an uncertain HTTP failure', async () => {
+    const { wrapper } = await setup()
+    mocks.reply.mockRejectedValueOnce(new Error('connection lost'))
+    await wrapper.get('[data-testid="live-candidate-mode"]').trigger('click')
+    await wrapper.get('[data-testid="clarify-input"]').setValue('three alternatives')
+    await wrapper.get('[data-testid="clarify-send-label"]').trigger('click')
+    await flushPromises()
+    const firstSid = mocks.reply.mock.calls[0][0].live.sid
+    expect((wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement).value).toBe('three alternatives')
+    mocks.reply.mockImplementation(async (request) => ({ status: 'accepted', live: { sid: request.live.sid, state: 'generating', mode: 'replace' } }))
+    await wrapper.get('[data-testid="clarify-send-label"]').trigger('click')
+    await flushPromises()
+    expect(mocks.reply.mock.calls[1][0].live.sid).toBe(firstSid)
+    expect((wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('retains the draft for a 200 invalid response', async () => {
+    const { wrapper } = await setup()
+    mocks.reply.mockResolvedValue({ status: 'invalid' })
+    await wrapper.get('[data-testid="live-candidate-mode"]').trigger('click')
+    await wrapper.get('[data-testid="clarify-input"]').setValue('keep requirement')
+    await wrapper.get('[data-testid="clarify-send-label"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('status')?.at(-1)).toEqual(['active'])
+    expect(wrapper.findComponent(ClarifyChat).props('draft')).toBe('keep requirement')
+    expect(wrapper.emitted('live-session')).toBeUndefined()
+  })
+
+  it('retains the draft when accepted is missing the required session acknowledgement', async () => {
+    const { wrapper } = await setup()
+    mocks.reply.mockResolvedValue({ status: 'accepted' })
+    await wrapper.get('[data-testid="live-candidate-mode"]').trigger('click')
+    await wrapper.get('[data-testid="clarify-input"]').setValue('keep requirement')
+    await wrapper.get('[data-testid="clarify-send-label"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent(ClarifyChat).props('draft')).toBe('keep requirement')
+    expect(wrapper.emitted('live-session')).toBeUndefined()
+  })
+
+  it('does not expose candidate mode to read-only or disabled previews', async () => {
+    const readOnly = await setup({ permission: 'react_only' })
+    expect(readOnly.wrapper.find('[data-testid="live-candidate-mode"]').exists()).toBe(false)
+    const disabled = await setup({ enabled: false })
+    expect(disabled.wrapper.find('[data-testid="live-candidate-mode"]').exists()).toBe(false)
+  })
+
+  it('retains overlong requirements and refuses unavailable preview controls', async () => {
+    const { wrapper, requestPageContext } = await setup()
+    await wrapper.get('[data-testid="live-candidate-mode"]').trigger('click')
+    await wrapper.get('[data-testid="clarify-input"]').setValue('长'.repeat(2001))
+    await wrapper.get('[data-testid="clarify-send-label"]').trigger('click')
+    await flushPromises()
+    expect(mocks.reply).not.toHaveBeenCalled()
+    expect(requestPageContext).not.toHaveBeenCalled()
+    expect(wrapper.findComponent(ClarifyChat).props('draft')).toHaveLength(2001)
+    requestPageContext.mockRejectedValueOnce(new Error('Preview Live controls are unavailable'))
+    await wrapper.get('[data-testid="clarify-input"]').setValue('keep request')
+    await wrapper.get('[data-testid="clarify-send-label"]').trigger('click')
+    await flushPromises()
+    expect(mocks.reply).not.toHaveBeenCalled()
+    expect(wrapper.findComponent(ClarifyChat).props('draft')).toBe('keep request')
   })
 })

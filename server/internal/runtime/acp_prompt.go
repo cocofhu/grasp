@@ -237,7 +237,7 @@ func previewNodePromptExtras(req NodeReq) string {
 	}
 	out := direct + models.DefaultPreviewPageControlContract
 	if liveVariantsEnabled(req) {
-		out += models.DefaultPreviewLiveContract
+		out += liveVariantPromptExtras(req)
 	}
 	return out
 }
@@ -245,14 +245,9 @@ func previewNodePromptExtras(req NodeReq) string {
 // liveVariantSkillDir is the platform skill copied in when Live variants are on.
 const liveVariantSkillDir = "skills/live-variants"
 
-// liveVariantsEnabled reports whether an app_preview node runs Live variants:
-// IP-direct preview (the page overlay needs the injecting proxy and HMR) and
-// the node's live_variants switch (default on). Grasp nodes never write
-// source, so they stay out even though they may register previews.
+// liveVariantsEnabled shares the capability gate with the engine and API.
 func liveVariantsEnabled(req NodeReq) bool {
-	return req.NodeType == "app_preview" &&
-		configTruthy(req.Config["direct_preview"]) &&
-		configDefaultOn(req.Config["live_variants"])
+	return models.LiveVariantsEnabled(req.NodeType, req.Config)
 }
 
 // liveVariantSkills returns the platform skill dirs to embed for req.
@@ -261,4 +256,17 @@ func liveVariantSkills(req NodeReq) []string {
 		return nil
 	}
 	return []string{liveVariantSkillDir}
+}
+
+// Repeat the Live contract on subsequent turns too: a resumed dialogue can
+// still contain the older Grasp rule that forbids every source edit.
+func liveVariantPromptExtras(req NodeReq) string {
+	if !liveVariantsEnabled(req) {
+		return ""
+	}
+	out := models.DefaultPreviewLiveContract
+	if req.NodeType == "grasp" || req.NodeType == "approve" {
+		out += models.DefaultGraspLiveContract
+	}
+	return out
 }

@@ -270,9 +270,10 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
         continue
       }
       const w = wrappers.find((x) => x.sid === s.sid)
+      const missing = (s.variants || []).filter((variant) => !w?.variants.some((mounted) => mounted.n === variant.n))
       const key = s.updatedAt || s.state
       const cur = mountWatch.get(s.sid)
-      if (w && w.variants.length) {
+      if (w && w.variants.length && !missing.length) {
         mountWatch.delete(s.sid)
         continue
       }
@@ -282,7 +283,11 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       }
       if (!cur.sent && now - cur.since >= MOUNT_GRACE_MS) {
         cur.sent = true
-        const error = w ? 'wrapper has no variants (data-grasp-variant ≥ 1)' : `no [data-grasp-live="${s.sid}"] on ${location.pathname}`
+        const error = !w
+          ? `no [data-grasp-live="${s.sid}"] on ${location.pathname}`
+          : missing.length
+            ? `reported variants not rendered: ${missing.map((variant) => variant.n).join(', ')}`
+            : 'wrapper has no variants (data-grasp-variant ≥ 1)'
         request('mount_failed', s.sid, { error })
       }
     }

@@ -46,9 +46,9 @@ func TestLiveUpdateListedOnlyWhenEnabled(t *testing.T) {
 	if listedNames(t, h, tok)["live_update"] {
 		t.Fatal("disabled node must not list live_update")
 	}
-	h2, tok2, _ := liveHost(t, "grasp", true)
+	h2, tok2, _ := liveHost(t, "react", true)
 	if listedNames(t, h2, tok2)["live_update"] {
-		t.Fatal("grasp must not list live_update")
+		t.Fatal("react must not list live_update")
 	}
 	h3 := NewHost(&memStore{})
 	tok3 := h3.RegisterRun("r1")
@@ -116,5 +116,23 @@ func TestLiveChatBeginToolProtocol(t *testing.T) {
 		if _, isErr := liveCall(t, h, tok, `{"session_id":"sid001","state":"refining","variant":`+variant+`}`); !isErr {
 			t.Fatalf("invalid ordinal %s was accepted", variant)
 		}
+	}
+}
+
+func TestLiveToolsAvailableInDirectGraspDialogue(t *testing.T) {
+	for _, nodeType := range []string{"grasp", "approve"} {
+		t.Run(nodeType, func(t *testing.T) {
+			h, tok, u := liveHost(t, nodeType, true)
+			if !listedNames(t, h, tok)["live_update"] {
+				t.Fatal("enabled Grasp must list live_update")
+			}
+			if txt, isErr := liveCall(t, h, tok, `{"session_id":"sid001","state":"ready"}`); isErr {
+				t.Fatalf("live_update: %s", txt)
+			}
+			u.enabled = false
+			if listedNames(t, h, tok)["live_update"] {
+				t.Fatal("disabled Grasp must not list live_update")
+			}
+		})
 	}
 }

@@ -332,10 +332,10 @@ function addAssignment() {
   props.node.config.assignments.push({ var: '', expr: '' })
 }
 
-/** auto_inject defaults on when the key is missing (legacy graphs). */
+/** Preview injection and Live default on when omitted by legacy graphs. */
 function switchOn(f: FieldSchema): boolean {
   const v = props.node.config?.[f.key]
-  if (f.key === 'auto_inject' && (v === undefined || v === null || v === '')) {
+  if ((f.key === 'auto_inject' || f.key === 'live_variants') && (v === undefined || v === null || v === '')) {
     return true
   }
   return !!v

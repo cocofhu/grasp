@@ -3832,7 +3832,9 @@
       "expiredHint": "Reopen the preview from Grasp to continue the conversation.",
       "networkError": "Could not reach Grasp. Check the connection and try again.",
       "coldHint": "The agent session has ended. Continue the review in Grasp.",
+      "pageCollaboration": "Page collaboration",
       "pageControl": {
+        "shortLabel": "Page control",
         "toggle": "Let the agent operate this page",
         "privacy": "While on, page content the agent reads appears in this conversation and other participants can see it. Use a test account.",
         "unsupported": "The preview page script is out of date. Restart the preview to use this.",
@@ -3844,6 +3846,13 @@
         }
       },
       "live": {
+        "candidateMode": "Page candidates",
+        "candidateShortLabel": "Candidates",
+        "candidateIntro": "Show 3 options on the page after you send a request. Choose one to keep.",
+        "candidateHint": "Send a request to generate 3 preview candidates, then choose and accept. Open candidates use Chat to refine or accept the current version. Turning this off keeps candidates.",
+        "pendingCandidates": "An existing candidate set is working, needs recovery or is not visible. Wait, or recover/discard it first.",
+        "promptTooLong": "Page candidate requests are limited to 2000 characters. Shorten the request and retry.",
+        "previewUnavailable": "Preview Live tools are unavailable. Reopen the preview and retry.",
         "title": "Live variants",
         "ops": {
           "generate": "Generate variants",

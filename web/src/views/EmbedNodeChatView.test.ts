@@ -16,9 +16,9 @@ vi.mock('@/views/PublicGateApprovalView.vue', () => ({
   default: defineComponent({
     props: { embedToken: { type: String, default: '' } },
     emits: ['status', 'events-ready', 'events-closed', 'page-frame'],
-    setup(props, { expose }) {
+    setup(props, { expose, slots }) {
       expose({ addPick: vi.fn(), sendEventsFrame: mocks.sendFrame })
-      return () => h('div', { 'data-testid': 'chat-stub', 'data-token': props.embedToken })
+      return () => h('div', { 'data-testid': 'chat-stub', 'data-token': props.embedToken }, slots['page-control']?.())
     },
   }),
 }))

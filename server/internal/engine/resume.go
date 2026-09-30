@@ -462,6 +462,9 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 				if !e.ReviewSessionReady(runID, nodeID) {
 					return errors.New("澄清进行中或待发送队列非空,请先 Cancel 或等待完成后再结束")
 				}
+				if err := e.checkLiveClosed(runID, nodeID); err != nil {
+					return err
+				}
 				if err := e.ensureSandboxIdleForConfirm(runID, nodeID, abortRunning); err != nil {
 					return err
 				}
@@ -531,7 +534,25 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	logDB(e.db.Save(&conv), runID, "confirm leave pending (force)")
 
 	req := e.nodeReq(c, node)
+	var liveWrap runtime.ReactTurn
+	// Adopted Live edits must reach the working branch before ReactReply's
+	// forced finish retires the Grasp sandbox. Ordinary clarification never
+	// enters this source-edit wrap-up. checkLiveClosed already ran above.
+	if nodereg.IsGrasp(node.Type) && len(e.LiveSessions(runID, nodeID, false)) > 0 {
+		if rp, ok := e.provider.(runtime.ReviewProvider); ok {
+			liveWrap = rp.OfferCommitOnConfirm(context.Background(), req)
+			e.flushMcpCalls(runID, nodeID)
+			e.flushTokenUsage(runID, nodeID, liveWrap.Usage, liveWrap.UsageByModel)
+			if strings.TrimSpace(liveWrap.Msg) != "" {
+				conv.Messages = append(conv.Messages, models.ReactMessage{Role: "agent", Text: liveWrap.Msg,
+					At: time.Now().Format(time.RFC3339), OpID: liveWrap.OpID})
+				logDB(e.db.Save(&conv), runID, "save Grasp Live git wrap-up")
+			}
+		}
+	}
 	t := e.provider.ReactReply(context.Background(), req, conv.Messages, effective, images, force)
+	t.Events = append(append([]models.AcpEvent(nil), liveWrap.Events...), t.Events...)
+	t.Result.Events = append(append([]models.AcpEvent(nil), liveWrap.Events...), t.Result.Events...)
 	agentMsg := models.ReactMessage{Role: "agent", Text: t.Msg,
 		At: time.Now().Format(time.RFC3339), Questions: t.Questions, Forms: t.Forms,
 		Interrupted: t.Interrupted, OpID: t.OpID}

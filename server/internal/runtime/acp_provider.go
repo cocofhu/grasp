@@ -160,9 +160,11 @@ func absorbChat(usage **models.TokenUsage, byModel *models.TokenUsageByModel, ev
 // reactSession keeps a sandbox + ACP connection alive across the human
 // think-time of a multi-turn react dialogue (open → reply → … → done).
 type reactSession struct {
-	sb   *sandbox.Sandbox
-	acp  *sandbox.ACPClient
-	home string // temp /root/.cursor host dir to clean up
+	sb           *sandbox.Sandbox
+	acp          *sandbox.ACPClient
+	home         string // temp /root/.cursor host dir to clean up
+	liveMu       sync.Mutex
+	liveBaseline liveMarkerBaseline
 }
 
 func newBaseACPProvider(host *mcp.Host, opts Options, backend AcpBackend) ExecProvider {

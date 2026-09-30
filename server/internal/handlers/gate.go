@@ -136,7 +136,7 @@ func (h *Handlers) ReactReply(c *gin.Context) {
 	}
 	runID, nodeID := c.Param("id"), c.Param("nodeId")
 	if b.Live != nil {
-		sess, err := h.Eng.ReactLiveAs(sessionTurnOwner(c), runID, nodeID, *b.Live)
+		sess, err := h.Eng.ReactLiveWithAttachmentsAs(sessionTurnOwner(c), runID, nodeID, *b.Live, b.Images, b.Annotations)
 		if err != nil {
 			writeReactReplyError(c, err)
 			return

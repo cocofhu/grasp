@@ -2,7 +2,7 @@ import { reactive, type InjectionKey } from 'vue'
 import type { LiveMark, LivePoint } from '../../liveoverlay/annotations'
 
 /**
- * Live variants: the preview page asks the parked app_preview agent for N
+ * Live variants: the preview page asks the parked preview-capable agent for N
  * variants of a picked element; the agent writes them into source and HMR
  * shows them. These helpers are the drawer side of that protocol. Message
  * names must match preview-pick.js / the live overlay bundle.
@@ -73,6 +73,7 @@ export type LiveElement = {
 export type LiveEvent = {
   op: LiveOp
   sid: string
+  scope?: 'page'
   action?: string
   prompt?: string
   count?: number
@@ -207,6 +208,10 @@ export function parseEmbedLiveMessage(data: unknown): EmbedLiveMessage | null {
   if (typeof m.op !== 'string' || !(LIVE_OPS as readonly string[]).includes(m.op)) return null
   const reqId = str(m.reqId, 64) || ''
   const ev: LiveEvent = { op: m.op as LiveOp, sid: m.sid }
+  if (m.scope !== undefined) {
+    if (m.scope !== 'page' || ev.op !== 'generate') return null
+    ev.scope = 'page'
+  }
   const action = str(m.action, 32)
   if (action) ev.action = action
   const prompt = str(m.prompt, 2000)

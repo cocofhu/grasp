@@ -200,8 +200,9 @@ type ReactTurn struct {
 	// (container create, image pull, connect handshake). Distinct from a normal
 	// clarify pause where the agent raises Questions via ask_question.
 	SetupErr error
-	// Err is set when Done is true but the finish path failed (e.g. a re-prompt
-	// nudge hit the per-turn chat deadline). Distinct from SetupErr.
+	// Err records execution/finish failures (including non-Done Live turns
+	// whose partial source edits must not be treated as accepted). Distinct
+	// from SetupErr.
 	Err error
 	// Interrupted marks a turn that did not finish on its own (sandbox or
 	// platform timeout, cancel): Msg is partial and must not read as 已完成.
