@@ -1414,7 +1414,7 @@
           "fullDesc": "Hot session: reply / cancel / confirm (and reject). Default; matches today’s behavior.",
           "react_only": "ReAct chat only",
           "reactOnlyChip": "ReAct only",
-          "react_onlyDesc": "Reply and cancel allowed; confirm / reject advance is blocked."
+          "react_onlyDesc": "Reply and cancel allowed; confirm / reject advance and Live variant writes are blocked."
         },
         "regenInheritsHint": "Regen inherits the current preset",
         "linkLabel": "Share link",
@@ -3875,11 +3875,16 @@
         "inplace": "In place",
         "accept": "Accept",
         "discard": "Discard",
+        "retry": "Retry",
+        "dismissSteer": "Dismiss failed adjustment",
+        "retryAccept": "Retry adoption",
+        "steerPartial": "Dismiss clears the failure; any page changes already made are kept.",
         "goto": "Go to variant {n}",
         "openInPreview": "Switch, accept or discard these variants on the preview page.",
         "discardAll": "Discard all",
-        "discardAllDone": "Asked to discard {n} variant sets",
-        "openSessions": "{n} Live variant sets are not accepted or discarded yet",
+        "cleanupAll": "Clear unfinished requests",
+        "discardAllDone": "Requested cleanup of {n} Live request(s)",
+        "openSessions": "{n} Live requests are unfinished",
         "failed": "Not finished: {error}"
       }
     },

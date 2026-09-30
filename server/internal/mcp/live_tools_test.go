@@ -99,3 +99,22 @@ func TestLiveUpdateValidation(t *testing.T) {
 		t.Fatal("nil session result")
 	}
 }
+
+func TestLiveChatBeginToolProtocol(t *testing.T) {
+	h, tok, u := liveHost(t, "app_preview", true)
+	u.sess = &models.LiveSession{ID: "sid001", State: models.LiveStateRefining, Selected: 2}
+	text, isErr := liveCall(t, h, tok, `{"session_id":"sid001","state":"refining","variant":2}`)
+	if isErr || !strings.Contains(text, "只修改变体 2") || u.got[0].Variant != 2 {
+		t.Fatalf("explicit ordinal missing: text=%q report=%+v isErr=%v", text, u.got, isErr)
+	}
+	u.sess = &models.LiveSession{ID: "sid001", State: models.LiveStateAccepting, Selected: 1, FinalParams: map[string]any{"gap": "24px"}}
+	text, isErr = liveCall(t, h, tok, `{"session_id":"sid001","state":"accepting"}`)
+	if isErr || !strings.Contains(text, "变体 1") || !strings.Contains(text, `"gap":"24px"`) {
+		t.Fatalf("adoption snapshot missing: %q %v", text, isErr)
+	}
+	for _, variant := range []string{"0", "1.5", "9", `"2"`} {
+		if _, isErr := liveCall(t, h, tok, `{"session_id":"sid001","state":"refining","variant":`+variant+`}`); !isErr {
+			t.Fatalf("invalid ordinal %s was accepted", variant)
+		}
+	}
+}

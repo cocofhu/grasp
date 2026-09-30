@@ -68,7 +68,7 @@ func FilterPublicBrokerFrame(raw []byte, producerID string, imageBase int) ([]by
 // (never owner or run id).
 var publicLiveFields = []string{
 	"sid", "mode", "action", "prompt", "count", "selector", "summary", "url",
-	"state", "file", "variants", "selected", "error", "createdAt", "updatedAt",
+	"state", "file", "variants", "selected", "retryAccept", "error", "createdAt", "updatedAt",
 }
 
 func marshalPublicLiveFrame(m map[string]any) ([]byte, bool) {

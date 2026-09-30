@@ -89,4 +89,20 @@ describe('LoginView copy', () => {
     expect(wrapper.text()).not.toContain('静态账号')
     wrapper.unmount()
   })
+
+  it('sanitizes login response redirect before navigating', async () => {
+    authApiMocks.login.mockResolvedValue({
+      username: 'admin',
+      expires_at: '2099-01-01T00:00:00Z',
+      redirect: 'https://evil.example/phish',
+    })
+    const wrapper = mountLogin('zh-CN')
+    await flushPromises()
+    await wrapper.find('#username').setValue('admin')
+    await wrapper.find('#password').setValue('x')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.vm.$route.path).toBe('/')
+    wrapper.unmount()
+  })
 })

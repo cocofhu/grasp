@@ -74,6 +74,7 @@ describe('Live overlay', () => {
     ;(q('[data-act="pick"]') as HTMLButtonElement).click()
     expect(document.documentElement.hasAttribute('data-grasp-live-picking')).toBe(true)
     const card = document.getElementById('card')!
+    card.getBoundingClientRect = () => new DOMRect(10, 10, 300, 180)
     card.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
     expect(card.hasAttribute('data-grasp-live-hover')).toBe(true)
     card.click()
@@ -101,6 +102,7 @@ describe('Live overlay', () => {
 
   it('requires a prompt for freeform and insert, and supports Esc', () => {
     document.body.innerHTML = '<main><section id="card">x</section></main>'
+    document.getElementById('card')!.getBoundingClientRect = () => new DOMRect(10, 10, 300, 180)
     make()
     overlay!.toggle()
     ;(q('[data-act="insert"]') as HTMLButtonElement).click()
@@ -250,5 +252,53 @@ describe('Live overlay', () => {
     document.getElementById('m')!.innerHTML = wrapperHtml()
     await flush()
     expect(q('[data-sw="sid001"]')).not.toBeNull()
+  })
+
+  it('offers retry and non-editing dismissal for a failed whole-page adjustment', () => {
+    document.body.innerHTML = '<main>partial adjustment</main>'
+    make()
+    overlay!.toggle()
+    sessions([{ sid: 'steer01', mode: 'steer', state: 'failed', prompt: 'Make it quieter', url: `${location.origin}/pricing`, error: 'compile failed' }])
+    expect(q('.hint')?.textContent).toContain(T.steerPartial)
+    ;(q('[data-act="retry"]') as HTMLButtonElement).click()
+    const retry = posted.find((m) => m.op === 'steer')!
+    expect(retry).toMatchObject({ sid: 'steer01', prompt: 'Make it quieter' })
+    expect(q('[data-act="retry"]')).toBeNull()
+    overlay!.onDrawer({ type: LIVE_ACK, reqId: retry.reqId, ok: false, error: 'still failed' })
+    expect(q('[data-act="retry"]')).not.toBeNull()
+    ;(q('[data-act="discard"]') as HTMLButtonElement).click()
+    const discard = posted.find((m) => m.op === 'discard')!
+    expect(discard).toMatchObject({ sid: 'steer01' })
+    overlay!.onDrawer({ type: LIVE_ACK, reqId: discard.reqId, ok: true, session: { sid: 'steer01', mode: 'steer', state: 'discarded' } })
+    expect(q('.hint')).toBeNull()
+    expect(document.querySelector('main')!.textContent).toBe('partial adjustment')
+  })
+
+  it('retries interrupted adoption without a wrapper or replacing persisted params', () => {
+    document.body.innerHTML = '<main>adopted markup pending cleanup</main>'
+    make()
+    overlay!.toggle()
+    sessions([{ sid: 'sid001', mode: 'replace', state: 'failed', selected: 2, retryAccept: true, error: 'cleanup interrupted' }])
+    expect(q('[data-act="retry-accept"]')?.textContent).toBe(T.retryAccept)
+    // Ordinary acceptance stays locked without a ready, mounted candidate.
+    overlay!.onDrawer({ type: LIVE_CMD, sid: 'sid001', cmd: 'accept', variant: 1 })
+    expect(posted.some((m) => m.op === 'accept')).toBe(false)
+    ;(q('[data-act="retry-accept"]') as HTMLButtonElement).click()
+    const first = posted.find((m) => m.op === 'accept')!
+    expect(first).toMatchObject({ sid: 'sid001', variant: 2 })
+    expect(first).not.toHaveProperty('params')
+    // An HTTP failure must leave the same explicit recovery available.
+    overlay!.onDrawer({ type: LIVE_ACK, reqId: first.reqId, ok: false, error: 'offline' })
+    expect(q('[data-act="retry-accept"]')).not.toBeNull()
+    overlay!.onDrawer({ type: LIVE_CMD, sid: 'sid001', cmd: 'retry-accept', variant: 1 })
+    const second = posted.filter((m) => m.op === 'accept').at(-1)!
+    expect(second).toMatchObject({ variant: 2 })
+    expect(second).not.toHaveProperty('params')
+    overlay!.onDrawer({ type: LIVE_ACK, reqId: second.reqId, ok: true, session: { sid: 'sid001', mode: 'replace', state: 'accepted', selected: 2 } })
+    expect(q('[data-act="retry-accept"]')).toBeNull()
+    expect(document.querySelector('main')?.textContent).toBe('adopted markup pending cleanup')
+    sessions([{ sid: 'sid002', mode: 'replace', state: 'failed', selected: 1 }])
+    overlay!.onDrawer({ type: LIVE_CMD, sid: 'sid002', cmd: 'retry-accept' })
+    expect(posted.filter((m) => m.op === 'accept')).toHaveLength(2)
   })
 })

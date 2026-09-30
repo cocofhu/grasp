@@ -379,6 +379,10 @@ func writeReactReplyError(c *gin.Context, err error) {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "code": "live_open"})
 		return
 	}
+	if errors.Is(err, engine.ErrLiveScanFailed) {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "code": "live_scan_failed"})
+		return
+	}
 	if errors.Is(err, engine.ErrSandboxBusy) {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "code": "sandbox_busy"})
 		return

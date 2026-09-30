@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"sort"
 	"strings"
@@ -22,7 +23,9 @@ type LiveMarkerScanner interface {
 	InstallLiveGuard(ctx context.Context, runID, nodeID string)
 }
 
-var liveMarkerPattern = regexp.MustCompile(models.LiveMarkerAttr + `="([A-Za-z0-9_-]+)"`)
+var liveMarkerPattern = regexp.MustCompile(models.LiveMarkerAttr + `[[:space:]]*=[[:space:]]*\{?[[:space:]]*["']([A-Za-z0-9_-]+)["']`)
+var liveAssignmentPattern = regexp.MustCompile(models.LiveMarkerAttr + `[[:space:]]*=`)
+var liveVariantAssignmentPattern = regexp.MustCompile(`data-grasp-variant[[:space:]]*=`)
 
 // liveScanExcludes are build output and dependency dirs a marker in source
 // never needs to be looked for in.
@@ -34,7 +37,7 @@ const liveScanExcludes = "--exclude-dir=node_modules --exclude-dir=.git --exclud
 // recognises its own hook and never overwrites someone else's.
 const liveGuardHook = `#!/bin/sh
 # grasp-live-guard
-if git diff --cached -U0 | grep -E '^\+.*data-grasp-(live|variant)=' >/dev/null 2>&1; then
+if git diff --cached -U0 | grep -E '^\+.*data-grasp-(live|variant)[[:space:]]*=' >/dev/null 2>&1; then
   echo "grasp: 提交里有 Live 变体预览标记(data-grasp-live / data-grasp-variant),请先采用或放弃变体" >&2
   exit 1
 fi
@@ -59,13 +62,32 @@ func (c *acpProvider) LiveMarkerSIDs(ctx context.Context, runID, nodeID string) 
 	if !ok {
 		return nil, false, nil
 	}
-	script := "grep -rIohE " + liveScanExcludes + " " +
-		shellArg(models.LiveMarkerAttr+`="[A-Za-z0-9_-]+"`) + " " + shellArg(ws) + " 2>/dev/null | sort -u | head -n 64; true"
-	out, err := sess.sb.ExecScript(ctx, 30*time.Second, "bash", script)
+	out, err := sess.sb.ExecScript(ctx, 30*time.Second, "bash", liveScanScript(ws))
 	if err != nil {
 		return nil, true, err
 	}
+	// A dynamic/malformed wrapper or an orphan variant is still preview code.
+	// Do not declare the workspace clean when its session cannot be resolved.
+	if len(liveAssignmentPattern.FindAllStringIndex(out, -1)) != len(liveMarkerPattern.FindAllStringIndex(out, -1)) {
+		return nil, true, errors.New("Live 标记无法解析,请清理源码中的预览包装后重试")
+	}
+	if liveVariantAssignmentPattern.MatchString(out) && !liveAssignmentPattern.MatchString(out) {
+		return nil, true, errors.New("源码中仍有未清理的 Live 变体标记")
+	}
 	return parseLiveMarkerSIDs(out), true, nil
+}
+
+// grep status 1 is a successful scan with no matches; status 2 is a read or
+// execution failure. Avoid pipelines and truncation that can mask those errors.
+func liveScanScript(ws string) string {
+	return "[ -d " + shellArg(ws) + " ] || { echo 'Live workspace is unavailable' >&2; exit 2; }\n" +
+		"scan_files=$(mktemp) || exit 2\ntrap 'rm -f \"$scan_files\"' EXIT\n" +
+		"grep -rIlZE " + liveScanExcludes + " " +
+		shellArg(`data-grasp-(live|variant)[[:space:]]*=`) + " " + shellArg(ws) + " >\"$scan_files\"\n" +
+		"scan_status=$?\ncase \"$scan_status\" in 0|1) ;; *) exit \"$scan_status\";; esac\n" +
+		// Read complete matching files so formatter-split attribute values still
+		// resolve. NUL-delimited paths preserve whitespace and newlines safely.
+		"while IFS= read -r -d '' scan_file; do\n  cat -- \"$scan_file\" || exit 2\n  printf '\\n'\ndone <\"$scan_files\"\n"
 }
 
 func parseLiveMarkerSIDs(out string) []string {

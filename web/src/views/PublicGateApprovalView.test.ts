@@ -341,6 +341,25 @@ describe('PublicGateApprovalView workbench', () => {
     expect(w.find('[data-testid="public-gate-cold-hint"]').exists()).toBe(false)
   })
 
+  it('react_only does not send Live writes', async () => {
+    window.location.hash = `#t=${'rl'.repeat(32)}`
+    mocks.preview.mockResolvedValue({
+      status: 'active',
+      kind: 'review',
+      nonce: 'n-rl',
+      reactSessionAlive: true,
+      permissionPreset: 'react_only',
+      actions: { reply: 'reply', cancel: 'cancel' },
+    })
+    mocks.reply.mockClear()
+    const w = mountView()
+    await flushPromises()
+    const vm = w.vm as { sendLive?: (ev: { op: string; sid: string }) => Promise<unknown>; discardAllLive?: () => Promise<number> }
+    expect(await vm.sendLive?.({ op: 'discard', sid: 'sid001' })).toBeNull()
+    expect(await vm.discardAllLive?.()).toBe(0)
+    expect(mocks.reply).not.toHaveBeenCalled()
+  })
+
   it('human_gate requires name and comment before confirm or reject', async () => {
     window.location.hash = `#t=${'ff'.repeat(32)}`
     mocks.preview.mockResolvedValue({

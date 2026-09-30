@@ -179,4 +179,12 @@ describe('AppSidebar', () => {
     expect(footer.classes()).toContain('flex-col')
     wrapper.unmount()
   })
+
+  it('logout clears leftover embed drawer tokens', async () => {
+    localStorage.setItem('grasp.embed.run-1.n1', JSON.stringify({ token: 'gse_x', expiresAt: '2099-01-01T00:00:00Z' }))
+    const wrapper = mountSidebar()
+    await wrapper.find('[data-testid="sidebar-logout"]').trigger('click')
+    expect(localStorage.getItem('grasp.embed.run-1.n1')).toBeNull()
+    wrapper.unmount()
+  })
 })

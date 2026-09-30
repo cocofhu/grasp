@@ -1,6 +1,7 @@
+import { createAnnotations } from './annotations'
 import { describeElement, type LiveElement } from './describe'
 import { fmt, strings, type Strings } from './i18n'
-import { applyParam, paramDefault, scanWrappers, showVariant, type LiveParam, type Wrapper } from './scan'
+import { applyParam, paramDefault, scanWrappers, setVariantVisible, showVariant, type LiveParam, type Wrapper } from './scan'
 import { OVERLAY_CSS, PAGE_CSS } from './styles'
 import { dropView, getView, putView, type Mode, type SessionView } from './viewStore'
 
@@ -31,8 +32,11 @@ type Session = {
   state: string
   selector?: string
   summary?: string
+  prompt?: string
   url?: string
   error?: string
+  selected?: number
+  retryAccept?: boolean
   variants?: Array<{ n: number; label?: string }>
   updatedAt?: string
 }
@@ -56,7 +60,7 @@ export const LIVE_ACK = 'grasp-embed:live-ack'
 export const LIVE_SESSIONS = 'grasp-embed:live-sessions'
 export const LIVE_CMD = 'grasp-embed:live-cmd'
 
-const ACTIONS = ['bolder', 'quieter', 'polish', 'typeset', 'colorize', 'layout', 'distill', 'adapt', 'freeform']
+const ACTIONS = ['bolder', 'quieter', 'polish', 'typeset', 'colorize', 'layout', 'distill', 'adapt', 'animate', 'delight', 'overdrive', 'freeform']
 const BUSY = new Set(['generating', 'refining', 'accepting', 'discarding'])
 const OPEN = new Set(['generating', 'ready', 'refining', 'accepting', 'discarding', 'failed'])
 const MOUNT_GRACE_MS = 5000
@@ -118,7 +122,8 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
   let focusSid = ''
   const sessions = new Map<string, Session>()
   const views = new Map<string, SessionView>()
-  const pending = new Map<string, { sid: string; op: string }>()
+  const postedViews = new Map<string, string>()
+  const pending = new Map<string, { sid: string; op: string; previousState?: string }>()
   const mountWatch = new Map<string, { key: string; since: number; sent: boolean }>()
   let wrappers: Wrapper[] = []
 
@@ -129,9 +134,10 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
   shadow.innerHTML =
     `<style>${OVERLAY_CSS}</style><div class="root">` +
     '<div data-layer="frames"></div><div data-layer="switchers"></div>' +
-    '<div data-layer="panel"></div><div data-layer="hint"></div><div data-layer="bar"></div></div>'
+    '<div data-layer="annotations"></div><div data-layer="panel"></div><div data-layer="hint"></div><div data-layer="bar"></div></div>'
   const root = shadow.querySelector('.root') as HTMLElement
   const layer = (name: string) => shadow.querySelector(`[data-layer="${name}"]`) as HTMLElement
+  const annotations = createAnnotations(layer('annotations'), T, () => renderPanel())
   const pageStyle = document.createElement('style')
   pageStyle.setAttribute('data-grasp-live-overlay', '')
   pageStyle.textContent = PAGE_CSS
@@ -157,9 +163,34 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     const v = { ...viewOf(sid), ...patch }
     views.set(sid, v)
     putView(sid, v)
-    opts.post({ type: LIVE_MSG, op: 'state', sid, current: v.current, mode: v.mode })
     applyWrappers()
+    syncViews()
     renderSwitchers()
+  }
+
+  function selectedParams(w: Wrapper | undefined, v: SessionView): Record<string, string> | undefined {
+    const variant = w?.variants.find((x) => x.n === v.current)
+    const vals = v.params[String(v.current)] || {}
+    const params: Record<string, string> = {}
+    for (const p of variant?.params || []) {
+      const val = vals[p.id] ?? paramDefault(p)
+      params[p.id] = p.kind === 'range' ? `${val}${p.unit || ''}` : String(val)
+    }
+    return Object.keys(params).length ? params : undefined
+  }
+
+  /** Publish the actual mounted view, including after reload, reconnect and HMR. */
+  function syncViews() {
+    for (const s of sessions.values()) {
+      if (s.mode === 'steer') continue
+      const w = wrappers.find((x) => x.sid === s.sid)
+      const v = viewOf(s.sid, w)
+      const current = OPEN.has(s.state) && w?.variants.some((x) => x.n === v.current) ? v.current : 0
+      const params = current ? selectedParams(w, v) : undefined
+      const message = { type: LIVE_MSG, op: 'state', sid: s.sid, current, mode: v.mode, ...(params ? { params } : {}) }
+      const signature = JSON.stringify(message)
+      if (postedViews.get(s.sid) !== signature && opts.post(message)) postedViews.set(s.sid, signature)
+    }
   }
 
   function upsert(raw: unknown) {
@@ -182,7 +213,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       opts.notice(T.noDrawer)
       return false
     }
-    pending.set(reqId, { sid, op })
+    pending.set(reqId, { sid, op, previousState: sessions.get(sid)?.state })
     return true
   }
 
@@ -208,8 +239,8 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       if (v.mode === 'compare' && !hidden) {
         const wide = (wrapperRect(w)?.width ?? 0) > window.innerWidth * 0.6
         w.el.setAttribute('data-grasp-compare', wide ? 'stack' : 'grid')
-        if (w.original) w.original.hidden = false
-        for (const x of w.variants) x.el.hidden = false
+        if (w.original) setVariantVisible(w.original, true)
+        for (const x of w.variants) setVariantVisible(x.el, true)
       } else {
         w.el.removeAttribute('data-grasp-compare')
         showVariant(w, v.current)
@@ -224,6 +255,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
   function rescan() {
     wrappers = scanWrappers()
     applyWrappers()
+    syncViews()
     checkMounts()
     renderSwitchers()
     renderBar()
@@ -299,7 +331,15 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       }
     }
     const away = openSessions().filter((s) => !wrappers.some((w) => w.sid === s.sid) && pathOf(s.url) && pathOf(s.url) !== location.pathname)
-    layer('hint').innerHTML = away.length
+    const failures = [...sessions.values()].filter((s) => s.state === 'failed' && !wrappers.some((w) => w.sid === s.sid))
+    layer('hint').innerHTML = failures.length
+      ? `<div class="hint" role="status">${failures.map((s) =>
+          `<div>${esc(T.failed)}${s.error ? `: ${esc(s.error)}` : ''} ` +
+          (s.mode === 'steer' ? `<button type="button" data-act="retry" data-sid="${esc(s.sid)}">${esc(T.retry)}</button>` : '') +
+          (canRetryAdoption(s) ? `<button type="button" data-act="retry-accept" data-sid="${esc(s.sid)}">${esc(T.retryAccept)}</button>` : '') +
+          `<button type="button" data-act="discard" data-sid="${esc(s.sid)}">${esc(s.mode === 'steer' ? T.dismissSteer : T.discard)}</button>` +
+          (s.mode === 'steer' ? `<div>${esc(T.steerPartial)}</div>` : '') + '</div>').join('')}</div>`
+      : away.length
       ? `<div class="hint" role="status">${esc(fmt(T.pending, { n: away.length, path: pathOf(away[0].url) }))} ` +
         `<button type="button" data-act="goto-url" data-sid="${esc(away[0].sid)}">→</button></div>`
       : picking
@@ -309,6 +349,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
 
   function renderPanel() {
     const el = layer('panel')
+    annotations.setTarget(open && panel ? panel.el : null)
     if (!panel || !open) {
       el.innerHTML = ''
       return
@@ -337,6 +378,11 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       pos +
       `<textarea data-input="prompt" rows="2" placeholder="${esc(needPrompt ? T.promptRequired : T.prompt)}" aria-label="${esc(T.prompt)}">${esc(p.prompt)}</textarea>` +
       `<textarea data-input="notes" rows="1" placeholder="${esc(T.notes)}" aria-label="${esc(T.notes)}">${esc(p.notes)}</textarea>` +
+      `<div class="row"><button type="button" class="chip" data-act="mark-draw" aria-pressed="${annotations.mode === 'draw'}"${annotations.count >= 8 ? ' disabled' : ''}>${esc(T.markDraw)}</button>` +
+      `<button type="button" class="chip" data-act="mark-note" aria-pressed="${annotations.mode === 'note'}"${annotations.count >= 8 ? ' disabled' : ''}>${esc(T.markNote)}</button>` +
+      `<button type="button" data-act="mark-undo"${!annotations.count ? ' disabled' : ''}>${esc(T.markUndo)}</button>` +
+      `<button type="button" data-act="mark-clear"${!annotations.count ? ' disabled' : ''}>${esc(T.markClear)}</button></div>` +
+      (annotations.mode ? `<div class="label" role="status">${esc(T.markHint)}</div>` : '') +
       `<div class="row"><span class="label">${esc(T.count)}</span>${counts}<span class="label">${esc(T.display)}</span>${modes}</div>` +
       `<div class="row"><button type="button" data-act="cancel-panel">${esc(T.cancel)}</button>` +
       `<button type="button" class="go" data-act="go">${esc(T.go)}</button></div>` +
@@ -345,6 +391,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
   }
 
   function positionPanel() {
+    annotations.layout()
     const box = layer('panel').firstElementChild as HTMLElement | null
     if (!box || !panel) return
     const r = panel.el.getBoundingClientRect()
@@ -389,7 +436,11 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
             (known && !busy
               ? it.n === 0
                 ? `<button type="button" data-act="discard" data-sid="${esc(w.sid)}">${esc(T.keepOriginal)}</button>`
-                : `<button type="button" class="accept" data-act="accept" data-sid="${esc(w.sid)}" data-n="${it.n}">${esc(T.choose)}</button>`
+                : s?.state === 'ready'
+                  ? `<button type="button" class="accept" data-act="accept" data-sid="${esc(w.sid)}" data-n="${it.n}">${esc(T.choose)}</button>`
+                  : canRetryAdoption(s) && s?.selected === it.n
+                    ? `<button type="button" class="accept" data-act="retry-accept" data-sid="${esc(w.sid)}">${esc(T.retryAccept)}</button>`
+                    : ''
               : '') +
             (it.n ? `<button type="button" data-act="inplace" data-sid="${esc(w.sid)}" data-n="${it.n}">${esc(T.viewInPlace)}</button>` : '') +
             '</div>'
@@ -412,6 +463,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
         `<button type="button" data-act="compare" data-sid="${esc(w.sid)}"${busy ? ' disabled' : ''}>${esc(T.sideBySide)}</button>` +
         `<button type="button" data-act="discard" data-sid="${esc(w.sid)}" aria-label="${esc(T.discard)}" title="${esc(known ? T.discard : T.viewOnly)}"${busy || !known ? ' disabled' : ''}>✕</button>` +
         `<button type="button" class="accept" data-act="accept" data-sid="${esc(w.sid)}" data-n="${cur?.n ?? ''}"${busy || !known || !cur || s?.state !== 'ready' ? ' disabled' : ''}>${esc(T.accept)}</button>` +
+        (canRetryAdoption(s) && !busy ? `<button type="button" class="accept" data-act="retry-accept" data-sid="${esc(w.sid)}">${esc(T.retryAccept)}</button>` : '') +
         '</div>'
       if (cur && cur.params.length && !busy) html += paramsRow(w.sid, cur.n, cur.params, v)
     }
@@ -547,7 +599,11 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
 
   function setPicking(kind: PickKind | null) {
     picking = kind
-    if (kind) opts.stopPick()
+    if (kind) {
+      opts.stopPick()
+      panel = null
+      renderPanel()
+    }
     clearHover()
     if (kind) document.documentElement.setAttribute('data-grasp-live-picking', '')
     else document.documentElement.removeAttribute('data-grasp-live-picking')
@@ -645,8 +701,16 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
   function go() {
     if (!panel) return
     const p = panel
+    const rect = p.el.getBoundingClientRect()
+    if (!p.el.isConnected || !rect.width || !rect.height) {
+      opts.notice(T.targetChanged)
+      panel = null
+      renderPanel()
+      return
+    }
     const needPrompt = p.kind === 'insert' || p.action === 'freeform'
-    if (needPrompt && !p.prompt.trim() && !p.notes.trim()) {
+    const marks = annotations.snapshot()
+    if (needPrompt && !p.prompt.trim() && !p.notes.trim() && !marks.some((m) => m.text?.trim())) {
       opts.notice(T.promptRequired)
       return
     }
@@ -660,12 +724,14 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       url: location.href,
       position: p.kind === 'insert' ? p.position : undefined,
       notes,
+      marks: marks.length ? marks : undefined,
     })
     if (!ok) return
     const v: SessionView = { current: 1, mode: p.mode, params: {} }
     views.set(sid, v)
     putView(sid, v)
     sessions.set(sid, { sid, mode: p.kind, state: 'generating', selector: p.desc.selector, url: location.href })
+    syncViews()
     focusSid = sid
     panel = null
     opts.notice(T.sent, true)
@@ -677,6 +743,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     if (!text) return
     const sid = newSid()
     if (request('steer', sid, { prompt: text, url: location.href })) {
+      sessions.set(sid, { sid, mode: 'steer', state: 'generating', prompt: text, url: location.href })
       steerText = ''
       opts.notice(T.sent, true)
       renderBar()
@@ -694,16 +761,11 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
   }
 
   function accept(sid: string, n: number) {
-    if (isBusy(sid) || !n) return
+    if (isBusy(sid) || !n || sessions.get(sid)?.state !== 'ready') return
     const w = wrappers.find((x) => x.sid === sid)
-    const variant = w?.variants.find((x) => x.n === n)
-    const vals = viewOf(sid, w).params[String(n)] || {}
-    const params: Record<string, string> = {}
-    for (const p of variant?.params || []) {
-      const val = vals[p.id] ?? paramDefault(p)
-      params[p.id] = p.kind === 'range' ? `${val}${p.unit || ''}` : String(val)
-    }
-    if (request('accept', sid, { variant: n, params: Object.keys(params).length ? params : undefined })) {
+    if (!w?.variants.some((x) => x.n === n)) return
+    const params = selectedParams(w, { ...viewOf(sid, w), current: n })
+    if (request('accept', sid, { variant: n, params })) {
       const s = sessions.get(sid)
       if (s) s.state = 'accepting'
       renderSwitchers()
@@ -725,6 +787,29 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     }
   }
 
+  function retry(sid: string) {
+    const s = sessions.get(sid)
+    if (!s || s.mode !== 'steer' || s.state !== 'failed' || isBusy(sid)) return
+    if (request('steer', sid, { prompt: s.prompt, url: s.url })) {
+      s.state = 'generating'
+      renderAll()
+    }
+  }
+
+  function canRetryAdoption(s: Session | undefined): boolean {
+    return !!s && s.state === 'failed' && s.retryAccept === true && Number.isInteger(s.selected) && (s.selected ?? 0) > 0
+  }
+
+  function retryAdoption(sid: string) {
+    const s = sessions.get(sid)
+    if (!s || !canRetryAdoption(s) || isBusy(sid)) return
+    // Recovery reuses the server's persisted selection and final params, even after HMR removed the wrapper.
+    if (request('accept', sid, { variant: s.selected })) {
+      s.state = 'accepting'
+      renderAll()
+    }
+  }
+
   function pendingFor(sid: string, op: string): boolean {
     for (const p of pending.values()) if (p.sid === sid && p.op === op) return true
     return false
@@ -737,6 +822,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     views.set(sid, { ...v, params })
     putView(sid, { ...v, params })
     applyWrappers()
+    syncViews()
   }
 
   function startMic() {
@@ -836,6 +922,19 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
           renderPanel()
         }
         break
+      case 'mark-draw':
+      case 'mark-note':
+        annotations.setMode(act === 'mark-draw' ? 'draw' : 'note')
+        renderPanel()
+        break
+      case 'mark-undo':
+        annotations.undo()
+        renderPanel()
+        break
+      case 'mark-clear':
+        annotations.clear()
+        renderPanel()
+        break
       case 'cancel-panel':
         panel = null
         renderPanel()
@@ -860,6 +959,12 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
         break
       case 'discard':
         discard(sid)
+        break
+      case 'retry':
+        retry(sid)
+        break
+      case 'retry-accept':
+        retryAdoption(sid)
         break
     }
   })
@@ -923,7 +1028,10 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     if (!msg || typeof msg !== 'object') return
     const m = msg as Record<string, unknown>
     if (m.type === LIVE_SESSIONS) {
-      if (m.replace === true) sessions.clear()
+      if (m.replace === true) {
+        sessions.clear()
+        postedViews.clear()
+      }
       if (Array.isArray(m.sessions)) for (const s of m.sessions) upsert(s)
       // A refresh lands here with the page's own view restored from sessionStorage.
       for (const s of sessions.values()) if (OPEN.has(s.state)) viewOf(s.sid)
@@ -941,7 +1049,14 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
         if (p && (p.op === 'generate' || p.op === 'insert') && !m.session) sessions.delete(p.sid)
         if (p && (p.op === 'accept' || p.op === 'discard')) {
           const s = sessions.get(p.sid)
-          if (s && (s.state === 'accepting' || s.state === 'discarding') && !m.session) s.state = 'ready'
+          if (s && (s.state === 'accepting' || s.state === 'discarding') && !m.session) s.state = p.previousState || 'ready'
+        }
+        if (p?.op === 'steer' && !m.session) {
+          const s = sessions.get(p.sid)
+          if (s) {
+            s.state = 'failed'
+            s.error = typeof m.error === 'string' ? m.error : T.failed
+          }
         }
       }
       rescan()
@@ -969,6 +1084,12 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
         case 'discard':
           discard(sid)
           break
+        case 'retry':
+          retry(sid)
+          break
+        case 'retry-accept':
+          retryAdoption(sid)
+          break
       }
     }
   }
@@ -985,9 +1106,10 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
 
   function setEnabled(on: boolean) {
     enabled = on
+    postedViews.clear()
     if (on) {
       mount()
-      observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-grasp-live', 'data-grasp-variant'] })
+      observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-grasp-live', 'data-grasp-variant', 'data-grasp-params', 'data-grasp-variant-label'] })
       rescan()
     } else {
       observer.disconnect()
