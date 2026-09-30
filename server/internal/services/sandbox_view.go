@@ -15,28 +15,41 @@ import (
 // acpHostPort resolves the live ACP host/port for a sandbox, preferring the
 // in-memory connection and falling back to attaching to the running container.
 func (s *SandboxService) acpHostPort(ctx context.Context, id uint) (string, int, error) {
+	host, port, _, err := s.acpConnection(ctx, id)
+	return host, port, err
+}
+
+// acpConnection keeps the bridge secret with its resolved address. The persisted
+// token survives platform restarts, when there is no in-memory ACP connection.
+func (s *SandboxService) acpConnection(ctx context.Context, id uint) (string, int, string, error) {
 	row, err := s.Get(id)
 	if err != nil {
-		return "", 0, err
+		return "", 0, "", err
 	}
 	s.mu.Lock()
 	ls := s.live[id]
 	s.mu.Unlock()
-	host, port := row.Host, row.ACPPort
+	host, port, password := row.Host, row.ACPPort, row.Token
 	if ls != nil && ls.sb != nil {
 		host, port = ls.sb.Host, ls.sb.Port
+		if password == "" {
+			password = ls.sb.Password
+		}
 	}
 	if host == "" || port == 0 {
 		if s.mgr.Status(ctx, row.Name) != "running" {
-			return "", 0, fmt.Errorf("sandbox container 不在运行")
+			return "", 0, "", fmt.Errorf("sandbox container 不在运行")
 		}
 		sb, aerr := s.mgr.Attach(ctx, row.Name)
 		if aerr != nil {
-			return "", 0, fmt.Errorf("attach: %w", aerr)
+			return "", 0, "", fmt.Errorf("attach: %w", aerr)
 		}
 		host, port = sb.Host, sb.Port
+		if password == "" {
+			password = sb.Password
+		}
 	}
-	return host, port, nil
+	return host, port, password, nil
 }
 
 // ACPUpstream returns the reachable "host:port" for the sandbox ACP bridge
@@ -102,11 +115,11 @@ func (s *SandboxService) IDEUpstream(ctx context.Context, id uint) (string, erro
 // AcpEvent timeline. Works the same way for every sandbox — interactive test
 // sandboxes here and per-run node sandboxes in the engine.
 func (s *SandboxService) Events(ctx context.Context, id uint) ([]models.AcpEvent, error) {
-	host, port, err := s.acpHostPort(ctx, id)
+	host, port, password, err := s.acpConnection(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	res, _, ferr := sandbox.FetchEventLog(ctx, host, port)
+	res, _, ferr := sandbox.FetchEventLogWithPassword(ctx, host, port, password)
 	if ferr != nil {
 		return nil, ferr
 	}
@@ -117,11 +130,11 @@ func (s *SandboxService) Events(ctx context.Context, id uint) ([]models.AcpEvent
 // rebuild the interactive chat transcript (with the original user prompts) when
 // reopening a reused sandbox. Returns the frames as raw JSON messages.
 func (s *SandboxService) EventLog(ctx context.Context, id uint) ([]json.RawMessage, error) {
-	host, port, err := s.acpHostPort(ctx, id)
+	host, port, password, err := s.acpConnection(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	frames, _, ferr := sandbox.FetchEventLogRaw(ctx, host, port)
+	frames, _, ferr := sandbox.FetchEventLogRawWithPassword(ctx, host, port, password)
 	if ferr != nil {
 		return nil, ferr
 	}
@@ -130,11 +143,11 @@ func (s *SandboxService) EventLog(ctx context.Context, id uint) ([]json.RawMessa
 
 // EventLogPage returns one page of raw event frames with cursor metadata.
 func (s *SandboxService) EventLogPage(ctx context.Context, id uint, cursor string, limit int) (*sandbox.EventLogPageResult, error) {
-	host, port, err := s.acpHostPort(ctx, id)
+	host, port, password, err := s.acpConnection(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	return sandbox.FetchEventLogPage(ctx, host, port, cursor, limit)
+	return sandbox.FetchEventLogPageWithPassword(ctx, host, port, cursor, limit, password)
 }
 
 // OpenTerminal attaches an interactive PTY shell to a sandbox over SSH.

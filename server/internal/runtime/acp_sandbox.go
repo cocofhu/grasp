@@ -31,7 +31,7 @@ func (c *acpProvider) registerLive(req NodeReq, sb *sandbox.Sandbox, acp *sandbo
 	}
 	c.mu.Unlock()
 	if c.timeline != nil && sb != nil {
-		c.timeline.startIngest(req.RunID, req.NodeID, host, port)
+		c.timeline.startIngest(req.RunID, req.NodeID, host, port, sb.Password)
 	}
 }
 
@@ -64,7 +64,7 @@ func (c *acpProvider) LiveNodeEvents(ctx context.Context, runID, nodeID string) 
 	if sb == nil {
 		return nil, false, nil
 	}
-	res, _, err := sandbox.FetchEventLogLastTurn(ctx, sb.Host, sb.Port)
+	res, _, err := sandbox.FetchEventLogLastTurnWithPassword(ctx, sb.Host, sb.Port, sb.Password)
 	if err != nil {
 		return nil, false, err
 	}
@@ -94,7 +94,7 @@ func (c *acpProvider) LiveNodeEventsPage(ctx context.Context, runID, nodeID, cur
 	if sb == nil {
 		return nil, "", false, false, nil
 	}
-	page, err := sandbox.FetchEventLogPage(ctx, sb.Host, sb.Port, cursor, limit)
+	page, err := sandbox.FetchEventLogPageWithPassword(ctx, sb.Host, sb.Port, cursor, limit, sb.Password)
 	if err != nil {
 		return nil, "", false, false, err
 	}
@@ -117,7 +117,7 @@ func (c *acpProvider) snapshotEvents(ctx context.Context, sb *sandbox.Sandbox, f
 	if sb == nil {
 		return fallback
 	}
-	snap, _, err := sandbox.FetchEventLog(ctx, sb.Host, sb.Port)
+	snap, _, err := sandbox.FetchEventLogWithPassword(ctx, sb.Host, sb.Port, sb.Password)
 	if err != nil || snap == nil {
 		return fallback
 	}

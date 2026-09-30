@@ -257,7 +257,9 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 	if len(images) > 0 {
 		dir, paths, merr := provider.MaterializeAttachments(images)
 		if merr != nil {
+			merr = e.safeError(merr)
 			log.Printf("oneshot: 附件落盘失败: %v", merr)
+			e.emitError(merr)
 			e.emitPromptDone("failed", nil)
 			return provider.TurnResult{StopReason: "failed"}, merr
 		}
@@ -275,7 +277,7 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 	// Resume fallback: if a resume attempt failed before establishing a
 	// session, retry once from scratch (rescues a stale resume pointer).
 	if err != nil && resumeID != "" && res.newSessionID == "" && !errors.Is(err, context.Canceled) {
-		log.Printf("oneshot: resume 失败，回退为全新会话重试一次: %v", err)
+		log.Printf("oneshot: resume 失败，回退为全新会话重试一次: %v", e.safeError(err))
 		e.mu.Lock()
 		e.sessionID = ""
 		e.mu.Unlock()
@@ -296,12 +298,28 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 		} else {
 			res.stopReason = provider.StopReasonTimeout
 			err = cause
-			// Before prompt_done: clients stop reading once they see the boundary.
-			e.emit(map[string]any{"op": "raw", "type": "error_text", "text": cause.Error()})
 		}
 	}
 	if errors.Is(err, context.Canceled) && (res.stopReason == "" || res.stopReason == "failed") {
 		res.stopReason = "cancelled"
+	}
+	// A failed resume attempt may have emitted structured errors before the
+	// fresh-session fallback succeeded. Publish only the final attempt's
+	// diagnostics, so an error from the abandoned attempt cannot fail that turn.
+	errorReported := false
+	for _, diagnostic := range res.diagnostics {
+		if strings.TrimSpace(diagnostic.Text) != "" {
+			e.emitUpdate(diagnostic)
+			errorReported = true
+		}
+	}
+	if err != nil {
+		err = e.safeError(err)
+		if !errors.Is(err, context.Canceled) && (!errorReported || res.stopReason == provider.StopReasonTimeout) {
+			// Clients stop reading at prompt_done. Surface the final attempt's error
+			// (including stderr) first, after resume fallback and watchdog handling.
+			e.emitError(err)
+		}
 	}
 	e.emitPromptDone(res.stopReason, res.usage)
 	return provider.TurnResult{StopReason: res.stopReason, Usage: res.usage}, err
@@ -311,6 +329,7 @@ type turnOutcome struct {
 	stopReason   string
 	usage        map[string]provider.TokenUsage
 	newSessionID string
+	diagnostics  []Msg
 }
 
 func (e *engine) runOnce(ctx context.Context, text string, images []provider.PromptImage, resumeID string) (turnOutcome, error) {
@@ -442,6 +461,7 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 
 	turnUsage := map[string]provider.TokenUsage{}
 	var newSID, stop string
+	var diagnostics []Msg
 	apply := func(pr ParseResult) {
 		if pr.SessionID != "" && newSID == "" {
 			newSID = pr.SessionID
@@ -453,6 +473,10 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 			turnUsage[model] = addUsage(turnUsage[model], u)
 		}
 		for _, m := range pr.Msgs {
+			if m.Kind == KindError {
+				diagnostics = append(diagnostics, m)
+				continue
+			}
 			e.emitUpdate(m)
 		}
 		if pr.StopReason != "" {
@@ -541,7 +565,7 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 			stop = "end_turn"
 		}
 	}
-	out := turnOutcome{stopReason: stop, usage: nonEmptyUsage(turnUsage), newSessionID: newSID}
+	out := turnOutcome{stopReason: stop, usage: nonEmptyUsage(turnUsage), newSessionID: newSID, diagnostics: diagnostics}
 	if waitErr != nil {
 		if streamErr != nil && !errors.Is(waitErr, context.Canceled) {
 			return out, fmt.Errorf("%v; %w; stderr: %s", streamErr, waitErr, tail.String())
@@ -619,7 +643,7 @@ func (e *engine) emitUpdate(m Msg) {
 		}
 		update = map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": m.Text}}
 	case KindError:
-		e.emit(map[string]any{"op": "raw", "type": "error_text", "text": m.Text})
+		e.emit(map[string]any{"op": "raw", "type": "error_text", "text": redactDiagnostic(m.Text, e.env)})
 		return
 	default:
 		return

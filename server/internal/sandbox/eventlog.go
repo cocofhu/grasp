@@ -7,12 +7,72 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 
 	"github.com/gorilla/websocket"
 )
+
+// EventLogReader is a passive bridge observer. Reuse it for polling so the
+// bridge does not create a new authenticated session every time history is read.
+// Cookies remain scoped to this reader and are refreshed once on a 401 response.
+type EventLogReader struct {
+	host     string
+	port     int
+	password string
+	mu       sync.Mutex
+	cookie   string
+}
+
+func NewEventLogReader(host string, port int, password string) *EventLogReader {
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	return &EventLogReader{host: host, port: port, password: strings.TrimSpace(password)}
+}
+
+func (r *EventLogReader) sessionCookie(ctx context.Context, rejected string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.cookie != "" && r.cookie != rejected {
+		return r.cookie, nil
+	}
+	cookie, err := bridgeLogin(ctx, r.host, r.port, r.password)
+	if err != nil {
+		return "", err
+	}
+	r.cookie = cookie
+	return cookie, nil
+}
+
+func (r *EventLogReader) dial(ctx context.Context) (*websocket.Conn, error) {
+	cookie, err := r.sessionCookie(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("ws://%s:%d/ws", r.host, r.port)
+	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
+	for attempt := 0; ; attempt++ {
+		conn, resp, err := dialer.DialContext(ctx, url, eventLogHeaders(cookie))
+		if err == nil {
+			return conn, nil
+		}
+		unauthorized := resp != nil && resp.StatusCode == http.StatusUnauthorized
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		if !unauthorized || r.password == "" || attempt > 0 {
+			return nil, fmt.Errorf("ws dial: %w", err)
+		}
+		cookie, err = r.sessionCookie(ctx, cookie)
+		if err != nil {
+			return nil, err
+		}
+	}
+}
 
 // FetchEventLog reads the full agent event history straight from a live
 // sandbox's cursor-acp bridge — the bridge records every op:event payload it
@@ -30,7 +90,18 @@ import (
 // AggregateLastTurnFrames instead — otherwise a hard refresh stitches the
 // previous turn into the live bubble.
 func FetchEventLog(ctx context.Context, host string, port int) (*ChatResult, string, error) {
-	all, sessionID, err := FetchEventLogRaw(ctx, host, port)
+	return FetchEventLogWithPassword(ctx, host, port, "")
+}
+
+// FetchEventLogWithPassword authenticates with the sandbox token before reading
+// history. The cookie is shared by the WebSocket handshake and older HTTP pages.
+func FetchEventLogWithPassword(ctx context.Context, host string, port int, password string) (*ChatResult, string, error) {
+	return NewEventLogReader(host, port, password).Fetch(ctx)
+}
+
+// Fetch aggregates the full history using this reader's authenticated session.
+func (r *EventLogReader) Fetch(ctx context.Context) (*ChatResult, string, error) {
+	all, sessionID, err := r.Raw(ctx)
 	if err != nil {
 		return nil, "", err
 	}
@@ -46,7 +117,17 @@ func FetchEventLog(ctx context.Context, host string, port int) (*ChatResult, str
 // live bubble never receives cross-turn narration. The sandbox still keeps the
 // full eventLog for console replay via FetchEventLog / FetchEventLogRaw.
 func FetchEventLogLastTurn(ctx context.Context, host string, port int) (*ChatResult, string, error) {
-	all, sessionID, err := FetchEventLogRaw(ctx, host, port)
+	return FetchEventLogLastTurnWithPassword(ctx, host, port, "")
+}
+
+// FetchEventLogLastTurnWithPassword is the authenticated current-turn reader.
+func FetchEventLogLastTurnWithPassword(ctx context.Context, host string, port int, password string) (*ChatResult, string, error) {
+	return NewEventLogReader(host, port, password).LastTurn(ctx)
+}
+
+// LastTurn reads only the current turn, suitable for streaming timeline seeds.
+func (r *EventLogReader) LastTurn(ctx context.Context) (*ChatResult, string, error) {
+	all, sessionID, err := r.Raw(ctx)
 	if err != nil {
 		return nil, "", err
 	}
@@ -63,14 +144,20 @@ func FetchEventLogLastTurn(ctx context.Context, host string, port int) (*ChatRes
 // transcript with the original user prompts (prompt_begin frames carry
 // promptText + imageURLs, which the aggregate drops) — use this.
 func FetchEventLogRaw(ctx context.Context, host string, port int) ([]json.RawMessage, string, error) {
-	if host == "" {
-		host = "127.0.0.1"
-	}
-	url := fmt.Sprintf("ws://%s:%d/ws", host, port)
-	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
-	conn, _, err := dialer.DialContext(ctx, url, nil)
+	return FetchEventLogRawWithPassword(ctx, host, port, "")
+}
+
+// FetchEventLogRawWithPassword reads authenticated raw history. Login failures
+// are returned directly; a rejected token must never trigger an anonymous retry.
+func FetchEventLogRawWithPassword(ctx context.Context, host string, port int, password string) ([]json.RawMessage, string, error) {
+	return NewEventLogReader(host, port, password).Raw(ctx)
+}
+
+// Raw reads the complete event history, retaining the session for later reads.
+func (r *EventLogReader) Raw(ctx context.Context) ([]json.RawMessage, string, error) {
+	conn, err := r.dial(ctx)
 	if err != nil {
-		return nil, "", fmt.Errorf("ws dial: %w", err)
+		return nil, "", err
 	}
 	defer conn.Close()
 
@@ -111,7 +198,7 @@ func FetchEventLogRaw(ctx context.Context, host string, port int) ([]json.RawMes
 	all := initial
 	cursor := totalTurns - 10
 	for hasMore && cursor > 0 {
-		batch, more, fetchErr := fetchEventsBefore(ctx, host, port, cursor, 50)
+		batch, more, fetchErr := r.fetchEventsBefore(ctx, cursor, 50)
 		if fetchErr != nil {
 			break // partial history is still useful
 		}
@@ -122,30 +209,52 @@ func FetchEventLogRaw(ctx context.Context, host string, port int) ([]json.RawMes
 	return all, sessionID, nil
 }
 
-// fetchEventsBefore pages older history via GET /api/events?before=&limit=.
-func fetchEventsBefore(ctx context.Context, host string, port, before, limit int) ([]json.RawMessage, bool, error) {
-	url := fmt.Sprintf("http://%s:%d/api/events?before=%d&limit=%d", host, port, before, limit)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+// fetchEventsBefore pages older history, reusing the WS login cookie.
+func (r *EventLogReader) fetchEventsBefore(ctx context.Context, before, limit int) ([]json.RawMessage, bool, error) {
+	cookie, err := r.sessionCookie(ctx, "")
 	if err != nil {
 		return nil, false, err
 	}
-	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
-	if err != nil {
-		return nil, false, fmt.Errorf("acp events GET: %w", err)
+	url := fmt.Sprintf("http://%s:%d/api/events?before=%d&limit=%d", r.host, r.port, before, limit)
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, false, err
+		}
+		req.Header = eventLogHeaders(cookie)
+		resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+		if err != nil {
+			return nil, false, fmt.Errorf("acp events GET: %w", err)
+		}
+		if resp.StatusCode == http.StatusUnauthorized && r.password != "" && attempt == 0 {
+			_ = resp.Body.Close()
+			cookie, err = r.sessionCookie(ctx, cookie)
+			if err != nil {
+				return nil, false, err
+			}
+			continue
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+			return nil, false, fmt.Errorf("acp events %d: %s", resp.StatusCode, string(body))
+		}
+		var payload struct {
+			Events  []json.RawMessage `json:"events"`
+			HasMore bool              `json:"hasMore"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+			return nil, false, fmt.Errorf("acp events decode: %w", err)
+		}
+		return payload.Events, payload.HasMore, nil
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, false, fmt.Errorf("acp events %d: %s", resp.StatusCode, string(body))
+}
+
+func eventLogHeaders(cookie string) http.Header {
+	if cookie == "" {
+		return nil
 	}
-	var payload struct {
-		Events  []json.RawMessage `json:"events"`
-		HasMore bool              `json:"hasMore"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, false, fmt.Errorf("acp events decode: %w", err)
-	}
-	return payload.Events, payload.HasMore, nil
+	return http.Header{"Cookie": []string{cookie}}
 }
 
 // EventLogPageResult is one page of raw event frames with cursor metadata.
@@ -159,9 +268,17 @@ type EventLogPageResult struct {
 // Without cursor it returns the most recent limit turns; with cursor (turn index
 // as string) it fetches older history via GET /api/events?before=&limit=.
 func FetchEventLogPage(ctx context.Context, host string, port int, cursor string, limit int) (*EventLogPageResult, error) {
-	if host == "" {
-		host = "127.0.0.1"
-	}
+	return FetchEventLogPageWithPassword(ctx, host, port, cursor, limit, "")
+}
+
+// FetchEventLogPageWithPassword authenticates both the initial WebSocket page
+// and subsequent HTTP pages using the same sandbox token as the driving client.
+func FetchEventLogPageWithPassword(ctx context.Context, host string, port int, cursor string, limit int, password string) (*EventLogPageResult, error) {
+	return NewEventLogReader(host, port, password).Page(ctx, cursor, limit)
+}
+
+// Page reads a history page using this reader's authenticated session.
+func (r *EventLogReader) Page(ctx context.Context, cursor string, limit int) (*EventLogPageResult, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -171,7 +288,7 @@ func FetchEventLogPage(ctx context.Context, host string, port int, cursor string
 		if err != nil || before <= 0 {
 			return &EventLogPageResult{}, nil
 		}
-		events, hasMore, ferr := fetchEventsBefore(ctx, host, port, before, limit)
+		events, hasMore, ferr := r.fetchEventsBefore(ctx, before, limit)
 		if ferr != nil {
 			return nil, ferr
 		}
@@ -185,11 +302,9 @@ func FetchEventLogPage(ctx context.Context, host string, port int, cursor string
 		return &EventLogPageResult{Events: events, NextCursor: next, HasMore: hasMore}, nil
 	}
 
-	url := fmt.Sprintf("ws://%s:%d/ws", host, port)
-	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
-	conn, _, err := dialer.DialContext(ctx, url, nil)
+	conn, err := r.dial(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("ws dial: %w", err)
+		return nil, err
 	}
 	defer conn.Close()
 
