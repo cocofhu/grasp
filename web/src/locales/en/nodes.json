@@ -562,6 +562,10 @@
           "label": "Auto-inject pick script",
           "help": "On direct IP preview, the sandbox injects preview-pick.js into inbound HTML so you do not edit the app. Turn off to add the script tag yourself (old images / CSP nonce)."
         },
+        "live_variants": {
+          "label": "Live variants",
+          "help": "On by default; needs direct IP preview. Pick an element on the preview page and the agent writes several design variants into source, shown through hot reload; switch or compare them on the page, then accept or discard. Confirm & continue is blocked until every set is accepted or discarded."
+        },
         "title": {
           "label": "Title",
           "placeholder": "App preview"

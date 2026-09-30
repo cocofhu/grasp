@@ -16,7 +16,8 @@
     "assert:brand": "node ../scripts/assert-no-approving-brand.mjs",
     "measure:lcp": "node scripts/measure-lcp.mjs",
     "measure:lcp2": "node scripts/measure-lcp2.mjs",
-    "build:page-control": "node scripts/build-page-control.mjs"
+    "build:page-control": "node scripts/build-page-control.mjs",
+    "build:live-overlay": "node scripts/build-live-overlay.mjs"
   },
   "dependencies": {
     "@novnc/novnc": "^1.5.0",

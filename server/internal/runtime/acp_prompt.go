@@ -247,12 +247,12 @@ const liveVariantSkillDir = "skills/live-variants"
 
 // liveVariantsEnabled reports whether an app_preview node runs Live variants:
 // IP-direct preview (the page overlay needs the injecting proxy and HMR) and
-// the node's live_variants switch. Grasp nodes never write source, so they
-// stay out even though they may register previews.
+// the node's live_variants switch (default on). Grasp nodes never write
+// source, so they stay out even though they may register previews.
 func liveVariantsEnabled(req NodeReq) bool {
 	return req.NodeType == "app_preview" &&
 		configTruthy(req.Config["direct_preview"]) &&
-		configTruthy(req.Config["live_variants"])
+		configDefaultOn(req.Config["live_variants"])
 }
 
 // liveVariantSkills returns the platform skill dirs to embed for req.

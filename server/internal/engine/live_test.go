@@ -79,7 +79,9 @@ func TestLiveEnabledRequiresDirectAndSwitch(t *testing.T) {
 		want bool
 	}{
 		{map[string]any{"direct_preview": true, "live_variants": true}, true},
-		{map[string]any{"direct_preview": true}, false},
+		{map[string]any{"direct_preview": true}, true},
+		{map[string]any{"direct_preview": true, "live_variants": ""}, true},
+		{map[string]any{"direct_preview": true, "live_variants": false}, false},
 		{map[string]any{"live_variants": "true"}, false},
 		{nil, false},
 	} {

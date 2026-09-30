@@ -1151,3 +1151,100 @@ describe('preview-pick.js page control', () => {
     expect(banner().hidden).toBe(true)
   })
 })
+
+describe('preview-pick.js Live overlay hook', () => {
+  const body = '<main><section id="card">Dispatch</section></main>'
+  const saved = JSON.stringify({ origin: GRASP, run: 'run-1', node: 'ap1', open: true, theme: 'dark' })
+
+  type FakeOverlay = {
+    received: unknown[]
+    toggles: number
+    enabled: boolean[]
+    open: boolean
+    opts: null | { post: (m: Record<string, unknown>) => boolean; stopPick: () => void; theme: () => string; isOwnUi: (el: Element) => boolean }
+  }
+
+  async function ready(install = true) {
+    const p = openPage(body, { savedEmbed: saved })
+    const fake: FakeOverlay = { received: [], toggles: 0, enabled: [], open: false, opts: null }
+    if (install) {
+      ;(p.win as unknown as Record<string, unknown>).__graspLiveOverlay = {
+        version: 1,
+        create: (o: FakeOverlay['opts']) => {
+          fake.opts = o
+          return {
+            onDrawer: (m: unknown) => fake.received.push(m),
+            toggle: () => {
+              fake.toggles++
+              fake.open = !fake.open
+            },
+            isOpen: () => fake.open,
+            setEnabled: (on: boolean) => fake.enabled.push(on),
+          }
+        },
+      }
+    }
+    await settle()
+    const inbox = p.drawerReady()
+    const send = (data: Msg) =>
+      p.win.dispatchEvent(new p.win.MessageEvent('message', { data, origin: GRASP, source: p.frame()?.contentWindow as never }))
+    const liveButton = () => p.shadow.querySelector('[data-role="live"]') as HTMLButtonElement
+    return { p, inbox, send, fake, liveButton }
+  }
+
+  it('stays hidden until the drawer says Live is on', async () => {
+    const { liveButton, fake } = await ready()
+    expect(liveButton().hidden).toBe(true)
+    expect(fake.opts).toBeNull()
+  })
+
+  it('loads the overlay, forwards drawer messages and posts through the drawer', async () => {
+    const { p, send, fake, liveButton, inbox } = await ready()
+    send({ type: 'grasp-embed:live-sessions', replace: true, sessions: [] })
+    send({ type: 'grasp-embed:live-caps', enabled: true })
+    await settle()
+    await settle()
+    expect(fake.opts).not.toBeNull()
+    expect(fake.received).toEqual([{ type: 'grasp-embed:live-sessions', replace: true, sessions: [] }])
+    expect(liveButton().hidden).toBe(false)
+    expect(liveButton().disabled).toBe(false)
+    liveButton().click()
+    expect(fake.toggles).toBe(1)
+    expect(fake.opts!.post({ type: 'grasp-embed:live', op: 'discard', sid: 'sid001' })).toBe(true)
+    expect(inbox.find((m) => m.type === 'grasp-embed:live')).toMatchObject({ op: 'discard', sid: 'sid001', target: GRASP })
+    send({ type: 'grasp-embed:live-cmd', sid: 'sid001', cmd: 'goto', variant: 2 })
+    expect(fake.received).toHaveLength(2)
+    expect(fake.opts!.theme()).toBe('dark')
+    expect(fake.opts!.isOwnUi(p.win.document.querySelector('grasp-preview-pick') as unknown as Element)).toBe(true)
+    fake.opts!.stopPick()
+
+    send({ type: 'grasp-embed:live-caps', enabled: false })
+    expect(fake.enabled).toEqual([false])
+    expect(liveButton().hidden).toBe(true)
+    send({ type: 'grasp-embed:live-caps', enabled: true })
+    expect(fake.enabled).toEqual([false, true])
+
+    send({ type: EMBED_SESSION_MESSAGE, ok: false })
+    expect(fake.enabled).toEqual([false, true, false])
+    expect(fake.opts!.post({ type: 'grasp-embed:live', op: 'discard', sid: 'sid001' })).toBe(false)
+  })
+
+  it('injects the overlay script next to preview-pick.js when it is not loaded yet', async () => {
+    const { p, send } = await ready(false)
+    send({ type: 'grasp-embed:live-caps', enabled: true })
+    await settle()
+    const s = p.win.document.querySelector('script[data-grasp-live-overlay]') as unknown as HTMLScriptElement | null
+    expect(s?.getAttribute('src')).toBe('/__grasp/live-overlay.js')
+  })
+
+  it('never picks the Live overlay itself', async () => {
+    const { p } = await ready()
+    const host = p.win.document.createElement('grasp-live-overlay')
+    host.setAttribute('data-grasp-live-overlay', '')
+    p.win.document.body.appendChild(host)
+    p.toggle()
+    ;(host as unknown as HTMLElement).click()
+    await settle()
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(true)
+  })
+})

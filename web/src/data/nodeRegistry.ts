@@ -394,6 +394,7 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
       { key: 'review_var', label: 'nodes.shared.reviewVar.label', type: 'text', placeholder: 'nodes.shared.reviewVar.placeholder', optional: true },
       { key: 'direct_preview', label: 'nodes.app_preview.fields.direct_preview.label', type: 'switch', optional: true, help: 'nodes.app_preview.fields.direct_preview.help' },
       { key: 'auto_inject', label: 'nodes.app_preview.fields.auto_inject.label', type: 'switch', optional: true, help: 'nodes.app_preview.fields.auto_inject.help' },
+      { key: 'live_variants', label: 'nodes.app_preview.fields.live_variants.label', type: 'switch', optional: true, help: 'nodes.app_preview.fields.live_variants.help' },
       { key: 'title', label: 'nodes.app_preview.fields.title.label', type: 'text', placeholder: 'nodes.app_preview.fields.title.placeholder', optional: true },
     ],
     outputs: [
@@ -405,6 +406,7 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
       max_rounds: 3,
       direct_preview: false,
       auto_inject: true,
+      live_variants: true,
       title: '应用预览',
       prompt: '在沙箱内启动应用并 set_preview(port),或对已部署地址 set_preview(url)(port 与 url 二选一),供人工取点标注并复审确认。',
     },

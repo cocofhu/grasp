@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import HtmlPreview from '@/components/ui/HtmlPreview.vue'
 import Icon from '@/components/ui/Icon.vue'
@@ -40,6 +40,16 @@ import {
   type PublicGateQueueItem,
 } from '@/lib/inbox/gateShareLink'
 import { isClarifyInteractive } from '@/lib/shared/clarifyInteractive'
+import {
+  LIVE_CARD_HOST,
+  createLiveStore,
+  parseLiveRef,
+  parseLiveSession,
+  type LiveCmd,
+  type LiveEvent,
+  type LiveSession,
+  type LiveView,
+} from '@/lib/inbox/liveVariants'
 import { playConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import type { AcpEvent, Artifact, ClarifyImage, ClarifyTurn, NodeType, ReactAnnotation, Run } from '@/lib/shared/types'
 
@@ -78,8 +88,19 @@ const emit = defineEmits<{
   'events-closed': []
   /** page_* frames for the drawer's page control. */
   'page-frame': [frame: Record<string, unknown>]
+  /** A Live session changed (server frame). */
+  'live-session': [session: LiveSession]
+  /** A Live card button: drive the preview page. */
+  'live-cmd': [sid: string, cmd: LiveCmd, variant?: number]
 }>()
 const chatOnly = computed(() => !!props.embedToken)
+
+const live = createLiveStore()
+provide(LIVE_CARD_HOST, {
+  store: live.store,
+  interactive: !!props.embedToken,
+  command: (sid, cmd, variant) => emit('live-cmd', sid, cmd, variant),
+})
 
 const POLL_MS = 2000
 const IDLE_POLL_MS = 10_000
@@ -240,6 +261,8 @@ const turns = computed<ClarifyTurn[]>(() =>
         quote: a.quote,
       })),
     }
+    const liveRef = parseLiveRef(turn.live)
+    if (liveRef) mapped.live = liveRef
     // Only attach structured prompts when present so plain turns stay unchanged.
     if (turn.questions?.length) {
       mapped.questions = turn.questions.map((q) => ({
@@ -804,6 +827,11 @@ function handlePublicWsMessage(raw: string) {
     emit('page-frame', m)
     return
   }
+  if (typ === 'live') {
+    const session = live.apply(m.session)
+    if (session) emit('live-session', session)
+    return
+  }
   if (typ === 'review') {
     // ACP buffered before this turn started belongs to an earlier turn.
     if (m.event === 'turn_begin') pendingPublicAcp = null
@@ -1106,6 +1134,7 @@ async function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotatio
       text,
       annotations: anns,
       images: images.map((im) => ({ data: im.data, mimeType: im.mimeType, name: im.name })),
+      liveCtx: chatOnly.value ? live.activeCtx() : null,
     })
     await loadPreview({ silent: true })
   } catch (e) {
@@ -1311,7 +1340,44 @@ function sendEventsFrame(frame: Record<string, unknown>): boolean {
   }
 }
 
-defineExpose({ loadPreview, loadUpstreamFull, openUpstreamModal, addPick: onAppPreviewPick, sendEventsFrame })
+/** Forward one Live request from the preview page; resolves with the session. */
+async function sendLive(ev: LiveEvent): Promise<LiveSession | null> {
+  const res = await publicGateApi.reply({ token: token.value, text: '', live: ev })
+  const session = live.apply(res.live)
+  if (session) emit('live-session', session)
+  void loadPreview({ silent: true })
+  return session ?? parseLiveSession(res.live)
+}
+
+/** Load the node's Live sessions (after connect / reconnect). */
+async function loadLiveSessions(): Promise<{ enabled: boolean; sessions: LiveSession[] }> {
+  const res = await publicGateApi.liveSessions(token.value)
+  const enabled = res.status === 'active' && !!res.enabled
+  live.setEnabled(enabled)
+  return { enabled, sessions: live.replaceAll(res.sessions) }
+}
+
+async function discardAllLive(): Promise<number> {
+  const res = await publicGateApi.liveDiscardAll(token.value)
+  return res.discarding ?? 0
+}
+
+function setLiveView(sid: string, view: LiveView) {
+  live.setView(sid, view)
+}
+
+defineExpose({
+  loadPreview,
+  loadUpstreamFull,
+  openUpstreamModal,
+  addPick: onAppPreviewPick,
+  sendEventsFrame,
+  sendLive,
+  loadLiveSessions,
+  discardAllLive,
+  setLiveView,
+  liveStore: live.store,
+})
 </script>
 
 <template>

@@ -28,7 +28,8 @@ var ErrLiveDisabled = errors.New("该节点未开启 Live 变体")
 const liveScanTimeout = 40 * time.Second
 
 // LiveEnabled reports whether nodeID on runID runs Live variants: an
-// app_preview with direct_preview and live_variants switched on.
+// app_preview with direct_preview on and live_variants not switched off
+// (default on, matching runtime.liveVariantsEnabled).
 func (e *Engine) LiveEnabled(runID, nodeID string) bool {
 	c, err := e.loadCtx(runID)
 	if err != nil {
@@ -38,7 +39,14 @@ func (e *Engine) LiveEnabled(runID, nodeID string) bool {
 	if n == nil || n.Type != "app_preview" || n.Config == nil {
 		return false
 	}
-	return configTruthyAny(n.Config["direct_preview"]) && configTruthyAny(n.Config["live_variants"])
+	if !configTruthyAny(n.Config["direct_preview"]) {
+		return false
+	}
+	v := n.Config["live_variants"]
+	if s, ok := v.(string); v == nil || (ok && strings.TrimSpace(s) == "") {
+		return true
+	}
+	return configTruthyAny(v)
 }
 
 // LiveSessions lists a node's Live sessions, newest first. openOnly keeps

@@ -23,6 +23,10 @@
   var TAB_CHANNEL = '__grasp_tabs';
   var TAB_PROBE_MS = 150;
   var EXEC_SCRIPT = 'page-control.js';
+  // Live variants (web/src/lib/inbox/liveVariants.ts + web/src/liveoverlay).
+  var EMBED_LIVE_PREFIX = 'grasp-embed:live';
+  var EMBED_LIVE_CAPS = 'grasp-embed:live-caps';
+  var LIVE_SCRIPT = 'live-overlay.js';
 
   var MAX_ITEMS = 20;
   var MAX_TEXT = 120;
@@ -58,6 +62,8 @@
         agentOn: 'Agent 可操作此页面',
         agentBusy: 'Agent 正在操作…',
         stop: '停止',
+        live: 'Live',
+        liveTitle: 'Live 实时变体：点选元素，让 Agent 生成几个设计变体',
       }
     : {
         pick: 'Pick',
@@ -76,6 +82,8 @@
         agentOn: 'Agent can operate this page',
         agentBusy: 'Agent is operating…',
         stop: 'Stop',
+        live: 'Live',
+        liveTitle: 'Live variants: pick an element and let the agent draft a few designs',
       };
 
   var enabled = false;
@@ -100,6 +108,8 @@
   var outbox = [];
   // Agent page control, switched on from the drawer.
   var control = { on: false, busy: 0, exec: null, loading: null, pending: {} };
+  // Live variants overlay, loaded once the drawer says the node has Live on.
+  var live = { enabled: false, api: null, loading: null, inbox: [] };
   var tabId = '';
   var tabReady = resolveTab();
 
@@ -203,8 +213,10 @@
   }
 
   function isOwn(ev) {
-    if (!host) return false;
     var t = ev.target;
+    // The Live overlay draws its own shadow host; never pick it.
+    if (t && t.closest && t.closest('[data-grasp-live-overlay]')) return true;
+    if (!host) return false;
     if (t === host || host.contains(t)) return true;
     // contains() does not see into the shadow root.
     var p = ev.composedPath ? ev.composedPath() : [];
@@ -243,6 +255,10 @@
     '.artifact[aria-expanded="true"]{background:#4338ca;color:#e0e7ff}' +
     '.chat{background:#312e81;color:#e0e7ff;font-weight:600}' +
     '.chat[aria-expanded="true"]{background:#4338ca}' +
+    '.live{background:#1f2937;font-weight:600;color:#fbbf24}' +
+    '.live[aria-pressed="true"]{background:#78350f;color:#fde68a}' +
+    '.light .live{background:#fef3c7;color:#92400e}' +
+    '.light .live[aria-pressed="true"]{background:#fde68a;color:#78350f}' +
     '.notice{margin-top:4px;color:#fbbf24}' +
     '.notice.ok{color:#6ee7b7}' +
     '.mask{position:fixed;inset:0;z-index:2147483645;background:rgba(0,0,0,.45)}' +
@@ -759,6 +775,7 @@
       '<span class="row" data-role="gate">' +
       '<span class="tip" data-role="ticket-tip" role="tooltip" id="grasp-ticket-tip" hidden></span>' +
       '<button type="button" class="toggle" data-role="toggle" aria-pressed="false"></button>' +
+      '<button type="button" class="live" data-role="live" aria-pressed="false" hidden></button>' +
       '<button type="button" class="artifact" data-role="artifact" aria-expanded="false"></button>' +
       '<button type="button" class="chat" data-role="chat" aria-expanded="false"></button>' +
       '</span>' +
@@ -771,6 +788,7 @@
       gate: shadow.querySelector('[data-role="gate"]'),
       tip: shadow.querySelector('[data-role="ticket-tip"]'),
       toggle: shadow.querySelector('[data-role="toggle"]'),
+      live: shadow.querySelector('[data-role="live"]'),
       artifact: shadow.querySelector('[data-role="artifact"]'),
       chat: shadow.querySelector('[data-role="chat"]'),
       notice: shadow.querySelector('[data-role="notice"]'),
@@ -817,6 +835,14 @@
       ev.preventDefault();
       ev.stopPropagation();
       setArtifactOpen(!artifactOpen);
+    });
+    ui.live.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (live.api) {
+        setEnabled(false);
+        live.api.toggle();
+      }
     });
     ui.artifactClose.addEventListener('click', function (ev) {
       ev.preventDefault();
@@ -895,6 +921,11 @@
     ui.agent.className = control.busy > 0 ? 'agent busy' : 'agent';
     ui.agentText.textContent = control.busy > 0 ? T.agentBusy : T.agentOn;
     ui.agentStop.textContent = T.stop;
+    ui.live.hidden = !live.enabled;
+    ui.live.textContent = T.live;
+    ui.live.title = T.liveTitle;
+    ui.live.disabled = !ok || !drawerReady || !live.api;
+    ui.live.setAttribute('aria-pressed', live.api && live.api.isOpen() ? 'true' : 'false');
     ui.artifact.disabled = !ok || !drawerReady;
     ui.artifact.textContent = T.artifact;
     ui.artifact.title = ok && drawerReady ? T.artifactTitle : '';
@@ -1271,6 +1302,84 @@
     } catch (e) {}
   }
 
+  function liveSrc() {
+    if (/preview-pick\.js([?#].*)?$/.test(scriptSrc)) return scriptSrc.replace(/preview-pick\.js([?#].*)?$/, LIVE_SCRIPT);
+    return '/__grasp/' + LIVE_SCRIPT;
+  }
+
+  function makeLive(api) {
+    var inst = api.create({
+      post: function (msg) {
+        if (!drawerReady || sessionDead) return false;
+        postDrawer(msg);
+        return true;
+      },
+      theme: drawerTheme,
+      notice: notice,
+      stopPick: function () {
+        setEnabled(false);
+      },
+      changed: render,
+      isOwnUi: function (el) {
+        return !!(host && el && (el === host || host.contains(el)));
+      },
+    });
+    var queued = live.inbox;
+    live.inbox = [];
+    queued.forEach(function (m) {
+      inst.onDrawer(m);
+    });
+    return inst;
+  }
+
+  function loadLive() {
+    if (live.api) return Promise.resolve(live.api);
+    if (live.loading) return live.loading;
+    live.loading = new Promise(function (resolve, reject) {
+      var api = window.__graspLiveOverlay;
+      if (api && api.version === 1) {
+        resolve(api);
+        return;
+      }
+      var s = document.createElement('script');
+      s.src = liveSrc();
+      s.async = true;
+      s.setAttribute('data-grasp-live-overlay', '');
+      s.onload = function () {
+        var loaded = window.__graspLiveOverlay;
+        if (loaded && loaded.version === 1) resolve(loaded);
+        else reject(new Error('live overlay missing'));
+      };
+      s.onerror = function () {
+        reject(new Error('live overlay failed to load'));
+      };
+      (document.head || document.documentElement).appendChild(s);
+    })
+      .then(function (api) {
+        live.api = makeLive(api);
+        render();
+        return live.api;
+      })
+      .catch(function (e) {
+        live.loading = null;
+        throw e;
+      });
+    return live.loading;
+  }
+
+  function onLiveMessage(data) {
+    if (data.type === EMBED_LIVE_CAPS) {
+      live.enabled = data.enabled === true;
+      if (live.enabled && live.api) live.api.setEnabled(true);
+      else if (live.enabled) loadLive().catch(function () {});
+      else if (live.api) live.api.setEnabled(false);
+      render();
+      return;
+    }
+    if (live.api) live.api.onDrawer(data);
+    else if (live.inbox.length < 50) live.inbox.push(data);
+  }
+
   function execSrc() {
     if (/preview-pick\.js([?#].*)?$/.test(scriptSrc)) return scriptSrc.replace(/preview-pick\.js([?#].*)?$/, EXEC_SCRIPT);
     return '/__grasp/' + EXEC_SCRIPT;
@@ -1413,6 +1522,11 @@
       setControl(false);
       setDrawerOpen(false);
       setArtifactOpen(false);
+      live.enabled = false;
+      if (live.api) live.api.setEnabled(false);
+      render();
+    } else if (typeof data.type === 'string' && data.type.indexOf(EMBED_LIVE_PREFIX) === 0) {
+      onLiveMessage(data);
     } else if (data.type === EMBED_CONTROL && typeof data.on === 'boolean') {
       setControl(data.on);
     } else if (data.type === EMBED_CMD) {

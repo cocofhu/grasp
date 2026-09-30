@@ -6,6 +6,7 @@ import ComposerShell from './ComposerShell.vue'
 import ClarifyDemoFrame from './ClarifyDemoFrame.vue'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
 import AnnotationChip from './AnnotationChip.vue'
+import LiveVariantCard from './LiveVariantCard.vue'
 import PendingSendQueuePanel from './PendingSendQueuePanel.vue'
 import type {
   ClarifyTurn,
@@ -335,6 +336,8 @@ const {
               </template>
             </template>
           </div>
+          <!-- Live variant request card (state from the preview drawer, if any) -->
+          <LiveVariantCard v-if="t.role === 'human' && t.live" :live-ref="t.live" />
           <!-- annotation chips attached to this human review turn -->
           <div v-if="t.role === 'human' && t.annotations && t.annotations.length" class="mb-1.5 flex flex-wrap gap-1.5 justify-end">
             <AnnotationChip

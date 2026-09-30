@@ -3842,6 +3842,45 @@
           "paused": "Page control: paused (preview page is in the background)",
           "offline": "Page control: not connected"
         }
+      },
+      "live": {
+        "title": "Live variants",
+        "ops": {
+          "generate": "Generate variants",
+          "insert": "Insert candidates",
+          "steer": "Whole-page tweak",
+          "refine": "Refine",
+          "accept": "Accept variant",
+          "discard": "Discard variants",
+          "mount_failed": "Render failed"
+        },
+        "states": {
+          "generating": "Generating…",
+          "ready": "Ready",
+          "refining": "Updating…",
+          "accepting": "Accepting…",
+          "discarding": "Discarding…",
+          "accepted": "Accepted",
+          "discarded": "Discarded",
+          "failed": "Failed",
+          "done": "Done",
+          "unknown": "Unknown"
+        },
+        "viewing": "Viewing {current} / {total}",
+        "selected": "Accepted variant {n}",
+        "variantCount": "{n} variants",
+        "prev": "Previous",
+        "next": "Next",
+        "compare": "Side by side",
+        "inplace": "In place",
+        "accept": "Accept",
+        "discard": "Discard",
+        "goto": "Go to variant {n}",
+        "openInPreview": "Switch, accept or discard these variants on the preview page.",
+        "discardAll": "Discard all",
+        "discardAllDone": "Asked to discard {n} variant sets",
+        "openSessions": "{n} Live variant sets are not accepted or discarded yet",
+        "failed": "Not finished: {error}"
       }
     },
     "embedArtifacts": {

@@ -3842,6 +3842,45 @@
           "paused": "页面操作：已暂停（预览页不在前台）",
           "offline": "页面操作：未连接"
         }
+      },
+      "live": {
+        "title": "Live 变体",
+        "ops": {
+          "generate": "生成变体",
+          "insert": "插入候选",
+          "steer": "整页调整",
+          "refine": "继续修改",
+          "accept": "采用变体",
+          "discard": "放弃变体",
+          "mount_failed": "渲染失败"
+        },
+        "states": {
+          "generating": "生成中…",
+          "ready": "已就绪",
+          "refining": "修改中…",
+          "accepting": "采用中…",
+          "discarding": "放弃中…",
+          "accepted": "已采用",
+          "discarded": "已放弃",
+          "failed": "失败",
+          "done": "已完成",
+          "unknown": "状态未知"
+        },
+        "viewing": "正在看 {current} / {total}",
+        "selected": "已采用变体 {n}",
+        "variantCount": "{n} 个变体",
+        "prev": "上一个",
+        "next": "下一个",
+        "compare": "并排看",
+        "inplace": "原位看",
+        "accept": "采用",
+        "discard": "放弃",
+        "goto": "跳到变体 {n}",
+        "openInPreview": "在预览页中切换、采用或放弃这组变体。",
+        "discardAll": "全部放弃",
+        "discardAllDone": "已请求放弃 {n} 组变体",
+        "openSessions": "还有 {n} 组 Live 变体没有采用或放弃",
+        "failed": "没有完成：{error}"
       }
     },
     "embedArtifacts": {

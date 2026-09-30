@@ -87,6 +87,7 @@ export default defineConfig(({ command }) => {
         '/preview-vnc/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },
         '/preview-pick.js': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true },
         '/page-control.js': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true },
+        '/live-overlay.js': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true },
         // No changeOrigin: ticket redemption and the share-link CSRF check
         // require Origin host == Host. The trailing slash keeps the
         // /public/gate-approvals SPA route on Vite.

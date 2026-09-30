@@ -15,7 +15,8 @@ func TestPreviewNodePromptExtrasLive(t *testing.T) {
 		want     bool
 	}{
 		{"app_preview live", "app_preview", map[string]any{"direct_preview": true, "live_variants": true}, true},
-		{"live off", "app_preview", map[string]any{"direct_preview": true}, false},
+		{"live default on", "app_preview", map[string]any{"direct_preview": true}, true},
+		{"live off", "app_preview", map[string]any{"direct_preview": true, "live_variants": false}, false},
 		{"not direct", "app_preview", map[string]any{"live_variants": true}, false},
 		{"grasp never", "grasp", map[string]any{"direct_preview": true, "live_variants": true}, false},
 	}
