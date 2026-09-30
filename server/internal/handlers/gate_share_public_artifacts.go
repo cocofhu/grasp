@@ -6,6 +6,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/gateshare"
+	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -29,6 +30,9 @@ func (h *Handlers) PublicGateArtifacts(c *gin.Context) {
 	arts := make([]gin.H, 0)
 	if h.Arts != nil {
 		for _, a := range h.Arts.ByRun(lookup.Link.RunID) {
+			if mcp.IsFeedbackArtifactName(a.Name) {
+				continue
+			}
 			arts = append(arts, publicArtifactMetaDTO(a))
 		}
 	}
@@ -63,8 +67,9 @@ func (h *Handlers) PublicGateArtifactContent(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
 		return
 	}
+	// The feedback ledger stays internal; answer as if it did not exist.
 	a, ok := h.Arts.GetRecord(lookup.Link.RunID, name)
-	if !ok {
+	if !ok || mcp.IsFeedbackArtifactName(a.Name) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
 		return
 	}

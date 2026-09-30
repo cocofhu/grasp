@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   preview: vi.fn(),
   upstream: vi.fn(),
   artifacts: vi.fn(),
+  artifactContent: vi.fn(),
   decide: vi.fn(),
   reply: vi.fn(),
   cancel: vi.fn(),
@@ -56,6 +57,7 @@ vi.mock('@/lib/inbox/gateShareLink', async () => {
       preview: mocks.preview,
       upstream: mocks.upstream,
       artifacts: mocks.artifacts,
+      artifactContent: mocks.artifactContent,
       decide: mocks.decide,
       reply: mocks.reply,
       cancel: mocks.cancel,
@@ -77,6 +79,7 @@ vi.mock('@/lib/shared/locale', async () => {
 
 import PublicGateApprovalView from './PublicGateApprovalView.vue'
 import ClarifyChat from '@/components/run/ClarifyChat.vue'
+import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 import type { VueWrapper } from '@vue/test-utils'
 
 const mounted: VueWrapper[] = []
@@ -110,6 +113,8 @@ beforeEach(() => {
   mocks.upstream.mockReset()
   mocks.artifacts.mockReset()
   mocks.artifacts.mockResolvedValue({ status: 'active', artifacts: [], nodes: [] })
+  mocks.artifactContent.mockReset()
+  mocks.artifactContent.mockResolvedValue({ status: 'active', content: '{}' })
   mocks.decide.mockReset()
   mocks.reply.mockReset()
   mocks.reply.mockResolvedValue({ status: 'accepted' })
@@ -243,6 +248,50 @@ describe('PublicGateApprovalView workbench', () => {
     )
     expect(human?.images?.[0]?.url).not.toContain('blob:')
     expect(human?.images?.[0]?.url).not.toContain('/api/blobs')
+  })
+
+  it('share stage never lists or auto-opens feedback ledger artifacts', async () => {
+    window.location.hash = `#t=${'ef'.repeat(32)}`
+    // Rendering a real product lets happy-dom try its default localhost:3000 origin.
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+    mocks.preview.mockResolvedValue({
+      status: 'active',
+      kind: 'review',
+      nodeType: 'grasp',
+      remainingSec: 3600,
+      nonce: 'nf',
+      reactSessionAlive: true,
+      actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
+      turns: [{ role: 'agent', text: '请描述目标', at: '2026-08-01T00:00:00Z' }],
+    })
+    const art = (name: string) => ({ id: name, name, kind: 'json', nodeId: 'g1', sizeBytes: 10, createdAt: '2026-08-01T00:00:00Z', revision: 1 })
+    mocks.artifacts.mockResolvedValue({
+      status: 'active',
+      artifacts: [art('feedback.clarify.g1.r1.json'), art('feedback_index.json'), art('research.json')],
+      nodes: [{ id: 'g1', type: 'grasp', label: 'Grasp' }],
+    })
+    const w = mountView()
+    await flushPromises()
+    const stage = w.getComponent(ReactArtifactStage)
+    expect((stage.props('artifacts') as Array<{ name: string }>).map((a) => a.name)).toEqual(['research.json'])
+    expect(stage.props('previewArtifact')).toBe('research.json')
+    expect((stage.props('run') as { artifacts: Array<{ name: string }> }).artifacts.map((a) => a.name)).toEqual(['research.json'])
+    expect(w.text()).not.toContain('feedback.clarify')
+
+    // Only feedback on the run: nothing is auto-opened.
+    w.unmount()
+    mounted.pop()
+    mocks.artifacts.mockResolvedValue({
+      status: 'active',
+      artifacts: [art('feedback.clarify.g1.r1.json')],
+      nodes: [{ id: 'g1', type: 'grasp', label: 'Grasp' }],
+    })
+    const only = mountView()
+    await flushPromises()
+    const onlyStage = only.getComponent(ReactArtifactStage)
+    expect(onlyStage.props('artifacts')).toEqual([])
+    expect(onlyStage.props('previewArtifact')).toBe('')
+    expect(mocks.artifactContent.mock.calls.map((c) => c[1])).not.toContain('feedback.clarify.g1.r1.json')
   })
 
   it('review hot session has ReAct + composer confirm and no reject', async () => {
