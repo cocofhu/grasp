@@ -62,6 +62,20 @@ beforeEach(() => {
 })
 
 describe('LoginView copy', () => {
+  it('hides demo account hint, divider, and collapsible footer (plan g1.1 / g1.2)', async () => {
+    const wrapper = mountLogin('zh-CN')
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('demo1234')
+    expect(wrapper.text()).not.toMatch(/Demo\s+admin/)
+    expect(wrapper.find('kbd').exists()).toBe(false)
+    expect(wrapper.find('details').exists()).toBe(false)
+    expect(wrapper.find('form').element.nextElementSibling).toBeNull()
+    expect(wrapper.find('#username').exists()).toBe(true)
+    expect(wrapper.find('#password').exists()).toBe(true)
+    expect(wrapper.find('button[type="submit"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('shows account subtitle without internal 静态账号 wording', async () => {
     const wrapper = mountLogin('zh-CN')
     await flushPromises()
