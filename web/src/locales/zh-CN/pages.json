@@ -3875,11 +3875,16 @@
         "inplace": "原位看",
         "accept": "采用",
         "discard": "放弃",
+        "retry": "重试",
+        "dismissSteer": "关闭失败请求",
+        "retryAccept": "重试采用",
+        "steerPartial": "关闭失败请求会保留已有改动。",
         "goto": "跳到变体 {n}",
         "openInPreview": "在预览页中切换、采用或放弃这组变体。",
         "discardAll": "全部放弃",
-        "discardAllDone": "已请求放弃 {n} 组变体",
-        "openSessions": "还有 {n} 组 Live 变体没有采用或放弃",
+        "cleanupAll": "清理未完成请求",
+        "discardAllDone": "已请求清理 {n} 个 Live 请求",
+        "openSessions": "还有 {n} 个未完成的 Live 请求",
         "failed": "没有完成：{error}"
       }
     },

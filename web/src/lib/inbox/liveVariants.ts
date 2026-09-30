@@ -1,4 +1,5 @@
 import { reactive, type InjectionKey } from 'vue'
+import type { LiveMark, LivePoint } from '../../liveoverlay/annotations'
 
 /**
  * Live variants: the preview page asks the parked app_preview agent for N
@@ -33,7 +34,7 @@ export type LiveOp = 'generate' | 'insert' | 'steer' | 'refine' | 'accept' | 'di
 
 export const LIVE_OPS: readonly LiveOp[] = ['generate', 'insert', 'steer', 'refine', 'accept', 'discard', 'mount_failed']
 
-export const LIVE_ACTIONS = ['bolder', 'quieter', 'polish', 'typeset', 'colorize', 'layout', 'distill', 'adapt', 'freeform'] as const
+export const LIVE_ACTIONS = ['bolder', 'quieter', 'polish', 'typeset', 'colorize', 'layout', 'distill', 'adapt', 'animate', 'delight', 'overdrive', 'freeform'] as const
 
 export type LiveVariant = { n: number; label?: string }
 
@@ -50,6 +51,7 @@ export type LiveSession = {
   file?: string
   variants?: LiveVariant[]
   selected?: number
+  retryAccept?: boolean
   error?: string
   createdAt?: string
   updatedAt?: string
@@ -80,14 +82,15 @@ export type LiveEvent = {
   variant?: number
   params?: Record<string, unknown>
   notes?: string[]
+  marks?: LiveMark[]
   error?: string
 }
 
-export type LiveCtx = { sid: string; current: number }
+export type LiveCtx = { sid: string; current: number; params?: Record<string, unknown> }
 
-export type LiveView = { current: number; mode: 'inplace' | 'compare' }
+export type LiveView = { current: number; mode: 'inplace' | 'compare'; params?: Record<string, unknown> }
 
-export type LiveCmd = 'goto' | 'compare' | 'inplace' | 'accept' | 'discard'
+export type LiveCmd = 'goto' | 'compare' | 'inplace' | 'accept' | 'discard' | 'retry' | 'retry-accept'
 
 /** A page message: either a request to forward (`event`) or a view update. */
 export type EmbedLiveMessage =
@@ -111,6 +114,51 @@ function str(v: unknown, max = 4000): string | undefined {
 
 function int(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isInteger(v) ? v : undefined
+}
+
+function parseParamValues(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const out: Record<string, unknown> = {}
+  for (const [key, val] of Object.entries(value).slice(0, 6)) {
+    if (!/^[a-z][a-z0-9-]{0,31}$/.test(key)) continue
+    if (typeof val === 'string') out[key] = val.slice(0, 120)
+    else if ((typeof val === 'number' && Number.isFinite(val)) || typeof val === 'boolean') out[key] = val
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+function parseMarks(value: unknown): LiveMark[] | null {
+  if (!Array.isArray(value) || value.length > 8) return null
+  const marks: LiveMark[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') return null
+    const m = item as Record<string, unknown>
+    if (m.kind !== 'draw' && m.kind !== 'note') return null
+    if (!Array.isArray(m.points) || m.points.length > 80 || m.points.length < (m.kind === 'draw' ? 2 : 1) || (m.kind === 'note' && m.points.length !== 1)) return null
+    const points: LivePoint[] = []
+    for (const point of m.points) {
+      if (!point || typeof point !== 'object') return null
+      const p = point as Record<string, unknown>
+      if (typeof p.x !== 'number' || typeof p.y !== 'number' || !Number.isFinite(p.x) || !Number.isFinite(p.y) || p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1) return null
+      points.push({ x: p.x, y: p.y })
+    }
+    const mark: LiveMark = { kind: m.kind, points }
+    const text = str(m.text, 300)
+    if (text) mark.text = text
+    if (m.targets !== undefined) {
+      if (!Array.isArray(m.targets) || m.targets.length > 4) return null
+      mark.targets = []
+      for (const entry of m.targets) {
+        if (!entry || typeof entry !== 'object') return null
+        const target = entry as Record<string, unknown>
+        const selector = str(target.selector, 1024)
+        if (!selector) return null
+        mark.targets.push({ selector, ...(str(target.text, 120) ? { text: str(target.text, 120) } : {}) })
+      }
+    }
+    marks.push(mark)
+  }
+  return marks
 }
 
 const SID_RE = /^[A-Za-z0-9_-]{6,64}$/
@@ -151,7 +199,10 @@ export function parseEmbedLiveMessage(data: unknown): EmbedLiveMessage | null {
   if (m.type !== EMBED_LIVE_MESSAGE || !validLiveSid(m.sid)) return null
   if (m.op === 'state') {
     const current = int(m.current) ?? 0
-    return { kind: 'state', sid: m.sid, view: { current, mode: m.mode === 'compare' ? 'compare' : 'inplace' } }
+    const view: LiveView = { current, mode: m.mode === 'compare' ? 'compare' : 'inplace' }
+    const params = parseParamValues(m.params)
+    if (params) view.params = params
+    return { kind: 'state', sid: m.sid, view }
   }
   if (typeof m.op !== 'string' || !(LIVE_OPS as readonly string[]).includes(m.op)) return null
   const reqId = str(m.reqId, 64) || ''
@@ -171,6 +222,11 @@ export function parseEmbedLiveMessage(data: unknown): EmbedLiveMessage | null {
   if (el) ev.element = el
   if (m.params && typeof m.params === 'object' && !Array.isArray(m.params)) ev.params = m.params as Record<string, unknown>
   if (Array.isArray(m.notes)) ev.notes = m.notes.filter((n): n is string => typeof n === 'string').slice(0, 10)
+  if (m.marks !== undefined) {
+    const marks = parseMarks(m.marks)
+    if (!marks) return null
+    ev.marks = marks
+  }
   const error = str(m.error, 2000)
   if (error) ev.error = error
   return { kind: 'request', reqId, event: ev }
@@ -200,6 +256,7 @@ export function parseLiveSession(v: unknown): LiveSession | null {
     file: str(s.file, 512),
     variants,
     selected: int(s.selected),
+    retryAccept: s.retryAccept === true,
     error: str(s.error, 2000),
     createdAt: str(s.createdAt, 64),
     updatedAt: str(s.updatedAt, 64),
@@ -236,6 +293,7 @@ export function createLiveStore() {
       const prev = store.sessions[s.sid]
       if (prev?.updatedAt && s.updatedAt && prev.updatedAt > s.updatedAt) return prev
       store.sessions[s.sid] = s
+      if (!isLiveOpen(s.state)) delete store.views[s.sid]
       return s
     },
     replaceAll(list: unknown): LiveSession[] {
@@ -247,6 +305,7 @@ export function createLiveStore() {
         }
       }
       store.sessions = next
+      for (const sid of Object.keys(store.views)) if (!isLiveOpen(next[sid]?.state)) delete store.views[sid]
       return Object.values(next)
     },
     setView(sid: string, view: LiveView) {
@@ -257,7 +316,7 @@ export function createLiveStore() {
       for (const s of Object.values(store.sessions)) {
         if (s.mode === 'steer' || !isLiveOpen(s.state)) continue
         const v = store.views[s.sid]
-        if (v && v.current > 0) return { sid: s.sid, current: v.current }
+        if (v && v.current > 0) return { sid: s.sid, current: v.current, ...(v.params ? { params: { ...v.params } } : {}) }
       }
       return null
     },

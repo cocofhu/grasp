@@ -54,6 +54,11 @@ type reviewQueueItem struct {
 	Owner string
 	// Live marks a Live variant request; persisted on the human message.
 	Live *models.LiveRef
+	// LiveChat snapshots the variant and knobs when the human sends a plain
+	// message. Only this active turn may begin implicit refinement/adoption.
+	LiveChat *models.LiveCtx
+	// LiveWritesDenied is server-derived share permission, never client input.
+	LiveWritesDenied bool
 }
 
 // reviewSession is the platform-authoritative controller for one parked
@@ -610,7 +615,9 @@ func (e *Engine) cancelReactSession(runID, producerID string, clearQueue bool) e
 	}
 
 	s.mu.Lock()
+	var dropped []*reviewQueueItem
 	if clearQueue {
+		dropped = s.queue
 		s.queue = nil
 		s.waiting = 0
 	}
@@ -621,6 +628,11 @@ func (e *Engine) cancelReactSession(runID, producerID string, clearQueue bool) e
 	kind := string(s.kind)
 	cancelFn := s.cancelFn
 	s.mu.Unlock()
+	for _, item := range dropped {
+		if item.Live != nil {
+			e.failCancelledQueuedLive(runID, producerID, item.Live.SID)
+		}
+	}
 
 	e.publishReview(runID, producerID, "queue_state", map[string]any{
 		"waiting": waiting,

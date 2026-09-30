@@ -5,8 +5,10 @@ import { fileURLToPath, URL } from 'node:url'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { WebSocketServer } from 'ws'
+import { handleLiveVariantsMock } from './e2e/live-variants-mock'
 
 const previewPickJs = fileURLToPath(new URL('./public/preview-pick.js', import.meta.url))
+const liveOverlayJs = fileURLToPath(new URL('./public/live-overlay.js', import.meta.url))
 
 const mockPick = {
   selector: '#demo-title',
@@ -114,9 +116,15 @@ export default defineConfig({
       name: 'e2e-preview-mocks',
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
+          if (handleLiveVariantsMock(req, res)) return
           if (req.url?.split('?')[0] === '/preview-pick.js') {
             res.setHeader('Content-Type', 'application/javascript; charset=utf-8')
             res.end(readFileSync(previewPickJs))
+            return
+          }
+          if (req.url?.split('?')[0] === '/live-overlay.js') {
+            res.setHeader('Content-Type', 'application/javascript; charset=utf-8')
+            res.end(readFileSync(liveOverlayJs))
             return
           }
           if (req.url?.startsWith('/__e2e/opts')) {
@@ -263,6 +271,8 @@ export default defineConfig({
         'gate-mobile-fill': fileURLToPath(new URL('./e2e/gate-mobile-fill.html', import.meta.url)),
         'gate-share-link': fileURLToPath(new URL('./e2e/gate-share-link.html', import.meta.url)),
         'gate-cold-silent': fileURLToPath(new URL('./e2e/gate-cold-silent.html', import.meta.url)),
+        'live-variants': fileURLToPath(new URL('./e2e/live-variants.html', import.meta.url)),
+        'live-variants-drawer': fileURLToPath(new URL('./e2e/live-variants-drawer.html', import.meta.url)),
         'clarify-inbox-product': fileURLToPath(
           new URL('./e2e/clarify-inbox-product.html', import.meta.url),
         ),

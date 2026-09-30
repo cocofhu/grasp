@@ -66,6 +66,7 @@ export const OVERLAY_CSS =
 
 /** Page-level styles: pick hover outline and the compare grid. */
 export const PAGE_CSS =
+  '[data-grasp-live]>[data-grasp-variant][hidden]{display:none!important}' +
   '[data-grasp-live-hover]{outline:2px solid #f59e0b!important;outline-offset:2px!important;cursor:crosshair!important}' +
   'html[data-grasp-live-picking],html[data-grasp-live-picking] *{cursor:crosshair!important}' +
   '[data-grasp-live][data-grasp-compare]{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px;align-items:start}' +

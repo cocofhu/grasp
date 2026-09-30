@@ -98,7 +98,7 @@ const chatOnly = computed(() => !!props.embedToken)
 const live = createLiveStore()
 provide(LIVE_CARD_HOST, {
   store: live.store,
-  interactive: !!props.embedToken,
+  get interactive() { return !!props.embedToken && canWriteLive.value },
   command: (sid, cmd, variant) => emit('live-cmd', sid, cmd, variant),
 })
 

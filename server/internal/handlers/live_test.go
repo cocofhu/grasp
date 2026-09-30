@@ -1,11 +1,17 @@
 package handlers_test
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/handlers"
+	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/runtime"
 )
 
 func TestLiveSessionsHTTP(t *testing.T) {
@@ -108,5 +114,73 @@ func TestPublicLiveSessionStripsRunID(t *testing.T) {
 	}
 	if m["sid"] != "sid001" || m["state"] != "ready" {
 		t.Fatalf("fields: %v", m)
+	}
+}
+
+type livePermissionProvider struct {
+	fakeProvider
+	eng     *engine.Engine
+	reports chan error
+}
+
+func (p *livePermissionProvider) ReviseInPlace(_ context.Context, req runtime.NodeReq, _ []models.ReactMessage, _ string, _ []models.PromptImage) runtime.ReactTurn {
+	_, err := p.eng.ApplyLiveReport(req.RunID, req.NodeID, mcp.LiveReport{SID: "chat01", State: models.LiveStateAccepting})
+	p.reports <- err
+	return runtime.ReactTurn{Msg: "已回复"}
+}
+
+func (*livePermissionProvider) OfferCommitOnConfirm(context.Context, runtime.NodeReq) runtime.ReactTurn {
+	return runtime.ReactTurn{}
+}
+func (*livePermissionProvider) ReconcileOnConfirm(context.Context, runtime.NodeReq) runtime.ReactTurn {
+	return runtime.ReactTurn{}
+}
+func (*livePermissionProvider) HasLiveSession(string, string) bool { return true }
+func (*livePermissionProvider) RetireSession(string, string)       {}
+
+func TestPublicLiveChatBeginUsesSharePermission(t *testing.T) {
+	for _, permission := range []string{models.SharePermissionFull, models.SharePermissionReactOnly} {
+		t.Run(permission, func(t *testing.T) {
+			h := newHarness(t)
+			seedInboxReview(t, h, "run-live-chat", "preview", true)
+			var run models.Run
+			h.db.First(&run, "id = ?", "run-live-chat")
+			run.Graph.Nodes[0].Type = "app_preview"
+			run.Graph.Nodes[0].Config = map[string]any{"direct_preview": true, "live_variants": true}
+			h.db.Save(&run)
+			h.db.Create(&models.LiveSession{ID: "chat01", RunID: run.ID, NodeID: "preview", Mode: "replace", State: models.LiveStateReady,
+				Variants: []models.LiveVariant{{N: 1}}})
+			provider := &livePermissionProvider{reports: make(chan error, 1)}
+			eng := engine.New(h.db, provider, h.host, h.h.Arts, 5)
+			provider.eng = eng
+			h.h.Eng = eng
+			t.Cleanup(eng.Close)
+			created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-live-chat/reviews/preview/share-link", map[string]any{
+				"ttlTier": "24h", "permissionPreset": permission,
+			}))
+			url, _ := created["url"].(string)
+			if !strings.Contains(url, "#t=") {
+				t.Fatalf("share link: %v", created)
+			}
+			token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
+			reply := h.doPublic(http.MethodPost, "/public/gate-approvals/reply", map[string]any{
+				"token": token, "text": "就用这个", "liveCtx": map[string]any{"sid": "chat01", "current": 1, "params": map[string]any{"gap": "24px"}},
+			}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
+			if reply.Code != http.StatusOK {
+				t.Fatalf("comment should remain allowed: %d %s", reply.Code, reply.Body.String())
+			}
+			select {
+			case err := <-provider.reports:
+				if permission == models.SharePermissionReactOnly {
+					if err == nil || !strings.Contains(err.Error(), "权限") {
+						t.Fatalf("react_only authorized implicit adoption: %v", err)
+					}
+				} else if err != nil {
+					t.Fatalf("full share could not begin Chat adoption: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("review turn did not run")
+			}
+		})
 	}
 }

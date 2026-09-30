@@ -1,7 +1,9 @@
 package mcp
 
 import (
+	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/models"
@@ -16,6 +18,7 @@ type LiveReport struct {
 	File     string
 	Variants []models.LiveVariant
 	Error    string
+	Variant  int // optional explicit ordinal for a Chat begin
 }
 
 // LiveUpdater records Live variant progress reported by the agent.
@@ -83,6 +86,13 @@ func parseLiveReport(args map[string]any) (LiveReport, error) {
 	if r.State == "" {
 		return r, fmt.Errorf("'state' is required")
 	}
+	if v, ok := args["variant"]; ok {
+		n, numeric := v.(float64)
+		if !numeric || n != math.Trunc(n) || n < 1 || n > models.LiveMaxTotal {
+			return r, fmt.Errorf("'variant' 需要是有效变体编号")
+		}
+		r.Variant = int(n)
+	}
 	raw, present := args["variants"]
 	if !present || raw == nil {
 		return r, nil
@@ -112,6 +122,13 @@ func formatLiveReportResult(s *models.LiveSession) string {
 		fmt.Fprintf(&b, "(%d 个变体)", len(s.Variants))
 	}
 	switch s.State {
+	case models.LiveStateAccepting:
+		fmt.Fprintf(&b, "。仅采用本轮 Chat 的变体 %d;最终参数: ", s.Selected)
+		params, _ := json.Marshal(s.FinalParams)
+		b.Write(params)
+		b.WriteString("。现在按 accept 清理源码,完成后报告 accepted;不要改变采用目标。")
+	case models.LiveStateRefining:
+		fmt.Fprintf(&b, "。现在只修改变体 %d,完成后报告 ready。", s.Selected)
 	case models.LiveStateReady:
 		b.WriteString("。页面会自动显示变体切换条;等待用户采用、放弃或继续修改,不要自行采用。")
 	case models.LiveStateAccepted, models.LiveStateDiscarded:
@@ -124,6 +141,7 @@ func liveTools() []map[string]any {
 	return []map[string]any{{
 		"name": liveUpdateTool,
 		"description": "Live 变体:报告某个 Live 会话的处理结果(按 skills/live-variants/SKILL.md)。" +
+			"普通 Chat 带 Live 上下文时,先按用户意图报告 refining 或 accepting 申请开始修改/采用,成功后再编辑;" +
 			"生成/继续改完成后 state=ready 并带上 variants;采用清理完成 state=accepted;放弃恢复完成 state=discarded;" +
 			"整页调整完成 state=done;做不到时 state=failed 并写 error。",
 		"inputSchema": map[string]any{
@@ -131,9 +149,10 @@ func liveTools() []map[string]any {
 			"properties": map[string]any{
 				"session_id": map[string]any{"type": "string", "description": "请求里的 sid"},
 				"state": map[string]any{"type": "string", "enum": []string{
-					models.LiveStateReady, models.LiveStateFailed, models.LiveStateAccepted, models.LiveStateDiscarded, models.LiveStateDone,
+					models.LiveStateRefining, models.LiveStateAccepting, models.LiveStateReady, models.LiveStateFailed, models.LiveStateAccepted, models.LiveStateDiscarded, models.LiveStateDone,
 				}},
-				"file": map[string]any{"type": "string", "description": "写入变体的源文件(相对仓库根目录)"},
+				"file":    map[string]any{"type": "string", "description": "写入变体的源文件(相对仓库根目录)"},
+				"variant": map[string]any{"type": "integer", "description": "仅普通 Chat 开始时使用:用户明确指定的编号;refining 可指定其他已有变体,accepting 必须与本条消息正在查看的变体一致。省略时使用当前变体。"},
 				"variants": map[string]any{
 					"type":        "array",
 					"description": "当前包装里的全部变体(不含原版 0),按编号",

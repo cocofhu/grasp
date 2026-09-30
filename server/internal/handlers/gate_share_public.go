@@ -227,7 +227,8 @@ func (h *Handlers) PublicGateReply(c *gin.Context) {
 		return
 	}
 	if kind == models.ShareLinkKindReview {
-		if err := h.Eng.ReactReplyLiveCtxAs(owner, lookup.Link.RunID, lookup.Link.NodeID, text, body.Images, body.Annotations, body.LiveCtx); err != nil {
+		allowLive := gateshare.Allow(lookup.Link.PermissionPreset, gateshare.ActionLive)
+		if err := h.Eng.ReactReplyLiveCtxWithPermissionAs(owner, lookup.Link.RunID, lookup.Link.NodeID, text, body.Images, body.Annotations, body.LiveCtx, allowLive); err != nil {
 			h.writePublicReactErr(c, err)
 			return
 		}

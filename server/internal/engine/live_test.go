@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -342,12 +343,14 @@ func TestSettleLiveState(t *testing.T) {
 	for _, c := range []tc{
 		{models.LiveStateGenerating, "replace", 3, true, false, false, models.LiveStateFailed},
 		{models.LiveStateGenerating, "steer", 0, false, true, false, models.LiveStateDone},
+		{models.LiveStateGenerating, "steer", 0, false, true, true, models.LiveStateFailed},
 		{models.LiveStateGenerating, "replace", 3, true, true, false, models.LiveStateReady},
 		{models.LiveStateGenerating, "replace", 0, true, true, false, models.LiveStateFailed},
 		{models.LiveStateGenerating, "replace", 3, false, true, true, models.LiveStateFailed},
 		{models.LiveStateRefining, "replace", 3, false, true, false, models.LiveStateFailed},
 		{models.LiveStateAccepting, "replace", 3, true, true, false, models.LiveStateFailed},
 		{models.LiveStateAccepting, "replace", 3, false, true, false, models.LiveStateAccepted},
+		{models.LiveStateAccepting, "replace", 3, false, true, true, models.LiveStateFailed},
 		{models.LiveStateDiscarding, "replace", 3, true, true, false, models.LiveStateFailed},
 		{models.LiveStateDiscarding, "replace", 3, false, true, false, models.LiveStateDiscarded},
 	} {
@@ -404,5 +407,345 @@ func TestCheckLiveClosedOpenSteer(t *testing.T) {
 	})
 	if err := eng.checkLiveClosed(runID, "preview"); !errors.Is(err, ErrLiveOpen) {
 		t.Fatalf("open steer err=%v, want ErrLiveOpen", err)
+	}
+}
+
+func TestLiveChatAcceptFreezesVariantAndParams(t *testing.T) {
+	for _, reportFinal := range []bool{true, false} {
+		t.Run(fmt.Sprintf("final_report_%v", reportFinal), func(t *testing.T) {
+			eng, db, p, runID := setupLive(t)
+			db.Create(&models.LiveSession{ID: "chat01", RunID: runID, NodeID: "preview", Mode: "replace", State: models.LiveStateReady,
+				Variants: []models.LiveVariant{{N: 1}, {N: 2, Label: "紧凑"}}})
+			p.setLiveMarkers("chat01")
+			start, release := make(chan struct{}), make(chan struct{})
+			results := make(chan error, 1)
+			p.mu.Lock()
+			p.reviseHook = func(req runtime.NodeReq, human string) {
+				close(start)
+				<-release
+				if !strings.Contains(human, "变体 2(紧凑)") || !strings.Contains(human, "gap=24px") {
+					results <- fmt.Errorf("incorrect snapshot prompt: %s", human)
+					return
+				}
+				for i := 0; i < 2; i++ { // repeated begin is idempotent
+					if _, err := eng.ApplyLiveReport(req.RunID, req.NodeID, mcp.LiveReport{SID: "chat01", State: models.LiveStateAccepting}); err != nil {
+						results <- err
+						return
+					}
+				}
+				p.setLiveMarkers()
+				var err error
+				if reportFinal {
+					_, err = eng.ApplyLiveReport(req.RunID, req.NodeID, mcp.LiveReport{SID: "chat01", State: models.LiveStateAccepted})
+				}
+				results <- err
+			}
+			p.mu.Unlock()
+			ctx := &models.LiveCtx{SID: "chat01", Current: 2, Params: map[string]any{"gap": "24px", "tone": "soft"}}
+			if err := eng.ReactReplyLiveCtxAs("user:a", runID, "preview", "就用这个", nil, nil, ctx); err != nil {
+				t.Fatal(err)
+			}
+			<-start
+			ctx.Current = 1
+			ctx.Params["gap"] = "48px" // later tuning must not mutate the queued request
+			close(release)
+			if err := eng.waitReviewReadyForTest(runID, "preview", 5*time.Second); err != nil {
+				t.Fatal(err)
+			}
+			if err := <-results; err != nil {
+				t.Fatal(err)
+			}
+			sess := waitLiveState(t, eng, runID, "chat01", models.LiveStateAccepted)
+			if sess.Selected != 2 || sess.FinalParams["gap"] != "24px" {
+				t.Fatalf("adoption changed with later page state: %+v", sess)
+			}
+			if err := eng.checkLiveClosed(runID, "preview"); err != nil {
+				t.Fatalf("completed Chat acceptance still blocks confirm: %v", err)
+			}
+			var conv models.ReactConversation
+			db.Where("run_id = ? AND node_id = ?", runID, "preview").Order("id desc").First(&conv)
+			var ref *models.LiveRef
+			for _, msg := range conv.Messages {
+				if msg.Role == "human" && msg.Text == "就用这个" {
+					ref = msg.Live
+				}
+			}
+			if ref == nil || ref.SID != "chat01" || ref.Variant != 2 {
+				t.Fatalf("Chat turn lost its Live context: %+v", ref)
+			}
+		})
+	}
+}
+
+func TestLiveChatBeginRequiresActivePermissionAndContext(t *testing.T) {
+	for _, withCtx := range []bool{true, false} {
+		t.Run(fmt.Sprintf("react_only_context_%v", withCtx), func(t *testing.T) {
+			eng, db, p, runID := setupLive(t)
+			db.Create(&models.LiveSession{ID: "chat02", RunID: runID, NodeID: "preview", Mode: "replace", State: models.LiveStateReady,
+				Variants: []models.LiveVariant{{N: 1}}})
+			results := make(chan error, 4)
+			p.mu.Lock()
+			p.reviseHook = func(req runtime.NodeReq, human string) {
+				for _, state := range []string{models.LiveStateAccepting, models.LiveStateRefining, models.LiveStateAccepted, models.LiveStateDiscarded} {
+					_, err := eng.ApplyLiveReport(req.RunID, req.NodeID, mcp.LiveReport{SID: "chat02", State: state})
+					results <- err
+				}
+			}
+			p.mu.Unlock()
+			var ctx *models.LiveCtx
+			if withCtx {
+				ctx = &models.LiveCtx{SID: "chat02", Current: 1}
+			}
+			if err := eng.ReactReplyLiveCtxWithPermissionAs("share:read-only", runID, "preview", "就用这个", nil, nil, ctx, false); err != nil {
+				t.Fatal(err)
+			}
+			if err := eng.waitReviewReadyForTest(runID, "preview", 5*time.Second); err != nil {
+				t.Fatal(err)
+			}
+			for i := 0; i < 4; i++ {
+				if err := <-results; err == nil || !strings.Contains(err.Error(), "权限") {
+					t.Fatalf("react_only Live mutation was not denied: %v", err)
+				}
+			}
+			sess, _ := eng.liveSession(runID, "preview", "chat02")
+			if sess.State != models.LiveStateReady || sess.Selected != 0 {
+				t.Fatalf("denied comment changed session: %+v", sess)
+			}
+			for _, state := range []string{models.LiveStateAccepting, models.LiveStateRefining} {
+				if _, err := eng.ApplyLiveReport(runID, "preview", mcp.LiveReport{SID: "chat02", State: state}); err == nil {
+					t.Fatalf("%s should require an active Chat context", state)
+				}
+			}
+		})
+	}
+}
+
+func TestLiveChatRefineAndInvalidVariant(t *testing.T) {
+	eng, db, p, runID := setupLive(t)
+	db.Create(&models.LiveSession{ID: "chat03", RunID: runID, NodeID: "preview", Mode: "replace", State: models.LiveStateReady,
+		Variants: []models.LiveVariant{{N: 1}, {N: 2}}})
+	p.setLiveMarkers("chat03")
+	if err := eng.ReactReplyLiveCtxAs("user:a", runID, "preview", "标题大一点", nil, nil, &models.LiveCtx{SID: "chat03", Current: 3}); err == nil {
+		t.Fatal("nonexistent viewed variant should be rejected")
+	}
+	results := make(chan error, 1)
+	p.mu.Lock()
+	p.reviseHook = func(req runtime.NodeReq, human string) {
+		if _, err := eng.ApplyLiveReport(req.RunID, req.NodeID, mcp.LiveReport{SID: "chat03", State: models.LiveStateAccepting, Variant: 2}); err == nil || !strings.Contains(err.Error(), "重新发送") {
+			results <- fmt.Errorf("adopting an unviewed candidate should request switch/resend: %v", err)
+			return
+		}
+		s, err := eng.ApplyLiveReport(req.RunID, req.NodeID, mcp.LiveReport{SID: "chat03", State: models.LiveStateRefining, Variant: 2})
+		if err == nil && s.Selected != 2 {
+			err = fmt.Errorf("explicit refine ordinal lost: %+v", s)
+		}
+		results <- err
+		// No final ready report: the attached LiveRef must settle the turn.
+	}
+	p.mu.Unlock()
+	if err := eng.ReactReplyLiveCtxAs("user:a", runID, "preview", "2 的标题大一点", nil, nil, &models.LiveCtx{SID: "chat03", Current: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.waitReviewReadyForTest(runID, "preview", 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-results; err != nil {
+		t.Fatal(err)
+	}
+	waitLiveState(t, eng, runID, "chat03", models.LiveStateReady)
+}
+
+func TestFailedSteerRetryOrDismiss(t *testing.T) {
+	for _, action := range []string{"retry", "discard", "discard-all"} {
+		t.Run(action, func(t *testing.T) {
+			eng, _, p, runID := setupLive(t)
+			first := true
+			agentReports(eng, p, func(human string) *mcp.LiveReport {
+				if first {
+					first = false
+					return &mcp.LiveReport{SID: "steer01", State: models.LiveStateFailed, Error: "could not complete adjustment"}
+				}
+				return &mcp.LiveReport{SID: "steer01", State: models.LiveStateDone}
+			})
+			if _, err := eng.ReactLiveAs("user:a", runID, "preview", models.LiveEvent{Op: models.LiveOpSteer, SID: "steer01", Prompt: "紧凑一些"}); err != nil {
+				t.Fatal(err)
+			}
+			waitLiveState(t, eng, runID, "steer01", models.LiveStateFailed)
+			if err := eng.waitReviewReadyForTest(runID, "preview", 5*time.Second); err != nil {
+				t.Fatal(err)
+			}
+			if err := eng.checkLiveClosed(runID, "preview"); !errors.Is(err, ErrLiveOpen) {
+				t.Fatalf("failed request must await explicit recovery: %v", err)
+			}
+			want := models.LiveStateDiscarded
+			switch action {
+			case "retry":
+				want = models.LiveStateDone
+				if _, err := eng.ReactLiveAs("user:a", runID, "preview", models.LiveEvent{Op: models.LiveOpSteer, SID: "steer01", Prompt: "再试一次紧凑布局"}); err != nil {
+					t.Fatal(err)
+				}
+			case "discard":
+				if _, err := eng.ReactLiveAs("user:a", runID, "preview", models.LiveEvent{Op: models.LiveOpDiscard, SID: "steer01"}); err != nil {
+					t.Fatal(err)
+				}
+			case "discard-all":
+				if n, err := eng.DiscardAllLiveAs("user:a", runID, "preview"); err != nil || n != 1 {
+					t.Fatalf("discard-all failed steer: n=%d err=%v", n, err)
+				}
+			}
+			waitLiveState(t, eng, runID, "steer01", want)
+			if err := eng.waitReviewReadyForTest(runID, "preview", 5*time.Second); err != nil {
+				t.Fatal(err)
+			}
+			if err := eng.checkLiveClosed(runID, "preview"); err != nil {
+				t.Fatalf("recovered steer blocks confirm: %v", err)
+			}
+		})
+	}
+}
+
+func TestInterruptedSteerDoesNotInferSuccessFromNoMarkers(t *testing.T) {
+	eng, _, p, runID := setupLive(t)
+	p.mu.Lock()
+	p.reviseErr = errors.New("turn interrupted")
+	p.mu.Unlock()
+	p.setLiveMarkers()
+	if _, err := eng.ReactLiveAs("user:a", runID, "preview", models.LiveEvent{Op: models.LiveOpSteer, SID: "steer02", Prompt: "紧凑一些"}); err != nil {
+		t.Fatal(err)
+	}
+	waitLiveState(t, eng, runID, "steer02", models.LiveStateFailed)
+	if err := eng.waitReviewReadyForTest(runID, "preview", 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := eng.DiscardAllLiveAs("user:a", runID, "preview"); err != nil || n != 1 {
+		t.Fatalf("dismiss interrupted steer: n=%d err=%v", n, err)
+	}
+	if err := eng.checkLiveClosed(runID, "preview"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCancelQueuedSteerCanBeDismissed(t *testing.T) {
+	eng, _, p, runID := setupLive(t)
+	hold := make(chan struct{})
+	p.mu.Lock()
+	p.reviseHold = hold
+	p.mu.Unlock()
+	if err := eng.ReactReplyAs("user:a", runID, "preview", "先检查页面", nil, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.ReactLiveAs("user:a", runID, "preview", models.LiveEvent{Op: models.LiveOpSteer, SID: "steer03", Prompt: "紧凑一些"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.CancelReviewSession(runID, "preview"); err != nil {
+		t.Fatal(err)
+	}
+	waitLiveState(t, eng, runID, "steer03", models.LiveStateFailed)
+	if err := eng.waitReviewReadyForTest(runID, "preview", 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := eng.DiscardAllLiveAs("user:a", runID, "preview"); err != nil || n != 1 {
+		t.Fatalf("dismiss cancelled queued request: n=%d err=%v", n, err)
+	}
+	if err := eng.checkLiveClosed(runID, "preview"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLiveMarksReachQueuedAgentPrompt(t *testing.T) {
+	for _, op := range []string{models.LiveOpGenerate, models.LiveOpInsert, models.LiveOpRefine} {
+		t.Run(op, func(t *testing.T) {
+			eng, db, p, runID := setupLive(t)
+			if op == models.LiveOpRefine {
+				db.Create(&models.LiveSession{ID: "marks01", RunID: runID, NodeID: "preview", Mode: "replace", State: models.LiveStateReady,
+					Variants: []models.LiveVariant{{N: 1}}})
+			}
+			prompts := make(chan string, 1)
+			p.mu.Lock()
+			p.reviseHook = func(req runtime.NodeReq, human string) {
+				p.setLiveMarkers("marks01")
+				_, _ = eng.ApplyLiveReport(req.RunID, req.NodeID, mcp.LiveReport{SID: "marks01", State: models.LiveStateReady, Variants: []models.LiveVariant{{N: 1}, {N: 2}}})
+				prompts <- human
+			}
+			p.mu.Unlock()
+			ev := models.LiveEvent{Op: op, SID: "marks01", Position: "before", Variant: 1,
+				Element: &models.LiveElement{Selector: "#hero", TagName: "section"},
+				Marks: []models.LiveMark{
+					{Kind: "draw", Points: []models.LivePoint{{X: 0.1, Y: 0.2}, {X: 0.8, Y: 0.7}}, Targets: []models.LiveMarkTarget{{Selector: "#hero button", Text: "Start"}}},
+					{Kind: "note", Points: []models.LivePoint{{X: 0.5, Y: 0.4}}, Text: "放大这里的按钮"},
+				}}
+			if _, err := eng.ReactLiveAs("user:a", runID, "preview", ev); err != nil {
+				t.Fatal(err)
+			}
+			if err := eng.waitReviewReadyForTest(runID, "preview", 5*time.Second); err != nil {
+				t.Fatal(err)
+			}
+			prompt := <-prompts
+			for _, want := range []string{"圈画路径", "(10.0%, 20.0%) → (80.0%, 70.0%)", "#hero button", "Start", "定位注释", "(50.0%, 40.0%)", "放大这里的按钮", "不可信页面信息"} {
+				if !strings.Contains(prompt, want) {
+					t.Fatalf("queued Effective omitted mark %q: %s", want, prompt)
+				}
+			}
+		})
+	}
+}
+
+func TestInterruptedChatAcceptanceRetriesFrozenRequestWithoutLiveCtx(t *testing.T) {
+	eng, db, p, runID := setupLive(t)
+	db.Create(&models.LiveSession{ID: "accept01", RunID: runID, NodeID: "preview", Mode: "replace", State: models.LiveStateReady,
+		Variants: []models.LiveVariant{{N: 1}, {N: 2}}})
+	results := make(chan error, 1)
+	p.mu.Lock()
+	p.reviseErr = errors.New("turn interrupted")
+	p.reviseHook = func(req runtime.NodeReq, _ string) {
+		_, err := eng.ApplyLiveReport(req.RunID, req.NodeID, mcp.LiveReport{SID: "accept01", State: models.LiveStateAccepting})
+		p.setLiveMarkers() // wrapper cleaned just before the interruption
+		results <- err
+	}
+	p.mu.Unlock()
+	if err := eng.ReactReplyLiveCtxAs("user:a", runID, "preview", "就用这个", nil, nil, &models.LiveCtx{SID: "accept01", Current: 2, Params: map[string]any{"gap": "24px"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.waitReviewReadyForTest(runID, "preview", 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-results; err != nil {
+		t.Fatal(err)
+	}
+	failed := waitLiveState(t, eng, runID, "accept01", models.LiveStateFailed)
+	if !failed.RetryAccept || failed.Selected != 2 || failed.FinalParams["gap"] != "24px" {
+		t.Fatalf("interrupted acceptance lost recovery snapshot: %+v", failed)
+	}
+	if _, err := eng.ReactLiveAs("user:a", runID, "preview", models.LiveEvent{Op: models.LiveOpAccept, SID: "accept01", Variant: 1}); err == nil {
+		t.Fatal("recovery must not switch to a different target")
+	}
+	p.mu.Lock()
+	p.reviseErr = nil
+	p.reviseHook = func(req runtime.NodeReq, human string) {
+		if !strings.Contains(human, "采用重试") || !strings.Contains(human, "gap=24px") || strings.Contains(human, "999px") {
+			results <- fmt.Errorf("retry did not use frozen request: %s", human)
+			return
+		}
+		_, err := eng.ApplyLiveReport(req.RunID, req.NodeID, mcp.LiveReport{SID: "accept01", State: models.LiveStateAccepted})
+		results <- err
+	}
+	p.mu.Unlock()
+	// This is the card's explicit recovery API, even after page current=0 and
+	// LiveCtx are cleared. Later/stale parameter values cannot replace the snapshot.
+	if _, err := eng.ReactLiveAs("user:a", runID, "preview", models.LiveEvent{Op: models.LiveOpAccept, SID: "accept01", Variant: 2, Params: map[string]any{"gap": "999px"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.waitReviewReadyForTest(runID, "preview", 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-results; err != nil {
+		t.Fatal(err)
+	}
+	accepted := waitLiveState(t, eng, runID, "accept01", models.LiveStateAccepted)
+	if accepted.RetryAccept || accepted.Selected != 2 || accepted.FinalParams["gap"] != "24px" {
+		t.Fatalf("retried acceptance result: %+v", accepted)
+	}
+	if err := eng.checkLiveClosed(runID, "preview"); err != nil {
+		t.Fatalf("retried cleanup still blocks confirm: %v", err)
 	}
 }

@@ -33,7 +33,7 @@ func TestBuildConfigHomeEmbeddedSkills(t *testing.T) {
 	if !strings.Contains(string(b), "live_update") {
 		t.Error("SKILL.md should describe live_update")
 	}
-	for _, a := range []string{"bolder", "quieter", "polish", "typeset", "colorize", "layout", "distill", "adapt", "freeform"} {
+	for _, a := range []string{"bolder", "quieter", "polish", "typeset", "colorize", "layout", "distill", "adapt", "animate", "delight", "overdrive", "freeform"} {
 		if _, err := os.Stat(filepath.Join(dir, "skills", "live-variants", "reference", a+".md")); err != nil {
 			t.Errorf("reference/%s.md missing: %v", a, err)
 		}

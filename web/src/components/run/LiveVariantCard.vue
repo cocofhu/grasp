@@ -26,10 +26,12 @@ const tone = computed(() => {
   if (state.value === 'ready') return 'bg-ok'
   return 'bg-txt3'
 })
-const current = computed(() => view.value?.current || (variants.value[0]?.n ?? 0))
+const current = computed(() => view.value?.current ?? 0)
 const currentIndex = computed(() => variants.value.findIndex((v) => v.n === current.value))
-const canAct = computed(() => !!host?.interactive && state.value === 'ready' && variants.value.length > 0)
+const canAct = computed(() => !!host?.interactive && state.value === 'ready' && currentIndex.value >= 0)
 const canDiscard = computed(() => !!host?.interactive && isLiveOpen(state.value) && !isLiveBusy(state.value))
+const failedSteer = computed(() => session.value?.mode === 'steer' && state.value === 'failed')
+const canRetryAccept = computed(() => !!host?.interactive && state.value === 'failed' && session.value?.retryAccept === true && Number.isInteger(session.value.selected) && (session.value.selected ?? 0) > 0)
 /** Only the newest turn of a session carries controls. */
 const isLatestTurn = computed(() => props.liveRef.op !== 'accept' && props.liveRef.op !== 'discard')
 
@@ -67,6 +69,12 @@ function step(delta: number) {
     <p v-else-if="session?.state === 'accepted' && session.selected" class="m-0 mt-1 text-[11px] text-txt3">
       {{ t('pages.embedChat.live.selected', { n: session.selected }) }}
     </p>
+    <p v-if="failedSteer" class="m-0 mt-1 text-[11px] leading-snug text-txt3" data-testid="live-steer-partial">
+      {{ t('pages.embedChat.live.steerPartial') }}
+    </p>
+    <button v-if="canRetryAccept" type="button" class="mt-2 rounded bg-accent px-2 py-0.5 text-[11px] font-medium text-white" data-testid="live-variant-retry-accept" @click="send('retry-accept')">
+      {{ t('pages.embedChat.live.retryAccept') }}
+    </button>
 
     <template v-if="session && isLatestTurn && variants.length && isLiveOpen(state)">
       <div class="mt-2 flex flex-wrap gap-1" role="group" :aria-label="t('pages.embedChat.live.variantCount', { n: variants.length })">
@@ -87,7 +95,7 @@ function step(delta: number) {
       </div>
       <div v-if="host?.interactive" class="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
         <button type="button" class="rounded border border-line px-1.5 py-0.5 text-txt2 hover:text-txt disabled:opacity-40" :disabled="!canAct" :aria-label="t('pages.embedChat.live.prev')" data-testid="live-variant-prev" @click="step(-1)">‹</button>
-        <span class="tabular-nums text-txt3" data-testid="live-variant-viewing">{{ t('pages.embedChat.live.viewing', { current: currentIndex + 1 || 1, total: variants.length }) }}</span>
+        <span class="tabular-nums text-txt3" data-testid="live-variant-viewing">{{ t('pages.embedChat.live.viewing', { current: currentIndex + 1, total: variants.length }) }}</span>
         <button type="button" class="rounded border border-line px-1.5 py-0.5 text-txt2 hover:text-txt disabled:opacity-40" :disabled="!canAct" :aria-label="t('pages.embedChat.live.next')" data-testid="live-variant-next" @click="step(1)">›</button>
         <button
           type="button"
@@ -109,5 +117,16 @@ function step(delta: number) {
       </div>
       <p v-else class="m-0 mt-1.5 text-[11px] text-txt3">{{ t('pages.embedChat.live.openInPreview') }}</p>
     </template>
+    <div v-if="session && isLatestTurn && isLiveOpen(state) && !variants.length" class="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+      <template v-if="host?.interactive">
+        <button v-if="failedSteer" type="button" class="rounded border border-line px-2 py-0.5 text-txt2 hover:text-txt disabled:opacity-40" :disabled="!canDiscard" data-testid="live-variant-retry" @click="send('retry')">
+          {{ t('pages.embedChat.live.retry') }}
+        </button>
+        <button type="button" class="rounded border border-line px-2 py-0.5 text-txt2 hover:text-err disabled:opacity-40" :disabled="!canDiscard" data-testid="live-variant-discard" @click="send('discard')">
+          {{ failedSteer ? t('pages.embedChat.live.dismissSteer') : t('pages.embedChat.live.discard') }}
+        </button>
+      </template>
+      <p v-else class="m-0 text-txt3">{{ t('pages.embedChat.live.openInPreview') }}</p>
+    </div>
   </div>
 </template>

@@ -70,8 +70,9 @@ const { supported: pageControlSupported, enabled: pageControlOn, state: pageCont
 const liveOpenCount = computed(() => {
   const store = chatRef.value?.liveStore
   if (!store?.enabled) return 0
-  return Object.values(store.sessions).filter((s) => s.mode !== 'steer' && isLiveOpen(s.state)).length
+  return Object.values(store.sessions).filter((s) => isLiveOpen(s.state) && (s.mode !== 'steer' || s.state === 'failed')).length
 })
+const hasFailedSteer = computed(() => Object.values(chatRef.value?.liveStore?.sessions || {}).some((s) => s.mode === 'steer' && s.state === 'failed'))
 const liveDiscarding = ref(false)
 const liveNotice = ref('')
 
@@ -272,6 +273,7 @@ onUnmounted(() => {
       data-testid="live-open-bar"
     >
       <span class="min-w-0 flex-1 truncate">{{ liveOpenCount > 0 ? t('pages.embedChat.live.openSessions', { n: liveOpenCount }) : liveNotice }}</span>
+      <span v-if="hasFailedSteer" class="text-txt3" data-testid="live-steer-partial">{{ t('pages.embedChat.live.steerPartial') }}</span>
       <button
         v-if="liveOpenCount > 0"
         type="button"
@@ -280,7 +282,7 @@ onUnmounted(() => {
         data-testid="live-discard-all"
         @click="discardAllLive"
       >
-        {{ t('pages.embedChat.live.discardAll') }}
+        {{ t(hasFailedSteer ? 'pages.embedChat.live.cleanupAll' : 'pages.embedChat.live.discardAll') }}
       </button>
     </div>
     <PublicGateApprovalView

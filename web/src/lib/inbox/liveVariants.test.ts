@@ -90,6 +90,32 @@ describe('liveVariants protocol', () => {
     expect(noEl?.kind === 'request' && noEl.event.element).toBeUndefined()
   })
 
+  it('carries only scalar candidate params in the page state snapshot', () => {
+    const message = parseEmbedLiveMessage({ type: EMBED_LIVE_MESSAGE, op: 'state', sid: 'sid001', current: 2, params: { gap: '32px', tone: 'strong', Bad: 'no', nested: { x: 1 } } })
+    expect(message).toEqual({ kind: 'state', sid: 'sid001', view: { current: 2, mode: 'inplace', params: { gap: '32px', tone: 'strong' } } })
+  })
+
+  it('carries bounded visual annotations through the drawer and rejects malformed geometry', () => {
+    const request = { type: EMBED_LIVE_MESSAGE, op: 'generate', sid: 'sid001', action: 'animate' }
+    const marks = [
+      { kind: 'draw', points: [{ x: 0.1, y: 0.2 }, { x: 0.8, y: 0.9 }], targets: [{ selector: 'button#book', text: 'Book now' }] },
+      { kind: 'note', points: [{ x: 0.4, y: 0.6 }], text: 'Match the suites below' },
+    ]
+    const message = parseEmbedLiveMessage({ ...request, marks })
+    expect(message?.kind === 'request' && message.event).toMatchObject({ action: 'animate', marks })
+    marks[0].points[0].x = 0.9
+    expect(message?.kind === 'request' && message.event.marks?.[0].points[0].x).toBe(0.1)
+    for (const bad of [
+      null, {}, Array(9).fill(marks[1]),
+      [{ kind: 'script', points: [{ x: 0, y: 0 }] }],
+      [{ kind: 'draw', points: [{ x: 0, y: 0 }] }],
+      [{ kind: 'note', points: [{ x: Infinity, y: 0 }] }],
+      [{ kind: 'note', points: [{ x: -0.1, y: 0 }] }],
+      [{ kind: 'draw', points: Array(81).fill({ x: 0.2, y: 0.2 }) }],
+      [{ ...marks[1], targets: [{ text: 'missing selector' }] }],
+    ]) expect(parseEmbedLiveMessage({ ...request, marks: bad })).toBeNull()
+  })
+
   it('parses sessions and refs', () => {
     expect(parseLiveSession(null)).toBeNull()
     expect(parseLiveSession({ sid: 'sid001' })).toBeNull()
@@ -101,6 +127,8 @@ describe('liveVariants protocol', () => {
     expect(parseLiveRef({ sid: 'sid001', op: 'generate', variant: 0 })).toEqual({ sid: 'sid001', op: 'generate' })
     expect(parseLiveRef({ sid: 'x', op: 'accept' })).toBeUndefined()
     expect(parseLiveRef(undefined)).toBeUndefined()
+    expect(parseLiveSession({ sid: 'sid001', state: 'failed', selected: 2, retryAccept: true })?.retryAccept).toBe(true)
+    expect(parseLiveSession({ sid: 'sid001', state: 'failed', retryAccept: 'true' })?.retryAccept).toBe(false)
   })
 })
 
@@ -124,5 +152,20 @@ describe('createLiveStore', () => {
     expect(live.replaceAll([{ sid: 'sid002', state: 'ready' }, 'junk'])).toHaveLength(1)
     expect(Object.keys(live.store.sessions)).toEqual(['sid002'])
     expect(live.replaceAll(null)).toEqual([])
+  })
+
+  it('freezes current params for a chat message and clears ended or missing views', () => {
+    const live = createLiveStore()
+    live.apply({ sid: 'sid001', state: 'ready' })
+    live.setView('sid001', { current: 2, mode: 'inplace', params: { gap: '32px' } })
+    const queuedCtx = live.activeCtx()
+    live.setView('sid001', { current: 1, mode: 'inplace', params: { gap: '16px' } })
+    expect(queuedCtx).toEqual({ sid: 'sid001', current: 2, params: { gap: '32px' } })
+    live.replaceAll([])
+    expect(live.store.views).toEqual({})
+    live.apply({ sid: 'sid001', state: 'ready' })
+    live.setView('sid001', { current: 2, mode: 'inplace' })
+    live.apply({ sid: 'sid001', state: 'accepted' })
+    expect(live.store.views).toEqual({})
   })
 })

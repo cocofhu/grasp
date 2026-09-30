@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it } from 'vitest'
-import { applyParam, paramDefault, parseParams, readWrapper, scanWrappers, showVariant } from './scan'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { applyParam, paramDefault, parseParams, readWrapper, scanWrappers, setVariantVisible, showVariant } from './scan'
 import { describeElement, selectorPath, visibleText } from './describe'
 import { dropView, getView, putView } from './viewStore'
 
 afterEach(() => {
   document.body.innerHTML = ''
   sessionStorage.clear()
+  vi.unstubAllGlobals()
 })
 
 describe('scan', () => {
@@ -65,6 +66,72 @@ describe('scan', () => {
     expect(paramDefault(ps[2])).toBe('off')
     expect(paramDefault({ id: 'x', kind: 'steps' })).toBe('')
     expect(paramDefault({ id: 'x', kind: 'range', default: 3 })).toBe(3)
+  })
+
+  it('hides roots with author and inline display rules and restores their display', () => {
+    document.body.innerHTML =
+      '<style>.flex{display:flex}.grid{display:grid}</style>' +
+      '<div data-grasp-live="sid001"><section class="flex" data-grasp-variant="0" hidden>original</section>' +
+      '<section class="grid" data-grasp-variant="1" style="display:grid!important">one</section>' +
+      '<section class="flex" data-grasp-variant="2" style="display:flex!important" hidden>two</section></div>'
+    const w = scanWrappers()[0]
+    showVariant(w, 1)
+    expect(getComputedStyle(w.original!).display).toBe('none')
+    expect(getComputedStyle(w.variants[1].el).display).toBe('none')
+    showVariant(w, 2)
+    expect(getComputedStyle(w.variants[0].el).display).toBe('none')
+    expect(w.variants[1].el.style.getPropertyValue('display')).toBe('flex')
+    expect(w.variants[1].el.style.getPropertyPriority('display')).toBe('important')
+    // HMR supplies a newer inline display to a hidden root.
+    w.variants[0].el.style.setProperty('display', 'inline-grid')
+    showVariant(w, 1)
+    expect(w.variants[0].el.style.getPropertyValue('display')).toBe('inline-grid')
+    showVariant(w, 0)
+    expect(w.original!.style.getPropertyValue('display')).toBe('')
+    expect(getComputedStyle(w.original!).display).toBe('flex')
+  })
+
+  it('fades only the selected candidate while rapid switches keep the others hidden', () => {
+    document.body.innerHTML = '<div data-grasp-live="sid001"><section data-grasp-variant="0" hidden>original</section><section data-grasp-variant="1">one</section><section data-grasp-variant="2" style="opacity:.75" hidden>two</section></div>'
+    vi.stubGlobal('matchMedia', () => ({ matches: false }))
+    const w = scanWrappers()[0]
+    const firstAnimation = { cancel: vi.fn(), onfinish: null } as unknown as Animation
+    const secondAnimation = { cancel: vi.fn(), onfinish: null } as unknown as Animation
+    const firstAnimate = vi.fn(() => firstAnimation)
+    const secondAnimate = vi.fn(() => secondAnimation)
+    Object.defineProperty(w.variants[0].el, 'animate', { value: firstAnimate })
+    Object.defineProperty(w.variants[1].el, 'animate', { value: secondAnimate })
+    showVariant(w, 1)
+    expect(firstAnimate).not.toHaveBeenCalled()
+    showVariant(w, 2)
+    expect(secondAnimate).toHaveBeenCalledWith([{ opacity: 0 }, { opacity: '.75' }], { duration: 160, easing: 'ease-out' })
+    expect(w.variants[0].el.hidden).toBe(true)
+    expect(getComputedStyle(w.variants[0].el).display).toBe('none')
+    expect(w.variants[1].el.hidden).toBe(false)
+    showVariant(w, 1)
+    expect(secondAnimation.cancel).toHaveBeenCalledOnce()
+    expect(firstAnimate).toHaveBeenCalledOnce()
+    expect(w.variants[1].el.hidden).toBe(true)
+    // Entering compare cancels the transient opacity and reveals all roots normally.
+    for (const el of [w.original!, ...w.variants.map((v) => v.el)]) setVariantVisible(el, true)
+    expect(firstAnimation.cancel).toHaveBeenCalledOnce()
+    showVariant(w, 2)
+    expect(secondAnimate).toHaveBeenCalledOnce()
+    showVariant(w, 0)
+    showVariant(w, 1)
+    expect(firstAnimate).toHaveBeenCalledOnce()
+  })
+
+  it('switches immediately when reduced motion is requested', () => {
+    document.body.innerHTML = '<div data-grasp-live="sid001"><section data-grasp-variant="1">one</section><section data-grasp-variant="2" hidden>two</section></div>'
+    vi.stubGlobal('matchMedia', () => ({ matches: true }))
+    const w = scanWrappers()[0]
+    const animate = vi.fn()
+    Object.defineProperty(w.variants[1].el, 'animate', { value: animate })
+    showVariant(w, 2)
+    expect(animate).not.toHaveBeenCalled()
+    expect(w.variants[0].el.hidden).toBe(true)
+    expect(w.variants[1].el.hidden).toBe(false)
   })
 })
 
