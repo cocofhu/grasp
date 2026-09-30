@@ -125,7 +125,7 @@ func TestChatLiveRequiresChoicesAndDoesNotAutoComplete(t *testing.T) {
 		t.Fatalf("invalid attachment left a blocking session: %+v", sessions)
 	}
 	sess, err := eng.ReactLiveAs("user:a", runID, "preview", ev)
-	if err != nil || sess.Mode != "replace" || sess.Selector != "" || sess.Summary != "页面候选" {
+	if err != nil || sess.Mode != "replace" || sess.Selector != "" || sess.Summary != "页面候选" || sess.Count != 3 {
 		t.Fatalf("page session: %+v, %v", sess, err)
 	}
 	if _, err := eng.ReactLiveAs("user:a", runID, "preview", ev); err != nil {
@@ -141,6 +141,8 @@ func TestChatLiveRequiresChoicesAndDoesNotAutoComplete(t *testing.T) {
 		{SID: ev.SID, State: models.LiveStateAccepted},
 		{SID: ev.SID, State: models.LiveStateReady},
 		{SID: ev.SID, State: models.LiveStateReady, Variants: []models.LiveVariant{{N: 1}}},
+		{SID: ev.SID, State: models.LiveStateReady, Variants: []models.LiveVariant{{N: 1}, {N: 2}}},
+		{SID: ev.SID, State: models.LiveStateReady, Variants: []models.LiveVariant{{N: 1}, {N: 2}, {N: 3}, {N: 4}}},
 	} {
 		if _, err := eng.ApplyLiveReport(runID, "preview", report); err == nil {
 			t.Fatalf("allowed completion without selectable candidates: %+v", report)
@@ -151,6 +153,123 @@ func TestChatLiveRequiresChoicesAndDoesNotAutoComplete(t *testing.T) {
 	}
 	if err := eng.checkLiveClosed(runID, "preview"); !errors.Is(err, ErrLiveOpen) {
 		t.Fatalf("ready page candidates must wait for user selection: %v", err)
+	}
+}
+
+func TestLivePageReadyMatchesInitialCount(t *testing.T) {
+	eng, db, _, runID := setupLive(t)
+	for i, tc := range []struct {
+		name, state, selector string
+		count, reported       int
+		wantOK                bool
+	}{
+		{"fewer", models.LiveStateGenerating, "", 3, 2, false},
+		{"exact", models.LiveStateGenerating, "", 3, 3, true},
+		{"more", models.LiveStateGenerating, "", 3, 4, false},
+		{"default", models.LiveStateGenerating, "", 0, 3, true},
+		{"requested-two", models.LiveStateGenerating, "", 2, 2, true},
+		{"requested-four", models.LiveStateGenerating, "", 4, 4, true},
+		{"invalid-small-count", models.LiveStateGenerating, "", 1, 3, false},
+		{"invalid-large-count", models.LiveStateGenerating, "", 5, 3, false},
+		{"element-two", models.LiveStateGenerating, "main > section", 3, 2, true},
+		{"element-failed-recovery", models.LiveStateFailed, "main > section", 3, 2, true},
+		{"refine-existing", models.LiveStateRefining, "", 3, 3, true},
+		{"refine-appended", models.LiveStateRefining, "", 3, 4, true},
+		{"refine-needs-choices", models.LiveStateRefining, "", 3, 1, false},
+		{"failed-needs-retry", models.LiveStateFailed, "", 3, 3, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sid := fmt.Sprintf("count%02d", i)
+			if err := db.Create(&models.LiveSession{ID: sid, RunID: runID, NodeID: "preview", Mode: "replace",
+				Selector: tc.selector, Count: tc.count, State: tc.state}).Error; err != nil {
+				t.Fatal(err)
+			}
+			variants := make([]models.LiveVariant, tc.reported)
+			for n := range variants {
+				variants[n].N = n + 1
+			}
+			_, err := eng.ApplyLiveReport(runID, "preview", mcp.LiveReport{SID: sid, State: models.LiveStateReady, Variants: variants})
+			if (err == nil) != tc.wantOK {
+				t.Fatalf("ready with %d variants, requested %d: %v", tc.reported, tc.count, err)
+			}
+			stored, loadErr := eng.liveSession(runID, "preview", sid)
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			if tc.wantOK {
+				if stored.State != models.LiveStateReady || len(stored.Variants) != tc.reported {
+					t.Fatalf("valid report not saved: %+v", stored)
+				}
+			} else if stored.State != tc.state || len(stored.Variants) != 0 {
+				t.Fatalf("rejected report changed durable state: %+v", stored)
+			}
+		})
+	}
+}
+
+func TestLivePageFailedRequiresExplicitRecovery(t *testing.T) {
+	eng, _, p, runID := setupLive(t)
+	hold := make(chan struct{})
+	p.mu.Lock()
+	p.reviseHold = hold
+	p.mu.Unlock()
+	defer func() {
+		close(hold)
+		_ = eng.waitReviewReadyForTest(runID, "preview", 5*time.Second)
+	}()
+	ev := models.LiveEvent{Op: models.LiveOpGenerate, SID: "retry01", Scope: "page", Prompt: "给我三个页面方案"}
+	if _, err := eng.ReactLiveAs("user:a", runID, "preview", ev); err != nil {
+		t.Fatal(err)
+	}
+	partial := []models.LiveVariant{{N: 1}, {N: 2}}
+	if _, err := eng.ApplyLiveReport(runID, "preview", mcp.LiveReport{SID: ev.SID, State: models.LiveStateFailed, Variants: partial}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.ApplyLiveReport(runID, "preview", mcp.LiveReport{SID: ev.SID, State: models.LiveStateReady, Variants: partial}); err == nil {
+		t.Fatal("failed report bypassed the initial generation count")
+	}
+	if _, err := eng.ReactLiveAs("user:a", runID, "preview", models.LiveEvent{Op: models.LiveOpRefine, SID: ev.SID,
+		Count: 1, Prompt: "补上第三个方案"}); err != nil {
+		t.Fatalf("explicit recovery unavailable: %v", err)
+	}
+	variants := append(partial, models.LiveVariant{N: 3})
+	if _, err := eng.ApplyLiveReport(runID, "preview", mcp.LiveReport{SID: ev.SID, State: models.LiveStateReady, Variants: variants}); err != nil {
+		t.Fatalf("explicit recovery could not complete: %v", err)
+	}
+	if _, err := eng.ReactLiveAs("user:a", runID, "preview", models.LiveEvent{Op: models.LiveOpRefine, SID: ev.SID,
+		Count: 1, Prompt: "再来一个方向"}); err != nil {
+		t.Fatal(err)
+	}
+	variants = append(variants, models.LiveVariant{N: 4})
+	sess, err := eng.ApplyLiveReport(runID, "preview", mcp.LiveReport{SID: ev.SID, State: models.LiveStateReady, Variants: variants})
+	if err != nil || sess.Count != 3 || len(sess.Variants) != 4 {
+		t.Fatalf("refine lost its append semantics: %+v, %v", sess, err)
+	}
+}
+
+func TestSettleLivePageReadyMatchesInitialCount(t *testing.T) {
+	for _, tc := range []struct {
+		name, state, selector string
+		count, reported       int
+		want                  string
+	}{
+		{"fewer", models.LiveStateGenerating, "", 3, 2, models.LiveStateFailed},
+		{"exact", models.LiveStateGenerating, "", 3, 3, models.LiveStateReady},
+		{"more", models.LiveStateGenerating, "", 3, 4, models.LiveStateFailed},
+		{"default", models.LiveStateGenerating, "", 0, 3, models.LiveStateReady},
+		{"invalid-count", models.LiveStateGenerating, "", 1, 3, models.LiveStateFailed},
+		{"element-two", models.LiveStateGenerating, "main > section", 3, 2, models.LiveStateReady},
+		{"refine-appended", models.LiveStateRefining, "", 3, 4, models.LiveStateReady},
+		{"refine-needs-choices", models.LiveStateRefining, "", 3, 1, models.LiveStateFailed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sess := &models.LiveSession{State: tc.state, Mode: "replace", Selector: tc.selector, Count: tc.count,
+				Variants: make([]models.LiveVariant, tc.reported)}
+			got, msg := settleLiveState(sess, true, true, false)
+			if got != tc.want || (got == models.LiveStateFailed && msg == "") {
+				t.Fatalf("settled as %s (%s), want %s", got, msg, tc.want)
+			}
+		})
 	}
 }
 
@@ -332,7 +451,7 @@ func TestLiveOneOpenSessionAndIDReuse(t *testing.T) {
 
 func TestLiveApplyReportValidation(t *testing.T) {
 	eng, db, _, runID := setupLive(t)
-	db.Create(&models.LiveSession{ID: "sid005", RunID: runID, NodeID: "preview", Mode: "replace", State: models.LiveStateGenerating})
+	db.Create(&models.LiveSession{ID: "sid005", RunID: runID, NodeID: "preview", Mode: "replace", Selector: "main > section", State: models.LiveStateGenerating})
 	for _, r := range []mcp.LiveReport{
 		{SID: "x", State: "ready"},
 		{SID: "missing1", State: "ready"},

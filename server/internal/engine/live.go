@@ -455,6 +455,7 @@ func (e *Engine) ApplyLiveReport(runID, nodeID string, u mcp.LiveReport) (*model
 		sess.FinalParams = chat.Params
 		sess.RetryAccept = true
 	}
+	fromState := sess.State
 	if u.Variants != nil {
 		vs, err := models.NormalizeLiveVariants(u.Variants)
 		if err != nil {
@@ -476,17 +477,49 @@ func (e *Engine) ApplyLiveReport(runID, nodeID string, u mcp.LiveReport) (*model
 			sess.Error = "Agent 未能完成"
 		}
 	}
-	if u.State == models.LiveStateReady && len(sess.Variants) == 0 && sess.Mode != "steer" {
-		return nil, errors.New("state=ready 时需要 variants(每个变体的编号与标签)")
-	}
-	if u.State == models.LiveStateReady && sess.Mode == "replace" && sess.Selector == "" && sess.Count >= models.LiveMinVariants && len(sess.Variants) < models.LiveMinVariants {
-		return nil, errors.New("页面候选至少需要两个变体供用户选择")
+	if u.State == models.LiveStateReady {
+		if err := liveReadyVariantsError(sess, fromState); err != nil {
+			return nil, err
+		}
 	}
 	if err := e.db.Save(sess).Error; err != nil {
 		return nil, err
 	}
 	e.publishLive(sess)
 	return sess, nil
+}
+
+// liveReadyVariantsError also guards recovery after a turn without live_update.
+// Count is the initial generation request; refine(count) means additional
+// variants, so an existing session's refined list may exceed that initial count.
+func liveReadyVariantsError(sess *models.LiveSession, fromState string) error {
+	if sess.Mode == "steer" {
+		return nil
+	}
+	if len(sess.Variants) == 0 {
+		return errors.New("state=ready 时需要 variants(每个变体的编号与标签)")
+	}
+	if sess.Mode != "replace" || sess.Selector != "" {
+		return nil
+	}
+	if fromState == models.LiveStateFailed {
+		return errors.New("页面候选已失败,请先重试修改,或放弃后重新生成")
+	}
+	if fromState == models.LiveStateGenerating {
+		count := sess.Count
+		if count == 0 {
+			count = 3 // same default as LiveEvent.Normalize
+		}
+		if count < models.LiveMinVariants || count > models.LiveMaxVariants {
+			return errors.New("页面候选请求的变体数量无效")
+		}
+		if len(sess.Variants) != count {
+			return fmt.Errorf("页面候选需要 %d 个变体,实际报告 %d 个;请补齐后重新报告", count, len(sess.Variants))
+		}
+	} else if len(sess.Variants) < models.LiveMinVariants {
+		return errors.New("页面候选至少需要两个变体供用户选择")
+	}
+	return nil
 }
 
 // settleLiveAfterTurn resolves a session the agent left mid-transition (it
@@ -542,6 +575,9 @@ func settleLiveState(sess *models.LiveSession, present, scanned, interrupted boo
 			return models.LiveStateDone, ""
 		}
 		if present && !interrupted && len(sess.Variants) > 0 {
+			if err := liveReadyVariantsError(sess, sess.State); err != nil {
+				return models.LiveStateFailed, err.Error()
+			}
 			return models.LiveStateReady, ""
 		}
 		if present {
