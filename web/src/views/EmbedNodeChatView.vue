@@ -271,6 +271,7 @@ onUnmounted(() => {
       class="min-h-0 flex-1"
       :embed-token="token"
       :request-page-context="pageContext.request"
+      :page-control-enabled="pageControlOn"
       @status="onStatus"
       @events-ready="onEventsReady"
       @events-closed="pageControl.onEventsClosed"

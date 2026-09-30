@@ -90,7 +90,7 @@ function mountView(locale: 'zh-CN' | 'en' = 'zh-CN', props: Record<string, unkno
       en: { ...commonEn, ...pagesEn, ...shellEn },
     },
   })
-  const wrapper = mount(PublicGateApprovalView, { props, slots, global: { plugins: [i18n] } })
+  const wrapper = mount(PublicGateApprovalView, { props, slots, global: { plugins: [i18n], stubs: { Teleport: !!props.embedToken } } })
   mounted.push(wrapper)
   return wrapper
 }
@@ -356,27 +356,32 @@ describe('PublicGateApprovalView workbench', () => {
       'page-control': '<button data-testid="permission-switch">Page permission</button>',
     })
     await flushPromises()
-    const permission = () => w.findAll('[data-testid="page-collaboration-controls"] [data-testid="permission-switch"]')
-    expect(permission()).toHaveLength(1)
+    async function expectPermissionReachable() {
+      const trigger = w.get('[data-testid="page-collaboration-toggle"]')
+      if (trigger.attributes('aria-expanded') !== 'true') await trigger.trigger('click')
+      await flushPromises()
+      expect(w.findAll('[data-testid="page-collaboration-controls"] [data-testid="permission-switch"]')).toHaveLength(1)
+    }
+    await expectPermissionReachable()
     expect(w.find('[data-testid="live-candidate-mode"]').exists()).toBe(false)
 
     mocks.preview.mockResolvedValue({ ...preview, reactSessionAlive: false, actions: {} })
     await (w.vm as unknown as { loadPreview: () => Promise<void> }).loadPreview()
     await flushPromises()
     expect(w.find('[data-testid="public-gate-react-only-deadend"]').exists()).toBe(true)
-    expect(permission()).toHaveLength(1)
+    await expectPermissionReachable()
 
     mocks.preview.mockRejectedValue(new Error('network unavailable'))
     await (w.vm as unknown as { loadPreview: () => Promise<void> }).loadPreview()
     await flushPromises()
     expect(w.find('[data-testid="public-gate-network-error"]').exists()).toBe(true)
-    expect(permission()).toHaveLength(1)
+    await expectPermissionReachable()
 
     mocks.preview.mockResolvedValue(preview)
     await w.get('[data-testid="public-gate-network-retry"]').trigger('click')
     await flushPromises()
     expect(w.find('[data-testid="clarify-input"]').exists()).toBe(true)
-    expect(permission()).toHaveLength(1)
+    await expectPermissionReachable()
   })
 
   it('react_only does not send Live writes', async () => {
@@ -1714,6 +1719,11 @@ describe('embedded Chat page candidate mode', () => {
     const vm = wrapper.vm as unknown as { loadLiveSessions: () => Promise<unknown>; setLiveView: (sid: string, view: unknown) => void }
     await vm.loadLiveSessions()
     await flushPromises()
+    const menu = wrapper.find('[data-testid="page-collaboration-toggle"]')
+    if (menu.exists()) {
+      await menu.trigger('click')
+      await flushPromises()
+    }
     return { wrapper, vm, requestPageContext }
   }
 

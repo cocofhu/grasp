@@ -350,6 +350,13 @@ test.describe('production Chat composer page candidates', () => {
     await expect(drawer(page).getByTestId('clarify-input')).toBeVisible({ timeout: 15_000 })
   }
 
+  async function openControls(page: Page) {
+    const toggle = drawer(page).getByTestId('page-collaboration-toggle')
+    await expect(toggle).toBeVisible()
+    if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click()
+    await expect(drawer(page).getByTestId('page-collaboration-controls')).toBeVisible()
+  }
+
   async function attachReference(page: Page) {
     await drawer(page).locator('input[type="file"]').setInputFiles({ name: 'reference.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNf8AAAAASUVORK5CYII=', 'base64') })
     await expect(drawer(page).getByTestId('clarify-draft-image-thumb')).toBeVisible()
@@ -360,6 +367,8 @@ test.describe('production Chat composer page candidates', () => {
     await entry(page, key)
     const mode = drawer(page).getByTestId('live-candidate-mode')
     const tools = page.locator('grasp-preview-pick [data-role="live"]')
+    await expect(drawer(page).getByTestId('page-collaboration-toggle')).toHaveAttribute('aria-expanded', 'false')
+    await openControls(page)
     await expect(mode).toHaveAttribute('aria-checked', 'false')
     await expect(tools).toHaveAttribute('aria-pressed', 'false')
     await attachReference(page)
@@ -370,6 +379,7 @@ test.describe('production Chat composer page candidates', () => {
       frame?.contentWindow?.postMessage({ type: 'grasp-embed:pick', payload: { selector: 'section#newsletter h2', tagName: 'H2', text: 'Newsletter original', outerHTML: '<h2>Newsletter original</h2>', url: location.href } }, location.origin)
     })
     await expect(drawer(page).getByTestId('clarify-annotation-chip')).toBeVisible()
+    await openControls(page)
     await mode.click()
     await expect(drawer(page).getByTestId('live-candidate-hint')).toContainText('3')
     await drawer(page).getByTestId('clarify-input').fill('保留订阅交互，生成三个整页设计候选供我挑选')
@@ -399,11 +409,13 @@ test.describe('production Chat composer page candidates', () => {
     await expect(page.locator('[data-grasp-variant="2"]')).toBeVisible()
     await expect(drawer(page).getByTestId('live-variant-viewing').last()).toContainText('2')
     // Turning the Chat send mode off does not close, accept or discard candidates.
+    await openControls(page)
     await mode.click()
     await expect(mode).toHaveAttribute('aria-checked', 'false')
     await expect(page.locator('[data-grasp-variant="2"]')).toBeVisible()
     expect((await state(page, key)).sessions[0].state).toBe('ready')
     await page.screenshot({ path: testInfo.outputPath('chat-page-candidates-choose.png'), animations: 'disabled' })
+    await openControls(page)
     await mode.click()
     await drawer(page).getByTestId('clarify-input').fill('就用这个')
     await drawer(page).getByTestId('clarify-send-label').click()
@@ -418,6 +430,7 @@ test.describe('production Chat composer page candidates', () => {
   test('off sends ordinary Chat and never creates candidate source', async ({ page }) => {
     const key = 'entry-composer-off'
     await entry(page, key)
+    await openControls(page)
     await expect(drawer(page).getByTestId('live-candidate-mode')).toHaveAttribute('aria-checked', 'false')
     await drawer(page).getByTestId('clarify-input').fill('普通聊天，请解释页面结构')
     await drawer(page).getByTestId('clarify-send-label').click()
@@ -432,6 +445,7 @@ test.describe('production Chat composer page candidates', () => {
     for (const options of ['&permission=react_only', '&live=false']) {
       const key = `entry-composer-${options.includes('permission') ? 'readonly' : 'disabled'}`
       await entry(page, key, options)
+      await openControls(page)
       await expect(drawer(page).getByTestId('live-candidate-mode')).toHaveCount(0)
       await drawer(page).getByTestId('clarify-input').fill('普通只读回复')
       await drawer(page).getByTestId('clarify-send-label').click()
@@ -451,6 +465,7 @@ test.describe('production Chat composer page candidates', () => {
       } else await route.continue()
     })
     await attachReference(page)
+    await openControls(page)
     await drawer(page).getByTestId('live-candidate-mode').click()
     await drawer(page).getByTestId('clarify-input').fill('保留这个需求与参考图')
     await drawer(page).getByTestId('clarify-send-label').click()
@@ -468,6 +483,7 @@ test.describe('production Chat composer page candidates', () => {
     const key = 'entry-composer-no-overlay'
     await page.route('**/live-overlay.js', (route) => route.abort())
     await entry(page, key)
+    await openControls(page)
     await drawer(page).getByTestId('live-candidate-mode').click()
     await drawer(page).getByTestId('clarify-input').fill('三个页面候选')
     await drawer(page).getByTestId('clarify-send-label').click()
@@ -476,23 +492,52 @@ test.describe('production Chat composer page candidates', () => {
     expect((await state(page, key)).requests).toEqual([])
   })
 
-  test('grouped page controls fit 350, 390 and 500px English Chat and remain independent without losing the draft', async ({ page }, testInfo) => {
+  test('page collaboration menu supports keyboard and dismissal, fits narrow English Chat, and keeps switches independent', async ({ page }, testInfo) => {
     await page.addInitScript(() => { if (!localStorage.getItem('grasp-locale')) localStorage.setItem('grasp-locale', 'en') })
     const key = 'entry-grouped-controls'
     await entry(page, key)
     const chat = drawer(page)
     const group = chat.getByTestId('page-collaboration-controls')
+    const toggle = chat.getByTestId('page-collaboration-toggle')
+    const summary = chat.getByTestId('page-collaboration-summary')
     const mode = chat.getByTestId('live-candidate-mode')
     const control = chat.getByTestId('page-control-toggle')
     const input = chat.getByTestId('clarify-input')
     const send = chat.getByTestId('clarify-send-label')
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await expect(group).toBeHidden()
+    await expect(summary).toHaveText('')
+    const draft = 'Keep the subscription flow and generate three designs for me to choose.'
+    await input.fill(draft)
+    await toggle.focus()
+    await toggle.press('Enter')
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await expect(group).toBeVisible()
     await expect(group).toHaveAccessibleName('Page collaboration')
     await expect(group.getByTestId('live-candidate-mode')).toHaveCount(1)
     await expect(group.getByTestId('page-control-toggle')).toHaveCount(1)
     await expect(control).toHaveAttribute('aria-checked', 'false')
     await expect(mode).toHaveAttribute('aria-checked', 'false')
-    const draft = 'Keep the subscription flow and generate three designs for me to choose.'
-    await input.fill(draft)
+    await expect(control).toBeFocused()
+    // A native switch is operable with Space. Escape closes the popup and
+    // restores the trigger, so keyboard users can immediately reopen it.
+    await mode.focus()
+    await mode.press('Escape')
+    await expect(group).toBeHidden()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await expect(toggle).toBeFocused()
+    await toggle.press('Space')
+    await expect(group).toBeVisible()
+    await mode.focus()
+    await mode.press('Tab')
+    await expect(group).toBeHidden()
+    await expect(input).toBeFocused()
+    await openControls(page)
+    await input.click()
+    await expect(group).toBeHidden()
+    await expect(input).toBeFocused()
+    await expect(input).toHaveValue(draft)
+    await openControls(page)
     await page.evaluate(() => {
       const captured: unknown[] = []
       ;(window as Window & { groupedPageMessages?: unknown[] }).groupedPageMessages = captured
@@ -502,8 +547,8 @@ test.describe('production Chat composer page candidates', () => {
       })
     })
     const controlMessages = () => page.evaluate(() => (window as Window & { groupedPageMessages?: unknown[] }).groupedPageMessages || [])
-
-    await mode.click()
+    await mode.focus()
+    await mode.press('Space')
     await expect(mode).toHaveAttribute('aria-checked', 'true')
     await expect(control).toHaveAttribute('aria-checked', 'false')
     await expect(chat.getByTestId('live-candidate-hint')).toContainText('3')
@@ -522,10 +567,16 @@ test.describe('production Chat composer page candidates', () => {
     await expect(mode).toHaveAttribute('aria-checked', 'true')
     await expect(control).toHaveAttribute('aria-checked', 'false')
     await expect.poll(controlMessages).toEqual([expect.objectContaining({ on: true }), expect.objectContaining({ on: false })])
+    await input.click()
+    await expect(group).toBeHidden()
+    await expect(summary).toContainText('Candidates')
     await expect(input).toHaveValue(draft)
+    await openControls(page)
+    await expect(mode).toHaveAttribute('aria-checked', 'true')
+    await expect(control).toHaveAttribute('aria-checked', 'false')
 
-    // Resize the actual shipping drawer using its handle, rather than styling
-    // Vue or a surrogate group. The inner Chat viewport is exactly each width.
+    // Resize the actual shipping drawer, checking closed and open states. The
+    // popup opens upwards, fits the iframe, and leaves the send action visible.
     async function resizeChat(width: number) {
       const frame = page.locator('grasp-preview-pick [data-role="drawer"] iframe')
       const initial = await frame.boundingBox()
@@ -541,34 +592,49 @@ test.describe('production Chat composer page candidates', () => {
       await expect.poll(async () => Math.round((await frame.boundingBox())!.width)).toBe(width)
     }
     for (const width of [350, 390, 500]) {
+      await input.click()
       await resizeChat(width)
-      await expect(send).toBeVisible()
+      await expect(toggle).toBeInViewport({ ratio: 1 })
+      await expect(summary).toBeVisible()
+      await expect(send).toBeInViewport({ ratio: 1 })
+      await expect(group).toBeHidden()
+      await openControls(page)
       await expect(send).toBeInViewport({ ratio: 1 })
       await expect(mode).toBeInViewport({ ratio: 1 })
       await expect(control).toBeInViewport({ ratio: 1 })
       const dimensions = await group.evaluate((element) => ({
         groupOverflow: element.scrollWidth - element.clientWidth,
         pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        groupTop: element.getBoundingClientRect().top,
         groupRight: element.getBoundingClientRect().right,
+        groupBottom: element.getBoundingClientRect().bottom,
+        triggerTop: document.querySelector('[data-testid="page-collaboration-toggle"]')!.getBoundingClientRect().top,
         viewportWidth: innerWidth,
       }))
       expect(dimensions.groupOverflow).toBeLessThanOrEqual(1)
       expect(dimensions.pageOverflow).toBeLessThanOrEqual(1)
+      expect(dimensions.groupTop).toBeGreaterThanOrEqual(0)
       expect(dimensions.groupRight).toBeLessThanOrEqual(dimensions.viewportWidth)
+      expect(dimensions.groupBottom).toBeLessThanOrEqual(dimensions.triggerTop)
       await expect(input).toHaveValue(draft)
     }
+    await input.click()
     await resizeChat(350)
-    await chat.getByTestId('public-gate-chat-host').screenshot({ path: testInfo.outputPath('grouped-page-controls-narrow.png'), animations: 'disabled' })
+    await openControls(page)
+    await chat.getByTestId('public-gate-chat-host').screenshot({ path: testInfo.outputPath('page-collaboration-menu-narrow.png'), animations: 'disabled' })
 
-    // The desktop deliverable shows the user's Chinese labels in the same real
-    // Chat. A fresh node also proves there is only one copy of each switch.
     await page.evaluate(() => localStorage.setItem('grasp-locale', 'zh-CN'))
     await entry(page, 'entry-grouped-controls-zh')
-    await expect(chat.getByTestId('page-collaboration-controls')).toHaveAccessibleName('页面协作')
     await resizeChat(500)
-    await chat.getByTestId('live-candidate-mode').click()
     await input.fill('保留订阅交互，给我三个页面候选，选好后再采用。')
-    await chat.getByTestId('public-gate-chat-host').screenshot({ path: testInfo.outputPath('grouped-page-controls-desktop.png'), animations: 'disabled' })
+    await expect(group).toBeHidden()
+    await chat.getByTestId('public-gate-chat-host').screenshot({ path: testInfo.outputPath('page-collaboration-menu-closed.png'), animations: 'disabled' })
+    await openControls(page)
+    await expect(group).toHaveAccessibleName('页面协作')
+    await mode.click()
+    await chat.getByTestId('public-gate-chat-host').screenshot({ path: testInfo.outputPath('page-collaboration-menu-open.png'), animations: 'disabled' })
+    await input.click()
+    await expect(summary).toContainText('页面候选')
     expect((await state(page, key)).requests).toEqual([])
   })
 

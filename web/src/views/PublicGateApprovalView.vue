@@ -84,6 +84,7 @@ type PublicChatRef = {
 const props = defineProps<{
   /** Chat-only drawer mode: the credential comes from the embed session instead of `#t=`. */
   embedToken?: string
+  pageControlEnabled?: boolean
   requestPageContext?: () => Promise<EmbedLiveContext>
 }>()
 const emit = defineEmits<{
@@ -216,6 +217,10 @@ const permissionPreset = computed(() => normalizePermissionPreset(preview.value?
 const isReactOnly = computed(() => permissionPreset.value === 'react_only')
 const canWriteLive = computed(() => !isReactOnly.value)
 const showPageCandidateMode = computed(() => chatOnly.value && live.store.enabled && canWriteLive.value && canReply.value)
+const pageCollaborationActiveLabels = computed(() => [
+  ...(props.pageControlEnabled ? [t('pages.embedChat.pageControl.shortLabel')] : []),
+  ...(showPageCandidateMode.value && pageCandidateMode.value ? [t('pages.embedChat.live.candidateShortLabel')] : []),
+])
 const showReactOnlyDeadend = computed(
   () => isActive.value && !doneKind.value && isReactOnly.value && !reactAlive.value,
 )
@@ -1510,7 +1515,7 @@ defineExpose({
       </div>
     </header>
 
-    <PageCollaborationControls v-if="chatOnly && $slots['page-control'] && composerUnavailable">
+    <PageCollaborationControls v-if="chatOnly && $slots['page-control'] && composerUnavailable" :active-labels="pageCollaborationActiveLabels">
       <slot name="page-control" />
     </PageCollaborationControls>
 
@@ -1729,7 +1734,7 @@ defineExpose({
                   @queue-reorder="onQueueReorder"
                 >
                   <template #composer-controls>
-                    <PageCollaborationControls v-if="chatOnly && ($slots['page-control'] || showPageCandidateMode)">
+                    <PageCollaborationControls v-if="chatOnly && ($slots['page-control'] || showPageCandidateMode)" :active-labels="pageCollaborationActiveLabels">
                       <slot name="page-control" />
                       <div v-if="showPageCandidateMode" class="px-3 py-2" data-testid="live-candidate-control">
                         <label class="flex items-center justify-between gap-3 text-xs font-medium text-txt2">
