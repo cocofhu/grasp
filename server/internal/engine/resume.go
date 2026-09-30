@@ -435,6 +435,9 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 				if !e.ReviewSessionReady(runID, nodeID) {
 					return errors.New("复审进行中或待发送队列非空,请先 Cancel 或等待完成后再确认")
 				}
+				if err := e.checkLiveClosed(runID, nodeID); err != nil {
+					return err
+				}
 				if err := e.ensureSandboxIdleForConfirm(runID, nodeID, abortRunning); err != nil {
 					return err
 				}

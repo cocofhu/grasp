@@ -175,6 +175,8 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/runs/:id/nodes/:nodeId/sandbox", h.RunNodeSandbox)
 		api.GET("/runs/:id/nodes/:nodeId/previews", h.ListNodePreviews)
 		api.POST("/runs/:id/nodes/:nodeId/embed-ticket", h.CreateEmbedTicket)
+		api.GET("/runs/:id/nodes/:nodeId/live-sessions", h.LiveSessions)
+		api.POST("/runs/:id/nodes/:nodeId/live-sessions/discard-all", h.LiveDiscardAll)
 		api.GET("/runs/:id/nodes/:nodeId/preview-issues", h.ListPreviewIssues)
 		api.POST("/runs/:id/nodes/:nodeId/preview-issues", h.CreatePreviewIssue)
 		api.DELETE("/runs/:id/nodes/:nodeId/preview-issues/:issueId", h.DeletePreviewIssue)
@@ -338,6 +340,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 	// Cooperative pick.js for IP-direct iframe preview (public static).
 	r.GET("/preview-pick.js", h.PreviewPickScript)
 	r.GET("/page-control.js", h.PageControlScript)
+	r.GET("/live-overlay.js", h.LiveOverlayScript)
 
 	// VNC preview (WebSocket): noVNC RFB proxy + CDP Pick/navigate control.
 	r.GET("/preview-vnc/:runId/:nodeId/:port/ws", h.PreviewVNC)
@@ -363,6 +366,8 @@ func New(h *handlers.Handlers) *gin.Engine {
 		pub.Any("/preview-api/:ticket/*path", h.PublicPreviewAPIProxy)
 		pub.POST("/decide", h.PublicGateDecide)
 		pub.POST("/reply", h.PublicGateReply)
+		pub.GET("/live-sessions", h.PublicLiveSessions)
+		pub.POST("/live-discard-all", h.PublicLiveDiscardAll)
 		pub.POST("/cancel", h.PublicGateCancel)
 		pub.POST("/queue/remove", h.PublicGateQueueRemove)
 		pub.POST("/queue/reorder", h.PublicGateQueueReorder)
@@ -375,6 +380,8 @@ func New(h *handlers.Handlers) *gin.Engine {
 		pub.OPTIONS("/embed-ticket", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 		pub.OPTIONS("/decide", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 		pub.OPTIONS("/reply", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+		pub.OPTIONS("/live-sessions", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+		pub.OPTIONS("/live-discard-all", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 		pub.OPTIONS("/cancel", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 		pub.OPTIONS("/queue/remove", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 		pub.OPTIONS("/queue/reorder", func(c *gin.Context) { c.Status(http.StatusNoContent) })

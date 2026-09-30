@@ -120,6 +120,24 @@ func TestProxy_ServesPageControlScript(t *testing.T) {
 	}
 }
 
+func TestProxy_ServesLiveOverlay(t *testing.T) {
+	proxy, _ := testProxy(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("live-overlay path must not hit upstream")
+	}))
+	resp, err := http.Get(proxy.URL + LiveOverlayPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(resp.Header.Get("Content-Type"), "javascript") {
+		t.Fatalf("status=%d type=%q", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	if !strings.Contains(string(body), "__graspLiveOverlay") {
+		t.Fatalf("script body: %s", body[:min(len(body), 80)])
+	}
+}
+
 func TestProxy_SkipsJSON(t *testing.T) {
 	raw := `{"ok":true,"html":"<body></body>"}`
 	proxy, _ := testProxy(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

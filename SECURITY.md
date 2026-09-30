@@ -34,9 +34,10 @@ Inbox operators can mint a one-shot external approval URL for a single pending
   Holders cannot open projects, other runs/nodes, or authenticated `/api/*`.
 - Default TTL is 24h (1h / 8h / 24h / 72h / 7d). One active link per instance.
   Minting also stores a link-level `permissionPreset` (`full` default, or
-  `react_only`). Preview.actions and public decide/reply/cancel share the same
-  Allow(preset, action) check: `react_only` may reply/cancel but every decide
-  is rejected with `403 permission_denied` **before** ConsumeCAS, so the
+  `react_only`). Preview.actions and public decide/reply/cancel/live share the
+  same Allow(preset, action) check: `react_only` may reply/cancel but every
+  decide and every Live write (generate / accept / discard / steer, including
+  discard-all) is rejected with `403 permission_denied` **before** ConsumeCAS, so the
   one-shot token is not marked used and the gate does not advance. Empty /
   missing presets on legacy rows mean `full`. Regenerating immediately revokes
   the previous URL and reuses the same TTL tier **and** permission preset from

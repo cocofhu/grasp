@@ -231,8 +231,34 @@ func previewNodePromptExtras(req NodeReq) string {
 	if !mcp.SetPreviewAllowed(req.NodeType) || !configTruthy(req.Config["direct_preview"]) {
 		return ""
 	}
+	direct := models.DefaultPreviewDirectContract
 	if !configDefaultOn(req.Config["auto_inject"]) {
-		return models.DefaultPreviewDirectManualContract + models.DefaultPreviewPageControlContract
+		direct = models.DefaultPreviewDirectManualContract
 	}
-	return models.DefaultPreviewDirectContract + models.DefaultPreviewPageControlContract
+	out := direct + models.DefaultPreviewPageControlContract
+	if liveVariantsEnabled(req) {
+		out += models.DefaultPreviewLiveContract
+	}
+	return out
+}
+
+// liveVariantSkillDir is the platform skill copied in when Live variants are on.
+const liveVariantSkillDir = "skills/live-variants"
+
+// liveVariantsEnabled reports whether an app_preview node runs Live variants:
+// IP-direct preview (the page overlay needs the injecting proxy and HMR) and
+// the node's live_variants switch (default on). Grasp nodes never write
+// source, so they stay out even though they may register previews.
+func liveVariantsEnabled(req NodeReq) bool {
+	return req.NodeType == "app_preview" &&
+		configTruthy(req.Config["direct_preview"]) &&
+		configDefaultOn(req.Config["live_variants"])
+}
+
+// liveVariantSkills returns the platform skill dirs to embed for req.
+func liveVariantSkills(req NodeReq) []string {
+	if !liveVariantsEnabled(req) {
+		return nil
+	}
+	return []string{liveVariantSkillDir}
 }

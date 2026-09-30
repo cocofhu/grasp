@@ -13,6 +13,9 @@ var previewPickJS []byte
 //go:embed page-control.js
 var pageControlJS []byte
 
+//go:embed live-overlay.js
+var liveOverlayJS []byte
+
 // PreviewPickScript serves the cooperative pick.js for IP-direct app preview.
 // The script runs in the app origin (loaded via <script src>) and postMessages
 // selector / URL back to the Grasp parent. No auth: it is public static JS.
@@ -30,4 +33,13 @@ func (h *Handlers) PageControlScript(c *gin.Context) {
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Cross-Origin-Resource-Policy", "cross-origin")
 	c.Data(http.StatusOK, "application/javascript; charset=utf-8", pageControlJS)
+}
+
+// LiveOverlayScript serves the Live variants overlay preview-pick.js loads,
+// from the same place, once the drawer reports Live is on for the node.
+func (h *Handlers) LiveOverlayScript(c *gin.Context) {
+	c.Header("Cache-Control", "public, max-age=300")
+	c.Header("Access-Control-Allow-Origin", "*")
+	c.Header("Cross-Origin-Resource-Policy", "cross-origin")
+	c.Data(http.StatusOK, "application/javascript; charset=utf-8", liveOverlayJS)
 }

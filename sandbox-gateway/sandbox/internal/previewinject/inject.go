@@ -23,6 +23,10 @@ const ScriptPath = "/__grasp/preview-pick.js"
 // loads it next to itself on demand.
 const PageControlPath = "/__grasp/page-control.js"
 
+// LiveOverlayPath serves the Live variants overlay; preview-pick.js loads it
+// from its own directory once the drawer reports Live is on.
+const LiveOverlayPath = "/__grasp/live-overlay.js"
+
 var (
 	reBodyClose      = regexp.MustCompile(`(?i)</body>`)
 	reHTMLClose      = regexp.MustCompile(`(?i)</html>`)

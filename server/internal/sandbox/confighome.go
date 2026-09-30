@@ -37,6 +37,10 @@ type ConfigHomeSpec struct {
 	// EmbeddedRules lists platform rule files (under skills_embed/) to embed
 	// for this node type. See nodereg.EmbeddedRuleFiles.
 	EmbeddedRules []string
+	// EmbeddedSkills lists platform skill directories (under skills_embed/,
+	// e.g. "skills/live-variants") copied into the config home. They land
+	// after the agent workspace, so the platform copy wins on a name clash.
+	EmbeddedSkills []string
 	// IncludeArtifactStore writes the artifact-store convention rule. Only set
 	// when the Agent has opted into the artifact-store MCP (convention-first):
 	// the platform never auto-injects it.
@@ -133,6 +137,12 @@ func BuildConfigHome(spec ConfigHomeSpec) (string, error) {
 		}
 		if err := os.WriteFile(filepath.Join(dir, name), b, 0o644); err != nil {
 			return "", err
+		}
+	}
+
+	for _, rel := range spec.EmbeddedSkills {
+		if err := copyEmbeddedDir(rel, dir); err != nil {
+			return "", fmt.Errorf("embed platform skill %s: %w", rel, err)
 		}
 	}
 
@@ -392,6 +402,37 @@ func resolvePlatformRule(relPath, agentName, profilesRoot, globalRulesDir string
 		}
 	}
 	return skillAssets.ReadFile("skills_embed/" + relPath)
+}
+
+// copyEmbeddedDir copies skills_embed/<rel> (a directory) to dst/<rel>,
+// replacing whatever the agent workspace put there.
+func copyEmbeddedDir(rel, dst string) error {
+	rel = filepath.ToSlash(filepath.Clean(rel))
+	if rel == "." || strings.HasPrefix(rel, "../") || filepath.IsAbs(rel) {
+		return fmt.Errorf("invalid embedded path %q", rel)
+	}
+	root := "skills_embed/" + rel
+	if _, err := fs.ReadDir(skillAssets, root); err != nil {
+		return err
+	}
+	target := filepath.Join(dst, filepath.FromSlash(rel))
+	if err := os.RemoveAll(target); err != nil {
+		return err
+	}
+	return fs.WalkDir(skillAssets, root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		out := filepath.Join(target, filepath.FromSlash(strings.TrimPrefix(p, root)))
+		if d.IsDir() {
+			return os.MkdirAll(out, 0o755)
+		}
+		b, err := skillAssets.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(out, b, 0o644)
+	})
 }
 
 // copyTree recursively copies the host directory src into dst.

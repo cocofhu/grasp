@@ -39,6 +39,7 @@ func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) string
 		BaseWorkDirSrc:       c.sharedWorkDir(req),
 		WorkDirSrc:           c.workDir(profile),
 		EmbeddedRules:        nodereg.EmbeddedRuleFiles(req.NodeType),
+		EmbeddedSkills:       liveVariantSkills(req),
 		IncludeArtifactStore: hasArtifactStore(specs),
 		OmitOutcomeRule:      nodereg.IsGrasp(req.NodeType),
 		MCP:                  specs,

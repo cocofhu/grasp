@@ -21,6 +21,9 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 	if isPageTool(name) {
 		return h.runPageTool(runID, token, name, args)
 	}
+	if name == liveUpdateTool {
+		return h.runLiveUpdate(runID, token, args)
+	}
 	switch name {
 	case "upload_image_artifact":
 		aname := asString(args["name"])

@@ -759,6 +759,8 @@ export interface ClarifyTurn {
   forms?: ReactForm[]
   // Precise field/element annotations the human attached this review turn.
   annotations?: ReactAnnotation[]
+  /** Live variant request this human turn came from (preview page). */
+  live?: { sid: string; op: string; variant?: number }
   /** Agent turn stopped mid-stream by 轮级 Cancel; partial text retained. */
   interrupted?: boolean
   /** Sandbox turn id persisted with this assistant reply (plan g1.1). */

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
@@ -23,10 +23,28 @@ import {
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { setThemeOverride } from '@/lib/shared/theme'
 import { usePageControl } from '@/lib/inbox/embedPageControl'
+import {
+  EMBED_LIVE_ACK_MESSAGE,
+  EMBED_LIVE_CAPS_MESSAGE,
+  EMBED_LIVE_CMD_MESSAGE,
+  EMBED_LIVE_SESSIONS_MESSAGE,
+  isLiveOpen,
+  parseEmbedLiveMessage,
+  type LiveCmd,
+  type LiveEvent,
+  type LiveSession,
+  type LiveStore,
+  type LiveView,
+} from '@/lib/inbox/liveVariants'
 
 type ChatRef = {
   addPick?: (payload: AppPreviewPickPayload) => void
   sendEventsFrame?: (frame: Record<string, unknown>) => boolean
+  sendLive?: (ev: LiveEvent) => Promise<LiveSession | null>
+  loadLiveSessions?: () => Promise<{ enabled: boolean; sessions: LiveSession[] }>
+  discardAllLive?: () => Promise<number>
+  setLiveView?: (sid: string, view: LiveView) => void
+  liveStore?: LiveStore
 }
 
 const { t } = useI18n()
@@ -48,6 +66,75 @@ const pageControl = usePageControl({
   send: (frame) => chatRef.value?.sendEventsFrame?.(frame) ?? false,
 })
 const { supported: pageControlSupported, enabled: pageControlOn, state: pageControlState, active: pageControlActive } = pageControl
+
+const liveOpenCount = computed(() => {
+  const store = chatRef.value?.liveStore
+  if (!store?.enabled) return 0
+  return Object.values(store.sessions).filter((s) => isLiveOpen(s.state) && (s.mode !== 'steer' || s.state === 'failed')).length
+})
+const hasFailedSteer = computed(() => Object.values(chatRef.value?.liveStore?.sessions || {}).some((s) => s.mode === 'steer' && s.state === 'failed'))
+const liveDiscarding = ref(false)
+const liveNotice = ref('')
+
+function postToPage(msg: Record<string, unknown>) {
+  if (window.parent !== window) window.parent.postMessage(msg, parentOrigin())
+}
+
+/** Tell the page whether Live is on and what sessions exist (connect / reconnect). */
+async function syncLive() {
+  const load = chatRef.value?.loadLiveSessions
+  if (!load) return
+  try {
+    const { enabled, sessions } = await load()
+    postToPage({ type: EMBED_LIVE_CAPS_MESSAGE, enabled })
+    postToPage({ type: EMBED_LIVE_SESSIONS_MESSAGE, replace: true, sessions })
+  } catch {
+    // Live stays off on the page until the next reconnect.
+  }
+}
+
+async function forwardLive(reqId: string, ev: LiveEvent) {
+  const send = chatRef.value?.sendLive
+  if (!send) {
+    postToPage({ type: EMBED_LIVE_ACK_MESSAGE, reqId, sid: ev.sid, ok: false, error: 'not ready' })
+    return
+  }
+  try {
+    const session = await send(ev)
+    postToPage({ type: EMBED_LIVE_ACK_MESSAGE, reqId, sid: ev.sid, ok: true, session })
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e)
+    postToPage({ type: EMBED_LIVE_ACK_MESSAGE, reqId, sid: ev.sid, ok: false, error })
+  }
+}
+
+function onLiveSession(session: LiveSession) {
+  postToPage({ type: EMBED_LIVE_SESSIONS_MESSAGE, sessions: [session] })
+}
+
+function onLiveCmd(sid: string, cmd: LiveCmd, variant?: number) {
+  postToPage({ type: EMBED_LIVE_CMD_MESSAGE, sid, cmd, variant })
+}
+
+async function discardAllLive() {
+  const run = chatRef.value?.discardAllLive
+  if (!run || liveDiscarding.value) return
+  liveDiscarding.value = true
+  liveNotice.value = ''
+  try {
+    const n = await run()
+    liveNotice.value = t('pages.embedChat.live.discardAllDone', { n })
+  } catch (e) {
+    liveNotice.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    liveDiscarding.value = false
+  }
+}
+
+function onEventsReady() {
+  pageControl.onEventsReady()
+  void syncLive()
+}
 
 function takeHash(): string {
   const hash = window.location.hash
@@ -98,6 +185,7 @@ function onStatus(status: string) {
     announced = true
     window.parent.postMessage({ type: EMBED_READY_MESSAGE }, parentOrigin())
     pageControl.awaitHello()
+    void syncLive()
   }
   if (status === 'invalid' || status === 'expired' || status === 'revoked') {
     pageControl.reset()
@@ -128,6 +216,12 @@ function onMessage(e: MessageEvent) {
   const result = parseEmbedCmdResult(e.data)
   if (result) {
     pageControl.onPageResult(result)
+    return
+  }
+  const liveMsg = parseEmbedLiveMessage(e.data)
+  if (liveMsg) {
+    if (liveMsg.kind === 'state') chatRef.value?.setLiveView?.(liveMsg.sid, liveMsg.view)
+    else void forwardLive(liveMsg.reqId, liveMsg.event)
     return
   }
   const pick = parseEmbedPickMessage(e.data)
@@ -172,15 +266,36 @@ onUnmounted(() => {
         {{ t('pages.embedChat.pageControl.unsupported') }}
       </p>
     </div>
+    <div
+      v-if="phase === 'ready' && token && (liveOpenCount > 0 || liveNotice)"
+      class="flex shrink-0 items-center gap-2 border-b border-line px-3 py-1.5 text-[11px] text-txt2"
+      role="status"
+      data-testid="live-open-bar"
+    >
+      <span class="min-w-0 flex-1 truncate">{{ liveOpenCount > 0 ? t('pages.embedChat.live.openSessions', { n: liveOpenCount }) : liveNotice }}</span>
+      <span v-if="hasFailedSteer" class="text-txt3" data-testid="live-steer-partial">{{ t('pages.embedChat.live.steerPartial') }}</span>
+      <button
+        v-if="liveOpenCount > 0"
+        type="button"
+        class="shrink-0 rounded border border-line px-2 py-0.5 text-txt2 hover:text-err disabled:opacity-40"
+        :disabled="liveDiscarding"
+        data-testid="live-discard-all"
+        @click="discardAllLive"
+      >
+        {{ t(hasFailedSteer ? 'pages.embedChat.live.cleanupAll' : 'pages.embedChat.live.discardAll') }}
+      </button>
+    </div>
     <PublicGateApprovalView
       v-if="phase === 'ready' && token"
       ref="chatRef"
       class="min-h-0 flex-1"
       :embed-token="token"
       @status="onStatus"
-      @events-ready="pageControl.onEventsReady"
+      @events-ready="onEventsReady"
       @events-closed="pageControl.onEventsClosed"
       @page-frame="pageControl.onServerFrame"
+      @live-session="onLiveSession"
+      @live-cmd="onLiveCmd"
     />
     <div
       v-else-if="phase === 'connecting'"

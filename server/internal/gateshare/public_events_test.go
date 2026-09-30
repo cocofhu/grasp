@@ -152,3 +152,24 @@ func TestFilterPublicBrokerFrameQueueStateKeepsAnnotations(t *testing.T) {
 		t.Fatalf("image path leak: %s", s)
 	}
 }
+
+func TestFilterPublicBrokerFrameLive(t *testing.T) {
+	raw := []byte(`{"type":"live","runId":"r1","nodeId":"p1","session":{"sid":"sid001","runId":"r1","nodeId":"p1","state":"ready","retryAccept":true,"variants":[{"n":1}],"summary":"h1"}}`)
+	out, ok := FilterPublicBrokerFrame(raw, "p1", 0)
+	if !ok {
+		t.Fatal("live frame dropped")
+	}
+	s := string(out)
+	if strings.Contains(s, `"r1"`) || !strings.Contains(s, `"state":"ready"`) || !strings.Contains(s, `"sid":"sid001"`) {
+		t.Fatalf("filtered = %s", s)
+	}
+	if !strings.Contains(s, `"retryAccept":true`) {
+		t.Fatalf("failed acceptance recovery flag stripped from public frame: %s", s)
+	}
+	if _, ok := FilterPublicBrokerFrame([]byte(`{"type":"live","nodeId":"p1"}`), "p1", 0); ok {
+		t.Fatal("frame without session must drop")
+	}
+	if _, ok := FilterPublicBrokerFrame(raw, "other", 0); ok {
+		t.Fatal("other node must drop")
+	}
+}

@@ -1414,7 +1414,7 @@
           "fullDesc": "Hot session: reply / cancel / confirm (and reject). Default; matches today’s behavior.",
           "react_only": "ReAct chat only",
           "reactOnlyChip": "ReAct only",
-          "react_onlyDesc": "Reply and cancel allowed; confirm / reject advance is blocked."
+          "react_onlyDesc": "Reply and cancel allowed; confirm / reject advance and Live variant writes are blocked."
         },
         "regenInheritsHint": "Regen inherits the current preset",
         "linkLabel": "Share link",
@@ -3842,6 +3842,50 @@
           "paused": "Page control: paused (preview page is in the background)",
           "offline": "Page control: not connected"
         }
+      },
+      "live": {
+        "title": "Live variants",
+        "ops": {
+          "generate": "Generate variants",
+          "insert": "Insert candidates",
+          "steer": "Whole-page tweak",
+          "refine": "Refine",
+          "accept": "Accept variant",
+          "discard": "Discard variants",
+          "mount_failed": "Render failed"
+        },
+        "states": {
+          "generating": "Generating…",
+          "ready": "Ready",
+          "refining": "Updating…",
+          "accepting": "Accepting…",
+          "discarding": "Discarding…",
+          "accepted": "Accepted",
+          "discarded": "Discarded",
+          "failed": "Failed",
+          "done": "Done",
+          "unknown": "Unknown"
+        },
+        "viewing": "Viewing {current} / {total}",
+        "selected": "Accepted variant {n}",
+        "variantCount": "{n} variants",
+        "prev": "Previous",
+        "next": "Next",
+        "compare": "Side by side",
+        "inplace": "In place",
+        "accept": "Accept",
+        "discard": "Discard",
+        "retry": "Retry",
+        "dismissSteer": "Dismiss failed adjustment",
+        "retryAccept": "Retry adoption",
+        "steerPartial": "Dismiss clears the failure; any page changes already made are kept.",
+        "goto": "Go to variant {n}",
+        "openInPreview": "Switch, accept or discard these variants on the preview page.",
+        "discardAll": "Discard all",
+        "cleanupAll": "Clear unfinished requests",
+        "discardAllDone": "Requested cleanup of {n} Live request(s)",
+        "openSessions": "{n} Live requests are unfinished",
+        "failed": "Not finished: {error}"
       }
     },
     "embedArtifacts": {

@@ -2,6 +2,7 @@
 web/node_modules/
 web/dist/
 web/dist-page-control/
+web/dist-live-overlay/
 docs/node_modules/
 docs/public/
 docs/.deploy_git/

@@ -433,6 +433,9 @@ type ReactMessage struct {
 	// visual page, each with an optional note. Rendered into the review prompt
 	// so the agent edits exactly the cited spot. Persisted for re-render.
 	Annotations []ReactAnnotation `json:"annotations,omitempty"`
+	// Live marks a human turn produced by a Live variant request; the chat
+	// renders a Live card for it (state comes from the LiveSession row).
+	Live *LiveRef `json:"live,omitempty"`
 	// Interrupted marks an agent turn that was stopped mid-stream by 轮级 Cancel.
 	// Partial narration is retained; the session stays parked for further edits.
 	Interrupted bool `json:"interrupted,omitempty"`
@@ -849,6 +852,7 @@ func AllModels() []any {
 		&NotificationBaseline{},
 		&ProjectExternalMcpSettings{},
 		&ProjectMcpApiKey{},
+		&LiveSession{},
 	}
 }
 

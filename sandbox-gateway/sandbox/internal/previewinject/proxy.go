@@ -21,6 +21,9 @@ var pickScript []byte
 //go:embed page-control.js
 var pageControlScript []byte
 
+//go:embed live-overlay.js
+var liveOverlayScript []byte
+
 var errUnsupportedEncoding = errors.New("unsupported content-encoding")
 
 const flushInterval = 100 * time.Millisecond
@@ -67,6 +70,10 @@ func NewHandlerWithEmbed(upstream *url.URL, scriptURL string, embed EmbedLookup)
 		}
 		if r.URL.Path == PageControlPath {
 			serveScript(w, pageControlScript)
+			return
+		}
+		if r.URL.Path == LiveOverlayPath {
+			serveScript(w, liveOverlayScript)
 			return
 		}
 		if r.URL.Path == EmbedOriginPath {

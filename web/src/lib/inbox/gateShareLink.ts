@@ -1,3 +1,4 @@
+import type { LiveCtx, LiveEvent } from '@/lib/inbox/liveVariants'
 import type { Artifact, ClarifyImage, ClarifyInboxItem, GateInboxItem, GateShareInboxStatus, InboxItem, ReactForm, ReactQuestion } from '@/lib/shared/types'
 import {
   GRASP_STORAGE_KEYS,
@@ -257,6 +258,8 @@ export type PublicGatePreviewTurn = {
   questions?: ReactQuestion[]
   /** ask_form cards. Absent when the turn has none. */
   forms?: ReactForm[]
+  /** Live variant request this human turn came from. */
+  live?: { sid: string; op: string; variant?: number }
 }
 
 export type PublicGateQueueItem = {
@@ -377,6 +380,15 @@ export type PublicGateReplyResult = {
   error?: string
   message?: string
   kind?: string
+  code?: string
+  /** Live session after a Live request. */
+  live?: unknown
+}
+
+export type PublicLiveSessionsResult = {
+  status: string
+  enabled?: boolean
+  sessions?: unknown[]
 }
 
 /** Public review-share artifact list item (metadata only; no runId). */
@@ -643,6 +655,8 @@ export const publicGateApi = {
       quote?: string
     }>
     images?: Array<{ data?: string; mimeType?: string; name?: string }>
+    live?: LiveEvent
+    liveCtx?: LiveCtx | null
   }): Promise<PublicGateReplyResult> {
     return fetch('/public/gate-approvals/reply', {
       method: 'POST',
@@ -659,6 +673,31 @@ export const publicGateApi = {
           status: res.status,
           body,
         })
+      }
+      return body
+    })
+  },
+  liveSessions(token: string): Promise<PublicLiveSessionsResult> {
+    return fetch('/public/gate-approvals/live-sessions', {
+      method: 'GET',
+      credentials: 'omit',
+      headers: { [GATE_SHARE_TOKEN_HEADER]: token, [GATE_SHARE_REQUEST_HEADER]: '1' },
+    }).then(async (res) => {
+      const body = await readJson<PublicLiveSessionsResult>(res)
+      if (!res.ok) throw Object.assign(new Error(`${res.status}`), { status: res.status, body })
+      return body
+    })
+  },
+  liveDiscardAll(token: string): Promise<PublicGateReplyResult & { discarding?: number }> {
+    return fetch('/public/gate-approvals/live-discard-all', {
+      method: 'POST',
+      credentials: 'omit',
+      headers: { 'Content-Type': 'application/json', [GATE_SHARE_REQUEST_HEADER]: '1' },
+      body: JSON.stringify({ token }),
+    }).then(async (res) => {
+      const body = await readJson<PublicGateReplyResult & { discarding?: number }>(res)
+      if (!res.ok) {
+        throw Object.assign(new Error(body.message || body.error || `${res.status}`), { status: res.status, body })
       }
       return body
     })
