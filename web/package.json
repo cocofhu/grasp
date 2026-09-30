@@ -27,7 +27,7 @@
     "@vue-flow/minimap": "^1.5.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "dompurify": "^3.2.3",
+    "dompurify": "^3.4.16",
     "echarts": "^6.1.0",
     "html-to-image": "^1.11.13",
     "jspdf": "^4.2.1",
@@ -61,6 +61,7 @@
     "ws": "^8.18.0"
   },
   "overrides": {
+    "dompurify": "^3.4.16",
     "brace-expansion": "^5.0.9",
     "minimatch": "^10.2.5",
     "js-yaml": "^4.3.2",
