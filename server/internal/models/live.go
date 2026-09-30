@@ -11,6 +11,41 @@ import (
 	"time"
 )
 
+// LiveNodeSupported restricts Live source edits to the preview and Grasp
+// dialogues, including the persisted legacy Grasp alias.
+func LiveNodeSupported(nodeType string) bool {
+	return nodeType == "app_preview" || nodeType == "grasp" || nodeType == "approve"
+}
+
+// LiveVariantsEnabled is shared by the API, engine and runtime. Existing direct
+// previews default to Live on unless explicitly disabled in their node config.
+func LiveVariantsEnabled(nodeType string, cfg map[string]any) bool {
+	if !LiveNodeSupported(nodeType) || !liveConfigTruthy(cfg["direct_preview"]) {
+		return false
+	}
+	v := cfg["live_variants"]
+	if s, ok := v.(string); v == nil || (ok && strings.TrimSpace(s) == "") {
+		return true
+	}
+	return liveConfigTruthy(v)
+}
+
+func liveConfigTruthy(v any) bool {
+	switch v := v.(type) {
+	case bool:
+		return v
+	case string:
+		s := strings.ToLower(strings.TrimSpace(v))
+		return s == "true" || s == "1" || s == "yes"
+	case float64:
+		return v != 0
+	case int:
+		return v != 0
+	default:
+		return false
+	}
+}
+
 // Live variant session states. A session moves generating → ready, may loop
 // through refining → ready, and ends accepted | discarded. failed can be
 // retried (generate/refine/discard). Steer sessions (whole-page edits, no

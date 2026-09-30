@@ -266,6 +266,21 @@ describe('NodeInspector', () => {
     wrapper.unmount()
   })
 
+  it.each(['grasp', 'approve', 'app_preview'] as const)('%s shows omitted Live enabled and persists explicit opt-out', async (type) => {
+    const node: WFNode = { id: 'preview', type, label: 'Preview', position: { x: 0, y: 0 }, config: { direct_preview: true } }
+    const wrapper = mountInspector(node)
+    await flushPromises()
+    const sw = wrapper.get('[data-testid="node-switch-live_variants"]')
+    expect(sw.attributes('aria-checked')).toBe('true')
+    expect(node.config.live_variants).toBeUndefined()
+    await sw.trigger('click')
+    expect(node.config.live_variants).toBe(false)
+    expect(sw.attributes('aria-checked')).toBe('false')
+    await sw.trigger('click')
+    expect(node.config.live_variants).toBe(true)
+    wrapper.unmount()
+  })
+
   it('addAction appends gate action row', async () => {
     const node = sampleGateNode()
     const wrapper = mountInspector(node)

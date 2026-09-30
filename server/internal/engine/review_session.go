@@ -302,6 +302,11 @@ func (e *Engine) enqueueClarifyRetryLast(owner, runID, nodeID string) (waiting i
 	if conv.Done {
 		return 0, errors.New("react already done")
 	}
+	// Live display text is not the original authorized event/parameter
+	// snapshot. Replaying it as ordinary chat would lose the state transition.
+	if lastHumanMessage(conv.Messages).Live != nil {
+		return 0, errors.New("请使用 Live 卡片重试或放弃该变体请求")
+	}
 	text, images, annotations, ok := lastRetryableHuman(conv.Messages)
 	if !ok {
 		return 0, errors.New("没有可重试的上一轮用户消息")
@@ -790,7 +795,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	} else {
 		humanMsg = models.ReactMessage{
 			Role: "human", Text: item.Text, At: now,
-			Images: item.Images, Annotations: item.Annotations,
+			Images: item.Images, Annotations: item.Annotations, Live: item.Live,
 		}
 		conv.Messages = append(conv.Messages, humanMsg)
 		logDB(e.db.Save(&conv), s.runID, "save clarify human turn (turn_begin)")
@@ -804,8 +809,11 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	s.mu.Lock()
 	cancelled := s.cancelRequested || ctx.Err() != nil
 	s.mu.Unlock()
-	if cancelled {
+	if cancelled || (item.Live != nil && (t.Interrupted || t.Err != nil)) {
 		interrupted = true
+	}
+	if item.Live != nil {
+		e.settleLiveAfterTurn(s.runID, s.producerID, item.Live.SID, interrupted)
 	}
 
 	for _, text := range t.Handoffs {

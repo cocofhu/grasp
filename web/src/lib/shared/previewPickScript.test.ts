@@ -1161,7 +1161,7 @@ describe('preview-pick.js Live overlay hook', () => {
     toggles: number
     enabled: boolean[]
     open: boolean
-    opts: null | { post: (m: Record<string, unknown>) => boolean; stopPick: () => void; theme: () => string; isOwnUi: (el: Element) => boolean }
+    opts: null | { post: (m: Record<string, unknown>) => boolean; stopPick: () => void; theme: () => string; isOwnUi: (el: Element) => boolean; changed: () => void }
   }
 
   async function ready(install = true) {
@@ -1177,6 +1177,7 @@ describe('preview-pick.js Live overlay hook', () => {
             toggle: () => {
               fake.toggles++
               fake.open = !fake.open
+              o?.changed()
             },
             isOpen: () => fake.open,
             setEnabled: (on: boolean) => fake.enabled.push(on),
@@ -1208,8 +1209,18 @@ describe('preview-pick.js Live overlay hook', () => {
     expect(fake.received).toEqual([{ type: 'grasp-embed:live-sessions', replace: true, sessions: [] }])
     expect(liveButton().hidden).toBe(false)
     expect(liveButton().disabled).toBe(false)
+    expect(liveButton().getAttribute('aria-pressed')).toBe('false')
+    expect(liveButton().getAttribute('aria-label')).toBe('Live variants')
+    expect(liveButton().textContent).toBe('Live · Off')
+    expect(liveButton().title).toContain('Turn on Live')
     liveButton().click()
     expect(fake.toggles).toBe(1)
+    expect(liveButton().getAttribute('aria-pressed')).toBe('true')
+    expect(liveButton().textContent).toBe('Live · On')
+    expect(liveButton().title).toContain('Close Live')
+    liveButton().click()
+    expect(liveButton().getAttribute('aria-pressed')).toBe('false')
+    expect(liveButton().textContent).toBe('Live · Off')
     expect(fake.opts!.post({ type: 'grasp-embed:live', op: 'discard', sid: 'sid001' })).toBe(true)
     expect(inbox.find((m) => m.type === 'grasp-embed:live')).toMatchObject({ op: 'discard', sid: 'sid001', target: GRASP })
     send({ type: 'grasp-embed:live-cmd', sid: 'sid001', cmd: 'goto', variant: 2 })

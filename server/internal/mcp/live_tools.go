@@ -38,7 +38,7 @@ func (h *Host) liveUpdaterFor(runID string) (LiveUpdater, string, bool) {
 	h.mu.RLock()
 	u := h.liveUpdater
 	h.mu.RUnlock()
-	if u == nil || h.ActiveNodeType(runID) != "app_preview" {
+	if u == nil || !models.LiveNodeSupported(h.ActiveNodeType(runID)) {
 		return nil, "", false
 	}
 	nodeID := h.ActiveNode(runID)
@@ -60,7 +60,7 @@ func (h *Host) runLiveUpdate(runID, token string, args map[string]any) (string, 
 	}
 	u, nodeID, ok := h.liveUpdaterFor(runID)
 	if !ok {
-		return liveUpdateTool + " 仅在开启了 Live 变体的直连 app_preview 节点可用。", true
+		return liveUpdateTool + " 仅在开启了 Live 变体的直连应用预览或 Grasp 节点可用。", true
 	}
 	r, err := parseLiveReport(args)
 	if err != nil {

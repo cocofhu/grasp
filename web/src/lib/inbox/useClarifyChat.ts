@@ -1753,6 +1753,14 @@ function showFailRetry(t: ClarifyTurn, idx: number): boolean {
   if (!isRetryableFailedAgent(t)) return false
   const list = displayTurns.value
   if (idx !== list.length - 1) return false
+  // Live recovery must preserve its operation, selected candidate and params.
+  // The generic retry endpoint only replays text; use the Live card instead.
+  for (let i = idx - 1; i >= 0; i--) {
+    if (list[i]?.role === 'human') {
+      if (list[i]?.live) return false
+      break
+    }
+  }
   return idx === latestRetryableFailIndex()
 }
 
@@ -1778,7 +1786,7 @@ function retryLastFailed() {
       break
     }
   }
-  if (!human) return
+  if (!human || human.live) return
 
   // Optimistic: put human + streaming agent into liveTurns (merge replaces
   // persisted empty/failure for the same human).

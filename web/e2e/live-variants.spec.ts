@@ -261,3 +261,82 @@ test.describe('Live preview and Chat browser bridge', () => {
     await expect(page.locator('#steer-complete')).toBeVisible()
   })
 })
+
+// Entry regression uses the production EmbedNodeChatView and public Chat with
+// real HTTP + WebSocket + postMessage. The HTTP surrogate derives capability
+// from a saved node, including the omitted switch on historical approve runs.
+// Go tests cover that same configuration against the actual handler/engine;
+// source generation here remains a deterministic agent/HMR surrogate.
+test.describe('Live entry on Grasp direct previews', () => {
+  for (const nodeType of ['approve', 'grasp']) {
+    test(`${nodeType} with an omitted Live switch supports pick, annotate, generate and Chat adopt`, async ({ page }, testInfo) => {
+      const key = `entry-${nodeType}`
+      await page.setViewportSize({ width: 1440, height: 1000 })
+      await page.request.post(`${origin}/__e2e/live/reset?key=${key}&nodeType=${nodeType}`)
+      const configured = await state(page, key)
+      expect(configured.node).toEqual({ type: nodeType, config: { direct_preview: true } })
+      const capability = page.waitForResponse((response) => response.url().endsWith('/public/gate-approvals/live-sessions'))
+      await page.goto(`${origin}/live-variants.html?key=${key}`)
+      await expect(drawer(page).getByTestId('embed-chat-root')).toBeVisible({ timeout: 15_000 })
+      expect(await (await capability).json()).toMatchObject({ status: 'active', enabled: true, sessions: [] })
+      await expect(drawer(page).getByTestId('clarify-input')).toBeVisible({ timeout: 15_000 })
+      const liveSwitch = page.locator('grasp-preview-pick [data-role="live"]')
+      await expect(liveSwitch).toHaveAttribute('aria-label', 'Live 实时变体')
+      await expect(liveSwitch).toHaveAttribute('aria-pressed', 'false')
+      await expect(liveSwitch).toHaveText('Live · 关')
+      await liveSwitch.click()
+      await expect(liveSwitch).toHaveAttribute('aria-pressed', 'true')
+      await expect(liveSwitch).toHaveText('Live · 开')
+      await overlay(page).locator('[data-act="close"]').click()
+      await expect(liveSwitch).toHaveAttribute('aria-pressed', 'false')
+      await expect(overlay(page).locator('[data-act="pick"]')).toBeHidden()
+      await liveSwitch.click()
+      await overlay(page).locator('[data-act="pick"]').click()
+      await page.locator('#newsletter').click({ position: { x: 15, y: 15 } })
+      await overlay(page).locator('[data-input="prompt"]').fill('保留订阅行为，给出三个更清晰的设计')
+      await markSelection(page)
+      await page.screenshot({ path: testInfo.outputPath(`live-${nodeType}-annotations.png`), animations: 'disabled' })
+      const generated = page.waitForRequest((request) => request.url().endsWith('/public/gate-approvals/reply') && request.postDataJSON()?.live?.op === 'generate')
+      await overlay(page).locator('[data-act="go"]').click()
+      expect((await generated).postDataJSON()).toMatchObject({
+        token: `live-e2e-${key}`, live: { op: 'generate', element: { selector: 'section#newsletter' }, marks: [{ kind: 'draw' }, { kind: 'note' }] },
+      })
+      await expect(drawer(page).getByTestId('live-variant-card').last()).toHaveAttribute('data-state', 'ready')
+      await overlay(page).locator('[data-act="next"]').click()
+      await expect(page.locator('[data-grasp-variant="2"]')).toBeVisible()
+      await expect(page.locator('[data-grasp-variant="1"]')).toBeHidden()
+      await expect(drawer(page).getByTestId('live-variant-viewing').last()).toContainText('2')
+      await liveSwitch.click()
+      await expect(liveSwitch).toHaveText('Live · 关')
+      await expect(overlay(page).locator('[data-act="pick"]')).toBeHidden()
+      await expect(page.locator('[data-grasp-variant="2"]')).toBeVisible()
+      expect((await state(page, key)).sessions.at(-1).state).toBe('ready')
+      await liveSwitch.click()
+      await expect(liveSwitch).toHaveText('Live · 开')
+      await expect(overlay(page).locator('[data-act="pick"]')).toBeVisible()
+      await page.screenshot({ path: testInfo.outputPath(`live-${nodeType}-variants.png`), animations: 'disabled' })
+      await drawer(page).getByTestId('clarify-input').fill('就用这个')
+      await drawer(page).getByTestId('clarify-send-label').click()
+      await expect(drawer(page).getByTestId('live-variant-card').last()).toHaveAttribute('data-state', 'accepted')
+      expect((await state(page, key)).requests.at(-1)).toMatchObject({ text: '就用这个', liveCtx: { current: 2 } })
+      await expectCleanSource(page, key, 'Newsletter variant 2')
+      await page.reload()
+      await expect(page.locator('#live-source h2')).toHaveText('Newsletter variant 2')
+      await expect(drawer(page).getByTestId('live-variant-card').last()).toHaveAttribute('data-state', 'accepted')
+    })
+  }
+
+  for (const setting of ['live=false', 'direct=false']) {
+    test(`legacy approve hides Live when ${setting} while retaining Chat`, async ({ page }) => {
+      const key = `entry-disabled-${setting.split('=')[0]}`
+      await page.request.post(`${origin}/__e2e/live/reset?key=${key}&nodeType=approve&${setting}`)
+      const capability = page.waitForResponse((response) => response.url().endsWith('/public/gate-approvals/live-sessions'))
+      await page.goto(`${origin}/live-variants.html?key=${key}`)
+      await expect(drawer(page).getByTestId('clarify-input')).toBeVisible({ timeout: 15_000 })
+      expect(await (await capability).json()).toMatchObject({ enabled: false })
+      await expect(page.locator('grasp-preview-pick [data-role="live"]')).toBeHidden()
+      await expect(overlay(page)).toHaveCount(0)
+      expect((await state(page, key)).requests).toEqual([])
+    })
+  }
+})

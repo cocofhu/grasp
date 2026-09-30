@@ -176,7 +176,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 		sess = c.rehydrateReact(ctx, req, prior)
 		if sess == nil {
 
-			return ReactTurn{Msg: "(澄清会话已失效,自动重建沙箱失败,请稍后重试)", Done: false}
+			return ReactTurn{Msg: "(澄清会话已失效,自动重建沙箱失败,请稍后重试)", Done: false, Err: errors.New("澄清会话重建失败")}
 		}
 	}
 
@@ -203,6 +203,9 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 		// unnecessary.
 		prompt = c.reactConfirmPrefix(req) + "\n\n" + strings.TrimRight(human, "\n")
 	}
+	if extra := liveVariantPromptExtras(req); extra != "" {
+		prompt = extra + "\n" + prompt
+	}
 	res, err := c.streamChat(chatCtx, sess.acp, req, prompt, chatImages)
 	if res != nil && res.OpID != "" {
 		chatOp = res.OpID
@@ -211,7 +214,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 		log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).
 			Msg("react reply chat failed")
 		return ReactTurn{
-			Msg: "(澄清回复失败:" + err.Error() + ")",
+			Msg: "(澄清回复失败:" + err.Error() + ")", Err: err,
 			Events: []models.AcpEvent{{
 				Kind: "message", Text: "react reply chat failed: " + err.Error(),
 			}},
@@ -244,7 +247,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 		}
 		events = c.snapshotEvents(ctx, sess.sb, events)
 		events = append(events, models.AcpEvent{Kind: "message", Text: "react reply chat failed: " + fail})
-		return withHandoffs(ReactTurn{Msg: msg, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel,
+		return withHandoffs(ReactTurn{Msg: msg, Done: false, Err: errors.New(fail), Events: events, Usage: usage, UsageByModel: usageByModel,
 			Interrupted: res.Interrupted})
 	}
 

@@ -9,8 +9,9 @@ describe('grasp node inspector', () => {
       'timeout',
       'direct_preview',
       'auto_inject',
+      'live_variants',
     ])
-    expect(NODE_DEFS.grasp.defaults).toEqual({ timeout: 30, direct_preview: false, auto_inject: true })
+    expect(NODE_DEFS.grasp.defaults).toEqual({ timeout: 30, direct_preview: false, auto_inject: true, live_variants: true })
     expect(NODE_DEFS.approve.fields.map((f) => f.key)).toEqual(NODE_DEFS.grasp.fields.map((f) => f.key))
     expect(NODE_DEFS.approve.defaults).toEqual(NODE_DEFS.grasp.defaults)
   })

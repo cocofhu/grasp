@@ -5,7 +5,7 @@ import { fileURLToPath, URL } from 'node:url'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { WebSocketServer } from 'ws'
-import { handleLiveVariantsMock } from './e2e/live-variants-mock'
+import { handleLiveEntryUpgrade, handleLiveVariantsMock } from './e2e/live-variants-mock'
 
 const previewPickJs = fileURLToPath(new URL('./public/preview-pick.js', import.meta.url))
 const liveOverlayJs = fileURLToPath(new URL('./public/live-overlay.js', import.meta.url))
@@ -230,6 +230,7 @@ export default defineConfig({
           next()
         })
         server.httpServer?.on('upgrade', (req, socket, head) => {
+          if (handleLiveEntryUpgrade(req, socket, head, wss)) return
           if (req.url?.startsWith('/preview-vnc/') || req.url?.match(/^\/sandbox-vnc\/\d+\/ws/)) {
             handleMockVncUpgrade(req, socket, head, wss)
             return

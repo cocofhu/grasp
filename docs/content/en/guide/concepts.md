@@ -33,9 +33,13 @@ In the pending-gates inbox, only **human_gate** cards (and the visual preview to
 
 Inbox **pending review** and **app preview** cards reuse the same management panel and token rules (`ShareLinkKindReview`, including TTL and permission presets), but authenticated APIs live under `/api/runs/:id/reviews/:nodeId/share-link*` — not `/gates/...`, and no fake Gate row is created. In-product entries: card **Copy temp link** and the mobile detail top bar button with the same label. The public page is labeled **External review**; hot sessions support multi-turn ReAct. For `productKind=app_preview` the public page defaults to remote desktop and picking via a short-lived ticket channel (desensitized ports; API ports use a same-origin iframe); mobile shows a degrade hint only. The only footer action is **Confirm and advance**. Run-detail review tabs and the logged-in review composer do not add a temp-link entry; `proposal_select` and pending clarify stay out of scope.
 
-### Live variants in app preview (app_preview + direct IP)
+### Live variants (Grasp / app preview + direct IP)
 
-App preview nodes with direct IP preview get **Live variants** by default (node switch `live_variants`). The preview page's bottom bar gains a "Live" button:
+**Grasp** (`grasp`, historical `approve`) and **app preview** (`app_preview`) nodes with direct IP preview (`direct_preview`) get **Live variants** by default (`live_variants`). After the agent registers an in-sandbox app port with `set_preview`, open its direct preview to find "Live" on the bottom bar. Existing direct-preview nodes that omit this switch default to enabled without migration. Explicitly disabled Live, noVNC and external URL-only previews do not provide this entry.
+
+The page’s **Live · Off / On** button toggles the Live controls immediately. Closing them keeps existing candidates; use **Discard** to undo candidates. The node setting controls whether this entry is available.
+
+To use Live:
 
 1. **Pick an element**, choose a design action (bolder / quieter / polish / typeset / colorize / layout / distill / adapt / animate / delight / overdrive) or describe the change. Draw on the element or pin a comment, with undo and clear controls; positions, circled controls and notes reach the agent together. Choose 2–4 variants and a display mode, then press **Go**.
 2. The agent writes the variants **straight into the sandbox source**, wrapped in temporary `data-grasp-live` / `data-grasp-variant` markers, and the dev server's hot reload shows them on the page you are looking at.

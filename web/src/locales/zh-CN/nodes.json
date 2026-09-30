@@ -632,6 +632,10 @@
         "auto_inject": {
           "label": "自动注入",
           "help": "IP 直连时由沙箱入站自动插入取点脚本，无需改业务 HTML。关闭则须在 HTML 入口手写 preview-pick.js（旧镜像 / CSP nonce）。默认开启。"
+        },
+        "live_variants": {
+          "label": "Live 实时变体",
+          "help": "默认开，需同时开启 IP 直连预览。在预览页点选元素后可让 Agent 生成多个设计变体，直接写进源码并通过热更新显示；在页面上切换、并排对比后采用或放弃。未采用或放弃时不能确认流转。"
         }
       },
       "outputs": {
@@ -672,7 +676,7 @@
           "desc": "完整对话记录"
         }
       },
-      "help": "### Grasp\n\n一次多轮 ReAct 对话完成**开发前工作**。本节点配置 Agent、超时(默认 30 分钟)、**IP 直连预览**(`direct_preview`,默认关)和**自动注入**(`auto_inject`,默认开):**没有 Prompt 模板**、**不限制轮次**、也没有自动澄清 / 条件注入。关闭直连时 `set_preview` 用 noVNC,开启直连时打开 `http://IP:端口/`;取点脚本由沙箱内透明代理插入,不必改业务 HTML,也不改写路径。开场由平台注入运行输入并等待用户先描述目标;Agent 用工具对齐需求,仅在真实分歧时 `ask_question`。\n\n**两份强制交付**(都写完才能结束,不是「唯一交付」):\n1. `set_clarified_requirement` → `clarified_requirement.json`(open_questions 必须为空;含 work_kind)\n2. `set_plan` → `plan.json`(最多两级:大目标→小目标;写入设计区时六节齐全,无内容显式「不涉及」,可挂 Mermaid diagram)\n\n**Bug 附加交付**:当 work_kind=bug 时须 `set_root_cause` → `root_cause.json`(结构化 JSON,**不是** page.html 或 write_artifact);非 bug 不得保留该产物。\n\n**可选**(有则展示,缺不失败):`set_research`;`set_proposals`(**仅当 ≥2 个可区分候选需用户择一时才写**;禁止单候选伪选择);`write_artifact` 写入 `page.html`;`set_preview` 登记可运行应用(沙箱 port 或外部 url,不是完成条件、不会结束本节点)。\n\n若角色包声明「唯一交付」或禁止上述工具,**以平台规则 `rules/grasp.md` 为准**。不要写实现代码、不要改仓库。"
+      "help": "### Grasp\n\n一次多轮 ReAct 对话完成**开发前工作**。本节点配置 Agent、超时(默认 30 分钟)、**IP 直连预览**(`direct_preview`,默认关)和**自动注入**(`auto_inject`,默认开):**没有 Prompt 模板**、**不限制轮次**、也没有自动澄清 / 条件注入。关闭直连时 `set_preview` 用 noVNC,开启直连时打开 `http://IP:端口/`;取点脚本由沙箱内透明代理插入,不必改业务 HTML,也不改写路径。开场由平台注入运行输入并等待用户先描述目标;Agent 用工具对齐需求,仅在真实分歧时 `ask_question`。\n\n**两份强制交付**(都写完才能结束,不是「唯一交付」):\n1. `set_clarified_requirement` → `clarified_requirement.json`(open_questions 必须为空;含 work_kind)\n2. `set_plan` → `plan.json`(最多两级:大目标→小目标;写入设计区时六节齐全,无内容显式「不涉及」,可挂 Mermaid diagram)\n\n**Bug 附加交付**:当 work_kind=bug 时须 `set_root_cause` → `root_cause.json`(结构化 JSON,**不是** page.html 或 write_artifact);非 bug 不得保留该产物。\n\n**可选**(有则展示,缺不失败):`set_research`;`set_proposals`(**仅当 ≥2 个可区分候选需用户择一时才写**;禁止单候选伪选择);`write_artifact` 写入 `page.html`;`set_preview` 登记可运行应用(沙箱 port 或外部 url,不是完成条件、不会结束本节点)。\n\n若角色包声明「唯一交付」或禁止上述工具,**以平台规则 `rules/grasp.md` 为准**。除平台授权的 Live 操作外，不要写实现代码、不要改仓库。Live 仅授权当前预览修改，不授权提交、推送或无关开发。\n\n**Live 实时变体**（开关 `live_variants`，IP 直连时默认开）：Agent 启动应用并用 `set_preview` 登记后，打开直连预览页，点击底部「Live」。可点选元素、圈画或添加定位批注，生成 2–4 个候选，原位切换或并排对比；在页面或对话卡片采用、放弃，也可在 Chat 里继续修改或说「就用这个」。已有 `approve` 类型节点同样支持，无需迁移节点；未保存此开关的存量直连节点默认开启，显式关闭则不显示 Live。仅注册外部 URL 或使用 noVNC 时不提供此入口。"
     }
   }
 }

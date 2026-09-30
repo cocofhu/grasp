@@ -2,7 +2,7 @@ import { reactive, type InjectionKey } from 'vue'
 import type { LiveMark, LivePoint } from '../../liveoverlay/annotations'
 
 /**
- * Live variants: the preview page asks the parked app_preview agent for N
+ * Live variants: the preview page asks the parked preview-capable agent for N
  * variants of a picked element; the agent writes them into source and HMR
  * shows them. These helpers are the drawer side of that protocol. Message
  * names must match preview-pick.js / the live overlay bundle.

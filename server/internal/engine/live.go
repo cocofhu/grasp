@@ -11,6 +11,7 @@ import (
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/runtime"
 
 	"github.com/google/uuid"
@@ -26,31 +27,30 @@ var ErrLiveOpen = errors.New("还有未采用或放弃的 Live 变体,请先在�
 // be scanned. Fail closed so leftover data-grasp-live markers cannot ship.
 var ErrLiveScanFailed = errors.New("无法确认预览页 Live 标记已清除,请稍后重试确认")
 
-// ErrLiveDisabled means the node is not an IP-direct app_preview with Live on.
+// ErrLiveDisabled means the node is not a supported IP-direct node with Live on.
 var ErrLiveDisabled = errors.New("该节点未开启 Live 变体")
 
 const liveScanTimeout = 40 * time.Second
 
-// LiveEnabled reports whether nodeID on runID runs Live variants: an
-// app_preview with direct_preview on and live_variants not switched off
-// (default on, matching runtime.liveVariantsEnabled).
+// LiveEnabled reports whether this node supports direct-preview Live editing.
 func (e *Engine) LiveEnabled(runID, nodeID string) bool {
 	c, err := e.loadCtx(runID)
 	if err != nil {
 		return false
 	}
 	n := c.graph.FindNode(nodeID)
-	if n == nil || n.Type != "app_preview" || n.Config == nil {
-		return false
+	return n != nil && models.LiveVariantsEnabled(n.Type, n.Config)
+}
+
+// liveQueueKind preserves the node's normal execution contract. Grasp uses
+// ReactReply (clarification/force-confirm), while app_preview uses review.
+func (e *Engine) liveQueueKind(runID, nodeID string) sessionKind {
+	if c, err := e.loadCtx(runID); err == nil {
+		if n := c.graph.FindNode(nodeID); n != nil && nodereg.ClarifyInteractive(n.Type) {
+			return sessionKindClarify
+		}
 	}
-	if !configTruthyAny(n.Config["direct_preview"]) {
-		return false
-	}
-	v := n.Config["live_variants"]
-	if s, ok := v.(string); v == nil || (ok && strings.TrimSpace(s) == "") {
-		return true
-	}
-	return configTruthyAny(v)
+	return sessionKindReview
 }
 
 // LiveSessions lists a node's Live sessions, newest first. openOnly keeps
@@ -238,7 +238,7 @@ func (e *Engine) ReactLiveAs(owner, runID, nodeID string, ev models.LiveEvent) (
 		Owner:     owner,
 		Live:      &models.LiveRef{SID: sess.ID, Op: ev.Op, Variant: ev.Variant},
 	}
-	if _, err := e.enqueueReviewItem(runID, nodeID, sessionKindReview, item); err != nil {
+	if _, err := e.enqueueReviewItem(runID, nodeID, e.liveQueueKind(runID, nodeID), item); err != nil {
 		if prev != nil {
 			e.db.Save(prev)
 		} else {
@@ -311,7 +311,7 @@ func (e *Engine) ReactReplyLiveCtxWithPermissionAs(owner, runID, nodeID, text st
 		}
 	}
 	item.Effective = effective
-	_, err = e.enqueueReviewItem(runID, nodeID, sessionKindReview, item)
+	_, err = e.enqueueReviewItem(runID, nodeID, e.liveQueueKind(runID, nodeID), item)
 	return err
 }
 
@@ -581,6 +581,19 @@ func (e *Engine) checkLiveClosed(runID, nodeID string) error {
 	}
 	if len(e.LiveSessions(runID, nodeID, true)) > 0 {
 		return ErrLiveOpen
+	}
+	// A Grasp dialogue may register a preview without ever editing source.
+	// Do not make ordinary clarification depend on a live sandbox merely
+	// because direct_preview was enabled. Once Live has been used, retain the
+	// same fail-closed scan as app_preview, including terminal sessions.
+	if e.liveQueueKind(runID, nodeID) == sessionKindClarify {
+		var count int64
+		if err := e.db.Model(&models.LiveSession{}).Where("run_id = ? AND node_id = ?", runID, nodeID).Count(&count).Error; err != nil {
+			return ErrLiveScanFailed
+		}
+		if count == 0 {
+			return nil
+		}
 	}
 	sc, ok := e.provider.(runtime.LiveMarkerScanner)
 	if !ok {

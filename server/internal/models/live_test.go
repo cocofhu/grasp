@@ -432,3 +432,27 @@ func TestAdditionalLiveActions(t *testing.T) {
 		}
 	}
 }
+
+func TestLiveNodeCapability(t *testing.T) {
+	for _, nodeType := range []string{"app_preview", "grasp", "approve", "react", "review", "research", "visual", ""} {
+		for _, tc := range []struct {
+			cfg     map[string]any
+			enabled bool
+		}{
+			{nil, false},
+			{map[string]any{"direct_preview": true}, true},
+			{map[string]any{"direct_preview": "yes", "live_variants": " "}, true},
+			{map[string]any{"direct_preview": 1, "live_variants": float64(1)}, true},
+			{map[string]any{"direct_preview": float64(1), "live_variants": "true"}, true},
+			{map[string]any{"direct_preview": true, "live_variants": false}, false},
+			{map[string]any{"direct_preview": true, "live_variants": "false"}, false},
+			{map[string]any{"direct_preview": []string{"true"}}, false},
+			{map[string]any{"live_variants": true}, false},
+		} {
+			want := tc.enabled && (nodeType == "app_preview" || nodeType == "grasp" || nodeType == "approve")
+			if got := LiveVariantsEnabled(nodeType, tc.cfg); got != want {
+				t.Errorf("%s %v: %v want %v", nodeType, tc.cfg, got, want)
+			}
+		}
+	}
+}

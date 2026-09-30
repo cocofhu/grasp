@@ -129,6 +129,10 @@ func (p *livePermissionProvider) ReviseInPlace(_ context.Context, req runtime.No
 	return runtime.ReactTurn{Msg: "已回复"}
 }
 
+func (p *livePermissionProvider) ReactReply(ctx context.Context, req runtime.NodeReq, history []models.ReactMessage, human string, images []models.PromptImage, _ bool) runtime.ReactTurn {
+	return p.ReviseInPlace(ctx, req, history, human, images)
+}
+
 func (*livePermissionProvider) OfferCommitOnConfirm(context.Context, runtime.NodeReq) runtime.ReactTurn {
 	return runtime.ReactTurn{}
 }
@@ -139,47 +143,78 @@ func (*livePermissionProvider) HasLiveSession(string, string) bool { return true
 func (*livePermissionProvider) RetireSession(string, string)       {}
 
 func TestPublicLiveChatBeginUsesSharePermission(t *testing.T) {
-	for _, permission := range []string{models.SharePermissionFull, models.SharePermissionReactOnly} {
-		t.Run(permission, func(t *testing.T) {
-			h := newHarness(t)
-			seedInboxReview(t, h, "run-live-chat", "preview", true)
-			var run models.Run
-			h.db.First(&run, "id = ?", "run-live-chat")
-			run.Graph.Nodes[0].Type = "app_preview"
-			run.Graph.Nodes[0].Config = map[string]any{"direct_preview": true, "live_variants": true}
-			h.db.Save(&run)
-			h.db.Create(&models.LiveSession{ID: "chat01", RunID: run.ID, NodeID: "preview", Mode: "replace", State: models.LiveStateReady,
-				Variants: []models.LiveVariant{{N: 1}}})
-			provider := &livePermissionProvider{reports: make(chan error, 1)}
-			eng := engine.New(h.db, provider, h.host, h.h.Arts, 5)
-			provider.eng = eng
-			h.h.Eng = eng
-			t.Cleanup(eng.Close)
-			created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-live-chat/reviews/preview/share-link", map[string]any{
-				"ttlTier": "24h", "permissionPreset": permission,
-			}))
-			url, _ := created["url"].(string)
-			if !strings.Contains(url, "#t=") {
-				t.Fatalf("share link: %v", created)
-			}
-			token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
-			reply := h.doPublic(http.MethodPost, "/public/gate-approvals/reply", map[string]any{
-				"token": token, "text": "就用这个", "liveCtx": map[string]any{"sid": "chat01", "current": 1, "params": map[string]any{"gap": "24px"}},
-			}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
-			if reply.Code != http.StatusOK {
-				t.Fatalf("comment should remain allowed: %d %s", reply.Code, reply.Body.String())
-			}
-			select {
-			case err := <-provider.reports:
-				if permission == models.SharePermissionReactOnly {
-					if err == nil || !strings.Contains(err.Error(), "权限") {
-						t.Fatalf("react_only authorized implicit adoption: %v", err)
-					}
-				} else if err != nil {
-					t.Fatalf("full share could not begin Chat adoption: %v", err)
+	for _, nodeType := range []string{"app_preview", "grasp", "approve"} {
+		for _, permission := range []string{models.SharePermissionFull, models.SharePermissionReactOnly} {
+			t.Run(nodeType+"/"+permission, func(t *testing.T) {
+				h := newHarness(t)
+				seedInboxReview(t, h, "run-live-chat", "preview", true)
+				var run models.Run
+				h.db.First(&run, "id = ?", "run-live-chat")
+				run.Graph.Nodes[0].Type = nodeType
+				run.Graph.Nodes[0].Config = map[string]any{"direct_preview": true}
+				h.db.Save(&run)
+				h.db.Create(&models.LiveSession{ID: "chat01", RunID: run.ID, NodeID: "preview", Mode: "replace", State: models.LiveStateReady,
+					Variants: []models.LiveVariant{{N: 1}}})
+				provider := &livePermissionProvider{reports: make(chan error, 1)}
+				eng := engine.New(h.db, provider, h.host, h.h.Arts, 5)
+				provider.eng = eng
+				h.h.Eng = eng
+				t.Cleanup(eng.Close)
+				created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-live-chat/reviews/preview/share-link", map[string]any{
+					"ttlTier": "24h", "permissionPreset": permission,
+				}))
+				url, _ := created["url"].(string)
+				if !strings.Contains(url, "#t=") {
+					t.Fatalf("share link: %v", created)
 				}
-			case <-time.After(5 * time.Second):
-				t.Fatal("review turn did not run")
+				token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
+				reply := h.doPublic(http.MethodPost, "/public/gate-approvals/reply", map[string]any{
+					"token": token, "text": "就用这个", "liveCtx": map[string]any{"sid": "chat01", "current": 1, "params": map[string]any{"gap": "24px"}},
+				}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
+				if reply.Code != http.StatusOK {
+					t.Fatalf("comment should remain allowed: %d %s", reply.Code, reply.Body.String())
+				}
+				select {
+				case err := <-provider.reports:
+					if permission == models.SharePermissionReactOnly {
+						if err == nil || !strings.Contains(err.Error(), "权限") {
+							t.Fatalf("react_only authorized implicit adoption: %v", err)
+						}
+					} else if err != nil {
+						t.Fatalf("full share could not begin Chat adoption: %v", err)
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatal("review turn did not run")
+				}
+			})
+		}
+	}
+}
+
+func TestLiveCapabilityForGraspEmbedAndAuthenticatedPreview(t *testing.T) {
+	for _, nodeType := range []string{"grasp", "approve"} {
+		t.Run(nodeType, func(t *testing.T) {
+			h := newHarness(t)
+			runID := "run-live-embed"
+			nodeID := "legacy-preview"
+			seedInboxReview(t, h, runID, nodeID, true)
+			var run models.Run
+			h.db.First(&run, "id = ?", runID)
+			run.Graph.FindNode(nodeID).Type = nodeType
+			h.db.Save(&run)
+			seedDirectPreview(t, h, runID, nodeID) // direct_preview only, no Live config
+			authenticated := h.do(http.MethodGet, "/api/runs/"+runID+"/nodes/"+nodeID+"/live-sessions", nil)
+			if authenticated.Code != http.StatusOK || parseJSON(t, authenticated)["enabled"] != true {
+				t.Fatalf("authenticated Live: %d %s", authenticated.Code, authenticated.Body.String())
+			}
+			token, _ := redeem(t, h, issueSessionTicket(t, h, runID, nodeID))["token"].(string)
+			if token == "" {
+				t.Fatal("missing drawer token")
+			}
+			response := h.doPublic(http.MethodGet, "/public/gate-approvals/live-sessions", nil, map[string]string{headerShareToken: token})
+			body := parseJSON(t, response)
+			if response.Code != http.StatusOK || body["enabled"] != true || body["status"] != "active" {
+				t.Fatalf("drawer Live: %d %s", response.Code, response.Body.String())
 			}
 		})
 	}

@@ -62,8 +62,11 @@
         agentOn: 'Agent 可操作此页面',
         agentBusy: 'Agent 正在操作…',
         stop: '停止',
-        live: 'Live',
-        liveTitle: 'Live 实时变体：点选元素，让 Agent 生成几个设计变体',
+        live: 'Live 实时变体',
+        liveOn: 'Live · 开',
+        liveOff: 'Live · 关',
+        liveEnable: '开启 Live 实时变体：点选元素、圈画批注，生成设计候选',
+        liveDisable: '关闭 Live 操作面板（保留已有候选）',
       }
     : {
         pick: 'Pick',
@@ -82,8 +85,11 @@
         agentOn: 'Agent can operate this page',
         agentBusy: 'Agent is operating…',
         stop: 'Stop',
-        live: 'Live',
-        liveTitle: 'Live variants: pick an element and let the agent draft a few designs',
+        live: 'Live variants',
+        liveOn: 'Live · On',
+        liveOff: 'Live · Off',
+        liveEnable: 'Turn on Live variants: pick elements, annotate and generate designs',
+        liveDisable: 'Close Live controls (keep existing candidates)',
       };
 
   var enabled = false;
@@ -922,10 +928,12 @@
     ui.agentText.textContent = control.busy > 0 ? T.agentBusy : T.agentOn;
     ui.agentStop.textContent = T.stop;
     ui.live.hidden = !live.enabled;
-    ui.live.textContent = T.live;
-    ui.live.title = T.liveTitle;
+    var liveOpen = !!(live.api && live.api.isOpen());
+    ui.live.textContent = liveOpen ? T.liveOn : T.liveOff;
+    ui.live.title = liveOpen ? T.liveDisable : T.liveEnable;
+    ui.live.setAttribute('aria-label', T.live);
     ui.live.disabled = !ok || !drawerReady || !live.api;
-    ui.live.setAttribute('aria-pressed', live.api && live.api.isOpen() ? 'true' : 'false');
+    ui.live.setAttribute('aria-pressed', liveOpen ? 'true' : 'false');
     ui.artifact.disabled = !ok || !drawerReady;
     ui.artifact.textContent = T.artifact;
     ui.artifact.title = ok && drawerReady ? T.artifactTitle : '';

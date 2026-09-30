@@ -863,6 +863,23 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
+  it('keeps failed Live operations on card recovery instead of text-only retry', () => {
+    const { chat, app, emit } = withChat({
+      nodeType: 'approve',
+      turns: [
+        { role: 'human', text: '采用当前变体', at: '2026-09-30T00:00:00Z', live: { sid: 'live-1', op: 'accept', variant: 2 } },
+        { role: 'agent', text: '', at: '2026-09-30T00:00:01Z' },
+      ],
+    })
+    const failed = chat.displayTurns.value.at(-1)!
+    expect(chat.isRetryableFailedAgent(failed)).toBe(true)
+    expect(chat.showFailRetry(failed, 1)).toBe(false)
+    chat.retryLastFailed()
+    expect(emit).not.toHaveBeenCalledWith('retry-last')
+    expect(chat.liveTurns.value).toHaveLength(0)
+    app.unmount()
+  })
+
   it('does not show retry on success or interrupted turns (plan g2.3)', () => {
     const { chat, app } = withChat()
     chat.applyReviewFrame({ event: 'turn_begin', item: { text: 'ok' } })
