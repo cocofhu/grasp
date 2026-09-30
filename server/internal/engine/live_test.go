@@ -343,6 +343,9 @@ func TestLiveGenerateAcceptFlow(t *testing.T) {
 	for _, m := range conv.Messages {
 		if m.Live != nil && m.Live.SID == "sid001" {
 			n++
+			if !m.Live.Generated {
+				t.Fatalf("Live event turn not marked generated: %+v", m.Live)
+			}
 		}
 	}
 	if n != 2 {
@@ -636,7 +639,7 @@ func TestLiveChatAcceptFreezesVariantAndParams(t *testing.T) {
 					ref = msg.Live
 				}
 			}
-			if ref == nil || ref.SID != "chat01" || ref.Variant != 2 {
+			if ref == nil || ref.SID != "chat01" || ref.Variant != 2 || ref.Generated {
 				t.Fatalf("Chat turn lost its Live context: %+v", ref)
 			}
 		})

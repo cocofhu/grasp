@@ -215,24 +215,69 @@ describe('Live overlay', () => {
     expect(posted.at(-1)).toMatchObject({ op: 'state', current: 1 })
   })
 
-  it('compare mode shows every variant with choose buttons and keep-original', () => {
+  it('compare mode keeps the page layout, labels each candidate and has one toolbar to leave it', () => {
     document.body.innerHTML = wrapperHtml()
     make()
     sessions([{ sid: 'sid001', state: 'ready', mode: 'replace', variants: [{ n: 1 }, { n: 2 }] }])
     ;(q('[data-act="compare"]') as HTMLButtonElement).click()
     const w = document.getElementById('w')!
-    expect(w.hasAttribute('data-grasp-compare')).toBe(true)
+    expect(w.getAttribute('data-grasp-compare')).toBe('')
     expect([...w.children].every((c) => !(c as HTMLElement).hidden)).toBe(true)
-    expect(shadow().querySelectorAll('[data-badge="sid001"]').length).toBe(3)
-    ;(q('[data-badge="sid001"][data-n="2"] [data-act="accept"]') as HTMLButtonElement).click()
+    expect(document.querySelector('style[data-grasp-live-overlay]')?.textContent).not.toMatch(/grid|margin-top/)
+    // One label and frame per candidate; the labels only select.
+    const tags = [...shadow().querySelectorAll<HTMLElement>('[data-tag="sid001"]')]
+    expect(tags.map((t) => t.textContent)).toEqual([T.original, '1 · 层级', '2 · 紧凑'])
+    expect(tags.every((t) => t.dataset.act === 'select')).toBe(true)
+    expect(shadow().querySelectorAll('[data-cframe="sid001"]').length).toBe(3)
+    expect(shadow().querySelectorAll('[data-sw="sid001"]').length).toBe(1)
+    const bar = () => q('[data-sw="sid001"][data-compare]')!
+    expect(bar().querySelector('[data-act="accept"]')?.textContent).toBe('采用 1')
+    ;(q('[data-tag="sid001"][data-n="2"]') as HTMLButtonElement).click()
+    expect(q('[data-tag="sid001"][data-n="2"]')?.getAttribute('aria-pressed')).toBe('true')
+    expect(q('[data-cframe="sid001"][data-n="2"]')?.classList.contains('sel')).toBe(true)
+    ;(bar().querySelector('[data-act="accept"]') as HTMLButtonElement).click()
     expect(posted.at(-1)).toMatchObject({ op: 'accept', variant: 2 })
     overlay!.onDrawer({ type: LIVE_ACK, reqId: posted.at(-1)!.reqId, ok: true, session: { sid: 'sid001', state: 'ready', mode: 'replace', variants: [{ n: 1 }, { n: 2 }], updatedAt: '9' } })
-    ;(q('[data-badge="sid001"][data-n="1"] [data-act="inplace"]') as HTMLButtonElement).click()
+    // Clicking the original in the page selects it; accept is then disabled.
+    ;(w.querySelector('[data-grasp-variant="0"]') as HTMLElement).click()
+    expect(bar().querySelector('.lab')?.textContent).toBe(T.selectedOriginal)
+    expect((bar().querySelector('[data-act="accept"]') as HTMLButtonElement).disabled).toBe(true)
+    // Back in place from the original lands on the first variant.
+    ;(bar().querySelector('[data-act="inplace"]') as HTMLButtonElement).click()
     expect(w.hasAttribute('data-grasp-compare')).toBe(false)
     expect(posted.at(-1)).toMatchObject({ op: 'state', current: 1, mode: 'inplace' })
+    // Esc also leaves compare, keeping the selection.
     ;(q('[data-act="compare"]') as HTMLButtonElement).click()
-    ;(q('[data-badge="sid001"][data-n="0"] [data-act="discard"]') as HTMLButtonElement).click()
+    ;(q('[data-tag="sid001"][data-n="2"]') as HTMLButtonElement).click()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(w.hasAttribute('data-grasp-compare')).toBe(false)
+    expect(q('[data-sw="sid001"] .count')?.textContent).toBe('2 / 2')
+    ;(q('[data-act="compare"]') as HTMLButtonElement).click()
+    ;(bar().querySelector('[data-act="discard"]') as HTMLButtonElement).click()
     expect(posted.at(-1)).toMatchObject({ op: 'discard', sid: 'sid001' })
+  })
+
+  it('follows the page background for its theme', () => {
+    document.body.innerHTML = wrapperHtml()
+    document.body.style.backgroundColor = 'rgb(15, 23, 42)'
+    overlay = createOverlay(
+      { post: () => true, theme: () => 'light', notice: () => {}, stopPick: () => {}, sendToChat: () => {}, changed: () => {}, isOwnUi: () => false },
+      T,
+    )
+    overlay.setEnabled(true)
+    expect(q('.root')?.classList.contains('light')).toBe(false)
+    document.body.style.backgroundColor = 'rgb(250, 250, 250)'
+    overlay.setEnabled(false)
+    overlay.setEnabled(true)
+    expect(q('.root')?.classList.contains('light')).toBe(true)
+    document.body.style.backgroundColor = ''
+    overlay.dispose()
+    overlay = createOverlay(
+      { post: () => true, theme: () => 'light', notice: () => {}, stopPick: () => {}, sendToChat: () => {}, changed: () => {}, isOwnUi: () => false },
+      T,
+    )
+    overlay.setEnabled(true)
+    expect(q('.root')?.classList.contains('light')).toBe(true)
   })
 
   it('restores the view after a reload and follows drawer commands', () => {

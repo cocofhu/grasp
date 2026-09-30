@@ -7,7 +7,7 @@ import pages from '@/locales/zh-CN/pages.json'
 import LiveVariantCard from './LiveVariantCard.vue'
 import { LIVE_CARD_HOST, createLiveStore, type LiveCardHost } from '@/lib/inbox/liveVariants'
 
-function mountCard(liveRef: { sid: string; op: string; variant?: number }, host?: Partial<LiveCardHost>) {
+function mountCard(liveRef: { sid: string; op: string; variant?: number; prompt?: string }, host?: Partial<LiveCardHost>) {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
   const provide = host ? { [LIVE_CARD_HOST as symbol]: host } : {}
   return mount(LiveVariantCard, { props: { liveRef }, global: { plugins: [i18n], provide } })
@@ -22,8 +22,7 @@ function readyStore() {
 describe('LiveVariantCard', () => {
   it('shows only the request without a host', () => {
     const w = mountCard({ sid: 'sid001', op: 'generate' })
-    expect(w.text()).toContain('Live 变体')
-    expect(w.text()).toContain('生成变体')
+    expect(w.get('[data-testid="live-variant-headline"]').text()).toBe('为页面出 3 个候选')
     expect(w.find('[data-testid="live-variant-state"]').exists()).toBe(false)
     w.unmount()
   })
@@ -34,7 +33,9 @@ describe('LiveVariantCard', () => {
     const command = vi.fn()
     const w = mountCard({ sid: 'sid001', op: 'generate' }, { store: live.store, interactive: true, command })
     expect(w.attributes('data-state')).toBe('ready')
-    expect(w.text()).toContain('section「Dispatch」')
+    expect(w.get('[data-testid="live-variant-headline"]').text()).toBe('为「Dispatch」出 3 个候选')
+    expect(w.text()).not.toContain('section「')
+    expect(w.find('[data-testid="live-variant-state"]').exists()).toBe(false)
     expect(w.get('[data-testid="live-variant-viewing"]').text()).toContain('2 / 3')
     const chips = w.findAll('[data-testid="live-variant-chip"]')
     expect(chips).toHaveLength(3)
@@ -68,7 +69,8 @@ describe('LiveVariantCard', () => {
     expect(w.get('[data-testid="live-variant-error"]').text()).toContain('no source')
     live.apply({ sid: 'sid001', state: 'accepted', selected: 2 })
     await w.vm.$nextTick()
-    expect(w.text()).toContain('已采用变体 2')
+    expect(w.text()).toContain('最终采用了候选 2')
+    expect(w.get('[data-testid="live-variant-state"]').text()).toBe('已写入代码')
     w.unmount()
   })
 
@@ -83,7 +85,7 @@ describe('LiveVariantCard', () => {
     expect(acc.find('[data-testid="live-variant-chip"]').exists()).toBe(false)
     acc.unmount()
     const odd = mountCard({ sid: 'sid009', op: 'weird' }, { store: live.store, interactive: true, command: vi.fn() })
-    expect(odd.text()).toContain('生成变体')
+    expect(odd.get('[data-testid="live-variant-headline"]').text()).toBe('为页面出 3 个候选')
     odd.unmount()
   })
 
@@ -128,5 +130,30 @@ describe('LiveVariantCard', () => {
     const readOnly = mountCard({ sid: 'sid001', op: 'accept', variant: 2 }, { store: live.store, interactive: false, command })
     expect(readOnly.find('[data-testid="live-variant-retry-accept"]').exists()).toBe(false)
     readOnly.unmount()
+  })
+
+  it('reads as a sentence per request and shows what the user typed', async () => {
+    const live = readyStore()
+    const opts = { store: live.store, interactive: true, command: vi.fn() }
+    const head = (w: ReturnType<typeof mountCard>) => w.get('[data-testid="live-variant-headline"]').text()
+    const acc = mountCard({ sid: 'sid001', op: 'accept', variant: 1 }, opts)
+    expect(head(acc)).toBe('采用候选 1 · 层级')
+    expect(acc.text()).toContain('「Dispatch」')
+    acc.unmount()
+    const ref = mountCard({ sid: 'sid001', op: 'refine', variant: 2, prompt: '按钮再大一点' }, opts)
+    expect(head(ref)).toBe('继续改候选 2')
+    expect(ref.get('[data-testid="live-variant-prompt"]').text()).toBe('按钮再大一点')
+    ref.unmount()
+    const more = mountCard({ sid: 'sid001', op: 'refine' }, opts)
+    expect(head(more)).toBe('再来几个候选')
+    more.unmount()
+    const dis = mountCard({ sid: 'sid001', op: 'discard' }, opts)
+    expect(head(dis)).toBe('放弃候选，恢复原样')
+    dis.unmount()
+    live.apply({ sid: 'page01', state: 'accepting', summary: '页面候选', count: 4 })
+    const page = mountCard({ sid: 'page01', op: 'generate' }, opts)
+    expect(head(page)).toBe('为页面出 4 个候选')
+    expect(page.get('[data-testid="live-variant-state"]').text()).toBe('正在写入代码…')
+    page.unmount()
   })
 })

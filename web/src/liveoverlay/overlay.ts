@@ -121,6 +121,19 @@ export function wrapperRect(w: Wrapper): DOMRect | null {
   return new DOMRect(l, t, r - l, b - t)
 }
 
+/** Theme matching the page background, or '' when the page paints none. */
+export function pageTheme(): 'light' | 'dark' | '' {
+  for (const el of [document.body, document.documentElement]) {
+    if (!el) continue
+    const m = getComputedStyle(el).backgroundColor.match(/rgba?\(([^)]*)\)/)
+    if (!m) continue
+    const [r, g, b, a = 1] = m[1].split(/[\s,/]+/).filter(Boolean).map(Number)
+    if (!a) continue
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.5 ? 'dark' : 'light'
+  }
+  return ''
+}
+
 export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverlay {
   let enabled = false
   let steerOpen = false
@@ -250,8 +263,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
         continue
       }
       if (v.mode === 'compare' && !hidden) {
-        const wide = (wrapperRect(w)?.width ?? 0) > window.innerWidth * 0.6
-        w.el.setAttribute('data-grasp-compare', wide ? 'stack' : 'grid')
+        w.el.setAttribute('data-grasp-compare', '')
         if (w.original) setVariantVisible(w.original, true)
         for (const x of w.variants) setVariantVisible(x.el, true)
       } else {
@@ -312,7 +324,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
   // ---------- rendering ----------
 
   function themeClass() {
-    root.className = opts.theme() === 'light' ? 'root light' : 'root'
+    root.className = (pageTheme() || opts.theme()) === 'light' ? 'root light' : 'root'
   }
 
   /** Steer composer and status hints, stacked just above preview-pick's bar. */
@@ -470,32 +482,39 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       const busy = isBusy(w.sid)
       const idx = w.variants.findIndex((x) => x.n === v.current)
       const cur = w.variants[idx]
-      frameHtml += `<div class="frame" data-frame="${esc(w.sid)}"></div>`
       if (busy) frameHtml += `<div class="shimmer" data-shimmer="${esc(w.sid)}"></div>`
-      if (v.mode === 'compare') {
-        const items = [...(w.original ? [{ n: 0, label: T.original }] : []), ...w.variants.map((x) => ({ n: x.n, label: x.label }))]
-        for (const it of items) {
-          html +=
-            `<div class="badge" data-badge="${esc(w.sid)}" data-n="${it.n}"><b>${it.n || '0'}${it.label ? ` · ${esc(it.label)}` : ''}</b>` +
-            (known && !busy
-              ? it.n === 0
-                ? `<button type="button" data-act="discard" data-sid="${esc(w.sid)}">${esc(T.keepOriginal)}</button>`
-                : s?.state === 'ready'
-                  ? `<button type="button" class="accept" data-act="accept" data-sid="${esc(w.sid)}" data-n="${it.n}">${esc(T.choose)}</button>`
-                  : canRetryAdoption(s) && s?.selected === it.n
-                    ? `<button type="button" class="accept" data-act="retry-accept" data-sid="${esc(w.sid)}">${esc(T.retryAccept)}</button>`
-                    : ''
-              : '') +
-            (it.n ? `<button type="button" data-act="inplace" data-sid="${esc(w.sid)}" data-n="${it.n}">${esc(T.viewInPlace)}</button>` : '') +
-            '</div>'
-        }
-        continue
-      }
       const status = s?.state === 'failed'
         ? `<span class="err" title="${esc(s.error || '')}">${esc(T.failed)}${s.error ? `: ${esc(s.error)}` : ''}</span>`
         : busy
           ? `<span class="state" role="status">${esc(stateLabel(s?.state || 'generating') || T.generating)}</span>`
           : ''
+      if (v.mode === 'compare') {
+        const items = [...(w.original ? [{ n: 0, label: T.original }] : []), ...w.variants.map((x) => ({ n: x.n, label: x.label }))]
+        for (const it of items) {
+          const sel = it.n === v.current
+          const text = it.n ? `${it.n}${it.label ? ` · ${it.label}` : ''}` : T.original
+          frameHtml += `<div class="cframe${sel ? ' sel' : ''}" data-cframe="${esc(w.sid)}" data-n="${it.n}"></div>`
+          html +=
+            `<button type="button" class="tag${sel ? ' sel' : ''}" data-tag="${esc(w.sid)}" data-act="select" data-sid="${esc(w.sid)}" data-n="${it.n}" ` +
+            `aria-pressed="${sel}" title="${esc(text)}">${esc(text)}</button>`
+        }
+        const backN = cur?.n ?? w.variants[0]?.n ?? 0
+        html +=
+          `<div class="sw" data-sw="${esc(w.sid)}" data-compare role="group" aria-label="${esc(T.comparing)}">` +
+          `<span class="count">${esc(T.comparing)}</span>` +
+          `<span class="lab">${esc(cur ? fmt(T.selected, { n: cur.label ? `${cur.n} · ${cur.label}` : cur.n }) : T.selectedOriginal)}</span>` +
+          status +
+          '<span class="sep" aria-hidden="true"></span>' +
+          `<button type="button" data-act="inplace" data-sid="${esc(w.sid)}" data-n="${backN}">${esc(T.backInPlace)}</button>` +
+          `<button type="button" data-act="discard" data-sid="${esc(w.sid)}" title="${esc(known ? T.discard : T.viewOnly)}"${busy || !known ? ' disabled' : ''}>${esc(T.discardAll)}</button>` +
+          (canRetryAdoption(s) && !busy
+            ? `<button type="button" class="accept" data-act="retry-accept" data-sid="${esc(w.sid)}">${esc(T.retryAccept)}</button>`
+            : `<button type="button" class="accept" data-act="accept" data-sid="${esc(w.sid)}" data-n="${cur?.n ?? ''}"${busy || !known || !cur || s?.state !== 'ready' ? ' disabled' : ''}>` +
+              `${esc(cur ? fmt(T.acceptN, { n: cur.n }) : T.accept)}</button>`) +
+          '</div>'
+        continue
+      }
+      frameHtml += `<div class="frame" data-frame="${esc(w.sid)}"></div>`
       html +=
         `<div class="sw" data-sw="${esc(w.sid)}" role="group" aria-label="${esc(T.title)}">` +
         `<button type="button" data-act="prev" data-sid="${esc(w.sid)}" aria-label="${esc(T.prev)}"${busy || w.variants.length < 2 ? ' disabled' : ''}>‹</button>` +
@@ -603,17 +622,21 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
         const r2 = new DOMRect(rect.left, rect.bottom + 10 + (sw.offsetHeight || 36), rect.width, 0)
         place(params, r2)
       }
-      shadow.querySelectorAll<HTMLElement>(`[data-badge="${w.sid}"]`).forEach((b) => {
-        const n = Number(b.dataset.n)
+      const candidateRect = (n: number) => {
         const el = n === 0 ? w.original : w.variants.find((x) => x.n === n)?.el
         const rc = el?.getBoundingClientRect()
-        if (!rc) {
+        return rc && (rc.width || rc.height) ? rc : null
+      }
+      shadow.querySelectorAll<HTMLElement>(`[data-cframe="${w.sid}"]`).forEach((f) => box(f, candidateRect(Number(f.dataset.n)), 2))
+      shadow.querySelectorAll<HTMLElement>(`[data-tag="${w.sid}"]`).forEach((b) => {
+        const rc = candidateRect(Number(b.dataset.n))
+        if (!rc || rc.bottom < 0 || rc.top > window.innerHeight) {
           b.style.display = 'none'
           return
         }
         b.style.display = ''
-        b.style.left = `${Math.max(8, rc.left)}px`
-        b.style.top = `${Math.max(8, rc.top - 30)}px`
+        b.style.left = `${Math.max(8, rc.left + 6)}px`
+        b.style.top = `${Math.max(8, rc.top + 6)}px`
       })
     }
     for (const s of sessions.values()) {
@@ -713,10 +736,27 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     }
   }
 
+  function selectCompared(target: EventTarget | null | undefined) {
+    const el = target as Element | null
+    if (!enabled || hidden || peek || !el || el.nodeType !== 1) return
+    for (const w of wrappers) {
+      const v = viewOf(w.sid, w)
+      if (v.mode !== 'compare') continue
+      const n = w.original?.contains(el) ? 0 : w.variants.find((x) => x.el.contains(el))?.n
+      if (n === undefined) continue
+      focusSid = w.sid
+      if (n !== v.current) setView(w.sid, { current: n })
+      return
+    }
+  }
+
   function onClick(ev: MouseEvent) {
-    if (!inserting) return
     const path = ev.composedPath ? ev.composedPath() : []
     if (ownPath(path)) return
+    if (!inserting) {
+      selectCompared(path[0] ?? ev.target)
+      return
+    }
     const el = pickable(path[0] ?? ev.target)
     if (!el) return
     ev.preventDefault()
@@ -736,6 +776,12 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       } else if (panel) {
         panel = null
         renderPanel()
+      } else if (!hidden && !peek) {
+        const w = wrappers.find((x) => viewOf(x.sid, x).mode === 'compare')
+        if (w) {
+          exitCompare(w.sid)
+          ev.stopPropagation()
+        }
       }
       return
     }
@@ -819,6 +865,14 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     const next = w.variants[(i + d + w.variants.length) % w.variants.length]
     focusSid = sid
     setView(sid, { current: next.n, mode: 'inplace' })
+  }
+
+  /** Back to in-place, keeping the selected variant (the original falls back to the first). */
+  function exitCompare(sid: string) {
+    const w = wrappers.find((x) => x.sid === sid)
+    const v = viewOf(sid, w)
+    const current = v.current || w?.variants[0]?.n || v.current
+    setView(sid, { mode: 'inplace', current })
   }
 
   function accept(sid: string, n: number) {
@@ -1014,6 +1068,9 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       case 'inplace':
         setView(sid, { mode: 'inplace', ...(n ? { current: n } : {}) })
         break
+      case 'select':
+        setView(sid, { current: n })
+        break
       case 'accept':
         accept(sid, n)
         break
@@ -1135,7 +1192,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
           setView(sid, { mode: 'compare' })
           break
         case 'inplace':
-          setView(sid, { mode: 'inplace' })
+          exitCompare(sid)
           break
         case 'accept':
           accept(sid, n || viewOf(sid).current)

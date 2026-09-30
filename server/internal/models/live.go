@@ -241,6 +241,24 @@ type LiveRef struct {
 	SID     string `json:"sid"`
 	Op      string `json:"op"`
 	Variant int    `json:"variant,omitempty"`
+	// Prompt is what the user typed for this request, shown on the card.
+	Prompt string `json:"prompt,omitempty"`
+	// Generated marks a message whose text came from LiveEventText; the chat
+	// shows the card instead of that text.
+	Generated bool `json:"generated,omitempty"`
+}
+
+const liveRefPromptMax = 200
+
+// NewLiveRef is the chat reference for a Live event on session sid.
+func NewLiveRef(ev LiveEvent, sid string) *LiveRef {
+	ref := &LiveRef{SID: sid, Op: ev.Op, Variant: ev.Variant}
+	if ev.Op == LiveOpGenerate && ev.Scope == "page" {
+		return ref // The message text is the user's own brief.
+	}
+	ref.Prompt = clipRunes(strings.TrimSpace(ev.Prompt), liveRefPromptMax)
+	ref.Generated = true
+	return ref
 }
 
 // Normalize clips free text and validates the event shape. It does not look

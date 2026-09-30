@@ -44,27 +44,29 @@ export const OVERLAY_CSS =
   'animation:shine 1.2s linear infinite;outline:2px dashed rgba(245,158,11,.8);outline-offset:2px}' +
   '@keyframes shine{from{background-position:200% 0}to{background-position:-200% 0}}' +
   '@media (prefers-reduced-motion:reduce){.shimmer{animation:none}}' +
-  '.badge{position:fixed;z-index:2147483645;display:flex;align-items:center;gap:4px;padding:3px;border-radius:8px;background:#18181b;' +
-  'border:1px solid #3f3f46;font-size:12px;white-space:nowrap}' +
-  '.badge b{padding:0 6px}' +
-  '.badge .accept{background:#f59e0b;color:#18181b;font-weight:700;padding:3px 8px}' +
-  '.badge button{padding:3px 8px}' +
+  '.cframe{position:fixed;z-index:2147483644;pointer-events:none;border:1px solid rgba(161,161,170,.4);border-radius:6px}' +
+  '.cframe.sel{border:2px solid #f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.18)}' +
+  '.tag{position:fixed;z-index:2147483645;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;line-height:16px;' +
+  'background:rgba(24,24,27,.78);border:1px solid rgba(63,63,70,.8);opacity:.8;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+  '.tag:hover{background:rgba(24,24,27,.92);opacity:1}' +
+  '.tag.sel,.tag.sel:hover{background:#f59e0b;border-color:#f59e0b;color:#18181b;opacity:1}' +
   '[hidden]{display:none!important}' +
   '.light{color:#18181b}' +
-  '.light .steer,.light .panel,.light .sw,.light .params,.light .badge{background:#fff;border-color:#e4e4e7;box-shadow:0 10px 30px rgba(16,24,40,.14)}' +
+  '.light .steer,.light .panel,.light .sw,.light .params{background:#fff;border-color:#e4e4e7;box-shadow:0 10px 30px rgba(16,24,40,.14)}' +
   '.light button:hover{background:#f4f4f5}' +
   '.light .chip,.light .panel textarea{background:#f4f4f5;border-color:#e4e4e7}' +
   '.light .hint{background:#fff;border-color:#e4e4e7}' +
   '.light .sep{background:#e4e4e7}' +
   '.light .label,.light .target,.light .sw .lab{color:#71717a}' +
   '.light .sw .state{color:#b45309}' +
-  '.light .sw .err{color:#b91c1c}'
+  '.light .sw .err{color:#b91c1c}' +
+  '.light .cframe{border-color:rgba(113,113,122,.35)}' +
+  '.light .tag{background:rgba(255,255,255,.88);border-color:#e4e4e7}' +
+  '.light .tag:hover{background:#fff}' +
+  '.light .tag.sel,.light .tag.sel:hover{background:#f59e0b;border-color:#f59e0b}'
 
-/** Page-level styles: pick hover outline and the compare grid. */
+/** Page-level styles: hidden variants and the pick hover outline. Compare leaves the page layout alone. */
 export const PAGE_CSS =
   '[data-grasp-live]>[data-grasp-variant][hidden]{display:none!important}' +
   '[data-grasp-live-hover]{outline:2px solid #f59e0b!important;outline-offset:2px!important;cursor:crosshair!important}' +
-  'html[data-grasp-live-picking],html[data-grasp-live-picking] *{cursor:crosshair!important}' +
-  '[data-grasp-live][data-grasp-compare]{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px;align-items:start}' +
-  '[data-grasp-live][data-grasp-compare][data-grasp-compare="stack"]{grid-template-columns:1fr}' +
-  '[data-grasp-live][data-grasp-compare]>[data-grasp-variant]{outline:1px dashed rgba(245,158,11,.7);outline-offset:4px;margin-top:28px!important}'
+  'html[data-grasp-live-picking],html[data-grasp-live-picking] *{cursor:crosshair!important}'

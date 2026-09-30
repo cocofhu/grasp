@@ -420,7 +420,7 @@ func SanitizeTurnsFrom(msgs []models.ReactMessage, imageBase int) ([]PreviewTurn
 			turn.Forms = forms
 		}
 		if m.Live != nil && models.ValidLiveSID(m.Live.SID) {
-			turn.Live = &models.LiveRef{SID: m.Live.SID, Op: m.Live.Op, Variant: m.Live.Variant}
+			turn.Live = &models.LiveRef{SID: m.Live.SID, Op: m.Live.Op, Variant: m.Live.Variant, Prompt: SanitizeDescription(m.Live.Prompt), Generated: m.Live.Generated}
 		}
 		// Keep a text-less turn when it still carries a choice card or form.
 		if turn.Text == "" && len(turn.Annotations) == 0 && len(turn.Images) == 0 && !turn.Interrupted && len(turn.Questions) == 0 && len(turn.Forms) == 0 {
