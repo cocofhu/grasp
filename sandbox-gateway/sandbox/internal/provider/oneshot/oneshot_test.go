@@ -385,7 +385,7 @@ func (f *capturePromptFake) Args(_ provider.OpenOptions, prompt, _ string) []str
 	f.mu.Unlock()
 	return []string{"sh", "-c", `printf '%s\n' 'text:ok' 'done'`}
 }
-func (capturePromptFake) ParseLine(line []byte) ParseResult {
+func (*capturePromptFake) ParseLine(line []byte) ParseResult {
 	s := string(line)
 	switch {
 	case strings.HasPrefix(s, "text:"):

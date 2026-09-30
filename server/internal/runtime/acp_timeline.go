@@ -165,7 +165,7 @@ func (s *acpTimelineStore) stop(runID, nodeID string) {
 	s.mu.Unlock()
 }
 
-func (s *acpTimelineStore) startIngest(runID, nodeID, host string, port int) {
+func (s *acpTimelineStore) startIngest(runID, nodeID, host string, port int, password string) {
 	if s == nil || host == "" || port <= 0 {
 		return
 	}
@@ -180,12 +180,15 @@ func (s *acpTimelineStore) startIngest(runID, nodeID, host string, port int) {
 	s.ingest[key] = cancel
 	s.mu.Unlock()
 
-	go s.ingestLoop(ctx, runID, nodeID, host, port)
+	go s.ingestLoop(ctx, runID, nodeID, host, port, password)
 }
 
-func (s *acpTimelineStore) ingestLoop(ctx context.Context, runID, nodeID, host string, port int) {
+func (s *acpTimelineStore) ingestLoop(ctx context.Context, runID, nodeID, host string, port int, password string) {
+	// Keep one cookie for this ingest lifecycle; polling must not allocate a
+	// new bridge session (and hash the login secret) every two seconds.
+	reader := sandbox.NewEventLogReader(host, port, password)
 	// Immediate first pull so cold page loads see history without waiting.
-	s.refreshFromSandbox(ctx, runID, nodeID, host, port)
+	s.refreshFromReader(ctx, runID, nodeID, reader)
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -194,15 +197,19 @@ func (s *acpTimelineStore) ingestLoop(ctx context.Context, runID, nodeID, host s
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.refreshFromSandbox(ctx, runID, nodeID, host, port)
+			s.refreshFromReader(ctx, runID, nodeID, reader)
 		}
 	}
 }
 
-func (s *acpTimelineStore) refreshFromSandbox(ctx context.Context, runID, nodeID, host string, port int) {
+func (s *acpTimelineStore) refreshFromSandbox(ctx context.Context, runID, nodeID, host string, port int, password string) {
+	s.refreshFromReader(ctx, runID, nodeID, sandbox.NewEventLogReader(host, port, password))
+}
+
+func (s *acpTimelineStore) refreshFromReader(ctx context.Context, runID, nodeID string, reader *sandbox.EventLogReader) {
 	// Last turn only — full-session FetchEventLog would lock a concatenated
 	// photo into the timeline via upsert and poison hard-refresh seeds.
-	res, _, err := sandbox.FetchEventLogLastTurn(ctx, host, port)
+	res, _, err := reader.LastTurn(ctx)
 	if err != nil || res == nil {
 		return // keep existing snapshot on transient bridge failures
 	}

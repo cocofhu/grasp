@@ -124,6 +124,7 @@ func TestOneShotWatchdogCauseReportsTimeout(t *testing.T) {
 	if errorTextBeforeDone(frames) == "" {
 		t.Fatal("real timeout must emit error_text before prompt_done")
 	}
+	assertDiagnosticBoundary(t, frames, provider.StopReasonTimeout, 1)
 	if n := spawns.Load(); n != 1 {
 		t.Fatalf("timeout must not fall back to a fresh session: spawned %d CLIs", n)
 	}

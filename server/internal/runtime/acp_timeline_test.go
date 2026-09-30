@@ -46,7 +46,7 @@ func TestAcpTimelineIngestKeepsSnapshotOnRefreshFailure(t *testing.T) {
 	s := newAcpTimelineStore()
 	s.upsert("r", "n", []models.AcpEvent{{T: 1, Kind: "message", Text: "keep"}})
 	// Unreachable host — must not clear the prior snapshot.
-	s.refreshFromSandbox(context.Background(), "r", "n", "127.0.0.1", 1)
+	s.refreshFromSandbox(context.Background(), "r", "n", "127.0.0.1", 1, "")
 	e, ok := s.get("r", "n")
 	if !ok || len(e.events) != 1 || e.events[0].Text != "keep" {
 		t.Fatalf("snapshot should survive refresh failure: %+v ok=%v", e.events, ok)
@@ -121,7 +121,7 @@ func TestTimelineReplaceOverridesLongerPrior(t *testing.T) {
 
 func TestAcpTimelineIngestLoopCancels(t *testing.T) {
 	s := newAcpTimelineStore()
-	s.startIngest("r", "n", "127.0.0.1", 1)
+	s.startIngest("r", "n", "127.0.0.1", 1, "")
 	time.Sleep(10 * time.Millisecond)
 	s.stop("r", "n")
 	// stop is idempotent
