@@ -9,7 +9,7 @@
     "server": "node scripts/build.mjs && npx --yes serve public -p 4000"
   },
   "dependencies": {
-    "markdown-it": "^14.1.0",
+    "markdown-it": "^14.3.1",
     "gray-matter": "^4.0.3"
   },
   "overrides": {
