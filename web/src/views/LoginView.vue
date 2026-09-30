@@ -22,7 +22,7 @@ const loading = ref(false)
 const fieldError = ref(false)
 
 const redirectTarget = computed(() => authRedirectPath(String(route.query.redirect || '')))
-/** Brand-only until session probe finishes — avoids flashing Demo credentials to logged-in users. */
+/** Brand-only until session probe finishes — avoids flashing the login form to logged-in users. */
 const showLoginForm = computed(() => ready.value && !user.value)
 
 if (user.value) {
@@ -105,13 +105,6 @@ async function onSubmit() {
             {{ loading ? t('pages.login.submitting') : t('pages.login.submit') }}
           </AppButton>
         </form>
-
-        <!-- Compact hint: avoid a large footer stealing LCP from brand-logo__name -->
-        <p class="mt-6 border-t border-line pt-4 text-center text-[10px] text-txt3">
-          Demo <kbd class="rounded border border-line bg-elevated px-1 font-mono text-[10px]">admin</kbd>
-          /
-          <kbd class="rounded border border-line bg-elevated px-1 font-mono text-[10px]">demo1234</kbd>
-        </p>
       </template>
     </div>
   </div>
