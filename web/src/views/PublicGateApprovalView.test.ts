@@ -10,7 +10,7 @@ import pagesEn from '@/locales/en/pages.json'
 import shellEn from '@/locales/en/shell.json'
 import { setTheme } from '@/lib/shared/theme'
 import { i18n as appI18n } from '@/lib/shared/i18n'
-import { locale as appLocale } from '@/lib/shared/locale'
+import { locale as appLocale, setLocale } from '@/lib/shared/locale'
 
 const mocks = vi.hoisted(() => ({
   preview: vi.fn(),
@@ -1846,5 +1846,85 @@ describe('embedded Chat page candidate mode', () => {
     await flushPromises()
     expect(mocks.reply).not.toHaveBeenCalled()
     expect(wrapper.findComponent(ClarifyChat).props('draft')).toBe('keep request')
+  })
+
+  it('plan g1.1 g1.2 g2.1 g3.1: gear panel locale row switches preview chat copy and keeps the draft', async () => {
+    await setLocale('en')
+    mocks.preview.mockResolvedValue({
+      status: 'active', kind: 'review', nodeType: 'grasp', reactSessionAlive: true,
+      permissionPreset: 'full', actions: { reply: 'reply' },
+      turns: [{ role: 'agent', text: 'Preview ready' }],
+    })
+    mocks.liveSessions.mockResolvedValue({ status: 'active', enabled: true, sessions: [] })
+    appI18n.global.setLocaleMessage('zh-CN', { ...common, ...pages, ...shell })
+    appI18n.global.setLocaleMessage('en', { ...commonEn, ...pagesEn, ...shellEn })
+    const wrapper = mount(PublicGateApprovalView, {
+      props: { embedToken: token },
+      global: { plugins: [appI18n], stubs: { Teleport: true } },
+    })
+    mounted.push(wrapper)
+    await flushPromises()
+    await (wrapper.vm as unknown as { loadLiveSessions: () => Promise<unknown> }).loadLiveSessions()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="public-gate-lang-select"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="clarify-input"]').attributes('placeholder')).toContain('Describe the goal first')
+    expect(wrapper.get('[data-testid="clarify-send-label"]').text()).toContain('Send reply')
+
+    await wrapper.get('[data-testid="page-collaboration-toggle"]').trigger('click')
+    await flushPromises()
+    const panel = wrapper.get('[data-testid="page-collaboration-controls"]')
+    expect(panel.text()).toContain('Page collaboration')
+    expect(panel.text()).toContain('Language')
+    expect(panel.get('[data-testid="preview-chat-locale-en"]').attributes('aria-selected')).toBe('true')
+    expect(panel.get('[data-testid="preview-chat-locale-zh"]').attributes('aria-selected')).toBe('false')
+    expect(panel.get('[data-testid="live-candidate-mode"]').attributes('aria-checked')).toBe('false')
+
+    await wrapper.get('[data-testid="clarify-input"]').setValue('keep this draft')
+    const chat = wrapper.findComponent(ClarifyChat)
+    await chat.vm.$emit('update:attachments', [{ data: 'aGVsbG8=', mimeType: 'image/png', name: 'reference.png' }])
+    await flushPromises()
+    expect(wrapper.find('[data-testid="clarify-draft-image-thumb"]').exists()).toBe(true)
+
+    await panel.get('[data-testid="preview-chat-locale-zh"]').trigger('click')
+    await flushPromises()
+    expect(localStorage.getItem('grasp-locale')).toBe('zh-CN')
+    expect(wrapper.get('[data-testid="clarify-input"]').attributes('placeholder')).toContain('请先描述目标')
+    expect(wrapper.get('[data-testid="clarify-send-label"]').text()).toContain('发送回复')
+    expect(wrapper.get('[data-testid="page-collaboration-controls"]').text()).toContain('页面协作')
+    expect(wrapper.get('[data-testid="preview-chat-locale-zh"]').attributes('aria-selected')).toBe('true')
+    expect((wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement).value).toBe('keep this draft')
+    expect(wrapper.find('[data-testid="clarify-draft-image-thumb"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="live-candidate-mode"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="page-collaboration-controls"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="preview-chat-locale-en"]').trigger('click')
+    await flushPromises()
+    expect(localStorage.getItem('grasp-locale')).toBe('en')
+    expect(wrapper.get('[data-testid="clarify-input"]').attributes('placeholder')).toContain('Describe the goal first')
+    expect(wrapper.get('[data-testid="clarify-send-label"]').text()).toContain('Send reply')
+    expect(wrapper.get('[data-testid="page-collaboration-controls"]').text()).toContain('Page collaboration')
+    expect((wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement).value).toBe('keep this draft')
+    expect(wrapper.find('[data-testid="clarify-draft-image-thumb"]').exists()).toBe(true)
+  })
+})
+
+describe('public approval page keeps its top-bar language select (plan g2)', () => {
+  it('does not add the preview-chat locale row or move the header language control', async () => {
+    window.location.hash = `#t=${'lg'.repeat(32)}`
+    mocks.preview.mockResolvedValue({
+      status: 'active',
+      kind: 'review',
+      nodeType: 'grasp',
+      reactSessionAlive: true,
+      actions: { reply: 'reply' },
+      turns: [],
+    })
+    const w = mountView('en')
+    await flushPromises()
+    expect(w.find('[data-testid="public-gate-chrome"]').exists()).toBe(true)
+    expect(w.find('[data-testid="public-gate-lang-select"]').exists()).toBe(true)
+    expect(w.find('[data-testid="preview-chat-locale"]').exists()).toBe(false)
+    expect(w.find('[data-testid="page-collaboration-toggle"]').exists()).toBe(false)
   })
 })
