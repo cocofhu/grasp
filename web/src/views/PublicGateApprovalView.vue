@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import HtmlPreview from '@/components/ui/HtmlPreview.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import PageCollaborationControls from '@/components/run/PageCollaborationControls.vue'
+import PreviewChatLocaleRow from '@/components/run/PreviewChatLocaleRow.vue'
 import { liveRequestId, type EmbedLiveContext } from '@/lib/inbox/embedLiveContext'
 import Icon from '@/components/ui/Icon.vue'
 import AppModal from '@/components/ui/AppModal.vue'
@@ -1517,6 +1518,7 @@ defineExpose({
 
     <PageCollaborationControls v-if="chatOnly && $slots['page-control'] && composerUnavailable" :active-labels="pageCollaborationActiveLabels">
       <slot name="page-control" />
+      <PreviewChatLocaleRow />
     </PageCollaborationControls>
 
     <div
@@ -1734,7 +1736,7 @@ defineExpose({
                   @queue-reorder="onQueueReorder"
                 >
                   <template #composer-controls="{ compact }">
-                    <PageCollaborationControls v-if="chatOnly && ($slots['page-control'] || showPageCandidateMode)" :active-labels="pageCollaborationActiveLabels" :compact="compact">
+                    <PageCollaborationControls v-if="chatOnly" :active-labels="pageCollaborationActiveLabels" :compact="compact">
                       <slot name="page-control" />
                       <div v-if="showPageCandidateMode" class="px-3 py-2" data-testid="live-candidate-control">
                         <label class="flex items-center justify-between gap-3 text-xs font-medium text-txt2">
@@ -1751,6 +1753,7 @@ defineExpose({
                           {{ t(pageCandidateMode ? 'pages.embedChat.live.candidateHint' : 'pages.embedChat.live.candidateIntro') }}
                         </p>
                       </div>
+                      <PreviewChatLocaleRow />
                     </PageCollaborationControls>
                   </template>
                 </ReviewComposer>

@@ -3833,6 +3833,7 @@
       "networkError": "Could not reach Grasp. Check the connection and try again.",
       "coldHint": "The agent session has ended. Continue the review in Grasp.",
       "pageCollaboration": "Page collaboration",
+      "language": "Language",
       "pageControl": {
         "shortLabel": "Page control",
         "toggle": "Let the agent operate this page",

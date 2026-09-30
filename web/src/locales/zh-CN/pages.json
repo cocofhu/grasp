@@ -3833,6 +3833,7 @@
       "networkError": "无法连接 Grasp，请检查网络后重试。",
       "coldHint": "Agent 会话已结束，请回到 Grasp 继续处理。",
       "pageCollaboration": "页面协作",
+      "language": "语言",
       "pageControl": {
         "shortLabel": "页面操作",
         "toggle": "允许 Agent 操作页面",
