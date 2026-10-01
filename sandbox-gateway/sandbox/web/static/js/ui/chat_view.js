@@ -6,7 +6,7 @@
 import {humanizeToolTitle, normalizeSessionUpdateKind} from '../core/acp_protocol.js';
 import {CardType, dispatchSessionUpdate} from '../conversation/index.js';
 import {hydrateMermaid, renderMarkdown, sanitizeChatLogHtml} from '../core/md.js';
-import {apiPath} from '../core/paths.js';
+import {chatApiPath} from '../core/paths.js';
 import {
     collectToolParams,
     flattenToolPayload,
@@ -17,7 +17,6 @@ import {
     truncateMiddle,
 } from './chat_payload.js';
 import {
-    deleteOtherSnapshots,
     deleteSnapshot,
     ensureLegacyMigrated,
     getSnapshot,
@@ -32,10 +31,12 @@ export class ChatView {
     /**
      * @param {HTMLElement} logEl #log
      * @param {HTMLElement} scrollRoot #chatScroll
+     * @param {{ chatId?: string }} [opts] chatId 用于历史分页请求（空为 default 会话）
      */
-    constructor(logEl, scrollRoot) {
+    constructor(logEl, scrollRoot, opts = {}) {
         this.logEl = logEl;
         this.scrollRoot = scrollRoot;
+        this.chatId = opts.chatId || '';
         /** @type {{ kind: string|null, bodyEl: HTMLElement|null, mdBuf: string }} */
         this.stream = {kind: null, bodyEl: null, mdBuf: ''};
         /** toolCallId -> entry */
@@ -114,7 +115,7 @@ export class ChatView {
         const beforeTurn = this._nextBefore;
 
         try {
-            const res = await fetch(apiPath(`api/events?before=${beforeTurn}&limit=10`));
+            const res = await fetch(chatApiPath(`api/events?before=${beforeTurn}&limit=10`, this.chatId));
             if (!res.ok) throw new Error(await res.text());
             const data = await res.json();
             const events = Array.isArray(data.events) ? data.events : [];
@@ -390,7 +391,7 @@ export class ChatView {
             clearTimeout(t);
         }
         this._mermaidTimers.clear();
-        const emptyEl = document.getElementById('emptyState');
+        const emptyEl = this._emptyEl();
         this.logEl.innerHTML = '';
         if (emptyEl) {
             this.logEl.appendChild(emptyEl);
@@ -404,7 +405,7 @@ export class ChatView {
         this._hasMoreTurns = false;
         this._nextBefore = null;
         this._pendingUserMessages = [];
-        const empty = document.getElementById('emptyState');
+        const empty = this._emptyEl();
         if (empty) empty.hidden = false;
         this.scrollToBottom();
     }
@@ -431,7 +432,7 @@ export class ChatView {
             this.endStream();
             this.resetToolsForNewTurn();
             this._finishAssistantTurn();
-            const empty = document.getElementById('emptyState');
+            const empty = this._emptyEl();
             const hasRows = this.logEl.querySelector(
                 '.cc-user-row, .cc-asst-row, .cc-tool-wrap, .cc-tool-group, .cc-notice, .cc-error-line'
             );
@@ -447,10 +448,9 @@ export class ChatView {
 
     /** 净化或旧数据可能导致 #emptyState 丢失，补回以免后续逻辑报错 */
     _ensureEmptyStateNode() {
-        if (document.getElementById('emptyState')) return;
+        if (this._emptyEl()) return;
         const wrap = document.createElement('div');
         wrap.className = 'cc-empty';
-        wrap.id = 'emptyState';
         wrap.innerHTML =
             '<div class="cc-empty-emoji" aria-hidden="true">🦀</div><h2 class="cc-empty-title">AgentChat</h2><p class="cc-empty-desc">聊天记录已恢复</p>';
         this.logEl.appendChild(wrap);
@@ -498,7 +498,7 @@ export class ChatView {
         if (!el || el.classList?.contains('cc-user-row') || el.classList?.contains('cc-asst-row')) {
             return false;
         }
-        if (el.id === 'emptyState') return false;
+        if (el.classList?.contains('cc-empty')) return false;
         if (el.tagName !== 'DIV') return false;
         if (el.children.length !== 1) return false;
         const inner = el.children[0];
@@ -523,8 +523,6 @@ export class ChatView {
         if (!ok) {
             this._persistDisabled = true;
             this.showPersistBannerOnce();
-        } else {
-            void deleteOtherSnapshots(sid);
         }
     }
 
@@ -546,7 +544,7 @@ export class ChatView {
     replayEventLog(events, _userTimeline) {
         if (!Array.isArray(events) || events.length === 0) return;
         // 清空当前聊天区域
-        const emptyEl = document.getElementById('emptyState');
+        const emptyEl = this._emptyEl();
         this.logEl.innerHTML = '';
         if (emptyEl) this.logEl.appendChild(emptyEl);
         this.endStream();
@@ -626,7 +624,7 @@ export class ChatView {
         const hasRows = this.logEl.querySelector(
             '.cc-user-row, .cc-asst-row, .cc-tool-wrap, .cc-tool-group, .cc-notice, .cc-error-line'
         );
-        const empty = document.getElementById('emptyState');
+        const empty = this._emptyEl();
         if (empty) empty.hidden = !!hasRows;
         this.scrollToBottom();
         this.flushPersist();
@@ -692,8 +690,13 @@ export class ChatView {
         this.scrollRoot.scrollTop = this.scrollRoot.scrollHeight;
     }
 
+    /** 本会话 #log 内的空态节点（多 Tab 时各自一份，不能按全局 id 查找） */
+    _emptyEl() {
+        return this.logEl.querySelector(':scope > .cc-empty');
+    }
+
     hideEmptyState() {
-        const el = document.getElementById('emptyState');
+        const el = this._emptyEl();
         if (el) el.hidden = true;
     }
 

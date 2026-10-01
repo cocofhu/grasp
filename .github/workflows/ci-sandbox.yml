@@ -56,6 +56,8 @@ jobs:
           node-version: "24"
       - name: safe_image_url unit tests
         run: node --test sandbox-gateway/sandbox/web/static/js/ui/safe_image_url_test.js
+      - name: tab_state unit tests
+        run: node --test sandbox-gateway/sandbox/web/static/js/app/tab_state_test.js
 
   sandbox-go:
     runs-on: ubuntu-latest

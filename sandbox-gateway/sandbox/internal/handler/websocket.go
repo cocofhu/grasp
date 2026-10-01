@@ -33,9 +33,14 @@ func wsPayloadPreview(b []byte, maxLen int) string {
 	return string(b[:maxLen]) + fmt.Sprintf("…(共%d字节)", len(b))
 }
 
-// WebSocket 处理与前端的 ACP 控制消息。
-func WebSocket(bridge *service.Bridge) gin.HandlerFunc {
+// WebSocket 处理与前端的 ACP 控制消息；?chat=<id> 选择会话，缺省为 default。
+func WebSocket(chats *service.ChatManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		bridge, ok := chats.Get(c.Query("chat"))
+		if !ok {
+			c.JSON(http.StatusNotFound, gin.H{"error": "chat not found"})
+			return
+		}
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
 			log.Printf("ws: WebSocket 升级失败 remote=%s: %v", c.ClientIP(), err)
@@ -43,7 +48,7 @@ func WebSocket(bridge *service.Bridge) gin.HandlerFunc {
 		}
 		cid := correl.ID()
 		remote := c.ClientIP()
-		log.Printf("ws cid=%s remote=%s: 已连接", cid, remote)
+		log.Printf("ws cid=%s remote=%s chat=%s: 已连接", cid, remote, bridge.ID())
 
 		defer func() {
 			bridge.UnregisterClient(conn)
@@ -55,7 +60,10 @@ func WebSocket(bridge *service.Bridge) gin.HandlerFunc {
 			}
 		}()
 
-		bridge.RegisterClient(conn)
+		if !bridge.RegisterClient(conn) {
+			log.Printf("ws cid=%s chat=%s: 会话已删除，拒绝连接", cid, bridge.ID())
+			return
+		}
 
 		if p := bridge.Session(); p != nil {
 			if err := bridge.WriteJSONWS(conn, bridge.ConnectedPayload(p)); err != nil {

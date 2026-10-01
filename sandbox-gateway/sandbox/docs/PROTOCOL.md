@@ -91,7 +91,8 @@
 
 ## 3. 会话能力
 
-WebSocket `/ws`,JSON 帧:
+WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST /api/chats` 创建),
+缺省为 `default` 会话;工作流不带该参数即可,语义与单会话一致。`/api/events` 同样接受 `chat`。
 
 - `→ {op:"connect", cwd?, fsRoot?, mcpServers?, autoPermission?}`
 - `← {op:"connected", sessionId, eventLog, totalTurns, hasMoreTurns, agent:{name,version}, ...}`

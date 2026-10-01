@@ -48,10 +48,17 @@ func (b *Bridge) unregisterClientLocked(c *websocket.Conn) {
 	b.mu.Unlock()
 }
 
-func (b *Bridge) RegisterClient(c *websocket.Conn) {
+// RegisterClient 登记客户端；会话已删除时直接关闭连接并返回 false。
+func (b *Bridge) RegisterClient(c *websocket.Conn) bool {
 	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		logging.WarnErr(c.Close(), "ws close on deleted chat", nil)
+		return false
+	}
 	b.clients[c] = &wsClient{conn: c}
 	b.mu.Unlock()
+	return true
 }
 
 func (b *Bridge) UnregisterClient(c *websocket.Conn) {

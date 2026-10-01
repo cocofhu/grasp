@@ -4,8 +4,8 @@
 
 ## 功能概览
 
-- **单进程网关**：Go（Gin）提供页面与 **`/ws`**，与全局单例 Agent 会话桥接。
-- **多标签共享**：同一 `acp-bridge` 进程只维护一组 Agent stdio 会话；多个浏览器标签连上来看到的是同一会话（有意设计）。
+- **单进程网关**：Go（Gin）提供页面与 **`/ws`**，按会话（chat）桥接 Agent。
+- **多会话 Tab**：页面顶栏可开多个 Tab，每个 Tab 是同一 provider 下独立的 Agent 会话（各自的队列、事件日志与模型），可并发运行。`/ws` 不带 `chat` 参数时落到 **`default`** 会话（平台调用即走这里，行为与单会话时代一致）；多个浏览器窗口打开同一 Tab 看到的是同一会话。会话列表只存于进程内存：刷新或换浏览器可恢复，关闭 Tab 才销毁，容器重启后只剩 `default`。
 - **队列与取消**：用户消息按 FIFO 与一轮 `session/prompt` 对应；顶栏 **停止** 图标仅在 **有待处理队列**（含「进行中 / 等待模型」或仍有排队未消费）时显示，用于取消当前轮次。
 - **权限与自动授权**：可在连接时开启自动授权；否则通过页面处理 `session/request_permission`。
 - **聊天记录**：按 ACP `sessionId` 落在浏览器 **IndexedDB**（库 `acp-bridge-chat`），刷新可对齐同一会话；旧版 **localStorage** 键会一次性迁移。后端也可在 `connected` 时下发事件日志用于恢复界面。
@@ -63,8 +63,8 @@
 
 ### 3) 选模型 —— `ACP_BRIDGE_MODEL`
 
-- **不设**：默认 `auto`，前端顶栏可切换（切换即重启该轮 agent）。
-- **设置**：模型被**锁定**，前端不可切换。等价的启动参数是 `-model`（优先级高于环境变量）。
+- **不设**：默认 `auto`，前端顶栏可按 Tab 切换（切换即重启该 Tab 的 agent）。
+- **设置**：作为各 Tab 的**默认模型**；Tab 仍可另选，选「默认」即回到它。等价的启动参数是 `-model`（优先级高于环境变量）。
 
 ```bash
 -e ACP_BRIDGE_MODEL=claude-4.6-opus-max      # 环境变量（推荐，经网关 env 透传）
@@ -121,7 +121,7 @@ go build -o backend ./cmd/backend
 ./backend
 ```
 
-在终端输出的地址用浏览器打开（默认监听 **0.0.0.0:8765**，本机一般为 **http://127.0.0.1:8765**）。页面加载后通过 WebSocket 与后端通信；后端维护**全局单例** Agent 会话（多标签页共享同一会话）。
+在终端输出的地址用浏览器打开（默认监听 **0.0.0.0:8765**，本机一般为 **http://127.0.0.1:8765**）。页面加载后通过 WebSocket 与后端通信；后端按会话（chat）维护 Agent，默认会话为 `default`，页面顶栏可新增 Tab。
 
 ### Agent、刷新与聊天记录
 
@@ -141,11 +141,13 @@ go build -o backend ./cmd/backend
 | `-listen`     | `0.0.0.0:8765`    | HTTP 监听地址。需要局域网其它设备访问时勿只绑 `127.0.0.1`。 |
 | `-gin-mode`   | `debug`           | `debug` / `release` / `test`。 |
 | `-web`        | `web`             | 静态资源根目录，须含 `index.html` 与 `static/`（相对当前工作目录或绝对路径）。 |
-| `-model`      | *(空，即 auto)*   | 指定 Agent 模型。也可通过环境变量 `ACP_BRIDGE_MODEL` 设置（优先级低于本参数）。指定后前端不可切换。 |
+| `-model`      | *(空，即 auto)*   | 默认 Agent 模型。也可通过环境变量 `ACP_BRIDGE_MODEL` 设置（优先级低于本参数）。各 Tab 可另选。 |
+
+环境变量 `SANDBOX_MAX_CHATS`（默认 `8`，含 `default`）限制同时存在的会话数，超出时 `POST /api/chats` 返回 409。
 
 ## 模型选择
 
-不指定模型时默认使用 `auto`，前端页面可通过顶栏模型按钮弹窗切换（切换后自动重启 Agent）；指定后模型被锁定、前端不可切换。
+每个 Tab（会话）可在顶栏模型按钮里单独选模型，切换只重启该 Tab 的 Agent。未选择（或选「默认」）时用默认模型：`-model` → `ACP_BRIDGE_MODEL` → 都没有则 `auto`（不传模型，由 CLI 自行决定）。默认会话 `default` 不选模型时行为与之前一致。
 配置方式与环境变量见上面 **[启动沙箱 · 选模型](#3-选模型--acp_bridge_model)**。
 
 > 旧别名 `CURSOR_ACP_MODEL` / `CURSOR_ACP_PASSWORD` / `CURSOR_ACP_PORT` 仍被 `startup.sh` 兼容识别，
@@ -157,8 +159,15 @@ go build -o backend ./cmd/backend
 |------|------|
 | `/` | 主页面（`index.html`） |
 | `/assets/*` | 前端静态资源（JS/CSS 等） |
-| `/ws` | WebSocket，JSON 消息体（见下节） |
-| `/api/prompt_queue` | 只读队列快照 JSON（对齐调试 / 外部观测） |
+| `/ws?chat=<id>` | WebSocket，JSON 消息体（见下节）；`chat` 缺省为 `default` |
+| `GET /api/chats` | 会话列表 `{chats:[{id,title,model,busy,connected,createdAt}], max, defaultModel}` |
+| `POST /api/chats` | 新建会话 `{title?, model?}`（`model` 空 = 跟随默认），Agent 在首次 connect 时启动；超上限 409 |
+| `PATCH /api/chats/:id` | 重命名 `{title}` |
+| `DELETE /api/chats/:id` | 结束该会话 Agent 并移除；`default` 不可删 |
+| `/api/prompt_queue?chat=` | 只读队列快照 JSON（对齐调试 / 外部观测） |
+| `/api/events?chat=` · `/api/models?chat=` · `POST /api/model?chat=` | 同原语义，作用于指定会话（缺省 `default`）；`POST /api/model` 传空串恢复跟随默认 |
+
+新会话的 `connect` 若未带 cwd / MCP，会沿用 `default` 会话的工作目录与 MCP 列表；各会话共享同一工作区，并发改同一文件可能冲突。
 
 其它未知 **GET** 会回退到 `index.html`（便于前端路由）；**/api/** 下未匹配路径返回 404。
 

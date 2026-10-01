@@ -151,12 +151,14 @@ export async function deleteSnapshot(sessionId) {
 }
 
 /**
- * 删除除 currentSessionId 外的所有快照（换 session 时清理旧记录）。
- * @param {string} currentSessionId
+ * 删除不在 keepSessionIds 中的所有快照（清理已关闭 Tab / 已重启会话的旧记录）。
+ * @param {string|Iterable<string>} keepSessionIds
  * @returns {Promise<void>}
  */
-export async function deleteOtherSnapshots(currentSessionId) {
-    const keep = String(currentSessionId || '');
+export async function deleteOtherSnapshots(keepSessionIds) {
+    const keep = new Set(
+        typeof keepSessionIds === 'string' ? [keepSessionIds] : Array.from(keepSessionIds || [], String)
+    );
     const db = await openDb();
     if (!db) return;
     await new Promise((resolve) => {
@@ -176,7 +178,7 @@ export async function deleteOtherSnapshots(currentSessionId) {
             const cursor = req.result;
             if (!cursor) return;
             const key = String(cursor.key || '');
-            if (key && key !== keep) {
+            if (key && !keep.has(key)) {
                 cursor.delete();
             }
             cursor.continue();

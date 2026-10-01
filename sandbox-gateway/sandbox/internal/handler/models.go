@@ -9,28 +9,34 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ModelsGET 返回可用模型列表与当前选中模型。
-func ModelsGET(bridge *service.Bridge) gin.HandlerFunc {
+// ModelsGET 返回可用模型列表、默认模型与 ?chat= 会话的当前模型。
+// current 为该会话实际使用的模型（会话选择 → 默认模型 → 空即 auto）；selected 为会话显式选择（空即跟随默认）。
+func ModelsGET(chats *service.ChatManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		bridge := chatFromQuery(c, chats)
+		if bridge == nil {
+			return
+		}
 		models, err := service.ListAgentModels()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		current := bridge.Model()
 		c.JSON(http.StatusOK, gin.H{
-			"models":  models,
-			"current": current,
-			"fixed":   bridge.ModelFixed(),
+			"models":   models,
+			"current":  bridge.EffectiveModel(),
+			"selected": bridge.Model(),
+			"default":  chats.DefaultModel(),
+			"fixed":    false,
 		})
 	}
 }
 
-// ModelPOST 设置模型并重启 Agent。
-func ModelPOST(bridge *service.Bridge) gin.HandlerFunc {
+// ModelPOST 设置 ?chat= 会话的模型并只重启该会话；model 为空串表示恢复跟随默认模型。
+func ModelPOST(chats *service.ChatManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if bridge.ModelFixed() {
-			c.JSON(http.StatusForbidden, gin.H{"error": "模型已由启动参数锁定，不可切换"})
+		bridge := chatFromQuery(c, chats)
+		if bridge == nil {
 			return
 		}
 		var body struct {
@@ -42,17 +48,18 @@ func ModelPOST(bridge *service.Bridge) gin.HandlerFunc {
 		}
 		model := strings.TrimSpace(body.Model)
 		prev := bridge.Model()
-		bridge.SetModel(model, false)
+		bridge.SetModel(model)
 		sess, err := bridge.RestartAgent()
 		if err != nil {
-			bridge.SetModel(prev, false)
+			bridge.SetModel(prev)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		bridge.Broadcast(bridge.ConnectedPayload(sess))
 		bridge.BroadcastQueueState()
 		c.JSON(http.StatusOK, gin.H{
-			"model":     bridge.Model(),
+			"model":     bridge.EffectiveModel(),
+			"selected":  bridge.Model(),
 			"sessionId": sess.SessionID(),
 		})
 	}

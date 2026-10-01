@@ -11,9 +11,13 @@ import (
 )
 
 // EventsBefore 返回指定轮次之前的历史事件（用于向上滚动加载）。
-// 参数: ?before=<turnIndex>&limit=<count>
-func EventsBefore(bridge *service.Bridge) gin.HandlerFunc {
+// 参数: ?before=<turnIndex>&limit=<count>&chat=<id>
+func EventsBefore(chats *service.ChatManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		bridge := chatFromQuery(c, chats)
+		if bridge == nil {
+			return
+		}
 		beforeStr := c.DefaultQuery("before", "0")
 		limitStr := c.DefaultQuery("limit", "10")
 		before, err := strconv.Atoi(beforeStr)

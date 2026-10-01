@@ -28,9 +28,19 @@ type PromptQueueEntry struct {
 	ImageCount int    `json:"imageCount,omitempty"` // 附带的图片数量，供队列面板展示
 }
 
-// Bridge 聚合 ACP 会话、权限等待与 WebSocket 广播（应用服务层）。
+// Bridge 聚合单个聊天会话的 ACP 会话、权限等待与 WebSocket 广播（应用服务层）。
+// 多个会话由 ChatManager 按 chat id 管理；default 会话即历史上的全局单例。
 type Bridge struct {
-	mu             sync.Mutex
+	// 会话元数据（id 创建后不变；title 由 ChatManager 在 mu 下修改）
+	id        string
+	title     string
+	createdAt time.Time
+	// 所属 ChatManager；nil 表示独立使用（单测）
+	mgr *ChatManager
+
+	mu sync.Mutex
+	// closed 在会话被 ChatManager.Delete 后置位：不再接受 WebSocket，也不再拉起 Agent。
+	closed         bool
 	sess           provider.Session
 	agentCtx       context.Context
 	agentCancel    context.CancelFunc
@@ -74,9 +84,8 @@ type Bridge struct {
 	eventSubNextID int
 	eventSubs      map[int]func(json.RawMessage)
 
-	// 用户指定的模型（环境变量 ACP_BRIDGE_MODEL 或 -model 参数）
-	model      string
-	modelFixed bool // 启动参数指定时锁定，前端不可切换
+	// 本会话选择的模型；空表示跟随 ChatManager 的默认模型（-model / ACP_BRIDGE_MODEL）。
+	model string
 
 	// 回合看门狗：连续无事件 turnIdle 或总时长超过 turnMax 即终止回合；0 表示不限。
 	turnIdle time.Duration
@@ -114,6 +123,8 @@ type promptTurn struct {
 func NewBridge() *Bridge {
 	idle, max := turnLimitsFromEnv()
 	return &Bridge{
+		id:             DefaultChatID,
+		createdAt:      time.Now(),
 		permWait:       make(map[string]chan string),
 		clients:        make(map[*websocket.Conn]*wsClient),
 		autoPermission: true,
@@ -124,27 +135,32 @@ func NewBridge() *Bridge {
 	}
 }
 
-// SetModel 设置用户指定的模型（启动时调用，线程安全）。
-// fixed=true 表示由启动参数指定，前端不可切换。
-func (b *Bridge) SetModel(m string, fixed bool) {
+// ID 返回会话 id（default 为默认会话）。
+func (b *Bridge) ID() string { return b.id }
+
+// SetModel 设置本会话选择的模型；空串表示跟随默认模型。下次建连生效。
+func (b *Bridge) SetModel(m string) {
 	b.mu.Lock()
-	b.model = m
-	b.modelFixed = fixed
+	b.model = strings.TrimSpace(m)
 	b.mu.Unlock()
 }
 
-// Model 返回当前指定的模型名称。
+// Model 返回本会话显式选择的模型；空表示跟随默认。
 func (b *Bridge) Model() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.model
 }
 
-// ModelFixed 返回模型是否被启动参数锁定。
-func (b *Bridge) ModelFixed() bool {
+// EffectiveModel 返回建连实际使用的模型：会话选择 → 默认模型 → 空（由 CLI 自选，即 auto）。
+func (b *Bridge) EffectiveModel() string {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.modelFixed
+	m := b.model
+	b.mu.Unlock()
+	if m != "" || b.mgr == nil {
+		return m
+	}
+	return b.mgr.DefaultModel()
 }
 
 func (b *Bridge) Session() provider.Session {
