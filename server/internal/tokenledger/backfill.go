@@ -15,21 +15,32 @@ const backfillBatch = 500
 
 // BackfillOnce imports legacy StateRun / ChatMessage usage into the ledger the
 // first time the ledger table exists. Later usage is written live by the
-// engine / PM / Studio sinks, so the import must not run again.
-func BackfillOnce(db *gorm.DB) {
+// engine / PM / Studio sinks and also lands in the legacy columns, so a second
+// import would double count: the import and its marker commit atomically, and
+// live rows without a marker skip the import.
+func BackfillOnce(db *gorm.DB) error {
 	var n int64
 	if err := db.Model(&models.Setting{}).Where(&models.Setting{Key: BackfillMarkerKey}).Count(&n).Error; err != nil {
-		log.Warn().Err(err).Msg("token ledger backfill: marker lookup failed")
-		return
+		return err
 	}
 	if n > 0 {
-		return
+		return nil
 	}
-	if err := Backfill(db); err != nil {
-		log.Warn().Err(err).Msg("token ledger backfill failed")
-		return
+	marker := models.Setting{Key: BackfillMarkerKey, Value: "true", UpdatedAt: time.Now()}
+	var live int64
+	if err := db.Model(&models.TokenUsageEvent{}).Where("backfilled = ?", false).Count(&live).Error; err != nil {
+		return err
 	}
-	_ = db.Save(&models.Setting{Key: BackfillMarkerKey, Value: "true", UpdatedAt: time.Now()}).Error
+	if live > 0 {
+		log.Error().Int64("live_rows", live).Msg("token ledger backfill skipped: live rows exist without marker; legacy usage not imported")
+		return db.Save(&marker).Error
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := Backfill(tx); err != nil {
+			return err
+		}
+		return tx.Save(&marker).Error
+	})
 }
 
 // Backfill (re)imports legacy usage. Idempotent: previously backfilled rows are

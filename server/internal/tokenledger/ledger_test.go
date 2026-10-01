@@ -183,16 +183,55 @@ func TestBackfillOnceRunsOnlyOnce(t *testing.T) {
 	ts := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
 	must(&models.Run{ID: "r1", WorkflowID: "wf", Status: "completed", StartedAt: ts})
 	must(&models.StateRun{RunID: "r1", NodeID: "n1", Status: "completed", Usage: &models.TokenUsage{InputTokens: 5}})
-	tokenledger.BackfillOnce(db)
+	if err := tokenledger.BackfillOnce(db); err != nil {
+		t.Fatal(err)
+	}
 	var n int64
 	db.Model(&models.TokenUsageEvent{}).Count(&n)
 	if n != 0 {
 		t.Fatalf("tokenledger.BackfillOnce re-ran after marker: %d rows", n)
 	}
 	db.Where(&models.Setting{Key: tokenledger.BackfillMarkerKey}).Delete(&models.Setting{})
-	tokenledger.BackfillOnce(db)
+	if err := tokenledger.BackfillOnce(db); err != nil {
+		t.Fatal(err)
+	}
 	db.Model(&models.TokenUsageEvent{}).Count(&n)
 	if n != 1 {
 		t.Fatalf("tokenledger.BackfillOnce without marker rows=%d want 1", n)
+	}
+}
+
+func TestBackfillOnceSkipsWhenLiveRowsExistWithoutMarker(t *testing.T) {
+	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "ledger_live.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	for _, v := range []any{
+		&models.Run{ID: "r1", WorkflowID: "wf", Status: "completed", StartedAt: ts},
+		&models.StateRun{RunID: "r1", NodeID: "n1", Status: "completed", Usage: &models.TokenUsage{InputTokens: 5}},
+	} {
+		if err := db.Create(v).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The same node's usage was already written live (it also sits in StateRun.usage).
+	tokenledger.Record(db, tokenledger.Entry{
+		At: ts, Source: models.TokenLedgerSourceWorkflow, RunID: "r1", NodeID: "n1",
+		Usage: &models.TokenUsage{InputTokens: 5},
+	})
+	db.Where(&models.Setting{Key: tokenledger.BackfillMarkerKey}).Delete(&models.Setting{})
+	if err := tokenledger.BackfillOnce(db); err != nil {
+		t.Fatal(err)
+	}
+	var total int64
+	db.Model(&models.TokenUsageEvent{}).Select("COALESCE(SUM(input_tokens), 0)").Scan(&total)
+	if total != 5 {
+		t.Fatalf("ledger input total=%d want 5 (no double count)", total)
+	}
+	var marker int64
+	db.Model(&models.Setting{}).Where(&models.Setting{Key: tokenledger.BackfillMarkerKey}).Count(&marker)
+	if marker != 1 {
+		t.Fatalf("marker rows=%d want 1", marker)
 	}
 }

@@ -181,7 +181,9 @@ func (s *DashboardService) loadPlatformUsageSince(ctx context.Context, since tim
 		s.loadPlatformUsageHook()
 	}
 	var out []platformUsagePoint
-	err := loadLedgerEvents(ctx, s.db, ledgerRowFilter{since: &since}, func(ev models.TokenUsageEvent) {
+	// Match CumulativeTokens (PlatformTokenBreakdown), which only covers workflow + PM.
+	filter := ledgerRowFilter{since: &since, sources: []string{models.TokenLedgerSourceWorkflow, models.TokenLedgerSourcePM}}
+	err := loadLedgerEvents(ctx, s.db, filter, func(ev models.TokenUsageEvent) {
 		out = append(out, platformUsagePoint{ts: ev.CreatedAt, total: ev.Total()})
 	})
 	if err != nil {

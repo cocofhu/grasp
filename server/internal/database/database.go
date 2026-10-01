@@ -178,7 +178,9 @@ func finalize(db *gorm.DB) (*gorm.DB, error) {
 	backfillWorkflowIDs(db)
 	backfillGateShareLinkKind(db)
 	ensureDefaultProject(db)
-	tokenledger.BackfillOnce(db)
+	if err := tokenledger.BackfillOnce(db); err != nil {
+		return nil, fmt.Errorf("token ledger backfill: %w", err)
+	}
 	return db, nil
 }
 
