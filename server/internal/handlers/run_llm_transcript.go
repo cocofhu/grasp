@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"sort"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/gin-gonic/gin"
@@ -36,6 +37,44 @@ func previewPromptEvents(events []models.AcpEvent) []models.AcpEvent {
 	return out
 }
 
+// mergeRecentTurns appends the provider's finished turns that a still-active
+// execution has not persisted yet. A turn belongs to the execution when its
+// prompt is not older than the execution start; turns already persisted are
+// recognised by their prompt timestamp.
+func mergeRecentTurns(persisted, recent []models.AcpEvent, startedAt *time.Time) []models.AcpEvent {
+	if len(recent) == 0 {
+		return persisted
+	}
+	seen := map[string]bool{}
+	for _, ev := range persisted {
+		if ev.Kind == models.AcpKindPrompt && ev.At != "" {
+			seen[ev.At] = true
+		}
+	}
+	out := persisted
+	keep := false
+	for _, ev := range recent {
+		if ev.Kind == models.AcpKindPrompt {
+			keep = !seen[ev.At] && !promptBefore(ev.At, startedAt)
+			if keep && len(out) == len(persisted) {
+				out = append([]models.AcpEvent(nil), persisted...)
+			}
+		}
+		if keep {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+func promptBefore(at string, startedAt *time.Time) bool {
+	if startedAt == nil {
+		return false
+	}
+	t, err := time.Parse(time.RFC3339Nano, at)
+	return err == nil && t.Before(startedAt.Truncate(time.Second))
+}
+
 // RunLlmTranscript returns every node execution of a run (oldest first) with
 // its full event log — prompts included — plus the prompts of turns still
 // streaming, for the run detail "LLM 过程" view.
@@ -53,11 +92,23 @@ func (h *Handlers) RunLlmTranscript(c *gin.Context) {
 		}
 		return a.Before(*b)
 	})
+	var recent map[string][]models.AcpEvent
+	if h.Eng != nil {
+		recent = h.Eng.RecentTurns(runID)
+	}
+	latest := map[string]int{}
+	for i, s := range states {
+		latest[s.NodeID] = i
+	}
 	execs := make([]gin.H, 0, len(states))
-	for _, s := range states {
+	for i, s := range states {
+		events := s.Events
+		if latest[s.NodeID] == i && (s.Status == "running" || s.Status == "waiting_human") {
+			events = mergeRecentTurns(events, recent[s.NodeID], s.StartedAt)
+		}
 		ex := gin.H{
 			"id": s.ID, "nodeId": s.NodeID, "nodeType": s.NodeType, "iteration": s.Iteration,
-			"status": s.Status, "durationSec": s.DurationSec, "events": s.Events, "mcpCalls": s.McpCalls,
+			"status": s.Status, "durationSec": s.DurationSec, "events": events, "mcpCalls": s.McpCalls,
 		}
 		if s.StartedAt != nil {
 			ex["startedAt"] = *s.StartedAt

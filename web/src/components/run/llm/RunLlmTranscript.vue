@@ -7,7 +7,7 @@ import LlmAnswerBubble from './LlmAnswerBubble.vue'
 import LlmSystemRow from './LlmSystemRow.vue'
 import { api } from '@/lib/api/api'
 import type { LlmTranscriptResponse } from '@/lib/api/apiTypes'
-import { buildLlmTranscript, summarizeLlmTranscript } from '@/lib/run/llmTranscript'
+import { buildLlmTranscript, carryInflight, summarizeLlmTranscript } from '@/lib/run/llmTranscript'
 import { resolveNodeDisplayLabel } from '@/lib/run/resolveNodeDisplayLabel'
 import { fmtTokenCount } from '@/lib/run/tokenUsage'
 import type { AcpEvent, Run, WFNode } from '@/lib/shared/types'
@@ -75,7 +75,7 @@ async function load() {
   try {
     const res = await api.llmTranscript(runId, { signal: mine.signal })
     if (ctrl !== mine) return
-    transcript.value = res
+    transcript.value = carryInflight(transcript.value, res)
     loadError.value = false
   } catch {
     if (mine.signal.aborted) return

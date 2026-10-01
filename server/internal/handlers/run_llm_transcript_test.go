@@ -21,6 +21,17 @@ func (inflightProvider) InflightPrompts(runID string) map[string]runtime.Infligh
 	return map[string]runtime.InflightPrompt{"n2": {Prompt: "still asking", At: "2026-10-01T00:00:10Z"}}
 }
 
+func (inflightProvider) RecentTurns(runID string) map[string][]models.AcpEvent {
+	if runID != "run-tr" {
+		return nil
+	}
+	return map[string][]models.AcpEvent{"n2": {
+		{Kind: models.AcpKindPrompt, Text: "first ask", At: "2026-10-01T00:00:06Z"},
+		{Kind: "message", Text: "first answer"},
+		{Kind: models.AcpKindTurnEnd, At: "2026-10-01T00:00:08Z"},
+	}}
+}
+
 func TestRunLlmTranscriptOrdersByStartAndReturnsFullPrompts(t *testing.T) {
 	h := newHarness(t)
 	old := h.h.Eng
@@ -67,6 +78,9 @@ func TestRunLlmTranscriptOrdersByStartAndReturnsFullPrompts(t *testing.T) {
 	}
 	if body.Inflight["n2"].Prompt != "still asking" {
 		t.Fatalf("inflight missing: %+v", body.Inflight)
+	}
+	if ev := body.Executions[1].Events; len(ev) != 3 || ev[0].Text != "first ask" {
+		t.Fatalf("running execution should include unpersisted finished turns: %+v", ev)
 	}
 
 	// Run detail and node events only carry a preview.

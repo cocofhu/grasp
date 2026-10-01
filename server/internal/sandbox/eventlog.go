@@ -385,6 +385,35 @@ func FramesAfterLastPromptBegin(frames []json.RawMessage) []json.RawMessage {
 	return frames[last:]
 }
 
+// SplitFramesByPromptBegin cuts a full event log into one chunk per turn, each
+// starting at its prompt_begin. Frames ahead of the first prompt_begin stay
+// with the first turn; a log without prompt_begin is a single chunk.
+func SplitFramesByPromptBegin(frames []json.RawMessage) [][]json.RawMessage {
+	var turns [][]json.RawMessage
+	start := 0
+	for i, raw := range frames {
+		if i > start && frameIsPromptBegin(raw) {
+			if len(turns) > 0 || hasPromptBegin(frames[start:i]) {
+				turns = append(turns, frames[start:i])
+				start = i
+			}
+		}
+	}
+	if start < len(frames) {
+		turns = append(turns, frames[start:])
+	}
+	return turns
+}
+
+func hasPromptBegin(frames []json.RawMessage) bool {
+	for _, raw := range frames {
+		if frameIsPromptBegin(raw) {
+			return true
+		}
+	}
+	return false
+}
+
 func frameIsPromptBegin(raw json.RawMessage) bool {
 	data := raw
 	var env struct {

@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -8,6 +9,35 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
+
+func TestMergeTranscriptSnapshot(t *testing.T) {
+	msg := func(s string) models.AcpEvent { return models.AcpEvent{Kind: "message", Text: s} }
+	q := func(s string) models.AcpEvent { return models.AcpEvent{Kind: models.AcpKindPrompt, Text: s} }
+	end := models.AcpEvent{Kind: models.AcpKindTurnEnd}
+	fallback := []models.AcpEvent{q("q1"), msg("s1"), end, q("q2"), msg("s2"), end}
+	snap := [][]models.AcpEvent{{msg("earlier")}, {msg("a1")}, {msg("a2")}}
+
+	got := mergeTranscriptSnapshot(snap, fallback)
+	var texts []string
+	for _, ev := range got {
+		texts = append(texts, ev.Kind+":"+ev.Text)
+	}
+	want := "message:earlier prompt:q1 message:a1 turn_end: prompt:q2 message:a2 turn_end:"
+	if strings.Join(texts, " ") != want {
+		t.Fatalf("got %q", strings.Join(texts, " "))
+	}
+
+	if got := mergeTranscriptSnapshot(snap[:1], fallback); len(got) != len(fallback) || got[1].Text != "s1" {
+		t.Fatalf("fewer sandbox turns than brackets should keep the streamed copy: %+v", got)
+	}
+	loose := append([]models.AcpEvent{msg("unbracketed")}, fallback...)
+	if _, ok := transcriptTurns(loose); ok {
+		t.Fatal("events outside a bracket must not align")
+	}
+	if _, ok := transcriptTurns([]models.AcpEvent{q("open"), msg("x")}); ok {
+		t.Fatal("an unterminated bracket must not align")
+	}
+}
 
 func TestAbsorbChatWrapsTurnWithPromptAndTurnEnd(t *testing.T) {
 	start := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
@@ -75,5 +105,32 @@ func TestInflightPromptsScopedToRun(t *testing.T) {
 	reg := &ProviderRegistry{providers: map[AcpBackend]ExecProvider{BackendCursor: c}}
 	if got := reg.InflightPrompts("r2"); got["b"].Prompt != "q2" {
 		t.Fatalf("registry fan-out: %+v", got)
+	}
+}
+
+func TestRecentTurnsCappedAndDroppedWithRun(t *testing.T) {
+	c := &acpProvider{}
+	req := NodeReq{RunID: "r1", NodeID: "a"}
+	turn := func(s string) []models.AcpEvent {
+		return []models.AcpEvent{{Kind: models.AcpKindPrompt, Text: s}, {Kind: models.AcpKindTurnEnd}}
+	}
+	c.recordRecentTurn(req, []models.AcpEvent{{Kind: "message"}})
+	for i := 0; i < recentTurnsCap+2; i++ {
+		c.recordRecentTurn(req, turn(strconv.Itoa(i)))
+	}
+	c.recordRecentTurn(NodeReq{RunID: "r2", NodeID: "a"}, turn("other"))
+
+	got := c.RecentTurns("r1")["a"]
+	if len(got) != 2*recentTurnsCap || got[0].Text != "2" {
+		t.Fatalf("want last %d turns starting at 2, got %d events (first %q)", recentTurnsCap, len(got), got[0].Text)
+	}
+	reg := &ProviderRegistry{providers: map[AcpBackend]ExecProvider{BackendCursor: c}}
+	if len(reg.RecentTurns("r2")["a"]) != 2 {
+		t.Fatal("registry fan-out")
+	}
+	c.setInflightPrompt(req, "q", 0, time.Now())
+	c.dropRunTranscript("r1")
+	if c.RecentTurns("r1") != nil || c.InflightPrompts("r1") != nil || c.RecentTurns("r2") == nil {
+		t.Fatal("drop must clear only the finished run")
 	}
 }

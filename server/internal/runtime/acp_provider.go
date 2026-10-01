@@ -116,9 +116,11 @@ type acpProvider struct {
 	timeline *acpTimelineStore
 	// inflight holds the prompt of the turn currently streaming per
 	// runID|nodeID, so the LLM transcript shows the question before the turn
-	// is persisted.
-	inflightMu sync.Mutex
-	inflight   map[string]InflightPrompt
+	// is persisted; recentTurns holds the finished bracketed turns of the same
+	// key until the run ends.
+	inflightMu  sync.Mutex
+	inflight    map[string]InflightPrompt
+	recentTurns map[string][][]models.AcpEvent
 }
 
 // streamChat runs one turn (prompt + optional image attachments), streaming
@@ -134,6 +136,7 @@ func (c *acpProvider) streamChat(ctx context.Context, acp *sandbox.ACPClient, re
 		res.ImageCount = len(images)
 		res.StartedAt = started
 		res.EndedAt = time.Now()
+		c.recordRecentTurn(req, transcriptTurnEvents(res))
 	}
 	return res, err
 }

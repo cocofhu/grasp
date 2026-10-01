@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AcpEvent, Run } from '@/lib/shared/types'
 import type { LlmTranscriptResponse } from '@/lib/api/apiTypes'
-import { buildLlmTranscript, splitTurns, summarizeLlmTranscript } from './llmTranscript'
+import { buildLlmTranscript, carryInflight, splitTurns, summarizeLlmTranscript } from './llmTranscript'
 
 const nodeInfo = (id: string) => ({ label: `L-${id}`, type: 'agent' })
 
@@ -22,6 +22,30 @@ function baseRun(over: Partial<Run> = {}): Run {
 }
 
 const ev = (e: Partial<AcpEvent> & { kind: AcpEvent['kind'] }): AcpEvent => ({ t: 0, ...e })
+
+describe('carryInflight', () => {
+  const at = '2026-10-01T00:00:05Z'
+  const prev: LlmTranscriptResponse = {
+    executions: [{ id: 1, nodeId: 'a', iteration: 1, status: 'running' }],
+    inflight: { a: { prompt: 'Q', at } },
+  }
+
+  it('keeps a finished turn visible until its prompt is fetched', () => {
+    const next: LlmTranscriptResponse = { executions: [{ id: 1, nodeId: 'a', iteration: 1, status: 'running' }] }
+    expect(carryInflight(prev, next).inflight?.a?.prompt).toBe('Q')
+  })
+
+  it('drops the carried prompt once persisted, superseded or the execution ended', () => {
+    const persisted: LlmTranscriptResponse = {
+      executions: [{ id: 1, nodeId: 'a', iteration: 1, status: 'running', events: [{ kind: 'prompt', text: 'Q', at }] }],
+    }
+    expect(carryInflight(prev, persisted).inflight).toBeUndefined()
+    const ended: LlmTranscriptResponse = { executions: [{ id: 1, nodeId: 'a', iteration: 1, status: 'completed' }] }
+    expect(carryInflight(prev, ended).inflight).toBeUndefined()
+    const newer: LlmTranscriptResponse = { ...prev, inflight: { a: { prompt: 'Q2', at: '2026-10-01T00:00:09Z' } } }
+    expect(carryInflight(prev, newer).inflight?.a?.prompt).toBe('Q2')
+  })
+})
 
 describe('splitTurns', () => {
   it('pairs each prompt with its reply and turn_end usage', () => {

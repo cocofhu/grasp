@@ -279,6 +279,28 @@ export function executionsFromRun(run: Run): LlmTranscriptExecution[] {
   return out.sort((a, b) => ms(a.startedAt) - ms(b.startedAt))
 }
 
+/**
+ * The server stops reporting a turn as inflight the moment it finishes, but
+ * the fetched executions only contain that turn on a later poll. Keep the
+ * previous inflight prompt of an active execution until its turn shows up,
+ * so the just-streamed answer does not blink out in between.
+ */
+export function carryInflight(
+  prev: LlmTranscriptResponse | null,
+  next: LlmTranscriptResponse,
+): LlmTranscriptResponse {
+  const carried: Record<string, LlmInflightPrompt> = {}
+  for (const [nodeId, p] of Object.entries(prev?.inflight || {})) {
+    if (next.inflight?.[nodeId]) continue
+    const latest = [...(next.executions || [])].reverse().find((ex) => ex.nodeId === nodeId)
+    if (!latest || (latest.status !== 'running' && latest.status !== 'waiting_human')) continue
+    if ((latest.events || []).some((ev) => ev.kind === 'prompt' && ev.at === p.at)) continue
+    carried[nodeId] = p
+  }
+  if (!Object.keys(carried).length) return next
+  return { ...next, inflight: { ...carried, ...(next.inflight || {}) } }
+}
+
 function liveTurn(inflight: LlmInflightPrompt, live: AcpEvent[] | undefined): LlmTurn {
   const turn = newTurn(promptFrom({ text: inflight.prompt, at: inflight.at, imageCount: inflight.imageCount }))
   turn.live = true

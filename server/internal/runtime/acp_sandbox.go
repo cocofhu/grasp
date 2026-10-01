@@ -117,11 +117,19 @@ func (c *acpProvider) snapshotEvents(ctx context.Context, sb *sandbox.Sandbox, f
 	if sb == nil {
 		return fallback
 	}
-	snap, _, err := sandbox.FetchEventLogWithPassword(ctx, sb.Host, sb.Port, sb.Password)
-	if err != nil || snap == nil {
+	frames, _, err := sandbox.NewEventLogReader(sb.Host, sb.Port, sb.Password).Raw(ctx)
+	if err != nil {
 		return fallback
 	}
-	if se := snap.AcpEvents(); len(se) > 0 {
+	if _, bracketed := transcriptTurns(fallback); bracketed {
+		chunks := sandbox.SplitFramesByPromptBegin(frames)
+		turns := make([][]models.AcpEvent, len(chunks))
+		for i, chunk := range chunks {
+			turns[i] = sandbox.AggregateFrames(chunk)
+		}
+		return mergeTranscriptSnapshot(turns, fallback)
+	}
+	if se := sandbox.AggregateFrames(frames); len(se) > 0 {
 		return se
 	}
 	return fallback

@@ -512,6 +512,7 @@ func mrTargetDisplay(target string) string {
 // setsid-detached preview survives Cancel of the production turn. Full Run /
 // gate / sandbox reclaim still Destroy via the normal lifecycle.
 func (c *acpProvider) AbortRun(runID string) {
+	c.dropRunTranscript(runID)
 	prefix := runID + "|"
 	c.mu.Lock()
 	var sessionKeys []string
