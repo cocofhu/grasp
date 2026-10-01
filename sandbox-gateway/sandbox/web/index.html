@@ -8,6 +8,12 @@
     <title>AgentChat</title>
     <script>
         (function () {
+            /* 与 static/js/app/embed.js parseThemeHash 一致：内嵌时宿主经 #theme= 指定首屏主题 */
+            const h = new URLSearchParams(location.hash.replace(/^#/, '')).get('theme');
+            if (h === 'light' || h === 'dark') {
+                document.documentElement.setAttribute('data-theme', h);
+                return;
+            }
             try {
                 const s = localStorage.getItem('acp-bridge-theme');
                 if (s === 'light' || s === 'dark') {
@@ -20,9 +26,6 @@
             document.documentElement.setAttribute('data-theme', q && q.matches ? 'light' : 'dark');
         })();
     </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com"/>
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
     <link rel="stylesheet" href="assets/css/app.css"/>
 </head>
 <body>
@@ -115,10 +118,15 @@
                             id="input"
                             class="cc-textarea"
                             rows="1"
-                            placeholder="Send a message...（Ctrl/⌘+Enter 换行）"
+                            placeholder="输入消息，Enter 发送，Ctrl/⌘+Enter 换行"
                             autocomplete="off"
                     ></textarea>
-                    <button type="button" class="cc-send" id="btnSend">Send</button>
+                    <button type="button" class="cc-send" id="btnSend" aria-label="发送">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M12 19V5M5 12l7-7 7 7"/>
+                        </svg>
+                    </button>
                 </div>
             </div>
         </footer>
@@ -208,9 +216,15 @@
     <main class="cc-scroll cc-chat-pane" role="tabpanel">
         <div class="cc-list cc-log">
             <div class="cc-empty">
-                <div class="cc-empty-emoji" aria-hidden="true">🦀</div>
-                <h2 class="cc-empty-title">AgentChat</h2>
-                <p class="cc-empty-desc">打开页面后将自动连接 Agent · 卡片式对话与底部队列布局</p>
+                <div class="cc-empty-mark" aria-hidden="true">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="4" y="8" width="16" height="12" rx="3"/>
+                        <path d="M12 4v4M9 13v1M15 13v1M9.5 17h5"/>
+                    </svg>
+                </div>
+                <h2 class="cc-empty-title">开始和 Agent 对话</h2>
+                <p class="cc-empty-desc">在下方输入需求，Agent 会在沙箱里读代码、改代码并回报进度。</p>
             </div>
         </div>
         <!-- 待发送队列在会话流底部 -->

@@ -156,7 +156,7 @@ func (h *Handlers) runDetailDTO(r models.Run) gin.H {
 	for _, s := range states {
 		nr := gin.H{
 			"nodeId": s.NodeID, "iteration": s.Iteration, "status": s.Status, "outputMd": s.OutputMd,
-			"outputs": services.OmitLargeJSONSnapshots(s.Outputs), "varsSnapshot": s.VarsSnapshot, "events": s.Events, "mcpCalls": s.McpCalls, "durationSec": s.DurationSec,
+			"outputs": services.OmitLargeJSONSnapshots(s.Outputs), "varsSnapshot": s.VarsSnapshot, "events": previewPromptEvents(s.Events), "mcpCalls": s.McpCalls, "durationSec": s.DurationSec,
 		}
 		// Nullable usage: omit when nil so clients treat missing as "—" (not 0).
 		if s.Usage != nil {

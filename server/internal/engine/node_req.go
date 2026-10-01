@@ -11,6 +11,7 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/runtime"
+	"github.com/cocofhu/grasp/internal/tokenledger"
 	"github.com/rs/zerolog/log"
 )
 
@@ -193,6 +194,18 @@ func (e *Engine) saveState(c *execCtx, node *models.Node, o nodeOutcome) {
 		sr = models.StateRun{RunID: c.run.ID, NodeID: node.ID, NodeType: node.Type, Iteration: iter, StartedAt: &now}
 	}
 
+	// Ledger first: tokens were spent even when the guards below drop a late
+	// outcome for an already-terminal execution.
+	ledgerStatus := tokenledger.StatusFromNode(o.status)
+	if sr.Status == "cancelled" || sr.Status == "failed" {
+		ledgerStatus = tokenledger.StatusFromNode(sr.Status)
+	}
+	e.recordTokenUsage(tokenledger.Entry{
+		RunID: c.run.ID, WorkflowID: c.run.WorkflowID, WorkflowName: c.run.WorkflowName, RunTitle: c.run.Title,
+		NodeID: node.ID, NodeType: node.Type, Phase: models.TokenLedgerPhaseProduction, Status: ledgerStatus,
+		Usage: o.usage, ByModel: o.usageByModel,
+	})
+
 	if status == "waiting_human" &&
 		(sr.Status == "completed" || sr.Status == "failed" || sr.Status == "cancelled") {
 		return
@@ -265,11 +278,28 @@ func (e *Engine) flushTokenUsage(runID, nodeID string, delta *models.TokenUsage,
 	if err := e.db.Where("run_id = ? AND node_id = ?", runID, nodeID).
 		Order("iteration desc, id desc").First(&sr).Error; err != nil {
 		log.Warn().Str("run_id", runID).Str("node_id", nodeID).Err(err).Msg("flushTokenUsage: no state_run to attach usage to")
+		e.recordTokenUsage(tokenledger.Entry{
+			RunID: runID, NodeID: nodeID, Phase: models.TokenLedgerPhaseInteractive,
+			Usage: delta, ByModel: byModel,
+		})
 		return
 	}
+	e.recordTokenUsage(tokenledger.Entry{
+		RunID: runID, NodeID: nodeID, NodeType: sr.NodeType, Phase: models.TokenLedgerPhaseInteractive,
+		Status: tokenledger.StatusFromNode(sr.Status), Usage: delta, ByModel: byModel,
+	})
 	sr.Usage = models.AddTokenUsage(sr.Usage, delta)
 	sr.UsageByModel = models.AddTokenUsageByModel(sr.UsageByModel, byModel)
 	logDB(e.db.Save(&sr), runID, "flush token usage")
+}
+
+// recordTokenUsage appends a workflow usage delta to the token ledger.
+func (e *Engine) recordTokenUsage(en tokenledger.Entry) {
+	en.Source = models.TokenLedgerSourceWorkflow
+	if en.At.IsZero() {
+		en.At = time.Now()
+	}
+	tokenledger.Record(e.db, en)
 }
 
 func str(v any) string {

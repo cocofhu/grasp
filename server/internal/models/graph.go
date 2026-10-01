@@ -77,12 +77,24 @@ type Variable struct {
 // AcpEvent is one streamed agent event (mirrors the frontend AcpEvent).
 type AcpEvent struct {
 	T        int           `json:"t"`
-	Kind     string        `json:"kind"` // message|thought|plan|tool_call|commands
+	Kind     string        `json:"kind"` // message|thought|plan|tool_call|commands|segment|prompt|turn_end
 	Title    string        `json:"title,omitempty"`
 	Text     string        `json:"text,omitempty"`
 	Status   string        `json:"status,omitempty"`
 	Artifact *ArtifactMeta `json:"artifact,omitempty"`
+	// At is the RFC3339 wall time; set on prompt (turn start) and turn_end.
+	At string `json:"at,omitempty"`
+	// Usage is the turn's token accounting; set on turn_end only.
+	Usage *TokenUsage `json:"usage,omitempty"`
+	// Truncated marks a prompt whose Text was cut (storage cap or DTO preview).
+	Truncated bool `json:"truncated,omitempty"`
 }
+
+// Transcript-only event kinds appended around each persisted chat turn.
+const (
+	AcpKindPrompt  = "prompt"
+	AcpKindTurnEnd = "turn_end"
+)
 
 // ArtifactMeta marks an event as an artifact-store write.
 type ArtifactMeta struct {

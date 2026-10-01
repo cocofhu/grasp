@@ -14,6 +14,8 @@ import { api, type SandboxView } from '@/lib/api/api'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { copyToClipboard } from '@/lib/shared/copyToClipboard'
 import { useToast } from '@/lib/composables/useToast'
+import { theme } from '@/lib/shared/theme'
+import { EMBED_THEME_MESSAGE } from '@/lib/inbox/embedChat'
 
 const route = useRoute()
 const router = useRouter()
@@ -55,6 +57,12 @@ const ideFrameKey = ref(0)
 const acpFrameKey = ref(0)
 /** Boot-class HardLoadLayer threshold (not the short REST 10s). */
 const IFRAME_BOOT_STUCK_MS = 60_000
+/** Must match sandbox web static/js/app/embed.js READY_MESSAGE. */
+const AGENTCHAT_READY_MESSAGE = 'grasp:agentchat-ready'
+const acpFrame = ref<HTMLIFrameElement | null>(null)
+/** Theme baked into the iframe URL at mount; later switches go over postMessage so the frame never reloads. */
+const acpFrameTheme = ref(theme.value)
+const acpSrc = computed(() => `${api.sandboxBridgeUrl(id)}#theme=${acpFrameTheme.value}`)
 
 const tabItems = computed(() => [
   { k: 'terminal', l: t('pages.sandboxConsole.tabs.terminal'), i: 'terminal' },
@@ -246,8 +254,22 @@ function retryIde() {
 }
 function retryAcp() {
   acpLoaded.value = false
+  acpFrameTheme.value = theme.value
   acpFrameKey.value += 1
 }
+function postAcpTheme() {
+  acpFrame.value?.contentWindow?.postMessage({ type: EMBED_THEME_MESSAGE, theme: theme.value }, window.location.origin)
+}
+// AgentChat announces itself once its UI is wired; iframe `load` also waits
+// for every subresource, so it stays as the fallback only.
+function onAcpMessage(e: MessageEvent) {
+  const win = acpFrame.value?.contentWindow
+  if (!win || e.source !== win || e.origin !== window.location.origin) return
+  if ((e.data as { type?: unknown } | null)?.type !== AGENTCHAT_READY_MESSAGE) return
+  acpLoaded.value = true
+  postAcpTheme()
+}
+watch(theme, postAcpTheme)
 
 watch(tab, (t) => {
   if (t === 'terminal') nextTick(() => { initTerminal(); doFit() })
@@ -258,6 +280,7 @@ watch(tab, (t) => {
 })
 
 onMounted(async () => {
+  window.addEventListener('message', onAcpMessage)
   tab.value = initialConsoleTab()
   if (isMobile.value) {
     await loadMeta()
@@ -278,6 +301,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('message', onAcpMessage)
   logAbort?.abort()
   logAbort = null
   logGen++
@@ -420,9 +444,10 @@ onBeforeUnmount(() => {
       >
         <iframe
           v-if="acpMounted && sandbox?.hasAcp"
+          ref="acpFrame"
           :key="acpFrameKey"
-          :src="api.sandboxBridgeUrl(id)"
-          class="h-full w-full border-0 bg-white"
+          :src="acpSrc"
+          class="h-full w-full border-0 bg-base"
           title="ACP bridge"
           @load="onAcpLoad"
         />

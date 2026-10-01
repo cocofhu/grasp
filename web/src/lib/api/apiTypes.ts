@@ -1,4 +1,11 @@
-import type { AcpEvent, ClarifyImage } from '../shared/types'
+import type {
+  AcpEvent,
+  ClarifyImage,
+  McpCall,
+  NodeRunStatus,
+  TokenUsage,
+  TokenUsageByModel,
+} from '../shared/types'
 
 export type AgentTestRepo = { name: string; url: string; branch?: string }
 
@@ -61,6 +68,35 @@ export interface NodeEventsResponse {
   live: boolean
   unavailable?: boolean
   error?: string
+}
+
+/** One node execution as served by GET /runs/:id/llm-transcript. */
+export interface LlmTranscriptExecution {
+  id: number
+  nodeId: string
+  nodeType?: string
+  iteration: number
+  status: NodeRunStatus
+  startedAt?: string
+  durationSec?: number
+  events?: AcpEvent[] | null
+  mcpCalls?: McpCall[] | null
+  usage?: TokenUsage | null
+  usageByModel?: TokenUsageByModel | null
+  error?: string
+}
+
+export interface LlmInflightPrompt {
+  prompt: string
+  imageCount?: number
+  at: string
+}
+
+export interface LlmTranscriptResponse {
+  /** Oldest first (by startedAt). */
+  executions: LlmTranscriptExecution[]
+  /** Prompt of the turn currently streaming, keyed by node id. */
+  inflight?: Record<string, LlmInflightPrompt>
 }
 
 export interface MCPServer {

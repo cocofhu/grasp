@@ -67,8 +67,11 @@ function toggleCall(i: number) {
   openCalls.value = s
 }
 
+// prompt / turn_end belong to the LLM transcript view, not the agent event log.
+const events = computed(() => props.events.filter((e) => e.kind !== 'prompt' && e.kind !== 'turn_end'))
+
 const hasTimelineContent = computed(
-  () => props.events.length > 0 || !!(props.mcpCalls && props.mcpCalls.length),
+  () => events.value.length > 0 || !!(props.mcpCalls && props.mcpCalls.length),
 )
 
 // Full-page loading/error only when there is nothing displayable yet.
@@ -347,7 +350,7 @@ function meta(e: AcpEvent | MergedAcpEvent) {
 
 // Auto-scroll to the newest event as the live stream grows.
 watch(
-  () => props.events.length,
+  () => events.value.length,
   async () => {
     await nextTick()
     if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight

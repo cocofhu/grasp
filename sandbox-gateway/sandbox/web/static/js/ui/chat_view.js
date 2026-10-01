@@ -24,6 +24,29 @@ import {
 } from './chat_persist_db.js';
 import {sanitizeImageURL} from './safe_image_url.js';
 
+const AVATAR_SVG =
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+    'stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/>' +
+    '<path d="M12 4v4M9 13v1M15 13v1M9.5 17h5"/></svg>';
+
+const THINKING_LIVE_LABEL = '思考中';
+
+/** @param {number} ms */
+function thoughtDoneLabel(ms) {
+    const sec = Math.round(ms / 1000);
+    return sec >= 1 ? `已思考 ${sec}s` : '已思考';
+}
+
+/** @param {HTMLElement|null} icon @param {string} st */
+function setToolStatus(icon, st) {
+    if (!icon) return;
+    const done = st === 'completed' || st === 'complete' || st === 'success';
+    const failed = st === 'failed' || st === 'error' || st === 'cancelled' || st === 'canceled';
+    icon.className = `cc-tool-status cc-tool-status--${done ? 'ok' : failed ? 'err' : 'run'}`;
+    icon.textContent = statusIcon(st);
+    icon.removeAttribute('style');
+}
+
 const PERSIST_BANNER_TEXT =
     '本地聊天快照过大，无法写入本地缓存；刷新后可能无法恢复，当前会话仍可通过 eventLog 重放。';
 
@@ -105,7 +128,10 @@ export class ChatView {
         this._loadingMore = true;
 
         let hint = this.logEl.querySelector('.cc-load-more-hint');
-        if (hint) hint.textContent = '加载中…';
+        if (hint) {
+            hint.textContent = '加载中…';
+            hint.dataset.state = 'loading';
+        }
 
         // _nextBefore 记录下次请求的 turnIndex（初始 = totalTurns - 已显示轮数）
         if (this._nextBefore == null) {
@@ -135,7 +161,10 @@ export class ChatView {
             this._updateLoadMoreHint();
         } catch (err) {
             console.warn('acp-bridge: 加载历史失败', err);
-            if (hint) hint.textContent = '加载失败，滚动重试';
+            if (hint) {
+                hint.textContent = '加载失败，滚动重试';
+                delete hint.dataset.state;
+            }
         } finally {
             this._loadingMore = false;
         }
@@ -327,7 +356,7 @@ export class ChatView {
         row.className = 'cc-asst-row';
         const av = document.createElement('div');
         av.className = 'cc-avatar';
-        av.textContent = 'C';
+        av.innerHTML = AVATAR_SVG;
         av.setAttribute('aria-hidden', 'true');
         const main = document.createElement('div');
         main.className = 'cc-asst-main';
@@ -426,6 +455,10 @@ export class ChatView {
             const clean = sanitizeChatLogHtml(data.html);
             if (!clean.trim()) return false;
             this.logEl.innerHTML = clean;
+            for (const av of this.logEl.querySelectorAll('.cc-avatar')) av.innerHTML = AVATAR_SVG;
+            for (const det of this.logEl.querySelectorAll('.cc-thinking[data-live]')) {
+                this._settleThinking(det.querySelector('.cc-thinking-body'), null);
+            }
             this._flushMermaid(this.logEl);
             this._ensureEmptyStateNode();
             this._mergeConsecutiveAssistantRows();
@@ -452,7 +485,7 @@ export class ChatView {
         const wrap = document.createElement('div');
         wrap.className = 'cc-empty';
         wrap.innerHTML =
-            '<div class="cc-empty-emoji" aria-hidden="true">🦀</div><h2 class="cc-empty-title">AgentChat</h2><p class="cc-empty-desc">聊天记录已恢复</p>';
+            `<div class="cc-empty-mark" aria-hidden="true">${AVATAR_SVG}</div><h2 class="cc-empty-title">AgentChat</h2><p class="cc-empty-desc">聊天记录已恢复</p>`;
         this.logEl.appendChild(wrap);
     }
 
@@ -633,8 +666,21 @@ export class ChatView {
 
     endStream() {
         const prevBody = this.stream.bodyEl;
+        if (this.stream.kind === 'thought') this._settleThinking(prevBody, Date.now() - (this.stream.startedAt || 0));
         this.stream = {kind: null, bodyEl: null, mdBuf: ''};
         if (prevBody) this._flushMermaid(prevBody);
+    }
+
+    /**
+     * @param {HTMLElement|null|undefined} body
+     * @param {number|null} ms 未知时长（如从快照恢复）传 null
+     */
+    _settleThinking(body, ms) {
+        const det = body?.closest('.cc-thinking');
+        if (!det || !det.hasAttribute('data-live')) return;
+        det.removeAttribute('data-live');
+        const sum = det.querySelector(':scope > summary');
+        if (sum) sum.textContent = ms == null ? '思考过程' : thoughtDoneLabel(ms);
     }
 
     /** @param {HTMLElement|null|undefined} el */
@@ -736,9 +782,10 @@ export class ChatView {
         this._beginAssistantTurnIfNeeded();
         const det = document.createElement('details');
         det.className = 'cc-thinking';
+        det.setAttribute('data-live', '');
         det.open = false;
         const sum = document.createElement('summary');
-        sum.textContent = '思考中';
+        sum.textContent = THINKING_LIVE_LABEL;
         const body = document.createElement('div');
         body.className = 'cc-thinking-body cc-md';
         const mdBuf = chunk;
@@ -747,7 +794,7 @@ export class ChatView {
         det.appendChild(sum);
         det.appendChild(body);
         this._turnStack.appendChild(det);
-        this.stream = {kind: 'thought', bodyEl: body, mdBuf};
+        this.stream = {kind: 'thought', bodyEl: body, mdBuf, startedAt: Date.now()};
         this.hideEmptyState();
         this.scrollToBottom();
         this._schedulePersist();
@@ -1001,9 +1048,10 @@ export class ChatView {
         const det = document.createElement('details');
         if (open) det.open = true;
         const sum = document.createElement('summary');
+        /* 这类卡片之后不会再收到状态更新，用中性标记而不是转圈 */
         const icon = document.createElement('span');
-        icon.textContent = '⏳';
-        icon.style.color = 'var(--warning)';
+        icon.className = 'cc-tool-status cc-tool-status--info';
+        icon.textContent = '◆';
         const t = document.createElement('span');
         t.className = 'cc-tool-title';
         t.textContent = humanizeToolTitle(title);
@@ -1151,13 +1199,7 @@ export class ChatView {
             entry.statusChain.push(st);
         }
 
-        entry.icon.textContent = statusIcon(st);
-        entry.icon.style.color =
-            st === 'completed' || st === 'complete'
-                ? 'var(--success)'
-                : st === 'failed' || st === 'error'
-                    ? 'var(--danger)'
-                    : 'var(--warning)';
+        setToolStatus(entry.icon, st);
 
         /*
          * ACP 工具事件分两类：

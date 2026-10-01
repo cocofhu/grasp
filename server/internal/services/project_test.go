@@ -437,6 +437,7 @@ func TestTotalTokensByProjectIDs(t *testing.T) {
 		Usage: &models.TokenUsage{CacheWriteTokens: 400},
 	})
 
+	syncTokenLedger(t, db)
 	got := s.totalTokensByProjectIDs([]string{noRun.ID, noUsage.ID, partial.ID, zero.ID, large.ID})
 
 	if _, ok := got[noRun.ID]; ok {
@@ -454,9 +455,11 @@ func TestTotalTokensByProjectIDs(t *testing.T) {
 	if got[large.ID] == nil || *got[large.ID] != 1_020_400 {
 		t.Fatalf("large = %v want 1020400", got[large.ID])
 	}
+	syncTokenLedger(t, db)
 	if single := s.totalTokens(partial.ID); single == nil || *single != 128 {
 		t.Fatalf("TotalTokens(partial) = %v", single)
 	}
+	syncTokenLedger(t, db)
 	if s.totalTokens(noRun.ID) != nil {
 		t.Fatal("TotalTokens(noRun) should be nil")
 	}
@@ -476,6 +479,7 @@ func TestTotalTokensByProjectIDs(t *testing.T) {
 		Status: "ok", CreatedAt: time.Now(),
 		Usage: &models.TokenUsage{InputTokens: 7, OutputTokens: 3},
 	})
+	syncTokenLedger(t, db)
 	bd := s.TokenBreakdown(pmOnly.ID)
 	if bd.Workflow != nil {
 		t.Fatalf("pm-only should have nil workflow: %v", bd.Workflow)
@@ -493,6 +497,7 @@ func TestTotalTokensByProjectIDs(t *testing.T) {
 		Status: "ok", CreatedAt: time.Now(),
 		Usage: &models.TokenUsage{InputTokens: 2},
 	})
+	syncTokenLedger(t, db)
 	merged := s.TokenBreakdown(partial.ID)
 	if merged.Total == nil || *merged.Total != 130 {
 		t.Fatalf("partial+pm total=%v want 130", merged.Total)

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
+	"github.com/cocofhu/grasp/internal/tokenledger"
 
 	"github.com/rs/zerolog/log"
 )
@@ -306,8 +308,29 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 // guard stays as a safety net; serial ordering of multiple messages is handled
 // by the caller's single-worker queue (see handlers.SandboxChat).
 func (s *SandboxService) Chat(ctx context.Context, id uint, text string, images []models.PromptImage, onEvent func(json.RawMessage)) error {
-	_, _, err := s.ChatWithTimeout(ctx, id, text, images, 0, onEvent)
+	usage, byModel, err := s.ChatWithTimeout(ctx, id, text, images, 0, onEvent)
+	s.recordStudioUsage(id, usage, byModel, err)
 	return err
+}
+
+// recordStudioUsage ledgers an interactive Studio / Agent-workspace chat turn.
+func (s *SandboxService) recordStudioUsage(id uint, usage *models.TokenUsage, byModel models.TokenUsageByModel, err error) {
+	if usage == nil && byModel == nil {
+		return
+	}
+	var row models.Sandbox
+	_ = s.db.Select("id", "project_id", "thread_id").Where("id = ?", id).Limit(1).Find(&row).Error
+	status := models.TokenLedgerStatusOK
+	if err != nil {
+		status = models.TokenLedgerStatusFailed
+		if errors.Is(err, context.Canceled) {
+			status = models.TokenLedgerStatusCancelled
+		}
+	}
+	tokenledger.Record(s.db, tokenledger.Entry{
+		Source: models.TokenLedgerSourceStudio, Phase: models.TokenLedgerPhaseChat, Status: status,
+		ProjectID: row.ProjectID, SandboxID: id, Usage: usage, ByModel: byModel,
+	})
 }
 
 // ChatWithTimeout is Chat with a per-call turn timeout override. timeout<=0

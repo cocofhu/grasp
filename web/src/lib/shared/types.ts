@@ -209,6 +209,12 @@ export interface TokenStatsBucket {
   workflowTotal?: number
   /** PM portion of the bucket (for stacked trend). */
   pmTotal?: number
+  /** Agent Studio chat-test portion (global stats only). */
+  studioTotal?: number
+  /** Usage from failed/cancelled calls (global stats only). */
+  failedTotal?: number
+  /** Estimated spend for the bucket (global stats only). */
+  cost?: number
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
@@ -236,6 +242,7 @@ export interface TokenStatsWorkflow {
   other?: boolean
   /** Rank row kind: workflow | pm | other (other = non-top workflows only). */
   kind?: TokenStatsRankKind
+  cost?: number
 }
 
 /** One model bucket in project TokenStats (composition / ranking). */
@@ -255,6 +262,7 @@ export interface TokenStatsModel {
   filled?: boolean
   /** upstream | via ACP_BRIDGE_MODEL | unknown */
   source?: string
+  cost?: number
 }
 
 /** Response of GET /projects/:id/token-stats */
@@ -282,9 +290,23 @@ export interface GlobalTokenStatsKPI {
   cacheWriteTokens: number
   workflowTotal: number
   pmTotal: number
+  studioTotal?: number
+  /** Usage from failed/cancelled calls. */
+  failedTotal?: number
   projectCount: number
   runCount: number
+  threadCount?: number
   modelCount: number
+  /** Ledger rows in the window. */
+  eventCount?: number
+  /** cacheRead / (input + cacheRead + cacheWrite), 0..1. */
+  cacheHitRate?: number
+  avgPerRun?: number
+  cost?: number
+  prevCost?: number | null
+  costDeltaPct?: number | null
+  /** Tokens whose model has no configured price. */
+  unpricedTotal?: number
 }
 
 export interface GlobalTokenStatsProjectRow {
@@ -295,6 +317,9 @@ export interface GlobalTokenStatsProjectRow {
   outputTokens: number
   cacheReadTokens?: number
   cacheWriteTokens?: number
+  cost?: number
+  runCount?: number
+  deleted?: boolean
   deltaPct?: number | null
 }
 
@@ -303,15 +328,31 @@ export interface GlobalTokenStatsRunRow {
   title: string
   projectId: string
   projectName: string
+  workflowId?: string
   workflowName: string
   modelKey: string
   modelName: string
   total: number
+  inputTokens?: number
+  outputTokens?: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
+  cost?: number
+  nodeCount?: number
+  status?: TokenLedgerStatus | string
+  firstAt?: string
 }
 
 export interface GlobalTokenStatsNamedBucket {
+  key?: string
   name: string
   total: number
+  inputTokens?: number
+  outputTokens?: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
+  cost?: number
+  count?: number
   other?: boolean
 }
 
@@ -319,6 +360,16 @@ export interface GlobalTokenStatsHeatmap {
   rows: string[]
   cols: string[]
   grid: number[][]
+}
+
+/** Project → workflow/PM/Studio → node type usage tree. */
+export interface GlobalTokenStatsTreeNode {
+  key: string
+  name: string
+  kind: 'project' | 'workflow' | 'pm' | 'studio' | 'nodeType' | string
+  value: number
+  cost?: number
+  children?: GlobalTokenStatsTreeNode[]
 }
 
 export interface GlobalTokenStatsSeries {
@@ -332,10 +383,17 @@ export interface GlobalTokenStatsFilterOption {
   name: string
 }
 
+export type TokenLedgerSource = 'workflow' | 'pm' | 'studio'
+export type TokenLedgerStatus = 'ok' | 'failed' | 'cancelled'
+export type TokenStatsGranularity = 'hour' | 'day' | 'week'
+
 export interface GlobalTokenStats {
-  window: TokenStatsWindow | string
+  window: TokenStatsWindow | 'custom' | string
   bucketWidth: 'hour' | 'day' | 'week' | string
   timezone: string
+  range?: { start?: string; end: string }
+  /** Currency of every cost field (USD | CNY). */
+  currency?: string
   empty: boolean
   kpi: GlobalTokenStatsKPI
   trend: TokenStatsBucket[]
@@ -344,15 +402,72 @@ export interface GlobalTokenStats {
   projects: GlobalTokenStatsProjectRow[]
   modelRanking: TokenStatsModel[]
   nodeTypes: GlobalTokenStatsNamedBucket[]
+  sources?: GlobalTokenStatsNamedBucket[]
+  statuses?: GlobalTokenStatsNamedBucket[]
+  phases?: GlobalTokenStatsNamedBucket[]
   workflows: TokenStatsWorkflow[]
   heatmap: GlobalTokenStatsHeatmap
+  /** [weekday Mon=0..Sun=6][hour 0..23] in the requested timezone. */
+  weekHour?: number[][]
+  tree?: GlobalTokenStatsTreeNode[]
   topRuns: GlobalTokenStatsRunRow[]
   projectTrends: GlobalTokenStatsSeries[]
   modelTrends: GlobalTokenStatsSeries[]
+  unpricedModels?: string[]
   filterOptions: {
     projects: GlobalTokenStatsFilterOption[]
     models: GlobalTokenStatsFilterOption[]
+    workflows?: GlobalTokenStatsFilterOption[]
+    nodeTypes?: GlobalTokenStatsFilterOption[]
   }
+}
+
+/** One ledger row from GET /stats/token/events. */
+export interface TokenUsageEventRow {
+  id: number
+  at: string
+  source: TokenLedgerSource | string
+  phase?: string
+  status: TokenLedgerStatus | string
+  projectId?: string
+  projectName?: string
+  workflowId?: string
+  workflowName?: string
+  runId?: string
+  runTitle?: string
+  nodeId?: string
+  nodeType?: string
+  threadId?: string
+  modelKey: string
+  total: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  cost: number
+  priced: boolean
+}
+
+export interface TokenUsageEventsPage {
+  total: number
+  page: number
+  pageSize: number
+  currency: string
+  items: TokenUsageEventRow[]
+}
+
+/** Per-1M-token unit prices for one model key. */
+export interface TokenModelPrice {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+}
+
+export interface TokenPricing {
+  currency: 'USD' | 'CNY' | string
+  models: Record<string, TokenModelPrice>
+  updatedAt?: string
 }
 
 export interface PmLeaderBinding {
@@ -582,12 +697,19 @@ export interface NodeTypeDef {
 // ---- runs ----
 export interface AcpEvent {
   t: number // seconds offset
-  kind: 'message' | 'thought' | 'plan' | 'tool_call' | 'commands' | 'segment'
+  // prompt / turn_end bracket each persisted chat turn (LLM 过程 transcript only).
+  kind: 'message' | 'thought' | 'plan' | 'tool_call' | 'commands' | 'segment' | 'prompt' | 'turn_end'
   title?: string
   text?: string
   status?: 'running' | 'completed' | 'failed'
   // 当 tool_call 是 artifact-store MCP 写入时,标记产物名/类型,供日志高亮与产物派生
   artifact?: { name: string; kind: 'markdown' | 'json' | 'yaml' }
+  /** RFC3339; set on prompt (turn start) and turn_end. */
+  at?: string
+  /** Turn token usage; turn_end only. */
+  usage?: TokenUsage | null
+  /** prompt text was cut (storage cap, or a preview on run detail). */
+  truncated?: boolean
 }
 
 // 一次内置 MCP 工具调用的记录(入参/结果均已截断,仅供调试)。

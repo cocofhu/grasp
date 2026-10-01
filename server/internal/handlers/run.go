@@ -337,7 +337,7 @@ func (h *Handlers) NodeEvents(c *gin.Context) {
 			return
 		}
 		if sr, ok := h.Runs.StateRun(runID, nodeID); ok {
-			c.JSON(http.StatusOK, gin.H{"events": sr.Events, "live": false})
+			c.JSON(http.StatusOK, gin.H{"events": previewPromptEvents(sr.Events), "live": false})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"events": []models.AcpEvent{}, "live": false})
@@ -355,7 +355,7 @@ func (h *Handlers) NodeEvents(c *gin.Context) {
 		return
 	}
 	if sr, ok := h.Runs.StateRun(runID, nodeID); ok {
-		ev, next, hasMore := pagePersistedEvents(sr.Events, cp.Cursor, cp.Limit)
+		ev, next, hasMore := pagePersistedEvents(previewPromptEvents(sr.Events), cp.Cursor, cp.Limit)
 		c.JSON(http.StatusOK, gin.H{"events": ev, "nextCursor": next, "hasMore": hasMore, "live": false})
 		return
 	}

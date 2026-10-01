@@ -104,7 +104,11 @@ type acpProvider struct {
 	// processing the turn) used to drive the running/idle indicator.
 	emit func(runID, nodeID string, events []models.AcpEvent, busy bool)
 
-	mu       sync.Mutex
+	mu sync.Mutex
+	// carry holds usage spent outside a returned turn (session rehydrate
+	// priming, retried ReactOpen attempts) until the next react turn for the
+	// same node reports it.
+	carry    map[string]carriedUsage
 	sessions map[string]*reactSession    // runID|nodeID -> live react session
 	live     map[string]*sandbox.Sandbox // runID|nodeID -> in-flight sandbox (for live event-log reads)
 	// inflightACP tracks the ACP client for in-flight agent turns (not parked
@@ -114,12 +118,34 @@ type acpProvider struct {
 	// timeline holds platform-side ACP event snapshots while a node sandbox is
 	// live. nodeEvents reads this first; cold FetchEventLog is fallback only.
 	timeline *acpTimelineStore
+	// inflight holds the prompt of the turn currently streaming per
+	// runID|nodeID, so the LLM transcript shows the question before the turn
+	// is persisted; recentTurns holds the finished bracketed turns of the same
+	// key until the run ends.
+	inflightMu  sync.Mutex
+	inflight    map[string]InflightPrompt
+	recentTurns map[string][][]models.AcpEvent
 }
 
 // streamChat runs one turn (prompt + optional image attachments), streaming
 // incremental events to the sink when one is configured; otherwise it falls
 // back to a single blocking aggregation.
 func (c *acpProvider) streamChat(ctx context.Context, acp *sandbox.ACPClient, req NodeReq, prompt string, images []models.PromptImage) (*sandbox.ChatResult, error) {
+	started := time.Now()
+	c.setInflightPrompt(req, prompt, len(images), started)
+	defer c.clearInflightPrompt(req)
+	res, err := c.runChat(ctx, acp, req, prompt, images)
+	if res != nil {
+		res.Prompt = prompt
+		res.ImageCount = len(images)
+		res.StartedAt = started
+		res.EndedAt = time.Now()
+		c.recordRecentTurn(req, transcriptTurnEvents(res))
+	}
+	return res, err
+}
+
+func (c *acpProvider) runChat(ctx context.Context, acp *sandbox.ACPClient, req NodeReq, prompt string, images []models.PromptImage) (*sandbox.ChatResult, error) {
 	if c.emit == nil {
 		return acp.ChatStructured(ctx, prompt, images)
 	}
@@ -147,7 +173,7 @@ func absorbChat(usage **models.TokenUsage, byModel *models.TokenUsageByModel, ev
 		return
 	}
 	if events != nil {
-		*events = append(*events, chatResultToEvents(res)...)
+		*events = append(*events, transcriptTurnEvents(res)...)
 	}
 	if usage != nil {
 		*usage = models.AddTokenUsage(*usage, res.Usage)
@@ -155,6 +181,40 @@ func absorbChat(usage **models.TokenUsage, byModel *models.TokenUsageByModel, ev
 	if byModel != nil {
 		*byModel = models.AddTokenUsageByModel(*byModel, res.UsageByModel)
 	}
+}
+
+type carriedUsage struct {
+	usage   *models.TokenUsage
+	byModel models.TokenUsageByModel
+}
+
+// carryChatUsage stashes a chat result's usage for key (nil-safe).
+func (c *acpProvider) carryChatUsage(key string, res *sandbox.ChatResult) {
+	if res == nil || (res.Usage == nil && res.UsageByModel == nil) {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.carry == nil {
+		c.carry = map[string]carriedUsage{}
+	}
+	cu := c.carry[key]
+	cu.usage = models.AddTokenUsage(cu.usage, res.Usage)
+	cu.byModel = models.AddTokenUsageByModel(cu.byModel, res.UsageByModel)
+	c.carry[key] = cu
+}
+
+// drainCarriedUsage folds any stashed usage for key into the outgoing turn.
+func (c *acpProvider) drainCarriedUsage(key string, out *ReactTurn) {
+	c.mu.Lock()
+	cu, ok := c.carry[key]
+	delete(c.carry, key)
+	c.mu.Unlock()
+	if !ok {
+		return
+	}
+	out.Usage = models.AddTokenUsage(cu.usage, out.Usage)
+	out.UsageByModel = models.AddTokenUsageByModel(cu.byModel, out.UsageByModel)
 }
 
 // reactSession keeps a sandbox + ACP connection alive across the human
@@ -185,7 +245,8 @@ func newBaseACPProvider(host *mcp.Host, opts Options, backend AcpBackend) ExecPr
 		Str("bridge", AgentRuntimeLabel(backend)).Msg("sandbox exec provider ready")
 	return &acpProvider{host: host, opts: opts, mgr: mgr, backend: backend,
 		sessions: map[string]*reactSession{}, live: map[string]*sandbox.Sandbox{},
-		inflightACP: map[string]*sandbox.ACPClient{}, timeline: newAcpTimelineStore()}
+		inflightACP: map[string]*sandbox.ACPClient{}, timeline: newAcpTimelineStore(),
+		inflight: map[string]InflightPrompt{}}
 }
 
 // resolveProviderImage picks the sandbox image for one acpBackend.

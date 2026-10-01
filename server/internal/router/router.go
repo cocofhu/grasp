@@ -54,6 +54,9 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/node-registry", h.NodeRegistry)
 		api.GET("/stats/dashboard", h.DashboardStats)
 		api.GET("/stats/token", h.GetGlobalTokenStats)
+		api.GET("/stats/token/events", h.ListTokenUsageEvents)
+		api.GET("/stats/token/pricing", h.GetTokenPricing)
+		api.PUT("/stats/token/pricing", h.UpdateTokenPricing)
 		api.GET("/stats/platform-status", h.PlatformStatus)
 
 		api.GET("/settings", h.GetSettings)
@@ -169,6 +172,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/runs/:id/artifacts", h.RunArtifacts)
 		api.GET("/runs/:id/artifacts/pack", h.PackRunArtifacts)
 		api.GET("/runs/:id/logs/export", h.ExportRunLogs)
+		api.GET("/runs/:id/llm-transcript", h.RunLlmTranscript)
 		api.GET("/runs/:id/inbox-context", h.RunInboxContext)
 		api.GET("/runs/:id/nodes/:nodeId/events", h.NodeEvents)
 		api.GET("/runs/:id/nodes/:nodeId/sandbox-log", h.NodeSandboxLog)

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/tokenledger"
 )
 
 func TestProjectCRUDAndErrors(t *testing.T) {
@@ -211,6 +212,8 @@ func TestProjectTotalTokensInListAndGet(t *testing.T) {
 		Usage: &models.TokenUsage{InputTokens: 128000, OutputTokens: 400},
 	}).Error)
 
+	must(tokenledger.Backfill(hn.db))
+
 	w = hn.do("GET", "/api/projects/"+id, nil)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"totalTokens":128400`) {
 		t.Fatalf("get with usage: %d %s", w.Code, w.Body.String())
@@ -264,6 +267,8 @@ func TestGetProjectTokenStats(t *testing.T) {
 		StartedAt: &now,
 		Usage:     &models.TokenUsage{InputTokens: 10, OutputTokens: 5},
 	}).Error)
+
+	must(tokenledger.Backfill(hn.db))
 
 	w = hn.do("GET", "/api/projects/"+id+"/token-stats?window=all&timezone=UTC", nil)
 	if w.Code != http.StatusOK {

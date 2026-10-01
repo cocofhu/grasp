@@ -107,6 +107,7 @@
       "liveLogBootPhase.ts",
       "liveLogRehydrate.ts",
       "liveLogSnapshotCache.ts",
+      "llmTranscript.ts",
       "mergeAcpEvents.ts",
       "mergeRunChrome.ts",
       "nodeEventsResponse.ts",
@@ -197,7 +198,7 @@
     "inbox": 27,
     "pm": 7,
     "project": 4,
-    "run": 56,
+    "run": 57,
     "shared": 40
   }
 }
