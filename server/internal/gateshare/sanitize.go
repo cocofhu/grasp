@@ -106,8 +106,6 @@ type PreviewActiveItem struct {
 var (
 	leakyURLRe     = regexp.MustCompile(`(?i)(?:blob:[^\s"'<>]*|/api/[^\s"'<>]*|/preview/[^\s"'<>]*|/sandbox[^\s"'<>]*|/v1/[^\s"'<>]*|https?://(?:localhost|127\.0\.0\.1|0\.0\.0\.0|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(?::\d+)?[^\s"'<>]*)`)
 	internalHostRe = regexp.MustCompile(`(?i)\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0)\b`)
-	// run IDs are "run-" plus the first 8 hex chars of a UUID (engine.StartRun).
-	runIDRe = regexp.MustCompile(`(?i)\brun-[0-9a-f]{8}\b`)
 )
 
 // SanitizeDescription redacts internal URLs / blob addresses from gate body text.
