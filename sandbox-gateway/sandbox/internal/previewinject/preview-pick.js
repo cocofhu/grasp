@@ -62,7 +62,7 @@
       agentOn: 'Agent 可操作此页面',
       agentBusy: 'Agent 正在操作…',
       stop: '停止',
-      pickDesign: '点选元素发到对话或生成候选，也可以插入区块或整页调整',
+      pickDesign: '点选元素引用或修改，也可以插入区块或整页调整',
       eye: '按住看原版，点击隐藏候选',
     },
     en: {
@@ -82,7 +82,7 @@
       agentOn: 'Agent can operate this page',
       agentBusy: 'Agent is operating…',
       stop: 'Stop',
-      pickDesign: 'Pick an element for chat or design variants, insert a block, or adjust the whole page',
+      pickDesign: 'Pick an element to quote or edit, insert a block, or adjust the whole page',
       eye: 'Hold to see the original, click to hide candidates',
     },
   };
@@ -306,7 +306,7 @@
     'border:0;border-radius:6px;background:transparent;color:#9ca3af;font-size:16px;line-height:1;cursor:pointer}' +
     '.mhead button:hover{background:#1f2937;color:#e5e7eb}' +
     '.modal iframe{flex:1;min-height:0;width:100%;border:0;background:#f3f3f5}' +
-    '.drawer{position:fixed;z-index:2147483646;display:flex;flex-direction:column;overflow:hidden;' +
+    '.drawer{position:fixed;z-index:2147483647;display:flex;flex-direction:column;overflow:hidden;' +
     'background:#0b0b0c;border-radius:22px;box-shadow:0 16px 40px rgba(0,0,0,.35);' +
     'font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e5e7eb}' +
     '.dhead{display:flex;align-items:center;gap:9px;height:48px;padding:0 10px 0 14px;flex:none;' +
@@ -1086,7 +1086,10 @@
   // ---- chat drawer ----
 
   function drawerTheme() {
-    return drawer && drawer.embed.theme === 'light' ? 'light' : 'dark';
+    // Empty when the chat drawer is not attached, so the action card can fall
+    // back to the page background. An attached drawer is always light or dark.
+    if (!drawer) return '';
+    return drawer.embed.theme === 'light' ? 'light' : 'dark';
   }
 
   function postTheme() {
@@ -1110,6 +1113,7 @@
     saveEmbed(drawer.embed);
     postTheme();
     render();
+    if (live.api && live.api.syncTheme) live.api.syncTheme();
   }
 
   function stashPending(got) {

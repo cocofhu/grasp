@@ -312,7 +312,7 @@ test.describe('Live entry on Grasp direct previews', () => {
       expect(await (await capability).json()).toMatchObject({ status: 'active', enabled: true, sessions: [] })
       await expect(drawer(page).getByTestId('clarify-input')).toBeVisible({ timeout: 15_000 })
       await expect(bar(page, 'live')).toHaveCount(0)
-      await expect(bar(page, 'toggle')).toHaveAttribute('title', '点选元素发到对话或生成候选，也可以插入区块或整页调整')
+      await expect(bar(page, 'toggle')).toHaveAttribute('title', '点选元素引用或修改，也可以插入区块或整页调整')
       await expect(bar(page, 'toggle')).toHaveText('取点')
       await expect(bar(page, 'insert')).toHaveCount(0)
       await expect(bar(page, 'steer')).toHaveCount(0)

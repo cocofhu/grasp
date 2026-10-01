@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LIVE_ACK, LIVE_CMD, LIVE_MSG, LIVE_SESSIONS, createOverlay, type LiveOverlay } from './overlay'
 import { strings } from './i18n'
+import { OVERLAY_CSS } from './styles'
 
 const T = strings('zh-CN')
 
@@ -72,6 +73,21 @@ afterEach(() => {
 })
 
 describe('Live overlay', () => {
+  it('keeps the primary chip text light on the purple background', () => {
+    expect(OVERLAY_CSS).toContain('.chip.go,.chip.go:hover,.chip.go:focus,.chip.go:focus-visible{background:var(--acc);color:#fff}')
+    expect(OVERLAY_CSS).toContain('.chip.go:hover,.chip.go:focus:hover,.chip.go:focus-visible:hover{background:var(--acc-hover);color:#fff}')
+    expect(OVERLAY_CSS).toContain('.light .chip.go:hover,.light .chip.go:focus:hover,.light .chip.go:focus-visible:hover{background:var(--acc-hover);color:#fff}')
+  })
+
+  it('keeps the action card, dock, frames and tags under the chat drawer', () => {
+    const layers = ['.dock', '.panel', '.sw', '.params', '.frame', '.shimmer', '.cframe', '.tag']
+    for (const sel of layers) {
+      const z = OVERLAY_CSS.match(new RegExp(sel.replace('.', '\\.') + '\\{[^}]*z-index:(\\d+)'))
+      expect(z, sel).not.toBeNull()
+      expect(Number(z![1]), sel).toBeLessThan(2147483647)
+    }
+  })
+
   it('has no toolbar of its own and offers chat or design for a picked element', () => {
     document.body.innerHTML = '<main><section id="card" class="c">Dispatch</section></main>'
     make()
@@ -307,20 +323,53 @@ describe('Live overlay', () => {
     expect(posted.at(-1)).toMatchObject({ op: 'discard', sid: 'sid001' })
   })
 
-  it('follows the page background for its theme', () => {
+  it('writes the theme when the action card opens and when the drawer theme changes', async () => {
+    document.body.innerHTML = '<main><section id="card">Hi</section></main>'
+    // Light page, dark chat drawer: the open card stays dark.
+    document.body.style.backgroundColor = 'rgb(250, 250, 250)'
+    let mode = 'dark'
+    overlay = createOverlay(
+      { post: () => true, theme: () => mode, notice: () => {}, stopPick: () => {}, sendToChat: () => {}, changed: () => {}, isOwnUi: () => false },
+      T,
+    )
+    overlay.setEnabled(true)
+    const card = document.getElementById('card')!
+    card.getBoundingClientRect = () => new DOMRect(10, 10, 200, 40)
+    overlay.offer(card)
+    expect(q('.root')?.classList.contains('light')).toBe(false)
+    expect(q('[data-act="to-chat"]')?.textContent).toBe('引用')
+    expect(q('[data-act="to-design"]')?.textContent).toBe('修改')
+    expect(strings('en').toChat).toBe('Quote')
+    expect(strings('en').toDesign).toBe('Edit')
+    expect(strings('en').pickHint).toBe('Click an element to quote or edit')
+    expect(T.pickHint).toBe('点选元素：引用或修改')
+    // Theme button on an already-open card: light, then back to dark.
+    mode = 'light'
+    overlay.syncTheme()
+    expect(q('.root')?.classList.contains('light')).toBe(true)
+    mode = 'dark'
+    overlay.syncTheme()
+    expect(q('.root')?.classList.contains('light')).toBe(false)
+    // A later page-background change does not override the drawer theme.
+    document.body.style.backgroundColor = 'rgb(255, 255, 255)'
+    await flush()
+    expect(q('.root')?.classList.contains('light')).toBe(false)
+  })
+
+  it('falls back to the page background only when the drawer theme is unavailable', async () => {
     document.body.innerHTML = wrapperHtml()
     document.body.style.backgroundColor = 'rgb(15, 23, 42)'
     overlay = createOverlay(
-      { post: () => true, theme: () => 'light', notice: () => {}, stopPick: () => {}, sendToChat: () => {}, changed: () => {}, isOwnUi: () => false },
+      { post: () => true, theme: () => '', notice: () => {}, stopPick: () => {}, sendToChat: () => {}, changed: () => {}, isOwnUi: () => false },
       T,
     )
     overlay.setEnabled(true)
     expect(q('.root')?.classList.contains('light')).toBe(false)
     document.body.style.backgroundColor = 'rgb(250, 250, 250)'
-    overlay.setEnabled(false)
-    overlay.setEnabled(true)
+    await flush()
     expect(q('.root')?.classList.contains('light')).toBe(true)
-    document.body.style.backgroundColor = ''
+    // An explicit drawer theme still wins over the page, including a dark page.
+    document.body.style.backgroundColor = 'rgb(15, 23, 42)'
     overlay.dispose()
     overlay = createOverlay(
       { post: () => true, theme: () => 'light', notice: () => {}, stopPick: () => {}, sendToChat: () => {}, changed: () => {}, isOwnUi: () => false },

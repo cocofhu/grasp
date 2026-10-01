@@ -1,9 +1,9 @@
 const zh = {
   title: 'Live',
-  toChat: '发到对话',
-  toDesign: '生成候选',
+  toChat: '引用',
+  toDesign: '修改',
   insertPicking: '点选锚点元素，在它前后插入新区块',
-  pickHint: '点选元素：发到对话或生成候选',
+  pickHint: '点选元素：引用或修改',
   pickMode: '取点方式',
   modeSelect: '选元素',
   modeInsert: '插入区块',
@@ -79,10 +79,10 @@ const zh = {
 
 const en: typeof zh = {
   title: 'Live',
-  toChat: 'Add to chat',
-  toDesign: 'Design variants',
+  toChat: 'Quote',
+  toDesign: 'Edit',
   insertPicking: 'Click an anchor element to insert a block before or after it',
-  pickHint: 'Click an element to add it to chat or design variants',
+  pickHint: 'Click an element to quote or edit',
   pickMode: 'Pick mode',
   modeSelect: 'Select',
   modeInsert: 'Insert block',
