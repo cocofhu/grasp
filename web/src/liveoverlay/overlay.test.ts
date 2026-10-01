@@ -372,6 +372,52 @@ describe('Live overlay', () => {
     }
   })
 
+  it('auto-reports a missing wrapper once, then leaves it to the person', () => {
+    vi.useFakeTimers()
+    try {
+      make()
+      const ready = (updatedAt: string, extra: Record<string, unknown> = {}) =>
+        sessions([{ sid: 'sid009', state: 'ready', mode: 'replace', url: `${location.origin}/pricing`, variants: [{ n: 1 }], updatedAt, ...extra }])
+      const reports = () => posted.filter((m) => m.op === 'mount_failed')
+
+      ready('1')
+      vi.advanceTimersByTime(6500)
+      expect(reports()).toEqual([expect.objectContaining({ sid: 'sid009', auto: true, error: 'no [data-grasp-live="sid009"] on /pricing' })])
+      overlay!.onDrawer({ type: LIVE_ACK, reqId: reports()[0].reqId, ok: true })
+
+      // The agent "fixes" and reports ready again; the page must not loop.
+      ready('2', { mountAutoReported: true })
+      vi.advanceTimersByTime(6500)
+      expect(reports()).toHaveLength(1)
+      expect(q('.hint')?.textContent).toContain(T.notMounted)
+      expect(q('[data-act="reload"]')).not.toBeNull()
+
+      ;(q('[data-act="report-mount"]') as HTMLButtonElement).click()
+      expect(reports()).toHaveLength(2)
+      expect(reports()[1]).not.toHaveProperty('auto')
+      expect(q('[data-act="report-mount"]')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not auto-report from a hidden tab', () => {
+    vi.useFakeTimers()
+    const vis = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    try {
+      make()
+      sessions([{ sid: 'sid009', state: 'ready', mode: 'replace', url: `${location.origin}/pricing`, variants: [{ n: 1 }], updatedAt: '1' }])
+      vi.advanceTimersByTime(6500)
+      expect(posted.some((m) => m.op === 'mount_failed')).toBe(false)
+      vis.mockReturnValue('visible')
+      vi.advanceTimersByTime(1500)
+      expect(posted.filter((m) => m.op === 'mount_failed')).toHaveLength(1)
+    } finally {
+      vis.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
   it('reports candidates missing from the rendered page even when some candidates mounted', () => {
     vi.useFakeTimers()
     try {

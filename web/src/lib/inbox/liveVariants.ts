@@ -52,6 +52,7 @@ export type LiveSession = {
   variants?: LiveVariant[]
   selected?: number
   retryAccept?: boolean
+  mountAutoReported?: boolean
   error?: string
   createdAt?: string
   updatedAt?: string
@@ -85,6 +86,8 @@ export type LiveEvent = {
   notes?: string[]
   marks?: LiveMark[]
   error?: string
+  /** mount_failed detected by the page rather than sent by the person. */
+  auto?: boolean
 }
 
 export type LiveCtx = { sid: string; current: number; params?: Record<string, unknown> }
@@ -234,6 +237,7 @@ export function parseEmbedLiveMessage(data: unknown): EmbedLiveMessage | null {
   }
   const error = str(m.error, 2000)
   if (error) ev.error = error
+  if (m.auto === true && ev.op === 'mount_failed') ev.auto = true
   return { kind: 'request', reqId, event: ev }
 }
 
@@ -262,6 +266,7 @@ export function parseLiveSession(v: unknown): LiveSession | null {
     variants,
     selected: int(s.selected),
     retryAccept: s.retryAccept === true,
+    mountAutoReported: s.mountAutoReported === true,
     error: str(s.error, 2000),
     createdAt: str(s.createdAt, 64),
     updatedAt: str(s.updatedAt, 64),

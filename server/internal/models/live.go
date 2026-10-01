@@ -144,9 +144,13 @@ type LiveSession struct {
 	// FinalParams is the immutable parameter snapshot used for adoption.
 	FinalParams map[string]any `gorm:"serializer:json" json:"-"`
 	RetryAccept bool           `json:"retryAccept,omitempty"`
-	Error       string         `json:"error,omitempty"`
-	CreatedAt   time.Time      `json:"createdAt"`
-	UpdatedAt   time.Time      `json:"updatedAt"`
+	// MountAutoReported caps page-detected mount_failed at one per attempt:
+	// every open preview tab and reload would otherwise report again after
+	// each agent "ready", looping without the person doing anything.
+	MountAutoReported bool      `json:"mountAutoReported,omitempty"`
+	Error             string    `json:"error,omitempty"`
+	CreatedAt         time.Time `json:"createdAt"`
+	UpdatedAt         time.Time `json:"updatedAt"`
 }
 
 // Open reports whether the session still has (or will have) preview markers
@@ -224,6 +228,7 @@ type LiveEvent struct {
 	Notes    []string       `json:"notes,omitempty"`    // annotations on the element
 	Marks    []LiveMark     `json:"marks,omitempty"`
 	Error    string         `json:"error,omitempty"` // mount_failed
+	Auto     bool           `json:"auto,omitempty"`  // mount_failed detected by the page, not sent by the person
 	Retry    bool           `json:"-"`               // server-derived acceptance recovery
 }
 

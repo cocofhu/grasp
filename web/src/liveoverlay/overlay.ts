@@ -54,6 +54,7 @@ type Session = {
   error?: string
   selected?: number
   retryAccept?: boolean
+  mountAutoReported?: boolean
   variants?: Array<{ n: number; label?: string }>
   updatedAt?: string
 }
@@ -159,7 +160,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
   const views = new Map<string, SessionView>()
   const postedViews = new Map<string, string>()
   const pending = new Map<string, { sid: string; op: string; previousState?: string }>()
-  const mountWatch = new Map<string, { key: string; since: number; sent: boolean }>()
+  const mountWatch = new Map<string, { key: string; since: number; sent: boolean; error?: string }>()
   let wrappers: Wrapper[] = []
 
   const host = document.createElement('grasp-live-overlay')
@@ -299,8 +300,16 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
     if (had !== wrappers.length > 0) opts.changed()
   }
 
+  /** Wrapper still missing after the grace period; shown as a page hint. */
+  function mountMissing(): Array<{ sid: string; error: string }> {
+    const out: Array<{ sid: string; error: string }> = []
+    for (const [sid, w] of mountWatch) if (w.error) out.push({ sid, error: w.error })
+    return out
+  }
+
   function checkMounts() {
     const now = Date.now()
+    const before = JSON.stringify(mountMissing())
     for (const s of sessions.values()) {
       if (s.state !== 'ready' || s.mode === 'steer' || pathOf(s.url) !== location.pathname) {
         mountWatch.delete(s.sid)
@@ -318,16 +327,26 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
         mountWatch.set(s.sid, { key, since: now, sent: false })
         continue
       }
-      if (!cur.sent && now - cur.since >= MOUNT_GRACE_MS) {
+      if (now - cur.since < MOUNT_GRACE_MS) continue
+      cur.error = !w
+        ? `no [data-grasp-live="${s.sid}"] on ${location.pathname}`
+        : missing.length
+          ? `reported variants not rendered: ${missing.map((variant) => variant.n).join(', ')}`
+          : 'wrapper has no variants (data-grasp-variant ≥ 1)'
+      // Only one automatic report per attempt (the server enforces it across
+      // tabs and reloads); later misses wait for the person on the page hint.
+      if (!cur.sent && !s.mountAutoReported && document.visibilityState === 'visible') {
         cur.sent = true
-        const error = !w
-          ? `no [data-grasp-live="${s.sid}"] on ${location.pathname}`
-          : missing.length
-            ? `reported variants not rendered: ${missing.map((variant) => variant.n).join(', ')}`
-            : 'wrapper has no variants (data-grasp-variant ≥ 1)'
-        request('mount_failed', s.sid, { error })
+        request('mount_failed', s.sid, { error: cur.error, auto: true })
       }
     }
+    if (JSON.stringify(mountMissing()) !== before) renderDock()
+  }
+
+  function reportMount(sid: string) {
+    const miss = mountMissing().find((m) => m.sid === sid)
+    if (!miss || isBusy(sid)) return
+    if (request('mount_failed', sid, { error: miss.error })) renderDock()
   }
 
   // ---------- rendering ----------
@@ -365,6 +384,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
   function hintHtml(): string {
     const away = openSessions().filter((s) => !wrappers.some((w) => w.sid === s.sid) && pathOf(s.url) && pathOf(s.url) !== location.pathname)
     const failures = [...sessions.values()].filter((s) => s.state === 'failed' && !wrappers.some((w) => w.sid === s.sid))
+    const notMounted = mountMissing().filter((m) => sessions.get(m.sid)?.state === 'ready')
     return failures.length
       ? `<div class="hint" role="status">${failures.map((s) =>
           `<div>${esc(T.failed)}${s.error ? `: ${esc(s.error)}` : ''} ` +
@@ -372,6 +392,12 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
           (canRetryAdoption(s) ? `<button type="button" data-act="retry-accept" data-sid="${esc(s.sid)}">${esc(T.retryAccept)}</button>` : '') +
           `<button type="button" data-act="discard" data-sid="${esc(s.sid)}">${esc(s.mode === 'steer' ? T.dismissSteer : T.discard)}</button>` +
           (s.mode === 'steer' ? `<div>${esc(T.steerPartial)}</div>` : '') + '</div>').join('')}</div>`
+      : notMounted.length
+      ? `<div class="hint" role="status">${notMounted.map((m) =>
+          `<div>${esc(T.notMounted)} ` +
+          `<button type="button" data-act="reload">${esc(T.reloadPage)}</button>` +
+          (isBusy(m.sid) ? '' : `<button type="button" data-act="report-mount" data-sid="${esc(m.sid)}">${esc(T.reportMount)}</button>`) +
+          '</div>').join('')}</div>`
       : away.length
       ? `<div class="hint" role="status">${esc(fmt(T.pending, { n: away.length, path: pathOf(away[0].url) }))} ` +
         `<button type="button" data-act="goto-url" data-sid="${esc(away[0].sid)}">→</button></div>`
@@ -1154,6 +1180,12 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
         break
       case 'retry-accept':
         retryAdoption(sid)
+        break
+      case 'reload':
+        location.reload()
+        break
+      case 'report-mount':
+        reportMount(sid)
         break
     }
   })

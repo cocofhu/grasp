@@ -71,6 +71,9 @@ const zh = {
   openOther: '还有一组变体没有采用或放弃',
   sent: '已发送给 Agent',
   viewOnly: '需要从 Grasp 重新打开预览才能采用或放弃',
+  notMounted: '候选还没显示在本页面',
+  reloadPage: '刷新',
+  reportMount: '告诉 Agent',
 }
 
 const en: typeof zh = {
@@ -146,6 +149,9 @@ const en: typeof zh = {
   openOther: 'Another variant set is still open',
   sent: 'Sent to the agent',
   viewOnly: 'Reopen the preview from Grasp to accept or discard',
+  notMounted: 'Candidates are not showing on this page',
+  reloadPage: 'Reload',
+  reportMount: 'Tell the agent',
 }
 
 export type Strings = typeof zh
