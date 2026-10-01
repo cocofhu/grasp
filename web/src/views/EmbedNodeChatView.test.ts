@@ -25,6 +25,8 @@ vi.mock('@/views/PublicGateApprovalView.vue', () => ({
 
 import EmbedNodeChatView from './EmbedNodeChatView.vue'
 import { loadEmbedSession, saveEmbedSession } from '@/lib/inbox/embedChat'
+import { locale, setLocale } from '@/lib/shared/locale'
+import { GRASP_STORAGE_KEYS } from '@/lib/shared/migrateBrandStorage'
 
 function mountView() {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': pages } })
@@ -97,9 +99,30 @@ describe('EmbedNodeChatView', () => {
       expect(parent.postMessage).not.toHaveBeenCalled()
       await w.getComponent('[data-testid="chat-stub"]').vm.$emit('status', 'active')
       await w.getComponent('[data-testid="chat-stub"]').vm.$emit('status', 'active')
-      expect(parent.postMessage).toHaveBeenCalledTimes(1)
-      expect(parent.postMessage.mock.calls[0][0]).toEqual({ type: 'grasp-embed:ready' })
+      expect(parent.postMessage.mock.calls.map((c) => c[0])).toEqual([
+        { type: 'grasp-embed:ready' },
+        { type: 'grasp-embed:lang', lang: locale.value },
+      ])
     } finally {
+      Object.defineProperty(window, 'parent', { value: window, configurable: true })
+    }
+  })
+
+  it('passes a language switch in the main Grasp tab on to the preview page', async () => {
+    const parent = { postMessage: vi.fn() }
+    Object.defineProperty(window, 'parent', { value: parent, configurable: true })
+    const before = locale.value
+    try {
+      saveEmbedSession('run-1', 'ap1', { token: 'gse_l', expiresAt: '2099-01-01T00:00:00Z' })
+      const w = mountView()
+      await flushPromises()
+      await w.getComponent('[data-testid="chat-stub"]').vm.$emit('status', 'active')
+      parent.postMessage.mockClear()
+      const next = before === 'en' ? 'zh-CN' : 'en'
+      window.dispatchEvent(new StorageEvent('storage', { key: GRASP_STORAGE_KEYS.locale, newValue: next }))
+      await vi.waitFor(() => expect(parent.postMessage).toHaveBeenCalledWith({ type: 'grasp-embed:lang', lang: next }, '*'))
+    } finally {
+      await setLocale(before)
       Object.defineProperty(window, 'parent', { value: window, configurable: true })
     }
   })

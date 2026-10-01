@@ -134,10 +134,14 @@ describe('Live overlay', () => {
     expect(overlay!.isInserting()).toBe(true)
     expect(stopPick).toHaveBeenCalled()
     expect(changed).toHaveBeenCalled()
-    expect(q('.dock .hint')?.textContent).toBe(T.insertPicking)
+    expect(overlay!.isPickMode()).toBe(true)
+    expect(q('.pickbar .pickhint')?.textContent).toBe(T.insertPicking)
+    expect(q('[data-act="mode-insert"]')?.getAttribute('aria-pressed')).toBe('true')
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     expect(document.documentElement.hasAttribute('data-grasp-live-picking')).toBe(false)
     expect(overlay!.isInserting()).toBe(false)
+    expect(overlay!.isPickMode()).toBe(false)
+    expect(q('.pickbar')).toBeNull()
     overlay!.startInsert()
     overlay!.cancelPick()
     expect(overlay!.isInserting()).toBe(false)
@@ -146,11 +150,18 @@ describe('Live overlay', () => {
     card.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
     expect(card.hasAttribute('data-grasp-live-hover')).toBe(true)
     card.click()
-    // Insert skips the chat-or-design card.
+    // Insert skips the chat-or-design card, ends pick mode and has no action chips.
     expect(q('.panel.choose')).toBeNull()
+    expect(overlay!.isPickMode()).toBe(false)
+    expect(q('[data-act="action"]')).toBeNull()
+    expect(q('[data-act="go"]')?.textContent).toBe(T.go)
     ;(q('[data-act="pos"][data-v="before"]') as HTMLButtonElement).click()
     ;(q('[data-act="go"]') as HTMLButtonElement).click()
     expect(notices).toContain(T.promptRequired)
+    // Notes and marks live in a collapsed section.
+    expect(q('[data-input="notes"]')).toBeNull()
+    ;(q('[data-act="marks-toggle"]') as HTMLButtonElement).click()
+    expect(q('[data-act="mark-undo"]')).toBeNull()
     const notes = q('[data-input="notes"]') as HTMLTextAreaElement
     notes.value = '加一个 FAQ'
     notes.dispatchEvent(new Event('input', { bubbles: true }))
@@ -187,6 +198,45 @@ describe('Live overlay', () => {
     document.getElementById('plus')!.click()
     expect(overlay.isInserting()).toBe(true)
     expect(q('.panel')).toBeNull()
+  })
+
+  it('switches between select and insert from the pick bar', () => {
+    document.body.innerHTML = '<main><section id="card">x</section></main>'
+    const startPick = vi.fn()
+    overlay = createOverlay(
+      { post: () => true, theme: () => 'dark', notice: () => {}, stopPick, startPick, sendToChat: () => {}, changed, isOwnUi: () => false },
+      T,
+    )
+    overlay.setEnabled(true)
+    overlay.setPickMode(true)
+    ;(q('[data-act="mode-insert"]') as HTMLButtonElement).click()
+    expect(overlay.isInserting()).toBe(true)
+    expect(stopPick).toHaveBeenCalled()
+    ;(q('[data-act="mode-select"]') as HTMLButtonElement).click()
+    expect(overlay.isInserting()).toBe(false)
+    expect(startPick).toHaveBeenCalled()
+    expect(overlay.isPickMode()).toBe(true)
+    overlay.setPickMode(false)
+    expect(q('.pickbar')).toBeNull()
+  })
+
+  it('re-renders the pick bar and the panel when the language changes', () => {
+    document.body.innerHTML = '<main><section id="card">x</section></main>'
+    const card = document.getElementById('card')!
+    card.getBoundingClientRect = () => new DOMRect(10, 10, 300, 180)
+    overlay = createOverlay({ post: () => true, theme: () => 'dark', notice: () => {}, stopPick: () => {}, sendToChat: () => {}, changed: () => {}, isOwnUi: () => false, lang: 'en' })
+    overlay.setEnabled(true)
+    const en = strings('en')
+    overlay.setPickMode(true)
+    expect(q('[data-act="mode-select"]')?.textContent).toBe(en.modeSelect)
+    overlay.offer(card)
+    ;(q('[data-act="to-design"]') as HTMLButtonElement).click()
+    expect(q('[data-act="go"]')?.textContent).toBe(en.go)
+    overlay.setLang('zh-CN')
+    expect(q('[data-act="go"]')?.textContent).toBe(T.go)
+    expect(q('[data-act="action"][data-v="bolder"]')?.textContent).toBe(T.actions.bolder)
+    overlay.setPickMode(true)
+    expect(q('[data-act="mode-select"]')?.textContent).toBe(T.modeSelect)
   })
 
   it('shows a switcher for wrappers, switches, accepts with params and syncs state', async () => {
@@ -368,15 +418,18 @@ describe('Live overlay', () => {
     expect(changed).toHaveBeenCalled()
     expect(q('.dock .hint')?.textContent).toContain('/about')
     expect(q('[data-input="steer"]')).toBeNull()
-    overlay!.setSteerOpen(true)
-    expect(overlay!.isSteerOpen()).toBe(true)
+    overlay!.setPickMode(true)
+    expect(overlay!.isPickMode()).toBe(true)
+    expect(q('.pickbar .pickhint')?.textContent).toBe(T.pickHint)
+    expect(q('[data-act="mode-select"]')?.getAttribute('aria-pressed')).toBe('true')
     const steer = q('[data-input="steer"]') as HTMLInputElement
-    expect(shadow().activeElement).toBe(steer)
+    steer.focus()
     steer.value = '整体再紧凑一些'
     steer.dispatchEvent(new Event('input', { bubbles: true }))
     steer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     expect(posted.at(-1)).toMatchObject({ op: 'steer', prompt: '整体再紧凑一些' })
-    expect(overlay!.isSteerOpen()).toBe(false)
+    expect(stopPick).toHaveBeenCalled()
+    expect(overlay!.isPickMode()).toBe(false)
     expect(q('[data-input="steer"]')).toBeNull()
     overlay!.setPeek(true)
     const orig = document.querySelector<HTMLElement>('[data-grasp-variant="0"]')!

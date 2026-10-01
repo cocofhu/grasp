@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
@@ -7,6 +7,7 @@ import AppSwitch from '@/components/ui/AppSwitch.vue'
 import PageControlStatus from '@/components/run/PageControlStatus.vue'
 import PublicGateApprovalView from '@/views/PublicGateApprovalView.vue'
 import {
+  EMBED_LANG_MESSAGE,
   EMBED_READY_MESSAGE,
   EMBED_SESSION_MESSAGE,
   clearEmbedSession,
@@ -22,6 +23,8 @@ import {
 } from '@/lib/inbox/embedChat'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { setThemeOverride } from '@/lib/shared/theme'
+import { locale, setLocale } from '@/lib/shared/locale'
+import { GRASP_STORAGE_KEYS } from '@/lib/shared/migrateBrandStorage'
 import { createEmbedLiveContext } from '@/lib/inbox/embedLiveContext'
 import { usePageControl } from '@/lib/inbox/embedPageControl'
 import {
@@ -187,6 +190,7 @@ function onStatus(status: string) {
   if (status === 'active' && !announced && window.parent !== window) {
     announced = true
     window.parent.postMessage({ type: EMBED_READY_MESSAGE }, parentOrigin())
+    postLang()
     pageControl.awaitHello()
     void syncLive()
   }
@@ -200,6 +204,21 @@ function onStatus(status: string) {
 
 function parentOrigin(): string {
   return window.location.ancestorOrigins?.[0] || '*'
+}
+
+function postLang() {
+  postToPage({ type: EMBED_LANG_MESSAGE, lang: locale.value })
+}
+
+watch(locale, () => {
+  if (announced) postLang()
+})
+
+// The main Grasp tab shares this origin's localStorage, so a language switch
+// there reaches the drawer (and through it, the page toolbar) without a reload.
+function onStorage(e: StorageEvent) {
+  if (e.key !== GRASP_STORAGE_KEYS.locale) return
+  if (e.newValue === 'zh-CN' || e.newValue === 'en') void setLocale(e.newValue)
 }
 
 function onMessage(e: MessageEvent) {
@@ -234,10 +253,12 @@ function onMessage(e: MessageEvent) {
 
 onMounted(() => {
   window.addEventListener('message', onMessage)
+  window.addEventListener('storage', onStorage)
   void connect()
 })
 onUnmounted(() => {
   window.removeEventListener('message', onMessage)
+  window.removeEventListener('storage', onStorage)
   pageContext.dispose()
   pageControl.dispose()
   setThemeOverride(null)

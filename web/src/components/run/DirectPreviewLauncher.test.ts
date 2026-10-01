@@ -3,6 +3,7 @@ import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import pages from '@/locales/zh-CN/pages.json'
+import { locale } from '@/lib/shared/locale'
 import DirectPreviewLauncher from './DirectPreviewLauncher.vue'
 
 const DIRECT = 'http://127.0.0.1:18081/'
@@ -28,7 +29,7 @@ describe('DirectPreviewLauncher', () => {
     const w = mountLauncher(() => Promise.resolve({ ticket: 'tk', runId: 'run-1', nodeId: 'ap1', expiresAt: '' }))
     await w.get('[data-testid="direct-preview-address"]').trigger('click')
     await flushPromises()
-    expect(tab.location.href).toBe(`${DIRECT}#__grasp_embed&run=run-1&node=ap1&ticket=tk&theme=dark`)
+    expect(tab.location.href).toBe(`${DIRECT}#__grasp_embed&run=run-1&node=ap1&ticket=tk&theme=dark&lang=${locale.value}`)
   })
 
   it('opens the tab inside the click, then sends it to the preview with the ticket', async () => {
@@ -42,7 +43,7 @@ describe('DirectPreviewLauncher', () => {
     expect(tab.location.href).toBe('')
     resolve({ ticket: 't/1', runId: 'run-1', nodeId: 'ap1', expiresAt: '' })
     await flushPromises()
-    expect(tab.location.href).toBe(`${DIRECT}#__grasp_embed&run=run-1&node=ap1&ticket=t%2F1&theme=dark`)
+    expect(tab.location.href).toBe(`${DIRECT}#__grasp_embed&run=run-1&node=ap1&ticket=t%2F1&theme=dark&lang=${locale.value}`)
     expect(w.find('[data-testid="direct-preview-tip"]').exists()).toBe(false)
   })
 
@@ -71,7 +72,7 @@ describe('DirectPreviewLauncher', () => {
     await w.get('[data-testid="app-preview-direct-open"]').trigger('click')
     await flushPromises()
     const link = w.get('[data-testid="direct-preview-tip"]')
-    expect(link.attributes('href')).toBe(`${DIRECT}#__grasp_embed&run=r&node=n&ticket=tk&theme=dark`)
+    expect(link.attributes('href')).toBe(`${DIRECT}#__grasp_embed&run=r&node=n&ticket=tk&theme=dark&lang=${locale.value}`)
     expect(link.attributes('rel')).toBe('noopener')
   })
 })

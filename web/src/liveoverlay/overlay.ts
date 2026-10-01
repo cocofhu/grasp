@@ -11,13 +11,17 @@ export type HostOpts = {
   post: (msg: Record<string, unknown>) => boolean
   theme: () => string
   notice: (text: string, ok?: boolean) => void
-  /** Turn off preview-pick's own Pick mode. */
+  /** Turn off preview-pick's own element picking. */
   stopPick: () => void
+  /** Turn preview-pick's element picking back on (the pick bar's "Select" segment). */
+  startPick?: () => void
   /** Hand a picked element to the chat drawer as a plain pick. */
   sendToChat: (el: Element) => void
-  /** Re-render preview-pick's bar (insert / steer / eye state). */
+  /** Re-render preview-pick's bar (pick / eye state). */
   changed: () => void
   isOwnUi: (el: Element) => boolean
+  /** Grasp UI language (`zh-CN` | `en`); falls back to the browser language. */
+  lang?: string
 }
 
 export type LiveOverlay = {
@@ -27,8 +31,10 @@ export type LiveOverlay = {
   startInsert: () => void
   cancelPick: () => void
   isInserting: () => boolean
-  setSteerOpen: (on: boolean) => void
-  isSteerOpen: () => boolean
+  /** Show or hide the pick bar (select / insert switch and whole-page input). */
+  setPickMode: (on: boolean) => void
+  isPickMode: () => boolean
+  setLang: (lang: string) => void
   hasCandidates: () => boolean
   setPeek: (on: boolean) => void
   toggleHidden: () => void
@@ -66,6 +72,7 @@ type Panel = {
   count: number
   mode: Mode
   position: 'before' | 'after'
+  marksOpen: boolean
 }
 
 export const LIVE_MSG = 'grasp-embed:live'
@@ -134,9 +141,11 @@ export function pageTheme(): 'light' | 'dark' | '' {
   return ''
 }
 
-export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverlay {
+export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOverlay {
+  let lang = opts.lang || (typeof navigator !== 'undefined' ? navigator.language || '' : '')
+  let T = initialStrings ?? strings(lang)
   let enabled = false
-  let steerOpen = false
+  let pickMode = false
   let hidden = false
   let peek = false
   let inserting = false
@@ -327,26 +336,19 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     root.className = (pageTheme() || opts.theme()) === 'light' ? 'root light' : 'root'
   }
 
-  /** Steer composer and status hints, stacked just above preview-pick's bar. */
-  function renderDock(focusSteer = false) {
+  /** Status hints and the pick bar, stacked just above preview-pick's bar. */
+  function renderDock() {
     themeClass()
     const dock = layer('dock')
     const focused = shadow.activeElement as HTMLInputElement | null
-    const keepFocus = focused?.dataset?.input === 'steer' ? { start: focused.selectionStart, end: focused.selectionEnd } : null
+    const restore = focused?.dataset?.input === 'steer' ? { start: focused.selectionStart, end: focused.selectionEnd } : null
     if (!enabled) {
       dock.innerHTML = ''
       return
     }
-    const hasMic = !!(window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition ||
-      !!(window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition
-    const composer = steerOpen
-      ? `<div class="steer" role="group" aria-label="${esc(T.steer)}"><input type="text" data-input="steer" placeholder="${esc(T.steer)}" aria-label="${esc(T.steer)}" value="${esc(steerText)}" />` +
-        (hasMic ? `<button type="button" data-act="mic" title="${esc(T.mic)}" aria-label="${esc(T.mic)}">🎤</button>` : '') +
-        `<button type="button" data-act="steer" aria-label="${esc(T.steerSend)}">↵</button></div>`
-      : ''
     const hint = hintHtml()
-    dock.innerHTML = hint || composer ? `<div class="dock">${hint}${composer}</div>` : ''
-    const restore = keepFocus || (focusSteer ? { start: steerText.length, end: steerText.length } : null)
+    const bar = pickMode ? pickBarHtml() : ''
+    dock.innerHTML = hint || bar ? `<div class="dock">${hint}${bar}</div>` : ''
     if (restore) {
       const input = dock.querySelector<HTMLInputElement>('[data-input="steer"]')
       if (input) {
@@ -373,9 +375,24 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       : away.length
       ? `<div class="hint" role="status">${esc(fmt(T.pending, { n: away.length, path: pathOf(away[0].url) }))} ` +
         `<button type="button" data-act="goto-url" data-sid="${esc(away[0].sid)}">→</button></div>`
-      : inserting
-        ? `<div class="hint" role="status">${esc(T.insertPicking)}</div>`
-        : ''
+      : ''
+  }
+
+  /** Select / insert switch plus the whole-page input, shown while Pick is on. */
+  function pickBarHtml(): string {
+    const hasMic = !!(window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition ||
+      !!(window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition
+    return (
+      `<div class="pickbar" role="group" aria-label="${esc(T.pickMode)}">` +
+      `<div class="row"><div class="seg" role="group" aria-label="${esc(T.pickMode)}">` +
+      `<button type="button" data-act="mode-select" aria-pressed="${!inserting}">${esc(T.modeSelect)}</button>` +
+      `<button type="button" data-act="mode-insert" aria-pressed="${inserting}">${esc(T.modeInsert)}</button></div>` +
+      `<span class="label pickhint" role="status">${esc(inserting ? T.insertPicking : T.pickHint)}</span></div>` +
+      `<div class="steer"><input type="text" data-input="steer" placeholder="${esc(T.steer)}" aria-label="${esc(T.steer)}" value="${esc(steerText)}" />` +
+      (hasMic ? `<button type="button" data-act="mic" title="${esc(T.mic)}" aria-label="${esc(T.mic)}">🎤</button>` : '') +
+      `<button type="button" data-act="steer" aria-label="${esc(T.steerSend)}">↵</button></div>` +
+      '</div>'
+    )
   }
 
   /** Why the element cannot get design candidates right now, if it cannot. */
@@ -411,39 +428,51 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       positionPanel()
       return
     }
-    const chips = (p.kind === 'insert' ? ['freeform'] : ACTIONS)
-      .map((a) => `<button type="button" class="chip" data-act="action" data-v="${a}" aria-pressed="${p.action === a}">${esc(T.actions[a] || a)}</button>`)
-      .join('')
-    const counts = [2, 3, 4]
-      .map((n) => `<button type="button" class="chip" data-act="count" data-v="${n}" aria-pressed="${p.count === n}">${n}</button>`)
-      .join('')
-    const modes = (['inplace', 'compare'] as Mode[])
-      .map((m) => `<button type="button" class="chip" data-act="pmode" data-v="${m}" aria-pressed="${p.mode === m}">${esc(m === 'compare' ? T.compare : T.inplace)}</button>`)
-      .join('')
-    const pos =
+    const seg = (act: string, label: string, items: Array<{ v: string; text: string; on: boolean }>) =>
+      `<div class="field"><span class="label">${esc(label)}</span><div class="seg" role="group" aria-label="${esc(label)}">` +
+      items.map((it) => `<button type="button" data-act="${act}" data-v="${esc(it.v)}" aria-pressed="${it.on}">${esc(it.text)}</button>`).join('') +
+      '</div></div>'
+    // Insert only ever uses the freeform action, so it gets a position switch instead of action chips.
+    const head =
       p.kind === 'insert'
-        ? `<div class="row">${(['before', 'after'] as const)
-            .map((v) => `<button type="button" class="chip" data-act="pos" data-v="${v}" aria-pressed="${p.position === v}">${esc(v === 'before' ? T.before : T.after)}</button>`)
+        ? seg('pos', T.position, (['before', 'after'] as const).map((v) => ({ v, text: v === 'before' ? T.before : T.after, on: p.position === v })))
+        : `<div class="chips" role="group">${ACTIONS
+            .map((a) => `<button type="button" class="chip" data-act="action" data-v="${a}" aria-pressed="${p.action === a}">${esc(T.actions[a] || a)}</button>`)
             .join('')}</div>`
-        : ''
     const needPrompt = p.kind === 'insert' || p.action === 'freeform'
+    const open = marksExpanded(p)
+    const n = annotations.count + (p.notes.trim() ? 1 : 0)
+    const marks =
+      `<div class="marks"><button type="button" class="disclosure" data-act="marks-toggle" aria-expanded="${open}">` +
+      `<span aria-hidden="true">${open ? '▾' : '▸'}</span> ${esc(T.marks)}${n ? ` (${n})` : ''}</button>` +
+      (open
+        ? `<textarea data-input="notes" rows="1" placeholder="${esc(T.notes)}" aria-label="${esc(T.notes)}">${esc(p.notes)}</textarea>` +
+          `<div class="row"><button type="button" class="chip" data-act="mark-draw" aria-pressed="${annotations.mode === 'draw'}"${annotations.count >= 8 ? ' disabled' : ''}>${esc(T.markDraw)}</button>` +
+          `<button type="button" class="chip" data-act="mark-note" aria-pressed="${annotations.mode === 'note'}"${annotations.count >= 8 ? ' disabled' : ''}>${esc(T.markNote)}</button>` +
+          (annotations.count
+            ? `<button type="button" class="link" data-act="mark-undo">${esc(T.markUndo)}</button>` +
+              `<button type="button" class="link" data-act="mark-clear">${esc(T.markClear)}</button>`
+            : '') +
+          '</div>' +
+          (annotations.mode ? `<div class="label" role="status">${esc(T.markHint)}</div>` : '')
+        : '') +
+      '</div>'
     el.innerHTML =
       '<div class="panel" role="dialog" aria-modal="false">' +
       targetHtml(p) +
-      `<div class="chips" role="group">${chips}</div>` +
-      pos +
+      head +
       `<textarea data-input="prompt" rows="2" placeholder="${esc(needPrompt ? T.promptRequired : T.prompt)}" aria-label="${esc(T.prompt)}">${esc(p.prompt)}</textarea>` +
-      `<textarea data-input="notes" rows="1" placeholder="${esc(T.notes)}" aria-label="${esc(T.notes)}">${esc(p.notes)}</textarea>` +
-      `<div class="row"><button type="button" class="chip" data-act="mark-draw" aria-pressed="${annotations.mode === 'draw'}"${annotations.count >= 8 ? ' disabled' : ''}>${esc(T.markDraw)}</button>` +
-      `<button type="button" class="chip" data-act="mark-note" aria-pressed="${annotations.mode === 'note'}"${annotations.count >= 8 ? ' disabled' : ''}>${esc(T.markNote)}</button>` +
-      `<button type="button" data-act="mark-undo"${!annotations.count ? ' disabled' : ''}>${esc(T.markUndo)}</button>` +
-      `<button type="button" data-act="mark-clear"${!annotations.count ? ' disabled' : ''}>${esc(T.markClear)}</button></div>` +
-      (annotations.mode ? `<div class="label" role="status">${esc(T.markHint)}</div>` : '') +
-      `<div class="row"><span class="label">${esc(T.count)}</span>${counts}<span class="label">${esc(T.display)}</span>${modes}</div>` +
-      `<div class="row"><button type="button" data-act="cancel-panel">${esc(T.cancel)}</button>` +
+      marks +
+      seg('count', T.count, [2, 3, 4].map((c) => ({ v: String(c), text: String(c), on: p.count === c }))) +
+      seg('pmode', T.display, (['inplace', 'compare'] as Mode[]).map((m) => ({ v: m, text: m === 'compare' ? T.compare : T.inplace, on: p.mode === m }))) +
+      `<div class="row foot"><button type="button" data-act="cancel-panel">${esc(T.cancel)}</button>` +
       `<button type="button" class="go" data-act="go">${esc(T.go)}</button></div>` +
       '</div>'
     positionPanel()
+  }
+
+  function marksExpanded(p: Panel): boolean {
+    return p.marksOpen || !!annotations.mode
   }
 
   function positionPanel() {
@@ -679,6 +708,26 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     if (was !== on) opts.changed()
   }
 
+  /** Leave pick mode entirely: no insert picking and no pick bar. */
+  function endPickMode() {
+    const was = pickMode || inserting
+    pickMode = false
+    setInserting(false)
+    renderDock()
+    if (was) opts.changed()
+  }
+
+  function setPickMode(on: boolean) {
+    if (!on || !enabled) {
+      endPickMode()
+      return
+    }
+    if (pickMode) return
+    pickMode = true
+    renderDock()
+    opts.changed()
+  }
+
   function newPanel(kind: PickKind, el: Element): Panel {
     return {
       kind,
@@ -691,6 +740,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       count: 3,
       mode: 'inplace',
       position: 'after',
+      marksOpen: false,
     }
   }
 
@@ -699,7 +749,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       opts.sendToChat(el)
       return
     }
-    setInserting(false)
+    endPickMode()
     mount()
     panel = newPanel('replace', el)
     renderPanel()
@@ -762,7 +812,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     ev.preventDefault()
     ev.stopPropagation()
     clearHover()
-    setInserting(false)
+    endPickMode()
     panel = newPanel('insert', el)
     renderPanel()
   }
@@ -770,8 +820,9 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
   function onKeydown(ev: KeyboardEvent) {
     if (!enabled) return
     if (ev.key === 'Escape') {
-      if (inserting) {
-        setInserting(false)
+      if (inserting || pickMode) {
+        endPickMode()
+        opts.stopPick()
         ev.stopPropagation()
       } else if (panel) {
         panel = null
@@ -850,7 +901,8 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     if (request('steer', sid, { prompt: text, url: location.href })) {
       sessions.set(sid, { sid, mode: 'steer', state: 'generating', prompt: text, url: location.href })
       steerText = ''
-      steerOpen = false
+      opts.stopPick()
+      endPickMode()
       opts.notice(T.sent, true)
       renderDock()
       opts.changed()
@@ -945,7 +997,7 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     const Ctor = W.SpeechRecognition || W.webkitSpeechRecognition
     if (!Ctor) return
     const rec = new Ctor()
-    rec.lang = navigator.language || 'zh-CN'
+    rec.lang = /^zh/i.test(lang) ? 'zh-CN' : 'en-US'
     rec.interimResults = false
     rec.onresult = (e) => {
       const said = e.results?.[0]?.[0]?.transcript || ''
@@ -978,10 +1030,14 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     opts.changed()
   }
 
-  function setSteerOpen(on: boolean) {
-    steerOpen = on && enabled
-    renderDock(steerOpen)
-    opts.changed()
+  function setLang(next: string) {
+    if (!next || next === lang) return
+    lang = next
+    T = strings(next)
+    annotations.setStrings(T)
+    renderDock()
+    renderPanel()
+    renderSwitchers()
   }
 
   shadow.addEventListener('click', (ev) => {
@@ -1014,6 +1070,22 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
         break
       case 'mic':
         startMic()
+        break
+      case 'mode-select':
+        if (inserting) {
+          setInserting(false)
+          opts.startPick?.()
+        }
+        break
+      case 'mode-insert':
+        if (!inserting) setInserting(true)
+        break
+      case 'marks-toggle':
+        if (panel) {
+          panel.marksOpen = !marksExpanded(panel)
+          if (!panel.marksOpen && annotations.mode) annotations.setMode(null)
+          renderPanel()
+        }
         break
       case 'steer':
         steer()
@@ -1219,9 +1291,9 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
       rescan()
     } else {
       observer.disconnect()
+      pickMode = false
       setInserting(false)
       panel = null
-      steerOpen = false
       renderAll()
       layer('switchers').innerHTML = ''
       layer('frames').innerHTML = ''
@@ -1233,14 +1305,17 @@ export function createOverlay(opts: HostOpts, T: Strings = strings()): LiveOverl
     onDrawer,
     offer,
     startInsert: () => {
-      if (enabled) setInserting(true)
+      if (!enabled) return
+      pickMode = true
+      setInserting(true)
     },
     cancelPick: () => {
       if (inserting) setInserting(false)
     },
     isInserting: () => inserting,
-    setSteerOpen,
-    isSteerOpen: () => steerOpen,
+    setPickMode,
+    isPickMode: () => pickMode,
+    setLang,
     hasCandidates: () => enabled && wrappers.length > 0,
     setPeek,
     toggleHidden,

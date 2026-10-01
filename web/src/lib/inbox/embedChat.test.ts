@@ -34,6 +34,9 @@ describe('embedChat', () => {
     expect(directPreviewEmbedUrl('http://10.0.0.5:18080/x#old', t, 'light')).toBe(
       'http://10.0.0.5:18080/x#__grasp_embed&run=r&node=n&ticket=a+b&theme=light',
     )
+    expect(directPreviewEmbedUrl('http://10.0.0.5:18080/x', t, 'dark', 'zh-CN')).toBe(
+      'http://10.0.0.5:18080/x#__grasp_embed&run=r&node=n&ticket=a+b&theme=dark&lang=zh-CN',
+    )
   })
 
   it('reads the host theme from the fragment and from messages', () => {

@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { directPreviewEmbedUrl, type EmbedTicket } from '@/lib/inbox/embedChat'
 import { theme } from '@/lib/shared/theme'
+import { locale } from '@/lib/shared/locale'
 
 const props = defineProps<{
   directUrl: string
@@ -25,7 +26,7 @@ async function open() {
   opening.value = true
   let url = props.directUrl
   try {
-    if (props.issueTicket) url = directPreviewEmbedUrl(props.directUrl, await props.issueTicket(), theme.value)
+    if (props.issueTicket) url = directPreviewEmbedUrl(props.directUrl, await props.issueTicket(), theme.value, locale.value)
   } catch {
     tip.value = 'chat'
   } finally {
