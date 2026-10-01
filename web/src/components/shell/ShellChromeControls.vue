@@ -222,6 +222,7 @@ defineExpose({
         :class="layout === 'sidebar' ? 'h-8 w-8' : 'h-9 w-9'"
         :title="themeTitle"
         data-testid="shell-theme-toggle"
+        data-motion="overlay-pop"
         @click="toggleTheme"
       >
         <span class="shell-theme-icon-stack" aria-hidden="true">
@@ -380,7 +381,13 @@ defineExpose({
 </template>
 
 <style scoped>
-/* g2.1 — moon ↔ sun rotate + cross-fade (~280ms); both sidebar and bar layouts */
+/*
+ * plan g1.1 — bar and sidebar share this stack; no layout-specific motion.
+ * plan g1.2 — same duration, easing, and amplitude as .overlay-pop
+ *   (opacity + translateY(-4px) + scale(0.98), var(--dur-overlay) / var(--ease-out-expo)).
+ *   Replaces the longer rotate cross-fade.
+ * plan g1.3 — prefers-reduced-motion paints the active icon immediately.
+ */
 .shell-theme-icon-stack {
   position: relative;
   display: inline-flex;
@@ -388,6 +395,8 @@ defineExpose({
   height: 1.125rem;
   align-items: center;
   justify-content: center;
+  view-transition-name: match-element;
+  view-transition-class: theme-icon;
 }
 
 .shell-theme-icon {
@@ -397,25 +406,26 @@ defineExpose({
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transform: rotate(-90deg) scale(0.55);
+  transform: translateY(-4px) scale(0.98);
   transition:
-    opacity 280ms ease,
-    transform 280ms ease;
+    opacity var(--dur-overlay) var(--ease-out-expo),
+    transform var(--dur-overlay) var(--ease-out-expo);
   pointer-events: none;
-}
-
-.shell-theme-icon-sun {
-  transform: rotate(90deg) scale(0.55);
 }
 
 .shell-theme-icon.is-active {
   opacity: 1;
-  transform: rotate(0deg) scale(1);
+  transform: translateY(0) scale(1);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .shell-theme-icon {
     transition: none;
+    transform: translateY(0) scale(1);
+  }
+
+  .shell-theme-icon:not(.is-active) {
+    opacity: 0;
   }
 }
 </style>

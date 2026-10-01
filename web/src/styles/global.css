@@ -139,7 +139,7 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  /* Theme color motion is the shell toggle cross-fade (plan g1.2), not a standing ease. */
 }
 
 * {
@@ -554,6 +554,19 @@ html.light .app-sidebar-card {
     transition: none !important;
     transform: none !important;
   }
+
+  /* plan g1.3 — theme cross-fade and icon pop do not play */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  .shell-theme-icon {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  html.theme-color-motion :where(:not(.shell-theme-icon):not(.shell-theme-icon-stack)) {
+    transition: none !important;
+  }
 }
 
 /* ---------- Hover ink: landing-point solid cover (plan g1 / g2) ---------- */
@@ -629,6 +642,56 @@ html.light .app-sidebar-card {
 .overlay-pop-leave-to {
   opacity: 0;
   transform: translateY(-4px) scale(0.98);
+}
+
+/*
+ * plan g1.2 — shell theme toggle.
+ * Root snapshots only cross-fade (same --dur-overlay / --ease-out-expo as .overlay-pop).
+ * No page translate or scale (risk: large surfaces should not shift).
+ * The theme icon is captured on its own and uses the overlay-pop rise + scale.
+ * plan g1.3 — reduced motion below zeroes these animations.
+ */
+::view-transition-group(root),
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--dur-overlay);
+  animation-timing-function: var(--ease-out-expo);
+}
+
+::view-transition-old(.theme-icon) {
+  mix-blend-mode: normal;
+  animation: var(--dur-overlay) var(--ease-out-expo) both theme-icon-pop-out;
+}
+
+::view-transition-new(.theme-icon) {
+  mix-blend-mode: normal;
+  animation: var(--dur-overlay) var(--ease-out-expo) both theme-icon-pop-in;
+}
+
+@keyframes theme-icon-pop-out {
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+@keyframes theme-icon-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+/* Snapshot must see the finished icon, not the first frame of the CSS transition. */
+html.theme-vt-capture .shell-theme-icon {
+  transition: none !important;
+}
+
+/* Fallback when View Transitions are unavailable: color only, icon keeps its own transition. */
+html.theme-color-motion :where(:not(.shell-theme-icon):not(.shell-theme-icon-stack)) {
+  transition-property: background-color, color, border-color, outline-color, fill, stroke;
+  transition-duration: var(--dur-overlay);
+  transition-timing-function: var(--ease-out-expo);
 }
 
 .ui-pressable {
