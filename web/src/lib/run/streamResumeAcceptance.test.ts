@@ -178,9 +178,13 @@ describe('stream resume acceptance (g5.2 three surfaces × four scenarios)', () 
     expect(pub).toMatch(/resumeFromForeground/)
     const resumeIdx = pub.indexOf('async function resumeFromForeground')
     expect(resumeIdx).toBeGreaterThan(-1)
-    const resumeSlice = pub.slice(resumeIdx, resumeIdx + 500)
-    expect(resumeSlice).toMatch(/publicRailsFilled = false/)
-    expect(resumeSlice).toMatch(/publicBusySeedRetry\.stop/)
+    expect(pub.slice(resumeIdx, resumeIdx + 500)).toMatch(/resyncChat\(/)
+    // Foreground return and events-socket reconnect share the same re-seed.
+    const resyncIdx = pub.indexOf('async function resyncChat')
+    expect(resyncIdx).toBeGreaterThan(-1)
+    const resyncSlice = pub.slice(resyncIdx, resyncIdx + 500)
+    expect(resyncSlice).toMatch(/publicRailsFilled = false/)
+    expect(resyncSlice).toMatch(/publicBusySeedRetry\.stop/)
   })
 
   it('g2.3: applyAcpEvents false must buffer on all three surfaces', () => {

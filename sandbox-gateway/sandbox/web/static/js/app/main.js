@@ -2,6 +2,7 @@ import {renderMermaidInLightboxMount} from '../core/md.js';
 import {apiPath, chatApiPath} from '../core/paths.js';
 import {queueStateHasPendingWork} from '../ui/queue_panel.js';
 import {setHeaderConnLive} from '../ws/session.js';
+import {announceReady, bindEmbedTheme, isEmbedded} from './embed.js';
 import {TabManager} from './tab_manager.js';
 import {modelDisplayName, modelPickerItems} from './tab_state.js';
 
@@ -56,8 +57,15 @@ if (!domOk) {
     }
 }
 
-/** 未在 localStorage 固定主题时，跟随系统明暗 */
+const embedded = isEmbedded(window);
+
+/** 内嵌时主题由宿主决定；单独打开时未在 localStorage 固定主题则跟随系统明暗 */
 function bindSystemThemeListener() {
+    if (embedded) {
+        if (btnTheme) btnTheme.hidden = true;
+        bindEmbedTheme(window, (theme) => html.setAttribute('data-theme', theme));
+        return;
+    }
     try {
         if (localStorage.getItem(THEME_STORAGE_KEY)) return;
     } catch (_) {
@@ -849,3 +857,5 @@ if (domOk && tabs) {
         }
     });
 }
+
+announceReady(window);

@@ -151,6 +151,7 @@ const pageCandidateMode = ref(false)
 // A retry of the same request keeps its session ID when the HTTP result is unknown.
 let candidateAttempt: { fingerprint: string; sid: string } | null = null
 
+let publicWsWasReady = false
 let lastKeptNonce = ''
 let nonceIssuedAt = 0
 let lastAppliedIdleQueue = false
@@ -564,6 +565,7 @@ async function loadPreview(opts?: { silent?: boolean; issueNonce?: boolean }) {
           : undefined
     const next = await publicGateApi.preview(tok, signal, known)
     if (attemptGen !== previewGen) return
+    lastChatUpdateAt = Date.now()
     // Inbox mounts the composer first, then turns arrive, and the existing
     // question/form watch preselects recommendations and seeds form values.
     // This view only mounts the composer once loading ends, with turns already
@@ -837,9 +839,14 @@ function handlePublicWsMessage(raw: string) {
   } catch {
     return
   }
+  lastChatUpdateAt = Date.now()
   const typ = String(m.type || '')
   if (typ === 'ready') {
     emit('events-ready')
+    // Frames published while disconnected are gone (the server only seeds a
+    // still-busy turn), so a reconnect re-reads the transcript like run detail.
+    if (publicWsWasReady) void resyncChat()
+    publicWsWasReady = true
     return
   }
   if (typ === 'error') return
@@ -914,6 +921,7 @@ function connectPublicEvents() {
 }
 
 function stopPublicEvents() {
+  publicWsWasReady = false
   publicBusySeedRetry.stop()
   publicWsReconnect.markIntentionalClose()
   publicWs?.close()
@@ -1318,18 +1326,34 @@ function stopRemainingTick() {
     remainingTimer = null
   }
 }
+/** Same depth as hard load: re-seed liveEvents under busy guard (g2.2). */
+async function resyncChat(opts?: { issueNonce?: boolean }) {
+  publicRailsFilled = false
+  publicLiveIncremental = false
+  publicBusySeedRetry.stop()
+  await loadPreview({ silent: true, issueNonce: opts?.issueNonce })
+}
 async function resumeFromForeground() {
   if (!canPoll()) {
     startRemainingTick()
     return
   }
   startRemainingTick()
-  // Same depth as hard load: re-seed liveEvents under busy guard (g2.2).
-  publicRailsFilled = false
-  publicLiveIncremental = false
-  publicBusySeedRetry.stop()
-  await loadPreview({ silent: true, issueNonce: true })
+  await resyncChat({ issueNonce: true })
   if (canPoll()) startPoll()
+}
+
+// Poll stops while hidden and the events socket can lose frames, so a busy
+// chat that has heard nothing for a while re-reads the preview on its own.
+const CHAT_SILENCE_MS = 20_000
+let lastChatUpdateAt = Date.now()
+let chatWatchdog: ReturnType<typeof setInterval> | null = null
+function checkChatSilence() {
+  if (!isActive.value || doneKind.value || submitting.value || !token.value) return
+  if (!chatRef.value?.isSessionBusy?.()) return
+  if (Date.now() - lastChatUpdateAt < CHAT_SILENCE_MS) return
+  lastChatUpdateAt = Date.now()
+  void resyncChat()
 }
 function onVisibilityChange() {
   if (pageHidden()) {
@@ -1382,8 +1406,11 @@ onMounted(async () => {
   startRemainingTick()
   if (canPoll()) startPoll()
   connectPublicEvents()
+  chatWatchdog = setInterval(checkChatSilence, 5_000)
 })
 onUnmounted(() => {
+  if (chatWatchdog) clearInterval(chatWatchdog)
+  chatWatchdog = null
   clearRateLimitRetry()
   stopPoll()
   stopRemainingTick()

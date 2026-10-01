@@ -119,6 +119,16 @@ jobs:
         run: node --test sandbox-gateway/sandbox/web/static/js/ui/safe_image_url_test.js
       - name: tab_state unit tests
         run: node --test sandbox-gateway/sandbox/web/static/js/app/tab_state_test.js
+      - name: embed handshake unit tests
+        run: node --test sandbox-gateway/sandbox/web/static/js/app/embed_test.js
+      # A static import or stylesheet on a CDN blocks the whole page whenever the
+      # browser cannot reach it; only on-demand dynamic imports may go external.
+      - name: No blocking external assets
+        run: |
+          web=sandbox-gateway/sandbox/web
+          if grep -rn "fonts.googleapis.com\|fonts.gstatic.com" "$web"; then exit 1; fi
+          if grep -rnE "^[[:space:]]*import[^(]*from[[:space:]]*['\"]https?://" "$web/static/js"; then exit 1; fi
+          if grep -rnE "<(link|script)[^>]*(href|src)=\"https?://" "$web"/*.html; then exit 1; fi
 
   sandbox-go:
     runs-on: ubuntu-latest

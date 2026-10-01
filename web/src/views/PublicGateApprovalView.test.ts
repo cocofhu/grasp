@@ -1588,6 +1588,93 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
     expect(w.get('[data-testid="public-gate-sidebar"]').text()).toContain('/cart · button.buy')
   })
 
+  describe('drawer chat stays in sync after lost frames', () => {
+    const busy = {
+      status: 'active',
+      kind: 'review',
+      nodeType: 'app_preview',
+      remainingSec: 3600,
+      reactSessionAlive: true,
+      productKind: 'app_preview',
+      sessionBusy: true,
+      waiting: 0,
+      activeItem: { text: '改文案' },
+      actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
+      turns: [{ role: 'agent', text: '预览已就绪', at: '2026-08-01T00:00:00Z' }],
+    }
+    const idle = {
+      ...busy,
+      sessionBusy: false,
+      activeItem: null,
+      turns: [
+        ...busy.turns,
+        { role: 'human', text: '改文案', at: '2026-08-01T00:01:00Z' },
+        { role: 'agent', text: '这是对文案和颜色的修改', thought: '先读源码', at: '2026-08-01T00:02:00Z' },
+      ],
+    }
+    const caret = '[data-testid="clarify-stream-caret"]'
+
+    async function mountStreaming() {
+      mocks.preview.mockResolvedValue(busy)
+      const w = mountView('zh-CN', { embedToken: drawerToken })
+      await flushPromises()
+      await flushPromises()
+      const sock = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
+      sock.emit({ type: 'ready' })
+      sock.emit({ type: 'review', event: 'turn_begin', nodeId: 'public-gate', item: { id: 'p1', text: '改文案' } })
+      sock.emit({ type: 'acp', nodeId: 'public-gate', events: [{ kind: 'thought', text: '先读源码' }] })
+      sock.emit({ type: 'acp', nodeId: 'public-gate', events: [{ kind: 'message', text: '这是对文案和颜色的修改' }] })
+      await flushPromises()
+      expect(w.find(caret).exists()).toBe(true)
+      return { w, sock }
+    }
+
+    function expectSettled(w: VueWrapper) {
+      expect(w.find(caret).exists()).toBe(false)
+      expect((w.text().match(/这是对文案和颜色的修改/g) || []).length).toBe(1)
+    }
+
+    it('an idle poll ends the reply when turn_done never arrives', async () => {
+      const { w } = await mountStreaming()
+      mocks.preview.mockResolvedValue(idle)
+      await (w.vm as unknown as { loadPreview: (opts?: { silent?: boolean }) => Promise<void> }).loadPreview({ silent: true })
+      await flushPromises()
+      await flushPromises()
+      expectSettled(w)
+    })
+
+    it('a reconnected events socket re-reads the transcript', async () => {
+      const { w, sock } = await mountStreaming()
+      mocks.preview.mockClear()
+      mocks.preview.mockResolvedValue(idle)
+      sock.emit({ type: 'ready' })
+      await flushPromises()
+      await flushPromises()
+      expect(mocks.preview).toHaveBeenCalled()
+      expectSettled(w)
+    })
+
+    it('a silent busy chat resyncs even while the page is hidden', async () => {
+      vi.useFakeTimers()
+      try {
+        const { w } = await mountStreaming()
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+        document.dispatchEvent(new Event('visibilitychange'))
+        mocks.preview.mockClear()
+        mocks.preview.mockResolvedValue(idle)
+        await vi.advanceTimersByTimeAsync(10_000)
+        expect(mocks.preview).not.toHaveBeenCalled()
+        await vi.advanceTimersByTimeAsync(15_000)
+        await flushPromises()
+        expect(mocks.preview).toHaveBeenCalledTimes(1)
+        expectSettled(w)
+      } finally {
+        Reflect.deleteProperty(document, 'visibilityState')
+        vi.useRealTimers()
+      }
+    })
+  })
+
   it('cold drawer session offers no confirm and points back to Grasp', async () => {
     mocks.preview.mockResolvedValue({
       status: 'active',
