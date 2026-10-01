@@ -52,6 +52,7 @@ export type LiveSession = {
   variants?: LiveVariant[]
   selected?: number
   retryAccept?: boolean
+  mountAutoReported?: boolean
   error?: string
   createdAt?: string
   updatedAt?: string
@@ -85,11 +86,14 @@ export type LiveEvent = {
   notes?: string[]
   marks?: LiveMark[]
   error?: string
+  /** mount_failed detected by the page rather than sent by the person. */
+  auto?: boolean
 }
 
 export type LiveCtx = { sid: string; current: number; params?: Record<string, unknown> }
 
-export type LiveView = { current: number; mode: 'inplace' | 'compare'; params?: Record<string, unknown> }
+/** `current` 0 with `original` means the page shows the original; 0 alone means nothing is mounted. */
+export type LiveView = { current: number; mode: 'inplace' | 'compare'; original?: boolean; params?: Record<string, unknown> }
 
 export type LiveCmd = 'goto' | 'compare' | 'inplace' | 'accept' | 'discard' | 'retry' | 'retry-accept'
 
@@ -201,6 +205,7 @@ export function parseEmbedLiveMessage(data: unknown): EmbedLiveMessage | null {
   if (m.op === 'state') {
     const current = int(m.current) ?? 0
     const view: LiveView = { current, mode: m.mode === 'compare' ? 'compare' : 'inplace' }
+    if (current === 0 && m.original === true) view.original = true
     const params = parseParamValues(m.params)
     if (params) view.params = params
     return { kind: 'state', sid: m.sid, view }
@@ -234,6 +239,7 @@ export function parseEmbedLiveMessage(data: unknown): EmbedLiveMessage | null {
   }
   const error = str(m.error, 2000)
   if (error) ev.error = error
+  if (m.auto === true && ev.op === 'mount_failed') ev.auto = true
   return { kind: 'request', reqId, event: ev }
 }
 
@@ -262,6 +268,7 @@ export function parseLiveSession(v: unknown): LiveSession | null {
     variants,
     selected: int(s.selected),
     retryAccept: s.retryAccept === true,
+    mountAutoReported: s.mountAutoReported === true,
     error: str(s.error, 2000),
     createdAt: str(s.createdAt, 64),
     updatedAt: str(s.updatedAt, 64),

@@ -3879,6 +3879,9 @@
           "unknown": "状态未知"
         },
         "viewing": "正在看 {current} / {total}",
+        "viewingOriginal": "正在看原版",
+        "original": "原版",
+        "gotoOriginal": "切到原版对比",
         "selected": "最终采用了候选 {n}",
         "variantCount": "{n} 个候选",
         "prev": "上一个",

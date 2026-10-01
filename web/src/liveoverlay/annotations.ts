@@ -11,11 +11,11 @@ export type LiveMark = {
 
 const MAX_MARKS = 8
 const SVG_NS = 'http://www.w3.org/2000/svg'
-const CSS = '.live-marks{position:fixed;z-index:2147483644;pointer-events:none;outline:2px solid #0f766e;border-radius:5px}' +
+const CSS = '.live-marks{position:fixed;z-index:2147483644;pointer-events:none;outline:2px solid #7b61ff;border-radius:5px}' +
   '.live-marks svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}' +
   '.live-marks[data-editing] svg{pointer-events:auto;touch-action:none;cursor:crosshair}' +
   '.live-mark-note{position:absolute;display:flex;align-items:start;gap:5px;pointer-events:auto;max-width:240px}' +
-  '.live-mark-note b{background:#f59e0b;color:#18181b;border:2px solid #fff;border-radius:50%;min-width:22px;height:22px;text-align:center}' +
+  '.live-mark-note b{background:#7b61ff;color:#fff;border:2px solid #fff;border-radius:50%;min-width:22px;height:22px;text-align:center}' +
   '.live-mark-note textarea{font:12px/1.4 system-ui;color:#fafafa;background:#18181b;border:1px solid #52525b;border-radius:6px;padding:6px;width:180px;max-width:35vw;resize:vertical;min-height:38px}'
 
 /** Marks live only in the shadow overlay; source/preview DOM is never painted. */
@@ -68,7 +68,7 @@ export function createAnnotations(layer: HTMLElement, initialStrings: Strings, c
       const path = document.createElementNS(SVG_NS, 'polyline')
       path.setAttribute('points', mark.points.map((p) => `${p.x * 1000},${p.y * 1000}`).join(' '))
       path.setAttribute('fill', 'none')
-      path.setAttribute('stroke', '#0f766e')
+      path.setAttribute('stroke', '#7b61ff')
       path.setAttribute('stroke-width', '4')
       path.setAttribute('stroke-linecap', 'round')
       path.setAttribute('stroke-linejoin', 'round')

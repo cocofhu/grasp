@@ -179,6 +179,11 @@ func (e *Engine) ReactLiveWithAttachmentsAs(owner, runID, nodeID string, ev mode
 			return cur, nil
 		}
 	}
+	if ev.Op == models.LiveOpMountFailed && ev.Auto && cur != nil && (cur.MountAutoReported || cur.State != models.LiveStateReady) {
+		// The page already reported this attempt (or a stale tab saw an old
+		// state); the person can still report manually from the page hint.
+		return cur, nil
+	}
 	next, err := models.NextLiveState(state, ev.Op)
 	if errors.Is(err, models.ErrLiveDuplicate) {
 		return cur, nil
@@ -238,7 +243,13 @@ func (e *Engine) ReactLiveWithAttachmentsAs(owner, runID, nodeID string, ev mode
 	case models.LiveOpMountFailed:
 		sess.Error = ev.Error
 		sess.RetryAccept = false
-	case models.LiveOpRefine, models.LiveOpDiscard:
+		if ev.Auto {
+			sess.MountAutoReported = true
+		}
+	case models.LiveOpRefine:
+		sess.RetryAccept = false
+		sess.MountAutoReported = false
+	case models.LiveOpDiscard:
 		sess.RetryAccept = false
 	}
 	if err := e.db.Save(sess).Error; err != nil {
@@ -445,6 +456,7 @@ func (e *Engine) ApplyLiveReport(runID, nodeID string, u mcp.LiveReport) (*model
 	}
 	if u.State == models.LiveStateRefining {
 		sess.RetryAccept = false
+		sess.MountAutoReported = false
 		sess.Selected = chat.Current
 		if u.Variant > 0 {
 			sess.Selected = u.Variant

@@ -372,6 +372,73 @@ func TestLiveGenerateAcceptFlow(t *testing.T) {
 	}
 }
 
+// The page re-detects a missing wrapper after every agent "ready" and on every
+// reload or extra tab; only the first automatic report may reach the agent.
+func TestLiveAutoMountFailedReportsOncePerAttempt(t *testing.T) {
+	eng, _, p, runID := setupLive(t)
+	agentReports(eng, p, func(human string) *mcp.LiveReport {
+		p.setLiveMarkers("sid001")
+		return &mcp.LiveReport{SID: "sid001", State: "ready", File: "src/App.vue",
+			Variants: []models.LiveVariant{{N: 1}, {N: 2}, {N: 3}}}
+	})
+	revises := func() int {
+		if err := eng.waitReviewReadyForTest(runID, "preview", 5*time.Second); err != nil {
+			t.Fatal(err)
+		}
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return p.reviseCalls["preview"]
+	}
+
+	if _, err := eng.ReactLiveAs("user:a", runID, "preview", genEvent("sid001")); err != nil {
+		t.Fatal(err)
+	}
+	waitLiveState(t, eng, runID, "sid001", models.LiveStateReady)
+	base := revises()
+
+	auto := models.LiveEvent{Op: models.LiveOpMountFailed, SID: "sid001", Error: "no wrapper", Auto: true}
+	sess, err := eng.ReactLiveAs("user:a", runID, "preview", auto)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sess.State != models.LiveStateRefining || !sess.MountAutoReported {
+		t.Fatalf("first auto report = %+v", sess)
+	}
+	waitLiveState(t, eng, runID, "sid001", models.LiveStateReady)
+	if got := revises(); got != base+1 {
+		t.Fatalf("revise calls = %d, want %d", got, base+1)
+	}
+
+	sess, err = eng.ReactLiveAs("user:a", runID, "preview", auto)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sess.State != models.LiveStateReady {
+		t.Fatalf("repeated auto report changed state: %+v", sess)
+	}
+	if got := revises(); got != base+1 {
+		t.Fatalf("repeated auto report queued a turn: revise calls = %d", got)
+	}
+
+	manual := models.LiveEvent{Op: models.LiveOpMountFailed, SID: "sid001", Error: "no wrapper"}
+	if sess, err = eng.ReactLiveAs("user:a", runID, "preview", manual); err != nil || sess.State != models.LiveStateRefining {
+		t.Fatalf("manual report: sess=%+v err=%v", sess, err)
+	}
+	waitLiveState(t, eng, runID, "sid001", models.LiveStateReady)
+	if got := revises(); got != base+2 {
+		t.Fatalf("manual report revise calls = %d, want %d", got, base+2)
+	}
+
+	refine := models.LiveEvent{Op: models.LiveOpRefine, SID: "sid001", Variant: 1, Prompt: "标题再大一点"}
+	if sess, err = eng.ReactLiveAs("user:a", runID, "preview", refine); err != nil || sess.MountAutoReported {
+		t.Fatalf("refine should reset the auto report: sess=%+v err=%v", sess, err)
+	}
+	waitLiveState(t, eng, runID, "sid001", models.LiveStateReady)
+	if sess, err = eng.ReactLiveAs("user:a", runID, "preview", auto); err != nil || sess.State != models.LiveStateRefining {
+		t.Fatalf("auto report after refine: sess=%+v err=%v", sess, err)
+	}
+}
+
 func TestLiveSettleWithoutReport(t *testing.T) {
 	eng, _, p, runID := setupLive(t)
 	// Agent writes markers but never calls live_update: no variants known → failed.

@@ -59,6 +59,43 @@ describe('LiveVariantCard', () => {
     w.unmount()
   })
 
+  it('offers the original for comparison on replace sessions only', async () => {
+    const live = createLiveStore()
+    live.apply({ sid: 'sid001', state: 'ready', mode: 'replace', variants: [{ n: 1 }, { n: 2 }] })
+    live.setView('sid001', { current: 1, mode: 'inplace' })
+    const command = vi.fn()
+    const w = mountCard({ sid: 'sid001', op: 'generate' }, { store: live.store, interactive: true, command })
+    const original = w.get('[data-testid="live-variant-original"]')
+    expect(original.text()).toBe('原版')
+    expect(original.attributes('aria-pressed')).toBe('false')
+    await original.trigger('click')
+    expect(command).toHaveBeenLastCalledWith('sid001', 'goto', 0)
+    await w.get('[data-testid="live-variant-prev"]').trigger('click')
+    expect(command).toHaveBeenLastCalledWith('sid001', 'goto', 0)
+
+    // The page reports it is showing the original: navigation stays live, adopting does not.
+    live.setView('sid001', { current: 0, mode: 'inplace', original: true })
+    await w.vm.$nextTick()
+    expect(w.get('[data-testid="live-variant-original"]').attributes('aria-pressed')).toBe('true')
+    expect(w.get('[data-testid="live-variant-viewing"]').text()).toBe('正在看原版')
+    expect(w.get('[data-testid="live-variant-accept"]').attributes('disabled')).toBeDefined()
+    expect(w.get('[data-testid="live-variant-next"]').attributes('disabled')).toBeUndefined()
+    await w.get('[data-testid="live-variant-next"]').trigger('click')
+    expect(command).toHaveBeenLastCalledWith('sid001', 'goto', 1)
+
+    // current 0 without the flag means nothing is mounted: controls stay off.
+    live.setView('sid001', { current: 0, mode: 'inplace' })
+    await w.vm.$nextTick()
+    expect(w.get('[data-testid="live-variant-next"]').attributes('disabled')).toBeDefined()
+    w.unmount()
+
+    const ins = createLiveStore()
+    ins.apply({ sid: 'ins001', state: 'ready', mode: 'insert', variants: [{ n: 1 }, { n: 2 }] })
+    const wi = mountCard({ sid: 'ins001', op: 'insert' }, { store: ins.store, interactive: true, command })
+    expect(wi.find('[data-testid="live-variant-original"]').exists()).toBe(false)
+    wi.unmount()
+  })
+
   it('is read-only outside the drawer and shows failures and results', async () => {
     const live = readyStore()
     const w = mountCard({ sid: 'sid001', op: 'generate' }, { store: live.store, interactive: false, command: vi.fn() })

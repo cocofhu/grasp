@@ -3879,6 +3879,9 @@
           "unknown": "Unknown"
         },
         "viewing": "Viewing {current} / {total}",
+        "viewingOriginal": "Viewing the original",
+        "original": "Original",
+        "gotoOriginal": "Show the original to compare",
         "selected": "Candidate {n} was used",
         "variantCount": "{n} candidates",
         "prev": "Previous",

@@ -54,6 +54,11 @@ const tone = computed(() => {
 })
 const current = computed(() => view.value?.current ?? 0)
 const currentIndex = computed(() => variants.value.findIndex((v) => v.n === current.value))
+/** Replace sessions keep the original in the page wrapper; insert sessions have none. */
+const hasOriginal = computed(() => session.value?.mode === 'replace')
+const onOriginal = computed(() => hasOriginal.value && !!view.value?.original)
+/** Switching works on the original too; adopting needs a candidate. */
+const canNav = computed(() => !!host?.interactive && state.value === 'ready' && (currentIndex.value >= 0 || onOriginal.value))
 const canAct = computed(() => !!host?.interactive && state.value === 'ready' && currentIndex.value >= 0)
 const canDiscard = computed(() => !!host?.interactive && isLiveOpen(state.value) && !isLiveBusy(state.value))
 const failedSteer = computed(() => session.value?.mode === 'steer' && state.value === 'failed')
@@ -66,11 +71,10 @@ function send(cmd: LiveCmd, variant?: number) {
 }
 
 function step(delta: number) {
-  const list = variants.value
-  if (!list.length) return
-  const i = currentIndex.value < 0 ? 0 : currentIndex.value
-  const next = list[(i + delta + list.length) % list.length]
-  send('goto', next.n)
+  if (!variants.value.length) return
+  const list = [...(hasOriginal.value ? [0] : []), ...variants.value.map((v) => v.n)]
+  const i = Math.max(0, list.indexOf(onOriginal.value ? 0 : current.value))
+  send('goto', list[(i + delta + list.length) % list.length])
 }
 </script>
 
@@ -106,6 +110,19 @@ function step(delta: number) {
     <template v-if="session && isLatestTurn && variants.length && isLiveOpen(state)">
       <div class="mt-2 flex flex-wrap gap-1" role="group" :aria-label="t('pages.embedChat.live.variantCount', { n: variants.length })">
         <button
+          v-if="hasOriginal"
+          type="button"
+          class="rounded border px-1.5 py-0.5 text-[11px] transition-colors disabled:cursor-default"
+          :class="onOriginal ? 'border-accent bg-accent/15 text-txt' : 'border-dashed border-line bg-surface/70 text-txt2 hover:border-accent/50'"
+          :aria-pressed="onOriginal"
+          :title="t('pages.embedChat.live.gotoOriginal')"
+          :disabled="!canNav"
+          data-testid="live-variant-original"
+          @click="send('goto', 0)"
+        >
+          {{ t('pages.embedChat.live.original') }}
+        </button>
+        <button
           v-for="v in variants"
           :key="v.n"
           type="button"
@@ -113,7 +130,7 @@ function step(delta: number) {
           :class="v.n === current ? 'border-accent bg-accent/15 text-txt' : 'border-line bg-surface/70 text-txt2 hover:border-accent/50'"
           :aria-pressed="v.n === current"
           :aria-label="t('pages.embedChat.live.goto', { n: v.n })"
-          :disabled="!canAct"
+          :disabled="!canNav"
           data-testid="live-variant-chip"
           @click="send('goto', v.n)"
         >
@@ -121,13 +138,15 @@ function step(delta: number) {
         </button>
       </div>
       <div v-if="host?.interactive" class="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-        <button type="button" class="rounded border border-line px-1.5 py-0.5 text-txt2 hover:text-txt disabled:opacity-40" :disabled="!canAct" :aria-label="t('pages.embedChat.live.prev')" data-testid="live-variant-prev" @click="step(-1)">‹</button>
-        <span class="tabular-nums text-txt3" data-testid="live-variant-viewing">{{ t('pages.embedChat.live.viewing', { current: currentIndex + 1, total: variants.length }) }}</span>
-        <button type="button" class="rounded border border-line px-1.5 py-0.5 text-txt2 hover:text-txt disabled:opacity-40" :disabled="!canAct" :aria-label="t('pages.embedChat.live.next')" data-testid="live-variant-next" @click="step(1)">›</button>
+        <button type="button" class="rounded border border-line px-1.5 py-0.5 text-txt2 hover:text-txt disabled:opacity-40" :disabled="!canNav" :aria-label="t('pages.embedChat.live.prev')" data-testid="live-variant-prev" @click="step(-1)">‹</button>
+        <span class="tabular-nums text-txt3" data-testid="live-variant-viewing">{{
+          onOriginal ? t('pages.embedChat.live.viewingOriginal') : t('pages.embedChat.live.viewing', { current: currentIndex + 1, total: variants.length })
+        }}</span>
+        <button type="button" class="rounded border border-line px-1.5 py-0.5 text-txt2 hover:text-txt disabled:opacity-40" :disabled="!canNav" :aria-label="t('pages.embedChat.live.next')" data-testid="live-variant-next" @click="step(1)">›</button>
         <button
           type="button"
           class="rounded border border-line px-1.5 py-0.5 text-txt2 hover:text-txt disabled:opacity-40"
-          :disabled="!canAct"
+          :disabled="!canNav"
           data-testid="live-variant-mode"
           @click="send(view?.mode === 'compare' ? 'inplace' : 'compare')"
         >

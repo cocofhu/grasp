@@ -59,6 +59,7 @@ const zh = {
   prev: '上一个',
   next: '下一个',
   original: '原版',
+  compareOriginal: '切到原版对比，再点一次回到候选',
   sideBySide: '并排',
   comparing: '并排对比',
   selected: '已选 {n}',
@@ -71,6 +72,9 @@ const zh = {
   openOther: '还有一组变体没有采用或放弃',
   sent: '已发送给 Agent',
   viewOnly: '需要从 Grasp 重新打开预览才能采用或放弃',
+  notMounted: '候选还没显示在本页面',
+  reloadPage: '刷新',
+  reportMount: '告诉 Agent',
 }
 
 const en: typeof zh = {
@@ -134,6 +138,7 @@ const en: typeof zh = {
   prev: 'Previous',
   next: 'Next',
   original: 'Original',
+  compareOriginal: 'Show the original to compare; click again to go back',
   sideBySide: 'Compare',
   comparing: 'Comparing',
   selected: 'Selected {n}',
@@ -146,6 +151,9 @@ const en: typeof zh = {
   openOther: 'Another variant set is still open',
   sent: 'Sent to the agent',
   viewOnly: 'Reopen the preview from Grasp to accept or discard',
+  notMounted: 'Candidates are not showing on this page',
+  reloadPage: 'Reload',
+  reportMount: 'Tell the agent',
 }
 
 export type Strings = typeof zh
