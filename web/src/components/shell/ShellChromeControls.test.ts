@@ -325,6 +325,10 @@ describe('ShellChromeControls theme icon (g2.1)', () => {
     __resetNotificationsPageEntryForTests()
   })
 
+  afterEach(() => {
+    delete document.startViewTransition
+  })
+
   it('cross-fades sun and moon on click and updates immediately', async () => {
     const wrapper = mountChrome('sidebar')
     await flushPromises()
@@ -377,6 +381,40 @@ describe('ShellChromeControls theme icon (g2.1)', () => {
     expect(src).toMatch(/prefers-reduced-motion:\s*reduce/)
     sidebar.unmount()
     bar.unmount()
+  })
+
+  it('keeps the previous icon until the view-transition callback (plan g1.2 review v1)', async () => {
+    let update: (() => Promise<unknown>) | null = null
+    document.startViewTransition = ((cb: () => unknown) => {
+      update = () => Promise.resolve(cb())
+      const pending = new Promise<void>(() => {})
+      return {
+        ready: pending,
+        finished: pending,
+        updateCallbackDone: pending,
+        skipTransition() {},
+        types: new Set<string>(),
+      }
+    }) as typeof document.startViewTransition
+
+    const wrapper = mountChrome('sidebar')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="shell-theme-icon-sun"]').classes()).toContain('is-active')
+
+    await wrapper.find('[data-testid="shell-theme-toggle"]').trigger('click')
+    expect(document.documentElement.classList.contains('light')).toBe(false)
+    expect(document.documentElement.classList.contains('theme-vt-capture')).toBe(true)
+    expect(wrapper.find('[data-testid="shell-theme-icon-sun"]').classes()).toContain('is-active')
+    expect(wrapper.find('[data-testid="shell-theme-icon-moon"]').classes()).not.toContain('is-active')
+
+    await update!()
+    expect(document.documentElement.classList.contains('light')).toBe(true)
+    expect(wrapper.find('[data-testid="shell-theme-icon-moon"]').classes()).toContain('is-active')
+    expect(wrapper.find('[data-testid="shell-theme-icon-sun"]').classes()).not.toContain('is-active')
+    expect(localStorage.getItem('grasp-theme')).toBe('light')
+
+    delete document.startViewTransition
+    wrapper.unmount()
   })
 
   it('rapid clicks settle on the last theme and the matching icon (plan g2.2)', async () => {

@@ -87,27 +87,72 @@ describe('toggleTheme shell motion (plan g1.2 g1.3 g2.1 g2.2)', () => {
     expect(document.documentElement.classList.contains('light')).toBe(true)
   })
 
-  it('cross-fades with the language-menu duration and keeps the last click (plan g1.2 g2.2)', () => {
-    const seen: string[] = []
+  it('does not paint the next theme until the view-transition callback (plan g1.2 review v1)', async () => {
+    let update: (() => Promise<unknown>) | null = null
     document.startViewTransition = (cb) => {
-      cb()
-      seen.push(document.documentElement.classList.contains('light') ? 'light' : 'dark')
+      // Browser captures the old snapshot before invoking the callback.
+      update = () => Promise.resolve(cb())
+      const pending = new Promise<void>(() => {})
       return {
-        ready: Promise.resolve(undefined),
-        finished: Promise.resolve(undefined),
-        updateCallbackDone: Promise.resolve(undefined),
+        ready: pending,
+        finished: pending,
+        updateCallbackDone: pending,
         skipTransition() {},
         types: new Set<string>(),
       }
     }
+
+    expect(theme.value).toBe('dark')
     toggleTheme()
-    toggleTheme()
-    toggleTheme()
-    expect(seen).toEqual(['light', 'dark', 'light'])
-    expect(theme.value).toBe('light')
+    expect(update).toBeTypeOf('function')
+    // Old snapshot window: previous theme, capture class already on.
+    expect(theme.value).toBe('dark')
+    expect(document.documentElement.classList.contains('light')).toBe(false)
+    expect(document.documentElement.classList.contains('theme-vt-capture')).toBe(true)
     expect(localStorage.getItem('grasp-theme')).toBe('light')
+
+    await update!()
+    expect(theme.value).toBe('light')
     expect(document.documentElement.classList.contains('light')).toBe(true)
     expect(document.documentElement.classList.contains('theme-vt-capture')).toBe(true)
+  })
+
+  it('rapid clicks before the callback settle on the last theme (plan g2.2 review v1)', async () => {
+    let calls = 0
+    let update: (() => Promise<unknown>) | null = null
+    document.startViewTransition = (cb) => {
+      calls += 1
+      update = () => Promise.resolve(cb())
+      const pending = new Promise<void>(() => {})
+      return {
+        ready: pending,
+        finished: pending,
+        updateCallbackDone: pending,
+        skipTransition() {},
+        types: new Set<string>(),
+      }
+    }
+
+    // Two clicks while theme.value is still dark must not both target light.
+    toggleTheme()
+    toggleTheme()
+    expect(calls).toBe(1)
+    expect(theme.value).toBe('dark')
+    expect(document.documentElement.classList.contains('light')).toBe(false)
+    expect(localStorage.getItem('grasp-theme')).toBe('dark')
+
+    await update!()
+    expect(theme.value).toBe('dark')
+    expect(document.documentElement.classList.contains('light')).toBe(false)
+
+    toggleTheme()
+    toggleTheme()
+    toggleTheme()
+    expect(localStorage.getItem('grasp-theme')).toBe('light')
+    await update!()
+    expect(theme.value).toBe('light')
+    expect(document.documentElement.classList.contains('light')).toBe(true)
+    expect(localStorage.getItem('grasp-theme')).toBe('light')
   })
 
   it('does not animate setTheme, embed override, or reduced motion (plan g1.3)', () => {
@@ -135,7 +180,9 @@ describe('toggleTheme shell motion (plan g1.2 g1.3 g2.1 g2.2)', () => {
     expect(rootBlock).not.toMatch(/translate|scale\(/)
     expect(css).toMatch(/@keyframes theme-icon-pop-in[\s\S]*translateY\(-4px\) scale\(0\.98\)/)
     expect(css).toMatch(/html\.theme-vt-capture \.shell-theme-icon/)
-    expect(css).toMatch(/html\.theme-color-motion/)
+    expect(css).toMatch(/html\.theme-color-motion body/)
+    expect(css).toMatch(/html\.theme-color-motion \.app-shell-dotgrid/)
+    expect(css).not.toMatch(/html\.theme-color-motion :where\(:not\(\.shell-theme-icon\)/)
     expect(css).toMatch(/::view-transition-old\(\*\)/)
     expect(css).toMatch(/--dur-overlay:\s*200ms/)
   })

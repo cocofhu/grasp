@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import {
   GRASP_STORAGE_KEYS,
   LEGACY_STORAGE_KEYS,
@@ -16,6 +16,22 @@ function initial(): ThemeName {
 }
 
 export const theme = ref<ThemeName>(initial())
+
+/**
+ * Synchronous choice for the shell toggle.
+ * theme.value is what Vue paints (icon .is-active). It must stay on the
+ * previous theme until the view-transition update callback, or the old
+ * snapshot is already the destination icon (review v1).
+ */
+let committed: ThemeName = theme.value
+
+/**
+ * True from startViewTransition until its update callback finishes.
+ * Clicks in that window only advance `committed`; the in-flight callback
+ * paints the latest choice so two fast clicks are not both computed from
+ * the still-unchanged theme.value (plan g2.2).
+ */
+let vtUpdatePending = false
 
 let override: ThemeName | null = null
 
@@ -43,54 +59,99 @@ function clearThemeMotionClass(gen: number, className: string) {
 }
 
 /**
+ * Paint `committed` and wait until Vue has flushed .is-active.
+ * Called only from inside startViewTransition's update callback, after the
+ * old snapshot (plan g1.2 / review v1).
+ */
+async function paintCommittedTheme() {
+  let guard = 0
+  while (guard++ < 8) {
+    const next = committed
+    theme.value = next
+    apply(next)
+    await nextTick()
+    if (committed === next) return
+  }
+  theme.value = committed
+  apply(committed)
+  await nextTick()
+}
+
+/**
  * Shell theme button only (plan g1 / g2).
  * Page colors cross-fade for --dur-overlay (same 200ms as the language menu).
  * The icon's own rise/scale stays on the button styles. Reduced motion paints immediately.
  * setTheme / embed override / public chrome stay instant.
+ *
+ * View Transitions: do not touch theme.value before the update callback.
+ * The old snapshot must still be the previous sun/moon and the previous
+ * html light class; the callback then writes the next theme and returns
+ * nextTick() so the new snapshot is the destination icon (review v1).
+ * theme-vt-capture stays until ready, which is after both snapshots.
  */
 function applyAnimated(t: ThemeName) {
   const root = document.documentElement
   if (prefersReducedMotion()) {
+    vtUpdatePending = false
     root.classList.remove('theme-vt-capture', 'theme-color-motion')
+    theme.value = t
     apply(t)
     return
   }
 
   root.classList.remove('theme-color-motion')
   if (typeof document.startViewTransition === 'function') {
+    // Callback has not run yet: it will read the latest `committed`.
+    if (vtUpdatePending) return
     const gen = ++themeMotionGen
-    // Freeze icon CSS transitions so the new snapshot is the finished icon, not the first frame.
+    // Freeze icon CSS transitions so both snapshots see a finished icon.
     root.classList.add('theme-vt-capture')
+    vtUpdatePending = true
     try {
-      const vt = document.startViewTransition(() => apply(t))
+      const vt = document.startViewTransition(() => {
+        const pending = paintCommittedTheme()
+        void pending.finally(() => {
+          vtUpdatePending = false
+        })
+        return pending
+      })
       const done = () => clearThemeMotionClass(gen, 'theme-vt-capture')
       void vt.ready.then(done, done)
       void vt.finished.then(done, done)
       return
     } catch {
+      vtUpdatePending = false
       clearThemeMotionClass(gen, 'theme-vt-capture')
+      theme.value = t
       apply(t)
       return
     }
   }
 
-  // No View Transitions: let color properties ease for the same overlay duration.
+  // No View Transitions: the icon keeps its own CSS transition (review v1).
+  // Color motion is limited to shell surfaces in global.css (review v3).
   const gen = ++themeMotionGen
   root.classList.add('theme-color-motion')
+  theme.value = t
   void root.offsetWidth
   apply(t)
   window.setTimeout(() => clearThemeMotionClass(gen, 'theme-color-motion'), 240)
 }
 
 export function setTheme(t: ThemeName) {
+  committed = t
   theme.value = t
   localStorage.setItem(STORAGE_KEY, t)
+  themeMotionGen++
+  vtUpdatePending = false
+  const root = document.documentElement
+  root.classList.remove('theme-vt-capture', 'theme-color-motion')
   apply(t)
 }
 
 export function toggleTheme() {
-  const next: ThemeName = theme.value === 'dark' ? 'light' : 'dark'
-  theme.value = next
+  const next: ThemeName = committed === 'dark' ? 'light' : 'dark'
+  committed = next
   localStorage.setItem(STORAGE_KEY, next)
   applyAnimated(next)
 }

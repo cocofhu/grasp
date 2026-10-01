@@ -564,7 +564,12 @@ html.light .app-sidebar-card {
     transition: none !important;
   }
 
-  html.theme-color-motion :where(:not(.shell-theme-icon):not(.shell-theme-icon-stack)) {
+  /* review v3 — only the color surfaces that theme-color-motion eases */
+  html.theme-color-motion,
+  html.theme-color-motion body,
+  html.theme-color-motion #app,
+  html.theme-color-motion .app-shell-dotgrid,
+  html.theme-color-motion .app-sidebar-card {
     transition: none !important;
   }
 }
@@ -687,8 +692,17 @@ html.theme-vt-capture .shell-theme-icon {
   transition: none !important;
 }
 
-/* Fallback when View Transitions are unavailable: color only, icon keeps its own transition. */
-html.theme-color-motion :where(:not(.shell-theme-icon):not(.shell-theme-icon-stack)) {
+/*
+ * Fallback when View Transitions are unavailable (review v3).
+ * Ease only color surfaces (html/body/#app and the shell). Do not retarget
+ * .ui-pressable / .list-card-lift — that replaced their transform transitions.
+ * The theme icon keeps its own opacity/transform transition.
+ */
+html.theme-color-motion,
+html.theme-color-motion body,
+html.theme-color-motion #app,
+html.theme-color-motion .app-shell-dotgrid,
+html.theme-color-motion .app-sidebar-card {
   transition-property: background-color, color, border-color, outline-color, fill, stroke;
   transition-duration: var(--dur-overlay);
   transition-timing-function: var(--ease-out-expo);
