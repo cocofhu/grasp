@@ -276,7 +276,7 @@ function handleImageLoadError() {
   imageDownloadError.value = true
 }
 
-async function loadContent(a: Artifact, opts?: { force?: boolean }) {
+async function loadContent(a: Artifact, opts?: { force?: boolean; silent?: boolean }) {
   if (!opts?.force && contentCache.value[a.id] !== undefined) return
   if (typeof a.content === 'string') {
     contentCache.value[a.id] = a.content
@@ -287,7 +287,9 @@ async function loadContent(a: Artifact, opts?: { force?: boolean }) {
   contentLoadAbort?.abort()
   const gen = ++contentLoadGen
   contentLoadAbort = new AbortController()
-  loading.value = true
+  // A silent refresh keeps the cached content on screen until the new body
+  // arrives, so mounted previews are patched instead of torn down.
+  loading.value = !opts?.silent
   loadErr.value = ''
   try {
     const full = props.shareToken
@@ -297,6 +299,7 @@ async function loadContent(a: Artifact, opts?: { force?: boolean }) {
     contentCache.value[a.id] = full.content ?? ''
   } catch (e: any) {
     if (gen !== contentLoadGen || isAbortError(e) || contentLoadAbort.signal.aborted) return
+    if (opts?.silent) return
     loadErr.value = t('pages.artifactPreview.loadFailed')
     if (contentCache.value[a.id] === undefined) contentCache.value[a.id] = ''
   } finally {
@@ -432,8 +435,8 @@ watch(
       resetImageDownloadState()
     }
     if (displayArtifact.value) {
-      if (sameId) delete contentCache.value[displayArtifact.value.id]
-      void loadContent(displayArtifact.value, { force: sameId })
+      const cached = sameId && contentCache.value[displayArtifact.value.id] !== undefined
+      void loadContent(displayArtifact.value, { force: sameId, silent: cached })
       if (isImagePreviewArtifact(displayArtifact.value.name, displayArtifact.value.kind)) {
         void loadImageDownload(displayArtifact.value)
       }

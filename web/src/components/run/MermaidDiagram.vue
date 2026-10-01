@@ -34,6 +34,9 @@ let themeObserver: MutationObserver | null = null
 let failedSourceKey = ''
 /** SVG produced before host mounted (watch immediate); applied onMounted / nextTick. */
 let pendingSvg: string | null = null
+/** Source+theme of the SVG currently shown; identical requests are no-ops. */
+let shownKey = ''
+const hasSvg = ref(false)
 
 const format = computed(() => (props.diagram.format || 'mermaid').trim().toLowerCase() || 'mermaid')
 const source = computed(() => (props.diagram.source || '').trim())
@@ -51,9 +54,15 @@ function sourceKey() {
   return `${format.value}\n${source.value}`
 }
 
+function themeKey() {
+  return `${mermaidThemeName()}\n${JSON.stringify(themeVars())}`
+}
+
 function clearHost() {
   if (host.value) host.value.innerHTML = ''
   pendingSvg = null
+  shownKey = ''
+  hasSvg.value = false
 }
 
 /** Remove this render's temp node and stray default error blocks.
@@ -85,6 +94,7 @@ async function applySvg(svg: string, gen: number) {
     if (host.value) {
       host.value.innerHTML = svg
       pendingSvg = null
+      hasSvg.value = true
       return
     }
     pendingSvg = svg
@@ -93,8 +103,12 @@ async function applySvg(svg: string, gen: number) {
 }
 
 async function render() {
-  const gen = ++renderGen
   const sk = sourceKey()
+  // Polls hand over equal diagrams and <html> class changes are not always
+  // theme switches; re-rendering those would blank the SVG and flicker.
+  const want = `${sk}\n${themeKey()}`
+  if (want === shownKey) return
+  const gen = ++renderGen
   if (!source.value) {
     failed.value = true
     failedSourceKey = sk
@@ -113,7 +127,6 @@ async function render() {
   }
   failed.value = false
   rendering.value = true
-  clearHost()
   let lastRenderId = ''
   try {
     const svg = await withMermaidSerial(async (mermaid) => {
@@ -156,6 +169,7 @@ async function render() {
     if (svg == null) return
     await applySvg(svg, gen)
     if (gen !== renderGen) return
+    shownKey = want
     failedSourceKey = ''
   } catch (err) {
     if (gen === renderGen) {
@@ -176,7 +190,7 @@ async function render() {
 }
 
 watch(
-  () => [source.value, format.value, props.diagram.fallback_artifact],
+  sourceKey,
   () => {
     // Source change clears sticky parse lock when key differs (checked via sourceKey above).
     void render()
@@ -188,6 +202,7 @@ onMounted(() => {
   if (pendingSvg && host.value) {
     host.value.innerHTML = pendingSvg
     pendingSvg = null
+    hasSvg.value = true
   }
   themeObserver = new MutationObserver(() => {
     void render()
@@ -226,6 +241,6 @@ onBeforeUnmount(() => {
       />
     </div>
     <div v-if="caption" class="text-center text-[11px] text-txt3">{{ caption }}</div>
-    <div v-if="rendering && !failed" class="text-[11px] text-txt3">…</div>
+    <div v-if="rendering && !failed && !hasSvg" class="text-[11px] text-txt3">…</div>
   </div>
 </template>
