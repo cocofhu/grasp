@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import BrandLogo from '@/components/shell/BrandLogo.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import Icon from '@/components/ui/Icon.vue'
+import TruncatedTextTooltip from '@/components/ui/TruncatedTextTooltip.vue'
 import { authApi } from '@/lib/api/api'
 import { useAuth } from '@/lib/composables/useAuth'
 import { authRedirectPath } from '@/lib/composables/useAuth'
@@ -65,10 +66,16 @@ async function onSubmit() {
 
         <div
           v-if="route.query.redirect"
-          class="mb-4 flex items-center gap-1.5 rounded-lg border border-info/25 bg-info/10 px-2.5 py-2 text-xs text-info"
+          data-testid="login-redirect-hint"
+          class="mb-4 flex min-w-0 items-center gap-1.5 rounded-lg border border-info/25 bg-info/10 px-2.5 py-2 text-xs text-info"
         >
-          <Icon name="chevron-right" :size="14" class="rotate-[-45deg]" />
-          {{ t('pages.login.redirectHint') }} <code class="font-mono text-[11px] text-txt2">{{ redirectTarget }}</code>
+          <Icon name="chevron-right" :size="14" class="shrink-0 rotate-[-45deg]" />
+          <span class="shrink-0 whitespace-nowrap">{{ t('pages.login.redirectHint') }}</span>
+          <TruncatedTextTooltip
+            :text="redirectTarget"
+            data-testid="login-redirect-path"
+            class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[11px] text-txt2"
+          />
         </div>
 
         <div v-if="error" class="mb-4 rounded-lg border border-err/30 bg-err/10 px-3 py-2.5 text-[13px] text-err">{{ error }}</div>
