@@ -8,6 +8,7 @@ import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import enPages from '@/locales/en/pages.json'
 import type { SandboxView } from '@/lib/api/api'
+import { setTheme } from '@/lib/shared/theme'
 
 const apiMocks = vi.hoisted(() => ({
   getSandbox: vi.fn(),
@@ -451,6 +452,42 @@ describe('SandboxConsoleView IDE/ACP lazy mount', () => {
     await nextTick()
     expect(acpLayer(wrapper).exists()).toBe(false)
     wrapper.unmount()
+  })
+
+  it('dismisses the ACP overlay on AgentChat ready and keeps its theme in sync', async () => {
+    setTheme('dark')
+    const wrapper = await mountConsole('acp-native')
+    await flushPromises()
+    const iframe = wrapper.get('iframe[title="ACP bridge"]').element as HTMLIFrameElement
+    expect(iframe.getAttribute('src')).toBe('about:blank#acp#theme=dark')
+    const post = vi.fn()
+    const frameWin = { postMessage: post }
+    Object.defineProperty(iframe, 'contentWindow', { configurable: true, get: () => frameWin })
+    const ready = { type: 'grasp:agentchat-ready' }
+    const origin = window.location.origin
+    const send = (data: unknown, from: unknown, fromOrigin = origin) => {
+      const e = new MessageEvent('message', { data, origin: fromOrigin })
+      Object.defineProperty(e, 'source', { value: from })
+      window.dispatchEvent(e)
+    }
+
+    send(ready, window)
+    send(ready, frameWin, 'https://evil.test')
+    send({ type: 'other' }, frameWin)
+    await nextTick()
+    expect(acpLayer(wrapper).exists()).toBe(true)
+
+    send(ready, frameWin)
+    await nextTick()
+    expect(acpLayer(wrapper).exists()).toBe(false)
+    expect(post).toHaveBeenLastCalledWith({ type: 'grasp-embed:theme', theme: 'dark' }, origin)
+
+    setTheme('light')
+    await nextTick()
+    expect(post).toHaveBeenLastCalledWith({ type: 'grasp-embed:theme', theme: 'light' }, origin)
+    expect(iframe.getAttribute('src')).toBe('about:blank#acp#theme=dark')
+    wrapper.unmount()
+    setTheme('dark')
   })
 
   it('does not flash acp unavailable while meta is pending and only shows it when hasAcp is false (g2.1 g3.2)', async () => {

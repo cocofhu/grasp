@@ -51,6 +51,10 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
+          # Vendored upstream builds (marked / DOMPurify) are pinned releases, not our code to patch.
+          config: |
+            paths-ignore:
+              - sandbox-gateway/sandbox/web/static/js/third_party
       - name: Manual Go build (fallback when autobuild is skipped)
         if: matrix.build-mode == 'manual'
         env:

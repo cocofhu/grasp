@@ -1,9 +1,11 @@
 /**
- * Markdown → 安全 HTML（DOMPurify）。依赖 esm.sh；内网可改为本地 vendor。
- * ```mermaid 围栏经 marked 转为 `<pre class="mermaid">`，再由 hydrateMermaid 异步绘制成 SVG。
+ * Markdown → 安全 HTML（DOMPurify）。marked / DOMPurify 随包自带：入口模块的静态依赖
+ * 一旦走外网，CDN 不通时整个页面都起不来。
+ * ```mermaid 围栏经 marked 转为 `<pre class="mermaid">`，再由 hydrateMermaid 异步绘制成 SVG；
+ * Mermaid 体积大，仍按需从 esm.sh 加载，加载失败时保留源码块。
  */
-import {marked} from 'https://esm.sh/marked@15.0.6';
-import DOMPurify from 'https://esm.sh/dompurify@3.2.4';
+import {marked} from '../third_party/marked-15.0.6.esm.js';
+import DOMPurify from '../third_party/dompurify-3.2.4.esm.js';
 
 function escapeHtml(s) {
     return String(s)
@@ -73,7 +75,11 @@ const MERMAID_CFG_FINGERPRINT = 'loose-svglabels-v1';
 
 async function getMermaid() {
     if (!mermaidModPromise) {
-        mermaidModPromise = import('https://esm.sh/mermaid@11.4.1');
+        mermaidModPromise = import('https://esm.sh/mermaid@11.4.1').catch((e) => {
+            /* 网络恢复后下一张图还能再试 */
+            mermaidModPromise = null;
+            throw e;
+        });
     }
     const mod = await mermaidModPromise;
     return mod.default;
@@ -170,7 +176,7 @@ function buildMermaidThemeVariables() {
     const canvas = v('--bg-secondary', '#161b22');
     const nodeA = v('--bg-tertiary', '#21262d');
     const nodeB = v('--code-bg', '#1c2128');
-    const lineSoft = '#6e7681';
+    const lineSoft = v('--text-tertiary', '#6e6e78');
 
     return {
         ...base,
@@ -184,7 +190,7 @@ function buildMermaidThemeVariables() {
         primaryBorderColor: border,
         secondaryColor: nodeB,
         secondaryTextColor: text,
-        secondaryBorderColor: '#444c56',
+        secondaryBorderColor: v('--border-strong', '#36363e'),
         tertiaryTextColor: textMuted,
         lineColor: lineSoft,
         clusterBkg: v('--bg-primary', '#0d1117'),

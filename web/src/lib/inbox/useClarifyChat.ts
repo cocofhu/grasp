@@ -10,7 +10,7 @@ import {
   isFailureAssistantText,
   isRetryableFailedAgent,
 } from '@/lib/inbox/clarifyEmptyFail'
-import { relTime } from '@/lib/shared/format'
+import { relTime as formatRelTime } from '@/lib/shared/format'
 import {
   demoGridColsClass,
   demoOptionsOf,
@@ -325,7 +325,16 @@ function onTextInput() {
   autoGrow()
 }
 
+// Timestamps are relative; without a clock "just now" never ages.
+const relClock = ref(0)
+const relClockTimer = setInterval(() => relClock.value++, 30_000)
+function relTime(iso: string): string {
+  void relClock.value
+  return formatRelTime(iso)
+}
+
 onBeforeUnmount(() => {
+  clearInterval(relClockTimer)
   composerResizeObserver?.disconnect()
   composerResizeObserver = null
   unsubStream()
@@ -1250,6 +1259,21 @@ function discardLastQueued() {
   }
 }
 
+/** Idle is authoritative: no live turn may keep its caret, tracked or not. */
+function endLiveStreaming() {
+  let flushed = false
+  for (const turn of liveTurns.value) {
+    if (turn.role !== 'agent' || !turn.streaming) continue
+    turn.streaming = false
+    flushed = true
+  }
+  if (flushed) {
+    streamPreview.flush()
+    thoughtPreview.flush()
+  }
+  liveAgentIdx.value = -1
+}
+
 /**
  * Authoritative idle (waiting=0 ∧ !busy ∧ no activeItem): force-clear local
  * sticky busy — ghost queued, stop streaming on the live agent, and thinking.
@@ -1258,15 +1282,7 @@ function discardLastQueued() {
  */
 function forceAuthoritativeIdle() {
   if (queued.value.length) queued.value = []
-  if (liveAgentIdx.value >= 0) {
-    const agent = liveTurns.value[liveAgentIdx.value]
-    if (agent?.streaming) {
-      agent.streaming = false
-      streamPreview.flush()
-      thoughtPreview.flush()
-    }
-    liveAgentIdx.value = -1
-  }
+  endLiveStreaming()
   thinking.value = false
 }
 
@@ -1439,15 +1455,7 @@ function applyQueueState(
   }
   // Authority idle / !busy: tear down streaming — keep empty/failure cards
   // (plan g1.1); never wipe liveTurns=[] for empty agents.
-  if (!busy && liveAgentIdx.value >= 0) {
-    const agent = liveTurns.value[liveAgentIdx.value]
-    if (agent?.streaming) {
-      agent.streaming = false
-      streamPreview.flush()
-      thoughtPreview.flush()
-    }
-    liveAgentIdx.value = -1
-  }
+  if (!busy) endLiveStreaming()
   thinking.value = liveAgentIdx.value >= 0 || queued.value.length > 0 || !!busy
 }
 
