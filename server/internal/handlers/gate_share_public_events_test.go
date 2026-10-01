@@ -81,8 +81,8 @@ func TestPublicGateEventsWSStreamsSanitizedAcp(t *testing.T) {
 		}
 		if strings.Contains(s, `"type":"acp"`) && strings.Contains(s, "标题已改为绿色") {
 			sawAcp = true
-			if strings.Contains(s, "127.0.0.1") {
-				t.Fatalf("url leak: %s", s)
+			if !strings.Contains(s, "思考 http://127.0.0.1/api/runs/x") {
+				t.Fatalf("thought must pass through verbatim: %s", s)
 			}
 		}
 		if strings.Contains(s, `"event":"turn_begin"`) && strings.Contains(s, "改成绿的") {

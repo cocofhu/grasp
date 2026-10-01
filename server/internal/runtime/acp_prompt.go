@@ -237,7 +237,7 @@ func previewNodePromptExtras(req NodeReq) string {
 	}
 	out := direct + models.DefaultPreviewPageControlContract
 	if liveVariantsEnabled(req) {
-		out += liveVariantPromptExtras(req)
+		out += models.DefaultPreviewLiveIndex
 	}
 	return out
 }
@@ -258,10 +258,17 @@ func liveVariantSkills(req NodeReq) []string {
 	return []string{liveVariantSkillDir}
 }
 
-// Repeat the Live contract on subsequent turns too: a resumed dialogue can
-// still contain the older Grasp rule that forbids every source edit.
-func liveVariantPromptExtras(req NodeReq) string {
-	if !liveVariantsEnabled(req) {
+// isLiveTurn reports whether human carries a platform-rendered Live request or
+// an operable Live context. Comment-only context ("## Live 上下文(仅评论)")
+// grants no edits and is excluded.
+func isLiveTurn(human string) bool {
+	return strings.Contains(human, "## Live 变体请求") || strings.Contains(human, "## Live 上下文\n")
+}
+
+// liveVariantPromptExtras is injected only on Live turns, every time: a resumed
+// dialogue can still contain the older Grasp rule that forbids every source edit.
+func liveVariantPromptExtras(req NodeReq, human string) string {
+	if !liveVariantsEnabled(req) || !isLiveTurn(human) {
 		return ""
 	}
 	out := models.DefaultPreviewLiveContract

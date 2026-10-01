@@ -18,11 +18,29 @@ func TestSanitizeLiveEventsKeepsRailsAndDropsTools(t *testing.T) {
 	if len(ev) != 2 {
 		t.Fatalf("events=%d %+v", len(ev), ev)
 	}
-	if ev[0].Kind != "thought" || strings.Contains(ev[0].Text, "127.0.0.1") || strings.Contains(ev[0].Text, "/api/runs") {
-		t.Fatalf("thought leaked: %+v", ev[0])
+	if ev[0].Kind != "thought" || ev[0].Text != "正在改 http://127.0.0.1/api/runs/secret" {
+		t.Fatalf("thought must pass through verbatim: %+v", ev[0])
 	}
 	if ev[1].Kind != "message" || ev[1].Text != "标题已改为绿色" {
 		t.Fatalf("message: %+v", ev[1])
+	}
+}
+
+func base(n int) func() int { return func() int { return n } }
+
+func TestSanitizeLiveEventsKeepsLongThought(t *testing.T) {
+	long := strings.Repeat("思", 20000) + "最新一句"
+	ev := SanitizeLiveEvents([]models.AcpEvent{{Kind: "thought", Text: long}})
+	if len(ev) != 1 || ev[0].Text != long {
+		t.Fatalf("thought cut: got %d runes", len([]rune(ev[0].Text)))
+	}
+}
+
+func TestSanitizeTurnsKeepsTextVerbatim(t *testing.T) {
+	long := strings.Repeat("长", 20000) + " http://10.1.2.3/api/x run-0123abcd"
+	turns := SanitizeTurns([]models.ReactMessage{{Role: "agent", Text: long}})
+	if len(turns) != 1 || turns[0].Text != long {
+		t.Fatal("turn text must match the approval page verbatim")
 	}
 }
 
@@ -37,7 +55,10 @@ func TestFilterPublicBrokerFrameStripsRunAndRewritesNode(t *testing.T) {
 			map[string]any{"kind": "tool_call", "title": "write", "text": "leak"},
 		},
 	})
-	out, ok := FilterPublicBrokerFrame(raw, "research1", 0)
+	out, ok := FilterPublicBrokerFrame(raw, "research1", func() int {
+		t.Fatal("acp frames must not read the image base")
+		return 0
+	})
 	if !ok {
 		t.Fatal("expected filtered frame")
 	}
@@ -48,11 +69,11 @@ func TestFilterPublicBrokerFrameStripsRunAndRewritesNode(t *testing.T) {
 	if !strings.Contains(s, PublicDialogueNodeID) || !strings.Contains(s, "流式正文") {
 		t.Fatalf("missing public payload: %s", s)
 	}
-	if strings.Contains(s, "10.1.2.3") {
-		t.Fatalf("url leak: %s", s)
+	if !strings.Contains(s, "流式正文 http://10.1.2.3/api/x") {
+		t.Fatalf("message must pass through verbatim: %s", s)
 	}
 
-	other, ok := FilterPublicBrokerFrame(raw, "other-node", 0)
+	other, ok := FilterPublicBrokerFrame(raw, "other-node", base(0))
 	if ok || other != nil {
 		t.Fatalf("other node must drop: ok=%v %s", ok, other)
 	}
@@ -70,7 +91,7 @@ func TestFilterPublicBrokerFrameReviewTurnBegin(t *testing.T) {
 			"images": []any{map[string]any{"data": "AAAA", "mimeType": "image/png", "name": "x.png"}},
 		},
 	})
-	out, ok := FilterPublicBrokerFrame(raw, "research1", 2)
+	out, ok := FilterPublicBrokerFrame(raw, "research1", base(2))
 	if !ok {
 		t.Fatal("expected review frame")
 	}
@@ -115,7 +136,7 @@ func TestFilterPublicBrokerFrameQueueStateKeepsAnnotations(t *testing.T) {
 			},
 		},
 	})
-	out, ok := FilterPublicBrokerFrame(raw, "research1", 0)
+	out, ok := FilterPublicBrokerFrame(raw, "research1", base(0))
 	if !ok {
 		t.Fatal("expected queue_state frame")
 	}
@@ -155,7 +176,7 @@ func TestFilterPublicBrokerFrameQueueStateKeepsAnnotations(t *testing.T) {
 
 func TestFilterPublicBrokerFrameLive(t *testing.T) {
 	raw := []byte(`{"type":"live","runId":"r1","nodeId":"p1","session":{"sid":"sid001","runId":"r1","nodeId":"p1","state":"ready","retryAccept":true,"variants":[{"n":1}],"summary":"h1"}}`)
-	out, ok := FilterPublicBrokerFrame(raw, "p1", 0)
+	out, ok := FilterPublicBrokerFrame(raw, "p1", base(0))
 	if !ok {
 		t.Fatal("live frame dropped")
 	}
@@ -166,10 +187,10 @@ func TestFilterPublicBrokerFrameLive(t *testing.T) {
 	if !strings.Contains(s, `"retryAccept":true`) {
 		t.Fatalf("failed acceptance recovery flag stripped from public frame: %s", s)
 	}
-	if _, ok := FilterPublicBrokerFrame([]byte(`{"type":"live","nodeId":"p1"}`), "p1", 0); ok {
+	if _, ok := FilterPublicBrokerFrame([]byte(`{"type":"live","nodeId":"p1"}`), "p1", base(0)); ok {
 		t.Fatal("frame without session must drop")
 	}
-	if _, ok := FilterPublicBrokerFrame(raw, "other", 0); ok {
+	if _, ok := FilterPublicBrokerFrame(raw, "other", base(0)); ok {
 		t.Fatal("other node must drop")
 	}
 }

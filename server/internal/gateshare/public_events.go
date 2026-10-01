@@ -11,7 +11,8 @@ import (
 // so the unauthenticated workbench can consume review/ACP without host ids.
 const PublicDialogueNodeID = "public-gate"
 
-// SanitizeLiveEvents keeps only message/thought rails and redacts leaky URLs.
+// SanitizeLiveEvents keeps only message/thought rails; their text is passed
+// through verbatim so the drawer matches the approval page.
 func SanitizeLiveEvents(events []models.AcpEvent) []PreviewLiveEvent {
 	if len(events) == 0 {
 		return nil
@@ -22,11 +23,10 @@ func SanitizeLiveEvents(events []models.AcpEvent) []PreviewLiveEvent {
 		if kind != "message" && kind != "thought" {
 			continue
 		}
-		text := capTurnText(SanitizeDescription(ev.Text))
-		if text == "" {
+		if strings.TrimSpace(ev.Text) == "" {
 			continue
 		}
-		out = append(out, PreviewLiveEvent{Kind: kind, Text: text})
+		out = append(out, PreviewLiveEvent{Kind: kind, Text: ev.Text})
 	}
 	if len(out) == 0 {
 		return nil
@@ -36,9 +36,12 @@ func SanitizeLiveEvents(events []models.AcpEvent) []PreviewLiveEvent {
 
 // FilterPublicBrokerFrame rewrites a run-broker payload for the public
 // workbench: only review/acp for producerID, strip runId, rewrite nodeId,
-// drop tool_call/plan. Image bytes become opaque indexes starting at imageBase
-// (conversation turn image count) so poll and WS share one catalogue.
-func FilterPublicBrokerFrame(raw []byte, producerID string, imageBase int) ([]byte, bool) {
+// drop tool_call/plan. Image bytes become opaque indexes starting at
+// imageBase() (conversation turn image count) so poll and WS share one
+// catalogue. imageBase reads the database, so it runs only for review frames
+// of producerID: the WS loop sees every frame of the run while streaming, and
+// a slow subscriber is dropped by the broker.
+func FilterPublicBrokerFrame(raw []byte, producerID string, imageBase func() int) ([]byte, bool) {
 	producerID = strings.TrimSpace(producerID)
 	if producerID == "" || len(raw) == 0 {
 		return nil, false
@@ -54,7 +57,7 @@ func FilterPublicBrokerFrame(raw []byte, producerID string, imageBase int) ([]by
 	}
 	switch strings.ToLower(strings.TrimSpace(typ)) {
 	case "review":
-		return marshalPublicReviewFrame(m, imageBase)
+		return marshalPublicReviewFrame(m, imageBase())
 	case "acp":
 		return marshalPublicAcpFrame(m)
 	case "live":
@@ -119,7 +122,7 @@ func marshalPublicReviewFrame(m map[string]any, imageBase int) ([]byte, bool) {
 		out["interrupted"] = interrupted
 	}
 	if msg, _ := m["message"].(string); strings.TrimSpace(msg) != "" {
-		out["message"] = capTurnText(SanitizeDescription(msg))
+		out["message"] = msg
 	}
 	idx := imageBase
 	if ai, next := activeItemFromAny(m["activeItem"], idx); ai != nil {

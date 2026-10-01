@@ -208,7 +208,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 		// unnecessary.
 		prompt = c.reactConfirmPrefix(req) + "\n\n" + strings.TrimRight(human, "\n")
 	}
-	if extra := liveVariantPromptExtras(req); extra != "" {
+	if extra := liveVariantPromptExtras(req, human); extra != "" {
 		prompt = extra + "\n" + prompt
 	}
 	res, err := c.streamChat(chatCtx, sess.acp, req, prompt, chatImages)

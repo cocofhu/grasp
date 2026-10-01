@@ -31,8 +31,11 @@ func TestPreviewNodePromptExtrasLive(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			req := NodeReq{NodeType: c.nodeType, Config: c.cfg}
 			got := previewNodePromptExtras(req)
-			if strings.Contains(got, models.DefaultPreviewLiveContract) != c.want {
-				t.Errorf("live contract present=%v, want %v", !c.want, c.want)
+			if strings.Contains(got, models.DefaultPreviewLiveIndex) != c.want {
+				t.Errorf("live index present=%v, want %v", !c.want, c.want)
+			}
+			if strings.Contains(got, models.DefaultPreviewLiveContract) {
+				t.Error("system prompt must carry only the Live index, not the full contract")
 			}
 			skills := liveVariantSkills(req)
 			if (len(skills) == 1 && skills[0] == liveVariantSkillDir) != c.want {
@@ -46,7 +49,7 @@ func TestPreviewNodePromptExtrasManualKeepsPageControl(t *testing.T) {
 	got := previewNodePromptExtras(NodeReq{NodeType: "app_preview", Config: map[string]any{
 		"direct_preview": true, "auto_inject": false, "live_variants": "true",
 	}})
-	for _, part := range []string{models.DefaultPreviewDirectManualContract, models.DefaultPreviewPageControlContract, models.DefaultPreviewLiveContract} {
+	for _, part := range []string{models.DefaultPreviewDirectManualContract, models.DefaultPreviewPageControlContract, models.DefaultPreviewLiveIndex} {
 		if !strings.Contains(got, part) {
 			t.Errorf("missing contract part %.40q", part)
 		}
@@ -95,13 +98,57 @@ func TestReactGraspLiveSkillAndContractRehydrate(t *testing.T) {
 			if mgr.createCount() != 2 {
 				t.Fatalf("sandboxes=%d", mgr.createCount())
 			}
-			for _, prompt := range []string{mgr.bridge(0).promptAt(0), mgr.bridge(1).promptAt(0), mgr.bridge(1).promptAt(1)} {
+			for _, prompt := range []string{mgr.bridge(0).promptAt(0), mgr.bridge(1).promptAt(1)} {
 				if !strings.Contains(prompt, models.DefaultPreviewLiveContract) || !strings.Contains(prompt, models.DefaultGraspLiveContract) {
-					t.Fatal("fresh/recovered prompt missing scoped Live contract")
+					t.Fatal("fresh/recovered Live turn missing scoped Live contract")
 				}
+			}
+			if priming := mgr.bridge(1).promptAt(0); !strings.Contains(priming, models.DefaultPreviewLiveIndex) || strings.Contains(priming, models.DefaultPreviewLiveContract) {
+				t.Fatal("rehydrate priming prompt must carry only the Live index")
 			}
 			p.RetireSession(req.RunID, req.NodeID)
 		})
+	}
+}
+
+func TestReactPlainTurnOmitsLiveContract(t *testing.T) {
+	p, _, _, mgr, _, req := setupProvider(t, func(int) chatFunc { return func(int) turnAction { return turnAction{narration: "ok"} } })
+	req.NodeType = "grasp"
+	req.Config["direct_preview"] = true
+	p.ReactOpen(context.Background(), req)
+	turns := []string{
+		"帮我用演示账号登录",
+		"## Live 上下文(仅评论)\n当前查看会话 `s1` 的变体 1。\n这个按钮颜色不错",
+	}
+	var history []models.ReactMessage
+	for _, human := range turns {
+		history = append(history, models.ReactMessage{Role: "human", Text: human})
+		got := p.ReactReply(context.Background(), req, history, human, nil, false)
+		if got.Err != nil {
+			t.Fatalf("plain turn failed: %+v", got)
+		}
+		history = append(history, models.ReactMessage{Role: "agent", Text: got.Msg})
+	}
+	for i := range turns {
+		prompt := mgr.bridge(0).promptAt(i)
+		if strings.Contains(prompt, models.DefaultPreviewLiveContract) || strings.Contains(prompt, models.DefaultGraspLiveContract) {
+			t.Errorf("turn %d carries the Live contract: %.80q", i, prompt)
+		}
+	}
+	p.RetireSession(req.RunID, req.NodeID)
+}
+
+func TestIsLiveTurn(t *testing.T) {
+	cases := map[string]bool{
+		"## Live 变体请求\n- sid: `a`": true,
+		"## Live 上下文\n用户当前正在看":     true,
+		"## Live 上下文(仅评论)\n当前查看会话": false,
+		"这只是登录请求":                  false,
+	}
+	for human, want := range cases {
+		if got := isLiveTurn(human); got != want {
+			t.Errorf("isLiveTurn(%q)=%v, want %v", human, got, want)
+		}
 	}
 }
 
