@@ -18,6 +18,8 @@ export const OVERLAY_CSS =
   'button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--acc);outline-offset:1px}' +
   'button:disabled{opacity:.45;cursor:not-allowed}' +
   // Sits just above preview-pick's bar (right:16px; bottom:16px).
+  // Every overlay layer stays below the chat drawer (preview-pick .drawer is 2147483647)
+  // so a later-mounted host cannot cover the chat.
   '.dock{position:fixed;right:16px;bottom:64px;z-index:2147483646;display:flex;flex-direction:column;align-items:flex-end;gap:6px;max-width:calc(100vw - 32px)}' +
   '.sep{width:1px;height:18px;background:var(--line2);margin:0 3px;flex:none}' +
   '.steer{display:flex;align-items:center;gap:2px;padding:4px 4px 4px 10px;border-radius:10px;background:var(--bg);border:1px solid var(--line);' +
@@ -59,8 +61,13 @@ export const OVERLAY_CSS =
   '.label{font-size:11px;color:var(--txt2)}' +
   '.target{font-size:12px;color:var(--txt3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
   '.go{background:var(--acc);color:#fff;font-weight:600;padding:6px 16px;margin-left:auto}' +
-  '.go:hover{background:var(--acc-hover)}' +
-  '.light .go:hover{background:var(--acc-hover)}' +
+  '.go:hover{background:var(--acc-hover);color:#fff}' +
+  '.go:focus,.go:focus-visible{color:#fff}' +
+  '.light .go:hover{background:var(--acc-hover);color:#fff}' +
+  '.chip.go,.chip.go:hover,.chip.go:focus,.chip.go:focus-visible{background:var(--acc);color:#fff}' +
+  '.chip.go:hover,.chip.go:focus:hover,.chip.go:focus-visible:hover{background:var(--acc-hover);color:#fff}' +
+  '.light .chip.go,.light .chip.go:hover,.light .chip.go:focus,.light .chip.go:focus-visible{color:#fff}' +
+  '.light .chip.go:hover,.light .chip.go:focus:hover,.light .chip.go:focus-visible:hover{background:var(--acc-hover);color:#fff}' +
   '.sw{position:fixed;z-index:2147483645;display:flex;align-items:center;gap:2px;padding:4px;border-radius:10px;background:var(--bg);' +
   'border:1px solid var(--line);box-shadow:var(--shadow);white-space:nowrap}' +
   '.sw .count{font-variant-numeric:tabular-nums;padding:0 6px;font-weight:600}' +

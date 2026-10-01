@@ -135,6 +135,14 @@ describe('preview-pick.js copies', () => {
       expect(readFileSync(resolve(repo, rel), 'utf8'), rel).toBe(SCRIPT)
     }
   })
+
+  it('puts the chat drawer above the live action card', () => {
+    const drawer = SCRIPT.match(/\.drawer\{[^}]*z-index:(\d+)/)
+    expect(drawer?.[1]).toBe('2147483647')
+    expect(SCRIPT).toContain('live.api.syncTheme')
+    expect(SCRIPT).toContain('点选元素引用或修改，也可以插入区块或整页调整')
+    expect(SCRIPT).toContain('Pick an element to quote or edit, insert a block, or adjust the whole page')
+  })
 })
 
 describe('preview-pick.js without a ticket', () => {
@@ -1297,7 +1305,7 @@ describe('preview-pick.js Live overlay hook', () => {
     expect(fake.received).toEqual([{ type: 'grasp-embed:live-sessions', replace: true, sessions: [] }])
     // Insert and whole-page adjustment live in the overlay's pick bar; the eye waits for candidates.
     expect(btn('eye').hidden).toBe(true)
-    expect(btn('toggle').title).toContain('design variants')
+    expect(btn('toggle').title).toContain('quote or edit')
     fake.candidates = true
     fake.opts!.changed()
     expect(btn('eye').hidden).toBe(false)
@@ -1368,7 +1376,7 @@ describe('preview-pick.js Live overlay hook', () => {
     expect(inbox.filter((m) => m.type === EMBED_PICK_MESSAGE)).toEqual([])
     // One pick opens the card and leaves Pick mode.
     expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(false)
-    // The card's "Add to chat" uses the ordinary pick path.
+    // The card's "Quote" action uses the ordinary pick path.
     fake.opts!.sendToChat(p.win.document.getElementById('card') as unknown as Element)
     expect(inbox.filter((m) => m.type === EMBED_PICK_MESSAGE)).toEqual([
       expect.objectContaining({ payload: expect.objectContaining({ selector: '#card', tagName: 'section' }), target: GRASP }),

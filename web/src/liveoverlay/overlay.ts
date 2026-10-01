@@ -40,6 +40,8 @@ export type LiveOverlay = {
   toggleHidden: () => void
   isHidden: () => boolean
   setEnabled: (on: boolean) => void
+  /** Re-read the page and drawer theme onto the overlay root. */
+  syncTheme: () => void
   dispose: () => void
 }
 
@@ -182,6 +184,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
   function mount() {
     if (!host.isConnected) (document.body || document.documentElement).appendChild(host)
     if (!pageStyle.isConnected) (document.head || document.documentElement).appendChild(pageStyle)
+    observeTheme()
   }
 
   // ---------- state helpers ----------
@@ -358,6 +361,14 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
     root.className = (pageTheme() || opts.theme()) === 'light' ? 'root light' : 'root'
   }
 
+  const themeObserver = new MutationObserver(() => themeClass())
+  function observeTheme() {
+    const watch = { attributes: true, attributeFilter: ['class', 'style'] }
+    themeObserver.observe(document.documentElement, watch)
+    if (document.body) themeObserver.observe(document.body, watch)
+  }
+  observeTheme()
+
   /** Status hints and the pick bar, stacked just above preview-pick's bar. */
   function renderDock() {
     themeClass()
@@ -435,6 +446,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
   }
 
   function renderPanel() {
+    themeClass()
     const el = layer('panel')
     annotations.setTarget(enabled && panel?.stage === 'design' ? panel.el : null)
     if (!panel || !enabled) {
@@ -1251,7 +1263,10 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
       const n = r.target as Node
       return !(n === host || host.contains(n) || n === pageStyle)
     })
-    if (relevant) scheduleRescan()
+    if (relevant) {
+      observeTheme()
+      scheduleRescan()
+    }
   })
   let rescanTimer = 0
   function scheduleRescan() {
@@ -1390,8 +1405,10 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
     toggleHidden,
     isHidden: () => hidden,
     setEnabled,
+    syncTheme: themeClass,
     dispose() {
       observer.disconnect()
+      themeObserver.disconnect()
       clearInterval(mountTimer)
       if (rescanTimer) clearTimeout(rescanTimer)
       document.removeEventListener('mousemove', onMove, true)
