@@ -651,10 +651,8 @@ fi
 
 # 启动 code-server（root 用户运行，前台），指定工作目录
 cd "$WORKSPACE_DIR"
-if command -v code-server >/dev/null 2>&1; then
-  code-server "$WORKSPACE_DIR"
-else
-  # 镜像缺 code-server 时只少了 IDE；保持容器存活，backend / SSH / 预览照常可用。
-  echo "警告：未找到 code-server，跳过 IDE（端口 ${CODE_SERVER_PORT}）；其余服务继续运行。请重新构建或拉取镜像。" >&2
-  exec tail -f /dev/null
+if ! command -v code-server >/dev/null 2>&1; then
+  echo "错误：镜像缺少 code-server（构建不完整），请重新构建或拉取镜像。" >&2
+  exit 1
 fi
+code-server "$WORKSPACE_DIR"

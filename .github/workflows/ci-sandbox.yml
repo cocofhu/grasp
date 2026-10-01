@@ -37,6 +37,8 @@ jobs:
           bash -n sandbox/scripts/vnc-preview.sh
           bash -n scripts/test-inject.sh
           bash -n scripts/test-git-auth.sh
+          bash -n scripts/test-agent-connect.sh
+          node --check scripts/agent-ws-check.mjs
           bash -n scripts/cover-check-sandbox.sh
           bash -n ../.github/scripts/coverage-badge-color.sh
           bash -n ../.github/scripts/publish-coverage-badge.sh
@@ -125,12 +127,18 @@ jobs:
             'command -v glab && glab --version && command -v gh && gh --version'
 
   # Full final sandbox image (same context/file/build-args as publish-sandbox).
-  # No --target: must catch gopls + AGENT_PROVIDERS layers.
+  # No --target: must catch gopls + AGENT_PROVIDERS layers. The image is then
+  # started per AGENT_PROVIDER and must reach "connected" over /ws.
   sandbox-images:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7
+      - name: Free disk space for the loaded image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker system prune -af >/dev/null
+          df -h /
       - uses: docker/setup-buildx-action@v4
       - name: Build final sandbox image
         uses: docker/build-push-action@v7
@@ -138,6 +146,7 @@ jobs:
           context: ./sandbox-gateway/sandbox
           file: ./sandbox-gateway/sandbox/Dockerfile
           push: false
+          load: true
           tags: universal-sandbox:ci
           build-args: |
             AGENT_PROVIDERS=cursor,claude_code,codebuddy,trae,opencode
@@ -145,3 +154,12 @@ jobs:
             USE_CN_MIRROR=false
           cache-from: type=gha,scope=sandbox-image
           cache-to: type=gha,mode=max,scope=sandbox-image
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      # Real chat / Trae handshake only run when the secrets exist (not on fork PRs).
+      - name: Agent connection E2E
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          TRAECLI_PERSONAL_ACCESS_TOKEN: ${{ secrets.TRAECLI_PERSONAL_ACCESS_TOKEN }}
+        run: ./sandbox-gateway/scripts/test-agent-connect.sh universal-sandbox:ci

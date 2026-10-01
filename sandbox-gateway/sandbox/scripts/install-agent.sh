@@ -7,14 +7,14 @@
 #
 # 约定：
 #   $1 / $AGENT_PROVIDERS          逗号列表或 all（默认 all）。
-#   $AGENT_OPTIONAL_PROVIDERS      失败只告警的 provider（默认 trae）。
+#   $AGENT_OPTIONAL_PROVIDERS      失败只告警的 provider（默认空：任何 provider 装不上都让构建失败）。
 #   $AGENT_INSTALL_CMD             可选：完全接管安装（用于未内置方式或私有源）。
 set -euo pipefail
 
 DEFAULT_PROVIDERS="cursor,claude_code,codebuddy,trae,opencode"
 raw="${1:-${AGENT_PROVIDERS:-all}}"
 custom_cmd="${AGENT_INSTALL_CMD:-}"
-optional_raw="${AGENT_OPTIONAL_PROVIDERS:-trae}"
+optional_raw="${AGENT_OPTIONAL_PROVIDERS:-}"
 
 log() { echo "[install-agent] $*"; }
 
@@ -29,6 +29,12 @@ retry() {
 }
 
 npm_global() { retry 3 npm install -g "$@"; }
+
+# curl_install <url> <shell> —— 官方 `curl | sh` 安装脚本。子 shell 不继承 pipefail，
+# 下载失败时 sh 读到空输入也会返回 0，所以显式开 pipefail，装完再由调用方校验二进制。
+curl_install() {
+  retry 3 bash -o pipefail -c "curl -fsSL --connect-timeout 20 --max-time 120 '$1' | $2"
+}
 
 install_cursor() {
   # 官方 install.sh 无重试/无超时且会吞掉失败；改为解析版本→带重试下载解压→建软链→校验。
@@ -56,13 +62,17 @@ install_cursor() {
 }
 
 install_claude_native() {
-  retry 3 bash -c 'curl -fsSL --connect-timeout 20 --max-time 120 https://claude.ai/install.sh | bash'
+  curl_install https://claude.ai/install.sh bash
   claude --version
 }
 
 install_trae() {
-  retry 3 bash -c 'curl -fsSL --connect-timeout 20 --max-time 120 "https://docs.trae.cn/cli/install.sh" | bash'
-  command -v traecli >/dev/null 2>&1 && traecli --version || log "traecli 已安装（版本探测跳过）"
+  # TraeCode CLI 1.x（https://docs.trae.cn/cli_get-started-with-trae-cli）；旧地址
+  # docs.trae.cn/cli/install.sh 已对 curl 返回 400 UA Forbidden。2.0（install_v2.sh）的
+  # `acp serve` 去掉了 backend 依赖的 --model，切换前须先改 backend/trae 的 Argv。
+  curl_install https://trae.cn/trae-cli/install.sh bash
+  traecli --version
+  traecli acp serve --help >/dev/null
 }
 
 install_one() {
