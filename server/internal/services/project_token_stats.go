@@ -58,6 +58,10 @@ type TokenStatsBucket struct {
 	OutputTokens     int64  `json:"outputTokens"`
 	CacheReadTokens  int64  `json:"cacheReadTokens"`
 	CacheWriteTokens int64  `json:"cacheWriteTokens"`
+	// StudioTotal / FailedTotal / Cost are populated by global stats only.
+	StudioTotal int64   `json:"studioTotal,omitempty"`
+	FailedTotal int64   `json:"failedTotal,omitempty"`
+	Cost        float64 `json:"cost,omitempty"`
 }
 
 // TokenStatsComposition is the four-component sum for the window (workflow+PM).
@@ -87,6 +91,8 @@ type TokenStatsWorkflow struct {
 	CacheWriteTokens int64  `json:"cacheWriteTokens,omitempty"`
 	Other            bool   `json:"other,omitempty"`
 	Kind             string `json:"kind,omitempty"` // workflow | pm | other
+	// Cost is the estimated spend (global stats only).
+	Cost float64 `json:"cost,omitempty"`
 }
 
 // TokenStatsModel is one model-composition / model-ranking row.
@@ -109,6 +115,8 @@ type TokenStatsModel struct {
 	Filled bool `json:"filled,omitempty"`
 	// Source: upstream | via ACP_BRIDGE_MODEL | unknown (omitted for other).
 	Source string `json:"source,omitempty"`
+	// Cost is the estimated spend (global stats only).
+	Cost float64 `json:"cost,omitempty"`
 }
 
 // TokenStatsResult is the single-response payload for trend/composition/workflows
@@ -138,7 +146,7 @@ type tokenUsageRow struct {
 	source       string // workflow | pm
 }
 
-// TokenStats aggregates non-nil StateRun.Usage + assistant ChatMessage.Usage for
+// TokenStats aggregates the project's workflow + PM token ledger rows for
 // one project into trend (workflow/pm split), composition (four parts), and
 // consumption rank (workflow Top10 + PM + other). Stdio is never counted.
 // Timestamp prefers StateRun.StartedAt / message CreatedAt.
@@ -648,168 +656,25 @@ func buildConsumptionRank(totals map[string]int64, names map[string]string, pmTo
 	return out
 }
 
+// loadTokenUsageRows reads the project's workflow + PM ledger rows. Studio chat
+// is platform-wide analytics only and stays off the project board.
 func (s *ProjectService) loadTokenUsageRows(ctx context.Context, projectID string) ([]tokenUsageRow, error) {
-	wfRows, err := s.loadWorkflowTokenUsageRows(ctx, projectID)
+	var out []tokenUsageRow
+	err := loadLedgerEvents(ctx, s.db, ledgerRowFilter{
+		projectID: projectID,
+		sources:   []string{models.TokenLedgerSourceWorkflow, models.TokenLedgerSourcePM},
+	}, func(ev models.TokenUsageEvent) {
+		out = append(out, tokenUsageRow{
+			ts:           ev.CreatedAt,
+			usage:        ledgerUsage(ev),
+			byModel:      ledgerByModel(ev),
+			workflowID:   ev.WorkflowID,
+			workflowName: ev.WorkflowName,
+			source:       orDefault(ev.Source, models.TokenLedgerSourceWorkflow),
+		})
+	})
 	if err != nil {
 		return nil, err
-	}
-	pmRows, err := s.loadPMTokenUsageRows(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]tokenUsageRow, 0, len(wfRows)+len(pmRows))
-	out = append(out, wfRows...)
-	out = append(out, pmRows...)
-	return out, nil
-}
-
-func (s *ProjectService) loadWorkflowTokenUsageRows(ctx context.Context, projectID string) ([]tokenUsageRow, error) {
-	var wfIDs []string
-	if err := s.db.WithContext(ctx).Model(&models.WorkflowDef{}).
-		Select("id").
-		Where("project_id = ?", projectID).
-		Pluck("id", &wfIDs).Error; err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			return nil, ErrTokenStatsTimeout
-		}
-		return nil, err
-	}
-	if len(wfIDs) == 0 {
-		return nil, nil
-	}
-
-	type runRow struct {
-		ID           string
-		WorkflowID   string
-		WorkflowName string
-		StartedAt    time.Time
-	}
-	var runs []runRow
-	for i := 0; i < len(wfIDs); i += tokenAggChunk {
-		if err := ctx.Err(); err != nil {
-			return nil, ErrTokenStatsTimeout
-		}
-		end := i + tokenAggChunk
-		if end > len(wfIDs) {
-			end = len(wfIDs)
-		}
-		var chunk []runRow
-		if err := s.db.WithContext(ctx).Model(&models.Run{}).
-			Select("id", "workflow_id", "workflow_name", "started_at").
-			Where("workflow_id IN ?", wfIDs[i:end]).
-			Find(&chunk).Error; err != nil {
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				return nil, ErrTokenStatsTimeout
-			}
-			return nil, err
-		}
-		runs = append(runs, chunk...)
-	}
-	if len(runs) == 0 {
-		return nil, nil
-	}
-
-	runMeta := make(map[string]runRow, len(runs))
-	runIDs := make([]string, 0, len(runs))
-	for _, r := range runs {
-		runMeta[r.ID] = r
-		runIDs = append(runIDs, r.ID)
-	}
-
-	var out []tokenUsageRow
-	for i := 0; i < len(runIDs); i += tokenAggChunk {
-		if err := ctx.Err(); err != nil {
-			return nil, ErrTokenStatsTimeout
-		}
-		end := i + tokenAggChunk
-		if end > len(runIDs) {
-			end = len(runIDs)
-		}
-		var srs []models.StateRun
-		if err := s.db.WithContext(ctx).Model(&models.StateRun{}).
-			Select("run_id", "usage", "usage_by_model", "started_at").
-			Where("run_id IN ? AND usage IS NOT NULL", runIDs[i:end]).
-			Find(&srs).Error; err != nil {
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				return nil, ErrTokenStatsTimeout
-			}
-			return nil, err
-		}
-		for _, sr := range srs {
-			if sr.Usage == nil {
-				continue
-			}
-			meta, ok := runMeta[sr.RunID]
-			if !ok {
-				continue
-			}
-			ts := meta.StartedAt
-			if sr.StartedAt != nil && !sr.StartedAt.IsZero() {
-				ts = *sr.StartedAt
-			}
-			if ts.IsZero() {
-				continue
-			}
-			by := models.EffectiveUsageByModel(sr.Usage, sr.UsageByModel)
-			out = append(out, tokenUsageRow{
-				ts:           ts,
-				usage:        *sr.Usage,
-				byModel:      by,
-				workflowID:   meta.WorkflowID,
-				workflowName: meta.WorkflowName,
-				source:       TokenStatsKindWorkflow,
-			})
-		}
-	}
-	return out, nil
-}
-
-func (s *ProjectService) loadPMTokenUsageRows(ctx context.Context, projectID string) ([]tokenUsageRow, error) {
-	var threadIDs []string
-	if err := s.db.WithContext(ctx).Model(&models.ChatThread{}).
-		Select("id").
-		Where("project_id = ?", projectID).
-		Pluck("id", &threadIDs).Error; err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			return nil, ErrTokenStatsTimeout
-		}
-		return nil, err
-	}
-	if len(threadIDs) == 0 {
-		return nil, nil
-	}
-
-	var out []tokenUsageRow
-	for i := 0; i < len(threadIDs); i += tokenAggChunk {
-		if err := ctx.Err(); err != nil {
-			return nil, ErrTokenStatsTimeout
-		}
-		end := i + tokenAggChunk
-		if end > len(threadIDs) {
-			end = len(threadIDs)
-		}
-		var msgs []models.ChatMessage
-		if err := s.db.WithContext(ctx).Model(&models.ChatMessage{}).
-			Select("usage", "usage_by_model", "created_at").
-			Where("thread_id IN ? AND role = ? AND usage IS NOT NULL", threadIDs[i:end], "assistant").
-			Find(&msgs).Error; err != nil {
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				return nil, ErrTokenStatsTimeout
-			}
-			return nil, err
-		}
-		for _, m := range msgs {
-			if m.Usage == nil || m.CreatedAt.IsZero() {
-				continue
-			}
-			by := models.EffectiveUsageByModel(m.Usage, m.UsageByModel)
-			out = append(out, tokenUsageRow{
-				ts:      m.CreatedAt,
-				usage:   *m.Usage,
-				byModel: by,
-				source:  TokenStatsKindPM,
-			})
-		}
 	}
 	return out, nil
 }

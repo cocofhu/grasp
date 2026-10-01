@@ -75,12 +75,11 @@ describe('radius zero clearance', () => {
 
   it('TokenAnalyticsView filter selects and clear use control rounded', () => {
     const src = read('views/TokenAnalyticsView.vue')
-    expect(src).toMatch(
-      /v-model="projectSel"\s+class="[^"]*\brounded\b[^"]*\bborder border-line\b/,
-    )
-    expect(src).toMatch(
-      /v-model="modelSel"\s+class="[^"]*\brounded\b[^"]*\bborder border-line\b/,
-    )
+    for (const id of ['project', 'model', 'workflow', 'node-type', 'status']) {
+      expect(src).toMatch(
+        new RegExp(`class="[^"]*\\brounded\\b[^"]*\\bborder border-line\\b[^"]*"\\s+data-testid="token-analytics-filter-${id}"`),
+      )
+    }
     expect(src).toMatch(
       /<button[^>]*class="[^"]*\brounded\b[^"]*"[^>]*@click="clearFilters"/,
     )

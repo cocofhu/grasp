@@ -30,7 +30,43 @@ const MOCK_STATS = {
     projectCount: 1,
     runCount: 3,
     modelCount: 1,
+    studioTotal: 0,
+    failedTotal: 300,
+    eventCount: 12,
+    cacheHitRate: 0.133,
+    avgPerRun: 3000,
+    cost: 4.56,
+    costDeltaPct: 8,
   },
+  currency: 'USD',
+  sources: [
+    { key: 'workflow', name: 'workflow', total: 7000 },
+    { key: 'pm', name: 'pm', total: 2000 },
+  ],
+  statuses: [
+    { key: 'ok', name: 'ok', total: 8700 },
+    { key: 'failed', name: 'failed', total: 300 },
+  ],
+  phases: [
+    { key: 'production', name: 'production', total: 6000 },
+    { key: 'interactive', name: 'interactive', total: 1000 },
+    { key: 'chat', name: 'chat', total: 2000 },
+  ],
+  weekHour: Array.from({ length: 7 }, (_, d) => Array.from({ length: 24 }, (_, h) => (d < 5 && h >= 9 && h <= 19 ? (h * 37 + d * 11) % 400 : 0))),
+  tree: [
+    {
+      key: 'p1',
+      name: 'Demo',
+      kind: 'project',
+      value: 7000,
+      children: [
+        { key: 'w1', name: 'wf', kind: 'workflow', value: 5000, children: [{ key: 'agent', name: 'agent', kind: 'nodeType', value: 5000 }] },
+        { key: '_pm', name: 'PM', kind: 'pm', value: 2000 },
+      ],
+    },
+    { key: 'p2', name: 'Docs', kind: 'project', value: 2000, children: [{ key: 'w2', name: 'review', kind: 'workflow', value: 2000 }] },
+  ],
+  unpricedModels: ['m2'],
   trend: [
     {
       bucket: '2026-07-01',
@@ -52,11 +88,11 @@ const MOCK_STATS = {
     cacheWriteTokens: 200,
   },
   projects: [
-    { projectId: 'p1', name: 'Demo', total: 7000, inputTokens: 4000, outputTokens: 2200, cacheReadTokens: 600, cacheWriteTokens: 200 },
+    { projectId: 'p1', name: 'Demo', total: 7000, inputTokens: 4000, outputTokens: 2200, cacheReadTokens: 600, cacheWriteTokens: 200, cost: 3.2, runCount: 2 },
     { projectId: 'p2', name: 'Docs', total: 2000, inputTokens: 1000, outputTokens: 800, cacheReadTokens: 200, cacheWriteTokens: 0 },
   ],
   modelRanking: [
-    { modelKey: 'm1', name: 'Model', total: 7000, inputTokens: 4000, outputTokens: 2200, cacheReadTokens: 600, cacheWriteTokens: 200 },
+    { modelKey: 'm1', name: 'Model', total: 7000, inputTokens: 4000, outputTokens: 2200, cacheReadTokens: 600, cacheWriteTokens: 200, cost: 4.56 },
     { modelKey: 'm2', name: 'Model Mini', total: 2000, inputTokens: 1000, outputTokens: 800, cacheReadTokens: 200, cacheWriteTokens: 0 },
   ],
   nodeTypes: [{ name: 'agent', total: 9000 }],
@@ -85,6 +121,35 @@ const MOCK_STATS = {
   },
 }
 
+const MOCK_EVENTS = {
+  total: 1,
+  page: 1,
+  pageSize: 20,
+  currency: 'USD',
+  items: [
+    {
+      id: 1,
+      at: '2026-07-01T10:00:00Z',
+      source: 'workflow',
+      phase: 'production',
+      status: 'ok',
+      projectId: 'p1',
+      projectName: 'Demo',
+      runId: 'r1',
+      runTitle: 'Run',
+      nodeType: 'agent',
+      modelKey: 'm1',
+      total: 9000,
+      inputTokens: 5000,
+      outputTokens: 3000,
+      cacheReadTokens: 800,
+      cacheWriteTokens: 200,
+      cost: 0,
+      priced: false,
+    },
+  ],
+}
+
 window.fetch = async (input: RequestInfo | URL) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
   if (url.includes('/auth/me')) {
@@ -110,6 +175,15 @@ window.fetch = async (input: RequestInfo | URL) => {
       JSON.stringify({ running: 0, waitingHuman: 0, failed: 0, completed: 0 }),
       { status: 200, headers: { 'Content-Type': 'application/json' } },
     )
+  }
+  if (url.includes('/stats/token/events')) {
+    return new Response(JSON.stringify(MOCK_EVENTS), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }
+  if (url.includes('/stats/token/pricing')) {
+    return new Response(JSON.stringify({ currency: 'USD', models: { m1: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } } }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
   }
   if (url.includes('/stats/token')) {
     const parsed = new URL(url, 'http://localhost')

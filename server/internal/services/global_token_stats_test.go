@@ -19,6 +19,7 @@ func TestGlobalTokenStatsEmpty(t *testing.T) {
 	s := NewProjectService(db)
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
 
+	syncTokenLedger(t, db)
 	res, err := s.GlobalTokenStats(context.Background(), GlobalTokenStatsQuery{
 		Window:   TokenStatsWindow30d,
 		Timezone: "Asia/Shanghai",
@@ -65,6 +66,7 @@ func TestGlobalTokenStatsAggregation(t *testing.T) {
 		Usage:     &models.TokenUsage{InputTokens: 100, OutputTokens: 50, CacheReadTokens: 10, CacheWriteTokens: 5},
 	})
 
+	syncTokenLedger(t, db)
 	res, err := s.GlobalTokenStats(context.Background(), GlobalTokenStatsQuery{
 		Window:   TokenStatsWindow7d,
 		Timezone: "Asia/Shanghai",
@@ -140,6 +142,7 @@ func TestGlobalTokenStatsModelRebucketByDefaultModel(t *testing.T) {
 		},
 	})
 
+	syncTokenLedger(t, db)
 	res, err := s.GlobalTokenStats(context.Background(), GlobalTokenStatsQuery{
 		Window:   TokenStatsWindow7d,
 		Timezone: "Asia/Shanghai",
@@ -216,6 +219,7 @@ func TestGlobalTokenStatsModelFilterAfterRebucket(t *testing.T) {
 		},
 	})
 
+	syncTokenLedger(t, db)
 	unfiltered, err := s.GlobalTokenStats(context.Background(), GlobalTokenStatsQuery{
 		Window:   TokenStatsWindow7d,
 		Timezone: "Asia/Shanghai",
@@ -228,6 +232,7 @@ func TestGlobalTokenStatsModelFilterAfterRebucket(t *testing.T) {
 		t.Fatalf("expected unfiltered KPI total 250, got %d", unfiltered.KPI.Total)
 	}
 
+	syncTokenLedger(t, db)
 	filtered, err := s.GlobalTokenStats(context.Background(), GlobalTokenStatsQuery{
 		Window:   TokenStatsWindow7d,
 		Timezone: "Asia/Shanghai",
@@ -292,6 +297,7 @@ func TestGlobalTokenStats24hPrevWindowDelta(t *testing.T) {
 		Usage:     &models.TokenUsage{InputTokens: 200},
 	})
 
+	syncTokenLedger(t, db)
 	res, err := s.GlobalTokenStats(context.Background(), GlobalTokenStatsQuery{
 		Window:   TokenStatsWindow24h,
 		Timezone: "Asia/Shanghai",
@@ -333,6 +339,7 @@ func TestGlobalTokenStats24hEmptyWindow(t *testing.T) {
 	if _, err := s.Create("EmptyG24h", "", nil, nil); err != nil {
 		t.Fatal(err)
 	}
+	syncTokenLedger(t, db)
 	res, err := s.GlobalTokenStats(context.Background(), GlobalTokenStatsQuery{
 		Window:   TokenStatsWindow24h,
 		Timezone: "Asia/Shanghai",
@@ -353,6 +360,7 @@ func TestGlobalTokenStatsOmitsWindowDefaultsAll(t *testing.T) {
 	}
 	s := NewProjectService(db)
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
+	syncTokenLedger(t, db)
 	res, err := s.GlobalTokenStats(context.Background(), GlobalTokenStatsQuery{
 		Timezone: "UTC",
 		Now:      now,

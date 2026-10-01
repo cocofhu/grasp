@@ -853,6 +853,7 @@ func AllModels() []any {
 		&ProjectExternalMcpSettings{},
 		&ProjectMcpApiKey{},
 		&LiveSession{},
+		&TokenUsageEvent{},
 	}
 }
 

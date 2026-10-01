@@ -215,135 +215,33 @@ func (s *ProjectService) PlatformTokenBreakdown() ProjectTokenBreakdown {
 }
 
 func (s *ProjectService) sumWorkflowTokensByProjectIDs(projectIDs []string) (sums map[string]int64, has map[string]struct{}) {
-	sums = make(map[string]int64)
-	has = make(map[string]struct{})
-
-	type wfRow struct {
-		ID        string
-		ProjectID string
-	}
-	var wfs []wfRow
-	if err := s.db.Model(&models.WorkflowDef{}).
-		Select("id", "project_id").
-		Where("project_id IN ?", projectIDs).
-		Find(&wfs).Error; err != nil || len(wfs) == 0 {
-		return sums, has
-	}
-
-	wfToProject := make(map[string]string, len(wfs))
-	wfIDs := make([]string, 0, len(wfs))
-	for _, w := range wfs {
-		wfToProject[w.ID] = w.ProjectID
-		wfIDs = append(wfIDs, w.ID)
-	}
-
-	type runRow struct {
-		ID         string
-		WorkflowID string
-	}
-	var runs []runRow
-	for i := 0; i < len(wfIDs); i += tokenAggChunk {
-		end := i + tokenAggChunk
-		if end > len(wfIDs) {
-			end = len(wfIDs)
-		}
-		var chunk []runRow
-		if err := s.db.Model(&models.Run{}).
-			Select("id", "workflow_id").
-			Where("workflow_id IN ?", wfIDs[i:end]).
-			Find(&chunk).Error; err != nil {
-			return sums, has
-		}
-		runs = append(runs, chunk...)
-	}
-	if len(runs) == 0 {
-		return sums, has
-	}
-
-	runToProject := make(map[string]string, len(runs))
-	runIDs := make([]string, 0, len(runs))
-	for _, r := range runs {
-		if pid := wfToProject[r.WorkflowID]; pid != "" {
-			runToProject[r.ID] = pid
-			runIDs = append(runIDs, r.ID)
-		}
-	}
-	if len(runIDs) == 0 {
-		return sums, has
-	}
-
-	for i := 0; i < len(runIDs); i += tokenAggChunk {
-		end := i + tokenAggChunk
-		if end > len(runIDs) {
-			end = len(runIDs)
-		}
-		var srs []models.StateRun
-		if err := s.db.Model(&models.StateRun{}).
-			Select("run_id", "usage").
-			Where("run_id IN ? AND usage IS NOT NULL", runIDs[i:end]).
-			Find(&srs).Error; err != nil {
-			return sums, has
-		}
-		for _, sr := range srs {
-			if sr.Usage == nil {
-				continue
-			}
-			pid := runToProject[sr.RunID]
-			if pid == "" {
-				continue
-			}
-			has[pid] = struct{}{}
-			sums[pid] += sr.Usage.Total()
-		}
-	}
-	return sums, has
+	return s.sumLedgerTokensByProjectIDs(projectIDs, models.TokenLedgerSourceWorkflow)
 }
 
 func (s *ProjectService) sumPMTokensByProjectIDs(projectIDs []string) (sums map[string]int64, has map[string]struct{}) {
+	return s.sumLedgerTokensByProjectIDs(projectIDs, models.TokenLedgerSourcePM)
+}
+
+func (s *ProjectService) sumLedgerTokensByProjectIDs(projectIDs []string, source string) (sums map[string]int64, has map[string]struct{}) {
 	sums = make(map[string]int64)
 	has = make(map[string]struct{})
-
-	type threadRow struct {
-		ID        string
-		ProjectID string
-	}
-	var threads []threadRow
-	if err := s.db.Model(&models.ChatThread{}).
-		Select("id", "project_id").
-		Where("project_id IN ?", projectIDs).
-		Find(&threads).Error; err != nil || len(threads) == 0 {
+	if len(projectIDs) == 0 {
 		return sums, has
 	}
-
-	threadToProject := make(map[string]string, len(threads))
-	threadIDs := make([]string, 0, len(threads))
-	for _, th := range threads {
-		threadToProject[th.ID] = th.ProjectID
-		threadIDs = append(threadIDs, th.ID)
-	}
-
-	for i := 0; i < len(threadIDs); i += tokenAggChunk {
+	for i := 0; i < len(projectIDs); i += tokenAggChunk {
 		end := i + tokenAggChunk
-		if end > len(threadIDs) {
-			end = len(threadIDs)
+		if end > len(projectIDs) {
+			end = len(projectIDs)
 		}
-		var msgs []models.ChatMessage
-		if err := s.db.Model(&models.ChatMessage{}).
-			Select("thread_id", "usage").
-			Where("thread_id IN ? AND role = ? AND usage IS NOT NULL", threadIDs[i:end], "assistant").
-			Find(&msgs).Error; err != nil {
+		bySource, err := ledgerSumsByProjectSource(s.db, projectIDs[i:end], []string{source})
+		if err != nil {
 			return sums, has
 		}
-		for _, m := range msgs {
-			if m.Usage == nil {
-				continue
+		for pid, m := range bySource {
+			if v, ok := m[source]; ok {
+				sums[pid] += v
+				has[pid] = struct{}{}
 			}
-			pid := threadToProject[m.ThreadID]
-			if pid == "" {
-				continue
-			}
-			has[pid] = struct{}{}
-			sums[pid] += m.Usage.Total()
 		}
 	}
 	return sums, has

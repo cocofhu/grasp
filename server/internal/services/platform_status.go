@@ -180,104 +180,14 @@ func (s *DashboardService) loadPlatformUsageSince(ctx context.Context, since tim
 	if s.loadPlatformUsageHook != nil {
 		s.loadPlatformUsageHook()
 	}
-	wf, err := s.loadPlatformWorkflowUsageSince(ctx, since)
+	var out []platformUsagePoint
+	// Match CumulativeTokens (PlatformTokenBreakdown), which only covers workflow + PM.
+	filter := ledgerRowFilter{since: &since, sources: []string{models.TokenLedgerSourceWorkflow, models.TokenLedgerSourcePM}}
+	err := loadLedgerEvents(ctx, s.db, filter, func(ev models.TokenUsageEvent) {
+		out = append(out, platformUsagePoint{ts: ev.CreatedAt, total: ev.Total()})
+	})
 	if err != nil {
 		return nil, err
-	}
-	pm, err := s.loadPlatformPMUsageSince(ctx, since)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]platformUsagePoint, 0, len(wf)+len(pm))
-	out = append(out, wf...)
-	out = append(out, pm...)
-	return out, nil
-}
-
-func (s *DashboardService) loadPlatformWorkflowUsageSince(ctx context.Context, since time.Time) ([]platformUsagePoint, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	var srs []models.StateRun
-	if err := s.db.WithContext(ctx).Model(&models.StateRun{}).
-		Select("run_id", "usage", "started_at").
-		Where("usage IS NOT NULL").
-		Find(&srs).Error; err != nil {
-		return nil, err
-	}
-	if len(srs) == 0 {
-		return nil, nil
-	}
-
-	runIDs := make([]string, 0, len(srs))
-	seen := map[string]struct{}{}
-	for _, sr := range srs {
-		if _, ok := seen[sr.RunID]; ok {
-			continue
-		}
-		seen[sr.RunID] = struct{}{}
-		runIDs = append(runIDs, sr.RunID)
-	}
-
-	type runRow struct {
-		ID        string
-		StartedAt time.Time
-	}
-	runStarted := map[string]time.Time{}
-	for i := 0; i < len(runIDs); i += tokenAggChunk {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		end := i + tokenAggChunk
-		if end > len(runIDs) {
-			end = len(runIDs)
-		}
-		var chunk []runRow
-		if err := s.db.WithContext(ctx).Model(&models.Run{}).
-			Select("id", "started_at").
-			Where("id IN ?", runIDs[i:end]).
-			Find(&chunk).Error; err != nil {
-			return nil, err
-		}
-		for _, r := range chunk {
-			runStarted[r.ID] = r.StartedAt
-		}
-	}
-
-	var out []platformUsagePoint
-	for _, sr := range srs {
-		if sr.Usage == nil {
-			continue
-		}
-		ts := runStarted[sr.RunID]
-		if sr.StartedAt != nil && !sr.StartedAt.IsZero() {
-			ts = *sr.StartedAt
-		}
-		if ts.IsZero() || ts.Before(since) {
-			continue
-		}
-		out = append(out, platformUsagePoint{ts: ts, total: sr.Usage.Total()})
-	}
-	return out, nil
-}
-
-func (s *DashboardService) loadPlatformPMUsageSince(ctx context.Context, since time.Time) ([]platformUsagePoint, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	var msgs []models.ChatMessage
-	if err := s.db.WithContext(ctx).Model(&models.ChatMessage{}).
-		Select("usage", "created_at").
-		Where("role = ? AND usage IS NOT NULL AND created_at >= ?", "assistant", since).
-		Find(&msgs).Error; err != nil {
-		return nil, err
-	}
-	var out []platformUsagePoint
-	for _, m := range msgs {
-		if m.Usage == nil || m.CreatedAt.IsZero() {
-			continue
-		}
-		out = append(out, platformUsagePoint{ts: m.CreatedAt, total: m.Usage.Total()})
 	}
 	return out, nil
 }

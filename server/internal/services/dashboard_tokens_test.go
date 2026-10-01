@@ -143,6 +143,7 @@ func TestPlatformTokenBreakdown_matchesPerProjectSum(t *testing.T) {
 		Usage: &models.TokenUsage{InputTokens: 10, OutputTokens: 5},
 	})
 
+	syncTokenLedger(t, db)
 	platform := s.PlatformTokenBreakdown()
 	// per-project: partial=128 wf, zero=0 wf, pmOnly=15 pm → platform wf=128, pm=15, total=143
 	if platform.Workflow == nil || *platform.Workflow != 128 {
@@ -157,6 +158,7 @@ func TestPlatformTokenBreakdown_matchesPerProjectSum(t *testing.T) {
 
 	// Same data: sum of each project's totalTokens equals platform total.
 	ids := []string{partial.ID, zero.ID, pmOnly.ID}
+	syncTokenLedger(t, db)
 	bd := s.TokenBreakdownByProjectIDs(ids)
 	var sum int64
 	for _, id := range ids {
@@ -201,6 +203,7 @@ func TestPlatformTokenBreakdown_matchesPerProjectSum(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	syncTokenLedger(t, db2)
 	got := NewDashboardService(db2, s2).Compute()
 	if got.TotalTokens == nil || *got.TotalTokens != 0 {
 		t.Fatalf("reported zero total=%v want 0", got.TotalTokens)

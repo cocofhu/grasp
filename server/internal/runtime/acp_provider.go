@@ -104,7 +104,11 @@ type acpProvider struct {
 	// processing the turn) used to drive the running/idle indicator.
 	emit func(runID, nodeID string, events []models.AcpEvent, busy bool)
 
-	mu       sync.Mutex
+	mu sync.Mutex
+	// carry holds usage spent outside a returned turn (session rehydrate
+	// priming, retried ReactOpen attempts) until the next react turn for the
+	// same node reports it.
+	carry    map[string]carriedUsage
 	sessions map[string]*reactSession    // runID|nodeID -> live react session
 	live     map[string]*sandbox.Sandbox // runID|nodeID -> in-flight sandbox (for live event-log reads)
 	// inflightACP tracks the ACP client for in-flight agent turns (not parked
@@ -177,6 +181,40 @@ func absorbChat(usage **models.TokenUsage, byModel *models.TokenUsageByModel, ev
 	if byModel != nil {
 		*byModel = models.AddTokenUsageByModel(*byModel, res.UsageByModel)
 	}
+}
+
+type carriedUsage struct {
+	usage   *models.TokenUsage
+	byModel models.TokenUsageByModel
+}
+
+// carryChatUsage stashes a chat result's usage for key (nil-safe).
+func (c *acpProvider) carryChatUsage(key string, res *sandbox.ChatResult) {
+	if res == nil || (res.Usage == nil && res.UsageByModel == nil) {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.carry == nil {
+		c.carry = map[string]carriedUsage{}
+	}
+	cu := c.carry[key]
+	cu.usage = models.AddTokenUsage(cu.usage, res.Usage)
+	cu.byModel = models.AddTokenUsageByModel(cu.byModel, res.UsageByModel)
+	c.carry[key] = cu
+}
+
+// drainCarriedUsage folds any stashed usage for key into the outgoing turn.
+func (c *acpProvider) drainCarriedUsage(key string, out *ReactTurn) {
+	c.mu.Lock()
+	cu, ok := c.carry[key]
+	delete(c.carry, key)
+	c.mu.Unlock()
+	if !ok {
+		return
+	}
+	out.Usage = models.AddTokenUsage(cu.usage, out.Usage)
+	out.UsageByModel = models.AddTokenUsageByModel(cu.byModel, out.UsageByModel)
 }
 
 // reactSession keeps a sandbox + ACP connection alive across the human

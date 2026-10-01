@@ -11,6 +11,7 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/runtime"
+	"github.com/cocofhu/grasp/internal/tokenledger"
 	"github.com/rs/zerolog/log"
 )
 
@@ -337,6 +338,7 @@ func (e *Engine) execute(runID, fromNodeID string) {
 			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "exit", Detail: "lost exec ownership; drop late outcome"})
 			log.Info().Str("run_id", runID).Str("node_id", node.ID).
 				Msg("execute stopped: lost exec ownership while node was in flight")
+			e.recordDroppedOutcomeUsage(c, node, outcome, models.TokenLedgerStatusCancelled)
 			return
 		}
 
@@ -344,6 +346,11 @@ func (e *Engine) execute(runID, fromNodeID string) {
 			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "exit", Detail: "run " + st + " during node; drop late outcome"})
 			log.Info().Str("run_id", runID).Str("node_id", node.ID).Str("status", st).
 				Msg("execute stopped: run became terminal while node was in flight")
+			status := models.TokenLedgerStatusCancelled
+			if st == "failed" {
+				status = models.TokenLedgerStatusFailed
+			}
+			e.recordDroppedOutcomeUsage(c, node, outcome, status)
 			return
 		}
 
@@ -419,4 +426,14 @@ func (e *Engine) execute(runID, fromNodeID string) {
 			log.Info().Str("run_id", runID).Msg("run completed")
 		}
 	}
+}
+
+// recordDroppedOutcomeUsage ledgers tokens spent by a node whose late outcome is
+// discarded (cancelled/failed run, lost ownership); StateRun is left untouched.
+func (e *Engine) recordDroppedOutcomeUsage(c *execCtx, node *models.Node, o nodeOutcome, status string) {
+	e.recordTokenUsage(tokenledger.Entry{
+		RunID: c.run.ID, WorkflowID: c.run.WorkflowID, WorkflowName: c.run.WorkflowName, RunTitle: c.run.Title,
+		NodeID: node.ID, NodeType: node.Type, Phase: models.TokenLedgerPhaseProduction,
+		Status: status, Usage: o.usage, ByModel: o.usageByModel,
+	})
 }

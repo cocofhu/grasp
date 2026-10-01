@@ -166,4 +166,29 @@ test.describe('Global token analytics', () => {
     await expect(page.getByTestId('run-detail-page')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByText('run:r1')).toBeVisible()
   })
+
+  test('pricing modal opens for admins with editable rows', async ({ page }) => {
+    await openStatsPage(page)
+    await page.getByTestId('token-analytics-pricing').click()
+    await expect(page.getByTestId('token-pricing-modal')).toBeVisible()
+    await expect(page.getByTestId('token-pricing-row').first()).toBeVisible()
+    await expect(page.getByTestId('token-pricing-save')).toBeEnabled()
+  })
+
+  test('project detail opens the drill-down modal with ledger events and applies the filter', async ({ page }) => {
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await openStatsPage(page)
+    await page.getByTestId('token-analytics-project-detail-p1').click()
+    const modal = page.getByTestId('token-drill-modal')
+    await expect(modal).toBeVisible()
+    await expect(page.getByTestId('token-drill-breadcrumb')).toContainText('项目：Demo')
+    await page.getByTestId('token-drill-tab-events').click()
+    await expect(page.getByTestId('token-events-table')).toContainText('m1')
+
+    await page.getByTestId('token-drill-apply').click()
+    await expect(modal).toHaveCount(0)
+    await expect(page.getByTestId('token-analytics-filter-project')).toHaveValue('p1')
+    expect(errors).toEqual([])
+  })
 })

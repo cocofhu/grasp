@@ -20,13 +20,21 @@ import (
 // separate execution record.
 func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, error) {
 	n := c.sandboxAttempts()
+	// Tokens burned by attempts that are retried away still count.
+	var spent *models.TokenUsage
+	var spentByModel models.TokenUsageByModel
 	for attempt := 1; ; attempt++ {
 		res, err := c.runAgentOnce(ctx, req)
 		if err == nil || !isRetryableSandboxErr(err) || attempt >= n || ctx.Err() != nil {
+			res.Usage = models.AddTokenUsage(spent, res.Usage)
+			res.UsageByModel = models.AddTokenUsageByModel(spentByModel, res.UsageByModel)
 			return res, err
 		}
+		spent = models.AddTokenUsage(spent, res.Usage)
+		spentByModel = models.AddTokenUsageByModel(spentByModel, res.UsageByModel)
 		c.emitRetryNotice(req, attempt, n, err)
 		if !c.backoff(ctx, attempt) {
+			res.Usage, res.UsageByModel = spent, spentByModel
 			return res, err
 		}
 	}
@@ -107,6 +115,7 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 			if isRetryableSandboxErr(err) {
 				keepForDebug = false
 			}
+			absorbChat(&usage, &usageByModel, nil, chatRes)
 			events := c.snapshotEvents(ctx, sb, turnEvents)
 			return NodeResult{Events: events, Usage: usage, UsageByModel: usageByModel}, fmt.Errorf("agent chat: %w", err)
 		}

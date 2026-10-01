@@ -23,6 +23,7 @@ func TestPlatformStatus_emptyNullAndTrueZero(t *testing.T) {
 	loc := time.FixedZone("UTC+8", 8*3600)
 	now := time.Date(2026, 8, 12, 14, 7, 0, 0, loc)
 
+	syncTokenLedger(t, db)
 	got, err := dash.PlatformStatus(context.Background(), PlatformStatusQuery{
 		UTCOffsetMinutes: intPtr(8 * 60),
 		Now:              now.UTC(),
@@ -49,6 +50,7 @@ func TestPlatformStatus_emptyNullAndTrueZero(t *testing.T) {
 	mustCreate(&models.Run{ID: "r-wh", Status: "waiting_human", StartedAt: now.UTC(), CreatedAt: now.UTC()})
 
 	dash.ClearPlatformStatusCacheForTest()
+	syncTokenLedger(t, db)
 	got, err = dash.PlatformStatus(context.Background(), PlatformStatusQuery{
 		UTCOffsetMinutes: intPtr(8 * 60),
 		Now:              now.UTC(),
@@ -117,6 +119,7 @@ func TestPlatformStatus_todayTokensSum(t *testing.T) {
 		Usage: &models.TokenUsage{InputTokens: 999999}, StartedAt: &srY,
 	})
 
+	syncTokenLedger(t, db)
 	got, err := dash.PlatformStatus(context.Background(), PlatformStatusQuery{
 		UTCOffsetMinutes: intPtr(8 * 60),
 		Now:              now.UTC(),
@@ -164,6 +167,7 @@ func TestPlatformStatus_crossDayTodayReset(t *testing.T) {
 
 	// New day 00:07 — yesterday excluded; today zero while cumulative exists (g1.3).
 	day2 := time.Date(2026, 8, 12, 0, 7, 0, 0, loc)
+	syncTokenLedger(t, db)
 	got, err := dash.PlatformStatus(context.Background(), PlatformStatusQuery{
 		UTCOffsetMinutes: intPtr(8 * 60),
 		Now:              day2.UTC(),
@@ -207,6 +211,7 @@ func TestPlatformStatus_cacheHitSkipsRescan(t *testing.T) {
 	})
 
 	q := PlatformStatusQuery{UTCOffsetMinutes: intPtr(8 * 60), Now: now.UTC()}
+	syncTokenLedger(t, db)
 	first, err := dash.PlatformStatus(context.Background(), q)
 	if err != nil {
 		t.Fatal(err)
@@ -222,6 +227,7 @@ func TestPlatformStatus_cacheHitSkipsRescan(t *testing.T) {
 		RunID: "run2", NodeID: "n1", Status: "completed",
 		Usage: &models.TokenUsage{InputTokens: 90}, StartedAt: &ts2,
 	})
+	syncTokenLedger(t, db)
 	second, err := dash.PlatformStatus(context.Background(), q)
 	if err != nil {
 		t.Fatal(err)
@@ -232,6 +238,7 @@ func TestPlatformStatus_cacheHitSkipsRescan(t *testing.T) {
 
 	// After TTL, recompute.
 	dash.ClearPlatformStatusCacheForTest()
+	syncTokenLedger(t, db)
 	third, err := dash.PlatformStatus(context.Background(), q)
 	if err != nil {
 		t.Fatal(err)

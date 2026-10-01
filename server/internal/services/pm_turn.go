@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/tokenledger"
 
 	"github.com/rs/zerolog/log"
 )
@@ -184,6 +185,18 @@ func (r *PmTurnRunner) StartWithTimeout(threadID, userMsgID string, sandboxID ui
 	return nil
 }
 
+// recordUsage ledgers one PM turn's usage regardless of outcome: failed and
+// stopped turns still consumed tokens even though no assistant message is kept.
+func (r *PmTurnRunner) recordUsage(t *pmActiveTurn, usage *models.TokenUsage, byModel models.TokenUsageByModel, status string) {
+	if r.pm == nil {
+		return
+	}
+	tokenledger.Record(r.pm.db, tokenledger.Entry{
+		Source: models.TokenLedgerSourcePM, Phase: models.TokenLedgerPhaseChat, Status: status,
+		ThreadID: t.threadID, SandboxID: t.sandboxID, Usage: usage, ByModel: byModel,
+	})
+}
+
 func (r *PmTurnRunner) run(ctx context.Context, t *pmActiveTurn, prompt string, images []models.PromptImage) {
 	defer t.cancel()
 
@@ -228,6 +241,11 @@ func (r *PmTurnRunner) run(ctx context.Context, t *pmActiveTurn, prompt string, 
 		case ctx.Err() == context.Canceled:
 			failKind = PmFailStopped
 		}
+		ledgerStatus := models.TokenLedgerStatusFailed
+		if failKind == PmFailStopped {
+			ledgerStatus = models.TokenLedgerStatusCancelled
+		}
+		r.recordUsage(t, usage, usageByModel, ledgerStatus)
 		msg := err.Error()
 		r.finishError(t, msg, failKind)
 		return
@@ -235,6 +253,7 @@ func (r *PmTurnRunner) run(ctx context.Context, t *pmActiveTurn, prompt string, 
 
 	text := strings.TrimSpace(partial)
 	if text == "" {
+		r.recordUsage(t, usage, usageByModel, models.TokenLedgerStatusFailed)
 		r.persistTurnFailure(t.threadID, userMsgID, PmFailEmpty)
 		r.emitTerminal(t, "error", "empty reply", PmFailEmpty)
 		return
@@ -245,10 +264,12 @@ func (r *PmTurnRunner) run(ctx context.Context, t *pmActiveTurn, prompt string, 
 	// count toward project totals (usage stays off the message).
 	if _, aerr := r.pm.AppendMessageSource(t.threadID, "assistant", text, "", citations, nil, nil, usage, usageByModel); aerr != nil {
 		log.Warn().Err(aerr).Str("thread", t.threadID).Msg("pm turn finalize append failed")
+		r.recordUsage(t, usage, usageByModel, models.TokenLedgerStatusFailed)
 		r.persistTurnFailure(t.threadID, userMsgID, PmFailUnknown)
 		r.emitTerminal(t, "error", aerr.Error(), PmFailUnknown)
 		return
 	}
+	r.recordUsage(t, usage, usageByModel, models.TokenLedgerStatusOK)
 	if _, err := r.pm.UpdateMessageFailure(t.threadID, userMsgID, "ok", ""); err != nil {
 		log.Warn().Err(err).Str("thread", t.threadID).Str("op", "clear_msg_failure").
 			Msg("pm turn persist failed")
@@ -498,4 +519,3 @@ func contentTextAny(v any) string {
 	}
 	return ""
 }
-
