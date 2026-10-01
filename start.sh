@@ -13,6 +13,7 @@
 #   ./start.sh dev -d      local source stack, detached
 #   ./start.sh sandbox     build universal-sandbox:local (dev only)
 #   ./start.sh gateway     rebuild local sandbox-gateway image (dev only)
+#   ./start.sh runtime     rebuild the sandbox runtime bundle (dev only)
 #
 # Requires Docker Compose on a Linux host (services use network_mode: host).
 set -euo pipefail
@@ -197,6 +198,22 @@ ensure_dev_sandbox_image() {
     "${gateway_dir}/sandbox"
 }
 
+# Sandbox runtime bundle (backend, preview-inject, startup scripts) the dev
+# server hands to sandboxes. Uses host Go when present, else a golang container.
+build_dev_runtime() {
+  local out=".devdata/sandbox-runtime"
+  mkdir -p "$out"
+  if command -v go >/dev/null 2>&1; then
+    scripts/build-sandbox-runtime.sh "$out" >/dev/null
+  else
+    docker run --rm --network=host \
+      -e GOPROXY="${GOPROXY:-https://goproxy.cn,direct}" -e GOSUMDB="${GOSUMDB:-sum.golang.google.cn}" \
+      -v "$HOST_REPO_DIR:/src" -v grasp-runtime-go-mod:/go/pkg/mod -w /src \
+      golang:1.25-bookworm scripts/build-sandbox-runtime.sh "$out" >/dev/null
+  fi
+  echo "sandbox runtime bundle: ${out}/sandbox-runtime.tgz"
+}
+
 up_dev() {
   local detach="${1:-}"
   if [[ ! -f server/config.yaml ]]; then
@@ -205,6 +222,7 @@ up_dev() {
   fi
   mkdir -p .devdata/db .devdata/sandbox-home
   export GRASP_SANDBOX_GATEWAY_URL="http://127.0.0.1:${GRASP_GATEWAY_PORT}"
+  build_dev_runtime
   ensure_dev_sandbox_image
   if [[ "$detach" == "1" ]]; then
     "${COMPOSE[@]}" -f "$DEV_COMPOSE_FILE" up --build -d
@@ -278,6 +296,11 @@ case "$cmd" in
   gateway)
     "${COMPOSE[@]}" -f "$DEV_COMPOSE_FILE" build gateway
     ;;
+  runtime)
+    # Rebuild the runtime bundle only; the dev server reloads it within ~30s
+    # and pushes it to running sandboxes on their next use.
+    build_dev_runtime
+    ;;
   build)
     echo "default start uses GHCR images (no local build)." >&2
     echo "for source builds: ./start.sh dev   or   ./start.sh sandbox" >&2
@@ -285,7 +308,7 @@ case "$cmd" in
     ;;
   *)
     echo "unknown: $cmd" >&2
-    echo "usage: ./start.sh [up|-d|pull|logs|gw-logs|down|restart|dev|sandbox|gateway]" >&2
+    echo "usage: ./start.sh [up|-d|pull|logs|gw-logs|down|restart|dev|sandbox|gateway|runtime]" >&2
     exit 1
     ;;
 esac

@@ -21,6 +21,23 @@ COPY web/ ./
 COPY scripts/assert-no-approving-brand.mjs /src/scripts/assert-no-approving-brand.mjs
 RUN npm run build
 
+# --- 沙箱运行时包 ---
+# backend / preview-inject 与 startup.sh 等脚本打成 sandbox-runtime.tgz，随服务端下发给
+# 沙箱（沙箱镜像只含环境 + grasp-bootstrap.sh）。见 scripts/build-sandbox-runtime.sh。
+FROM golang:1.25-bookworm AS sandbox-runtime
+WORKDIR /src
+ENV GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=sum.golang.google.cn
+COPY sandbox-gateway/sandbox/go.mod sandbox-gateway/sandbox/go.sum sandbox-gateway/sandbox/
+RUN cd sandbox-gateway/sandbox && go mod download
+COPY sandbox-gateway/sandbox/ sandbox-gateway/sandbox/
+COPY scripts/build-sandbox-runtime.sh scripts/
+RUN scripts/build-sandbox-runtime.sh /out
+
+# `docker build --target sandbox-runtime-export --output type=local,dest=<dir>` 导出运行时包（CI 用）。
+FROM scratch AS sandbox-runtime-export
+COPY --from=sandbox-runtime /out/sandbox-runtime.tgz /
+
 # --- Go 构建 ---
 FROM golang:1.25-bookworm AS build
 WORKDIR /src
@@ -55,6 +72,7 @@ WORKDIR /app
 COPY --from=build /out/grasp-server /app/grasp-server
 COPY --from=build /out/grasp /app/grasp
 COPY --from=build /src/web/dist /app/web/dist
+COPY --from=sandbox-runtime /out/sandbox-runtime.tgz /app/sandbox-runtime/sandbox-runtime.tgz
 
 # 数据落 SQLite,挂到持久卷;端口与默认 DB 路径可被部署的 env 覆盖。
 ENV GRASP_PORT=8080 \

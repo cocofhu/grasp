@@ -151,6 +151,12 @@ func main() {
 	// Shared ConfigHome .tgz registry for gateway config.bundleUrl inject
 	// (startup.sh extracts before agent start). Served at /sandbox-inject/:id.
 	injectStore := sandbox.NewBundleStore()
+	// Grasp's in-sandbox runtime (scripts + backend + preview-inject), served
+	// to new sandboxes at start and pushed to running ones (EnsureRuntime).
+	runtimeBundle := sandbox.NewRuntimeBundle(cfg.SandboxRuntimeBundle())
+	if _, _, err := runtimeBundle.Current(); err != nil {
+		log.Warn().Err(err).Msg("sandbox runtime bundle unavailable; sandbox creation will fail until it exists")
+	}
 
 	blobStore, err := blob.NewFromConfig(cfg)
 	if err != nil {
@@ -182,6 +188,7 @@ func main() {
 		SandboxCreateTimeout: cfg.SandboxCreateTimeout(),
 		MCPEndpoint:          cfg.Server.MCPAdvertise,
 		InjectStore:          injectStore,
+		Runtime:              runtimeBundle,
 		Blobs:                blobStore,
 		ProfilesRoot:         cfg.Engine.ProfilesRoot,
 		PlatformRulesRoot:    cfg.Engine.PlatformRulesRoot,
@@ -321,6 +328,7 @@ func main() {
 		InjectAdvertise: cfg.Server.MCPAdvertise,
 		CreateTimeout:   cfg.SandboxCreateTimeout(),
 		Blobs:           blobStore,
+		Runtime:         runtimeBundle,
 	})
 	log.Info().Str("gateway", cfg.Sandbox.GatewayURL).Msg("sandbox control plane: sandbox-gateway")
 	sbxSvc := services.NewSandboxService(db, sbxMgr, agentSvc, host, services.SandboxOptions{

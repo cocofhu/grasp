@@ -234,6 +234,21 @@ type SandboxConfig struct {
 	// trees (rules/skills/mcp.json) are staged before gateway bundleUrl / SSH
 	// inject into the sandbox. Empty = OS temp dir.
 	WorkDir string `yaml:"work_dir"`
+	// RuntimeBundle is the sandbox runtime bundle (.tgz from
+	// scripts/build-sandbox-runtime.sh) served to every sandbox. Empty =
+	// DefaultSandboxRuntimeBundle, where the server image ships it.
+	RuntimeBundle string `yaml:"runtime_bundle"`
+}
+
+// DefaultSandboxRuntimeBundle is where server/Dockerfile places the bundle.
+const DefaultSandboxRuntimeBundle = "/app/sandbox-runtime/sandbox-runtime.tgz"
+
+// SandboxRuntimeBundle is the configured runtime bundle path, or the default.
+func (c *Config) SandboxRuntimeBundle() string {
+	if v := strings.TrimSpace(c.Sandbox.RuntimeBundle); v != "" {
+		return v
+	}
+	return DefaultSandboxRuntimeBundle
 }
 
 // TestSandboxTTL returns the interactive sandbox idle lifetime.
@@ -409,6 +424,9 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := env("GRASP_SANDBOX_WORK_DIR"); v != "" {
 		c.Sandbox.WorkDir = v
+	}
+	if v := env("GRASP_SANDBOX_RUNTIME_BUNDLE"); v != "" {
+		c.Sandbox.RuntimeBundle = v
 	}
 	if v := envInt("GRASP_AUTH_MAX_FAILURES"); v != 0 {
 		c.Auth.MaxFailures = v

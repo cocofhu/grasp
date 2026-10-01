@@ -4,6 +4,8 @@
 # WebSocket connect 拿到 connected（与平台「连接中 → 已连接」同一路径）。
 #
 # 用法：scripts/test-agent-connect.sh <image> [providers]
+#   RUNTIME_BUNDLE：运行时包（默认 .devdata/sandbox-runtime/sandbox-runtime.tgz，
+#   scripts/build-sandbox-runtime.sh 构建）；镜像本身不带逻辑，由本脚本像 Grasp 一样下发。
 #   providers 默认 cursor,claude_code,codebuddy,opencode,trae（镜像预装的五个）
 #   设置 CURSOR_API_KEY 时，额外对 cursor 跑一轮真实对话（回复里须含约定标记）。
 #   trae 的 ACP 服务启动前必须登录：只有设置 TRAECLI_PERSONAL_ACCESS_TOKEN 时才做握手，
@@ -18,12 +20,17 @@ connect_timeout="${CONNECT_TIMEOUT:-120}"
 chat_timeout="${CHAT_TIMEOUT:-240}"
 here="$(cd "$(dirname "$0")" && pwd)"
 ws_check="$here/agent-ws-check.mjs"
+runtime_bundle="${RUNTIME_BUNDLE:-$here/../../.devdata/sandbox-runtime/sandbox-runtime.tgz}"
+[ -f "$runtime_bundle" ] || { echo "[agent-e2e] 运行时包不存在：$runtime_bundle（先运行 scripts/build-sandbox-runtime.sh 或设置 RUNTIME_BUNDLE）" >&2; exit 1; }
+# shellcheck source=lib-runtime.sh
+. "$here/lib-runtime.sh"
 
 log() { echo "[agent-e2e] $*"; }
 
 name=""
 cleanup() {
   [ -n "$name" ] && docker rm -f "$name" >/dev/null 2>&1 || true
+  stop_runtime_servers
 }
 trap cleanup EXIT
 
@@ -54,7 +61,7 @@ check_provider() {
   if [ "$provider" = trae ] && [ -n "${TRAECLI_PERSONAL_ACCESS_TOKEN:-}" ]; then
     env+=(-e TRAECLI_PERSONAL_ACCESS_TOKEN)
   fi
-  docker run -d --privileged --name "$name" "${env[@]}" \
+  docker run -d --privileged --name "$name" "${RUNTIME_DOCKER_ARGS[@]}" "${env[@]}" \
     -p 127.0.0.1::8765 -p 127.0.0.1::8744 "$image" >/dev/null
 
   local api="" ide="" deadline=$((SECONDS + ready_timeout))
@@ -115,6 +122,7 @@ check_provider() {
   log "provider=$provider: 通过"
 }
 
+start_runtime_server "$runtime_bundle"
 IFS=',' read -r -a list <<<"$providers"
 for p in "${list[@]}"; do
   p="$(echo "$p" | tr -d '[:space:]')"

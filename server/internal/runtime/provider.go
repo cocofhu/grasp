@@ -55,6 +55,8 @@ type Options struct {
 	MCPEndpoint string
 	// InjectStore holds short-lived ConfigHome .tgz for gateway bundleUrl inject.
 	InjectStore *sandbox.BundleStore
+	// Runtime is the sandbox runtime bundle shared with the sandbox service.
+	Runtime *sandbox.RuntimeBundle
 	// Blobs resolves blob:{id} attachments for ACP chat turns.
 	Blobs blob.Store
 	// ProfilesRoot is where agent_profile rules live (<root>/<profile>/rules.md),

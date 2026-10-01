@@ -33,6 +33,7 @@
 | 会话 | `GET /ws` + `GET /api/events` | Agent 交互通道(对话 + 流式事件 + 历史) |
 | IDE(可选) | code-server 端口 | 浏览器内编辑器,纯参考实现 |
 | 预览桌面(可选) | CDP `:9222` + websockify `:6080` | 沙箱内 headed 浏览器;见 §5 |
+| 运行时忙闲(参考实现) | `GET /api/runtime/busy` | 仅回环来源、不走登录鉴权;`{"busy","reason"}`,供热更新判断能否重启 backend;见 §4.2 |
 
 ---
 
@@ -192,6 +193,20 @@ WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST
 预签名 URL;或经 `SANDBOX_INJECT_HEADERS`(每行一个 HTTP 头)下发鉴权头(用 `curl -K` 配置文件,
 不进 `ps` 参数,日志隐去 query)。本地文件/目录/归档无需鉴权。
 
+### 4.2 运行时包(参考实现)
+
+参考实现的镜像只含环境与启动器 `/grasp-bootstrap.sh`;`startup.sh`、`backend`、`preview-inject`
+等逻辑打成运行时包(`scripts/build-sandbox-runtime.sh`),由平台下发:
+
+- 启动:平台设 `GRASP_RUNTIME_URL`(鉴权头复用 `SANDBOX_INJECT_HEADERS`)。容器入口 `grasp-bootstrap.sh fetch`
+  下载、校验(MANIFEST 的 `version` = 内容 sha256、`arch`、`min_image` ≤ `/etc/grasp-image-level`)后安装到
+  `/opt/grasp-runtime/<version>`,切换 `current` 软链并 exec `current/scripts/startup.sh`。未设置时失败退出。
+- 热更新:平台经 SSH 执行 `grasp-bootstrap.sh install-stdin`(包从 stdin 读),再执行
+  `/opt/grasp-runtime/current/scripts/services.sh restart preview-inject` 与 `restart backend --if-idle`。
+- 退出码契约:`grasp-bootstrap.sh` 0 成功 · 1 失败 · 2 用法错误 · 4 镜像版本不够(需重建镜像);
+  `services.sh` 3 = backend 忙(有进行中的轮次、排队的 prompt 或已连接的 `/ws` 客户端),稍后重试。
+- `GET /api/runtime/busy`:只接受回环来源,注册在登录鉴权之前;返回 `{"busy":bool,"reason":"turn:<chat>|queue:<chat>|clients:<chat>"}`。
+
 ### 按 Agent 配置的注入布局(参考实现)
 
 参考实现把两个注入根做成**每个 Agent 可配置、随 Agent 持久化**的字段(存于
@@ -346,6 +361,7 @@ iframe 内嵌它。跨源页面无法由 Grasp 注入脚本,参考实现在**沙
 | IDE | `code-server`(8744) |
 | 预览桌面 | `vnc-preview.sh`(Xvfb + Chromium + x11vnc + websockify);`VNC_PREVIEW=1` |
 | 直连预览注入 | `preview-inject` + `preview-inject.sh`;`PREVIEW_DIRECT=1` |
+| 运行时包 | `grasp-bootstrap.sh`(镜像)+ `scripts/build-sandbox-runtime.sh` 产物(平台下发);`services.sh` 管理常驻服务 |
 | 鉴权密钥 | `CURSOR_API_KEY`、`GITLAB_TOKEN` 等仅参考实现需要 |
 
 ---

@@ -43,6 +43,9 @@ func New(deps *Dependencies) *gin.Engine {
 	r.Use(gin.Recovery(), gin.Logger())
 	r.Use(corsMiddleware())
 
+	// Registered before the password guard: loopback-only, see handler.RuntimeBusy.
+	r.GET("/api/runtime/busy", handler.RuntimeBusy(deps.Chats))
+
 	if deps.Auth != nil && deps.Auth.Enabled() {
 		r.Use(deps.Auth.Middleware())
 		r.GET("/login", deps.Auth.LoginGET(deps.LoginHTMLPath))

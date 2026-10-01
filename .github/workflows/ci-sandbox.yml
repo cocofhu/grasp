@@ -1,13 +1,18 @@
 name: ci-sandbox
 
-# Path-filtered suite for the universal sandbox image + its startup/scripts.
-# PR CI: scripts/Go + cli-tools fast check + full final sandbox image build
-# (aligned with publish-sandbox; push:false).
+# Path-filtered suite for the universal sandbox image + the runtime bundle the
+# Grasp server serves to it (scripts/build-sandbox-runtime.sh; built into the
+# server image by server/Dockerfile). The image only starts with a bundle, so
+# the image jobs always run image + bundle together.
+# PR CI: scripts/Go + runtime bundle + cli-tools fast check + full final
+# sandbox image build (aligned with publish-sandbox; push:false).
 on:
   push:
     paths:
       - "sandbox-gateway/sandbox/**"
       - "sandbox-gateway/scripts/**"
+      - "scripts/build-sandbox-runtime.sh"
+      - "server/Dockerfile"
       - ".github/workflows/ci-sandbox.yml"
       - ".github/scripts/coverage-badge-color.sh"
       - ".github/scripts/publish-coverage-badge.sh"
@@ -16,6 +21,8 @@ on:
     paths:
       - "sandbox-gateway/sandbox/**"
       - "sandbox-gateway/scripts/**"
+      - "scripts/build-sandbox-runtime.sh"
+      - "server/Dockerfile"
       - ".github/workflows/ci-sandbox.yml"
       - ".github/scripts/coverage-badge-color.sh"
       - ".github/scripts/publish-coverage-badge.sh"
@@ -35,6 +42,14 @@ jobs:
           bash -n sandbox/scripts/install-agent.sh
           bash -n sandbox/scripts/claude-env.sh
           bash -n sandbox/scripts/vnc-preview.sh
+          bash -n sandbox/scripts/preview-inject.sh
+          bash -n sandbox/scripts/grasp-bootstrap.sh
+          bash -n sandbox/scripts/services.sh
+          bash -n ../scripts/build-sandbox-runtime.sh
+          bash -n scripts/lib-runtime.sh
+          bash -n scripts/runtime-server.sh
+          bash -n scripts/test-runtime-bootstrap.sh
+          bash -n scripts/test-runtime-e2e.sh
           bash -n scripts/test-inject.sh
           bash -n scripts/test-git-auth.sh
           bash -n scripts/test-agent-connect.sh
@@ -46,6 +61,52 @@ jobs:
         run: ./scripts/test-inject.sh
       - name: Git auth (gh/glab) smoke
         run: ./scripts/test-git-auth.sh
+      - name: Runtime bootstrap + services smoke
+        run: ./scripts/test-runtime-bootstrap.sh
+
+  # The bundle the server image ships (server/Dockerfile stage) must be the one
+  # tested here: rebuild it twice with the same toolchain and require identical
+  # bytes, then hand that file to the image jobs.
+  runtime-bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build bundle (server/Dockerfile --target sandbox-runtime-export)
+        run: |
+          docker buildx build -f server/Dockerfile --target sandbox-runtime-export \
+            --output type=local,dest=out/docker .
+      - name: Rebuild twice with the same toolchain (reproducible)
+        run: |
+          for n in a b; do
+            docker run --rm -v "$PWD:/src:ro" -v "$PWD/out/$n:/out" -w /src \
+              golang:1.25-bookworm scripts/build-sandbox-runtime.sh /out
+          done
+          sha256sum out/*/sandbox-runtime.tgz
+          test "$(sha256sum <out/a/sandbox-runtime.tgz)" = "$(sha256sum <out/b/sandbox-runtime.tgz)"
+          test "$(sha256sum <out/a/sandbox-runtime.tgz)" = "$(sha256sum <out/docker/sandbox-runtime.tgz)"
+      - name: Check MANIFEST and contents
+        run: |
+          set -euo pipefail
+          mkdir -p out/x
+          tar -xzf out/docker/sandbox-runtime.tgz -C out/x
+          cat out/x/MANIFEST
+          grep -Eq '^version=[0-9a-f]{64}$' out/x/MANIFEST
+          grep -qx 'arch=amd64' out/x/MANIFEST
+          grep -qx "min_image=$(tr -d '[:space:]' <sandbox-gateway/sandbox/IMAGE_LEVEL)" out/x/MANIFEST
+          test -x out/x/bin/backend
+          test -x out/x/bin/preview-inject
+          test -f out/x/share/backend/web/index.html
+          for s in startup preview-inject vnc-preview services claude-env; do test -x "out/x/scripts/$s.sh"; done
+          cmp web/public/live-overlay.js sandbox-gateway/sandbox/internal/previewinject/live-overlay.js
+          python3 -c 'import sys; sys.exit(open(sys.argv[1],"rb").read() not in open(sys.argv[2],"rb").read())' \
+            web/public/live-overlay.js out/x/bin/preview-inject
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sandbox-runtime
+          path: out/docker/sandbox-runtime.tgz
+          retention-days: 7
 
   static-js:
     runs-on: ubuntu-latest
@@ -130,12 +191,18 @@ jobs:
 
   # Full final sandbox image (same context/file/build-args as publish-sandbox).
   # No --target: must catch gopls + AGENT_PROVIDERS layers. The image is then
-  # started per AGENT_PROVIDER and must reach "connected" over /ws.
+  # started with the runtime bundle (runtime E2E) and per AGENT_PROVIDER must
+  # reach "connected" over /ws.
   sandbox-images:
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    needs: runtime-bundle
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          name: sandbox-runtime
+          path: runtime
       - name: Free disk space for the loaded image
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
@@ -159,9 +226,12 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
+      - name: Runtime bundle E2E (start, direct preview, hot update, image level)
+        run: ./sandbox-gateway/scripts/test-runtime-e2e.sh universal-sandbox:ci runtime/sandbox-runtime.tgz
       # Real chat / Trae handshake only run when the secrets exist (not on fork PRs).
       - name: Agent connection E2E
         env:
+          RUNTIME_BUNDLE: runtime/sandbox-runtime.tgz
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           TRAECLI_PERSONAL_ACCESS_TOKEN: ${{ secrets.TRAECLI_PERSONAL_ACCESS_TOKEN }}
         run: ./sandbox-gateway/scripts/test-agent-connect.sh universal-sandbox:ci

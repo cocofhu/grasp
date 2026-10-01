@@ -15,8 +15,10 @@ server/data/
 grasp-server
 server/grasp-server
 
-# 网关与沙箱源码(由 sandbox-gateway/Dockerfile 单独构建)
+# 网关源码(由 sandbox-gateway/Dockerfile 单独构建);沙箱运行时包源码需要进上下文
 sandbox-gateway/
+!sandbox-gateway/sandbox
+!sandbox-gateway/sandbox/**
 
 # 本地开发数据
 .devdata/

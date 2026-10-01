@@ -8,17 +8,41 @@
 五类 agent 后端 CLI 均已预装，`AGENT_PROVIDER` 单活切换：`cursor`（Cursor CLI）、`claude_code`（原生 Claude CLI）、`codebuddy`（`@tencent-ai/codebuddy-code`）、`trae`（Trae CLI）、`opencode`（`opencode-ai`，`run --format json`）。
 发布一张图 `ghcr.io/cocofhu/universal-sandbox`。本地打薄镜像：`--build-arg AGENT_PROVIDERS=cursor`。
 
+## 镜像与运行时包
+
+镜像只提供**环境**（系统软件、Agent CLI、工具链、code-server、sshd）和启动器 `/grasp-bootstrap.sh`。
+Grasp 的逻辑——`startup.sh` 等脚本、`backend`、`preview-inject` 和 `web/`——打成**运行时包**，
+由 Grasp 服务端下发：
+
+- 构建：仓库根 `scripts/build-sandbox-runtime.sh [OUT_DIR]` 产出 `sandbox-runtime.tgz`（可复现，版本 = 内容 sha256）。
+  服务端镜像在 `server/Dockerfile` 里构建并内置一份（`/app/sandbox-runtime/sandbox-runtime.tgz`，可用 `GRASP_SANDBOX_RUNTIME_BUNDLE` 改路径）；
+  本地开发 `./start.sh dev` 自动构建到 `.devdata/sandbox-runtime/`，改了逻辑后 `./start.sh runtime` 重建，服务端 30 秒内自动加载。
+- 新沙箱：Grasp 创建时传 `GRASP_RUNTIME_URL`（与 `SANDBOX_INJECT` 共用 `SANDBOX_INJECT_HEADERS` 里的 Bearer 令牌）。
+  容器入口 `grasp-bootstrap.sh fetch` 下载、校验并安装到 `/opt/grasp-runtime/<version>`，切换 `current` 软链后 exec `current/scripts/startup.sh`。
+  `/usr/local/bin/backend`、`preview-inject`、`*.sh` 和 `/usr/local/share/backend` 都是指向 `current` 的软链。
+  **没有 `GRASP_RUNTIME_URL` 时容器直接失败退出**：镜像不能脱离 Grasp 单独运行。
+- 运行中的沙箱：Grasp 每次使用沙箱时（`Attach`）后台比对版本，不一致就经 SSH 推送新包（`grasp-bootstrap.sh install-stdin`），
+  再 `services.sh restart preview-inject` 和 `services.sh restart backend --if-idle`。backend 有进行中的轮次、排队的 prompt 或已连接的 WebSocket 时返回 busy（退出码 3），下次使用时再重启。
+  热更新**不会**重跑 `startup.sh` 里只执行一次的步骤（凭据、克隆、dockerd、code-server 配置），这类改动只对新沙箱生效。
+- 兼容性：镜像写入 `/etc/grasp-image-level`（来自 `IMAGE_LEVEL`），运行时包 MANIFEST 带 `min_image`。镜像版本不够时 bootstrap 退出码 4，
+  日志提示“请重建沙箱镜像”；Grasp 对这类沙箱和不带 bootstrap 的旧镜像沙箱不再推送。
+
+`grasp-bootstrap.sh` 子命令（`fetch` / `install-stdin` / `version`）与退出码（0 成功 · 1 失败 · 2 用法错误 · 4 镜像版本不够）是与 Grasp 服务端的契约，
+改动它们必须同时给 `IMAGE_LEVEL` 加 1。什么时候需要重建镜像：只有系统软件、Agent CLI、工具链、code-server、sshd 或 `grasp-bootstrap.sh` 变了才需要；
+其余逻辑改动发服务端即可。
+
 ## 目录结构
 
 ```
 sandbox/
-├── Dockerfile / .dockerignore / docker-compose.yml   # 镜像构建
+├── Dockerfile / .dockerignore / docker-compose.yml   # 镜像构建（只含环境 + grasp-bootstrap.sh）
+├── IMAGE_LEVEL         # 镜像能力版本号，写入 /etc/grasp-image-level；运行时包 MANIFEST 的 min_image
 ├── go.mod / go.sum / .gitignore                       # ACP 桥接服务（module: backend）
 ├── cmd/backend/        # 服务入口
 ├── cmd/preview-inject/ # 直连预览 HTML 注入进程（听 17980）
 ├── internal/           # acp(ACP 协议传输层) + backend(...) + previewinject + service/handler/router/...
-├── web/                # 前端静态资源（打进镜像）
-├── scripts/            # 运行时脚本（打进镜像）：startup.sh / vnc-preview.sh / preview-inject.sh / claude-env.sh
+├── web/                # 前端静态资源（进运行时包）
+├── scripts/            # grasp-bootstrap.sh（打进镜像）；startup.sh / services.sh / vnc-preview.sh / preview-inject.sh / claude-env.sh（进运行时包）
 ├── docs/               # PROTOCOL.md / ARCHITECTURE.md / BACKEND.md
 └── README.md           # 本文（镜像总览）
 ```
@@ -49,19 +73,22 @@ sandbox/
 
 ## 快速运行
 
-需要 **特权模式** 才能启动容器内 `dockerd`（DinD）：
+正常由 Grasp 经 sandbox-gateway 创建。手动运行时需要自己提供运行时包（参考 `sandbox-gateway/scripts/test-runtime-e2e.sh`），
+并以 **特权模式** 启动容器内 `dockerd`（DinD）：
 
 ```bash
-docker build -t universal-sandbox:local sandbox/
-docker run --privileged -d \
+docker build -t universal-sandbox:local sandbox-gateway/sandbox/
+scripts/build-sandbox-runtime.sh /tmp/rt
+sandbox-gateway/scripts/runtime-server.sh /tmp/rt/sandbox-runtime.tgz 18765 my-token &
+docker run --privileged -d --add-host host.docker.internal:host-gateway \
+  -e GRASP_RUNTIME_URL=http://host.docker.internal:18765/sandbox-inject/rt.tgz \
+  -e SANDBOX_INJECT_HEADERS='Authorization: Bearer my-token' \
   -e ROOT_PASSWORD='你的密码' \
   -p 8744:8744 -p 22:22 -p 8765:8765 \
   universal-sandbox:local
 ```
 
 不需要容器内 Docker：加 `-e SKIP_INNER_DOCKER=1`。
-
-或使用 compose：`cd sandbox && docker compose up --build`。
 
 ## 多仓库 PULL
 
@@ -177,7 +204,8 @@ docker run --privileged -d \
 | 变量 | 默认值 | 作用 |
 | --- | --- | --- |
 | `SANDBOX_INJECT` | 空 | 逗号分隔 `src[\|dest]`；`src` 为容器内文件/目录/归档或 `http(s)://` URL，归档解压、其余复制到 `dest`；`dest` 省略默认 `$CONFIG_ROOT` |
-| `SANDBOX_INJECT_HEADERS` | 空 | 仅 URL 下载用：每行一个 HTTP 头（如 `Authorization: Bearer xxx`），经 `curl -K` 下发做远端鉴权 |
+| `SANDBOX_INJECT_HEADERS` | 空 | 仅 URL 下载用：每行一个 HTTP 头（如 `Authorization: Bearer xxx`），经 `curl -K` 下发做远端鉴权；`GRASP_RUNTIME_URL` 也用它 |
+| `GRASP_RUNTIME_URL` | **必填** | 运行时包地址，容器入口 `grasp-bootstrap.sh fetch` 下载安装后才执行 `startup.sh`。见[镜像与运行时包](#镜像与运行时包) |
 
 见下方[契约注入](#契约注入)。
 

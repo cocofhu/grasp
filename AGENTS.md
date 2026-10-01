@@ -21,7 +21,9 @@ setup and layout.
 | `server/` | Go backend (FSM, sandbox client, artifact MCP, APIs) |
 | `web/` | Vue 3 + Vue Flow UI |
 | `sandbox-gateway/gateway/` | Gateway control plane |
-| `sandbox-gateway/sandbox/` + `sandbox-gateway/scripts/` | Universal sandbox image, startup/scripts, cover helpers |
+| `sandbox-gateway/sandbox/` | Sandbox image (environment + `grasp-bootstrap.sh` only) and the runtime bundle source (`scripts/`, `cmd/`, `internal/`, `web/`) |
+| `sandbox-gateway/scripts/` | Sandbox smoke / E2E scripts, cover helpers |
+| `scripts/build-sandbox-runtime.sh` | Builds the sandbox runtime bundle (also run by `server/Dockerfile`) |
 | `docs/` | Project site (static HTML) + help (Markdown → HTML); CI publishes to `cocofhu/approving-pages` |
 
 Always-on branch-protection job: `.github/workflows/ci.yml` (`gate` only —
@@ -96,7 +98,7 @@ On push to `main`, `ci-docs` also runs `.github/scripts/publish-pages.sh` when
 Secret `PAGES_DEPLOY_KEY` is set (SSH deploy key with write access on
 `cocofhu/approving-pages`).
 
-### `sandbox-gateway/sandbox/**` or `sandbox-gateway/scripts/**` → `ci-sandbox`
+### `sandbox-gateway/sandbox/**`, `sandbox-gateway/scripts/**`, `scripts/build-sandbox-runtime.sh` or `server/Dockerfile` → `ci-sandbox`
 
 From `sandbox-gateway/`:
 
@@ -106,11 +108,16 @@ bash -n sandbox/scripts/startup.sh
 bash -n sandbox/scripts/install-agent.sh
 bash -n sandbox/scripts/claude-env.sh
 bash -n sandbox/scripts/vnc-preview.sh
+bash -n sandbox/scripts/grasp-bootstrap.sh
+bash -n sandbox/scripts/services.sh
+bash -n scripts/test-runtime-bootstrap.sh
+bash -n scripts/test-runtime-e2e.sh
 bash -n scripts/test-inject.sh
 bash -n scripts/test-git-auth.sh
 bash -n scripts/cover-check-sandbox.sh
 ./scripts/test-inject.sh
 ./scripts/test-git-auth.sh
+./scripts/test-runtime-bootstrap.sh
 
 # Sandbox Go (golangci from sandbox/; cover from sandbox-gateway/)
 ROOT="$PWD/.."   # if cwd is sandbox-gateway; else set to repo root
@@ -120,7 +127,32 @@ ROOT="$PWD/.."   # if cwd is sandbox-gateway; else set to repo root
 # Docker cli-tools stage (glab/gh) — as in ci-sandbox
 # docker build --target cli-tools -t universal-sandbox-cli-tools:ci \
 #   -f sandbox/Dockerfile sandbox/
+
+# Full image + runtime bundle (slow; job sandbox-images)
+# ../scripts/build-sandbox-runtime.sh /tmp/rt
+# docker build -t universal-sandbox:local sandbox/
+# ./scripts/test-runtime-e2e.sh universal-sandbox:local /tmp/rt/sandbox-runtime.tgz
+# RUNTIME_BUNDLE=/tmp/rt/sandbox-runtime.tgz ./scripts/test-agent-connect.sh universal-sandbox:local
 ```
+
+---
+
+## Sandbox image and runtime bundle (沙箱镜像与运行时包)
+
+The sandbox image is environment only; Grasp's in-sandbox logic ships as a
+runtime bundle served by the server (`GRASP_RUNTIME_URL` at create, SSH push to
+running sandboxes). Details: `sandbox-gateway/sandbox/README.md`.
+
+1. Logic changes (sandbox `scripts/`, `cmd/`, `internal/`, `web/`, page scripts)
+   go into the runtime bundle: release the server. Do not rebuild the image for them.
+2. Only system packages, Agent CLIs, toolchains, code-server, sshd and
+   `grasp-bootstrap.sh` need a new sandbox image.
+3. When the bundle starts depending on something new in the image, bump
+   `sandbox-gateway/sandbox/IMAGE_LEVEL` in the same PR and add it to the image.
+4. Do not change `grasp-bootstrap.sh` subcommands or exit codes; if you must,
+   bump `IMAGE_LEVEL` too.
+5. Release order: server first, then the sandbox image (a new image cannot
+   start without a server that sets `GRASP_RUNTIME_URL`).
 
 ---
 
@@ -165,6 +197,12 @@ not a substitute for these gates.
 4. **Path-filtered CI blind spot** — Docs-only / root-only / cross-module PRs may
    skip module jobs; the always-on `ci` gate is not module proof. Still run local
    suites for trees you actually touched.
+5. **Runtime hot update skips one-time startup** — Pushing a bundle restarts
+   only `backend` / `preview-inject` (`services.sh`); one-time `startup.sh`
+   steps (credentials, clone, dockerd, code-server config) apply to new sandboxes only.
+6. **Page script copies** — After editing `live-overlay.js` (and other page
+   scripts) run `npm run build:live-overlay` in `web/`; it syncs the three copies
+   and `assertCopiesInSync` checks them.
 
 ---
 
