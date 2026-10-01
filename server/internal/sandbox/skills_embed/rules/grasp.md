@@ -11,7 +11,7 @@ alwaysApply: false
 - 用手上的工具阅读仓库与上游产物,对齐需求后写入澄清与计划。
 - 只有存在真实分歧、需要用户拍板时才调用 `ask_question`;禁止为问而问(例如输入仅有代码库时问「本次开发目标是修缺陷还是新功能」)。
 - 每轮聚焦一个小问题,信息足够后再收敛。
-- **普通澄清不写实现代码、不改仓库。** 仅当平台运行时明确注入 Live 编辑契约时,处理 Live 变体请求或经 `live_update` 授权的 Live 上下文修改/采用可修改对应预览源码;参见 `skills/live-variants/SKILL.md`。该例外不替代强制交付,也不结束本节点。
+- **普通澄清不写实现代码、不改仓库。** 平台消息明确授权的预览改码例外以该消息为准;该例外不替代强制交付,也不结束本节点。
 
 ## 两份常驻强制交付(不是「唯一」)
 
@@ -54,7 +54,7 @@ demoHtml 运行于 Gates HtmlPreview 的 sandbox iframe(sandbox="allow-scripts a
 - 当需要在提问卡片之外给人看一份完整页面、文案稿或示意图时:先 `write_artifact(name, content, kind)`;需要点名聚焦时再立刻 `set_artifact_preview(name)`。
 - 与 `ask_question.demoHtml` 的分工:**选项级并排对比**用 `demoHtml`;**独立成稿、需要热更新或取点标注**用产物舞台。
 - 可多次调用 `set_artifact_preview` 切换焦点;同名再次 `write_artifact` 后预览会热更新,已关闭的 Tab 会在变更时重新打开。
-- 普通产物预览不授权改仓库;Live 编辑仅限上面的例外。需求规格本身仍只能用 `set_clarified_requirement`,不要把它写成普通产物文件。
+- 普通产物预览不授权改仓库。需求规格本身仍只能用 `set_clarified_requirement`,不要把它写成普通产物文件。
 
 ## 强制交付 1:set_clarified_requirement
 
@@ -100,7 +100,7 @@ demoHtml 运行于 Gates HtmlPreview 的 sandbox iframe(sandbox="allow-scripts a
 - `set_research`:结构化调研结论(`summary` 必填;问题/发现至少一类非空)。
 - `set_proposals`:**仅当存在至少两个方向不同、取舍有意义的候选、且需要用户在其中择一时才调用**;写入 ≥2 个候选(可标一个 `recommended`)。方向已唯一、用户已拍板、或澄清/计划足以推进时**禁止调用**——尤其禁止写入仅 1 条且标推荐/已选定的「伪选择」凑产物。独立 proposal 节点仍须强制交付;本约束只约束 Approve 可选路径。与 `ask_question`「禁止为问而问」同理:无真实分歧则不生成选择任务。
 - `write_artifact` 写入 `page.html`(kind=`html`):单文件自包含 HTML,CSS/JS 全部内联,禁止外链与 Web Storage;写完后平台会自动钉 Tab,需要主动聚焦时再 `set_artifact_preview("page.html")`。
-- `set_preview(port?, url?, label?)`:登记可运行应用预览(沙箱端口或已部署 http(s) URL,恰好其一)。**不是完成条件**,成功后不会结束本节点(与 app_preview 不同)。只登记审批人要看的前端页面,后端 API、数据库等端口不要登记(页面会自己调用),除非用户明确要求。沙箱内须 `setsid`/`nohup` 真后台、监听 `0.0.0.0:<port>`(不要 docker、不要只绑 127.0.0.1);已部署地址用 `set_preview(url=...)`。普通预览登记不授权实现修改;Live 请求仅限上述例外。
+- `set_preview(port?, url?, label?)`:登记可运行应用预览(沙箱端口或已部署 http(s) URL,恰好其一)。**不是完成条件**,成功后不会结束本节点(与 app_preview 不同)。只登记审批人要看的前端页面,后端 API、数据库等端口不要登记(页面会自己调用),除非用户明确要求。沙箱内须 `setsid`/`nohup` 真后台、监听 `0.0.0.0:<port>`(不要 docker、不要只绑 127.0.0.1);已部署地址用 `set_preview(url=...)`。普通预览登记不授权实现修改。
 
 ## 结束条件
 

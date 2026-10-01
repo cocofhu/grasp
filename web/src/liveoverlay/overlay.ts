@@ -425,8 +425,6 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
 
   /** Select / insert switch plus the whole-page input, shown while Pick is on. */
   function pickBarHtml(): string {
-    const hasMic = !!(window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition ||
-      !!(window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition
     return (
       `<div class="pickbar" role="group" aria-label="${esc(T.pickMode)}">` +
       `<div class="row"><div class="seg" role="group" aria-label="${esc(T.pickMode)}">` +
@@ -434,7 +432,6 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
       `<button type="button" data-act="mode-insert" aria-pressed="${inserting}">${esc(T.modeInsert)}</button></div>` +
       `<span class="label pickhint" role="status">${esc(inserting ? T.insertPicking : T.pickHint)}</span></div>` +
       `<div class="steer"><input type="text" data-input="steer" placeholder="${esc(T.steer)}" aria-label="${esc(T.steer)}" value="${esc(steerText)}" />` +
-      (hasMic ? `<button type="button" data-act="mic" title="${esc(T.mic)}" aria-label="${esc(T.mic)}">🎤</button>` : '') +
       `<button type="button" data-act="steer" aria-label="${esc(T.steerSend)}">↵</button></div>` +
       '</div>'
     )
@@ -1064,27 +1061,6 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
     syncViews()
   }
 
-  function startMic() {
-    const W = window as unknown as { SpeechRecognition?: new () => SpeechRec; webkitSpeechRecognition?: new () => SpeechRec }
-    const Ctor = W.SpeechRecognition || W.webkitSpeechRecognition
-    if (!Ctor) return
-    const rec = new Ctor()
-    rec.lang = /^zh/i.test(lang) ? 'zh-CN' : 'en-US'
-    rec.interimResults = false
-    rec.onresult = (e) => {
-      const said = e.results?.[0]?.[0]?.transcript || ''
-      if (said) {
-        steerText = (steerText ? `${steerText} ` : '') + said
-        renderDock()
-      }
-    }
-    try {
-      rec.start()
-    } catch {
-      // Already listening or blocked.
-    }
-  }
-
   // ---------- events ----------
 
   function setPeek(on: boolean) {
@@ -1139,9 +1115,6 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
           panel.stage = 'design'
           renderPanel()
         }
-        break
-      case 'mic':
-        startMic()
         break
       case 'mode-select':
         if (inserting) {
@@ -1427,11 +1400,4 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
       pageStyle.remove()
     },
   }
-}
-
-type SpeechRec = {
-  lang: string
-  interimResults: boolean
-  onresult: ((e: { results?: ArrayLike<ArrayLike<{ transcript?: string }>> }) => void) | null
-  start: () => void
 }

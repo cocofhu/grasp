@@ -14,8 +14,6 @@ const (
 	maxDescriptionRunes  = 8000
 	MaxCommentRunes      = 4000
 	MaxExternalNameRunes = 80
-	maxTurns             = 80
-	maxTurnRunes         = 4000
 	maxAnnotationRunes   = 400
 	maxUpstreamBytes     = 64 * 1024
 )
@@ -267,27 +265,6 @@ func sanitizeJSONValue(v any, depth int) any {
 	}
 }
 
-// sanitizeQuestionText redacts intranet addresses, blobs, and run IDs from
-// choice/form copy. It does not change SanitizeDescription, so ordinary turn
-// text keeps the previous rules.
-func sanitizeQuestionText(s string) string {
-	s = SanitizeDescription(s)
-	if s == "" {
-		return ""
-	}
-	return runIDRe.ReplaceAllString(s, "[redacted]")
-}
-
-// sanitizeDemoHTML applies the public visual-page size cap and address rules,
-// then strips run IDs. External stylesheet links stay.
-func sanitizeDemoHTML(html string) string {
-	html = SanitizeVisualHTML(html)
-	if html == "" {
-		return ""
-	}
-	return runIDRe.ReplaceAllString(html, "[redacted]")
-}
-
 func sanitizeQuestions(qs []models.ReactQuestion) []PreviewQuestion {
 	if len(qs) == 0 {
 		return nil
@@ -296,8 +273,8 @@ func sanitizeQuestions(qs []models.ReactQuestion) []PreviewQuestion {
 	for _, q := range qs {
 		opts := make([]PreviewOption, 0, len(q.Options))
 		for _, o := range q.Options {
-			label := sanitizeQuestionText(o.Label)
-			demo := sanitizeDemoHTML(o.DemoHtml)
+			label := o.Label
+			demo := o.DemoHtml
 			id := strings.TrimSpace(o.ID)
 			if id == "" && label == "" && demo == "" {
 				continue
@@ -308,7 +285,7 @@ func sanitizeQuestions(qs []models.ReactQuestion) []PreviewQuestion {
 			}
 			opts = append(opts, opt)
 		}
-		prompt := sanitizeQuestionText(q.Prompt)
+		prompt := q.Prompt
 		id := strings.TrimSpace(q.ID)
 		if id == "" && prompt == "" && len(opts) == 0 {
 			continue
@@ -348,11 +325,11 @@ func sanitizeForms(forms []models.ReactForm) []PreviewForm {
 	for _, f := range forms {
 		fields := make([]PreviewFormField, 0, len(f.Fields))
 		for _, field := range f.Fields {
-			name := sanitizeQuestionText(field.Name)
-			label := sanitizeQuestionText(field.Label)
-			placeholder := sanitizeQuestionText(field.Placeholder)
-			value := sanitizeQuestionText(field.Value)
-			why := sanitizeQuestionText(field.Why)
+			name := field.Name
+			label := field.Label
+			placeholder := field.Placeholder
+			value := field.Value
+			why := field.Why
 			if name == "" && label == "" && placeholder == "" && value == "" && why == "" {
 				continue
 			}
@@ -367,7 +344,7 @@ func sanitizeForms(forms []models.ReactForm) []PreviewForm {
 			}
 			fields = append(fields, pf)
 		}
-		title := sanitizeQuestionText(f.Title)
+		title := f.Title
 		if title == "" && len(fields) == 0 {
 			continue
 		}
@@ -384,7 +361,8 @@ func sanitizeForms(forms []models.ReactForm) []PreviewForm {
 
 // SanitizeTurns redacts conversation history for the public ReAct sidebar.
 // Image bytes / blob URLs are replaced with opaque dialogue-scoped indexes;
-// text and annotation chips are size-capped. Image-only human turns are kept.
+// text, annotations, questions and forms pass through verbatim to match the
+// approval page. Image-only human turns are kept.
 func SanitizeTurns(msgs []models.ReactMessage) []PreviewTurn {
 	turns, _ := SanitizeTurnsFrom(msgs, 0)
 	return turns
@@ -395,9 +373,6 @@ func SanitizeTurnsFrom(msgs []models.ReactMessage, imageBase int) ([]PreviewTurn
 	if len(msgs) == 0 {
 		return nil, imageBase
 	}
-	if len(msgs) > maxTurns {
-		msgs = msgs[len(msgs)-maxTurns:]
-	}
 	idx := imageBase
 	out := make([]PreviewTurn, 0, len(msgs))
 	for _, m := range msgs {
@@ -405,8 +380,7 @@ func SanitizeTurnsFrom(msgs []models.ReactMessage, imageBase int) ([]PreviewTurn
 		if role != "agent" && role != "human" {
 			continue
 		}
-		text := capTurnText(SanitizeDescription(m.Text))
-		turn := PreviewTurn{Role: role, Text: text, At: strings.TrimSpace(m.At), Interrupted: m.Interrupted}
+		turn := PreviewTurn{Role: role, Text: m.Text, At: strings.TrimSpace(m.At), Interrupted: m.Interrupted}
 		if anns := sanitizeAnnotations(m.Annotations); len(anns) > 0 {
 			turn.Annotations = anns
 		}
@@ -420,7 +394,7 @@ func SanitizeTurnsFrom(msgs []models.ReactMessage, imageBase int) ([]PreviewTurn
 			turn.Forms = forms
 		}
 		if m.Live != nil && models.ValidLiveSID(m.Live.SID) {
-			turn.Live = &models.LiveRef{SID: m.Live.SID, Op: m.Live.Op, Variant: m.Live.Variant, Prompt: SanitizeDescription(m.Live.Prompt), Generated: m.Live.Generated}
+			turn.Live = &models.LiveRef{SID: m.Live.SID, Op: m.Live.Op, Variant: m.Live.Variant, Prompt: m.Live.Prompt, Generated: m.Live.Generated}
 		}
 		// Keep a text-less turn when it still carries a choice card or form.
 		if turn.Text == "" && len(turn.Annotations) == 0 && len(turn.Images) == 0 && !turn.Interrupted && len(turn.Questions) == 0 && len(turn.Forms) == 0 {
@@ -454,7 +428,6 @@ func SanitizeQueueItemsFrom(items []map[string]any, imageBase int) ([]PreviewQue
 		}
 		id, _ := it["id"].(string)
 		text, _ := it["text"].(string)
-		text = capTurnText(SanitizeDescription(text))
 		id = strings.TrimSpace(id)
 		anns := annotationsFromAny(it["annotations"])
 		imgs := sanitizePromptImages(imagesFromAny(it["images"]), &idx)
@@ -492,7 +465,7 @@ func SanitizeActiveItemFrom(m map[string]any, imageBase int) (*PreviewActiveItem
 	text, _ := m["text"].(string)
 	item := &PreviewActiveItem{
 		ID:          strings.TrimSpace(id),
-		Text:        capTurnText(SanitizeDescription(text)),
+		Text:        text,
 		Annotations: annotationsFromAny(m["annotations"]),
 		Images:      sanitizePromptImages(imagesFromAny(m["images"]), &idx),
 	}
@@ -505,9 +478,6 @@ func SanitizeActiveItemFrom(m map[string]any, imageBase int) (*PreviewActiveItem
 // DialogueImageCatalog flattens conversation + in-flight session images in the
 // same order used when assigning opaque preview indexes (turns → active → queue).
 func DialogueImageCatalog(turns []models.ReactMessage, active map[string]any, queue []map[string]any) []models.PromptImage {
-	if len(turns) > maxTurns {
-		turns = turns[len(turns)-maxTurns:]
-	}
 	var out []models.PromptImage
 	for _, m := range turns {
 		role := strings.ToLower(strings.TrimSpace(m.Role))
@@ -659,14 +629,6 @@ func safeImageName(name string) string {
 	return name
 }
 
-func capTurnText(text string) string {
-	if utf8.RuneCountInString(text) <= maxTurnRunes {
-		return text
-	}
-	r := []rune(text)
-	return string(r[:maxTurnRunes]) + "…"
-}
-
 func stringMapField(m map[string]any, key string) string {
 	s, _ := m[key].(string)
 	return strings.TrimSpace(s)
@@ -679,11 +641,11 @@ func sanitizeAnnotations(anns []models.ReactAnnotation) []PreviewAnnotation {
 	out := make([]PreviewAnnotation, 0, len(anns))
 	for _, a := range anns {
 		pa := PreviewAnnotation{
-			Selector: clampAnnotationField(a.Selector),
-			JSONPath: clampAnnotationField(a.JSONPath),
-			Label:    clampAnnotationField(a.Label),
-			Note:     clampAnnotationField(a.Note),
-			Quote:    clampAnnotationField(a.Quote),
+			Selector: a.Selector,
+			JSONPath: a.JSONPath,
+			Label:    a.Label,
+			Note:     a.Note,
+			Quote:    a.Quote,
 		}
 		if pa.Selector == "" && pa.JSONPath == "" && pa.Label == "" && pa.Note == "" && pa.Quote == "" {
 			continue
@@ -694,15 +656,6 @@ func sanitizeAnnotations(anns []models.ReactAnnotation) []PreviewAnnotation {
 		return nil
 	}
 	return out
-}
-
-func clampAnnotationField(s string) string {
-	s = SanitizeDescription(s)
-	if utf8.RuneCountInString(s) > maxAnnotationRunes {
-		r := []rune(s)
-		s = string(r[:maxAnnotationRunes]) + "…"
-	}
-	return s
 }
 
 // SanitizeUpstream extracts a leak-free clarified_requirement (or similar) payload,

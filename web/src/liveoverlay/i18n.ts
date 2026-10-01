@@ -9,7 +9,6 @@ const zh = {
   modeInsert: '插入区块',
   steer: '整页调整…',
   steerSend: '发送',
-  mic: '语音输入',
   actions: {
     bolder: '更醒目',
     quieter: '更克制',
@@ -88,7 +87,6 @@ const en: typeof zh = {
   modeInsert: 'Insert block',
   steer: 'Adjust the whole page…',
   steerSend: 'Send',
-  mic: 'Voice input',
   actions: {
     bolder: 'Bolder',
     quieter: 'Quieter',

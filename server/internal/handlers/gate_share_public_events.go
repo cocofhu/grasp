@@ -89,6 +89,7 @@ func (h *Handlers) PublicGateEvents(c *gin.Context) {
 	}
 	h.seedPublicDialogue(conn, lookup, producerID)
 	w := &wsWriter{conn: conn}
+	imageBase := func() int { return h.publicDialogueImageBase(runID, producerID) }
 
 	// Only drawer tokens may offer their page to the agent; a share-link
 	// workbench is not a preview page.
@@ -123,7 +124,7 @@ func (h *Handlers) PublicGateEvents(c *gin.Context) {
 			if !open {
 				return
 			}
-			out, ok := gateshare.FilterPublicBrokerFrame(msg, producerID, h.publicDialogueImageBase(runID, producerID))
+			out, ok := gateshare.FilterPublicBrokerFrame(msg, producerID, imageBase)
 			if !ok {
 				continue
 			}
@@ -143,7 +144,8 @@ func (h *Handlers) seedPublicDialogue(conn *websocket.Conn, lookup *gateshare.Lo
 		return
 	}
 	runID := lookup.Link.RunID
-	imageBase := h.publicDialogueImageBase(runID, producerID)
+	base := h.publicDialogueImageBase(runID, producerID)
+	imageBase := func() int { return base }
 	busy := false
 	if snap, ok := h.Eng.ReviewSessionSnapshotFor(runID, producerID); ok {
 		busy = snap.Busy || snap.Waiting > 0

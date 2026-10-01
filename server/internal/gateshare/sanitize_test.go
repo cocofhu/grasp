@@ -42,8 +42,8 @@ func TestSanitizeQueueItemsKeepsAnnotationsAndImageIndexes(t *testing.T) {
 	if len(items) != 3 {
 		t.Fatalf("items=%d %+v", len(items), items)
 	}
-	if strings.Contains(items[0].Text, "10.1.2.3") {
-		t.Fatalf("text leak: %s", items[0].Text)
+	if items[0].Text != "改标题 http://10.1.2.3/api/runs/x" {
+		t.Fatalf("queue text must pass through verbatim: %s", items[0].Text)
 	}
 	if len(items[0].Annotations) != 1 || items[0].Annotations[0].Selector != "#title" {
 		t.Fatalf("ann: %+v", items[0].Annotations)
@@ -82,8 +82,8 @@ func TestSanitizeTurnsKeepsOpaqueImageIndexes(t *testing.T) {
 	if len(turns) != 3 {
 		t.Fatalf("turns=%d %+v", len(turns), turns)
 	}
-	if strings.Contains(turns[0].Text, "10.1.2.3") || strings.Contains(turns[0].Text, "/api/runs") {
-		t.Fatalf("agent text leaked: %s", turns[0].Text)
+	if turns[0].Text != msgs[0].Text {
+		t.Fatalf("agent text must pass through verbatim: %s", turns[0].Text)
 	}
 	if turns[1].Role != "human" || len(turns[1].Annotations) == 0 || turns[1].Annotations[0].Selector != "#title" {
 		t.Fatalf("human ann: %+v", turns[1])
@@ -154,8 +154,8 @@ func TestSanitizeTurnsDropsIdentityAndCaps(t *testing.T) {
 	if len(turns) != 2 {
 		t.Fatalf("turns=%d %+v", len(turns), turns)
 	}
-	if strings.Contains(turns[0].Text, "10.1.2.3") || strings.Contains(turns[0].Text, "/api/runs") {
-		t.Fatalf("agent text leaked: %s", turns[0].Text)
+	if turns[0].Text != msgs[0].Text {
+		t.Fatalf("agent text must pass through verbatim: %s", turns[0].Text)
 	}
 	if turns[1].Role != "human" || len(turns[1].Annotations) == 0 || turns[1].Annotations[0].Selector != "#title" {
 		t.Fatalf("human ann: %+v", turns[1])
@@ -380,8 +380,8 @@ func TestBuildReviewPreviewDTOIncludesQueueState(t *testing.T) {
 	if !dto.SessionBusy || dto.Waiting != 1 || len(dto.QueueItems) != 1 || dto.ActiveItem == nil {
 		t.Fatalf("queue dto: busy=%v waiting=%d items=%+v active=%+v", dto.SessionBusy, dto.Waiting, dto.QueueItems, dto.ActiveItem)
 	}
-	if strings.Contains(dto.QueueItems[0].Text, "10.1.2.3") || strings.Contains(dto.ActiveItem.Text, "/api/runs") {
-		t.Fatalf("queue leak: %+v %+v", dto.QueueItems[0], dto.ActiveItem)
+	if dto.QueueItems[0].Text != "请改标题，勿访问 http://10.1.2.3/api/runs/x" || dto.ActiveItem.Text != "请改标题，勿访问 http://10.1.2.3/api/runs/x" {
+		t.Fatalf("queue/active text must pass through verbatim: %+v %+v", dto.QueueItems[0], dto.ActiveItem)
 	}
 	if len(dto.QueueItems[0].Annotations) != 1 || dto.QueueItems[0].Annotations[0].Selector != "#title" {
 		t.Fatalf("queue items must keep sanitized annotations: %+v", dto.QueueItems[0])
@@ -538,21 +538,13 @@ func TestSanitizeTurnsPassesQuestionsAndForms(t *testing.T) {
 	if turns[2].Text != "" || len(turns[2].Forms) != 1 || turns[2].Forms[0].Title != "只有表单" {
 		t.Fatalf("empty-text form dropped: %+v", turns[2])
 	}
-	raw, _ := json.Marshal(turns)
-	s := string(raw)
-	for _, leak := range []string{"10.1.2.3", "192.168.1.9", "127.0.0.1", "blob:", "run-abcdef12", "/api/runs", "/api/blobs"} {
-		if strings.Contains(s, leak) {
-			t.Fatalf("question sanitize leak %q: %s", leak, s)
-		}
+	src := msgs[0].Questions[0]
+	if q[0].Prompt != src.Prompt || q[0].Options[0].Label != src.Options[0].Label || q[0].Options[0].DemoHtml != src.Options[0].DemoHtml {
+		t.Fatalf("question copy must pass through verbatim: %+v", q[0])
 	}
-	if !strings.Contains(s, "https://cdn.example.com/app.css") {
-		t.Fatalf("external stylesheet must stay: %s", s)
-	}
-	if !strings.Contains(q[0].Options[0].DemoHtml, "[redacted]") && !strings.Contains(q[0].Options[0].DemoHtml, "#") {
-		t.Fatalf("demo html should redact private address: %s", q[0].Options[0].DemoHtml)
-	}
-	if len(q[0].Options[0].DemoHtml) > maxVisualHTMLBytes {
-		t.Fatalf("demo html over visual cap: %d", len(q[0].Options[0].DemoHtml))
+	f := turns[0].Forms[0]
+	if f.Title != msgs[0].Forms[0].Title || f.Fields[0].Placeholder != "见 run-abcdef12" || f.Fields[0].Value != "blob:secret" {
+		t.Fatalf("form copy must pass through verbatim: %+v", f)
 	}
 	// No structured prompt: JSON and hash stay on the pre-question shape.
 	plain := SanitizeTurns([]models.ReactMessage{{
