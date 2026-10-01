@@ -50,8 +50,11 @@ services:
       # Optional host revision for `go run -ldflags -X` (see Dockerfile.dev).
       # ./start.sh dev fills this from `git rev-parse HEAD` when unset.
       GIT_COMMIT: ${GIT_COMMIT:-}
+      # 沙箱运行时包(./start.sh dev / ./start.sh runtime 构建),服务端下发给沙箱。
+      GRASP_SANDBOX_RUNTIME_BUNDLE: /sandbox-runtime/sandbox-runtime.tgz
     volumes:
       - ./server:/app
+      - ./.devdata/sandbox-runtime:/sandbox-runtime:ro
       # data 里放 skill profiles(agent.json 等),UI 保存 Agent 时要写回,故可写。
       - ./data:/app/data
       - ./.devdata/db:/data

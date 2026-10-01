@@ -129,7 +129,9 @@ supervise_loop() {
       fi
     fi
     ensure_rules || echo "preview-inject: iptables ensure failed (privileged / NET_ADMIN?)" >&2
-    sleep 5
+    # Backgrounded so TERM (services.sh restart) is handled without waiting out the sleep.
+    sleep 5 &
+    wait $! || true
   done
 }
 
@@ -172,7 +174,8 @@ preview_inject_main() {
     kill_bin || true
     remove_rules || true
   }
-  trap cleanup EXIT INT TERM
+  trap cleanup EXIT
+  trap 'exit 0' INT TERM
 
   start_bin || { echo "preview-inject: failed to start binary" >&2; exit 0; }
   if ! wait_listen; then

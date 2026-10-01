@@ -81,6 +81,11 @@ type Manager struct {
 
 	// hostKeys holds per-endpoint TOFU SSH host keys for data-plane dials.
 	hostKeys *hostKeyCache
+
+	// runtime is the sandbox runtime bundle every new sandbox fetches at
+	// start (GRASP_RUNTIME_URL) and running sandboxes get via EnsureRuntime.
+	// Nil only in tests that do not exercise the bundle.
+	runtime *RuntimeBundle
 }
 
 // ManagerOptions configures a gateway-backed Manager.
@@ -105,6 +110,8 @@ type ManagerOptions struct {
 	CreateTimeout time.Duration
 	// Blobs resolves blob:{id} attachments for ACP chat turns.
 	Blobs blob.Store
+	// Runtime is the sandbox runtime bundle; the image cannot start without it.
+	Runtime *RuntimeBundle
 }
 
 // Spec describes one sandbox to create. The sandbox is a generic agent runner:
@@ -289,8 +296,12 @@ func NewManager(gw *GatewayClient, opts ManagerOptions) *Manager {
 		createTimeout:           createTimeout,
 		blobs:                   opts.Blobs,
 		hostKeys:                newHostKeyCache(),
+		runtime:                 opts.Runtime,
 	}
 }
+
+// Runtime returns the sandbox runtime bundle (nil when not configured).
+func (m *Manager) Runtime() *RuntimeBundle { return m.runtime }
 
 // Gateway exposes the underlying REST client (for host/port resolution etc.).
 func (m *Manager) Gateway() *GatewayClient { return m.gw }
@@ -382,20 +393,34 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 		Mounts:       spec.Mounts,
 		Resources:    spec.Resources,
 	}
-	// Pre-start inject: pack SSH staging (+ ConfigHome) into SANDBOX_INJECT.
-	// SSH staging must land before git clone; startup.sh runs inject first.
-	// Prefer Env-based multi-inject so SSH + ConfigHome share one auth token.
-	var bundleIDs []string
-	if parts, headers, ids := m.buildMultiInject(spec.ConfigHome, configRoot, spec.SSHPrivateKey, spec.SSHKnownHosts); len(parts) > 0 {
-		env["SANDBOX_INJECT"] = strings.Join(parts, ",")
-		if headers != "" {
-			env["SANDBOX_INJECT_HEADERS"] = headers
+	var runtimeData []byte
+	var runtimeMan RuntimeManifest
+	if m.runtime != nil {
+		data, man, err := m.runtime.Current()
+		if err != nil {
+			return nil, err
 		}
+		runtimeData, runtimeMan = data, man
+	}
+	// Pre-start inject: pack SSH staging (+ ConfigHome) into SANDBOX_INJECT and
+	// the runtime bundle into GRASP_RUNTIME_URL. SSH staging must land before
+	// git clone; startup.sh runs inject first. All share one auth token.
+	var bundleIDs []string
+	if inj := m.buildMultiInject(spec.ConfigHome, configRoot, spec.SSHPrivateKey, spec.SSHKnownHosts, runtimeData); inj.ok() {
+		if len(inj.parts) > 0 {
+			env["SANDBOX_INJECT"] = strings.Join(inj.parts, ",")
+			log.Info().Str("sandbox_inject", env["SANDBOX_INJECT"]).
+				Bool("ssh", strings.TrimSpace(spec.SSHPrivateKey) != "" || strings.TrimSpace(spec.SSHKnownHosts) != "").
+				Msg("sandbox config+ssh inject via SANDBOX_INJECT")
+		}
+		if inj.runtimeURL != "" {
+			env["GRASP_RUNTIME_URL"] = inj.runtimeURL
+		}
+		env["SANDBOX_INJECT_HEADERS"] = inj.headers
 		req.Env = env
-		bundleIDs = ids
-		log.Info().Str("sandbox_inject", env["SANDBOX_INJECT"]).
-			Bool("ssh", strings.TrimSpace(spec.SSHPrivateKey) != "" || strings.TrimSpace(spec.SSHKnownHosts) != "").
-			Msg("sandbox config+ssh inject via SANDBOX_INJECT")
+		bundleIDs = inj.ids
+	} else if runtimeData != nil {
+		return nil, fmt.Errorf("sandbox runtime bundle needs the inject store and a sandbox-reachable server URL (server.mcp_advertise)")
 	} else if cfg := m.buildInjectConfig(spec.ConfigHome, configRoot); cfg != nil {
 		// Fallback single ConfigHome inject (no SSH).
 		req.Config = cfg
@@ -426,6 +451,9 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 	}
 	sb := m.sandboxFromGW(running, workspaceDir)
 	sb.ConfigRoot = configRoot
+	if runtimeData != nil {
+		m.runtime.noteInstalled(sb.ID, runtimeMan.Version)
+	}
 	// Carry the acp-bridge secret so ACP() / WaitForACPReady can log in. The
 	// image treats these as the same unified token (see ApplyPasswords).
 	if pw := strings.TrimSpace(env["CURSOR_ACP_PASSWORD"]); pw != "" {
@@ -499,35 +527,50 @@ func (m *Manager) buildInjectConfig(hostDir, configRoot string) *GWConfigInject 
 	}
 }
 
-// buildMultiInject packs optional SSH staging + ConfigHome bundles that share one
-// bearer token, returning SANDBOX_INJECT parts (SSH first) and Authorization header.
-func (m *Manager) buildMultiInject(configHome, configRoot, sshKey, sshHosts string) (parts []string, headers string, ids []string) {
+// injectPlan is the pre-start inject for one sandbox: SANDBOX_INJECT parts
+// (SSH staging first, then ConfigHome), the runtime bundle URL and the shared
+// Authorization header.
+type injectPlan struct {
+	parts      []string
+	runtimeURL string
+	headers    string
+	ids        []string
+}
+
+func (p injectPlan) ok() bool { return len(p.parts) > 0 || p.runtimeURL != "" }
+
+// buildMultiInject registers the optional SSH staging, ConfigHome and runtime
+// bundles under one bearer token. The zero plan means nothing to inject (or no
+// inject store / reachable base URL).
+func (m *Manager) buildMultiInject(configHome, configRoot, sshKey, sshHosts string, runtime []byte) injectPlan {
 	if m.bundles == nil {
-		return nil, "", nil
+		return injectPlan{}
 	}
 	base := strings.TrimRight(config.ResolveMCPAdvertise(m.injectAdvertiseFallback), "/")
 	if base == "" {
-		return nil, "", nil
+		return injectPlan{}
 	}
 	token := randomHex(24)
 	if token == "" {
-		return nil, "", nil
+		return injectPlan{}
 	}
-	put := func(data []byte, dest string) bool {
+	var plan injectPlan
+	put := func(data []byte) string {
 		id := m.bundles.PutWithToken(data, DefaultInjectBundleTTL, token)
 		if id == "" {
-			return false
+			return ""
 		}
-		parts = append(parts, base+"/sandbox-inject/"+id+".tgz|"+dest)
-		ids = append(ids, id)
-		return true
+		plan.ids = append(plan.ids, id)
+		return base + "/sandbox-inject/" + id + ".tgz"
 	}
 	if sshData, err := PackSSHInjectTarGz(sshKey, sshHosts); err != nil {
 		log.Warn().Err(err).Msg("pack ssh inject bundle failed")
 	} else if sshData != nil {
-		if !put(sshData, SSHInjectStagingDir) {
-			return nil, "", nil
+		u := put(sshData)
+		if u == "" {
+			return injectPlan{}
 		}
+		plan.parts = append(plan.parts, u+"|"+SSHInjectStagingDir)
 	}
 	if strings.TrimSpace(configHome) != "" {
 		data, err := PackConfigHomeTarGz(configHome)
@@ -538,15 +581,23 @@ func (m *Manager) buildMultiInject(configHome, configRoot, sshKey, sshHosts stri
 			if dest == "" {
 				dest = "/root/.cursor"
 			}
-			if !put(data, dest) {
-				return nil, "", nil
+			u := put(data)
+			if u == "" {
+				return injectPlan{}
 			}
+			plan.parts = append(plan.parts, u+"|"+dest)
 		}
 	}
-	if len(parts) == 0 {
-		return nil, "", nil
+	if runtime != nil {
+		if plan.runtimeURL = put(runtime); plan.runtimeURL == "" {
+			return injectPlan{}
+		}
 	}
-	return parts, "Authorization: Bearer " + token, ids
+	if !plan.ok() {
+		return injectPlan{}
+	}
+	plan.headers = "Authorization: Bearer " + token
+	return plan
 }
 
 func bundleIDFromURL(u string) string {
@@ -573,7 +624,9 @@ func (m *Manager) Attach(ctx context.Context, id string) (*Sandbox, error) {
 	if sb.Endpoint("session") == "" {
 		return nil, fmt.Errorf("sandbox %s has no session endpoint (status=%s)", id, sb.Status)
 	}
-	return m.sandboxFromGW(sb, m.WorkspaceDir), nil
+	out := m.sandboxFromGW(sb, m.WorkspaceDir)
+	m.ensureRuntimeAsync(out)
+	return out, nil
 }
 
 // DestroyByName removes a sandbox by gateway id (best effort).
@@ -581,6 +634,7 @@ func (m *Manager) DestroyByName(ctx context.Context, id string) error {
 	if m.gw == nil || strings.TrimSpace(id) == "" {
 		return nil
 	}
+	m.runtime.forget(id)
 	return m.gw.Destroy(ctx, id)
 }
 

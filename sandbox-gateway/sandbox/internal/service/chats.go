@@ -136,6 +136,35 @@ func (m *ChatManager) List() []ChatInfo {
 	return out
 }
 
+// RuntimeBusy 报告是否不宜重启 backend：任一会话有进行中的回合、排队消息或已连接的
+// WebSocket 客户端（重启会断开平台或浏览器的连接）。
+func (m *ChatManager) RuntimeBusy() (busy bool, reason string) {
+	m.mu.Lock()
+	list := make([]*Bridge, 0, len(m.order))
+	for _, id := range m.order {
+		list = append(list, m.chats[id])
+	}
+	m.mu.Unlock()
+	for _, b := range list {
+		b.turnMu.Lock()
+		turn := b.activeTurn != nil
+		b.turnMu.Unlock()
+		if turn {
+			return true, "turn:" + b.id
+		}
+		if waiting, _, _ := b.PromptQueueInfo(); waiting > 0 {
+			return true, "queue:" + b.id
+		}
+		b.mu.Lock()
+		clients := len(b.clients)
+		b.mu.Unlock()
+		if clients > 0 {
+			return true, "clients:" + b.id
+		}
+	}
+	return false, ""
+}
+
 // Info 返回单个会话的列表项。
 func (m *ChatManager) Info(b *Bridge) ChatInfo {
 	m.mu.Lock()

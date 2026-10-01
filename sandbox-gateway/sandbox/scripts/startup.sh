@@ -617,37 +617,35 @@ if [ "$_vnc_flag" = "1" ] || [ "$_vnc_flag" = "true" ]; then
   fi
 fi
 
+# backend 与直连预览注入由 services.sh 管理：Grasp 热更新运行时包后经 SSH 调
+# services.sh restart，SSH 会话拿不到 PID1 的环境，所以先把环境落盘（600）。
+# ACP_BRIDGE_* 为主环境变量；CURSOR_ACP_* 为 deprecated 兼容别名
+export ACP_BRIDGE_PORT=${ACP_BRIDGE_PORT:-${CURSOR_ACP_PORT:-8765}}
+export WORKSPACE_DIR CODE_SERVER_PORT
+GRASP_RUNTIME_RUN_DIR="${GRASP_RUNTIME_RUN_DIR:-/run/grasp-runtime}"
+_services="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/services.sh"
+mkdir -p "$GRASP_RUNTIME_RUN_DIR"
+chmod 700 "$GRASP_RUNTIME_RUN_DIR"
+(
+  umask 077
+  for _v in $(compgen -e); do
+    case "$_v" in PWD|OLDPWD|SHLVL|_) continue ;; esac
+    declare -p "$_v"
+  done >"$GRASP_RUNTIME_RUN_DIR/env"
+)
+unset _v
+
 # 直连预览 HTML 注入：应用仍听 PREVIEW_PORT；入站经 iptables REDIRECT 到 17980。
 # 与 noVNC 互斥由 Approving 保证（direct_preview 不设 VNC_PREVIEW）。
 if [ "${PREVIEW_DIRECT:-}" = "1" ] || [ "${PREVIEW_DIRECT:-}" = "true" ]; then
-  if [ -x /usr/local/bin/preview-inject.sh ]; then
-    echo "启动直连预览 HTML 注入（PREVIEW_DIRECT=1）…"
-    /usr/local/bin/preview-inject.sh &
-  else
-    echo "未找到 preview-inject.sh，跳过直连预览注入" >&2
-  fi
+  echo "启动直连预览 HTML 注入（PREVIEW_DIRECT=1）…"
+  "$_services" start preview-inject || echo "直连预览注入启动失败" >&2
 fi
 
 # backend（网关）：按 AGENT_PROVIDER 单活启动对应 provider，监听 8765（AGENT_PROVIDER / CONFIG_ROOT 已在前面解析）。
-# ACP_BRIDGE_* 为主环境变量；CURSOR_ACP_* 为 deprecated 兼容别名
-ACP_BRIDGE_PORT=${ACP_BRIDGE_PORT:-${CURSOR_ACP_PORT:-8765}}
-if [ -x /usr/local/bin/backend ] && [ -d /usr/local/share/backend/web ]; then
-  echo "启动 backend (AGENT_PROVIDER=${AGENT_PROVIDER})，监听 0.0.0.0:${ACP_BRIDGE_PORT}，configRoot ${CONFIG_ROOT}，工作目录 ${WORKSPACE_DIR}"
-  (
-    cd "$WORKSPACE_DIR"
-    _acp_args=(
-      -listen "0.0.0.0:${ACP_BRIDGE_PORT}"
-      -web /usr/local/share/backend/web
-      -gin-mode release
-    )
-    _acp_password="${ACP_BRIDGE_PASSWORD:-${CURSOR_ACP_PASSWORD:-}}"
-    [ -n "$_acp_password" ] && _acp_args+=( -password "$_acp_password" )
-    export ACP_BRIDGE_MODEL="${ACP_BRIDGE_MODEL:-${CURSOR_ACP_MODEL:-}}"
-    exec /usr/local/bin/backend "${_acp_args[@]}"
-  ) &
-else
-  echo "未找到 backend 可执行文件或 web 资源，跳过 ACP 服务"
-fi
+echo "启动 backend (AGENT_PROVIDER=${AGENT_PROVIDER})，监听 0.0.0.0:${ACP_BRIDGE_PORT}，configRoot ${CONFIG_ROOT}，工作目录 ${WORKSPACE_DIR}"
+"$_services" start backend || echo "未找到 backend 可执行文件或 web 资源，跳过 ACP 服务" >&2
+unset _services
 
 # 启动 code-server（root 用户运行，前台），指定工作目录
 cd "$WORKSPACE_DIR"

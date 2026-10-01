@@ -5,7 +5,9 @@
 #   docker build --build-arg AGENT_PROVIDERS=cursor -t universal-sandbox:local .
 #   docker build --build-arg AGENT_PROVIDERS=gemini -t sandbox:gemini .
 #   docker build --build-arg AGENT_INSTALL_CMD='npm i -g <pkg>' -t sandbox:custom .
-# 运行示例：docker run --privileged -e CODE_SERVER_PORT=8744 -p 8744:8744 -p 22:22 -p 8765:8765 <image>
+# 镜像只含运行环境；Grasp 运行时包由服务端下发，启动时必须提供 GRASP_RUNTIME_URL
+# （鉴权头走 SANDBOX_INJECT_HEADERS），见 scripts/grasp-bootstrap.sh。
+# 运行示例：docker run --privileged -e GRASP_RUNTIME_URL=<url> -e CODE_SERVER_PORT=8744 -p 8744:8744 -p 22:22 -p 8765:8765 <image>
 # backend 默认监听 0.0.0.0:8765（容器内需 -p 映射方可从宿主机访问），可用 -e ACP_BRIDGE_PORT=<端口> 覆盖；
 #   可选 -e ACP_BRIDGE_PASSWORD=<口令> 启用登录页；cwd 为 WORKSPACE_DIR。
 # 不需要内置 Docker：docker run -e SKIP_INNER_DOCKER=1 ...
@@ -276,8 +278,9 @@ RUN for i in 1 2 3; do \
 # 刻意不预装任何 code-server 扩展：保持镜像轻量，扩展由用户按需在 IDE 内自行安装。
 
 # Claude CLI 的环境初始化（仅设置环境变量；claude 本体由 agent 安装层按需装入）。
-COPY scripts/claude-env.sh /etc/profile.d/claude.sh
-RUN echo '[ -f /etc/profile.d/claude.sh ] && . /etc/profile.d/claude.sh' >> /root/.bashrc
+# 脚本随运行时包下发，这里只留指向 current 的软链。
+RUN ln -sfn /opt/grasp-runtime/current/scripts/claude-env.sh /etc/profile.d/claude.sh && \
+    echo '[ -f /etc/profile.d/claude.sh ] && . /etc/profile.d/claude.sh' >> /root/.bashrc
 
 # SSH
 RUN mkdir /var/run/sshd && \
@@ -292,36 +295,22 @@ EXPOSE 8744 22 8765 9222 6080
 # 预装以便离线用全局二进制（mcp.json 里直接 command: chrome-devtools-mcp，不走 npx 拉取）。
 RUN npm install -g chrome-devtools-mcp
 
-# backend（ACP 桥接服务）：编译多后端二进制并安装前端静态资源；运行时监听 0.0.0.0:8765
-COPY go.mod go.sum /tmp/backend-src/
-COPY cmd /tmp/backend-src/cmd
-COPY internal /tmp/backend-src/internal
-COPY web /tmp/backend-src/web
-RUN cd /tmp/backend-src && \
-    go build -ldflags="-s -w" -o /usr/local/bin/backend ./cmd/backend && \
-    go build -ldflags="-s -w" -o /usr/local/bin/preview-inject ./cmd/preview-inject && \
-    ln -sf /usr/local/bin/backend /usr/local/bin/acp-bridge && \
-    ln -sf /usr/local/bin/backend /usr/local/bin/acp-gateway && \
-    ln -sf /usr/local/bin/backend /usr/local/bin/cursor-acp && \
-    mkdir -p /usr/local/share/backend && \
-    cp -a web /usr/local/share/backend/web && \
-    ln -sf /usr/local/share/backend /usr/local/share/acp-bridge && \
-    ln -sf /usr/local/share/backend /usr/local/share/acp-gateway && \
-    ln -sf /usr/local/share/backend /usr/local/share/cursor-acp && \
-    rm -rf /tmp/backend-src
+# Grasp 运行时（backend/ACP 桥接、preview-inject 与 startup.sh 等脚本）不打进镜像：
+# 由 Grasp 服务端下发运行时包（scripts/build-sandbox-runtime.sh 构建），
+# grasp-bootstrap.sh 安装到 /opt/grasp-runtime/<version> 并切换 current。
+# 旧路径保留为指向 current 的软链，服务端与脚本里的调用不变。
+# IMAGE_LEVEL：镜像提供的能力级别，运行时包 MANIFEST 的 min_image 必须 ≤ 它。
+COPY IMAGE_LEVEL /etc/grasp-image-level
+COPY scripts/grasp-bootstrap.sh /grasp-bootstrap.sh
+RUN chmod +x /grasp-bootstrap.sh && \
+    mkdir -p /opt/grasp-runtime && \
+    cur=/opt/grasp-runtime/current && \
+    for b in backend acp-bridge acp-gateway cursor-acp; do ln -sfn "$cur/bin/backend" "/usr/local/bin/$b"; done && \
+    ln -sfn "$cur/bin/preview-inject" /usr/local/bin/preview-inject && \
+    for s in preview-inject.sh vnc-preview.sh services.sh; do ln -sfn "$cur/scripts/$s" "/usr/local/bin/$s"; done && \
+    for d in backend acp-bridge acp-gateway cursor-acp; do ln -sfn "$cur/share/backend" "/usr/local/share/$d"; done
 
 ENV ACP_BRIDGE_PORT=8765
-
-# noVNC 预览栈脚本（headed Chromium on Xvfb + x11vnc + websockify）；VNC_PREVIEW=1 时启动
-COPY scripts/vnc-preview.sh /usr/local/bin/vnc-preview.sh
-RUN chmod +x /usr/local/bin/vnc-preview.sh
-
-# 直连预览 HTML 注入（PREVIEW_DIRECT=1）：听 17980，iptables REDIRECT PREVIEW_PORT
-COPY scripts/preview-inject.sh /usr/local/bin/preview-inject.sh
-RUN chmod +x /usr/local/bin/preview-inject.sh
-
-COPY scripts/startup.sh /startup.sh
-RUN chmod +x /startup.sh
 
 # ── Agent 安装层 ──────────────────────────────────────────────────────────
 # 默认预装五个对外 CLI；运行时 AGENT_PROVIDER 单活（未设置时回落 cursor）。
@@ -335,4 +324,4 @@ RUN chmod +x /usr/local/bin/install-agent.sh && \
     AGENT_OPTIONAL_PROVIDERS="${AGENT_OPTIONAL_PROVIDERS}" \
     /usr/local/bin/install-agent.sh "${AGENT_PROVIDERS}"
 
-ENTRYPOINT ["/startup.sh"]
+ENTRYPOINT ["/grasp-bootstrap.sh", "fetch"]
