@@ -67,10 +67,25 @@ install_claude_native() {
 }
 
 install_trae() {
-  # TraeCode CLI 1.x（https://docs.trae.cn/cli_get-started-with-trae-cli）；旧地址
-  # docs.trae.cn/cli/install.sh 已对 curl 返回 400 UA Forbidden。2.0（install_v2.sh）的
-  # `acp serve` 去掉了 backend 依赖的 --model，切换前须先改 backend/trae 的 Argv。
-  curl_install https://trae.cn/trae-cli/install.sh bash
+  # TraeCode CLI 1.x（https://docs.trae.cn/cli_get-started-with-trae-cli）。官方 install.sh
+  # 所在的 trae.cn 对海外 IP（GitHub runner）返回 403，这里照它的逻辑直接从 CDN 下载。
+  # 2.0（install_v2.sh）的 `acp serve` 去掉了 backend 依赖的 --model，切换前须先改 backend/trae 的 Argv。
+  local cdn="https://lf-cdn.trae.com.cn/obj/trae-com-cn/trae-cli" ver arch data="/root/.local/share/trae-cli"
+  case "$(uname -m)" in
+    x86_64|amd64) arch=amd64 ;;
+    aarch64|arm64) arch=arm64 ;;
+    *) log "错误：trae 不支持架构 $(uname -m)"; return 1 ;;
+  esac
+  ver="$(curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 20 --max-time 60 "$cdn/trae-cli_latest_version.txt" | tr -d '[:space:]')"
+  ver="${ver#v}"
+  [ -n "$ver" ] || { log "错误：未取到 trae-cli 版本号"; return 1; }
+  curl -fsSL --retry 8 --retry-delay 5 --retry-all-errors --connect-timeout 30 --max-time 600 \
+    "$cdn/trae-cli_${ver}_linux_${arch}.tar.gz" -o /tmp/trae-cli.tgz
+  rm -rf "$data" && mkdir -p "$data" /root/.local/bin
+  tar -C "$data" -xzf /tmp/trae-cli.tgz
+  rm -f /tmp/trae-cli.tgz
+  chmod +x "$data/trae-cli"
+  for n in trae-cli traecli trae-agent; do ln -sf "$data/trae-cli" "/root/.local/bin/$n"; done
   traecli --version
   traecli acp serve --help >/dev/null
 }
