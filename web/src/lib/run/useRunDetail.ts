@@ -40,6 +40,8 @@ import type { RunPriority } from '@/components/ui/PrioritySegmented.vue'
 
 type RunLoadErrorKind = 'not_found' | 'network_or_server'
 
+export type RunViewMode = 'canvas' | 'timeline' | 'stats' | 'llm'
+
 
 export function useRunDetail() {
 const route = useRoute()
@@ -301,6 +303,7 @@ const live = useRunDetailLiveLog({
 })
 const {
   eventPages,
+  liveEvents,
   liveBusy,
   liveNode,
   rehydrateByNode,
@@ -1255,7 +1258,7 @@ function applyDetailArtifactsDeepLink(): boolean {
 
 // Main-area view: canvas / timeline (+ node detail) or execution-stats split.
 // Narrow screens default to timeline (no persistence); desktop keeps canvas.
-const viewMode = ref<'canvas' | 'timeline' | 'stats'>(isMobile.value ? 'timeline' : 'canvas')
+const viewMode = ref<RunViewMode>(isMobile.value ? 'timeline' : 'canvas')
 /** Stats sub-tab: single-run (timeline + panel) vs multi-run aggregate (full width). */
 const statsTab = ref<'single' | 'multi'>('single')
 
@@ -1289,6 +1292,13 @@ function selectExecution(nodeId: string, idx: number) {
     selected.value = nodeId
   }
   if (isMobile.value) mobileMainPanel.value = 'detail'
+}
+
+/** LLM transcript → timeline, focused on one execution. */
+function locateExecution(nodeId: string, idx: number) {
+  viewMode.value = 'timeline'
+  selectExecution(nodeId, idx)
+  timelineScrollToken.value++
 }
 
   return {
@@ -1438,6 +1448,8 @@ function selectExecution(nodeId: string, idx: number) {
   viewMode,
   statsTab,
   selectExecution,
+  locateExecution,
+  liveEvents,
   fmtTime,
   fmtDuration,
   formatTrigger,

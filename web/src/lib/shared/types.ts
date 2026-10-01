@@ -582,12 +582,19 @@ export interface NodeTypeDef {
 // ---- runs ----
 export interface AcpEvent {
   t: number // seconds offset
-  kind: 'message' | 'thought' | 'plan' | 'tool_call' | 'commands' | 'segment'
+  // prompt / turn_end bracket each persisted chat turn (LLM 过程 transcript only).
+  kind: 'message' | 'thought' | 'plan' | 'tool_call' | 'commands' | 'segment' | 'prompt' | 'turn_end'
   title?: string
   text?: string
   status?: 'running' | 'completed' | 'failed'
   // 当 tool_call 是 artifact-store MCP 写入时,标记产物名/类型,供日志高亮与产物派生
   artifact?: { name: string; kind: 'markdown' | 'json' | 'yaml' }
+  /** RFC3339; set on prompt (turn start) and turn_end. */
+  at?: string
+  /** Turn token usage; turn_end only. */
+  usage?: TokenUsage | null
+  /** prompt text was cut (storage cap, or a preview on run detail). */
+  truncated?: boolean
 }
 
 // 一次内置 MCP 工具调用的记录(入参/结果均已截断,仅供调试)。

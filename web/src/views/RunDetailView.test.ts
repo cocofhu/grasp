@@ -425,7 +425,7 @@ describe('RunDetailView mobile timeline view contract', () => {
     expect(src).toMatch(/data-testid="view-mode-canvas"/)
     expect(src).toMatch(/if \(mobile && viewMode\.value === 'canvas'\) viewMode\.value = 'timeline'/)
     expect(src).toMatch(
-      /viewMode = ref<'canvas' \| 'timeline' \| 'stats'>\(isMobile\.value \? 'timeline' : 'canvas'\)/,
+      /viewMode = ref<RunViewMode>\(isMobile\.value \? 'timeline' : 'canvas'\)/,
     )
   })
 

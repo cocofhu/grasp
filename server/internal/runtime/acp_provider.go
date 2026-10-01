@@ -114,12 +114,34 @@ type acpProvider struct {
 	// timeline holds platform-side ACP event snapshots while a node sandbox is
 	// live. nodeEvents reads this first; cold FetchEventLog is fallback only.
 	timeline *acpTimelineStore
+	// inflight holds the prompt of the turn currently streaming per
+	// runID|nodeID, so the LLM transcript shows the question before the turn
+	// is persisted; recentTurns holds the finished bracketed turns of the same
+	// key until the run ends.
+	inflightMu  sync.Mutex
+	inflight    map[string]InflightPrompt
+	recentTurns map[string][][]models.AcpEvent
 }
 
 // streamChat runs one turn (prompt + optional image attachments), streaming
 // incremental events to the sink when one is configured; otherwise it falls
 // back to a single blocking aggregation.
 func (c *acpProvider) streamChat(ctx context.Context, acp *sandbox.ACPClient, req NodeReq, prompt string, images []models.PromptImage) (*sandbox.ChatResult, error) {
+	started := time.Now()
+	c.setInflightPrompt(req, prompt, len(images), started)
+	defer c.clearInflightPrompt(req)
+	res, err := c.runChat(ctx, acp, req, prompt, images)
+	if res != nil {
+		res.Prompt = prompt
+		res.ImageCount = len(images)
+		res.StartedAt = started
+		res.EndedAt = time.Now()
+		c.recordRecentTurn(req, transcriptTurnEvents(res))
+	}
+	return res, err
+}
+
+func (c *acpProvider) runChat(ctx context.Context, acp *sandbox.ACPClient, req NodeReq, prompt string, images []models.PromptImage) (*sandbox.ChatResult, error) {
 	if c.emit == nil {
 		return acp.ChatStructured(ctx, prompt, images)
 	}
@@ -147,7 +169,7 @@ func absorbChat(usage **models.TokenUsage, byModel *models.TokenUsageByModel, ev
 		return
 	}
 	if events != nil {
-		*events = append(*events, chatResultToEvents(res)...)
+		*events = append(*events, transcriptTurnEvents(res)...)
 	}
 	if usage != nil {
 		*usage = models.AddTokenUsage(*usage, res.Usage)
@@ -185,7 +207,8 @@ func newBaseACPProvider(host *mcp.Host, opts Options, backend AcpBackend) ExecPr
 		Str("bridge", AgentRuntimeLabel(backend)).Msg("sandbox exec provider ready")
 	return &acpProvider{host: host, opts: opts, mgr: mgr, backend: backend,
 		sessions: map[string]*reactSession{}, live: map[string]*sandbox.Sandbox{},
-		inflightACP: map[string]*sandbox.ACPClient{}, timeline: newAcpTimelineStore()}
+		inflightACP: map[string]*sandbox.ACPClient{}, timeline: newAcpTimelineStore(),
+		inflight: map[string]InflightPrompt{}}
 }
 
 // resolveProviderImage picks the sandbox image for one acpBackend.

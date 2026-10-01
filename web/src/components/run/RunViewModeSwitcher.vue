@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import type { RunViewMode } from '@/lib/run/useRunDetail'
 
 const props = defineProps<{
-  viewMode: 'canvas' | 'timeline' | 'stats'
+  viewMode: RunViewMode
   isMobile: boolean
 }>()
 
 const emit = defineEmits<{
-  'update:viewMode': [mode: 'canvas' | 'timeline' | 'stats']
+  'update:viewMode': [mode: RunViewMode]
 }>()
 
 const { t } = useI18n()
@@ -88,6 +89,15 @@ onBeforeUnmount(() => {
       @click="emit('update:viewMode', 'stats')"
     >
       {{ t('pages.runDetail.stats') }}
+    </button>
+    <button
+      data-testid="view-mode-llm"
+      class="relative z-[1] rounded-md px-2.5 py-1 font-medium transition-colors"
+      :class="viewMode === 'llm' ? 'text-accent' : 'text-txt3 hover:text-txt2'"
+      :data-view-mode-active="viewMode === 'llm' ? 'true' : undefined"
+      @click="emit('update:viewMode', 'llm')"
+    >
+      {{ t('pages.runDetail.llm') }}
     </button>
   </div>
 </template>

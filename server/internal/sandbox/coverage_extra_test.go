@@ -118,6 +118,23 @@ func TestFramesAfterLastPromptBegin_WrappedAndBare(t *testing.T) {
 	}
 }
 
+func TestSplitFramesByPromptBegin(t *testing.T) {
+	setup := json.RawMessage(`{"type":"session_update","update":{"sessionUpdate":"available_commands_update"}}`)
+	pb := json.RawMessage(`{"op":"event","data":{"type":"prompt_begin"}}`)
+	msg := json.RawMessage(`{"type":"session_update","update":{"sessionUpdate":"agent_message_chunk","content":{"text":"x"}}}`)
+
+	turns := SplitFramesByPromptBegin([]json.RawMessage{setup, pb, msg, pb, msg, msg})
+	if len(turns) != 2 || len(turns[0]) != 3 || len(turns[1]) != 3 {
+		t.Fatalf("leading frames should stay with turn 1: %v", turns)
+	}
+	if got := SplitFramesByPromptBegin([]json.RawMessage{msg, msg}); len(got) != 1 || len(got[0]) != 2 {
+		t.Fatalf("no prompt_begin should be one chunk: %v", got)
+	}
+	if got := SplitFramesByPromptBegin(nil); len(got) != 0 {
+		t.Fatalf("empty log: %v", got)
+	}
+}
+
 func TestFramesAfterLastPromptBegin_NoBeginKeepsAll(t *testing.T) {
 	frames := []json.RawMessage{
 		json.RawMessage(`{"type":"session_update","update":{"sessionUpdate":"agent_message_chunk","content":{"text":"only"}}}`),

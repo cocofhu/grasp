@@ -40,6 +40,26 @@ func (e *Engine) LiveNodeEventsPage(ctx context.Context, runID, nodeID, cursor s
 	return src.LiveNodeEventsPage(ctx, runID, nodeID, cursor, limit)
 }
 
+// InflightPrompts returns the prompt of each turn still streaming for runID,
+// keyed by node id (nil when none or the provider does not track them).
+func (e *Engine) InflightPrompts(runID string) map[string]runtime.InflightPrompt {
+	src, ok := e.provider.(runtime.InflightPromptSource)
+	if !ok {
+		return nil
+	}
+	return src.InflightPrompts(runID)
+}
+
+// RecentTurns returns the finished, not-yet-necessarily-persisted bracketed
+// turns of each node for runID (nil when the provider does not track them).
+func (e *Engine) RecentTurns(runID string) map[string][]models.AcpEvent {
+	src, ok := e.provider.(runtime.InflightPromptSource)
+	if !ok {
+		return nil
+	}
+	return src.RecentTurns(runID)
+}
+
 // publishAcp streams a running node's in-progress ACP events to subscribers of
 // the run's WebSocket (live agent preview). It is best-effort: marshal failures
 // or absent subscribers are silently dropped. The authoritative event log lives

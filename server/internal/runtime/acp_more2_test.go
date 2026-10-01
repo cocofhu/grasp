@@ -181,6 +181,17 @@ func TestSnapshotEvents(t *testing.T) {
 	if len(got) == 0 || got[0].Text == "fb" {
 		t.Fatalf("expected snapshot events, got %+v", got)
 	}
+
+	// Bracketed streamed turns keep their prompt/turn_end around the snapshot.
+	bracketed := []models.AcpEvent{
+		{Kind: models.AcpKindPrompt, Text: "Q"},
+		{Kind: "message", Text: "streamed"},
+		{Kind: models.AcpKindTurnEnd, Status: "completed"},
+	}
+	got = p.snapshotEvents(context.Background(), sb, bracketed)
+	if len(got) != 3 || got[0].Text != "Q" || got[1].Text != "hello-snap" || got[2].Kind != models.AcpKindTurnEnd {
+		t.Fatalf("expected re-bracketed snapshot, got %+v", got)
+	}
 }
 
 func TestFindOrCreateMRCreatePath(t *testing.T) {
