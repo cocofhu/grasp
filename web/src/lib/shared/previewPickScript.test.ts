@@ -359,6 +359,39 @@ describe('preview-pick.js chat drawer', () => {
   })
 })
 
+describe('preview-pick.js language', () => {
+  const body = '<main><h2>Plan</h2></main>'
+  const reply = { origin: GRASP, runId: 'run-1', nodeId: 'ap1' }
+  const toggleText = (p: Page) => (p.shadow.querySelector('[data-role="toggle"]') as HTMLElement).textContent
+
+  it('uses the Grasp language from the ticket fragment over the browser language and keeps it', async () => {
+    const p = openPage(body, { hash: '#__grasp_embed&run=run-1&node=ap1&ticket=tk1&lang=zh-CN', embedReply: reply })
+    expect(toggleText(p)).toBe('取点')
+    await settle()
+    expect(JSON.parse(p.win.localStorage.getItem('__grasp_embed') || '{}').lang).toBe('zh-CN')
+  })
+
+  it('falls back to the browser language without a Grasp language', () => {
+    const p = openPage(body)
+    expect(toggleText(p)).toBe('Pick')
+  })
+
+  it('switches the toolbar when the drawer reports the Grasp language', async () => {
+    const p = openPage(body, { hash: '#__grasp_embed&run=run-1&node=ap1&ticket=tk1', embedReply: reply })
+    await settle()
+    p.drawerReady()
+    expect(toggleText(p)).toBe('Pick')
+    p.win.dispatchEvent(
+      new p.win.MessageEvent('message', { data: { type: 'grasp-embed:lang', lang: 'zh-CN' }, origin: GRASP, source: p.frame()?.contentWindow as never }),
+    )
+    expect(toggleText(p)).toBe('取点')
+    expect(p.chatButton().textContent).toBe('对话')
+    // Other origins cannot switch it.
+    p.win.dispatchEvent(new p.win.MessageEvent('message', { data: { type: 'grasp-embed:lang', lang: 'en' }, origin: 'https://evil.example', source: p.frame()?.contentWindow as never }))
+    expect(toggleText(p)).toBe('取点')
+  })
+})
+
 describe('preview-pick.js artifact modal', () => {
   const body = '<main><h2>Plan</h2><button id="buy">Buy</button></main>'
   const hash = '#__grasp_embed&run=run-1&node=ap1&ticket=tk1'
@@ -1160,10 +1193,12 @@ describe('preview-pick.js Live overlay hook', () => {
   type HostOpts = {
     post: (m: Record<string, unknown>) => boolean
     stopPick: () => void
+    startPick: () => void
     sendToChat: (el: Element) => void
     theme: () => string
     isOwnUi: (el: Element) => boolean
     changed: () => void
+    lang: string
   }
   type FakeOverlay = {
     received: unknown[]
@@ -1171,7 +1206,8 @@ describe('preview-pick.js Live overlay hook', () => {
     offered: Element[]
     inserting: boolean
     cancels: number
-    steerOpen: boolean
+    pickMode: boolean
+    langs: string[]
     candidates: boolean
     hidden: boolean
     peeks: boolean[]
@@ -1186,7 +1222,8 @@ describe('preview-pick.js Live overlay hook', () => {
       offered: [],
       inserting: false,
       cancels: 0,
-      steerOpen: false,
+      pickMode: false,
+      langs: [],
       candidates: false,
       hidden: false,
       peeks: [],
@@ -1194,14 +1231,18 @@ describe('preview-pick.js Live overlay hook', () => {
     }
     if (install) {
       ;(p.win as unknown as Record<string, unknown>).__graspLiveOverlay = {
-        version: 2,
+        version: 3,
         create: (o: HostOpts) => {
           fake.opts = o
           return {
             onDrawer: (m: unknown) => fake.received.push(m),
-            offer: (el: Element) => fake.offered.push(el),
+            offer: (el: Element) => {
+              fake.pickMode = false
+              fake.offered.push(el)
+            },
             startInsert: () => {
               o.stopPick()
+              fake.pickMode = true
               fake.inserting = true
               o.changed()
             },
@@ -1210,11 +1251,13 @@ describe('preview-pick.js Live overlay hook', () => {
               fake.inserting = false
             },
             isInserting: () => fake.inserting,
-            setSteerOpen: (on: boolean) => {
-              fake.steerOpen = on
+            setPickMode: (on: boolean) => {
+              fake.pickMode = on
+              if (!on) fake.inserting = false
               o.changed()
             },
-            isSteerOpen: () => fake.steerOpen,
+            isPickMode: () => fake.pickMode,
+            setLang: (l: string) => void fake.langs.push(l),
             hasCandidates: () => fake.candidates,
             setPeek: (on: boolean) => fake.peeks.push(on),
             toggleHidden: () => {
@@ -1235,11 +1278,11 @@ describe('preview-pick.js Live overlay hook', () => {
     return { p, inbox, send, fake, btn }
   }
 
-  const liveHidden = (btn: (role: string) => HTMLButtonElement) => ['insert', 'steer', 'eye'].map((r) => btn(r).hidden)
-
   it('stays hidden until the drawer says Live is on', async () => {
     const { btn, fake } = await ready()
-    expect(liveHidden(btn)).toEqual([true, true, true])
+    expect(btn('insert')).toBeNull()
+    expect(btn('steer')).toBeNull()
+    expect(btn('eye').hidden).toBe(true)
     expect(btn('live')).toBeNull()
     expect(fake.opts).toBeNull()
   })
@@ -1252,11 +1295,8 @@ describe('preview-pick.js Live overlay hook', () => {
     await settle()
     expect(fake.opts).not.toBeNull()
     expect(fake.received).toEqual([{ type: 'grasp-embed:live-sessions', replace: true, sessions: [] }])
-    // + and Steer show once Live loads; the eye waits for candidates on the page.
-    expect(liveHidden(btn)).toEqual([false, false, true])
-    expect(btn('insert').disabled).toBe(false)
-    expect(btn('insert').getAttribute('aria-label')).toContain('Insert')
-    expect(btn('steer').textContent).toBe('Steer')
+    // Insert and whole-page adjustment live in the overlay's pick bar; the eye waits for candidates.
+    expect(btn('eye').hidden).toBe(true)
     expect(btn('toggle').title).toContain('design variants')
     fake.candidates = true
     fake.opts!.changed()
@@ -1271,13 +1311,22 @@ describe('preview-pick.js Live overlay hook', () => {
 
     send({ type: 'grasp-embed:live-caps', enabled: false })
     expect(fake.enabled).toEqual([false])
-    expect(liveHidden(btn)).toEqual([true, true, true])
+    expect(btn('eye').hidden).toBe(true)
     send({ type: 'grasp-embed:live-caps', enabled: true })
     expect(fake.enabled).toEqual([false, true])
 
     send({ type: EMBED_SESSION_MESSAGE, ok: false })
     expect(fake.enabled).toEqual([false, true, false])
     expect(fake.opts!.post({ type: 'grasp-embed:live', op: 'discard', sid: 'sid001' })).toBe(false)
+  })
+
+  it('hands the overlay the Grasp language and forwards later switches', async () => {
+    const { send, fake } = await ready()
+    send({ type: 'grasp-embed:live-caps', enabled: true })
+    await settle()
+    expect(fake.opts!.lang).toBe('en')
+    send({ type: 'grasp-embed:lang', lang: 'zh-CN' })
+    expect(fake.langs).toEqual(['zh-CN'])
   })
 
   it('injects the overlay script next to preview-pick.js when it is not loaded yet', async () => {
@@ -1327,28 +1376,34 @@ describe('preview-pick.js Live overlay hook', () => {
     expect(p.drawerOpen()).toBe(true)
   })
 
-  it('keeps Pick and insert mutually exclusive and drives Steer and the eye', async () => {
+  it('opens one pick mode that spans select and insert, and drives the eye', async () => {
     const { p, fake, btn } = await liveReady()
     p.toggle()
-    btn('insert').click()
-    expect(fake.inserting).toBe(true)
-    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(false)
-    expect(btn('insert').getAttribute('aria-pressed')).toBe('true')
-    // Pick cancels an insert in progress.
-    p.toggle()
-    expect(fake.inserting).toBe(false)
-    expect(fake.cancels).toBeGreaterThan(0)
+    expect(fake.pickMode).toBe(true)
+    expect(btn('toggle').getAttribute('aria-pressed')).toBe('true')
     expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(true)
+    // The pick bar's insert segment turns off element picking but keeps Pick pressed.
+    fake.opts!.stopPick()
+    fake.inserting = true
+    fake.opts!.changed()
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(false)
+    expect(btn('toggle').getAttribute('aria-pressed')).toBe('true')
+    // The select segment turns element picking back on.
+    fake.opts!.startPick()
+    fake.inserting = false
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(true)
+    // Pick again leaves pick mode entirely.
     p.toggle()
-    btn('insert').click()
-    btn('insert').click()
-    expect(fake.inserting).toBe(false)
-
-    btn('steer').click()
-    expect(fake.steerOpen).toBe(true)
-    expect(btn('steer').getAttribute('aria-expanded')).toBe('true')
-    btn('steer').click()
-    expect(fake.steerOpen).toBe(false)
+    expect(fake.pickMode).toBe(false)
+    expect(btn('toggle').getAttribute('aria-pressed')).toBe('false')
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(false)
+    // Esc leaves pick mode too, also while inserting.
+    p.toggle()
+    fake.opts!.stopPick()
+    fake.inserting = true
+    p.win.document.dispatchEvent(new p.win.KeyboardEvent('keydown', { key: 'Escape' }) as unknown as Event)
+    expect(fake.pickMode).toBe(false)
+    expect(btn('toggle').getAttribute('aria-pressed')).toBe('false')
 
     fake.candidates = true
     fake.opts!.changed()
@@ -1414,8 +1469,8 @@ describe('preview-pick.js Live overlay hook', () => {
     send({ type: EMBED_LIVE_CONTEXT_REQUEST, nonce: 'pending-load' })
     send(revocation)
     ;(p.win as unknown as Record<string, unknown>).__graspLiveOverlay = {
-      version: 2,
-      create: () => ({ onDrawer: () => {}, setEnabled: () => {} }),
+      version: 3,
+      create: () => ({ onDrawer: () => {}, setEnabled: () => {}, isPickMode: () => false }),
     }
     const script = p.win.document.querySelector('script[data-grasp-live-overlay]')
     script!.dispatchEvent(new p.win.Event('load'))

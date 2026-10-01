@@ -19,7 +19,8 @@ const CSS = '.live-marks{position:fixed;z-index:2147483644;pointer-events:none;o
   '.live-mark-note textarea{font:12px/1.4 system-ui;color:#fafafa;background:#18181b;border:1px solid #52525b;border-radius:6px;padding:6px;width:180px;max-width:35vw;resize:vertical;min-height:38px}'
 
 /** Marks live only in the shadow overlay; source/preview DOM is never painted. */
-export function createAnnotations(layer: HTMLElement, T: Strings, changed: () => void) {
+export function createAnnotations(layer: HTMLElement, initialStrings: Strings, changed: () => void) {
+  let T = initialStrings
   let target: Element | null = null
   let marks: LiveMark[] = []
   let mode: 'draw' | 'note' | null = null
@@ -157,7 +158,13 @@ export function createAnnotations(layer: HTMLElement, T: Strings, changed: () =>
     layout,
     get mode() { return mode },
     get count() { return marks.length },
-    setMode(next: 'draw' | 'note') { mode = mode === next ? null : next; render() },
+    /** Toggles `next`; `null` turns marking off. */
+    setMode(next: 'draw' | 'note' | null) { mode = next && mode !== next ? next : null; render() },
+    setStrings(next: Strings) {
+      T = next
+      svg.setAttribute('aria-label', T.markCanvas)
+      render()
+    },
     setTarget(el: Element | null) {
       if (target === el) { layout(); return }
       target = el

@@ -22,12 +22,14 @@ async function open(page: Page, key: string) {
   await page.request.post(`${origin}/__e2e/live/reset?key=${key}`)
   await page.goto(`${origin}/live-variants.html?key=${key}`)
   await expect(drawer(page).getByTestId('live-drawer')).toBeVisible()
-  await expect(bar(page, 'insert')).toBeEnabled()
+  // Pick only gets its Live tooltip once the overlay is loaded and usable.
+  await expect(bar(page, 'toggle')).toHaveAttribute('title', /.+/)
 }
 
 async function generate(page: Page, prompt = '', inserted = false) {
   if (inserted) {
-    await bar(page, 'insert').click()
+    await bar(page, 'toggle').click()
+    await overlay(page).locator('[data-act="mode-insert"]').click()
     await page.locator('#newsletter').click({ position: { x: 15, y: 15 } })
   } else {
     await pickForDesign(page)
@@ -58,7 +60,13 @@ async function expectCleanSource(page: Page, key: string, title: string) {
   await expect(page.locator('[data-grasp-live]')).toHaveCount(0)
 }
 
+async function openMarks(page: Page) {
+  const toggle = overlay(page).locator('[data-act="marks-toggle"]')
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+}
+
 async function markSelection(page: Page) {
+  await openMarks(page)
   await overlay(page).locator('[data-act="mark-draw"]').click()
   const canvas = overlay(page).locator('.live-marks svg')
   await expect(canvas).toBeVisible()
@@ -89,6 +97,7 @@ test.describe('Live preview and Chat browser bridge', () => {
     await pick()
     await overlay(page).locator('[data-act="action"][data-v="animate"]').click()
     await expect(overlay(page).locator('[data-act="action"][data-v="animate"]')).toHaveAttribute('aria-pressed', 'true')
+    await openMarks(page)
     await overlay(page).locator('[data-input="notes"]').fill('颜色沿用现有色板')
     await markSelection(page)
     expect((await state(page, key)).source).toBe(LIVE_ORIGINAL)
@@ -125,7 +134,7 @@ test.describe('Live preview and Chat browser bridge', () => {
     await overlay(page).locator('[data-act="mark-clear"]').click()
     await expect(overlay(page).locator('polyline')).toHaveCount(0)
     await expect(overlay(page).locator('textarea[data-mark-note]')).toHaveCount(0)
-    await expect(overlay(page).locator('[data-act="mark-clear"]')).toBeDisabled()
+    await expect(overlay(page).locator('[data-act="mark-clear"]')).toHaveCount(0)
     await overlay(page).locator('[data-act="go"]').click()
     await expect(drawer(page).getByTestId('live-variant-card').last()).toHaveAttribute('data-state', 'ready')
     const cleanRequest = (await state(page, key)).requests.at(-1).live
@@ -260,7 +269,8 @@ test.describe('Live preview and Chat browser bridge', () => {
     const key = 'steer-recovery'
     await open(page, key)
     const steer = async (chat: FrameLocator, prompt: string) => {
-      await bar(page, 'steer').click()
+      // Whole-page adjustment is the input in Pick's bar.
+      await bar(page, 'toggle').click()
       await overlay(page).locator('[data-input="steer"]').fill(prompt)
       await overlay(page).locator('[data-act="steer"]').click()
       await expect(chat.getByTestId('live-variant-card').last()).toHaveAttribute('data-state', 'failed')
@@ -302,10 +312,18 @@ test.describe('Live entry on Grasp direct previews', () => {
       expect(await (await capability).json()).toMatchObject({ status: 'active', enabled: true, sessions: [] })
       await expect(drawer(page).getByTestId('clarify-input')).toBeVisible({ timeout: 15_000 })
       await expect(bar(page, 'live')).toHaveCount(0)
-      await expect(bar(page, 'toggle')).toHaveAttribute('title', '点选元素：发到对话或生成设计候选')
-      await expect(bar(page, 'insert')).toBeVisible()
-      await expect(bar(page, 'steer')).toHaveText('整页调整')
+      await expect(bar(page, 'toggle')).toHaveAttribute('title', '点选元素发到对话或生成候选，也可以插入区块或整页调整')
+      await expect(bar(page, 'toggle')).toHaveText('取点')
+      await expect(bar(page, 'insert')).toHaveCount(0)
+      await expect(bar(page, 'steer')).toHaveCount(0)
       await expect(bar(page, 'eye')).toBeHidden()
+      // Pick opens one bar for select / insert and the whole-page input.
+      await bar(page, 'toggle').click()
+      await expect(overlay(page).locator('[data-act="mode-select"]')).toHaveText('选元素')
+      await expect(overlay(page).locator('[data-input="steer"]')).toBeVisible()
+      await page.screenshot({ path: testInfo.outputPath(`live-${nodeType}-pickbar.png`), animations: 'disabled' })
+      await bar(page, 'toggle').click()
+      await expect(overlay(page).locator('.pickbar')).toHaveCount(0)
       // The action card can still send the element to Chat as a plain pick.
       await bar(page, 'toggle').click()
       await page.locator('#newsletter').click({ position: { x: 15, y: 15 } })
@@ -357,7 +375,7 @@ test.describe('Live entry on Grasp direct previews', () => {
       await page.goto(`${origin}/live-variants.html?key=${key}`)
       await expect(drawer(page).getByTestId('clarify-input')).toBeVisible({ timeout: 15_000 })
       expect(await (await capability).json()).toMatchObject({ enabled: false })
-      for (const role of ['insert', 'steer', 'eye']) await expect(bar(page, role)).toBeHidden()
+      await expect(bar(page, 'eye')).toBeHidden()
       await expect(overlay(page)).toHaveCount(0)
       expect((await state(page, key)).requests).toEqual([])
     })
@@ -389,7 +407,7 @@ test.describe('production Chat composer page candidates', () => {
     const key = 'entry-composer'
     await entry(page, key)
     const mode = drawer(page).getByTestId('live-candidate-mode')
-    const tools = bar(page, 'insert')
+    const tools = bar(page, 'toggle')
     await expect(drawer(page).getByTestId('page-collaboration-toggle')).toHaveAttribute('aria-expanded', 'false')
     await openControls(page)
     await expect(mode).toHaveAttribute('aria-checked', 'false')

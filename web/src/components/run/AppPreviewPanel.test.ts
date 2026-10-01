@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import AppPreviewPanel from './AppPreviewPanel.vue'
+import { locale } from '@/lib/shared/locale'
 
 vi.mock('@novnc/novnc/lib/rfb.js', () => ({
   default: class MockRFB {},
@@ -188,7 +189,7 @@ describe('AppPreviewPanel', () => {
     expect(openSpy).toHaveBeenCalledWith('about:blank', '_blank')
     expect(apiMocks.embedTicket).toHaveBeenCalledWith('run-1', 'preview-1')
     expect(tab.opener).toBeNull()
-    expect(tab.location.href).toBe('http://127.0.0.1:18081/#__grasp_embed&run=run-1&node=preview-1&ticket=tk&theme=dark')
+    expect(tab.location.href).toBe(`http://127.0.0.1:18081/#__grasp_embed&run=run-1&node=preview-1&ticket=tk&theme=dark&lang=${locale.value}`)
     openSpy.mockRestore()
     wrapper.unmount()
   })

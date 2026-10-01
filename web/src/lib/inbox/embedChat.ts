@@ -8,6 +8,8 @@ const STORAGE_PREFIX = 'grasp.embed.'
 export const EMBED_PICK_MESSAGE = 'grasp-embed:pick'
 export const EMBED_READY_MESSAGE = 'grasp-embed:ready'
 export const EMBED_THEME_MESSAGE = 'grasp-embed:theme'
+/** Drawer → page: Grasp UI language (`zh-CN` | `en`) so the page toolbar matches the app. */
+export const EMBED_LANG_MESSAGE = 'grasp-embed:lang'
 /** Drawer → page: `{ok:false}` when the drawer session is invalid, expired or revoked. */
 export const EMBED_SESSION_MESSAGE = 'grasp-embed:session'
 /** Page ↔ drawer: capability announce / stop (page → drawer), toggle state (drawer → page). */
@@ -43,9 +45,10 @@ export function embedArtifactsPath(runId: string, nodeId: string): string {
 }
 
 /** Direct preview URL carrying a drawer ticket for the in-page pick script (preview-pick.js). */
-export function directPreviewEmbedUrl(directUrl: string, t: EmbedTicket, theme: ThemeName): string {
+export function directPreviewEmbedUrl(directUrl: string, t: EmbedTicket, theme: ThemeName, lang?: string): string {
   const base = directUrl.split('#')[0]
   const q = new URLSearchParams({ run: t.runId, node: t.nodeId, ticket: t.ticket, theme })
+  if (lang) q.set('lang', lang)
   return `${base}#__grasp_embed&${q.toString()}`
 }
 

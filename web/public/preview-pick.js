@@ -9,6 +9,7 @@
   var EMBED_READY = 'grasp-embed:ready';
   var EMBED_SESSION = 'grasp-embed:session';
   var EMBED_THEME = 'grasp-embed:theme';
+  var EMBED_LANG = 'grasp-embed:lang';
   var EMBED_HASH = '__grasp_embed';
   var EMBED_ORIGIN_PATH = '/__grasp/embed-origin';
   var EMBED_STORE_KEY = '__grasp_embed';
@@ -43,54 +44,76 @@
     '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4' +
     'M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
 
-  var zh = /^zh/i.test((navigator.language || '') + '');
-  var T = zh
-    ? {
-        pick: '取点',
-        picking: '取点中 · Esc 退出',
-        added: '已添加到 Grasp 对话框',
-        artifact: '产物',
-        artifactTitle: '产物',
-        closeArtifact: '关闭产物',
-        chat: '对话',
-        chatTitle: 'Grasp · Agent 对话',
-        needTicket: '需要从预览页跳转重新获得票据',
-        brand: 'Page Harness CoCo',
-        close: '收起对话',
-        toLight: '切换到浅色',
-        toDark: '切换到深色',
-        agentOn: 'Agent 可操作此页面',
-        agentBusy: 'Agent 正在操作…',
-        stop: '停止',
-        pickDesign: '点选元素：发到对话或生成设计候选',
-        insert: '插入新区块：点选锚点元素，在它前后生成',
-        steer: '整页调整',
-        steerTitle: '用一句话调整整页',
-        eye: '按住看原版，点击隐藏候选',
-      }
-    : {
-        pick: 'Pick',
-        picking: 'Picking · Esc to stop',
-        added: 'Added to the Grasp chat',
-        artifact: 'Artifact',
-        artifactTitle: 'Artifacts',
-        closeArtifact: 'Close artifacts',
-        chat: 'Chat',
-        chatTitle: 'Grasp · Agent chat',
-        needTicket: 'Reopen from the preview page in Grasp to get a new ticket.',
-        brand: 'Page Harness CoCo',
-        close: 'Hide chat',
-        toLight: 'Switch to light',
-        toDark: 'Switch to dark',
-        agentOn: 'Agent can operate this page',
-        agentBusy: 'Agent is operating…',
-        stop: 'Stop',
-        pickDesign: 'Pick an element: add it to chat or design variants',
-        insert: 'Insert a block: pick an anchor element to add before or after',
-        steer: 'Steer',
-        steerTitle: 'Adjust the whole page in one sentence',
-        eye: 'Hold to see the original, click to hide candidates',
-      };
+  var STRINGS = {
+    zh: {
+      pick: '取点',
+      picking: '取点中 · Esc 退出',
+      added: '已添加到 Grasp 对话框',
+      artifact: '产物',
+      artifactTitle: '产物',
+      closeArtifact: '关闭产物',
+      chat: '对话',
+      chatTitle: 'Grasp · Agent 对话',
+      needTicket: '需要从预览页跳转重新获得票据',
+      brand: 'Page Harness CoCo',
+      close: '收起对话',
+      toLight: '切换到浅色',
+      toDark: '切换到深色',
+      agentOn: 'Agent 可操作此页面',
+      agentBusy: 'Agent 正在操作…',
+      stop: '停止',
+      pickDesign: '点选元素发到对话或生成候选，也可以插入区块或整页调整',
+      eye: '按住看原版，点击隐藏候选',
+    },
+    en: {
+      pick: 'Pick',
+      picking: 'Picking · Esc to stop',
+      added: 'Added to the Grasp chat',
+      artifact: 'Artifact',
+      artifactTitle: 'Artifacts',
+      closeArtifact: 'Close artifacts',
+      chat: 'Chat',
+      chatTitle: 'Grasp · Agent chat',
+      needTicket: 'Reopen from the preview page in Grasp to get a new ticket.',
+      brand: 'Page Harness CoCo',
+      close: 'Hide chat',
+      toLight: 'Switch to light',
+      toDark: 'Switch to dark',
+      agentOn: 'Agent can operate this page',
+      agentBusy: 'Agent is operating…',
+      stop: 'Stop',
+      pickDesign: 'Pick an element for chat or design variants, insert a block, or adjust the whole page',
+      eye: 'Hold to see the original, click to hide candidates',
+    },
+  };
+
+  // Grasp UI language: `zh-CN` | `en`, or '' when unknown.
+  function normLang(v) {
+    v = typeof v === 'string' ? v : '';
+    if (/^zh/i.test(v)) return 'zh-CN';
+    if (/^en/i.test(v)) return 'en';
+    return '';
+  }
+
+  function stringsFor(l) {
+    return /^zh/i.test(l || '') ? STRINGS.zh : STRINGS.en;
+  }
+
+  // The fragment is still in the address bar here; bootDrawer strips it later.
+  function initialLang() {
+    try {
+      var q = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+      if (q.has(EMBED_HASH) && normLang(q.get('lang'))) return normLang(q.get('lang'));
+    } catch (e) {}
+    var pending = loadPending();
+    if (pending && pending.lang) return pending.lang;
+    var saved = loadEmbed();
+    if (saved && normLang(saved.lang)) return normLang(saved.lang);
+    return normLang(navigator.language || '') || 'en';
+  }
+
+  var lang = initialLang();
+  var T = stringsFor(lang);
 
   var enabled = false;
   var hoverEl = null;
@@ -781,8 +804,6 @@
       '<span class="row" data-role="gate">' +
       '<span class="tip" data-role="ticket-tip" role="tooltip" id="grasp-ticket-tip" hidden></span>' +
       '<button type="button" class="toggle" data-role="toggle" aria-pressed="false"></button>' +
-      '<button type="button" class="live" data-role="insert" aria-pressed="false" hidden>+</button>' +
-      '<button type="button" class="live" data-role="steer" aria-expanded="false" hidden></button>' +
       '<button type="button" class="live" data-role="eye" aria-pressed="false" hidden>👁</button>' +
       '<button type="button" class="artifact" data-role="artifact" aria-expanded="false"></button>' +
       '<button type="button" class="chat" data-role="chat" aria-expanded="false"></button>' +
@@ -796,8 +817,6 @@
       gate: shadow.querySelector('[data-role="gate"]'),
       tip: shadow.querySelector('[data-role="ticket-tip"]'),
       toggle: shadow.querySelector('[data-role="toggle"]'),
-      insert: shadow.querySelector('[data-role="insert"]'),
-      steer: shadow.querySelector('[data-role="steer"]'),
       eye: shadow.querySelector('[data-role="eye"]'),
       artifact: shadow.querySelector('[data-role="artifact"]'),
       chat: shadow.querySelector('[data-role="chat"]'),
@@ -811,18 +830,15 @@
       artifactModal: shadow.querySelector('[data-role="artifact-modal"]'),
       artifactTitle: shadow.querySelector('[data-role="artifact-title"]'),
       artifactClose: shadow.querySelector('[data-role="artifact-close"]'),
+      drawerTitle: shadow.querySelector('[data-role="drawer-title"]'),
+      drawerClose: shadow.querySelector('[data-role="drawer-close"]'),
     };
     ui.agentStop.addEventListener('click', function (ev) {
       ev.preventDefault();
       ev.stopPropagation();
       stopControl();
     });
-    var titleEl = shadow.querySelector('[data-role="drawer-title"]');
-    titleEl.textContent = T.brand;
-    titleEl.title = T.brand;
-    ui.artifactTitle.textContent = T.artifactTitle;
-    ui.artifactClose.setAttribute('aria-label', T.closeArtifact);
-    ui.artifactClose.title = T.closeArtifact;
+    applyStaticLabels();
     var head = shadow.querySelector('[data-role="drawer-head"]');
     head.addEventListener('pointerdown', onHeadPointerDown);
     Array.prototype.forEach.call(ui.drawer.querySelectorAll('.edge'), function (edge) {
@@ -833,30 +849,16 @@
     Array.prototype.forEach.call(ui.artifactModal.querySelectorAll('.edge'), function (edge) {
       edge.addEventListener('pointerdown', onArtifactEdgePointerDown);
     });
-    var closeBtn = shadow.querySelector('[data-role="drawer-close"]');
-    closeBtn.setAttribute('aria-label', T.close);
-    closeBtn.title = T.close;
     ui.toggle.addEventListener('click', function (ev) {
       ev.preventDefault();
       ev.stopPropagation();
-      setEnabled(!enabled);
+      if (pickActive()) exitPick();
+      else startPickMode();
     });
     ui.artifact.addEventListener('click', function (ev) {
       ev.preventDefault();
       ev.stopPropagation();
       setArtifactOpen(!artifactOpen);
-    });
-    ui.insert.addEventListener('click', function (ev) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      if (!liveUsable() || control.busy > 0) return;
-      if (live.api.isInserting()) live.api.cancelPick();
-      else live.api.startInsert();
-    });
-    ui.steer.addEventListener('click', function (ev) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      if (liveUsable()) live.api.setSteerOpen(!live.api.isSteerOpen());
     });
     // Hold to peek at the original; a short click hides the candidates instead.
     var eyeDownAt = 0;
@@ -908,7 +910,7 @@
       tipFocus = false;
       syncTicketTip();
     });
-    closeBtn.addEventListener('click', function (ev) {
+    ui.drawerClose.addEventListener('click', function (ev) {
       ev.preventDefault();
       ev.stopPropagation();
       setDrawerOpen(false);
@@ -941,10 +943,40 @@
     ui.tip.className = show ? 'tip on' : 'tip';
   }
 
+  function applyStaticLabels() {
+    if (!ui) return;
+    ui.drawerTitle.textContent = T.brand;
+    ui.drawerTitle.title = T.brand;
+    ui.artifactTitle.textContent = T.artifactTitle;
+    ui.artifactClose.setAttribute('aria-label', T.closeArtifact);
+    ui.artifactClose.title = T.closeArtifact;
+    ui.drawerClose.setAttribute('aria-label', T.close);
+    ui.drawerClose.title = T.close;
+    if (drawer) drawer.frame.title = T.chatTitle;
+    if (artifactFrame) artifactFrame.title = T.artifactTitle;
+  }
+
+  function setLang(next) {
+    next = normLang(next);
+    if (!next) return;
+    if (drawer && drawer.embed.lang !== next) {
+      drawer.embed.lang = next;
+      saveEmbed(drawer.embed);
+    }
+    if (next === lang) return;
+    lang = next;
+    T = stringsFor(next);
+    applyStaticLabels();
+    syncTicketTip();
+    render();
+    if (live.api && live.api.setLang) live.api.setLang(next);
+  }
+
   function render() {
     if (!ui) return;
-    ui.toggle.textContent = enabled ? T.picking : T.pick;
-    ui.toggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    var picking = pickActive();
+    ui.toggle.textContent = picking ? T.picking : T.pick;
+    ui.toggle.setAttribute('aria-pressed', picking ? 'true' : 'false');
     var ok = usable();
     syncTicketTip();
     ui.toggle.disabled = !ok || control.busy > 0;
@@ -955,16 +987,6 @@
     var liveOn = !!(live.enabled && live.api);
     var liveOk = liveUsable();
     ui.toggle.title = liveOk ? T.pickDesign : '';
-    ui.insert.hidden = !liveOn;
-    ui.insert.disabled = !liveOk || control.busy > 0;
-    ui.insert.title = T.insert;
-    ui.insert.setAttribute('aria-label', T.insert);
-    ui.insert.setAttribute('aria-pressed', liveOn && live.api.isInserting() ? 'true' : 'false');
-    ui.steer.hidden = !liveOn;
-    ui.steer.disabled = !liveOk;
-    ui.steer.textContent = T.steer;
-    ui.steer.title = T.steerTitle;
-    ui.steer.setAttribute('aria-expanded', liveOn && live.api.isSteerOpen() ? 'true' : 'false');
     ui.eye.hidden = !(liveOn && live.api.hasCandidates());
     ui.eye.title = T.eye;
     ui.eye.setAttribute('aria-label', T.eye);
@@ -1007,6 +1029,22 @@
 
   function liveUsable() {
     return !!(live.enabled && live.api) && usable() && drawerReady;
+  }
+
+  // Pick mode spans element picking here and, with Live on, the overlay's pick bar
+  // (select / insert switch and whole-page input).
+  function pickActive() {
+    return enabled || !!(live.api && live.api.isPickMode());
+  }
+
+  function startPickMode() {
+    setEnabled(true);
+    if (enabled && liveUsable()) live.api.setPickMode(true);
+  }
+
+  function exitPick() {
+    setEnabled(false);
+    if (live.api) live.api.setPickMode(false);
   }
 
   function setEnabled(on) {
@@ -1078,7 +1116,7 @@
     try {
       sessionStorage.setItem(
         EMBED_PENDING_KEY,
-        JSON.stringify({ run: got.run, node: got.node, ticket: got.ticket, theme: got.theme }),
+        JSON.stringify({ run: got.run, node: got.node, ticket: got.ticket, theme: got.theme, lang: got.lang }),
       );
     } catch (e) {}
   }
@@ -1087,7 +1125,13 @@
     try {
       var v = JSON.parse(sessionStorage.getItem(EMBED_PENDING_KEY) || 'null');
       if (v && v.run && v.node && v.ticket) {
-        return { run: String(v.run), node: String(v.node), ticket: String(v.ticket), theme: v.theme === 'light' ? 'light' : 'dark' };
+        return {
+          run: String(v.run),
+          node: String(v.node),
+          ticket: String(v.ticket),
+          theme: v.theme === 'light' ? 'light' : 'dark',
+          lang: normLang(v.lang),
+        };
       }
     } catch (e) {}
     return null;
@@ -1114,6 +1158,7 @@
       node: q.get('node') || '',
       ticket: q.get('ticket') || '',
       theme: q.get('theme') === 'light' ? 'light' : 'dark',
+      lang: normLang(q.get('lang')),
     };
     var ok = !!(got.run && got.node && got.ticket);
     if (ok) stashPending(got);
@@ -1245,7 +1290,10 @@
         }
         // Keep the pending ticket until the drawer reports a live session.
         // A login redirect destroys this page before the iframe can redeem it.
-        startDrawer({ origin: v.origin, run: frag.run, node: frag.node, open: true, theme: frag.theme }, frag.ticket);
+        startDrawer(
+          { origin: v.origin, run: frag.run, node: frag.node, open: true, theme: frag.theme, lang: frag.lang || lang },
+          frag.ticket,
+        );
         setDrawerOpen(true);
       })
       .catch(resumeDrawer);
@@ -1286,11 +1334,11 @@
   }
 
   function onKeydown(ev) {
-    if (!enabled) return;
+    if (!pickActive()) return;
     if (ev.key !== 'Escape' && ev.key !== 'Esc') return;
     ev.preventDefault();
     ev.stopPropagation();
-    setEnabled(false);
+    exitPick();
   }
 
   // ---- agent page control ----
@@ -1375,6 +1423,10 @@
       stopPick: function () {
         setEnabled(false);
       },
+      startPick: function () {
+        setEnabled(true);
+      },
+      lang: lang,
       sendToChat: pickToChat,
       changed: render,
       isOwnUi: function (el) {
@@ -1394,7 +1446,7 @@
     if (live.loading) return live.loading;
     live.loading = new Promise(function (resolve, reject) {
       var api = window.__graspLiveOverlay;
-      if (api && api.version === 2) {
+      if (api && api.version === 3) {
         resolve(api);
         return;
       }
@@ -1404,7 +1456,7 @@
       s.setAttribute('data-grasp-live-overlay', '');
       s.onload = function () {
         var loaded = window.__graspLiveOverlay;
-        if (loaded && loaded.version === 2) resolve(loaded);
+        if (loaded && loaded.version === 3) resolve(loaded);
         else reject(new Error('live overlay missing'));
       };
       s.onerror = function () {
@@ -1414,6 +1466,7 @@
     })
       .then(function (api) {
         live.api = makeLive(api);
+        if (enabled && liveUsable()) live.api.setPickMode(true);
         render();
         return live.api;
       })
@@ -1543,8 +1596,7 @@
       replyCmd(nonce, { ok: false, error: '用户没有开启页面操作' });
       return;
     }
-    if (enabled) setEnabled(false);
-    if (live.api) live.api.cancelPick();
+    if (pickActive()) exitPick();
     var ac = typeof AbortController === 'function' ? new AbortController() : true;
     control.pending[nonce] = ac;
     control.busy++;
@@ -1583,6 +1635,8 @@
       tabReady.then(function () {
         postDrawer({ type: EMBED_CONTROL, caps: [PAGE_CONTROL_CAP], tab: tabId });
       });
+    } else if (data.type === EMBED_LANG) {
+      setLang(data.lang);
     } else if (data.type === EMBED_SESSION && data.ok === false) {
       sessionDead = true;
       clearPending();

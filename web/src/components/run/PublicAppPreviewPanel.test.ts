@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import PublicAppPreviewPanel from './PublicAppPreviewPanel.vue'
+import { locale } from '@/lib/shared/locale'
 
 const shareMocks = vi.hoisted(() => ({
   createPreviewTicket: vi.fn(),
@@ -94,7 +95,7 @@ describe('PublicAppPreviewPanel', () => {
     await w.get('[data-testid="app-preview-direct-open"]').trigger('click')
     await flushPromises()
     expect(shareMocks.embedTicket).toHaveBeenCalledWith('share-token')
-    expect(tab.location.href).toBe('http://10.0.0.5:18080/#__grasp_embed&run=run-1&node=ap1&ticket=tk&theme=dark')
+    expect(tab.location.href).toBe(`http://10.0.0.5:18080/#__grasp_embed&run=run-1&node=ap1&ticket=tk&theme=dark&lang=${locale.value}`)
     open.mockRestore()
     w.unmount()
   })
