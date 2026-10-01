@@ -18,6 +18,10 @@
 ARG BASE_IMAGE=docker.m.daocloud.io/library/ubuntu:22.04
 FROM ${BASE_IMAGE} AS cli-tools
 
+# 所有 RUN 走 bash + pipefail：`curl ... | sh`、`curl ... | gpg` 下载失败时整条命令失败，
+# 不会静默产出缺组件的镜像。最终阶段 FROM cli-tools 继承此设置。
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # 国内 apt 镜像开关（默认 true：本地不传 build-arg 仍走清华源；CI/publish 传 false）
 ARG USE_CN_MIRROR=true
 
@@ -261,8 +265,13 @@ RUN { \
 RUN pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 RUN pip3 install --upgrade pip setuptools wheel
 
-# 安装 code-server（带重试，防止网络抖动）
-RUN for i in 1 2 3; do curl -fsSL --connect-timeout 20 --max-time 120 https://code-server.dev/install.sh | sh && break || echo "code-server 安装失败，第 $i 次重试..." && sleep $((i * 5)); done
+# 安装 code-server（带重试，防止网络抖动）；以 code-server 可执行为准，三次都失败则构建失败。
+RUN for i in 1 2 3; do \
+      curl -fsSL --connect-timeout 20 --max-time 120 https://code-server.dev/install.sh | sh; \
+      command -v code-server >/dev/null 2>&1 && break; \
+      echo "code-server 安装失败，第 $i 次重试..."; sleep $((i * 5)); \
+    done; \
+    command -v code-server >/dev/null 2>&1 || { echo "code-server 安装失败，终止构建" >&2; exit 1; }
 
 # 刻意不预装任何 code-server 扩展：保持镜像轻量，扩展由用户按需在 IDE 内自行安装。
 
@@ -318,7 +327,7 @@ RUN chmod +x /startup.sh
 # 默认预装五个对外 CLI；运行时 AGENT_PROVIDER 单活（未设置时回落 cursor）。
 # 本地打薄镜像：--build-arg AGENT_PROVIDERS=cursor
 ARG AGENT_PROVIDERS=cursor,claude_code,codebuddy,trae,opencode
-ARG AGENT_OPTIONAL_PROVIDERS=trae
+ARG AGENT_OPTIONAL_PROVIDERS=
 ARG AGENT_INSTALL_CMD=
 COPY scripts/install-agent.sh /usr/local/bin/install-agent.sh
 RUN chmod +x /usr/local/bin/install-agent.sh && \

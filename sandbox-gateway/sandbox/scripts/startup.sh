@@ -651,4 +651,8 @@ fi
 
 # 启动 code-server（root 用户运行，前台），指定工作目录
 cd "$WORKSPACE_DIR"
+if ! command -v code-server >/dev/null 2>&1; then
+  echo "错误：镜像缺少 code-server（构建不完整），请重新构建或拉取镜像。" >&2
+  exit 1
+fi
 code-server "$WORKSPACE_DIR"
