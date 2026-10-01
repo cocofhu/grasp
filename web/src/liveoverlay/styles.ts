@@ -47,6 +47,7 @@ export const OVERLAY_CSS =
   '.sw .count{font-variant-numeric:tabular-nums;padding:0 6px;font-weight:600}' +
   '.sw .lab{color:#a1a1aa;font-size:12px;padding-right:4px;max-width:120px;overflow:hidden;text-overflow:ellipsis}' +
   '.sw .accept{background:#f59e0b;color:#18181b;font-weight:700}' +
+  '.sw button[aria-pressed="true"]{background:rgba(245,158,11,.2);color:#fbbf24;font-weight:600}' +
   '.sw .accept:hover{background:#fbbf24}' +
   '.sw .state{padding:0 8px;color:#fbbf24}' +
   '.sw .err{padding:0 8px;color:#fca5a5;max-width:260px;overflow:hidden;text-overflow:ellipsis}' +
@@ -78,6 +79,7 @@ export const OVERLAY_CSS =
   '.light .sep{background:#e4e4e7}' +
   '.light .label,.light .target,.light .sw .lab{color:#71717a}' +
   '.light .sw .state{color:#b45309}' +
+  '.light .sw button[aria-pressed="true"]{color:#b45309}' +
   '.light .sw .err{color:#b91c1c}' +
   '.light .cframe{border-color:rgba(113,113,122,.35)}' +
   '.light .tag{background:rgba(255,255,255,.88);border-color:#e4e4e7}' +

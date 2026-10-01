@@ -372,6 +372,52 @@ describe('Live overlay', () => {
     }
   })
 
+  it('compares with the original in place: toggle, cycle and drawer goto', () => {
+    document.body.innerHTML = wrapperHtml()
+    make()
+    sessions([{ sid: 'sid001', state: 'ready', mode: 'replace', variants: [{ n: 1 }, { n: 2 }] }])
+    const shown = () => [...document.querySelectorAll<HTMLElement>('[data-grasp-variant]')].filter((el) => !el.hidden).map((el) => el.dataset.graspVariant)
+    const btn = (act: string) => q(`[data-sw="sid001"] [data-act="${act}"]`) as HTMLButtonElement
+    const lastState = () => posted.filter((m) => m.op === 'state').at(-1)
+
+    expect(btn('original').getAttribute('aria-pressed')).toBe('false')
+    btn('next').click()
+    expect(shown()).toEqual(['2'])
+    btn('original').click()
+    expect(shown()).toEqual(['0'])
+    expect(q('[data-sw="sid001"] .count')?.textContent).toBe(T.original)
+    expect(btn('original').getAttribute('aria-pressed')).toBe('true')
+    expect(btn('accept').disabled).toBe(true)
+    expect(lastState()).toMatchObject({ current: 0, original: true })
+    // Toggling back returns to the candidate being compared, not the first one.
+    btn('original').click()
+    expect(shown()).toEqual(['2'])
+    expect(lastState()).toMatchObject({ current: 2 })
+    expect(lastState()).not.toHaveProperty('original')
+
+    // The original sits at the start of the in-place cycle.
+    btn('prev').click()
+    btn('prev').click()
+    expect(shown()).toEqual(['0'])
+    btn('next').click()
+    expect(shown()).toEqual(['1'])
+
+    overlay!.onDrawer({ type: LIVE_CMD, sid: 'sid001', cmd: 'goto', variant: 0 })
+    expect(shown()).toEqual(['0'])
+    overlay!.onDrawer({ type: LIVE_CMD, sid: 'sid001', cmd: 'goto', variant: 2 })
+    expect(shown()).toEqual(['2'])
+  })
+
+  it('insert wrappers have no original to compare', () => {
+    document.body.innerHTML =
+      '<div data-grasp-live="ins001" style="display:contents"><section data-grasp-variant="1">a</section><section data-grasp-variant="2" hidden>b</section></div>'
+    make()
+    sessions([{ sid: 'ins001', state: 'ready', mode: 'insert', variants: [{ n: 1 }, { n: 2 }] }])
+    expect(q('[data-sw="ins001"] [data-act="original"]')).toBeNull()
+    overlay!.onDrawer({ type: LIVE_CMD, sid: 'ins001', cmd: 'goto', variant: 0 })
+    expect(posted.filter((m) => m.op === 'state').at(-1)).toMatchObject({ current: 1 })
+  })
+
   it('auto-reports a missing wrapper once, then leaves it to the person', () => {
     vi.useFakeTimers()
     try {

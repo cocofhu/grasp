@@ -84,6 +84,10 @@ describe('liveVariants protocol', () => {
     expect(st).toEqual({ kind: 'state', sid: 'sid001', view: { current: 2, mode: 'compare' } })
     const st2 = parseEmbedLiveMessage({ type: EMBED_LIVE_MESSAGE, op: 'state', sid: 'sid001' })
     expect(st2).toEqual({ kind: 'state', sid: 'sid001', view: { current: 0, mode: 'inplace' } })
+    const orig = parseEmbedLiveMessage({ type: EMBED_LIVE_MESSAGE, op: 'state', sid: 'sid001', current: 0, original: true })
+    expect(orig).toEqual({ kind: 'state', sid: 'sid001', view: { current: 0, mode: 'inplace', original: true } })
+    const bogus = parseEmbedLiveMessage({ type: EMBED_LIVE_MESSAGE, op: 'state', sid: 'sid001', current: 2, original: true })
+    expect(bogus?.kind === 'state' && bogus.view.original).toBeUndefined()
   })
 
   it('rejects bad messages', () => {

@@ -160,6 +160,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
   const views = new Map<string, SessionView>()
   const postedViews = new Map<string, string>()
   const pending = new Map<string, { sid: string; op: string; previousState?: string }>()
+  const lastCandidate = new Map<string, number>()
   const mountWatch = new Map<string, { key: string; since: number; sent: boolean; error?: string }>()
   let wrappers: Wrapper[] = []
 
@@ -223,7 +224,9 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
       const v = viewOf(s.sid, w)
       const current = OPEN.has(s.state) && w?.variants.some((x) => x.n === v.current) ? v.current : 0
       const params = current ? selectedParams(w, v) : undefined
-      const message = { type: LIVE_MSG, op: 'state', sid: s.sid, current, mode: v.mode, ...(params ? { params } : {}) }
+      // current 0 alone also means "not mounted here"; flag a mounted original explicitly.
+      const original = OPEN.has(s.state) && !!w?.original && w.variants.length > 0 && v.current === 0
+      const message = { type: LIVE_MSG, op: 'state', sid: s.sid, current, mode: v.mode, ...(original ? { original: true } : {}), ...(params ? { params } : {}) }
       const signature = JSON.stringify(message)
       if (postedViews.get(s.sid) !== signature && opts.post(message)) postedViews.set(s.sid, signature)
     }
@@ -570,14 +573,19 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
         continue
       }
       frameHtml += `<div class="frame" data-frame="${esc(w.sid)}"></div>`
+      const onOriginal = !cur && v.current === 0 && !!w.original
+      const single = cycleOf(w).length < 2
       html +=
         `<div class="sw" data-sw="${esc(w.sid)}" role="group" aria-label="${esc(T.title)}">` +
-        `<button type="button" data-act="prev" data-sid="${esc(w.sid)}" aria-label="${esc(T.prev)}"${busy || w.variants.length < 2 ? ' disabled' : ''}>‹</button>` +
-        `<span class="count" aria-live="polite">${idx + 1 || 0} / ${w.variants.length}</span>` +
+        `<button type="button" data-act="prev" data-sid="${esc(w.sid)}" aria-label="${esc(T.prev)}"${busy || single ? ' disabled' : ''}>‹</button>` +
+        `<span class="count" aria-live="polite">${onOriginal ? esc(T.original) : `${idx + 1 || 0} / ${w.variants.length}`}</span>` +
         (cur?.label ? `<span class="lab">${esc(cur.label)}</span>` : '') +
-        `<button type="button" data-act="next" data-sid="${esc(w.sid)}" aria-label="${esc(T.next)}"${busy || w.variants.length < 2 ? ' disabled' : ''}>›</button>` +
+        `<button type="button" data-act="next" data-sid="${esc(w.sid)}" aria-label="${esc(T.next)}"${busy || single ? ' disabled' : ''}>›</button>` +
         status +
         '<span class="sep" aria-hidden="true"></span>' +
+        (w.original
+          ? `<button type="button" data-act="original" data-sid="${esc(w.sid)}" aria-pressed="${onOriginal}" title="${esc(T.compareOriginal)}"${busy ? ' disabled' : ''}>${esc(T.original)}</button>`
+          : '') +
         `<button type="button" data-act="compare" data-sid="${esc(w.sid)}"${busy ? ' disabled' : ''}>${esc(T.sideBySide)}</button>` +
         `<button type="button" data-act="discard" data-sid="${esc(w.sid)}" aria-label="${esc(T.discard)}" title="${esc(known ? T.discard : T.viewOnly)}"${busy || !known ? ' disabled' : ''}>✕</button>` +
         `<button type="button" class="accept" data-act="accept" data-sid="${esc(w.sid)}" data-n="${cur?.n ?? ''}"${busy || !known || !cur || s?.state !== 'ready' ? ' disabled' : ''}>${esc(T.accept)}</button>` +
@@ -935,14 +943,35 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
     }
   }
 
+  /** In-place cycle order: the original (replace mode only) first, then the candidates. */
+  function cycleOf(w: Wrapper): number[] {
+    return [...(w.original ? [0] : []), ...w.variants.map((x) => x.n)]
+  }
+
   function step(sid: string, d: number) {
     const w = wrappers.find((x) => x.sid === sid)
     if (!w || !w.variants.length || isBusy(sid)) return
     const v = viewOf(sid, w)
-    const i = Math.max(0, w.variants.findIndex((x) => x.n === v.current))
-    const next = w.variants[(i + d + w.variants.length) % w.variants.length]
+    const items = cycleOf(w)
+    const i = Math.max(0, items.indexOf(v.current))
+    if (v.current) lastCandidate.set(sid, v.current)
     focusSid = sid
-    setView(sid, { current: next.n, mode: 'inplace' })
+    setView(sid, { current: items[(i + d + items.length) % items.length], mode: 'inplace' })
+  }
+
+  /** Flip between the original and the candidate last looked at. */
+  function toggleOriginal(sid: string) {
+    const w = wrappers.find((x) => x.sid === sid)
+    if (!w?.original || !w.variants.length || isBusy(sid)) return
+    const v = viewOf(sid, w)
+    focusSid = sid
+    if (v.current === 0) {
+      const back = lastCandidate.get(sid)
+      setView(sid, { current: w.variants.some((x) => x.n === back) ? back! : w.variants[0].n, mode: 'inplace' })
+      return
+    }
+    lastCandidate.set(sid, v.current)
+    setView(sid, { current: 0, mode: 'inplace' })
   }
 
   /** Back to in-place, keeping the selected variant (the original falls back to the first). */
@@ -1160,6 +1189,9 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
       case 'next':
         step(sid, 1)
         break
+      case 'original':
+        toggleOriginal(sid)
+        break
       case 'compare':
         setView(sid, { mode: 'compare' })
         break
@@ -1291,6 +1323,11 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
       switch (m.cmd) {
         case 'goto':
           if (n) setView(sid, { current: n, mode: 'inplace' })
+          else if (m.variant === 0 && wrappers.find((x) => x.sid === sid)?.original) {
+            const cur = viewOf(sid).current
+            if (cur) lastCandidate.set(sid, cur)
+            setView(sid, { current: 0, mode: 'inplace' })
+          }
           break
         case 'compare':
           setView(sid, { mode: 'compare' })

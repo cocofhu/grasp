@@ -92,7 +92,8 @@ export type LiveEvent = {
 
 export type LiveCtx = { sid: string; current: number; params?: Record<string, unknown> }
 
-export type LiveView = { current: number; mode: 'inplace' | 'compare'; params?: Record<string, unknown> }
+/** `current` 0 with `original` means the page shows the original; 0 alone means nothing is mounted. */
+export type LiveView = { current: number; mode: 'inplace' | 'compare'; original?: boolean; params?: Record<string, unknown> }
 
 export type LiveCmd = 'goto' | 'compare' | 'inplace' | 'accept' | 'discard' | 'retry' | 'retry-accept'
 
@@ -204,6 +205,7 @@ export function parseEmbedLiveMessage(data: unknown): EmbedLiveMessage | null {
   if (m.op === 'state') {
     const current = int(m.current) ?? 0
     const view: LiveView = { current, mode: m.mode === 'compare' ? 'compare' : 'inplace' }
+    if (current === 0 && m.original === true) view.original = true
     const params = parseParamValues(m.params)
     if (params) view.params = params
     return { kind: 'state', sid: m.sid, view }
