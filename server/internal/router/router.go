@@ -54,6 +54,9 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/node-registry", h.NodeRegistry)
 		api.GET("/stats/dashboard", h.DashboardStats)
 		api.GET("/stats/token", h.GetGlobalTokenStats)
+		api.GET("/stats/token/events", h.ListTokenUsageEvents)
+		api.GET("/stats/token/pricing", h.GetTokenPricing)
+		api.PUT("/stats/token/pricing", h.UpdateTokenPricing)
 		api.GET("/stats/platform-status", h.PlatformStatus)
 
 		api.GET("/settings", h.GetSettings)

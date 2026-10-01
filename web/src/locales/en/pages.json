@@ -69,38 +69,52 @@
       "lineModes": {
         "total": "Total (vs previous period)",
         "project": "By project",
-        "model": "By model"
+        "model": "By model",
+        "cost": "Cost & cache hit"
       },
       "areaModes": {
         "source": "By source",
-        "comp": "By input/output/cache"
+        "comp": "By input/output/cache",
+        "status": "By outcome"
       },
       "barDimensions": {
         "project": "Project",
         "workflow": "Workflow",
-        "model": "Model"
+        "model": "Model",
+        "nodeType": "Node type",
+        "run": "Run"
       },
       "charts": {
         "lines": "Line chart",
-        "linesHint": "Compare the current range with the previous period; split by project or model",
+        "linesHint": "Compare with the previous period, or split by project, model, or cost; click a point for that period's details",
         "pies": "Share",
-        "piesHint": "Click a slice to filter",
+        "piesHint": "Click a slice for details",
         "bars": "Bar chart",
         "barsHints": {
           "project": "Stacked usage by project",
           "workflow": "Stacked usage by workflow",
-          "model": "Stacked usage by model"
+          "model": "Stacked usage by model",
+          "nodeType": "Stacked usage by node type"
         },
         "area": "Stacked area",
-        "areaHint": "Daily by source, or input/output/cache",
+        "areaHint": "Source, input/output/cache, or outcome over time",
         "heat": "Models vs projects",
-        "nodeWf": "Node type / workflow share",
+        "nodeWf": "Node type / workflow / status / phase",
         "sourcePie": "By source",
         "compPie": "Input/output/cache",
         "projPie": "By project",
         "modelPie": "By model",
         "nodePie": "Node type",
-        "wfPie": "Workflow share"
+        "wfPie": "Workflow share",
+        "heatHint": "Click a cell for details",
+        "statusPie": "Call status",
+        "phasePie": "Phase",
+        "costRank": "Cost ranking",
+        "costRankHint": "Estimated from configured prices",
+        "weekHour": "Time-of-week",
+        "weekHourHint": "Weekday × hour (local time)",
+        "treemap": "Usage structure",
+        "treemapHint": "Project → workflow / PM / Studio → node type; click for details"
       },
       "tables": {
         "projects": "Projects",
@@ -112,9 +126,120 @@
         "colInput": "Input",
         "colOutput": "Output",
         "colDelta": "Change",
-        "resizeCol": "Drag to resize the {col} column"
+        "resizeCol": "Drag to resize the {col} column",
+        "models": "Models",
+        "colCost": "Cost",
+        "colRuns": "Runs",
+        "colCache": "Cache r/w",
+        "colShare": "Share",
+        "details": "Details"
       },
-      "filterApplied": "Filtered: {name}"
+      "filterApplied": "Filtered: {name}",
+      "sourceStudio": "Agent Studio",
+      "workflowAll": "Workflow: all",
+      "nodeTypeAll": "Node type: all",
+      "statusAll": "Status: all",
+      "statuses": {
+        "ok": "Succeeded",
+        "failed": "Failed",
+        "cancelled": "Cancelled",
+        "failedOrCancelled": "Failed / cancelled"
+      },
+      "phases": {
+        "production": "Execution",
+        "interactive": "Interactive revise",
+        "chat": "Chat"
+      },
+      "granularity": {
+        "aria": "Time granularity",
+        "auto": "Granularity: auto",
+        "hour": "Hourly",
+        "day": "Daily",
+        "week": "Weekly"
+      },
+      "windowCustom": "Custom",
+      "rangeFrom": "Start date",
+      "rangeTo": "End date",
+      "refresh": "Refresh",
+      "noData": "No data",
+      "kpiCost": "Estimated cost",
+      "kpiCostUnpriced": "No prices set",
+      "kpiCostConfigure": "Set model prices",
+      "kpiCostUnpricedModels": "{n} models unpriced (excluded from cost)",
+      "cacheHit": "Cache hit rate",
+      "kpiCacheDetail": "Cache read {read} · write {write}",
+      "kpiFailed": "Failed / cancelled usage",
+      "kpiFailedShare": "{pct} of total",
+      "kpiAvgPerRun": "Avg {n} per run",
+      "unassigned": "Unassigned",
+      "unknownModel": "Unknown model",
+      "deleted": "deleted",
+      "exportCsv": "Export CSV",
+      "weekdays": {
+        "0": "Mon",
+        "1": "Tue",
+        "2": "Wed",
+        "3": "Thu",
+        "4": "Fri",
+        "5": "Sat",
+        "6": "Sun"
+      },
+      "drill": {
+        "title": "Usage details",
+        "dims": {
+          "project": "Project",
+          "model": "Model",
+          "workflow": "Workflow",
+          "nodeType": "Node type",
+          "source": "Source",
+          "status": "Status",
+          "run": "Run",
+          "bucket": "Time"
+        },
+        "tabs": {
+          "overview": "Overview",
+          "breakdown": "Breakdown",
+          "events": "Calls ({n})"
+        },
+        "calls": "Calls",
+        "nestedHint": "Click any chart element here to drill further; use the path above to go back",
+        "apply": "Apply as page filter",
+        "openRun": "Open run",
+        "openProject": "Open project board"
+      },
+      "events": {
+        "sortBy": "Sort",
+        "sort": {
+          "time": "Time",
+          "total": "Usage",
+          "cost": "Cost"
+        },
+        "colTime": "Time",
+        "colSource": "Source / phase",
+        "colScope": "Run / node",
+        "thread": "PM thread",
+        "empty": "No calls"
+      },
+      "pricing": {
+        "button": "Model prices",
+        "title": "Model pricing",
+        "hint": "Prices are per 1M tokens; cost is estimated at query time with the current prices. Models without a price are excluded. Model names match exactly first, then case-insensitively.",
+        "readOnly": "Only admins can change prices",
+        "currency": "Currency",
+        "updatedAt": "Updated {at}",
+        "fields": {
+          "input": "Input / 1M",
+          "output": "Output / 1M",
+          "cacheRead": "Cache read / 1M",
+          "cacheWrite": "Cache write / 1M"
+        },
+        "modelPh": "Model name, e.g. claude-sonnet-4",
+        "empty": "No models",
+        "add": "Add model",
+        "remove": "Remove",
+        "saved": "Prices saved",
+        "saveFailed": "Save failed"
+      }
     },
     "board": {
       "title": "Requirement progress board",

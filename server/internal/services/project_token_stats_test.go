@@ -110,6 +110,7 @@ func TestTokenStatsAggregation(t *testing.T) {
 	})
 
 	t.Run("empty_project_no_forged_series", func(t *testing.T) {
+		syncTokenLedger(t, db)
 		res, err := s.TokenStats(context.Background(), emptyProj.ID, TokenStatsQuery{
 			Window: TokenStatsWindow30d, Timezone: "Asia/Shanghai", Now: now,
 		})
@@ -131,6 +132,7 @@ func TestTokenStatsAggregation(t *testing.T) {
 	})
 
 	t.Run("7d_day_buckets_and_null_not_zero", func(t *testing.T) {
+		syncTokenLedger(t, db)
 		res, err := s.TokenStats(context.Background(), proj.ID, TokenStatsQuery{
 			Window: TokenStatsWindow7d, Timezone: "Asia/Shanghai", Now: now,
 		})
@@ -173,6 +175,7 @@ func TestTokenStatsAggregation(t *testing.T) {
 	})
 
 	t.Run("all_matches_TotalTokens_and_weekly", func(t *testing.T) {
+		syncTokenLedger(t, db)
 		res, err := s.TokenStats(context.Background(), proj.ID, TokenStatsQuery{
 			Window: TokenStatsWindowAll, Timezone: "Asia/Shanghai", Now: now,
 		})
@@ -182,6 +185,7 @@ func TestTokenStatsAggregation(t *testing.T) {
 		if res.BucketWidth != TokenStatsBucketWeek {
 			t.Fatalf("bucketWidth=%s", res.BucketWidth)
 		}
+		syncTokenLedger(t, db)
 		tt := s.totalTokens(proj.ID)
 		if tt == nil {
 			t.Fatal("TotalTokens nil")
@@ -222,6 +226,7 @@ func TestTokenStatsAggregation(t *testing.T) {
 				Usage:     &models.TokenUsage{InputTokens: tokens},
 			})
 		}
+		syncTokenLedger(t, db)
 		res, err := s.TokenStats(context.Background(), extraProj.ID, TokenStatsQuery{
 			Window: TokenStatsWindow30d, Timezone: "Asia/Shanghai", Now: now,
 		})
@@ -275,6 +280,7 @@ func TestTokenStatsAggregation(t *testing.T) {
 			RunID: "run-fb", NodeID: "n1", Status: "completed",
 			Usage: &models.TokenUsage{InputTokens: 42},
 		})
+		syncTokenLedger(t, db)
 		res, err := s.TokenStats(context.Background(), p.ID, TokenStatsQuery{
 			Window: TokenStatsWindow7d, Timezone: "Asia/Shanghai", Now: now,
 		})
@@ -296,12 +302,14 @@ func TestTokenStatsAggregation(t *testing.T) {
 	})
 
 	t.Run("invalid_window", func(t *testing.T) {
+		syncTokenLedger(t, db)
 		_, err := s.TokenStats(context.Background(), proj.ID, TokenStatsQuery{
 			Window: "1y", Timezone: "UTC", Now: now,
 		})
 		if err != ErrInvalidTokenStatsWindow {
 			t.Fatalf("err=%v", err)
 		}
+		syncTokenLedger(t, db)
 		_, err = s.TokenStats(context.Background(), proj.ID, TokenStatsQuery{
 			Window: "1d", Timezone: "UTC", Now: now,
 		})
@@ -313,6 +321,7 @@ func TestTokenStatsAggregation(t *testing.T) {
 	t.Run("24h_rolling_hour_buckets_excludes_older", func(t *testing.T) {
 		// now = 2026-07-25 20:00 Shanghai; 24h start = 2026-07-24 20:00.
 		// dayIn (07-24 10:00) is outside; dayToday (07-25 08:00) is inside.
+		syncTokenLedger(t, db)
 		res, err := s.TokenStats(context.Background(), proj.ID, TokenStatsQuery{
 			Window: TokenStatsWindow24h, Timezone: "Asia/Shanghai", Now: now,
 		})
@@ -360,6 +369,7 @@ func TestTokenStatsAggregation(t *testing.T) {
 	})
 
 	t.Run("24h_empty_no_forged_series", func(t *testing.T) {
+		syncTokenLedger(t, db)
 		res, err := s.TokenStats(context.Background(), emptyProj.ID, TokenStatsQuery{
 			Window: TokenStatsWindow24h, Timezone: "Asia/Shanghai", Now: now,
 		})
@@ -408,6 +418,7 @@ func TestTokenStatsAggregation(t *testing.T) {
 			Status: "ok", CreatedAt: ts,
 		})
 
+		syncTokenLedger(t, db)
 		res, err := s.TokenStats(context.Background(), p.ID, TokenStatsQuery{
 			Window: TokenStatsWindow7d, Timezone: "Asia/Shanghai", Now: now,
 		})
@@ -452,6 +463,7 @@ func TestTokenStatsAggregation(t *testing.T) {
 			t.Fatalf("rank missing pm/workflow: %+v", res.Workflows)
 		}
 
+		syncTokenLedger(t, db)
 		bd := s.TokenBreakdown(p.ID)
 		if bd.Total == nil || *bd.Total != 170 {
 			t.Fatalf("breakdown.total=%v want 170", bd.Total)
@@ -796,6 +808,7 @@ func TestTokenStatsLegacyMapsToUnknown(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	syncTokenLedger(t, db)
 	res, err := s.TokenStats(context.Background(), proj.ID, TokenStatsQuery{
 		Window: TokenStatsWindow30d, Timezone: "Asia/Shanghai", Now: now,
 	})
@@ -1003,6 +1016,7 @@ func TestTokenStats24hHourFillAcrossMidnight(t *testing.T) {
 		Usage: &models.TokenUsage{InputTokens: 777},
 	})
 
+	syncTokenLedger(t, db)
 	res, err := s.TokenStats(context.Background(), proj.ID, TokenStatsQuery{
 		Window: TokenStatsWindow24h, Timezone: "Asia/Shanghai", Now: now,
 	})

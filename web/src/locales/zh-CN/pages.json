@@ -69,38 +69,52 @@
       "lineModes": {
         "total": "总量（对比上一周期）",
         "project": "按项目",
-        "model": "按模型"
+        "model": "按模型",
+        "cost": "费用与缓存命中"
       },
       "areaModes": {
         "source": "按来源",
-        "comp": "按输入/输出/缓存"
+        "comp": "按输入/输出/缓存",
+        "status": "按成功/失败"
       },
       "barDimensions": {
         "project": "项目",
         "workflow": "工作流",
-        "model": "模型"
+        "model": "模型",
+        "nodeType": "节点类型",
+        "run": "运行"
       },
       "charts": {
         "lines": "折线图",
-        "linesHint": "对比当前时间范围与上一周期，也可按项目或模型分开看",
+        "linesHint": "对比当前时间范围与上一周期，也可按项目、模型或费用看；点击数据点查看该时段明细",
         "pies": "占比",
-        "piesHint": "点击扇区可筛选",
+        "piesHint": "点击扇区查看明细",
         "bars": "柱状图",
         "barsHints": {
           "project": "各项目用量堆叠对比",
           "workflow": "各工作流用量堆叠对比",
-          "model": "各模型用量堆叠对比"
+          "model": "各模型用量堆叠对比",
+          "nodeType": "各节点类型用量堆叠对比"
         },
         "area": "堆叠面积",
-        "areaHint": "按天查看来源，或输入/输出/缓存",
+        "areaHint": "按时间查看来源、输入/输出/缓存或成功/失败",
         "heat": "模型与项目对照",
-        "nodeWf": "节点类型 / 工作流占比",
+        "nodeWf": "节点类型 / 工作流 / 状态 / 阶段",
         "sourcePie": "来源构成",
         "compPie": "输入/输出/缓存构成",
         "projPie": "项目占比",
         "modelPie": "模型占比",
         "nodePie": "节点类型",
-        "wfPie": "工作流占比"
+        "wfPie": "工作流占比",
+        "heatHint": "点击单元格查看明细",
+        "statusPie": "调用状态",
+        "phasePie": "阶段",
+        "costRank": "费用排行",
+        "costRankHint": "按已配置单价估算",
+        "weekHour": "时段分布",
+        "weekHourHint": "星期 × 小时（本地时区）",
+        "treemap": "用量结构",
+        "treemapHint": "项目 → 工作流 / 项目管理 / Studio → 节点类型，点击查看明细"
       },
       "tables": {
         "projects": "项目明细表",
@@ -112,9 +126,120 @@
         "colInput": "输入",
         "colOutput": "输出",
         "colDelta": "变化",
-        "resizeCol": "拖动调整{col}列宽"
+        "resizeCol": "拖动调整{col}列宽",
+        "models": "模型明细表",
+        "colCost": "费用",
+        "colRuns": "运行",
+        "colCache": "缓存读/写",
+        "colShare": "占比",
+        "details": "详情"
       },
-      "filterApplied": "已筛选：{name}"
+      "filterApplied": "已筛选：{name}",
+      "sourceStudio": "Agent Studio",
+      "workflowAll": "工作流：全部",
+      "nodeTypeAll": "节点类型：全部",
+      "statusAll": "状态：全部",
+      "statuses": {
+        "ok": "成功",
+        "failed": "失败",
+        "cancelled": "已取消",
+        "failedOrCancelled": "失败 / 取消"
+      },
+      "phases": {
+        "production": "执行",
+        "interactive": "交互修订",
+        "chat": "对话"
+      },
+      "granularity": {
+        "aria": "时间粒度",
+        "auto": "粒度：自动",
+        "hour": "按小时",
+        "day": "按天",
+        "week": "按周"
+      },
+      "windowCustom": "自定义",
+      "rangeFrom": "开始日期",
+      "rangeTo": "结束日期",
+      "refresh": "刷新",
+      "noData": "暂无数据",
+      "kpiCost": "预估费用",
+      "kpiCostUnpriced": "未配置单价",
+      "kpiCostConfigure": "设置模型单价",
+      "kpiCostUnpricedModels": "{n} 个模型未定价，未计入费用",
+      "cacheHit": "缓存命中率",
+      "kpiCacheDetail": "缓存读 {read} · 缓存写 {write}",
+      "kpiFailed": "失败 / 取消消耗",
+      "kpiFailedShare": "占总量 {pct}",
+      "kpiAvgPerRun": "单次运行平均 {n}",
+      "unassigned": "未归属项目",
+      "unknownModel": "未知模型",
+      "deleted": "已删除",
+      "exportCsv": "导出 CSV",
+      "weekdays": {
+        "0": "周一",
+        "1": "周二",
+        "2": "周三",
+        "3": "周四",
+        "4": "周五",
+        "5": "周六",
+        "6": "周日"
+      },
+      "drill": {
+        "title": "用量明细",
+        "dims": {
+          "project": "项目",
+          "model": "模型",
+          "workflow": "工作流",
+          "nodeType": "节点类型",
+          "source": "来源",
+          "status": "状态",
+          "run": "运行",
+          "bucket": "时间"
+        },
+        "tabs": {
+          "overview": "概览",
+          "breakdown": "分布",
+          "events": "调用明细（{n}）"
+        },
+        "calls": "调用记录",
+        "nestedHint": "弹窗里的图表元素也可以继续点击下钻；点击顶部路径可返回上一层",
+        "apply": "应用到页面筛选",
+        "openRun": "打开运行详情",
+        "openProject": "打开项目看板"
+      },
+      "events": {
+        "sortBy": "排序",
+        "sort": {
+          "time": "时间",
+          "total": "用量",
+          "cost": "费用"
+        },
+        "colTime": "时间",
+        "colSource": "来源 / 阶段",
+        "colScope": "运行 / 节点",
+        "thread": "项目管理会话",
+        "empty": "没有调用记录"
+      },
+      "pricing": {
+        "button": "模型单价",
+        "title": "模型单价设置",
+        "hint": "按每 100 万 Token 计价，费用在查询时按当前单价估算；未配置单价的模型不计入费用。模型名先精确匹配，再忽略大小写匹配。",
+        "readOnly": "仅管理员可修改单价",
+        "currency": "币种",
+        "updatedAt": "更新于 {at}",
+        "fields": {
+          "input": "输入 / 1M",
+          "output": "输出 / 1M",
+          "cacheRead": "缓存读 / 1M",
+          "cacheWrite": "缓存写 / 1M"
+        },
+        "modelPh": "模型名，如 claude-sonnet-4",
+        "empty": "暂无模型",
+        "add": "添加模型",
+        "remove": "移除",
+        "saved": "单价已保存",
+        "saveFailed": "保存失败"
+      }
     },
     "board": {
       "title": "需求进度看板",

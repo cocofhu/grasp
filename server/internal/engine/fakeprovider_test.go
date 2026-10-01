@@ -146,6 +146,8 @@ type fakeProvider struct {
 	// agentUsage (test-only): when set, RunAgent attaches this Usage so review
 	// enter/saveState paths can assert StateRun.Usage is preserved across pause.
 	agentUsage *models.TokenUsage
+	// agentUsageByModel (test-only): per-model breakdown paired with agentUsage.
+	agentUsageByModel models.TokenUsageByModel
 	// reviseUsage (test-only): when set, ReviseInPlace returns this Usage delta
 	// so flushTokenUsage on review/gate-react revise turns can be asserted.
 	reviseUsage *models.TokenUsage
@@ -375,8 +377,9 @@ func (f *fakeProvider) RunAgent(ctx context.Context, req runtime.NodeReq) (runti
 	f.emitOutcome(req, outcomeOut)
 	f.mu.Lock()
 	usage := models.CloneTokenUsage(f.agentUsage)
+	byModel := models.CloneTokenUsageByModel(f.agentUsageByModel)
 	f.mu.Unlock()
-	return runtime.NodeResult{OutputMd: content, Outputs: out, Usage: usage}, nil
+	return runtime.NodeResult{OutputMd: content, Outputs: out, Usage: usage, UsageByModel: byModel}, nil
 }
 
 // fakePrompt mirrors the provider's conditional_prompt injection so engine

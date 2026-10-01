@@ -24,6 +24,7 @@ func (c *acpProvider) ReactOpen(ctx context.Context, req NodeReq) (out ReactTurn
 		if out.OpID == "" && chatOp != "" {
 			out.OpID = chatOp
 		}
+		c.drainCarriedUsage(reactKey(req), &out)
 	}()
 	n := c.sandboxAttempts()
 	seeded := c.upstreamArtifacts(req)
@@ -70,6 +71,7 @@ func (c *acpProvider) ReactOpen(ctx context.Context, req NodeReq) (out ReactTurn
 				return c.finishReact(ctx, req, reactKey(req), sess, res.Narration, nil, events, usage, usageByModel, false)
 			}
 
+			c.carryChatUsage(reactKey(req), res)
 			if isRetryableSandboxErr(err) {
 				c.discardSandbox(ctx, req, sb, acp, home, nil)
 			} else {
@@ -117,8 +119,10 @@ func (c *acpProvider) rehydrateReact(ctx context.Context, req NodeReq, history [
 				return sess
 			}
 			chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
-			_, err = c.streamChat(chatCtx, acp, req, c.buildReactRehydratePrompt(req, seeded, history), req.PromptImages)
+			var primed *sandbox.ChatResult
+			primed, err = c.streamChat(chatCtx, acp, req, c.buildReactRehydratePrompt(req, seeded, history), req.PromptImages)
 			cancel()
+			c.carryChatUsage(reactKey(req), primed)
 			if err == nil {
 
 				_ = takeClarifyPending(c.host, req.RunID, req.NodeID)
@@ -154,6 +158,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 		if out.OpID == "" && chatOp != "" {
 			out.OpID = chatOp
 		}
+		c.drainCarriedUsage(reactKey(req), &out)
 	}()
 	key := reactKey(req)
 	c.mu.Lock()
@@ -315,6 +320,7 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 		if out.OpID == "" && chatOp != "" {
 			out.OpID = chatOp
 		}
+		c.drainCarriedUsage(reactKey(req), &out)
 	}()
 	key := reactKey(req)
 	c.mu.Lock()

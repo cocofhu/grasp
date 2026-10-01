@@ -540,6 +540,9 @@ func TestReviewEnterPreservesUsage(t *testing.T) {
 	provider.agentUsage = &models.TokenUsage{
 		InputTokens: 100, OutputTokens: 40, CacheReadTokens: 10, CacheWriteTokens: 2,
 	}
+	provider.agentUsageByModel = models.TokenUsageByModel{
+		"m-review": {InputTokens: 100, OutputTokens: 40, CacheReadTokens: 10, CacheWriteTokens: 2},
+	}
 
 	run, err := eng.StartRun("review-wf", map[string]any{"idea": "登录"}, "test")
 	if err != nil {
@@ -562,6 +565,33 @@ func TestReviewEnterPreservesUsage(t *testing.T) {
 	if sr.Usage.InputTokens != 100 || sr.Usage.OutputTokens != 40 ||
 		sr.Usage.CacheReadTokens != 10 || sr.Usage.CacheWriteTokens != 2 {
 		t.Fatalf("usage mismatch: %+v", sr.Usage)
+	}
+	if b, ok := sr.UsageByModel["m-review"]; !ok || b.Total() != 152 {
+		t.Fatalf("UsageByModel must survive enterReview, got %+v", sr.UsageByModel)
+	}
+	assertLedgerTotal(t, db, run.ID, "m-review", 152)
+}
+
+// assertLedgerTotal checks the token ledger mirrors the StateRun accounting.
+func assertLedgerTotal(t *testing.T, db *gorm.DB, runID, modelKey string, want int64) {
+	t.Helper()
+	var rows []models.TokenUsageEvent
+	q := db.Where("run_id = ?", runID)
+	if modelKey != "" {
+		q = q.Where("model_key = ?", modelKey)
+	}
+	if err := q.Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	var got int64
+	for _, r := range rows {
+		if r.Source != models.TokenLedgerSourceWorkflow || r.NodeID == "" {
+			t.Fatalf("ledger row missing source/node: %+v", r)
+		}
+		got += r.Total()
+	}
+	if got != want {
+		t.Fatalf("ledger total=%d want %d (rows=%+v)", got, want, rows)
 	}
 }
 
@@ -598,6 +628,7 @@ func TestReviewReviseFlushesTokenUsage(t *testing.T) {
 	if sr.Usage.InputTokens != 57 || sr.Usage.OutputTokens != 23 || sr.Usage.CacheReadTokens != 1 {
 		t.Fatalf("expected agent+revise sum, got %+v", sr.Usage)
 	}
+	assertLedgerTotal(t, db, run.ID, "", 81)
 }
 
 // TestGateReactReviseFlushesTokenUsage: gate-react ReviseInPlace also merges

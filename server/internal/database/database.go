@@ -13,6 +13,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/tokenledger"
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/driver/mysql"
@@ -177,6 +178,7 @@ func finalize(db *gorm.DB) (*gorm.DB, error) {
 	backfillWorkflowIDs(db)
 	backfillGateShareLinkKind(db)
 	ensureDefaultProject(db)
+	tokenledger.BackfillOnce(db)
 	return db, nil
 }
 
