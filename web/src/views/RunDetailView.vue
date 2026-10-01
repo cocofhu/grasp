@@ -21,6 +21,7 @@ import RunSandboxEnvPanel from '@/components/run/RunSandboxEnvPanel.vue'
 import ExecutionTimeline from '@/components/run/ExecutionTimeline.vue'
 import ExecutionStatsPanel from '@/components/run/ExecutionStatsPanel.vue'
 import RunViewModeSwitcher from '@/components/run/RunViewModeSwitcher.vue'
+import RunLlmTranscript from '@/components/run/llm/RunLlmTranscript.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import RefreshStrip from '@/components/run/RefreshStrip.vue'
 import HardLoadLayer from '@/components/run/HardLoadLayer.vue'
@@ -177,6 +178,8 @@ const {
   viewMode,
   statsTab,
   selectExecution,
+  locateExecution,
+  liveEvents,
   fmtTime,
   fmtDuration,
   formatTrigger,
@@ -440,15 +443,30 @@ const {
         <RunViewModeSwitcher v-model:view-mode="viewMode" :is-mobile="isMobile" />
       </div>
       <div
-        v-else-if="viewMode === 'stats'"
+        v-else-if="viewMode === 'stats' || viewMode === 'llm'"
         data-testid="run-detail-view-mode-switcher"
         class="absolute left-3 top-3 z-10"
       >
         <RunViewModeSwitcher v-model:view-mode="viewMode" :is-mobile="isMobile" />
       </div>
 
+      <!-- LLM transcript: full-width chat of every prompt → reply across the run. -->
+      <div
+        v-if="viewMode === 'llm'"
+        data-testid="run-llm-pane"
+        class="relative flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col md:pt-12"
+      >
+        <RunLlmTranscript
+          :run="run"
+          :nodes="wf.nodes"
+          :live-events="liveEvents"
+          @locate="locateExecution"
+          @open-artifacts="() => { showDetail = true; detailTab = 'artifacts' }"
+        />
+      </div>
+
       <!-- Stats mode: full-width single/multi tabs; single = timeline+panel (no click link); multi = full panel. -->
-      <template v-if="viewMode === 'stats'">
+      <template v-else-if="viewMode === 'stats'">
         <div class="relative flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col md:pt-12">
           <div class="flex shrink-0 border-b border-line bg-surface px-3 sm:px-4">
             <button

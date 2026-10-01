@@ -3,6 +3,7 @@ package sandbox
 import (
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/textutil"
@@ -61,6 +62,15 @@ type ChatResult struct {
 	// Segments are thought/narration sealed at a turn_segment boundary. The
 	// fields above stay the segment still being written.
 	Segments []ChatSegment `json:"-"`
+
+	// Prompt / ImageCount / StartedAt / EndedAt describe the request side of
+	// the turn. Stamped by the runtime after the turn so the persisted
+	// transcript carries the question; never part of AcpEvents() (live
+	// streaming must not resend the prompt on every chunk).
+	Prompt     string    `json:"-"`
+	ImageCount int       `json:"-"`
+	StartedAt  time.Time `json:"-"`
+	EndedAt    time.Time `json:"-"`
 }
 
 // ChatSegment is one agent row already closed by a same-turn continuation.

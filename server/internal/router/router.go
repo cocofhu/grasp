@@ -169,6 +169,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/runs/:id/artifacts", h.RunArtifacts)
 		api.GET("/runs/:id/artifacts/pack", h.PackRunArtifacts)
 		api.GET("/runs/:id/logs/export", h.ExportRunLogs)
+		api.GET("/runs/:id/llm-transcript", h.RunLlmTranscript)
 		api.GET("/runs/:id/inbox-context", h.RunInboxContext)
 		api.GET("/runs/:id/nodes/:nodeId/events", h.NodeEvents)
 		api.GET("/runs/:id/nodes/:nodeId/sandbox-log", h.NodeSandboxLog)

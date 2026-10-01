@@ -11,6 +11,7 @@ import type { EmbedTicket } from '../../inbox/embedChat'
 import { apiState, BASE, origin, req, wsUrl } from '../httpCore'
 import type {
   EventPaginatedResponse,
+  LlmTranscriptResponse,
   NodeEventsResponse,
   PaginatedResponse,
   PreviewIssue,
@@ -289,6 +290,12 @@ export const runsClient = {
     ),
 
   exportRunLogsUrl: (id: string) => `${origin()}/api/runs/${id}/logs/export`,
+  // Every node execution with full prompts (run detail only carries previews).
+  llmTranscript: (runId: string, opts?: { signal?: AbortSignal }) =>
+    req<LlmTranscriptResponse>(
+      `/runs/${runId}/llm-transcript`,
+      opts?.signal ? { signal: opts.signal } : undefined,
+    ),
   // Agent event log, read straight from the node's live sandbox (falls back to
   // the persisted snapshot once the sandbox is gone).
   nodeEvents: (
