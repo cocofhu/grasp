@@ -324,6 +324,29 @@ describe('MermaidDiagram parse-first and sticky parse fallback (g2.1 / g2.2 / g2
     wrapper.unmount()
   })
 
+  it('keeps the SVG when a poll hands over an equal diagram or <html> gets a non-theme class', async () => {
+    const wrapper = mountDiagram('flowchart LR\n  SAME-->SVG')
+    await flushPromises()
+    await flushMermaidQueue()
+    const svg = wrapper.find('svg[data-ok="1"]').element
+    const rendersBefore = mermaidRender.mock.calls.length
+
+    await wrapper.setProps({
+      diagram: { format: 'mermaid', source: 'flowchart LR\n  SAME-->SVG' },
+      jsonPath: 'architecture.diagram',
+    })
+    document.documentElement.classList.add('overflow-hidden')
+    await flushPromises()
+    await new Promise((r) => setTimeout(r, 0))
+    await flushPromises()
+    await flushMermaidQueue()
+
+    expect(mermaidRender.mock.calls.length).toBe(rendersBefore)
+    expect(wrapper.find('svg[data-ok="1"]').element).toBe(svg)
+    document.documentElement.classList.remove('overflow-hidden')
+    wrapper.unmount()
+  })
+
   it('g2.2: source change clears sticky parse lock and re-renders', async () => {
     mermaidParse.mockImplementation(async (src: string) => {
       if (String(src).includes('BAD')) throw new Error('bad')

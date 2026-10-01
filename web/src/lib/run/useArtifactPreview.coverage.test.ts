@@ -372,6 +372,28 @@ describe('useArtifactPreview coverage', () => {
     app.unmount()
   })
 
+  it('keeps the cached body on screen while a same-id refresh loads', async () => {
+    mocks.artifactContent.mockResolvedValueOnce({ content: '{"title":"A"}' })
+    const { preview, props, app } = mountPreview({
+      artifact: artifact({ id: 'plan', name: 'plan.json', kind: 'json', updatedAt: 't1', revision: 1 }),
+    })
+    await flushPromises()
+    expect(preview.showStructuredUi.value).toBe(true)
+
+    let resolve!: (v: { content: string }) => void
+    mocks.artifactContent.mockReturnValueOnce(new Promise((r) => (resolve = r)))
+    props.artifact = artifact({ id: 'plan', name: 'plan.json', kind: 'json', updatedAt: 't2', revision: 2 })
+    await nextTick()
+    expect(preview.activeContent.value).toBe('{"title":"A"}')
+    expect(preview.loading.value).toBe(false)
+    expect(preview.showStructuredUi.value).toBe(true)
+
+    resolve({ content: '{"title":"B"}' })
+    await flushPromises()
+    expect(preview.activeContent.value).toBe('{"title":"B"}')
+    app.unmount()
+  })
+
   it('opens, closes, maps, and confirms deletion with guarded and error paths', async () => {
     const { preview, emit, props, app } = mountPreview()
     expect(preview.mapDeleteError({ status: 409 })).toContain('RunNotEnded')
