@@ -1086,7 +1086,10 @@
   // ---- chat drawer ----
 
   function drawerTheme() {
-    return drawer && drawer.embed.theme === 'light' ? 'light' : 'dark';
+    // Empty when the chat drawer is not attached, so the action card can fall
+    // back to the page background. An attached drawer is always light or dark.
+    if (!drawer) return '';
+    return drawer.embed.theme === 'light' ? 'light' : 'dark';
   }
 
   function postTheme() {

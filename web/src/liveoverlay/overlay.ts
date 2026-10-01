@@ -9,6 +9,7 @@ import { dropView, getView, putView, type Mode, type SessionView } from './viewS
 export type HostOpts = {
   /** Post to the chat drawer; false when the drawer is not ready. */
   post: (msg: Record<string, unknown>) => boolean
+  /** Chat drawer theme: `light` or `dark`. Empty when the drawer has no theme yet. */
   theme: () => string
   notice: (text: string, ok?: boolean) => void
   /** Turn off preview-pick's own element picking. */
@@ -40,7 +41,7 @@ export type LiveOverlay = {
   toggleHidden: () => void
   isHidden: () => boolean
   setEnabled: (on: boolean) => void
-  /** Re-read the page and drawer theme onto the overlay root. */
+  /** Re-apply the chat drawer theme onto an already-open action card. */
   syncTheme: () => void
   dispose: () => void
 }
@@ -358,7 +359,11 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
   // ---------- rendering ----------
 
   function themeClass() {
-    root.className = (pageTheme() || opts.theme()) === 'light' ? 'root light' : 'root'
+    // The chat drawer theme wins. The page background is only a fallback when
+    // preview-pick has no drawer theme yet (opts.theme() is not light or dark).
+    const drawer = opts.theme()
+    const theme = drawer === 'light' || drawer === 'dark' ? drawer : pageTheme()
+    root.className = theme === 'light' ? 'root light' : 'root'
   }
 
   const themeObserver = new MutationObserver(() => themeClass())

@@ -140,6 +140,7 @@ describe('preview-pick.js copies', () => {
     const drawer = SCRIPT.match(/\.drawer\{[^}]*z-index:(\d+)/)
     expect(drawer?.[1]).toBe('2147483647')
     expect(SCRIPT).toContain('live.api.syncTheme')
+    expect(SCRIPT).toContain("if (!drawer) return '';")
     expect(SCRIPT).toContain('点选元素引用或修改，也可以插入区块或整页调整')
     expect(SCRIPT).toContain('Pick an element to quote or edit, insert a block, or adjust the whole page')
   })
