@@ -1,17 +1,19 @@
 import {renderMermaidInLightboxMount} from '../core/md.js';
-import {apiPath} from '../core/paths.js';
-import {ChatView} from '../ui/chat_view.js';
-import {createQueuePanelUpdater, queueStateHasPendingWork} from '../ui/queue_panel.js';
-import {BrowserSession, setHeaderConnLive} from '../ws/session.js';
+import {apiPath, chatApiPath} from '../core/paths.js';
+import {queueStateHasPendingWork} from '../ui/queue_panel.js';
+import {setHeaderConnLive} from '../ws/session.js';
+import {TabManager} from './tab_manager.js';
+import {modelDisplayName, modelPickerItems} from './tab_state.js';
 
-const logEl = document.getElementById('log');
-const scrollEl = document.getElementById('chatScroll');
+const panesEl = document.getElementById('chatPanes');
+const paneTpl = /** @type {HTMLTemplateElement|null} */ (document.getElementById('chatPaneTpl'));
+const tabListEl = document.getElementById('tabList');
+const btnNewTab = /** @type {HTMLButtonElement|null} */ (document.getElementById('btnNewTab'));
 const statusEl = document.getElementById('status');
 const inputEl = document.getElementById('input');
 const btnSend = document.getElementById('btnSend');
 const btnCancel = document.getElementById('btnCancel');
 const btnRestartAgent = document.getElementById('btnRestartAgent');
-const queuePanel = document.getElementById('queuePanel');
 const btnModelPicker = document.getElementById('btnModelPicker');
 const modelLabel = document.getElementById('modelLabel');
 const modelModal = document.getElementById('modelModal');
@@ -35,13 +37,14 @@ const html = document.documentElement;
 const THEME_STORAGE_KEY = 'acp-bridge-theme';
 
 const domOk =
-    statusEl && logEl && scrollEl && inputEl && btnSend && btnCancel;
+    statusEl && panesEl && paneTpl && tabListEl && inputEl && btnSend && btnCancel;
 
 if (!domOk) {
     console.error('acp-bridge: 页面缺少必要节点，请确认通过本服务打开（勿用过期缓存的 HTML）', {
         statusEl: !!statusEl,
-        logEl: !!logEl,
-        scrollEl: !!scrollEl,
+        panesEl: !!panesEl,
+        paneTpl: !!paneTpl,
+        tabListEl: !!tabListEl,
         inputEl: !!inputEl,
         btnSend: !!btnSend,
         btnCancel: !!btnCancel,
@@ -71,93 +74,124 @@ function bindSystemThemeListener() {
     });
 }
 
-const chat = domOk ? new ChatView(logEl, scrollEl) : null;
+/* ── 会话 Tab ── */
 
-/** 与会话就绪（可发消息）一致，来自 BrowserSession onConnected */
-let sessionLive = false;
-/** 最近一次 connected / queue_state 中的队列字段，用于顶栏停止按钮是否显示 */
-let lastQueuePayload = null;
-
-const updateQueuePanel = createQueuePanelUpdater(queuePanel);
-
-function syncStopBtnVisibility() {
-    if (!btnCancel) return;
-    const show =
-        sessionLive &&
-        lastQueuePayload != null &&
-        queueStateHasPendingWork(lastQueuePayload);
-    btnCancel.classList.toggle('cc-stop-btn--visible', show);
-}
-
-function setConnected(connected) {
-    sessionLive = connected;
-    if (!connected) lastQueuePayload = null;
-    syncStopBtnVisibility();
-    syncSendState();
-    if (connected) {
-        loadModelList();
-    }
-}
-
-function setRestartAvailable(available) {
-    if (btnRestartAgent) btnRestartAgent.disabled = !available;
-}
-
+/** 模型目录（同一 provider，各 Tab 共用）；当前模型按 Tab 记录 */
 let _allModels = [];
-let _currentModelId = '';
-let _modelFixed = false;
+let _modelListLoaded = false;
+/** -model / ACP_BRIDGE_MODEL；空表示 auto */
+let _defaultModel = '';
 
-function setModelInfo(_model, currentModel) {
-    if (currentModel) {
-        _currentModelId = currentModel;
-        updateModelLabel();
+const tabs = domOk
+    ? new TabManager({
+        tabListEl,
+        newTabBtn: btnNewTab,
+        panesEl,
+        template: paneTpl,
+        onActiveChange: (tab, prev) => {
+            if (prev) {
+                prev.draft = inputEl.value;
+            }
+            pendingFiles = tab.pendingFiles;
+            inputEl.value = tab.draft;
+            inputEl.classList.toggle('cc-textarea--expanded', tab.draft.includes('\n'));
+            autoGrow(inputEl);
+            renderAttachPreview();
+            renderHeader();
+            if (tab.sessionLive) loadModelList(tab);
+        },
+        onTabChange: (tab) => {
+            if (tab === tabs.active) renderHeader();
+            if (tab.sessionLive && !_modelListLoaded) loadModelList(tab);
+        },
+        getModelName: (tab) => modelDisplayName(tab.selectedModel, _allModels),
+    })
+    : null;
+
+/** 顶栏状态 / 模型 / 重启 / 停止按钮跟随当前 Tab */
+function renderHeader() {
+    const tab = tabs?.active;
+    if (!tab) return;
+    if (statusEl) {
+        statusEl.textContent = tab.statusText;
+        setHeaderConnLive(statusEl, tab.statusLive);
     }
+    if (btnRestartAgent) btnRestartAgent.disabled = !tab.restartAvailable;
+    if (btnCancel) {
+        const show = tab.sessionLive && tab.lastQueue != null && queueStateHasPendingWork(tab.lastQueue);
+        btnCancel.classList.toggle('cc-stop-btn--visible', show);
+    }
+    if (btnModelPicker) {
+        btnModelPicker.disabled = !tab.sessionLive || !!tab.switchingModel;
+        btnModelPicker.title = tab.selectedModel ? '选择模型（本 Tab）' : '选择模型（当前跟随默认）';
+    }
+    updateModelLabel();
+    syncSendState();
 }
 
 function updateModelLabel() {
-    if (!modelLabel) return;
-    if (!_currentModelId || _currentModelId === 'auto') {
-        modelLabel.textContent = 'Auto';
-    } else {
-        const found = _allModels.find(m => m.id === _currentModelId);
-        modelLabel.textContent = found ? found.name : _currentModelId;
-    }
+    const tab = tabs?.active;
+    if (!modelLabel || !tab) return;
+    modelLabel.textContent = modelDisplayName(tab.currentModel, _allModels);
 }
 
-let _modelListLoaded = false;
-async function loadModelList() {
-    if (_modelListLoaded && _allModels.length) return;
+/** @type {Promise<void>|null} */
+let _modelListPromise = null;
+/** 拉取失败后 30s 内不再随 Tab 状态变化自动重试（打开模型弹窗时仍会重试） */
+let _modelListFailedAt = 0;
+
+/**
+ * 模型目录只拉一次（服务端可能要跑 CLI --list-models）；各 Tab 的选择记在 ChatTab 上。
+ * @param {import('./chat_tab.js').ChatTab} tab
+ */
+function loadModelList(tab, force = false) {
+    if (_modelListLoaded) return Promise.resolve();
+    if (!force && Date.now() - _modelListFailedAt < 30000) return Promise.resolve();
+    if (!_modelListPromise) {
+        _modelListPromise = fetchModelList(tab).finally(() => {
+            _modelListPromise = null;
+        });
+    }
+    return _modelListPromise;
+}
+
+/** @param {import('./chat_tab.js').ChatTab} tab */
+async function fetchModelList(tab) {
     try {
-        const res = await fetch(apiPath('api/models'), {credentials: 'include', headers: {'Accept': 'application/json'}});
+        const res = await fetch(chatApiPath('api/models', tab.wireChatId), {
+            credentials: 'include',
+            headers: {'Accept': 'application/json'},
+        });
         if (!res.ok) {
             console.warn('acp-bridge: /api/models 响应异常', res.status);
+            _modelListFailedAt = Date.now();
             return;
         }
         const data = await res.json();
         _allModels = data.models || [];
-        if (data.current) _currentModelId = data.current;
-        _modelFixed = !!data.fixed;
-        updateModelLabel();
+        _defaultModel = data.default || '';
+        tab.selectedModel = data.selected || '';
+        if (data.current) tab.currentModel = data.current;
         _modelListLoaded = true;
-        if (btnModelPicker) {
-            btnModelPicker.disabled = _modelFixed;
-            if (_modelFixed) btnModelPicker.title = '模型已由启动参数锁定';
-        }
+        tabs.render();
+        renderHeader();
     } catch (e) {
         console.warn('acp-bridge: 加载模型列表失败', e);
+        _modelListFailedAt = Date.now();
     }
 }
 
 async function openModelModal() {
-    if (!modelModal || !modelList) return;
+    const tab = tabs?.active;
+    if (!modelModal || !modelList || !tab) return;
     modelModal.hidden = false;
     if (modelModalBackdrop) modelModalBackdrop.hidden = false;
     if (modelSearch) { modelSearch.value = ''; modelSearch.focus(); }
-    if (!_allModels.length) {
+    if (!_modelListLoaded) {
         modelList.innerHTML = '<div class="cc-model-empty">加载中…</div>';
-        await loadModelList();
     }
-    renderModelList('');
+    await loadModelList(tab, true);
+    renderModelList(modelSearch ? modelSearch.value : '');
 }
 
 function closeModelModal() {
@@ -166,40 +200,58 @@ function closeModelModal() {
 }
 
 function renderModelList(filter) {
-    if (!modelList) return;
+    const tab = tabs?.active;
+    if (!modelList || !tab) return;
     const q = filter.toLowerCase().trim();
+    const items = modelPickerItems(_allModels, _defaultModel || tabs.defaultModel);
     const filtered = q
-        ? _allModels.filter(m => m.id.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q))
-        : _allModels;
-    if (!filtered.length) {
-        modelList.innerHTML = '<div class="cc-model-empty">无匹配模型</div>';
-        return;
-    }
+        ? items.filter(m => m.followDefault || m.id.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q))
+        : items;
     const frag = document.createDocumentFragment();
     for (const m of filtered) {
         const el = document.createElement('div');
-        el.className = 'cc-model-item' + (m.id === _currentModelId ? ' active' : '');
+        const active = m.followDefault ? !tab.selectedModel : m.id === tab.selectedModel;
+        el.className = 'cc-model-item' + (active ? ' active' : '');
         el.dataset.id = m.id;
-        let html = `<span>${m.name || m.id}</span>`;
-        if (m.isDefault) html += `<span class="cc-model-item-default">default</span>`;
-        if (m.id !== m.name) html += `<span class="cc-model-item-id">${m.id}</span>`;
-        el.innerHTML = html;
+        const name = document.createElement('span');
+        name.textContent = m.name;
+        el.appendChild(name);
+        if (m.isDefault) {
+            const d = document.createElement('span');
+            d.className = 'cc-model-item-default';
+            d.textContent = 'default';
+            el.appendChild(d);
+        }
+        if (!m.followDefault && m.id !== m.name) {
+            const idEl = document.createElement('span');
+            idEl.className = 'cc-model-item-id';
+            idEl.textContent = m.id;
+            el.appendChild(idEl);
+        }
         el.addEventListener('click', () => selectModel(m.id));
         frag.appendChild(el);
     }
     modelList.innerHTML = '';
     modelList.appendChild(frag);
+    if (filtered.length === 1 && q) {
+        const empty = document.createElement('div');
+        empty.className = 'cc-model-empty';
+        empty.textContent = '无匹配模型';
+        modelList.appendChild(empty);
+    }
 }
 
+/** @param {string} modelId 空串表示恢复跟随默认模型 */
 async function selectModel(modelId) {
     closeModelModal();
-    if (btnModelPicker) btnModelPicker.disabled = true;
-    if (statusEl) {
-        statusEl.textContent = '正在切换模型…';
-        setHeaderConnLive(statusEl, false);
-    }
+    const tab = tabs?.active;
+    if (!tab) return;
+    tab.switchingModel = true;
+    tab.statusText = '正在切换模型…';
+    tab.statusLive = false;
+    renderHeader();
     try {
-        const res = await fetch(apiPath('api/model'), {
+        const res = await fetch(chatApiPath('api/model', tab.wireChatId), {
             method: 'POST',
             credentials: 'include',
             headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
@@ -209,13 +261,16 @@ async function selectModel(modelId) {
             const err = await res.text();
             throw new Error(err);
         }
-        _currentModelId = modelId;
-        updateModelLabel();
+        const data = await res.json();
+        tab.selectedModel = data.selected || '';
+        tab.currentModel = data.model || 'auto';
     } catch (e) {
         console.error('acp-bridge: 切换模型失败', e);
-        if (statusEl) statusEl.textContent = '切换失败: ' + (e.message || String(e));
+        tab.statusText = '切换失败: ' + (e.message || String(e));
     } finally {
-        if (btnModelPicker && !_modelFixed) btnModelPicker.disabled = false;
+        tab.switchingModel = false;
+        tabs.render();
+        if (tab === tabs.active) renderHeader();
     }
 }
 
@@ -227,30 +282,11 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && modelModal && !modelModal.hidden) closeModelModal();
 });
 
-const onQueueState = (m) => {
-    updateQueuePanel(m);
-    lastQueuePayload = m && typeof m === 'object' ? m : null;
-    syncStopBtnVisibility();
-};
-
-const session = domOk
-    ? new BrowserSession({
-        statusEl,
-        chat,
-        getCwd: () => '',
-        getAutoPerm: () => true,
-        onConnected: setConnected,
-        onRestartAvailable: setRestartAvailable,
-        onQueueState,
-        onModelUpdate: setModelInfo,
-    })
-    : null;
-
 function syncSendState() {
     if (!btnSend || !inputEl) return;
     const hasText = inputEl.value.trim().length > 0;
     const hasFiles = pendingFiles.length > 0;
-    btnSend.disabled = !(hasText || hasFiles) || !session?.canSendChat();
+    btnSend.disabled = !(hasText || hasFiles) || !tabs?.active?.session.canSendChat();
 }
 
 if (btnTheme) {
@@ -403,8 +439,9 @@ if (btnToggleDetail) {
 
 /* ── 附件管理 ── */
 
+/** 当前 Tab 的待发送附件（与 ChatTab.pendingFiles 为同一数组，切 Tab 时换引用） */
 /** @type {{ file: File, dataURL?: string }[]} */
-const pendingFiles = [];
+let pendingFiles = [];
 const MAX_ATTACH = 10;
 const IMAGE_MIME_RE = /^image\/(png|jpe?g|gif|webp|svg\+xml|bmp)$/i;
 
@@ -505,9 +542,11 @@ async function buildImages() {
 if (domOk && btnSend && inputEl) {
     btnSend.addEventListener('click', async () => {
         try {
+            const tab = tabs.active;
+            if (!tab) return;
             const t = inputEl.value.trim();
             if (!t && pendingFiles.length === 0) return;
-            chat.endStream();
+            tab.chat.endStream();
             let images = [];
             /* 图片用 dataURL 预览；非图片文件在气泡里显示文件名 */
             const imageURLs = pendingFiles
@@ -520,9 +559,10 @@ if (domOk && btnSend && inputEl) {
             if (pendingFiles.length > 0) {
                 images = await buildImages();
             }
-            chat.enqueueUserMessage(displayText, imageURLs);
-            session.sendChat(t, images);
+            tab.chat.enqueueUserMessage(displayText, imageURLs);
+            tab.session.sendChat(t, images);
             inputEl.value = '';
+            tab.draft = '';
             clearFiles();
             inputEl.classList.remove('cc-textarea--expanded');
             autoGrow(inputEl);
@@ -532,12 +572,12 @@ if (domOk && btnSend && inputEl) {
         }
     });
 
-    btnCancel.addEventListener('click', () => session.cancel());
+    btnCancel.addEventListener('click', () => tabs.active?.session.cancel());
 
     if (btnRestartAgent) {
         btnRestartAgent.addEventListener('click', () => {
             try {
-                session.restartAgent();
+                tabs.active?.session.restartAgent();
             } catch (e) {
                 alert(e.message || String(e));
             }
@@ -750,9 +790,9 @@ document.addEventListener('keydown', (e) => {
     if (imgLightbox && !imgLightbox.hidden) closeLightbox();
 });
 
-/* 事件委托：用户图片预览 · Mermaid 放大 */
-if (logEl) {
-    logEl.addEventListener('click', (e) => {
+/* 事件委托：用户图片预览 · Mermaid 放大（所有 Tab 面板） */
+if (panesEl) {
+    panesEl.addEventListener('click', (e) => {
         const mer = e.target.closest('.cc-mermaid--interactive');
         if (mer) {
             openMermaidLightbox(mer);
@@ -761,7 +801,7 @@ if (logEl) {
         const img = e.target.closest('.cc-user-img');
         if (img && img.src) openLightbox(img.src);
     });
-    logEl.addEventListener('keydown', (e) => {
+    panesEl.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter' && e.key !== ' ') return;
         const mer = e.target.closest('.cc-mermaid--interactive');
         if (!mer) return;
@@ -779,13 +819,13 @@ bindSystemThemeListener();
 
 window.addEventListener('pagehide', () => {
     try {
-        chat?.flushPersist();
+        tabs?.flushAll();
     } catch (_) {
     }
 });
 window.addEventListener('beforeunload', () => {
     try {
-        chat?.flushPersist();
+        tabs?.flushAll();
     } catch (_) {
     }
 });
@@ -793,22 +833,19 @@ window.addEventListener('beforeunload', () => {
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
         try {
-            chat?.flushPersist();
+            tabs?.flushAll();
         } catch (_) {
         }
     }
 });
 
-if (domOk && session) {
-    setConnected(false);
+if (domOk && tabs) {
     syncSendState();
-    try {
-        session.connect();
-    } catch (e) {
+    tabs.init().catch((e) => {
         console.error(e);
         if (statusEl) {
             statusEl.textContent = '脚本异常，无法连接：' + (e && e.message ? e.message : String(e));
             setHeaderConnLive(statusEl, false);
         }
-    }
+    });
 }

@@ -127,7 +127,8 @@ docker run --privileged -d \
 | `AGENT_PROVIDER` | `cursor` | agent 后端，单活：`cursor` / `claude_code` / `codebuddy` / `trae` / `opencode` |
 | `ACP_BRIDGE_PORT` | `8765` | backend 监听端口 |
 | `ACP_BRIDGE_PASSWORD` | 空 | 设置后 backend 启用登录页鉴权 |
-| `ACP_BRIDGE_MODEL` | 空 | 锁定 agent 模型（不设则用后端默认） |
+| `ACP_BRIDGE_MODEL` | 空 | 默认 agent 模型（不设则用后端默认）；AgentChat 各 Tab 可另选 |
+| `SANDBOX_MAX_CHATS` | `8` | AgentChat 同时存在的会话（Tab）上限，含 `default` |
 | `CONFIG_ROOT` | 随后端 | 能力发现的配置树根，默认按后端取 `/root/.cursor` `/.claude` `/.codebuddy` `/.trae` `/.config/opencode` |
 
 > `CURSOR_ACP_PORT` / `CURSOR_ACP_PASSWORD` / `CURSOR_ACP_MODEL` 为上述三项的 deprecated 兼容别名。

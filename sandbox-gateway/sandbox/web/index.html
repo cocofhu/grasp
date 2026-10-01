@@ -82,24 +82,18 @@
         </div>
     </header>
 
+    <!-- 会话 Tab：每个 Tab 是同一 provider 下独立的 Agent 会话 -->
+    <nav class="cc-tabbar" aria-label="会话">
+        <div class="cc-tabs" id="tabList" role="tablist"></div>
+        <button type="button" class="cc-tab-new" id="btnNewTab" title="新建会话" aria-label="新建会话">
+            <svg width="14" height="14" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" fill="none"/>
+            </svg>
+        </button>
+    </nav>
+
     <div class="cc-main-col">
-        <main class="cc-scroll" id="chatScroll">
-            <div class="cc-list" id="log">
-                <div class="cc-empty" id="emptyState">
-                    <div class="cc-empty-emoji" aria-hidden="true">🦀</div>
-                    <h2 class="cc-empty-title">AgentChat</h2>
-                    <p class="cc-empty-desc">打开页面后将自动连接 Agent · 卡片式对话与底部队列布局</p>
-                </div>
-            </div>
-            <!-- 待发送队列在会话流底部 -->
-            <details class="cc-queue-panel" id="queuePanel" hidden>
-                <summary class="cc-queue-summary">
-                    <span class="cc-queue-spin" aria-hidden="true"></span>
-                    <span class="cc-queue-summary-text">排队</span>
-                </summary>
-                <div class="cc-queue-body" aria-label="待发送消息队列"></div>
-            </details>
-        </main>
+        <div class="cc-panes" id="chatPanes"></div>
 
         <footer class="cc-input-panel">
             <div class="cc-input-inner">
@@ -209,6 +203,26 @@
         <div class="cc-model-list" id="modelList"></div>
     </div>
 </div>
+
+<template id="chatPaneTpl">
+    <main class="cc-scroll cc-chat-pane" role="tabpanel">
+        <div class="cc-list cc-log">
+            <div class="cc-empty">
+                <div class="cc-empty-emoji" aria-hidden="true">🦀</div>
+                <h2 class="cc-empty-title">AgentChat</h2>
+                <p class="cc-empty-desc">打开页面后将自动连接 Agent · 卡片式对话与底部队列布局</p>
+            </div>
+        </div>
+        <!-- 待发送队列在会话流底部 -->
+        <details class="cc-queue-panel" hidden>
+            <summary class="cc-queue-summary">
+                <span class="cc-queue-spin" aria-hidden="true"></span>
+                <span class="cc-queue-summary-text">排队</span>
+            </summary>
+            <div class="cc-queue-body" aria-label="待发送消息队列"></div>
+        </details>
+    </main>
+</template>
 
 <script type="module" src="assets/js/app/main.js"></script>
 </body>

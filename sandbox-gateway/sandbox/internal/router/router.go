@@ -25,7 +25,7 @@ import (
 // Dependencies 注入路由依赖（前端从磁盘 webRoot 提供）。
 type Dependencies struct {
 	WebRoot       string // 含 index.html 与 static/ 的目录（绝对路径）
-	Bridge        *service.Bridge
+	Chats         *service.ChatManager
 	QQBot         *qqbot.Service
 	Auth          *auth.Guard // 非 nil 且 Enabled() 时启用口令与登录页
 	LoginHTMLPath string      // login.html 绝对路径（启用 Auth 时必填）
@@ -55,12 +55,16 @@ func New(deps *Dependencies) *gin.Engine {
 
 	indexFile := handler.IndexPath(deps.WebRoot)
 	r.GET("/", handler.IndexHTML(indexFile))
-	r.GET("/ws", handler.WebSocket(deps.Bridge))
-	r.GET("/api/prompt_queue", handler.PromptQueue(deps.Bridge))
-	r.GET("/api/events", handler.EventsBefore(deps.Bridge))
-	r.GET("/api/capabilities", handler.Capabilities(deps.Bridge))
-	r.GET("/api/models", handler.ModelsGET(deps.Bridge))
-	r.POST("/api/model", handler.ModelPOST(deps.Bridge))
+	r.GET("/ws", handler.WebSocket(deps.Chats))
+	r.GET("/api/chats", handler.ChatsList(deps.Chats))
+	r.POST("/api/chats", handler.ChatsCreate(deps.Chats))
+	r.PATCH("/api/chats/:id", handler.ChatsRename(deps.Chats))
+	r.DELETE("/api/chats/:id", handler.ChatsDelete(deps.Chats))
+	r.GET("/api/prompt_queue", handler.PromptQueue(deps.Chats))
+	r.GET("/api/events", handler.EventsBefore(deps.Chats))
+	r.GET("/api/capabilities", handler.Capabilities(deps.Chats.Default()))
+	r.GET("/api/models", handler.ModelsGET(deps.Chats))
+	r.POST("/api/model", handler.ModelPOST(deps.Chats))
 	r.GET("/api/qq/config", handler.QQConfig(deps.QQBot))
 	r.POST("/api/qq/config", handler.QQConfigUpdate(deps.QQBot))
 
@@ -84,7 +88,7 @@ func New(deps *Dependencies) *gin.Engine {
 func corsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)

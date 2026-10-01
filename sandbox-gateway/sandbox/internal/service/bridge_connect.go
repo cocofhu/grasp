@@ -66,9 +66,7 @@ func (b *Bridge) ConnectedPayload(p provider.Session) map[string]any {
 		"fsRoot":    p.FSRoot(),
 		"agent":     agentInfo,
 	}
-	b.mu.Lock()
-	curModel := b.model
-	b.mu.Unlock()
+	curModel := b.EffectiveModel()
 	if curModel == "" {
 		curModel = "auto"
 	}
@@ -79,6 +77,7 @@ func (b *Bridge) ConnectedPayload(p provider.Session) map[string]any {
 		}
 	}
 	m["currentModel"] = curModel
+	m["chatId"] = b.id
 	// 协议已预留的可选 usage：仅当该会话上报用量时携带累计量，否则完全省略（帧不变）。
 	if p.ReportsUsage() {
 		if u := p.CumulativeUsage(); len(u) > 0 {
@@ -186,6 +185,7 @@ func mcpServerSummary(mcp json.RawMessage) (count int, names []string) {
 
 // Connect 启动或替换 Agent 会话（由 AGENT_PROVIDER 选定的 provider 负责拉起对应 transport）。
 func (b *Bridge) Connect(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (provider.Session, error) {
+	cwd, fsRoot, mcp = b.inheritFromDefault(cwd, fsRoot, mcp)
 	if cwd == "" {
 		wd, err := os.Getwd()
 		if err != nil {
@@ -201,6 +201,10 @@ func (b *Bridge) Connect(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (p
 	log.Printf("acp: 实际使用目录 cwd=%q fsRoot=%q（前端留空时已用服务端当前目录或默认与 cwd 相同） mcp_servers_count=%d names=%v", cwd, fsEff, count, names)
 
 	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		return nil, ErrChatNotFound
+	}
 	if b.sess != nil {
 		b.agentCancel()
 		logging.WarnErr(b.sess.Close(), "agent session close on reconnect", nil)
@@ -211,8 +215,8 @@ func (b *Bridge) Connect(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (p
 		b.autoPermission = *auto
 	}
 	ctx := b.agentCtx
-	m := b.model
 	b.mu.Unlock()
+	m := b.EffectiveModel()
 
 	b.clearPromptQueue()
 	b.clearUserTurnHistory()
@@ -241,6 +245,12 @@ func (b *Bridge) Connect(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (p
 		return nil, err
 	}
 	b.mu.Lock()
+	if b.closed {
+		// 握手期间会话被删除：不能把 Agent 挂回已删除的会话，否则子进程无人回收。
+		b.mu.Unlock()
+		logging.WarnErr(sess.Close(), "agent session close for deleted chat", nil)
+		return nil, ErrChatNotFound
+	}
 	b.sess = sess
 	if len(mcp) > 0 && string(mcp) != "null" {
 		b.lastMCP = append(json.RawMessage(nil), mcp...)
@@ -341,5 +351,5 @@ func (b *Bridge) RestartAgent() (provider.Session, error) {
 	}
 	ap := auto
 	log.Printf("acp: 收到重启请求，将重建 Agent（cwd=%q fsRoot=%q）", cwd, fsRoot)
-	return b.Connect(cwd, fsRoot, mcp, &ap)
+	return b.connectOrTest(cwd, fsRoot, mcp, &ap)
 }

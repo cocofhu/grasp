@@ -28,7 +28,7 @@ func main() {
 	ginMode := flag.String("gin-mode", "debug", "Gin 模式: debug | release | test")
 	webDir := flag.String("web", "web", "前端静态目录：内含 index.html 与 static/（相对当前工作目录或绝对路径）")
 	password := flag.String("password", "", "访问口令；非空时必须先登录。也可设环境变量 ACP_BRIDGE_PASSWORD（优先级低于本参数）")
-	model := flag.String("model", "", "指定 Agent 模型（如 claude-sonnet）。也可设环境变量 ACP_BRIDGE_MODEL（优先级低于本参数）")
+	model := flag.String("model", "", "默认 Agent 模型（如 claude-sonnet），各会话可在页面另选。也可设环境变量 ACP_BRIDGE_MODEL（优先级低于本参数）")
 	qqConfigPath := flag.String("qq-config", "qq_bot.json", "QQ 机器人配置文件路径（JSON，可通过页面左上角 QQ 图标配置）")
 	flag.Parse()
 
@@ -69,13 +69,13 @@ func main() {
 		}
 	}
 
-	bridge := service.NewBridge()
-	bridge.SetModel(agentModel, agentModel != "")
+	chats := service.NewChatManager()
+	chats.SetDefaultModel(agentModel)
 	if agentModel != "" {
-		zlog.Info().Str("model", agentModel).Msg("agent model locked")
+		zlog.Info().Str("model", agentModel).Msg("agent default model")
 	}
-	bridge.StartDefaultAgent()
-	qqService, err := qqbot.New(bridge, qqbot.NewStore(*qqConfigPath))
+	chats.StartDefaultAgent()
+	qqService, err := qqbot.New(chats.Default(), qqbot.NewStore(*qqConfigPath))
 	if err != nil {
 		zlog.Fatal().Err(err).Str("qq_config", *qqConfigPath).Msg("qq bot init failed")
 	}
@@ -83,7 +83,7 @@ func main() {
 
 	engine := router.New(&router.Dependencies{
 		WebRoot:       webRoot,
-		Bridge:        bridge,
+		Chats:         chats,
 		QQBot:         qqService,
 		Auth:          auth.NewGuard(authPassword),
 		LoginHTMLPath: loginPath,
