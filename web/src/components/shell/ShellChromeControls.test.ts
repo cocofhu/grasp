@@ -325,6 +325,10 @@ describe('ShellChromeControls theme icon (g2.1)', () => {
     __resetNotificationsPageEntryForTests()
   })
 
+  afterEach(() => {
+    delete document.startViewTransition
+  })
+
   it('cross-fades sun and moon on click and updates immediately', async () => {
     const wrapper = mountChrome('sidebar')
     await flushPromises()
@@ -355,14 +359,76 @@ describe('ShellChromeControls theme icon (g2.1)', () => {
     wrapper.unmount()
   })
 
-  it('source includes 280ms rotate fade and prefers-reduced-motion', async () => {
+  it('sidebar and bar share overlay-pop icon motion (plan g1.1 g1.2 g1.3)', async () => {
     const { readFileSync } = await import('node:fs')
     const { dirname, join } = await import('node:path')
     const { fileURLToPath } = await import('node:url')
     const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'ShellChromeControls.vue'), 'utf8')
-    expect(src).toMatch(/280ms/)
-    expect(src).toMatch(/rotate/)
-    expect(src).toMatch(/opacity/)
+    const sidebar = mountChrome('sidebar')
+    const bar = mountChrome('bar')
+    await flushPromises()
+    expect(sidebar.find('[data-testid="shell-theme-toggle"]').attributes('data-motion')).toBe('overlay-pop')
+    expect(bar.find('[data-testid="shell-theme-toggle"]').attributes('data-motion')).toBe('overlay-pop')
+    // plan g1.1 — one control, one motion block; not a longer rotate cross-fade
+    expect(src).toMatch(/plan g1\.1/)
+    expect(src).toMatch(/data-motion="overlay-pop"/)
+    expect(src).toMatch(/var\(--dur-overlay\)/)
+    expect(src).toMatch(/var\(--ease-out-expo\)/)
+    expect(src).toMatch(/translateY\(-4px\) scale\(0\.98\)/)
+    expect(src).not.toMatch(/280ms/)
+    expect(src).not.toMatch(/rotate\(/)
+    // plan g1.3
     expect(src).toMatch(/prefers-reduced-motion:\s*reduce/)
+    sidebar.unmount()
+    bar.unmount()
+  })
+
+  it('keeps the previous icon until the view-transition callback (plan g1.2 review v1)', async () => {
+    let update: (() => Promise<unknown>) | null = null
+    document.startViewTransition = ((cb: () => unknown) => {
+      update = () => Promise.resolve(cb())
+      const pending = new Promise<void>(() => {})
+      return {
+        ready: pending,
+        finished: pending,
+        updateCallbackDone: pending,
+        skipTransition() {},
+        types: new Set<string>(),
+      }
+    }) as typeof document.startViewTransition
+
+    const wrapper = mountChrome('sidebar')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="shell-theme-icon-sun"]').classes()).toContain('is-active')
+
+    await wrapper.find('[data-testid="shell-theme-toggle"]').trigger('click')
+    expect(document.documentElement.classList.contains('light')).toBe(false)
+    expect(document.documentElement.classList.contains('theme-vt-capture')).toBe(true)
+    expect(wrapper.find('[data-testid="shell-theme-icon-sun"]').classes()).toContain('is-active')
+    expect(wrapper.find('[data-testid="shell-theme-icon-moon"]').classes()).not.toContain('is-active')
+
+    await update!()
+    expect(document.documentElement.classList.contains('light')).toBe(true)
+    expect(wrapper.find('[data-testid="shell-theme-icon-moon"]').classes()).toContain('is-active')
+    expect(wrapper.find('[data-testid="shell-theme-icon-sun"]').classes()).not.toContain('is-active')
+    expect(localStorage.getItem('grasp-theme')).toBe('light')
+
+    delete document.startViewTransition
+    wrapper.unmount()
+  })
+
+  it('rapid clicks settle on the last theme and the matching icon (plan g2.2)', async () => {
+    const wrapper = mountChrome('sidebar')
+    await flushPromises()
+    const button = wrapper.find('[data-testid="shell-theme-toggle"]')
+    await button.trigger('click')
+    await button.trigger('click')
+    await button.trigger('click')
+    await nextTick()
+    expect(document.documentElement.classList.contains('light')).toBe(true)
+    expect(localStorage.getItem('grasp-theme')).toBe('light')
+    expect(wrapper.find('[data-testid="shell-theme-icon-moon"]').classes()).toContain('is-active')
+    expect(wrapper.find('[data-testid="shell-theme-icon-sun"]').classes()).not.toContain('is-active')
+    wrapper.unmount()
   })
 })
