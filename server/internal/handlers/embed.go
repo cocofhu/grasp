@@ -163,6 +163,10 @@ func (h *Handlers) PublicEmbedTicket(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "permission_denied", "message": "当前链接权限不允许回复"})
 		return
 	}
+	lane, ok := h.requestLane(c, token, lookup)
+	if !ok {
+		return
+	}
 	runID, nodeID := lookup.Link.RunID, lookup.Link.NodeID
 	if len(h.directPreviewOrigins(runID, nodeID)) == 0 {
 		c.JSON(http.StatusConflict, gin.H{"error": "no direct preview"})
@@ -173,6 +177,7 @@ func (h *Handlers) PublicEmbedTicket(c *gin.Context) {
 		RunID:          runID,
 		NodeID:         nodeID,
 		ShareTokenHash: lookup.Link.TokenHash,
+		Lane:           lane,
 		GraspOrigin:    h.embedGraspOrigin(c),
 	})
 	if err != nil {

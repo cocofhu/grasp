@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   canCreateGateShare,
   formatRemainingSec,
+  getShareVisitorId,
   inboxShareKind,
   isLoopbackShareHost,
   isShareableInboxItem,
@@ -153,6 +154,7 @@ describe('gateShareLink additional coverage', () => {
       headers: {
         'X-Gate-Share-Token': 'token',
         'X-Gate-Share-Requested': '1',
+        'X-Gate-Share-Visitor': getShareVisitorId(),
         'X-Gate-Known-Visual-Html-Hash': 'vh',
         'X-Gate-Known-Upstream-Hash': 'uh',
         'X-Gate-Known-Structured-Hash': 'sh',
@@ -172,7 +174,11 @@ describe('gateShareLink additional coverage', () => {
     expect(fetchMock).toHaveBeenLastCalledWith('/public/gate-approvals/upstream', expect.objectContaining({
       method: 'GET',
       signal,
-      headers: { 'X-Gate-Share-Token': 'token', 'X-Gate-Share-Requested': '1' },
+      headers: {
+        'X-Gate-Share-Token': 'token',
+        'X-Gate-Share-Requested': '1',
+        'X-Gate-Share-Visitor': getShareVisitorId(),
+      },
     }))
     fetchMock.mockResolvedValueOnce(response({ message: 'upstream denied' }, 403))
     await expect(publicGateApi.upstream('token')).rejects.toThrow('upstream denied')

@@ -51,7 +51,16 @@ func (h *Handlers) PublicGateImage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_index"})
 		return
 	}
-	img, ok := h.resolvePublicDialogueImage(lookup, idx)
+	visitor := strings.TrimSpace(c.GetHeader(headerShareVisitor))
+	if visitor == "" {
+		visitor = strings.TrimSpace(c.Query("v"))
+	}
+	lane, ok := h.publicLane(token, lookup, visitor)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "visitor_required"})
+		return
+	}
+	img, ok := h.resolvePublicDialogueImage(lookup, lane, idx)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
 		return
@@ -59,7 +68,7 @@ func (h *Handlers) PublicGateImage(c *gin.Context) {
 	h.writePublicPromptImage(c, img)
 }
 
-func (h *Handlers) resolvePublicDialogueImage(lookup *gateshare.LookupResult, index int) (models.PromptImage, bool) {
+func (h *Handlers) resolvePublicDialogueImage(lookup *gateshare.LookupResult, lane string, index int) (models.PromptImage, bool) {
 	if lookup == nil || index < 0 {
 		return models.PromptImage{}, false
 	}
@@ -67,18 +76,8 @@ func (h *Handlers) resolvePublicDialogueImage(lookup *gateshare.LookupResult, in
 	if producerID == "" {
 		producerID = strings.TrimSpace(lookup.Link.NodeID)
 	}
-	var turns []models.ReactMessage
-	if conv := h.publicConversation(lookup.Link.RunID, producerID); conv != nil {
-		turns = conv.Turns()
-	}
-	var active map[string]any
-	var queue []map[string]any
-	if h.Eng != nil {
-		if snap, ok := h.Eng.ReviewSessionSnapshotFor(lookup.Link.RunID, producerID); ok {
-			active = snap.ActiveItem
-			queue = snap.Items
-		}
-	}
+	turns := h.publicLaneTurns(lookup, producerID, lane)
+	active, queue := h.publicLaneQueue(lookup.Link.RunID, producerID, lane)
 	catalog := gateshare.DialogueImageCatalog(turns, active, queue)
 	if index >= len(catalog) {
 		return models.PromptImage{}, false

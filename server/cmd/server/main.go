@@ -264,6 +264,7 @@ func main() {
 		}
 		embedStore.InvalidateShare(tokenHashes...)
 		gateShareSessions.KickMany(tokenHashes)
+		go eng.RetireVisitorLanesForTokenHashes(tokenHashes)
 	})
 	eng.SetShareRevoker(gateShareSvc)
 	host.SetProjectAuditHook(func(runID, nodeID, tool string, args map[string]any, resultText string, isError bool) {

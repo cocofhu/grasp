@@ -127,7 +127,11 @@ func (h *Handlers) PublicLiveDiscardAll(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "permission_denied", "message": "当前链接权限不允许操作 Live 变体"})
 		return
 	}
-	n, err := h.Eng.DiscardAllLiveAs(h.publicTurnOwner(body.Token), lookup.Link.RunID, lookup.Link.NodeID)
+	lane, ok := h.requestLane(c, body.Token, lookup)
+	if !ok {
+		return
+	}
+	n, err := h.Eng.DiscardAllLiveAs(h.publicTurnOwner(body.Token, lane), lookup.Link.RunID, lookup.Link.NodeID)
 	if err != nil {
 		h.writePublicReactErr(c, err)
 		return

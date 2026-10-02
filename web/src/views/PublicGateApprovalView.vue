@@ -31,6 +31,7 @@ import {
 import { pickAcpRails } from '@/lib/run/pendingAcpBuffer'
 import {
   formatRemainingSec,
+  getShareVisitorId,
   mergePublicGatePreview,
   mapPublicGateImages,
   parseShareTokenFromHash,
@@ -903,7 +904,7 @@ function connectPublicEvents() {
     if (publicWs !== socket) return
     publicWsReconnect.markOpened()
     try {
-      socket.send(JSON.stringify({ token: token.value }))
+      socket.send(JSON.stringify({ token: token.value, visitor: getShareVisitorId() }))
     } catch {
       socket.close()
     }
@@ -1215,7 +1216,9 @@ async function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotatio
     }
     if (!accepted) {
       pendingReplyText.value = ''
-      errorText.value = e instanceof Error ? e.message : t('pages.publicGate.replyFailed')
+      errorText.value = (e as { body?: { error?: string } } | null)?.body?.error === 'visitors_full'
+        ? t('pages.publicGate.visitorsFull')
+        : e instanceof Error ? e.message : t('pages.publicGate.replyFailed')
     }
   } finally {
     // A refresh failure after acknowledgement must never turn into a resend.

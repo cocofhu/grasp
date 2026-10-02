@@ -105,6 +105,10 @@ func (h *Handlers) PublicGatePreview(c *gin.Context) {
 		c.JSON(http.StatusOK, out)
 		return
 	}
+	lane, ok := h.requestLane(c, token, lookup)
+	if !ok {
+		return
+	}
 	known := gateshare.SparsePreviewKnown{
 		VisualHTML: strings.TrimSpace(c.GetHeader(gateshare.HeaderKnownVisualHTMLHash)),
 		Upstream:   strings.TrimSpace(c.GetHeader(gateshare.HeaderKnownUpstreamHash)),
@@ -113,14 +117,14 @@ func (h *Handlers) PublicGatePreview(c *gin.Context) {
 	}
 	if kind == models.ShareLinkKindReview {
 		visual, structName, structContent := h.publicReviewArtifacts(lookup)
-		extras := h.publicReviewExtras(lookup, visual, structName)
+		extras := h.publicReviewExtras(lookup, lane, visual, structName)
 		dto := gateshare.BuildReviewPreviewDTO(st, lookup, visual, structName, structContent, nonce, extras)
 		gateshare.ApplySparsePreview(&dto, known)
 		c.JSON(http.StatusOK, dto)
 		return
 	}
 	visual, structName, structContent := h.publicGateArtifacts(lookup)
-	extras := h.publicGateExtras(lookup, visual, structName)
+	extras := h.publicGateExtras(lookup, lane, visual, structName)
 	dto := gateshare.BuildPreviewDTO(st, lookup, visual, structName, structContent, nonce, extras)
 	gateshare.ApplySparsePreview(&dto, known)
 	c.JSON(http.StatusOK, dto)
@@ -202,7 +206,11 @@ func (h *Handlers) PublicGateReply(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "permission_denied", "message": "当前链接权限不允许回复"})
 		return
 	}
-	owner := h.publicTurnOwner(token)
+	lane, ok := h.requestLane(c, token, lookup)
+	if !ok {
+		return
+	}
+	owner := h.publicTurnOwner(token, lane)
 	kind := publicShareKind(lookup)
 	if body.Live != nil {
 		if !gateshare.Allow(lookup.Link.PermissionPreset, gateshare.ActionLive) {
@@ -226,6 +234,10 @@ func (h *Handlers) PublicGateReply(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "empty_reply", "message": "请填写修订意见或标注后再发送"})
 		return
 	}
+	if lane != "" && body.LiveCtx == nil {
+		h.publicVisitorReply(c, lookup, lane, owner, text, body)
+		return
+	}
 	if kind == models.ShareLinkKindReview {
 		allowLive := gateshare.Allow(lookup.Link.PermissionPreset, gateshare.ActionLive)
 		if err := h.Eng.ReactReplyLiveCtxWithPermissionAs(owner, lookup.Link.RunID, lookup.Link.NodeID, text, body.Images, body.Annotations, body.LiveCtx, allowLive); err != nil {
@@ -240,6 +252,30 @@ func (h *Handlers) PublicGateReply(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "accepted", "kind": models.ShareLinkKindHumanGate})
+}
+
+func (h *Handlers) publicVisitorReply(c *gin.Context, lookup *gateshare.LookupResult, lane, owner, text string, body publicReplyBody) {
+	kind := publicShareKind(lookup)
+	t := engine.VisitorTarget{
+		LinkID: lookup.Link.ID, RunID: lookup.Link.RunID, Lane: lane, Owner: owner,
+		ProducerID: lookup.Link.NodeID, Source: "node",
+	}
+	if kind != models.ShareLinkKindReview {
+		producerID, alive := h.Eng.GateReactInfo(lookup.Link.RunID, lookup.Link.NodeID)
+		if producerID == "" || !alive {
+			c.JSON(http.StatusOK, gin.H{"status": "cold", "error": "session_cold", "message": "会话已结束，仅可确认并流转"})
+			return
+		}
+		t.ProducerID, t.Source, t.GateNodeID = producerID, "gate", lookup.Link.NodeID
+	}
+	if _, err := h.Eng.EnqueueVisitorTurn(t, text, body.Images, body.Annotations); err != nil {
+		if writeVisitorsFull(c, err) {
+			return
+		}
+		h.writePublicReactErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "accepted", "kind": kind})
 }
 
 func (h *Handlers) PublicGateCancel(c *gin.Context) {
@@ -277,7 +313,24 @@ func (h *Handlers) PublicGateCancel(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "permission_denied", "message": "当前链接权限不允许取消会话"})
 		return
 	}
+	lane, ok := h.requestLane(c, token, lookup)
+	if !ok {
+		return
+	}
 	kind := publicShareKind(lookup)
+	if lane != "" {
+		runID, producerID, err := h.publicShareQueueTarget(lookup)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "session_cold", "message": "上游会话已结束，无法取消"})
+			return
+		}
+		if err := h.Eng.CancelVisitorTurn(runID, producerID, lane); err != nil {
+			h.writePublicReactErr(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "kind": kind})
+		return
+	}
 	if kind == models.ShareLinkKindReview {
 		var err error
 		if lookup.Node != nil && nodereg.ClarifyInteractive(lookup.Node.Type) {
@@ -351,12 +404,21 @@ func (h *Handlers) PublicGateQueueRemove(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "permission_denied", "message": "当前链接权限不允许回复"})
 		return
 	}
+	lane, ok := h.requestLane(c, token, lookup)
+	if !ok {
+		return
+	}
 	runID, nodeID, err := h.publicShareQueueTarget(lookup)
 	if err != nil {
 		h.writePublicReactErr(c, err)
 		return
 	}
-	if err := h.Eng.RemoveQueuedItem(runID, nodeID, body.ItemID); err != nil {
+	if lane != "" {
+		err = h.Eng.RemoveVisitorQueuedItem(runID, nodeID, lane, body.ItemID)
+	} else {
+		err = h.Eng.RemoveQueuedItem(runID, nodeID, body.ItemID)
+	}
+	if err != nil {
 		h.writePublicReactErr(c, err)
 		return
 	}
@@ -398,12 +460,21 @@ func (h *Handlers) PublicGateQueueReorder(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "permission_denied", "message": "当前链接权限不允许回复"})
 		return
 	}
+	lane, ok := h.requestLane(c, token, lookup)
+	if !ok {
+		return
+	}
 	runID, nodeID, err := h.publicShareQueueTarget(lookup)
 	if err != nil {
 		h.writePublicReactErr(c, err)
 		return
 	}
-	if err := h.Eng.ReorderQueuedItems(runID, nodeID, body.ItemIDs); err != nil {
+	if lane != "" {
+		err = h.Eng.ReorderVisitorQueuedItems(runID, nodeID, lane, body.ItemIDs)
+	} else {
+		err = h.Eng.ReorderQueuedItems(runID, nodeID, body.ItemIDs)
+	}
+	if err != nil {
 		h.writePublicReactErr(c, err)
 		return
 	}
@@ -499,8 +570,9 @@ func (h *Handlers) PublicGateDecide(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "nonce", "message": "请求未通过安全校验"})
 		return
 	}
+	lane, _ := h.publicLane(token, lookup, c.GetHeader(headerShareVisitor))
 	if kind == models.ShareLinkKindReview {
-		h.publicReviewDecide(c, lookup, token, strings.TrimSpace(body.Action), body.AbortRunning)
+		h.publicReviewDecide(c, lookup, token, lane, strings.TrimSpace(body.Action), body.AbortRunning)
 		return
 	}
 	action := strings.TrimSpace(body.Action)
@@ -531,6 +603,10 @@ func (h *Handlers) PublicGateDecide(c *gin.Context) {
 		return
 	}
 	if res.Link != nil {
+		if !res.AlreadyProcessed {
+			h.GateShare.RecordUsedLane(res.Link.ID, lane)
+			go h.Eng.RetireVisitorLanesForLink(res.Link.ID)
+		}
 		h.GateShare.RecordUseAudit(
 			res.Link.RunID, res.Link.NodeID, res.Action, name,
 			gateshare.MaskIP(c.ClientIP()), gateshare.SummarizeUA(c.Request.UserAgent()),
@@ -569,7 +645,7 @@ func publicShareKind(lookup *gateshare.LookupResult) string {
 	return models.ShareLinkKindHumanGate
 }
 
-func (h *Handlers) publicReviewDecide(c *gin.Context, lookup *gateshare.LookupResult, token, action string, abortRunning bool) {
+func (h *Handlers) publicReviewDecide(c *gin.Context, lookup *gateshare.LookupResult, token, lane, action string, abortRunning bool) {
 	if action == "" {
 		action = "confirm"
 	}
@@ -612,6 +688,10 @@ func (h *Handlers) publicReviewDecide(c *gin.Context, lookup *gateshare.LookupRe
 		return
 	}
 	if res.Link != nil {
+		if !res.AlreadyProcessed {
+			h.GateShare.RecordUsedLane(res.Link.ID, lane)
+			go h.Eng.RetireVisitorLanesForLink(res.Link.ID)
+		}
 		h.GateShare.RecordUseAudit(
 			res.Link.RunID, res.Link.NodeID, res.Action, "",
 			gateshare.MaskIP(c.ClientIP()), gateshare.SummarizeUA(c.Request.UserAgent()),
@@ -645,7 +725,7 @@ func (h *Handlers) publicReviewArtifacts(lookup *gateshare.LookupResult) (visual
 	return "", name, a.Content
 }
 
-func (h *Handlers) publicReviewExtras(lookup *gateshare.LookupResult, visualHTML, structName string) gateshare.PreviewExtras {
+func (h *Handlers) publicReviewExtras(lookup *gateshare.LookupResult, lane, visualHTML, structName string) gateshare.PreviewExtras {
 	ex := gateshare.PreviewExtras{}
 	if lookup == nil {
 		return ex
@@ -665,30 +745,16 @@ func (h *Handlers) publicReviewExtras(lookup *gateshare.LookupResult, visualHTML
 	if lookup.Node != nil && nodereg.IsGrasp(lookup.Node.Type) {
 		ex.Ports = h.publicAppPreviewPorts(runID, nodeID)
 	}
-	if conv := h.publicConversation(runID, nodeID); conv != nil {
-		ex.Turns = conv.Turns()
-	}
+	ex.Turns = h.publicLaneTurns(lookup, nodeID, lane)
 	ex.ReactSessionAlive = h.Eng != nil && h.Eng.HasLiveReviewSession(runID, nodeID)
-	if ex.ReactSessionAlive && h.Eng != nil {
-		if snap, ok := h.Eng.ReviewSessionSnapshotFor(runID, nodeID); ok {
-			ex.Waiting = snap.Waiting
-			ex.QueueItems = snap.Items
-			ex.ActiveItem = snap.ActiveItem
-			ex.SessionBusy = snap.Busy || snap.Waiting > 0 || !h.Eng.ReviewSessionReady(runID, nodeID)
-		} else {
-			waiting, thinking := h.Eng.ReviewSessionState(runID, nodeID)
-			ex.Waiting = waiting
-			ex.SessionBusy = thinking || waiting > 0 || !h.Eng.ReviewSessionReady(runID, nodeID)
-		}
-		if ex.SessionBusy {
-			ex.LiveEvents = h.publicLiveACP(runID, nodeID)
-		}
+	if ex.ReactSessionAlive {
+		h.publicLaneSession(&ex, runID, nodeID, lane)
 	}
 	ex.UpstreamName, ex.UpstreamContent = h.publicUpstreamArtifact(runID, structName)
 	return ex
 }
 
-func (h *Handlers) publicGateExtras(lookup *gateshare.LookupResult, visualHTML, structName string) gateshare.PreviewExtras {
+func (h *Handlers) publicGateExtras(lookup *gateshare.LookupResult, lane, visualHTML, structName string) gateshare.PreviewExtras {
 	ex := gateshare.PreviewExtras{}
 	if lookup == nil {
 		return ex
@@ -709,9 +775,7 @@ func (h *Handlers) publicGateExtras(lookup *gateshare.LookupResult, visualHTML, 
 		producerID = h.publicGateProducerID(lookup)
 	}
 	if producerID != "" {
-		if conv := h.publicConversation(runID, producerID); conv != nil {
-			ex.Turns = conv.Turns()
-		}
+		ex.Turns = h.publicLaneTurns(lookup, producerID, lane)
 		if lookup.Run.Graph.FindNode(producerID) != nil && lookup.Run.Graph.FindNode(producerID).Type == "app_preview" {
 			ex.ProductKind = gateshare.ProductKindAppPreview
 			if ex.ProductName == "" {
@@ -720,20 +784,8 @@ func (h *Handlers) publicGateExtras(lookup *gateshare.LookupResult, visualHTML, 
 		}
 	}
 	ex.ReactSessionAlive = alive
-	if alive && h.Eng != nil && producerID != "" {
-		if snap, ok := h.Eng.ReviewSessionSnapshotFor(runID, producerID); ok {
-			ex.Waiting = snap.Waiting
-			ex.QueueItems = snap.Items
-			ex.ActiveItem = snap.ActiveItem
-			ex.SessionBusy = snap.Busy || snap.Waiting > 0 || !h.Eng.ReviewSessionReady(runID, producerID)
-		} else {
-			waiting, thinking := h.Eng.ReviewSessionState(runID, producerID)
-			ex.Waiting = waiting
-			ex.SessionBusy = thinking || waiting > 0 || !h.Eng.ReviewSessionReady(runID, producerID)
-		}
-		if ex.SessionBusy {
-			ex.LiveEvents = h.publicLiveACP(runID, producerID)
-		}
+	if alive {
+		h.publicLaneSession(&ex, runID, producerID, lane)
 	}
 	ex.UpstreamName, ex.UpstreamContent = h.publicUpstreamArtifact(runID, structName)
 	return ex

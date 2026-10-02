@@ -38,10 +38,14 @@ func sessionTurnOwner(c *gin.Context) string {
 // publicTurnOwner is the page owner behind a share token or drawer token. A
 // drawer minted by a logged-in user belongs to that user, so the same person
 // can chat from the workbench and have the agent act on their preview page.
-func (h *Handlers) publicTurnOwner(token string) string {
+func (h *Handlers) publicTurnOwner(token, lane string) string {
 	token = strings.TrimSpace(token)
 	if !embed.IsSessionToken(token) {
-		return pagebridge.TokenOwner("share", token)
+		owner := pagebridge.TokenOwner("share", token)
+		if owner != "" && lane != "" {
+			owner += ":" + lane
+		}
+		return owner
 	}
 	if h.Embed != nil {
 		if c, ok := h.Embed.LookupSession(token); ok && c.Kind == models.EmbedKindSession {

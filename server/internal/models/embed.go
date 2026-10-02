@@ -19,6 +19,7 @@ type EmbedTicket struct {
 	NodeID         string     `gorm:"size:128;not null" json:"-"`
 	Username       string     `gorm:"size:128" json:"-"`
 	ShareTokenHash string     `gorm:"size:64" json:"-"`
+	Lane           string     `gorm:"size:16" json:"-"`
 	GraspOrigin    string     `gorm:"size:512;not null" json:"-"`
 	ExpiresAt      time.Time  `gorm:"index" json:"-"`
 	ConsumedAt     *time.Time `json:"-"`
@@ -35,6 +36,7 @@ type EmbedSession struct {
 	NodeID         string    `gorm:"size:128;not null" json:"-"`
 	Username       string    `gorm:"size:128" json:"-"`
 	ShareTokenHash string    `gorm:"index;size:64" json:"-"`
+	Lane           string    `gorm:"size:16" json:"-"`
 	ExpiresAt      time.Time `gorm:"index" json:"-"`
 	CreatedAt      time.Time `json:"-"`
 }

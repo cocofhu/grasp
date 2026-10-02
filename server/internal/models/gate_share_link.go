@@ -23,12 +23,41 @@ type GateShareLink struct {
 	TTLTier   string `gorm:"size:8" json:"ttlTier"`
 	// PermissionPreset is the link-level capability preset (full|react_only).
 	// Empty / missing rows are treated as full for backward compatibility.
-	PermissionPreset string `gorm:"size:32" json:"permissionPreset,omitempty"`
-	ExpiresAt time.Time  `gorm:"index" json:"expiresAt"`
-	RevokedAt *time.Time `json:"revokedAt,omitempty"`
-	UsedAt    *time.Time `json:"usedAt,omitempty"`
-	UsedAction string    `gorm:"size:64" json:"usedAction,omitempty"`
-	CreatedAt time.Time  `json:"createdAt"`
+	PermissionPreset string     `gorm:"size:32" json:"permissionPreset,omitempty"`
+	ExpiresAt        time.Time  `gorm:"index" json:"expiresAt"`
+	RevokedAt        *time.Time `json:"revokedAt,omitempty"`
+	UsedAt           *time.Time `json:"usedAt,omitempty"`
+	UsedAction       string     `gorm:"size:64" json:"usedAction,omitempty"`
+	// UsedLane is the visitor lane whose confirm/reject consumed the link.
+	UsedLane  string    `gorm:"size:16" json:"usedLane,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// GateShareVisitorConversation is one share-link visitor's own dialogue. Lane
+// is a hash of (link, browser visitor id), never the raw id. Messages starts
+// as a copy of the node's dialogue at the visitor's first message.
+type GateShareVisitorConversation struct {
+	ID     uint   `gorm:"primaryKey" json:"-"`
+	LinkID string `gorm:"uniqueIndex:idx_gsvc_link_lane,priority:1;size:40;not null" json:"-"`
+	Lane   string `gorm:"uniqueIndex:idx_gsvc_link_lane,priority:2;size:16;not null" json:"-"`
+	RunID  string `gorm:"index;size:64" json:"-"`
+	NodeID string `gorm:"size:128" json:"-"`
+	// ChatID is the sandbox bridge chat currently serving the lane ("" when closed).
+	ChatID string `gorm:"size:64" json:"-"`
+	// Messages opens with a snapshot of the node's own dialogue taken when the
+	// visitor first spoke (HistoryLen turns), followed by the visitor's turns.
+	Messages     []ReactMessage `gorm:"serializer:json" json:"turns"`
+	HistoryLen   int            `json:"-"`
+	LastActiveAt time.Time      `json:"-"`
+	CreatedAt    time.Time      `json:"-"`
+}
+
+// Turns returns the transcript as a non-nil slice so JSON clients always get [].
+func (c GateShareVisitorConversation) Turns() []ReactMessage {
+	if c.Messages == nil {
+		return []ReactMessage{}
+	}
+	return c.Messages
 }
 
 // Share-link permission presets (product: default full).

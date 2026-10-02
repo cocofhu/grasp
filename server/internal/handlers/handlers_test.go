@@ -102,6 +102,7 @@ func newHarness(t *testing.T) *harness {
 		}
 		embedStore.InvalidateShare(tokenHashes...)
 		gateShareSessions.KickMany(tokenHashes)
+		eng.RetireVisitorLanesForTokenHashes(tokenHashes)
 	})
 	eng.SetShareRevoker(gateShareSvc)
 	t.Cleanup(func() {

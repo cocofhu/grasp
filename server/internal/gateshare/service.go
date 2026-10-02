@@ -622,6 +622,15 @@ func (s *Service) ConsumeCAS(linkID, action string) (bool, *models.GateShareLink
 	return res.RowsAffected == 1, &link, nil
 }
 
+// RecordUsedLane notes which visitor lane's decision consumed the link.
+func (s *Service) RecordUsedLane(linkID, lane string) {
+	if s == nil || s.db == nil || strings.TrimSpace(linkID) == "" || lane == "" {
+		return
+	}
+	_ = s.db.Model(&models.GateShareLink{}).
+		Where("id = ? AND used_at IS NOT NULL", linkID).Update("used_lane", lane).Error
+}
+
 // RollbackConsume clears used_at/used_action so a failed resume can retry.
 func (s *Service) RollbackConsume(linkID string) error {
 	if s == nil || s.db == nil || strings.TrimSpace(linkID) == "" {

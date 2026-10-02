@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -114,6 +115,9 @@ type ACPClient struct {
 	// backfill weak usage keys (default/unknown/empty). Empty disables backfill.
 	bridgeModel string
 
+	// chatID selects a bridge chat (/ws?chat=<id>); empty is the default chat.
+	chatID string
+
 	mu        sync.Mutex
 	conn      *websocket.Conn
 	sessionID string
@@ -212,7 +216,16 @@ func (c *ACPClient) setConnected(sessionID string) {
 	c.mu.Unlock()
 }
 
+// WithChat targets a bridge chat created via CreateChat instead of the default one.
+func (c *ACPClient) WithChat(chatID string) *ACPClient {
+	c.chatID = strings.TrimSpace(chatID)
+	return c
+}
+
 func (c *ACPClient) wsURL() string {
+	if c.chatID != "" {
+		return fmt.Sprintf("ws://%s:%d/ws?chat=%s", c.host, c.port, url.QueryEscape(c.chatID))
+	}
 	return fmt.Sprintf("ws://%s:%d/ws", c.host, c.port)
 }
 
