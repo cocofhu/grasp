@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -9,13 +10,15 @@ import (
 )
 
 type fakePageBridge struct {
-	calls []pagebridge.Command
-	res   pagebridge.Result
-	err   error
+	calls    []pagebridge.Command
+	sessions []string
+	res      pagebridge.Result
+	err      error
 }
 
-func (f *fakePageBridge) Do(_, _ string, cmd pagebridge.Command) (pagebridge.Result, error) {
+func (f *fakePageBridge) Do(_, _, sessionID string, cmd pagebridge.Command) (pagebridge.Result, error) {
 	f.calls = append(f.calls, cmd)
+	f.sessions = append(f.sessions, sessionID)
 	return f.res, f.err
 }
 
@@ -58,6 +61,31 @@ func TestPageToolRequiresDirectPreview(t *testing.T) {
 	txt, isErr := toolText(t, call(t, h, "r1", tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"page_state","arguments":{}}}`))
 	if !isErr || !strings.Contains(txt, "直连预览") || len(b.calls) != 0 {
 		t.Fatalf("txt=%q isErr=%v calls=%d", txt, isErr, len(b.calls))
+	}
+}
+
+func TestPageToolsRequireSessionID(t *testing.T) {
+	for _, tool := range pageTools() {
+		schema := tool["inputSchema"].(map[string]any)
+		req, _ := schema["required"].([]string)
+		if !slices.Contains(req, "session_id") || schema["properties"].(map[string]any)["session_id"] == nil {
+			t.Fatalf("%s: session_id not required: %v", tool["name"], schema)
+		}
+	}
+	h, tok, b := pageHost(t, "grasp", true)
+	call(t, h, "r1", tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"page_click","arguments":{"index":1,"state_id":"p1:3","session_id":" ps_abc "}}}`)
+	if len(b.sessions) != 1 || b.sessions[0] != "ps_abc" {
+		t.Fatalf("sessions = %q", b.sessions)
+	}
+	if _, leaked := b.calls[0].Args["session_id"]; leaked {
+		t.Fatalf("session id leaked into the page command: %v", b.calls[0].Args)
+	}
+	got := redactToolArgs("page_click", map[string]any{"index": 1.0, "session_id": "ps_abc"})
+	if got["session_id"] != "[redacted]" || got["index"] != 1.0 {
+		t.Fatalf("redacted = %v", got)
+	}
+	if got := redactToolArgs("upload_image_artifact", map[string]any{"session_id": "x"}); got["session_id"] != "x" {
+		t.Fatalf("non-page tools untouched, got %v", got)
 	}
 }
 

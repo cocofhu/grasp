@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -118,6 +119,66 @@ func TestDrawerRegistersPageControlAndRelaysCommands(t *testing.T) {
 	waitStatus(t, hub, key, pagebridge.StatusOffline)
 	if st := readFrame(t, bench, "page_control_state"); st["state"] != "offline" {
 		t.Fatalf("workbench frame = %v", st)
+	}
+}
+
+type sessionTurns map[string]string
+
+func (m sessionTurns) PageTurn(_, _, sessionID string) (string, <-chan struct{}, bool) {
+	return m[sessionID], nil, m[sessionID] != ""
+}
+
+func TestMCPPageToolRoutesBySessionID(t *testing.T) {
+	hn := newHarness(t)
+	seedAppPreviewReview(t, hn, "run-page-sid", "ap1")
+	seedDirectPreview(t, hn, "run-page-sid", "ap1")
+	hub := pagebridge.NewHub()
+	hn.host.SetPageBridge(&pagebridge.Router{Hub: hub, Turns: sessionTurns{"ps_a": "embed:a", "ps_b": "embed:b"}})
+	tok := hn.host.RegisterRun("run-page-sid")
+	hn.host.SetActiveNode("run-page-sid", "ap1", "app_preview")
+
+	frames := map[string]chan map[string]any{"embed:a": make(chan map[string]any, 4), "embed:b": make(chan map[string]any, 4)}
+	conns := map[string]*pagebridge.Conn{}
+	for owner, ch := range frames {
+		ch := ch
+		c := hub.Attach(pagebridge.Key{RunID: "run-page-sid", NodeID: "ap1", Owner: owner}, func(b []byte) error {
+			var m map[string]any
+			_ = json.Unmarshal(b, &m)
+			if m["type"] == "page_cmd" {
+				ch <- m
+			}
+			return nil
+		})
+		c.SetControl(true, true)
+		conns[owner] = c
+	}
+
+	callPage := func(sid string) string {
+		req := httptest.NewRequest(http.MethodPost, "/mcp/runs/run-page-sid", strings.NewReader(
+			`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"page_state","arguments":{"session_id":"`+sid+`"}}}`))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		w := httptest.NewRecorder()
+		hn.r.ServeHTTP(w, req)
+		return w.Body.String()
+	}
+	done := make(chan string, 1)
+	go func() { done <- callPage("ps_a") }()
+	select {
+	case cmd := <-frames["embed:a"]:
+		conns["embed:a"].Deliver(cmd["id"].(string), pagebridge.Result{OK: true, State: map[string]any{"stateId": "a:1"}})
+	case <-time.After(3 * time.Second):
+		t.Fatal("ps_a never reached embed:a")
+	}
+	if body := <-done; !strings.Contains(body, "a:1") {
+		t.Fatalf("result = %s", body)
+	}
+	select {
+	case f := <-frames["embed:b"]:
+		t.Fatalf("ps_a reached embed:b: %v", f)
+	default:
+	}
+	if body := callPage(""); !strings.Contains(body, "session_id") {
+		t.Fatalf("missing session id should be refused: %s", body)
 	}
 }
 

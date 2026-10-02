@@ -36,7 +36,7 @@ func (p *livePreparingProvider) PrepareLiveBaseline(context.Context, string, str
 }
 
 func (p *livePreparingProvider) ReviseInPlace(_ context.Context, req runtime.NodeReq, _ []models.ReactMessage, human string, _ []models.PromptImage) runtime.ReactTurn {
-	if human == "clone workspace" {
+	if strings.HasSuffix(human, "clone workspace") {
 		close(p.started)
 		<-p.release
 		p.muBaseline.Lock()

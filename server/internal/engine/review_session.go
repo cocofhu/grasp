@@ -52,6 +52,9 @@ type reviewQueueItem struct {
 	// Owner is who sent the turn (pagebridge owner id). Page tools act only on
 	// this person's page. Never exposed in frames.
 	Owner string
+	// PageSession is the page_* session id minted while this turn runs. Sent
+	// only in the agent prompt; never persisted or exposed in frames.
+	PageSession string
 	// Live marks a Live variant request; persisted on the human message.
 	Live *models.LiveRef
 	// LiveChat snapshots the variant and knobs when the human sends a plain
@@ -297,23 +300,6 @@ func (e *Engine) EnqueueClarifyTurn(runID, nodeID, text string, images []models.
 // EnqueueClarifyTurnAs is EnqueueClarifyTurn sent by owner (a pagebridge owner id).
 func (e *Engine) EnqueueClarifyTurnAs(owner, runID, nodeID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) (waiting int, err error) {
 	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, false, owner)
-}
-
-// ActivePageTurn reports who sent the turn running on a node and a channel
-// closed when it ends or is cancelled.
-func (e *Engine) ActivePageTurn(runID, nodeID string) (owner string, done <-chan struct{}, ok bool) {
-	e.reviewMu.Lock()
-	s := e.reviewSess[e.reviewSessionKey(runID, nodeID)]
-	e.reviewMu.Unlock()
-	if s == nil {
-		return "", nil, false
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.active == nil || s.active.Owner == "" {
-		return "", nil, false
-	}
-	return s.active.Owner, s.turnDone, true
 }
 
 // EnqueueClarifyRetryLast re-runs the latest human turn without inserting a new
@@ -746,6 +732,7 @@ func (e *Engine) pumpReviewSession(s *reviewSession) {
 		ctx, cancel := context.WithCancel(context.Background())
 		s.cancelFn = cancel
 		s.turnDone = ctx.Done()
+		item.PageSession = e.mintPageSession(s, item.Owner, ctx.Done())
 		s.mu.Unlock()
 
 		e.publishSession(s, "queue_state", map[string]any{
@@ -778,6 +765,7 @@ func (e *Engine) pumpReviewSession(s *reviewSession) {
 		}
 
 		cancel()
+		e.revokePageSession(item.PageSession)
 		s.mu.Lock()
 		s.active = nil
 		s.cancelFn = nil
@@ -860,7 +848,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	if err := e.prepareLiveTurn(ctx, s.runID, s.producerID, item); err != nil {
 		t = runtime.ReactTurn{Msg: "Live 初始化失败: " + err.Error(), Err: err}
 	} else {
-		t = e.provider.ReactReply(ctx, req, conv.Messages, item.Effective, item.Images, force)
+		t = e.provider.ReactReply(ctx, req, conv.Messages, withPageSession(item.PageSession, item.Effective), item.Images, force)
 	}
 
 	s.mu.Lock()
@@ -1022,7 +1010,7 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 	if err := e.prepareLiveTurn(ctx, s.runID, s.producerID, item); err != nil {
 		t = runtime.ReactTurn{Msg: "Live 初始化失败: " + err.Error(), Err: err}
 	} else {
-		t = rp.ReviseInPlace(ctx, req, conv.Messages, item.Effective, item.Images)
+		t = rp.ReviseInPlace(ctx, req, conv.Messages, withPageSession(item.PageSession, item.Effective), item.Images)
 	}
 
 	s.mu.Lock()

@@ -36,14 +36,14 @@ const (
 )
 
 var (
-	ErrNoOwner   = errors.New("这一轮不是由用户在对话里发起的,不能操作页面")
-	ErrOffline   = errors.New("用户没有打开允许 Agent 操作的直连预览页(或已关闭开关);请在回复里请用户在预览页抽屉打开「允许 Agent 操作页面」")
-	ErrPaused    = errors.New("用户已切到其他标签页,预览页暂停操作;请在回复里请用户切回预览页后再继续")
-	ErrTimeout   = errors.New("页面没有在规定时间内返回结果,操作结果未知;页面可能弹出了 alert/confirm 等对话框,需要用户手动关闭。请先调用 page_state 确认页面现状,仍无响应时请用户查看预览页")
-	ErrStopped   = errors.New("用户停止了页面操作")
-	ErrCancelled = errors.New("本轮已取消,页面操作已停止")
-	ErrLost      = errors.New("页面在操作过程中断开且没有恢复,操作结果无法确认")
-	errLost      = errors.New("controller lost")
+	ErrBadSession = errors.New("缺少或无效的 session_id:请使用本轮对话说明里给出的 session_id;如果本轮没有给出,说明这一轮不是由用户发起的,不能操作页面")
+	ErrOffline    = errors.New("用户没有打开允许 Agent 操作的直连预览页(或已关闭开关);请在回复里请用户在预览页抽屉打开「允许 Agent 操作页面」")
+	ErrPaused     = errors.New("用户已切到其他标签页,预览页暂停操作;请在回复里请用户切回预览页后再继续")
+	ErrTimeout    = errors.New("页面没有在规定时间内返回结果,操作结果未知;页面可能弹出了 alert/confirm 等对话框,需要用户手动关闭。请先调用 page_state 确认页面现状,仍无响应时请用户查看预览页")
+	ErrStopped    = errors.New("用户停止了页面操作")
+	ErrCancelled  = errors.New("本轮已取消,页面操作已停止")
+	ErrLost       = errors.New("页面在操作过程中断开且没有恢复,操作结果无法确认")
+	errLost       = errors.New("controller lost")
 )
 
 // Key identifies whose page, on which run and node.
@@ -471,10 +471,10 @@ func TokenOwner(kind, token string) string {
 	return kind + ":" + hex.EncodeToString(sum[:8])
 }
 
-// TurnSource reports who started the turn now running on a node, and a
-// channel closed when that turn ends or is cancelled.
+// TurnSource resolves a page session id to who started the turn it belongs
+// to, and a channel closed when that turn ends or is cancelled.
 type TurnSource interface {
-	ActivePageTurn(runID, nodeID string) (owner string, done <-chan struct{}, ok bool)
+	PageTurn(runID, nodeID, sessionID string) (owner string, done <-chan struct{}, ok bool)
 }
 
 // Router resolves the turn owner and runs the command on their page.
@@ -483,13 +483,13 @@ type Router struct {
 	Turns TurnSource
 }
 
-func (r *Router) Do(runID, nodeID string, cmd Command) (Result, error) {
+func (r *Router) Do(runID, nodeID, sessionID string, cmd Command) (Result, error) {
 	if r == nil || r.Hub == nil || r.Turns == nil {
 		return Result{}, ErrOffline
 	}
-	owner, done, ok := r.Turns.ActivePageTurn(runID, nodeID)
+	owner, done, ok := r.Turns.PageTurn(runID, nodeID, sessionID)
 	if !ok || owner == "" {
-		return Result{}, ErrNoOwner
+		return Result{}, ErrBadSession
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

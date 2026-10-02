@@ -235,6 +235,7 @@ func (e *Engine) RetireVisitorLanesForTokenHashes(tokenHashes []string) {
 
 func (e *Engine) retireVisitorLane(st *visitorLaneState) {
 	_ = e.cancelLaneSession(st.runID, st.producerID, st.lane, true)
+	e.revokeLanePageSessions(st.runID, st.producerID, st.lane)
 	if vp, ok := e.provider.(runtime.VisitorLaneProvider); ok {
 		vp.RetireVisitorLane(st.runID, st.producerID, st.lane)
 	}
@@ -361,7 +362,7 @@ func (e *Engine) executeVisitorTurn(ctx context.Context, s *reviewSession, item 
 	s.liveEvents = nil
 	s.mu.Unlock()
 	req := e.nodeReq(c, producer)
-	t := vp.VisitorTurn(ctx, req, s.lane, prelude, item.Effective, item.Images, func(events []models.AcpEvent, busy bool) {
+	t := vp.VisitorTurn(ctx, req, s.lane, prelude, withPageSession(item.PageSession, item.Effective), item.Images, func(events []models.AcpEvent, busy bool) {
 		s.mu.Lock()
 		s.liveEvents = events
 		s.mu.Unlock()
