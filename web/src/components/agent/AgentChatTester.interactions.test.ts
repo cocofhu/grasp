@@ -206,10 +206,6 @@ describe('AgentChatTester interactions', () => {
     const turn = { role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true }
     vm.applyAcp({}, turn)
     vm.applyAcp({ type: 'other' }, turn)
-    expect(vm.contentText(null)).toBe('')
-    expect(vm.contentText({ parts: ['a', { text: 'b' }] })).toBe('ab')
-    expect(vm.contentText({ nope: true })).toBe('')
-    expect(vm.normalizeKind('toolCall-Update')).toBe('tool_call_update')
     expect(vm.humanizeTool('工具')).toBe('工具')
     expect(vm.humanizeTool('tool_12345678')).toBe('')
     expect(vm.planEntries({ steps: 'bad' })).toEqual([])
@@ -331,7 +327,6 @@ describe('AgentChatTester interactions', () => {
     expect(wrapped).toHaveLength(2)
     expect(wrapped[1]).toMatchObject({ role: 'agent', thought: 'ab', text: 'xy' })
     expect(wrapped[1].tools[0]).toMatchObject({ id: 't9', status: 'pending' })
-    expect(vm.unwrapFrame(null)).toBeNull()
     w.unmount()
   })
 

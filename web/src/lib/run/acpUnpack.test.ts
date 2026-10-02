@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   contentText,
   extractAgentMessageDelta,
+  flattenUpdate,
   normalizeKind,
   unwrapFrame,
 } from './acpUnpack'
@@ -25,6 +26,16 @@ describe('acpUnpack', () => {
     expect(contentText({ text: 'x' })).toBe('x')
     expect(contentText({ parts: [{ text: 'p' }, 'q'] })).toBe('pq')
     expect(contentText(null)).toBe('')
+    expect(contentText({ parts: ['a', { text: 'b' }] })).toBe('ab')
+    expect(contentText({ nope: true })).toBe('')
+    expect(normalizeKind('toolCall-Update')).toBe('tool_call_update')
+    expect(unwrapFrame(null)).toBeNull()
+  })
+
+  it('flattenUpdate lifts nested sessionUpdate fields without overriding', () => {
+    expect(flattenUpdate({ kind: 'k', sessionUpdate: { kind: 'x', content: 'c' } })).toEqual({ kind: 'k', content: 'c' })
+    expect(flattenUpdate({ session_update: 'plan', entries: [] })).toEqual({ session_update: 'plan', entries: [] })
+    expect(flattenUpdate('raw')).toBe('raw')
   })
 
   it('extractAgentMessageDelta accumulates nested op:event agent_message_chunk', () => {

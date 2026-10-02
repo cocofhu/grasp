@@ -22,6 +22,7 @@ import {
   isImageAttachment,
 } from '@/lib/shared/attachments'
 import { chatImageSrc } from '@/lib/shared/compositeText'
+import { contentText, flattenUpdate, normalizeKind, unwrapFrame } from '@/lib/run/acpUnpack'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 
 // `attachId` attaches to an existing sandbox (skips the create flow) — used by
@@ -407,12 +408,6 @@ function removeAttachment(i: number) {
   attachments.value.splice(i, 1)
 }
 
-// unwrapFrame peels a persisted event frame ({op:"event",data:{…}}) down to the
-// bare event ({type,…}); passes through frames already in bare form.
-function unwrapFrame(f: any): any {
-  return f && typeof f === 'object' && f.op === 'event' && f.data ? f.data : f
-}
-
 function rebuildTurnsFromFrames(events: any[]): Turn[] {
   const rebuilt: Turn[] = []
   let agent: Turn | null = null
@@ -509,7 +504,7 @@ async function loadEarlierHistory() {
 function applyAcp(envelope: any, turn: Turn) {
   const ev = envelope?.data ?? envelope
   if (!ev || ev.type !== 'session_update' || !ev.update) return
-  const u = flatten(ev.update)
+  const u = flattenUpdate(ev.update)
   const kind = normalizeKind(u.sessionUpdate || u.session_update || u.type || u.kind || '')
   if (kind === 'agent_message_chunk') turn.text += contentText(u.content)
   else if (kind === 'agent_thought_chunk') turn.thought += contentText(u.content)
@@ -517,34 +512,8 @@ function applyAcp(envelope: any, turn: Turn) {
   else if (isToolKind(kind)) applyTool(u, turn)
 }
 
-function flatten(u: any): any {
-  const out: any = { ...u }
-  const su = out.sessionUpdate ?? out.session_update
-  if (su && typeof su === 'object') {
-    for (const k of Object.keys(su)) if (!(k in out)) out[k] = su[k]
-    delete out.sessionUpdate
-    delete out.session_update
-  }
-  return out
-}
-function normalizeKind(s: any): string {
-  return String(s || '')
-    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-    .replace(/-/g, '_')
-    .toLowerCase()
-}
 function isToolKind(k: string): boolean {
   return k.includes('tool_call') || k.includes('toolcall')
-}
-function contentText(v: any): string {
-  if (v == null) return ''
-  if (typeof v === 'string') return v
-  if (Array.isArray(v)) return v.map(contentText).join('')
-  if (typeof v === 'object') {
-    if (typeof v.text === 'string') return v.text
-    if (Array.isArray(v.parts)) return v.parts.map(contentText).join('')
-  }
-  return ''
 }
 function field(o: any, ...keys: string[]): string {
   for (const k of keys) if (typeof o[k] === 'string' && o[k]) return o[k]
