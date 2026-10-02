@@ -14,14 +14,16 @@ import {
   SITE_ATTACH_MAX_BYTES,
   SITE_ATTACH_MAX_MIB,
   attachmentDisplayName,
-  fileAttachmentName,
+  filesFromClipboard,
   findOversizedAttachments,
   formatSelectRejectMessage,
   formatSendRejectMessage,
   inferImageMimeFromUrl,
   isImageAttachment,
+  readFilesAsAttachments,
 } from '@/lib/shared/attachments'
 import { chatImageSrc } from '@/lib/shared/compositeText'
+import { contentText, flattenUpdate, normalizeKind, unwrapFrame } from '@/lib/run/acpUnpack'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 
 // `attachId` attaches to an existing sandbox (skips the create flow) — used by
@@ -358,25 +360,11 @@ function onFrame(data: string) {
 }
 
 // --- file attachments (any type; 50 MiB select/send gate) -----------------
-function addFiles(files: FileList | null | undefined) {
+function addFiles(files: ArrayLike<File> | null | undefined) {
   if (!files) return
-  const rejected: string[] = []
-  const list = Array.from(files)
-  list.forEach((f, i) => {
-    if (f.size > SITE_ATTACH_MAX_BYTES) {
-      rejected.push(fileAttachmentName(f, i))
-      return
-    }
-    const name = fileAttachmentName(f, i)
-    const mimeType = f.type || 'application/octet-stream'
-    const reader = new FileReader()
-    reader.onload = () => {
-      const res = String(reader.result || '')
-      const comma = res.indexOf(',')
-      const data = comma >= 0 ? res.slice(comma + 1) : res
-      attachments.value.push({ data, mimeType, url: res, name })
-    }
-    reader.readAsDataURL(f)
+  const { rejected } = readFilesAsAttachments(files, {
+    maxBytes: SITE_ATTACH_MAX_BYTES,
+    onRead: (att) => attachments.value.push(att),
   })
   if (rejected.length) {
     errorMsg.value = formatSelectRejectMessage(rejected, SITE_ATTACH_MAX_MIB)
@@ -387,30 +375,14 @@ function onPickFiles(e: Event) {
   if (fileInput.value) fileInput.value.value = ''
 }
 function onPaste(e: ClipboardEvent) {
-  const items = e.clipboardData?.items
-  if (!items) return
-  const picked: File[] = []
-  for (const it of Array.from(items)) {
-    if (it.kind === 'file') {
-      const f = it.getAsFile()
-      if (f) picked.push(f)
-    }
-  }
+  const picked = filesFromClipboard(e)
   if (picked.length) {
     e.preventDefault()
-    const dt = new DataTransfer()
-    picked.forEach((f) => dt.items.add(f))
-    addFiles(dt.files)
+    addFiles(picked)
   }
 }
 function removeAttachment(i: number) {
   attachments.value.splice(i, 1)
-}
-
-// unwrapFrame peels a persisted event frame ({op:"event",data:{…}}) down to the
-// bare event ({type,…}); passes through frames already in bare form.
-function unwrapFrame(f: any): any {
-  return f && typeof f === 'object' && f.op === 'event' && f.data ? f.data : f
 }
 
 function rebuildTurnsFromFrames(events: any[]): Turn[] {
@@ -509,7 +481,7 @@ async function loadEarlierHistory() {
 function applyAcp(envelope: any, turn: Turn) {
   const ev = envelope?.data ?? envelope
   if (!ev || ev.type !== 'session_update' || !ev.update) return
-  const u = flatten(ev.update)
+  const u = flattenUpdate(ev.update)
   const kind = normalizeKind(u.sessionUpdate || u.session_update || u.type || u.kind || '')
   if (kind === 'agent_message_chunk') turn.text += contentText(u.content)
   else if (kind === 'agent_thought_chunk') turn.thought += contentText(u.content)
@@ -517,34 +489,8 @@ function applyAcp(envelope: any, turn: Turn) {
   else if (isToolKind(kind)) applyTool(u, turn)
 }
 
-function flatten(u: any): any {
-  const out: any = { ...u }
-  const su = out.sessionUpdate ?? out.session_update
-  if (su && typeof su === 'object') {
-    for (const k of Object.keys(su)) if (!(k in out)) out[k] = su[k]
-    delete out.sessionUpdate
-    delete out.session_update
-  }
-  return out
-}
-function normalizeKind(s: any): string {
-  return String(s || '')
-    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-    .replace(/-/g, '_')
-    .toLowerCase()
-}
 function isToolKind(k: string): boolean {
   return k.includes('tool_call') || k.includes('toolcall')
-}
-function contentText(v: any): string {
-  if (v == null) return ''
-  if (typeof v === 'string') return v
-  if (Array.isArray(v)) return v.map(contentText).join('')
-  if (typeof v === 'object') {
-    if (typeof v.text === 'string') return v.text
-    if (Array.isArray(v.parts)) return v.parts.map(contentText).join('')
-  }
-  return ''
 }
 function field(o: any, ...keys: string[]): string {
   for (const k of keys) if (typeof o[k] === 'string' && o[k]) return o[k]

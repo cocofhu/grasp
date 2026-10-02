@@ -637,6 +637,36 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
+  it('keeps attachment shape and notice semantics when selecting files', () => {
+    class Reader {
+      result: string | ArrayBuffer | null = null
+      onload: (() => void) | null = null
+      readAsDataURL(file: File) {
+        this.result = `data:${file.type || 'application/octet-stream'};base64,YWJj`
+        this.onload?.()
+      }
+    }
+    vi.stubGlobal('FileReader', Reader)
+    const { chat, app, models } = withChat()
+    chat.addFiles(null)
+    expect(models.attachments.value).toEqual([])
+    expect(chat.attachNotice.value).toBeNull()
+
+    const huge = new File(['x'], 'huge.bin')
+    Object.defineProperty(huge, 'size', { value: 51 * 1024 * 1024 })
+    chat.addFiles([huge] as unknown as FileList)
+    expect(chat.attachNotice.value).toContain('huge.bin')
+    expect(models.attachments.value).toEqual([])
+
+    const plain = new File(['abc'], 'note', { type: '' })
+    chat.addFiles([plain] as unknown as FileList)
+    expect(chat.attachNotice.value).toBeNull()
+    expect(models.attachments.value).toEqual([
+      { data: 'YWJj', mimeType: 'application/octet-stream', name: 'note' },
+    ])
+    app.unmount()
+  })
+
   it('derives seed turns and thought display behavior', () => {
     const seed = image('seed.png')
     const { chat, app } = withChat({ seedHumanText: 'seed', seedHumanImages: [seed] })

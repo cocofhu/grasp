@@ -10,7 +10,7 @@ export function unwrapFrame(f: unknown): any {
   return frame && typeof frame === 'object' && frame.op === 'event' && frame.data ? frame.data : f
 }
 
-function flattenUpdate(u: any): any {
+export function flattenUpdate(u: any): any {
   if (!u || typeof u !== 'object') return u
   const out: any = { ...u }
   const su = out.sessionUpdate ?? out.session_update
