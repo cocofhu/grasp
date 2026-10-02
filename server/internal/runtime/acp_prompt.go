@@ -46,6 +46,9 @@ func (c *acpProvider) buildAgentPrompt(req NodeReq, seeded []string) string {
 	if nodeNeedsOutcome(req.NodeType) && !nodereg.IsGrasp(req.NodeType) {
 		b.WriteString(prompts.OutcomeContractText())
 	}
+	if nodeNeedsOutcome(req.NodeType) {
+		b.WriteString(models.DefaultBackgroundServiceRule)
+	}
 
 	if inject := conditionalInjection(req); inject != "" {
 		b.WriteString("\n\n" + inject)

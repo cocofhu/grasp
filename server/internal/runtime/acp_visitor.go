@@ -41,10 +41,7 @@ func (c *acpProvider) VisitorTurn(ctx context.Context, req NodeReq, lane, prelud
 	}
 	prompt := human
 	if !vl.primed {
-		prelude = strings.TrimSpace(prelude + previewNodePromptExtras(req))
-	}
-	if !vl.primed && prelude != "" {
-		prompt = prelude + "\n\n## 用户消息\n" + strings.TrimRight(human, "\n")
+		prompt = visitorFirstPrompt(req, prelude, human)
 	}
 	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
 	defer cancel()
@@ -79,6 +76,13 @@ func (c *acpProvider) VisitorTurn(ctx context.Context, req NodeReq, lane, prelud
 		out.Interrupted = res.Interrupted
 	}
 	return out
+}
+
+// visitorFirstPrompt opens a fresh visitor chat: it has none of the parked
+// session's context, so it gets the prelude plus the node's operational rules.
+func visitorFirstPrompt(req NodeReq, prelude, human string) string {
+	prelude = strings.TrimSpace(prelude + previewNodePromptExtras(req) + models.DefaultBackgroundServiceRule)
+	return prelude + "\n\n## 用户消息\n" + strings.TrimRight(human, "\n")
 }
 
 func (c *acpProvider) openVisitorLane(ctx context.Context, req NodeReq, lane string) (*visitorLane, error) {

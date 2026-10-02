@@ -332,6 +332,28 @@ func TestApprovePromptIgnoresTemplateAndInjectsVars(t *testing.T) {
 	}
 }
 
+func TestBackgroundServiceRuleReachesEveryAgentPrompt(t *testing.T) {
+	host := mcp.NewHost(newMemStore())
+	p := newACPProvider(host, Options{}).(*acpProvider)
+	for _, nt := range []string{"grasp", "approve", "react", "implement", "test"} {
+		got := p.buildAgentPrompt(NodeReq{NodeType: nt, Config: map[string]any{"prompt": "P"}}, nil)
+		if strings.Count(got, "## 常驻服务(强制)") != 1 {
+			t.Errorf("%s: background service rule must appear exactly once:\n%s", nt, got)
+		}
+	}
+
+	req := NodeReq{NodeType: "grasp", Config: map[string]any{"direct_preview": true}}
+	got := visitorFirstPrompt(req, "# 访客对话说明\n", "帮我登录\n")
+	for _, want := range []string{"# 访客对话说明", "page_state", "## 常驻服务(强制)", "## 用户消息\n帮我登录"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("visitor first prompt missing %q:\n%s", want, got)
+		}
+	}
+	if !strings.HasSuffix(got, "帮我登录") {
+		t.Errorf("user message must close the visitor prompt:\n%s", got)
+	}
+}
+
 // stubHistory feeds the host the two run-scoped reads FeedbackBrief needs.
 type stubHistory struct {
 	run      models.Run

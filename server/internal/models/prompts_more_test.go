@@ -176,17 +176,21 @@ func TestConfirmTimePromptsSplitReconcileFromSummary(t *testing.T) {
 	}
 }
 
-func TestDefaultOutcomeContractDetachesLongRunningServices(t *testing.T) {
-	got := DefaultOutcomeContract
+func TestDefaultBackgroundServiceRuleDetachesLongRunningServices(t *testing.T) {
+	got := DefaultBackgroundServiceRule
 	for _, want := range []string{
-		"setsid",
-		"nohup",
+		"setsid nohup",
+		"</dev/null",
 		"禁止前台或未脱钩的命令占住 Agent 回合",
+		"Shell 工具自带的后台模式",
 		"不要为收尾杀掉这些进程",
 	} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("DefaultOutcomeContract missing %q\n---\n%s", want, got)
+			t.Fatalf("DefaultBackgroundServiceRule missing %q\n---\n%s", want, got)
 		}
+	}
+	if strings.Contains(got, "node_complete") {
+		t.Fatal("the rule reaches Grasp Phase1, which must not see node_complete")
 	}
 }
 
