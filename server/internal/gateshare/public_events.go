@@ -42,6 +42,13 @@ func SanitizeLiveEvents(events []models.AcpEvent) []PreviewLiveEvent {
 // of producerID: the WS loop sees every frame of the run while streaming, and
 // a slow subscriber is dropped by the broker.
 func FilterPublicBrokerFrame(raw []byte, producerID string, imageBase func() int) ([]byte, bool) {
+	return FilterPublicLaneFrame(raw, producerID, "", imageBase)
+}
+
+// FilterPublicLaneFrame is FilterPublicBrokerFrame for one visitor lane. A
+// visitor sees only its own type:"visitor" frames (unwrapped to review/acp),
+// never the node's own dialogue; lane "" sees the reverse.
+func FilterPublicLaneFrame(raw []byte, producerID, lane string, imageBase func() int) ([]byte, bool) {
 	producerID = strings.TrimSpace(producerID)
 	if producerID == "" || len(raw) == 0 {
 		return nil, false
@@ -55,7 +62,21 @@ func FilterPublicBrokerFrame(raw []byte, producerID string, imageBase func() int
 	if strings.TrimSpace(nodeID) != producerID {
 		return nil, false
 	}
-	switch strings.ToLower(strings.TrimSpace(typ)) {
+	typ = strings.ToLower(strings.TrimSpace(typ))
+	if lane != "" {
+		switch typ {
+		case "visitor":
+			if l, _ := m["lane"].(string); l != lane {
+				return nil, false
+			}
+			typ, _ = m["kind"].(string)
+		case "review", "acp":
+			return nil, false
+		}
+	} else if typ == "visitor" {
+		return nil, false
+	}
+	switch typ {
 	case "review":
 		return marshalPublicReviewFrame(m, imageBase())
 	case "acp":

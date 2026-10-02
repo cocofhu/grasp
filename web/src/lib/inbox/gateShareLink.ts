@@ -25,6 +25,48 @@ export function normalizePermissionPreset(
 
 const GATE_SHARE_TOKEN_HEADER = 'X-Gate-Share-Token'
 const GATE_SHARE_REQUEST_HEADER = 'X-Gate-Share-Requested'
+/** Must match server handlers.headerShareVisitor. */
+const GATE_SHARE_VISITOR_HEADER = 'X-Gate-Share-Visitor'
+const SHARE_VISITOR_STORAGE_KEY = 'grasp.gateShareVisitor'
+const SHARE_VISITOR_RE = /^[0-9a-f]{32}$/
+
+let shareVisitorMemory = ''
+
+function randomShareVisitorId(): string {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * Anonymous per-browser id: each visitor of the same share link gets an own
+ * conversation. localStorage (not sessionStorage) so a refresh or a new tab
+ * keeps the visitor's dialogue.
+ */
+export function getShareVisitorId(): string {
+  try {
+    const saved = localStorage.getItem(SHARE_VISITOR_STORAGE_KEY) || ''
+    if (SHARE_VISITOR_RE.test(saved)) return saved
+    const id = randomShareVisitorId()
+    localStorage.setItem(SHARE_VISITOR_STORAGE_KEY, id)
+    return id
+  } catch {
+    // Storage blocked: the visitor id lasts until reload.
+    if (!shareVisitorMemory) shareVisitorMemory = randomShareVisitorId()
+    return shareVisitorMemory
+  }
+}
+
+/** Base headers for every public share request; token is optional (body-token mutates). */
+function publicShareHeaders(token?: string, json = false): Record<string, string> {
+  const headers: Record<string, string> = {
+    [GATE_SHARE_REQUEST_HEADER]: '1',
+    [GATE_SHARE_VISITOR_HEADER]: getShareVisitorId(),
+  }
+  if (token != null) headers[GATE_SHARE_TOKEN_HEADER] = token
+  if (json) headers['Content-Type'] = 'application/json'
+  return headers
+}
 
 const SHARE_URL_STORAGE_PREFIX = GRASP_STORAGE_KEYS.gateShareUrlPrefix
 
@@ -528,7 +570,7 @@ export function publicGateImageUrl(token: string, index: number): string {
   const tok = String(token || '').trim()
   const idx = Number(index)
   if (!tok || !Number.isFinite(idx) || idx < 0) return ''
-  return `/public/gate-approvals/images/${Math.floor(idx)}?token=${encodeURIComponent(tok)}`
+  return `/public/gate-approvals/images/${Math.floor(idx)}?token=${encodeURIComponent(tok)}&v=${getShareVisitorId()}`
 }
 
 /** Map leak-free preview image indexes onto ClarifyImage rows with a token URL. */
@@ -560,10 +602,7 @@ export const publicGateApi = {
     signal?: AbortSignal,
     known?: PublicGatePreviewKnown,
   ): Promise<PublicGatePreview> {
-    const headers: Record<string, string> = {
-      [GATE_SHARE_TOKEN_HEADER]: token,
-      [GATE_SHARE_REQUEST_HEADER]: '1',
-    }
+    const headers = publicShareHeaders(token)
     const vh = known?.visualHtmlHash?.trim()
     const uh = known?.upstreamHash?.trim()
     const sh = known?.structuredHash?.trim()
@@ -595,10 +634,7 @@ export const publicGateApi = {
       method: 'GET',
       credentials: 'omit',
       signal,
-      headers: {
-        [GATE_SHARE_TOKEN_HEADER]: token,
-        [GATE_SHARE_REQUEST_HEADER]: '1',
-      },
+      headers: publicShareHeaders(token),
     }).then(async (res) => {
       const body = await readJson<PublicGateUpstreamResult>(res)
       if (!res.ok) {
@@ -625,10 +661,7 @@ export const publicGateApi = {
       method: 'POST',
       credentials: 'omit',
       signal,
-      headers: {
-        'Content-Type': 'application/json',
-        [GATE_SHARE_REQUEST_HEADER]: '1',
-      },
+      headers: publicShareHeaders(undefined, true),
       body: JSON.stringify(payload),
     }).then(async (res) => {
       const body = await readJson<PublicGateDecideResult>(res)
@@ -661,10 +694,7 @@ export const publicGateApi = {
     return fetch('/public/gate-approvals/reply', {
       method: 'POST',
       credentials: 'omit',
-      headers: {
-        'Content-Type': 'application/json',
-        [GATE_SHARE_REQUEST_HEADER]: '1',
-      },
+      headers: publicShareHeaders(undefined, true),
       body: JSON.stringify(payload),
     }).then(async (res) => {
       const body = await readJson<PublicGateReplyResult>(res)
@@ -681,7 +711,7 @@ export const publicGateApi = {
     return fetch('/public/gate-approvals/live-sessions', {
       method: 'GET',
       credentials: 'omit',
-      headers: { [GATE_SHARE_TOKEN_HEADER]: token, [GATE_SHARE_REQUEST_HEADER]: '1' },
+      headers: publicShareHeaders(token),
     }).then(async (res) => {
       const body = await readJson<PublicLiveSessionsResult>(res)
       if (!res.ok) throw Object.assign(new Error(`${res.status}`), { status: res.status, body })
@@ -692,7 +722,7 @@ export const publicGateApi = {
     return fetch('/public/gate-approvals/live-discard-all', {
       method: 'POST',
       credentials: 'omit',
-      headers: { 'Content-Type': 'application/json', [GATE_SHARE_REQUEST_HEADER]: '1' },
+      headers: publicShareHeaders(undefined, true),
       body: JSON.stringify({ token }),
     }).then(async (res) => {
       const body = await readJson<PublicGateReplyResult & { discarding?: number }>(res)
@@ -706,10 +736,7 @@ export const publicGateApi = {
     return fetch('/public/gate-approvals/cancel', {
       method: 'POST',
       credentials: 'omit',
-      headers: {
-        'Content-Type': 'application/json',
-        [GATE_SHARE_REQUEST_HEADER]: '1',
-      },
+      headers: publicShareHeaders(undefined, true),
       body: JSON.stringify({ token }),
     }).then(async (res) => {
       const body = await readJson<PublicGateReplyResult>(res)
@@ -726,10 +753,7 @@ export const publicGateApi = {
     return fetch('/public/gate-approvals/queue/remove', {
       method: 'POST',
       credentials: 'omit',
-      headers: {
-        'Content-Type': 'application/json',
-        [GATE_SHARE_REQUEST_HEADER]: '1',
-      },
+      headers: publicShareHeaders(undefined, true),
       body: JSON.stringify({ token, itemId }),
     }).then(async (res) => {
       const body = await readJson<PublicGateReplyResult>(res)
@@ -746,10 +770,7 @@ export const publicGateApi = {
     return fetch('/public/gate-approvals/queue/reorder', {
       method: 'POST',
       credentials: 'omit',
-      headers: {
-        'Content-Type': 'application/json',
-        [GATE_SHARE_REQUEST_HEADER]: '1',
-      },
+      headers: publicShareHeaders(undefined, true),
       body: JSON.stringify({ token, itemIds }),
     }).then(async (res) => {
       const body = await readJson<PublicGateReplyResult>(res)
@@ -767,10 +788,7 @@ export const publicGateApi = {
       method: 'GET',
       credentials: 'omit',
       signal,
-      headers: {
-        [GATE_SHARE_TOKEN_HEADER]: token,
-        [GATE_SHARE_REQUEST_HEADER]: '1',
-      },
+      headers: publicShareHeaders(token),
     }).then(async (res) => {
       const body = await readJson<PublicGateArtifactsResult>(res)
       if (!res.ok) {
@@ -792,10 +810,7 @@ export const publicGateApi = {
       method: 'GET',
       credentials: 'omit',
       signal,
-      headers: {
-        [GATE_SHARE_TOKEN_HEADER]: token,
-        [GATE_SHARE_REQUEST_HEADER]: '1',
-      },
+      headers: publicShareHeaders(token),
     }).then(async (res) => {
       const body = await readJson<PublicGateArtifactContentResult>(res)
       if (!res.ok) {
@@ -821,11 +836,7 @@ export const publicGateApi = {
       method: 'POST',
       credentials: 'omit',
       signal,
-      headers: {
-        'Content-Type': 'application/json',
-        [GATE_SHARE_TOKEN_HEADER]: token,
-        [GATE_SHARE_REQUEST_HEADER]: '1',
-      },
+      headers: publicShareHeaders(token, true),
       body: JSON.stringify({ port, purpose: purpose || 'vnc' }),
     }).then(async (res) => {
       const body = await readJson<PublicPreviewTicketResult>(res)
@@ -844,11 +855,7 @@ export const publicGateApi = {
       method: 'POST',
       credentials: 'omit',
       signal,
-      headers: {
-        'Content-Type': 'application/json',
-        [GATE_SHARE_TOKEN_HEADER]: token,
-        [GATE_SHARE_REQUEST_HEADER]: '1',
-      },
+      headers: publicShareHeaders(token, true),
     }).then(async (res) => {
       const body = await readJson<EmbedTicket & { status?: string; error?: string; message?: string }>(res)
       // A spent or revoked link answers 200 with a status and no ticket.

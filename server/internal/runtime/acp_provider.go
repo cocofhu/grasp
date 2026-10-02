@@ -110,6 +110,7 @@ type acpProvider struct {
 	// same node reports it.
 	carry    map[string]carriedUsage
 	sessions map[string]*reactSession    // runID|nodeID -> live react session
+	visitors map[string]*visitorLane     // runID|nodeID|lane -> share-link visitor chat
 	live     map[string]*sandbox.Sandbox // runID|nodeID -> in-flight sandbox (for live event-log reads)
 	// inflightACP tracks the ACP client for in-flight agent turns (not parked
 	// in sessions). AbortRun closes these so Cancel-during-agent unblocks

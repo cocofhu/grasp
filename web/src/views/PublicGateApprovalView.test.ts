@@ -78,6 +78,7 @@ vi.mock('@/lib/shared/locale', async () => {
 })
 
 import PublicGateApprovalView from './PublicGateApprovalView.vue'
+import { getShareVisitorId } from '@/lib/inbox/gateShareLink'
 import ClarifyChat from '@/components/run/ClarifyChat.vue'
 import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 import type { VueWrapper } from '@vue/test-utils'
@@ -244,7 +245,7 @@ describe('PublicGateApprovalView workbench', () => {
     expect(human?.images).toHaveLength(1)
     expect(human?.images?.[0]?.name).toBe('shot.png')
     expect(human?.images?.[0]?.url).toBe(
-      `/public/gate-approvals/images/0?token=${encodeURIComponent(token)}`,
+      `/public/gate-approvals/images/0?token=${encodeURIComponent(token)}&v=${getShareVisitorId()}`,
     )
     expect(human?.images?.[0]?.url).not.toContain('blob:')
     expect(human?.images?.[0]?.url).not.toContain('/api/blobs')

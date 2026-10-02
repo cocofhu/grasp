@@ -124,8 +124,14 @@ let clarifyLinkUsed = false
 ;(api as any).revokeReviewShareLink = async () => ({ status: 'revoked' })
 
 const originalFetch = window.fetch.bind(window)
+// sharedBackend=1: preview/reply reach the network so a spec can serve several
+// browser contexts from one store (per-visitor conversations).
+const sharedBackend = new URLSearchParams(location.search).get('sharedBackend') === '1'
 window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+  if (sharedBackend && /\/public\/gate-approvals\/(preview|reply)(\?|$)/.test(url)) {
+    return originalFetch(input, init)
+  }
   if (url.includes('/public/gate-approvals/artifacts') && !url.includes('/content')) {
     return new Response(JSON.stringify({ status: 'active', artifacts: [], nodes: [] }), {
       status: 200,

@@ -523,6 +523,7 @@ func mrTargetDisplay(target string) string {
 func (c *acpProvider) AbortRun(runID string) {
 	c.dropRunTranscript(runID)
 	prefix := runID + "|"
+	c.retireVisitorLanes(prefix)
 	c.mu.Lock()
 	var sessionKeys []string
 	for k := range c.sessions {
@@ -604,6 +605,7 @@ func (c *acpProvider) closeSession(key string) {
 	if c.timeline != nil && runID != "" && nodeID != "" {
 		c.timeline.stop(runID, nodeID)
 	}
+	c.retireVisitorLanes(key + "|")
 	if sess != nil {
 
 		c.retireRunSandbox(sess.sb, sess.acp, sess.home)

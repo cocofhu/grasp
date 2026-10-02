@@ -25,7 +25,8 @@ const (
 )
 
 type publicEventsAuth struct {
-	Token string `json:"token"`
+	Token   string `json:"token"`
+	Visitor string `json:"visitor"`
 }
 
 // PublicGateEvents streams leak-free review/ACP frames for the share-link
@@ -78,6 +79,11 @@ func (h *Handlers) PublicGateEvents(c *gin.Context) {
 		_ = conn.WriteJSON(gin.H{"type": "error", "status": "invalid"})
 		return
 	}
+	lane, ok := h.publicLane(token, lookup, auth.Visitor)
+	if !ok {
+		_ = conn.WriteJSON(gin.H{"type": "error", "status": "visitor_required"})
+		return
+	}
 	_ = conn.SetReadDeadline(time.Time{})
 	// Subscribe before advertising ready so events published right after the
 	// client sees ready are not lost to a subscribe race.
@@ -87,15 +93,15 @@ func (h *Handlers) PublicGateEvents(c *gin.Context) {
 	if err := conn.WriteJSON(gin.H{"type": "ready"}); err != nil {
 		return
 	}
-	h.seedPublicDialogue(conn, lookup, producerID)
+	h.seedPublicDialogue(conn, lookup, producerID, lane)
 	w := &wsWriter{conn: conn}
-	imageBase := func() int { return h.publicDialogueImageBase(runID, producerID) }
+	imageBase := func() int { return h.publicDialogueImageBase(lookup, producerID, lane) }
 
 	// Only drawer tokens may offer their page to the agent; a share-link
 	// workbench is not a preview page.
 	var pc *pagebridge.Conn
 	if h.PageBridge != nil && embed.IsSessionToken(token) && lookup.Node != nil && mcp.SetPreviewAllowed(lookup.Node.Type) {
-		pc = h.PageBridge.Attach(pagebridge.Key{RunID: runID, NodeID: producerID, Owner: h.publicTurnOwner(token)}, w.write)
+		pc = h.PageBridge.Attach(pagebridge.Key{RunID: runID, NodeID: producerID, Owner: h.publicTurnOwner(token, lane)}, w.write)
 		defer pc.Detach()
 	}
 	conn.SetReadLimit(publicEventsReadLimit)
@@ -124,7 +130,7 @@ func (h *Handlers) PublicGateEvents(c *gin.Context) {
 			if !open {
 				return
 			}
-			out, ok := gateshare.FilterPublicBrokerFrame(msg, producerID, imageBase)
+			out, ok := gateshare.FilterPublicLaneFrame(msg, producerID, lane, imageBase)
 			if !ok {
 				continue
 			}
@@ -139,13 +145,17 @@ func (h *Handlers) PublicGateEvents(c *gin.Context) {
 	}
 }
 
-func (h *Handlers) seedPublicDialogue(conn *websocket.Conn, lookup *gateshare.LookupResult, producerID string) {
+func (h *Handlers) seedPublicDialogue(conn *websocket.Conn, lookup *gateshare.LookupResult, producerID, lane string) {
 	if h.Eng == nil || lookup == nil || conn == nil {
 		return
 	}
 	runID := lookup.Link.RunID
-	base := h.publicDialogueImageBase(runID, producerID)
+	base := h.publicDialogueImageBase(lookup, producerID, lane)
 	imageBase := func() int { return base }
+	if lane != "" {
+		h.seedVisitorDialogue(conn, runID, producerID, lane, imageBase)
+		return
+	}
 	busy := false
 	if snap, ok := h.Eng.ReviewSessionSnapshotFor(runID, producerID); ok {
 		busy = snap.Busy || snap.Waiting > 0
@@ -192,11 +202,42 @@ func (h *Handlers) seedPublicDialogue(conn *websocket.Conn, lookup *gateshare.Lo
 	}
 }
 
+// seedVisitorDialogue replays a visitor lane's queue and in-flight stream.
+func (h *Handlers) seedVisitorDialogue(conn *websocket.Conn, runID, producerID, lane string, imageBase func() int) {
+	snap, ok := h.Eng.VisitorSessionSnapshot(runID, producerID, lane)
+	if !ok {
+		return
+	}
+	payload := map[string]any{
+		"type": "review", "runId": runID, "nodeId": producerID, "event": "queue_state",
+		"waiting": snap.Waiting, "items": snap.Items, "busy": snap.Busy,
+	}
+	if snap.ActiveItem != nil {
+		payload["activeItem"] = snap.ActiveItem
+	}
+	writeSeedFrame(conn, payload, producerID, imageBase)
+	if !snap.Busy && snap.Waiting == 0 {
+		return
+	}
+	if ev := h.Eng.VisitorLiveEvents(runID, producerID, lane); len(ev) > 0 {
+		writeSeedFrame(conn, map[string]any{
+			"type": "acp", "runId": runID, "nodeId": producerID, "events": ev, "busy": true,
+		}, producerID, imageBase)
+	}
+}
+
+func writeSeedFrame(conn *websocket.Conn, payload map[string]any, producerID string, imageBase func() int) {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	if out, ok := gateshare.FilterPublicBrokerFrame(raw, producerID, imageBase); ok {
+		_ = conn.WriteMessage(websocket.TextMessage, out)
+	}
+}
+
 // publicDialogueImageBase returns how many opaque image indexes the persisted
 // dialogue turns already occupy, so WS queue/active frames continue the series.
-func (h *Handlers) publicDialogueImageBase(runID, producerID string) int {
-	if conv := h.publicConversation(runID, producerID); conv != nil {
-		return len(gateshare.DialogueImageCatalog(conv.Turns(), nil, nil))
-	}
-	return 0
+func (h *Handlers) publicDialogueImageBase(lookup *gateshare.LookupResult, producerID, lane string) int {
+	return len(gateshare.DialogueImageCatalog(h.publicLaneTurns(lookup, producerID, lane), nil, nil))
 }

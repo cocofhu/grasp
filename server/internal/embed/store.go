@@ -43,8 +43,10 @@ type Claims struct {
 	NodeID         string
 	Username       string
 	ShareTokenHash string
-	GraspOrigin    string
-	ExpiresAt      time.Time
+	// Lane is the share-link visitor lane a share embed converses on.
+	Lane        string
+	GraspOrigin string
+	ExpiresAt   time.Time
 }
 
 type Store struct {
@@ -121,6 +123,7 @@ func (s *Store) IssueTicket(c Claims) (string, time.Time, error) {
 		NodeID:         strings.TrimSpace(c.NodeID),
 		Username:       strings.TrimSpace(c.Username),
 		ShareTokenHash: strings.TrimSpace(c.ShareTokenHash),
+		Lane:           strings.TrimSpace(c.Lane),
 		GraspOrigin:    strings.TrimRight(strings.TrimSpace(c.GraspOrigin), "/"),
 		ExpiresAt:      exp,
 	}
@@ -143,6 +146,7 @@ func ticketClaims(row models.EmbedTicket) *Claims {
 		NodeID:         row.NodeID,
 		Username:       row.Username,
 		ShareTokenHash: row.ShareTokenHash,
+		Lane:           row.Lane,
 		GraspOrigin:    row.GraspOrigin,
 		ExpiresAt:      row.ExpiresAt,
 	}
@@ -249,6 +253,7 @@ func createSessionTx(tx *gorm.DB, c Claims, now time.Time) (string, time.Time, e
 		NodeID:         strings.TrimSpace(c.NodeID),
 		Username:       strings.TrimSpace(c.Username),
 		ShareTokenHash: strings.TrimSpace(c.ShareTokenHash),
+		Lane:           strings.TrimSpace(c.Lane),
 		ExpiresAt:      exp,
 	}
 	if err := tx.Where("expires_at <= ?", now).Delete(&models.EmbedSession{}).Error; err != nil {
@@ -276,6 +281,7 @@ func (s *Store) LookupSession(token string) (*Claims, bool) {
 		NodeID:         row.NodeID,
 		Username:       row.Username,
 		ShareTokenHash: row.ShareTokenHash,
+		Lane:           row.Lane,
 		ExpiresAt:      row.ExpiresAt,
 	}, true
 }

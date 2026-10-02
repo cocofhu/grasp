@@ -24,6 +24,7 @@ var (
 	_ ReviewProvider       = (*ProviderRegistry)(nil)
 	_ LiveMarkerScanner    = (*ProviderRegistry)(nil)
 	_ LiveBaselinePreparer = (*ProviderRegistry)(nil)
+	_ VisitorLaneProvider  = (*ProviderRegistry)(nil)
 )
 
 // ProviderRegistry routes agent/react execution to the ExecProvider matching
@@ -187,6 +188,53 @@ func (r *ProviderRegistry) CancelSessionTurn(runID, nodeID string) {
 			cp.CancelSessionTurn(runID, nodeID)
 		}
 	}
+}
+
+// VisitorTurn runs a share-link visitor turn on the backend holding the node's
+// parked session (visitor chats branch from that sandbox).
+func (r *ProviderRegistry) VisitorTurn(ctx context.Context, req NodeReq, lane, prelude, human string, images []models.PromptImage, onProgress func([]models.AcpEvent, bool)) ReactTurn {
+	for _, p := range r.providers {
+		rp, ok := p.(ReviewProvider)
+		if !ok || !rp.HasLiveSession(req.RunID, req.NodeID) {
+			continue
+		}
+		if vp, ok := p.(VisitorLaneProvider); ok {
+			return vp.VisitorTurn(ctx, req, lane, prelude, human, images, onProgress)
+		}
+	}
+	return ReactTurn{Msg: "(" + ErrNoParkedSession.Error() + ")", Err: ErrNoParkedSession}
+}
+
+// CancelVisitorTurn fans out to every backend; only the lane's owner acts.
+func (r *ProviderRegistry) CancelVisitorTurn(runID, nodeID, lane string) {
+	for _, p := range r.providers {
+		if vp, ok := p.(VisitorLaneProvider); ok {
+			vp.CancelVisitorTurn(runID, nodeID, lane)
+		}
+	}
+}
+
+// RetireVisitorLane fans out to every backend; idempotent.
+func (r *ProviderRegistry) RetireVisitorLane(runID, nodeID, lane string) {
+	for _, p := range r.providers {
+		if vp, ok := p.(VisitorLaneProvider); ok {
+			vp.RetireVisitorLane(runID, nodeID, lane)
+		}
+	}
+}
+
+// VisitorChatID returns the bridge chat serving a lane on whichever backend holds it.
+func (r *ProviderRegistry) VisitorChatID(runID, nodeID, lane string) string {
+	for _, p := range r.providers {
+		if ci, ok := p.(interface {
+			VisitorChatID(runID, nodeID, lane string) string
+		}); ok {
+			if id := ci.VisitorChatID(runID, nodeID, lane); id != "" {
+				return id
+			}
+		}
+	}
+	return ""
 }
 
 // SessionBridgeState returns the first backend's bridge view for a parked

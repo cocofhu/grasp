@@ -105,6 +105,12 @@ type Engine struct {
 	reviewMu   sync.Mutex
 	reviewSess map[string]*reviewSession // key: runID|producerNodeID
 
+	// visitorMu guards visitorLanes: share-link visitor lanes holding (or
+	// about to hold) a sandbox chat, for the per-link cap and idle sweep.
+	visitorMu    sync.Mutex
+	visitorLanes map[string]*visitorLaneState // key: runID|producerID|lane
+	visitorSweep sync.Once
+
 	// skills looks up Agents for same-project agent_profile runtime gate.
 	skills SkillLookup
 

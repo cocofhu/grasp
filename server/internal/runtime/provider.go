@@ -7,6 +7,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
@@ -270,6 +271,27 @@ type ReviewProvider interface {
 // Bridge session/cancel also clears the sandbox PromptQueue.
 type ReviewTurnCanceller interface {
 	CancelSessionTurn(runID, nodeID string)
+}
+
+// ErrVisitorsFull is the sandbox refusing another visitor chat.
+var ErrVisitorsFull = errors.New("visitor chats full")
+
+// ErrNoParkedSession means the node has no live parked session to branch a
+// visitor chat from (the review/clarify session has ended).
+var ErrNoParkedSession = errors.New("上游会话已不存在 (cold)")
+
+// VisitorLaneProvider is an optional provider capability for share-link
+// visitors: each lane is an extra bridge chat in the node's parked sandbox, so
+// visitors get their own Agent context while editing the same workspace.
+type VisitorLaneProvider interface {
+	// VisitorTurn sends one human turn on lane, opening the lane's chat on
+	// first use; prelude is prepended only to the lane's first prompt.
+	// onProgress receives the in-flight turn's events.
+	VisitorTurn(ctx context.Context, req NodeReq, lane, prelude, human string, images []models.PromptImage, onProgress func(events []models.AcpEvent, busy bool)) ReactTurn
+	// CancelVisitorTurn aborts the lane's in-flight turn, keeping its chat.
+	CancelVisitorTurn(runID, nodeID, lane string)
+	// RetireVisitorLane closes one lane's chat; idempotent.
+	RetireVisitorLane(runID, nodeID, lane string)
 }
 
 // BridgeStatus is the sandbox bridge's own view of a parked session's turns.

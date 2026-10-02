@@ -381,6 +381,77 @@ test.describe('human_gate 临时审批链接', () => {
     await expect(page.getByTestId('public-gate-done')).toContainText('已确认')
   })
 
+  test('两位访客打开同一链接各自对话互不可见', async ({ browser }) => {
+    type Turn = { role: string; text: string; at: string }
+    const seed: Turn = { role: 'agent', text: '请复审 research.json', at: '2026-08-01T00:00:00Z' }
+    const turnsByVisitor = new Map<string, Turn[]>()
+    const turnsFor = (visitor: string) => turnsByVisitor.get(visitor) ?? [seed]
+
+    const open = async () => {
+      const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+      await context.route(/\/public\/gate-approvals\/preview$/, async (route) => {
+        const visitor = route.request().headers()['x-gate-share-visitor'] || ''
+        await route.fulfill({
+          json: {
+            status: 'active',
+            kind: 'review',
+            title: '调研',
+            description: '待复审脱敏摘要',
+            remainingSec: 3600,
+            nonce: 'nonce-e2e-visitors',
+            reactSessionAlive: true,
+            sessionBusy: false,
+            waiting: 0,
+            productKind: 'structured',
+            productName: 'research.json',
+            actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
+            structured: { name: 'research.json', title: '调研摘要', doc: { title: '调研摘要' } },
+            turns: turnsFor(visitor),
+          },
+        })
+      })
+      await context.route(/\/public\/gate-approvals\/reply$/, async (route) => {
+        const visitor = route.request().headers()['x-gate-share-visitor'] || ''
+        const text = String((route.request().postDataJSON() as { text?: string }).text || '')
+        const at = new Date().toISOString()
+        turnsByVisitor.set(visitor, [
+          ...turnsFor(visitor),
+          { role: 'human', text, at },
+          { role: 'agent', text: `收到：${text}`, at },
+        ])
+        await route.fulfill({ json: { status: 'accepted', kind: 'review' } })
+      })
+      const page = await context.newPage()
+      await page.goto('/gate-share-link.html?scene=public-review&sharedBackend=1')
+      await expect(page.getByTestId('clarify-input')).toBeVisible({ timeout: 10_000 })
+      return { context, page }
+    }
+
+    const a = await open()
+    const b = await open()
+    try {
+      await a.page.getByTestId('clarify-input').fill('访客A的问题')
+      await a.page.getByTestId('clarify-send-icon').click()
+      await expect(a.page.getByTestId('public-gate-root')).toContainText('收到：访客A的问题', { timeout: 10_000 })
+
+      await b.page.getByTestId('clarify-input').fill('访客B的问题')
+      await b.page.getByTestId('clarify-send-icon').click()
+      await expect(b.page.getByTestId('public-gate-root')).toContainText('收到：访客B的问题', { timeout: 10_000 })
+      await expect(b.page.getByTestId('public-gate-root')).not.toContainText('访客A的问题')
+
+      await a.page.reload()
+      await expect(a.page.getByTestId('public-gate-root')).toContainText('收到：访客A的问题', { timeout: 10_000 })
+      await expect(a.page.getByTestId('public-gate-root')).not.toContainText('访客B的问题')
+
+      const visitors = [...turnsByVisitor.keys()]
+      expect(visitors).toHaveLength(2)
+      for (const v of visitors) expect(v).toMatch(/^[0-9a-f]{32}$/)
+    } finally {
+      await a.context.close()
+      await b.context.close()
+    }
+  })
+
   test('公开应用预览页远程壳可确认且支持多端口', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/gate-share-link.html?scene=public-app-preview')

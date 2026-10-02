@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   maskShareUrl,
   parseShareTokenFromHash,
@@ -20,6 +20,8 @@ import {
   shareApiErrorMessage,
   isLoopbackHostname,
   isLoopbackShareHost,
+  getShareVisitorId,
+  publicGateApi,
 } from './gateShareLink'
 
 const t = (key: string, values?: Record<string, unknown>) => {
@@ -249,7 +251,7 @@ describe('gateShareLink helpers', () => {
   it('maps opaque image indexes to token image URLs without blob paths (g2.1)', () => {
     const token = 'a'.repeat(64)
     expect(publicGateImageUrl(token, 0)).toBe(
-      `/public/gate-approvals/images/0?token=${encodeURIComponent(token)}`,
+      `/public/gate-approvals/images/0?token=${encodeURIComponent(token)}&v=${getShareVisitorId()}`,
     )
     expect(publicGateImageUrl('', 0)).toBe('')
     expect(publicGateImageUrl(token, -1)).toBe('')
@@ -263,5 +265,52 @@ describe('gateShareLink helpers', () => {
     expect(mapped[0]?.url).not.toContain('/api/blobs')
     expect(mapped[1]?.url).toContain('/images/2?')
     expect(mapPublicGateImages(token, [])).toEqual([])
+  })
+
+  describe('getShareVisitorId', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+      localStorage.removeItem('grasp.gateShareVisitor')
+    })
+
+    it('mints a 128-bit hex id once and reuses it', () => {
+      localStorage.removeItem('grasp.gateShareVisitor')
+      const id = getShareVisitorId()
+      expect(id).toMatch(/^[0-9a-f]{32}$/)
+      expect(localStorage.getItem('grasp.gateShareVisitor')).toBe(id)
+      expect(getShareVisitorId()).toBe(id)
+    })
+
+    it('replaces a malformed stored id', () => {
+      localStorage.setItem('grasp.gateShareVisitor', 'not-a-visitor')
+      const id = getShareVisitorId()
+      expect(id).toMatch(/^[0-9a-f]{32}$/)
+      expect(localStorage.getItem('grasp.gateShareVisitor')).toBe(id)
+    })
+
+    it('keeps one id in memory when storage is blocked', () => {
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new Error('blocked')
+      })
+      const id = getShareVisitorId()
+      expect(id).toMatch(/^[0-9a-f]{32}$/)
+      expect(getShareVisitorId()).toBe(id)
+    })
+
+    it('rides on every public request', async () => {
+      const fetchMock = vi.fn().mockImplementation(async () =>
+        new Response(JSON.stringify({ status: 'accepted' }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      )
+      vi.stubGlobal('fetch', fetchMock)
+      try {
+        await publicGateApi.reply({ token: 't', text: 'hi' })
+        await publicGateApi.cancel('t')
+        for (const call of fetchMock.mock.calls) {
+          expect((call[1] as RequestInit).headers).toMatchObject({ 'X-Gate-Share-Visitor': getShareVisitorId() })
+        }
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    })
   })
 })
