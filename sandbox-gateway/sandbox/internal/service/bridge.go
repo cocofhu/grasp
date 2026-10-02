@@ -90,6 +90,8 @@ type Bridge struct {
 	// 回合看门狗：连续无事件 turnIdle 或总时长超过 turnMax 即终止回合；0 表示不限。
 	turnIdle time.Duration
 	turnMax  time.Duration
+	// 无进行中工具调用时的空闲上限（更短）；0 表示只用 turnIdle。
+	turnQuietIdle time.Duration
 }
 
 // queuedPrompt：入队前 InMessage 核心字段（单会话 FIFO）。
@@ -114,6 +116,7 @@ type promptTurn struct {
 	continued    atomic.Bool             // true 表示已经续跑过，下一次空闲才是真正超时
 	lastCause    string                  // 最近一次看门狗取消原因，写在 cancel 之前
 	lastActivity atomic.Int64            // 最近一次 provider 事件（UnixNano），看门狗 idle 计时用
+	tools        turnTools               // 进行中的工具调用，决定用 quiet 还是 idle 阈值
 	started      time.Time               // 本轮用户消息开始时间；续跑不重置总时长
 	opID         string                  // 与 ws oid= / queue_entries 对齐，供 queue_state.running 展示
 	userText     string                  // 当前 session/prompt 的用户文案快照（仅 UI）
@@ -121,7 +124,7 @@ type promptTurn struct {
 }
 
 func NewBridge() *Bridge {
-	idle, max := turnLimitsFromEnv()
+	idle, max, quiet := turnLimitsFromEnv()
 	return &Bridge{
 		id:             DefaultChatID,
 		createdAt:      time.Now(),
@@ -132,6 +135,7 @@ func NewBridge() *Bridge {
 		eventSubs:      make(map[int]func(json.RawMessage)),
 		turnIdle:       idle,
 		turnMax:        max,
+		turnQuietIdle:  quiet,
 	}
 }
 

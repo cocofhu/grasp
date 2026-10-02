@@ -159,6 +159,79 @@ func TestWatchdogDoesNotErrorAfterEndTurn(t *testing.T) {
 	}
 }
 
+func toolEvent(update, id, status string) json.RawMessage {
+	return json.RawMessage(`{"type":"session_update","sessionId":"s1","update":{"sessionUpdate":"` + update + `","toolCallId":"` + id + `","status":"` + status + `"}}`)
+}
+
+func TestTurnToolsQuiet(t *testing.T) {
+	var tt turnTools
+	if tt.quiet() {
+		t.Fatal("a turn without tool events must not count as quiet")
+	}
+	tt.note(json.RawMessage(`{"type":"session_update","update":{"sessionUpdate":"agent_thought_chunk","content":{"text":"tool_call"}}}`))
+	if tt.quiet() {
+		t.Fatal("text mentioning tool_call is not a tool event")
+	}
+	tt.note(toolEvent("tool_call", "t1", "in_progress"))
+	tt.note(toolEvent("tool_call", "t2", "in_progress"))
+	tt.note(toolEvent("tool_call_update", "t1", "completed"))
+	if tt.quiet() {
+		t.Fatal("t2 is still open")
+	}
+	tt.note(toolEvent("tool_call_update", "t2", "failed"))
+	if !tt.quiet() {
+		t.Fatal("all reported tools finished")
+	}
+	tt.note(toolEvent("tool_call", "t3", "in_progress"))
+	tt.reset()
+	if !tt.quiet() {
+		t.Fatal("reset must drop calls the killed process left open")
+	}
+}
+
+func TestWatchdogQuietIdleAfterToolsFinish(t *testing.T) {
+	sess := &blockingSess{stubSess: stubSess{id: "s1"}}
+	b := newTestBridge(sess)
+	b.turnIdle, b.turnMax, b.turnQuietIdle = 5*time.Second, 0, 80*time.Millisecond
+	c := dialBridge(t, b)
+
+	start := time.Now()
+	_ = b.ChatWithOpID("login", "op-A", "chat", nil)
+	b.noteTurnEvent(toolEvent("tool_call", "t1", "in_progress"))
+	b.noteTurnEvent(toolEvent("tool_call_update", "t1", "completed"))
+
+	readUntil(t, c, func(f wsFrame) bool { return f.Op == "event" && dataType(f) == "turn_segment" })
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("quiet limit should resume well before idle: %s", elapsed)
+	}
+	b.CancelPromptOp("op-A")
+	waitIdle(t, b)
+}
+
+func TestWatchdogQuietIdleWaitsForOpenTool(t *testing.T) {
+	for name, events := range map[string][]json.RawMessage{
+		"open tool":      {toolEvent("tool_call", "t1", "in_progress")},
+		"no tool events": nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			sess := &blockingSess{stubSess: stubSess{id: "s1"}}
+			b := newTestBridge(sess)
+			b.turnIdle, b.turnMax, b.turnQuietIdle = 5*time.Second, 0, 40*time.Millisecond
+
+			_ = b.ChatWithOpID("npm install", "op-A", "chat", nil)
+			for _, ev := range events {
+				b.noteTurnEvent(ev)
+			}
+			time.Sleep(250 * time.Millisecond)
+			if n := sess.prompts.Load(); n != 1 {
+				t.Fatalf("quiet limit fired while a tool may still run: prompts=%d", n)
+			}
+			b.CancelPromptOp("op-A")
+			waitIdle(t, b)
+		})
+	}
+}
+
 func TestWatchdogPerChatMaxDuration(t *testing.T) {
 	sess := &blockingSess{stubSess: stubSess{id: "s1"}}
 	b := newTestBridge(sess)

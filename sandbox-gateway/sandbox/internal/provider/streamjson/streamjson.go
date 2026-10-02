@@ -288,6 +288,48 @@ type streamEvent struct {
 	ModelUsage map[string]wireUsage `json:"modelUsage"`
 	Result     string               `json:"result"`
 	IsError    bool                 `json:"is_error"`
+	// cursor-agent reports tools as top-level events instead of content blocks:
+	// {"type":"tool_call","subtype":"started|completed","call_id":...,
+	//  "tool_call":{"shellToolCall":{"args":{...},"result":{...}}}}.
+	CallID   string                     `json:"call_id"`
+	ToolCall map[string]json.RawMessage `json:"tool_call"`
+}
+
+type cursorToolBody struct {
+	Args      json.RawMessage            `json:"args"`
+	Result    map[string]json.RawMessage `json:"result"`
+	Name      string                     `json:"name"`      // "function" form
+	Arguments json.RawMessage            `json:"arguments"` // "function" form
+}
+
+// cursorToolMsg maps one cursor tool_call event onto the unified taxonomy.
+func cursorToolMsg(ev streamEvent) (oneshot.Msg, bool) {
+	if ev.CallID == "" || len(ev.ToolCall) != 1 {
+		return oneshot.Msg{}, false
+	}
+	var kind string
+	var body cursorToolBody
+	for k, raw := range ev.ToolCall {
+		kind = k
+		if json.Unmarshal(raw, &body) != nil {
+			return oneshot.Msg{}, false
+		}
+	}
+	title, input := strings.TrimSuffix(kind, "ToolCall"), body.Args
+	if kind == "function" {
+		title, input = body.Name, body.Arguments
+	}
+	switch ev.Subtype {
+	case "started":
+		return oneshot.Msg{Kind: oneshot.KindToolUse, ToolCallID: ev.CallID, ToolTitle: title, RawInput: input}, true
+	case "completed":
+		status := "completed"
+		if _, ok := body.Result["success"]; len(body.Result) > 0 && !ok {
+			status = "failed"
+		}
+		return oneshot.Msg{Kind: oneshot.KindToolResult, ToolCallID: ev.CallID, ToolStatus: status}, true
+	}
+	return oneshot.Msg{}, false
 }
 
 func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
@@ -345,6 +387,10 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 			}
 		}
 		addUsage(ev.Message.Usage, ev.Message.Model)
+	case "tool_call":
+		if m, ok := cursorToolMsg(ev); ok {
+			res.Msgs = append(res.Msgs, m)
+		}
 	case "user":
 		if ev.Message == nil {
 			break

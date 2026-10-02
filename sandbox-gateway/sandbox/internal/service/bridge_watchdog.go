@@ -1,28 +1,34 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"backend/internal/provider"
 )
 
 const (
-	defaultTurnIdle = 10 * time.Minute
-	defaultTurnMax  = 60 * time.Minute
+	defaultTurnIdle      = 10 * time.Minute
+	defaultTurnMax       = 60 * time.Minute
+	defaultTurnQuietIdle = 3 * time.Minute
 
-	envTurnIdle = "SANDBOX_TURN_IDLE_TIMEOUT"
-	envTurnMax  = "SANDBOX_TURN_MAX_DURATION"
+	envTurnIdle      = "SANDBOX_TURN_IDLE_TIMEOUT"
+	envTurnMax       = "SANDBOX_TURN_MAX_DURATION"
+	envTurnQuietIdle = "SANDBOX_TURN_QUIET_IDLE_TIMEOUT"
 )
 
-func turnLimitsFromEnv() (idle, max time.Duration) {
+func turnLimitsFromEnv() (idle, max, quiet time.Duration) {
 	return parseTurnLimit(os.Getenv(envTurnIdle), defaultTurnIdle),
-		parseTurnLimit(os.Getenv(envTurnMax), defaultTurnMax)
+		parseTurnLimit(os.Getenv(envTurnMax), defaultTurnMax),
+		parseTurnLimit(os.Getenv(envTurnQuietIdle), defaultTurnQuietIdle)
 }
 
 // parseTurnLimit accepts a Go duration ("15m") or plain seconds ("900"); "0"
@@ -47,14 +53,85 @@ func parseTurnLimit(v string, def time.Duration) time.Duration {
 }
 
 // touchActiveTurn marks provider activity on the in-flight turn and returns its opId.
-func (b *Bridge) touchActiveTurn() string {
+func (b *Bridge) touchActiveTurn() string { return b.noteTurnEvent(nil) }
+
+// noteTurnEvent is touchActiveTurn for a provider event: it also tracks the
+// turn's open tool calls for the quiet-idle limit.
+func (b *Bridge) noteTurnEvent(ev json.RawMessage) string {
 	b.turnMu.Lock()
-	defer b.turnMu.Unlock()
-	if b.activeTurn == nil {
+	th := b.activeTurn
+	b.turnMu.Unlock()
+	if th == nil {
 		return ""
 	}
-	b.activeTurn.lastActivity.Store(time.Now().UnixNano())
-	return b.activeTurn.opID
+	th.lastActivity.Store(time.Now().UnixNano())
+	th.tools.note(ev)
+	return th.opID
+}
+
+// turnTools tracks the tool calls a provider reported as started but not yet
+// finished within one turn.
+type turnTools struct {
+	mu   sync.Mutex
+	open map[string]struct{}
+	seen bool // the provider reported at least one tool call with an id
+}
+
+func (t *turnTools) note(ev json.RawMessage) {
+	if !bytes.Contains(ev, []byte(`"tool_call`)) {
+		return
+	}
+	var f struct {
+		Update struct {
+			SessionUpdate string `json:"sessionUpdate"`
+			ToolCallID    string `json:"toolCallId"`
+			Status        string `json:"status"`
+		} `json:"update"`
+	}
+	if json.Unmarshal(ev, &f) != nil || f.Update.ToolCallID == "" {
+		return
+	}
+	u := f.Update
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	switch u.SessionUpdate {
+	case "tool_call":
+		t.seen = true
+		if t.open == nil {
+			t.open = map[string]struct{}{}
+		}
+		if !toolStatusDone(u.Status) {
+			t.open[u.ToolCallID] = struct{}{}
+		}
+	case "tool_call_update":
+		t.seen = true
+		if toolStatusDone(u.Status) {
+			delete(t.open, u.ToolCallID)
+		}
+	}
+}
+
+// quiet reports whether no tool is known to be running. A provider that never
+// reports tools is never quiet: a long silent command could be one of them.
+func (t *turnTools) quiet() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.seen && len(t.open) == 0
+}
+
+// reset forgets open calls after the process group was killed.
+func (t *turnTools) reset() {
+	t.mu.Lock()
+	t.open = nil
+	t.mu.Unlock()
+}
+
+func toolStatusDone(status string) bool {
+	switch status {
+	case "completed", "failed", "cancelled":
+		return true
+	}
+	return false
 }
 
 func (b *Bridge) turnLimits(item queuedPrompt) (idle, max time.Duration) {
@@ -81,31 +158,45 @@ func watchdogTick(idle, max time.Duration) time.Duration {
 }
 
 // watchTurn aborts th once it has had no provider event for idle, or has run
-// longer than max. The first idle cancels with provider.ErrTurnRecover so the
-// bridge can resume once. A second idle, or the total-duration limit, cancels
-// with provider.ErrTurnTimeout.
+// longer than max. While no reported tool call is open, the shorter quiet
+// limit replaces idle: a CLI that went silent between tools is usually stuck
+// waiting on a process it should have detached. The first idle cancels with
+// provider.ErrTurnRecover so the bridge can resume once. A second idle, or
+// the total-duration limit, cancels with provider.ErrTurnTimeout.
 func (b *Bridge) watchTurn(p provider.Session, th *promptTurn, idle, max time.Duration) func() {
 	if idle <= 0 && max <= 0 {
 		return func() {}
+	}
+	quiet := b.turnQuietIdle
+	if idle <= 0 || quiet >= idle {
+		quiet = 0
 	}
 	stop := make(chan struct{})
 	start := th.started
 	if start.IsZero() {
 		start = time.Now()
 	}
+	tickBase := idle
+	if quiet > 0 {
+		tickBase = quiet
+	}
 	go func() {
-		t := time.NewTicker(watchdogTick(idle, max))
+		t := time.NewTicker(watchdogTick(tickBase, max))
 		defer t.Stop()
 		for {
 			select {
 			case <-stop:
 				return
 			case now := <-t.C:
+				limit := idle
+				if quiet > 0 && th.tools.quiet() {
+					limit = quiet
+				}
 				var why string
 				if max > 0 && now.Sub(start) >= max {
 					why = fmt.Sprintf("回合总时长超过 %s", max)
-				} else if idle > 0 && now.Sub(time.Unix(0, th.lastActivity.Load())) >= idle {
-					why = fmt.Sprintf("连续 %s 没有任何输出", idle)
+				} else if limit > 0 && now.Sub(time.Unix(0, th.lastActivity.Load())) >= limit {
+					why = fmt.Sprintf("连续 %s 没有任何输出", limit)
 				}
 				if why == "" {
 					continue

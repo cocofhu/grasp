@@ -3,6 +3,7 @@ package streamjson
 import (
 	"bufio"
 	"os"
+	"strings"
 	"testing"
 
 	"backend/internal/provider"
@@ -124,6 +125,38 @@ func TestParseCursorDialect(t *testing.T) {
 	u := r.Usage["default"]
 	if u.InputTokens != 6907 || u.OutputTokens != 32 || u.CacheReadTokens != 5984 {
 		t.Fatalf("camelCase usage=%+v", u)
+	}
+}
+
+// Shapes from https://cursor.com/docs/cli/reference/output-format.
+func TestParseCursorToolCalls(t *testing.T) {
+	c := &codec{}
+	started := c.ParseLine([]byte(`{"type":"tool_call","subtype":"started","call_id":"toolu_1","tool_call":{"shellToolCall":{"args":{"command":"go run ./cmd/server"}}},"session_id":"S1"}`))
+	if len(started.Msgs) != 1 {
+		t.Fatalf("started=%+v", started.Msgs)
+	}
+	m := started.Msgs[0]
+	if m.Kind != oneshot.KindToolUse || m.ToolCallID != "toolu_1" || m.ToolTitle != "shell" || !strings.Contains(string(m.RawInput), "go run") {
+		t.Fatalf("started msg=%+v", m)
+	}
+
+	done := c.ParseLine([]byte(`{"type":"tool_call","subtype":"completed","call_id":"toolu_1","tool_call":{"readToolCall":{"args":{"path":"a"},"result":{"success":{"content":"x"}}}},"session_id":"S1"}`))
+	if len(done.Msgs) != 1 || done.Msgs[0].Kind != oneshot.KindToolResult || done.Msgs[0].ToolCallID != "toolu_1" || done.Msgs[0].ToolStatus != "completed" {
+		t.Fatalf("completed=%+v", done.Msgs)
+	}
+
+	failed := c.ParseLine([]byte(`{"type":"tool_call","subtype":"completed","call_id":"toolu_2","tool_call":{"shellToolCall":{"args":{},"result":{"failure":{"exitCode":1}}}}}`))
+	if len(failed.Msgs) != 1 || failed.Msgs[0].ToolStatus != "failed" {
+		t.Fatalf("failed=%+v", failed.Msgs)
+	}
+
+	fn := c.ParseLine([]byte(`{"type":"tool_call","subtype":"started","call_id":"toolu_3","tool_call":{"function":{"name":"page_state","arguments":"{\"session_id\":\"x\"}"}}}`))
+	if len(fn.Msgs) != 1 || fn.Msgs[0].ToolTitle != "page_state" {
+		t.Fatalf("function form=%+v", fn.Msgs)
+	}
+
+	if pr := c.ParseLine([]byte(`{"type":"tool_call","subtype":"started","tool_call":{"shellToolCall":{}}}`)); len(pr.Msgs) != 0 {
+		t.Fatalf("tool_call without call_id cannot be correlated: %+v", pr.Msgs)
 	}
 }
 

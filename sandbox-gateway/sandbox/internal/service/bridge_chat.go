@@ -144,6 +144,7 @@ func (b *Bridge) continueAfterStall(p provider.Session, item queuedPrompt, th *p
 	th.continued.Store(true)
 	th.recover.Store(false)
 	th.timedOut.Store(false)
+	th.tools.reset()
 	b.Broadcast(eventEnvelope(map[string]any{
 		"type":      "turn_segment",
 		"sessionId": p.SessionID(),

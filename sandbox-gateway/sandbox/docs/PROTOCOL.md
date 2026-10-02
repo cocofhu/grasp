@@ -144,6 +144,7 @@ WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST
 给用户看的超时说明不包含后台拉起命令。
 
 - `SANDBOX_TURN_IDLE_TIMEOUT`(默认 `10m`):连续这么久没有任何事件帧;第一次续跑,第二次才超时;
+- `SANDBOX_TURN_QUIET_IDLE_TIMEOUT`(默认 `3m`):本轮已上报过工具调用、且当前没有进行中的工具时,用这个更短的空闲上限代替上一条(多见于 Agent 用未脱钩的后台命令起了常驻服务,CLI 一直等它退出);从未上报工具事件的 provider 不受影响;
 - `SANDBOX_TURN_MAX_DURATION`(默认 `60m`,可被 `chat.deadlineSec` 按轮覆盖):整轮总时长,到点直接超时。
 
 取值为 Go duration(如 `90s`)或纯秒数,`0` 关闭。
