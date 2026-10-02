@@ -246,6 +246,49 @@ describe('AgentChatTester interactions', () => {
     w.unmount()
   })
 
+  it('pastes clipboard files with data URL and keeps prior selection errors', async () => {
+    class Reader {
+      result = ''
+      onload: (() => void) | null = null
+      readAsDataURL(file: File) {
+        this.result = `data:${file.type};base64,UA==`
+        queueMicrotask(() => this.onload?.())
+      }
+    }
+    class Transfer {
+      files: File[] = []
+      items = { add: (f: File) => this.files.push(f) }
+    }
+    vi.stubGlobal('FileReader', Reader)
+    vi.stubGlobal('DataTransfer', Transfer)
+    const w = mountTester()
+    const vm = w.vm as any
+
+    const huge = new File(['x'], 'huge.dat')
+    Object.defineProperty(huge, 'size', { value: 60 * 1024 * 1024 })
+    vm.addFiles([huge] as any)
+    expect(vm.errorMsg).toContain('huge.dat')
+
+    const textOnly = vi.fn()
+    vm.onPaste({ preventDefault: textOnly, clipboardData: { items: [{ kind: 'string', getAsFile: () => null }] } })
+    vm.onPaste({ preventDefault: textOnly, clipboardData: null })
+    expect(textOnly).not.toHaveBeenCalled()
+
+    const file = new File(['p'], 'shot.png', { type: 'image/png' })
+    const preventDefault = vi.fn()
+    vm.onPaste({
+      preventDefault,
+      clipboardData: { items: [{ kind: 'string', getAsFile: () => null }, { kind: 'file', getAsFile: () => file }] },
+    })
+    await flushPromises()
+    expect(preventDefault).toHaveBeenCalled()
+    expect(vm.attachments).toEqual([
+      { data: 'UA==', mimeType: 'image/png', url: 'data:image/png;base64,UA==', name: 'shot.png' },
+    ])
+    expect(vm.errorMsg).toContain('huge.dat')
+    w.unmount()
+  })
+
   it('restores paged history, loads earlier events, and tolerates failures', async () => {
     const newer = [
       { op: 'event', data: { type: 'prompt_begin', promptText: 'new', imageURLs: ['https://x/a.png', '', 1] } },
@@ -279,6 +322,15 @@ describe('AgentChatTester interactions', () => {
     expect(vm.restoring).toBe(false)
 
     expect(vm.rebuildTurnsFromFrames([{ type: 'session_update', update: { type: 'agent_thought_chunk', content: '' } }])).toEqual([])
+    const wrapped = vm.rebuildTurnsFromFrames([
+      { op: 'event', data: { type: 'prompt_begin', text: 'q' } },
+      { op: 'event', data: { type: 'session_update', update: { sessionUpdate: 'agentThoughtChunk', content: { parts: ['a', { text: 'b' }] } } } },
+      { op: 'event', data: { type: 'session_update', update: { kind: 'tool_call', id: 't9', title: 'run', status: 'pending' } } },
+      { op: 'event', data: { type: 'session_update', update: { session_update: 'agent_message_chunk', content: ['x', { text: 'y' }] } } },
+    ])
+    expect(wrapped).toHaveLength(2)
+    expect(wrapped[1]).toMatchObject({ role: 'agent', thought: 'ab', text: 'xy' })
+    expect(wrapped[1].tools[0]).toMatchObject({ id: 't9', status: 'pending' })
     expect(vm.unwrapFrame(null)).toBeNull()
     w.unmount()
   })
