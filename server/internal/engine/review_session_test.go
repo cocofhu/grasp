@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/runtime"
 )
 
 // TestReviewSessionQueueAndCancel: FIFO enqueue + Cancel clears pending and
@@ -260,12 +261,15 @@ func TestQueueSnapshotIncludesAnnotationsAndImages(t *testing.T) {
 	_ = eng.waitReviewReadyForTest(run.ID, "prop", 5*time.Second)
 }
 
-// TestActivePageTurnOwner: page tools route by who sent the running turn, and
-// the turn's done channel closes on Cancel so pending page commands stop.
-func TestActivePageTurnOwner(t *testing.T) {
+// TestPageSessionRoutesToSender: a turn someone sent carries a page session
+// id in its prompt only; page tools resolve it to that sender until the turn
+// is cancelled.
+func TestPageSessionRoutesToSender(t *testing.T) {
 	eng, db, provider := setupReviewEngine(t, true)
 	hold := make(chan struct{})
 	provider.reviseHold = hold
+	prompts := make(chan string, 4)
+	provider.reviseHook = func(_ runtime.NodeReq, human string) { prompts <- human }
 
 	run, err := eng.StartRun("review-wf", map[string]any{"idea": "登录"}, "test")
 	if err != nil {
@@ -274,28 +278,32 @@ func TestActivePageTurnOwner(t *testing.T) {
 	waitReactPause(t, db, run.ID, "prop")
 	waitRunStatus(t, db, run.ID, "waiting_human")
 
-	if _, _, ok := eng.ActivePageTurn(run.ID, "prop"); ok {
-		t.Fatal("no turn yet")
-	}
 	if _, err := eng.EnqueueReviewTurnAs("user:alice", run.ID, "prop", "帮我登录", nil, nil, "node", ""); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
-	var owner string
-	var done <-chan struct{}
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		var ok bool
-		if owner, done, ok = eng.ActivePageTurn(run.ID, "prop"); ok {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
+	var prompt string
+	select {
+	case prompt = <-prompts:
+	case <-time.After(3 * time.Second):
+		t.Fatal("turn never reached the provider")
 	}
-	if owner != "user:alice" || done == nil {
-		t.Fatalf("owner=%q done=%v", owner, done)
+	sid := pageSessionPattern.FindString(prompt)
+	if sid == "" || !strings.Contains(prompt, "帮我登录") {
+		t.Fatalf("prompt lacks a page session id: %q", prompt)
+	}
+	owner, done, ok := eng.PageTurn(run.ID, "prop", sid)
+	if !ok || owner != "user:alice" || done == nil {
+		t.Fatalf("owner=%q ok=%v", owner, ok)
+	}
+	if _, _, ok := eng.PageTurn(run.ID, "other", sid); ok {
+		t.Fatal("session id must be bound to its node")
+	}
+	if _, _, ok := eng.PageTurn(run.ID, "prop", ""); ok {
+		t.Fatal("missing session id resolved")
 	}
 	snap, _ := eng.ReviewSessionSnapshotFor(run.ID, "prop")
-	if b, _ := json.Marshal(snap); strings.Contains(string(b), "alice") {
-		t.Fatalf("owner leaked into snapshot: %s", b)
+	if b, _ := json.Marshal(snap); strings.Contains(string(b), "alice") || strings.Contains(string(b), sid) {
+		t.Fatalf("owner or session leaked into snapshot: %s", b)
 	}
 	if err := eng.CancelReviewSession(run.ID, "prop"); err != nil {
 		t.Fatalf("cancel: %v", err)
@@ -305,9 +313,15 @@ func TestActivePageTurnOwner(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("done not closed on cancel")
 	}
+	if _, _, ok := eng.PageTurn(run.ID, "prop", sid); ok {
+		t.Fatal("cancelled turn's session still valid")
+	}
 	close(hold)
 	_ = eng.waitReviewReadyForTest(run.ID, "prop", 5*time.Second)
-	if _, _, ok := eng.ActivePageTurn(run.ID, "prop"); ok {
-		t.Fatal("turn should be gone")
+	var conv models.ReactConversation
+	if err := db.Where("run_id = ? AND node_id = ?", run.ID, "prop").Order("iteration desc").First(&conv).Error; err == nil {
+		if b, _ := json.Marshal(conv.Messages); strings.Contains(string(b), sid) {
+			t.Fatalf("session id persisted: %s", b)
+		}
 	}
 }

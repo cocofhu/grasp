@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -30,6 +31,7 @@ type visitorFake struct {
 	primed   map[string]bool
 	retired  []string
 	cancelOn map[string]bool
+	hold     chan struct{} // when set, visitor turns block until it closes
 }
 
 var _ runtime.VisitorLaneProvider = (*visitorFake)(nil)
@@ -46,7 +48,14 @@ func (v *visitorFake) VisitorTurn(ctx context.Context, req runtime.NodeReq, lane
 		v.primed[lane] = true
 	}
 	v.prompts[lane] = append(v.prompts[lane], prompt)
+	hold := v.hold
 	v.vmu.Unlock()
+	if hold != nil {
+		select {
+		case <-hold:
+		case <-ctx.Done():
+		}
+	}
 	if onProgress != nil {
 		onProgress([]models.AcpEvent{{Kind: "message", Text: "visitor-stream"}}, true)
 	}
@@ -176,6 +185,84 @@ func TestVisitorLanesKeepSeparateTranscripts(t *testing.T) {
 	}
 	if snaps := eng.ReviewSessionsForRun("r1"); len(snaps) != 0 {
 		t.Fatalf("visitor lanes must not appear in run snapshots: %+v", snaps)
+	}
+}
+
+var pageSessionPattern = regexp.MustCompile(`ps_[A-Za-z0-9_-]{43}`)
+
+func TestVisitorPageSessionsPerLane(t *testing.T) {
+	eng, _, p := setupVisitorEngine(t)
+	hold := make(chan struct{})
+	p.hold = hold
+	laneA := gateshare.VisitorLane("link1", strings.Repeat("a", 32))
+	laneB := gateshare.VisitorLane("link1", strings.Repeat("b", 32))
+	for lane, owner := range map[string]string{laneA: "embed:aaaa", laneB: "embed:bbbb"} {
+		target := visitorTarget(lane)
+		target.Owner = owner
+		if _, err := eng.EnqueueVisitorTurn(target, "帮我登录", nil, nil); err != nil {
+			t.Fatalf("enqueue %s: %v", lane, err)
+		}
+	}
+	sessionOf := func(lane string) string {
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if ps := p.promptsFor(lane); len(ps) > 0 {
+				return pageSessionPattern.FindString(ps[len(ps)-1])
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		return ""
+	}
+	sidA, sidB := sessionOf(laneA), sessionOf(laneB)
+	if sidA == "" || sidB == "" || sidA == sidB {
+		t.Fatalf("each lane needs its own page session: %q %q", sidA, sidB)
+	}
+	if owner, _, ok := eng.PageTurn("r1", "p1", sidA); !ok || owner != "embed:aaaa" {
+		t.Fatalf("lane A session -> %q %v", owner, ok)
+	}
+	if owner, _, ok := eng.PageTurn("r1", "p1", sidB); !ok || owner != "embed:bbbb" {
+		t.Fatalf("lane B session -> %q %v", owner, ok)
+	}
+	close(hold)
+	waitLaneIdle(t, eng, laneA)
+	waitLaneIdle(t, eng, laneB)
+	if _, _, ok := eng.PageTurn("r1", "p1", sidA); ok {
+		t.Fatal("finished visitor turn's session still valid")
+	}
+	for _, m := range eng.VisitorTurns("link1", laneA, "r1", "p1") {
+		if m.Role == "human" && strings.Contains(m.Text, "ps_") {
+			t.Fatalf("session id persisted in the visitor transcript: %q", m.Text)
+		}
+	}
+}
+
+func TestPageSessionNeedsSender(t *testing.T) {
+	eng, _, p := setupVisitorEngine(t)
+	lane := gateshare.VisitorLane("link1", strings.Repeat("c", 32))
+	if _, err := eng.EnqueueVisitorTurn(visitorTarget(lane), "hi", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	waitLaneIdle(t, eng, lane)
+	if ps := p.promptsFor(lane); len(ps) != 1 || strings.Contains(ps[0], "ps_") {
+		t.Fatalf("a turn without a sender must not get a page session: %q", ps)
+	}
+}
+
+func TestRetireRevokesPageSessions(t *testing.T) {
+	eng, _, _ := setupVisitorEngine(t)
+	lane := "v:0123456789ab"
+	done := make(chan struct{})
+	id := eng.mintPageSession(&reviewSession{runID: "r1", producerID: "p1", lane: lane}, "embed:x", done)
+	eng.mintPageSession(&reviewSession{runID: "r1", producerID: "p1", lane: ""}, "user:o", done)
+	eng.revokeLanePageSessions("r1", "p1", lane)
+	if _, _, ok := eng.PageTurn("r1", "p1", id); ok {
+		t.Fatal("retired lane kept its page session")
+	}
+	eng.pageMu.Lock()
+	n := len(eng.pageSessions)
+	eng.pageMu.Unlock()
+	if n != 1 {
+		t.Fatalf("other lanes' sessions must survive, left %d", n)
 	}
 }
 

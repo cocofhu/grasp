@@ -40,8 +40,11 @@ func (c *acpProvider) VisitorTurn(ctx context.Context, req NodeReq, lane, prelud
 		return ReactTurn{Msg: "(访客会话启动失败:" + err.Error() + ")", Err: err}
 	}
 	prompt := human
-	if !vl.primed && strings.TrimSpace(prelude) != "" {
-		prompt = strings.TrimRight(prelude, "\n") + "\n\n## 用户消息\n" + strings.TrimRight(human, "\n")
+	if !vl.primed {
+		prelude = strings.TrimSpace(prelude + previewNodePromptExtras(req))
+	}
+	if !vl.primed && prelude != "" {
+		prompt = prelude + "\n\n## 用户消息\n" + strings.TrimRight(human, "\n")
 	}
 	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
 	defer cancel()

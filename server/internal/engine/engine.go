@@ -111,6 +111,11 @@ type Engine struct {
 	visitorLanes map[string]*visitorLaneState // key: runID|producerID|lane
 	visitorSweep sync.Once
 
+	// pageMu guards pageSessions: the page_* session id of each running turn
+	// that has a sender.
+	pageMu       sync.Mutex
+	pageSessions map[string]*pageSession
+
 	// skills looks up Agents for same-project agent_profile runtime gate.
 	skills SkillLookup
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +18,8 @@ import (
 )
 
 const headerShareVisitor = "X-Gate-Share-Visitor"
+
+var pageSessionLine = regexp.MustCompile(`^本轮页面操作 session_id: ps_[A-Za-z0-9_-]+[^\n]*\n\n`)
 
 // laneProvider is a parked review session whose backend hosts visitor chats.
 type laneProvider struct {
@@ -44,6 +47,7 @@ func (p *laneProvider) VisitorTurn(_ context.Context, _ runtime.NodeReq, lane, _
 	if p.visitor == nil {
 		p.visitor = map[string][]string{}
 	}
+	human = pageSessionLine.ReplaceAllString(human, "")
 	p.visitor[lane] = append(p.visitor[lane], human)
 	return runtime.ReactTurn{Msg: "visitor reply: " + human}
 }

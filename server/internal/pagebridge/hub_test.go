@@ -279,8 +279,8 @@ type fakeTurns struct {
 	done  chan struct{}
 }
 
-func (f fakeTurns) ActivePageTurn(string, string) (string, <-chan struct{}, bool) {
-	return f.owner, f.done, f.owner != ""
+func (f fakeTurns) PageTurn(_, _, sessionID string) (string, <-chan struct{}, bool) {
+	return f.owner, f.done, f.owner != "" && sessionID == "ps_ok"
 }
 
 func TestRouterCancelsWhenTurnEnds(t *testing.T) {
@@ -292,7 +292,7 @@ func TestRouterCancelsWhenTurnEnds(t *testing.T) {
 	r := &Router{Hub: h, Turns: turns}
 	out := make(chan outcome, 1)
 	go func() {
-		res, err := r.Do("r", "n", Command{Action: "click"})
+		res, err := r.Do("r", "n", "ps_ok", Command{Action: "click"})
 		out <- outcome{res, err}
 	}()
 	p.nextCmd(t)
@@ -300,8 +300,47 @@ func TestRouterCancelsWhenTurnEnds(t *testing.T) {
 	if o := wait(t, out); !errors.Is(o.err, ErrCancelled) {
 		t.Fatalf("err = %v", o.err)
 	}
-	if _, err := (&Router{Hub: h, Turns: fakeTurns{}}).Do("r", "n", Command{Action: "state"}); !errors.Is(err, ErrNoOwner) {
+	if _, err := (&Router{Hub: h, Turns: fakeTurns{}}).Do("r", "n", "ps_ok", Command{Action: "state"}); !errors.Is(err, ErrBadSession) {
 		t.Fatalf("no owner: err = %v", err)
+	}
+	if _, err := r.Do("r", "n", "ps_forged", Command{Action: "state"}); !errors.Is(err, ErrBadSession) {
+		t.Fatalf("bad session: err = %v", err)
+	}
+}
+
+type sessionTurns map[string]string
+
+func (m sessionTurns) PageTurn(_, _, sessionID string) (string, <-chan struct{}, bool) {
+	return m[sessionID], nil, m[sessionID] != ""
+}
+
+func TestRouterRoutesBySession(t *testing.T) {
+	h := fastHub()
+	a, b := newFakePage(), newFakePage()
+	keyA := Key{RunID: "r", NodeID: "n", Owner: "embed:a"}
+	keyB := Key{RunID: "r", NodeID: "n", Owner: "embed:b"}
+	h.Attach(keyA, a.send).SetControl(true, true)
+	cb := h.Attach(keyB, b.send)
+	cb.SetControl(true, true)
+	r := &Router{Hub: h, Turns: sessionTurns{"ps_a": "embed:a", "ps_b": "embed:b"}}
+
+	out := make(chan outcome, 1)
+	go func() {
+		res, err := r.Do("r", "n", "ps_b", Command{Action: "state"})
+		out <- outcome{res, err}
+	}()
+	cmd := b.nextCmd(t)
+	cb.Deliver(cmd["id"].(string), Result{OK: true})
+	if o := wait(t, out); o.err != nil {
+		t.Fatalf("err = %v", o.err)
+	}
+	select {
+	case f := <-a.cmds:
+		t.Fatalf("session ps_b reached embed:a's page: %v", f)
+	default:
+	}
+	if _, err := r.Do("r", "n", "", Command{Action: "state"}); !errors.Is(err, ErrBadSession) {
+		t.Fatalf("missing session: err = %v", err)
 	}
 }
 
