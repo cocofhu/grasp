@@ -3,11 +3,12 @@ import type { ClarifyImage } from '@/lib/shared/types'
 import {
   SITE_ATTACH_MAX_BYTES,
   SITE_ATTACH_MAX_MIB,
-  fileAttachmentName,
+  filesFromClipboard,
   findOversizedAttachments,
   formatSelectRejectMessage,
   formatSendRejectMessage,
   attachmentDisplayName,
+  readFilesAsAttachments,
 } from '@/lib/shared/attachments'
 
 export type AttachNotice = { kind: 'error' | 'ok'; text: string } | null
@@ -28,30 +29,11 @@ export function useImageAttachments(opts?: { maxBytes?: number; maxMiB?: number 
     notice.value = null
   }
 
-  function addFiles(files: FileList | null | undefined) {
+  function addFiles(files: ArrayLike<File> | null | undefined) {
     if (!files) return
-    const rejected: string[] = []
-    let accepted = 0
-    const list = Array.from(files)
-    list.forEach((f, i) => {
-      if (f.size > maxBytes) {
-        rejected.push(fileAttachmentName(f, i))
-        return
-      }
-      const name = fileAttachmentName(f, i)
-      const mimeType = f.type || 'application/octet-stream'
-      const reader = new FileReader()
-      reader.onload = () => {
-        const res = String(reader.result || '')
-        const comma = res.indexOf(',')
-        attachments.value.push({
-          data: comma >= 0 ? res.slice(comma + 1) : res,
-          mimeType,
-          name,
-        })
-      }
-      reader.readAsDataURL(f)
-      accepted++
+    const { rejected, accepted } = readFilesAsAttachments(files, {
+      maxBytes,
+      onRead: ({ data, mimeType, name }) => attachments.value.push({ data, mimeType, name }),
     })
     if (rejected.length) {
       setNotice('error', formatSelectRejectMessage(rejected, maxMiB))
@@ -66,21 +48,10 @@ export function useImageAttachments(opts?: { maxBytes?: number; maxMiB?: number 
   }
 
   function onPaste(e: ClipboardEvent) {
-    const items = e.clipboardData?.items
-    if (!items) return
-    const picked: File[] = []
-    for (const it of Array.from(items)) {
-      // Paste: keep image clipboard items; non-image paste is typically text.
-      if (it.kind === 'file') {
-        const f = it.getAsFile()
-        if (f) picked.push(f)
-      }
-    }
+    const picked = filesFromClipboard(e)
     if (picked.length) {
       e.preventDefault()
-      const dt = new DataTransfer()
-      picked.forEach((f) => dt.items.add(f))
-      addFiles(dt.files)
+      addFiles(picked)
     }
   }
 

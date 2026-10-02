@@ -83,6 +83,52 @@ export function findOversizedAttachments(
   return images.filter((im) => isOversizedAttachment(im, maxBytes))
 }
 
+export type ReadAttachment = { data: string; mimeType: string; url: string; name: string }
+
+/**
+ * Size-gate then read each file as a data URL. `onRead` fires asynchronously per
+ * accepted file (FileReader order); `url` is the full data URL, `data` the bare base64.
+ */
+export function readFilesAsAttachments(
+  files: ArrayLike<File>,
+  opts: { maxBytes?: number; onRead: (att: ReadAttachment) => void },
+): { rejected: string[]; accepted: number } {
+  const maxBytes = opts.maxBytes ?? SITE_ATTACH_MAX_BYTES
+  const rejected: string[] = []
+  let accepted = 0
+  Array.from(files).forEach((f, i) => {
+    const name = fileAttachmentName(f, i)
+    if (f.size > maxBytes) {
+      rejected.push(name)
+      return
+    }
+    const mimeType = f.type || 'application/octet-stream'
+    const reader = new FileReader()
+    reader.onload = () => {
+      const url = String(reader.result || '')
+      const comma = url.indexOf(',')
+      opts.onRead({ data: comma >= 0 ? url.slice(comma + 1) : url, mimeType, url, name })
+    }
+    reader.readAsDataURL(f)
+    accepted++
+  })
+  return { rejected, accepted }
+}
+
+/** File items from a paste event; empty when the clipboard carries no files. */
+export function filesFromClipboard(e: ClipboardEvent): File[] {
+  const items = e.clipboardData?.items
+  if (!items) return []
+  const picked: File[] = []
+  for (const it of Array.from(items)) {
+    if (it.kind === 'file') {
+      const f = it.getAsFile()
+      if (f) picked.push(f)
+    }
+  }
+  return picked
+}
+
 /** Human-readable reject toast: selection stage. */
 export function formatSelectRejectMessage(names: string[], maxMiB = SITE_ATTACH_MAX_MIB): string {
   return `已拒绝超限文件：${names.join(', ')}。单文件上限 ${maxMiB} MiB，未进入待发送列表。`

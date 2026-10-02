@@ -31,11 +31,12 @@ import {
   SITE_ATTACH_MAX_BYTES,
   SITE_ATTACH_MAX_MIB,
   attachmentDisplayName,
-  fileAttachmentName,
+  filesFromClipboard,
   findOversizedAttachments,
   formatSelectRejectMessage,
   formatSendRejectMessage,
   isImageAttachment,
+  readFilesAsAttachments,
 } from '@/lib/shared/attachments'
 import { imgSrc } from '@/lib/shared/compositeText'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
@@ -730,28 +731,11 @@ watch(
   },
 )
 
-function addFiles(files: FileList | null | undefined) {
+function addFiles(files: ArrayLike<File> | null | undefined) {
   if (!files) return
-  const rejected: string[] = []
-  const list = Array.from(files)
-  list.forEach((f, i) => {
-    if (f.size > SITE_ATTACH_MAX_BYTES) {
-      rejected.push(fileAttachmentName(f, i))
-      return
-    }
-    const name = fileAttachmentName(f, i)
-    const mimeType = f.type || 'application/octet-stream'
-    const reader = new FileReader()
-    reader.onload = () => {
-      const res = String(reader.result || '')
-      const comma = res.indexOf(',')
-      attachments.value.push({
-        data: comma >= 0 ? res.slice(comma + 1) : res,
-        mimeType,
-        name,
-      })
-    }
-    reader.readAsDataURL(f)
+  const { rejected } = readFilesAsAttachments(files, {
+    maxBytes: SITE_ATTACH_MAX_BYTES,
+    onRead: ({ data, mimeType, name }) => attachments.value.push({ data, mimeType, name }),
   })
   if (rejected.length) {
     attachNotice.value = formatSelectRejectMessage(rejected, SITE_ATTACH_MAX_MIB)
@@ -764,23 +748,10 @@ function onPickFiles(e: Event) {
   if (fileInput.value) fileInput.value.value = ''
 }
 function onPaste(e: ClipboardEvent) {
-  const items = e.clipboardData?.items
-  if (!items) {
-    nextTick(autoGrow)
-    return
-  }
-  const picked: File[] = []
-  for (const it of Array.from(items)) {
-    if (it.kind === 'file') {
-      const f = it.getAsFile()
-      if (f) picked.push(f)
-    }
-  }
+  const picked = filesFromClipboard(e)
   if (picked.length) {
     e.preventDefault()
-    const dt = new DataTransfer()
-    picked.forEach((f) => dt.items.add(f))
-    addFiles(dt.files)
+    addFiles(picked)
   }
   nextTick(autoGrow)
 }
