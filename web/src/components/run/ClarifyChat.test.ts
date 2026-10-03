@@ -1439,12 +1439,12 @@ describe('ClarifyChat', () => {
       wrapper.unmount()
     })
 
-    it('tool_call alone keeps 思考中… placeholder (no tool UI, no air bubble)', async () => {
+    it('tool_call keeps 思考中… placeholder and shows the folded tool row (no air bubble)', async () => {
       const wrapper = mountChat({ draft: '请复审' })
       await clickSend(wrapper)
       const vm = wrapper.vm as unknown as {
         applyReviewFrame: (f: Record<string, unknown>) => void
-        applyAcpEvents: (e: { kind: string; text?: string }[], nodeId?: string) => void
+        applyAcpEvents: (e: { kind: string; text?: string; title?: string; status?: string }[], nodeId?: string) => void
       }
       vm.applyReviewFrame({
         event: 'turn_begin',
@@ -1452,13 +1452,52 @@ describe('ClarifyChat', () => {
         item: { text: '请复审' },
       })
       await flushPromises()
-      vm.applyAcpEvents([{ kind: 'tool_call', text: 'read_file' }], 'react-1')
+      vm.applyAcpEvents([{ kind: 'tool_call', title: 'read_file', status: 'running' }], 'react-1')
       await flushPromises()
 
       expect(wrapper.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="clarify-busy-placeholder"]').text()).toContain('思考中')
-      expect(wrapper.text()).not.toMatch(/正在调用工具|读文件/)
+      const group = wrapper.find('[data-testid="agent-tool-group"]')
+      expect(group.exists()).toBe(true)
+      expect(group.attributes('data-state')).toBe('running')
+      expect(group.text()).toContain('read_file')
       expect(wrapper.find('[data-testid="clarify-agent-message"]').exists()).toBe(false)
+
+      // Cumulative snapshots replace the tool list; message lands beside it.
+      vm.applyAcpEvents(
+        [
+          { kind: 'tool_call', title: 'read_file', status: 'completed' },
+          { kind: 'tool_call', title: 'Shell', status: 'failed' },
+          { kind: 'message', text: '复审完成' },
+        ],
+        'react-1',
+      )
+      await flushPromises()
+      const after = wrapper.find('[data-testid="agent-tool-group"]')
+      expect(after.attributes('data-state')).toBe('failed')
+      expect(after.text()).toContain('使用了 2 个工具')
+      await after.find('[data-testid="agent-tool-group-head"]').trigger('click')
+      const rows = wrapper.findAll('[data-testid="agent-tool-row"]')
+      expect(rows.map((r) => r.attributes('data-state'))).toEqual(['done', 'failed'])
+      expect(wrapper.find('[data-testid="clarify-agent-message"]').text()).toContain('复审完成')
+      wrapper.unmount()
+    })
+
+    it('renders persisted tools on a settled agent turn', () => {
+      const wrapper = mountChat({
+        turns: [
+          {
+            role: 'agent',
+            text: '已改好',
+            at: new Date().toISOString(),
+            tools: [{ title: 'write', status: 'completed' }],
+          },
+        ],
+      })
+      const group = wrapper.find('[data-testid="agent-tool-group"]')
+      expect(group.exists()).toBe(true)
+      expect(group.attributes('data-state')).toBe('done')
+      expect(group.find('[data-testid="agent-tool-group-names"]').text()).toBe('write')
       wrapper.unmount()
     })
   })

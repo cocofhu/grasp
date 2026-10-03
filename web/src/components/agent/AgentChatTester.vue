@@ -8,7 +8,9 @@ import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
 import ReposEditor, { type RepoRow } from '@/components/ui/ReposEditor.vue'
 import AcpStatusPill from '@/components/run/AcpStatusPill.vue'
-import { renderMarkdown } from '@/lib/shared/markdown'
+import AgentToolGroup from '@/components/run/AgentToolGroup.vue'
+import StreamMarkdown from '@/components/run/StreamMarkdown.vue'
+import { renderMarkdown, renderMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
 import { api, type CreateAgentTestPayload, type SandboxView } from '@/lib/api/api'
 import {
   SITE_ATTACH_MAX_BYTES,
@@ -43,6 +45,7 @@ const props = defineProps<{
 }>()
 
 const { t, te } = useI18n()
+const blockCache: MarkdownBlockCache = new Map()
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
 
 type Tool = { id: string; title: string; status: string }
@@ -580,8 +583,6 @@ onBeforeUnmount(() => {
   ws?.close()
   if (startTimer) clearInterval(startTimer)
 })
-
-const toolIcon: Record<string, string> = { completed: 'check', failed: 'close', in_progress: 'spinner', pending: 'clock' }
 </script>
 
 <template>
@@ -781,26 +782,12 @@ const toolIcon: Record<string, string> = { completed: 'check', failed: 'close', 
               <span :class="p.status === 'completed' ? 'line-through text-txt3' : ''">{{ p.content }}</span>
             </div>
           </div>
-          <!-- tool calls -->
-          <div v-if="turn.tools.length" class="flex flex-wrap gap-1.5">
-            <span
-              v-for="tool in turn.tools"
-              :key="tool.id || tool.title"
-              class="inline-flex items-center gap-1.5 rounded-full border border-line bg-base px-2 py-0.5 text-[11px] text-txt2"
-            >
-              <Icon
-                :name="toolIcon[tool.status] || 'doc'"
-                :size="11"
-                :class="[
-                  tool.status === 'completed' ? 'text-ok' : tool.status === 'failed' ? 'text-err' : 'text-accent-2',
-                  tool.status === 'in_progress' ? 'animate-spin' : '',
-                ]"
-              />
-              {{ tool.title }}
-            </span>
-          </div>
+          <AgentToolGroup v-if="turn.tools.length" :tools="turn.tools" :busy="turn.streaming" />
           <!-- narration -->
-          <div v-if="turn.text" class="md rounded-lg rounded-bl-sm border border-line bg-surface px-3 py-2 text-[13px] leading-6 text-txt" v-html="renderMarkdown(turn.text)" />
+          <div v-if="turn.text" class="md rounded-lg rounded-bl-sm border border-line bg-surface px-3 py-2 text-[13px] leading-6 text-txt">
+            <StreamMarkdown v-if="turn.streaming" :blocks="renderMarkdownBlocks(turn.text, blockCache)" />
+            <span v-else v-html="renderMarkdown(turn.text)" />
+          </div>
           <div v-else-if="turn.streaming && !turn.thought && !turn.tools.length" class="rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-txt3">
             <Icon name="spinner" :size="13" class="mr-1 inline animate-spin" />{{ t('pages.agentChatTester.generating') }}
           </div>

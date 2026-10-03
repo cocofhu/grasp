@@ -284,6 +284,8 @@ const turns = computed<ClarifyTurn[]>(() =>
     }
     const liveRef = parseLiveRef(turn.live)
     if (liveRef) mapped.live = liveRef
+    const tools = (turn.tools || []).filter((x) => x?.title).map((x) => ({ title: x.title as string, status: x.status }))
+    if (mapped.role === 'agent' && tools.length) mapped.tools = tools
     // Only attach structured prompts when present so plain turns stay unchanged.
     if (turn.questions?.length) {
       mapped.questions = turn.questions.map((q) => ({

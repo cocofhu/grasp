@@ -207,14 +207,16 @@ describe('useGateApproval actions', () => {
     expect(approval.applyAcpEvents([
       { kind: 'thought', text: 'thinking' },
       { kind: 'message', text: 'answer' },
-      { kind: 'tool_call', text: 'ignored' },
+      { kind: 'tool_call', title: 'read_file', status: 'completed', text: 'not-a-message' },
     ])).toBe(true)
     expect(approval.reactStreamThought.value).toBe('thinking')
     expect(approval.reactStreamText.value).toBe('answer')
+    expect(approval.reactStreamTools.value).toEqual([{ title: 'read_file', status: 'completed' }])
 
     approval.applyReviewFrame({ event: 'turn_done', nodeId: 'producer' })
     expect(approval.reactStreamCompletedAt.value).toBeTruthy()
     approval.applyReviewFrame({ event: 'turn_begin', nodeId: 'producer' })
+    expect(approval.reactStreamTools.value).toEqual([])
     approval.applyReviewFrame({ event: 'turn_done', nodeId: 'producer', interrupted: true })
     expect(approval.reactInterrupted.value).toBe(true)
 

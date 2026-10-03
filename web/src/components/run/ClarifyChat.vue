@@ -5,6 +5,8 @@ import ChatImagePreviewModal from '../ui/ChatImagePreviewModal.vue'
 import ComposerShell from './ComposerShell.vue'
 import ClarifyDemoFrame from './ClarifyDemoFrame.vue'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
+import AgentToolGroup from './AgentToolGroup.vue'
+import StreamMarkdown from './StreamMarkdown.vue'
 import AnnotationChip from './AnnotationChip.vue'
 import LiveVariantCard from './LiveVariantCard.vue'
 import PendingSendQueuePanel from './PendingSendQueuePanel.vue'
@@ -177,6 +179,7 @@ const {
   showSandboxOrphanBanner,
   sandboxOrphanOpLabel,
   liveStreamHtml,
+  liveStreamBlocks,
   streamPreview,
   unsubStream,
   liveThoughtText,
@@ -452,14 +455,16 @@ const {
               </summary>
               <div class="whitespace-pre-wrap break-words border-t border-dashed border-line px-2.5 pb-2 pt-1.5 font-mono leading-5 [overflow-wrap:anywhere]">{{ agentThoughtDisplay(t, i) }}</div>
             </details>
+            <AgentToolGroup v-if="t.tools?.length" :tools="t.tools" :busy="!!t.streaming" />
             <!-- Message body + streaming caret -->
             <div
               v-if="agentHasMessage(t) && !isRetryableFailedAgent(t)"
               class="md rounded-lg border border-line bg-elevated px-3 py-2 text-[13px] leading-relaxed text-txt"
               data-testid="clarify-agent-message"
             >
-              <span
-                v-html="t.streaming ? liveStreamHtml : renderMarkdown(t.text)"
+              <StreamMarkdown v-if="t.streaming" :blocks="liveStreamBlocks" /><span
+                v-else
+                v-html="renderMarkdown(t.text)"
               /><span
                 v-if="t.streaming"
                 class="clarify-stream-caret"

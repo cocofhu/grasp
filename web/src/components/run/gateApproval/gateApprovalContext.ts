@@ -1,5 +1,5 @@
 import { inject, type InjectionKey, type Ref } from 'vue'
-import type { ClarifyImage, Gate, ReactAnnotation, Run } from '@/lib/shared/types'
+import type { AgentTool, ClarifyImage, Gate, ReactAnnotation, Run } from '@/lib/shared/types'
 import type { GatePrimaryProductRef } from '@/lib/inbox/gateUpstream'
 import type { CommentPin } from '@/lib/inbox/useCommentPins'
 import type { PlanDoc } from '../PlanView.vue'
@@ -126,6 +126,7 @@ export type GateApprovalState = {
   reactThinking: boolean
   reactStreamText: string
   reactStreamThought: string
+  reactStreamTools: AgentTool[]
   reactInterrupted: boolean
   reactStreamCompletedAt: string | null
 

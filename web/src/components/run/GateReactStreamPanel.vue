@@ -8,7 +8,11 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { relTime } from '@/lib/shared/format'
 import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
+import type { AgentTool } from '@/lib/shared/types'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
+import AgentToolGroup from './AgentToolGroup.vue'
+import StreamMarkdown from './StreamMarkdown.vue'
+import { renderMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
 
 const props = withDefaults(
   defineProps<{
@@ -18,6 +22,8 @@ const props = withDefaults(
     interrupted?: boolean
     /** ISO timestamp when turn completed normally (not interrupted/error). */
     completedAt?: string | null
+    /** Tool calls of the current turn (name + status). */
+    streamTools?: AgentTool[]
   }>(),
   {
     thinking: false,
@@ -25,6 +31,7 @@ const props = withDefaults(
     streamThought: '',
     interrupted: false,
     completedAt: null,
+    streamTools: () => [],
   },
 )
 
@@ -89,6 +96,9 @@ onBeforeUnmount(() => {
   thoughtReveal.reset()
   messageReveal.reset()
 })
+
+const blockCache: MarkdownBlockCache = new Map()
+const messageBlocks = computed(() => renderMarkdownBlocks(revealedMessage.value, blockCache))
 
 const hasThought = computed(() => !!props.streamThought)
 const hasMessage = computed(() => !!props.streamText)
@@ -170,9 +180,10 @@ function onThoughtToggle(e: Event) {
       </div>
     </details>
 
-    <div v-if="hasMessage" data-testid="gate-react-message">
-      {{ revealedMessage }}
-      <span
+    <AgentToolGroup v-if="streamTools.length" :tools="streamTools" :busy="streaming" />
+
+    <div v-if="hasMessage" class="md" data-testid="gate-react-message">
+      <StreamMarkdown :blocks="messageBlocks" /><span
         v-if="streaming"
         class="gate-stream-caret"
         data-testid="gate-stream-caret"

@@ -122,6 +122,7 @@ const sendDisabled = computed(
     :thinking="s.reactThinking"
     :stream-text="s.reactStreamText"
     :stream-thought="s.reactStreamThought"
+    :stream-tools="s.reactStreamTools"
     :interrupted="s.reactInterrupted"
     :completed-at="s.reactStreamCompletedAt"
   />

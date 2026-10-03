@@ -302,6 +302,8 @@ export type PublicGatePreviewTurn = {
   forms?: ReactForm[]
   /** Live variant request this human turn came from. */
   live?: { sid: string; op: string; variant?: number }
+  /** Agent tool calls as bare names (server-sanitized). Absent when none. */
+  tools?: Array<{ title?: string; status?: string }>
 }
 
 export type PublicGateQueueItem = {
