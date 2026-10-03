@@ -344,6 +344,11 @@ func TestClarifyOpenPersistsToolSummary(t *testing.T) {
 	provider.reactTools = []models.AcpEvent{
 		{Kind: "tool_call", Title: "read_file", Status: "completed"},
 		{Kind: "tool_call", Title: "ask_question", Status: "completed"},
+		{Kind: models.AcpKindTimeline, Parts: []models.AcpPart{
+			{Kind: "thought", Text: "look first"},
+			{Kind: "tool", Title: "read_file", Status: "completed", Summary: "a.md"},
+			{Kind: "message", Text: "streamed draft"},
+		}},
 	}
 	run, err := eng.StartRun("wf", nil, "test")
 	if err != nil {
@@ -360,5 +365,10 @@ func TestClarifyOpenPersistsToolSummary(t *testing.T) {
 	got := conv.Messages[0].Tools
 	if len(got) != 2 || got[0].Title != "read_file" || got[1].Title != "ask_question" || got[1].Status != "completed" {
 		t.Fatalf("tools: %+v", got)
+	}
+	parts := conv.Messages[0].Parts
+	if len(parts) != 3 || parts[0].Text != "look first" || parts[1].Summary != "a.md" ||
+		parts[2].Kind != "message" || parts[2].Text != conv.Messages[0].Text {
+		t.Fatalf("timeline must persist with the stored reply text: %+v (text %q)", parts, conv.Messages[0].Text)
 	}
 }

@@ -9,6 +9,7 @@ import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
 import ReposEditor, { type RepoRow } from '@/components/ui/ReposEditor.vue'
 import AcpStatusPill from '@/components/run/AcpStatusPill.vue'
 import AgentToolGroup from '@/components/run/AgentToolGroup.vue'
+import AgentTimeline from '@/components/run/AgentTimeline.vue'
 import StreamMarkdown from '@/components/run/StreamMarkdown.vue'
 import { renderMarkdown, renderMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
 import { api, type CreateAgentTestPayload, type SandboxView } from '@/lib/api/api'
@@ -26,6 +27,7 @@ import {
 } from '@/lib/shared/attachments'
 import { chatImageSrc } from '@/lib/shared/compositeText'
 import { contentText, flattenUpdate, normalizeKind, unwrapFrame } from '@/lib/run/acpUnpack'
+import type { AgentPart } from '@/lib/shared/types'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 
 // `attachId` attaches to an existing sandbox (skips the create flow) — used by
@@ -48,7 +50,9 @@ const { t, te } = useI18n()
 const blockCache: MarkdownBlockCache = new Map()
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
 
-type Tool = { id: string; title: string; status: string }
+type Tool = { id: string; title: string; status: string; summary?: string; input?: string; output?: string }
+/** Arrival order of the reply: text runs, or an index into Turn.tools. */
+type Step = { kind: 'thought' | 'message'; text: string } | { kind: 'tool'; tool: number }
 type ImageAtt = { data: string; mimeType: string; url: string; name?: string }
 type QueueItem = { text: string; images: ImageAtt[] }
 type Turn = {
@@ -56,6 +60,7 @@ type Turn = {
   text: string
   thought: string
   tools: Tool[]
+  steps?: Step[]
   plan: { content: string; status: string }[]
   streaming: boolean
   images?: ImageAtt[]
@@ -486,10 +491,60 @@ function applyAcp(envelope: any, turn: Turn) {
   if (!ev || ev.type !== 'session_update' || !ev.update) return
   const u = flattenUpdate(ev.update)
   const kind = normalizeKind(u.sessionUpdate || u.session_update || u.type || u.kind || '')
-  if (kind === 'agent_message_chunk') turn.text += contentText(u.content)
-  else if (kind === 'agent_thought_chunk') turn.thought += contentText(u.content)
+  if (kind === 'agent_message_chunk') {
+    const s = contentText(u.content)
+    turn.text += s
+    addStep(turn, 'message', s)
+  } else if (kind === 'agent_thought_chunk') {
+    const s = contentText(u.content)
+    turn.thought += s
+    addStep(turn, 'thought', s)
+  }
   else if (kind === 'plan') turn.plan = planEntries(u)
   else if (isToolKind(kind)) applyTool(u, turn)
+}
+
+function addStep(turn: Turn, kind: 'thought' | 'message', s: string) {
+  if (!s) return
+  const steps = (turn.steps ??= [])
+  const last = steps[steps.length - 1]
+  if (last && last.kind === kind) last.text += s
+  else steps.push({ kind, text: s })
+}
+
+/** Turn steps as timeline parts; tool steps read the live tool row. */
+function partsOf(turn: Turn): AgentPart[] {
+  return (turn.steps || []).map((st) => {
+    if (st.kind !== 'tool') return { kind: st.kind, text: st.text }
+    const tool = turn.tools[st.tool]
+    return tool ? { kind: 'tool', title: tool.title, status: tool.status, summary: tool.summary, input: tool.input, output: tool.output } : { kind: 'tool', title: '' }
+  })
+}
+
+const SUMMARY_KEYS = ['command', 'cmd', 'file_path', 'filePath', 'path', 'target_file', 'url', 'uri', 'pattern', 'glob_pattern', 'query', 'search_term', 'name', 'description']
+const TOOL_DETAIL_MAX = 2000
+const SECRET_KEY_RE = /token|secret|password|passwd|api[_-]?key|authorization|cookie|credential/i
+
+function toolSummary(input: any): string {
+  if (!input || typeof input !== 'object') return ''
+  for (const k of SUMMARY_KEYS) {
+    const v = input[k]
+    const s = typeof v === 'string' ? v : Array.isArray(v) ? v.filter((x) => typeof x === 'string').join(' ') : ''
+    if (s.trim()) return s.replace(/\s+/g, ' ').trim().slice(0, 160)
+  }
+  return ''
+}
+
+function toolDetail(v: any, output: boolean): string {
+  if (v === undefined || v === null) return ''
+  let s = ''
+  if (typeof v === 'string') s = v
+  else if (output && typeof v === 'object' && !Array.isArray(v)) s = [v.stdout, v.stderr].filter((x) => typeof x === 'string' && x).join('\n') || (typeof v.output === 'string' ? v.output : '')
+  if (!s && output && (Array.isArray(v) || v.content)) s = contentText(Array.isArray(v) ? v : v.content)
+  if (!s) s = JSON.stringify(v, (k, x) => (k && SECRET_KEY_RE.test(k) && typeof x !== 'object' ? '****' : x), 2)
+  s = s.trim()
+  if (!s || s === '{}' || s === '[]') return ''
+  return s.length > TOOL_DETAIL_MAX ? `${s.slice(0, TOOL_DETAIL_MAX)}\n…(truncated)` : s
 }
 
 function isToolKind(k: string): boolean {
@@ -531,13 +586,22 @@ function applyTool(u: any, turn: Turn) {
     field(u, 'title', 'name', 'toolName', 'tool_name', 'kind') || field(tc, 'title', 'name', 'toolName', 'kind'),
   )
   const stat = field(u, 'status', 'state') || field(tc, 'status', 'state')
+  const rawIn = u.rawInput ?? u.raw_input ?? u.input ?? tc.rawInput ?? tc.input
+  const rawOut = u.rawOutput ?? u.raw_output ?? u.output ?? tc.rawOutput ?? tc.output
   const existing = turn.tools.find((t) => id && t.id === id)
+  const tool = existing ?? { id, title: title || t('pages.agentChatTester.toolFallback'), status: stat || 'pending' }
   if (existing) {
     if (title) existing.title = title
     if (stat) existing.status = stat
   } else {
-    turn.tools.push({ id, title: title || t('pages.agentChatTester.toolFallback'), status: stat || 'pending' })
+    turn.tools.push(tool)
+    ;(turn.steps ??= []).push({ kind: 'tool', tool: turn.tools.length - 1 })
   }
+  if (rawIn !== undefined) {
+    tool.summary = toolSummary(rawIn) || undefined
+    tool.input = toolDetail(rawIn, false) || undefined
+  }
+  if (rawOut !== undefined) tool.output = toolDetail(rawOut, true) || undefined
 }
 
 function scrollDown() {
@@ -769,8 +833,16 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div v-else class="max-w-[88%] space-y-2">
+          <AgentTimeline
+            v-if="turn.steps?.length"
+            :parts="partsOf(turn)"
+            :streaming="turn.streaming"
+            :completed="!turn.streaming && !turn.error"
+            :interrupted="!turn.streaming && !!turn.error"
+            message-test-id="tester-agent-message"
+          />
           <!-- thought -->
-          <details v-if="turn.thought" class="rounded-md border border-line bg-base/60 text-[11.5px] text-txt3">
+          <details v-if="turn.thought && !turn.steps?.length" class="rounded-md border border-line bg-base/60 text-[11.5px] text-txt3">
             <summary class="cursor-pointer select-none px-2.5 py-1.5 text-txt3 hover:text-txt2"><Icon name="sparkles" :size="11" class="-mt-0.5 mr-1 inline text-accent-2" />{{ t('pages.agentChatTester.thought') }}</summary>
             <div class="whitespace-pre-wrap px-2.5 pb-2 font-mono leading-5">{{ turn.thought }}</div>
           </details>
@@ -782,13 +854,13 @@ onBeforeUnmount(() => {
               <span :class="p.status === 'completed' ? 'line-through text-txt3' : ''">{{ p.content }}</span>
             </div>
           </div>
-          <AgentToolGroup v-if="turn.tools.length" :tools="turn.tools" :busy="turn.streaming" />
+          <AgentToolGroup v-if="turn.tools.length && !turn.steps?.length" :tools="turn.tools" :busy="turn.streaming" />
           <!-- narration -->
-          <div v-if="turn.text" class="md rounded-lg rounded-bl-sm border border-line bg-surface px-3 py-2 text-[13px] leading-6 text-txt">
+          <div v-if="turn.text && !turn.steps?.length" class="md rounded-lg rounded-bl-sm border border-line bg-surface px-3 py-2 text-[13px] leading-6 text-txt">
             <StreamMarkdown v-if="turn.streaming" :blocks="renderMarkdownBlocks(turn.text, blockCache)" />
             <span v-else v-html="renderMarkdown(turn.text)" />
           </div>
-          <div v-else-if="turn.streaming && !turn.thought && !turn.tools.length" class="rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-txt3">
+          <div v-else-if="turn.streaming && !turn.thought && !turn.tools.length && !turn.text" class="rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-txt3">
             <Icon name="spinner" :size="13" class="mr-1 inline animate-spin" />{{ t('pages.agentChatTester.generating') }}
           </div>
           <div v-if="turn.error" class="rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err">{{ turn.error }}</div>

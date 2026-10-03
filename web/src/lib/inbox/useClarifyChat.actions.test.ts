@@ -392,6 +392,37 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
+  it('puts the ordered timeline on the open agent segment and drops it when absent', () => {
+    const { chat, app } = withChat()
+    chat.applyQueueState(1, [{ id: 'item-1', text: 'hello' }])
+    chat.applyReviewFrame({ event: 'turn_begin', nodeId: 'node-1', item: { id: 'item-1', text: 'hello' } })
+    const parts = [
+      { kind: 'thought' as const, text: 'look' },
+      { kind: 'tool' as const, title: 'Shell', status: 'completed', summary: 'ls' },
+      { kind: 'message' as const, text: 'second' },
+    ]
+    expect(chat.applyAcpEvents([
+      { t: 0, kind: 'message', text: 'answer' },
+      { t: 0, kind: 'timeline', parts: [{ kind: 'message', text: 'answer' }] },
+      { t: 1, kind: 'segment' },
+      { t: 2, kind: 'thought', text: 'look' },
+      { t: 3, kind: 'tool_call', title: 'Shell', status: 'completed' },
+      { t: 4, kind: 'message', text: 'second' },
+      { t: 4, kind: 'timeline', parts },
+    ])).toBe(true)
+    let rows = chat.liveTurns.value.filter((x) => x.role === 'agent')
+    expect(rows[0]!.parts).toBeUndefined()
+    expect(rows[1]!.parts).toEqual(parts)
+    expect(chat.applyAcpEvents([
+      { t: 0, kind: 'message', text: 'answer' },
+      { t: 1, kind: 'segment' },
+      { t: 4, kind: 'message', text: 'second' },
+    ])).toBe(true)
+    rows = chat.liveTurns.value.filter((x) => x.role === 'agent')
+    expect(rows[1]!.parts).toBeUndefined()
+    app.unmount()
+  })
+
   it('materializes websocket turns, streams ACP content, and settles completion', () => {
     const { chat, app } = withChat()
     chat.applyQueueState(1, [{ id: 'item-1', text: 'hello' }])

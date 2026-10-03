@@ -214,6 +214,47 @@ describe('PublicGateApprovalView workbench', () => {
     expect(w.find('[data-testid="html-preview-inspect-toggle"]').exists()).toBe(true)
   })
 
+  it('keeps agent timeline order with bare tool names only', async () => {
+    window.location.hash = `#t=${'cd'.repeat(32)}`
+    mocks.preview.mockResolvedValue({
+      status: 'active',
+      kind: 'human_gate',
+      title: '审阅视觉稿',
+      remainingSec: 3600,
+      nonce: 'n-parts',
+      reactSessionAlive: true,
+      productKind: 'visual',
+      productName: 'page.html',
+      actions: { approve: 'approve', reject: 'revise', confirm: 'approve', reply: 'reply', cancel: 'cancel' },
+      visualHtml: '<p>ok</p>',
+      turns: [
+        { role: 'human', text: '看看', at: '2026-08-01T00:00:00Z', parts: [{ kind: 'message', text: 'ignored' }] },
+        {
+          role: 'agent',
+          text: '改好了',
+          at: '2026-08-01T00:00:01Z',
+          parts: [
+            { kind: 'thought', text: '先读' },
+            { kind: 'tool', title: 'Read', status: 'completed', summary: '/secret/path', output: 'leak' },
+            { kind: 'message', text: '改好了' },
+            { kind: 'bogus', text: 'x' },
+          ],
+        },
+      ],
+    })
+    const w = mountView()
+    await flushPromises()
+    const tl = w.get('[data-testid="agent-timeline"]')
+    expect(Array.from(tl.element.children).map((el) => el.getAttribute('data-testid'))).toEqual([
+      'agent-timeline-thought', 'agent-tool-group', 'clarify-agent-message',
+    ])
+    expect(w.findAll('[data-testid="agent-timeline"]')).toHaveLength(1)
+    await w.get('[data-testid="agent-tool-group-head"]').trigger('click')
+    expect(w.find('[data-testid="agent-tool-summary"]').exists()).toBe(false)
+    expect(w.find('[data-testid="agent-tool-row-toggle"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('/secret/path')
+  })
+
   it('maps preview turn image indexes to token URLs after reload (g2.1)', async () => {
     const token = 'bb'.repeat(32)
     window.location.hash = `#t=${token}`

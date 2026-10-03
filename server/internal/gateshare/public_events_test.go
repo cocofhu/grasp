@@ -23,11 +23,52 @@ func TestSanitizeLiveEventsKeepsRailsAndBareToolNames(t *testing.T) {
 	if ev[0].Kind != "thought" || ev[0].Text != "正在改 http://127.0.0.1/api/runs/secret" {
 		t.Fatalf("thought must pass through verbatim: %+v", ev[0])
 	}
-	if ev[1] != (PreviewLiveEvent{Kind: "tool_call", Title: "write_artifact", Status: "completed"}) {
+	if ev[1].Kind != "tool_call" || ev[1].Title != "write_artifact" || ev[1].Status != "completed" || ev[1].Text != "" || ev[1].Parts != nil {
 		t.Fatalf("tool must keep only its bare name and status: %+v", ev[1])
 	}
 	if ev[2].Kind != "message" || ev[2].Text != "标题已改为绿色" {
 		t.Fatalf("message: %+v", ev[2])
+	}
+}
+
+func TestSanitizeLiveEventsTimelineDropsToolDetails(t *testing.T) {
+	ev := SanitizeLiveEvents([]models.AcpEvent{{Kind: models.AcpKindTimeline, Parts: []models.AcpPart{
+		{Kind: "thought", Text: "想一下"},
+		{Kind: "tool", Title: "Shell curl http://10.0.0.1", Status: "completed", Summary: "curl http://10.0.0.1", Input: "{}", Output: "secret body"},
+		{Kind: "message", Text: "好了"},
+		{Kind: "message", Text: "  "},
+		{Kind: "weird", Text: "x"},
+	}}})
+	if len(ev) != 1 || ev[0].Kind != models.AcpKindTimeline {
+		t.Fatalf("events: %+v", ev)
+	}
+	want := []models.AcpPart{{Kind: "thought", Text: "想一下"}, {Kind: "tool", Title: "Shell", Status: "completed"}, {Kind: "message", Text: "好了"}}
+	if len(ev[0].Parts) != len(want) {
+		t.Fatalf("parts: %+v", ev[0].Parts)
+	}
+	for i, p := range ev[0].Parts {
+		if p != want[i] {
+			t.Fatalf("part %d = %+v, want %+v", i, p, want[i])
+		}
+	}
+	if SanitizeLiveEvents([]models.AcpEvent{{Kind: models.AcpKindTimeline}}) != nil {
+		t.Fatal("empty timeline must be dropped")
+	}
+}
+
+func TestPublicAcpFrameKeepsSanitizedTimeline(t *testing.T) {
+	raw, _ := json.Marshal(map[string]any{"type": "acp", "nodeId": "n1", "events": []any{
+		map[string]any{"kind": "timeline", "parts": []any{
+			map[string]any{"kind": "tool", "title": "Read /etc/passwd", "status": "completed", "summary": "/etc/passwd", "output": "root:x"},
+			"junk",
+		}},
+	}})
+	out, ok := FilterPublicBrokerFrame(raw, "n1", func() int { return 0 })
+	if !ok {
+		t.Fatal("frame dropped")
+	}
+	if s := string(out); strings.Contains(s, "passwd") || strings.Contains(s, "root:x") || !strings.Contains(s, `"title":"Read"`) {
+		t.Fatalf("frame: %s", s)
 	}
 }
 
@@ -66,6 +107,9 @@ func TestSanitizeTurnsReducesAgentTools(t *testing.T) {
 	want := []models.ReactTool{{Title: "Read", Status: "completed"}, {Title: "tool"}}
 	if len(turns[0].Tools) != 2 || turns[0].Tools[0] != want[0] || turns[0].Tools[1] != want[1] {
 		t.Fatalf("agent tools: %+v", turns[0].Tools)
+	}
+	if turns[0].Parts != nil {
+		t.Fatalf("no parts expected: %+v", turns[0].Parts)
 	}
 	if turns[1].Tools != nil {
 		t.Fatalf("human turns carry no tools: %+v", turns[1].Tools)
@@ -251,5 +295,31 @@ func TestFilterPublicBrokerFrameLive(t *testing.T) {
 	}
 	if _, ok := FilterPublicBrokerFrame(raw, "other", base(0)); ok {
 		t.Fatal("other node must drop")
+	}
+}
+
+func TestSanitizeTurnsReducesAgentParts(t *testing.T) {
+	turns := SanitizeTurns([]models.ReactMessage{
+		{Role: "agent", Text: "ok", Parts: []models.AcpPart{
+			{Kind: "tool", Title: "Read src/secret.ts", Status: "completed", Summary: "src/secret.ts", Input: "in", Output: "out"},
+			{Kind: "message", Text: "ok"},
+		}},
+		{Role: "human", Text: "hi", Parts: []models.AcpPart{{Kind: "message", Text: "x"}}},
+	})
+	if len(turns) != 2 || len(turns[0].Parts) != 2 || turns[1].Parts != nil {
+		t.Fatalf("turns: %+v", turns)
+	}
+	if turns[0].Parts[0] != (models.AcpPart{Kind: "tool", Title: "Read", Status: "completed"}) {
+		t.Fatalf("tool part: %+v", turns[0].Parts[0])
+	}
+	var many []models.AcpPart
+	for range maxPublicParts + 5 {
+		many = append(many, models.AcpPart{Kind: "message", Text: "m"})
+	}
+	if got := SanitizeParts(many); len(got) != maxPublicParts {
+		t.Fatalf("cap: %d", len(got))
+	}
+	if SanitizeParts([]models.AcpPart{{Kind: "x"}}) != nil {
+		t.Fatal("unknown kinds dropped")
 	}
 }

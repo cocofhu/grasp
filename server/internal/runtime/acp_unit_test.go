@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -1215,7 +1216,7 @@ func TestChatResultToEventsSharesAcpEventsFullThought(t *testing.T) {
 		t.Fatalf("len wrapper=%d shared=%d", len(viaWrapper), len(viaShared))
 	}
 	for i := range viaWrapper {
-		if viaWrapper[i] != viaShared[i] {
+		if !reflect.DeepEqual(viaWrapper[i], viaShared[i]) {
 			t.Fatalf("event[%d] diverged: wrapper=%+v shared=%+v", i, viaWrapper[i], viaShared[i])
 		}
 	}

@@ -286,6 +286,11 @@ const turns = computed<ClarifyTurn[]>(() =>
     if (liveRef) mapped.live = liveRef
     const tools = (turn.tools || []).filter((x) => x?.title).map((x) => ({ title: x.title as string, status: x.status }))
     if (mapped.role === 'agent' && tools.length) mapped.tools = tools
+    if (mapped.role === 'agent' && turn.parts?.length) {
+      mapped.parts = turn.parts
+        .filter((p) => p && (p.kind === 'thought' || p.kind === 'message' || p.kind === 'tool'))
+        .map((p) => (p.kind === 'tool' ? { kind: 'tool', title: p.title, status: p.status } : { kind: p.kind, text: p.text }))
+    }
     // Only attach structured prompts when present so plain turns stay unchanged.
     if (turn.questions?.length) {
       mapped.questions = turn.questions.map((q) => ({
@@ -732,12 +737,12 @@ function syncChatQueueFromPreview() {
 }
 
 function toAcpEvents(
-  events: { kind?: string; text?: string }[] | undefined,
+  events: { kind?: string; text?: string; parts?: AcpEvent['parts'] }[] | undefined,
 ): AcpEvent[] {
   if (!events?.length) return []
   return events
-    .filter((e) => (e.kind === 'message' || e.kind === 'thought') && e.text)
-    .map((e) => ({ t: 0, kind: e.kind as AcpEvent['kind'], text: e.text }))
+    .filter((e) => ((e.kind === 'message' || e.kind === 'thought') && e.text) || (e.kind === 'timeline' && e.parts?.length))
+    .map((e) => (e.kind === 'timeline' ? { t: 0, kind: 'timeline', parts: e.parts } : { t: 0, kind: e.kind as AcpEvent['kind'], text: e.text }))
 }
 
 let pendingPublicAcp: AcpEvent[] | null = null

@@ -189,7 +189,7 @@ func TestSnapshotEvents(t *testing.T) {
 		{Kind: models.AcpKindTurnEnd, Status: "completed"},
 	}
 	got = p.snapshotEvents(context.Background(), sb, bracketed)
-	if len(got) != 3 || got[0].Text != "Q" || got[1].Text != "hello-snap" || got[2].Kind != models.AcpKindTurnEnd {
+	if len(got) != 4 || got[0].Text != "Q" || got[1].Text != "hello-snap" || got[2].Kind != models.AcpKindTimeline || got[3].Kind != models.AcpKindTurnEnd {
 		t.Fatalf("expected re-bracketed snapshot, got %+v", got)
 	}
 }

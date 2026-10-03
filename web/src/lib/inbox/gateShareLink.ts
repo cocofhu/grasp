@@ -1,5 +1,5 @@
 import type { LiveCtx, LiveEvent } from '@/lib/inbox/liveVariants'
-import type { Artifact, ClarifyImage, ClarifyInboxItem, GateInboxItem, GateShareInboxStatus, InboxItem, ReactForm, ReactQuestion } from '@/lib/shared/types'
+import type { AgentPart, Artifact, ClarifyImage, ClarifyInboxItem, GateInboxItem, GateShareInboxStatus, InboxItem, ReactForm, ReactQuestion } from '@/lib/shared/types'
 import {
   GRASP_STORAGE_KEYS,
   LEGACY_STORAGE_KEYS,
@@ -304,6 +304,8 @@ export type PublicGatePreviewTurn = {
   live?: { sid: string; op: string; variant?: number }
   /** Agent tool calls as bare names (server-sanitized). Absent when none. */
   tools?: Array<{ title?: string; status?: string }>
+  /** Agent steps in order; tool steps carry bare names only (server-sanitized). */
+  parts?: AgentPart[]
 }
 
 export type PublicGateQueueItem = {
@@ -374,8 +376,9 @@ export type PublicGatePreview = {
 }
 
 export type PublicGateLiveEvent = {
-  kind: 'message' | 'thought' | string
+  kind: 'message' | 'thought' | 'timeline' | string
   text?: string
+  parts?: AgentPart[]
 }
 
 export type PublicPreviewPort = {

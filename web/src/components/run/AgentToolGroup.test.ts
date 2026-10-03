@@ -91,3 +91,33 @@ describe('AgentToolGroup expanded prop', () => {
     expect(w.find('[data-testid="agent-tool-list"]').exists()).toBe(true)
   })
 })
+
+describe('AgentToolGroup details', () => {
+  it('shows the summary and expands a call with input/output on its own', async () => {
+    const w = mountGroup([
+      { title: 'Shell', status: 'completed', summary: 'curl -sS http://x', input: '{\n  "command": "curl"\n}', output: 'ok' },
+      { title: 'Read', status: 'completed', summary: 'a.ts' },
+    ])
+    await w.find('[data-testid="agent-tool-group-head"]').trigger('click')
+    expect(w.findAll('[data-testid="agent-tool-summary"]').map((s) => s.text())).toEqual(['curl -sS http://x', 'a.ts'])
+    const toggles = w.findAll('[data-testid="agent-tool-row-toggle"]')
+    expect(toggles).toHaveLength(1)
+    expect(toggles[0]!.attributes('aria-expanded')).toBe('false')
+    expect(w.find('[data-testid="agent-tool-detail"]').exists()).toBe(false)
+    await toggles[0]!.trigger('click')
+    expect(toggles[0]!.attributes('aria-expanded')).toBe('true')
+    expect(w.find('[data-testid="agent-tool-input"]').text()).toContain('"command": "curl"')
+    expect(w.find('[data-testid="agent-tool-output"]').text()).toBe('ok')
+    expect(w.text()).toContain('入参')
+    await toggles[0]!.trigger('click')
+    expect(w.find('[data-testid="agent-tool-detail"]').exists()).toBe(false)
+  })
+
+  it('a call with only output shows just that section', async () => {
+    const w = mountGroup([{ title: 'Shell', output: 'done' }])
+    await w.find('[data-testid="agent-tool-group-head"]').trigger('click')
+    await w.find('[data-testid="agent-tool-row-toggle"]').trigger('click')
+    expect(w.find('[data-testid="agent-tool-input"]').exists()).toBe(false)
+    expect(w.find('[data-testid="agent-tool-output"]').text()).toBe('done')
+  })
+})

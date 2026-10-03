@@ -34,6 +34,9 @@ type PreviewTurn struct {
 	Live *models.LiveRef `json:"live,omitempty"`
 	// Tools are the agent turn's tool calls as bare names (SanitizeToolTitle).
 	Tools []models.ReactTool `json:"tools,omitempty"`
+	// Parts is the agent turn's timeline with tool steps reduced like Tools
+	// (no summary, input or output).
+	Parts []models.AcpPart `json:"parts,omitempty"`
 }
 
 // PreviewQuestion is a leak-free ask_question card (id, prompt, options).
@@ -399,6 +402,9 @@ func SanitizeTurnsFrom(msgs []models.ReactMessage, imageBase int) ([]PreviewTurn
 		if role == "agent" && len(m.Tools) > 0 {
 			turn.Tools = sanitizeTools(m.Tools)
 		}
+		if role == "agent" {
+			turn.Parts = SanitizeParts(m.Parts)
+		}
 		// Keep a text-less turn when it still carries a choice card or form.
 		if turn.Text == "" && len(turn.Annotations) == 0 && len(turn.Images) == 0 && !turn.Interrupted && len(turn.Questions) == 0 && len(turn.Forms) == 0 {
 			continue
@@ -409,6 +415,35 @@ func SanitizeTurnsFrom(msgs []models.ReactMessage, imageBase int) ([]PreviewTurn
 		return nil, idx
 	}
 	return out, idx
+}
+
+// maxPublicParts caps the timeline steps one public turn or frame carries.
+const maxPublicParts = 120
+
+// SanitizeParts keeps thought/message steps verbatim (as the live rails do)
+// and reduces tool steps to a bare name and status.
+func SanitizeParts(parts []models.AcpPart) []models.AcpPart {
+	if len(parts) == 0 {
+		return nil
+	}
+	out := make([]models.AcpPart, 0, min(len(parts), maxPublicParts))
+	for _, p := range parts {
+		if len(out) == maxPublicParts {
+			break
+		}
+		switch p.Kind {
+		case "tool":
+			out = append(out, models.AcpPart{Kind: "tool", Title: SanitizeToolTitle(p.Title), Status: SanitizeToolStatus(p.Status)})
+		case "thought", "message":
+			if strings.TrimSpace(p.Text) != "" {
+				out = append(out, models.AcpPart{Kind: p.Kind, Text: p.Text})
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func sanitizeTools(tools []models.ReactTool) []models.ReactTool {

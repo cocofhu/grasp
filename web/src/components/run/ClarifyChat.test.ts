@@ -125,6 +125,33 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
+  it('renders a stored reply as its ordered timeline instead of merged rails', () => {
+    const wrapper = mountChat({
+      done: true,
+      turns: [{
+        role: 'agent',
+        text: 'done',
+        thought: 'look',
+        tools: [{ title: 'Shell', status: 'completed' }],
+        parts: [
+          { kind: 'thought', text: 'look' },
+          { kind: 'tool', title: 'Shell', status: 'completed', summary: 'ls -la' },
+          { kind: 'message', text: 'found it' },
+          { kind: 'tool', title: 'Write', status: 'completed' },
+          { kind: 'message', text: 'done' },
+        ],
+        at: '2026-07-18T00:00:00Z',
+      }],
+    })
+    const tl = wrapper.get('[data-testid="agent-timeline"]')
+    expect(Array.from(tl.element.children).map((el) => el.getAttribute('data-testid'))).toEqual([
+      'agent-timeline-thought', 'agent-tool-group', 'clarify-agent-message', 'agent-tool-group', 'clarify-agent-message',
+    ])
+    expect(wrapper.findAll('[data-testid="clarify-agent-message"]').map((m) => m.text())).toEqual(['found it', 'done'])
+    expect(wrapper.findAll('[data-testid="agent-tool-group"]')).toHaveLength(2)
+    wrapper.unmount()
+  })
+
   it('shows closed hint when inactive', () => {
     const wrapper = mountChat({ active: false })
     expect(wrapper.text()).toMatch(/已关闭|不可再回复/)

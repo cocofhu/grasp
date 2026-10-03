@@ -698,7 +698,8 @@ export interface NodeTypeDef {
 export interface AcpEvent {
   t: number // seconds offset
   // prompt / turn_end bracket each persisted chat turn (LLM 过程 transcript only).
-  kind: 'message' | 'thought' | 'plan' | 'tool_call' | 'commands' | 'segment' | 'prompt' | 'turn_end'
+  // timeline: the open agent row's thought / tool / message steps in order (parts).
+  kind: 'message' | 'thought' | 'plan' | 'tool_call' | 'commands' | 'segment' | 'prompt' | 'turn_end' | 'timeline'
   title?: string
   text?: string
   status?: 'running' | 'completed' | 'failed'
@@ -710,6 +711,22 @@ export interface AcpEvent {
   usage?: TokenUsage | null
   /** prompt text was cut (storage cap, or a preview on run detail). */
   truncated?: boolean
+  /** kind=timeline only. */
+  parts?: AgentPart[]
+}
+
+/**
+ * One step of an agent reply in arrival order. Tool steps carry a redacted
+ * one-line summary and truncated input/output (absent on public pages).
+ */
+export interface AgentPart {
+  kind: 'thought' | 'message' | 'tool'
+  text?: string
+  title?: string
+  status?: string
+  summary?: string
+  input?: string
+  output?: string
 }
 
 // 一次内置 MCP 工具调用的记录(入参/结果均已截断,仅供调试)。
@@ -900,12 +917,17 @@ export interface ClarifyTurn {
   thought?: string
   /** Tool calls of this agent turn (name + status only; live ACP or persisted). */
   tools?: AgentTool[]
+  /** Thought / tool / message steps in order; rendered instead of the rails when set. */
+  parts?: AgentPart[]
 }
 
 /** One tool call shown in the folded tool row of an agent turn. */
 export interface AgentTool {
   title: string
   status?: string
+  summary?: string
+  input?: string
+  output?: string
 }
 
 export interface Gate {

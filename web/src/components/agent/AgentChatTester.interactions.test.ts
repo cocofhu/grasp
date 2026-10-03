@@ -129,6 +129,42 @@ describe('AgentChatTester interactions', () => {
     missing.unmount()
   })
 
+  it('shows tool summary and masked details in arrival order', async () => {
+    const w = mountTester()
+    const vm = w.vm as any
+    vm.status = 'starting'
+    vm.openWs(3)
+    socket!.onopen?.()
+    await flushPromises()
+    vm.input = 'go'
+    vm.send()
+    frame('turn_begin')
+    const up = (update: Record<string, unknown>) => frame('acp', { data: { type: 'session_update', update } })
+    up({ sessionUpdate: 'agent_thought_chunk', content: { text: 'plan' } })
+    up({ sessionUpdate: 'tool_call', toolCallId: 'a', title: 'Shell', status: 'in_progress', rawInput: { command: 'curl  -sS\n http://x', env: { API_KEY: 'k1' } } })
+    up({ sessionUpdate: 'tool_call_update', toolCallId: 'a', status: 'completed', rawOutput: { stdout: 'ok', stderr: 'warn' } })
+    up({ sessionUpdate: 'tool_call', toolCallId: 'b', title: 'Read', rawInput: 'a.ts', rawOutput: { content: [{ text: 'body' }] } })
+    up({ sessionUpdate: 'agent_message_chunk', content: { text: 'found ' } })
+    up({ sessionUpdate: 'agent_message_chunk', content: { text: 'it' } })
+    up({ sessionUpdate: 'tool_call', toolCallId: 'c', title: 'Noop', rawInput: {}, rawOutput: [] })
+    await flushPromises()
+    const turn = vm.turns[vm.turns.length - 1]
+    expect(turn.steps.map((s: any) => s.kind)).toEqual(['thought', 'tool', 'tool', 'message', 'tool'])
+    expect(turn.steps[3].text).toBe('found it')
+    expect(turn.tools[0]).toMatchObject({ summary: 'curl -sS http://x', output: 'ok\nwarn' })
+    expect(turn.tools[0].input).toContain('"API_KEY": "****"')
+    expect(turn.tools[0].input).not.toContain('k1')
+    expect(turn.tools[1]).toMatchObject({ input: 'a.ts', output: 'body' })
+    expect(turn.tools[1].summary).toBeUndefined()
+    expect(turn.tools[2].input).toBeUndefined()
+    expect(turn.tools[2].output).toBeUndefined()
+    const tl = w.get('[data-testid="agent-timeline"]')
+    expect(Array.from(tl.element.children).map((el) => el.getAttribute('data-testid'))).toEqual([
+      'agent-timeline-thought', 'agent-tool-group', 'tester-agent-message', 'agent-tool-group',
+    ])
+    expect(w.find('[data-testid="agent-chat-generating"]').exists()).toBe(false)
+  })
+
   it('queues sends, applies live ACP frames, cancels, and handles socket events', async () => {
     const w = mountTester()
     const vm = w.vm as any
@@ -156,7 +192,9 @@ describe('AgentChatTester interactions', () => {
     expect(vm.turns[1].tools[0]).toMatchObject({ id: 't1', title: 'Read Done', status: 'completed' })
     expect(w.find('[data-testid="agent-tool-group"]').attributes('data-state')).toBe('done')
     expect(w.find('[data-testid="agent-tool-group-names"]').text()).toBe('Read Done')
-    expect(w.find('[data-testid="stream-md"]').text()).toContain('Hello')
+    expect(w.find('[data-testid="tester-agent-message"]').text()).toContain('Hello')
+    const steps = w.find('[data-testid="agent-timeline"]').findAll('[data-testid="tester-agent-message"], [data-testid="agent-timeline-thought"], [data-testid="agent-tool-group"]')
+    expect(steps.map((s) => s.attributes('data-testid'))).toEqual(['tester-agent-message', 'agent-timeline-thought', 'agent-tool-group'])
     frame('turn_done')
     expect(vm.status).toBe('ready')
     await flushPromises()

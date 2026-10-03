@@ -88,6 +88,63 @@ type AcpEvent struct {
 	Usage *TokenUsage `json:"usage,omitempty"`
 	// Truncated marks a prompt whose Text was cut (storage cap or DTO preview).
 	Truncated bool `json:"truncated,omitempty"`
+	// Parts is set on kind=timeline only: the open agent row as it happened
+	// (thought, tool and message steps interleaved).
+	Parts []AcpPart `json:"parts,omitempty"`
+}
+
+// AcpKindTimeline carries the ordered steps of the open agent row. It follows
+// the flat thought/tool_call/message events, which stay for older consumers.
+const AcpKindTimeline = "timeline"
+
+// AcpPart is one step of an agent reply.
+type AcpPart struct {
+	Kind string `json:"kind"` // thought|message|tool
+	Text string `json:"text,omitempty"`
+	// Tool steps only. Summary is the redacted one-line argument (command,
+	// path, URL…); Input / Output are redacted, truncated details.
+	Title   string `json:"title,omitempty"`
+	Status  string `json:"status,omitempty"`
+	Summary string `json:"summary,omitempty"`
+	Input   string `json:"input,omitempty"`
+	Output  string `json:"output,omitempty"`
+}
+
+// PartsForReply returns the steps of the last timeline event (the row the
+// tools and narration of a persisted agent turn belong to), or nil. When the
+// stored reply text differs from the streamed narration (the engine cleaned
+// it), message steps are replaced by one final step carrying text, so the
+// timeline never shows what the reply itself dropped.
+func PartsForReply(events []AcpEvent, text string) []AcpPart {
+	var parts []AcpPart
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Kind == AcpKindTimeline {
+			parts = events[i].Parts
+			break
+		}
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	var said strings.Builder
+	for _, p := range parts {
+		if p.Kind == "message" {
+			said.WriteString(p.Text)
+		}
+	}
+	if strings.TrimSpace(said.String()) == strings.TrimSpace(text) {
+		return parts
+	}
+	out := make([]AcpPart, 0, len(parts)+1)
+	for _, p := range parts {
+		if p.Kind != "message" {
+			out = append(out, p)
+		}
+	}
+	if strings.TrimSpace(text) != "" {
+		out = append(out, AcpPart{Kind: "message", Text: text})
+	}
+	return out
 }
 
 // Transcript-only event kinds appended around each persisted chat turn.

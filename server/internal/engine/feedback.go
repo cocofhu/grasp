@@ -158,7 +158,7 @@ func (e *Engine) reviewFeedbackEvent(s *reviewSession, item *reviewQueueItem, it
 		AgentSummary:   strings.TrimSpace(agentSummary),
 		Annotations:    item.Annotations,
 		Attachments:    item.Images,
-		Turns:          []models.ReactMessage{human, agent},
+		Turns:          []models.ReactMessage{human, withoutParts(agent)},
 		Targets:        targets,
 		Interrupted:    interrupted,
 		OccurredAt:     time.Now(),
@@ -189,7 +189,7 @@ func (e *Engine) clarifyFeedbackEvent(s *reviewSession, item *reviewQueueItem, i
 		AgentSummary:   strings.TrimSpace(agentSummary),
 		Annotations:    item.Annotations,
 		Attachments:    item.Images,
-		Turns:          []models.ReactMessage{human, agent},
+		Turns:          []models.ReactMessage{human, withoutParts(agent)},
 		Interrupted:    interrupted,
 		OccurredAt:     time.Now(),
 	}
@@ -233,7 +233,7 @@ func (e *Engine) confirmRoundFeedbackEvent(runID, nodeID, kind string, iteration
 		AgentSummary:   strings.TrimSpace(agentSummary),
 		Annotations:    human.Annotations,
 		Attachments:    human.Images,
-		Turns:          []models.ReactMessage{human, agent},
+		Turns:          []models.ReactMessage{human, withoutParts(agent)},
 		Detail:         map[string]any{"confirm": true},
 		OccurredAt:     time.Now(),
 	}
@@ -253,7 +253,7 @@ func (e *Engine) recordAutoClarifyRound(runID, nodeID string, iteration int, hum
 		Actor:      "system",
 		Action:     "auto_answer",
 		Text:       human.Text,
-		Turns:      []models.ReactMessage{human, agent},
+		Turns:      []models.ReactMessage{human, withoutParts(agent)},
 		IndexOnly:  true,
 		OccurredAt: time.Now(),
 	})
@@ -454,4 +454,11 @@ func (e *Engine) nodeMeta(runID string) (labels, types map[string]string) {
 		types[n.ID] = n.Type
 	}
 	return labels, types
+}
+
+// withoutParts drops the chat timeline (tool inputs/outputs) from a turn kept
+// in the feedback record; the reply text and tool names stay.
+func withoutParts(m models.ReactMessage) models.ReactMessage {
+	m.Parts = nil
+	return m
 }

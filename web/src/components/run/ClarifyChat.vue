@@ -6,6 +6,7 @@ import ComposerShell from './ComposerShell.vue'
 import ClarifyDemoFrame from './ClarifyDemoFrame.vue'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
 import AgentToolGroup from './AgentToolGroup.vue'
+import AgentTimeline from './AgentTimeline.vue'
 import StreamMarkdown from './StreamMarkdown.vue'
 import AnnotationChip from './AnnotationChip.vue'
 import LiveVariantCard from './LiveVariantCard.vue'
@@ -435,81 +436,96 @@ const {
             >
               {{ translate('pages.clarify.outputting') }}
             </div>
-            <!-- Thought: open while thought-only; default collapsed once message starts -->
-            <details
-              v-if="t.thought"
-              class="mb-2 w-full rounded-md border border-line bg-base/60 text-[11.5px] text-txt3"
-              data-testid="clarify-thought"
-              :open="isThoughtOpen(i, t)"
-              @toggle="onThoughtToggle(i, $event)"
+            <!-- Steps in arrival order (thought / tools / message), like the persisted timeline -->
+            <AgentTimeline
+              v-if="t.parts?.length && !isRetryableFailedAgent(t)"
+              :parts="t.parts"
+              :streaming="!!t.streaming"
+              :completed="showTurnCompleted(t)"
+              :interrupted="!!t.interrupted"
+              message-test-id="clarify-agent-message"
             >
-              <summary
-                class="flex cursor-pointer select-none items-center gap-1.5 px-2.5 py-1.5 text-txt3 hover:text-txt2"
-                data-testid="clarify-thought-summary"
+              <template #caret>
+                <span class="clarify-stream-caret" data-testid="clarify-stream-caret" aria-hidden="true" />
+              </template>
+            </AgentTimeline>
+            <template v-else>
+              <!-- Thought: open while thought-only; default collapsed once message starts -->
+              <details
+                v-if="t.thought"
+                class="mb-2 w-full rounded-md border border-line bg-base/60 text-[11.5px] text-txt3"
+                data-testid="clarify-thought"
+                :open="isThoughtOpen(i, t)"
+                @toggle="onThoughtToggle(i, $event)"
               >
-                <ThoughtSummaryStatus
-                  :busy="!!t.streaming"
-                  :completed="showTurnCompleted(t)"
-                  :interrupted="!!t.interrupted"
+                <summary
+                  class="flex cursor-pointer select-none items-center gap-1.5 px-2.5 py-1.5 text-txt3 hover:text-txt2"
+                  data-testid="clarify-thought-summary"
+                >
+                  <ThoughtSummaryStatus
+                    :busy="!!t.streaming"
+                    :completed="showTurnCompleted(t)"
+                    :interrupted="!!t.interrupted"
+                  />
+                </summary>
+                <div class="whitespace-pre-wrap break-words border-t border-dashed border-line px-2.5 pb-2 pt-1.5 font-mono leading-5 [overflow-wrap:anywhere]">{{ agentThoughtDisplay(t, i) }}</div>
+              </details>
+              <AgentToolGroup v-if="t.tools?.length" :tools="t.tools" :busy="!!t.streaming" />
+              <!-- Message body + streaming caret -->
+              <div
+                v-if="agentHasMessage(t) && !isRetryableFailedAgent(t)"
+                class="md rounded-lg border border-line bg-elevated px-3 py-2 text-[13px] leading-relaxed text-txt"
+                data-testid="clarify-agent-message"
+              >
+                <StreamMarkdown v-if="t.streaming" :blocks="liveStreamBlocks" /><span
+                  v-else
+                  v-html="renderMarkdown(t.text)"
+                /><span
+                  v-if="t.streaming"
+                  class="clarify-stream-caret"
+                  data-testid="clarify-stream-caret"
+                  aria-hidden="true"
                 />
-              </summary>
-              <div class="whitespace-pre-wrap break-words border-t border-dashed border-line px-2.5 pb-2 pt-1.5 font-mono leading-5 [overflow-wrap:anywhere]">{{ agentThoughtDisplay(t, i) }}</div>
-            </details>
-            <AgentToolGroup v-if="t.tools?.length" :tools="t.tools" :busy="!!t.streaming" />
-            <!-- Message body + streaming caret -->
-            <div
-              v-if="agentHasMessage(t) && !isRetryableFailedAgent(t)"
-              class="md rounded-lg border border-line bg-elevated px-3 py-2 text-[13px] leading-relaxed text-txt"
-              data-testid="clarify-agent-message"
-            >
-              <StreamMarkdown v-if="t.streaming" :blocks="liveStreamBlocks" /><span
-                v-else
-                v-html="renderMarkdown(t.text)"
-              /><span
-                v-if="t.streaming"
-                class="clarify-stream-caret"
-                data-testid="clarify-stream-caret"
-                aria-hidden="true"
-              />
-            </div>
-            <!-- Empty / failure card + cover-retry (plan g1.1 / g1.2) -->
-            <div
-              v-else-if="isRetryableFailedAgent(t)"
-              class="rounded-lg flex max-w-full flex-col gap-2 border border-err/35 bg-err/10 px-3 py-2.5"
-              role="alert"
-              data-testid="clarify-empty-fail"
-            >
-              <div class="flex items-start gap-2">
-                <Icon name="alert" :size="16" class="mt-0.5 shrink-0 text-err" />
-                <div class="min-w-0">
-                  <div class="text-[13px] font-semibold text-err">
-                    {{ translate('pages.clarify.emptyFailTitle') }}
-                  </div>
-                  <div
-                    class="mt-0.5 break-words text-xs text-txt2 [overflow-wrap:anywhere]"
-                    data-testid="clarify-empty-fail-desc"
-                  >
-                    {{
-                      emptyFailDisplayText(
-                        t,
-                        translate('pages.clarify.emptyFailDesc'),
-                      )
-                    }}
+              </div>
+              <!-- Empty / failure card + cover-retry (plan g1.1 / g1.2) -->
+              <div
+                v-else-if="isRetryableFailedAgent(t)"
+                class="rounded-lg flex max-w-full flex-col gap-2 border border-err/35 bg-err/10 px-3 py-2.5"
+                role="alert"
+                data-testid="clarify-empty-fail"
+              >
+                <div class="flex items-start gap-2">
+                  <Icon name="alert" :size="16" class="mt-0.5 shrink-0 text-err" />
+                  <div class="min-w-0">
+                    <div class="text-[13px] font-semibold text-err">
+                      {{ translate('pages.clarify.emptyFailTitle') }}
+                    </div>
+                    <div
+                      class="mt-0.5 break-words text-xs text-txt2 [overflow-wrap:anywhere]"
+                      data-testid="clarify-empty-fail-desc"
+                    >
+                      {{
+                        emptyFailDisplayText(
+                          t,
+                          translate('pages.clarify.emptyFailDesc'),
+                        )
+                      }}
+                    </div>
                   </div>
                 </div>
+                <div v-if="showFailRetry(t, i)">
+                  <button
+                    type="button"
+                    class="rounded-md border border-err/40 bg-transparent px-2.5 py-1 text-xs text-err hover:bg-err/15 disabled:opacity-50"
+                    :disabled="failRetryDisabled"
+                    data-testid="clarify-empty-fail-retry"
+                    @click="retryLastFailed"
+                  >
+                    {{ translate('pages.clarify.retry') }}
+                  </button>
+                </div>
               </div>
-              <div v-if="showFailRetry(t, i)">
-                <button
-                  type="button"
-                  class="rounded-md border border-err/40 bg-transparent px-2.5 py-1 text-xs text-err hover:bg-err/15 disabled:opacity-50"
-                  :disabled="failRetryDisabled"
-                  data-testid="clarify-empty-fail-retry"
-                  @click="retryLastFailed"
-                >
-                  {{ translate('pages.clarify.retry') }}
-                </button>
-              </div>
-            </div>
+            </template>
             <!-- Restrained completion footnote (Demo); never for interrupted/error -->
             <div
               v-if="showTurnCompleted(t)"
