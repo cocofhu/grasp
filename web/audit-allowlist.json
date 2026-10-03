@@ -1,0 +1,8 @@
+[
+  {
+    "id": "GHSA-vfj7-8cjw-p6xm",
+    "package": "braces",
+    "reason": "No patched release (all versions <=3.0.3). Reached only via devDependencies (tailwindcss 3 -> chokidar/micromatch, @vue/eslint-config-typescript -> fast-glob) that expand our own config globs at build/lint time; never bundled or fed untrusted patterns. Upstream fix: micromatch/braces#72.",
+    "expires": "2026-12-31"
+  }
+]
