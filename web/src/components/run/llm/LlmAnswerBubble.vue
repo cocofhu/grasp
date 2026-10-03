@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '../../ui/Icon.vue'
 import { renderMarkdown, renderMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
 import AgentToolGroup from '../AgentToolGroup.vue'
+import AgentTimeline from '../AgentTimeline.vue'
 import StreamMarkdown from '../StreamMarkdown.vue'
 import { fmtDuration } from '@/lib/shared/format'
 import { fmtTokenCount, tokenUsageTotal } from '@/lib/run/tokenUsage'
@@ -65,7 +66,7 @@ const durationSec = computed(() => {
   return Number.isFinite(d) && d >= 0 ? d : null
 })
 
-const hasReply = computed(() => props.turn.answers.some((a) => a.text || a.tools.length || a.plan || a.thought))
+const hasReply = computed(() => props.turn.answers.some((a) => a.text || a.tools.length || a.plan || a.thought || a.parts?.length))
 </script>
 
 <template>
@@ -90,7 +91,18 @@ const hasReply = computed(() => props.turn.answers.some((a) => a.text || a.tools
       <div class="rounded-xl min-w-0 space-y-2 rounded-tl-sm border border-line bg-surface px-3 py-2">
         <template v-for="(a, i) in turn.answers" :key="i">
           <div v-if="i > 0" class="border-t border-dashed border-line" />
-          <div v-if="a.thought && showThought" class="text-[12px]">
+          <AgentTimeline
+            v-if="a.parts?.length"
+            :parts="a.parts"
+            :streaming="turn.live"
+            :completed="!turn.live && !turn.failed"
+            :interrupted="!turn.live && turn.failed"
+            :hide-thought="!showThought"
+            :expanded="expandAll"
+            bare
+            message-test-id="llm-answer-text"
+          />
+          <div v-if="a.thought && showThought && !a.parts?.length" class="text-[12px]">
             <button
               type="button"
               class="inline-flex items-center gap-1 text-txt3 hover:text-txt2"
@@ -113,9 +125,9 @@ const hasReply = computed(() => props.turn.answers.some((a) => a.text || a.tools
             </button>
             <pre v-if="open.has(`${i}:plan`)" class="m-0 mt-1 whitespace-pre-wrap font-mono text-[11px] leading-5 text-txt2">{{ a.plan }}</pre>
           </div>
-          <AgentToolGroup v-if="a.tools.length" :tools="a.tools" :busy="turn.live" :expanded="expandAll" />
+          <AgentToolGroup v-if="a.tools.length && !a.parts?.length" :tools="a.tools" :busy="turn.live" :expanded="expandAll" />
           <div
-            v-if="a.text"
+            v-if="a.text && !a.parts?.length"
             class="md min-w-0 text-[13px] leading-6 text-txt"
             data-testid="llm-answer-text"
           >

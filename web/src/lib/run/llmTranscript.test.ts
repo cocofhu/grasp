@@ -71,6 +71,23 @@ describe('splitTurns', () => {
     expect(turns[1]!).toMatchObject({ failed: true, error: 'quota' })
   })
 
+  it('attaches the ordered timeline to the reply it belongs to', () => {
+    const parts = [{ kind: 'thought' as const, text: 't' }, { kind: 'tool' as const, title: 'Read' }, { kind: 'message' as const, text: 'm' }]
+    const turns = splitTurns([
+      ev({ kind: 'prompt', text: 'Q' }),
+      ev({ kind: 'message', text: 'first' }),
+      ev({ kind: 'segment' }),
+      ev({ kind: 'thought', text: 't' }),
+      ev({ kind: 'message', text: 'm' }),
+      ev({ kind: 'timeline', parts: [] }),
+      ev({ kind: 'timeline', parts }),
+      ev({ kind: 'turn_end' }),
+    ])
+    expect(turns[0]!.answers).toHaveLength(2)
+    expect(turns[0]!.answers[0]!.parts).toBeUndefined()
+    expect(turns[0]!.answers[1]!.parts).toEqual(parts)
+  })
+
   it('keeps legacy events (no prompt) as a single reply-only turn', () => {
     const turns = splitTurns([ev({ kind: 'thought', text: 't' }), ev({ kind: 'message', text: 'm' })])
     expect(turns).toHaveLength(1)

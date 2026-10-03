@@ -2952,6 +2952,8 @@
       "toolRunning": "Running",
       "toolFailed": "Failed",
       "toolDone": "Done",
+      "toolInput": "Input",
+      "toolOutput": "Output",
       "turnCompleted": "Done",
       "emptyFailTitle": "No output this turn",
       "emptyFailDesc": "The assistant returned no message. You can retry the last turn.",

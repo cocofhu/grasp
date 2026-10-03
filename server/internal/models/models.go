@@ -450,6 +450,9 @@ type ReactMessage struct {
 	// only, never input/output), so the chat keeps the folded tool row after
 	// the live stream is replaced by the persisted transcript.
 	Tools []ReactTool `json:"tools,omitempty"`
+	// Parts keep the agent turn's thought, tool and message steps in order
+	// so the chat shows the same timeline after a refresh. Empty on older rows.
+	Parts []AcpPart `json:"parts,omitempty"`
 }
 
 // ReactTool is one tool call summarised on a persisted agent turn.

@@ -3,7 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { renderMarkdown, renderMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
 import { createStreamMarkdownPreview } from '@/lib/shared/streamMarkdownPreview'
 import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
-import { sameTools, toolsFromAcp } from '@/lib/run/acpTools'
+import { partsFromAcp, sameParts, sameTools, toolsFromAcp } from '@/lib/run/acpTools'
 import { mergePersistedAndLiveTurns, persistedCompletedLiveHuman } from '@/lib/inbox/mergeClarifyLiveTurns'
 import {
   emptyFailDisplayText,
@@ -19,6 +19,7 @@ import {
   useSideBySide,
 } from '@/lib/inbox/clarifyDemo'
 import type {
+  AgentPart,
   AgentTool,
   ClarifyTurn,
   ClarifyImage,
@@ -1516,6 +1517,8 @@ function applyReviewFrame(frame: {
         existingHuman.annotations = annotations ?? existingHuman.annotations
         existingAgent.text = ''
         existingAgent.thought = ''
+        delete existingAgent.tools
+        delete existingAgent.parts
         existingAgent.questions = undefined
         existingAgent.interrupted = false
         existingAgent.streaming = true
@@ -1638,14 +1641,18 @@ function agentSegments(events: AcpEvent[]): { thought: string; message: string }
   return multi ? segs : null
 }
 
-/** Snapshot tools live on the open (last) agent row, matching the persisted transcript. */
-function setRowTools(row: ClarifyTurn, tools: AgentTool[]) {
-  if (sameTools(row.tools, tools)) return
-  if (tools.length) row.tools = tools
-  else delete row.tools
+/** Snapshot tools and steps live on the open (last) agent row, matching the persisted transcript. */
+function setRowTools(row: ClarifyTurn, tools: AgentTool[], parts?: AgentPart[]) {
+  if (!sameTools(row.tools, tools)) {
+    if (tools.length) row.tools = tools
+    else delete row.tools
+  }
+  if (sameParts(row.parts, parts)) return
+  if (parts?.length) row.parts = parts
+  else delete row.parts
 }
 
-function applyAgentSegments(segs: { thought: string; message: string }[], tools: AgentTool[]) {
+function applyAgentSegments(segs: { thought: string; message: string }[], tools: AgentTool[], parts?: AgentPart[]) {
   let first = liveAgentIdx.value
   while (first > 0 && liveTurns.value[first - 1]?.role === 'agent') first--
   while (liveTurns.value.length < first + segs.length) {
@@ -1665,7 +1672,7 @@ function applyAgentSegments(segs: { thought: string; message: string }[], tools:
     row.text = seg.message
     row.streaming = last
     row.handoff = !last
-    setRowTools(row, last ? tools : [])
+    setRowTools(row, last ? tools : [], last ? parts : undefined)
     if (last) {
       liveAgentIdx.value = first + i
       messageReveal.setTarget(seg.message)
@@ -1688,9 +1695,10 @@ function applyAcpEvents(events: AcpEvent[] | undefined, nodeId?: string): boolea
   const agent = liveTurns.value[liveAgentIdx.value]
   if (!agent) return false
   const tools = toolsFromAcp(events)
+  const parts = partsFromAcp(events)
   const segs = agentSegments(events)
   if (segs) {
-    applyAgentSegments(segs, tools)
+    applyAgentSegments(segs, tools, parts)
     void scrollBottom()
     return true
   }
@@ -1707,7 +1715,7 @@ function applyAcpEvents(events: AcpEvent[] | undefined, nodeId?: string): boolea
   // Keep thought / message on separate rails — never msg||thought overwrite.
   agent.thought = thought
   agent.text = msg
-  setRowTools(agent, tools)
+  setRowTools(agent, tools, parts)
   // Authority → reveal → markdown/text coalesce (not absolute snapshot → DOM).
   messageReveal.setTarget(msg)
   thoughtReveal.setTarget(thought)

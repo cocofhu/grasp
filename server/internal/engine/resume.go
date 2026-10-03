@@ -545,7 +545,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 			e.flushTokenUsage(runID, nodeID, liveWrap.Usage, liveWrap.UsageByModel)
 			if strings.TrimSpace(liveWrap.Msg) != "" {
 				conv.Messages = append(conv.Messages, models.ReactMessage{Role: "agent", Text: liveWrap.Msg,
-					At: time.Now().Format(time.RFC3339), OpID: liveWrap.OpID, Tools: models.ToolsFromEvents(liveWrap.Events)})
+					At: time.Now().Format(time.RFC3339), OpID: liveWrap.OpID, Tools: models.ToolsFromEvents(liveWrap.Events), Parts: models.PartsForReply(liveWrap.Events, liveWrap.Msg)})
 				logDB(e.db.Save(&conv), runID, "save Grasp Live git wrap-up")
 			}
 		}
@@ -560,7 +560,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	}
 	agentMsg := models.ReactMessage{Role: "agent", Text: t.Msg,
 		At: time.Now().Format(time.RFC3339), Questions: t.Questions, Forms: t.Forms,
-		Interrupted: t.Interrupted, OpID: t.OpID, Tools: models.ToolsFromEvents(replyEvents)}
+		Interrupted: t.Interrupted, OpID: t.OpID, Tools: models.ToolsFromEvents(replyEvents), Parts: models.PartsForReply(replyEvents, t.Msg)}
 	conv.Messages = append(conv.Messages, agentMsg)
 
 	// Auto-clarify: if this node runs in auto mode and the agent asked more

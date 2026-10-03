@@ -12,8 +12,9 @@ import (
 const PublicDialogueNodeID = "public-gate"
 
 // SanitizeLiveEvents keeps message/thought rails (text verbatim, so the drawer
-// matches the approval page) and tool_call rows reduced to a bare tool name
-// and status. Plan, segment and every tool argument/output are dropped.
+// matches the approval page), tool_call rows reduced to a bare tool name and
+// status, and timeline rows sanitized the same way (SanitizeParts). Plan,
+// segment and every tool argument/output are dropped.
 func SanitizeLiveEvents(events []models.AcpEvent) []PreviewLiveEvent {
 	if len(events) == 0 {
 		return nil
@@ -26,6 +27,12 @@ func SanitizeLiveEvents(events []models.AcpEvent) []PreviewLiveEvent {
 			if tools < models.MaxReactTools {
 				tools++
 				out = append(out, PreviewLiveEvent{Kind: kind, Title: SanitizeToolTitle(ev.Title), Status: SanitizeToolStatus(ev.Status)})
+			}
+			continue
+		}
+		if kind == models.AcpKindTimeline {
+			if parts := SanitizeParts(ev.Parts); len(parts) > 0 {
+				out = append(out, PreviewLiveEvent{Kind: kind, Parts: parts})
 			}
 			continue
 		}
@@ -312,10 +319,30 @@ func acpEventsFromAny(v any) []models.AcpEvent {
 			text, _ := am["text"].(string)
 			title, _ := am["title"].(string)
 			status, _ := am["status"].(string)
-			out = append(out, models.AcpEvent{Kind: kind, Text: text, Title: title, Status: status})
+			out = append(out, models.AcpEvent{Kind: kind, Text: text, Title: title, Status: status, Parts: partsFromAny(am["parts"])})
 		}
 		return out
 	default:
 		return nil
 	}
+}
+
+func partsFromAny(v any) []models.AcpPart {
+	arr, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]models.AcpPart, 0, len(arr))
+	for _, raw := range arr {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		kind, _ := m["kind"].(string)
+		text, _ := m["text"].(string)
+		title, _ := m["title"].(string)
+		status, _ := m["status"].(string)
+		out = append(out, models.AcpPart{Kind: kind, Text: text, Title: title, Status: status})
+	}
+	return out
 }

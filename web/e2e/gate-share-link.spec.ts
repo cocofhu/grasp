@@ -497,6 +497,54 @@ test.describe('human_gate 临时审批链接', () => {
     await expect(page.getByTestId('public-gate-root')).toContainText('已核对 research.json')
   })
 
+  test('未登录复审页按时间轴交替展示思考、工具与回复', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.route(/\/public\/gate-approvals\/preview$/, async (route) => {
+      await route.fulfill({
+        json: {
+          status: 'active',
+          kind: 'review',
+          title: '调研',
+          remainingSec: 3600,
+          nonce: 'nonce-e2e-timeline',
+          reactSessionAlive: true,
+          sessionBusy: false,
+          waiting: 0,
+          productKind: 'structured',
+          productName: 'research.json',
+          actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
+          structured: { name: 'research.json', title: '调研摘要', doc: { title: '调研摘要' } },
+          turns: [
+            { role: 'human', text: '核对一下数据来源', at: '2026-08-01T00:00:00Z' },
+            {
+              role: 'agent',
+              text: '来源已补齐',
+              at: '2026-08-01T00:00:01Z',
+              tools: [{ title: 'read_file', status: 'completed' }, { title: 'Shell', status: 'completed' }, { title: 'write', status: 'completed' }],
+              parts: [
+                { kind: 'thought', text: '先读 research.json 看现有来源' },
+                { kind: 'tool', title: 'read_file', status: 'completed' },
+                { kind: 'tool', title: 'Shell', status: 'completed' },
+                { kind: 'message', text: '发现两条来源缺少链接，我来补上。' },
+                { kind: 'tool', title: 'write', status: 'completed' },
+                { kind: 'message', text: '来源已补齐' },
+              ],
+            },
+          ],
+        },
+      })
+    })
+    await page.goto('/gate-share-link.html?scene=public-review&sharedBackend=1')
+    const timeline = page.getByTestId('agent-timeline')
+    await expect(timeline).toBeVisible({ timeout: 10_000 })
+    const order = await timeline.evaluate((el) => Array.from(el.children).map((c) => c.getAttribute('data-testid')))
+    expect(order).toEqual(['agent-timeline-thought', 'agent-tool-group', 'clarify-agent-message', 'agent-tool-group', 'clarify-agent-message'])
+    await expect(timeline.getByTestId('agent-tool-group').first()).toContainText('使用了 2 个工具')
+    await expect(timeline.getByTestId('clarify-agent-message').first()).toHaveText('发现两条来源缺少链接，我来补上。')
+    await expect(page.getByTestId('agent-tool-summary')).toHaveCount(0)
+    await page.getByTestId('public-gate-sidebar').screenshot({ path: 'test-results/screenshots/public-review-timeline.png' })
+  })
+
   test('公开应用预览页远程壳可确认且支持多端口', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/gate-share-link.html?scene=public-app-preview')

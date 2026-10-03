@@ -2952,6 +2952,8 @@
       "toolRunning": "运行中",
       "toolFailed": "失败",
       "toolDone": "完成",
+      "toolInput": "入参",
+      "toolOutput": "输出",
       "turnCompleted": "已完成",
       "emptyFailTitle": "本轮没有输出",
       "emptyFailDesc": "助手本轮没有返回正文，可重试上一轮。",

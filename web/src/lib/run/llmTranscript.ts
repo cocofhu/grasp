@@ -1,5 +1,6 @@
 import type {
   AcpEvent,
+  AgentPart,
   ClarifyImage,
   McpCall,
   NodeRunStatus,
@@ -34,6 +35,8 @@ export interface LlmAnswer {
   text?: string
   plan?: string
   tools: LlmToolStep[]
+  /** Thought / tool / message steps in order (kind=timeline); rendered instead of the rails. */
+  parts?: AgentPart[]
 }
 
 export interface LlmTurn {
@@ -113,7 +116,7 @@ function emptyAnswer(): LlmAnswer {
 }
 
 function answerHasContent(a: LlmAnswer): boolean {
-  return !!(a.thought || a.text || a.plan || a.tools.length)
+  return !!(a.thought || a.text || a.plan || a.tools.length || a.parts?.length)
 }
 
 function joinText(prev: string | undefined, next: string): string {
@@ -140,6 +143,9 @@ function applyReplyEvent(answers: LlmAnswer[], ev: AcpEvent) {
     }
     case 'plan':
       if (ev.text) cur.plan = ev.text
+      return
+    case 'timeline':
+      if (ev.parts?.length) cur.parts = ev.parts
       return
     case 'tool_call':
       cur.tools.push({

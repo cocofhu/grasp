@@ -72,6 +72,8 @@ type PreviewLiveEvent struct {
 	// Title / Status are set on tool_call rows only (bare tool name, see SanitizeToolTitle).
 	Title  string `json:"title,omitempty"`
 	Status string `json:"status,omitempty"`
+	// Parts is set on timeline rows only (see SanitizeParts).
+	Parts []models.AcpPart `json:"parts,omitempty"`
 }
 
 // PublicPreviewPort is the leak-free port entry for public app_preview remote / API iframe.

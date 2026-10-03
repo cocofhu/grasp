@@ -277,7 +277,7 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 		// summary turn) before the git wrap-up retires the session.
 		rec := rp.ReconcileOnConfirm(context.Background(), req)
 		agentMsg := models.ReactMessage{Role: "agent", Text: rec.Msg, At: time.Now().Format(time.RFC3339), OpID: rec.OpID,
-			Tools: models.ToolsFromEvents(rec.Events)}
+			Tools: models.ToolsFromEvents(rec.Events), Parts: models.PartsForReply(rec.Events, rec.Msg)}
 		if strings.TrimSpace(rec.Msg) != "" {
 			conv.Messages = append(conv.Messages, agentMsg)
 			logDB(e.db.Save(conv), runID, "save review confirm reconcile")
@@ -291,7 +291,7 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 		if strings.TrimSpace(t.Msg) != "" {
 			conv.Messages = append(conv.Messages, models.ReactMessage{
 				Role: "agent", Text: t.Msg, At: time.Now().Format(time.RFC3339), OpID: t.OpID,
-				Tools: models.ToolsFromEvents(t.Events),
+				Tools: models.ToolsFromEvents(t.Events), Parts: models.PartsForReply(t.Events, t.Msg),
 			})
 			logDB(e.db.Save(conv), runID, "save review git wrap-up")
 		}

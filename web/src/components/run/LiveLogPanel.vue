@@ -68,7 +68,7 @@ function toggleCall(i: number) {
 }
 
 // prompt / turn_end belong to the LLM transcript view, not the agent event log.
-const events = computed(() => props.events.filter((e) => e.kind !== 'prompt' && e.kind !== 'turn_end'))
+const events = computed(() => props.events.filter((e) => e.kind !== 'prompt' && e.kind !== 'turn_end' && e.kind !== 'timeline'))
 
 const hasTimelineContent = computed(
   () => events.value.length > 0 || !!(props.mcpCalls && props.mcpCalls.length),

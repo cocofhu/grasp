@@ -3,11 +3,11 @@ package services
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/textutil"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -601,16 +601,6 @@ var valueScanParentKeys = map[string]bool{
 	"message": true, "messages": true, "input": true, "inputs": true,
 }
 
-// sensitiveValueREs redact common embedded secret shapes inside free-text values.
-var sensitiveValueREs = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)\b(sk-[A-Za-z0-9_\-]{16,})\b`),
-	regexp.MustCompile(`(?i)\b(ghp_[A-Za-z0-9]{20,})\b`),
-	regexp.MustCompile(`(?i)\b(github_pat_[A-Za-z0-9_]{20,})\b`),
-	regexp.MustCompile(`(?i)\b(xox[baprs]-[A-Za-z0-9\-]{10,})\b`),
-	regexp.MustCompile(`(?i)\b(Bearer\s+[A-Za-z0-9\-_\.=]{16,})\b`),
-	regexp.MustCompile(`(?i)\b((?:api[_-]?key|password|passwd|secret|token)\s*[:=]\s*)([^\s"'\\]{6,})`),
-}
-
 // MaskAuditPayload deeply redacts sensitive fields and truncates oversized trees.
 func MaskAuditPayload(in map[string]any) map[string]any {
 	if in == nil {
@@ -665,7 +655,7 @@ func maskValue(v any, depth int, scanValues bool) any {
 	case string:
 		s := t
 		if scanValues {
-			s = redactSensitiveString(s)
+			s = textutil.RedactSecrets(s)
 		}
 		if len(s) > 4000 {
 			return s[:4000] + "…"
@@ -674,18 +664,6 @@ func maskValue(v any, depth int, scanValues bool) any {
 	default:
 		return v
 	}
-}
-
-func redactSensitiveString(s string) string {
-	out := s
-	for _, re := range sensitiveValueREs {
-		if re.NumSubexp() >= 2 {
-			out = re.ReplaceAllString(out, "${1}"+SecretMask)
-		} else {
-			out = re.ReplaceAllString(out, SecretMask)
-		}
-	}
-	return out
 }
 
 func isSensitiveKey(key string) bool {

@@ -62,6 +62,9 @@ type ChatResult struct {
 	// Segments are thought/narration sealed at a turn_segment boundary. The
 	// fields above stay the segment still being written.
 	Segments []ChatSegment `json:"-"`
+	// Timeline is the open segment's thought / narration / tool steps in the
+	// order they arrived (AcpEvents reports it as one kind=timeline event).
+	Timeline []ChatStep `json:"-"`
 
 	// Prompt / ImageCount / StartedAt / EndedAt describe the request side of
 	// the turn. Stamped by the runtime after the turn so the persisted
@@ -88,6 +91,7 @@ func (r *ChatResult) sealSegment() {
 	r.Segments = append(r.Segments, ChatSegment{Thought: r.Thought, Narration: r.Narration})
 	r.Thought = ""
 	r.Narration = ""
+	r.Timeline = nil
 }
 
 // appendErrorText records a provider/bridge error body on the turn. Multiple
@@ -226,8 +230,8 @@ func isToolKind(k string) bool {
 }
 
 // AcpEvents flattens an aggregated ChatResult into the ordered AcpEvent
-// timeline (thought → plan → tool calls → narration) the run/sandbox UIs
-// render. Single conversion shared by the live turn, the sandbox event-log
+// timeline (thought → plan → tool calls → narration, then the interleaved
+// kind=timeline steps of the open row) the run/sandbox UIs render. Single conversion shared by the live turn, the sandbox event-log
 // reader, and the interactive console — there is one source of truth for the
 // event log: the sandbox itself.
 func (r *ChatResult) AcpEvents() []models.AcpEvent {
@@ -273,6 +277,10 @@ func (r *ChatResult) AcpEvents() []models.AcpEvent {
 	}
 	if r.Narration != "" {
 		ev = append(ev, models.AcpEvent{T: t, Kind: "message", Text: textutil.TruncateBytes(r.Narration, 8000, "…(truncated)")})
+		t++
+	}
+	if tl := r.timelineEvent(t); tl != nil {
+		ev = append(ev, *tl)
 	}
 	return ev
 }
@@ -285,10 +293,12 @@ func dispatchSessionUpdate(kind string, flat map[string]any, result *ChatResult)
 	case kind == "agent_message_chunk":
 		if t := extractContentText(flat["content"]); t != "" {
 			result.Narration += t
+			result.addText("message", t)
 		}
 	case kind == "agent_thought_chunk":
 		if t := extractContentText(flat["content"]); t != "" {
 			result.Thought += t
+			result.addText("thought", t)
 		}
 	case kind == "plan":
 		if entries := extractPlanEntries(flat); len(entries) > 0 {
@@ -345,6 +355,7 @@ func applyToolCall(flat map[string]any, result *ChatResult) {
 		RawInput:  rawIn,
 		RawOutput: rawOut,
 	})
+	result.addTool(len(result.ToolCalls) - 1)
 }
 
 func extractContentText(v any) string {

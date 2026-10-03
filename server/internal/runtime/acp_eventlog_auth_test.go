@@ -46,15 +46,15 @@ func TestRuntimeEventHistoryAuthAndRetry(t *testing.T) {
 	p := &acpProvider{live: map[string]*sandbox.Sandbox{"r|n": sb}}
 	ctx := context.Background()
 	events, live, err := p.LiveNodeEvents(ctx, "r", "n")
-	if err != nil || !live || len(events) != 1 || events[0].Text != "hello-snap" {
+	if err != nil || !live || len(events) != 2 || events[0].Text != "hello-snap" || events[1].Kind != models.AcpKindTimeline {
 		t.Fatalf("live events=%+v live=%v err=%v", events, live, err)
 	}
 	page, _, _, live, err := p.LiveNodeEventsPage(ctx, "r", "n", "", 20)
-	if err != nil || !live || len(page) != 1 || page[0].Text != "hello-snap" {
+	if err != nil || !live || len(page) != 2 || page[0].Text != "hello-snap" {
 		t.Fatalf("live page=%+v live=%v err=%v", page, live, err)
 	}
 	fallback := []models.AcpEvent{{Kind: "message", Text: "streamed fallback"}}
-	if snap := p.snapshotEvents(ctx, sb, fallback); len(snap) != 1 || snap[0].Text != "hello-snap" {
+	if snap := p.snapshotEvents(ctx, sb, fallback); len(snap) != 2 || snap[0].Text != "hello-snap" {
 		t.Fatalf("persisted snapshot=%+v", snap)
 	}
 	if logins.Load() != 3 {
@@ -74,7 +74,7 @@ func TestRuntimeEventHistoryAuthAndRetry(t *testing.T) {
 		t.Fatalf("fallback lost=%+v", snap)
 	}
 	sb.Password = "runtime-token"
-	if events, live, err := p.LiveNodeEvents(ctx, "r", "n"); err != nil || !live || len(events) != 1 {
+	if events, live, err := p.LiveNodeEvents(ctx, "r", "n"); err != nil || !live || len(events) != 2 {
 		t.Fatalf("retry events=%v live=%v err=%v", events, live, err)
 	}
 }
@@ -87,7 +87,7 @@ func TestTimelineUsesAuthenticatedReaderWithoutRepeatedLogin(t *testing.T) {
 		timeline.refreshFromReader(context.Background(), "r", "n", reader)
 	}
 	entry, ok := timeline.get("r", "n")
-	if !ok || len(entry.events) != 1 || entry.events[0].Text != "hello-snap" {
+	if !ok || len(entry.events) != 2 || entry.events[0].Text != "hello-snap" {
 		t.Fatalf("timeline=%+v ok=%v", entry, ok)
 	}
 	if logins.Load() != 1 {
@@ -95,7 +95,7 @@ func TestTimelineUsesAuthenticatedReaderWithoutRepeatedLogin(t *testing.T) {
 	}
 	timeline.refreshFromSandbox(context.Background(), "r", "n", sb.Host, sb.Port, "invalid-token")
 	entry, ok = timeline.get("r", "n")
-	if !ok || len(entry.events) != 1 || entry.events[0].Text != "hello-snap" {
+	if !ok || len(entry.events) != 2 || entry.events[0].Text != "hello-snap" {
 		t.Fatalf("auth failure erased timeline=%+v ok=%v", entry, ok)
 	}
 }
@@ -119,7 +119,7 @@ func TestRuntimeRegistersAuthenticatedTimeline(t *testing.T) {
 			deadline := time.Now().Add(2 * time.Second)
 			for {
 				if entry, ok := p.timeline.get("r", "n"); ok {
-					if len(entry.events) != 1 || entry.events[0].Text != "hello-snap" {
+					if len(entry.events) != 2 || entry.events[0].Text != "hello-snap" {
 						t.Fatalf("timeline=%+v", entry)
 					}
 					break
