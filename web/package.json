@@ -14,6 +14,7 @@
     "lint": "eslint .",
     "assert:novnc-http": "node scripts/assert-no-novnc-secure-context.mjs",
     "assert:brand": "node ../scripts/assert-no-approving-brand.mjs",
+    "audit:check": "node scripts/audit-check.mjs",
     "measure:lcp": "node scripts/measure-lcp.mjs",
     "measure:lcp2": "node scripts/measure-lcp2.mjs",
     "build:page-control": "node scripts/build-page-control.mjs",

@@ -4,7 +4,7 @@
 # Residual-prone patterns (do not "boolean-sanitize" and assume taint is cleared):
 #   incomplete multi-char HTML strip, DOM reinterpret after encode — see
 #   web/src/lib/highlightJson.test.ts and CONTRIBUTING.md "Security scans".
-# npm audit: high+ fails the job (web highs cleared via audit fix + overrides.minimatch).
+# npm audit: high+ fails the job unless allowlisted with an expiry (web/audit-allowlist.json).
 # gitleaks: fail-on-leak after .gitleaks.toml allowlist for documented placeholders.
 name: security
 
@@ -84,10 +84,11 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: npm audit (high+)
         # Hardened after web audit high=0 (audit fix + overrides.minimatch ^10.2.5).
+        # Unpatched advisories may be allowlisted with an expiry in web/audit-allowlist.json.
         # Use the official registry (mirror audit APIs are often unimplemented).
         env:
           npm_config_registry: https://registry.npmjs.org
-        run: npm audit --audit-level=high
+        run: npm run audit:check
 
   gitleaks:
     name: gitleaks

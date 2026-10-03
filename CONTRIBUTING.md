@@ -198,6 +198,10 @@ Workflow: `.github/workflows/security.yml` (push to `main`, every PR, weekly
 schedule). Jobs: CodeQL (go + javascript-typescript), `npm audit` (web, high+),
 gitleaks.
 
+- `npm audit` runs as `npm run audit:check` in `web/`. A high/critical advisory
+  with **no patched release** that only reaches dev/build tooling may be added
+  to `web/audit-allowlist.json` with a reason and an `expires` date (a few
+  months out); expired entries fail the job. Remove the entry once a fix ships.
 - A failing CodeQL **analyze** job turns the corresponding PR check red.
 - **Job green ≠ default branch has zero open alerts.** Historical / residual
   findings can remain under Security → Code scanning after analyze succeeds.
