@@ -1,8 +1,9 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { renderMarkdown } from '@/lib/shared/markdown'
+import { renderMarkdown, renderMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
 import { createStreamMarkdownPreview } from '@/lib/shared/streamMarkdownPreview'
 import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
+import { sameTools, toolsFromAcp } from '@/lib/run/acpTools'
 import { mergePersistedAndLiveTurns, persistedCompletedLiveHuman } from '@/lib/inbox/mergeClarifyLiveTurns'
 import {
   emptyFailDisplayText,
@@ -18,6 +19,7 @@ import {
   useSideBySide,
 } from '@/lib/inbox/clarifyDemo'
 import type {
+  AgentTool,
   ClarifyTurn,
   ClarifyImage,
   ReactQuestion,
@@ -205,11 +207,19 @@ function prependSeedHuman(list: ClarifyTurn[]): ClarifyTurn[] {
   return [seed, ...list]
 }
 const liveAgentIdx = ref(-1)
-/** Coalesced markdown HTML for the live streaming agent bubble. */
-const liveStreamHtml = ref('')
-const streamPreview = createStreamMarkdownPreview({ render: renderMarkdown })
-const unsubStream = streamPreview.subscribe((html) => {
-  liveStreamHtml.value = html
+/**
+ * Coalesced per-block markdown HTML for the live streaming agent bubble.
+ * Settled blocks keep their string (and DOM); only the open block re-renders.
+ */
+const liveStreamBlocks = ref<string[]>([])
+const liveStreamHtml = computed(() => liveStreamBlocks.value.join(''))
+const streamBlockCache: MarkdownBlockCache = new Map()
+const streamPreview = createStreamMarkdownPreview<string[]>({
+  render: (src) => renderMarkdownBlocks(src, streamBlockCache),
+  empty: [],
+})
+const unsubStream = streamPreview.subscribe((blocks) => {
+  liveStreamBlocks.value = blocks
 })
 /** Coalesced thought text (rAF) — same cadence as message preview. */
 const liveThoughtText = ref('')
@@ -1628,7 +1638,14 @@ function agentSegments(events: AcpEvent[]): { thought: string; message: string }
   return multi ? segs : null
 }
 
-function applyAgentSegments(segs: { thought: string; message: string }[]) {
+/** Snapshot tools live on the open (last) agent row, matching the persisted transcript. */
+function setRowTools(row: ClarifyTurn, tools: AgentTool[]) {
+  if (sameTools(row.tools, tools)) return
+  if (tools.length) row.tools = tools
+  else delete row.tools
+}
+
+function applyAgentSegments(segs: { thought: string; message: string }[], tools: AgentTool[]) {
   let first = liveAgentIdx.value
   while (first > 0 && liveTurns.value[first - 1]?.role === 'agent') first--
   while (liveTurns.value.length < first + segs.length) {
@@ -1648,6 +1665,7 @@ function applyAgentSegments(segs: { thought: string; message: string }[]) {
     row.text = seg.message
     row.streaming = last
     row.handoff = !last
+    setRowTools(row, last ? tools : [])
     if (last) {
       liveAgentIdx.value = first + i
       messageReveal.setTarget(seg.message)
@@ -1669,16 +1687,17 @@ function applyAcpEvents(events: AcpEvent[] | undefined, nodeId?: string): boolea
   if (liveAgentIdx.value < 0) return false
   const agent = liveTurns.value[liveAgentIdx.value]
   if (!agent) return false
+  const tools = toolsFromAcp(events)
   const segs = agentSegments(events)
   if (segs) {
-    applyAgentSegments(segs)
+    applyAgentSegments(segs, tools)
     void scrollBottom()
     return true
   }
   let msg = agent.text
   let thought = agent.thought || ''
   for (const ev of events) {
-    // Ignore tool_call / plan for UI (Demo: no tool chips); placeholder stays via streaming.
+    // Plan stays out of the dialogue; tool_call rows feed the folded tool group.
     if (ev.kind === 'message' && ev.text) msg = ev.text
     if (ev.kind === 'thought' && ev.text) thought = ev.text
   }
@@ -1688,6 +1707,7 @@ function applyAcpEvents(events: AcpEvent[] | undefined, nodeId?: string): boolea
   // Keep thought / message on separate rails — never msg||thought overwrite.
   agent.thought = thought
   agent.text = msg
+  setRowTools(agent, tools)
   // Authority → reveal → markdown/text coalesce (not absolute snapshot → DOM).
   messageReveal.setTarget(msg)
   thoughtReveal.setTarget(thought)
@@ -1921,6 +1941,7 @@ function retryLastFailed() {
     showSandboxOrphanBanner,
     sandboxOrphanOpLabel,
     liveStreamHtml,
+    liveStreamBlocks,
     streamPreview,
     unsubStream,
     liveThoughtText,

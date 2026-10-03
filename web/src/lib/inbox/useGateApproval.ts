@@ -34,7 +34,8 @@ import {
   isReadonlyArtifactKind,
   type GatePrimaryProductRef,
 } from '@/lib/inbox/gateUpstream'
-import type { ClarifyImage, Gate, GateShareInboxStatus, Run, ReactAnnotation } from '@/lib/shared/types'
+import type { AcpEvent, AgentTool, ClarifyImage, Gate, GateShareInboxStatus, Run, ReactAnnotation } from '@/lib/shared/types'
+import { sameTools, toolsFromAcp } from '@/lib/run/acpTools'
 import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { REVERT_ACTION_IDS, POSITIVE_ACTION_IDS } from '@/components/run/gateApproval/gateApprovalActions'
 import { gateApprovalKey } from '@/components/run/gateApproval/gateApprovalContext'
@@ -1188,6 +1189,8 @@ const reactInFlight = ref(false)
 const reactStreamText = ref('')
 /** ACP thought rail (separate from message — Demo: thought must not be dropped). */
 const reactStreamThought = ref('')
+/** ACP tool_call rows of the current turn (name + status) for the folded tool group. */
+const reactStreamTools = ref<AgentTool[]>([])
 const reactInterrupted = ref(false)
 /** Normal completion timestamp for restrained「已完成」footnote (Demo phase 4). */
 const reactStreamCompletedAt = ref<string | null>(null)
@@ -1415,6 +1418,7 @@ function applyReviewFrame(frame: {
       reactInFlight.value = true
       reactStreamText.value = ''
       reactStreamThought.value = ''
+      reactStreamTools.value = []
       reactInterrupted.value = false
       reactStreamCompletedAt.value = null
       break
@@ -1522,16 +1526,19 @@ function applyReviewFrame(frame: {
  * Returns false when not ready (!thinking && !inFlight) so host buffers —
  * never silent-noop as applied (mounted-but-no-slot race).
  */
-function applyAcpEvents(events: { kind?: string; text?: string }[] | undefined): boolean {
+function applyAcpEvents(events: { kind?: string; text?: string; title?: string; status?: string }[] | undefined): boolean {
   if (!events?.length) return true
   // Accept ACP while busy/inFlight even if waiting=0 cleared the queue panel.
   if (!reactThinking.value && !reactInFlight.value) return false
   if (!reactThinking.value) reactThinking.value = true
   for (const ev of events) {
-    // Ignore tool_call / plan UI; keep rails separate so thought is never overwritten.
+    // Plan stays out of the panel; keep rails separate so thought is never overwritten.
     if (ev.kind === 'message' && ev.text) reactStreamText.value = ev.text
     if (ev.kind === 'thought' && ev.text) reactStreamThought.value = ev.text
   }
+  // Snapshots are cumulative: the latest tool list replaces the previous one.
+  const tools = toolsFromAcp(events as AcpEvent[])
+  if (!sameTools(reactStreamTools.value, tools)) reactStreamTools.value = tools
   return true
 }
 
@@ -1917,6 +1924,7 @@ provide(gateApprovalKey, {
     reactThinking,
     reactStreamText,
     reactStreamThought,
+    reactStreamTools,
     reactInterrupted,
     reactStreamCompletedAt,
     isActionDisabled,
@@ -2098,6 +2106,7 @@ provide(gateApprovalKey, {
     reactInFlight,
     reactStreamText,
     reactStreamThought,
+    reactStreamTools,
     reactInterrupted,
     reactStreamCompletedAt,
     reactError,

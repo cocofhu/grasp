@@ -50,3 +50,38 @@ export function renderMarkdown(src: string): string {
   }
   return html
 }
+
+/** Per-stream cache for renderMarkdownBlocks: `type\0raw` → sanitized block HTML. */
+export type MarkdownBlockCache = Map<string, string>
+
+/** Unused blocks kept beyond the live set before the cache is pruned. */
+const BLOCK_SLACK = 64
+
+/**
+ * Split markdown into top-level blocks and render each one on its own.
+ * While text streams only the last block keeps changing; every settled block
+ * hits `cache` and returns the identical string, so Vue leaves its DOM (text
+ * selection, images, diagrams) untouched instead of re-parsing the whole reply.
+ */
+export function renderMarkdownBlocks(src: string, cache: MarkdownBlockCache): string[] {
+  const tokens = marked.lexer(src ?? '')
+  const out: string[] = []
+  const used = new Set<string>()
+  for (const tok of tokens) {
+    if (tok.type === 'space') continue
+    const key = `${tok.type}\u0000${tok.raw}`
+    let html = cache.get(key)
+    if (html === undefined) {
+      parseCount += 1
+      const list = Object.assign([tok], { links: tokens.links }) as unknown as Parameters<typeof marked.parser>[0]
+      html = DOMPurify.sanitize(marked.parser(list) as string)
+      cache.set(key, html)
+    }
+    used.add(key)
+    if (html) out.push(html)
+  }
+  if (cache.size > used.size + BLOCK_SLACK) {
+    for (const k of cache.keys()) if (!used.has(k)) cache.delete(k)
+  }
+  return out
+}

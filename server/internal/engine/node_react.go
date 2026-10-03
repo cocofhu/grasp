@@ -44,7 +44,7 @@ func (e *Engine) execReactEnter(c *execCtx, node *models.Node) nodeOutcome {
 		if !skipEmpty {
 			msgs = []models.ReactMessage{{Role: "agent", Text: t.Msg,
 				At: time.Now().Format(time.RFC3339), Questions: t.Questions, Forms: t.Forms,
-				OpID: t.OpID}}
+				OpID: t.OpID, Tools: models.ToolsFromEvents(t.Events)}}
 		}
 		conv = models.ReactConversation{RunID: c.run.ID, NodeID: node.ID, Iteration: iter, Done: t.Done,
 			Messages: msgs}
@@ -110,7 +110,7 @@ func (e *Engine) autoAdvanceReact(c *execCtx, node *models.Node, conv *models.Re
 		accBy = models.AddTokenUsageByModel(accBy, t.UsageByModel)
 		agentMsg := models.ReactMessage{Role: "agent", Text: t.Msg,
 			At: time.Now().Format(time.RFC3339), Questions: t.Questions, Forms: t.Forms,
-			OpID: t.OpID}
+			OpID: t.OpID, Tools: models.ToolsFromEvents(t.Events)}
 		conv.Messages = append(conv.Messages, agentMsg)
 		conv.Done = t.Done
 		logDB(e.db.Save(conv), c.run.ID, "auto react round")

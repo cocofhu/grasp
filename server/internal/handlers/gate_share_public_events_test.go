@@ -50,7 +50,7 @@ func TestPublicGateEventsWSStreamsSanitizedAcp(t *testing.T) {
 		"events": []any{
 			map[string]any{"kind": "thought", "text": "思考 http://127.0.0.1/api/runs/x"},
 			map[string]any{"kind": "message", "text": "标题已改为绿色"},
-			map[string]any{"kind": "tool_call", "title": "write", "text": "secret"},
+			map[string]any{"kind": "tool_call", "title": "write /srv/secret.env", "text": "secret", "status": "completed"},
 		},
 	}))
 	h.h.Eng.Broker().Publish("run-pub-ws", mustJSON(t, map[string]any{
@@ -76,11 +76,15 @@ func TestPublicGateEventsWSStreamsSanitizedAcp(t *testing.T) {
 			break
 		}
 		s := string(msg)
-		if strings.Contains(s, "run-pub-ws") || strings.Contains(s, "research-ws") || strings.Contains(s, "should-not-leak") || strings.Contains(s, "tool_call") {
+		if strings.Contains(s, "run-pub-ws") || strings.Contains(s, "research-ws") || strings.Contains(s, "should-not-leak") ||
+			strings.Contains(s, "secret") {
 			t.Fatalf("leaked: %s", s)
 		}
 		if strings.Contains(s, `"type":"acp"`) && strings.Contains(s, "标题已改为绿色") {
 			sawAcp = true
+			if !strings.Contains(s, `{"kind":"tool_call","title":"write","status":"completed"}`) {
+				t.Fatalf("tool row must be reduced to its bare name: %s", s)
+			}
 			if !strings.Contains(s, "思考 http://127.0.0.1/api/runs/x") {
 				t.Fatalf("thought must pass through verbatim: %s", s)
 			}

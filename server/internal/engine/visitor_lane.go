@@ -383,7 +383,7 @@ func (e *Engine) executeVisitorTurn(ctx context.Context, s *reviewSession, item 
 	}
 	agentMsg := models.ReactMessage{
 		Role: "agent", Text: t.Msg, At: time.Now().Format(time.RFC3339),
-		Interrupted: interrupted, OpID: t.OpID,
+		Interrupted: interrupted, OpID: t.OpID, Tools: models.ToolsFromEvents(t.Events),
 	}
 	if interrupted && strings.TrimSpace(agentMsg.Text) == "" {
 		agentMsg.Text = "(已中断)"

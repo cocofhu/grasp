@@ -898,6 +898,14 @@ export interface ClarifyTurn {
    * `text` so message arrival does not erase the thought block.
    */
   thought?: string
+  /** Tool calls of this agent turn (name + status only; live ACP or persisted). */
+  tools?: AgentTool[]
+}
+
+/** One tool call shown in the folded tool row of an agent turn. */
+export interface AgentTool {
+  title: string
+  status?: string
 }
 
 export interface Gate {

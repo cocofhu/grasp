@@ -2,7 +2,9 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../../ui/Icon.vue'
-import { renderMarkdown } from '@/lib/shared/markdown'
+import { renderMarkdown, renderMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
+import AgentToolGroup from '../AgentToolGroup.vue'
+import StreamMarkdown from '../StreamMarkdown.vue'
 import { fmtDuration } from '@/lib/shared/format'
 import { fmtTokenCount, tokenUsageTotal } from '@/lib/run/tokenUsage'
 import type { LlmTurn } from '@/lib/run/llmTranscript'
@@ -18,8 +20,9 @@ const props = defineProps<{
 const emit = defineEmits<{ 'open-artifact': [] }>()
 
 const { t } = useI18n()
+const blockCache: MarkdownBlockCache = new Map()
 
-/** Open detail sections, keyed `${answerIdx}:${section}` (section: thought|plan|tools) or `mcp`. */
+/** Open detail sections, keyed `${answerIdx}:${section}` (section: thought|plan) or `mcp`. */
 const open = ref<Set<string>>(new Set())
 const openMcp = ref<Set<number>>(new Set())
 
@@ -27,7 +30,6 @@ function allKeys(): Set<string> {
   const s = new Set<string>(['mcp'])
   props.turn.answers.forEach((_, i) => {
     s.add(`${i}:plan`)
-    s.add(`${i}:tools`)
     if (props.showThought) s.add(`${i}:thought`)
   })
   return s
@@ -64,12 +66,6 @@ const durationSec = computed(() => {
 })
 
 const hasReply = computed(() => props.turn.answers.some((a) => a.text || a.tools.length || a.plan || a.thought))
-
-function toolDot(status?: string) {
-  if (status === 'failed') return 'text-err'
-  if (status === 'completed') return 'text-ok'
-  return 'text-warn'
-}
 </script>
 
 <template>
@@ -117,29 +113,15 @@ function toolDot(status?: string) {
             </button>
             <pre v-if="open.has(`${i}:plan`)" class="m-0 mt-1 whitespace-pre-wrap font-mono text-[11px] leading-5 text-txt2">{{ a.plan }}</pre>
           </div>
-          <div v-if="a.tools.length" class="text-[12px]">
-            <button
-              type="button"
-              class="inline-flex items-center gap-1 text-info hover:text-txt"
-              data-testid="llm-tools-toggle"
-              @click="toggle(`${i}:tools`)"
-            >
-              <Icon name="terminal" :size="12" />{{ t('pages.llmTranscript.tools', { n: a.tools.length }) }}
-              <Icon name="chevron-down" :size="11" :class="open.has(`${i}:tools`) ? 'rotate-180' : ''" />
-            </button>
-            <ul v-if="open.has(`${i}:tools`)" class="m-0 mt-1 list-none space-y-0.5 p-0 font-mono text-[11px]" data-testid="llm-tools">
-              <li v-for="(tool, ti) in a.tools" :key="ti" class="flex min-w-0 items-center gap-1.5 text-txt2">
-                <span :class="toolDot(tool.status)">●</span>
-                <span class="truncate">{{ tool.title }}</span>
-              </li>
-            </ul>
-          </div>
+          <AgentToolGroup v-if="a.tools.length" :tools="a.tools" :busy="turn.live" :expanded="expandAll" />
           <div
             v-if="a.text"
             class="md min-w-0 text-[13px] leading-6 text-txt"
             data-testid="llm-answer-text"
-            v-html="renderMarkdown(a.text)"
-          />
+          >
+            <StreamMarkdown v-if="turn.live" :blocks="renderMarkdownBlocks(a.text, blockCache)" />
+            <span v-else v-html="renderMarkdown(a.text)" />
+          </div>
           <div v-if="a.tools.some((tool) => tool.artifact)" class="flex flex-wrap gap-1.5">
             <button
               v-for="(tool, ti) in a.tools.filter((x) => x.artifact)"

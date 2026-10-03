@@ -32,6 +32,8 @@ type PreviewTurn struct {
 	Forms       []PreviewForm       `json:"forms,omitempty"`
 	// Live points a human turn at its Live variant session (sid/op only).
 	Live *models.LiveRef `json:"live,omitempty"`
+	// Tools are the agent turn's tool calls as bare names (SanitizeToolTitle).
+	Tools []models.ReactTool `json:"tools,omitempty"`
 }
 
 // PreviewQuestion is a leak-free ask_question card (id, prompt, options).
@@ -394,6 +396,9 @@ func SanitizeTurnsFrom(msgs []models.ReactMessage, imageBase int) ([]PreviewTurn
 		if m.Live != nil && models.ValidLiveSID(m.Live.SID) {
 			turn.Live = &models.LiveRef{SID: m.Live.SID, Op: m.Live.Op, Variant: m.Live.Variant, Prompt: m.Live.Prompt, Generated: m.Live.Generated}
 		}
+		if role == "agent" && len(m.Tools) > 0 {
+			turn.Tools = sanitizeTools(m.Tools)
+		}
 		// Keep a text-less turn when it still carries a choice card or form.
 		if turn.Text == "" && len(turn.Annotations) == 0 && len(turn.Images) == 0 && !turn.Interrupted && len(turn.Questions) == 0 && len(turn.Forms) == 0 {
 			continue
@@ -404,6 +409,15 @@ func SanitizeTurnsFrom(msgs []models.ReactMessage, imageBase int) ([]PreviewTurn
 		return nil, idx
 	}
 	return out, idx
+}
+
+func sanitizeTools(tools []models.ReactTool) []models.ReactTool {
+	n := min(len(tools), models.MaxReactTools)
+	out := make([]models.ReactTool, 0, n)
+	for _, t := range tools[:n] {
+		out = append(out, models.ReactTool{Title: SanitizeToolTitle(t.Title), Status: SanitizeToolStatus(t.Status)})
+	}
+	return out
 }
 
 // SanitizeQueueItems redacts pending FIFO rows for the public ReAct sidebar.

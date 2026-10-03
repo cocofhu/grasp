@@ -7,7 +7,7 @@ import ComposerShell from './ComposerShell.vue'
 import ParagraphInput from '../ui/ParagraphInput.vue'
 import GateReactStreamPanel from './GateReactStreamPanel.vue'
 import PendingSendQueuePanel, { type PendingQueueRow } from './PendingSendQueuePanel.vue'
-import type { ClarifyTurn, ClarifyImage, ReactAnnotation, AcpEvent } from '@/lib/shared/types'
+import type { AgentTool, ClarifyTurn, ClarifyImage, ReactAnnotation, AcpEvent } from '@/lib/shared/types'
 import { isGrasp } from '@/lib/shared/clarifyInteractive'
 import AnnotationChip from './AnnotationChip.vue'
 import PageControlStatus from './PageControlStatus.vue'
@@ -71,6 +71,8 @@ const props = withDefaults(
     streamText?: string
     /** ACP thought rail (separate from streamText). */
     streamThought?: string
+    /** ACP tool_call rows of the current turn (name + status). */
+    streamTools?: AgentTool[]
     interrupted?: boolean
     /** ISO when turn completed normally — drives restrained「已完成」footnote. */
     streamCompletedAt?: string | null
@@ -104,6 +106,7 @@ const props = withDefaults(
     thinking: false,
     streamText: '',
     streamThought: '',
+    streamTools: () => [],
     interrupted: false,
     streamCompletedAt: null,
   },
@@ -391,6 +394,7 @@ function onConfirm() {
           :thinking="thinking"
           :stream-text="streamText"
           :stream-thought="streamThought"
+          :stream-tools="streamTools"
           :interrupted="interrupted"
           :completed-at="streamCompletedAt"
         />

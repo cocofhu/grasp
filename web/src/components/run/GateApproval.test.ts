@@ -3027,10 +3027,14 @@ describe('GateApproval mobileFillRemaining layout', () => {
       item: { text: '下一轮' },
     })
     await flushPromises()
-    vm.applyAcpEvents?.([{ kind: 'tool_call', text: 'read_file' }])
+    expect(wrapper.find('[data-testid="agent-tool-group"]').exists()).toBe(false)
+    vm.applyAcpEvents?.([{ kind: 'tool_call', title: 'read_file', status: 'running' }])
     await flushPromises()
     expect(wrapper.find('[data-testid="gate-busy-placeholder"]').exists()).toBe(true)
-    expect(wrapper.text()).not.toMatch(/正在调用工具/)
+    const group = wrapper.find('[data-testid="gate-react-stream"] [data-testid="agent-tool-group"]')
+    expect(group.exists()).toBe(true)
+    expect(group.text()).toContain('read_file')
+    expect(group.attributes('data-state')).toBe('running')
     wrapper.unmount()
   })
 

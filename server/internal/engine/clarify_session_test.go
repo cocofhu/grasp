@@ -335,3 +335,30 @@ func TestClarifyRetryLastRejectsSuccessAgent(t *testing.T) {
 		t.Fatalf("reject message: %v", err)
 	}
 }
+
+// TestClarifyOpenPersistsToolSummary: the opening agent turn keeps the tool
+// calls (name + status only) so the chat can re-render the folded tool row.
+func TestClarifyOpenPersistsToolSummary(t *testing.T) {
+	eng, db, provider := setupEngineGraphP(t, reactOnlyGraph())
+	provider.reactPending = 10
+	provider.reactTools = []models.AcpEvent{
+		{Kind: "tool_call", Title: "read_file", Status: "completed"},
+		{Kind: "tool_call", Title: "ask_question", Status: "completed"},
+	}
+	run, err := eng.StartRun("wf", nil, "test")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitReactPause(t, db, run.ID, "clarify")
+	var conv models.ReactConversation
+	if err := db.Where("run_id = ? AND node_id = ?", run.ID, "clarify").First(&conv).Error; err != nil {
+		t.Fatalf("load conv: %v", err)
+	}
+	if len(conv.Messages) == 0 || conv.Messages[0].Role != "agent" {
+		t.Fatalf("messages: %+v", conv.Messages)
+	}
+	got := conv.Messages[0].Tools
+	if len(got) != 2 || got[0].Title != "read_file" || got[1].Title != "ask_question" || got[1].Status != "completed" {
+		t.Fatalf("tools: %+v", got)
+	}
+}

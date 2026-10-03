@@ -452,6 +452,51 @@ test.describe('human_gate 临时审批链接', () => {
     }
   })
 
+  test('未登录复审页展示 agent 工具调用（仅名称与状态）', async ({ page }) => {
+    await page.route(/\/public\/gate-approvals\/preview$/, async (route) => {
+      await route.fulfill({
+        json: {
+          status: 'active',
+          kind: 'review',
+          title: '调研',
+          description: '待复审脱敏摘要',
+          remainingSec: 3600,
+          nonce: 'nonce-e2e-tools',
+          reactSessionAlive: true,
+          sessionBusy: false,
+          waiting: 0,
+          productKind: 'structured',
+          productName: 'research.json',
+          actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
+          structured: { name: 'research.json', title: '调研摘要', doc: { title: '调研摘要' } },
+          turns: [
+            {
+              role: 'agent',
+              text: '已核对 research.json',
+              at: '2026-08-01T00:00:00Z',
+              tools: [
+                { title: 'read_file', status: 'completed' },
+                { title: 'Shell', status: 'failed' },
+              ],
+            },
+          ],
+        },
+      })
+    })
+    await page.goto('/gate-share-link.html?scene=public-review&sharedBackend=1')
+    const group = page.getByTestId('agent-tool-group')
+    await expect(group).toBeVisible({ timeout: 10_000 })
+    await expect(group).toHaveAttribute('data-state', 'failed')
+    await expect(group).toContainText('使用了 2 个工具')
+    await expect(page.getByTestId('agent-tool-group-names')).toHaveText('read_file · Shell')
+    await page.getByTestId('agent-tool-group-head').click()
+    const rows = page.getByTestId('agent-tool-row')
+    await expect(rows).toHaveCount(2)
+    await expect(rows.nth(0)).toHaveAttribute('data-state', 'done')
+    await expect(rows.nth(1)).toHaveAttribute('data-state', 'failed')
+    await expect(page.getByTestId('public-gate-root')).toContainText('已核对 research.json')
+  })
+
   test('公开应用预览页远程壳可确认且支持多端口', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/gate-share-link.html?scene=public-app-preview')

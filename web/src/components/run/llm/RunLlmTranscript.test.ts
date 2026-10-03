@@ -95,14 +95,14 @@ describe('RunLlmTranscript', () => {
     const text = () => w.find('[data-testid="llm-prompt-text"]').text()
     expect(text()).not.toContain('line 12')
     expect(w.find('[data-testid="llm-thought"]').exists()).toBe(false)
-    expect(w.find('[data-testid="llm-tools"]').exists()).toBe(false)
+    expect(w.find('[data-testid="agent-tool-list"]').exists()).toBe(false)
 
     await w.find('[data-testid="llm-prompt-toggle"]').trigger('click')
     expect(text()).toContain('line 12')
 
     await w.find('[data-testid="llm-expand-all"]').trigger('click')
     expect(w.find('[data-testid="llm-thought"]').text()).toBe('secret reasoning')
-    expect(w.find('[data-testid="llm-tools"]').text()).toContain('write_artifact prd.md')
+    expect(w.find('[data-testid="agent-tool-list"]').text()).toContain('write_artifact prd.md')
     expect(JSON.parse(localStorage.getItem('grasp.llmTranscript.prefs')!).expandAll).toBe(true)
   })
 

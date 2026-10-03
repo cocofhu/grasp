@@ -545,17 +545,22 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 			e.flushTokenUsage(runID, nodeID, liveWrap.Usage, liveWrap.UsageByModel)
 			if strings.TrimSpace(liveWrap.Msg) != "" {
 				conv.Messages = append(conv.Messages, models.ReactMessage{Role: "agent", Text: liveWrap.Msg,
-					At: time.Now().Format(time.RFC3339), OpID: liveWrap.OpID})
+					At: time.Now().Format(time.RFC3339), OpID: liveWrap.OpID, Tools: models.ToolsFromEvents(liveWrap.Events)})
 				logDB(e.db.Save(&conv), runID, "save Grasp Live git wrap-up")
 			}
 		}
 	}
 	t := e.provider.ReactReply(context.Background(), req, conv.Messages, effective, images, force)
+	replyEvents := t.Events
 	t.Events = append(append([]models.AcpEvent(nil), liveWrap.Events...), t.Events...)
 	t.Result.Events = append(append([]models.AcpEvent(nil), liveWrap.Events...), t.Result.Events...)
+	// A persisted wrap-up message already carries its own tools.
+	if strings.TrimSpace(liveWrap.Msg) == "" {
+		replyEvents = t.Events
+	}
 	agentMsg := models.ReactMessage{Role: "agent", Text: t.Msg,
 		At: time.Now().Format(time.RFC3339), Questions: t.Questions, Forms: t.Forms,
-		Interrupted: t.Interrupted, OpID: t.OpID}
+		Interrupted: t.Interrupted, OpID: t.OpID, Tools: models.ToolsFromEvents(replyEvents)}
 	conv.Messages = append(conv.Messages, agentMsg)
 
 	// Auto-clarify: if this node runs in auto mode and the agent asked more

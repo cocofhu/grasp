@@ -375,6 +375,23 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
+  it('puts tool calls on the open agent segment only', () => {
+    const { chat, app } = withChat()
+    chat.applyQueueState(1, [{ id: 'item-1', text: 'hello' }])
+    chat.applyReviewFrame({ event: 'turn_begin', nodeId: 'node-1', item: { id: 'item-1', text: 'hello' } })
+    expect(chat.applyAcpEvents([
+      { t: 0, kind: 'message', text: 'answer' },
+      { t: 1, kind: 'segment' },
+      { t: 2, kind: 'tool_call', title: 'read_file', status: 'completed' },
+      { t: 3, kind: 'message', text: 'second' },
+    ])).toBe(true)
+    const rows = chat.liveTurns.value.filter((x) => x.role === 'agent')
+    expect(rows.map((r) => r.text)).toEqual(['answer', 'second'])
+    expect(rows[0]!.tools).toBeUndefined()
+    expect(rows[1]!.tools).toEqual([{ title: 'read_file', status: 'completed' }])
+    app.unmount()
+  })
+
   it('materializes websocket turns, streams ACP content, and settles completion', () => {
     const { chat, app } = withChat()
     chat.applyQueueState(1, [{ id: 'item-1', text: 'hello' }])
@@ -393,8 +410,12 @@ describe('useClarifyChat actions', () => {
     expect(agent.text).toBe('answer')
     expect(agent.thought).toBe('reasoning')
     expect(chat.liveStreamHtml.value).toContain('answer')
+    expect(chat.liveStreamBlocks.value).toHaveLength(1)
+    expect(chat.liveStreamBlocks.value[0]).toContain('answer')
     expect(chat.agentHasMessage(agent)).toBe(true)
     expect(chat.agentThoughtDisplay(agent, 1)).toBe('reasoning')
+    expect(agent.tools).toBeUndefined()
+
 
     chat.applyReviewFrame({ event: 'turn_done', interrupted: true })
     expect(agent.streaming).toBe(false)

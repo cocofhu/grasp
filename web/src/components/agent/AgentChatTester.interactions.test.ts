@@ -154,8 +154,14 @@ describe('AgentChatTester interactions', () => {
     expect(vm.turns[1]).toMatchObject({ text: 'Hello', thought: 'think', streaming: true })
     expect(vm.turns[1].plan).toEqual([{ content: 'step', status: 'completed' }])
     expect(vm.turns[1].tools[0]).toMatchObject({ id: 't1', title: 'Read Done', status: 'completed' })
+    expect(w.find('[data-testid="agent-tool-group"]').attributes('data-state')).toBe('done')
+    expect(w.find('[data-testid="agent-tool-group-names"]').text()).toBe('Read Done')
+    expect(w.find('[data-testid="stream-md"]').text()).toContain('Hello')
     frame('turn_done')
     expect(vm.status).toBe('ready')
+    await flushPromises()
+    expect(w.find('[data-testid="stream-md"]').exists()).toBe(false)
+    expect(w.text()).toContain('Hello')
 
     vm.input = 'again'
     vm.send()

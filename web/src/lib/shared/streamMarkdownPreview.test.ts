@@ -71,4 +71,24 @@ describe('createStreamMarkdownPreview', () => {
     preview.flush()
     expect(render).toHaveBeenCalledWith('x')
   })
+
+  it('publishes block arrays with a typed empty value', () => {
+    const seen: string[][] = []
+    const preview = createStreamMarkdownPreview<string[]>({
+      render: (src) => src.split('\n\n'),
+      empty: [],
+      schedule: (cb) => {
+        cb()
+        return 1
+      },
+      cancel: () => {},
+    })
+    preview.subscribe((b) => seen.push(b))
+    expect(preview.getHtml()).toEqual([])
+    preview.setText('a\n\nb')
+    expect(preview.getHtml()).toEqual(['a', 'b'])
+    preview.reset()
+    expect(preview.getHtml()).toEqual([])
+    expect(seen).toEqual([['a', 'b'], []])
+  })
 })
