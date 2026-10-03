@@ -69,6 +69,9 @@ type PreviewDTO struct {
 type PreviewLiveEvent struct {
 	Kind string `json:"kind"`
 	Text string `json:"text,omitempty"`
+	// Title / Status are set on tool_call rows only (bare tool name, see SanitizeToolTitle).
+	Title  string `json:"title,omitempty"`
+	Status string `json:"status,omitempty"`
 }
 
 // PublicPreviewPort is the leak-free port entry for public app_preview remote / API iframe.

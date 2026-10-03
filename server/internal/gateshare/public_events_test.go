@@ -8,21 +8,77 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-func TestSanitizeLiveEventsKeepsRailsAndDropsTools(t *testing.T) {
+func TestSanitizeLiveEventsKeepsRailsAndBareToolNames(t *testing.T) {
 	ev := SanitizeLiveEvents([]models.AcpEvent{
 		{Kind: "thought", Text: "正在改 http://127.0.0.1/api/runs/secret"},
-		{Kind: "tool_call", Title: "write", Text: "should-drop"},
+		{Kind: "tool_call", Title: "write_artifact(prd.md)", Text: "should-drop", Status: "completed",
+			Artifact: &models.ArtifactMeta{Name: "prd.md", Kind: "md"}},
 		{Kind: "message", Text: "标题已改为绿色"},
 		{Kind: "plan", Text: "plan-secret"},
+		{Kind: "segment"},
 	})
-	if len(ev) != 2 {
+	if len(ev) != 3 {
 		t.Fatalf("events=%d %+v", len(ev), ev)
 	}
 	if ev[0].Kind != "thought" || ev[0].Text != "正在改 http://127.0.0.1/api/runs/secret" {
 		t.Fatalf("thought must pass through verbatim: %+v", ev[0])
 	}
-	if ev[1].Kind != "message" || ev[1].Text != "标题已改为绿色" {
-		t.Fatalf("message: %+v", ev[1])
+	if ev[1] != (PreviewLiveEvent{Kind: "tool_call", Title: "write_artifact", Status: "completed"}) {
+		t.Fatalf("tool must keep only its bare name and status: %+v", ev[1])
+	}
+	if ev[2].Kind != "message" || ev[2].Text != "标题已改为绿色" {
+		t.Fatalf("message: %+v", ev[2])
+	}
+}
+
+func TestSanitizeToolTitle(t *testing.T) {
+	cases := map[string]string{
+		"read_file":                    "read_file",
+		"Shell":                        "Shell",
+		"mcp:grasp.write-artifact":     "mcp:grasp.write-artifact",
+		"write_artifact(prd.md)":       "write_artifact",
+		"Read /etc/passwd":             "Read",
+		"run_terminal_cmd\ncat ~/.ssh": "run_terminal_cmd",
+		"/home/u/.env":                 "tool",
+		"https://example.com/x":        "tool",
+		"读取文件":                         "tool",
+		"":                             "tool",
+		strings.Repeat("a", 41):        "tool",
+	}
+	for in, want := range cases {
+		if got := SanitizeToolTitle(in); got != want {
+			t.Errorf("SanitizeToolTitle(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if SanitizeToolStatus(" Completed ") != "completed" || SanitizeToolStatus("weird") != "" {
+		t.Fatal("status whitelist")
+	}
+}
+
+func TestSanitizeTurnsReducesAgentTools(t *testing.T) {
+	turns := SanitizeTurns([]models.ReactMessage{
+		{Role: "agent", Text: "ok", Tools: []models.ReactTool{{Title: "Read src/secret.ts", Status: "completed"}, {Title: "/x", Status: "nope"}}},
+		{Role: "human", Text: "hi", Tools: []models.ReactTool{{Title: "Shell"}}},
+	})
+	if len(turns) != 2 {
+		t.Fatalf("turns: %+v", turns)
+	}
+	want := []models.ReactTool{{Title: "Read", Status: "completed"}, {Title: "tool"}}
+	if len(turns[0].Tools) != 2 || turns[0].Tools[0] != want[0] || turns[0].Tools[1] != want[1] {
+		t.Fatalf("agent tools: %+v", turns[0].Tools)
+	}
+	if turns[1].Tools != nil {
+		t.Fatalf("human turns carry no tools: %+v", turns[1].Tools)
+	}
+}
+
+func TestSanitizeLiveEventsCapsTools(t *testing.T) {
+	var ev []models.AcpEvent
+	for i := 0; i < models.MaxReactTools+5; i++ {
+		ev = append(ev, models.AcpEvent{Kind: "tool_call", Title: "t"})
+	}
+	if got := SanitizeLiveEvents(ev); len(got) != models.MaxReactTools {
+		t.Fatalf("len=%d", len(got))
 	}
 }
 
@@ -52,7 +108,7 @@ func TestFilterPublicBrokerFrameStripsRunAndRewritesNode(t *testing.T) {
 		"busy":   true,
 		"events": []any{
 			map[string]any{"kind": "message", "text": "流式正文 http://10.1.2.3/api/x"},
-			map[string]any{"kind": "tool_call", "title": "write", "text": "leak"},
+			map[string]any{"kind": "tool_call", "title": "write src/leak.ts", "text": "leak", "status": "running"},
 		},
 	})
 	out, ok := FilterPublicBrokerFrame(raw, "research1", func() int {
@@ -63,8 +119,11 @@ func TestFilterPublicBrokerFrameStripsRunAndRewritesNode(t *testing.T) {
 		t.Fatal("expected filtered frame")
 	}
 	s := string(out)
-	if strings.Contains(s, "run-secret") || strings.Contains(s, "research1") || strings.Contains(s, "tool_call") {
+	if strings.Contains(s, "run-secret") || strings.Contains(s, "research1") || strings.Contains(s, "leak") {
 		t.Fatalf("leaked: %s", s)
+	}
+	if !strings.Contains(s, `{"kind":"tool_call","title":"write","status":"running"}`) {
+		t.Fatalf("tool row must keep its bare name: %s", s)
 	}
 	if !strings.Contains(s, PublicDialogueNodeID) || !strings.Contains(s, "流式正文") {
 		t.Fatalf("missing public payload: %s", s)

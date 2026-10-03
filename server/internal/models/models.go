@@ -446,6 +446,35 @@ type ReactMessage struct {
 	// Refresh replay uses it to tell a finished turn from a different one
 	// the bridge still reports (plan g1.1).
 	OpID string `json:"opId,omitempty"`
+	// Tools are the tool calls the agent made this turn (name + final status
+	// only, never input/output), so the chat keeps the folded tool row after
+	// the live stream is replaced by the persisted transcript.
+	Tools []ReactTool `json:"tools,omitempty"`
+}
+
+// ReactTool is one tool call summarised on a persisted agent turn.
+type ReactTool struct {
+	Title  string `json:"title"`
+	Status string `json:"status,omitempty"`
+}
+
+// MaxReactTools caps how many tool calls one persisted agent turn keeps.
+const MaxReactTools = 50
+
+// ToolsFromEvents extracts the tool_call rows of a turn's ACP timeline in
+// order (capped at MaxReactTools). Returns nil when the turn used no tools.
+func ToolsFromEvents(events []AcpEvent) []ReactTool {
+	var out []ReactTool
+	for _, ev := range events {
+		if ev.Kind != "tool_call" || ev.Title == "" {
+			continue
+		}
+		if len(out) == MaxReactTools {
+			break
+		}
+		out = append(out, ReactTool{Title: ev.Title, Status: ev.Status})
+	}
+	return out
 }
 
 // ReactAnnotation is one precise reference a human attached to a review turn.

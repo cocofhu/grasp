@@ -260,12 +260,16 @@ func TestGraspLiveSuccessfulConfirmPreservesWrapupAccounting(t *testing.T) {
 	waitRunStatus(t, db, run.ID, "waiting_human")
 	db.Create(&models.LiveSession{ID: "adopted1", RunID: run.ID, NodeID: "preview", State: models.LiveStateAccepted})
 	gp := &graspLiveProvider{fakeProvider: p, wrap: &runtime.ReactTurn{
-		Msg: "pushed Live edits", Events: []models.AcpEvent{{Kind: "message", Text: "live commit push"}},
+		Msg: "pushed Live edits", Events: []models.AcpEvent{
+			{Kind: "tool_call", Title: "git_push", Status: "completed"},
+			{Kind: "message", Text: "live commit push"},
+		},
 		Usage:        &models.TokenUsage{InputTokens: 11, OutputTokens: 7},
 		UsageByModel: models.TokenUsageByModel{"model": {InputTokens: 11, OutputTokens: 7}},
 	}}
 	gp.reply = func(req runtime.NodeReq, human string) runtime.ReactTurn {
 		reply := p.ReactReply(context.Background(), req, nil, human, nil, true)
+		reply.Events = append([]models.AcpEvent{{Kind: "tool_call", Title: "write", Status: "completed"}}, reply.Events...)
 		reply.Result.Events = []models.AcpEvent{{Kind: "message", Text: "force confirm"}}
 		reply.Result.Usage = &models.TokenUsage{InputTokens: 5, OutputTokens: 2}
 		reply.Result.UsageByModel = models.TokenUsageByModel{"model": {InputTokens: 5, OutputTokens: 2}}
@@ -291,5 +295,24 @@ func TestGraspLiveSuccessfulConfirmPreservesWrapupAccounting(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("missing wrap-up events in final state: %+v", sr.Events)
+	}
+	var conv models.ReactConversation
+	db.Where("run_id = ? AND node_id = ?", run.ID, "preview").First(&conv)
+	var wrapTools, replyTools []models.ReactTool
+	for _, m := range conv.Messages {
+		if m.Role != "agent" {
+			continue
+		}
+		if m.Text == "pushed Live edits" {
+			wrapTools = m.Tools
+		} else {
+			replyTools = m.Tools
+		}
+	}
+	if len(wrapTools) != 1 || wrapTools[0].Title != "git_push" {
+		t.Fatalf("wrap-up tools: %+v", wrapTools)
+	}
+	if len(replyTools) != 1 || replyTools[0].Title != "write" {
+		t.Fatalf("reply must not repeat the persisted wrap-up tools: %+v", replyTools)
 	}
 }

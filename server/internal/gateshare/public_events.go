@@ -11,15 +11,24 @@ import (
 // so the unauthenticated workbench can consume review/ACP without host ids.
 const PublicDialogueNodeID = "public-gate"
 
-// SanitizeLiveEvents keeps only message/thought rails; their text is passed
-// through verbatim so the drawer matches the approval page.
+// SanitizeLiveEvents keeps message/thought rails (text verbatim, so the drawer
+// matches the approval page) and tool_call rows reduced to a bare tool name
+// and status. Plan, segment and every tool argument/output are dropped.
 func SanitizeLiveEvents(events []models.AcpEvent) []PreviewLiveEvent {
 	if len(events) == 0 {
 		return nil
 	}
 	out := make([]PreviewLiveEvent, 0, 2)
+	tools := 0
 	for _, ev := range events {
 		kind := strings.ToLower(strings.TrimSpace(ev.Kind))
+		if kind == "tool_call" {
+			if tools < models.MaxReactTools {
+				tools++
+				out = append(out, PreviewLiveEvent{Kind: kind, Title: SanitizeToolTitle(ev.Title), Status: SanitizeToolStatus(ev.Status)})
+			}
+			continue
+		}
 		if kind != "message" && kind != "thought" {
 			continue
 		}
@@ -32,6 +41,40 @@ func SanitizeLiveEvents(events []models.AcpEvent) []PreviewLiveEvent {
 		return nil
 	}
 	return out
+}
+
+const maxPublicToolTitle = 40
+
+// SanitizeToolTitle reduces a tool title to its bare name for public viewers:
+// the part before the first space or "(", limited to [A-Za-z0-9_.:-] and 40
+// characters. Titles that carry paths, commands or URLs collapse to the
+// leading verb (e.g. "write_artifact(prd.md)" → "write_artifact"); anything
+// else becomes "tool".
+func SanitizeToolTitle(title string) string {
+	s := strings.TrimSpace(title)
+	if i := strings.IndexAny(s, " \t\n("); i >= 0 {
+		s = s[:i]
+	}
+	if s == "" || len(s) > maxPublicToolTitle {
+		return "tool"
+	}
+	for _, r := range s {
+		ok := r == '_' || r == '.' || r == ':' || r == '-' ||
+			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+		if !ok {
+			return "tool"
+		}
+	}
+	return s
+}
+
+// SanitizeToolStatus keeps only the statuses the UI knows.
+func SanitizeToolStatus(status string) string {
+	switch s := strings.ToLower(strings.TrimSpace(status)); s {
+	case "running", "completed", "failed", "pending", "in_progress":
+		return s
+	}
+	return ""
 }
 
 // FilterPublicBrokerFrame rewrites a run-broker payload for the public
@@ -267,7 +310,9 @@ func acpEventsFromAny(v any) []models.AcpEvent {
 			}
 			kind, _ := am["kind"].(string)
 			text, _ := am["text"].(string)
-			out = append(out, models.AcpEvent{Kind: kind, Text: text})
+			title, _ := am["title"].(string)
+			status, _ := am["status"].(string)
+			out = append(out, models.AcpEvent{Kind: kind, Text: text, Title: title, Status: status})
 		}
 		return out
 	default:

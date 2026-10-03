@@ -56,6 +56,8 @@ type fakeProvider struct {
 	abortCalls       int
 	// reactSetupErr, when set, makes ReactOpen fail with a sandbox setup error.
 	reactSetupErr error
+	// reactTools are extra tool_call events ReactOpen reports in its timeline.
+	reactTools []models.AcpEvent
 
 	// submit_mr controls (test-only): optional mr_url reported via node_complete
 	// outputs (platform no longer gates on pushed / conflicts).
@@ -443,8 +445,10 @@ func (f *fakeProvider) ReactOpen(ctx context.Context, req runtime.NodeReq) runti
 		}})
 	}
 	qs := f.host.TakePendingQuestions(req.RunID, req.NodeID)
-	return runtime.ReactTurn{Msg: "请补充关键信息。", Questions: qs,
-		Events: []models.AcpEvent{{Kind: "message", Text: "react open"}}}
+	f.mu.Lock()
+	events := append(append([]models.AcpEvent(nil), f.reactTools...), models.AcpEvent{Kind: "message", Text: "react open"})
+	f.mu.Unlock()
+	return runtime.ReactTurn{Msg: "请补充关键信息。", Questions: qs, Events: events}
 }
 
 // ReactReply concludes the clarification with no further questions (or on a
