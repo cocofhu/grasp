@@ -105,14 +105,20 @@ install_opencode_mock_config() {
   log "provider=opencode: GRASP_OPENCODE_BASE_URL=${base}（custom / OpenAI 兼容适配器）"
 }
 
-assert_mock_hit() {
-  local body hits
+mock_hits() {
+  local body
   body="$(curl -fsS "http://127.0.0.1:${mock_port}/health")" \
     || die "provider=opencode: 读取 mock health 失败"
-  hits="$(printf '%s' "$body" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const j=JSON.parse(s);process.stdout.write(String(j.hits??""))})')" \
+  printf '%s' "$body" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const j=JSON.parse(s);if(!Number.isInteger(j.hits))process.exit(1);process.stdout.write(String(j.hits))})' \
     || die "provider=opencode: mock health 无法解析"
-  [ "$hits" -ge 1 ] || die "provider=opencode: 对话没有打到 mock chat model（hits=${hits:-0}）"
-  log "provider=opencode: mock 收到 ${hits} 次补全请求"
+}
+
+# $1: hits before the chat. Only requests made during this chat count.
+assert_mock_hit() {
+  local before="$1" after
+  after="$(mock_hits)"
+  [ "$after" -gt "$before" ] || die "provider=opencode: 对话没有打到 mock chat model（对话前 ${before}，对话后 ${after}）"
+  log "provider=opencode: 本轮对话 mock 收到 $((after - before)) 次补全请求"
 }
 
 host_port() {
@@ -201,9 +207,11 @@ check_provider() {
   fi
 
   if [ "$provider" = opencode ]; then
+    local hits_before
+    hits_before="$(mock_hits)"
     node "$ws_check" "ws://127.0.0.1:$api/ws" chat "$chat_timeout" \
       || die "provider=$provider: mock 对话失败"
-    assert_mock_hit
+    assert_mock_hit "$hits_before"
   fi
 
   [ "$(docker inspect -f '{{.State.Running}}' "$name")" = true ] || die "provider=$provider: 容器在检查过程中退出"
