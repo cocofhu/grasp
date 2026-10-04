@@ -65,6 +65,29 @@ describe('AgentTimeline', () => {
     expect((el.element as HTMLDetailsElement).open).toBe(true)
   })
 
+  // plan coverage: g2.2 — timeline parts render thought and message in full.
+  it('renders long thought and message without a truncated suffix (g2.2)', () => {
+    const longThought = `${'思'.repeat(3000)}思考结尾END`
+    const longMessage = `${'回'.repeat(3000)}结尾标记END`
+    expect(new TextEncoder().encode(longThought).length).toBeGreaterThan(8000)
+    expect(new TextEncoder().encode(longMessage).length).toBeGreaterThan(8000)
+    const w = mountTimeline({
+      completed: true,
+      parts: [
+        { kind: 'thought', text: longThought },
+        { kind: 'message', text: longMessage },
+      ],
+    })
+    const thought = w.get('[data-testid="agent-timeline-thought"] .whitespace-pre-wrap')
+    expect(thought.text()).toBe(longThought)
+    expect(thought.text()).not.toContain('…(truncated)')
+    expect(thought.text()).not.toContain('...(truncated)')
+    const message = w.get('[data-testid="agent-timeline-message"]')
+    expect(message.text()).toBe(longMessage)
+    expect(message.text()).not.toContain('…(truncated)')
+    expect(message.text()).not.toContain('...(truncated)')
+  })
+
   it('follows expand-all, hides thoughts on request, and draws bare messages', () => {
     const w = mountTimeline({ expanded: true, bare: true })
     expect((w.find('[data-testid="agent-timeline-thought"]').element as HTMLDetailsElement).open).toBe(true)

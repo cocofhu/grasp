@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/textutil"
 )
 
 // ChatResult is the structured aggregation of one prompt turn's
@@ -253,16 +252,15 @@ func (r *ChatResult) AcpEvents() []models.AcpEvent {
 			t++
 		}
 		if seg.Narration != "" {
-			ev = append(ev, models.AcpEvent{T: t, Kind: "message", Text: textutil.TruncateBytes(seg.Narration, 8000, "…(truncated)")})
+			ev = append(ev, models.AcpEvent{T: t, Kind: "message", Text: seg.Narration})
 			t++
 		}
 		ev = append(ev, models.AcpEvent{T: t, Kind: "segment"})
 		t++
 	}
 	if r.Thought != "" {
-		// ReAct / timeline / hard-refresh seed all consume this event: keep the
-		// full Thought so UIs never see …(truncated). Message narration still
-		// truncates below (8000 bytes).
+		// ReAct chat, the timeline, and hard-refresh seed all consume this
+		// event: keep the full Thought so UIs never see …(truncated).
 		ev = append(ev, models.AcpEvent{T: t, Kind: "thought", Text: r.Thought})
 		t++
 	}
@@ -283,7 +281,9 @@ func (r *ChatResult) AcpEvents() []models.AcpEvent {
 		t++
 	}
 	if r.Narration != "" {
-		ev = append(ev, models.AcpEvent{T: t, Kind: "message", Text: textutil.TruncateBytes(r.Narration, 8000, "…(truncated)")})
+		// Same as Thought: the visible reply is the full narration, including
+		// text longer than the old 8000-byte cap.
+		ev = append(ev, models.AcpEvent{T: t, Kind: "message", Text: r.Narration})
 		t++
 	}
 	if tl := r.timelineEvent(t); tl != nil {

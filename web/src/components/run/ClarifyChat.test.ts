@@ -1295,6 +1295,64 @@ describe('ClarifyChat', () => {
       wrapper.unmount()
     })
 
+    // plan coverage: g2.2 — no timeline parts: flat message renders in full.
+    it('renders full long flat message without truncated suffix (g2.2)', async () => {
+      const longMessage = `${'回'.repeat(3000)}结尾标记END`
+      expect(new TextEncoder().encode(longMessage).length).toBeGreaterThan(8000)
+      const wrapper = mountChat({ draft: '请复审' })
+      await clickSend(wrapper)
+      const vm = wrapper.vm as unknown as {
+        applyReviewFrame: (f: Record<string, unknown>) => void
+        applyAcpEvents: (e: { kind: string; text: string }[], nodeId?: string) => void
+      }
+      vm.applyReviewFrame({
+        event: 'turn_begin',
+        nodeId: 'react-1',
+        item: { text: '请复审' },
+      })
+      await flushPromises()
+      vm.applyAcpEvents([{ kind: 'message', text: longMessage }], 'react-1')
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="agent-timeline"]').exists()).toBe(false)
+      const bubble = wrapper.get('[data-testid="clarify-agent-message"]')
+      expect(bubble.text()).toBe(longMessage)
+      expect(bubble.text()).toContain('结尾标记END')
+      expect(bubble.text()).not.toContain('…(truncated)')
+      expect(bubble.text()).not.toContain('...(truncated)')
+      wrapper.unmount()
+    })
+
+    // plan coverage: g2.2 — timeline parts render the step text, not a second cut.
+    it('renders full long timeline parts without truncated suffix (g2.2)', () => {
+      const longThought = `${'思'.repeat(3000)}思考结尾END`
+      const longMessage = `${'回'.repeat(3000)}结尾标记END`
+      expect(new TextEncoder().encode(longThought).length).toBeGreaterThan(8000)
+      expect(new TextEncoder().encode(longMessage).length).toBeGreaterThan(8000)
+      const wrapper = mountChat({
+        done: true,
+        turns: [{
+          role: 'agent',
+          text: longMessage,
+          thought: longThought,
+          parts: [
+            { kind: 'thought', text: longThought },
+            { kind: 'message', text: longMessage },
+          ],
+          at: '2026-07-18T00:00:00Z',
+        }],
+      })
+      const thought = wrapper.get('[data-testid="agent-timeline-thought"] .whitespace-pre-wrap')
+      expect(thought.text()).toBe(longThought)
+      expect(thought.text()).not.toContain('…(truncated)')
+      const bubble = wrapper.get('[data-testid="clarify-agent-message"]')
+      expect(bubble.text()).toBe(longMessage)
+      expect(bubble.text()).toContain('结尾标记END')
+      expect(bubble.text()).not.toContain('…(truncated)')
+      expect(bubble.text()).not.toContain('...(truncated)')
+      wrapper.unmount()
+    })
+
     it('turn_done removes 输出中 status while keeping thought+message', async () => {
       const wrapper = mountChat({ draft: '请复审' })
       await clickSend(wrapper)

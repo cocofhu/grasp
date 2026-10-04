@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/cocofhu/grasp/internal/models"
 )
@@ -94,29 +95,71 @@ func TestTimelineCaps(t *testing.T) {
 		t.Fatalf("steps = %d", n)
 	}
 
+	// plan coverage: g1.1 / g2.1 — thought and message over 8000 bytes stay full.
+	longMsg := strings.Repeat("回", maxStepText) + "结尾标记END"
+	if len(longMsg) <= maxStepText {
+		t.Fatalf("message fixture too short: %d", len(longMsg))
+	}
 	big := &ChatResult{}
-	msgChunk(big, strings.Repeat("a", maxStepText+100))
-	if p := timelineOf(t, big); !strings.HasSuffix(p[0].Text, "…(truncated)") {
-		t.Fatalf("long step must be truncated, got %d bytes", len(p[0].Text))
+	msgChunk(big, longMsg)
+	if p := timelineOf(t, big); p[0].Kind != "message" || p[0].Text != longMsg || !utf8.ValidString(p[0].Text) {
+		t.Fatalf("long message step must equal original (%d bytes), got %d", len(longMsg), len(p[0].Text))
+	} else if strings.Contains(p[0].Text, "…(truncated)") || strings.Contains(p[0].Text, "...(truncated)") {
+		t.Fatal("long message step must not be truncated")
+	}
+	exact := strings.Repeat("a", maxStepText)
+	exactRow := &ChatResult{}
+	msgChunk(exactRow, exact)
+	if p := timelineOf(t, exactRow); p[0].Text != exact {
+		t.Fatalf("exactly-%d message must be unchanged", maxStepText)
 	}
 
+	longThought := strings.Repeat("思", maxStepText) + "思考结尾END"
+	bigThought := &ChatResult{}
+	thoughtChunk(bigThought, longThought)
+	if p := timelineOf(t, bigThought); p[0].Kind != "thought" || p[0].Text != longThought || !utf8.ValidString(p[0].Text) {
+		t.Fatalf("long thought step must equal original")
+	} else if strings.Contains(p[0].Text, "…(truncated)") || strings.Contains(p[0].Text, "...(truncated)") {
+		t.Fatal("long thought step must not be truncated")
+	}
+
+	// Combined prose over the 64KiB budget stays full (plan g2.1).
+	block := strings.Repeat("文", 12000)
+	if len(block)*2 <= maxTimelineText {
+		t.Fatalf("prose fixture must exceed budget: %d", len(block)*2)
+	}
+	over := &ChatResult{}
+	thoughtChunk(over, block)
+	msgChunk(over, block)
+	overParts := timelineOf(t, over)
+	if len(overParts) != 2 || overParts[0].Text != block || overParts[1].Text != block {
+		t.Fatalf("prose over 64KiB must stay full: %+v", overParts)
+	}
+
+	// Tool details still drop once prose plus details exhaust the budget.
 	budget := &ChatResult{}
+	chunk := strings.Repeat("b", maxStepText)
 	for range 10 {
-		msgChunk(budget, strings.Repeat("b", maxStepText))
+		msgChunk(budget, chunk)
 		dispatchSessionUpdate("tool_call", map[string]any{"title": "Read", "rawInput": map[string]any{"path": strings.Repeat("p", 3000)}}, budget)
 	}
-	total := 0
+	prose := 0
 	var lastTool models.AcpPart
 	for _, p := range timelineOf(t, budget) {
-		total += len(p.Text) + len(p.Input) + len(p.Output)
+		if p.Kind == "message" {
+			if p.Text != chunk || strings.Contains(p.Text, "truncated") {
+				t.Fatalf("prose over budget must stay full, got %d bytes", len(p.Text))
+			}
+			prose += len(p.Text)
+		}
 		if p.Kind == "tool" {
 			lastTool = p
 		}
 	}
-	if total > maxTimelineText+200 {
-		t.Fatalf("timeline text %d exceeds budget", total)
+	if prose <= maxTimelineText {
+		t.Fatalf("fixture must exceed timeline budget, prose=%d", prose)
 	}
-	if lastTool.Input != "" || lastTool.Summary == "" {
+	if lastTool.Input != "" || lastTool.Output != "" || lastTool.Summary == "" {
 		t.Fatalf("over budget a tool keeps only its summary: %+v", lastTool)
 	}
 }

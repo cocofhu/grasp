@@ -163,21 +163,62 @@ func TestAcpEventsThoughtFullTextNoTruncate(t *testing.T) {
 	if len((&ChatResult{}).AcpEvents()) != 0 {
 		t.Fatalf("empty ChatResult should yield no events")
 	}
-	// Message >8000 still truncated (out of scope for thought, regression lock).
-	longMsg := strings.Repeat("m", 8001)
+	// Thought >8000 bytes stays full (plan g1.2 / g2.1). Chinese sample stays valid UTF-8.
+	longThought := strings.Repeat("思考需要完整保留到结尾。", 400) + "思考结尾END"
+	if len(longThought) <= 8000 {
+		t.Fatalf("thought sample too short: %d bytes", len(longThought))
+	}
+	evLongThought := (&ChatResult{Thought: longThought}).AcpEvents()
+	if len(evLongThought) != 1 || evLongThought[0].Kind != "thought" || evLongThought[0].Text != longThought {
+		t.Fatalf("thought >8000 must equal full text, got %d bytes", len(evLongThought[0].Text))
+	}
+	if !utf8.ValidString(evLongThought[0].Text) {
+		t.Fatal("long thought invalid UTF-8")
+	}
+	if strings.Contains(evLongThought[0].Text, "…(truncated)") || strings.Contains(evLongThought[0].Text, "...(truncated)") {
+		t.Fatal("long thought must not contain truncated suffix")
+	}
+	// Message >8000 is full text, not the old 8000-byte truncation (plan g1.2 / g2.1).
+	longMsg := strings.Repeat("回复需要完整保留到结尾。", 400) + "结尾标记END"
+	if len(longMsg) <= 8000 {
+		t.Fatalf("message sample too short: %d bytes", len(longMsg))
+	}
 	evMsg := (&ChatResult{Narration: longMsg}).AcpEvents()
 	if len(evMsg) != 1 || evMsg[0].Kind != "message" {
-		t.Fatalf("expected 1 message event")
+		t.Fatalf("expected 1 message event, got %+v", evMsg)
 	}
-	if evMsg[0].Text == longMsg {
-		t.Fatalf("message >8000 should still truncate")
+	if evMsg[0].Text != longMsg {
+		t.Fatalf("message text must equal full Narration (%d bytes), got %d", len(longMsg), len(evMsg[0].Text))
 	}
-	if !strings.HasSuffix(evMsg[0].Text, "…(truncated)") {
-		t.Fatalf("message truncate suffix missing: %q", evMsg[0].Text[len(evMsg[0].Text)-20:])
+	if !utf8.ValidString(evMsg[0].Text) {
+		t.Fatal("message invalid UTF-8")
 	}
-	wantMsg := textutil.TruncateBytes(longMsg, 8000, "…(truncated)")
-	if evMsg[0].Text != wantMsg {
-		t.Fatalf("message truncate mismatch")
+	if strings.Contains(evMsg[0].Text, "…(truncated)") || strings.Contains(evMsg[0].Text, "...(truncated)") {
+		t.Fatal("message must not contain truncated suffix")
+	}
+	exactMsg := strings.Repeat("m", 8000)
+	evExactMsg := (&ChatResult{Narration: exactMsg}).AcpEvents()
+	if len(evExactMsg) != 1 || evExactMsg[0].Text != exactMsg {
+		t.Fatal("exactly-8000 message must be unchanged")
+	}
+	evShortMsg := (&ChatResult{Narration: "short"}).AcpEvents()
+	if len(evShortMsg) != 1 || evShortMsg[0].Kind != "message" || evShortMsg[0].Text != "short" {
+		t.Fatalf("short message = %+v", evShortMsg)
+	}
+	// Sealed segment narration is also full (plan g1.2).
+	sealed := &ChatResult{Thought: longThought, Narration: longMsg}
+	sealed.sealSegment()
+	var sealedMsg, sealedThought string
+	for _, e := range sealed.AcpEvents() {
+		switch e.Kind {
+		case "message":
+			sealedMsg = e.Text
+		case "thought":
+			sealedThought = e.Text
+		}
+	}
+	if sealedMsg != longMsg || sealedThought != longThought {
+		t.Fatalf("sealed segment must keep full narration and thought, msg=%d thought=%d", len(sealedMsg), len(sealedThought))
 	}
 }
 
