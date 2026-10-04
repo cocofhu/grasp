@@ -36,7 +36,12 @@ fi
 files=()
 while IFS= read -r path; do
   files+=("$path")
-done < <(find start.sh release-smoke.sh server/scripts scripts sandbox-gateway .github/scripts -type f -name '*.sh' | LC_ALL=C sort)
+done < <(
+  {
+    find . -maxdepth 1 -type f -name '*.sh'
+    find server/scripts scripts sandbox-gateway .github/scripts -type f -name '*.sh'
+  } | sed 's#^\./##' | LC_ALL=C sort
+)
 
 if [[ "${#files[@]}" -eq 0 ]]; then
   echo "shellcheck-error: no managed scripts found" >&2
