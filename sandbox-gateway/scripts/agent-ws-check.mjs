@@ -3,7 +3,9 @@
 // optionally run one chat turn. Exits non-zero with the reason on failure.
 //
 //   node agent-ws-check.mjs <ws-url> connect [timeoutSec]
-//   node agent-ws-check.mjs <ws-url> chat    [timeoutSec]   (needs agent credentials)
+//   node agent-ws-check.mjs <ws-url> chat    [timeoutSec]
+// Chat requires prompt_done, stopReason end_turn, and GRASP_AGENT_E2E_OK.
+// Real cursor chat needs credentials. The opencode mock path does not.
 const [url, mode = 'connect', timeoutArg = '120'] = process.argv.slice(2)
 if (!url || !['connect', 'chat'].includes(mode)) {
   console.error('usage: agent-ws-check.mjs <ws-url> connect|chat [timeoutSec]')

@@ -136,10 +136,14 @@ bash -n scripts/test-runtime-bootstrap.sh
 bash -n scripts/test-runtime-e2e.sh
 bash -n scripts/test-inject.sh
 bash -n scripts/test-git-auth.sh
+bash -n scripts/test-agent-connect.sh
 bash -n scripts/cover-check-sandbox.sh
+node --check scripts/agent-ws-check.mjs
+node --check scripts/mock-chat-model.mjs
 ./scripts/test-inject.sh
 ./scripts/test-git-auth.sh
 ./scripts/test-runtime-bootstrap.sh
+node --test scripts/mock-chat-model.test.mjs
 
 # Sandbox Go (golangci from sandbox/; cover from sandbox-gateway/)
 ROOT="$PWD/.."   # if cwd is sandbox-gateway; else set to repo root
@@ -150,7 +154,10 @@ ROOT="$PWD/.."   # if cwd is sandbox-gateway; else set to repo root
 # docker build --target cli-tools -t universal-sandbox-cli-tools:ci \
 #   -f sandbox/Dockerfile sandbox/
 
-# Full image + runtime bundle (slow; job sandbox-images)
+# Full image + runtime bundle (slow; job sandbox-images, not the ci.yml gate).
+# opencode mock chat always runs and does not need a vendor key.
+# CURSOR_API_KEY, when set, still adds the real cursor chat; without it only
+# that real chat is skipped. Trae handshake still needs TRAECLI_PERSONAL_ACCESS_TOKEN.
 # ../scripts/build-sandbox-runtime.sh /tmp/rt
 # docker build -t universal-sandbox:local sandbox/
 # ./scripts/test-runtime-e2e.sh universal-sandbox:local /tmp/rt/sandbox-runtime.tgz

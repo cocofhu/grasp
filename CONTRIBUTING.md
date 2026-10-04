@@ -192,6 +192,34 @@ Dev-only local sandbox image:
 ./start.sh sandbox       # build universal-sandbox:local
 ```
 
+### Sandbox agent chat check
+
+`ci-sandbox` job `sandbox-images` runs `sandbox-gateway/scripts/test-agent-connect.sh`.
+That script always runs one opencode chat against a host-side mock chat model
+(fixture `ci-e2e`, assistant text `GRASP_AGENT_E2E_OK`, `finish_reason=stop`).
+The container reaches the mock through `host.docker.internal`. No
+`CURSOR_API_KEY` is required for this path. When that key is set, the script
+still runs the original real cursor chat as well; without the key only the
+real cursor chat is skipped. Trae still skips its handshake unless
+`TRAECLI_PERSONAL_ACCESS_TOKEN` is set. This chat check is not part of the
+always-on `.github/workflows/ci.yml` gate.
+
+The mock contract test does not build `universal-sandbox`. From
+`sandbox-gateway/`:
+
+```bash
+node --test scripts/mock-chat-model.test.mjs
+```
+
+Same mock chat as CI, after the image and runtime bundle exist:
+
+```bash
+cd sandbox-gateway
+../scripts/build-sandbox-runtime.sh /tmp/rt
+docker build -t universal-sandbox:local sandbox/
+RUNTIME_BUNDLE=/tmp/rt/sandbox-runtime.tgz ./scripts/test-agent-connect.sh universal-sandbox:local
+```
+
 ## Security scans (CodeQL and friends)
 
 Workflow: `.github/workflows/security.yml` (push to `main`, every PR, weekly

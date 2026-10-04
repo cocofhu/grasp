@@ -36,6 +36,9 @@ jobs:
         working-directory: sandbox-gateway
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
       - name: Shell syntax
         run: |
           bash -n sandbox/scripts/startup.sh
@@ -54,6 +57,7 @@ jobs:
           bash -n scripts/test-git-auth.sh
           bash -n scripts/test-agent-connect.sh
           node --check scripts/agent-ws-check.mjs
+          node --check scripts/mock-chat-model.mjs
           bash -n scripts/cover-check-sandbox.sh
           bash -n ../.github/scripts/coverage-badge-color.sh
           bash -n ../.github/scripts/publish-coverage-badge.sh
@@ -63,6 +67,10 @@ jobs:
         run: ./scripts/test-git-auth.sh
       - name: Runtime bootstrap + services smoke
         run: ./scripts/test-runtime-bootstrap.sh
+      # Fixture replay only. Does not build universal-sandbox. Fails the job
+      # when the one-shot or SSE reply drops GRASP_AGENT_E2E_OK or finish_reason stop.
+      - name: Mock chat model contract
+        run: node --test scripts/mock-chat-model.test.mjs
 
   # The bundle the server image ships (server/Dockerfile stage) must be the one
   # tested here: rebuild it twice with the same toolchain and require identical
@@ -238,7 +246,8 @@ jobs:
           node-version: "24"
       - name: Runtime bundle E2E (start, direct preview, hot update, image level)
         run: ./sandbox-gateway/scripts/test-runtime-e2e.sh universal-sandbox:ci runtime/sandbox-runtime.tgz
-      # Real chat / Trae handshake only run when the secrets exist (not on fork PRs).
+      # opencode mock chat always runs (no vendor key). Real cursor chat and the
+      # Trae handshake still need secrets, which fork PRs do not receive.
       - name: Agent connection E2E
         env:
           RUNTIME_BUNDLE: runtime/sandbox-runtime.tgz
