@@ -48,13 +48,12 @@ const headline = computed(() => {
 })
 /** Generate and insert name the element in the headline already. */
 const showTarget = computed(() => !!target.value && opKey.value !== 'generate' && opKey.value !== 'insert')
-/** "Ready" is implied by the controls below. */
-const showState = computed(() => !!session.value && !!state.value && state.value !== 'ready')
-const tone = computed(() => {
-  if (state.value === 'failed') return 'bg-err'
-  if (isLiveBusy(state.value)) return 'bg-warn animate-pulse'
-  if (state.value === 'ready') return 'bg-ok'
-  return 'bg-txt3'
+const showState = computed(() => !!session.value && !!state.value)
+const pill = computed(() => {
+  if (state.value === 'ready') return 'bg-accent/15 text-accent'
+  if (state.value === 'accepted') return 'bg-ok/15 text-ok'
+  if (state.value === 'failed') return 'bg-err/15 text-err'
+  return 'bg-overlay text-txt3'
 })
 const current = computed(() => view.value?.current ?? 0)
 const currentIndex = computed(() => variants.value.findIndex((v) => v.n === current.value))
@@ -69,6 +68,9 @@ const failedSteer = computed(() => session.value?.mode === 'steer' && state.valu
 const canRetryAccept = computed(() => !!host?.interactive && state.value === 'failed' && session.value?.retryAccept === true && Number.isInteger(session.value.selected) && (session.value.selected ?? 0) > 0)
 /** Only the newest turn of a session carries controls. */
 const isLatestTurn = computed(() => !props.compact && props.liveRef.op !== 'accept' && props.liveRef.op !== 'discard')
+const showPicker = computed(() => !!session.value && isLatestTurn.value && variants.value.length > 0 && isLiveOpen(state.value))
+const showAccepted = computed(() => !!session.value && isLatestTurn.value && variants.value.length > 0 && state.value === 'accepted')
+const showActions = computed(() => !!session.value && isLatestTurn.value && isLiveOpen(state.value))
 
 function send(cmd: LiveCmd, variant?: number) {
   host?.command(props.liveRef.sid, cmd, variant)
@@ -80,46 +82,65 @@ function step(delta: number) {
   const i = Math.max(0, list.indexOf(onOriginal.value ? 0 : current.value))
   send('goto', list[(i + delta + list.length) % list.length])
 }
+
+const chip = 'rounded-md border px-2 py-0.5 text-[11px] transition-colors disabled:cursor-default'
+const ghostBtn = 'rounded-md border border-line bg-surface/70 px-2 py-0.5 text-[11px] text-txt2 transition-colors hover:text-txt disabled:opacity-40'
+const arrowBtn = 'flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-line bg-surface/70 text-txt2 transition-colors hover:text-txt disabled:opacity-40'
 </script>
 
 <template>
   <div
-    class="w-full max-w-[340px] rounded-lg border border-accent/30 bg-accent-dim/40 px-3 py-2 text-left"
-    :class="agent ? 'mt-2' : 'mb-1.5 ml-auto'"
+    class="live-variant-card flex w-full flex-col gap-2 rounded-xl border border-accent/30 bg-accent-dim/40 px-3 py-2.5 text-left"
+    :class="agent ? 'mt-2' : 'mb-1.5 ml-auto max-w-[340px]'"
     data-testid="live-variant-card"
     :data-state="stateKey"
     :data-side="agent ? 'agent' : 'human'"
   >
-    <div class="flex items-center gap-1.5 text-[12px] font-medium text-txt">
-      <Icon name="sparkles" :size="12" class="shrink-0 text-accent" aria-hidden="true" />
-      <span class="min-w-0 truncate" :title="session?.selector || headline" data-testid="live-variant-headline">{{ headline }}</span>
-      <span v-if="showState" class="ml-auto inline-flex shrink-0 items-center gap-1 text-[11px] font-normal text-txt3" role="status" data-testid="live-variant-state">
-        <span class="h-1.5 w-1.5 rounded-full" :class="tone" aria-hidden="true" />
+    <div class="flex min-w-0 items-center gap-1.5 text-[12.5px] font-semibold text-txt">
+      <Icon name="sparkles" :size="14" class="shrink-0 text-accent" aria-hidden="true" />
+      <span class="min-w-0 flex-1 truncate" :title="session?.selector || headline" data-testid="live-variant-headline">{{ headline }}</span>
+      <span
+        v-if="showState"
+        class="inline-flex h-5 shrink-0 items-center gap-1 rounded-full px-2 text-[11px] font-medium"
+        :class="pill"
+        role="status"
+        data-testid="live-variant-state"
+      >
+        <Icon v-if="isLiveBusy(state)" name="spinner" :size="10" class="animate-spin" aria-hidden="true" />
         {{ t(`pages.embedChat.live.states.${stateKey}`) }}
       </span>
     </div>
-    <p v-if="liveRef.prompt && !agent" class="m-0 mt-1 whitespace-pre-wrap break-words text-[12px] leading-snug text-txt2" data-testid="live-variant-prompt">{{ liveRef.prompt }}</p>
-    <p v-if="showTarget" class="m-0 mt-1 truncate text-[11px] text-txt3" :title="session?.selector">{{ target }}</p>
-    <p v-if="session?.state === 'failed' && session.error" class="m-0 mt-1 text-[11px] leading-snug text-err" data-testid="live-variant-error">
+
+    <p v-if="liveRef.prompt && !agent" class="m-0 whitespace-pre-wrap break-words text-[12px] leading-snug text-txt2" data-testid="live-variant-prompt">{{ liveRef.prompt }}</p>
+    <p v-if="showTarget" class="m-0 truncate text-[11px] text-txt3" :title="session?.selector">{{ target }}</p>
+    <p v-if="session?.state === 'failed' && session.error" class="m-0 text-[11px] leading-snug text-err" data-testid="live-variant-error">
       {{ t('pages.embedChat.live.failed', { error: session.error }) }}
     </p>
-    <p v-else-if="session?.state === 'accepted' && session.selected && opKey !== 'accept'" class="m-0 mt-1 text-[11px] text-txt3">
+    <p v-else-if="session?.state === 'accepted' && session.selected && opKey !== 'accept' && !showAccepted" class="m-0 text-[11px] text-txt3">
       {{ t('pages.embedChat.live.selected', { n: session.selected }) }}
     </p>
-    <p v-if="failedSteer" class="m-0 mt-1 text-[11px] leading-snug text-txt3" data-testid="live-steer-partial">
+    <p v-if="failedSteer" class="m-0 text-[11px] leading-snug text-txt3" data-testid="live-steer-partial">
       {{ t('pages.embedChat.live.steerPartial') }}
     </p>
-    <button v-if="canRetryAccept" type="button" class="mt-2 rounded bg-accent px-2 py-0.5 text-[11px] font-medium text-white" data-testid="live-variant-retry-accept" @click="send('retry-accept')">
+    <button
+      v-if="canRetryAccept && !showActions"
+      type="button"
+      class="self-start rounded-md bg-accent px-2.5 py-0.5 text-[11px] font-medium text-white"
+      data-testid="live-variant-retry-accept"
+      @click="send('retry-accept')"
+    >
       {{ t('pages.embedChat.live.retryAccept') }}
     </button>
 
-    <template v-if="session && isLatestTurn && variants.length && isLiveOpen(state)">
-      <div class="mt-2 flex flex-wrap gap-1" role="group" :aria-label="t('pages.embedChat.live.variantCount', { n: variants.length })">
+    <div v-if="showPicker" class="flex min-w-0 items-center gap-1" role="group" :aria-label="t('pages.embedChat.live.variantCount', { n: variants.length })">
+      <button v-if="host?.interactive" type="button" :class="arrowBtn" :disabled="!canNav" :aria-label="t('pages.embedChat.live.prev')" data-testid="live-variant-prev" @click="step(-1)">
+        <Icon name="chevron-left" :size="12" aria-hidden="true" />
+      </button>
+      <div class="flex min-w-0 flex-1 flex-wrap gap-1">
         <button
           v-if="hasOriginal"
           type="button"
-          class="rounded border px-1.5 py-0.5 text-[11px] transition-colors disabled:cursor-default"
-          :class="onOriginal ? 'border-accent bg-accent/15 text-txt' : 'border-dashed border-line bg-surface/70 text-txt2 hover:border-accent/50'"
+          :class="[chip, onOriginal ? 'border-accent bg-accent/15 text-txt' : 'border-dashed border-line bg-surface/70 text-txt2 hover:border-accent/50']"
           :aria-pressed="onOriginal"
           :title="t('pages.embedChat.live.gotoOriginal')"
           :disabled="!canNav"
@@ -132,9 +153,8 @@ function step(delta: number) {
           v-for="v in variants"
           :key="v.n"
           type="button"
-          class="rounded border px-1.5 py-0.5 text-[11px] transition-colors disabled:cursor-default"
-          :class="v.n === current ? 'border-accent bg-accent/15 text-txt' : 'border-line bg-surface/70 text-txt2 hover:border-accent/50'"
-          :aria-pressed="v.n === current"
+          :class="[chip, v.n === current && !onOriginal ? 'border-accent bg-accent/15 text-txt' : 'border-line bg-surface/70 text-txt2 hover:border-accent/50']"
+          :aria-pressed="v.n === current && !onOriginal"
           :aria-label="t('pages.embedChat.live.goto', { n: v.n })"
           :disabled="!canNav"
           data-testid="live-variant-chip"
@@ -143,42 +163,87 @@ function step(delta: number) {
           {{ v.n }}<template v-if="v.label"> · {{ v.label }}</template>
         </button>
       </div>
-      <div v-if="host?.interactive" class="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-        <button type="button" class="rounded border border-line px-1.5 py-0.5 text-txt2 hover:text-txt disabled:opacity-40" :disabled="!canNav" :aria-label="t('pages.embedChat.live.prev')" data-testid="live-variant-prev" @click="step(-1)">‹</button>
-        <span class="tabular-nums text-txt3" data-testid="live-variant-viewing">{{
-          onOriginal ? t('pages.embedChat.live.viewingOriginal') : t('pages.embedChat.live.viewing', { current: currentIndex + 1, total: variants.length })
-        }}</span>
-        <button type="button" class="rounded border border-line px-1.5 py-0.5 text-txt2 hover:text-txt disabled:opacity-40" :disabled="!canNav" :aria-label="t('pages.embedChat.live.next')" data-testid="live-variant-next" @click="step(1)">›</button>
+      <button v-if="host?.interactive" type="button" :class="arrowBtn" :disabled="!canNav" :aria-label="t('pages.embedChat.live.next')" data-testid="live-variant-next" @click="step(1)">
+        <Icon name="chevron-right" :size="12" aria-hidden="true" />
+      </button>
+    </div>
+
+    <div v-else-if="showAccepted" class="flex flex-wrap gap-1" data-testid="live-variant-result">
+      <span
+        v-for="v in variants"
+        :key="v.n"
+        class="rounded-md border px-2 py-0.5 text-[11px]"
+        :class="v.n === session?.selected ? 'border-accent bg-accent font-medium text-white' : 'border-line bg-surface/70 text-txt3'"
+        data-testid="live-variant-chip"
+      >
+        {{ v.n }}<template v-if="v.label"> · {{ v.label }}</template>
+      </span>
+    </div>
+
+    <div v-if="showActions && host?.interactive" class="flex flex-wrap items-center gap-1.5">
+      <button
+        v-if="variants.length && !failedSteer"
+        type="button"
+        :class="ghostBtn"
+        :disabled="!canNav"
+        data-testid="live-variant-mode"
+        @click="send(view?.mode === 'compare' ? 'inplace' : 'compare')"
+      >
+        {{ view?.mode === 'compare' ? t('pages.embedChat.live.inplace') : t('pages.embedChat.live.compare') }}
+      </button>
+      <span class="ml-auto flex flex-wrap gap-1.5">
         <button
           type="button"
-          class="rounded border border-line px-1.5 py-0.5 text-txt2 hover:text-txt disabled:opacity-40"
-          :disabled="!canNav"
-          data-testid="live-variant-mode"
-          @click="send(view?.mode === 'compare' ? 'inplace' : 'compare')"
+          :class="[ghostBtn, 'hover:text-err']"
+          :disabled="!canDiscard"
+          data-testid="live-variant-discard"
+          @click="send('discard')"
         >
-          {{ view?.mode === 'compare' ? t('pages.embedChat.live.inplace') : t('pages.embedChat.live.compare') }}
+          {{ failedSteer && !variants.length ? t('pages.embedChat.live.dismissSteer') : t('pages.embedChat.live.discard') }}
         </button>
-        <span class="ml-auto flex gap-1.5">
-          <button type="button" class="rounded border border-line px-2 py-0.5 text-txt2 hover:text-err disabled:opacity-40" :disabled="!canDiscard" data-testid="live-variant-discard" @click="send('discard')">
-            {{ t('pages.embedChat.live.discard') }}
-          </button>
-          <button type="button" class="rounded bg-accent px-2 py-0.5 font-medium text-white disabled:opacity-40" :disabled="!canAct" data-testid="live-variant-accept" @click="send('accept', current)">
-            {{ t('pages.embedChat.live.accept') }}
-          </button>
-        </span>
-      </div>
-      <p v-else class="m-0 mt-1.5 text-[11px] text-txt3">{{ t('pages.embedChat.live.openInPreview') }}</p>
-    </template>
-    <div v-if="session && isLatestTurn && isLiveOpen(state) && !variants.length" class="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-      <template v-if="host?.interactive">
-        <button v-if="failedSteer" type="button" class="rounded border border-line px-2 py-0.5 text-txt2 hover:text-txt disabled:opacity-40" :disabled="!canDiscard" data-testid="live-variant-retry" @click="send('retry')">
+        <button v-if="failedSteer" type="button" :class="ghostBtn" :disabled="!canDiscard" data-testid="live-variant-retry" @click="send('retry')">
           {{ t('pages.embedChat.live.retry') }}
         </button>
-        <button type="button" class="rounded border border-line px-2 py-0.5 text-txt2 hover:text-err disabled:opacity-40" :disabled="!canDiscard" data-testid="live-variant-discard" @click="send('discard')">
-          {{ failedSteer ? t('pages.embedChat.live.dismissSteer') : t('pages.embedChat.live.discard') }}
+        <button
+          v-if="canRetryAccept"
+          type="button"
+          class="rounded-md bg-accent px-2.5 py-0.5 text-[11px] font-medium text-white"
+          data-testid="live-variant-retry-accept"
+          @click="send('retry-accept')"
+        >
+          {{ t('pages.embedChat.live.retryAccept') }}
         </button>
-      </template>
-      <p v-else class="m-0 text-txt3">{{ t('pages.embedChat.live.openInPreview') }}</p>
+        <button
+          v-else-if="variants.length && state !== 'failed'"
+          type="button"
+          class="rounded-md bg-accent px-2.5 py-0.5 text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          :disabled="!canAct"
+          data-testid="live-variant-accept"
+          @click="send('accept', current)"
+        >
+          {{ t('pages.embedChat.live.accept') }}
+        </button>
+      </span>
     </div>
+    <p v-else-if="showActions" class="m-0 text-[11px] text-txt3">{{ t('pages.embedChat.live.openInPreview') }}</p>
   </div>
 </template>
+
+<style scoped>
+.live-variant-card {
+  animation: live-card-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes live-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-variant-card {
+    animation: none;
+  }
+}
+</style>

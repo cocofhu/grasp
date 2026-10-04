@@ -701,7 +701,7 @@ onBeforeUnmount(() => {
     <!-- Preview toolbar: back/forward/reload + Pick + fullscreen + FPS -->
     <div
       v-if="!consoleMode"
-      class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-elevated px-3 py-1.5"
+      class="relative z-20 flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-elevated px-3 py-1.5"
     >
       <button
         type="button"
@@ -764,7 +764,6 @@ onBeforeUnmount(() => {
           v-if="status === 'live'"
           class="group relative cursor-default tabular-nums"
           :class="fpsCounter.hasRecentFrames.value ? 'text-txt2' : 'text-txt3'"
-          :title="t('pages.appPreview.novnc.fpsTooltip')"
         >
           <template v-if="fpsCounter.hasRecentFrames.value">
             <span class="font-medium">{{ fpsCounter.fps.value }}</span>
@@ -775,7 +774,7 @@ onBeforeUnmount(() => {
             {{ t('pages.appPreview.novnc.fps') }}
           </template>
           <span
-            class="rounded-md pointer-events-none absolute bottom-full right-0 z-20 mb-2 hidden w-[220px] border border-line-strong bg-overlay px-2.5 py-2 text-[10px] leading-snug text-txt2 shadow-card group-hover:block"
+            class="rounded-md pointer-events-none absolute right-0 top-full z-30 mt-2 hidden w-[220px] border border-line-strong bg-overlay px-2.5 py-2 text-[10px] leading-snug text-txt2 shadow-card group-hover:block"
           >
             {{ t('pages.appPreview.novnc.fpsTooltip') }}
           </span>

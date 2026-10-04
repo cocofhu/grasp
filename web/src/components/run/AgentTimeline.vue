@@ -3,11 +3,15 @@
  * One agent reply as it happened: each thought run, tool group and message
  * run in arrival order. Consecutive tool calls fold into one AgentToolGroup;
  * only the thought being written stays open while the reply streams.
+ * The block being written is revealed gradually and rendered at most once per
+ * frame; settled blocks render their full text.
  */
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { AgentPart } from '@/lib/shared/types'
 import { timelineBlocks } from '@/lib/run/acpTools'
+import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
 import { renderMarkdown, renderMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
+import { createStreamMarkdownPreview } from '@/lib/shared/streamMarkdownPreview'
 import AgentToolGroup from './AgentToolGroup.vue'
 import StreamMarkdown from './StreamMarkdown.vue'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
@@ -43,8 +47,64 @@ const props = withDefaults(
   },
 )
 
+const emit = defineEmits<{ reveal: [] }>()
+
 const cache: MarkdownBlockCache = new Map()
 const blocks = computed(() => timelineBlocks(props.parts).filter((b) => !(props.hideThought && b.kind === 'thought')))
+
+const liveBlocks = ref<string[]>([])
+const liveThought = ref('')
+const preview = createStreamMarkdownPreview<string[]>({
+  render: (src) => renderMarkdownBlocks(src, cache),
+  empty: [],
+})
+const unsubPreview = preview.subscribe((html) => {
+  liveBlocks.value = html
+  emit('reveal')
+})
+const syncReveal = Boolean(import.meta.env.VITEST)
+let liveKey = ''
+let liveKind: 'thought' | 'message' | '' = ''
+const reveal = createStreamTextReveal({
+  sync: syncReveal,
+  onReveal: (text) => {
+    if (liveKind === 'thought') {
+      liveThought.value = text
+      emit('reveal')
+      return
+    }
+    preview.setText(text)
+    if (syncReveal) preview.flush()
+  },
+})
+
+const lastText = computed(() => {
+  const b = blocks.value[blocks.value.length - 1]
+  return b && b.kind !== 'tools' ? { key: b.key, kind: b.kind, text: b.text } : null
+})
+watch(
+  () => [lastText.value, props.streaming] as const,
+  ([last, streaming], prev) => {
+    if (!last || (!streaming && !prev?.[1])) return
+    if (last.key !== liveKey) {
+      reveal.reset()
+      preview.reset()
+      liveKey = last.key
+      liveKind = last.kind
+    }
+    reveal.setTarget(last.text)
+    if (!streaming) {
+      reveal.flush()
+      preview.flush()
+    }
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => {
+  unsubPreview()
+  reveal.stop()
+  preview.reset()
+})
 const thoughtOpen = ref<Record<number, boolean>>({})
 
 const openByDefault = (last: boolean) => props.expanded || (props.streaming && last)
@@ -77,7 +137,7 @@ function onToggle(index: number, last: boolean, e: Event) {
             :interrupted="!streaming && interrupted"
           />
         </summary>
-        <div class="whitespace-pre-wrap break-words border-t border-dashed border-line px-2.5 pb-2 pt-1.5 font-mono leading-5 [overflow-wrap:anywhere]">{{ b.text }}</div>
+        <div class="whitespace-pre-wrap break-words border-t border-dashed border-line px-2.5 pb-2 pt-1.5 font-mono leading-5 [overflow-wrap:anywhere]">{{ streaming && b.last ? liveThought : b.text }}</div>
       </details>
       <div
         v-else
@@ -85,7 +145,7 @@ function onToggle(index: number, last: boolean, e: Event) {
         :class="bare ? 'leading-6' : 'rounded-lg border border-line bg-elevated px-3 py-2 leading-relaxed'"
         :data-testid="messageTestId"
       >
-        <StreamMarkdown v-if="streaming && b.last" :blocks="renderMarkdownBlocks(b.text, cache)" /><span
+        <StreamMarkdown v-if="streaming && b.last" :blocks="liveBlocks" /><span
           v-else
           v-html="renderMarkdown(b.text)"
         /><slot v-if="streaming && b.last" name="caret" />

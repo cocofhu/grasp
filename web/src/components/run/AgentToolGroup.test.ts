@@ -64,6 +64,14 @@ describe('AgentToolGroup', () => {
     expect(w.find('[data-testid="agent-tool-list"]').exists()).toBe(false)
   })
 
+  it('spins the running spinner in the head and the row', async () => {
+    const w = mountGroup([{ title: 'Shell', status: 'running' }], true)
+    await w.find('[data-testid="agent-tool-group-head"]').trigger('click')
+    const spinners = w.findAll('icon-stub[name="spinner"]')
+    expect(spinners).toHaveLength(2)
+    for (const s of spinners) expect(s.classes()).toContain('animate-spin')
+  })
+
   it('a still-running tool no longer spins once the turn ended', () => {
     const w = mountGroup([{ title: 'Shell', status: 'running' }, { title: 'x', status: 'pending' }], false)
     expect(w.find('[data-testid="agent-tool-group"]').attributes('data-state')).toBe('done')
