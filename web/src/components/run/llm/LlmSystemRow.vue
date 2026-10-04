@@ -129,7 +129,7 @@ const detailLong = computed(() => detail.value.length > DETAIL_PREVIEW || detail
 
   <div
     v-else-if="item.type === 'legacy'"
-    class="mx-auto flex max-w-[min(720px,92%)] items-center gap-1.5 rounded-md border border-dashed border-line px-3 py-1.5 text-[11px] text-txt3"
+    class="flex w-full min-w-0 items-center gap-1.5 rounded-md border border-dashed border-line px-3 py-1.5 text-[11px] text-txt3"
     data-testid="llm-legacy"
   >
     <Icon name="history" :size="12" />{{ t('pages.llmTranscript.legacy') }}
@@ -137,10 +137,10 @@ const detailLong = computed(() => detail.value.length > DETAIL_PREVIEW || detail
 
   <div
     v-else-if="item.type === 'error'"
-    class="rounded-lg mx-auto flex max-w-[min(820px,92%)] items-start gap-1.5 border border-err/40 bg-err/[0.06] px-3 py-2 text-[12px] text-err"
+    class="rounded-lg flex w-full min-w-0 max-w-full items-start gap-1.5 overflow-hidden border border-err/40 bg-err/[0.06] px-3 py-2 text-[12px] text-err"
     data-testid="llm-exec-error"
   >
     <Icon name="alert" :size="13" class="mt-0.5 shrink-0" />
-    <span class="whitespace-pre-wrap break-words"><b>{{ t('pages.llmTranscript.execError') }}</b> · {{ item.text }}</span>
+    <span class="min-w-0 flex-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]"><b>{{ t('pages.llmTranscript.execError') }}</b> · {{ item.text }}</span>
   </div>
 </template>

@@ -276,7 +276,7 @@ function toggleFollow() {
       >
         <Icon name="chat" :size="20" />{{ t('pages.llmTranscript.empty') }}
       </div>
-      <ol v-else class="mx-auto flex max-w-[1040px] list-none flex-col gap-3 p-0">
+      <ol v-else class="flex w-full min-w-0 list-none flex-col gap-3 p-0" data-testid="llm-transcript-list">
         <li v-for="it in items" :key="it.key" :data-item-key="it.key" :data-item-type="it.type">
           <template v-if="it.type === 'turn'">
             <div class="flex flex-col gap-2.5">
