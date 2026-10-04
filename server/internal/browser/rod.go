@@ -368,9 +368,12 @@ func (rp *rodPage) watchDesktop(ctx context.Context) {
 }
 
 func (rp *rodPage) maintainDesktop() {
+	if rp == nil {
+		return
+	}
 	rp.desktopMu.Lock()
 	defer rp.desktopMu.Unlock()
-	if rp == nil || rp.page == nil {
+	if rp.page == nil {
 		return
 	}
 	bounds, err := rp.readWindowBounds()
