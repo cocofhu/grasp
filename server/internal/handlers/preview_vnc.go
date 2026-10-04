@@ -183,8 +183,14 @@ func (h *Handlers) applyVncMsg(page browser.Page, m vncClientMsg, pushJSON func(
 	case "inspect":
 		if err := page.SetInspect(m.On); err != nil {
 			log.Warn().Err(err).Bool("on", m.On).Msg("preview-vnc SetInspect failed")
-			if m.On && pushJSON != nil && errors.Is(err, browser.ErrDesktopNotReady) {
-				pushJSON(gin.H{"type": "not-ready"})
+			if pushJSON != nil {
+				switch {
+				case m.On && errors.Is(err, browser.ErrDesktopNotReady):
+					pushJSON(gin.H{"type": "not-ready"})
+				case !m.On:
+					// The client already shows inspect off; the page may still be armed.
+					pushJSON(gin.H{"type": "inspect-off-failed"})
+				}
 			}
 		}
 	case "navigate":

@@ -3160,6 +3160,7 @@
         "urlLabel": "url",
         "windowNotReady": "窗口未就绪，无法可靠取点。请等待预览窗口铺满后再试。",
         "describeFailed": "未能识别该元素，请重试",
+        "inspectOffFailed": "页面可能仍在取点模式，请再点一次「取消标注」或刷新预览",
         "reconnect": "重新连接",
         "error": "noVNC 预览连接失败",
         "connectingTitle": "正在启动预览环境…",

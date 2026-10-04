@@ -11,6 +11,10 @@ All notable public-release changes are documented here.
   IP direct preview on, the panel still uses noVNC and adds an "open directly in
   new tab" button. Public share pages behave the same way. The new
   `desktop_idle_ttl_seconds` setting (default 0) can close idle pages.
+- **App preview:** the noVNC window shows the browser tab strip and address bar
+  again and no longer clips the top of the page. **Cancel annotation** now
+  leaves pick mode, and the panel shows a tip if the page did not leave it. The
+  watch-only hint is easier to read.
 
 ## 1.2.1 — 2026-09-28
 

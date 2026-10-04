@@ -3160,6 +3160,7 @@
         "urlLabel": "url",
         "windowNotReady": "Window not ready for reliable picking. Wait until the preview window fills the desktop, then try again.",
         "describeFailed": "Could not identify that element. Please retry.",
+        "inspectOffFailed": "The page may still be in pick mode. Select Cancel annotation again or reload the preview.",
         "reconnect": "Reconnect",
         "error": "noVNC preview connection failed",
         "connectingTitle": "Starting preview environment…",

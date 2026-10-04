@@ -15,6 +15,7 @@ import (
 type vncRecPage struct {
 	inspect    *bool
 	inspectErr error
+	offErr     error
 	navs       []string
 	gotos      []string
 	url        string
@@ -28,6 +29,9 @@ func (p *vncRecPage) SetViewport(int, int, float64) error       { return nil }
 func (p *vncRecPage) SetInspect(on bool) error {
 	if p.inspectErr != nil && on {
 		return p.inspectErr
+	}
+	if p.offErr != nil && !on {
+		return p.offErr
 	}
 	p.inspect = &on
 	return nil
@@ -172,6 +176,19 @@ func TestApplyVncMsgInspectNotReadyPushes(t *testing.T) {
 	})
 	if len(pushed) != 1 {
 		t.Fatalf("on:false should not push not-ready: %v", pushed)
+	}
+}
+
+func TestApplyVncMsgInspectOffFailurePushes(t *testing.T) {
+	h := &Handlers{}
+	p := &vncRecPage{offErr: errors.New("highlight configuration parameter is missing")}
+	var pushed []string
+	h.applyVncMsg(p, decodeVnc(t, `{"type":"inspect","on":false}`), func(v any) {
+		b, _ := json.Marshal(v)
+		pushed = append(pushed, string(b))
+	})
+	if len(pushed) != 1 || pushed[0] != `{"type":"inspect-off-failed"}` {
+		t.Fatalf("want inspect-off-failed push, got %v", pushed)
 	}
 }
 

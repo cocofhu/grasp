@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-rod/rod/lib/proto"
 )
@@ -28,19 +29,6 @@ func TestPlan_g1_1_splitWindowStateAndSize(t *testing.T) {
 	}
 }
 
-func TestPlan_g1_1_toolbarShiftedOffDesktop(t *testing.T) {
-	// Outer frame already equals the screen, but the toolbar ate 120px of content.
-	left, top, width, height := fitContentToDesktop(desktopGeom{
-		outerW: ViewportWidth, outerH: ViewportHeight, contentW: ViewportWidth, contentH: ViewportHeight - 120,
-	})
-	if top != -120 || height != ViewportHeight+120 {
-		t.Fatalf("top=%d height=%d want top=-120 height=%d", top, height, ViewportHeight+120)
-	}
-	if left != 0 || width != ViewportWidth {
-		t.Fatalf("left=%d width=%d want a horizontal span of the desktop", left, width)
-	}
-}
-
 func TestPlan_g1_2_viewportUsesContentAreaNotOuterFrame(t *testing.T) {
 	// Outer frame is 1920x1080; content is short by the toolbar. Viewport height
 	// must be the content height, and device pixel ratio stays 1.
@@ -59,48 +47,129 @@ func TestPlan_g1_2_viewportUsesContentAreaNotOuterFrame(t *testing.T) {
 	}
 }
 
-func TestPlan_g1_3_outerFrameDoesNotProveContentCovered(t *testing.T) {
-	// Old gate treated outer 1920x1080, and even 80px short, as ready.
-	outerOK := geomFromBounds(&proto.BrowserBounds{
-		Width: intPtr(ViewportWidth), Height: intPtr(ViewportHeight),
-	}, ViewportWidth, ViewportHeight-80)
-	if contentCoversDesktop(outerOK) {
-		t.Fatal("content 80px short of the screen must not be ready, even when the outer frame is 1920x1080")
-	}
-	oneShort := desktopGeom{
+func TestPlan_g1_3_toolbarOnScreenIsReady(t *testing.T) {
+	// Window at the origin covering the screen; the toolbar takes the top 88px
+	// and the content area fills the rest.
+	g := desktopGeom{
 		outerW: ViewportWidth, outerH: ViewportHeight,
-		contentW: ViewportWidth, contentH: ViewportHeight - 1,
+		contentW: ViewportWidth, contentH: ViewportHeight - 88,
 	}
-	if contentCoversDesktop(oneShort) {
-		t.Fatal("content 1px short must not be ready")
+	if !desktopReady(g) {
+		t.Fatal("toolbar on screen with content filling the rest should be ready")
 	}
-	if contentCoversDesktop(desktopGeom{}) {
-		t.Fatal("empty geometry must not be ready")
+	// Fullscreen: no toolbar, content equals the frame.
+	g.contentH = ViewportHeight
+	if !desktopReady(g) {
+		t.Fatal("fullscreen content covering the frame should be ready")
 	}
-	exact := desktopGeom{
-		outerW: ViewportWidth, outerH: ViewportHeight,
-		contentW: ViewportWidth, contentH: ViewportHeight,
-	}
-	if !contentCoversDesktop(exact) {
-		t.Fatal("content that covers the desktop at the origin should be ready")
+	// Chromium reports a couple of pixels of border on Xvfb.
+	if !desktopReady(desktopGeom{left: -2, outerW: ViewportWidth + 2, outerH: ViewportHeight, contentW: ViewportWidth - 1, contentH: 992}) {
+		t.Fatal("border slack should still be ready")
 	}
 }
 
-func TestPlan_g1_3_toolbarStillOnScreenIsNotCovered(t *testing.T) {
-	// Window was grown downward so the content size matches the desktop, but
-	// the toolbar still occupies the top of the framebuffer.
-	onScreen := desktopGeom{
-		left: 0, top: 0,
-		outerW: ViewportWidth + 120, outerH: ViewportHeight + 120,
-		contentW: ViewportWidth, contentH: ViewportHeight,
+func TestPlan_g1_3_shiftedOrStaleIsNotReady(t *testing.T) {
+	cases := map[string]desktopGeom{
+		"empty": {},
+		// Toolbar parked above the screen clips the page top.
+		"shifted up": {top: -88, outerW: ViewportWidth, outerH: ViewportHeight + 88, contentW: ViewportWidth, contentH: ViewportHeight},
+		// Outer frame updated, innerHeight still from before the resize.
+		"stale content": {outerW: ViewportWidth, outerH: ViewportHeight, contentW: ViewportWidth, contentH: 817},
+		"short frame":   {outerW: ViewportWidth, outerH: 900, contentW: ViewportWidth, contentH: 812},
+		"narrow":        {outerW: ViewportWidth, outerH: ViewportHeight, contentW: 1280, contentH: 992},
 	}
-	if contentCoversDesktop(onScreen) {
-		t.Fatal("content origin pushed down by the toolbar must not count as covered")
+	for name, g := range cases {
+		if desktopReady(g) {
+			t.Errorf("%s: %+v must not be ready", name, g)
+		}
 	}
-	onScreen.top = -120
-	onScreen.left = -120
-	if !contentCoversDesktop(onScreen) {
-		t.Fatal("toolbar shifted off the framebuffer should count as covered")
+}
+
+// fakeDesktop models Chromium on Xvfb: the outer frame changes as soon as
+// setWindowBounds returns, but innerHeight lags for a few reads.
+type fakeDesktop struct {
+	toolbar    int
+	lagReads   int
+	staleH     int
+	fit        bool
+	geom       desktopGeom
+	pending    int
+	lastBounds *proto.BrowserBounds
+}
+
+func (f *fakeDesktop) setWindowBounds(b *proto.BrowserBounds) error {
+	if b.Width == nil {
+		return nil
+	}
+	f.lastBounds = b
+	f.staleH = f.geom.contentH
+	f.geom.left, f.geom.top = *b.Left, *b.Top
+	f.geom.outerW, f.geom.outerH = *b.Width, *b.Height
+	f.pending = f.lagReads
+	return nil
+}
+
+func (f *fakeDesktop) readDesktopGeom() (desktopGeom, error) {
+	g := f.geom
+	g.contentW = g.outerW
+	g.contentH = g.outerH - f.toolbar
+	if !f.fit {
+		g.contentH = g.outerH / 2
+	}
+	if f.pending > 0 {
+		f.pending--
+		g.contentH = f.staleH
+	}
+	f.geom.contentH = g.contentH
+	return g, nil
+}
+
+func fastSettle(t *testing.T) {
+	t.Helper()
+	poll, timeout := desktopSettlePoll, desktopSettleTimeout
+	desktopSettlePoll, desktopSettleTimeout = time.Millisecond, 50*time.Millisecond
+	t.Cleanup(func() { desktopSettlePoll, desktopSettleTimeout = poll, timeout })
+}
+
+func TestPlan_g1_4_staleInnerHeightWaitsForResize(t *testing.T) {
+	fastSettle(t)
+	f := &fakeDesktop{toolbar: 88, lagReads: 2, fit: true, geom: desktopGeom{contentH: 817}}
+	g, err := presentNormal(f)
+	if err != nil {
+		t.Fatalf("presentNormal: %v", err)
+	}
+	if g.top != 0 || g.left != 0 {
+		t.Fatalf("window moved to %d,%d; the toolbar must stay on screen", g.left, g.top)
+	}
+	if g.contentW != ViewportWidth || g.contentH != ViewportHeight-88 {
+		t.Fatalf("content=%dx%d, want settled 1920x992 (not the stale 817)", g.contentW, g.contentH)
+	}
+}
+
+func TestPlan_g1_4_failureLeavesWindowAtOrigin(t *testing.T) {
+	fastSettle(t)
+	f := &fakeDesktop{toolbar: 88, fit: false}
+	_, err := presentNormal(f)
+	if !errors.Is(err, ErrDesktopNotReady) {
+		t.Fatalf("err=%v, want ErrDesktopNotReady", err)
+	}
+	b := f.lastBounds
+	if b == nil || *b.Left != 0 || *b.Top != 0 || *b.Width != ViewportWidth || *b.Height != ViewportHeight {
+		t.Fatalf("last bounds %+v, want 0,0 1920x1080 so the page top is not clipped", b)
+	}
+}
+
+func TestPlan_g1_5_inspectOffCarriesHighlightConfig(t *testing.T) {
+	off := inspectModeRequest(false)
+	if off.Mode != proto.OverlayInspectModeNone {
+		t.Fatalf("mode=%q", off.Mode)
+	}
+	if off.HighlightConfig == nil {
+		t.Fatal("Chromium rejects setInspectMode none without highlightConfig")
+	}
+	on := inspectModeRequest(true)
+	if on.Mode != proto.OverlayInspectModeSearchForNode || on.HighlightConfig == nil {
+		t.Fatalf("on request %+v", on)
 	}
 }
 
