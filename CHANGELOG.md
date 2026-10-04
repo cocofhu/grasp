@@ -24,6 +24,9 @@ All notable public-release changes are documented here.
   starting. When the port is unreachable, the error tells the agent what to
   fix, including the address the app actually listens on (for example
   `127.0.0.1` instead of `0.0.0.0`), instead of `Process exited with status 1`.
+- **Runs:** a paused node's agent session no longer floods the server log with
+  `acp event channel full` warnings, and the platform stops reconnecting to the
+  sandbox every two seconds while no turn is running.
 
 ## 1.2.1 — 2026-09-28
 

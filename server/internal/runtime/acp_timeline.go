@@ -28,13 +28,30 @@ type acpTimelineStore struct {
 	mu      sync.Mutex
 	entries map[string]*acpTimelineEntry
 	ingest  map[string]context.CancelFunc
+	// pull refreshes one node from its sandbox event log; a field so tests can
+	// count dials without a bridge.
+	pull func(ctx context.Context, runID, nodeID string, reader *sandbox.EventLogReader)
 }
 
+// timelineIngestEvery is the event-log poll cadence while a turn is running.
+var timelineIngestEvery = 2 * time.Second
+
 func newAcpTimelineStore() *acpTimelineStore {
-	return &acpTimelineStore{
+	s := &acpTimelineStore{
 		entries: map[string]*acpTimelineEntry{},
 		ingest:  map[string]context.CancelFunc{},
 	}
+	s.pull = s.refreshFromReader
+	return s
+}
+
+// acpTurnBusy reports whether acp has a turn running, by this client or any
+// other bridge client. nil means unknown, so the ingest keeps polling.
+func acpTurnBusy(acp *sandbox.ACPClient) func() bool {
+	if acp == nil {
+		return nil
+	}
+	return func() bool { return acp.TurnInFlight() || acp.BridgeState().Busy }
 }
 
 func timelineKey(runID, nodeID string) string { return runID + "|" + nodeID }
@@ -165,7 +182,10 @@ func (s *acpTimelineStore) stop(runID, nodeID string) {
 	s.mu.Unlock()
 }
 
-func (s *acpTimelineStore) startIngest(runID, nodeID, host string, port int, password string) {
+// startIngest polls the sandbox event log for runID/nodeID. busy gates the
+// poll: each pull dials the bridge /ws, so an idle parked session must not be
+// dialed every tick. A nil busy polls unconditionally.
+func (s *acpTimelineStore) startIngest(runID, nodeID, host string, port int, password string, busy func() bool) {
 	if s == nil || host == "" || port <= 0 {
 		return
 	}
@@ -180,24 +200,30 @@ func (s *acpTimelineStore) startIngest(runID, nodeID, host string, port int, pas
 	s.ingest[key] = cancel
 	s.mu.Unlock()
 
-	go s.ingestLoop(ctx, runID, nodeID, host, port, password)
+	go s.ingestLoop(ctx, runID, nodeID, host, port, password, busy)
 }
 
-func (s *acpTimelineStore) ingestLoop(ctx context.Context, runID, nodeID, host string, port int, password string) {
+func (s *acpTimelineStore) ingestLoop(ctx context.Context, runID, nodeID, host string, port int, password string, busy func() bool) {
 	// Keep one cookie for this ingest lifecycle; polling must not allocate a
 	// new bridge session (and hash the login secret) every two seconds.
 	reader := sandbox.NewEventLogReader(host, port, password)
 	// Immediate first pull so cold page loads see history without waiting.
-	s.refreshFromReader(ctx, runID, nodeID, reader)
+	s.pull(ctx, runID, nodeID, reader)
 
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(timelineIngestEvery)
 	defer ticker.Stop()
+	wasBusy := false
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.refreshFromReader(ctx, runID, nodeID, reader)
+			now := busy == nil || busy()
+			// One more pull after the turn ends picks up its final frames.
+			if now || wasBusy {
+				s.pull(ctx, runID, nodeID, reader)
+			}
+			wasBusy = now
 		}
 	}
 }

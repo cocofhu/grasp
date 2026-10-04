@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/sandbox"
+	"sync/atomic"
 )
 
 func TestAcpTimelineStoreUpsertAndPage(t *testing.T) {
@@ -121,9 +123,68 @@ func TestTimelineReplaceOverridesLongerPrior(t *testing.T) {
 
 func TestAcpTimelineIngestLoopCancels(t *testing.T) {
 	s := newAcpTimelineStore()
-	s.startIngest("r", "n", "127.0.0.1", 1, "")
+	s.startIngest("r", "n", "127.0.0.1", 1, "", nil)
 	time.Sleep(10 * time.Millisecond)
 	s.stop("r", "n")
 	// stop is idempotent
 	s.stop("r", "n")
+}
+
+func TestAcpTimelineIngestPollsOnlyWhileBusy(t *testing.T) {
+	prev := timelineIngestEvery
+	timelineIngestEvery = 5 * time.Millisecond
+	t.Cleanup(func() { timelineIngestEvery = prev })
+
+	s := newAcpTimelineStore()
+	var pulls atomic.Int32
+	s.pull = func(context.Context, string, string, *sandbox.EventLogReader) { pulls.Add(1) }
+	var busy atomic.Bool
+	s.startIngest("r", "n", "127.0.0.1", 1, "", busy.Load)
+	t.Cleanup(func() { s.stop("r", "n") })
+
+	waitPulls := func(min int32) {
+		t.Helper()
+		deadline := time.Now().Add(2 * time.Second)
+		for pulls.Load() < min && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
+		if pulls.Load() < min {
+			t.Fatalf("pulls=%d want >= %d", pulls.Load(), min)
+		}
+	}
+
+	waitPulls(1) // cold first pull
+	time.Sleep(60 * time.Millisecond)
+	if n := pulls.Load(); n != 1 {
+		t.Fatalf("idle session must not be polled, pulls=%d", n)
+	}
+
+	busy.Store(true)
+	waitPulls(4)
+	busy.Store(false)
+	time.Sleep(30 * time.Millisecond)
+	settled := pulls.Load()
+	time.Sleep(60 * time.Millisecond)
+	if n := pulls.Load(); n != settled {
+		t.Fatalf("polling must stop after the turn ends: %d -> %d", settled, n)
+	}
+}
+
+func TestAcpTurnBusyNilClient(t *testing.T) {
+	if acpTurnBusy(nil) != nil {
+		t.Fatal("nil client should poll unconditionally")
+	}
+	c := sandbox.NewACPClient("127.0.0.1", 1)
+	busy := acpTurnBusy(c)
+	if busy() {
+		t.Fatal("fresh client is idle")
+	}
+	c.SeedBridgeForTest(sandbox.BridgeState{Known: true, Busy: true, RunningOpID: "op-x"}, "", "")
+	if !busy() {
+		t.Fatal("bridge busy should count")
+	}
+	c.SeedBridgeForTest(sandbox.BridgeState{Known: true}, "", "op-mine")
+	if !busy() {
+		t.Fatal("own in-flight turn should count")
+	}
 }
