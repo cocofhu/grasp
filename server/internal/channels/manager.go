@@ -353,7 +353,7 @@ func (m *Manager) drainConvQueue(q *convQueue, key string) {
 		if len(q.pending) == 0 {
 			q.busy = false
 			q.mu.Unlock()
-			m.flushPushQueue(key)
+			_ = m.flushPushQueue(key)
 			return
 		}
 		next := q.pending[0]

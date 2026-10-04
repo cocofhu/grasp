@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "server": "node scripts/build.mjs && npx --yes serve public -p 4000"
+    "server": "node scripts/build.mjs && npx --yes serve public -p 4000",
+    "audit:check": "node scripts/audit-check.mjs"
   },
   "dependencies": {
     "markdown-it": "^14.3.2",

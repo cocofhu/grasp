@@ -138,7 +138,7 @@ func forceUpstreamLogin(parent context.Context, upstreamHost, password string) (
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("login returned %s", resp.Status)
@@ -191,7 +191,7 @@ func forceVibeLogin(parent context.Context, upstreamHost, password string) ([]*h
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("vibe login returned %s", resp.Status)

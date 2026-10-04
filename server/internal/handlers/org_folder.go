@@ -55,7 +55,7 @@ func (h *Handlers) ImportOrgFolder(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	limited := io.LimitReader(f, services.OrgFolderMaxBytes+1)
 	raw, err := io.ReadAll(limited)

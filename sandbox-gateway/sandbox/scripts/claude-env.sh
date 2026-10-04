@@ -1,3 +1,5 @@
+# shellcheck shell=bash
+# Sourced fragment (defines ai-code). No shebang: direct exec stays unchanged.
 # Claude Code 环境变量：均由容器环境注入，不在通用镜像里硬编码任何具体端点/模型/密钥。
 # 平台/业务方可注入 ANTHROPIC_BASE_URL、ANTHROPIC_AUTH_TOKEN、CLAUDE_MODEL 等（claude 会自行读取）。
 export IS_SANDBOX="${IS_SANDBOX:-1}"

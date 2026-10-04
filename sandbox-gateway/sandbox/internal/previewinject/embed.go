@@ -74,7 +74,7 @@ func (l EmbedLookup) lookup(r *http.Request, ticket, node string) (embedOrigin, 
 	if err != nil {
 		return embedOrigin{}, false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return embedOrigin{}, false
 	}

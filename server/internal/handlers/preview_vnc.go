@@ -76,7 +76,7 @@ func (h *Handlers) PreviewVNC(c *gin.Context) {
 		log.Debug().Str("run_id", runID).Str("node_id", nodeID).Err(err).Msg("preview-vnc websocket upgrade failed")
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// gorilla/websocket does not support concurrent writes; the RFB passthrough
 	// loop, pushJSON, and OnPick may all write to conn.
@@ -115,7 +115,7 @@ func (h *Handlers) PreviewVNC(c *gin.Context) {
 		_ = writeJSON(gin.H{"type": "error", "message": "vnc upstream failed"})
 		return
 	}
-	defer upstream.Close()
+	defer func() { _ = upstream.Close() }()
 
 	done := make(chan struct{})
 	defer close(done)

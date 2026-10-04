@@ -477,7 +477,7 @@ func (a *Adapter) downloadDecryptImage(ctx context.Context, img *callbackImage) 
 		log.Warn().Err(err).Msg("wecom: image download failed")
 		return nil, "单聊图片下载失败，已跳过"
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return nil, "单聊图片下载失败，已跳过"
 	}

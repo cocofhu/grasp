@@ -159,7 +159,7 @@ func (r *EventLogReader) Raw(ctx context.Context) ([]json.RawMessage, string, er
 	if err != nil {
 		return nil, "", err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	if err := conn.WriteJSON(map[string]any{"op": "connect", "autoPermission": true}); err != nil {
 		return nil, "", fmt.Errorf("ws connect: %w", err)
@@ -234,7 +234,7 @@ func (r *EventLogReader) fetchEventsBefore(ctx context.Context, before, limit in
 			}
 			continue
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 			return nil, false, fmt.Errorf("acp events %d: %s", resp.StatusCode, string(body))
@@ -306,7 +306,7 @@ func (r *EventLogReader) Page(ctx context.Context, cursor string, limit int) (*E
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	if err := conn.WriteJSON(map[string]any{"op": "connect", "autoPermission": true}); err != nil {
 		return nil, fmt.Errorf("ws connect: %w", err)

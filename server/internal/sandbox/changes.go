@@ -78,7 +78,7 @@ func fetchChanges(ctx context.Context, host string, port int) (*Changes, error) 
 	if err != nil {
 		return nil, fmt.Errorf("changes GET: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("changes %d", resp.StatusCode)
 	}

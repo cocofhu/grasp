@@ -279,7 +279,7 @@ func (h *Handlers) SandboxChat(c *gin.Context) {
 		log.Debug().Uint64("sandbox_id", uint64(id)).Err(err).Msg("sandbox websocket upgrade failed")
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	var wmu sync.Mutex
 	write := func(v any) error {
@@ -389,7 +389,7 @@ func (h *Handlers) SandboxTerminal(c *gin.Context) {
 		log.Debug().Uint64("sandbox_id", uint64(id)).Err(err).Msg("sandbox websocket upgrade failed")
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	term, err := h.Sbx.OpenTerminal(c.Request.Context(), id)
 	if err != nil {

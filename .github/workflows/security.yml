@@ -4,7 +4,10 @@
 # Residual-prone patterns (do not "boolean-sanitize" and assume taint is cleared):
 #   incomplete multi-char HTML strip, DOM reinterpret after encode — see
 #   web/src/lib/highlightJson.test.ts and CONTRIBUTING.md "Security scans".
-# npm audit: high+ fails the job unless allowlisted with an expiry (web/audit-allowlist.json).
+# npm audit: high+ fails the job unless allowlisted with an expiry
+# (web/audit-allowlist.json and docs/audit-allowlist.json).
+# govulncheck: called-symbol findings fail unless listed in govulncheck-allowlist.json
+# with a reason and an expiry. No Actions secrets are read.
 # gitleaks: fail-on-leak after .gitleaks.toml allowlist for documented placeholders.
 name: security
 
@@ -89,6 +92,39 @@ jobs:
         env:
           npm_config_registry: https://registry.npmjs.org
         run: npm run audit:check
+
+  npm-audit-docs:
+    name: npm audit (docs)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+      - name: npm audit (high+)
+        # Same expiry allowlist rules as web. Official registry only.
+        # Failure is the job result: no continue-on-error.
+        env:
+          npm_config_registry: https://registry.npmjs.org
+        run: npm run audit:check
+
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25.x"
+      - name: govulncheck (server, gateway, sandbox)
+        env:
+          GOPROXY: https://proxy.golang.org,direct
+        run: ./.github/scripts/govulncheck-check.sh
 
   gitleaks:
     name: gitleaks

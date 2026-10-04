@@ -72,7 +72,7 @@ func (h *Handlers) SandboxVNC(c *gin.Context) {
 		log.Debug().Uint("sandbox_id", id).Err(err).Msg("sandbox-vnc websocket upgrade failed")
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	var wmu sync.Mutex
 	writeJSON := func(v any) error {
@@ -113,7 +113,7 @@ func (h *Handlers) SandboxVNC(c *gin.Context) {
 		_ = writeJSON(gin.H{"type": "error", "message": "vnc upstream failed"})
 		return
 	}
-	defer upstream.Close()
+	defer func() { _ = upstream.Close() }()
 
 	done := make(chan struct{})
 	defer close(done)

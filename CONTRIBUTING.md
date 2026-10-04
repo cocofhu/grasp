@@ -22,9 +22,10 @@ Before contributing, read [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) and
 CI appends these gates alongside existing vet/tests/`vue-tsc` (nothing is
 replaced). Use the same commands locally before opening a PR.
 
-**Go** — shared root config [`.golangci.yml`](.golangci.yml) (golangci-lint v2,
-`staticcheck` SA*/S1*, `_test.go` excluded for the first pass). Install a v2.x
-binary (`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0`
+**Go** — shared root config [`.golangci.yml`](.golangci.yml) (golangci-lint v2.12).
+Enabled on non-test code: `staticcheck` SA*/S1*, `errcheck`, and `unused`.
+`_test.go` stays excluded. Install the v2.12 binary
+(`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0`
 or the [official releases](https://golangci-lint.run/docs/welcome/install/)),
 then from each module directory:
 
@@ -36,7 +37,27 @@ ROOT="$PWD"
 (cd sandbox-gateway/sandbox && golangci-lint run --config "$ROOT/.golangci.yml" ./...)
 ```
 
+`go vet ./...` runs in `ci-server`, `ci-gateway`, and the `sandbox-go` job of
+`ci-sandbox` (from `sandbox-gateway/sandbox`).
+
 Matching workflows: `ci-server`, `ci-gateway`, `ci-sandbox` (sandbox-go job).
+
+**Workflows and shell** — always-on [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+(every pull request and push to `main`, no path filter). These do not replace
+module tests or coverage.
+
+```bash
+# from repo root; downloads pinned actionlint v1.7.12 and shellcheck v0.11.0
+./.github/scripts/actionlint.sh
+./.github/scripts/shellcheck-error.sh
+```
+
+`actionlint` checks every file under `.github/workflows`. `shellcheck-error.sh`
+runs shellcheck `--severity=error` on repo-root `*.sh`, `server/scripts`,
+`scripts`, `sandbox-gateway`, and `.github/scripts`. Warnings do not fail.
+An exemption is a `# shellcheck` directive with a reason comment, and it must
+not change the script's behavior. A workflow syntax or expression error, or a
+shell error, fails the job. There is no `continue-on-error` on these steps.
 
 **Web** — ESLint (flat config in `web/`) coexists with `vue-tsc` (types stay on
 `vue-tsc`; ESLint is not type-aware in this first pass). CI fails on ESLint
@@ -92,8 +113,10 @@ required status checks for PRs into `main` (rulesets / classic protection).
 Code-side `web-gate` still fails the workflow when e2e fails even if protection
 is not updated yet.
 
-Later tightening (more Go linters, stricter ESLint rules, optional type-aware
-ESLint) can ratchet without changing this layout; not required for this pass.
+Further tightening (more Go linters, stricter ESLint rules, optional type-aware
+ESLint) can ratchet without changing this layout. Do not raise the coverage
+numbers below, and do not put the full Playwright suite or `release-smoke` on
+every pull request.
 
 Never commit credentials, local configuration, generated databases, or
 organization-only URLs to public examples.
@@ -223,13 +246,37 @@ RUNTIME_BUNDLE=/tmp/rt/sandbox-runtime.tgz ./scripts/test-agent-connect.sh unive
 ## Security scans (CodeQL and friends)
 
 Workflow: `.github/workflows/security.yml` (push to `main`, every PR, weekly
-schedule). Jobs: CodeQL (go + javascript-typescript), `npm audit` (web, high+),
-gitleaks.
+schedule). Jobs: CodeQL (go + javascript-typescript), `npm audit` (web and
+docs, high+), `govulncheck` (server, gateway, sandbox), gitleaks. New jobs do
+not read repository secrets. A failed audit or vuln scan fails the job; none
+of them set `continue-on-error`.
 
-- `npm audit` runs as `npm run audit:check` in `web/`. A high/critical advisory
-  with **no patched release** that only reaches dev/build tooling may be added
-  to `web/audit-allowlist.json` with a reason and an `expires` date (a few
-  months out); expired entries fail the job. Remove the entry once a fix ships.
+- `npm audit` runs as `npm run audit:check` in `web/` and in `docs/` (official
+  registry `https://registry.npmjs.org`). A high/critical advisory with **no
+  patched release** that only reaches dev/build tooling may be added to
+  `web/audit-allowlist.json` or `docs/audit-allowlist.json` with `id`,
+  `reason`, and `expires` (a few months out). Expired entries fail the check
+  even after npm stops reporting them. Remove the entry once a fix ships.
+
+```bash
+cd docs && npm_config_registry=https://registry.npmjs.org npm run audit:check
+```
+
+- `govulncheck` v1.1.4 scans `server`, `sandbox-gateway/gateway`, and
+  `sandbox-gateway/sandbox` for called-symbol vulnerabilities. Use the same Go
+  as CI: `actions/setup-go` with `go-version: "1.25.x"` (latest 1.25 patch).
+  An older 1.25.0 reports standard-library findings that the current patch
+  already fixes. Called findings fail unless listed in
+  `govulncheck-allowlist.json` with `id`, `module`, `reason`, and `expires`.
+  Expired entries fail the check. The current server exemptions are the two
+  `golang.org/x/crypto` ssh issues whose fix (`v0.56.0`) requires Go 1.26,
+  which this repo does not use yet.
+
+```bash
+# from repo root, with Go 1.25.x (latest patch) on PATH
+./.github/scripts/govulncheck-check.sh
+```
+
 - A failing CodeQL **analyze** job turns the corresponding PR check red.
 - **Job green ≠ default branch has zero open alerts.** Historical / residual
   findings can remain under Security → Code scanning after analyze succeeds.

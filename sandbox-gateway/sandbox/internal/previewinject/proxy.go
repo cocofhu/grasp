@@ -151,7 +151,7 @@ func unsupportedEncoding(enc string) bool {
 }
 
 func readDecodableBody(resp *http.Response) ([]byte, error) {
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	enc := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Encoding")))
 	var r io.Reader = resp.Body
 	switch enc {
@@ -161,11 +161,11 @@ func readDecodableBody(resp *http.Response) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer gr.Close()
+		defer func() { _ = gr.Close() }()
 		r = gr
 	case "deflate":
 		fr := flate.NewReader(resp.Body)
-		defer fr.Close()
+		defer func() { _ = fr.Close() }()
 		r = fr
 	default:
 		return nil, errUnsupportedEncoding

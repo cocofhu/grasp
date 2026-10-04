@@ -32,7 +32,7 @@ func (h *Handlers) GetBlob(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "blob not found"})
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	header := make([]byte, 512)
 	n, readErr := io.ReadFull(rc, header)

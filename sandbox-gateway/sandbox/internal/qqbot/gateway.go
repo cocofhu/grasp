@@ -108,7 +108,7 @@ func (s *Service) connectAndServe(ctx context.Context) error {
 	s.wsMu.Unlock()
 
 	defer func() {
-		conn.Close()
+		_ = conn.Close()
 		s.wsMu.Lock()
 		if s.wsConn == conn {
 			s.wsConn = nil
@@ -149,7 +149,7 @@ func (s *Service) serveWS(ctx context.Context, conn *websocket.Conn, token strin
 	for {
 		select {
 		case <-ctx.Done():
-			conn.WriteMessage(websocket.CloseMessage,
+			_ = conn.WriteMessage(websocket.CloseMessage,
 				websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 			return ctx.Err()
 

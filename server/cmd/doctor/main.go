@@ -48,7 +48,7 @@ func run(args []string, out io.Writer) error {
 	if err := checkHTTP(ctx, opts.apiURL+"/api/health", ""); err != nil {
 		return fmt.Errorf("service API: %w", err)
 	}
-	fmt.Fprintln(out, "Service API .............. healthy")
+	_, _ = fmt.Fprintln(out, "Service API .............. healthy")
 	if !opts.runDemo {
 		return nil
 	}
@@ -56,7 +56,7 @@ func run(args []string, out io.Writer) error {
 	if err := checkHTTP(ctx, opts.gatewayURL+"/healthz", opts.gatewayAPIKey); err != nil {
 		return fmt.Errorf("sandbox gateway: %w", err)
 	}
-	fmt.Fprintln(out, "Sandbox gateway .......... healthy")
+	_, _ = fmt.Fprintln(out, "Sandbox gateway .......... healthy")
 
 	client := sandbox.NewGatewayClient(opts.gatewayURL, opts.gatewayAPIKey)
 	created, err := client.Create(ctx, sandbox.GWCreateRequest{
@@ -86,18 +86,18 @@ func run(args []string, out io.Writer) error {
 	if _, err := client.WaitRunning(ctx, created.ID, remaining(ctx, 2*time.Minute)); err != nil {
 		return fmt.Errorf("wait for demo sandbox: %w", err)
 	}
-	fmt.Fprintln(out, "Demo sandbox ............. passed")
+	_, _ = fmt.Fprintln(out, "Demo sandbox ............. passed")
 
 	if err := verifyArtifactIsolation(ctx, opts.apiURL, opts.doctorToken); err != nil {
 		return fmt.Errorf("artifact isolation: %w", err)
 	}
-	fmt.Fprintln(out, "Artifact isolation ....... verified")
+	_, _ = fmt.Fprintln(out, "Artifact isolation ....... verified")
 
 	if err := cleanup(); err != nil {
 		return fmt.Errorf("delete demo sandbox: %w", err)
 	}
 	cleaned = true
-	fmt.Fprintln(out, "Cleanup .................. passed")
+	_, _ = fmt.Fprintln(out, "Cleanup .................. passed")
 	return nil
 }
 
@@ -151,7 +151,7 @@ func checkHTTP(ctx context.Context, url, token string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("GET %s returned %s", url, resp.Status)
@@ -228,7 +228,7 @@ func startArtifactSession(ctx context.Context, apiURL, doctorToken string) (arti
 	if err != nil {
 		return artifactSession{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var session artifactSession
 	if resp.StatusCode != http.StatusCreated {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
@@ -254,7 +254,7 @@ func cleanupArtifactSession(ctx context.Context, apiURL, doctorToken string, ses
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	if resp.StatusCode != http.StatusNoContent {
 		return fmt.Errorf("cleanup artifact session returned %s", resp.Status)
@@ -285,7 +285,7 @@ func callMCP(ctx context.Context, apiURL, runID, token string, id int, tool stri
 	if err != nil {
 		return rpcResponse{}, 0, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 		return rpcResponse{}, resp.StatusCode, nil

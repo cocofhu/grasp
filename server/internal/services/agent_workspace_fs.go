@@ -231,7 +231,7 @@ func (s *AgentService) ReadWorkspaceFile(agent, rel string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	limited := io.LimitReader(f, WorkspaceFileMaxBytes+1)
 	b, err := io.ReadAll(limited)
 	if err != nil {

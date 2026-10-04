@@ -213,13 +213,13 @@ func (c sshCreds) run(ctx context.Context, timeout time.Duration, cmd safeCmd) (
 	if err != nil {
 		return nil, err
 	}
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	sess, err := cli.NewSession()
 	if err != nil {
 		return nil, fmt.Errorf("ssh session: %w", err)
 	}
-	defer sess.Close()
+	defer func() { _ = sess.Close() }()
 
 	var buf bytes.Buffer
 	sess.Stdout = &buf
@@ -260,13 +260,13 @@ func (c sshCreds) runInput(ctx context.Context, timeout time.Duration, cmd safeC
 	if err != nil {
 		return nil, err
 	}
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	sess, err := cli.NewSession()
 	if err != nil {
 		return nil, fmt.Errorf("ssh session: %w", err)
 	}
-	defer sess.Close()
+	defer func() { _ = sess.Close() }()
 
 	var buf bytes.Buffer
 	sess.Stdout = &buf

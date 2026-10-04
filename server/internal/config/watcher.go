@@ -115,7 +115,7 @@ func WatchAndReload(ctx context.Context, path string, callbacks ...ReloadCallbac
 	dir := filepath.Dir(path)
 	base := filepath.Base(path)
 	if err := watcherAddFn(watcher, dir); err != nil {
-		watcherCloseFn(watcher)
+		_ = watcherCloseFn(watcher)
 		if isInotifyLimitError(err) {
 			startPollingReload(ctx, path, callbacks, err)
 			return nil
@@ -124,7 +124,7 @@ func WatchAndReload(ctx context.Context, path string, callbacks ...ReloadCallbac
 	}
 
 	go func() {
-		defer watcherCloseFn(watcher)
+		defer func() { _ = watcherCloseFn(watcher) }()
 		scheduler := &reloadScheduler{path: path, callbacks: callbacks}
 		defer scheduler.stop()
 		for {

@@ -271,23 +271,6 @@ func pickNonEmpty(primary, fallback string) string {
 	return strings.TrimSpace(fallback)
 }
 
-func mergeStringMap(base, overlay map[string]string) map[string]string {
-	out := map[string]string{}
-	for k, v := range base {
-		if strings.TrimSpace(k) == "" {
-			continue
-		}
-		out[k] = v
-	}
-	for k, v := range overlay {
-		if strings.TrimSpace(k) == "" {
-			continue
-		}
-		out[k] = v
-	}
-	return out
-}
-
 func mergeFiles(base, overlay []AgentFile) []AgentFile {
 	byPath := map[string]AgentFile{}
 	order := make([]string, 0, len(base)+len(overlay))

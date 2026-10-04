@@ -1,0 +1,14 @@
+[
+  {
+    "id": "GO-2026-6355",
+    "module": "server",
+    "reason": "Patched in golang.org/x/crypto v0.56.0, but that module's go.mod requires Go 1.26.0. CI and the server image stay on Go 1.25.x, so the patched release cannot be required yet. Revisit when the toolchain is 1.26 or a 1.25-compatible crypto patch exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6354",
+    "module": "server",
+    "reason": "Same constraint as GO-2026-6355: the fix is golang.org/x/crypto v0.56.0, which requires Go 1.26.0, and this repo stays on Go 1.25.x.",
+    "expires": "2026-12-31"
+  }
+]

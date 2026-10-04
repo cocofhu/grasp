@@ -57,7 +57,7 @@ func NewPlatformRuleService(globalDir, profilesRoot string) (*PlatformRuleServic
 		profilesRoot: profilesRoot,
 		allowed:      allowed,
 	}
-	s.Seed()
+	_ = s.Seed()
 	return s, nil
 }
 

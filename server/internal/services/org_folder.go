@@ -381,7 +381,7 @@ func (o *OrgService) ImportFolderZIP(raw []byte, targetGroupID string, mode Impo
 	if err != nil {
 		return ImportFolderResult{}, err
 	}
-	defer os.RemoveAll(snapDir)
+	defer func() { _ = os.RemoveAll(snapDir) }()
 
 	orgSnap, orgSnapErr := os.ReadFile(o.path())
 	orgExisted := orgSnapErr == nil

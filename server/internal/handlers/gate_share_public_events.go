@@ -44,7 +44,7 @@ func (h *Handlers) PublicGateEvents(c *gin.Context) {
 		log.Debug().Err(err).Msg("public gate events websocket upgrade failed")
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	_ = conn.SetReadDeadline(time.Now().Add(publicEventsAuthTimeout))
 	_, data, err := conn.ReadMessage()

@@ -46,7 +46,7 @@ func (t *tokenCache) get(ctx context.Context, appKey, appSecret string) (string,
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode >= 400 {
 		return "", fmt.Errorf("%w: oauth status=%d body=%s", channels.ErrAdapterAuth, resp.StatusCode, truncateErr(raw))
@@ -133,7 +133,7 @@ func postSessionWebhook(ctx context.Context, webhook, label string, body map[str
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("dingtalk webhook %s: status=%d body=%s", label, resp.StatusCode, truncateErr(respBody))
@@ -200,7 +200,7 @@ func sendOpenAPI(ctx context.Context, token, robotCode string, scene channels.Sc
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("dingtalk openapi %s: status=%d body=%s", msgKey, resp.StatusCode, truncateErr(respBody))
@@ -233,7 +233,7 @@ func downloadByCode(ctx context.Context, token, robotCode, downloadCode string) 
 	if err != nil {
 		return nil, "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode >= 400 {
 		return nil, "", fmt.Errorf("dingtalk download url: status=%d body=%s", resp.StatusCode, truncateErr(raw))
@@ -256,7 +256,7 @@ func downloadPublic(ctx context.Context, rawURL string) ([]byte, string, error) 
 	if err != nil {
 		return nil, "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		return nil, "", fmt.Errorf("download image %s: %s", rawURL, resp.Status)
 	}
