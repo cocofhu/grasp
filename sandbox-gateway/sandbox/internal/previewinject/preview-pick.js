@@ -63,7 +63,8 @@
       agentBusy: 'Agent 正在操作…',
       stop: '停止',
       pickDesign: '点选元素引用或修改，也可以插入区块或整页调整',
-      eye: '按住看原版，点击隐藏候选',
+      eye: '按住看原版，点击收起选择层',
+      eyeShow: '展开选择层',
     },
     en: {
       pick: 'Pick',
@@ -83,7 +84,8 @@
       agentBusy: 'Agent is operating…',
       stop: 'Stop',
       pickDesign: 'Pick an element to quote or edit, insert a block, or adjust the whole page',
-      eye: 'Hold to see the original, click to hide candidates',
+      eye: 'Hold to see the original, click to hide the selection layer',
+      eyeShow: 'Show the selection layer',
     },
   };
 
@@ -860,7 +862,8 @@
       ev.stopPropagation();
       setArtifactOpen(!artifactOpen);
     });
-    // Hold to peek at the original; a short click hides the candidates instead.
+    // Hold to peek at the original; a short click toggles the selection layer
+    // (the same switch as the candidate toolbar's hide control).
     var eyeDownAt = 0;
     var endPeek = function () {
       if (live.api) live.api.setPeek(false);
@@ -987,10 +990,11 @@
     var liveOn = !!(live.enabled && live.api);
     var liveOk = liveUsable();
     ui.toggle.title = liveOk ? T.pickDesign : '';
+    var chromeHidden = !!(liveOn && live.api.isHidden());
     ui.eye.hidden = !(liveOn && live.api.hasCandidates());
-    ui.eye.title = T.eye;
-    ui.eye.setAttribute('aria-label', T.eye);
-    ui.eye.setAttribute('aria-pressed', liveOn && live.api.isHidden() ? 'true' : 'false');
+    ui.eye.title = chromeHidden ? T.eyeShow : T.eye;
+    ui.eye.setAttribute('aria-label', chromeHidden ? T.eyeShow : T.eye);
+    ui.eye.setAttribute('aria-pressed', chromeHidden ? 'true' : 'false');
     ui.artifact.disabled = !ok || !drawerReady;
     ui.artifact.textContent = T.artifact;
     ui.artifact.title = ok && drawerReady ? T.artifactTitle : '';
