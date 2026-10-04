@@ -271,10 +271,18 @@ const reservedArtifactStore = "artifact-store"
 // gates optional MR creation; empty means "no credentials, skip MR".
 func (c *acpProvider) gitToken(req NodeReq) string {
 	vars := c.mcpVars(req)
+	if c.opts.ProjectCredentialsForProject != nil {
+		if v := c.opts.ProjectCredentialsForProject(c.projectIDForReq(req))["GITLAB_TOKEN"]; v != "" {
+			return v
+		}
+	}
 	if v := substVars(c.effectiveAgent(req).Env["GITLAB_TOKEN"], vars); v != "" {
 		return v
 	}
-	return c.opts.Env["GITLAB_TOKEN"]
+	if v := c.opts.Env["GITLAB_TOKEN"]; v != "" {
+		return v
+	}
+	return os.Getenv("GITLAB_TOKEN")
 }
 
 // gitLabURL resolves GITLAB_URL for GitLab detection and MR gating. Explicit
@@ -283,7 +291,18 @@ func (c *acpProvider) gitToken(req NodeReq) string {
 // token on GitHub).
 func (c *acpProvider) gitLabURL(req NodeReq) string {
 	vars := c.mcpVars(req)
+	if c.opts.ProjectCredentialsForProject != nil {
+		if v := strings.TrimSpace(c.opts.ProjectCredentialsForProject(c.projectIDForReq(req))["GITLAB_URL"]); v != "" {
+			return v
+		}
+	}
 	if v := substVars(c.effectiveAgent(req).Env["GITLAB_URL"], vars); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(c.opts.Env["GITLAB_URL"]); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(os.Getenv("GITLAB_URL")); v != "" {
 		return v
 	}
 	repo := c.nodeRepoURL(req)
@@ -320,7 +339,19 @@ func (c *acpProvider) mcpVars(req NodeReq) map[string]string {
 // mcpVars first, then effective Agent/shared env keys that are not already
 // reserved. Agent env cannot override GRASP_* / vars.*.
 func (c *acpProvider) templateVars(req NodeReq) map[string]string {
-	return MergeEnvIntoTemplateVars(c.mcpVars(req), c.effectiveAgent(req).Env)
+	base := c.mcpVars(req)
+	// Credential references are available only to user-authored MCP templates;
+	// they are intentionally kept out of mcpVars so they cannot become global
+	// sandbox environment keys.
+	if c.opts.ProjectCredentialReferences != nil {
+		pid := c.projectIDForReq(req)
+		for k, v := range c.opts.ProjectCredentialReferences(pid) {
+			if _, exists := base[k]; !exists {
+				base[k] = v
+			}
+		}
+	}
+	return MergeEnvIntoTemplateVars(base, c.effectiveAgent(req).Env)
 }
 
 // MergeEnvIntoTemplateVars copies base, then adds env keys that are not already

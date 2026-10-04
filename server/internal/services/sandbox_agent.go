@@ -199,7 +199,14 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 	}
 
 	vars = runtime.MergeEnvIntoTemplateVars(vars, agent.Env)
-	specs := filterAgentPlatformMCP(resolveAgentMCP(agent.MCP, vars))
+	mcpVars := vars
+	if s.projectCredentialReferences != nil {
+		// Credential references are scoped to user-authored MCP templates. Keep
+		// them out of vars so the ordinary sandbox environment never receives
+		// these values as global keys.
+		mcpVars = runtime.MergeEnvIntoTemplateVars(s.projectCredentialReferences(projectID), vars)
+	}
+	specs := filterAgentPlatformMCP(resolveAgentMCP(agent.MCP, mcpVars))
 	specs = append(specs, platformSpecs...)
 	specs = dedupeMCPByName(specs)
 
@@ -211,6 +218,11 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 		}
 		env[k] = v
 	}
+	for k, v := range processCredentialEnv() {
+		if _, exists := env[k]; !exists {
+			env[k] = v
+		}
+	}
 	for k, v := range agent.Env {
 		if strings.Contains(v, "GRASP_ARTIFACT") {
 			continue
@@ -219,6 +231,16 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 	}
 	for k, v := range vars {
 		env[k] = v
+	}
+	// Project UI credentials are the highest-priority source. Apply them after
+	// template/Agent vars so interactive, PM and cron sandboxes match workflow
+	// resolver precedence.
+	if s.projectCredentials != nil {
+		for k, v := range s.projectCredentials(projectID) {
+			if strings.TrimSpace(k) != "" {
+				env[strings.TrimSpace(k)] = v
+			}
+		}
 	}
 	backend := runtime.NormalizeBackend(agent.AcpBackend)
 	workDir := s.skills.WorkDir(profile)

@@ -14,6 +14,9 @@ import { origin, req } from '../httpCore'
 import type {
   CreateProjectSharedAgentTestPayload,
   PaginatedResponse,
+  ProjectCredentialItem,
+  ProjectCredentialPutBody,
+  ProjectCredentialsResponse,
   ProjectSharedAgentConfig,
   SandboxView,
 } from '../apiTypes'
@@ -46,6 +49,25 @@ export const projectsClient = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  /** Project-owned credentials. GET never returns plaintext; PUT accepts a new value. */
+  getProjectCredentials: (id: string) =>
+    req<ProjectCredentialsResponse>(`/projects/${encodeURIComponent(id)}/credentials`),
+  createProjectCredential: (projectId: string, body: ProjectCredentialPutBody) =>
+    req<ProjectCredentialItem>(
+      `/projects/${encodeURIComponent(projectId)}/credentials`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+  putProjectCredential: (projectId: string, credentialId: string, body: ProjectCredentialPutBody) =>
+    req<ProjectCredentialItem>(
+      `/projects/${encodeURIComponent(projectId)}/credentials/${encodeURIComponent(credentialId)}`,
+      { method: 'PUT', body: JSON.stringify(body) },
+    ),
+  deleteProjectCredential: (projectId: string, credentialId: string) =>
+    req<{ status: string }>(
+      `/projects/${encodeURIComponent(projectId)}/credentials/${encodeURIComponent(credentialId)}`,
+      { method: 'DELETE' },
+    ),
 
   listRequirementDrafts: (
     projectId: string,

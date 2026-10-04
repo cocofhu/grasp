@@ -4,6 +4,10 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Project credentials:** ACP and Git credentials can be managed in project
+  credential settings, which take precedence at runtime; compatible
+  project/Agent environment variables remain a fallback. Platform service
+  configuration keeps its explicit environment > file > defaults precedence.
 - **App preview:** noVNC now keeps one persistent page per sandbox. Reopening
   the preview resumes the same screen without reloading, switching ports
   navigates within that page, and browser logins survive a Chromium restart.

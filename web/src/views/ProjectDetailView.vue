@@ -19,6 +19,7 @@ import TokenUsageHoverTip from '@/components/ui/TokenUsageHoverTip.vue'
 import ProjectAuditPanel from '@/components/project/ProjectAuditPanel.vue'
 import ProjectNotifyPanel from '@/components/project/ProjectNotifyPanel.vue'
 import ProjectSharedAgentPanel from '@/components/project/ProjectSharedAgentPanel.vue'
+import ProjectCredentialsPanel from '@/components/project/ProjectCredentialsPanel.vue'
 import ProjectAgentsPanel from '@/components/project/ProjectAgentsPanel.vue'
 import RequirementDraftsPanel from '@/components/project/RequirementDraftsPanel.vue'
 import ProjectExternalMcpPanel from '@/components/project/ProjectExternalMcpPanel.vue'
@@ -965,6 +966,11 @@ const onboardingEmptyDesc = computed(() =>
       <!-- Shared Agent config: fill remaining main area -->
       <div v-else-if="tab === 'sharedAgent'" class="flex min-h-0 flex-1 flex-col">
         <ProjectSharedAgentPanel :project-id="projectId" />
+      </div>
+
+      <!-- Project-owned credentials: values are write-only and never returned by GET. -->
+      <div v-else-if="tab === 'credentials'" class="flex min-h-0 flex-1 flex-col">
+        <ProjectCredentialsPanel :project-id="projectId" />
       </div>
 
       <!-- Variables tab: fill remaining main area; no varsHint / merge-rules row -->

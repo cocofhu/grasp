@@ -179,6 +179,53 @@ export interface ProjectSharedAgentConfig {
   prompts?: AgentPrompts
 }
 
+/** Project-owned credential metadata. Secret values are never returned by GET. */
+export interface ProjectCredentialItem {
+  id: string
+  projectId?: string
+  /** Credential kind (ai, git, ssh, mcp, custom, …). */
+  type?: string
+  /** @deprecated Alias accepted by older API clients. */
+  kind?: string
+  name: string
+  target?: string
+  targetType?: string
+  targetId?: string
+  provider?: string
+  envKey?: string
+  fallbackEnvKey?: string
+  configured: boolean
+  /** Masked display value (for example, a key prefix); never the plaintext secret. */
+  masked?: string
+  source?: string
+  enabled?: boolean
+  metadata?: Record<string, unknown>
+  createdAt?: string
+  updatedAt?: string
+  revokedAt?: string
+}
+
+export interface ProjectCredentialsResponse {
+  items: ProjectCredentialItem[]
+}
+
+export interface ProjectCredentialPutBody {
+  type?: string
+  kind?: string
+  name?: string
+  target?: string
+  targetType?: string
+  targetId?: string
+  provider?: string
+  envKey?: string
+  fallbackEnvKey?: string
+  /** Empty values keep an existing secret; clear/delete removes it. */
+  value?: string
+  metadata?: Record<string, unknown>
+  enabled?: boolean
+  clear?: boolean
+}
+
 export type CreateProjectSharedAgentTestPayload = {
   agentName: string
   repos?: AgentTestRepo[]

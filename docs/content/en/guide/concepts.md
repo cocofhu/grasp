@@ -70,7 +70,7 @@ The page and chat card share the current candidate. "Use this one" keeps the ver
 
 Agents are not black-box prompts on a laptop. They execute in Docker containers through the in-repo [sandbox-gateway](https://github.com/cocofhu/approving/tree/main/sandbox-gateway), talking over ACP.
 
-Supported backends: **Cursor**, **Claude Code**, **CodeBuddy**, **Trae**, and **OpenCode**. Configure `acpBackend` per agent; keep secrets in agent meta env (OpenCode also takes vendor, optional API Base, and model).
+Supported backends: **Cursor**, **Claude Code**, **CodeBuddy**, **Trae**, and **OpenCode**. Configure `acpBackend` per agent; save backend keys, sites, and other runtime credentials in the project's credential UI first. Compatible project or Agent meta environment variables are a fallback only when no project credential is configured (OpenCode also takes vendor, optional API Base, and model).
 
 ## Artifact contract and MCP
 

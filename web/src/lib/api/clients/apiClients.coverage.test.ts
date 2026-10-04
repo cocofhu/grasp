@@ -38,6 +38,18 @@ describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
       layout: {},
     })
     await projectsClient.createProjectSharedAgentTest('p1', { agentName: 'a' })
+    await projectsClient.getProjectCredentials('p1')
+    await projectsClient.createProjectCredential('p1', {
+      type: 'custom',
+      name: 'demo',
+      value: 'secret',
+    })
+    await projectsClient.putProjectCredential('p1', 'cred-1', {
+      type: 'custom',
+      name: 'demo',
+      value: 'rotated',
+    })
+    await projectsClient.deleteProjectCredential('p1', 'cred-1')
     await projectsClient.listRequirementDrafts('p1', { status: 'open', q: 'x' })
     await projectsClient.getRequirementDraft('p1', 'd1')
     await projectsClient.createRequirementDraft('p1', { title: 't' })

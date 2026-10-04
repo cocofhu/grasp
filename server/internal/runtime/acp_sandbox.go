@@ -320,12 +320,55 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		}
 		env[k] = v
 	}
+	// Deployment environment is the lowest-priority compatibility source. Read
+	// only the documented credential keys; arbitrary server process variables
+	// must never bleed into a sandbox. Shared/Agent and UI values overlay below.
+	for _, k := range []string{
+		"GRASP_CURSOR_API_KEY", "CURSOR_API_KEY", "GRASP_CLAUDE_API_KEY", "ANTHROPIC_API_KEY",
+		"GRASP_CODEBUDDY_API_KEY", "CODEBUDDY_API_KEY", "GRASP_TRAE_API_KEY", "TRAE_API_KEY",
+		"TRAECLI_PERSONAL_ACCESS_TOKEN", "GRASP_OPENCODE_API_KEY", "OPENCODE_API_KEY",
+		"GITHUB_TOKEN", "GH_TOKEN", "GITLAB_TOKEN", "GITLAB_URL", "GIT_SSH_PRIVATE_KEY", "GIT_SSH_KNOWN_HOSTS",
+	} {
+		if _, exists := env[k]; exists {
+			continue
+		}
+		if v, ok := os.LookupEnv(k); ok && v != "" {
+			env[k] = v
+		}
+	}
+	if c.opts.ProjectCredentialFallbackEnvForProject != nil {
+		for target, fallback := range c.opts.ProjectCredentialFallbackEnvForProject(c.projectIDForReq(req)) {
+			if _, exists := env[target]; exists {
+				continue
+			}
+			fallback = strings.TrimSpace(fallback)
+			if v := env[fallback]; v != "" {
+				env[target] = v
+			} else if v, ok := os.LookupEnv(fallback); ok && v != "" {
+				env[target] = v
+			}
+		}
+	}
 	profile := models.AgentProfile(req.Config)
 	agentCfg := c.effectiveAgent(req)
 	vars := c.mcpVars(req)
 
 	for k, v := range agentCfg.Env {
 		env[k] = substVars(v, vars)
+	}
+	// Project UI credentials are the highest-priority source. They are resolved
+	// only for the owning project and never copied into persisted Agent config.
+	if c.opts.ProjectCredentialsForProject != nil {
+		for k, v := range c.opts.ProjectCredentialsForProject(c.projectIDForReq(req)) {
+			k = strings.TrimSpace(k)
+			if k != "" {
+				env[k] = v
+			}
+		}
+	}
+	protectedCredentialKeys := map[string]struct{}{}
+	if c.opts.ProjectCredentialKeysForProject != nil {
+		protectedCredentialKeys = c.opts.ProjectCredentialKeysForProject(c.projectIDForReq(req))
 	}
 	// Run-scoped StartRun snapshot overlays shared + Agent for user-可控 keys.
 	// Empty string values intentionally override. Must stay before mergeAuthEnv /
@@ -334,6 +377,9 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		for _, e := range c.opts.RunSandboxEnvForRun(req.RunID) {
 			k := strings.TrimSpace(e.Key)
 			if k == "" {
+				continue
+			}
+			if _, protected := protectedCredentialKeys[k]; protected {
 				continue
 			}
 			env[k] = e.Value
@@ -353,6 +399,9 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 
 	for k, v := range vars {
 		if strings.HasPrefix(k, "vars.") || v == "" {
+			continue
+		}
+		if _, protected := protectedCredentialKeys[k]; protected {
 			continue
 		}
 		env[k] = v

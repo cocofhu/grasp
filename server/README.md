@@ -9,9 +9,21 @@
 对应 Provider。统一沙箱镜像内 `acp-bridge` 按 `AGENT_PROVIDER` 单活启动 bridge(:8765)。
 兼容期容器内 `acp-gateway` / `cursor-acp` 为指向 `acp-bridge` 的软链(计划 0.2.0 移除)。
 
-**鉴权**:各后端 Key / 站点可配置在 **项目沙箱 env**(流水线底噪)或 **Agent env**(同名覆盖;
-见「ACP 后端怎么用」)。平台级 `GRASP_CURSOR_API_KEY` / `sandbox.cursor_api_key`
-已废弃且不再注入沙箱;Agent Studio 不继承项目 env。
+**鉴权**:优先在项目详情的**项目凭据** UI 中管理各后端 Key、站点和 Git 凭据；运行时按项目配置注入。
+兼容的项目/Agent env 和进程环境变量仍可作为回退（项目凭据 UI > 项目 env > Agent env > 进程 env）。平台级
+`GRASP_CURSOR_API_KEY` / `sandbox.cursor_api_key` 已废弃且不再注入沙箱；Agent Studio 不继承项目凭据。
+
+凭据解析与注入范围如下。UI 保存的新值使用 `security.secrets_key` 加密，列表和审计只显示掩码；旧环境变量不会自动迁移。
+
+| 管理项 | UI 内容 | 兼容回退 | 注入/使用 |
+|---|---|---|---|
+| AI CLI/API（Cursor、Claude Code、CodeBuddy、Trae、OpenCode） | API Key/Token；OpenCode provider、base URL、model 为非敏感配置 | 对应 `GRASP_*` / 官方 API Key 环境变量 | 新沙箱解析为 CLI 标准变量 |
+| Git HTTPS | GitHub/GitLab Token、GitLab URL | `GITHUB_TOKEN`、`GH_TOKEN`、`GITLAB_TOKEN`、`GITLAB_URL` | 注入沙箱，由 startup 配置 `git`、`gh`/`glab` |
+| Git SSH | 私钥、known_hosts | `GIT_SSH_PRIVATE_KEY`、`GIT_SSH_KNOWN_HOSTS` | 写入 `~/.ssh/id_rsa`、`~/.ssh/known_hosts`，不作为普通 env |
+| MCP / 自定义 | MCP Header/command env 或明确目标环境键；支持 `${credential:<id>}` | 仅使用记录明确绑定的 fallback env key | 仅展开到目标 MCP 或绑定键，不扩散到所有 Agent |
+| 渠道、外部 MCP、工作流 Key | 在项目凭据页汇总查看 | 不读取进程 env | 复用现有加密/hash 适配器；渠道/鉴权服务端使用，不注入沙箱 |
+
+运行时优先级为：**项目凭据 UI > 项目共享 env > Agent env > 进程环境变量**。已登记的凭据键不能被每次 Run 的临时 env 覆盖。部署密钥、数据库密码、Session/Gate/Artifact Token 等仍是平台配置或系统自动管理项，不进入项目凭据页。
 
 `GRASP_EXEC_PROVIDER` 已废弃(读取时 WARN,不影响路由);请改用 Agent `acpBackend`。
 
@@ -41,9 +53,11 @@ engine → ProviderRegistry → baseACPProvider → sandbox-gateway REST(创建�
 
 ## ACP 后端怎么用
 
-五个后端共用配置入口:**项目沙箱 env**(流水线默认底噪,官方鉴权键强制 Secret)+
-**Agent Studio → Meta 选 `acpBackend` → Env**(同名覆盖;Studio 调试须在 Agent env 单独配置)。
-平台级不提供全局 ACP Key;`MergeAuthEnv` 把项目/Agent 侧别名收成 CLI 认的变量后注入流水线沙箱。
+五个后端共用配置入口：项目详情中的**项目凭据**（最高优先级），以及兼容的**项目/Agent env**回退。
+Agent Studio → Meta 仍可选择 `acpBackend` 和填写 env，但不会覆盖已保存的项目凭据；项目凭据 UI >
+项目 env > Agent env。`MergeAuthEnv` 最终把解析出的别名收成 CLI 认的变量后注入流水线沙箱。
+
+下面各后端的 env 示例是回退写法；新部署应先在项目凭据 UI 保存 Key，再按需补充 env 选项。
 
 | acpBackend | 沙箱内 CLI | 默认 configRoot | 容器内鉴权变量 |
 |------------|------------|-----------------|----------------|
@@ -60,7 +74,7 @@ Agent Studio 的 Env 页会按当前后端提示所需 Key;CodeBuddy / Trae 另�
 ### Cursor
 
 1. Meta:`acpBackend = cursor`(默认)。
-2. Env 任选其一:
+2. 项目凭据 UI 首选；若使用兼容回退，Env 任选其一:
    - `GRASP_CURSOR_API_KEY`
    - `CURSOR_API_KEY`
 3. Key 来自 Cursor Dashboard / CLI 登录后的 API Key。
@@ -80,7 +94,7 @@ Agent Studio 的 Env 页会按当前后端提示所需 Key;CodeBuddy / Trae 另�
 ### Claude Code
 
 1. Meta:`acpBackend = claude_code`。
-2. Env 任选其一:
+2. 项目凭据 UI 首选；若使用兼容回退，Env 任选其一:
    - `GRASP_CLAUDE_API_KEY`
    - `ANTHROPIC_API_KEY`
 3. Key 来自 Anthropic Console。
@@ -98,7 +112,7 @@ Agent Studio 的 Env 页会按当前后端提示所需 Key;CodeBuddy / Trae 另�
 ### CodeBuddy
 
 1. Meta:`acpBackend = codebuddy`。
-2. Env 鉴权任选其一:
+2. 项目凭据 UI 首选；若使用兼容回退，Env 鉴权任选其一:
    - `GRASP_CODEBUDDY_API_KEY`
    - `CODEBUDDY_API_KEY`
 3. **必须选对站点**(Key 与站点绑定;错站会 401 `not_found`):
@@ -139,7 +153,7 @@ Staging 示例:
 ### Trae
 
 1. Meta:`acpBackend = trae`。
-2. Env 鉴权(官方 CLI 登录令牌,须含 `trae-lt-` 前缀)任选其一:
+2. 项目凭据 UI 首选；若使用兼容回退，Env 鉴权（官方 CLI 登录令牌，须含 `trae-lt-` 前缀）任选其一:
    - `GRASP_TRAE_API_KEY`(平台别名)
    - `TRAE_API_KEY`(旧别名)
    - `TRAECLI_PERSONAL_ACCESS_TOKEN`(官方名;注入沙箱时统一写成此名)
@@ -167,7 +181,7 @@ Staging 示例:
 ### OpenCode
 
 1. Meta:`acpBackend = opencode`(沙箱镜像 `universal-sandbox`;CLI 为 `opencode run --format json`,经 ACP 桥包装)。
-2. 共享 Agent env:
+2. 项目凭据 UI 首选；若使用兼容回退，可在共享 Agent env 中配置:
    - `GRASP_OPENCODE_API_KEY`(别名 `OPENCODE_API_KEY`)
    - `GRASP_OPENCODE_PROVIDER`:OpenCode 模型目录(models.dev)里的厂商 id(`openai` / `anthropic` / `deepseek` / `zai` / …);目录里没有的可以直接自己起一个名字(如 `tokenhub`),runtime 会按 OpenAI 兼容端点生成适配器,此时 `GRASP_OPENCODE_BASE_URL` 必填。`custom` 是这类自定义端点的默认名字,没有特殊含义
    - 可选 `GRASP_OPENCODE_BASE_URL`(`custom` 必填)
@@ -191,7 +205,7 @@ Staging 示例:
 
 ### 速查:鉴权别名 → 容器变量
 
-| acpBackend | Agent env(任选其一) | 容器内 CLI 变量 |
+| acpBackend | 项目凭据 UI（首选）/兼容 Agent env 回退 | 容器内 CLI 变量 |
 |------------|---------------------|-----------------|
 | `cursor` | `GRASP_CURSOR_API_KEY` / `CURSOR_API_KEY` | `CURSOR_API_KEY` |
 | `claude_code` | `GRASP_CLAUDE_API_KEY` / `ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY` |
@@ -220,9 +234,9 @@ Staging 示例:
 | `GRASP_PROFILES_ROOT` | `data/profiles` | Agent profile 规则根(挂入 `{configRoot}/rules`) |
 
 > **GitLab 不是平台配置**:平台不依赖任何固定的 GitLab 地址或令牌。仓库地址由工作流
-> 全局变量 `repo_url` 提供;凭据(`GITLAB_TOKEN` / `GITLAB_URL` 等)在 **Agent 元信息的
-> 环境变量**里配置,值可引用 `${vars.<全局变量名>}`。run 执行时按 run 注入对应沙箱用于
-> clone/push/MR。`GITLAB_URL` 未显式配置时会自动从 `repo_url` 推导(scheme+host)。
+> 全局变量 `repo_url` 提供；凭据优先在**项目凭据** UI 中配置，兼容的 `GITLAB_TOKEN` /
+> `GITLAB_URL` 等 Agent 环境变量可作为回退，值可引用 `${vars.<全局变量名>}`。run 执行时
+> 按 run 注入对应沙箱用于 clone/push/MR。`GITLAB_URL` 未显式配置时会自动从 `repo_url` 推导。
 
 ## 配置(YAML)+ 存储(SQLite)
 
@@ -247,19 +261,19 @@ engine: { exec_provider, max_concurrent_runs, profiles_root }
 sandbox: { image, env, cursor_auth_path, agent_chat_timeout_seconds, ... }
 ```
 
-> GitLab/代码托管**不在**这份配置里:仓库地址走工作流全局变量 `repo_url`,凭据走
-> Agent 元信息环境变量,不是平台级配置。
+> GitLab/代码托管**不在**这份服务端配置里：仓库地址走工作流全局变量 `repo_url`，凭据优先走
+> 项目凭据 UI，兼容 Agent 元信息环境变量回退，不是平台级配置。
 
 环境变量覆盖(env 优先级最高,上表对应字段):`GRASP_PORT`、`GRASP_DB`、
 `GRASP_EXEC_PROVIDER`、`GRASP_MAX_RUNS`、`GRASP_PROFILES_ROOT`、`GRASP_MCP_ADVERTISE`、
 `GRASP_SANDBOX_IMAGE`、`GRASP_AGENT_MODEL`、`GRASP_AGENT_TIMEOUT_SEC` 等。
 
-> **ACP 鉴权不在平台级配置**:各后端 API Key / 站点通过 **项目沙箱 env**(流水线底噪)或
-> **Agent 元信息 env**(同名覆盖)注入流水线沙箱(见「ACP 后端怎么用」)。
+> **ACP 鉴权首选项目凭据 UI**:各后端 API Key / 站点从项目凭据解析；未配置 UI 凭据时，才从
+> **项目/Agent 元信息 env**回退注入流水线沙箱(见「ACP 后端怎么用」)。
 > `sandbox.cursor_api_key` / `GRASP_CURSOR_API_KEY` 若仍出现在旧配置中会打 WARN 且**不会**
 > 注入沙箱。Agent Studio 不继承项目 env。
-> Git 托管凭据（`GITLAB_*` / `GITHUB_*` / SSH）同样配在 Agent env，按 run 注入沙箱，
-> 不进平台配置或镜像。
+> Git 托管凭据（`GITLAB_*` / `GITHUB_*` / SSH）同样优先在项目凭据 UI 管理；兼容 Agent env
+> 按 run 回退注入沙箱，不进平台配置或镜像。
 
 完整选项表见 [`CONFIGURATION.md`](CONFIGURATION.md)。公开发布栈见仓库根
 `compose.release.yaml` 与 `./release-smoke.sh`；镜像发布见 `.github/workflows/publish-image.yml`。
@@ -285,7 +299,7 @@ CDP/noVNC。K8s 存量 LB 在 gateway 启动调和完成前仍可能对外暴露
 
 ## 种子数据
 
-首次启动不自动写入样例流水线或密钥。「默认项目」为空时走第一次安装引导：配置 ACP 后端 / Token / Git（写入共享 Agent 配置），再生成综合项目组与「默认工作流」。
+首次启动不自动写入样例流水线或密钥。「默认项目」为空时走第一次安装引导：在项目凭据 UI 配置 ACP 后端 / Token / Git（Git 可跳过），再生成综合项目组与「默认工作流」。兼容的项目/Agent env 仅作为回退。
 
 ## 运行(真实沙箱)
 
@@ -298,8 +312,8 @@ GRASP_PORT=8090 \
 go run ./cmd/server
 ```
 
-先在 Agent 元信息里选好 `acpBackend` 并配置鉴权(及 CodeBuddy/Trae 站点),可附带
-Git 凭据(可引用全局变量)。Cursor 示例:
+先在项目详情的项目凭据 UI 保存 `acpBackend` 对应的鉴权和站点，可附带 Git 凭据。
+若需兼容回退，再在 Agent 元信息里配置（可引用全局变量）。Cursor 回退示例:
 
 ```json
 {
@@ -319,7 +333,7 @@ CodeBuddy 国际站 / Trae 国内站等其它后端的 env 写法见上文「ACP
 
 ```bash
 go test ./...                       # 引擎 FSM + fake-bridge E2E,零凭证,~2s
-# 真实沙箱集成测试(需可达的 sandbox-gateway; key 写在测试 Agent profile env 或 GRASP_CURSOR_API_KEY):
+# 真实沙箱集成测试（测试专用环境变量回退；需可达的 sandbox-gateway）:
 GRASP_LIVE=1 GRASP_SANDBOX_GATEWAY_URL=http://127.0.0.1:8899 GRASP_CURSOR_API_KEY=crsr_xxx \
   go test ./internal/runtime/ -run TestCursorLiveRunAgent -v
 # 原生 MCP 验证(Agent 真的调用 write_artifact,无 produces/harvest):
@@ -340,10 +354,11 @@ GRASP_LIVE=1 GRASP_SANDBOX_GATEWAY_URL=http://127.0.0.1:8899 GRASP_CURSOR_API_KE
 
 `cmd/acpsmoke <port> "<prompt>"` 是对接已运行容器 ACP 的手动冒烟工具。
 
-## Git 接入(Agent 元信息环境变量)
+## Git 接入（项目凭据 UI，环境变量回退）
 
-Git/代码托管由**用户自己配置**,不是平台级设置。仓库地址来自工作流全局变量 `repo_url`;
-凭据在 **Agent 元信息的环境变量**里配置,值支持模板替换:
+Git/代码托管由**用户自己配置**，不是平台级设置。仓库地址来自工作流全局变量 `repo_url`；
+推荐在项目详情的项目凭据 UI 中保存 Token、主机和 SSH 信息。兼容的 Agent 元信息环境变量
+仍可作为回退，值支持模板替换：
 
 - `${GRASP_ARTIFACT_URL}` / `${GRASP_ARTIFACT_TOKEN}` / `${GRASP_RUN_ID}` / `${GRASP_NODE_ID}` — 运行级变量;
 - `${vars.<全局变量名>}` — 工作流全局变量,如 `${vars.repo_url}`。
@@ -362,7 +377,7 @@ Git/代码托管由**用户自己配置**,不是平台级设置。仓库地址�
 
 Gitea/Bitbucket/Codeberg 等 **HTTPS 不支持 Token 注入**,请改用 SSH。`startup.sh` 在 clone 前按每个仓库 URL 的 scheme 路由凭据(HTTPS 与 SSH 互斥);SSH 未配 `GIT_SSH_KNOWN_HOSTS` 时 fail-fast。仓库列表通过 `GIT_REPOS`(逗号分隔,每项 `name|url|branch`)注入,每个仓 clone 到 `/root/workspace/<name>/`。
 
-`GIT_REPOS` 与凭据同样用「环境变量 + 引用」的方式在 Agent 元信息里显式接线,引用工作流的 `repos` 全局变量:`{"GIT_REPOS":"${vars.repos}"}`(`${vars.repos}` 会被展开成上面的 `name|url|branch` 逗号格式)。平台不做任何兜底/特殊注入 —— 没接线就不会 clone(和不配 `GITLAB_TOKEN` 就不能 push 同理)。
+`GIT_REPOS` 与兼容凭据回退可用「环境变量 + 引用」在 Agent 元信息里显式接线,引用工作流的 `repos` 全局变量:`{"GIT_REPOS":"${vars.repos}"}`(`${vars.repos}` 会被展开成上面的 `name|url|branch` 逗号格式)。项目凭据 UI 会优先提供认证信息；两者都未配置时不会 clone/push。
 
 例如在 `go-backend` Agent 元信息里配置 `{"GIT_REPOS":"${vars.repos}","GITLAB_TOKEN":"glpat_xxx","GITLAB_URL":"https://git.example.com"}`。
 run 执行时这些环境变量按 run 注入(kind-agnostic)沙箱用于 clone/push;`GITLAB_URL` 未显式配置

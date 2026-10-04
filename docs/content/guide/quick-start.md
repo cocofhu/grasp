@@ -58,7 +58,7 @@ Agent / workspace / platform-rules 与 SQLite 持久在仓库根 `.localdata` �
 
 ## 下一步
 
-- 登录后进入「默认项目」时，按第一次安装引导配置 **ACP 后端、API Token、Git 凭据**（Git 可跳过）。完成后写入项目共享 Agent 配置，生成 **综合项目组** 与已发布的 **默认工作流**（仓库 URL 在启动 Run 时填写）。引导只针对默认项目。
+- 登录后进入「默认项目」时，按第一次安装引导在项目凭据 UI 配置 **ACP 后端、API Token、Git 凭据**（Git 可跳过）。项目凭据会优先注入运行时；兼容的项目/Agent env 仅作为回退。完成后生成 **综合项目组** 与已发布的 **默认工作流**（仓库 URL 在启动 Run 时填写）。引导只针对默认项目。
 - [核心概念](../concepts/) — FSM、gate、sandbox、artifact
 - [配置摘要](../../help/configuration/) — 指向完整 `CONFIGURATION.md`
 - [网关摘要](../../help/gateway/) — 指向 `GATEWAY.md`

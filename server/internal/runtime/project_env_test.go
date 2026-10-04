@@ -309,6 +309,40 @@ func TestSpecRunSandboxEnvDoesNotOverrideReservedAfterInject(t *testing.T) {
 	}
 }
 
+func TestSpecProjectCredentialWinsOverRunEnv(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "demo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"env":{"CUSTOM_PROJECT_TOKEN":"agent","GRASP_CURSOR_API_KEY":"agent-key"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := &acpProvider{
+		opts: Options{
+			ProfilesRoot:         root,
+			ProjectIDForWorkflow: func(string) string { return "proj-1" },
+			ProjectCredentialsForProject: func(string) map[string]string {
+				return map[string]string{"CUSTOM_PROJECT_TOKEN": "ui", "GRASP_CURSOR_API_KEY": "ui-key"}
+			},
+			ProjectCredentialKeysForProject: func(string) map[string]struct{} {
+				return map[string]struct{}{"CUSTOM_PROJECT_TOKEN": {}, "GRASP_CURSOR_API_KEY": {}}
+			},
+			RunSandboxEnvForRun: func(string) []models.EnvEntry {
+				return []models.EnvEntry{{Key: "CUSTOM_PROJECT_TOKEN", Value: "run"}, {Key: "GRASP_CURSOR_API_KEY", Value: "run-key"}}
+			},
+		},
+		backend: BackendCursor,
+	}
+	spec, err := c.spec(NodeReq{RunID: "run-1", WorkflowID: "wf-1", Config: map[string]any{"agent_profile": "demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Env["CUSTOM_PROJECT_TOKEN"] != "ui" || spec.Env["GRASP_CURSOR_API_KEY"] != "ui-key" {
+		t.Fatalf("project credentials were shadowed: %#v", spec.Env)
+	}
+}
+
 func TestResolvedMCPSpecsSubstitutesSharedEnv(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "demo")
@@ -391,6 +425,31 @@ func TestResolvedMCPSpecsAgentEnvOverlaysShared(t *testing.T) {
 	})
 	if len(specs) != 1 || specs[0].Headers["Authorization"] != "Bearer from-agent" {
 		t.Fatalf("agent env should win: %+v", specs)
+	}
+}
+
+func TestResolvedMCPSpecsProjectCredentialReference(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "demo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"mcp":[{"name":"private","url":"https://logs.example/mcp","headers":{"Authorization":"Bearer ${credential:cred-1}"}}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := &acpProvider{opts: Options{
+		ProfilesRoot:                root,
+		ProjectIDForWorkflow:        func(string) string { return "proj-1" },
+		ProjectCredentialReferences: func(string) map[string]string { return map[string]string{"credential:cred-1": "secret-ref"} },
+	}, backend: BackendCursor}
+	specs := c.resolvedMCPSpecs(NodeReq{WorkflowID: "wf-1", Config: map[string]any{"agent_profile": "demo"}})
+	if len(specs) != 1 || specs[0].Headers["Authorization"] != "Bearer secret-ref" {
+		t.Fatalf("credential reference not expanded: %+v", specs)
+	}
+	if spec, err := c.spec(NodeReq{WorkflowID: "wf-1", Config: map[string]any{"agent_profile": "demo"}}); err == nil {
+		if _, leaked := spec.Env["credential:cred-1"]; leaked {
+			t.Fatal("credential reference must not be a global sandbox env key")
+		}
 	}
 }
 

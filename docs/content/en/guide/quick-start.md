@@ -58,7 +58,7 @@ Image tags / digests can be overridden in `.env` — see [`.env.example`](https:
 
 ## Next steps
 
-- After login, the **default project** opens first-time setup: ACP backend, API token, and optional Git credentials (written to shared Agent config), then creates the default team and publishes **Default Workflow**. Fill the repo URL when starting a Run.
+- After login, the **default project** opens first-time setup: save the ACP backend, API token, and optional Git credentials in the project's credential UI (Git may be skipped). Project credentials are injected first; compatible project or Agent environment variables remain fallback options. The setup then creates the default team and publishes **Default Workflow**. Fill the repo URL when starting a Run.
 - [Core concepts](../concepts/) — FSM, gates, sandbox, artifacts
 - [Configuration summary](../../help/configuration/) — points to full `CONFIGURATION.md`
 - [Gateway summary](../../help/gateway/) — points to `GATEWAY.md`

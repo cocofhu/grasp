@@ -70,6 +70,19 @@ type Options struct {
 	// Wired for workflow Run sandboxes and project-context chat tests only —
 	// Agent Studio interactive tests must leave it unused.
 	SharedAgentForProject func(projectID string) SharedAgentView
+	// ProjectCredentialsForProject resolves UI-managed credential environment
+	// values. It is applied after process/shared/Agent env so UI wins.
+	ProjectCredentialsForProject func(projectID string) map[string]string
+	// ProjectCredentialKeysForProject returns registered credential bindings,
+	// including empty slots. Run-scoped env entries cannot shadow these keys.
+	ProjectCredentialKeysForProject func(projectID string) map[string]struct{}
+	// ProjectCredentialFallbackEnvForProject maps target keys to explicit
+	// deployment environment fallback keys. Runtime applies these below shared
+	// and Agent env layers.
+	ProjectCredentialFallbackEnvForProject func(projectID string) map[string]string
+	// ProjectCredentialReferences resolves ${credential:<id>} placeholders in
+	// MCP headers/command/env without exposing values as global environment keys.
+	ProjectCredentialReferences func(projectID string) map[string]string
 	// ProjectIDForWorkflow resolves workflow → owning project for extend.
 	ProjectIDForWorkflow func(workflowID string) string
 	// RunSandboxEnvForRun, when set, returns the immutable StartRun sandbox env

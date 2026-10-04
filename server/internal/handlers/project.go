@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/crypto"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 
@@ -176,6 +177,153 @@ func (h *Handlers) DeleteProject(c *gin.Context) {
 		Payload:      map[string]any{"deleted": true},
 	})
 	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
+}
+
+// ListProjectCredentials returns metadata and masked values only.
+func (h *Handlers) ListProjectCredentials(c *gin.Context) {
+	if h.ProjectCredentials == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "credentials unavailable"})
+		return
+	}
+	rows, err := h.ProjectCredentials.List(c.Param("id"))
+	if err != nil {
+		writeCredentialErr(c, err)
+		return
+	}
+	rows = append(rows, h.projectCredentialAdapters(c.Param("id"))...)
+	c.JSON(http.StatusOK, gin.H{"items": rows})
+}
+
+// projectCredentialAdapters exposes credentials that already have a dedicated
+// encrypted/hash-backed service. The adapter only returns metadata and a
+// masked prefix; it never copies plaintext into ProjectCredential storage.
+func (h *Handlers) projectCredentialAdapters(projectID string) []services.ProjectCredentialView {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return nil
+	}
+	out := make([]services.ProjectCredentialView, 0)
+	if h.Channels != nil {
+		if channels, err := h.Channels.ListByProject(projectID); err == nil {
+			for _, ch := range channels {
+				masked := ""
+				if ch.AppSecretSet {
+					masked = "••••••••"
+				}
+				out = append(out, services.ProjectCredentialView{
+					ID: "channel:" + ch.ID, ProjectID: projectID, Type: "channel", Kind: "channel",
+					Provider: ch.Type, Name: ch.Name, Target: ch.ID, TargetType: "channel", TargetID: ch.ID,
+					Masked: masked, Source: "channel", Configured: ch.AppSecretSet, Enabled: ch.Enabled,
+					CreatedAt: ch.CreatedAt, UpdatedAt: ch.UpdatedAt,
+				})
+			}
+		}
+	}
+	if h.ProjectMcpKeys != nil {
+		for _, key := range h.ProjectMcpKeys.List(projectID) {
+			out = append(out, services.ProjectCredentialView{
+				ID: "external_mcp:" + key.ID, ProjectID: projectID, Type: "external_mcp", Kind: "external_mcp",
+				Name: key.Name, Target: key.ID, TargetType: "external_mcp", TargetID: key.ID,
+				Masked: key.KeyPrefix, Source: "external_mcp", Configured: true, Enabled: key.RevokedAt == nil,
+				RevokedAt: key.RevokedAt, CreatedAt: key.CreatedAt,
+			})
+		}
+	}
+	if h.APIKeys != nil && h.WF != nil {
+		for _, wf := range h.WF.List(projectID) {
+			for _, key := range h.APIKeys.List(wf.ID) {
+				out = append(out, services.ProjectCredentialView{
+					ID: "workflow:" + key.ID, ProjectID: projectID, Type: "workflow", Kind: "workflow",
+					Name: key.Name, Target: wf.ID, TargetType: "workflow", TargetID: wf.ID,
+					Masked: key.KeyPrefix, Source: "workflow", Configured: true, Enabled: key.RevokedAt == nil,
+					RevokedAt: key.RevokedAt, CreatedAt: key.CreatedAt,
+				})
+			}
+		}
+	}
+	return out
+}
+
+type projectCredentialBody struct {
+	services.ProjectCredentialInput
+}
+
+func (h *Handlers) CreateProjectCredential(c *gin.Context) {
+	if h.ProjectCredentials == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "credentials unavailable"})
+		return
+	}
+	var b projectCredentialBody
+	if err := c.ShouldBindJSON(&b); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	v, err := h.ProjectCredentials.Create(c.Param("id"), b.ProjectCredentialInput)
+	if err != nil {
+		writeCredentialErr(c, err)
+		return
+	}
+	h.recordAudit(services.AuditRecord{ProjectID: c.Param("id"), Actor: h.auditActorFromContext(c), Action: models.AuditActionProjectConfig, ResourceType: "project_credential", ResourceID: v.ID, Outcome: models.AuditOutcomeOK, Summary: "create project credential", Payload: map[string]any{"type": v.Type, "provider": v.Provider, "name": v.Name}})
+	c.JSON(http.StatusOK, v)
+}
+
+func (h *Handlers) UpdateProjectCredential(c *gin.Context) {
+	if h.ProjectCredentials == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "credentials unavailable"})
+		return
+	}
+	var b projectCredentialBody
+	if err := c.ShouldBindJSON(&b); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	v, err := h.ProjectCredentials.Update(c.Param("id"), c.Param("credentialId"), b.ProjectCredentialInput)
+	if err != nil {
+		writeCredentialErr(c, err)
+		return
+	}
+	h.recordAudit(services.AuditRecord{ProjectID: c.Param("id"), Actor: h.auditActorFromContext(c), Action: models.AuditActionProjectConfig, ResourceType: "project_credential", ResourceID: v.ID, Outcome: models.AuditOutcomeOK, Summary: "update project credential", Payload: map[string]any{"type": v.Type, "provider": v.Provider, "name": v.Name, "cleared": b.Clear}})
+	c.JSON(http.StatusOK, v)
+}
+
+func (h *Handlers) RevokeProjectCredential(c *gin.Context) {
+	if h.ProjectCredentials == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "credentials unavailable"})
+		return
+	}
+	if err := h.ProjectCredentials.Revoke(c.Param("id"), c.Param("credentialId")); err != nil {
+		writeCredentialErr(c, err)
+		return
+	}
+	h.recordAudit(services.AuditRecord{ProjectID: c.Param("id"), Actor: h.auditActorFromContext(c), Action: models.AuditActionProjectConfig, ResourceType: "project_credential", ResourceID: c.Param("credentialId"), Outcome: models.AuditOutcomeOK, Summary: "revoke project credential"})
+	c.JSON(http.StatusOK, gin.H{"status": "revoked"})
+}
+
+func (h *Handlers) ClearProjectCredential(c *gin.Context) {
+	if h.ProjectCredentials == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "credentials unavailable"})
+		return
+	}
+	if err := h.ProjectCredentials.Clear(c.Param("id"), c.Param("credentialId")); err != nil {
+		writeCredentialErr(c, err)
+		return
+	}
+	h.recordAudit(services.AuditRecord{ProjectID: c.Param("id"), Actor: h.auditActorFromContext(c), Action: models.AuditActionProjectConfig, ResourceType: "project_credential", ResourceID: c.Param("credentialId"), Outcome: models.AuditOutcomeOK, Summary: "clear project credential"})
+	c.JSON(http.StatusOK, gin.H{"status": "cleared"})
+}
+
+func writeCredentialErr(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, services.ErrCredentialProject), errors.Is(err, services.ErrCredentialType), errors.Is(err, services.ErrCredentialName), errors.Is(err, services.ErrCredentialTarget):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.Is(err, services.ErrProjectNotFound), errors.Is(err, services.ErrCredentialNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	case errors.Is(err, crypto.ErrNoSecretsKey), errors.Is(err, crypto.ErrInvalidSecretsKey):
+		c.JSON(http.StatusPreconditionFailed, gin.H{"error": err.Error()})
+	default:
+		_ = c.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }
 
 // GetProjectTokenStats returns the same aggregation as GET /api/stats/token,

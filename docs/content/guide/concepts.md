@@ -71,7 +71,7 @@ Inbox **待复审**、**应用预览**与 **待澄清**卡片使用同一套管�
 
 Agent 不是在笔记本上跑的黑盒 prompt。它们通过仓库内嵌的 [sandbox-gateway](https://github.com/cocofhu/approving/tree/main/sandbox-gateway) 在 Docker 容器中执行，经 ACP 通信。
 
-支持 **Cursor**、**Claude Code**、**CodeBuddy**、**Trae**、**OpenCode**。按 Agent 配置 `acpBackend`；密钥放在 Agent meta env（OpenCode 还可指定厂商、API Base 与 model）。
+支持 **Cursor**、**Claude Code**、**CodeBuddy**、**Trae**、**OpenCode**。按 Agent 配置 `acpBackend`；优先在项目详情的项目凭据 UI 中保存密钥、站点和其他后端选项。兼容的项目/Agent meta env 仅在项目凭据未配置时作为回退（OpenCode 还可指定厂商、API Base 与 model）。
 
 ## 产物契约与 MCP
 

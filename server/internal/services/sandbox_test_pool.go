@@ -186,6 +186,11 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 		}
 		env[k] = v
 	}
+	for k, v := range processCredentialEnv() {
+		if _, exists := env[k]; !exists {
+			env[k] = v
+		}
+	}
 	for k, v := range agent.Env {
 		env[k] = substTemplate(v, vars)
 	}
@@ -196,6 +201,15 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 	for k, v := range vars {
 		if v != "" {
 			env[k] = v
+		}
+	}
+	// Project UI credentials are the highest-priority source; apply after the
+	// Agent/template vars above so test sandboxes match workflow precedence.
+	if s.projectCredentials != nil {
+		for k, v := range s.projectCredentials(projectID) {
+			if strings.TrimSpace(k) != "" {
+				env[strings.TrimSpace(k)] = v
+			}
 		}
 	}
 	backend := runtime.NormalizeBackend(agent.AcpBackend)
@@ -751,7 +765,13 @@ func (s *SandboxService) testMcpVars(runID, token, projectID, profile string) ma
 }
 
 func (s *SandboxService) buildTestSandboxSpecs(projectID, profile, runID, token string, agent Agent, vars map[string]string) []sandbox.MCPServerSpec {
-	specs := filterAgentPlatformMCP(resolveAgentMCP(agent.MCP, vars))
+	mcpVars := vars
+	if s.projectCredentialReferences != nil {
+		// Resolve credential references only while rendering MCP configuration;
+		// do not copy their plaintext values into the sandbox environment.
+		mcpVars = runtime.MergeEnvIntoTemplateVars(s.projectCredentialReferences(projectID), vars)
+	}
+	specs := filterAgentPlatformMCP(resolveAgentMCP(agent.MCP, mcpVars))
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
 		return specs
