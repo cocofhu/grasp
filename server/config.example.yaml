@@ -4,14 +4,17 @@
 # 以只读卷挂到 CONFIG_PATH;进程读取它。**不要把真实配置提交进 git / 打进镜像**。
 #
 # 本地开发:`cp config.example.yaml config.yaml` 后改值即可;或完全不写文件,
-# 仅用环境变量(env > 文件 > 默认)。
+# 仅用环境变量(env > 文件 > 默认)。这里的优先级适用于平台服务配置。
 #
 # 优先级:显式环境变量 > 本文件(经 ConfigMap 下发)> 代码默认值。
-# 高敏密钥(cursor_api_key)生产走 K8s Secret 注入环境变量,不放本文件。
+# 平台服务的高敏密钥生产走 K8s Secret 注入环境变量,不放本文件。
+# ACP / Git 运行时凭据优先在项目详情的项目凭据 UI 管理，兼容的项目/Agent
+# 环境变量仅作回退；旧的 cursor_api_key 不再注入沙箱。
 #
 # 注意:GitLab/代码托管不是平台级配置。仓库地址由工作流全局变量 repo_url 提供,
-# 凭据(GITLAB_TOKEN / GITLAB_URL 等)在 Agent 元信息的环境变量里配置(可引用
-# ${vars.<全局变量名>}),按 run 注入对应沙箱;平台本身不依赖任何固定的 GitLab 地址或令牌。
+# 兼容回退凭据(GITLAB_TOKEN / GITLAB_URL 等)可在项目/Agent 元信息的环境变量里
+# 配置(可引用 ${vars.<全局变量名>}),按 run 注入对应沙箱;平台本身不依赖任何固定
+# 的 GitLab 地址或令牌。
 
 server:
   port: 8080
@@ -49,12 +52,13 @@ sandbox:
   # 通用环境变量透传(厂商无关):逐条注入沙箱容器。
   # 默认 SKIP_INNER_DOCKER=0(启用 DinD);设为 "1" 则不启动内层 dockerd。
   env: {}
-  # ACP 后端密钥与选项(厂商中立入口):合并进沙箱 Env。各键保持后端语义,例如:
+  # ACP 后端密钥与选项(厂商中立兼容入口):合并进沙箱 Env。项目凭据 UI 优先；
+  # 仅在 UI 未配置时使用这里的回退值。各键保持后端语义,例如:
   #   GRASP_CURSOR_API_KEY — Cursor 后端
   #   ANTHROPIC_API_KEY       — Claude Code 后端
   #   CODEBUDDY_API_KEY       — CodeBuddy 后端
   acp_env: {}
-  # deprecated: 请改用 acp_env.GRASP_CURSOR_API_KEY;计划 0.2.0 移除。
+  # deprecated: 请改用项目凭据 UI（或兼容回退 acp_env.GRASP_CURSOR_API_KEY）；计划 0.2.0 移除。
   cursor_api_key: ""
   # deprecated: 参考实现 cursor CLI 登录复用;计划 0.2.0 移除。
   cursor_auth_path: ""

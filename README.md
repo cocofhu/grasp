@@ -131,11 +131,11 @@ Override image tags or digests in `.env`; see [`.env.example`](.env.example).
 ## Build your first workflow
 
 1. Sign in with the local demo account. A fresh installation starts with an empty project and does not create a sample pipeline.
-2. Create an agent in **Agent Studio**, select `cursor`, `claude_code`, `codebuddy`, `trae`, or `opencode`, and configure the matching API key.
+2. Open the project credential settings, select `cursor`, `claude_code`, `codebuddy`, `trae`, or `opencode`, and save the matching API key there. Agent env values remain available as a fallback.
 3. Open the canvas: connect a Grasp node after start, then Visual / gate / implement nodes. Draw success, fail, and rollback — mark checkpoints where a retry should re-enter.
 4. Publish and start a run (or launch from **Home** in one sentence). Watch the state trace, `page.html` preview, and inbox items waiting at gates.
 
-See [`server/README.md`](server/README.md) for backend authentication and Agent env configuration.
+See [`server/README.md`](server/README.md) for backend authentication, project credential settings, and environment-variable fallback.
 
 ## Architecture
 
@@ -161,6 +161,8 @@ See [`server/README.md`](server/README.md) for backend authentication and Agent 
 
 Configuration precedence is explicit environment variables > mounted config file > defaults. See [`server/CONFIGURATION.md`](server/CONFIGURATION.md) for all options and [`GATEWAY.md`](GATEWAY.md) for the gateway contract.
 
+For runtime credentials, the precedence is project credential UI > project shared env > Agent env; the server's own process environment is never injected into sandboxes. Compatible project/Agent environment variables are used only when no UI credential is configured. The precedence above applies to platform service configuration, not runtime credentials.
+
 ## Development and quality
 
 **Development requirements:** Go, Node.js, and Docker Compose; sandbox execution requires Linux.
@@ -174,7 +176,7 @@ Module-specific lint, test, coverage, and E2E commands are documented in [`AGENT
 ## Deployment and security notes
 
 - The default account is for local demos only. Configure your own authentication users before any shared or production deployment.
-- Keep ACP API keys and Git credentials in project or Agent env; never commit them.
+- Manage ACP API keys and Git credentials in the project's credential UI. Environment variables remain a fallback for compatible deployments; never commit credentials.
 - Pin production images by digest; see [Release images and smoke](CONTRIBUTING.md#release-images-and-smoke).
 - 1.0.0 is the first stable public release. Perform your own security review, backups, and capacity validation before production use.
 - **Reverse proxy Host:** temporary approval share links mint from this request's `Host` (never client `X-Forwarded-Host`). Preserve the browser Host (for example nginx `proxy_set_header Host $host`) and forward `X-Forwarded-Proto` when TLS terminates upstream. See [`SECURITY.md`](SECURITY.md).

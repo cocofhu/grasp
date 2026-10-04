@@ -198,6 +198,13 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 			env[k] = v
 		}
 	}
+	// Project UI credentials are the highest-priority source; apply after the
+	// Agent/template vars above so test sandboxes match workflow precedence.
+	var projectCreds map[string]string
+	if s.projectCredentials != nil {
+		projectCreds = s.projectCredentials(projectID)
+		overlayProjectCredentialEnv(env, projectCreds)
+	}
 	backend := runtime.NormalizeBackend(agent.AcpBackend)
 	workDir := s.skills.WorkDir(profile)
 	// Align auth gate with BuildConfigHome: shared extend then Agent overlay.
@@ -252,7 +259,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 		ConfigRoot:   agent.Layout.ConfigRoot,
 		WorkspaceDir: agent.Layout.WorkspaceDir,
 	}
-	ApplyAgentSSHToSpec(&spec, agent)
+	ApplyAgentSSHToSpec(&spec, agentWithProjectSSH(agent, projectCreds))
 	sb, err := s.mgr.Create(ctx, spec)
 	if err != nil {
 		_ = os.RemoveAll(home)
@@ -751,7 +758,13 @@ func (s *SandboxService) testMcpVars(runID, token, projectID, profile string) ma
 }
 
 func (s *SandboxService) buildTestSandboxSpecs(projectID, profile, runID, token string, agent Agent, vars map[string]string) []sandbox.MCPServerSpec {
-	specs := filterAgentPlatformMCP(resolveAgentMCP(agent.MCP, vars))
+	mcpVars := vars
+	if s.projectCredentialReferences != nil {
+		// Resolve credential references only while rendering MCP configuration;
+		// do not copy their plaintext values into the sandbox environment.
+		mcpVars = runtime.MergeEnvIntoTemplateVars(s.projectCredentialReferences(projectID), vars)
+	}
+	specs := filterAgentPlatformMCP(resolveAgentMCP(agent.MCP, mcpVars))
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
 		return specs

@@ -4,6 +4,10 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Project credentials:** ACP and Git credentials can be managed in project
+  credential settings, which take precedence at runtime; compatible
+  project/Agent environment variables remain a fallback. Platform service
+  configuration keeps its explicit environment > file > defaults precedence.
 - **Gate approval chat:** a message that starts while an earlier queued item
   was already trimmed no longer removes the wrong waiting message from the
   queue panel.

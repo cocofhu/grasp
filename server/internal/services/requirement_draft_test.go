@@ -21,7 +21,7 @@ func setupRequirementDraftDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Project{}, &models.RequirementDraft{}); err != nil {
+	if err := db.AutoMigrate(&models.Project{}, &models.RequirementDraft{}, &models.ProjectCredential{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	now := time.Now()

@@ -42,9 +42,31 @@ type ProjectVariable struct {
 	Secret   bool   `json:"secret,omitempty"`
 }
 
+// ProjectCredential is a project-scoped secret managed from the project UI.
+// ValueEnc is AES-GCM ciphertext and is never serialized to API responses.
+// Hash-based credentials (external MCP/workflow keys) keep their existing
+// dedicated models; this model is for reusable runtime secrets.
+type ProjectCredential struct {
+	ID             string         `gorm:"primaryKey" json:"id"`
+	ProjectID      string         `gorm:"index" json:"projectId"`
+	Type           string         `json:"type"` // ai | git | ssh | mcp | custom | channel | external_mcp | workflow
+	Provider       string         `json:"provider,omitempty"`
+	Name           string         `json:"name"`
+	Target         string         `json:"target,omitempty"`
+	EnvKey         string         `gorm:"index" json:"envKey,omitempty"`
+	FallbackEnvKey string         `json:"fallbackEnvKey,omitempty"`
+	ValueEnc       string         `json:"-"`
+	Metadata       map[string]any `gorm:"serializer:json" json:"metadata,omitempty"`
+	Enabled        bool           `json:"enabled"`
+	RevokedAt      *time.Time     `json:"revokedAt,omitempty"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
+}
+
 // Project is a workspace that owns workflows and holds workflow variable
-// defaults. Project-level OS env lives in the shared Agent config (extend
-// layer); Run.SandboxEnv remains the per-run snapshot.
+// defaults. ProjectCredential is the preferred project-level secret store;
+// shared Agent env remains the compatibility extend layer. Run.SandboxEnv
+// remains the per-run snapshot for non-credential variables.
 type Project struct {
 	ID          string `gorm:"primaryKey" json:"id"`
 	Name        string `gorm:"uniqueIndex" json:"name"`
@@ -873,6 +895,7 @@ func AllModels() []any {
 		&ProjectMemoryItem{}, &ChatThread{}, &ChatMessage{}, &ChatTurnDraft{},
 		&AgentCronJob{}, &AgentCronRun{}, &ChannelConfig{},
 		&ProjectAuditEvent{},
+		&ProjectCredential{},
 		&NotifyDeliveryReceipt{},
 		&GateShareLink{},
 		&GateShareVisitorConversation{},

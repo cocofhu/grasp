@@ -36,11 +36,13 @@ type SandboxService struct {
 	// When set, Open / OpenAgentSandbox merge via ExtendOverlay before inject.
 	shared *SharedAgentService
 
-	profilesRoot      string
-	platformRulesRoot string
-	mcpEndpoint       string
-	env               map[string]string
-	chatTimeout       time.Duration
+	profilesRoot                string
+	platformRulesRoot           string
+	mcpEndpoint                 string
+	env                         map[string]string
+	projectCredentials          func(projectID string) map[string]string
+	projectCredentialReferences func(projectID string) map[string]string
+	chatTimeout                 time.Duration
 	// ttl / runTTL / max are runtime-tunable via the settings page, so they are
 	// held atomically (read from many sites, some already under s.mu) rather
 	// than guarded by s.mu — avoiding any lock-reentrancy at the read points.
@@ -100,6 +102,12 @@ type SandboxOptions struct {
 	Max    int
 	// SharedAgent optional project baseline used by Open / OpenAgentSandbox.
 	SharedAgent *SharedAgentService
+	// ProjectCredentials resolves UI-managed project credential environment
+	// values for interactive, PM, cron, and project-context sandboxes.
+	ProjectCredentials func(projectID string) map[string]string
+	// ProjectCredentialReferences resolves ${credential:<id>} values for MCP
+	// templates without placing those values in the process environment.
+	ProjectCredentialReferences func(projectID string) map[string]string
 	// OpenCodeCatalog lets a gateway absent from OpenCode's provider catalog be
 	// declared with an adapter in opencode.json. Nil keeps `custom`-only.
 	OpenCodeCatalog runtime.OpenCodeCatalog
@@ -140,15 +148,17 @@ func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, 
 	}
 	s := &SandboxService{
 		db: db, mgr: mgr, skills: skills, host: host,
-		shared:            opts.SharedAgent,
-		profilesRoot:      opts.ProfilesRoot,
-		platformRulesRoot: opts.PlatformRulesRoot,
-		mcpEndpoint:       opts.MCPEndpoint,
-		env:               opts.Env,
-		chatTimeout:       opts.ChatTimeout,
-		openCodeCatalog:   opts.OpenCodeCatalog,
-		live:              map[uint]*liveSandbox{},
-		runActive:         map[string]bool{},
+		shared:                      opts.SharedAgent,
+		profilesRoot:                opts.ProfilesRoot,
+		platformRulesRoot:           opts.PlatformRulesRoot,
+		mcpEndpoint:                 opts.MCPEndpoint,
+		env:                         opts.Env,
+		projectCredentials:          opts.ProjectCredentials,
+		projectCredentialReferences: opts.ProjectCredentialReferences,
+		chatTimeout:                 opts.ChatTimeout,
+		openCodeCatalog:             opts.OpenCodeCatalog,
+		live:                        map[uint]*liveSandbox{},
+		runActive:                   map[string]bool{},
 	}
 	s.ttl.Store(int64(opts.TTL))
 	s.runTTL.Store(int64(opts.RunTTL))

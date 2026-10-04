@@ -327,6 +327,35 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	for k, v := range agentCfg.Env {
 		env[k] = substVars(v, vars)
 	}
+	// Explicit fallback bindings alias a key already present in the project's
+	// own sandbox env. The server process environment is never consulted.
+	if c.opts.ProjectCredentialFallbackEnvForProject != nil {
+		for target, fallback := range c.opts.ProjectCredentialFallbackEnvForProject(c.projectIDForReq(req)) {
+			if _, exists := env[target]; exists {
+				continue
+			}
+			if v := env[strings.TrimSpace(fallback)]; v != "" {
+				env[target] = v
+			}
+		}
+	}
+	// Project UI credentials are the highest-priority source. They are resolved
+	// only for the owning project and never copied into persisted Agent config.
+	// Platform-reserved keys from mcpVars are re-applied below and still win.
+	var projectCreds map[string]string
+	if c.opts.ProjectCredentialsForProject != nil {
+		projectCreds = c.opts.ProjectCredentialsForProject(c.projectIDForReq(req))
+		for k, v := range projectCreds {
+			k = strings.TrimSpace(k)
+			if k != "" {
+				env[k] = v
+			}
+		}
+	}
+	protectedCredentialKeys := map[string]struct{}{}
+	if c.opts.ProjectCredentialKeysForProject != nil {
+		protectedCredentialKeys = c.opts.ProjectCredentialKeysForProject(c.projectIDForReq(req))
+	}
 	// Run-scoped StartRun snapshot overlays shared + Agent for user-可控 keys.
 	// Empty string values intentionally override. Must stay before mergeAuthEnv /
 	// mcpVars / CONFIG_ROOT / ApplyPasswords so reserved platform keys win later.
@@ -334,6 +363,9 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		for _, e := range c.opts.RunSandboxEnvForRun(req.RunID) {
 			k := strings.TrimSpace(e.Key)
 			if k == "" {
+				continue
+			}
+			if _, protected := protectedCredentialKeys[k]; protected {
 				continue
 			}
 			env[k] = e.Value
@@ -382,12 +414,13 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		WorkspaceDir: layout.WorkspaceDir,
 	}
 	// SSH: meta literal preferred; env fallback already vars-expanded above.
+	// Project credentials outrank the Agent meta literal.
 	key := agentCfg.GitSshPrivateKey
-	if strings.TrimSpace(key) == "" {
+	if strings.TrimSpace(projectCreds["GIT_SSH_PRIVATE_KEY"]) != "" || strings.TrimSpace(key) == "" {
 		key = env["GIT_SSH_PRIVATE_KEY"]
 	}
 	hosts := agentCfg.GitSshKnownHosts
-	if strings.TrimSpace(hosts) == "" {
+	if strings.TrimSpace(projectCreds["GIT_SSH_KNOWN_HOSTS"]) != "" || strings.TrimSpace(hosts) == "" {
 		hosts = env["GIT_SSH_KNOWN_HOSTS"]
 	}
 	sandbox.ApplySSHCredentials(&spec, key, hosts)

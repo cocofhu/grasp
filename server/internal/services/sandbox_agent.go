@@ -199,7 +199,14 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 	}
 
 	vars = runtime.MergeEnvIntoTemplateVars(vars, agent.Env)
-	specs := filterAgentPlatformMCP(resolveAgentMCP(agent.MCP, vars))
+	mcpVars := vars
+	if s.projectCredentialReferences != nil {
+		// Credential references are scoped to user-authored MCP templates. Keep
+		// them out of vars so the ordinary sandbox environment never receives
+		// these values as global keys.
+		mcpVars = runtime.MergeEnvIntoTemplateVars(s.projectCredentialReferences(projectID), vars)
+	}
+	specs := filterAgentPlatformMCP(resolveAgentMCP(agent.MCP, mcpVars))
 	specs = append(specs, platformSpecs...)
 	specs = dedupeMCPByName(specs)
 
@@ -219,6 +226,14 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 	}
 	for k, v := range vars {
 		env[k] = v
+	}
+	// Project UI credentials are the highest-priority source. Apply them after
+	// template/Agent vars so interactive, PM and cron sandboxes match workflow
+	// resolver precedence.
+	var projectCreds map[string]string
+	if s.projectCredentials != nil {
+		projectCreds = s.projectCredentials(projectID)
+		overlayProjectCredentialEnv(env, projectCreds)
 	}
 	backend := runtime.NormalizeBackend(agent.AcpBackend)
 	workDir := s.skills.WorkDir(profile)
@@ -274,7 +289,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 		ConfigRoot:   agent.Layout.ConfigRoot,
 		WorkspaceDir: agent.Layout.WorkspaceDir,
 	}
-	ApplyAgentSSHToSpec(&spec, agent)
+	ApplyAgentSSHToSpec(&spec, agentWithProjectSSH(agent, projectCreds))
 	sb, err := s.mgr.Create(ctx, spec)
 	if err != nil {
 		_ = os.RemoveAll(home)

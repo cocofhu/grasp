@@ -88,11 +88,16 @@ type OnboardingService struct {
 	SharedAgent *SharedAgentService
 	WF          *WorkflowService
 	Org         *OrgService
+	Credentials *ProjectCredentialService
 }
 
 // NewOnboardingService wires dependencies. org may be nil (agents still saved).
-func NewOnboardingService(projects *ProjectService, skills *AgentService, shared *SharedAgentService, wf *WorkflowService, org *OrgService) *OnboardingService {
-	return &OnboardingService{Projects: projects, Skills: skills, SharedAgent: shared, WF: wf, Org: org}
+func NewOnboardingService(projects *ProjectService, skills *AgentService, shared *SharedAgentService, wf *WorkflowService, org *OrgService, credentials ...*ProjectCredentialService) *OnboardingService {
+	var creds *ProjectCredentialService
+	if len(credentials) > 0 {
+		creds = credentials[0]
+	}
+	return &OnboardingService{Projects: projects, Skills: skills, SharedAgent: shared, WF: wf, Org: org, Credentials: creds}
 }
 
 // CreateFromBaseline clones the embedded first-install workflow into a new
@@ -323,7 +328,15 @@ func (s *OnboardingService) writeProjectAuth(projectID, backend, apiKey, region 
 	}
 	cfg.ProjectID = projectID
 	cfg.AcpBackend = backend
-	cfg.Env[primaryAuthEnvKey(backend)] = apiKey
+	primaryKey := primaryAuthEnvKey(backend)
+	if s.Credentials != nil && strings.TrimSpace(apiKey) != "" {
+		if _, err := s.Credentials.SetByEnvKey(projectID, ProjectCredentialInput{Type: "ai", Provider: backend, Name: backend + " API Key", EnvKey: primaryKey, Value: apiKey}); err != nil {
+			return err
+		}
+		delete(cfg.Env, primaryKey)
+	} else {
+		cfg.Env[primaryKey] = apiKey
+	}
 	switch backend {
 	case AcpBackendCodeBuddy:
 		if region == "" {
@@ -343,22 +356,55 @@ func (s *OnboardingService) writeProjectAuth(projectID, backend, apiKey, region 
 		cfg.GitCredentialType = cred
 	}
 	if v := strings.TrimSpace(req.GitHubToken); v != "" {
-		cfg.Env["GITHUB_TOKEN"] = v
+		if s.Credentials != nil {
+			if _, err := s.Credentials.SetByEnvKey(projectID, ProjectCredentialInput{Type: "git", Provider: "github", Name: "GitHub HTTPS Token", EnvKey: "GITHUB_TOKEN", Value: v}); err != nil {
+				return err
+			}
+			delete(cfg.Env, "GITHUB_TOKEN")
+		} else {
+			cfg.Env["GITHUB_TOKEN"] = v
+		}
 	}
 	if v := strings.TrimSpace(req.GitLabToken); v != "" {
-		cfg.Env["GITLAB_TOKEN"] = v
+		if s.Credentials != nil {
+			if _, err := s.Credentials.SetByEnvKey(projectID, ProjectCredentialInput{Type: "git", Provider: "gitlab", Name: "GitLab HTTPS Token", EnvKey: "GITLAB_TOKEN", Value: v}); err != nil {
+				return err
+			}
+			delete(cfg.Env, "GITLAB_TOKEN")
+		} else {
+			cfg.Env["GITLAB_TOKEN"] = v
+		}
 	}
 	if v := strings.TrimSpace(req.GitLabURL); v != "" {
-		cfg.Env["GITLAB_URL"] = v
+		if s.Credentials != nil {
+			if _, err := s.Credentials.SetByEnvKey(projectID, ProjectCredentialInput{Type: "git", Provider: "gitlab", Name: "GitLab URL", EnvKey: "GITLAB_URL", Value: v}); err != nil {
+				return err
+			}
+			delete(cfg.Env, "GITLAB_URL")
+		} else {
+			cfg.Env["GITLAB_URL"] = v
+		}
 	}
 	if err := ValidateAgentSSHMeta(req.GitSshKnownHosts, req.GitSshPrivateKey); err != nil {
 		return err
 	}
 	if v := strings.TrimSpace(req.GitSshPrivateKey); v != "" {
-		cfg.GitSshPrivateKey = v
+		if s.Credentials != nil {
+			if _, err := s.Credentials.SetByEnvKey(projectID, ProjectCredentialInput{Type: "ssh", Provider: "ssh", Name: "Git SSH Private Key", EnvKey: "GIT_SSH_PRIVATE_KEY", Value: v}); err != nil {
+				return err
+			}
+		} else {
+			cfg.GitSshPrivateKey = v
+		}
 	}
 	if v := strings.TrimSpace(req.GitSshKnownHosts); v != "" {
-		cfg.GitSshKnownHosts = v
+		if s.Credentials != nil {
+			if _, err := s.Credentials.SetByEnvKey(projectID, ProjectCredentialInput{Type: "ssh", Provider: "ssh", Name: "Git SSH Known Hosts", EnvKey: "GIT_SSH_KNOWN_HOSTS", Value: v}); err != nil {
+				return err
+			}
+		} else {
+			cfg.GitSshKnownHosts = v
+		}
 	}
 	if v := strings.TrimSpace(req.GitUserName); v != "" {
 		cfg.Env["GIT_USER_NAME"] = v

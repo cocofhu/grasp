@@ -3,7 +3,7 @@ title: 配置
 description: 配置要点摘要；完整说明见源码 CONFIGURATION.md。
 ---
 
-Grasp 服务端配置以 YAML / 环境变量为主（本地示例见 `server/config.example.yaml` 与根目录 `.env.example`）。
+Grasp 平台服务配置以 YAML / 环境变量为主（本地示例见 `server/config.example.yaml` 与根目录 `.env.example`）。ACP、Git 等运行时凭据优先在项目详情的项目凭据 UI 中管理；兼容的项目/Agent 环境变量仅作为回退。
 
 ## 完整文档
 
@@ -20,7 +20,7 @@ Grasp 服务端配置以 YAML / 环境变量为主（本地示例见 `server/con
 ./start.sh dev -d      # 源码 + HMR
 ```
 
-镜像 tag / digest、网关与沙箱相关变量见 `.env.example`。Agent 侧 API key、`GITHUB_*` / `GITLAB_*` / SSH 等放在 Agent meta env（值可引用 `${vars.<name>}`）。
+镜像 tag / digest、网关与沙箱相关变量见 `.env.example`。Agent 侧 API key、`GITHUB_*` / `GITLAB_*` / SSH 等应先保存到项目凭据 UI；兼容回退仍可放在项目共享或 Agent meta env（值可引用 `${vars.<name>}`）。
 
 ## 数据库与附件同生命周期
 

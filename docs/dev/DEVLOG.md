@@ -23,6 +23,30 @@
 ### 2026-10-05
 
 - 日期：2026-10-05
+- 范围：`server/internal/{envauth,services,runtime,handlers}`、`README.md`、`server/README.md`
+- 做了什么：项目凭据收口安全边界。去掉沙箱从服务进程环境读取 `GITHUB_TOKEN` / `*_API_KEY` 等的回退（含 `gitToken` / `gitLabURL`）；`fallbackEnvKey` 只从项目/Agent env 取值，不再 `os.LookupEnv`。凭据 env key 必须是合法标识符，且不能是平台保留变量（新增 `envauth.IsPlatformReservedEnvKey`）；交互/测试沙箱叠加凭据时跳过保留键，流水线沙箱的 `GRASP_*` 平台变量恢复为最后写入。渠道/外部 MCP/工作流类型只作为只读视图，不能新建。未填值的内置槽位不再挡住 Run env。项目凭据中的 SSH 私钥/known_hosts 优先于 Agent 元信息。删除项目时一并删除凭据。
+- 为什么：原实现会把服务端宿主机的 Token 注入所有项目的沙箱；项目用户可通过 `fallbackEnvKey`（如 `GRASP_SECRETS_KEY`）读出服务端任意环境变量；自定义凭据可覆盖 `GRASP_ARTIFACT_TOKEN` / `GRASP_PM_TOKEN` 等平台令牌；打开凭据页即生成空槽位，会让 Run 级 `GITHUB_TOKEN` 静默失效。
+- 如何验证：新增服务与 runtime 用例覆盖保留键/非法键拒绝、空槽位、平台键不被覆盖、进程 env 不泄漏、删除级联；`go test ./...`、`go vet ./...`、`gen-configdoc -check` 通过。
+
+### 2026-10-04
+
+- 日期：2026-10-04
+- 范围：`server/internal/{models,services,handlers,runtime,router}`、`server/cmd/server/main.go`、`web/src/{components/project,lib/api,lib/project,locales,views}`
+- 做了什么：新增项目凭据加密存储、掩码 CRUD、清除/撤销和项目详情凭据页；把 AI CLI、Git、SSH、MCP、自定义凭据接入统一解析器，并为渠道、外部 MCP 和工作流 Key 提供只读适配视图。UI 凭据覆盖项目共享 env、Agent env；已绑定凭据键不能被 Run env 覆盖，MCP 支持 `${credential:<id>}` 展开，SSH 材料写入文件。
+- 为什么：让项目密钥有统一的高优先级管理入口，同时保留旧环境变量部署的兼容路径，避免服务端专用鉴权和沙箱运行时凭据互相泄露。
+- 如何验证：`go test ./...`、`go vet ./...`、`go run ./cmd/gen-configdoc -out CONFIGURATION.md -check`、服务端覆盖率 91.4%；Web `npm run lint`、`npx vue-tsc --noEmit`、`npm test -- --run --coverage`（3976 tests）和 `npm run build` 通过。`golangci-lint` 未运行，当前环境未安装该二进制。
+
+### 2026-10-04
+
+- 日期：2026-10-04
+- 范围：`README.md`、`server/README.md`、`server/config.example.yaml`、`docs/content/{guide,help}`、`docs/site/{index.html,en/index.html}`、`CHANGELOG.md`
+- 做了什么：把 ACP、Git 等运行时凭据的项目凭据 UI 标为首选，将兼容的项目/Agent 环境变量保留为回退；同时明确平台服务配置仍按环境变量 > YAML > 默认值解析。
+- 为什么：项目凭据由专门的 UI 统一管理，避免新部署继续把运行时密钥散落在环境变量中，同时保持已有部署的兼容路径。
+- 如何验证：用 `rg` 检查公开 README、服务端说明、帮助页和站点文案中的凭据优先级；`git diff --check` 通过。未重新生成 `server/CONFIGURATION.md`，因为平台配置项和生成器未改变。
+
+### 2026-10-05
+
+- 日期：2026-10-05
 - 范围：`server/internal/chatsession/stream{,_test}.go`、`server/internal/services/{sandbox_chat,sandbox_chat_test,pm_turn}.go`、`server/internal/handlers/{sandbox,handlers}.go`、`server/cmd/server/main.go`、`web/src/components/agent/AgentChatTester{.vue,.test.ts,.interactions.test.ts}`
 - 做了什么：把 PM 里"帧编号 + 当前轮回放缓冲 + 订阅者扇出"抽成 `chatsession.Stream`，PM 改用它。Agent Studio / 沙箱控制台的对话从"每个 WS 连接一条队列"改成 `SandboxChats`：每个沙箱一个 chatsession FIFO，连接断开不影响排队和正在跑的轮次；WS 连上先发 queue_state 快照，忙时回放当前轮，帧格式和 PM 一致（`{type:'session',event}` / `{type:'acp'}`）。客户端发 chat 时带 `id`，`turn_begin` 按 id 取回本地附件预览。`AgentChatTester` 断线按 1s·2^n（封顶 15s）重连；历史恢复完成前先暂存实时帧，并去掉事件日志里正在跑的那一轮，避免回放重复。销毁沙箱时先取消它的对话。
 - 为什么：统一聊天的最后一块。Studio 原来刷新页面或断线就丢队列，正在跑的轮次也看不到了；PM 和 Studio 的回放逻辑本质相同，收成一份。

@@ -179,6 +179,7 @@ func main() {
 	auditSvc := services.NewProjectAuditService(db)
 	externalMcpSvc := services.NewProjectExternalMcpService(db, cfg.Server.MCPAdvertise)
 	projectMcpKeySvc := services.NewProjectMcpApiKeyService(db)
+	projectCredentialSvc := services.NewProjectCredentialService(db)
 	services.BackfillAuditElevatedFields(db)
 	sharedAgentSvc := services.NewSharedAgentService(services.DefaultSharedAgentRoot(cfg.Engine.ProfilesRoot))
 	services.MigrateProjectSandboxEnvOnce(db, projectSvc, sharedAgentSvc)
@@ -234,6 +235,10 @@ func main() {
 				ProjectID: pickSharedProjectID(cfg),
 			}
 		},
+		ProjectCredentialsForProject:           projectCredentialSvc.ResolveEnv,
+		ProjectCredentialKeysForProject:        projectCredentialSvc.CredentialEnvKeys,
+		ProjectCredentialFallbackEnvForProject: projectCredentialSvc.FallbackEnvKeys,
+		ProjectCredentialReferences:            projectCredentialSvc.ResolveReferences,
 		RunSandboxEnvForRun: func(runID string) []models.EnvEntry {
 			var run models.Run
 			if err := db.Select("sandbox_env").First(&run, "id = ?", runID).Error; err != nil {
@@ -345,16 +350,18 @@ func main() {
 	})
 	log.Info().Str("gateway", cfg.Sandbox.GatewayURL).Msg("sandbox control plane: sandbox-gateway")
 	sbxSvc := services.NewSandboxService(db, sbxMgr, agentSvc, host, services.SandboxOptions{
-		ProfilesRoot:      cfg.Engine.ProfilesRoot,
-		PlatformRulesRoot: cfg.Engine.PlatformRulesRoot,
-		MCPEndpoint:       cfg.Server.MCPAdvertise,
-		Env:               cfg.Sandbox.Env,
-		ChatTimeout:       cfg.AgentChatTimeout(),
-		TTL:               cfg.TestSandboxTTL(),
-		RunTTL:            cfg.RunSandboxTTL(),
-		Max:               cfg.Sandbox.MaxTestSandboxes,
-		SharedAgent:       sharedAgentSvc,
-		OpenCodeCatalog:   openCodeCatalog,
+		ProfilesRoot:                cfg.Engine.ProfilesRoot,
+		PlatformRulesRoot:           cfg.Engine.PlatformRulesRoot,
+		MCPEndpoint:                 cfg.Server.MCPAdvertise,
+		Env:                         cfg.Sandbox.Env,
+		ChatTimeout:                 cfg.AgentChatTimeout(),
+		TTL:                         cfg.TestSandboxTTL(),
+		RunTTL:                      cfg.RunSandboxTTL(),
+		Max:                         cfg.Sandbox.MaxTestSandboxes,
+		SharedAgent:                 sharedAgentSvc,
+		ProjectCredentials:          projectCredentialSvc.ResolveEnv,
+		ProjectCredentialReferences: projectCredentialSvc.ResolveReferences,
+		OpenCodeCatalog:             openCodeCatalog,
 	})
 	// Let the exec provider record per-run node sandboxes in the same store so
 	// they show up in the sandbox UI alongside interactive test sandboxes.
@@ -428,11 +435,6 @@ func main() {
 	// Raise the per-turn deadline well above the legacy 90s so channel/cron and
 	// interactive PM turns are not truncated (aligns with the sandbox chat cap).
 	pmTurns.SetTurnDeadline(cfg.AgentChatTimeout() + 30*time.Second)
-	if n, err := pmSvc.FailInterruptedTurns(); err != nil {
-		log.Warn().Err(err).Msg("pm interrupted turn sweep failed")
-	} else if n > 0 {
-		log.Info().Int("turns", n).Msg("pm turns interrupted by restart marked failed")
-	}
 	sbxSvc.SetAgentSandboxDestroyHook(func(projectID, threadID, token string) {
 		mcpWire.unregister(token)
 		mcpWire.clearSandboxRef(threadID)
@@ -484,53 +486,54 @@ func main() {
 	cronSched.Start(sweeperCtx)
 
 	h := &handlers.Handlers{
-		WF:                wfSvc,
-		Projects:          projectSvc,
-		Runs:              runSvc,
-		Arts:              artifactSvc,
-		APIKeys:           services.NewAPIKeyService(db),
-		Agents:            agentSvc,
-		SharedAgent:       sharedAgentSvc,
-		Org:               orgSvc,
-		Dash:              services.NewDashboardService(db, projectSvc),
-		Sbx:               sbxSvc,
-		SbxChats:          services.NewSandboxChats(sbxSvc),
-		Preview:           previewSvc,
-		Issues:            issueSvc,
-		RequirementDrafts: requirementDraftSvc,
-		Notifications:     notificationSvc,
-		Eng:               eng,
-		MCP:               host,
-		Pm:                pmSvc,
-		PmProgress:        pmProgress,
-		PmTurns:           pmTurns,
-		PMMCP:             pmMCP,
-		MemoryMCP:         memoryMCP,
-		ContextMCP:        contextMCP,
-		SchedulerMCP:      schedulerMCP,
-		Settings:          settingsSvc,
-		Shutdown:          coord,
-		Auth:              authSvc,
-		PlatformRules:     platformRuleSvc,
-		Channels:          channelSvc,
-		RunNotify:         runNotifySvc,
-		Browser:           browserSvc,
-		Audit:             auditSvc,
-		ExternalMcp:       externalMcpSvc,
-		ProjectMcpKeys:    projectMcpKeySvc,
-		GateShare:         gateShareSvc,
-		GateShareNonces:   gateshare.NewNonceStore(db),
-		GateShareTickets:  gateShareTickets,
-		Embed:             embedStore,
-		PageBridge:        pageHub,
-		GateShareSessions: gateShareSessions,
-		GateShareLimiter:  gateshare.NewIPLimiter(),
-		PublicAdvertise:   cfg.Server.PublicAdvertise,
-		InjectBundles:     injectStore,
-		Blobs:             blobStore,
-		Onboarding:        services.NewOnboardingService(projectSvc, agentSvc, sharedAgentSvc, wfSvc, orgSvc),
-		Team:              services.NewTeamService(projectSvc, agentSvc, orgSvc, pmSvc, sbxSvc),
-		OpenCodeCatalog:   openCodeCatalog,
+		WF:                 wfSvc,
+		Projects:           projectSvc,
+		Runs:               runSvc,
+		Arts:               artifactSvc,
+		APIKeys:            services.NewAPIKeyService(db),
+		Agents:             agentSvc,
+		SharedAgent:        sharedAgentSvc,
+		Org:                orgSvc,
+		Dash:               services.NewDashboardService(db, projectSvc),
+		Sbx:                sbxSvc,
+		SbxChats:           services.NewSandboxChats(sbxSvc),
+		Preview:            previewSvc,
+		Issues:             issueSvc,
+		RequirementDrafts:  requirementDraftSvc,
+		Notifications:      notificationSvc,
+		Eng:                eng,
+		MCP:                host,
+		Pm:                 pmSvc,
+		PmProgress:         pmProgress,
+		PmTurns:            pmTurns,
+		PMMCP:              pmMCP,
+		MemoryMCP:          memoryMCP,
+		ContextMCP:         contextMCP,
+		SchedulerMCP:       schedulerMCP,
+		Settings:           settingsSvc,
+		Shutdown:           coord,
+		Auth:               authSvc,
+		PlatformRules:      platformRuleSvc,
+		Channels:           channelSvc,
+		RunNotify:          runNotifySvc,
+		Browser:            browserSvc,
+		Audit:              auditSvc,
+		ExternalMcp:        externalMcpSvc,
+		ProjectMcpKeys:     projectMcpKeySvc,
+		ProjectCredentials: projectCredentialSvc,
+		GateShare:          gateShareSvc,
+		GateShareNonces:    gateshare.NewNonceStore(db),
+		GateShareTickets:   gateShareTickets,
+		Embed:              embedStore,
+		PageBridge:         pageHub,
+		GateShareSessions:  gateShareSessions,
+		GateShareLimiter:   gateshare.NewIPLimiter(),
+		PublicAdvertise:    cfg.Server.PublicAdvertise,
+		InjectBundles:      injectStore,
+		Blobs:              blobStore,
+		Onboarding:         services.NewOnboardingService(projectSvc, agentSvc, sharedAgentSvc, wfSvc, orgSvc, projectCredentialSvc),
+		Team:               services.NewTeamService(projectSvc, agentSvc, orgSvc, pmSvc, sbxSvc),
+		OpenCodeCatalog:    openCodeCatalog,
 	}
 	if h.Team != nil && h.PMMCP != nil {
 		h.PMMCP.SetTeam(h.Team)
