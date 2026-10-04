@@ -108,6 +108,8 @@ type AcpPart struct {
 	Summary string `json:"summary,omitempty"`
 	Input   string `json:"input,omitempty"`
 	Output  string `json:"output,omitempty"`
+	// DurationMs is how long a finished tool ran (0 = unknown).
+	DurationMs int64 `json:"durationMs,omitempty"`
 }
 
 // PartsForReply returns the steps of the last timeline event (the row the

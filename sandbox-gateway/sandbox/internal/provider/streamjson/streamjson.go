@@ -1,7 +1,9 @@
 // Package streamjson implements the Anthropic-style "stream-json" NDJSON codec
 // (as emitted by `claude -p --output-format stream-json`). Each stdout line is a
-// JSON object describing an init / assistant / user / result event. The codec is
-// transport-agnostic and driven by the oneshot engine.
+// JSON object describing an init / assistant / user / result event. cursor-agent
+// speaks the same dialect except that tools arrive as top-level tool_call
+// events (cursor_tool.go). The codec is transport-agnostic and driven by the
+// oneshot engine.
 package streamjson
 
 import (
@@ -318,6 +320,9 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 	}
 
 	switch ev.Type {
+	case "tool_call":
+		// cursor-agent reports tools as top-level events, not tool_use blocks.
+		res.Msgs = append(res.Msgs, parseCursorTool(line)...)
 	case "thinking":
 		// Some CLIs stream reasoning as top-level events with subtype
 		// delta/completed rather than as assistant content blocks.

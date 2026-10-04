@@ -1487,7 +1487,7 @@ describe('ClarifyChat', () => {
       const group = wrapper.find('[data-testid="agent-tool-group"]')
       expect(group.exists()).toBe(true)
       expect(group.attributes('data-state')).toBe('running')
-      expect(group.text()).toContain('read_file')
+      expect(group.text()).toContain('读取文件')
       expect(wrapper.find('[data-testid="clarify-agent-message"]').exists()).toBe(false)
 
       // Cumulative snapshots replace the tool list; message lands beside it.
@@ -1524,7 +1524,7 @@ describe('ClarifyChat', () => {
       const group = wrapper.find('[data-testid="agent-tool-group"]')
       expect(group.exists()).toBe(true)
       expect(group.attributes('data-state')).toBe('done')
-      expect(group.find('[data-testid="agent-tool-group-names"]').text()).toBe('write')
+      expect(group.find('[data-testid="agent-tool-group-names"]').text()).toBe('写入文件')
       wrapper.unmount()
     })
   })

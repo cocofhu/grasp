@@ -88,6 +88,8 @@ func toolPart(tc ACPToolCall) models.AcpPart {
 		Summary: ToolSummary(tc.RawInput),
 		Input:   toolDetail(tc.RawInput, false),
 		Output:  toolDetail(tc.RawOutput, true),
+
+		DurationMs: tc.DurationMs,
 	}
 }
 

@@ -44,6 +44,8 @@ type Msg struct {
 	ToolTitle  string
 	ToolStatus string
 	RawInput   json.RawMessage
+	// DurationMs is how long a finished tool ran, when the CLI reports it.
+	DurationMs int64
 }
 
 // ParseResult is what a codec extracts from a single stdout line.
@@ -633,6 +635,9 @@ func (e *engine) emitUpdate(m Msg) {
 			status = "completed"
 		}
 		update = map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": m.ToolCallID, "status": status}
+		if m.DurationMs > 0 {
+			update["durationMs"] = m.DurationMs
+		}
 		if m.Text != "" {
 			update["content"] = []any{map[string]any{"type": "content", "content": map[string]any{"type": "text", "text": m.Text}}}
 		}
