@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -262,5 +263,91 @@ func TestBridgeStateMirror(t *testing.T) {
 			t.Fatal("queue_state not mirrored")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// A parked client (connected, no chat or cancel in flight) still mirrors
+// queue_state but must not buffer the bridge's broadcasts, otherwise eventCh
+// fills and every later frame logs a drop.
+func TestParkedClientDoesNotBufferBroadcasts(t *testing.T) {
+	flood := make(chan struct{})
+	flooded := make(chan struct{})
+	h, p := wsServer(t, func(conn *websocket.Conn, op string, msg map[string]any) {
+		switch op {
+		case "connect":
+			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "sess-park"})
+			go func() {
+				<-flood
+				for i := 0; i < 2000; i++ {
+					_ = conn.WriteJSON(queueStateFrame(i%2 == 0, "", 0))
+				}
+				_ = conn.WriteJSON(queueStateFrame(true, "op-other", 2))
+				close(flooded)
+			}()
+		case "chat":
+			opID := fmt.Sprint(msg["opId"])
+			_ = conn.WriteJSON(tagged(chunkFrame("after park"), opID))
+			_ = conn.WriteJSON(tagged(doneFrame(), opID))
+		}
+	})
+	c := connectAndClient(t, h, p)
+	close(flood)
+	<-flooded
+
+	deadline := time.Now().Add(2 * time.Second)
+	for c.BridgeState().Waiting != 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if st := c.BridgeState(); !st.Busy || st.Waiting != 2 {
+		t.Fatalf("queue_state must still be mirrored while parked: %+v", st)
+	}
+	if n := len(c.eventCh); n != 0 {
+		t.Fatalf("parked client buffered %d frames", n)
+	}
+	if n := c.dropped.Load(); n != 0 || c.lastDropLog.Load() != 0 {
+		t.Fatalf("parked client must not drop/warn, dropped=%d", n)
+	}
+
+	res, err := c.ChatStructured(context.Background(), "hi", nil)
+	if err != nil || res.Narration != "after park" {
+		t.Fatalf("chat after park: res=%+v err=%v", res, err)
+	}
+	if n := c.readers.Load(); n != 0 {
+		t.Fatalf("readers leaked: %d", n)
+	}
+}
+
+func TestNoteDroppedRateLimits(t *testing.T) {
+	c := NewACPClient("127.0.0.1", 1)
+	c.noteDropped()
+	first := c.lastDropLog.Load()
+	if first == 0 || c.dropped.Load() != 0 {
+		t.Fatalf("first drop should log and reset the counter: last=%d dropped=%d", first, c.dropped.Load())
+	}
+	for i := 0; i < 5; i++ {
+		c.noteDropped()
+	}
+	if c.lastDropLog.Load() != first || c.dropped.Load() != 5 {
+		t.Fatalf("drops inside the window should only count: last=%d dropped=%d", c.lastDropLog.Load(), c.dropped.Load())
+	}
+	c.lastDropLog.Store(time.Now().Add(-2 * dropLogEvery).UnixNano())
+	c.noteDropped()
+	if c.dropped.Load() != 0 {
+		t.Fatalf("drop after the window should log the backlog, dropped=%d", c.dropped.Load())
+	}
+}
+
+func TestAcquireReaderReleaseIsIdempotent(t *testing.T) {
+	c := NewACPClient("127.0.0.1", 1)
+	r1 := c.acquireReader()
+	r2 := c.acquireReader()
+	r1()
+	r1()
+	if n := c.readers.Load(); n != 1 {
+		t.Fatalf("readers=%d want 1", n)
+	}
+	r2()
+	if n := c.readers.Load(); n != 0 {
+		t.Fatalf("readers=%d want 0", n)
 	}
 }
