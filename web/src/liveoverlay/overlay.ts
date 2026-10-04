@@ -271,6 +271,17 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
 
   // ---------- page wrappers ----------
 
+  /** Busy session whose wrapper is not on this page yet: its shimmer is still selection chrome. */
+  function awaitingMount(): boolean {
+    for (const s of sessions.values()) {
+      if (s.mode === 'steer' || !BUSY.has(s.state)) continue
+      if (wrappers.some((w) => w.sid === s.sid)) continue
+      if (s.url && pathOf(s.url) !== location.pathname) continue
+      return true
+    }
+    return false
+  }
+
   function applyWrappers() {
     for (const w of wrappers) {
       const v = viewOf(w.sid, w)
@@ -279,7 +290,8 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
         showVariant(w, 0)
         continue
       }
-      if (v.mode === 'compare' && !hidden) {
+      // Hiding only drops the selection chrome. Compare keeps every candidate on the page.
+      if (v.mode === 'compare') {
         w.el.setAttribute('data-grasp-compare', '')
         if (w.original) setVariantVisible(w.original, true)
         for (const x of w.variants) setVariantVisible(x.el, true)
@@ -297,7 +309,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
   function rescan() {
     const had = wrappers.length > 0
     wrappers = scanWrappers()
-    if (!wrappers.length) hidden = false
+    if (!wrappers.length && !awaitingMount()) hidden = false
     applyWrappers()
     syncViews()
     checkMounts()
@@ -533,6 +545,11 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
     box.style.top = `${top}px`
   }
 
+  /** Same switch as the preview-bar eye: collapse every selection frame, bar and param row. */
+  function hideChromeButton(): string {
+    return `<button type="button" data-act="hide" title="${esc(T.hideChrome)}" aria-label="${esc(T.hideChrome)}">${esc(T.hide)}</button>`
+  }
+
   function stateLabel(state: string): string {
     return ({ generating: T.generating, refining: T.refining, accepting: T.accepting, discarding: T.discarding } as Record<string, string>)[state] || ''
   }
@@ -578,6 +595,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
           status +
           '<span class="sep" aria-hidden="true"></span>' +
           `<button type="button" data-act="inplace" data-sid="${esc(w.sid)}" data-n="${backN}">${esc(T.backInPlace)}</button>` +
+          hideChromeButton() +
           `<button type="button" data-act="discard" data-sid="${esc(w.sid)}" title="${esc(known ? T.discard : T.viewOnly)}"${busy || !known ? ' disabled' : ''}>${esc(T.discardAll)}</button>` +
           (canRetryAdoption(s) && !busy
             ? `<button type="button" class="accept" data-act="retry-accept" data-sid="${esc(w.sid)}">${esc(T.retryAccept)}</button>`
@@ -601,6 +619,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
           ? `<button type="button" data-act="original" data-sid="${esc(w.sid)}" aria-pressed="${onOriginal}" title="${esc(T.compareOriginal)}"${busy ? ' disabled' : ''}>${esc(T.original)}</button>`
           : '') +
         `<button type="button" data-act="compare" data-sid="${esc(w.sid)}"${busy ? ' disabled' : ''}>${esc(T.sideBySide)}</button>` +
+        hideChromeButton() +
         `<button type="button" data-act="discard" data-sid="${esc(w.sid)}" aria-label="${esc(T.discard)}" title="${esc(known ? T.discard : T.viewOnly)}"${busy || !known ? ' disabled' : ''}>✕</button>` +
         `<button type="button" class="accept" data-act="accept" data-sid="${esc(w.sid)}" data-n="${cur?.n ?? ''}"${busy || !known || !cur || s?.state !== 'ready' ? ' disabled' : ''}>${esc(T.accept)}</button>` +
         (canRetryAdoption(s) && !busy ? `<button type="button" class="accept" data-act="retry-accept" data-sid="${esc(w.sid)}">${esc(T.retryAccept)}</button>` : '') +
@@ -614,6 +633,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
       frameHtml += `<div class="shimmer" data-shimmer-sel="${esc(s.sid)}"></div>`
       html +=
         `<div class="sw" data-sw-sel="${esc(s.sid)}" role="status"><span class="state">${esc(stateLabel(s.state) || T.generating)}</span>` +
+        hideChromeButton() +
         (s.state === 'generating'
           ? `<button type="button" data-act="discard" data-sid="${esc(s.sid)}">${esc(T.cancel)}</button>`
           : '') +
@@ -1185,6 +1205,9 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
       case 'compare':
         setView(sid, { mode: 'compare' })
         break
+      case 'hide':
+        toggleHidden()
+        break
       case 'inplace':
         setView(sid, { mode: 'inplace', ...(n ? { current: n } : {}) })
         break
@@ -1378,7 +1401,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
     setPickMode,
     isPickMode: () => pickMode,
     setLang,
-    hasCandidates: () => enabled && wrappers.length > 0,
+    hasCandidates: () => enabled && (wrappers.length > 0 || awaitingMount()),
     setPeek,
     toggleHidden,
     isHidden: () => hidden,

@@ -16,6 +16,18 @@
       "reviewVar": {
         "label": "复审控制变量",
         "placeholder": "默认 review；未定义或为假=跳过复审，为真=进入 ReAct 复审"
+      },
+      "reviewDirectPreview": {
+        "label": "复审 IP 直连预览",
+        "help": "仅在复审阶段生效。关闭时 set_preview 走 noVNC 远程桌面；开启后预览在新标签页打开 http://IP:端口/，并开放取点、页面操作与右下角对话抽屉。仅对新建沙箱生效。"
+      },
+      "reviewAutoInject": {
+        "label": "自动注入取点脚本",
+        "help": "直连预览时由沙箱代理自动注入取点脚本；关闭后需 Agent 在应用中手动引入。"
+      },
+      "reviewLiveVariants": {
+        "label": "Live 方案对比",
+        "help": "复审中允许 Agent 生成多个实时变体供对比采纳。计划/调研/方案/视觉节点仅做预览：采纳后写回计划或 page.html 并还原源码，不提交代码。"
       }
     },
     "input": {

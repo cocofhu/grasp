@@ -24,13 +24,13 @@ func TestPreviewNodePromptExtrasLive(t *testing.T) {
 		{"grasp", "grasp", map[string]any{"direct_preview": true, "live_variants": true}, true},
 		{"legacy approve default", "approve", map[string]any{"direct_preview": true}, true},
 		{"grasp disabled", "grasp", map[string]any{"direct_preview": true, "live_variants": false}, false},
-		{"review excluded", "review", map[string]any{"direct_preview": true}, false},
+		{"review agent in review extras", "review", map[string]any{"direct_preview": true}, true},
 		{"clarify excluded", "react", map[string]any{"direct_preview": true}, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			req := NodeReq{NodeType: c.nodeType, Config: c.cfg}
-			got := previewNodePromptExtras(req)
+			got := previewNodePromptExtras(req) + reviewCapabilityExtras(req)
 			if strings.Contains(got, models.DefaultPreviewLiveIndex) != c.want {
 				t.Errorf("live index present=%v, want %v", !c.want, c.want)
 			}
@@ -42,6 +42,53 @@ func TestPreviewNodePromptExtrasLive(t *testing.T) {
 				t.Errorf("skills=%v, want live=%v", skills, c.want)
 			}
 		})
+	}
+}
+
+func TestReviewAgentNodePromptStaysOutOfAutonomousRun(t *testing.T) {
+	req := NodeReq{NodeType: "implement", Config: map[string]any{"direct_preview": true}}
+	if got := previewNodePromptExtras(req); got != "" {
+		t.Fatalf("autonomous implement run must not carry preview contracts: %.80q", got)
+	}
+}
+
+func TestReviewCapabilityExtras(t *testing.T) {
+	if got := reviewCapabilityExtras(NodeReq{NodeType: "test"}); got != "" {
+		t.Fatalf("test node is not a review agent: %.40q", got)
+	}
+	dev := reviewCapabilityExtras(NodeReq{NodeType: "implement", Config: map[string]any{}})
+	if !strings.Contains(dev, models.DefaultReviewCapabilityDevContract) || strings.Contains(dev, "PREVIEW_PORT") {
+		t.Fatalf("implement noVNC extras: %.80q", dev)
+	}
+	design := reviewCapabilityExtras(NodeReq{NodeType: "plan", Config: map[string]any{"direct_preview": true, "auto_inject": false}})
+	for _, part := range []string{models.DefaultReviewCapabilityDesignContract, models.DefaultReviewPreviewDirectManualContract, models.DefaultPreviewPageControlContract, models.DefaultPreviewLiveIndex} {
+		if !strings.Contains(design, part) {
+			t.Errorf("plan direct extras missing %.40q", part)
+		}
+	}
+}
+
+func TestReviewTurnPrompt(t *testing.T) {
+	req := NodeReq{NodeType: "visual", Config: map[string]any{"direct_preview": true}}
+	first := []models.ReactMessage{{Role: "agent", Text: "summary"}, {Role: "human", Text: "改一下"}}
+	design := strings.TrimSpace(models.DefaultReviewCapabilityDesignContract)
+	got := reviewTurnPrompt(req, first, "改一下", false)
+	if !strings.Contains(got, design) || !strings.HasSuffix(got, "改一下") {
+		t.Fatalf("first review turn: %.120q", got)
+	}
+	later := append(first, models.ReactMessage{Role: "agent", Text: "ok"}, models.ReactMessage{Role: "human", Text: "再改"})
+	if got := reviewTurnPrompt(req, later, "再改", false); got != "再改" {
+		t.Fatalf("later plain turn must be bare: %.120q", got)
+	}
+	if got := reviewTurnPrompt(req, later, "再改", true); !strings.Contains(got, design) {
+		t.Fatal("rehydrated turn must re-send the capability note")
+	}
+	live := "## Live 变体请求\n- op: accept"
+	if got := reviewTurnPrompt(req, later, live, false); !strings.Contains(got, models.DefaultReviewDesignLiveContract) || !strings.Contains(got, models.DefaultPreviewLiveContract) {
+		t.Fatalf("design Live turn: %.120q", got)
+	}
+	if got := reviewTurnPrompt(NodeReq{NodeType: "app_preview"}, first, "改一下", false); got != "改一下" {
+		t.Fatalf("app_preview turns unchanged: %.80q", got)
 	}
 }
 

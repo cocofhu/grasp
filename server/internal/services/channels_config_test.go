@@ -387,8 +387,8 @@ func TestChannelCreateDingTalkStripsWebhookAndRobotCode(t *testing.T) {
 	in.IsPrimary = false
 	in.IsPrimarySet = true
 	in.Config = map[string]any{
-		"token":           "should-drop",
-		"robotCode":       "should-drop",
+		"token":            "should-drop",
+		"robotCode":        "should-drop",
 		"allowMemoryWrite": true,
 	}
 	dto, err := svc.Create(in)

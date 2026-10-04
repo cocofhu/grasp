@@ -1182,8 +1182,8 @@ func TestSandboxOpenWithEffectiveKeepsNormalizedOpenCodeModel(t *testing.T) {
 		Env: map[string]string{
 			"GRASP_OPENCODE_API_KEY":  "sk-test",
 			"GRASP_OPENCODE_PROVIDER": "tencent-tokenhub",
-			"ACP_BRIDGE_MODEL":            "deepseek/deepseek-flash",
-			"BROWSER_MCP":                 "1",
+			"ACP_BRIDGE_MODEL":        "deepseek/deepseek-flash",
+			"BROWSER_MCP":             "1",
 		},
 		Layout: AgentLayout{
 			ConfigRoot:   "/root/.config/opencode",
@@ -1329,7 +1329,7 @@ func TestResolveAgentMCPSubstitutesMergedEnv(t *testing.T) {
 		"GRASP_ARTIFACT_TOKEN": "tok",
 	}
 	vars := runtime.MergeEnvIntoTemplateVars(base, map[string]string{
-		"LOG_CENTER_TOKEN":         "secret-from-shared",
+		"LOG_CENTER_TOKEN":     "secret-from-shared",
 		"GRASP_ARTIFACT_TOKEN": "evil",
 	})
 	specs := resolveAgentMCP([]MCPServer{

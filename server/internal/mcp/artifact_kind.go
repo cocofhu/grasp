@@ -8,19 +8,19 @@ import (
 // reservedArtifactExpectedKind maps platform contract / reserved artifact names
 // to the only kind write_artifact may store for them.
 var reservedArtifactExpectedKind = map[string]string{
-	"page.html":                          "html",
-	PlanArtifactName:                     "json",
-	ClarifiedRequirementArtifactName:     "json",
-	ResearchArtifactName:                 "json",
-	RootCauseArtifactName:                "json",
-	ProposalsArtifactName:                "json",
-	ProposalArtifactName:                 "json",
-	TestResultArtifactName:               "json",
-	ReviewArtifactName:                   "json",
-	ImplementationResultArtifactName:     "json",
-	PreflightArtifactName:                "json",
-	NodeOutcomeArtifactName:              "json",
-	FeedbackIndexArtifactName:            "json",
+	"page.html":                      "html",
+	PlanArtifactName:                 "json",
+	ClarifiedRequirementArtifactName: "json",
+	ResearchArtifactName:             "json",
+	RootCauseArtifactName:            "json",
+	ProposalsArtifactName:            "json",
+	ProposalArtifactName:             "json",
+	TestResultArtifactName:           "json",
+	ReviewArtifactName:               "json",
+	ImplementationResultArtifactName: "json",
+	PreflightArtifactName:            "json",
+	NodeOutcomeArtifactName:          "json",
+	FeedbackIndexArtifactName:        "json",
 }
 
 // ExpectedKindForReservedName returns the expected kind for a platform

@@ -41,7 +41,7 @@ func (c *acpProvider) VisitorTurn(ctx context.Context, req NodeReq, lane, prelud
 	}
 	prompt := human
 	if !vl.primed {
-		prelude = strings.TrimSpace(prelude + previewNodePromptExtras(req))
+		prelude = strings.TrimSpace(prelude + previewNodePromptExtras(req) + reviewCapabilityExtras(req))
 	}
 	if !vl.primed && prelude != "" {
 		prompt = prelude + "\n\n## 用户消息\n" + strings.TrimRight(human, "\n")

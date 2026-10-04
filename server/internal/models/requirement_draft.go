@@ -34,7 +34,7 @@ type RequirementDraft struct {
 	// Progress is 0–100; independent of status.
 	Progress int `json:"progress"`
 	// ParentID optionally points at a top-level requirement in the same project (one level only).
-	ParentID *string `gorm:"index" json:"parentId"`
+	ParentID  *string   `gorm:"index" json:"parentId"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `gorm:"index:idx_req_draft_proj_status_updated,priority:3" json:"updatedAt"`
 }

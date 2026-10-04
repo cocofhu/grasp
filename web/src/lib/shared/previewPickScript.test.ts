@@ -1423,6 +1423,12 @@ describe('preview-pick.js Live overlay hook', () => {
     eye.click()
     expect(fake.hidden).toBe(true)
     expect(eye.getAttribute('aria-pressed')).toBe('true')
+    // plan g2.1: the corner eye is the restore control and shares the hide switch.
+    expect(eye.getAttribute('aria-label')).toBe('Show the selection layer')
+    eye.click()
+    expect(fake.hidden).toBe(false)
+    expect(eye.getAttribute('aria-pressed')).toBe('false')
+    expect(eye.getAttribute('aria-label')).toBe('Hold to see the original, click to hide the selection layer')
   })
 
   it('does not expose the page URL to other origins, other frames, or invalid request nonces', async () => {

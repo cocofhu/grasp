@@ -42,6 +42,15 @@ func (e *Engine) LiveEnabled(runID, nodeID string) bool {
 	return n != nil && models.LiveVariantsEnabled(n.Type, n.Config)
 }
 
+func (e *Engine) reviewAgentNode(runID, nodeID string) bool {
+	c, err := e.loadCtx(runID)
+	if err != nil {
+		return false
+	}
+	n := c.graph.FindNode(nodeID)
+	return n != nil && models.ReviewAgentNode(n.Type)
+}
+
 // liveQueueKind preserves the node's normal execution contract. Grasp uses
 // ReactReply (clarification/force-confirm), while app_preview uses review.
 func (e *Engine) liveQueueKind(runID, nodeID string) sessionKind {
@@ -668,7 +677,8 @@ func (e *Engine) checkLiveClosed(runID, nodeID string) error {
 	// Do not make ordinary clarification depend on a live sandbox merely
 	// because direct_preview was enabled. Once Live has been used, retain the
 	// same fail-closed scan as app_preview, including terminal sessions.
-	if e.liveQueueKind(runID, nodeID) == sessionKindClarify {
+	// Review agent nodes are the same: direct preview is optional there.
+	if e.liveQueueKind(runID, nodeID) == sessionKindClarify || e.reviewAgentNode(runID, nodeID) {
 		var count int64
 		if err := e.db.Model(&models.LiveSession{}).Where("run_id = ? AND node_id = ?", runID, nodeID).Count(&count).Error; err != nil {
 			return ErrLiveScanFailed

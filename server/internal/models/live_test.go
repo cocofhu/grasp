@@ -472,7 +472,7 @@ func TestAdditionalLiveActions(t *testing.T) {
 }
 
 func TestLiveNodeCapability(t *testing.T) {
-	for _, nodeType := range []string{"app_preview", "grasp", "approve", "react", "review", "research", "visual", ""} {
+	for _, nodeType := range []string{"app_preview", "grasp", "approve", "react", "review", "research", "visual", "implement", "plan", "proposal", "test", ""} {
 		for _, tc := range []struct {
 			cfg     map[string]any
 			enabled bool
@@ -487,10 +487,48 @@ func TestLiveNodeCapability(t *testing.T) {
 			{map[string]any{"direct_preview": []string{"true"}}, false},
 			{map[string]any{"live_variants": true}, false},
 		} {
-			want := tc.enabled && (nodeType == "app_preview" || nodeType == "grasp" || nodeType == "approve")
+			want := tc.enabled && nodeType != "react" && nodeType != "test" && nodeType != ""
 			if got := LiveVariantsEnabled(nodeType, tc.cfg); got != want {
 				t.Errorf("%s %v: %v want %v", nodeType, tc.cfg, got, want)
 			}
+		}
+	}
+}
+
+func TestReviewAgentNodeClasses(t *testing.T) {
+	for nodeType, want := range map[string][2]bool{
+		"plan": {true, true}, "research": {true, true}, "proposal": {true, true}, "visual": {true, true},
+		"implement": {true, false}, "review": {true, false},
+		"test": {}, "react": {}, "grasp": {}, "approve": {}, "app_preview": {}, "submit_mr": {},
+	} {
+		if got := ReviewAgentNode(nodeType); got != want[0] {
+			t.Errorf("ReviewAgentNode(%s)=%v", nodeType, got)
+		}
+		if got := ReviewDesignNode(nodeType); got != want[1] {
+			t.Errorf("ReviewDesignNode(%s)=%v", nodeType, got)
+		}
+	}
+}
+
+func TestPreviewCapableNode(t *testing.T) {
+	direct := map[string]any{"direct_preview": true}
+	cases := []struct {
+		nodeType string
+		cfg      map[string]any
+		want     bool
+	}{
+		{"app_preview", nil, true},
+		{"grasp", nil, true},
+		{"approve", nil, true},
+		{"implement", nil, false},
+		{"implement", direct, true},
+		{"plan", direct, true},
+		{"test", direct, false},
+		{"react", direct, false},
+	}
+	for _, c := range cases {
+		if got := PreviewCapableNode(c.nodeType, c.cfg); got != c.want {
+			t.Errorf("PreviewCapableNode(%s, %v)=%v want %v", c.nodeType, c.cfg, got, c.want)
 		}
 	}
 }

@@ -148,6 +148,18 @@ func main() {
 		}
 		return nodeID, nodeType, true
 	})
+	host.SetReviewPhaseSource(func(runID string) bool {
+		nodeID := host.ActiveNode(runID)
+		if !models.ReviewAgentNode(host.ActiveNodeType(runID)) {
+			return false
+		}
+		var conv models.ReactConversation
+		if db.Select("done").Where("run_id = ? AND node_id = ?", runID, nodeID).
+			Order("iteration desc, id desc").First(&conv).Error != nil {
+			return false
+		}
+		return !conv.Done
+	})
 	// Shared ConfigHome .tgz registry for gateway config.bundleUrl inject
 	// (startup.sh extracts before agent start). Served at /sandbox-inject/:id.
 	injectStore := sandbox.NewBundleStore()

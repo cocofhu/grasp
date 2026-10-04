@@ -5,6 +5,15 @@
 import type { NodeType, NodeTypeDef } from '@/lib/shared/types'
 import { productOutputDefs } from '@/lib/run/productNodeArtifacts'
 
+// Review-phase preview switches shared by review-capable agent nodes; they only
+// take effect while the node is under human review.
+const REVIEW_PREVIEW_FIELDS: NodeTypeDef['fields'] = [
+  { key: 'direct_preview', label: 'nodes.shared.reviewDirectPreview.label', type: 'switch', optional: true, help: 'nodes.shared.reviewDirectPreview.help' },
+  { key: 'auto_inject', label: 'nodes.shared.reviewAutoInject.label', type: 'switch', optional: true, help: 'nodes.shared.reviewAutoInject.help' },
+  { key: 'live_variants', label: 'nodes.shared.reviewLiveVariants.label', type: 'switch', optional: true, help: 'nodes.shared.reviewLiveVariants.help' },
+]
+const REVIEW_PREVIEW_DEFAULTS = { direct_preview: false, auto_inject: true, live_variants: true }
+
 export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
   input: {
     type: 'input',
@@ -175,9 +184,10 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
       { key: 'timeout', label: 'nodes.plan.fields.timeout.label', type: 'duration', optional: true },
       { key: 'conditional_prompt', label: 'nodes.plan.fields.conditional_prompt.label', type: 'conditional', optional: true },
       { key: 'review_var', label: 'nodes.shared.reviewVar.label', type: 'text', placeholder: 'nodes.shared.reviewVar.placeholder', optional: true },
+      ...REVIEW_PREVIEW_FIELDS,
     ],
     outputs: productOutputDefs('plan'),
-    defaults: { prompt: '基于上游产物制定实施计划(最多两级:大目标→小目标),用 set_plan 写入' },
+    defaults: { ...REVIEW_PREVIEW_DEFAULTS, prompt: '基于上游产物制定实施计划(最多两级:大目标→小目标),用 set_plan 写入' },
     help: 'nodes.plan.help',
   },
   implement: {
@@ -194,6 +204,7 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
       { key: 'timeout', label: 'nodes.implement.fields.timeout.label', type: 'duration', optional: true },
       { key: 'conditional_prompt', label: 'nodes.implement.fields.conditional_prompt.label', type: 'conditional', optional: true },
       { key: 'review_var', label: 'nodes.shared.reviewVar.label', type: 'text', placeholder: 'nodes.shared.reviewVar.placeholder', optional: true },
+      ...REVIEW_PREVIEW_FIELDS,
     ],
     outputs: productOutputDefs('implement', [
       { key: 'branches', desc: 'nodes.implement.outputs.branches.desc' },
@@ -201,6 +212,7 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
       { key: 'changed_files', desc: 'nodes.implement.outputs.changed_files.desc' },
     ]),
     defaults: {
+      ...REVIEW_PREVIEW_DEFAULTS,
       max_rounds: 3,
       prompt:
         '用 get_plan 读取计划逐项实现,用 update_plan_status 标记进度。若存在预览打回请依据 {{vars.preview_issues}}（含 selector 与截图）修改。完成后调用 set_implementation_result 写入实现结果',
@@ -220,9 +232,10 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
       { key: 'timeout', label: 'nodes.research.fields.timeout.label', type: 'duration', optional: true },
       { key: 'conditional_prompt', label: 'nodes.research.fields.conditional_prompt.label', type: 'conditional', optional: true },
       { key: 'review_var', label: 'nodes.shared.reviewVar.label', type: 'text', placeholder: 'nodes.shared.reviewVar.placeholder', optional: true },
+      ...REVIEW_PREVIEW_FIELDS,
     ],
     outputs: productOutputDefs('research'),
-    defaults: { prompt: '围绕上游需求做技术调研,给出问题结论与关键发现,用 set_research 写入' },
+    defaults: { ...REVIEW_PREVIEW_DEFAULTS, prompt: '围绕上游需求做技术调研,给出问题结论与关键发现,用 set_research 写入' },
     help: 'nodes.research.help',
   },
   test: {
@@ -259,9 +272,10 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
       { key: 'timeout', label: 'nodes.review.fields.timeout.label', type: 'duration', optional: true },
       { key: 'conditional_prompt', label: 'nodes.review.fields.conditional_prompt.label', type: 'conditional', optional: true },
       { key: 'review_var', label: 'nodes.shared.reviewVar.label', type: 'text', placeholder: 'nodes.shared.reviewVar.placeholder', optional: true },
+      ...REVIEW_PREVIEW_FIELDS,
     ],
     outputs: productOutputDefs('review'),
-    defaults: { reason_var: 'reason', exits: { pass: { goto: '' }, fail: { goto: '' } }, prompt: '评审上游实现/设计,给出结论与按严重度排列的意见,用 set_review 写入' },
+    defaults: { ...REVIEW_PREVIEW_DEFAULTS, reason_var: 'reason', exits: { pass: { goto: '' }, fail: { goto: '' } }, prompt: '评审上游实现/设计,给出结论与按严重度排列的意见,用 set_review 写入' },
     help: 'nodes.review.help',
   },
   proposal: {
@@ -277,9 +291,10 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
       { key: 'timeout', label: 'nodes.proposal.fields.timeout.label', type: 'duration', optional: true },
       { key: 'conditional_prompt', label: 'nodes.proposal.fields.conditional_prompt.label', type: 'conditional', optional: true },
       { key: 'review_var', label: 'nodes.shared.reviewVar.label', type: 'text', placeholder: 'nodes.shared.reviewVar.placeholder', optional: true },
+      ...REVIEW_PREVIEW_FIELDS,
     ],
     outputs: productOutputDefs('proposal'),
-    defaults: { prompt: '针对上游需求给出 1-3 个候选方案(含优缺点、权衡、工作量/风险),推荐其一,用 set_proposals 写入' },
+    defaults: { ...REVIEW_PREVIEW_DEFAULTS, prompt: '针对上游需求给出 1-3 个候选方案(含优缺点、权衡、工作量/风险),推荐其一,用 set_proposals 写入' },
     help: 'nodes.proposal.help',
   },
   proposal_select: {
@@ -341,11 +356,12 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
       { key: 'timeout', label: 'nodes.visual.fields.timeout.label', type: 'duration', optional: true },
       { key: 'conditional_prompt', label: 'nodes.visual.fields.conditional_prompt.label', type: 'conditional', optional: true },
       { key: 'review_var', label: 'nodes.shared.reviewVar.label', type: 'text', placeholder: 'nodes.shared.reviewVar.placeholder', optional: true },
+      ...REVIEW_PREVIEW_FIELDS,
     ],
     outputs: productOutputDefs('visual', [
       { key: 'artifact_id', desc: 'nodes.visual.outputs.artifact_id.desc' },
     ]),
-    defaults: { prompt: '根据上游需求,基于仓库中现有业务前端做高保真目标态页面:先只读定位目标路由、组件、设计令牌与文案,再生成改后 page.html;无基线时沿用项目设计系统。不要编造通用 demo。' },
+    defaults: { ...REVIEW_PREVIEW_DEFAULTS, prompt: '根据上游需求,基于仓库中现有业务前端做高保真目标态页面:先只读定位目标路由、组件、设计令牌与文案,再生成改后 page.html;无基线时沿用项目设计系统。不要编造通用 demo。' },
     help: 'nodes.visual.help',
   },
   human_gate: {

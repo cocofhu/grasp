@@ -113,6 +113,7 @@ defineExpose({
         :node-type="node.type"
         :annotatable="inputActive"
         :remote-kind="remoteKind"
+        probe-registered-preview
         @pick="emit('pick', $event)"
         @staged-pick="emit('stagedPick', $event)"
       />

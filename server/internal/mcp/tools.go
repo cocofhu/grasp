@@ -46,7 +46,13 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 		if strings.TrimSpace(aname) == PreflightArtifactName {
 			return "write_artifact failed: preflight.json 只能通过 set_preflight 写入,不能用 write_artifact 伪造", true
 		}
-		id, err := h.WriteArtifact(runID, token, h.ActiveNode(runID), aname, content, kind)
+		writer := h.ActiveNode(runID)
+		if h.reviewAgentInReview(runID) {
+			if owner := h.artifactWriterNode(runID, token, aname); owner != "" {
+				writer = owner
+			}
+		}
+		id, err := h.WriteArtifact(runID, token, writer, aname, content, kind)
 		if err != nil {
 			return "write_artifact failed: " + err.Error(), true
 		}
@@ -103,16 +109,15 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 		if !h.authorize(runID, token) {
 			return "set_plan failed: " + ErrUnauthorized.Error(), true
 		}
-		// Plan-only: writing the plan is the plan node's sole capability.
-		if !toolAllowed(h.ActiveNodeType(runID), "set_plan") {
-			return "set_plan 仅在计划(plan)或 Grasp 节点可用,当前节点不支持。", true
+		if !h.nodeToolAllowed(runID, "set_plan") {
+			return toolDeniedMsg("set_plan"), true
 		}
 		doc, err := parsePlan(args)
 		if err != nil {
 			return "set_plan failed: " + err.Error(), true
 		}
 		b, _ := json.MarshalIndent(doc, "", "  ")
-		if _, err := h.WriteArtifact(runID, token, h.ActiveNode(runID), PlanArtifactName, string(b), "json"); err != nil {
+		if _, err := h.WriteArtifact(runID, token, h.productWriterNode(runID, token, "set_plan", PlanArtifactName), PlanArtifactName, string(b), "json"); err != nil {
 			return "set_plan failed: " + err.Error(), true
 		}
 		nSub := 0
@@ -274,8 +279,8 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 		if !h.authorize(runID, token) {
 			return "set_preview failed: " + ErrUnauthorized.Error(), true
 		}
-		if !SetPreviewAllowed(h.ActiveNodeType(runID)) {
-			return "set_preview 仅在 app_preview 或 Grasp 节点可用,当前节点不支持。", true
+		if !SetPreviewAllowed(h.ActiveNodeType(runID)) && !h.nodeToolAllowed(runID, "set_preview") {
+			return toolDeniedMsg("set_preview"), true
 		}
 		portRaw, hasPort := args["port"]
 		urlRaw := strings.TrimSpace(asString(args["url"]))
@@ -305,8 +310,8 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 		if !h.authorize(runID, token) {
 			return "set_artifact_preview failed: " + ErrUnauthorized.Error(), true
 		}
-		if !toolAllowed(h.ActiveNodeType(runID), "set_artifact_preview") {
-			return "set_artifact_preview 仅在澄清(react)、Grasp 或环境确认(preflight)节点可用,当前节点不支持。", true
+		if !h.nodeToolAllowed(runID, "set_artifact_preview") {
+			return toolDeniedMsg("set_artifact_preview"), true
 		}
 		aname := strings.TrimSpace(asString(args["name"]))
 		if aname == "" {
@@ -397,7 +402,7 @@ func (h *Host) structuredSet(runID, token, tool, nodeType, name string, doc any,
 	if !h.authorize(runID, token) {
 		return tool + " failed: " + ErrUnauthorized.Error(), true
 	}
-	if !toolAllowed(h.ActiveNodeType(runID), tool) {
+	if !h.nodeToolAllowed(runID, tool) {
 		return toolDeniedMsg(tool), true
 	}
 	if parseErr != nil {
@@ -407,7 +412,7 @@ func (h *Host) structuredSet(runID, token, tool, nodeType, name string, doc any,
 	if err != nil {
 		return tool + " failed: encode result: " + err.Error(), true
 	}
-	if _, err := h.WriteArtifact(runID, token, h.ActiveNode(runID), name, string(b), "json"); err != nil {
+	if _, err := h.WriteArtifact(runID, token, h.productWriterNode(runID, token, tool, name), name, string(b), "json"); err != nil {
 		return tool + " failed: " + err.Error(), true
 	}
 	return okMsg, false
@@ -443,18 +448,63 @@ func toolAllowed(active, tool string) bool {
 	}
 }
 
+// reviewToolAllowed lists the tools a review agent node (models.ReviewAgentNode)
+// gains while parked in its post-run review phase, on top of its own
+// toolAllowed set. Preflight, root-cause and test conclusions stay owned by
+// their node types.
+func reviewToolAllowed(tool string) bool {
+	switch tool {
+	case "set_artifact_preview", "set_clarified_requirement", "set_plan",
+		"set_research", "set_proposals", "set_preview":
+		return true
+	}
+	return false
+}
+
+// reviewAgentInReview reports whether the active node is a review agent node
+// currently in its review phase.
+func (h *Host) reviewAgentInReview(runID string) bool {
+	return models.ReviewAgentNode(h.ActiveNodeType(runID)) && h.InReviewPhase(runID)
+}
+
+// nodeToolAllowed is toolAllowed widened by the review-phase toolset.
+func (h *Host) nodeToolAllowed(runID, tool string) bool {
+	if toolAllowed(h.ActiveNodeType(runID), tool) {
+		return true
+	}
+	return reviewToolAllowed(tool) && h.reviewAgentInReview(runID)
+}
+
+// productWriterNode is the node a set_* product is attributed to. A review
+// writing another node type's product keeps the existing owner so that node's
+// product panel, versions and outputs stay bound to it.
+func (h *Host) productWriterNode(runID, token, tool, name string) string {
+	active := h.ActiveNode(runID)
+	if toolAllowed(h.ActiveNodeType(runID), tool) {
+		return active
+	}
+	if owner := h.artifactWriterNode(runID, token, name); owner != "" {
+		return owner
+	}
+	return active
+}
+
 func toolDeniedMsg(tool string) string {
 	switch tool {
 	case "set_clarified_requirement":
-		return "set_clarified_requirement 仅在澄清(react)或 Grasp 节点可用,当前节点不支持。"
+		return "set_clarified_requirement 仅在澄清(react)、Grasp 节点或复审阶段可用,当前节点不支持。"
 	case "set_plan":
-		return "set_plan 仅在计划(plan)或 Grasp 节点可用,当前节点不支持。"
+		return "set_plan 仅在计划(plan)、Grasp 节点或复审阶段可用,当前节点不支持。"
 	case "set_research":
-		return "set_research 仅在调研(research)或 Grasp 节点可用,当前节点不支持。"
+		return "set_research 仅在调研(research)、Grasp 节点或复审阶段可用,当前节点不支持。"
 	case "set_root_cause":
 		return "set_root_cause 仅在 Grasp 节点可用,当前节点不支持。"
 	case "set_proposals":
-		return "set_proposals 仅在方案(proposal)或 Grasp 节点可用,当前节点不支持。"
+		return "set_proposals 仅在方案(proposal)、Grasp 节点或复审阶段可用,当前节点不支持。"
+	case "set_preview":
+		return "set_preview 仅在 app_preview、Grasp 节点或复审阶段可用,当前节点不支持。"
+	case "set_artifact_preview":
+		return "set_artifact_preview 仅在澄清(react)、Grasp、环境确认(preflight)节点或复审阶段可用,当前节点不支持。"
 	case "set_preflight":
 		return "set_preflight 仅在环境确认(preflight)节点可用,当前节点不支持。"
 	case "ask_form":
@@ -771,7 +821,7 @@ func artifactTools() []map[string]any {
 		},
 		{
 			"name": "ask_question",
-			"description": "仅澄清(react)、Grasp 或环境确认(preflight)节点可用:向用户提出结构化的选择题(问题+候选选项),界面会渲染成单选/多选卡片让用户点选。" +
+			"description": "仅澄清(react)、Grasp、环境确认(preflight)节点或复审阶段可用:向用户提出结构化的选择题(问题+候选选项),界面会渲染成单选/多选卡片让用户点选。" +
 				"当需要用户在有限选项中做决定时使用;调用后应结束本轮回复,等待用户完成选择。" +
 				"澄清是门禁:任何还不确定、需要用户拍板的点都必须用本工具让用户确认,不能留成未决问题就结束。" +
 				"只有当信息已充分、没有任何待确认问题时,才不要调用本工具,直接调用 set_clarified_requirement 收敛结论——届时视为澄清结束。",
@@ -841,7 +891,7 @@ func artifactTools() []map[string]any {
 		},
 		{
 			"name": "set_plan",
-			"description": "仅计划(plan)或 Grasp 节点可用:写入本次运行的全局结构化计划。计划最多两级:大目标 goals[] → 小目标 subgoals[](小目标是叶子,其下不能再有子目标)。" +
+			"description": "仅计划(plan)、Grasp 节点,或可复审 Agent 节点的复审阶段可用:写入本次运行的全局结构化计划。计划最多两级:大目标 goals[] → 小目标 subgoals[](小目标是叶子,其下不能再有子目标)。" +
 				"可选 SDD 设计区(architecture/data_design/interfaces/components/interaction/test_design);写入设计区时应六节齐全,无内容用「不涉及」占位。" +
 				"图按需、非强制:architecture/data_design/interaction 可挂 diagrams[](及兼容单数 diagram);interfaces/components 项亦可选同结构。" +
 				"一等图种 activity/flowchart/sequence/er——涉及活动/业务流/时序/数据时尽量都提供便于审批,缺可选图种不失败;禁止「必须四种图」。多子模块按需补图并写 scope。" +
@@ -992,7 +1042,7 @@ func artifactTools() []map[string]any {
 		},
 		{
 			"name": "set_clarified_requirement",
-			"description": "仅澄清(react)或 Grasp 节点可用:写入结构化需求规格(对齐 ISO/IEC/IEEE 29148 SRS 与 PRD 子集)。" +
+			"description": "仅澄清(react)、Grasp 节点,或可复审 Agent 节点的复审阶段可用:写入结构化需求规格(对齐 ISO/IEC/IEEE 29148 SRS 与 PRD 子集)。" +
 				"在澄清节点这是唯一结构化交付;在 Grasp 节点这是两份强制交付之一(另一份是 set_plan)。信息充分后调用它。" +
 				"视觉/文案预览材料应 write_artifact 后立刻 set_artifact_preview,不要把需求规格写成普通产物文件。" +
 				"澄清是门禁:调用前所有不确定的点都应已通过 ask_question 让用户确认,open_questions 必须为空,否则平台会驳回并要求继续澄清。" +
@@ -1076,14 +1126,14 @@ func artifactTools() []map[string]any {
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"title":       strProp("报告标题,也是卡片摘录标题"),
-					"summary":     strProp("一段话概述,也是卡片摘录正文"),
-					"symptom":     strProp("观察到的现象"),
-					"expected":    strProp("期望行为"),
-					"actual":      strProp("实际行为"),
+					"title":        strProp("报告标题,也是卡片摘录标题"),
+					"summary":      strProp("一段话概述,也是卡片摘录正文"),
+					"symptom":      strProp("观察到的现象"),
+					"expected":     strProp("期望行为"),
+					"actual":       strProp("实际行为"),
 					"reproduction": strList("复现步骤(至少一步)"),
-					"impact":      strProp("影响谁、影响什么"),
-					"root_cause":  strProp("为什么会出现,不能只有符号名"),
+					"impact":       strProp("影响谁、影响什么"),
+					"root_cause":   strProp("为什么会出现,不能只有符号名"),
 					"evidence": objList("支撑根因的文字证据(至少 1 条)", map[string]any{
 						"title":  strProp("证据标题"),
 						"detail": strProp("证据详情"),
@@ -1095,10 +1145,10 @@ func artifactTools() []map[string]any {
 						"source":  strProp("非空图源"),
 						"caption": strProp("可选图注"),
 					}, "source"),
-					"ruled_out":             strList("可选:已排除的假设"),
-					"contributing_factors":  strList("可选:促成因素"),
-					"affected_scope":        strProp("可选:影响范围"),
-					"causal_chain":          strProp("可选:一句话补充图示的因果链"),
+					"ruled_out":            strList("可选:已排除的假设"),
+					"contributing_factors": strList("可选:促成因素"),
+					"affected_scope":       strProp("可选:影响范围"),
+					"causal_chain":         strProp("可选:一句话补充图示的因果链"),
 				},
 				"required": []string{
 					"title", "summary", "symptom", "expected", "actual",
@@ -1109,7 +1159,7 @@ func artifactTools() []map[string]any {
 		getTool("get_root_cause", "读回当前运行已写入的根因 JSON(root_cause.json),供前端渲染与本节点复核。"),
 		{
 			"name": "set_research",
-			"description": "仅调研(research)或 Grasp 节点可用:写入结构化的技术调研结论(technical spike)。" +
+			"description": "仅调研(research)、Grasp 节点,或可复审 Agent 节点的复审阶段可用:写入结构化的技术调研结论(technical spike)。" +
 				"在调研节点这是唯一交付;在 Grasp 节点为可选(有助于拍板,不是完成条件)。",
 			"inputSchema": map[string]any{
 				"type": "object",
@@ -1134,7 +1184,7 @@ func artifactTools() []map[string]any {
 		getTool("get_research", "读取本次运行的调研结论(research.json)。"),
 		{
 			"name": "set_proposals",
-			"description": "仅方案(proposal)或 Grasp 节点可用:写入结构化的候选方案集(对齐 ADR/MADR 与设计文档),可含多个方案供后续确认。" +
+			"description": "仅方案(proposal)、Grasp 节点,或可复审 Agent 节点的复审阶段可用:写入结构化的候选方案集(对齐 ADR/MADR 与设计文档),可含多个方案供后续确认。" +
 				"在方案节点这是唯一交付(至少 1 个候选即可)。" +
 				"在 Grasp 节点为可选且**非凑产物**:仅当存在至少两个方向不同、取舍有意义的候选且需要用户择一时才调用(写入 ≥2 个);无真实分歧则不要调用,禁止单候选「伪选择」。",
 			"inputSchema": map[string]any{
@@ -1274,9 +1324,9 @@ func artifactTools() []map[string]any {
 		getTool("get_preflight", "读取本次运行的环境确认清单(preflight.json)。"),
 		{
 			"name": "set_preview",
-			"description": "仅 app_preview 或 Grasp 节点可用:注册沙箱内应用预览端口或外部 http(s) URL。" +
+			"description": "仅 app_preview、Grasp 节点,或可复审 Agent 节点的复审阶段可用:注册沙箱内应用预览端口或外部 http(s) URL。" +
 				"参数 port? 与 url? 二选一(恰好其一);label(可选)用于 UI 标签。只登记审批人要看的前端页面;后端 API、数据库等端口不要登记(页面会自己调用),除非用户明确要求。确有多个前端(如用户端 + 管理端)时可多次调用分别登记;同 port 或同规范化 url 再次调用可更新 label。外部 URL 由浏览器 iframe 直连,不做服务端探测,取点可能降级。" +
-				"在 Grasp 上这是可选预览,不是完成条件,成功后不会结束本节点。",
+				"在 Grasp 与复审阶段这是可选预览,不是完成条件,成功后不会结束本节点。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1288,7 +1338,7 @@ func artifactTools() []map[string]any {
 		},
 		{
 			"name": "set_artifact_preview",
-			"description": "仅澄清(react)、Grasp 或环境确认(preflight)节点可用:把已写入的产物钉到 ReAct 界面预览 Tab。" +
+			"description": "仅澄清(react)、Grasp、环境确认(preflight)节点,或可复审 Agent 节点的复审阶段可用:把已写入的产物钉到 ReAct 界面预览 Tab。" +
 				"参数 name 为 list_artifacts / write_artifact 中的产物名,必须已存在。可多次调用切换预览;同名再次 write_artifact 后预览会热更新。" +
 				"与 ask_question.demoHtml 分工:选项级并排对比用 demoHtml;独立成稿、需热更新或取点标注用本工具。",
 			"inputSchema": map[string]any{

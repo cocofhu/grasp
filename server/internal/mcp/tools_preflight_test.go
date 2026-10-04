@@ -53,7 +53,7 @@ func TestParseForms(t *testing.T) {
 			map[string]any{"name": "db_url", "label": "数据库", "type": "url", "why": "plan gap"},
 			map[string]any{"name": "password", "label": "密码", "type": "text"},
 			map[string]any{"name": "bad", "label": "x", "type": "password"}, // rejected
-			map[string]any{"name": "nolabel"},                              // rejected
+			map[string]any{"name": "nolabel"},                               // rejected
 		},
 	})
 	if len(forms) != 1 || len(forms[0].Fields) != 2 {

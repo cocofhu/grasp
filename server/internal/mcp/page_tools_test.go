@@ -50,9 +50,29 @@ func TestPageToolsListedOnlyForPreviewNodes(t *testing.T) {
 	if !listedNames(t, h, tok)["page_click"] {
 		t.Fatal("grasp node should list page tools")
 	}
-	h.SetActiveNode("r1", "i1", "implement")
+	h.SetActiveNode("r1", "t1", "test")
 	if listedNames(t, h, tok)["page_state"] {
-		t.Fatal("implement node must not list page tools")
+		t.Fatal("non-review node must not list page tools")
+	}
+}
+
+func TestPageToolsReviewAgentNode(t *testing.T) {
+	h, tok, b := pageHost(t, "implement", true)
+	if !listedNames(t, h, tok)["page_state"] {
+		t.Fatal("direct-preview implement node should list page tools from session start")
+	}
+	txt, isErr := toolText(t, call(t, h, "r1", tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"page_state","arguments":{"session_id":"s1"}}}`))
+	if !isErr || !strings.Contains(txt, "复审阶段") || len(b.calls) != 0 {
+		t.Fatalf("outside review: txt=%q isErr=%v calls=%d", txt, isErr, len(b.calls))
+	}
+	h.SetActiveReview("r1", true)
+	if _, isErr := toolText(t, call(t, h, "r1", tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"page_state","arguments":{"session_id":"s1"}}}`)); isErr || len(b.calls) != 1 {
+		t.Fatalf("in review: isErr=%v calls=%d", isErr, len(b.calls))
+	}
+
+	noDirect, tok2, _ := pageHost(t, "implement", false)
+	if listedNames(t, noDirect, tok2)["page_state"] {
+		t.Fatal("implement without direct preview must not list page tools")
 	}
 }
 

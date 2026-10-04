@@ -10,19 +10,19 @@ func TestScanAndStripGroupSensitiveKeys(t *testing.T) {
 	for name, env := range map[string]map[string]string{
 		"alice": {
 			"GRASP_CURSOR_API_KEY": "a-key",
-			"GITLAB_TOKEN":             "a-gl",
-			"FEATURE_FLAG":             "1",
+			"GITLAB_TOKEN":         "a-gl",
+			"FEATURE_FLAG":         "1",
 		},
 		"bob": {
 			"GRASP_CURSOR_API_KEY": "b-key",
-			"LOG_LEVEL":                "info",
+			"LOG_LEVEL":            "info",
 		},
 		"carol": {
 			"GITLAB_TOKEN": "c-gl",
 		},
 		"outside": {
 			"GRASP_CURSOR_API_KEY": "out-key",
-			"GITLAB_TOKEN":             "out-gl",
+			"GITLAB_TOKEN":         "out-gl",
 		},
 	} {
 		a, ok := skill.Get(name)

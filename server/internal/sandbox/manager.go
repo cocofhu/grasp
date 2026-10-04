@@ -141,8 +141,8 @@ type Spec struct {
 	// SSHPrivateKey / SSHKnownHosts are optional literals injected as files
 	// under /tmp/grasp-ssh-inject before git clone (not via ordinary env).
 	// Empty fields are omitted (do not create/clear the corresponding file).
-	SSHPrivateKey  string
-	SSHKnownHosts  string
+	SSHPrivateKey string
+	SSHKnownHosts string
 }
 
 // SSHInjectStagingDir is the in-sandbox destination for the SSH file inject

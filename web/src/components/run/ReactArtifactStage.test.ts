@@ -528,6 +528,47 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
+  it('upgrades a review stage of a non-Grasp node to the app tab once set_preview registers', async () => {
+    vi.mocked(api.nodePreviews).mockResolvedValue({
+      ports: [
+        { port: 5173, label: '前端', runId: 'run-impl-review', nodeId: 'impl_1', proxyUrl: '/p', healthy: true },
+      ],
+    })
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [art({ id: 'a1', name: 'plan.json', kind: 'json', nodeId: 'impl_1' })],
+        runId: 'run-impl-review',
+        nodeId: 'impl_1',
+        nodeType: 'implement',
+        remoteKind: 'off',
+        probeRegisteredPreview: true,
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    expect(api.nodePreviews).toHaveBeenCalledWith('run-impl-review', 'impl_1', expect.anything())
+    expect(wrapper.find('[data-testid="app-preview-stub"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('keeps the remote kind for a non-Grasp node without the review probe', async () => {
+    vi.mocked(api.nodePreviews).mockClear()
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [art({ id: 'a1', name: 'plan.json', kind: 'json', nodeId: 'impl_1' })],
+        runId: 'run-impl-plain',
+        nodeId: 'impl_1',
+        nodeType: 'implement',
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    expect(api.nodePreviews).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="react-artifact-tab-novnc"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('shows public app preview for Approve from share ports without probing', async () => {
     vi.mocked(api.nodePreviews).mockClear()
     const wrapper = mount(ReactArtifactStage, {

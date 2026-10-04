@@ -10,7 +10,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/embed"
 	"github.com/cocofhu/grasp/internal/gateshare"
-	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 
@@ -77,7 +76,7 @@ func (h *Handlers) embedTargetReady(runID, nodeID string) (int, string) {
 		return http.StatusConflict, "run finished"
 	}
 	n := run.Graph.FindNode(nodeID)
-	if n == nil || !mcp.SetPreviewAllowed(n.Type) || !services.IsShareableReviewSession(n) {
+	if n == nil || !models.PreviewCapableNode(n.Type, n.Config) || !services.IsShareableReviewSession(n) {
 		return http.StatusBadRequest, "node has no preview chat"
 	}
 	if len(h.directPreviewOrigins(runID, nodeID)) == 0 {
@@ -155,7 +154,7 @@ func (h *Handlers) PublicEmbedTicket(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": st})
 		return
 	}
-	if lookup.Kind != models.ShareLinkKindReview || lookup.Node == nil || !mcp.SetPreviewAllowed(lookup.Node.Type) {
+	if lookup.Kind != models.ShareLinkKindReview || lookup.Node == nil || !models.PreviewCapableNode(lookup.Node.Type, lookup.Node.Config) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "unsupported", "message": "当前分享链不支持预览页对话"})
 		return
 	}
