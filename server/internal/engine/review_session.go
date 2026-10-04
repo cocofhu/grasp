@@ -340,7 +340,6 @@ func isRetryableEmptyOrFailedAgent(m models.ReactMessage) bool {
 		strings.Contains(t, "复审修改失败")
 }
 
-
 func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string, kind sessionKind, retryLast bool, owner string) (waiting int, err error) {
 	if e.IsHalted() {
 		return 0, errors.New("server is shutting down")

@@ -197,8 +197,11 @@ describe('AgentChatTester image preview (f4)', () => {
     await sendBtn!.trigger('click')
     await flushPromises()
 
+    const queuedId = (wrapper.vm as any).queued[0].id
     socket!.onmessage?.(
-      new MessageEvent('message', { data: JSON.stringify({ type: 'turn_begin' }) }),
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'session', event: 'turn_begin', item: { id: queuedId, text: '看这张' } }),
+      }),
     )
     await flushPromises()
 

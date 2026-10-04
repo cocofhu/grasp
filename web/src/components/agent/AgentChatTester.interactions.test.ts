@@ -80,7 +80,8 @@ function mountTester(props: Record<string, unknown> = {}) {
 }
 
 function frame(type: string, extra: Record<string, unknown> = {}) {
-  socket!.onmessage?.(new MessageEvent('message', { data: JSON.stringify({ type, ...extra }) }))
+  const body = type === 'acp' ? { type, ...extra } : { type: 'session', event: type, ...extra }
+  socket!.onmessage?.(new MessageEvent('message', { data: JSON.stringify(body) }))
 }
 
 describe('AgentChatTester interactions', () => {
@@ -138,7 +139,7 @@ describe('AgentChatTester interactions', () => {
     await flushPromises()
     vm.input = 'go'
     vm.send()
-    frame('turn_begin')
+    frame('turn_begin', { item: { id: vm.queued[0].id } })
     const up = (update: Record<string, unknown>) => frame('acp', { data: { type: 'session_update', update } })
     up({ sessionUpdate: 'agent_thought_chunk', content: { text: 'plan' } })
     up({ sessionUpdate: 'tool_call', toolCallId: 'a', title: 'Shell', status: 'in_progress', rawInput: { command: 'curl  -sS\n http://x', env: { API_KEY: 'k1' } } })
@@ -179,8 +180,13 @@ describe('AgentChatTester interactions', () => {
     expect(socket!.send).toHaveBeenCalled()
     expect(vm.queued).toHaveLength(1)
     expect(vm.status).toBe('thinking')
-    frame('queue_state')
-    frame('turn_begin')
+    const sentId = vm.queued[0].id
+    expect(JSON.parse(socket!.send.mock.calls[0][0])).toMatchObject({ type: 'chat', id: sentId, content: 'hello' })
+    frame('queue_state', { busy: true, waiting: 1, items: [{ id: sentId, text: 'hello', images: [] }] })
+    expect(vm.queued).toHaveLength(1)
+    frame('turn_begin', { item: { id: sentId, text: 'hello' } })
+    expect(vm.queued).toHaveLength(0)
+    expect(vm.turns[0].images[0].name).toBe('pic.png')
     frame('acp', { data: { type: 'session_update', update: { sessionUpdate: 'agentMessageChunk', content: { text: 'Hello' } } } })
     frame('acp', { data: { type: 'session_update', update: { session_update: 'agent-thought-chunk', content: [{ text: 'think' }] } } })
     frame('acp', { data: { type: 'session_update', update: { type: 'plan', entries: [{ title: 'step', state: 'completed' }, {}] } } })
@@ -203,7 +209,7 @@ describe('AgentChatTester interactions', () => {
 
     vm.input = 'again'
     vm.send()
-    frame('turn_begin')
+    frame('turn_begin', { item: { id: vm.queued[0].id } })
     frame('error', { message: 'agent failed' })
     expect(vm.turns.at(-1).error).toBe('agent failed')
     frame('error')
@@ -214,14 +220,22 @@ describe('AgentChatTester interactions', () => {
     expect(vm.queued).toEqual([])
     expect(socket!.send).toHaveBeenLastCalledWith(JSON.stringify({ type: 'cancel' }))
 
+    vi.useFakeTimers()
     socket!.onerror?.()
     expect(vm.status).toBe('error')
-    socket!.onclose?.()
+    const dropped = socket!
+    dropped.onclose?.()
     expect(vm.status).toBe('error')
-    vm.status = 'ready'
+    vi.advanceTimersByTime(1000)
+    expect(socket).not.toBe(dropped)
+    socket!.onopen?.()
+    expect(vm.status).toBe('ready')
     socket!.onclose?.()
     expect(vm.status).toBe('closed')
+    const waiting = socket
     w.unmount()
+    vi.advanceTimersByTime(30_000)
+    expect(socket).toBe(waiting)
   })
 
   it('ignores invalid sends/frames and rejects oversized attachments', async () => {
@@ -390,6 +404,51 @@ describe('AgentChatTester interactions', () => {
     vm.openWs(12)
     await w.setProps({ profile: 'claude' })
     expect(vm.status).toBe('idle')
+    w.unmount()
+  })
+
+  it('replays a running turn after reconnecting without duplicating it', async () => {
+    mocks.eventLog.mockResolvedValue({
+      events: [
+        { type: 'prompt_begin', promptText: 'old' },
+        { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'done' } } },
+        { type: 'prompt_begin', promptText: 'live' },
+        { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'par' } } },
+      ],
+    })
+    const w = mountTester()
+    const vm = w.vm as any
+    vm.status = 'starting'
+    vm.openWs(5)
+    socket!.onopen?.()
+    frame('queue_state', { busy: true, waiting: 1, activeItem: { id: 'srv-1', text: 'live' }, items: [{ id: 'srv-2', text: 'next', images: [{ data: 'QQ==', mimeType: 'image/png' }] }] })
+    frame('turn_begin', { item: { id: 'srv-1', text: 'live', images: [] } })
+    frame('acp', { data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'partial' } } } })
+    await flushPromises()
+    expect(vm.turns.map((t: any) => t.text)).toEqual(['old', 'done', 'live', 'partial'])
+    expect(vm.status).toBe('thinking')
+    expect(vm.queued[0]).toMatchObject({ id: 'srv-2', text: 'next' })
+    expect(vm.queued[0].images[0].url).toBe('data:image/png;base64,QQ==')
+
+    // Reconnect mid-turn: the replay rebuilds the same reply in place.
+    vm.openWs(5)
+    socket!.onopen?.()
+    frame('queue_state', { busy: true, waiting: 0, activeItem: { id: 'srv-1', text: 'live' }, items: [] })
+    frame('turn_begin', { item: { id: 'srv-1', text: 'live' } })
+    frame('acp', { data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'partial more' } } } })
+    await flushPromises()
+    expect(vm.turns.map((t: any) => t.text)).toEqual(['old', 'done', 'live', 'partial more'])
+
+    // The turn finished while disconnected: an idle snapshot settles it.
+    vm.openWs(5)
+    socket!.onopen?.()
+    frame('queue_state', { busy: false, waiting: 0, items: [] })
+    await flushPromises()
+    expect(vm.turns.at(-1).streaming).toBe(false)
+    expect(vm.status).toBe('ready')
+    frame('error', { message: '消息队列已满，请稍候' })
+    expect(vm.errorMsg).toBe('消息队列已满，请稍候')
+    socket!.onmessage?.(new MessageEvent('message', { data: JSON.stringify({ type: 'other' }) }))
     w.unmount()
   })
 })

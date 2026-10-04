@@ -494,6 +494,7 @@ func main() {
 		Org:               orgSvc,
 		Dash:              services.NewDashboardService(db, projectSvc),
 		Sbx:               sbxSvc,
+		SbxChats:          services.NewSandboxChats(sbxSvc),
 		Preview:           previewSvc,
 		Issues:            issueSvc,
 		RequirementDrafts: requirementDraftSvc,

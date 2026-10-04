@@ -38,28 +38,7 @@ const PmEventPhase = "phase"
 var errPmTurnDuplicate = errors.New("该消息已在处理中")
 
 // PmTurnEvent is one frame of a thread's chat stream.
-type PmTurnEvent struct {
-	Seq int
-	// Type is "session" (control frame) or "acp" (raw ACP frame in Data).
-	Type    string
-	Event   string
-	Data    json.RawMessage
-	Payload map[string]any
-}
-
-// Frame renders the event for the thread WebSocket.
-func (e PmTurnEvent) Frame() map[string]any {
-	out := map[string]any{"type": e.Type, "seq": e.Seq}
-	if e.Type == "acp" {
-		out["data"] = e.Data
-		return out
-	}
-	for k, v := range e.Payload {
-		out[k] = v
-	}
-	out["event"] = e.Event
-	return out
-}
+type PmTurnEvent = chatsession.Event
 
 // PmTurnRequest is one queued PM turn.
 type PmTurnRequest struct {
@@ -80,41 +59,6 @@ type PmTurnRequest struct {
 type pmChatter interface {
 	ChatWithTimeout(ctx context.Context, id uint, text string, images []models.PromptImage, timeout time.Duration, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error)
 	Cancel(id uint)
-}
-
-type turnSub struct {
-	mu     sync.Mutex
-	ch     chan PmTurnEvent
-	closed bool
-}
-
-func (s *turnSub) Close() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.closed {
-		s.closed = true
-		close(s.ch)
-	}
-}
-
-// send delivers ev, giving a slow WS writer a short grace period before the
-// frame is skipped.
-func (s *turnSub) send(ev PmTurnEvent) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
-		return
-	}
-	select {
-	case s.ch <- ev:
-		return
-	default:
-	}
-	select {
-	case s.ch <- ev:
-	case <-time.After(3 * time.Second):
-		log.Warn().Int("seq", ev.Seq).Str("type", ev.Type).Msg("pm turn fanout timed out; subscriber may skip a frame")
-	}
 }
 
 // PmTurnRunner runs PM consult turns: one chatsession FIFO per thread, shared
@@ -140,10 +84,9 @@ type pmThread struct {
 	// refs counts callers and subscribers using the thread; guarded by r.mu.
 	refs int
 
+	stream *chatsession.Stream
+
 	mu        sync.Mutex
-	subs      map[*turnSub]struct{}
-	nextSeq   int
-	turn      []PmTurnEvent
 	userMsgID string
 	partial   string
 	phase     string
@@ -231,7 +174,7 @@ func (r *PmTurnRunner) lookup(threadID string) *pmThread {
 }
 
 func (r *PmTurnRunner) newThread(threadID string) *pmThread {
-	th := &pmThread{r: r, id: threadID, subs: make(map[*turnSub]struct{})}
+	th := &pmThread{r: r, id: threadID, stream: chatsession.NewStream(pmTurnBufferMax)}
 	th.sess = chatsession.New(chatsession.Config[*PmTurnRequest]{
 		Capacity:  pmQueueCapacity,
 		FullError: "PM 会话排队已满，请稍候",
@@ -245,7 +188,6 @@ func (r *PmTurnRunner) newThread(threadID string) *pmThread {
 		},
 		BeforeTurn: func(q *PmTurnRequest, _ <-chan struct{}) {
 			th.mu.Lock()
-			th.turn = nil
 			th.userMsgID = q.UserMsgID
 			th.partial = ""
 			th.sandboxID = q.SandboxID
@@ -339,30 +281,18 @@ func (r *PmTurnRunner) Cancel(threadID string) {
 // open across turns until the returned unsubscribe func is called.
 func (r *PmTurnRunner) Subscribe(threadID string, afterSeq int) (<-chan PmTurnEvent, func(), bool) {
 	th := r.acquire(threadID)
-	ch := make(chan PmTurnEvent, pmTurnBufferMax+16)
-	sub := &turnSub{ch: ch}
-	th.mu.Lock()
-	sn := th.sess.Snapshot()
-	qs := sn.QueueState()
-	th.decorateQueueLocked(qs)
-	ch <- PmTurnEvent{Seq: th.nextSeq - 1, Type: "session", Event: chatsession.EventQueueState, Payload: qs}
-	if sn.Busy {
-		for _, ev := range th.turn {
-			if ev.Seq > afterSeq {
-				ch <- ev
-			}
-		}
-	}
-	th.subs[sub] = struct{}{}
-	th.mu.Unlock()
-
+	ch, unsubStream := th.stream.Subscribe(func() (map[string]any, bool) {
+		sn := th.sess.Snapshot()
+		qs := sn.QueueState()
+		th.mu.Lock()
+		th.decorateQueueLocked(qs)
+		th.mu.Unlock()
+		return qs, sn.Busy
+	}, afterSeq)
 	var once sync.Once
 	unsub := func() {
 		once.Do(func() {
-			th.mu.Lock()
-			delete(th.subs, sub)
-			th.mu.Unlock()
-			sub.Close()
+			unsubStream()
 			r.release(th)
 		})
 	}
@@ -378,7 +308,7 @@ func (r *PmTurnRunner) Status(threadID string) (active bool, userMsgID string, p
 	_, busy := th.sess.Active()
 	th.mu.Lock()
 	defer th.mu.Unlock()
-	return busy, th.userMsgID, th.partial, 0, th.nextSeq - 1
+	return busy, th.userMsgID, th.partial, 0, th.stream.LastSeq()
 }
 
 func (th *pmThread) decorateQueueLocked(payload map[string]any) {
@@ -388,47 +318,25 @@ func (th *pmThread) decorateQueueLocked(payload map[string]any) {
 	}
 }
 
-// emitLocked assigns the next seq, records turn frames for reconnect replay
-// and returns the subscribers to fan out to.
-func (th *pmThread) emitLocked(ev *PmTurnEvent, record bool) []*turnSub {
-	ev.Seq = th.nextSeq
-	th.nextSeq++
-	if record {
-		th.turn = append(th.turn, *ev)
-		if len(th.turn) > pmTurnBufferMax {
-			// Keep turn_begin so a replay still opens the turn.
-			th.turn = append(th.turn[:1], th.turn[len(th.turn)-pmTurnBufferMax+1:]...)
-		}
-	}
-	out := make([]*turnSub, 0, len(th.subs))
-	for sub := range th.subs {
-		out = append(out, sub)
-	}
-	return out
-}
-
 func (th *pmThread) publishSession(event string, payload map[string]any) {
+	keep := chatsession.KeepNone
 	th.mu.Lock()
-	record := false
 	switch event {
 	case chatsession.EventQueueState:
 		th.decorateQueueLocked(payload)
 	case chatsession.EventTurnBegin:
-		th.turn = nil
-		record = true
+		keep = chatsession.KeepBegin
 	case chatsession.EventTurnDone, chatsession.EventError:
 		payload["userMsgId"] = th.userMsgID
 		if th.failKind != "" {
 			payload["failKind"] = th.failKind
 		}
-		th.turn = nil
 		th.sandboxID = 0
 		th.phase = ""
+		keep = chatsession.KeepEnd
 	}
-	ev := PmTurnEvent{Type: "session", Event: event, Payload: payload}
-	subs := th.emitLocked(&ev, record)
 	th.mu.Unlock()
-	fanout(subs, ev)
+	th.stream.Session(event, payload, keep)
 }
 
 func (th *pmThread) setPhase(phase string) {
@@ -438,20 +346,16 @@ func (th *pmThread) setPhase(phase string) {
 		return
 	}
 	th.phase = phase
-	ev := PmTurnEvent{Type: "session", Event: PmEventPhase, Payload: map[string]any{"phase": phase}}
-	subs := th.emitLocked(&ev, false)
 	th.mu.Unlock()
-	fanout(subs, ev)
+	th.stream.Session(PmEventPhase, map[string]any{"phase": phase}, chatsession.KeepNone)
 }
 
 func (th *pmThread) onAcp(raw json.RawMessage) {
 	delta := extractPmAgentText(raw)
 	th.mu.Lock()
 	th.partial += delta
-	ev := PmTurnEvent{Type: "acp", Data: append(json.RawMessage(nil), raw...)}
-	subs := th.emitLocked(&ev, true)
 	th.mu.Unlock()
-	fanout(subs, ev)
+	th.stream.Acp(raw)
 }
 
 func (th *pmThread) fail(q *PmTurnRequest, failKind string) {
@@ -569,12 +473,6 @@ func (r *PmTurnRunner) persistTurnFailure(threadID, userMsgID, failKind string) 
 	}
 	if _, err := r.pm.UpdateMessageFailure(threadID, userMsgID, "failed", failKind); err != nil {
 		log.Warn().Err(err).Str("thread", threadID).Str("op", "msg_failure").Msg("pm turn persist failed")
-	}
-}
-
-func fanout(subs []*turnSub, ev PmTurnEvent) {
-	for _, sub := range subs {
-		sub.send(ev)
 	}
 }
 
