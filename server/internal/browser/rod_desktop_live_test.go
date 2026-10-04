@@ -18,9 +18,11 @@ import (
 )
 
 // TestPlan_g2_liveContentCoversXvfb checks the headed window on a real Xvfb:
-// non-fullscreen content covers 1920x1080 (no black desktop at the bottom),
-// fullscreen and leaving fullscreen keep that coverage, and a viewport point
-// hits the element under it. Skipped unless PREVIEW_DESKTOP_LIVE=1.
+// the window sits at 0,0 with the tab strip and address bar on screen, the
+// content area fills the rest of 1920x1080 (page top bar right below the
+// toolbar, no black desktop at the bottom), fullscreen and leaving fullscreen
+// keep that, a viewport point hits the element under it, and inspect turns
+// on and off. Skipped unless PREVIEW_DESKTOP_LIVE=1.
 func TestPlan_g2_liveContentCoversXvfb(t *testing.T) {
 	if os.Getenv("PREVIEW_DESKTOP_LIVE") == "" {
 		t.Skip("set PREVIEW_DESKTOP_LIVE=1 to run the Xvfb coverage check")
@@ -93,17 +95,17 @@ func TestPlan_g2_liveContentCoversXvfb(t *testing.T) {
 	grab := compileGrab(t)
 	assertPickHitsButton(t, rp, "non-fullscreen")
 	assertContentCovers(t, rp, "non-fullscreen")
-	assertFramebufferCovered(t, grab, display, "non-fullscreen")
+	assertFramebufferCovered(t, rp, grab, display, "non-fullscreen")
+	assertInspectToggles(t, rp, "non-fullscreen")
 
-	// Browser UI fullscreen is a state change only. The watch has to move the
-	// frame back onto the screen once the toolbar disappears.
+	// Browser UI fullscreen is a state change only. The watch has to re-pin
+	// the viewport once the toolbar disappears.
 	if err := rp.setWindowBounds(&proto.BrowserBounds{WindowState: proto.BrowserWindowStateFullscreen}); err != nil {
 		t.Fatalf("enter fullscreen: %v", err)
 	}
 	waitContentAndFrame(t, rp, grab, display, "fullscreen")
 
-	// Leaving fullscreen restores a normal window; the watch parks the toolbar
-	// off-screen again so the page range stays the same.
+	// Leaving fullscreen restores a normal window with the toolbar on screen.
 	if err := rp.setWindowBounds(windowStateOnlyBounds()); err != nil {
 		t.Fatalf("leave fullscreen: %v", err)
 	}
@@ -122,8 +124,21 @@ func assertContentCovers(t *testing.T, rp *rodPage, label string) {
 		t.Fatalf("%s read geometry: %v", label, err)
 	}
 	t.Logf("%s geom left=%d top=%d outer=%dx%d content=%dx%d", label, g.left, g.top, g.outerW, g.outerH, g.contentW, g.contentH)
-	if !contentCoversDesktop(g) {
+	if !desktopReady(g) {
 		t.Fatalf("%s: %v", label, desktopNotReadyError(g))
+	}
+}
+
+func assertInspectToggles(t *testing.T, rp *rodPage, label string) {
+	t.Helper()
+	if err := rp.SetInspect(true); err != nil {
+		t.Fatalf("%s inspect on: %v", label, err)
+	}
+	if err := inspectModeRequest(false).Call(rp.page); err != nil {
+		t.Fatalf("%s setInspectMode none: %v", label, err)
+	}
+	if err := rp.SetInspect(false); err != nil {
+		t.Fatalf("%s inspect off: %v", label, err)
 	}
 }
 
@@ -152,9 +167,9 @@ func assertPickHitsButton(t *testing.T, rp *rodPage, label string) {
 	}
 }
 
-func assertFramebufferCovered(t *testing.T, grab, display, label string) {
+func assertFramebufferCovered(t *testing.T, rp *rodPage, grab, display, label string) {
 	t.Helper()
-	if err := framebufferCoverError(grab, display); err != nil {
+	if err := framebufferCoverError(rp, grab, display); err != nil {
 		t.Fatalf("%s: %v", label, err)
 	}
 }
@@ -165,7 +180,7 @@ func waitContentAndFrame(t *testing.T, rp *rodPage, grab, display, label string)
 	var last error
 	for time.Now().Before(deadline) {
 		gerr := contentCoverError(rp)
-		ferr := framebufferCoverError(grab, display)
+		ferr := framebufferCoverError(rp, grab, display)
 		if gerr == nil && ferr == nil {
 			t.Logf("%s covered", label)
 			return
@@ -189,19 +204,32 @@ func contentCoverError(rp *rodPage) error {
 	if err != nil {
 		return err
 	}
-	if !contentCoversDesktop(g) {
+	if !desktopReady(g) {
 		return desktopNotReadyError(g)
 	}
 	return nil
 }
 
-func framebufferCoverError(grab, display string) error {
-	top, bottom, black, samples, err := sampleFramebuffer(grab, display)
+// framebufferCoverError samples the screen: the toolbar band (when the window
+// has one) must be painted browser UI, the page top bar must sit right below
+// it, and the bottom band must be page, not black desktop.
+func framebufferCoverError(rp *rodPage, grab, display string) error {
+	g, err := rp.readDesktopGeom()
 	if err != nil {
 		return err
 	}
+	contentTop := g.top + g.outerH - g.contentH
+	ui, top, bottom, black, samples, err := sampleFramebuffer(grab, display, contentTop)
+	if err != nil {
+		return err
+	}
+	if contentTop > 16 {
+		if nearRGB(ui, [3]int{34, 197, 94}, 48) || nearRGB(ui, [3]int{0, 0, 0}, 8) {
+			return fmt.Errorf("toolbar pixel %v is page or black desktop, want browser UI", ui)
+		}
+	}
 	if !nearRGB(top, [3]int{34, 197, 94}, 48) {
-		return fmt.Errorf("top pixel %v is not the page top bar", top)
+		return fmt.Errorf("pixel %v below the toolbar (content top %d) is not the page top bar", top, contentTop)
 	}
 	if !nearRGB(bottom, [3]int{225, 29, 72}, 48) {
 		return fmt.Errorf("bottom pixel %v is not the page bottom bar", bottom)
@@ -240,12 +268,12 @@ func compileGrab(t *testing.T) string {
 	return bin
 }
 
-func sampleFramebuffer(grab, display string) (top, bottom [3]int, black, samples int, err error) {
-	run := exec.Command(grab)
+func sampleFramebuffer(grab, display string, contentTop int) (ui, top, bottom [3]int, black, samples int, err error) {
+	run := exec.Command(grab, strconv.Itoa(contentTop))
 	run.Env = append(os.Environ(), "DISPLAY="+display)
 	out, err := run.CombinedOutput()
 	if err != nil {
-		return [3]int{}, [3]int{}, 0, 0, fmt.Errorf("grab: %v\n%s", err, out)
+		return [3]int{}, [3]int{}, [3]int{}, 0, 0, fmt.Errorf("grab: %v\n%s", err, out)
 	}
 	for _, line := range strings.Split(string(out), "\n") {
 		fields := strings.Fields(line)
@@ -253,6 +281,8 @@ func sampleFramebuffer(grab, display string) (top, bottom [3]int, black, samples
 			continue
 		}
 		switch fields[0] {
+		case "ui":
+			ui, err = parseRGB(fields[1:])
 		case "top":
 			top, err = parseRGB(fields[1:])
 		case "bottom":
@@ -265,10 +295,10 @@ func sampleFramebuffer(grab, display string) (top, bottom [3]int, black, samples
 			_, err = fmt.Sscanf(fields[1], "%d/%d", &black, &samples)
 		}
 		if err != nil {
-			return [3]int{}, [3]int{}, 0, 0, err
+			return [3]int{}, [3]int{}, [3]int{}, 0, 0, err
 		}
 	}
-	return top, bottom, black, samples, nil
+	return ui, top, bottom, black, samples, nil
 }
 
 func parseRGB(fields []string) ([3]int, error) {
@@ -343,6 +373,7 @@ const xGrabSource = `
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <stdio.h>
+#include <stdlib.h>
 static int chan(unsigned long p, unsigned long mask) {
   int shift = 0, bits = 0;
   unsigned long m;
@@ -355,16 +386,17 @@ static int chan(unsigned long p, unsigned long mask) {
   if (bits > 8) v >>= (bits - 8);
   return v;
 }
-int main(void) {
+int main(int argc, char **argv) {
+  int contentTop = argc > 1 ? atoi(argv[1]) : 0;
   Display *d = XOpenDisplay(NULL);
   if (!d) { fprintf(stderr, "no display\n"); return 1; }
   Window root = DefaultRootWindow(d);
   XImage *img = XGetImage(d, root, 0, 0, 1920, 1080, AllPlanes, ZPixmap);
   if (!img) { fprintf(stderr, "no image\n"); return 1; }
-  int xs[2] = {16, 16};
-  int ys[2] = {16, 1060};
-  const char *names[2] = {"top", "bottom"};
-  for (int i = 0; i < 2; i++) {
+  int xs[3] = {16, 16, 16};
+  int ys[3] = {8, contentTop + 16, 1060};
+  const char *names[3] = {"ui", "top", "bottom"};
+  for (int i = 0; i < 3; i++) {
     unsigned long p = XGetPixel(img, xs[i], ys[i]);
     printf("%s %d %d %d\n", names[i], chan(p, img->red_mask), chan(p, img->green_mask), chan(p, img->blue_mask));
   }

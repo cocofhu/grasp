@@ -281,6 +281,12 @@ function handleCtrlText(data: string) {
         err: true,
       }
       break
+    case 'inspect-off-failed':
+      inlineTip.value = {
+        text: t('pages.appPreview.novnc.inspectOffFailed'),
+        err: true,
+      }
+      break
     case 'inspect-canceled':
       // Remote Esc (Overlay.inspectModeCanceled) — keep staged pick; no failure tip.
       // Chromium does not leave searchForNode on this event; echo on:false so
@@ -849,7 +855,7 @@ onBeforeUnmount(() => {
         </div>
         <span
           v-else-if="!inspect"
-          class="pointer-events-none absolute bottom-2 left-2 z-10 rounded-md bg-overlay/90 px-2 py-1 text-[10px] text-txt3"
+          class="pointer-events-none absolute bottom-2 left-2 z-10 rounded-md border border-line-strong bg-overlay/95 px-2 py-1 text-[11px] text-txt2 shadow-card"
           data-testid="novnc-watch-hint"
         >
           {{ t('pages.appPreview.novnc.watchOnlyHint') }}

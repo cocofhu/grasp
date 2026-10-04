@@ -482,6 +482,23 @@ describe('NovncPreviewPanel', () => {
     wrapper.unmount()
   })
 
+  it('inspect-off-failed shows a tip after cancel', async () => {
+    const wrapper = mountNovnc()
+    await flushPromises()
+    const ws = MockWebSocket.instances[0]!
+
+    await inspectButton(wrapper).trigger('click')
+    await inspectButton(wrapper).trigger('click')
+    expect(inspectButton(wrapper).attributes('aria-pressed')).toBe('false')
+
+    ws.onmessage?.({ data: JSON.stringify({ type: 'inspect-off-failed' }) })
+    await flushPromises()
+    const tip = wrapper.find('[data-testid="novnc-inline-tip"]')
+    expect(tip.exists()).toBe(true)
+    expect(tip.text()).toContain('页面可能仍在取点模式')
+    wrapper.unmount()
+  })
+
   it('describe-failed shows tip, clears sticky, no pick result (g3.2/S3)', async () => {
     const wrapper = mountNovnc()
     await flushPromises()

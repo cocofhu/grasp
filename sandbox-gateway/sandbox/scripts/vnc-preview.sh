@@ -74,9 +74,10 @@ if ! curl -fsS "http://127.0.0.1:${CDP_LOOPBACK_PORT}/json/version" >/dev/null 2
 
   # No window manager on Xvfb. Explicit position and size are the bootstrap
   # window fallback; Approving NewTab windows are resized via CDP
-  # (presentDesktop: normal state, then size, so the content area covers the
-  # screen). Do not pass --start-maximized: without a WM it does not fill the
-  # screen and it races the later normal-state size.
+  # (presentDesktop: normal state, then a 0,0 1920x1080 frame, so the tab strip
+  # and address bar stay visible above the content area). Do not pass
+  # --start-maximized: without a WM it does not fill the screen and it races the
+  # later normal-state size.
   # --disable-infobars: suppress Chrome for Testing non-interactive product info
   # bar ("…is only for automated testing…") so it never paints into the VNC
   # framebuffer and does not reserve top viewport height (Chromium CfT switch).
