@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -54,10 +55,18 @@ type containerState struct {
 	engine    Engine
 }
 
-// Service manages the per-viewer preview tabs opened inside app_preview
-// sandboxes. It dials each sandbox's in-container CDP/websockify; it never
-// creates or destroys containers (the sandbox-gateway owns that). Safe for
-// concurrent use.
+// desktop is the one long-lived page a sandbox's VNC display shows. Viewers
+// attach to it; it outlives them so reconnecting keeps the page state.
+type desktop struct {
+	page     Page
+	owner    *Session
+	lastSeen time.Time
+}
+
+// Service manages the desktop page inside each app_preview sandbox and the
+// viewer sessions attached to it. It dials each sandbox's in-container
+// CDP/websockify; it never creates or destroys containers (the sandbox-gateway
+// owns that). Safe for concurrent use.
 type Service struct {
 	sbx  SandboxExecer
 	cfg  Config
@@ -71,6 +80,7 @@ type Service struct {
 	reg        *tabRegistry
 	containers map[string]*containerState
 	sessions   map[string]*Session
+	desktops   map[string]*desktop
 
 	stop     chan struct{}
 	stopOnce sync.Once
@@ -86,37 +96,99 @@ func New(sbx SandboxExecer, cfg Config) *Service {
 		reg:        newTabRegistry(cfg.MaxTabs, cfg.MaxTabsPerContainer),
 		containers: map[string]*containerState{},
 		sessions:   map[string]*Session{},
+		desktops:   map[string]*desktop{},
 		stop:       make(chan struct{}),
 	}
 	s.readyProbe = s.probeVNCReady
 	return s
 }
 
-// Session is one viewer's isolated tab.
+// Session is one viewer attached to a sandbox's desktop page.
 type Session struct {
 	ID        string
 	container string
 	page      Page
+	view      *viewerPage
 	svc       *Service
 	done      chan struct{}
 	reason    string
 }
 
-// Page exposes the underlying tab controller for the WS handler.
-func (se *Session) Page() Page { return se.page }
+// Page is this viewer's handle on the desktop page. Pick callbacks set on it
+// fire only while the viewer is attached, and closing it is a no-op.
+func (se *Session) Page() Page { return se.view }
 
-// Done is closed when the session is torn down (by the client, idle sweep, or
-// LRU eviction). Reason explains why.
+// Done is closed when the viewer is detached (by the client, idle sweep,
+// supersede, or LRU eviction). Reason explains why.
 func (se *Session) Done() <-chan struct{} { return se.done }
 
-// Reason returns why the session ended ("closed" | "idle" | "evicted").
+// Reason returns why the session ended ("closed" | "idle" | "evicted" |
+// "superseded" | "desktop-closed").
 func (se *Session) Reason() string { return se.reason }
 
 // Touch marks the session active (defers idle reclamation).
 func (se *Session) Touch() { se.svc.touch(se.ID) }
 
-// Close tears the session down.
+// Close detaches the viewer. The desktop page stays open.
 func (se *Session) Close() { se.svc.CloseSession(se.ID) }
+
+// viewerPage routes the shared page's pick callbacks to one viewer.
+type viewerPage struct {
+	Page
+	mu         sync.Mutex
+	onPick     func(Pick)
+	onCanceled func()
+	onFailed   func()
+}
+
+func (v *viewerPage) OnPick(cb func(Pick)) {
+	v.mu.Lock()
+	v.onPick = cb
+	v.mu.Unlock()
+}
+
+func (v *viewerPage) OnInspectCanceled(cb func()) {
+	v.mu.Lock()
+	v.onCanceled = cb
+	v.mu.Unlock()
+}
+
+func (v *viewerPage) OnDescribeFailed(cb func()) {
+	v.mu.Lock()
+	v.onFailed = cb
+	v.mu.Unlock()
+}
+
+func (v *viewerPage) Close() error { return nil }
+
+func (v *viewerPage) pick(p Pick) bool {
+	v.mu.Lock()
+	cb := v.onPick
+	v.mu.Unlock()
+	if cb == nil {
+		return false
+	}
+	cb(p)
+	return true
+}
+
+func (v *viewerPage) canceled() {
+	v.mu.Lock()
+	cb := v.onCanceled
+	v.mu.Unlock()
+	if cb != nil {
+		cb()
+	}
+}
+
+func (v *viewerPage) failed() {
+	v.mu.Lock()
+	cb := v.onFailed
+	v.mu.Unlock()
+	if cb != nil {
+		cb()
+	}
+}
 
 // VNCWebSocketURL returns the container-local websockify endpoint for noVNC.
 func (se *Session) VNCWebSocketURL() (string, error) {
@@ -294,11 +366,16 @@ func (s *Service) Stop() {
 		_ = cs.engine.Close()
 	}
 	s.containers = map[string]*containerState{}
+	// Desktop pages stay open in the sandbox Chromium; only our handles go.
+	s.desktops = map[string]*desktop{}
 }
 
-// OpenInSandbox attaches to the VNC/CDP stack running inside an app_preview
-// sandbox and opens an isolated tab navigated to targetURL (typically
-// http://127.0.0.1:<port>/ so Chromium stays inside the sandbox network namespace).
+// OpenInSandbox attaches a viewer to the desktop page of an app_preview
+// sandbox's VNC/CDP stack. The first viewer opens the page at targetURL
+// (typically http://127.0.0.1:<port>/ so Chromium stays inside the sandbox
+// network namespace). Later viewers reuse that page as it is, and only
+// navigate when targetURL points at another origin; about:blank never
+// navigates an existing page.
 // sandboxIP is only used when no SandboxEndpointResolver is present (legacy /
 // unit tests). With a gateway resolver, named internal cdp/novnc are required.
 func (s *Service) OpenInSandbox(ctx context.Context, sandboxName, sandboxIP, targetURL string) (*Session, error) {
@@ -327,7 +404,142 @@ func (s *Service) OpenInSandbox(ctx context.Context, sandboxName, sandboxIP, tar
 		}
 	}
 
-	return s.openTabInSandboxLocked(ctx, sandboxName, sandboxIP, cdpAddr, novncAddr, targetURL)
+	d := s.reuseDesktopLocked(ctx, sandboxName, targetURL)
+	if _, err := s.attachSandboxLocked(ctx, sandboxName, sandboxIP, cdpAddr, novncAddr); err != nil {
+		return nil, err
+	}
+	if d == nil {
+		page, err := s.openTabInSandboxLocked(ctx, sandboxName, sandboxIP, cdpAddr, novncAddr, targetURL)
+		if err != nil {
+			return nil, err
+		}
+		d = s.newDesktopLocked(sandboxName, page)
+	}
+	sess := &Session{
+		ID:        uuid.NewString(),
+		container: sandboxName,
+		page:      d.page,
+		view:      &viewerPage{Page: d.page},
+		svc:       s,
+		done:      make(chan struct{}),
+	}
+	d.owner = sess
+	d.lastSeen = s.reg.now()
+	s.sessions[sess.ID] = sess
+	s.reg.add(sess.ID, sandboxName)
+	log.Info().Str("session", sess.ID).Str("sandbox", sandboxName).Str("url", targetURL).Int("tabs", s.reg.count()).Msg("sandbox preview viewer attached")
+	return sess, nil
+}
+
+// desktopProbeTimeout bounds the liveness check on a cached desktop page.
+const desktopProbeTimeout = 3 * time.Second
+
+// reuseDesktopLocked returns the sandbox's live desktop page, navigated to
+// targetURL when it shows another origin. A page that no longer answers is
+// dropped together with the CDP engine; nil means open a new one. Caller
+// holds s.mu.
+func (s *Service) reuseDesktopLocked(ctx context.Context, sandboxName, targetURL string) *desktop {
+	d := s.desktops[sandboxName]
+	if d == nil {
+		return nil
+	}
+	pctx, cancel := context.WithTimeout(ctx, desktopProbeTimeout)
+	cur, err := d.page.URL(pctx)
+	cancel()
+	if err != nil {
+		log.Warn().Str("sandbox", sandboxName).Err(err).Msg("sandbox desktop page gone, reopening")
+		s.dropDesktopLocked(sandboxName, d, "desktop-closed")
+		s.dropEngineLocked(sandboxName)
+		return nil
+	}
+	if needsNavigate(cur, targetURL) {
+		if err := d.page.Goto(targetURL); err != nil {
+			log.Warn().Str("sandbox", sandboxName).Str("url", targetURL).Err(err).Msg("sandbox desktop goto failed")
+		}
+	}
+	if p, ok := d.page.(desktopPresenter); ok {
+		if err := p.presentDesktop(); err != nil {
+			log.Debug().Str("sandbox", sandboxName).Err(err).Msg("sandbox desktop re-present")
+		}
+	}
+	return d
+}
+
+// desktopPresenter brings a reused page back to the front of the Xvfb screen.
+type desktopPresenter interface {
+	presentDesktop() error
+}
+
+// needsNavigate reports whether a reused page at cur must go to target.
+// Same origin keeps the page (and whatever path the viewer left it on).
+func needsNavigate(cur, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" || target == "about:blank" {
+		return false
+	}
+	cu, err := url.Parse(cur)
+	if err != nil {
+		return true
+	}
+	tu, err := url.Parse(target)
+	if err != nil {
+		return true
+	}
+	return !strings.EqualFold(cu.Scheme, tu.Scheme) || !strings.EqualFold(cu.Host, tu.Host)
+}
+
+// newDesktopLocked registers page as the sandbox's desktop and routes its
+// pick events to whichever viewer is attached. Caller holds s.mu.
+func (s *Service) newDesktopLocked(sandboxName string, page Page) *desktop {
+	d := &desktop{page: page, lastSeen: s.reg.now()}
+	page.OnPick(func(p Pick) {
+		if v := s.ownerView(sandboxName, d); v == nil || !v.pick(p) {
+			_ = page.SetInspect(false)
+		}
+	})
+	page.OnInspectCanceled(func() {
+		if v := s.ownerView(sandboxName, d); v != nil {
+			v.canceled()
+		}
+	})
+	page.OnDescribeFailed(func() {
+		if v := s.ownerView(sandboxName, d); v != nil {
+			v.failed()
+		}
+	})
+	s.desktops[sandboxName] = d
+	return d
+}
+
+func (s *Service) ownerView(sandboxName string, d *desktop) *viewerPage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.desktops[sandboxName] != d || d.owner == nil {
+		return nil
+	}
+	return d.owner.view
+}
+
+// dropDesktopLocked closes the desktop page and detaches its viewer. Caller
+// holds s.mu.
+func (s *Service) dropDesktopLocked(sandboxName string, d *desktop, reason string) {
+	if s.desktops[sandboxName] != d {
+		return
+	}
+	if d.owner != nil {
+		s.closeLocked(d.owner.ID, reason)
+	}
+	delete(s.desktops, sandboxName)
+	_ = d.page.Close()
+}
+
+// dropEngineLocked disconnects the cached CDP engine for a sandbox. Caller
+// holds s.mu.
+func (s *Service) dropEngineLocked(sandboxName string) {
+	if cs, ok := s.containers[sandboxName]; ok {
+		_ = cs.engine.Close()
+		delete(s.containers, sandboxName)
+	}
 }
 
 // supersedeContainerLocked closes existing sessions in sandboxName when the
@@ -350,10 +562,10 @@ func (s *Service) supersedeContainerLocked(sandboxName string) {
 	}
 }
 
-// openTabInSandboxLocked dials CDP, opens a tab, and registers the session.
+// openTabInSandboxLocked dials CDP and opens the sandbox's desktop page.
 // On NewTab failure the cached engine is evicted and redialed once. Caller
 // holds s.mu.
-func (s *Service) openTabInSandboxLocked(ctx context.Context, sandboxName, sandboxIP, cdpAddr, novncAddr, targetURL string) (*Session, error) {
+func (s *Service) openTabInSandboxLocked(ctx context.Context, sandboxName, sandboxIP, cdpAddr, novncAddr, targetURL string) (Page, error) {
 	cs, err := s.attachSandboxLocked(ctx, sandboxName, sandboxIP, cdpAddr, novncAddr)
 	if err != nil {
 		return nil, err
@@ -372,11 +584,8 @@ func (s *Service) openTabInSandboxLocked(ctx context.Context, sandboxName, sandb
 			return nil, fmt.Errorf("open tab: %w", err)
 		}
 	}
-	sess := &Session{ID: uuid.NewString(), container: sandboxName, page: page, svc: s, done: make(chan struct{})}
-	s.sessions[sess.ID] = sess
-	s.reg.add(sess.ID, sandboxName)
-	log.Info().Str("session", sess.ID).Str("sandbox", sandboxName).Str("url", targetURL).Int("tabs", s.reg.count()).Msg("sandbox preview tab opened")
-	return sess, nil
+	log.Info().Str("sandbox", sandboxName).Str("url", targetURL).Msg("sandbox desktop page opened")
+	return page, nil
 }
 
 // EnsureSandboxVNC starts /usr/local/bin/vnc-preview.sh inside the sandbox (over
@@ -582,33 +791,75 @@ func (s *Service) touch(id string) {
 	s.mu.Unlock()
 }
 
-// closeLocked closes a session's page and clears accounting. Caller holds s.mu.
+// closeLocked detaches a viewer and clears accounting. The desktop page stays
+// open; only inspect mode is left. Caller holds s.mu.
 func (s *Service) closeLocked(id, reason string) {
 	sess, ok := s.sessions[id]
 	if !ok {
 		return
 	}
 	sess.reason = reason
-	_ = sess.page.Close()
+	if d := s.desktops[sess.container]; d != nil && d.owner == sess {
+		d.owner = nil
+		d.lastSeen = s.reg.now()
+		_ = d.page.SetInspect(false)
+	}
 	delete(s.sessions, id)
 	s.reg.remove(id)
 	close(sess.done)
 }
 
-// sweep frees idle tabs and disconnects cached CDP engines for sandboxes that
-// have held zero tabs beyond the TTL. It never destroys containers — the
-// sandbox-gateway owns their lifecycle.
+// sweep detaches idle viewers, closes desktop pages past DesktopIdleTTL,
+// forgets desktops whose page no longer answers (sandbox recycled), and
+// disconnects CDP engines of sandboxes without a viewer or desktop beyond
+// ContainerIdleTTL. It never destroys containers — the sandbox-gateway owns
+// their lifecycle.
 func (s *Service) sweep() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for _, id := range s.reg.idle(s.cfg.TabIdleTTL) {
 		s.closeLocked(id, "idle")
 	}
-	for _, name := range s.reg.reapableContainers(s.cfg.ContainerIdleTTL) {
-		if cs, ok := s.containers[name]; ok {
-			_ = cs.engine.Close()
-			delete(s.containers, name)
+	if ttl := s.cfg.DesktopIdleTTL; ttl > 0 {
+		cutoff := s.reg.now().Add(-ttl)
+		for name, d := range s.desktops {
+			if d.owner == nil && d.lastSeen.Before(cutoff) {
+				s.dropDesktopLocked(name, d, "desktop-closed")
+			}
 		}
+	}
+	unattended := map[string]*desktop{}
+	for name, d := range s.desktops {
+		if d.owner == nil {
+			unattended[name] = d
+		}
+	}
+	s.mu.Unlock()
+
+	// Probe outside the lock: a recycled sandbox makes the call wait for the timeout.
+	var gone []string
+	for name, d := range unattended {
+		ctx, cancel := context.WithTimeout(context.Background(), desktopProbeTimeout)
+		_, err := d.page.URL(ctx)
+		cancel()
+		if err != nil {
+			gone = append(gone, name)
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, name := range gone {
+		if d := s.desktops[name]; d == unattended[name] && d.owner == nil {
+			delete(s.desktops, name)
+			s.dropEngineLocked(name)
+			s.reg.forgetContainer(name)
+		}
+	}
+	for _, name := range s.reg.reapableContainers(s.cfg.ContainerIdleTTL) {
+		if _, ok := s.desktops[name]; ok {
+			continue
+		}
+		s.dropEngineLocked(name)
 		s.reg.forgetContainer(name)
 	}
 }

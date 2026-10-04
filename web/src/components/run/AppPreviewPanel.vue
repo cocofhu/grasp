@@ -43,13 +43,17 @@ function isDirectPort(p: PreviewPort): boolean {
   return p.mode === 'direct' && !!(p.directUrl || '').trim()
 }
 
+/** IP-direct ports also get noVNC; direct only adds an open-in-new-tab button. */
 function isVncPort(p: PreviewPort): boolean {
-  return !isUrlPreview(p) && !isDirectPort(p)
+  return !isUrlPreview(p)
 }
 
 const activePort = ref<number | null>(null)
 const vncPorts = computed(() => ports.value.filter(isVncPort))
 const activeVnc = computed(() => vncPorts.value.find((p) => previewTabKey(p) === activeKey.value) || null)
+const activeDirectUrl = computed(() =>
+  activeVnc.value && isDirectPort(activeVnc.value) ? (activeVnc.value.directUrl || '').trim() : '',
+)
 /** Port the single noVNC socket is bound to; changing it reconnects. */
 const vncConnPort = ref<number | null>(null)
 /** Last VNC port shown; kept while a direct/url tab is active so we do not navigate away. */
@@ -218,13 +222,6 @@ function selectPreview(key: string) {
           :url="(p.url || '').trim()"
           :title="previewTabLabel(p)"
         />
-        <DirectPreviewLauncher
-          v-for="p in ports.filter((x) => isDirectPort(x))"
-          v-show="activeKey === previewTabKey(p)"
-          :key="`direct-${previewTabKey(p)}`"
-          :direct-url="p.directUrl || ''"
-          :issue-ticket="() => api.embedTicket(runId, nodeId)"
-        />
         <NovncPreviewPanel
           v-if="vncConnPort != null"
           v-show="!!activeVnc"
@@ -236,7 +233,16 @@ function selectPreview(key: string) {
           :compact="compact"
           @pick="onPick"
           @staged-pick="onStagedPick"
-        />
+        >
+          <template v-if="activeDirectUrl" #toolbar-extra>
+            <DirectPreviewLauncher
+              :key="activeDirectUrl"
+              compact
+              :direct-url="activeDirectUrl"
+              :issue-ticket="() => api.embedTicket(runId, nodeId)"
+            />
+          </template>
+        </NovncPreviewPanel>
       </div>
       <PreviewFeedbackChat
         v-if="!compact && showFeedback"

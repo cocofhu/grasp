@@ -33,7 +33,8 @@ const NovncStub = defineComponent({
   name: 'NovncPreviewPanel',
   props: { runId: String, nodeId: String, port: Number, targetPort: Number, fill: Boolean, compact: Boolean },
   emits: ['pick'],
-  template: '<div data-testid="novnc-stub" :data-port="port" :data-target-port="targetPort" />',
+  template:
+    '<div data-testid="novnc-stub" :data-port="port" :data-target-port="targetPort"><slot name="toolbar-extra" /></div>',
 })
 
 const FeedbackStub = defineComponent({
@@ -164,7 +165,7 @@ describe('AppPreviewPanel', () => {
     wrapper.unmount()
   })
 
-  it('direct mode opens a new tab carrying a drawer ticket instead of embedding', async () => {
+  it('direct mode keeps noVNC and adds a new-tab button carrying a drawer ticket', async () => {
     apiMocks.nodePreviews.mockResolvedValue({
       ports: [
         {
@@ -177,9 +178,10 @@ describe('AppPreviewPanel', () => {
     })
     const wrapper = mountPanel()
     await flushPromises()
-    expect(wrapper.find('[data-testid="novnc-stub"]').exists()).toBe(false)
+    const novnc = wrapper.get('[data-testid="novnc-stub"]')
+    expect(novnc.attributes('data-port')).toBe('18081')
     expect(wrapper.find('iframe').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="direct-preview-address"]').text()).toBe('http://127.0.0.1:18081/')
+    expect(novnc.find('[data-testid="app-preview-direct-open"]').attributes('title')).toBe('http://127.0.0.1:18081/')
 
     const tab = { opener: {} as unknown, closed: false, location: { href: '' } }
     const openSpy = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window)
@@ -191,6 +193,23 @@ describe('AppPreviewPanel', () => {
     expect(tab.opener).toBeNull()
     expect(tab.location.href).toBe(`http://127.0.0.1:18081/#__grasp_embed&run=run-1&node=preview-1&ticket=tk&theme=dark&lang=${locale.value}`)
     openSpy.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('shows the new-tab button only while a direct port is active', async () => {
+    apiMocks.nodePreviews.mockResolvedValue({
+      ports: [
+        { port: 5173, label: '前端', mode: 'direct', directUrl: 'http://10.0.0.5:5173/' },
+        { port: 8080, label: 'API' },
+      ],
+    })
+    const wrapper = mountPanel()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="app-preview-direct-open"]').exists()).toBe(true)
+    await wrapper.findAll('button').find((b) => b.text() === 'API')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="app-preview-direct-open"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="novnc-stub"]')).toHaveLength(1)
     wrapper.unmount()
   })
 

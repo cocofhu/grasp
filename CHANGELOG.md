@@ -4,6 +4,14 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **App preview:** noVNC now keeps one persistent page per sandbox. Reopening
+  the preview resumes the same screen without reloading, switching ports
+  navigates within that page, and browser logins survive a Chromium restart.
+  The viewer starts watch-only, with **Take over** / **Return control**. With
+  IP direct preview on, the panel still uses noVNC and adds an "open directly in
+  new tab" button. Public share pages behave the same way. The new
+  `desktop_idle_ttl_seconds` setting (default 0) can close idle pages.
+
 ## 1.2.1 — 2026-09-28
 
 - **Preview drawer:** compact Page Harness CoCo title bar (grip + PH badge +

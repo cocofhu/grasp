@@ -53,9 +53,9 @@ function publicTabKey(p: PublicPreviewPort): string {
   return `port:${p.port}`
 }
 
+/** IP-direct sandbox port: previews over noVNC and can also open in a new tab. */
 function isDirectPort(p: PublicPreviewPort): boolean {
-  if (isUrlPreview(p)) return true
-  return !!(p.directUrl || '').trim()
+  return !isUrlPreview(p) && !!(p.directUrl || '').trim()
 }
 
 function tabLabel(p: PublicPreviewPort): string {
@@ -107,7 +107,7 @@ async function exchangeTicket() {
   if (props.mobile) return
   const meta = activeMeta.value
   if (!meta) return
-  if (isUrlPreview(meta) || isDirectPort(meta)) {
+  if (isUrlPreview(meta)) {
     ticketBusy.value = false
     return
   }
@@ -252,7 +252,7 @@ function retry() {
           <p>{{ t('pages.publicGate.appPreviewLinkInactive') }}</p>
         </div>
         <div
-          v-else-if="ticketError && !vncWsUrl && !activeIsDirect"
+          v-else-if="ticketError && !vncWsUrl && !activeIsUrl"
           class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-base/90 px-6 text-center text-sm text-txt3"
           data-testid="public-gate-app-preview-error"
         >
@@ -272,12 +272,6 @@ function retry() {
           :url="activeDirectUrl"
           :title="activeMeta ? tabLabel(activeMeta) : 'preview'"
         />
-        <DirectPreviewLauncher
-          v-else-if="activeIsDirect && activeDirectUrl"
-          :direct-url="activeDirectUrl"
-          :issue-ticket="active ? () => publicGateApi.embedTicket(token) : undefined"
-          data-testid="public-gate-app-preview-api"
-        />
         <NovncPreviewPanel
           v-else-if="vncWsUrl"
           :key="`public-vnc-${activePort}-${vncWsUrl}`"
@@ -287,7 +281,17 @@ function retry() {
           @pick="onPick"
           @staged-pick="onStagedPick"
           @reconnect-request="retry"
-        />
+        >
+          <template v-if="activeIsDirect && activeDirectUrl" #toolbar-extra>
+            <DirectPreviewLauncher
+              :key="activeDirectUrl"
+              compact
+              :direct-url="activeDirectUrl"
+              :issue-ticket="active ? () => publicGateApi.embedTicket(token) : undefined"
+              data-testid="public-gate-app-preview-api"
+            />
+          </template>
+        </NovncPreviewPanel>
         <div
           v-else-if="ticketBusy"
           class="flex h-full items-center justify-center text-sm text-txt3"

@@ -79,13 +79,7 @@ func (h *Handlers) PublicPreviewTicket(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "port_not_registered", "message": "预览端口未注册"})
 		return
 	}
-	wantPurpose := gateshare.PreviewPurposeVNC
-	if strings.TrimSpace(matched.DirectURL) != "" {
-		wantPurpose = gateshare.PreviewPurposeAPI
-	}
-	if purpose != wantPurpose {
-		purpose = wantPurpose
-	}
+	purpose = publicTicketPurpose(*matched, purpose)
 	ticket, exp, err := h.GateShareTickets.Issue(
 		lookup.Link.TokenHash, lookup.Link.RunID, lookup.Link.NodeID, body.Port, purpose,
 	)
@@ -106,6 +100,22 @@ func (h *Handlers) PublicPreviewTicket(c *gin.Context) {
 		out["iframePath"] = fmt.Sprintf("/public/gate-approvals/preview-api/%s/", ticket)
 	}
 	c.JSON(http.StatusOK, out)
+}
+
+// publicTicketPurpose picks the ticket purpose for a registered port. External
+// URLs only have the API proxy and plain ports only noVNC; IP-direct ports
+// offer both, so the requested purpose wins.
+func publicTicketPurpose(p gateshare.PublicPreviewPort, requested string) string {
+	if p.Kind == "url" {
+		return gateshare.PreviewPurposeAPI
+	}
+	if strings.TrimSpace(p.DirectURL) == "" {
+		return gateshare.PreviewPurposeVNC
+	}
+	if requested == gateshare.PreviewPurposeAPI {
+		return gateshare.PreviewPurposeAPI
+	}
+	return gateshare.PreviewPurposeVNC
 }
 
 // PublicPreviewVNC proxies noVNC over a share-scoped ticket (no Session).
@@ -210,7 +220,7 @@ func (h *Handlers) PublicPreviewVNC(c *gin.Context) {
 	sess.Page().OnDescribeFailed(func() {
 		pushJSON(gin.H{"type": "describe-failed"})
 	})
-	pushJSON(gin.H{"type": "ready", "url": navigateURL})
+	pushJSON(gin.H{"type": "ready", "url": vncReadyURL(c.Request.Context(), sess.Page(), navigateURL)})
 
 	go func() {
 		select {
@@ -233,6 +243,9 @@ func (h *Handlers) PublicPreviewVNC(c *gin.Context) {
 				var m vncClientMsg
 				if json.Unmarshal(data, &m) == nil {
 					sess.Touch()
+					if !publicVncMsgAllowed(m) {
+						continue
+					}
 					h.applyVncMsg(sess.Page(), m, pushJSON)
 					continue
 				}
@@ -252,6 +265,24 @@ func (h *Handlers) PublicPreviewVNC(c *gin.Context) {
 			return
 		}
 	}
+}
+
+// publicVncMsgAllowed keeps anonymous viewers on in-sandbox loopback pages:
+// the desktop shares the owner's browser profile, so a goto elsewhere would
+// reach sites with the owner's logins.
+func publicVncMsgAllowed(m vncClientMsg) bool {
+	if m.Type != "navigate" || (m.Action != "goto" && m.URL == "") {
+		return true
+	}
+	u, err := url.Parse(strings.TrimSpace(m.URL))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	switch strings.ToLower(u.Hostname()) {
+	case "127.0.0.1", "localhost", "::1":
+		return true
+	}
+	return false
 }
 
 // PublicPreviewAPIProxy reverse-proxies API ports via opaque ticket path (leak-free).

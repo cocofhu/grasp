@@ -78,6 +78,10 @@ type BrowserConfig struct {
 	// ContainerIdleTTLSeconds drops a cached CDP attachment after the sandbox
 	// has held zero tabs for this long (does not destroy the sandbox). 0 = 600.
 	ContainerIdleTTLSeconds int `yaml:"container_idle_ttl_seconds"`
+	// DesktopIdleTTLSeconds closes a sandbox's preview page after no viewer has
+	// been attached for this long. 0 keeps the page (and its screen state) until
+	// the sandbox goes away.
+	DesktopIdleTTLSeconds int `yaml:"desktop_idle_ttl_seconds"`
 }
 
 // TabIdleTTL returns the per-tab idle lifetime before it is freed.
@@ -88,6 +92,12 @@ func (c *Config) TabIdleTTL() time.Duration {
 // ContainerIdleTTL returns how long an empty Chromium container is kept.
 func (c *Config) ContainerIdleTTL() time.Duration {
 	return time.Duration(c.Browser.ContainerIdleTTLSeconds) * time.Second
+}
+
+// DesktopIdleTTL returns how long an unwatched sandbox preview page is kept
+// (0 = for the sandbox's lifetime).
+func (c *Config) DesktopIdleTTL() time.Duration {
+	return time.Duration(c.Browser.DesktopIdleTTLSeconds) * time.Second
 }
 
 // AuthUser is one static login account (username + bcrypt password hash).

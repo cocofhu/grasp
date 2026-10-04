@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/browser"
+	"github.com/cocofhu/grasp/internal/gateshare"
 )
 
 type vncRecPage struct {
@@ -16,6 +17,8 @@ type vncRecPage struct {
 	inspectErr error
 	navs       []string
 	gotos      []string
+	url        string
+	urlErr     error
 }
 
 func (p *vncRecPage) StartScreencast(func(browser.Frame)) error { return nil }
@@ -35,6 +38,65 @@ func (p *vncRecPage) OnDescribeFailed(func())   {}
 func (p *vncRecPage) Navigate(a string) error   { p.navs = append(p.navs, a); return nil }
 func (p *vncRecPage) Goto(u string) error       { p.gotos = append(p.gotos, u); return nil }
 func (p *vncRecPage) Close() error              { return nil }
+func (p *vncRecPage) URL(context.Context) (string, error) {
+	return p.url, p.urlErr
+}
+
+func TestVncReadyURLPrefersPageURL(t *testing.T) {
+	ctx := context.Background()
+	const nav = "http://127.0.0.1:3000/"
+	if got := vncReadyURL(ctx, &vncRecPage{url: "http://127.0.0.1:3000/orders/7"}, nav); got != "http://127.0.0.1:3000/orders/7" {
+		t.Fatalf("got %q", got)
+	}
+	if got := vncReadyURL(ctx, &vncRecPage{}, nav); got != nav {
+		t.Fatalf("empty url should fall back, got %q", got)
+	}
+	if got := vncReadyURL(ctx, &vncRecPage{url: "x", urlErr: errors.New("gone")}, nav); got != nav {
+		t.Fatalf("error should fall back, got %q", got)
+	}
+}
+
+func TestPublicVncMsgAllowed(t *testing.T) {
+	cases := []struct {
+		m    vncClientMsg
+		want bool
+	}{
+		{vncClientMsg{Type: "inspect", On: true}, true},
+		{vncClientMsg{Type: "navigate", Action: "reload"}, true},
+		{vncClientMsg{Type: "navigate", Action: "goto", URL: "http://127.0.0.1:3000/"}, true},
+		{vncClientMsg{Type: "navigate", Action: "goto", URL: "https://localhost/x"}, true},
+		{vncClientMsg{Type: "navigate", Action: "goto", URL: "http://[::1]:8080/"}, true},
+		{vncClientMsg{Type: "navigate", Action: "goto", URL: "https://github.com/"}, false},
+		{vncClientMsg{Type: "navigate", Action: "goto", URL: "file:///etc/passwd"}, false},
+		{vncClientMsg{Type: "navigate", Action: "goto", URL: "about:blank"}, false},
+		{vncClientMsg{Type: "navigate", Action: "goto"}, false},
+		{vncClientMsg{Type: "navigate", URL: "http://127.0.0.1.evil.com/"}, false},
+	}
+	for _, c := range cases {
+		if got := publicVncMsgAllowed(c.m); got != c.want {
+			t.Errorf("publicVncMsgAllowed(%+v) = %v, want %v", c.m, got, c.want)
+		}
+	}
+}
+
+func TestPublicTicketPurpose(t *testing.T) {
+	cases := []struct {
+		port      gateshare.PublicPreviewPort
+		requested string
+		want      string
+	}{
+		{gateshare.PublicPreviewPort{Kind: "url", URL: "https://x/", DirectURL: "https://x/"}, "vnc", gateshare.PreviewPurposeAPI},
+		{gateshare.PublicPreviewPort{Kind: "port", Port: 3000}, "api", gateshare.PreviewPurposeVNC},
+		{gateshare.PublicPreviewPort{Kind: "port", Port: 3000, DirectURL: "http://10.0.0.1:3000/"}, "vnc", gateshare.PreviewPurposeVNC},
+		{gateshare.PublicPreviewPort{Kind: "port", Port: 3000, DirectURL: "http://10.0.0.1:3000/"}, "", gateshare.PreviewPurposeVNC},
+		{gateshare.PublicPreviewPort{Kind: "port", Port: 3000, DirectURL: "http://10.0.0.1:3000/"}, "api", gateshare.PreviewPurposeAPI},
+	}
+	for i, c := range cases {
+		if got := publicTicketPurpose(c.port, c.requested); got != c.want {
+			t.Errorf("case %d: got %q, want %q", i, got, c.want)
+		}
+	}
+}
 
 func decodeVnc(t *testing.T, raw string) vncClientMsg {
 	t.Helper()

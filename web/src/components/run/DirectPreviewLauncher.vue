@@ -9,6 +9,8 @@ const props = defineProps<{
   directUrl: string
   /** Mints the chat-drawer ticket; the preview opens without a drawer when this fails. */
   issueTicket?: () => Promise<EmbedTicket>
+  /** Toolbar button next to the noVNC preview instead of a full-panel launcher. */
+  compact?: boolean
 }>()
 
 const { t } = useI18n()
@@ -42,7 +44,39 @@ async function open() {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col items-center justify-center gap-3 px-6 text-center" data-testid="app-preview-direct">
+  <span v-if="compact" class="relative inline-flex items-center" data-testid="app-preview-direct">
+    <button
+      type="button"
+      class="rounded px-2 py-0.5 text-[11px] text-txt2 hover:bg-overlay hover:text-txt disabled:opacity-60"
+      :disabled="opening"
+      :title="directUrl"
+      data-testid="app-preview-direct-open"
+      @click="open"
+    >
+      {{ t('pages.appPreview.directOpenTabShort') }} ↗
+    </button>
+    <span
+      v-if="tip === 'chat'"
+      class="rounded-md absolute left-0 top-full z-20 mt-1 w-[260px] border border-warn/40 bg-warn/10 px-2.5 py-1.5 text-[11px] text-warn shadow-card"
+      role="status"
+      data-testid="direct-preview-tip"
+    >
+      {{ t('pages.appPreview.directChatUnavailable') }}
+    </span>
+    <a
+      v-else-if="tip === 'blocked'"
+      :href="blockedUrl"
+      target="_blank"
+      rel="noopener"
+      class="rounded-md absolute left-0 top-full z-20 mt-1 w-max border border-line bg-overlay px-2.5 py-1.5 text-[11px] text-accent shadow-card hover:underline"
+      data-testid="direct-preview-tip"
+    >{{ t('pages.appPreview.directPopupBlocked') }}</a>
+  </span>
+  <div
+    v-else
+    class="flex h-full min-h-0 flex-col items-center justify-center gap-3 px-6 text-center"
+    data-testid="app-preview-direct"
+  >
     <button
       type="button"
       class="max-w-full truncate rounded border border-line bg-base px-2 py-1 font-mono text-[12px] text-txt2 hover:border-accent hover:text-txt"

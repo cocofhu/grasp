@@ -3139,6 +3139,7 @@
       "connectionLost": "预览连接已断开",
       "sandboxRecycled": "沙箱已回收,预览不可用",
       "directOpenTab": "新标签打开",
+      "directOpenTabShort": "新标签页直连打开",
       "externalUrlHint": "外部 URL 直连预览；跨域站点不支持取点标注。",
       "novnc": {
         "back": "后退",
@@ -3148,6 +3149,10 @@
         "exitFullscreen": "退出全屏",
         "inspect": "取点标注",
         "cancelInspect": "取消标注",
+        "takeOver": "接管",
+        "returnControl": "交还",
+        "controlBanner": "你正在操作这个页面，完成后点「交还」",
+        "watchOnlyHint": "仅观看 · 点「接管」后可用鼠标键盘操作",
         "usePick": "添加到聊天 ⤴",
         "clearPick": "清除",
         "pickedLabel": "已选出",

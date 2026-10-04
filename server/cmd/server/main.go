@@ -373,6 +373,7 @@ func main() {
 		MaxTabsPerContainer: cfg.Browser.MaxTabsPerContainer,
 		TabIdleTTL:          cfg.TabIdleTTL(),
 		ContainerIdleTTL:    cfg.ContainerIdleTTL(),
+		DesktopIdleTTL:      cfg.DesktopIdleTTL(),
 	})
 	browserSvc.Start()
 	log.Info().Int("max_tabs", cfg.Browser.MaxTabs).Msg("in-sandbox vnc preview enabled")

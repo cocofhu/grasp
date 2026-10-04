@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/cdp"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
 	"github.com/rs/zerolog/log"
@@ -45,34 +46,39 @@ var ErrDesktopNotReady = errors.New("desktop window not ready for inspect")
 // returns an Engine. The browser is NOT bound to the caller's request context so
 // it outlives individual requests; its lifetime is the container's.
 func dialRod(_ context.Context, httpBase string) (Engine, error) {
-	ws, err := launcher.ResolveURL(httpBase)
+	wsURL, err := launcher.ResolveURL(httpBase)
 	if err != nil {
 		return nil, fmt.Errorf("resolve cdp url: %w", err)
 	}
-	// NoDefaultDevice: rod's laptop preset (1280x800) would override the layout
-	// viewport before we can measure the real content area.
-	b := rod.New().ControlURL(ws).NoDefaultDevice()
-	if err := b.Connect(); err != nil {
+	// Own the WebSocket so Close can drop the connection: rod's Browser.Close
+	// sends Browser.close, which would kill the sandbox Chromium and its state.
+	ws := &cdp.WebSocket{}
+	if err := ws.Connect(context.Background(), wsURL, nil); err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
 	}
-	return &rodEngine{browser: b}, nil
+	// NoDefaultDevice: rod's laptop preset (1280x800) would override the layout
+	// viewport before we can measure the real content area.
+	b := rod.New().Client(cdp.New().Start(ws)).NoDefaultDevice()
+	if err := b.Connect(); err != nil {
+		_ = ws.Close()
+		return nil, fmt.Errorf("connect: %w", err)
+	}
+	return &rodEngine{browser: b, ws: ws}, nil
 }
 
-type rodEngine struct{ browser *rod.Browser }
+type rodEngine struct {
+	browser *rod.Browser
+	ws      *cdp.WebSocket
+}
 
 func (e *rodEngine) NewTab(_ context.Context, url string) (Page, error) {
-	// Each tab gets its own browser context (isolated cookies/storage), disposed
-	// on close, so multiple viewers of the same app don't share login state.
-	ctxRes, err := proto.TargetCreateBrowserContext{DisposeOnDetach: false}.Call(e.browser)
+	// Default browser context: cookies and storage live in the Chromium profile
+	// and survive viewer reconnects and Chromium restarts.
+	page, err := e.browser.Page(proto.TargetCreateTarget{URL: url})
 	if err != nil {
-		return nil, fmt.Errorf("create browser context: %w", err)
-	}
-	page, err := e.browser.Page(proto.TargetCreateTarget{URL: url, BrowserContextID: ctxRes.BrowserContextID})
-	if err != nil {
-		_ = proto.TargetDisposeBrowserContext{BrowserContextID: ctxRes.BrowserContextID}.Call(e.browser)
 		return nil, fmt.Errorf("create page: %w", err)
 	}
-	rp := &rodPage{engine: e, page: page, ctxID: ctxRes.BrowserContextID}
+	rp := &rodPage{engine: e, page: page}
 	// Headed Chromium on Xvfb (no window manager) opens NewTab as another
 	// window. presentDesktop covers the framebuffer with the content area and
 	// pins the CSS viewport to that content area (DSF 1). Tab open stays
@@ -479,12 +485,11 @@ func (rp *rodPage) readContentSize() (int, int, error) {
 	return 0, 0, fmt.Errorf("content size unavailable")
 }
 
-func (e *rodEngine) Close() error { return e.browser.Close() }
+func (e *rodEngine) Close() error { return e.ws.Close() }
 
 type rodPage struct {
 	engine *rodEngine
 	page   *rod.Page
-	ctxID  proto.BrowserBrowserContextID
 
 	mu                sync.Mutex
 	onPick            func(Pick)
@@ -713,11 +718,15 @@ func (rp *rodPage) Close() error {
 	}
 	rp.desktopMu.Unlock()
 	rp.inspectCancel.stop()
-	err := rp.page.Close()
-	// Dispose the isolated browser context so it doesn't leak in a long-lived
-	// container.
-	_ = proto.TargetDisposeBrowserContext{BrowserContextID: rp.ctxID}.Call(rp.engine.browser)
-	return err
+	return rp.page.Close()
+}
+
+func (rp *rodPage) URL(ctx context.Context) (string, error) {
+	info, err := proto.TargetGetTargetInfo{TargetID: rp.page.TargetID}.Call(rp.page.Context(ctx))
+	if err != nil {
+		return "", err
+	}
+	return info.TargetInfo.URL, nil
 }
 
 // installPickListener wires Overlay pick + cancel events to page callbacks.
