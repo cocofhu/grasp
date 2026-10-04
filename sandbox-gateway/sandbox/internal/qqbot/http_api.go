@@ -150,7 +150,7 @@ func (s *Service) accessToken(ctx context.Context, cfg Config) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, rerr := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if rerr != nil {
 		return "", fmt.Errorf("qq token read body: %w", rerr)
@@ -187,7 +187,7 @@ func (s *Service) getGatewayURL(ctx context.Context, token string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, rerr := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if rerr != nil {
 		return "", fmt.Errorf("gateway read body: %w", rerr)

@@ -78,7 +78,7 @@ func (c *client) accessToken(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("token http %d: %s", resp.StatusCode, string(raw))
@@ -185,7 +185,7 @@ func (c *client) doJSON(ctx context.Context, method, path string, body any, out 
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return &apiError{StatusCode: resp.StatusCode, Method: method, Path: path, Body: string(raw)}

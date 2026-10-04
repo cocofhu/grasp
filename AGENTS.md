@@ -48,14 +48,29 @@ add a separate `Unreleased` bullet in `CHANGELOG.md`.
 | `scripts/build-sandbox-runtime.sh` | Builds the sandbox runtime bundle (also run by `server/Dockerfile`) |
 | `docs/` | Project site (static HTML) + help (Markdown → HTML); CI publishes to `cocofhu/approving-pages` |
 
-Always-on branch-protection job: `.github/workflows/ci.yml` (`gate` only —
-does **not** run lint/test). Module suites are path-filtered.
+Always-on branch-protection job: `.github/workflows/ci.yml` (`gate`). It runs
+the brand-text assert, pinned `actionlint` v1.7.12, and error-level
+`shellcheck`. It does **not** run module lint, tests, or coverage. Module
+suites are path-filtered.
 
 ---
 
 ## Change path → local commands
 
 Copy from CI. Cross-tree changes: run each matching suite. `ROOT` = repo root.
+
+### Every pull request → `ci` (`gate`)
+
+No path filter. From the repo root:
+
+```bash
+./.github/scripts/actionlint.sh          # actionlint v1.7.12, all .github/workflows
+./.github/scripts/shellcheck-error.sh    # shellcheck v0.11.0, --severity=error
+```
+
+`shellcheck-error.sh` covers repo-root `*.sh`, `server/scripts`, `scripts`,
+`sandbox-gateway`, and `.github/scripts`. Warnings do not fail. This job is
+not module proof.
 
 ### `server/**` or root `.golangci.yml` → `ci-server`
 
@@ -112,9 +127,14 @@ help pages are Markdown under `content/` (built to `public/`).
 cd docs
 npm ci --no-audit --no-fund
 npm run build
+npm_config_registry=https://registry.npmjs.org npm run audit:check
 # optional local preview (root-relative assets):
 # BASE_PATH=/ npm run server
 ```
+
+`audit:check` is the high/critical npm audit (`docs/scripts/audit-check.mjs`,
+`docs/audit-allowlist.json`). The same command is the `npm audit (docs)` job
+in `security.yml`. An expired allowlist entry fails the command.
 
 On push to `main`, `ci-docs` also runs `.github/scripts/publish-pages.sh` when
 Secret `PAGES_DEPLOY_KEY` is set (SSH deploy key with write access on
@@ -145,9 +165,10 @@ node --check scripts/mock-chat-model.mjs
 ./scripts/test-runtime-bootstrap.sh
 node --test scripts/mock-chat-model.test.mjs
 
-# Sandbox Go (golangci from sandbox/; cover from sandbox-gateway/)
+# Sandbox Go (golangci and go vet from sandbox/; cover from sandbox-gateway/)
 ROOT="$PWD/.."   # if cwd is sandbox-gateway; else set to repo root
 (cd sandbox && golangci-lint run --config "$ROOT/.golangci.yml" ./...)
+(cd sandbox && go vet ./...)
 ./scripts/cover-check-sandbox.sh 90
 
 # Docker cli-tools stage (glab/gh) — as in ci-sandbox
@@ -193,7 +214,12 @@ running sandboxes). Details: `sandbox-gateway/sandbox/README.md`.
 | Gateway Go coverage | ≥ **90** via `./scripts/cover-check.sh gateway 90` | `ci-gateway` |
 | Sandbox Go coverage | ≥ **90** via `./scripts/cover-check-sandbox.sh 90` | `ci-sandbox` |
 | Web Lines coverage | ≥ **85** | `web/vite.config.ts` → `thresholds.lines` |
-| golangci-lint | v2.12, root `.golangci.yml` | ci-server / ci-gateway / ci-sandbox |
+| golangci-lint | v2.12, root `.golangci.yml`: staticcheck SA*/S1*, errcheck, unused; `_test.go` excluded | ci-server / ci-gateway / ci-sandbox |
+| go vet | `go vet ./...` in server, gateway, and `sandbox-gateway/sandbox` | ci-server / ci-gateway / ci-sandbox `sandbox-go` |
+| actionlint | v1.7.12 via `./.github/scripts/actionlint.sh` | always-on `ci` |
+| shellcheck | v0.11.0, `--severity=error`, via `./.github/scripts/shellcheck-error.sh` | always-on `ci` |
+| govulncheck | v1.1.4 via `./.github/scripts/govulncheck-check.sh` on Go 1.25.x (latest patch) | `security.yml` |
+| docs npm audit | `npm run audit:check` in `docs/`, high/critical, official registry | `security.yml` |
 | ESLint | `npm run lint` — **errors** fail; warnings allowed | `ci-web` |
 | vue-tsc | `npx vue-tsc --noEmit` | `ci-web` |
 | gen-configdoc | `go run ./cmd/gen-configdoc -out CONFIGURATION.md -check` | `ci-server` |
@@ -224,8 +250,8 @@ not a substitute for these gates.
    already-exists / no-commits-between; non-zero create must not mean hard fail;
    idempotent success may leave empty `mr_url`. (PR #13 · git SKILL)
 4. **Path-filtered CI blind spot** — Docs-only / root-only / cross-module PRs may
-   skip module jobs; the always-on `ci` gate is not module proof. Still run local
-   suites for trees you actually touched.
+   skip module jobs. The always-on `ci` gate runs actionlint and shellcheck,
+   and is still not module proof. Still run local suites for trees you actually touched.
 5. **Runtime hot update skips one-time startup** — Pushing a bundle restarts
    only `backend` / `preview-inject` (`services.sh`); one-time `startup.sh`
    steps (credentials, clone, dockerd, code-server config) apply to new sandboxes only.

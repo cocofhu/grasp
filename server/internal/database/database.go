@@ -89,7 +89,7 @@ func ensureSQLiteTemplate() error {
 			sqliteTemplateErr = err
 			return
 		}
-		defer os.RemoveAll(dir)
+		defer func() { _ = os.RemoveAll(dir) }()
 		path := filepath.Join(dir, "template.db")
 		// Build the template with DELETE journal so the schema lives in a single
 		// file (no -wal/-shm) and a byte-for-byte copy is a complete DB.

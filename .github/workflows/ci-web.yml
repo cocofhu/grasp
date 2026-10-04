@@ -45,9 +45,11 @@ jobs:
             exit 1
           fi
           color="$(../.github/scripts/coverage-badge-color.sh "$pct")"
-          echo "pct=$pct" >>"$GITHUB_OUTPUT"
-          echo "color=$color" >>"$GITHUB_OUTPUT"
-          echo "ok=true" >>"$GITHUB_OUTPUT"
+          {
+            echo "pct=$pct"
+            echo "color=$color"
+            echo "ok=true"
+          } >>"$GITHUB_OUTPUT"
           echo "web Lines coverage=${pct}% color=${color}"
       - name: Publish coverage-web badge
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.coverage.outputs.ok == 'true'

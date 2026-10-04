@@ -19,3 +19,7 @@ jobs:
           echo "server/ → ci-server; web/ → ci-web; sandbox-gateway/sandbox|scripts → ci-sandbox; sandbox-gateway/gateway → ci-gateway; docs/ → ci-docs."
       - name: Assert no Approving brand remnants
         run: node scripts/assert-no-approving-brand.mjs
+      - name: actionlint
+        run: ./.github/scripts/actionlint.sh
+      - name: shellcheck (error)
+        run: ./.github/scripts/shellcheck-error.sh

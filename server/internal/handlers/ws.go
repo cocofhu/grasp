@@ -50,7 +50,7 @@ func (h *Handlers) RunEvents(c *gin.Context) {
 		log.Debug().Str("run_id", runID).Err(err).Msg("run events websocket upgrade failed")
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	w := &wsWriter{conn: conn}
 
 	ch, unsub := h.Eng.Broker().Subscribe(runID)

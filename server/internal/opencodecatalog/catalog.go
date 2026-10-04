@@ -197,7 +197,7 @@ func (s *Store) fetch(ctx context.Context) ([]Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("catalog %s: unexpected status %d", s.url, resp.StatusCode)
 	}

@@ -80,7 +80,7 @@ func downloadImage(ctx context.Context, att attachment, authHeader string) (chan
 	if err != nil {
 		return channels.Image{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return channels.Image{}, fmt.Errorf("download image http %d", resp.StatusCode)
 	}

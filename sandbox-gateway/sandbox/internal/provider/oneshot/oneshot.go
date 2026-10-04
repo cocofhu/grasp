@@ -265,7 +265,7 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 			e.emitPromptDone("failed", nil)
 			return provider.TurnResult{StopReason: "failed"}, merr
 		}
-		defer os.RemoveAll(dir)
+		defer func() { _ = os.RemoveAll(dir) }()
 		log.Printf("oneshot: agent %q 已将 %d 个附件落到 %s", e.c.AgentName(), len(paths), dir)
 		text = provider.AppendAttachmentRefs(text, paths)
 		images = nil
@@ -354,7 +354,7 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 			_ = os.Remove(logPath)
 			return turnOutcome{stopReason: "failed"}, fmt.Errorf("oneshot: close log file: %w", cerr)
 		}
-		defer os.Remove(logPath)
+		defer func() { _ = os.Remove(logPath) }()
 	}
 
 	var args []string
@@ -603,7 +603,7 @@ func (e *engine) Cancel() error {
 
 func (e *engine) Close() error {
 	e.closeOnce.Do(func() {
-		e.Cancel()
+		_ = e.Cancel()
 		close(e.done)
 	})
 	return nil

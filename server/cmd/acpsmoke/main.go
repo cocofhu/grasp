@@ -17,7 +17,7 @@ func main() {
 		os.Exit(2)
 	}
 	var port int
-	fmt.Sscanf(os.Args[1], "%d", &port)
+	_, _ = fmt.Sscanf(os.Args[1], "%d", &port)
 	prompt := os.Args[2]
 
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)

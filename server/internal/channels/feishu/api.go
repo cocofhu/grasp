@@ -45,7 +45,7 @@ func probeTenantToken(ctx context.Context, baseURL, appID, secret string) (strin
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	var out tokenResp
 	if err := json.Unmarshal(raw, &out); err != nil {
@@ -72,7 +72,7 @@ func fetchBotOpenID(ctx context.Context, baseURL, tenantToken string) string {
 	if err != nil {
 		return ""
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	var out botInfoResp
 	if json.Unmarshal(raw, &out) != nil || out.Code != 0 {

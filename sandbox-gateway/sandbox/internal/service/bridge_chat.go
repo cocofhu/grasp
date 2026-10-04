@@ -204,7 +204,7 @@ func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item
 			}, oid))
 			return
 		}
-		defer os.RemoveAll(dir)
+		defer func() { _ = os.RemoveAll(dir) }()
 		log.Printf("prompt %s oid=%s: 已将 %d 个附件落到 %s", b.AgentLogPrefix(), oid, len(paths), dir)
 		text = provider.AppendAttachmentRefs(text, paths)
 		images = nil

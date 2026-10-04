@@ -1,3 +1,5 @@
+# shellcheck shell=bash
+# Sourced by e2e-stub/entrypoint.sh. No shebang: direct exec stays unchanged.
 inject_one() {
     local spec="$1" src dest tmp="" _curl_cfg="" _h
     IFS='|' read -r src dest <<< "$spec"

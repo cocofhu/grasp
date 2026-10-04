@@ -129,10 +129,6 @@ func (e *Engine) laneSession(runID, producerID, lane string) *reviewSession {
 	return e.reviewSess[e.laneSessionKey(runID, producerID, lane)]
 }
 
-func (e *Engine) dropReviewSessionIfIdle(runID, producerID string) {
-	e.dropLaneSessionIfIdle(runID, producerID, "")
-}
-
 func (e *Engine) dropLaneSessionIfIdle(runID, producerID, lane string) {
 	key := e.laneSessionKey(runID, producerID, lane)
 	e.reviewMu.Lock()

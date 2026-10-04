@@ -159,7 +159,7 @@ func (h *Handlers) PublicPreviewVNC(c *gin.Context) {
 		log.Debug().Err(err).Msg("public preview-vnc websocket upgrade failed")
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	unregister := func() {}
 	if h.GateShareSessions != nil {
@@ -206,7 +206,7 @@ func (h *Handlers) PublicPreviewVNC(c *gin.Context) {
 		_ = writeJSON(gin.H{"type": "error", "message": "vnc upstream failed"})
 		return
 	}
-	defer upstream.Close()
+	defer func() { _ = upstream.Close() }()
 
 	done := make(chan struct{})
 	defer close(done)

@@ -21,7 +21,7 @@ func (s *Service) downloadImage(ctx context.Context, rawURL string, limit int64)
 	if err != nil {
 		return service.PromptImage{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return service.PromptImage{}, fmt.Errorf("image status=%d", resp.StatusCode)
 	}

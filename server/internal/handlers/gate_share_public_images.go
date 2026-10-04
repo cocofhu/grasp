@@ -98,7 +98,7 @@ func (h *Handlers) writePublicPromptImage(c *gin.Context, img models.PromptImage
 			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
 			return
 		}
-		defer rc.Close()
+		defer func() { _ = rc.Close() }()
 
 		header := make([]byte, 512)
 		n, readErr := io.ReadFull(rc, header)

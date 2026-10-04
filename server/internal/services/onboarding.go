@@ -408,10 +408,6 @@ func agentAuthConfigFileName(backend string) string {
 	return "settings.json"
 }
 
-func (s *OnboardingService) ensureFirstInstallOrg(agentNames []string) error {
-	return s.ensureOnboardingOrg(FirstInstallGroupID, FirstInstallGroupName, agentNames)
-}
-
 func (s *OnboardingService) ensureOnboardingOrg(groupID, groupName string, agentNames []string) error {
 	if s.Org == nil {
 		return nil

@@ -133,7 +133,7 @@ func (g *GatewayClient) do(ctx context.Context, method, path string, body any, o
 	if err != nil {
 		return fmt.Errorf("%s %s: %w", method, path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return fmt.Errorf("read %s %s response: %w", method, path, err)

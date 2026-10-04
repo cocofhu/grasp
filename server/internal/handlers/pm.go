@@ -656,7 +656,7 @@ func (h *Handlers) PmThreadChat(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	var wmu sync.Mutex
 	write := func(v any) error {

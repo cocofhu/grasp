@@ -160,6 +160,9 @@ jobs:
           version: v2.12
           working-directory: sandbox-gateway/sandbox
           args: --config=${{ github.workspace }}/.golangci.yml
+      - name: go vet
+        working-directory: sandbox-gateway/sandbox
+        run: go vet ./...
       - name: Sandbox Go coverage gate
         id: cover
         run: ./scripts/cover-check-sandbox.sh 90

@@ -140,7 +140,6 @@ func gatePathSummary(g models.Graph, upToNodeID string) string {
 	if start == upToNodeID {
 		return labelOf(upToNodeID)
 	}
-	type edge struct{ to string }
 	out := map[string][]string{}
 	for _, e := range g.Edges {
 		if e.Kind == models.EdgeFailure || e.Kind == models.EdgeRollback {
