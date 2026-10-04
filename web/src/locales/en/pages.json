@@ -82,6 +82,9 @@
         "workflow": "Workflow",
         "model": "Model",
         "nodeType": "Node type",
+        "source": "Source",
+        "status": "Status",
+        "phase": "Phase",
         "run": "Run"
       },
       "charts": {
@@ -94,7 +97,11 @@
           "project": "Stacked usage by project",
           "workflow": "Stacked usage by workflow",
           "model": "Stacked usage by model",
-          "nodeType": "Stacked usage by node type"
+          "nodeType": "Stacked usage by node type",
+          "source": "Stacked usage by source",
+          "status": "Stacked usage by status",
+          "phase": "Stacked usage by phase",
+          "run": "Stacked usage by run"
         },
         "area": "Stacked area",
         "areaHint": "Source, input/output/cache, or outcome over time",

@@ -521,13 +521,54 @@ describe('TokenAnalyticsView', () => {
     wrapper.unmount()
   })
 
+  it('enables source, status, phase, and run bars only when at least two buckets exist (g3.1 g4.2)', async () => {
+    const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
+    await flushPromises()
+    for (const dim of ['source', 'status', 'phase', 'run']) {
+      expect(wrapper.find(`[data-testid="token-analytics-bar-dimension-${dim}"]`).attributes('disabled')).toBeDefined()
+    }
+    wrapper.unmount()
+
+    vi.mocked(api.getGlobalTokenStats).mockResolvedValueOnce({
+      ...sampleData,
+      sources: [
+        { key: 'workflow', name: 'workflow', total: 100, inputTokens: 60, outputTokens: 40, cost: 1.5 },
+        { key: 'studio', name: 'studio', total: 40, inputTokens: 20, outputTokens: 20, cost: 0.5 },
+      ],
+      statuses: [
+        { key: 'ok', name: 'ok', total: 90, inputTokens: 50, outputTokens: 40, cost: 1 },
+        { key: 'failed', name: 'failed', total: 50, inputTokens: 30, outputTokens: 20, cost: 0.4 },
+      ],
+      phases: [
+        { key: 'production', name: 'production', total: 80, inputTokens: 40, outputTokens: 40, cost: 1 },
+        { key: 'chat', name: 'chat', total: 60, inputTokens: 30, outputTokens: 30, cost: 0.2 },
+      ],
+      topRuns: [
+        { ...sampleData.topRuns[0], runId: 'r1', title: 'Run 1', total: 50, inputTokens: 30, outputTokens: 20 },
+        { ...sampleData.topRuns[0], runId: 'r2', title: 'Run 2', total: 40, inputTokens: 20, outputTokens: 20 },
+      ],
+    })
+    const comparable = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
+    await flushPromises()
+    for (const dim of ['source', 'status', 'phase', 'run']) {
+      const btn = comparable.find(`[data-testid="token-analytics-bar-dimension-${dim}"]`)
+      expect(btn.attributes('disabled')).toBeUndefined()
+      await btn.trigger('click')
+      expect(btn.classes()).toContain('font-semibold')
+    }
+    for (const dim of ['source', 'nodeType', 'status', 'phase']) {
+      expect(comparable.find(`[data-testid="token-analytics-cost-dimension-${dim}"]`).exists()).toBe(true)
+    }
+    comparable.unmount()
+  })
+
   it('navigates to project board when clicking project name', async () => {
     const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
     await flushPromises()
     const projectBtn = wrapper.findAll('button.text-accent-2').find((b) => b.text() === 'Grasp')
     expect(projectBtn).toBeTruthy()
     await projectBtn!.trigger('click')
-    expect(pushMock).toHaveBeenCalledWith({ path: '/projects/p1', query: { tab: 'board' } })
+    expect(pushMock).toHaveBeenCalledWith({ path: '/projects/p1', query: { tab: 'board', window: 'all' } })
     wrapper.unmount()
   })
 

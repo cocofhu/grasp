@@ -282,6 +282,45 @@ func TestGetProjectTokenStats(t *testing.T) {
 		t.Fatalf("all should be week: %s", body)
 	}
 
+	// Same ledger the board reads: studio with this project counts; studio
+	// without a project and another project's rows do not. Query projectId
+	// cannot retarget the path project. plan coverage: g1.1 g1.2 g1.3 g4.1
+	other := hn.do("POST", "/api/projects", map[string]any{"name": "OtherStats", "description": "d"})
+	if other.Code != http.StatusOK {
+		t.Fatalf("create other: %d %s", other.Code, other.Body.String())
+	}
+	otherID := jsonField(other.Body.String(), "id")
+	must(hn.db.Create(&models.TokenUsageEvent{
+		CreatedAt: now, Source: "studio", Phase: "chat", Status: "ok",
+		ProjectID: id, ProjectName: "StatsProj", ModelKey: "m",
+		InputTokens: 7, OutputTokens: 3,
+	}).Error)
+	must(hn.db.Create(&models.TokenUsageEvent{
+		CreatedAt: now, Source: "studio", Phase: "chat", Status: "ok",
+		ModelKey: "orphan", InputTokens: 1000,
+	}).Error)
+	must(hn.db.Create(&models.TokenUsageEvent{
+		CreatedAt: now, Source: "workflow", Phase: "production", Status: "ok",
+		ProjectID: otherID, ProjectName: "OtherStats", WorkflowID: "wf-other", ModelKey: "m",
+		InputTokens: 50,
+	}).Error)
+
+	w = hn.do("GET", "/api/projects/"+id+"/token-stats?window=all&timezone=UTC&projectId="+otherID, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("locked stats: %d %s", w.Code, w.Body.String())
+	}
+	lockedBody := w.Body.String()
+	if !strings.Contains(lockedBody, `"total":25`) || strings.Contains(lockedBody, `"total":1000`) || strings.Contains(lockedBody, `"total":50`) {
+		t.Fatalf("project lock/studio scope: %s", lockedBody)
+	}
+	global := hn.do("GET", "/api/stats/token?window=all&timezone=UTC&projectId="+id, nil)
+	if global.Code != http.StatusOK {
+		t.Fatalf("global: %d %s", global.Code, global.Body.String())
+	}
+	if !strings.Contains(global.Body.String(), `"total":25`) {
+		t.Fatalf("global project filter should match board: %s", global.Body.String())
+	}
+
 	w = hn.do("GET", "/api/projects/"+id+"/token-stats?window=bad", nil)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("bad window: %d %s", w.Code, w.Body.String())

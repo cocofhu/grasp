@@ -229,6 +229,126 @@ func TestTokenUsageEventsPagingAndFilters(t *testing.T) {
 	}
 }
 
+// TestProjectBoardUsesSameAggregation locks a project onto GlobalTokenStats
+// and checks KPI, four components, and every breakdown match. Studio rows
+// without a project id stay on the platform total only.
+func TestProjectBoardUsesSameAggregation(t *testing.T) {
+	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "project_board_same_agg.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewProjectService(db)
+	p1, err := s.Create("Board", "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p2, err := s.Create("Other", "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SaveTokenPricing(db, TokenPricing{
+		Currency: "USD",
+		Models:   map[string]TokenModelPrice{"priced": {Input: 1, Output: 2, CacheRead: 0.1, CacheWrite: 0.2}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
+	at := now.Add(-2 * time.Hour)
+	seedLedger(t, db,
+		models.TokenUsageEvent{CreatedAt: at, Source: "workflow", Phase: "production", Status: "ok",
+			ProjectID: p1.ID, ProjectName: "Board", WorkflowID: "wf-a", WorkflowName: "main",
+			RunID: "r-a", RunTitle: "Run A", NodeType: "agent", ModelKey: "priced",
+			InputTokens: 100, OutputTokens: 40, CacheReadTokens: 10, CacheWriteTokens: 5},
+		models.TokenUsageEvent{CreatedAt: at, Source: "pm", Phase: "interactive", Status: "failed",
+			ProjectID: p1.ID, ProjectName: "Board", ThreadID: "th-1", ModelKey: "priced",
+			InputTokens: 20, OutputTokens: 10},
+		models.TokenUsageEvent{CreatedAt: at, Source: "studio", Phase: "chat", Status: "cancelled",
+			ProjectID: p1.ID, ProjectName: "Board", RunID: "r-studio", RunTitle: "Studio", ModelKey: "priced",
+			InputTokens: 8, OutputTokens: 2},
+		models.TokenUsageEvent{CreatedAt: at, Source: "studio", Phase: "chat", Status: "ok",
+			ProjectID: "", ProjectName: "", ModelKey: "unpriced-studio",
+			InputTokens: 1000, OutputTokens: 1000},
+		models.TokenUsageEvent{CreatedAt: at, Source: "workflow", Phase: "production", Status: "ok",
+			ProjectID: p2.ID, ProjectName: "Other", WorkflowID: "wf-b", WorkflowName: "other",
+			RunID: "r-b", RunTitle: "Run B", NodeType: "tool", ModelKey: "priced",
+			InputTokens: 7},
+	)
+
+	q := GlobalTokenStatsQuery{Window: TokenStatsWindowAll, Timezone: "UTC", Now: now, ProjectID: p1.ID}
+	locked, err := s.GlobalTokenStats(context.Background(), q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := s.GlobalTokenStats(context.Background(), q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if locked.KPI.Total != again.KPI.Total || locked.KPI.Cost != again.KPI.Cost {
+		t.Fatalf("same query diverged: %+v vs %+v", locked.KPI, again.KPI)
+	}
+	// workflow 155 + pm 30 + studio 10 = 195. Unassigned studio (2000) and p2 (7) stay out.
+	if locked.KPI.Total != 195 || locked.KPI.StudioTotal != 10 || locked.KPI.WorkflowTotal != 155 || locked.KPI.PmTotal != 30 {
+		t.Fatalf("locked kpi=%+v", locked.KPI)
+	}
+	if locked.Composition.Total != locked.KPI.Total {
+		t.Fatalf("composition %d != kpi %d", locked.Composition.Total, locked.KPI.Total)
+	}
+	parts := locked.Composition.InputTokens + locked.Composition.OutputTokens + locked.Composition.CacheReadTokens + locked.Composition.CacheWriteTokens
+	if parts != locked.KPI.Total || locked.Composition.InputTokens != 128 || locked.Composition.OutputTokens != 52 {
+		t.Fatalf("parts=%d composition=%+v", parts, locked.Composition)
+	}
+	sumNamed := func(rows []GlobalTokenStatsNamedBucket) int64 {
+		var n int64
+		for _, r := range rows {
+			n += r.Total
+		}
+		return n
+	}
+	if sumNamed(locked.Sources) != locked.KPI.Total || sumNamed(locked.Statuses) != locked.KPI.Total || sumNamed(locked.Phases) != locked.KPI.Total {
+		t.Fatalf("dimension sums sources=%d statuses=%d phases=%d kpi=%d", sumNamed(locked.Sources), sumNamed(locked.Statuses), sumNamed(locked.Phases), locked.KPI.Total)
+	}
+	if locked.KPI.FailedTotal != 40 { // failed 30 + cancelled 10
+		t.Fatalf("failedTotal=%d", locked.KPI.FailedTotal)
+	}
+	if locked.KPI.UnpricedTotal != 0 {
+		t.Fatalf("priced project rows should not be unpriced: %d", locked.KPI.UnpricedTotal)
+	}
+	for _, p := range locked.Projects {
+		if p.ProjectID != p1.ID {
+			t.Fatalf("locked projects leaked %s", p.ProjectID)
+		}
+	}
+
+	wfOnly, err := s.GlobalTokenStats(context.Background(), GlobalTokenStatsQuery{
+		Window: TokenStatsWindowAll, Timezone: "UTC", Now: now, ProjectID: p1.ID, Source: GlobalTokenStatsSourceWorkflow,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wfOnly.KPI.Total != 155 || wfOnly.KPI.StudioTotal != 0 || wfOnly.KPI.PmTotal != 0 {
+		t.Fatalf("workflow-only kpi=%+v", wfOnly.KPI)
+	}
+
+	platform, err := s.GlobalTokenStats(context.Background(), GlobalTokenStatsQuery{
+		Window: TokenStatsWindowAll, Timezone: "UTC", Now: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if platform.KPI.Total != 195+2000+7 {
+		t.Fatalf("platform total=%d", platform.KPI.Total)
+	}
+	p2stats, err := s.GlobalTokenStats(context.Background(), GlobalTokenStatsQuery{
+		Window: TokenStatsWindowAll, Timezone: "UTC", Now: now, ProjectID: p2.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p2stats.KPI.Total != 7 || p2stats.KPI.StudioTotal != 0 {
+		t.Fatalf("other project picked up unassigned studio: %+v", p2stats.KPI)
+	}
+}
+
 func TestSaveTokenPricingValidation(t *testing.T) {
 	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "pricing.db"))
 	if err != nil {

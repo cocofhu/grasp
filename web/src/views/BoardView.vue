@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, toRef, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import RunBoardColumn from '@/components/board/RunBoardColumn.vue'
 import RunBoardPreviewDrawer from '@/components/board/RunBoardPreviewDrawer.vue'
@@ -18,7 +18,13 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
+const route = useRoute()
 const { t } = useI18n()
+
+function queryText(key: string): string {
+  const v = route.query[key]
+  return typeof v === 'string' ? v : ''
+}
 
 const extraEnabled = reactive({
   queued: false,
@@ -173,7 +179,13 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <TokenStatsPanel :project-id="projectId" />
+    <TokenStatsPanel
+      :project-id="projectId"
+      :initial-window="queryText('window')"
+      :initial-from="queryText('from')"
+      :initial-to="queryText('to')"
+      :initial-granularity="queryText('granularity')"
+    />
 
     <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
       <div class="flex flex-wrap items-center gap-2">

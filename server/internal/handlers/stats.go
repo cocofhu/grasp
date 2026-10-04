@@ -16,8 +16,17 @@ import (
 // utcOffsetMinutes, source=all|workflow|pm|studio, status=ok|failed|cancelled,
 // projectId, modelKey, workflowId, nodeType, runId.
 func parseGlobalTokenStatsQuery(c *gin.Context) (services.GlobalTokenStatsQuery, bool) {
+	return parseTokenStatsQuery(c, services.TokenStatsWindowAll)
+}
+
+// parseTokenStatsQuery reads the shared stats filters. defaultWindow is used
+// only when the request omits window (usage stats: all, project board: 30d).
+func parseTokenStatsQuery(c *gin.Context, defaultWindow string) (services.GlobalTokenStatsQuery, bool) {
+	if strings.TrimSpace(defaultWindow) == "" {
+		defaultWindow = services.TokenStatsWindowAll
+	}
 	q := services.GlobalTokenStatsQuery{
-		Window:      c.DefaultQuery("window", services.TokenStatsWindowAll),
+		Window:      c.DefaultQuery("window", defaultWindow),
 		From:        strings.TrimSpace(c.Query("from")),
 		To:          strings.TrimSpace(c.Query("to")),
 		Granularity: strings.TrimSpace(c.Query("granularity")),

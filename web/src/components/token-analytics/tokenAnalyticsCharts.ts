@@ -537,6 +537,136 @@ export function treemapOption(tree: GlobalTokenStatsTreeNode[] | undefined, curr
   }
 }
 
+export interface DrillBreakdown {
+  id: string
+  title: string
+  rows: StackedBarRow[]
+}
+
+function breakdownParts(row: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number }) {
+  return {
+    input: row.inputTokens || 0,
+    output: row.outputTokens || 0,
+    cacheRead: row.cacheReadTokens || 0,
+    cacheWrite: row.cacheWriteTokens || 0,
+  }
+}
+
+/**
+ * Drill-down comparison axes. Locked filters are omitted, and a dimension with
+ * fewer than two buckets is omitted so a single bar is never drawn.
+ * plan coverage: g3.3 g4.2
+ */
+export function listDrillBreakdowns(
+  stats: GlobalTokenStats,
+  filters: {
+    projectId?: string
+    modelKey?: string
+    workflowId?: string
+    nodeType?: string
+    runId?: string
+    source?: string
+    status?: string
+  },
+  t: Translate,
+): DrillBreakdown[] {
+  const out: DrillBreakdown[] = []
+  const push = (id: string, rows: StackedBarRow[]) => {
+    if (rows.length < 2) return
+    out.push({ id, title: t(`pages.tokenAnalytics.barDimensions.${id}`), rows })
+  }
+  if (!filters.projectId) {
+    push(
+      'project',
+      stats.projects.slice(0, 10).map((p) => ({
+        name: p.name,
+        ...breakdownParts(p),
+        other: false,
+        drill: p.projectId ? { dim: 'project', key: p.projectId, name: p.name } : undefined,
+      })),
+    )
+  }
+  if (!filters.source || filters.source === 'all') {
+    push(
+      'source',
+      (stats.sources ?? []).filter((r) => r.total > 0).map((r) => {
+        const key = r.key || r.name
+        const name = sourceLabel(t, key)
+        return { name, ...breakdownParts(r), other: !!r.other, drill: key ? { dim: 'source' as const, key, name } : undefined }
+      }),
+    )
+  }
+  if (!filters.modelKey) {
+    push(
+      'model',
+      stats.modelRanking.slice(0, 10).map((m) => ({
+        name: m.name,
+        ...breakdownParts(m),
+        other: !!m.other,
+        drill: m.modelKey && !m.other ? { dim: 'model', key: m.modelKey, name: m.name } : undefined,
+      })),
+    )
+  }
+  if (!filters.workflowId && !filters.runId) {
+    push(
+      'workflow',
+      stats.workflows.slice(0, 10).map((w) => ({
+        name: w.name,
+        ...breakdownParts(w),
+        other: !!w.other,
+        drill: w.kind === 'pm'
+          ? { dim: 'source' as const, key: 'pm', name: sourceLabel(t, 'pm') }
+          : w.workflowId && !w.other
+            ? { dim: 'workflow' as const, key: w.workflowId, name: w.name }
+            : undefined,
+      })),
+    )
+  }
+  if (!filters.nodeType) {
+    push(
+      'nodeType',
+      stats.nodeTypes.slice(0, 10).map((n) => {
+        const key = n.key || ''
+        return {
+          name: n.name,
+          ...breakdownParts(n),
+          other: !!n.other,
+          drill: key && key !== 'unknown' && !n.other ? { dim: 'nodeType' as const, key, name: n.name } : undefined,
+        }
+      }),
+    )
+  }
+  if (!filters.status) {
+    push(
+      'status',
+      (stats.statuses ?? []).filter((r) => r.total > 0).map((r) => {
+        const key = r.key || r.name
+        const name = statusLabel(t, key)
+        return { name, ...breakdownParts(r), other: false, drill: key ? { dim: 'status' as const, key, name } : undefined }
+      }),
+    )
+  }
+  push(
+    'phase',
+    (stats.phases ?? []).filter((r) => r.total > 0).map((r) => {
+      const key = r.key || r.name
+      return { name: phaseLabel(t, key), ...breakdownParts(r), other: false }
+    }),
+  )
+  if (!filters.runId) {
+    push(
+      'run',
+      stats.topRuns.slice(0, 10).map((r) => ({
+        name: r.title || r.runId,
+        ...breakdownParts(r),
+        other: false,
+        drill: r.runId ? { dim: 'run' as const, key: r.runId, name: r.title || r.runId } : undefined,
+      })),
+    )
+  }
+  return out
+}
+
 /** Extract the drill path ECharts click params carry (set via `data.drill`). */
 export function drillFromChartEvent(params: unknown): DrillTarget[] | null {
   const ev = params as { componentType?: string; data?: { drill?: DrillTarget[]; other?: boolean } }

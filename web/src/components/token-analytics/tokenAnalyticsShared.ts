@@ -93,6 +93,20 @@ export function filtersToParams(f: TokenStatsFilters): GlobalTokenStatsParams {
   }
 }
 
+/** Query carried onto the project board so its Token stats open on the same range. */
+export function boardQueryFromFilters(f: TokenStatsFilters): Record<string, string> {
+  const query: Record<string, string> = { tab: 'board' }
+  if (f.window === 'custom' && f.from) {
+    query.window = 'custom'
+    query.from = f.from
+    if (f.to) query.to = f.to
+  } else if (f.window) {
+    query.window = f.window
+  }
+  if (f.granularity) query.granularity = f.granularity
+  return query
+}
+
 /** Number of narrowing filters beyond the time range (for the "clear" affordance). */
 export function activeFilterCount(f: TokenStatsFilters): number {
   return [
