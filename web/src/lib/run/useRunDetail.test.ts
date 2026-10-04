@@ -371,4 +371,118 @@ describe('useRunDetail', () => {
 
     app.unmount()
   })
+
+  it('soft refresh writes persisted Agent turns when chrome is unchanged (g1.2 / g2.2)', async () => {
+    const parked = (
+      turns: { role: 'human' | 'agent'; text: string; thought?: string; streaming?: boolean }[],
+      busy = false,
+    ): Run => {
+      const slot = {
+        nodeId: 'n1',
+        done: false,
+        turns: turns.map((t) => ({ at: 't', thought: '', ...t })),
+      }
+      return {
+        ...sampleRun(),
+        status: 'waiting_human',
+        progress: 0.4,
+        nodeRuns: {
+          n1: { nodeId: 'n1', status: 'waiting_human', outputs: {}, events: [], mcpCalls: [] },
+          n2: { nodeId: 'n2', status: 'pending', outputs: {} },
+        },
+        reactSessions: { n1: { busy, waiting: 0, items: [] } },
+        clarify: slot,
+        clarifyByNode: { n1: { ...slot, turns: slot.turns.map((t) => ({ ...t })) } },
+      } as unknown as Run
+    }
+
+    mocks.getRun.mockResolvedValue(parked([]))
+    const { detail, app } = await withRunDetail()
+    await flushPromises()
+    expect(detail.run.value.clarify?.turns ?? []).toHaveLength(0)
+    expect(detail.run.value.clarifyByNode?.n1?.turns ?? []).toHaveLength(0)
+
+    mocks.getRun.mockResolvedValue(
+      parked([
+        { role: 'human', text: '开始' },
+        { role: 'agent', text: '已落盘回复', thought: '先想清楚' },
+      ]),
+    )
+    await detail.loadRun(false, true)
+    await flushPromises()
+    expect(detail.run.value.status).toBe('waiting_human')
+    expect(detail.run.value.clarify?.turns.map((t) => t.text)).toEqual(['开始', '已落盘回复'])
+    expect(detail.run.value.clarify?.turns[1]?.thought).toBe('先想清楚')
+    expect(detail.run.value.clarifyByNode?.n1?.turns.map((t) => t.text)).toEqual(['开始', '已落盘回复'])
+
+    const live = {
+      nodeId: 'n1',
+      done: false,
+      turns: [{ role: 'agent' as const, text: 'live bubble', thought: '思考中', at: 't', streaming: true }],
+    }
+    detail.run.value = {
+      ...detail.run.value,
+      reactSessions: { n1: { busy: true, waiting: 0, items: [] } },
+      clarify: live,
+      clarifyByNode: { n1: { ...live, turns: live.turns.map((t) => ({ ...t })) } },
+    }
+    mocks.getRun.mockResolvedValue(parked([]))
+    await detail.fetchRunData()
+    expect(detail.run.value.clarify?.turns[0]?.text).toBe('live bubble')
+    expect(detail.run.value.clarify?.turns[0]?.streaming).toBe(true)
+    expect(detail.run.value.clarifyByNode?.n1?.turns[0]?.text).toBe('live bubble')
+
+    await detail.patchRunChrome()
+    expect(detail.run.value.clarify?.turns[0]?.text).toBe('live bubble')
+    expect(detail.run.value.clarifyByNode?.n1?.turns[0]?.thought).toBe('思考中')
+
+    app.unmount()
+  })
+
+  it('patchRunChrome adopts a longer idle transcript over an empty busy panel (g1.3)', async () => {
+    const parked = (
+      turns: { role: 'human' | 'agent'; text: string; thought?: string }[],
+      busy: boolean,
+    ): Run => {
+      const slot = {
+        nodeId: 'n1',
+        done: false,
+        turns: turns.map((t) => ({ at: 't', thought: '', ...t })),
+      }
+      return {
+        ...sampleRun(),
+        status: 'waiting_human',
+        progress: 0.4,
+        nodeRuns: {
+          n1: { nodeId: 'n1', status: 'waiting_human', outputs: {}, events: [], mcpCalls: [] },
+          n2: { nodeId: 'n2', status: 'pending', outputs: {} },
+        },
+        reactSessions: { n1: { busy, waiting: 0, items: [] } },
+        clarify: slot,
+        clarifyByNode: { n1: { ...slot, turns: slot.turns.map((t) => ({ ...t })) } },
+      } as unknown as Run
+    }
+
+    mocks.getRun.mockResolvedValue(parked([], false))
+    const { detail, app } = await withRunDetail()
+    await flushPromises()
+    detail.run.value = {
+      ...detail.run.value,
+      reactSessions: { n1: { busy: true, waiting: 0, items: [] } },
+    }
+    mocks.getRun.mockResolvedValue(
+      parked(
+        [
+          { role: 'human', text: '开始' },
+          { role: 'agent', text: '已落盘回复', thought: '先想清楚' },
+        ],
+        false,
+      ),
+    )
+    await detail.patchRunChrome()
+    expect(detail.run.value.clarify?.turns.map((t) => t.text)).toEqual(['开始', '已落盘回复'])
+    expect(detail.run.value.clarifyByNode?.n1?.turns[1]?.thought).toBe('先想清楚')
+    expect(detail.run.value.reactSessions?.n1?.busy).toBe(false)
+    app.unmount()
+  })
 })
