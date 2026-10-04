@@ -70,14 +70,14 @@ const hasReply = computed(() => props.turn.answers.some((a) => a.text || a.tools
 </script>
 
 <template>
-  <div class="flex gap-2.5" data-testid="llm-answer">
+  <div class="flex min-w-0 w-full gap-2.5" data-testid="llm-answer">
     <span
       class="mt-5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-line-strong bg-elevated text-txt2"
       :title="t('pages.llmTranscript.speaker.agent')"
     >
       <Icon name="robot" :size="14" />
     </span>
-    <div class="flex min-w-0 max-w-[min(820px,92%)] flex-1 flex-col">
+    <div class="flex min-w-0 w-full max-w-full flex-1 flex-col">
       <div class="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-txt3">
         <span class="font-medium text-txt2">{{ nodeLabel }}</span>
         <span v-for="m in models" :key="m" class="rounded border border-line bg-elevated px-1 py-px font-mono text-[10px]">{{ m }}</span>
@@ -88,7 +88,7 @@ const hasReply = computed(() => props.turn.answers.some((a) => a.text || a.tools
         </span>
       </div>
 
-      <div class="rounded-xl min-w-0 space-y-2 rounded-tl-sm border border-line bg-surface px-3 py-2">
+      <div class="rounded-xl min-w-0 max-w-full overflow-x-auto space-y-2 rounded-tl-sm border border-line bg-surface px-3 py-2">
         <template v-for="(a, i) in turn.answers" :key="i">
           <div v-if="i > 0" class="border-t border-dashed border-line" />
           <AgentTimeline

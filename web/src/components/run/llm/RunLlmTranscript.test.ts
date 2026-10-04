@@ -158,11 +158,130 @@ describe('RunLlmTranscript', () => {
     })
     const w = mountView({ run: run({ status: 'running', trace: [] }) })
     await flushPromises()
-    expect(w.find('[data-testid="llm-prompt-text"]').text()).toBe('implement it')
+    expect(w.find('[data-testid="llm-prompt-text"]').text().replace(/\s+/g, ' ').trim()).toBe('implement it')
     expect(w.find('[data-testid="llm-answer"]').text()).toContain('等待模型响应')
     await w.setProps({ liveEvents: { a: [{ t: 0, kind: 'message', text: 'on it' }] } })
     expect(w.find('[data-testid="llm-answer"]').text()).toContain('on it')
     expect(w.find('[data-testid="llm-answer"]').text()).toContain('正在回答')
+  })
+
+  // plan g1.1 / g1.2 / g1.3: list fills the scroller; bubbles and banners are not capped.
+  it('lays the transcript out full width and keeps dividers inline-centered', async () => {
+    llmTranscript.mockResolvedValue({
+      executions: [
+        {
+          id: 1,
+          nodeId: 'a',
+          iteration: 1,
+          status: 'completed',
+          startedAt: '2026-10-01T00:00:00Z',
+          events: [
+            { t: 0, kind: 'prompt', text: 'hello', at: '2026-10-01T00:00:01Z' },
+            { t: 1, kind: 'message', text: '**done**' },
+          ],
+        },
+        {
+          id: 2,
+          nodeId: 'a',
+          iteration: 2,
+          status: 'failed',
+          startedAt: '2026-10-01T00:00:20Z',
+          error: 'executor blew up',
+          events: [{ t: 0, kind: 'message', text: 'orphan reply without a prompt' }],
+        },
+      ],
+    })
+    const w = mountView({ run: run({ trace: [{ at: '2026-10-01T00:00:30Z', nodeId: 'a', event: 'transition', to: 'b', kind: 'success' }] }) })
+    await flushPromises()
+
+    const list = w.get('[data-testid="llm-transcript-list"]')
+    expect(list.classes()).toContain('w-full')
+    expect(list.classes()).not.toContain('mx-auto')
+    expect(list.classes().join(' ')).not.toContain('max-w-[1040px]')
+
+    const prompt = w.get('[data-testid="llm-prompt"]')
+    expect(prompt.html()).not.toContain('max-w-[min(760px,88%)]')
+    expect(prompt.classes()).toContain('justify-end')
+
+    const answer = w.get('[data-testid="llm-answer"]')
+    expect(answer.html()).not.toContain('max-w-[min(820px,92%)]')
+    expect(answer.classes()).toContain('w-full')
+
+    const legacy = w.get('[data-testid="llm-legacy"]')
+    expect(legacy.classes()).toContain('w-full')
+    expect(legacy.classes()).not.toContain('mx-auto')
+    expect(legacy.classes().join(' ')).not.toContain('max-w-[min(720px,92%)]')
+
+    const err = w.get('[data-testid="llm-exec-error"]')
+    expect(err.classes()).toContain('w-full')
+    expect(err.classes()).not.toContain('mx-auto')
+    expect(err.classes().join(' ')).not.toContain('max-w-[min(820px,92%)]')
+    expect(err.text()).toContain('executor blew up')
+
+    expect(w.get('[data-testid="llm-node-divider"]').html()).toContain('justify-center')
+    expect(w.get('[data-testid="llm-trace"]').classes()).toContain('justify-center')
+  })
+
+  // plan g2.1 / g2.2: prompt body is renderMarkdown; collapse and expand both render; copy keeps the source.
+  it('renders prompt markdown for bold, lists, and fenced code, and copies the source', async () => {
+    const markdownPrompt = [
+      '**只输出一个代码块**',
+      '',
+      '1. 第一步',
+      '2. 第二步',
+      '',
+      '继续说明',
+      '',
+      '```json',
+      '{"ok": true}',
+      '```',
+      '',
+      'TAIL_AFTER_FENCE',
+    ].join('\n')
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true })
+
+    llmTranscript.mockResolvedValue({
+      executions: [
+        {
+          id: 1,
+          nodeId: 'a',
+          iteration: 1,
+          status: 'completed',
+          startedAt: '2026-10-01T00:00:00Z',
+          events: [
+            { t: 0, kind: 'prompt', text: markdownPrompt, at: '2026-10-01T00:00:01Z' },
+            { t: 1, kind: 'message', text: '**done**' },
+          ],
+        },
+      ],
+    })
+    const w = mountView({ run: run({ trace: [] }) })
+    await flushPromises()
+
+    const body = () => w.get('[data-testid="llm-prompt-text"]')
+    const collapsed = body().html()
+    expect(collapsed).toContain('<strong>只输出一个代码块</strong>')
+    expect(collapsed).toContain('<li>')
+    expect(collapsed).not.toContain('**只输出一个代码块**')
+    expect(collapsed).not.toContain('```')
+    expect(body().text()).not.toContain('TAIL_AFTER_FENCE')
+
+    await w.get('[data-testid="llm-prompt-toggle"]').trigger('click')
+    const expanded = body().html()
+    expect(expanded).toContain('<strong>只输出一个代码块</strong>')
+    expect(expanded).toContain('<pre')
+    expect(expanded).toContain('<code')
+    expect(expanded).toContain('json')
+    expect(expanded).not.toContain('```')
+    expect(body().text()).toContain('TAIL_AFTER_FENCE')
+
+    await w.get('[data-testid="llm-prompt-copy"]').trigger('click')
+    await flushPromises()
+    expect(writeText).toHaveBeenCalledWith(markdownPrompt)
+
+    expect(w.get('[data-testid="llm-answer-text"]').html()).toContain('<strong>done</strong>')
   })
 
   it('shows the empty state for a run without executions', async () => {

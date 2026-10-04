@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '../../ui/Icon.vue'
 import { copyToClipboard } from '@/lib/shared/copyToClipboard'
 import { imgSrc } from '@/lib/shared/compositeText'
+import { renderMarkdown } from '@/lib/shared/markdown'
 import { fmtClock, type LlmPrompt } from '@/lib/run/llmTranscript'
 
 const COLLAPSED_LINES = 6
@@ -31,6 +32,8 @@ const shown = computed(() => {
   if (expanded.value || !collapsible.value) return props.prompt.text
   return lines.value.slice(0, COLLAPSED_LINES).join('\n').slice(0, 600)
 })
+/** Collapsed summary and the expanded body share renderMarkdown (GFM + DOMPurify). */
+const promptHtml = computed(() => renderMarkdown(shown.value))
 
 const isHuman = computed(() => props.prompt.source === 'human')
 const sourceCls = computed(() => {
@@ -54,8 +57,8 @@ async function copy() {
 </script>
 
 <template>
-  <div class="flex justify-end gap-2.5" data-testid="llm-prompt">
-    <div class="flex min-w-0 max-w-[min(760px,88%)] flex-col items-end">
+  <div class="flex min-w-0 w-full justify-end gap-2.5" data-testid="llm-prompt">
+    <div class="flex min-w-0 w-full max-w-full flex-1 flex-col items-end">
       <div class="mb-1 flex items-center gap-1.5 text-[11px] text-txt3">
         <span class="rounded-full border px-1.5 py-px text-[10px]" :class="sourceCls" data-testid="llm-prompt-source">
           {{ t(`pages.llmTranscript.source.${prompt.source}`) }}
@@ -69,13 +72,14 @@ async function copy() {
           class="rounded px-1 text-txt3 transition-colors hover:text-txt"
           :title="copied ? t('pages.llmTranscript.copied') : t('pages.llmTranscript.copy')"
           :aria-label="t('pages.llmTranscript.copy')"
+          data-testid="llm-prompt-copy"
           @click="copy"
         >
           <Icon :name="copied ? 'check' : 'copy'" :size="11" />
         </button>
       </div>
       <div
-        class="rounded-xl min-w-0 max-w-full rounded-tr-sm border px-3 py-2"
+        class="rounded-xl min-w-0 w-full max-w-full overflow-hidden rounded-tr-sm border px-3 py-2"
         :class="isHuman ? 'border-warn/30 bg-warn/[0.07]' : 'border-accent/25 bg-accent-dim/60'"
       >
         <div v-if="prompt.images?.length" class="mb-2 flex flex-wrap justify-end gap-1.5">
@@ -87,10 +91,13 @@ async function copy() {
             class="h-16 w-16 rounded-md border border-line object-cover"
           />
         </div>
-        <pre
-          class="m-0 whitespace-pre-wrap break-words font-sans text-[13px] leading-6 text-txt"
+        <div
+          class="md min-w-0 max-w-full overflow-x-auto break-words text-[13px] leading-6 text-txt"
           data-testid="llm-prompt-text"
-        >{{ shown }}<span v-if="collapsible && !expanded" class="text-txt3">…</span></pre>
+        >
+          <div v-html="promptHtml" />
+          <span v-if="collapsible && !expanded" class="text-txt3">…</span>
+        </div>
         <div
           v-if="collapsible || prompt.truncated || previewOnly"
           class="mt-1.5 flex flex-wrap items-center justify-end gap-2 border-t border-line/60 pt-1.5 text-[11px]"
