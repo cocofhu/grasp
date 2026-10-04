@@ -727,6 +727,8 @@ export interface AgentPart {
   summary?: string
   input?: string
   output?: string
+  /** How long a finished tool ran, when the agent reports it. */
+  durationMs?: number
 }
 
 // 一次内置 MCP 工具调用的记录(入参/结果均已截断,仅供调试)。
@@ -928,6 +930,7 @@ export interface AgentTool {
   summary?: string
   input?: string
   output?: string
+  durationMs?: number
 }
 
 export interface Gate {

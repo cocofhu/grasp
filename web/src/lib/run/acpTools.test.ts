@@ -63,6 +63,7 @@ describe('sameParts', () => {
     expect(sameParts([{ kind: 'tool', title: 'a', status: 'running' }], [{ kind: 'tool', title: 'a', status: 'completed' }])).toBe(false)
     expect(sameParts([{ kind: 'tool', title: 'a' }], [{ kind: 'tool', title: 'a', output: 'x' }])).toBe(false)
     expect(sameParts([{ kind: 'message', text: 'a' }], [])).toBe(false)
+    expect(sameParts([{ kind: 'tool', title: 'a' }], [{ kind: 'tool', title: 'a', durationMs: 1200 }])).toBe(false)
   })
 })
 
@@ -85,5 +86,12 @@ describe('timelineBlocks', () => {
     expect(blocks.map((b) => b.last)).toEqual([false, false, false, true])
     expect(new Set(blocks.map((b) => b.key)).size).toBe(4)
     expect(timelineBlocks(undefined)).toEqual([])
+  })
+})
+
+describe('timelineBlocks tool duration', () => {
+  it('carries durationMs onto the tool', () => {
+    const [b] = timelineBlocks([{ kind: 'tool', title: 'Shell', durationMs: 4200 }, { kind: 'tool', title: 'Read' }])
+    expect(b).toMatchObject({ kind: 'tools', tools: [{ title: 'Shell', durationMs: 4200 }, { title: 'Read' }] })
   })
 })

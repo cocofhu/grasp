@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:e2e:ci": "playwright test e2e/gate-mobile-fill.spec.ts e2e/clarify-inbox-product.spec.ts e2e/delete-run-list.spec.ts e2e/cancel-run.spec.ts e2e/agent-create-wizard.spec.ts e2e/board-token-stats.spec.ts e2e/run-detail-mobile.spec.ts e2e/run-detail-mobile-panel.spec.ts e2e/gate-share-link.spec.ts e2e/shell-loading.spec.ts e2e/live-variants.spec.ts",
+    "test:e2e:ci": "playwright test e2e/gate-mobile-fill.spec.ts e2e/clarify-inbox-product.spec.ts e2e/delete-run-list.spec.ts e2e/cancel-run.spec.ts e2e/agent-create-wizard.spec.ts e2e/board-token-stats.spec.ts e2e/run-detail-mobile.spec.ts e2e/run-detail-mobile-panel.spec.ts e2e/gate-share-link.spec.ts e2e/shell-loading.spec.ts e2e/live-variants.spec.ts e2e/agent-tool-timeline.spec.ts",
     "lint": "eslint .",
     "assert:novnc-http": "node scripts/assert-no-novnc-secure-context.mjs",
     "assert:brand": "node ../scripts/assert-no-approving-brand.mjs",

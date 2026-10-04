@@ -443,6 +443,7 @@ const {
               :streaming="!!t.streaming"
               :completed="showTurnCompleted(t)"
               :interrupted="!!t.interrupted"
+              :run-id="runId"
               message-test-id="clarify-agent-message"
             >
               <template #caret>
@@ -470,7 +471,7 @@ const {
                 </summary>
                 <div class="whitespace-pre-wrap break-words border-t border-dashed border-line px-2.5 pb-2 pt-1.5 font-mono leading-5 [overflow-wrap:anywhere]">{{ agentThoughtDisplay(t, i) }}</div>
               </details>
-              <AgentToolGroup v-if="t.tools?.length" :tools="t.tools" :busy="!!t.streaming" />
+              <AgentToolGroup v-if="t.tools?.length" :tools="t.tools" :busy="!!t.streaming" :run-id="runId" />
               <!-- Message body + streaming caret -->
               <div
                 v-if="agentHasMessage(t) && !isRetryableFailedAgent(t)"

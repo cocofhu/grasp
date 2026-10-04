@@ -39,7 +39,7 @@ export function partsFromAcp(events: ReadonlyArray<Pick<AcpEvent, 'kind' | 'part
   return undefined
 }
 
-const partKey = (p: AgentPart) => [p.kind, p.text, p.title, p.status, p.summary, p.input, p.output].map((x) => x || '').join('\u0000')
+const partKey = (p: AgentPart) => [p.kind, p.text, p.title, p.status, p.summary, p.input, p.output, p.durationMs].map((x) => String(x || '')).join('\u0000')
 
 /** True when two step lists render identically. */
 export function sameParts(a: AgentPart[] | undefined, b: AgentPart[] | undefined): boolean {
@@ -63,6 +63,7 @@ export function timelineBlocks(parts: readonly AgentPart[] | undefined): Timelin
       if (p.summary) tool.summary = p.summary
       if (p.input) tool.input = p.input
       if (p.output) tool.output = p.output
+      if (p.durationMs) tool.durationMs = p.durationMs
       if (prev?.kind === 'tools') prev.tools.push(tool)
       else out.push({ kind: 'tools', tools: [tool], key: `g${index}`, last: false })
     } else if ((p.kind === 'thought' || p.kind === 'message') && p.text?.trim()) {

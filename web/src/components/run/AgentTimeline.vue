@@ -28,8 +28,19 @@ const props = withDefaults(
     messageTestId?: string
     /** Messages without their own bubble (the host already draws one). */
     bare?: boolean
+    /** Run whose artifact stage tool rows link to. */
+    runId?: string
   }>(),
-  { streaming: false, completed: false, interrupted: false, hideThought: false, expanded: false, messageTestId: 'agent-timeline-message', bare: false },
+  {
+    streaming: false,
+    completed: false,
+    interrupted: false,
+    hideThought: false,
+    expanded: false,
+    messageTestId: 'agent-timeline-message',
+    bare: false,
+    runId: undefined,
+  },
 )
 
 const cache: MarkdownBlockCache = new Map()
@@ -51,7 +62,7 @@ function onToggle(index: number, last: boolean, e: Event) {
 <template>
   <div class="flex min-w-0 flex-col" data-testid="agent-timeline">
     <template v-for="b in blocks" :key="b.key">
-      <AgentToolGroup v-if="b.kind === 'tools'" :tools="b.tools" :busy="streaming" :expanded="expanded" />
+      <AgentToolGroup v-if="b.kind === 'tools'" :tools="b.tools" :busy="streaming" :expanded="expanded" :run-id="runId" />
       <details
         v-else-if="b.kind === 'thought'"
         class="mb-2 w-full rounded-md border border-line bg-base/60 text-[11.5px] text-txt3"

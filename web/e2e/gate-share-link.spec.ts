@@ -488,7 +488,7 @@ test.describe('human_gate 临时审批链接', () => {
     await expect(group).toBeVisible({ timeout: 10_000 })
     await expect(group).toHaveAttribute('data-state', 'failed')
     await expect(group).toContainText('使用了 2 个工具')
-    await expect(page.getByTestId('agent-tool-group-names')).toHaveText('read_file · Shell')
+    await expect(page.getByTestId('agent-tool-group-names')).toHaveText('读取文件 · 运行命令')
     await page.getByTestId('agent-tool-group-head').click()
     const rows = page.getByTestId('agent-tool-row')
     await expect(rows).toHaveCount(2)
