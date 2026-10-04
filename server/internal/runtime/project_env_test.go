@@ -343,6 +343,48 @@ func TestSpecProjectCredentialWinsOverRunEnv(t *testing.T) {
 	}
 }
 
+func TestSpecProjectCredentialsDoNotReadProcessEnvOrShadowPlatformKeys(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "demo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"env":{"GRASP_CURSOR_API_KEY":"agent-key","PROJECT_ALIAS_SRC":"alias"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GITHUB_TOKEN", "server-process-token")
+	t.Setenv("SERVER_ONLY_SECRET", "server-secret")
+	c := &acpProvider{
+		opts: Options{
+			ProfilesRoot:         root,
+			ProjectIDForWorkflow: func(string) string { return "proj-1" },
+			ProjectCredentialsForProject: func(string) map[string]string {
+				return map[string]string{"GRASP_ARTIFACT_TOKEN": "user-token"}
+			},
+			ProjectCredentialFallbackEnvForProject: func(string) map[string]string {
+				return map[string]string{"LEAK": "SERVER_ONLY_SECRET", "ALIASED": "PROJECT_ALIAS_SRC"}
+			},
+		},
+		backend: BackendCursor,
+	}
+	spec, err := c.spec(NodeReq{RunID: "run-1", WorkflowID: "wf-1", Token: "platform-token", Config: map[string]any{"agent_profile": "demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := spec.Env["GITHUB_TOKEN"]; ok {
+		t.Fatalf("server process GITHUB_TOKEN leaked into sandbox: %q", spec.Env["GITHUB_TOKEN"])
+	}
+	if _, ok := spec.Env["LEAK"]; ok {
+		t.Fatal("fallback binding must not read the server process environment")
+	}
+	if spec.Env["ALIASED"] != "alias" {
+		t.Fatalf("fallback from project env not applied: %q", spec.Env["ALIASED"])
+	}
+	if spec.Env["GRASP_ARTIFACT_TOKEN"] != "platform-token" {
+		t.Fatalf("platform token shadowed by credential: %q", spec.Env["GRASP_ARTIFACT_TOKEN"])
+	}
+}
+
 func TestResolvedMCPSpecsSubstitutesSharedEnv(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "demo")

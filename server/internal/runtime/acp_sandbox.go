@@ -320,35 +320,6 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		}
 		env[k] = v
 	}
-	// Deployment environment is the lowest-priority compatibility source. Read
-	// only the documented credential keys; arbitrary server process variables
-	// must never bleed into a sandbox. Shared/Agent and UI values overlay below.
-	for _, k := range []string{
-		"GRASP_CURSOR_API_KEY", "CURSOR_API_KEY", "GRASP_CLAUDE_API_KEY", "ANTHROPIC_API_KEY",
-		"GRASP_CODEBUDDY_API_KEY", "CODEBUDDY_API_KEY", "GRASP_TRAE_API_KEY", "TRAE_API_KEY",
-		"TRAECLI_PERSONAL_ACCESS_TOKEN", "GRASP_OPENCODE_API_KEY", "OPENCODE_API_KEY",
-		"GITHUB_TOKEN", "GH_TOKEN", "GITLAB_TOKEN", "GITLAB_URL", "GIT_SSH_PRIVATE_KEY", "GIT_SSH_KNOWN_HOSTS",
-	} {
-		if _, exists := env[k]; exists {
-			continue
-		}
-		if v, ok := os.LookupEnv(k); ok && v != "" {
-			env[k] = v
-		}
-	}
-	if c.opts.ProjectCredentialFallbackEnvForProject != nil {
-		for target, fallback := range c.opts.ProjectCredentialFallbackEnvForProject(c.projectIDForReq(req)) {
-			if _, exists := env[target]; exists {
-				continue
-			}
-			fallback = strings.TrimSpace(fallback)
-			if v := env[fallback]; v != "" {
-				env[target] = v
-			} else if v, ok := os.LookupEnv(fallback); ok && v != "" {
-				env[target] = v
-			}
-		}
-	}
 	profile := models.AgentProfile(req.Config)
 	agentCfg := c.effectiveAgent(req)
 	vars := c.mcpVars(req)
@@ -356,10 +327,25 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	for k, v := range agentCfg.Env {
 		env[k] = substVars(v, vars)
 	}
+	// Explicit fallback bindings alias a key already present in the project's
+	// own sandbox env. The server process environment is never consulted.
+	if c.opts.ProjectCredentialFallbackEnvForProject != nil {
+		for target, fallback := range c.opts.ProjectCredentialFallbackEnvForProject(c.projectIDForReq(req)) {
+			if _, exists := env[target]; exists {
+				continue
+			}
+			if v := env[strings.TrimSpace(fallback)]; v != "" {
+				env[target] = v
+			}
+		}
+	}
 	// Project UI credentials are the highest-priority source. They are resolved
 	// only for the owning project and never copied into persisted Agent config.
+	// Platform-reserved keys from mcpVars are re-applied below and still win.
+	var projectCreds map[string]string
 	if c.opts.ProjectCredentialsForProject != nil {
-		for k, v := range c.opts.ProjectCredentialsForProject(c.projectIDForReq(req)) {
+		projectCreds = c.opts.ProjectCredentialsForProject(c.projectIDForReq(req))
+		for k, v := range projectCreds {
 			k = strings.TrimSpace(k)
 			if k != "" {
 				env[k] = v
@@ -401,9 +387,6 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		if strings.HasPrefix(k, "vars.") || v == "" {
 			continue
 		}
-		if _, protected := protectedCredentialKeys[k]; protected {
-			continue
-		}
 		env[k] = v
 	}
 
@@ -431,12 +414,13 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		WorkspaceDir: layout.WorkspaceDir,
 	}
 	// SSH: meta literal preferred; env fallback already vars-expanded above.
+	// Project credentials outrank the Agent meta literal.
 	key := agentCfg.GitSshPrivateKey
-	if strings.TrimSpace(key) == "" {
+	if strings.TrimSpace(projectCreds["GIT_SSH_PRIVATE_KEY"]) != "" || strings.TrimSpace(key) == "" {
 		key = env["GIT_SSH_PRIVATE_KEY"]
 	}
 	hosts := agentCfg.GitSshKnownHosts
-	if strings.TrimSpace(hosts) == "" {
+	if strings.TrimSpace(projectCreds["GIT_SSH_KNOWN_HOSTS"]) != "" || strings.TrimSpace(hosts) == "" {
 		hosts = env["GIT_SSH_KNOWN_HOSTS"]
 	}
 	sandbox.ApplySSHCredentials(&spec, key, hosts)

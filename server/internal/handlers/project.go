@@ -314,7 +314,7 @@ func (h *Handlers) ClearProjectCredential(c *gin.Context) {
 
 func writeCredentialErr(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, services.ErrCredentialProject), errors.Is(err, services.ErrCredentialType), errors.Is(err, services.ErrCredentialName), errors.Is(err, services.ErrCredentialTarget):
+	case errors.Is(err, services.ErrCredentialProject), errors.Is(err, services.ErrCredentialType), errors.Is(err, services.ErrCredentialName), errors.Is(err, services.ErrCredentialTarget), errors.Is(err, services.ErrCredentialEnvKey):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, services.ErrProjectNotFound), errors.Is(err, services.ErrCredentialNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})

@@ -20,11 +20,19 @@
 
 ## 记录
 
+### 2026-10-05
+
+- 日期：2026-10-05
+- 范围：`server/internal/{envauth,services,runtime,handlers}`、`README.md`、`server/README.md`
+- 做了什么：项目凭据收口安全边界。去掉沙箱从服务进程环境读取 `GITHUB_TOKEN` / `*_API_KEY` 等的回退（含 `gitToken` / `gitLabURL`）；`fallbackEnvKey` 只从项目/Agent env 取值，不再 `os.LookupEnv`。凭据 env key 必须是合法标识符，且不能是平台保留变量（新增 `envauth.IsPlatformReservedEnvKey`）；交互/测试沙箱叠加凭据时跳过保留键，流水线沙箱的 `GRASP_*` 平台变量恢复为最后写入。渠道/外部 MCP/工作流类型只作为只读视图，不能新建。未填值的内置槽位不再挡住 Run env。项目凭据中的 SSH 私钥/known_hosts 优先于 Agent 元信息。删除项目时一并删除凭据。
+- 为什么：原实现会把服务端宿主机的 Token 注入所有项目的沙箱；项目用户可通过 `fallbackEnvKey`（如 `GRASP_SECRETS_KEY`）读出服务端任意环境变量；自定义凭据可覆盖 `GRASP_ARTIFACT_TOKEN` / `GRASP_PM_TOKEN` 等平台令牌；打开凭据页即生成空槽位，会让 Run 级 `GITHUB_TOKEN` 静默失效。
+- 如何验证：新增服务与 runtime 用例覆盖保留键/非法键拒绝、空槽位、平台键不被覆盖、进程 env 不泄漏、删除级联；`go test ./...`、`go vet ./...`、`gen-configdoc -check` 通过。
+
 ### 2026-10-04
 
 - 日期：2026-10-04
 - 范围：`server/internal/{models,services,handlers,runtime,router}`、`server/cmd/server/main.go`、`web/src/{components/project,lib/api,lib/project,locales,views}`
-- 做了什么：新增项目凭据加密存储、掩码 CRUD、清除/撤销和项目详情凭据页；把 AI CLI、Git、SSH、MCP、自定义凭据接入统一解析器，并为渠道、外部 MCP 和工作流 Key 提供只读适配视图。UI 凭据覆盖项目共享 env、Agent env、进程 env；已绑定凭据键不能被 Run env 覆盖，MCP 支持 `${credential:<id>}` 展开，SSH 材料写入文件。
+- 做了什么：新增项目凭据加密存储、掩码 CRUD、清除/撤销和项目详情凭据页；把 AI CLI、Git、SSH、MCP、自定义凭据接入统一解析器，并为渠道、外部 MCP 和工作流 Key 提供只读适配视图。UI 凭据覆盖项目共享 env、Agent env；已绑定凭据键不能被 Run env 覆盖，MCP 支持 `${credential:<id>}` 展开，SSH 材料写入文件。
 - 为什么：让项目密钥有统一的高优先级管理入口，同时保留旧环境变量部署的兼容路径，避免服务端专用鉴权和沙箱运行时凭据互相泄露。
 - 如何验证：`go test ./...`、`go vet ./...`、`go run ./cmd/gen-configdoc -out CONFIGURATION.md -check`、服务端覆盖率 91.4%；Web `npm run lint`、`npx vue-tsc --noEmit`、`npm test -- --run --coverage`（3976 tests）和 `npm run build` 通过。`golangci-lint` 未运行，当前环境未安装该二进制。
 

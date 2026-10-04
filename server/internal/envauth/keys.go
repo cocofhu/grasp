@@ -48,6 +48,23 @@ func IsTokenEnvKey(k string) bool {
 	}
 }
 
+// IsPlatformReservedEnvKey reports env keys the platform injects into every
+// sandbox (run coordinates, platform MCP endpoints/tokens, layout, passwords).
+// User-managed credentials must never shadow them.
+func IsPlatformReservedEnvKey(k string) bool {
+	switch k {
+	case "GRASP_RUN_ID", "GRASP_NODE_ID", "CONFIG_ROOT", "AGENT_PROVIDER",
+		"PASSWORD", "ROOT_PASSWORD", "ACP_BRIDGE_PASSWORD", "CURSOR_ACP_PASSWORD":
+		return true
+	}
+	for _, prefix := range []string{"GRASP_ARTIFACT_", "GRASP_MEMORY_", "GRASP_CONTEXT_", "GRASP_SCHEDULER_", "GRASP_PM_"} {
+		if strings.HasPrefix(k, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // MergeEnvSharedTokenPriority: non-Token keys use Agent-over-shared; Token keys
 // keep shared when the key exists on shared, otherwise keep Agent stock.
 func MergeEnvSharedTokenPriority(shared, agent map[string]string) map[string]string {

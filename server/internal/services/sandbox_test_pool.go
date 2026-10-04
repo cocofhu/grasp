@@ -186,11 +186,6 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 		}
 		env[k] = v
 	}
-	for k, v := range processCredentialEnv() {
-		if _, exists := env[k]; !exists {
-			env[k] = v
-		}
-	}
 	for k, v := range agent.Env {
 		env[k] = substTemplate(v, vars)
 	}
@@ -205,12 +200,10 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 	}
 	// Project UI credentials are the highest-priority source; apply after the
 	// Agent/template vars above so test sandboxes match workflow precedence.
+	var projectCreds map[string]string
 	if s.projectCredentials != nil {
-		for k, v := range s.projectCredentials(projectID) {
-			if strings.TrimSpace(k) != "" {
-				env[strings.TrimSpace(k)] = v
-			}
-		}
+		projectCreds = s.projectCredentials(projectID)
+		overlayProjectCredentialEnv(env, projectCreds)
 	}
 	backend := runtime.NormalizeBackend(agent.AcpBackend)
 	workDir := s.skills.WorkDir(profile)
@@ -266,7 +259,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 		ConfigRoot:   agent.Layout.ConfigRoot,
 		WorkspaceDir: agent.Layout.WorkspaceDir,
 	}
-	ApplyAgentSSHToSpec(&spec, agent)
+	ApplyAgentSSHToSpec(&spec, agentWithProjectSSH(agent, projectCreds))
 	sb, err := s.mgr.Create(ctx, spec)
 	if err != nil {
 		_ = os.RemoveAll(home)

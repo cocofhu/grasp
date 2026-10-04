@@ -3,31 +3,52 @@ package services
 import (
 	"errors"
 	"fmt"
-	"os"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/crypto"
+	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
-var credentialFallbackEnvKeys = []string{
-	"GRASP_CURSOR_API_KEY", "CURSOR_API_KEY", "GRASP_CLAUDE_API_KEY", "ANTHROPIC_API_KEY",
-	"GRASP_CODEBUDDY_API_KEY", "CODEBUDDY_API_KEY", "GRASP_TRAE_API_KEY", "TRAE_API_KEY",
-	"TRAECLI_PERSONAL_ACCESS_TOKEN", "GRASP_OPENCODE_API_KEY", "OPENCODE_API_KEY",
-	"GITHUB_TOKEN", "GH_TOKEN", "GITLAB_TOKEN", "GITLAB_URL", "GIT_SSH_PRIVATE_KEY", "GIT_SSH_KNOWN_HOSTS",
+var credentialEnvKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// validCredentialEnvKey accepts an empty key (no binding) or a plain env
+// identifier that does not collide with platform-injected sandbox variables.
+func validCredentialEnvKey(k string) bool {
+	if k == "" {
+		return true
+	}
+	return credentialEnvKeyPattern.MatchString(k) && !envauth.IsPlatformReservedEnvKey(k)
 }
 
-func processCredentialEnv() map[string]string {
-	out := make(map[string]string)
-	for _, key := range credentialFallbackEnvKeys {
-		if value, ok := os.LookupEnv(key); ok && value != "" {
-			out[key] = value
+// overlayProjectCredentialEnv applies resolved project credentials onto env.
+// Platform-reserved keys are skipped so a credential can never replace run
+// coordinates or platform MCP tokens.
+func overlayProjectCredentialEnv(env, creds map[string]string) {
+	for k, v := range creds {
+		k = strings.TrimSpace(k)
+		if k == "" || envauth.IsPlatformReservedEnvKey(k) {
+			continue
 		}
+		env[k] = v
 	}
-	return out
+}
+
+// agentWithProjectSSH drops Agent meta SSH literals that a project credential
+// supplies, so ApplyAgentSSHToSpec picks the project value from Spec.Env.
+func agentWithProjectSSH(agent Agent, creds map[string]string) Agent {
+	if strings.TrimSpace(creds[EnvGitSSHPrivateKey]) != "" {
+		agent.GitSshPrivateKey = ""
+	}
+	if strings.TrimSpace(creds[EnvGitSSHKnownHosts]) != "" {
+		agent.GitSshKnownHosts = ""
+	}
+	return agent
 }
 
 // ProjectCredentialInput is the write shape used by the project credential API.
@@ -79,6 +100,7 @@ var (
 	ErrCredentialType     = errors.New("credential type is required")
 	ErrCredentialName     = errors.New("credential name is required")
 	ErrCredentialTarget   = errors.New("custom credential target is required")
+	ErrCredentialEnvKey   = errors.New("credential env key must be a valid identifier and not a platform-reserved key")
 )
 
 // ProjectCredentialService persists encrypted project credentials and resolves
@@ -101,9 +123,12 @@ func (s *ProjectCredentialService) ensureProject(projectID string) error {
 	return err
 }
 
+// validCredentialType lists the types stored in ProjectCredential. Channel,
+// external MCP and workflow keys are read-only adapter views over their own
+// services and cannot be created here.
 func validCredentialType(t string) bool {
 	switch strings.ToLower(strings.TrimSpace(t)) {
-	case "ai", "git", "ssh", "mcp", "custom", "channel", "external_mcp", "workflow":
+	case "ai", "git", "ssh", "mcp", "custom":
 		return true
 	default:
 		return false
@@ -250,6 +275,9 @@ func (s *ProjectCredentialService) Create(projectID string, in ProjectCredential
 	if in.EnvKey == "" {
 		in.EnvKey = defaultCredentialEnvKey(in)
 	}
+	if !validCredentialEnvKey(in.EnvKey) || !validCredentialEnvKey(in.FallbackEnvKey) {
+		return ProjectCredentialView{}, ErrCredentialEnvKey
+	}
 	if in.Type == "custom" && strings.TrimSpace(in.EnvKey) == "" && strings.TrimSpace(in.Target) == "" && strings.TrimSpace(in.TargetID) == "" {
 		return ProjectCredentialView{}, ErrCredentialTarget
 	}
@@ -312,8 +340,11 @@ func (s *ProjectCredentialService) Update(projectID, id string, in ProjectCreden
 	if strings.TrimSpace(in.EnvKey) != "" {
 		row.EnvKey = strings.TrimSpace(in.EnvKey)
 	}
-	if in.FallbackEnvKey != "" {
+	if strings.TrimSpace(in.FallbackEnvKey) != "" {
 		row.FallbackEnvKey = strings.TrimSpace(in.FallbackEnvKey)
+	}
+	if !validCredentialEnvKey(row.EnvKey) || !validCredentialEnvKey(row.FallbackEnvKey) {
+		return ProjectCredentialView{}, ErrCredentialEnvKey
 	}
 	if in.Metadata != nil {
 		row.Metadata = safeCredentialMetadata(in.Metadata)
@@ -425,10 +456,13 @@ func (s *ProjectCredentialService) ResolveEnv(projectID string) map[string]strin
 			continue
 		}
 		key := strings.TrimSpace(row.EnvKey)
-		if key == "" {
+		if key == "" || envauth.IsPlatformReservedEnvKey(key) {
 			continue
 		}
 		v, err := crypto.Decrypt(row.ValueEnc)
+		if err != nil {
+			log.Warn().Err(err).Str("project", projectID).Str("credential", row.ID).Msg("skip undecryptable project credential")
+		}
 		if err != nil || v == "" {
 			if strings.EqualFold(row.Provider, "opencode") {
 				addOpenCodeMetadata(out, row.Metadata)
@@ -458,9 +492,11 @@ func addOpenCodeMetadata(out map[string]string, metadata map[string]any) {
 	}
 }
 
-// CredentialEnvKeys returns the environment keys registered by active project
-// credentials, including empty slots. Callers use this set to prevent a
-// per-run environment snapshot from shadowing a project credential binding.
+// CredentialEnvKeys returns the environment keys bound by active project
+// credentials that carry a value or an explicit fallback. Callers use this set
+// to prevent a per-run environment snapshot from shadowing a project
+// credential binding. Empty built-in slots (materialized just by opening the
+// UI) are excluded so they do not silently block Run env values.
 // The values themselves are intentionally not resolved here.
 func (s *ProjectCredentialService) CredentialEnvKeys(projectID string) map[string]struct{} {
 	projectID = strings.TrimSpace(projectID)
@@ -473,6 +509,9 @@ func (s *ProjectCredentialService) CredentialEnvKeys(projectID string) map[strin
 	}
 	out := make(map[string]struct{})
 	for _, row := range rows {
+		if strings.TrimSpace(row.ValueEnc) == "" && strings.TrimSpace(row.FallbackEnvKey) == "" {
+			continue
+		}
 		if key := strings.TrimSpace(row.EnvKey); key != "" {
 			switch strings.ToLower(strings.TrimSpace(row.Type)) {
 			case "ai", "git", "ssh", "mcp", "custom":
@@ -483,8 +522,10 @@ func (s *ProjectCredentialService) CredentialEnvKeys(projectID string) map[strin
 	return out
 }
 
-// FallbackEnvKeys returns target→deployment env key bindings for credentials
-// that have no UI value. Runtime applies these before shared/Agent overlays.
+// FallbackEnvKeys returns target→fallback env key bindings for credentials
+// that have no UI value. Runtime resolves the fallback only from the
+// sandbox env assembled for the project (shared/Agent layers), never from the
+// server process environment.
 func (s *ProjectCredentialService) FallbackEnvKeys(projectID string) map[string]string {
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {

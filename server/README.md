@@ -10,20 +10,20 @@
 兼容期容器内 `acp-gateway` / `cursor-acp` 为指向 `acp-bridge` 的软链(计划 0.2.0 移除)。
 
 **鉴权**:优先在项目详情的**项目凭据** UI 中管理各后端 Key、站点和 Git 凭据；运行时按项目配置注入。
-兼容的项目/Agent env 和进程环境变量仍可作为回退（项目凭据 UI > 项目 env > Agent env > 进程 env）。平台级
+兼容的项目/Agent env 仍可作为回退（项目凭据 UI > 项目 env > Agent env）；服务进程自身的环境变量不会注入沙箱。平台级
 `GRASP_CURSOR_API_KEY` / `sandbox.cursor_api_key` 已废弃且不再注入沙箱；Agent Studio 不继承项目凭据。
 
 凭据解析与注入范围如下。UI 保存的新值使用 `security.secrets_key` 加密，列表和审计只显示掩码；旧环境变量不会自动迁移。
 
 | 管理项 | UI 内容 | 兼容回退 | 注入/使用 |
 |---|---|---|---|
-| AI CLI/API（Cursor、Claude Code、CodeBuddy、Trae、OpenCode） | API Key/Token；OpenCode provider、base URL、model 为非敏感配置 | 对应 `GRASP_*` / 官方 API Key 环境变量 | 新沙箱解析为 CLI 标准变量 |
-| Git HTTPS | GitHub/GitLab Token、GitLab URL | `GITHUB_TOKEN`、`GH_TOKEN`、`GITLAB_TOKEN`、`GITLAB_URL` | 注入沙箱，由 startup 配置 `git`、`gh`/`glab` |
-| Git SSH | 私钥、known_hosts | `GIT_SSH_PRIVATE_KEY`、`GIT_SSH_KNOWN_HOSTS` | 写入 `~/.ssh/id_rsa`、`~/.ssh/known_hosts`，不作为普通 env |
-| MCP / 自定义 | MCP Header/command env 或明确目标环境键；支持 `${credential:<id>}` | 仅使用记录明确绑定的 fallback env key | 仅展开到目标 MCP 或绑定键，不扩散到所有 Agent |
-| 渠道、外部 MCP、工作流 Key | 在项目凭据页汇总查看 | 不读取进程 env | 复用现有加密/hash 适配器；渠道/鉴权服务端使用，不注入沙箱 |
+| AI CLI/API（Cursor、Claude Code、CodeBuddy、Trae、OpenCode） | API Key/Token；OpenCode provider、base URL、model 为非敏感配置 | 项目/Agent env 中对应的 `GRASP_*` / 官方 API Key | 新沙箱解析为 CLI 标准变量 |
+| Git HTTPS | GitHub/GitLab Token、GitLab URL | 项目/Agent env 中的 `GITHUB_TOKEN`、`GH_TOKEN`、`GITLAB_TOKEN`、`GITLAB_URL` | 注入沙箱，由 startup 配置 `git`、`gh`/`glab` |
+| Git SSH | 私钥、known_hosts | 项目/Agent env 或 Agent 元信息中的 SSH 字段 | 写入 `~/.ssh/id_rsa`、`~/.ssh/known_hosts`，不作为普通 env |
+| MCP / 自定义 | MCP Header/command env 或明确目标环境键；支持 `${credential:<id>}` | 仅使用记录明确绑定的 fallback env key，且只从项目/Agent env 中取值 | 仅展开到目标 MCP 或绑定键，不扩散到所有 Agent |
+| 渠道、外部 MCP、工作流 Key | 在项目凭据页汇总查看 | 无 | 复用现有加密/hash 适配器；渠道/鉴权服务端使用，不注入沙箱 |
 
-运行时优先级为：**项目凭据 UI > 项目共享 env > Agent env > 进程环境变量**。已登记的凭据键不能被每次 Run 的临时 env 覆盖。部署密钥、数据库密码、Session/Gate/Artifact Token 等仍是平台配置或系统自动管理项，不进入项目凭据页。
+运行时优先级为：**项目凭据 UI > 项目共享 env > Agent env**，服务进程环境变量不参与。已配置值的凭据键不能被每次 Run 的临时 env 覆盖（未填值的内置槽位不受此限制）。平台注入的保留变量（`GRASP_ARTIFACT_*`、`GRASP_RUN_ID`、`GRASP_NODE_ID`、`GRASP_MEMORY_*`、`GRASP_CONTEXT_*`、`GRASP_SCHEDULER_*`、`GRASP_PM_*`、`CONFIG_ROOT`、`AGENT_PROVIDER`、沙箱密码）不能作为凭据键。部署密钥、数据库密码、Session/Gate/Artifact Token 等仍是平台配置或系统自动管理项，不进入项目凭据页。
 
 `GRASP_EXEC_PROVIDER` 已废弃(读取时 WARN,不影响路由);请改用 Agent `acpBackend`。
 

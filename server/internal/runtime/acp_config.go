@@ -279,10 +279,7 @@ func (c *acpProvider) gitToken(req NodeReq) string {
 	if v := substVars(c.effectiveAgent(req).Env["GITLAB_TOKEN"], vars); v != "" {
 		return v
 	}
-	if v := c.opts.Env["GITLAB_TOKEN"]; v != "" {
-		return v
-	}
-	return os.Getenv("GITLAB_TOKEN")
+	return c.opts.Env["GITLAB_TOKEN"]
 }
 
 // gitLabURL resolves GITLAB_URL for GitLab detection and MR gating. Explicit
@@ -300,9 +297,6 @@ func (c *acpProvider) gitLabURL(req NodeReq) string {
 		return v
 	}
 	if v := strings.TrimSpace(c.opts.Env["GITLAB_URL"]); v != "" {
-		return v
-	}
-	if v := strings.TrimSpace(os.Getenv("GITLAB_URL")); v != "" {
 		return v
 	}
 	repo := c.nodeRepoURL(req)

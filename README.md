@@ -161,7 +161,7 @@ See [`server/README.md`](server/README.md) for backend authentication, project c
 
 Configuration precedence is explicit environment variables > mounted config file > defaults. See [`server/CONFIGURATION.md`](server/CONFIGURATION.md) for all options and [`GATEWAY.md`](GATEWAY.md) for the gateway contract.
 
-For runtime credentials, the precedence is project credential UI > project shared env > Agent env > process environment. Compatible environment variables are used only when no UI credential is configured. The precedence above applies to platform service configuration, not runtime credentials.
+For runtime credentials, the precedence is project credential UI > project shared env > Agent env; the server's own process environment is never injected into sandboxes. Compatible project/Agent environment variables are used only when no UI credential is configured. The precedence above applies to platform service configuration, not runtime credentials.
 
 ## Development and quality
 

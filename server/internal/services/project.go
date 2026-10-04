@@ -355,6 +355,9 @@ func (s *ProjectService) Delete(id string) error {
 		if err := tx.Where("project_id = ?", id).Delete(&models.RequirementDraft{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("project_id = ?", id).Delete(&models.ProjectCredential{}).Error; err != nil {
+			return err
+		}
 		return tx.Delete(&models.Project{}, "id = ?", id).Error
 	})
 }

@@ -93,9 +93,11 @@ describe('ProjectCredentialsPanel', () => {
     await wrapper.get('[data-testid="project-credential-create"]').trigger('click')
     await wrapper.get('[data-testid="project-credential-create-name"]').setValue('Custom')
     await wrapper.get('[data-testid="project-credential-create-value"]').setValue('custom-secret')
+    expect(wrapper.get('[data-testid="project-credential-create-submit"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="project-credential-create-env"]').setValue('CUSTOM_TOKEN')
     await wrapper.get('[data-testid="project-credential-create-submit"]').trigger('click')
     await flushPromises()
-    expect(mocks.create).toHaveBeenCalledWith('p1', expect.objectContaining({ type: 'custom', name: 'Custom', value: 'custom-secret' }))
+    expect(mocks.create).toHaveBeenCalledWith('p1', expect.objectContaining({ type: 'custom', name: 'Custom', envKey: 'CUSTOM_TOKEN', value: 'custom-secret' }))
     wrapper.unmount()
   })
 
