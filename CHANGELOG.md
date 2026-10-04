@@ -4,6 +4,9 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Gate approval chat:** a message that starts while an earlier queued item
+  was already trimmed no longer removes the wrong waiting message from the
+  queue panel.
 - **App preview:** noVNC now keeps one persistent page per sandbox. Reopening
   the preview resumes the same screen without reloading, switching ports
   navigates within that page, and browser logins survive a Chromium restart.

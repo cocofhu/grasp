@@ -51,18 +51,16 @@ import {
 import type { Ref } from 'vue'
 import { isGrasp } from '@/lib/shared/clarifyInteractive'
 import { useConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
-
-/** Element-level clone so queue rows never share annotation object refs with composer. */
-function cloneReactAnnotations(anns?: ReactAnnotation[] | null): ReactAnnotation[] {
-  if (!anns?.length) return []
-  return anns.map((a) => ({ ...a }))
-}
-
-/** Element-level clone for attachment lists (same contract as annotations). */
-function cloneClarifyImages(imgs?: ClarifyImage[] | null): ClarifyImage[] {
-  if (!imgs?.length) return []
-  return imgs.map((im) => ({ ...im }))
-}
+import {
+  cloneAnnotations as cloneReactAnnotations,
+  cloneImages as cloneClarifyImages,
+  dropGhostItems,
+  isAuthoritativeIdle,
+  reconcileQueue,
+  takeTurnBeginItem,
+  type SessionFrameItem,
+  type SessionQueueItem,
+} from '@/lib/chat/sessionQueue'
 
 export type ClarifyChatProps = {
   runId: string
@@ -113,12 +111,7 @@ const draft = models.draft
 const attachments = models.attachments
 const annotations = models.annotations
 
-type QueueItem = {
-  id?: string
-  text: string
-  images: ClarifyImage[]
-  annotations: ReactAnnotation[]
-}
+type QueueItem = SessionQueueItem
 
 // active: whether the run is still in an interactive state (queued/running/
 // waiting_human). When false (completed/failed/cancelled) the chat input is
@@ -1275,7 +1268,7 @@ function forceAuthoritativeIdle() {
  */
 function settleAfterTurnEnd() {
   if (queued.value.some((q) => !q.id)) {
-    queued.value = queued.value.filter((q) => !!q.id)
+    queued.value = dropGhostItems(queued.value)
   }
   thinking.value = queued.value.length > 0 || liveAgentIdx.value >= 0
 }
@@ -1346,22 +1339,11 @@ const sandboxOrphanOpLabel = computed(() => {
  */
 function applyQueueState(
   waiting: number,
-  items: {
-    id?: string
-    text?: string
-    images?: ClarifyImage[]
-    annotations?: ReactAnnotation[]
-  }[] | null,
+  items: SessionFrameItem[] | null,
   busy?: boolean,
-  activeItem?: {
-    id?: string
-    text?: string
-    images?: ClarifyImage[]
-    annotations?: ReactAnnotation[]
-  } | null,
+  activeItem?: SessionFrameItem | null,
 ) {
-  const authoritativeIdle = waiting === 0 && !busy && !activeItem
-  if (authoritativeIdle) {
+  if (isAuthoritativeIdle(waiting, busy, activeItem)) {
     forceAuthoritativeIdle()
     return
   }
@@ -1369,38 +1351,7 @@ function applyQueueState(
     if (queued.value.length) queued.value = []
     if (liveAgentIdx.value < 0) thinking.value = false
   } else if (items) {
-    const rebuilt: QueueItem[] = items.map((it) => {
-      const text = it.text ?? ''
-      const id = typeof it.id === 'string' && it.id ? it.id : undefined
-      // Prefer server id match; text fallback for optimistic rows not yet reconciled.
-      const local = id
-        ? queued.value.find((q) => q.id === id) ?? queued.value.find((q) => !q.id && q.text === text)
-        : queued.value.find((q) => q.text === text)
-      // Prefer frame images/annotations (authoritative); local only when frame omits.
-      // Clone elements so composer refill never shares object refs with the queue row.
-      const images = Array.isArray(it.images)
-        ? cloneClarifyImages(it.images)
-        : cloneClarifyImages(local?.images)
-      const annotations = Array.isArray(it.annotations)
-        ? cloneReactAnnotations(it.annotations)
-        : cloneReactAnnotations(local?.annotations)
-      return {
-        id: id ?? local?.id,
-        text,
-        images,
-        annotations,
-      }
-    })
-    const maxLocal = liveAgentIdx.value >= 0 || busy ? rebuilt.length : rebuilt.length + 1
-    if (queued.value.length > maxLocal) {
-      const optimistic = queued.value.slice(rebuilt.length).slice(0, Math.max(0, maxLocal - rebuilt.length))
-      queued.value = [...rebuilt, ...optimistic]
-    } else if (queued.value.length < rebuilt.length) {
-      queued.value = rebuilt
-    } else {
-      const optimistic = queued.value.slice(rebuilt.length)
-      queued.value = [...rebuilt, ...optimistic]
-    }
+    queued.value = reconcileQueue(queued.value, items, liveAgentIdx.value >= 0 || !!busy)
   }
   // Refresh resume: recreate streaming agent bubble from activeItem when busy.
   // Skip when persisted turns already completed this human — otherwise poll
@@ -1445,31 +1396,16 @@ function applyQueueState(
 function applyReviewFrame(frame: {
   event?: string
   nodeId?: string
-  item?: {
-    id?: string
-    text?: string
-    images?: ClarifyImage[]
-    annotations?: ReactAnnotation[]
-  }
+  item?: SessionFrameItem
   message?: string
   interrupted?: boolean
   waiting?: number
-  items?: {
-    id?: string
-    text?: string
-    images?: ClarifyImage[]
-    annotations?: ReactAnnotation[]
-  }[]
+  items?: SessionFrameItem[]
   busy?: boolean
   sandboxBusy?: boolean
   sandboxDesynced?: boolean
   sandboxRunningOpId?: string
-  activeItem?: {
-    id?: string
-    text?: string
-    images?: ClarifyImage[]
-    annotations?: ReactAnnotation[]
-  }
+  activeItem?: SessionFrameItem
 }) {
   // Defense: ignore frames for other producer sessions on the same run.
   if (frame.nodeId && frame.nodeId !== props.nodeId) return
@@ -1479,18 +1415,10 @@ function applyReviewFrame(frame: {
       // frame.item is server-authoritative; match-remove by id first, text fallback —
       // never blind-shift (that would bind live human to the next waiter after trim).
       const auth = frame.item
-      const id = typeof auth?.id === 'string' && auth.id ? auth.id : undefined
       const text = auth?.text ?? ''
-      let matchIdx = -1
-      if (id) {
-        matchIdx = queued.value.findIndex((q) => q.id === id)
-      } else if (text) {
-        // No server id: text match for optimistic rows only.
-        matchIdx = queued.value.findIndex((q) => q.text === text)
-      }
-      // If auth carried an id but it is already absent (queue_state trimmed it),
-      // do NOT fall back to text — that would steal a different same-text waiter.
-      const local = matchIdx >= 0 ? queued.value.splice(matchIdx, 1)[0] : undefined
+      const begun = takeTurnBeginItem(queued.value, auth)
+      queued.value = begun.queue
+      const local = begun.taken
       const images =
         auth?.images && auth.images.length > 0 ? auth.images : local?.images
       const annotations =
