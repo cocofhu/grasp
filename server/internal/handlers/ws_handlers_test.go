@@ -107,13 +107,17 @@ func TestSandboxChatWS(t *testing.T) {
 	if err := c.WriteJSON(map[string]any{"type": "chat", "content": "hi"}); err != nil {
 		t.Fatalf("write chat: %v", err)
 	}
+	_, first, err := c.ReadMessage()
+	if err != nil || !strings.Contains(string(first), `"event":"queue_state"`) {
+		t.Fatalf("first frame should be the queue snapshot: %v %s", err, first)
+	}
 	sawError := false
-	for i := 0; i < 6; i++ {
+	for i := 0; i < 10; i++ {
 		_, msg, err := c.ReadMessage()
 		if err != nil {
 			break
 		}
-		if strings.Contains(string(msg), `"type":"error"`) {
+		if strings.Contains(string(msg), `"event":"error"`) {
 			sawError = true
 			break
 		}

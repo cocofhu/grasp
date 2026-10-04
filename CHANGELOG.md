@@ -36,6 +36,10 @@ All notable public-release changes are documented here.
   live. Messages sent while PM is busy wait in line, and **Stop** also clears
   the line. A turn cut short by a server restart is marked **Interrupted by
   restart** and can be retried.
+- **Agent Studio:** the chat tester and the sandbox console's chat tab keep
+  their queue and running reply when the page is refreshed or the connection
+  drops. The panel reconnects on its own and picks the reply up where it is,
+  and destroying the sandbox stops its queued messages.
 
 ## 1.2.1 — 2026-09-28
 

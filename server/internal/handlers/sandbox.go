@@ -17,6 +17,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
+	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -237,6 +238,9 @@ func (h *Handlers) DestroySandbox(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
 		return
 	}
+	if h.SbxChats != nil {
+		h.SbxChats.Cancel(id)
+	}
 	if err := h.Sbx.Destroy(c.Request.Context(), id); err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
@@ -250,20 +254,13 @@ func (h *Handlers) CleanupSandboxes(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"destroyed": destroyed, "skipped": skipped})
 }
 
-// chatItem is one queued chat turn (text + optional image attachments).
-type chatItem struct {
-	Content string               `json:"content"`
-	Images  []models.PromptImage `json:"images"`
-}
-
-// SandboxChat is the streaming chat-test WebSocket. The client sends
-// {"type":"chat","content":"…","images":[{data,mimeType}]}; frames are enqueued
-// into a per-connection FIFO and drained by a single worker (serial ordering),
-// so the user can fire multiple messages without waiting for each turn. The
-// server streams {"type":"acp","data":{…}} for the running turn, brackets each
-// turn with {"type":"turn_begin"}/{"type":"turn_done"} (or {"type":"error"}),
-// and emits {"type":"queue_state","waiting":N} on every enqueue/dequeue.
-// {"type":"cancel"} aborts the current turn and clears the pending queue.
+// SandboxChat is the Agent Studio / sandbox-console chat WebSocket. Turns run
+// in the sandbox's chatsession FIFO and outlive the connection. On connect the
+// server sends a queue_state snapshot and, while busy, replays the active turn;
+// then live frames follow: {"type":"session","event":"queue_state"|
+// "turn_begin"|"turn_done"|"error",…} and {"type":"acp","data":{…}}. The client
+// sends {"type":"chat","id":"…","content":"…","images":[…]} to queue a turn and
+// {"type":"cancel"} to stop the running turn and clear the queue.
 func (h *Handlers) SandboxChat(c *gin.Context) {
 	if h.Auth != nil {
 		if _, ok := h.Auth.RequireSession(c); !ok {
@@ -272,6 +269,10 @@ func (h *Handlers) SandboxChat(c *gin.Context) {
 	}
 	id, ok := parseUintParam(c, "id")
 	if !ok {
+		return
+	}
+	if h.SbxChats == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "sandbox chat unavailable"})
 		return
 	}
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -288,40 +289,17 @@ func (h *Handlers) SandboxChat(c *gin.Context) {
 		return conn.WriteJSON(v)
 	}
 
-	ctx, cancel := context.WithCancel(c.Request.Context())
-	defer cancel()
-
-	// Per-connection FIFO of pending turns, drained by one worker goroutine so
-	// turns run strictly serially (the ACP client demuxes one turn at a time).
-	queue := make(chan chatItem, 64)
-	var qmu sync.Mutex // guards waiting count + close coordination
-	waiting := 0
-	broadcastQueue := func() { _ = write(gin.H{"type": "queue_state", "waiting": waiting}) }
-
-	// Worker: drain the queue, running one turn at a time.
+	ch, unsub := h.SbxChats.Subscribe(id, -1)
+	defer unsub()
 	go func() {
-		for item := range queue {
-			qmu.Lock()
-			if waiting > 0 {
-				waiting--
-			}
-			qmu.Unlock()
-			broadcastQueue()
-			_ = write(gin.H{"type": "turn_begin"})
-			cerr := h.Sbx.Chat(ctx, id, item.Content, item.Images, func(raw json.RawMessage) {
-				_ = write(gin.H{"type": "acp", "data": raw})
-			})
-			if cerr != nil {
-				_ = write(gin.H{"type": "error", "message": cerr.Error()})
-			} else {
-				_ = write(gin.H{"type": "turn_done"})
+		for ev := range ch {
+			if write(ev.Frame()) != nil {
+				_ = conn.Close()
+				return
 			}
 		}
 	}()
 
-	// Read loop: enqueue chat frames; handle cancel. Closing queue on exit
-	// lets the worker goroutine finish and return.
-	defer close(queue)
 	for {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
@@ -329,6 +307,7 @@ func (h *Handlers) SandboxChat(c *gin.Context) {
 		}
 		var m struct {
 			Type    string               `json:"type"`
+			ID      string               `json:"id"`
 			Content string               `json:"content"`
 			Images  []models.PromptImage `json:"images"`
 		}
@@ -337,35 +316,13 @@ func (h *Handlers) SandboxChat(c *gin.Context) {
 		}
 		switch m.Type {
 		case "cancel":
-			// Drop everything not yet started, then abort the running turn.
-			qmu.Lock()
-			for {
-				select {
-				case <-queue:
-					continue
-				default:
-				}
-				break
-			}
-			waiting = 0
-			qmu.Unlock()
-			broadcastQueue()
-			h.Sbx.Cancel(id)
+			h.SbxChats.Cancel(id)
 		case "chat", "":
 			if m.Content == "" && len(m.Images) == 0 {
 				continue
 			}
-			qmu.Lock()
-			waiting++
-			qmu.Unlock()
-			select {
-			case queue <- chatItem{Content: m.Content, Images: m.Images}:
-				broadcastQueue()
-			default:
-				qmu.Lock()
-				waiting--
-				qmu.Unlock()
-				_ = write(gin.H{"type": "error", "message": "消息队列已满,请稍候"})
+			if _, err := h.SbxChats.Enqueue(id, services.SandboxChatItem{ID: strings.TrimSpace(m.ID), Content: m.Content, Images: m.Images}); err != nil {
+				_ = write(gin.H{"type": "session", "event": "error", "message": err.Error(), "interrupted": false})
 			}
 		}
 	}

@@ -55,4 +55,3 @@ func TestNormalizePmKind(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
-

@@ -23,6 +23,14 @@
 ### 2026-10-05
 
 - 日期：2026-10-05
+- 范围：`server/internal/chatsession/stream{,_test}.go`、`server/internal/services/{sandbox_chat,sandbox_chat_test,pm_turn}.go`、`server/internal/handlers/{sandbox,handlers}.go`、`server/cmd/server/main.go`、`web/src/components/agent/AgentChatTester{.vue,.test.ts,.interactions.test.ts}`
+- 做了什么：把 PM 里"帧编号 + 当前轮回放缓冲 + 订阅者扇出"抽成 `chatsession.Stream`，PM 改用它。Agent Studio / 沙箱控制台的对话从"每个 WS 连接一条队列"改成 `SandboxChats`：每个沙箱一个 chatsession FIFO，连接断开不影响排队和正在跑的轮次；WS 连上先发 queue_state 快照，忙时回放当前轮，帧格式和 PM 一致（`{type:'session',event}` / `{type:'acp'}`）。客户端发 chat 时带 `id`，`turn_begin` 按 id 取回本地附件预览。`AgentChatTester` 断线按 1s·2^n（封顶 15s）重连；历史恢复完成前先暂存实时帧，并去掉事件日志里正在跑的那一轮，避免回放重复。销毁沙箱时先取消它的对话。
+- 为什么：统一聊天的最后一块。Studio 原来刷新页面或断线就丢队列，正在跑的轮次也看不到了；PM 和 Studio 的回放逻辑本质相同，收成一份。
+- 如何验证：`go test ./...` 全绿（新增 `stream_test.go`、`sandbox_chat_test.go`，`go test -race` 通过）；`chatsession` 覆盖率 97.0%，`cover-check-server.sh 90` 为 91.7%；golangci-lint 0 issues；`npx vitest run` 全绿（新增重连回放用例）；`vue-tsc --noEmit`、eslint 无错误。
+
+### 2026-10-05
+
+- 日期：2026-10-05
 - 范围：`server/internal/services/{pm_turn,pm_thread,pm,sandbox_view}.go`、`server/internal/handlers/pm.go`、`server/internal/router/router.go`、`server/cmd/server/main.go`、`web/src/lib/pm/{usePmLeaderChat,pmTurnState}.ts`、`web/src/lib/api/clients/pmClient.ts`、`web/src/components/pm/PmLeaderChat.vue`、相关测试与 locales
 - 做了什么：PM 对话改跑在 `chatsession` 上。每个线程一个 FIFO 会话，网页、IM 渠道、定时任务、审批自动回复都通过原有的 `Start` / `Active` / `Cancel` / `Subscribe` 入队。新增 `POST .../turns`（起轮或 `retryOf` 重试，忙时排队，返回 `waiting`）和 `POST .../turns/cancel`；线程 WS 只负责订阅：连上先发 queue_state 快照，忙时回放当前轮的 turn_begin 和 acp 帧，再接实时帧，另有 `phase` 帧报告沙箱准备进度（preparing / pulling / running）。沙箱准备从前端挪到服务端（`openPmSandbox` + `SandboxView.WaitReady`）。启动时把残留的 streaming 草稿标成新的 failKind `interrupted`。删掉 `/draft` 接口和前端的草稿续接、孤儿判定、90 秒期限。前端断线按 1s·2^n（封顶 15s）重连，页面回到前台时立即重连。
 - 为什么：PM 断线、刷新、轮次超过 90 秒都会在前端被判成"连接中断"，可服务端其实还在跑。改成以服务端为准，和 ReAct 澄清走同一套排队与快照恢复。

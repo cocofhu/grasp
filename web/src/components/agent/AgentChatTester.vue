@@ -54,7 +54,7 @@ type Tool = { id: string; title: string; status: string; summary?: string; input
 /** Arrival order of the reply: text runs, or an index into Turn.tools. */
 type Step = { kind: 'thought' | 'message'; text: string } | { kind: 'tool'; tool: number }
 type ImageAtt = { data: string; mimeType: string; url: string; name?: string }
-type QueueItem = { text: string; images: ImageAtt[] }
+type QueueItem = { id: string; text: string; images: ImageAtt[] }
 type Turn = {
   role: 'user' | 'agent'
   text: string
@@ -78,11 +78,10 @@ const repos = ref<RepoRow[]>([{ name: '', url: '', branch: '' }])
 const scroller = ref<HTMLElement | null>(null)
 const attachments = ref<ImageAtt[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
-// Local FIFO of not-yet-started sends, mirroring the server-side queue (same
-// order). Items live ONLY in the bottom queue panel — no conversation bubble is
-// created until the worker actually starts the turn (turn_begin), at which
-// point we shift the front and render the user + streaming agent bubbles. This
-// avoids showing "queued" bubbles prematurely in the transcript.
+// Not-yet-started sends as last reported by the server (plus optimistic local
+// sends). Items live ONLY in the bottom queue panel — no conversation bubble is
+// created until the server starts the turn (turn_begin). This avoids showing
+// "queued" bubbles prematurely in the transcript.
 const queued = ref<QueueItem[]>([])
 // True while rebuilding a reused sandbox's prior transcript, so the UI can show
 // a "loading history" indicator instead of a blank (seemingly frozen) panel.
@@ -92,7 +91,16 @@ const historyHasMore = ref(false)
 const historyCursor = ref('')
 let rawFrames: any[] = []
 let activeIdx = -1
+let activeItemId = ''
 let ws: WebSocket | null = null
+let wsSandboxId = 0
+let wsAttempt = 0
+let wsReconnectTimer: number | undefined
+// Frames that arrive before the reused sandbox's history is restored.
+let heldFrames: string[] | null = null
+let disposed = false
+// Local copies of sent items so turn_begin can show their previews.
+const sentItems = new Map<string, QueueItem>()
 
 const statusLabel = computed(() => ({
   idle: t('pages.agentChatTester.status.idle'),
@@ -246,20 +254,80 @@ async function waitReady(id: number) {
 }
 
 function openWs(id: number) {
-  ws = new WebSocket(api.sandboxChatWsUrl(id))
-  ws.onopen = () => {
+  closeWs()
+  wsSandboxId = id
+  const sock = new WebSocket(api.sandboxChatWsUrl(id))
+  ws = sock
+  heldFrames = []
+  sock.onopen = () => {
+    if (ws !== sock) return
+    wsAttempt = 0
     status.value = 'ready'
+    errorMsg.value = ''
     // Reused sandbox: rebuild the prior transcript so the context is visible,
-    // like the sandbox console page.
-    void restoreHistory(id)
+    // like the sandbox console page. Live frames wait until it is in place.
+    void restoreHistory(id).finally(() => {
+      if (ws === sock) flushHeldFrames()
+    })
   }
-  ws.onmessage = (ev) => onFrame(ev.data)
-  ws.onclose = () => {
+  sock.onmessage = (ev) => {
+    if (ws !== sock) return
+    if (heldFrames) heldFrames.push(ev.data)
+    else onFrame(ev.data)
+  }
+  sock.onclose = () => {
+    if (ws !== sock) return
+    ws = null
     if (status.value !== 'error') status.value = 'closed'
+    scheduleReconnect()
   }
-  ws.onerror = () => {
+  sock.onerror = () => {
+    if (ws !== sock) return
     status.value = 'error'
     errorMsg.value = t('pages.agentChatTester.wsFailed')
+  }
+}
+
+function closeWs() {
+  if (wsReconnectTimer !== undefined) {
+    clearTimeout(wsReconnectTimer)
+    wsReconnectTimer = undefined
+  }
+  const sock = ws
+  ws = null
+  heldFrames = null
+  sock?.close()
+}
+
+// The turn keeps running on the server while the socket is down; reconnecting
+// replays it, so a dropped connection only pauses the view.
+function scheduleReconnect() {
+  if (disposed || !wsSandboxId || wsReconnectTimer !== undefined) return
+  const delay = Math.min(15_000, 1000 * 2 ** wsAttempt)
+  wsAttempt++
+  wsReconnectTimer = window.setTimeout(() => {
+    wsReconnectTimer = undefined
+    if (!disposed && wsSandboxId && !ws) openWs(wsSandboxId)
+  }, delay)
+}
+
+function flushHeldFrames() {
+  const held = heldFrames ?? []
+  heldFrames = null
+  const head = parseFrame(held[0])
+  const active = head?.event === 'queue_state' && head.busy ? head.activeItem : null
+  if (active && activeIdx < 0) dropRestoredActiveTurn(String(active.text ?? ''))
+  for (const raw of held) onFrame(raw)
+}
+
+// The event log already holds the running turn's prompt and partial reply; drop
+// them so the replayed frames rebuild that turn once.
+function dropRestoredActiveTurn(text: string) {
+  for (let i = turns.value.length - 1; i >= 0; i--) {
+    const turn = turns.value[i]
+    if (turn?.role !== 'user') continue
+    if (turn.text === text.trim()) turns.value = turns.value.slice(0, i)
+    return
   }
 }
 
@@ -267,6 +335,10 @@ function openWs(id: number) {
 // queued on the server (single worker drains them serially).
 const canSend = () =>
   !!ws && ws.readyState === WebSocket.OPEN && (status.value === 'ready' || status.value === 'thinking')
+
+function newItemId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
 
 function send() {
   const text = input.value.trim()
@@ -282,13 +354,16 @@ function send() {
   }
   // Enqueue only — the bubble is created on turn_begin (see onFrame), so extra
   // sends show up in the bottom queue panel instead of as premature bubbles.
-  queued.value.push({ text, images: imgs })
+  const item: QueueItem = { id: newItemId(), text, images: imgs }
+  sentItems.set(item.id, item)
+  queued.value.push(item)
   input.value = ''
   attachments.value = []
   status.value = 'thinking'
   ws!.send(
     JSON.stringify({
       type: 'chat',
+      id: item.id,
       content: text,
       images: imgs.map((a) => ({
         data: a.data,
@@ -311,58 +386,110 @@ function refreshStatus() {
   status.value = queued.value.length === 0 && activeIdx < 0 ? 'ready' : 'thinking'
 }
 
-function onFrame(data: string) {
-  let frame: any
+function parseFrame(data: string | undefined): any {
+  if (typeof data !== 'string') return null
   try {
-    frame = JSON.parse(data)
+    return JSON.parse(data)
   } catch {
+    return null
+  }
+}
+
+function serverItem(raw: any): QueueItem {
+  const id = String(raw?.id ?? '')
+  const local = id ? sentItems.get(id) : undefined
+  if (local) return local
+  const images: ImageAtt[] = Array.isArray(raw?.images)
+    ? raw.images
+        .filter((im: any) => im && typeof im.data === 'string')
+        .map((im: any) => ({
+          data: im.data,
+          mimeType: String(im.mimeType || ''),
+          url: im.mimeType ? `data:${im.mimeType};base64,${im.data}` : '',
+          ...(im.name ? { name: String(im.name) } : {}),
+        }))
+    : []
+  return { id, text: String(raw?.text ?? ''), images }
+}
+
+function applyQueueState(frame: any) {
+  queued.value = Array.isArray(frame.items) ? frame.items.map(serverItem) : []
+  if (!frame.busy && activeIdx >= 0) {
+    // The turn ended while we were away.
+    const turn = turns.value[activeIdx]
+    if (turn) turn.streaming = false
+    activeIdx = -1
+    activeItemId = ''
+  }
+  if (frame.busy) status.value = 'thinking'
+  else refreshStatus()
+}
+
+function beginTurn(frame: any) {
+  const item = serverItem(frame.item)
+  queued.value = queued.value.filter((q) => q.id !== item.id)
+  if (item.id && item.id === activeItemId && activeIdx >= 0) {
+    // Replay of the turn we were already showing: rebuild its reply.
+    turns.value[activeIdx] = { role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true }
+    status.value = 'thinking'
     return
   }
-  switch (frame.type) {
+  if (activeIdx >= 0) {
+    const prev = turns.value[activeIdx]
+    if (prev) prev.streaming = false
+  }
+  turns.value.push({
+    role: 'user',
+    text: item.text,
+    thought: '',
+    tools: [],
+    plan: [],
+    streaming: false,
+    images: item.images.length ? item.images : undefined,
+  })
+  activeIdx =
+    turns.value.push({ role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true }) - 1
+  activeItemId = item.id
+  status.value = 'thinking'
+}
+
+function endTurn(error?: string) {
+  const turn = activeIdx >= 0 ? turns.value[activeIdx] : null
+  if (turn) {
+    turn.streaming = false
+    if (error !== undefined) turn.error = error
+  } else if (error !== undefined) {
+    errorMsg.value = error
+  }
+  if (activeItemId) sentItems.delete(activeItemId)
+  activeIdx = -1
+  activeItemId = ''
+  refreshStatus()
+}
+
+function onFrame(data: string) {
+  const frame = parseFrame(data)
+  if (!frame || typeof frame !== 'object') return
+  if (frame.type === 'acp') {
+    const turn = activeIdx >= 0 ? turns.value[activeIdx] : null
+    if (turn) applyAcp(frame.data, turn)
+    scrollDown()
+    return
+  }
+  if (frame.type !== 'session') return
+  switch (frame.event) {
     case 'queue_state':
-      // Server count is authoritative for reconciliation, but we drive the
-      // panel from the local queue (which carries text/images). No-op here.
+      applyQueueState(frame)
       break
-    case 'turn_begin': {
-      // The worker started the next queued item: materialize its bubbles now.
-      const item = queued.value.shift()
-      turns.value.push({
-        role: 'user',
-        text: item?.text ?? '',
-        thought: '',
-        tools: [],
-        plan: [],
-        streaming: false,
-        images: item && item.images.length ? item.images : undefined,
-      })
-      activeIdx =
-        turns.value.push({ role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true }) - 1
+    case 'turn_begin':
+      beginTurn(frame)
       break
-    }
-    case 'acp': {
-      const turn = activeIdx >= 0 ? turns.value[activeIdx] : null
-      if (turn) applyAcp(frame.data, turn)
+    case 'turn_done':
+      endTurn()
       break
-    }
-    case 'turn_done': {
-      const turn = activeIdx >= 0 ? turns.value[activeIdx] : null
-      if (turn) turn.streaming = false
-      activeIdx = -1
-      refreshStatus()
+    case 'error':
+      endTurn(frame.message || t('pages.agentChatTester.execError'))
       break
-    }
-    case 'error': {
-      const turn = activeIdx >= 0 ? turns.value[activeIdx] : null
-      if (turn) {
-        turn.streaming = false
-        turn.error = frame.message || t('pages.agentChatTester.execError')
-      } else {
-        errorMsg.value = frame.message || t('pages.agentChatTester.execError')
-      }
-      activeIdx = -1
-      refreshStatus()
-      break
-    }
   }
   scrollDown()
 }
@@ -611,8 +738,11 @@ function scrollDown() {
 }
 
 function reset() {
-  ws?.close()
-  ws = null
+  closeWs()
+  wsSandboxId = 0
+  wsAttempt = 0
+  sentItems.clear()
+  activeItemId = ''
   sandbox.value = null
   turns.value = []
   attachments.value = []
@@ -644,7 +774,8 @@ watch(
   () => reset(),
 )
 onBeforeUnmount(() => {
-  ws?.close()
+  disposed = true
+  closeWs()
   if (startTimer) clearInterval(startTimer)
 })
 </script>
@@ -877,7 +1008,7 @@ onBeforeUnmount(() => {
       <div class="space-y-1">
         <div
           v-for="(q, qi) in queued"
-          :key="qi"
+          :key="q.id || qi"
           class="flex items-center gap-2 rounded border border-line bg-surface px-2 py-1 text-[12px] text-txt2"
         >
           <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-line text-[9px] text-txt3">{{ qi + 1 }}</span>
