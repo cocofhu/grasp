@@ -23,6 +23,14 @@
 ### 2026-10-05
 
 - 日期：2026-10-05
+- 范围：`server/internal/handlers/preview-pick.js`、`web/public/preview-pick.js`、`sandbox-gateway/sandbox/internal/previewinject/preview-pick.js`、`web/src/lib/shared/previewPickScript.test.ts`
+- 做了什么：重做直连预览底部工具条的视觉样式，统一按钮尺寸、间距、圆角、边框、阴影和浅深色主题；为取点、产物、对话和原版预览加入线性 SVG 图标；将原版预览说明从浏览器原生长 tooltip 改为可聚焦的自定义提示，并增加窄屏自动换行。
+- 为什么：原工具条依赖默认按钮样式，emoji 眼睛图标在不同环境中比例和颜色不一致，长原生 tooltip 会遮挡页面并破坏层级，截图中的控件难以辨识。
+- 如何验证：`previewPickScript.test.ts` 61/61 通过；`go test ./internal/handlers -run 'TestPreviewPickScript|TestLiveOverlayScript'` 通过；三份脚本副本同步且 `git diff --check` 通过。
+
+### 2026-10-05
+
+- 日期：2026-10-05
 - 范围：`server/internal/{envauth,services,runtime,handlers}`、`README.md`、`server/README.md`
 - 做了什么：项目凭据收口安全边界。去掉沙箱从服务进程环境读取 `GITHUB_TOKEN` / `*_API_KEY` 等的回退（含 `gitToken` / `gitLabURL`）；`fallbackEnvKey` 只从项目/Agent env 取值，不再 `os.LookupEnv`。凭据 env key 必须是合法标识符，且不能是平台保留变量（新增 `envauth.IsPlatformReservedEnvKey`）；交互/测试沙箱叠加凭据时跳过保留键，流水线沙箱的 `GRASP_*` 平台变量恢复为最后写入。渠道/外部 MCP/工作流类型只作为只读视图，不能新建。未填值的内置槽位不再挡住 Run env。项目凭据中的 SSH 私钥/known_hosts 优先于 Agent 元信息。删除项目时一并删除凭据。
 - 为什么：原实现会把服务端宿主机的 Token 注入所有项目的沙箱；项目用户可通过 `fallbackEnvKey`（如 `GRASP_SECRETS_KEY`）读出服务端任意环境变量；自定义凭据可覆盖 `GRASP_ARTIFACT_TOKEN` / `GRASP_PM_TOKEN` 等平台令牌；打开凭据页即生成空槽位，会让 Run 级 `GITHUB_TOKEN` 静默失效。
