@@ -94,9 +94,66 @@ fi
 `, port)
 	out, err := s.mgr.ExecScript(ctx, sandboxName, 20*time.Second, "bash", script)
 	if err != nil {
+		if msg := keepaliveFailure(out); msg != "" {
+			return 0, fmt.Errorf("%s (%w)", msg, err)
+		}
 		return 0, err
 	}
 	return parseKeepalivePID(out), nil
+}
+
+// keepaliveFailure returns the script's own "keepalive: …" reason; ExecScript
+// folds stderr into out, which is otherwise lost behind "exit status 1".
+func keepaliveFailure(out string) string {
+	lines := strings.Split(out, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if line := strings.TrimSpace(lines[i]); strings.HasPrefix(line, "keepalive: ") {
+			return line
+		}
+	}
+	return lastNonEmptyLine(out)
+}
+
+func lastNonEmptyLine(out string) string {
+	lines := strings.Split(out, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if line := strings.TrimSpace(lines[i]); line != "" {
+			if len(line) > 200 {
+				line = line[:200]
+			}
+			return line
+		}
+	}
+	return ""
+}
+
+// ListenAddrs lists the local addresses (ss "Local Address:Port") holding a
+// TCP listener on port inside the sandbox, e.g. "127.0.0.1:3000".
+func (s *PreviewService) ListenAddrs(ctx context.Context, sandboxName string, port int) ([]string, error) {
+	if s.mgr == nil || sandboxName == "" || port <= 0 {
+		return nil, fmt.Errorf("sandbox not available")
+	}
+	script := fmt.Sprintf(`ss -tlnH 2>/dev/null | awk '{print $4}' | grep -E ':%d$' || true`, port)
+	out, err := s.mgr.ExecScript(ctx, sandboxName, 5*time.Second, "bash", script)
+	if err != nil {
+		return nil, err
+	}
+	return parseListenAddrs(out, port), nil
+}
+
+func parseListenAddrs(out string, port int) []string {
+	suffix := ":" + strconv.Itoa(port)
+	seen := map[string]bool{}
+	var addrs []string
+	for _, line := range strings.Split(out, "\n") {
+		a := strings.TrimSpace(line)
+		if a == "" || !strings.HasSuffix(a, suffix) || seen[a] {
+			continue
+		}
+		seen[a] = true
+		addrs = append(addrs, a)
+	}
+	return addrs
 }
 
 // parseKeepalivePID extracts "OK pid=<n>" from keepalive script stdout.

@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -54,12 +56,146 @@ type fakePreviewOps struct {
 	up      string
 	warmed  []string
 	direct  bool
+	// probeSeq, when set, answers successive probes before falling back to healthy.
+	probeSeq     []bool
+	probes       int
+	keepaliveErr error
+	keepalives   int
+	// keepaliveProbes records the probe count when keepalive ran.
+	keepaliveProbes int
 }
 
 func (f *fakePreviewOps) SandboxForRunNode(string, string) (string, bool) { return f.name, f.ok }
-func (f *fakePreviewOps) ProbeHTTPPort(context.Context, string, int) bool { return f.healthy }
+func (f *fakePreviewOps) ProbeHTTPPort(context.Context, string, int) bool {
+	f.probes++
+	if f.probes <= len(f.probeSeq) {
+		return f.probeSeq[f.probes-1]
+	}
+	return f.healthy
+}
 func (f *fakePreviewOps) KeepalivePort(context.Context, string, int) (int, error) {
+	f.keepalives++
+	f.keepaliveProbes = f.probes
+	if f.keepaliveErr != nil {
+		return 0, f.keepaliveErr
+	}
 	return 4242, nil
+}
+
+// listenPreviewOps adds in-sandbox listen addresses to fakePreviewOps.
+type listenPreviewOps struct {
+	*fakePreviewOps
+	addrs []string
+	err   error
+}
+
+func (l *listenPreviewOps) ListenAddrs(context.Context, string, int) ([]string, error) {
+	return l.addrs, l.err
+}
+
+func fastPreviewProbe(t *testing.T) {
+	t.Helper()
+	prev := previewProbeInterval
+	previewProbeInterval = time.Millisecond
+	t.Cleanup(func() { previewProbeInterval = prev })
+}
+
+func TestSetPreviewProbesBeforeKeepalive(t *testing.T) {
+	fastPreviewProbe(t)
+	h := NewHost(&memStore{})
+	ops := &fakePreviewOps{name: "sb", ok: true, healthy: true, probeSeq: []bool{false, false}, up: "http://10.0.0.1:1"}
+	h.SetPreviewSandboxOps(ops)
+	if _, err := h.setPreviewPort("r", "n", 3000, ""); err != nil {
+		t.Fatalf("app that binds on the third probe should register: %v", err)
+	}
+	if ops.keepalives != 1 || ops.keepaliveProbes != 3 {
+		t.Fatalf("keepalive must run after a successful probe: keepalives=%d probesBefore=%d", ops.keepalives, ops.keepaliveProbes)
+	}
+	if ops.probes != 4 {
+		t.Fatalf("want a confirming probe after keepalive, probes=%d", ops.probes)
+	}
+}
+
+func TestSetPreviewUnreachableSkipsKeepalive(t *testing.T) {
+	fastPreviewProbe(t)
+	h := NewHost(&memStore{})
+	ops := &fakePreviewOps{name: "sb", ok: true, healthy: false}
+	h.SetPreviewSandboxOps(ops)
+	_, err := h.setPreviewPort("r", "n", 3000, "")
+	if err == nil {
+		t.Fatal("unreachable port should fail")
+	}
+	if ops.keepalives != 0 {
+		t.Fatalf("keepalive must not run on an unreachable port, got %d", ops.keepalives)
+	}
+	if ops.probes != previewProbeAttempts {
+		t.Fatalf("probes=%d want %d", ops.probes, previewProbeAttempts)
+	}
+	if !strings.Contains(err.Error(), "0.0.0.0:3000") {
+		t.Fatalf("error should say how to bind: %v", err)
+	}
+}
+
+func TestSetPreviewUnreachableNamesListenAddress(t *testing.T) {
+	fastPreviewProbe(t)
+	cases := []struct {
+		name  string
+		addrs []string
+		err   error
+		want  []string
+	}{
+		{"loopback", []string{"127.0.0.1:3000", "[::1]:3000"}, nil, []string{"只监听在 127.0.0.1:3000, [::1]:3000", "0.0.0.0:3000"}},
+		{"none", nil, nil, []string{"没有进程在监听"}},
+		{"wildcard", []string{"0.0.0.0:3000"}, nil, []string{"已在 0.0.0.0:3000 监听", "没有响应"}},
+		{"inspect error", nil, errors.New("ssh down"), []string{"不可达", "0.0.0.0:3000"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := NewHost(&memStore{})
+			h.SetPreviewSandboxOps(&listenPreviewOps{fakePreviewOps: &fakePreviewOps{name: "sb", ok: true}, addrs: tc.addrs, err: tc.err})
+			_, err := h.setPreviewPort("r", "n", 3000, "")
+			if err == nil {
+				t.Fatal("want error")
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(err.Error(), w) {
+					t.Fatalf("error %q missing %q", err, w)
+				}
+			}
+		})
+	}
+}
+
+func TestSetPreviewKeepaliveErrorCarriesReason(t *testing.T) {
+	fastPreviewProbe(t)
+	h := NewHost(&memStore{})
+	ops := &fakePreviewOps{name: "sb", ok: true, healthy: true, keepaliveErr: errors.New("keepalive: cannot read cmdline for pid 7 (exit status 1)")}
+	h.SetPreviewSandboxOps(ops)
+	_, err := h.setPreviewPort("r", "n", 3000, "")
+	if err == nil || !strings.Contains(err.Error(), "cannot read cmdline") || !strings.Contains(err.Error(), "可以访问") {
+		t.Fatalf("keepalive failure should keep the script reason: %v", err)
+	}
+}
+
+func TestAllLoopback(t *testing.T) {
+	cases := map[string]bool{
+		"127.0.0.1:3000":   true,
+		"[::1]:3000":       true,
+		"localhost:3000":   true,
+		"0.0.0.0:3000":     false,
+		"*:3000":           false,
+		"[::]:3000":        false,
+		"10.0.0.5:3000":    false,
+		"[fe80::1%eth0]:3": false,
+	}
+	for in, want := range cases {
+		if got := allLoopback([]string{in}); got != want {
+			t.Fatalf("allLoopback(%q)=%v want %v", in, got, want)
+		}
+	}
+	if allLoopback([]string{"127.0.0.1:1", "0.0.0.0:1"}) {
+		t.Fatal("mixed list is not loopback-only")
+	}
 }
 func (f *fakePreviewOps) PreviewUpstream(context.Context, string, int) (string, bool) {
 	if f.up == "" {

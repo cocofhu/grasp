@@ -148,6 +148,7 @@ func TestValidatePreviewURL(t *testing.T) {
 }
 
 func TestSetPreviewUnreachableFails(t *testing.T) {
+	fastPreviewProbe(t)
 	h := NewHost(&memStore{})
 	h.SetPreviewSandboxOps(&fakePreviewOps{name: "sb", ok: true, healthy: false, up: "http://10.0.0.1:9"})
 	tok := h.RegisterRun("r1")

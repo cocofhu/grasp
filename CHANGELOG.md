@@ -20,6 +20,10 @@ All notable public-release changes are documented here.
   readable reason and reconnects on its own with backoff, waiting until the tab
   is visible again. It does not reconnect when the preview was opened in another
   window.
+- **App preview:** `set_preview` now waits briefly for a port that is still
+  starting. When the port is unreachable, the error tells the agent what to
+  fix, including the address the app actually listens on (for example
+  `127.0.0.1` instead of `0.0.0.0`), instead of `Process exited with status 1`.
 
 ## 1.2.1 — 2026-09-28
 
