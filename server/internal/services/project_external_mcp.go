@@ -13,9 +13,9 @@ import (
 
 // ProjectExternalMcpSettingsView is the REST shape for external MCP settings.
 type ProjectExternalMcpSettingsView struct {
-	Enabled      bool     `json:"enabled"`
-	EnabledPacks []string `json:"enabledPacks"`
-	McpBaseURL   string   `json:"mcpBaseUrl,omitempty"`
+	Enabled      bool      `json:"enabled"`
+	EnabledPacks []string  `json:"enabledPacks"`
+	McpBaseURL   string    `json:"mcpBaseUrl,omitempty"`
 	UpdatedAt    time.Time `json:"updatedAt,omitempty"`
 }
 

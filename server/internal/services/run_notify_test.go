@@ -281,7 +281,7 @@ func TestAttemptDeliver_usesCustomTemplate(t *testing.T) {
 	p := models.Project{
 		ID: "proj-n1", Name: "Demo",
 		NotifyPolicy: models.ProjectNotifyPolicy{
-			ChannelIDs: []string{"chn-primary"}, Enabled:              boolPtr(true),
+			ChannelIDs: []string{"chn-primary"}, Enabled: boolPtr(true),
 			DefaultEvents:        []string{"waiting_human", "failed"},
 			WaitingHumanTemplate: "WAIT {project} {run_id} {title}",
 			FailedTemplate:       "FAIL {workflow} {node}",
@@ -328,7 +328,7 @@ func TestAttemptDeliver_kindsIndependent(t *testing.T) {
 	p := models.Project{
 		ID: "proj-n1", Name: "Demo",
 		NotifyPolicy: models.ProjectNotifyPolicy{
-			ChannelIDs: []string{"chn-primary"}, Enabled:              boolPtr(true),
+			ChannelIDs: []string{"chn-primary"}, Enabled: boolPtr(true),
 			DefaultEvents:        []string{"waiting_human", "failed"},
 			WaitingHumanTemplate: "CUSTOM_WAIT {run_id}",
 			// failed empty → default formatter
@@ -436,7 +436,7 @@ func TestAttemptDeliver_completedCustomTemplate(t *testing.T) {
 	p := models.Project{
 		ID: "proj-n1", Name: "Demo",
 		NotifyPolicy: models.ProjectNotifyPolicy{
-			ChannelIDs: []string{"chn-primary"}, Enabled:           boolPtr(true),
+			ChannelIDs: []string{"chn-primary"}, Enabled: boolPtr(true),
 			DefaultEvents:     []string{"completed"},
 			CompletedTemplate: "DONE {title} {run_id} {node}",
 		},

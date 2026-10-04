@@ -8,14 +8,14 @@ import (
 )
 
 const (
-	EnvOpenCodeAPIKey          = "OPENCODE_API_KEY"
-	EnvGraspOpenCodeAPIKey = "GRASP_OPENCODE_API_KEY"
-	EnvOpenCodeProvider        = "GRASP_OPENCODE_PROVIDER"
-	EnvOpenCodeBaseURL         = "GRASP_OPENCODE_BASE_URL"
-	EnvOpenCodeModelVision     = "GRASP_OPENCODE_MODEL_VISION"
-	EnvACPBridgeModel          = "ACP_BRIDGE_MODEL"
-	DefaultOpenCodeProvider    = "openai"
-	openCodeCompatibleNPM      = "@ai-sdk/openai-compatible"
+	EnvOpenCodeAPIKey       = "OPENCODE_API_KEY"
+	EnvGraspOpenCodeAPIKey  = "GRASP_OPENCODE_API_KEY"
+	EnvOpenCodeProvider     = "GRASP_OPENCODE_PROVIDER"
+	EnvOpenCodeBaseURL      = "GRASP_OPENCODE_BASE_URL"
+	EnvOpenCodeModelVision  = "GRASP_OPENCODE_MODEL_VISION"
+	EnvACPBridgeModel       = "ACP_BRIDGE_MODEL"
+	DefaultOpenCodeProvider = "openai"
+	openCodeCompatibleNPM   = "@ai-sdk/openai-compatible"
 )
 
 // openCodeProviderID is the shape of an OpenCode catalog provider id.

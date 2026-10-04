@@ -77,8 +77,8 @@ func TestCursorLiveMCP(t *testing.T) {
 	gatewayURL := getenvOr("GRASP_SANDBOX_GATEWAY_URL", "http://127.0.0.1:8899")
 	agentEnv := map[string]string{
 		"GRASP_CURSOR_API_KEY": apiKey,
-		"CURSOR_API_KEY":           apiKey,
-		"ACP_BRIDGE_MODEL":         model,
+		"CURSOR_API_KEY":       apiKey,
+		"ACP_BRIDGE_MODEL":     model,
 	}
 	envJSON, _ := json.Marshal(agentEnv)
 	agentJSON := `{"acpBackend":"cursor","mcp":[{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":` + string(envJSON) + `}`

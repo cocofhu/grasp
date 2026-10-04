@@ -53,21 +53,21 @@ type TeamBootstrapEvent struct {
 
 // TeamBootstrapResource is one created resource for the progress panel.
 type TeamBootstrapResource struct {
-	Kind  string `json:"kind"` // project|group|agent
-	Name  string `json:"name"`
+	Kind   string `json:"kind"` // project|group|agent
+	Name   string `json:"name"`
 	Detail string `json:"detail,omitempty"`
 }
 
 // TeamBootstrapSession tracks an in-flight or finished team bootstrap.
 type TeamBootstrapSession struct {
-	ID              string                  `json:"id"`
-	Status          string                  `json:"status"` // starting|running|pulling|ready|failed
-	Error           string                  `json:"error,omitempty"`
-	ProjectID       string                  `json:"projectId,omitempty"`
-	RootGroupID     string                  `json:"rootGroupId,omitempty"`
-	PipelineGroupID string                  `json:"pipelineGroupId,omitempty"`
-	PMAgent         string                  `json:"pmAgent,omitempty"`
-	SandboxID       string                  `json:"sandboxId,omitempty"`
+	ID              string `json:"id"`
+	Status          string `json:"status"` // starting|running|pulling|ready|failed
+	Error           string `json:"error,omitempty"`
+	ProjectID       string `json:"projectId,omitempty"`
+	RootGroupID     string `json:"rootGroupId,omitempty"`
+	PipelineGroupID string `json:"pipelineGroupId,omitempty"`
+	PMAgent         string `json:"pmAgent,omitempty"`
+	SandboxID       string `json:"sandboxId,omitempty"`
 	// SandboxStatus mirrors gateway/local sandbox lifecycle (pulling|creating|running|error).
 	SandboxStatus   string                  `json:"sandboxStatus,omitempty"`
 	Prefix          string                  `json:"prefix,omitempty"`
@@ -754,7 +754,6 @@ func (s *TeamService) SetOrgMembership(args SetOrgMembershipArgs) error {
 	_, err = s.Org.Put(org, org.Revision)
 	return err
 }
-
 
 func (s *TeamService) buildPMAgent(req normalizedTeamReq, projectID string) (Agent, error) {
 	tmpl, err := loadTeamAgentTemplate(TeamPMEmbedName)

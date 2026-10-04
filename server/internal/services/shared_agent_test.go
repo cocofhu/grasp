@@ -80,15 +80,15 @@ func TestExtendOverlay_TokenSharedPriority(t *testing.T) {
 	shared := SharedAgentConfig{
 		Env: map[string]string{
 			"GRASP_CURSOR_API_KEY": "shared-key",
-			"FEATURE_FLAG":             "shared-flag",
+			"FEATURE_FLAG":         "shared-flag",
 		},
 	}
 	agent := Agent{
 		Name: "demo",
 		Env: map[string]string{
 			"GRASP_CURSOR_API_KEY": "agent-key",
-			"GITLAB_TOKEN":             "agent-gl",
-			"FEATURE_FLAG":             "agent-flag",
+			"GITLAB_TOKEN":         "agent-gl",
+			"FEATURE_FLAG":         "agent-flag",
 		},
 	}
 	got := ExtendOverlay(shared, agent)

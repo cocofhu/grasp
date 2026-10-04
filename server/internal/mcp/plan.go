@@ -57,9 +57,9 @@ type planDiagram struct {
 }
 
 type planArchitecture struct {
-	Summary   string        `json:"summary"`
-	Diagrams  []planDiagram `json:"diagrams,omitempty"`
-	Diagram   *planDiagram  `json:"diagram,omitempty"`
+	Summary  string        `json:"summary"`
+	Diagrams []planDiagram `json:"diagrams,omitempty"`
+	Diagram  *planDiagram  `json:"diagram,omitempty"`
 }
 
 type planField struct {
@@ -113,14 +113,14 @@ type planInteraction struct {
 }
 
 type planDoc struct {
-	Title         string              `json:"title,omitempty"`
-	Architecture  *planArchitecture   `json:"architecture,omitempty"`
-	DataDesign    *planDataDesign     `json:"data_design,omitempty"`
-	Interfaces    []planInterfaceItem `json:"interfaces,omitempty"`
-	Components    []planComponentItem `json:"components,omitempty"`
-	Interaction   *planInteraction    `json:"interaction,omitempty"`
-	TestDesign    string              `json:"test_design,omitempty"`
-	Goals         []planGoal          `json:"goals"`
+	Title        string              `json:"title,omitempty"`
+	Architecture *planArchitecture   `json:"architecture,omitempty"`
+	DataDesign   *planDataDesign     `json:"data_design,omitempty"`
+	Interfaces   []planInterfaceItem `json:"interfaces,omitempty"`
+	Components   []planComponentItem `json:"components,omitempty"`
+	Interaction  *planInteraction    `json:"interaction,omitempty"`
+	TestDesign   string              `json:"test_design,omitempty"`
+	Goals        []planGoal          `json:"goals"`
 }
 
 func validPlanStatus(s string) bool {

@@ -280,4 +280,3 @@ func TestWorkflowImportLiftsAndMigrates(t *testing.T) {
 		t.Fatalf("migrated results: %#v", outCfg["results"])
 	}
 }
-

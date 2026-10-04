@@ -127,22 +127,22 @@ func newHarness(t *testing.T) *harness {
 	wfSvc := services.NewWorkflowService(db)
 	sharedAgent := services.NewSharedAgentService(t.TempDir())
 	h := &handlers.Handlers{
-		WF:               wfSvc,
-		Projects:         projectSvc,
-		Runs:             services.NewRunService(db),
-		Arts:             arts,
-		APIKeys:          services.NewAPIKeyService(db),
-		Agents:           skills,
-		SharedAgent:      sharedAgent,
-		Dash:             services.NewDashboardService(db, projectSvc),
-		Sbx:              sbx,
-		Eng:              eng,
-		MCP:              host,
-		Auth:             authSvc,
-		PlatformRules:    platformRules,
-		Issues:           services.NewIssueService(db),
-		Audit:            auditSvc,
-		Onboarding:       services.NewOnboardingService(projectSvc, skills, sharedAgent, wfSvc, services.NewOrgService(profilesRoot, skills)),
+		WF:                wfSvc,
+		Projects:          projectSvc,
+		Runs:              services.NewRunService(db),
+		Arts:              arts,
+		APIKeys:           services.NewAPIKeyService(db),
+		Agents:            skills,
+		SharedAgent:       sharedAgent,
+		Dash:              services.NewDashboardService(db, projectSvc),
+		Sbx:               sbx,
+		Eng:               eng,
+		MCP:               host,
+		Auth:              authSvc,
+		PlatformRules:     platformRules,
+		Issues:            services.NewIssueService(db),
+		Audit:             auditSvc,
+		Onboarding:        services.NewOnboardingService(projectSvc, skills, sharedAgent, wfSvc, services.NewOrgService(profilesRoot, skills)),
 		GateShare:         gateShareSvc,
 		GateShareNonces:   gateshare.NewNonceStore(db),
 		GateShareTickets:  gateShareTickets,
@@ -1895,7 +1895,7 @@ func TestDoctorArtifactSessionIsLoopbackAndTokenProtected(t *testing.T) {
 	}
 
 	w = request(http.MethodDelete, "/_internal/doctor/artifact-sessions/"+session["id"], map[string]string{
-		"Authorization":              "Bearer doctor-secret",
+		"Authorization":          "Bearer doctor-secret",
 		"X-Grasp-Doctor-Cleanup": session["cleanup_token"],
 	}, "127.0.0.1:1234")
 	if w.Code != http.StatusNoContent {

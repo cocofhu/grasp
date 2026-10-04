@@ -47,20 +47,20 @@ type rootCauseDiagram struct {
 }
 
 type rootCauseDoc struct {
-	Title                string             `json:"title"`
-	Summary              string             `json:"summary"`
-	Symptom              string             `json:"symptom"`
-	Expected             string             `json:"expected"`
-	Actual               string             `json:"actual"`
-	Reproduction         flexStrings        `json:"reproduction"`
-	Impact               string             `json:"impact"`
-	RootCause            string             `json:"root_cause"`
-	Evidence             []rootCauseEvidence `json:"evidence"`
-	Diagrams             []rootCauseDiagram `json:"diagrams"`
-	RuledOut             flexStrings        `json:"ruled_out,omitempty"`
-	ContributingFactors  flexStrings        `json:"contributing_factors,omitempty"`
-	AffectedScope        string             `json:"affected_scope,omitempty"`
-	CausalChain          string             `json:"causal_chain,omitempty"`
+	Title               string              `json:"title"`
+	Summary             string              `json:"summary"`
+	Symptom             string              `json:"symptom"`
+	Expected            string              `json:"expected"`
+	Actual              string              `json:"actual"`
+	Reproduction        flexStrings         `json:"reproduction"`
+	Impact              string              `json:"impact"`
+	RootCause           string              `json:"root_cause"`
+	Evidence            []rootCauseEvidence `json:"evidence"`
+	Diagrams            []rootCauseDiagram  `json:"diagrams"`
+	RuledOut            flexStrings         `json:"ruled_out,omitempty"`
+	ContributingFactors flexStrings         `json:"contributing_factors,omitempty"`
+	AffectedScope       string              `json:"affected_scope,omitempty"`
+	CausalChain         string              `json:"causal_chain,omitempty"`
 }
 
 // ValidWorkKind reports whether s is bug|feature|other (empty is not valid).

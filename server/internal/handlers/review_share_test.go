@@ -668,4 +668,3 @@ func TestReviewSharePublicArtifactsInactiveAndHumanGateDenied(t *testing.T) {
 		t.Fatalf("expired must not return artifacts: %+v", exp)
 	}
 }
-

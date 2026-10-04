@@ -321,6 +321,7 @@ func (s *PmService) RenameAgentScopedData(oldName, newName string) error {
 			Updates(map[string]any{"pm_leader_agent": newName, "updated_at": now}).Error
 	})
 }
+
 // GetMemory returns one memory by id for project+agent.
 func (s *PmService) GetMemory(projectID, agentName, id string) (models.ProjectMemoryItem, error) {
 	var item models.ProjectMemoryItem

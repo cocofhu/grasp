@@ -467,7 +467,6 @@ func TestParsePlanMultiDiagrams(t *testing.T) {
 	})
 }
 
-
 func TestParsePlanMermaidSyntaxGate(t *testing.T) {
 	goals := []any{map[string]any{"title": "G"}}
 
@@ -570,7 +569,7 @@ func TestParsePlanMermaidSyntaxGate(t *testing.T) {
 		}
 		_, err = parsePlan(map[string]any{
 			"components": []any{map[string]any{
-				"name": "MermaidDiagram.vue",
+				"name":    "MermaidDiagram.vue",
 				"diagram": map[string]any{"source": "flowchart LR\n  A-->["},
 			}},
 			"goals": goals,

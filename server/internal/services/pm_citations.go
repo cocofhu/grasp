@@ -14,13 +14,13 @@ import (
 
 // Citation ID shape rules (mirrored on the frontend CitationCard).
 var (
-	pmRunIDRe       = regexp.MustCompile(`(?i)^run-[0-9a-f]{8}$`)
-	pmWorkflowIDRe  = regexp.MustCompile(`(?i)^wf-[0-9a-f]{8}$`)
-	pmArtifactIDRe  = regexp.MustCompile(`(?i)^art-[0-9a-f]{8}$`)
+	pmRunIDRe        = regexp.MustCompile(`(?i)^run-[0-9a-f]{8}$`)
+	pmWorkflowIDRe   = regexp.MustCompile(`(?i)^wf-[0-9a-f]{8}$`)
+	pmArtifactIDRe   = regexp.MustCompile(`(?i)^art-[0-9a-f]{8}$`)
 	pmArtifactNameRe = regexp.MustCompile(`(?i)^[a-z0-9][a-z0-9._-]*\.[a-z0-9]{1,16}$`)
-	pmGateTargetRe  = regexp.MustCompile(`(?i)^run-[0-9a-f]{8}(?::[a-z0-9][a-z0-9_.-]*)?$`)
-	pmPlanIDRe      = regexp.MustCompile(`(?i)^g\d+(?:\.\d+)?$`)
-	pmPlanScopedRe  = regexp.MustCompile(`(?i)^run-[0-9a-f]{8}:g\d+(?:\.\d+)?$`)
+	pmGateTargetRe   = regexp.MustCompile(`(?i)^run-[0-9a-f]{8}(?::[a-z0-9][a-z0-9_.-]*)?$`)
+	pmPlanIDRe       = regexp.MustCompile(`(?i)^g\d+(?:\.\d+)?$`)
+	pmPlanScopedRe   = regexp.MustCompile(`(?i)^run-[0-9a-f]{8}:g\d+(?:\.\d+)?$`)
 
 	// Broad discoverer; shape is enforced per type after match.
 	pmCitationDiscoverRe = regexp.MustCompile(`(?i)\b(run|gate|artifact|workflow|plan)[:\s]+([a-zA-Z0-9_./:-]+)`)

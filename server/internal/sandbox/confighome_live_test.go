@@ -77,7 +77,7 @@ func TestLiveGatewayConfigHomeInject(t *testing.T) {
 			"GRASP_ARTIFACT_URL":   "http://api.example.com/mcp/runs/live-inject-test",
 			"GRASP_ARTIFACT_TOKEN": "live-tok",
 			"GRASP_RUN_ID":         "live-inject-test",
-			"SKIP_INNER_DOCKER":       "1",
+			"SKIP_INNER_DOCKER":    "1",
 		},
 	})
 	if err != nil {
