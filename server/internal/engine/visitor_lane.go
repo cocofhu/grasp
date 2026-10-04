@@ -148,12 +148,7 @@ func (e *Engine) VisitorLiveEvents(runID, producerID, lane string) []models.AcpE
 	if s == nil {
 		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.active == nil {
-		return nil
-	}
-	return append([]models.AcpEvent(nil), s.liveEvents...)
+	return s.LiveEvents()
 }
 
 // CancelVisitorTurn stops the lane's active turn and drops its queue.
@@ -358,21 +353,15 @@ func (e *Engine) executeVisitorTurn(ctx context.Context, s *reviewSession, item 
 	logDB(e.db.Save(conv), s.runID, "save visitor human turn")
 	e.touchVisitorLane(s.runID, s.producerID, s.lane)
 
-	s.mu.Lock()
-	s.liveEvents = nil
-	s.mu.Unlock()
+	s.SetLiveEvents(nil)
 	req := e.nodeReq(c, producer)
 	t := vp.VisitorTurn(ctx, req, s.lane, prelude, withPageSession(item.PageSession, item.Effective), item.Images, func(events []models.AcpEvent, busy bool) {
-		s.mu.Lock()
-		s.liveEvents = events
-		s.mu.Unlock()
+		s.SetLiveEvents(events)
 		e.publishVisitorAcp(s, events, busy)
 	})
 
-	s.mu.Lock()
-	cancelled := s.cancelRequested || ctx.Err() != nil
-	s.liveEvents = nil
-	s.mu.Unlock()
+	cancelled := s.CancelRequested() || ctx.Err() != nil
+	s.SetLiveEvents(nil)
 	if cancelled || t.Err != nil {
 		interrupted = true
 	}
