@@ -682,6 +682,17 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
     el.style.top = `${top}px`
   }
 
+  /** Below the already-placed anchor, or above it when the viewport bottom is too close: `place` clamps both to the same spot. */
+  function placeUnder(el: HTMLElement, anchor: HTMLElement, rect: DOMRect) {
+    place(el, rect)
+    const aTop = parseFloat(anchor.style.top) || 0
+    const aH = anchor.offsetHeight || 36
+    const h = el.offsetHeight || 36
+    let top = aTop + aH + 6
+    if (top + h > window.innerHeight - 72) top = Math.max(8, aTop - h - 6)
+    el.style.top = `${top}px`
+  }
+
   function box(el: HTMLElement, rect: DOMRect | null, pad = 3) {
     if (!rect) {
       el.style.display = 'none'
@@ -715,10 +726,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
       const sw = shadow.querySelector<HTMLElement>(`[data-sw="${w.sid}"]`)
       if (sw) place(sw, rect)
       const params = shadow.querySelector<HTMLElement>(`[data-params="${w.sid}"]`)
-      if (params && sw && rect) {
-        const r2 = new DOMRect(rect.left, rect.bottom + 10 + (sw.offsetHeight || 36), rect.width, 0)
-        place(params, r2)
-      }
+      if (params && sw && rect) placeUnder(params, sw, rect)
       const candidateRect = (n: number) => {
         const el = n === 0 ? w.original : w.variants.find((x) => x.n === n)?.el
         const rc = el?.getBoundingClientRect()

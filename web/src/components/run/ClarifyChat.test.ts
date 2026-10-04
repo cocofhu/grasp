@@ -8,6 +8,14 @@ import { i18n } from '@/lib/shared/i18n'
 import { loadLocaleMessages } from '@/lib/shared/loadLocaleMessages'
 import type { ClarifyTurn, ReactAnnotation } from '@/lib/shared/types'
 import ClarifyChat from './ClarifyChat.vue'
+import { LIVE_CARD_HOST, createLiveStore, type LiveCardHost } from '@/lib/inbox/liveVariants'
+
+function liveHost(): LiveCardHost {
+  const live = createLiveStore()
+  live.apply({ sid: 'sid001', state: 'ready', summary: '页面候选', variants: [{ n: 1, label: '入场' }, { n: 2, label: '聚焦' }] })
+  live.setView('sid001', { current: 1, mode: 'inplace' })
+  return { store: live.store, interactive: true, command: vi.fn() }
+}
 
 beforeAll(async () => {
   // relTime() reads global i18n; load zh-CN so completion footer shows「刚刚」
@@ -32,6 +40,7 @@ function mountChat(opts: {
   seedHumanImages?: { data: string; mimeType: string; name?: string }[]
   hideFinish?: boolean
   sendLabel?: string
+  liveHost?: LiveCardHost
 } = {}) {
   const i18n = createI18n({
     legacy: false,
@@ -61,6 +70,7 @@ function mountChat(opts: {
     },
     global: {
       plugins: [i18n],
+      provide: opts.liveHost ? { [LIVE_CARD_HOST as symbol]: opts.liveHost } : {},
       stubs: {
         Icon: true,
         ClarifyDemoFrame: true,
@@ -111,10 +121,52 @@ describe('ClarifyChat', () => {
       { role: 'human', text: 'Live · 放弃变体,恢复原样', at, live: { sid: 'sid001', op: 'discard' } },
       { role: 'human', text: '按钮再大一点', at, live: { sid: 'sid001', op: 'refine', variant: 2 } },
     ]
-    const wrapper = mountChat({ turns })
+    const wrapper = mountChat({ turns, liveHost: liveHost() })
     expect(wrapper.findAll('[data-testid="live-variant-card"]')).toHaveLength(3)
     expect(wrapper.text()).not.toContain('Live · ')
     expect(wrapper.text()).toContain('按钮再大一点')
+    wrapper.unmount()
+  })
+
+  it('sends the interactive card under the agent reply in the preview drawer', () => {
+    const at = '2026-07-18T00:00:00Z'
+    const turns: ClarifyTurn[] = [
+      { role: 'human', text: '首页加点动效', at, live: { sid: 'sid001', op: 'generate' } },
+      { role: 'agent', text: '已放上 2 个候选', at },
+    ]
+    const wrapper = mountChat({ turns, liveHost: liveHost() })
+    const cards = wrapper.findAll('[data-testid="live-variant-card"]')
+    expect(cards.map((c) => c.attributes('data-side'))).toEqual(['human', 'agent'])
+    expect(cards[0].find('[data-testid="live-variant-accept"]').exists()).toBe(false)
+    expect(cards[1].find('[data-testid="live-variant-accept"]').exists()).toBe(true)
+    expect(cards[1].findAll('[data-testid="live-variant-chip"]')).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  it('keeps the controls on the request until the agent replies', () => {
+    const at = '2026-07-18T00:00:00Z'
+    const turns: ClarifyTurn[] = [{ role: 'human', text: '首页加点动效', at, live: { sid: 'sid001', op: 'generate' } }]
+    const wrapper = mountChat({ turns, liveHost: liveHost() })
+    const cards = wrapper.findAll('[data-testid="live-variant-card"]')
+    expect(cards).toHaveLength(1)
+    expect(cards[0].find('[data-testid="live-variant-accept"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('shows no Live card on the approval page', () => {
+    const at = '2026-07-18T00:00:00Z'
+    const turns: ClarifyTurn[] = [
+      { role: 'human', text: '首页加点动效', at, live: { sid: 'sid001', op: 'generate' } },
+      { role: 'agent', text: '已放上 2 个候选', at },
+      { role: 'human', text: 'Live · 继续修改变体 2', at, live: { sid: 'sid001', op: 'refine', variant: 2, prompt: '标题再大一点', generated: true } },
+      { role: 'human', text: 'Live · 采用变体 1', at, live: { sid: 'sid001', op: 'accept', variant: 1, generated: true } },
+    ]
+    const wrapper = mountChat({ turns })
+    expect(wrapper.find('[data-testid="live-variant-card"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('首页加点动效')
+    expect(wrapper.text()).toContain('标题再大一点')
+    expect(wrapper.text()).not.toContain('Live · ')
+    expect(wrapper.findAll('[data-testid="clarify-scroller"] > .flex-row-reverse')).toHaveLength(2)
     wrapper.unmount()
   })
 

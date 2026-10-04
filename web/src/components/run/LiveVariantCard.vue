@@ -5,11 +5,15 @@ import Icon from '../ui/Icon.vue'
 import { LIVE_CARD_HOST, isLiveBusy, isLiveOpen, type LiveCmd } from '@/lib/inbox/liveVariants'
 
 /**
- * Chat card for a human turn that came from a Live variant request. State
- * comes from the host's Live store (the preview drawer); elsewhere the card
- * only names the request.
+ * Chat card for a Live variant request. State comes from the host's Live
+ * store (the preview drawer). `compact` keeps only the request headline;
+ * `agent` places the card on the agent side, under the reply.
  */
-const props = defineProps<{ liveRef: { sid: string; op: string; variant?: number; prompt?: string } }>()
+const props = defineProps<{
+  liveRef: { sid: string; op: string; variant?: number; prompt?: string }
+  compact?: boolean
+  agent?: boolean
+}>()
 
 /** Server summary for page-scope sessions (engine/live.go). */
 const PAGE_SUMMARY = '页面候选'
@@ -64,7 +68,7 @@ const canDiscard = computed(() => !!host?.interactive && isLiveOpen(state.value)
 const failedSteer = computed(() => session.value?.mode === 'steer' && state.value === 'failed')
 const canRetryAccept = computed(() => !!host?.interactive && state.value === 'failed' && session.value?.retryAccept === true && Number.isInteger(session.value.selected) && (session.value.selected ?? 0) > 0)
 /** Only the newest turn of a session carries controls. */
-const isLatestTurn = computed(() => props.liveRef.op !== 'accept' && props.liveRef.op !== 'discard')
+const isLatestTurn = computed(() => !props.compact && props.liveRef.op !== 'accept' && props.liveRef.op !== 'discard')
 
 function send(cmd: LiveCmd, variant?: number) {
   host?.command(props.liveRef.sid, cmd, variant)
@@ -80,9 +84,11 @@ function step(delta: number) {
 
 <template>
   <div
-    class="mb-1.5 ml-auto w-full max-w-[340px] rounded-lg border border-accent/30 bg-accent-dim/40 px-3 py-2 text-left"
+    class="w-full max-w-[340px] rounded-lg border border-accent/30 bg-accent-dim/40 px-3 py-2 text-left"
+    :class="agent ? 'mt-2' : 'mb-1.5 ml-auto'"
     data-testid="live-variant-card"
     :data-state="stateKey"
+    :data-side="agent ? 'agent' : 'human'"
   >
     <div class="flex items-center gap-1.5 text-[12px] font-medium text-txt">
       <Icon name="sparkles" :size="12" class="shrink-0 text-accent" aria-hidden="true" />
@@ -92,7 +98,7 @@ function step(delta: number) {
         {{ t(`pages.embedChat.live.states.${stateKey}`) }}
       </span>
     </div>
-    <p v-if="liveRef.prompt" class="m-0 mt-1 whitespace-pre-wrap break-words text-[12px] leading-snug text-txt2" data-testid="live-variant-prompt">{{ liveRef.prompt }}</p>
+    <p v-if="liveRef.prompt && !agent" class="m-0 mt-1 whitespace-pre-wrap break-words text-[12px] leading-snug text-txt2" data-testid="live-variant-prompt">{{ liveRef.prompt }}</p>
     <p v-if="showTarget" class="m-0 mt-1 truncate text-[11px] text-txt3" :title="session?.selector">{{ target }}</p>
     <p v-if="session?.state === 'failed' && session.error" class="m-0 mt-1 text-[11px] leading-snug text-err" data-testid="live-variant-error">
       {{ t('pages.embedChat.live.failed', { error: session.error }) }}

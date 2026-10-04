@@ -281,6 +281,22 @@ describe('Live overlay', () => {
     expect(posted.at(-1)).toMatchObject({ op: 'state', current: 1 })
   })
 
+  it('keeps the params row off the switcher when the candidate sits near the viewport bottom', async () => {
+    document.body.innerHTML = wrapperHtml()
+    const v2 = document.querySelector<HTMLElement>('[data-grasp-variant="2"]')!
+    v2.getBoundingClientRect = () => new DOMRect(100, window.innerHeight - 60, 400, 50)
+    make()
+    sessions([{ sid: 'sid001', state: 'ready', mode: 'replace', url: 'http://localhost/pricing', variants: [{ n: 1 }, { n: 2 }] }])
+    ;(q('[data-act="next"]') as HTMLButtonElement).click()
+    await new Promise((r) => requestAnimationFrame(() => r(null)))
+    const sw = q('[data-sw="sid001"]')!
+    const params = q('[data-params="sid001"]')!
+    const swTop = parseFloat(sw.style.top)
+    const pTop = parseFloat(params.style.top)
+    expect(Number.isFinite(swTop) && Number.isFinite(pTop)).toBe(true)
+    expect(pTop + 36 <= swTop || pTop >= swTop + 36).toBe(true)
+  })
+
   it('compare mode keeps the page layout, labels each candidate and has one toolbar to leave it', () => {
     document.body.innerHTML = wrapperHtml()
     make()
