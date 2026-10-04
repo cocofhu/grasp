@@ -27,6 +27,19 @@ describe('LiveVariantCard', () => {
     w.unmount()
   })
 
+  it('compact cards name the request without controls', () => {
+    const live = readyStore()
+    const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
+    const w = mount(LiveVariantCard, {
+      props: { liveRef: { sid: 'sid001', op: 'generate' }, compact: true },
+      global: { plugins: [i18n], provide: { [LIVE_CARD_HOST as symbol]: { store: live.store, interactive: true, command: vi.fn() } } },
+    })
+    expect(w.get('[data-testid="live-variant-headline"]').text()).toBe('为「Dispatch」出 3 个候选')
+    expect(w.find('[data-testid="live-variant-chip"]').exists()).toBe(false)
+    expect(w.find('[data-testid="live-variant-accept"]').exists()).toBe(false)
+    w.unmount()
+  })
+
   it('drives the page from the drawer', async () => {
     const live = readyStore()
     live.setView('sid001', { current: 2, mode: 'inplace' })
