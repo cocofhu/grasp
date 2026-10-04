@@ -125,9 +125,11 @@
       "runStats.ts",
       "runTags.ts",
       "runTitle.ts",
+      "stageLinks.ts",
       "streamTextReveal.ts",
       "structuredArtifacts.ts",
       "tokenUsage.ts",
+      "toolLabels.ts",
       "useArtifactGroupSelection.ts",
       "useArtifactPreview.ts",
       "useArtifactVersions.ts",
@@ -199,7 +201,7 @@
     "inbox": 27,
     "pm": 7,
     "project": 4,
-    "run": 58,
+    "run": 60,
     "shared": 40
   }
 }

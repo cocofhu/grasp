@@ -61,6 +61,7 @@ import {
   type ArtifactVersionChoice,
 } from '@/lib/run/reactArtifactPreview'
 import { useArtifactVersions } from '@/lib/run/useArtifactVersions'
+import { registerStageLinks } from '@/lib/run/stageLinks'
 
 const props = withDefaults(
   defineProps<{
@@ -728,6 +729,25 @@ watch(
     }
     if (changed) selectedVersionIndex.value = next
   },
+)
+
+watch(
+  () => props.runId,
+  (runId, _, onCleanup) => {
+    if (!runId) return
+    onCleanup(
+      registerStageLinks(runId, {
+        hasArtifact: (name) => !!artifactByName(name),
+        openArtifact: (name) => {
+          markUserMoved()
+          activatePreview(name)
+        },
+        canOpenPreview: () => canOpenNovnc.value,
+        openPreview: openNovnc,
+      }),
+    )
+  },
+  { immediate: true },
 )
 
 onBeforeUnmount(() => {

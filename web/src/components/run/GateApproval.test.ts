@@ -3033,7 +3033,7 @@ describe('GateApproval mobileFillRemaining layout', () => {
     expect(wrapper.find('[data-testid="gate-busy-placeholder"]').exists()).toBe(true)
     const group = wrapper.find('[data-testid="gate-react-stream"] [data-testid="agent-tool-group"]')
     expect(group.exists()).toBe(true)
-    expect(group.text()).toContain('read_file')
+    expect(group.text()).toContain('读取文件')
     expect(group.attributes('data-state')).toBe('running')
     wrapper.unmount()
   })

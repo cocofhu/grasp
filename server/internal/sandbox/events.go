@@ -2,6 +2,8 @@ package sandbox
 
 import (
 	"encoding/json"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -62,6 +64,9 @@ type ChatResult struct {
 	// Segments are thought/narration sealed at a turn_segment boundary. The
 	// fields above stay the segment still being written.
 	Segments []ChatSegment `json:"-"`
+	// planTools are ids of tool calls folded into Plan, so their later
+	// updates (which carry no title) do not surface as anonymous tools.
+	planTools map[string]bool
 	// Timeline is the open segment's thought / narration / tool steps in the
 	// order they arrived (AcpEvents reports it as one kind=timeline event).
 	Timeline []ChatStep `json:"-"`
@@ -128,6 +133,8 @@ type ACPToolCall struct {
 	Status    string          `json:"status,omitempty"`
 	RawInput  json.RawMessage `json:"raw_input,omitempty"`
 	RawOutput json.RawMessage `json:"raw_output,omitempty"`
+	// DurationMs is how long the finished tool ran, when the agent reports it.
+	DurationMs int64 `json:"duration_ms,omitempty"`
 }
 
 type ACPCommand struct {
@@ -321,12 +328,22 @@ func applyToolCall(flat map[string]any, result *ChatResult) {
 	status := stringField(flat, "status", "state")
 	rawIn := rawField(flat, "rawInput", "raw_input", "input", "arguments", "args")
 	rawOut := rawField(flat, "rawOutput", "raw_output", "output", "result", "content")
+	duration := msField(flat, "durationMs", "duration_ms")
 
 	normTitle := normalizeKindString(strings.ReplaceAll(title, " ", "_"))
 	if planToolNames[normTitle] {
 		if entries := extractPlanEntriesFromRaw(rawIn); len(entries) > 0 {
 			result.Plan = &ACPPlan{Entries: entries}
 		}
+		if id != "" {
+			if result.planTools == nil {
+				result.planTools = map[string]bool{}
+			}
+			result.planTools[id] = true
+		}
+		return
+	}
+	if result.planTools[id] {
 		return
 	}
 
@@ -345,15 +362,19 @@ func applyToolCall(flat map[string]any, result *ChatResult) {
 			if len(rawOut) > 0 {
 				tc.RawOutput = rawOut
 			}
+			if duration > 0 {
+				tc.DurationMs = duration
+			}
 			return
 		}
 	}
 	result.ToolCalls = append(result.ToolCalls, ACPToolCall{
-		ID:        id,
-		Title:     title,
-		Status:    status,
-		RawInput:  rawIn,
-		RawOutput: rawOut,
+		ID:         id,
+		Title:      title,
+		Status:     status,
+		RawInput:   rawIn,
+		RawOutput:  rawOut,
+		DurationMs: duration,
 	})
 	result.addTool(len(result.ToolCalls) - 1)
 }
@@ -494,6 +515,29 @@ func stringField(m map[string]any, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+// msField reads a non-negative millisecond count (JSON number or numeric string).
+func msField(m map[string]any, keys ...string) int64 {
+	for _, k := range keys {
+		var n float64
+		switch v := m[k].(type) {
+		case float64:
+			n = v
+		case string:
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				continue
+			}
+			n = f
+		default:
+			continue
+		}
+		if n > 0 && n < math.MaxInt64 {
+			return int64(n)
+		}
+	}
+	return 0
 }
 
 func rawField(m map[string]any, keys ...string) json.RawMessage {

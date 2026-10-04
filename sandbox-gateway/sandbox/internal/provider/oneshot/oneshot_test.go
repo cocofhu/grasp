@@ -427,3 +427,43 @@ func TestOneShotMaterializesAttachmentsAsPaths(t *testing.T) {
 		t.Fatalf("prompt should reference temp attach dir: %q", got)
 	}
 }
+
+// toolFake reports one tool start and its finished result with a duration.
+type toolFake struct{ baseFake }
+
+func (toolFake) Args(_ provider.OpenOptions, _, _ string) []string {
+	return []string{"sh", "-c", `printf '%s\n' use ok fail`}
+}
+func (toolFake) ParseLine(line []byte) ParseResult {
+	switch string(line) {
+	case "use":
+		return ParseResult{Msgs: []Msg{{Kind: KindToolUse, ToolCallID: "t1", ToolTitle: "Shell", RawInput: json.RawMessage(`{"command":"ls"}`)}}}
+	case "ok":
+		return ParseResult{Msgs: []Msg{{Kind: KindToolResult, ToolCallID: "t1", Text: "a.go", DurationMs: 1500}}}
+	case "fail":
+		return ParseResult{Msgs: []Msg{{Kind: KindToolResult, ToolCallID: "t2", ToolStatus: "failed"}}, StopReason: "end_turn"}
+	}
+	return ParseResult{}
+}
+
+func TestOneShotToolUpdatesCarryDuration(t *testing.T) {
+	frames, _ := runTurn(t, toolFake{})
+	var updates []map[string]any
+	for _, f := range frames {
+		if u, ok := f["update"].(map[string]any); ok && f["type"] == "session_update" {
+			updates = append(updates, u)
+		}
+	}
+	if len(updates) != 3 {
+		t.Fatalf("updates = %v", updates)
+	}
+	if u := updates[0]; u["sessionUpdate"] != "tool_call" || u["title"] != "Shell" || u["rawInput"] == nil {
+		t.Errorf("tool_call = %v", u)
+	}
+	if u := updates[1]; u["sessionUpdate"] != "tool_call_update" || u["status"] != "completed" || u["durationMs"] != float64(1500) || u["content"] == nil {
+		t.Errorf("finished update = %v", u)
+	}
+	if u := updates[2]; u["status"] != "failed" || u["durationMs"] != nil || u["content"] != nil {
+		t.Errorf("failed update = %v", u)
+	}
+}

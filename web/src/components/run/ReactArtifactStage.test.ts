@@ -9,6 +9,7 @@ import type { Artifact } from '@/lib/shared/types'
 import { resetStageOpenStateForTests } from '@/lib/run/reactArtifactPreview'
 import ReactArtifactStage from './ReactArtifactStage.vue'
 import { api } from '@/lib/api/api'
+import { stageLinksFor } from '@/lib/run/stageLinks'
 
 const { mockAddClarifyAnnotation } = vi.hoisted(() => ({
   mockAddClarifyAnnotation: vi.fn(() => 'added'),
@@ -155,6 +156,27 @@ describe('ReactArtifactStage', () => {
     expect(wrapper.get('[data-testid="artifact-preview"]').text()).toBe('research.json|off')
     expect(wrapper.get('[data-testid="react-artifact-tab-grid"]').attributes('aria-selected')).toBe('false')
     wrapper.unmount()
+  })
+
+  it('lets the chat open its artifacts and preview through stage links', async () => {
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json' })],
+        runId: 'run-links',
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    const links = stageLinksFor('run-links')!
+    expect(links.hasArtifact('research.json')).toBe(true)
+    expect(links.hasArtifact('missing.json')).toBe(false)
+    expect(links.canOpenPreview()).toBe(false)
+    links.openPreview()
+    links.openArtifact('research.json')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="react-artifact-tab-research.json"]').attributes('aria-selected')).toBe('true')
+    wrapper.unmount()
+    expect(stageLinksFor('run-links')).toBeNull()
   })
 
   it('keeps pipeline artifact cards compact instead of stretching the row (g1.1 / g1.2 / g2.2)', async () => {
