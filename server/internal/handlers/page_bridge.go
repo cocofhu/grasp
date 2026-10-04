@@ -59,12 +59,13 @@ func (h *Handlers) publicTurnOwner(token, lane string) string {
 
 // publicPageFrame is a drawer → server page-bridge frame.
 //
-//	{"type":"page_control","on":true,"visible":true}
+//	{"type":"page_control","on":true,"visible":true,"tab":"k3x9"}
 //	{"type":"page_result","id":"c7","ok":true,"state":{...}}
 type publicPageFrame struct {
 	Type    string         `json:"type"`
 	On      bool           `json:"on"`
 	Visible bool           `json:"visible"`
+	Tab     string         `json:"tab"`
 	ID      string         `json:"id"`
 	OK      bool           `json:"ok"`
 	Error   string         `json:"error"`
@@ -82,6 +83,7 @@ func handlePublicPageFrame(pc *pagebridge.Conn, data []byte) {
 	}
 	switch f.Type {
 	case "page_control":
+		pc.SetTab(f.Tab)
 		pc.SetControl(f.On, f.Visible)
 	case "page_result":
 		if f.ID != "" {

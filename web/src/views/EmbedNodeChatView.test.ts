@@ -202,7 +202,7 @@ describe('EmbedNodeChatView', () => {
       expect(w.get('[data-testid="page-control-bar"]').text()).toContain('允许 Agent 操作页面')
 
       await w.get('[data-testid="page-control-toggle"]').trigger('click')
-      expect(mocks.sendFrame).toHaveBeenLastCalledWith({ type: 'page_control', on: true, visible: true })
+      expect(mocks.sendFrame).toHaveBeenLastCalledWith({ type: 'page_control', on: true, visible: true, tab: 't1' })
       expect(parent.postMessage).toHaveBeenLastCalledWith({ type: 'grasp-embed:control', on: true }, '*')
 
       const chat = w.getComponent('[data-testid="chat-stub"]')
@@ -219,7 +219,7 @@ describe('EmbedNodeChatView', () => {
       await chat.vm.$emit('page-frame', { type: 'page_control_state', state: 'paused' })
       expect(w.get('[data-testid="page-control-status"]').text()).toContain('已暂停')
       await chat.vm.$emit('events-ready')
-      expect(mocks.sendFrame).toHaveBeenLastCalledWith({ type: 'page_control', on: true, visible: true })
+      expect(mocks.sendFrame).toHaveBeenLastCalledWith({ type: 'page_control', on: true, visible: true, tab: 't1' })
     })
 
     it('says the page script is too old when it never answers', async () => {

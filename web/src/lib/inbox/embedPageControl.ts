@@ -53,7 +53,7 @@ export function usePageControl(opts: PageControlOptions) {
   const visible = () => (opts.isVisible ? opts.isVisible() : document.visibilityState !== 'hidden')
 
   function report() {
-    opts.send({ type: 'page_control', on: enabled.value && supported.value === true, visible: visible() })
+    opts.send({ type: 'page_control', on: enabled.value && supported.value === true, visible: visible(), tab })
   }
 
   function announce() {
