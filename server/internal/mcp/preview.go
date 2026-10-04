@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -82,6 +83,73 @@ type PreviewSandboxOps interface {
 // previewDirectChecker is optionally implemented by PreviewSandboxOps.
 type previewDirectChecker interface {
 	DirectPreview(runID, nodeID string) bool
+}
+
+// previewListenInspector is optionally implemented to report which local
+// addresses hold port inside the sandbox, so an unreachable port can say why.
+type previewListenInspector interface {
+	ListenAddrs(ctx context.Context, sandboxName string, port int) ([]string, error)
+}
+
+// Probe retries cover an app that is still binding when the agent calls set_preview.
+const previewProbeAttempts = 5
+
+var previewProbeInterval = 500 * time.Millisecond
+
+func probePreviewPort(ctx context.Context, ops PreviewSandboxOps, sandboxName string, port int) bool {
+	for i := 0; i < previewProbeAttempts; i++ {
+		if ops.ProbeHTTPPort(ctx, sandboxName, port) {
+			return true
+		}
+		if i == previewProbeAttempts-1 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(previewProbeInterval):
+		}
+	}
+	return false
+}
+
+// previewUnreachableError tells the agent what to fix, using the in-sandbox
+// listen addresses when ops can report them.
+func previewUnreachableError(ctx context.Context, ops PreviewSandboxOps, sandboxName string, port int) error {
+	insp, ok := ops.(previewListenInspector)
+	if !ok {
+		return fmt.Errorf("预览端口 %d 不可达：请确认服务已启动并监听 0.0.0.0:%d，然后重试 set_preview", port, port)
+	}
+	addrs, err := insp.ListenAddrs(ctx, sandboxName, port)
+	if err != nil {
+		return fmt.Errorf("预览端口 %d 不可达：请确认服务已启动并监听 0.0.0.0:%d，然后重试 set_preview", port, port)
+	}
+	if len(addrs) == 0 {
+		return fmt.Errorf("预览端口 %d 没有进程在监听：请先在沙箱里启动服务并监听 0.0.0.0:%d，然后重试 set_preview", port, port)
+	}
+	list := strings.Join(addrs, ", ")
+	if allLoopback(addrs) {
+		return fmt.Errorf("预览端口 %d 只监听在 %s，平台访问不到：请改为监听 0.0.0.0:%d，然后重试 set_preview", port, list, port)
+	}
+	return fmt.Errorf("预览端口 %d 已在 %s 监听，但平台请求没有响应（服务可能还在启动或卡住）：确认服务能正常返回后重试 set_preview", port, list)
+}
+
+func allLoopback(addrs []string) bool {
+	for _, a := range addrs {
+		host := a
+		if h, _, err := net.SplitHostPort(a); err == nil {
+			host = h
+		}
+		host = strings.Trim(host, "[]")
+		if i := strings.IndexByte(host, '%'); i >= 0 {
+			host = host[:i]
+		}
+		ip := net.ParseIP(host)
+		if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+			return false
+		}
+	}
+	return true
 }
 
 // previewPortPublisher is optionally implemented to PATCH k8s Services for unpublished ports.
@@ -353,7 +421,7 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (str
 	if ops == nil || sandboxName == "" {
 		return "", fmt.Errorf("无法探测预览端口:沙箱未就绪")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	direct := h.previewDirect(runID, nodeID)
 	if direct {
@@ -361,15 +429,19 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (str
 			_, _ = pub.EnsurePublishedPort(ctx, sandboxName, port)
 		}
 	}
+	// Probe before keepalive: keepalive restarts the listener, which only makes
+	// sense once the port is known to serve the platform.
+	if !probePreviewPort(ctx, ops, sandboxName, port) {
+		return "", previewUnreachableError(ctx, ops, sandboxName, port)
+	}
 	keepalivePID, err := ops.KeepalivePort(ctx, sandboxName, port)
 	if err != nil {
 		log.Warn().Err(err).Str("run_id", runID).Str("node_id", nodeID).
 			Int("port", port).Msg("preview keepalive failed")
-		return "", fmt.Errorf("预览保活脱钩失败: %w", err)
+		return "", fmt.Errorf("预览端口 %d 可以访问，但脱离 Agent 进程保活失败：%w；服务仍在运行，可稍后重试 set_preview", port, err)
 	}
-	healthy := ops.ProbeHTTPPort(ctx, sandboxName, port)
-	if !healthy {
-		return "", fmt.Errorf("预览端口 %d 不可达(须监听 0.0.0.0 且服务已启动);修复后可重试 set_preview", port)
+	if !probePreviewPort(ctx, ops, sandboxName, port) {
+		return "", fmt.Errorf("预览端口 %d 保活重启后不可达：%w", port, previewUnreachableError(ctx, ops, sandboxName, port))
 	}
 	host := ""
 	if base, ok := ops.PreviewUpstream(ctx, sandboxName, port); ok && base != "" {

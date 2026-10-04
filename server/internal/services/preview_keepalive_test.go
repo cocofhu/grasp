@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -76,5 +77,66 @@ func TestKeepalivePortExecUsesSetsidScript(t *testing.T) {
 	}
 	if strings.Contains(sawScript, "while kill -0") {
 		t.Fatal("must not use watch-only loop")
+	}
+}
+
+func TestKeepalivePortErrorKeepsScriptReason(t *testing.T) {
+	db := newTestDB(t)
+	fg := sandboxtest.New(t)
+	fg.Seed("sb-ka")
+	mgr := sandbox.NewManager(fg.Client(), sandbox.ManagerOptions{WorkspaceDir: "/root/workspace"})
+	svc := NewPreviewService(db, mgr)
+
+	restore := sandbox.SetExecHook(func(context.Context, string, int, string, io.Reader) ([]byte, error) {
+		return []byte("keepalive: no listener on port 8080\n"), errors.New("Process exited with status 1")
+	})
+	t.Cleanup(restore)
+
+	_, err := svc.KeepalivePort(context.Background(), "sb-ka", 8080)
+	if err == nil || !strings.Contains(err.Error(), "no listener on port 8080") || !strings.Contains(err.Error(), "status 1") {
+		t.Fatalf("want script reason and exit status, got %v", err)
+	}
+}
+
+func TestKeepaliveFailure(t *testing.T) {
+	cases := map[string]string{
+		"":                                    "",
+		"noise\nkeepalive: relaunch failed\n": "keepalive: relaunch failed",
+		"bash: line 3: ss: command not found\n\n": "bash: line 3: ss: command not found",
+	}
+	for in, want := range cases {
+		if got := keepaliveFailure(in); got != want {
+			t.Fatalf("keepaliveFailure(%q)=%q want %q", in, got, want)
+		}
+	}
+}
+
+func TestListenAddrs(t *testing.T) {
+	db := newTestDB(t)
+	fg := sandboxtest.New(t)
+	fg.Seed("sb-ls")
+	mgr := sandbox.NewManager(fg.Client(), sandbox.ManagerOptions{WorkspaceDir: "/root/workspace"})
+	svc := NewPreviewService(db, mgr)
+
+	var sawScript string
+	restore := sandbox.SetExecHook(func(_ context.Context, _ string, _ int, _ string, stdin io.Reader) ([]byte, error) {
+		b, _ := io.ReadAll(stdin)
+		sawScript = string(b)
+		return []byte("127.0.0.1:17990\n[::1]:17990\n127.0.0.1:17990\n10.0.0.1:179900\n"), nil
+	})
+	t.Cleanup(restore)
+
+	addrs, err := svc.ListenAddrs(context.Background(), "sb-ls", 17990)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(addrs, ",") != "127.0.0.1:17990,[::1]:17990" {
+		t.Fatalf("addrs=%v", addrs)
+	}
+	if !strings.Contains(sawScript, "ss -tlnH") || !strings.Contains(sawScript, ":17990$") {
+		t.Fatalf("script=%q", sawScript)
+	}
+	if _, err := (&PreviewService{}).ListenAddrs(context.Background(), "sb", 1); err == nil {
+		t.Fatal("nil manager should error")
 	}
 }
