@@ -1,5 +1,5 @@
 {
-  "principle": "Align with components/{run,agent,inbox,pm,project}; api/ root=httpCore+apiTypes+api aggregate, clients/ under api/clients/; composables/ cross-domain use*; shared/ types/regionPolicy/loading*/i18n/format/theme and other cross-cutting utils",
+  "principle": "Align with components/{run,agent,inbox,pm,project}; api/ root=httpCore+apiTypes+api aggregate, clients/ under api/clients/; chat/ agent-chat session queue/frame core shared by every chat surface; composables/ cross-domain use*; shared/ types/regionPolicy/loading*/i18n/format/theme and other cross-cutting utils",
   "domains": {
     "agent": [
       "agentCreateWizard.ts",
@@ -25,6 +25,9 @@
       "api.ts",
       "apiTypes.ts",
       "httpCore.ts"
+    ],
+    "chat": [
+      "sessionQueue.ts"
     ],
     "composables": [
       "useAuth.ts",
@@ -198,6 +201,7 @@
   "totals": {
     "agent": 18,
     "api": 3,
+    "chat": 1,
     "composables": 17,
     "inbox": 27,
     "pm": 7,
