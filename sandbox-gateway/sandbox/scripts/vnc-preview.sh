@@ -70,11 +70,16 @@ if ! curl -fsS "http://127.0.0.1:${CDP_LOOPBACK_PORT}/json/version" >/dev/null 2
     sleep 1
   fi
 
-  # No window manager on Xvfb: pin geometry explicitly. Approving NewTab windows
-  # are re-sized via CDP (presentDesktop); this covers the bootstrap window.
+  # No window manager on Xvfb. Explicit position and size are the bootstrap
+  # window fallback; Approving NewTab windows are resized via CDP
+  # (presentDesktop: normal state, then size, so the content area covers the
+  # screen). Do not pass --start-maximized: without a WM it does not fill the
+  # screen and it races the later normal-state size.
   # --disable-infobars: suppress Chrome for Testing non-interactive product info
   # bar ("…is only for automated testing…") so it never paints into the VNC
   # framebuffer and does not reserve top viewport height (Chromium CfT switch).
+  # --force-device-scale-factor=1: keep the framebuffer in CSS pixels before CDP
+  # pins the same ratio on the content viewport.
   "$CHROME_BIN" \
     --no-sandbox \
     --disable-dev-shm-usage \
@@ -82,7 +87,7 @@ if ! curl -fsS "http://127.0.0.1:${CDP_LOOPBACK_PORT}/json/version" >/dev/null 2
     --remote-debugging-port="${CDP_LOOPBACK_PORT}" \
     --window-size=1920,1080 \
     --window-position=0,0 \
-    --start-maximized \
+    --force-device-scale-factor=1 \
     --no-first-run \
     --no-default-browser-check \
     about:blank \
