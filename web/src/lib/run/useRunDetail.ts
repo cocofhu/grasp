@@ -23,8 +23,10 @@ import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/
 import { resolveNodeDisplayLabelFromNode } from '@/lib/run/resolveNodeDisplayLabel'
 import { applyPreviewArtifactName } from '@/lib/run/reactArtifactPreview'
 import {
+  applyPersistedClarify,
   artifactsListFingerprint,
-  mergeRunChromeFields,
+  clarifyStreamAheadOfServer,
+  clarifyTurnsFingerprint,
   runChromeFingerprint,
   runSnapshotUnchanged,
 } from '@/lib/run/mergeRunChrome'
@@ -359,7 +361,7 @@ async function refreshArtifactPreviewState(frame?: { previewArtifact?: string })
   }
 }
 
-/** Busy-safe REST patch: chrome only, never hard load / dialogue overwrite (g1.1 / g1.3). */
+/** Busy-safe REST patch: chrome, plus a longer idle transcript (plan g1.3). */
 let chromePatchInflight = false
 async function patchRunChrome() {
   const id = runId.value
@@ -369,12 +371,19 @@ async function patchRunChrome() {
   try {
     const snapshot = await api.getRun(id)
     const prev = run.value
-    const merged = mergeRunChromeFields(prev, snapshot)
+    // Keeps in-progress streaming bubbles; adopts clarify once the server copy
+    // is more complete and the session is no longer ahead (plan g1.3).
+    const merged = applyPersistedClarify(prev, snapshot)
     const artsChanged =
       artifactsListFingerprint(prev.artifacts) !== artifactsListFingerprint(merged.artifacts)
-    if (runChromeFingerprint(prev) !== runChromeFingerprint(merged)) {
+    const chromeChanged = runChromeFingerprint(prev) !== runChromeFingerprint(merged)
+    const turnsChanged = clarifyTurnsFingerprint(prev) !== clarifyTurnsFingerprint(merged)
+    if (chromeChanged || turnsChanged) {
       run.value = merged
     }
+    // Only after a longer transcript landed. A chrome-only patch must not
+    // clear liveBusy while the chat is still streaming (plan g1.3).
+    if (turnsChanged) releaseIdleClarifyBusy(prev, merged, snapshot)
     if (artsChanged) {
       void refreshArtifactPreviewState()
     }
@@ -383,6 +392,23 @@ async function patchRunChrome() {
   } finally {
     chromePatchInflight = false
   }
+}
+
+/** Drop stale live-busy only for nodes whose persisted transcript was just adopted. */
+function releaseIdleClarifyBusy(prev: Run, merged: Run, snapshot: Run) {
+  const sessions = snapshot.reactSessions
+  if (!sessions) return
+  for (const [nodeId, snap] of Object.entries(sessions)) {
+    if (snap?.busy) continue
+    const before = clarifySlotFor(prev, nodeId)
+    const after = clarifySlotFor(merged, nodeId)
+    if (!after || before === after) continue
+    liveBusy[nodeId] = false
+  }
+}
+
+function clarifySlotFor(run: Run, nodeId: string) {
+  return run.clarifyByNode?.[nodeId] || (run.clarify?.nodeId === nodeId ? run.clarify : undefined)
 }
 
 const wsApi = useRunDetailWs({
@@ -453,6 +479,19 @@ async function fetchRunData(): Promise<true | RunLoadErrorKind> {
   try {
     const r = await api.getRun(id)
     if (run.value.id === r.id && runSnapshotUnchanged(run.value, r)) {
+      await loadUnknownModelDisplayName(wf.value.projectId)
+      return true
+    }
+    // Turn fingerprint changed, but a local stream is still ahead of a shorter
+    // server snapshot: keep those bubbles and only take safe chrome (plan g1.2).
+    if (run.value.id === r.id && clarifyStreamAheadOfServer(run.value, r)) {
+      const merged = applyPersistedClarify(run.value, r)
+      if (
+        runChromeFingerprint(run.value) !== runChromeFingerprint(merged) ||
+        clarifyTurnsFingerprint(run.value) !== clarifyTurnsFingerprint(merged)
+      ) {
+        run.value = merged
+      }
       await loadUnknownModelDisplayName(wf.value.projectId)
       return true
     }

@@ -462,6 +462,9 @@ export function useRunDetailWs(opts: {
           liveBusy[m.nodeId] = false
           dialoguePlatformBusy[m.nodeId] = false
           busySeedRetry.stop()
+          // Session is idle: loadRun writes back persisted clarify turns when
+          // the transcript fingerprint changed (plan g1.2). A shorter snapshot
+          // than a still-streaming local row is held inside fetchRunData.
           loadRun(false, true)
         }
       } else if (
@@ -471,6 +474,8 @@ export function useRunDetailWs(opts: {
         m.type === 'artifact_edit'
       ) {
         // Auto path: never hard load (g1.3). Busy → chrome patch + shared preview entry (g1.1 / g2.1).
+        // patchRunChrome still merges a longer idle transcript so an empty Agent
+        // panel is not frozen while this gate remains true (plan g1.3).
         if (isClarifySessionBusy()) {
           void patchRunChrome?.()
           if (m.type === 'artifact_edit') refreshArtifactPreview?.(m)
