@@ -141,16 +141,17 @@ func (h *Handlers) SandboxVNC(c *gin.Context) {
 	}()
 
 	go func() {
+		activity := newVncToucher(sess.Touch)
 		for {
 			msgType, data, err := conn.ReadMessage()
 			if err != nil {
 				_ = upstream.Close()
 				return
 			}
+			activity.mark()
 			if msgType == websocket.TextMessage {
 				var m vncClientMsg
 				if json.Unmarshal(data, &m) == nil {
-					sess.Touch()
 					h.applyVncMsg(sess.Page(), m, pushJSON)
 					continue
 				}
