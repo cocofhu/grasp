@@ -23,6 +23,14 @@
 ### 2026-10-05
 
 - 日期：2026-10-05
+- 范围：`server/internal/services/{pm_turn,pm_thread,pm,sandbox_view}.go`、`server/internal/handlers/pm.go`、`server/internal/router/router.go`、`server/cmd/server/main.go`、`web/src/lib/pm/{usePmLeaderChat,pmTurnState}.ts`、`web/src/lib/api/clients/pmClient.ts`、`web/src/components/pm/PmLeaderChat.vue`、相关测试与 locales
+- 做了什么：PM 对话改跑在 `chatsession` 上。每个线程一个 FIFO 会话，网页、IM 渠道、定时任务、审批自动回复都通过原有的 `Start` / `Active` / `Cancel` / `Subscribe` 入队。新增 `POST .../turns`（起轮或 `retryOf` 重试，忙时排队，返回 `waiting`）和 `POST .../turns/cancel`；线程 WS 只负责订阅：连上先发 queue_state 快照，忙时回放当前轮的 turn_begin 和 acp 帧，再接实时帧，另有 `phase` 帧报告沙箱准备进度（preparing / pulling / running）。沙箱准备从前端挪到服务端（`openPmSandbox` + `SandboxView.WaitReady`）。启动时把残留的 streaming 草稿标成新的 failKind `interrupted`。删掉 `/draft` 接口和前端的草稿续接、孤儿判定、90 秒期限。前端断线按 1s·2^n（封顶 15s）重连，页面回到前台时立即重连。
+- 为什么：PM 断线、刷新、轮次超过 90 秒都会在前端被判成"连接中断"，可服务端其实还在跑。改成以服务端为准，和 ReAct 澄清走同一套排队与快照恢复。
+- 如何验证：`go test ./...` 全绿（新增 `pm_turn_session_test.go`、`pm_turn_prompt_test.go`，覆盖排队、重复入队、重连回放、取消清队、准备失败、失败类型、空闲回收）；golangci-lint 0 issues；`npx vitest run` 全绿（`PmLeaderChat.test.ts`、`usePmLeaderChat.actions.test.ts` 按新协议重写）；`vue-tsc --noEmit`、eslint 无错误。
+
+### 2026-10-05
+
+- 日期：2026-10-05
 - 范围：`server/internal/chatsession/{session,registry,session_test}.go`、`server/internal/engine/{review_session,visitor_lane,live,engine}.go`、`server/internal/engine/{resume_review_external,clarify_session}_test.go`、`server/scripts/cover-check-server.sh`
 - 做了什么：新建 `chatsession` 包，把 ReAct 澄清、复审 / 预览审批、分享页访客通道共用的排队、单 pump、Cancel（只停当前轮或连队列一起清）、删除 / 重排、快照，以及 queue_state / turn_begin / turn_done / error 的发布抽成泛型 `Session[T]` 和 `Registry`。engine 的 `reviewSession` 改为包一层 `chatsession.Session`，执行、落库、Live、page session、反馈台账仍留在 engine，通过 Config 回调接入。`chatsession` 加入服务端覆盖率门禁。顺手修了 `TestClarifyReactReplyEnqueues` 不加锁改 `reactHold` 的数据竞争（main 上 `-race` 已失败）。
 - 为什么：统一聊天的第一步。平台上有好几套"排队 + 一次跑一轮 + 断线后靠快照恢复"的实现，PM 和 Agent Studio 各写了一份，PM 断线就判失败。先把 ReAct 这套已经验证过的逻辑抽出来、行为不变，后面 PM、Studio 接同一个包。

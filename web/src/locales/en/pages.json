@@ -1050,6 +1050,8 @@
         "failUnknownDesc": "Processing was interrupted. Please retry. If it persists, check your connection.",
         "failStoppedTitle": "Stopped",
         "failStoppedDesc": "You stopped this turn. Partial stream text was discarded; you can retry.",
+        "failInterruptedTitle": "Interrupted by restart",
+        "failInterruptedDesc": "The server restarted while this reply was generating. Retry to run it again.",
         "openSource": "Open source",
         "citationMissing": "Citation target missing or inaccessible",
         "citationInvalid": "Invalid citation or target does not exist",

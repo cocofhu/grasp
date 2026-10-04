@@ -428,6 +428,11 @@ func main() {
 	// Raise the per-turn deadline well above the legacy 90s so channel/cron and
 	// interactive PM turns are not truncated (aligns with the sandbox chat cap).
 	pmTurns.SetTurnDeadline(cfg.AgentChatTimeout() + 30*time.Second)
+	if n, err := pmSvc.FailInterruptedTurns(); err != nil {
+		log.Warn().Err(err).Msg("pm interrupted turn sweep failed")
+	} else if n > 0 {
+		log.Info().Int("turns", n).Msg("pm turns interrupted by restart marked failed")
+	}
 	sbxSvc.SetAgentSandboxDestroyHook(func(projectID, threadID, token string) {
 		mcpWire.unregister(token)
 		mcpWire.clearSandboxRef(threadID)

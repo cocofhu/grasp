@@ -1050,6 +1050,8 @@
         "failUnknownDesc": "处理中断，请重试。若问题持续，请检查网络连接。",
         "failStoppedTitle": "已停止",
         "failStoppedDesc": "你已停止本轮处理，半成品已丢弃，可重试。",
+        "failInterruptedTitle": "服务重启中断",
+        "failInterruptedDesc": "服务重启导致本轮生成中断，可点击重试。",
         "openSource": "跳转原文",
         "citationMissing": "引用目标不可用或无权限",
         "citationInvalid": "引用无效或目标不存在",
