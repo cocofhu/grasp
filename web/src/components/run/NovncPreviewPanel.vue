@@ -63,6 +63,13 @@ const inspect = ref(false)
 const inspectToggleLabel = computed(() =>
   t(inspect.value ? 'pages.appPreview.novnc.cancelInspect' : 'pages.appPreview.novnc.inspect'),
 )
+/** Viewer has taken over mouse and keyboard; otherwise the desktop is watch-only. */
+const control = ref(false)
+/** Inspect needs clicks on the page, so it lifts watch-only while armed. */
+const inputEnabled = computed(() => control.value || inspect.value)
+const controlToggleLabel = computed(() =>
+  t(control.value ? 'pages.appPreview.novnc.returnControl' : 'pages.appPreview.novnc.takeOver'),
+)
 const picked = ref<AppPreviewPickPayload | null>(null)
 const address = ref('about:blank')
 /** Toolbar inline tip (Demo S2/S3): not-ready warn vs describe-failed err. */
@@ -243,7 +250,10 @@ function handleCtrlText(data: string) {
       clearPreviewWarnTimer()
       status.value = 'live'
       if (typeof msg.url === 'string' && msg.url) address.value = msg.url
-      if (props.targetPort && props.targetPort !== props.port) gotoTargetPort()
+      // A re-attached desktop may already show the target port; do not reload it.
+      if (props.targetPort && props.targetPort !== props.port && urlPort(address.value) !== props.targetPort) {
+        gotoTargetPort()
+      }
       break
     case 'picked':
       inlineTip.value = null
@@ -344,6 +354,7 @@ function connect() {
   statusMsg.value = ''
   picked.value = null
   inspect.value = false
+  control.value = false
   inlineTip.value = null
   if (consoleMode.value) address.value = 'about:blank'
 
@@ -420,7 +431,7 @@ function connect() {
     rfb = new RFB(host, channel)
     rfb.scaleViewport = true
     rfb.resizeSession = false
-    rfb.viewOnly = false
+    rfb.viewOnly = !inputEnabled.value
     rfb.focusOnClick = true
     // Xvfb often has no cursor theme → remote cursor is fully transparent; show a
     // local fallback dot so the viewer always has a pointer.
@@ -491,6 +502,29 @@ function openAddress() {
   address.value = url
   sendCtrl({ type: 'navigate', action: 'goto', url })
 }
+
+function urlPort(raw: string): number | null {
+  try {
+    const u = new URL(raw)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
+    return Number(u.port || (u.protocol === 'https:' ? 443 : 80))
+  } catch {
+    return null
+  }
+}
+
+function toggleControl() {
+  control.value = !control.value
+}
+
+watch(inputEnabled, (on) => {
+  if (!rfb) return
+  try {
+    rfb.viewOnly = !on
+  } catch {
+    /* ignore */
+  }
+})
 
 function gotoTargetPort() {
   const port = props.targetPort || props.port
@@ -613,12 +647,25 @@ onBeforeUnmount(() => {
       </button>
       <button
         type="button"
+        class="rounded px-2 py-0.5 text-[11px] transition disabled:opacity-50"
+        :class="control ? 'bg-accent/20 text-accent' : 'text-txt2 hover:bg-overlay'"
+        :title="controlToggleLabel"
+        :aria-pressed="control ? 'true' : 'false'"
+        :disabled="status !== 'live'"
+        data-testid="novnc-control-toggle"
+        @click="toggleControl"
+      >
+        {{ controlToggleLabel }}
+      </button>
+      <button
+        type="button"
         class="rounded px-1.5 py-0.5 text-[11px] text-txt2 hover:bg-overlay"
         :title="t(isFullscreen ? 'pages.appPreview.novnc.exitFullscreen' : 'pages.appPreview.novnc.fullscreen')"
         @click="toggleFullscreen"
       >
         {{ isFullscreen ? '⤢' : '⛶' }}
       </button>
+      <slot name="toolbar-extra" />
       <span class="ml-auto flex items-center gap-2.5 text-[10px]">
         <span
           v-if="status === 'live'"
@@ -712,6 +759,18 @@ onBeforeUnmount(() => {
         {{ t('pages.sandboxConsole.novncOpen') }}
       </button>
       <button
+        type="button"
+        class="shrink-0 rounded px-2 py-0.5 text-[11px] transition disabled:opacity-50"
+        :class="control ? 'bg-accent/20 text-accent' : 'text-txt2 hover:bg-overlay'"
+        :title="controlToggleLabel"
+        :aria-pressed="control ? 'true' : 'false'"
+        :disabled="status !== 'live'"
+        data-testid="novnc-control-toggle"
+        @click="toggleControl"
+      >
+        {{ controlToggleLabel }}
+      </button>
+      <button
         v-if="inspectable"
         type="button"
         class="shrink-0 rounded px-2 py-0.5 text-[11px] transition"
@@ -776,6 +835,26 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <div ref="canvasHost" class="novnc-canvas-host absolute inset-0 h-full w-full" />
+      <template v-if="status === 'live'">
+        <div
+          v-if="control"
+          class="pointer-events-none absolute inset-0 z-10 ring-2 ring-inset ring-accent"
+          data-testid="novnc-control-frame"
+        >
+          <span
+            class="absolute left-1/2 top-2 -translate-x-1/2 rounded-full bg-accent px-3 py-1 text-[11px] font-medium text-white shadow-card"
+          >
+            {{ t('pages.appPreview.novnc.controlBanner') }}
+          </span>
+        </div>
+        <span
+          v-else-if="!inspect"
+          class="pointer-events-none absolute bottom-2 left-2 z-10 rounded-md bg-overlay/90 px-2 py-1 text-[10px] text-txt3"
+          data-testid="novnc-watch-hint"
+        >
+          {{ t('pages.appPreview.novnc.watchOnlyHint') }}
+        </span>
+      </template>
 
       <div
         v-if="!consoleMode && status === 'connecting'"

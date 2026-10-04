@@ -93,6 +93,9 @@ browser:
   # Idle tab / empty container reclamation (seconds).
   tab_idle_ttl_seconds: 300
   container_idle_ttl_seconds: 600
+  # Close an unwatched sandbox preview page after this long; 0 keeps it (and
+  # its screen state) for the sandbox's lifetime.
+  desktop_idle_ttl_seconds: 0
 
 # 静态账号登录（鉴权始终启用，无 auth.enabled 开关）。下列账号只允许 loopback
 # 本地 demo；任何共享、远程或生产部署都必须通过 GRASP_AUTH_USERS 显式替换。

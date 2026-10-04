@@ -35,6 +35,14 @@ In the pending-gates inbox, only **human_gate** cards (and the visual preview to
 
 Inbox **pending review** and **app preview** cards reuse the same management panel and token rules (`ShareLinkKindReview`, including TTL and permission presets), but authenticated APIs live under `/api/runs/:id/reviews/:nodeId/share-link*` — not `/gates/...`, and no fake Gate row is created. In-product entries: card **Copy temp link** and the mobile detail top bar button with the same label. The public page is labeled **External review**; hot sessions support multi-turn ReAct. For `productKind=app_preview` the public page defaults to remote desktop and picking via a short-lived ticket channel (desensitized ports; API ports use a same-origin iframe); mobile shows a degrade hint only. The only footer action is **Confirm and advance**. Per-visitor conversations, the shared workspace, and first-decision-wins apply as above. Run-detail review tabs and the logged-in review composer do not add a temp-link entry; `proposal_select` and pending clarify stay out of scope.
 
+### App preview: noVNC and direct IP
+
+Sandbox ports registered with `set_preview` always preview over noVNC in the panel, which shows `http://127.0.0.1:port/` inside the sandbox. The preview page in the sandbox stays open: after you leave and come back, switch tabs, or reload the platform page, you see the same page with its login and form state; logins also survive a Chromium restart. A sandbox shows one screen at a time, and switching ports navigates that same page.
+
+The preview is watch-only by default. Select Take over in the toolbar to use mouse and keyboard, and Return control when you are done; Pick annotation allows clicks while it is armed. This only prevents stray clicks; it is not access control.
+
+When the node has direct IP preview (`direct_preview`) on, the noVNC toolbar adds an Open directly in new tab button for `http://IP:port/`, which carries the pick bar and the Chat drawer at the bottom right.
+
 ### Live variants (Grasp / app preview + direct IP)
 
 **Grasp** (`grasp`, historical `approve`) and **app preview** (`app_preview`) nodes with direct IP preview (`direct_preview`) get **Live variants** by default (`live_variants`). After the agent registers an in-sandbox app port with `set_preview`, open its direct preview and click the **Page collaboration** icon at the bottom of the chat input, next to the attachment button. Choose **Page candidates** from the menu. Existing direct-preview nodes that omit the node setting have this capability without migration. Explicitly disabled Live, noVNC, external URL-only previews and links without Live permission do not provide candidate generation.

@@ -3139,6 +3139,7 @@
       "connectionLost": "Preview connection lost",
       "sandboxRecycled": "Sandbox recycled; preview unavailable",
       "directOpenTab": "Open in new tab",
+      "directOpenTabShort": "Open directly in new tab",
       "externalUrlHint": "External URL opens directly; pick-annotate is unavailable on cross-origin sites.",
       "novnc": {
         "back": "Back",
@@ -3148,6 +3149,10 @@
         "exitFullscreen": "Exit fullscreen",
         "inspect": "Pick to annotate",
         "cancelInspect": "Cancel annotation",
+        "takeOver": "Take over",
+        "returnControl": "Return control",
+        "controlBanner": "You are controlling this page. Select Return control when done.",
+        "watchOnlyHint": "Watching only · Select Take over to use mouse and keyboard",
         "usePick": "Add to chat ⤴",
         "clearPick": "Clear",
         "pickedLabel": "Picked",

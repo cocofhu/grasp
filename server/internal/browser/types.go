@@ -50,9 +50,9 @@ type Pick struct {
 
 // Engine is one Chromium instance (one container) we can open tabs in.
 type Engine interface {
-	// NewTab opens an isolated tab (its own browser context) navigated to url.
+	// NewTab opens a tab in the default browser context navigated to url.
 	NewTab(ctx context.Context, url string) (Page, error)
-	// Close disconnects from the browser (does not stop the container).
+	// Close disconnects from the browser. It must not stop Chromium.
 	Close() error
 }
 
@@ -85,6 +85,8 @@ type Page interface {
 	Navigate(action string) error
 	// Goto navigates the tab to url (e.g. about:blank or http://…).
 	Goto(url string) error
+	// URL returns the tab's current URL; an error means the tab is gone.
+	URL(ctx context.Context) (string, error)
 	Close() error
 }
 
@@ -115,4 +117,7 @@ type Config struct {
 	MaxTabsPerContainer int
 	TabIdleTTL          time.Duration
 	ContainerIdleTTL    time.Duration
+	// DesktopIdleTTL closes a sandbox's desktop page after no viewer has been
+	// attached for this long. 0 keeps it until the sandbox goes away.
+	DesktopIdleTTL time.Duration
 }

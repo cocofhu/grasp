@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,8 +66,9 @@ func (h *Handlers) PreviewVNC(c *gin.Context) {
 		c.String(http.StatusBadGateway, "preview host invalid")
 		return
 	}
-	// Stay on the sandbox loopback so iptables sends this port through preview-inject.
-	// The browser origin remains http://127.0.0.1:<port>/, so app paths are unchanged.
+	// Sandbox loopback: the in-sandbox Chromium reaches the app directly. The
+	// preview-inject REDIRECT only matches inbound (PREROUTING) traffic, so no
+	// pick bar is injected here; Pick runs over CDP instead.
 	navigateURL := fmt.Sprintf("http://127.0.0.1:%d/", port)
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -130,7 +132,7 @@ func (h *Handlers) PreviewVNC(c *gin.Context) {
 		pushJSON(gin.H{"type": "describe-failed"})
 	})
 
-	pushJSON(gin.H{"type": "ready", "url": navigateURL})
+	pushJSON(gin.H{"type": "ready", "url": vncReadyURL(c.Request.Context(), sess.Page(), navigateURL)})
 
 	go func() {
 		select {
@@ -196,6 +198,17 @@ func (h *Handlers) applyVncMsg(page browser.Page, m vncClientMsg, pushJSON func(
 		}
 		_ = page.Navigate(m.Action)
 	}
+}
+
+// vncReadyURL is the URL the attached desktop page is showing, which differs
+// from navigateURL when a viewer re-attaches to a page left elsewhere.
+func vncReadyURL(ctx context.Context, page browser.Page, navigateURL string) string {
+	uctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if u, err := page.URL(uctx); err == nil && strings.TrimSpace(u) != "" {
+		return u
+	}
+	return navigateURL
 }
 
 // previewHostIP extracts the host/IP from a bridge URL like http://172.17.0.2:3000/.

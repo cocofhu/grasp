@@ -11,6 +11,8 @@ CDP_PORT="${CDP_PORT:-9222}"
 VNC_PORT="${VNC_PORT:-5900}"
 WS_PORT="${WS_PORT:-6080}"
 PID_DIR="${VNC_PID_DIR:-/tmp/sandbox-vnc}"
+# Fixed profile so cookies and logins survive a Chromium restart.
+PROFILE_DIR="${VNC_CHROME_PROFILE_DIR:-${HOME:-/root}/.grasp-preview-chrome}"
 mkdir -p "$PID_DIR"
 
 LOCK_FILE="${PID_DIR}/start.lock"
@@ -80,7 +82,11 @@ if ! curl -fsS "http://127.0.0.1:${CDP_LOOPBACK_PORT}/json/version" >/dev/null 2
   # framebuffer and does not reserve top viewport height (Chromium CfT switch).
   # --force-device-scale-factor=1: keep the framebuffer in CSS pixels before CDP
   # pins the same ratio on the content viewport.
+  mkdir -p "$PROFILE_DIR"
+  # A crashed Chromium leaves a profile lock that blocks the next start.
+  rm -f "$PROFILE_DIR"/Singleton{Lock,Socket,Cookie}
   "$CHROME_BIN" \
+    --user-data-dir="$PROFILE_DIR" \
     --no-sandbox \
     --disable-dev-shm-usage \
     --disable-infobars \

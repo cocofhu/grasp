@@ -8,10 +8,10 @@ import DirectPreviewLauncher from './DirectPreviewLauncher.vue'
 
 const DIRECT = 'http://127.0.0.1:18081/'
 
-function mountLauncher(issueTicket?: () => Promise<unknown>) {
+function mountLauncher(issueTicket?: () => Promise<unknown>, compact = false) {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': pages } })
   return mount(DirectPreviewLauncher, {
-    props: { directUrl: DIRECT, issueTicket: issueTicket as never },
+    props: { directUrl: DIRECT, issueTicket: issueTicket as never, compact },
     global: { plugins: [i18n] },
   })
 }
@@ -74,5 +74,32 @@ describe('DirectPreviewLauncher', () => {
     const link = w.get('[data-testid="direct-preview-tip"]')
     expect(link.attributes('href')).toBe(`${DIRECT}#__grasp_embed&run=r&node=n&ticket=tk&theme=dark&lang=${locale.value}`)
     expect(link.attributes('rel')).toBe('noopener')
+  })
+
+  it('compact variant is one toolbar button that opens with the ticket', async () => {
+    const tab = fakeTab()
+    vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window)
+    const w = mountLauncher(() => Promise.resolve({ ticket: 'tk', runId: 'run-1', nodeId: 'ap1', expiresAt: '' }), true)
+    expect(w.find('[data-testid="direct-preview-address"]').exists()).toBe(false)
+    const btn = w.get('[data-testid="app-preview-direct-open"]')
+    expect(btn.text()).toContain('新标签页直连打开')
+    expect(btn.attributes('title')).toBe(DIRECT)
+    await btn.trigger('click')
+    await flushPromises()
+    expect(tab.location.href).toBe(`${DIRECT}#__grasp_embed&run=run-1&node=ap1&ticket=tk&theme=dark&lang=${locale.value}`)
+  })
+
+  it('compact variant shows tips for a missing drawer and a blocked popup', async () => {
+    vi.spyOn(window, 'open').mockReturnValue(fakeTab() as unknown as Window)
+    const w = mountLauncher(() => Promise.reject(new Error('409')), true)
+    await w.get('[data-testid="app-preview-direct-open"]').trigger('click')
+    await flushPromises()
+    expect(w.get('[data-testid="direct-preview-tip"]').text()).toContain('没法附带对话抽屉')
+
+    vi.spyOn(window, 'open').mockReturnValue(null)
+    const blocked = mountLauncher(undefined, true)
+    await blocked.get('[data-testid="app-preview-direct-open"]').trigger('click')
+    await flushPromises()
+    expect(blocked.get('[data-testid="direct-preview-tip"]').attributes('href')).toBe(DIRECT)
   })
 })

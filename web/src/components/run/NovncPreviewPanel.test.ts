@@ -18,12 +18,14 @@ class MockWebSocket {
     MockWebSocket.instances.push(this)
     queueMicrotask(() => {
       this.onopen?.()
-      this.onmessage?.({ data: JSON.stringify({ type: 'ready', url: 'http://localhost:5173' }) })
+      this.onmessage?.({ data: JSON.stringify({ type: 'ready', url: MockWebSocket.readyUrl }) })
     })
   }
   static instances: MockWebSocket[] = []
+  static readyUrl = 'http://localhost:5173'
   static reset() {
     MockWebSocket.instances = []
+    MockWebSocket.readyUrl = 'http://localhost:5173'
   }
   send(data: string) {
     this.sent.push(data)
@@ -212,6 +214,73 @@ describe('NovncPreviewPanel', () => {
     await flushPromises()
     expect(gotos()).toEqual(['http://127.0.0.1:8080/', 'http://127.0.0.1:5173/'])
     expect(MockWebSocket.instances).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('re-attaching to a desktop already on the target port does not navigate', async () => {
+    MockWebSocket.readyUrl = 'http://127.0.0.1:8080/orders/7'
+    const wrapper = mountNovnc({ targetPort: 8080 })
+    await flushPromises()
+    const gotos = MockWebSocket.instances[0].sent
+      .map((s) => JSON.parse(s) as { type?: string; action?: string })
+      .filter((m) => m.type === 'navigate' && m.action === 'goto')
+    expect(gotos).toEqual([])
+    wrapper.unmount()
+  })
+
+  it('starts watch-only; take over and return toggle remote input', async () => {
+    const wrapper = mountNovnc()
+    await flushPromises()
+    const rfb = rfbMocks.last() as unknown as { viewOnly: boolean }
+    const toggle = () => wrapper.get('[data-testid="novnc-control-toggle"]')
+    expect(rfb.viewOnly).toBe(true)
+    expect(toggle().text()).toBe('接管')
+    expect(wrapper.find('[data-testid="novnc-watch-hint"]').exists()).toBe(true)
+
+    await toggle().trigger('click')
+    expect(rfb.viewOnly).toBe(false)
+    expect(toggle().text()).toBe('交还')
+    expect(toggle().attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="novnc-control-frame"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="novnc-watch-hint"]').exists()).toBe(false)
+
+    await toggle().trigger('click')
+    expect(rfb.viewOnly).toBe(true)
+    expect(wrapper.find('[data-testid="novnc-control-frame"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('inspect lifts watch-only while armed, then restores it', async () => {
+    const wrapper = mountNovnc()
+    await flushPromises()
+    const rfb = rfbMocks.last() as unknown as { viewOnly: boolean }
+    await inspectButton(wrapper).trigger('click')
+    expect(rfb.viewOnly).toBe(false)
+    expect(wrapper.find('[data-testid="novnc-watch-hint"]').exists()).toBe(false)
+    await inspectButton(wrapper).trigger('click')
+    expect(rfb.viewOnly).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('reconnect drops take-over back to watch-only', async () => {
+    const wrapper = mountNovnc()
+    await flushPromises()
+    await wrapper.get('[data-testid="novnc-control-toggle"]').trigger('click')
+    await wrapper.setProps({ port: 8080 })
+    await flushPromises()
+    const rfb = rfbMocks.last() as unknown as { viewOnly: boolean }
+    expect(rfb.viewOnly).toBe(true)
+    expect(wrapper.get('[data-testid="novnc-control-toggle"]').text()).toBe('接管')
+    wrapper.unmount()
+  })
+
+  it('console mode also offers take over', async () => {
+    const wrapper = mountNovnc({ sandboxId: 42, runId: undefined, nodeId: undefined, port: undefined })
+    await flushPromises()
+    const rfb = rfbMocks.last() as unknown as { viewOnly: boolean }
+    expect(rfb.viewOnly).toBe(true)
+    await wrapper.get('[data-testid="novnc-control-toggle"]').trigger('click')
+    expect(rfb.viewOnly).toBe(false)
     wrapper.unmount()
   })
 

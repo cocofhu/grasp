@@ -16,8 +16,9 @@ import (
 
 // SandboxVNC proxies noVNC (RFB over WebSocket) for a console sandbox by ID.
 // Unlike PreviewVNC it does not require a registered preview port triple; it
-// resolves the sandbox container name/IP, EnsureSandboxVNC on demand, and opens
-// Chromium at about:blank (address-bar navigation uses CDP goto).
+// resolves the sandbox container name/IP, EnsureSandboxVNC on demand, and
+// attaches to the sandbox desktop page as it is (about:blank only for the
+// first viewer; address-bar navigation uses CDP goto).
 func (h *Handlers) SandboxVNC(c *gin.Context) {
 	if h.Auth != nil {
 		if _, ok := h.Auth.RequireSession(c); !ok {
@@ -127,7 +128,7 @@ func (h *Handlers) SandboxVNC(c *gin.Context) {
 		pushJSON(gin.H{"type": "describe-failed"})
 	})
 
-	pushJSON(gin.H{"type": "ready", "url": navigateURL})
+	pushJSON(gin.H{"type": "ready", "url": vncReadyURL(c.Request.Context(), sess.Page(), navigateURL)})
 
 	go func() {
 		select {
