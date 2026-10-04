@@ -13,11 +13,9 @@ import {
 } from '@/lib/shared/attachments'
 import { useToast } from '@/lib/composables/useToast'
 import {
-  classifyPmTurnError,
-  findConvergableOrphanIds,
   isPmFailKind,
   pmActiveThreadStorageKey,
-  shouldApplyEventSeq,
+  pmWsReconnectDelayMs,
   type PmFailKind,
 } from '@/lib/pm/pmTurnState'
 import { extractAgentMessageDelta } from '@/lib/run/acpUnpack'
@@ -82,8 +80,8 @@ function clearStreamText() {
   streamPreview.reset()
   streamHtml.value = ''
 }
+/** Reconnected mid-turn: the bubble waits for replayed output. */
 const resuming = ref(false)
-const lastEventSeq = ref(-1)
 const scroller = ref<HTMLElement | null>(null)
 
 const STICK_THRESHOLD = 48
@@ -166,22 +164,15 @@ watch(attachNotice, (n) => {
 })
 
 let ws: WebSocket | null = null
-let sandboxId = 0
-/** Gateway lifecycle while ensureSandbox/waitReady boots (pulling|creating|…). */
+/** Thread the socket should follow; '' disables reconnect. */
+let wsThreadId = ''
+let wsAttempt = 0
+let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null
+let disposed = false
+/** Sandbox boot / turn phase from the server (preparing|pulling|creating|running). */
 const sandboxBootStatus = ref('')
-/** When true, ignore a late turn_done after user cancelled / failTurn. */
-let streamCancelled = false
-/** Generation token so late async work from a previous turn is ignored. */
-let turnGen = 0
-/** Prevents duplicate failTurn / late WS handlers after a turn already finished. */
-let turnClosed = false
-let turnDeadlineTimer: ReturnType<typeof setTimeout> | null = null
-let readyAbort: AbortController | null = null
 /** Discard stale listPmMessages responses after thread switch or re-load. */
 let threadLoadGen = 0
-
-const TURN_DEADLINE_MS = 90_000
-const WS_OPEN_TIMEOUT_MS = 10_000
 
 const enabled = computed(() => !!props.binding?.enabled && props.binding.agentAvailable)
 const turnBusy = computed(
@@ -401,6 +392,7 @@ const FAIL_KIND_KEYS: Record<FailKind, { title: string; desc: string }> = {
   empty: { title: 'failEmptyTitle', desc: 'failEmptyDesc' },
   unknown: { title: 'failUnknownTitle', desc: 'failUnknownDesc' },
   stopped: { title: 'failStoppedTitle', desc: 'failStoppedDesc' },
+  interrupted: { title: 'failInterruptedTitle', desc: 'failInterruptedDesc' },
 }
 
 function failMeta(kind: string) {
@@ -475,8 +467,8 @@ async function activateThread(id: string, opts?: { preserveTurn?: boolean }) {
     /* ignore quota */
   }
   closeWs()
-  sandboxId = 0
   await loadMessages(id)
+  if (id === activeId.value) connectThreadWs(id)
 }
 
 async function selectThread(id: string) {
@@ -518,9 +510,7 @@ async function loadMessages(tid: string) {
     if (gen !== threadLoadGen || tid !== activeId.value) return
     messages.value = res.items || []
     hasMoreEarlier.value = channel ? false : !!res.hasMore
-    await hydrateDraftAndMaybeResume(tid)
-    if (gen !== threadLoadGen || tid !== activeId.value) return
-  } catch (e: any) {
+  } catch {
     if (gen !== threadLoadGen || tid !== activeId.value) return
     messagesLoadFailed.value = true
     toast.error(t('pages.projectDetail.pm.loadFailed'))
@@ -600,54 +590,6 @@ async function retryLoadMessages() {
   await loadMessages(activeId.value)
 }
 
-/**
- * Hydrate priority: hasFinal > streaming+live resume > streaming+!live|failed converge > orphan.
- * Never call beginResume when live=false.
- */
-async function hydrateDraftAndMaybeResume(tid: string) {
-  if (tid !== activeId.value) return
-  // Channel threads are Web-readonly: never resume turns or persist fail metadata.
-  const th = threads.value.find((x) => x.id === tid)
-  if (isChannelThread(th)) return
-  let draftUserMsgId = ''
-  let skipOrphans = false
-  try {
-    const info = await api.getPmDraft(props.projectId, tid)
-    const draft = info.draft
-    // hasFinal alone skips resume/orphan for this hydrate (draft may already be cleared).
-    if (info.hasFinal) {
-      skipOrphans = true
-      return
-    }
-    if (draft && draft.status === 'streaming' && draft.userMsgId) {
-      draftUserMsgId = draft.userMsgId
-      if (info.live) {
-        skipOrphans = true
-        // Already busy with a live send in this session — don't double-resume.
-        if (busy.value && activeUserMessageId.value === draft.userMsgId) return
-        await beginResume(tid, draft.partialText || '', draft.eventSeq ?? -1, draft.userMsgId)
-        return
-      }
-      // Dead streaming draft (older server without reconcile): connection + optional partial.
-      await convergeFailedDraft(draft.userMsgId, 'connection', draft.partialText || '')
-      return
-    }
-    if (draft && draft.status === 'failed' && draft.userMsgId) {
-      // Exclude this turn from orphan converge; still ensure fail card + Retry.
-      draftUserMsgId = draft.userMsgId
-      const raw = draft.failKind || ''
-      const kind = (isPmFailKind(raw) ? raw : 'connection') as FailKind
-      // Refresh/interrupt path must not stay on unknown when draft is already failed.
-      const resolved: FailKind = kind === 'unknown' ? 'connection' : kind
-      await convergeFailedDraft(draft.userMsgId, resolved, draft.partialText || '')
-    }
-  } catch {
-    /* draft fetch failed → orphan path uses connection (not unknown) */
-  } finally {
-    await convergeOrphanTurns(tid, { draftUserMsgId, skipAll: skipOrphans })
-  }
-}
-
 function setFailedPartial(userMsgId: string, partial: string) {
   const text = partial.trim()
   if (!userMsgId || !text) return
@@ -659,85 +601,6 @@ function clearFailedPartial(userMsgId: string) {
   const next = { ...failedPartialByUserMsgId.value }
   delete next[userMsgId]
   failedPartialByUserMsgId.value = next
-}
-
-async function convergeFailedDraft(userMsgId: string, kind: FailKind, partial: string) {
-  if (partial.trim()) setFailedPartial(userMsgId, partial)
-  else clearFailedPartial(userMsgId)
-  const existing = messages.value.find((m) => m.id === userMsgId)
-  if (existing && existing.status !== 'failed') {
-    await persistFailure(userMsgId, kind)
-  } else if (existing && existing.status === 'failed' && existing.failKind !== kind) {
-    await persistFailure(userMsgId, kind)
-  }
-}
-
-async function beginResume(tid: string, partial: string, afterSeq: number, userMsgId: string) {
-  if (tid !== activeId.value) return
-  const gen = ++turnGen
-  streamCancelled = false
-  turnClosed = false
-  activeUserMessageId.value = userMsgId
-  sending.value = true
-  streaming.value = true
-  resuming.value = true
-  syncStreamText(partial)
-  lastEventSeq.value = afterSeq
-  startTurnDeadline(gen)
-  readyAbort = new AbortController()
-  const signal = readyAbort.signal
-  try {
-    await ensureSandbox(false, signal)
-    if (gen !== turnGen || streamCancelled || turnClosed) return
-    startTurnDeadline(gen)
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      throw Object.assign(new Error('ws not open'), { failKind: 'connection' as FailKind })
-    }
-    ws.send(JSON.stringify({ type: 'resume', afterSeq }))
-  } catch (e: any) {
-    resuming.value = false
-    if (gen !== turnGen || turnClosed) return
-    if (e?.name === 'AbortError' || streamCancelled) {
-      if (!turnClosed) await failTurn('stopped')
-      return
-    }
-    await failTurn(classifyPmTurnError(e))
-    const detail = String(e?.message || e)
-    if (detail) toast.error(detail)
-  } finally {
-    if (readyAbort?.signal === signal) readyAbort = null
-  }
-}
-
-/**
- * Only converge truly unrecoverable orphans (no draft / no live turn).
- * Default failKind is connection (refresh/interrupt), never unknown.
- */
-async function convergeOrphanTurns(
-  tid: string,
-  opts?: { draftUserMsgId?: string; skipAll?: boolean },
-) {
-  if (tid !== activeId.value) return
-  const orphans = findConvergableOrphanIds(messages.value, opts).filter((id) => {
-    if (busy.value && id === activeUserMessageId.value) return false
-    return true
-  })
-  for (const mid of orphans) {
-    if (tid !== activeId.value) return
-    try {
-      const msg = await api.patchPmMessage(props.projectId, tid, mid, {
-        status: 'failed',
-        failKind: 'connection',
-      })
-      patchLocalMessage(mid, {
-        status: msg.status || 'failed',
-        failKind: msg.failKind || 'connection',
-      })
-    } catch (e: any) {
-      patchLocalMessage(mid, { status: 'failed', failKind: 'connection' })
-      toast.error(String(e?.message || e))
-    }
-  }
 }
 
 async function newThread() {
@@ -775,48 +638,156 @@ async function removeThread(id: string) {
   }
 }
 
+function clearReconnectTimer() {
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer)
+    wsReconnectTimer = null
+  }
+}
+
+/** Close the thread socket and stop following it. */
 function closeWs() {
+  wsThreadId = ''
+  clearReconnectTimer()
   if (ws) {
+    const socket = ws
+    ws = null
     try {
-      ws.close()
+      socket.close()
     } catch {
       /* ignore */
     }
+  }
+}
+
+/**
+ * Follow the thread's turn stream. The server sends a queue_state snapshot on
+ * every (re)connect, so a dropped socket only reconnects — it never fails a turn.
+ */
+function connectThreadWs(tid: string) {
+  closeWs()
+  if (!tid || disposed || isChannelThread(threads.value.find((x) => x.id === tid))) return
+  wsThreadId = tid
+  wsAttempt = 0
+  openThreadWs()
+}
+
+function openThreadWs() {
+  clearReconnectTimer()
+  const tid = wsThreadId
+  if (!tid || disposed) return
+  let socket: WebSocket
+  try {
+    socket = new WebSocket(api.pmThreadChatWsUrl(props.projectId, tid))
+  } catch {
+    scheduleReconnect()
+    return
+  }
+  ws = socket
+  socket.onmessage = (ev) => {
+    if (ws !== socket || tid !== activeId.value) return
+    let msg: any
+    try {
+      msg = JSON.parse(ev.data)
+    } catch {
+      return
+    }
+    wsAttempt = 0
+    handleFrame(msg)
+  }
+  socket.onclose = () => {
+    if (ws !== socket) return
     ws = null
+    scheduleReconnect()
   }
 }
 
-function clearTurnDeadline() {
-  if (turnDeadlineTimer) {
-    clearTimeout(turnDeadlineTimer)
-    turnDeadlineTimer = null
+function scheduleReconnect() {
+  if (!wsThreadId || disposed || wsReconnectTimer) return
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+  const delay = pmWsReconnectDelayMs(wsAttempt)
+  wsAttempt += 1
+  wsReconnectTimer = setTimeout(() => {
+    wsReconnectTimer = null
+    openThreadWs()
+  }, delay)
+}
+
+function onVisibilityChange() {
+  if (document.visibilityState !== 'visible' || !wsThreadId || ws) return
+  wsAttempt = 0
+  openThreadWs()
+}
+
+function handleFrame(msg: any) {
+  if (msg?.type === 'acp') {
+    if (msg.data) handleAcp(msg.data)
+    return
+  }
+  if (msg?.type !== 'session') return
+  switch (msg.event) {
+    case 'queue_state':
+      applyQueueState(msg)
+      break
+    case 'turn_begin':
+      beginServerTurn(String(msg.userMsgId || msg.item?.id || ''))
+      break
+    case 'phase':
+      sandboxBootStatus.value = String(msg.phase || '')
+      break
+    case 'turn_done':
+      if (msg.interrupted) {
+        void onTurnError('stopped', '')
+      } else {
+        void onTurnDone()
+      }
+      break
+    case 'error': {
+      const kind = (isPmFailKind(msg.failKind) ? msg.failKind : 'unknown') as FailKind
+      void onTurnError(kind, String(msg.message || 'error'))
+      break
+    }
   }
 }
 
-function startTurnDeadline(gen: number) {
-  clearTurnDeadline()
-  turnDeadlineTimer = setTimeout(() => {
-    if (gen !== turnGen) return
-    if (!busy.value) return
-    void failTurn('sandbox')
-  }, TURN_DEADLINE_MS)
+/** Snapshot / queue change: busy restores the live bubble; idle settles a turn whose end we missed. */
+function applyQueueState(msg: { busy?: boolean; waiting?: number; phase?: string; userMsgId?: string }) {
+  if (msg.busy) {
+    if (msg.phase) sandboxBootStatus.value = msg.phase
+    if (msg.userMsgId && msg.userMsgId !== activeUserMessageId.value) {
+      beginServerTurn(msg.userMsgId)
+      resuming.value = true
+    } else if (!streaming.value && !finalizing.value) {
+      streaming.value = true
+      resuming.value = true
+    }
+    return
+  }
+  if ((msg.waiting ?? 0) > 0) return
+  sandboxBootStatus.value = ''
+  if ((sending.value || streaming.value) && !finalizing.value) void onTurnDone()
+}
+
+function beginServerTurn(userMsgId: string) {
+  if (userMsgId) activeUserMessageId.value = userMsgId
+  clearStreamText()
+  sending.value = false
+  streaming.value = true
+  finalizing.value = false
+  resuming.value = false
+  // Turn started elsewhere (IM channel, cron, another tab): pull its user message.
+  if (userMsgId && !messagesLoading.value && !messages.value.some((m) => m.id === userMsgId)) {
+    void refreshMessages()
+  }
 }
 
 function resetTurnLocal() {
-  turnGen += 1
-  streamCancelled = true
-  turnClosed = true
-  clearTurnDeadline()
-  if (readyAbort) {
-    readyAbort.abort()
-    readyAbort = null
-  }
   clearStreamText()
   streaming.value = false
   sending.value = false
   resuming.value = false
   finalizing.value = false
-  lastEventSeq.value = -1
+  sandboxBootStatus.value = ''
   activeUserMessageId.value = ''
   failedPartialByUserMsgId.value = {}
 }
@@ -825,185 +796,21 @@ function patchLocalMessage(mid: string, patch: Partial<ChatMessage>) {
   messages.value = messages.value.map((m) => (m.id === mid ? { ...m, ...patch } : m))
 }
 
-async function persistFailure(mid: string, kind: FailKind) {
-  if (!activeId.value || !mid) return
-  try {
-    const msg = await api.patchPmMessage(props.projectId, activeId.value, mid, {
-      status: 'failed',
-      failKind: kind,
-    })
-    patchLocalMessage(mid, { status: msg.status || 'failed', failKind: msg.failKind || kind })
-  } catch (e: any) {
-    // Still show session-local failure even if persistence fails.
-    patchLocalMessage(mid, { status: 'failed', failKind: kind })
-    toast.error(String(e?.message || e))
+function upsertLocalMessage(msg: ChatMessage) {
+  if (messages.value.some((m) => m.id === msg.id)) {
+    patchLocalMessage(msg.id, msg)
+  } else {
+    messages.value = [...messages.value, msg]
   }
-}
-
-async function clearFailure(mid: string) {
-  if (!activeId.value || !mid) return
-  try {
-    const msg = await api.patchPmMessage(props.projectId, activeId.value, mid, { status: 'ok' })
-    patchLocalMessage(mid, { status: msg.status || 'ok', failKind: '' })
-  } catch (e: any) {
-    patchLocalMessage(mid, { status: 'ok', failKind: '' })
-    toast.error(String(e?.message || e))
-  }
-}
-
-/**
- * Unified turn failure finish: discard stream half-product, persist failKind on user turn.
- */
-async function failTurn(kind: FailKind) {
-  if (turnClosed) return
-  turnClosed = true
-  const mid = activeUserMessageId.value
-  streamCancelled = true
-  clearTurnDeadline()
-  if (readyAbort) {
-    readyAbort.abort()
-    readyAbort = null
-  }
-  clearStreamText()
-  streaming.value = false
-  sending.value = false
-  resuming.value = false
-  finalizing.value = false
-  if (mid) {
-    await persistFailure(mid, kind)
-  }
-  await nextTick()
-  scrollBottom()
-}
-
-async function ensureSandbox(injectHistory: boolean, signal?: AbortSignal) {
-  if (!activeId.value) {
-    // Must not reset turnGen — caller (runTurn) already owns the busy lock.
-    await ensureActiveThread()
-  }
-  if (!activeId.value) throw new Error('no thread')
-  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-  const res = await api.ensurePmSandbox(props.projectId, activeId.value, {
-    injectHistory,
-  })
-  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-  sandboxId = res.sandbox.id
-  await waitReady(sandboxId, signal)
-  await openWs(sandboxId)
-  return res.preamble || ''
-}
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
-async function waitReady(id: number, signal?: AbortSignal) {
-  // Align with sandbox create timeout (~20m) so cold image pulls are not cut off at 90s (g3.3 / g3.4).
-  const deadline = Date.now() + 20 * 60 * 1000
-  try {
-    while (Date.now() < deadline) {
-      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-      const s = await api.getSandbox(id)
-      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-      sandboxBootStatus.value = s.status || ''
-      // Do not let the 90s turn deadline fire during a long image pull (g3.4).
-      if (s.status === 'pulling') {
-        clearTurnDeadline()
-      }
-      if (s.status === 'running') return
-      if (s.status === 'error') throw Object.assign(new Error(s.error || 'sandbox error'), { failKind: 'unknown' as FailKind })
-      await sleep(s.status === 'pulling' ? 2000 : 1000)
-    }
-    throw Object.assign(new Error('sandbox timeout'), { failKind: 'sandbox' as FailKind })
-  } finally {
-    sandboxBootStatus.value = ''
-  }
-}
-
-function waitWsOpen(socket: WebSocket, timeoutMs: number): Promise<void> {
-  if (socket.readyState === WebSocket.OPEN) return Promise.resolve()
-  if (socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED) {
-    return Promise.reject(Object.assign(new Error('ws closed'), { failKind: 'connection' as FailKind }))
-  }
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      cleanup()
-      reject(Object.assign(new Error('ws open timeout'), { failKind: 'connection' as FailKind }))
-    }, timeoutMs)
-    const onOpen = () => {
-      cleanup()
-      resolve()
-    }
-    const onErr = () => {
-      cleanup()
-      reject(Object.assign(new Error('ws error'), { failKind: 'connection' as FailKind }))
-    }
-    const onClose = () => {
-      cleanup()
-      reject(Object.assign(new Error('ws closed'), { failKind: 'connection' as FailKind }))
-    }
-    const cleanup = () => {
-      clearTimeout(timer)
-      socket.removeEventListener('open', onOpen)
-      socket.removeEventListener('error', onErr)
-      socket.removeEventListener('close', onClose)
-    }
-    socket.addEventListener('open', onOpen)
-    socket.addEventListener('error', onErr)
-    socket.addEventListener('close', onClose)
-  })
-}
-
-async function openWs(_id: number) {
-  closeWs()
-  if (!activeId.value) throw new Error('no thread')
-  const socket = new WebSocket(api.pmThreadChatWsUrl(props.projectId, activeId.value))
-  ws = socket
-  socket.onmessage = (ev) => {
-    let msg: any
-    try {
-      msg = JSON.parse(ev.data)
-    } catch {
-      return
-    }
-    // Dedup overlapping fan-out / resume catch-up by seq (exclusive watermark).
-    if (typeof msg.seq === 'number') {
-      if (!shouldApplyEventSeq(msg.seq, lastEventSeq.value)) return
-      lastEventSeq.value = msg.seq
-    }
-    if (msg.type === 'acp' && msg.data) {
-      handleAcp(msg.data)
-    } else if (msg.type === 'resume_hint') {
-      // Absolute snapshot from server draft — never append onto stale streamText.
-      if (typeof msg.partialText === 'string') {
-        syncStreamText(msg.partialText)
-      }
-      if (typeof msg.eventSeq === 'number') {
-        lastEventSeq.value = msg.eventSeq
-      }
-      if (msg.userMsgId) activeUserMessageId.value = msg.userMsgId
-      resuming.value = true
-    } else if (msg.type === 'turn_done') {
-      void onTurnDone()
-    } else if (msg.type === 'error') {
-      const kind = (isPmFailKind(msg.failKind) ? msg.failKind : 'unknown') as FailKind
-      void onTurnError(kind, String(msg.error || msg.message || 'error'))
-    }
-  }
-  socket.onerror = () => {
-    if (!turnClosed && busy.value && !streamCancelled) {
-      void failTurn('connection')
-    }
-  }
-  socket.onclose = () => {
-    if (ws === socket) ws = null
-    // WS disconnect must NOT fail the turn — server turn runner continues.
-  }
-  await waitWsOpen(socket, WS_OPEN_TIMEOUT_MS)
 }
 
 function handleAcp(raw: any) {
-  if (streamCancelled) return
+  if ((!streaming.value && !sending.value) || finalizing.value) return
   const delta = extractAgentMessageDelta(raw)
   if (!delta?.text) return
+  sending.value = false
+  streaming.value = true
+  resuming.value = false
   appendStreamText(delta.text)
   void nextTick().then(() => scrollBottom())
 }
@@ -1016,26 +823,32 @@ function clearFinalizingStream() {
   resuming.value = false
 }
 
+/** Tail refetch merged into the loaded window (full list for channel threads). */
+async function refreshMessages(): Promise<boolean> {
+  if (!activeId.value) return false
+  const tid = activeId.value
+  const gen = threadLoadGen
+  const channel = isChannelThread(threads.value.find((x) => x.id === tid))
+  const res = channel
+    ? await api.listPmMessages(props.projectId, tid)
+    : await api.listPmMessages(props.projectId, tid, { limit: PAGE_SIZE })
+  if (gen !== threadLoadGen || tid !== activeId.value) return false
+  const incoming = res.items || []
+  messages.value = channel ? incoming : mergeMessagesKeepPrefix(messages.value, incoming)
+  if (!channel && typeof res.hasMore === 'boolean' && messages.value.length <= PAGE_SIZE) {
+    // Only trust hasMore when we have not prepended beyond the tail window.
+    hasMoreEarlier.value = res.hasMore
+  }
+  return true
+}
+
 async function refetchAfterTurnDone() {
   if (!activeId.value) return
   finalizingRefetchFailed.value = false
   const tid = activeId.value
   const gen = threadLoadGen
   try {
-    const channel = isChannelThread(threads.value.find((x) => x.id === tid))
-    // Channel: full list replace. Non-Channel: tail refetch + merge keep prefix.
-    const res = channel
-      ? await api.listPmMessages(props.projectId, tid)
-      : await api.listPmMessages(props.projectId, tid, { limit: PAGE_SIZE })
-    if (gen !== threadLoadGen || tid !== activeId.value) return
-    const incoming = res.items || []
-    messages.value = channel
-      ? incoming
-      : mergeMessagesKeepPrefix(messages.value, incoming)
-    if (!channel && typeof res.hasMore === 'boolean' && messages.value.length <= PAGE_SIZE) {
-      // Only trust hasMore when we have not prepended beyond the tail window.
-      hasMoreEarlier.value = res.hasMore
-    }
+    if (!(await refreshMessages())) return
     const thr = await api.listPmThreads(props.projectId)
     if (gen !== threadLoadGen || tid !== activeId.value) return
     threads.value = thr.items || []
@@ -1049,26 +862,14 @@ async function refetchAfterTurnDone() {
   }
 }
 
-/**
- * Server already finalized (assistant appended or failure persisted). Refresh messages.
- */
+/** Server finalized the turn (assistant appended). Refresh messages. */
 async function onTurnDone() {
-  if (streamCancelled || turnClosed) {
-    clearStreamText()
-    streaming.value = false
-    sending.value = false
-    resuming.value = false
-    finalizingRefetchFailed.value = false
-    finalizing.value = false
-    return
-  }
-  turnClosed = true
-  streamCancelled = true
-  clearTurnDeadline()
+  if (finalizing.value) return
   streaming.value = false
   sending.value = false
   resuming.value = false
-      streamPreview.flush()
+  sandboxBootStatus.value = ''
+  streamPreview.flush()
   finalizing.value = true
   if (!activeId.value) {
     clearFinalizingStream()
@@ -1077,108 +878,42 @@ async function onTurnDone() {
   await refetchAfterTurnDone()
 }
 
+/** Server already persisted the failure on the user message; refresh then show the card. */
 async function onTurnError(kind: FailKind, detail: string) {
-  if (turnClosed) return
-  // Server already persisted failure on user message + draft; refresh then show card.
-  turnClosed = true
-  streamCancelled = true
-  clearTurnDeadline()
+  const mid = activeUserMessageId.value
+  if (mid && kind !== 'stopped') setFailedPartial(mid, streamText.value)
   clearStreamText()
   streaming.value = false
   sending.value = false
   resuming.value = false
   finalizing.value = false
-  const mid = activeUserMessageId.value
-  if (activeId.value) {
-    const tid = activeId.value
-    const gen = threadLoadGen
-    try {
-      const channel = isChannelThread(threads.value.find((x) => x.id === tid))
-      const res = channel
-        ? await api.listPmMessages(props.projectId, tid)
-        : await api.listPmMessages(props.projectId, tid, { limit: PAGE_SIZE })
-      if (gen === threadLoadGen && tid === activeId.value) {
-        const incoming = res.items || []
-        messages.value = channel
-          ? incoming
-          : mergeMessagesKeepPrefix(messages.value, incoming)
-        if (!channel && typeof res.hasMore === 'boolean' && messages.value.length <= PAGE_SIZE) {
-          hasMoreEarlier.value = res.hasMore
-        }
-      }
-      // If server did not mark failure (edge), persist locally.
-      if (mid) {
-        const user = messages.value.find((m) => m.id === mid)
-        if (user && user.status !== 'failed') {
-          await persistFailure(mid, kind)
-        }
-      }
-    } catch {
-      if (mid) await persistFailure(mid, kind)
-    }
-  } else if (mid) {
-    await persistFailure(mid, kind)
-  }
+  sandboxBootStatus.value = ''
   activeUserMessageId.value = ''
+  try {
+    await refreshMessages()
+  } catch {
+    /* card falls back to the local patch below */
+  }
+  if (mid) {
+    const user = messages.value.find((m) => m.id === mid)
+    if (user && user.status !== 'failed') patchLocalMessage(mid, { status: 'failed', failKind: kind })
+  }
   if (detail && kind === 'unknown') toast.error(detail)
   await nextTick()
   scrollBottom()
 }
 
-/**
- * Run one consult turn against an already-persisted user message (send or retry).
- * @param existingGen - when send() already claimed a generation for the busy lock, reuse it.
- */
-async function runTurn(
-  userMsg: ChatMessage,
-  content: string,
-  imgs: ClarifyImage[],
-  existingGen?: number,
-) {
-  const gen = existingGen ?? ++turnGen
-  streamCancelled = false
-  turnClosed = false
-  activeUserMessageId.value = userMsg.id
-  sending.value = true
-  streaming.value = true
-  clearStreamText()
-  // Ready-phase deadline (~90s); refreshed after sandbox is ready for stream phase.
-  startTurnDeadline(gen)
-  readyAbort = new AbortController()
-  const signal = readyAbort.signal
-
-  try {
-    const preamble = await ensureSandbox(true, signal)
-    if (gen !== turnGen || streamCancelled || turnClosed) return
-    // Fresh generation window after ready so slow sandbox does not starve streaming.
-    startTurnDeadline(gen)
-    const prompt = preamble
-      ? `${preamble}\n\n用户问题：${content || t('pages.projectDetail.pm.imagesOnly')}`
-      : content || t('pages.projectDetail.pm.imagesOnly')
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      throw Object.assign(new Error('ws not open'), { failKind: 'connection' as FailKind })
-    }
-    ws.send(
-      JSON.stringify({
-        type: 'chat',
-        content: prompt,
-        images: imgs.map((a) => ({ data: a.data, mimeType: a.mimeType })),
-        userMsgId: userMsg.id,
-        sandboxId,
-      }),
-    )
-  } catch (e: any) {
-    if (gen !== turnGen || turnClosed) return
-    if (e?.name === 'AbortError' || streamCancelled) {
-      if (!turnClosed) await failTurn('stopped')
-      return
-    }
-    await failTurn(classifyPmTurnError(e))
-    const detail = String(e?.message || e)
-    if (detail && detail !== 'sandbox timeout') toast.error(detail)
-  } finally {
-    if (readyAbort?.signal === signal) readyAbort = null
-  }
+/** Queue one turn on the server: a new message (content) or a retry (retryOf). */
+async function startTurn(body: { content?: string; images?: ClarifyImage[]; retryOf?: string }) {
+  if (!activeId.value) throw new Error('no thread')
+  const tid = activeId.value
+  const res = await api.startPmTurn(props.projectId, tid, body)
+  if (tid !== activeId.value) return
+  upsertLocalMessage(res.message)
+  if (!activeUserMessageId.value || !streaming.value) activeUserMessageId.value = res.message.id
+  await nextTick()
+  stickToBottom.value = true
+  scrollBottom(true)
 }
 
 /**
@@ -1201,76 +936,31 @@ async function send(text?: string, explicitImages?: ClarifyImage[]) {
   if (blockSendIfOversized(imgs)) return
   if (explicitImages === undefined) takeAttachments()
   else attachments.value = []
-  // f7: lock busy BEFORE any await so double-click / suggestion cannot append another user turn.
-  const gen = ++turnGen
-  streamCancelled = false
-  turnClosed = false
+  // Lock busy BEFORE any await so double-click / suggestion cannot queue another turn.
   sending.value = true
-  streaming.value = true
   clearStreamText()
-  startTurnDeadline(gen)
   if (fromInput) input.value = ''
   try {
-    // Create thread without resetTurnLocal so this generation stays valid (review v1).
+    // Create thread without resetting this send (review v1).
     if (!activeId.value) await ensureActiveThread()
-    if (gen !== turnGen || streamCancelled || turnClosed) {
-      // Stopped while creating thread / before append.
-      sending.value = false
-      streaming.value = false
-      clearTurnDeadline()
-      return
-    }
-    if (!activeId.value) throw new Error('no thread')
-    const userMsg = await api.appendPmMessage(props.projectId, activeId.value, {
-      role: 'user',
-      content,
-      images: imgs.length ? imgs : undefined,
-    })
-    messages.value = [...messages.value, userMsg]
-    await nextTick()
-    stickToBottom.value = true
-    scrollBottom(true)
-    if (gen !== turnGen || streamCancelled || turnClosed) {
-      // Stopped during append: persist stopped on the message we just created.
-      activeUserMessageId.value = userMsg.id
-      if (turnClosed) {
-        await persistFailure(userMsg.id, 'stopped')
-        sending.value = false
-        streaming.value = false
-      } else {
-        await failTurn('stopped')
-      }
-      return
-    }
-    await runTurn(userMsg, content, imgs, gen)
+    await startTurn({ content, images: imgs.length ? imgs : undefined })
   } catch (e: any) {
     sending.value = false
-    streaming.value = false
-    clearTurnDeadline()
     if (fromInput) input.value = content
     if (imgs.length) attachments.value = [...imgs, ...attachments.value]
     toast.error(String(e?.message || e))
+    // A rejected turn may still have persisted (and failed) the user message.
+    void refreshMessages().catch(() => {})
   }
 }
 
-function stop() {
-  if (!busy.value) return
-  streamCancelled = true
-  clearTurnDeadline()
-  if (readyAbort) {
-    readyAbort.abort()
-    readyAbort = null
+async function stop() {
+  if (!turnBusy.value || !activeId.value) return
+  try {
+    await api.cancelPmTurn(props.projectId, activeId.value)
+  } catch (e: any) {
+    toast.error(String(e?.message || e))
   }
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    try {
-      ws.send(JSON.stringify({ type: 'cancel' }))
-    } catch {
-      /* ignore */
-    }
-  }
-  clearStreamText()
-  resuming.value = false
-  void failTurn('stopped')
 }
 
 /** Cover-this-turn retry: reuse userMessageId, do not append a new user bubble. */
@@ -1278,30 +968,16 @@ async function retryTurn(userMessageId: string) {
   if (busy.value) return
   const userMsg = messages.value.find((m) => m.id === userMessageId && m.role === 'user')
   if (!userMsg) return
-  // Lock busy before clearFailure await (same f7 race as send).
-  const gen = ++turnGen
-  streamCancelled = false
-  turnClosed = false
   sending.value = true
-  streaming.value = true
   clearStreamText()
   clearFailedPartial(userMessageId)
-  startTurnDeadline(gen)
+  const prev = { status: userMsg.status, failKind: userMsg.failKind }
+  patchLocalMessage(userMessageId, { status: 'ok', failKind: '' })
   try {
-    await clearFailure(userMessageId)
-    if (gen !== turnGen || streamCancelled || turnClosed) {
-      sending.value = false
-      streaming.value = false
-      clearTurnDeadline()
-      return
-    }
-    const content = (userMsg.content || '').trim()
-    const imgs = userMsg.images?.slice() ?? []
-    await runTurn(userMsg, content, imgs, gen)
+    await startTurn({ retryOf: userMessageId })
   } catch (e: any) {
     sending.value = false
-    streaming.value = false
-    clearTurnDeadline()
+    patchLocalMessage(userMessageId, prev)
     toast.error(String(e?.message || e))
   }
 }
@@ -1324,9 +1000,12 @@ watch(
 )
 
 onMounted(() => {
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibilityChange)
   void loadThreads().then(() => applyRestoreMobileChat())
 })
 onBeforeUnmount(() => {
+  disposed = true
+  if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibilityChange)
   unsubStreamHtml()
   streamPreview.reset()
   resetTurnLocal()
@@ -1357,7 +1036,6 @@ onBeforeUnmount(() => {
   appendStreamText,
   clearStreamText,
   resuming,
-  lastEventSeq,
   scroller,
   STICK_THRESHOLD,
   TOP_THRESHOLD,
@@ -1382,13 +1060,6 @@ onBeforeUnmount(() => {
   imagePreview,
   openChatImagePreview,
   closeChatImagePreview,
-  sandboxId,
-  streamCancelled,
-  turnGen,
-  turnClosed,
-  threadLoadGen,
-  TURN_DEADLINE_MS,
-  WS_OPEN_TIMEOUT_MS,
   enabled,
   turnBusy,
   busy,
@@ -1441,33 +1112,21 @@ onBeforeUnmount(() => {
   loadMessages,
   loadEarlier,
   retryLoadMessages,
-  hydrateDraftAndMaybeResume,
   setFailedPartial,
   clearFailedPartial,
-  convergeFailedDraft,
-  beginResume,
-  convergeOrphanTurns,
   newThread,
   removeThread,
   closeWs,
-  clearTurnDeadline,
-  startTurnDeadline,
   resetTurnLocal,
   patchLocalMessage,
-  persistFailure,
-  clearFailure,
-  failTurn,
-  ensureSandbox,
-  sleep,
-  waitReady,
-  waitWsOpen,
-  openWs,
+  connectThreadWs,
+  handleFrame,
+  refreshMessages,
   handleAcp,
   clearFinalizingStream,
   refetchAfterTurnDone,
   onTurnDone,
   onTurnError,
-  runTurn,
   send,
   stop,
   retryTurn,

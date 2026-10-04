@@ -109,7 +109,8 @@ describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
     await pmClient.appendPmMessage('p1', 't1', { content: 'hi' })
     await pmClient.patchPmMessage('p1', 't1', 'm1', { status: 'ok' })
     await pmClient.ensurePmSandbox('p1', 't1', { injectHistory: true })
-    await pmClient.getPmDraft('p1', 't1')
+    await pmClient.startPmTurn('p1', 't1', { content: 'hi' })
+    await pmClient.cancelPmTurn('p1', 't1')
     expect(pmClient.pmThreadChatWsUrl('p1', 't1')).toContain('/chat')
   })
 

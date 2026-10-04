@@ -145,7 +145,8 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.POST("/projects/:id/pm/threads/:tid/messages", h.AppendPmMessage)
 		api.PATCH("/projects/:id/pm/threads/:tid/messages/:mid", h.PatchPmMessage)
 		api.POST("/projects/:id/pm/threads/:tid/sandbox", h.EnsurePmSandbox)
-		api.GET("/projects/:id/pm/threads/:tid/draft", h.GetPmDraft)
+		api.POST("/projects/:id/pm/threads/:tid/turns", h.StartPmTurn)
+		api.POST("/projects/:id/pm/threads/:tid/turns/cancel", h.CancelPmTurn)
 		api.GET("/projects/:id/pm/threads/:tid/chat", h.PmThreadChat)
 
 		api.GET("/workflows", h.ListWorkflows)

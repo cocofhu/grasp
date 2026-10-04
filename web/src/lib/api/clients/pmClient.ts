@@ -3,7 +3,6 @@ import type {
   AgentCronJob,
   ChatThread,
   ChatMessage,
-  PmDraftResponse,
   ProgressCitation,
   AttachedContext,
   ClarifyImage,
@@ -92,9 +91,19 @@ export const pmClient = {
       `/projects/${projectId}/pm/threads/${tid}/sandbox`,
       { method: 'POST', body: JSON.stringify(body || {}) },
     ),
-  getPmDraft: (projectId: string, tid: string) =>
-    req<PmDraftResponse>(`/projects/${projectId}/pm/threads/${tid}/draft`),
-  /** PM turn-runner WebSocket (decoupled from sandbox request ctx). */
+  /** Queue a PM turn: persists the user message (or reuses retryOf); the server readies the sandbox. */
+  startPmTurn: (
+    projectId: string,
+    tid: string,
+    body: { content?: string; images?: ClarifyImage[]; retryOf?: string; attachedContext?: AttachedContext },
+  ) =>
+    req<{ message: ChatMessage; waiting: number }>(`/projects/${projectId}/pm/threads/${tid}/turns`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  cancelPmTurn: (projectId: string, tid: string) =>
+    req<{ ok: boolean }>(`/projects/${projectId}/pm/threads/${tid}/turns/cancel`, { method: 'POST' }),
+  /** PM thread WebSocket: subscribe-only (snapshot, active-turn replay, live frames). */
   pmThreadChatWsUrl: (projectId: string, tid: string) =>
     wsUrl(`/projects/${projectId}/pm/threads/${tid}/chat`),
 }

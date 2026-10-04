@@ -21,8 +21,32 @@ import (
 
 // vncClientMsg is the JSON control envelope over the VNC preview socket.
 // Binary frames carry RFB (proxied to websockify); text JSON handles Pick/navigate.
+// vncTouchEvery throttles viewer activity marks; well under browser.TabIdleTTL.
+const vncTouchEvery = 15 * time.Second
+
+// vncToucher marks a viewer active on any client traffic so a watched but
+// untouched preview is not swept as idle. Used from one reader goroutine.
+type vncToucher struct {
+	touch func()
+	now   func() time.Time
+	last  time.Time
+}
+
+func newVncToucher(touch func()) *vncToucher {
+	return &vncToucher{touch: touch, now: time.Now}
+}
+
+func (t *vncToucher) mark() {
+	now := t.now()
+	if !t.last.IsZero() && now.Sub(t.last) < vncTouchEvery {
+		return
+	}
+	t.last = now
+	t.touch()
+}
+
 type vncClientMsg struct {
-	Type   string `json:"type"`   // "inspect" | "navigate"
+	Type   string `json:"type"`   // "inspect" | "navigate" | "ping"
 	On     bool   `json:"on"`     // inspect
 	Action string `json:"action"` // navigate: "reload"|"back"|"forward"|"goto"
 	URL    string `json:"url"`    // navigate goto target (about:blank / http…)
@@ -146,16 +170,17 @@ func (h *Handlers) PreviewVNC(c *gin.Context) {
 
 	// Client → upstream: binary RFB passthrough; text JSON → CDP control.
 	go func() {
+		activity := newVncToucher(sess.Touch)
 		for {
 			msgType, data, err := conn.ReadMessage()
 			if err != nil {
 				_ = upstream.Close()
 				return
 			}
+			activity.mark()
 			if msgType == websocket.TextMessage {
 				var m vncClientMsg
 				if json.Unmarshal(data, &m) == nil {
-					sess.Touch()
 					h.applyVncMsg(sess.Page(), m, pushJSON)
 					continue
 				}
@@ -183,8 +208,14 @@ func (h *Handlers) applyVncMsg(page browser.Page, m vncClientMsg, pushJSON func(
 	case "inspect":
 		if err := page.SetInspect(m.On); err != nil {
 			log.Warn().Err(err).Bool("on", m.On).Msg("preview-vnc SetInspect failed")
-			if m.On && pushJSON != nil && errors.Is(err, browser.ErrDesktopNotReady) {
-				pushJSON(gin.H{"type": "not-ready"})
+			if pushJSON != nil {
+				switch {
+				case m.On && errors.Is(err, browser.ErrDesktopNotReady):
+					pushJSON(gin.H{"type": "not-ready"})
+				case !m.On:
+					// The client already shows inspect off; the page may still be armed.
+					pushJSON(gin.H{"type": "inspect-off-failed"})
+				}
 			}
 		}
 	case "navigate":

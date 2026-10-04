@@ -42,18 +42,16 @@ import { gateApprovalKey } from '@/components/run/gateApproval/gateApprovalConte
 import { type PlanDoc } from '@/components/run/PlanView.vue'
 import { type ProposalsDoc } from '@/components/run/ProposalSelectView.vue'
 import { isStructuredArtifactName } from '@/components/run/StructuredArtifactView.vue'
-
-/** Element-level clone so queue rows never share annotation object refs with composer. */
-function cloneReactAnnotations(anns?: ReactAnnotation[] | null): ReactAnnotation[] {
-  if (!anns?.length) return []
-  return anns.map((a) => ({ ...a }))
-}
-
-/** Element-level clone for attachment lists (same contract as annotations). */
-function cloneClarifyImages(imgs?: ClarifyImage[] | null): ClarifyImage[] {
-  if (!imgs?.length) return []
-  return imgs.map((im) => ({ ...im }))
-}
+import {
+  cloneAnnotations as cloneReactAnnotations,
+  cloneImages as cloneClarifyImages,
+  dropGhostItems,
+  isAuthoritativeIdle,
+  reconcileQueue,
+  takeTurnBeginItem,
+  type SessionFrameItem,
+  type SessionQueueItem,
+} from '@/lib/chat/sessionQueue'
 
 export type GateApprovalProps = {
   gate: Gate
@@ -1177,9 +1175,7 @@ const reactText = ref('')
 const reactImages = ref<ClarifyImage[]>([])
 const reactSending = ref(false)
 /** Sandbox-aligned: pending-send queue + in-flight turn (HTTP returns on enqueue). */
-const reactQueued = ref<
-  { id?: string; text: string; images: ClarifyImage[]; annotations: ReactAnnotation[] }[]
->([])
+const reactQueued = ref<SessionQueueItem[]>([])
 const reactQueueNotice = ref<string | null>(null)
 const reactQueueToast = ref<string | null>(null)
 let reactQueueToastTimer = 0
@@ -1377,43 +1373,26 @@ function settleReactAfterTurnEnd() {
   if (reactInFlight.value) {
     reactInFlight.value = false
   }
-  if (reactQueued.value.some((q) => !q.id)) {
-    reactQueued.value = reactQueued.value.filter((q) => !!q.id)
-  }
+  reactQueued.value = dropGhostItems(reactQueued.value)
   reactThinking.value = reactQueued.value.length > 0
 }
 
 function applyReviewFrame(frame: {
   event?: string
   nodeId?: string
-  item?: {
-    id?: string
-    text?: string
-    images?: ClarifyImage[]
-    annotations?: ReactAnnotation[]
-  }
+  item?: SessionFrameItem
   interrupted?: boolean
   message?: string
   waiting?: number
-  items?: {
-    id?: string
-    text?: string
-    images?: ClarifyImage[]
-    annotations?: ReactAnnotation[]
-  }[]
+  items?: SessionFrameItem[]
   busy?: boolean
-  activeItem?: {
-    id?: string
-    text?: string
-    images?: ClarifyImage[]
-    annotations?: ReactAnnotation[]
-  } | null
+  activeItem?: SessionFrameItem | null
 }) {
   const producer = props.gate.reactUpstreamNodeId
   if (producer && frame.nodeId && frame.nodeId !== producer) return
   switch (frame.event) {
     case 'turn_begin':
-      reactQueued.value.shift()
+      reactQueued.value = takeTurnBeginItem(reactQueued.value, frame.item).queue
       reactThinking.value = true
       reactInFlight.value = true
       reactStreamText.value = ''
@@ -1445,8 +1424,7 @@ function applyReviewFrame(frame: {
       const items = Array.isArray(frame.items) ? frame.items : null
       const busy = !!frame.busy
       const activeItem = frame.activeItem
-      const authoritativeIdle = waiting === 0 && !busy && !activeItem
-      if (authoritativeIdle) {
+      if (isAuthoritativeIdle(waiting, busy, activeItem)) {
         forceReactAuthoritativeIdle()
         break
       }
@@ -1480,40 +1458,7 @@ function applyReviewFrame(frame: {
         break
       }
       if (items) {
-        // Preserve server id so turn_done can distinguish ghost vs real waiters.
-        // Prefer frame images/annotations; local only when frame omits; always slice.
-        const rebuilt = items.map((it) => {
-          const text = it.text ?? ''
-          const id = typeof it.id === 'string' && it.id ? it.id : undefined
-          const local = id
-            ? reactQueued.value.find((q) => q.id === id) ??
-              reactQueued.value.find((q) => !q.id && q.text === text)
-            : reactQueued.value.find((q) => q.text === text)
-          const images = Array.isArray(it.images)
-            ? cloneClarifyImages(it.images)
-            : cloneClarifyImages(local?.images)
-          const annotations = Array.isArray(it.annotations)
-            ? cloneReactAnnotations(it.annotations)
-            : cloneReactAnnotations(local?.annotations)
-          return {
-            id: id ?? local?.id,
-            text,
-            images,
-            annotations,
-          }
-        })
-        const maxLocal = reactInFlight.value || busy ? rebuilt.length : rebuilt.length + 1
-        if (reactQueued.value.length > maxLocal) {
-          const optimistic = reactQueued.value
-            .slice(rebuilt.length)
-            .slice(0, Math.max(0, maxLocal - rebuilt.length))
-          reactQueued.value = [...rebuilt, ...optimistic]
-        } else if (reactQueued.value.length < rebuilt.length) {
-          reactQueued.value = rebuilt
-        } else {
-          const optimistic = reactQueued.value.slice(rebuilt.length)
-          reactQueued.value = [...rebuilt, ...optimistic]
-        }
+        reactQueued.value = reconcileQueue(reactQueued.value, items, reactInFlight.value || busy)
       }
       reactThinking.value = reactInFlight.value || reactQueued.value.length > 0 || busy
       break

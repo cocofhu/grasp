@@ -1051,6 +1051,8 @@
         "failUnknownDesc": "处理中断，请重试。若问题持续，请检查网络连接。",
         "failStoppedTitle": "已停止",
         "failStoppedDesc": "你已停止本轮处理，半成品已丢弃，可重试。",
+        "failInterruptedTitle": "服务重启中断",
+        "failInterruptedDesc": "服务重启导致本轮生成中断，可点击重试。",
         "openSource": "跳转原文",
         "citationMissing": "引用目标不可用或无权限",
         "citationInvalid": "引用无效或目标不存在",
@@ -3186,7 +3188,16 @@
         "urlLabel": "url",
         "windowNotReady": "窗口未就绪，无法可靠取点。请等待预览窗口铺满后再试。",
         "describeFailed": "未能识别该元素，请重试",
+        "inspectOffFailed": "页面可能仍在取点模式，请再点一次「取消标注」或刷新预览",
         "reconnect": "重新连接",
+        "reconnectingAttempt": "正在重新连接（第 {n}/{max} 次）",
+        "closedReason": {
+          "idle": "长时间无操作已断开",
+          "desktop-closed": "沙箱桌面已关闭",
+          "superseded": "已在其他窗口打开，这里不再自动重连",
+          "evicted": "预览连接过多，这里被断开",
+          "disconnect": "连接已断开"
+        },
         "error": "noVNC 预览连接失败",
         "connectingTitle": "正在启动预览环境…",
         "connectingHint": "首次启动约需 30–60s(需在沙箱内拉起浏览器),请稍候。",
@@ -3197,6 +3208,7 @@
           "connecting": "连接中…",
           "live": "已连接",
           "closed": "已断开",
+          "reconnecting": "重连中…",
           "error": "错误"
         }
       },

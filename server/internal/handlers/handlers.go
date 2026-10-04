@@ -36,6 +36,7 @@ type Handlers struct {
 	Org                *services.OrgService
 	Dash               *services.DashboardService
 	Sbx                *services.SandboxService
+	SbxChats           *services.SandboxChats
 	Eng                *engine.Engine
 	MCP                *mcp.Host
 	Pm                 *services.PmService

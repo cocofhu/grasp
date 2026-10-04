@@ -190,3 +190,32 @@ func TestApproveFirstMessageRedeliveredAfterCancelResume(t *testing.T) {
 		t.Fatalf("new visit human turns = %d, want 1", humans)
 	}
 }
+
+// The opening message runs on the session FIFO like a typed reply, so the run
+// page shows the agent working instead of "waiting for a human reply".
+func TestApproveFirstMessageTurnShowsBusy(t *testing.T) {
+	eng, db, p := setupEngineGraphP(t, approveOnlyGraph())
+	hold := make(chan struct{})
+	p.mu.Lock()
+	p.reactHold = hold
+	p.mu.Unlock()
+	run, err := eng.StartRunWithFirstMessage("wf", nil, "test", "", nil, nil, "", &models.CompositeText{Text: "开始吧"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	deadline := time.Now().Add(waitPollTimeout)
+	var snap ReviewSessionSnapshot
+	for time.Now().Before(deadline) {
+		if s, ok := eng.ReviewSessionSnapshotFor(run.ID, "predev"); ok && s.Busy {
+			snap = s
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	close(hold)
+	if !snap.Busy {
+		t.Fatal("first-message turn must report busy while it runs")
+	}
+	waitFirstHumanTurn(t, db, run.ID, "predev")
+}

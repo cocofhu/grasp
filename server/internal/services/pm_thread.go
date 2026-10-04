@@ -9,6 +9,7 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
@@ -479,17 +480,6 @@ func (s *PmService) UpsertDraft(threadID, userMsgID, partialText, status string,
 	return *existing, nil
 }
 
-// PatchDraftPartial updates only the streaming text progress (hot path).
-func (s *PmService) PatchDraftPartial(threadID, partialText string, chunkIndex, eventSeq int) error {
-	return s.db.Model(&models.ChatTurnDraft{}).Where("thread_id = ? AND status = ?", threadID, PmDraftStreaming).
-		Updates(map[string]any{
-			"partial_text": partialText,
-			"chunk_index":  chunkIndex,
-			"event_seq":    eventSeq,
-			"updated_at":   time.Now(),
-		}).Error
-}
-
 // FailDraft marks the draft failed (keeps partial for hydrate diagnostics).
 func (s *PmService) FailDraft(threadID, failKind string) error {
 	if failKind == "" {
@@ -522,4 +512,25 @@ func (s *PmService) HasAssistantAfter(threadID, userMsgID string) (bool, error) 
 		Where("thread_id = ? AND role = ? AND created_at >= ?", threadID, "assistant", user.CreatedAt).
 		Count(&count).Error
 	return count > 0, err
+}
+
+// FailInterruptedTurns fails every turn left streaming by a previous process:
+// its runner is gone, so the user message gets failKind interrupted and can be
+// retried. Call once at boot before any turn starts.
+func (s *PmService) FailInterruptedTurns() (int, error) {
+	var drafts []models.ChatTurnDraft
+	if err := s.db.Where("status = ?", PmDraftStreaming).Find(&drafts).Error; err != nil {
+		return 0, err
+	}
+	for _, d := range drafts {
+		if d.UserMsgID != "" {
+			if _, err := s.UpdateMessageFailure(d.ThreadID, d.UserMsgID, "failed", PmFailInterrupted); err != nil {
+				log.Warn().Err(err).Str("thread", d.ThreadID).Msg("pm interrupted turn mark failed")
+			}
+		}
+		if err := s.FailDraft(d.ThreadID, PmFailInterrupted); err != nil {
+			return 0, err
+		}
+	}
+	return len(drafts), nil
 }

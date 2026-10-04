@@ -18,14 +18,20 @@ class MockWebSocket {
     MockWebSocket.instances.push(this)
     queueMicrotask(() => {
       this.onopen?.()
-      this.onmessage?.({ data: JSON.stringify({ type: 'ready', url: MockWebSocket.readyUrl }) })
+      const frame = MockWebSocket.failWith
+        ? { type: 'error', message: MockWebSocket.failWith }
+        : { type: 'ready', url: MockWebSocket.readyUrl }
+      this.onmessage?.({ data: JSON.stringify(frame) })
     })
   }
   static instances: MockWebSocket[] = []
   static readyUrl = 'http://localhost:5173'
+  /** When set, new sockets answer with this server error instead of ready. */
+  static failWith = ''
   static reset() {
     MockWebSocket.instances = []
     MockWebSocket.readyUrl = 'http://localhost:5173'
+    MockWebSocket.failWith = ''
   }
   send(data: string) {
     this.sent.push(data)
@@ -482,6 +488,23 @@ describe('NovncPreviewPanel', () => {
     wrapper.unmount()
   })
 
+  it('inspect-off-failed shows a tip after cancel', async () => {
+    const wrapper = mountNovnc()
+    await flushPromises()
+    const ws = MockWebSocket.instances[0]!
+
+    await inspectButton(wrapper).trigger('click')
+    await inspectButton(wrapper).trigger('click')
+    expect(inspectButton(wrapper).attributes('aria-pressed')).toBe('false')
+
+    ws.onmessage?.({ data: JSON.stringify({ type: 'inspect-off-failed' }) })
+    await flushPromises()
+    const tip = wrapper.find('[data-testid="novnc-inline-tip"]')
+    expect(tip.exists()).toBe(true)
+    expect(tip.text()).toContain('页面可能仍在取点模式')
+    wrapper.unmount()
+  })
+
   it('describe-failed shows tip, clears sticky, no pick result (g3.2/S3)', async () => {
     const wrapper = mountNovnc()
     await flushPromises()
@@ -584,14 +607,99 @@ describe('NovncPreviewPanel', () => {
     resizeObserverMocks.trigger()
     await flushPromises()
 
-    expect(wrapper.text()).toMatch(/已断开|重新连接|closed|reconnect/i)
-    const reconnectBtn = wrapper.findAll('button').find((b) =>
-      /重新连接|reconnect/i.test(b.text()),
-    )
-    expect(reconnectBtn).toBeTruthy()
+    expect(wrapper.find('[data-testid="novnc-closed-msg"]').text()).toContain('连接已断开')
+    expect(wrapper.find('[data-testid="novnc-closed-msg"]').text()).toContain('正在重新连接')
     // Toolbar controls remain usable (g2.3).
     expect(inspectButton(wrapper).exists()).toBe(true)
     wrapper.unmount()
+  })
+
+  describe('auto reconnect', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+      setVisibility('visible')
+    })
+
+    function setVisibility(v: 'visible' | 'hidden') {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => v })
+    }
+
+    function serverClose(ws: MockWebSocket, reason: string) {
+      ws.onmessage?.({ data: JSON.stringify({ type: 'closed', reason }) })
+    }
+
+    it('closed idle shows a localized reason and reconnects with a fresh socket', async () => {
+      const wrapper = mountNovnc()
+      await flushPromises()
+      serverClose(MockWebSocket.instances[0]!, 'idle')
+      await flushPromises()
+      const msg = wrapper.find('[data-testid="novnc-closed-msg"]').text()
+      expect(msg).toContain('长时间无操作已断开')
+      expect(msg).not.toMatch(/\bidle\b/)
+      expect(wrapper.find('[data-testid="novnc-status"]').text()).toBe('重连中…')
+      expect(wrapper.find('[data-testid="novnc-reconnect"]').exists()).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(1000)
+      await flushPromises()
+      expect(MockWebSocket.instances).toHaveLength(2)
+      expect(wrapper.find('[data-testid="novnc-status"]').text()).toBe('已连接')
+      wrapper.unmount()
+    })
+
+    it('waits for the tab to become visible before reconnecting', async () => {
+      const wrapper = mountNovnc()
+      await flushPromises()
+      setVisibility('hidden')
+      serverClose(MockWebSocket.instances[0]!, 'idle')
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(MockWebSocket.instances).toHaveLength(1)
+
+      setVisibility('visible')
+      document.dispatchEvent(new Event('visibilitychange'))
+      await flushPromises()
+      expect(MockWebSocket.instances).toHaveLength(2)
+      wrapper.unmount()
+    })
+
+    it('superseded does not reconnect and keeps the manual button', async () => {
+      const wrapper = mountNovnc()
+      await flushPromises()
+      serverClose(MockWebSocket.instances[0]!, 'superseded')
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(MockWebSocket.instances).toHaveLength(1)
+      expect(wrapper.find('[data-testid="novnc-closed-msg"]').text()).toContain('已在其他窗口打开')
+      expect(wrapper.find('[data-testid="novnc-reconnect"]').exists()).toBe(true)
+      wrapper.unmount()
+    })
+
+    it('gives up after the retry budget and shows the manual button', async () => {
+      const wrapper = mountNovnc()
+      await flushPromises()
+      MockWebSocket.failWith = 'sandbox gone'
+      serverClose(MockWebSocket.instances[0]!, 'idle')
+      for (let i = 0; i < 8; i++) await vi.advanceTimersByTimeAsync(30_000)
+      expect(MockWebSocket.instances.length).toBe(1 + 6)
+      expect(wrapper.find('[data-testid="novnc-reconnect"]').exists()).toBe(true)
+      wrapper.unmount()
+    })
+
+    it('sends ping heartbeats only while live and visible', async () => {
+      const wrapper = mountNovnc()
+      await flushPromises()
+      const ws = MockWebSocket.instances[0]!
+      const pings = () => ws.sent.filter((d) => d === JSON.stringify({ type: 'ping' })).length
+
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(pings()).toBe(1)
+      setVisibility('hidden')
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(pings()).toBe(1)
+      wrapper.unmount()
+    })
   })
 
   it('document visibility restore reasserts scaleViewport without reconnect (g2.2)', async () => {

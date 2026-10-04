@@ -229,12 +229,22 @@ func TestPmDraftCheckpoint(t *testing.T) {
 	if d.PartialText != "partial" || d.UserMsgID != user.ID {
 		t.Fatalf("draft=%+v", d)
 	}
-	if err := pm.PatchDraftPartial(th.ID, "partial more", 2, 1); err != nil {
-		t.Fatal(err)
-	}
 	got, err := pm.GetDraft(th.ID)
-	if err != nil || got == nil || got.PartialText != "partial more" || got.ChunkIndex != 2 {
+	if err != nil || got == nil || got.Status != PmDraftStreaming {
 		t.Fatalf("got=%+v err=%v", got, err)
+	}
+	n, err := pm.FailInterruptedTurns()
+	if err != nil || n != 1 {
+		t.Fatalf("sweep n=%d err=%v", n, err)
+	}
+	if got, _ = pm.GetDraft(th.ID); got == nil || got.Status != PmDraftFailed || got.FailKind != PmFailInterrupted {
+		t.Fatalf("draft after sweep=%+v", got)
+	}
+	if m, _ := pm.GetMessage(th.ID, user.ID); m.Status != "failed" || m.FailKind != PmFailInterrupted {
+		t.Fatalf("user msg after sweep=%+v", m)
+	}
+	if n, _ = pm.FailInterruptedTurns(); n != 0 {
+		t.Fatalf("second sweep n=%d", n)
 	}
 	has, err := pm.HasAssistantAfter(th.ID, user.ID)
 	if err != nil || has {

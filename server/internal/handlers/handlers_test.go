@@ -136,6 +136,7 @@ func newHarness(t *testing.T) *harness {
 		SharedAgent:       sharedAgent,
 		Dash:              services.NewDashboardService(db, projectSvc),
 		Sbx:               sbx,
+		SbxChats:          services.NewSandboxChats(sbx),
 		Eng:               eng,
 		MCP:               host,
 		Auth:              authSvc,

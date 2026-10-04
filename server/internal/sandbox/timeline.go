@@ -26,8 +26,8 @@ const (
 	// maxTimelineText budgets tool details. Prose is counted so later tool
 	// input/output can be dropped, but thought and message text are not cut.
 	maxTimelineText = 64 << 10
-	maxToolSummary   = 160
-	maxToolDetail    = 2000
+	maxToolSummary  = 160
+	maxToolDetail   = 2000
 )
 
 // addText appends a thought/message chunk, extending the last step when it is

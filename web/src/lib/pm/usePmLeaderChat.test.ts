@@ -11,11 +11,7 @@ const mocks = vi.hoisted(() => ({
   createPmThread: vi.fn(),
   deletePmThread: vi.fn(),
   listPmMessages: vi.fn(),
-  getPmDraft: vi.fn(),
-  appendPmMessage: vi.fn(),
   patchPmMessage: vi.fn(),
-  ensurePmSandbox: vi.fn(),
-  getSandbox: vi.fn(),
   pmThreadChatWsUrl: vi.fn(() => 'ws://example.test/pm'),
 }))
 
@@ -29,11 +25,7 @@ vi.mock('@/lib/api/api', async () => {
       createPmThread: mocks.createPmThread,
       deletePmThread: mocks.deletePmThread,
       listPmMessages: mocks.listPmMessages,
-      getPmDraft: mocks.getPmDraft,
-      appendPmMessage: mocks.appendPmMessage,
       patchPmMessage: mocks.patchPmMessage,
-      ensurePmSandbox: mocks.ensurePmSandbox,
-      getSandbox: mocks.getSandbox,
       pmThreadChatWsUrl: mocks.pmThreadChatWsUrl,
     },
   }
@@ -86,14 +78,22 @@ function withChat() {
 
 describe('usePmLeaderChat', () => {
   beforeEach(() => {
+    vi.stubGlobal(
+      'WebSocket',
+      class {
+        onmessage = null
+        onclose = null
+        close() {}
+      },
+    )
     mocks.listPmThreads.mockResolvedValue({ items: [THREAD] })
     mocks.listPmMessages.mockResolvedValue({ items: [], hasMore: false })
-    mocks.getPmDraft.mockResolvedValue({ content: '', status: 'idle' })
     mocks.createPmThread.mockResolvedValue({ ...THREAD, id: 'th-2', title: '新会话' })
     mocks.deletePmThread.mockResolvedValue({ status: 'ok' })
   })
 
   afterEach(() => {
+    vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
 

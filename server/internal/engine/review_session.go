@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
+	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/nodereg"
@@ -20,10 +20,9 @@ import (
 )
 
 // MaxReviewQueueItems caps pending (not-yet-started) review/clarify turns per
-// parked producer session. Aligned with the sandbox-gateway bridge PromptQueue
-// (MaxPromptQueueItems=32). The platform FIFO is authoritative for UI waiting.
+// parked producer session. The platform FIFO is authoritative for UI waiting.
 // Review Cancel clears this queue; clarify Cancel keeps it and pumps the next item.
-const MaxReviewQueueItems = 32
+const MaxReviewQueueItems = chatsession.DefaultCapacity
 
 // sessionKind distinguishes post-run review (ReviseInPlace) from classic react
 // clarify (ReactReply). Both share FIFO / WS frames; Cancel policy forks.
@@ -64,10 +63,14 @@ type reviewQueueItem struct {
 	LiveWritesDenied bool
 }
 
-// reviewSession is the platform-authoritative controller for one parked
-// producer ACP session: FIFO pending queue + single worker pump, mirroring
-// SandboxChat's per-conn queue/worker model. Used by both review and clarify.
+func reviewItemView(it *reviewQueueItem) chatsession.ItemView {
+	return chatsession.ItemView{ID: it.ID, Text: it.Text, Images: it.Images, Annotations: it.Annotations}
+}
+
+// reviewSession is one parked producer ACP session on the shared chatsession
+// FIFO. Used by review, clarify and share-link visitor lanes.
 type reviewSession struct {
+	*chatsession.Session[*reviewQueueItem]
 	runID      string
 	producerID string
 	kind       sessionKind
@@ -75,20 +78,6 @@ type reviewSession struct {
 	// its own FIFO against a separate sandbox chat (see visitor_lane.go).
 	lane   string
 	linkID string
-
-	mu       sync.Mutex
-	queue    []*reviewQueueItem
-	waiting  int
-	active   *reviewQueueItem
-	cancelFn context.CancelFunc
-	turnDone <-chan struct{}
-	pumping  bool
-	// cancelRequested is set by Cancel; the active turn saves partial narration
-	// as interrupted when the provider returns.
-	cancelRequested bool
-	// liveEvents is a visitor lane's in-flight stream for reconnect seeding
-	// (the default lane reads it from the provider instead).
-	liveEvents []models.AcpEvent
 }
 
 func (e *Engine) reviewSessionKey(runID, producerID string) string {
@@ -108,41 +97,62 @@ func (e *Engine) getOrCreateReviewSession(runID, producerID string, kind session
 
 func (e *Engine) getOrCreateLaneSession(runID, producerID, lane, linkID string, kind sessionKind) *reviewSession {
 	key := e.laneSessionKey(runID, producerID, lane)
-	e.reviewMu.Lock()
-	defer e.reviewMu.Unlock()
-	if e.reviewSess == nil {
-		e.reviewSess = map[string]*reviewSession{}
+	return e.reviewSess.GetOrCreate(key, func() *reviewSession {
+		return e.newReviewSession(runID, producerID, lane, linkID, kind)
+	})
+}
+
+func (e *Engine) newReviewSession(runID, producerID, lane, linkID string, kind sessionKind) *reviewSession {
+	s := &reviewSession{runID: runID, producerID: producerID, kind: kind, lane: lane, linkID: linkID}
+	fullMsg := "复审消息队列已满,请稍候"
+	if kind == sessionKindClarify {
+		fullMsg = "澄清消息队列已满,请稍候"
 	}
-	s := e.reviewSess[key]
-	if s == nil {
-		s = &reviewSession{runID: runID, producerID: producerID, kind: kind, lane: lane, linkID: linkID}
-		e.reviewSess[key] = s
-	} else if s.kind == "" {
-		s.kind = kind
-	}
+	s.Session = chatsession.New(chatsession.Config[*reviewQueueItem]{
+		Capacity:   MaxReviewQueueItems,
+		FullError:  fullMsg,
+		View:       reviewItemView,
+		FrameExtra: map[string]any{"kind": string(kind)},
+		Publish: func(event string, payload map[string]any) {
+			e.publishReviewLane(runID, producerID, lane, event, payload)
+		},
+		TurnBeginExtra: func(it *reviewQueueItem) map[string]any {
+			return map[string]any{"gateNodeId": it.GateNodeID, "source": it.Source}
+		},
+		BeforeTurn: func(it *reviewQueueItem, done <-chan struct{}) {
+			it.PageSession = e.mintPageSession(s, it.Owner, done)
+		},
+		AfterTurn: func(it *reviewQueueItem) { e.revokePageSession(it.PageSession) },
+		Execute: func(ctx context.Context, it *reviewQueueItem) (bool, error) {
+			switch {
+			case lane != "":
+				return e.executeVisitorTurn(ctx, s, it)
+			case kind == sessionKindClarify:
+				return e.executeClarifyTurn(ctx, s, it)
+			default:
+				return e.executeReviewTurn(ctx, s, it)
+			}
+		},
+		OnDropped: func(items []*reviewQueueItem) {
+			for _, it := range items {
+				if it.Live != nil {
+					e.failCancelledQueuedLive(runID, producerID, it.Live.SID)
+				}
+			}
+		},
+		CancelTurn: func() { e.cancelLaneProviderTurn(runID, producerID, lane) },
+		OnIdle:     func() { e.dropLaneSessionIfIdle(runID, producerID, lane) },
+	})
 	return s
 }
 
 func (e *Engine) laneSession(runID, producerID, lane string) *reviewSession {
-	e.reviewMu.Lock()
-	defer e.reviewMu.Unlock()
-	return e.reviewSess[e.laneSessionKey(runID, producerID, lane)]
+	s, _ := e.reviewSess.Get(e.laneSessionKey(runID, producerID, lane))
+	return s
 }
 
 func (e *Engine) dropLaneSessionIfIdle(runID, producerID, lane string) {
-	key := e.laneSessionKey(runID, producerID, lane)
-	e.reviewMu.Lock()
-	defer e.reviewMu.Unlock()
-	s := e.reviewSess[key]
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	idle := s.active == nil && s.waiting == 0 && !s.pumping
-	s.mu.Unlock()
-	if idle {
-		delete(e.reviewSess, key)
-	}
+	e.reviewSess.DropIfIdle(e.laneSessionKey(runID, producerID, lane))
 }
 
 // HasLiveReviewSession reports whether a parked ACP review session is still alive
@@ -159,15 +169,8 @@ func (e *Engine) HasLiveReviewSession(runID, nodeID string) bool {
 // ReviewSessionReady reports whether the producer session has no in-flight turn
 // and an empty pending queue (FR4 ready gate for force confirm).
 func (e *Engine) ReviewSessionReady(runID, producerID string) bool {
-	e.reviewMu.Lock()
-	s := e.reviewSess[e.reviewSessionKey(runID, producerID)]
-	e.reviewMu.Unlock()
-	if s == nil {
-		return true
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.active == nil && s.waiting == 0
+	s := e.laneSession(runID, producerID, "")
+	return s == nil || s.Ready()
 }
 
 // ReviewSessionState returns waiting count and whether a turn is in flight.
@@ -188,33 +191,15 @@ func (e *Engine) laneSnapshot(s *reviewSession) (ReviewSessionSnapshot, bool) {
 	if s == nil {
 		return ReviewSessionSnapshot{}, false
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	snap := ReviewSessionSnapshot{
-		NodeID:  s.producerID,
-		Kind:    string(s.kind),
-		Waiting: s.waiting,
-		Busy:    s.active != nil,
-		Items:   s.queueSnapshotLocked(),
-	}
-	if s.active != nil {
-		images := s.active.Images
-		if images == nil {
-			images = []models.PromptImage{}
-		}
-		annotations := s.active.Annotations
-		if annotations == nil {
-			annotations = []models.ReactAnnotation{}
-		}
-		// Align with ReviewSessionsForRun / turn_begin: include images + annotations.
-		snap.ActiveItem = map[string]any{
-			"id":          s.active.ID,
-			"text":        s.active.Text,
-			"images":      images,
-			"annotations": annotations,
-		}
-	}
-	return snap, true
+	sn := s.Snapshot()
+	return ReviewSessionSnapshot{
+		NodeID:     s.producerID,
+		Kind:       string(s.kind),
+		Waiting:    sn.Waiting,
+		Busy:       sn.Busy,
+		Items:      sn.Items,
+		ActiveItem: sn.ActiveItem,
+	}, true
 }
 
 // ReviewSessionSnapshot is the refresh-resume DTO for one parked session.
@@ -229,30 +214,16 @@ type ReviewSessionSnapshot struct {
 
 // ReviewSessionsForRun returns authoritative busy/queue snapshots for refresh resume.
 func (e *Engine) ReviewSessionsForRun(runID string) []ReviewSessionSnapshot {
-	e.reviewMu.Lock()
-	defer e.reviewMu.Unlock()
-	var out []ReviewSessionSnapshot
-	for _, s := range e.reviewSess {
-		if s == nil || s.runID != runID || s.lane != "" {
-			continue
+	var sessions []*reviewSession
+	e.reviewSess.Range(func(_ string, s *reviewSession) bool {
+		if s != nil && s.runID == runID && s.lane == "" {
+			sessions = append(sessions, s)
 		}
-		s.mu.Lock()
-		snap := ReviewSessionSnapshot{
-			NodeID:  s.producerID,
-			Kind:    string(s.kind),
-			Waiting: s.waiting,
-			Busy:    s.active != nil,
-			Items:   s.queueSnapshotLocked(),
-		}
-		if s.active != nil {
-			snap.ActiveItem = map[string]any{
-				"id":          s.active.ID,
-				"text":        s.active.Text,
-				"images":      s.active.Images,
-				"annotations": s.active.Annotations,
-			}
-		}
-		s.mu.Unlock()
+		return true
+	})
+	out := make([]ReviewSessionSnapshot, 0, len(sessions))
+	for _, s := range sessions {
+		snap, _ := e.laneSnapshot(s)
 		out = append(out, snap)
 	}
 	return out
@@ -410,46 +381,19 @@ func (e *Engine) enqueueLaneItem(runID, producerID, lane, linkID string, kind se
 	if lane == "" && !retryLast && choiceDup && e.transcriptHasChoiceAfterLatestAsk(runID, producerID) {
 		return 0, errors.New("本轮选择题已提交,请等待回复")
 	}
-
-	s.mu.Lock()
-	if !retryLast && choiceDup && sessionHasChoiceLocked(s) {
-		s.mu.Unlock()
-		return 0, errors.New("本轮选择题已提交,请等待回复")
-	}
-	if s.waiting >= MaxReviewQueueItems {
-		s.mu.Unlock()
-		fullMsg := "复审消息队列已满,请稍候"
-		if kind == sessionKindClarify {
-			fullMsg = "澄清消息队列已满,请稍候"
+	return s.Enqueue(item, func(active *reviewQueueItem, hasActive bool, pending []*reviewQueueItem) error {
+		if !retryLast && choiceDup && hasChoice(active, hasActive, pending) {
+			return errors.New("本轮选择题已提交,请等待回复")
 		}
-		return 0, errors.New(fullMsg)
-	}
-	s.queue = append(s.queue, item)
-	s.waiting++
-	waiting = s.waiting
-	startPump := !s.pumping
-	if startPump {
-		s.pumping = true
-	}
-	s.mu.Unlock()
-
-	e.publishSession(s, "queue_state", map[string]any{
-		"waiting": waiting,
-		"items":   s.queueSnapshot(),
-		"busy":    true,
-		"kind":    string(kind),
+		return nil
 	})
-	if startPump {
-		go e.pumpReviewSession(s)
-	}
-	return waiting, nil
 }
 
-func sessionHasChoiceLocked(s *reviewSession) bool {
-	if s.active != nil && models.IsChoiceReply(s.active.Text) {
+func hasChoice(active *reviewQueueItem, hasActive bool, pending []*reviewQueueItem) bool {
+	if hasActive && models.IsChoiceReply(active.Text) {
 		return true
 	}
-	for _, it := range s.queue {
+	for _, it := range pending {
 		if models.IsChoiceReply(it.Text) {
 			return true
 		}
@@ -483,83 +427,20 @@ func (e *Engine) transcriptHasChoiceAfterLatestAsk(runID, nodeID string) bool {
 	return false
 }
 
-func (s *reviewSession) queueSnapshot() []map[string]any {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.queueSnapshotLocked()
-}
-
-func (s *reviewSession) queueSnapshotLocked() []map[string]any {
-	out := make([]map[string]any, 0, len(s.queue))
-	for _, it := range s.queue {
-		images := it.Images
-		if images == nil {
-			images = []models.PromptImage{}
-		}
-		annotations := it.Annotations
-		if annotations == nil {
-			annotations = []models.ReactAnnotation{}
-		}
-		// Waiting items must carry images + annotations (same fields as turn_begin)
-		// so refresh / queue_state reconcile does not drop annotation chips.
-		out = append(out, map[string]any{
-			"id":          it.ID,
-			"text":        it.Text,
-			"images":      images,
-			"annotations": annotations,
-		})
-	}
-	return out
-}
-
 // RemoveQueuedItem drops one waiting (not active) item by id and broadcasts queue_state.
 func (e *Engine) RemoveQueuedItem(runID, producerID, itemID string) error {
 	return e.removeLaneQueuedItem(runID, producerID, "", itemID)
 }
 
 func (e *Engine) removeLaneQueuedItem(runID, producerID, lane, itemID string) error {
-	itemID = strings.TrimSpace(itemID)
-	if itemID == "" {
+	if strings.TrimSpace(itemID) == "" {
 		return errors.New("item id required")
 	}
 	s := e.laneSession(runID, producerID, lane)
 	if s == nil {
 		return errors.New("no session")
 	}
-
-	s.mu.Lock()
-	if s.active != nil && s.active.ID == itemID {
-		s.mu.Unlock()
-		return errors.New("cannot remove active item")
-	}
-	idx := -1
-	for i, it := range s.queue {
-		if it.ID == itemID {
-			idx = i
-			break
-		}
-	}
-	if idx < 0 {
-		s.mu.Unlock()
-		return errors.New("item not found")
-	}
-	s.queue = append(s.queue[:idx], s.queue[idx+1:]...)
-	if s.waiting > 0 {
-		s.waiting--
-	}
-	waiting := s.waiting
-	busy := s.active != nil
-	items := s.queueSnapshotLocked()
-	kind := string(s.kind)
-	s.mu.Unlock()
-
-	e.publishSession(s, "queue_state", map[string]any{
-		"waiting": waiting,
-		"items":   items,
-		"busy":    busy,
-		"kind":    kind,
-	})
-	return nil
+	return s.Remove(itemID)
 }
 
 // ReorderQueuedItems sets the waiting FIFO to itemIDs order (must match exactly).
@@ -575,40 +456,7 @@ func (e *Engine) reorderLaneQueuedItems(runID, producerID, lane string, itemIDs 
 	if s == nil {
 		return errors.New("no session")
 	}
-
-	s.mu.Lock()
-	if len(s.queue) != len(itemIDs) {
-		s.mu.Unlock()
-		return errors.New("item count mismatch")
-	}
-	byID := make(map[string]*reviewQueueItem, len(s.queue))
-	for _, it := range s.queue {
-		byID[it.ID] = it
-	}
-	reordered := make([]*reviewQueueItem, 0, len(itemIDs))
-	for _, id := range itemIDs {
-		id = strings.TrimSpace(id)
-		it, ok := byID[id]
-		if !ok {
-			s.mu.Unlock()
-			return errors.New("item not found")
-		}
-		reordered = append(reordered, it)
-	}
-	s.queue = reordered
-	waiting := s.waiting
-	busy := s.active != nil
-	items := s.queueSnapshotLocked()
-	kind := string(s.kind)
-	s.mu.Unlock()
-
-	e.publishSession(s, "queue_state", map[string]any{
-		"waiting": waiting,
-		"items":   items,
-		"busy":    busy,
-		"kind":    kind,
-	})
-	return nil
+	return s.Reorder(itemIDs)
 }
 
 // CancelReviewSession clears all not-yet-started queue items, requests ACP
@@ -639,37 +487,7 @@ func (e *Engine) cancelLaneSession(runID, producerID, lane string, clearQueue bo
 		e.publishReviewLane(runID, producerID, lane, "queue_state", map[string]any{"waiting": 0, "items": []any{}, "busy": false})
 		return nil
 	}
-
-	s.mu.Lock()
-	var dropped []*reviewQueueItem
-	if clearQueue {
-		dropped = s.queue
-		s.queue = nil
-		s.waiting = 0
-	}
-	s.cancelRequested = true
-	waiting := s.waiting
-	items := s.queueSnapshotLocked()
-	busy := s.active != nil
-	kind := string(s.kind)
-	cancelFn := s.cancelFn
-	s.mu.Unlock()
-	for _, item := range dropped {
-		if item.Live != nil {
-			e.failCancelledQueuedLive(runID, producerID, item.Live.SID)
-		}
-	}
-
-	e.publishSession(s, "queue_state", map[string]any{
-		"waiting": waiting,
-		"items":   items,
-		"busy":    busy,
-		"kind":    kind,
-	})
-	e.cancelLaneProviderTurn(runID, producerID, lane)
-	if cancelFn != nil {
-		cancelFn()
-	}
+	s.Cancel(clearQueue)
 	return nil
 }
 
@@ -686,100 +504,6 @@ func (e *Engine) cancelLaneProviderTurn(runID, producerID, lane string) {
 	}
 	if vp, ok := e.provider.(runtime.VisitorLaneProvider); ok {
 		vp.CancelVisitorTurn(runID, producerID, lane)
-	}
-}
-
-func (e *Engine) pumpReviewSession(s *reviewSession) {
-	defer func() {
-		s.mu.Lock()
-		s.pumping = false
-		idle := s.active == nil && s.waiting == 0
-		s.mu.Unlock()
-		if idle {
-			e.dropLaneSessionIfIdle(s.runID, s.producerID, s.lane)
-		} else {
-			// More items arrived while we were finishing; restart pump.
-			s.mu.Lock()
-			restart := s.waiting > 0 && !s.pumping
-			if restart {
-				s.pumping = true
-			}
-			s.mu.Unlock()
-			if restart {
-				go e.pumpReviewSession(s)
-			}
-		}
-	}()
-
-	for {
-		s.mu.Lock()
-		if len(s.queue) == 0 {
-			s.mu.Unlock()
-			return
-		}
-		item := s.queue[0]
-		s.queue = s.queue[1:]
-		if s.waiting > 0 {
-			s.waiting--
-		}
-		waiting := s.waiting
-		s.active = item
-		s.cancelRequested = false
-		ctx, cancel := context.WithCancel(context.Background())
-		s.cancelFn = cancel
-		s.turnDone = ctx.Done()
-		item.PageSession = e.mintPageSession(s, item.Owner, ctx.Done())
-		s.mu.Unlock()
-
-		e.publishSession(s, "queue_state", map[string]any{
-			"waiting": waiting,
-			"items":   s.queueSnapshot(),
-			"busy":    true,
-			"kind":    string(s.kind),
-		})
-		e.publishSession(s, "turn_begin", map[string]any{
-			"item": map[string]any{
-				"id":          item.ID,
-				"text":        item.Text,
-				"images":      item.Images,
-				"annotations": item.Annotations,
-			},
-			"gateNodeId": item.GateNodeID,
-			"source":     item.Source,
-			"kind":       string(s.kind),
-		})
-
-		var interrupted bool
-		var turnErr error
-		switch {
-		case s.lane != "":
-			interrupted, turnErr = e.executeVisitorTurn(ctx, s, item)
-		case s.kind == sessionKindClarify:
-			interrupted, turnErr = e.executeClarifyTurn(ctx, s, item)
-		default:
-			interrupted, turnErr = e.executeReviewTurn(ctx, s, item)
-		}
-
-		cancel()
-		e.revokePageSession(item.PageSession)
-		s.mu.Lock()
-		s.active = nil
-		s.cancelFn = nil
-		s.turnDone = nil
-		wasCancel := s.cancelRequested || interrupted
-		s.cancelRequested = false
-		s.mu.Unlock()
-
-		if turnErr != nil && !wasCancel {
-			e.publishSession(s, "error", map[string]any{
-				"message":     turnErr.Error(),
-				"interrupted": false,
-			})
-		} else {
-			e.publishSession(s, "turn_done", map[string]any{
-				"interrupted": wasCancel,
-			})
-		}
 	}
 }
 
@@ -847,9 +571,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 		t = e.provider.ReactReply(ctx, req, conv.Messages, withPageSession(item.PageSession, item.Effective), item.Images, force)
 	}
 
-	s.mu.Lock()
-	cancelled := s.cancelRequested || ctx.Err() != nil
-	s.mu.Unlock()
+	cancelled := s.CancelRequested() || ctx.Err() != nil
 	if cancelled || (item.Live != nil && (t.Interrupted || t.Err != nil)) {
 		interrupted = true
 	}
@@ -1009,9 +731,7 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 		t = rp.ReviseInPlace(ctx, req, conv.Messages, withPageSession(item.PageSession, item.Effective), item.Images)
 	}
 
-	s.mu.Lock()
-	cancelled := s.cancelRequested || ctx.Err() != nil
-	s.mu.Unlock()
+	cancelled := s.CancelRequested() || ctx.Err() != nil
 	// Cancel and revise failure share Interrupted so UI never shows Done/已完成.
 	// Surface failure in chat; do not fail the enqueue API or the Run.
 	if cancelled || t.Err != nil {
@@ -1107,10 +827,6 @@ func (e *Engine) refreshGateBodyAfterRevise(c *execCtx, gateNodeID string) {
 // filter by nodeId (producer).
 func (e *Engine) publishReview(runID, nodeID, event string, extra map[string]any) {
 	e.publishReviewLane(runID, nodeID, "", event, extra)
-}
-
-func (e *Engine) publishSession(s *reviewSession, event string, extra map[string]any) {
-	e.publishReviewLane(s.runID, s.producerID, s.lane, event, extra)
 }
 
 // publishReviewLane publishes a visitor lane's frames as type:"visitor" so

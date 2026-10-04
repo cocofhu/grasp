@@ -208,6 +208,8 @@ func (c *ACPClient) runTurn(ctx context.Context, text string, images []models.Pr
 	if err != nil {
 		return nil, err
 	}
+	release := c.acquireReader()
+	defer release()
 	c.drainEvents()
 	opID := newTurnOpID()
 	c.turnOpID.Store(opID)
@@ -334,6 +336,8 @@ func (c *ACPClient) CancelTurnAndWait(opID string, wait time.Duration) bool {
 	if opID != "" {
 		msg["opId"] = opID
 	}
+	release := c.acquireReader()
+	defer release()
 	if err := c.send(msg); err != nil {
 		return false
 	}

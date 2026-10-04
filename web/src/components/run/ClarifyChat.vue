@@ -11,6 +11,8 @@ import StreamMarkdown from './StreamMarkdown.vue'
 import AnnotationChip from './AnnotationChip.vue'
 import LiveVariantCard from './LiveVariantCard.vue'
 import PendingSendQueuePanel from './PendingSendQueuePanel.vue'
+import { computed, inject } from 'vue'
+import { LIVE_CARD_HOST } from '@/lib/inbox/liveVariants'
 import type {
   ClarifyTurn,
   ClarifyImage,
@@ -66,6 +68,20 @@ const props = withDefaults(
 /** Live request text written for the agent; the Live card already tells the user. */
 function isLiveCardText(t: ClarifyTurn): boolean {
   return !!t.live && (t.live.generated === true || /^Live · /.test(t.text || ''))
+}
+
+/** Only the preview drawer can drive candidates; elsewhere Live cards are not shown. */
+const liveHost = inject(LIVE_CARD_HOST, null)
+
+/** Human bubble text: generated Live text falls back to the user's prompt without a card. */
+function humanBubbleText(t: ClarifyTurn): string {
+  if (!isLiveCardText(t)) return t.text || ''
+  return liveHost ? '' : t.live?.prompt || ''
+}
+
+/** A generated Live turn with nothing left to show once the card is gone. */
+function isEmptyLiveTurn(t: ClarifyTurn): boolean {
+  return t.role === 'human' && !liveHost && isLiveCardText(t) && !humanBubbleText(t) && !t.images?.length && !t.annotations?.length
 }
 
 const emit = defineEmits<{
@@ -244,6 +260,29 @@ const {
   reorderQueuedItems,
   editQueuedItem,
 } = chat
+
+/**
+ * Where each session's interactive card goes: under the first agent reply
+ * after the session's newest request, or on that request until the agent replies.
+ */
+const liveCards = computed(() => {
+  const full = new Map<number, NonNullable<ClarifyTurn['live']>>()
+  const latest = new Map<string, number>()
+  if (!liveHost) return { full, latest }
+  const turns = displayTurns.value
+  turns.forEach((t, i) => {
+    if (t.role === 'human' && t.live) latest.set(t.live.sid, i)
+  })
+  for (const [sid, i] of latest) {
+    const live = turns[i].live!
+    const j = turns.findIndex((t, k) => k > i && t.role === 'agent')
+    if (j >= 0 && live.op !== 'accept' && live.op !== 'discard' && !full.has(j)) {
+      full.set(j, live)
+      latest.set(sid, -1)
+    }
+  }
+  return { full, latest }
+})
 </script>
 
 <template>
@@ -290,7 +329,8 @@ const {
       >
         {{ translate('pages.clarify.approveEmptyHint') }}
       </p>
-      <div v-for="(t, i) in displayTurns" :key="i" class="flex gap-2.5" :class="t.role === 'human' ? 'flex-row-reverse' : ''">
+      <template v-for="(t, i) in displayTurns" :key="i">
+      <div v-if="!isEmptyLiveTurn(t)" class="flex gap-2.5" :class="t.role === 'human' ? 'flex-row-reverse' : ''">
         <div
           class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
           :class="t.role === 'agent' ? 'bg-n-clarify/15 text-n-clarify' : 'bg-accent-dim text-accent-2'"
@@ -348,7 +388,11 @@ const {
             </template>
           </div>
           <!-- Live variant request card (state from the preview drawer, if any) -->
-          <LiveVariantCard v-if="t.role === 'human' && t.live" :live-ref="t.live" />
+          <LiveVariantCard
+            v-if="liveHost && t.role === 'human' && t.live"
+            :live-ref="t.live"
+            :compact="liveCards.latest.get(t.live.sid) !== i"
+          />
           <!-- annotation chips attached to this human review turn -->
           <div v-if="t.role === 'human' && t.annotations && t.annotations.length" class="mb-1.5 flex flex-wrap gap-1.5 justify-end">
             <AnnotationChip
@@ -527,6 +571,7 @@ const {
                 </div>
               </div>
             </template>
+            <LiveVariantCard v-if="liveCards.full.has(i)" :live-ref="liveCards.full.get(i)!" agent />
             <!-- Restrained completion footnote (Demo); never for interrupted/error -->
             <div
               v-if="showTurnCompleted(t)"
@@ -539,9 +584,9 @@ const {
           </template>
           <!-- Human free-text bubble (agent branch handled above; role narrowed to human) -->
           <div
-            v-else-if="t.text && !isLiveCardText(t)"
+            v-else-if="humanBubbleText(t)"
             class="md rounded-lg border border-accent/30 bg-accent-dim/60 px-3 py-2 text-[13px] leading-relaxed text-txt"
-            v-html="renderMarkdown(t.text)"
+            v-html="renderMarkdown(humanBubbleText(t))"
           />
 
           <!-- Structured choice questions (ask_question). The latest agent turn
@@ -841,6 +886,7 @@ const {
           >{{ locale && relTime(t.at) }}</div>
         </div>
       </div>
+      </template>
       <div v-if="thinking && !validating && liveAgentIdx < 0" class="flex items-center gap-2 pl-9 text-[12px] text-txt3">
         <span class="typing-dots"><i /><i /><i /></span>
         {{ translate('pages.clarify.thinking') }}

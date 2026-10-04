@@ -8,6 +8,9 @@ All notable public-release changes are documented here.
   credential settings, which take precedence at runtime; compatible
   project/Agent environment variables remain a fallback. Platform service
   configuration keeps its explicit environment > file > defaults precedence.
+- **Gate approval chat:** a message that starts while an earlier queued item
+  was already trimmed no longer removes the wrong waiting message from the
+  queue panel.
 - **App preview:** noVNC now keeps one persistent page per sandbox. Reopening
   the preview resumes the same screen without reloading, switching ports
   navigates within that page, and browser logins survive a Chromium restart.
@@ -15,6 +18,32 @@ All notable public-release changes are documented here.
   IP direct preview on, the panel still uses noVNC and adds an "open directly in
   new tab" button. Public share pages behave the same way. The new
   `desktop_idle_ttl_seconds` setting (default 0) can close idle pages.
+- **App preview:** the noVNC window shows the browser tab strip and address bar
+  again and no longer clips the top of the page. **Cancel annotation** now
+  leaves pick mode, and the panel shows a tip if the page did not leave it. The
+  watch-only hint is easier to read.
+- **App preview:** a watched preview no longer drops after five minutes without
+  input. If the connection is closed for inactivity or lost, the panel shows a
+  readable reason and reconnects on its own with backoff, waiting until the tab
+  is visible again. It does not reconnect when the preview was opened in another
+  window.
+- **App preview:** `set_preview` now waits briefly for a port that is still
+  starting. When the port is unreachable, the error tells the agent what to
+  fix, including the address the app actually listens on (for example
+  `127.0.0.1` instead of `0.0.0.0`), instead of `Process exited with status 1`.
+- **Runs:** a paused node's agent session no longer floods the server log with
+  `acp event channel full` warnings, and the platform stops reconnecting to the
+  sandbox every two seconds while no turn is running.
+- **PM chat:** a reply no longer fails with "connection lost" when the socket
+  drops, the tab is refreshed, or a turn runs longer than 90 seconds. The turn
+  keeps running on the server; reopening the thread replays it and follows it
+  live. Messages sent while PM is busy wait in line, and **Stop** also clears
+  the line. A turn cut short by a server restart is marked **Interrupted by
+  restart** and can be retried.
+- **Agent Studio:** the chat tester and the sandbox console's chat tab keep
+  their queue and running reply when the page is refreshed or the connection
+  drops. The panel reconnects on its own and picks the reply up where it is,
+  and destroying the sandbox stops its queued messages.
 
 ## 1.2.1 — 2026-09-28
 

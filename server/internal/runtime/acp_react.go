@@ -792,7 +792,7 @@ func (c *acpProvider) parkReactSession(req NodeReq, sb *sandbox.Sandbox, acp *sa
 	}
 	c.mu.Unlock()
 	if c.timeline != nil && sb != nil {
-		c.timeline.startIngest(req.RunID, req.NodeID, host, port, sb.Password)
+		c.timeline.startIngest(req.RunID, req.NodeID, host, port, sb.Password, acpTurnBusy(acp))
 	}
 	return sess
 }

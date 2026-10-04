@@ -39,6 +39,70 @@
 ### 2026-10-05
 
 - 日期：2026-10-05
+- 范围：`server/internal/chatsession/stream{,_test}.go`、`server/internal/services/{sandbox_chat,sandbox_chat_test,pm_turn}.go`、`server/internal/handlers/{sandbox,handlers}.go`、`server/cmd/server/main.go`、`web/src/components/agent/AgentChatTester{.vue,.test.ts,.interactions.test.ts}`
+- 做了什么：把 PM 里"帧编号 + 当前轮回放缓冲 + 订阅者扇出"抽成 `chatsession.Stream`，PM 改用它。Agent Studio / 沙箱控制台的对话从"每个 WS 连接一条队列"改成 `SandboxChats`：每个沙箱一个 chatsession FIFO，连接断开不影响排队和正在跑的轮次；WS 连上先发 queue_state 快照，忙时回放当前轮，帧格式和 PM 一致（`{type:'session',event}` / `{type:'acp'}`）。客户端发 chat 时带 `id`，`turn_begin` 按 id 取回本地附件预览。`AgentChatTester` 断线按 1s·2^n（封顶 15s）重连；历史恢复完成前先暂存实时帧，并去掉事件日志里正在跑的那一轮，避免回放重复。销毁沙箱时先取消它的对话。
+- 为什么：统一聊天的最后一块。Studio 原来刷新页面或断线就丢队列，正在跑的轮次也看不到了；PM 和 Studio 的回放逻辑本质相同，收成一份。
+- 如何验证：`go test ./...` 全绿（新增 `stream_test.go`、`sandbox_chat_test.go`，`go test -race` 通过）；`chatsession` 覆盖率 97.0%，`cover-check-server.sh 90` 为 91.7%；golangci-lint 0 issues；`npx vitest run` 全绿（新增重连回放用例）；`vue-tsc --noEmit`、eslint 无错误。
+
+### 2026-10-05
+
+- 日期：2026-10-05
+- 范围：`server/internal/services/{pm_turn,pm_thread,pm,sandbox_view}.go`、`server/internal/handlers/pm.go`、`server/internal/router/router.go`、`server/cmd/server/main.go`、`web/src/lib/pm/{usePmLeaderChat,pmTurnState}.ts`、`web/src/lib/api/clients/pmClient.ts`、`web/src/components/pm/PmLeaderChat.vue`、相关测试与 locales
+- 做了什么：PM 对话改跑在 `chatsession` 上。每个线程一个 FIFO 会话，网页、IM 渠道、定时任务、审批自动回复都通过原有的 `Start` / `Active` / `Cancel` / `Subscribe` 入队。新增 `POST .../turns`（起轮或 `retryOf` 重试，忙时排队，返回 `waiting`）和 `POST .../turns/cancel`；线程 WS 只负责订阅：连上先发 queue_state 快照，忙时回放当前轮的 turn_begin 和 acp 帧，再接实时帧，另有 `phase` 帧报告沙箱准备进度（preparing / pulling / running）。沙箱准备从前端挪到服务端（`openPmSandbox` + `SandboxView.WaitReady`）。启动时把残留的 streaming 草稿标成新的 failKind `interrupted`。删掉 `/draft` 接口和前端的草稿续接、孤儿判定、90 秒期限。前端断线按 1s·2^n（封顶 15s）重连，页面回到前台时立即重连。
+- 为什么：PM 断线、刷新、轮次超过 90 秒都会在前端被判成"连接中断"，可服务端其实还在跑。改成以服务端为准，和 ReAct 澄清走同一套排队与快照恢复。
+- 如何验证：`go test ./...` 全绿（新增 `pm_turn_session_test.go`、`pm_turn_prompt_test.go`，覆盖排队、重复入队、重连回放、取消清队、准备失败、失败类型、空闲回收）；golangci-lint 0 issues；`npx vitest run` 全绿（`PmLeaderChat.test.ts`、`usePmLeaderChat.actions.test.ts` 按新协议重写）；`vue-tsc --noEmit`、eslint 无错误。
+
+### 2026-10-05
+
+- 日期：2026-10-05
+- 范围：`web/src/lib/chat/sessionQueue{,.test}.ts`、`web/src/lib/inbox/{useClarifyChat,useGateApproval}.ts`、`web/LIB_DOMAIN_MAP.json`
+- 做了什么：新建前端 `lib/chat` 域，把 ReAct 澄清和审批热修订各自维护的排队对账抽成纯函数：`reconcileQueue`（queue_state 重建队列：先按 id、再按文本匹配乐观行，无进行中轮次时最多保留一条本地领先行）、`takeTurnBeginItem`、`dropGhostItems`、`isAuthoritativeIdle` 以及附件克隆。两个 composable 改为调用这些函数，队列类型统一为 `SessionQueueItem`。
+- 为什么：两处代码逐行重复，后续 PM 和 Agent Studio 迁到 chatsession 后也要用同一套对账，先收成一份。审批面板的 turn_begin 原来直接 `shift()` 队首，queue_state 先裁掉该条时会误删下一条等待消息；现在与澄清一致，按 id 匹配，id 已不在队列时不按文本回退。
+- 如何验证：`npx vitest run`（新增 `sessionQueue.test.ts`；`ClarifyChat`、`useGateApproval`、`PublicGateApprovalView` 等既有用例全部通过）；`vue-tsc --noEmit`、eslint 无新增问题。
+
+### 2026-10-05
+
+- 日期：2026-10-05
+- 范围：`server/internal/chatsession/{session,registry,session_test}.go`、`server/internal/engine/{review_session,visitor_lane,live,engine}.go`、`server/internal/engine/{resume_review_external,clarify_session}_test.go`、`server/scripts/cover-check-server.sh`
+- 做了什么：新建 `chatsession` 包，把 ReAct 澄清、复审 / 预览审批、分享页访客通道共用的排队、单 pump、Cancel（只停当前轮或连队列一起清）、删除 / 重排、快照，以及 queue_state / turn_begin / turn_done / error 的发布抽成泛型 `Session[T]` 和 `Registry`。engine 的 `reviewSession` 改为包一层 `chatsession.Session`，执行、落库、Live、page session、反馈台账仍留在 engine，通过 Config 回调接入。`chatsession` 加入服务端覆盖率门禁。顺手修了 `TestClarifyReactReplyEnqueues` 不加锁改 `reactHold` 的数据竞争（main 上 `-race` 已失败）。
+- 为什么：统一聊天的第一步。平台上有好几套"排队 + 一次跑一轮 + 断线后靠快照恢复"的实现，PM 和 Agent Studio 各写了一份，PM 断线就判失败。先把 ReAct 这套已经验证过的逻辑抽出来、行为不变，后面 PM、Studio 接同一个包。
+- 如何验证：`go test ./...` 全绿；`go test -race ./internal/engine/ ./internal/chatsession/` 通过；`chatsession` 覆盖率 96.5%，`cover-check-server.sh 90` 为 91.6%；golangci-lint 0 issues。行为差异只有一处：turn_begin 和快照里的 images / annotations 为空时统一给空数组（原来有的路径给 null）。
+
+### 2026-10-05
+
+- 日期：2026-10-05
+- 范围：`server/internal/sandbox/{acp,acp_turn,acp_turn_test}.go`、`server/internal/runtime/{acp_timeline,acp_timeline_test,acp_sandbox,acp_react}.go`、`server/internal/engine/approve_first_message_test.go`
+- 做了什么：ACP 客户端记录当前有几个调用方在读事件通道（连接握手、一轮对话、等待取消确认）；没有读取方时 `readLoop` 只更新 queue_state 镜像，不再把帧塞进通道。真正丢帧时的告警限为每分钟一次，并带丢弃计数。时间线的事件日志轮询只在这一轮正在执行（本客户端有轮次在跑，或 bridge 报 busy）时每 2 秒拉一次，轮次结束后再拉最后一次；拿不到 ACP 客户端时保持原来的行为。补了一个测试，确认审批节点暂停后投递首条消息的那一轮在会话快照里显示为 busy。
+- 为什么：run 3f471c4b 从 03:10 起持续打印 `acp event channel full, dropping message`。原因是 grasp 节点暂停后 ACP 连接一直开着，但两轮之间没人读通道，bridge 的广播很快把 512 的缓冲占满。同时时间线每 2 秒拨一次 `/ws` 又断开，沙箱日志里刷出大量连接和 broken pipe，每次断开还会触发 bridge 再广播一次 queue_state。
+- 如何验证：`go test ./internal/sandbox/ ./internal/runtime/ ./internal/engine/`（新增：暂停的连接被灌 2000 条 queue_state 不缓冲、不告警且镜像正确；告警限频；读取方计数不泄漏；空闲不轮询、busy 时轮询、结束后停；首条消息那一轮 busy）；`-race` 通过；golangci-lint 0 issues。
+
+### 2026-10-05
+
+- 日期：2026-10-05
+- 范围：`server/internal/mcp/preview{,_test,_more_test}.go`、`server/internal/services/preview_keepalive{,_test}.go`
+- 做了什么：`set_preview` 改为先探测端口（最多 5 次、间隔 500ms），能访问后再保活，保活后再探测一次确认，整体超时 60 秒。端口不可达时，按沙箱里 `ss` 看到的监听地址给出提示：没有进程监听、只监听回环地址（附实际地址，要求改为 0.0.0.0）、或已监听但无响应。保活失败时错误里带上脚本自己的 `keepalive: …` 原因。
+- 为什么：run 3f471c4b 里 Agent 在服务还没监听时调用 `set_preview`，先跑的保活脚本以 `no listener` 退出 1，但输出被丢弃，Agent 只看到 `Process exited with status 1`，看不出该怎么修。探测只请求一次，也不说服务实际监听在哪里。
+- 如何验证：`go test ./internal/mcp/ ./internal/services/`（新增先探测再保活、不可达不保活、三种监听地址提示、保活原因透传）；golangci-lint 0 issues。
+
+### 2026-10-05
+
+- 日期：2026-10-05
+- 范围：`server/internal/handlers/{preview_vnc,sandbox_vnc,gate_share_public_preview}.go`、`server/internal/handlers/preview_vnc_test.go`、`web/src/lib/shared/vncReconnect{,.test}.ts`、`web/src/components/run/NovncPreviewPanel{.vue,.test.ts}`、`web/src/locales/{zh-CN,en}/pages.json`、`web/LIB_DOMAIN_MAP.json`
+- 做了什么：三个 VNC 代理收到客户端任何消息（含二进制 RFB 和新增的 `ping`）都刷新会话活跃时间，限频 15 秒一次。预览面板在页面可见且已连接时每 60 秒发一次 `ping`。服务端 `closed` 和意外断线改为本地化提示；`idle`、`desktop-closed` 和断线按 1s、2s、4s… 退避自动重连（最长 30s，最多 6 次），页面在后台时等切回前台再连；`superseded`、`evicted` 不自动重连，保留手动按钮。公开分享页自动重连同样走 `reconnect-request` 换新票据。
+- 为什么：活跃时间只在文本控制消息时刷新，只看不操作的观看者在 `TabIdleTTL`（300 秒）后被 sweep 以 `idle` 断开，面板直接显示原文 `idle`，只能手动重连。
+- 如何验证：`go test ./internal/handlers/`、golangci-lint 0 issues；`vue-tsc --noEmit`、eslint、全量 vitest 通过（新增 idle 自动重连、后台等待、superseded 不重连、重试用完出按钮、心跳只在可见时发送）。
+
+### 2026-10-05
+
+- 日期：2026-10-05
+- 范围：`server/internal/browser/rod.go`、`server/internal/browser/rod_desktop{,_live}_test.go`、`server/internal/handlers/preview_vnc{,_test}.go`、`sandbox-gateway/sandbox/scripts/vnc-preview.sh`、`web/src/components/run/NovncPreviewPanel{.vue,.test.ts}`、`web/src/locales/{zh-CN,en}/pages.json`
+- 做了什么：noVNC 预览窗口固定在 0,0、1920x1080 正常态，标签栏和地址栏留在屏幕上，视口锁定为工具栏下方的内容区；每次 setWindowBounds 后轮询到外框匹配且连续三次读数一致再判定，失败也不再移动窗口。`SetInspect(false)` 关闭时也带 highlightConfig，失败退回 `Overlay.disable`；关闭失败推送 `inspect-off-failed`，面板显示提示。「仅观看」提示改为 `text-txt2`、11px、带描边。
+- 为什么：#724 把工具栏移出屏幕，但调整窗口后立刻读 innerHeight 读到旧值，线上算出工具栏 263px（实际约 88px），窗口被多推上去约 175px，页面顶部导航被裁，且失败后窗口停在错误位置。Chromium 的 `Overlay.setInspectMode` 在 mode none 时也要求 highlightConfig，否则报 "highlight configuration parameter is missing"，取点模式一直开着，「取消标注」无效。提示文字在浅色主题下对比度约 2.3:1。
+- 如何验证：`go test ./internal/browser/ ./internal/handlers/`；`PREVIEW_DESKTOP_LIVE=1` 实机 Xvfb 测试通过（内容区 1919x992、工具栏像素为浏览器 UI、进出全屏后取点命中、取点开关均返回 nil），同一 Chromium 上不带 highlightConfig 的 none 请求复现了线上报错；golangci-lint 0 issues；`vue-tsc --noEmit`、eslint、`NovncPreviewPanel.test.ts` 通过。
+
+### 2026-10-05
+
+- 日期：2026-10-05
 - 范围：`.github/scripts/{actionlint,shellcheck-error,govulncheck-check}.*`、`.github/workflows/{ci,ci-web,ci-sandbox,security}.yml`、`.golangci.yml`、`govulncheck-allowlist.json`、`docs/scripts/audit-check.mjs`、`docs/audit-allowlist.json`、`AGENTS.md`、`CONTRIBUTING.md`，以及 server / gateway / sandbox 里为通过 errcheck、unused 做的机械修改
 - 做了什么：始终执行的 ci 工作流加上 actionlint 和 error 级 shellcheck，根目录按一层 `*.sh` 通配收集。security 工作流对三个 Go 模块跑 govulncheck，过期豁免会失败；docs 也像 web 一样拦 high/critical npm 漏洞。共享 golangci 对非测试代码启用 errcheck 和 unused，sandbox-go 补上 `go vet`。
 - 为什么：这些检查仓库文档里已经点名过，但一直没有接进 CI；工作流和 shell 脚本出错要等真正跑到才会发现。

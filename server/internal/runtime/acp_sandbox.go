@@ -31,7 +31,7 @@ func (c *acpProvider) registerLive(req NodeReq, sb *sandbox.Sandbox, acp *sandbo
 	}
 	c.mu.Unlock()
 	if c.timeline != nil && sb != nil {
-		c.timeline.startIngest(req.RunID, req.NodeID, host, port, sb.Password)
+		c.timeline.startIngest(req.RunID, req.NodeID, host, port, sb.Password, acpTurnBusy(acp))
 	}
 }
 

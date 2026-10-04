@@ -14,32 +14,45 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Fixed remote desktop. The Xvfb framebuffer is 1920x1080; the CSS viewport is
-// the visible content area after the window covers that framebuffer, not the
-// outer frame (tab strip and address bar sit inside the outer frame). Pinned
-// via Emulation.setDeviceMetricsOverride at DSF 1, so captured pixels equal CSS
+// Fixed remote desktop. The Xvfb framebuffer is 1920x1080 and the outer
+// Chromium window covers it at 0,0, so the tab strip and address bar stay
+// visible at the top of the preview. The CSS viewport is the content area
+// below that toolbar, not the outer frame. Pinned via
+// Emulation.setDeviceMetricsOverride at DSF 1, so captured pixels equal CSS
 // pixels and client click coordinates map 1:1.
 const (
 	ViewportWidth  = 1920
 	ViewportHeight = 1080
 
-	// contentOriginSlackPx is rounding tolerance for the content origin after
-	// the toolbar is shifted off the framebuffer. It is not a size slack: a
-	// content area shorter than the desktop is never treated as covered.
-	contentOriginSlackPx = 2
+	// desktopFrameSlackPx is rounding tolerance for the outer frame origin and
+	// size; Chromium reports a couple of pixels of border on Xvfb.
+	desktopFrameSlackPx = 2
+	// maxContentInsetXPx / maxContentInsetYPx bound the frame borders and the
+	// tab strip plus address bar. A larger inset means the content size was
+	// read before the window finished resizing, or the content area is short.
+	maxContentInsetXPx   = 8
+	maxContentInsetYPx   = 200
 	desktopBoundsRetries = 3
 	desktopBoundsRetry   = 80 * time.Millisecond
 	// desktopWatchInterval re-checks the headed window after the viewer toggles
-	// fullscreen. Entering fullscreen hides the toolbar without moving a window
-	// that was shifted to park that toolbar off-screen, which clips the page.
+	// fullscreen, which changes the content area under the pinned viewport.
 	desktopWatchInterval = 300 * time.Millisecond
+	// desktopSettleStableReads is how many identical reads in a row count as
+	// settled. The outer frame updates at once; innerHeight follows only after
+	// the X11 resize and relayout.
+	desktopSettleStableReads = 3
 )
 
-// ErrDesktopNotReady means the headed window's visible content area does not
-// cover the Xvfb desktop. Overlay inspect would mis-hit. Callers must refuse
-// entering inspect and surface a not-ready control message. The error text
-// includes content and outer sizes so a short content area is diagnosable
-// even when the outer frame already reads ~1920x1080.
+var (
+	desktopSettlePoll    = 40 * time.Millisecond
+	desktopSettleTimeout = time.Second
+)
+
+// ErrDesktopNotReady means the headed window does not cover the Xvfb desktop
+// with a content area directly below its toolbar. Overlay inspect would
+// mis-hit. Callers must refuse entering inspect and surface a not-ready
+// control message. The error text includes content and outer sizes so a short
+// content area is diagnosable even when the outer frame reads 1920x1080.
 var ErrDesktopNotReady = errors.New("desktop window not ready for inspect")
 
 // dialRod connects to a Chromium container's CDP endpoint (http://ip:9222) and
@@ -80,9 +93,9 @@ func (e *rodEngine) NewTab(_ context.Context, url string) (Page, error) {
 	}
 	rp := &rodPage{engine: e, page: page}
 	// Headed Chromium on Xvfb (no window manager) opens NewTab as another
-	// window. presentDesktop covers the framebuffer with the content area and
-	// pins the CSS viewport to that content area (DSF 1). Tab open stays
-	// best-effort; SetInspect(on) hard-gates on readiness.
+	// window. presentDesktop covers the framebuffer with that window and pins
+	// the CSS viewport to its content area (DSF 1). Tab open stays best-effort;
+	// SetInspect(on) hard-gates on readiness.
 	if err := rp.presentDesktop(); err != nil {
 		log.Warn().Err(err).Msg("preview NewTab content area does not cover desktop; inspect stays disabled")
 	}
@@ -113,56 +126,44 @@ func windowSizeOnlyBounds(left, top, width, height int) *proto.BrowserBounds {
 	}
 }
 
-// fitContentToDesktop returns the outer rectangle that places the content area
-// over the whole Xvfb screen. The toolbar/tab-strip inset is shifted off the
-// top and left of the framebuffer so it no longer consumes desktop pixels.
-func fitContentToDesktop(g desktopGeom) (left, top, width, height int) {
-	if g.contentW <= 0 || g.contentH <= 0 || g.outerW <= 0 || g.outerH <= 0 {
-		return 0, 0, ViewportWidth, ViewportHeight
+func absInt(v int) int {
+	if v < 0 {
+		return -v
 	}
-	insetX := g.outerW - g.contentW
-	insetY := g.outerH - g.contentH
-	if insetX < 0 {
-		insetX = 0
-	}
-	if insetY < 0 {
-		insetY = 0
-	}
-	return -insetX, -insetY, ViewportWidth + insetX, ViewportHeight + insetY
+	return v
 }
 
-// contentCoversDesktop reports whether the visible content area covers the
-// Xvfb screen and starts at the screen origin. An outer frame of 1920x1080 is
-// not enough: the toolbar lives inside that frame, so a short content area
-// (or a content origin pushed down by the toolbar) stays not ready.
-func contentCoversDesktop(g desktopGeom) bool {
-	if g.contentW < ViewportWidth || g.contentH < ViewportHeight {
+// frameMatches reports whether the outer frame is the requested rectangle,
+// within the border slack Chromium reports on Xvfb.
+func frameMatches(g desktopGeom, left, top, width, height int) bool {
+	return absInt(g.left-left) <= desktopFrameSlackPx &&
+		absInt(g.top-top) <= desktopFrameSlackPx &&
+		absInt(g.outerW-width) <= desktopFrameSlackPx &&
+		absInt(g.outerH-height) <= desktopFrameSlackPx
+}
+
+// desktopReady reports whether the outer frame covers the Xvfb screen at the
+// origin and the content area fills it below the toolbar. The toolbar stays
+// on screen, so the content area is shorter than the desktop by the toolbar
+// height (zero in fullscreen). An inset outside the toolbar bounds means the
+// content size is stale or short, and the window is not ready.
+func desktopReady(g desktopGeom) bool {
+	if g.contentW <= 0 || g.contentH <= 0 {
+		return false
+	}
+	if !frameMatches(g, 0, 0, ViewportWidth, ViewportHeight) {
 		return false
 	}
 	insetX := g.outerW - g.contentW
 	insetY := g.outerH - g.contentH
-	if insetX < 0 {
-		insetX = 0
-	}
-	if insetY < 0 {
-		insetY = 0
-	}
-	originX := g.left + insetX
-	originY := g.top + insetY
-	if originX > contentOriginSlackPx || originY > contentOriginSlackPx {
-		return false
-	}
-	if originX < -contentOriginSlackPx || originY < -contentOriginSlackPx {
-		return false
-	}
-	return true
+	return insetX >= 0 && insetX <= maxContentInsetXPx &&
+		insetY >= 0 && insetY <= maxContentInsetYPx
 }
 
 // viewportForContent is the CSS viewport at DSF 1. It follows the content
 // area. Callers must not pass the outer frame: a 1920x1080 outer size with a
 // shorter content area would layout past what the window can paint.
-// Content larger than the desktop is clamped to the framebuffer, which is the
-// visible content once the toolbar has been shifted off-screen.
+// Content larger than the desktop is clamped to the framebuffer.
 func viewportForContent(contentW, contentH int) (width, height int, dpr float64) {
 	w, h := contentW, contentH
 	if w > ViewportWidth {
@@ -194,12 +195,13 @@ func (rp *rodPage) readWindowBounds() (*proto.BrowserBounds, error) {
 	return res.Bounds, nil
 }
 
-// presentDesktop focuses the tab, then sizes the headed window so its visible
-// content area covers the Xvfb framebuffer. Window state and the outer
+// presentDesktop focuses the tab, then places the headed window over the Xvfb
+// framebuffer at 0,0 with the toolbar visible. Window state and the outer
 // rectangle are separate CDP requests. The CSS viewport is pinned to the
-// content area only after that area covers the screen. Returns
-// ErrDesktopNotReady (with content and outer sizes) when it still does not,
-// so inspect must not enter Overlay searchForNode.
+// content area once the window settles. Returns ErrDesktopNotReady (with
+// content and outer sizes) when it does not, so inspect must not enter Overlay
+// searchForNode. The window stays at 0,0 either way, so a failure never clips
+// the page.
 func (rp *rodPage) presentDesktop() error {
 	if rp == nil || rp.page == nil {
 		return fmt.Errorf("%w: nil page", ErrDesktopNotReady)
@@ -211,59 +213,88 @@ func (rp *rodPage) presentDesktop() error {
 		log.Debug().Err(err).Msg("preview presentDesktop Activate")
 	}
 	err := rp.presentNormalLocked()
+	rp.armDesktopWatchLocked()
 	if err != nil {
 		log.Warn().Err(err).Msg("preview presentDesktop content area does not cover desktop")
 		return err
 	}
-	rp.armDesktopWatchLocked()
 	return nil
 }
 
-// presentNormalLocked parks the toolbar off the framebuffer and pins the CSS
-// viewport to the content area. State and size are separate requests.
-func (rp *rodPage) presentNormalLocked() error {
-	rp.clearDeviceMetrics()
-	left, top, width, height := 0, 0, ViewportWidth, ViewportHeight
+// desktopWindow is the CDP surface the window fit needs, so the resize race
+// can be exercised without Chromium.
+type desktopWindow interface {
+	setWindowBounds(bounds *proto.BrowserBounds) error
+	readDesktopGeom() (desktopGeom, error)
+}
+
+// waitDesktopGeom polls until the outer frame is the requested rectangle and
+// the geometry reads the same several times in a row. Chromium reports the new
+// outer bounds right after setWindowBounds, but innerWidth/innerHeight keep
+// the old size until the X11 resize and relayout finish. On timeout it returns
+// the last geometry read; callers decide readiness from it.
+func waitDesktopGeom(w desktopWindow, left, top, width, height int) (desktopGeom, error) {
+	deadline := time.Now().Add(desktopSettleTimeout)
+	var last desktopGeom
+	have := false
+	stable := 0
+	var readErr error
+	for {
+		g, err := w.readDesktopGeom()
+		if err != nil {
+			readErr = err
+			stable = 0
+		} else {
+			readErr = nil
+			switch {
+			case !frameMatches(g, left, top, width, height):
+				stable = 0
+			case have && g == last:
+				stable++
+			default:
+				stable = 1
+			}
+			last, have = g, true
+		}
+		if stable >= desktopSettleStableReads {
+			return last, nil
+		}
+		if !time.Now().Before(deadline) {
+			if !have {
+				return desktopGeom{}, readErr
+			}
+			return last, nil
+		}
+		time.Sleep(desktopSettlePoll)
+	}
+}
+
+// presentNormal sets the normal state, then the 0,0 1920x1080 frame, and waits
+// for the content area to settle below the toolbar.
+func presentNormal(w desktopWindow) (desktopGeom, error) {
 	var lastErr error
 	for attempt := 0; attempt < desktopBoundsRetries; attempt++ {
 		if attempt > 0 {
 			time.Sleep(desktopBoundsRetry)
 		}
-		if err := rp.setWindowBounds(windowStateOnlyBounds()); err != nil {
+		if err := w.setWindowBounds(windowStateOnlyBounds()); err != nil {
 			lastErr = err
 			log.Debug().Err(err).Int("attempt", attempt).Msg("preview presentDesktop set window state")
 			continue
 		}
-		if err := rp.setWindowBounds(windowSizeOnlyBounds(left, top, width, height)); err != nil {
+		if err := w.setWindowBounds(windowSizeOnlyBounds(0, 0, ViewportWidth, ViewportHeight)); err != nil {
 			lastErr = err
 			log.Debug().Err(err).Int("attempt", attempt).Msg("preview presentDesktop set window size")
 			continue
 		}
-		geom, err := rp.readDesktopGeom()
+		geom, err := waitDesktopGeom(w, 0, 0, ViewportWidth, ViewportHeight)
 		if err != nil {
 			lastErr = err
 			log.Debug().Err(err).Int("attempt", attempt).Msg("preview presentDesktop read geometry")
 			continue
 		}
-		if contentCoversDesktop(geom) {
-			return rp.finishDesktop(geom)
-		}
-		// Toolbar still inside the frame, or the window is short. Grow the
-		// outer size by the chrome inset and shift that inset off-screen.
-		left, top, width, height = fitContentToDesktop(geom)
-		if err := rp.setWindowBounds(windowSizeOnlyBounds(left, top, width, height)); err != nil {
-			lastErr = err
-			log.Debug().Err(err).Int("attempt", attempt).Msg("preview presentDesktop fit content")
-			continue
-		}
-		geom, err = rp.readDesktopGeom()
-		if err != nil {
-			lastErr = err
-			log.Debug().Err(err).Int("attempt", attempt).Msg("preview presentDesktop read fitted geometry")
-			continue
-		}
-		if contentCoversDesktop(geom) {
-			return rp.finishDesktop(geom)
+		if desktopReady(geom) {
+			return geom, nil
 		}
 		lastErr = desktopNotReadyError(geom)
 		log.Debug().
@@ -273,20 +304,40 @@ func (rp *rodPage) presentNormalLocked() error {
 			Int("attempt", attempt).
 			Msg("preview presentDesktop content area short of desktop")
 	}
-	if lastErr == nil {
-		lastErr = errors.New("unknown")
-	}
-	if !errors.Is(lastErr, ErrDesktopNotReady) {
-		lastErr = fmt.Errorf("%w: %v", ErrDesktopNotReady, lastErr)
-	}
-	return lastErr
+	return desktopGeom{}, wrapNotReady(lastErr)
 }
 
-// presentFullscreenLocked keeps fullscreen (toolbar hidden) but places the
-// outer frame on the Xvfb screen. A window that was shifted up to hide the
-// toolbar would clip the page once fullscreen removes that toolbar in place.
-// On a display without a window manager, size is ignored while fullscreen, so
-// the frame is placed in the normal state and fullscreen is entered again.
+func wrapNotReady(err error) error {
+	if err == nil {
+		err = errors.New("unknown")
+	}
+	if !errors.Is(err, ErrDesktopNotReady) {
+		err = fmt.Errorf("%w: %v", ErrDesktopNotReady, err)
+	}
+	return err
+}
+
+// presentNormalLocked places the window at 0,0 1920x1080 and pins the CSS
+// viewport to the content area under the toolbar.
+func (rp *rodPage) presentNormalLocked() error {
+	rp.clearDeviceMetrics()
+	geom, err := presentNormal(rp)
+	if err != nil {
+		// Note the frame anyway so the watch only refits when it changes
+		// instead of retrying a window that cannot fit on every tick.
+		if b, berr := rp.readWindowBounds(); berr == nil {
+			rp.noteFromBounds(b)
+		}
+		return err
+	}
+	return rp.finishDesktop(geom)
+}
+
+// presentFullscreenLocked re-pins the viewport after the viewer enters
+// fullscreen, which removes the toolbar and grows the content area. If the
+// frame is off the screen, it is placed in the normal state and fullscreen is
+// entered again: on a display without a window manager, size is ignored while
+// fullscreen.
 func (rp *rodPage) presentFullscreenLocked() error {
 	rp.clearDeviceMetrics()
 	var lastErr error
@@ -294,9 +345,8 @@ func (rp *rodPage) presentFullscreenLocked() error {
 		if attempt > 0 {
 			time.Sleep(desktopBoundsRetry)
 		}
-		_ = rp.setWindowBounds(windowSizeOnlyBounds(0, 0, ViewportWidth, ViewportHeight))
-		geom, err := rp.readDesktopGeom()
-		if err == nil && contentCoversDesktop(geom) {
+		geom, err := waitDesktopGeom(rp, 0, 0, ViewportWidth, ViewportHeight)
+		if err == nil && desktopReady(geom) {
 			return rp.finishDesktop(geom)
 		}
 		if err := rp.setWindowBounds(windowStateOnlyBounds()); err != nil {
@@ -311,24 +361,20 @@ func (rp *rodPage) presentFullscreenLocked() error {
 			lastErr = err
 			continue
 		}
-		time.Sleep(desktopBoundsRetry)
-		geom, err = rp.readDesktopGeom()
+		geom, err = waitDesktopGeom(rp, 0, 0, ViewportWidth, ViewportHeight)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		if contentCoversDesktop(geom) {
+		if desktopReady(geom) {
 			return rp.finishDesktop(geom)
 		}
 		lastErr = desktopNotReadyError(geom)
 	}
-	if lastErr == nil {
-		lastErr = errors.New("unknown")
+	if b, berr := rp.readWindowBounds(); berr == nil {
+		rp.noteFromBounds(b)
 	}
-	if !errors.Is(lastErr, ErrDesktopNotReady) {
-		lastErr = fmt.Errorf("%w: %v", ErrDesktopNotReady, lastErr)
-	}
-	return lastErr
+	return wrapNotReady(lastErr)
 }
 
 func (rp *rodPage) finishDesktop(g desktopGeom) error {
@@ -663,15 +709,36 @@ func (rp *rodPage) SetViewport(width, height int, dpr float64) error {
 	}.Call(rp.page)
 }
 
+// inspectHighlightConfig is required on every Overlay.setInspectMode call:
+// Chromium rejects even mode none without it ("highlight configuration
+// parameter is missing") and searchForNode stays armed.
+func inspectHighlightConfig() *proto.OverlayHighlightConfig {
+	content, border := 0.4, 1.0
+	return &proto.OverlayHighlightConfig{
+		ContentColor: &proto.DOMRGBA{R: 111, G: 168, B: 220, A: &content},
+		BorderColor:  &proto.DOMRGBA{R: 79, G: 133, B: 214, A: &border},
+	}
+}
+
+func inspectModeRequest(on bool) proto.OverlaySetInspectMode {
+	mode := proto.OverlayInspectModeNone
+	if on {
+		mode = proto.OverlayInspectModeSearchForNode
+	}
+	return proto.OverlaySetInspectMode{Mode: mode, HighlightConfig: inspectHighlightConfig()}
+}
+
 func (rp *rodPage) SetInspect(on bool) error {
 	if !on {
 		rp.inspectCancel.set(false)
 		_ = proto.OverlayHideHighlight{}.Call(rp.page)
-		err := proto.OverlaySetInspectMode{Mode: proto.OverlayInspectModeNone}.Call(rp.page)
-		if err != nil {
-			return err
+		modeErr := inspectModeRequest(false).Call(rp.page)
+		// Overlay.disable also leaves inspect mode, so it is the fallback when
+		// setInspectMode is rejected.
+		disableErr := proto.OverlayDisable{}.Call(rp.page)
+		if modeErr != nil && disableErr != nil {
+			return fmt.Errorf("leave inspect: %v; overlay disable: %w", modeErr, disableErr)
 		}
-		_ = proto.OverlayDisable{}.Call(rp.page)
 		return nil
 	}
 	// Hard gate: refuse Overlay searchForNode when geometry is still wrong —
@@ -682,12 +749,7 @@ func (rp *rodPage) SetInspect(on bool) error {
 	rp.inspectCancel.set(true)
 	_ = proto.DOMEnable{}.Call(rp.page)
 	_ = proto.OverlayEnable{}.Call(rp.page)
-	content, border := 0.4, 1.0
-	cfg := &proto.OverlayHighlightConfig{
-		ContentColor: &proto.DOMRGBA{R: 111, G: 168, B: 220, A: &content},
-		BorderColor:  &proto.DOMRGBA{R: 79, G: 133, B: 214, A: &border},
-	}
-	return proto.OverlaySetInspectMode{Mode: proto.OverlayInspectModeSearchForNode, HighlightConfig: cfg}.Call(rp.page)
+	return inspectModeRequest(true).Call(rp.page)
 }
 
 func (rp *rodPage) Navigate(action string) error {

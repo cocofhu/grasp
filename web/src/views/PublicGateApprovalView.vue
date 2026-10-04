@@ -105,11 +105,13 @@ const emit = defineEmits<{
 const chatOnly = computed(() => !!props.embedToken)
 
 const live = createLiveStore()
-provide(LIVE_CARD_HOST, {
-  store: live.store,
-  get interactive() { return !!props.embedToken && canWriteLive.value },
-  command: (sid, cmd, variant) => emit('live-cmd', sid, cmd, variant),
-})
+if (props.embedToken) {
+  provide(LIVE_CARD_HOST, {
+    store: live.store,
+    get interactive() { return canWriteLive.value },
+    command: (sid, cmd, variant) => emit('live-cmd', sid, cmd, variant),
+  })
+}
 
 const POLL_MS = 2000
 const IDLE_POLL_MS = 10_000

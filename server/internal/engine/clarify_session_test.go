@@ -130,7 +130,9 @@ func TestClarifyReactReplyEnqueues(t *testing.T) {
 		t.Fatal("expected thinking after enqueue")
 	}
 	close(hold)
+	provider.mu.Lock()
 	provider.reactHold = nil
+	provider.mu.Unlock()
 	if err := eng.waitReviewReadyForTest(run.ID, "clarify", 5*time.Second); err != nil {
 		t.Fatalf("wait: %v", err)
 	}

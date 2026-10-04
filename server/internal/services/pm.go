@@ -92,11 +92,13 @@ const (
 	PmFailEmpty      = "empty"
 	PmFailUnknown    = "unknown"
 	PmFailStopped    = "stopped"
+	// PmFailInterrupted marks a turn cut off by a server restart.
+	PmFailInterrupted = "interrupted"
 )
 
 func validPmFailKind(kind string) bool {
 	switch kind {
-	case PmFailConnection, PmFailSandbox, PmFailEmpty, PmFailUnknown, PmFailStopped:
+	case PmFailConnection, PmFailSandbox, PmFailEmpty, PmFailUnknown, PmFailStopped, PmFailInterrupted:
 		return true
 	default:
 		return false

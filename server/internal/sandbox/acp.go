@@ -126,6 +126,14 @@ type ACPClient struct {
 	eventCh chan json.RawMessage
 	done    chan struct{}
 
+	// readers counts callers draining eventCh (handshake, turn, cancel wait).
+	// With none, frames are not queued: a parked client would otherwise fill
+	// the buffer with bridge broadcasts nobody reads.
+	readers atomic.Int32
+	// dropped counts frames lost to a full eventCh since the last warning.
+	dropped     atomic.Int64
+	lastDropLog atomic.Int64
+
 	// opIDTagged latches once any frame arrives with an opId: the bridge
 	// attributes frames to turns, so untagged event frames are not ours.
 	opIDTagged atomic.Bool
@@ -346,6 +354,8 @@ func (c *ACPClient) connectOnce(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("ws dial: %w", err)
 	}
+	release := c.acquireReader()
+	defer release()
 	c.mu.Lock()
 	c.conn = conn
 	c.done = make(chan struct{})
@@ -606,12 +616,39 @@ func (c *ACPClient) readLoop() {
 			return
 		}
 		c.observeQueueState(message)
+		if c.readers.Load() == 0 {
+			continue
+		}
 		select {
 		case c.eventCh <- json.RawMessage(message):
 		default:
-			c.lg.Warn().Msg("acp event channel full, dropping message")
+			c.noteDropped()
 		}
 	}
+}
+
+// acquireReader marks a caller as draining eventCh until release is called.
+func (c *ACPClient) acquireReader() (release func()) {
+	c.readers.Add(1)
+	var once sync.Once
+	return func() { once.Do(func() { c.readers.Add(-1) }) }
+}
+
+// dropLogEvery rate-limits the full-channel warning.
+const dropLogEvery = time.Minute
+
+func (c *ACPClient) noteDropped() {
+	n := c.dropped.Add(1)
+	now := time.Now().UnixNano()
+	last := c.lastDropLog.Load()
+	if last != 0 && time.Duration(now-last) < dropLogEvery {
+		return
+	}
+	if !c.lastDropLog.CompareAndSwap(last, now) {
+		return
+	}
+	c.dropped.Add(-n)
+	c.lg.Warn().Int64("dropped", n).Msg("acp event channel full, dropping messages")
 }
 
 func parseOpAndSession(raw json.RawMessage) (string, string) {

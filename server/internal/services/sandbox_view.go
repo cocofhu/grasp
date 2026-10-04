@@ -3,8 +3,10 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -210,6 +212,39 @@ func (s *SandboxService) GetView(ctx context.Context, id uint) (*SandboxView, er
 		}
 	}
 	return &v, nil
+}
+
+// WaitReady polls a sandbox until it runs, reporting each status (pulling,
+// creating, …) to onStatus. It fails on status error or when ctx ends.
+func (s *SandboxService) WaitReady(ctx context.Context, id uint, onStatus func(string)) error {
+	for {
+		row, err := s.Get(id)
+		if err != nil {
+			return err
+		}
+		v := s.view(ctx, row)
+		if onStatus != nil {
+			onStatus(v.Status)
+		}
+		switch v.Status {
+		case "running":
+			return nil
+		case "error":
+			if v.Error != "" {
+				return errors.New(v.Error)
+			}
+			return errors.New("sandbox error")
+		}
+		wait := time.Second
+		if v.Status == "pulling" {
+			wait = 2 * time.Second
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("sandbox not ready (%s): %w", v.Status, ctx.Err())
+		case <-time.After(wait):
+		}
+	}
 }
 
 var userVisibleEndpointKeys = map[string]struct{}{

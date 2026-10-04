@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,7 +9,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/cocofhu/grasp/internal/auth"
 	"github.com/cocofhu/grasp/internal/models"
@@ -481,64 +481,19 @@ func (h *Handlers) EnsurePmSandbox(c *gin.Context) {
 		writePmErr(c, err)
 		return
 	}
-	// Backfill agentName on legacy threads.
-	if thread.AgentName == "" && proj.PmLeaderAgent != "" {
-		thread.AgentName = proj.PmLeaderAgent
-		if err := h.Pm.SetThreadAgentName(tid, proj.PmLeaderAgent); err != nil {
-			log.Warn().Err(err).Str("thread", tid).Msg("backfill thread agent name failed")
-		}
-	}
+	h.backfillPmThreadAgent(&thread, proj.PmLeaderAgent)
 
-	var attached *models.AttachedContext
 	var body struct {
 		AttachedContext *models.AttachedContext `json:"attachedContext"`
 		InjectHistory   bool                    `json:"injectHistory"`
 	}
 	_ = c.ShouldBindJSON(&body)
-	attached = body.AttachedContext
 
-	binding, _ := h.Pm.GetBinding(projectID)
-	token := h.registerPmPlatformTokens(projectID, tid, user, proj.PmLeaderAgent, binding.EnabledMcps)
-	specs := append(
-		services.BuildAgentPlatformMCPSpecs(projectID, proj.PmLeaderAgent, token),
-		services.BuildPmRoleMCPSpecs(projectID, token, binding.EnabledMcps)...,
-	)
-	row, reused, err := h.Sbx.OpenAgentSandbox(c.Request.Context(), services.AgentSandboxOpenOpts{
-		Profile:       proj.PmLeaderAgent,
-		ProjectID:     projectID,
-		ThreadID:      tid,
-		SharedToken:   token,
-		PlatformSpecs: specs,
-		Reuse:         true,
-		RunIDPrefix:   "agent",
-	})
+	row, preamble, err := h.openPmSandbox(c.Request.Context(), projectID, tid, user, proj.PmLeaderAgent, body.AttachedContext, body.InjectHistory)
 	if err != nil {
-		h.unregisterPmPlatformTokens(token)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if reused {
-		h.unregisterPmPlatformTokens(token)
-		token = row.Token
-		h.restorePmPlatformTokens(projectID, tid, user, proj.PmLeaderAgent, token, binding.EnabledMcps)
-	}
-	if attached != nil {
-		h.PMMCP.SetAttached(token, attached)
-		if h.ContextMCP != nil {
-			h.ContextMCP.SetAttached(token, attached)
-		}
-	}
-	if err := h.Pm.BindSandbox(tid, row.ID); err != nil {
-		log.Warn().Err(err).Str("thread", tid).Uint("sandbox", row.ID).
-			Msg("pm bind sandbox failed")
-	}
-
-	// Build context preamble for the agent from persisted messages when requested.
-	preamble := ""
-	if body.InjectHistory {
-		preamble = h.buildPmPreamble(tid, attached)
-	}
-
 	view, err := h.Sbx.GetView(c.Request.Context(), row.ID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -555,11 +510,77 @@ func (h *Handlers) EnsurePmSandbox(c *gin.Context) {
 	})
 }
 
-// GetPmDraft handles GET /api/projects/:id/pm/threads/:tid/draft
-// Returns the streaming checkpoint (or null draft) plus whether a live turn is active.
-func (h *Handlers) GetPmDraft(c *gin.Context) {
-	if h.Pm == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
+func (h *Handlers) backfillPmThreadAgent(thread *models.ChatThread, agent string) {
+	if thread.AgentName != "" || agent == "" {
+		return
+	}
+	thread.AgentName = agent
+	if err := h.Pm.SetThreadAgentName(thread.ID, agent); err != nil {
+		log.Warn().Err(err).Str("thread", thread.ID).Msg("backfill thread agent name failed")
+	}
+}
+
+// openPmSandbox opens or reuses the thread-bound consult sandbox, wires its
+// platform MCP tokens and returns the history preamble when requested.
+func (h *Handlers) openPmSandbox(ctx context.Context, projectID, tid, user, agent string, attached *models.AttachedContext, injectHistory bool) (*models.Sandbox, string, error) {
+	binding, _ := h.Pm.GetBinding(projectID)
+	token := h.registerPmPlatformTokens(projectID, tid, user, agent, binding.EnabledMcps)
+	specs := append(
+		services.BuildAgentPlatformMCPSpecs(projectID, agent, token),
+		services.BuildPmRoleMCPSpecs(projectID, token, binding.EnabledMcps)...,
+	)
+	row, reused, err := h.Sbx.OpenAgentSandbox(ctx, services.AgentSandboxOpenOpts{
+		Profile:       agent,
+		ProjectID:     projectID,
+		ThreadID:      tid,
+		SharedToken:   token,
+		PlatformSpecs: specs,
+		Reuse:         true,
+		RunIDPrefix:   "agent",
+	})
+	if err != nil {
+		h.unregisterPmPlatformTokens(token)
+		return nil, "", err
+	}
+	if reused {
+		h.unregisterPmPlatformTokens(token)
+		token = row.Token
+		h.restorePmPlatformTokens(projectID, tid, user, agent, token, binding.EnabledMcps)
+	}
+	if attached != nil {
+		h.PMMCP.SetAttached(token, attached)
+		if h.ContextMCP != nil {
+			h.ContextMCP.SetAttached(token, attached)
+		}
+	}
+	if err := h.Pm.BindSandbox(tid, row.ID); err != nil {
+		log.Warn().Err(err).Str("thread", tid).Uint("sandbox", row.ID).
+			Msg("pm bind sandbox failed")
+	}
+	preamble := ""
+	if injectHistory {
+		preamble = h.buildPmPreamble(tid, attached)
+	}
+	return row, preamble, nil
+}
+
+// pmTurnPrompt prefixes the history preamble onto the user's question.
+func pmTurnPrompt(preamble, content string) string {
+	if strings.TrimSpace(content) == "" {
+		content = "（见附件）"
+	}
+	if preamble == "" {
+		return content
+	}
+	return preamble + "\n\n用户问题：" + content
+}
+
+// StartPmTurn handles POST /api/projects/:id/pm/threads/:tid/turns. It
+// persists the user message (or reuses retryOf) and queues the turn; the
+// server readies the sandbox and streams progress on the thread WebSocket.
+func (h *Handlers) StartPmTurn(c *gin.Context) {
+	if h.Pm == nil || h.PmTurns == nil || h.Sbx == nil || h.PMMCP == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm turn unavailable"})
 		return
 	}
 	user, ok := h.sessionUser(c)
@@ -567,69 +588,118 @@ func (h *Handlers) GetPmDraft(c *gin.Context) {
 		return
 	}
 	projectID, tid := c.Param("id"), c.Param("tid")
-	if _, err := h.Pm.GetThread(projectID, tid, user); err != nil {
-		writePmErr(c, err)
-		return
-	}
-	draft, err := h.Pm.GetDraft(tid)
+	proj, err := h.Pm.RequireEnabled(projectID)
 	if err != nil {
 		writePmErr(c, err)
 		return
 	}
-	live := false
-	if h.PmTurns != nil {
-		live = h.PmTurns.Active(tid)
+	thread, err := h.Pm.RequireWritableThread(projectID, tid, user)
+	if err != nil {
+		writePmErr(c, err)
+		return
 	}
-	// If an assistant final already exists for this user turn, prefer final over draft (s4).
-	var hasFinal bool
-	if draft != nil && draft.UserMsgID != "" {
-		var err error
-		hasFinal, err = h.Pm.HasAssistantAfter(tid, draft.UserMsgID)
+	var body struct {
+		Content         string                  `json:"content"`
+		Images          []models.PromptImage    `json:"images"`
+		RetryOf         string                  `json:"retryOf"`
+		AttachedContext *models.AttachedContext `json:"attachedContext"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var userMsg models.ChatMessage
+	if body.RetryOf != "" {
+		userMsg, err = h.Pm.GetMessage(tid, body.RetryOf)
 		if err != nil {
-			log.Warn().Err(err).Str("thread", tid).Msg("has assistant after draft check failed")
+			writePmErr(c, err)
+			return
 		}
-		if hasFinal {
-			if err := h.Pm.ClearDraft(tid); err != nil {
-				log.Warn().Err(err).Str("thread", tid).Msg("clear superseded draft failed")
-			}
-			draft = nil
+		if userMsg.Role != "user" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "retryOf must be a user message"})
+			return
 		}
-	}
-	// Stale streaming draft with no live in-process turn (e.g. process restart):
-	// reconcile to failed+connection so clients never mis-resume.
-	if draft != nil && draft.Status == services.PmDraftStreaming && !live {
-		if err := h.Pm.FailDraft(tid, services.PmFailConnection); err != nil {
-			log.Warn().Err(err).Str("thread", tid).Msg("fail stale streaming draft failed")
+	} else {
+		body.Content = strings.TrimSpace(body.Content)
+		if body.Content == "" && len(body.Images) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "content or images required"})
+			return
 		}
-		if draft.UserMsgID != "" {
-			if _, err := h.Pm.UpdateMessageFailure(tid, draft.UserMsgID, "failed", services.PmFailConnection); err != nil {
-				log.Warn().Err(err).Str("thread", tid).Msg("mark stale turn failed")
-			}
-		}
-		draft, err = h.Pm.GetDraft(tid)
+		userMsg, err = h.Pm.AppendMessage(tid, "user", body.Content, nil, body.AttachedContext, body.Images)
 		if err != nil {
 			writePmErr(c, err)
 			return
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"draft":    draft,
-		"live":     live,
-		"hasFinal": hasFinal,
+	h.backfillPmThreadAgent(&thread, proj.PmLeaderAgent)
+
+	agent := proj.PmLeaderAgent
+	attached := body.AttachedContext
+	content := userMsg.Content
+	waiting, err := h.PmTurns.Enqueue(tid, services.PmTurnRequest{
+		UserMsgID: userMsg.ID,
+		Text:      content,
+		Images:    userMsg.Images,
+		Prepare: func(ctx context.Context, setPhase func(string)) (uint, string, error) {
+			row, preamble, err := h.openPmSandbox(ctx, projectID, tid, user, agent, attached, true)
+			if err != nil {
+				return 0, "", err
+			}
+			if err := h.Sbx.WaitReady(ctx, row.ID, setPhase); err != nil {
+				return 0, "", err
+			}
+			return row.ID, pmTurnPrompt(preamble, content), nil
+		},
 	})
+	if err != nil {
+		if body.RetryOf == "" {
+			if _, ferr := h.Pm.UpdateMessageFailure(tid, userMsg.ID, "failed", services.PmFailUnknown); ferr != nil {
+				log.Warn().Err(ferr).Str("thread", tid).Msg("pm mark rejected turn failed")
+			}
+		}
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	if userMsg.Status == "failed" {
+		if m, err := h.Pm.UpdateMessageFailure(tid, userMsg.ID, "ok", ""); err == nil {
+			userMsg = m
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"message": userMsg, "waiting": waiting})
 }
 
-// PmThreadChat is the PM consult WebSocket. Turns run in PmTurnRunner (not bound to
-// this connection's request context). Client frames:
+// CancelPmTurn handles POST /api/projects/:id/pm/threads/:tid/turns/cancel:
+// stops the running turn and drops queued ones.
+func (h *Handlers) CancelPmTurn(c *gin.Context) {
+	if h.Pm == nil || h.PmTurns == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm turn unavailable"})
+		return
+	}
+	user, ok := h.sessionUser(c)
+	if !ok {
+		return
+	}
+	projectID, tid := c.Param("id"), c.Param("tid")
+	if _, err := h.Pm.RequireWritableThread(projectID, tid, user); err != nil {
+		writePmErr(c, err)
+		return
+	}
+	h.PmTurns.Cancel(tid)
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// PmThreadChat is the PM thread WebSocket. It only subscribes: the first frame
+// is a queue_state snapshot, then the active turn is replayed and live frames
+// follow:
 //
-//	{"type":"chat","content":"…","images":[…],"userMsgId":"…","sandboxId":N}
-//	{"type":"resume","afterSeq":N}  — catch-up then live subscribe
-//	{"type":"cancel"}
+//	{"type":"session","event":"queue_state|turn_begin|phase|turn_done|error",…}
+//	{"type":"acp","data":<raw ACP frame>}
 //
-// Server frames keep the SandboxChat shape: {"type":"acp","data":…,"seq":N},
-// {"type":"turn_done","seq":N}, {"type":"error","message":…,"failKind":…,"seq":N}.
+// Client frames: {"type":"cancel"}. Turns start via POST …/turns and keep
+// running when the socket drops.
 func (h *Handlers) PmThreadChat(c *gin.Context) {
-	if h.Pm == nil || h.PmTurns == nil || h.Sbx == nil {
+	if h.Pm == nil || h.PmTurns == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm turn unavailable"})
 		return
 	}
@@ -658,129 +728,37 @@ func (h *Handlers) PmThreadChat(c *gin.Context) {
 	}
 	defer func() { _ = conn.Close() }()
 
-	var wmu sync.Mutex
-	write := func(v any) error {
-		wmu.Lock()
-		defer wmu.Unlock()
-		return conn.WriteJSON(v)
-	}
+	ch, unsub, _ := h.PmTurns.Subscribe(tid, -1)
+	defer unsub()
 
-	var (
-		subMu  sync.Mutex
-		unsub  func()
-		stopCh chan struct{}
-	)
-	stopFanout := func() {
-		subMu.Lock()
-		defer subMu.Unlock()
-		if unsub != nil {
-			unsub()
-			unsub = nil
-		}
-		if stopCh != nil {
-			close(stopCh)
-			stopCh = nil
-		}
-	}
-	defer stopFanout()
-
-	startFanout := func(afterSeq int) {
-		stopFanout()
-		ch, u, ok := h.PmTurns.Subscribe(tid, afterSeq)
-		if !ok {
-			_ = write(gin.H{"type": "error", "message": "no active turn", "failKind": "connection"})
-			return
-		}
-		subMu.Lock()
-		unsub = u
-		stopCh = make(chan struct{})
-		localStop := stopCh
-		subMu.Unlock()
-
-		go func() {
-			for {
-				select {
-				case <-localStop:
-					return
-				case ev, open := <-ch:
-					if !open {
-						return
-					}
-					switch ev.Type {
-					case "acp":
-						_ = write(gin.H{"type": "acp", "data": ev.Data, "seq": ev.Seq})
-					case "turn_done":
-						_ = write(gin.H{"type": "turn_done", "seq": ev.Seq})
-					case "error":
-						_ = write(gin.H{"type": "error", "message": ev.Error, "failKind": ev.FailKind, "seq": ev.Seq})
-					}
-				}
+	writeDone := make(chan struct{})
+	go func() {
+		defer close(writeDone)
+		for ev := range ch {
+			if err := conn.WriteJSON(ev.Frame()); err != nil {
+				_ = conn.Close()
+				return
 			}
-		}()
-	}
-
-	// On reconnect with a live turn: only send resume_hint (absolute partial snapshot).
-	// Do NOT auto startFanout here — the client must send {type:resume,afterSeq}
-	// exactly once, otherwise overlapping subscriptions double-deliver ACP frames.
-	if h.PmTurns.Active(tid) {
-		if draft, _ := h.Pm.GetDraft(tid); draft != nil {
-			_ = write(gin.H{
-				"type":        "resume_hint",
-				"partialText": draft.PartialText,
-				"chunkIndex":  draft.ChunkIndex,
-				"eventSeq":    draft.EventSeq,
-				"userMsgId":   draft.UserMsgID,
-			})
 		}
-	}
+	}()
 
 	for {
 		_, data, rerr := conn.ReadMessage()
 		if rerr != nil {
-			return
+			break
 		}
 		var m struct {
-			Type      string               `json:"type"`
-			Content   string               `json:"content"`
-			Images    []models.PromptImage `json:"images"`
-			UserMsgID string               `json:"userMsgId"`
-			SandboxID uint                 `json:"sandboxId"`
-			AfterSeq  *int                 `json:"afterSeq"`
+			Type string `json:"type"`
 		}
 		if json.Unmarshal(data, &m) != nil {
 			continue
 		}
-		switch m.Type {
-		case "cancel":
+		if m.Type == "cancel" {
 			h.PmTurns.Cancel(tid)
-		case "resume":
-			after := -1
-			if m.AfterSeq != nil {
-				after = *m.AfterSeq
-			} else if draft, _ := h.Pm.GetDraft(tid); draft != nil {
-				after = draft.EventSeq
-			}
-			if !h.PmTurns.Active(tid) {
-				// Process restart: draft may exist but turn is gone — signal resume failure.
-				_ = write(gin.H{"type": "error", "message": "turn not running", "failKind": "connection"})
-				continue
-			}
-			startFanout(after)
-		case "chat", "":
-			if m.Content == "" && len(m.Images) == 0 {
-				continue
-			}
-			if m.UserMsgID == "" || m.SandboxID == 0 {
-				_ = write(gin.H{"type": "error", "message": "userMsgId and sandboxId required", "failKind": "unknown"})
-				continue
-			}
-			if err := h.PmTurns.Start(tid, m.UserMsgID, m.SandboxID, m.Content, m.Images); err != nil {
-				_ = write(gin.H{"type": "error", "message": err.Error(), "failKind": "unknown"})
-				continue
-			}
-			startFanout(-1)
 		}
 	}
+	unsub()
+	<-writeDone
 }
 
 func (h *Handlers) buildPmPreamble(threadID string, attached *models.AttachedContext) string {

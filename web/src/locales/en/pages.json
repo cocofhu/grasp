@@ -1051,6 +1051,8 @@
         "failUnknownDesc": "Processing was interrupted. Please retry. If it persists, check your connection.",
         "failStoppedTitle": "Stopped",
         "failStoppedDesc": "You stopped this turn. Partial stream text was discarded; you can retry.",
+        "failInterruptedTitle": "Interrupted by restart",
+        "failInterruptedDesc": "The server restarted while this reply was generating. Retry to run it again.",
         "openSource": "Open source",
         "citationMissing": "Citation target missing or inaccessible",
         "citationInvalid": "Invalid citation or target does not exist",
@@ -3186,7 +3188,16 @@
         "urlLabel": "url",
         "windowNotReady": "Window not ready for reliable picking. Wait until the preview window fills the desktop, then try again.",
         "describeFailed": "Could not identify that element. Please retry.",
+        "inspectOffFailed": "The page may still be in pick mode. Select Cancel annotation again or reload the preview.",
         "reconnect": "Reconnect",
+        "reconnectingAttempt": "Reconnecting (attempt {n}/{max})",
+        "closedReason": {
+          "idle": "Disconnected after a period of inactivity",
+          "desktop-closed": "The sandbox desktop was closed",
+          "superseded": "Opened in another window; not reconnecting here",
+          "evicted": "Too many preview connections; this one was dropped",
+          "disconnect": "Connection lost"
+        },
         "error": "noVNC preview connection failed",
         "connectingTitle": "Starting preview environment…",
         "connectingHint": "First launch takes ~30–60s (the browser must spin up inside the sandbox). Please wait.",
@@ -3197,6 +3208,7 @@
           "connecting": "Connecting…",
           "live": "Live",
           "closed": "Disconnected",
+          "reconnecting": "Reconnecting…",
           "error": "Error"
         }
       },

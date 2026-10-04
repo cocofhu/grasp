@@ -15,6 +15,7 @@ import (
 type vncRecPage struct {
 	inspect    *bool
 	inspectErr error
+	offErr     error
 	navs       []string
 	gotos      []string
 	url        string
@@ -28,6 +29,9 @@ func (p *vncRecPage) SetViewport(int, int, float64) error       { return nil }
 func (p *vncRecPage) SetInspect(on bool) error {
 	if p.inspectErr != nil && on {
 		return p.inspectErr
+	}
+	if p.offErr != nil && !on {
+		return p.offErr
 	}
 	p.inspect = &on
 	return nil
@@ -138,6 +142,38 @@ func TestApplyVncMsgIgnoresUnknown(t *testing.T) {
 	}
 }
 
+func TestApplyVncMsgPingIsNoop(t *testing.T) {
+	h := &Handlers{}
+	p := &vncRecPage{}
+	var pushed []any
+	h.applyVncMsg(p, decodeVnc(t, `{"type":"ping"}`), func(v any) { pushed = append(pushed, v) })
+	if p.inspect != nil || len(p.navs) != 0 || len(p.gotos) != 0 || len(pushed) != 0 {
+		t.Fatalf("ping should only mark activity: inspect=%v navs=%v gotos=%v pushed=%v", p.inspect, p.navs, p.gotos, pushed)
+	}
+}
+
+func TestVncToucherThrottles(t *testing.T) {
+	n := 0
+	now := time.Unix(1000, 0)
+	tc := newVncToucher(func() { n++ })
+	tc.now = func() time.Time { return now }
+
+	tc.mark()
+	if n != 1 {
+		t.Fatalf("first mark should touch, got %d", n)
+	}
+	now = now.Add(vncTouchEvery - time.Second)
+	tc.mark()
+	if n != 1 {
+		t.Fatalf("mark inside the window should be throttled, got %d", n)
+	}
+	now = now.Add(time.Second)
+	tc.mark()
+	if n != 2 {
+		t.Fatalf("mark after the window should touch again, got %d", n)
+	}
+}
+
 func TestApplyVncMsgGoto(t *testing.T) {
 	h := &Handlers{}
 	p := &vncRecPage{}
@@ -172,6 +208,19 @@ func TestApplyVncMsgInspectNotReadyPushes(t *testing.T) {
 	})
 	if len(pushed) != 1 {
 		t.Fatalf("on:false should not push not-ready: %v", pushed)
+	}
+}
+
+func TestApplyVncMsgInspectOffFailurePushes(t *testing.T) {
+	h := &Handlers{}
+	p := &vncRecPage{offErr: errors.New("highlight configuration parameter is missing")}
+	var pushed []string
+	h.applyVncMsg(p, decodeVnc(t, `{"type":"inspect","on":false}`), func(v any) {
+		b, _ := json.Marshal(v)
+		pushed = append(pushed, string(b))
+	})
+	if len(pushed) != 1 || pushed[0] != `{"type":"inspect-off-failed"}` {
+		t.Fatalf("want inspect-off-failed push, got %v", pushed)
 	}
 }
 
