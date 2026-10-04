@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   activeFilterCount,
   applyDrill,
+  boardQueryFromFilters,
   bucketDateRange,
   defaultTokenStatsFilters,
   filtersToParams,
@@ -10,7 +11,7 @@ import {
   isDrillable,
   toCsv,
 } from './tokenAnalyticsShared'
-import { cacheHitRatio, drillFromChartEvent, trendChartOption } from './tokenAnalyticsCharts'
+import { cacheHitRatio, drillFromChartEvent, listDrillBreakdowns, trendChartOption } from './tokenAnalyticsCharts'
 import type { GlobalTokenStats } from '@/lib/shared/types'
 
 const t = (k: string) => k
@@ -41,6 +42,7 @@ describe('tokenAnalyticsShared', () => {
       to: '2026-07-02',
       granularity: 'hour',
     })
+    expect(applyDrill(base, [{ dim: 'phase', key: 'chat', name: 'Chat' }]).phase).toBe('chat')
     expect(base.projectId).toBe('')
   })
 
@@ -56,6 +58,17 @@ describe('tokenAnalyticsShared', () => {
     expect(isDrillable({ dim: 'project', key: '', name: '' })).toBe(false)
     expect(isDrillable({ dim: 'bucket', key: 'W30', name: '' })).toBe(false)
     expect(isDrillable({ dim: 'model', key: 'm', name: 'm' })).toBe(true)
+  })
+
+  it('carries the current window onto the project board (g3.4)', () => {
+    expect(boardQueryFromFilters(defaultTokenStatsFilters())).toEqual({ tab: 'board', window: 'all' })
+    expect(boardQueryFromFilters({ ...defaultTokenStatsFilters(), window: 'custom', from: '2026-07-01', to: '2026-07-03', granularity: 'day' })).toEqual({
+      tab: 'board',
+      window: 'custom',
+      from: '2026-07-01',
+      to: '2026-07-03',
+      granularity: 'day',
+    })
   })
 
   it('formats cost and CSV', () => {
@@ -102,6 +115,53 @@ describe('tokenAnalyticsCharts', () => {
   it('computes cache hit ratio over all input-side tokens', () => {
     expect(cacheHitRatio({ inputTokens: 6, cacheReadTokens: 2, cacheWriteTokens: 0 })).toBe(0.25)
     expect(cacheHitRatio({})).toBe(0)
+  })
+
+  it('hides locked drill dimensions and single-bucket axes (g3.3 g4.2)', () => {
+    const rich = {
+      ...stats,
+      projects: [
+        { projectId: 'p1', name: 'P1', total: 10, inputTokens: 6, outputTokens: 4 },
+        { projectId: 'p2', name: 'P2', total: 4, inputTokens: 2, outputTokens: 2 },
+      ],
+      modelRanking: [
+        { modelKey: 'a', name: 'A', total: 8, inputTokens: 5, outputTokens: 3 },
+        { modelKey: 'b', name: 'B', total: 6, inputTokens: 3, outputTokens: 3 },
+      ],
+      workflows: [],
+      nodeTypes: [{ key: 'agent', name: 'agent', total: 10, inputTokens: 6, outputTokens: 4 }],
+      sources: [
+        { key: 'workflow', name: 'workflow', total: 9, inputTokens: 5, outputTokens: 4 },
+        { key: 'studio', name: 'studio', total: 5, inputTokens: 3, outputTokens: 2 },
+      ],
+      statuses: [
+        { key: 'ok', name: 'ok', total: 8, inputTokens: 4, outputTokens: 4 },
+        { key: 'failed', name: 'failed', total: 6, inputTokens: 4, outputTokens: 2 },
+      ],
+      phases: [
+        { key: 'production', name: 'production', total: 7, inputTokens: 4, outputTokens: 3 },
+        { key: 'chat', name: 'chat', total: 7, inputTokens: 4, outputTokens: 3 },
+      ],
+      topRuns: [
+        { runId: 'r1', title: 'R1', total: 6, inputTokens: 4, outputTokens: 2 },
+        { runId: 'r2', title: 'R2', total: 4, inputTokens: 2, outputTokens: 2 },
+      ],
+    } as unknown as GlobalTokenStats
+    const openBreakdowns = listDrillBreakdowns(rich, {}, t)
+    const open = openBreakdowns.map((b) => b.id)
+    expect(open).toEqual(expect.arrayContaining(['project', 'source', 'model', 'status', 'phase', 'run']))
+    expect(open).not.toContain('nodeType')
+    const phaseRows = openBreakdowns.find((b) => b.id === 'phase')?.rows ?? []
+    expect(phaseRows.map((r) => r.drill)).toEqual([
+      { dim: 'phase', key: 'production', name: 'pages.tokenAnalytics.phases.production' },
+      { dim: 'phase', key: 'chat', name: 'pages.tokenAnalytics.phases.chat' },
+    ])
+    const locked = listDrillBreakdowns(rich, { projectId: 'p1', source: 'workflow', status: 'ok', runId: 'r1' }, t).map((b) => b.id)
+    for (const id of ['project', 'source', 'status', 'run']) expect(locked).not.toContain(id)
+    expect(locked).toEqual(expect.arrayContaining(['model', 'phase']))
+    const phaseLocked = listDrillBreakdowns(rich, { phase: 'chat' }, t).map((b) => b.id)
+    expect(phaseLocked).not.toContain('phase')
+    expect(phaseLocked).toEqual(expect.arrayContaining(['source', 'status']))
   })
 
   it('extracts drill paths from chart click events', () => {

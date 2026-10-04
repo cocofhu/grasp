@@ -82,6 +82,9 @@
         "workflow": "工作流",
         "model": "模型",
         "nodeType": "节点类型",
+        "source": "来源",
+        "status": "状态",
+        "phase": "阶段",
         "run": "运行"
       },
       "charts": {
@@ -94,7 +97,11 @@
           "project": "各项目用量堆叠对比",
           "workflow": "各工作流用量堆叠对比",
           "model": "各模型用量堆叠对比",
-          "nodeType": "各节点类型用量堆叠对比"
+          "nodeType": "各节点类型用量堆叠对比",
+          "source": "各来源用量堆叠对比",
+          "status": "各状态用量堆叠对比",
+          "phase": "各阶段用量堆叠对比",
+          "run": "各运行用量堆叠对比"
         },
         "area": "堆叠面积",
         "areaHint": "按时间查看来源、输入/输出/缓存或成功/失败",
@@ -139,6 +146,7 @@
       "workflowAll": "工作流：全部",
       "nodeTypeAll": "节点类型：全部",
       "statusAll": "状态：全部",
+      "phaseAll": "阶段：全部",
       "statuses": {
         "ok": "成功",
         "failed": "失败",
@@ -193,6 +201,7 @@
           "nodeType": "节点类型",
           "source": "来源",
           "status": "状态",
+          "phase": "阶段",
           "run": "运行",
           "bucket": "时间"
         },

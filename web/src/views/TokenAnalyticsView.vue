@@ -27,6 +27,7 @@ import {
   TOKEN_LEDGER_SOURCE_COLORS,
   TOKEN_LEDGER_STATUS_COLORS,
   activeFilterCount,
+  boardQueryFromFilters,
   defaultTokenStatsFilters,
   downloadCsv,
   filtersToParams,
@@ -74,10 +75,11 @@ const SOURCES: TokenSourceFilter[] = ['all', 'workflow', 'pm', 'studio']
 const filters = ref<TokenStatsFilters>(defaultTokenStatsFilters())
 const lineMode = ref<TrendMode>('total')
 const areaMode = ref<AreaMode>('source')
-type BarDimension = 'project' | 'workflow' | 'model' | 'nodeType'
-const BAR_DIMENSIONS: BarDimension[] = ['project', 'workflow', 'model', 'nodeType']
+type BarDimension = 'project' | 'workflow' | 'model' | 'nodeType' | 'source' | 'status' | 'phase' | 'run'
+const BAR_DIMENSIONS: BarDimension[] = ['project', 'workflow', 'model', 'nodeType', 'source', 'status', 'phase', 'run']
 const barDimension = ref<BarDimension>('project')
-type CostDimension = 'model' | 'project' | 'workflow'
+type CostDimension = 'model' | 'project' | 'workflow' | 'source' | 'nodeType' | 'status' | 'phase'
+const COST_DIMENSIONS: CostDimension[] = ['model', 'project', 'workflow', 'source', 'nodeType', 'status', 'phase']
 const costDimension = ref<CostDimension>('model')
 const loading = ref(true)
 const failed = ref(false)
@@ -149,7 +151,7 @@ function namedSlices(
   rows: GlobalTokenStatsNamedBucket[] | undefined,
   label: (k: string) => string,
   colors: Record<string, string>,
-  dim: 'source' | 'status' | null,
+  dim: 'source' | 'status' | 'phase' | null,
 ): DrillPieSlice[] {
   return (rows ?? []).filter((r) => r.total > 0).map((r, i) => {
     const key = r.key || r.name
@@ -211,7 +213,7 @@ const pieSlices = computed(() => {
       drill: w.workflowId ? { dim: 'workflow' as const, key: w.workflowId, name: w.name } : undefined,
     })),
     status: namedSlices(d.statuses, (k) => statusLabel(t, k), TOKEN_LEDGER_STATUS_COLORS, 'status'),
-    phase: namedSlices(d.phases, (k) => phaseLabel(t, k), TOKEN_LEDGER_PHASE_COLORS, null),
+    phase: namedSlices(d.phases, (k) => phaseLabel(t, k), TOKEN_LEDGER_PHASE_COLORS, 'phase'),
   }
 })
 
@@ -251,6 +253,23 @@ function workflowDrill(w: TokenStatsWorkflow): DrillTarget | undefined {
   return w.workflowId ? { dim: 'workflow', key: w.workflowId, name: w.name } : undefined
 }
 
+function namedBarRows(
+  rows: GlobalTokenStatsNamedBucket[] | undefined,
+  label: (key: string) => string,
+  dim: DrillTarget['dim'] | null,
+): StackedBarRow[] {
+  return (rows ?? []).filter((r) => r.total > 0).map((r) => {
+    const key = r.key || r.name
+    const name = label(key)
+    return {
+      name,
+      ...partsOf(r),
+      other: !!r.other,
+      drill: dim && key && !r.other ? { dim, key, name } : undefined,
+    }
+  })
+}
+
 function normalizeBarRows(dimension: BarDimension): StackedBarRow[] {
   const d = data.value
   if (!d) return []
@@ -273,27 +292,36 @@ function normalizeBarRows(dimension: BarDimension): StackedBarRow[] {
       drill: m.modelKey && !m.other ? { dim: 'model', key: m.modelKey, name: m.name } : undefined,
     }))
   }
-  return d.nodeTypes.map((n) => ({
-    name: n.name,
-    ...partsOf(n),
-    other: !!n.other,
-    drill: n.key && n.key !== 'unknown' && !n.other ? { dim: 'nodeType', key: n.key, name: n.name } : undefined,
+  if (dimension === 'nodeType') {
+    return d.nodeTypes.map((n) => ({
+      name: n.name,
+      ...partsOf(n),
+      other: !!n.other,
+      drill: n.key && n.key !== 'unknown' && !n.other ? { dim: 'nodeType', key: n.key, name: n.name } : undefined,
+    }))
+  }
+  if (dimension === 'source') return namedBarRows(d.sources, (k) => sourceLabel(t, k), 'source')
+  if (dimension === 'status') return namedBarRows(d.statuses, (k) => statusLabel(t, k), 'status')
+  if (dimension === 'phase') return namedBarRows(d.phases, (k) => phaseLabel(t, k), 'phase')
+  return (d.topRuns ?? []).slice(0, 10).map((r) => ({
+    name: r.title || r.runId,
+    ...partsOf(r),
+    other: false,
+    drill: r.runId ? { dim: 'run' as const, key: r.runId, name: r.title || r.runId } : undefined,
   }))
 }
 
-const barRowsByDimension = computed<Record<BarDimension, StackedBarRow[]>>(() => ({
-  project: normalizeBarRows('project'),
-  workflow: normalizeBarRows('workflow'),
-  model: normalizeBarRows('model'),
-  nodeType: normalizeBarRows('nodeType'),
-}))
+const barRowsByDimension = computed(() => {
+  const out = {} as Record<BarDimension, StackedBarRow[]>
+  for (const dim of BAR_DIMENSIONS) out[dim] = normalizeBarRows(dim)
+  return out
+})
 
-const barDimensionEnabled = computed<Record<BarDimension, boolean>>(() => ({
-  project: barRowsByDimension.value.project.length >= 2,
-  workflow: barRowsByDimension.value.workflow.length >= 2,
-  model: barRowsByDimension.value.model.length >= 2,
-  nodeType: barRowsByDimension.value.nodeType.length >= 2,
-}))
+const barDimensionEnabled = computed(() => {
+  const out = {} as Record<BarDimension, boolean>
+  for (const dim of BAR_DIMENSIONS) out[dim] = barRowsByDimension.value[dim].length >= 2
+  return out
+})
 
 const hasComparableBarDimension = computed(() => BAR_DIMENSIONS.some((dim) => barDimensionEnabled.value[dim]))
 
@@ -310,28 +338,67 @@ function selectBarDimension(dimension: string) {
 
 const barOption = computed(() => stackedBarOption(barRowsByDimension.value[barDimension.value], t))
 
-const costRows = computed<CostBarRow[]>(() => {
+function namedCostRows(
+  rows: GlobalTokenStatsNamedBucket[] | undefined,
+  label: (key: string) => string,
+  dim: DrillTarget['dim'] | null,
+): CostBarRow[] {
+  return (rows ?? []).filter((r) => (r.cost || 0) > 0).map((r) => {
+    const key = r.key || r.name
+    const name = label(key)
+    return {
+      name,
+      cost: r.cost || 0,
+      total: r.total,
+      drill: dim && key && !r.other ? { dim, key, name } : undefined,
+    }
+  })
+}
+
+function costRowsFor(dim: CostDimension): CostBarRow[] {
   const d = data.value
   if (!d) return []
-  if (costDimension.value === 'model') {
-    return d.modelRanking.filter((m) => !m.other).map((m) => ({
+  if (dim === 'model') {
+    return d.modelRanking.filter((m) => !m.other && (m.cost || 0) > 0).map((m) => ({
       name: m.name,
       cost: m.cost || 0,
       total: m.total,
-      drill: m.modelKey ? { dim: 'model', key: m.modelKey, name: m.name } : undefined,
+      drill: m.modelKey ? { dim: 'model' as const, key: m.modelKey, name: m.name } : undefined,
     }))
   }
-  if (costDimension.value === 'project') {
-    return d.projects.map((p) => ({
+  if (dim === 'project') {
+    return d.projects.filter((p) => (p.cost || 0) > 0).map((p) => ({
       name: p.name,
       cost: p.cost || 0,
       total: p.total,
-      drill: p.projectId ? { dim: 'project', key: p.projectId, name: p.name } : undefined,
+      drill: p.projectId ? { dim: 'project' as const, key: p.projectId, name: p.name } : undefined,
     }))
   }
-  return d.workflows.filter((w) => !w.other).map((w) => ({ name: w.name, cost: w.cost || 0, total: w.total, drill: workflowDrill(w) }))
+  if (dim === 'workflow') {
+    return d.workflows.filter((w) => !w.other && (w.cost || 0) > 0).map((w) => ({ name: w.name, cost: w.cost || 0, total: w.total, drill: workflowDrill(w) }))
+  }
+  if (dim === 'source') return namedCostRows(d.sources, (k) => sourceLabel(t, k), 'source')
+  if (dim === 'nodeType') return namedCostRows(d.nodeTypes, (k) => k, 'nodeType')
+  if (dim === 'status') return namedCostRows(d.statuses, (k) => statusLabel(t, k), 'status')
+  return namedCostRows(d.phases, (k) => phaseLabel(t, k), 'phase')
+}
+
+const costDimensionEnabled = computed(() => {
+  const out = {} as Record<CostDimension, boolean>
+  for (const dim of COST_DIMENSIONS) out[dim] = costRowsFor(dim).length > 0
+  return out
 })
-const costOption = computed(() => (kpiCostPriced.value ? costBarOption(costRows.value, currency.value, t) : null))
+
+function reconcileCostDimension() {
+  if (costDimensionEnabled.value[costDimension.value]) return
+  const fallback = COST_DIMENSIONS.find((dim) => costDimensionEnabled.value[dim])
+  if (fallback) costDimension.value = fallback
+}
+
+const costOption = computed(() => {
+  if (!costDimensionEnabled.value[costDimension.value]) return null
+  return costBarOption(costRowsFor(costDimension.value), currency.value, t)
+})
 
 // ---------- Trend / area / heat / tree ----------
 
@@ -358,8 +425,18 @@ const barModes = computed(() =>
   })),
 )
 const costModes = computed(() =>
-  (['model', 'project', 'workflow'] as const).map((dim) => ({ id: dim, label: t(`pages.tokenAnalytics.barDimensions.${dim}`) })),
+  COST_DIMENSIONS.map((dim) => ({
+    id: dim,
+    label: t(`pages.tokenAnalytics.barDimensions.${dim}`),
+    disabled: !costDimensionEnabled.value[dim],
+    testId: `token-analytics-cost-dimension-${dim}`,
+  })),
 )
+
+function selectCostDimension(dimension: string) {
+  const dim = dimension as CostDimension
+  if (costDimensionEnabled.value[dim]) costDimension.value = dim
+}
 
 // ---------- Load ----------
 
@@ -374,6 +451,7 @@ async function load() {
     if (gen !== generation) return
     data.value = res
     reconcileBarDimension()
+    reconcileCostDimension()
     if (lineMode.value === 'cost' && !(res.kpi.cost || 0) && !res.kpi.cacheReadTokens) lineMode.value = 'total'
     failed.value = false
   } catch (e: unknown) {
@@ -410,7 +488,8 @@ function onDrillApply(next: TokenStatsFilters) {
 }
 
 function goBoard(projectId: string) {
-  void router.push({ path: `/projects/${projectId}`, query: { tab: 'board' } })
+  // plan coverage: g3.4 — carry the current window (all / custom from-to) onto the board
+  void router.push({ path: `/projects/${projectId}`, query: boardQueryFromFilters(filters.value) })
 }
 
 function goRun(runId: string) {
@@ -691,6 +770,15 @@ watch(() => JSON.stringify(filters.value), () => void load())
           <option value="">{{ t('pages.tokenAnalytics.statusAll') }}</option>
           <option v-for="s in (['ok', 'failed', 'cancelled'] as const)" :key="s" :value="s">{{ statusLabel(t, s) }}</option>
         </select>
+        <select
+          :value="filters.phase"
+          class="rounded border border-line bg-surface px-2 py-1.5 text-xs text-txt2"
+          data-testid="token-analytics-filter-phase"
+          @change="setFilter('phase', ($event.target as HTMLSelectElement).value as TokenStatsFilters['phase'])"
+        >
+          <option value="">{{ t('pages.tokenAnalytics.phaseAll') }}</option>
+          <option v-for="p in (['production', 'interactive', 'chat'] as const)" :key="p" :value="p">{{ phaseLabel(t, p) }}</option>
+        </select>
         <span
           v-if="filters.runId"
           class="chip flex items-center gap-1 border border-accent/40 bg-accent-dim px-2.5 py-1.5 text-xs text-accent-2"
@@ -906,7 +994,7 @@ watch(() => JSON.stringify(filters.value), () => void load())
             :hint="t('pages.tokenAnalytics.charts.costRankHint')"
             :modes="costModes"
             :mode="costDimension"
-            @update:mode="costDimension = $event as CostDimension"
+            @update:mode="selectCostDimension"
           >
             <div class="token-analytics-plot mt-2 h-[240px] overflow-visible" data-testid="token-analytics-plot-cost">
               <VChart :option="costOption" autoresize class="h-full w-full" @click="onChartClick" />

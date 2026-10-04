@@ -14,6 +14,7 @@ import {
   TOKEN_LEDGER_SOURCE_COLORS,
   TOKEN_LEDGER_STATUS_COLORS,
   applyDrill,
+  boardQueryFromFilters,
   downloadCsv,
   filtersToParams,
   fmtCost,
@@ -28,12 +29,12 @@ import {
   bucketPart,
   drillFromChartEvent,
   drillPieOption,
+  listDrillBreakdowns,
   partLabel,
   sourceLabel,
   stackedBarOption,
   statusLabel,
   trendChartOption,
-  type StackedBarRow,
 } from './tokenAnalyticsCharts'
 import TokenEventsTable from './TokenEventsTable.vue'
 
@@ -242,70 +243,12 @@ const statusOption = computed(() => {
   )
 })
 
-function partsRow(r: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number }) {
-  return {
-    input: r.inputTokens || 0,
-    output: r.outputTokens || 0,
-    cacheRead: r.cacheReadTokens || 0,
-    cacheWrite: r.cacheWriteTokens || 0,
-  }
-}
-
-type Breakdown = { id: string; title: string; option: ReturnType<typeof stackedBarOption> }
-
-const breakdowns = computed<Breakdown[]>(() => {
+const breakdowns = computed(() => {
   const s = stats.value
   if (!s) return []
-  const f = filters.value
-  const out: Breakdown[] = []
-  if (!f.projectId) {
-    const rows: StackedBarRow[] = s.projects.slice(0, 10).map((p) => ({
-      name: p.name,
-      ...partsRow(p),
-      other: false,
-      drill: p.projectId ? { dim: 'project', key: p.projectId, name: p.name } : undefined,
-    }))
-    out.push({ id: 'project', title: t('pages.tokenAnalytics.barDimensions.project'), option: stackedBarOption(rows, t) })
-  }
-  if (!f.modelKey) {
-    const rows: StackedBarRow[] = s.modelRanking.slice(0, 10).map((m) => ({
-      name: m.name,
-      ...partsRow(m),
-      other: !!m.other,
-      drill: m.modelKey && !m.other ? { dim: 'model', key: m.modelKey, name: m.name } : undefined,
-    }))
-    out.push({ id: 'model', title: t('pages.tokenAnalytics.barDimensions.model'), option: stackedBarOption(rows, t) })
-  }
-  if (!f.workflowId && !f.runId) {
-    const rows: StackedBarRow[] = s.workflows.slice(0, 10).map((w) => ({
-      name: w.name,
-      ...partsRow(w),
-      other: !!w.other,
-      drill: w.kind === 'pm'
-        ? { dim: 'source', key: 'pm', name: sourceLabel(t, 'pm') }
-        : w.workflowId && !w.other ? { dim: 'workflow', key: w.workflowId, name: w.name } : undefined,
-    }))
-    out.push({ id: 'workflow', title: t('pages.tokenAnalytics.barDimensions.workflow'), option: stackedBarOption(rows, t) })
-  }
-  if (!f.nodeType) {
-    const rows: StackedBarRow[] = s.nodeTypes.slice(0, 10).map((n) => ({
-      name: n.name,
-      ...partsRow(n),
-      other: !!n.other,
-      drill: n.key && n.key !== 'unknown' && !n.other ? { dim: 'nodeType', key: n.key, name: n.name } : undefined,
-    }))
-    out.push({ id: 'nodeType', title: t('pages.tokenAnalytics.barDimensions.nodeType'), option: stackedBarOption(rows, t) })
-  }
-  if (!f.runId) {
-    const rows: StackedBarRow[] = s.topRuns.slice(0, 10).map((r) => ({
-      name: r.title || r.runId,
-      ...partsRow(r),
-      other: false,
-      drill: { dim: 'run', key: r.runId, name: r.title || r.runId },
-    }))
-    out.push({ id: 'run', title: t('pages.tokenAnalytics.barDimensions.run'), option: stackedBarOption(rows, t) })
-  }
-  return out.filter((b) => b.option)
+  return listDrillBreakdowns(s, filters.value, t)
+    .map((b) => ({ id: b.id, title: b.title, option: stackedBarOption(b.rows, t) }))
+    .filter((b) => b.option)
 })
 
 const tabs = computed(() => [
@@ -347,7 +290,8 @@ function openProject() {
   const s = current.value
   if (s?.dim !== 'project') return
   emit('close')
-  void router.push({ path: `/projects/${s.key}`, query: { tab: 'board' } })
+  // plan coverage: g3.4 — drill-down keeps the page time range when opening the board
+  void router.push({ path: `/projects/${s.key}`, query: boardQueryFromFilters(filters.value) })
 }
 </script>
 
@@ -431,7 +375,7 @@ function openProject() {
         </template>
 
         <div v-else-if="tab === 'breakdown'" class="grid grid-cols-1 gap-2.5 lg:grid-cols-2" data-testid="token-drill-breakdowns">
-          <div v-for="b in breakdowns" :key="b.id" class="rounded-lg border border-line/70 p-2">
+          <div v-for="b in breakdowns" :key="b.id" class="rounded-lg border border-line/70 p-2" :data-testid="`token-drill-breakdown-${b.id}`">
             <p class="m-0 text-xs font-semibold">{{ b.title }}</p>
             <div class="h-[200px] overflow-visible">
               <VChart :option="b.option!" autoresize class="h-full w-full" @click="onChartClick" />

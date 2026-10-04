@@ -1,4 +1,5 @@
 import type {
+  GlobalTokenStats,
   Project,
   ProjectAuditEvent,
   ProjectAuditFacets,
@@ -221,23 +222,45 @@ export const projectsClient = {
     return `${origin()}/api/projects/${encodeURIComponent(id)}/audit/export?${q}`
   },
 
-  /** Board Token stats: trend / composition / workflows Top10+other. */
+  /**
+   * Board Token stats. Same query and payload as usage stats, with the path
+   * project locked server-side. Default window stays 30d.
+   * plan coverage: g1.1
+   */
   getProjectTokenStats: (
     id: string,
     params: {
       window?: TokenStatsWindow | string
+      from?: string
+      to?: string
+      granularity?: 'hour' | 'day' | 'week' | string
       timezone?: string
       utcOffsetMinutes?: number
+      source?: 'all' | 'workflow' | 'pm' | 'studio' | string
+      status?: 'ok' | 'failed' | 'cancelled' | string
+      phase?: 'production' | 'interactive' | 'chat' | string
+      modelKey?: string
+      workflowId?: string
+      nodeType?: string
     },
     opts?: { signal?: AbortSignal },
   ) => {
     const q = new URLSearchParams()
     q.set('window', params.window || '30d')
+    if (params.from) q.set('from', params.from)
+    if (params.to) q.set('to', params.to)
+    if (params.granularity) q.set('granularity', params.granularity)
     if (params.timezone) q.set('timezone', params.timezone)
     if (params.utcOffsetMinutes != null && Number.isFinite(params.utcOffsetMinutes)) {
       q.set('utcOffsetMinutes', String(Math.round(params.utcOffsetMinutes)))
     }
-    return req<ProjectTokenStats>(
+    if (params.source) q.set('source', params.source)
+    if (params.status) q.set('status', params.status)
+    if (params.phase) q.set('phase', params.phase)
+    if (params.modelKey) q.set('modelKey', params.modelKey)
+    if (params.workflowId) q.set('workflowId', params.workflowId)
+    if (params.nodeType) q.set('nodeType', params.nodeType)
+    return req<ProjectTokenStats & Partial<GlobalTokenStats>>(
       `/projects/${encodeURIComponent(id)}/token-stats?${q}`,
       opts?.signal ? { signal: opts.signal } : undefined,
     )

@@ -444,7 +444,88 @@ describe('Token charts (g2.3/g2.4)', () => {
     expect(pmDs!.borderDash).toEqual([5, 4])
     expect(wfDs!.borderDash).toBeUndefined()
     expect(String(pmDs!.backgroundColor)).not.toMatch(/245,\s*158,\s*11/)
+    const pmSeries = (wrapper.vm as unknown as { chartOption: TrendOption }).chartOption.series?.find(
+      (s) => s.name === '项目管理',
+    )
+    expect(pmSeries?.symbolSize).toBe(7)
+    expect(pmSeries?.clip).toBe(false)
     wrapper.unmount()
+  })
+
+  it('stacks workflow, PM, and Agent Studio and drops an all-zero source (review v1)', () => {
+    const mixed = mount(TokenTrendChart, {
+      props: {
+        bucketWidth: 'day',
+        trend: [
+          {
+            bucket: '2026-07-24',
+            total: 180,
+            workflowTotal: 100,
+            pmTotal: 20,
+            studioTotal: 60,
+            inputTokens: 80,
+            outputTokens: 50,
+            cacheReadTokens: 30,
+            cacheWriteTokens: 20,
+          },
+          {
+            bucket: '2026-07-25',
+            total: 40,
+            workflowTotal: 0,
+            pmTotal: 10,
+            studioTotal: 30,
+            inputTokens: 20,
+            outputTokens: 10,
+            cacheReadTokens: 10,
+            cacheWriteTokens: 0,
+          },
+        ],
+      },
+      global: { plugins: [i18n()] },
+    })
+    const mixedExposed = mixed.vm as unknown as {
+      chartData: { datasets: { label: string; data: number[] }[] }
+      chartOption: TrendOption
+    }
+    expect(mixedExposed.chartData.datasets.map((d) => d.label)).toEqual(['workflow', 'pm', 'studio'])
+    expect(mixedExposed.chartOption.series?.map((s) => s.name)).toEqual(['工作流', '项目管理', 'Agent Studio'])
+    for (const [i, bucketTotal] of [180, 40].entries()) {
+      const sum = mixedExposed.chartData.datasets.reduce((s, d) => s + (d.data[i] || 0), 0)
+      expect(sum).toBe(bucketTotal)
+    }
+    mixed.unmount()
+
+    const studioOnly = mount(TokenTrendChart, {
+      props: {
+        bucketWidth: 'day',
+        trend: [
+          {
+            bucket: '2026-07-24',
+            total: 60,
+            workflowTotal: 0,
+            pmTotal: 0,
+            studioTotal: 60,
+            inputTokens: 20,
+            outputTokens: 20,
+            cacheReadTokens: 20,
+            cacheWriteTokens: 0,
+          },
+        ],
+      },
+      global: { plugins: [i18n()] },
+    })
+    const studioExposed = studioOnly.vm as unknown as {
+      chartData: { datasets: { label: string; data: number[] }[] }
+      chartOption: TrendOption
+    }
+    expect(studioExposed.chartData.datasets.map((d) => d.label)).toEqual(['studio'])
+    expect(studioExposed.chartData.datasets[0]?.data).toEqual([60])
+    expect(studioExposed.chartOption.series?.map((s) => s.name)).toEqual(['Agent Studio'])
+    const html = studioExposed.chartOption.tooltip!.formatter!({ dataIndex: 0 })
+    expect(html).toMatch(/data-tip-row="studio"/)
+    expect(html).not.toMatch(/data-tip-row="workflow"/)
+    expect(html).not.toMatch(/data-tip-row="pm"/)
+    studioOnly.unmount()
   })
 })
 
@@ -542,8 +623,8 @@ describe('TokenTrendChart tooltip / theme chrome (g2.3/g2.4)', () => {
     expect(darkOpt.tooltip?.triggerOn).toBe('mousemove')
     expect(darkOpt.tooltip?.axisPointer?.snap).toBe(true)
     expect(typeof darkOpt.tooltip?.position).toBe('function')
-    expect(darkOpt.series?.[1]?.symbolSize).toBe(7)
-    expect(darkOpt.series?.[0]?.clip).toBe(false)
+    // An all-zero window draws no source line (workflow / PM / Studio).
+    expect(darkOpt.series).toEqual([])
     darkWrap.unmount()
 
     setTheme('light')

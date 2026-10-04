@@ -28,6 +28,15 @@ func waitFirstHumanTurn(t *testing.T, db *gorm.DB, runID, nodeID string) models.
 	return models.ReactMessage{}
 }
 
+func hasHumanTurn(msgs []models.ReactMessage) bool {
+	for _, m := range msgs {
+		if m.Role == "human" {
+			return true
+		}
+	}
+	return false
+}
+
 // The launcher's opening message is delivered by the engine once the approve
 // node parks — no client-side park polling / follow-up reply.
 func TestApproveFirstMessageDeliveredOnPark(t *testing.T) {
@@ -153,13 +162,20 @@ func TestApproveFirstMessageRedeliveredAfterCancelResume(t *testing.T) {
 	}
 	waitRunStatus(t, db, run.ID, "waiting_human")
 
+	// Delivery runs after the node parks, so waiting_human can be observed
+	// before the new visit holds its human turn.
 	var conv models.ReactConversation
-	if err := db.Where("run_id = ? AND node_id = ?", run.ID, "predev").
-		Order("iteration desc").First(&conv).Error; err != nil {
-		t.Fatalf("conv: %v", err)
-	}
-	if conv.Iteration < 2 {
-		t.Fatalf("expected new visit iteration >= 2, got %d", conv.Iteration)
+	deadline := time.Now().Add(waitPollTimeout)
+	for {
+		err := db.Where("run_id = ? AND node_id = ?", run.ID, "predev").
+			Order("iteration desc").First(&conv).Error
+		if err == nil && conv.Iteration >= 2 && hasHumanTurn(conv.Messages) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("first message was never redelivered into the new visit (iteration=%d, err=%v)", conv.Iteration, err)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	humans := 0
 	for _, m := range conv.Messages {
