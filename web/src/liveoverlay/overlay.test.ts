@@ -649,4 +649,133 @@ describe('Live overlay', () => {
     overlay!.onDrawer({ type: LIVE_CMD, sid: 'sid002', cmd: 'retry-accept' })
     expect(posted.filter((m) => m.op === 'accept')).toHaveLength(2)
   })
+
+  it('hides in-place and compare chrome, then restores the same candidate (plan g1.1 g1.2 g2.1 g2.2)', () => {
+    document.body.innerHTML = wrapperHtml()
+    make()
+    sessions([{ sid: 'sid001', state: 'ready', mode: 'replace', variants: [{ n: 1 }, { n: 2 }] }])
+    ;(q('[data-act="next"]') as HTMLButtonElement).click()
+    ;(q('[data-param="sid001|2|tone"][data-v="strong"]') as HTMLButtonElement).click()
+    const v2 = document.querySelector<HTMLElement>('[data-grasp-variant="2"]')!
+    expect(v2.hidden).toBe(false)
+    expect(v2.getAttribute('data-gp-tone')).toBe('strong')
+    const hide = q('[data-sw="sid001"] [data-act="hide"]') as HTMLButtonElement
+    expect(hide.textContent).toBe(T.hide)
+    expect(hide.disabled).toBe(false)
+    const before = posted.length
+    changed.mockClear()
+    hide.click()
+    // plan g1.2 g3.2: frames, toolbar and params leave; the candidate and its params stay.
+    expect(overlay!.isHidden()).toBe(true)
+    expect(changed).toHaveBeenCalled()
+    expect(q('[data-frame="sid001"]')).toBeNull()
+    expect(q('[data-sw="sid001"]')).toBeNull()
+    expect(q('[data-params="sid001"]')).toBeNull()
+    expect(v2.hidden).toBe(false)
+    expect(v2.getAttribute('data-gp-tone')).toBe('strong')
+    expect(posted.slice(before).some((m) => m.op === 'accept' || m.op === 'discard')).toBe(false)
+    // plan g2.1: the preview-bar eye flips the same switch.
+    overlay!.toggleHidden()
+    expect(overlay!.isHidden()).toBe(false)
+    expect(q('[data-sw="sid001"] .count')?.textContent).toBe('2 / 2')
+    expect(q('[data-param="sid001|2|tone"][data-v="strong"]')?.getAttribute('aria-pressed')).toBe('true')
+    expect(q('[data-frame="sid001"]')).not.toBeNull()
+
+    ;(q('[data-act="compare"]') as HTMLButtonElement).click()
+    ;(q('[data-tag="sid001"][data-n="2"]') as HTMLButtonElement).click()
+    const w = document.getElementById('w')!
+    ;(q('[data-sw="sid001"] [data-act="hide"]') as HTMLButtonElement).click()
+    expect(overlay!.isHidden()).toBe(true)
+    expect(w.getAttribute('data-grasp-compare')).toBe('')
+    expect([...w.children].every((c) => !(c as HTMLElement).hidden)).toBe(true)
+    expect(q('[data-cframe="sid001"]')).toBeNull()
+    expect(q('[data-tag="sid001"]')).toBeNull()
+    expect(q('[data-sw="sid001"]')).toBeNull()
+    ;(w.querySelector('[data-grasp-variant="1"]') as HTMLElement).click()
+    overlay!.toggleHidden()
+    expect(q('[data-sw="sid001"]')?.hasAttribute('data-compare')).toBe(true)
+    expect(q('[data-tag="sid001"][data-n="2"]')?.getAttribute('aria-pressed')).toBe('true')
+    expect(q('[data-cframe="sid001"][data-n="2"]')?.classList.contains('sel')).toBe(true)
+    expect(posted.slice(before).some((m) => m.op === 'accept' || m.op === 'discard')).toBe(false)
+  })
+
+  it('hides every candidate group at once and puts each frame back on its element (plan g2.2 g3.1)', () => {
+    document.body.innerHTML =
+      '<div id="a" data-grasp-live="sida01" style="display:contents"><section data-grasp-variant="1">A</section></div>' +
+      '<div id="b" data-grasp-live="sidb01" style="display:contents"><section data-grasp-variant="1">B</section></div>'
+    make()
+    sessions([
+      { sid: 'sida01', state: 'ready', mode: 'replace', variants: [{ n: 1 }] },
+      { sid: 'sidb01', state: 'ready', mode: 'replace', variants: [{ n: 1 }] },
+    ])
+    expect(q('[data-frame="sida01"]')).not.toBeNull()
+    expect(q('[data-frame="sidb01"]')).not.toBeNull()
+    ;(q('[data-sw="sida01"] [data-act="hide"]') as HTMLButtonElement).click()
+    expect(q('[data-frame]')).toBeNull()
+    expect(q('[data-sw]')).toBeNull()
+    expect(document.querySelector<HTMLElement>('#a [data-grasp-variant="1"]')!.hidden).toBe(false)
+    expect(document.querySelector<HTMLElement>('#b [data-grasp-variant="1"]')!.hidden).toBe(false)
+    overlay!.toggleHidden()
+    expect(q('[data-frame="sida01"]')).not.toBeNull()
+    expect(q('[data-frame="sidb01"]')).not.toBeNull()
+    expect(q('[data-sw="sida01"] .count')?.textContent).toBe('1 / 1')
+    expect(q('[data-sw="sidb01"] .count')?.textContent).toBe('1 / 1')
+  })
+
+  it('hides chrome during generation without cancelling it (plan g3.1 g3.2)', async () => {
+    document.body.innerHTML = wrapperHtml() + '<section id="card">pending</section>'
+    make()
+    sessions([{ sid: 'sid001', state: 'generating', mode: 'replace', variants: [{ n: 1 }, { n: 2 }] }])
+    const hide = q('[data-sw="sid001"] [data-act="hide"]') as HTMLButtonElement
+    expect(hide.disabled).toBe(false)
+    expect(q('[data-sw="sid001"] .state')?.textContent).toBe(T.generating)
+    const before = posted.length
+    hide.click()
+    expect(overlay!.isHidden()).toBe(true)
+    expect(q('[data-shimmer="sid001"]')).toBeNull()
+    expect(q('[data-sw="sid001"]')).toBeNull()
+    expect(posted.slice(before).some((m) => m.op === 'discard' || m.op === 'accept')).toBe(false)
+    const shown = document.querySelector<HTMLElement>('[data-grasp-variant="1"]')!
+    expect(shown.hidden).toBe(false)
+    overlay!.toggleHidden()
+    expect(q('[data-sw="sid001"] .state')?.textContent).toBe(T.generating)
+    expect(q('[data-shimmer="sid001"]')).not.toBeNull()
+    expect(posted.slice(before).some((m) => m.op === 'discard' || m.op === 'accept')).toBe(false)
+
+    // Before the wrapper mounts, hide still only removes the shimmer and does not cancel.
+    sessions([{ sid: 'gen1', state: 'generating', mode: 'replace', selector: 'section#card', url: `${location.origin}/pricing` }], false)
+    expect(overlay!.hasCandidates()).toBe(true)
+    const pendingHide = q('[data-sw-sel="gen1"] [data-act="hide"]') as HTMLButtonElement
+    expect(q('[data-sw-sel="gen1"] [data-act="discard"]')?.textContent).toBe(T.cancel)
+    const mid = posted.length
+    pendingHide.click()
+    expect(q('[data-shimmer-sel="gen1"]')).toBeNull()
+    expect(q('[data-sw-sel="gen1"]')).toBeNull()
+    expect(posted.slice(mid).some((m) => m.op === 'discard')).toBe(false)
+    document.body.appendChild(document.createTextNode(''))
+    await flush()
+    expect(overlay!.isHidden()).toBe(true)
+    expect(q('[data-sw-sel="gen1"]')).toBeNull()
+    overlay!.toggleHidden()
+    expect(q('[data-sw-sel="gen1"] [data-act="discard"]')?.textContent).toBe(T.cancel)
+    expect(posted.slice(mid).some((m) => m.op === 'discard')).toBe(false)
+  })
+
+  it('keeps a pre-mount generation hidden across rescans (plan g3.2)', async () => {
+    document.body.innerHTML = '<section id="card">pending</section>'
+    make()
+    sessions([{ sid: 'gen1', state: 'generating', mode: 'replace', selector: 'section#card', url: `${location.origin}/pricing` }])
+    expect(overlay!.hasCandidates()).toBe(true)
+    expect(q('[data-frame]')).toBeNull()
+    ;(q('[data-sw-sel="gen1"] [data-act="hide"]') as HTMLButtonElement).click()
+    expect(posted.some((m) => m.op === 'discard' || m.op === 'accept')).toBe(false)
+    document.body.appendChild(document.createTextNode('x'))
+    await flush()
+    expect(overlay!.isHidden()).toBe(true)
+    expect(q('[data-sw-sel="gen1"]')).toBeNull()
+    expect(q('[data-shimmer-sel="gen1"]')).toBeNull()
+    overlay!.toggleHidden()
+    expect(q('[data-sw-sel="gen1"] [data-act="discard"]')?.textContent).toBe(T.cancel)
+    expect(posted.some((m) => m.op === 'discard' || m.op === 'accept')).toBe(false)
+  })
 })
