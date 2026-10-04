@@ -326,6 +326,7 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 	c.mu.Lock()
 	sess := c.sessions[key]
 	c.mu.Unlock()
+	rehydrated := false
 	if sess == nil || sess.acp == nil || !sess.acp.IsConnected() {
 		if sess != nil {
 			c.mu.Lock()
@@ -343,9 +344,10 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 			log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).Msg("review revise rehydrate failed")
 			return ReactTurn{Msg: "(" + err.Error() + ")", Done: false, Err: err}
 		}
+		rehydrated = true
 	}
 	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
-	res, err := c.streamChat(chatCtx, sess.acp, req, human, images)
+	res, err := c.streamChat(chatCtx, sess.acp, req, reviewTurnPrompt(req, history, human, rehydrated), images)
 	cancel()
 	if res != nil && res.OpID != "" {
 		chatOp = res.OpID
@@ -374,6 +376,33 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 	}
 	events = c.snapshotEvents(ctx, sess.sb, events)
 	return ReactTurn{Msg: res.Narration, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel, Handoffs: handoffs}
+}
+
+// reviewTurnPrompt prefixes a review agent node's turn with its Live contract
+// (Live turns only) and, on the first review turn or after a rehydrate lost
+// the agent context, the review-phase capability note.
+func reviewTurnPrompt(req NodeReq, history []models.ReactMessage, human string, rehydrated bool) string {
+	if !models.ReviewAgentNode(req.NodeType) {
+		return human
+	}
+	prompt := human
+	if extra := liveVariantPromptExtras(req, human); extra != "" {
+		prompt = extra + "\n" + prompt
+	}
+	if rehydrated || humanTurnCount(history) <= 1 {
+		prompt = strings.TrimSpace(reviewCapabilityExtras(req)) + "\n\n## 用户消息\n" + prompt
+	}
+	return prompt
+}
+
+func humanTurnCount(history []models.ReactMessage) int {
+	n := 0
+	for _, m := range history {
+		if m.Role == "human" {
+			n++
+		}
+	}
+	return n
 }
 
 // HasLiveSession reports whether a parked review session is held for the node.

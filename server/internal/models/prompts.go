@@ -377,6 +377,33 @@ func (p *AgentPrompts) PreviewContractText() string {
 	return DefaultPreviewContract
 }
 
+// Review-phase capability fragments for review agent nodes (ReviewAgentNode).
+// They are injected only into review turns, never into the autonomous run.
+const (
+	reviewCapabilityCommon = "\n\n## 复审能力(平台规则)\n本节点已进入人工复审。在继续满足本节点原有交付契约的前提下,复审期间你还可以按用户要求使用:\n" +
+		"- `ask_question`:存在真实分歧需要用户拍板时提问。\n" +
+		"- `set_clarified_requirement` / `set_plan` / `update_plan_status` / `set_research` / `set_proposals`:改写本次运行的需求、计划、调研或方案。必须写入**完整内容**(不是增量),平台会保留原产物所属节点并同步给下游。\n" +
+		"- `write_artifact` + `set_artifact_preview`:写入并预览 `page.html` 等产物。\n" +
+		"- `set_preview(port?, url?, label?)`:用户要看运行中的页面时登记预览(port 与 url 恰好其一;本沙箱启动的服务须用 `setsid`/`nohup` 后台运行并监听 `0.0.0.0`)。预览可选,不是完成条件。\n" +
+		"不可用:`set_preflight`、`ask_form`、`set_root_cause`、`set_test_result`。本节点自己的交付工具与完成条件不变,确认流转时平台仍按本节点类型校验产物。\n"
+	// DefaultReviewCapabilityDevContract is the review toolset note for
+	// implement / review nodes, which keep full repository rights.
+	DefaultReviewCapabilityDevContract = reviewCapabilityCommon +
+		"- 你可以修改代码、提交并推送当前工作分支(禁止在 main/master/develop/release-* 上提交);不要创建、更新或关闭 PR/MR。\n"
+	// DefaultReviewCapabilityDesignContract is the review toolset note for
+	// plan / research / proposal / visual nodes, which must not commit code.
+	DefaultReviewCapabilityDesignContract = reviewCapabilityCommon +
+		"- 本节点属于计划/设计类:**不要提交或推送代码**。为了演示可以临时启动服务或改动源码,但结论必须落进产物(`set_plan` 设计区、`page.html` 等);确认流转时平台不会提交工作区改动,下游拿不到它们。\n"
+	// DefaultReviewPreviewDirectContract replaces the app_preview direct-preview
+	// contract for review agent nodes with direct_preview on.
+	DefaultReviewPreviewDirectContract = "\n\n### 复审预览:IP 直连\n本节点开启了 IP 直连预览。仅当用户要看页面时:监听 `0.0.0.0:$PREVIEW_PORT`(环境变量 `PREVIEW_PORT` 是平台预映射端口;Vite 用 `--port $PREVIEW_PORT --host 0.0.0.0`),服务在根路径 `/`,再 `set_preview(port=数字($PREVIEW_PORT))`。审批人浏览器直连该地址,取点脚本由沙箱入站代理注入,不要改 base href 或依赖平台 `/preview/...` 改写。\n"
+	// DefaultReviewPreviewDirectManualContract is the auto_inject=off variant.
+	DefaultReviewPreviewDirectManualContract = "\n\n### 复审预览:IP 直连\n本节点开启了 IP 直连预览且关闭了自动注入。仅当用户要看页面时:监听 `0.0.0.0:$PREVIEW_PORT`(Vite 用 `--port $PREVIEW_PORT --host 0.0.0.0`),服务在根路径 `/`,每个 HTML 入口须包含 `<script src=\"$PREVIEW_PICK_SCRIPT_URL\"></script>`,再 `set_preview(port=数字($PREVIEW_PORT))`。不要改应用 origin / base href。\n"
+	// DefaultReviewDesignLiveContract overrides Live adoption for design nodes:
+	// the chosen variant goes into products and the source is restored.
+	DefaultReviewDesignLiveContract = "\n\n### 计划/设计节点的 Live 例外\n本节点不提交代码,Live 只用来在真实页面上比较效果。采用(accept)时:把选中变体的设计结论(布局、样式取值、交互、文案)写进产物——有计划时用 `set_plan` 的设计区(完整重写),视觉节点写 `page.html`;然后按技能完成标记清理,并把本次 Live 改动的源文件恢复原样(`git checkout -- <文件>`),再 `live_update(state=\"accepted\")`。放弃(discard)照技能恢复原样。任何情况下都不要 `git commit` / `git push`。\n"
+)
+
 // PreviewRetryText returns the app_preview re-prompt when set_preview was not called.
 func (p *AgentPrompts) PreviewRetryText() string {
 	if p != nil && strings.TrimSpace(p.PreviewRetry) != "" {

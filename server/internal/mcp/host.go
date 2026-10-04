@@ -72,6 +72,7 @@ type Host struct {
 	// ReAct review phase. While set, ask_question is permitted for the node
 	// (beyond the react clarify node) so a review can raise follow-up choices.
 	activeReview map[string]bool
+	reviewSrc    ReviewPhaseSource
 	store        Store
 	// pending holds structured questions raised via the ask_question tool,
 	// keyed runID -> nodeID. The engine drains them (TakePendingQuestions)
@@ -340,11 +341,31 @@ func (h *Host) SetActiveReview(runID string, on bool) {
 	h.mu.Unlock()
 }
 
+// ReviewPhaseSource resolves from persistence whether a run's active node has
+// an open post-run review dialogue.
+type ReviewPhaseSource func(runID string) bool
+
+// SetReviewPhaseSource wires the persistence-backed InReviewPhase fallback.
+func (h *Host) SetReviewPhaseSource(src ReviewPhaseSource) {
+	h.mu.Lock()
+	h.reviewSrc = src
+	h.mu.Unlock()
+}
+
 // InReviewPhase reports whether a run's active node is in the review phase.
+// The in-memory flag is lost on restart (or never set on a replica that did
+// not drive the node); the review toolset depends on it, so a miss falls back
+// to reviewSrc. The fallback is not cached: the flag is per run, and a cached
+// answer could outlive the node whose review it described.
 func (h *Host) InReviewPhase(runID string) bool {
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return h.activeReview[runID]
+	on := h.activeReview[runID]
+	src := h.reviewSrc
+	h.mu.RUnlock()
+	if on || src == nil {
+		return on
+	}
+	return src(runID)
 }
 
 // SetPendingQuestions records the structured questions the agent raised this

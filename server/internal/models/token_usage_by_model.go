@@ -18,10 +18,10 @@ const (
 
 // ModelTokenUsage is one model's four-component usage plus attribution.
 type ModelTokenUsage struct {
-	InputTokens      int64  `json:"inputTokens"`
-	OutputTokens     int64  `json:"outputTokens"`
-	CacheReadTokens  int64  `json:"cacheReadTokens"`
-	CacheWriteTokens int64  `json:"cacheWriteTokens"`
+	InputTokens      int64 `json:"inputTokens"`
+	OutputTokens     int64 `json:"outputTokens"`
+	CacheReadTokens  int64 `json:"cacheReadTokens"`
+	CacheWriteTokens int64 `json:"cacheWriteTokens"`
 	// Source: upstream | via ACP_BRIDGE_MODEL | unknown
 	Source string `json:"source,omitempty"`
 	// Filled is true when any portion of this bucket came from weak-key

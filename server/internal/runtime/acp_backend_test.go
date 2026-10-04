@@ -93,8 +93,8 @@ func TestMergeAuthEnv_TraeKeyPreference(t *testing.T) {
 	// agentKeys order: APPROVING → TRAE_API_KEY → TRAECLI token
 	out, err := MergeAuthEnv(BackendTrae, map[string]string{
 		"GRASP_TRAE_API_KEY": "trae-lt-first",
-		"TRAE_API_KEY":           "trae-lt-second",
-		EnvTraeCLIToken:          "trae-lt-third",
+		"TRAE_API_KEY":       "trae-lt-second",
+		EnvTraeCLIToken:      "trae-lt-third",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -243,7 +243,7 @@ func TestMergeRegionEnv_CodeBuddy(t *testing.T) {
 	t.Run("staging sets region for settings.json", func(t *testing.T) {
 		out, err := MergeAuthEnv(BackendCodeBuddy, map[string]string{
 			"GRASP_CODEBUDDY_API_KEY": "ck_x",
-			EnvCodeBuddyRegion:            "staging",
+			EnvCodeBuddyRegion:        "staging",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -357,7 +357,7 @@ func TestMergeRegionEnv_Trae(t *testing.T) {
 		for _, alias := range []string{"intl", "international", "public", "ai"} {
 			out, err := MergeAuthEnv(BackendTrae, map[string]string{
 				"GRASP_TRAE_API_KEY": "trae-lt-x",
-				EnvTraeRegion:            alias,
+				EnvTraeRegion:        alias,
 			})
 			if err != nil {
 				t.Fatal(err)

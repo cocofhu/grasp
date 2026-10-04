@@ -190,6 +190,7 @@ func (s *ChannelConfigService) GetByID(id string) (ChannelConfigDTO, error) {
 	}
 	return s.attachRuntime(s.toChannelDTO(row)), nil
 }
+
 // GetPrimaryByProject returns the primary channel, or nil when the project has none.
 func (s *ChannelConfigService) GetPrimaryByProject(projectID string) (*ChannelConfigDTO, error) {
 	var r models.ChannelConfig
@@ -204,6 +205,7 @@ func (s *ChannelConfigService) GetPrimaryByProject(projectID string) (*ChannelCo
 	dto := s.attachRuntime(s.toChannelDTO(r))
 	return &dto, nil
 }
+
 // Create inserts a new config. First channel (or first while no primary) becomes
 // primary; when a primary already exists the new row is secondary.
 // Primary election and agent uniqueness run inside a transaction with row locks

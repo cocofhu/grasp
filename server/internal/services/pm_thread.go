@@ -213,6 +213,7 @@ func (s *PmService) ListConversationsForAgent(projectID, agentName, userID strin
 	}
 	return threads, nil
 }
+
 // DeleteThread removes a thread and its messages (owner only; channel threads rejected).
 func (s *PmService) DeleteThread(projectID, threadID, userID string) error {
 	if _, err := s.RequireWritableThread(projectID, threadID, userID); err != nil {
@@ -405,6 +406,7 @@ func (s *PmService) DeleteCronJobForAgent(projectID, agentName, jobID string) er
 		return tx.Where("id = ?", job.ThreadID).Delete(&models.ChatThread{}).Error
 	})
 }
+
 // Draft status constants.
 const (
 	PmDraftStreaming = "streaming"

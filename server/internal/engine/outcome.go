@@ -40,12 +40,12 @@ func (e *Engine) consumeNodeOutcome(c *execCtx, node *models.Node, res *runtime.
 		// mark retryable so NodeAutoRetryMax can recover with a fresh attempt.
 		retryable := errMsg == errMCPSurfaceEmpty
 		return nodeOutcome{
-			status:    "failed",
-			err:       errMsg,
-			outputMd:  "节点失败:" + errMsg,
-			outputs:   res.Outputs,
-			events:    res.Events,
-			usage:     res.Usage, usageByModel: res.UsageByModel,
+			status:   "failed",
+			err:      errMsg,
+			outputMd: "节点失败:" + errMsg,
+			outputs:  res.Outputs,
+			events:   res.Events,
+			usage:    res.Usage, usageByModel: res.UsageByModel,
 			retryable: retryable,
 		}, false
 	}

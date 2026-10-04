@@ -15,7 +15,7 @@ type webhookEntry struct {
 }
 
 type webhookCache struct {
-	mu   sync.Mutex
+	mu    sync.Mutex
 	byKey map[string]webhookEntry
 }
 

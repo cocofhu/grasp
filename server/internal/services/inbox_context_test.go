@@ -150,10 +150,10 @@ func TestSlimNodeExecutionsOmitsLargeJSONSnapshots(t *testing.T) {
 	db.Create(&models.StateRun{
 		RunID: "r-slim-json", NodeID: "up", Iteration: 1, Status: "completed",
 		Outputs: map[string]any{
-			"page":                         "<html/>",
-			"clarified_requirement":        "md",
-			"clarified_requirement_json":   `{"title":"big"}`,
-			"research_json":                `{"summary":"x"}`,
+			"page":                       "<html/>",
+			"clarified_requirement":      "md",
+			"clarified_requirement_json": `{"title":"big"}`,
+			"research_json":              `{"summary":"x"}`,
 		},
 	})
 	execs := s.SlimNodeExecutions("r-slim-json", []string{"up"})

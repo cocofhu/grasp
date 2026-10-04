@@ -21,10 +21,10 @@ type preflightField struct {
 }
 
 type preflightDoc struct {
-	Summary    string          `json:"summary"`
-	Confirmed  bool            `json:"confirmed"`
+	Summary    string           `json:"summary"`
+	Confirmed  bool             `json:"confirmed"`
 	Fields     []preflightField `json:"fields,omitempty"`
-	Unresolved flexStrings     `json:"unresolved,omitempty"`
+	Unresolved flexStrings      `json:"unresolved,omitempty"`
 }
 
 func normPreflightVerification(s string) (string, bool) {

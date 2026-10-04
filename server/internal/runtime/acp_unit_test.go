@@ -590,9 +590,19 @@ func TestApplyAppPreviewEnv(t *testing.T) {
 		t.Fatalf("explicit off must stick: %v", off)
 	}
 	other := map[string]string{}
-	applyAppPreviewEnv(other, "implement", map[string]any{"direct_preview": true}, "http://app.example")
+	applyAppPreviewEnv(other, "test", map[string]any{"direct_preview": true}, "http://app.example")
 	if other["PREVIEW_DIRECT"] != "" || other["VNC_PREVIEW"] != "" || other["PREVIEW_PICK_SCRIPT_URL"] != "" {
 		t.Fatalf("other node: %v", other)
+	}
+	reviewVNC := map[string]string{}
+	applyAppPreviewEnv(reviewVNC, "implement", nil, "http://app.example")
+	if len(reviewVNC) != 0 {
+		t.Fatalf("review agent without direct preview must not start VNC: %v", reviewVNC)
+	}
+	reviewDirect := map[string]string{}
+	applyAppPreviewEnv(reviewDirect, "plan", map[string]any{"direct_preview": true}, "http://app.example")
+	if reviewDirect["PREVIEW_DIRECT"] != "1" || reviewDirect["VNC_PREVIEW"] != "" || reviewDirect["PREVIEW_PICK_SCRIPT_URL"] != "/__grasp/preview-pick.js" {
+		t.Fatalf("review agent direct: %v", reviewDirect)
 	}
 	empty := map[string]string{}
 	applyAppPreviewEnv(empty, "app_preview", map[string]any{"direct_preview": true}, "")

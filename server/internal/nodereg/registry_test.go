@@ -4,7 +4,16 @@ import (
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/models"
 )
+
+func TestReviewAgentNodesAreReviewCapable(t *testing.T) {
+	for nodeType := range registry {
+		if models.ReviewAgentNode(nodeType) && !ReviewCapable(nodeType) {
+			t.Errorf("%s gains the review toolset but is not review-capable", nodeType)
+		}
+	}
+}
 
 func TestRegistryStructuredProducts(t *testing.T) {
 	cases := map[string]struct{ artifact, tool string }{

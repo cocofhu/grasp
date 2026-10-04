@@ -29,12 +29,12 @@ func (p *vncRecPage) SetInspect(on bool) error {
 	p.inspect = &on
 	return nil
 }
-func (p *vncRecPage) OnPick(func(browser.Pick))                {}
-func (p *vncRecPage) OnInspectCanceled(func())                 {}
-func (p *vncRecPage) OnDescribeFailed(func())                  {}
-func (p *vncRecPage) Navigate(a string) error                  { p.navs = append(p.navs, a); return nil }
-func (p *vncRecPage) Goto(u string) error                      { p.gotos = append(p.gotos, u); return nil }
-func (p *vncRecPage) Close() error                             { return nil }
+func (p *vncRecPage) OnPick(func(browser.Pick)) {}
+func (p *vncRecPage) OnInspectCanceled(func())  {}
+func (p *vncRecPage) OnDescribeFailed(func())   {}
+func (p *vncRecPage) Navigate(a string) error   { p.navs = append(p.navs, a); return nil }
+func (p *vncRecPage) Goto(u string) error       { p.gotos = append(p.gotos, u); return nil }
+func (p *vncRecPage) Close() error              { return nil }
 
 func decodeVnc(t *testing.T, raw string) vncClientMsg {
 	t.Helper()

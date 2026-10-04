@@ -305,7 +305,7 @@ func TestExternalMcpAgentFSUsesPmLeader(t *testing.T) {
 	listBody, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{
-			"name": "pm_fs_list",
+			"name":      "pm_fs_list",
 			"arguments": map[string]any{"agentName": "member-a", "path": "."},
 		},
 	})
@@ -366,7 +366,7 @@ func TestExternalMcpAgentFSRequiresPmLeader(t *testing.T) {
 	listBody, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{
-			"name": "pm_fs_list",
+			"name":      "pm_fs_list",
 			"arguments": map[string]any{"agentName": "orphan", "path": "."},
 		},
 	})

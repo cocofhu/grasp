@@ -263,7 +263,6 @@ func TestFormatMCPAuditSummary_FailWithoutReasonKeepsAction(t *testing.T) {
 	}
 }
 
-
 func TestFormatMCPAuditSummary_EdgeBranches(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

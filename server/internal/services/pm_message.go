@@ -180,6 +180,7 @@ func (s *PmService) RecentMessages(threadID string, n int) ([]models.ChatMessage
 	}
 	return filtered, nil
 }
+
 // CountMessagesByThreads returns message counts keyed by thread id.
 func (s *PmService) CountMessagesByThreads(threadIDs []string) (map[string]int64, error) {
 	out := map[string]int64{}

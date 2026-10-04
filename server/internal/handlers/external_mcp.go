@@ -175,9 +175,9 @@ func externalMcpSettingsDTO(v services.ProjectExternalMcpSettingsView) gin.H {
 		packs = []string{}
 	}
 	out := gin.H{
-		"enabled":       v.Enabled,
-		"enabledPacks":  packs,
-		"mcpBaseUrl":    v.McpBaseURL,
+		"enabled":      v.Enabled,
+		"enabledPacks": packs,
+		"mcpBaseUrl":   v.McpBaseURL,
 	}
 	if !v.UpdatedAt.IsZero() {
 		out["updatedAt"] = v.UpdatedAt

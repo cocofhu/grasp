@@ -5,7 +5,7 @@ import "time"
 // ProjectAuditEvent is an append-only, project-scoped operation audit record.
 // Managers must not Update/Delete via public API; only List/Export are exposed.
 type ProjectAuditEvent struct {
-	ID             string         `gorm:"primaryKey" json:"id"`
+	ID             string    `gorm:"primaryKey" json:"id"`
 	ProjectID      string    `gorm:"index:idx_audit_proj_occurred,priority:1;index:idx_audit_proj_run,priority:1;index" json:"projectId"`
 	OccurredAt     time.Time `gorm:"index:idx_audit_proj_occurred,priority:2;index" json:"occurredAt"`
 	Actor          string    `gorm:"index" json:"actor"`
