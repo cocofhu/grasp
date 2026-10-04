@@ -20,8 +20,12 @@ type ChatStep struct {
 const (
 	// MaxTimelineSteps caps the steps one row reports; later steps are dropped.
 	MaxTimelineSteps = 120
-	maxStepText      = 8000
-	maxTimelineText  = 64 << 10
+	// maxStepText is the former per-step prose cap. Thought and message text
+	// are no longer cut to it; tests still use it as the size that used to truncate.
+	maxStepText = 8000
+	// maxTimelineText budgets tool details. Prose is counted so later tool
+	// input/output can be dropped, but thought and message text are not cut.
+	maxTimelineText = 64 << 10
 	maxToolSummary   = 160
 	maxToolDetail    = 2000
 )
@@ -66,7 +70,10 @@ func (r *ChatResult) timelineEvent(t int) *models.AcpEvent {
 		if strings.TrimSpace(st.Text) == "" {
 			continue
 		}
-		text := textutil.TruncateBytes(st.Text, min(maxStepText, max(budget, 0)), "…(truncated)")
+		// Chat prose is the text the ReAct bubble shows. Deliver the accumulated
+		// original even when it exceeds the old 8000-byte step cap or the
+		// remaining 64KiB budget. Counting it still lets later tool details drop.
+		text := st.Text
 		budget -= len(text)
 		parts = append(parts, models.AcpPart{Kind: st.Kind, Text: text})
 	}
