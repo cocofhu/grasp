@@ -23,6 +23,14 @@
 ### 2026-10-05
 
 - 日期：2026-10-05
+- 范围：`web/src/lib/chat/sessionQueue{,.test}.ts`、`web/src/lib/inbox/{useClarifyChat,useGateApproval}.ts`、`web/LIB_DOMAIN_MAP.json`
+- 做了什么：新建前端 `lib/chat` 域，把 ReAct 澄清和审批热修订各自维护的排队对账抽成纯函数：`reconcileQueue`（queue_state 重建队列：先按 id、再按文本匹配乐观行，无进行中轮次时最多保留一条本地领先行）、`takeTurnBeginItem`、`dropGhostItems`、`isAuthoritativeIdle` 以及附件克隆。两个 composable 改为调用这些函数，队列类型统一为 `SessionQueueItem`。
+- 为什么：两处代码逐行重复，后续 PM 和 Agent Studio 迁到 chatsession 后也要用同一套对账，先收成一份。审批面板的 turn_begin 原来直接 `shift()` 队首，queue_state 先裁掉该条时会误删下一条等待消息；现在与澄清一致，按 id 匹配，id 已不在队列时不按文本回退。
+- 如何验证：`npx vitest run`（新增 `sessionQueue.test.ts`；`ClarifyChat`、`useGateApproval`、`PublicGateApprovalView` 等既有用例全部通过）；`vue-tsc --noEmit`、eslint 无新增问题。
+
+### 2026-10-05
+
+- 日期：2026-10-05
 - 范围：`server/internal/sandbox/{acp,acp_turn,acp_turn_test}.go`、`server/internal/runtime/{acp_timeline,acp_timeline_test,acp_sandbox,acp_react}.go`、`server/internal/engine/approve_first_message_test.go`
 - 做了什么：ACP 客户端记录当前有几个调用方在读事件通道（连接握手、一轮对话、等待取消确认）；没有读取方时 `readLoop` 只更新 queue_state 镜像，不再把帧塞进通道。真正丢帧时的告警限为每分钟一次，并带丢弃计数。时间线的事件日志轮询只在这一轮正在执行（本客户端有轮次在跑，或 bridge 报 busy）时每 2 秒拉一次，轮次结束后再拉最后一次；拿不到 ACP 客户端时保持原来的行为。补了一个测试，确认审批节点暂停后投递首条消息的那一轮在会话快照里显示为 busy。
 - 为什么：run 3f471c4b 从 03:10 起持续打印 `acp event channel full, dropping message`。原因是 grasp 节点暂停后 ACP 连接一直开着，但两轮之间没人读通道，bridge 的广播很快把 512 的缓冲占满。同时时间线每 2 秒拨一次 `/ws` 又断开，沙箱日志里刷出大量连接和 broken pipe，每次断开还会触发 bridge 再广播一次 queue_state。
