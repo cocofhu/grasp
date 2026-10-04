@@ -82,6 +82,8 @@ const props = withDefaults(
     ports?: PublicPreviewPort[]
     publicActive?: boolean
     publicMobile?: boolean
+    /** Review stage of a non-Grasp node: show the app tab once set_preview registers. */
+    probeRegisteredPreview?: boolean
   }>(),
   {
     previewArtifact: '',
@@ -96,6 +98,7 @@ const props = withDefaults(
     ports: () => [],
     publicActive: true,
     publicMobile: false,
+    probeRegisteredPreview: false,
   },
 )
 
@@ -164,53 +167,54 @@ const resolvedRemoteKind = computed(() =>
 const stageNode = computed(() => props.run?.nodes?.find((n) => n.id === props.nodeId) || null)
 const resolvedNodeType = computed(() => String(props.nodeType || stageNode.value?.type || '').trim())
 
-/** Approve: silent probe for set_preview registrations; hide app tab until ports exist. */
-const APPROVE_PREVIEW_POLL_MS = 2500
-const approvePreviewRegistered = ref(false)
-let approveProbeTimer: ReturnType<typeof setInterval> | null = null
-let approveProbeAbort: AbortController | null = null
-let approveProbeGen = 0
+/** Grasp, or a review stage that opts in: silent probe for set_preview registrations. */
+const REGISTERED_PREVIEW_POLL_MS = 2500
+const previewRegistered = ref(false)
+let previewProbeTimer: ReturnType<typeof setInterval> | null = null
+let previewProbeAbort: AbortController | null = null
+let previewProbeGen = 0
+const probesRegisteredPreview = computed(() => isGrasp(resolvedNodeType.value) || props.probeRegisteredPreview)
 
-function stopApprovePreviewProbe() {
-  if (approveProbeTimer) {
-    clearInterval(approveProbeTimer)
-    approveProbeTimer = null
+function stopRegisteredPreviewProbe() {
+  if (previewProbeTimer) {
+    clearInterval(previewProbeTimer)
+    previewProbeTimer = null
   }
-  approveProbeAbort?.abort()
-  approveProbeAbort = null
-  approveProbeGen++
+  previewProbeAbort?.abort()
+  previewProbeAbort = null
+  previewProbeGen++
 }
 
-async function probeApprovePreviews() {
-  if (!isGrasp(resolvedNodeType.value)) return
+async function probeRegisteredPreviews() {
+  if (!probesRegisteredPreview.value) return
   const rid = String(props.runId || '').trim()
   const nid = String(props.nodeId || '').trim()
   if (!rid || !nid) {
-    approvePreviewRegistered.value = false
+    previewRegistered.value = false
     return
   }
-  approveProbeAbort?.abort()
-  const gen = ++approveProbeGen
-  approveProbeAbort = new AbortController()
+  previewProbeAbort?.abort()
+  const gen = ++previewProbeGen
+  previewProbeAbort = new AbortController()
   try {
-    const r = await api.nodePreviews(rid, nid, { signal: approveProbeAbort.signal })
-    if (gen !== approveProbeGen) return
-    approvePreviewRegistered.value = (r.ports || []).length > 0
+    const r = await api.nodePreviews(rid, nid, { signal: previewProbeAbort.signal })
+    if (gen !== previewProbeGen) return
+    previewRegistered.value = (r.ports || []).length > 0
   } catch (e) {
-    if (gen !== approveProbeGen || isAbortError(e)) return
+    if (gen !== previewProbeGen || isAbortError(e)) return
     // Keep last known registration on transient errors.
   }
 }
 
 watch(
-  () => `${resolvedNodeType.value}|${props.runId}|${props.nodeId}|${props.hideAppPreview}`,
+  () => `${probesRegisteredPreview.value}|${props.runId}|${props.nodeId}|${props.hideAppPreview}`,
   () => {
-    stopApprovePreviewProbe()
-    approvePreviewRegistered.value = false
+    stopRegisteredPreviewProbe()
+    previewRegistered.value = false
     if (props.hideAppPreview) return
-    if (!isGrasp(resolvedNodeType.value)) return
-    void probeApprovePreviews()
-    approveProbeTimer = setInterval(() => void probeApprovePreviews(), APPROVE_PREVIEW_POLL_MS)
+    if (!probesRegisteredPreview.value) return
+    void probeRegisteredPreviews()
+    previewProbeTimer = setInterval(() => void probeRegisteredPreviews(), REGISTERED_PREVIEW_POLL_MS)
   },
   { immediate: true },
 )
@@ -219,8 +223,9 @@ const effectiveRemoteKind = computed(() => {
   if (props.hideAppPreview) return 'off'
   if (isGrasp(resolvedNodeType.value)) {
     if (resolvedRemoteKind.value === 'public') return props.ports?.length ? 'public' : 'off'
-    return approveStageRemoteKind(approvePreviewRegistered.value)
+    return approveStageRemoteKind(previewRegistered.value)
   }
+  if (props.probeRegisteredPreview && previewRegistered.value && resolvedRemoteKind.value !== 'public') return 'app'
   return resolvedRemoteKind.value
 })
 
@@ -656,8 +661,8 @@ watch(
   () => effectiveRemoteKind.value,
   (kind) => {
     if (kind !== 'app' && kind !== 'public') {
-      // Drop an empty Approve app tab if registration disappears.
-      if (isGrasp(resolvedNodeType.value) && novncOpen.value && activeTab.value === REACT_STAGE_TAB_NOVNC) {
+      // Drop an empty app tab if the set_preview registration disappears.
+      if (kind === 'off' && probesRegisteredPreview.value && novncOpen.value && activeTab.value === REACT_STAGE_TAB_NOVNC) {
         novncOpen.value = false
         activeTab.value = openNames.value.length
           ? previewTabId(openNames.value[openNames.value.length - 1])
@@ -726,7 +731,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
-  stopApprovePreviewProbe()
+  stopRegisteredPreviewProbe()
   summaryThumbGen++
   summaryThumbAbort?.abort()
 })

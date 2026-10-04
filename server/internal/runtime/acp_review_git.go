@@ -20,6 +20,13 @@ func (c *acpProvider) OfferCommitOnConfirm(ctx context.Context, req NodeReq) Rea
 	if !nodeTouchesRepos(req.NodeType) {
 		return ReactTurn{}
 	}
+	if models.ReviewDesignNode(req.NodeType) {
+		// Planning/design nodes never commit: review demos and Live trials stay
+		// in this node's sandbox, and downstream clones fresh.
+		log.Info().Str("run", req.RunID).Str("node", req.NodeID).Str("node_type", req.NodeType).
+			Msg("review confirm git wrap-up skipped: design node does not commit")
+		return ReactTurn{}
+	}
 	key := reactKey(req)
 	c.mu.Lock()
 	sess := c.sessions[key]

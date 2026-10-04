@@ -12,9 +12,44 @@ import (
 )
 
 // LiveNodeSupported restricts Live source edits to the preview and Grasp
-// dialogues, including the persisted legacy Grasp alias.
+// dialogues (including the persisted legacy Grasp alias) and to review-capable
+// agent nodes, whose Live requests are only accepted during their review.
 func LiveNodeSupported(nodeType string) bool {
+	return previewHostNode(nodeType) || ReviewAgentNode(nodeType)
+}
+
+func previewHostNode(nodeType string) bool {
 	return nodeType == "app_preview" || nodeType == "grasp" || nodeType == "approve"
+}
+
+// ReviewAgentNode reports the review-capable agent node types that gain the
+// full review toolset (cross-node set_*, set_preview, page_*, Live) while
+// parked in their post-run review phase. Must stay a subset of
+// nodereg.ReviewCapable.
+func ReviewAgentNode(nodeType string) bool {
+	return ReviewDesignNode(nodeType) || nodeType == "implement" || nodeType == "review"
+}
+
+// ReviewDesignNode reports the planning/design node types that must not commit
+// code: in review their Live adoptions are written back into products and the
+// source is restored.
+func ReviewDesignNode(nodeType string) bool {
+	switch nodeType {
+	case "plan", "research", "proposal", "visual":
+		return true
+	}
+	return false
+}
+
+// PreviewCapableNode reports whether a node can host a direct preview with the
+// embed drawer and page control: app_preview / Grasp always (subject to their
+// own direct_preview switch downstream), review agent nodes only when their
+// direct_preview switch is on.
+func PreviewCapableNode(nodeType string, cfg map[string]any) bool {
+	if previewHostNode(nodeType) {
+		return true
+	}
+	return ReviewAgentNode(nodeType) && liveConfigTruthy(cfg["direct_preview"])
 }
 
 // LiveVariantsEnabled is shared by the API, engine and runtime. Existing direct

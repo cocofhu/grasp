@@ -482,6 +482,7 @@ const listFadeKey = computed(() =>
               :node-type="inboxStageNodeType"
               :annotatable="clarifyInputActive"
               :remote-kind="inboxRemoteKind"
+              :probe-registered-preview="composerMode === 'review'"
               @pick="onAppPreviewReviewPick"
               @staged-pick="onAppPreviewStagedPick"
             />
@@ -621,6 +622,7 @@ const listFadeKey = computed(() =>
                   :node-type="inboxStageNodeType"
                   :annotatable="clarifyInputActive"
                   :remote-kind="inboxRemoteKind"
+                  :probe-registered-preview="composerMode === 'review'"
                   @pick="onAppPreviewReviewPick"
                   @staged-pick="onAppPreviewStagedPick"
                 />

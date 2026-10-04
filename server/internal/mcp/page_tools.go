@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/pagebridge"
 )
 
@@ -38,20 +39,29 @@ func isPageTool(name string) bool {
 
 // pageToolsListed reports whether tools/list should carry page_* for the
 // run's active node. Whether a drawer is actually attached is only known at
-// call time.
+// call time. Review agent nodes list them from session start when direct
+// preview is on (agents rarely refetch tools/list mid-session); the review
+// phase itself is checked at call time.
 func (h *Host) pageToolsListed(runID string) bool {
 	h.mu.RLock()
 	b := h.pageBridge
 	h.mu.RUnlock()
-	return b != nil && SetPreviewAllowed(h.ActiveNodeType(runID))
+	if b == nil {
+		return false
+	}
+	active := h.ActiveNodeType(runID)
+	if SetPreviewAllowed(active) {
+		return true
+	}
+	return models.ReviewAgentNode(active) && h.previewDirect(runID, h.ActiveNode(runID))
 }
 
 func (h *Host) runPageTool(runID, token, name string, args map[string]any) (string, bool) {
 	if !h.authorize(runID, token) {
 		return name + " failed: " + ErrUnauthorized.Error(), true
 	}
-	if !SetPreviewAllowed(h.ActiveNodeType(runID)) {
-		return name + " 仅在 app_preview 或 Grasp 节点可用,当前节点不支持。", true
+	if !SetPreviewAllowed(h.ActiveNodeType(runID)) && !h.reviewAgentInReview(runID) {
+		return name + " 仅在 app_preview、Grasp 节点或复审阶段可用,当前节点不支持。", true
 	}
 	nodeID := h.ActiveNode(runID)
 	if !h.previewDirect(runID, nodeID) {

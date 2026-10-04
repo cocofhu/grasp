@@ -402,8 +402,19 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 // has an explicit off (0/false). When the node switch
 // direct_preview is on, skip the VNC stack and ask the gateway to 1:1-map a
 // PREVIEW_PORT instead (PREVIEW_DIRECT=1).
+//
+// Review agent nodes only get the direct-preview env (when their switch is on);
+// without it their review preview starts noVNC on demand at set_preview, so
+// ordinary runs do not pay for a headed Chromium.
 func applyAppPreviewEnv(env map[string]string, nodeType string, cfg map[string]any, publicAdvertise string) {
-	if env == nil || !mcp.SetPreviewAllowed(nodeType) {
+	if env == nil {
+		return
+	}
+	reviewNode := models.ReviewAgentNode(nodeType)
+	if !mcp.SetPreviewAllowed(nodeType) && !reviewNode {
+		return
+	}
+	if reviewNode && !configTruthy(cfg["direct_preview"]) {
 		return
 	}
 	if configTruthy(cfg["direct_preview"]) {

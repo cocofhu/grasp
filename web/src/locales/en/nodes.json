@@ -16,6 +16,18 @@
       "reviewVar": {
         "label": "Review control variable",
         "placeholder": "Default: review. Undefined/falsy = skip review, truthy = enter ReAct review"
+      },
+      "reviewDirectPreview": {
+        "label": "Direct IP preview in review",
+        "help": "Only applies during review. Off: set_preview uses the noVNC remote desktop. On: the preview opens http://IP:port/ in a new tab with point picking, page tools and the chat drawer. Takes effect for new sandboxes only."
+      },
+      "reviewAutoInject": {
+        "label": "Auto-inject pick script",
+        "help": "With direct preview, the sandbox proxy injects the pick script automatically. Turn off to have the agent include it in the app manually."
+      },
+      "reviewLiveVariants": {
+        "label": "Live variants",
+        "help": "Lets the agent build live variants for side-by-side comparison during review. Plan, research, proposal and visual nodes are preview-only: the adopted variant is written back to the plan or page.html, the source is restored, and nothing is committed."
       }
     },
     "input": {

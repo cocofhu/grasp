@@ -242,6 +242,32 @@ func previewNodePromptExtras(req NodeReq) string {
 	return out
 }
 
+// reviewCapabilityExtras is the review-phase toolset note for review agent
+// nodes (empty for other types): design nodes are told not to commit, and
+// direct preview adds the PREVIEW_PORT, page_* and Live instructions.
+func reviewCapabilityExtras(req NodeReq) string {
+	if !models.ReviewAgentNode(req.NodeType) {
+		return ""
+	}
+	out := models.DefaultReviewCapabilityDevContract
+	if models.ReviewDesignNode(req.NodeType) {
+		out = models.DefaultReviewCapabilityDesignContract
+	}
+	if !configTruthy(req.Config["direct_preview"]) {
+		return out
+	}
+	if configDefaultOn(req.Config["auto_inject"]) {
+		out += models.DefaultReviewPreviewDirectContract
+	} else {
+		out += models.DefaultReviewPreviewDirectManualContract
+	}
+	out += models.DefaultPreviewPageControlContract
+	if liveVariantsEnabled(req) {
+		out += models.DefaultPreviewLiveIndex
+	}
+	return out
+}
+
 // liveVariantSkillDir is the platform skill copied in when Live variants are on.
 const liveVariantSkillDir = "skills/live-variants"
 
@@ -274,6 +300,9 @@ func liveVariantPromptExtras(req NodeReq, human string) string {
 	out := models.DefaultPreviewLiveContract
 	if req.NodeType == "grasp" || req.NodeType == "approve" {
 		out += models.DefaultGraspLiveContract
+	}
+	if models.ReviewDesignNode(req.NodeType) {
+		out += models.DefaultReviewDesignLiveContract
 	}
 	return out
 }
