@@ -4,6 +4,7 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Project credentials UI:** reorganize credentials into API key, Git, SSH, and other sections with responsive cards, configuration summary, and a structured add-credential form.
 - **Project credentials:** ACP and Git credentials can be managed in project
   credential settings, which take precedence at runtime; compatible
   project/Agent environment variables remain a fallback. Platform service

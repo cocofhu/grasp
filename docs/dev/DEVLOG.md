@@ -28,6 +28,13 @@
 - 为什么：原实现会把服务端宿主机的 Token 注入所有项目的沙箱；项目用户可通过 `fallbackEnvKey`（如 `GRASP_SECRETS_KEY`）读出服务端任意环境变量；自定义凭据可覆盖 `GRASP_ARTIFACT_TOKEN` / `GRASP_PM_TOKEN` 等平台令牌；打开凭据页即生成空槽位，会让 Run 级 `GITHUB_TOKEN` 静默失效。
 - 如何验证：新增服务与 runtime 用例覆盖保留键/非法键拒绝、空槽位、平台键不被覆盖、进程 env 不泄漏、删除级联；`go test ./...`、`go vet ./...`、`gen-configdoc -check` 通过。
 
+### 2026-10-05
+
+- 范围：`web/src/components/project/ProjectCredentialsPanel.vue`、`web/src/components/project/ProjectCredentialsPanel.test.ts`、`web/src/locales/{zh-CN,en}/pages.json`
+- 做了什么：重做项目凭据页的布局，按模型 API Key、代码托管、SSH 和其他凭据分组，增加配置摘要和响应式卡片网格；新增凭据弹窗拆分为基本信息、运行时绑定和凭据值区块，并明确 API Key 与仅写入语义。
+- 为什么：旧页面单列卡片在宽屏留下大量空白，API Key 与 Git/SSH 凭据混排，新增表单字段层级也不清楚，用户难以判断凭据该填在哪里。
+- 如何验证：项目凭据组件 Vitest 4/4 通过；`npm run lint`（0 errors，仅仓库既有 warnings）和 `npx vue-tsc --noEmit` 通过；`git diff --check` 通过。
+
 ### 2026-10-04
 
 - 日期：2026-10-04
