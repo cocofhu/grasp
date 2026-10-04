@@ -141,6 +141,8 @@ describe('preview-pick.js copies', () => {
     expect(drawer?.[1]).toBe('2147483647')
     expect(SCRIPT).toContain('live.api.syncTheme')
     expect(SCRIPT).toContain("if (!drawer) return '';")
+    expect(SCRIPT).toContain('.live[data-tooltip]::after')
+    expect(SCRIPT).toContain('var ICON_EYE_OFF')
     expect(SCRIPT).toContain('点选元素引用或修改，也可以插入区块或整页调整')
     expect(SCRIPT).toContain('Pick an element to quote or edit, insert a block, or adjust the whole page')
   })
@@ -1310,6 +1312,9 @@ describe('preview-pick.js Live overlay hook', () => {
     fake.candidates = true
     fake.opts!.changed()
     expect(btn('eye').hidden).toBe(false)
+    expect(btn('eye').innerHTML).toContain('button-icon')
+    expect(btn('eye').getAttribute('title')).toBe(null)
+    expect(btn('eye').getAttribute('data-tooltip')).toContain('Hold to see the original')
     expect(fake.opts!.post({ type: 'grasp-embed:live', op: 'discard', sid: 'sid001' })).toBe(true)
     expect(inbox.find((m) => m.type === 'grasp-embed:live')).toMatchObject({ op: 'discard', sid: 'sid001', target: GRASP })
     send({ type: 'grasp-embed:live-cmd', sid: 'sid001', cmd: 'goto', variant: 2 })
