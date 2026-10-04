@@ -262,9 +262,10 @@ type LiveEvent struct {
 	Params   map[string]any `json:"params,omitempty"`   // accept: final knob values
 	Notes    []string       `json:"notes,omitempty"`    // annotations on the element
 	Marks    []LiveMark     `json:"marks,omitempty"`
-	Error    string         `json:"error,omitempty"` // mount_failed
-	Auto     bool           `json:"auto,omitempty"`  // mount_failed detected by the page, not sent by the person
-	Retry    bool           `json:"-"`               // server-derived acceptance recovery
+	Error    string         `json:"error,omitempty"`   // mount_failed
+	Auto     bool           `json:"auto,omitempty"`    // mount_failed detected by the page, not sent by the person
+	Replace  bool           `json:"replace,omitempty"` // page generate: discard idle open candidate sets first
+	Retry    bool           `json:"-"`                 // server-derived acceptance recovery
 }
 
 // LiveCtx rides on a plain chat message while a session is open so "this"
@@ -312,6 +313,9 @@ func (ev *LiveEvent) Normalize() error {
 	}
 	if ev.Scope != "" && (ev.Scope != "page" || ev.Op != LiveOpGenerate) {
 		return errors.New("scope=page 仅用于从聊天生成页面候选")
+	}
+	if ev.Scope != "page" {
+		ev.Replace = false
 	}
 	if ev.Scope == "page" && len([]rune(strings.TrimSpace(ev.Prompt))) > livePromptMax {
 		return fmt.Errorf("页面候选需求最多 %d 字,请精简后重试", livePromptMax)

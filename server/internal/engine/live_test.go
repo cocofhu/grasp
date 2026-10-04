@@ -156,6 +156,79 @@ func TestChatLiveRequiresChoicesAndDoesNotAutoComplete(t *testing.T) {
 	}
 }
 
+func TestLivePageReplaceDiscardsIdleCandidatesFirst(t *testing.T) {
+	eng, _, p, runID := setupLive(t)
+	hold := make(chan struct{})
+	prompts := make(chan string, 8)
+	p.mu.Lock()
+	p.reviseHold = hold
+	p.reviseHook = func(_ runtime.NodeReq, human string) { prompts <- human }
+	p.mu.Unlock()
+	released := false
+	defer func() {
+		if !released {
+			close(hold)
+		}
+		_ = eng.waitReviewReadyForTest(runID, "preview", 5*time.Second)
+	}()
+	nextPrompt := func() string {
+		t.Helper()
+		select {
+		case s := <-prompts:
+			return s
+		case <-time.After(5 * time.Second):
+			t.Fatal("turn never reached the provider")
+			return ""
+		}
+	}
+
+	first := models.LiveEvent{Op: models.LiveOpGenerate, SID: "page01", Scope: "page", Prompt: "重新设计登录弹窗"}
+	if _, err := eng.ReactLiveAs("user:a", runID, "preview", first); err != nil {
+		t.Fatal(err)
+	}
+	nextPrompt()
+	replace := models.LiveEvent{Op: models.LiveOpGenerate, SID: "page02", Scope: "page", Prompt: "换一种风格", Replace: true}
+	if _, err := eng.ReactLiveAs("user:a", runID, "preview", replace); !errors.Is(err, ErrLiveBusy) {
+		t.Fatalf("replace while generating: err=%v, want ErrLiveBusy", err)
+	}
+	if s, _ := eng.liveSession(runID, "preview", "page01"); s == nil || s.State != models.LiveStateGenerating {
+		t.Fatalf("busy replace touched the open session: %+v", s)
+	}
+	if _, err := eng.ApplyLiveReport(runID, "preview", mcp.LiveReport{SID: "page01", State: models.LiveStateReady, Variants: []models.LiveVariant{{N: 1}, {N: 2}, {N: 3}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	plain := replace
+	plain.Replace = false
+	if _, err := eng.ReactLiveAs("user:a", runID, "preview", plain); err == nil {
+		t.Fatal("generate without replace bypassed the one-open-session limit")
+	}
+	if s, _ := eng.liveSession(runID, "preview", "page01"); s == nil || s.State != models.LiveStateReady {
+		t.Fatalf("plain generate changed the ready session: %+v", s)
+	}
+
+	sess, err := eng.ReactLiveAs("user:a", runID, "preview", replace)
+	if err != nil || sess.State != models.LiveStateGenerating {
+		t.Fatalf("replace generate: %+v, %v", sess, err)
+	}
+	if s, _ := eng.liveSession(runID, "preview", "page01"); s == nil || s.State != models.LiveStateDiscarding {
+		t.Fatalf("old session not discarding: %+v", s)
+	}
+	if again, err := eng.ReactLiveAs("user:a", runID, "preview", replace); err != nil || again.ID != "page02" {
+		t.Fatalf("retried replace generate: %+v, %v", again, err)
+	}
+
+	close(hold)
+	released = true
+	discard, generate := nextPrompt(), nextPrompt()
+	if !strings.Contains(discard, "sid: `page01`") || !strings.Contains(discard, "op: discard") {
+		t.Fatalf("first queued turn is not the discard: %q", discard)
+	}
+	if !strings.Contains(generate, "sid: `page02`") || !strings.Contains(generate, "op: generate") {
+		t.Fatalf("second queued turn is not the generate: %q", generate)
+	}
+}
+
 func TestLivePageReadyMatchesInitialCount(t *testing.T) {
 	eng, db, _, runID := setupLive(t)
 	for i, tc := range []struct {
