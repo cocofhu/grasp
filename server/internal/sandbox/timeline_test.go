@@ -185,3 +185,22 @@ func TestToolDetail(t *testing.T) {
 		t.Fatal("deep input must be cut")
 	}
 }
+
+func TestTimelineToolDurationAndPlanUpdates(t *testing.T) {
+	r := &ChatResult{}
+	dispatchSessionUpdate("tool_call", map[string]any{"toolCallId": "p", "title": "Update todos",
+		"rawInput": map[string]any{"todos": []any{map[string]any{"content": "x"}}}}, r)
+	dispatchSessionUpdate("tool_call_update", map[string]any{"toolCallId": "p", "status": "completed"}, r)
+	dispatchSessionUpdate("tool_call", map[string]any{"toolCallId": "s", "title": "Shell", "rawInput": map[string]any{"command": "npm ci"}}, r)
+	dispatchSessionUpdate("tool_call_update", map[string]any{"toolCallId": "s", "status": "completed", "durationMs": float64(42000)}, r)
+	dispatchSessionUpdate("tool_call", map[string]any{"toolCallId": "n", "title": "Read", "duration_ms": "1500"}, r)
+	dispatchSessionUpdate("tool_call", map[string]any{"toolCallId": "z", "title": "Grep", "durationMs": "soon"}, r)
+
+	if len(r.ToolCalls) != 3 {
+		t.Fatalf("plan tool updates must stay folded into the plan: %+v", r.ToolCalls)
+	}
+	parts := timelineOf(t, r)
+	if len(parts) != 3 || parts[0].Title != "Shell" || parts[0].DurationMs != 42000 || parts[1].DurationMs != 1500 || parts[2].DurationMs != 0 {
+		t.Fatalf("durations: %+v", parts)
+	}
+}
