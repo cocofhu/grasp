@@ -56,6 +56,29 @@ func TestVncReadyURLPrefersPageURL(t *testing.T) {
 	}
 }
 
+func TestPublicVncMsgAllowed(t *testing.T) {
+	cases := []struct {
+		m    vncClientMsg
+		want bool
+	}{
+		{vncClientMsg{Type: "inspect", On: true}, true},
+		{vncClientMsg{Type: "navigate", Action: "reload"}, true},
+		{vncClientMsg{Type: "navigate", Action: "goto", URL: "http://127.0.0.1:3000/"}, true},
+		{vncClientMsg{Type: "navigate", Action: "goto", URL: "https://localhost/x"}, true},
+		{vncClientMsg{Type: "navigate", Action: "goto", URL: "http://[::1]:8080/"}, true},
+		{vncClientMsg{Type: "navigate", Action: "goto", URL: "https://github.com/"}, false},
+		{vncClientMsg{Type: "navigate", Action: "goto", URL: "file:///etc/passwd"}, false},
+		{vncClientMsg{Type: "navigate", Action: "goto", URL: "about:blank"}, false},
+		{vncClientMsg{Type: "navigate", Action: "goto"}, false},
+		{vncClientMsg{Type: "navigate", URL: "http://127.0.0.1.evil.com/"}, false},
+	}
+	for _, c := range cases {
+		if got := publicVncMsgAllowed(c.m); got != c.want {
+			t.Errorf("publicVncMsgAllowed(%+v) = %v, want %v", c.m, got, c.want)
+		}
+	}
+}
+
 func TestPublicTicketPurpose(t *testing.T) {
 	cases := []struct {
 		port      gateshare.PublicPreviewPort

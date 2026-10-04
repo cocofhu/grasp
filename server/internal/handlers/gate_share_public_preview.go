@@ -243,6 +243,9 @@ func (h *Handlers) PublicPreviewVNC(c *gin.Context) {
 				var m vncClientMsg
 				if json.Unmarshal(data, &m) == nil {
 					sess.Touch()
+					if !publicVncMsgAllowed(m) {
+						continue
+					}
 					h.applyVncMsg(sess.Page(), m, pushJSON)
 					continue
 				}
@@ -262,6 +265,24 @@ func (h *Handlers) PublicPreviewVNC(c *gin.Context) {
 			return
 		}
 	}
+}
+
+// publicVncMsgAllowed keeps anonymous viewers on in-sandbox loopback pages:
+// the desktop shares the owner's browser profile, so a goto elsewhere would
+// reach sites with the owner's logins.
+func publicVncMsgAllowed(m vncClientMsg) bool {
+	if m.Type != "navigate" || (m.Action != "goto" && m.URL == "") {
+		return true
+	}
+	u, err := url.Parse(strings.TrimSpace(m.URL))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	switch strings.ToLower(u.Hostname()) {
+	case "127.0.0.1", "localhost", "::1":
+		return true
+	}
+	return false
 }
 
 // PublicPreviewAPIProxy reverse-proxies API ports via opaque ticket path (leak-free).
