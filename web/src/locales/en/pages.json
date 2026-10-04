@@ -3162,6 +3162,14 @@
         "describeFailed": "Could not identify that element. Please retry.",
         "inspectOffFailed": "The page may still be in pick mode. Select Cancel annotation again or reload the preview.",
         "reconnect": "Reconnect",
+        "reconnectingAttempt": "Reconnecting (attempt {n}/{max})",
+        "closedReason": {
+          "idle": "Disconnected after a period of inactivity",
+          "desktop-closed": "The sandbox desktop was closed",
+          "superseded": "Opened in another window; not reconnecting here",
+          "evicted": "Too many preview connections; this one was dropped",
+          "disconnect": "Connection lost"
+        },
         "error": "noVNC preview connection failed",
         "connectingTitle": "Starting preview environment…",
         "connectingHint": "First launch takes ~30–60s (the browser must spin up inside the sandbox). Please wait.",
@@ -3172,6 +3180,7 @@
           "connecting": "Connecting…",
           "live": "Live",
           "closed": "Disconnected",
+          "reconnecting": "Reconnecting…",
           "error": "Error"
         }
       },

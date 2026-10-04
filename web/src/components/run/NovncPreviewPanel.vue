@@ -5,6 +5,13 @@ import { api } from '@/lib/api/api'
 import { PreviewVncChannel } from '@/lib/shared/previewVncChannel'
 import { createPreviewFpsCounter } from '@/lib/shared/previewFps'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
+import {
+  VNC_HEARTBEAT_MS,
+  VNC_RECONNECT_MAX_ATTEMPTS,
+  closeReasonKey,
+  reconnectDelayMs,
+  shouldAutoReconnect,
+} from '@/lib/shared/vncReconnect'
 // @ts-expect-error noVNC ships without bundled types
 // Pinned to exact 1.5.0 (see package.json). Official path is HTTP + x11vnc -nopw
 // (None auth) + PreviewVncChannel demux. noVNC's Secure Context Log.Error is
@@ -97,6 +104,75 @@ let lastFitHeight = 0
 let restoreRafAttempts = 0
 const MAX_RESTORE_RAF_ATTEMPTS = 5
 
+/** Auto retries already started for the current loss; reset once a session is ready. */
+const reconnectAttempt = ref(0)
+/** An automatic reconnect is scheduled or in flight. */
+const reconnecting = ref(false)
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+let reconnectWhenVisible = false
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+
+const statusLabel = computed(() =>
+  reconnecting.value
+    ? t('pages.appPreview.novnc.status.reconnecting')
+    : t(`pages.appPreview.novnc.status.${status.value}`),
+)
+const reconnectingText = computed(() =>
+  t('pages.appPreview.novnc.reconnectingAttempt', {
+    n: Math.min(reconnectAttempt.value + 1, VNC_RECONNECT_MAX_ATTEMPTS),
+    max: VNC_RECONNECT_MAX_ATTEMPTS,
+  }),
+)
+
+function clearReconnectTimer() {
+  if (reconnectTimer != null) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+  reconnectWhenVisible = false
+}
+
+function scheduleAutoReconnect(reason: string) {
+  if (!shouldAutoReconnect(reason) || reconnectAttempt.value >= VNC_RECONNECT_MAX_ATTEMPTS) {
+    reconnecting.value = false
+    return
+  }
+  reconnecting.value = true
+  clearReconnectTimer()
+  if (document.visibilityState !== 'visible') {
+    reconnectWhenVisible = true
+    return
+  }
+  reconnectTimer = setTimeout(runAutoReconnect, reconnectDelayMs(reconnectAttempt.value))
+}
+
+function runAutoReconnect() {
+  reconnectTimer = null
+  reconnectAttempt.value++
+  reconnect({ auto: true })
+}
+
+/** Live session ended: show a localized reason and retry when the policy allows. */
+function onConnectionLost(reason: string) {
+  if (disposed) return
+  clearConnectTimer()
+  clearPreviewWarnTimer()
+  status.value = 'closed'
+  statusMsg.value = t(`pages.appPreview.novnc.closedReason.${closeReasonKey(reason)}`)
+  if (rfb) {
+    try {
+      rfb.disconnect()
+    } catch {
+      /* ignore */
+    }
+  }
+  scheduleAutoReconnect(reason)
+}
+
+function heartbeat() {
+  if (status.value === 'live' && document.visibilityState === 'visible') sendCtrl({ type: 'ping' })
+}
+
 function clearConnectTimer() {
   if (connectTimer != null) {
     clearTimeout(connectTimer)
@@ -138,7 +214,7 @@ function restoreViewport(_reason: string) {
   if (status.value === 'error' || status.value === 'closed') return
   if (!rfb || !sessionSocketAlive()) {
     // Socket died while hidden — surface closed UI instead of black canvas.
-    if (status.value === 'live') status.value = 'closed'
+    if (status.value === 'live') onConnectionLost('disconnect')
     return
   }
 
@@ -167,6 +243,11 @@ function onViewportResize() {
 
 function onDocumentVisibility() {
   if (document.visibilityState === 'visible') {
+    if (reconnectWhenVisible) {
+      reconnectWhenVisible = false
+      runAutoReconnect()
+      return
+    }
     restoreViewport('document-visible')
   }
 }
@@ -211,6 +292,7 @@ function fail(m: string) {
   clearPreviewWarnTimer()
   status.value = 'error'
   statusMsg.value = m
+  if (reconnecting.value) scheduleAutoReconnect('disconnect')
 }
 
 function teardown() {
@@ -249,6 +331,8 @@ function handleCtrlText(data: string) {
       clearConnectTimer()
       clearPreviewWarnTimer()
       status.value = 'live'
+      reconnectAttempt.value = 0
+      reconnecting.value = false
       if (typeof msg.url === 'string' && msg.url) address.value = msg.url
       // A re-attached desktop may already show the target port; do not reload it.
       if (props.targetPort && props.targetPort !== props.port && urlPort(address.value) !== props.targetPort) {
@@ -296,15 +380,7 @@ function handleCtrlText(data: string) {
       clearInspect('remote-esc', { syncRemote: true })
       break
     case 'closed':
-      status.value = 'closed'
-      statusMsg.value = msg.reason || ''
-      if (rfb) {
-        try {
-          rfb.disconnect()
-        } catch {
-          /* ignore */
-        }
-      }
+      onConnectionLost(typeof msg.reason === 'string' ? msg.reason : '')
       break
     case 'error':
       fail(
@@ -408,8 +484,8 @@ function connect() {
           ? t('pages.sandboxConsole.novncUnavailable')
           : t('pages.appPreview.novnc.error'),
       )
-    } else if (status.value !== 'error') {
-      status.value = 'closed'
+    } else if (status.value === 'live') {
+      onConnectionLost('disconnect')
     }
   })
 
@@ -453,7 +529,8 @@ function connect() {
     })
     rfb.addEventListener('disconnect', () => {
       if (disposed || status.value === 'error' || status.value === 'closed') return
-      status.value = 'closed'
+      if (status.value === 'live') onConnectionLost('disconnect')
+      else status.value = 'closed'
     })
     rfb.addEventListener('securityfailure', () => {
       fail(
@@ -471,7 +548,12 @@ function connect() {
   }
 }
 
-function reconnect() {
+function reconnect(opts?: { auto?: boolean }) {
+  clearReconnectTimer()
+  if (!opts?.auto) {
+    reconnectAttempt.value = 0
+    reconnecting.value = false
+  }
   // Short-lived public tickets expire; reusing the first wsUrl fails after TTL.
   // Ask parent (PublicAppPreviewPanel) to exchange a fresh ticket and remount.
   if ((props.wsUrl || '').trim()) {
@@ -590,6 +672,7 @@ onMounted(() => {
   document.addEventListener('fullscreenchange', onFsChange)
   document.addEventListener('visibilitychange', onDocumentVisibility)
   window.addEventListener('keydown', onKeydown)
+  heartbeatTimer = setInterval(heartbeat, VNC_HEARTBEAT_MS)
   connect()
   // Observe the preview viewport (definite box), not the canvas content size.
   setupHostResizeObserver()
@@ -600,6 +683,10 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onDocumentVisibility)
   window.removeEventListener('keydown', onKeydown)
   teardownHostResizeObserver()
+  if (heartbeatTimer != null) clearInterval(heartbeatTimer)
+  heartbeatTimer = null
+  clearReconnectTimer()
+  reconnecting.value = false
   teardown()
 })
 </script>
@@ -698,11 +785,11 @@ onBeforeUnmount(() => {
             class="inline-block h-1.5 w-1.5 rounded-full"
             :class="{
               'bg-ok': status === 'live',
-              'bg-warn animate-pulse': status === 'connecting',
-              'bg-err': status === 'error' || status === 'closed',
+              'bg-warn animate-pulse': status === 'connecting' || reconnecting,
+              'bg-err': !reconnecting && (status === 'error' || status === 'closed'),
             }"
           />
-          <span class="text-txt3">{{ t(`pages.appPreview.novnc.status.${status}`) }}</span>
+          <span class="text-txt3" data-testid="novnc-status">{{ statusLabel }}</span>
         </span>
       </span>
       <div
@@ -794,8 +881,17 @@ onBeforeUnmount(() => {
       v-if="!consoleMode && (status === 'error' || status === 'closed')"
       class="flex shrink-0 items-center gap-3 border-b border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn"
     >
-      <span class="min-w-0 flex-1 truncate">{{ statusMsg || t('pages.appPreview.novnc.error') }}</span>
-      <button type="button" class="rounded bg-overlay px-2 py-0.5 text-txt hover:bg-overlay/80" @click="reconnect">
+      <span class="min-w-0 flex-1 truncate" data-testid="novnc-closed-msg">
+        {{ statusMsg || t('pages.appPreview.novnc.error') }}
+        <template v-if="reconnecting"> · {{ reconnectingText }}</template>
+      </span>
+      <button
+        v-if="!reconnecting"
+        type="button"
+        class="rounded bg-overlay px-2 py-0.5 text-txt hover:bg-overlay/80"
+        data-testid="novnc-reconnect"
+        @click="reconnect()"
+      >
         {{ t('pages.appPreview.novnc.reconnect') }}
       </button>
     </div>
@@ -832,10 +928,12 @@ onBeforeUnmount(() => {
         >
           {{ statusMsg }}
         </div>
+        <div v-if="reconnecting" class="text-[11px] text-warn">{{ reconnectingText }}</div>
         <button
+          v-else
           type="button"
           class="rounded bg-overlay px-3 py-1.5 text-xs text-txt hover:bg-overlay/80"
-          @click="reconnect"
+          @click="reconnect()"
         >
           {{ t('pages.appPreview.novnc.reconnect') }}
         </button>
@@ -888,7 +986,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="rounded-lg mt-2 inline-flex min-h-11 items-center border border-line bg-surface px-3 text-[12px] font-medium text-txt"
-            @click="reconnect"
+            @click="reconnect()"
           >
             {{ t('pages.appPreview.novnc.reconnect') }}
           </button>

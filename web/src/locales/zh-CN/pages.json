@@ -3162,6 +3162,14 @@
         "describeFailed": "未能识别该元素，请重试",
         "inspectOffFailed": "页面可能仍在取点模式，请再点一次「取消标注」或刷新预览",
         "reconnect": "重新连接",
+        "reconnectingAttempt": "正在重新连接（第 {n}/{max} 次）",
+        "closedReason": {
+          "idle": "长时间无操作已断开",
+          "desktop-closed": "沙箱桌面已关闭",
+          "superseded": "已在其他窗口打开，这里不再自动重连",
+          "evicted": "预览连接过多，这里被断开",
+          "disconnect": "连接已断开"
+        },
         "error": "noVNC 预览连接失败",
         "connectingTitle": "正在启动预览环境…",
         "connectingHint": "首次启动约需 30–60s(需在沙箱内拉起浏览器),请稍候。",
@@ -3172,6 +3180,7 @@
           "connecting": "连接中…",
           "live": "已连接",
           "closed": "已断开",
+          "reconnecting": "重连中…",
           "error": "错误"
         }
       },

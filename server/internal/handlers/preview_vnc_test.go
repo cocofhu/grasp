@@ -142,6 +142,38 @@ func TestApplyVncMsgIgnoresUnknown(t *testing.T) {
 	}
 }
 
+func TestApplyVncMsgPingIsNoop(t *testing.T) {
+	h := &Handlers{}
+	p := &vncRecPage{}
+	var pushed []any
+	h.applyVncMsg(p, decodeVnc(t, `{"type":"ping"}`), func(v any) { pushed = append(pushed, v) })
+	if p.inspect != nil || len(p.navs) != 0 || len(p.gotos) != 0 || len(pushed) != 0 {
+		t.Fatalf("ping should only mark activity: inspect=%v navs=%v gotos=%v pushed=%v", p.inspect, p.navs, p.gotos, pushed)
+	}
+}
+
+func TestVncToucherThrottles(t *testing.T) {
+	n := 0
+	now := time.Unix(1000, 0)
+	tc := newVncToucher(func() { n++ })
+	tc.now = func() time.Time { return now }
+
+	tc.mark()
+	if n != 1 {
+		t.Fatalf("first mark should touch, got %d", n)
+	}
+	now = now.Add(vncTouchEvery - time.Second)
+	tc.mark()
+	if n != 1 {
+		t.Fatalf("mark inside the window should be throttled, got %d", n)
+	}
+	now = now.Add(time.Second)
+	tc.mark()
+	if n != 2 {
+		t.Fatalf("mark after the window should touch again, got %d", n)
+	}
+}
+
 func TestApplyVncMsgGoto(t *testing.T) {
 	h := &Handlers{}
 	p := &vncRecPage{}

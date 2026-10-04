@@ -191,7 +191,8 @@
       "startPath.ts",
       "streamMarkdownPreview.ts",
       "theme.ts",
-      "types.ts"
+      "types.ts",
+      "vncReconnect.ts"
     ]
   },
   "totals": {
@@ -202,6 +203,6 @@
     "pm": 7,
     "project": 4,
     "run": 60,
-    "shared": 40
+    "shared": 41
   }
 }

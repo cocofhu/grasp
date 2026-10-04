@@ -15,6 +15,11 @@ All notable public-release changes are documented here.
   again and no longer clips the top of the page. **Cancel annotation** now
   leaves pick mode, and the panel shows a tip if the page did not leave it. The
   watch-only hint is easier to read.
+- **App preview:** a watched preview no longer drops after five minutes without
+  input. If the connection is closed for inactivity or lost, the panel shows a
+  readable reason and reconnects on its own with backoff, waiting until the tab
+  is visible again. It does not reconnect when the preview was opened in another
+  window.
 
 ## 1.2.1 — 2026-09-28
 
