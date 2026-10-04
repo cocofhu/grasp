@@ -23,8 +23,8 @@
       "sendShortcut": "Ctrl/⌘ + Enter to send",
       "missingRequired": "Fill required launch fields before starting",
       "cardFallback": "Grasp pre-dev clarification",
-      "scrollLeft": "Scroll left",
-      "scrollRight": "Scroll right",
+      "scrollLeft": "Short press scrolls one card left; hold to reach the left end",
+      "scrollRight": "Short press scrolls one card right; hold to reach the right end",
       "draftRestored": "Draft restored",
       "pipelineMenu": {
         "more": "More actions",

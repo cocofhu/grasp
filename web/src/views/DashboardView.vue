@@ -362,6 +362,13 @@ function onComposerSubmit(e: Event) {
 }
 
 const PIPELINE_SCROLL_EPS = 2
+/** plan g1.1 — keep past this threshold counts as a hold and scrolls to the rail end. */
+const PIPELINE_NAV_HOLD_MS = 400
+
+let pipelineNavHoldTimer: ReturnType<typeof setTimeout> | null = null
+let pipelineNavGestureSeq = 0
+/** Direction of an in-flight scroll-to-edge; cleared once that end is reached. plan g1.2 */
+let pipelineEdgeDir: number | null = null
 
 function pipelineCardStep(): number {
   const rail = pipelineCardsEl.value
@@ -393,6 +400,11 @@ function syncPipelineNav() {
   pipelineCanScrollNext.value = overflow && !atEnd
   pipelineFadeLeft.value = overflow && !atStart
   pipelineFadeRight.value = overflow && !atEnd
+  if (pipelineEdgeDir != null) {
+    if ((pipelineEdgeDir < 0 && atStart) || (pipelineEdgeDir > 0 && atEnd)) {
+      pipelineEdgeDir = null
+    }
+  }
 }
 
 function scrollPipelineByDir(dir: number) {
@@ -406,6 +418,104 @@ function scrollPipelineByDir(dir: number) {
   } else {
     rail.scrollBy({ left: delta, behavior: 'smooth' })
   }
+}
+
+function clearPipelineNavHold() {
+  if (pipelineNavHoldTimer != null) {
+    clearTimeout(pipelineNavHoldTimer)
+    pipelineNavHoldTimer = null
+  }
+}
+
+/** plan g1.2 — assigning scrollLeft stops an in-flight smooth scroll at the current offset. */
+function stopPipelineSmoothScroll() {
+  const rail = pipelineCardsEl.value
+  pipelineEdgeDir = null
+  if (!rail) return
+  const left = rail.scrollLeft
+  rail.classList.add('home-pipeline-rail--instant')
+  rail.scrollLeft = left
+  requestAnimationFrame(() => rail.classList.remove('home-pipeline-rail--instant'))
+}
+
+/** plan g1.2 — left end is 0; right end is scrollWidth − clientWidth. */
+function scrollPipelineToEdge(dir: number) {
+  const rail = pipelineCardsEl.value
+  if (!rail) return
+  const max = Math.max(0, rail.scrollWidth - rail.clientWidth)
+  const target = dir < 0 ? 0 : max
+  pipelineEdgeDir = dir
+  if (prefersReducedMotion()) {
+    rail.classList.add('home-pipeline-rail--instant')
+    rail.scrollLeft = target
+    requestAnimationFrame(() => rail.classList.remove('home-pipeline-rail--instant'))
+  } else {
+    rail.scrollTo({ left: target, behavior: 'smooth' })
+  }
+}
+
+function onPipelineNavPointerDown(e: PointerEvent, dir: number) {
+  if (e.button != null && e.button !== 0) return
+  const el = e.currentTarget as HTMLButtonElement | null
+  if (!el || el.disabled) return
+
+  if (pipelineEdgeDir != null && pipelineEdgeDir !== dir) {
+    stopPipelineSmoothScroll()
+  }
+
+  clearPipelineNavHold()
+  const token = String(++pipelineNavGestureSeq)
+  el.dataset.pipelineNavGesture = token
+  delete el.dataset.pipelineNavBlockClick
+
+  if (typeof el.setPointerCapture === 'function' && Number.isFinite(e.pointerId)) {
+    try {
+      el.setPointerCapture(e.pointerId)
+    } catch {
+      /* pointer already released */
+    }
+  }
+
+  pipelineNavHoldTimer = setTimeout(() => {
+    pipelineNavHoldTimer = null
+    if (el.dataset.pipelineNavGesture !== token) return
+    // plan g1.1 — swallow the click that follows this press so it does not step again
+    el.dataset.pipelineNavBlockClick = token
+    scrollPipelineToEdge(dir)
+  }, PIPELINE_NAV_HOLD_MS)
+}
+
+function releasePipelineNavPointer(e: PointerEvent) {
+  const el = e.currentTarget as HTMLElement | null
+  clearPipelineNavHold()
+  if (!el || !Number.isFinite(e.pointerId) || typeof el.releasePointerCapture !== 'function') return
+  try {
+    if (typeof el.hasPointerCapture === 'function' && !el.hasPointerCapture(e.pointerId)) return
+    el.releasePointerCapture(e.pointerId)
+  } catch {
+    /* already released */
+  }
+}
+
+function onPipelineNavPointerUp(e: PointerEvent) {
+  releasePipelineNavPointer(e)
+}
+
+function onPipelineNavPointerCancel(e: PointerEvent) {
+  releasePipelineNavPointer(e)
+}
+
+function onPipelineNavClick(e: MouseEvent, dir: number) {
+  const el = e.currentTarget as HTMLButtonElement | null
+  if (!el || el.disabled) return
+  if (
+    el.dataset.pipelineNavBlockClick
+    && el.dataset.pipelineNavBlockClick === el.dataset.pipelineNavGesture
+  ) {
+    delete el.dataset.pipelineNavBlockClick
+    return
+  }
+  scrollPipelineByDir(dir)
 }
 
 function onPipelineWheel(e: WheelEvent) {
@@ -475,6 +585,7 @@ onBeforeUnmount(() => {
   clearBrandTimers()
   clearPhTimers()
   clearLongPress()
+  clearPipelineNavHold()
   pipelineStripObserver?.disconnect()
   pipelineStripObserver = null
   window.removeEventListener('resize', syncPipelineNav)
@@ -694,7 +805,11 @@ onBeforeUnmount(() => {
             :disabled="!pipelineCanScrollPrev"
             :aria-label="t('pages.dashboard.scrollLeft')"
             :title="t('pages.dashboard.scrollLeft')"
-            @click="scrollPipelineByDir(-1)"
+            @pointerdown="onPipelineNavPointerDown($event, -1)"
+            @pointerup="onPipelineNavPointerUp"
+            @pointercancel="onPipelineNavPointerCancel"
+            @click="onPipelineNavClick($event, -1)"
+            @contextmenu.prevent
           >
             <Icon name="chevron-left" :size="16" />
           </button>
@@ -790,7 +905,11 @@ onBeforeUnmount(() => {
             :disabled="!pipelineCanScrollNext"
             :aria-label="t('pages.dashboard.scrollRight')"
             :title="t('pages.dashboard.scrollRight')"
-            @click="scrollPipelineByDir(1)"
+            @pointerdown="onPipelineNavPointerDown($event, 1)"
+            @pointerup="onPipelineNavPointerUp"
+            @pointercancel="onPipelineNavPointerCancel"
+            @click="onPipelineNavClick($event, 1)"
+            @contextmenu.prevent
           >
             <Icon name="chevron-right" :size="16" />
           </button>
@@ -1173,6 +1292,9 @@ onBeforeUnmount(() => {
   place-items: center;
   cursor: pointer;
   padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   transition:
     opacity 0.2s ease,
     color 0.15s ease,

@@ -4,6 +4,7 @@ import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
+import enPages from '@/locales/en/pages.json'
 import type { Workflow } from '@/lib/shared/types'
 
 const mocks = vi.hoisted(() => ({
@@ -114,6 +115,70 @@ function teleported(testid: string) {
 
 function teleportedExists(testid: string) {
   return document.querySelector(`[data-testid="${testid}"]`) != null
+}
+
+/** plan g1.1 — press shorter than this stays a one-card step. */
+const PIPELINE_NAV_HOLD_MS = 400
+
+function manyHomeWorkflows(count = 8): Workflow[] {
+  return Array.from({ length: count }, (_, i) => ({
+    ...approveWf,
+    id: i === 0 ? approveWf.id : `wf-${i}`,
+    name: `流水线 ${i}`,
+  }))
+}
+
+function installOverflowRail(rail: HTMLDivElement, initialLeft: number) {
+  Object.defineProperty(rail, 'clientWidth', { configurable: true, value: 400 })
+  Object.defineProperty(rail, 'scrollWidth', { configurable: true, value: 1600 })
+  let scrollLeft = initialLeft
+  Object.defineProperty(rail, 'scrollLeft', {
+    configurable: true,
+    get: () => scrollLeft,
+    set: (v: number) => {
+      scrollLeft = v
+    },
+  })
+  const scrollTo = vi.fn((opts?: ScrollToOptions | number) => {
+    if (typeof opts === 'number') scrollLeft = opts
+    else if (opts && typeof opts.left === 'number') scrollLeft = opts.left
+  })
+  const scrollBy = vi.fn((opts?: ScrollToOptions | number) => {
+    const delta = typeof opts === 'number' ? opts : (opts?.left ?? 0)
+    scrollLeft += delta
+  })
+  rail.scrollTo = scrollTo as typeof rail.scrollTo
+  rail.scrollBy = scrollBy as typeof rail.scrollBy
+  const card = rail.querySelector('.home-shell__card') as HTMLElement
+  vi.spyOn(card, 'getBoundingClientRect').mockReturnValue({
+    width: 192,
+    height: 120,
+    top: 0,
+    left: 0,
+    bottom: 120,
+    right: 192,
+    x: 0,
+    y: 0,
+    toJSON() {
+      return {}
+    },
+  } as DOMRect)
+  return {
+    get left() {
+      return scrollLeft
+    },
+    set left(v: number) {
+      scrollLeft = v
+    },
+    max: 1600 - 400,
+    scrollTo,
+    scrollBy,
+    cardStep() {
+      const styles = getComputedStyle(rail)
+      const gap = parseFloat(styles.columnGap || styles.gap || '12') || 12
+      return card.getBoundingClientRect().width + gap
+    },
+  }
 }
 
 function stubReducedMotion(matches: boolean) {
@@ -985,6 +1050,199 @@ describe('DashboardView home composer', () => {
     expect(wrapper.get('[data-testid="home-pipeline-card-wf-ap"]').classes()).toContain(
       'home-shell__card--selected',
     )
+    wrapper.unmount()
+  })
+
+  // plan g1.3 — zh/en hover copy distinguishes a short press from a hold-to-end
+  it('explains short-press and hold-to-end on pipeline arrows in zh and en', async () => {
+    expect(pages.pages.dashboard.scrollLeft).toContain('按住')
+    expect(pages.pages.dashboard.scrollLeft).toContain('最左')
+    expect(pages.pages.dashboard.scrollRight).toContain('按住')
+    expect(pages.pages.dashboard.scrollRight).toContain('最右')
+    expect(enPages.pages.dashboard.scrollLeft.toLowerCase()).toContain('hold')
+    expect(enPages.pages.dashboard.scrollLeft.toLowerCase()).toContain('left end')
+    expect(enPages.pages.dashboard.scrollRight.toLowerCase()).toContain('hold')
+    expect(enPages.pages.dashboard.scrollRight.toLowerCase()).toContain('right end')
+
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const prev = wrapper.get('[data-testid="home-pipeline-scroll-prev"]')
+    const next = wrapper.get('[data-testid="home-pipeline-scroll-next"]')
+    expect(prev.attributes('title')).toBe(pages.pages.dashboard.scrollLeft)
+    expect(prev.attributes('aria-label')).toBe(pages.pages.dashboard.scrollLeft)
+    expect(next.attributes('title')).toBe(pages.pages.dashboard.scrollRight)
+    expect(next.attributes('aria-label')).toBe(pages.pages.dashboard.scrollRight)
+    expect(dashboardSource).toMatch(/-webkit-touch-callout:\s*none/)
+    const menuEvent = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    prev.element.dispatchEvent(menuEvent)
+    expect(menuEvent.defaultPrevented).toBe(true)
+    wrapper.unmount()
+  })
+
+  // plan g2.2 / g1.1 / g1.2 — hold scrolls to the rail end; a short press steps one card
+  it('holds the left arrow to scrollLeft 0 and ignores the trailing click', async () => {
+    mocks.listWorkflows.mockResolvedValue(manyHomeWorkflows())
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const rail = wrapper.get('[data-testid="home-pipeline-cards"]').element as HTMLDivElement
+    const scroller = installOverflowRail(rail, 480)
+    await rail.dispatchEvent(new Event('scroll'))
+    await flushPromises()
+
+    const prev = wrapper.get('[data-testid="home-pipeline-scroll-prev"]')
+    expect((prev.element as HTMLButtonElement).disabled).toBe(false)
+    const capture = vi.spyOn(prev.element as HTMLElement, 'setPointerCapture')
+    await prev.trigger('pointerdown', { button: 0, pointerId: 3 })
+    expect(capture).toHaveBeenCalledWith(3)
+    await vi.advanceTimersByTimeAsync(PIPELINE_NAV_HOLD_MS)
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 0, behavior: 'smooth' })
+    expect(scroller.left).toBe(0)
+    expect(scroller.scrollBy).not.toHaveBeenCalled()
+
+    await prev.trigger('pointerup', { button: 0, pointerId: 3 })
+    await prev.trigger('click')
+    expect(scroller.left).toBe(0)
+    expect(scroller.scrollBy).not.toHaveBeenCalled()
+    await rail.dispatchEvent(new Event('scroll'))
+    await flushPromises()
+    expect((prev.element as HTMLButtonElement).disabled).toBe(true)
+    expect(wrapper.find('.home-pipeline-rail-wrap--has-left').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-pipeline-card-wf-ap"]').classes()).toContain(
+      'home-shell__card--selected',
+    )
+    wrapper.unmount()
+  })
+
+  it('holds the right arrow to the maximum scrollLeft', async () => {
+    mocks.listWorkflows.mockResolvedValue(manyHomeWorkflows())
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const rail = wrapper.get('[data-testid="home-pipeline-cards"]').element as HTMLDivElement
+    const scroller = installOverflowRail(rail, 0)
+    await rail.dispatchEvent(new Event('scroll'))
+    await flushPromises()
+
+    const next = wrapper.get('[data-testid="home-pipeline-scroll-next"]')
+    expect((next.element as HTMLButtonElement).disabled).toBe(false)
+    await next.trigger('pointerdown', { button: 0, pointerId: 4 })
+    await vi.advanceTimersByTimeAsync(PIPELINE_NAV_HOLD_MS)
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: scroller.max, behavior: 'smooth' })
+    expect(scroller.left).toBe(scroller.max)
+    await next.trigger('pointerup', { button: 0, pointerId: 4 })
+    await next.trigger('click')
+    expect(scroller.left).toBe(scroller.max)
+    expect(scroller.scrollBy).not.toHaveBeenCalled()
+    await rail.dispatchEvent(new Event('scroll'))
+    await flushPromises()
+    expect((next.element as HTMLButtonElement).disabled).toBe(true)
+    expect(wrapper.find('.home-pipeline-rail-wrap--has-right').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-pipeline-card-wf-ap"]').classes()).toContain(
+      'home-shell__card--selected',
+    )
+    wrapper.unmount()
+  })
+
+  it('releases before the hold threshold and steps only one card', async () => {
+    mocks.listWorkflows.mockResolvedValue(manyHomeWorkflows())
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const rail = wrapper.get('[data-testid="home-pipeline-cards"]').element as HTMLDivElement
+    const scroller = installOverflowRail(rail, 100)
+    await rail.dispatchEvent(new Event('scroll'))
+    await flushPromises()
+
+    const next = wrapper.get('[data-testid="home-pipeline-scroll-next"]')
+    const before = scroller.left
+    await next.trigger('pointerdown', { button: 0, pointerId: 5 })
+    await vi.advanceTimersByTimeAsync(PIPELINE_NAV_HOLD_MS - 1)
+    await next.trigger('pointerup', { button: 0, pointerId: 5 })
+    await next.trigger('click')
+    expect(scroller.scrollTo).not.toHaveBeenCalled()
+    expect(scroller.scrollBy).toHaveBeenCalledTimes(1)
+    expect(scroller.scrollBy).toHaveBeenCalledWith({ left: scroller.cardStep(), behavior: 'smooth' })
+    expect(scroller.left - before).toBe(scroller.cardStep())
+    await vi.advanceTimersByTimeAsync(PIPELINE_NAV_HOLD_MS)
+    expect(scroller.scrollTo).not.toHaveBeenCalled()
+    expect(scroller.left - before).toBe(scroller.cardStep())
+    expect(wrapper.get('[data-testid="home-pipeline-card-wf-ap"]').classes()).toContain(
+      'home-shell__card--selected',
+    )
+    wrapper.unmount()
+  })
+
+  it('jumps to the rail end immediately when reduced motion is on', async () => {
+    stubReducedMotion(true)
+    mocks.listWorkflows.mockResolvedValue(manyHomeWorkflows())
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const rail = wrapper.get('[data-testid="home-pipeline-cards"]').element as HTMLDivElement
+    const scroller = installOverflowRail(rail, 360)
+    await rail.dispatchEvent(new Event('scroll'))
+    await flushPromises()
+
+    const prev = wrapper.get('[data-testid="home-pipeline-scroll-prev"]')
+    await prev.trigger('pointerdown', { button: 0, pointerId: 6 })
+    await vi.advanceTimersByTimeAsync(PIPELINE_NAV_HOLD_MS)
+    expect(scroller.scrollTo).not.toHaveBeenCalled()
+    expect(scroller.left).toBe(0)
+    expect(scroller.scrollBy).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('cancels an in-flight edge scroll when the opposite arrow is pressed', async () => {
+    mocks.listWorkflows.mockResolvedValue(manyHomeWorkflows())
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const rail = wrapper.get('[data-testid="home-pipeline-cards"]').element as HTMLDivElement
+    const scroller = installOverflowRail(rail, 480)
+    scroller.scrollTo.mockImplementation(() => {
+      /* leave scrollLeft mid-flight until the opposite press */
+    })
+    await rail.dispatchEvent(new Event('scroll'))
+    await flushPromises()
+
+    const next = wrapper.get('[data-testid="home-pipeline-scroll-next"]')
+    const prev = wrapper.get('[data-testid="home-pipeline-scroll-prev"]')
+    await next.trigger('pointerdown', { button: 0, pointerId: 8 })
+    await vi.advanceTimersByTimeAsync(PIPELINE_NAV_HOLD_MS)
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: scroller.max, behavior: 'smooth' })
+    expect(scroller.left).toBe(480)
+    await next.trigger('pointerup', { button: 0, pointerId: 8 })
+    await next.trigger('click')
+    expect(scroller.left).toBe(480)
+
+    await prev.trigger('pointerdown', { button: 0, pointerId: 9 })
+    expect(rail.classList.contains('home-pipeline-rail--instant')).toBe(true)
+    expect(scroller.left).toBe(480)
+    scroller.scrollTo.mockImplementation((opts?: ScrollToOptions | number) => {
+      if (typeof opts === 'number') scroller.left = opts
+      else if (opts && typeof opts.left === 'number') scroller.left = opts.left
+    })
+    await vi.advanceTimersByTimeAsync(PIPELINE_NAV_HOLD_MS)
+    expect(scroller.left).toBe(0)
+    expect(scroller.scrollBy).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('does not scroll when a disabled arrow is held and keeps arrows disabled without overflow', async () => {
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const rail = wrapper.get('[data-testid="home-pipeline-cards"]').element as HTMLDivElement
+    const scroller = installOverflowRail(rail, 0)
+    Object.defineProperty(rail, 'scrollWidth', { configurable: true, value: 200 })
+    Object.defineProperty(rail, 'clientWidth', { configurable: true, value: 800 })
+    await rail.dispatchEvent(new Event('scroll'))
+    await flushPromises()
+    const prev = wrapper.get('[data-testid="home-pipeline-scroll-prev"]')
+    const next = wrapper.get('[data-testid="home-pipeline-scroll-next"]')
+    expect((prev.element as HTMLButtonElement).disabled).toBe(true)
+    expect((next.element as HTMLButtonElement).disabled).toBe(true)
+    await next.trigger('pointerdown', { button: 0, pointerId: 2 })
+    await vi.advanceTimersByTimeAsync(PIPELINE_NAV_HOLD_MS)
+    await next.trigger('click')
+    expect(scroller.scrollTo).not.toHaveBeenCalled()
+    expect(scroller.scrollBy).not.toHaveBeenCalled()
+    expect(scroller.left).toBe(0)
     wrapper.unmount()
   })
 
