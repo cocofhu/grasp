@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"github.com/cocofhu/grasp/internal/blob"
+	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
@@ -100,10 +101,9 @@ type Engine struct {
 	// node-scoped failed transitions (QQ Run notify). Engine never blocks on it.
 	runNotify RunNotifier
 
-	// reviewMu guards reviewSess: per parked producer session FIFO + single
-	// worker for node-inline review and gate hot-revise (SandboxChat-aligned).
-	reviewMu   sync.Mutex
-	reviewSess map[string]*reviewSession // key: runID|producerNodeID
+	// reviewSess holds per parked producer session FIFO + single worker for
+	// node-inline review, gate hot-revise and visitor lanes.
+	reviewSess chatsession.Registry[*reviewSession] // key: laneSessionKey
 
 	// visitorMu guards visitorLanes: share-link visitor lanes holding (or
 	// about to hold) a sandbox chat, for the per-link cap and idle sweep.

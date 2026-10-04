@@ -71,9 +71,7 @@ func TestResumeReviewExternalBusyDoesNotBurnLink(t *testing.T) {
 	token := extractShareToken(t, created.URL)
 
 	s := eng.getOrCreateReviewSession(run.ID, "prop", sessionKindReview)
-	s.mu.Lock()
-	s.waiting = 1
-	s.mu.Unlock()
+	s.SeedForTest([]*reviewQueueItem{{ID: "q1", Text: "排队中"}})
 
 	res, err := eng.ResumeReviewExternal(share, token, "confirm")
 	if err != gateshare.ErrReviewBusy {
@@ -87,9 +85,7 @@ func TestResumeReviewExternalBusyDoesNotBurnLink(t *testing.T) {
 		t.Fatalf("link burned after busy: st=%s err=%v", st, lerr)
 	}
 
-	s.mu.Lock()
-	s.waiting = 0
-	s.mu.Unlock()
+	s.SeedForTest(nil)
 	res2, err := eng.ResumeReviewExternal(share, token, "confirm")
 	if err != nil {
 		t.Fatalf("retry after ready: %v", err)
@@ -276,10 +272,7 @@ func TestCancelClarifyTurnKeepsQueueForPublicShare(t *testing.T) {
 	token := extractShareToken(t, created.URL)
 
 	s := eng.getOrCreateReviewSession(run.ID, "clarify", sessionKindClarify)
-	s.mu.Lock()
-	s.queue = []*reviewQueueItem{{ID: "q1", Text: "已排队回复"}, {ID: "q2", Text: "第二条"}}
-	s.waiting = 2
-	s.mu.Unlock()
+	s.SeedForTest([]*reviewQueueItem{{ID: "q1", Text: "已排队回复"}, {ID: "q2", Text: "第二条"}})
 
 	if err := eng.CancelClarifyTurn(run.ID, "clarify"); err != nil {
 		t.Fatalf("cancel clarify: %v", err)

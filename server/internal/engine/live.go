@@ -367,18 +367,15 @@ func liveVariantExists(sess *models.LiveSession, n int) bool {
 // activeLiveChat snapshots authorization from the turn currently running, not
 // from a later queued message or mutable page state.
 func (e *Engine) activeLiveChat(runID, nodeID string) (*models.LiveCtx, bool) {
-	e.reviewMu.Lock()
-	s := e.reviewSess[e.reviewSessionKey(runID, nodeID)]
-	e.reviewMu.Unlock()
+	s := e.laneSession(runID, nodeID, "")
 	if s == nil {
 		return nil, false
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.active == nil {
+	active, ok := s.Active()
+	if !ok {
 		return nil, false
 	}
-	return s.active.LiveChat, s.active.LiveWritesDenied
+	return active.LiveChat, active.LiveWritesDenied
 }
 
 func (e *Engine) failCancelledQueuedLive(runID, nodeID, sid string) {

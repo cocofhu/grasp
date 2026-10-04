@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Server coverage gate: core unit-testable packages
-# (auth/apikey / config / crypto / textutil / logging / nodereg / models / shutdown / router / mcp).
+# (auth/apikey / config / crypto / textutil / logging / nodereg / models / shutdown / router / mcp / chatsession).
 # Excludes handlers/services/engine/sandbox/runtime/database/browser/channels/cmd
 # (integration/IO surfaces covered via go test ./... and e2e subsets).
 set -euo pipefail
@@ -20,6 +20,7 @@ PKGS=(
   ./internal/shutdown
   ./internal/router
   ./internal/mcp/...
+  ./internal/chatsession
 )
 LIST="$(go list "${PKGS[@]}" | paste -sd, -)"
 go test "${PKGS[@]}" -count=1 -timeout 20m -coverpkg="$LIST" -coverprofile="$COVER"
