@@ -8,10 +8,12 @@ Static HTML homepage + Markdown help, built to `public/` and published by
 
 | Path | Role |
 |------|------|
-| `site/` | Static assets and homepage (`index.html`, CSS, JS) |
-| `content/` | Help / guide Markdown (`*.md` with YAML front matter) |
-| `scripts/build.mjs` | Copy `site/` → `public/`, render Markdown → HTML |
+| `site/` | Static assets and homepage (`index.html`, CSS, JS). Copied into `public/` |
+| `content/` | Help / guide Markdown (`*.md` with YAML front matter). Rendered into `public/` |
+| `scripts/build.mjs` | Copy `site/` → `public/`, render Markdown → HTML. Does not read `agent/` or `dev/` |
 | `public/` | Build output (gitignored) |
+| `agent/` | In-repo agent handbook ([`agent/README.md`](agent/README.md)). Not published to `public/` |
+| `dev/` | In-repo notes and the development log ([`dev/DEVLOG.md`](dev/DEVLOG.md)). Not published to `public/` |
 
 ## Local commands
 

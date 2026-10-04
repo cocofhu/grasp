@@ -12,6 +12,28 @@ This file does **not** replace [`CONTRIBUTING.md`](CONTRIBUTING.md),
 path→commands, gates, pitfalls, and do-not-touch; use CONTRIBUTING for full
 setup and layout.
 
+## Read which doc
+
+| Need | File |
+|------|------|
+| Commands, gates, pitfalls, do-not-touch | This file |
+| Which document to edit, and when to log | [`docs/agent/README.md`](docs/agent/README.md) |
+| Internal development log | [`docs/dev/DEVLOG.md`](docs/dev/DEVLOG.md) |
+| Environment and full contribution flow | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
+
+Boundaries only — do not copy command blocks into the handbook. See
+[`docs/agent/README.md`](docs/agent/README.md).
+
+## Development log (hard rule)
+
+When a change is worth a later reader, append one entry at the **top** of
+[`docs/dev/DEVLOG.md`](docs/dev/DEVLOG.md): date, scope (paths), what, why, how
+verified. Do not paste that journal into this file.
+
+If the change has **no** user-visible behavior, do **not** edit
+[`CHANGELOG.md`](CHANGELOG.md). If it does, still write the DEVLOG entry and
+add a separate `Unreleased` bullet in `CHANGELOG.md`.
+
 ---
 
 ## Directory roles
