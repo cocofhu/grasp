@@ -23,8 +23,8 @@
       "sendShortcut": "Ctrl/⌘ + Enter 发送",
       "missingRequired": "启动前还需填写必填项",
       "cardFallback": "Grasp 开发前澄清",
-      "scrollLeft": "向左滚动",
-      "scrollRight": "向右滚动",
+      "scrollLeft": "短按向左滚一张，按住到最左端",
+      "scrollRight": "短按向右滚一张，按住到最右端",
       "draftRestored": "草稿已恢复",
       "pipelineMenu": {
         "more": "更多操作",
