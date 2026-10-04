@@ -30,6 +30,10 @@ var ErrLiveScanFailed = errors.New("无法确认预览页 Live 标记已清除,�
 // ErrLiveDisabled means the node is not a supported IP-direct node with Live on.
 var ErrLiveDisabled = errors.New("该节点未开启 Live 变体")
 
+// ErrLiveBusy rejects a replacing page generate while the agent is still
+// working on a candidate set.
+var ErrLiveBusy = errors.New("当前候选正在处理中,请稍候再发送")
+
 const liveScanTimeout = 40 * time.Second
 
 // LiveEnabled reports whether this node supports direct-preview Live editing.
@@ -142,6 +146,11 @@ func (e *Engine) ReactLiveWithAttachmentsAs(owner, runID, nodeID string, ev mode
 	if err := e.reviewConvOpen(runID, nodeID); err != nil {
 		return nil, err
 	}
+	if ev.Replace {
+		if err := e.discardIdleLiveForReplace(owner, runID, nodeID, ev.SID); err != nil {
+			return nil, err
+		}
+	}
 
 	e.liveMu.Lock()
 	defer e.liveMu.Unlock()
@@ -206,7 +215,7 @@ func (e *Engine) ReactLiveWithAttachmentsAs(owner, runID, nodeID string, ev mode
 	}
 	if cur == nil && ev.Op != models.LiveOpSteer {
 		for _, o := range e.LiveSessions(runID, nodeID, true) {
-			if o.Mode != "steer" {
+			if o.Mode != "steer" && !(ev.Replace && o.State == models.LiveStateDiscarding) {
 				return nil, fmt.Errorf("还有一个未完成的 Live 变体(%s),请先采用或放弃", o.Summary)
 			}
 		}
@@ -395,6 +404,36 @@ func (e *Engine) failCancelledQueuedLive(runID, nodeID, sid string) {
 		}
 		e.publishLive(sess)
 	}
+}
+
+// discardIdleLiveForReplace queues a discard for each ready or failed
+// candidate set so a replacing page generate can follow it in the same queue.
+// If the generate then fails to enqueue, the discards stand and the page
+// returns to the original.
+func (e *Engine) discardIdleLiveForReplace(owner, runID, nodeID, sid string) error {
+	if cur, err := e.liveSession(runID, nodeID, sid); err != nil {
+		return err
+	} else if cur != nil {
+		return nil
+	}
+	var idle []string
+	for _, s := range e.LiveSessions(runID, nodeID, true) {
+		if s.Mode == "steer" {
+			continue
+		}
+		switch s.State {
+		case models.LiveStateGenerating, models.LiveStateRefining, models.LiveStateAccepting:
+			return ErrLiveBusy
+		case models.LiveStateReady, models.LiveStateFailed:
+			idle = append(idle, s.ID)
+		}
+	}
+	for _, id := range idle {
+		if _, err := e.ReactLiveAs(owner, runID, nodeID, models.LiveEvent{Op: models.LiveOpDiscard, SID: id}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DiscardAllLiveAs queues a discard for every open Live session on the node.

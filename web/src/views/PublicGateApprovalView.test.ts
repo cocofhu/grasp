@@ -1950,8 +1950,8 @@ describe('embedded Chat page candidate mode', () => {
     expect(requestPageContext).not.toHaveBeenCalled()
   })
 
-  for (const state of ['generating', 'failed', 'ready']) {
-    it(`retains the draft when an existing ${state} session has no displayed candidate`, async () => {
+  for (const state of ['generating', 'refining', 'accepting', 'discarding']) {
+    it(`retains the draft while an existing ${state} session is busy`, async () => {
       const { wrapper } = await setup({ sessions: [{ sid: 'existing', mode: 'replace', state }] })
       await wrapper.get('[data-testid="live-candidate-mode"]').trigger('click')
       await wrapper.get('[data-testid="clarify-input"]').setValue('new requirement')
@@ -1959,9 +1959,34 @@ describe('embedded Chat page candidate mode', () => {
       await flushPromises()
       expect(mocks.reply).not.toHaveBeenCalled()
       expect((wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement).value).toBe('new requirement')
-      expect(wrapper.text()).toContain('已有候选')
+      expect(wrapper.text()).toContain('候选正在处理中')
     })
   }
+
+  for (const state of ['ready', 'failed']) {
+    it(`replaces an existing ${state} session when the original is displayed`, async () => {
+      const { wrapper, vm } = await setup({ sessions: [{ sid: 'existing', mode: 'replace', state, variants: [{ n: 1 }, { n: 2 }, { n: 3 }] }] })
+      vm.setLiveView('existing', { current: 0, mode: 'inplace', original: true })
+      mocks.reply.mockImplementation(async (request) => ({ status: 'accepted', live: { sid: request.live.sid, mode: 'replace', state: 'generating' } }))
+      await wrapper.get('[data-testid="live-candidate-mode"]').trigger('click')
+      await wrapper.get('[data-testid="clarify-input"]').setValue('new requirement')
+      await wrapper.get('[data-testid="clarify-send-label"]').trigger('click')
+      await flushPromises()
+      expect(mocks.reply.mock.calls[0][0]).toMatchObject({ live: { op: 'generate', scope: 'page', prompt: 'new requirement', replace: true } })
+      expect(mocks.reply.mock.calls[0][0].live.sid).not.toBe('existing')
+      expect((wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement).value).toBe('')
+    })
+  }
+
+  it('does not mark a first page generate as a replacement', async () => {
+    const { wrapper } = await setup({ sessions: [{ sid: 'old', mode: 'replace', state: 'accepted' }] })
+    mocks.reply.mockImplementation(async (request) => ({ status: 'accepted', live: { sid: request.live.sid, mode: 'replace', state: 'generating' } }))
+    await wrapper.get('[data-testid="live-candidate-mode"]').trigger('click')
+    await wrapper.get('[data-testid="clarify-input"]').setValue('first request')
+    await wrapper.get('[data-testid="clarify-send-label"]').trigger('click')
+    await flushPromises()
+    expect(mocks.reply.mock.calls[0][0].live).not.toHaveProperty('replace')
+  })
 
   it('keeps a stable session ID and the draft after an uncertain HTTP failure', async () => {
     const { wrapper } = await setup()

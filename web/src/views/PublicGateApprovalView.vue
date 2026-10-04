@@ -51,6 +51,7 @@ import {
   createLiveStore,
   parseLiveRef,
   parseLiveSession,
+  isLiveBusy,
   isLiveOpen,
   type LiveCmd,
   type LiveEvent,
@@ -1177,15 +1178,14 @@ async function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotatio
       if (liveCtx && live.store.sessions[liveCtx.sid]?.state !== 'ready') throw new Error(t('pages.embedChat.live.pendingCandidates'))
     }
     if (candidateIntent && chatOnly.value && pageCandidateMode.value && !liveCtx) {
-      if (Object.values(live.store.sessions).some((session) => isLiveOpen(session.state))) {
-        throw new Error(t('pages.embedChat.live.pendingCandidates'))
-      }
+      const open = Object.values(live.store.sessions).filter((session) => session.mode !== 'steer' && isLiveOpen(session.state))
+      if (open.some((session) => isLiveBusy(session.state))) throw new Error(t('pages.embedChat.live.candidatesBusy'))
       if (Array.from(text).length > 2000) throw new Error(t('pages.embedChat.live.promptTooLong'))
       if (!props.requestPageContext) throw new Error(t('pages.embedChat.live.previewUnavailable'))
       const context = await props.requestPageContext()
       const fingerprint = JSON.stringify({ text, images, annotations: anns, url: context.url })
       if (candidateAttempt?.fingerprint !== fingerprint) candidateAttempt = { fingerprint, sid: liveRequestId() }
-      candidate = { op: 'generate', scope: 'page', sid: candidateAttempt.sid, count: 3, prompt: text, url: context.url }
+      candidate = { op: 'generate', scope: 'page', sid: candidateAttempt.sid, count: 3, prompt: text, url: context.url, ...(open.length ? { replace: true } : {}) }
     }
     const result = await publicGateApi.reply({
       token: token.value,

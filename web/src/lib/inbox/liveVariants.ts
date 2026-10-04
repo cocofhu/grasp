@@ -88,6 +88,8 @@ export type LiveEvent = {
   error?: string
   /** mount_failed detected by the page rather than sent by the person. */
   auto?: boolean
+  /** Page generate: discard ready or failed candidate sets before generating. */
+  replace?: boolean
 }
 
 export type LiveCtx = { sid: string; current: number; params?: Record<string, unknown> }
