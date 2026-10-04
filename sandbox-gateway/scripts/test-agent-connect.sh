@@ -7,7 +7,13 @@
 #   RUNTIME_BUNDLE：运行时包（默认 .devdata/sandbox-runtime/sandbox-runtime.tgz，
 #   scripts/build-sandbox-runtime.sh 构建）；镜像本身不带逻辑，由本脚本像 Grasp 一样下发。
 #   providers 默认 cursor,claude_code,codebuddy,opencode,trae（镜像预装的五个）
+#   opencode 始终跑一轮 mock 对话，不需要厂商密钥：本脚本在宿主机拉起
+#   mock-chat-model.mjs（夹具 ci-e2e，回复含 GRASP_AGENT_E2E_OK），容器通过
+#   host.docker.internal 访问。配置与平台一致：GRASP_OPENCODE_PROVIDER=custom、
+#   GRASP_OPENCODE_BASE_URL、OpenAI 兼容适配器写入 opencode.json，模型为 custom/ci-e2e。
+#   请求没打到替身、缺标记、stopReason 不是 end_turn 或超时，检查失败并打印容器日志。
 #   设置 CURSOR_API_KEY 时，额外对 cursor 跑一轮真实对话（回复里须含约定标记）。
+#   未设置则只跳过这条真实对话，不跳过 opencode 的 mock 对话。
 #   trae 的 ACP 服务启动前必须登录：只有设置 TRAECLI_PERSONAL_ACCESS_TOKEN 时才做握手，
 #   否则只校验 `traecli acp serve --help`（仍能发现漏装）。
 #   READY_TIMEOUT（默认 240s）/ CONNECT_TIMEOUT（默认 120s）/ CHAT_TIMEOUT（默认 240s）
@@ -20,6 +26,7 @@ connect_timeout="${CONNECT_TIMEOUT:-120}"
 chat_timeout="${CHAT_TIMEOUT:-240}"
 here="$(cd "$(dirname "$0")" && pwd)"
 ws_check="$here/agent-ws-check.mjs"
+mock_chat="$here/mock-chat-model.mjs"
 runtime_bundle="${RUNTIME_BUNDLE:-$here/../../.devdata/sandbox-runtime/sandbox-runtime.tgz}"
 [ -f "$runtime_bundle" ] || { echo "[agent-e2e] 运行时包不存在：$runtime_bundle（先运行 scripts/build-sandbox-runtime.sh 或设置 RUNTIME_BUNDLE）" >&2; exit 1; }
 # shellcheck source=lib-runtime.sh
@@ -28,8 +35,15 @@ runtime_bundle="${RUNTIME_BUNDLE:-$here/../../.devdata/sandbox-runtime/sandbox-r
 log() { echo "[agent-e2e] $*"; }
 
 name=""
+mock_pid=""
+mock_port=""
+mock_log=""
 cleanup() {
   [ -n "$name" ] && docker rm -f "$name" >/dev/null 2>&1 || true
+  if [ -n "$mock_pid" ]; then
+    kill "$mock_pid" >/dev/null 2>&1 || true
+    wait "$mock_pid" 2>/dev/null || true
+  fi
   stop_runtime_servers
 }
 trap cleanup EXIT
@@ -38,12 +52,73 @@ dump() {
   echo "::group::container logs ($name)"
   docker logs "$name" 2>&1 | tail -200 || true
   echo "::endgroup::"
+  if [ -n "$mock_log" ] && [ -f "$mock_log" ]; then
+    echo "::group::mock chat model"
+    tail -100 "$mock_log" || true
+    echo "::endgroup::"
+  fi
 }
 
 die() {
   echo "::error::[agent-e2e] $*"
   dump
   exit 1
+}
+
+start_mock_chat() {
+  [ -f "$mock_chat" ] || die "找不到 mock chat model：$mock_chat"
+  mock_log="$(mktemp)"
+  local out line i
+  out="$(mktemp)"
+  node "$mock_chat" --listen 0.0.0.0 --port 0 >"$out" 2>"$mock_log" &
+  mock_pid=$!
+  for i in $(seq 1 50); do
+    line="$(grep -m1 '^MOCK_CHAT_PORT=' "$out" 2>/dev/null || true)"
+    if [ -n "$line" ]; then
+      mock_port="${line#MOCK_CHAT_PORT=}"
+      break
+    fi
+    if ! kill -0 "$mock_pid" 2>/dev/null; then
+      die "mock chat model 启动失败：$(cat "$mock_log" 2>/dev/null || true)"
+    fi
+    sleep 0.1
+  done
+  rm -f "$out"
+  [ -n "$mock_port" ] || die "mock chat model 未报告端口：$(cat "$mock_log" 2>/dev/null || true)"
+  curl -fsS "http://127.0.0.1:${mock_port}/health" >/dev/null || die "mock chat model 健康检查失败 port=${mock_port}"
+  log "mock chat model 就绪 port=${mock_port}（容器经 host.docker.internal 访问）"
+}
+
+install_opencode_mock_config() {
+  [ -n "$mock_port" ] || die "provider=opencode: mock chat model 未启动"
+  local base="http://host.docker.internal:${mock_port}/v1" cfg
+  cfg="$(mktemp)"
+  node "$mock_chat" --print-opencode-config --base-url "$base" >"$cfg" \
+    || die "provider=opencode: 生成 opencode.json 失败"
+  docker exec "$name" mkdir -p /root/.config/opencode \
+    || die "provider=opencode: 无法创建 OpenCode 配置目录"
+  docker cp "$cfg" "$name:/root/.config/opencode/opencode.json" \
+    || die "provider=opencode: 无法写入 opencode.json"
+  rm -f "$cfg"
+  docker exec "$name" test -s /root/.config/opencode/opencode.json \
+    || die "provider=opencode: opencode.json 为空"
+  log "provider=opencode: GRASP_OPENCODE_BASE_URL=${base}（custom / OpenAI 兼容适配器）"
+}
+
+mock_hits() {
+  local body
+  body="$(curl -fsS "http://127.0.0.1:${mock_port}/health")" \
+    || die "provider=opencode: 读取 mock health 失败"
+  printf '%s' "$body" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const j=JSON.parse(s);if(!Number.isInteger(j.hits))process.exit(1);process.stdout.write(String(j.hits))})' \
+    || die "provider=opencode: mock health 无法解析"
+}
+
+# $1: hits before the chat. Only requests made during this chat count.
+assert_mock_hit() {
+  local before="$1" after
+  after="$(mock_hits)"
+  [ "$after" -gt "$before" ] || die "provider=opencode: 对话没有打到 mock chat model（对话前 ${before}，对话后 ${after}）"
+  log "provider=opencode: 本轮对话 mock 收到 $((after - before)) 次补全请求"
 }
 
 host_port() {
@@ -55,6 +130,17 @@ check_provider() {
   name="grasp-agent-e2e-${provider}-$$"
   log "provider=$provider: 启动容器"
   local env=(-e AGENT_PROVIDER="$provider" -e ROOT_PASSWORD=ci-e2e -e VNC_PREVIEW=1 -e PREVIEW_DIRECT=1)
+  if [ "$provider" = opencode ]; then
+    [ -n "$mock_port" ] || die "provider=opencode: mock chat model 未启动"
+    env+=(
+      -e GRASP_OPENCODE_PROVIDER=custom
+      -e "GRASP_OPENCODE_BASE_URL=http://host.docker.internal:${mock_port}/v1"
+      -e ACP_BRIDGE_MODEL=custom/ci-e2e
+      -e OPENCODE_API_KEY=ci-e2e
+      -e GRASP_OPENCODE_API_KEY=ci-e2e
+      -e OPENCODE_CONFIG=/root/.config/opencode/opencode.json
+    )
+  fi
   if [ "$provider" = cursor ] && [ -n "${CURSOR_API_KEY:-}" ]; then
     env+=(-e CURSOR_API_KEY)
   fi
@@ -104,6 +190,10 @@ check_provider() {
     log "provider=$provider: \`$probe\` 正常"
   fi
 
+  if [ "$provider" = opencode ]; then
+    install_opencode_mock_config
+  fi
+
   if [ "$provider" = trae ] && [ -z "${TRAECLI_PERSONAL_ACCESS_TOKEN:-}" ]; then
     log "provider=$provider: 未设置 TRAECLI_PERSONAL_ACCESS_TOKEN，跳过握手"
   else
@@ -116,6 +206,14 @@ check_provider() {
       || die "provider=$provider: 真实对话失败"
   fi
 
+  if [ "$provider" = opencode ]; then
+    local hits_before
+    hits_before="$(mock_hits)"
+    node "$ws_check" "ws://127.0.0.1:$api/ws" chat "$chat_timeout" \
+      || die "provider=$provider: mock 对话失败"
+    assert_mock_hit "$hits_before"
+  fi
+
   [ "$(docker inspect -f '{{.State.Running}}' "$name")" = true ] || die "provider=$provider: 容器在检查过程中退出"
   docker rm -f "$name" >/dev/null
   name=""
@@ -124,11 +222,19 @@ check_provider() {
 
 start_runtime_server "$runtime_bundle"
 IFS=',' read -r -a list <<<"$providers"
+need_mock=0
+for p in "${list[@]}"; do
+  p="$(echo "$p" | tr -d '[:space:]')"
+  [ "$p" = opencode ] && need_mock=1
+done
+if [ "$need_mock" = 1 ]; then
+  start_mock_chat
+fi
 for p in "${list[@]}"; do
   p="$(echo "$p" | tr -d '[:space:]')"
   [ -n "$p" ] && check_provider "$p"
 done
 if [ -z "${CURSOR_API_KEY:-}" ]; then
-  log "未设置 CURSOR_API_KEY：跳过真实对话，只验证到 Agent 握手"
+  log "未设置 CURSOR_API_KEY：已跳过 cursor 真实对话（opencode 的 mock 对话不依赖该密钥）"
 fi
 log "全部通过：$providers"
