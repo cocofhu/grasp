@@ -30,6 +30,12 @@ All notable public-release changes are documented here.
 - **Runs:** a paused node's agent session no longer floods the server log with
   `acp event channel full` warnings, and the platform stops reconnecting to the
   sandbox every two seconds while no turn is running.
+- **PM chat:** a reply no longer fails with "connection lost" when the socket
+  drops, the tab is refreshed, or a turn runs longer than 90 seconds. The turn
+  keeps running on the server; reopening the thread replays it and follows it
+  live. Messages sent while PM is busy wait in line, and **Stop** also clears
+  the line. A turn cut short by a server restart is marked **Interrupted by
+  restart** and can be retried.
 
 ## 1.2.1 — 2026-09-28
 

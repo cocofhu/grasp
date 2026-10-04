@@ -3,11 +3,12 @@ package services
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/tokenledger"
 
@@ -19,70 +20,155 @@ const (
 	// pmDefaultTurnDeadline is the fallback per-turn ctx deadline when the
 	// runner has no explicit deadline configured (see SetTurnDeadline).
 	pmDefaultTurnDeadline = 10 * time.Minute
+	// pmPrepareTimeout bounds sandbox boot for web turns; a cold image pull
+	// takes minutes and must not count against the chat deadline.
+	pmPrepareTimeout = 20 * time.Minute
+	pmQueueCapacity  = 8
 )
 
-// PmTurnEvent is one buffered event for WS catch-up / live fan-out.
+// PM turn phases, reported in queue_state and phase frames while busy.
+const (
+	PmPhasePreparing = "preparing"
+	PmPhaseRunning   = "running"
+)
+
+// PmEventPhase is the session event announcing a phase change.
+const PmEventPhase = "phase"
+
+var errPmTurnDuplicate = errors.New("该消息已在处理中")
+
+// PmTurnEvent is one frame of a thread's chat stream.
 type PmTurnEvent struct {
-	Seq      int             `json:"seq"`
-	Type     string          `json:"type"` // acp | turn_done | error
-	Data     json.RawMessage `json:"data,omitempty"`
-	Error    string          `json:"error,omitempty"`
-	FailKind string          `json:"failKind,omitempty"`
+	Seq int
+	// Type is "session" (control frame) or "acp" (raw ACP frame in Data).
+	Type    string
+	Event   string
+	Data    json.RawMessage
+	Payload map[string]any
+}
+
+// Frame renders the event for the thread WebSocket.
+func (e PmTurnEvent) Frame() map[string]any {
+	out := map[string]any{"type": e.Type, "seq": e.Seq}
+	if e.Type == "acp" {
+		out["data"] = e.Data
+		return out
+	}
+	for k, v := range e.Payload {
+		out[k] = v
+	}
+	out["event"] = e.Event
+	return out
+}
+
+// PmTurnRequest is one queued PM turn.
+type PmTurnRequest struct {
+	UserMsgID string
+	// Text is shown for the item in queue_state; defaults to Prompt.
+	Text   string
+	Images []models.PromptImage
+	// SandboxID and Prompt are used as-is when Prepare is nil.
+	SandboxID uint
+	Prompt    string
+	// Timeout overrides the chat turn cap (0 → runner default).
+	Timeout time.Duration
+	// Prepare readies the sandbox and builds the prompt once the turn starts;
+	// setPhase reports boot progress (e.g. "pulling").
+	Prepare func(ctx context.Context, setPhase func(string)) (sandboxID uint, prompt string, err error)
+}
+
+type pmChatter interface {
+	ChatWithTimeout(ctx context.Context, id uint, text string, images []models.PromptImage, timeout time.Duration, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error)
+	Cancel(id uint)
 }
 
 type turnSub struct {
-	ch   chan PmTurnEvent
-	once sync.Once
+	mu     sync.Mutex
+	ch     chan PmTurnEvent
+	closed bool
 }
 
 func (s *turnSub) Close() {
-	s.once.Do(func() { close(s.ch) })
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.closed {
+		s.closed = true
+		close(s.ch)
+	}
 }
 
-type pmActiveTurn struct {
-	threadID  string
-	userMsgID string
-	sandboxID uint
-	cancel    context.CancelFunc
-	// chatTimeout overrides the sandbox chat idle/overall cap for this turn
-	// (0 → sandbox default). Set for channel turns with a longer deadline.
-	chatTimeout time.Duration
-
-	mu         sync.Mutex
-	events     []PmTurnEvent
-	nextSeq    int
-	partial    string
-	chunkIndex int
-	done       bool
-	errMsg     string
-	subs       map[*turnSub]struct{}
+// send delivers ev, giving a slow WS writer a short grace period before the
+// frame is skipped.
+func (s *turnSub) send(ev PmTurnEvent) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	select {
+	case s.ch <- ev:
+		return
+	default:
+	}
+	select {
+	case s.ch <- ev:
+	case <-time.After(3 * time.Second):
+		log.Warn().Int("seq", ev.Seq).Str("type", ev.Type).Msg("pm turn fanout timed out; subscriber may skip a frame")
+	}
 }
 
-// PmTurnRunner runs PM consult turns decoupled from a single WS request ctx.
-// Events are buffered and fanned out so reconnecting clients can catch up.
+// PmTurnRunner runs PM consult turns: one chatsession FIFO per thread, shared
+// by the web UI, IM channels, cron and gate-auto. Turns run on a background
+// context; viewers subscribe and get a snapshot plus the active turn's frames.
 type PmTurnRunner struct {
-	pm  *PmService
-	sbx *SandboxService
+	pm   *PmService
+	chat pmChatter
 	// Optional deps for progress-citation existence checks (fail-closed when nil).
 	runs *RunService
 	arts *ArtifactService
 	wf   *WorkflowService
 
 	mu           sync.Mutex
-	turns        map[string]*pmActiveTurn // keyed by threadID
-	turnDeadline time.Duration            // default per-turn ctx deadline
+	threads      map[string]*pmThread
+	turnDeadline time.Duration
+}
+
+type pmThread struct {
+	r    *PmTurnRunner
+	id   string
+	sess *chatsession.Session[*PmTurnRequest]
+	// refs counts callers and subscribers using the thread; guarded by r.mu.
+	refs int
+
+	mu        sync.Mutex
+	subs      map[*turnSub]struct{}
+	nextSeq   int
+	turn      []PmTurnEvent
+	userMsgID string
+	partial   string
+	phase     string
+	sandboxID uint
+	failKind  string
 }
 
 // NewPmTurnRunner builds a runner. The default per-turn deadline is
 // pmDefaultTurnDeadline; override at boot with SetTurnDeadline so long
 // channel/cron turns are not truncated.
 func NewPmTurnRunner(pm *PmService, sbx *SandboxService) *PmTurnRunner {
-	return &PmTurnRunner{
+	r := &PmTurnRunner{
 		pm:           pm,
-		sbx:          sbx,
-		turns:        make(map[string]*pmActiveTurn),
+		threads:      make(map[string]*pmThread),
 		turnDeadline: pmDefaultTurnDeadline,
 	}
+	if sbx != nil {
+		r.chat = sbx
+	}
+	return r
+}
+
+// SetChatterForTest replaces the sandbox chat backend.
+func (r *PmTurnRunner) SetChatterForTest(c pmChatter) {
+	r.chat = c
 }
 
 // SetTurnDeadline configures the default per-turn ctx deadline (values <= 0 are
@@ -113,35 +199,92 @@ func (r *PmTurnRunner) DefaultDeadline() time.Duration {
 	return r.defaultDeadline()
 }
 
-// Active reports whether a live in-process turn exists for the thread.
-// Done turns that have not been GC'd yet return false (not live for resume).
-func (r *PmTurnRunner) Active(threadID string) bool {
+func (r *PmTurnRunner) acquire(threadID string) *pmThread {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	t := r.turns[threadID]
-	return t != nil && !t.isDone()
+	th := r.threads[threadID]
+	if th == nil {
+		th = r.newThread(threadID)
+		r.threads[threadID] = th
+	}
+	th.refs++
+	return th
 }
 
-// ForceActiveForTest inserts a non-done in-memory turn for handler tests.
-func (r *PmTurnRunner) ForceActiveForTest(threadID, userMsgID string) {
+func (r *PmTurnRunner) release(th *pmThread) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.turns[threadID] = &pmActiveTurn{
-		threadID:  threadID,
-		userMsgID: userMsgID,
-		cancel:    func() {},
-		subs:      make(map[*turnSub]struct{}),
+	th.refs--
+	r.dropIfIdleLocked(th)
+}
+
+func (r *PmTurnRunner) dropIfIdleLocked(th *pmThread) {
+	if th.refs <= 0 && th.sess.Idle() && r.threads[th.id] == th {
+		delete(r.threads, th.id)
 	}
 }
 
-func (t *pmActiveTurn) isDone() bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.done
+func (r *PmTurnRunner) lookup(threadID string) *pmThread {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.threads[threadID]
 }
 
-// Start launches a background Chat turn with the runner's default deadline.
-// Returns error if a turn is already running.
+func (r *PmTurnRunner) newThread(threadID string) *pmThread {
+	th := &pmThread{r: r, id: threadID, subs: make(map[*turnSub]struct{})}
+	th.sess = chatsession.New(chatsession.Config[*PmTurnRequest]{
+		Capacity:  pmQueueCapacity,
+		FullError: "PM 会话排队已满，请稍候",
+		View: func(q *PmTurnRequest) chatsession.ItemView {
+			return chatsession.ItemView{ID: q.UserMsgID, Text: q.Text, Images: q.Images}
+		},
+		Execute: th.execute,
+		Publish: th.publishSession,
+		TurnBeginExtra: func(q *PmTurnRequest) map[string]any {
+			return map[string]any{"userMsgId": q.UserMsgID}
+		},
+		BeforeTurn: func(q *PmTurnRequest, _ <-chan struct{}) {
+			th.mu.Lock()
+			th.turn = nil
+			th.userMsgID = q.UserMsgID
+			th.partial = ""
+			th.sandboxID = q.SandboxID
+			th.failKind = ""
+			th.phase = PmPhaseRunning
+			if q.Prepare != nil {
+				th.phase = PmPhasePreparing
+			}
+			th.mu.Unlock()
+		},
+		OnDropped: func(items []*PmTurnRequest) {
+			for _, q := range items {
+				r.persistTurnFailure(threadID, q.UserMsgID, PmFailStopped)
+			}
+		},
+		OnIdle: func() {
+			r.mu.Lock()
+			r.dropIfIdleLocked(th)
+			r.mu.Unlock()
+		},
+		CancelTurn: func() {
+			th.mu.Lock()
+			sid := th.sandboxID
+			th.mu.Unlock()
+			if r.chat != nil && sid != 0 {
+				r.chat.Cancel(sid)
+			}
+		},
+	})
+	return th
+}
+
+// Active reports whether the thread has a running or queued turn.
+func (r *PmTurnRunner) Active(threadID string) bool {
+	th := r.lookup(threadID)
+	return th != nil && !th.sess.Ready()
+}
+
+// Start queues a turn with the runner's default deadline.
 func (r *PmTurnRunner) Start(threadID, userMsgID string, sandboxID uint, prompt string, images []models.PromptImage) error {
 	return r.StartWithTimeout(threadID, userMsgID, sandboxID, prompt, images, 0)
 }
@@ -150,278 +293,289 @@ func (r *PmTurnRunner) Start(threadID, userMsgID string, sandboxID uint, prompt 
 // uses the runner default (SetTurnDeadline). A positive timeout caps both the
 // turn ctx (timeout + buffer) and the sandbox chat turn (timeout).
 func (r *PmTurnRunner) StartWithTimeout(threadID, userMsgID string, sandboxID uint, prompt string, images []models.PromptImage, timeout time.Duration) error {
-	if r.sbx == nil || r.pm == nil {
-		return fmt.Errorf("pm turn runner unavailable")
-	}
-	ctxTimeout := r.defaultDeadline()
-	var chatTimeout time.Duration
-	if timeout > 0 {
-		chatTimeout = timeout
-		ctxTimeout = timeout + 30*time.Second
-	}
-	r.mu.Lock()
-	if existing := r.turns[threadID]; existing != nil && !existing.isDone() {
-		r.mu.Unlock()
-		return fmt.Errorf("turn already running")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
-	t := &pmActiveTurn{
-		threadID:    threadID,
-		userMsgID:   userMsgID,
-		sandboxID:   sandboxID,
-		cancel:      cancel,
-		chatTimeout: chatTimeout,
-		subs:        make(map[*turnSub]struct{}),
-	}
-	r.turns[threadID] = t
-	r.mu.Unlock()
-
-	if _, err := r.pm.UpsertDraft(threadID, userMsgID, "", PmDraftStreaming, 0, 0, sandboxID); err != nil {
-		log.Warn().Err(err).Str("thread", threadID).Str("op", "upsert_draft").
-			Msg("pm turn persist failed")
-	}
-
-	go r.run(ctx, t, prompt, images)
-	return nil
+	_, err := r.Enqueue(threadID, PmTurnRequest{
+		UserMsgID: userMsgID,
+		SandboxID: sandboxID,
+		Prompt:    prompt,
+		Images:    images,
+		Timeout:   timeout,
+	})
+	return err
 }
 
-// recordUsage ledgers one PM turn's usage regardless of outcome: failed and
-// stopped turns still consumed tokens even though no assistant message is kept.
-func (r *PmTurnRunner) recordUsage(t *pmActiveTurn, usage *models.TokenUsage, byModel models.TokenUsageByModel, status string) {
-	if r.pm == nil {
-		return
+// Enqueue appends a turn to the thread FIFO and returns the pending count.
+func (r *PmTurnRunner) Enqueue(threadID string, req PmTurnRequest) (int, error) {
+	if r.chat == nil || r.pm == nil {
+		return 0, errors.New("pm turn runner unavailable")
 	}
-	tokenledger.Record(r.pm.db, tokenledger.Entry{
-		Source: models.TokenLedgerSourcePM, Phase: models.TokenLedgerPhaseChat, Status: status,
-		ThreadID: t.threadID, SandboxID: t.sandboxID, Usage: usage, ByModel: byModel,
+	if req.Text == "" {
+		req.Text = req.Prompt
+	}
+	q := &req
+	th := r.acquire(threadID)
+	defer r.release(th)
+	return th.sess.Enqueue(q, func(active *PmTurnRequest, hasActive bool, pending []*PmTurnRequest) error {
+		if hasActive && active.UserMsgID == q.UserMsgID {
+			return errPmTurnDuplicate
+		}
+		for _, p := range pending {
+			if p.UserMsgID == q.UserMsgID {
+				return errPmTurnDuplicate
+			}
+		}
+		return nil
 	})
 }
 
-func (r *PmTurnRunner) run(ctx context.Context, t *pmActiveTurn, prompt string, images []models.PromptImage) {
-	defer t.cancel()
-
-	usage, usageByModel, err := r.sbx.ChatWithTimeout(ctx, t.sandboxID, prompt, images, t.chatTimeout, func(raw json.RawMessage) {
-		delta := extractPmAgentText(raw)
-		t.mu.Lock()
-		if delta != "" {
-			t.partial += delta
-			t.chunkIndex++
-		}
-		seq := t.nextSeq
-		t.nextSeq++
-		ev := PmTurnEvent{Seq: seq, Type: "acp", Data: append(json.RawMessage(nil), raw...)}
-		t.events = append(t.events, ev)
-		if len(t.events) > pmTurnBufferMax {
-			t.events = t.events[len(t.events)-pmTurnBufferMax:]
-		}
-		partial := t.partial
-		chunkIndex := t.chunkIndex
-		subs := t.snapshotSubsLocked()
-		t.mu.Unlock()
-
-		if err := r.pm.PatchDraftPartial(t.threadID, partial, chunkIndex, seq); err != nil {
-			log.Warn().Err(err).Str("thread", t.threadID).Str("op", "patch_draft").
-				Msg("pm turn persist failed")
-		}
-		for _, sub := range subs {
-			fanoutEvent(sub, ev)
-		}
-	})
-
-	t.mu.Lock()
-	partial := t.partial
-	userMsgID := t.userMsgID
-	t.mu.Unlock()
-
-	if err != nil {
-		failKind := PmFailUnknown
-		switch {
-		case ctx.Err() == context.DeadlineExceeded:
-			failKind = PmFailSandbox
-		case ctx.Err() == context.Canceled:
-			failKind = PmFailStopped
-		}
-		ledgerStatus := models.TokenLedgerStatusFailed
-		if failKind == PmFailStopped {
-			ledgerStatus = models.TokenLedgerStatusCancelled
-		}
-		r.recordUsage(t, usage, usageByModel, ledgerStatus)
-		msg := err.Error()
-		r.finishError(t, msg, failKind)
-		return
-	}
-
-	text := strings.TrimSpace(partial)
-	if text == "" {
-		r.recordUsage(t, usage, usageByModel, models.TokenLedgerStatusFailed)
-		r.persistTurnFailure(t.threadID, userMsgID, PmFailEmpty)
-		r.emitTerminal(t, "error", "empty reply", PmFailEmpty)
-		return
-	}
-
-	citations := r.filterAndEnrichCitations(t.threadID, extractPmCitations(text))
-	// Persist Usage only on successful finalize. Append failure must not silently
-	// count toward project totals (usage stays off the message).
-	if _, aerr := r.pm.AppendMessageSource(t.threadID, "assistant", text, "", citations, nil, nil, usage, usageByModel); aerr != nil {
-		log.Warn().Err(aerr).Str("thread", t.threadID).Msg("pm turn finalize append failed")
-		r.recordUsage(t, usage, usageByModel, models.TokenLedgerStatusFailed)
-		r.persistTurnFailure(t.threadID, userMsgID, PmFailUnknown)
-		r.emitTerminal(t, "error", aerr.Error(), PmFailUnknown)
-		return
-	}
-	r.recordUsage(t, usage, usageByModel, models.TokenLedgerStatusOK)
-	if _, err := r.pm.UpdateMessageFailure(t.threadID, userMsgID, "ok", ""); err != nil {
-		log.Warn().Err(err).Str("thread", t.threadID).Str("op", "clear_msg_failure").
-			Msg("pm turn persist failed")
-	}
-	if err := r.pm.ClearDraft(t.threadID); err != nil {
-		log.Warn().Err(err).Str("thread", t.threadID).Str("op", "clear_draft").
-			Msg("pm turn persist failed")
-	}
-	r.emitTerminal(t, "turn_done", "", "")
-}
-
-func (r *PmTurnRunner) persistTurnFailure(threadID, userMsgID, failKind string) {
-	if err := r.pm.FailDraft(threadID, failKind); err != nil {
-		log.Warn().Err(err).Str("thread", threadID).Str("op", "fail_draft").
-			Msg("pm turn persist failed")
-	}
-	if _, err := r.pm.UpdateMessageFailure(threadID, userMsgID, "failed", failKind); err != nil {
-		log.Warn().Err(err).Str("thread", threadID).Str("op", "msg_failure").
-			Msg("pm turn persist failed")
+// Cancel stops the active turn and drops queued ones (marked stopped).
+func (r *PmTurnRunner) Cancel(threadID string) {
+	if th := r.lookup(threadID); th != nil {
+		th.sess.Cancel(true)
 	}
 }
 
-func (r *PmTurnRunner) finishError(t *pmActiveTurn, msg, failKind string) {
-	r.persistTurnFailure(t.threadID, t.userMsgID, failKind)
-	r.emitTerminal(t, "error", msg, failKind)
-}
-
-func (r *PmTurnRunner) emitTerminal(t *pmActiveTurn, typ, errMsg, failKind string) {
-	t.mu.Lock()
-	if t.done {
-		t.mu.Unlock()
-		return
-	}
-	t.done = true
-	t.errMsg = errMsg
-	seq := t.nextSeq
-	t.nextSeq++
-	ev := PmTurnEvent{Seq: seq, Type: typ, Error: errMsg, FailKind: failKind}
-	t.events = append(t.events, ev)
-	subs := t.snapshotSubsLocked()
-	t.subs = make(map[*turnSub]struct{})
-	t.mu.Unlock()
-
-	for _, sub := range subs {
-		fanoutEvent(sub, ev)
-		sub.Close()
-	}
-
-	go func() {
-		time.Sleep(2 * time.Minute)
-		r.mu.Lock()
-		if cur := r.turns[t.threadID]; cur == t {
-			delete(r.turns, t.threadID)
+// Subscribe streams the thread: first a queue_state snapshot, then (when busy)
+// the active turn's frames after afterSeq, then live frames. The channel stays
+// open across turns until the returned unsubscribe func is called.
+func (r *PmTurnRunner) Subscribe(threadID string, afterSeq int) (<-chan PmTurnEvent, func(), bool) {
+	th := r.acquire(threadID)
+	ch := make(chan PmTurnEvent, pmTurnBufferMax+16)
+	sub := &turnSub{ch: ch}
+	th.mu.Lock()
+	sn := th.sess.Snapshot()
+	qs := sn.QueueState()
+	th.decorateQueueLocked(qs)
+	ch <- PmTurnEvent{Seq: th.nextSeq - 1, Type: "session", Event: chatsession.EventQueueState, Payload: qs}
+	if sn.Busy {
+		for _, ev := range th.turn {
+			if ev.Seq > afterSeq {
+				ch <- ev
+			}
 		}
-		r.mu.Unlock()
-	}()
+	}
+	th.subs[sub] = struct{}{}
+	th.mu.Unlock()
+
+	var once sync.Once
+	unsub := func() {
+		once.Do(func() {
+			th.mu.Lock()
+			delete(th.subs, sub)
+			th.mu.Unlock()
+			sub.Close()
+			r.release(th)
+		})
+	}
+	return ch, unsub, true
 }
 
-func (t *pmActiveTurn) snapshotSubsLocked() []*turnSub {
-	out := make([]*turnSub, 0, len(t.subs))
-	for sub := range t.subs {
+// Status returns the active turn's progress.
+func (r *PmTurnRunner) Status(threadID string) (active bool, userMsgID string, partial string, chunkIndex, eventSeq int) {
+	th := r.lookup(threadID)
+	if th == nil {
+		return false, "", "", 0, -1
+	}
+	_, busy := th.sess.Active()
+	th.mu.Lock()
+	defer th.mu.Unlock()
+	return busy, th.userMsgID, th.partial, 0, th.nextSeq - 1
+}
+
+func (th *pmThread) decorateQueueLocked(payload map[string]any) {
+	if busy, _ := payload["busy"].(bool); busy && th.phase != "" {
+		payload["phase"] = th.phase
+		payload["userMsgId"] = th.userMsgID
+	}
+}
+
+// emitLocked assigns the next seq, records turn frames for reconnect replay
+// and returns the subscribers to fan out to.
+func (th *pmThread) emitLocked(ev *PmTurnEvent, record bool) []*turnSub {
+	ev.Seq = th.nextSeq
+	th.nextSeq++
+	if record {
+		th.turn = append(th.turn, *ev)
+		if len(th.turn) > pmTurnBufferMax {
+			// Keep turn_begin so a replay still opens the turn.
+			th.turn = append(th.turn[:1], th.turn[len(th.turn)-pmTurnBufferMax+1:]...)
+		}
+	}
+	out := make([]*turnSub, 0, len(th.subs))
+	for sub := range th.subs {
 		out = append(out, sub)
 	}
 	return out
 }
 
-// Cancel aborts the in-flight turn for a thread.
-func (r *PmTurnRunner) Cancel(threadID string) {
-	r.mu.Lock()
-	t := r.turns[threadID]
-	r.mu.Unlock()
-	if t == nil {
-		return
-	}
-	t.cancel()
-	if r.sbx != nil && t.sandboxID != 0 {
-		r.sbx.Cancel(t.sandboxID)
-	}
-}
-
-// fanoutEvent delivers one event to a subscriber without silently dropping.
-// Catch-up channels are sized to hold the full ring buffer; live path blocks
-// briefly so a slow WS write does not skip stream chunks.
-func fanoutEvent(sub *turnSub, ev PmTurnEvent) {
-	select {
-	case sub.ch <- ev:
-		return
-	default:
-	}
-	select {
-	case sub.ch <- ev:
-	case <-time.After(3 * time.Second):
-		log.Warn().Int("seq", ev.Seq).Str("type", ev.Type).Msg("pm turn fanout timed out; subscriber may skip a frame")
-	}
-}
-
-// Subscribe returns a channel of events starting after afterSeq (exclusive).
-// Caller must call the returned unsubscribe func.
-func (r *PmTurnRunner) Subscribe(threadID string, afterSeq int) (<-chan PmTurnEvent, func(), bool) {
-	r.mu.Lock()
-	t := r.turns[threadID]
-	r.mu.Unlock()
-	if t == nil {
-		return nil, func() {}, false
-	}
-
-	// Buffer covers the full in-memory ring so catch-up never drops under lock.
-	ch := make(chan PmTurnEvent, pmTurnBufferMax+8)
-	sub := &turnSub{ch: ch}
-	t.mu.Lock()
-	for _, ev := range t.events {
-		if ev.Seq > afterSeq {
-			// Channel capacity covers the ring; send cannot block under lock.
-			ch <- ev
+func (th *pmThread) publishSession(event string, payload map[string]any) {
+	th.mu.Lock()
+	record := false
+	switch event {
+	case chatsession.EventQueueState:
+		th.decorateQueueLocked(payload)
+	case chatsession.EventTurnBegin:
+		th.turn = nil
+		record = true
+	case chatsession.EventTurnDone, chatsession.EventError:
+		payload["userMsgId"] = th.userMsgID
+		if th.failKind != "" {
+			payload["failKind"] = th.failKind
 		}
+		th.turn = nil
+		th.sandboxID = 0
+		th.phase = ""
 	}
-	done := t.done
-	if done {
-		t.mu.Unlock()
-		close(ch)
-		return ch, func() {}, true
-	}
-	t.subs[sub] = struct{}{}
-	t.mu.Unlock()
-
-	unsub := func() {
-		t.mu.Lock()
-		delete(t.subs, sub)
-		t.mu.Unlock()
-		sub.Close()
-	}
-	return ch, unsub, true
+	ev := PmTurnEvent{Type: "session", Event: event, Payload: payload}
+	subs := th.emitLocked(&ev, record)
+	th.mu.Unlock()
+	fanout(subs, ev)
 }
 
-// Status returns in-memory turn progress when live.
-func (r *PmTurnRunner) Status(threadID string) (active bool, userMsgID string, partial string, chunkIndex, eventSeq int) {
-	r.mu.Lock()
-	t := r.turns[threadID]
-	r.mu.Unlock()
-	if t == nil {
-		return false, "", "", 0, 0
+func (th *pmThread) setPhase(phase string) {
+	th.mu.Lock()
+	if phase == "" || th.phase == phase {
+		th.mu.Unlock()
+		return
 	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.done {
-		return false, t.userMsgID, t.partial, t.chunkIndex, t.nextSeq - 1
+	th.phase = phase
+	ev := PmTurnEvent{Type: "session", Event: PmEventPhase, Payload: map[string]any{"phase": phase}}
+	subs := th.emitLocked(&ev, false)
+	th.mu.Unlock()
+	fanout(subs, ev)
+}
+
+func (th *pmThread) onAcp(raw json.RawMessage) {
+	delta := extractPmAgentText(raw)
+	th.mu.Lock()
+	th.partial += delta
+	ev := PmTurnEvent{Type: "acp", Data: append(json.RawMessage(nil), raw...)}
+	subs := th.emitLocked(&ev, true)
+	th.mu.Unlock()
+	fanout(subs, ev)
+}
+
+func (th *pmThread) fail(q *PmTurnRequest, failKind string) {
+	th.mu.Lock()
+	th.failKind = failKind
+	th.mu.Unlock()
+	th.r.persistTurnFailure(th.id, q.UserMsgID, failKind)
+}
+
+func (th *pmThread) execute(ctx context.Context, q *PmTurnRequest) (bool, error) {
+	r := th.r
+	sandboxID, prompt := q.SandboxID, q.Prompt
+	if q.Prepare != nil {
+		pctx, pcancel := context.WithTimeout(ctx, pmPrepareTimeout)
+		sid, p, err := q.Prepare(pctx, th.setPhase)
+		pcancel()
+		if err == nil && ctx.Err() != nil {
+			err = ctx.Err()
+		}
+		if err != nil {
+			kind := PmFailSandbox
+			if ctx.Err() != nil {
+				kind = PmFailStopped
+			}
+			th.fail(q, kind)
+			return false, err
+		}
+		sandboxID, prompt = sid, p
+		th.mu.Lock()
+		th.sandboxID = sid
+		th.mu.Unlock()
+		th.setPhase(PmPhaseRunning)
 	}
-	seq := t.nextSeq - 1
-	if t.nextSeq == 0 {
-		seq = -1
+
+	ctxTimeout := r.defaultDeadline()
+	var chatTimeout time.Duration
+	if q.Timeout > 0 {
+		chatTimeout = q.Timeout
+		ctxTimeout = q.Timeout + 30*time.Second
 	}
-	return true, t.userMsgID, t.partial, t.chunkIndex, seq
+	tctx, cancel := context.WithTimeout(ctx, ctxTimeout)
+	defer cancel()
+
+	// The streaming draft marks an unfinished turn so a restart can fail it.
+	if _, err := r.pm.UpsertDraft(th.id, q.UserMsgID, "", PmDraftStreaming, 0, 0, sandboxID); err != nil {
+		log.Warn().Err(err).Str("thread", th.id).Str("op", "upsert_draft").Msg("pm turn persist failed")
+	}
+	usage, usageByModel, err := r.chat.ChatWithTimeout(tctx, sandboxID, prompt, q.Images, chatTimeout, th.onAcp)
+
+	th.mu.Lock()
+	partial := th.partial
+	th.mu.Unlock()
+
+	if err != nil {
+		failKind := PmFailUnknown
+		switch {
+		case ctx.Err() != nil:
+			failKind = PmFailStopped
+		case errors.Is(tctx.Err(), context.DeadlineExceeded):
+			failKind = PmFailSandbox
+		}
+		ledgerStatus := models.TokenLedgerStatusFailed
+		if failKind == PmFailStopped {
+			ledgerStatus = models.TokenLedgerStatusCancelled
+		}
+		r.recordUsage(th.id, sandboxID, usage, usageByModel, ledgerStatus)
+		th.fail(q, failKind)
+		return false, err
+	}
+
+	text := strings.TrimSpace(partial)
+	if text == "" {
+		r.recordUsage(th.id, sandboxID, usage, usageByModel, models.TokenLedgerStatusFailed)
+		th.fail(q, PmFailEmpty)
+		return false, errors.New("empty reply")
+	}
+
+	citations := r.filterAndEnrichCitations(th.id, extractPmCitations(text))
+	// Persist Usage only on successful finalize. Append failure must not silently
+	// count toward project totals (usage stays off the message).
+	if _, aerr := r.pm.AppendMessageSource(th.id, "assistant", text, "", citations, nil, nil, usage, usageByModel); aerr != nil {
+		log.Warn().Err(aerr).Str("thread", th.id).Msg("pm turn finalize append failed")
+		r.recordUsage(th.id, sandboxID, usage, usageByModel, models.TokenLedgerStatusFailed)
+		th.fail(q, PmFailUnknown)
+		return false, aerr
+	}
+	r.recordUsage(th.id, sandboxID, usage, usageByModel, models.TokenLedgerStatusOK)
+	if _, err := r.pm.UpdateMessageFailure(th.id, q.UserMsgID, "ok", ""); err != nil {
+		log.Warn().Err(err).Str("thread", th.id).Str("op", "clear_msg_failure").Msg("pm turn persist failed")
+	}
+	if err := r.pm.ClearDraft(th.id); err != nil {
+		log.Warn().Err(err).Str("thread", th.id).Str("op", "clear_draft").Msg("pm turn persist failed")
+	}
+	return false, nil
+}
+
+// recordUsage ledgers one PM turn's usage regardless of outcome: failed and
+// stopped turns still consumed tokens even though no assistant message is kept.
+func (r *PmTurnRunner) recordUsage(threadID string, sandboxID uint, usage *models.TokenUsage, byModel models.TokenUsageByModel, status string) {
+	if r.pm == nil {
+		return
+	}
+	tokenledger.Record(r.pm.db, tokenledger.Entry{
+		Source: models.TokenLedgerSourcePM, Phase: models.TokenLedgerPhaseChat, Status: status,
+		ThreadID: threadID, SandboxID: sandboxID, Usage: usage, ByModel: byModel,
+	})
+}
+
+func (r *PmTurnRunner) persistTurnFailure(threadID, userMsgID, failKind string) {
+	if r.pm == nil || userMsgID == "" {
+		return
+	}
+	if err := r.pm.FailDraft(threadID, failKind); err != nil {
+		log.Warn().Err(err).Str("thread", threadID).Str("op", "fail_draft").Msg("pm turn persist failed")
+	}
+	if _, err := r.pm.UpdateMessageFailure(threadID, userMsgID, "failed", failKind); err != nil {
+		log.Warn().Err(err).Str("thread", threadID).Str("op", "msg_failure").Msg("pm turn persist failed")
+	}
+}
+
+func fanout(subs []*turnSub, ev PmTurnEvent) {
+	for _, sub := range subs {
+		sub.send(ev)
+	}
 }
 
 // ExtractAgentMessageText pulls agent_message_chunk text from a raw ACP frame.

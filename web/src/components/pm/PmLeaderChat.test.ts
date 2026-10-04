@@ -11,12 +11,10 @@ const apiMocks = vi.hoisted(() => ({
   listPmThreads: vi.fn(),
   createPmThread: vi.fn(),
   listPmMessages: vi.fn(),
-  appendPmMessage: vi.fn(),
-  ensurePmSandbox: vi.fn(),
-  getSandbox: vi.fn(),
+  startPmTurn: vi.fn(),
+  cancelPmTurn: vi.fn(),
   sandboxChatWsUrl: vi.fn(() => 'ws://test/sandbox/1'),
   pmThreadChatWsUrl: vi.fn(() => 'ws://test/pm/thr-new/chat'),
-  getPmDraft: vi.fn(),
   patchPmMessage: vi.fn(),
   deletePmThread: vi.fn(),
 }))
@@ -30,12 +28,10 @@ vi.mock('@/lib/api/api', async () => {
       listPmThreads: apiMocks.listPmThreads,
       createPmThread: apiMocks.createPmThread,
       listPmMessages: apiMocks.listPmMessages,
-      appendPmMessage: apiMocks.appendPmMessage,
-      ensurePmSandbox: apiMocks.ensurePmSandbox,
-      getSandbox: apiMocks.getSandbox,
+      startPmTurn: apiMocks.startPmTurn,
+      cancelPmTurn: apiMocks.cancelPmTurn,
       sandboxChatWsUrl: apiMocks.sandboxChatWsUrl,
       pmThreadChatWsUrl: apiMocks.pmThreadChatWsUrl,
-      getPmDraft: apiMocks.getPmDraft,
       patchPmMessage: apiMocks.patchPmMessage,
       deletePmThread: apiMocks.deletePmThread,
     },
@@ -47,6 +43,10 @@ class MockWebSocket {
   static OPEN = 1
   static CLOSING = 2
   static CLOSED = 3
+  static instances: MockWebSocket[] = []
+  constructor() {
+    MockWebSocket.instances.push(this)
+  }
   readyState = MockWebSocket.OPEN
   onmessage: ((ev: MessageEvent) => void) | null = null
   onerror: (() => void) | null = null
@@ -55,6 +55,26 @@ class MockWebSocket {
   close = vi.fn()
   addEventListener = vi.fn()
   removeEventListener = vi.fn()
+}
+
+function lastSocket(): MockWebSocket {
+  const socket = MockWebSocket.instances[MockWebSocket.instances.length - 1]
+  if (!socket) throw new Error('no websocket opened')
+  return socket
+}
+
+function serverFrame(socket: MockWebSocket, frame: unknown) {
+  socket.onmessage?.(new MessageEvent('message', { data: JSON.stringify(frame) }))
+}
+
+function chunkFrame(text: string) {
+  return {
+    type: 'acp',
+    data: {
+      op: 'event',
+      data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } } },
+    },
+  }
 }
 
 function mountChat(
@@ -98,18 +118,10 @@ describe('PmLeaderChat first-send without thread', () => {
     apiMocks.listPmThreads.mockResolvedValue({ items: [] })
     apiMocks.createPmThread.mockResolvedValue({ id: 'thr-new', title: '新会话' })
     apiMocks.listPmMessages.mockResolvedValue({ items: [] })
-    apiMocks.getPmDraft.mockResolvedValue({ draft: null, live: false, hasFinal: false })
-    apiMocks.appendPmMessage.mockImplementation(async (_pid: string, _tid: string, body: { content?: string; role?: string }) => ({
-      id: 'msg-u1',
-      role: body.role || 'user',
-      content: body.content || '',
-      status: 'ok',
+    apiMocks.startPmTurn.mockImplementation(async (_pid: string, _tid: string, body: { content?: string }) => ({
+      message: { id: 'msg-u1', role: 'user', content: body.content || '', status: 'ok' },
+      waiting: 1,
     }))
-    apiMocks.ensurePmSandbox.mockResolvedValue({
-      sandbox: { id: 1, status: 'running' },
-      preamble: '',
-    })
-    apiMocks.getSandbox.mockResolvedValue({ id: 1, status: 'running' })
   })
 
   afterEach(() => {
@@ -126,11 +138,10 @@ describe('PmLeaderChat first-send without thread', () => {
     await flushPromises()
 
     expect(apiMocks.createPmThread).toHaveBeenCalledWith('proj-1')
-    expect(apiMocks.appendPmMessage).toHaveBeenCalledWith(
+    expect(apiMocks.startPmTurn).toHaveBeenCalledWith(
       'proj-1',
       'thr-new',
       expect.objectContaining({
-        role: 'user',
         content: '项目整体进度如何？',
       }),
     )
@@ -157,11 +168,10 @@ describe('PmLeaderChat first-send without thread', () => {
     await flushPromises()
 
     expect(apiMocks.createPmThread).toHaveBeenCalledTimes(1)
-    expect(apiMocks.appendPmMessage).toHaveBeenCalledWith(
+    expect(apiMocks.startPmTurn).toHaveBeenCalledWith(
       'proj-1',
       'thr-new',
       expect.objectContaining({
-        role: 'user',
         content: '本周有哪些风险？',
       }),
     )
@@ -215,18 +225,10 @@ describe('PmLeaderChat ACP + hydrate', () => {
     apiMocks.listPmThreads.mockResolvedValue({ items: [] })
     apiMocks.createPmThread.mockResolvedValue({ id: 'thr-new', title: '新会话' })
     apiMocks.listPmMessages.mockResolvedValue({ items: [] })
-    apiMocks.getPmDraft.mockResolvedValue({ draft: null, live: false, hasFinal: false })
-    apiMocks.appendPmMessage.mockImplementation(async (_pid: string, _tid: string, body: { content?: string; role?: string }) => ({
-      id: 'msg-u1',
-      role: body.role || 'user',
-      content: body.content || '',
-      status: 'ok',
+    apiMocks.startPmTurn.mockImplementation(async (_pid: string, _tid: string, body: { content?: string }) => ({
+      message: { id: 'msg-u1', role: 'user', content: body.content || '', status: 'ok' },
+      waiting: 1,
     }))
-    apiMocks.ensurePmSandbox.mockResolvedValue({
-      sandbox: { id: 1, status: 'running' },
-      preamble: '',
-    })
-    apiMocks.getSandbox.mockResolvedValue({ id: 1, status: 'running' })
     apiMocks.patchPmMessage.mockResolvedValue({ id: 'u1', status: 'failed', failKind: 'unknown' })
   })
 
@@ -248,29 +250,15 @@ describe('PmLeaderChat ACP + hydrate', () => {
     expect(extractAgentMessageDelta(nested)?.text).toBe('进度正常')
   })
 
-  it('turn_done with no chunk maps to empty failKind (vacuum empty)', async () => {
+  it('error frame with failKind=empty shows the server-persisted empty card', async () => {
     apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', title: 't' }] })
     apiMocks.listPmMessages.mockResolvedValue({
       items: [{ id: 'u1', role: 'user', content: '?', status: 'ok' }],
     })
-    apiMocks.getPmDraft.mockResolvedValue({ draft: null, live: false, hasFinal: false })
-    apiMocks.appendPmMessage.mockResolvedValue({
-      id: 'u1',
-      role: 'user',
-      content: '?',
-      status: 'ok',
+    apiMocks.startPmTurn.mockResolvedValue({
+      message: { id: 'u1', role: 'user', content: '?', status: 'ok' },
+      waiting: 1,
     })
-    apiMocks.patchPmMessage.mockResolvedValue({ id: 'u1', status: 'failed', failKind: 'empty' })
-
-    let socket: MockWebSocket | null = null
-    class CaptureWS extends MockWebSocket {
-      constructor() {
-        super()
-        socket = this
-      }
-    }
-    // @ts-expect-error test stub
-    globalThis.WebSocket = CaptureWS
 
     const wrapper = mountChat()
     await flushPromises()
@@ -281,325 +269,225 @@ describe('PmLeaderChat ACP + hydrate', () => {
     await sendBtn!.trigger('click')
     await flushPromises()
 
-    expect(socket).toBeTruthy()
-    // Server empty path: error frame with failKind=empty (turn produced no agent text).
-    socket!.onmessage?.(
-      new MessageEvent('message', {
-        data: JSON.stringify({ type: 'error', failKind: 'empty', message: 'empty reply', seq: 0 }),
-      }),
-    )
+    apiMocks.listPmMessages.mockResolvedValueOnce({
+      items: [{ id: 'u1', role: 'user', content: '?', status: 'failed', failKind: 'empty' }],
+    })
+    serverFrame(lastSocket(), { type: 'session', event: 'error', failKind: 'empty', message: 'empty reply', userMsgId: 'u1' })
     await flushPromises()
 
     expect(wrapper.text()).toContain('空回复')
     expect(wrapper.text()).toContain('本轮未产出有效回复')
-    expect(wrapper.text()).not.toContain('未落库')
-    expect(wrapper.text()).not.toContain('空气泡')
     expect(wrapper.text()).toContain('重试')
-    expect(apiMocks.patchPmMessage).toHaveBeenCalledWith(
-      'proj-1',
-      'thr-1',
-      'u1',
-      expect.objectContaining({ status: 'failed', failKind: 'empty' }),
-    )
-    wrapper.unmount()
-  })
-
-  it('duplicate acp seq does not double-append stream text', async () => {
-    apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', title: 't' }] })
-    apiMocks.listPmMessages.mockResolvedValue({ items: [] })
-    apiMocks.getPmDraft.mockResolvedValue({ draft: null, live: false, hasFinal: false })
-
-    let socket: MockWebSocket | null = null
-    class CaptureWS extends MockWebSocket {
-      constructor() {
-        super()
-        socket = this
-      }
-    }
-    // @ts-expect-error test stub
-    globalThis.WebSocket = CaptureWS
-
-    const wrapper = mountChat()
-    await flushPromises()
-
-    const textarea = wrapper.find('textarea')
-    await textarea.setValue('进度？')
-    const sendBtn = wrapper.findAll('button').find((b) => b.text() === '发送')
-    await sendBtn!.trigger('click')
-    await flushPromises()
-
-    const chunk = (text: string) => ({
-      op: 'event',
-      data: {
-        type: 'session_update',
-        update: {
-          sessionUpdate: 'agent_message_chunk',
-          content: { type: 'text', text },
-        },
-      },
-    })
-
-    expect(socket).toBeTruthy()
-    socket!.onmessage?.(
-      new MessageEvent('message', {
-        data: JSON.stringify({ type: 'acp', data: chunk('Hello'), seq: 0 }),
-      }),
-    )
-    // Same seq again — must not double-append (double fan-out regression).
-    socket!.onmessage?.(
-      new MessageEvent('message', {
-        data: JSON.stringify({ type: 'acp', data: chunk('Hello'), seq: 0 }),
-      }),
-    )
-    socket!.onmessage?.(
-      new MessageEvent('message', {
-        data: JSON.stringify({ type: 'acp', data: chunk('!'), seq: 1 }),
-      }),
-    )
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('Hello!')
-    expect(wrapper.text()).not.toMatch(/HelloHello/)
-    wrapper.unmount()
-  })
-
-  it('failed draft persists failure card without skipAll blocking Retry', async () => {
-    apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', title: 't' }] })
-    apiMocks.listPmMessages.mockResolvedValue({
-      items: [{ id: 'u1', role: 'user', content: 'q', status: 'ok' }],
-    })
-    apiMocks.getPmDraft.mockResolvedValue({
-      draft: {
-        id: 'd1',
-        threadId: 'thr-1',
-        userMsgId: 'u1',
-        partialText: '',
-        chunkIndex: 0,
-        eventSeq: 0,
-        status: 'failed',
-        failKind: 'empty',
-      },
-      live: false,
-      hasFinal: false,
-    })
-    apiMocks.patchPmMessage.mockResolvedValue({ id: 'u1', status: 'failed', failKind: 'empty' })
-
-    const wrapper = mountChat()
-    await flushPromises()
-
-    expect(apiMocks.patchPmMessage).toHaveBeenCalledWith(
-      'proj-1',
-      'thr-1',
-      'u1',
-      expect.objectContaining({ status: 'failed', failKind: 'empty' }),
-    )
-    expect(wrapper.text()).toContain('空回复')
-    expect(wrapper.text()).toContain('本轮未产出有效回复')
-    expect(wrapper.text()).not.toContain('未落库')
-    expect(wrapper.text()).not.toContain('空气泡')
-    expect(wrapper.text()).toContain('重试')
-    wrapper.unmount()
-  })
-
-  it('hydrate prefers final over draft (s4) — hasFinal skips resume', async () => {
-    apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', title: 't' }] })
-    apiMocks.listPmMessages.mockResolvedValue({
-      items: [
-        { id: 'u1', role: 'user', content: 'q', status: 'ok' },
-        { id: 'a1', role: 'assistant', content: 'final answer' },
-      ],
-    })
-    apiMocks.getPmDraft.mockResolvedValue({
-      draft: {
-        id: 'd1',
-        threadId: 'thr-1',
-        userMsgId: 'u1',
-        partialText: 'stale',
-        chunkIndex: 1,
-        eventSeq: 0,
-        status: 'streaming',
-      },
-      live: false,
-      hasFinal: true,
-    })
-
-    const wrapper = mountChat()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('final answer')
-    expect(wrapper.text()).not.toContain('正在续接回复')
-    expect(apiMocks.ensurePmSandbox).not.toHaveBeenCalled()
-    expect(apiMocks.pmThreadChatWsUrl).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('streaming draft auto-resumes without orphan→unknown', async () => {
-    apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', title: 't' }] })
-    apiMocks.listPmMessages.mockResolvedValue({
-      items: [{ id: 'u1', role: 'user', content: 'q', status: 'ok' }],
-    })
-    apiMocks.getPmDraft.mockResolvedValue({
-      draft: {
-        id: 'd1',
-        threadId: 'thr-1',
-        userMsgId: 'u1',
-        partialText: 'partial…',
-        chunkIndex: 2,
-        eventSeq: 1,
-        status: 'streaming',
-      },
-      live: true,
-      hasFinal: false,
-    })
-
-    const wrapper = mountChat()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('partial…')
-    expect(apiMocks.pmThreadChatWsUrl).toHaveBeenCalledWith('proj-1', 'thr-1')
     expect(apiMocks.patchPmMessage).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
-  it('streaming + !live does not resume and shows connection + failed partial (S2)', async () => {
+  it('reconnect replays the active turn without duplicating stream text', async () => {
     apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', title: 't' }] })
     apiMocks.listPmMessages.mockResolvedValue({
-      items: [{ id: 'u1', role: 'user', content: 'q', status: 'ok' }],
+      items: [{ id: 'u1', role: 'user', content: '进度？', status: 'ok' }],
     })
-    apiMocks.getPmDraft.mockResolvedValue({
-      draft: {
-        id: 'd1',
-        threadId: 'thr-1',
-        userMsgId: 'u1',
-        partialText: '半成品内容',
-        chunkIndex: 2,
-        eventSeq: 1,
-        status: 'streaming',
-      },
-      live: false,
-      hasFinal: false,
-    })
-    apiMocks.patchPmMessage.mockResolvedValue({ id: 'u1', status: 'failed', failKind: 'connection' })
 
     const wrapper = mountChat()
     await flushPromises()
 
-    expect(apiMocks.pmThreadChatWsUrl).not.toHaveBeenCalled()
-    expect(apiMocks.ensurePmSandbox).not.toHaveBeenCalled()
-    expect(apiMocks.patchPmMessage).toHaveBeenCalledWith(
-      'proj-1',
-      'thr-1',
-      'u1',
-      expect.objectContaining({ status: 'failed', failKind: 'connection' }),
-    )
-    expect(wrapper.text()).toContain('半成品内容')
-    expect(wrapper.text()).toContain('已停止 · 半成品已保留')
-    expect(wrapper.text()).toContain('连接中断')
-    expect(wrapper.text()).not.toContain('未知错误')
-    expect(wrapper.find('[data-testid="pm-failed-partial"]').exists()).toBe(true)
-    // Composer stays usable (busy=false).
+    const first = lastSocket()
+    serverFrame(first, { type: 'session', event: 'queue_state', busy: true, waiting: 0, userMsgId: 'u1', phase: 'running' })
+    serverFrame(first, { type: 'session', event: 'turn_begin', userMsgId: 'u1' })
+    serverFrame(first, chunkFrame('Hello'))
+    await flushPromises()
+    expect(wrapper.text()).toContain('Hello')
+
+    first.onclose?.()
+    document.dispatchEvent(new Event('visibilitychange'))
+    const second = lastSocket()
+    expect(second).not.toBe(first)
+    serverFrame(second, { type: 'session', event: 'queue_state', busy: true, waiting: 0, userMsgId: 'u1', phase: 'running' })
+    serverFrame(second, { type: 'session', event: 'turn_begin', userMsgId: 'u1' })
+    serverFrame(second, chunkFrame('Hello'))
+    serverFrame(second, chunkFrame('!'))
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Hello!')
+    expect(wrapper.text()).not.toMatch(/HelloHello/)
+    expect(wrapper.text()).not.toContain('连接中断')
+    wrapper.unmount()
+  })
+
+  it('server-failed turn renders its fail card with Retry on load', async () => {
+    apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', title: 't' }] })
+    apiMocks.listPmMessages.mockResolvedValue({
+      items: [{ id: 'u1', role: 'user', content: 'q', status: 'failed', failKind: 'empty' }],
+    })
+
+    const wrapper = mountChat()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('空回复')
+    expect(wrapper.text()).toContain('重试')
+    expect(apiMocks.patchPmMessage).not.toHaveBeenCalled()
+    expect(apiMocks.pmThreadChatWsUrl).toHaveBeenCalledWith('proj-1', 'thr-1')
+    wrapper.unmount()
+  })
+
+  it('refresh mid-turn restores the live bubble from the snapshot and replay', async () => {
+    apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', title: 't' }] })
+    apiMocks.listPmMessages.mockResolvedValue({
+      items: [{ id: 'u1', role: 'user', content: 'q', status: 'ok' }],
+    })
+
+    const wrapper = mountChat()
+    await flushPromises()
+
+    const socket = lastSocket()
+    serverFrame(socket, { type: 'session', event: 'queue_state', busy: true, waiting: 0, userMsgId: 'u1', phase: 'running' })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="pm-stream-resuming-meta"]').exists()).toBe(true)
+
+    serverFrame(socket, { type: 'session', event: 'turn_begin', userMsgId: 'u1' })
+    serverFrame(socket, chunkFrame('partial…'))
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('partial…')
+    expect(apiMocks.patchPmMessage).not.toHaveBeenCalled()
+    expect(wrapper.find('textarea').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('a turn interrupted by a server restart shows the interrupted card', async () => {
+    apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', title: 't' }] })
+    apiMocks.listPmMessages.mockResolvedValue({
+      items: [{ id: 'u1', role: 'user', content: 'q', status: 'failed', failKind: 'interrupted' }],
+    })
+
+    const wrapper = mountChat()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('服务重启中断')
+    expect(wrapper.text()).toContain('重试')
+    expect(wrapper.text()).not.toContain('连接中断')
     expect(wrapper.find('textarea').attributes('disabled')).toBeUndefined()
     wrapper.unmount()
   })
 
-  it('streaming + !live without partial shows only connection fail card (S3)', async () => {
+  it('socket errors and drops never fail the running turn', async () => {
     apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', title: 't' }] })
-    apiMocks.listPmMessages.mockResolvedValue({
-      items: [{ id: 'u1', role: 'user', content: 'q', status: 'ok' }],
-    })
-    apiMocks.getPmDraft.mockResolvedValue({
-      draft: {
-        id: 'd1',
-        threadId: 'thr-1',
-        userMsgId: 'u1',
-        partialText: '',
-        chunkIndex: 0,
-        eventSeq: 0,
-        status: 'streaming',
-      },
-      live: false,
-      hasFinal: false,
-    })
-    apiMocks.patchPmMessage.mockResolvedValue({ id: 'u1', status: 'failed', failKind: 'connection' })
+    apiMocks.listPmMessages.mockResolvedValue({ items: [] })
 
     const wrapper = mountChat()
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="pm-failed-partial"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('连接中断')
-    expect(wrapper.text()).toContain('重试')
-    expect(wrapper.text()).not.toContain('未知错误')
+    await wrapper.find('textarea').setValue('进度？')
+    await wrapper.findAll('button').find((b) => b.text() === '发送')!.trigger('click')
+    await flushPromises()
+    const socket = lastSocket()
+    serverFrame(socket, { type: 'session', event: 'turn_begin', userMsgId: 'msg-u1' })
+    serverFrame(socket, chunkFrame('写到一半'))
+    await flushPromises()
+
+    socket.onerror?.()
+    socket.onclose?.()
+    await flushPromises()
+
+    expect(apiMocks.patchPmMessage).not.toHaveBeenCalled()
+    expect(wrapper.text()).not.toContain('连接中断')
+    expect(wrapper.text()).toContain('写到一半')
+    expect(wrapper.find('[data-testid="pm-stream-bubble"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('orphan / getPmDraft failure converges to connection (not unknown)', async () => {
+  it('missed turn end settles from the idle snapshot after reconnect', async () => {
     apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', title: 't' }] })
-    apiMocks.listPmMessages.mockResolvedValue({
-      items: [{ id: 'u1', role: 'user', content: 'q', status: 'ok' }],
-    })
-    apiMocks.getPmDraft.mockRejectedValue(new Error('draft unavailable'))
-    apiMocks.patchPmMessage.mockResolvedValue({ id: 'u1', status: 'failed', failKind: 'connection' })
+    apiMocks.listPmMessages.mockResolvedValue({ items: [] })
 
     const wrapper = mountChat()
     await flushPromises()
 
-    expect(apiMocks.patchPmMessage).toHaveBeenCalledWith(
-      'proj-1',
-      'thr-1',
-      'u1',
-      expect.objectContaining({ status: 'failed', failKind: 'connection' }),
-    )
-    expect(wrapper.text()).toContain('连接中断')
-    expect(wrapper.text()).not.toContain('未知错误')
+    await wrapper.find('textarea').setValue('进度？')
+    await wrapper.findAll('button').find((b) => b.text() === '发送')!.trigger('click')
+    await flushPromises()
+    const first = lastSocket()
+    serverFrame(first, { type: 'session', event: 'turn_begin', userMsgId: 'msg-u1' })
+    await flushPromises()
+
+    first.onclose?.()
+    apiMocks.listPmMessages.mockResolvedValue({
+      items: [
+        { id: 'msg-u1', role: 'user', content: '进度？', status: 'ok' },
+        { id: 'a1', role: 'assistant', content: '一切正常' },
+      ],
+    })
+    document.dispatchEvent(new Event('visibilitychange'))
+    serverFrame(lastSocket(), { type: 'session', event: 'queue_state', busy: false, waiting: 0 })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="pm-stream-bubble"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('一切正常')
     wrapper.unmount()
   })
 
-  it('Retry clears failed partial bubble and starts a new turn (S4)', async () => {
+  it('Retry clears the failed partial and re-queues the same message (S4)', async () => {
     apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', title: 't' }] })
     apiMocks.listPmMessages.mockResolvedValue({
       items: [{ id: 'u1', role: 'user', content: '项目整体进度如何？', status: 'ok' }],
     })
-    apiMocks.getPmDraft.mockResolvedValue({
-      draft: {
-        id: 'd1',
-        threadId: 'thr-1',
-        userMsgId: 'u1',
-        partialText: '半成品内容',
-        chunkIndex: 1,
-        eventSeq: 0,
-        status: 'failed',
-        failKind: 'connection',
-      },
-      live: false,
-      hasFinal: false,
+    apiMocks.startPmTurn.mockResolvedValue({
+      message: { id: 'u1', role: 'user', content: '项目整体进度如何？', status: 'ok' },
+      waiting: 1,
     })
-    apiMocks.patchPmMessage.mockImplementation(async (_p, _t, _m, body: { status?: string; failKind?: string }) => ({
-      id: 'u1',
-      status: body.status || 'ok',
-      failKind: body.failKind || '',
-    }))
-    apiMocks.ensurePmSandbox.mockResolvedValue({
-      sandbox: { id: 1, status: 'running' },
-      preamble: '',
-    })
-    apiMocks.getSandbox.mockResolvedValue({ id: 1, status: 'running' })
 
     const wrapper = mountChat()
+    await flushPromises()
+
+    const socket = lastSocket()
+    serverFrame(socket, { type: 'session', event: 'turn_begin', userMsgId: 'u1' })
+    serverFrame(socket, chunkFrame('半成品内容'))
+    await flushPromises()
+    apiMocks.listPmMessages.mockResolvedValueOnce({
+      items: [{ id: 'u1', role: 'user', content: '项目整体进度如何？', status: 'failed', failKind: 'sandbox' }],
+    })
+    serverFrame(socket, { type: 'session', event: 'error', failKind: 'sandbox', message: 'timeout', userMsgId: 'u1' })
     await flushPromises()
 
     expect(wrapper.find('[data-testid="pm-failed-partial"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('半成品内容')
 
-    const retry = wrapper.find('[data-testid="pm-fail-retry"]')
-    expect(retry.exists()).toBe(true)
-    await retry.trigger('click')
+    await wrapper.find('[data-testid="pm-fail-retry"]').trigger('click')
     await flushPromises()
 
+    expect(apiMocks.startPmTurn).toHaveBeenCalledWith('proj-1', 'thr-1', { retryOf: 'u1' })
     expect(wrapper.find('[data-testid="pm-failed-partial"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('半成品内容')
-    expect(wrapper.text()).not.toContain('连接中断')
-    expect(apiMocks.pmThreadChatWsUrl).toHaveBeenCalled()
     expect(wrapper.find('[data-testid="pm-stream-bubble"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('Stop asks the server to cancel and shows the stopped card from its frame', async () => {
+    apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', title: 't' }] })
+    apiMocks.listPmMessages.mockResolvedValue({ items: [] })
+    apiMocks.cancelPmTurn.mockResolvedValue({ ok: true })
+
+    const wrapper = mountChat()
+    await flushPromises()
+
+    await wrapper.find('textarea').setValue('进度？')
+    await wrapper.findAll('button').find((b) => b.text() === '发送')!.trigger('click')
+    await flushPromises()
+    serverFrame(lastSocket(), { type: 'session', event: 'turn_begin', userMsgId: 'msg-u1' })
+    await flushPromises()
+
+    await wrapper.findAll('button').find((b) => b.text().includes('停止'))!.trigger('click')
+    await flushPromises()
+    expect(apiMocks.cancelPmTurn).toHaveBeenCalledWith('proj-1', 'thr-1')
+
+    apiMocks.listPmMessages.mockResolvedValueOnce({
+      items: [{ id: 'msg-u1', role: 'user', content: '进度？', status: 'failed', failKind: 'stopped' }],
+    })
+    serverFrame(lastSocket(), { type: 'session', event: 'turn_done', interrupted: true, failKind: 'stopped', userMsgId: 'msg-u1' })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="pm-stream-bubble"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('已停止')
     wrapper.unmount()
   })
 })
@@ -612,12 +500,6 @@ describe('PmLeaderChat loading states S1–S5', () => {
     localStorage.clear()
     // @ts-expect-error test stub
     globalThis.WebSocket = MockWebSocket
-    apiMocks.ensurePmSandbox.mockResolvedValue({
-      sandbox: { id: 1, status: 'running' },
-      preamble: '',
-    })
-    apiMocks.getSandbox.mockResolvedValue({ id: 1, status: 'running' })
-    apiMocks.getPmDraft.mockResolvedValue({ draft: null, live: false, hasFinal: false })
     apiMocks.patchPmMessage.mockResolvedValue({ id: 'u1', status: 'failed', failKind: 'connection' })
   })
 
@@ -632,7 +514,6 @@ describe('PmLeaderChat loading states S1–S5', () => {
     })
     apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', title: '历史会话' }] })
     apiMocks.listPmMessages.mockReturnValue(messagesPromise)
-    apiMocks.getPmDraft.mockResolvedValue({ draft: null, live: false, hasFinal: false })
 
     const wrapper = mountChat()
     await flushPromises()
@@ -671,7 +552,6 @@ describe('PmLeaderChat loading states S1–S5', () => {
         { id: 'u1', role: 'user', content: 'q', status: 'failed', failKind: 'connection', createdAt: '2026-01-01T00:02:00Z' },
       ],
     })
-    apiMocks.getPmDraft.mockResolvedValue({ draft: null, live: false, hasFinal: false })
 
     const wrapper = mountChat()
     await flushPromises()
@@ -690,7 +570,6 @@ describe('PmLeaderChat loading states S1–S5', () => {
         { id: 'a1', role: 'assistant', content: '**bold** reply', createdAt: '2026-01-01T00:01:00Z' },
       ],
     })
-    apiMocks.getPmDraft.mockResolvedValue({ draft: null, live: false, hasFinal: false })
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -781,18 +660,10 @@ describe('PmLeaderChat loading states S3/S5 and race boundaries', () => {
     globalThis.WebSocket = MockWebSocket
     apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', title: 't' }] })
     apiMocks.listPmMessages.mockResolvedValue({ items: [] })
-    apiMocks.getPmDraft.mockResolvedValue({ draft: null, live: false, hasFinal: false })
-    apiMocks.appendPmMessage.mockImplementation(async (_pid: string, _tid: string, body: { content?: string; role?: string }) => ({
-      id: 'msg-u1',
-      role: body.role || 'user',
-      content: body.content || '',
-      status: 'ok',
+    apiMocks.startPmTurn.mockImplementation(async (_pid: string, _tid: string, body: { content?: string }) => ({
+      message: { id: 'msg-u1', role: 'user', content: body.content || '', status: 'ok' },
+      waiting: 1,
     }))
-    apiMocks.ensurePmSandbox.mockResolvedValue({
-      sandbox: { id: 1, status: 'running' },
-      preamble: '',
-    })
-    apiMocks.getSandbox.mockResolvedValue({ id: 1, status: 'running' })
     apiMocks.patchPmMessage.mockResolvedValue({ id: 'u1', status: 'failed', failKind: 'unknown' })
   })
 
@@ -850,7 +721,7 @@ describe('PmLeaderChat loading states S3/S5 and race boundaries', () => {
 
     apiMocks.listPmMessages.mockReturnValueOnce(refetchPromise)
     socket!.onmessage?.(
-      new MessageEvent('message', { data: JSON.stringify({ type: 'turn_done', seq: 1 }) }),
+      new MessageEvent('message', { data: JSON.stringify({ type: 'session', event: 'turn_done', interrupted: false }) }),
     )
     await flushPromises()
 
@@ -937,7 +808,7 @@ describe('PmLeaderChat loading states S3/S5 and race boundaries', () => {
 
     apiMocks.listPmMessages.mockRejectedValueOnce(new Error('network down'))
     socket!.onmessage?.(
-      new MessageEvent('message', { data: JSON.stringify({ type: 'turn_done', seq: 1 }) }),
+      new MessageEvent('message', { data: JSON.stringify({ type: 'session', event: 'turn_done', interrupted: false }) }),
     )
     await flushPromises()
 
@@ -956,42 +827,6 @@ describe('PmLeaderChat loading states S3/S5 and race boundaries', () => {
 
     expect(wrapper.find('[data-testid="pm-stream-bubble"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Partial answer done')
-    wrapper.unmount()
-  })
-
-  it('S5: live draft hydrate shows loading then partial with resuming meta', async () => {
-    let resolveMessages: (v: { items: unknown[] }) => void = () => {}
-    const messagesPromise = new Promise<{ items: unknown[] }>((r) => {
-      resolveMessages = r
-    })
-    apiMocks.listPmMessages.mockReturnValue(messagesPromise)
-    apiMocks.getPmDraft.mockResolvedValue({
-      draft: {
-        id: 'd1',
-        threadId: 'thr-1',
-        userMsgId: 'u1',
-        partialText: 'partial…',
-        chunkIndex: 2,
-        eventSeq: 1,
-        status: 'streaming',
-      },
-      live: true,
-      hasFinal: false,
-    })
-
-    const wrapper = mountChat()
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="pm-messages-loading"]').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('partial…')
-
-    resolveMessages({ items: [{ id: 'u1', role: 'user', content: 'q', status: 'ok' }] })
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="pm-messages-loading"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('partial…')
-    expect(wrapper.find('[data-testid="pm-stream-resuming-meta"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('正在续接回复')
     wrapper.unmount()
   })
 
@@ -1045,7 +880,7 @@ describe('PmLeaderChat loading states S3/S5 and race boundaries', () => {
       }),
     )
     socket!.onmessage?.(
-      new MessageEvent('message', { data: JSON.stringify({ type: 'turn_done', seq: 1 }) }),
+      new MessageEvent('message', { data: JSON.stringify({ type: 'session', event: 'turn_done', interrupted: false }) }),
     )
     await flushPromises()
 
@@ -1102,7 +937,6 @@ describe('PmLeaderChat i18n locale switch', () => {
     localStorage.clear()
     apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', title: 't' }] })
     apiMocks.listPmMessages.mockRejectedValue(new Error('fail'))
-    apiMocks.getPmDraft.mockResolvedValue({ draft: null, live: false, hasFinal: false })
   })
 
   it('shows en loading/error strings without raw keys', async () => {
@@ -1130,7 +964,6 @@ describe('PmLeaderChat settings entry', () => {
     vi.clearAllMocks()
     apiMocks.listPmThreads.mockResolvedValue({ items: [] })
     apiMocks.listPmMessages.mockResolvedValue({ items: [] })
-    apiMocks.getPmDraft.mockResolvedValue({ draft: null, live: false, hasFinal: false })
   })
 
   it('emits openSettings from enabled gear+settings button', async () => {
@@ -1198,18 +1031,10 @@ describe('PmLeaderChat stick-to-bottom', () => {
     globalThis.WebSocket = MockWebSocket
     apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', title: 't' }] })
     apiMocks.listPmMessages.mockResolvedValue({ items: [] })
-    apiMocks.getPmDraft.mockResolvedValue({ draft: null, live: false, hasFinal: false })
-    apiMocks.appendPmMessage.mockImplementation(async (_pid: string, _tid: string, body: { content?: string; role?: string }) => ({
-      id: 'msg-u1',
-      role: body.role || 'user',
-      content: body.content || '',
-      status: 'ok',
+    apiMocks.startPmTurn.mockImplementation(async (_pid: string, _tid: string, body: { content?: string }) => ({
+      message: { id: 'msg-u1', role: 'user', content: body.content || '', status: 'ok' },
+      waiting: 1,
     }))
-    apiMocks.ensurePmSandbox.mockResolvedValue({
-      sandbox: { id: 1, status: 'running' },
-      preamble: '',
-    })
-    apiMocks.getSandbox.mockResolvedValue({ id: 1, status: 'running' })
   })
 
   afterEach(() => {
@@ -1271,7 +1096,7 @@ describe('PmLeaderChat stick-to-bottom', () => {
     })
     socket!.onmessage?.(
       new MessageEvent('message', {
-        data: JSON.stringify({ type: 'turn_done', seq: 1 }),
+        data: JSON.stringify({ type: 'session', event: 'turn_done', interrupted: false }),
       }),
     )
     await flushPromises()
@@ -1354,7 +1179,7 @@ describe('PmLeaderChat stick-to-bottom', () => {
     expect(wrapper.text()).toContain('渠道会话在 Web 只读：不可发送、不可删除')
     expect(wrapper.text()).toContain('禁止当普通 Web 线程编辑或删除')
     expect(wrapper.text()).toContain('可点击缩略图查看大图')
-    expect(apiMocks.appendPmMessage).not.toHaveBeenCalled()
+    expect(apiMocks.startPmTurn).not.toHaveBeenCalled()
 
     // Web thread has send composer and no QQ header tag.
     await wrapper.find('[data-channel="0"]').trigger('click')
@@ -1633,18 +1458,10 @@ describe('PmLeaderChat tail window + lazyload', () => {
     localStorage.clear()
     // @ts-expect-error test stub
     globalThis.WebSocket = MockWebSocket
-    apiMocks.getPmDraft.mockResolvedValue({ draft: null, live: false, hasFinal: false })
-    apiMocks.appendPmMessage.mockImplementation(async (_pid: string, _tid: string, body: { content?: string; role?: string }) => ({
-      id: 'msg-u1',
-      role: body.role || 'user',
-      content: body.content || '',
-      status: 'ok',
+    apiMocks.startPmTurn.mockImplementation(async (_pid: string, _tid: string, body: { content?: string }) => ({
+      message: { id: 'msg-u1', role: 'user', content: body.content || '', status: 'ok' },
+      waiting: 1,
     }))
-    apiMocks.ensurePmSandbox.mockResolvedValue({
-      sandbox: { id: 1, status: 'running' },
-      preamble: '',
-    })
-    apiMocks.getSandbox.mockResolvedValue({ id: 1, status: 'running' })
   })
 
   afterEach(() => {
@@ -1820,7 +1637,7 @@ describe('PmLeaderChat tail window + lazyload', () => {
 
     socket!.onmessage?.(
       new MessageEvent('message', {
-        data: JSON.stringify({ type: 'turn_done', seq: 0 }),
+        data: JSON.stringify({ type: 'session', event: 'turn_done', interrupted: false }),
       }),
     )
     await flushPromises()
@@ -1942,9 +1759,6 @@ describe('PmLeaderChat image preview (f1/f2)', () => {
         },
       ],
     })
-    apiMocks.getPmDraft.mockResolvedValue({ draft: null, live: false, hasFinal: false })
-    apiMocks.ensurePmSandbox.mockResolvedValue({ sandbox: { id: 1, status: 'running' }, preamble: '' })
-    apiMocks.getSandbox.mockResolvedValue({ id: 1, status: 'running' })
   })
 
   afterEach(() => {

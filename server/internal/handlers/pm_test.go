@@ -1,7 +1,9 @@
 package handlers_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -139,29 +141,26 @@ func TestPmLeaderBindingMemoryAndThreadGate(t *testing.T) {
 	}
 }
 
-func TestGetPmDraftReconcilesStaleStreamingWhenNotActive(t *testing.T) {
-	hn := newHarness(t)
+func setupPmTurnThread(t *testing.T, hn *harness, name string) (pm *services.PmService, pid, tid string) {
+	t.Helper()
 	enableAdmin(t)
-
-	pm := services.NewPmService(hn.db, hn.h.Agents)
+	pm = services.NewPmService(hn.db, hn.h.Agents)
 	hn.h.Pm = pm
 	hn.h.PmProgress = services.NewPmProgress(pm, hn.h.Runs, hn.h.Arts)
 	hn.h.PMMCP = pmmcp.NewHost(pm, hn.h.PmProgress, nil, hn.h.Runs, hn.h.Arts, nil)
-	hn.h.PmTurns = services.NewPmTurnRunner(pm, nil)
 
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "DraftReconcile"})
+	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": name})
 	if w.Code != 200 {
 		t.Fatalf("create project: %d %s", w.Code, w.Body.String())
 	}
 	var proj map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &proj)
-	pid := proj["id"].(string)
-	if err := hn.h.Agents.Save(services.Agent{Name: "pm-draft", ProjectID: pid}); err != nil {
+	pid = proj["id"].(string)
+	if err := hn.h.Agents.Save(services.Agent{Name: "pm-" + name, ProjectID: pid}); err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
-
 	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/pm-leader", map[string]any{
-		"enabled": true, "agentConfigRef": "pm-draft",
+		"enabled": true, "agentConfigRef": "pm-" + name,
 	})
 	if w.Code != 200 {
 		t.Fatalf("enable: %d %s", w.Code, w.Body.String())
@@ -172,137 +171,107 @@ func TestGetPmDraftReconcilesStaleStreamingWhenNotActive(t *testing.T) {
 	}
 	var thr map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &thr)
-	tid := thr["id"].(string)
+	return pm, pid, thr["id"].(string)
+}
 
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages", map[string]any{
-		"role": "user", "content": "进度？",
-	})
-	if w.Code != 200 {
-		t.Fatalf("message: %d %s", w.Code, w.Body.String())
-	}
-	var userMsg map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &userMsg)
-	uid := userMsg["id"].(string)
+func TestStartPmTurnValidatesAndMarksRejected(t *testing.T) {
+	hn := newHarness(t)
+	pm, pid, tid := setupPmTurnThread(t, hn, "TurnReject")
+	hn.h.PmTurns = services.NewPmTurnRunner(pm, nil)
+	base := "/api/projects/" + pid + "/pm/threads/" + tid
 
-	if _, err := pm.UpsertDraft(tid, uid, "half done…", services.PmDraftStreaming, 1, 0, 0); err != nil {
-		t.Fatalf("upsert draft: %v", err)
+	if w := hn.do(http.MethodPost, base+"/turns", map[string]any{"content": "  "}); w.Code != http.StatusBadRequest {
+		t.Fatalf("empty content: %d %s", w.Code, w.Body.String())
 	}
-
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/threads/"+tid+"/draft", nil)
-	if w.Code != 200 {
-		t.Fatalf("get draft: %d %s", w.Code, w.Body.String())
+	asst, err := pm.AppendMessage(tid, "assistant", "答", nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	var resp struct {
-		Live  bool `json:"live"`
-		Draft *struct {
-			Status      string `json:"status"`
-			FailKind    string `json:"failKind"`
-			PartialText string `json:"partialText"`
-			UserMsgID   string `json:"userMsgId"`
-		} `json:"draft"`
+	if w := hn.do(http.MethodPost, base+"/turns", map[string]any{"retryOf": asst.ID}); w.Code != http.StatusBadRequest {
+		t.Fatalf("retry assistant: %d %s", w.Code, w.Body.String())
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if resp.Live {
-		t.Fatal("expected live=false when no Active turn")
-	}
-	if resp.Draft == nil {
-		t.Fatal("expected reconciled draft")
-	}
-	if resp.Draft.Status != services.PmDraftFailed || resp.Draft.FailKind != services.PmFailConnection {
-		t.Fatalf("draft=%+v want failed/connection", resp.Draft)
-	}
-	if resp.Draft.PartialText != "half done…" {
-		t.Fatalf("partialText=%q want preserved", resp.Draft.PartialText)
+	if w := hn.do(http.MethodPost, base+"/turns", map[string]any{"retryOf": "missing"}); w.Code == http.StatusOK {
+		t.Fatalf("retry missing: %d", w.Code)
 	}
 
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages", nil)
-	if w.Code != 200 {
-		t.Fatalf("messages: %d", w.Code)
+	// No sandbox chat backend: the turn is rejected and the new user message
+	// is marked failed instead of being left as an orphan.
+	w := hn.do(http.MethodPost, base+"/turns", map[string]any{"content": "进度？"})
+	if w.Code != http.StatusConflict {
+		t.Fatalf("enqueue: %d %s", w.Code, w.Body.String())
 	}
-	var msgResp struct {
-		Items []map[string]any `json:"items"`
+	msgs, _ := pm.ListMessages(tid)
+	last := msgs[len(msgs)-1]
+	if last.Role != "user" || last.Status != "failed" || last.FailKind != services.PmFailUnknown {
+		t.Fatalf("rejected msg=%+v", last)
 	}
-	_ = json.Unmarshal(w.Body.Bytes(), &msgResp)
-	if len(msgResp.Items) != 1 {
-		t.Fatalf("messages=%d", len(msgResp.Items))
-	}
-	if msgResp.Items[0]["status"] != "failed" || msgResp.Items[0]["failKind"] != services.PmFailConnection {
-		t.Fatalf("user msg=%v want failed/connection", msgResp.Items[0])
+
+	if w := hn.do(http.MethodPost, base+"/turns/cancel", nil); w.Code != http.StatusOK {
+		t.Fatalf("cancel: %d %s", w.Code, w.Body.String())
 	}
 }
 
-func TestGetPmDraftKeepsStreamingWhenActive(t *testing.T) {
+type stubPmChat struct{}
+
+func (stubPmChat) ChatWithTimeout(context.Context, uint, string, []models.PromptImage, time.Duration, func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
+	return nil, nil, errors.New("unreachable")
+}
+
+func (stubPmChat) Cancel(uint) {}
+
+func TestStartPmTurnQueuesAndRetry(t *testing.T) {
 	hn := newHarness(t)
-	enableAdmin(t)
-
-	pm := services.NewPmService(hn.db, hn.h.Agents)
-	hn.h.Pm = pm
-	hn.h.PmProgress = services.NewPmProgress(pm, hn.h.Runs, hn.h.Arts)
-	hn.h.PMMCP = pmmcp.NewHost(pm, hn.h.PmProgress, nil, hn.h.Runs, hn.h.Arts, nil)
+	pm, pid, tid := setupPmTurnThread(t, hn, "TurnQueue")
 	runner := services.NewPmTurnRunner(pm, nil)
+	runner.SetChatterForTest(stubPmChat{})
 	hn.h.PmTurns = runner
+	base := "/api/projects/" + pid + "/pm/threads/" + tid
 
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "DraftLive"})
-	if w.Code != 200 {
-		t.Fatalf("create project: %d %s", w.Code, w.Body.String())
-	}
-	var proj map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &proj)
-	pid := proj["id"].(string)
-	if err := hn.h.Agents.Save(services.Agent{Name: "pm-live", ProjectID: pid}); err != nil {
-		t.Fatalf("create agent: %v", err)
-	}
-
-	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/pm-leader", map[string]any{
-		"enabled": true, "agentConfigRef": "pm-live",
-	})
-	if w.Code != 200 {
-		t.Fatalf("enable: %d %s", w.Code, w.Body.String())
-	}
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads", map[string]any{"title": "t"})
-	if w.Code != 200 {
-		t.Fatalf("thread: %d %s", w.Code, w.Body.String())
-	}
-	var thr map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &thr)
-	tid := thr["id"].(string)
-
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages", map[string]any{
-		"role": "user", "content": "进度？",
-	})
-	if w.Code != 200 {
-		t.Fatalf("message: %d %s", w.Code, w.Body.String())
-	}
-	var userMsg map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &userMsg)
-	uid := userMsg["id"].(string)
-
-	if _, err := pm.UpsertDraft(tid, uid, "live partial", services.PmDraftStreaming, 1, 0, 0); err != nil {
-		t.Fatalf("upsert draft: %v", err)
-	}
-	// Simulate an in-process turn without starting Chat (sbx nil).
-	runner.ForceActiveForTest(tid, uid)
-
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/threads/"+tid+"/draft", nil)
-	if w.Code != 200 {
-		t.Fatalf("get draft: %d %s", w.Code, w.Body.String())
+	w := hn.do(http.MethodPost, base+"/turns", map[string]any{"content": "进度？"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("start: %d %s", w.Code, w.Body.String())
 	}
 	var resp struct {
-		Live  bool `json:"live"`
-		Draft *struct {
-			Status string `json:"status"`
-		} `json:"draft"`
+		Message models.ChatMessage `json:"message"`
+		Waiting int                `json:"waiting"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode: %v", err)
+		t.Fatal(err)
 	}
-	if !resp.Live {
-		t.Fatal("expected live=true while Active")
+	if resp.Message.ID == "" || resp.Message.Content != "进度？" || resp.Waiting != 1 {
+		t.Fatalf("resp=%+v", resp)
 	}
-	if resp.Draft == nil || resp.Draft.Status != services.PmDraftStreaming {
-		t.Fatalf("draft=%+v want streaming preserved", resp.Draft)
+	failed := waitPmMessageFailed(t, pm, tid, resp.Message.ID)
+	if failed.FailKind == services.PmFailConnection || failed.FailKind == "" {
+		t.Fatalf("server must record a real failKind, got %+v", failed)
+	}
+
+	w = hn.do(http.MethodPost, base+"/turns", map[string]any{"retryOf": resp.Message.ID})
+	if w.Code != http.StatusOK {
+		t.Fatalf("retry: %d %s", w.Code, w.Body.String())
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Message.Status == "failed" {
+		t.Fatalf("retry must clear failure, got %+v", resp.Message)
+	}
+	waitPmMessageFailed(t, pm, tid, resp.Message.ID)
+	if msgs, _ := pm.ListMessages(tid); len(msgs) != 1 {
+		t.Fatalf("retry must not append a user message, got %d", len(msgs))
+	}
+}
+
+func waitPmMessageFailed(t *testing.T, pm *services.PmService, tid, mid string) models.ChatMessage {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		m, err := pm.GetMessage(tid, mid)
+		if err == nil && m.Status == "failed" {
+			return m
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("message %s never failed: %+v", mid, m)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 

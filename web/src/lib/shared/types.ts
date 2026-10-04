@@ -609,27 +609,6 @@ export interface ChatMessage {
   createdAt: string
 }
 
-/** In-progress PM consult draft checkpoint (server-persisted). */
-export interface PmTurnDraft {
-  id: string
-  threadId: string
-  userMsgId: string
-  partialText: string
-  chunkIndex: number
-  eventSeq: number
-  status: 'streaming' | 'done' | 'failed' | string
-  failKind?: string
-  sandboxId?: number
-  createdAt: string
-  updatedAt: string
-}
-
-export interface PmDraftResponse {
-  draft: PmTurnDraft | null
-  live: boolean
-  hasFinal: boolean
-}
-
 // A published, immutable snapshot of a workflow's graph.
 export interface WorkflowVersion {
   workflowId: string

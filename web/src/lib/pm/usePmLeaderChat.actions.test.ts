@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { createApp, defineComponent, nextTick, reactive, ref } from 'vue'
+import { createApp, defineComponent, reactive } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
@@ -17,11 +17,9 @@ const mocks = vi.hoisted(() => ({
   createPmThread: vi.fn(),
   deletePmThread: vi.fn(),
   listPmMessages: vi.fn(),
-  getPmDraft: vi.fn(),
-  appendPmMessage: vi.fn(),
   patchPmMessage: vi.fn(),
-  ensurePmSandbox: vi.fn(),
-  getSandbox: vi.fn(),
+  startPmTurn: vi.fn(),
+  cancelPmTurn: vi.fn(),
   pmThreadChatWsUrl: vi.fn(() => 'ws://example.test/pm'),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
@@ -37,11 +35,9 @@ vi.mock('@/lib/api/api', async () => {
       createPmThread: mocks.createPmThread,
       deletePmThread: mocks.deletePmThread,
       listPmMessages: mocks.listPmMessages,
-      getPmDraft: mocks.getPmDraft,
-      appendPmMessage: mocks.appendPmMessage,
       patchPmMessage: mocks.patchPmMessage,
-      ensurePmSandbox: mocks.ensurePmSandbox,
-      getSandbox: mocks.getSandbox,
+      startPmTurn: mocks.startPmTurn,
+      cancelPmTurn: mocks.cancelPmTurn,
       pmThreadChatWsUrl: mocks.pmThreadChatWsUrl,
     },
   }
@@ -159,15 +155,14 @@ describe('usePmLeaderChat actions', () => {
     })
     mocks.listPmThreads.mockResolvedValue({ items: [thread()] })
     mocks.listPmMessages.mockResolvedValue({ items: [], hasMore: false })
-    mocks.getPmDraft.mockResolvedValue({ draft: null, live: false, hasFinal: false })
     mocks.createPmThread.mockResolvedValue(thread({ id: 'th-2', title: '新会话' }))
     mocks.deletePmThread.mockResolvedValue({ status: 'ok' })
-    mocks.appendPmMessage.mockImplementation(async (_p, _t, body) =>
-      message('u-new', 'user', { content: body.content, images: body.images }),
-    )
+    mocks.startPmTurn.mockImplementation(async (_p, _t, body) => ({
+      message: message(body.retryOf || 'u-new', 'user', { content: body.content ?? 'retry', status: 'ok' }),
+      waiting: 1,
+    }))
+    mocks.cancelPmTurn.mockResolvedValue({ ok: true })
     mocks.patchPmMessage.mockImplementation(async (_p, _t, id, patch) => message(id, 'user', patch))
-    mocks.ensurePmSandbox.mockResolvedValue({ sandbox: { id: 7 }, preamble: 'context' })
-    mocks.getSandbox.mockResolvedValue({ status: 'running' })
   })
 
   afterEach(() => {
@@ -264,147 +259,6 @@ describe('usePmLeaderChat actions', () => {
     app.unmount()
   })
 
-  it('sends a turn, consumes websocket frames and finalizes from the server', async () => {
-    const { chat, app } = withChat()
-    await flushPromises()
-    chat.input.value = ' hello '
-    await chat.send()
-    const socket = MockWebSocket.instances.at(-1)!
-    expect(mocks.appendPmMessage).toHaveBeenCalled()
-    expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({
-      type: 'chat',
-      content: 'context\n\n用户问题：hello',
-      userMsgId: 'u-new',
-    })
-
-    socket.frame({ seq: 1, type: 'resume_hint', partialText: 'seed', eventSeq: 5, userMsgId: 'u-new' })
-    expect(chat.streamText.value).toBe('seed')
-    socket.frame({ seq: 5, type: 'acp', data: { type: 'agent_message_chunk', content: 'ignored' } })
-    socket.frame({ type: 'acp', data: { type: 'agent_message_chunk', content: '!' } })
-    socket.frame('bad json')
-
-    mocks.listPmMessages.mockResolvedValueOnce({
-      items: [message('u-new'), message('a-new', 'assistant')],
-      hasMore: false,
-    })
-    mocks.listPmThreads.mockResolvedValueOnce({ items: [thread({ title: '更新' })] })
-    socket.frame({ seq: 6, type: 'turn_done' })
-    await flushPromises()
-    expect(chat.finalizing.value).toBe(false)
-    expect(chat.messages.value.some((m) => m.id === 'a-new')).toBe(true)
-    expect(chat.streamText.value).toBe('')
-    app.unmount()
-  })
-
-  it('marks websocket and server errors as failed', async () => {
-    const { chat, app } = withChat()
-    await flushPromises()
-    chat.input.value = 'fail me'
-    await chat.send()
-    const socket = MockWebSocket.instances.at(-1)!
-    mocks.listPmMessages.mockResolvedValueOnce({
-      items: [message('u-new', 'user', { status: 'ok' })],
-      hasMore: false,
-    })
-    socket.frame({ type: 'error', failKind: 'sandbox', error: 'runner failed' })
-    await flushPromises()
-    expect(mocks.patchPmMessage).toHaveBeenCalledWith(
-      'proj-1',
-      'th-1',
-      'u-new',
-      expect.objectContaining({ status: 'failed', failKind: 'sandbox' }),
-    )
-
-    chat.input.value = 'disconnect'
-    await chat.send()
-    MockWebSocket.instances.at(-1)!.onerror?.(new Event('error'))
-    await flushPromises()
-    expect(chat.sending.value).toBe(false)
-    app.unmount()
-  })
-
-  it('hydrates failed drafts and converges orphan messages even when persistence fails', async () => {
-    mocks.listPmMessages.mockResolvedValueOnce({
-      items: [
-        message('draft', 'user', { status: 'ok' }),
-        message('orphan', 'user', { status: 'sending' }),
-      ],
-      hasMore: false,
-    })
-    mocks.getPmDraft.mockResolvedValueOnce({
-      draft: { status: 'failed', userMsgId: 'draft', failKind: 'unknown', partialText: 'partial' },
-      live: false,
-      hasFinal: false,
-    })
-    mocks.patchPmMessage
-      .mockImplementationOnce(async (_p, _t, id, patch) => message(id, 'user', patch))
-      .mockRejectedValueOnce(new Error('patch down'))
-    const { chat, app } = withChat()
-    await flushPromises()
-    expect(chat.failedPartialByUserMsgId.value.draft).toBe('partial')
-    expect(chat.messages.value.find((m) => m.id === 'draft')?.failKind).toBe('connection')
-    expect(chat.messages.value.find((m) => m.id === 'orphan')?.status).toBe('failed')
-    expect(mocks.toastError).toHaveBeenCalledWith('patch down')
-    app.unmount()
-  })
-
-  it('stops and retries a failed turn without appending another user message', async () => {
-    const { chat, app } = withChat()
-    await flushPromises()
-    chat.messages.value = [message('retry', 'user', { content: 'again', status: 'failed' }) as never]
-    await chat.retryTurn('missing')
-    await chat.retryTurn('retry')
-    expect(mocks.patchPmMessage).toHaveBeenCalledWith('proj-1', 'th-1', 'retry', { status: 'ok' })
-    expect(mocks.appendPmMessage).not.toHaveBeenCalled()
-    const socket = MockWebSocket.instances.at(-1)!
-    expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({ type: 'chat', userMsgId: 'retry' })
-    chat.stop()
-    await flushPromises()
-    expect(socket.sent.some((raw) => JSON.parse(raw).type === 'cancel')).toBe(true)
-    expect(chat.messages.value[0]?.status).toBe('failed')
-    app.unmount()
-  })
-
-  it('covers sandbox readiness and websocket opening outcomes', async () => {
-    const { chat, app } = withChat()
-    await flushPromises()
-    mocks.getSandbox.mockResolvedValueOnce({ status: 'error', error: 'boot failed' })
-    await expect(chat.waitReady(7)).rejects.toThrow('boot failed')
-
-    const open = new MockWebSocket('ws://open')
-    expect(await chat.waitWsOpen(open as never, 10)).toBeUndefined()
-    const closed = new MockWebSocket('ws://closed')
-    closed.readyState = MockWebSocket.CLOSED
-    await expect(chat.waitWsOpen(closed as never, 10)).rejects.toThrow('ws closed')
-    const connecting = new MockWebSocket('ws://connecting')
-    connecting.readyState = MockWebSocket.CONNECTING
-    const pending = chat.waitWsOpen(connecting as never, 100)
-    connecting.fire('error')
-    await expect(pending).rejects.toThrow('ws error')
-    app.unmount()
-  })
-
-  it('exposes pulling boot copy while waitReady sees status=pulling (g3.3)', async () => {
-    vi.useFakeTimers()
-    const { chat, app } = withChat()
-    await flushPromises()
-    mocks.getSandbox
-      .mockResolvedValueOnce({ status: 'pulling' })
-      .mockResolvedValueOnce({ status: 'running' })
-    const pending = chat.waitReady(9)
-    await flushPromises()
-    expect(chat.sandboxBootStatus.value).toBe('pulling')
-    expect(chat.isPullingBoot.value).toBe(true)
-    expect(chat.busyHint.value).toContain('正在拉取镜像')
-    await vi.advanceTimersByTimeAsync(2000)
-    await flushPromises()
-    await pending
-    expect(chat.sandboxBootStatus.value).toBe('')
-    expect(chat.isPullingBoot.value).toBe(false)
-    app.unmount()
-    vi.useRealTimers()
-  })
-
   it('copies assistant text and reports clipboard failures', async () => {
     const { chat, app } = withChat()
     await flushPromises()
@@ -424,46 +278,6 @@ describe('usePmLeaderChat actions', () => {
     writeText.mockRejectedValueOnce(new Error('denied'))
     await chat.copyAssistantText({ currentTarget: button } as unknown as Event)
     expect(mocks.toastError).toHaveBeenCalled()
-    app.unmount()
-  })
-
-  it('resumes a live server draft from its sequence watermark', async () => {
-    mocks.listPmMessages.mockResolvedValueOnce({
-      items: [message('live', 'user', { status: 'sending' })],
-      hasMore: false,
-    })
-    mocks.getPmDraft.mockResolvedValueOnce({
-      draft: { status: 'streaming', userMsgId: 'live', partialText: 'partial', eventSeq: 4 },
-      live: true,
-      hasFinal: false,
-    })
-    const { chat, app } = withChat()
-    await flushPromises()
-    expect(chat.resuming.value).toBe(true)
-    expect(chat.streamText.value).toBe('partial')
-    expect(chat.lastEventSeq.value).toBe(4)
-    expect(JSON.parse(MockWebSocket.instances[0]!.sent[0]!)).toEqual({ type: 'resume', afterSeq: 4 })
-    app.unmount()
-  })
-
-  it('classifies resume failures and dead streaming drafts', async () => {
-    mocks.listPmMessages.mockResolvedValueOnce({
-      items: [message('dead', 'user', { status: 'sending' })],
-      hasMore: false,
-    })
-    mocks.getPmDraft.mockResolvedValueOnce({
-      draft: { status: 'streaming', userMsgId: 'dead', partialText: '', eventSeq: 2 },
-      live: false,
-      hasFinal: false,
-    })
-    const { chat, app } = withChat()
-    await flushPromises()
-    expect(chat.messages.value[0]?.failKind).toBe('connection')
-
-    mocks.ensurePmSandbox.mockRejectedValueOnce(new Error('resume unavailable'))
-    await chat.beginResume('th-1', 'old', 1, 'dead')
-    expect(chat.messages.value[0]?.status).toBe('failed')
-    expect(mocks.toastError).toHaveBeenCalledWith('resume unavailable')
     app.unmount()
   })
 
@@ -505,83 +319,6 @@ describe('usePmLeaderChat actions', () => {
     props.projectId = 'proj-2'
     await flushPromises()
     expect(mocks.listPmThreads).toHaveBeenCalledWith('proj-2')
-    app.unmount()
-  })
-
-  it('restores send state when append fails and blocks unavailable sends', async () => {
-    mocks.appendPmMessage.mockRejectedValueOnce(new Error('append down'))
-    const { chat, app, emit } = withChat()
-    await flushPromises()
-    chat.input.value = 'keep me'
-    chat.attachments.value = [imageAttachment()]
-    await chat.send()
-    expect(chat.input.value).toBe('keep me')
-    expect(chat.attachments.value).toHaveLength(1)
-    expect(mocks.toastError).toHaveBeenCalledWith('append down')
-
-    chat.input.value = 'disabled'
-    const disabled = withChat({ binding: { enabled: false, agentAvailable: true } })
-    await flushPromises()
-    disabled.chat.input.value = 'hello'
-    await disabled.chat.send()
-    expect(disabled.emit).toHaveBeenCalledWith('openSettings')
-    emit.mockClear()
-    disabled.app.unmount()
-    app.unmount()
-  })
-
-  it('falls back locally when failure persistence and clearing fail', async () => {
-    const { chat, app } = withChat()
-    await flushPromises()
-    chat.messages.value = [message('u', 'user', { status: 'ok' }) as never]
-    mocks.patchPmMessage.mockRejectedValueOnce(new Error('persist down'))
-    await chat.persistFailure('u', 'unknown')
-    expect(chat.messages.value[0]).toMatchObject({ status: 'failed', failKind: 'unknown' })
-    mocks.patchPmMessage.mockRejectedValueOnce(new Error('clear down'))
-    await chat.clearFailure('u')
-    expect(chat.messages.value[0]).toMatchObject({ status: 'ok', failKind: '' })
-    expect(mocks.toastError).toHaveBeenCalledWith('clear down')
-    app.unmount()
-  })
-
-  it('reports final refetch failures and clears cancelled turn completion', async () => {
-    const { chat, app } = withChat()
-    await flushPromises()
-    chat.input.value = 'turn'
-    await chat.send()
-    mocks.listPmMessages.mockRejectedValueOnce(new Error('refresh down'))
-    MockWebSocket.instances.at(-1)!.frame({ type: 'turn_done' })
-    await flushPromises()
-    expect(chat.finalizingRefetchFailed.value).toBe(true)
-    expect(chat.finalizing.value).toBe(true)
-
-    await chat.onTurnDone()
-    expect(chat.finalizing.value).toBe(false)
-    expect(chat.streamText.value).toBe('')
-    app.unmount()
-  })
-
-  it('handles malformed frames, ACP deltas, and channel context guards', async () => {
-    const { chat, app } = withChat()
-    await flushPromises()
-    chat.input.value = 'start'
-    await chat.send()
-    const socket = MockWebSocket.instances.at(-1)!
-    socket.onmessage?.(new MessageEvent('message', { data: '{bad' }))
-    chat.handleAcp({
-      type: 'session_update',
-      update: {
-        sessionUpdate: 'agent_message_chunk',
-        content: { text: 'delta' },
-      },
-    })
-    chat.handleAcp({ type: 'tool_call', content: 'ignored' })
-    expect(chat.streamText.value).toContain('delta')
-    chat.openChannelCtx(new MouseEvent('contextmenu'), thread() as never)
-    expect(chat.channelCtx.value).toBeNull()
-    chat.openChannelDetail()
-    chat.closeChannelCtx()
-    chat.onChannelCtxAction()
     app.unmount()
   })
 
@@ -646,97 +383,179 @@ describe('usePmLeaderChat actions', () => {
     app.unmount()
   })
 
-  it('fails a fresh turn when sandbox preparation rejects', async () => {
-    mocks.ensurePmSandbox.mockRejectedValueOnce(new Error('sandbox boot exploded'))
+  it('queues a turn over HTTP and follows it on the thread socket', async () => {
     const { chat, app } = withChat()
     await flushPromises()
-    chat.input.value = 'question'
+    const socket = MockWebSocket.instances.at(-1)!
+    expect(mocks.pmThreadChatWsUrl).toHaveBeenCalledWith('proj-1', 'th-1')
+
+    chat.input.value = '进度？'
     await chat.send()
-    expect(chat.messages.value[0]).toMatchObject({ id: 'u-new', status: 'failed' })
+    await flushPromises()
+    expect(mocks.startPmTurn).toHaveBeenCalledWith('proj-1', 'th-1', { content: '进度？', images: undefined })
+    expect(chat.messages.value.map((m) => m.id)).toEqual(['u-new'])
+    expect(chat.sending.value).toBe(true)
+    expect(socket.sent).toEqual([])
+
+    socket.frame({ type: 'session', event: 'phase', phase: 'pulling' })
+    expect(chat.sandboxBootStatus.value).toBe('pulling')
+    expect(chat.isPullingBoot.value).toBe(true)
+    socket.frame({ type: 'session', event: 'turn_begin', userMsgId: 'u-new' })
     expect(chat.sending.value).toBe(false)
-    expect(mocks.toastError).toHaveBeenCalledWith('sandbox boot exploded')
+    expect(chat.streaming.value).toBe(true)
+    socket.frame({
+      type: 'acp',
+      data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: '好' } } },
+    })
+    socket.frame({ type: 'acp' })
+    socket.frame('not json{')
+    socket.onmessage?.(new MessageEvent('message', { data: 'not json{' }))
+    expect(chat.streamText.value).toBe('好')
+
+    mocks.listPmMessages.mockResolvedValue({ items: [message('u-new'), message('a1', 'assistant')], hasMore: false })
+    socket.frame({ type: 'session', event: 'turn_done', interrupted: false, userMsgId: 'u-new' })
+    await flushPromises()
+    expect(chat.streaming.value).toBe(false)
+    expect(chat.finalizing.value).toBe(false)
+    expect(chat.messages.value.map((m) => m.id)).toEqual(['u-new', 'a1'])
     app.unmount()
   })
 
-  it('persists stopped when cancellation happens during thread creation', async () => {
-    let resolveCreate!: (value: ReturnType<typeof thread>) => void
-    mocks.listPmThreads.mockResolvedValueOnce({ items: [] })
-    mocks.createPmThread.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveCreate = resolve
-      }),
-    )
+  it('restores input and refreshes messages when the server rejects a turn', async () => {
+    mocks.startPmTurn.mockRejectedValueOnce(new Error('PM 会话排队已满，请稍候'))
     const { chat, app } = withChat()
     await flushPromises()
-    chat.input.value = 'slow create'
-    const sending = chat.send()
-    chat.stop()
-    resolveCreate(thread({ id: 'created' }))
-    await sending
+    chat.input.value = '再问'
+    mocks.listPmMessages.mockResolvedValue({
+      items: [message('u-x', 'user', { status: 'failed', failKind: 'unknown' })],
+      hasMore: false,
+    })
+    await chat.send()
+    await flushPromises()
+    expect(chat.input.value).toBe('再问')
     expect(chat.sending.value).toBe(false)
-    expect(mocks.appendPmMessage).not.toHaveBeenCalled()
+    expect(mocks.toastError).toHaveBeenCalledWith('PM 会话排队已满，请稍候')
+    expect(chat.messages.value[0]?.failKind).toBe('unknown')
     app.unmount()
   })
 
-  it('persists stopped when cancellation happens during message append', async () => {
-    let resolveAppend!: (value: ReturnType<typeof message>) => void
-    mocks.appendPmMessage.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveAppend = resolve
-      }),
-    )
-    const { chat, app } = withChat()
+  it('blocks sends while busy, on channel threads and when PM is unavailable', async () => {
+    const { chat, app, emit, props } = withChat()
     await flushPromises()
-    chat.input.value = 'slow append'
-    const sending = chat.send()
-    chat.stop()
-    resolveAppend(message('slow', 'user', { content: 'slow append' }))
-    await sending
-    expect(mocks.patchPmMessage).toHaveBeenCalledWith(
-      'proj-1',
-      'th-1',
-      'slow',
-      expect.objectContaining({ failKind: 'stopped' }),
-    )
+    chat.sending.value = true
+    chat.input.value = 'x'
+    await chat.send()
+    chat.sending.value = false
+    expect(mocks.startPmTurn).not.toHaveBeenCalled()
+
+    props.binding = { ...props.binding, enabled: false }
+    await chat.send('建议')
+    expect(emit).toHaveBeenCalledWith('openSettings')
+    expect(mocks.startPmTurn).not.toHaveBeenCalled()
     app.unmount()
   })
 
-  it('aborts readiness and times out websocket opening', async () => {
+  it('pulls in turns started elsewhere and settles error frames', async () => {
     const { chat, app } = withChat()
     await flushPromises()
-    const controller = new AbortController()
-    controller.abort()
-    await expect(chat.ensureSandbox(true, controller.signal)).rejects.toThrow('Aborted')
-    await expect(chat.waitReady(7, controller.signal)).rejects.toThrow('Aborted')
+    const socket = MockWebSocket.instances.at(-1)!
+    mocks.listPmMessages.mockResolvedValue({ items: [message('u-im')], hasMore: false })
+    socket.frame({ type: 'session', event: 'queue_state', busy: true, waiting: 0, userMsgId: 'u-im', phase: 'running' })
+    await flushPromises()
+    expect(chat.activeUserMessageId.value).toBe('u-im')
+    expect(chat.resuming.value).toBe(true)
+    expect(chat.messages.value.map((m) => m.id)).toEqual(['u-im'])
 
+    socket.frame({
+      type: 'acp',
+      data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: '半' } } },
+    })
+    socket.frame({ type: 'session', event: 'error', failKind: 'bogus', message: 'acp closed', userMsgId: 'u-im' })
+    await flushPromises()
+    expect(chat.streaming.value).toBe(false)
+    expect(chat.failedPartialByUserMsgId.value['u-im']).toBe('半')
+    expect(chat.messages.value[0]?.status).toBe('failed')
+    expect(chat.messages.value[0]?.failKind).toBe('unknown')
+    expect(mocks.toastError).toHaveBeenCalledWith('acp closed')
+    expect(mocks.patchPmMessage).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it('reconnects with backoff after a drop and stops following on unmount', async () => {
     vi.useFakeTimers()
-    const connecting = new MockWebSocket('ws://timeout')
-    connecting.readyState = MockWebSocket.CONNECTING
-    const pending = chat.waitWsOpen(connecting as never, 10)
-    vi.advanceTimersByTime(10)
-    await expect(pending).rejects.toThrow('ws open timeout')
+    const { chat, app } = withChat()
+    await vi.runOnlyPendingTimersAsync()
+    await flushPromises()
+    expect(MockWebSocket.instances).toHaveLength(1)
+    MockWebSocket.instances[0]!.onclose?.(new CloseEvent('close'))
+    expect(MockWebSocket.instances).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(MockWebSocket.instances).toHaveLength(2)
+    MockWebSocket.instances[1]!.onclose?.(new CloseEvent('close'))
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(MockWebSocket.instances).toHaveLength(2)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(MockWebSocket.instances).toHaveLength(3)
+
+    expect(chat.busy.value).toBe(false)
+    app.unmount()
+    MockWebSocket.instances[2]!.onclose?.(new CloseEvent('close'))
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(MockWebSocket.instances).toHaveLength(3)
+  })
+
+  it('does not subscribe channel threads', async () => {
+    mocks.listPmThreads.mockResolvedValue({ items: [thread({ id: 'ch', userId: 'feishu:c2c:peer-9' })] })
+    const { app } = withChat()
+    await flushPromises()
+    expect(MockWebSocket.instances).toHaveLength(0)
     app.unmount()
   })
 
-  it('handles turn errors when message refresh itself fails', async () => {
+  it('stop cancels on the server and retry re-queues the failed message', async () => {
+    mocks.listPmMessages.mockResolvedValue({
+      items: [message('u1', 'user', { status: 'failed', failKind: 'sandbox' })],
+      hasMore: false,
+    })
     const { chat, app } = withChat()
     await flushPromises()
-    chat.input.value = 'unknown'
-    await chat.send()
-    mocks.listPmMessages.mockRejectedValueOnce(new Error('refresh failed'))
-    MockWebSocket.instances.at(-1)!.frame({ type: 'error', failKind: 'bogus', error: 'server detail' })
+
+    await chat.stop()
+    expect(mocks.cancelPmTurn).not.toHaveBeenCalled()
+
+    await chat.retryTurn('missing')
+    expect(mocks.startPmTurn).not.toHaveBeenCalled()
+    await chat.retryTurn('u1')
+    expect(mocks.startPmTurn).toHaveBeenCalledWith('proj-1', 'th-1', { retryOf: 'u1' })
+    expect(chat.messages.value[0]?.status).toBe('ok')
+
+    mocks.cancelPmTurn.mockRejectedValueOnce(new Error('cancel failed'))
+    await chat.stop()
+    expect(mocks.cancelPmTurn).toHaveBeenCalledWith('proj-1', 'th-1')
+    expect(mocks.toastError).toHaveBeenCalledWith('cancel failed')
+
+    chat.sending.value = false
+    mocks.startPmTurn.mockRejectedValueOnce(new Error('该消息已在处理中'))
+    await chat.retryTurn('u1')
+    expect(chat.messages.value[0]?.status).toBe('ok')
+    expect(chat.sending.value).toBe(false)
+    app.unmount()
+  })
+
+  it('reports refetch failures after turn_done and retries them', async () => {
+    const { chat, app } = withChat()
     await flushPromises()
-    expect(mocks.patchPmMessage).toHaveBeenCalledWith(
-      'proj-1',
-      'th-1',
-      'u-new',
-      expect.objectContaining({ failKind: 'unknown' }),
-    )
-    expect(mocks.toastError).toHaveBeenCalledWith('server detail')
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.frame({ type: 'session', event: 'turn_begin', userMsgId: 'u1' })
+    mocks.listPmMessages.mockRejectedValueOnce(new Error('down'))
+    socket.frame({ type: 'session', event: 'turn_done', interrupted: false })
+    await flushPromises()
+    expect(chat.finalizingRefetchFailed.value).toBe(true)
+    expect(chat.finalizing.value).toBe(true)
+    socket.frame({ type: 'session', event: 'turn_done', interrupted: false })
+    await chat.refetchAfterTurnDone()
+    await flushPromises()
+    expect(chat.finalizing.value).toBe(false)
     app.unmount()
   })
 })
-
-function imageAttachment() {
-  return { data: 'YQ==', mimeType: 'image/png', name: 'a.png' }
-}
