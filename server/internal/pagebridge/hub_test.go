@@ -162,6 +162,7 @@ func TestPausedResumesWhenVisible(t *testing.T) {
 	}
 }
 
+// Without a session pin (plain Do), the newest foreground tab wins.
 func TestLastForegroundWins(t *testing.T) {
 	h := fastHub()
 	a, b := newFakePage(), newFakePage()
@@ -186,6 +187,110 @@ func TestLastForegroundWins(t *testing.T) {
 	wait(t, ch)
 	if len(b.cmds) != 0 {
 		t.Fatal("background tab got the command")
+	}
+}
+
+func attachTab(h *Hub, tab string, visible bool) (*Conn, *fakePage) {
+	p := newFakePage()
+	c := h.Attach(key, p.send)
+	c.SetTab(tab)
+	c.SetControl(true, visible)
+	return c, p
+}
+
+func doSessionAsync(h *Hub, session string, done <-chan struct{}) chan outcome {
+	out := make(chan outcome, 1)
+	go func() {
+		res, err := h.DoSession(context.Background(), key, session, done, Command{Action: "state"})
+		out <- outcome{res, err}
+	}()
+	return out
+}
+
+func answerNext(t *testing.T, c *Conn, p *fakePage, ch chan outcome) {
+	t.Helper()
+	cmd := p.nextCmd(t)
+	c.Deliver(cmd["id"].(string), Result{OK: true})
+	if o := wait(t, ch); o.err != nil {
+		t.Fatalf("err = %v", o.err)
+	}
+}
+
+func TestSessionPinIgnoresNewerForeground(t *testing.T) {
+	h := fastHub()
+	done := make(chan struct{})
+	ca, a := attachTab(h, "tab-a", true)
+	answerNext(t, ca, a, doSessionAsync(h, "s1", done))
+
+	cb, b := attachTab(h, "tab-b", true)
+	if a.lastState()["active"] != true || b.lastState()["active"] != false {
+		t.Fatalf("pinned tab must stay active: a=%v b=%v", a.lastState(), b.lastState())
+	}
+	answerNext(t, ca, a, doSessionAsync(h, "s1", done))
+	if len(b.cmds) != 0 {
+		t.Fatal("a newer foreground tab took the pinned session's command")
+	}
+
+	close(done)
+	deadline := time.Now().Add(2 * time.Second)
+	for b.lastState()["active"] != true {
+		if time.Now().After(deadline) {
+			t.Fatal("pin was not dropped when the turn ended")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	ch := doAsync(h, context.Background(), key, Command{Action: "state"})
+	answerNext(t, cb, b, ch)
+}
+
+func TestSessionPinFollowsReloadOfSameTab(t *testing.T) {
+	h := fastHub()
+	done := make(chan struct{})
+	defer close(done)
+	ca, a := attachTab(h, "tab-a", true)
+	answerNext(t, ca, a, doSessionAsync(h, "s1", done))
+
+	ca.Detach()
+	_, b := attachTab(h, "tab-b", true)
+	ca2, a2 := attachTab(h, "tab-a", true)
+	answerNext(t, ca2, a2, doSessionAsync(h, "s1", done))
+	if len(b.cmds) != 0 {
+		t.Fatal("another tab got the command after the pinned tab reloaded")
+	}
+}
+
+func TestSessionPinGoneDoesNotFallBack(t *testing.T) {
+	h := fastHub()
+	done := make(chan struct{})
+	defer close(done)
+	ca, a := attachTab(h, "tab-a", true)
+	answerNext(t, ca, a, doSessionAsync(h, "s1", done))
+
+	_, b := attachTab(h, "tab-b", true)
+	ca.SetControl(false, true)
+	if o := wait(t, doSessionAsync(h, "s1", done)); !errors.Is(o.err, ErrPinnedGone) {
+		t.Fatalf("err = %v", o.err)
+	}
+
+	ca.SetControl(true, false)
+	if o := wait(t, doSessionAsync(h, "s1", done)); !errors.Is(o.err, ErrPaused) {
+		t.Fatalf("hidden pinned tab: err = %v", o.err)
+	}
+	if len(b.cmds) != 0 {
+		t.Fatal("the other tab got a command meant for the pinned one")
+	}
+}
+
+func TestSessionPinWithoutTabIdUsesConnection(t *testing.T) {
+	h := fastHub()
+	done := make(chan struct{})
+	defer close(done)
+	ca, a := attachTab(h, "", true)
+	answerNext(t, ca, a, doSessionAsync(h, "s1", done))
+	_, b := attachTab(h, "", true)
+	answerNext(t, ca, a, doSessionAsync(h, "s1", done))
+	if len(b.cmds) != 0 {
+		t.Fatal("pin without tab id must stick to the first connection")
 	}
 }
 

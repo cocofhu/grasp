@@ -43,6 +43,7 @@ var (
 	ErrStopped    = errors.New("用户停止了页面操作")
 	ErrCancelled  = errors.New("本轮已取消,页面操作已停止")
 	ErrLost       = errors.New("页面在操作过程中断开且没有恢复,操作结果无法确认")
+	ErrPinnedGone = errors.New("本轮页面操作所在的标签页已关闭或关掉了开关;本轮不会改用其他标签页,请在回复里请用户回到那个预览页重新打开「允许 Agent 操作页面」")
 	errLost       = errors.New("controller lost")
 )
 
@@ -94,6 +95,7 @@ type Hub struct {
 	conns    map[Key]map[*Conn]struct{}
 	lost     map[Key]time.Time
 	watchers map[watchKey]map[*watcher]struct{}
+	pins     map[string]*pin
 	wake     chan struct{}
 	seq      uint64
 	now      func() time.Time
@@ -108,6 +110,7 @@ func NewHub() *Hub {
 		conns:          map[Key]map[*Conn]struct{}{},
 		lost:           map[Key]time.Time{},
 		watchers:       map[watchKey]map[*watcher]struct{}{},
+		pins:           map[string]*pin{},
 		wake:           make(chan struct{}),
 		now:            time.Now,
 	}
@@ -118,6 +121,7 @@ type Conn struct {
 	hub      *Hub
 	key      Key
 	send     func([]byte) error
+	tab      string
 	on       bool
 	visible  bool
 	activeAt uint64
@@ -139,8 +143,32 @@ func (h *Hub) Attach(key Key, send func([]byte) error) *Conn {
 	return c
 }
 
+// pin binds one turn's page session to the browser tab its first command went
+// to. A reload of that tab reconnects with the same tab id and still matches.
+type pin struct {
+	key  Key
+	tab  string
+	conn *Conn
+	seq  uint64
+}
+
+func (p *pin) matches(c *Conn) bool {
+	if p.tab != "" {
+		return c.tab == p.tab
+	}
+	return c == p.conn
+}
+
+// SetTab records the preview page's per-tab id; call it before SetControl.
+func (c *Conn) SetTab(tab string) {
+	c.hub.mu.Lock()
+	c.tab = tab
+	c.hub.mu.Unlock()
+}
+
 // SetControl records the drawer's toggle and tab visibility. The connection
-// that most recently became on and visible is the one commands go to.
+// that most recently became on and visible is the one commands go to, unless
+// the turn is already pinned to another tab (see DoSession).
 func (c *Conn) SetControl(on, visible bool) {
 	h := c.hub
 	h.mu.Lock()
@@ -260,9 +288,20 @@ func (h *Hub) Status(key Key) Status {
 // ReconnectWait and returns the fresh state marked Unconfirmed. Commands are
 // never replayed.
 func (h *Hub) Do(ctx context.Context, key Key, cmd Command) (Result, error) {
+	return h.DoSession(ctx, key, "", nil, cmd)
+}
+
+// DoSession is Do for one turn's page session. The first command pins the
+// session to the tab it went to; later commands of the session only go to that
+// tab (or its reload), never to another tab that came to the front. The pin is
+// dropped when done closes. Without a session or done it behaves like Do.
+func (h *Hub) DoSession(ctx context.Context, key Key, session string, done <-chan struct{}, cmd Command) (Result, error) {
+	if done == nil {
+		session = ""
+	}
 	ctx, cancel := context.WithTimeout(ctx, h.CallBudget)
 	defer cancel()
-	c, err := h.waitActive(ctx, key)
+	c, err := h.waitActive(ctx, key, session, done)
 	if err != nil {
 		return Result{}, err
 	}
@@ -270,7 +309,7 @@ func (h *Hub) Do(ctx context.Context, key Key, cmd Command) (Result, error) {
 	if !errors.Is(err, errLost) {
 		return res, err
 	}
-	c2, err := h.waitActive(ctx, key)
+	c2, err := h.waitActive(ctx, key, session, done)
 	if err != nil {
 		return Result{Unconfirmed: true}, ErrLost
 	}
@@ -282,18 +321,30 @@ func (h *Hub) Do(ctx context.Context, key Key, cmd Command) (Result, error) {
 	return st, nil
 }
 
-func (h *Hub) waitActive(ctx context.Context, key Key) (*Conn, error) {
+func (h *Hub) waitActive(ctx context.Context, key Key, session string, done <-chan struct{}) (*Conn, error) {
 	var pausedUntil time.Time
 	for {
 		h.mu.Lock()
-		st, active := h.statusLocked(key)
+		var p *pin
+		if session != "" {
+			p = h.pins[session]
+		}
+		st, active := h.statusForLocked(key, p)
 		if active != nil {
+			var sends []pendingSend
+			if session != "" && p == nil {
+				sends = h.pinLocked(session, key, active, done)
+			}
 			h.mu.Unlock()
+			deliver(sends)
 			return active, nil
 		}
 		now := h.now()
 		var until time.Time
 		fail := ErrOffline
+		if p != nil {
+			fail = ErrPinnedGone
+		}
 		if st == StatusPaused {
 			if pausedUntil.IsZero() {
 				pausedUntil = now.Add(h.PauseWait)
@@ -374,11 +425,44 @@ func (h *Hub) abandon(c *Conn, id string) {
 	_ = c.send(frame)
 }
 
+// pinLocked pins session to c's tab until done closes, and returns the state
+// frames telling drawers which one is now active.
+func (h *Hub) pinLocked(session string, key Key, c *Conn, done <-chan struct{}) []pendingSend {
+	h.seq++
+	h.pins[session] = &pin{key: key, tab: c.tab, conn: c, seq: h.seq}
+	go func() {
+		<-done
+		h.mu.Lock()
+		delete(h.pins, session)
+		sends := h.changedLocked(key)
+		h.mu.Unlock()
+		deliver(sends)
+	}()
+	return h.changedLocked(key)
+}
+
+// pinForLocked is the newest pin on key, or nil.
+func (h *Hub) pinForLocked(key Key) *pin {
+	var latest *pin
+	for _, p := range h.pins {
+		if p.key == key && (latest == nil || p.seq > latest.seq) {
+			latest = p
+		}
+	}
+	return latest
+}
+
 func (h *Hub) statusLocked(key Key) (Status, *Conn) {
+	return h.statusForLocked(key, h.pinForLocked(key))
+}
+
+// statusForLocked picks the active connection among those p allows (all of
+// them when p is nil).
+func (h *Hub) statusForLocked(key Key, p *pin) (Status, *Conn) {
 	var active *Conn
 	anyOn := false
 	for c := range h.conns[key] {
-		if c.closed || !c.on {
+		if c.closed || !c.on || (p != nil && !p.matches(c)) {
 			continue
 		}
 		anyOn = true
@@ -502,5 +586,5 @@ func (r *Router) Do(runID, nodeID, sessionID string, cmd Command) (Result, error
 			}
 		}()
 	}
-	return r.Hub.Do(ctx, Key{RunID: runID, NodeID: nodeID, Owner: owner}, cmd)
+	return r.Hub.DoSession(ctx, Key{RunID: runID, NodeID: nodeID, Owner: owner}, sessionID, done, cmd)
 }
