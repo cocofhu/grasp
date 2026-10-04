@@ -59,11 +59,6 @@ const {
   onLaunchStarted,
 } = useHomeApproveChat()
 
-const brandVisible = ref('')
-/** Keep caret in layout; hide with opacity so settle does not shift the centered brand. */
-const brandCursorGone = ref(false)
-const brandCursorBlink = ref(false)
-const brandTimers: ReturnType<typeof setTimeout>[] = []
 const composerFocused = ref(false)
 const composing = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
@@ -111,45 +106,6 @@ const showPhTypewriter = computed(() => !draft.value.trim() && !composerFocused.
 function prefersReducedMotion(): boolean {
   if (typeof window === 'undefined' || !window.matchMedia) return false
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
-}
-
-function clearBrandTimers() {
-  while (brandTimers.length) {
-    const id = brandTimers.pop()
-    if (id != null) clearTimeout(id)
-  }
-}
-
-function scheduleBrand(fn: () => void, ms: number) {
-  brandTimers.push(setTimeout(fn, ms))
-}
-
-/** Monospace brand: type once, soft blink caret, then opacity-hide caret (keep box). */
-function runBrandTypewriter() {
-  clearBrandTimers()
-  brandCursorBlink.value = false
-  brandCursorGone.value = false
-  if (prefersReducedMotion()) {
-    brandVisible.value = productName.value
-    brandCursorGone.value = true
-    return
-  }
-  brandVisible.value = ''
-  let i = 0
-  const typeNext = () => {
-    if (i < productName.value.length) {
-      i += 1
-      brandVisible.value = productName.value.slice(0, i)
-      scheduleBrand(typeNext, 78)
-      return
-    }
-    brandCursorBlink.value = true
-    scheduleBrand(() => {
-      brandCursorBlink.value = false
-      brandCursorGone.value = true
-    }, 850 * 3)
-  }
-  scheduleBrand(typeNext, 220)
 }
 
 function clearPhTimers() {
@@ -543,7 +499,6 @@ function openFilePicker() {
 }
 
 watch(draft, () => nextTick(autoGrow))
-watch(productName, () => runBrandTypewriter(), { immediate: true })
 watch(showPhTypewriter, () => runPlaceholderTypewriter(), { immediate: true })
 watch(placeholderLines, () => {
   if (showPhTypewriter.value) runPlaceholderTypewriter()
@@ -582,7 +537,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  clearBrandTimers()
   clearPhTimers()
   clearLongPress()
   clearPipelineNavHold()
@@ -601,23 +555,21 @@ onBeforeUnmount(() => {
     <div
       class="home-shell__content relative z-[1] mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10"
     >
-      <h1 class="home-brand" data-testid="home-brand" :aria-label="productName">
-        <span class="home-brand__text" data-testid="home-brand-text">{{ brandVisible }}</span>
-        <span
-          class="home-brand__cursor"
-          :class="{
-            'home-brand__cursor--blink': brandCursorBlink,
-            'home-brand__cursor--gone': brandCursorGone,
-          }"
-          data-testid="home-brand-cursor"
-          aria-hidden="true"
-        />
+      <h1
+        class="home-brand home-layer home-layer--mark"
+        data-testid="home-brand"
+        :aria-label="productName"
+      >
+        <span class="home-brand__text" data-testid="home-brand-text">{{ productName }}</span>
       </h1>
-      <p class="home-hint mt-[18px] text-center" data-testid="home-title">
+      <p class="home-hint home-layer home-layer--copy text-center" data-testid="home-title">
         {{ effectiveSubtitle }}
       </p>
 
-      <div class="mt-[30px] w-full">
+      <div
+        class="home-composer-slot home-layer home-layer--composer w-full"
+        data-testid="home-composer-slot"
+      >
         <p
           v-if="attachNotice"
           class="mb-2 rounded border border-err/40 bg-err/10 px-3 py-1.5 text-[12px] text-err"
@@ -713,7 +665,7 @@ onBeforeUnmount(() => {
           <div class="home-composer__toolbar flex items-center gap-2 border-t px-3 py-2.5">
             <button
               type="button"
-              class="home-composer__plus flex h-8 w-8 shrink-0 items-center justify-center border text-txt2 hover:text-txt disabled:opacity-40"
+              class="home-composer__plus flex shrink-0 items-center justify-center border text-txt2 hover:text-txt disabled:opacity-40"
               :disabled="sending"
               :title="t('pages.clarify.addImage')"
               data-testid="home-composer-plus"
@@ -737,7 +689,7 @@ onBeforeUnmount(() => {
             <div class="flex-1" />
             <button
               type="submit"
-              class="home-composer__send flex h-8 w-8 shrink-0 items-center justify-center text-base disabled:opacity-[0.28]"
+              class="home-composer__send flex shrink-0 items-center justify-center text-base disabled:opacity-[0.28]"
               data-testid="home-composer-send"
               :disabled="sending || !canSend"
               :aria-label="t('pages.dashboard.send')"
@@ -990,14 +942,13 @@ onBeforeUnmount(() => {
   isolation: isolate;
 }
 
-/* g1.1 — monospace brand; solid color; letter-spacing matches design */
+/* plan g1.1 — monospace wordmark 3.25rem / 0.04em; copy 16px; composer gap 36px */
 .home-brand {
   display: inline-flex;
   align-items: baseline;
   margin: 0;
-  min-height: 1.1em;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  font-size: clamp(2.5rem, 8.5vw, 4.25rem);
+  font-size: 3.25rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   line-height: 1.05;
@@ -1008,38 +959,41 @@ onBeforeUnmount(() => {
   white-space: pre;
 }
 
-.home-brand__cursor {
-  display: inline-block;
-  width: 0.08em;
-  height: 0.92em;
-  margin-left: 0.06em;
-  vertical-align: -0.06em;
-  flex-shrink: 0;
-  background: rgb(var(--c-accent));
-  opacity: 1;
-  transition: opacity 0.2s ease;
-}
-
-.home-brand__cursor--blink {
-  animation: home-brand-caret 0.85s steps(1) 3;
-}
-
-.home-brand__cursor--gone {
-  opacity: 0;
-}
-
 .home-hint {
-  font-size: 14px;
+  margin-top: 12px;
+  font-size: 16px;
   font-weight: 500;
   letter-spacing: 0.01em;
+  text-align: center;
   color: rgb(var(--c-txt2));
-  opacity: 0;
-  animation: home-hint-in 0.45s ease-out 0.15s forwards;
 }
 
-@keyframes home-hint-in {
+/* plan g1.1 — gap above the composer; surface, line, and card shadow stay on existing tokens */
+.home-composer-slot {
+  margin-top: 36px;
+}
+
+/* plan g1.2 — layered entrance: wordmark, copy, then composer rise once */
+.home-layer {
+  animation: home-layer-in 0.52s var(--ease-out-expo) both;
+}
+
+.home-layer--copy {
+  animation-delay: 0.07s;
+}
+
+.home-layer--composer {
+  animation-delay: 0.14s;
+}
+
+@keyframes home-layer-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
   to {
     opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -1048,6 +1002,7 @@ onBeforeUnmount(() => {
   border-color: rgb(var(--c-line));
   background: rgb(var(--c-surface));
   border-radius: 16px;
+  box-shadow: var(--shadow-card);
   overflow: hidden;
 }
 
@@ -1086,6 +1041,8 @@ onBeforeUnmount(() => {
 }
 
 .home-composer__plus {
+  width: 40px;
+  height: 40px;
   border-color: rgb(var(--c-line));
   background: transparent;
   border-radius: 8px;
@@ -1099,6 +1056,8 @@ onBeforeUnmount(() => {
 }
 
 .home-composer__send {
+  width: 40px;
+  height: 40px;
   background: rgb(var(--c-txt));
   color: rgb(var(--c-base));
   border-radius: 8px;
@@ -1347,17 +1306,6 @@ onBeforeUnmount(() => {
   opacity: 1;
 }
 
-@keyframes home-brand-caret {
-  0%,
-  49% {
-    opacity: 1;
-  }
-  50%,
-  100% {
-    opacity: 0;
-  }
-}
-
 @keyframes home-ph-caret {
   0%,
   49% {
@@ -1369,16 +1317,14 @@ onBeforeUnmount(() => {
   }
 }
 
-/* g1.3 / g2.3 — prefers-reduced-motion */
+/* plan g1.2 / g2.3 — prefers-reduced-motion: entrance stays visible, no displacement */
 @media (prefers-reduced-motion: reduce) {
-  .home-hint {
+  .home-layer,
+  .home-layer--copy,
+  .home-layer--composer {
     animation: none !important;
-    opacity: 1;
-  }
-
-  .home-brand__cursor {
-    opacity: 0 !important;
-    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
   }
 
   .home-composer__ph-cursor {

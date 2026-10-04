@@ -54,11 +54,15 @@ describe('DashboardView home chat layout', () => {
     expect(particleBgSrc).toMatch(/pointer-events:\s*none/)
   })
 
-  // plan g1.2 / g1.3 — monospace Grasp, no gradient shimmer / staggered / serif accent
+  // plan g1.1 / g1.2 — monospace Grasp, layered entrance, no gradient / typewriter caret
   it('uses local monospace brand without banned brand effects', () => {
     expect(src).toMatch(/data-testid="home-brand"/)
     expect(src).toMatch(/ui-monospace/)
-    expect(src).toMatch(/home-brand__cursor/)
+    expect(src).toMatch(/font-size:\s*3\.25rem/)
+    expect(src).toMatch(/letter-spacing:\s*0\.04em/)
+    expect(src).toMatch(/home-layer--mark/)
+    expect(src).toMatch(/margin-top:\s*36px/)
+    expect(src).not.toMatch(/home-brand__cursor/)
     expect(src).not.toMatch(/var\(--grad-logo\)/)
     expect(src).not.toMatch(/background-clip:\s*text/)
     expect(src).not.toMatch(/shimmer/)
@@ -102,12 +106,13 @@ describe('DashboardView home chat layout', () => {
     expect(src).not.toMatch(/thumb-class="rounded-none"/)
   })
 
-  // plan g2 / g3 — no filter hint; caret opacity settle; placeholder typewriter
+  // plan g1.2 / g2 — layered entrance respects reduced motion; placeholder typewriter stays
   // plan g1.1 / g2.2 — Ctrl/Meta+Enter send (no shiftKey-only Enter-to-send)
-  it('omits filter hint and keeps caret settle + placeholder typewriter', () => {
+  it('omits filter hint and keeps layered entrance + placeholder typewriter', () => {
     expect(src).not.toMatch(/data-testid="home-filter-hint"/)
     expect(src).not.toMatch(/filterHint/)
-    expect(src).toMatch(/home-brand__cursor--gone/)
+    expect(src).not.toMatch(/home-brand__cursor--gone/)
+    expect(src).toMatch(/home-layer--composer/)
     expect(src).toMatch(/data-testid="home-composer-placeholder"/)
     expect(src).toMatch(/ctrlKey\s*\|\|\s*e\.metaKey|e\.metaKey\s*\|\|\s*e\.ctrlKey/)
     expect(src).toMatch(/sendShortcut/)

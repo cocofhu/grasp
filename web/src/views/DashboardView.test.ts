@@ -409,36 +409,59 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
-  // plan g3 — one-shot typewriter then opacity-hide caret (keep layout box)
-  it('types Grasp once then settles without looping', async () => {
+  // plan g1.1 / g1.2 — adopted layered entrance: full wordmark, no typewriter caret
+  it('shows the full product name immediately without a typewriter caret', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
-    expect(wrapper.get('[data-testid="home-brand-text"]').text()).toBe('')
-    await vi.advanceTimersByTimeAsync(220 + 78 * 9 + 50)
     expect(wrapper.get('[data-testid="home-brand-text"]').text()).toBe('Grasp')
-    const caret = wrapper.get('[data-testid="home-brand-cursor"]')
-    expect(caret.classes()).not.toContain('home-brand__cursor--gone')
-    await vi.advanceTimersByTimeAsync(850 * 3 + 50)
-    expect(wrapper.get('[data-testid="home-brand-text"]').text()).toBe('Grasp')
-    expect(wrapper.get('[data-testid="home-brand-cursor"]').classes()).toContain('home-brand__cursor--gone')
-    expect(wrapper.get('[data-testid="home-brand-cursor"]').classes()).not.toContain('home-brand__cursor--blink')
+    expect(wrapper.get('[data-testid="home-brand"]').attributes('aria-label')).toBe('Grasp')
+    expect(wrapper.find('[data-testid="home-brand-cursor"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-brand"]').classes()).toContain('home-layer--mark')
+    expect(wrapper.get('[data-testid="home-title"]').classes()).toContain('home-layer--copy')
+    expect(wrapper.get('[data-testid="home-composer-slot"]').classes()).toContain('home-layer--composer')
     await vi.advanceTimersByTimeAsync(5000)
     expect(wrapper.get('[data-testid="home-brand-text"]').text()).toBe('Grasp')
-    expect(wrapper.get('[data-testid="home-brand-cursor"]').classes()).toContain('home-brand__cursor--gone')
     wrapper.unmount()
   })
 
-  // plan g3 — reduced-motion shows static brand; caret stays in layout but gone
-  it('shows full Grasp immediately under reduced-motion', async () => {
+  // plan g1.2 — reduced motion keeps the wordmark visible and cancels displacement
+  it('keeps the wordmark visible when reduced motion is preferred', async () => {
     stubReducedMotion(true)
     const wrapper = mountDashboard()
     await flushPromises()
     expect(wrapper.get('[data-testid="home-brand-text"]').text()).toBe('Grasp')
-    expect(wrapper.get('[data-testid="home-brand-cursor"]').classes()).toContain('home-brand__cursor--gone')
+    expect(wrapper.find('[data-testid="home-brand-cursor"]').exists()).toBe(false)
+    expect(dashboardSource).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.home-layer[\s\S]*animation:\s*none/,
+    )
+    expect(dashboardSource).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.home-layer[\s\S]*transform:\s*none/,
+    )
     wrapper.unmount()
   })
 
-  it('uses the same configured product name for typewriter, static mode, and aria label', async () => {
+  // plan g1.1 — wordmark 3.25rem, copy 16px, composer gap 36px, existing tokens
+  it('uses the adopted wordmark size, copy size, and composer spacing', () => {
+    expect(dashboardSource).toMatch(/\.home-brand\s*\{[^}]*font-size:\s*3\.25rem/)
+    expect(dashboardSource).toMatch(/\.home-brand\s*\{[^}]*letter-spacing:\s*0\.04em/)
+    expect(dashboardSource).toMatch(/\.home-brand\s*\{[^}]*color:\s*rgb\(var\(--c-txt\)\)/)
+    expect(dashboardSource).toMatch(/\.home-hint\s*\{[^}]*font-size:\s*16px/)
+    expect(dashboardSource).toMatch(/\.home-hint\s*\{[^}]*text-align:\s*center/)
+    expect(dashboardSource).toMatch(/\.home-hint\s*\{[^}]*color:\s*rgb\(var\(--c-txt2\)\)/)
+    expect(dashboardSource).toMatch(/\.home-composer-slot\s*\{[^}]*margin-top:\s*36px/)
+    expect(dashboardSource).toMatch(/\.home-composer\s*\{[^}]*box-shadow:\s*var\(--shadow-card\)/)
+    expect(dashboardSource).toMatch(/\.home-composer__plus\s*\{[^}]*width:\s*40px/)
+    expect(dashboardSource).toMatch(/\.home-composer__plus\s*\{[^}]*height:\s*40px/)
+    expect(dashboardSource).toMatch(/\.home-composer__send\s*\{[^}]*width:\s*40px/)
+    expect(dashboardSource).toMatch(/\.home-composer__send\s*\{[^}]*height:\s*40px/)
+    expect(dashboardSource).toMatch(/animation:\s*home-layer-in 0\.52s/)
+    expect(dashboardSource).toMatch(/\.home-layer--copy\s*\{[^}]*animation-delay:\s*0\.07s/)
+    expect(dashboardSource).toMatch(/\.home-layer--composer\s*\{[^}]*animation-delay:\s*0\.14s/)
+    expect(dashboardSource).not.toMatch(/home-brand__cursor/)
+    expect(dashboardSource).not.toMatch(/runBrandTypewriter/)
+  })
+
+  it('uses the configured product name for the wordmark and aria label', async () => {
     setBrandSettings({ product_name: 'Acme Flow' })
     stubReducedMotion(true)
     const wrapper = mountDashboard()
