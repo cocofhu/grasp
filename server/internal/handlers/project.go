@@ -3,7 +3,6 @@ package handlers
 import (
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/models"
@@ -179,9 +178,11 @@ func (h *Handlers) DeleteProject(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
 }
 
-// GetProjectTokenStats returns trend/composition/workflows for board Token charts.
-// Query: window=24h|7d|30d|90d|all (default 30d), timezone=IANA (preferred),
-// utcOffsetMinutes=int (fallback fixed offset, east of UTC positive).
+// GetProjectTokenStats returns the same aggregation as GET /api/stats/token,
+// locked to this project. A query projectId cannot switch the scope.
+// Window defaults to 30d when omitted (usage stats still default to all).
+// Other filters match usage stats: from/to, granularity, source, status, phase,
+// modelKey, workflowId, nodeType, timezone, utcOffsetMinutes.
 func (h *Handlers) GetProjectTokenStats(c *gin.Context) {
 	if h.Projects == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "projects unavailable"})
@@ -193,34 +194,19 @@ func (h *Handlers) GetProjectTokenStats(c *gin.Context) {
 		return
 	}
 
-	q := services.TokenStatsQuery{
-		Window:   c.DefaultQuery("window", services.TokenStatsWindow30d),
-		Timezone: c.Query("timezone"),
+	q, ok := parseTokenStatsQuery(c, services.TokenStatsWindow30d)
+	if !ok {
+		return
 	}
-	if raw := strings.TrimSpace(c.Query("utcOffsetMinutes")); raw != "" {
-		mins, err := strconv.Atoi(raw)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid utcOffsetMinutes"})
-			return
-		}
-		q.UTCOffsetMinutes = &mins
+	// Lock the project. Ignore any client-supplied projectId.
+	q.ProjectID = id
+	if strings.TrimSpace(c.Query("window")) == "" && q.From == "" && q.To == "" {
+		q.Window = services.TokenStatsWindow30d
 	}
 
-	result, err := h.Projects.TokenStats(c.Request.Context(), id, q)
+	result, err := h.Projects.GlobalTokenStats(c.Request.Context(), q)
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrInvalidTokenStatsWindow),
-			errors.Is(err, services.ErrInvalidTokenStatsTimezone):
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		case errors.Is(err, services.ErrTokenStatsTimeout):
-			c.JSON(http.StatusServiceUnavailable, gin.H{
-				"error":     err.Error(),
-				"retryable": true,
-			})
-		default:
-			_ = c.Error(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		}
+		writeTokenStatsError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)

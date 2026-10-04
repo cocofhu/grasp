@@ -63,14 +63,14 @@ function sampleStats(partial: Partial<ProjectTokenStats> = {}): ProjectTokenStat
   }
 }
 
-function mountPanel() {
+function mountPanel(extra: Record<string, unknown> = {}) {
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
     messages: { 'zh-CN': { ...common, ...pages } },
   })
   return mount(TokenStatsPanel, {
-    props: { projectId: 'proj-1' },
+    props: { projectId: 'proj-1', ...extra },
     global: {
       plugins: [i18n],
       stubs: {
@@ -254,5 +254,186 @@ describe('TokenStatsPanel', () => {
     expect(wrapper.find('[data-testid="token-stats-window-badge"]').text()).toContain('近 24 小时')
     expect(wrapper.text()).toContain('按小时聚合 · 本地时区')
     wrapper.unmount()
+  })
+
+  it('opens on the carried range and otherwise stays on 30d (g3.4)', async () => {
+    getProjectTokenStats.mockResolvedValue(sampleStats({ window: 'all' }))
+    const carried = mountPanel({ initialWindow: 'all' })
+    await flushPromises()
+    expect(getProjectTokenStats).toHaveBeenLastCalledWith(
+      'proj-1',
+      expect.objectContaining({ window: 'all' }),
+      expect.anything(),
+    )
+    expect(carried.find('[data-testid="token-stats-window-all"]').attributes('aria-selected')).toBe('true')
+    expect(carried.find('[data-testid="token-stats-window-badge"]').text()).toContain('全部历史')
+    carried.unmount()
+
+    getProjectTokenStats.mockClear()
+    getProjectTokenStats.mockResolvedValue(sampleStats())
+    const direct = mountPanel()
+    await flushPromises()
+    expect(getProjectTokenStats).toHaveBeenLastCalledWith(
+      'proj-1',
+      expect.objectContaining({ window: '30d' }),
+      expect.anything(),
+    )
+    direct.unmount()
+  })
+
+  it('keeps the route window across project changes and reapplies query updates (review v2)', async () => {
+    getProjectTokenStats.mockResolvedValue(sampleStats({ window: 'all' }))
+    const carried = mountPanel({ initialWindow: 'all' })
+    await flushPromises()
+    getProjectTokenStats.mockClear()
+    await carried.setProps({ projectId: 'proj-2' })
+    await flushPromises()
+    expect(getProjectTokenStats).toHaveBeenLastCalledWith(
+      'proj-2',
+      expect.objectContaining({ window: 'all' }),
+      expect.anything(),
+    )
+    expect(carried.find('[data-testid="token-stats-window-badge"]').text()).toContain('全部历史')
+
+    getProjectTokenStats.mockClear()
+    await carried.setProps({ initialWindow: '7d' })
+    await flushPromises()
+    expect(getProjectTokenStats).toHaveBeenLastCalledWith(
+      'proj-2',
+      expect.objectContaining({ window: '7d' }),
+      expect.anything(),
+    )
+    expect(carried.find('[data-testid="token-stats-window-badge"]').text()).toContain('近 7 天')
+
+    getProjectTokenStats.mockClear()
+    await carried.setProps({
+      projectId: 'proj-3',
+      initialWindow: '',
+      initialFrom: '',
+      initialTo: '',
+      initialGranularity: '',
+    })
+    await flushPromises()
+    expect(getProjectTokenStats).toHaveBeenLastCalledWith(
+      'proj-3',
+      expect.objectContaining({ window: '30d' }),
+      expect.anything(),
+    )
+    carried.unmount()
+  })
+
+  it('sends a phase filter to the locked project stats (review v4)', async () => {
+    getProjectTokenStats.mockResolvedValue(sampleStats())
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.find('[data-testid="token-stats-filter-phase"]').setValue('chat')
+    await flushPromises()
+    expect(getProjectTokenStats).toHaveBeenLastCalledWith(
+      'proj-1',
+      expect.objectContaining({ phase: 'chat' }),
+      expect.anything(),
+    )
+    wrapper.unmount()
+  })
+
+  it('sends source, workflow, model, node, status, and custom range filters (g2.1)', async () => {
+    getProjectTokenStats.mockResolvedValue(sampleStats({
+      filterOptions: {
+        workflows: [{ key: 'wf-a', name: 'approve-main' }],
+        models: [{ key: 'sonnet', name: 'Sonnet' }],
+        nodeTypes: [{ key: 'agent', name: 'agent' }],
+      },
+    } as Partial<ProjectTokenStats>))
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.find('[data-testid="token-stats-source-studio"]').trigger('click')
+    await flushPromises()
+    expect(getProjectTokenStats).toHaveBeenLastCalledWith(
+      'proj-1',
+      expect.objectContaining({ source: 'studio' }),
+      expect.anything(),
+    )
+    await wrapper.find('[data-testid="token-stats-filter-workflow"]').setValue('wf-a')
+    await wrapper.find('[data-testid="token-stats-filter-model"]').setValue('sonnet')
+    await wrapper.find('[data-testid="token-stats-filter-node"]').setValue('agent')
+    await wrapper.find('[data-testid="token-stats-filter-status"]').setValue('failed')
+    await flushPromises()
+    expect(getProjectTokenStats).toHaveBeenLastCalledWith(
+      'proj-1',
+      expect.objectContaining({ source: 'studio', workflowId: 'wf-a', modelKey: 'sonnet', nodeType: 'agent', status: 'failed' }),
+      expect.anything(),
+    )
+    getProjectTokenStats.mockClear()
+    await wrapper.find('[data-testid="token-stats-window-custom"]').trigger('click')
+    await flushPromises()
+    expect(getProjectTokenStats).toHaveBeenLastCalledWith(
+      'proj-1',
+      expect.objectContaining({ window: 'custom', from: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) }),
+      expect.anything(),
+    )
+    wrapper.unmount()
+  })
+
+  it('shows project-scoped metrics and distributions and skips cross-project charts (g2.2 g2.3 g4.3)', async () => {
+    getProjectTokenStats.mockResolvedValue({
+      ...sampleStats(),
+      kpi: {
+        total: 180,
+        deltaPct: 10,
+        inputTokens: 70,
+        outputTokens: 55,
+        cacheReadTokens: 35,
+        cacheWriteTokens: 20,
+        failedTotal: 12,
+        runCount: 3,
+        modelCount: 2,
+        cacheHitRate: 0.25,
+        cost: 1.5,
+      },
+      currency: 'USD',
+      unpricedModels: ['opus'],
+      sources: [
+        { key: 'workflow', name: 'workflow', total: 120 },
+        { key: 'studio', name: 'studio', total: 60 },
+      ],
+      nodeTypes: [{ key: 'agent', name: 'agent', total: 120 }],
+      statuses: [{ key: 'ok', name: 'ok', total: 168 }, { key: 'failed', name: 'failed', total: 12 }],
+      phases: [{ key: 'production', name: 'production', total: 100 }, { key: 'chat', name: 'chat', total: 80 }],
+      topRuns: [{ runId: 'r1', title: 'Run 1', total: 90 }],
+      projects: [{ projectId: 'proj-1', name: 'Board', total: 180 }],
+      heatmap: { rows: ['Sonnet'], cols: ['Board'], grid: [[180]] },
+    })
+    const wrapper = mountPanel()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="token-stats-kpi-total"]').text()).toContain('180')
+    expect(wrapper.find('[data-testid="token-stats-kpi-cache"]').text()).toContain('25.0%')
+    expect(wrapper.find('[data-testid="token-stats-kpi-cost"]').text()).toContain('$1.50')
+    expect(wrapper.find('[data-testid="token-stats-kpi-cost-unpriced"]').text()).toContain('1 个模型未定价')
+    expect(wrapper.find('[data-testid="token-stats-kpi-failed"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="token-stats-kpi-runs"]').text()).toContain('3')
+    expect(wrapper.find('[data-testid="token-stats-kpi-models"]').text()).toContain('2')
+    expect(wrapper.find('[data-testid="token-stats-source-card"]').text()).toContain('Agent Studio')
+    expect(wrapper.find('[data-testid="token-stats-node-card"]').text()).toContain('agent')
+    expect(wrapper.find('[data-testid="token-stats-status-card"]').text()).toContain('失败')
+    expect(wrapper.find('[data-testid="token-stats-phase-card"]').text()).toContain('对话')
+    expect(wrapper.find('[data-testid="token-stats-runs-card"]').text()).toContain('Run 1')
+    expect(wrapper.find('[data-testid="token-stats-projects"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="token-stats-heatmap"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('项目占比')
+    expect(wrapper.text()).not.toContain('模型与项目对照')
+    wrapper.unmount()
+
+    getProjectTokenStats.mockResolvedValue({
+      ...sampleStats({ empty: true, trend: [], workflows: [] }),
+      kpi: { total: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, failedTotal: 0, runCount: 0, modelCount: 0, cost: 0 },
+      sources: [],
+      trend: [],
+    })
+    const empty = mountPanel()
+    await flushPromises()
+    expect(empty.find('[data-testid="token-stats-empty"]').exists()).toBe(true)
+    expect(empty.find('[data-testid="token-stats-kpis"]').exists()).toBe(false)
+    expect(empty.find('[data-testid="token-stats-charts"]').exists()).toBe(false)
+    empty.unmount()
   })
 })
