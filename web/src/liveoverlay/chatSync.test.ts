@@ -54,7 +54,7 @@ describe('Live page and chat synchronization', () => {
   it('publishes the first mounted candidate before any page interaction', () => {
     const { live } = connect()
     expect(live.activeCtx()).toEqual({ sid: 'sid001', current: 1 })
-    expect(card!.get('[data-testid="live-variant-viewing"]').text()).toContain('1 / 2')
+    expect(card!.findAll('[data-testid="live-variant-chip"]')[0]!.attributes('aria-pressed')).toBe('true')
     expect(card!.get('[data-testid="live-variant-accept"]').attributes('disabled')).toBeUndefined()
   })
 
@@ -63,7 +63,7 @@ describe('Live page and chat synchronization', () => {
     const { live, requests } = connect()
     expect((document.querySelector('[data-grasp-variant="2"]') as HTMLElement).hidden).toBe(false)
     expect(live.activeCtx()).toEqual({ sid: 'sid001', current: 2, params: { gap: '32px', tone: 'soft' } })
-    expect(card!.get('[data-testid="live-variant-viewing"]').text()).toContain('2 / 2')
+    expect(card!.findAll('[data-testid="live-variant-chip"]')[1]!.attributes('aria-pressed')).toBe('true')
     const slider = document.querySelector('grasp-live-overlay')!.shadowRoot!.querySelector('[data-param="sid001|2|gap"]') as HTMLInputElement
     slider.value = '40'
     slider.dispatchEvent(new Event('input', { bubbles: true }))

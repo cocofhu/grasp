@@ -12,7 +12,7 @@ import AnnotationChip from './AnnotationChip.vue'
 import LiveVariantCard from './LiveVariantCard.vue'
 import PendingSendQueuePanel from './PendingSendQueuePanel.vue'
 import { computed, inject } from 'vue'
-import { LIVE_CARD_HOST } from '@/lib/inbox/liveVariants'
+import { LIVE_CARD_HOST, isLiveBusy } from '@/lib/inbox/liveVariants'
 import type {
   ClarifyTurn,
   ClarifyImage,
@@ -263,16 +263,19 @@ const {
 
 /**
  * Where each session's interactive card goes: under the first agent reply
- * after the session's newest request, or on that request until the agent replies.
+ * after the session's newest request, or on that request when no reply came.
+ * Either only shows once the agent stopped working on the session.
  */
 const liveCards = computed(() => {
   const full = new Map<number, NonNullable<ClarifyTurn['live']>>()
   const latest = new Map<string, number>()
-  if (!liveHost) return { full, latest }
+  const newest = new Map<string, number>()
+  if (!liveHost) return { full, latest, newest }
   const turns = displayTurns.value
   turns.forEach((t, i) => {
     if (t.role === 'human' && t.live) latest.set(t.live.sid, i)
   })
+  for (const [sid, i] of latest) newest.set(sid, i)
   for (const [sid, i] of latest) {
     const live = turns[i].live!
     const j = turns.findIndex((t, k) => k > i && t.role === 'agent')
@@ -281,8 +284,17 @@ const liveCards = computed(() => {
       latest.set(sid, -1)
     }
   }
-  return { full, latest }
+  return { full, latest, newest }
 })
+const liveSettled = (sid: string) => {
+  const state = liveHost?.store.sessions[sid]?.state
+  return !!state && !isLiveBusy(state)
+}
+/** Older requests keep a headline; the newest waits for the agent like the reply card. */
+function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
+  if (liveCards.value.newest.get(live.sid) !== i) return true
+  return live.op === 'accept' || live.op === 'discard' || liveSettled(live.sid)
+}
 </script>
 
 <template>
@@ -389,7 +401,7 @@ const liveCards = computed(() => {
           </div>
           <!-- Live variant request card (state from the preview drawer, if any) -->
           <LiveVariantCard
-            v-if="liveHost && t.role === 'human' && t.live"
+            v-if="liveHost && t.role === 'human' && t.live && showHumanLiveCard(t.live, i)"
             :live-ref="t.live"
             :compact="liveCards.latest.get(t.live.sid) !== i"
           />
@@ -489,6 +501,7 @@ const liveCards = computed(() => {
               :interrupted="!!t.interrupted"
               :run-id="runId"
               message-test-id="clarify-agent-message"
+              @reveal="scrollBottom()"
             >
               <template #caret>
                 <span class="clarify-stream-caret" data-testid="clarify-stream-caret" aria-hidden="true" />
@@ -571,7 +584,11 @@ const liveCards = computed(() => {
                 </div>
               </div>
             </template>
-            <LiveVariantCard v-if="liveCards.full.has(i)" :live-ref="liveCards.full.get(i)!" agent />
+            <LiveVariantCard
+              v-if="liveCards.full.has(i) && !t.streaming && liveSettled(liveCards.full.get(i)!.sid)"
+              :live-ref="liveCards.full.get(i)!"
+              agent
+            />
             <!-- Restrained completion footnote (Demo); never for interrupted/error -->
             <div
               v-if="showTurnCompleted(t)"

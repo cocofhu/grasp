@@ -10,9 +10,9 @@ import type { ClarifyTurn, ReactAnnotation } from '@/lib/shared/types'
 import ClarifyChat from './ClarifyChat.vue'
 import { LIVE_CARD_HOST, createLiveStore, type LiveCardHost } from '@/lib/inbox/liveVariants'
 
-function liveHost(): LiveCardHost {
+function liveHost(state = 'ready'): LiveCardHost {
   const live = createLiveStore()
-  live.apply({ sid: 'sid001', state: 'ready', summary: '页面候选', variants: [{ n: 1, label: '入场' }, { n: 2, label: '聚焦' }] })
+  live.apply({ sid: 'sid001', state, summary: '页面候选', variants: [{ n: 1, label: '入场' }, { n: 2, label: '聚焦' }] })
   live.setView('sid001', { current: 1, mode: 'inplace' })
   return { store: live.store, interactive: true, command: vi.fn() }
 }
@@ -151,6 +151,20 @@ describe('ClarifyChat', () => {
     expect(cards).toHaveLength(1)
     expect(cards[0].find('[data-testid="live-variant-accept"]').exists()).toBe(true)
     wrapper.unmount()
+  })
+
+  it('shows no Live card while the agent is still working on the session', () => {
+    const at = '2026-07-18T00:00:00Z'
+    const request: ClarifyTurn = { role: 'human', text: '首页加点动效', at, live: { sid: 'sid001', op: 'generate' } }
+    const generating = mountChat({ turns: [request, { role: 'agent', text: '我先看看结构', at }], liveHost: liveHost('generating') })
+    expect(generating.find('[data-testid="live-variant-card"]').exists()).toBe(false)
+    generating.unmount()
+    const waiting = mountChat({ turns: [request], liveHost: liveHost('generating') })
+    expect(waiting.find('[data-testid="live-variant-card"]').exists()).toBe(false)
+    waiting.unmount()
+    const streaming = mountChat({ turns: [request, { role: 'agent', text: '已放上 2 个候选', at, streaming: true }], liveHost: liveHost() })
+    expect(streaming.find('[data-testid="live-variant-card"][data-side="agent"]').exists()).toBe(false)
+    streaming.unmount()
   })
 
   it('shows no Live card on the approval page', () => {

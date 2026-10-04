@@ -43,7 +43,7 @@ async function tuneSecond(page: Page) {
   await overlay(page).locator('[data-act="next"]').click()
   await expect(page.locator('[data-grasp-variant="1"]')).toBeHidden()
   await expect(page.locator('[data-grasp-variant="2"]')).toBeVisible()
-  await expect(drawer(page).getByTestId('live-variant-viewing').last()).toContainText('2')
+  await expect(drawer(page).getByTestId('live-variant-card').last().getByTestId('live-variant-chip').nth(1)).toHaveAttribute('aria-pressed', 'true')
   const gap = overlay(page).locator('input[data-param$="|2|gap"]')
   await gap.focus()
   await gap.press('ArrowRight')
@@ -158,7 +158,7 @@ test.describe('Live preview and Chat browser bridge', () => {
     await expect(drawer(page).getByTestId('live-drawer')).toBeVisible()
     await expect(page.locator('[data-grasp-variant="2"]')).toBeVisible()
     await expect(page.locator('[data-grasp-variant="1"]')).toBeHidden()
-    await expect(drawer(page).getByTestId('live-variant-viewing').last()).toContainText('2')
+    await expect(drawer(page).getByTestId('live-variant-card').last().getByTestId('live-variant-chip').nth(1)).toHaveAttribute('aria-pressed', 'true')
     await expect(drawer(page).getByTestId('live-active-context')).toContainText('"gap":"32px"')
 
     await drawer(page).getByTestId('live-chat-input').fill('就用这个')
@@ -343,7 +343,7 @@ test.describe('Live entry on Grasp direct previews', () => {
       await overlay(page).locator('[data-act="next"]').click()
       await expect(page.locator('[data-grasp-variant="2"]')).toBeVisible()
       await expect(page.locator('[data-grasp-variant="1"]')).toBeHidden()
-      await expect(drawer(page).getByTestId('live-variant-viewing').last()).toContainText('2')
+      await expect(drawer(page).getByTestId('live-variant-card').last().getByTestId('live-variant-chip').nth(1)).toHaveAttribute('aria-pressed', 'true')
       // Hiding the candidate controls keeps the viewed candidate and the session.
       const eye = bar(page, 'eye')
       await expect(eye).toBeVisible()
@@ -448,7 +448,7 @@ test.describe('production Chat composer page candidates', () => {
     expect(generated.source).toContain('data-grasp-live')
     await overlay(page).locator('[data-act="next"]').click()
     await expect(page.locator('[data-grasp-variant="2"]')).toBeVisible()
-    await expect(drawer(page).getByTestId('live-variant-viewing').last()).toContainText('2')
+    await expect(drawer(page).getByTestId('live-variant-card').last().getByTestId('live-variant-chip').nth(1)).toHaveAttribute('aria-pressed', 'true')
     // Turning the Chat send mode off does not close, accept or discard candidates.
     await openControls(page)
     await mode.click()
