@@ -151,7 +151,7 @@ function namedSlices(
   rows: GlobalTokenStatsNamedBucket[] | undefined,
   label: (k: string) => string,
   colors: Record<string, string>,
-  dim: 'source' | 'status' | null,
+  dim: 'source' | 'status' | 'phase' | null,
 ): DrillPieSlice[] {
   return (rows ?? []).filter((r) => r.total > 0).map((r, i) => {
     const key = r.key || r.name
@@ -213,7 +213,7 @@ const pieSlices = computed(() => {
       drill: w.workflowId ? { dim: 'workflow' as const, key: w.workflowId, name: w.name } : undefined,
     })),
     status: namedSlices(d.statuses, (k) => statusLabel(t, k), TOKEN_LEDGER_STATUS_COLORS, 'status'),
-    phase: namedSlices(d.phases, (k) => phaseLabel(t, k), TOKEN_LEDGER_PHASE_COLORS, null),
+    phase: namedSlices(d.phases, (k) => phaseLabel(t, k), TOKEN_LEDGER_PHASE_COLORS, 'phase'),
   }
 })
 
@@ -302,7 +302,7 @@ function normalizeBarRows(dimension: BarDimension): StackedBarRow[] {
   }
   if (dimension === 'source') return namedBarRows(d.sources, (k) => sourceLabel(t, k), 'source')
   if (dimension === 'status') return namedBarRows(d.statuses, (k) => statusLabel(t, k), 'status')
-  if (dimension === 'phase') return namedBarRows(d.phases, (k) => phaseLabel(t, k), null)
+  if (dimension === 'phase') return namedBarRows(d.phases, (k) => phaseLabel(t, k), 'phase')
   return (d.topRuns ?? []).slice(0, 10).map((r) => ({
     name: r.title || r.runId,
     ...partsOf(r),
@@ -380,7 +380,7 @@ function costRowsFor(dim: CostDimension): CostBarRow[] {
   if (dim === 'source') return namedCostRows(d.sources, (k) => sourceLabel(t, k), 'source')
   if (dim === 'nodeType') return namedCostRows(d.nodeTypes, (k) => k, 'nodeType')
   if (dim === 'status') return namedCostRows(d.statuses, (k) => statusLabel(t, k), 'status')
-  return namedCostRows(d.phases, (k) => phaseLabel(t, k), null)
+  return namedCostRows(d.phases, (k) => phaseLabel(t, k), 'phase')
 }
 
 const costDimensionEnabled = computed(() => {
@@ -769,6 +769,15 @@ watch(() => JSON.stringify(filters.value), () => void load())
         >
           <option value="">{{ t('pages.tokenAnalytics.statusAll') }}</option>
           <option v-for="s in (['ok', 'failed', 'cancelled'] as const)" :key="s" :value="s">{{ statusLabel(t, s) }}</option>
+        </select>
+        <select
+          :value="filters.phase"
+          class="rounded border border-line bg-surface px-2 py-1.5 text-xs text-txt2"
+          data-testid="token-analytics-filter-phase"
+          @change="setFilter('phase', ($event.target as HTMLSelectElement).value as TokenStatsFilters['phase'])"
+        >
+          <option value="">{{ t('pages.tokenAnalytics.phaseAll') }}</option>
+          <option v-for="p in (['production', 'interactive', 'chat'] as const)" :key="p" :value="p">{{ phaseLabel(t, p) }}</option>
         </select>
         <span
           v-if="filters.runId"

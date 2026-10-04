@@ -40,6 +40,7 @@ export const TOKEN_LEDGER_PHASE_COLORS: Record<string, string> = {
 
 export type TokenSourceFilter = 'all' | 'workflow' | 'pm' | 'studio'
 export type TokenStatusFilter = '' | 'ok' | 'failed' | 'cancelled'
+export type TokenPhaseFilter = '' | 'production' | 'interactive' | 'chat'
 export type TokenGranularityFilter = '' | 'hour' | 'day' | 'week'
 
 /** Page-level filter state; also the base scope of every drill-down. */
@@ -50,6 +51,7 @@ export interface TokenStatsFilters {
   granularity: TokenGranularityFilter
   source: TokenSourceFilter
   status: TokenStatusFilter
+  phase: TokenPhaseFilter
   projectId: string
   modelKey: string
   workflowId: string
@@ -65,6 +67,7 @@ export function defaultTokenStatsFilters(): TokenStatsFilters {
     granularity: '',
     source: 'all',
     status: '',
+    phase: '',
     projectId: '',
     modelKey: '',
     workflowId: '',
@@ -85,6 +88,7 @@ export function filtersToParams(f: TokenStatsFilters): GlobalTokenStatsParams {
     utcOffsetMinutes: tz.utcOffsetMinutes,
     source: f.source,
     status: f.status || undefined,
+    phase: f.phase || undefined,
     projectId: f.projectId || undefined,
     modelKey: f.modelKey || undefined,
     workflowId: f.workflowId || undefined,
@@ -112,6 +116,7 @@ export function activeFilterCount(f: TokenStatsFilters): number {
   return [
     f.source !== 'all',
     !!f.status,
+    !!f.phase,
     !!f.projectId,
     !!f.modelKey,
     !!f.workflowId,
@@ -120,7 +125,7 @@ export function activeFilterCount(f: TokenStatsFilters): number {
   ].filter(Boolean).length
 }
 
-export type DrillDim = 'project' | 'model' | 'workflow' | 'nodeType' | 'source' | 'status' | 'run' | 'bucket'
+export type DrillDim = 'project' | 'model' | 'workflow' | 'nodeType' | 'source' | 'status' | 'phase' | 'run' | 'bucket'
 
 /** One step of a drill-down path (clicked chart element / table row). */
 export interface DrillTarget {
@@ -180,6 +185,9 @@ export function applyDrill(base: TokenStatsFilters, path: DrillTarget[]): TokenS
         break
       case 'status':
         out.status = (step.key as TokenStatusFilter) || ''
+        break
+      case 'phase':
+        out.phase = (step.key as TokenPhaseFilter) || ''
         break
       case 'run':
         out.runId = step.key

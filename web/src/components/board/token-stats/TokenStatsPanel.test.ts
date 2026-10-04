@@ -281,6 +281,61 @@ describe('TokenStatsPanel', () => {
     direct.unmount()
   })
 
+  it('keeps the route window across project changes and reapplies query updates (review v2)', async () => {
+    getProjectTokenStats.mockResolvedValue(sampleStats({ window: 'all' }))
+    const carried = mountPanel({ initialWindow: 'all' })
+    await flushPromises()
+    getProjectTokenStats.mockClear()
+    await carried.setProps({ projectId: 'proj-2' })
+    await flushPromises()
+    expect(getProjectTokenStats).toHaveBeenLastCalledWith(
+      'proj-2',
+      expect.objectContaining({ window: 'all' }),
+      expect.anything(),
+    )
+    expect(carried.find('[data-testid="token-stats-window-badge"]').text()).toContain('全部历史')
+
+    getProjectTokenStats.mockClear()
+    await carried.setProps({ initialWindow: '7d' })
+    await flushPromises()
+    expect(getProjectTokenStats).toHaveBeenLastCalledWith(
+      'proj-2',
+      expect.objectContaining({ window: '7d' }),
+      expect.anything(),
+    )
+    expect(carried.find('[data-testid="token-stats-window-badge"]').text()).toContain('近 7 天')
+
+    getProjectTokenStats.mockClear()
+    await carried.setProps({
+      projectId: 'proj-3',
+      initialWindow: '',
+      initialFrom: '',
+      initialTo: '',
+      initialGranularity: '',
+    })
+    await flushPromises()
+    expect(getProjectTokenStats).toHaveBeenLastCalledWith(
+      'proj-3',
+      expect.objectContaining({ window: '30d' }),
+      expect.anything(),
+    )
+    carried.unmount()
+  })
+
+  it('sends a phase filter to the locked project stats (review v4)', async () => {
+    getProjectTokenStats.mockResolvedValue(sampleStats())
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.find('[data-testid="token-stats-filter-phase"]').setValue('chat')
+    await flushPromises()
+    expect(getProjectTokenStats).toHaveBeenLastCalledWith(
+      'proj-1',
+      expect.objectContaining({ phase: 'chat' }),
+      expect.anything(),
+    )
+    wrapper.unmount()
+  })
+
   it('sends source, workflow, model, node, status, and custom range filters (g2.1)', async () => {
     getProjectTokenStats.mockResolvedValue(sampleStats({
       filterOptions: {
@@ -336,6 +391,7 @@ describe('TokenStatsPanel', () => {
         cost: 1.5,
       },
       currency: 'USD',
+      unpricedModels: ['opus'],
       sources: [
         { key: 'workflow', name: 'workflow', total: 120 },
         { key: 'studio', name: 'studio', total: 60 },
@@ -352,6 +408,7 @@ describe('TokenStatsPanel', () => {
     expect(wrapper.find('[data-testid="token-stats-kpi-total"]').text()).toContain('180')
     expect(wrapper.find('[data-testid="token-stats-kpi-cache"]').text()).toContain('25.0%')
     expect(wrapper.find('[data-testid="token-stats-kpi-cost"]').text()).toContain('$1.50')
+    expect(wrapper.find('[data-testid="token-stats-kpi-cost-unpriced"]').text()).toContain('1 个模型未定价')
     expect(wrapper.find('[data-testid="token-stats-kpi-failed"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="token-stats-kpi-runs"]').text()).toContain('3')
     expect(wrapper.find('[data-testid="token-stats-kpi-models"]').text()).toContain('2')

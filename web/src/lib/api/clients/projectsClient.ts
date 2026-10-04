@@ -238,6 +238,7 @@ export const projectsClient = {
       utcOffsetMinutes?: number
       source?: 'all' | 'workflow' | 'pm' | 'studio' | string
       status?: 'ok' | 'failed' | 'cancelled' | string
+      phase?: 'production' | 'interactive' | 'chat' | string
       modelKey?: string
       workflowId?: string
       nodeType?: string
@@ -255,6 +256,7 @@ export const projectsClient = {
     }
     if (params.source) q.set('source', params.source)
     if (params.status) q.set('status', params.status)
+    if (params.phase) q.set('phase', params.phase)
     if (params.modelKey) q.set('modelKey', params.modelKey)
     if (params.workflowId) q.set('workflowId', params.workflowId)
     if (params.nodeType) q.set('nodeType', params.nodeType)

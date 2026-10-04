@@ -43,6 +43,7 @@ type GlobalTokenStatsQuery struct {
 	UTCOffsetMinutes *int
 	Source           string // all|workflow|pm|studio
 	Status           string // ok|failed|cancelled
+	Phase            string // production|interactive|chat
 	ProjectID        string
 	ModelKey         string
 	WorkflowID       string
@@ -603,6 +604,9 @@ func filterGlobalRowUsage(row globalTokenUsageRow, q GlobalTokenStatsQuery, sour
 		return models.TokenUsage{}, false
 	}
 	if st := strings.TrimSpace(q.Status); st != "" && row.status != st {
+		return models.TokenUsage{}, false
+	}
+	if ph := strings.TrimSpace(q.Phase); ph != "" && orDefault(row.phase, models.TokenLedgerPhaseProduction) != ph {
 		return models.TokenUsage{}, false
 	}
 	if wf := strings.TrimSpace(q.WorkflowID); wf != "" && row.workflowID != wf {

@@ -17,6 +17,7 @@ export type GlobalTokenStatsParams = {
   utcOffsetMinutes?: number
   source?: 'all' | 'workflow' | 'pm' | 'studio' | string
   status?: 'ok' | 'failed' | 'cancelled' | string
+  phase?: 'production' | 'interactive' | 'chat' | string
   projectId?: string
   modelKey?: string
   workflowId?: string
@@ -42,6 +43,7 @@ function tokenStatsQuery(params: GlobalTokenStatsParams): URLSearchParams {
   }
   if (params.source && params.source !== 'all') q.set('source', params.source)
   if (params.status) q.set('status', params.status)
+  if (params.phase) q.set('phase', params.phase)
   if (params.projectId) q.set('projectId', params.projectId)
   if (params.modelKey) q.set('modelKey', params.modelKey)
   if (params.workflowId) q.set('workflowId', params.workflowId)

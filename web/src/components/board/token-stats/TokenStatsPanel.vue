@@ -38,6 +38,7 @@ const { t } = useI18n()
 
 const WINDOWS: TokenStatsWindow[] = ['24h', '7d', '30d', '90d', 'all']
 const SOURCES = ['all', 'workflow', 'pm', 'studio'] as const
+const PHASES = ['production', 'interactive', 'chat'] as const
 
 type BoardWindow = TokenStatsWindow | 'custom'
 type BoardStats = ProjectTokenStats & {
@@ -62,6 +63,7 @@ type BoardStats = ProjectTokenStats & {
   phases?: GlobalTokenStatsNamedBucket[]
   nodeTypes?: GlobalTokenStatsNamedBucket[]
   topRuns?: { runId: string; title?: string; total: number }[]
+  unpricedModels?: string[]
   filterOptions?: {
     models?: { key: string; name: string }[]
     workflows?: { key: string; name: string }[]
@@ -77,6 +79,7 @@ const rangeTo = ref('')
 const granularity = ref<'' | 'hour' | 'day' | 'week'>('')
 const sourceSel = ref<(typeof SOURCES)[number]>('all')
 const statusSel = ref('')
+const phaseSel = ref('')
 const workflowId = ref('')
 const modelKey = ref('')
 const nodeType = ref('')
@@ -107,6 +110,15 @@ function applyInitialRange() {
   if (props.initialGranularity === 'hour' || props.initialGranularity === 'day' || props.initialGranularity === 'week') {
     granularity.value = props.initialGranularity
   }
+}
+
+/** Route window wins; a board opened with no window/from/to stays on the last 30 days. */
+function applyRouteRangeOrDefault() {
+  windowSel.value = '30d'
+  rangeFrom.value = ''
+  rangeTo.value = ''
+  granularity.value = ''
+  applyInitialRange()
 }
 
 applyInitialRange()
@@ -167,6 +179,7 @@ async function load() {
         utcOffsetMinutes: tz.utcOffsetMinutes,
         source: sourceSel.value,
         status: statusSel.value || undefined,
+        phase: phaseSel.value || undefined,
         workflowId: workflowId.value || undefined,
         modelKey: modelKey.value || undefined,
         nodeType: nodeType.value || undefined,
@@ -224,8 +237,9 @@ function setSource(s: (typeof SOURCES)[number]) {
   void load()
 }
 
-function setSelect(key: 'status' | 'workflow' | 'model' | 'node' | 'grain', value: string) {
+function setSelect(key: 'status' | 'phase' | 'workflow' | 'model' | 'node' | 'grain', value: string) {
   if (key === 'status') statusSel.value = value
+  else if (key === 'phase') phaseSel.value = value
   else if (key === 'workflow') workflowId.value = value
   else if (key === 'model') modelKey.value = value
   else if (key === 'node') nodeType.value = value
@@ -240,15 +254,21 @@ function retry() {
 watch(
   () => props.projectId,
   () => {
-    windowSel.value = '30d'
-    rangeFrom.value = ''
-    rangeTo.value = ''
-    granularity.value = ''
     sourceSel.value = 'all'
     statusSel.value = ''
+    phaseSel.value = ''
     workflowId.value = ''
     modelKey.value = ''
     nodeType.value = ''
+    applyRouteRangeOrDefault()
+    void load()
+  },
+)
+
+watch(
+  () => [props.initialWindow, props.initialFrom, props.initialTo, props.initialGranularity] as const,
+  () => {
+    applyRouteRangeOrDefault()
     void load()
   },
 )
@@ -404,6 +424,15 @@ onUnmounted(() => {
         <option value="failed">{{ statusLabel(t, 'failed') }}</option>
         <option value="cancelled">{{ statusLabel(t, 'cancelled') }}</option>
       </select>
+      <select
+        :value="phaseSel"
+        class="rounded border border-line bg-surface px-2 py-1.5 text-xs text-txt2"
+        data-testid="token-stats-filter-phase"
+        @change="setSelect('phase', ($event.target as HTMLSelectElement).value)"
+      >
+        <option value="">{{ t('pages.tokenAnalytics.phaseAll') }}</option>
+        <option v-for="p in PHASES" :key="p" :value="p">{{ phaseLabel(t, p) }}</option>
+      </select>
     </div>
 
     <!-- Loading: whole panel placeholder, no stale charts -->
@@ -498,6 +527,13 @@ onUnmounted(() => {
         <div class="rounded-lg border border-line bg-surface p-3" data-testid="token-stats-kpi-cost">
           <div class="text-[11px] text-txt3">{{ t('pages.tokenAnalytics.kpiCost') }}</div>
           <div class="mt-1 text-lg font-bold tabular-nums">{{ (data.kpi.cost || 0) > 0 ? fmtCost(data.kpi.cost, data.currency) : t('pages.tokenAnalytics.kpiCostUnpriced') }}</div>
+          <div
+            v-if="(data.kpi.cost || 0) > 0 && (data.unpricedModels?.length || 0) > 0"
+            class="mt-0.5 text-[11px] text-warn"
+            data-testid="token-stats-kpi-cost-unpriced"
+          >
+            {{ t('pages.tokenAnalytics.kpiCostUnpricedModels', { n: data.unpricedModels!.length }) }}
+          </div>
           <div v-if="costDeltaLabel" class="mt-0.5 text-[11px] text-txt3">{{ costDeltaLabel }}</div>
         </div>
         <div class="rounded-lg border border-line bg-surface p-3" data-testid="token-stats-kpi-failed">

@@ -181,7 +181,7 @@ func (h *Handlers) DeleteProject(c *gin.Context) {
 // GetProjectTokenStats returns the same aggregation as GET /api/stats/token,
 // locked to this project. A query projectId cannot switch the scope.
 // Window defaults to 30d when omitted (usage stats still default to all).
-// Other filters match usage stats: from/to, granularity, source, status,
+// Other filters match usage stats: from/to, granularity, source, status, phase,
 // modelKey, workflowId, nodeType, timezone, utcOffsetMinutes.
 func (h *Handlers) GetProjectTokenStats(c *gin.Context) {
 	if h.Projects == nil {

@@ -316,6 +316,7 @@ export function stackedBarOption(rows: StackedBarRow[], t: Translate) {
       stack: 'total',
       name: partLabel(t, key),
       barMaxWidth: BAR_MAX_WIDTH,
+      cursor: rows.some((row) => row.drill) ? 'pointer' : 'default',
       itemStyle: { color: TOKEN_PART_COLORS[key] },
       data: rows.map((row) => {
         const topKey = [...TOKEN_PART_KEYS].reverse().find((k) => row[k] > 0)
@@ -364,6 +365,7 @@ export function costBarOption(rows: CostBarRow[], currency: string | undefined, 
       {
         type: 'bar',
         barMaxWidth: 16,
+        cursor: ordered.some((r) => r.drill) ? 'pointer' : 'default',
         data: ordered.map((r) => ({
           value: Number(r.cost.toFixed(6)),
           total: r.total,
@@ -567,6 +569,7 @@ export function listDrillBreakdowns(
     runId?: string
     source?: string
     status?: string
+    phase?: string
   },
   t: Translate,
 ): DrillBreakdown[] {
@@ -646,13 +649,21 @@ export function listDrillBreakdowns(
       }),
     )
   }
-  push(
-    'phase',
-    (stats.phases ?? []).filter((r) => r.total > 0).map((r) => {
-      const key = r.key || r.name
-      return { name: phaseLabel(t, key), ...breakdownParts(r), other: false }
-    }),
-  )
+  if (!filters.phase) {
+    push(
+      'phase',
+      (stats.phases ?? []).filter((r) => r.total > 0).map((r) => {
+        const key = r.key || r.name
+        const name = phaseLabel(t, key)
+        return {
+          name,
+          ...breakdownParts(r),
+          other: false,
+          drill: key ? { dim: 'phase' as const, key, name } : undefined,
+        }
+      }),
+    )
+  }
   if (!filters.runId) {
     push(
       'run',

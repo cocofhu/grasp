@@ -146,6 +146,7 @@
       "workflowAll": "工作流：全部",
       "nodeTypeAll": "节点类型：全部",
       "statusAll": "状态：全部",
+      "phaseAll": "阶段：全部",
       "statuses": {
         "ok": "成功",
         "failed": "失败",
@@ -200,6 +201,7 @@
           "nodeType": "节点类型",
           "source": "来源",
           "status": "状态",
+          "phase": "阶段",
           "run": "运行",
           "bucket": "时间"
         },

@@ -559,6 +559,20 @@ describe('TokenAnalyticsView', () => {
     for (const dim of ['source', 'nodeType', 'status', 'phase']) {
       expect(comparable.find(`[data-testid="token-analytics-cost-dimension-${dim}"]`).exists()).toBe(true)
     }
+    await comparable.find('[data-testid="token-analytics-bar-dimension-phase"]').trigger('click')
+    const barOption = comparable.find('[data-testid="token-analytics-plot-bars"]').findComponent({ name: 'VChart' }).props('option') as {
+      series: Array<{ cursor?: string; data: Array<{ drill?: Array<{ dim: string; key: string }> }> }>
+    }
+    expect(barOption.series[0]?.cursor).toBe('pointer')
+    expect(barOption.series[0]?.data.map((d) => d.drill?.[0]?.dim)).toEqual(['phase', 'phase'])
+    expect(barOption.series[0]?.data.map((d) => d.drill?.[0]?.key)).toEqual(['production', 'chat'])
+    vi.mocked(api.getGlobalTokenStats).mockClear()
+    await comparable.find('[data-testid="token-analytics-filter-phase"]').setValue('chat')
+    await flushPromises()
+    expect(api.getGlobalTokenStats).toHaveBeenLastCalledWith(
+      expect.objectContaining({ phase: 'chat' }),
+      expect.anything(),
+    )
     comparable.unmount()
   })
 
@@ -758,8 +772,9 @@ describe('TokenAnalyticsView', () => {
     expect(filters.text()).toContain('工作流：全部')
     expect(filters.text()).toContain('节点类型：全部')
     expect(filters.text()).toContain('状态：全部')
+    expect(filters.text()).toContain('阶段：全部')
     const selects = filters.findAll('select')
-    expect(selects).toHaveLength(5)
+    expect(selects).toHaveLength(6)
     for (const sel of selects) expect((sel.element as HTMLSelectElement).value).toBe('')
     wrapper.unmount()
   })

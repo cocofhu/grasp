@@ -130,6 +130,16 @@ func TestGlobalTokenStatsLedgerDimensionsAndCost(t *testing.T) {
 	if failed.KPI.Total != 100 {
 		t.Fatalf("status+nodeType filter total=%d", failed.KPI.Total)
 	}
+	chat, err := s.GlobalTokenStats(context.Background(), GlobalTokenStatsQuery{
+		Window: TokenStatsWindow7d, Timezone: "UTC", Now: now, Phase: models.TokenLedgerPhaseChat,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Studio cache-read 1_000_000 + PM output 10. Production and interactive stay out.
+	if chat.KPI.Total != 1_000_010 || chat.KPI.StudioTotal != 1_000_000 {
+		t.Fatalf("phase=chat total=%d studio=%d", chat.KPI.Total, chat.KPI.StudioTotal)
+	}
 }
 
 func TestGlobalTokenStatsCustomRangeAndGranularity(t *testing.T) {

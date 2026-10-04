@@ -13,6 +13,8 @@ import {
 } from '@/components/charts/chartTheme'
 import type { TokenStatsBucket } from '@/lib/shared/types'
 import { fmtCompactTokenCount } from '@/lib/run/tokenUsage'
+import { TOKEN_LEDGER_SOURCE_COLORS } from '@/components/token-analytics/tokenAnalyticsShared'
+import { sourceLabel } from '@/components/token-analytics/tokenAnalyticsCharts'
 import {
   TOKEN_SOURCE_COLORS,
   echartsTooltipPosition,
@@ -33,9 +35,22 @@ const { t } = useI18n()
 const CHART_HEIGHT_PX = 200
 const WF_COLOR = TOKEN_SOURCE_COLORS.workflow
 const PM_COLOR = TOKEN_SOURCE_COLORS.pm
+const STUDIO_COLOR = TOKEN_LEDGER_SOURCE_COLORS.studio
 
-const wfName = computed(() => t('pages.board.tokenStats.workflow'))
-const pmName = computed(() => t('pages.board.tokenStats.pm'))
+type SourceKey = 'workflow' | 'pm' | 'studio'
+const SOURCE_ORDER: SourceKey[] = ['workflow', 'pm', 'studio']
+
+function sourceValue(b: TokenStatsBucket, key: SourceKey): number {
+  if (key === 'workflow') return b.workflowTotal || 0
+  if (key === 'pm') return b.pmTotal || 0
+  return b.studioTotal || 0
+}
+
+/** Sources that are entirely zero under the current filter are omitted (no zero line). */
+const activeSources = computed(() =>
+  SOURCE_ORDER.filter((key) => props.trend.some((b) => sourceValue(b, key) > 0)),
+)
+
 const tone = computed(() => chartTone())
 
 const wrapRef = ref<HTMLElement | null>(null)
@@ -66,10 +81,35 @@ watch(
   () => hideTip(),
 )
 
+function sourceSeriesStyle(key: SourceKey) {
+  if (key === 'pm') {
+    return {
+      lineStyle: { color: PM_COLOR, width: 1.8, type: [5, 4] as unknown as 'dashed' },
+      areaStyle: { color: 'rgba(109, 92, 255, 0.14)' },
+      symbol: 'circle' as const,
+      symbolSize: 7,
+      showSymbol: true,
+      itemStyle: { color: '#fff', borderColor: PM_COLOR, borderWidth: 2 },
+    }
+  }
+  if (key === 'studio') {
+    return {
+      lineStyle: { color: STUDIO_COLOR, width: 1.8 },
+      areaStyle: { color: 'rgba(34, 166, 179, 0.28)' },
+      showSymbol: false,
+      itemStyle: { color: STUDIO_COLOR },
+    }
+  }
+  return {
+    lineStyle: { color: WF_COLOR, width: 1.8 },
+    areaStyle: { color: 'rgba(109, 92, 255, 0.28)' },
+    showSymbol: false,
+  }
+}
+
 const chartOption = computed(() => {
   const labels = props.trend.map((b) => formatBucketLabel(b.bucket, props.bucketWidth))
-  const workflow = props.trend.map((b) => b.workflowTotal || 0)
-  const pm = props.trend.map((b) => b.pmTotal || 0)
+  const sources = activeSources.value
   const axis = statsAxis()
   return {
     grid: TREND_CHART_GRID,
@@ -97,14 +137,18 @@ const chartOption = computed(() => {
         if (!b) return ''
         const label = formatBucketLabel(b.bucket, props.bucketWidth)
         const total = fmtCompactTokenCount(b.total)
-        return `<div>${label} · ${total}</div>
-          <div data-tip-row="workflow">${wfName.value} ${fmtCompactTokenCount(b.workflowTotal || 0)}</div>
-          <div data-tip-row="pm">${pmName.value} ${fmtCompactTokenCount(b.pmTotal || 0)}</div>`
+        const rows = sources
+          .map(
+            (key) =>
+              `<div data-tip-row="${key}">${sourceLabel(t, key)} ${fmtCompactTokenCount(sourceValue(b, key))}</div>`,
+          )
+          .join('')
+        return `<div>${label} · ${total}</div>${rows}`
       },
     }),
     legend: {
       ...statsLegend(),
-      data: [wfName.value, pmName.value],
+      data: sources.map((key) => sourceLabel(t, key)),
     },
     xAxis: {
       type: 'category',
@@ -118,46 +162,26 @@ const chartOption = computed(() => {
       ...axis,
       axisLabel: { ...axis.axisLabel, formatter: (v: number) => fmtCompactAxis(v) },
     },
-    series: [
-      {
-        type: 'line',
-        name: wfName.value,
-        stack: 'source',
-        data: workflow,
-        lineStyle: { color: WF_COLOR, width: 1.8 },
-        areaStyle: { color: 'rgba(109, 92, 255, 0.28)' },
-        showSymbol: false,
-        clip: false,
-        smooth: true,
-      },
-      {
-        type: 'line',
-        name: pmName.value,
-        stack: 'source',
-        data: pm,
-        lineStyle: { color: PM_COLOR, width: 1.8, type: [5, 4] as unknown as 'dashed' },
-        areaStyle: { color: 'rgba(109, 92, 255, 0.14)' },
-        symbol: 'circle',
-        symbolSize: 7,
-        clip: false,
-        itemStyle: { color: '#fff', borderColor: PM_COLOR, borderWidth: 2 },
-        smooth: true,
-      },
-    ],
+    series: sources.map((key) => ({
+      type: 'line' as const,
+      name: sourceLabel(t, key),
+      stack: 'source',
+      data: props.trend.map((b) => sourceValue(b, key)),
+      clip: false,
+      smooth: true,
+      ...sourceSeriesStyle(key),
+    })),
   }
 })
 
 const chartData = computed(() => ({
   labels: props.trend.map((b) => formatBucketLabel(b.bucket, props.bucketWidth)),
-  datasets: [
-    { label: 'workflow', data: props.trend.map((b) => b.workflowTotal || 0), borderColor: WF_COLOR },
-    {
-      label: 'pm',
-      data: props.trend.map((b) => b.pmTotal || 0),
-      borderColor: PM_COLOR,
-      borderDash: [5, 4],
-    },
-  ],
+  datasets: activeSources.value.map((key) => ({
+    label: key,
+    data: props.trend.map((b) => sourceValue(b, key)),
+    borderColor: key === 'studio' ? STUDIO_COLOR : key === 'pm' ? PM_COLOR : WF_COLOR,
+    ...(key === 'pm' ? { borderDash: [5, 4] } : {}),
+  })),
 }))
 
 defineExpose({ chartOption, chartData, hideTip })
@@ -196,11 +220,8 @@ defineExpose({ chartOption, chartData, hideTip })
         {{ formatBucketLabel(tipBucket.bucket, bucketWidth) }}
         · {{ fmtCompactTokenCount(tipBucket.total) }}
       </div>
-      <div data-tip-row="workflow">
-        {{ wfName }} {{ fmtCompactTokenCount(tipBucket.workflowTotal || 0) }}
-      </div>
-      <div data-tip-row="pm">
-        {{ pmName }} {{ fmtCompactTokenCount(tipBucket.pmTotal || 0) }}
+      <div v-for="key in activeSources" :key="key" :data-tip-row="key">
+        {{ sourceLabel(t, key) }} {{ fmtCompactTokenCount(sourceValue(tipBucket, key)) }}
       </div>
     </div>
   </Teleport>

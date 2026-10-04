@@ -42,6 +42,7 @@ describe('tokenAnalyticsShared', () => {
       to: '2026-07-02',
       granularity: 'hour',
     })
+    expect(applyDrill(base, [{ dim: 'phase', key: 'chat', name: 'Chat' }]).phase).toBe('chat')
     expect(base.projectId).toBe('')
   })
 
@@ -146,12 +147,21 @@ describe('tokenAnalyticsCharts', () => {
         { runId: 'r2', title: 'R2', total: 4, inputTokens: 2, outputTokens: 2 },
       ],
     } as unknown as GlobalTokenStats
-    const open = listDrillBreakdowns(rich, {}, t).map((b) => b.id)
+    const openBreakdowns = listDrillBreakdowns(rich, {}, t)
+    const open = openBreakdowns.map((b) => b.id)
     expect(open).toEqual(expect.arrayContaining(['project', 'source', 'model', 'status', 'phase', 'run']))
     expect(open).not.toContain('nodeType')
+    const phaseRows = openBreakdowns.find((b) => b.id === 'phase')?.rows ?? []
+    expect(phaseRows.map((r) => r.drill)).toEqual([
+      { dim: 'phase', key: 'production', name: 'pages.tokenAnalytics.phases.production' },
+      { dim: 'phase', key: 'chat', name: 'pages.tokenAnalytics.phases.chat' },
+    ])
     const locked = listDrillBreakdowns(rich, { projectId: 'p1', source: 'workflow', status: 'ok', runId: 'r1' }, t).map((b) => b.id)
     for (const id of ['project', 'source', 'status', 'run']) expect(locked).not.toContain(id)
     expect(locked).toEqual(expect.arrayContaining(['model', 'phase']))
+    const phaseLocked = listDrillBreakdowns(rich, { phase: 'chat' }, t).map((b) => b.id)
+    expect(phaseLocked).not.toContain('phase')
+    expect(phaseLocked).toEqual(expect.arrayContaining(['source', 'status']))
   })
 
   it('extracts drill paths from chart click events', () => {

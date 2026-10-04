@@ -14,7 +14,7 @@ import (
 // Query: window=24h|7d|30d|90d|all (default all), from/to=YYYY-MM-DD (custom
 // range, overrides window), granularity=hour|day|week, timezone,
 // utcOffsetMinutes, source=all|workflow|pm|studio, status=ok|failed|cancelled,
-// projectId, modelKey, workflowId, nodeType, runId.
+// phase=production|interactive|chat, projectId, modelKey, workflowId, nodeType, runId.
 func parseGlobalTokenStatsQuery(c *gin.Context) (services.GlobalTokenStatsQuery, bool) {
 	return parseTokenStatsQuery(c, services.TokenStatsWindowAll)
 }
@@ -33,6 +33,7 @@ func parseTokenStatsQuery(c *gin.Context, defaultWindow string) (services.Global
 		Timezone:    c.Query("timezone"),
 		Source:      c.DefaultQuery("source", services.GlobalTokenStatsSourceAll),
 		Status:      strings.TrimSpace(c.Query("status")),
+		Phase:       strings.TrimSpace(c.Query("phase")),
 		ProjectID:   strings.TrimSpace(c.Query("projectId")),
 		ModelKey:    strings.TrimSpace(c.Query("modelKey")),
 		WorkflowID:  strings.TrimSpace(c.Query("workflowId")),

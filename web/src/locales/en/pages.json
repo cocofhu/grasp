@@ -146,6 +146,7 @@
       "workflowAll": "Workflow: all",
       "nodeTypeAll": "Node type: all",
       "statusAll": "Status: all",
+      "phaseAll": "Phase: all",
       "statuses": {
         "ok": "Succeeded",
         "failed": "Failed",
@@ -200,6 +201,7 @@
           "nodeType": "Node type",
           "source": "Source",
           "status": "Status",
+          "phase": "Phase",
           "run": "Run",
           "bucket": "Time"
         },
