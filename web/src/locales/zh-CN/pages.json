@@ -13,7 +13,9 @@
       ],
       "selectProject": "选择项目",
       "noProject": "尚未选择项目。选择一个项目后可从首页启动 Grasp 工作流。",
-      "noWorkflows": "没有可在首页使用的工作流。请到项目详情为已发布、Grasp 打头的工作流打开「首页可见」。",
+      "noWorkflows": "没有可在首页使用的工作流。首页只显示已发布、开始后第一个节点是澄清 Agent 的工作流，请到项目详情为它打开「首页可见」。",
+      "unpublishedWorkflows": "「{name}」有未发布的修改，发布后才会出现在首页。",
+      "goPublish": "去编辑页发布",
       "goCanvas": "去画布把 Grasp 接到开始节点后",
       "goProjects": "前往项目查看工作流",
       "pickWorkflow": "请先选择一个工作流",
@@ -1320,6 +1322,7 @@
         "noEdit": "不可拖拽 · 无属性面板编辑"
       },
       "publishFailed": "发布失败:",
+      "hiddenFromHome": "有未发布的修改，首页已暂时隐藏这个工作流，发布后恢复。",
       "rollbackFailed": "回滚失败,请重试",
       "runDraftHint": " · 启动前会先保存当前草稿",
       "singleInputOnly": "工作流只能有一个输入节点",

@@ -251,6 +251,50 @@ test('run canvas shows running and failed node states', async ({ page }) => {
   await expect(page.getByTestId('canvas-node-fail')).toContainText('登录接口返回 500')
 })
 
+test('run canvas draws every edge when the graph arrives after mount', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/workflow-canvas.html?view=run&scenario=running&async=1')
+  await expect(page.locator('.vue-flow__node')).toHaveCount(5)
+  await expect(page.locator('path.cedge-path')).toHaveCount(5)
+  await page.waitForTimeout(400)
+  await page.screenshot({ path: `${SHOT}/run-async.png` })
+})
+
+test('editor: dragging blank space pans, Shift + drag box-selects', async ({ page }) => {
+  await openEditor(page, freshStore())
+  await startFromTemplate(page)
+  const transform = () => page.locator('.vue-flow__transformationpane').getAttribute('style')
+  const pane = await paneBox(page)
+  const before = await transform()
+  await page.mouse.move(pane.x + 40, pane.y + pane.height - 60)
+  await page.mouse.down()
+  await page.mouse.move(pane.x + 140, pane.y + pane.height - 120, { steps: 6 })
+  await page.mouse.up()
+  await expect.poll(transform).not.toBe(before)
+  await expect(page.locator('.vue-flow__node.selected')).toHaveCount(0)
+
+  const first = (await nodes(page).first().boundingBox())!
+  await page.keyboard.down('Shift')
+  await page.mouse.move(first.x - 30, first.y - 30)
+  await page.mouse.down()
+  await page.mouse.move(first.x + first.width + 20, first.y + first.height + 20, { steps: 6 })
+  await page.mouse.up()
+  await page.keyboard.up('Shift')
+  await expect(page.locator('.vue-flow__node.selected')).not.toHaveCount(0)
+})
+
+test('mouse wheel zooms the canvas', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/workflow-canvas.html?view=run&scenario=running')
+  await expect(page.locator('.vue-flow__node')).toHaveCount(5)
+  await page.waitForTimeout(400)
+  const zoom = page.getByTestId('canvas-zoom')
+  const before = await zoom.textContent()
+  await page.mouse.move(400, 300)
+  await page.mouse.wheel(0, -400)
+  await expect(zoom).not.toHaveText(before || '')
+})
+
 for (const theme of ['light', 'dark'] as const) {
   test(`screenshots (${theme}): empty, default, running, failed`, async ({ page }) => {
     await openEditor(page, freshStore(), theme)

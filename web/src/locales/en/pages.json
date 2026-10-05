@@ -13,7 +13,9 @@
       ],
       "selectProject": "Select a project",
       "noProject": "No project selected. Pick a project to start a Grasp workflow from Home.",
-      "noWorkflows": "No workflows are available on Home. In a project, turn on “Show on Home” for a published workflow whose first node after start is Grasp.",
+      "noWorkflows": "No workflows are available on Home. Home lists published workflows whose first node after start is a clarify Agent; turn on “Show on Home” for one in its project.",
+      "unpublishedWorkflows": "“{name}” has unpublished changes. Publish it to show it on Home.",
+      "goPublish": "Open the editor to publish",
       "goCanvas": "Open the canvas and connect Grasp after start",
       "goProjects": "Browse projects for workflows",
       "pickWorkflow": "Select a workflow first",
@@ -1320,6 +1322,7 @@
         "noEdit": "No drag · no inspector editing"
       },
       "publishFailed": "Publish failed:",
+      "hiddenFromHome": "This workflow has unpublished changes and is hidden from Home until you publish it.",
       "rollbackFailed": "Rollback failed; try again",
       "runDraftHint": " · saves draft before start",
       "singleInputOnly": "A workflow may have only one input node",

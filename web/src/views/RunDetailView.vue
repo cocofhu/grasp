@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import StatusPill from '@/components/ui/StatusPill.vue'
@@ -32,6 +32,8 @@ import AppModal from '@/components/ui/AppModal.vue'
 
 import { useRunDetail } from '@/lib/run/useRunDetail'
 import { formatRepoNames, runRepoNames } from '@/lib/run/runTitle'
+import { api } from '@/lib/api/api'
+import type { Agent } from '@/lib/api/apiTypes'
 
 
 const {
@@ -236,6 +238,19 @@ const canvasFailReasons = computed(() => {
 const canvasFollowNodeId = computed(() => {
   const s = statusMap.value
   return wf.value.nodes.find((n) => s[n.id] === 'running' || s[n.id] === 'waiting_human')?.id ?? null
+})
+// Same source as the editor: project Agents resolve outlets for nodes without a caps snapshot.
+const allAgents = ref<Agent[]>([])
+const canvasAgents = computed(() =>
+  allAgents.value.filter((a) => !!wf.value.projectId && a.projectId === wf.value.projectId),
+)
+onMounted(() => {
+  api
+    .listAgents()
+    .then((list) => {
+      allAgents.value = Array.isArray(list) ? list : []
+    })
+    .catch(() => {})
 })
 </script>
 
@@ -587,6 +602,7 @@ const canvasFollowNodeId = computed(() => {
           :nodes="wf.nodes"
           :edges="wf.edges"
           mode="run"
+          :agents="canvasAgents"
           auto-layout-on-init
           :status-map="statusMap"
           :iterations="canvasIterations"

@@ -74,4 +74,11 @@ func TestGraphsEqual_positionMatters(t *testing.T) {
 	if GraphsEqual(a, b) {
 		t.Fatal("position change should differ")
 	}
+	if !GraphsEqualIgnoringLayout(a, b) {
+		t.Fatal("position-only change should be equal ignoring layout")
+	}
+	b.Nodes[0].Label = "Renamed"
+	if GraphsEqualIgnoringLayout(a, b) {
+		t.Fatal("label change should still differ ignoring layout")
+	}
 }

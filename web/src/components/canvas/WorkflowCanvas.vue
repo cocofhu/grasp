@@ -276,7 +276,11 @@ function onNodeDragStop(e: { nodes: { id: string; position: Point }[] }) {
   props.editor?.moveNodes(e.nodes.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y })))
 }
 
+/** The mouseup that ends a connection drag also reaches the pane as a click; it must not close what that drag opened. */
+let connectEndedAt = 0
+
 function onPaneClick() {
+  if (performance.now() - connectEndedAt < 50) return
   closeOverlays()
   props.editor?.clearSelection()
   emit('pane-click')
@@ -297,6 +301,7 @@ function onConnect(c: Connection) {
 function onConnectEnd(ev?: MouseEvent | TouchEvent) {
   const from = connecting.value
   connecting.value = null
+  if (from) connectEndedAt = performance.now()
   if (!from || connected || !ev) return
   const pt = 'changedTouches' in ev ? ev.changedTouches[0] : (ev as MouseEvent)
   if (!pt) return
@@ -312,8 +317,9 @@ function onConnectEnd(ev?: MouseEvent | TouchEvent) {
 }
 
 function isValidConnection(c: Connection | Edge): boolean {
-  if (!props.editor) return false
+  // Vue Flow also runs this on every edge passed in through props; those are the model and always render.
   if ('id' in c && props.edges.some((e) => e.id === c.id)) return true
+  if (!props.editor) return false
   return props.editor.checkConnection({ source: c.source, sourceHandle: normHandle(c.sourceHandle), target: c.target }).ok
 }
 
@@ -460,9 +466,12 @@ function closeOverlays(): boolean {
 // ── Layout / viewport ──
 const reduced = prefersReducedMotion()
 
-async function fit(duration = reduced ? 0 : 240) {
+/** Lowest zoom the opening view may use; wider graphs overflow instead of shrinking past legibility. */
+const INITIAL_MIN_ZOOM = 0.7
+
+async function fit(duration = reduced ? 0 : 240, minZoom?: number) {
   await nextTick()
-  await fitView({ padding: 0.2, maxZoom: 1, duration })
+  await fitView({ padding: 0.2, maxZoom: 1, minZoom, duration })
 }
 
 async function layout(animate = true) {
@@ -518,7 +527,8 @@ async function onNodesInitialized() {
       await nextTick()
     }
   }
-  await fit(0)
+  await fit(0, INITIAL_MIN_ZOOM)
+  if (props.follow && props.followNodeId) centerOn(props.followNodeId, 0)
 }
 
 // ── Follow (run mode) ──
@@ -526,14 +536,14 @@ function onMoveStart() {
   if (props.follow) emit('update:follow', false)
 }
 
-function centerOn(id: string) {
+function centerOn(id: string, duration = reduced ? 0 : 400) {
   const n = findNode(id)
   if (!n) return
   const w = n.dimensions?.width || 220
   const h = n.dimensions?.height || 80
   void setCenter(n.computedPosition.x + w / 2, n.computedPosition.y + h / 2, {
     zoom: Math.max(viewport.value.zoom, 0.8),
-    duration: reduced ? 0 : 400,
+    duration,
   })
 }
 
@@ -685,13 +695,13 @@ defineExpose({ fit, layout, centerOn, openCommandPalette })
       :nodes-focusable="true"
       :edges-focusable="editing"
       :disable-keyboard-a11y="true"
-      :selection-key-code="editing ? true : null"
+      :selection-key-code="editing ? 'Shift' : null"
       :multi-selection-key-code="'Shift'"
       :delete-key-code="null"
-      :pan-on-drag="editing ? false : true"
+      :pan-on-drag="true"
       :pan-activation-key-code="'Space'"
-      :pan-on-scroll="true"
-      :zoom-activation-key-code="['Control', 'Meta']"
+      :zoom-on-scroll="true"
+      :zoom-on-pinch="true"
       :zoom-on-double-click="false"
       :snap-to-grid="true"
       :snap-grid="[8, 8]"
