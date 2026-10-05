@@ -41,68 +41,58 @@ function schemaLabel(schema: string, fallback: string) {
 </script>
 
 <template>
-  <div
-    class="team-card"
-    :class="{ 'is-off': !member.enabled }"
-    :data-testid="`onboarding-team-card-${member.templateId}`"
-  >
-    <label class="team-toggle" :class="{ 'is-locked': required }">
-      <input
-        type="checkbox"
-        class="team-native"
-        :checked="member.enabled"
-        :disabled="required"
-        :data-testid="`onboarding-team-toggle-${member.templateId}`"
-        @change="emit('toggle', ($event.target as HTMLInputElement).checked)"
-      />
-      <span class="team-box" aria-hidden="true"><Icon name="check" :size="12" /></span>
-    </label>
+  <div class="team-card" :class="{ 'is-off': !member.enabled }" :data-testid="`onboarding-team-card-${member.templateId}`">
+    <div class="flex items-center gap-2">
+      <span class="team-avatar">{{ t(`${keyBase}.title`).slice(0, 1) }}</span>
+      <strong class="min-w-0 truncate text-[14px] font-semibold text-txt">{{ t(`${keyBase}.title`) }}</strong>
+      <span class="team-badge" :class="{ 'is-required': required }">
+        {{ required ? t('pages.onboarding.team.required') : t('pages.onboarding.team.optional') }}
+      </span>
+      <label class="team-toggle ml-auto" :class="{ 'is-locked': required }">
+        <input
+          type="checkbox"
+          class="team-native"
+          :checked="member.enabled"
+          :disabled="required"
+          :data-testid="`onboarding-team-toggle-${member.templateId}`"
+          @change="emit('toggle', ($event.target as HTMLInputElement).checked)"
+        />
+        <span class="team-box" aria-hidden="true"><Icon name="check" :size="12" /></span>
+      </label>
+    </div>
+    <p class="mt-2 text-[12.5px] leading-[1.6] text-txt2">{{ desc }}</p>
 
-    <div class="min-w-0 flex-1">
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="team-avatar">{{ t(`${keyBase}.title`).slice(0, 1) }}</span>
-        <strong class="text-[14px] font-semibold text-txt">{{ t(`${keyBase}.title`) }}</strong>
-        <span class="team-badge" :class="{ 'is-required': required }">
-          {{ required ? t('pages.onboarding.team.required') : t('pages.onboarding.team.optional') }}
+    <div v-if="caps" class="mt-3 space-y-2 text-[11.5px]" :data-testid="`onboarding-team-caps-${member.templateId}`">
+      <div class="flex flex-wrap gap-1.5">
+        <span class="team-pill is-strong">
+          <Icon :name="caps.interaction === 'clarify' ? 'chat' : 'play'" :size="11" />
+          {{ caps.interaction === 'clarify' ? t('pages.onboarding.team.interactionClarify') : t('pages.onboarding.team.interactionAuto') }}
+        </span>
+        <span v-if="caps.review" class="team-pill is-strong"><Icon name="check" :size="11" />{{ t('pages.onboarding.team.review') }}</span>
+        <span class="team-pill" :class="{ 'is-ok': caps.preview }" :data-testid="`onboarding-team-preview-${member.templateId}`">
+          <Icon name="monitor" :size="11" />{{ caps.preview ? t('pages.onboarding.team.preview') : t('pages.onboarding.team.noPreview') }}
         </span>
       </div>
-      <p class="mt-1.5 text-[12.5px] leading-[1.65] text-txt2">{{ desc }}</p>
-
-      <div v-if="caps" class="mt-3 space-y-1.5 text-[11.5px]" :data-testid="`onboarding-team-caps-${member.templateId}`">
-        <div class="flex flex-wrap items-center gap-1.5">
-          <span class="team-pill is-strong">
-            <Icon :name="caps.interaction === 'clarify' ? 'chat' : 'play'" :size="11" />
-            {{
-              caps.interaction === 'clarify'
-                ? t('pages.onboarding.team.interactionClarify')
-                : t('pages.onboarding.team.interactionAuto')
-            }}
-          </span>
-          <span v-if="caps.review" class="team-pill is-strong"><Icon name="check" :size="11" />{{ t('pages.onboarding.team.review') }}</span>
-          <span class="team-pill" :class="{ 'is-ok': caps.preview }" :data-testid="`onboarding-team-preview-${member.templateId}`">
-            <Icon name="monitor" :size="11" />{{ caps.preview ? t('pages.onboarding.team.preview') : t('pages.onboarding.team.noPreview') }}
-          </span>
-        </div>
-        <div v-if="caps.tools.length" class="team-line">
-          <span class="team-line-label">{{ t('pages.onboarding.team.tools') }}</span>
-          <span>{{ caps.tools.map(toolLabel).join(' · ') }}</span>
-        </div>
-        <div v-if="caps.writes.length" class="team-line">
-          <span class="team-line-label">{{ t('pages.onboarding.team.writes') }}</span>
-          <span>
-            <template v-for="(w, i) in caps.writes" :key="w.name">
-              <span v-if="i" class="text-txt3"> · </span>
-              <span
-                :class="w.required ? 'text-txt' : 'text-txt3'"
-                :title="w.required ? t('pages.onboarding.team.writeRequired') : t('pages.onboarding.team.writeOptional')"
-              >{{ schemaLabel(w.name, w.label) }}<span v-if="!w.required">?</span></span>
-            </template>
-          </span>
-        </div>
+      <div v-if="caps.tools.length" class="team-line">
+        <span class="team-line-label">{{ t('pages.onboarding.team.tools') }}</span>
+        <span>{{ caps.tools.map(toolLabel).join(' · ') }}</span>
+      </div>
+      <div v-if="caps.writes.length" class="team-line">
+        <span class="team-line-label">{{ t('pages.onboarding.team.writes') }}</span>
+        <span>
+          <template v-for="(w, i) in caps.writes" :key="w.name">
+            <span v-if="i" class="text-txt3"> · </span>
+            <span
+              :class="w.required ? 'text-txt' : 'text-txt3'"
+              :title="w.required ? t('pages.onboarding.team.writeRequired') : t('pages.onboarding.team.writeOptional')"
+              >{{ schemaLabel(w.name, w.label) }}<span v-if="!w.required">?</span></span
+            >
+          </template>
+        </span>
       </div>
     </div>
 
-    <div v-if="member.enabled" class="grid w-[240px] shrink-0 content-start gap-2.5">
+    <div v-if="member.enabled" class="team-fields">
       <label class="block">
         <span class="team-label">{{ t('pages.onboarding.team.nameLabel') }}</span>
         <input
@@ -139,8 +129,9 @@ function schemaLabel(schema: string, fallback: string) {
 <style scoped>
 .team-card {
   display: flex;
-  gap: 14px;
-  padding: 16px 18px;
+  flex-direction: column;
+  min-width: 0;
+  padding: 14px 16px 16px;
   border-radius: 14px;
   border: 1px solid rgb(var(--c-line));
   background: rgb(var(--c-base));
@@ -157,8 +148,6 @@ function schemaLabel(schema: string, fallback: string) {
 .team-toggle {
   position: relative;
   flex-shrink: 0;
-  align-self: flex-start;
-  margin-top: 3px;
   cursor: pointer;
 }
 .team-native {
@@ -240,8 +229,14 @@ function schemaLabel(schema: string, fallback: string) {
 }
 .team-line-label {
   flex-shrink: 0;
-  width: 30px;
+  min-width: 28px;
   color: rgb(var(--c-txt3));
+}
+.team-fields {
+  display: grid;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 14px;
 }
 .team-label {
   display: block;

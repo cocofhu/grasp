@@ -127,39 +127,97 @@ async function mockOnboardingApi(page: Page): Promise<MockState> {
   return state
 }
 
-/** Select OpenCode vendor/model, fill API key and Git identity on the connect page. */
-async function fillConnect(page: Page, apiKey: string) {
+test.use({ viewport: { width: 1280, height: 720 } })
+
+async function next(page: Page) {
+  await page.getByTestId('onboarding-next').click()
+}
+
+async function expectStep(page: Page, id: string) {
+  await expect(page.getByTestId(`onboarding-rail-${id}`)).toHaveAttribute('data-active', '1')
+}
+
+/** Every page must fit the dialog without scrolling. */
+async function expectNoScroll(page: Page, testId = 'onboarding-body') {
+  const body = page.getByTestId(testId)
+  const overflow = await body.evaluate((el) => el.scrollHeight - el.clientHeight)
+  expect(overflow).toBeLessThanOrEqual(1)
+}
+
+async function fillKey(page: Page, apiKey: string) {
   await page.locator('[data-test="opencode-provider"] [data-test="app-select-trigger"]').click()
   await page.locator('[data-test="app-select-option-deepseek"]').click()
   await page.locator('[data-test="opencode-model"] [data-test="app-select-trigger"]').click()
   await page.locator('[data-test="app-select-option-deepseek/deepseek-v4-pro"]').click()
   await page.getByTestId('onboarding-api-key').fill(apiKey)
+}
+
+async function fillIdentity(page: Page) {
   await page.getByTestId('onboarding-git-user-name').fill('Ada Lovelace')
   await page.getByTestId('onboarding-git-user-email').fill('ada@example.com')
 }
 
-test('首次安装四步引导：连接 → 团队 → 工作流预览 → 完成（zh）', async ({ page }) => {
+/** From preferences through model, key and Git to the team step. */
+async function walkToTeam(page: Page, apiKey: string, opts: { skipGit?: boolean } = {}) {
+  await next(page)
+  await expectStep(page, 'model')
+  await next(page)
+  await expectStep(page, 'key')
+  await fillKey(page, apiKey)
+  await next(page)
+  await expectStep(page, 'git')
+  await fillIdentity(page)
+  if (opts.skipGit) await page.getByTestId('onboarding-git-skip').click()
+  await next(page)
+  await expectStep(page, 'team')
+}
+
+test('首次安装分步引导：偏好 → 模型 → 密钥 → Git → 团队 → 工作流 → 完成（zh）', async ({ page }) => {
   const state = await mockOnboardingApi(page)
 
   await page.goto('/onboarding-wizard.html', { waitUntil: 'networkidle' })
   await expect(page.getByTestId('onboarding-wizard-root')).toBeVisible()
   await expect(page.getByTestId('onboarding-empty-desc')).toContainText('默认工作流')
   await expect(page.getByTestId('onboarding-language-zh-CN')).toHaveAttribute('aria-checked', 'true')
-  for (const label of ['连接', '团队', '工作流预览', '完成']) {
+  for (const label of ['偏好', '模型后端', 'API Key', 'Git', '团队', '工作流预览', '完成']) {
     await expect(page.locator('.onb-step-title', { hasText: label }).first()).toBeVisible()
   }
-  await expect(page.getByTestId('onboarding-section-git')).toBeVisible()
-  await page.screenshot({ path: path.join(OUT, '01-connect.png'), fullPage: true })
+  await expectStep(page, 'prefs')
+  await expect(page.getByTestId('onboarding-prev')).toHaveCount(0)
+  await expectNoScroll(page)
+  await page.screenshot({ path: path.join(OUT, '01-prefs.png') })
 
-  await page.getByTestId('onboarding-next').click()
-  await expect(page.getByTestId('onboarding-rail-connect')).toHaveAttribute('data-active', '1')
+  await next(page)
+  await expectStep(page, 'model')
+  await expectNoScroll(page)
+  await page.screenshot({ path: path.join(OUT, '02-model.png') })
+  await page.getByTestId('onboarding-path-cli').click()
+  await expectNoScroll(page)
+  await page.screenshot({ path: path.join(OUT, '02-model-cli.png') })
+  await page.getByTestId('onboarding-path-apiKey').click()
 
-  await fillConnect(page, 'crsr_e2e_test_key')
+  await next(page)
+  await expectStep(page, 'key')
+  await next(page)
+  await expectStep(page, 'key')
+  await fillKey(page, 'crsr_e2e_test_key')
+  await expectNoScroll(page)
+  await page.screenshot({ path: path.join(OUT, '03-key.png') })
+
+  await next(page)
+  await expectStep(page, 'git')
+  await next(page)
+  await expectStep(page, 'git')
+  await fillIdentity(page)
   await page.getByTestId('onboarding-repo-url').fill('https://github.com/org/web.git')
   await expect(page.getByTestId('onboarding-repo-hint')).toContainText('/root/workspace/web/')
-  await page.getByTestId('onboarding-next').click()
+  await page.getByTestId('onboarding-git-type-github_https').click()
+  await expectNoScroll(page)
+  await page.screenshot({ path: path.join(OUT, '04-git.png') })
+  await page.getByTestId('onboarding-git-type-github_https').click()
+  await next(page)
 
-  await expect(page.getByTestId('onboarding-rail-team')).toHaveAttribute('data-active', '1')
+  await expectStep(page, 'team')
   const clarify = page.getByTestId('onboarding-team-card-clarify')
   await expect(clarify).toContainText('需求澄清')
   await expect(clarify).toContainText('多轮对话澄清')
@@ -170,8 +228,9 @@ test('首次安装四步引导：连接 → 团队 → 工作流预览 → 完�
   await expect(page.getByTestId('onboarding-team-toggle-clarify')).toBeDisabled()
   await expect(page.getByTestId('onboarding-team-name-implement')).toHaveValue('实现')
   await page.getByTestId('onboarding-team-model-implement').fill('deepseek/deepseek-v4-pro')
-  await page.screenshot({ path: path.join(OUT, '02-team.png'), fullPage: true })
-  await page.getByTestId('onboarding-next').click()
+  await expectNoScroll(page)
+  await page.screenshot({ path: path.join(OUT, '05-team.png') })
+  await next(page)
 
   await expect(page.getByTestId('onboarding-rail-workflow')).toHaveAttribute('data-active', '1')
   const preview = page.getByTestId('onboarding-workflow-preview')
@@ -181,16 +240,18 @@ test('首次安装四步引导：连接 → 团队 → 工作流预览 → 完�
   await expect(preview.getByText('未通过')).toBeVisible()
   await expect(page.getByTestId('onboarding-review-repo')).toContainText('web')
   await expect(page.getByTestId('onboarding-review-workflow')).toContainText('默认工作流')
-  await page.screenshot({ path: path.join(OUT, '03-workflow.png'), fullPage: true })
+  await expectNoScroll(page)
+  await page.screenshot({ path: path.join(OUT, '06-workflow.png') })
 
-  await page.getByTestId('onboarding-next').click()
+  await next(page)
   await expect(page.getByTestId('onboarding-success')).toBeVisible()
   await expect(page.getByTestId('onboarding-rail-done')).toHaveAttribute('data-active', '1')
   await expect(page.getByTestId('onboarding-success-agents')).toContainText('测试评审')
   await expect(page.getByText('默认工作流（已发布）')).toBeVisible()
   await expect(page.getByTestId('onboarding-run-once')).toContainText('运行一次')
   await expect(page.getByTestId('onboarding-edit-workflow')).toContainText('去编辑工作流')
-  await page.screenshot({ path: path.join(OUT, '04-done.png'), fullPage: true })
+  await expectNoScroll(page, 'onboarding-success')
+  await page.screenshot({ path: path.join(OUT, '07-done.png') })
 
   expect(state.bootstrapBody?.repoUrl).toBe('https://github.com/org/web.git')
   expect(state.bootstrapBody?.agents).toEqual([
@@ -207,16 +268,13 @@ test('首次安装四步引导：连接 → 团队 → 工作流预览 → 完�
 test('unchecking 测试评审 trims the preview and the bootstrap request', async ({ page }) => {
   const state = await mockOnboardingApi(page)
   await page.goto('/onboarding-wizard.html', { waitUntil: 'networkidle' })
-  await fillConnect(page, 'crsr_trim')
-  await page.getByTestId('onboarding-git-skip').click()
-  await expect(page.getByTestId('onboarding-git-skipped')).toBeVisible()
-  await page.getByTestId('onboarding-next').click()
+  await walkToTeam(page, 'crsr_trim', { skipGit: true })
 
   await page.getByTestId('onboarding-team-toggle-test_review').uncheck()
   await page.getByTestId('onboarding-next').click()
   await expect(page.getByTestId('onboarding-preview-node-test_review')).toHaveCount(0)
   await expect(page.getByTestId('onboarding-workflow-note')).toContainText('实现完成后直接结束')
-  await page.screenshot({ path: path.join(OUT, 'trim-workflow.png'), fullPage: true })
+  await page.screenshot({ path: path.join(OUT, 'trim-workflow.png') })
   await page.getByTestId('onboarding-next').click()
 
   await expect(page.getByTestId('onboarding-success')).toBeVisible()
@@ -228,11 +286,12 @@ test('onboarding wizard English copy', async ({ page }) => {
   const state = await mockOnboardingApi(page)
   await page.goto('/onboarding-wizard.html', { waitUntil: 'networkidle' })
   await page.getByTestId('onboarding-language-en').click()
-  await expect(page.locator('.onb-step-title', { hasText: 'Connect' })).toBeVisible()
+  await expect(page.locator('.onb-step-title', { hasText: 'Preferences' })).toBeVisible()
   await expect(page.getByTestId('onboarding-empty-desc')).toContainText('Default Workflow')
+  await expectNoScroll(page)
+  await page.screenshot({ path: path.join(OUT, 'en-prefs.png') })
 
-  await fillConnect(page, 'crsr_e2e_en')
-  await page.getByTestId('onboarding-next').click()
+  await walkToTeam(page, 'crsr_e2e_en')
   await expect(page.getByTestId('onboarding-team-card-test_review')).toContainText('Test & review')
   await expect(page.getByTestId('onboarding-team-preview-clarify')).toHaveText('Can start an app preview')
   await page.getByTestId('onboarding-next').click()
@@ -243,23 +302,23 @@ test('onboarding wizard English copy', async ({ page }) => {
   await expect(page.getByTestId('onboarding-run-once')).toContainText('Run once')
   expect(state.bootstrapBody?.featureHint).toBeUndefined()
   expect(state.bootstrapBody?.repos).toBeUndefined()
-  await page.screenshot({ path: path.join(OUT, 'en-done.png'), fullPage: true })
+  await page.screenshot({ path: path.join(OUT, 'en-done.png') })
 })
 
-test('新建项目 create 模式：连接页填项目名 → 名称带前缀 → create+bootstrap', async ({ page }) => {
+test('新建项目 create 模式：偏好页填项目名 → 名称带前缀 → create+bootstrap', async ({ page }) => {
   const state = await mockOnboardingApi(page)
   await page.goto('/onboarding-wizard.html?mode=createProject', { waitUntil: 'networkidle' })
   await expect(page.getByTestId('onboarding-project-name')).toBeVisible()
   await expect(page.getByTestId('onboarding-language-zh-CN')).toHaveCount(0)
 
-  await fillConnect(page, 'sk-create-e2e')
-  await page.getByTestId('onboarding-next').click()
-  await expect(page.getByTestId('onboarding-rail-connect')).toHaveAttribute('data-active', '1')
+  await next(page)
+  await expectStep(page, 'prefs')
 
   await page.getByTestId('onboarding-project-name').fill('中国象棋')
-  await page.getByTestId('onboarding-next').click()
+  await expectNoScroll(page)
+  await walkToTeam(page, 'sk-create-e2e')
   await expect(page.getByTestId('onboarding-team-name-clarify')).toHaveValue('中国象棋需求澄清')
-  await page.screenshot({ path: path.join(OUT, 'create-team.png'), fullPage: true })
+  await page.screenshot({ path: path.join(OUT, 'create-team.png') })
   await page.getByTestId('onboarding-next').click()
   await page.getByTestId('onboarding-next').click()
 

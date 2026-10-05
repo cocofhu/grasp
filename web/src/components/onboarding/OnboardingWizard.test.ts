@@ -137,15 +137,26 @@ async function fillOpenCodeAuth(wrapper: Wrapper, key = 'sk-oc-demo') {
   await wrapper.find('[data-testid="onboarding-api-key"]').setValue(key)
 }
 
-async function fillConnect(wrapper: Wrapper, key = 'sk-oc-demo') {
-  await fillOpenCodeAuth(wrapper, key)
+async function next(wrapper: Wrapper) {
+  await wrapper.find('[data-testid="onboarding-next"]').trigger('click')
+  await flushPromises()
+}
+
+async function fillIdentity(wrapper: Wrapper) {
   await wrapper.find('[data-testid="onboarding-git-user-name"]').setValue('Ada Lovelace')
   await wrapper.find('[data-testid="onboarding-git-user-email"]').setValue('ada@example.com')
 }
 
-async function next(wrapper: Wrapper) {
-  await wrapper.find('[data-testid="onboarding-next"]').trigger('click')
-  await flushPromises()
+/** Preferences → model → key → Git → team; `onGit` runs on the Git page before leaving it. */
+async function walkToTeam(wrapper: Wrapper, opts: { key?: string; onGit?: () => Promise<void> } = {}) {
+  await next(wrapper)
+  await next(wrapper)
+  await fillOpenCodeAuth(wrapper, opts.key)
+  await next(wrapper)
+  await fillIdentity(wrapper)
+  await opts.onGit?.()
+  await next(wrapper)
+  expect(activeStep(wrapper)).toBe('onboarding-rail-team')
 }
 
 function activeStep(wrapper: Wrapper) {
@@ -164,19 +175,35 @@ describe('OnboardingWizard', () => {
     vi.clearAllMocks()
   })
 
-  it('shows four steps and puts language, backend, key and Git on the connect page', async () => {
+  it('shows one topic per step: preferences, model, key, Git, team, workflow, done', async () => {
     const wrapper = await mountWizard()
     expect(wrapper.findAll('[data-testid^="onboarding-rail-"]').map((w) => w.attributes('data-testid'))).toEqual([
-      'onboarding-rail-connect',
+      'onboarding-rail-prefs',
+      'onboarding-rail-model',
+      'onboarding-rail-key',
+      'onboarding-rail-git',
       'onboarding-rail-team',
       'onboarding-rail-workflow',
       'onboarding-rail-done',
     ])
-    expect(activeStep(wrapper)).toBe('onboarding-rail-connect')
-    for (const id of ['language', 'backend', 'key', 'git']) {
-      expect(wrapper.find(`[data-testid="onboarding-section-${id}"]`).exists()).toBe(true)
-    }
+    const section = (id: string) => wrapper.find(`[data-testid="onboarding-section-${id}"]`).exists()
+    expect(activeStep(wrapper)).toBe('onboarding-rail-prefs')
+    expect(section('language')).toBe(true)
+    expect(wrapper.find('[data-testid="onboarding-vnc-preview"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="onboarding-project-name"]').exists()).toBe(false)
+    expect(section('backend')).toBe(false)
+
+    for (const [step, id] of [
+      ['model', 'backend'],
+      ['key', 'key'],
+      ['git', 'git'],
+    ]) {
+      if (step === 'git') await fillOpenCodeAuth(wrapper)
+      await next(wrapper)
+      expect(activeStep(wrapper)).toBe(`onboarding-rail-${step}`)
+      expect(section(id!)).toBe(true)
+      expect(section('language')).toBe(false)
+    }
   })
 
   it('persists language and theme switches', async () => {
@@ -194,6 +221,7 @@ describe('OnboardingWizard', () => {
 
   it('backend section offers two start paths and swaps the detail block', async () => {
     const wrapper = await mountWizard()
+    await next(wrapper)
     expect(wrapper.find('[data-testid="onboarding-path-apikey-detail"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="onboarding-backend-cursor"]').exists()).toBe(false)
 
@@ -208,19 +236,23 @@ describe('OnboardingWizard', () => {
     expect(wrapper.find('[data-testid="onboarding-path-apikey-detail"]').exists()).toBe(true)
   })
 
-  it('connect requires the key, the OpenCode model and the Git identity', async () => {
+  it('the key step requires the key and the OpenCode model; the Git step requires the identity', async () => {
     const wrapper = await mountWizard()
     await next(wrapper)
-    expect(activeStep(wrapper)).toBe('onboarding-rail-connect')
+    await next(wrapper)
+    await next(wrapper)
+    expect(activeStep(wrapper)).toBe('onboarding-rail-key')
 
     await wrapper.find('[data-testid="onboarding-api-key"]').setValue('sk-oc-demo')
     await next(wrapper)
     expect(wrapper.find('[data-test="opencode-model-required"]').exists()).toBe(true)
-    expect(activeStep(wrapper)).toBe('onboarding-rail-connect')
+    expect(activeStep(wrapper)).toBe('onboarding-rail-key')
 
     await fillOpenCodeAuth(wrapper)
     await next(wrapper)
-    expect(activeStep(wrapper)).toBe('onboarding-rail-connect')
+    expect(activeStep(wrapper)).toBe('onboarding-rail-git')
+    await next(wrapper)
+    expect(activeStep(wrapper)).toBe('onboarding-rail-git')
 
     await wrapper.find('[data-testid="onboarding-git-user-name"]').setValue('Ada')
     await wrapper.find('[data-testid="onboarding-git-user-email"]').setValue('ada@example.com')
@@ -232,8 +264,7 @@ describe('OnboardingWizard', () => {
     const { api } = await import('@/lib/api/api')
     const wrapper = await mountWizard()
     expect(api.listAgentTeamTemplates).toHaveBeenCalled()
-    await fillConnect(wrapper)
-    await next(wrapper)
+    await walkToTeam(wrapper)
 
     for (const id of ['clarify', 'implement', 'test_review']) {
       expect(wrapper.find(`[data-testid="onboarding-team-card-${id}"]`).exists()).toBe(true)
@@ -264,8 +295,7 @@ describe('OnboardingWizard', () => {
 
   it('renames, picks a model, and unchecking test_review trims the preview and the request', async () => {
     const wrapper = await mountWizard()
-    await fillConnect(wrapper)
-    await next(wrapper)
+    await walkToTeam(wrapper)
 
     await wrapper.find('[data-testid="onboarding-team-name-implement"]').setValue('编码')
     await wrapper.find('[data-testid="onboarding-team-model-implement"]').setValue('gpt-5')
@@ -288,8 +318,7 @@ describe('OnboardingWizard', () => {
 
   it('workflow preview shows the full default workflow with the fail loop', async () => {
     const wrapper = await mountWizard()
-    await fillConnect(wrapper)
-    await next(wrapper)
+    await walkToTeam(wrapper)
     await next(wrapper)
     for (const id of ['input', 'clarify', 'implement', 'test_review', 'output']) {
       expect(wrapper.find(`[data-testid="onboarding-preview-node-${id}"]`).exists()).toBe(true)
@@ -306,8 +335,7 @@ describe('OnboardingWizard', () => {
   it('duplicate or blank team names block the team step', async () => {
     const { api } = await import('@/lib/api/api')
     const wrapper = await mountWizard()
-    await fillConnect(wrapper)
-    await next(wrapper)
+    await walkToTeam(wrapper)
     await wrapper.find('[data-testid="onboarding-team-name-test_review"]').setValue('')
     expect(wrapper.find('[data-testid="onboarding-team-name-error-test_review"]').exists()).toBe(false)
     await next(wrapper)
@@ -329,8 +357,7 @@ describe('OnboardingWizard', () => {
     const { api } = await import('@/lib/api/api')
     vi.mocked(api.listAgentTeamTemplates).mockRejectedValueOnce(new Error('down'))
     const wrapper = await mountWizard()
-    await fillConnect(wrapper)
-    await next(wrapper)
+    await walkToTeam(wrapper)
     expect(wrapper.find('[data-testid="onboarding-team-load-error"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="onboarding-team-caps-clarify"]').exists()).toBe(false)
     await next(wrapper)
@@ -339,13 +366,15 @@ describe('OnboardingWizard', () => {
 
   it('bootstraps with OpenCode, repo, identity and preview flags', async () => {
     const wrapper = await mountWizard()
-    await fillConnect(wrapper)
-    const hint = () => wrapper.find('[data-testid="onboarding-repo-hint"]').text()
-    expect(hint()).toBe('pages.onboarding.repo.hint')
-    await wrapper.find('[data-testid="onboarding-repo-url"]').setValue('https://github.com/org/web.git')
-    await wrapper.find('[data-testid="onboarding-repo-branch"]').setValue('develop')
-    expect(hint()).toBe('pages.onboarding.repo.cloneTo')
-    await next(wrapper)
+    await walkToTeam(wrapper, {
+      onGit: async () => {
+        const hint = () => wrapper.find('[data-testid="onboarding-repo-hint"]').text()
+        expect(hint()).toBe('pages.onboarding.repo.hint')
+        await wrapper.find('[data-testid="onboarding-repo-url"]').setValue('https://github.com/org/web.git')
+        await wrapper.find('[data-testid="onboarding-repo-branch"]').setValue('develop')
+        expect(hint()).toBe('pages.onboarding.repo.cloneTo')
+      },
+    })
     await next(wrapper)
     await next(wrapper)
 
@@ -369,14 +398,16 @@ describe('OnboardingWizard', () => {
 
   it('skipping Git drops the repo and credentials', async () => {
     const wrapper = await mountWizard()
-    await fillConnect(wrapper)
-    await wrapper.find('[data-testid="onboarding-repo-url"]').setValue('https://github.com/org/web.git')
-    await wrapper.find('[data-testid="onboarding-git-type-github_https"]').trigger('click')
-    await wrapper.find('[data-testid="onboarding-github-token"]').setValue('ghp_x')
-    await wrapper.find('[data-testid="onboarding-git-skip"]').trigger('click')
-    expect(wrapper.find('[data-testid="onboarding-git-skipped"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="onboarding-repo-url"]').exists()).toBe(false)
-    await next(wrapper)
+    await walkToTeam(wrapper, {
+      onGit: async () => {
+        await wrapper.find('[data-testid="onboarding-repo-url"]').setValue('https://github.com/org/web.git')
+        await wrapper.find('[data-testid="onboarding-git-type-github_https"]').trigger('click')
+        await wrapper.find('[data-testid="onboarding-github-token"]').setValue('ghp_x')
+        await wrapper.find('[data-testid="onboarding-git-skip"]').trigger('click')
+        expect(wrapper.find('[data-testid="onboarding-git-skipped"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="onboarding-repo-url"]').exists()).toBe(false)
+      },
+    })
     await next(wrapper)
     expect(wrapper.find('[data-testid="onboarding-review-repo"]').text()).toContain('pages.onboarding.workflow.repoSkip')
     await next(wrapper)
@@ -391,8 +422,7 @@ describe('OnboardingWizard', () => {
   it('done page: run once opens the run launcher for the new workflow', async () => {
     const { api } = await import('@/lib/api/api')
     const wrapper = await mountWizard()
-    await fillConnect(wrapper)
-    await next(wrapper)
+    await walkToTeam(wrapper)
     await next(wrapper)
     await next(wrapper)
     expect(wrapper.emitted('completed')?.[0]?.[0]).toEqual(expect.objectContaining({ workflowId: 'wf-1' }))
@@ -411,8 +441,7 @@ describe('OnboardingWizard', () => {
 
   it('done page: edit workflow opens the editor', async () => {
     const wrapper = await mountWizard()
-    await fillConnect(wrapper)
-    await next(wrapper)
+    await walkToTeam(wrapper)
     await next(wrapper)
     await next(wrapper)
     await wrapper.find('[data-testid="onboarding-edit-workflow"]').trigger('click')
@@ -436,7 +465,7 @@ describe('OnboardingWizard', () => {
     expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [], [])).toBe(false)
   })
 
-  it('create mode: project name on connect, prefixed names, and bootstrap retry never re-creates (s3/f6)', async () => {
+  it('create mode: project name on preferences, prefixed names, and bootstrap retry never re-creates (s3/f6)', async () => {
     const { api } = await import('@/lib/api/api')
     vi.mocked(api.createProject).mockResolvedValue({ id: 'proj-created-1', name: '支付中台' } as never)
     vi.mocked(api.bootstrapProjectOnboarding)
@@ -451,12 +480,11 @@ describe('OnboardingWizard', () => {
     const wrapper = await mountWizard({ mode: 'createProject', projectId: '' })
     expect(wrapper.find('[data-testid="onboarding-title"]').text()).toBe('pages.onboarding.titleCreate')
     expect(wrapper.find('[data-testid="onboarding-section-language"]').exists()).toBe(false)
-    await fillConnect(wrapper, 'sk-create')
     await next(wrapper)
-    expect(activeStep(wrapper)).toBe('onboarding-rail-connect')
+    expect(activeStep(wrapper)).toBe('onboarding-rail-prefs')
 
     await wrapper.find('[data-testid="onboarding-project-name"]').setValue('支付中台')
-    await next(wrapper)
+    await walkToTeam(wrapper, { key: 'sk-create' })
     expect(
       (wrapper.find('[data-testid="onboarding-team-name-clarify"]').element as HTMLInputElement).value,
     ).toBe('支付中台需求澄清')
@@ -498,8 +526,7 @@ describe('OnboardingWizard', () => {
     const wrapper = await mountWizard({ mode: 'retry', projectId: 'p-retry' })
     expect(api.getProject).toHaveBeenCalledWith('p-retry')
     expect(wrapper.find('[data-testid="onboarding-title"]').text()).toBe('pages.onboarding.titleRetry')
-    await fillConnect(wrapper)
-    await next(wrapper)
+    await walkToTeam(wrapper)
     expect(
       (wrapper.find('[data-testid="onboarding-team-name-implement"]').element as HTMLInputElement).value,
     ).toBe('老项目实现')

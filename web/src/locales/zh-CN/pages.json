@@ -390,7 +390,10 @@
       "emptyDescCreate": "将配置模型后端、API Key 与 Git，创建本项目的三个 Agent（名称带项目名前缀），并发布「默认工作流」。不会自动开跑。",
       "workflowName": "默认工作流",
       "steps": {
-        "connect": "连接",
+        "prefs": "偏好",
+        "model": "模型后端",
+        "key": "API Key",
+        "git": "Git",
         "team": "团队",
         "workflow": "工作流预览",
         "done": "完成"
@@ -429,7 +432,8 @@
       "apiKey": {
         "meta": "按所选后端填写 API Key。此项必填，未填写将无法生成配置。",
         "required": "请先填写 API Key。",
-        "hint": "仅保存在项目共享配置中，不会写入日志或产物。"
+        "hint": "仅保存在项目共享配置中，不会写入日志或产物。",
+        "envLabel": "需要的环境变量"
       },
       "git": {
         "meta": "沙箱里 git commit 需要提交身份；仓库和访问凭据可以现在填，也可以跳过。",
@@ -438,13 +442,6 @@
         "unskip": "现在配置",
         "skippedHint": "已跳过：仓库在启动运行时再填，私有仓的凭据稍后在项目「凭据」里补。",
         "foot": "凭据写入项目凭据，不进入 Agent 导出包。"
-      },
-      "connect": {
-        "meta": "一页填完连接所需的配置。密钥写入本项目共享 Agent 配置，供全部 Agent 共用；仓库与凭据可以跳过。",
-        "sectionLanguage": "界面",
-        "sectionBackend": "模型后端",
-        "sectionKey": "API Key",
-        "sectionGit": "Git"
       },
       "gitUser": {
         "section": "Git 提交身份",
@@ -477,7 +474,7 @@
         "chip": "仓库"
       },
       "team": {
-        "meta": "默认创建三个 Agent，组成「需求澄清 → 实现 → 测试评审」工作流。可以改名、指定模型；测试评审可以不要。",
+        "meta": "三个 Agent 组成「需求澄清 → 实现 → 测试评审」工作流，可改名并指定模型。",
         "loading": "正在读取模板能力…",
         "loadError": "模板能力读取失败，仍可按默认配置创建。",
         "retry": "重试",
@@ -580,11 +577,16 @@
       "railFoot": "所有配置之后都能在项目设置里修改。",
       "stepOf": "第 {n} 步，共 {total} 步",
       "railDesc": {
-        "connect": "语言、模型后端、API Key 与 Git",
+        "prefs": "语言、主题与预览能力",
+        "model": "API Key 或编码 CLI 账号",
+        "key": "填写模型与密钥",
+        "git": "提交身份、仓库与凭据",
         "team": "确认要创建的 Agent",
         "workflow": "预览将要发布的默认工作流",
         "done": "生成配置，开始第一次运行"
-      }
+      },
+      "prefsMeta": "界面语言与主题，以及 Agent 在沙箱里可用的预览能力。",
+      "prefsMetaCreate": "项目名称，以及 Agent 在沙箱里可用的预览能力。"
     },
     "tokenByModel": {
       "tipTitle": "用量提示",

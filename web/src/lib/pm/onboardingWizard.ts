@@ -60,16 +60,19 @@ export const ONBOARDING_AGENT_NAMES: readonly string[] = ONBOARDING_TEMPLATES.ma
 
 export type OnboardingMode = 'firstInstall' | 'createProject' | 'retry'
 
-export type OnboardingStepId = 'connect' | 'team' | 'workflow' | 'done'
+export type OnboardingStepId = 'prefs' | 'model' | 'key' | 'git' | 'team' | 'workflow' | 'done'
 
 export type OnboardingStep = {
   id: OnboardingStepId
   labelKey: string
 }
 
-/** Same four steps in every mode; `done` is the success page after generating. */
+/** Same steps in every mode, one topic per page; `done` is the success page after generating. */
 export const ONBOARDING_STEPS: OnboardingStep[] = [
-  { id: 'connect', labelKey: 'pages.onboarding.steps.connect' },
+  { id: 'prefs', labelKey: 'pages.onboarding.steps.prefs' },
+  { id: 'model', labelKey: 'pages.onboarding.steps.model' },
+  { id: 'key', labelKey: 'pages.onboarding.steps.key' },
+  { id: 'git', labelKey: 'pages.onboarding.steps.git' },
   { id: 'team', labelKey: 'pages.onboarding.steps.team' },
   { id: 'workflow', labelKey: 'pages.onboarding.steps.workflow' },
   { id: 'done', labelKey: 'pages.onboarding.steps.done' },

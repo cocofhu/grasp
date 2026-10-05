@@ -390,7 +390,10 @@
       "emptyDescCreate": "Configure the model backend, API key and Git, create this project's three Agents (prefixed with the project name), and publish the Default Workflow. Does not start a run.",
       "workflowName": "Default Workflow",
       "steps": {
-        "connect": "Connect",
+        "prefs": "Preferences",
+        "model": "Model backend",
+        "key": "API key",
+        "git": "Git",
         "team": "Team",
         "workflow": "Workflow preview",
         "done": "Done"
@@ -429,7 +432,8 @@
       "apiKey": {
         "meta": "API Key is required for the selected backend.",
         "required": "Please enter an API Key.",
-        "hint": "Stored only in project shared config — not in logs or artifacts."
+        "hint": "Stored only in project shared config — not in logs or artifacts.",
+        "envLabel": "Environment variable"
       },
       "git": {
         "meta": "git commit in the sandbox needs a commit identity; the repository and access credentials can be filled in now or skipped.",
@@ -438,13 +442,6 @@
         "unskip": "Configure now",
         "skippedHint": "Skipped: fill the repository when starting a run, and add private-repo credentials later under Project credentials.",
         "foot": "Credentials are stored in Project credentials, not in Agent export packs."
-      },
-      "connect": {
-        "meta": "Everything needed to connect, on one page. Keys go to this project's shared Agent config and are used by all Agents; the repository and credentials can be skipped.",
-        "sectionLanguage": "Interface",
-        "sectionBackend": "Model backend",
-        "sectionKey": "API key",
-        "sectionGit": "Git"
       },
       "gitUser": {
         "section": "Git commit identity",
@@ -477,7 +474,7 @@
         "chip": "Repo"
       },
       "team": {
-        "meta": "Three Agents are created by default and form the Clarify → Implement → Test & review workflow. Rename them or pick a model; Test & review is optional.",
+        "meta": "Three Agents form the Clarify → Implement → Test & review workflow; rename them or pick a model.",
         "loading": "Loading template capabilities…",
         "loadError": "Could not load template capabilities. You can still create the default team.",
         "retry": "Retry",
@@ -580,11 +577,16 @@
       "railFoot": "Everything here can be changed later in project settings.",
       "stepOf": "Step {n} of {total}",
       "railDesc": {
-        "connect": "Language, model backend, API key and Git",
-        "team": "Confirm the Agents to create",
-        "workflow": "Preview the default workflow to publish",
-        "done": "Generate the setup and run it once"
-      }
+        "prefs": "Language, theme, previews",
+        "model": "API key or CLI account",
+        "key": "Model and key",
+        "git": "Identity and repository",
+        "team": "Agents to create",
+        "workflow": "Default workflow to publish",
+        "done": "Generate and run once"
+      },
+      "prefsMeta": "Interface language and theme, plus the preview abilities Agents get in the sandbox.",
+      "prefsMetaCreate": "Project name, plus the preview abilities Agents get in the sandbox."
     },
     "tokenByModel": {
       "tipTitle": "Usage tip",

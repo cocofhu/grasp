@@ -49,12 +49,15 @@ import {
   type OnboardingDraft,
   type OnboardingMode,
   type OnboardingStartPath,
+  type OnboardingStepId,
   type OnboardingTeamMember,
   type OnboardingTemplateId,
 } from '@/lib/pm/onboardingWizard'
 import { START_PATH_OPTIONS } from '@/lib/shared/startPath'
 
-export type OnboardingCompletedResult = OnboardingBootstrapResult & { projectId?: string }
+export type OnboardingCompletedResult = OnboardingBootstrapResult & {
+  projectId?: string
+}
 
 const props = withDefaults(
   defineProps<{
@@ -139,7 +142,9 @@ const reviewIncluded = computed(() => workflowPreview.value.nodes.some((n) => n.
 const enabledTeam = computed(() => draft.value.team.filter((m) => m.enabled))
 const modelPlaceholder = computed(() =>
   draft.value.acpBackend === 'opencode' && draft.value.openCodeModel.trim()
-    ? t('pages.onboarding.team.modelInherit', { model: draft.value.openCodeModel.trim() })
+    ? t('pages.onboarding.team.modelInherit', {
+        model: draft.value.openCodeModel.trim(),
+      })
     : t('pages.onboarding.team.modelPlaceholder'),
 )
 const successAgentNames = computed(() => {
@@ -147,11 +152,7 @@ const successAgentNames = computed(() => {
   return enabledTeam.value.map((m) => m.name).filter(Boolean)
 })
 
-watch(
-  defaultAgentNames,
-  (names) => applyDefaultTeamNames(draft.value.team, names),
-  { immediate: true },
-)
+watch(defaultAgentNames, (names) => applyDefaultTeamNames(draft.value.team, names), { immediate: true })
 
 watch(
   () => props.open,
@@ -292,8 +293,11 @@ function validateProjectName(): boolean {
   return true
 }
 
-function validateConnect(): boolean {
-  if (isCreate.value && !createdProjectId.value && !validateProjectName()) return false
+function validatePrefs(): boolean {
+  return !isCreate.value || !!createdProjectId.value || validateProjectName()
+}
+
+function validateKey(): boolean {
   if (!draft.value.apiKey.trim()) {
     keyError.value = true
     toast.error(t('pages.onboarding.toastNeedKey'))
@@ -304,18 +308,17 @@ function validateConnect(): boolean {
     toast.error(t('pages.agentStudio.openCode.modelRequired'))
     return false
   }
-  if (
-    draft.value.acpBackend === 'opencode' &&
-    openCodeCustomBaseRequired(draft.value.openCodeProvider, draft.value.openCodeBaseURL)
-  ) {
+  if (draft.value.acpBackend === 'opencode' && openCodeCustomBaseRequired(draft.value.openCodeProvider, draft.value.openCodeBaseURL)) {
     toast.error(t('pages.agentStudio.openCode.baseRequired'))
     return false
   }
-  if (!gitIdentityConfigured(draft.value)) {
-    toast.error(t('pages.onboarding.toastNeedGitUser'))
-    return false
-  }
   return true
+}
+
+function validateGit(): boolean {
+  if (gitIdentityConfigured(draft.value)) return true
+  toast.error(t('pages.onboarding.toastNeedGitUser'))
+  return false
 }
 
 function validateTeam(): boolean {
@@ -340,7 +343,9 @@ function goPrev() {
 function goNext() {
   if (creating.value) return
   const id = currentStep.value.id
-  if (id === 'connect' && !validateConnect()) return
+  if (id === 'prefs' && !validatePrefs()) return
+  if (id === 'key' && !validateKey()) return
+  if (id === 'git' && !validateGit()) return
   if (id === 'team' && !validateTeam()) return
   if (id === 'workflow') {
     void submitBootstrap()
@@ -363,7 +368,18 @@ async function runBootstrap(projectId: string, body: ReturnType<typeof assembleB
 }
 
 async function submitBootstrap() {
-  if (!validateConnect() || !validateTeam()) return
+  const checks: [OnboardingStepId, () => boolean][] = [
+    ['prefs', validatePrefs],
+    ['key', validateKey],
+    ['git', validateGit],
+    ['team', validateTeam],
+  ]
+  const failed = checks.find(([, ok]) => !ok())
+  if (failed) {
+    draft.value.step = steps.findIndex((s) => s.id === failed[0])
+    stepAnimKey.value++
+    return
+  }
   creating.value = true
   createError.value = ''
   try {
@@ -448,15 +464,22 @@ function editWorkflow() {
             <div class="onb-brand grid h-10 w-10 place-items-center rounded-xl">
               <Icon name="sparkles" :size="20" />
             </div>
-            <h2 id="onb-title" class="mt-4 text-[17px] font-semibold leading-6 text-txt" data-testid="onboarding-title">{{ wizardTitle }}</h2>
-            <p class="mt-1 text-[12px] leading-5 text-txt3">{{ t('pages.onboarding.railSub') }}</p>
+            <h2 id="onb-title" class="mt-4 text-[17px] font-semibold leading-6 text-txt" data-testid="onboarding-title">
+              {{ wizardTitle }}
+            </h2>
+            <p class="mt-1 text-[12px] leading-5 text-txt3">
+              {{ t('pages.onboarding.railSub') }}
+            </p>
           </div>
           <ol class="mt-7 flex-1 px-4" :aria-label="t('pages.onboarding.railCap')">
             <li
               v-for="(s, i) in steps"
               :key="s.id"
               class="onb-step"
-              :class="{ 'is-done': i < activeIndex, 'is-active': i === activeIndex }"
+              :class="{
+                'is-done': i < activeIndex,
+                'is-active': i === activeIndex,
+              }"
               :data-testid="`onboarding-rail-${s.id}`"
               :data-active="i === activeIndex ? '1' : undefined"
               :aria-current="i === activeIndex ? 'step' : undefined"
@@ -467,11 +490,15 @@ function editWorkflow() {
               </div>
               <div class="min-w-0 pb-5">
                 <div class="onb-step-title">{{ t(s.labelKey) }}</div>
-                <div class="onb-step-desc">{{ t(`pages.onboarding.railDesc.${s.id}`) }}</div>
+                <div class="onb-step-desc">
+                  {{ t(`pages.onboarding.railDesc.${s.id}`) }}
+                </div>
               </div>
             </li>
           </ol>
-          <p class="px-6 pb-5 text-[11px] leading-5 text-txt3">{{ t('pages.onboarding.railFoot') }}</p>
+          <p class="px-6 pb-5 text-[11px] leading-5 text-txt3">
+            {{ t('pages.onboarding.railFoot') }}
+          </p>
         </aside>
 
         <div class="relative flex min-w-0 flex-1 flex-col bg-surface">
@@ -491,27 +518,43 @@ function editWorkflow() {
               <div class="onb-success-mark grid h-12 w-12 place-items-center rounded-full">
                 <Icon name="check" :size="24" />
               </div>
-              <h3 class="mt-5 text-[22px] font-semibold text-txt">{{ t('pages.onboarding.success.title') }}</h3>
-              <p class="mt-1.5 max-w-[60ch] text-[13px] leading-6 text-txt2">{{ t('pages.onboarding.success.desc') }}</p>
+              <h3 class="mt-5 text-[22px] font-semibold text-txt">
+                {{ t('pages.onboarding.success.title') }}
+              </h3>
+              <p class="mt-1.5 max-w-[60ch] text-[13px] leading-6 text-txt2">
+                {{ t('pages.onboarding.success.desc') }}
+              </p>
 
               <div class="mt-6 grid gap-4 lg:grid-cols-[1fr_1.25fr]">
                 <section class="onb-card">
-                  <div class="onb-card-title">{{ t('pages.onboarding.success.created') }}</div>
+                  <div class="onb-card-title">
+                    {{ t('pages.onboarding.success.created') }}
+                  </div>
                   <ul class="mt-3 space-y-2" data-testid="onboarding-success-agents">
                     <li v-for="n in successAgentNames" :key="n" class="flex items-center gap-2.5 text-[13px] text-txt">
-                      <span class="onb-avatar">{{ n.slice(0, 1) }}</span>{{ n }}
+                      <span class="onb-avatar">{{ n.slice(0, 1) }}</span
+                      >{{ n }}
                     </li>
                     <li class="flex items-center gap-2.5 text-[13px] text-txt">
-                      <span class="onb-avatar is-flow"><Icon name="workflow" :size="13" /></span>{{ t('pages.onboarding.success.publishedLine') }}
+                      <span class="onb-avatar is-flow"><Icon name="workflow" :size="13" /></span
+                      >{{ t('pages.onboarding.success.publishedLine') }}
                     </li>
                   </ul>
                 </section>
                 <section class="onb-card">
-                  <div class="onb-card-title">{{ t('pages.onboarding.success.written') }}</div>
+                  <div class="onb-card-title">
+                    {{ t('pages.onboarding.success.written') }}
+                  </div>
                   <ul class="mt-3 space-y-2.5 text-[12.5px] leading-5">
                     <li class="onb-status" :class="repoOk ? 'is-ok' : 'is-warn'" data-testid="onboarding-success-repo">
                       <Icon :name="repoOk ? 'check' : 'alert'" :size="14" />
-                      <span>{{ repoOk ? t('pages.onboarding.success.repoOk', { dir: repoDirName }) : t('pages.onboarding.success.limit') }}</span>
+                      <span>{{
+                        repoOk
+                          ? t('pages.onboarding.success.repoOk', {
+                              dir: repoDirName,
+                            })
+                          : t('pages.onboarding.success.limit')
+                      }}</span>
                     </li>
                     <li class="onb-status" :class="gitOk ? 'is-ok' : 'is-warn'" data-testid="onboarding-success-git">
                       <Icon :name="gitOk ? 'check' : 'alert'" :size="14" />
@@ -519,7 +562,12 @@ function editWorkflow() {
                     </li>
                     <li class="onb-status is-ok" data-testid="onboarding-success-git-user">
                       <Icon name="check" :size="14" />
-                      <span>{{ t('pages.onboarding.success.gitUserOk', { name: draft.gitUserName, email: draft.gitUserEmail }) }}</span>
+                      <span>{{
+                        t('pages.onboarding.success.gitUserOk', {
+                          name: draft.gitUserName,
+                          email: draft.gitUserEmail,
+                        })
+                      }}</span>
                     </li>
                     <li class="onb-status is-ok" data-testid="onboarding-success-preview">
                       <Icon name="check" :size="14" />
@@ -564,18 +612,26 @@ function editWorkflow() {
           </template>
 
           <template v-else>
-            <div class="min-h-0 flex-1 overflow-y-auto px-10 pb-8 pt-9">
+            <div class="min-h-0 flex-1 overflow-y-auto px-10 pb-8 pt-8" data-testid="onboarding-body">
               <div :key="stepAnimKey">
                 <div class="text-[11.5px] font-medium text-accent-2">
-                  {{ t('pages.onboarding.stepOf', { n: activeIndex + 1, total: wizardStepCount }) }}
+                  {{
+                    t('pages.onboarding.stepOf', {
+                      n: activeIndex + 1,
+                      total: wizardStepCount,
+                    })
+                  }}
                 </div>
-                <h3 class="mt-1.5 text-[22px] font-semibold leading-8 text-txt">{{ t(currentStep.labelKey) }}</h3>
+                <h3 class="mt-1.5 text-[22px] font-semibold leading-8 text-txt">
+                  {{ t(currentStep.labelKey) }}
+                </h3>
 
-                <template v-if="currentStep.id === 'connect'">
-                  <p class="onb-lede">{{ t('pages.onboarding.connect.meta') }}</p>
-
-                  <div class="mt-6 space-y-4">
-                    <section v-if="isCreate" class="onb-card" data-testid="onboarding-section-project">
+                <template v-if="currentStep.id === 'prefs'">
+                  <p class="onb-lede">
+                    {{ t(isCreate ? 'pages.onboarding.prefsMetaCreate' : 'pages.onboarding.prefsMeta') }}
+                  </p>
+                  <div class="mt-7 space-y-7">
+                    <section v-if="isCreate" data-testid="onboarding-section-project">
                       <label class="block">
                         <span class="onb-label">{{ t('pages.onboarding.projectName.label') }} <span class="text-err">*</span></span>
                         <input
@@ -589,22 +645,20 @@ function editWorkflow() {
                           data-testid="onboarding-project-name"
                           @input="projectNameError = ''"
                         />
-                        <p class="onb-hint">{{ t('pages.onboarding.projectName.meta') }}</p>
-                        <p v-if="projectNameError" class="onb-error">{{ projectNameError }}</p>
+                        <p class="onb-hint">
+                          {{ t('pages.onboarding.projectName.meta') }}
+                        </p>
+                        <p v-if="projectNameError" class="onb-error">
+                          {{ projectNameError }}
+                        </p>
                       </label>
                     </section>
-
-                    <section v-else class="onb-card" data-testid="onboarding-section-language">
-                      <div class="onb-card-head">
-                        <span class="onb-card-icon"><Icon name="globe" :size="15" /></span>
-                        <div class="min-w-0">
-                          <div class="onb-card-title">{{ t('pages.onboarding.connect.sectionLanguage') }}</div>
-                          <p class="onb-card-desc">{{ t('pages.onboarding.language.detected') }}</p>
-                        </div>
-                      </div>
+                    <section v-else data-testid="onboarding-section-language">
                       <div class="mt-4 grid gap-4 sm:grid-cols-2">
                         <div>
-                          <div class="onb-label">{{ t('pages.onboarding.language.languageLabel') }}</div>
+                          <div class="onb-label">
+                            {{ t('pages.onboarding.language.languageLabel') }}
+                          </div>
                           <div class="onb-seg" role="radiogroup" :aria-label="t('pages.onboarding.language.languageLabel')">
                             <button
                               v-for="option in languageOptions"
@@ -622,7 +676,9 @@ function editWorkflow() {
                           </div>
                         </div>
                         <div>
-                          <div class="onb-label">{{ t('pages.onboarding.language.themeLabel') }}</div>
+                          <div class="onb-label">
+                            {{ t('pages.onboarding.language.themeLabel') }}
+                          </div>
                           <div class="onb-seg" role="radiogroup" :aria-label="t('pages.onboarding.language.themeLabel')">
                             <button
                               v-for="option in themeOptions"
@@ -640,99 +696,146 @@ function editWorkflow() {
                           </div>
                         </div>
                       </div>
+                      <p class="onb-hint">
+                        {{ t('pages.onboarding.language.detected') }}
+                      </p>
                     </section>
-
-                    <section class="onb-card" data-testid="onboarding-section-backend">
-                      <div class="onb-card-head">
-                        <span class="onb-card-icon"><Icon name="robot" :size="15" /></span>
-                        <div class="min-w-0">
-                          <div class="onb-card-title">{{ t('pages.onboarding.connect.sectionBackend') }}</div>
-                          <p class="onb-card-desc">{{ t('pages.onboarding.acp.meta') }}</p>
-                        </div>
+                    <section>
+                      <div class="onb-sub">
+                        {{ t('pages.onboarding.preview.section') }}
                       </div>
-                      <div class="mt-4 grid gap-3 sm:grid-cols-2" role="radiogroup" :aria-label="t('pages.onboarding.connect.sectionBackend')">
+                      <div class="onb-rows mt-2">
                         <button
-                          v-for="option in startPathOptions"
-                          :key="option.id"
+                          type="button"
+                          role="switch"
+                          class="onb-row"
+                          :aria-checked="draft.vncPreview"
+                          data-testid="onboarding-vnc-preview"
+                          @click="toggleVncPreview"
+                        >
+                          <span class="min-w-0 flex-1 text-left">
+                            <strong class="block text-[13px] font-medium text-txt">{{ t('pages.onboarding.preview.vncLabel') }}</strong>
+                            <span class="mt-0.5 block text-[12px] text-txt3">{{ t('pages.onboarding.preview.vncHint') }}</span>
+                          </span>
+                          <span class="onb-switch" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          role="switch"
+                          class="onb-row"
+                          :aria-checked="draft.browserMcp"
+                          data-testid="onboarding-browser-mcp"
+                          @click="toggleBrowserMcp"
+                        >
+                          <span class="min-w-0 flex-1 text-left">
+                            <strong class="block text-[13px] font-medium text-txt">{{ t('pages.onboarding.preview.browserLabel') }}</strong>
+                            <span class="mt-0.5 block text-[12px] text-txt3">{{ t('pages.onboarding.preview.browserHint') }}</span>
+                          </span>
+                          <span class="onb-switch" aria-hidden="true" />
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                </template>
+
+                <template v-else-if="currentStep.id === 'model'">
+                  <p class="onb-lede">{{ t('pages.onboarding.acp.meta') }}</p>
+                  <section class="mt-7" data-testid="onboarding-section-backend">
+                    <div class="grid gap-3 sm:grid-cols-2" role="radiogroup" :aria-label="t('pages.onboarding.steps.model')">
+                      <button
+                        v-for="option in startPathOptions"
+                        :key="option.id"
+                        type="button"
+                        role="radio"
+                        class="onb-tile"
+                        :aria-checked="draft.startPath === option.id"
+                        :data-testid="`onboarding-path-${option.id}`"
+                        @click="selectStartPath(option.id)"
+                      >
+                        <span class="onb-tile-icon"><Icon :name="option.id === 'apiKey' ? 'lock' : 'terminal'" :size="16" /></span>
+                        <span class="min-w-0 flex-1">
+                          <strong class="block text-[13.5px] text-txt">{{ t(option.titleKey) }}</strong>
+                          <span class="mt-1 block text-[12px] leading-5 text-txt3">{{ t(option.descKey) }}</span>
+                        </span>
+                        <span class="onb-check"><Icon name="check" :size="11" /></span>
+                      </button>
+                    </div>
+
+                    <div v-if="draft.startPath === 'apiKey'" class="mt-4" data-testid="onboarding-path-apikey-detail">
+                      <div class="onb-label">
+                        {{ t('pages.onboarding.acp.apiKeyVendorsLabel') }}
+                      </div>
+                      <div class="flex flex-wrap gap-1.5">
+                        <span v-for="p in OPENCODE_FALLBACK_PROVIDERS" :key="p.id" class="onb-chip">{{ t(p.labelKey) }}</span>
+                      </div>
+                      <p class="onb-hint">
+                        {{ t('pages.onboarding.acp.apiKeyVendorsHint') }}
+                        <code class="ml-1 font-mono text-txt2">/root/.config/opencode</code>
+                      </p>
+                    </div>
+                    <div v-else class="mt-4">
+                      <div class="onb-label">
+                        {{ t('pages.onboarding.acp.cliLabel') }}
+                      </div>
+                      <div
+                        class="grid grid-cols-2 gap-2.5 sm:grid-cols-4"
+                        role="radiogroup"
+                        :aria-label="t('pages.onboarding.acp.cliLabel')"
+                      >
+                        <button
+                          v-for="b in ONBOARDING_CLI_BACKENDS"
+                          :key="b.id"
                           type="button"
                           role="radio"
-                          class="onb-tile"
-                          :aria-checked="draft.startPath === option.id"
-                          :data-testid="`onboarding-path-${option.id}`"
-                          @click="selectStartPath(option.id)"
+                          class="onb-tile is-compact"
+                          :aria-checked="draft.acpBackend === b.id"
+                          :data-testid="`onboarding-backend-${b.id}`"
+                          @click="selectBackend(b.id)"
                         >
-                          <span class="onb-tile-icon"><Icon :name="option.id === 'apiKey' ? 'lock' : 'terminal'" :size="16" /></span>
                           <span class="min-w-0 flex-1">
-                            <strong class="block text-[13.5px] text-txt">{{ t(option.titleKey) }}</strong>
-                            <span class="mt-1 block text-[12px] leading-5 text-txt3">{{ t(option.descKey) }}</span>
+                            <strong class="block truncate text-[13px] text-txt">{{ b.label }}</strong>
+                            <span class="mt-0.5 block truncate font-mono text-[10.5px] text-txt3">{{ b.configRoot }}</span>
                           </span>
                           <span class="onb-check"><Icon name="check" :size="11" /></span>
                         </button>
                       </div>
+                    </div>
+                    <div v-if="regionPolicy" class="mt-4">
+                      <div class="onb-label">
+                        {{ t('pages.onboarding.acp.region') }}
+                      </div>
+                      <div class="onb-seg" role="radiogroup" :aria-label="t('pages.onboarding.acp.region')">
+                        <button
+                          v-for="option in regionPolicy.options"
+                          :key="option.id"
+                          type="button"
+                          role="radio"
+                          class="onb-seg-item"
+                          :aria-checked="draft.region === option.id"
+                          @click="selectRegion(option.id)"
+                        >
+                          {{ t(option.labelKey) }}
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+                </template>
 
-                      <div v-if="draft.startPath === 'apiKey'" class="mt-4" data-testid="onboarding-path-apikey-detail">
-                        <div class="onb-label">{{ t('pages.onboarding.acp.apiKeyVendorsLabel') }}</div>
-                        <div class="flex flex-wrap gap-1.5">
-                          <span v-for="p in OPENCODE_FALLBACK_PROVIDERS" :key="p.id" class="onb-chip">{{ t(p.labelKey) }}</span>
-                        </div>
-                        <p class="onb-hint">
-                          {{ t('pages.onboarding.acp.apiKeyVendorsHint') }}
-                          <code class="ml-1 font-mono text-txt2">/root/.config/opencode</code>
-                        </p>
+                <template v-else-if="currentStep.id === 'key'">
+                  <p class="onb-lede">
+                    {{ t('pages.onboarding.apiKey.meta') }}
+                  </p>
+                  <section class="onb-split mt-6" data-testid="onboarding-section-key">
+                    <aside class="onb-guide">
+                      <div class="onb-label">
+                        {{ t('pages.onboarding.apiKey.envLabel') }}
                       </div>
-                      <div v-else class="mt-4">
-                        <div class="onb-label">{{ t('pages.onboarding.acp.cliLabel') }}</div>
-                        <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-4" role="radiogroup" :aria-label="t('pages.onboarding.acp.cliLabel')">
-                          <button
-                            v-for="b in ONBOARDING_CLI_BACKENDS"
-                            :key="b.id"
-                            type="button"
-                            role="radio"
-                            class="onb-tile is-compact"
-                            :aria-checked="draft.acpBackend === b.id"
-                            :data-testid="`onboarding-backend-${b.id}`"
-                            @click="selectBackend(b.id)"
-                          >
-                            <span class="min-w-0 flex-1">
-                              <strong class="block truncate text-[13px] text-txt">{{ b.label }}</strong>
-                              <span class="mt-0.5 block truncate font-mono text-[10.5px] text-txt3">{{ b.configRoot }}</span>
-                            </span>
-                            <span class="onb-check"><Icon name="check" :size="11" /></span>
-                          </button>
-                        </div>
-                      </div>
-                      <div v-if="regionPolicy" class="mt-4">
-                        <div class="onb-label">{{ t('pages.onboarding.acp.region') }}</div>
-                        <div class="onb-seg" role="radiogroup" :aria-label="t('pages.onboarding.acp.region')">
-                          <button
-                            v-for="option in regionPolicy.options"
-                            :key="option.id"
-                            type="button"
-                            role="radio"
-                            class="onb-seg-item"
-                            :aria-checked="draft.region === option.id"
-                            @click="selectRegion(option.id)"
-                          >
-                            {{ t(option.labelKey) }}
-                          </button>
-                        </div>
-                      </div>
-                    </section>
-
-                    <section class="onb-card" data-testid="onboarding-section-key">
-                      <div class="onb-card-head">
-                        <span class="onb-card-icon"><Icon name="lock" :size="15" /></span>
-                        <div class="min-w-0 flex-1">
-                          <div class="onb-card-title">{{ t('pages.onboarding.connect.sectionKey') }}</div>
-                          <p class="onb-card-desc">{{ t('pages.onboarding.apiKey.meta') }}</p>
-                        </div>
-                        <code class="onb-keyname">
-                          {{ primaryAuthKey }}<span v-if="primaryAuthAlt" class="text-txt3"> / {{ primaryAuthAlt }}</span>
-                        </code>
-                      </div>
+                      <code class="onb-keyname">{{ primaryAuthKey }}</code>
+                      <code v-if="primaryAuthAlt" class="onb-keyname is-alt">{{ primaryAuthAlt }}</code>
                       <ol v-if="authGuide.pathStepKeys.length" class="onb-steps-list mt-4">
                         <li v-for="(k, i) in authGuide.pathStepKeys" :key="i">
-                          <span class="onb-steps-num">{{ i + 1 }}</span><span>{{ t(k) }}</span>
+                          <span class="onb-steps-num">{{ i + 1 }}</span
+                          ><span>{{ t(k) }}</span>
                         </li>
                       </ol>
                       <div v-if="authGuide.links.length" class="mt-3 flex flex-wrap gap-2">
@@ -743,11 +846,13 @@ function editWorkflow() {
                           target="_blank"
                           rel="noopener noreferrer"
                           class="onb-link"
-                        >{{ t(link.labelKey) }}<Icon name="arrow-up" :size="11" class="rotate-45" /></a>
+                          >{{ t(link.labelKey) }}<Icon name="arrow-up" :size="11" class="rotate-45"
+                        /></a>
                       </div>
+                    </aside>
+                    <div class="min-w-0">
                       <OpenCodeProviderFields
                         v-if="draft.acpBackend === 'opencode'"
-                        class="mt-4"
                         :provider="(draft.openCodeProvider || 'openai') as OpenCodeProviderId"
                         :base-url="draft.openCodeBaseURL"
                         :model="draft.openCodeModel"
@@ -771,151 +876,164 @@ function editWorkflow() {
                           data-testid="onboarding-api-key"
                           @input="keyError = false"
                         />
-                        <p class="onb-hint">{{ t('pages.onboarding.apiKey.hint') }}</p>
-                        <p v-if="keyError" class="onb-error">{{ t('pages.onboarding.apiKey.required') }}</p>
+                        <p class="onb-hint">
+                          {{ t('pages.onboarding.apiKey.hint') }}
+                        </p>
+                        <p v-if="keyError" class="onb-error">
+                          {{ t('pages.onboarding.apiKey.required') }}
+                        </p>
                       </label>
-                    </section>
+                    </div>
+                  </section>
+                </template>
 
-                    <section class="onb-card" data-testid="onboarding-section-git">
-                      <div class="onb-card-head">
-                        <span class="onb-card-icon"><Icon name="git" :size="15" /></span>
-                        <div class="min-w-0">
-                          <div class="onb-card-title">{{ t('pages.onboarding.connect.sectionGit') }}</div>
-                          <p class="onb-card-desc">{{ t('pages.onboarding.git.meta') }}</p>
-                        </div>
+                <template v-else-if="currentStep.id === 'git'">
+                  <p class="onb-lede">{{ t('pages.onboarding.git.meta') }}</p>
+                  <section class="mt-6" data-testid="onboarding-section-git">
+                    <div class="onb-sub">
+                      {{ t('pages.onboarding.gitUser.section') }}
+                    </div>
+                    <div class="mt-2 grid gap-3 sm:grid-cols-2">
+                      <label class="block">
+                        <span class="onb-label">{{ t('pages.onboarding.gitUser.nameLabel') }} <span class="text-err">*</span></span>
+                        <input
+                          v-model="draft.gitUserName"
+                          type="text"
+                          autocomplete="off"
+                          :placeholder="t('pages.onboarding.gitUser.namePlaceholder')"
+                          class="onb-input"
+                          data-testid="onboarding-git-user-name"
+                        />
+                      </label>
+                      <label class="block">
+                        <span class="onb-label">{{ t('pages.onboarding.gitUser.emailLabel') }} <span class="text-err">*</span></span>
+                        <input
+                          v-model="draft.gitUserEmail"
+                          type="email"
+                          autocomplete="off"
+                          :placeholder="t('pages.onboarding.gitUser.emailPlaceholder')"
+                          class="onb-input"
+                          data-testid="onboarding-git-user-email"
+                        />
+                      </label>
+                    </div>
+                    <p class="onb-hint">
+                      {{ t('pages.onboarding.gitUser.hint') }}
+                    </p>
+                    <div class="mt-5 flex items-center gap-3">
+                      <div class="onb-sub flex-1">
+                        {{ t('pages.onboarding.git.repoCredSection') }}
                       </div>
-
-                      <div class="onb-sub mt-4">{{ t('pages.onboarding.gitUser.section') }}</div>
-                      <div class="mt-2 grid gap-3 sm:grid-cols-2">
+                      <AppButton size="sm" variant="ghost" data-testid="onboarding-git-skip" @click="toggleGitSkipped">
+                        {{ draft.gitSkipped ? t('pages.onboarding.git.unskip') : t('pages.onboarding.git.skip') }}
+                      </AppButton>
+                    </div>
+                    <p v-if="draft.gitSkipped" class="onb-note mt-2" data-testid="onboarding-git-skipped">
+                      {{ t('pages.onboarding.git.skippedHint') }}
+                    </p>
+                    <template v-else>
+                      <div class="mt-2 grid gap-3 sm:grid-cols-[2fr_1fr]">
                         <label class="block">
-                          <span class="onb-label">{{ t('pages.onboarding.gitUser.nameLabel') }} <span class="text-err">*</span></span>
+                          <span class="onb-label">{{ t('pages.onboarding.repo.urlLabel') }}</span>
                           <input
-                            v-model="draft.gitUserName"
+                            v-model="draft.repoUrl"
                             type="text"
                             autocomplete="off"
-                            :placeholder="t('pages.onboarding.gitUser.namePlaceholder')"
-                            class="onb-input"
-                            data-testid="onboarding-git-user-name"
+                            placeholder="https://github.com/org/repo.git"
+                            class="onb-input font-mono"
+                            data-testid="onboarding-repo-url"
                           />
                         </label>
                         <label class="block">
-                          <span class="onb-label">{{ t('pages.onboarding.gitUser.emailLabel') }} <span class="text-err">*</span></span>
+                          <span class="onb-label">{{ t('pages.onboarding.repo.branchLabel') }}</span>
                           <input
-                            v-model="draft.gitUserEmail"
-                            type="email"
+                            v-model="draft.repoBranch"
+                            type="text"
                             autocomplete="off"
-                            :placeholder="t('pages.onboarding.gitUser.emailPlaceholder')"
-                            class="onb-input"
-                            data-testid="onboarding-git-user-email"
+                            :placeholder="t('pages.onboarding.repo.branchPlaceholder')"
+                            class="onb-input font-mono"
+                            data-testid="onboarding-repo-branch"
                           />
                         </label>
                       </div>
-                      <p class="onb-hint">{{ t('pages.onboarding.gitUser.hint') }}</p>
-
-                      <div class="onb-sub mt-5">{{ t('pages.onboarding.preview.section') }}</div>
-                      <div class="onb-rows mt-2">
-                        <button type="button" role="switch" class="onb-row" :aria-checked="draft.vncPreview" data-testid="onboarding-vnc-preview" @click="toggleVncPreview">
-                          <span class="min-w-0 flex-1 text-left">
-                            <strong class="block text-[13px] font-medium text-txt">{{ t('pages.onboarding.preview.vncLabel') }}</strong>
-                            <span class="mt-0.5 block text-[12px] text-txt3">{{ t('pages.onboarding.preview.vncHint') }}</span>
-                          </span>
-                          <span class="onb-switch" aria-hidden="true" />
-                        </button>
-                        <button type="button" role="switch" class="onb-row" :aria-checked="draft.browserMcp" data-testid="onboarding-browser-mcp" @click="toggleBrowserMcp">
-                          <span class="min-w-0 flex-1 text-left">
-                            <strong class="block text-[13px] font-medium text-txt">{{ t('pages.onboarding.preview.browserLabel') }}</strong>
-                            <span class="mt-0.5 block text-[12px] text-txt3">{{ t('pages.onboarding.preview.browserHint') }}</span>
-                          </span>
-                          <span class="onb-switch" aria-hidden="true" />
-                        </button>
-                      </div>
-
-                      <div class="mt-5 flex items-center gap-3">
-                        <div class="onb-sub flex-1">{{ t('pages.onboarding.git.repoCredSection') }}</div>
-                        <AppButton size="sm" variant="ghost" data-testid="onboarding-git-skip" @click="toggleGitSkipped">
-                          {{ draft.gitSkipped ? t('pages.onboarding.git.unskip') : t('pages.onboarding.git.skip') }}
-                        </AppButton>
-                      </div>
-                      <p v-if="draft.gitSkipped" class="onb-note mt-2" data-testid="onboarding-git-skipped">
-                        {{ t('pages.onboarding.git.skippedHint') }}
+                      <p class="onb-hint" data-testid="onboarding-repo-hint">
+                        {{
+                          repoDirName
+                            ? t('pages.onboarding.repo.cloneTo', {
+                                dir: repoDirName,
+                              })
+                            : t('pages.onboarding.repo.hint')
+                        }}
                       </p>
-                      <template v-else>
-                        <div class="mt-2 grid gap-3 sm:grid-cols-[2fr_1fr]">
-                          <label class="block">
-                            <span class="onb-label">{{ t('pages.onboarding.repo.urlLabel') }}</span>
-                            <input
-                              v-model="draft.repoUrl"
-                              type="text"
-                              autocomplete="off"
-                              placeholder="https://github.com/org/repo.git"
-                              class="onb-input font-mono"
-                              data-testid="onboarding-repo-url"
-                            />
-                          </label>
-                          <label class="block">
-                            <span class="onb-label">{{ t('pages.onboarding.repo.branchLabel') }}</span>
-                            <input
-                              v-model="draft.repoBranch"
-                              type="text"
-                              autocomplete="off"
-                              :placeholder="t('pages.onboarding.repo.branchPlaceholder')"
-                              class="onb-input font-mono"
-                              data-testid="onboarding-repo-branch"
-                            />
-                          </label>
-                        </div>
-                        <p class="onb-hint" data-testid="onboarding-repo-hint">
-                          {{ repoDirName ? t('pages.onboarding.repo.cloneTo', { dir: repoDirName }) : t('pages.onboarding.repo.hint') }}
-                        </p>
-                        <div class="onb-label mt-4">{{ t('pages.onboarding.repo.credSection') }}</div>
-                        <div class="onb-seg" role="radiogroup" :aria-label="t('pages.onboarding.repo.credSection')">
-                          <button
-                            v-for="g in ONBOARDING_GIT_TYPES"
-                            :key="g.id"
-                            type="button"
-                            role="radio"
-                            class="onb-seg-item"
-                            :aria-checked="draft.gitCredentialType === g.id"
-                            :data-testid="`onboarding-git-type-${g.id}`"
-                            @click="selectGitType(g.id)"
-                          >
-                            {{ t(g.labelKey) }}
-                          </button>
-                        </div>
-                        <label v-if="draft.gitCredentialType === 'github_https'" class="mt-3 block">
-                          <span class="onb-label">GITHUB_TOKEN</span>
-                          <input v-model="draft.githubToken" type="password" autocomplete="off" class="onb-input font-mono" data-testid="onboarding-github-token" />
+                      <div class="onb-label mt-4">
+                        {{ t('pages.onboarding.repo.credSection') }}
+                      </div>
+                      <div class="onb-seg" role="radiogroup" :aria-label="t('pages.onboarding.repo.credSection')">
+                        <button
+                          v-for="g in ONBOARDING_GIT_TYPES"
+                          :key="g.id"
+                          type="button"
+                          role="radio"
+                          class="onb-seg-item"
+                          :aria-checked="draft.gitCredentialType === g.id"
+                          :data-testid="`onboarding-git-type-${g.id}`"
+                          @click="selectGitType(g.id)"
+                        >
+                          {{ t(g.labelKey) }}
+                        </button>
+                      </div>
+                      <label v-if="draft.gitCredentialType === 'github_https'" class="mt-3 block">
+                        <span class="onb-label">GITHUB_TOKEN</span>
+                        <input
+                          v-model="draft.githubToken"
+                          type="password"
+                          autocomplete="off"
+                          class="onb-input font-mono"
+                          data-testid="onboarding-github-token"
+                        />
+                      </label>
+                      <div v-else-if="draft.gitCredentialType === 'gitlab_https'" class="mt-3 grid gap-3 sm:grid-cols-2">
+                        <label class="block">
+                          <span class="onb-label">GITLAB_TOKEN</span>
+                          <input
+                            v-model="draft.gitlabToken"
+                            type="password"
+                            autocomplete="off"
+                            class="onb-input font-mono"
+                            data-testid="onboarding-gitlab-token"
+                          />
                         </label>
-                        <div v-else-if="draft.gitCredentialType === 'gitlab_https'" class="mt-3 grid gap-3 sm:grid-cols-2">
-                          <label class="block">
-                            <span class="onb-label">GITLAB_TOKEN</span>
-                            <input v-model="draft.gitlabToken" type="password" autocomplete="off" class="onb-input font-mono" data-testid="onboarding-gitlab-token" />
-                          </label>
-                          <label class="block">
-                            <span class="onb-label">GITLAB_URL</span>
-                            <input
-                              v-model="draft.gitlabUrl"
-                              type="text"
-                              placeholder="https://gitlab.example.com"
-                              class="onb-input font-mono"
-                              data-testid="onboarding-gitlab-url"
-                            />
-                          </label>
-                        </div>
-                        <div v-else-if="draft.gitCredentialType === 'ssh'" class="mt-3 grid gap-3">
-                          <label class="block">
-                            <span class="onb-label">SSH private key</span>
-                            <textarea v-model="draft.gitSshPrivateKey" rows="4" class="onb-input is-area font-mono" data-testid="onboarding-ssh-key" />
-                          </label>
-                          <label class="block">
-                            <span class="onb-label">known_hosts</span>
-                            <textarea v-model="draft.gitSshKnownHosts" rows="2" class="onb-input is-area font-mono" />
-                          </label>
-                        </div>
-                        <p class="onb-hint">{{ t('pages.onboarding.git.foot') }}</p>
-                      </template>
-                    </section>
-                  </div>
+                        <label class="block">
+                          <span class="onb-label">GITLAB_URL</span>
+                          <input
+                            v-model="draft.gitlabUrl"
+                            type="text"
+                            placeholder="https://gitlab.example.com"
+                            class="onb-input font-mono"
+                            data-testid="onboarding-gitlab-url"
+                          />
+                        </label>
+                      </div>
+                      <div v-else-if="draft.gitCredentialType === 'ssh'" class="mt-3 grid gap-3">
+                        <label class="block">
+                          <span class="onb-label">SSH private key</span>
+                          <textarea
+                            v-model="draft.gitSshPrivateKey"
+                            rows="4"
+                            class="onb-input is-area font-mono"
+                            data-testid="onboarding-ssh-key"
+                          />
+                        </label>
+                        <label class="block">
+                          <span class="onb-label">known_hosts</span>
+                          <textarea v-model="draft.gitSshKnownHosts" rows="2" class="onb-input is-area font-mono" />
+                        </label>
+                      </div>
+                      <p class="onb-hint">
+                        {{ t('pages.onboarding.git.foot') }}
+                      </p>
+                    </template>
+                  </section>
                 </template>
 
                 <template v-else-if="currentStep.id === 'team'">
@@ -923,14 +1041,18 @@ function editWorkflow() {
                   <p v-if="templatesState === 'loading'" class="onb-note mt-4" data-testid="onboarding-team-loading">
                     {{ t('pages.onboarding.team.loading') }}
                   </p>
-                  <div v-else-if="templatesState === 'error'" class="onb-note is-warn mt-4 flex items-center gap-3" data-testid="onboarding-team-load-error">
+                  <div
+                    v-else-if="templatesState === 'error'"
+                    class="onb-note is-warn mt-4 flex items-center gap-3"
+                    data-testid="onboarding-team-load-error"
+                  >
                     <Icon name="alert" :size="14" />
                     <span class="flex-1">{{ t('pages.onboarding.team.loadError') }}</span>
                     <AppButton size="sm" variant="outline" data-testid="onboarding-team-retry" @click="loadTemplates">
                       {{ t('pages.onboarding.team.retry') }}
                     </AppButton>
                   </div>
-                  <div class="mt-6 space-y-3">
+                  <div class="mt-6 grid grid-cols-3 items-stretch gap-3">
                     <OnboardingTeamCard
                       v-for="m in draft.team"
                       :key="m.templateId"
@@ -945,11 +1067,15 @@ function editWorkflow() {
                       @update:model="m.model = $event"
                     />
                   </div>
-                  <p class="onb-hint mt-3">{{ t('pages.onboarding.team.foot') }}</p>
+                  <p class="onb-hint mt-3">
+                    {{ t('pages.onboarding.team.foot') }}
+                  </p>
                 </template>
 
                 <template v-else-if="currentStep.id === 'workflow'">
-                  <p class="onb-lede">{{ t('pages.onboarding.workflow.meta') }}</p>
+                  <p class="onb-lede">
+                    {{ t('pages.onboarding.workflow.meta') }}
+                  </p>
                   <section class="onb-card onb-canvas mt-6">
                     <OnboardingWorkflowPreview :preview="workflowPreview" />
                     <p class="mt-3 flex items-center gap-1.5 text-[12px] text-txt3" data-testid="onboarding-workflow-note">
@@ -958,11 +1084,16 @@ function editWorkflow() {
                   </section>
 
                   <section class="onb-card mt-4">
-                    <div class="onb-card-title">{{ t('pages.onboarding.workflow.summary') }}</div>
+                    <div class="onb-card-title">
+                      {{ t('pages.onboarding.workflow.summary') }}
+                    </div>
                     <dl class="onb-summary mt-3">
                       <div>
-                        <dt>{{ t('pages.onboarding.connect.sectionBackend') }}</dt>
-                        <dd><span class="onb-dot is-ok" />{{ backendLabel }}<template v-if="regionPolicy && draft.region"> · {{ draft.region }}</template></dd>
+                        <dt>{{ t('pages.onboarding.steps.model') }}</dt>
+                        <dd>
+                          <span class="onb-dot is-ok" />{{ backendLabel
+                          }}<template v-if="regionPolicy && draft.region"> · {{ draft.region }}</template>
+                        </dd>
                       </div>
                       <div>
                         <dt>API Key</dt>
@@ -970,7 +1101,11 @@ function editWorkflow() {
                       </div>
                       <div data-testid="onboarding-review-repo">
                         <dt>{{ t('pages.onboarding.repo.chip') }}</dt>
-                        <dd><span class="onb-dot" :class="{ 'is-ok': repoOk }" />{{ repoOk ? repoDirName : t('pages.onboarding.workflow.repoSkip') }}</dd>
+                        <dd>
+                          <span class="onb-dot" :class="{ 'is-ok': repoOk }" />{{
+                            repoOk ? repoDirName : t('pages.onboarding.workflow.repoSkip')
+                          }}
+                        </dd>
                       </div>
                       <div data-testid="onboarding-review-git-user">
                         <dt>{{ t('pages.onboarding.gitUser.chip') }}</dt>
@@ -978,20 +1113,34 @@ function editWorkflow() {
                       </div>
                       <div>
                         <dt>{{ t('pages.onboarding.workflow.gitCred') }}</dt>
-                        <dd><span class="onb-dot" :class="{ 'is-ok': gitOk }" />{{ gitOk ? draft.gitCredentialType : t('pages.onboarding.workflow.gitSkip') }}</dd>
+                        <dd>
+                          <span class="onb-dot" :class="{ 'is-ok': gitOk }" />{{
+                            gitOk ? draft.gitCredentialType : t('pages.onboarding.workflow.gitSkip')
+                          }}
+                        </dd>
                       </div>
                       <div data-testid="onboarding-review-agents">
                         <dt>Agent</dt>
-                        <dd><span class="onb-dot is-ok" />{{ t('pages.onboarding.workflow.agentsValue', { n: enabledTeam.length }) }}</dd>
+                        <dd>
+                          <span class="onb-dot is-ok" />{{
+                            t('pages.onboarding.workflow.agentsValue', {
+                              n: enabledTeam.length,
+                            })
+                          }}
+                        </dd>
                       </div>
                       <div data-testid="onboarding-review-workflow">
                         <dt>{{ t('pages.onboarding.workflow.wfLabel') }}</dt>
                         <dd><span class="onb-dot is-ok" />{{ t('pages.onboarding.workflow.wfValue') }}</dd>
                       </div>
                     </dl>
-                    <p class="onb-hint mt-3">{{ t('pages.onboarding.workflow.reuseHint') }}</p>
+                    <p class="onb-hint mt-3">
+                      {{ t('pages.onboarding.workflow.reuseHint') }}
+                    </p>
                   </section>
-                  <p v-if="createError" class="onb-note is-err mt-3" data-testid="onboarding-create-error">{{ createError }}</p>
+                  <p v-if="createError" class="onb-note is-err mt-3" data-testid="onboarding-create-error">
+                    {{ createError }}
+                  </p>
                 </template>
               </div>
             </div>
@@ -1040,9 +1189,7 @@ function editWorkflow() {
 }
 .onb-rail {
   border-right: 1px solid rgb(var(--c-line));
-  background:
-    radial-gradient(120% 60% at 0% 0%, rgb(var(--c-accent) / 0.1), transparent 60%),
-    rgb(var(--c-elevated));
+  background: radial-gradient(120% 60% at 0% 0%, rgb(var(--c-accent) / 0.1), transparent 60%), rgb(var(--c-elevated));
 }
 .onb-brand {
   color: rgb(var(--c-accent-2));
@@ -1314,17 +1461,33 @@ function editWorkflow() {
   background: rgb(var(--c-elevated));
 }
 .onb-keyname {
-  flex-shrink: 0;
-  max-width: 45%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   padding: 4px 9px;
   border-radius: 7px;
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 11.5px;
   color: rgb(var(--c-accent-2));
   background: rgb(var(--c-accent) / 0.1);
+}
+.onb-keyname.is-alt {
+  margin-top: 6px;
+  color: rgb(var(--c-txt3));
+  background: rgb(var(--c-line) / 0.5);
+}
+.onb-split {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+.onb-guide {
+  border-radius: 12px;
+  border: 1px solid rgb(var(--c-line));
+  background: rgb(var(--c-elevated));
+  padding: 16px;
 }
 .onb-steps-list {
   display: grid;
@@ -1428,15 +1591,15 @@ function editWorkflow() {
   background: rgb(var(--c-err) / 0.1);
 }
 .onb-canvas {
-  padding: 22px 20px 16px;
+  padding: 16px 20px 14px;
   background:
     radial-gradient(circle, rgb(var(--c-line-strong) / 0.55) 1px, transparent 1.2px) 0 0 / 16px 16px,
     rgb(var(--c-base));
 }
 .onb-summary {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 24px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 20px;
 }
 .onb-summary > div {
   display: flex;
