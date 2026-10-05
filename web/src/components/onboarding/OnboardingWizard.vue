@@ -825,20 +825,10 @@ function editWorkflow() {
                   <p class="onb-lede">
                     {{ t('pages.onboarding.apiKey.meta') }}
                   </p>
-                  <section class="onb-split mt-6" data-testid="onboarding-section-key">
-                    <aside class="onb-guide">
-                      <div class="onb-label">
-                        {{ t('pages.onboarding.apiKey.envLabel') }}
-                      </div>
-                      <code class="onb-keyname">{{ primaryAuthKey }}</code>
-                      <code v-if="primaryAuthAlt" class="onb-keyname is-alt">{{ primaryAuthAlt }}</code>
-                      <ol v-if="authGuide.pathStepKeys.length" class="onb-steps-list mt-4">
-                        <li v-for="(k, i) in authGuide.pathStepKeys" :key="i">
-                          <span class="onb-steps-num">{{ i + 1 }}</span
-                          ><span>{{ t(k) }}</span>
-                        </li>
-                      </ol>
-                      <div v-if="authGuide.links.length" class="mt-3 flex flex-wrap gap-2">
+                  <section class="mt-5" data-testid="onboarding-section-key">
+                    <div v-if="authGuide.pathStepKeys.length" class="onb-guide">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <div class="onb-sub flex-1">{{ t('pages.onboarding.apiKey.howTo') }}</div>
                         <a
                           v-for="link in authGuide.links"
                           :key="link.url"
@@ -849,41 +839,49 @@ function editWorkflow() {
                           >{{ t(link.labelKey) }}<Icon name="arrow-up" :size="11" class="rotate-45"
                         /></a>
                       </div>
-                    </aside>
-                    <div class="min-w-0">
-                      <OpenCodeProviderFields
-                        v-if="draft.acpBackend === 'opencode'"
-                        :provider="(draft.openCodeProvider || 'openai') as OpenCodeProviderId"
-                        :base-url="draft.openCodeBaseURL"
-                        :model="draft.openCodeModel"
-                        :vision="draft.openCodeModelVision"
-                        :require-base="openCodeCustomBaseRequired(draft.openCodeProvider, draft.openCodeBaseURL)"
-                        :require-model="modelError"
-                        @update:provider="draft.openCodeProvider = $event"
-                        @update:base-url="draft.openCodeBaseURL = $event"
-                        @update:model="selectOpenCodeModel"
-                        @update:vision="draft.openCodeModelVision = $event"
-                      />
-                      <label class="mt-4 block">
-                        <span class="onb-label">API Key <span class="text-err">*</span></span>
-                        <input
-                          id="onb-api-key"
-                          v-model="draft.apiKey"
-                          type="password"
-                          autocomplete="off"
-                          class="onb-input font-mono"
-                          :class="{ 'is-invalid': keyError }"
-                          data-testid="onboarding-api-key"
-                          @input="keyError = false"
-                        />
-                        <p class="onb-hint">
-                          {{ t('pages.onboarding.apiKey.hint') }}
-                        </p>
-                        <p v-if="keyError" class="onb-error">
-                          {{ t('pages.onboarding.apiKey.required') }}
-                        </p>
-                      </label>
+                      <ol class="onb-guide-steps">
+                        <li v-for="(k, i) in authGuide.pathStepKeys" :key="i">
+                          <span class="onb-steps-num">{{ i + 1 }}</span>
+                          <span>{{ t(k) }}</span>
+                        </li>
+                      </ol>
                     </div>
+
+                    <OpenCodeProviderFields
+                      v-if="draft.acpBackend === 'opencode'"
+                      class="mt-4"
+                      columns
+                      :provider="(draft.openCodeProvider || 'openai') as OpenCodeProviderId"
+                      :base-url="draft.openCodeBaseURL"
+                      :model="draft.openCodeModel"
+                      :vision="draft.openCodeModelVision"
+                      :require-base="openCodeCustomBaseRequired(draft.openCodeProvider, draft.openCodeBaseURL)"
+                      :require-model="modelError"
+                      @update:provider="draft.openCodeProvider = $event"
+                      @update:base-url="draft.openCodeBaseURL = $event"
+                      @update:model="selectOpenCodeModel"
+                      @update:vision="draft.openCodeModelVision = $event"
+                    />
+                    <label class="block" :class="draft.acpBackend === 'opencode' ? 'mt-4' : 'mt-6'">
+                      <span class="onb-label">API Key <span class="text-err">*</span></span>
+                      <input
+                        id="onb-api-key"
+                        v-model="draft.apiKey"
+                        type="password"
+                        autocomplete="off"
+                        class="onb-input is-lg font-mono"
+                        :class="{ 'is-invalid': keyError }"
+                        :placeholder="t('pages.onboarding.apiKey.placeholder')"
+                        data-testid="onboarding-api-key"
+                        @input="keyError = false"
+                      />
+                      <p class="onb-hint">
+                        {{ t('pages.onboarding.apiKey.savedAs') }}
+                        <code class="onb-keyname" :title="primaryAuthAlt">{{ primaryAuthKey }}</code
+                        >{{ t('pages.onboarding.apiKey.hint') }}
+                      </p>
+                      <p v-if="keyError" class="onb-error">{{ t('pages.onboarding.apiKey.required') }}</p>
+                    </label>
                   </section>
                 </template>
 
@@ -1343,12 +1341,17 @@ function editWorkflow() {
     border-color 0.15s,
     box-shadow 0.15s;
 }
+.onb-input.is-lg {
+  height: 42px;
+  font-size: 14px;
+}
 .onb-input.is-area {
   height: auto;
   padding: 8px 12px;
   font-size: 12px;
 }
 .onb-input::placeholder {
+  font-family: theme('fontFamily.sans');
   color: rgb(var(--c-txt3));
 }
 .onb-input:hover {
@@ -1461,44 +1464,31 @@ function editWorkflow() {
   background: rgb(var(--c-elevated));
 }
 .onb-keyname {
-  display: block;
-  width: fit-content;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  padding: 4px 9px;
-  border-radius: 7px;
+  padding: 1px 6px;
+  border-radius: 5px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11.5px;
+  font-size: 11px;
   color: rgb(var(--c-accent-2));
   background: rgb(var(--c-accent) / 0.1);
-}
-.onb-keyname.is-alt {
-  margin-top: 6px;
-  color: rgb(var(--c-txt3));
-  background: rgb(var(--c-line) / 0.5);
-}
-.onb-split {
-  display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 28px;
-  align-items: start;
 }
 .onb-guide {
   border-radius: 12px;
   border: 1px solid rgb(var(--c-line));
   background: rgb(var(--c-elevated));
-  padding: 16px;
+  padding: 12px 16px 14px;
 }
-.onb-steps-list {
+.onb-guide-steps {
   display: grid;
-  gap: 8px;
-  font-size: 12.5px;
-  line-height: 1.6;
-  color: rgb(var(--c-txt2));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 12px;
 }
-.onb-steps-list li {
+.onb-guide-steps li {
   display: flex;
   gap: 10px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: rgb(var(--c-txt2));
 }
 .onb-steps-num {
   display: grid;
@@ -1510,8 +1500,8 @@ function editWorkflow() {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
-  color: rgb(var(--c-txt2));
-  background: rgb(var(--c-elevated));
+  color: rgb(var(--c-accent-2));
+  background: rgb(var(--c-accent) / 0.12);
 }
 .onb-link {
   display: inline-flex;

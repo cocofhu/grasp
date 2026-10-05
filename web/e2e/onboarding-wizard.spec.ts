@@ -184,16 +184,21 @@ test('首次安装分步引导：偏好 → 模型 → 密钥 → Git → 团队
   }
   await expectStep(page, 'prefs')
   await expect(page.getByTestId('onboarding-prev')).toHaveCount(0)
-  await expectNoScroll(page)
   await page.screenshot({ path: path.join(OUT, '01-prefs.png') })
+  await expectNoScroll(page)
 
   await next(page)
   await expectStep(page, 'model')
-  await expectNoScroll(page)
   await page.screenshot({ path: path.join(OUT, '02-model.png') })
-  await page.getByTestId('onboarding-path-cli').click()
   await expectNoScroll(page)
+  await page.getByTestId('onboarding-path-cli').click()
   await page.screenshot({ path: path.join(OUT, '02-model-cli.png') })
+  await expectNoScroll(page)
+  await next(page)
+  await expectStep(page, 'key')
+  await page.screenshot({ path: path.join(OUT, '03-key-cli.png') })
+  await expectNoScroll(page)
+  await page.getByTestId('onboarding-prev').click()
   await page.getByTestId('onboarding-path-apiKey').click()
 
   await next(page)
@@ -201,8 +206,8 @@ test('首次安装分步引导：偏好 → 模型 → 密钥 → Git → 团队
   await next(page)
   await expectStep(page, 'key')
   await fillKey(page, 'crsr_e2e_test_key')
-  await expectNoScroll(page)
   await page.screenshot({ path: path.join(OUT, '03-key.png') })
+  await expectNoScroll(page)
 
   await next(page)
   await expectStep(page, 'git')
@@ -212,8 +217,8 @@ test('首次安装分步引导：偏好 → 模型 → 密钥 → Git → 团队
   await page.getByTestId('onboarding-repo-url').fill('https://github.com/org/web.git')
   await expect(page.getByTestId('onboarding-repo-hint')).toContainText('/root/workspace/web/')
   await page.getByTestId('onboarding-git-type-github_https').click()
-  await expectNoScroll(page)
   await page.screenshot({ path: path.join(OUT, '04-git.png') })
+  await expectNoScroll(page)
   await page.getByTestId('onboarding-git-type-github_https').click()
   await next(page)
 
@@ -228,8 +233,8 @@ test('首次安装分步引导：偏好 → 模型 → 密钥 → Git → 团队
   await expect(page.getByTestId('onboarding-team-toggle-clarify')).toBeDisabled()
   await expect(page.getByTestId('onboarding-team-name-implement')).toHaveValue('实现')
   await page.getByTestId('onboarding-team-model-implement').fill('deepseek/deepseek-v4-pro')
-  await expectNoScroll(page)
   await page.screenshot({ path: path.join(OUT, '05-team.png') })
+  await expectNoScroll(page)
   await next(page)
 
   await expect(page.getByTestId('onboarding-rail-workflow')).toHaveAttribute('data-active', '1')
@@ -240,8 +245,8 @@ test('首次安装分步引导：偏好 → 模型 → 密钥 → Git → 团队
   await expect(preview.getByText('未通过')).toBeVisible()
   await expect(page.getByTestId('onboarding-review-repo')).toContainText('web')
   await expect(page.getByTestId('onboarding-review-workflow')).toContainText('默认工作流')
-  await expectNoScroll(page)
   await page.screenshot({ path: path.join(OUT, '06-workflow.png') })
+  await expectNoScroll(page)
 
   await next(page)
   await expect(page.getByTestId('onboarding-success')).toBeVisible()
@@ -250,8 +255,8 @@ test('首次安装分步引导：偏好 → 模型 → 密钥 → Git → 团队
   await expect(page.getByText('默认工作流（已发布）')).toBeVisible()
   await expect(page.getByTestId('onboarding-run-once')).toContainText('运行一次')
   await expect(page.getByTestId('onboarding-edit-workflow')).toContainText('去编辑工作流')
-  await expectNoScroll(page, 'onboarding-success')
   await page.screenshot({ path: path.join(OUT, '07-done.png') })
+  await expectNoScroll(page, 'onboarding-success')
 
   expect(state.bootstrapBody?.repoUrl).toBe('https://github.com/org/web.git')
   expect(state.bootstrapBody?.agents).toEqual([
@@ -288,8 +293,8 @@ test('onboarding wizard English copy', async ({ page }) => {
   await page.getByTestId('onboarding-language-en').click()
   await expect(page.locator('.onb-step-title', { hasText: 'Preferences' })).toBeVisible()
   await expect(page.getByTestId('onboarding-empty-desc')).toContainText('Default Workflow')
-  await expectNoScroll(page)
   await page.screenshot({ path: path.join(OUT, 'en-prefs.png') })
+  await expectNoScroll(page)
 
   await walkToTeam(page, 'crsr_e2e_en')
   await expect(page.getByTestId('onboarding-team-card-test_review')).toContainText('Test & review')

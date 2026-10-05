@@ -19,6 +19,8 @@ const props = defineProps<{
   vision?: boolean
   requireBase?: boolean
   requireModel?: boolean
+  /** Two-column grid (vendor | model, base URL | vision) without the advanced notes, for wide, short containers. */
+  columns?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -170,7 +172,7 @@ watch(
 </script>
 
 <template>
-  <div class="space-y-3" data-test="opencode-provider-fields">
+  <div :class="columns ? 'grid grid-cols-2 items-start gap-x-4 gap-y-3' : 'space-y-3'" data-test="opencode-provider-fields">
     <div class="block">
       <span class="mb-1.5 block text-[12px] font-medium text-txt2">
         {{ t('pages.agentStudio.openCode.providerLabel') }}
@@ -218,6 +220,7 @@ watch(
         {{ t('pages.agentStudio.openCode.modelRequired') }}
       </p>
       <details
+        v-if="!columns"
         class="mt-1 rounded-md border border-dashed border-line bg-base px-3 py-2"
         data-test="opencode-advanced"
       >

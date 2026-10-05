@@ -432,8 +432,10 @@
       "apiKey": {
         "meta": "按所选后端填写 API Key。此项必填，未填写将无法生成配置。",
         "required": "请先填写 API Key。",
-        "hint": "仅保存在项目共享配置中，不会写入日志或产物。",
-        "envLabel": "需要的环境变量"
+        "hint": "，只存于项目共享配置，不会写入日志或产物。",
+        "howTo": "如何获取",
+        "placeholder": "粘贴你的 API Key",
+        "savedAs": "保存为"
       },
       "git": {
         "meta": "沙箱里 git commit 需要提交身份；仓库和访问凭据可以现在填，也可以跳过。",

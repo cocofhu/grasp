@@ -432,8 +432,10 @@
       "apiKey": {
         "meta": "API Key is required for the selected backend.",
         "required": "Please enter an API Key.",
-        "hint": "Stored only in project shared config — not in logs or artifacts.",
-        "envLabel": "Environment variable"
+        "hint": " — stored only in the project shared config, never in logs or artifacts.",
+        "howTo": "How to get it",
+        "placeholder": "Paste your API key",
+        "savedAs": "Saved as"
       },
       "git": {
         "meta": "git commit in the sandbox needs a commit identity; the repository and access credentials can be filled in now or skipped.",
