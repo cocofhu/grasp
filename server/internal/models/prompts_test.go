@@ -17,6 +17,15 @@ func TestSchemaContracts(t *testing.T) {
 	}
 }
 
+// A failing verdict marked failed fails the run instead of taking the fail outlet.
+func TestOutcomeContractSeparatesVerdictFromFailure(t *testing.T) {
+	for _, want := range []string{"判定结论", "仍以 `success` 标记", "fail 出口"} {
+		if !strings.Contains(OutcomeContract, want) {
+			t.Errorf("OutcomeContract missing %q", want)
+		}
+	}
+}
+
 func TestPromptTemplates(t *testing.T) {
 	if got := FeedbackHeaderFor(3); !strings.Contains(got, "3") || strings.Contains(got, "{n}") {
 		t.Errorf("FeedbackHeaderFor=%q", got)

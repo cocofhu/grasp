@@ -48,7 +48,7 @@ const (
 	ClarifiedOpenQuestionsRetry = "【必须澄清】你写入的需求里仍有以下待确认问题没有和用户敲定:\n{items}\n澄清是门禁,不能带着未确认的问题结束。请现在用 `ask_question` 工具把这些问题逐一抛给用户做选择(每个问题给出候选选项),等用户确认后再重新调用 `set_clarified_requirement` 更新结论并清空 open_questions。不要直接结束澄清,也不要替用户擅自拍板。"
 	PreflightRetry              = "【必须完成】环境确认尚未就绪:{reason}。请继续用 `ask_question`/`ask_form` 采集缺口,在沙箱核验后调用 `set_preflight`(confirmed=true, unresolved 为空)。不要用 write_artifact 伪造 preflight.json;表单提交不能代替 set_preflight。\n"
 
-	OutcomeContract = "\n\n## 完成标记契约(强制)\n结束本节点前**必须**调用 `node_complete` 标记结果:`status` 取 `success` 或 `failed`;可选 `summary` / `error` / `outputs` / `checks`。写完产物(`set_*` / `write_artifact`)后再调用。未标记将被判定为节点失败。平台先做默认校验(产物/门禁等),通过后才可能做业务 RPC 校验。若需启动长期服务(web / 被测应用等),必须用 `setsid`/`nohup` 放入独立会话并重定向日志,禁止前台或未脱钩的命令占住 Agent 回合;不要为收尾杀掉这些进程。\n"
+	OutcomeContract = "\n\n## 完成标记契约(强制)\n结束本节点前**必须**调用 `node_complete` 标记结果:`status` 取 `success` 或 `failed`;可选 `summary` / `error` / `outputs` / `checks`。`failed` 只表示本节点无法完成工作(环境、工具或依赖故障);测试不通过、评审打回等是判定结论,写入判定产物后仍以 `success` 标记,平台据此走 fail 出口。写完产物(`set_*` / `write_artifact`)后再调用。未标记将被判定为节点失败。平台先做默认校验(产物/门禁等),通过后才可能做业务 RPC 校验。若需启动长期服务(web / 被测应用等),必须用 `setsid`/`nohup` 放入独立会话并重定向日志,禁止前台或未脱钩的命令占住 Agent 回合;不要为收尾杀掉这些进程。\n"
 	OutcomeRetry    = "【必须完成】你尚未调用 `node_complete` 标记本节点完成结果,这是强制要求。现在立即调用 `node_complete(status=\"success\"|\"failed\", summary?, error?, outputs?)`,不要再提问或输出其它内容——只需完成这次调用。\n"
 
 	// ReviewConfirmReconcile is the review-side confirm turn: node_complete

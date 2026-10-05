@@ -1285,12 +1285,13 @@ func artifactTools() []map[string]any {
 			"name": "node_complete",
 			"description": "所有 Agent 类节点可用:在结束本节点前标记完成结果。" +
 				"status 取 success|failed;可选 summary/error/outputs/checks。" +
+				"failed 只表示本节点无法完成工作;测试不通过、评审打回是判定结论,写入判定产物后仍标 success,平台据此走 fail 出口。" +
 				"写完产物(set_* / write_artifact)后必须调用本工具;平台先跑默认校验(产物/门禁等),通过后才可能做业务 RPC 校验。" +
 				"submit_mr 节点用 outputs.mr_url 等申报结果,平台不再代验 git 推送/MR/冲突。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"status":  strProp("success|failed"),
+					"status":  strProp("success|failed;判定不通过仍为 success"),
 					"summary": strProp("可选:给人看的一句话摘要"),
 					"error":   strProp("可选:status=failed 时的错误说明"),
 					"outputs": map[string]any{
