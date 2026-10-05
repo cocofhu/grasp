@@ -15,46 +15,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// reviewVarName resolves the control variable that decides whether this node
-// enters the post-run ReAct review phase: a per-node config["review_var"]
-// override, else the node type's default (nodereg.Spec.ReviewVar). Empty when
-// the node type is not review-capable.
-func reviewVarName(node *models.Node) string {
-	if v := strings.TrimSpace(str(node.Config["review_var"])); v != "" {
-		return v
-	}
-	return nodereg.DefaultReviewVar(node.Type)
-}
-
-// reviewEnabled reports whether this node should enter the interactive review
-// phase. Natural-language semantics aligned with "是否要 review":
-//
-//	undefined ⇒ skip (legacy pipelines without the var never stop for review)
-//	DEFINED and FALSY  ⇒ skip
-//	DEFINED and TRUTHY ⇒ enter interactive review
-//
-// app_preview always enters review after a healthy set_preview (pure ReAct
-// waiting_human; no Gate shell — main interaction is parked ReAct + VNC).
-// A node type with no review variable is never review-capable.
-func (e *Engine) reviewEnabled(c *execCtx, node *models.Node) bool {
-	if node != nil && node.Type == "app_preview" {
-		return true
-	}
-	name := reviewVarName(node)
-	if name == "" {
-		return false
-	}
-	raw, ok := c.vars[name]
-	if !ok {
-		return false // undefined ⇒ skip (zero behavior change for old graphs)
-	}
-	return truthy(raw) // truthy ⇒ review, falsy ⇒ skip
-}
-
 // hasDownstreamReactGate reports whether some approval gate reachable forward of
 // this producer node binds its product as the primary upstream — in which case
 // the producer's sandbox session must be kept alive so the gate can issue a
-// ReAct reject against it. app_preview is its own producer and handled inline.
+// ReAct reject against it.
 func (e *Engine) hasDownstreamReactGate(c *execCtx, node *models.Node) bool {
 	if node == nil {
 		return false
@@ -96,19 +60,18 @@ func (e *Engine) hasDownstreamReactGate(c *execCtx, node *models.Node) bool {
 	return false
 }
 
-// nodeProducesArtifact reports whether node writes the given reserved/produces
-// artifact name (used to bind a still-running producer to a downstream
-// proposal_select before the artifact row exists).
+// nodeProducesArtifact reports whether node declares a product stored under
+// name (binds a still-running producer to a downstream proposal_select before
+// the artifact row exists).
 func (e *Engine) nodeProducesArtifact(node *models.Node, name string) bool {
 	name = strings.TrimSpace(name)
 	if node == nil || name == "" {
 		return false
 	}
-	if spec, ok := nodereg.Get(node.Type); ok && strings.TrimSpace(spec.ArtifactName) == name {
-		return true
-	}
-	if produces := strings.TrimSpace(str(node.Config["produces"])); produces == name {
-		return true
+	for _, sc := range nodereg.DeclaredSchemas(node.Caps) {
+		if sc.ArtifactName == name {
+			return true
+		}
 	}
 	return false
 }
@@ -117,9 +80,6 @@ func (e *Engine) nodeProducesArtifact(node *models.Node, name string) bool {
 // approval gate reviews (and whose parked session a ReAct reject edits):
 //   - human_gate: the primary upstream node bound by its body template.
 //   - proposal_select: the node that wrote the upstream proposals.json.
-//
-// app_preview no longer creates a Gate; its parked session is finished via
-// reviewReply (force) rather than GateReactRevise / GateReactInfo.
 //
 // Returns "" when it cannot be resolved.
 func (e *Engine) gateProducerNodeID(c *execCtx, gate *models.Node) string {
@@ -137,16 +97,6 @@ func (e *Engine) gateProducerNodeID(c *execCtx, gate *models.Node) string {
 	default:
 		return ""
 	}
-}
-
-// maybeEnterReview turns a freshly-completed producer outcome into a paused
-// review pause when review is requested; otherwise returns it unchanged. The
-// live session was already parked by the provider (KeepAliveForReview).
-func (e *Engine) maybeEnterReview(c *execCtx, node *models.Node, completed nodeOutcome) nodeOutcome {
-	if !e.reviewEnabled(c, node) {
-		return completed
-	}
-	return e.enterReview(c, node, completed)
 }
 
 // enterReview seeds a review ReactConversation (agent turn = product summary +
@@ -179,68 +129,34 @@ func (e *Engine) enterReview(c *execCtx, node *models.Node, completed nodeOutcom
 		outputs: completed.outputs, events: completed.events, usage: completed.usage, usageByModel: completed.usageByModel}
 }
 
-// reviewSummaryMarkdown renders the node's product as the opening review turn.
+// reviewSummaryMarkdown renders the node's products as the opening review turn.
 func (e *Engine) reviewSummaryMarkdown(c *execCtx, node *models.Node) string {
-	var body string
-	if spec, ok := nodereg.Get(node.Type); ok {
+	var parts []string
+	for _, sc := range nodereg.DeclaredSchemas(node.Caps) {
+		content, ok := e.artifactOwnedByNode(c.run.ID, node.ID, sc.ArtifactName)
+		if !ok {
+			continue
+		}
 		switch {
-		case node.Type == "plan":
-			if s, ok := e.store.Get(c.run.ID, mcp.PlanArtifactName); ok {
-				body = mcp.RenderPlanMarkdown(s)
-			}
-		case node.Type == "visual":
-			body = "已生成可视化网页 " + visualPageName + "。请在预览中取点标注要调整的元素,或直接描述修改点。"
-		case node.Type == "app_preview":
-			body = "应用预览已就绪(set_preview 可达)。请先开启「取点标注」再点选问题元素,或直接对话说明要改哪里;确认无误后点「确认并流转」。结束/Cancel 会话不会拆掉预览服务。"
-		case spec.Render != nodereg.RenderNone:
-			if render := nodereg.Renderer(spec.Render); render != nil {
-				if s, ok := e.store.Get(c.run.ID, spec.ArtifactName); ok {
-					body = render(s)
-				}
-			}
+		case sc.Name == models.SchemaPage:
+			parts = append(parts, "已生成可视化网页 "+mcp.PageArtifactName+"。请在预览中取点标注要调整的元素,或直接描述修改点。")
+		case sc.Render != nil:
+			parts = append(parts, sc.Render(content))
 		}
 	}
-	if strings.TrimSpace(body) == "" {
+	if node.Caps.CanPreview() {
+		parts = append(parts, "如已启动预览服务,可在预览中取点标注问题元素,或直接对话说明要改哪里。")
+	}
+	body := strings.TrimSpace(strings.Join(parts, "\n\n"))
+	if body == "" {
 		body = "本节点产物已生成。"
 	}
 	return body + "\n\n---\n请审阅以上产物:可逐字段/元素标注并说明要改哪里,我会在同一沙箱里就地修改;确认无误后点「确认并流转」结束复审。"
 }
 
-// finalizeProduct re-derives a node's outcome from its (possibly just-edited)
-// product, dispatching to the type-specific finalizer so the review-finish path
-// behaves exactly like the initial run's contract finalization.
-func (e *Engine) finalizeProduct(c *execCtx, node *models.Node, res runtime.NodeResult) nodeOutcome {
-	switch node.Type {
-	case "visual":
-		return e.finalizeVisual(c, node, res)
-	case "plan":
-		return e.finalizePlan(c, node, res)
-	case "app_preview":
-		return e.finalizeAppPreview(c, node, res)
-	default:
-		return e.finalizeAgentProducts(c, node, res)
-	}
-}
-
-// finalizeAppPreview accepts a healthy set_preview registration as the product
-// contract (no structured artifact / node_complete required).
-func (e *Engine) finalizeAppPreview(c *execCtx, node *models.Node, res runtime.NodeResult) nodeOutcome {
-	if !e.host.HasHealthyPreviewPorts(c.run.ID, node.ID) {
-		return nodeOutcome{status: "failed", err: "预览契约未满足:无可达 set_preview",
-			outputMd: "应用预览失败:无可达预览端口", events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel}
-	}
-	out := res.Outputs
-	if out == nil {
-		out = map[string]any{}
-	}
-	out["preview_ready"] = true
-	return nodeOutcome{status: "completed", outputMd: "应用预览已就绪", outputs: out, events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel}
-}
-
-// isReviewNode reports whether a node type uses the post-run ReAct review path
-// (a review-capable producer, not the classic react clarify node).
-func isReviewNode(nodeType string) bool {
-	return nodeType != "react" && !nodereg.IsGrasp(nodeType) && nodereg.ReviewCapable(nodeType)
+// isReviewNode reports whether a node uses the post-run ReAct review path.
+func isReviewNode(node *models.Node) bool {
+	return node != nil && node.Caps.ReviewEnabled()
 }
 
 // reviewReply finalizes a post-run review dialogue when force=true: if the
@@ -300,9 +216,10 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 		rp.RetireSession(runID, nodeID)
 	}
 
-	outcome := e.finalizeProduct(c, node, runtime.NodeResult{})
+	outcome := e.finalizeAgent(c, node, runtime.NodeResult{})
 	outcome = e.afterDefaultChecks(c, node, outcome)
-	if outcome.status == "failed" {
+	verdictFailed := outcome.status == "failed" && outcome.handle == handleFail
+	if outcome.status == "failed" && !verdictFailed {
 		// Keep paused/waiting_human so the reviewer can fix and retry.
 		conv.Done = false
 		logDB(e.db.Save(conv), runID, "reopen review after force validation failure")
@@ -317,17 +234,9 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 		return errors.New(errMsg)
 	}
 
-	// app_preview: inject action=pass so legacy when/action edges still match;
-	// fail edges see no fail action and do not route. Always clear preview_issues.
-	if node.Type == "app_preview" {
-		if outcome.outputs == nil {
-			outcome.outputs = map[string]any{}
-		}
-		outcome.outputs["action"] = "pass"
-		outVar := firstNonEmptyStr(str(node.Config["output_var"]), "action")
-		outcome.outputs[outVar] = "pass"
-		c.setVar(outVar, "pass")
-		e.persistVar(runID, outVar, "pass")
+	// Confirming the review accepts the previewed result: the node's open
+	// preview issues are settled and must not leak into downstream prompts.
+	if node.Caps.CanPreview() {
 		e.forceClearPreviewIssueVars(c, runID)
 		if lifeErr := e.markPreviewIssuesResolvedByNode(runID, nodeID); lifeErr != nil {
 			conv.Done = false
@@ -348,13 +257,20 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 	}
 
 	e.saveState(c, node, outcome)
-	detail := "复审完成"
-	if node.Type == "app_preview" {
-		detail = "复审完成 action=pass"
-	}
-	e.appendTrace(c, models.TraceEntry{NodeID: nodeID, Event: "resume", Detail: detail})
+	e.appendTrace(c, models.TraceEntry{NodeID: nodeID, Event: "resume", Detail: "复审完成"})
 	c.nodeOutputs[nodeID] = outcome.outputs
 	e.appendTrace(c, models.TraceEntry{NodeID: nodeID, Event: "exit"})
+	if verdictFailed {
+		c.setVar("last_error", outcome.err)
+		e.persistVar(runID, "last_error", outcome.err)
+		next := e.routeFailure(c, node, outcome)
+		if next == "" {
+			e.finish(runID, "failed")
+			return nil
+		}
+		go e.resumeAdmitted(runID, next)
+		return nil
+	}
 	next := e.routeSuccess(c, node, outcome)
 	if next == "" {
 		e.finish(runID, "completed")
@@ -448,7 +364,7 @@ func (e *Engine) retireGateUpstreamSession(c *execCtx, gateNode *models.Node) {
 // On finalize failure (e.g. missing page.html) this is a no-op — prior outputs
 // are left intact.
 func (e *Engine) refreshProducerOutputs(c *execCtx, producer *models.Node) {
-	oc := e.finalizeProduct(c, producer, runtime.NodeResult{})
+	oc := e.finalizeAgent(c, producer, runtime.NodeResult{})
 	if oc.status != "completed" || oc.outputs == nil {
 		return
 	}

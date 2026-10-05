@@ -41,7 +41,7 @@ const props = withDefaults(
      */
     hostConfirmFlow?: boolean
     /**
-     * Run Detail: stage (「流水线产物」) and sidebar (「Agent交互」) stay flush.
+     * Run Detail: stage (「工作流产物」) and sidebar (「Agent交互」) stay flush.
      * Kept so existing callers can pass it; the floating-card chrome is off.
      * Inbox/GateApproval keep the flush layout on both.
      */

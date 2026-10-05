@@ -41,10 +41,10 @@ async function openRunList(
   let runs =
     opts?.runs ??
     [
-      buildRun('run-completed', 'completed', '已结束流水线'),
-      buildRun('run-failed', 'failed', '失败流水线'),
-      buildRun('run-running', 'running', '运行中流水线'),
-      buildRun('run-cancelled', 'cancelled', '已取消流水线'),
+      buildRun('run-completed', 'completed', '已结束工作流'),
+      buildRun('run-failed', 'failed', '失败工作流'),
+      buildRun('run-running', 'running', '运行中工作流'),
+      buildRun('run-cancelled', 'cancelled', '已取消工作流'),
     ]
 
   await page.route('**/api/**', async (route) => {
@@ -90,7 +90,7 @@ async function openRunList(
 
   await page.goto('/run-list.html')
   await expect(page.getByRole('heading', { name: '运行记录' })).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByText('按项目、流水线与状态筛选')).toBeVisible()
+  await expect(page.getByText('按项目、工作流与状态筛选')).toBeVisible()
 }
 
 test.describe('RunListView delete run acceptance', () => {
@@ -102,7 +102,7 @@ test.describe('RunListView delete run acceptance', () => {
       },
     })
 
-    const completedRow = page.locator('tr', { hasText: '已结束流水线' })
+    const completedRow = page.locator('tr', { hasText: '已结束工作流' })
     await expect(completedRow.getByTestId('delete-run-btn')).toBeVisible()
     await expect(completedRow.getByTestId('cancel-run-btn')).toHaveCount(0)
 
@@ -118,12 +118,12 @@ test.describe('RunListView delete run acceptance', () => {
       .getByRole('button', { name: '取消' })
       .click()
     await expect(page.getByText('确认删除该次运行？')).toHaveCount(0)
-    await expect(page.getByText('已结束流水线', { exact: true })).toBeVisible()
+    await expect(page.getByText('已结束工作流', { exact: true })).toBeVisible()
 
     await completedRow.getByTestId('delete-run-btn').click()
     await page.getByTestId('confirm-delete-run-btn').click()
     await expect.poll(() => deletedId).toBe('run-completed')
-    await expect(page.getByText('已结束流水线', { exact: true })).toHaveCount(0)
+    await expect(page.getByText('已结束工作流', { exact: true })).toHaveCount(0)
     await expect(page.getByRole('heading', { name: '运行' })).toBeVisible()
     await expect(page.getByText(/已删除运行/)).toBeVisible()
     await expect(page.getByTestId('run-detail-page')).toHaveCount(0)
@@ -132,11 +132,11 @@ test.describe('RunListView delete run acceptance', () => {
   test('running: only cancel; cancelled: delete enabled like completed', async ({ page }) => {
     await openRunList(page)
 
-    const runningRow = page.locator('tr', { hasText: '运行中流水线' })
+    const runningRow = page.locator('tr', { hasText: '运行中工作流' })
     await expect(runningRow.getByTestId('cancel-run-btn')).toBeVisible()
     await expect(runningRow.getByTestId('delete-run-btn')).toHaveCount(0)
 
-    const cancelledRow = page.locator('tr', { hasText: '已取消流水线' })
+    const cancelledRow = page.locator('tr', { hasText: '已取消工作流' })
     await expect(cancelledRow.getByTestId('delete-run-btn')).toBeVisible()
     await expect(cancelledRow.getByTestId('cancel-run-btn')).toHaveCount(0)
     await expect(cancelledRow.getByTestId('run-ops-placeholder')).toHaveCount(0)
@@ -150,23 +150,23 @@ test.describe('RunListView delete run acceptance', () => {
       },
     })
 
-    const cancelledRow = page.locator('tr', { hasText: '已取消流水线' })
+    const cancelledRow = page.locator('tr', { hasText: '已取消工作流' })
     await cancelledRow.getByTestId('delete-run-btn').click()
     await expect(page.getByText('确认删除该次运行？')).toBeVisible()
     await page.getByTestId('confirm-delete-run-btn').click()
     await expect.poll(() => deletedId).toBe('run-cancelled')
-    await expect(page.getByText('已取消流水线', { exact: true })).toHaveCount(0)
+    await expect(page.getByText('已取消工作流', { exact: true })).toHaveCount(0)
     await expect(page.getByRole('heading', { name: '运行' })).toBeVisible()
     await expect(page.getByText(/已删除运行/)).toBeVisible()
   })
 
   test('delete failure keeps row and shows error', async ({ page }) => {
     await openRunList(page, { deleteFailStatus: 409 })
-    const failedRow = page.locator('tr', { hasText: '失败流水线' })
+    const failedRow = page.locator('tr', { hasText: '失败工作流' })
     await failedRow.getByTestId('delete-run-btn').click()
     await page.getByTestId('confirm-delete-run-btn').click()
     await expect(page.getByText('当前状态不可删除')).toBeVisible()
-    await expect(page.getByText('失败流水线', { exact: true })).toBeVisible()
+    await expect(page.getByText('失败工作流', { exact: true })).toBeVisible()
   })
 
   test('mobile cards: delete / cancel / cancelled parity', async ({ page }) => {
@@ -174,15 +174,15 @@ test.describe('RunListView delete run acceptance', () => {
     await expect(page.locator('table')).toHaveCount(0)
 
     // Cards use RouterLink custom → role=link (not role=button / bare <a>)
-    const completedCard = page.locator('[role="link"]', { hasText: '已结束流水线' })
+    const completedCard = page.locator('[role="link"]', { hasText: '已结束工作流' })
     await expect(completedCard.getByTestId('delete-run-btn')).toBeVisible()
     await expect(completedCard.getByTestId('cancel-run-btn')).toHaveCount(0)
 
-    const runningCard = page.locator('[role="link"]', { hasText: '运行中流水线' })
+    const runningCard = page.locator('[role="link"]', { hasText: '运行中工作流' })
     await expect(runningCard.getByTestId('cancel-run-btn')).toBeVisible()
     await expect(runningCard.getByTestId('delete-run-btn')).toHaveCount(0)
 
-    const cancelledCard = page.locator('[role="link"]', { hasText: '已取消流水线' })
+    const cancelledCard = page.locator('[role="link"]', { hasText: '已取消工作流' })
     await expect(cancelledCard.getByTestId('delete-run-btn')).toBeVisible()
     await expect(cancelledCard.getByTestId('run-ops-placeholder')).toHaveCount(0)
 

@@ -41,7 +41,7 @@ services:
       # 渠道凭据 AES 主密钥(也可写在 server/config.yaml 的 security.secrets_key)。
       # .env 里设了就会覆盖 YAML;未设则走配置文件。
       GRASP_SECRETS_KEY: ${GRASP_SECRETS_KEY:-}
-      # app_preview noVNC 使用沙箱内置 VNC 栈(VNC_PREVIEW=1)，无需独立 browser 镜像。
+      # 应用预览 noVNC 使用沙箱内置 VNC 栈(VNC_PREVIEW=1)，无需独立 browser 镜像。
       GRASP_BROWSER_ENABLED: ${GRASP_BROWSER_ENABLED:-}
       # 国内网络默认走 goproxy.cn(Dockerfile.dev 里也设了同样的默认值作为镜像
       # 内置兜底);在 .env 里设 GOPROXY/GOSUMDB 可覆盖。

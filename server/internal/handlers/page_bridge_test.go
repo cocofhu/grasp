@@ -135,7 +135,8 @@ func TestMCPPageToolRoutesBySessionID(t *testing.T) {
 	hub := pagebridge.NewHub()
 	hn.host.SetPageBridge(&pagebridge.Router{Hub: hub, Turns: sessionTurns{"ps_a": "embed:a", "ps_b": "embed:b"}})
 	tok := hn.host.RegisterRun("run-page-sid")
-	hn.host.SetActiveNode("run-page-sid", "ap1", "app_preview")
+	hn.host.SetActiveNode("run-page-sid", "ap1", testPreviewCaps)
+	hn.host.SetActiveReview("run-page-sid", true)
 
 	frames := map[string]chan map[string]any{"embed:a": make(chan map[string]any, 4), "embed:b": make(chan map[string]any, 4)}
 	conns := map[string]*pagebridge.Conn{}

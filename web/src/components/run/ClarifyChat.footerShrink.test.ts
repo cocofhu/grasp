@@ -32,7 +32,6 @@ function mountChat(extra: Record<string, unknown> = {}) {
       turns: [{ role: 'agent', text: '请确认', at: '2026-09-29T00:00:00Z' }],
       done: false,
       active: true,
-      nodeType: 'approve',
       ...extra,
     },
     global: {
@@ -57,7 +56,6 @@ function mountComposer(extra: Record<string, unknown> = {}) {
       turns: [{ role: 'agent', text: '请确认', at: '2026-09-29T00:00:00Z' }],
       done: false,
       active: true,
-      nodeType: 'approve',
       canPass: true,
       ...extra,
     },

@@ -13,17 +13,15 @@ import (
 	"gorm.io/gorm"
 )
 
-// reviewGraph: input → proposal (review-capable) → output. The proposal node's
-// post-run ReAct review phase is gated by the "review" control variable.
+// reviewGraph: input → proposal (review on) → output.
 func reviewGraph() models.Graph {
 	return models.Graph{
 		Variables: []models.Variable{
 			{Name: "idea", Type: "paragraph", Ask: true, Required: true, Editable: true},
-			{Name: "review", Type: "bool", Value: true},
 		},
 		Nodes: []models.Node{
 			{ID: "input", Type: "input", Label: "输入"},
-			{ID: "prop", Type: "proposal", Label: "方案", Config: map[string]any{"agent_profile": "pm-agent", "prompt": "给方案"}},
+			{ID: "prop", Type: "agent", Caps: capsProposal, Label: "方案", Config: map[string]any{"agent_profile": "pm-agent", "prompt": "给方案"}},
 			{ID: "output", Type: "output", Label: "输出"},
 		},
 		Edges: []models.Edge{
@@ -33,18 +31,13 @@ func reviewGraph() models.Graph {
 	}
 }
 
-func setupReviewEngine(t *testing.T, reviewVal any) (*Engine, *gorm.DB, *fakeProvider) {
+func setupReviewEngine(t *testing.T) (*Engine, *gorm.DB, *fakeProvider) {
 	t.Helper()
 	db, err := database.OpenSQLiteTest(t.TempDir() + "/review.db")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
 	g := reviewGraph()
-	for i := range g.Variables {
-		if g.Variables[i].Name == "review" {
-			g.Variables[i].Value = reviewVal
-		}
-	}
 	wf := models.WorkflowDef{ID: "review-wf", Name: "review-wf", Status: "published", Version: 1, Graph: g}
 	if err := db.Create(&wf).Error; err != nil {
 		t.Fatalf("create workflow: %v", err)
@@ -60,47 +53,11 @@ func setupReviewEngine(t *testing.T, reviewVal any) (*Engine, *gorm.DB, *fakePro
 	return eng, db, provider
 }
 
-// TestReviewSkipWhenVarUndefined: with no review control variable, a
-// review-capable producer completes in one shot (today's behavior, zero change).
-func TestReviewSkipWhenVarUndefined(t *testing.T) {
-	db, err := database.OpenSQLiteTest(t.TempDir() + "/noreview.db")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	g := reviewGraph()
-	// Drop the review variable entirely → undefined ⇒ skip.
-	g.Variables = g.Variables[:1]
-	wf := models.WorkflowDef{ID: "review-wf", Name: "review-wf", Status: "published", Version: 1, Graph: g}
-	if err := db.Create(&wf).Error; err != nil {
-		t.Fatalf("create workflow: %v", err)
-	}
-	if err := db.Create(&models.WorkflowVersion{WorkflowID: wf.ID, Version: 1, Graph: g}).Error; err != nil {
-		t.Fatalf("create version: %v", err)
-	}
-	arts := services.NewArtifactService(db)
-	host := mcp.NewHost(arts)
-	eng := New(db, &fakeProvider{host: host}, host, arts, 5)
-	cleanupEngineDB(t, eng, db)
-
-	run, err := eng.StartRun("review-wf", map[string]any{"idea": "登录"}, "test")
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	waitRunStatus(t, db, run.ID, "completed")
-
-	// No review conversation should have been seeded for the producer.
-	var n int64
-	db.Model(&models.ReactConversation{}).Where("run_id = ? AND node_id = ?", run.ID, "prop").Count(&n)
-	if n != 0 {
-		t.Fatalf("expected no review conversation when review var undefined, got %d", n)
-	}
-}
-
 // TestReviewEnterReviseFinish: review var truthy ⇒ enter interactive review; a
 // revise turn edits in place (stays paused), then a forced finish re-validates
 // the product contract WITHOUT Agent ReactReply and advances to completion.
 func TestReviewEnterReviseFinish(t *testing.T) {
-	eng, db, provider := setupReviewEngine(t, true)
+	eng, db, provider := setupReviewEngine(t)
 
 	run, err := eng.StartRun("review-wf", map[string]any{"idea": "登录"}, "test")
 	if err != nil {
@@ -178,7 +135,7 @@ func TestReviewEnterReviseFinish(t *testing.T) {
 // TestReviewForcePersistsGitWrapUp: confirm-time OfferCommitOnConfirm narration
 // is stored as the agent turn answering the human「确认」.
 func TestReviewForcePersistsGitWrapUp(t *testing.T) {
-	eng, db, provider := setupReviewEngine(t, true)
+	eng, db, provider := setupReviewEngine(t)
 	provider.wrapUpMsg = "已提交 src/a.go,跳过 tmp.log"
 
 	run, err := eng.StartRun("review-wf", map[string]any{"idea": "登录"}, "test")
@@ -213,7 +170,7 @@ func TestReviewForcePersistsGitWrapUp(t *testing.T) {
 // TestReviewForceValidationFailureKeepsPaused: business re-validation failure
 // must not Done/routeFailure; the review stays waiting_human and is retryable.
 func TestReviewForceValidationFailureKeepsPaused(t *testing.T) {
-	eng, db, provider := setupReviewEngine(t, true)
+	eng, db, provider := setupReviewEngine(t)
 
 	run, err := eng.StartRun("review-wf", map[string]any{"idea": "登录"}, "test")
 	if err != nil {
@@ -259,7 +216,7 @@ func TestReviewForceValidationFailureKeepsPaused(t *testing.T) {
 // parked session when ready; a subsequent revise is rejected (conv Done).
 // Busy-state reject is covered by TestReviewForceRejectedWhileQueued.
 func TestReviewForceRequiresReadyAndRejectsLateRevise(t *testing.T) {
-	eng, db, provider := setupReviewEngine(t, true)
+	eng, db, provider := setupReviewEngine(t)
 
 	run, err := eng.StartRun("review-wf", map[string]any{"idea": "登录"}, "test")
 	if err != nil {
@@ -287,7 +244,7 @@ func TestReviewForceRequiresReadyAndRejectsLateRevise(t *testing.T) {
 // TestReviewForceRejectedWhileQueued: force confirm is refused while the
 // platform FIFO has pending/active work (FR4 ready gate).
 func TestReviewForceRejectedWhileQueued(t *testing.T) {
-	eng, db, provider := setupReviewEngine(t, true)
+	eng, db, provider := setupReviewEngine(t)
 	hold := make(chan struct{})
 	provider.reviseHold = hold
 
@@ -352,24 +309,6 @@ func arts(db *gorm.DB, runID, name string) (models.Artifact, bool) {
 	return a, true
 }
 
-// TestReviewSkipWhenVarFalsy: review var DEFINED and falsy ⇒ skip interactive
-// review (producer completes in one shot, no conversation seeded).
-func TestReviewSkipWhenVarFalsy(t *testing.T) {
-	eng, db, _ := setupReviewEngine(t, false)
-
-	run, err := eng.StartRun("review-wf", map[string]any{"idea": "登录"}, "test")
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	waitRunStatus(t, db, run.ID, "completed")
-
-	var n int64
-	db.Model(&models.ReactConversation{}).Where("run_id = ? AND node_id = ?", run.ID, "prop").Count(&n)
-	if n != 0 {
-		t.Fatalf("expected no review conversation when review var falsy, got %d", n)
-	}
-}
-
 // gateReactGraph: input → proposal → proposal_select (manual) → output.
 // No review control variable: the producer's session is kept alive solely via
 // hasDownstreamReactGate so the select gate can issue a ReAct reject.
@@ -381,7 +320,7 @@ func gateReactGraph() models.Graph {
 		},
 		Nodes: []models.Node{
 			{ID: "input", Type: "input", Label: "输入"},
-			{ID: "prop", Type: "proposal", Label: "方案", Config: map[string]any{"agent_profile": "pm-agent", "prompt": "给方案"}},
+			{ID: "prop", Type: "agent", Caps: capsProposalAuto, Label: "方案", Config: map[string]any{"agent_profile": "pm-agent", "prompt": "给方案"}},
 			{ID: "select", Type: "proposal_select", Label: "确认",
 				Config: map[string]any{"auto_var": "auto_confirm", "output_var": "selected_proposal"}},
 			{ID: "output", Type: "output", Label: "输出"},
@@ -486,7 +425,7 @@ func TestGateReactReviseInPlace(t *testing.T) {
 // written yet) plus the direct helper.
 func TestNodeProducesArtifactAndDownstreamGateKeepAlive(t *testing.T) {
 	eng, _, _ := setupGateReactEngine(t)
-	prop := &models.Node{ID: "prop", Type: "proposal"}
+	prop := &models.Node{ID: "prop", Type: "agent", Caps: capsProposal}
 	if !eng.nodeProducesArtifact(prop, mcp.ProposalsArtifactName) {
 		t.Fatalf("proposal node should produce proposals.json")
 	}
@@ -501,7 +440,7 @@ func TestNodeProducesArtifactAndDownstreamGateKeepAlive(t *testing.T) {
 	c := &execCtx{
 		graph: models.Graph{
 			Nodes: []models.Node{
-				{ID: "prop", Type: "proposal"},
+				{ID: "prop", Type: "agent", Caps: capsProposal},
 				{ID: "select", Type: "proposal_select", Config: map[string]any{}},
 			},
 			Edges: []models.Edge{{ID: "e", Source: "prop", Target: "select"}},
@@ -536,7 +475,7 @@ func TestRenderReviewHuman(t *testing.T) {
 // TestReviewEnterPreservesUsage: completed → enterReview → saveState must keep
 // production-phase usage on the paused StateRun (not drop to nil / timeline "—").
 func TestReviewEnterPreservesUsage(t *testing.T) {
-	eng, db, provider := setupReviewEngine(t, true)
+	eng, db, provider := setupReviewEngine(t)
 	provider.agentUsage = &models.TokenUsage{
 		InputTokens: 100, OutputTokens: 40, CacheReadTokens: 10, CacheWriteTokens: 2,
 	}
@@ -598,7 +537,7 @@ func assertLedgerTotal(t *testing.T, db *gorm.DB, runID, modelKey string, want i
 // TestReviewReviseFlushesTokenUsage: ReviseInPlace mid-turn usage is merged onto
 // the same StateRun via flushTokenUsage (aligned with clarify resume path).
 func TestReviewReviseFlushesTokenUsage(t *testing.T) {
-	eng, db, provider := setupReviewEngine(t, true)
+	eng, db, provider := setupReviewEngine(t)
 	provider.agentUsage = &models.TokenUsage{InputTokens: 50, OutputTokens: 20}
 	provider.reviseUsage = &models.TokenUsage{InputTokens: 7, OutputTokens: 3, CacheReadTokens: 1}
 

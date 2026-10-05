@@ -18,7 +18,7 @@ func TestSaveGateArtifactHTTP(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "research", Type: "research"},
+			{ID: "research", Type: "agent", Caps: testReviewCaps},
 			{ID: "gate", Type: "human_gate", Config: map[string]any{
 				"title":         "审阅",
 				"body_template": "{{nodes.research.outputs.research}}",
@@ -32,7 +32,7 @@ func TestSaveGateArtifactHTTP(t *testing.T) {
 		Graph: g, StartedAt: now, CreatedAt: now,
 	})
 	h.db.Create(&models.StateRun{
-		RunID: runID, NodeID: "research", NodeType: "research", Iteration: 1, Status: "completed",
+		RunID: runID, NodeID: "research", NodeType: "agent", Iteration: 1, Status: "completed",
 		Outputs: map[string]any{"research_json": researchJSON, "research": "md"},
 	})
 	h.db.Create(&models.Gate{
@@ -98,7 +98,7 @@ func TestSaveAnnotationArtifactHTTP(t *testing.T) {
 	now := time.Now()
 	g := models.Graph{
 		Nodes: []models.Node{
-			{ID: "visual", Type: "visual"},
+			{ID: "visual", Type: "agent", Caps: testReviewCaps},
 			{ID: "gate", Type: "human_gate", Config: map[string]any{
 				"title":         "审阅",
 				"body_template": "{{nodes.visual.outputs.page}}",

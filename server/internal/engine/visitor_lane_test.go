@@ -97,7 +97,7 @@ func setupVisitorEngine(t *testing.T) (*Engine, *gorm.DB, *visitorFake) {
 	cleanupEngineDB(t, eng, db)
 
 	g := models.Graph{Nodes: []models.Node{
-		{ID: "p1", Type: "agent", Label: "产出", Config: map[string]any{"prompt": "写一份设计文档"}},
+		{ID: "p1", Type: "agent", Caps: capsPlain, Label: "产出", Config: map[string]any{"prompt": "写一份设计文档"}},
 	}}
 	if err := db.Create(&models.Run{ID: "r1", Status: "waiting_human", Graph: g}).Error; err != nil {
 		t.Fatalf("create run: %v", err)

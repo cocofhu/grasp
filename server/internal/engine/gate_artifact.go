@@ -12,6 +12,7 @@ import (
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	gatenode "github.com/cocofhu/grasp/internal/models/nodereg"
+	"github.com/cocofhu/grasp/internal/nodereg"
 
 	"github.com/rs/zerolog/log"
 )
@@ -194,12 +195,8 @@ func collectUpstreamProduces(c *execCtx, gateNode *models.Node) []string {
 		if up == nil {
 			continue
 		}
-		if prod, _ := up.Config["produces"].(string); strings.TrimSpace(prod) != "" {
-			for _, part := range strings.Split(prod, ",") {
-				n := strings.TrimSpace(part)
-				if n == "" || seen[n] {
-					continue
-				}
+		for _, s := range nodereg.DeclaredSchemas(up.Caps) {
+			if n := s.ArtifactName; n != "" && !seen[n] {
 				seen[n] = true
 				names = append(names, n)
 			}

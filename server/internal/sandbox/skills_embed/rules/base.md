@@ -1,5 +1,5 @@
 ---
-description: approving 沙箱 Agent 基础行为规则
+description: 沙箱 Agent 基础行为规则
 alwaysApply: true
 ---
 

@@ -18,7 +18,7 @@ function draft(over: Partial<AgentStudioDraft> = {}): AgentStudioDraft {
     mcp: [],
     env: [],
     layout: { configRoot: '/root/.cursor', workspaceDir: '/root/workspace' },
-    prompts: {},
+    capabilities: null,
     ...over,
   }) as AgentStudioDraft
 }

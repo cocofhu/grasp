@@ -181,7 +181,7 @@ function onHandlePointerDown(workflowId: string, event: PointerEvent) {
       offsetY,
       width: rect.width,
     }
-    document.body.classList.add('quick-pipeline-dragging')
+    document.body.classList.add('quick-workflow-dragging')
     updatePlaceholder(moveEvent.clientY)
   }
 
@@ -215,7 +215,7 @@ function onHandlePointerDown(workflowId: string, event: PointerEvent) {
 
     const { from: dragFrom, placeholder } = dragState.value
     dragState.value = undefined
-    document.body.classList.remove('quick-pipeline-dragging')
+    document.body.classList.remove('quick-workflow-dragging')
     if (!cancelled) reorderFavorites(dragFrom, placeholder)
     window.setTimeout(() => {
       suppressQuickItemClick.value = false
@@ -284,7 +284,7 @@ const settingsItems = settingsNavItems
       </template>
     </div>
 
-    <!-- Workspace primary + quick pipelines slide together (plan g2.2) -->
+    <!-- Workspace primary + quick workflows slide together (plan g2.2) -->
     <div v-else-if="primaryGroup" key="workspace" class="nav-chrome-pane">
     <div class="mb-3" data-testid="nav-workspace-chrome">
       <RouterLink
@@ -306,22 +306,22 @@ const settingsItems = settingsNavItems
       </RouterLink>
     </div>
 
-    <!-- Quick pipelines: workspace only, and only when favorites exist (plan g1.2) -->
-    <div v-if="displayItems.length" class="mb-3" data-testid="nav-quick-pipelines">
+    <!-- Quick workflows: workspace only, and only when favorites exist (plan g1.2) -->
+    <div v-if="displayItems.length" class="mb-3" data-testid="nav-quick-workflows">
       <div class="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-txt3">
-        {{ t('nav.quickPipelines') }}
+        {{ t('nav.quickWorkflows') }}
       </div>
-      <div ref="quickList" class="quick-pipelines-list">
+      <div ref="quickList" class="quick-workflows-list">
         <template v-for="(item, index) in dragItems" :key="item.workflowId">
           <div
             v-if="dragState && dragState.placeholder === index"
-            class="quick-pipeline-placeholder"
-            data-testid="nav-quick-pipeline-placeholder"
+            class="quick-workflow-placeholder"
+            data-testid="nav-quick-workflow-placeholder"
           />
           <div
             class="mb-0.5 grid w-full grid-cols-[28px_1fr_28px] items-center gap-0.5 px-2 py-1.5 text-left text-txt2 transition hover:bg-elevated hover:text-txt"
             data-sortable-row
-            data-testid="nav-quick-pipeline-item"
+            data-testid="nav-quick-workflow-item"
             role="button"
             tabindex="0"
             @click="onLaunch(item.workflowId)"
@@ -331,8 +331,8 @@ const settingsItems = settingsNavItems
             <button
               v-if="!isMobile"
               type="button"
-              class="quick-pipeline-handle flex h-7 w-7 items-center justify-center text-txt3 hover:bg-overlay hover:text-txt"
-              data-testid="nav-quick-pipeline-drag-handle"
+              class="quick-workflow-handle flex h-7 w-7 items-center justify-center text-txt3 hover:bg-overlay hover:text-txt"
+              data-testid="nav-quick-workflow-drag-handle"
               aria-label="拖动调整顺序"
               title="拖动调整顺序"
               @pointerdown="onHandlePointerDown(item.workflowId, $event)"
@@ -351,7 +351,7 @@ const settingsItems = settingsNavItems
             <button
               type="button"
               class="flex h-7 w-7 items-center justify-center text-warn hover:text-warn"
-              data-testid="nav-quick-pipeline-unfavorite"
+              data-testid="nav-quick-workflow-unfavorite"
               :aria-label="t('common.buttons.unfavorite')"
               :title="t('common.buttons.unfavorite')"
               @click="onUnfavorite(item.workflowId, item.name, $event)"
@@ -362,8 +362,8 @@ const settingsItems = settingsNavItems
         </template>
         <div
           v-if="dragState && dragState.placeholder === dragItems.length"
-          class="quick-pipeline-placeholder"
-          data-testid="nav-quick-pipeline-placeholder"
+          class="quick-workflow-placeholder"
+          data-testid="nav-quick-workflow-placeholder"
         />
       </div>
     </div>
@@ -374,7 +374,7 @@ const settingsItems = settingsNavItems
   </nav>
   <div
     v-if="dragState"
-    class="quick-pipeline-drag-float grid grid-cols-[28px_1fr_28px] items-center gap-0.5 px-2 py-1.5"
+    class="quick-workflow-drag-float grid grid-cols-[28px_1fr_28px] items-center gap-0.5 px-2 py-1.5"
     :style="{
       width: `${dragState.width}px`,
       left: `${dragState.x - dragState.offsetX}px`,
@@ -446,23 +446,23 @@ const settingsItems = settingsNavItems
   }
 }
 
-.quick-pipeline-handle {
+.quick-workflow-handle {
   cursor: grab;
   touch-action: none;
 }
 
-.quick-pipeline-handle:active {
+.quick-workflow-handle:active {
   cursor: grabbing;
 }
 
-.quick-pipeline-placeholder {
+.quick-workflow-placeholder {
   height: 46px;
   margin-bottom: 2px;
   border: 1px dashed rgb(var(--c-accent) / 70%);
   background: rgb(var(--c-accent) / 12%);
 }
 
-.quick-pipeline-drag-float {
+.quick-workflow-drag-float {
   position: fixed;
   z-index: 9999;
   pointer-events: none;
@@ -473,8 +473,8 @@ const settingsItems = settingsNavItems
   transform: scale(1.02);
 }
 
-:global(body.quick-pipeline-dragging),
-:global(body.quick-pipeline-dragging *) {
+:global(body.quick-workflow-dragging),
+:global(body.quick-workflow-dragging *) {
   cursor: grabbing !important;
   user-select: none;
 }

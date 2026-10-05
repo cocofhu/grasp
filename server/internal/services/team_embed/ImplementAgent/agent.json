@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "name": "ImplementAgent",
   "acpBackend": "cursor",
   "mcp": [
     {
@@ -10,8 +11,24 @@
       }
     }
   ],
-  "name": "ImplementAgent",
   "env": {
     "GIT_REPOS": "${vars.repos}"
+  },
+  "capabilities": {
+    "interaction": "auto",
+    "review": true,
+    "tools": [
+      "set_preview",
+      "update_plan_status"
+    ],
+    "reads": [
+      "*"
+    ],
+    "writes": [
+      {
+        "schema": "implementation_result",
+        "required": true
+      }
+    ]
   }
 }

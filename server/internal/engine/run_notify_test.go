@@ -61,7 +61,7 @@ func TestRunNotifyOnWaitingHuman(t *testing.T) {
 		},
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "gate"},
-			{ID: "e2", Source: "gate", Target: "output", When: "action == 'approve'"},
+			{ID: "e2", Source: "gate", Target: "output", SourceHandle: "approve"},
 		},
 	}
 	eng, db, _ := setupEngineGraphP(t, g)
@@ -96,7 +96,7 @@ func TestRunNotifyOnNodeFailed(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input", Label: "输入"},
-			{ID: "boom", Type: "agent", Label: "实现", Config: map[string]any{
+			{ID: "boom", Type: "agent", Caps: capsPlain, Label: "实现", Config: map[string]any{
 				"prompt": "x", "produces": "out.md",
 			}},
 			{ID: "output", Type: "output"},

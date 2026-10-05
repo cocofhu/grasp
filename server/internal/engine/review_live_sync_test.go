@@ -26,7 +26,7 @@ func TestReviewReplySyncsOutputsAndBodyMd(t *testing.T) {
 		Variables: []models.Variable{{Name: "review", Type: "bool", Value: true}},
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "page", Type: "visual", Config: map[string]any{}},
+			{ID: "page", Type: "agent", Caps: capsPage, Config: map[string]any{}},
 			{ID: "gate", Type: "human_gate", Config: map[string]any{
 				"title":         "审阅",
 				"body_template": "{{nodes.page.outputs.page}}",
@@ -94,7 +94,7 @@ func TestReviewReplySyncsOutputsAndBodyMd(t *testing.T) {
 		t.Fatalf("reviseCalls=%d", provider.reviseCalls["page"])
 	}
 
-	storePage, ok := arts.Get(run.ID, visualPageName)
+	storePage, ok := arts.Get(run.ID, mcp.PageArtifactName)
 	if !ok || !strings.Contains(storePage, "v2") {
 		t.Fatalf("store page.html not revised: ok=%v content=%q", ok, storePage)
 	}
@@ -123,7 +123,7 @@ func TestWriteArtifactSyncsOutputsAndPendingBodyMd(t *testing.T) {
 	now := time.Now()
 	g := models.Graph{
 		Nodes: []models.Node{
-			{ID: "page", Type: "visual"},
+			{ID: "page", Type: "agent", Caps: capsPage},
 			{ID: "gate", Type: "human_gate", Config: map[string]any{
 				"title":         "审阅",
 				"body_template": "{{nodes.page.outputs.page}}",
@@ -140,7 +140,7 @@ func TestWriteArtifactSyncsOutputsAndPendingBodyMd(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Create(&models.StateRun{
-		RunID: runID, NodeID: "page", NodeType: "visual", Iteration: 1, Status: "completed",
+		RunID: runID, NodeID: "page", NodeType: "agent", Iteration: 1, Status: "completed",
 		Outputs: map[string]any{"page": oldHTML},
 	})
 	db.Create(&models.Gate{
@@ -149,10 +149,10 @@ func TestWriteArtifactSyncsOutputsAndPendingBodyMd(t *testing.T) {
 		Actions: []models.GateAction{{ID: "approve", Label: "批准"}},
 	})
 	tok := eng.host.RegisterRun(runID)
-	eng.host.SetActiveNode(runID, "page", "visual")
+	eng.host.SetActiveNode(runID, "page", capsPage)
 	eng.host.SetActiveReview(runID, true)
 
-	if _, err := eng.host.WriteArtifact(runID, tok, "page", visualPageName, newHTML, "html"); err != nil {
+	if _, err := eng.host.WriteArtifact(runID, tok, "page", mcp.PageArtifactName, newHTML, "html"); err != nil {
 		t.Fatalf("WriteArtifact: %v", err)
 	}
 
@@ -168,7 +168,7 @@ func TestWriteArtifactSyncsOutputsAndPendingBodyMd(t *testing.T) {
 	}
 
 	newerHTML := "<!doctype html><html><body>newer-live</body></html>"
-	if _, err := eng.host.WriteArtifact(runID, tok, "page", visualPageName, newerHTML, "html"); err != nil {
+	if _, err := eng.host.WriteArtifact(runID, tok, "page", mcp.PageArtifactName, newerHTML, "html"); err != nil {
 		t.Fatalf("WriteArtifact second: %v", err)
 	}
 	if err := db.Where("run_id = ? AND node_id = ?", runID, "page").First(&sr).Error; err != nil {
@@ -196,20 +196,20 @@ func TestWriteArtifactFailureDoesNotClearOutputs(t *testing.T) {
 	runID := "run-write-fail"
 	now := time.Now()
 	oldHTML := "<!doctype html><html><body>keep-me</body></html>"
-	g := models.Graph{Nodes: []models.Node{{ID: "page", Type: "visual"}}}
+	g := models.Graph{Nodes: []models.Node{{ID: "page", Type: "agent", Caps: capsPage}}}
 	db.Create(&models.Run{
 		ID: runID, WorkflowID: "w", WorkflowName: "w", Status: "waiting_human",
 		Graph: g, StartedAt: now, CreatedAt: now,
 	})
 	db.Create(&models.StateRun{
-		RunID: runID, NodeID: "page", NodeType: "visual", Iteration: 1, Status: "waiting_human",
+		RunID: runID, NodeID: "page", NodeType: "agent", Iteration: 1, Status: "waiting_human",
 		Outputs: map[string]any{"page": oldHTML},
 	})
-	if _, err := eng.store.Save(runID, "page", visualPageName, "html", oldHTML); err != nil {
+	if _, err := eng.store.Save(runID, "page", mcp.PageArtifactName, "html", oldHTML); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := eng.host.WriteArtifact(runID, "bad-token", "page", visualPageName, "<html>x</html>", "html"); err == nil {
+	if _, err := eng.host.WriteArtifact(runID, "bad-token", "page", mcp.PageArtifactName, "<html>x</html>", "html"); err == nil {
 		t.Fatal("expected unauthorized error")
 	}
 	var sr models.StateRun
@@ -217,7 +217,7 @@ func TestWriteArtifactFailureDoesNotClearOutputs(t *testing.T) {
 	if got, _ := sr.Outputs["page"].(string); got != oldHTML {
 		t.Fatalf("outputs overwritten on failed write: %q", got)
 	}
-	if content, ok := eng.store.Get(runID, visualPageName); !ok || content != oldHTML {
+	if content, ok := eng.store.Get(runID, mcp.PageArtifactName); !ok || content != oldHTML {
 		t.Fatalf("store overwritten on failed write: ok=%v %q", ok, content)
 	}
 }
@@ -229,17 +229,17 @@ func TestSyncAfterPrimaryArtifactWriteSkipsNonPrimaryAndNonWaiting(t *testing.T)
 	runID := "run-sync-skip"
 	now := time.Now()
 	old := "<html>keep</html>"
-	g := models.Graph{Nodes: []models.Node{{ID: "page", Type: "visual"}}}
+	g := models.Graph{Nodes: []models.Node{{ID: "page", Type: "agent", Caps: capsPage}}}
 	db.Create(&models.Run{
 		ID: runID, WorkflowID: "w", WorkflowName: "w", Status: "running",
 		Graph: g, StartedAt: now, CreatedAt: now,
 	})
 	db.Create(&models.StateRun{
-		RunID: runID, NodeID: "page", NodeType: "visual", Iteration: 1, Status: "running",
+		RunID: runID, NodeID: "page", NodeType: "agent", Iteration: 1, Status: "running",
 		Outputs: map[string]any{"page": old},
 	})
 	tok := eng.host.RegisterRun(runID)
-	eng.host.SetActiveNode(runID, "page", "visual")
+	eng.host.SetActiveNode(runID, "page", capsPage)
 
 	// Non-primary name: store updates, outputs untouched.
 	if _, err := eng.host.WriteArtifact(runID, tok, "page", "notes.md", "hello", "markdown"); err != nil {
@@ -252,7 +252,7 @@ func TestSyncAfterPrimaryArtifactWriteSkipsNonPrimaryAndNonWaiting(t *testing.T)
 	}
 
 	// Primary page.html while run is still "running" (not review / waiting_human): no sync.
-	if _, err := eng.host.WriteArtifact(runID, tok, "page", visualPageName, "<html>new</html>", "html"); err != nil {
+	if _, err := eng.host.WriteArtifact(runID, tok, "page", mcp.PageArtifactName, "<html>new</html>", "html"); err != nil {
 		t.Fatal(err)
 	}
 	db.Where("run_id = ? AND node_id = ?", runID, "page").First(&sr)
@@ -269,7 +269,7 @@ func TestSyncAfterPrimaryArtifactWriteStructuredProduct(t *testing.T) {
 	now := time.Now()
 	g := models.Graph{
 		Nodes: []models.Node{
-			{ID: "research", Type: "research"},
+			{ID: "research", Type: "agent", Caps: capsResearch},
 			{ID: "gate", Type: "human_gate", Config: map[string]any{
 				"title":         "审阅",
 				"body_template": "{{nodes.research.outputs.research}}",
@@ -284,7 +284,7 @@ func TestSyncAfterPrimaryArtifactWriteStructuredProduct(t *testing.T) {
 		Graph: g, StartedAt: now, CreatedAt: now,
 	})
 	db.Create(&models.StateRun{
-		RunID: runID, NodeID: "research", NodeType: "research", Iteration: 1, Status: "completed",
+		RunID: runID, NodeID: "research", NodeType: "agent", Iteration: 1, Status: "completed",
 		Outputs: map[string]any{"research_json": oldJSON, "research": "old-md"},
 	})
 	db.Create(&models.Gate{
@@ -294,7 +294,7 @@ func TestSyncAfterPrimaryArtifactWriteStructuredProduct(t *testing.T) {
 	})
 	tok := eng.host.RegisterRun(runID)
 	eng.host.SetActiveReview(runID, true)
-	eng.host.SetActiveNode(runID, "research", "research")
+	eng.host.SetActiveNode(runID, "research", capsResearch)
 
 	if _, err := eng.host.WriteArtifact(runID, tok, "research", mcp.ResearchArtifactName, newJSON, "json"); err != nil {
 		t.Fatal(err)
@@ -347,7 +347,7 @@ func TestReviewReplyFailureDoesNotSyncOutputs(t *testing.T) {
 		Variables: []models.Variable{{Name: "review", Type: "bool", Value: true}},
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "page", Type: "visual"},
+			{ID: "page", Type: "agent", Caps: capsPage},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{

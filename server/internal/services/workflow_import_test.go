@@ -96,18 +96,18 @@ func TestWorkflowImportCreatesDraft(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
 
-	existing := &models.WorkflowDef{ID: "wf-x", ProjectID: models.DefaultProjectID, Name: "流水线 A", Graph: validGraph()}
+	existing := &models.WorkflowDef{ID: "wf-x", ProjectID: models.DefaultProjectID, Name: "工作流 A", Graph: validGraph()}
 	if err := s.Save(existing); err != nil {
 		t.Fatal(err)
 	}
 
-	raw := envelopeJSON(validEnvelope("流水线 A"))
+	raw := envelopeJSON(validEnvelope("工作流 A"))
 	imported, err := s.Import(raw, "")
 	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
-	if imported.Name != "流水线 A 副本" {
-		t.Fatalf("name = %q, want 流水线 A 副本", imported.Name)
+	if imported.Name != "工作流 A 副本" {
+		t.Fatalf("name = %q, want 工作流 A 副本", imported.Name)
 	}
 	if imported.Status != "draft" || imported.Version != 1 {
 		t.Fatalf("status/version = %s/%d", imported.Status, imported.Version)

@@ -166,7 +166,7 @@ func TestSaveStateDoesNotReviveCancelledVisit(t *testing.T) {
 	eng, db := setupEngine(t)
 	runID := "run-save-guard"
 	db.Create(&models.Run{ID: runID, WorkflowID: "x", WorkflowName: "x", Status: "cancelled",
-		Graph: models.Graph{Nodes: []models.Node{{ID: "work", Type: "agent"}}}})
+		Graph: models.Graph{Nodes: []models.Node{{ID: "work", Type: "agent", Caps: capsPlain}}}})
 	db.Create(&models.StateRun{
 		RunID: runID, NodeID: "work", NodeType: "agent", Iteration: 1,
 		Status: "cancelled", Error: "run 已取消,节点未收尾",
@@ -177,7 +177,7 @@ func TestSaveStateDoesNotReviveCancelledVisit(t *testing.T) {
 		iter: map[string]int{"work": 1},
 		vars: map[string]any{},
 	}
-	node := &models.Node{ID: "work", Type: "agent"}
+	node := &models.Node{ID: "work", Type: "agent", Caps: capsPlain}
 	eng.saveState(c, node, nodeOutcome{status: "completed", outputMd: "should not land", outputs: map[string]any{"x": 1}})
 
 	var sr models.StateRun

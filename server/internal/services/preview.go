@@ -170,23 +170,8 @@ func (s *PreviewService) PreviewUpstream(ctx context.Context, sandboxName string
 	return "http://" + addr, true
 }
 
-func previewConfigTruthy(v any) bool {
-	switch t := v.(type) {
-	case bool:
-		return t
-	case string:
-		s := strings.ToLower(strings.TrimSpace(t))
-		return s == "true" || s == "1" || s == "yes"
-	case float64:
-		return t != 0
-	case int:
-		return t != 0
-	default:
-		return false
-	}
-}
-
-// DirectPreview reports whether the app_preview node has direct_preview enabled.
+// DirectPreview reports whether the node's Agent previews IP-direct, which is
+// every Agent granted set_preview.
 func (s *PreviewService) DirectPreview(runID, nodeID string) bool {
 	if s.db == nil || runID == "" || nodeID == "" {
 		return false
@@ -196,10 +181,7 @@ func (s *PreviewService) DirectPreview(runID, nodeID string) bool {
 		return false
 	}
 	n := run.Graph.FindNode(nodeID)
-	if n == nil || n.Config == nil {
-		return false
-	}
-	return previewConfigTruthy(n.Config["direct_preview"])
+	return n != nil && n.Caps.CanPreview()
 }
 
 // EnsurePublishedPort asks the gateway to map port onto the K8s Service/LB

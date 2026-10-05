@@ -23,7 +23,7 @@ function desktopWorkflowsBlock(): string {
   return detailSrc.slice(start, end)
 }
 
-describe('ProjectDetailView pipelines desktop table layout (g1.2 / g1.3)', () => {
+describe('ProjectDetailView workflows desktop table layout (g1.2 / g1.3)', () => {
   it('table keeps w-full plus a min-width so narrow columns trigger horizontal scroll', () => {
     const desktop = desktopWorkflowsBlock()
     const tableStart = desktop.indexOf('<table')
@@ -61,7 +61,7 @@ describe('ProjectDetailView pipelines desktop table layout (g1.2 / g1.3)', () =>
   })
 })
 
-describe('ProjectDetailView pipelines mobile card layout regression (g1.4)', () => {
+describe('ProjectDetailView workflows mobile card layout regression (g1.4)', () => {
   it('mobile branch stays a card list and is not given the desktop min-width', () => {
     const mobile = mobileWorkflowsBlock()
     expect(mobile).toMatch(/data-testid="wf-notify-inline"/)

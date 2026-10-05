@@ -49,7 +49,6 @@ import {
   CLARIFY_AUTO_GROW_MIN,
 } from '@/lib/inbox/composerAutoGrow'
 import type { Ref } from 'vue'
-import { isGrasp } from '@/lib/shared/clarifyInteractive'
 import { useConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import {
   cloneAnnotations as cloneReactAnnotations,
@@ -74,14 +73,12 @@ export type ClarifyChatProps = {
   hideFinish?: boolean
   coldSession?: boolean
   finishDisabled?: boolean
-  forceConfirmFlow?: boolean
   sendLabel?: string
   /** Optional adapter transport: retain the composer until the request is accepted. */
   sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[]) => Promise<boolean>
   confirmError?: string | null
   /** Host set this after a 409 sandbox_busy so the error bar offers abort+confirm. */
   confirmCanAbort?: boolean
-  nodeType?: string
   seedHumanText?: string
   seedHumanImages?: ClarifyImage[]
 }
@@ -157,17 +154,13 @@ const queued = ref<QueueItem[]>([])
 const liveTurns = ref<ClarifyTurn[]>([])
 /** Bridge-reported orphan turn (platform FIFO idle, sandbox still busy). */
 const sandboxOrphan = ref<{ runningOpId: string; desynced: boolean } | null>(null)
-const showApproveEmptyHint = computed(
+const showClarifyEmptyHint = computed(
   () =>
     !props.reviewMode &&
-    isGrasp(props.nodeType) &&
     persistedTurns.value.length === 0 &&
     liveTurns.value.length === 0 &&
     queued.value.length === 0 &&
     !seedHumanTurn.value,
-)
-const useConfirmFlowAction = computed(
-  () => props.reviewMode || isGrasp(props.nodeType) || !!props.forceConfirmFlow,
 )
 
 function humanMatchesSeed(t: ClarifyTurn, seed: ClarifyTurn): boolean {
@@ -515,8 +508,7 @@ const pendingInteractiveOpen = computed(
 const inputPlaceholder = computed(() => {
   if (pendingInteractiveOpen.value) return translate('pages.clarify.skipInputPlaceholder')
   if (props.reviewMode) return translate('pages.clarify.reviewInputPlaceholder')
-  if (isGrasp(props.nodeType)) return translate('pages.clarify.approveInputPlaceholder')
-  return translate('pages.clarify.inputPlaceholder')
+  return translate('pages.clarify.clarifyInputPlaceholder')
 })
 
 const displayTurns = computed<ClarifyTurn[]>(() => {
@@ -1164,26 +1156,10 @@ function finishAbort() {
 
 function finishEarly() {
   if (props.done || (!props.active && !props.coldSession)) return
-  if (props.reviewMode) {
-    if (validating.value || confirmDisabled.value) return
-    validating.value = true
-    // Click intent: play overlay immediately; parent force must not wait for done (g1.1).
-    void playConfirmCeremony()
-    emit('finish')
-    void scrollBottom()
-    return
-  }
-  // Grasp / confirm-flow: hide thinking placeholder — overlay is the main feedback (g2.1).
-  if (useConfirmFlowAction.value) {
-    if (validating.value || confirmDisabled.value) return
-    validating.value = true
-    void playConfirmCeremony()
-    emit('finish')
-    void scrollBottom()
-    return
-  }
-  if (thinking.value) return
-  thinking.value = true
+  // Click intent: play overlay immediately; parent force must not wait for done (g1.1).
+  if (validating.value || confirmDisabled.value) return
+  validating.value = true
+  void playConfirmCeremony()
   emit('finish')
   void scrollBottom()
 }
@@ -1870,8 +1846,7 @@ function retryLastFailed() {
     validating,
     queued,
     liveTurns,
-    showApproveEmptyHint,
-    useConfirmFlowAction,
+    showClarifyEmptyHint,
     seedHumanTurn,
     liveAgentIdx,
     showSandboxOrphanBanner,

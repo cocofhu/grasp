@@ -7,11 +7,27 @@ description: FSM orchestration, human gates, sandboxed execution, and artifact c
 
 Grasp turns coding agents into steps in a workflow. You orchestrate on a finite state machine:
 
-- **Nodes** are states (agent / react / gate / …)
+- **Nodes** are states: Agent, input, output, set variable, branch, human gate, and proposal select — seven in total
 - **Edges** are transitions, with configurable success, failure, and rollback paths
 - Use `when` guards and checkpoints to make risky steps explicit
 
 This is not a one-shot, irreversible agent run: design the path first, then gate the critical steps.
+
+## Agent nodes and capabilities
+
+A workflow has one kind of Agent node. The node only sets three things: which Agent runs (`agent_profile`), the goal (`prompt`, supports `{{variables}}`), and a timeout in minutes. What the Agent may do is declared by the Agent itself in `capabilities` in its `agent.json`, edited on the **Capabilities** tab in Agent Studio:
+
+- `interaction`: `clarify` holds a multi-turn conversation and ends only when a person confirms; `auto` runs once.
+- `review`: `auto` only. After the run the node waits for human review; the session stays online, so the Agent can keep editing and start previews.
+- `tools`: grantable platform tools — `ask_question`, `ask_form`, `set_artifact_preview`, `set_preview`, `update_plan_status`. `clarify` must be granted `ask_question`.
+- `reads` / `writes`: artifacts the Agent may read (`*` for all) and the structured products it writes, each optionally required. A missing required product fails the node.
+- When the Agent writes a product with a verdict (`test_result`, `review`), its node has **Pass** and **Fail** outlets on the canvas; it leaves through Pass only when every verdict passes.
+
+Every node that uses the same Agent has the same capabilities; nodes differ only by goal. If you need different permissions, create a second Agent. Behaviour rules live in the Agent workspace's `AGENTS.md` and skills; the platform keeps only a fixed common protocol.
+
+Three templates ship built in: **Clarify** (clarify; writes the requirement spec and plan), **Implement** (auto with review; writes the implementation result) and **Test & review** (auto with review; writes the test result and review verdict). All three can start a preview with `set_preview`. Onboarding creates the default workflow input → Clarify → Implement → Test & review; Pass goes to output and Fail goes back to Implement.
+
+A workflow with an unknown node type fails validation with "未知节点类型 X" (unknown node type) and its runs fail; an Agent without capabilities fails with "Agent X 未声明能力" (Agent has no capabilities).
 
 ## Human gates
 
@@ -31,9 +47,9 @@ In the pending-gates inbox, only **human_gate** cards (and the visual preview to
 - **Each visitor has their own conversation.** When one link is shared with several people, every browser (identified by an anonymous visitor id kept in local storage, so refreshes and new tabs keep it) gets its own dialogue and its own Agent context; visitors never see each other's messages. Before speaking, a visitor sees the node's dialogue so far. The Agent runs each visitor in a separate sandbox chat, but the **workspace and artifacts stay shared**: product edits one visitor asks for are visible to the others and in-product. Up to 6 visitors per link can talk at once; past that the page asks them to try again later. A visitor idle for 30 minutes has their sandbox chat closed, and their next message resumes with the existing conversation.
 - **First decision wins.** Once any visitor confirms or rejects successfully, the link stops working for everyone and all visitor chats end.
 
-### Temporary review links (Inbox kind=review / app_preview)
+### Temporary review links (Inbox kind=review)
 
-Inbox **pending review** and **app preview** cards reuse the same management panel and token rules (`ShareLinkKindReview`, including TTL and permission presets), but authenticated APIs live under `/api/runs/:id/reviews/:nodeId/share-link*` — not `/gates/...`, and no fake Gate row is created. In-product entries: card **Copy temp link** and the mobile detail top bar button with the same label. The public page is labeled **External review**; hot sessions support multi-turn ReAct. For `productKind=app_preview` the public page defaults to remote desktop and picking via a short-lived ticket channel (desensitized ports; API ports use a same-origin iframe); mobile shows a degrade hint only. The only footer action is **Confirm and advance**. Per-visitor conversations, the shared workspace, and first-decision-wins apply as above. Run-detail review tabs and the logged-in review composer do not add a temp-link entry; `proposal_select` and pending clarify stay out of scope.
+Inbox **pending review** and **app preview** cards reuse the same management panel and token rules (`ShareLinkKindReview`, including TTL and permission presets), but authenticated APIs live under `/api/runs/:id/reviews/:nodeId/share-link*` — not `/gates/...`, and no fake Gate row is created. In-product entries: card **Copy temp link** and the mobile detail top bar button with the same label. The public page is labeled **External review**; hot sessions support multi-turn ReAct. When the node registered an app preview, the public page defaults to remote desktop and picking via a short-lived ticket channel (desensitized ports; API ports use a same-origin iframe); mobile shows a degrade hint only. The only footer action is **Confirm and advance**. Per-visitor conversations, the shared workspace, and first-decision-wins apply as above. Run-detail review tabs and the logged-in review composer do not add a temp-link entry; `proposal_select` and pending clarify stay out of scope.
 
 ### App preview: noVNC and direct IP
 
@@ -41,11 +57,11 @@ Sandbox ports registered with `set_preview` always preview over noVNC in the pan
 
 The preview is watch-only by default. Select Take over in the toolbar to use mouse and keyboard, and Return control when you are done; Pick annotation allows clicks while it is armed. This only prevents stray clicks; it is not access control.
 
-When the node has direct IP preview (`direct_preview`) on, the noVNC toolbar adds an Open directly in new tab button for `http://IP:port/`, which carries the pick bar and the Chat drawer at the bottom right.
+When the Agent is granted `set_preview`, the noVNC toolbar adds an Open directly in new tab button for `http://IP:port/`, which carries the pick bar and the Chat drawer at the bottom right.
 
-### Live variants (Grasp / app preview + direct IP)
+### Live variants
 
-**Grasp** (`grasp`, historical `approve`) and **app preview** (`app_preview`) nodes with direct IP preview (`direct_preview`) get **Live variants** by default (`live_variants`). After the agent registers an in-sandbox app port with `set_preview`, open its direct preview and click the **Page collaboration** icon at the bottom of the chat input, next to the attachment button. Choose **Page candidates** from the menu. Existing direct-preview nodes that omit the node setting have this capability without migration. Explicitly disabled Live, noVNC, external URL-only previews and links without Live permission do not provide candidate generation.
+Agent nodes granted `set_preview` that talk with a person (`clarify`, or `auto` with review) get **Live variants**. After the agent registers an in-sandbox app port with `set_preview`, open its direct preview and click the **Page collaboration** icon at the bottom of the chat input, next to the attachment button. Choose **Page candidates** from the menu. noVNC, external URL-only previews and links without Live permission do not provide candidate generation.
 
 **Page collaboration** is collapsed by default. Its icon shares the attachment toolbar; hover to see its full name. Click the icon to expand the menu and set **Page control** and **Page candidates** independently. You can collapse the menu when finished; both switch settings are retained. The icon shows how many features are enabled; hover or open the menu to see which ones.
 

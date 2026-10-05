@@ -31,7 +31,7 @@ func TestRunAgentEventSinkAndRetry(t *testing.T) {
 	p, _ := newTestProvider(t, host, testOpts(), mgr)
 	var emitted int
 	p.SetEventSink(func(string, string, []models.AcpEvent, bool) { emitted++ })
-	req := reqWithProfile(NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Token: tok,
+	req := reqWithProfile(NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testPlainCaps, Token: tok,
 		Config: map[string]any{"prompt": "go", "produces": "report.md"}, Vars: map[string]any{}})
 	if _, err := p.RunAgent(context.Background(), req); err != nil {
 		t.Fatalf("RunAgent: %v", err)
@@ -59,7 +59,7 @@ func TestEnsureStructuredReprompt(t *testing.T) {
 		}
 	})
 	p, _ := newTestProvider(t, host, testOpts(), mgr)
-	req := reqWithProfile(NodeReq{RunID: "r", NodeID: "n", NodeType: "research", Token: tok,
+	req := reqWithProfile(NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testCapsWriting(models.SchemaResearch), Token: tok,
 		Config: map[string]any{"prompt": "research"}, Vars: map[string]any{}})
 	if _, err := p.RunAgent(context.Background(), req); err != nil {
 		t.Fatalf("RunAgent: %v", err)
@@ -92,7 +92,7 @@ func TestEnsureStructuredIgnoresUpstreamOwner(t *testing.T) {
 		}
 	})
 	p, _ := newTestProvider(t, host, testOpts(), mgr)
-	req := reqWithProfile(NodeReq{RunID: "r", NodeID: "n", NodeType: "research", Token: tok,
+	req := reqWithProfile(NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testCapsWriting(models.SchemaResearch), Token: tok,
 		Config: map[string]any{"prompt": "research"}, Vars: map[string]any{}})
 	if _, err := p.RunAgent(context.Background(), req); err != nil {
 		t.Fatalf("RunAgent: %v", err)
@@ -125,7 +125,7 @@ func implementProvider(t *testing.T, planJSON string, chat chatFunc) (*acpProvid
 	}
 	mgr := newFakeManager(t, host, runID, nodeID, tok, func(int) chatFunc { return chat })
 	p, _ := newTestProvider(t, host, testOpts(), mgr)
-	req := reqWithProfile(NodeReq{RunID: runID, NodeID: nodeID, NodeType: "implement", Token: tok,
+	req := reqWithProfile(NodeReq{RunID: runID, NodeID: nodeID, NodeType: "agent", Caps: testImplementCaps, Token: tok,
 		Config: map[string]any{"prompt": "build", "max_rounds": 2}, Vars: map[string]any{}})
 	return p, store, tok, req
 }
@@ -168,8 +168,9 @@ func TestEnsurePlanCompleteNudgeTimeout(t *testing.T) {
 		}
 		return turnAction{stall: true}
 	})
-	req.Config["chat_timeout"] = 1
+	p.opts.ChatTimeout = time.Second
 	p.opts.ChatIdleTimeout = 5 * time.Second
+	p.opts.ChatTimeout = time.Second
 	_, err := p.RunAgent(context.Background(), req)
 	if err == nil {
 		t.Fatal("expected nudge timeout failure")
@@ -200,9 +201,10 @@ func TestEnsureStructuredNudgeTimeout(t *testing.T) {
 		}
 	})
 	p, _ := newTestProvider(t, host, testOpts(), mgr)
-	req := reqWithProfile(NodeReq{RunID: "r", NodeID: "n", NodeType: "research", Token: tok,
-		Config: map[string]any{"prompt": "research", "chat_timeout": 1}, Vars: map[string]any{}})
+	req := reqWithProfile(NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testCapsWriting(models.SchemaResearch), Token: tok,
+		Config: map[string]any{"prompt": "research"}, Vars: map[string]any{}})
 	p.opts.ChatIdleTimeout = 5 * time.Second
+	p.opts.ChatTimeout = time.Second
 	_, err := p.RunAgent(context.Background(), req)
 	if err == nil {
 		t.Fatal("expected structured nudge timeout failure")
@@ -233,10 +235,11 @@ func TestEnsureOutcomeNudgeTimeout(t *testing.T) {
 		}
 	})
 	p, _ := newTestProvider(t, host, testOpts(), mgr)
-	req := reqWithProfile(NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Token: tok,
-		Config: map[string]any{"prompt": "go", "produces": "report.md", "chat_timeout": 1},
+	req := reqWithProfile(NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testPlainCaps, Token: tok,
+		Config: map[string]any{"prompt": "go", "produces": "report.md"},
 		Vars:   map[string]any{}})
 	p.opts.ChatIdleTimeout = 5 * time.Second
+	p.opts.ChatTimeout = time.Second
 	_, err := p.RunAgent(context.Background(), req)
 	if err == nil {
 		t.Fatal("expected node_complete nudge timeout failure")
@@ -265,7 +268,7 @@ func TestEnsureStructuredRepromptTransportError(t *testing.T) {
 		}
 	})
 	p, _ := newTestProvider(t, host, testOpts(), mgr)
-	req := reqWithProfile(NodeReq{RunID: "r", NodeID: "n", NodeType: "research", Token: tok,
+	req := reqWithProfile(NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testCapsWriting(models.SchemaResearch), Token: tok,
 		Config: map[string]any{"prompt": "research"}, Vars: map[string]any{}})
 	_, err := p.RunAgent(context.Background(), req)
 	if err == nil {
@@ -279,30 +282,23 @@ func TestEnsureStructuredRepromptTransportError(t *testing.T) {
 	}
 }
 
-// TestRunAgentChatFailurePersistsEvents best-effort snapshots ACP events when
-// streamChat fails; the NodeResult must carry an Events slice (possibly empty
-// when the sandbox produced none) instead of a zero-value NodeResult{}.
-func TestRunAgentChatFailurePersistsEvents(t *testing.T) {
+// TestRunAgentChatFailureSurfacesError: an error-only first turn fails the
+// node with the provider message instead of a zero-value success.
+func TestRunAgentChatFailureSurfacesError(t *testing.T) {
 	store := newMemStore()
 	host := mcp.NewHost(store)
 	tok := host.RegisterRun("r")
 	t.Cleanup(func() { host.UnregisterRun("r") })
 	mgr := newFakeManager(t, host, "r", "n", tok, func(int) chatFunc {
 		return func(int) turnAction {
-			return turnAction{narration: "partial", sendError: "model refused"}
+			return turnAction{sendError: "model refused"}
 		}
 	})
 	p, _ := newTestProvider(t, host, testOpts(), mgr)
-	req := reqWithProfile(NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Token: tok,
-		Config: map[string]any{"prompt": "go", "produces": "report.md"}, Vars: map[string]any{}})
-	res, err := p.RunAgent(context.Background(), req)
-	if err == nil {
-		t.Fatal("expected agent chat failure")
-	}
-	if res.Events == nil {
-		t.Error("expected non-nil Events slice on streamChat failure path")
-	}
-	if len(res.Events) == 0 {
-		t.Error("expected streamed events folded into failure snapshot")
+	req := reqWithProfile(NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testPlainCaps, Token: tok,
+		Config: map[string]any{"prompt": "go"}, Vars: map[string]any{}})
+	_, err := p.RunAgent(context.Background(), req)
+	if err == nil || !strings.Contains(err.Error(), "agent chat") || !strings.Contains(err.Error(), "model refused") {
+		t.Fatalf("expected agent chat failure with provider text, got %v", err)
 	}
 }

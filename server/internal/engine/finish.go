@@ -107,7 +107,10 @@ func (e *Engine) pauseStillPending(runID string, node *models.Node) bool {
 			return true
 		}
 		return !gate.Resolved
-	case "react", "grasp", "approve", "preflight":
+	case "agent":
+		if !node.Caps.Interactive() {
+			return true
+		}
 		var conv models.ReactConversation
 		if err := e.db.Where("run_id = ? AND node_id = ?", runID, node.ID).
 			Order("iteration desc, id desc").First(&conv).Error; err != nil {
@@ -115,15 +118,6 @@ func (e *Engine) pauseStillPending(runID string, node *models.Node) bool {
 		}
 		return !conv.Done
 	default:
-
-		if isReviewNode(node.Type) {
-			var conv models.ReactConversation
-			if err := e.db.Where("run_id = ? AND node_id = ?", runID, node.ID).
-				Order("iteration desc, id desc").First(&conv).Error; err != nil {
-				return true
-			}
-			return !conv.Done
-		}
 		return true
 	}
 }

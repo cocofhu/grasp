@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
 import type { WebSocketServer } from 'ws'
+import type { AgentCapabilities } from '../src/lib/api/apiTypes'
 
 /**
  * Deterministic agent/dev-server surrogate for browser protocol tests. Source
@@ -47,7 +48,7 @@ type Session = {
 type Reply = { images?: Array<{data?:string; mimeType?:string; name?:string}>; annotations?: Array<{selector?:string; label?:string; note?:string}>; token?: string; live?: Event; text?: string; liveCtx?: { sid: string; current: number; params?: Record<string, unknown> } }
 type State = {
   permissionPreset?: 'full' | 'react_only'
-  node: { type: string; config: { direct_preview: boolean; live_variants?: boolean } }
+  node: { type: 'agent'; caps: AgentCapabilities }
   source: string
   revision: number
   sessions: Session[]
@@ -64,10 +65,17 @@ const params = JSON.stringify([
   { id: 'tone', kind: 'steps', default: 'soft', options: [{ value: 'soft', label: '柔和' }, { value: 'strong', label: '强烈' }], label: '强调' },
 ])
 
+// Capability presets selectable via /__e2e/live/reset?caps=…
+export const LIVE_CAPS: Record<string, AgentCapabilities> = {
+  clarify: { interaction: 'clarify', tools: ['ask_question', 'set_preview'] },
+  review: { interaction: 'auto', review: true, tools: ['set_preview'] },
+  'no-preview': { interaction: 'clarify', tools: ['ask_question'] },
+}
+
 function stateFor(key: string): State {
   let state = states.get(key)
   if (!state) {
-    state = { node: { type: 'app_preview', config: { direct_preview: true } }, source: LIVE_ORIGINAL, revision: 0, sessions: [], messages: [], requests: [] }
+    state = { node: { type: 'agent', caps: LIVE_CAPS.clarify }, source: LIVE_ORIGINAL, revision: 0, sessions: [], messages: [], requests: [] }
     states.set(key, state)
   }
   return state
@@ -213,9 +221,8 @@ export function handleLiveVariantsMock(req: IncomingMessage, res: ServerResponse
   if (url.pathname === '/__e2e/live/reset') {
     states.delete(key)
     const state = stateFor(key)
-    state.node = { type: url.searchParams.get('nodeType') || 'app_preview', config: { direct_preview: url.searchParams.get('direct') !== 'false' } }
+    state.node = { type: 'agent', caps: LIVE_CAPS[url.searchParams.get('caps') || 'clarify'] || LIVE_CAPS.clarify }
     if (url.searchParams.get('permission') === 'react_only') state.permissionPreset = 'react_only'
-    if (url.searchParams.has('live')) state.node.config.live_variants = url.searchParams.get('live') !== 'false'
     json(res, publicState(state))
     return true
   }
@@ -232,11 +239,12 @@ export function handleLiveVariantsMock(req: IncomingMessage, res: ServerResponse
   return true
 }
 
-// HTTP surrogate models node configuration, not a page-side enabled:true flag.
-// Go handler/engine tests independently verify this policy against real nodes.
+// HTTP surrogate mirrors models.LiveVariantsEnabled: an interactive Agent
+// (clarify, or auto + review) that may register previews (set_preview).
 function entryEnabled(state: State): boolean {
-  return ['app_preview', 'grasp', 'approve'].includes(state.node.type)
-    && state.node.config.direct_preview && state.node.config.live_variants !== false
+  const caps = state.node.caps
+  const interactive = caps.interaction === 'clarify' || !!caps.review
+  return interactive && !!caps.tools?.includes('set_preview')
 }
 function entryKey(token: unknown): string | null {
   return typeof token === 'string' && token.startsWith('live-e2e-entry-') ? token.slice('live-e2e-'.length) : null
@@ -271,7 +279,7 @@ function handleLiveEntryApi(req: IncomingMessage, res: ServerResponse, url: URL)
   }
   if (url.pathname.endsWith('/preview')) {
     json(res, {
-      status: 'active', kind: 'review', nodeType: state.node.type, title: 'Live direct preview',
+      status: 'active', kind: 'review', nodeType: state.node.type, interaction: state.node.caps.interaction, title: 'Live direct preview',
       remainingSec: 3600, nonce: 'live-entry', permissionPreset: state.permissionPreset || 'full', reactSessionAlive: true,
       sessionBusy: false, waiting: 0, queueItems: [], actions: { reply: 'reply', confirm: 'confirm' },
       turns: [

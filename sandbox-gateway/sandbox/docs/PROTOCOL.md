@@ -2,7 +2,7 @@
 
 本文件定义 **工作流与「沙箱」之间的抽象协议**。沙箱是一种**能力**,
 不绑定任何特定工具:它为工作流提供「代码开发/测试环境 + Agent 会话」,
-以及可选的「应用预览桌面」(headed Chromium + VNC,供 `app_preview` 人工审批)。
+以及可选的「应用预览桌面」(headed Chromium + VNC,供应用预览人工复审)。
 只要一个容器镜像满足本协议,无论内部用不用 Cursor、Git、GitLab,都能被工作流
 当作沙箱驱动。
 
@@ -67,7 +67,7 @@
 - `session.tokenUsage`:会话事件/连接负载是否携带用量(token)字段。参考实现据实为
   `false`(当前 cursor-agent ACP 不上报用量);未来 agent 能报时在事件里透出 `usage`
   并置 `true`。
-- `preview` 缺省 / `preview.vnc=false` → 沙箱不提供预览桌面,平台对 `app_preview`
+- `preview` 缺省 / `preview.vnc=false` → 沙箱不提供预览桌面,平台对应用预览
   的 noVNC Tab 应降级(不可用或提示镜像不支持)。见 §5。
 - `config.*`:**配置注入契约**,见 §4。
 
@@ -222,19 +222,19 @@ WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST
 
 ---
 
-## 5. 预览桌面能力(可选,`app_preview`)
+## 5. 预览桌面能力(可选,应用预览)
 
-`app_preview` 节点需要在**同一沙箱网络命名空间**内打开应用页面,供人工审批(noVNC
+开启预览能力的 Agent 节点需要在**同一沙箱网络命名空间**内打开应用页面,供人工复审(noVNC
 画面 + CDP Pick/导航)。预览浏览器**必须跑在沙箱本体内**,不得由平台在同网桥上
 另起全局 Chromium 池(避免跨 sandbox 串扰与扁平网络可达)。
 
 ### 5.1 启用
 
-- 平台在创建 `app_preview` 沙箱时注入环境变量 `VNC_PREVIEW=1`(或 `true`)。
+- 平台按 Agent 的沙箱环境配置注入环境变量 `VNC_PREVIEW=1`(或 `true`)。
 - 参考实现:`startup.sh` 检测到该变量后后台执行 `/usr/local/bin/vnc-preview.sh`;
   若沙箱已启动后才需要预览,平台可 `docker exec … /usr/local/bin/vnc-preview.sh`
   幂等拉起(脚本探测 CDP 已就绪则直接退出 0)。
-- 非 `app_preview` 节点**不应**开启,以免每个沙箱都吃 headed Chromium 内存。
+- 不需要应用预览的 Agent **不应**开启,以免每个沙箱都吃 headed Chromium 内存。
 
 > **经 MCP 暴露(可选)**:CDP(`:9222`)不仅供平台侧 Pick/导航,也可作为 **agent 的浏览器工具**。
 > 参考实现设 `BROWSER_MCP=1` 时:隐含开启预览栈,并把 `chrome-devtools-mcp`(以 `--browser-url`

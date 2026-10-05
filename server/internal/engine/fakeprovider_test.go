@@ -31,17 +31,17 @@ type fakeProvider struct {
 	// promptImages records PromptImages from each node for integration tests.
 	promptImages map[string][]models.PromptImage
 
-	// react controls (test-only): reactPending keeps the dialogue open for N
+	// clarify controls (test-only): reactPending keeps the dialogue open for N
 	// more replies (each returns Done:false with a follow-up question);
-	// reactSkipProduces makes the final turn write no clarified_requirement so
-	// the produces contract fails and routeFailure is exercised.
+	// reactSkipProduces makes the confirm turn write no products so the
+	// contract fails and routeFailure is exercised.
 	reactPending      int
 	reactSkipProduces bool
-	// approveSkipPlan writes clarified_requirement.json but not plan.json so
-	// the Approve two-product contract fails.
-	approveSkipPlan bool
-	// approveWriteOptional also writes research.json so optional lift is tested.
-	approveWriteOptional bool
+	// clarifySkipPlan writes clarified_requirement.json but not plan.json so
+	// the two-product clarify contract fails.
+	clarifySkipPlan bool
+	// clarifyWriteOptional also writes optional products so their lift is tested.
+	clarifyWriteOptional bool
 	// reactForceStayOpen: force=true still returns Done:false (pending ask_question).
 	reactForceStayOpen bool
 	// reactInterrupted: force wrap-up returns Done:false + Interrupted (timeout).
@@ -56,21 +56,8 @@ type fakeProvider struct {
 	abortCalls       int
 	// reactSetupErr, when set, makes ReactOpen fail with a sandbox setup error.
 	reactSetupErr error
-	// reactTools are extra tool_call events ReactOpen reports in its timeline.
+	// reactTools are extra tool_call events a follow-up ReactReply turn reports.
 	reactTools []models.AcpEvent
-
-	// submit_mr controls (test-only): optional mr_url reported via node_complete
-	// outputs (platform no longer gates on pushed / conflicts).
-	mrURL string
-	// mrRepoCalls records config["repo"] for each submit_mr RunAgent call (order).
-	mrRepoCalls []string
-	// mrSourceCalls / mrTargetCalls record interpolated branch config per call.
-	mrSourceCalls []string
-	mrTargetCalls []string
-	// mrFailOnRepo, when set, makes the call for that pinned repo fail.
-	mrFailOnRepo string
-	// mrURLByRepo optionally overrides mrURL per pinned repo name.
-	mrURLByRepo map[string]string
 
 	// skipOutcome (test-only): when true, do not call node_complete so the
 	// engine's missing-mark path can be exercised.
@@ -304,78 +291,21 @@ func (f *fakeProvider) RunAgent(ctx context.Context, req runtime.NodeReq) (runti
 	f.emitCall(req)
 	content := fmt.Sprintf("# %s (fake)\n\nprofile=%v\n", req.NodeID, req.Config["agent_profile"])
 	out := map[string]any{"content": content}
-	// Record the resolved prompt so tests can assert conditional injection.
-	out["prompt"] = fakePrompt(req)
-	// implement nodes publish a name→branch map (exportBranchVar consumes it).
-	if req.NodeType == "implement" {
+	out["prompt"], _ = req.Config["prompt"].(string)
+	// Agents that commit code publish a name→branch map (exported as a var).
+	if req.Caps.CommitsCode() {
 		out["branches"] = `{"app":"feature/impl"}`
 	}
-	// submit_mr: record config and prepare mr_url for node_complete outputs.
-	var outcomeOut map[string]any
-	if req.NodeType == "submit_mr" {
-		repo, _ := req.Config["repo"].(string)
-		src, _ := req.Config["source_branch"].(string)
-		tgt, _ := req.Config["target_branch"].(string)
-		f.mu.Lock()
-		f.mrRepoCalls = append(f.mrRepoCalls, repo)
-		f.mrSourceCalls = append(f.mrSourceCalls, src)
-		f.mrTargetCalls = append(f.mrTargetCalls, tgt)
-		failOn := f.mrFailOnRepo
-		url := f.mrURL
-		if f.mrURLByRepo != nil {
-			if u, ok := f.mrURLByRepo[repo]; ok {
-				url = u
-			}
-		}
-		f.mu.Unlock()
-		if failOn != "" && repo == failOn {
-			return runtime.NodeResult{}, fmt.Errorf("forced failure on repo %s", repo)
-		}
-		out["mr_url"] = url
-		out["branch"] = "feature/impl"
-		outcomeOut = map[string]any{"mr_url": url, "branch": "feature/impl"}
-	}
-	if produces, _ := req.Config["produces"].(string); produces != "" {
-		body := content
-		if strings.HasSuffix(produces, ".json") {
-			body = `{"success": true, "complete": true}`
-		}
-		id, err := f.host.WriteArtifact(req.RunID, req.Token, req.NodeID, produces, body, kindOf(produces))
-		if err != nil {
-			return runtime.NodeResult{}, err
-		}
-		out["artifact_id"] = id
-	}
-	// app_preview requires at least one set_preview registration before the
-	// engine will open the human approval gate.
-	if req.NodeType == "app_preview" && f.host != nil {
+	// A preview-only Agent registers one preview so its review has something to show.
+	if req.Caps.CanPreview() && len(req.Caps.Writes) == 0 && f.host != nil {
 		f.host.PutPreviewPortForTest(req.RunID, req.NodeID, 5173, "前端")
 	}
-	// visual nodes produce page.html only through write_artifact (no workspace
-	// file), mirroring the real contract; visualSkipProduces omits it to exercise
-	// the contract-miss path.
-	if req.NodeType == "visual" && !f.visualSkipProduces {
-		body := "<!doctype html><html><head><style>body{color:red}</style></head><body><h1>demo</h1></body></html>"
-		if f.visualBodyByNode != nil {
-			if custom, ok := f.visualBodyByNode[req.NodeID]; ok && custom != "" {
-				body = custom
-			}
-		}
-		id, err := f.host.WriteArtifact(req.RunID, req.Token, req.NodeID, visualPageName, body, "html")
-		if err != nil {
-			return runtime.NodeResult{}, err
-		}
-		out["artifact_id"] = id
+	// Write every declared product so the engine's contract enforcement is
+	// satisfied offline; the skip knobs exercise the contract-miss paths.
+	if err := f.writeDeclaredProducts(req); err != nil {
+		return runtime.NodeResult{}, err
 	}
-	// Framework nodes with a reserved structured product: write a minimal valid
-	// one so the engine's structured-contract enforcement is satisfied offline.
-	// structuredSkipProduces omits it to exercise finalizeStructured's miss path.
-	if name, body := fakeStructured(req.NodeType); name != "" && !f.structuredSkipProduces {
-		body = f.nextStructuredBody(req.NodeID, body)
-		if _, err := f.host.WriteArtifact(req.RunID, req.Token, req.NodeID, name, body, "json"); err != nil {
-			return runtime.NodeResult{}, err
-		}
-	}
+	var outcomeOut map[string]any
 	f.emitOutcome(req, outcomeOut)
 	f.mu.Lock()
 	usage := models.CloneTokenUsage(f.agentUsage)
@@ -384,44 +314,64 @@ func (f *fakeProvider) RunAgent(ctx context.Context, req runtime.NodeReq) (runti
 	return runtime.NodeResult{OutputMd: content, Outputs: out, Usage: usage, UsageByModel: byModel}, nil
 }
 
-// fakePrompt mirrors the provider's conditional_prompt injection so engine
-// tests can assert the injected text reaches the agent when when_var is set.
-func fakePrompt(req runtime.NodeReq) string {
-	p, _ := req.Config["prompt"].(string)
-	if cp, ok := req.Config["conditional_prompt"].(map[string]any); ok {
-		whenVar, _ := cp["when_var"].(string)
-		text, _ := cp["text"].(string)
-		if whenVar != "" && text != "" {
-			if v, ok := req.Vars[whenVar]; ok && fmt.Sprint(v) != "" && fmt.Sprint(v) != "false" {
-				p += "\n\n" + text
-			}
-		}
-	}
-	return p
-}
-
-// fakeStructured returns the reserved artifact name and a minimal valid JSON
-// body for the autonomous framework-card node types.
-func fakeStructured(nodeType string) (name, body string) {
-	switch nodeType {
-	case "plan":
+// fakeStructured returns the artifact name and a minimal valid body for a
+// product schema.
+func fakeStructured(schema string) (name, body string) {
+	switch schema {
+	case models.SchemaPlan:
 		return mcp.PlanArtifactName, `{"goals":[{"id":"g1","title":"目标","status":"done"}]}`
-	case "implement":
+	case models.SchemaImplementationResult:
 		return mcp.ImplementationResultArtifactName, `{"summary":"done"}`
-	case "research":
+	case models.SchemaResearch:
 		return mcp.ResearchArtifactName, `{"summary":"researched","findings":[{"id":"r1","title":"f"}]}`
-	case "test":
+	case models.SchemaTestResult:
 		return mcp.TestResultArtifactName, `{"summary":"tested","passed":1,"failed":0,"skipped":0}`
-	case "review":
+	case models.SchemaReview:
 		return mcp.ReviewArtifactName, `{"summary":"reviewed","verdict":"approve"}`
-	case "proposal":
+	case models.SchemaProposals:
 		return mcp.ProposalsArtifactName, `{"context":"ctx","proposals":[{"id":"p1","title":"A"},{"id":"p2","title":"B","recommended":true}]}`
 	}
 	return "", ""
 }
 
-// ReactOpen raises one structured question so the dialogue pauses for a human
-// reply (mirrors an agent calling ask_question on its opening turn).
+const fakePageHTML = "<!doctype html><html><head><style>body{color:red}</style></head><body><h1>demo</h1></body></html>"
+
+// writeDeclaredProducts writes every product an auto Agent declares.
+func (f *fakeProvider) writeDeclaredProducts(req runtime.NodeReq) error {
+	if req.Caps == nil {
+		return nil
+	}
+	f.mu.Lock()
+	skipStructured, skipPage := f.structuredSkipProduces, f.visualSkipProduces
+	f.mu.Unlock()
+	for _, w := range req.Caps.Writes {
+		if w.Schema == models.SchemaPage {
+			if skipPage {
+				continue
+			}
+			body := fakePageHTML
+			if custom, ok := f.visualBodyByNode[req.NodeID]; ok && custom != "" {
+				body = custom
+			}
+			if _, err := f.host.WriteArtifact(req.RunID, req.Token, req.NodeID, mcp.PageArtifactName, body, "html"); err != nil {
+				return err
+			}
+			continue
+		}
+		name, body := fakeStructured(w.Schema)
+		if name == "" || skipStructured {
+			continue
+		}
+		body = f.nextStructuredBody(req.NodeID, body)
+		if _, err := f.host.WriteArtifact(req.RunID, req.Token, req.NodeID, name, body, "json"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ReactOpen parks the clarify session without chatting (the first LLM turn
+// is the user's first message), mirroring the real provider.
 func (f *fakeProvider) ReactOpen(ctx context.Context, req runtime.NodeReq) runtime.ReactTurn {
 	f.mu.Lock()
 	setupErr := f.reactSetupErr
@@ -433,22 +383,7 @@ func (f *fakeProvider) ReactOpen(ctx context.Context, req runtime.NodeReq) runti
 			Events:   []models.AcpEvent{{Kind: "message", Text: "react open failed: " + setupErr.Error()}},
 		}
 	}
-	if req.NodeType == "approve" {
-		return runtime.ReactTurn{}
-	}
-	if f.recordCalls {
-		f.emitAsk(req) // records the call + sets the pending questions
-	} else {
-		f.host.SetPendingQuestions(req.RunID, req.NodeID, []models.ReactQuestion{{
-			ID: "q1", Prompt: "请补充关键信息。",
-			Options: []models.ReactOption{{ID: "o1", Label: "选项A"}, {ID: "o2", Label: "选项B"}},
-		}})
-	}
-	qs := f.host.TakePendingQuestions(req.RunID, req.NodeID)
-	f.mu.Lock()
-	events := append(append([]models.AcpEvent(nil), f.reactTools...), models.AcpEvent{Kind: "message", Text: "react open"})
-	f.mu.Unlock()
-	return runtime.ReactTurn{Msg: "请补充关键信息。", Questions: qs, Events: events}
+	return runtime.ReactTurn{}
 }
 
 // ReactReply concludes the clarification with no further questions (or on a
@@ -468,6 +403,7 @@ func (f *fakeProvider) ReactReply(ctx context.Context, req runtime.NodeReq, hist
 	stayOpen := f.reactForceStayOpen
 	interrupted := f.reactInterrupted
 	hold := f.reactHold
+	tools := append([]models.AcpEvent(nil), f.reactTools...)
 	f.mu.Unlock()
 	if interrupted {
 		return runtime.ReactTurn{Msg: "半截旁白", Done: false, Interrupted: true,
@@ -500,76 +436,73 @@ func (f *fakeProvider) ReactReply(ctx context.Context, req runtime.NodeReq, hist
 		}
 		qs := f.host.TakePendingQuestions(req.RunID, req.NodeID)
 		return runtime.ReactTurn{Msg: "请继续补充。", Questions: qs, Done: false,
-			Events: []models.AcpEvent{{Kind: "message", Text: "follow-up"}}}
+			Events: append(tools, models.AcpEvent{Kind: "message", Text: "follow-up"})}
 	}
 	content := "## 结论\n\n" + human
 	if skip {
-		if req.NodeType == "approve" && !force {
+		if !force {
 			f.host.ClearOutcome(req.RunID, req.NodeID)
 			return runtime.ReactTurn{Msg: "完成(缺产物)。", Done: false,
 				Result: runtime.NodeResult{OutputMd: content, Outputs: map[string]any{}}}
 		}
-		// Finish without writing the reserved product -> contract miss.
-		// Still mark outcome so the engine reaches the produces check.
+		// Confirm without writing the products -> contract miss.
+		f.host.SetOutcomeAllowed(req.RunID, true)
 		f.emitOutcome(req, nil)
 		return runtime.ReactTurn{Msg: "完成(缺产物)。", Done: true,
 			Result: runtime.NodeResult{OutputMd: content, Outputs: map[string]any{}}}
 	}
 	out := map[string]any{"clarified_requirement": content}
-	// A react node's structured deliverable is clarified_requirement.json.
-	body := fmt.Sprintf(`{
+	if msg, err := f.writeClarifyProducts(req, human); err != nil {
+		return runtime.ReactTurn{Msg: msg + err.Error() + ")。", Done: true,
+			Result: runtime.NodeResult{OutputMd: content, Outputs: out}}
+	}
+	if !force {
+		// Mirror the real provider: the dialogue only ends on confirm.
+		f.host.ClearOutcome(req.RunID, req.NodeID)
+		f.host.SetOutcomeAllowed(req.RunID, false)
+		return runtime.ReactTurn{Msg: "信息已充分。", Done: false, Result: runtime.NodeResult{OutputMd: content, Outputs: out}}
+	}
+	f.host.SetOutcomeAllowed(req.RunID, true)
+	f.emitOutcome(req, nil)
+	turn := runtime.ReactTurn{Msg: "信息已充分。", Done: true,
+		Result: runtime.NodeResult{OutputMd: content, Outputs: out}}
+	// Only the confirm turn runs the hidden summary turn.
+	f.mu.Lock()
+	turn.AgentSummary = f.reactConfirmSummary
+	f.mu.Unlock()
+	return turn
+}
+
+// writeClarifyProducts writes a clarify Agent's products: the requirement
+// (from the human's words) and plan unless skipped, optional ones on request.
+func (f *fakeProvider) writeClarifyProducts(req runtime.NodeReq, human string) (string, error) {
+	f.mu.Lock()
+	skipPlan, writeOpt := f.clarifySkipPlan, f.clarifyWriteOptional
+	f.mu.Unlock()
+	if req.Caps.WritesSchema(models.SchemaClarifiedRequirement) {
+		body := fmt.Sprintf(`{
 		"title":"需求","summary":%q,"background":"测试背景",
 		"goals":["完成需求"],"in_scope":["本功能"],"out_of_scope":["其它"],
 		"functional_requirements":[{"id":"f1","title":"需求","detail":"实现所述需求","priority":"must","acceptance_criteria":["可验收"]}],
 		"assumptions":["无额外假设(已与用户确认)"],"dependencies":["无额外依赖(已与用户确认)"],"constraints":["无额外约束(已与用户确认)"]
 	}`, human)
-	id, err := f.host.WriteArtifact(req.RunID, req.Token, req.NodeID, mcp.ClarifiedRequirementArtifactName, body, "json")
-	if err != nil {
-		// Surface write failures instead of silently failing the produces contract.
-		return runtime.ReactTurn{Msg: "完成(写产物失败:" + err.Error() + ")。", Done: true,
-			Result: runtime.NodeResult{OutputMd: content, Outputs: map[string]any{}}}
-	}
-	out["artifact_id"] = id
-	if req.NodeType == "approve" {
-		f.mu.Lock()
-		skipPlan := f.approveSkipPlan
-		writeOpt := f.approveWriteOptional
-		f.mu.Unlock()
-		if !skipPlan {
-			_, planBody := fakeStructured("plan")
-			if _, err := f.host.WriteArtifact(req.RunID, req.Token, req.NodeID, mcp.PlanArtifactName, planBody, "json"); err != nil {
-				return runtime.ReactTurn{Msg: "完成(写计划失败:" + err.Error() + ")。", Done: true,
-					Result: runtime.NodeResult{OutputMd: content, Outputs: out}}
-			}
-		}
-		if writeOpt {
-			_, researchBody := fakeStructured("research")
-			if _, err := f.host.WriteArtifact(req.RunID, req.Token, req.NodeID, mcp.ResearchArtifactName, researchBody, "json"); err != nil {
-				return runtime.ReactTurn{Msg: "完成(写调研失败:" + err.Error() + ")。", Done: true,
-					Result: runtime.NodeResult{OutputMd: content, Outputs: out}}
-			}
+		if _, err := f.host.WriteArtifact(req.RunID, req.Token, req.NodeID, mcp.ClarifiedRequirementArtifactName, body, "json"); err != nil {
+			return "完成(写产物失败:", err
 		}
 	}
-	if req.NodeType == "approve" && !force {
-		// Mirror real acpProvider: discard premature node_complete so !force
-		// cannot complete the node (ClearOutcome + Done=false).
-		f.host.ClearOutcome(req.RunID, req.NodeID)
-		f.host.SetOutcomeAllowed(req.RunID, false)
-		return runtime.ReactTurn{Msg: "信息已充分。", Done: false, Result: runtime.NodeResult{OutputMd: content, Outputs: out}}
+	for _, w := range req.Caps.Writes {
+		if w.Schema == models.SchemaClarifiedRequirement || (w.Schema == models.SchemaPlan && skipPlan) || (!w.Required && !writeOpt) {
+			continue
+		}
+		name, body := fakeStructured(w.Schema)
+		if name == "" {
+			continue
+		}
+		if _, err := f.host.WriteArtifact(req.RunID, req.Token, req.NodeID, name, body, "json"); err != nil {
+			return "完成(写产物失败:", err
+		}
 	}
-	if req.NodeType == "approve" || req.NodeType == "grasp" {
-		f.host.SetOutcomeAllowed(req.RunID, true)
-	}
-	f.emitOutcome(req, nil)
-	turn := runtime.ReactTurn{Msg: "信息已充分。", Done: true,
-		Result: runtime.NodeResult{OutputMd: content, Outputs: out}}
-	if force {
-		// Only the confirm turn runs the hidden summary turn.
-		f.mu.Lock()
-		turn.AgentSummary = f.reactConfirmSummary
-		f.mu.Unlock()
-	}
-	return turn
+	return "", nil
 }
 
 // --- runtime.ReviewProvider (post-run ReAct review phase) --------------------
@@ -604,16 +537,20 @@ func (f *fakeProvider) ReviseInPlace(ctx context.Context, req runtime.NodeReq, h
 		}
 	}
 
-	if !skipWrite {
-		if name, body := fakeStructured(req.NodeType); name != "" {
-			body = f.nextStructuredBody(req.NodeID, body)
-			_, _ = f.host.WriteArtifact(req.RunID, req.Token, req.NodeID, name, body, "json")
-		}
-		// Visual review rewrites page.html in place (mirrors real ACP write_artifact).
-		if req.NodeType == "visual" && !f.visualSkipProduces {
-			body := f.nextStructuredBody(req.NodeID,
-				"<!doctype html><html><body><h1>revised</h1></body></html>")
-			_, _ = f.host.WriteArtifact(req.RunID, req.Token, req.NodeID, visualPageName, body, "html")
+	if !skipWrite && req.Caps != nil {
+		for _, w := range req.Caps.Writes {
+			if w.Schema == models.SchemaPage {
+				if !f.visualSkipProduces {
+					body := f.nextStructuredBody(req.NodeID,
+						"<!doctype html><html><body><h1>revised</h1></body></html>")
+					_, _ = f.host.WriteArtifact(req.RunID, req.Token, req.NodeID, mcp.PageArtifactName, body, "html")
+				}
+				continue
+			}
+			if name, body := fakeStructured(w.Schema); name != "" {
+				body = f.nextStructuredBody(req.NodeID, body)
+				_, _ = f.host.WriteArtifact(req.RunID, req.Token, req.NodeID, name, body, "json")
+			}
 		}
 	}
 	msg := "已按标注就地修改。"

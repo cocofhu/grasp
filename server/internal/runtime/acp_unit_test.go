@@ -16,7 +16,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/textutil"
 
@@ -92,18 +91,6 @@ func TestPureHelpers(t *testing.T) {
 	}
 }
 
-func TestStructuredProduct(t *testing.T) {
-	cases := map[string]string{"plan": mcp.PlanArtifactName, "implement": mcp.ImplementationResultArtifactName,
-		"research": mcp.ResearchArtifactName, "test": mcp.TestResultArtifactName, "review": mcp.ReviewArtifactName,
-		"proposal": mcp.ProposalsArtifactName, "preflight": mcp.PreflightArtifactName, "agent": ""}
-	for nt, want := range cases {
-		name, _ := nodereg.StructuredProduct(nt)
-		if name != want {
-			t.Errorf("StructuredProduct(%q) = %q want %q", nt, name, want)
-		}
-	}
-}
-
 func TestArtifactOwnedByNode(t *testing.T) {
 	store := newMemStore()
 	host := mcp.NewHost(store)
@@ -130,126 +117,6 @@ func TestArtifactOwnedByNode(t *testing.T) {
 	}
 	if artifactOwnedByNode(host, "r", "bad-token", "n", mcp.PlanArtifactName) {
 		t.Fatal("unauthorized token must not report ownership")
-	}
-}
-
-func TestApproveProductsSettled(t *testing.T) {
-	store := newMemStore()
-	host := mcp.NewHost(store)
-	tok := host.RegisterRun("r")
-	t.Cleanup(func() { host.UnregisterRun("r") })
-	p := newACPProvider(host, Options{}).(*acpProvider)
-	req := NodeReq{RunID: "r", NodeID: "n", NodeType: "approve", Token: tok}
-
-	if p.approveProductsSettled(req) {
-		t.Fatal("missing artifacts must not be settled")
-	}
-	if _, err := host.WriteArtifact("r", tok, "n", mcp.ClarifiedRequirementArtifactName,
-		mcp.MinimalValidClarifiedRequirementJSON, "json"); err != nil {
-		t.Fatal(err)
-	}
-	if p.approveProductsSettled(req) {
-		t.Fatal("clarified requirement alone must not be settled")
-	}
-	if _, err := host.WriteArtifact("r", tok, "n", mcp.PlanArtifactName,
-		`{"goals":[{"id":"g1","title":"目标"}]}`, "json"); err != nil {
-		t.Fatal(err)
-	}
-	if !p.approveProductsSettled(req) {
-		t.Fatal("both products with work_kind=feature and empty open_questions must be settled")
-	}
-
-	openReq := strings.Replace(mcp.MinimalValidClarifiedRequirementJSON,
-		`"constraints": ["仅邮箱登录"]`,
-		`"constraints": ["仅邮箱登录"], "open_questions": ["还要不要短信?"]`, 1)
-	if _, err := host.WriteArtifact("r", tok, "n", mcp.ClarifiedRequirementArtifactName, openReq, "json"); err != nil {
-		t.Fatal(err)
-	}
-	if p.approveProductsSettled(req) {
-		t.Fatal("non-empty open_questions must not be settled")
-	}
-
-	if _, err := host.WriteArtifact("r", tok, "n", mcp.ClarifiedRequirementArtifactName,
-		`{not-json`, "json"); err != nil {
-		t.Fatal(err)
-	}
-	if p.approveProductsSettled(req) {
-		t.Fatal("unparseable clarified requirement must not be settled")
-	}
-
-	// Restore plan + feature CR so work_kind flip cases start from a known state.
-	if _, err := host.WriteArtifact("r", tok, "n", mcp.PlanArtifactName,
-		`{"goals":[{"id":"g1","title":"目标"}]}`, "json"); err != nil {
-		t.Fatal(err)
-	}
-	bugCR := strings.Replace(mcp.MinimalValidClarifiedRequirementJSON,
-		`"work_kind": "feature"`, `"work_kind": "bug"`, 1)
-	if _, err := host.WriteArtifact("r", tok, "n", mcp.ClarifiedRequirementArtifactName, bugCR, "json"); err != nil {
-		t.Fatal(err)
-	}
-	if p.approveProductsSettled(req) {
-		t.Fatal("work_kind=bug without root_cause.json must not be settled")
-	}
-	rc := `{
-		"title":"登录按钮无响应","summary":"点击无请求","symptom":"无反应","expected":"发起请求",
-		"actual":"无请求","reproduction":["打开页","点击"],"impact":"无法登录",
-		"root_cause":"按钮未绑定 click 处理器导致点击被忽略",
-		"evidence":[{"title":"监听缺失","detail":"模板无 @click"}],
-		"diagrams":[{"kind":"flowchart","title":"失败路径","source":"flowchart TD\n  A-->B"}]
-	}`
-	if _, err := host.WriteArtifact("r", tok, "n", mcp.RootCauseArtifactName, rc, "json"); err != nil {
-		t.Fatal(err)
-	}
-	if !p.approveProductsSettled(req) {
-		t.Fatal("work_kind=bug with valid root_cause.json must be settled")
-	}
-
-	// Flip back to feature while leftover root_cause remains → not settled.
-	if _, err := host.WriteArtifact("r", tok, "n", mcp.ClarifiedRequirementArtifactName,
-		mcp.MinimalValidClarifiedRequirementJSON, "json"); err != nil {
-		t.Fatal(err)
-	}
-	if p.approveProductsSettled(req) {
-		t.Fatal("non-bug with leftover root_cause.json must not be settled")
-	}
-	host.DeleteArtifact("r", mcp.RootCauseArtifactName)
-	if !p.approveProductsSettled(req) {
-		t.Fatal("non-bug without root_cause.json must be settled")
-	}
-}
-
-func TestConditionalInjection(t *testing.T) {
-	req := NodeReq{Config: map[string]any{"conditional_prompt": map[string]any{"when_var": "flag", "text": "EXTRA"}}, Vars: map[string]any{}}
-	if got := conditionalInjection(req); got != "" {
-		t.Errorf("no var => empty, got %q", got)
-	}
-	req.Vars["flag"] = "yes"
-	if got := conditionalInjection(req); got != "EXTRA" {
-		t.Errorf("var set => EXTRA, got %q", got)
-	}
-	req.Vars["flag"] = "false"
-	if got := conditionalInjection(req); got != "" {
-		t.Errorf("false => empty, got %q", got)
-	}
-	req.NodeType = "approve"
-	req.Vars["flag"] = "yes"
-	if got := conditionalInjection(req); got != "" {
-		t.Errorf("approve leftover conditional_prompt => empty, got %q", got)
-	}
-}
-
-func TestConditionalInjectionComposite(t *testing.T) {
-	req := NodeReq{
-		Config: map[string]any{"conditional_prompt": map[string]any{"when_var": "flag", "text": "EXTRA"}},
-		Vars: map[string]any{
-			"flag": map[string]any{
-				"text":   "",
-				"images": []any{map[string]any{"data": "x", "mimeType": "image/png"}},
-			},
-		},
-	}
-	if got := conditionalInjection(req); got != "EXTRA" {
-		t.Errorf("images-only when_var should inject, got %q", got)
 	}
 }
 
@@ -284,55 +151,6 @@ func TestBuildAgentPromptPerType(t *testing.T) {
 	}
 }
 
-func TestApprovePromptIgnoresTemplateAndInjectsVars(t *testing.T) {
-	host := mcp.NewHost(newMemStore())
-	p := newACPProvider(host, Options{}).(*acpProvider)
-	req := NodeReq{
-		NodeType: "approve",
-		Config:   map[string]any{"prompt": "UNIQUE_USER_PROMPT_XYZ"},
-		Vars:     map[string]any{"feature": "邮箱验证码登录", "empty": ""},
-	}
-	got := p.buildAgentPrompt(req, []string{"up.md"})
-	if strings.Contains(got, "UNIQUE_USER_PROMPT_XYZ") {
-		t.Fatal("approve must ignore inspector prompt template")
-	}
-	if !strings.Contains(got, "邮箱验证码登录") {
-		t.Fatalf("approve should inject feature var:\n%s", got)
-	}
-	if strings.Contains(got, "用 ask_question 开始") {
-		t.Fatal("approve seed must not start with ask_question")
-	}
-	if !strings.Contains(got, "以下是本次运行输入") {
-		t.Fatalf("approve seed should present run inputs:\n%s", got)
-	}
-	open := p.buildReactOpenPrompt(req, nil)
-	if strings.Contains(open, "第一回合必须调用 ask_question") {
-		t.Fatalf("approve must not force first-turn ask_question:\n%s", open)
-	}
-	if !strings.Contains(open, "真实分歧") {
-		t.Fatalf("approve open suffix missing:\n%s", open)
-	}
-	leftover := req
-	leftover.Config = map[string]any{
-		"prompt":             "UNIQUE_USER_PROMPT_XYZ",
-		"conditional_prompt": map[string]any{"when_var": "feature", "text": "CONDITIONAL_INJECT_XYZ"},
-	}
-	got = p.buildAgentPrompt(leftover, nil)
-	if strings.Contains(got, "CONDITIONAL_INJECT_XYZ") {
-		t.Fatal("approve must ignore leftover conditional_prompt")
-	}
-	if strings.Contains(got, "node_complete") {
-		t.Fatalf("Grasp Phase1 system prompt must not mention node_complete:\n%s", got)
-	}
-	if strings.Contains(got, "完成标记契约") {
-		t.Fatalf("Grasp Phase1 must not append OutcomeContract:\n%s", got)
-	}
-	impl := p.buildAgentPrompt(NodeReq{NodeType: "implement", Config: map[string]any{"prompt": "P"}}, nil)
-	if !strings.Contains(impl, "node_complete") {
-		t.Fatal("implement prompt must still include OutcomeContract")
-	}
-}
-
 // stubHistory feeds the host the two run-scoped reads FeedbackBrief needs.
 type stubHistory struct {
 	run      models.Run
@@ -362,7 +180,7 @@ func TestBuildAgentPromptInjectsFeedbackOnlyWhenInScope(t *testing.T) {
 	p := newACPProvider(host, Options{}).(*acpProvider)
 
 	got := p.buildAgentPrompt(NodeReq{
-		RunID: "r1", NodeID: "impl", NodeType: "implement",
+		RunID: "r1", NodeID: "impl", NodeType: "agent", Caps: testImplementCaps,
 		Config: map[string]any{"prompt": "P"},
 	}, nil)
 	if !strings.Contains(got, "历史人工反馈") || !strings.Contains(got, "list_run_history") {
@@ -381,233 +199,11 @@ func TestBuildAgentPromptInjectsFeedbackOnlyWhenInScope(t *testing.T) {
 	}
 
 	clean := p.buildAgentPrompt(NodeReq{
-		RunID: "r1", NodeID: "other", NodeType: "implement",
+		RunID: "r1", NodeID: "other", NodeType: "agent", Caps: testImplementCaps,
 		Config: map[string]any{"prompt": "P"},
 	}, nil)
 	if strings.Contains(clean, "历史人工反馈") {
 		t.Fatalf("a node with no feedback in scope must not carry the clause:\n%s", clean)
-	}
-}
-
-func TestTestNodePromptExtras(t *testing.T) {
-	host := mcp.NewHost(newMemStore())
-	p := newACPProvider(host, Options{}).(*acpProvider)
-
-	t.Run("no repos no extras", func(t *testing.T) {
-		got := p.buildAgentPrompt(NodeReq{
-			NodeType: "test",
-			Config:   map[string]any{"prompt": "P"},
-			Vars:     map[string]any{},
-		}, nil)
-		if strings.Contains(got, "多仓测试范围") || strings.Contains(got, "工作区仓库布局") {
-			t.Error("no repos should not inject repo layout/scope section")
-		}
-	})
-
-	t.Run("multi repo all scope", func(t *testing.T) {
-		got := p.buildAgentPrompt(NodeReq{
-			NodeType: "test",
-			Config:   map[string]any{"prompt": "P", "repoScope": "all"},
-			Vars: map[string]any{
-				"repos": `[{"name":"primary"},{"name":"frontend"}]`,
-			},
-		}, nil)
-		if !strings.Contains(got, "多仓测试范围") || !strings.Contains(got, "repoScope=all") {
-			t.Errorf("expected multi-repo injection: %q", got)
-		}
-	})
-
-	t.Run("scoped repo", func(t *testing.T) {
-		got := p.buildAgentPrompt(NodeReq{
-			NodeType: "test",
-			Config:   map[string]any{"prompt": "P", "repoScope": "frontend"},
-			Vars: map[string]any{
-				"repos": `[{"name":"primary"},{"name":"frontend"}]`,
-			},
-		}, nil)
-		if !strings.Contains(got, "repoScope=frontend") || !strings.Contains(got, "/root/workspace/frontend/") {
-			t.Errorf("expected scoped repo injection: %q", got)
-		}
-	})
-
-	t.Run("block_on_skipped", func(t *testing.T) {
-		got := p.buildAgentPrompt(NodeReq{
-			NodeType: "test",
-			Config:   map[string]any{"prompt": "P", "block_on_skipped": true},
-			Vars:     map[string]any{},
-		}, nil)
-		if !strings.Contains(got, "block_on_skipped=true") {
-			t.Errorf("expected block_on_skipped injection: %q", got)
-		}
-	})
-
-	t.Run("direct_preview extras", func(t *testing.T) {
-		got := p.buildAgentPrompt(NodeReq{
-			NodeType: "app_preview",
-			Config:   map[string]any{"prompt": "P", "direct_preview": true},
-		}, nil)
-		if !strings.Contains(got, "direct_preview") || !strings.Contains(got, "PREVIEW_PORT") || !strings.Contains(got, "PREVIEW_PICK_SCRIPT_URL") {
-			t.Errorf("expected direct_preview injection: %q", got)
-		}
-	})
-
-	t.Run("approve direct_preview extras", func(t *testing.T) {
-		got := p.buildAgentPrompt(NodeReq{
-			NodeType: "approve",
-			Config:   map[string]any{"direct_preview": true},
-		}, nil)
-		if !strings.Contains(got, "direct_preview") || !strings.Contains(got, "PREVIEW_PORT") {
-			t.Errorf("expected approve direct_preview injection: %q", got)
-		}
-		if !strings.Contains(got, "set_preview") {
-			t.Errorf("approve contract should mention set_preview: %q", got)
-		}
-	})
-
-	t.Run("grasp direct_preview extras", func(t *testing.T) {
-		got := p.buildAgentPrompt(NodeReq{
-			NodeType: "grasp",
-			Config:   map[string]any{"direct_preview": true},
-		}, nil)
-		if !strings.Contains(got, "direct_preview") || !strings.Contains(got, "PREVIEW_PORT") || !strings.Contains(got, "PREVIEW_PICK_SCRIPT_URL") {
-			t.Errorf("expected grasp direct_preview injection: %q", got)
-		}
-	})
-
-	t.Run("direct_preview off no extras", func(t *testing.T) {
-		got := p.buildAgentPrompt(NodeReq{
-			NodeType: "app_preview",
-			Config:   map[string]any{"prompt": "P"},
-		}, nil)
-		if strings.Contains(got, "节点配置:direct_preview") {
-			t.Errorf("default must not inject direct_preview: %q", got)
-		}
-	})
-}
-
-func TestPreviewNodePromptExtras(t *testing.T) {
-	host := mcp.NewHost(newMemStore())
-	p := newACPProvider(host, Options{}).(*acpProvider)
-
-	got := p.buildAgentPrompt(NodeReq{
-		NodeType: "app_preview",
-		Config:   map[string]any{"prompt": "P", "direct_preview": true},
-	}, nil)
-	if !strings.Contains(got, "direct_preview") || !strings.Contains(got, "PREVIEW_PORT") || !strings.Contains(got, "PREVIEW_PICK_SCRIPT_URL") {
-		t.Errorf("expected direct_preview injection: %q", got)
-	}
-	if !strings.Contains(got, `<script src="$PREVIEW_PICK_SCRIPT_URL"></script>`) {
-		t.Errorf("expected pick script contract: %q", got)
-	}
-	if !strings.Contains(got, "自动向 HTML 注入") {
-		t.Errorf("expected platform auto-inject: %q", got)
-	}
-	if !strings.Contains(got, "旧沙箱镜像") {
-		t.Errorf("expected old-image fallback: %q", got)
-	}
-	for _, want := range []string{"page_state", "stateId", "不可信数据", "验证码"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("expected page control guidance %q: %q", want, got)
-		}
-	}
-
-	manual := p.buildAgentPrompt(NodeReq{
-		NodeType: "app_preview",
-		Config:   map[string]any{"prompt": "P", "direct_preview": true, "auto_inject": false},
-	}, nil)
-	if !strings.Contains(manual, "已关闭自动注入") {
-		t.Errorf("expected manual script contract: %q", manual)
-	}
-	if strings.Contains(manual, "自动向 HTML 注入") {
-		t.Errorf("manual must not claim auto-inject: %q", manual)
-	}
-	if !strings.Contains(manual, "page_state") {
-		t.Errorf("manual inject still gets page control guidance: %q", manual)
-	}
-
-	off := p.buildAgentPrompt(NodeReq{
-		NodeType: "app_preview",
-		Config:   map[string]any{"prompt": "P"},
-	}, nil)
-	if strings.Contains(off, "节点配置:direct_preview") {
-		t.Errorf("default must not inject direct_preview: %q", off)
-	}
-	for _, want := range []string{
-		"port 与 url 必须恰好提供其一",
-		`set_preview(url=`,
-		"不要为了走 port 而在沙箱里反代外部站点",
-	} {
-		if !strings.Contains(off, want) {
-			t.Errorf("preview contract missing %q:\n%s", want, off)
-		}
-	}
-	if strings.Contains(off, "port 必填") {
-		t.Errorf("preview contract must not require port: %q", off)
-	}
-}
-
-func TestApplyAppPreviewEnv(t *testing.T) {
-	vnc := map[string]string{}
-	applyAppPreviewEnv(vnc, "app_preview", nil, "http://app.example")
-	if vnc["VNC_PREVIEW"] != "1" || vnc["PREVIEW_DIRECT"] != "" {
-		t.Fatalf("default vnc: %v", vnc)
-	}
-	direct := map[string]string{}
-	applyAppPreviewEnv(direct, "app_preview", map[string]any{"direct_preview": true}, "http://app.example/")
-	if direct["PREVIEW_DIRECT"] != "1" || direct["VNC_PREVIEW"] != "" {
-		t.Fatalf("direct: %v", direct)
-	}
-	if direct["PREVIEW_PICK_SCRIPT_URL"] != "/__grasp/preview-pick.js" {
-		t.Fatalf("pick script: %v", direct)
-	}
-	if direct["PREVIEW_AUTO_INJECT"] != "1" {
-		t.Fatalf("auto inject default on: %v", direct)
-	}
-	manualEnv := map[string]string{}
-	applyAppPreviewEnv(manualEnv, "app_preview", map[string]any{"direct_preview": true, "auto_inject": false}, "http://app.example")
-	if manualEnv["PREVIEW_DIRECT"] != "1" || manualEnv["PREVIEW_AUTO_INJECT"] != "0" {
-		t.Fatalf("auto inject off: %v", manualEnv)
-	}
-	if manualEnv["PREVIEW_PICK_SCRIPT_URL"] != "http://app.example/preview-pick.js" {
-		t.Fatalf("manual pick script: %v", manualEnv)
-	}
-	approve := map[string]string{}
-	applyAppPreviewEnv(approve, "approve", nil, "http://app.example")
-	if approve["VNC_PREVIEW"] != "1" || approve["PREVIEW_DIRECT"] != "" {
-		t.Fatalf("approve default vnc: %v", approve)
-	}
-	graspDirect := map[string]string{}
-	applyAppPreviewEnv(graspDirect, "grasp", map[string]any{"direct_preview": true}, "http://app.example")
-	if graspDirect["PREVIEW_DIRECT"] != "1" || graspDirect["VNC_PREVIEW"] != "" || graspDirect["PREVIEW_AUTO_INJECT"] != "1" {
-		t.Fatalf("grasp direct: %v", graspDirect)
-	}
-	if graspDirect["PREVIEW_PICK_SCRIPT_URL"] != "/__grasp/preview-pick.js" {
-		t.Fatalf("grasp pick script: %v", graspDirect)
-	}
-	off := map[string]string{"VNC_PREVIEW": "0"}
-	applyAppPreviewEnv(off, "approve", nil, "http://app.example")
-	if off["VNC_PREVIEW"] != "0" || off["GRASP_VNC_PREVIEW"] != "" {
-		t.Fatalf("explicit off must stick: %v", off)
-	}
-	other := map[string]string{}
-	applyAppPreviewEnv(other, "test", map[string]any{"direct_preview": true}, "http://app.example")
-	if other["PREVIEW_DIRECT"] != "" || other["VNC_PREVIEW"] != "" || other["PREVIEW_PICK_SCRIPT_URL"] != "" {
-		t.Fatalf("other node: %v", other)
-	}
-	reviewVNC := map[string]string{}
-	applyAppPreviewEnv(reviewVNC, "implement", nil, "http://app.example")
-	if len(reviewVNC) != 0 {
-		t.Fatalf("review agent without direct preview must not start VNC: %v", reviewVNC)
-	}
-	reviewDirect := map[string]string{}
-	applyAppPreviewEnv(reviewDirect, "plan", map[string]any{"direct_preview": true}, "http://app.example")
-	if reviewDirect["PREVIEW_DIRECT"] != "1" || reviewDirect["VNC_PREVIEW"] != "" || reviewDirect["PREVIEW_PICK_SCRIPT_URL"] != "/__grasp/preview-pick.js" {
-		t.Fatalf("review agent direct: %v", reviewDirect)
-	}
-	empty := map[string]string{}
-	applyAppPreviewEnv(empty, "app_preview", map[string]any{"direct_preview": true}, "")
-	if empty["PREVIEW_PICK_SCRIPT_URL"] != "/__grasp/preview-pick.js" {
-		t.Fatalf("auto-inject uses same-origin path without advertise: %v", empty)
 	}
 }
 
@@ -793,7 +389,7 @@ func TestAgentConfigAndMCP(t *testing.T) {
 	root := writeAgent(t, "dev", `{"mcp":[{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":{"GITLAB_TOKEN":"tok-${GRASP_RUN_ID}","GRASP_CURSOR_API_KEY":"test-key"}}`)
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{ProfilesRoot: root, MCPEndpoint: "http://host.docker.internal:9099"}).(*acpProvider)
-	req := NodeReq{RunID: "run9", NodeID: "n", Token: "tkn", NodeType: "agent",
+	req := NodeReq{RunID: "run9", NodeID: "n", Token: "tkn", NodeType: "agent", Caps: testPlainCaps,
 		Config: map[string]any{"agent_profile": "dev"}, Vars: map[string]any{"repos": `[{"name":"p","url":"https://gitlab.com/g/p.git"}]`}}
 
 	cfg := p.agentConfig("dev")
@@ -828,7 +424,7 @@ func TestSpecDoesNotDeriveGitLabURLFromGitHubRepo(t *testing.T) {
 	root := writeAgent(t, "dev", `{"env":{"GITHUB_TOKEN":"gh","GITLAB_TOKEN":"gl","GRASP_CURSOR_API_KEY":"test-key"}}`)
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{ProfilesRoot: root}).(*acpProvider)
-	req := NodeReq{RunID: "run-gh", NodeID: "n", Token: "tkn", NodeType: "agent",
+	req := NodeReq{RunID: "run-gh", NodeID: "n", Token: "tkn", NodeType: "agent", Caps: testPlainCaps,
 		Config: map[string]any{"agent_profile": "dev"}, Vars: map[string]any{"repos": `[{"name":"app","url":"https://github.com/acme/app.git"}]`}}
 
 	sp, err := p.spec(req)
@@ -1058,7 +654,7 @@ func TestRunAgentImplementNode(t *testing.T) {
 		}
 	})
 	p, _ := newTestProvider(t, host, testOpts(), mgr)
-	req := reqWithProfile(NodeReq{RunID: runID, NodeID: nodeID, NodeType: "implement", Token: tok,
+	req := reqWithProfile(NodeReq{RunID: runID, NodeID: nodeID, NodeType: "agent", Caps: testImplementCaps, Token: tok,
 		Config: map[string]any{"prompt": "build"}, Vars: map[string]any{}})
 	res, err := p.RunAgent(context.Background(), req)
 	if err != nil {
@@ -1107,39 +703,6 @@ func TestDebugFetchPage(t *testing.T) {
 	if page != nil {
 		ev := sandbox.AggregateFrames(page.Events)
 		t.Logf("events=%+v", ev)
-	}
-}
-
-func TestApproveInjectOpenPrompt(t *testing.T) {
-	req := NodeReq{NodeType: "approve"}
-	if !approveInjectOpenPrompt(req, nil) {
-		t.Fatal("empty history is first turn")
-	}
-	if !approveInjectOpenPrompt(req, []models.ReactMessage{{Role: "human", Text: "做登录"}}) {
-		t.Fatal("sole human message is first turn")
-	}
-	if approveInjectOpenPrompt(req, []models.ReactMessage{
-		{Role: "agent", Text: "请补充"},
-		{Role: "human", Text: "做登录"},
-	}) {
-		t.Fatal("prior agent text is not first turn")
-	}
-	if !approveInjectOpenPrompt(req, []models.ReactMessage{
-		{Role: "human", Text: "做登录"},
-		{Role: "agent", Text: "(澄清回复失败:boom)"},
-		{Role: "human", Text: "再试"},
-	}) {
-		t.Fatal("failed open bubble must still inject")
-	}
-	if !approveInjectOpenPrompt(req, []models.ReactMessage{
-		{Role: "human", Text: "做登录"},
-		{Role: "agent", Text: "(已中断)", Interrupted: true},
-		{Role: "human", Text: "再试"},
-	}) {
-		t.Fatal("interrupted open bubble must still inject")
-	}
-	if approveInjectOpenPrompt(NodeReq{NodeType: "react"}, []models.ReactMessage{{Role: "human", Text: "x"}}) {
-		t.Fatal("react must not inject approve open prompt")
 	}
 }
 

@@ -36,13 +36,13 @@ import {
   findArtifactByName,
   isOwnNodeArtifact,
   isAppPreviewRemoteNode,
-  isClarifyInteractiveGraphNode,
+  isClarifyGraphNode,
   latestOwnNodeHtmlName,
   nextTabAfterClose,
   openStagePreviewTab,
   previewTabId,
   coalesceStageTab,
-  approveStageRemoteKind,
+  clarifyStageRemoteKind,
   resolveEffectivePreviewPin,
   resolveStageRemoteKind,
   stageGridArtifactsWithPin,
@@ -59,6 +59,16 @@ import {
   markStageTabUnread,
   clearStageTabUnread,
 } from './reactArtifactPreview'
+import type { AgentCapabilities } from '@/lib/api/apiTypes'
+import { ASK_CAPS, CLARIFY_CAPS, PREVIEW_REVIEW_CAPS, writesCaps } from '@/test/capsFixtures'
+
+function gnode(id: string, label: string, caps?: AgentCapabilities) {
+  return { id, type: 'agent' as const, label, position: { x: 0, y: 0 }, config: {}, caps }
+}
+
+const CLARIFY_NODE = gnode('react', '澄清', CLARIFY_CAPS)
+const PAGE_NODE = gnode('visual_bqc5', '视觉', writesCaps('page'))
+const RESEARCH_NODE = gnode('research', '调研', writesCaps('research'))
 
 function art(partial: Partial<Artifact> & Pick<Artifact, 'id' | 'name'>): Artifact {
   return {
@@ -91,21 +101,16 @@ describe('reactArtifactPreview helpers', () => {
     expect(artifactKindLabelKey('unknown')).toContain('kindFile')
   })
 
-  it('detects clarify-interactive graph nodes', () => {
-    const run = {
-      nodes: [{ id: 'c1', type: 'react', label: '澄清', position: { x: 0, y: 0 }, config: {} }],
-    } as Run
-    expect(isClarifyInteractiveGraphNode(run, 'c1')).toBe(true)
-    expect(isClarifyInteractiveGraphNode(run, 'other')).toBe(false)
-    const approveRun = {
-      nodes: [{ id: 'a1', type: 'approve', label: 'Approve', position: { x: 0, y: 0 }, config: {} }],
-    } as Run
-    expect(isClarifyInteractiveGraphNode(approveRun, 'a1')).toBe(true)
-    expect(isAppPreviewRemoteNode('app_preview')).toBe(true)
-    expect(isAppPreviewRemoteNode('approve')).toBe(false)
-    expect(isAppPreviewRemoteNode('react')).toBe(false)
-    expect(approveStageRemoteKind(false)).toBe('off')
-    expect(approveStageRemoteKind(true)).toBe('app')
+  it('detects clarify graph nodes from caps', () => {
+    const run = { nodes: [gnode('c1', '澄清', ASK_CAPS), gnode('a1', '实现', PREVIEW_REVIEW_CAPS)] } as unknown as Run
+    expect(isClarifyGraphNode(run, 'c1')).toBe(true)
+    expect(isClarifyGraphNode(run, 'a1')).toBe(false)
+    expect(isClarifyGraphNode(run, 'other')).toBe(false)
+    expect(isAppPreviewRemoteNode(gnode('p', '预览', PREVIEW_REVIEW_CAPS))).toBe(true)
+    expect(isAppPreviewRemoteNode(gnode('c', '澄清', CLARIFY_CAPS))).toBe(false)
+    expect(isAppPreviewRemoteNode({ type: 'human_gate', caps: PREVIEW_REVIEW_CAPS })).toBe(false)
+    expect(clarifyStageRemoteKind(false)).toBe('off')
+    expect(clarifyStageRemoteKind(true)).toBe('app')
   })
 
   it('treats foreign-node artifacts as read-only unless nodeId is empty', () => {
@@ -124,7 +129,7 @@ describe('reactArtifactPreview helpers', () => {
     const live = art({ id: 'live', name: 'page.html', nodeId: 'visual_1', content: '<p>new</p>' })
     const run = {
       id: 'r1',
-      nodes: [{ id: 'visual_1', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} }],
+      nodes: [gnode('visual_1', '视觉', writesCaps('page'))],
       nodeExecutions: {
         visual_1: [
           { nodeId: 'visual_1', iteration: 1, status: 'completed', outputs: { page: '<p>old</p>' } },
@@ -134,7 +139,7 @@ describe('reactArtifactPreview helpers', () => {
     } as unknown as Run
     const node = run.nodes![0]
     expect(expandStageArtifacts([live], run, node).map((a) => a.name)).toEqual(['page.html'])
-    expect(expandStageArtifacts([live], run, { ...node, type: 'research' }).map((a) => a.name)).toEqual(['page.html'])
+    expect(expandStageArtifacts([live], run, { ...node, caps: writesCaps('research') }).map((a) => a.name)).toEqual(['page.html'])
   })
 
   it('hides the same-preview visual node page copy when page.html is present', () => {
@@ -172,28 +177,21 @@ describe('reactArtifactPreview helpers', () => {
     ])
   })
 
-  it('uses sandbox remote only for ReAct inbox nodes', () => {
+  it('uses sandbox remote only for clarify Agents without set_preview', () => {
     const run = {
-      nodes: [
-        { id: 'c1', type: 'react', label: '澄清', position: { x: 0, y: 0 }, config: {} },
-        { id: 'visual', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} },
-      ],
+      nodes: [gnode('c1', '澄清', ASK_CAPS), gnode('visual', '视觉', writesCaps('page'))],
     } as unknown as Run
     expect(inboxStageRemoteKind({ appPreview: true, run, nodeId: 'preview' })).toBe('app')
     expect(inboxStageRemoteKind({ appPreview: false, run, nodeId: 'c1' })).toBe('sandbox')
     expect(inboxStageRemoteKind({ appPreview: false, run, nodeId: 'visual' })).toBe('off')
-    const approveRun = {
-      nodes: [{ id: 'a1', type: 'approve', label: 'Approve', position: { x: 0, y: 0 }, config: {} }],
-    } as unknown as Run
-    // Approve without registered preview stays off (not app/sandbox).
-    expect(inboxStageRemoteKind({ appPreview: false, run: approveRun, nodeId: 'a1' })).toBe('off')
+    const previewClarifyRun = { nodes: [gnode('a1', '澄清', CLARIFY_CAPS)] } as unknown as Run
+    // Clarify with set_preview but no registered preview stays off (not app/sandbox).
+    expect(inboxStageRemoteKind({ appPreview: false, run: previewClarifyRun, nodeId: 'a1' })).toBe('off')
     expect(
-      inboxStageRemoteKind({ appPreview: false, run: approveRun, nodeId: 'a1', hasRegisteredPreview: true }),
+      inboxStageRemoteKind({ appPreview: false, run: previewClarifyRun, nodeId: 'a1', hasRegisteredPreview: true }),
     ).toBe('app')
-    const appPreviewRun = {
-      nodes: [{ id: 'p1', type: 'app_preview', label: '预览', position: { x: 0, y: 0 }, config: {} }],
-    } as unknown as Run
-    expect(inboxStageRemoteKind({ appPreview: false, run: appPreviewRun, nodeId: 'p1' })).toBe('app')
+    const reviewRun = { nodes: [gnode('p1', '实现', PREVIEW_REVIEW_CAPS)] } as unknown as Run
+    expect(inboxStageRemoteKind({ appPreview: false, run: reviewRun, nodeId: 'p1' })).toBe('app')
   })
 
   it('resolves remoteKind with explicit override over sandbox default', () => {
@@ -217,9 +215,9 @@ describe('reactArtifactPreview helpers', () => {
   })
 
   it('diffs fingerprints for create/update and filters auto-pin visibility (g1.1)', () => {
-    expect(isAutoPinStageNode('react')).toBe(true)
-    expect(isAutoPinStageNode('approve')).toBe(true)
-    expect(isAutoPinStageNode('visual')).toBe(false)
+    expect(isAutoPinStageNode(CLARIFY_NODE)).toBe(true)
+    expect(isAutoPinStageNode(gnode('c', '澄清', ASK_CAPS))).toBe(true)
+    expect(isAutoPinStageNode(PAGE_NODE)).toBe(false)
     expect(isFeedbackArtifactName('feedback_index.json')).toBe(true)
     expect(isFeedbackArtifactName('feedback.clarify.x.json')).toBe(true)
     expect(isFeedbackArtifactName('clarified_requirement.json')).toBe(false)
@@ -295,9 +293,9 @@ describe('reactArtifactPreview helpers', () => {
     expect(marks['plan.json']).toBeUndefined()
   })
 
-  it('shows all visible products on react/approve grids including custom names (g1.2 / f5)', () => {
+  it('shows all visible products on clarify grids including custom names (g1.2 / f5)', () => {
     const run = {
-      nodes: [{ id: 'approve_1', type: 'approve', label: 'Approve', position: { x: 0, y: 0 }, config: {} }],
+      nodes: [gnode('approve_1', '需求澄清', CLARIFY_CAPS)],
     } as unknown as Run
     const requirement = art({
       id: 'c',
@@ -308,10 +306,10 @@ describe('reactArtifactPreview helpers', () => {
     const demo = art({ id: 'd', name: 'brand-row-preview.html', kind: 'html', nodeId: 'approve_1' })
     const complete = art({ id: 'n', name: 'node_complete.json', kind: 'json', nodeId: 'approve_1' })
     expect(
-      stageGridArtifactsForNode([requirement, demo, complete], run, '', 'approve').map((a) => a.name),
+      stageGridArtifactsForNode([requirement, demo, complete], run, '', run.nodes![0]).map((a) => a.name),
     ).toEqual(['clarified_requirement.json', 'brand-row-preview.html'])
     expect(
-      stageGridArtifactsForNode([requirement, demo, complete], run, 'brand-row-preview.html', 'visual').map(
+      stageGridArtifactsForNode([requirement, demo, complete], run, 'brand-row-preview.html', PAGE_NODE).map(
         (a) => a.name,
       ),
     ).toEqual(['clarified_requirement.json', 'brand-row-preview.html'])
@@ -361,7 +359,7 @@ describe('reactArtifactPreview helpers', () => {
     expect(shouldActivatePinnedPreview('page.html', ['page.html'], undefined, undefined, true)).toBe(false)
   })
 
-  it('prefers an on-stage pin, then visual page.html, then newest own-node HTML', () => {
+  it('prefers an on-stage pin, then page-schema page.html, then newest own-node HTML', () => {
     const pin = art({ id: 'pin', name: 'brief.md', kind: 'markdown', nodeId: 'react' })
     const live = art({ id: 'live', name: 'page.html', kind: 'html', nodeId: 'visual_bqc5' })
     const copy = art({ id: 'copy', name: 'visual_bqc5.page.html', kind: 'html', nodeId: 'visual_bqc5' })
@@ -370,7 +368,7 @@ describe('reactArtifactPreview helpers', () => {
       resolveEffectivePreviewPin({
         previewArtifact: 'brief.md',
         artifacts: [live, pin],
-        nodeType: 'visual',
+        node: PAGE_NODE,
         nodeId: 'visual_bqc5',
       }),
     ).toBe('brief.md')
@@ -378,7 +376,7 @@ describe('reactArtifactPreview helpers', () => {
       resolveEffectivePreviewPin({
         previewArtifact: 'missing.html',
         artifacts: [live],
-        nodeType: 'visual',
+        node: PAGE_NODE,
         nodeId: 'visual_bqc5',
       }),
     ).toBe('')
@@ -386,7 +384,7 @@ describe('reactArtifactPreview helpers', () => {
       resolveEffectivePreviewPin({
         previewArtifact: '',
         artifacts: [copy, hist, live],
-        nodeType: 'visual',
+        node: PAGE_NODE,
         nodeId: 'visual_bqc5',
       }),
     ).toBe('page.html')
@@ -394,13 +392,13 @@ describe('reactArtifactPreview helpers', () => {
       resolveEffectivePreviewPin({
         previewArtifact: '',
         artifacts: [copy],
-        nodeType: 'visual',
+        node: PAGE_NODE,
         nodeId: 'visual_bqc5',
       }),
     ).toBe('')
   })
 
-  it('picks the newest own-node HTML for unpinned react and ignores upstream page.html', () => {
+  it('picks the newest own-node HTML for unpinned clarify and ignores upstream page.html', () => {
     const upstream = art({
       id: 'up',
       name: 'page.html',
@@ -431,7 +429,7 @@ describe('reactArtifactPreview helpers', () => {
       resolveEffectivePreviewPin({
         previewArtifact: '',
         artifacts: [upstream, older, newer, json],
-        nodeType: 'react',
+        node: CLARIFY_NODE,
         nodeId: 'react_ymx0',
       }),
     ).toBe('brand-row-preview.html')
@@ -439,7 +437,7 @@ describe('reactArtifactPreview helpers', () => {
       resolveEffectivePreviewPin({
         previewArtifact: 'research.json',
         artifacts: [upstream, older, newer, json],
-        nodeType: 'react',
+        node: CLARIFY_NODE,
         nodeId: 'react_ymx0',
       }),
     ).toBe('research.json')
@@ -447,7 +445,7 @@ describe('reactArtifactPreview helpers', () => {
       resolveEffectivePreviewPin({
         previewArtifact: '',
         artifacts: [json],
-        nodeType: 'react',
+        node: CLARIFY_NODE,
         nodeId: 'react_ymx0',
       }),
     ).toBe('')
@@ -455,21 +453,21 @@ describe('reactArtifactPreview helpers', () => {
       resolveEffectivePreviewPin({
         previewArtifact: '',
         artifacts: [newer],
-        nodeType: 'research',
+        node: RESEARCH_NODE,
         nodeId: 'research',
       }),
     ).toBe('')
     expect(latestOwnNodeHtmlName([newer], '')).toBe('')
   })
 
-  it('hides bookkeeping artifacts and keeps agent-written products on the pipeline grid', () => {
+  it('hides bookkeeping artifacts and keeps agent-written products on the workflow grid', () => {
     const run = {
       nodes: [
-        { id: 'visual_bqc5', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} },
-        { id: 'react_ymx0', type: 'react', label: '澄清', position: { x: 0, y: 0 }, config: {} },
-        { id: 'research', type: 'research', label: '调研', position: { x: 0, y: 0 }, config: {} },
-        { id: 'clarify', type: 'react', label: '需求', position: { x: 0, y: 0 }, config: {} },
-        { id: 'approve_7gl6', type: 'approve', label: 'Approve', position: { x: 0, y: 0 }, config: {} },
+        PAGE_NODE,
+        gnode('react_ymx0', '澄清', ASK_CAPS),
+        RESEARCH_NODE,
+        gnode('clarify', '需求', ASK_CAPS),
+        gnode('approve_7gl6', '需求澄清', CLARIFY_CAPS),
         { id: 'human_gate_x1', type: 'human_gate', label: '门禁', position: { x: 0, y: 0 }, config: {} },
       ],
     } as unknown as Run
@@ -627,9 +625,9 @@ describe('reactArtifactPreview helpers', () => {
       summary: 'meta 摘要',
     })
     const noMeta =
-      '<html><body><div class="banner"><h1>流水线产物</h1><p>友好名 + 简单预览</p></div></body></html>'
+      '<html><body><div class="banner"><h1>工作流产物</h1><p>友好名 + 简单预览</p></div></body></html>'
     expect(extractVisualHtmlSummary(noMeta)).toEqual({
-      title: '流水线产物',
+      title: '工作流产物',
       summary: '友好名 + 简单预览',
     })
     expect(extractVisualHtmlSummary('<html><body><div>x</div></body></html>')).toBeNull()
@@ -709,7 +707,7 @@ describe('reactArtifactPreview helpers', () => {
       ).toBeNull()
     })
 
-    it('coalesces legacy chrome preview id to pipeline grid (g1.3)', () => {
+    it('coalesces legacy chrome preview id to workflow grid (g1.3)', () => {
       expect(coalesceStageTab(REACT_STAGE_TAB_PREVIEW)).toBe(REACT_STAGE_TAB_GRID)
       expect(coalesceStageTab('')).toBe(REACT_STAGE_TAB_GRID)
       expect(coalesceStageTab(previewTabId('a.html'))).toBe(previewTabId('a.html'))

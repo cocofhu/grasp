@@ -163,7 +163,8 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
         JSON.stringify({
           status: clarifyLinkUsed ? 'used' : 'active',
           kind: 'review',
-          nodeType: 'react',
+          nodeType: 'agent',
+          interaction: 'clarify',
           title: '需求澄清',
           description: '外部澄清。请回答问题，信息足够后确认并流转。',
           remainingSec: 3600,
@@ -217,8 +218,8 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
           reactSessionAlive: true,
           sessionBusy: false,
           waiting: 0,
-          productKind: 'app_preview',
-          productName: 'app_preview',
+          productKind: 'app',
+          productName: 'app',
           actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
           ports: [
             { port: 5173, label: 'Web · 5173', mode: 'vnc' },
@@ -398,9 +399,9 @@ const clarifyItem: ClarifyInboxItem = {
 
 const appPreviewItem: ClarifyInboxItem = {
   type: 'clarify',
-  kind: 'app_preview',
+  kind: 'review',
   runId: 'run-e2e-preview',
-  nodeId: 'app_preview-e2e',
+  nodeId: 'implement-e2e',
   iteration: 1,
   workflowName: 'wf',
   label: '应用预览',

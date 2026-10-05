@@ -21,6 +21,7 @@ import type {
   WFNode,
 } from '@/lib/shared/types'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
+import { isAppPreviewRemoteNode } from '@/lib/run/reactArtifactPreview'
 
 const props = defineProps<{
   mobile: boolean
@@ -71,7 +72,7 @@ const reviewChatRef = ref<{
   playConfirmCeremony?: () => Promise<void>
 } | null>(null)
 
-const remoteKind = computed(() => (props.node.type === 'app_preview' ? 'app' : 'off'))
+const remoteKind = computed(() => (isAppPreviewRemoteNode(props.node) ? 'app' : 'off'))
 
 defineExpose({
   applyReviewFrame: (frame: any) => reviewChatRef.value?.applyReviewFrame?.(frame),
@@ -110,7 +111,7 @@ defineExpose({
         :run-id="run.id"
         :run="run"
         :node-id="node.id"
-        :node-type="node.type"
+        :node="node"
         :annotatable="inputActive"
         :remote-kind="remoteKind"
         probe-registered-preview

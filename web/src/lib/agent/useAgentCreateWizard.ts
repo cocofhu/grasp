@@ -74,14 +74,16 @@ const customConfigDraft = ref('')
 const templateOptions = ref<AgentTemplateOption[]>([])
 
 const showDescField = computed(() => !hasRoleTemplate(draft.value))
+const selectedTemplate = computed(() => {
+  const id = (draft.value.templateId || 'blank').trim()
+  if (id === 'blank') return null
+  return templateOptions.value.find((o) => o.id === id) || null
+})
 const templateHint = computed(() => {
   const id = (draft.value.templateId || 'blank').trim()
   if (id === 'blank') return t('pages.agentStudio.wizard.basics.templateHintBlank')
-  const opt = templateOptions.value.find((o) => o.id === id)
-  if (!opt) return t('pages.agentStudio.wizard.basics.templateHintPack', { name: id })
-  return t('pages.agentStudio.wizard.basics.templateHintPack', {
-    name: opt.subtitle || opt.name,
-  })
+  const opt = selectedTemplate.value
+  return t('pages.agentStudio.wizard.basics.templateHintPack', { name: opt?.name || id })
 })
 
 async function loadTemplates() {
@@ -93,17 +95,9 @@ async function loadTemplates() {
       t('pages.agentStudio.wizard.basics.templateBlankSub'),
     )
   } catch {
-    // Offline / API miss: still offer blank + pinned packs so UI is usable.
+    // Offline / API miss: blank stays usable.
     templateOptions.value = buildTemplateOptions(
-      [
-        { id: 'test', embedName: 'TestAgent', roleLabelZh: '测试工程师', summary: '测试验证' },
-        {
-          id: 'preflight',
-          embedName: 'PreflightAgent',
-          roleLabelZh: '环境确认工程师',
-          summary: '环境确认',
-        },
-      ],
+      [],
       t('pages.agentStudio.wizard.basics.templateBlank'),
       t('pages.agentStudio.wizard.basics.templateBlankSub'),
     )
@@ -461,6 +455,7 @@ function chipClass(kind: string) {
   primaryAuthAlt,
   headSub,
   templateOptions,
+  selectedTemplate,
   showDescField,
   templateHint,
   onTemplateSelect,

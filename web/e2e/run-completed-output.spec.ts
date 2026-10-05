@@ -3,10 +3,11 @@
  */
 import { test, expect, type Page } from '@playwright/test'
 import type { Artifact, OutputCard } from '../src/lib/shared/types'
+import { RESEARCH_CAPS } from '../src/test/capsFixtures'
 
 const nodes = [
   { id: 'start', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
-  { id: 'research', type: 'research', label: '代码调研', position: { x: 180, y: 0 }, config: {} },
+  { id: 'research', type: 'agent', caps: RESEARCH_CAPS, label: '代码调研', position: { x: 180, y: 0 }, config: {} },
   { id: 'end', type: 'output', label: '结束', position: { x: 360, y: 0 }, config: {} },
 ]
 

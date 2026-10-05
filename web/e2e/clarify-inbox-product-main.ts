@@ -15,6 +15,7 @@ import {
   resolveClarifyProductStage,
 } from '../src/lib/inbox/clarifyInboxStage'
 import type { NodeRun, Run, WFNode } from '../src/lib/shared/types'
+import { AUTO_CAPS, CLARIFY_CAPS, PAGE_CAPS, RESEARCH_CAPS, writesCaps } from '../src/test/capsFixtures'
 
 type Scenario =
   | 'research'
@@ -56,8 +57,8 @@ const upstreamReqDoc = {
   return { content: '{}' }
 }
 
-function node(id: string, type: string, label: string): WFNode {
-  return { id, type, label, position: { x: 0, y: 0 }, config: {} }
+function node(id: string, label: string, caps: WFNode['caps'] = AUTO_CAPS): WFNode {
+  return { id, type: 'agent', label, position: { x: 0, y: 0 }, config: {}, caps }
 }
 
 function exec(nodeId: string, status: NodeRun['status'], outputs: Record<string, unknown> = {}): NodeRun {
@@ -78,7 +79,7 @@ function buildRun(scenario: Scenario): Run | null {
       startedAt: '',
       durationSec: 0,
       progress: 0,
-      nodes: [node('agent_1', 'agent', '通用 Agent')],
+      nodes: [node('agent_1', '通用 Agent')],
       edges: [],
       artifacts: [],
       nodeExecutions: {
@@ -102,7 +103,7 @@ function buildRun(scenario: Scenario): Run | null {
       startedAt: '',
       durationSec: 0,
       progress: 0,
-      nodes: [node('agent_1', 'agent', '通用 Agent')],
+      nodes: [node('agent_1', '通用 Agent')],
       edges: [],
       artifacts: [],
       nodeExecutions: {
@@ -125,7 +126,7 @@ function buildRun(scenario: Scenario): Run | null {
       startedAt: '',
       durationSec: 0,
       progress: 0,
-      nodes: [node('visual', 'visual', '视觉网页')],
+      nodes: [node('visual', '视觉网页', PAGE_CAPS)],
       edges: [],
       artifacts: [
         {
@@ -161,7 +162,7 @@ function buildRun(scenario: Scenario): Run | null {
       startedAt: '',
       durationSec: 0,
       progress: 0,
-      nodes: [node('react', 'react', '需求澄清')],
+      nodes: [node('react', '需求澄清', CLARIFY_CAPS)],
       edges: [],
       artifacts: [
         {
@@ -196,8 +197,8 @@ function buildRun(scenario: Scenario): Run | null {
     durationSec: 0,
     progress: 0,
     nodes: [
-      node('research_1', 'research', '调研结论'),
-      node('plan_1', 'plan', '实施计划'),
+      node('research_1', '调研结论', RESEARCH_CAPS),
+      node('plan_1', '实施计划', writesCaps('plan', { review: true })),
     ],
     edges: [],
     artifacts: [

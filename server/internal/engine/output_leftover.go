@@ -93,7 +93,7 @@ var leftoverArtifactPreferredOrder = []string{
 
 const (
 	leftoverArtifactsSectionTitle = "## 产物全文"
-	leftoverArtifactsSectionIntro = "下列产物已从本 Run 产物库按文件全文写入；后续执行只读本文，不回查原流水线或原 Run。\n"
+	leftoverArtifactsSectionIntro = "下列产物已从本 Run 产物库按文件全文写入；后续执行只读本文，不回查原工作流或原 Run。\n"
 	leftoverPlanHistoryNote       = "以下为计划全文，仅为历史对照，不是本次验收依据。\n"
 )
 
@@ -128,7 +128,7 @@ func nodeLabel(n models.Node) string {
 	return label
 }
 
-// collectLeftovers scans test/review/react/grasp nodes with JSON snapshots in
+// collectLeftovers scans test / review / clarify products with JSON snapshots in
 // this run (independent of output card source checkboxes). Malformed JSON is
 // skipped per node. skipped cases are counted as context only and do not count
 // as leftover items.
@@ -143,37 +143,22 @@ func collectLeftovers(c *execCtx) leftoverBundle {
 			continue
 		}
 		label := nodeLabel(n)
-		switch n.Type {
-		case "test":
-			raw, _ := outs[testResultJSONKey].(string)
-			if strings.TrimSpace(raw) == "" {
-				continue
+		if raw, _ := outs[testResultJSONKey].(string); strings.TrimSpace(raw) != "" {
+			if items, skipped, ok := parseTestLeftovers(raw, n.ID, label); ok {
+				out.TestNodeCount++
+				out.TestSkipped += skipped
+				out.Items = append(out.Items, items...)
 			}
-			items, skipped, ok := parseTestLeftovers(raw, n.ID, label)
-			if !ok {
-				continue
+		}
+		if raw, _ := outs[reviewJSONKey].(string); strings.TrimSpace(raw) != "" {
+			if items, verdict, ok := parseReviewLeftovers(raw, n.ID, label); ok {
+				if verdict != "" {
+					out.ReviewVerdicts[n.ID] = verdict
+				}
+				out.Items = append(out.Items, items...)
 			}
-			out.TestNodeCount++
-			out.TestSkipped += skipped
-			out.Items = append(out.Items, items...)
-		case "review":
-			raw, _ := outs[reviewJSONKey].(string)
-			if strings.TrimSpace(raw) == "" {
-				continue
-			}
-			items, verdict, ok := parseReviewLeftovers(raw, n.ID, label)
-			if !ok {
-				continue
-			}
-			if verdict != "" {
-				out.ReviewVerdicts[n.ID] = verdict
-			}
-			out.Items = append(out.Items, items...)
-		case "react", "grasp":
-			raw, _ := outs[clarifiedRequirementJSONKey].(string)
-			if strings.TrimSpace(raw) == "" {
-				continue
-			}
+		}
+		if raw, _ := outs[clarifiedRequirementJSONKey].(string); strings.TrimSpace(raw) != "" {
 			for _, q := range mcp.ClarifiedOpenQuestions(raw) {
 				out.Items = append(out.Items, leftoverItem{
 					Kind:      leftoverKindOpenQuestion,
@@ -358,7 +343,7 @@ func truncateRunes(s string, max int) string {
 func buildLeftoverDraftTitle(workflowName, runID string) string {
 	name := strings.TrimSpace(workflowName)
 	if name == "" {
-		name = "流水线"
+		name = "工作流"
 	}
 	short := shortRunID(runID)
 	prefix := "遗留汇总 · "
@@ -396,7 +381,7 @@ func clarifiedJSONUsable(raw string) bool {
 	return strings.TrimSpace(doc.Summary) != ""
 }
 
-// snapshotClarifiedSpecs walks react/grasp nodes in graph order and copies each
+// snapshotClarifiedSpecs walks clarify Agents in graph order and copies each
 // clarified requirement into readable Markdown (JSON render preferred).
 func snapshotClarifiedSpecs(c *execCtx) []clarifiedSpecSnap {
 	if c == nil || c.graph.Nodes == nil {
@@ -404,7 +389,7 @@ func snapshotClarifiedSpecs(c *execCtx) []clarifiedSpecSnap {
 	}
 	var out []clarifiedSpecSnap
 	for _, n := range c.graph.Nodes {
-		if n.Type != "react" && n.Type != "grasp" {
+		if !n.Caps.WritesSchema(models.SchemaClarifiedRequirement) {
 			continue
 		}
 		outs := c.nodeOutputs[n.ID]
@@ -469,7 +454,7 @@ func buildSpecSection(c *execCtx) string {
 	var b strings.Builder
 	if len(specs) > 0 {
 		b.WriteString("## 需求规格\n\n")
-		b.WriteString("下列规格已从本 Run 节点输出快照拷贝；后续执行只读本文，不回查原流水线或原 Run。\n\n")
+		b.WriteString("下列规格已从本 Run 节点输出快照拷贝；后续执行只读本文，不回查原工作流或原 Run。\n\n")
 		for _, s := range specs {
 			b.WriteString(fmt.Sprintf("### 节点 `%s`（%s）\n\n", s.NodeID, s.NodeLabel))
 			b.WriteString(s.Markdown)
@@ -852,10 +837,10 @@ func buildSourceNote(c *execCtx, bundle leftoverBundle) string {
 	var b strings.Builder
 	b.WriteString("## 来源注记\n\n")
 	b.WriteString("下列标识仅供人回顾，**不是**执行依据；标识失效后，上方正文与遗留仍完整有效。")
-	b.WriteString("请勿以「打开原 Run / 原流水线」作为获取需求的必要步骤。\n\n")
-	b.WriteString(fmt.Sprintf("- **流水线名**: %s\n", wfName))
+	b.WriteString("请勿以「打开原 Run / 原工作流」作为获取需求的必要步骤。\n\n")
+	b.WriteString(fmt.Sprintf("- **工作流名**: %s\n", wfName))
 	if id := strings.TrimSpace(c.run.WorkflowID); id != "" {
-		b.WriteString(fmt.Sprintf("- **流水线 ID**（可选）: `%s`\n", id))
+		b.WriteString(fmt.Sprintf("- **工作流 ID**（可选）: `%s`\n", id))
 	}
 	b.WriteString(fmt.Sprintf("- **版本**: %d\n", c.run.WorkflowVersion))
 	b.WriteString(fmt.Sprintf("- **Run ID**（可选）: `%s`\n", c.run.ID))
@@ -975,12 +960,12 @@ func buildLeftoverDraftBody(c *execCtx, bundle leftoverBundle, store mcp.Store) 
 	arts, sections := buildArtifactsSection(store, runID)
 
 	bg := "## 背景\n\n" +
-		"流水线已跑到结束节点，测试/评审门禁已放行，但仍有未处理遗留。" +
+		"工作流已跑到结束节点，测试/评审门禁已放行，但仍有未处理遗留。" +
 		"本草稿由结束节点开关「自动写入遗留需求草稿」生成，是一份**自包含需求文档**："
 	if arts != "" {
-		bg += "正文含本次 Run 全部文本产物全文与遗留，原流水线及其全部 Run 删除后仍可当作后续执行的需求输入，不依赖回查原执行。\n"
+		bg += "正文含本次 Run 全部文本产物全文与遗留，原工作流及其全部 Run 删除后仍可当作后续执行的需求输入，不依赖回查原执行。\n"
 	} else {
-		bg += "正文含需求规格（或完整原始输入）与遗留全文，原流水线及其全部 Run 删除后仍可当作后续执行的需求输入，不依赖回查原执行。\n"
+		bg += "正文含需求规格（或完整原始输入）与遗留全文，原工作流及其全部 Run 删除后仍可当作后续执行的需求输入，不依赖回查原执行。\n"
 	}
 
 	parts := leftoverBodyParts{
@@ -1042,7 +1027,7 @@ func (e *Engine) maybeWriteLeftoverDraft(c *execCtx, node *models.Node, outputs 
 
 	projectID := services.ResolveProjectIDForRun(e.db, c.run.ID)
 	if projectID == "" {
-		outputs[leftoverDraftErrKey] = "无法解析流水线所属项目，跳过遗留草稿"
+		outputs[leftoverDraftErrKey] = "无法解析工作流所属项目，跳过遗留草稿"
 		return
 	}
 

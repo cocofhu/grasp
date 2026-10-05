@@ -12,6 +12,7 @@ import Icon from '../src/components/ui/Icon.vue'
 import ExecutionStatsPanel from '../src/components/run/ExecutionStatsPanel.vue'
 import ExecutionTimeline from '../src/components/run/ExecutionTimeline.vue'
 import type { Run, WFNode } from '../src/lib/shared/types'
+import { CLARIFY_CAPS, RESEARCH_CAPS } from '../src/test/capsFixtures'
 
 const LONG_REPOS = {
   repos: [
@@ -22,8 +23,8 @@ const LONG_REPOS = {
 
 const nodes: WFNode[] = [
   { id: 'input', type: 'input', label: '输入', position: { x: 0, y: 0 }, config: {} },
-  { id: 'clarify', type: 'react', label: '需求澄清', position: { x: 120, y: 0 }, config: {} },
-  { id: 'research', type: 'research', label: '技术调研', position: { x: 240, y: 0 }, config: {} },
+  { id: 'clarify', type: 'agent', caps: CLARIFY_CAPS, label: '需求澄清', position: { x: 120, y: 0 }, config: {} },
+  { id: 'research', type: 'agent', caps: RESEARCH_CAPS, label: '技术调研', position: { x: 240, y: 0 }, config: {} },
 ]
 
 const mockRun: Run = {

@@ -61,7 +61,7 @@ func (c *Config) SecretsKey() string {
 	return strings.TrimSpace(c.Security.SecretsKey)
 }
 
-// BrowserConfig configures the server-side VNC preview path. Each app_preview
+// BrowserConfig configures the server-side VNC preview path. Each preview
 // sandbox embeds Xvfb+Chromium+x11vnc+websockify; the platform dials that
 // sandbox over CDP/websockify (no global browser pool). See internal/browser.
 type BrowserConfig struct {
@@ -169,8 +169,6 @@ type EngineConfig struct {
 	MaxConcurrentRuns int `yaml:"max_concurrent_runs"`
 	// ProfilesRoot is where skill profiles (rules) are stored.
 	ProfilesRoot string `yaml:"profiles_root"`
-	// PlatformRulesRoot is where global platform rule defaults are stored.
-	PlatformRulesRoot string `yaml:"platform_rules_root"`
 	// NodeAutoRetryMax caps how many times a node that fails with a transient /
 	// contract-style fault (structured-product contract miss, plan-incomplete,
 	// agent/sandbox execution error) and has no explicit failure/rollback edge
@@ -503,9 +501,6 @@ func setDefaults(c *Config) {
 	c.Storage.Driver = strings.ToLower(strings.TrimSpace(c.Storage.Driver))
 	if c.Storage.BlobsRoot == "" {
 		c.Storage.BlobsRoot = "data/blobs"
-	}
-	if c.Engine.PlatformRulesRoot == "" {
-		c.Engine.PlatformRulesRoot = "data/platform-rules"
 	}
 	if c.Engine.NodeAutoRetryMax == 0 {
 		c.Engine.NodeAutoRetryMax = 3

@@ -72,7 +72,8 @@ beforeEach(() => {
   mocks.preview.mockResolvedValue({
     status: 'active',
     kind: 'review',
-    nodeType: 'approve',
+    nodeType: 'agent',
+    interaction: 'clarify',
     productName: 'plan.json',
   })
   mocks.artifacts.mockResolvedValue({
@@ -88,7 +89,7 @@ beforeEach(() => {
         revision: 1,
       },
     ],
-    nodes: [{ id: 'ap1', type: 'approve', label: 'Approve' }],
+    nodes: [{ id: 'ap1', type: 'agent', label: 'Approve' }],
   })
 })
 
@@ -127,7 +128,8 @@ describe('EmbedNodeArtifactsView', () => {
     mocks.preview.mockResolvedValue({
       status: 'active',
       kind: 'review',
-      nodeType: 'approve',
+      nodeType: 'agent',
+    interaction: 'clarify',
       productName: '',
     })
     mocks.artifacts.mockResolvedValue({
@@ -161,7 +163,7 @@ describe('EmbedNodeArtifactsView', () => {
           revision: 1,
         },
       ],
-      nodes: [{ id: 'ap1', type: 'approve', label: 'Approve' }],
+      nodes: [{ id: 'ap1', type: 'agent', label: 'Approve' }],
     })
     const w = mount(EmbedNodeArtifactsView, {
       global: { plugins: [i18n()], stubs: { Icon: true } },
@@ -175,12 +177,13 @@ describe('EmbedNodeArtifactsView', () => {
     w.unmount()
   })
 
-  it('shows empty pipeline products when only feedback remains (g2.2)', async () => {
+  it('shows empty workflow products when only feedback remains (g2.2)', async () => {
     saveEmbedSession('run-1', 'ap1', { token: 'gse_' + 'ab'.repeat(16), expiresAt: '2099-01-01T00:00:00Z' })
     mocks.preview.mockResolvedValue({
       status: 'active',
       kind: 'review',
-      nodeType: 'approve',
+      nodeType: 'agent',
+    interaction: 'clarify',
       productName: 'feedback_index.json',
     })
     mocks.artifacts.mockResolvedValue({
@@ -205,7 +208,7 @@ describe('EmbedNodeArtifactsView', () => {
           revision: 1,
         },
       ],
-      nodes: [{ id: 'ap1', type: 'approve', label: 'Approve' }],
+      nodes: [{ id: 'ap1', type: 'agent', label: 'Approve' }],
     })
     const w = mount(EmbedNodeArtifactsView, {
       global: { plugins: [i18n()], stubs: { Icon: true } },

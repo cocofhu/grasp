@@ -13,7 +13,7 @@ func TestEscapeLikeAndInboxHelpers(t *testing.T) {
 	}
 	db := newTestDB(t)
 	s := NewRunService(db)
-	g := models.Graph{Nodes: []models.Node{{ID: "r1", Type: "react", Label: "澄清"}}}
+	g := models.Graph{Nodes: []models.Node{agentNode("r1", "澄清", testClarifyCaps)}}
 	db.Create(&models.Run{ID: "run-ctx", Status: "waiting_human", Graph: g})
 	db.Create(&models.ReactConversation{RunID: "run-ctx", NodeID: "r1", Iteration: 1})
 	db.Create(&models.Gate{RunID: "run-ctx", NodeID: "r1", Iteration: 1, Title: "g", Resolved: false})

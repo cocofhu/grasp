@@ -6,6 +6,7 @@ import { installIdleScrollbar } from '../src/lib/shared/idleScrollbar'
 import { setTheme } from '../src/lib/shared/theme'
 import GateApproval from '../src/components/run/GateApproval.vue'
 import type { Gate, Run } from '../src/lib/shared/types'
+import { RESEARCH_CAPS } from '../src/test/capsFixtures'
 
 const params = new URLSearchParams(window.location.search)
 const session = params.get('session') === 'hot' ? 'hot' : 'cold'
@@ -48,7 +49,7 @@ const run = {
     },
     {
       id: 'research',
-      type: 'research',
+      type: 'agent', caps: RESEARCH_CAPS,
       label: '调研',
       position: { x: 0, y: 0 },
       config: {},

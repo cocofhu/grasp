@@ -333,7 +333,7 @@ func (h *Handlers) PublicGateCancel(c *gin.Context) {
 	}
 	if kind == models.ShareLinkKindReview {
 		var err error
-		if lookup.Node != nil && nodereg.ClarifyInteractive(lookup.Node.Type) {
+		if lookup.Node != nil && lookup.Node.Caps.Clarify() {
 			err = h.Eng.CancelClarifyTurn(lookup.Link.RunID, lookup.Link.NodeID)
 		} else {
 			err = h.Eng.CancelReviewSession(lookup.Link.RunID, lookup.Link.NodeID)
@@ -709,20 +709,21 @@ func (h *Handlers) publicReviewArtifacts(lookup *gateshare.LookupResult) (visual
 	if lookup == nil || h.Arts == nil || lookup.Node == nil {
 		return "", "", ""
 	}
-	spec, ok := nodereg.Get(lookup.Node.Type)
-	name := strings.TrimSpace(spec.ArtifactName)
-	if !ok || name == "" {
-		return "", "", ""
+	for _, sc := range nodereg.DeclaredSchemas(lookup.Node.Caps) {
+		name := strings.TrimSpace(sc.ArtifactName)
+		if name == "" {
+			continue
+		}
+		a, ok := h.Arts.GetRecord(lookup.Link.RunID, name)
+		if !ok {
+			continue
+		}
+		if sc.Name == models.SchemaPage {
+			return a.Content, "", ""
+		}
+		return "", name, a.Content
 	}
-	a, ok := h.Arts.GetRecord(lookup.Link.RunID, name)
-	if !ok {
-		return "", "", ""
-	}
-	lower := strings.ToLower(name)
-	if lower == "page.html" || strings.HasSuffix(lower, ".html") {
-		return a.Content, "", ""
-	}
-	return "", name, a.Content
+	return "", "", ""
 }
 
 func (h *Handlers) publicReviewExtras(lookup *gateshare.LookupResult, lane, visualHTML, structName string) gateshare.PreviewExtras {
@@ -731,19 +732,18 @@ func (h *Handlers) publicReviewExtras(lookup *gateshare.LookupResult, lane, visu
 		return ex
 	}
 	runID, nodeID := lookup.Link.RunID, lookup.Link.NodeID
-	if lookup.Node != nil && lookup.Node.Type == "app_preview" {
-		ex.ProductKind = gateshare.ProductKindAppPreview
-		ex.ProductName = "app_preview"
-		ex.Ports = h.publicAppPreviewPorts(runID, nodeID)
-	} else if strings.TrimSpace(visualHTML) != "" {
+	if strings.TrimSpace(visualHTML) != "" {
 		ex.ProductKind = gateshare.ProductKindVisual
 		ex.ProductName = "page.html"
 	} else if strings.TrimSpace(structName) != "" {
 		ex.ProductKind = gateshare.ProductKindStructured
 		ex.ProductName = structName
 	}
-	if lookup.Node != nil && nodereg.IsGrasp(lookup.Node.Type) {
+	if lookup.Node != nil && lookup.Node.Caps.CanPreview() {
 		ex.Ports = h.publicAppPreviewPorts(runID, nodeID)
+		if ex.ProductKind == "" {
+			ex.ProductKind = gateshare.ProductKindAppPreview
+		}
 	}
 	ex.Turns = h.publicLaneTurns(lookup, nodeID, lane)
 	ex.ReactSessionAlive = h.Eng != nil && h.Eng.HasLiveReviewSession(runID, nodeID)
@@ -776,12 +776,6 @@ func (h *Handlers) publicGateExtras(lookup *gateshare.LookupResult, lane, visual
 	}
 	if producerID != "" {
 		ex.Turns = h.publicLaneTurns(lookup, producerID, lane)
-		if lookup.Run.Graph.FindNode(producerID) != nil && lookup.Run.Graph.FindNode(producerID).Type == "app_preview" {
-			ex.ProductKind = gateshare.ProductKindAppPreview
-			if ex.ProductName == "" {
-				ex.ProductName = "app_preview"
-			}
-		}
 	}
 	ex.ReactSessionAlive = alive
 	if alive {

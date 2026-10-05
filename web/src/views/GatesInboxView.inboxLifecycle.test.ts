@@ -62,15 +62,15 @@ vi.mock('@/lib/composables/useToast', () => ({
 }))
 
 const filterState = vi.hoisted(() => ({
-  pipelineSelected: null as { value: string } | null,
+  workflowSelected: null as { value: string } | null,
   projectSelected: null as { value: string } | null,
 }))
 
-vi.mock('@/lib/composables/usePipelineFilter', async () => {
+vi.mock('@/lib/composables/useWorkflowFilter', async () => {
   const { ref } = await import('vue')
-  filterState.pipelineSelected = ref('')
+  filterState.workflowSelected = ref('')
   return {
-    usePipelineFilter: () => ({ selected: filterState.pipelineSelected! }),
+    useWorkflowFilter: () => ({ selected: filterState.workflowSelected! }),
   }
 })
 
@@ -102,6 +102,7 @@ vi.mock('@/lib/inbox/useClarifyDraft', async () => {
 import GatesInboxView from './GatesInboxView.vue'
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { setHomeApproveHandoff, takeHomeApproveHandoff } from '@/lib/run/homeApproveHandoff'
+import { CLARIFY_CAPS, IMPLEMENT_CAPS } from '@/test/capsFixtures'
 
 function paged(items: InboxItem[]) {
   return { items, total: items.length, page: 1, pageSize: 20 }
@@ -242,7 +243,7 @@ function mountInbox() {
       stubs: {
         Icon: true,
         EmptyState: true,
-        PipelineFilter: true,
+        WorkflowFilter: true,
         ProjectFilter: true,
         Pagination: true,
         ArtifactLoadingPane: true,
@@ -276,7 +277,7 @@ beforeEach(async () => {
   mocks.reactReply.mockResolvedValue({ status: 'ok' })
   mocks.nodeEvents.mockResolvedValue({ events: [], live: false })
   mocks.runArtifacts.mockResolvedValue([])
-  if (filterState.pipelineSelected) filterState.pipelineSelected.value = ''
+  if (filterState.workflowSelected) filterState.workflowSelected.value = ''
   if (filterState.projectSelected) filterState.projectSelected.value = ''
   // Reset singleton so each test starts from an empty pending badge/list.
   mocks.listGates.mockResolvedValue(paged([]))
@@ -286,7 +287,7 @@ beforeEach(async () => {
       return {
         type: 'clarify',
         status: 'waiting_human',
-        nodes: [{ id: nodeId, type: 'react', label: nodeId }],
+        nodes: [{ id: nodeId, type: 'agent', caps: CLARIFY_CAPS, label: nodeId }],
         artifacts: [],
         nodeExecutions: {},
         clarify: { nodeId, iteration: 1, turns: [], done: false, label: nodeId },
@@ -1342,7 +1343,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
           releaseStale = resolve
         }),
     )
-    filterState.pipelineSelected!.value = 'wf-stale'
+    filterState.workflowSelected!.value = 'wf-stale'
     await flushPromises()
 
     // Approve while the stale listGates is still in flight.
@@ -1416,7 +1417,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     releaseContext({
       type: 'clarify',
       status: 'waiting_human',
-      nodes: [{ id: 'clarify-resume', type: 'react', label: '澄清' }],
+      nodes: [{ id: 'clarify-resume', type: 'agent', caps: CLARIFY_CAPS, label: '澄清' }],
       artifacts: [],
       nodeExecutions: {},
       reactSessions: {
@@ -1493,7 +1494,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     releaseContext({
       type: 'clarify',
       status: 'waiting_human',
-      nodes: [{ id: 'clarify-acp-race', type: 'react', label: '澄清' }],
+      nodes: [{ id: 'clarify-acp-race', type: 'agent', caps: CLARIFY_CAPS, label: '澄清' }],
       artifacts: [],
       nodeExecutions: {},
       reactSessions: {
@@ -1572,7 +1573,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     releaseContext({
       type: 'gate',
       nodes: [
-        { id: 'visual-producer', type: 'visual', label: '视觉' },
+        { id: 'visual-producer', type: 'agent', caps: IMPLEMENT_CAPS, label: '视觉' },
         { id: 'gate-acp-gate', type: 'human_gate', label: '审批' },
       ],
       artifacts: [],
@@ -1662,7 +1663,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     mocks.inboxContext.mockResolvedValue({
       type: 'clarify',
       status: 'waiting_human',
-      nodes: [{ id: 'ap', type: 'approve', label: '澄清' }],
+      nodes: [{ id: 'ap', type: 'agent', caps: CLARIFY_CAPS, label: '澄清' }],
       artifacts: [],
       nodeExecutions: {},
       clarify: { nodeId: 'ap', iteration: 1, turns: [], done: false, label: '澄清' },
@@ -1700,7 +1701,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     mocks.inboxContext.mockResolvedValue({
       type: 'clarify',
       status: 'waiting_human',
-      nodes: [{ id: 'ap', type: 'approve', label: '澄清' }],
+      nodes: [{ id: 'ap', type: 'agent', caps: CLARIFY_CAPS, label: '澄清' }],
       artifacts: [],
       nodeExecutions: {},
       clarify: { nodeId: 'ap', iteration: 1, turns: [], done: false, label: '澄清' },
@@ -1762,7 +1763,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     mocks.inboxContext.mockResolvedValue({
       type: 'clarify',
       status: 'waiting_human',
-      nodes: [{ id: 'approve_7gl8', type: 'approve', label: '澄清' }],
+      nodes: [{ id: 'approve_7gl8', type: 'agent', caps: CLARIFY_CAPS, label: '澄清' }],
       artifacts: [],
       nodeExecutions: {},
       clarify: { nodeId: 'approve_7gl8', iteration: 1, turns: [], done: false, label: '澄清' },

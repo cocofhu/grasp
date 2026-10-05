@@ -21,7 +21,7 @@ describe('lastOutputNodeId', () => {
       artifacts: [],
     }
     const nodes = [
-      { id: 'plan', type: 'plan' },
+      { id: 'plan', type: 'agent' },
       { id: 'out1', type: 'output' },
       { id: 'out2', type: 'output' },
     ]
@@ -42,7 +42,7 @@ describe('lastOutputNodeId', () => {
       artifacts: [],
     } as Run
     const nodes = [
-      { id: 'plan', type: 'plan' },
+      { id: 'plan', type: 'agent' },
       { id: 'out1', type: 'output' },
       { id: 'out2', type: 'output' },
     ]
@@ -64,6 +64,6 @@ describe('lastOutputNodeId', () => {
       nodeRuns: { plan: { nodeId: 'plan', status: 'completed', startedAt: '2026-01-01T00:00:05Z' } },
       artifacts: [],
     } as Run
-    expect(resolveOutputFocusNodeId(run, [{ id: 'plan', type: 'plan' }])).toBeNull()
+    expect(resolveOutputFocusNodeId(run, [{ id: 'plan', type: 'agent' }])).toBeNull()
   })
 })

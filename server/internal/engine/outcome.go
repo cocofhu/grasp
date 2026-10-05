@@ -6,7 +6,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/rs/zerolog/log"
 )
@@ -197,18 +196,6 @@ func (e *Engine) withOutcome(c *execCtx, node *models.Node, res runtime.NodeResu
 func (e *Engine) finishAgentOutcome(c *execCtx, node *models.Node, res runtime.NodeResult, next func(runtime.NodeResult) nodeOutcome) nodeOutcome {
 	oc := e.withOutcome(c, node, res, next)
 	return e.afterDefaultChecks(c, node, oc)
-}
-
-// agentExecNeedsOutcome reports whether this executor kind requires node_complete.
-func agentExecNeedsOutcome(k nodereg.ExecKind) bool {
-	switch k {
-	case nodereg.ExecAgent, nodereg.ExecPlan, nodereg.ExecStructured,
-		nodereg.ExecStructuredGated, nodereg.ExecSubmitMR, nodereg.ExecVisual:
-		return true
-	// ExecAppPreview: 可达 set_preview 即生产相完成，豁免 node_complete 硬门禁。
-	default:
-		return false
-	}
 }
 
 // missingOutcomeErr (CAPA A7) picks the failure reason when no adoptable mark

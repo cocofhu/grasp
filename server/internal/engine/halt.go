@@ -58,19 +58,19 @@ func (e *Engine) WaitAgentReact(ctx context.Context, deadline time.Time) bool {
 	defer ticker.Stop()
 
 	for {
-		active := e.countActiveAgentReact()
+		active := e.countActiveAgents()
 		if active == 0 {
 			log.Info().Msg("waiting runs: all agent/react completed")
 			return false
 		}
 		if time.Now().After(deadline) {
-			n := e.forceCancelActiveAgentReact()
+			n := e.forceCancelActiveAgents()
 			log.Warn().Int("runs", n).Msg("timeout force")
 			return true
 		}
 		select {
 		case <-ctx.Done():
-			e.forceCancelActiveAgentReact()
+			e.forceCancelActiveAgents()
 			return true
 		case <-ticker.C:
 			log.Info().Int("active", active).Msg("waiting runs")
@@ -78,19 +78,19 @@ func (e *Engine) WaitAgentReact(ctx context.Context, deadline time.Time) bool {
 	}
 }
 
-func (e *Engine) countActiveAgentReact() int {
+func (e *Engine) countActiveAgents() int {
 	var n int64
 	e.db.Model(&models.StateRun{}).
-		Where("status = ? AND node_type IN ?", "running", []string{"agent", "react", "grasp", "approve"}).
+		Where("status = ? AND node_type = ?", "running", "agent").
 		Count(&n)
 	return int(n)
 }
 
-func (e *Engine) forceCancelActiveAgentReact() int {
+func (e *Engine) forceCancelActiveAgents() int {
 	var states []models.StateRun
-	if err := e.db.Where("status = ? AND node_type IN ?", "running", []string{"agent", "react", "grasp", "approve"}).
+	if err := e.db.Where("status = ? AND node_type = ?", "running", "agent").
 		Find(&states).Error; err != nil {
-		log.Error().Err(err).Msg("force cancel agent/react: query failed")
+		log.Error().Err(err).Msg("force cancel agents: query failed")
 		return 0
 	}
 	seen := map[string]bool{}

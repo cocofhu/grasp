@@ -13,12 +13,13 @@ import {
   sharePct,
 } from './runStats'
 import type { Run, WFNode } from '../shared/types'
+import { ASK_CAPS, AUTO_CAPS, IMPLEMENT_CAPS } from '@/test/capsFixtures'
 
 const nodes: WFNode[] = [
-  { id: 'research', type: 'research', label: '调研', position: { x: 0, y: 0 }, config: {} },
-  { id: 'react', type: 'react', label: '需求澄清', position: { x: 0, y: 0 }, config: {} },
+  { id: 'research', type: 'agent', label: '调研', position: { x: 0, y: 0 }, config: {}, caps: AUTO_CAPS },
+  { id: 'react', type: 'agent', label: '需求澄清', position: { x: 0, y: 0 }, config: {}, caps: ASK_CAPS },
   { id: 'gate', type: 'human_gate', label: '人工门禁', position: { x: 0, y: 0 }, config: {} },
-  { id: 'skip', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} },
+  { id: 'skip', type: 'agent', label: '视觉', position: { x: 0, y: 0 }, config: {}, caps: AUTO_CAPS },
 ]
 
 function baseRun(partial: Partial<Run> & Pick<Run, 'nodeExecutions'>): Run {
@@ -67,10 +68,11 @@ describe('resolveProcessDuration / hasHumanWait', () => {
   })
 
   it('flags human wait heuristically', () => {
-    expect(hasHumanWait('waiting_human', 'agent')).toBe(true)
-    expect(hasHumanWait('completed', 'human_gate')).toBe(true)
-    expect(hasHumanWait('completed', 'react')).toBe(true)
-    expect(hasHumanWait('completed', 'research')).toBe(false)
+    expect(hasHumanWait('waiting_human', { type: 'agent' })).toBe(true)
+    expect(hasHumanWait('completed', { type: 'human_gate' })).toBe(true)
+    expect(hasHumanWait('completed', { type: 'agent', caps: ASK_CAPS })).toBe(true)
+    expect(hasHumanWait('completed', { type: 'agent', caps: IMPLEMENT_CAPS })).toBe(true)
+    expect(hasHumanWait('completed', { type: 'agent', caps: AUTO_CAPS })).toBe(false)
   })
 
   it('resolveRunWallSec uses live elapsed for waiting_human', () => {
@@ -505,7 +507,8 @@ describe('aggregateSingleRun', () => {
 
   it('merges by type', () => {
     const merged = mergeByType(flattenProcesses(run, nodes, Date.now()))
-    expect(merged.find((m) => m.key === 'react')?.durationSec).toBe(40)
+    expect(merged.find((m) => m.key === 'agent')?.durationSec).toBe(60)
+    expect(merged.find((m) => m.key === 'human_gate')?.durationSec).toBe(25)
     expect(mergeByNode(flattenProcesses(run, nodes, Date.now())).length).toBe(3)
   })
 
@@ -612,7 +615,7 @@ describe('aggregateMultiRuns', () => {
           },
         ],
       },
-      nodes: [{ id: 'n1', type: 'research', label: 'R', position: { x: 0, y: 0 }, config: {} }],
+      nodes: [{ id: 'n1', type: 'agent', label: 'R', position: { x: 0, y: 0 }, config: {} }],
     })
     const runNew = baseRun({
       id: 'new',
@@ -628,7 +631,7 @@ describe('aggregateMultiRuns', () => {
           },
         ],
       },
-      nodes: [{ id: 'n1', type: 'plan', label: 'P', position: { x: 0, y: 0 }, config: {} }],
+      nodes: [{ id: 'n1', type: 'branch', label: 'P', position: { x: 0, y: 0 }, config: {} }],
     })
     const byNode = aggregateMultiRuns(
       [
@@ -649,7 +652,7 @@ describe('aggregateMultiRuns', () => {
       'type',
       Date.now(),
     )
-    expect(byType.items.map((i) => i.key).sort()).toEqual(['plan', 'research'])
+    expect(byType.items.map((i) => i.key).sort()).toEqual(['agent', 'branch'])
   })
 })
 

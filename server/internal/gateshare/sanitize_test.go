@@ -299,7 +299,7 @@ func TestBuildReviewPreviewDTOIncludesWorkbenchFields(t *testing.T) {
 	lookup := &LookupResult{
 		Kind: models.ShareLinkKindReview,
 		Link: models.GateShareLink{ExpiresAt: mustFuture()},
-		Node: &models.Node{ID: "research1", Type: "research", Label: "调研"},
+		Node: &models.Node{ID: "research1", Type: "agent", Label: "调研", Caps: &models.AgentCapabilities{Interaction: models.InteractionAuto, Review: true}},
 	}
 	dto := BuildReviewPreviewDTO(models.ShareLinkStateActive, lookup, "", "research.json", `{"title":"调研摘要","goals":["g1"],"runId":"hide-me"}`, "nonce-1", PreviewExtras{
 		Turns: []models.ReactMessage{
@@ -314,8 +314,8 @@ func TestBuildReviewPreviewDTOIncludesWorkbenchFields(t *testing.T) {
 	if dto.Kind != models.ShareLinkKindReview {
 		t.Fatalf("kind=%s", dto.Kind)
 	}
-	if dto.NodeType != "research" {
-		t.Fatalf("nodeType=%s want research", dto.NodeType)
+	if dto.NodeType != "agent" || dto.Interaction != models.InteractionAuto {
+		t.Fatalf("nodeType=%s interaction=%s want agent/auto", dto.NodeType, dto.Interaction)
 	}
 	if dto.Actions["confirm"] != "confirm" || dto.Actions["reply"] != "reply" || dto.Actions["cancel"] != "cancel" {
 		t.Fatalf("actions=%+v", dto.Actions)
@@ -352,7 +352,7 @@ func TestBuildReviewPreviewDTOIncludesQueueState(t *testing.T) {
 	lookup := &LookupResult{
 		Kind: models.ShareLinkKindReview,
 		Link: models.GateShareLink{ExpiresAt: mustFuture()},
-		Node: &models.Node{ID: "research1", Type: "research", Label: "调研"},
+		Node: &models.Node{ID: "research1", Type: "agent", Label: "调研", Caps: &models.AgentCapabilities{Interaction: models.InteractionAuto, Review: true}},
 	}
 	dto := BuildReviewPreviewDTO(models.ShareLinkStateActive, lookup, "", "research.json", `{"title":"调研摘要"}`, "nonce-q", PreviewExtras{
 		ReactSessionAlive: true,
@@ -409,7 +409,7 @@ func TestBuildReviewPreviewDTOClarifyCopyAndEmptyProduct(t *testing.T) {
 	lookup := &LookupResult{
 		Kind: models.ShareLinkKindReview,
 		Link: models.GateShareLink{ExpiresAt: mustFuture()},
-		Node: &models.Node{ID: "clarify", Type: "react", Label: "需求澄清"},
+		Node: &models.Node{ID: "clarify", Type: "agent", Label: "需求澄清", Caps: &models.AgentCapabilities{Interaction: models.InteractionClarify, Tools: []string{models.ToolAskQuestion}}},
 	}
 	dto := BuildReviewPreviewDTO(models.ShareLinkStateActive, lookup, "", "", "", "nonce-c", PreviewExtras{
 		Turns: []models.ReactMessage{
@@ -420,7 +420,7 @@ func TestBuildReviewPreviewDTOClarifyCopyAndEmptyProduct(t *testing.T) {
 	if dto.Kind != models.ShareLinkKindReview {
 		t.Fatalf("kind must stay review: %s", dto.Kind)
 	}
-	if dto.NodeType != "react" {
+	if dto.NodeType != "agent" {
 		t.Fatalf("nodeType=%s", dto.NodeType)
 	}
 	if dto.Title != "需求澄清" {
@@ -443,7 +443,7 @@ func TestBuildReviewPreviewDTOClarifyCopyAndEmptyProduct(t *testing.T) {
 	reviewLookup := &LookupResult{
 		Kind: models.ShareLinkKindReview,
 		Link: models.GateShareLink{ExpiresAt: mustFuture()},
-		Node: &models.Node{ID: "research1", Type: "research", Label: "调研"},
+		Node: &models.Node{ID: "research1", Type: "agent", Label: "调研", Caps: &models.AgentCapabilities{Interaction: models.InteractionAuto, Review: true}},
 	}
 	rev := BuildReviewPreviewDTO(models.ShareLinkStateActive, reviewLookup, "", "research.json", `{"title":"调研"}`, "n2", PreviewExtras{})
 	if !strings.Contains(rev.Description, "待复审") {

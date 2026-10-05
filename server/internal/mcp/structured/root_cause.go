@@ -10,10 +10,10 @@ import (
 	"github.com/cocofhu/grasp/internal/mcp/mermaidvalidate"
 )
 
-// RootCauseArtifactName is the reserved JSON product for Grasp bug runs.
+// RootCauseArtifactName is the reserved JSON product for bug work items.
 const RootCauseArtifactName = "root_cause.json"
 
-// Work kind values on clarified_requirement (Grasp required; react optional).
+// Work kind values on clarified_requirement.
 const (
 	WorkKindBug     = "bug"
 	WorkKindFeature = "feature"

@@ -6,21 +6,23 @@ import {
   hasRoleTemplate,
 } from './agentCreateWizard'
 
-describe('agentTemplateOptions (plan g1 / g2)', () => {
-  it('orders blank → test → preflight → rest', () => {
+describe('agentTemplateOptions', () => {
+  it('puts blank first and keeps the server template order with capabilities', () => {
+    const caps = { interaction: 'clarify' as const, tools: ['ask_question' as const] }
     const opts = buildTemplateOptions(
       [
-        { id: 'implement', embedName: 'ImplementAgent', roleLabelZh: '实现工程师', summary: 'x' },
-        { id: 'test', embedName: 'TestAgent', roleLabelZh: '测试工程师', summary: 'y' },
-        { id: 'preflight', embedName: 'PreflightAgent', roleLabelZh: '环境确认工程师', summary: 'z' },
-        { id: 'clarify', embedName: 'ClarifyAgent', roleLabelZh: '澄清工程师', summary: 'c' },
+        { id: 'clarify', embedName: 'ClarifyAgent', roleLabelZh: '需求澄清', summary: 'c', capabilities: caps },
+        { id: 'implement', embedName: 'ImplementAgent', roleLabelZh: '实现', summary: 'x' },
+        { id: 'blank', embedName: 'Blank', roleLabelZh: '', summary: '' },
+        { id: 'test_review', embedName: 'TestReviewAgent', roleLabelZh: '', summary: 'y' },
       ],
       '空白',
       '通用身份 Rule',
     )
-    expect(opts.map((o) => o.id)).toEqual(['blank', 'test', 'preflight', 'implement', 'clarify'])
-    expect(opts[1].subtitle).toContain('set_test_result')
-    expect(opts[2].subtitle).toContain('set_preflight')
+    expect(opts.map((o) => o.id)).toEqual(['blank', 'clarify', 'implement', 'test_review'])
+    expect(opts[0]).toMatchObject({ name: '空白', subtitle: '通用身份 Rule' })
+    expect(opts[1]).toMatchObject({ name: '需求澄清', subtitle: 'ClarifyAgent', capabilities: caps })
+    expect(opts[3].name).toBe('TestReviewAgent')
   })
 })
 

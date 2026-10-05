@@ -26,7 +26,7 @@ var (
 	// ErrProjectNotFound is returned when the requested project does not exist.
 	ErrProjectNotFound = errors.New("project not found")
 	// ErrProjectHasWorkflows is returned when deleting a project that still owns workflows.
-	ErrProjectHasWorkflows = errors.New("项目下仍有流水线，请先删除全部流水线")
+	ErrProjectHasWorkflows = errors.New("项目下仍有工作流，请先删除全部工作流")
 	// ErrSecretPlaceholderOnNewKey is returned when a new/renamed key is saved with only the mask.
 	ErrSecretPlaceholderOnNewKey = errors.New("新密钥或重命名的键不能使用打码占位值，请重新填写明文")
 	// ErrUnknownModelDisplayNameTooLong is returned when the alias exceeds 64 runes.

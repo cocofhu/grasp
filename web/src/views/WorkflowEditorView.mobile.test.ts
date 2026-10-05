@@ -6,10 +6,14 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
+import nodes from '@/locales/zh-CN/nodes.json'
+import canvas from '@/locales/zh-CN/canvas.json'
 
 const apiMocks = vi.hoisted(() => ({
   getWorkflow: vi.fn(),
   saveWorkflow: vi.fn(),
+  listAgents: vi.fn(async () => []),
+  getProject: vi.fn(async () => ({ name: 'proj' })),
 }))
 
 const breakpointMocks = vi.hoisted(() => {
@@ -26,6 +30,8 @@ vi.mock('@/lib/api/api', async () => {
       ...actual.api,
       getWorkflow: apiMocks.getWorkflow,
       saveWorkflow: apiMocks.saveWorkflow,
+      listAgents: apiMocks.listAgents,
+      getProject: apiMocks.getProject,
     },
   }
 })
@@ -62,9 +68,6 @@ vi.mock('@/components/canvas/NodePalette.vue', () => ({
 vi.mock('@/components/canvas/NodeInspector.vue', () => ({
   default: { name: 'NodeInspector', template: '<div data-testid="node-inspector-stub" />' },
 }))
-vi.mock('@/components/canvas/EdgeInspector.vue', () => ({
-  default: { name: 'EdgeInspector', template: '<div data-testid="edge-inspector-stub" />' },
-}))
 
 import WorkflowEditorView from './WorkflowEditorView.vue'
 
@@ -76,8 +79,8 @@ const MOCK_WF = {
   version: 1,
   updatedAt: '',
   nodes: [
-    { id: 'n1', type: 'react', label: '需求澄清', position: { x: 0, y: 0 }, config: {} },
-    { id: 'n2', type: 'gate', label: '人工确认', position: { x: 120, y: 0 }, config: {} },
+    { id: 'n1', type: 'agent', label: '需求澄清', position: { x: 0, y: 0 }, config: { agent_profile: '需求澄清', prompt: '' } },
+    { id: 'n2', type: 'human_gate', label: '人工确认', position: { x: 120, y: 0 }, config: { actions: [] } },
   ],
   edges: [],
 }
@@ -86,7 +89,7 @@ async function mountEditor() {
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
-    messages: { 'zh-CN': { ...common, ...pages } },
+    messages: { 'zh-CN': { ...common, ...nodes, ...pages, ...canvas } },
   })
   const router = createRouter({
     history: createMemoryHistory(),
@@ -149,8 +152,8 @@ describe('WorkflowEditorView mobile desktop-recommend', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="workflow-editor-summary"]').exists()).toBe(true)
     expect(wrapper.findAll('[data-testid="workflow-editor-node-row"]')).toHaveLength(2)
-    expect(wrapper.text()).toContain('react · 需求澄清')
-    expect(wrapper.text()).toContain('gate · 人工确认')
+    expect(wrapper.text()).toContain('Agent · 需求澄清')
+    expect(wrapper.text()).toContain('人工门禁 · 人工确认')
     wrapper.unmount()
   })
 
@@ -189,12 +192,12 @@ describe('WorkflowEditorView back navigation', () => {
     return target
   }
 
-  it('desktop back lands on the owning project pipelines Tab', async () => {
+  it('desktop back lands on the owning project workflows Tab', async () => {
     const target = await backTarget(false, { ...MOCK_WF, projectId: 'proj-1' })
     expect(target).toBe('/projects/proj-1?tab=workflows')
   })
 
-  it('mobile back lands on the owning project pipelines Tab', async () => {
+  it('mobile back lands on the owning project workflows Tab', async () => {
     const target = await backTarget(true, { ...MOCK_WF, projectId: 'proj-1' })
     expect(target).toBe('/projects/proj-1?tab=workflows')
   })

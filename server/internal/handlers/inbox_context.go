@@ -104,7 +104,7 @@ func (h *Handlers) inboxContextGate(c *gin.Context, runID, gateNodeID string, it
 	c.JSON(http.StatusOK, out)
 }
 
-// inboxContextStarting serves the clarify context of a booting approve node:
+// inboxContextStarting serves the clarify context of a booting clarify node:
 // same shape as a normal clarify context but with an empty transcript and
 // starting=true, so the inbox detail pane can render the boot loader.
 func (h *Handlers) inboxContextStarting(c *gin.Context, run models.Run, nodeID string, iteration int) {

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/tokenledger"
 	"github.com/rs/zerolog/log"
@@ -364,7 +363,7 @@ func (e *Engine) execute(runID, fromNodeID string) {
 				if e.finish(runID, "waiting_human") {
 
 					e.fireGateAutoInvoke(c, node)
-					e.fireApproveFirstMessage(c, node)
+					e.fireClarifyFirstMessage(c, node)
 					e.fireRunNotify(c, node, models.NotifyKindWaitingHuman)
 				}
 			}
@@ -373,7 +372,7 @@ func (e *Engine) execute(runID, fromNodeID string) {
 			log.Info().Str("run_id", runID).Str("node_id", node.ID).Str("err", outcome.err).Msg("node failed")
 			e.saveState(c, node, outcome)
 
-			if nodereg.ClarifyInteractive(node.Type) && outcome.sandboxSetup {
+			if node.Caps.Clarify() && outcome.sandboxSetup {
 				if outcome.err != "" {
 					c.setVar("last_error", outcome.err)
 					e.persistVar(runID, "last_error", outcome.err)

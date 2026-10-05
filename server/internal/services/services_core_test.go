@@ -174,9 +174,9 @@ func TestSuggestCopyName(t *testing.T) {
 		existing []string
 		want     string
 	}{
-		{"流水线 A", nil, "流水线 A 副本"},
-		{"流水线 A", []string{"流水线 A 副本"}, "流水线 A 副本(2)"},
-		{"流水线 A", []string{"流水线 A 副本", "流水线 A 副本(2)"}, "流水线 A 副本(3)"},
+		{"工作流 A", nil, "工作流 A 副本"},
+		{"工作流 A", []string{"工作流 A 副本"}, "工作流 A 副本(2)"},
+		{"工作流 A", []string{"工作流 A 副本", "工作流 A 副本(2)"}, "工作流 A 副本(3)"},
 		{"Demo", []string{"demo"}, "Demo 副本"},
 	}
 	for _, tc := range cases {
@@ -192,7 +192,7 @@ func TestWorkflowCopy(t *testing.T) {
 	s := NewWorkflowService(db)
 
 	src := &models.WorkflowDef{
-		ID: "wf-src", ProjectID: models.DefaultProjectID, Name: "流水线 A", Description: "desc", NeedsRepo: true,
+		ID: "wf-src", ProjectID: models.DefaultProjectID, Name: "工作流 A", Description: "desc", NeedsRepo: true,
 		Status: "published", Version: 3, Graph: validGraph(),
 	}
 	if err := s.Save(src); err != nil {
@@ -204,7 +204,7 @@ func TestWorkflowCopy(t *testing.T) {
 	db.Create(&models.Run{ID: "run1", WorkflowID: "wf-src", Status: "completed"})
 
 	suggested, sourceName, sourceID, err := s.CopyPreview("wf-src")
-	if err != nil || suggested != "流水线 A 副本" || sourceName != "流水线 A" || sourceID != "wf-src" {
+	if err != nil || suggested != "工作流 A 副本" || sourceName != "工作流 A" || sourceID != "wf-src" {
 		t.Fatalf("CopyPreview: suggested=%q source=%q id=%q err=%v", suggested, sourceName, sourceID, err)
 	}
 
@@ -240,7 +240,7 @@ func TestWorkflowCopy(t *testing.T) {
 	}
 
 	suggested2, _, _, err := s.CopyPreview("wf-src")
-	if err != nil || suggested2 != "流水线 A 副本(2)" {
+	if err != nil || suggested2 != "工作流 A 副本(2)" {
 		t.Fatalf("CopyPreview second: %q err=%v", suggested2, err)
 	}
 

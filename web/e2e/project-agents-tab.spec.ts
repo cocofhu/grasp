@@ -74,7 +74,7 @@ async function stubProjectApis(page: import('@playwright/test').Page) {
     }
     if (path === '/projects/proj-1/shared-agent-config') {
       await route.fulfill({
-        json: { acpBackend: 'opencode', env: {}, mcpServers: {}, prompts: {} },
+        json: { acpBackend: 'opencode', env: {}, mcpServers: {} },
       })
       return
     }
@@ -129,7 +129,6 @@ async function stubProjectApis(page: import('@playwright/test').Page) {
           acpBackend: 'opencode',
           env: {},
           mcpServers: {},
-          prompts: {},
           files: [],
         },
       })

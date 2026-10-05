@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/cocofhu/grasp/internal/models"
 )
 
 // memStore is a minimal in-memory Store for testing the MCP dispatcher.
@@ -83,11 +85,11 @@ func TestMCPDispatcher(t *testing.T) {
 		t.Fatalf("initialize result missing protocolVersion: %v", init)
 	}
 
-	// tools/list: 7 core + 2 history + 14 structured + set_preview + set_artifact_preview.
+	// tools/list outside an Agent node: only the tools no capability gates.
 	list := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
 	tools, _ := list["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 29 {
-		t.Fatalf("expected 29 tools, got %d", len(tools))
+	if len(tools) != 15 {
+		t.Fatalf("expected 15 tools, got %d", len(tools))
 	}
 
 	// tools/call write_artifact
@@ -119,14 +121,14 @@ func TestMCPDispatcher(t *testing.T) {
 	}
 
 	// ask_question is clarify-only: rejected on a non-react active node.
-	h.SetActiveNode(runID, "n1", "agent")
+	h.SetActiveNode(runID, "n1", capsPlain)
 	aqBad := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"ask_question","arguments":{"questions":[{"prompt":"选哪个?","options":["A","B"]}]}}}`)
 	if aqBad["result"].(map[string]any)["isError"] != true {
 		t.Fatalf("ask_question should be rejected on non-react node, got %v", aqBad)
 	}
 
 	// On a react node it records the pending questions for the engine to drain.
-	h.SetActiveNode(runID, "clarify", "react")
+	h.SetActiveNode(runID, "clarify", capsClarify)
 	aqOK := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"ask_question","arguments":{"questions":[{"prompt":"选哪个?","options":[{"label":"A"},{"label":"B"}],"allowMultiple":true}]}}}`)
 	if aqOK["result"].(map[string]any)["isError"] == true {
 		t.Fatalf("ask_question failed on react node: %v", aqOK)
@@ -156,14 +158,14 @@ func TestPlanTools(t *testing.T) {
 	tok := h.RegisterRun(runID)
 
 	// set_plan is plan-only: rejected on a non-plan node.
-	h.SetActiveNode(runID, "impl", "implement")
+	h.SetActiveNode(runID, "impl", capsImplement)
 	bad := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"set_plan","arguments":{"goals":[{"title":"G1"}]}}}`)
 	if _, isErr := toolText(t, bad); !isErr {
 		t.Fatalf("set_plan should be rejected on non-plan node")
 	}
 
 	// Three-level plan is rejected (subgoals may not nest).
-	h.SetActiveNode(runID, "plan", "plan")
+	h.SetActiveNode(runID, "plan", capsWriting(models.SchemaPlan))
 	deep := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"set_plan","arguments":{"goals":[{"title":"G1","subgoals":[{"title":"S1","subgoals":[{"title":"X"}]}]}]}}}`)
 	if _, isErr := toolText(t, deep); !isErr {
 		t.Fatalf("three-level plan should be rejected")
@@ -180,14 +182,15 @@ func TestPlanTools(t *testing.T) {
 		t.Fatalf("expected 3 incomplete items, got %d (err=%v)", len(inc), err)
 	}
 
-	// update_plan_status works from any node once a plan exists (including plan node).
+	// update_plan_status needs the grant: the implement Agent has it.
+	h.SetActiveNode(runID, "impl", capsImplement)
 	stOk := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"update_plan_status","arguments":{"id":"g1.1","status":"done"}}}`)
 	if _, isErr := toolText(t, stOk); isErr {
-		t.Fatalf("update_plan_status should succeed on plan node: %v", stOk)
+		t.Fatalf("update_plan_status should succeed on implement node: %v", stOk)
 	}
 
 	// Move to the implement node and complete remaining leaves.
-	h.SetActiveNode(runID, "impl", "implement")
+	h.SetActiveNode(runID, "impl", capsImplement)
 	// Unknown id errors.
 	unk := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"update_plan_status","arguments":{"id":"nope","status":"done"}}}`)
 	if _, isErr := toolText(t, unk); !isErr {
@@ -234,7 +237,7 @@ func TestReviewPhaseTools(t *testing.T) {
 	tok := h.RegisterRun(runID)
 
 	// A proposal node finished its automated run and is now in the review phase.
-	h.SetActiveNode(runID, "prop", "proposal")
+	h.SetActiveNode(runID, "prop", capsReviewWriting(models.SchemaProposals))
 	h.SetActiveReview(runID, true)
 	if !h.InReviewPhase(runID) {
 		t.Fatalf("run should be marked in review phase")
@@ -277,14 +280,14 @@ func TestStructuredTools(t *testing.T) {
 	tok := h.RegisterRun(runID)
 
 	// set_clarified_requirement is react-only: rejected on a non-react node.
-	h.SetActiveNode(runID, "n", "agent")
+	h.SetActiveNode(runID, "n", capsPlain)
 	bad := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"set_clarified_requirement","arguments":{"summary":"s","functional_requirements":[{"title":"f"}]}}}`)
 	if _, isErr := toolText(t, bad); !isErr {
 		t.Fatalf("set_clarified_requirement should be rejected off a react node")
 	}
 
-	// On a react node it writes clarified_requirement.json and assigns ids.
-	h.SetActiveNode(runID, "clarify", "react")
+	// On a clarify Agent it writes clarified_requirement.json and assigns ids.
+	h.SetActiveNode(runID, "clarify", capsClarify)
 	okArgs := `{
 		"title":"登录需求","summary":"用户可用邮箱验证码登录","background":"需要安全登录入口",
 		"goals":["完成邮箱验证码登录"],"in_scope":["邮箱验证码登录"],"out_of_scope":["第三方 OAuth"],
@@ -323,7 +326,7 @@ func TestStructuredTools(t *testing.T) {
 	}
 
 	// set_proposals on a proposal node, then SelectProposal picks the recommended.
-	h.SetActiveNode(runID, "prop", "proposal")
+	h.SetActiveNode(runID, "prop", capsWriting(models.SchemaProposals))
 	pr := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"set_proposals","arguments":{"context":"选型","proposals":[{"title":"A"},{"title":"B","recommended":true}]}}}`)
 	if _, isErr := toolText(t, pr); isErr {
 		t.Fatalf("set_proposals failed: %v", pr)
@@ -341,7 +344,7 @@ func TestStructuredTools(t *testing.T) {
 	}
 
 	// set_review normalizes verdict and sorts findings by severity.
-	h.SetActiveNode(runID, "rev", "review")
+	h.SetActiveNode(runID, "rev", capsTestReview)
 	rv := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"set_review","arguments":{"summary":"ok","verdict":"request_changes","findings":[{"title":"low1","severity":"low"},{"title":"crit1","severity":"critical"}]}}}`)
 	if _, isErr := toolText(t, rv); isErr {
 		t.Fatalf("set_review failed: %v", rv)
@@ -368,12 +371,12 @@ func TestSetArtifactPreview(t *testing.T) {
 	runID := "run-preview"
 	tok := h.RegisterRun(runID)
 
-	h.SetActiveNode(runID, "n", "agent")
+	h.SetActiveNode(runID, "n", capsPlain)
 	if _, isErr := toolText(t, call(t, h, runID, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"set_artifact_preview","arguments":{"name":"page.html"}}}`)); !isErr {
 		t.Fatal("set_artifact_preview on non-react node should fail")
 	}
 
-	h.SetActiveNode(runID, "c1", "react")
+	h.SetActiveNode(runID, "c1", capsClarify)
 	if _, isErr := toolText(t, call(t, h, runID, tok, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"set_artifact_preview","arguments":{}}}`)); !isErr {
 		t.Fatal("set_artifact_preview without name should fail")
 	}
@@ -409,14 +412,14 @@ func TestSetArtifactPreview(t *testing.T) {
 	}
 }
 
-func TestApproveNodePreDevTools(t *testing.T) {
-	for _, nodeType := range []string{"approve", "grasp"} {
+func TestClarifyAgentPreDevTools(t *testing.T) {
+	for _, nodeType := range []string{"clarify"} {
 		t.Run(nodeType, func(t *testing.T) {
 			store := &memStore{}
 			h := NewHost(store)
 			runID := "run-" + nodeType
 			tok := h.RegisterRun(runID)
-			h.SetActiveNode(runID, "pre", nodeType)
+			h.SetActiveNode(runID, "pre", capsClarify)
 
 			aq := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ask_question","arguments":{"questions":[{"prompt":"选哪个?","options":[{"label":"A"},{"label":"B"}]}]}}}`)
 			if _, isErr := toolText(t, aq); isErr {
@@ -466,7 +469,7 @@ func TestUploadImageArtifactSniffsContent(t *testing.T) {
 	h := NewHost(store)
 	runID := "sniff-run"
 	tok := h.RegisterRun(runID)
-	h.SetActiveNode(runID, "tst", "test")
+	h.SetActiveNode(runID, "tst", capsTestReview)
 
 	ok, err := h.UploadImageArtifact(runID, tok, "tst", "shot.png", pngB64())
 	if err != nil || ok == "" {

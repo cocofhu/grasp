@@ -38,8 +38,7 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 let artifactsAbort: AbortController | null = null
 let previewAbort: AbortController | null = null
 
-const nodeType = computed(() => String(preview.value?.nodeType || '').trim())
-/** Preview Artifacts window: pipeline products only — drop feedback.* / feedback_index.json. */
+/** Preview Artifacts window: workflow products only — drop feedback.* / feedback_index.json. */
 const stageArtifacts = computed(() => artifacts.value.filter((a) => !isFeedbackArtifactName(a.name)))
 const previewPin = computed(() => {
   const pin = preview.value?.productName || preview.value?.structured?.name || ''
@@ -223,7 +222,6 @@ onUnmounted(() => {
       :preview-artifact="previewPin"
       :run="runGraph"
       :node-id="nodeId"
-      :node-type="nodeType"
       remote-kind="off"
       hide-app-preview
       :token="token"

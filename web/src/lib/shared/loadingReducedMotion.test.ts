@@ -42,7 +42,7 @@ describe('global loading reduced-motion (g4.4)', () => {
     const read = (rel: string) => readFileSync(join(root, rel), 'utf8')
     expect(read('components/ui/ProjectFilter.vue')).toMatch(/name="overlay-pop"/)
     expect(read('components/ui/StatusFilter.vue')).toMatch(/name="overlay-pop"/)
-    expect(read('components/ui/PipelineFilter.vue')).toMatch(/name="overlay-pop"/)
+    expect(read('components/ui/WorkflowFilter.vue')).toMatch(/name="overlay-pop"/)
     expect(read('components/ui/LangSelect.vue')).toMatch(/name="overlay-pop"/)
     expect(read('components/board/RunBoardCard.vue')).toMatch(/list-card-lift/)
     expect(read('components/board/RunBoardCard.vue')).not.toMatch(/translateY\(-1px\)/)

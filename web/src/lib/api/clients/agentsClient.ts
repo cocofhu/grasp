@@ -8,6 +8,7 @@ import { BASE, req } from '../httpCore'
 import type {
   Agent,
   AgentOrg,
+  AgentTemplate,
   OpenCodeModelsResponse,
   OpenCodeProvidersResponse,
   OrgFolderImportResult,
@@ -59,6 +60,7 @@ export const agentsClient = {
       openCodeBaseURL?: string
       openCodeModel?: string
       openCodeModelVision?: boolean
+      agents?: { templateId: string; name?: string; model?: string }[]
     },
   ) =>
     req<{
@@ -82,9 +84,7 @@ export const agentsClient = {
       method: 'POST',
     }),
   listAgentTeamTemplates: () =>
-    req<{ items: { id: string; embedName: string; roleLabelZh: string; summary: string }[] }>(
-      '/agent-teams/templates',
-    ),
+    req<{ items: AgentTemplate[] }>('/agent-teams/templates'),
   getAgentsOrg: () => req<AgentOrg>('/agents/org'),
   saveAgentsOrg: (org: AgentOrg) =>
     req<AgentOrg>('/agents/org', { method: 'PUT', body: JSON.stringify(org) }),

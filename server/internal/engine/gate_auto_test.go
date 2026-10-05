@@ -63,7 +63,7 @@ func TestGateAutoInvokeOnHumanGatePause(t *testing.T) {
 		},
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "gate"},
-			{ID: "e2", Source: "gate", Target: "output", When: "action == 'approve'"},
+			{ID: "e2", Source: "gate", Target: "output", SourceHandle: "approve"},
 		},
 	}
 	eng, db, _ := setupEngineGraphP(t, g)
@@ -113,7 +113,7 @@ func TestGateAutoInvokeProposalSelectAndSkipAutoVar(t *testing.T) {
 		},
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "prop", Type: "proposal", Label: "方案", Config: map[string]any{"prompt": "给方案"}},
+			{ID: "prop", Type: "agent", Caps: capsProposalAuto, Label: "方案", Config: map[string]any{"prompt": "给方案"}},
 			{ID: "select", Type: "proposal_select", Config: map[string]any{
 				"auto_var": "auto_confirm", "output_var": "selected_proposal",
 			}},
@@ -158,7 +158,7 @@ func TestGateAutoInvokeOnProposalSelectManual(t *testing.T) {
 		},
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "prop", Type: "proposal", Label: "方案", Config: map[string]any{"prompt": "给方案"}},
+			{ID: "prop", Type: "agent", Caps: capsProposalAuto, Label: "方案", Config: map[string]any{"prompt": "给方案"}},
 			{ID: "select", Type: "proposal_select", Label: "选方案", Config: map[string]any{
 				"auto_var": "auto_confirm", "output_var": "selected_proposal",
 			}},
@@ -194,7 +194,7 @@ func TestGatePathSummary(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input", Label: "输入"},
-			{ID: "impl", Type: "agent", Label: "实现"},
+			{ID: "impl", Type: "agent", Caps: capsPlain, Label: "实现"},
 			{ID: "gate", Type: "human_gate", Label: "门禁"},
 			{ID: "out", Type: "output", Label: "输出"},
 		},
@@ -210,25 +210,24 @@ func TestGatePathSummary(t *testing.T) {
 	}
 }
 
-func TestGateAutoInvokeSkipsAppPreview(t *testing.T) {
+func TestGateAutoInvokeSkipsReviewAgent(t *testing.T) {
 	g := models.Graph{
 		Variables: []models.Variable{
 			{Name: "pm_auto_gate", Type: "boolean", Value: true},
 		},
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "preview", Type: "app_preview", Label: "预览", Config: map[string]any{
+			{ID: "preview", Type: "agent", Caps: capsPreview, Label: "预览", Config: map[string]any{
 				"title": "应用预览",
 			}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "preview"},
-			{ID: "e2", Source: "preview", Target: "output", When: "action == 'pass'"},
+			{ID: "e2", Source: "preview", Target: "output"},
 		},
 	}
-	eng, db, provider := setupEngineGraphP(t, g)
-	provider.skipOutcome = true
+	eng, db, _ := setupEngineGraphP(t, g)
 	proj := models.Project{ID: "proj-app-preview", Name: "AppPrev", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	if err := db.Create(&proj).Error; err != nil {
 		t.Fatal(err)
@@ -244,7 +243,7 @@ func TestGateAutoInvokeSkipsAppPreview(t *testing.T) {
 	waitRunStatus(t, db, run.ID, "waiting_human")
 	time.Sleep(200 * time.Millisecond)
 	if n := int(rec.n.Load()); n != 0 {
-		t.Fatalf("app_preview must not fire gate-auto; got %d events", n)
+		t.Fatalf("a review agent must not fire gate-auto; got %d events", n)
 	}
 }
 
@@ -260,7 +259,7 @@ func TestResumeGateIdempotentHumanThenPM(t *testing.T) {
 		},
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "gate"},
-			{ID: "e2", Source: "gate", Target: "output", When: "action == 'approve'"},
+			{ID: "e2", Source: "gate", Target: "output", SourceHandle: "approve"},
 		},
 	}
 	eng, db, _ := setupEngineGraphP(t, g)

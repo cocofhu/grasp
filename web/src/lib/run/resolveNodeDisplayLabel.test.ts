@@ -3,33 +3,33 @@ import { resolveNodeDisplayLabel, resolveNodeDisplayLabelFromNode } from './reso
 
 const t = (key: string) => {
   const map: Record<string, string> = {
-    'nodes.test.label': '测试',
-    'nodes.plan.label': '计划',
+    'nodes.agent.label': 'Agent',
+    'nodes.branch.label': '分支',
   }
   return map[key] ?? key
 }
 
 describe('resolveNodeDisplayLabel', () => {
   it('translates when label equals the raw registry key', () => {
-    expect(resolveNodeDisplayLabel('nodes.test.label', 'test', t)).toBe('测试')
+    expect(resolveNodeDisplayLabel('nodes.agent.label', 'agent', t)).toBe('Agent')
   })
 
   it('returns custom labels unchanged', () => {
-    expect(resolveNodeDisplayLabel('测试节点', 'test', t)).toBe('测试节点')
+    expect(resolveNodeDisplayLabel('测试节点', 'agent', t)).toBe('测试节点')
   })
 
   it('falls back to nodeId when label is empty', () => {
-    expect(resolveNodeDisplayLabel('', 'test', t, { nodeId: 'test_abc' })).toBe('test_abc')
+    expect(resolveNodeDisplayLabel('', 'agent', t, { nodeId: 'agent_abc' })).toBe('agent_abc')
   })
 
   it('falls back to translated type name when label is empty and no nodeId', () => {
-    expect(resolveNodeDisplayLabel(undefined, 'plan', t, { typeLabel: '计划' })).toBe('计划')
+    expect(resolveNodeDisplayLabel(undefined, 'branch', t, { typeLabel: '分支' })).toBe('分支')
   })
 })
 
 describe('resolveNodeDisplayLabelFromNode', () => {
   it('delegates to resolveNodeDisplayLabel with node fields', () => {
-    const node = { id: 'test_1', type: 'test' as const, label: 'nodes.test.label' }
-    expect(resolveNodeDisplayLabelFromNode(node, t)).toBe('测试')
+    const node = { id: 'agent_1', type: 'agent' as const, label: 'nodes.agent.label' }
+    expect(resolveNodeDisplayLabelFromNode(node, t)).toBe('Agent')
   })
 })

@@ -472,63 +472,29 @@ func TestAdditionalLiveActions(t *testing.T) {
 }
 
 func TestLiveNodeCapability(t *testing.T) {
-	for _, nodeType := range []string{"app_preview", "grasp", "approve", "react", "review", "research", "visual", "implement", "plan", "proposal", "test", ""} {
-		for _, tc := range []struct {
-			cfg     map[string]any
-			enabled bool
-		}{
-			{nil, false},
-			{map[string]any{"direct_preview": true}, true},
-			{map[string]any{"direct_preview": "yes", "live_variants": " "}, true},
-			{map[string]any{"direct_preview": 1, "live_variants": float64(1)}, true},
-			{map[string]any{"direct_preview": float64(1), "live_variants": "true"}, true},
-			{map[string]any{"direct_preview": true, "live_variants": false}, false},
-			{map[string]any{"direct_preview": true, "live_variants": "false"}, false},
-			{map[string]any{"direct_preview": []string{"true"}}, false},
-			{map[string]any{"live_variants": true}, false},
-		} {
-			want := tc.enabled && nodeType != "react" && nodeType != "test" && nodeType != ""
-			if got := LiveVariantsEnabled(nodeType, tc.cfg); got != want {
-				t.Errorf("%s %v: %v want %v", nodeType, tc.cfg, got, want)
-			}
-		}
-	}
-}
-
-func TestReviewAgentNodeClasses(t *testing.T) {
-	for nodeType, want := range map[string][2]bool{
-		"plan": {true, true}, "research": {true, true}, "proposal": {true, true}, "visual": {true, true},
-		"implement": {true, false}, "review": {true, false},
-		"test": {}, "react": {}, "grasp": {}, "approve": {}, "app_preview": {}, "submit_mr": {},
-	} {
-		if got := ReviewAgentNode(nodeType); got != want[0] {
-			t.Errorf("ReviewAgentNode(%s)=%v", nodeType, got)
-		}
-		if got := ReviewDesignNode(nodeType); got != want[1] {
-			t.Errorf("ReviewDesignNode(%s)=%v", nodeType, got)
-		}
-	}
-}
-
-func TestPreviewCapableNode(t *testing.T) {
-	direct := map[string]any{"direct_preview": true}
-	cases := []struct {
-		nodeType string
-		cfg      map[string]any
-		want     bool
+	clarifyPreview := &AgentCapabilities{Interaction: InteractionClarify, Tools: []string{ToolAskQuestion, ToolSetPreview}}
+	reviewPreview := &AgentCapabilities{Interaction: InteractionAuto, Review: true, Tools: []string{ToolSetPreview}}
+	autoPreview := &AgentCapabilities{Interaction: InteractionAuto, Tools: []string{ToolSetPreview}}
+	clarifyOnly := &AgentCapabilities{Interaction: InteractionClarify, Tools: []string{ToolAskQuestion}}
+	for _, tc := range []struct {
+		name          string
+		caps          *AgentCapabilities
+		live, preview bool
 	}{
-		{"app_preview", nil, true},
-		{"grasp", nil, true},
-		{"approve", nil, true},
-		{"implement", nil, false},
-		{"implement", direct, true},
-		{"plan", direct, true},
-		{"test", direct, false},
-		{"react", direct, false},
-	}
-	for _, c := range cases {
-		if got := PreviewCapableNode(c.nodeType, c.cfg); got != c.want {
-			t.Errorf("PreviewCapableNode(%s, %v)=%v want %v", c.nodeType, c.cfg, got, c.want)
+		{"nil", nil, false, false},
+		{"clarify+preview", clarifyPreview, true, true},
+		{"review+preview", reviewPreview, true, true},
+		{"auto+preview", autoPreview, false, true},
+		{"clarify only", clarifyOnly, false, false},
+	} {
+		if got := LiveVariantsEnabled(tc.caps); got != tc.live {
+			t.Errorf("%s LiveVariantsEnabled=%v want %v", tc.name, got, tc.live)
+		}
+		if got := LiveNodeSupported(tc.caps); got != tc.live {
+			t.Errorf("%s LiveNodeSupported=%v want %v", tc.name, got, tc.live)
+		}
+		if got := PreviewCapableNode(tc.caps); got != tc.preview {
+			t.Errorf("%s PreviewCapableNode=%v want %v", tc.name, got, tc.preview)
 		}
 	}
 }

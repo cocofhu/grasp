@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/cocofhu/grasp/internal/models"
 )
 
 // TestResearchTestImplementTools exercises the set_/get_ tools not covered by
@@ -16,7 +18,7 @@ func TestResearchTestImplementTools(t *testing.T) {
 	runID := "r"
 	tok := h.RegisterRun(runID)
 
-	h.SetActiveNode(runID, "res", "research")
+	h.SetActiveNode(runID, "res", capsWriting(models.SchemaResearch))
 	call(t, h, runID, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"set_research","arguments":{"summary":"调研","questions":[{"question":"Q1","answer":"A1"}],"findings":[{"title":"F1","detail":"d"}],"recommendation":"用A"}}}`)
 	if _, ok := store.Get(runID, ResearchArtifactName); !ok {
 		t.Fatal("research.json not written")
@@ -25,14 +27,14 @@ func TestResearchTestImplementTools(t *testing.T) {
 		t.Fatal("get_research errored")
 	}
 
-	h.SetActiveNode(runID, "tst", "test")
+	h.SetActiveNode(runID, "tst", capsTestReview)
 	call(t, h, runID, tok, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"set_test_result","arguments":{"summary":"测试","passed":3,"failed":1,"skipped":0,"cases":[{"name":"c1","status":"passed"},{"name":"c2","status":"failed"}]}}}`)
 	if _, ok := store.Get(runID, TestResultArtifactName); !ok {
 		t.Fatal("test_result.json not written")
 	}
 	call(t, h, runID, tok, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_test_result","arguments":{}}}`)
 
-	h.SetActiveNode(runID, "imp", "implement")
+	h.SetActiveNode(runID, "imp", capsImplement)
 	call(t, h, runID, tok, `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"set_implementation_result","arguments":{"summary":"实现","changes":["a.go"],"branch":"feat","tests":"ok"}}}`)
 	if _, ok := store.Get(runID, ImplementationResultArtifactName); !ok {
 		t.Fatal("implementation_result.json not written")
@@ -53,7 +55,7 @@ func TestRootCauseTools(t *testing.T) {
 	runID := "r-rc"
 	tok := h.RegisterRun(runID)
 
-	h.SetActiveNode(runID, "g", "grasp")
+	h.SetActiveNode(runID, "g", capsClarifyRootCause)
 	// Non-bug clarified blocks set_root_cause.
 	crArgs := MinimalValidClarifiedRequirementJSON
 	call(t, h, runID, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"set_clarified_requirement","arguments":`+crArgs+`}}`)
@@ -80,9 +82,9 @@ func TestRootCauseTools(t *testing.T) {
 		t.Fatal("get_root_cause errored")
 	}
 
-	h.SetActiveNode(runID, "r", "react")
+	h.SetActiveNode(runID, "r", capsClarify)
 	if _, isErr := toolText(t, call(t, h, runID, tok, `{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"set_root_cause","arguments":`+rcArgs+`}}`)); !isErr {
-		t.Fatal("set_root_cause must be grasp-only")
+		t.Fatal("set_root_cause requires the root_cause product")
 	}
 }
 
@@ -115,20 +117,20 @@ func TestCallToolErrorBranches(t *testing.T) {
 		t.Fatal("ask_question with bad token should error")
 	}
 	// ask_question on a non-react node.
-	h.SetActiveNode(runID, "n", "agent")
+	h.SetActiveNode(runID, "n", capsPlain)
 	assertErr(tc(4, "ask_question", `{"questions":[{"prompt":"q"}]}`))
 	// ask_question on a react node but with empty questions.
-	h.SetActiveNode(runID, "n", "react")
+	h.SetActiveNode(runID, "n", capsClarify)
 	assertErr(tc(5, "ask_question", `{"questions":[]}`))
 
 	// set_plan on a non-plan node.
-	h.SetActiveNode(runID, "n", "agent")
+	h.SetActiveNode(runID, "n", capsPlain)
 	assertErr(tc(6, "set_plan", `{"goals":[{"id":"g1","title":"G"}]}`))
 
 	// update_plan_status before a plan exists (any node type).
 	assertErr(tc(7, "update_plan_status", `{"id":"g1","status":"done"}`))
 	// implement node from here on.
-	h.SetActiveNode(runID, "n", "implement")
+	h.SetActiveNode(runID, "n", capsImplement)
 	// missing id.
 	assertErr(tc(8, "update_plan_status", `{"status":"done"}`))
 	// invalid status.
@@ -139,9 +141,9 @@ func TestCallToolErrorBranches(t *testing.T) {
 	assertErr(tc(11, "get_plan", `{}`))
 
 	// Write a plan (as a plan node) then update a non-existent item id.
-	h.SetActiveNode(runID, "p", "plan")
+	h.SetActiveNode(runID, "p", capsWriting(models.SchemaPlan))
 	call(t, h, runID, tok, tc(12, "set_plan", `{"goals":[{"id":"g1","title":"目标","subgoals":[{"id":"s1","title":"子"}]}]}`))
-	h.SetActiveNode(runID, "n", "implement")
+	h.SetActiveNode(runID, "n", capsImplement)
 	assertErr(tc(13, "update_plan_status", `{"id":"nope","status":"done"}`))
 	// A valid update succeeds (subgoal ids are normalized to g<goal>.<sub>).
 	if _, isErr := toolText(t, call(t, h, runID, tok, tc(14, "update_plan_status", `{"id":"g1.1","status":"done"}`))); isErr {
@@ -164,26 +166,25 @@ func TestCallToolErrorBranches(t *testing.T) {
 	if !keptWriter {
 		t.Fatal("plan.json missing after update_plan_status")
 	}
-	// Any node may backfill plan status once a plan exists.
-	h.SetActiveNode(runID, "n", "agent")
-	if _, isErr := toolText(t, call(t, h, runID, tok, tc(16, "update_plan_status", `{"id":"g1.1","status":"done"}`))); isErr {
-		t.Fatal("update_plan_status on agent node should succeed")
+	// Plan progress needs the update_plan_status grant.
+	h.SetActiveNode(runID, "n", capsPlain)
+	if _, isErr := toolText(t, call(t, h, runID, tok, tc(16, "update_plan_status", `{"id":"g1.1","status":"done"}`))); !isErr {
+		t.Fatal("update_plan_status without the grant should fail")
 	}
-	// Cleared active node (e.g. run finished) may still backfill.
-	h.SetActiveNode(runID, "", "")
+	h.SetActiveNode(runID, "n", capsImplement)
 	if _, isErr := toolText(t, call(t, h, runID, tok, tc(17, "update_plan_status", `{"id":"g1.1","status":"done"}`))); isErr {
-		t.Fatal("update_plan_status with no active node should succeed")
+		t.Fatal("update_plan_status with the grant should succeed")
 	}
 
 	// structuredSet auth failure (wrong token) and wrong-node gating.
-	h.SetActiveNode(runID, "n", "research")
+	h.SetActiveNode(runID, "n", capsWriting(models.SchemaResearch))
 	if _, isErr := toolText(t, call(t, h, runID, "wrong-token", tc(20, "set_research", `{"summary":"s","findings":[{"title":"f"}]}`))); !isErr {
 		t.Fatal("set_research bad token should error")
 	}
-	h.SetActiveNode(runID, "n", "agent") // wrong node type for set_research
+	h.SetActiveNode(runID, "n", capsPlain) // wrong node type for set_research
 	assertErr(tc(21, "set_research", `{"summary":"s","findings":[{"title":"f"}]}`))
 	// structuredSet parse error (empty summary) on the correct node.
-	h.SetActiveNode(runID, "n", "research")
+	h.SetActiveNode(runID, "n", capsWriting(models.SchemaResearch))
 	assertErr(tc(22, "set_research", `{}`))
 	// structuredGet auth failure.
 	if _, isErr := toolText(t, call(t, h, runID, "wrong-token", tc(23, "get_research", `{}`))); !isErr {
@@ -278,7 +279,7 @@ func TestSetTestResultValidatesScreenshotArtifacts(t *testing.T) {
 	h := NewHost(store)
 	runID := "r"
 	tok := h.RegisterRun(runID)
-	h.SetActiveNode(runID, "tst", "test")
+	h.SetActiveNode(runID, "tst", capsTestReview)
 
 	// Seed via upload_image_artifact (artifact-upload CLI path); write_artifact
 	// must not be used for images (see TestWriteArtifactKindValidation).
@@ -494,56 +495,49 @@ func TestAuthorizeSandboxLifetimeFallback(t *testing.T) {
 	}
 }
 
-// TestActiveNodeSourceFallback covers the node-type gate fallback: when the
+// TestActiveNodeSourceFallback covers the capability gate fallback: when the
 // in-memory SetActiveNode registration is gone (server restart / a replica that
-// never executed the node), ActiveNode/ActiveNodeType resolve from the persisted
-// source so node-scoped tools (e.g. set_preview) re-gate correctly instead of
-// seeing "" and being wrongly rejected.
+// never executed the node), ActiveNode/ActiveCaps resolve from the persisted
+// source so node-scoped tools (e.g. set_preview) re-gate correctly.
 func TestActiveNodeSourceFallback(t *testing.T) {
 	h := NewHost(&memStore{})
 
-	// No in-memory state and no source: gate sees the unknown defaults.
-	if got := h.ActiveNodeType("run"); got != "" {
-		t.Fatalf("ActiveNodeType without state = %q, want \"\"", got)
+	if got := h.ActiveCaps("run"); got != nil {
+		t.Fatalf("ActiveCaps without state = %+v, want nil", got)
 	}
 	if got := h.ActiveNode("run"); got != "mcp" {
 		t.Fatalf("ActiveNode without state = %q, want \"mcp\"", got)
 	}
 
 	calls := 0
-	h.SetActiveNodeSource(func(runID string) (string, string, bool) {
+	h.SetActiveNodeSource(func(runID string) (string, *models.AgentCapabilities, bool) {
 		if runID != "run" {
-			return "", "", false
+			return "", nil, false
 		}
 		calls++
-		return "app_preview_auz1", "app_preview", true
+		return "preview_auz1", capsPreview, true
 	})
 
-	// Fallback resolves the current node + type from persistence.
-	if got := h.ActiveNodeType("run"); got != "app_preview" {
-		t.Fatalf("ActiveNodeType via fallback = %q, want app_preview", got)
+	if got := h.ActiveCaps("run"); !got.CanPreview() {
+		t.Fatalf("ActiveCaps via fallback = %+v, want preview caps", got)
 	}
-	if got := h.ActiveNode("run"); got != "app_preview_auz1" {
-		t.Fatalf("ActiveNode via fallback = %q, want app_preview_auz1", got)
+	if got := h.ActiveNode("run"); got != "preview_auz1" {
+		t.Fatalf("ActiveNode via fallback = %q, want preview_auz1", got)
 	}
-	// The first resolution re-cached both fields, so the second lookup is served
-	// from memory without hitting the source again.
 	if calls != 1 {
 		t.Fatalf("source consulted %d times, want 1 (result should be cached)", calls)
 	}
 
-	// A live in-memory registration is authoritative and never consults the source.
-	h.SetActiveNode("run", "impl", "implement")
-	if got := h.ActiveNodeType("run"); got != "implement" {
-		t.Fatalf("ActiveNodeType after SetActiveNode = %q, want implement", got)
+	h.SetActiveNode("run", "impl", capsImplement)
+	if got := h.ActiveCaps("run"); !got.CommitsCode() {
+		t.Fatalf("ActiveCaps after SetActiveNode = %+v, want implement caps", got)
 	}
 	if calls != 1 {
 		t.Fatalf("source consulted %d times after in-memory set, want 1", calls)
 	}
 
-	// Unknown run: fallback reports no active node → gate keeps unknown defaults.
-	if got := h.ActiveNodeType("other"); got != "" {
-		t.Fatalf("ActiveNodeType for unknown run = %q, want \"\"", got)
+	if got := h.ActiveCaps("other"); got != nil {
+		t.Fatalf("ActiveCaps for unknown run = %+v, want nil", got)
 	}
 }
 

@@ -74,8 +74,8 @@ export function useArtifactGroupSelection(
     }
   }
 
-  /** PipelineFilter changed; always clears sidebar unnamed highlight (even when wf stays empty). */
-  function applyPipelineFilter(wf: string) {
+  /** WorkflowFilter changed; always clears sidebar unnamed highlight (even when wf stays empty). */
+  function applyWorkflowFilter(wf: string) {
     highlightUnnamed.value = false
     selectedGroupKey.value = null
     explicitSelection.value = false
@@ -105,6 +105,6 @@ export function useArtifactGroupSelection(
     activeGroupArtifacts,
     shouldAutoSelectArtifact,
     selectGroup,
-    applyPipelineFilter,
+    applyWorkflowFilter,
   }
 }

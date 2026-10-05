@@ -33,7 +33,7 @@ type Capabilities struct {
 		Port       int  `json:"port"`
 	} `json:"ide"`
 	// Preview declares the optional in-sandbox VNC desktop (CDP + websockify)
-	// used by app_preview. Missing / vnc=false → platform degrades noVNC.
+	// used by set_preview. Missing / vnc=false → platform degrades noVNC.
 	Preview struct {
 		VNC            bool   `json:"vnc"`
 		CDPPort        int    `json:"cdpPort"`

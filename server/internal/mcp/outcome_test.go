@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/cocofhu/grasp/internal/models"
 )
 
 type memOutcomeStore struct {
@@ -105,7 +107,7 @@ func TestNodeCompleteMorePaths(t *testing.T) {
 		t.Fatalf("want no active node, got %q err=%v", msg, isErr)
 	}
 
-	h.SetActiveNode("r1", "n1", "research")
+	h.SetActiveNode("r1", "n1", capsWriting(models.SchemaResearch))
 	msg, isErr = h.runTool("r1", tok, "node_complete", map[string]any{
 		"status": "failed",
 		"error":  "boom",
@@ -122,7 +124,7 @@ func TestNodeCompleteMorePaths(t *testing.T) {
 
 	h2 := NewHost(&failAuditStore{})
 	tok2 := h2.RegisterRun("r2")
-	h2.SetActiveNode("r2", "n2", "research")
+	h2.SetActiveNode("r2", "n2", capsWriting(models.SchemaResearch))
 	msg, isErr = h2.runTool("r2", tok2, "node_complete", map[string]any{"status": "success", "summary": "audit"})
 	if isErr || !strings.Contains(msg, "audit") {
 		t.Fatalf("audit write failure should still succeed mark: %q err=%v", msg, isErr)
@@ -132,7 +134,7 @@ func TestNodeCompleteMorePaths(t *testing.T) {
 func TestNodeCompleteTool(t *testing.T) {
 	h := NewHost(&memOutcomeStore{})
 	tok := h.RegisterRun("r1")
-	h.SetActiveNode("r1", "n1", "research")
+	h.SetActiveNode("r1", "n1", capsWriting(models.SchemaResearch))
 
 	msg, isErr := h.runTool("r1", tok, "node_complete", map[string]any{
 		"status":  "success",
@@ -165,7 +167,7 @@ func TestClearOutcome(t *testing.T) {
 	store := &memOutcomeStore{}
 	h := NewHost(store)
 	tok := h.RegisterRun("r1")
-	h.SetActiveNode("r1", "n1", "agent")
+	h.SetActiveNode("r1", "n1", capsPlain)
 	if msg, isErr := h.runTool("r1", tok, "node_complete", map[string]any{
 		"status": "success", "summary": "stale",
 	}); isErr {
@@ -191,7 +193,7 @@ func TestClassifyAndRestoreOutcomeArtifact(t *testing.T) {
 	store := &memOutcomeStore{}
 	h := NewHost(store)
 	h.RegisterRun("r1")
-	h.SetActiveNode("r1", "n1", "agent")
+	h.SetActiveNode("r1", "n1", capsPlain)
 	_, _ = store.Save("r1", "n1", NodeOutcomeArtifactName, "json",
 		OutcomeJSON(NodeOutcome{Status: OutcomeSuccess, Summary: "from art"}))
 	if h.HasOutcome("r1", "n1") {

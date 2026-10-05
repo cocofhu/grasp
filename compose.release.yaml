@@ -42,7 +42,7 @@ services:
       GRASP_AUTH_USERS: ${GRASP_AUTH_USERS:-}
     volumes:
       - ./.localdata/db:/data
-      # Agent profiles / org / platform-rules (WORKDIR-relative data/*). Keep separate from SQLite /data.
+      # Agent profiles / org (WORKDIR-relative data/*). Keep separate from SQLite /data.
       - ./.localdata/app-data:/app/data
     depends_on:
       gateway:

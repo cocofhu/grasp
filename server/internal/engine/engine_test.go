@@ -2,7 +2,6 @@ package engine
 
 import (
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -70,19 +69,19 @@ func testClarifyGraph() models.Graph {
 		},
 		Nodes: []models.Node{
 			{ID: "input", Type: "input", Label: "输入"},
-			{ID: "clarify", Type: "react", Label: "需求澄清", Config: map[string]any{"agent_profile": "pm-agent", "max_rounds": 3, "prompt": "澄清:{{vars.idea}}"}},
-			{ID: "design", Type: "agent", Label: "设计", Checkpoint: true, Config: map[string]any{"agent_profile": "design-agent", "prompt": "设计", "produces": "design.md"}},
-			{ID: "review_design", Type: "review", Label: "设计复核", Config: map[string]any{"agent_profile": "analyst-agent", "prompt": "复核"}},
+			{ID: "clarify", Type: "agent", Caps: capsClarify, Label: "需求澄清", Config: map[string]any{"agent_profile": "pm-agent", "max_rounds": 3, "prompt": "澄清:{{vars.idea}}"}},
+			{ID: "design", Type: "agent", Caps: capsPlain, Label: "设计", Checkpoint: true, Config: map[string]any{"agent_profile": "design-agent", "prompt": "设计", "produces": "design.md"}},
+			{ID: "review_design", Type: "agent", Caps: capsCodeReview, Label: "设计复核", Config: map[string]any{"agent_profile": "analyst-agent", "prompt": "复核"}},
 			{ID: "approve", Type: "human_gate", Label: "设计评审", Config: map[string]any{"title": "设计评审", "actions": []any{map[string]any{"id": "approve", "label": "批准"}, map[string]any{"id": "revise", "label": "退回"}}}},
-			{ID: "plan", Type: "agent", Label: "方案", Config: map[string]any{"agent_profile": "plan-agent", "prompt": "方案", "produces": "plan.md"}},
+			{ID: "plan", Type: "agent", Caps: capsPlain, Label: "方案", Config: map[string]any{"agent_profile": "plan-agent", "prompt": "方案", "produces": "plan.md"}},
 			{ID: "output", Type: "output", Label: "输出"},
 		},
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "clarify"},
 			{ID: "e2", Source: "clarify", Target: "design"},
 			{ID: "e3", Source: "design", Target: "review_design"},
-			{ID: "e4", Source: "review_design", Target: "approve", Kind: models.EdgeSuccess},
-			{ID: "e6", Source: "approve", Target: "plan", When: "action == 'approve'", Kind: models.EdgeSuccess},
+			{ID: "e4", Source: "review_design", Target: "approve", SourceHandle: "pass", Kind: models.EdgeSuccess},
+			{ID: "e6", Source: "approve", Target: "plan", SourceHandle: "approve", Kind: models.EdgeSuccess},
 			{ID: "e7", Source: "plan", Target: "output"},
 		},
 	}
@@ -170,6 +169,9 @@ func TestClarifyToDesignRun(t *testing.T) {
 	if err := eng.waitReviewReadyForTest(run.ID, "clarify", 5*time.Second); err != nil {
 		t.Fatalf("wait clarify turn: %v", err)
 	}
+	if err := eng.ReactReply(run.ID, "clarify", "就这样", nil, nil, true); err != nil {
+		t.Fatalf("clarify confirm: %v", err)
+	}
 
 	// design (agent) and review_design (review) run automatically, then the
 	// human gate pauses.
@@ -223,7 +225,7 @@ func proposalGraph() models.Graph {
 		Variables: []models.Variable{{Name: "auto_confirm", Type: "bool", Value: true}},
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "propose", Type: "proposal", Config: map[string]any{"agent_profile": "arch", "prompt": "方案"}},
+			{ID: "propose", Type: "agent", Caps: capsProposalAuto, Config: map[string]any{"agent_profile": "arch", "prompt": "方案"}},
 			{ID: "select", Type: "proposal_select", Config: map[string]any{"auto_var": "auto_confirm", "output_var": "selected_proposal"}},
 			{ID: "output", Type: "output"},
 		},
@@ -319,15 +321,15 @@ func TestProposalSelectManualSingleCandidate(t *testing.T) {
 	}
 }
 
-// TestGateActionGoto: a human_gate action with a goto routes directly to that
-// node, bypassing edge guards, and assigns the action to the global var.
-func TestGateActionGoto(t *testing.T) {
+// TestGateActionHandles: a human_gate leaves through the outlet named by the
+// chosen action and assigns the action to the global var.
+func TestGateActionHandles(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
 			{ID: "gate", Type: "human_gate", Config: map[string]any{"title": "选路", "output_var": "action",
 				"actions": []any{
-					map[string]any{"id": "toB", "label": "去B", "goto": "b"},
+					map[string]any{"id": "toB", "label": "去B"},
 					map[string]any{"id": "toA", "label": "去A"},
 				}}},
 			{ID: "a", Type: "output", Config: map[string]any{"result": "A"}},
@@ -335,7 +337,8 @@ func TestGateActionGoto(t *testing.T) {
 		},
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "gate"},
-			{ID: "e2", Source: "gate", Target: "a", Kind: models.EdgeSuccess},
+			{ID: "e2", Source: "gate", Target: "a", SourceHandle: "toA", Kind: models.EdgeSuccess},
+			{ID: "e3", Source: "gate", Target: "b", SourceHandle: "toB", Kind: models.EdgeSuccess},
 		},
 	}
 	eng, db := setupEngineGraph(t, g)
@@ -346,14 +349,14 @@ func TestGateActionGoto(t *testing.T) {
 	}
 	waitRunStatus(t, db, run.ID, "completed")
 
-	// Node b should have been reached (via goto), node a should not.
+	// Node b should have been reached (via its outlet), node a should not.
 	var srB models.StateRun
 	if err := db.Where("run_id = ? AND node_id = ?", run.ID, "b").First(&srB).Error; err != nil {
-		t.Fatalf("goto routing did not reach node b: %v", err)
+		t.Fatalf("outlet routing did not reach node b: %v", err)
 	}
 	var srA models.StateRun
 	if err := db.Where("run_id = ? AND node_id = ?", run.ID, "a").First(&srA).Error; err == nil {
-		t.Fatalf("node a should not have executed under goto routing")
+		t.Fatalf("node a should not have executed when toB was chosen")
 	}
 	var v models.RunVariable
 	db.Where("run_id = ? AND name = ?", run.ID, "action").First(&v)
@@ -386,18 +389,19 @@ func TestGateLoopBackReApproval(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "work", Type: "agent", Config: map[string]any{"agent_profile": "x", "prompt": "干活", "produces": "work.md"}},
+			{ID: "work", Type: "agent", Caps: capsPlain, Config: map[string]any{"agent_profile": "x", "prompt": "干活", "produces": "work.md"}},
 			{ID: "gate", Type: "human_gate", Config: map[string]any{"title": "评审", "output_var": "action",
 				"actions": []any{
 					map[string]any{"id": "approve", "label": "批准"},
-					map[string]any{"id": "revise", "label": "退回修改", "goto": "work"},
+					map[string]any{"id": "revise", "label": "退回修改"},
 				}}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "work"},
 			{ID: "e2", Source: "work", Target: "gate"},
-			{ID: "e3", Source: "gate", Target: "output", When: "action == 'approve'", Kind: models.EdgeSuccess},
+			{ID: "e3", Source: "gate", Target: "output", SourceHandle: "approve", Kind: models.EdgeSuccess},
+			{ID: "e4", Source: "gate", Target: "work", SourceHandle: "revise"},
 		},
 	}
 	eng, db := setupEngineGraph(t, g)
@@ -441,7 +445,7 @@ func TestGateLoopBackReApproval(t *testing.T) {
 }
 
 // TestCancelAtGateThenResumeNoDuplicateApproval is the regression guard for the
-// "审批中取消流水线后从失败处继续,原审批还在,完成后出现两个审批" bug: cancelling
+// "审批中取消工作流后从失败处继续,原审批还在,完成后出现两个审批" bug: cancelling
 // while paused at a human gate must supersede the pending gate and move the paused
 // node off waiting_human, so resuming from that point opens exactly ONE fresh
 // approval — not a second one alongside the stale, never-resolved original.
@@ -449,7 +453,7 @@ func TestCancelAtGateThenResumeNoDuplicateApproval(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "work", Type: "agent", Config: map[string]any{"agent_profile": "x", "prompt": "干活", "produces": "work.md"}},
+			{ID: "work", Type: "agent", Caps: capsPlain, Config: map[string]any{"agent_profile": "x", "prompt": "干活", "produces": "work.md"}},
 			{ID: "gate", Type: "human_gate", Config: map[string]any{"title": "评审", "output_var": "action",
 				"actions": []any{
 					map[string]any{"id": "approve", "label": "批准"},
@@ -459,7 +463,8 @@ func TestCancelAtGateThenResumeNoDuplicateApproval(t *testing.T) {
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "work"},
 			{ID: "e2", Source: "work", Target: "gate"},
-			{ID: "e3", Source: "gate", Target: "output", When: "action == 'approve'", Kind: models.EdgeSuccess},
+			{ID: "e3", Source: "gate", Target: "output", SourceHandle: "approve", Kind: models.EdgeSuccess},
+			{ID: "e4", Source: "gate", Target: "work", SourceHandle: "revise"},
 		},
 	}
 	eng, db := setupEngineGraph(t, g)
@@ -514,33 +519,6 @@ func TestCancelAtGateThenResumeNoDuplicateApproval(t *testing.T) {
 	db.Model(&models.Gate{}).Where("run_id = ? AND resolved = ?", run.ID, false).Count(&unresolved)
 	if unresolved != 0 {
 		t.Fatalf("after completion %d unresolved gate(s) linger; expected 0", unresolved)
-	}
-}
-
-// TestConditionalInjection: an agent node's conditional_prompt is appended only
-// when its when_var global variable is set and non-empty.
-func TestConditionalInjection(t *testing.T) {
-	g := models.Graph{
-		Variables: []models.Variable{{Name: "extra", Type: "string", Value: "追加提示"}},
-		Nodes: []models.Node{
-			{ID: "input", Type: "input"},
-			{ID: "a", Type: "agent", Config: map[string]any{"prompt": "基础", "produces": "a.md",
-				"conditional_prompt": map[string]any{"when_var": "extra", "text": "注入:{{vars.extra}}"}}},
-			{ID: "output", Type: "output"},
-		},
-		Edges: []models.Edge{
-			{ID: "e1", Source: "input", Target: "a"},
-			{ID: "e2", Source: "a", Target: "output"},
-		},
-	}
-	eng, db := setupEngineGraph(t, g)
-	run, _ := eng.StartRun("wf", nil, "test")
-	waitRunStatus(t, db, run.ID, "completed")
-	var sr models.StateRun
-	db.Where("run_id = ? AND node_id = ?", run.ID, "a").First(&sr)
-	prompt, _ := sr.Outputs["prompt"].(string)
-	if !strings.Contains(prompt, "注入:追加提示") {
-		t.Fatalf("conditional prompt not injected, got %q", prompt)
 	}
 }
 

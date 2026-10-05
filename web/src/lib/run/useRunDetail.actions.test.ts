@@ -7,6 +7,7 @@ import { flushPromises } from '@vue/test-utils'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { Run, WFNode, Workflow } from '@/lib/shared/types'
+import { ASK_CAPS, PREVIEW_REVIEW_CAPS } from '@/test/capsFixtures'
 
 const isMobile = ref(false)
 
@@ -80,8 +81,8 @@ function stubNode(partial: Partial<WFNode> & Pick<WFNode, 'id' | 'type'>): WFNod
 }
 
 const sampleNodes = [
-  stubNode({ id: 'n1', type: 'react' }),
-  stubNode({ id: 'n2', type: 'app_preview' }),
+  stubNode({ id: 'n1', type: 'agent', caps: ASK_CAPS }),
+  stubNode({ id: 'n2', type: 'agent', caps: PREVIEW_REVIEW_CAPS }),
   stubNode({ id: 'n3', type: 'output' }),
 ]
 
@@ -114,7 +115,7 @@ const sampleRun = (over: Partial<Run> = {}): Run =>
       n1: { nodeId: 'n1', turns: [], done: false },
       n2: { nodeId: 'n2', turns: [], done: false },
     },
-    gate: { nodeId: 'n1', kind: 'approve', fields: [] },
+    gate: { nodeId: 'n1', fields: [] },
     ...over,
   }) as unknown as Run
 
@@ -317,7 +318,7 @@ describe('useRunDetail actions', () => {
     mocks.reactQueueReorder.mockRejectedValueOnce(new Error('stale'))
     await detail.onClarifyQueueReorder(['a'])
 
-    // Finish uses the clarify prompt for a react node.
+    // Finish uses the clarify prompt for a clarify node.
     mocks.reactReply.mockClear()
     detail.onClarifyFinish()
     await flushPromises()

@@ -42,7 +42,7 @@ const structuredArtifact: Artifact = {
   kind: 'json',
   nodeId: 'react',
   runId: 'run-1',
-  workflowName: '测试流水线',
+  workflowName: '测试工作流',
   sizeBytes: 2048,
   createdAt: '2026-07-26T01:00:00Z',
 }

@@ -1,292 +1,171 @@
 // @vitest-environment happy-dom
 import { createI18n } from 'vue-i18n'
-import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mount, RouterLinkStub } from '@vue/test-utils'
+import { describe, expect, it } from 'vitest'
+import canvas from '@/locales/zh-CN/canvas.json'
 import common from '@/locales/zh-CN/common.json'
-import pages from '@/locales/zh-CN/pages.json'
 import nodes from '@/locales/zh-CN/nodes.json'
+import pages from '@/locales/zh-CN/pages.json'
 import type { WFEdge, WFNode } from '@/lib/shared/types'
-
-const apiMocks = vi.hoisted(() => ({
-  listAgents: vi.fn(),
-}))
-
-vi.mock('@/lib/api/api', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
-  return {
-    ...actual,
-    api: {
-      ...actual.api,
-      listAgents: apiMocks.listAgents,
-    },
-  }
-})
-
+import { CLARIFY_CAPS, TEST_REVIEW_CAPS } from '@/test/capsFixtures'
+import type { CanvasAgent } from './composables/outlets'
 import NodeInspector from './NodeInspector.vue'
 
-function sampleNode(): WFNode {
-  return {
-    id: 'research',
-    type: 'research',
-    label: '调研',
-    position: { x: 0, y: 0 },
-    config: {},
-  }
+const i18n = createI18n({
+  legacy: false,
+  locale: 'zh-CN',
+  messages: { 'zh-CN': { ...common, ...nodes, ...pages, ...canvas } },
+})
+const t = i18n.global.t as (k: string, n?: Record<string, unknown>) => string
+
+const AGENTS: CanvasAgent[] = [
+  { name: '需求澄清', capabilities: CLARIFY_CAPS },
+  { name: '测试评审', capabilities: TEST_REVIEW_CAPS },
+]
+
+function node(type: string, config: Record<string, any> = {}, id = type, label = type): WFNode {
+  return { id, type, label, position: { x: 0, y: 0 }, config } as WFNode
 }
 
-function sampleInputNode(): WFNode {
-  return {
-    id: 'input',
-    type: 'input',
-    label: '输入',
-    position: { x: 0, y: 0 },
-    config: { variables: [{ name: 'topic', type: 'string', value: '', ask: false }] },
-  }
-}
-
-function sampleBranchNode(): WFNode {
-  return {
-    id: 'branch',
-    type: 'branch',
-    label: '分支',
-    position: { x: 0, y: 0 },
-    config: { cases: [{ when: 'exists("x")', goto: 'out' }] },
-  }
-}
-
-function sampleGateNode(): WFNode {
-  return {
-    id: 'gate',
-    type: 'human_gate',
-    label: '门禁',
-    position: { x: 0, y: 0 },
-    config: { actions: [{ id: 'approve', label: '批准' }] },
-  }
-}
-
-function mountInspector(node = sampleNode()) {
-  const i18n = createI18n({
-    legacy: false,
-    locale: 'zh-CN',
-    messages: { 'zh-CN': { ...common, ...pages, ...nodes } },
-  })
+function mountInspector(target: WFNode, opts: { allNodes?: WFNode[]; edges?: WFEdge[]; agents?: CanvasAgent[]; agentsLoaded?: boolean; focusGoalTick?: number } = {}) {
   return mount(NodeInspector, {
     props: {
-      node,
-      allNodes: [node],
-      edges: [] as WFEdge[],
+      node: target,
+      allNodes: opts.allNodes ?? [target],
+      edges: opts.edges ?? [],
+      agents: opts.agents ?? AGENTS,
+      agentsLoaded: opts.agentsLoaded ?? true,
+      focusGoalTick: opts.focusGoalTick,
     },
-    global: {
-      plugins: [i18n],
-      stubs: {
-        Icon: true,
-        AppButton: { template: '<button><slot /></button>' },
-        OutputSourcesEditor: { template: '<div data-testid="output-sources" />' },
-      },
-    },
+    attachTo: document.body,
+    global: { plugins: [i18n], stubs: { Icon: true, RouterLink: RouterLinkStub } },
   })
 }
 
-beforeEach(() => {
-  vi.clearAllMocks()
-  apiMocks.listAgents.mockResolvedValue([{ name: 'agent-a' }])
-})
+describe('NodeInspector · agent node', () => {
+  it('shows only Agent, goal and timeout plus the read-only capabilities block', () => {
+    const target = node('agent', { agent_profile: '测试评审', prompt: '跑测试' }, 'a1', '测试评审')
+    const w = mountInspector(target)
+    expect(w.find('[data-testid="agent-picker"]').text()).toContain('测试评审')
+    expect((w.find('[data-testid="goal-input"]').element as HTMLTextAreaElement).value).toBe('跑测试')
+    expect(w.find('[data-testid="inspector-timeout"]').exists()).toBe(true)
+    expect(w.find('[data-testid="field-agent_profile"]').exists()).toBe(false)
+    expect(w.find('[data-testid="field-prompt"]').exists()).toBe(false)
 
-describe('NodeInspector', () => {
-  it('renders node title and config tab', async () => {
-    const wrapper = mountInspector()
-    await flushPromises()
-    expect(wrapper.text()).toContain('调研')
-    expect(wrapper.text()).toMatch(/配置|config/i)
-    wrapper.unmount()
+    const caps = w.find('[data-testid="inspector-capabilities"]')
+    expect(caps.text()).toContain(t('nodes.capabilities.interaction.auto'))
+    expect(caps.text()).toContain(t('canvas.caps.review'))
+    expect(caps.text()).toContain(t('nodes.capabilities.gated'))
+    expect(caps.text()).toContain(t('nodes.capabilities.readsAll'))
+    const link = w.findComponent(RouterLinkStub)
+    expect(link.props('to')).toEqual({ path: '/agents', query: { agent: '测试评审', studioTab: 'capabilities' } })
+    w.unmount()
   })
 
-  it('switches to help tab when clicked', async () => {
-    const wrapper = mountInspector()
-    await flushPromises()
-    const helpBtn = wrapper.findAll('button').find((b) => b.text().includes('帮助') || b.text().includes('Help'))
-    expect(helpBtn).toBeTruthy()
-    await helpBtn!.trigger('click')
-    await flushPromises()
-    expect(wrapper.text()).toMatch(/帮助|Help|说明|文档/i)
-    wrapper.unmount()
+  it('picks an agent from the list and adopts its name as the default label', async () => {
+    const target = node('agent', { agent_profile: '', prompt: '' }, 'a1', 'agent')
+    const w = mountInspector(target)
+    expect(w.text()).toContain(t('canvas.node.noAgent'))
+    await w.find('[data-testid="agent-picker"]').trigger('click')
+    const opt = w.find('[data-testid="agent-option-需求澄清"]')
+    expect(opt.text()).toContain(t('nodes.capabilities.interaction.clarify'))
+    await opt.trigger('click')
+    expect(target.config.agent_profile).toBe('需求澄清')
+    expect(target.label).toBe('需求澄清')
+    expect(w.find('[data-testid="agent-picker-list"]').exists()).toBe(false)
+    w.unmount()
   })
 
-  it('emits delete when delete action is triggered', async () => {
-    const wrapper = mountInspector()
-    await flushPromises()
-    const del = wrapper.findAll('button').find((b) => b.classes().some((c) => c.includes('err')) || b.text().includes('删除'))
-    expect(del).toBeTruthy()
-    await del!.trigger('click')
-    expect(wrapper.emitted('delete')).toBeTruthy()
-    wrapper.unmount()
+  it('keeps a custom label when switching agents', async () => {
+    const target = node('agent', { agent_profile: '需求澄清', prompt: '' }, 'a1', '我的节点')
+    const w = mountInspector(target)
+    await w.find('[data-testid="agent-picker"]').trigger('click')
+    await w.find('[data-testid="agent-picker-list"]').trigger('keydown', { key: 'ArrowDown' })
+    await w.find('[data-testid="agent-picker-list"]').trigger('keydown', { key: 'Enter' })
+    expect(target.config.agent_profile).toBe('测试评审')
+    expect(target.label).toBe('我的节点')
+    w.unmount()
   })
 
-  it('insertVar appends token into bound config field', async () => {
-    const node = sampleInputNode()
-    node.config.prompt = 'hello'
-    const wrapper = mountInspector(node)
-    await flushPromises()
-    const insertBtn = wrapper.findAll('button').find((b) => b.text().includes('{{vars.topic}}') || b.attributes('title')?.includes('vars'))
-    if (insertBtn) {
-      await insertBtn.trigger('click')
-      expect(String(node.config.prompt)).toContain('{{vars.topic}}')
-    } else {
-      // invoke via exposed config row if button label differs by locale
-      const vm = wrapper.vm as any
-      vm.insertVar?.('prompt', '{{vars.topic}}')
-      expect(String(node.config.prompt)).toContain('{{vars.topic}}')
-    }
-    wrapper.unmount()
+  it('flags an agent that no longer exists once agents are loaded', () => {
+    const target = node('agent', { agent_profile: 'ghost', prompt: '' })
+    expect(mountInspector(target).find('[data-testid="inspector-agent-missing"]').exists()).toBe(true)
+    expect(mountInspector(target, { agentsLoaded: false }).find('[data-testid="inspector-agent-missing"]').exists()).toBe(false)
   })
 
-  it('addFormField pushes a new form row on gate node', async () => {
-    const node = sampleGateNode()
-    node.config.form = []
-    const wrapper = mountInspector(node)
-    await flushPromises()
-    ;(wrapper.vm as any).addFormField()
-    expect(node.config.form?.length).toBe(1)
-    wrapper.unmount()
+  it('warns when the agent has no declared capabilities', () => {
+    const target = node('agent', { agent_profile: 'bare', prompt: '' })
+    const w = mountInspector(target, { agents: [{ name: 'bare' }] })
+    expect(w.find('[data-testid="inspector-capabilities"]').text()).toContain(t('canvas.inspector.noCapsBody'))
   })
 
-  it('addElseIf inserts branch case before default', async () => {
-    const node = sampleBranchNode()
-    node.config.cases = [{ when: 'default', goto: 'out' }]
-    const wrapper = mountInspector(node)
-    await flushPromises()
-    ;(wrapper.vm as any).addElseIf?.()
-    expect(node.config.cases?.length).toBe(2)
-    expect(node.config.cases?.[0].when).not.toBe('default')
-    wrapper.unmount()
+  it('stores timeout as whole minutes and clears invalid input', async () => {
+    const target = node('agent', { agent_profile: '测试评审', prompt: '' })
+    const w = mountInspector(target)
+    const input = w.find('[data-testid="inspector-timeout"]')
+    await input.setValue('12.6')
+    expect(target.config.timeout).toBe(13)
+    await input.setValue('-1')
+    expect(target.config).not.toHaveProperty('timeout')
+    await input.setValue('')
+    expect(target.config).not.toHaveProperty('timeout')
   })
 
-  it('loads agent list for agent node config without auto-filling empty agent_profile', async () => {
-    const agentNode: WFNode = {
-      id: 'agent',
-      type: 'agent',
-      label: 'Agent',
-      position: { x: 0, y: 0 },
-      config: { agent_profile: '' },
-    }
-    apiMocks.listAgents.mockResolvedValue([
-      { name: 'agent-a', projectId: 'proj-1' },
-      { name: 'other', projectId: 'proj-2' },
-      { name: 'unbound', projectId: '' },
-    ])
-    const i18n = createI18n({
-      legacy: false,
-      locale: 'zh-CN',
-      messages: { 'zh-CN': { ...common, ...pages, ...nodes } },
-    })
-    const wrapper = mount(NodeInspector, {
-      props: {
-        node: agentNode,
-        allNodes: [agentNode],
-        edges: [] as WFEdge[],
-        projectId: 'proj-1',
-      },
-      global: {
-        plugins: [i18n],
-        stubs: {
-          Icon: true,
-          AppButton: { template: '<button><slot /></button>' },
-          OutputSourcesEditor: { template: '<div data-testid="output-sources" />' },
-        },
-      },
-    })
-    await flushPromises()
-    expect(apiMocks.listAgents).toHaveBeenCalled()
-    // Empty config must stay empty (g1.4) — no auto-fill of agentNames[0].
-    expect(agentNode.config.agent_profile).toBe('')
-    const opts = wrapper.findAll('select option').map((o) => o.text())
-    expect(opts.some((t) => t.includes('agent-a'))).toBe(true)
-    expect(opts.some((t) => t.includes('other'))).toBe(false)
-    expect(opts.some((t) => t.includes('unbound'))).toBe(false)
-    wrapper.unmount()
+  it('suggests variables and upstream outputs after typing {{ and inserts the token', async () => {
+    const input = node('input', { variables: [{ name: 'feature', type: 'paragraph' }] }, 'in', '输入')
+    const up = node('agent', { agent_profile: '需求澄清', prompt: '' }, 'clarify', '澄清')
+    const target = node('agent', { agent_profile: '测试评审', prompt: '' }, 'test', '测试')
+    const edges: WFEdge[] = [
+      { id: 'e1', source: 'in', target: 'clarify' },
+      { id: 'e2', source: 'clarify', target: 'test' },
+    ]
+    const w = mountInspector(target, { allNodes: [input, up, target], edges })
+    const ta = w.find('[data-testid="goal-input"]')
+    const el = ta.element as HTMLTextAreaElement
+    el.value = '看 {{fea'
+    el.setSelectionRange(el.value.length, el.value.length)
+    await ta.trigger('input')
+    expect(target.config.prompt).toBe('看 {{fea')
+    const suggest = w.find('[data-testid="goal-suggest"]')
+    expect(suggest.text()).toContain('{{vars.feature}}')
+    expect(suggest.text()).not.toContain('{{nodes.clarify')
+    await ta.trigger('keydown', { key: 'Enter' })
+    expect(target.config.prompt).toBe('看 {{vars.feature}}')
+    expect(w.find('[data-testid="goal-suggest"]').exists()).toBe(false)
+    w.unmount()
   })
 
-  it('keeps stale cross-project agent_profile with banner', async () => {
-    const agentNode: WFNode = {
-      id: 'agent',
-      type: 'agent',
-      label: 'Agent',
-      position: { x: 0, y: 0 },
-      config: { agent_profile: 'beta-runner' },
-    }
-    apiMocks.listAgents.mockResolvedValue([
-      { name: 'agent-a', projectId: 'proj-1' },
-      { name: 'beta-runner', projectId: 'proj-2' },
-    ])
-    const i18n = createI18n({
-      legacy: false,
-      locale: 'zh-CN',
-      messages: { 'zh-CN': { ...common, ...pages, ...nodes } },
-    })
-    const wrapper = mount(NodeInspector, {
-      props: {
-        node: agentNode,
-        allNodes: [agentNode],
-        edges: [] as WFEdge[],
-        projectId: 'proj-1',
-      },
-      global: {
-        plugins: [i18n],
-        stubs: {
-          Icon: true,
-          AppButton: { template: '<button><slot /></button>' },
-          OutputSourcesEditor: { template: '<div data-testid="output-sources" />' },
-        },
-      },
-    })
-    await flushPromises()
-    expect(wrapper.find('[data-testid="skill-profile-stale-banner"]').exists()).toBe(true)
-    expect(wrapper.text()).toMatch(/非本项目|stale/)
-    expect(agentNode.config.agent_profile).toBe('beta-runner')
-    wrapper.unmount()
+  it('lists upstream node outputs as goal tokens', async () => {
+    const up = node('agent', { agent_profile: '需求澄清', prompt: '' }, 'clarify', '澄清')
+    const target = node('agent', { agent_profile: '测试评审', prompt: '' }, 'test', '测试')
+    const w = mountInspector(target, { allNodes: [up, target], edges: [{ id: 'e', source: 'clarify', target: 'test' }] })
+    const ta = w.find('[data-testid="goal-input"]')
+    const el = ta.element as HTMLTextAreaElement
+    el.value = '{{'
+    el.setSelectionRange(2, 2)
+    await ta.trigger('input')
+    expect(w.find('[data-testid="goal-suggest"]').text()).toContain('{{nodes.clarify.outputs.content}}')
+    w.unmount()
   })
 
-  it('app_preview card shows auto_inject on by default', async () => {
-    const node: WFNode = {
-      id: 'preview',
-      type: 'app_preview',
-      label: '应用预览',
-      position: { x: 0, y: 0 },
-      config: { direct_preview: true },
-    }
-    const wrapper = mountInspector(node)
-    await flushPromises()
-    expect(wrapper.text()).toContain('自动注入')
-    const sw = wrapper.find('[data-testid="node-switch-auto_inject"]')
-    expect(sw.exists()).toBe(true)
-    expect(sw.attributes('aria-checked')).toBe('true')
-    await sw.trigger('click')
-    expect(node.config.auto_inject).toBe(false)
-    expect(sw.attributes('aria-checked')).toBe('false')
-    wrapper.unmount()
+  it('focuses the goal when the focus tick changes', async () => {
+    const target = node('agent', { agent_profile: '测试评审', prompt: 'abc' })
+    const w = mountInspector(target)
+    await w.setProps({ focusGoalTick: 1 })
+    await new Promise((r) => setTimeout(r))
+    expect(document.activeElement).toBe(w.find('[data-testid="goal-input"]').element)
+    w.unmount()
   })
 
-  it.each(['grasp', 'approve', 'app_preview'] as const)('%s shows omitted Live enabled and persists explicit opt-out', async (type) => {
-    const node: WFNode = { id: 'preview', type, label: 'Preview', position: { x: 0, y: 0 }, config: { direct_preview: true } }
-    const wrapper = mountInspector(node)
-    await flushPromises()
-    const sw = wrapper.get('[data-testid="node-switch-live_variants"]')
-    expect(sw.attributes('aria-checked')).toBe('true')
-    expect(node.config.live_variants).toBeUndefined()
-    await sw.trigger('click')
-    expect(node.config.live_variants).toBe(false)
-    expect(sw.attributes('aria-checked')).toBe('false')
-    await sw.trigger('click')
-    expect(node.config.live_variants).toBe(true)
-    wrapper.unmount()
-  })
-
-  it('addAction appends gate action row', async () => {
-    const node = sampleGateNode()
-    const wrapper = mountInspector(node)
-    await flushPromises()
-    ;(wrapper.vm as any).addAction?.()
-    expect(node.config.actions?.length).toBe(2)
-    wrapper.unmount()
+  it('renames the node and emits delete / close', async () => {
+    const target = node('agent', { agent_profile: '测试评审', prompt: '' })
+    const w = mountInspector(target)
+    await w.find('[data-testid="inspector-name"]').setValue('新名字')
+    expect(target.label).toBe('新名字')
+    await w.find('[data-testid="inspector-delete"]').trigger('click')
+    await w.find('[data-testid="inspector-close"]').trigger('click')
+    expect(w.emitted('delete')).toHaveLength(1)
+    expect(w.emitted('close')).toHaveLength(1)
+    w.unmount()
   })
 })

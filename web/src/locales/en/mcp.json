@@ -131,7 +131,7 @@
         },
         "set_preview": {
           "signature": "set_preview(port?, url?, label?)",
-          "desc": "app_preview or Grasp: register sandbox port or external http(s) URL (exactly one); URL may include a port; iframe direct, no server probe. On Grasp this is optional and does not end the node"
+          "desc": "Agent nodes with the preview capability only: register a sandbox port or an external http(s) URL (exactly one); URL may include a port; iframe direct, no server probe. Registering a preview does not end the node"
         },
         "page_state": {
           "signature": "page_state() -> stateId + page content",

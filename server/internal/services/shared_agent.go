@@ -19,36 +19,34 @@ import (
 // at startup (workflow Run + project-context chat test). Shape mirrors Agent
 // without a Name; identity is ProjectID. Empty config is valid.
 type SharedAgentConfig struct {
-	ProjectID         string               `json:"projectId"`
-	AcpBackend        string               `json:"acpBackend,omitempty"`
-	DefaultProjectID  string               `json:"defaultProjectId,omitempty"`
-	GitCredentialType string               `json:"gitCredentialType,omitempty"`
-	GitSshKnownHosts  string               `json:"gitSshKnownHosts,omitempty"`
-	GitSshPrivateKey  string               `json:"gitSshPrivateKey,omitempty"`
-	Files             []AgentFile          `json:"files"`
-	MCP               []MCPServer          `json:"mcp"`
-	Env               map[string]string    `json:"env"`
-	Layout            AgentLayout          `json:"layout"`
-	Prompts           *models.AgentPrompts `json:"prompts,omitempty"`
+	ProjectID         string            `json:"projectId"`
+	AcpBackend        string            `json:"acpBackend,omitempty"`
+	DefaultProjectID  string            `json:"defaultProjectId,omitempty"`
+	GitCredentialType string            `json:"gitCredentialType,omitempty"`
+	GitSshKnownHosts  string            `json:"gitSshKnownHosts,omitempty"`
+	GitSshPrivateKey  string            `json:"gitSshPrivateKey,omitempty"`
+	Files             []AgentFile       `json:"files"`
+	MCP               []MCPServer       `json:"mcp"`
+	Env               map[string]string `json:"env"`
+	Layout            AgentLayout       `json:"layout"`
 }
 
 // sharedAgentDisk mirrors agent.json under data/project-shared/<projectId>/.
 type sharedAgentDisk struct {
-	AcpBackend        string               `json:"acpBackend,omitempty"`
-	DefaultProjectID  string               `json:"defaultProjectId,omitempty"`
-	GitCredentialType string               `json:"gitCredentialType,omitempty"`
-	GitSshKnownHosts  string               `json:"gitSshKnownHosts,omitempty"`
-	GitSshPrivateKey  string               `json:"gitSshPrivateKey,omitempty"`
-	MCP               []MCPServer          `json:"mcp,omitempty"`
-	Env               map[string]string    `json:"env,omitempty"`
-	Layout            *AgentLayout         `json:"layout,omitempty"`
-	Prompts           *models.AgentPrompts `json:"prompts,omitempty"`
+	AcpBackend        string            `json:"acpBackend,omitempty"`
+	DefaultProjectID  string            `json:"defaultProjectId,omitempty"`
+	GitCredentialType string            `json:"gitCredentialType,omitempty"`
+	GitSshKnownHosts  string            `json:"gitSshKnownHosts,omitempty"`
+	GitSshPrivateKey  string            `json:"gitSshPrivateKey,omitempty"`
+	MCP               []MCPServer       `json:"mcp,omitempty"`
+	Env               map[string]string `json:"env,omitempty"`
+	Layout            *AgentLayout      `json:"layout,omitempty"`
 }
 
 // SharedAgentService persists per-project shared Agent baselines on disk:
 //
 //	<root>/<projectId>/workspace/**  -- shared working-dir tree
-//	<root>/<projectId>/agent.json    -- mcp / env / layout / prompts / meta
+//	<root>/<projectId>/agent.json    -- mcp / env / layout / meta
 type SharedAgentService struct {
 	root string
 	mu   sync.Mutex
@@ -121,7 +119,6 @@ func (s *SharedAgentService) Get(projectID string) SharedAgentConfig {
 		MCP:               cfg.MCP,
 		Env:               env,
 		Layout:            layout,
-		Prompts:           cfg.Prompts,
 	}
 }
 
@@ -158,7 +155,6 @@ func (s *SharedAgentService) Save(cfg SharedAgentConfig) error {
 		MCP:               cfg.MCP,
 		Env:               cfg.Env,
 		Layout:            &layout,
-		Prompts:           cfg.Prompts,
 	}
 	b, err := json.MarshalIndent(disk, "", "  ")
 	if err != nil {
@@ -227,7 +223,6 @@ func (c SharedAgentConfig) AsAgent() Agent {
 		MCP:               c.MCP,
 		Env:               env,
 		Layout:            c.Layout,
-		Prompts:           c.Prompts,
 	}
 }
 
@@ -249,7 +244,6 @@ func ExtendOverlay(shared SharedAgentConfig, agent Agent) Agent {
 		MCP:               mergeMCP(base.MCP, agent.MCP),
 		Env:               envauth.MergeEnvSharedTokenPriority(base.Env, agent.Env),
 		Layout:            mergeLayout(base.Layout, agent.Layout),
-		Prompts:           mergePrompts(base.Prompts, agent.Prompts),
 	}
 	if strings.TrimSpace(out.ProjectID) == "" {
 		out.ProjectID = strings.TrimSpace(base.ProjectID)
@@ -329,49 +323,6 @@ func mergeLayout(base, overlay AgentLayout) AgentLayout {
 		ConfigRoot:   pickNonEmpty(overlay.ConfigRoot, base.ConfigRoot),
 		WorkspaceDir: pickNonEmpty(overlay.WorkspaceDir, base.WorkspaceDir),
 	}
-}
-
-func mergePrompts(base, overlay *models.AgentPrompts) *models.AgentPrompts {
-	if base == nil && overlay == nil {
-		return nil
-	}
-	// Field-level merge via JSON maps so new AgentPrompts keys stay covered.
-	bm := promptsToMap(base)
-	om := promptsToMap(overlay)
-	out := map[string]string{}
-	for k, v := range bm {
-		out[k] = v
-	}
-	for k, v := range om {
-		if strings.TrimSpace(v) != "" {
-			out[k] = v
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	b, err := json.Marshal(out)
-	if err != nil {
-		return overlay
-	}
-	var p models.AgentPrompts
-	if err := json.Unmarshal(b, &p); err != nil {
-		return overlay
-	}
-	return &p
-}
-
-func promptsToMap(p *models.AgentPrompts) map[string]string {
-	out := map[string]string{}
-	if p == nil {
-		return out
-	}
-	b, err := json.Marshal(p)
-	if err != nil {
-		return out
-	}
-	_ = json.Unmarshal(b, &out)
-	return out
 }
 
 func (s *SharedAgentService) readConfig(pid string) sharedAgentDisk {

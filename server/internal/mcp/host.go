@@ -65,9 +65,9 @@ type ArtifactDeleter interface {
 // Host manages per-run scoped endpoints and tokens.
 type Host struct {
 	mu         sync.RWMutex
-	tokens     map[string]string // runID -> token
-	active     map[string]string // runID -> currently-executing nodeID
-	activeType map[string]string // runID -> currently-executing node type
+	tokens     map[string]string                    // runID -> token
+	active     map[string]string                    // runID -> currently-executing nodeID
+	activeCaps map[string]*models.AgentCapabilities // runID -> active node's Agent capabilities
 	// activeReview marks runs whose currently-executing node is in the post-run
 	// ReAct review phase. While set, ask_question is permitted for the node
 	// (beyond the react clarify node) so a review can raise follow-up choices.
@@ -94,16 +94,16 @@ type Host struct {
 	// finished / server restarted) for exactly as long as a sandbox for the run
 	// exists — i.e. token lifetime tracks sandbox lifetime. Nil ⇒ no fallback.
 	tokenSrc RunTokenSource
-	// activeSrc is the persistence-backed fallback for ActiveNode/ActiveNodeType:
-	// given a runID it resolves the run's current node id + type from the DB.
-	// It mirrors tokenSrc for the node-type gate: when the in-memory
+	// activeSrc is the persistence-backed fallback for ActiveNode/ActiveCaps:
+	// given a runID it resolves the run's current node id + capabilities from
+	// the DB. It mirrors tokenSrc for the capability gate: when the in-memory
 	// SetActiveNode registration is missing — server restarted mid-run, or the
-	// MCP call is served by a replica that never executed the node (e.g. an
-	// app_preview sandbox kept alive during waiting_human) — the gate would
-	// otherwise see an empty type and wrongly reject node-scoped tools like
-	// set_preview / set_plan / set_*. Nil ⇒ no fallback. See ActiveNodeType.
+	// MCP call is served by a replica that never executed the node (e.g. a
+	// review sandbox kept alive during waiting_human) — the gate would
+	// otherwise see no capabilities and wrongly reject set_preview / set_*.
+	// Nil ⇒ no fallback. See ActiveCaps.
 	activeSrc ActiveNodeSource
-	// Preview port registrations (app_preview set_preview); keyed runID|nodeID.
+	// Preview port registrations (set_preview); keyed runID|nodeID.
 	previewMem   map[string][]PreviewPort
 	previewBase  string
 	previewStore PreviewStore
@@ -114,9 +114,9 @@ type Host struct {
 	// outcomes buffers node_complete marks keyed runID -> nodeID. The engine
 	// drains them via TakeOutcome after the agent turn (destructive).
 	outcomes map[string]map[string]NodeOutcome
-	// outcomeAllowed gates Grasp Phase1 visibility of node_complete: when the
-	// active node is Grasp/approve and this flag is false, tools/list omits the
-	// tool and tools/call treats it as unknown. Non-Grasp nodes ignore the flag.
+	// outcomeAllowed gates clarify-dialogue visibility of node_complete: while
+	// the active Agent is a clarify Agent and this flag is false, tools/list
+	// omits the tool and tools/call treats it as unknown. Auto Agents ignore it.
 	// toolsListGen increments whenever the flag flips so tests (and future SSE
 	// clients) can observe a tools/list_changed refresh signal.
 	outcomeAllowed map[string]bool
@@ -136,7 +136,7 @@ type Host struct {
 	// pageBridge runs page_* tools on the turn owner's direct preview page.
 	// Nil ⇒ page tools are unlisted and fail.
 	pageBridge PageBridge
-	// liveUpdater records live_update reports (Live variants on app_preview).
+	// liveUpdater records live_update reports (Live variants on preview-capable Agents).
 	liveUpdater LiveUpdater
 }
 
@@ -155,16 +155,16 @@ type ProjectAuditHook func(runID, nodeID, tool string, args map[string]any, resu
 // has a live sandbox. ok is false when the run is unknown.
 type RunTokenSource func(runID string) (token string, sandboxAlive bool, ok bool)
 
-// ActiveNodeSource resolves a run's current node id and type from persistence.
-// ok is false when the run has no resolvable active node (unknown/terminal).
-type ActiveNodeSource func(runID string) (nodeID, nodeType string, ok bool)
+// ActiveNodeSource resolves a run's current node id and capabilities from
+// persistence. ok is false when the run has no resolvable active node.
+type ActiveNodeSource func(runID string) (nodeID string, caps *models.AgentCapabilities, ok bool)
 
 // NewHost builds a host backed by the given store.
 func NewHost(store Store) *Host {
 	return &Host{
 		tokens:         map[string]string{},
 		active:         map[string]string{},
-		activeType:     map[string]string{},
+		activeCaps:     map[string]*models.AgentCapabilities{},
 		activeReview:   map[string]bool{},
 		pending:        map[string]map[string][]models.ReactQuestion{},
 		pendingForms:   map[string]map[string][]models.ReactForm{},
@@ -188,8 +188,8 @@ func (h *Host) SetHistoryProvider(p HistoryProvider) { h.history = p }
 // RunTokenSource / authorize).
 func (h *Host) SetRunTokenSource(src RunTokenSource) { h.tokenSrc = src }
 
-// SetActiveNodeSource wires the persistence-backed ActiveNode/ActiveNodeType
-// fallback (see ActiveNodeSource / ActiveNodeType).
+// SetActiveNodeSource wires the persistence-backed ActiveNode/ActiveCaps
+// fallback (see ActiveNodeSource / ActiveCaps).
 func (h *Host) SetActiveNodeSource(src ActiveNodeSource) { h.activeSrc = src }
 
 // SetAfterWriteArtifact wires a post-Save hook for WriteArtifact (engine sync).
@@ -255,20 +255,20 @@ func (h *Host) PeekMcpCalls(runID, nodeID string) []models.McpCall {
 	return out
 }
 
-// SetActiveNode records which node (and its type) a run is currently executing
-// so MCP writes (write_artifact) can be attributed to the producing node and
-// clarify-only tools (ask_question) can be gated to react nodes. Runs execute
-// one node at a time, so a single value per run is sufficient.
-func (h *Host) SetActiveNode(runID, nodeID, nodeType string) {
+// SetActiveNode records which node a run is currently executing and that
+// node's Agent capabilities, so MCP writes are attributed to the producing node
+// and every tool is gated by what the Agent declares. Runs execute one node at
+// a time, so a single value per run is sufficient.
+func (h *Host) SetActiveNode(runID, nodeID string, caps *models.AgentCapabilities) {
 	h.mu.Lock()
 	h.active[runID] = nodeID
-	h.activeType[runID] = nodeType
+	h.activeCaps[runID] = caps
 	h.mu.Unlock()
 }
 
 // ActiveNode returns the run's currently-executing node, or "mcp" if unknown.
 // When the in-memory registration is missing it falls back to activeSrc (see
-// ActiveNodeType for why the fallback matters); resolved values are re-cached so
+// ActiveCaps for why the fallback matters); resolved values are re-cached so
 // repeat calls in the same process stay cheap.
 func (h *Host) ActiveNode(runID string) string {
 	h.mu.RLock()
@@ -279,54 +279,38 @@ func (h *Host) ActiveNode(runID string) string {
 		return n
 	}
 	if src != nil {
-		if nodeID, nodeType, ok := src(runID); ok && nodeID != "" {
-			h.cacheActive(runID, nodeID, nodeType)
+		if nodeID, caps, ok := src(runID); ok && nodeID != "" {
+			h.SetActiveNode(runID, nodeID, caps)
 			return nodeID
 		}
 	}
 	return "mcp"
 }
 
-// ActiveNodeType returns the run's currently-executing node type (e.g. "react"
-// or "agent"), or "" if unknown.
+// ActiveCaps returns the capabilities of the run's currently-executing node,
+// or nil when unknown (nil grants nothing).
 //
 // The in-memory value (SetActiveNode) is authoritative while the engine drives
-// the node here. When it is missing — server restarted mid-run, or this replica
-// never executed the node yet still serves the sandbox's MCP call (e.g. an
-// app_preview node kept alive during waiting_human) — the node-type gate would
-// see "" and wrongly reject node-scoped tools (set_preview / set_plan / set_*).
-// Falling back to activeSrc restores the authoritative type from the DB (source
-// of truth), so it re-gates correctly rather than weakening the gate. The
-// resolved value is re-cached; the engine's next SetActiveNode overwrites it.
-func (h *Host) ActiveNodeType(runID string) string {
+// the node here. When it is missing — server restarted mid-run, or this
+// replica never executed the node yet still serves the sandbox's MCP call —
+// falling back to activeSrc restores the authoritative capabilities from the
+// DB, so it re-gates correctly rather than weakening the gate.
+func (h *Host) ActiveCaps(runID string) *models.AgentCapabilities {
 	h.mu.RLock()
-	t := h.activeType[runID]
+	nodeID := h.active[runID]
+	caps := h.activeCaps[runID]
 	src := h.activeSrc
 	h.mu.RUnlock()
-	if t != "" {
-		return t
+	if nodeID != "" {
+		return caps
 	}
 	if src != nil {
-		if nodeID, nodeType, ok := src(runID); ok && nodeType != "" {
-			h.cacheActive(runID, nodeID, nodeType)
-			return nodeType
+		if id, c, ok := src(runID); ok && id != "" {
+			h.SetActiveNode(runID, id, c)
+			return c
 		}
 	}
-	return ""
-}
-
-// cacheActive records a fallback-resolved node/type into the in-memory maps so
-// subsequent calls in this process avoid re-querying. Empty fields are skipped
-// so a partial resolution never clobbers a good in-memory value.
-func (h *Host) cacheActive(runID, nodeID, nodeType string) {
-	h.mu.Lock()
-	if nodeID != "" {
-		h.active[runID] = nodeID
-	}
-	if nodeType != "" {
-		h.activeType[runID] = nodeType
-	}
-	h.mu.Unlock()
+	return nil
 }
 
 // SetActiveReview marks (or clears) whether a run's active node is in the
@@ -447,7 +431,7 @@ func (h *Host) UnregisterRun(runID string) {
 	h.mu.Lock()
 	delete(h.tokens, runID)
 	delete(h.active, runID)
-	delete(h.activeType, runID)
+	delete(h.activeCaps, runID)
 	delete(h.activeReview, runID)
 	delete(h.pending, runID)
 	delete(h.calls, runID)

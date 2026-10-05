@@ -103,7 +103,7 @@ func TestNodeReqPromptImages(t *testing.T) {
 		},
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "agent", Type: "agent", Config: map[string]any{
+			{ID: "agent", Type: "agent", Caps: capsPlain, Config: map[string]any{
 				"agent_profile": "r",
 				"prompt":        "Do {{vars.feature}} with {{vars.extra}}",
 			}},
@@ -157,7 +157,7 @@ func TestPromptImagesIntegration(t *testing.T) {
 		},
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "research", Type: "research", Config: map[string]any{
+			{ID: "research", Type: "agent", Caps: capsPlan, Config: map[string]any{
 				"agent_profile": "r",
 				"prompt":        "Research {{vars.feature}}",
 			}},

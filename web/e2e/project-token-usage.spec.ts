@@ -19,7 +19,7 @@ const MOCK_PROJECTS = [
   {
     id: 'p2',
     name: 'Ops Sync',
-    description: '运维同步流水线',
+    description: '运维同步工作流',
     workflowCount: 5,
     totalTokens: 1_020_000,
     createdAt: '2026-01-01T00:00:00Z',

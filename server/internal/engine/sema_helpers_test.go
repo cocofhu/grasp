@@ -67,7 +67,7 @@ func TestSetAutoRetryMaxInt64Bounds(t *testing.T) {
 }
 
 func TestDefaultAppPreviewHelpersRemoved(t *testing.T) {
-	// app_preview no longer creates Gate actions/form; helpers were retired with
+	// Preview review agents create no Gate actions/form; helpers were retired with
 	// the Gate shell. Keep a compile-time reminder that parseActions still works
 	// for human_gate.
 	acts := parseActions(nil)

@@ -22,12 +22,13 @@ import { agentConfigRelPath } from '@/lib/agent/backendAuthGuide'
 import { useAgentImport } from '@/lib/agent/useAgentImport'
 import { isManagedRegionKey } from '@/lib/shared/regionPolicy'
 import {
-  PROMPT_KEYS, fromDraft, hydrateStudioDraft, draftPayloadJson,
+  fromDraft, hydrateStudioDraft, draftPayloadJson,
   type AgentStudioDraft as Draft,
 } from '@/lib/agent/agentStudioDraft'
+import { capabilityIssueKey, validateCapabilities } from '@/lib/workflow/agentCapabilities'
 
-export type StudioTab = 'files' | 'mcp' | 'env' | 'prompts' | 'platform-rules' | 'meta' | 'data' | 'test'
-const STUDIO_TABS: StudioTab[] = ['files', 'mcp', 'env', 'prompts', 'platform-rules', 'meta', 'data', 'test']
+export type StudioTab = 'files' | 'mcp' | 'env' | 'capabilities' | 'meta' | 'data' | 'test'
+const STUDIO_TABS: StudioTab[] = ['files', 'mcp', 'env', 'capabilities', 'meta', 'data', 'test']
 
 function isStudioTab(q: unknown): q is StudioTab {
   return typeof q === 'string' && (STUDIO_TABS as readonly string[]).includes(q)
@@ -754,17 +755,14 @@ async function onRemoveFromGroup(agentName: string, groupId: string) {
     showToast(t('pages.agentStudio.org.removeFromGroupToast'))
   }
 }
-const promptCount = computed(() => (draft.value ? PROMPT_KEYS.filter((k) => draft.value!.prompts[k].trim()).length : 0))
 const studioTabs = computed(() => {
   if (!draft.value) return []
   const d = draft.value
-  const pc = promptCount.value
   return [
     { k: 'files' as const, l: t('pages.agentStudio.tabs.files', { n: d.files.length }) },
     { k: 'mcp' as const, l: t('pages.agentStudio.tabs.mcp', { n: d.mcp.length }) },
     { k: 'env' as const, l: t('pages.agentStudio.tabs.env', { n: d.env.filter((e) => !isManagedRegionKey(e.k)).length }) },
-    { k: 'prompts' as const, l: pc ? t('pages.agentStudio.tabs.promptsCount', { n: pc }) : t('pages.agentStudio.tabs.prompts') },
-    { k: 'platform-rules' as const, l: t('pages.agentStudio.tabs.platformRules') },
+    { k: 'capabilities' as const, l: t('pages.agentStudio.tabs.capabilities') },
     { k: 'data' as const, l: t('pages.agentStudio.tabs.data') },
     { k: 'meta' as const, l: t('pages.agentStudio.tabs.meta') },
     { k: 'test' as const, l: t('pages.agentStudio.tabs.test') },
@@ -1003,6 +1001,15 @@ function openManageFromSheet() {
 
 async function save(reason?: string) {
   if (!dirty.value) return false
+  const capsIssue = draft.value?.capabilities ? validateCapabilities(draft.value.capabilities) : null
+  if (capsIssue) {
+    error.value = t('pages.agentStudio.capabilities.invalid', {
+      reason: t(capabilityIssueKey(capsIssue), { value: capsIssue.value ?? '' }),
+    })
+    tab.value = 'capabilities'
+    syncStudioQuery()
+    return false
+  }
   saving.value = true
   error.value = ''
   try {
@@ -1684,7 +1691,6 @@ onBeforeUnmount(() => {
   onMoveGroup,
   onMoveAgent,
   onRemoveFromGroup,
-  promptCount,
   studioTabs,
   studioTabLabel,
   showToast,

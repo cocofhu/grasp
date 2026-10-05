@@ -34,10 +34,8 @@ func TestBuildOnboardingNamePlan_defaultAndDerived(t *testing.T) {
 	if def.GroupID != services.FirstInstallGroupID || def.GroupName != services.FirstInstallGroupName {
 		t.Fatalf("default group = %s/%s", def.GroupID, def.GroupName)
 	}
-	for _, n := range def.AgentNames {
-		if !strings.HasPrefix(n, "综合") {
-			t.Fatalf("default agent %q", n)
-		}
+	if strings.Join(def.AgentNames, ",") != "需求澄清,实现,测试评审" {
+		t.Fatalf("default agents = %v", def.AgentNames)
 	}
 
 	plan, err := services.BuildOnboardingNamePlan("proj-abc", "Acme Corp", models.DefaultProjectID)
@@ -53,7 +51,7 @@ func TestBuildOnboardingNamePlan_defaultAndDerived(t *testing.T) {
 	if plan.GroupName != "Acme Corp项目组" {
 		t.Fatalf("groupName = %q", plan.GroupName)
 	}
-	if plan.NameMap["综合研发工程师"] != "AcmeCorp研发工程师" {
+	if plan.NameMap["实现"] != "AcmeCorp实现" {
 		t.Fatalf("map = %#v", plan.NameMap)
 	}
 }
@@ -61,18 +59,18 @@ func TestBuildOnboardingNamePlan_defaultAndDerived(t *testing.T) {
 func TestRemapOnboardingAgentProfiles(t *testing.T) {
 	g := &models.Graph{
 		Nodes: []models.Node{
-			{ID: "n1", Type: "implement", Config: map[string]any{"agent_profile": "综合研发工程师"}},
-			{ID: "n2", Type: "test", Config: map[string]any{"agent_profile": "综合测试工程师"}},
+			{ID: "n1", Type: "agent", Config: map[string]any{"agent_profile": "实现"}},
+			{ID: "n2", Type: "agent", Config: map[string]any{"agent_profile": "测试评审"}},
 		},
 	}
 	services.RemapOnboardingAgentProfiles(g, map[string]string{
-		"综合研发工程师": "中国象棋研发工程师",
-		"综合测试工程师": "中国象棋测试工程师",
+		"实现":   "中国象棋实现",
+		"测试评审": "中国象棋测试评审",
 	})
-	if got, _ := g.Nodes[0].Config["agent_profile"].(string); got != "中国象棋研发工程师" {
+	if got, _ := g.Nodes[0].Config["agent_profile"].(string); got != "中国象棋实现" {
 		t.Fatalf("n1 = %q", got)
 	}
-	if got, _ := g.Nodes[1].Config["agent_profile"].(string); got != "中国象棋测试工程师" {
+	if got, _ := g.Nodes[1].Config["agent_profile"].(string); got != "中国象棋测试评审" {
 		t.Fatalf("n2 = %q", got)
 	}
 }

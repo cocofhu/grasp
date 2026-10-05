@@ -32,8 +32,8 @@ function mountModal(open = true) {
     props: {
       open,
       sourceId: 'wf-1',
-      sourceName: '源流水线',
-      suggestedName: '源流水线-副本',
+      sourceName: '源工作流',
+      suggestedName: '源工作流-副本',
       existingNames: ['other'],
     },
     global: {
@@ -52,7 +52,7 @@ function mountModal(open = true) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  apiMocks.copyWorkflow.mockResolvedValue({ id: 'wf-2', name: '源流水线-副本' })
+  apiMocks.copyWorkflow.mockResolvedValue({ id: 'wf-2', name: '源工作流-副本' })
 })
 
 describe('CopyWorkflowModal', () => {
@@ -61,7 +61,7 @@ describe('CopyWorkflowModal', () => {
     await wrapper.setProps({ open: true })
     await flushPromises()
     const input = wrapper.find('input')
-    expect((input.element as HTMLInputElement).value).toBe('源流水线-副本')
+    expect((input.element as HTMLInputElement).value).toBe('源工作流-副本')
     wrapper.unmount()
   })
 
@@ -83,11 +83,11 @@ describe('CopyWorkflowModal', () => {
     expect(apiMocks.copyWorkflow).toHaveBeenCalledTimes(1)
     expect(apiMocks.copyWorkflow).toHaveBeenCalledWith(
       'wf-1',
-      '源流水线-副本',
+      '源工作流-副本',
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
     await wrapper.setProps({ open: false })
-    resolveCopy({ id: 'wf-2', name: '源流水线-副本' })
+    resolveCopy({ id: 'wf-2', name: '源工作流-副本' })
     await flushPromises()
     expect(wrapper.emitted('copied')).toBeFalsy()
     wrapper.unmount()

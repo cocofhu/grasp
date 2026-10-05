@@ -63,7 +63,7 @@ type desktop struct {
 	lastSeen time.Time
 }
 
-// Service manages the desktop page inside each app_preview sandbox and the
+// Service manages the desktop page inside each preview-capable sandbox and the
 // viewer sessions attached to it. It dials each sandbox's in-container
 // CDP/websockify; it never creates or destroys containers (the sandbox-gateway
 // owns that). Safe for concurrent use.
@@ -370,7 +370,7 @@ func (s *Service) Stop() {
 	s.desktops = map[string]*desktop{}
 }
 
-// OpenInSandbox attaches a viewer to the desktop page of an app_preview
+// OpenInSandbox attaches a viewer to the desktop page of a preview-capable
 // sandbox's VNC/CDP stack. The first viewer opens the page at targetURL
 // (typically http://127.0.0.1:<port>/ so Chromium stays inside the sandbox
 // network namespace). Later viewers reuse that page as it is, and only

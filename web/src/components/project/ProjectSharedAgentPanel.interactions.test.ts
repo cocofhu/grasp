@@ -22,7 +22,7 @@ import ProjectSharedAgentPanel from './ProjectSharedAgentPanel.vue'
 const cfg = {
   acpBackend: 'cursor', defaultProjectId: 'p1', gitCredentialType: '',
   gitSshKnownHosts: '', gitSshPrivateKey: '', files: [], mcp: [], env: {},
-  layout: { configRoot: '~/.cursor', workspaceDir: '/workspace' }, prompts: {},
+  layout: { configRoot: '~/.cursor', workspaceDir: '/workspace' },
 }
 const FilesStub = { name: 'AgentFilesPanel', props: ['draft', 'save'], methods: { openPathOrCreate: vi.fn() }, template: '<div data-testid="files"/>' }
 function mountPanel(projectId = 'p1') {
@@ -33,7 +33,6 @@ function mountPanel(projectId = 'p1') {
       Icon: true, AppButton: { template: '<button v-bind="$attrs"><slot/></button>' },
       AgentFilesPanel: FilesStub, AgentMcpPanel: { template: '<div data-testid="mcp"/>' },
       AgentEnvPanel: { emits: ['open-settings-file'], template: '<button data-testid="env-settings" @click="$emit(\'open-settings-file\')"/>' },
-      AgentPromptsPanel: { template: '<div data-testid="prompts"/>' },
     } },
   })
 }
@@ -118,7 +117,7 @@ describe('ProjectSharedAgentPanel interactions', () => {
     mocks.getConfig.mockResolvedValueOnce({ ...cfg, env: { CURSOR_REGION: 'legacy-special' }, gitSshPrivateKey: 'private', gitSshKnownHosts: 'host key' })
     const w = mountPanel(); await flushPromises()
     const vm = w.vm as any
-    for (const tab of ['mcp', 'env', 'prompts', 'meta']) {
+    for (const tab of ['mcp', 'env', 'meta']) {
       await w.get(`[data-testid="shared-agent-subtab-${tab}"]`).trigger('click')
       await flushPromises()
     }

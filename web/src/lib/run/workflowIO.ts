@@ -93,14 +93,11 @@ export function downloadJson(filename: string, data: unknown) {
   URL.revokeObjectURL(a.href)
 }
 
-/** Collect agent_profile references from agent-class nodes. */
+/** Collect agent_profile references from agent nodes. */
 export function collectAgentProfiles(nodes: WFNode[]): string[] {
-  const agentTypes = new Set([
-    'react', 'grasp', 'approve', 'preflight', 'agent', 'plan', 'implement', 'research', 'test', 'review', 'proposal', 'submit_mr', 'visual', 'app_preview',
-  ])
   const out = new Set<string>()
   for (const n of nodes) {
-    if (!agentTypes.has(n.type)) continue
+    if (n.type !== 'agent') continue
     const sp = getAgentProfile(n.config)
     if (sp) out.add(sp)
   }

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/cocofhu/grasp/internal/models"
 )
 
 func reviewCall(t *testing.T, h *Host, tok, tool string, args map[string]any) (string, bool) {
@@ -17,83 +19,38 @@ func reviewCall(t *testing.T, h *Host, tok, tool string, args map[string]any) (s
 
 var reviewPlanArgs = map[string]any{"goals": []any{map[string]any{"title": "统一控件高度"}}}
 
-func TestReviewPhaseWidensToolset(t *testing.T) {
+func TestReviewPhaseKeepsDeclaredToolset(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
 	tok := h.RegisterRun("r1")
-	h.SetActiveNode("r1", "impl", "implement")
+	h.SetActiveNode("r1", "impl", capsImplement)
 
-	if txt, isErr := reviewCall(t, h, tok, "set_plan", reviewPlanArgs); !isErr || !strings.Contains(txt, "复审阶段") {
-		t.Fatalf("implement outside review must not set_plan: %q", txt)
-	}
-	if txt, isErr := reviewCall(t, h, tok, "set_preview", map[string]any{"url": "https://example.com"}); !isErr {
-		t.Fatalf("implement outside review must not set_preview: %q", txt)
-	}
-
-	h.SetActiveReview("r1", true)
-	if txt, isErr := reviewCall(t, h, tok, "set_plan", reviewPlanArgs); isErr {
-		t.Fatalf("implement in review should set_plan: %q", txt)
-	}
-	if txt, isErr := reviewCall(t, h, tok, "set_preview", map[string]any{"url": "https://example.com"}); isErr {
-		t.Fatalf("implement in review should set_preview: %q", txt)
+	for _, review := range []bool{false, true} {
+		h.SetActiveReview("r1", review)
+		if txt, isErr := reviewCall(t, h, tok, "set_plan", reviewPlanArgs); !isErr {
+			t.Fatalf("review=%v: undeclared set_plan must stay closed: %q", review, txt)
+		}
+		if txt, isErr := reviewCall(t, h, tok, "set_preview", map[string]any{"url": "https://example.com"}); isErr {
+			t.Fatalf("review=%v: granted set_preview should work: %q", review, txt)
+		}
+		for _, tool := range []string{"set_preflight", "ask_form", "set_root_cause", "set_test_result"} {
+			if txt, isErr := reviewCall(t, h, tok, tool, map[string]any{}); !isErr || strings.HasPrefix(txt, "ok") {
+				t.Errorf("review=%v: %s must stay closed: %q", review, tool, txt)
+			}
+		}
 	}
 	if got := h.ListPreviewPorts("r1", "impl"); len(got) != 1 || got[0].URL != "https://example.com" {
 		t.Fatalf("preview not registered on the review node: %+v", got)
-	}
-	for _, tool := range []string{"set_preflight", "ask_form", "set_root_cause", "set_test_result"} {
-		if txt, isErr := reviewCall(t, h, tok, tool, map[string]any{}); !isErr || strings.HasPrefix(txt, "ok") {
-			t.Errorf("%s must stay closed in review: %q", tool, txt)
-		}
 	}
 }
 
 func TestReviewPhaseNotForOtherNodeTypes(t *testing.T) {
 	h := NewHost(&memStore{})
 	tok := h.RegisterRun("r1")
-	h.SetActiveNode("r1", "t1", "test")
+	h.SetActiveNode("r1", "t1", capsTestReview)
 	h.SetActiveReview("r1", true)
 	if txt, isErr := reviewCall(t, h, tok, "set_plan", reviewPlanArgs); !isErr {
 		t.Fatalf("test node is not a review agent: %q", txt)
-	}
-}
-
-func TestReviewCrossNodeWriteKeepsOwner(t *testing.T) {
-	store := &memStore{}
-	h := NewHost(store)
-	tok := h.RegisterRun("r1")
-	if _, err := store.Save("r1", "plan_1", PlanArtifactName, "json", `{"goals":[]}`); err != nil {
-		t.Fatal(err)
-	}
-	h.SetActiveNode("r1", "impl", "implement")
-	h.SetActiveReview("r1", true)
-
-	if txt, isErr := reviewCall(t, h, tok, "set_plan", reviewPlanArgs); isErr {
-		t.Fatalf("set_plan: %q", txt)
-	}
-	if owner := store.node["r1|"+PlanArtifactName]; owner != "plan_1" {
-		t.Fatalf("plan.json owner=%q, want plan_1", owner)
-	}
-	if body, _ := store.Get("r1", PlanArtifactName); !strings.Contains(body, "统一控件高度") {
-		t.Fatalf("plan content not rewritten: %s", body)
-	}
-
-	if txt, isErr := reviewCall(t, h, tok, "set_research", map[string]any{
-		"summary": "s", "findings": []any{map[string]any{"title": "f", "detail": "d"}},
-	}); isErr {
-		t.Fatalf("set_research: %q", txt)
-	}
-	if owner := store.node["r1|research.json"]; owner != "impl" {
-		t.Fatalf("new cross-node product owner=%q, want the review node", owner)
-	}
-
-	if _, err := store.Save("r1", "visual_1", "page.html", "html", "<p>old</p>"); err != nil {
-		t.Fatal(err)
-	}
-	if txt, isErr := reviewCall(t, h, tok, "write_artifact", map[string]any{"name": "page.html", "content": "<p>new</p>", "kind": "html"}); isErr {
-		t.Fatalf("write_artifact: %q", txt)
-	}
-	if owner := store.node["r1|page.html"]; owner != "visual_1" {
-		t.Fatalf("page.html owner=%q, want visual_1", owner)
 	}
 }
 
@@ -104,7 +61,7 @@ func TestOwnProductWriteStaysOnActiveNode(t *testing.T) {
 	if _, err := store.Save("r1", "plan_old", PlanArtifactName, "json", `{"goals":[]}`); err != nil {
 		t.Fatal(err)
 	}
-	h.SetActiveNode("r1", "plan_new", "plan")
+	h.SetActiveNode("r1", "plan_new", capsWriting(models.SchemaPlan))
 	if txt, isErr := reviewCall(t, h, tok, "set_plan", reviewPlanArgs); isErr {
 		t.Fatalf("set_plan: %q", txt)
 	}

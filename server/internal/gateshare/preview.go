@@ -14,7 +14,7 @@ import (
 const (
 	ProductKindVisual     = "visual"
 	ProductKindStructured = "structured"
-	ProductKindAppPreview = "app_preview"
+	ProductKindAppPreview = "app"
 
 	// HeaderKnown* let silent pollers ask the server to omit unchanged large
 	// fields (field-level sparse update).
@@ -54,12 +54,14 @@ type PreviewDTO struct {
 	ActiveItem        *PreviewActiveItem `json:"activeItem,omitempty"`
 	ProductKind       string             `json:"productKind,omitempty"`
 	ProductName       string             `json:"productName,omitempty"`
-	// Ports is the desensitized public app_preview port list (no runId/nodeId/paths).
+	// Ports is the desensitized public preview port list (no runId/nodeId/paths).
 	Ports []PublicPreviewPort `json:"ports,omitempty"`
-	// NodeType is the graph node type (e.g. react / research / app_preview).
-	// Kind stays "review" for ShareLinkKindReview; clients use NodeType to
-	// distinguish Inbox 待澄清 from 待复审 without leaking Run#.
+	// NodeType is the graph node type (always "agent" for producers).
 	NodeType string `json:"nodeType,omitempty"`
+	// Interaction is the producer Agent's capability interaction ("clarify" |
+	// "auto"). Kind stays "review" for ShareLinkKindReview; clients use it to
+	// distinguish Inbox 待澄清 from 待复审 without leaking the graph.
+	Interaction string `json:"interaction,omitempty"`
 	// LiveEvents is a leak-free in-flight ACP snapshot (message/thought only)
 	// while sessionBusy. Poll fallback when the public events WS is down.
 	LiveEvents []PreviewLiveEvent `json:"liveEvents,omitempty"`
@@ -76,7 +78,7 @@ type PreviewLiveEvent struct {
 	Parts []models.AcpPart `json:"parts,omitempty"`
 }
 
-// PublicPreviewPort is the leak-free port entry for public app_preview remote / API iframe.
+// PublicPreviewPort is the leak-free port entry for public preview remote / API iframe.
 type PublicPreviewPort struct {
 	Port  int    `json:"port"`
 	Label string `json:"label,omitempty"`
@@ -158,6 +160,9 @@ func BuildReviewPreviewDTO(st string, lookup *LookupResult, visualHTML, structur
 	}
 	if lookup.Node != nil {
 		dto.NodeType = strings.TrimSpace(lookup.Node.Type)
+		if lookup.Node.Caps != nil {
+			dto.Interaction = lookup.Node.Caps.Interaction
+		}
 	}
 	title, desc := reviewPreviewCopy(lookup.Node)
 	dto.Title = title
@@ -204,9 +209,9 @@ func applyPreviewArtifacts(dto *PreviewDTO, visualHTML, structuredName, structur
 	dto.ProductKind = kind
 	dto.ProductName = name
 	if kind == ProductKindAppPreview && dto.ProductName == "" {
-		dto.ProductName = "app_preview"
+		dto.ProductName = "app"
 	}
-	// Grasp nodes may register a live preview next to their structured product.
+	// Preview-capable Agents may register a live preview next to their structured product.
 	if len(extras.Ports) > 0 {
 		dto.Ports = append([]PublicPreviewPort(nil), extras.Ports...)
 	}
@@ -336,7 +341,7 @@ func WantPreviewNonce(silentPoll, issueNonce bool) bool {
 
 func inferProductKind(visualHTML, structuredName, hinted string) (kind, name string) {
 	if hinted == ProductKindAppPreview {
-		return ProductKindAppPreview, "app_preview"
+		return ProductKindAppPreview, "app"
 	}
 	if strings.TrimSpace(visualHTML) != "" {
 		return ProductKindVisual, "page.html"
@@ -348,7 +353,7 @@ func inferProductKind(visualHTML, structuredName, hinted string) (kind, name str
 }
 
 func reviewPreviewCopy(node *models.Node) (title, description string) {
-	if node != nil && nodereg.ClarifyInteractive(node.Type) {
+	if node != nil && node.Caps.Clarify() {
 		title = strings.TrimSpace(node.Label)
 		if title == "" {
 			if spec, ok := nodereg.Get(node.Type); ok {

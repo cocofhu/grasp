@@ -85,53 +85,20 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 	var usage *models.TokenUsage
 	var usageByModel models.TokenUsageByModel
 
-	if req.NodeType == "app_preview" {
-		ready := c.host.PreviewReadyChan(req.RunID, req.NodeID)
-		go func() {
-			select {
-			case <-ready:
-				cancel()
-				if acp != nil {
-					_ = acp.Cancel()
-				}
-				log.Info().Str("run", req.RunID).Str("node", req.NodeID).
-					Msg("app_preview early finish: healthy set_preview signaled")
-			case <-chatCtx.Done():
-			}
-		}()
-	}
-
 	chatRes, err = c.streamChat(chatCtx, acp, req, c.buildAgentPrompt(req, seeded), req.PromptImages)
 	if err != nil {
-
-		if req.NodeType == "app_preview" && c.host.HasHealthyPreviewPorts(req.RunID, req.NodeID) {
-			log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).
-				Msg("app_preview chat ended after healthy preview; continuing to park/review")
-			err = nil
-			if chatRes == nil {
-				chatRes = &sandbox.ChatResult{Narration: "预览已就绪(生产相提前结束)"}
-			}
-		} else {
-			if isRetryableSandboxErr(err) {
-				keepForDebug = false
-			}
-			absorbChat(&usage, &usageByModel, nil, chatRes)
-			events := c.snapshotEvents(ctx, sb, turnEvents)
-			return NodeResult{Events: events, Usage: usage, UsageByModel: usageByModel}, fmt.Errorf("agent chat: %w", err)
+		if isRetryableSandboxErr(err) {
+			keepForDebug = false
 		}
+		absorbChat(&usage, &usageByModel, nil, chatRes)
+		events := c.snapshotEvents(ctx, sb, turnEvents)
+		return NodeResult{Events: events, Usage: usage, UsageByModel: usageByModel}, fmt.Errorf("agent chat: %w", err)
 	}
 	absorbChat(&usage, &usageByModel, &turnEvents, chatRes)
 	out := map[string]any{"content": chatRes.Narration, "narration_summary": firstLine(chatRes.Narration)}
 
-	if req.NodeType == "implement" {
+	if req.Caps.TracksPlanProgress() {
 		if perr := c.ensurePlanComplete(ctx, req, acp, &turnEvents, &usage, &usageByModel); perr != nil {
-			events := c.snapshotEvents(ctx, sb, turnEvents)
-			return NodeResult{OutputMd: chatRes.Narration, Outputs: out, Events: events, Usage: usage, UsageByModel: usageByModel}, perr
-		}
-	}
-
-	if req.NodeType == "app_preview" {
-		if perr := c.ensurePreviewRegistered(ctx, req, acp, &turnEvents, &usage, &usageByModel); perr != nil {
 			events := c.snapshotEvents(ctx, sb, turnEvents)
 			return NodeResult{OutputMd: chatRes.Narration, Outputs: out, Events: events, Usage: usage, UsageByModel: usageByModel}, perr
 		}
@@ -144,47 +111,14 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 
 	events := c.snapshotEvents(ctx, sb, turnEvents)
 
-	if produces := str2(req.Config["produces"]); produces != "" {
-
-		if _, rerr := c.host.ReadArtifact(req.RunID, req.Token, produces); rerr != nil {
-			if err := c.harvest(ctx, sb, req, produces, out, &events); err != nil {
-
-				return NodeResult{OutputMd: chatRes.Narration, Outputs: out, Events: events, Usage: usage, UsageByModel: usageByModel}, err
-			}
-		}
-	}
-
-	if req.NodeType == "implement" {
+	if req.Caps.CommitsCode() {
 		c.ensurePushed(ctx, sb, req)
 	}
 
 	git := c.captureChanges(ctx, sb, req, out)
 
-	if b, _ := req.Config["detect_push"].(bool); b {
-		if p := c.detectPush(ctx, sb, req); p != nil {
-			if git == nil {
-				git = &GitInfo{}
-			}
-			git.Pushed = p.Pushed
-			git.PushedSHA = p.PushedSHA
-			if p.Branch != "" {
-				git.Branch = p.Branch
-				out["branch"] = p.Branch
-			}
-			if p.MrURL != "" {
-				git.MrURL = p.MrURL
-				out["mr_url"] = p.MrURL
-			}
-			out["pushed_sha"] = p.PushedSHA
-		}
-	}
-
-	if req.NodeType != "app_preview" || !c.host.HasHealthyPreviewPorts(req.RunID, req.NodeID) {
-		if _, oerr := c.ensureOutcome(ctx, req, acp, &events, &usage, &usageByModel); oerr != nil {
-			return NodeResult{OutputMd: chatRes.Narration, Outputs: out, Events: events, Git: git, Usage: usage, UsageByModel: usageByModel}, oerr
-		}
-	} else if c.host.HasHealthyPreviewPorts(req.RunID, req.NodeID) {
-		out["preview_ready"] = true
+	if _, oerr := c.ensureOutcome(ctx, req, acp, &events, &usage, &usageByModel); oerr != nil {
+		return NodeResult{OutputMd: chatRes.Narration, Outputs: out, Events: events, Git: git, Usage: usage, UsageByModel: usageByModel}, oerr
 	}
 
 	if req.KeepAliveForReview {
@@ -503,20 +437,11 @@ func mrBranches(req NodeReq) (source, target string) {
 	return source, target
 }
 
-// mrTargetDisplay renders the target branch for prompts; an empty target means
-// the repository default branch.
-func mrTargetDisplay(target string) string {
-	if target == "" {
-		return "仓库默认分支"
-	}
-	return target
-}
-
 // AbortRun tears down live react sessions and in-flight agent ACP connections
 // for a run. Called on cancel/fail so Cancel-during-agent unblocks RunAgent
 // (and react sandboxes are not left busy forever).
 //
-// When an app_preview node already has a healthy keepalive registration, the
+// When a preview-capable Agent node already has a healthy keepalive registration, the
 // sandbox is retired (ACP closed, container kept) instead of Destroy'd so the
 // setsid-detached preview survives Cancel of the production turn. Full Run /
 // gate / sandbox reclaim still Destroy via the normal lifecycle.

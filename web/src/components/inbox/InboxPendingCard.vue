@@ -41,8 +41,6 @@ const replying = computed(() => isReplyingInboxItem(props.item))
 const inProgress = computed(() => isInboxProgressItem(props.item))
 const iconName = computed(() => {
   if (props.item.type === 'gate') return 'gate'
-  if (props.item.kind === 'app_preview') return 'monitor'
-  if (props.item.kind === 'preflight') return 'ci'
   return 'chat'
 })
 const iconClass = computed(() => inboxIconToneClass(inboxBadgeTone(props.item)))

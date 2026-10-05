@@ -116,7 +116,7 @@
     },
     "search": {
       "placeholder": "Search workflows, runs…",
-      "pipelinePlaceholder": "Search pipelines…",
+      "workflowPlaceholder": "Search workflows…",
       "agentPlaceholder": "Search Agents…",
       "nodePlaceholder": "Search nodes",
       "optionPlaceholder": "Search…",
@@ -169,7 +169,7 @@
       "noWorkflows": "No workflows yet",
       "noRuns": "No runs yet",
       "noMatchingRuns": "No matching runs",
-      "noMatchingPipelines": "No matching pipelines",
+      "noMatchingWorkflows": "No matching workflows",
       "noMatchingAgents": "No matching Agents",
       "noArtifacts": "No artifacts",
       "noArtifactsInGroup": "No artifacts in this group",
@@ -179,9 +179,9 @@
       "noSandboxes": "No sandboxes yet. Node sandboxes are created when workflows run, or start a test sandbox under Agent Studio → Chat test.",
       "noAgents": "No agents yet. Click New agent, or the backend seeds a default on first start.",
       "noPendingGates": "Nothing pending",
-      "noPendingGatesForPipeline": "No pending items for this pipeline",
+      "noPendingGatesForWorkflow": "No pending items for this workflow",
       "noPendingGatesDesc": "Items appear here when a workflow reaches a human gate or clarify node",
-      "noPendingGatesPipelineDesc": "Try another pipeline or view all pipelines",
+      "noPendingGatesWorkflowDesc": "Try another workflow or view all workflows",
       "selectNode": "Select a node",
       "selectNodeDesc": "Click a node on the canvas to view output and logs"
     },
@@ -202,7 +202,7 @@
       "favoriteAdded": "Favorited \"{name}\" — pinned to the sidebar",
       "favoriteRemoved": "Removed \"{name}\" from favorites",
       "favoriteFull": "Limit of {max} reached — unfavorite another shortcut first",
-      "favoriteLaunchFailed": "Could not launch this pipeline; try again"
+      "favoriteLaunchFailed": "Could not launch this workflow; try again"
     },
     "action": "Action",
     "optional": "Optional",
@@ -260,10 +260,10 @@
         "desc": "Return to a checkpoint, restore variable snapshot, inject error context"
       }
     },
-    "pipelineFilter": {
-      "all": "All pipelines",
-      "noMatch": "No matching pipelines",
-      "loadFailed": "Failed to load pipelines"
+    "workflowFilter": {
+      "all": "All workflows",
+      "noMatch": "No matching workflows",
+      "loadFailed": "Failed to load workflows"
     },
     "projectFilter": {
       "all": "All projects",

@@ -13,7 +13,7 @@ func autoRetryGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "risky", Type: "agent", Config: map[string]any{"prompt": "x", "produces": "out.md"}},
+			{ID: "risky", Type: "agent", Caps: capsPlain, Config: map[string]any{"prompt": "x", "produces": "out.md"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -29,7 +29,7 @@ func researchContractGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "research", Type: "research", Label: "调研",
+			{ID: "research", Type: "agent", Caps: capsResearch, Label: "调研",
 				Config: map[string]any{"agent_profile": "r", "prompt": "调研"}},
 			{ID: "output", Type: "output"},
 		},
@@ -46,7 +46,7 @@ func reviewGateGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "review", Type: "review", Label: "评审",
+			{ID: "review", Type: "agent", Caps: capsCodeReview, Label: "评审",
 				Config: map[string]any{"agent_profile": "v", "prompt": "评审"}},
 			{ID: "output", Type: "output"},
 		},

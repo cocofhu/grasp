@@ -17,8 +17,8 @@ func TestRenameAgent_cascadesWorkflowAndReturnsCount(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "in", Type: "input", Label: "Start"},
-			{ID: "r", Type: "research", Label: "R", Config: map[string]any{"agent_profile": "research-agent"}},
-			{ID: "p", Type: "app_preview", Label: "P", Config: map[string]any{"agent_profile": "research-agent"}},
+			{ID: "r", Type: "agent", Caps: testReviewCaps, Label: "R", Config: map[string]any{"agent_profile": "research-agent"}},
+			{ID: "p", Type: "agent", Caps: testPreviewCaps, Label: "P", Config: map[string]any{"agent_profile": "research-agent"}},
 			{ID: "out", Type: "output", Label: "End"},
 		},
 		Edges: []models.Edge{

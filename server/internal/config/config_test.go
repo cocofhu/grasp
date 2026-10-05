@@ -26,9 +26,6 @@ func TestSetDefaults(t *testing.T) {
 	if c.Engine.ProfilesRoot != "data/profiles" {
 		t.Errorf("default profiles_root = %q", c.Engine.ProfilesRoot)
 	}
-	if c.Engine.PlatformRulesRoot != "data/platform-rules" {
-		t.Errorf("default platform_rules_root = %q", c.Engine.PlatformRulesRoot)
-	}
 	if c.Storage.Driver != "local" {
 		t.Errorf("default storage.driver = %q", c.Storage.Driver)
 	}

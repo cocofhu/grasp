@@ -3,7 +3,7 @@ title: 网关
 description: sandbox-gateway 契约摘要；完整说明见 GATEWAY.md。
 ---
 
-Grasp 通过 vendored 的 **sandbox-gateway** 控制平面调度通用沙箱镜像。Web UI 走 Grasp API；Agent / react 节点经 gateway 在容器中执行。
+Grasp 通过 vendored 的 **sandbox-gateway** 控制平面调度通用沙箱镜像。Web UI 走 Grasp API；Agent 节点经 gateway 在容器中执行。
 
 ## 直连与平台代理
 

@@ -154,7 +154,7 @@ func (b *fakeBridge) applyTurn(conn *websocket.Conn, act turnAction) bool {
 		_, _ = b.host.WriteArtifact(b.runID, b.token, b.nodeID, name, content, kindForName(name))
 	}
 	if act.outcome {
-		b.host.SetActiveNode(b.runID, b.nodeID, "approve")
+		b.host.SetActiveNode(b.runID, b.nodeID, testClarifyCaps)
 		_, _ = b.host.ServeRPC(b.runID, b.token, []byte(
 			`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"node_complete","arguments":{"status":"success","summary":"turn outcome"}}}`))
 	}

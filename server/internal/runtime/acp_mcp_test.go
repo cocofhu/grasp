@@ -96,7 +96,7 @@ func TestCursorLiveMCP(t *testing.T) {
 		RunID:    runID,
 		Token:    tok,
 		NodeID:   "mcp-node",
-		NodeType: "agent",
+		NodeType: "agent", Caps: testPlainCaps,
 		Config: map[string]any{
 			"agent_profile": "go-backend",
 			"prompt": "请直接调用 artifact-store MCP 的 write_artifact 工具,写入一个名为 result.json 的产物," +

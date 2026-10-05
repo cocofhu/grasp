@@ -2,7 +2,7 @@
   "pages": {
     "dashboard": {
       "title": "Start a pre-dev clarification in one sentence",
-      "subtitle": "Pick a Grasp pipeline; the first message becomes the Run title",
+      "subtitle": "Pick a Grasp workflow; the first message becomes the Run title",
       "placeholder": "Start your next iteration quickly",
       "placeholders": [
         "Start your next iteration quickly",
@@ -12,12 +12,12 @@
         "Attach a doc or screenshot to start clarifying"
       ],
       "selectProject": "Select a project",
-      "noProject": "No project selected. Pick a project to start a Grasp pipeline from Home.",
-      "noPipelines": "No pipelines are available on Home. In a project, turn on “Show on Home” for a published pipeline whose first node after start is Grasp.",
+      "noProject": "No project selected. Pick a project to start a Grasp workflow from Home.",
+      "noWorkflows": "No workflows are available on Home. In a project, turn on “Show on Home” for a published workflow whose first node after start is Grasp.",
       "goCanvas": "Open the canvas and connect Grasp after start",
-      "goProjects": "Browse projects for pipelines",
-      "pickPipeline": "Select a pipeline first",
-      "noPipelineShort": "No pipeline",
+      "goProjects": "Browse projects for workflows",
+      "pickWorkflow": "Select a workflow first",
+      "noWorkflowShort": "No workflow",
       "needText": "Describe the goal or attach a file first",
       "send": "Send",
       "sendShortcut": "Ctrl/⌘ + Enter to send",
@@ -26,7 +26,7 @@
       "scrollLeft": "Short press scrolls one card left; hold to reach the left end",
       "scrollRight": "Short press scrolls one card right; hold to reach the right end",
       "draftRestored": "Draft restored",
-      "pipelineMenu": {
+      "workflowMenu": {
         "more": "More actions",
         "hide": "Hide",
         "edit": "Edit"
@@ -386,57 +386,34 @@
       "close": "Close",
       "cta": "Finish install setup",
       "emptyTitle": "Finish first-time setup",
-      "emptyDesc": "Configure ACP backend, token, and Git; create the default team and Default Workflow. Does not start a Run.",
-      "emptyDescCreate": "Configure ACP backend, token, and Git; create this project's team and Default Workflow (agent names derived from the project name). Does not start a Run.",
+      "emptyDesc": "Configure the model backend, API key and Git, create the Clarify / Implement / Test & review Agents, and publish the Default Workflow. Does not start a run.",
+      "emptyDescCreate": "Configure the model backend, API key and Git, create this project's three Agents (prefixed with the project name), and publish the Default Workflow. Does not start a run.",
       "workflowName": "Default Workflow",
       "head": {
-        "projectName": "Enter a project name",
-        "language": "Choose display language and theme",
-        "overview": "What will be written",
-        "acp": "Choose how to start",
-        "apiKey": "Enter API Key",
-        "git": "Repository, Git identity, and preview (credentials optional)",
-        "review": "Confirm and generate",
-        "success": "Install complete"
+        "connect": "Language, model backend, API key and Git",
+        "team": "Confirm the Agents to create",
+        "workflow": "Preview the default workflow to publish",
+        "done": "Done",
+        "success": "Setup complete"
       },
       "steps": {
-        "projectName": "Project name",
-        "language": "Language & theme",
-        "overview": "Overview",
-        "acp": "Backend",
-        "apiKey": "API Key",
-        "git": "Git",
-        "review": "Review"
+        "connect": "Connect",
+        "team": "Team",
+        "workflow": "Workflow preview",
+        "done": "Done"
       },
       "projectName": {
-        "meta": "The project name is used to derive Agent and team naming prefixes.",
+        "meta": "The project name prefixes the Agent names.",
         "label": "Project name",
         "placeholder": "e.g. Payments platform",
         "required": "Please enter a project name",
         "invalid": "That name cannot produce a valid Agent naming prefix — try another"
       },
       "language": {
-        "meta": "Choose the display language for setup and the control plane. It defaults to your system language.",
         "detected": "You can switch languages later from the bottom-left corner.",
         "themeLabel": "Interface theme",
         "themeDark": "Dark",
-        "themeDarkHint": "Default; easier on long sessions",
-        "themeLight": "Light",
-        "themeLightHint": "Better for bright rooms and screen sharing",
-        "themeHint": "Applies immediately; you can switch it later from the bottom-left corner."
-      },
-      "overview": {
-        "meta": "Credentials go into this project's shared Agent config and are inherited by team Agents. Imported team packs and workflows do not carry secrets.",
-        "itemBackend": "ACP backend (and region)",
-        "itemToken": "API token for that backend",
-        "itemGit": "Target repository, Git commit identity, plus a token or SSH (repo and credentials optional)",
-        "itemPreview": "Page preview and browser tools on by default so the sandbox can show a page and let the agent use a browser",
-        "agents": "Agents",
-        "agentsList": "Default team: product / implement / test / review / preview / lead",
-        "agentsListDerived": "This project's team: product / implement / test / review / preview / lead (names derived from the project name)",
-        "workflow": "Workflow",
-        "workflowHint": "Set the repo now, or when starting a Run",
-        "banner": "Keep secrets in shared config only — never in Agent workspaces."
+        "themeLight": "Light"
       },
       "acp": {
         "meta": "Pick how to start: a model-vendor API key, or a coding-CLI vendor account. Either way the key is stored in this project's shared Agent config.",
@@ -461,8 +438,19 @@
         "hint": "Stored only in project shared config — not in logs or artifacts."
       },
       "git": {
-        "meta": "Set the repository, Git commit identity, and sandbox preview. Credentials can be skipped and filled in later.",
-        "foot": "Credentials are stored in shared config, not in the team export pack."
+        "meta": "git commit in the sandbox needs a commit identity; the repository and access credentials can be filled in now or skipped.",
+        "repoCredSection": "Repository and access credentials",
+        "skip": "Skip",
+        "unskip": "Configure now",
+        "skippedHint": "Skipped: fill the repository when starting a run, and add private-repo credentials later under Project credentials.",
+        "foot": "Credentials are stored in Project credentials, not in Agent export packs."
+      },
+      "connect": {
+        "meta": "Everything needed to connect, on one page. Keys go to this project's shared Agent config and are used by all Agents; the repository and credentials can be skipped.",
+        "sectionLanguage": "Interface",
+        "sectionBackend": "Model backend",
+        "sectionKey": "API key",
+        "sectionGit": "Git"
       },
       "gitUser": {
         "section": "Git commit identity",
@@ -494,32 +482,96 @@
         "cloneTo": "Clones to /root/workspace/{dir}/ and fills the Default Workflow repos variable.",
         "chip": "Repo"
       },
-      "review": {
-        "meta": "Confirm below. Existing same-named resources are reused/updated (idempotent).",
-        "needKey": "API Key is missing — go back and fill it in.",
-        "featureHint": "Installs the default team and Default Workflow. Fill the repo when you start a Run.",
-        "featureHintDerived": "Installs this project's team and Default Workflow (agent names derived from the project name). Fill the repo when you start a Run.",
-        "agentsChip": "Agents · 6",
+      "team": {
+        "meta": "Three Agents are created by default and form the Clarify → Implement → Test & review workflow. Rename them or pick a model; Test & review is optional.",
+        "loading": "Loading template capabilities…",
+        "loadError": "Could not load template capabilities. You can still create the default team.",
+        "retry": "Retry",
+        "required": "Required",
+        "optional": "Optional",
+        "interactionClarify": "Multi-turn clarification",
+        "interactionAuto": "Runs automatically",
+        "review": "Human review after run",
+        "preview": "Can start an app preview",
+        "noPreview": "No preview",
+        "tools": "Tools",
+        "writes": "Writes",
+        "writeRequired": "Required product",
+        "writeOptional": "Optional product",
+        "nameLabel": "Name",
+        "namePlaceholder": "Agent name",
+        "modelLabel": "Model",
+        "modelPlaceholder": "Empty = project default",
+        "modelInherit": "Empty = {model}",
+        "foot": "Clarify and Implement are the backbone of the workflow and cannot be removed. Names are prefixed with the project name and can be changed later on the Agents page.",
+        "toastFixNames": "Fix the Agent names first",
+        "nameIssues": {
+          "required": "Enter a name",
+          "invalid": "No spaces, slashes or punctuation",
+          "duplicate": "Duplicates another Agent's name"
+        },
+        "templates": {
+          "clarify": {
+            "title": "Clarify",
+            "desc": "Clarifies the requirement with you over several turns and writes the plan; for bugs it finds the root cause. Can start an app demo."
+          },
+          "implement": {
+            "title": "Implement",
+            "desc": "Implements the plan, tests locally, commits, pushes and opens an MR; can start the app for your review."
+          },
+          "test_review": {
+            "title": "Test & review",
+            "desc": "Runs the tests and reviews the code; passes only when both pass, otherwise sends the work back to Implement."
+          }
+        },
+        "toolNames": {
+          "ask_question": "Ask questions",
+          "ask_form": "Ask via form",
+          "set_artifact_preview": "Artifact preview",
+          "set_preview": "App preview",
+          "update_plan_status": "Plan progress"
+        },
+        "schemaNames": {
+          "clarified_requirement": "Requirement spec",
+          "plan": "Plan",
+          "research": "Research",
+          "root_cause": "Root cause",
+          "proposals": "Proposals",
+          "page": "Page",
+          "implementation_result": "Implementation result",
+          "test_result": "Test result",
+          "review": "Review verdict"
+        }
+      },
+      "workflow": {
+        "meta": "Generating publishes this Default Workflow; you can keep editing it in the editor afterwards.",
+        "input": "Start",
+        "output": "End",
+        "pass": "pass",
+        "fail": "fail",
+        "failLoop": "When Test & review fails, the work goes back to Implement (up to 3 times).",
+        "noReview": "Test & review is not selected: the workflow ends after Implement.",
+        "summary": "Will write",
+        "keyOn": "Set",
+        "repoSkip": "Filled at run start",
+        "gitSkip": "Skipped",
+        "agentsChip": "Agents · {n}",
         "wfChip": "Workflow · Default Workflow",
-        "keyOn": "set",
-        "keyOff": "missing",
-        "gitSkip": "skipped",
-        "repoSkip": "at run start",
-        "gitUserOff": "missing",
-        "flagOn": "on",
-        "flagOff": "off"
+        "reuseHint": "Resources with the same name are reused and updated, never duplicated. Nothing runs automatically."
       },
       "success": {
         "title": "Setup ready",
-        "desc": "Project credentials saved; default team and published Default Workflow are ready.",
-        "descDerived": "Project credentials saved; this project's team and published Default Workflow are ready.",
+        "desc": "Project credentials are saved, the Agents below were created, and the Default Workflow is published.",
+        "runOnce": "Run once",
+        "runOnceHint": "Enter a requirement and repository and run the default workflow now.",
+        "editWorkflow": "Edit workflow",
+        "editWorkflowHint": "Adjust nodes, prompts and branches on the canvas.",
         "limit": "Default Workflow has an empty repo URL — fill it when starting a Run. For private repos, confirm Git credentials in Project credentials first; env/shared config remain compatibility fallbacks.",
         "repoOk": "Saved to the Default Workflow repos variable, cloning to /root/workspace/{dir}/. You can still change it at run start.",
         "publishedLine": "Default Workflow (published)",
         "gitOk": "Git credentials were saved to Project credentials (values are masked).",
         "gitSkip": "Git was skipped. For private repos, add a token or SSH under Project → shared Agent config.",
         "gitUserOk": "Saved commit identity: {name} <{email}>.",
-        "gitUserSkip": "Git identity was not set. The sandbox will use sandbox / sandbox{'@'}localhost.",
         "preview": "Wrote {vnc} and {mcp} to shared config."
       },
       "toastOk": "Generated — Run not started automatically",
@@ -552,7 +604,7 @@
         "scratch": "From scratch",
         "scratchDesc": "Start with an empty canvas and add nodes",
         "baseline": "Default baseline workflow",
-        "baselineDesc": "Use the built-in pipeline and add repositories",
+        "baselineDesc": "Use the built-in workflow and add repositories",
         "modalTitle": "Create from default baseline",
         "modalHint": "Uses the same repository list as Run launch. Add one or more repositories; each is cloned into the workspace.",
         "nameLabel": "Workflow name (required)",
@@ -562,7 +614,7 @@
         "created": "Created workflow \"{name}\""
       },
       "tabBoard": "Board",
-      "tabWorkflows": "Pipelines",
+      "tabWorkflows": "Workflows",
       "tabRequirementDrafts": "Requirement drafts",
       "tabNotify": "Notify",
       "tabPmLeader": "Project Management",
@@ -782,7 +834,7 @@
         "actorSystem": "System",
         "actionProjectConfig": "Config",
         "actionWorkflow": "Workflow",
-        "actionRun": "Pipeline",
+        "actionRun": "Workflow",
         "actionGate": "Gate",
         "actionMcp": "MCP call",
         "actionExport": "Export"
@@ -1169,10 +1221,22 @@
           "apiKeys": "API key slots"
         },
         "groups": {
-          "ai": { "title": "Model API keys", "hint": "Model-vendor credentials used by ACP backends and OpenCode." },
-          "git": { "title": "Code hosting", "hint": "Tokens and endpoints used to clone, push, and open merge requests." },
-          "ssh": { "title": "Git SSH", "hint": "Private key and known_hosts for SSH repositories." },
-          "other": { "title": "Other credentials", "hint": "Custom service or MCP credentials scoped to this project." }
+          "ai": {
+            "title": "Model API keys",
+            "hint": "Model-vendor credentials used by ACP backends and OpenCode."
+          },
+          "git": {
+            "title": "Code hosting",
+            "hint": "Tokens and endpoints used to clone, push, and open merge requests."
+          },
+          "ssh": {
+            "title": "Git SSH",
+            "hint": "Private key and known_hosts for SSH repositories."
+          },
+          "other": {
+            "title": "Other credentials",
+            "hint": "Custom service or MCP credentials scoped to this project."
+          }
         },
         "typeAi": "AI / API key",
         "typeGit": "Git",
@@ -1210,12 +1274,12 @@
       "addRow": "Add row",
       "saved": "Saved",
       "deleteTitle": "Delete project · {name}",
-      "deleteWarning": "Only empty projects (no pipelines) can be deleted. This cannot be undone.",
+      "deleteWarning": "Only empty projects (no workflows) can be deleted. This cannot be undone.",
       "deleted": "Project deleted"
     },
     "workflowList": {
       "title": "Workflows",
-      "subtitle": "Visual dev pipelines · GitLab/repo optional (empty = artifact-only flow)",
+      "subtitle": "Visual dev workflows · GitLab/repo optional (empty = artifact-only flow)",
       "deleteTitle": "Delete workflow · {name}",
       "deleteWarning": "This cannot be undone: deletes all versions, runs, artifacts, and gates for this workflow.",
       "deleteConfirm": "Delete workflow {name}?",
@@ -1227,7 +1291,7 @@
       "unnamedWorkflow": "Untitled workflow",
       "descLabel": "Description (optional)",
       "descPlaceholder": "List subtitle / brief description",
-      "projectRequired": "Pick a project before creating a pipeline",
+      "projectRequired": "Pick a project before creating a workflow",
       "loadFailed": "Failed to load workflow; backend may be offline",
       "loading": "Loading workflow…",
       "mobile": {
@@ -1242,14 +1306,19 @@
       "rollbackFailed": "Rollback failed; try again",
       "runDraftHint": " · saves draft before start",
       "singleInputOnly": "A workflow may have only one input node",
-      "duplicateSuccessEdge": "This node already has an unconditional success edge; the pipeline takes only one path. To split, add a condition on the edge or use a branch node.",
+      "duplicateSuccessEdge": "This node already has an unconditional success edge; the workflow takes only one path. To split, add a condition on the edge or use a branch node.",
       "graphErrors": {
         "missingInput": "Missing input node: exactly one input is required as the start",
         "tooManyInputs": "Too many input nodes: only one input is allowed",
         "missingOutput": "Missing output node: at least one output is required as the end",
         "inputHasIncoming": "Input node cannot have incoming edges",
         "outputHasOutgoing": "Output node cannot have outgoing edges",
-        "duplicateSuccessFanOut": "Node \"{label}\" has multiple unconditional success edges; only one will ever run. Add when guards, use a branch node, or remove extra edges."
+        "duplicateSuccessFanOut": "Node \"{label}\" has several unconditional edges on the same outlet: the workflow only ever takes one of them (it does not fork). Add conditions to the edges or delete the extras",
+        "unknownNodeType": "Unknown node type {type}",
+        "agentMissingProfile": "Node \"{label}\" has no Agent selected",
+        "agentNotFound": "Agent {name} of node \"{label}\" does not exist",
+        "agentNoCapabilities": "Agent {name} has no capabilities declared",
+        "agentInvalidCapabilities": "Agent {name} has invalid capabilities: {reason}"
       },
       "nodeChips": {
         "agent": "Agent {name}",
@@ -1443,7 +1512,7 @@
     },
     "runList": {
       "title": "Run history",
-      "subtitle": "Filter by project, pipeline, and status",
+      "subtitle": "Filter by project, workflow, and status",
       "tagsLabel": "Tags",
       "queued": "queued",
       "cancelConfirm": "Only this run is stopped; the list row status will refresh after success.",
@@ -1852,40 +1921,6 @@
         "note": "total = test + running workflows · excludes TTL keep-alive sandboxes"
       }
     },
-    "platformRules": {
-      "title": "Platform rules (global defaults)",
-      "subtitle": "10 rule files · admin write only · stored in data/platform-rules/",
-      "backToSettings": "Back to settings",
-      "backToList": "Back to list",
-      "emptyList": "No platform rule files",
-      "emptySummary": "No summary",
-      "mtimeLabel": "Updated",
-      "summaryTitle": "Read-only summary",
-      "mobileStepChip": "Single-column step",
-      "mobileReadonlyHint": "Desktop uses two panes (list / editor); the explanation now opens from the header Help button. Narrow screens are browse-only with no edit or save.",
-      "helpButton": "Help",
-      "helpTitle": "About platform rules",
-      "readOnlyHint": "Read-only (non-admin)",
-      "resetEmbed": "Restore embedded default",
-      "loadFailed": "Failed to load platform rules",
-      "saveFailed": "Save failed",
-      "resetFailed": "Restore failed",
-      "fileListTitle": "Rule files",
-      "fileListDesc": "All 10 .md files under skills_embed/rules",
-      "sourceGlobal": "Global default",
-      "sourceEmbed": "Embedded fallback",
-      "priorityTitle": "Runtime load priority",
-      "priorityAgent": "Agent override",
-      "priorityGlobal": "Global default",
-      "priorityEmbed": "Embedded fallback",
-      "injectTitle": "BuildCursorHome injection order",
-      "injectAgentDir": "Agent working directory",
-      "injectPlatformRules": "Platform rules (base + node-specific)",
-      "constraintsTitle": "Constraints",
-      "constraintNodereg": "Node→rule mapping still defined in nodereg code",
-      "constraintWholeFile": "Agent override replaces the whole file",
-      "constraintScope": "Does not include skills/, mcp.json, or other embed assets"
-    },
     "sandboxes": {
       "title": "Sandboxes",
       "errorPrefix": "Error:",
@@ -2026,32 +2061,10 @@
         "files": "Workspace ({n})",
         "mcp": "MCP ({n})",
         "env": "Env vars ({n})",
-        "prompts": "Prompts",
-        "promptsCount": "Prompts ({n})",
         "test": "Chat test",
         "meta": "Metadata",
-        "platformRules": "Platform rules",
-        "data": "Data"
-      },
-      "platformRules": {
-        "title": "Platform rule overrides",
-        "subtitle": "profiles/{agent}/platform-rules/ · delete override to fall back to global",
-        "inherited": "Inherited",
-        "overridden": "Overridden",
-        "inheritPath": "Inherits data/platform-rules/{file}",
-        "createOverride": "Create override",
-        "deleteOverride": "Delete override",
-        "loadFailed": "Load failed",
-        "saveFailed": "Save failed",
-        "deleteFailed": "Delete override failed",
-        "overrideCreated": "Override created",
-        "saved": "Override saved",
-        "overrideDeleted": "Override deleted; fell back to global default",
-        "statusTitle": "Override status",
-        "overriddenCount": "Overridden {n}",
-        "inheritedCount": "Inherited {n}",
-        "diffHint": "Differs from global default",
-        "promptsNote": "Platform rules and AgentPrompts runtime prompts coexist independently."
+        "data": "Data",
+        "capabilities": "Capabilities"
       },
       "agentList": {
         "title": "Agents",
@@ -2373,12 +2386,6 @@
           "gitea": "Gitea / self-hosted"
         }
       },
-      "prompts": {
-        "title": "Platform prompt overrides",
-        "intro": "Injected at runtime for this agent only. Empty = built-in default. {name} is replaced with declared artifact filename.",
-        "defaultPrefix": "Default:",
-        "rulesNote": "Manage rules/*.md under Workspace; injected with the workspace into sandbox."
-      },
       "meta": {
         "layoutTitle": "Sandbox layout (WSP/1)",
         "layoutIntro": "Persisted per agent; applied when creating sandboxes. Switching ACP backend fills recommended configRoot; manual overrides are respected.",
@@ -2497,28 +2504,6 @@
         "jsonArray": "Expected an array",
         "jsonObject": "Expected an object"
       },
-      "promptFields": {
-        "upstreamHeader": {
-          "label": "Upstream artifacts header",
-          "hint": "Prepended before artifact file list when upstream artifacts exist.",
-          "placeholder": "\n\n## Upstream artifacts (read-only)\nFiles from upstream nodes are in `.grasp/artifacts/`:\n"
-        },
-        "producesContract": {
-          "label": "Produces contract (agent node)",
-          "hint": "Appended when produces is set. {name} = artifact filename.",
-          "placeholder": "\n## Produces contract (required)\nWrite `{name}` under /root/workspace before finishing; missing file fails the node.\n"
-        },
-        "reactOpening": {
-          "label": "ReAct opening suffix",
-          "hint": "Appended to prompt when clarify node opens.",
-          "placeholder": "\n\nMulti-turn clarify: ask key questions first, wait for replies; do not jump to final conclusions."
-        },
-        "reactMissingArtifact": {
-          "label": "ReAct missing-artifact nudge",
-          "hint": "When clarify ends without declared artifact. {name} = filename.",
-          "placeholder": "Clarify is done but artifact `{name}` is missing. Write it via write_artifact now; no more questions."
-        }
-      },
       "exportImport": {
         "export": "Export",
         "import": "Import",
@@ -2611,11 +2596,11 @@
           "projectName": "Project / team name",
           "prefix": "Name prefix",
           "rootGroup": "Root group name",
-          "pipelineGroup": "Pipeline subgroup",
-          "pipelineHint": "Engineers join this subgroup by default",
+          "workflowGroup": "Workflow subgroup",
+          "workflowGroupHint": "Engineers join this subgroup by default",
           "pmName": "PM Agent name",
           "background": "Project background",
-          "backgroundPlaceholder": "Goals, stack, repos, pipeline needs… Used as the sandbox team-build prompt.",
+          "backgroundPlaceholder": "Goals, stack, repos, workflow needs… Used as the sandbox team-build prompt.",
           "backgroundHint": "Like a prompt: injected into the sandbox to generate groups and engineers."
         },
         "acp": {
@@ -2641,13 +2626,13 @@
           "meta": "Creates the project and PM, starts a sandbox, and provisions 9 engineers from the reference roster.",
           "project": "Project",
           "root": "Root group",
-          "pipeline": "Subgroup",
+          "workflowGroup": "Subgroup",
           "set": "Set",
           "skip": "Skipped (add later)",
           "none": "None",
           "roster": "Roster: 1 PM + 9 engineers · 10 total",
           "background": "Project background (team prompt)",
-          "noArtifactWarn": "Pipeline roles usually need artifact-store; it is missing from the MCP list."
+          "noArtifactWarn": "Workflow roles usually need artifact-store; it is missing from the MCP list."
         },
         "errors": {
           "projectRequired": "Project / team name is required",
@@ -2698,7 +2683,6 @@
           "rules": "Rules",
           "skills": "Skills",
           "commands": "Commands",
-          "prompts": "Prompts",
           "review": "Confirm"
         },
         "basics": {
@@ -2813,9 +2797,6 @@
           "namePlaceholder": "command name (letters, digits, _, -)",
           "add": "Add Command"
         },
-        "prompts": {
-          "meta": "Override platform prompt fields. Skipping keeps platform defaults (no empty overwrite)."
-        },
         "review": {
           "meta": "Review the summary, then create once. Cancel/close does not persist. Configure MCP / Rules and other capabilities later in Studio.",
           "name": "Name",
@@ -2832,9 +2813,7 @@
           "rulesDefault": "Rules · default will be written",
           "rulesCustom": "Rules · customized",
           "skills": "Skills",
-          "commands": "Commands",
-          "promptsDefault": "Prompts · platform defaults",
-          "promptsCustom": "Prompts · customized"
+          "commands": "Commands"
         }
       },
       "project": {
@@ -2907,6 +2886,32 @@
           "deliverOff": "Channel delivery disabled",
           "deleted": "Job deleted"
         }
+      },
+      "capabilities": {
+        "subtitle": "What this Agent may do and must deliver in workflow nodes; every node using it shares these capabilities",
+        "undeclaredTitle": "No capabilities declared",
+        "undeclaredDesc": "Workflow nodes cannot use an Agent without capabilities; runs fail with \"Agent has no capabilities\".",
+        "declare": "Declare capabilities",
+        "invalid": "Invalid capabilities: {reason}",
+        "interactionTitle": "Interaction",
+        "interactionDesc": {
+          "auto": "Runs once on its own without asking the human",
+          "clarify": "Multi-turn dialogue with the human; ends when the human confirms"
+        },
+        "reviewDesc": "After the run, park for human review; the session stays online to revise from annotations",
+        "reviewDisabledClarify": "Clarify ends when the human confirms; review cannot be enabled",
+        "toolsTitle": "Tools",
+        "toolsDesc": "set_* product tools come from Writes; only the extra grantable platform tools are listed here.",
+        "readsTitle": "Reads",
+        "readsDesc": "Which products the Agent sees through list_artifacts / read_artifact.",
+        "readsOther": "Other artifact names",
+        "readsOtherPlaceholder": "Comma separated, e.g. design.md",
+        "writesTitle": "Writes",
+        "writesDesc": "Each checked product grants its set_* tool; a required product not written by the node fails it.",
+        "verdictBadge": "Verdict",
+        "verdictHint": "Writing a verdict product gives the node Pass / Fail outlets",
+        "maxRoundsTitle": "Max nudge rounds",
+        "maxRoundsDesc": "How many extra rounds to nudge while plan items remain open; empty = default 3"
       }
     },
     "runLaunch": {
@@ -3090,12 +3095,9 @@
       "connectingStagePullingTitle": "Pulling the image",
       "connectingStageHint": "Artifacts will appear here when the session is ready",
       "addImage": "Add attachment",
-      "inputPlaceholder": "Add details…",
-      "approveInputPlaceholder": "Describe the goal first…",
-      "approveEmptyHint": "State the goal first. The agent will use tools to align requirements and only ask when a real decision is needed.",
+      "clarifyInputPlaceholder": "Describe the goal first…",
+      "clarifyEmptyHint": "State the goal first. The agent will use tools to align requirements and only ask when a real decision is needed.",
       "reviewInputPlaceholder": "Add annotations or change notes…",
-      "finishEarly": "End interaction",
-      "finishEarlyTitle": "Enough info — ask agent to wrap up now",
       "confirmFlow": "Confirm & continue",
       "confirmFlowTitle": "Accept the current persisted product and continue (no Agent)",
       "confirmFlowHint": "Accept the current persisted product and continue (no Agent)",
@@ -3149,7 +3151,7 @@
       "removeChip": "Remove reference"
     },
     "reactArtifactStage": {
-      "pipelineTab": "Pipeline artifacts",
+      "workflowTab": "Workflow artifacts",
       "closeTab": "Close",
       "novncTab": "noVNC",
       "novncCardTitle": "Remote desktop",

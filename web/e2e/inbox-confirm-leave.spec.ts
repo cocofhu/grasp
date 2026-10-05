@@ -5,6 +5,7 @@
  */
 import { expect, test, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
+import { CLARIFY_CAPS } from '../src/test/capsFixtures'
 
 const SHOT = '/tmp/inbox-confirm-leave-shots'
 mkdirSync(SHOT, { recursive: true })
@@ -27,7 +28,7 @@ type State = {
 function approveItem(): InboxItem {
   return {
     type: 'clarify',
-    kind: 'approve',
+    kind: 'clarify',
     runId: 'run-approve',
     nodeId: 'approve_7gl6',
     iteration: 1,
@@ -45,7 +46,7 @@ function approveItem(): InboxItem {
 function approveItemNeighbor(): InboxItem {
   return {
     type: 'clarify',
-    kind: 'approve',
+    kind: 'clarify',
     runId: 'run-approve-b',
     nodeId: 'approve_7gl7',
     iteration: 1,
@@ -126,7 +127,8 @@ async function mockApis(page: Page, state: State) {
             nodes: [
               {
                 id: nid,
-                type: 'approve',
+                type: 'agent',
+                caps: CLARIFY_CAPS,
                 label: 'Approve',
                 position: { x: 0, y: 0 },
                 config: {},

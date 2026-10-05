@@ -28,8 +28,9 @@ func seedDirectPreview(t *testing.T, hn *harness, runID, nodeID string) {
 	if err := hn.db.Where("id = ?", runID).First(&run).Error; err != nil {
 		t.Fatal(err)
 	}
-	if n := run.Graph.FindNode(nodeID); n != nil {
-		n.Config = map[string]any{"direct_preview": true}
+	if n := run.Graph.FindNode(nodeID); n != nil && !n.Caps.CanPreview() {
+		n.Type = "agent"
+		n.Caps = testPreviewCaps
 	}
 	if err := hn.db.Save(&run).Error; err != nil {
 		t.Fatal(err)

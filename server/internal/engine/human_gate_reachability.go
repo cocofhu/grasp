@@ -9,9 +9,7 @@ import (
 // hasRemainingHumanGate reports whether a node with Type=="human_gate" is
 // reachable forward from fromNodeID (inclusive) on the given graph snapshot.
 //
-// Reachability neighbors are OutEdges targets plus config goto targets
-// (branch.cases[].goto, human_gate.actions[].goto, structured exits.*.goto).
-// Only human_gate counts — proposal_select, ReAct review waits, and platform
+// Reachability follows OutEdges targets. Only human_gate counts — proposal_select, ReAct review waits, and platform
 // auto gates do not. Missing/empty graph, missing from node, or unresolvable
 // structure returns false (conservative: avoid falsely prioritizing).
 // Cycles terminate via a visited set.
@@ -35,7 +33,8 @@ func hasRemainingHumanGate(graph *models.Graph, fromNodeID string) bool {
 		if node == nil {
 			continue
 		}
-		for _, next := range remainingPathNeighbors(graph, node) {
+		for _, ed := range graph.OutEdges(node.ID) {
+			next := ed.Target
 			if visited[next] {
 				continue
 			}
@@ -48,74 +47,6 @@ func hasRemainingHumanGate(graph *models.Graph, fromNodeID string) bool {
 		}
 	}
 	return false
-}
-
-// remainingPathNeighbors returns forward destinations from node: OutEdges
-// targets union config goto targets, de-duplicated while preserving discovery
-// order (edges first, then config gotos).
-func remainingPathNeighbors(graph *models.Graph, node *models.Node) []string {
-	if graph == nil || node == nil {
-		return nil
-	}
-	seen := map[string]bool{}
-	var out []string
-	add := func(id string) {
-		id = strings.TrimSpace(id)
-		if id == "" || seen[id] {
-			return
-		}
-		seen[id] = true
-		out = append(out, id)
-	}
-	for _, ed := range graph.OutEdges(node.ID) {
-		add(ed.Target)
-	}
-	for _, g := range configGotoTargets(node) {
-		add(g)
-	}
-	return out
-}
-
-// configGotoTargets extracts static goto destinations from node config that
-// runtime routing may take without a corresponding OutEdge.
-func configGotoTargets(node *models.Node) []string {
-	if node == nil || node.Config == nil {
-		return nil
-	}
-	var out []string
-	appendGoto := func(v any) {
-		if g := strings.TrimSpace(str(v)); g != "" {
-			out = append(out, g)
-		}
-	}
-	if cases, ok := node.Config["cases"].([]any); ok {
-		for _, ci := range cases {
-			m, ok := ci.(map[string]any)
-			if !ok {
-				continue
-			}
-			appendGoto(m["goto"])
-		}
-	}
-	if actions, ok := node.Config["actions"].([]any); ok {
-		for _, ai := range actions {
-			m, ok := ai.(map[string]any)
-			if !ok {
-				continue
-			}
-			appendGoto(m["goto"])
-		}
-	}
-	if exits, ok := node.Config["exits"].(map[string]any); ok {
-		for _, side := range exits {
-			m, ok := side.(map[string]any)
-			if !ok {
-				continue
-			}
-			appendGoto(m["goto"])
-		}
-	}
-	return out
 }
 
 // continueFromNodeID resolves the admission continue point for a queued run:

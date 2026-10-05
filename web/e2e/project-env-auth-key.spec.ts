@@ -22,7 +22,6 @@ const MOCK_SHARED_AGENT = {
     API_URL: 'https://example.com',
   },
   layout: { configRoot: '/root/.cursor', workspaceDir: '/root/workspace' },
-  prompts: {},
 }
 
 const MOCK_WORKFLOWS: unknown[] = []

@@ -2,64 +2,23 @@ package engine
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-// whenLooksLikeFailAction reports whether an edge when-guard is a fail/reject
-// action match (used to keep app_preview firstSuccess fallback off fail edges).
-func whenLooksLikeFailAction(when string) bool {
-	when = strings.TrimSpace(when)
-	if when == "" {
-		return false
-	}
-	for _, id := range []string{"fail", "reject", "revise"} {
-		if strings.Contains(when, "action") && (strings.Contains(when, "'"+id+"'") || strings.Contains(when, `"`+id+`"`)) {
-			return true
-		}
-	}
-	return false
-}
-
-// routeSuccess selects the next state after a node succeeds.
+// routeSuccess selects the next state after a node succeeds: the first edge
+// leaving through the outcome's handle whose when-guard passes.
 func (e *Engine) routeSuccess(c *execCtx, node *models.Node, outcome nodeOutcome) string {
 	if e.IsHalted() {
 		e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "exit", Detail: "shutdown: scheduler halted"})
 		e.finish(c.run.ID, "cancelled")
 		return ""
 	}
-
-	if node.Type == "branch" {
-		if outcome.goto_ != "" {
-			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "transition", To: outcome.goto_, Kind: models.EdgeSuccess})
-			return outcome.goto_
-		}
-		return ""
-	}
-
-	if outcome.goto_ != "" {
-		e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "transition", To: outcome.goto_, Kind: models.EdgeSuccess})
-		return outcome.goto_
-	}
-
-	extra := map[string]any{}
-	if a, ok := outcome.outputs["action"]; ok {
-		extra["action"] = a
-	}
-	ec := e.evalContext(c, extra)
-	edges := c.graph.OutEdges(node.ID)
-	var firstSuccess *models.Edge
-	for i := range edges {
-		ed := edges[i]
-		if ed.KindOrDefault() == models.EdgeSuccess && firstSuccess == nil {
-
-			if node.Type == "app_preview" && whenLooksLikeFailAction(ed.When) {
-
-			} else {
-				firstSuccess = &edges[i]
-			}
+	ec := e.evalContext(c, outcomeAction(outcome))
+	for _, ed := range c.graph.OutEdges(node.ID) {
+		if ed.SourceHandle != outcome.handle || ed.KindOrDefault() == models.EdgeFailure {
+			continue
 		}
 		if !guardPasses(ed.When, ec) {
 			continue
@@ -73,52 +32,51 @@ func (e *Engine) routeSuccess(c *execCtx, node *models.Node, outcome nodeOutcome
 		e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "transition", To: ed.Target, Kind: ed.KindOrDefault()})
 		return ed.Target
 	}
-
-	if firstSuccess != nil {
-		e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "transition", To: firstSuccess.Target, Kind: models.EdgeSuccess})
-		return firstSuccess.Target
-	}
 	return ""
 }
 
-// routeFailure selects the next state after a node fails. When the outcome
-// carries a structured-gate goto or action, goto is preferred, then when-guarded
-// success edges from the bottom outlet; otherwise legacy rollback/failure edges.
+// routeFailure selects the next state after a node fails. An outcome leaving
+// through a named handle (a failing verdict) follows that handle's edges;
+// otherwise plain-outlet rollback edges, then failure edges, apply.
 func (e *Engine) routeFailure(c *execCtx, node *models.Node, outcome nodeOutcome) string {
-	if outcome.goto_ != "" {
-		e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "transition", To: outcome.goto_, Kind: models.EdgeFailure})
-		return outcome.goto_
-	}
-	if a, ok := outcome.outputs["action"]; ok {
-		ec := e.evalContext(c, map[string]any{"action": a})
-		edges := c.graph.OutEdges(node.ID)
-		for i := range edges {
-			ed := edges[i]
-			if ed.KindOrDefault() != models.EdgeSuccess || strings.TrimSpace(ed.When) == "" {
+	edges := c.graph.OutEdges(node.ID)
+	if outcome.handle != "" {
+		for _, ed := range edges {
+			if ed.SourceHandle != outcome.handle {
 				continue
 			}
-			if !guardPasses(ed.When, ec) {
+			if ed.KindOrDefault() == models.EdgeRollback {
+				if target, ok := e.doRollback(c, ed); ok {
+					return target
+				}
 				continue
 			}
-			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "transition", To: ed.Target, Kind: models.EdgeSuccess})
+			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "transition", To: ed.Target, Kind: ed.KindOrDefault()})
 			return ed.Target
 		}
+		return ""
 	}
-	edges := c.graph.OutEdges(node.ID)
-	for i := range edges {
-		if edges[i].KindOrDefault() == models.EdgeRollback {
-			if target, ok := e.doRollback(c, edges[i]); ok {
+	for _, ed := range edges {
+		if ed.SourceHandle == "" && ed.KindOrDefault() == models.EdgeRollback {
+			if target, ok := e.doRollback(c, ed); ok {
 				return target
 			}
 		}
 	}
-	for i := range edges {
-		if edges[i].KindOrDefault() == models.EdgeFailure {
-			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "transition", To: edges[i].Target, Kind: models.EdgeFailure})
-			return edges[i].Target
+	for _, ed := range edges {
+		if ed.KindOrDefault() == models.EdgeFailure {
+			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "transition", To: ed.Target, Kind: models.EdgeFailure})
+			return ed.Target
 		}
 	}
 	return ""
+}
+
+func outcomeAction(outcome nodeOutcome) map[string]any {
+	if a, ok := outcome.outputs["action"]; ok {
+		return map[string]any{"action": a}
+	}
+	return map[string]any{}
 }
 
 // doRollback performs a rollback transition: enforce the attempt cap, restore

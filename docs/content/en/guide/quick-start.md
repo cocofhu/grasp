@@ -32,7 +32,7 @@ Then open:
 
 Default `./start.sh` / `-d` / `restart` do **not** pre-pull the sandbox runtime. The first time you create a sandbox, the Gateway pulls that image on demand (often multi-GB); Inbox starting and the run page show a “pulling image” loading state. Use `./start.sh pull` to warm it up front.
 
-Agent / workspace / platform-rules and SQLite data live under `.localdata` at the repo root (bind mounts: `gateway` / `db` / `app-data`). `./start.sh restart` and `./start.sh down` keep that directory. To wipe: `./start.sh down && rm -rf .localdata`.
+Agent / workspace and SQLite data live under `.localdata` at the repo root (bind mounts: `gateway` / `db` / `app-data`). `./start.sh restart` and `./start.sh down` keep that directory. To wipe: `./start.sh down && rm -rf .localdata`.
 
 ### Database and attachments share one lifecycle (backup / cleanup)
 

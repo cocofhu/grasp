@@ -18,7 +18,7 @@ function stubRun(partial: {
   return {
     id: partial.id,
     workflowId: 'wf-1',
-    workflowName: 'Demo Pipeline',
+    workflowName: 'Demo Workflow',
     title: partial.title || partial.id,
     status: partial.status || 'completed',
     trigger: 'manual',
@@ -106,7 +106,7 @@ async function mockApis(page: Page, capture: { requests: Request[] }) {
     }
     if (path.endsWith('/api/workflows') || path === '/api/workflows') {
       await route.fulfill({
-        json: [{ id: 'wf-1', name: 'Demo Pipeline', status: 'published', version: 1, nodes: [], edges: [] }],
+        json: [{ id: 'wf-1', name: 'Demo Workflow', status: 'published', version: 1, nodes: [], edges: [] }],
       })
       return
     }

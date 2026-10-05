@@ -55,36 +55,22 @@ func TestSandboxAttempts(t *testing.T) {
 	}
 }
 
-// TestNodeChatTimeout honors a per-node chat_timeout override before the global.
+// TestNodeChatTimeout: the node's timeout (minutes) wins, clarify Agents
+// default to 30m, everything else uses the global chat timeout.
 func TestNodeChatTimeout(t *testing.T) {
 	c := &acpProvider{opts: Options{ChatTimeout: 90 * time.Second}}
 
 	if d := c.nodeChatTimeout(NodeReq{}); d != 90*time.Second {
 		t.Errorf("default timeout = %v, want 90s", d)
 	}
-	req := NodeReq{Config: map[string]any{"chat_timeout": 300}}
-	if d := c.nodeChatTimeout(req); d != 300*time.Second {
-		t.Errorf("override timeout = %v, want 300s", d)
-	}
-	// The editor card field `timeout` is expressed in minutes.
 	if d := c.nodeChatTimeout(NodeReq{Config: map[string]any{"timeout": 20}}); d != 20*time.Minute {
 		t.Errorf("timeout(min) = %v, want 20m", d)
 	}
-	// chat_timeout (seconds) wins over timeout (minutes) when both are set.
-	both := NodeReq{Config: map[string]any{"chat_timeout": 300, "timeout": 20}}
-	if d := c.nodeChatTimeout(both); d != 300*time.Second {
-		t.Errorf("chat_timeout should win = %v, want 300s", d)
+	if d := c.nodeChatTimeout(NodeReq{Caps: testClarifyCaps, Config: map[string]any{"timeout": 20}}); d != 20*time.Minute {
+		t.Errorf("clarify timeout(min) = %v, want 20m", d)
 	}
-	approve := NodeReq{NodeType: "approve", Config: map[string]any{"timeout": 20}}
-	if d := c.nodeChatTimeout(approve); d != 20*time.Minute {
-		t.Errorf("approve timeout(min) = %v, want 20m", d)
-	}
-	approveChat := NodeReq{NodeType: "approve", Config: map[string]any{"chat_timeout": 300}}
-	if d := c.nodeChatTimeout(approveChat); d != 300*time.Second {
-		t.Errorf("approve chat_timeout = %v, want 300s", d)
-	}
-	if d := c.nodeChatTimeout(NodeReq{NodeType: "approve"}); d != 30*time.Minute {
-		t.Errorf("approve empty config = %v, want 30m", d)
+	if d := c.nodeChatTimeout(NodeReq{Caps: testClarifyCaps}); d != 30*time.Minute {
+		t.Errorf("clarify default = %v, want 30m", d)
 	}
 }
 

@@ -27,7 +27,7 @@ func setupFolderOrg(t *testing.T) (*AgentService, *OrgService) {
 	}
 	orgSvc := NewOrgService(root, skill)
 	gRoot := OrgGroup{ID: "g_root", Name: "Grasp项目组"}
-	gSub := OrgGroup{ID: "g_pipe", Name: "Pipeline(GitHub)", ParentGroupID: "g_root"}
+	gSub := OrgGroup{ID: "g_pipe", Name: "工作流(GitHub)", ParentGroupID: "g_root"}
 	gEmpty := OrgGroup{ID: "g_empty", Name: "空组", ParentGroupID: "g_root"}
 	gOther := OrgGroup{ID: "g_other", Name: "其他组"}
 	if _, err := orgSvc.Put(AgentOrg{
@@ -300,7 +300,7 @@ func TestSanitizeDownloadFilename_cjkAndUnsafe(t *testing.T) {
 	if got := sanitizeDownloadFilename("Grasp项目组"); got != "Grasp项目组" {
 		t.Fatalf("got %q", got)
 	}
-	if got := sanitizeDownloadFilename("Pipeline(GitHub)"); got != "Pipeline_GitHub_" {
+	if got := sanitizeDownloadFilename("工作流(GitHub)"); got != "工作流_GitHub_" {
 		t.Fatalf("got %q", got)
 	}
 	if got := sanitizeDownloadFilename("a/b\\c"); got != "a_b_c" {

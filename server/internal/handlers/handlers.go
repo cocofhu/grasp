@@ -53,7 +53,6 @@ type Handlers struct {
 	Settings           *services.SettingsService
 	Shutdown           *shutdown.Coordinator
 	Auth               *auth.Service
-	PlatformRules      *services.PlatformRuleService
 	Channels           *services.ChannelConfigService
 	RunNotify          *services.RunNotifyService
 	Browser            *browser.Service

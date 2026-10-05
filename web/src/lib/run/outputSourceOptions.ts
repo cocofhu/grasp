@@ -1,5 +1,5 @@
 import type { WFEdge, WFNode } from '../shared/types'
-import { productArtifactsForType } from './productNodeArtifacts'
+import { productArtifactsForNode } from './productNodeArtifacts'
 
 export interface OutputSourceOption {
   value: string
@@ -24,33 +24,10 @@ function addPred(preds: Record<string, string[]>, source: string, target: string
   ;(preds[target] ||= []).push(source)
 }
 
-/**
- * Collect upstream node ids reachable via real edges ∪ goto adjacency
- * (branch.cases / human_gate.actions / test|review exits), transitive.
- * Mirrors canvasLayout.buildAdjacency predecessor semantics for option discovery.
- */
-export function upstreamNodeIds(nodeId: string, edges: WFEdge[], nodes: WFNode[] = []): Set<string> {
+/** Upstream node ids reachable via edges (every outlet, incl. pass / fail / case), transitive. */
+export function upstreamNodeIds(nodeId: string, edges: WFEdge[]): Set<string> {
   const preds: Record<string, string[]> = {}
   for (const e of edges) addPred(preds, e.source, e.target)
-
-  for (const n of nodes) {
-    if (n.type === 'branch') {
-      for (const c of (n.config?.cases as { goto?: string }[]) || []) {
-        if (c?.goto) addPred(preds, n.id, c.goto)
-      }
-    }
-    if (n.type === 'human_gate') {
-      for (const a of (n.config?.actions as { id?: string; goto?: string }[]) || []) {
-        if (a?.goto) addPred(preds, n.id, a.goto)
-      }
-    }
-    if (n.type === 'test' || n.type === 'review') {
-      const exits = (n.config?.exits as Record<string, { goto?: string }>) || {}
-      for (const key of ['pass', 'fail']) {
-        if (exits[key]?.goto) addPred(preds, n.id, exits[key].goto!)
-      }
-    }
-  }
 
   const seen = new Set<string>()
   const stack = [...(preds[nodeId] || [])]
@@ -63,14 +40,14 @@ export function upstreamNodeIds(nodeId: string, edges: WFEdge[], nodes: WFNode[]
   return seen
 }
 
-/** Structured output templates for a node type, derived from the nodereg manifest. */
+/** Structured output templates for a node's declared products. */
 function structuredOutputOptions(
   n: WFNode,
   t: (key: string, params?: Record<string, unknown>) => string,
 ): { value: string; label: string }[] {
   const opts: { value: string; label: string }[] = []
   const seen = new Set<string>()
-  for (const a of productArtifactsForType(n.type)) {
+  for (const a of productArtifactsForNode(n)) {
     if (!a.outputKey || seen.has(a.outputKey)) continue
     const labelKey = OUTPUT_LABEL_KEY[a.outputKey]
     if (!labelKey) continue
@@ -97,7 +74,7 @@ export function buildOutputSourceOptions(
     seen.add(value)
     opts.push({ value, label })
   }
-  const upstreamIds = upstreamNodeIds(targetNodeId, edges, allNodes)
+  const upstreamIds = upstreamNodeIds(targetNodeId, edges)
   for (const n of allNodes) {
     if (!upstreamIds.has(n.id)) continue
     for (const so of structuredOutputOptions(n, t)) add(so.value, so.label)

@@ -67,17 +67,17 @@ func (p *livePreparingProvider) ReactReply(ctx context.Context, req runtime.Node
 }
 
 func TestLiveBaselinePreparesAtExecutionAndFailureKeepsDialogue(t *testing.T) {
-	for _, nodeType := range []string{"app_preview", "grasp", "approve"} {
+	for _, kind := range []struct {
+		name string
+		caps *models.AgentCapabilities
+	}{{"review", capsPreview}, {"clarify", capsClarify}} {
 		for _, fail := range []bool{false, true} {
-			name := nodeType + "/success"
+			name := kind.name + "/success"
 			if fail {
-				name = nodeType + "/failure"
+				name = kind.name + "/failure"
 			}
 			t.Run(name, func(t *testing.T) {
-				graph := liveGraph(map[string]any{"direct_preview": true})
-				graph.Nodes[1].Type = nodeType
-				eng, db, base := setupEngineGraphP(t, graph)
-				base.skipOutcome = true
+				eng, db, base := setupEngineGraphP(t, liveGraph(kind.caps))
 				run, err := eng.StartRun("wf", nil, "test")
 				if err != nil {
 					t.Fatal(err)

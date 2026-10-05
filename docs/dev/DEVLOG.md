@@ -23,6 +23,14 @@
 ### 2026-10-05
 
 - 日期：2026-10-05
+- 范围：`server/internal/{nodereg,engine,runtime,pmmcp,mcp,models,services,handlers,gateshare,sandbox}`、`agents/`、`web/src/{components/canvas,components/agent,lib/workflow,lib/inbox,lib/run,views,locales}`、`web/e2e/workflow-canvas*`、`sandbox-gateway/sandbox/docs/PROTOCOL.md`
+- 做了什么：把 13 种 Agent 类节点合并为一个 `agent` 节点，节点类型收敛为 input / output / set_var / branch / agent / human_gate / proposal_select 7 种；Agent 行为由 `capabilities`（interaction clarify|auto、review、tools、reads、writes、maxRounds）一次声明，节点保存能力快照，引擎只有一个按 interaction 分流的执行器和统一收尾（必填产物、schema 钩子、review 出口路由）。删除平台规则覆盖（页面、Agent 标签页、`/api/platform-rules`、嵌入规则读取）和全部旧类型字符串判断；收件箱 kind 只剩 clarify / review，公开分享预览 productKind 改为 `app` 并带 `interaction`。内置模板改为需求澄清 / 实现 / 测试评审，向导四步。工作流画布重做：自动保存、可折叠节点面板、滑出检查器、带标签出口、边上条件编辑、快速添加、撤销重做、8px 网格吸附和对齐参考线、ELK 自动布局；运行页复用只读画布并跟随运行节点，快照无坐标时只在显示层自动布局。移除 `nodeColorHex`，节点颜色改用 `--c-hue-*` 主题色。
+- 为什么：旧模型每种 Agent 类型各有一套执行器、提示词契约和前端分支，组合新能力需要新增类型并改动全栈；能力声明化后同一节点即可组合澄清、评审、预览与产物契约，代码路径和配置面都显著收敛。
+- 如何验证：新增 `web/e2e/workflow-canvas.spec.ts` 覆盖面板拖入、出口拖到空白处快速添加、边中点插入、撤销重做、边条件编辑后自动保存并刷新不丢失、运行/失败状态，以及浅色/深色主题下空画布、默认工作流、运行中、失败 4 种状态截图；200 节点拖拽实测约 58 fps。修掉两个画布缺陷：Vue Flow 的 `isValidConnection` 会把已存在的边判为重复导致模板/撤销后边消失；回流边入口与正向边中点控件重叠。web：Vitest 442 文件 4056 通过、覆盖率达标，lint 0 error，`vue-tsc` 0 error，build 通过，`test:e2e:ci` 77/77；server：`go test ./...` 与 golangci-lint 0 issue。`e2e/artifacts-page-version.spec.ts`、`e2e/run-list-sort.spec.ts:230` 在 HEAD 上同样失败，不在 CI 列表内。
+
+### 2026-10-05
+
+- 日期：2026-10-05
 - 范围：`server/internal/handlers/preview-pick.js`、`web/public/preview-pick.js`、`sandbox-gateway/sandbox/internal/previewinject/preview-pick.js`、`web/src/lib/shared/previewPickScript.test.ts`
 - 做了什么：重做直连预览底部工具条的视觉样式，统一按钮尺寸、间距、圆角、边框、阴影和浅深色主题；为取点、产物、对话和原版预览加入线性 SVG 图标；将原版预览说明从浏览器原生长 tooltip 改为可聚焦的自定义提示，并增加窄屏自动换行。
 - 为什么：原工具条依赖默认按钮样式，emoji 眼睛图标在不同环境中比例和颜色不一致，长原生 tooltip 会遮挡页面并破坏层级，截图中的控件难以辨识。
@@ -32,7 +40,7 @@
 
 - 日期：2026-10-05
 - 范围：`server/internal/{envauth,services,runtime,handlers}`、`README.md`、`server/README.md`
-- 做了什么：项目凭据收口安全边界。去掉沙箱从服务进程环境读取 `GITHUB_TOKEN` / `*_API_KEY` 等的回退（含 `gitToken` / `gitLabURL`）；`fallbackEnvKey` 只从项目/Agent env 取值，不再 `os.LookupEnv`。凭据 env key 必须是合法标识符，且不能是平台保留变量（新增 `envauth.IsPlatformReservedEnvKey`）；交互/测试沙箱叠加凭据时跳过保留键，流水线沙箱的 `GRASP_*` 平台变量恢复为最后写入。渠道/外部 MCP/工作流类型只作为只读视图，不能新建。未填值的内置槽位不再挡住 Run env。项目凭据中的 SSH 私钥/known_hosts 优先于 Agent 元信息。删除项目时一并删除凭据。
+- 做了什么：项目凭据收口安全边界。去掉沙箱从服务进程环境读取 `GITHUB_TOKEN` / `*_API_KEY` 等的回退（含 `gitToken` / `gitLabURL`）；`fallbackEnvKey` 只从项目/Agent env 取值，不再 `os.LookupEnv`。凭据 env key 必须是合法标识符，且不能是平台保留变量（新增 `envauth.IsPlatformReservedEnvKey`）；交互/测试沙箱叠加凭据时跳过保留键，工作流沙箱的 `GRASP_*` 平台变量恢复为最后写入。渠道/外部 MCP/工作流类型只作为只读视图，不能新建。未填值的内置槽位不再挡住 Run env。项目凭据中的 SSH 私钥/known_hosts 优先于 Agent 元信息。删除项目时一并删除凭据。
 - 为什么：原实现会把服务端宿主机的 Token 注入所有项目的沙箱；项目用户可通过 `fallbackEnvKey`（如 `GRASP_SECRETS_KEY`）读出服务端任意环境变量；自定义凭据可覆盖 `GRASP_ARTIFACT_TOKEN` / `GRASP_PM_TOKEN` 等平台令牌；打开凭据页即生成空槽位，会让 Run 级 `GITHUB_TOKEN` 静默失效。
 - 如何验证：新增服务与 runtime 用例覆盖保留键/非法键拒绝、空槽位、平台键不被覆盖、进程 env 不泄漏、删除级联；`go test ./...`、`go vet ./...`、`gen-configdoc -check` 通过。
 

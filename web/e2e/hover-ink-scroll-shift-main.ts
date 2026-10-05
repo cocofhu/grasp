@@ -29,7 +29,6 @@ async function bootstrap() {
       { path: '/gates', component: stub('page-gates', '待办页') },
       { path: '/runs', component: stub('page-runs', '运行页') },
       { path: '/settings', component: stub('page-settings', '设置页') },
-      { path: '/settings/platform-rules', component: stub('page-platform-rules', '平台规则') },
       { path: '/notifications', component: stub('page-notifications', '通知页') },
     ],
   })

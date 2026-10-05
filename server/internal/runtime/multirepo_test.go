@@ -252,19 +252,6 @@ func TestFirstRepoURL(t *testing.T) {
 	}
 }
 
-func TestNodeTouchesRepos(t *testing.T) {
-	for _, nt := range []string{"agent", "implement", "review", "test", "submit_mr", "research", "app_preview", "approve", "visual"} {
-		if !nodeTouchesRepos(nt) {
-			t.Errorf("%q should touch repos", nt)
-		}
-	}
-	for _, nt := range []string{"input", "human_gate", "clarify", "proposal", ""} {
-		if nodeTouchesRepos(nt) {
-			t.Errorf("%q should not touch repos", nt)
-		}
-	}
-}
-
 func TestNodeRepo(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{}).(*acpProvider)
@@ -273,9 +260,9 @@ func TestNodeRepo(t *testing.T) {
 
 	// submit_mr pins config["repo"] -> that repo's dir + url.
 	dir, url := p.nodeRepo(NodeReq{
-		NodeType: "submit_mr",
-		Config:   map[string]any{"repo": "api"},
-		Vars:     map[string]any{"repos": reposVar},
+		NodeType: "agent", Caps: testPlainCaps,
+		Config: map[string]any{"repo": "api"},
+		Vars:   map[string]any{"repos": reposVar},
 	})
 	if dir != "/root/workspace/api" || url != "https://h/api.git" {
 		t.Errorf("pinned repo: dir=%q url=%q", dir, url)
@@ -341,30 +328,6 @@ func TestMRBranchesMultiRepo(t *testing.T) {
 	}
 }
 
-func TestVisualPromptIncludesContractAndRepoLayout(t *testing.T) {
-	host := mcp.NewHost(newMemStore())
-	p := newACPProvider(host, Options{}).(*acpProvider)
-	got := p.buildAgentPrompt(NodeReq{
-		NodeType: "visual",
-		Config:   map[string]any{"prompt": "VISUAL_USER_PROMPT"},
-		Vars: map[string]any{
-			"repos": `[{"name":"web","url":"https://h/web.git"},{"name":"api","url":"https://h/api.git"}]`,
-		},
-	}, nil)
-	for _, want := range []string{
-		"VISUAL_USER_PROMPT",
-		"视觉网页契约",
-		"只读检查现有业务 UI",
-		"不构成任何写入授权",
-		"/root/workspace/web/",
-		"/root/workspace/api/",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("visual prompt missing %q:\n%s", want, got)
-		}
-	}
-}
-
 func TestMultiRepoLayoutText(t *testing.T) {
 	// No repos -> empty (single-repo / pure artifact flow).
 	if got := multiRepoLayoutText(NodeReq{}); got != "" {
@@ -375,32 +338,5 @@ func TestMultiRepoLayoutText(t *testing.T) {
 	}})
 	if !strings.Contains(got, "/root/workspace/web/") || !strings.Contains(got, "/root/workspace/api/") {
 		t.Errorf("layout text missing repo dirs: %q", got)
-	}
-}
-
-func TestSubmitMRRepoNote(t *testing.T) {
-	reposVar := `[{"name":"web","url":"https://h/web.git"},{"name":"api","url":"https://h/api.git"}]`
-
-	// Non-submit_mr node -> empty.
-	if got := submitMRRepoNote(NodeReq{NodeType: "agent", Vars: map[string]any{"repos": reposVar}}); got != "" {
-		t.Errorf("non-submit_mr should yield empty, got %q", got)
-	}
-	// submit_mr with no repos -> empty.
-	if got := submitMRRepoNote(NodeReq{NodeType: "submit_mr"}); got != "" {
-		t.Errorf("submit_mr without repos should yield empty, got %q", got)
-	}
-	// submit_mr with a pinned repo -> names the repo dir.
-	pinned := submitMRRepoNote(NodeReq{
-		NodeType: "submit_mr",
-		Config:   map[string]any{"repo": "api"},
-		Vars:     map[string]any{"repos": reposVar},
-	})
-	if !strings.Contains(pinned, "/root/workspace/api") {
-		t.Errorf("pinned note missing repo dir: %q", pinned)
-	}
-	// submit_mr without a pinned repo -> generic guidance.
-	generic := submitMRRepoNote(NodeReq{NodeType: "submit_mr", Vars: map[string]any{"repos": reposVar}})
-	if generic == "" || strings.Contains(generic, "/root/workspace/api") {
-		t.Errorf("unpinned note should be generic, got %q", generic)
 	}
 }

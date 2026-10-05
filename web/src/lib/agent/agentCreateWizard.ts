@@ -1,4 +1,4 @@
-import type { Agent, AgentFile, AgentPrompts, MCPServer } from '@/lib/api/api'
+import type { Agent, AgentCapabilities, AgentFile, MCPServer } from '@/lib/api/api'
 import type { GitCredentialType } from '@/lib/agent/gitCredentialAnalysis'
 import { validateAgentName, normalizeAgentName } from '@/lib/agent/agentIO'
 import {
@@ -41,7 +41,6 @@ export type WizardStepId =
   | 'rules'
   | 'skills'
   | 'commands'
-  | 'prompts'
   | 'review'
 
 export type WizardKV = { k: string; v: string }
@@ -58,9 +57,6 @@ export type WizardMCP = {
 
 export type WizardSkill = { name: string; content: string }
 export type WizardCommand = { name: string; content: string }
-
-export type WizardPromptKey = keyof AgentPrompts
-export type WizardPrompts = Record<WizardPromptKey, string>
 
 export type WizardSkipped = Partial<Record<WizardStepId, boolean>>
 
@@ -92,7 +88,6 @@ export type WizardDraft = {
   rulesContent: string
   skills: WizardSkill[]
   commands: WizardCommand[]
-  prompts: WizardPrompts
   skipped: WizardSkipped
 }
 
@@ -114,13 +109,6 @@ export const WIZARD_STEPS: WizardStepDef[] = [
 export const DEFAULT_CONFIG_ROOT = '/root/.cursor'
 export const DEFAULT_WORKSPACE_DIR = '/root/workspace'
 
-const WIZARD_PROMPT_KEYS: WizardPromptKey[] = [
-  'upstreamArtifactsHeader',
-  'producesContract',
-  'reactOpenSuffix',
-  'producesRetry',
-]
-
 export const GIT_ENV_KEYS = new Set([
   'GIT_REPOS',
   'GITHUB_TOKEN',
@@ -131,13 +119,9 @@ export const GIT_ENV_KEYS = new Set([
   'GIT_SSH_KNOWN_HOSTS',
 ])
 
-export function emptyPrompts(): WizardPrompts {
-  return {
-    upstreamArtifactsHeader: '',
-    producesContract: '',
-    reactOpenSuffix: '',
-    producesRetry: '',
-  }
+/** Starting capabilities of a blank Agent: one autonomous run reading every product. */
+export function blankAgentCapabilities(): AgentCapabilities {
+  return { interaction: 'auto', reads: ['*'] }
 }
 
 export function freshDraft(): WizardDraft {
@@ -159,7 +143,6 @@ export function freshDraft(): WizardDraft {
     rulesContent: '',
     skills: [],
     commands: [],
-    prompts: emptyPrompts(),
     skipped: {},
   }
 }
@@ -250,19 +233,6 @@ function draftMcpToApi(m: WizardMCP): MCPServer {
   }
 }
 
-function draftPromptsToApi(p: WizardPrompts, skipped: boolean): AgentPrompts | undefined {
-  if (skipped) return undefined
-  const out: AgentPrompts = {}
-  let any = false
-  for (const k of WIZARD_PROMPT_KEYS) {
-    if (p[k].trim()) {
-      out[k] = p[k]
-      any = true
-    }
-  }
-  return any ? out : undefined
-}
-
 export function parseCustomConfigJson(
   raw: string,
 ): { ok: true; normalized: string } | { ok: false } {
@@ -340,13 +310,13 @@ function collectFiles(draft: WizardDraft): AgentFile[] {
   return files
 }
 
-/** Assemble POST /agents payload. Skip Rules still writes default rule; Skip Prompts omits prompts.
+/** Assemble POST /agents payload. Skip Rules still writes default rule.
  * Token-class keys are always stripped from env (write them in Project shared Agent config).
  * When templateId is set (not blank), payload includes templateId and omits default identity files
- * so the server can copy the embed pack (plan g2.1). */
+ * so the server can copy the embed pack and its capabilities; blank Agents start with
+ * blankAgentCapabilities(). */
 export function assembleCreatePayload(draft: WizardDraft): Agent & { templateId?: string } {
   const name = normalizeAgentName(draft.name)
-  const prompts = draftPromptsToApi(draft.prompts, !!draft.skipped.prompts)
   const envDraft: WizardDraft = {
     ...draft,
     env: stripTokenKeysFromKV(
@@ -370,7 +340,7 @@ export function assembleCreatePayload(draft: WizardDraft): Agent & { templateId?
       configRoot: draft.configRoot.trim() || configRootFor(draft.acpBackend),
       workspaceDir: DEFAULT_WORKSPACE_DIR,
     },
-    ...(prompts ? { prompts } : {}),
+    ...(useTemplate ? {} : { capabilities: blankAgentCapabilities() }),
   }
 }
 
@@ -389,10 +359,6 @@ export function envConfiguredCount(draft: WizardDraft, gitOnly = false): number 
     if (!k) return false
     return gitOnly ? GIT_ENV_KEYS.has(k) : !GIT_ENV_KEYS.has(k) && !isManagedRegionKey(k)
   }).length
-}
-
-function promptConfiguredCount(draft: WizardDraft): number {
-  return WIZARD_PROMPT_KEYS.filter((k) => draft.prompts[k].trim()).length
 }
 
 export type ReviewChipKind = 'ok' | 'empty' | 'def'

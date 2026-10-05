@@ -7,6 +7,7 @@ import { installIdleScrollbar } from '../src/lib/shared/idleScrollbar'
 import ArtifactPreview from '../src/components/run/ArtifactPreview.vue'
 import type { Artifact, Run } from '../src/lib/shared/types'
 import { api } from '../src/lib/api/api'
+import { PAGE_CAPS } from '../src/test/capsFixtures'
 
 const params = new URLSearchParams(location.search)
 const scenario = params.get('scenario') || 'multi'
@@ -38,7 +39,7 @@ const planJson: Artifact = {
 
 const multiRun = {
   id: 'run-version-e2e',
-  nodes: [{ id: 'visual_1', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} }],
+  nodes: [{ id: 'visual_1', type: 'agent', caps: PAGE_CAPS, label: '视觉', position: { x: 0, y: 0 }, config: {} }],
   nodeExecutions: {
     visual_1: [
       {
@@ -61,7 +62,7 @@ const multiRun = {
 
 const singleRun = {
   id: 'run-version-e2e',
-  nodes: [{ id: 'visual_1', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} }],
+  nodes: [{ id: 'visual_1', type: 'agent', caps: PAGE_CAPS, label: '视觉', position: { x: 0, y: 0 }, config: {} }],
   nodeExecutions: {
     visual_1: [
       {

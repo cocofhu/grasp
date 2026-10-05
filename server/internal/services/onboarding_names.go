@@ -11,12 +11,19 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// onboardingNameMarker is the fixed prefix in embedded first-install agent names.
-const onboardingNameMarker = "综合"
+// OnboardingAgentNames are the canonical onboarding Agent names: the built-in
+// template labels, which the default workflow's agent_profile refs use.
+var OnboardingAgentNames = func() []string {
+	out := make([]string, 0, len(TeamEngineerTemplates))
+	for _, r := range TeamEngineerTemplates {
+		out = append(out, r.RoleLabelZH)
+	}
+	return out
+}()
 
-// longestOnboardingRoleSuffixRunes is the longest role tail after replacing 综合
-// (代码审查工程师 = 7) so derived names stay within MaxAgentNameRunes.
-const longestOnboardingRoleSuffixRunes = 7
+// longestOnboardingRoleSuffixRunes is the longest template label (需求澄清 /
+// 测试评审 = 4) so prefixed names stay within MaxAgentNameRunes.
+const longestOnboardingRoleSuffixRunes = 4
 
 // OnboardingNamePlan holds per-project agent / org naming for bootstrap.
 type OnboardingNamePlan struct {
@@ -24,7 +31,7 @@ type OnboardingNamePlan struct {
 	GroupID    string
 	GroupName  string
 	AgentNames []string
-	// NameMap maps embedded canonical names (综合*) → actual save names.
+	// NameMap maps canonical template names → actual save names.
 	NameMap map[string]string
 }
 
@@ -71,7 +78,8 @@ func SanitizeOnboardingPrefix(projectName string) (string, error) {
 }
 
 // BuildOnboardingNamePlan derives Agent / group names for a project.
-// Default project keeps stable 综合* names and FirstInstallGroupID.
+// The default project keeps the bare template names and FirstInstallGroupID;
+// other projects prefix them with the project name.
 func BuildOnboardingNamePlan(projectID, projectName, defaultProjectID string) (OnboardingNamePlan, error) {
 	projectID = strings.TrimSpace(projectID)
 	defaultProjectID = strings.TrimSpace(defaultProjectID)
@@ -86,7 +94,7 @@ func BuildOnboardingNamePlan(projectID, projectName, defaultProjectID string) (O
 			m[n] = n
 		}
 		return OnboardingNamePlan{
-			Prefix:     onboardingNameMarker,
+			Prefix:     "",
 			GroupID:    FirstInstallGroupID,
 			GroupName:  FirstInstallGroupName,
 			AgentNames: names,
@@ -104,7 +112,7 @@ func BuildOnboardingNamePlan(projectID, projectName, defaultProjectID string) (O
 	m := make(map[string]string, len(OnboardingAgentNames))
 	names := make([]string, 0, len(OnboardingAgentNames))
 	for _, canonical := range OnboardingAgentNames {
-		derived := strings.Replace(canonical, onboardingNameMarker, prefix, 1)
+		derived := prefix + canonical
 		normalized, nerr := NormalizeAndValidateAgentName(derived)
 		if nerr != nil {
 			return OnboardingNamePlan{}, fmt.Errorf("derive %s: %w", canonical, nerr)
@@ -121,7 +129,7 @@ func BuildOnboardingNamePlan(projectID, projectName, defaultProjectID string) (O
 	}, nil
 }
 
-// RemapOnboardingAgentProfiles rewrites embedded 综合* agent_profile refs.
+// RemapOnboardingAgentProfiles rewrites the default workflow's agent_profile refs.
 func RemapOnboardingAgentProfiles(g *models.Graph, nameMap map[string]string) {
 	if g == nil || len(nameMap) == 0 {
 		return

@@ -22,6 +22,15 @@ func TestBootstrapOnboardingAPI(t *testing.T) {
 		t.Fatalf("no key: %d %s", w.Code, w.Body.String())
 	}
 
+	w = hn.do("POST", "/api/projects/"+pid+"/bootstrap-onboarding", map[string]any{
+		"acpBackend": "cursor",
+		"apiKey":     "crsr_test",
+		"agents":     []map[string]any{{"templateId": "implement"}},
+	})
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "clarify") {
+		t.Fatalf("team without clarify: %d %s", w.Code, w.Body.String())
+	}
+
 	w = hn.do("POST", "/api/projects", map[string]any{"name": "BootProj"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("create project: %d %s", w.Code, w.Body.String())
@@ -38,11 +47,11 @@ func TestBootstrapOnboardingAPI(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &otherRes); err != nil {
 		t.Fatal(err)
 	}
-	if len(otherRes.AgentIDs) != 6 {
+	if len(otherRes.AgentIDs) != len(services.OnboardingAgentNames) {
 		t.Fatalf("non-default agents: %+v", otherRes)
 	}
 	for _, id := range otherRes.AgentIDs {
-		if strings.HasPrefix(id, "综合") {
+		if !strings.HasPrefix(id, "BootProj") {
 			t.Fatalf("non-default must derive names, got %q", id)
 		}
 	}
@@ -58,7 +67,7 @@ func TestBootstrapOnboardingAPI(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
 		t.Fatal(err)
 	}
-	if len(res.AgentIDs) != 6 || res.WorkflowID == "" || !res.Published {
+	if len(res.AgentIDs) != len(services.OnboardingAgentNames) || res.WorkflowID == "" || !res.Published {
 		t.Fatalf("bad result: %+v", res)
 	}
 

@@ -3,7 +3,7 @@ title: Gateway
 description: sandbox-gateway contract summary; full details in GATEWAY.md.
 ---
 
-Grasp schedules the generic sandbox image through the vendored **sandbox-gateway** control plane. The Web UI talks to the Grasp API; agent / react nodes execute in containers via the gateway.
+Grasp schedules the generic sandbox image through the vendored **sandbox-gateway** control plane. The Web UI talks to the Grasp API; Agent nodes execute in containers via the gateway.
 
 ## Direct endpoints vs platform proxy
 

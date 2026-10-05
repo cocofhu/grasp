@@ -39,16 +39,6 @@ describe('settings-family narrow-screen stacking (g3)', () => {
     expect(settings).not.toMatch(/TriggersView/)
   })
 
-  it('PlatformRulesView desktop header actions use size md; min-h-11 is paired with md:min-h-0', () => {
-    const src = read('PlatformRulesView.vue')
-    expect(src).toMatch(/variant="ghost"\s+size="md"/)
-    expect(src).toMatch(/variant="primary"\s+size="md"/)
-    expect(src).not.toMatch(/size="sm"/)
-    const minH11 = src.match(/min-h-11/g) || []
-    const paired = src.match(/min-h-11[\s\S]{0,80}md:min-h-0/g) || []
-    expect(paired.length).toBe(minH11.length)
-  })
-
   it('Notifications controls keep touch height', () => {
     expect(read('NotificationsView.vue')).toMatch(/min-h-11 border border-line bg-transparent/)
     expect(read('NotificationsView.vue')).toMatch(/min-h-11 border-b-2 border-transparent px-4/)

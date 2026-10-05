@@ -1,0 +1,592 @@
+/* Workflow canvas: node cards, ports, edges. Design tokens only. */
+
+.cnode {
+  position: relative;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 12px;
+  background: rgb(var(--c-surface));
+  box-shadow: var(--shadow-card);
+  color: rgb(var(--c-txt));
+  font-size: 12px;
+  transition:
+    border-color var(--dur-ui) ease,
+    box-shadow var(--dur-ui) ease,
+    opacity var(--dur-ui) ease;
+}
+.cnode:hover {
+  border-color: rgb(var(--c-line-strong));
+}
+.cnode.is-selected {
+  border-color: rgb(var(--c-accent));
+  box-shadow: 0 0 0 1px rgb(var(--c-accent)), var(--shadow-card);
+}
+.vue-flow__node:focus-visible {
+  outline: none;
+}
+.vue-flow__node:focus-visible .cnode {
+  box-shadow: 0 0 0 2px rgb(var(--c-accent) / 0.55), var(--shadow-card);
+}
+
+.cnode-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 8px;
+}
+.cnode-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  color: rgb(var(--c-txt));
+}
+.cnode-sub {
+  font-size: 11px;
+  line-height: 15px;
+  color: rgb(var(--c-txt3));
+}
+.cnode-icon {
+  display: flex;
+  height: 28px;
+  width: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgb(var(--c-elevated));
+  color: rgb(var(--c-txt2));
+}
+.cnode-avatar {
+  display: flex;
+  height: 28px;
+  width: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.cnode-body {
+  padding: 0 12px 10px;
+}
+.cnode-goal {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 17px;
+  color: rgb(var(--c-txt2));
+  overflow-wrap: anywhere;
+}
+.cnode-goal.is-empty {
+  color: rgb(var(--c-warn));
+}
+.cnode-foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-top: 1px solid rgb(var(--c-line));
+  padding: 6px 12px;
+  min-height: 30px;
+}
+.cnode-cap {
+  display: inline-flex;
+  height: 20px;
+  width: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: rgb(var(--c-txt3));
+}
+.cnode-cap.is-on {
+  background: rgb(var(--c-accent-dim));
+  color: rgb(var(--c-accent-2));
+}
+
+.cnode-outlets {
+  border-top: 1px solid rgb(var(--c-line));
+  padding: 4px 0;
+}
+.cnode-outlet {
+  position: relative;
+  display: flex;
+  height: 24px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 0 14px 0 12px;
+  font-size: 11px;
+  color: rgb(var(--c-txt2));
+}
+.cnode-outlet-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cnode-outlet.tone-ok .cnode-outlet-label {
+  color: rgb(var(--c-ok));
+}
+.cnode-outlet.tone-err .cnode-outlet-label {
+  color: rgb(var(--c-err));
+}
+.cnode-outlet.is-stale .cnode-outlet-label {
+  color: rgb(var(--c-err));
+  text-decoration: line-through;
+}
+
+/* Ports: 8px visible dot inside a 20px hit area */
+.cnode .vue-flow__handle.cport {
+  width: 20px;
+  height: 20px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cnode .vue-flow__handle.cport::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: rgb(var(--c-surface));
+  border: 1.5px solid rgb(var(--c-line-strong));
+  transition:
+    transform var(--dur-press) ease,
+    border-color var(--dur-press) ease,
+    background var(--dur-press) ease;
+  pointer-events: none;
+}
+.cnode .vue-flow__handle.cport.vue-flow__handle-left {
+  left: -10px;
+}
+.cnode .vue-flow__handle.cport.vue-flow__handle-right {
+  right: -10px;
+}
+.cnode .vue-flow__handle.cport:hover::after,
+.cnode .vue-flow__handle.cport.connectingfrom::after {
+  border-color: rgb(var(--c-accent));
+  background: rgb(var(--c-accent));
+  transform: scale(1.25);
+}
+.cnode-outlet.tone-ok .vue-flow__handle.cport::after {
+  border-color: rgb(var(--c-ok));
+}
+.cnode-outlet.tone-err .vue-flow__handle.cport::after {
+  border-color: rgb(var(--c-err));
+}
+.cnode .vue-flow__handle.cport.is-valid::after {
+  border-color: rgb(var(--c-accent));
+  background: rgb(var(--c-accent) / 0.25);
+  transform: scale(1.4);
+  box-shadow: 0 0 0 4px rgb(var(--c-accent) / 0.2);
+}
+.cnode .vue-flow__handle.cport.is-invalid::after {
+  opacity: 0.35;
+}
+.cport-reason {
+  display: none;
+  position: absolute;
+  right: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  border: 1px solid rgb(var(--c-err) / 0.4);
+  border-radius: 8px;
+  background: rgb(var(--c-surface));
+  box-shadow: var(--shadow-card);
+  color: rgb(var(--c-err));
+  padding: 3px 8px;
+  font-size: 11px;
+  pointer-events: none;
+  z-index: 5;
+}
+.vue-flow__handle.cport.is-invalid:hover .cport-reason {
+  display: block;
+}
+.vue-flow__handle.cport--in .cport-reason {
+  right: auto;
+  left: calc(100% + 6px);
+}
+
+/* Badges */
+.cnode-badge {
+  position: absolute;
+  right: -8px;
+  top: -8px;
+  display: flex;
+  height: 20px;
+  min-width: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 2px solid rgb(var(--c-base));
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  z-index: 2;
+}
+.cnode-badge.is-ok {
+  background: rgb(var(--c-ok));
+  color: rgb(var(--c-base));
+}
+.cnode-badge.is-err {
+  background: rgb(var(--c-err));
+  color: #fff;
+}
+.cnode-badge.is-warn {
+  background: rgb(var(--c-warn));
+  color: rgb(var(--c-base));
+}
+.cnode-badge.is-info {
+  background: rgb(var(--c-accent));
+  color: #fff;
+}
+.cnode-issues {
+  display: none;
+  position: absolute;
+  right: -8px;
+  bottom: calc(100% + 14px);
+  width: max-content;
+  max-width: 260px;
+  border: 1px solid rgb(var(--c-err) / 0.35);
+  border-radius: 8px;
+  background: rgb(var(--c-surface));
+  box-shadow: var(--shadow-card);
+  padding: 6px 10px;
+  color: rgb(var(--c-err));
+  font-size: 11px;
+  line-height: 16px;
+  z-index: 10;
+}
+.cnode-badge:hover + .cnode-issues,
+.cnode-issues:hover {
+  display: block;
+}
+
+.cnode-iter {
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: rgb(var(--c-elevated));
+  padding: 1px 6px;
+  font-size: 10px;
+  color: rgb(var(--c-txt2));
+}
+.cnode-fail {
+  border-top: 1px solid rgb(var(--c-err) / 0.3);
+  padding: 6px 12px;
+  color: rgb(var(--c-err));
+  font-size: 11px;
+  line-height: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cnode-reply {
+  display: flex;
+  border-top: 1px solid rgb(var(--c-warn) / 0.35);
+  padding: 6px 12px;
+}
+
+.cnode-menu-btn {
+  display: flex;
+  height: 22px;
+  width: 22px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: rgb(var(--c-txt3));
+  opacity: 0;
+  transition: opacity var(--dur-ui) ease;
+}
+.cnode:hover .cnode-menu-btn,
+.cnode-menu-btn[aria-expanded='true'],
+.cnode-menu-btn:focus-visible {
+  opacity: 1;
+}
+.cnode-menu-btn:hover {
+  background: rgb(var(--c-elevated));
+  color: rgb(var(--c-txt));
+}
+.cnode-menu {
+  position: absolute;
+  right: 6px;
+  top: 34px;
+  z-index: 20;
+  min-width: 132px;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 8px;
+  background: rgb(var(--c-surface));
+  box-shadow: var(--shadow-card);
+  padding: 4px;
+}
+.cnode-menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  border-radius: 6px;
+  padding: 5px 8px;
+  text-align: left;
+  font-size: 12px;
+  color: rgb(var(--c-txt2));
+}
+.cnode-menu button:hover {
+  background: rgb(var(--c-elevated));
+  color: rgb(var(--c-txt));
+}
+.cnode-menu button.is-danger:hover {
+  background: rgb(var(--c-err) / 0.1);
+  color: rgb(var(--c-err));
+}
+
+/* Run states */
+.cnode.st-running {
+  border-color: rgb(var(--c-accent));
+}
+.cnode.st-running::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 2px;
+  background: linear-gradient(
+    90deg,
+    rgb(var(--c-accent) / 0) 0%,
+    rgb(var(--c-accent)) 50%,
+    rgb(var(--c-accent) / 0) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: cnode-flow 1.6s linear infinite;
+  pointer-events: none;
+}
+.cnode.st-waiting_human {
+  border-color: rgb(var(--c-warn));
+  animation: cnode-breathe 2s ease-in-out infinite;
+}
+.cnode.st-completed {
+  border-color: rgb(var(--c-ok) / 0.55);
+}
+.cnode.st-failed {
+  border-color: rgb(var(--c-err));
+  box-shadow: 0 0 0 1px rgb(var(--c-err) / 0.6), var(--shadow-card);
+}
+.cnode.st-skipped,
+.cnode.st-cancelled {
+  opacity: 0.5;
+}
+.cnode.st-pending.is-run {
+  opacity: 0.72;
+}
+
+@keyframes cnode-flow {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@keyframes cnode-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(var(--c-warn) / 0), var(--shadow-card);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgb(var(--c-warn) / 0.22), var(--shadow-card);
+  }
+}
+
+/* Edges */
+.cedge-path {
+  fill: none;
+  stroke: var(--flow-edge);
+  stroke-width: 1.5;
+  transition:
+    stroke var(--dur-ui) ease,
+    opacity var(--dur-ui) ease;
+}
+.cedge-path.tone-ok {
+  stroke: rgb(var(--c-ok));
+}
+.cedge-path.tone-err {
+  stroke: rgb(var(--c-err));
+}
+.cedge-path.is-dashed {
+  stroke-dasharray: 6 4;
+}
+.cedge-path.run-traversed {
+  stroke: var(--flow-edge-active);
+  stroke-dasharray: none;
+}
+.cedge-path.run-active {
+  stroke: var(--flow-edge-active);
+  stroke-width: 2;
+  stroke-dasharray: 6 6;
+  animation: cedge-dash 0.6s linear infinite;
+}
+.cedge-path.run-dim {
+  opacity: 0.35;
+}
+.vue-flow__edge.selected .cedge-path,
+.cedge-path.is-hovered {
+  stroke-width: 2.25;
+}
+.vue-flow__edge.selected .cedge-path:not(.tone-ok):not(.tone-err) {
+  stroke: var(--flow-edge-active);
+}
+@keyframes cedge-dash {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+
+.cedge-mid {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: all;
+}
+.cedge-label {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 9999px;
+  background: rgb(var(--c-surface));
+  padding: 1px 8px;
+  font-size: 10.5px;
+  line-height: 16px;
+  color: rgb(var(--c-txt2));
+  cursor: pointer;
+}
+.cedge-label:hover {
+  border-color: rgb(var(--c-line-strong));
+  color: rgb(var(--c-txt));
+}
+.cedge-label.tone-ok {
+  border-color: rgb(var(--c-ok) / 0.4);
+  color: rgb(var(--c-ok));
+}
+.cedge-label.tone-err {
+  border-color: rgb(var(--c-err) / 0.4);
+  color: rgb(var(--c-err));
+}
+.cedge-btn {
+  display: flex;
+  height: 20px;
+  width: 20px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(var(--c-line-strong));
+  border-radius: 9999px;
+  background: rgb(var(--c-surface));
+  color: rgb(var(--c-txt2));
+  box-shadow: var(--shadow-card);
+}
+.cedge-btn:hover {
+  border-color: rgb(var(--c-accent));
+  color: rgb(var(--c-accent-2));
+}
+.cedge-btn.is-danger:hover {
+  border-color: rgb(var(--c-err));
+  color: rgb(var(--c-err));
+}
+
+/* Floating chrome */
+.cchrome {
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 12px;
+  background: rgb(var(--c-surface));
+  box-shadow: var(--shadow-card);
+}
+.cchrome-btn {
+  display: flex;
+  height: 30px;
+  min-width: 30px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: rgb(var(--c-txt2));
+  font-size: 11px;
+}
+.cchrome-btn:hover:not(:disabled) {
+  background: rgb(var(--c-elevated));
+  color: rgb(var(--c-txt));
+}
+.cchrome-btn:disabled {
+  opacity: 0.4;
+}
+.cchrome-btn.is-on {
+  background: rgb(var(--c-accent-dim));
+  color: rgb(var(--c-accent-2));
+}
+
+.ckbd {
+  display: inline-flex;
+  min-width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(var(--c-line-strong));
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: rgb(var(--c-elevated));
+  padding: 0 5px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  color: rgb(var(--c-txt2));
+}
+
+.canvas-host .vue-flow__selection,
+.canvas-host .vue-flow__nodesselection-rect {
+  border: 1px solid rgb(var(--c-accent) / 0.7);
+  background: rgb(var(--c-accent) / 0.08);
+}
+.canvas-host .vue-flow__pane.selection {
+  cursor: default;
+}
+.canvas-host.is-panning .vue-flow__pane {
+  cursor: grab;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cnode,
+  .cedge-path {
+    transition: none;
+  }
+  .cnode.st-running::before,
+  .cnode.st-waiting_human,
+  .cedge-path.run-active {
+    animation: none;
+  }
+}
+
+/* Alignment guides while dragging */
+.canvas-guide {
+  position: absolute;
+  background: rgb(var(--c-accent) / 0.7);
+}
+.canvas-guide-v {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+.canvas-guide-h {
+  left: 0;
+  right: 0;
+  height: 1px;
+}

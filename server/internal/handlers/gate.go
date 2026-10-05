@@ -7,7 +7,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -176,7 +175,7 @@ func (h *Handlers) ReactCancel(c *gin.Context) {
 	runID, nodeID := c.Param("id"), c.Param("nodeId")
 	clearQueue := true
 	if run, ok := h.Runs.Get(runID); ok {
-		if n := run.Graph.FindNode(nodeID); n != nil && nodereg.ClarifyInteractive(n.Type) {
+		if n := run.Graph.FindNode(nodeID); n != nil && n.Caps.Clarify() {
 			clearQueue = false
 		}
 	}

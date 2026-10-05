@@ -1,17 +1,21 @@
 <script setup lang="ts">
 /**
  * Template picker for Agent create wizard basics.
- * Interaction mirrors HomePipelineSelect: Teleport to body, pinned search,
+ * Interaction mirrors HomeWorkflowSelect: Teleport to body, pinned search,
  * list-only scroll (max-height 220px), 4px ghost scrollbar — no create footer.
  * Selecting a row never writes draft.name (plan g1.4).
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import type { AgentCapabilities } from '@/lib/api/apiTypes'
 
 export type AgentTemplateOption = {
   id: string
   name: string
   subtitle?: string
+  /** What the template does (server summary). */
+  description?: string
+  capabilities?: AgentCapabilities
 }
 
 const props = withDefaults(
@@ -61,6 +65,7 @@ const filtered = computed(() => {
     (o) =>
       o.name.toLowerCase().includes(q) ||
       (o.subtitle || '').toLowerCase().includes(q) ||
+      (o.description || '').toLowerCase().includes(q) ||
       o.id.toLowerCase().includes(q),
   )
 })
@@ -331,6 +336,11 @@ onBeforeUnmount(() => {
                 class="agent-template-select__opt-sub"
                 v-html="highlightName(o.subtitle, search.trim())"
               />
+              <span
+                v-if="o.description"
+                class="agent-template-select__opt-sub"
+                :data-testid="`agent-template-select-desc-${o.id}`"
+              >{{ o.description }}</span>
             </button>
           </template>
           <div

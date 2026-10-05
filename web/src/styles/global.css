@@ -35,6 +35,18 @@
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --flow-dot: #1f1f26;
   --flow-mask: rgba(10, 10, 11, 0.72);
+  /* Canvas edges: default stroke and run-state traversed / active stroke */
+  --flow-edge: rgb(var(--c-line-strong));
+  --flow-edge-active: rgb(var(--c-accent));
+  /* Agent avatar palette (RGB triplets), picked by a stable hash of the Agent name */
+  --c-hue-1: 167 139 250;
+  --c-hue-2: 96 165 250;
+  --c-hue-3: 34 211 238;
+  --c-hue-4: 45 212 191;
+  --c-hue-5: 74 222 128;
+  --c-hue-6: 251 191 36;
+  --c-hue-7: 251 146 60;
+  --c-hue-8: 244 114 182;
   --grad-logo: linear-gradient(90deg, #7B61FF 0%, #818CF8 35%, #6366F1 55%, #7B61FF 75%, #A78BFA 100%);
   --grad-logo-size: 200% 100%;
 
@@ -72,6 +84,16 @@ html.light {
   --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
   --flow-dot: #d8dce3;
   --flow-mask: rgba(250, 250, 251, 0.72);
+  --flow-edge: rgb(var(--c-line-strong));
+  --flow-edge-active: rgb(var(--c-accent));
+  --c-hue-1: 109 40 217;
+  --c-hue-2: 29 78 216;
+  --c-hue-3: 14 116 144;
+  --c-hue-4: 15 118 110;
+  --c-hue-5: 21 128 61;
+  --c-hue-6: 180 83 9;
+  --c-hue-7: 194 65 12;
+  --c-hue-8: 190 24 93;
   --grad-logo: linear-gradient(90deg, #6D28D9 0%, #7B61FF 30%, #6366F1 55%, #4F46E5 75%, #7B61FF 100%);
 
   /* JSON 代码板 — VS Code Light+（g1.1） */
@@ -788,12 +810,12 @@ html.theme-color-motion .app-sidebar-card {
   background-color: rgb(var(--c-base));
 }
 .vue-flow__edge-path {
-  stroke: rgb(var(--c-line-strong));
+  stroke: var(--flow-edge);
   stroke-width: 1.5;
 }
 .vue-flow__edge.selected .vue-flow__edge-path,
 .vue-flow__edge:focus .vue-flow__edge-path {
-  stroke: #7b61ff;
+  stroke: var(--flow-edge-active);
 }
 .vue-flow__edge.animated .vue-flow__edge-path {
   stroke: #7b61ff;

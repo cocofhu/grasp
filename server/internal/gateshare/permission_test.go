@@ -114,7 +114,7 @@ func TestBuildReviewPreviewDTOFiltersReactOnly(t *testing.T) {
 			Kind:             models.ShareLinkKindReview,
 		},
 		Kind: models.ShareLinkKindReview,
-		Node: &models.Node{ID: "research1", Type: "research", Label: "调研"},
+		Node: &models.Node{ID: "research1", Type: "agent", Label: "调研", Caps: &models.AgentCapabilities{Interaction: models.InteractionAuto, Review: true}},
 	}
 	dto := BuildReviewPreviewDTO(models.ShareLinkStateActive, lookup, "", "", "", "n", PreviewExtras{ReactSessionAlive: true})
 	if dto.Actions["confirm"] != "" {
@@ -129,7 +129,7 @@ func TestBuildReviewPreviewDTOKeepsGraspPreviewPorts(t *testing.T) {
 	lookup := &LookupResult{
 		Link: models.GateShareLink{ID: "gsl-g1", ExpiresAt: time.Now().Add(time.Hour), Kind: models.ShareLinkKindReview},
 		Kind: models.ShareLinkKindReview,
-		Node: &models.Node{ID: "grasp1", Type: "grasp"},
+		Node: &models.Node{ID: "grasp1", Type: "agent", Caps: &models.AgentCapabilities{Interaction: models.InteractionClarify, Tools: []string{models.ToolAskQuestion}}},
 	}
 	ports := []PublicPreviewPort{{Port: 18080, Kind: "port", Mode: "direct", DirectURL: "http://10.0.0.5:18080/"}}
 	dto := BuildReviewPreviewDTO(models.ShareLinkStateActive, lookup, "", "research.json", `{"title":"t"}`, "n", PreviewExtras{Ports: ports})

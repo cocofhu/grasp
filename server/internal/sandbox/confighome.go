@@ -7,8 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
-	"sort"
 	"strings"
 )
 
@@ -34,9 +32,6 @@ type ConfigHomeSpec struct {
 	// (<ProfilesRoot>/<agent>/workspace); its whole tree (rules/, skills/,
 	// AGENTS.md, scripts, …) is copied verbatim into the config home.
 	WorkDirSrc string
-	// EmbeddedRules lists platform rule files (under skills_embed/) to embed
-	// for this node type. See nodereg.EmbeddedRuleFiles.
-	EmbeddedRules []string
 	// EmbeddedSkills lists platform skill directories (under skills_embed/,
 	// e.g. "skills/live-variants") copied into the config home. They land
 	// after the agent workspace, so the platform copy wins on a name clash.
@@ -46,8 +41,8 @@ type ConfigHomeSpec struct {
 	// the platform never auto-injects it.
 	IncludeArtifactStore bool
 	// OmitOutcomeRule strips the「完成标记」section from artifact-store.md.
-	// Used for Grasp Phase1 so the always-on rule file never names the outcome
-	// tool; Phase2 introduces it via ConfirmSuffix / OutcomeRetry instead.
+	// Used for clarify Agents so the always-on rule file never names the
+	// outcome tool; the confirm turn introduces it instead.
 	OmitOutcomeRule bool
 	// MCP are the MCP servers (from the Agent config, with the reserved
 	// artifact-store entry already resolved to its run-scoped URL+token by the
@@ -67,14 +62,6 @@ type ConfigHomeSpec struct {
 	// OpenCodeConfig, when non-nil, is written as opencode.json if that file
 	// is not already present (user-authored config wins).
 	OpenCodeConfig map[string]any
-	// AgentName is the agent_profile used to resolve per-agent platform-rule
-	// overrides under <ProfilesRoot>/<agent>/platform-rules/.
-	AgentName string
-	// ProfilesRoot is the agents root (e.g. data/profiles).
-	ProfilesRoot string
-	// GlobalRulesDir is the global platform-rules directory (e.g.
-	// data/platform-rules).
-	GlobalRulesDir string
 }
 
 // MCPServerSpec is one MCP server entry for mcp.json. URL-based (streamable
@@ -105,8 +92,8 @@ func BuildConfigHome(spec ConfigHomeSpec) (string, error) {
 	}
 
 	// First lay down project-shared workspace (extend), then agent workspace
-	// (overlay). Platform base rules + mcp.json layer on top so platform rules
-	// can't be silently dropped by the agent.
+	// (overlay). The embedded base rules + mcp.json layer on top so they can't
+	// be silently dropped by the agent.
 	if spec.BaseWorkDirSrc != "" {
 		if err := copyTree(spec.BaseWorkDirSrc, dir); err != nil {
 			return "", err
@@ -126,9 +113,8 @@ func BuildConfigHome(spec ConfigHomeSpec) (string, error) {
 	if spec.IncludeArtifactStore {
 		embedded = append(embedded, "rules/artifact-store.md")
 	}
-	embedded = append(embedded, spec.EmbeddedRules...)
 	for _, name := range embedded {
-		b, err := resolvePlatformRule(name, spec.AgentName, spec.ProfilesRoot, spec.GlobalRulesDir)
+		b, err := skillAssets.ReadFile("skills_embed/" + name)
 		if err != nil {
 			return "", fmt.Errorf("resolve platform rule %s: %w", name, err)
 		}
@@ -330,7 +316,7 @@ func asStringAnyMap(v any) map[string]any {
 }
 
 // stripOutcomeRuleSection removes the「完成标记」section from artifact-store.md
-// so Grasp Phase1 never sees the outcome tool name in always-on rules.
+// so a clarify Agent never sees the outcome tool name in always-on rules.
 func stripOutcomeRuleSection(b []byte) []byte {
 	const heading = "## 完成标记"
 	s := string(b)
@@ -344,64 +330,6 @@ func stripOutcomeRuleSection(b []byte) []byte {
 		return []byte(strings.TrimRight(s[:i], "\n") + "\n")
 	}
 	return []byte(s[:i] + rest[next+1:])
-}
-
-// EmbeddedRuleBasenames returns sorted basenames of all embedded platform rules
-// under skills_embed/rules/.
-func EmbeddedRuleBasenames() ([]string, error) {
-	entries, err := fs.ReadDir(skillAssets, "skills_embed/rules")
-	if err != nil {
-		return nil, err
-	}
-	var names []string
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-			continue
-		}
-		names = append(names, e.Name())
-	}
-	sort.Strings(names)
-	return names, nil
-}
-
-// ReadEmbeddedRule reads an embedded platform rule by relative path such as
-// "rules/base.md".
-func ReadEmbeddedRule(relPath string) ([]byte, error) {
-	return skillAssets.ReadFile("skills_embed/" + relPath)
-}
-
-// platformRuleAgentPattern mirrors services path-layer agent names (Unicode L/N + `._-`).
-var platformRuleAgentPattern = regexp.MustCompile(`^[\p{L}\p{N}._-]+$`)
-
-func safePlatformRuleAgent(agentName string) string {
-	base := filepath.Base(strings.TrimSpace(agentName))
-	if base == "" || base == "." || base == ".." {
-		return ""
-	}
-	if !platformRuleAgentPattern.MatchString(base) {
-		return ""
-	}
-	return base
-}
-
-func resolvePlatformRule(relPath, agentName, profilesRoot, globalRulesDir string) ([]byte, error) {
-	base := filepath.Base(relPath)
-	if agentName != "" && profilesRoot != "" {
-		agent := safePlatformRuleAgent(agentName)
-		if agent != "" {
-			p := filepath.Join(profilesRoot, agent, "platform-rules", base)
-			if b, err := os.ReadFile(p); err == nil {
-				return b, nil
-			}
-		}
-	}
-	if globalRulesDir != "" {
-		p := filepath.Join(globalRulesDir, base)
-		if b, err := os.ReadFile(p); err == nil {
-			return b, nil
-		}
-	}
-	return skillAssets.ReadFile("skills_embed/" + relPath)
 }
 
 // copyEmbeddedDir copies skills_embed/<rel> (a directory) to dst/<rel>,

@@ -35,7 +35,7 @@ func researchEarlyFailGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "research", Type: "research", Label: "代码调研", Config: map[string]any{"prompt": "调研"}},
+			{ID: "research", Type: "agent", Caps: capsResearch, Label: "代码调研", Config: map[string]any{"prompt": "调研"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -210,7 +210,7 @@ func TestSuccessfulRunSkipsRunErrorArtifact(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "research", Type: "research", Config: map[string]any{"prompt": "调研"}},
+			{ID: "research", Type: "agent", Caps: capsResearchAuto, Config: map[string]any{"prompt": "调研"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{

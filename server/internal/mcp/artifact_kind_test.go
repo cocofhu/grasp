@@ -230,7 +230,7 @@ func TestUploadImageArtifactChannel(t *testing.T) {
 	h := NewHost(store)
 	runID := "upload-run"
 	tok := h.RegisterRun(runID)
-	h.SetActiveNode(runID, "tst", "test")
+	h.SetActiveNode(runID, "tst", capsTestReview)
 
 	// Hidden from agent tool list (g2.2: agents should use artifact-upload CLI).
 	list := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)

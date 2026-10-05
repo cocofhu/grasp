@@ -6,6 +6,7 @@ import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { NodeRun, Run, WFNode } from '@/lib/shared/types'
 import NodeOutputPanel from './NodeOutputPanel.vue'
+import { ASK_CAPS, CLARIFY_CAPS, PREVIEW_REVIEW_CAPS, writesCaps } from '@/test/capsFixtures'
 
 const apiMocks = vi.hoisted(() => ({
   artifactContent: vi.fn(),
@@ -76,10 +77,11 @@ describe('NodeOutputPanel', () => {
   it('renders research agent info and structured markdown', async () => {
     const node: WFNode = {
       id: 'research',
-      type: 'research',
+      type: 'agent',
       label: '调研',
       position: { x: 0, y: 0 },
       config: { agent_profile: 'researcher' },
+      caps: writesCaps('research'),
     }
     const nodeRun: NodeRun = {
       nodeId: 'research',
@@ -99,14 +101,15 @@ describe('NodeOutputPanel', () => {
     wrapper.unmount()
   })
 
-  it('loads plan.json for plan node', async () => {
+  it('loads plan.json for a plan-writing agent', async () => {
     const planDoc = { title: '计划', goals: [{ id: 'g1', title: '目标', status: 'pending' }] }
     const node: WFNode = {
       id: 'plan',
-      type: 'plan',
+      type: 'agent',
       label: '计划',
       position: { x: 0, y: 0 },
       config: {},
+      caps: writesCaps('plan'),
     }
     const nodeRun: NodeRun = {
       nodeId: 'plan',
@@ -200,13 +203,14 @@ describe('NodeOutputPanel', () => {
     wrapper.unmount()
   })
 
-  it('renders AppPreviewPanel for app_preview (not the generic agent card)', async () => {
+  it('renders AppPreviewPanel for a reviewed set_preview agent', async () => {
     const node: WFNode = {
       id: 'preview',
-      type: 'app_preview',
+      type: 'agent',
       label: '预览',
       position: { x: 0, y: 0 },
       config: { agent_profile: 'previewer' },
+      caps: PREVIEW_REVIEW_CAPS,
     }
     const nodeRun: NodeRun = {
       nodeId: 'preview',
@@ -222,13 +226,14 @@ describe('NodeOutputPanel', () => {
     wrapper.unmount()
   })
 
-  it('renders clarify interaction card for approve nodes', async () => {
+  it('renders clarify interaction card for clarify agents', async () => {
     const node: WFNode = {
       id: 'approve',
-      type: 'approve',
-      label: 'Approve',
+      type: 'agent',
+      label: '需求澄清',
       position: { x: 0, y: 0 },
       config: { agent_profile: 'pm' },
+      caps: CLARIFY_CAPS,
     }
     const nodeRun: NodeRun = {
       nodeId: 'approve',
@@ -250,13 +255,14 @@ describe('NodeOutputPanel', () => {
     wrapper.unmount()
   })
 
-  it('renders structured requirement and plan products for approve outputs', async () => {
+  it('renders structured requirement and plan products for clarify outputs', async () => {
     const node: WFNode = {
       id: 'approve',
-      type: 'approve',
-      label: 'Approve',
+      type: 'agent',
+      label: '需求澄清',
       position: { x: 0, y: 0 },
       config: {},
+      caps: CLARIFY_CAPS,
     }
     const nodeRun: NodeRun = {
       nodeId: 'approve',
@@ -277,16 +283,17 @@ describe('NodeOutputPanel', () => {
     wrapper.unmount()
   })
 
-  it('loads the requirement artifact belonging to the current react node', async () => {
+  it('loads the requirement artifact belonging to the current clarify node', async () => {
     apiMocks.artifactContent.mockResolvedValueOnce({
       content: JSON.stringify({ title: '当前节点需求', goals: ['目标'] }),
     })
     const node: WFNode = {
       id: 'react-current',
-      type: 'react',
-      label: 'React',
+      type: 'agent',
+      label: '澄清',
       position: { x: 0, y: 0 },
       config: {},
+      caps: ASK_CAPS,
     }
     const nodeRun: NodeRun = {
       nodeId: 'react-current',

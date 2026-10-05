@@ -62,11 +62,11 @@ describe('migrateBrandStorage', () => {
 
   it('runBrandStorageMigration is idempotent and covers fixed keys', () => {
     localStorage.setItem(LEGACY_STORAGE_KEYS.theme, 'light')
-    localStorage.setItem(LEGACY_STORAGE_KEYS.homeLastPipelineId, 'wf-1')
+    localStorage.setItem(LEGACY_STORAGE_KEYS.homeLastWorkflowId, 'wf-1')
     runBrandStorageMigration()
     runBrandStorageMigration()
     expect(localStorage.getItem(GRASP_STORAGE_KEYS.theme)).toBe('light')
-    expect(localStorage.getItem(GRASP_STORAGE_KEYS.homeLastPipelineId)).toBe('wf-1')
+    expect(localStorage.getItem(GRASP_STORAGE_KEYS.homeLastWorkflowId)).toBe('wf-1')
     expect(localStorage.getItem(LEGACY_STORAGE_KEYS.theme)).toBeNull()
   })
 })

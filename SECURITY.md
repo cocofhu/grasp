@@ -64,7 +64,7 @@ Inbox operators can mint a one-shot external approval URL for a single pending
   remains in-process; GET preview and POST decide use separate per-IP buckets so
   polling cannot starve confirm. The store keeps the last few nonces per link so
   multiple tabs can submit after refresh.
-- Public `app_preview` remote desktop uses a **separate** short-lived ticket
+- Public app-preview remote desktop uses a **separate** short-lived ticket
   (not the long-lived share token): clients exchange via
   `POST /public/gate-approvals/preview-ticket` with `X-Gate-Share-Token`, then
   connect `GET /public/gate-approvals/preview-vnc/ws?ticket=…` or load a

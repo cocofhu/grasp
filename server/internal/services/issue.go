@@ -13,7 +13,7 @@ import (
 )
 
 // IssueService persists human-reported preview issues. Humans submit problems
-// from the app_preview UI via REST; the engine snapshots them into a run
+// from the preview UI via REST; the engine snapshots them into a run
 // variable (preview_issues) at gate resume so a downstream node can consume
 // them via {{vars.preview_issues}}.
 type IssueService struct {

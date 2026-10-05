@@ -61,7 +61,7 @@ func TestReactReplySurfacesProviderErrorText(t *testing.T) {
 			return turnAction{errorText: providerQuotaErr, failed: true}
 		}
 	})
-	open := p.ReactOpen(context.Background(), req)
+	open := clarifyFirstTurn(p, req)
 	if open.Done {
 		t.Fatal("opening question must pause")
 	}
@@ -84,26 +84,26 @@ func TestReactReplySurfacesProviderErrorText(t *testing.T) {
 	}
 }
 
-// ReactOpen used to finishReact on empty narration even when the provider failed.
-// That silently closed the node; now it must keep the dialogue open with the banner.
-func TestReactOpenSurfacesProviderErrorText(t *testing.T) {
+// A provider failure on the first message must keep the dialogue open with
+// the failure banner instead of closing the node.
+func TestClarifyFirstTurnSurfacesProviderErrorText(t *testing.T) {
 	p, _, _, _, req := reactSetup(t, func(int) chatFunc {
 		return func(int) turnAction {
 			return turnAction{errorText: providerQuotaErr, failed: true}
 		}
 	})
-	open := p.ReactOpen(context.Background(), req)
-	if open.Done {
-		t.Fatalf("provider failure on open must not finish the node, got %+v", open)
+	first := clarifyFirstTurn(p, req)
+	if first.Done {
+		t.Fatalf("provider failure on the first turn must not finish the node, got %+v", first)
 	}
-	if !strings.Contains(open.Msg, "澄清开场失败") {
-		t.Fatalf("missing open failure banner: %q", open.Msg)
+	if !strings.Contains(first.Msg, "澄清回复失败") {
+		t.Fatalf("missing failure banner: %q", first.Msg)
 	}
-	if !strings.Contains(open.Msg, "free trial quota") {
-		t.Fatalf("missing provider error body: %q", open.Msg)
+	if !strings.Contains(first.Msg, "free trial quota") {
+		t.Fatalf("missing provider error body: %q", first.Msg)
 	}
 	if !p.HasLiveSession(req.RunID, req.NodeID) {
-		t.Fatal("session must stay parked after open failure")
+		t.Fatal("session must stay parked after first-turn failure")
 	}
 }
 
@@ -121,7 +121,7 @@ func TestReviseInPlaceSurfacesProviderErrorText(t *testing.T) {
 			return turnAction{errorText: providerQuotaErr, failed: true}
 		}
 	})
-	open := p.ReactOpen(context.Background(), req)
+	open := clarifyFirstTurn(p, req)
 	if open.Done {
 		t.Fatal("opening question must pause")
 	}
@@ -160,7 +160,7 @@ func TestReactReplySurfacesTopLevelErrorWithContent(t *testing.T) {
 			return turnAction{narration: "partial thought", sendError: providerQuotaErr}
 		}
 	})
-	open := p.ReactOpen(context.Background(), req)
+	open := clarifyFirstTurn(p, req)
 	if open.Done {
 		t.Fatal("opening question must pause")
 	}

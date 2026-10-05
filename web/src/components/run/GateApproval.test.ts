@@ -3,6 +3,7 @@ import { defineComponent } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { TEST_REVIEW_CAPS, writesCaps } from '@/test/capsFixtures'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { Gate, Run } from '@/lib/shared/types'
@@ -453,10 +454,11 @@ describe('GateApproval content-fit layout branches', () => {
           },
           {
             id: 'research',
-            type: 'research',
+            type: 'agent',
             label: '调研',
             position: { x: 0, y: 0 },
             config: {},
+            caps: writesCaps('research'),
           },
         ],
         nodeExecutions: {
@@ -516,33 +518,6 @@ describe('GateApproval content-fit layout branches', () => {
     )
     expect(form.classes()).not.toContain('sticky')
     expectApprovalActionsVisible(wrapper)
-    wrapper.unmount()
-  })
-
-  it('keeps app_preview on flex-1 fill path under fillPreview', async () => {
-    const wrapper = mountApproval({
-      fillPreview: true,
-      gate: baseGate({ nodeId: 'preview-gate' }),
-      run: baseRun({
-        nodes: [
-          {
-            id: 'preview-gate',
-            type: 'app_preview',
-            label: '预览',
-            position: { x: 0, y: 0 },
-            config: {},
-          },
-        ],
-      }),
-    })
-    await flushPromises()
-
-    expect(contentFitRoot(wrapper).exists()).toBe(false)
-    const app = wrapper.find('[data-testid="app-preview"]')
-    expect(app.exists()).toBe(true)
-    expect(app.attributes('data-fill')).toBe('1')
-    const appHost = app.element.parentElement
-    expect(appHost?.className).toMatch(/\bflex-1\b/)
     wrapper.unmount()
   })
 
@@ -1088,10 +1063,11 @@ describe('GateApproval content-fit layout branches', () => {
           },
           {
             id: 'research',
-            type: 'research',
+            type: 'agent',
             label: '调研',
             position: { x: 0, y: 0 },
             config: {},
+            caps: writesCaps('research'),
           },
         ],
         nodeExecutions: {
@@ -1484,10 +1460,11 @@ describe('GateApproval primary-artifacts status guard', () => {
         },
         {
           id: 'research',
-          type: 'research',
+          type: 'agent',
           label: '调研',
           position: { x: 0, y: 0 },
           config: {},
+          caps: writesCaps('research'),
         },
       ],
       nodeExecutions: {
@@ -1618,10 +1595,11 @@ describe('GateApproval product editor state machine', () => {
         },
         {
           id: 'research',
-          type: 'research',
+          type: 'agent',
           label: '调研',
           position: { x: 0, y: 0 },
           config: {},
+          caps: writesCaps('research'),
         },
       ],
       nodeExecutions: {
@@ -1680,10 +1658,11 @@ describe('GateApproval product editor state machine', () => {
           },
           {
             id: 'test',
-            type: 'test',
+            type: 'agent',
             label: '测试',
             position: { x: 0, y: 0 },
             config: { produces: 'screenshot-blob' },
+            caps: TEST_REVIEW_CAPS,
           },
         ],
         artifacts: [
@@ -1796,10 +1775,11 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
         },
         {
           id: 'visual',
-          type: 'visual',
+          type: 'agent',
           label: '视觉',
           position: { x: 0, y: 0 },
           config: {},
+          caps: writesCaps('page'),
         },
       ],
       nodeExecutions: {
@@ -2488,236 +2468,6 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
     expect(form.find('[data-testid="content-fit-preview-issues-loading"]').exists()).toBe(false)
     expect(form.findAll('button').some((b) => b.text().includes('确认并流转'))).toBe(true)
     expect(form.findAll('button').every((b) => !b.text().includes('返回修改'))).toBe(true)
-    expect(wrapper.text()).toContain('确认并流转')
-    wrapper.unmount()
-  })
-})
-
-describe('GateApproval app_preview reject without form', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    breakpointMocks.isMobile.value = false
-    apiMocks.listPreviewIssues.mockResolvedValue({ issues: [] })
-    // Avoid pollution from visual tests that mock page.html primary products.
-    apiMocks.listGatePrimaryArtifacts.mockRejectedValue(new Error('offline'))
-    apiMocks.artifactContent.mockResolvedValue({ content: '{}' })
-  })
-
-  it('hides reject with empty form and no open preview issues (default app_preview)', async () => {
-    const wrapper = mountApproval({
-      fillPreview: true,
-      gate: baseGate({
-        nodeId: 'preview-gate',
-        form: [],
-        actions: [
-          { id: 'pass', label: '通过' },
-          { id: 'fail', label: '退回' },
-        ],
-      }),
-      run: baseRun({
-        nodes: [
-          {
-            id: 'preview-gate',
-            type: 'app_preview',
-            label: '预览',
-            position: { x: 0, y: 0 },
-            config: {},
-          },
-        ],
-      }),
-    })
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="paragraph-input"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('确认并流转')
-    expect(wrapper.text()).not.toContain('可直接退回')
-    const buttons = wrapper.findAll('button')
-    expect(buttons.some((b) => b.text().includes('确认并流转'))).toBe(true)
-    expect(buttons.every((b) => b.text() !== '退回' && !b.text().includes('退回('))).toBe(true)
-    expect(wrapper.emitted('resolve')).toBeFalsy()
-    wrapper.unmount()
-  })
-
-  it('hides configured gate.form on app_preview and disables confirm when open issues exist', async () => {
-    apiMocks.listPreviewIssues.mockResolvedValue({
-      issues: [
-        {
-          id: 'iss-1',
-          runId: 'run-1',
-          nodeId: 'preview-gate',
-          body: '预览问题',
-          status: 'open',
-          createdAt: '2026-07-18T00:00:00Z',
-        },
-      ],
-    })
-    const wrapper = mountApproval({
-      fillPreview: true,
-      gate: baseGate({
-        nodeId: 'preview-gate',
-        form: [{ key: 'comment', label: '评审意见' }],
-        actions: [
-          { id: 'pass', label: '通过' },
-          { id: 'fail', label: '退回' },
-        ],
-      }),
-      run: baseRun({
-        nodes: [
-          {
-            id: 'preview-gate',
-            type: 'app_preview',
-            label: '预览',
-            position: { x: 0, y: 0 },
-            config: {},
-          },
-        ],
-      }),
-    })
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="paragraph-input"]').exists()).toBe(false)
-    const buttons = wrapper.findAll('button')
-    // ≥1 open issue: 确认并流转 is hidden; the gate's own 退回 exit is offered, enabled.
-    expect(buttons.some((b) => b.text().includes('确认并流转'))).toBe(false)
-    const reject = buttons.find((b) => b.text().includes('退回'))!
-    expect(reject).toBeTruthy()
-    expect((reject.element as HTMLButtonElement).disabled).toBe(false)
-
-    await reject.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.emitted('resolve')?.[0]?.[0]).toBe('fail')
-    wrapper.unmount()
-  })
-
-  function appPreviewHotMount(opts?: { issues?: Array<Record<string, unknown>> }) {
-    if (opts?.issues) {
-      apiMocks.listPreviewIssues.mockResolvedValue({ issues: opts.issues })
-    }
-    return mountApproval({
-      fillPreview: true,
-      gate: baseGate({
-        nodeId: 'preview-gate',
-        form: [],
-        actions: [
-          { id: 'pass', label: '通过' },
-          { id: 'fail', label: '退回' },
-        ],
-        reactSessionAlive: true,
-        reactUpstreamNodeId: 'agent',
-      }),
-      run: baseRun({
-        nodes: [
-          {
-            id: 'preview-gate',
-            type: 'app_preview',
-            label: '预览',
-            position: { x: 0, y: 0 },
-            config: {},
-          },
-        ],
-      }),
-    })
-  }
-
-  it('hot app_preview n_open=0: send + confirm mounted; empty send disabled until draft', async () => {
-    const wrapper = appPreviewHotMount()
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="app-preview"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="review-composer-gate"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="review-composer-pass"]').exists()).toBe(true)
-    const send = wrapper.find('[data-testid="review-composer-send"]')
-    expect(send.exists()).toBe(true)
-    expect((send.element as HTMLButtonElement).disabled).toBe(true)
-    expect(apiMocks.gateReactRevise).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('hot app_preview VNC pick (outerHTML) stages ReAct selector annotation', async () => {
-    const wrapper = appPreviewHotMount()
-    await flushPromises()
-    const panel = wrapper.findComponent({ name: 'AppPreviewPanel' })
-    expect(panel.exists()).toBe(true)
-    await panel.vm.$emit('pick', {
-      selector: '#hero',
-      tagName: 'DIV',
-      outerHTML: '<div id="hero">x</div>',
-      url: 'http://127.0.0.1:5173/settings?tab=1',
-    })
-    await flushPromises()
-    // Annotation chip: path · selector; full url stays on annotation.
-    expect(wrapper.text()).toContain('/settings?tab=1 · #hero')
-    const vm = wrapper.vm as any
-    expect(vm.reactAnnotations?.[0]?.url).toBe('http://127.0.0.1:5173/settings?tab=1')
-    wrapper.unmount()
-  })
-
-  it('hot app_preview VNC pick without url still stages selector', async () => {
-    const wrapper = appPreviewHotMount()
-    await flushPromises()
-    const panel = wrapper.findComponent({ name: 'AppPreviewPanel' })
-    await panel.vm.$emit('pick', {
-      selector: '#hero',
-      tagName: 'DIV',
-      outerHTML: '<div id="hero">x</div>',
-    })
-    await flushPromises()
-    expect(wrapper.text()).toContain('#hero')
-    const vm = wrapper.vm as any
-    expect(vm.reactAnnotations?.[0]?.url).toBeUndefined()
-    wrapper.unmount()
-  })
-
-  it('hot app_preview n_open≥1: send enabled and confirm disabled; send uses gateReactRevise', async () => {
-    apiMocks.gateReactRevise.mockResolvedValue({})
-    const wrapper = appPreviewHotMount({
-      issues: [
-        {
-          id: 'iss-1',
-          runId: 'run-1',
-          nodeId: 'preview-gate',
-          body: '预览问题',
-          status: 'open',
-          createdAt: '2026-07-18T00:00:00Z',
-        },
-      ],
-    })
-    await flushPromises()
-
-    const pass = wrapper.find('[data-testid="review-composer-pass"]')
-    expect(pass.exists()).toBe(true)
-    expect((pass.element as HTMLButtonElement).disabled).toBe(true)
-    const send = wrapper.find('[data-testid="review-composer-send"]')
-    expect(send.exists()).toBe(true)
-    expect(send.text()).toContain('发送')
-    expect((send.element as HTMLButtonElement).disabled).toBe(false)
-    await send.trigger('click')
-    await flushPromises()
-    expect(apiMocks.gateReactRevise).toHaveBeenCalled()
-    expect(wrapper.emitted('resolve')).toBeFalsy()
-    wrapper.unmount()
-  })
-
-  it('hot app_preview only-resolved: confirm enabled and send present', async () => {
-    const wrapper = appPreviewHotMount({
-      issues: [
-        {
-          id: 'iss-resolved',
-          runId: 'run-1',
-          nodeId: 'preview-gate',
-          body: '已解决',
-          status: 'resolved',
-          createdAt: '2026-07-18T00:00:00Z',
-        },
-      ],
-    })
-    await flushPromises()
-
-    const pass = wrapper.find('[data-testid="review-composer-pass"]')
-    expect(pass.exists()).toBe(true)
-    expect((pass.element as HTMLButtonElement).disabled).toBe(false)
-    expect(wrapper.find('[data-testid="review-composer-send"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('确认并流转')
     wrapper.unmount()
   })

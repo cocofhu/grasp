@@ -63,7 +63,7 @@ func (h *Handlers) PublicPreviewTicket(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": st})
 		return
 	}
-	if lookup.Kind != models.ShareLinkKindReview || lookup.Node == nil || lookup.Node.Type != "app_preview" {
+	if lookup.Kind != models.ShareLinkKindReview || lookup.Node == nil || !lookup.Node.Caps.CanPreview() {
 		c.JSON(http.StatusForbidden, gin.H{"error": "unsupported", "message": "当前分享链不支持远程预览"})
 		return
 	}

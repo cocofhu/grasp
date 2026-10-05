@@ -12,7 +12,7 @@ const MOCK_PROJECT = {
 const MOCK_WORKFLOWS = [
   {
     id: 'wf-1',
-    name: 'Alpha Pipeline',
+    name: 'Alpha Workflow',
     description: 'First workflow',
     status: 'published',
     version: 2,
@@ -24,7 +24,7 @@ const MOCK_WORKFLOWS = [
   },
   {
     id: 'wf-2',
-    name: 'Beta Pipeline',
+    name: 'Beta Workflow',
     description: '',
     status: 'draft',
     version: 1,
@@ -35,7 +35,7 @@ const MOCK_WORKFLOWS = [
   },
   {
     id: 'wf-3',
-    name: 'Gamma Pipeline',
+    name: 'Gamma Workflow',
     description: 'Last row for overflow check',
     status: 'published',
     version: 1,
@@ -84,7 +84,7 @@ async function gotoProjectDetail(
               {
                 id: 'run-p1',
                 workflowId: 'wf-1',
-                workflowName: 'Alpha Pipeline',
+                workflowName: 'Alpha Workflow',
                 title: '本项目Run',
                 status: 'running',
                 trigger: 'manual',
@@ -171,15 +171,15 @@ async function gotoProjectDetail(
   await page.goto(`/project-detail.html${qs}`)
   await expect(page.getByRole('heading', { name: 'Demo Project' })).toBeVisible({ timeout: 10_000 })
   await expect(page.getByRole('button', { name: '看板' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '流水线' })).toBeVisible()
-  // Workflow tests operate on the pipelines tab (board is now the default).
+  await expect(page.getByRole('button', { name: '工作流' })).toBeVisible()
+  // Workflow tests operate on the workflows tab (board is now the default).
   if (!opts.keepDefaultTab && opts.tab !== 'board') {
-    await page.getByRole('button', { name: '流水线' }).click()
+    await page.getByRole('button', { name: '工作流' }).click()
     await expect(page.getByRole('button', { name: '导入' })).toBeVisible({ timeout: 5_000 })
   }
 }
 
-test.describe('ProjectDetailView 流水线操作列', () => {
+test.describe('ProjectDetailView 工作流操作列', () => {
   test('桌面：图标+文字五操作与导入/新建工具栏', async ({ page }) => {
     await gotoProjectDetail(page, { width: 1280, height: 800 })
 
@@ -253,12 +253,12 @@ test.describe('ProjectDetailView 流水线操作列', () => {
     const create = page.getByTestId('create-baseline-workflow')
     await expect(create).toBeDisabled()
     const workflowName = page.getByTestId('baseline-workflow-name')
-    await expect(workflowName).toHaveAttribute('placeholder', '例如 需求对齐流水线')
+    await expect(workflowName).toHaveAttribute('placeholder', '例如 需求对齐工作流')
     await expect(page.getByRole('dialog').locator('svg')).toHaveCount(3)
 
     await page.getByPlaceholder('仓库地址 https://…/repo.git').fill('https://github.com/acme/app.git')
     await expect(create).toBeDisabled()
-    await workflowName.fill('需求对齐流水线')
+    await workflowName.fill('需求对齐工作流')
     await expect(create).toBeEnabled()
     await page.getByRole('dialog').getByRole('button', { name: '添加仓库' }).click()
     await expect(page.getByPlaceholder('仓库地址 https://…/repo.git')).toHaveCount(2)
@@ -290,7 +290,7 @@ test.describe('ProjectDetailView 流水线操作列', () => {
     }
 
     await menu.getByRole('menuitem', { name: '删除' }).click()
-    await expect(page.getByText('删除工作流 · Gamma Pipeline')).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByText('删除工作流 · Gamma Workflow')).toBeVisible({ timeout: 5_000 })
   })
 
   test('窄屏运行 click.stop 不误跳编辑器', async ({ page }) => {
@@ -307,7 +307,7 @@ test.describe('ProjectDetailView 流水线操作列', () => {
 
     const actionCell = page.locator('table tbody tr').first().locator('td').last()
     await actionCell.getByRole('button', { name: '导出' }).click()
-    await expect(page.getByText('导出工作流 · Alpha Pipeline')).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByText('导出工作流 · Alpha Workflow')).toBeVisible({ timeout: 5_000 })
   })
 })
 
@@ -333,7 +333,6 @@ const MOCK_SHARED_AGENT = {
   mcp: [],
   env: { API_URL: 'https://example.com' },
   layout: { configRoot: '/root/.cursor', workspaceDir: '/root/workspace' },
-  prompts: {},
 }
 
 const MOCK_SHARED_AGENT_EMPTY = {
@@ -543,7 +542,7 @@ test.describe('ProjectDetailView 共享 Agent / 工作流变量面板布局', ()
     await expect(page.getByTestId('shared-agent-subtab-files')).toBeVisible()
     await expect(page.getByTestId('shared-agent-subtab-mcp')).toBeVisible()
     await expect(page.getByTestId('shared-agent-subtab-env')).toBeVisible()
-    await expect(page.getByTestId('shared-agent-subtab-prompts')).toBeVisible()
+    await expect(page.getByTestId('shared-agent-subtab-prompts')).toHaveCount(0)
     await expect(page.getByTestId('shared-agent-subtab-meta')).toBeVisible()
     await expect(page.getByTestId('shared-agent-subtab-test')).toHaveCount(0)
     await expect(page.getByTestId('shared-agent-subtab-data')).toHaveCount(0)
@@ -651,7 +650,7 @@ test.describe('ProjectDetailView 项目信息面板', () => {
     // 点击删除 → 既有确认弹窗 → 取消后仍停留详情且项目未删
     await deleteBtn.click()
     await expect(page.getByText('删除项目 · Demo Project')).toBeVisible({ timeout: 5_000 })
-    await expect(page.getByText('仅当项目下已无流水线时可删除')).toBeVisible()
+    await expect(page.getByText('仅当项目下已无工作流时可删除')).toBeVisible()
     await page.getByRole('button', { name: '取消' }).click()
     await expect(page.getByText('删除项目 · Demo Project')).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'Demo Project' })).toBeVisible()
@@ -796,11 +795,11 @@ test.describe('ProjectDetailView 看板首 Tab 与深链', () => {
     await expect(page).toHaveURL(/tab=board/)
   })
 
-  test('?tab=board 直达看板；切换流水线后仍可回看板', async ({ page }) => {
+  test('?tab=board 直达看板；切换工作流后仍可回看板', async ({ page }) => {
     await gotoProjectDetail(page, { width: 1280, height: 800, tab: 'board' })
     await expect(page.getByTestId('project-board-panel')).toBeVisible()
     await expect(page).toHaveURL(/tab=board/)
-    await page.getByRole('button', { name: '流水线' }).click()
+    await page.getByRole('button', { name: '工作流' }).click()
     await expect(page.getByRole('button', { name: '导入' })).toBeVisible()
     await expect(page).toHaveURL(/tab=workflows/)
     await page.getByRole('button', { name: '看板' }).click()

@@ -40,7 +40,7 @@ function mountModal(open = true, extraProps: Record<string, unknown> = {}) {
     props: {
       open,
       workflowId: 'wf-1',
-      workflowName: '测试流水线',
+      workflowName: '测试工作流',
       fields: [{ key: 'topic', desc: '主题', required: true }],
       runInputs: { topic: 'hello' },
       runImages: {},
@@ -80,7 +80,7 @@ describe('RunLaunchModal', () => {
     const wrapper = mountModal(true)
     await flushPromises()
     expect(wrapper.find('[data-testid="modal"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('测试流水线')
+    expect(wrapper.text()).toContain('测试工作流')
     wrapper.unmount()
   })
 
@@ -100,7 +100,7 @@ describe('RunLaunchModal', () => {
       props: {
         open: true,
         workflowId: 'wf-1',
-        workflowName: '测试流水线',
+        workflowName: '测试工作流',
         fields: [{ key: 'topic', desc: '主题', required: true }],
         runInputs: { topic: '' },
         runImages: {},

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import StatusPill from '@/components/ui/StatusPill.vue'
@@ -218,6 +219,22 @@ const {
   currentLiveLogBootSession,
   onLiveLogBootSession,
 } = useRunDetail()
+
+const followCanvas = ref(true)
+const canvasIterations = computed(() => {
+  const m: Record<string, number> = {}
+  for (const [id, nr] of Object.entries(run.value.nodeRuns)) if (nr.iteration) m[id] = nr.iteration
+  return m
+})
+const canvasFailReasons = computed(() => {
+  const m: Record<string, string> = {}
+  for (const [id, nr] of Object.entries(run.value.nodeRuns)) if (nr.status === 'failed' && nr.error) m[id] = nr.error
+  return m
+})
+const canvasFollowNodeId = computed(() => {
+  const s = statusMap.value
+  return wf.value.nodes.find((n) => s[n.id] === 'running' || s[n.id] === 'waiting_human')?.id ?? null
+})
 </script>
 
 <template>
@@ -571,12 +588,20 @@ const {
           :nodes="wf.nodes"
           :edges="wf.edges"
           mode="run"
+          auto-layout-on-init
           :status-map="statusMap"
+          :iterations="canvasIterations"
+          :fail-reasons="canvasFailReasons"
           :selected-node="selected"
           :active-path="activePath"
+          :follow="followCanvas"
+          :follow-node-id="canvasFollowNodeId"
+          data-testid="run-detail-canvas"
+          @update:follow="followCanvas = $event"
           @select-node="selectNode"
+          @reply="selectNode"
         />
-        <div class="pointer-events-none absolute right-3 top-3 rounded-md border border-line bg-surface/90 px-2.5 py-1 text-[11px] text-txt3 backdrop-blur">
+        <div class="pointer-events-none absolute bottom-3 right-3 rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] text-txt3">
           {{ t('pages.runDetail.canvasHint') }}
         </div>
       </div>

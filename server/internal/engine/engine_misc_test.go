@@ -80,15 +80,15 @@ func TestSetVarBranchImplementPipeline(t *testing.T) {
 				map[string]any{"expr": "ignored"},                // no var name -> skipped
 			}}},
 			{ID: "br", Type: "branch", Config: map[string]any{"cases": []any{
-				map[string]any{"when": "vars.x == 3", "goto": "impl"},
+				map[string]any{"when": "vars.x == 3", "id": "impl"},
 			}}},
-			{ID: "impl", Type: "implement", Config: map[string]any{"prompt": "build", "agent_profile": "dev"}},
+			{ID: "impl", Type: "agent", Caps: capsImplement, Config: map[string]any{"prompt": "build", "agent_profile": "dev"}},
 			{ID: "output", Type: "output", Config: map[string]any{"result": "done x={{vars.x}} branch={{vars.branches}}"}},
 		},
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "sv"},
 			{ID: "e2", Source: "sv", Target: "br"},
-			{ID: "e3", Source: "br", Target: "impl"},
+			{ID: "e3", Source: "br", Target: "impl", SourceHandle: "impl"},
 			{ID: "e4", Source: "impl", Target: "output"},
 		},
 	}
@@ -137,8 +137,8 @@ func TestGateFormValidationRequired(t *testing.T) {
 		},
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "gate"},
-			{ID: "e2", Source: "gate", Target: "output", When: "action == 'approve'"},
-			{ID: "e3", Source: "gate", Target: "output", When: "action == 'reject'"},
+			{ID: "e2", Source: "gate", Target: "output", SourceHandle: "approve"},
+			{ID: "e3", Source: "gate", Target: "output", SourceHandle: "reject"},
 		},
 	}
 	eng, db, _ := setupEngineGraphP(t, g)
@@ -317,7 +317,7 @@ func TestCaptureDeliverableNoProduces(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "work", Type: "agent", Config: map[string]any{"prompt": "做点事"}},
+			{ID: "work", Type: "agent", Caps: capsPlain, Config: map[string]any{"prompt": "做点事"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -342,7 +342,7 @@ func reactOnlyGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "clarify", Type: "react", Config: map[string]any{"agent_profile": "pm", "prompt": "澄清"}},
+			{ID: "clarify", Type: "agent", Caps: capsClarify, Config: map[string]any{"agent_profile": "pm", "prompt": "澄清"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -352,8 +352,8 @@ func reactOnlyGraph() models.Graph {
 	}
 }
 
-// TestReactMultiRound: the agent keeps the dialogue open for one extra round
-// (Done:false) before finishing, exercising the !t.Done branch of ReactReply.
+// TestReactMultiRound: a non-confirm reply keeps the dialogue open; the
+// confirm reply finishes the node.
 func TestReactMultiRound(t *testing.T) {
 	eng, db, p := setupEngineGraphP(t, reactOnlyGraph())
 	p.reactPending = 1
@@ -379,12 +379,9 @@ func TestReactMultiRound(t *testing.T) {
 	// do not race a late finish("waiting_human") from the opening turn.
 	waitReactPause(t, db, run.ID, "clarify")
 	waitRunStatus(t, db, run.ID, "waiting_human")
-	// Second reply -> agent finishes; run completes.
-	if err := eng.ReactReply(run.ID, "clarify", "第二轮", nil, nil, false); err != nil {
+	// Second reply confirms -> the node finishes; run completes.
+	if err := eng.ReactReply(run.ID, "clarify", "第二轮", nil, nil, true); err != nil {
 		t.Fatalf("reply 2: %v", err)
-	}
-	if err := eng.waitReviewReadyForTest(run.ID, "clarify", 5*time.Second); err != nil {
-		t.Fatalf("wait after reply 2: %v", err)
 	}
 	waitRunStatus(t, db, run.ID, "completed")
 
@@ -409,66 +406,6 @@ func TestReactContractMiss(t *testing.T) {
 		t.Fatalf("reply: %v", err)
 	}
 	waitRunStatus(t, db, run.ID, "failed")
-}
-
-// autoReactGraph is a single react node driven by the `auto_clarify` var so the
-// auto-clarify (auto_var) loop can be exercised with the var toggled on/off.
-func autoReactGraph(autoVal any) models.Graph {
-	return models.Graph{
-		Variables: []models.Variable{{Name: "auto_clarify", Type: "bool", Value: autoVal}},
-		Nodes: []models.Node{
-			{ID: "input", Type: "input"},
-			{ID: "clarify", Type: "react", Config: map[string]any{"agent_profile": "pm", "prompt": "澄清", "auto_var": "auto_clarify"}},
-			{ID: "output", Type: "output"},
-		},
-		Edges: []models.Edge{
-			{ID: "e1", Source: "input", Target: "clarify"},
-			{ID: "e2", Source: "clarify", Target: "output"},
-		},
-	}
-}
-
-// TestReactAutoVarCompletes: with auto_var truthy the engine answers the react
-// dialogue itself (recommended option, or the first as fallback — the fake
-// raises un-recommended options, so the first "选项A" is chosen) and the run
-// completes without ever pausing for a human.
-func TestReactAutoVarCompletes(t *testing.T) {
-	eng, db, _ := setupEngineGraphP(t, autoReactGraph(true))
-	run, err := eng.StartRun("wf", nil, "test")
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	waitRunStatus(t, db, run.ID, "completed")
-
-	var conv models.ReactConversation
-	if err := db.Where("run_id = ? AND node_id = ?", run.ID, "clarify").First(&conv).Error; err != nil {
-		t.Fatalf("load conversation: %v", err)
-	}
-	if !conv.Done {
-		t.Fatal("conversation should be done after auto clarify")
-	}
-	var humanText string
-	for _, m := range conv.Messages {
-		if m.Role == "human" {
-			humanText = m.Text
-			break
-		}
-	}
-	if !strings.Contains(humanText, "选项A") {
-		t.Fatalf("auto reply should pick the first option 选项A, got %q", humanText)
-	}
-}
-
-// TestReactAutoVarFalsePauses: an auto_var that resolves falsy leaves the node
-// interactive — it pauses for a human exactly like a plain react node.
-func TestReactAutoVarFalsePauses(t *testing.T) {
-	eng, db, _ := setupEngineGraphP(t, autoReactGraph(false))
-	run, err := eng.StartRun("wf", nil, "test")
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	waitReactPause(t, db, run.ID, "clarify")
-	waitRunStatus(t, db, run.ID, "waiting_human")
 }
 
 func TestBrokerGetterLiveEventsAndPublishAcp(t *testing.T) {
