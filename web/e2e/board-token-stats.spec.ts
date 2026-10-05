@@ -11,7 +11,7 @@ function stubRun(partial: {
   return {
     id: partial.id,
     workflowId: 'wf-1',
-    workflowName: 'Demo Pipeline',
+    workflowName: 'Demo Workflow',
     title: partial.title,
     status: partial.status,
     trigger: 'manual',

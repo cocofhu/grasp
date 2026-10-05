@@ -81,13 +81,27 @@ const run = (over: Record<string, unknown> = {}): Run =>
     id: 'run-1',
     status: 'waiting_human',
     nodes: [
-      { id: 'gate-1', type: 'approve', config: {} },
+      { id: 'gate-1', type: 'human_gate', config: {} },
       { id: 'producer', type: 'output', config: {} },
     ],
     artifacts: [],
     nodeExecutions: {},
     ...over,
   }) as unknown as Run
+
+/** Gate whose primary product is a page.html (HtmlPreview + PreviewIssue path). */
+function pageGateRun(): Run {
+  mocks.listGatePrimaryArtifacts.mockResolvedValue({
+    items: [{ name: 'page.html', kind: 'html', readonly: false, nodeId: 'producer', outputKey: 'page' }],
+  })
+  return run({
+    nodes: [
+      { id: 'gate-1', type: 'human_gate', config: { body_template: '{{nodes.producer.outputs.page}}' } },
+      { id: 'producer', type: 'output', config: {} },
+    ],
+    artifacts: [{ id: 'page-art', name: 'page.html', sizeBytes: 10 }],
+  })
+}
 
 function withApproval(over: Partial<GateApprovalProps> = {}) {
   let approval!: ReturnType<typeof useGateApproval>
@@ -323,7 +337,7 @@ describe('useGateApproval actions', () => {
   it('handles preview picks, duplicate annotations and preview issue failures', async () => {
     const { approval, app } = withApproval({
       gate: gate(),
-      run: run({ nodes: [{ id: 'gate-1', type: 'app_preview', config: {} }] }),
+      run: pageGateRun(),
     })
     await flushPromises()
     expect(approval.usesPreviewIssues.value).toBe(true)
@@ -359,7 +373,7 @@ describe('useGateApproval actions', () => {
 
   it('records and sends preview feedback through the mounted chat contract', async () => {
     const { approval, app, emit } = withApproval({
-      run: run({ nodes: [{ id: 'gate-1', type: 'app_preview', config: {} }] }),
+      run: pageGateRun(),
     })
     await flushPromises()
     const flush = vi.fn(async () => true)
@@ -430,7 +444,7 @@ describe('useGateApproval actions', () => {
       nodes: [
         {
           id: 'gate-1',
-          type: 'approve',
+          type: 'human_gate',
           config: { body_template: '{{nodes.producer.outputs.page}}' },
         },
         { id: 'producer', type: 'output', config: {} },
@@ -496,7 +510,7 @@ describe('useGateApproval actions', () => {
     mocks.artifactContent.mockResolvedValue({ content: '<button>Buy</button>' })
     const visualRun = run({
       nodes: [
-        { id: 'gate-1', type: 'approve', config: { body_template: '{{nodes.producer.outputs.page}}' } },
+        { id: 'gate-1', type: 'human_gate', config: { body_template: '{{nodes.producer.outputs.page}}' } },
         { id: 'producer', type: 'output', config: {} },
       ],
       artifacts: [{ id: 'page', name: 'page.html' }],
@@ -572,7 +586,7 @@ describe('useGateApproval actions', () => {
 
   it('keeps a preview draft when history succeeds but hot revise fails', async () => {
     const { approval, app } = withApproval({
-      run: run({ nodes: [{ id: 'gate-1', type: 'app_preview', config: {} }] }),
+      run: pageGateRun(),
     })
     await flushPromises()
     approval.feedbackChatRef.value = {
@@ -647,7 +661,7 @@ describe('useGateApproval actions', () => {
 
   it('uses fallback preview issue APIs and composer action routing', async () => {
     const { approval, app, emit } = withApproval({
-      run: run({ nodes: [{ id: 'gate-1', type: 'app_preview', config: {} }] }),
+      run: pageGateRun(),
     })
     await flushPromises()
     approval.feedbackChatRef.value = null
@@ -694,7 +708,7 @@ describe('useGateApproval actions', () => {
     isMobile.value = true
     const productRun = run({
       nodes: [
-        { id: 'gate-1', type: 'approve', config: { body_template: '{{nodes.producer.outputs.page}}' } },
+        { id: 'gate-1', type: 'human_gate', config: { body_template: '{{nodes.producer.outputs.page}}' } },
         { id: 'producer', type: 'output', config: {} },
       ],
       artifacts: [],

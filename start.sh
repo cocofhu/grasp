@@ -68,13 +68,21 @@ if [[ -z "${GRASP_AUTH_USERS:-}" ]]; then
   GRASP_AUTH_USERS='[{"username":"admin","password_hash":"$2a$10$EY.SdHq0p6drMz6U9JVrz.Kq0jNkg7TWmsVUFLtB1dL1yIelDkITi","is_admin":true}]'
 fi
 
+# Credential encryption key: generated once and kept in .env so saved
+# credentials stay readable across restarts.
+if [[ -z "${GRASP_SECRETS_KEY:-}" ]]; then
+  # shellcheck source=scripts/ensure-secrets-key.sh
+  source scripts/ensure-secrets-key.sh
+  GRASP_SECRETS_KEY="$(ensure_secrets_key .env)"
+fi
+
 if [[ -z "${GRASP_DOCTOR_TOKEN:-}" ]]; then
   GRASP_DOCTOR_TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
 fi
 
 export GRASP_PORT GRASP_GATEWAY_PORT GRASP_SANDBOX_GATEWAY_URL
 export GRASP_DEPLOYMENT_MODE GRASP_IMAGE SANDBOX_GATEWAY_IMAGE
-export SANDBOX_IMAGE SANDBOX_GATEWAY_API_KEY GRASP_AUTH_USERS GRASP_DOCTOR_TOKEN
+export SANDBOX_IMAGE SANDBOX_GATEWAY_API_KEY GRASP_AUTH_USERS GRASP_DOCTOR_TOKEN GRASP_SECRETS_KEY
 export GRASP_SANDBOX_IMAGE
 # Grasp client uses the dedicated env name; keep it in sync with the gateway.
 export GRASP_SANDBOX_GATEWAY_API_KEY="${GRASP_SANDBOX_GATEWAY_API_KEY:-$SANDBOX_GATEWAY_API_KEY}"

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { createI18n } from 'vue-i18n'
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { AgentPart } from '@/lib/shared/types'
@@ -45,6 +45,24 @@ describe('AgentTimeline', () => {
     expect(w.findAll('[data-testid="stream-md"]')).toHaveLength(1)
     expect(msgs[1]!.find('[data-testid="stream-md"]').text()).toContain('second')
     expect(w.findAll('[data-testid="agent-tool-group"]')[1]!.attributes('data-state')).toBe('running')
+  })
+
+  it('reveals the message being written gradually and shows it whole once the turn ends', async () => {
+    vi.stubEnv('VITEST', '')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'] })
+    try {
+      const text = 'x'.repeat(200)
+      const w = mountTimeline({ streaming: true, parts: [{ kind: 'message', text }] })
+      const shown = () => w.find('[data-testid="agent-timeline-message"]').text().length
+      await vi.advanceTimersByTimeAsync(100)
+      expect(shown()).toBeGreaterThan(0)
+      expect(shown()).toBeLessThan(text.length)
+      await w.setProps({ streaming: false, completed: true })
+      expect(shown()).toBe(text.length)
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllEnvs()
+    }
   })
 
   it('keeps the thought being written open and closes it when the next step lands', async () => {

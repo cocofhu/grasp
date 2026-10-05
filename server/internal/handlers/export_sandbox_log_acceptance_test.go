@@ -16,7 +16,7 @@ func TestExportWriteStateRunIncludesSandboxArchive(t *testing.T) {
 		NodeID:  "research",
 		Content: "[boot] ok\n[fatal] fail",
 	}}
-	writeStateRun(&b, models.StateRun{NodeID: "research", NodeType: "research", Status: "failed", Iteration: 1}, logs, used)
+	writeStateRun(&b, models.StateRun{NodeID: "research", NodeType: "agent", Status: "failed", Iteration: 1}, logs, used)
 	out := b.String()
 	if !strings.Contains(out, "Sandbox (docker) Log") {
 		t.Fatalf("expected sandbox section, got: %q", out)
@@ -30,7 +30,7 @@ func TestExportWriteStateRunIncludesSandboxArchive(t *testing.T) {
 
 	// Second emission for the same container must not duplicate.
 	var b2 strings.Builder
-	writeStateRun(&b2, models.StateRun{NodeID: "research", NodeType: "research", Status: "failed", Iteration: 2}, logs, used)
+	writeStateRun(&b2, models.StateRun{NodeID: "research", NodeType: "agent", Status: "failed", Iteration: 2}, logs, used)
 	if strings.Contains(b2.String(), "Sandbox (docker) Log") {
 		t.Fatalf("duplicate sandbox section on second iteration: %q", b2.String())
 	}
@@ -40,7 +40,7 @@ func TestExportWriteStateRunIncludesSandboxArchive(t *testing.T) {
 func TestExportWriteStateRunOmitsMissingSandboxArchive(t *testing.T) {
 	var b strings.Builder
 	used := map[string]bool{}
-	writeStateRun(&b, models.StateRun{NodeID: "research", NodeType: "research", Status: "completed", Iteration: 1}, nil, used)
+	writeStateRun(&b, models.StateRun{NodeID: "research", NodeType: "agent", Status: "completed", Iteration: 1}, nil, used)
 	if strings.Contains(b.String(), "Sandbox (docker) Log") {
 		t.Fatalf("must not forge sandbox section without archive: %q", b.String())
 	}

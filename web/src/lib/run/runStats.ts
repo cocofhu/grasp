@@ -1,4 +1,5 @@
-import { NODE_DEFS, nodeColorHex } from '@/data/nodeRegistry'
+import { NODE_DEFS, nodeColor } from '@/data/nodeRegistry'
+import { isInteractiveNode } from '@/lib/shared/clarifyInteractive'
 import {
   mergeTokenUsage,
   summarizeMultiRunUsage,
@@ -8,13 +9,8 @@ import {
 } from '@/lib/run/tokenUsage'
 import type { NodeRun, NodeRunStatus, NodeType, Run, TokenUsage, TokenUsageByModel, WFNode } from '@/lib/shared/types'
 
-/** Node types that typically pause for human input (wait is baked into durationSec). */
-const HUMAN_WAIT_TYPES: ReadonlySet<NodeType> = new Set([
-  'human_gate',
-  'react',
-  'preflight',
-  'app_preview',
-])
+/** Node types that always pause for human input (wait is baked into durationSec). */
+const HUMAN_WAIT_TYPES: ReadonlySet<NodeType> = new Set(['human_gate', 'proposal_select'])
 
 export type SingleDimension = 'process' | 'node' | 'type'
 export type MultiDimension = 'node' | 'type'
@@ -116,8 +112,9 @@ export function sharePct(durationSec: number, denominatorSec: number): number | 
   return Math.round((durationSec / Math.max(denominatorSec, 1)) * 100)
 }
 
-export function hasHumanWait(status: NodeRunStatus, type: NodeType): boolean {
-  return status === 'waiting_human' || HUMAN_WAIT_TYPES.has(type)
+/** Interactive Agents (clarify / review caps) pause for human input too. */
+export function hasHumanWait(status: NodeRunStatus, node: Pick<WFNode, 'type' | 'caps'>): boolean {
+  return status === 'waiting_human' || HUMAN_WAIT_TYPES.has(node.type) || isInteractiveNode(node)
 }
 
 /**
@@ -207,13 +204,6 @@ export function pickDefaultTimelineNodeId(
   return undefined
 }
 
-function colorForType(type: NodeType, index = 0): string {
-  const hex = nodeColorHex(type)
-  if (hex) return hex
-  const fallback = ['#818CF8', '#38BDF8', '#FBBF24', '#F472B6', '#34D399', '#FB923C']
-  return fallback[index % fallback.length]
-}
-
 type LabelFn = (label: string | undefined, type: NodeType, nodeId: string) => string
 
 function defaultLabel(label: string | undefined, type: NodeType, nodeId: string): string {
@@ -257,7 +247,7 @@ export function flattenProcesses(
         durationSec,
         label,
         type,
-        hasHumanWait: hasHumanWait(ex.status, type),
+        hasHumanWait: hasHumanWait(ex.status, node || { type }),
         live,
         usage: ex.usage,
         usageByModel: ex.usageByModel,
@@ -361,7 +351,7 @@ function attachShareAndColor(items: RawStat[], wallSec: number): StatItem[] {
   return items.map((it, i) => ({
     ...it,
     sharePct: sharePct(it.durationSec, wallSec),
-    color: colorForType(it.type, i),
+    color: nodeColor(it.type),
   }))
 }
 
@@ -483,7 +473,7 @@ export function aggregateMultiRuns(
         live: false,
         count: it.count,
         isProcess: false,
-        color: colorForType(it.type, i),
+        color: nodeColor(it.type),
         totalTokens: totalTokensOrNull(it.usage),
         avgSec,
         runHits,

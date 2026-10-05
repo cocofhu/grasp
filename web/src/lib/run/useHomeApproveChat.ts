@@ -6,7 +6,7 @@ import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { useImageAttachments } from '@/lib/composables/useImageAttachments'
 import { readStoredProjectId } from '@/lib/composables/useProjectContext'
-import { graspFirstNodeId, isPublishedGraspFirst } from '@/lib/run/graspFirstPipeline'
+import { clarifyFirstNodeId, isPublishedClarifyFirst } from '@/lib/run/clarifyFirstWorkflow'
 import {
   clearHomeComposerDraft,
   loadHomeComposerDraft,
@@ -17,6 +17,7 @@ import { clipRunTitle } from '@/lib/run/runTitle'
 import { missingRequiredAskField, seedAskLaunchFields } from '@/lib/run/useWorkflowAskInputs'
 import { attachmentDisplayName } from '@/lib/shared/attachments'
 import type { ClarifyImage, Project, Workflow } from '@/lib/shared/types'
+import type { Agent } from '@/lib/api/apiTypes'
 import type { RunPriority } from '@/components/ui/PrioritySegmented.vue'
 
 import {
@@ -25,13 +26,13 @@ import {
   migrateLocalStorageKey,
 } from '@/lib/shared/migrateBrandStorage'
 
-/** Remember last selected home pipeline across visits (plan g2.4). */
-export const HOME_PIPELINE_MEMORY_KEY = GRASP_STORAGE_KEYS.homeLastPipelineId
+/** Remember last selected home workflow across visits (plan g2.4). */
+export const HOME_WORKFLOW_MEMORY_KEY = GRASP_STORAGE_KEYS.homeLastWorkflowId
 
 /** Remember last home Composer priority (plan g1.4). Not stored in IndexedDB draft. */
 export const HOME_PRIORITY_MEMORY_KEY = GRASP_STORAGE_KEYS.homeLastPriority
 
-migrateLocalStorageKey(LEGACY_STORAGE_KEYS.homeLastPipelineId, HOME_PIPELINE_MEMORY_KEY)
+migrateLocalStorageKey(LEGACY_STORAGE_KEYS.homeLastWorkflowId, HOME_WORKFLOW_MEMORY_KEY)
 migrateLocalStorageKey(LEGACY_STORAGE_KEYS.homeLastPriority, HOME_PRIORITY_MEMORY_KEY)
 
 /** Debounce for auto-save (plan g2.2; NFR ~300–800ms). */
@@ -44,24 +45,24 @@ function titleFromDraft(text: string, images: ClarifyImage[]): string {
   return clipRunTitle(name)
 }
 
-function readLastPipelineId(): string {
+function readLastWorkflowId(): string {
   try {
-    return localStorage.getItem(HOME_PIPELINE_MEMORY_KEY)?.trim() || ''
+    return localStorage.getItem(HOME_WORKFLOW_MEMORY_KEY)?.trim() || ''
   } catch {
     return ''
   }
 }
 
-function writeLastPipelineId(id: string) {
+function writeLastWorkflowId(id: string) {
   try {
-    if (id) localStorage.setItem(HOME_PIPELINE_MEMORY_KEY, id)
-    else localStorage.removeItem(HOME_PIPELINE_MEMORY_KEY)
+    if (id) localStorage.setItem(HOME_WORKFLOW_MEMORY_KEY, id)
+    else localStorage.removeItem(HOME_WORKFLOW_MEMORY_KEY)
   } catch {
     /* ignore quota / private mode */
   }
 }
 
-function pickDefaultPipelineId(list: Workflow[], preferred: string): string {
+function pickDefaultWorkflowId(list: Workflow[], preferred: string): string {
   if (preferred && list.some((w) => w.id === preferred)) return preferred
   return list[0]?.id || ''
 }
@@ -114,13 +115,14 @@ export function useHomeApproveChat() {
 
   const workflows = ref<Workflow[]>([])
   const projectNamesById = ref<Map<string, string>>(new Map())
+  const agentsByName = ref<Map<string, Agent>>(new Map())
   const loading = ref(false)
   const loadError = ref<string | null>(null)
   const selectedId = ref('')
   const launchPriority = ref<RunPriority>(readLastPriority())
   const draft = ref('')
   const sending = ref(false)
-  const hidingPipelineId = ref<string | null>(null)
+  const hidingWorkflowId = ref<string | null>(null)
   const pendingText = ref('')
   const pendingImages = ref<ClarifyImage[]>([])
 
@@ -135,25 +137,25 @@ export function useHomeApproveChat() {
   let saveTimer: ReturnType<typeof setTimeout> | null = null
   /** Skip auto-save while applying a restored draft. */
   let suppressSave = false
-  /** Draft pipeline id preferred over HOME_PIPELINE_MEMORY_KEY (plan g2.4). */
-  let preferredDraftPipelineId = ''
+  /** Draft workflow id preferred over HOME_WORKFLOW_MEMORY_KEY (plan g2.4). */
+  let preferredDraftWorkflowId = ''
   /** Toast once after a non-empty restore. */
   let restoreToastShown = false
   /** Auto-save quota / partial toast once per session (plan g2.2 / F4). */
   let quotaToastShown = false
 
-  const pipelines = computed(() =>
+  const homeWorkflows = computed(() =>
     workflows.value
-      .filter((w) => isPublishedGraspFirst(w) && !!w.showOnHome)
+      .filter((w) => isPublishedClarifyFirst(w, agentsByName.value) && !!w.showOnHome)
       .map((w) => ({
         ...w,
         projectName: resolveHomeProjectName(w.projectId, projectNamesById.value),
       })),
   )
   const selected = computed(
-    () => pipelines.value.find((w) => w.id === selectedId.value) || pipelines.value[0] || null,
+    () => homeWorkflows.value.find((w) => w.id === selectedId.value) || homeWorkflows.value[0] || null,
   )
-  /** Project context from the selected pipeline (not a home project gate). */
+  /** Project context from the selected workflow (not a home project gate). */
   const projectId = computed(
     () => selected.value?.projectId || launchTarget.value?.projectId || readStoredProjectId() || '',
   )
@@ -170,7 +172,7 @@ export function useHomeApproveChat() {
     const result = await saveHomeComposerDraft(
       draft.value,
       attach.attachments.value,
-      selectedId.value || preferredDraftPipelineId || '',
+      selectedId.value || preferredDraftWorkflowId || '',
     )
     if (result === 'ok') return
     if (result === 'quota_exceeded' || result === 'partial') {
@@ -198,12 +200,12 @@ export function useHomeApproveChat() {
       saveTimer = null
     }
     void clearHomeComposerDraft()
-    preferredDraftPipelineId = ''
+    preferredDraftWorkflowId = ''
   }
 
   /**
    * Restore from IndexedDB (with legacy localStorage migration) (plan g2.1).
-   * Pipeline selection: draft pipeline > lastPipeline memory > list default (g2.4).
+   * Workflow selection: draft workflow > lastWorkflow memory > list default (g2.4).
    */
   async function hydrateComposerDraft() {
     const stored = await loadHomeComposerDraft()
@@ -219,17 +221,17 @@ export function useHomeApproveChat() {
       draft.value = stored.text
       attach.attachments.value = stored.attachments.map((im) => ({ ...im }))
       if (stored.pipelineId) {
-        const list = pipelines.value
+        const list = homeWorkflows.value
         if (list.length === 0) {
-          // List not loaded yet — keep preference for pipelines watch (plan g2.4).
-          preferredDraftPipelineId = stored.pipelineId
+          // List not loaded yet — keep preference for workflows watch (plan g2.4).
+          preferredDraftWorkflowId = stored.pipelineId
           selectedId.value = stored.pipelineId
         } else if (list.some((w) => w.id === stored.pipelineId)) {
-          preferredDraftPipelineId = stored.pipelineId
+          preferredDraftWorkflowId = stored.pipelineId
           selectedId.value = stored.pipelineId
         } else {
-          // Stale draft pipeline after list is known — do not clobber current selection.
-          preferredDraftPipelineId = ''
+          // Stale draft workflow after list is known — do not clobber current selection.
+          preferredDraftWorkflowId = ''
         }
       }
       if (!restoreToastShown) {
@@ -242,26 +244,26 @@ export function useHomeApproveChat() {
   }
 
   watch(
-    pipelines,
+    homeWorkflows,
     (list) => {
       // While the list is still empty (initial mount / load in flight), keep any
-      // draft pipeline preference from hydrate — do not treat "not in empty list"
+      // draft workflow preference from hydrate — do not treat "not in empty list"
       // as unavailable (plan g2.4).
       if (list.length === 0) return
       const draftPreferred =
-        preferredDraftPipelineId && list.some((w) => w.id === preferredDraftPipelineId)
-          ? preferredDraftPipelineId
+        preferredDraftWorkflowId && list.some((w) => w.id === preferredDraftWorkflowId)
+          ? preferredDraftWorkflowId
           : ''
-      // Drop stale draft preference only once we know the pipeline is gone.
-      if (preferredDraftPipelineId && !draftPreferred) {
-        preferredDraftPipelineId = ''
+      // Drop stale draft preference only once we know the workflow is gone.
+      if (preferredDraftWorkflowId && !draftPreferred) {
+        preferredDraftWorkflowId = ''
       }
       const selectedPreferred =
         selectedId.value && list.some((w) => w.id === selectedId.value) ? selectedId.value : ''
-      const preferred = draftPreferred || selectedPreferred || readLastPipelineId()
-      const next = pickDefaultPipelineId(list, preferred)
+      const preferred = draftPreferred || selectedPreferred || readLastWorkflowId()
+      const next = pickDefaultWorkflowId(list, preferred)
       if (next !== selectedId.value) selectedId.value = next
-      if (next) writeLastPipelineId(next)
+      if (next) writeLastWorkflowId(next)
     },
     { immediate: true },
   )
@@ -279,11 +281,14 @@ export function useHomeApproveChat() {
     try {
       // Cross-project: omit projectId so the API returns all visible workflows.
       // Parallel listProjects so home cards can show names without a flash of UUID (g1.1).
-      const [list, projects] = await Promise.all([
+      // Agents supply the caps that decide which workflows open with a clarify Agent.
+      const [list, projects, agents] = await Promise.all([
         api.listWorkflows({ signal: ac.signal }),
         api.listProjects({ signal: ac.signal }).catch(() => [] as Project[]),
+        api.listAgents().catch(() => [] as Agent[]),
       ])
       if (ac.signal.aborted) return
+      agentsByName.value = new Map((Array.isArray(agents) ? agents : []).map((a) => [a.name, a]))
       workflows.value = Array.isArray(list) ? list : []
       projectNamesById.value = projectNameMap(projects)
     } catch (e: any) {
@@ -307,16 +312,16 @@ export function useHomeApproveChat() {
       return
     }
     const id = (preferredId || '').trim()
-    if (id && pipelines.value.some((w) => w.id === id)) {
-      selectPipeline(id)
+    if (id && homeWorkflows.value.some((w) => w.id === id)) {
+      selectWorkflow(id)
     }
   }
 
-  function selectPipeline(id: string) {
+  function selectWorkflow(id: string) {
     if (!id) return
     selectedId.value = id
-    preferredDraftPipelineId = id
-    writeLastPipelineId(id)
+    preferredDraftWorkflowId = id
+    writeLastWorkflowId(id)
   }
 
   function selectPriority(value: RunPriority) {
@@ -324,18 +329,18 @@ export function useHomeApproveChat() {
     writeLastPriority(launchPriority.value)
   }
 
-  async function hidePipelineFromHome(wf: Workflow) {
-    if (hidingPipelineId.value) return
+  async function hideWorkflowFromHome(wf: Workflow) {
+    if (hidingWorkflowId.value) return
     const previousWorkflows = workflows.value
     const previousSelectedId = selectedId.value
-    hidingPipelineId.value = wf.id
+    hidingWorkflowId.value = wf.id
     workflows.value = workflows.value.map((item) =>
       item.id === wf.id ? { ...item, showOnHome: false } : item,
     )
-    const nextId = pipelines.value[0]?.id || ''
+    const nextId = homeWorkflows.value[0]?.id || ''
     selectedId.value = nextId
-    preferredDraftPipelineId = nextId
-    writeLastPipelineId(nextId)
+    preferredDraftWorkflowId = nextId
+    writeLastWorkflowId(nextId)
     try {
       const saved = await api.patchWorkflowHomeVisibility(wf.id, false)
       workflows.value = workflows.value.map((item) =>
@@ -345,11 +350,11 @@ export function useHomeApproveChat() {
     } catch (e: any) {
       workflows.value = previousWorkflows
       selectedId.value = previousSelectedId
-      preferredDraftPipelineId = previousSelectedId
-      writeLastPipelineId(previousSelectedId)
+      preferredDraftWorkflowId = previousSelectedId
+      writeLastWorkflowId(previousSelectedId)
       toast.error(String(e?.message || e) || t('pages.projectDetail.homeVisibility.updateFailed'))
     } finally {
-      hidingPipelineId.value = null
+      hidingWorkflowId.value = null
     }
   }
 
@@ -368,7 +373,7 @@ export function useHomeApproveChat() {
   }
 
   function goGates(runId: string, nodeId?: string) {
-    // Align inbox filters to the pipeline being started (plan g1.1). Use the
+    // Align inbox filters to the workflow being started (plan g1.1). Use the
     // workflow object's projectId only — never a hard-coded project name/UUID.
     const wf = selected.value || launchTarget.value
     const projectId = (wf?.projectId || '').trim()
@@ -385,7 +390,7 @@ export function useHomeApproveChat() {
    */
   async function afterStart(runId: string, text: string, images: ClarifyImage[]) {
     const wf = selected.value || launchTarget.value
-    const knownNodeId = wf ? graspFirstNodeId(wf) || '' : ''
+    const knownNodeId = wf ? clarifyFirstNodeId(wf, agentsByName.value) || '' : ''
     setHomeApproveHandoff({ runId, nodeId: knownNodeId, text, images })
     await goGates(runId, knownNodeId || undefined)
   }
@@ -395,7 +400,7 @@ export function useHomeApproveChat() {
     const text = draft.value.trim()
     const images = attach.attachments.value.map((im) => ({ ...im }))
     if (!wf) {
-      toast.warn(t('pages.dashboard.pickPipeline'))
+      toast.warn(t('pages.dashboard.pickWorkflow'))
       return
     }
     if (!text && images.length === 0) {
@@ -407,7 +412,7 @@ export function useHomeApproveChat() {
     sending.value = true
     pendingText.value = text
     pendingImages.value = images
-    writeLastPipelineId(wf.id)
+    writeLastWorkflowId(wf.id)
     try {
       const missing = missingRequiredAskField(wf)
       if (missing) {
@@ -476,13 +481,13 @@ export function useHomeApproveChat() {
 
   return {
     projectId,
-    pipelines,
+    homeWorkflows,
     selected,
     selectedId,
     launchPriority,
     draft,
     sending,
-    hidingPipelineId,
+    hidingWorkflowId,
     canSend,
     loading,
     loadError,
@@ -502,9 +507,9 @@ export function useHomeApproveChat() {
     removeAttachment: attach.removeAttachment,
     load,
     reloadAfterCreate,
-    selectPipeline,
+    selectWorkflow,
     selectPriority,
-    hidePipelineFromHome,
+    hideWorkflowFromHome,
     send,
     closeLaunch,
     onLaunchStarted,

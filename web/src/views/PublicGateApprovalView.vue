@@ -45,12 +45,13 @@ import {
   type PublicGatePreviewKnown,
   type PublicGateQueueItem,
 } from '@/lib/inbox/gateShareLink'
-import { isClarifyInteractive } from '@/lib/shared/clarifyInteractive'
+import type { CapsNode } from '@/lib/shared/clarifyInteractive'
 import {
   LIVE_CARD_HOST,
   createLiveStore,
   parseLiveRef,
   parseLiveSession,
+  isLiveBusy,
   isLiveOpen,
   type LiveCmd,
   type LiveEvent,
@@ -200,7 +201,11 @@ function abortPreview() {
 }
 
 const isReview = computed(() => preview.value?.kind === 'review')
-const isClarify = computed(() => isClarifyInteractive(preview.value?.nodeType))
+const isClarify = computed(() => preview.value?.interaction === 'clarify')
+/** Public DTOs carry no graph; the interaction alone drives stage pin / auto-pin. */
+const stageNode = computed<CapsNode>(() =>
+  preview.value?.interaction ? { type: 'agent', caps: { interaction: preview.value.interaction } } : null,
+)
 const composerMode = computed<'clarify' | 'review'>(() => (isClarify.value ? 'clarify' : 'review'))
 const status = computed(() => preview.value?.status || (token.value ? 'invalid' : 'invalid'))
 const isActive = computed(() => status.value === 'active')
@@ -264,7 +269,7 @@ const inspectable = computed(
   () =>
     isActive.value &&
     reactAlive.value &&
-    (isReview.value || productKind.value === 'visual' || productKind.value === 'app_preview'),
+    (isReview.value || productKind.value === 'visual' || productKind.value === 'app'),
 )
 const usePublicArtifactStage = computed(() => isReview.value)
 const appPreviewPorts = computed(() => preview.value?.ports || [])
@@ -335,7 +340,7 @@ const statusHint = computed(() => {
 })
 const productLabel = computed(() => {
   if (productKind.value === 'visual') return t('pages.publicGate.visualProduct')
-  if (productKind.value === 'app_preview') return t('pages.publicGate.appPreviewProduct')
+  if (productKind.value === 'app') return t('pages.publicGate.appPreviewProduct')
   if (productKind.value === 'structured') return t('pages.publicGate.structuredProduct')
   return t('pages.publicGate.structuredProduct')
 })
@@ -477,7 +482,7 @@ async function loadPublicArtifacts(opts?: { silent?: boolean }) {
       }
       return
     }
-    // Share links show pipeline products only — never the feedback ledger.
+    // Share links show workflow products only — never the feedback ledger.
     publicArtifacts.value = (res.artifacts || []).filter((a) => !isFeedbackArtifactName(a.name)).map((a) => ({
       id: a.id,
       name: a.name,
@@ -1177,15 +1182,14 @@ async function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotatio
       if (liveCtx && live.store.sessions[liveCtx.sid]?.state !== 'ready') throw new Error(t('pages.embedChat.live.pendingCandidates'))
     }
     if (candidateIntent && chatOnly.value && pageCandidateMode.value && !liveCtx) {
-      if (Object.values(live.store.sessions).some((session) => isLiveOpen(session.state))) {
-        throw new Error(t('pages.embedChat.live.pendingCandidates'))
-      }
+      const open = Object.values(live.store.sessions).filter((session) => session.mode !== 'steer' && isLiveOpen(session.state))
+      if (open.some((session) => isLiveBusy(session.state))) throw new Error(t('pages.embedChat.live.candidatesBusy'))
       if (Array.from(text).length > 2000) throw new Error(t('pages.embedChat.live.promptTooLong'))
       if (!props.requestPageContext) throw new Error(t('pages.embedChat.live.previewUnavailable'))
       const context = await props.requestPageContext()
       const fingerprint = JSON.stringify({ text, images, annotations: anns, url: context.url })
       if (candidateAttempt?.fingerprint !== fingerprint) candidateAttempt = { fingerprint, sid: liveRequestId() }
-      candidate = { op: 'generate', scope: 'page', sid: candidateAttempt.sid, count: 3, prompt: text, url: context.url }
+      candidate = { op: 'generate', scope: 'page', sid: candidateAttempt.sid, count: 3, prompt: text, url: context.url, ...(open.length ? { replace: true } : {}) }
     }
     const result = await publicGateApi.reply({
       token: token.value,
@@ -1652,9 +1656,9 @@ defineExpose({
               :artifacts="publicStageArtifacts"
               :preview-artifact="publicPreviewName"
               :run="publicRunGraph"
-              :node-type="preview?.nodeType"
+              :node="stageNode"
               :annotatable="inspectable"
-              :remote-kind="productKind === 'app_preview' || appPreviewPorts.length ? 'public' : 'off'"
+              :remote-kind="productKind === 'app' || appPreviewPorts.length ? 'public' : 'off'"
               :token="token"
               :ports="appPreviewPorts"
               :public-active="isActive"
@@ -1682,7 +1686,7 @@ defineExpose({
                 />
               </div>
               <PublicAppPreviewPanel
-                v-else-if="productKind === 'app_preview'"
+                v-else-if="productKind === 'app'"
                 :token="token"
                 :ports="appPreviewPorts"
                 :active="isActive"
@@ -1760,13 +1764,11 @@ defineExpose({
                   v-model:attachments="attachments"
                   v-model:annotations="annotations"
                   :turns="turns"
-                  :node-type="preview?.nodeType"
                   :done="false"
                   :active="canReply"
                   :cold-session="!chatOnly && !canReply"
                   :can-pass="!chatOnly && (showConfirm || linkInvalid)"
                   :pass-disabled="confirmDisabled"
-                  :force-confirm="!chatOnly && (showConfirm || linkInvalid)"
                   :confirm-error="errorText || null"
                   :confirm-can-abort="confirmCanAbort"
                   @send="onLegacySend"

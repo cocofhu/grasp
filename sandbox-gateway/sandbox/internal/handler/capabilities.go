@@ -54,7 +54,7 @@ func BuildCapabilities(bridge *service.Bridge) gin.H {
 			"port":       envInt("CODE_SERVER_PORT", 8744),
 		},
 		// 应用预览桌面(可选):沙箱内 Xvfb+Chromium+x11vnc+websockify。
-		// 平台在 app_preview 注入 enableEnv=1 后 dial cdpPort / websockifyPort。
+		// 平台为开启应用预览的 Agent 注入 enableEnv=1 后 dial cdpPort / websockifyPort。
 		"preview": gin.H{
 			"vnc":            true,
 			"cdpPort":        9222,

@@ -100,7 +100,7 @@ describe('PublicGateApproval height chain to clarify-scroller (g1.2 / g2)', () =
 })
 
 describe('PublicGateApproval react artifact stage', () => {
-  it('uses ReactArtifactStage for ReAct review/clarify/app_preview workbench', () => {
+  it('uses ReactArtifactStage for ReAct review/clarify/app preview workbench', () => {
     expect(viewSrc).toMatch(/const usePublicArtifactStage = computed\(\(\) => isReview\.value\)/)
     expect(viewSrc).toMatch(/data-testid="public-gate-react-stage"/)
     expect(viewSrc).toMatch(/v-if="usePublicArtifactStage"/)
@@ -109,7 +109,7 @@ describe('PublicGateApproval react artifact stage', () => {
     expect(viewSrc).toMatch(/loadPublicArtifacts/)
     expect(viewSrc).toMatch(/publicGateApi\.artifacts/)
     expect(viewSrc).toMatch(
-      /:remote-kind="productKind === 'app_preview' \|\| appPreviewPorts.length \? 'public' : 'off'"/,
+      /:remote-kind="productKind === 'app' \|\| appPreviewPorts.length \? 'public' : 'off'"/,
     )
     expect(viewSrc).toMatch(/data-testid="public-gate-stage"/)
   })

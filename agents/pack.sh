@@ -23,15 +23,8 @@ TARGET="${1:-all}"
 ALL_AGENTS=(
   PMAgent
   ClarifyAgent
-  ResearchAgent
-  ProposalAgent
-  PlanAgent
   ImplementAgent
-  TestAgent
-  ReviewAgent
-  VisualAgent
-  PreviewAgent
-  PreflightAgent
+  TestReviewAgent
 )
 
 die() { echo "error: $*" >&2; exit 1; }

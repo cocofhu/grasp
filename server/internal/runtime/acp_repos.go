@@ -281,34 +281,6 @@ func (c *acpProvider) nodeRepoURL(req NodeReq) string {
 	return firstRepoURL(req)
 }
 
-func configTruthy(v any) bool {
-	switch t := v.(type) {
-	case bool:
-		return t
-	case string:
-		s := strings.ToLower(strings.TrimSpace(t))
-		return s == "true" || s == "1" || s == "yes"
-	case float64:
-		return t != 0
-	case int:
-		return t != 0
-	default:
-		return false
-	}
-}
-
-// configDefaultOn is true when v is missing/empty or truthy. Used by
-// app_preview auto_inject so legacy graphs (no key) keep injecting.
-func configDefaultOn(v any) bool {
-	if v == nil {
-		return true
-	}
-	if s, ok := v.(string); ok && strings.TrimSpace(s) == "" {
-		return true
-	}
-	return configTruthy(v)
-}
-
 func str2(v any) string {
 	if v == nil {
 		return ""

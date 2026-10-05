@@ -1,18 +1,10 @@
-// Node palette definitions for the workflow editor. Structured-product mappings
-// (artifact names, output keys) are generated from server/internal/nodereg —
-// see web/src/lib/run/structuredArtifacts.ts and nodeManifest.generated.json.
+// Node palette definitions for the workflow editor. The seven node types match
+// server/internal/nodereg; agent node products and outlets follow the chosen
+// Agent's capabilities (see web/src/lib/workflow/).
 
+import type { AgentCapabilities } from '@/lib/api/apiTypes'
 import type { NodeType, NodeTypeDef } from '@/lib/shared/types'
-import { productOutputDefs } from '@/lib/run/productNodeArtifacts'
-
-// Review-phase preview switches shared by review-capable agent nodes; they only
-// take effect while the node is under human review.
-const REVIEW_PREVIEW_FIELDS: NodeTypeDef['fields'] = [
-  { key: 'direct_preview', label: 'nodes.shared.reviewDirectPreview.label', type: 'switch', optional: true, help: 'nodes.shared.reviewDirectPreview.help' },
-  { key: 'auto_inject', label: 'nodes.shared.reviewAutoInject.label', type: 'switch', optional: true, help: 'nodes.shared.reviewAutoInject.help' },
-  { key: 'live_variants', label: 'nodes.shared.reviewLiveVariants.label', type: 'switch', optional: true, help: 'nodes.shared.reviewLiveVariants.help' },
-]
-const REVIEW_PREVIEW_DEFAULTS = { direct_preview: false, auto_inject: true, live_variants: true }
+import { declaredProducts } from '@/lib/workflow/agentCapabilities'
 
 export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
   input: {
@@ -56,91 +48,27 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
     ],
     defaults: { auto_leftover_draft: false },
   },
-  react: {
-    type: 'react',
-    label: 'nodes.react.label',
-    desc: 'nodes.react.desc',
-    icon: 'chat',
-    color: 'text-n-clarify',
-    category: 'nodes.categories.agent',
-    fields: [
-      { key: 'agent_profile', label: 'nodes.react.fields.agent_profile.label', type: 'select' },
-      { key: 'prompt', label: 'nodes.react.fields.prompt.label', type: 'prompt', placeholder: 'nodes.react.fields.prompt.placeholder' },
-      { key: 'max_rounds', label: 'nodes.react.fields.max_rounds.label', type: 'number', placeholder: 'nodes.react.fields.max_rounds.placeholder' },
-      { key: 'auto_var', label: 'nodes.react.fields.auto_var.label', type: 'text', placeholder: 'nodes.react.fields.auto_var.placeholder', optional: true },
-      { key: 'timeout', label: 'nodes.react.fields.timeout.label', type: 'duration', optional: true },
-      { key: 'conditional_prompt', label: 'nodes.react.fields.conditional_prompt.label', type: 'conditional', optional: true },
-    ],
-    outputs: productOutputDefs('react', [
-      { key: 'transcript', desc: 'nodes.react.outputs.transcript.desc' },
-    ]),
-    defaults: { max_rounds: 6, prompt: '针对以下需求提出澄清问题,直到信息充分,再调用 set_clarified_requirement 写入结构化需求:\n{{vars.feature}}' },
-    help: 'nodes.react.help',
+  set_var: {
+    type: 'set_var',
+    label: 'nodes.set_var.label',
+    desc: 'nodes.set_var.desc',
+    icon: 'edit',
+    color: 'text-n-artifact',
+    category: 'nodes.categories.control',
+    fields: [{ key: 'assignments', label: 'nodes.set_var.fields.assignments.label', type: 'assignments' }],
+    outputs: [{ key: 'vars', desc: 'nodes.set_var.outputs.vars.desc' }],
+    defaults: { assignments: [{ var: '', expr: '' }] },
   },
-  grasp: {
-    type: 'grasp',
-    label: 'nodes.grasp.label',
-    desc: 'nodes.grasp.desc',
-    icon: 'check',
-    color: 'text-n-clarify',
-    category: 'nodes.categories.agent',
-    fields: [
-      { key: 'agent_profile', label: 'nodes.grasp.fields.agent_profile.label', type: 'select' },
-      { key: 'timeout', label: 'nodes.grasp.fields.timeout.label', type: 'duration', optional: true },
-      { key: 'direct_preview', label: 'nodes.grasp.fields.direct_preview.label', type: 'switch', optional: true, help: 'nodes.grasp.fields.direct_preview.help' },
-      { key: 'auto_inject', label: 'nodes.grasp.fields.auto_inject.label', type: 'switch', optional: true, help: 'nodes.grasp.fields.auto_inject.help' },
-      { key: 'live_variants', label: 'nodes.grasp.fields.live_variants.label', type: 'switch', optional: true, help: 'nodes.grasp.fields.live_variants.help' },
-    ],
-    outputs: productOutputDefs('grasp', [
-      { key: 'transcript', desc: 'nodes.grasp.outputs.transcript.desc' },
-    ]),
-    defaults: { timeout: 30, direct_preview: false, auto_inject: true, live_variants: true },
-    help: 'nodes.grasp.help',
-  },
-  // Historical type string — same inspector as grasp so old graphs still open.
-  approve: {
-    type: 'approve',
-    label: 'nodes.grasp.label',
-    desc: 'nodes.grasp.desc',
-    icon: 'check',
-    color: 'text-n-clarify',
-    category: 'nodes.categories.agent',
-    fields: [
-      { key: 'agent_profile', label: 'nodes.grasp.fields.agent_profile.label', type: 'select' },
-      { key: 'timeout', label: 'nodes.grasp.fields.timeout.label', type: 'duration', optional: true },
-      { key: 'direct_preview', label: 'nodes.grasp.fields.direct_preview.label', type: 'switch', optional: true, help: 'nodes.grasp.fields.direct_preview.help' },
-      { key: 'auto_inject', label: 'nodes.grasp.fields.auto_inject.label', type: 'switch', optional: true, help: 'nodes.grasp.fields.auto_inject.help' },
-      { key: 'live_variants', label: 'nodes.grasp.fields.live_variants.label', type: 'switch', optional: true, help: 'nodes.grasp.fields.live_variants.help' },
-    ],
-    outputs: productOutputDefs('grasp', [
-      { key: 'transcript', desc: 'nodes.grasp.outputs.transcript.desc' },
-    ]),
-    defaults: { timeout: 30, direct_preview: false, auto_inject: true, live_variants: true },
-    help: 'nodes.grasp.help',
-  },
-  preflight: {
-    type: 'preflight',
-    label: 'nodes.preflight.label',
-    desc: 'nodes.preflight.desc',
-    icon: 'ci',
-    color: 'text-n-ci',
-    category: 'nodes.categories.agent',
-    fields: [
-      { key: 'agent_profile', label: 'nodes.preflight.fields.agent_profile.label', type: 'select' },
-      { key: 'prompt', label: 'nodes.preflight.fields.prompt.label', type: 'prompt', placeholder: 'nodes.preflight.fields.prompt.placeholder' },
-      { key: 'max_rounds', label: 'nodes.preflight.fields.max_rounds.label', type: 'number', placeholder: 'nodes.preflight.fields.max_rounds.placeholder' },
-      { key: 'timeout', label: 'nodes.preflight.fields.timeout.label', type: 'duration', optional: true },
-      { key: 'conditional_prompt', label: 'nodes.preflight.fields.conditional_prompt.label', type: 'conditional', optional: true },
-    ],
-    outputs: productOutputDefs('preflight', [
-      { key: 'transcript', desc: 'nodes.preflight.outputs.transcript.desc' },
-    ]),
-    defaults: {
-      max_rounds: 6,
-      prompt:
-        '对照计划/仓库/变量核对执行环境。有缺口用 ask_question 或 ask_form;确认后 set_preflight 再 node_complete。无缺口则写 confirmed 空 fields 直通。密码明文。\n{{vars.feature}}',
-    },
-    help: 'nodes.preflight.help',
+  branch: {
+    type: 'branch',
+    label: 'nodes.branch.label',
+    desc: 'nodes.branch.desc',
+    icon: 'branch',
+    color: 'text-n-branch',
+    category: 'nodes.categories.control',
+    fields: [{ key: 'cases', label: 'nodes.branch.fields.cases.label', type: 'cases' }],
+    outputs: [{ key: 'matched', desc: 'nodes.branch.outputs.matched.desc' }],
+    defaults: { cases: [{ id: 'case_1', when: 'exists("design.md")' }] },
   },
   agent: {
     type: 'agent',
@@ -153,216 +81,18 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
       { key: 'agent_profile', label: 'nodes.agent.fields.agent_profile.label', type: 'select' },
       { key: 'prompt', label: 'nodes.agent.fields.prompt.label', type: 'prompt', placeholder: 'nodes.agent.fields.prompt.placeholder' },
       { key: 'timeout', label: 'nodes.agent.fields.timeout.label', type: 'duration', optional: true },
-      { key: 'produces', label: 'nodes.agent.fields.produces.label', type: 'text', placeholder: 'nodes.agent.fields.produces.placeholder', optional: true },
-      { key: 'conditional_prompt', label: 'nodes.agent.fields.conditional_prompt.label', type: 'conditional', optional: true },
     ],
     outputs: [
       { key: 'content', desc: 'nodes.agent.outputs.content.desc' },
       { key: 'narration_summary', desc: 'nodes.agent.outputs.narration_summary.desc' },
-      { key: 'artifact_id', desc: 'nodes.agent.outputs.artifact_id.desc' },
       { key: 'branch', desc: 'nodes.agent.outputs.branch.desc' },
-      { key: 'base_branch', desc: 'nodes.agent.outputs.base_branch.desc' },
-      { key: 'new_branch', desc: 'nodes.agent.outputs.new_branch.desc' },
       { key: 'commit_sha', desc: 'nodes.agent.outputs.commit_sha.desc' },
       { key: 'pushed', desc: 'nodes.agent.outputs.pushed.desc' },
       { key: 'changed_files', desc: 'nodes.agent.outputs.changed_files.desc' },
       { key: 'diff_stat', desc: 'nodes.agent.outputs.diff_stat.desc' },
     ],
-    defaults: {},
+    defaults: { agent_profile: '', prompt: '' },
     help: 'nodes.agent.help',
-  },
-  plan: {
-    type: 'plan',
-    label: 'nodes.plan.label',
-    desc: 'nodes.plan.desc',
-    icon: 'robot',
-    color: 'text-n-llm',
-    category: 'nodes.categories.agent',
-    fields: [
-      { key: 'agent_profile', label: 'nodes.plan.fields.agent_profile.label', type: 'select' },
-      { key: 'prompt', label: 'nodes.plan.fields.prompt.label', type: 'prompt', placeholder: 'nodes.plan.fields.prompt.placeholder' },
-      { key: 'timeout', label: 'nodes.plan.fields.timeout.label', type: 'duration', optional: true },
-      { key: 'conditional_prompt', label: 'nodes.plan.fields.conditional_prompt.label', type: 'conditional', optional: true },
-      { key: 'review_var', label: 'nodes.shared.reviewVar.label', type: 'text', placeholder: 'nodes.shared.reviewVar.placeholder', optional: true },
-      ...REVIEW_PREVIEW_FIELDS,
-    ],
-    outputs: productOutputDefs('plan'),
-    defaults: { ...REVIEW_PREVIEW_DEFAULTS, prompt: '基于上游产物制定实施计划(最多两级:大目标→小目标),用 set_plan 写入' },
-    help: 'nodes.plan.help',
-  },
-  implement: {
-    type: 'implement',
-    label: 'nodes.implement.label',
-    desc: 'nodes.implement.desc',
-    icon: 'robot',
-    color: 'text-n-llm',
-    category: 'nodes.categories.agent',
-    fields: [
-      { key: 'agent_profile', label: 'nodes.implement.fields.agent_profile.label', type: 'select' },
-      { key: 'prompt', label: 'nodes.implement.fields.prompt.label', type: 'prompt', placeholder: 'nodes.implement.fields.prompt.placeholder' },
-      { key: 'max_rounds', label: 'nodes.implement.fields.max_rounds.label', type: 'number', placeholder: 'nodes.implement.fields.max_rounds.placeholder' },
-      { key: 'timeout', label: 'nodes.implement.fields.timeout.label', type: 'duration', optional: true },
-      { key: 'conditional_prompt', label: 'nodes.implement.fields.conditional_prompt.label', type: 'conditional', optional: true },
-      { key: 'review_var', label: 'nodes.shared.reviewVar.label', type: 'text', placeholder: 'nodes.shared.reviewVar.placeholder', optional: true },
-      ...REVIEW_PREVIEW_FIELDS,
-    ],
-    outputs: productOutputDefs('implement', [
-      { key: 'branches', desc: 'nodes.implement.outputs.branches.desc' },
-      { key: 'pushed', desc: 'nodes.implement.outputs.pushed.desc' },
-      { key: 'changed_files', desc: 'nodes.implement.outputs.changed_files.desc' },
-    ]),
-    defaults: {
-      ...REVIEW_PREVIEW_DEFAULTS,
-      max_rounds: 3,
-      prompt:
-        '用 get_plan 读取计划逐项实现,用 update_plan_status 标记进度。若存在预览打回请依据 {{vars.preview_issues}}（含 selector 与截图）修改。完成后调用 set_implementation_result 写入实现结果',
-    },
-    help: 'nodes.implement.help',
-  },
-  research: {
-    type: 'research',
-    label: 'nodes.research.label',
-    desc: 'nodes.research.desc',
-    icon: 'robot',
-    color: 'text-n-llm',
-    category: 'nodes.categories.agent',
-    fields: [
-      { key: 'agent_profile', label: 'nodes.research.fields.agent_profile.label', type: 'select' },
-      { key: 'prompt', label: 'nodes.research.fields.prompt.label', type: 'prompt', placeholder: 'nodes.research.fields.prompt.placeholder' },
-      { key: 'timeout', label: 'nodes.research.fields.timeout.label', type: 'duration', optional: true },
-      { key: 'conditional_prompt', label: 'nodes.research.fields.conditional_prompt.label', type: 'conditional', optional: true },
-      { key: 'review_var', label: 'nodes.shared.reviewVar.label', type: 'text', placeholder: 'nodes.shared.reviewVar.placeholder', optional: true },
-      ...REVIEW_PREVIEW_FIELDS,
-    ],
-    outputs: productOutputDefs('research'),
-    defaults: { ...REVIEW_PREVIEW_DEFAULTS, prompt: '围绕上游需求做技术调研,给出问题结论与关键发现,用 set_research 写入' },
-    help: 'nodes.research.help',
-  },
-  test: {
-    type: 'test',
-    label: 'nodes.test.label',
-    desc: 'nodes.test.desc',
-    icon: 'robot',
-    color: 'text-n-llm',
-    category: 'nodes.categories.agent',
-    fields: [
-      { key: 'agent_profile', label: 'nodes.test.fields.agent_profile.label', type: 'select' },
-      { key: 'reason_var', label: 'nodes.test.fields.reason_var.label', type: 'text', placeholder: 'nodes.test.fields.reason_var.placeholder', optional: true },
-      { key: 'repoScope', label: 'nodes.test.fields.repoScope.label', type: 'text', placeholder: 'nodes.test.fields.repoScope.placeholder', optional: true },
-      { key: 'block_on_skipped', label: 'nodes.test.fields.block_on_skipped.label', type: 'switch', optional: true },
-      { key: 'prompt', label: 'nodes.test.fields.prompt.label', type: 'prompt', placeholder: 'nodes.test.fields.prompt.placeholder' },
-      { key: 'timeout', label: 'nodes.test.fields.timeout.label', type: 'duration', optional: true },
-      { key: 'conditional_prompt', label: 'nodes.test.fields.conditional_prompt.label', type: 'conditional', optional: true },
-    ],
-    outputs: productOutputDefs('test'),
-    defaults: { reason_var: 'reason', repoScope: 'all', block_on_skipped: false, exits: { pass: { goto: '' }, fail: { goto: '' } }, prompt: '对上游实现执行测试并如实记录结果,用 set_test_result 写入测试总结' },
-    help: 'nodes.test.help',
-  },
-  review: {
-    type: 'review',
-    label: 'nodes.review.label',
-    desc: 'nodes.review.desc',
-    icon: 'robot',
-    color: 'text-n-llm',
-    category: 'nodes.categories.agent',
-    fields: [
-      { key: 'agent_profile', label: 'nodes.review.fields.agent_profile.label', type: 'select' },
-      { key: 'reason_var', label: 'nodes.review.fields.reason_var.label', type: 'text', placeholder: 'nodes.review.fields.reason_var.placeholder', optional: true },
-      { key: 'prompt', label: 'nodes.review.fields.prompt.label', type: 'prompt', placeholder: 'nodes.review.fields.prompt.placeholder' },
-      { key: 'timeout', label: 'nodes.review.fields.timeout.label', type: 'duration', optional: true },
-      { key: 'conditional_prompt', label: 'nodes.review.fields.conditional_prompt.label', type: 'conditional', optional: true },
-      { key: 'review_var', label: 'nodes.shared.reviewVar.label', type: 'text', placeholder: 'nodes.shared.reviewVar.placeholder', optional: true },
-      ...REVIEW_PREVIEW_FIELDS,
-    ],
-    outputs: productOutputDefs('review'),
-    defaults: { ...REVIEW_PREVIEW_DEFAULTS, reason_var: 'reason', exits: { pass: { goto: '' }, fail: { goto: '' } }, prompt: '评审上游实现/设计,给出结论与按严重度排列的意见,用 set_review 写入' },
-    help: 'nodes.review.help',
-  },
-  proposal: {
-    type: 'proposal',
-    label: 'nodes.proposal.label',
-    desc: 'nodes.proposal.desc',
-    icon: 'robot',
-    color: 'text-n-llm',
-    category: 'nodes.categories.agent',
-    fields: [
-      { key: 'agent_profile', label: 'nodes.proposal.fields.agent_profile.label', type: 'select' },
-      { key: 'prompt', label: 'nodes.proposal.fields.prompt.label', type: 'prompt', placeholder: 'nodes.proposal.fields.prompt.placeholder' },
-      { key: 'timeout', label: 'nodes.proposal.fields.timeout.label', type: 'duration', optional: true },
-      { key: 'conditional_prompt', label: 'nodes.proposal.fields.conditional_prompt.label', type: 'conditional', optional: true },
-      { key: 'review_var', label: 'nodes.shared.reviewVar.label', type: 'text', placeholder: 'nodes.shared.reviewVar.placeholder', optional: true },
-      ...REVIEW_PREVIEW_FIELDS,
-    ],
-    outputs: productOutputDefs('proposal'),
-    defaults: { ...REVIEW_PREVIEW_DEFAULTS, prompt: '针对上游需求给出 1-3 个候选方案(含优缺点、权衡、工作量/风险),推荐其一,用 set_proposals 写入' },
-    help: 'nodes.proposal.help',
-  },
-  proposal_select: {
-    type: 'proposal_select',
-    label: 'nodes.proposal_select.label',
-    desc: 'nodes.proposal_select.desc',
-    icon: 'gate',
-    color: 'text-n-gate',
-    category: 'nodes.categories.collaboration',
-    fields: [
-      { key: 'title', label: 'nodes.proposal_select.fields.title.label', type: 'text', placeholder: 'nodes.proposal_select.fields.title.placeholder' },
-      { key: 'from', label: 'nodes.proposal_select.fields.from.label', type: 'text', placeholder: 'nodes.proposal_select.fields.from.placeholder', optional: true },
-      { key: 'auto_var', label: 'nodes.proposal_select.fields.auto_var.label', type: 'text', placeholder: 'nodes.proposal_select.fields.auto_var.placeholder', optional: true },
-      { key: 'output_var', label: 'nodes.proposal_select.fields.output_var.label', type: 'text', placeholder: 'nodes.proposal_select.fields.output_var.placeholder', optional: true },
-    ],
-    outputs: productOutputDefs('proposal_select', [
-      { key: 'selected_proposal', desc: 'nodes.proposal_select.outputs.selected_proposal.desc' },
-    ]),
-    defaults: { title: '选择方案', from: 'proposals.json', auto_var: 'auto_confirm', output_var: 'selected_proposal' },
-    help: 'nodes.proposal_select.help',
-  },
-  submit_mr: {
-    type: 'submit_mr',
-    label: 'nodes.submit_mr.label',
-    desc: 'nodes.submit_mr.desc',
-    icon: 'git',
-    color: 'text-n-llm',
-    category: 'nodes.categories.agent',
-    fields: [
-      { key: 'agent_profile', label: 'nodes.submit_mr.fields.agent_profile.label', type: 'select', optional: true },
-      { key: 'repo', label: 'nodes.submit_mr.fields.repo.label', type: 'repo_select', placeholder: 'nodes.submit_mr.fields.repo.placeholder', optional: true },
-      { key: 'source_branch', label: 'nodes.submit_mr.fields.source_branch.label', type: 'text', placeholder: 'nodes.submit_mr.fields.source_branch.placeholder', optional: true },
-      { key: 'target_branch', label: 'nodes.submit_mr.fields.target_branch.label', type: 'text', placeholder: 'nodes.submit_mr.fields.target_branch.placeholder', optional: true },
-      { key: 'prompt', label: 'nodes.submit_mr.fields.prompt.label', type: 'prompt', placeholder: 'nodes.submit_mr.fields.prompt.placeholder', optional: true },
-      { key: 'conditional_prompt', label: 'nodes.submit_mr.fields.conditional_prompt.label', type: 'conditional', optional: true },
-      { key: 'timeout', label: 'nodes.submit_mr.fields.timeout.label', type: 'duration', optional: true },
-    ],
-    outputs: [
-      { key: 'mr_url', desc: 'nodes.submit_mr.outputs.mr_url.desc' },
-      { key: 'mr_has_conflicts', desc: 'nodes.submit_mr.outputs.mr_has_conflicts.desc' },
-      { key: 'mr_mergeable', desc: 'nodes.submit_mr.outputs.mr_mergeable.desc' },
-      { key: 'pushed', desc: 'nodes.submit_mr.outputs.pushed.desc' },
-      { key: 'pushed_sha', desc: 'nodes.submit_mr.outputs.pushed_sha.desc' },
-      { key: 'branch', desc: 'nodes.submit_mr.outputs.branch.desc' },
-    ],
-    defaults: { prompt: '将目标分支合入源分支并解决所有冲突,推送源分支,然后按托管商用 glab/gh 创建从源分支到目标分支的合并请求（MR/PR）。Git 与对应 CLI 凭据由沙箱提供。' },
-    help: 'nodes.submit_mr.help',
-  },
-  visual: {
-    type: 'visual',
-    label: 'nodes.visual.label',
-    desc: 'nodes.visual.desc',
-    icon: 'dashboard',
-    color: 'text-n-llm',
-    category: 'nodes.categories.agent',
-    fields: [
-      { key: 'agent_profile', label: 'nodes.visual.fields.agent_profile.label', type: 'select' },
-      { key: 'prompt', label: 'nodes.visual.fields.prompt.label', type: 'prompt', placeholder: 'nodes.visual.fields.prompt.placeholder' },
-      { key: 'timeout', label: 'nodes.visual.fields.timeout.label', type: 'duration', optional: true },
-      { key: 'conditional_prompt', label: 'nodes.visual.fields.conditional_prompt.label', type: 'conditional', optional: true },
-      { key: 'review_var', label: 'nodes.shared.reviewVar.label', type: 'text', placeholder: 'nodes.shared.reviewVar.placeholder', optional: true },
-      ...REVIEW_PREVIEW_FIELDS,
-    ],
-    outputs: productOutputDefs('visual', [
-      { key: 'artifact_id', desc: 'nodes.visual.outputs.artifact_id.desc' },
-    ]),
-    defaults: { ...REVIEW_PREVIEW_DEFAULTS, prompt: '根据上游需求,基于仓库中现有业务前端做高保真目标态页面:先只读定位目标路由、组件、设计令牌与文案,再生成改后 page.html;无基线时沿用项目设计系统。不要编造通用 demo。' },
-    help: 'nodes.visual.help',
   },
   human_gate: {
     type: 'human_gate',
@@ -383,7 +113,7 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
       { key: 'action', desc: 'nodes.human_gate.outputs.action.desc' },
       { key: 'form', desc: 'nodes.human_gate.outputs.form.desc' },
       { key: 'reviewer_id', desc: 'nodes.human_gate.outputs.reviewer_id.desc' },
-      { key: 'preview_issues', desc: 'nodes.app_preview.outputs.preview_issues.desc' },
+      { key: 'preview_issues', desc: 'nodes.human_gate.outputs.preview_issues.desc' },
     ],
     defaults: {
       title: '人工评审',
@@ -396,74 +126,50 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
     },
     help: 'nodes.human_gate.help',
   },
-  app_preview: {
-    type: 'app_preview',
-    label: 'nodes.app_preview.label',
-    desc: 'nodes.app_preview.desc',
-    icon: 'dashboard',
+  proposal_select: {
+    type: 'proposal_select',
+    label: 'nodes.proposal_select.label',
+    desc: 'nodes.proposal_select.desc',
+    icon: 'gate',
     color: 'text-n-gate',
-    category: 'nodes.categories.agent',
+    category: 'nodes.categories.collaboration',
     fields: [
-      { key: 'agent_profile', label: 'nodes.app_preview.fields.agent_profile.label', type: 'select' },
-      { key: 'prompt', label: 'nodes.app_preview.fields.prompt.label', type: 'prompt', placeholder: 'nodes.app_preview.fields.prompt.placeholder' },
-      { key: 'max_rounds', label: 'nodes.app_preview.fields.max_rounds.label', type: 'number', placeholder: 'nodes.app_preview.fields.max_rounds.placeholder' },
-      { key: 'timeout', label: 'nodes.app_preview.fields.timeout.label', type: 'duration', optional: true },
-      { key: 'conditional_prompt', label: 'nodes.app_preview.fields.conditional_prompt.label', type: 'conditional', optional: true },
-      { key: 'review_var', label: 'nodes.shared.reviewVar.label', type: 'text', placeholder: 'nodes.shared.reviewVar.placeholder', optional: true },
-      { key: 'direct_preview', label: 'nodes.app_preview.fields.direct_preview.label', type: 'switch', optional: true, help: 'nodes.app_preview.fields.direct_preview.help' },
-      { key: 'auto_inject', label: 'nodes.app_preview.fields.auto_inject.label', type: 'switch', optional: true, help: 'nodes.app_preview.fields.auto_inject.help' },
-      { key: 'live_variants', label: 'nodes.app_preview.fields.live_variants.label', type: 'switch', optional: true, help: 'nodes.app_preview.fields.live_variants.help' },
-      { key: 'title', label: 'nodes.app_preview.fields.title.label', type: 'text', placeholder: 'nodes.app_preview.fields.title.placeholder', optional: true },
+      { key: 'title', label: 'nodes.proposal_select.fields.title.label', type: 'text', placeholder: 'nodes.proposal_select.fields.title.placeholder' },
+      { key: 'from', label: 'nodes.proposal_select.fields.from.label', type: 'text', placeholder: 'nodes.proposal_select.fields.from.placeholder', optional: true },
+      { key: 'auto_var', label: 'nodes.proposal_select.fields.auto_var.label', type: 'text', placeholder: 'nodes.proposal_select.fields.auto_var.placeholder', optional: true },
+      { key: 'output_var', label: 'nodes.proposal_select.fields.output_var.label', type: 'text', placeholder: 'nodes.proposal_select.fields.output_var.placeholder', optional: true },
     ],
     outputs: [
-      { key: 'action', desc: 'nodes.app_preview.outputs.action.desc' },
-      { key: 'preview_issues', desc: 'nodes.app_preview.outputs.preview_issues.desc' },
-      { key: 'preview_ready', desc: 'nodes.app_preview.outputs.preview_ready.desc' },
+      { key: 'selected_proposal', desc: 'nodes.proposal_select.outputs.selected_proposal.desc' },
     ],
-    defaults: {
-      max_rounds: 3,
-      direct_preview: false,
-      auto_inject: true,
-      live_variants: true,
-      title: '应用预览',
-      prompt: '在沙箱内启动应用并 set_preview(port),或对已部署地址 set_preview(url)(port 与 url 二选一),供人工取点标注并复审确认。',
-    },
-    help: 'nodes.app_preview.help',
-  },
-  branch: {
-    type: 'branch',
-    label: 'nodes.branch.label',
-    desc: 'nodes.branch.desc',
-    icon: 'branch',
-    color: 'text-n-branch',
-    category: 'nodes.categories.control',
-    fields: [{ key: 'cases', label: 'nodes.branch.fields.cases.label', type: 'cases' }],
-    outputs: [
-      { key: 'matched', desc: 'nodes.branch.outputs.matched.desc' },
-      { key: 'goto', desc: 'nodes.branch.outputs.goto.desc' },
-    ],
-    defaults: { cases: [{ when: 'exists("design.md")', goto: '' }, { when: 'default', goto: '' }] },
-  },
-  set_var: {
-    type: 'set_var',
-    label: 'nodes.set_var.label',
-    desc: 'nodes.set_var.desc',
-    icon: 'edit',
-    color: 'text-n-artifact',
-    category: 'nodes.categories.control',
-    fields: [{ key: 'assignments', label: 'nodes.set_var.fields.assignments.label', type: 'assignments' }],
-    outputs: [{ key: 'vars', desc: 'nodes.set_var.outputs.vars.desc' }],
-    defaults: { assignments: [{ var: '', expr: '' }] },
+    defaults: { title: '选择方案', from: 'proposals.json', auto_var: 'auto_confirm', output_var: 'selected_proposal' },
+    help: 'nodes.proposal_select.help',
   },
 }
 
 export const PALETTE_GROUPS: { title: string; types: NodeType[] }[] = [
   { title: 'nodes.palette.control', types: ['input', 'output', 'set_var', 'branch'] },
-  { title: 'nodes.palette.agent', types: ['grasp', 'react', 'preflight', 'research', 'proposal', 'plan', 'implement', 'app_preview', 'test', 'review', 'submit_mr', 'visual'] },
+  { title: 'nodes.palette.agent', types: ['agent'] },
   { title: 'nodes.palette.collaboration', types: ['human_gate', 'proposal_select'] },
 ]
 
-/** True when human_gate body_template binds visual page.html (PreviewIssue path). */
+/**
+ * Output rows of an agent node: the generic agent outputs plus, per declared
+ * product, its rendered markdown key and raw `_json` key (page has no JSON).
+ * Descriptions are i18n keys.
+ */
+export function agentOutputDefs(caps: AgentCapabilities | null | undefined): { key: string; desc: string }[] {
+  const outs: { key: string; desc: string }[] = []
+  for (const p of declaredProducts(caps)) {
+    outs.push({ key: p.outputKey, desc: `nodes.schemas.${p.name}.markdown` })
+    if (p.outputJsonKey) outs.push({ key: p.outputJsonKey, desc: `nodes.schemas.${p.name}.json` })
+  }
+  const seen = new Set(outs.map((o) => o.key))
+  for (const o of NODE_DEFS.agent.outputs) if (!seen.has(o.key)) outs.push(o)
+  return outs
+}
+
+/** True when human_gate body_template binds page.html (PreviewIssue path). */
 export function isPageHtmlGateBody(bodyTemplate: unknown): boolean {
   const s = String(bodyTemplate ?? '')
   return /\.outputs\.page\b/.test(s) || s.includes('page.html')
@@ -482,28 +188,18 @@ export function syncHumanGateFormDefaults(config: Record<string, any>): void {
   config.form = defaultHumanGateForm(config.body_template)
 }
 
-export function nodeColorHex(type: NodeType): string {
-  const map: Record<NodeType, string> = {
-    input: '#94A3B8',
-    output: '#34D399',
-    react: '#22D3EE',
-    grasp: '#10B981',
-    approve: '#10B981',
-    preflight: '#2DD4BF',
-    agent: '#A78BFA',
-    plan: '#818CF8',
-    implement: '#8B5CF6',
-    app_preview: '#FBBF24',
-    research: '#38BDF8',
-    test: '#2DD4BF',
-    review: '#F472B6',
-    proposal: '#C084FC',
-    proposal_select: '#FBBF24',
-    submit_mr: '#FB923C',
-    visual: '#5EEAD4',
-    human_gate: '#FBBF24',
-    branch: '#E879F9',
-    set_var: '#F59E0B',
-  }
-  return map[type]
+const NODE_HUE: Record<NodeType, number> = {
+  input: 2,
+  output: 5,
+  set_var: 7,
+  branch: 8,
+  agent: 1,
+  human_gate: 6,
+  proposal_select: 6,
+}
+
+/** Theme-aware accent for a node type (`--c-hue-*` tokens); unknown types use the agent hue. */
+export function nodeColor(type: NodeType | string, alpha?: number): string {
+  const v = `var(--c-hue-${NODE_HUE[type as NodeType] ?? NODE_HUE.agent})`
+  return alpha == null ? `rgb(${v})` : `rgb(${v} / ${alpha})`
 }

@@ -200,7 +200,7 @@ func TestMarshalRoundJSONWritesAgentSummaryWhenPresent(t *testing.T) {
 		AgentSummary: "用户希望在单轮卡片最前增加 Agent 对反馈的总结。",
 		Turns:        []models.ReactMessage{{Role: "human", Text: "需要总结"}, {Role: "agent", Text: "已加总结区"}},
 	}
-	body, err := MarshalRoundJSON(cur, nil, "run-1", NodeRef{Label: "调研", Type: "research"})
+	body, err := MarshalRoundJSON(cur, nil, "run-1", NodeRef{Label: "调研", Type: "agent"})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestMarshalFeedbackSummaryJSONCoversAllRoundsWithoutTranscript(t *testing.T
 		{RunID: "run-1", Kind: models.FeedbackKindReview, NodeID: "research-1", Iteration: 1, Round: 2,
 			OccurredAt: at.Add(time.Minute), AgentSummary: "图表改为柱状图"},
 	}
-	body, err := MarshalFeedbackSummaryJSON(events, "run-1", NodeRef{Label: "调研", Type: "research"})
+	body, err := MarshalFeedbackSummaryJSON(events, "run-1", NodeRef{Label: "调研", Type: "agent"})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -308,7 +308,7 @@ func TestMarshalFeedbackSummaryJSONSurfacesConfirmRoundSummary(t *testing.T) {
 
 func decodeSummaryDoc(t *testing.T, events []models.FeedbackEvent) map[string]any {
 	t.Helper()
-	body, err := MarshalFeedbackSummaryJSON(events, "run-1", NodeRef{Label: "需求对齐", Type: "approve"})
+	body, err := MarshalFeedbackSummaryJSON(events, "run-1", NodeRef{Label: "需求对齐", Type: "agent"})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -353,7 +353,7 @@ func TestMarshalRoundJSONCarriesPriorRoundsAndPrevPointer(t *testing.T) {
 		Detail:      map[string]any{"source": "gate"},
 		Turns:       []models.ReactMessage{{Role: "human", Text: "补链接"}, {Role: "agent", Text: "已补充"}},
 	}
-	body, err := MarshalRoundJSON(cur, prior, "run-1", NodeRef{Label: "调研", Type: "research"})
+	body, err := MarshalRoundJSON(cur, prior, "run-1", NodeRef{Label: "调研", Type: "agent"})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}

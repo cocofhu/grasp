@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import { IMPLEMENT_CAPS } from '../src/test/capsFixtures'
 
 const nodes = [
   { id: 'input', type: 'input', label: '读取部署配置与环境变量', position: { x: 0, y: 0 }, config: {} },
@@ -11,7 +12,7 @@ const nodes = [
   },
   {
     id: 'deploy',
-    type: 'implement',
+    type: 'agent', caps: IMPLEMENT_CAPS,
     label: '部署到 production-ap-southeast-1 集群并等待全部工作负载完成滚动更新',
     position: { x: 360, y: 0 },
     config: { agent_profile: 'deployment-agent' },

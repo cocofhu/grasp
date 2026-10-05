@@ -150,15 +150,15 @@ func (*livePermissionProvider) HasLiveSession(string, string) bool { return true
 func (*livePermissionProvider) RetireSession(string, string)       {}
 
 func TestPublicLiveChatBeginUsesSharePermission(t *testing.T) {
-	for _, nodeType := range []string{"app_preview", "grasp", "approve"} {
+	for name, caps := range map[string]*models.AgentCapabilities{"review": testPreviewCaps, "clarify": testClarifyCaps} {
 		for _, permission := range []string{models.SharePermissionFull, models.SharePermissionReactOnly} {
-			t.Run(nodeType+"/"+permission, func(t *testing.T) {
+			t.Run(name+"/"+permission, func(t *testing.T) {
 				h := newHarness(t)
 				seedInboxReview(t, h, "run-live-chat", "preview", true)
 				var run models.Run
 				h.db.First(&run, "id = ?", "run-live-chat")
-				run.Graph.Nodes[0].Type = nodeType
-				run.Graph.Nodes[0].Config = map[string]any{"direct_preview": true}
+				run.Graph.Nodes[0].Type = "agent"
+				run.Graph.Nodes[0].Caps = caps
 				h.db.Save(&run)
 				h.db.Create(&models.LiveSession{ID: "chat01", RunID: run.ID, NodeID: "preview", Mode: "replace", State: models.LiveStateReady,
 					Variants: []models.LiveVariant{{N: 1}}})
@@ -198,18 +198,18 @@ func TestPublicLiveChatBeginUsesSharePermission(t *testing.T) {
 	}
 }
 
-func TestLiveCapabilityForGraspEmbedAndAuthenticatedPreview(t *testing.T) {
-	for _, nodeType := range []string{"grasp", "approve"} {
-		t.Run(nodeType, func(t *testing.T) {
+func TestLiveCapabilityForClarifyEmbedAndAuthenticatedPreview(t *testing.T) {
+	for name, caps := range map[string]*models.AgentCapabilities{"review": testPreviewCaps, "clarify": testClarifyCaps} {
+		t.Run(name, func(t *testing.T) {
 			h := newHarness(t)
 			runID := "run-live-embed"
-			nodeID := "legacy-preview"
+			nodeID := "clarify-preview"
 			seedInboxReview(t, h, runID, nodeID, true)
 			var run models.Run
 			h.db.First(&run, "id = ?", runID)
-			run.Graph.FindNode(nodeID).Type = nodeType
+			run.Graph.FindNode(nodeID).Caps = caps
 			h.db.Save(&run)
-			seedDirectPreview(t, h, runID, nodeID) // direct_preview only, no Live config
+			seedDirectPreview(t, h, runID, nodeID)
 			authenticated := h.do(http.MethodGet, "/api/runs/"+runID+"/nodes/"+nodeID+"/live-sessions", nil)
 			if authenticated.Code != http.StatusOK || parseJSON(t, authenticated)["enabled"] != true {
 				t.Fatalf("authenticated Live: %d %s", authenticated.Code, authenticated.Body.String())
@@ -250,15 +250,19 @@ func (p *chatLiveProvider) ReactReply(ctx context.Context, req runtime.NodeReq, 
 }
 
 func TestChatLiveGenerateThroughAuthenticatedAndEmbedReplies(t *testing.T) {
-	for _, nodeType := range []string{"app_preview", "grasp", "approve"} {
+	cases := []struct {
+		name string
+		caps *models.AgentCapabilities
+	}{{"review", testPreviewCaps}, {"clarify-attachments", testClarifyCaps}, {"clarify-text", testClarifyCaps}}
+	for _, tc := range cases {
 		for _, entry := range []string{"authenticated", "embed"} {
-			t.Run(nodeType+"/"+entry, func(t *testing.T) {
+			t.Run(tc.name+"/"+entry, func(t *testing.T) {
 				h := newHarness(t)
 				runID, nodeID := "run-chat-live", "preview"
 				seedInboxReview(t, h, runID, nodeID, true)
 				var run models.Run
 				h.db.First(&run, "id = ?", runID)
-				run.Graph.FindNode(nodeID).Type = nodeType
+				run.Graph.FindNode(nodeID).Caps = tc.caps
 				h.db.Save(&run)
 				seedDirectPreview(t, h, runID, nodeID)
 				provider := &chatLiveProvider{calls: make(chan chatLiveCall, 1)}
@@ -271,10 +275,10 @@ func TestChatLiveGenerateThroughAuthenticatedAndEmbedReplies(t *testing.T) {
 				images := []models.PromptImage{{Data: "QUJD", MimeType: "image/png", Name: "reference.png"}}
 				annotations := []models.ReactAnnotation{{Selector: "#login-dialog", Text: "按钮需要更明显"}}
 				// Preserve ordinary composer support for attachment-only turns.
-				if nodeType == "grasp" {
+				if tc.name == "clarify-attachments" {
 					prompt, annotations = "", nil
 				}
-				if nodeType == "approve" {
+				if tc.name == "clarify-text" {
 					prompt, images = "", nil
 				}
 				body := map[string]any{"live": models.LiveEvent{Op: models.LiveOpGenerate, SID: "chat01", Scope: "page", Prompt: prompt, Count: 3}, "images": images, "annotations": annotations}

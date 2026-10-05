@@ -7,11 +7,11 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-func reactGraph(autoVar string) models.Graph {
+func reactGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "in", Type: "input", Label: "Start"},
-			{ID: "react", Type: "react", Label: "需求澄清", Config: map[string]any{"auto_var": autoVar}},
+			agentNode("react", "需求澄清", testClarifyCaps),
 			{ID: "out", Type: "output", Label: "End"},
 		},
 		Edges: []models.Edge{
@@ -42,7 +42,7 @@ func TestAllPendingInboxItems(t *testing.T) {
 
 	db.Create(&models.Run{
 		ID: "run-clarify", WorkflowID: "wf2", WorkflowName: "功能迭代工作流",
-		Title: "收件箱标题透出", Status: "waiting_human", StartedAt: now.Add(-30 * time.Minute), Graph: reactGraph(""),
+		Title: "收件箱标题透出", Status: "waiting_human", StartedAt: now.Add(-30 * time.Minute), Graph: reactGraph(),
 	})
 	db.Create(&models.ReactConversation{
 		RunID: "run-clarify", NodeID: "react", Iteration: 1, Done: false,
@@ -52,15 +52,15 @@ func TestAllPendingInboxItems(t *testing.T) {
 	})
 
 	// Terminal run — excluded.
-	db.Create(&models.Run{ID: "run-done", Status: "completed", StartedAt: now, Graph: reactGraph("")})
+	db.Create(&models.Run{ID: "run-done", Status: "completed", StartedAt: now, Graph: reactGraph()})
 	db.Create(&models.ReactConversation{RunID: "run-done", NodeID: "react", Done: false})
 
 	// Done conversation — excluded.
-	db.Create(&models.Run{ID: "run-finished", Status: "waiting_human", StartedAt: now, Graph: reactGraph("")})
+	db.Create(&models.Run{ID: "run-finished", Status: "waiting_human", StartedAt: now, Graph: reactGraph()})
 	db.Create(&models.ReactConversation{RunID: "run-finished", NodeID: "react", Done: true})
 
 	// Auto-var react — excluded.
-	db.Create(&models.Run{ID: "run-auto", Status: "waiting_human", StartedAt: now, Graph: reactGraph("auto_clarify")})
+	db.Create(&models.Run{ID: "run-auto", Status: "waiting_human", StartedAt: now, Graph: reactGraph()})
 	db.Create(&models.RunVariable{RunID: "run-auto", Name: "auto_clarify", Type: "bool", Value: true})
 	db.Create(&models.ReactConversation{RunID: "run-auto", NodeID: "react", Done: false})
 
@@ -70,7 +70,7 @@ func TestAllPendingInboxItems(t *testing.T) {
 	db.Create(&models.StateRun{RunID: "run-clarify", NodeID: "react", Iteration: 1, Status: "waiting_human"})
 
 	// Failed react node with stale conversation — excluded from inbox.
-	db.Create(&models.Run{ID: "run-sbx-fail", Status: "running", StartedAt: now, Graph: reactGraph("")})
+	db.Create(&models.Run{ID: "run-sbx-fail", Status: "running", StartedAt: now, Graph: reactGraph()})
 	db.Create(&models.ReactConversation{RunID: "run-sbx-fail", NodeID: "react", Iteration: 1, Done: false,
 		Messages: []models.ReactMessage{{Role: "agent", Text: "err", At: now.Format(time.RFC3339)}}})
 	db.Create(&models.StateRun{RunID: "run-sbx-fail", NodeID: "react", Iteration: 1, Status: "failed",
@@ -174,16 +174,16 @@ func TestPendingInboxItemsOmitsEmptyRunTitle(t *testing.T) {
 	}
 }
 
-func reviewCapableGraph(nodeType, label string) models.Graph {
+func reviewCapableGraph(nodeID, label string) models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "in", Type: "input", Label: "Start"},
-			{ID: nodeType, Type: nodeType, Label: label},
+			agentNode(nodeID, label, testReviewCaps),
 			{ID: "out", Type: "output", Label: "End"},
 		},
 		Edges: []models.Edge{
-			{ID: "e1", Source: "in", Target: nodeType},
-			{ID: "e2", Source: nodeType, Target: "out"},
+			{ID: "e1", Source: "in", Target: nodeID},
+			{ID: "e2", Source: nodeID, Target: "out"},
 		},
 	}
 }
@@ -196,7 +196,7 @@ func TestPendingClarificationsKind(t *testing.T) {
 	// react → kind=clarify, type remains clarify
 	db.Create(&models.Run{
 		ID: "run-react", WorkflowID: "wf-r", WorkflowName: "澄清流",
-		Status: "waiting_human", StartedAt: now, Graph: reactGraph(""),
+		Status: "waiting_human", StartedAt: now, Graph: reactGraph(),
 	})
 	db.Create(&models.ReactConversation{
 		RunID: "run-react", NodeID: "react", Iteration: 1, Done: false,
@@ -226,16 +226,16 @@ func TestPendingClarificationsKind(t *testing.T) {
 	})
 	db.Create(&models.StateRun{RunID: "run-proposal", NodeID: "proposal", Iteration: 1, Status: "waiting_human"})
 
-	// app_preview → kind=app_preview (not generic review)
+	// preview-capable review Agent → kind=review
 	db.Create(&models.Run{
 		ID: "run-app-preview", WorkflowID: "wf-ap", WorkflowName: "预览流",
-		Status: "waiting_human", StartedAt: now, Graph: reviewCapableGraph("app_preview", "应用预览"),
+		Status: "waiting_human", StartedAt: now, Graph: reviewCapableGraph("preview", "应用预览"),
 	})
 	db.Create(&models.ReactConversation{
-		RunID: "run-app-preview", NodeID: "app_preview", Iteration: 1, Done: false,
+		RunID: "run-app-preview", NodeID: "preview", Iteration: 1, Done: false,
 		Messages: []models.ReactMessage{{Role: "agent", Text: "preview", At: now.Add(3 * time.Minute).Format(time.RFC3339)}},
 	})
-	db.Create(&models.StateRun{RunID: "run-app-preview", NodeID: "app_preview", Iteration: 1, Status: "waiting_human"})
+	db.Create(&models.StateRun{RunID: "run-app-preview", NodeID: "preview", Iteration: 1, Status: "waiting_human"})
 
 	items := s.AllPendingInboxItems()
 	byRun := map[string]ClarifyInboxItem{}
@@ -258,8 +258,8 @@ func TestPendingClarificationsKind(t *testing.T) {
 	if byRun["run-proposal"].Type != "clarify" || byRun["run-proposal"].Kind != "review" {
 		t.Fatalf("proposal: type=%q kind=%q", byRun["run-proposal"].Type, byRun["run-proposal"].Kind)
 	}
-	if byRun["run-app-preview"].Type != "clarify" || byRun["run-app-preview"].Kind != "app_preview" {
-		t.Fatalf("app_preview: type=%q kind=%q", byRun["run-app-preview"].Type, byRun["run-app-preview"].Kind)
+	if byRun["run-app-preview"].Type != "clarify" || byRun["run-app-preview"].Kind != "review" {
+		t.Fatalf("preview review: type=%q kind=%q", byRun["run-app-preview"].Type, byRun["run-app-preview"].Kind)
 	}
 	if byRun["run-research"].Label != "调研" || byRun["run-proposal"].Label != "方案" {
 		t.Fatalf("labels: research=%q proposal=%q", byRun["run-research"].Label, byRun["run-proposal"].Label)
@@ -304,26 +304,14 @@ func TestPendingInboxItemsFilterByTags(t *testing.T) {
 }
 
 func TestClarifyInboxKind(t *testing.T) {
-	if got := clarifyInboxKind(&models.Node{Type: "react"}); got != "clarify" {
-		t.Fatalf("react → %q", got)
+	if got := clarifyInboxKind(&models.Node{Type: "agent", Caps: testClarifyCaps}); got != "clarify" {
+		t.Fatalf("clarify Agent → %q", got)
 	}
-	if got := clarifyInboxKind(&models.Node{Type: "approve"}); got != "clarify" {
-		t.Fatalf("approve → %q", got)
+	if got := clarifyInboxKind(&models.Node{Type: "agent", Caps: testReviewCaps}); got != "review" {
+		t.Fatalf("review Agent → %q", got)
 	}
-	if got := clarifyInboxKind(&models.Node{Type: "preflight"}); got != "preflight" {
-		t.Fatalf("preflight → %q", got)
-	}
-	if got := clarifyInboxKind(&models.Node{Type: "research"}); got != "review" {
-		t.Fatalf("research → %q", got)
-	}
-	if got := clarifyInboxKind(&models.Node{Type: "proposal"}); got != "review" {
-		t.Fatalf("proposal → %q", got)
-	}
-	if got := clarifyInboxKind(&models.Node{Type: "app_preview"}); got != "app_preview" {
-		t.Fatalf("app_preview → %q, want app_preview", got)
-	}
-	if got := clarifyInboxKind(&models.Node{Type: "proposal_select"}); got != "clarify" {
-		t.Fatalf("proposal_select is gate channel, not review kind: %q", got)
+	if got := clarifyInboxKind(&models.Node{Type: "agent", Caps: testAutoCaps}); got != "clarify" {
+		t.Fatalf("auto Agent without review → %q", got)
 	}
 	if got := clarifyInboxKind(nil); got != "clarify" {
 		t.Fatalf("nil → %q", got)
@@ -331,31 +319,25 @@ func TestClarifyInboxKind(t *testing.T) {
 }
 
 func TestIsShareableReviewSession(t *testing.T) {
-	if IsShareableReviewSession(&models.Node{Type: "research"}) != true {
-		t.Fatal("research must be shareable")
+	if !IsShareableReviewSession(&models.Node{Type: "agent", Caps: testReviewCaps}) {
+		t.Fatal("review Agent must be shareable")
 	}
-	if IsShareableReviewSession(&models.Node{Type: "app_preview"}) != true {
-		t.Fatal("app_preview must be shareable (plan g1.1)")
+	if !IsShareableReviewSession(&models.Node{Type: "agent", Caps: testClarifyCaps}) {
+		t.Fatal("clarify Agent must be shareable")
 	}
-	if clarifyInboxKind(&models.Node{Type: "app_preview"}) == "review" {
-		t.Fatal("inbox review kind must stay review-only; app_preview is a distinct kind")
+	if IsShareableReviewSession(&models.Node{Type: "agent", Caps: testAutoCaps}) {
+		t.Fatal("auto Agent without review must not be shareable")
 	}
-	if !IsShareableReviewSession(&models.Node{Type: "react"}) {
-		t.Fatal("clarify react must be shareable (plan g1.1)")
-	}
-	if !IsShareableReviewSession(&models.Node{Type: "approve"}) {
-		t.Fatal("approve must be shareable")
-	}
-	if IsShareableReviewSession(&models.Node{Type: "proposal_select"}) {
-		t.Fatal("proposal_select must not be shareable via review session")
+	if IsShareableReviewSession(&models.Node{Type: "human_gate"}) {
+		t.Fatal("human_gate must not be shareable via review session")
 	}
 	if IsShareableReviewSession(nil) {
 		t.Fatal("nil must not be shareable")
 	}
 }
 
-// TestPendingInboxIncludesAppPreview covers g1.3: app_preview waiting_human
-// appears in PendingInboxItems with kind=app_preview; coexists with human_gate;
+// TestPendingInboxIncludesAppPreview covers g1.3: preview review waiting_human
+// appears in PendingInboxItems with kind=review; coexists with human_gate;
 // disappears when the conversation is marked done.
 func TestPendingInboxIncludesAppPreview(t *testing.T) {
 	db := newTestDB(t)
@@ -367,35 +349,35 @@ func TestPendingInboxIncludesAppPreview(t *testing.T) {
 	db.Create(&models.Run{
 		ID: "run-preview", WorkflowID: "wf-ap", WorkflowName: "预览工作流",
 		Title: "应用预览验收", Status: "waiting_human", StartedAt: now.Add(-20 * time.Minute),
-		Graph: reviewCapableGraph("app_preview", "应用预览"),
+		Graph: reviewCapableGraph("preview", "应用预览"),
 	})
 	db.Create(&models.ReactConversation{
-		RunID: "run-preview", NodeID: "app_preview", Iteration: 1, Done: false,
+		RunID: "run-preview", NodeID: "preview", Iteration: 1, Done: false,
 		Messages: []models.ReactMessage{
 			{Role: "agent", Text: "preview ready", At: previewAt.Format(time.RFC3339)},
 		},
 	})
 	db.Create(&models.StateRun{
-		RunID: "run-preview", NodeID: "app_preview", Iteration: 1, Status: "waiting_human",
+		RunID: "run-preview", NodeID: "preview", Iteration: 1, Status: "waiting_human",
 	})
 
-	// Only app_preview → inbox non-empty with kind=app_preview.
+	// Only the preview review → inbox non-empty with kind=review.
 	items := s.AllPendingInboxItems()
 	if len(items) != 1 {
-		t.Fatalf("only app_preview: expected 1 inbox item, got %d", len(items))
+		t.Fatalf("only preview review: expected 1 inbox item, got %d", len(items))
 	}
 	preview, ok := items[0].(ClarifyInboxItem)
 	if !ok {
 		t.Fatalf("expected ClarifyInboxItem, got %T", items[0])
 	}
-	if preview.Type != "clarify" || preview.Kind != "app_preview" {
-		t.Fatalf("app_preview: type=%q kind=%q", preview.Type, preview.Kind)
+	if preview.Type != "clarify" || preview.Kind != "review" {
+		t.Fatalf("preview review: type=%q kind=%q", preview.Type, preview.Kind)
 	}
 	if preview.RunID != "run-preview" || preview.Label != "应用预览" {
-		t.Fatalf("app_preview fields: runId=%q label=%q", preview.RunID, preview.Label)
+		t.Fatalf("preview review fields: runId=%q label=%q", preview.RunID, preview.Label)
 	}
 	if preview.RunTitle != "应用预览验收" || preview.WorkflowName != "预览工作流" {
-		t.Fatalf("app_preview titles: runTitle=%q workflow=%q", preview.RunTitle, preview.WorkflowName)
+		t.Fatalf("preview review titles: runTitle=%q workflow=%q", preview.RunTitle, preview.WorkflowName)
 	}
 
 	// Coexist with unresolved human_gate — both visible, neither overwritten.
@@ -423,7 +405,7 @@ func TestPendingInboxIncludesAppPreview(t *testing.T) {
 				sawGate = true
 			}
 		case ClarifyInboxItem:
-			if v.RunID == "run-preview" && v.Kind == "app_preview" {
+			if v.RunID == "run-preview" && v.Kind == "review" {
 				sawPreview = true
 			}
 		}
@@ -434,7 +416,7 @@ func TestPendingInboxIncludesAppPreview(t *testing.T) {
 
 	// Confirm/complete: mark conversation done → preview item disappears; gate remains.
 	if err := db.Model(&models.ReactConversation{}).
-		Where("run_id = ? AND node_id = ?", "run-preview", "app_preview").
+		Where("run_id = ? AND node_id = ?", "run-preview", "preview").
 		Update("done", true).Error; err != nil {
 		t.Fatalf("mark done: %v", err)
 	}
@@ -447,8 +429,8 @@ func TestPendingInboxIncludesAppPreview(t *testing.T) {
 		t.Fatalf("after preview done: expected gate run-gate, got %#v", items[0])
 	}
 	for _, it := range items {
-		if c, ok := it.(ClarifyInboxItem); ok && c.Kind == "app_preview" {
-			t.Fatalf("done app_preview must leave inbox, got %#v", c)
+		if c, ok := it.(ClarifyInboxItem); ok && c.Kind == "preview" {
+			t.Fatalf("done preview review must leave inbox, got %#v", c)
 		}
 	}
 }
@@ -490,7 +472,7 @@ func TestPendingInboxExcludesTransferred(t *testing.T) {
 	// Still-pending clarify (must remain).
 	db.Create(&models.Run{
 		ID: "run-clarify-live", WorkflowID: "wf2", WorkflowName: "C",
-		Title: "仍待澄清", Status: "waiting_human", StartedAt: now.Add(-20 * time.Minute), Graph: reactGraph(""),
+		Title: "仍待澄清", Status: "waiting_human", StartedAt: now.Add(-20 * time.Minute), Graph: reactGraph(),
 	})
 	db.Create(&models.ReactConversation{
 		RunID: "run-clarify-live", NodeID: "react", Iteration: 1, Done: false,
@@ -518,14 +500,14 @@ func TestPendingInboxExcludesTransferred(t *testing.T) {
 	db.Create(&models.Run{
 		ID: "run-preview-gone", WorkflowID: "wf4", WorkflowName: "P",
 		Title: "已流转预览", Status: "running", StartedAt: now.Add(-50 * time.Minute),
-		Graph: reviewCapableGraph("app_preview", "应用预览"),
+		Graph: reviewCapableGraph("preview", "应用预览"),
 	})
 	db.Create(&models.ReactConversation{
-		RunID: "run-preview-gone", NodeID: "app_preview", Iteration: 1, Done: true,
+		RunID: "run-preview-gone", NodeID: "preview", Iteration: 1, Done: true,
 		Messages: []models.ReactMessage{{Role: "agent", Text: "ok", At: now.Add(-8 * time.Minute).Format(time.RFC3339)}},
 	})
 	db.Create(&models.StateRun{
-		RunID: "run-preview-gone", NodeID: "app_preview", Iteration: 1, Status: "completed",
+		RunID: "run-preview-gone", NodeID: "preview", Iteration: 1, Status: "completed",
 	})
 
 	// Review-kind transferred: conversation Done but stale waiting_human row.
@@ -584,23 +566,6 @@ func TestPendingInboxExcludesTransferred(t *testing.T) {
 	}
 }
 
-func TestReactAutoEnabled(t *testing.T) {
-	node := &models.Node{Config: map[string]any{"auto_var": "auto_flag"}}
-	if reactAutoEnabled(node, map[string]any{"auto_flag": true}) != true {
-		t.Fatal("truthy auto var")
-	}
-	if reactAutoEnabled(node, map[string]any{"auto_flag": false}) != false {
-		t.Fatal("falsy auto var")
-	}
-	if reactAutoEnabled(&models.Node{Config: map[string]any{}}, nil) != false {
-		t.Fatal("empty auto_var")
-	}
-	approve := &models.Node{Type: "approve", Config: map[string]any{"auto_var": "auto_flag"}}
-	if reactAutoEnabled(approve, map[string]any{"auto_flag": true}) {
-		t.Fatal("approve leftover auto_var must not auto-clarify")
-	}
-}
-
 func TestAttachInboxReplyingState(t *testing.T) {
 	busy := func(runID, nodeID string) bool {
 		return runID == "run-busy" && nodeID == "react"
@@ -609,7 +574,7 @@ func TestAttachInboxReplyingState(t *testing.T) {
 		ClarifyInboxItem{Type: "clarify", Kind: "clarify", RunID: "run-busy", NodeID: "react"},
 		ClarifyInboxItem{Type: "clarify", Kind: "review", RunID: "run-idle", NodeID: "research"},
 		ClarifyInboxItem{Type: "clarify", Kind: "clarify", State: "starting", RunID: "run-busy", NodeID: "react"},
-		ClarifyInboxItem{Type: "clarify", Kind: "app_preview", State: "replying", RunID: "run-idle", NodeID: "preview"},
+		ClarifyInboxItem{Type: "clarify", Kind: "review", State: "replying", RunID: "run-idle", NodeID: "preview"},
 		GateInboxItem{Type: "gate", RunID: "run-busy", NodeID: "hg1", Title: "门禁"},
 	}
 	AttachInboxReplyingState(items, busy)
@@ -645,7 +610,7 @@ func TestPendingInboxItemsStayListedWhenReplying(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	db.Create(&models.Run{
 		ID: "run-reply", WorkflowID: "wf-r", WorkflowName: "WF",
-		Title: "回复中仍在列表", Status: "waiting_human", StartedAt: now, Graph: reactGraph(""),
+		Title: "回复中仍在列表", Status: "waiting_human", StartedAt: now, Graph: reactGraph(),
 	})
 	db.Create(&models.ReactConversation{
 		RunID: "run-reply", NodeID: "react", Iteration: 1, Done: false,

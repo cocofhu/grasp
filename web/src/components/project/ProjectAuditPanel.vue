@@ -1450,31 +1450,23 @@ onUnmounted(() => {
   flex-shrink: 0;
   background: rgb(var(--c-txt3));
 }
-.node-dot.research,
-.node-dot.react,
 .node-dot.input,
 .node-dot.output {
   background: rgb(var(--c-info));
 }
-.node-dot.proposal,
-.node-dot.proposal_select,
+.node-dot.clarify,
 .node-dot.implement,
-.node-dot.plan,
-.node-dot.test,
-.node-dot.review,
-.node-dot.submit_mr {
-  background: rgb(var(--c-info));
+.node-dot.test_review,
+.node-dot.agent {
+  background: rgb(var(--c-accent));
 }
-.node-dot.gate,
 .node-dot.human_gate,
-.node-dot.visual,
-.node-dot.app_preview {
+.node-dot.proposal_select {
   background: rgb(var(--c-warn));
 }
-.node-dot.agent,
 .node-dot.branch,
 .node-dot.set_var {
-  background: rgb(var(--c-accent));
+  background: rgb(var(--c-txt2));
 }
 .node-dot.system {
   background: rgb(var(--c-ok));

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/pagebridge"
 
 	"github.com/gin-gonic/gin"
@@ -124,7 +123,7 @@ func (h *Handlers) handleRunWSControl(runID, owner string, data []byte) {
 		}
 		clearQueue := true
 		if run, ok := h.Runs.Get(runID); ok {
-			if n := run.Graph.FindNode(nodeID); n != nil && nodereg.ClarifyInteractive(n.Type) {
+			if n := run.Graph.FindNode(nodeID); n != nil && n.Caps.Clarify() {
 				clearQueue = false
 			}
 		}
@@ -151,7 +150,7 @@ func (h *Handlers) handleRunWSControl(runID, owner string, data []byte) {
 		}
 		// Classic react → clarify FIFO; review-capable nodes → review FIFO.
 		if run, ok := h.Runs.Get(runID); ok {
-			if n := run.Graph.FindNode(nodeID); n != nil && nodereg.ClarifyInteractive(n.Type) {
+			if n := run.Graph.FindNode(nodeID); n != nil && n.Caps.Clarify() {
 				if _, err := h.Eng.EnqueueClarifyTurnAs(owner, runID, nodeID, m.Content, m.Images, m.Annotations); err != nil {
 					h.publishReviewWSError(runID, nodeID, err.Error())
 				}

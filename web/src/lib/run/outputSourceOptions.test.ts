@@ -5,6 +5,8 @@ import {
   upstreamNodeIds,
 } from './outputSourceOptions'
 import type { WFEdge, WFNode } from '../shared/types'
+import type { AgentCapabilities } from '@/lib/api/apiTypes'
+import { AUTO_CAPS, CLARIFY_CAPS, IMPLEMENT_CAPS, TEST_REVIEW_CAPS, writesCaps } from '@/test/capsFixtures'
 
 const t = (key: string, params?: Record<string, unknown>) =>
   params?.value != null ? `${key}:${params.value}` : key
@@ -13,11 +15,15 @@ function node(id: string, type: string, label: string, config: Record<string, un
   return { id, type: type as never, label, position: { x: 0, y: 0 }, config } as WFNode
 }
 
+function agent(id: string, label: string, caps: AgentCapabilities, config: Record<string, unknown> = {}): WFNode {
+  return { ...node(id, 'agent', label, config), caps } as WFNode
+}
+
 describe('outputSourceOptions', () => {
   const nodes: WFNode[] = [
     node('in', 'input', '输入'),
-    node('plan', 'plan', '计划'),
-    node('agent', 'agent', '实现', { produces: 'out.md' }),
+    agent('plan', '计划', writesCaps('plan')),
+    agent('agent', '实现', AUTO_CAPS, { produces: 'out.md' }),
     node('gate', 'human_gate', '门禁'),
   ]
   const edges: WFEdge[] = [
@@ -27,8 +33,8 @@ describe('outputSourceOptions', () => {
   ]
 
   it('walks transitive upstream ids', () => {
-    expect([...upstreamNodeIds('gate', edges, nodes)].sort()).toEqual(['agent', 'in', 'plan'])
-    expect(upstreamNodeIds('in', edges, nodes).size).toBe(0)
+    expect([...upstreamNodeIds('gate', edges)].sort()).toEqual(['agent', 'in', 'plan'])
+    expect(upstreamNodeIds('in', edges).size).toBe(0)
   })
 
   it('builds structured/agent/artifact options and resolves labels', () => {
@@ -44,132 +50,73 @@ describe('outputSourceOptions', () => {
     )
   })
 
-  it('includes upstream via test exit.goto only (no real edge to output)', () => {
-    // plan_coverage: g1.1 / g3.1 — test|review exits.pass.goto
+  it('includes upstream via pass / fail outlets of a gated agent', () => {
     const graph = [
-      node('research', 'research', '调研'),
-      node('test', 'test', '测试', {
-        exits: { pass: { goto: 'output' }, fail: { goto: 'research' } },
-      }),
-      node('output', 'output', '输出'),
-    ]
-    const realEdges: WFEdge[] = [{ id: 'e1', source: 'research', target: 'test' }]
-    const upstream = upstreamNodeIds('output', realEdges, graph)
-    expect(upstream.has('test')).toBe(true)
-    expect(upstream.has('research')).toBe(true)
-
-    const opts = buildOutputSourceOptions(graph, realEdges, 'output', t)
-    expect(opts.length).toBeGreaterThan(0)
-    expect(opts.some((o) => o.value.includes('nodes.research.outputs.research'))).toBe(true)
-    expect(opts.some((o) => o.value.includes('nodes.test.outputs.test_result'))).toBe(true)
-  })
-
-  it('includes upstream via review exit.goto only', () => {
-    // plan_coverage: g3.1 — review exit.goto（仅第二段为 goto，无指向 output 的真实边）
-    const graph = [
-      node('implement', 'implement', '实现'),
-      node('review', 'review', '评审', {
-        exits: { pass: { goto: 'output' }, fail: { goto: 'implement' } },
-      }),
-      node('output', 'output', '输出'),
-    ]
-    const realEdges: WFEdge[] = [{ id: 'e1', source: 'implement', target: 'review' }]
-    const opts = buildOutputSourceOptions(graph, realEdges, 'output', t)
-    expect(opts.some((o) => o.value.includes('nodes.implement.outputs.implementation_result'))).toBe(
-      true,
-    )
-    expect(opts.some((o) => o.value.includes('nodes.review.outputs.review'))).toBe(true)
-  })
-
-  it('includes upstream via human_gate action.goto only', () => {
-    // plan_coverage: g1.1 / g3.1 — human_gate.actions[].goto
-    const graph = [
-      node('research', 'research', '调研'),
-      node('gate', 'human_gate', '门禁', {
-        actions: [{ id: 'approve', label: '通过', goto: 'output' }],
-      }),
-      node('output', 'output', '输出'),
-    ]
-    const realEdges: WFEdge[] = [{ id: 'e1', source: 'research', target: 'gate' }]
-    const opts = buildOutputSourceOptions(graph, realEdges, 'output', t)
-    expect(opts.some((o) => o.value.includes('nodes.research.outputs.research'))).toBe(true)
-  })
-
-  it('includes upstream via branch case.goto only', () => {
-    // plan_coverage: g1.1 / g3.1 — branch.cases[].goto
-    const graph = [
-      node('research', 'research', '调研'),
-      node('branch', 'branch', '分支', {
-        cases: [{ label: 'ok', goto: 'output' }],
-      }),
-      node('output', 'output', '输出'),
-    ]
-    const realEdges: WFEdge[] = [{ id: 'e1', source: 'research', target: 'branch' }]
-    const opts = buildOutputSourceOptions(graph, realEdges, 'output', t)
-    expect(opts.some((o) => o.value.includes('nodes.research.outputs.research'))).toBe(true)
-  })
-
-  it('unions edges and goto, dedupes option templates', () => {
-    // plan_coverage: g1.2 / g3.1 — edges ∪ goto 并集去重
-    const graph = [
-      node('implement', 'implement', '实现'),
-      node('test', 'test', '测试', {
-        exits: { pass: { goto: 'output' }, fail: { goto: 'implement' } },
-      }),
+      agent('implement', '实现', IMPLEMENT_CAPS),
+      agent('test', '测试评审', TEST_REVIEW_CAPS),
       node('output', 'output', '输出'),
     ]
     const realEdges: WFEdge[] = [
       { id: 'e1', source: 'implement', target: 'test' },
-      { id: 'e2', source: 'implement', target: 'output', kind: 'success' },
-      { id: 'e3', source: 'test', target: 'output', kind: 'success' },
+      { id: 'e2', source: 'test', target: 'output', sourceHandle: 'pass' },
+      { id: 'e3', source: 'test', target: 'implement', sourceHandle: 'fail' },
+    ]
+    const upstream = upstreamNodeIds('output', realEdges)
+    expect(upstream.has('test')).toBe(true)
+    expect(upstream.has('implement')).toBe(true)
+
+    const opts = buildOutputSourceOptions(graph, realEdges, 'output', t)
+    expect(opts.some((o) => o.value.includes('nodes.implement.outputs.implementation_result'))).toBe(true)
+    expect(opts.some((o) => o.value.includes('nodes.test.outputs.test_result'))).toBe(true)
+    expect(opts.some((o) => o.value.includes('nodes.test.outputs.review'))).toBe(true)
+  })
+
+  it('includes upstream via human_gate action and branch case outlets', () => {
+    const graph = [
+      agent('research', '调研', writesCaps('research')),
+      node('gate', 'human_gate', '门禁', { actions: [{ id: 'approve', label: '通过' }] }),
+      node('branch', 'branch', '分支', { cases: [{ id: 'ok', when: 'true' }] }),
+      node('output', 'output', '输出'),
+    ]
+    const realEdges: WFEdge[] = [
+      { id: 'e1', source: 'research', target: 'gate' },
+      { id: 'e2', source: 'gate', target: 'branch', sourceHandle: 'approve' },
+      { id: 'e3', source: 'branch', target: 'output', sourceHandle: 'ok' },
+    ]
+    const opts = buildOutputSourceOptions(graph, realEdges, 'output', t)
+    expect(opts.some((o) => o.value.includes('nodes.research.outputs.research'))).toBe(true)
+  })
+
+  it('dedupes option templates across parallel paths', () => {
+    const graph = [
+      agent('implement', '实现', IMPLEMENT_CAPS),
+      agent('test', '测试评审', TEST_REVIEW_CAPS),
+      node('output', 'output', '输出'),
+    ]
+    const realEdges: WFEdge[] = [
+      { id: 'e1', source: 'implement', target: 'test' },
+      { id: 'e2', source: 'implement', target: 'output' },
+      { id: 'e3', source: 'test', target: 'output', sourceHandle: 'pass' },
     ]
     const opts = buildOutputSourceOptions(graph, realEdges, 'output', t)
     const implValues = opts.filter((o) =>
       o.value.includes('nodes.implement.outputs.implementation_result'),
     )
     expect(implValues).toHaveLength(1)
-    expect(opts.some((o) => o.value.includes('nodes.test.outputs.test_result'))).toBe(true)
   })
 
-  it('keeps real-edge implement→output options (no regression)', () => {
-    // plan_coverage: g1.3 / g3.1 — 真实边对照不回归
-    const graph = [
-      node('implement', 'implement', '实现'),
-      node('output', 'output', '输出'),
-    ]
-    const realEdges: WFEdge[] = [
-      { id: 'e1', source: 'implement', target: 'output', kind: 'success' },
-    ]
-    const opts = buildOutputSourceOptions(graph, realEdges, 'output', t)
-    expect(opts.some((o) => o.value.includes('nodes.implement.outputs.implementation_result'))).toBe(
-      true,
-    )
-  })
-
-  it('derives Approve multi-product options from the manifest', () => {
-    const graph = [
-      node('approve', 'approve', 'Approve'),
-      node('output', 'output', '输出'),
-    ]
-    const realEdges: WFEdge[] = [{ id: 'e1', source: 'approve', target: 'output', kind: 'success' }]
+  it('derives clarify multi-product options from declared writes', () => {
+    const graph = [agent('clarify', '需求澄清', CLARIFY_CAPS), node('output', 'output', '输出')]
+    const realEdges: WFEdge[] = [{ id: 'e1', source: 'clarify', target: 'output' }]
     const opts = buildOutputSourceOptions(graph, realEdges, 'output', t)
     for (const key of ['clarified_requirement', 'plan', 'research', 'proposals', 'page']) {
-      expect(opts.some((o) => o.value === `{{nodes.approve.outputs.${key}}}`)).toBe(true)
+      expect(opts.some((o) => o.value === `{{nodes.clarify.outputs.${key}}}`)).toBe(true)
     }
   })
 
-  it('derives single-product options from manifest outputKey', () => {
-    const graph = [
-      node('plan', 'plan', '计划'),
-      node('proposal_select', 'proposal_select', '选方案'),
-      node('output', 'output', '输出'),
-    ]
-    const realEdges: WFEdge[] = [
-      { id: 'e1', source: 'plan', target: 'proposal_select' },
-      { id: 'e2', source: 'proposal_select', target: 'output' },
-    ]
-    const opts = buildOutputSourceOptions(graph, realEdges, 'output', t)
-    expect(opts.some((o) => o.value === '{{nodes.plan.outputs.plan}}')).toBe(true)
-    expect(opts.some((o) => o.value === '{{nodes.proposal_select.outputs.proposal}}')).toBe(true)
+  it('offers nothing structured for an agent without caps', () => {
+    const graph = [node('a', 'agent', 'A'), node('output', 'output', '输出')]
+    const opts = buildOutputSourceOptions(graph, [{ id: 'e1', source: 'a', target: 'output' }], 'output', t)
+    expect(opts.map((o) => o.value)).toEqual(['{{nodes.a.outputs.content}}'])
   })
 })

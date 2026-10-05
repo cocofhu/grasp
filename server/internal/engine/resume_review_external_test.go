@@ -18,7 +18,7 @@ func extractShareToken(t *testing.T, url string) string {
 }
 
 func TestResumeReviewExternalConfirmAndLoginRevoke(t *testing.T) {
-	eng, db, _ := setupReviewEngine(t, true)
+	eng, db, _ := setupReviewEngine(t)
 	share := gateshare.NewService(db, nil)
 	eng.SetShareRevoker(share)
 
@@ -53,7 +53,7 @@ func TestResumeReviewExternalConfirmAndLoginRevoke(t *testing.T) {
 }
 
 func TestResumeReviewExternalBusyDoesNotBurnLink(t *testing.T) {
-	eng, db, _ := setupReviewEngine(t, true)
+	eng, db, _ := setupReviewEngine(t)
 	share := gateshare.NewService(db, nil)
 	eng.SetShareRevoker(share)
 
@@ -96,7 +96,7 @@ func TestResumeReviewExternalBusyDoesNotBurnLink(t *testing.T) {
 }
 
 func TestResumeReviewExternalValidationFailureDoesNotBurnLink(t *testing.T) {
-	eng, db, _ := setupReviewEngine(t, true)
+	eng, db, _ := setupReviewEngine(t)
 	share := gateshare.NewService(db, nil)
 	eng.SetShareRevoker(share)
 
@@ -141,7 +141,7 @@ func TestResumeReviewExternalValidationFailureDoesNotBurnLink(t *testing.T) {
 }
 
 func TestReviewLoginForceRevokesUnusedShareLink(t *testing.T) {
-	eng, db, _ := setupReviewEngine(t, true)
+	eng, db, _ := setupReviewEngine(t)
 	share := gateshare.NewService(db, nil)
 	eng.SetShareRevoker(share)
 

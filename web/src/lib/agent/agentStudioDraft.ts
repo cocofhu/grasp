@@ -1,4 +1,5 @@
-import type { Agent, AgentPrompts, MCPServer } from '@/lib/api/api'
+import type { Agent, AgentCapabilities, MCPServer } from '@/lib/api/api'
+import { normalizeCapabilities } from '@/lib/workflow/agentCapabilities'
 import type { GitCredentialType } from '@/lib/agent/gitCredentialAnalysis'
 import {
   ACP_BACKENDS,
@@ -7,8 +8,6 @@ import {
 } from '@/lib/shared/regionPolicy'
 
 export type KV = { k: string; v: string }
-export type PromptKey = keyof AgentPrompts
-export type PromptDraft = Record<PromptKey, string>
 export type DraftMCP = {
   name: string
   transport: 'url' | 'command'
@@ -30,7 +29,8 @@ export type AgentStudioDraft = {
   mcp: DraftMCP[]
   env: KV[]
   layout: { configRoot: string; workspaceDir: string }
-  prompts: PromptDraft
+  /** null = not declared; the Agent cannot run workflow nodes until it is. */
+  capabilities: AgentCapabilities | null
 }
 
 /** @deprecated Prefer AgentStudioDraft; kept as Draft alias for local call sites. */
@@ -62,22 +62,6 @@ export const AGENT_PLATFORM_MCPS = [
     token: '${GRASP_SCHEDULER_TOKEN}',
   },
 ] as const
-
-export const PROMPT_KEYS: PromptKey[] = [
-  'upstreamArtifactsHeader',
-  'producesContract',
-  'reactOpenSuffix',
-  'producesRetry',
-]
-
-export function emptyPrompts(): PromptDraft {
-  return { upstreamArtifactsHeader: '', producesContract: '', reactOpenSuffix: '', producesRetry: '' }
-}
-
-/** Textarea / HTTP payloads treat CRLF and CR as LF; keep draft and dirty compare aligned. */
-export function normalizePromptText(s: string): string {
-  return s.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-}
 
 export function recToKV(rec?: Record<string, string>): KV[] {
   return Object.entries(rec || {}).map(([k, v]) => ({ k, v }))
@@ -124,9 +108,16 @@ export function defaultConfigRootFor(backend: BackendId): string {
   return ACP_BACKENDS.find((b) => b.id === backend)?.configRoot || DEFAULT_CONFIG_ROOT
 }
 
+function cloneCapabilities(c: AgentCapabilities): AgentCapabilities {
+  return {
+    ...c,
+    tools: [...(c.tools || [])],
+    reads: [...(c.reads || [])],
+    writes: (c.writes || []).map((w) => ({ ...w })),
+  }
+}
+
 export function toDraft(a: Agent): AgentStudioDraft {
-  const prompts = emptyPrompts()
-  for (const k of PROMPT_KEYS) prompts[k] = normalizePromptText(a.prompts?.[k] ?? '')
   return {
     name: a.name,
     projectId: a.projectId || '',
@@ -141,21 +132,8 @@ export function toDraft(a: Agent): AgentStudioDraft {
       configRoot: a.layout?.configRoot || DEFAULT_CONFIG_ROOT,
       workspaceDir: a.layout?.workspaceDir || DEFAULT_WORKSPACE_DIR,
     },
-    prompts,
+    capabilities: a.capabilities ? cloneCapabilities(a.capabilities) : null,
   }
-}
-
-export function draftPromptsToApi(p: PromptDraft): AgentPrompts | undefined {
-  const out: AgentPrompts = {}
-  let any = false
-  for (const k of PROMPT_KEYS) {
-    const text = normalizePromptText(p[k])
-    if (text.trim()) {
-      out[k] = text
-      any = true
-    }
-  }
-  return any ? out : undefined
 }
 
 export function fromDraftRaw(d: AgentStudioDraft): Agent {
@@ -173,7 +151,7 @@ export function fromDraftRaw(d: AgentStudioDraft): Agent {
       configRoot: d.layout.configRoot.trim() || DEFAULT_CONFIG_ROOT,
       workspaceDir: d.layout.workspaceDir.trim() || DEFAULT_WORKSPACE_DIR,
     },
-    prompts: draftPromptsToApi(d.prompts),
+    ...(d.capabilities ? { capabilities: normalizeCapabilities(d.capabilities) } : {}),
   }
 }
 

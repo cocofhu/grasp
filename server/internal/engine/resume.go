@@ -12,7 +12,6 @@ import (
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	gatenode "github.com/cocofhu/grasp/internal/models/nodereg"
-	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/services"
 
@@ -123,7 +122,7 @@ func (e *Engine) resumeGateLocked(runID, nodeID, action string, form map[string]
 		outcome = e.finalizeProposal(c, node, final, id, outVar)
 	} else if node.Type == "human_gate" {
 		// human_gate: expose action, assign it to the configured global var,
-		// and carry any per-action goto target for direct routing.
+		// and leave through the edge whose sourceHandle is the action id.
 		outVar := firstNonEmptyStr(str(node.Config["output_var"]), "action")
 		c.setVar(outVar, action)
 		e.persistVar(runID, outVar, action)
@@ -163,12 +162,7 @@ func (e *Engine) resumeGateLocked(runID, nodeID, action string, form map[string]
 		if reviewerActor.Unattributable {
 			outputs["reviewer_unattributable"] = true
 		}
-		outcome = nodeOutcome{status: "completed", outputs: outputs, outputMd: "审批:" + action}
-		for _, a := range parseActions(node.Config["actions"]) {
-			if a.ID == action && a.Goto != "" {
-				outcome.goto_ = a.Goto
-			}
-		}
+		outcome = nodeOutcome{status: "completed", outputs: outputs, outputMd: "审批:" + action, handle: action}
 	}
 	e.saveState(c, node, outcome)
 	c.nodeOutputs[nodeID] = outcome.outputs
@@ -229,8 +223,8 @@ func (e *Engine) resumeGateLocked(runID, nodeID, action string, form map[string]
 
 // shouldSnapshotPreviewIssues reports whether resume should write
 // vars.preview_issues for this gate. human_gate only when body_template binds
-// page.html (HtmlPreview Issue path). app_preview clears preview_issues on
-// review confirm (reviewReply) and no longer resumes via Gate.
+// page.html (HtmlPreview Issue path). Agents with a preview clear
+// preview_issues on review confirm instead.
 func shouldSnapshotPreviewIssues(node *models.Node) bool {
 	if node == nil {
 		return false
@@ -292,7 +286,7 @@ func (e *Engine) markPreviewIssuesResolvedByNode(runID, nodeID string) error {
 }
 
 // snapshotPreviewIssues writes the human-reported preview issues for this
-// app_preview / human_gate (HtmlPreview) node into two run variables:
+// human_gate (HtmlPreview) node into two run variables:
 //   - preview_issues: a composite {text, images[]} value whose text is a
 //     numbered list of the problems and whose images are every attached
 //     screenshot, so a downstream node referencing {{vars.preview_issues}}
@@ -412,7 +406,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	cPeek, peekErr := e.loadCtx(runID)
 	if peekErr == nil {
 		if n := cPeek.graph.FindNode(nodeID); n != nil {
-			if isReviewNode(n.Type) {
+			if isReviewNode(n) {
 				if retryLast {
 					return errors.New("retryLast is only supported for clarify/approve dialogues")
 				}
@@ -441,7 +435,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 				if err := e.ensureSandboxIdleForConfirm(runID, nodeID, abortRunning); err != nil {
 					return err
 				}
-			} else if nodereg.ClarifyInteractive(n.Type) && !force {
+			} else if n.Caps.Clarify() && !force {
 				// Classic clarify !force: same FIFO / WS / refresh-resume as review.
 				var convPeek models.ReactConversation
 				if err := e.db.Where("run_id = ? AND node_id = ?", runID, nodeID).
@@ -457,7 +451,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 				}
 				_, err := e.EnqueueClarifyTurnAs(owner, runID, nodeID, humanText, images, annotations)
 				return err
-			} else if nodereg.ClarifyInteractive(n.Type) && force {
+			} else if n.Caps.Clarify() && force {
 				// Clarify force finish: only when session idle (no in-flight / queue).
 				if !e.ReviewSessionReady(runID, nodeID) {
 					return errors.New("澄清进行中或待发送队列非空,请先 Cancel 或等待完成后再结束")
@@ -485,7 +479,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 		return err
 	}
 	node := c.graph.FindNode(nodeID)
-	if node == nil || (!nodereg.ClarifyInteractive(node.Type) && !isReviewNode(node.Type)) {
+	if node == nil || (!node.Caps.Clarify() && !isReviewNode(node)) {
 		return errors.New("react node not found")
 	}
 	if err := e.checkAgentProfileProject(c, node); err != nil {
@@ -503,7 +497,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 
 	// Review force: human turn is recorded, then git wrap-up + finalize.
 	// Review !force already returned via EnqueueReviewTurn above.
-	if isReviewNode(node.Type) {
+	if isReviewNode(node) {
 		if !force {
 			return errors.New("internal: review non-force must enqueue")
 		}
@@ -536,9 +530,9 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	req := e.nodeReq(c, node)
 	var liveWrap runtime.ReactTurn
 	// Adopted Live edits must reach the working branch before ReactReply's
-	// forced finish retires the Grasp sandbox. Ordinary clarification never
+	// forced finish retires the clarify sandbox. Ordinary clarification never
 	// enters this source-edit wrap-up. checkLiveClosed already ran above.
-	if nodereg.IsGrasp(node.Type) && len(e.LiveSessions(runID, nodeID, false)) > 0 {
+	if node.Caps.Clarify() && len(e.LiveSessions(runID, nodeID, false)) > 0 {
 		if rp, ok := e.provider.(runtime.ReviewProvider); ok {
 			liveWrap = rp.OfferCommitOnConfirm(context.Background(), req)
 			e.flushMcpCalls(runID, nodeID)
@@ -562,14 +556,6 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 		At: time.Now().Format(time.RFC3339), Questions: t.Questions, Forms: t.Forms,
 		Interrupted: t.Interrupted, OpID: t.OpID, Tools: models.ToolsFromEvents(replyEvents), Parts: models.PartsForReply(replyEvents, t.Msg)}
 	conv.Messages = append(conv.Messages, agentMsg)
-
-	// Auto-clarify: if this node runs in auto mode and the agent asked more
-	// questions, keep answering with the recommended option set (all recommended
-	// for multi-select, or the first as fallback) instead of pausing for another
-	// human reply.
-	if !force && !t.Done && len(t.Questions) > 0 && len(t.Forms) == 0 && e.autoReactEnabled(c, node) {
-		t = e.autoAdvanceReact(c, node, &conv, req, t)
-	}
 
 	if !t.Done {
 		conv.Done = false
@@ -610,7 +596,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 
 	// Finalize: require node_complete, enforce produces, then optional RPC.
 	outcome := e.finishAgentOutcome(c, node, t.Result, func(r runtime.NodeResult) nodeOutcome {
-		return e.finalizeAgentProducts(c, node, r)
+		return e.finalizeAgent(c, node, r)
 	})
 	e.saveState(c, node, outcome)
 	e.appendTrace(c, models.TraceEntry{NodeID: nodeID, Event: "resume", Detail: "react 完成"})
@@ -720,7 +706,7 @@ func (e *Engine) ResumeFrom(runID, nodeID string) error {
 	// A cancelled/failed approve visit may have already delivered FirstMessage;
 	// release the latch so the fresh visit opened by this resume can claim again.
 	if c.run.FirstMessage != nil {
-		e.releaseApproveFirstMessageLatch(runID)
+		e.releaseClarifyFirstMessageLatch(runID)
 		c.run.FirstMessageDeliveredAt = nil
 	}
 	// Record the manual resume in the trace before handing off to admission.
@@ -859,7 +845,7 @@ func (e *Engine) Cancel(runID string) error {
 	// terminal status and exits without routing; its endExecute is gen-guarded.
 	e.forceEndExecute(runID)
 	if run.FirstMessage != nil {
-		e.releaseApproveFirstMessageLatch(runID)
+		e.releaseClarifyFirstMessageLatch(runID)
 	}
 	return nil
 }

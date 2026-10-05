@@ -1,8 +1,9 @@
 /**
- * E2E: Home chat starts an Approve-first pipeline and opens the inbox.
+ * E2E: Home chat starts an Approve-first workflow and opens the inbox.
  * Harness: dashboard-home-chat.html (DashboardView + gates stub)
  */
 import { expect, test, type Page } from '@playwright/test'
+import { CLARIFY_CAPS } from '../src/test/capsFixtures'
 
 function approveWorkflow() {
   return {
@@ -16,7 +17,7 @@ function approveWorkflow() {
     showOnHome: true,
     nodes: [
       { id: 'in', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
-      { id: 'ap', type: 'approve', label: '澄清', position: { x: 0, y: 0 }, config: {} },
+      { id: 'ap', type: 'agent', caps: CLARIFY_CAPS, label: '澄清', position: { x: 0, y: 0 }, config: {} },
       { id: 'out', type: 'output', label: '结束', position: { x: 0, y: 0 }, config: {} },
     ],
     edges: [
@@ -91,14 +92,14 @@ async function mockHomeApis(page: Page) {
   })
 }
 
-test.describe('首页 Chat 启动 Approve 流水线', () => {
-  test('无项目记忆：仍跨项目加载流水线并可发送', async ({ page }) => {
+test.describe('首页 Chat 启动 Approve 工作流', () => {
+  test('无项目记忆：仍跨项目加载工作流并可发送', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await mockHomeApis(page)
     await page.goto('/dashboard-home-chat.html')
     await expect(page.getByTestId('dashboard-view')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByTestId('home-no-project')).toHaveCount(0)
-    await expect(page.getByTestId('home-pipeline-card-wf-approve')).toContainText('自我迭代PRO')
+    await expect(page.getByTestId('home-workflow-card-wf-approve')).toContainText('自我迭代PRO')
     await page.getByTestId('home-composer-input').fill('不先选项目也能开跑')
     await page.getByTestId('home-composer-send').click()
     await expect(page.getByTestId('gates-inbox-page')).toBeVisible({ timeout: 10_000 })
@@ -109,7 +110,7 @@ test.describe('首页 Chat 启动 Approve 流水线', () => {
     await mockHomeApis(page)
     await page.goto('/dashboard-home-chat.html?memory=1&projectId=proj-1')
     await expect(page.getByTestId('dashboard-view')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('home-pipeline-card-wf-approve')).toContainText('自我迭代PRO')
+    await expect(page.getByTestId('home-workflow-card-wf-approve')).toContainText('自我迭代PRO')
 
     await page.getByTestId('home-composer-input').fill('把登录做清楚')
     await page.getByTestId('home-composer-send').click()

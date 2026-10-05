@@ -141,7 +141,7 @@ func TestProjectDeleteWithWorkflows(t *testing.T) {
 	if w.Code != http.StatusConflict {
 		t.Fatalf("delete with workflows: %d %s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "流水线") {
+	if !strings.Contains(w.Body.String(), "工作流") {
 		t.Fatalf("expected workflows error body: %s", w.Body.String())
 	}
 }

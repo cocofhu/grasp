@@ -134,15 +134,36 @@ export interface AgentLayout {
   workspaceDir?: string
 }
 
-// AgentPrompts overrides the platform-injected prompt text and sandbox rule
-// files for one Agent. Every field is optional; an empty field falls back to
-// the platform default. The templated fields use a `{name}` placeholder for the
-// declared produces file name.
-export interface AgentPrompts {
-  upstreamArtifactsHeader?: string
-  producesContract?: string
-  reactOpenSuffix?: string
-  producesRetry?: string
+export type AgentInteraction = 'auto' | 'clarify'
+
+/** Platform tools an Agent may be granted (set_* product tools follow from writes). */
+export type GrantableTool = 'ask_question' | 'ask_form' | 'set_artifact_preview' | 'set_preview' | 'update_plan_status'
+
+/** One structured product an Agent writes (schema name from the node manifest). */
+export interface ProductWrite {
+  schema: string
+  required?: boolean
+}
+
+/** What an Agent may do and must deliver when a workflow node runs it (agent.json `capabilities`). */
+export interface AgentCapabilities {
+  interaction: AgentInteraction
+  /** auto only: park for human review after the run. */
+  review?: boolean
+  tools?: string[]
+  /** Readable artifact names; "*" reads all. */
+  reads?: string[]
+  writes?: ProductWrite[]
+  maxRounds?: number
+}
+
+/** Built-in workflow Agent template (GET /agent-teams/templates). */
+export interface AgentTemplate {
+  id: string
+  embedName: string
+  roleLabelZh: string
+  summary: string
+  capabilities?: AgentCapabilities
 }
 
 export interface Agent {
@@ -161,7 +182,8 @@ export interface Agent {
   mcp?: MCPServer[]
   env?: Record<string, string>
   layout?: AgentLayout
-  prompts?: AgentPrompts
+  /** Absent = the Agent cannot run workflow nodes ("Agent X 未声明能力"). */
+  capabilities?: AgentCapabilities
 }
 
 /** Project-level shared Agent baseline (extend layer; Agent overlays on top). */
@@ -176,7 +198,6 @@ export interface ProjectSharedAgentConfig {
   mcp: MCPServer[]
   env: Record<string, string>
   layout: AgentLayout
-  prompts?: AgentPrompts
 }
 
 /** Project-owned credential metadata. Secret values are never returned by GET. */
@@ -278,7 +299,7 @@ export interface TeamBootstrapSession {
   error?: string
   projectId?: string
   rootGroupId?: string
-  pipelineGroupId?: string
+  workflowGroupId?: string
   pmAgent?: string
   sandboxId?: string
   /** Gateway/local sandbox lifecycle while bootstrap waits (pulling|creating|running|…). */
@@ -297,7 +318,7 @@ export interface TeamBootstrapRequest {
   projectName: string
   prefix: string
   rootGroupName: string
-  pipelineGroupName: string
+  workflowGroupName: string
   pmName: string
   background: string
   acpBackend: string
@@ -376,18 +397,6 @@ export interface SettingItem {
 export interface BrandSettings {
   product_name: string
   home_subtitle: string
-}
-
-export type PlatformRuleSource = 'override' | 'global' | 'embed'
-
-export interface PlatformRuleMeta {
-  file: string
-  source: PlatformRuleSource
-  mtime?: string
-}
-
-export interface PlatformRuleContent extends PlatformRuleMeta {
-  content: string
 }
 
 export interface ChannelConfig {

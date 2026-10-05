@@ -203,25 +203,24 @@ func TestStartRunTitleOverrideBeatsReposAsk(t *testing.T) {
 	}
 }
 
-// TestFrameworkNodesPipeline drives research → test → review framework-card
-// nodes end to end, exercising execStructuredAgent / finalizeStructured and
-// each node's structured-contract enforcement + renderer. Reserved JSON is
+// TestFrameworkNodesPipeline drives research → test → review agents end to
+// end, exercising each schema's contract enforcement + renderer. Reserved JSON is
 // persisted; fixed-name markdown companions are not. Node outputs still carry
 // rendered Markdown (outKey) and raw JSON (outKey+"_json").
 func TestFrameworkNodesPipeline(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "research", Type: "research", Config: map[string]any{"agent_profile": "r", "prompt": "调研"}},
-			{ID: "test", Type: "test", Config: map[string]any{"agent_profile": "t", "prompt": "测试"}},
-			{ID: "review", Type: "review", Config: map[string]any{"agent_profile": "v", "prompt": "评审"}},
+			{ID: "research", Type: "agent", Caps: capsResearchAuto, Config: map[string]any{"agent_profile": "r", "prompt": "调研"}},
+			{ID: "test", Type: "agent", Caps: capsTest, Config: map[string]any{"agent_profile": "t", "prompt": "测试"}},
+			{ID: "review", Type: "agent", Caps: capsCodeReview, Config: map[string]any{"agent_profile": "v", "prompt": "评审"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "research"},
 			{ID: "e2", Source: "research", Target: "test"},
-			{ID: "e3", Source: "test", Target: "review"},
-			{ID: "e4", Source: "review", Target: "output"},
+			{ID: "e3", Source: "test", Target: "review", SourceHandle: handlePass},
+			{ID: "e4", Source: "review", Target: "output", SourceHandle: handlePass},
 		},
 	}
 	eng, db := setupEngineGraph(t, g)

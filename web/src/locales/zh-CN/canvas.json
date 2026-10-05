@@ -1,0 +1,267 @@
+{
+  "canvas": {
+    "aria": {
+      "canvas": "工作流画布",
+      "node": "{type}节点:{label}",
+      "inPort": "入口",
+      "outPort": "出口:{label}",
+      "outPortPlain": "出口",
+      "edge": "从 {source} 到 {target}",
+      "nodeMenu": "节点操作",
+      "insertNode": "在这条连线中间插入节点",
+      "deleteEdge": "删除连线",
+      "editCondition": "编辑连线条件",
+      "closeInspector": "关闭检查器",
+      "togglePalette": "展开或收起节点面板",
+      "palette": "节点面板",
+      "inspector": "节点检查器"
+    },
+    "outlet": {
+      "pass": "通过",
+      "fail": "不通过",
+      "else": "否则",
+      "caseN": "分支 {n}",
+      "stale": "{handle}(已失效)"
+    },
+    "caps": {
+      "undeclared": "未声明能力",
+      "review": "复审",
+      "preview": "预览",
+      "writes": "写 {list}",
+      "listSep": "、",
+      "ask": "会向人提问",
+      "previewFull": "可以启动应用预览",
+      "reviewFull": "跑完后进入人工复审",
+      "gateFull": "按判定走「通过」或「不通过」出口"
+    },
+    "node": {
+      "goalEmpty": "点击填写目标",
+      "noAgent": "未选择 Agent",
+      "agentMissing": "Agent「{name}」不存在",
+      "iteration": "第 {n} 次",
+      "reply": "去回复",
+      "issues": "{n} 个问题",
+      "menu": {
+        "edit": "编辑",
+        "rename": "重命名",
+        "duplicate": "原地复制",
+        "delete": "删除"
+      },
+      "status": {
+        "running": "运行中",
+        "waiting_human": "等待回复",
+        "completed": "已完成",
+        "failed": "失败",
+        "skipped": "已跳过",
+        "cancelled": "已取消",
+        "pending": "未开始"
+      },
+      "summary": {
+        "variables": "{n} 个变量",
+        "sources": "{n} 个输出来源",
+        "noSources": "未选择输出来源",
+        "assignments": "{n} 个赋值",
+        "cases": "{n} 个分支",
+        "actions": "{n} 个动作",
+        "proposals": "从 {from} 选择方案"
+      }
+    },
+    "edge": {
+      "editorTitle": "连线条件",
+      "when": "条件(when)",
+      "whenPlaceholder": "例如 vars.attempt < 3,留空表示总是走这条线",
+      "kind": "类型",
+      "note": "备注",
+      "notePlaceholder": "显示在连线上的说明",
+      "done": "完成",
+      "delete": "删除连线"
+    },
+    "palette": {
+      "search": "搜索节点或 Agent",
+      "agents": "Agent",
+      "control": "控制",
+      "collab": "协作",
+      "fromTemplate": "从模板新建",
+      "blankAgent": "空白 Agent 节点",
+      "blankAgentDesc": "稍后在检查器中选择 Agent",
+      "noAgents": "项目里还没有 Agent",
+      "noMatch": "没有匹配的节点",
+      "dragHint": "拖到画布上,或点击添加",
+      "collapse": "收起面板",
+      "expand": "展开面板"
+    },
+    "quickAdd": {
+      "placeholder": "搜索节点或 Agent…",
+      "titleCommand": "添加节点",
+      "titleConnect": "接在「{label}」后面",
+      "titleInsert": "插入到连线中间",
+      "empty": "没有匹配的节点",
+      "hint": "↑↓ 选择 · Enter 添加 · Esc 关闭"
+    },
+    "toolbar": {
+      "zoomIn": "放大",
+      "zoomOut": "缩小",
+      "fitView": "适应画布 (Shift+1)",
+      "autoLayout": "自动布局 (Shift+L)",
+      "minimap": "显示或隐藏小地图",
+      "undo": "撤销",
+      "redo": "重做",
+      "help": "快捷键 (?)",
+      "follow": "跟随",
+      "followOn": "正在跟随运行中的节点",
+      "followOff": "点击后自动跟随运行中的节点"
+    },
+    "shortcuts": {
+      "title": "快捷键",
+      "actions": {
+        "undo": "撤销",
+        "redo": "重做",
+        "copy": "复制",
+        "paste": "粘贴",
+        "duplicate": "原地复制",
+        "delete": "删除选中",
+        "selectAll": "全选",
+        "save": "立即保存",
+        "fitView": "适应画布",
+        "autoLayout": "自动布局",
+        "quickAdd": "快速添加",
+        "rename": "重命名节点",
+        "navigate": "在相连的节点之间移动",
+        "help": "快捷键帮助",
+        "escape": "关闭浮层或取消选择"
+      },
+      "mouse": {
+        "title": "鼠标和触控板",
+        "pan": "按住空格拖动,或双指滑动:平移",
+        "zoom": "Ctrl/⌘ + 滚轮,或双指捏合:缩放",
+        "select": "在空白处拖动:框选;Shift + 单击:多选",
+        "dblclick": "双击空白处:快速添加;双击节点:编辑目标"
+      }
+    },
+    "empty": {
+      "title": "开始搭建工作流",
+      "templateTitle": "从默认模板开始",
+      "templateDesc": "需求澄清 → 实现 → 测试评审,评审不通过时回到实现",
+      "blankTitle": "空白开始",
+      "blankDesc": "只放输入和输出,自己搭建中间的步骤",
+      "hint": "随时按 / 搜索并添加节点"
+    },
+    "template": {
+      "labels": {
+        "input": "输入",
+        "clarify": "需求澄清",
+        "implement": "实现",
+        "test_review": "测试评审",
+        "output": "输出"
+      },
+      "goals": {
+        "clarify": "和提需求的人澄清以下需求,直到信息充分,写出需求规格和实施计划:\n{'{{vars.feature}}'}",
+        "implement": "按需求规格和计划完成实现,逐项更新计划进度,并写入实现结果。",
+        "test_review": "测试并评审上游的实现,如实写入测试结果和评审结论。"
+      }
+    },
+    "rules": {
+      "missingEnd": "连线两端必须都是节点",
+      "selfLoop": "节点不能连到自己",
+      "inputNoIncoming": "输入节点不能有入边",
+      "outputNoOutgoing": "输出节点不能有出边",
+      "duplicate": "这两个节点之间已经有这条连线",
+      "singleInput": "输入节点只能有一个"
+    },
+    "issues": {
+      "count": "{n} 个问题",
+      "none": "没有问题",
+      "next": "跳到下一个问题",
+      "missingInput": "缺少输入节点",
+      "missingOutput": "缺少输出节点",
+      "tooManyInputs": "输入节点只能有一个",
+      "unknownType": "未知节点类型 {type}",
+      "inputHasIncoming": "输入节点不能有入边",
+      "outputHasOutgoing": "输出节点不能有出边",
+      "unreachable": "没有连线进入这个节点",
+      "noAgent": "未选择 Agent",
+      "agentNotFound": "Agent「{name}」不存在或不属于本项目",
+      "agentNoCaps": "Agent {name} 未声明能力",
+      "agentBadCaps": "Agent {name} 的能力有误:{reason}",
+      "noGoal": "未填写目标",
+      "staleOutlet": "出口「{handle}」已不存在,请重新连线",
+      "duplicateFanOut": "同一个出口有多条无条件连线,只有第一条会执行"
+    },
+    "inspector": {
+      "close": "关闭",
+      "sections": {
+        "agent": "Agent",
+        "goal": "目标",
+        "timeout": "超时",
+        "capabilities": "能力",
+        "basics": "基本信息",
+        "settings": "配置",
+        "outputs": "输出"
+      },
+      "agentPlaceholder": "选择 Agent",
+      "goalPlaceholder": "这一步要完成什么。输入 {'{{'} 插入变量或上游产物",
+      "goalHint": "输入 {'{{'} 插入变量或上游产物",
+      "timeoutPlaceholder": "不限",
+      "interaction": "交互方式",
+      "tools": "工具",
+      "reads": "可读产物",
+      "writes": "写入产物",
+      "none": "无",
+      "editInStudio": "在 Agent Studio 中编辑",
+      "noCapsBody": "这个 Agent 还没有声明能力,运行时会校验失败。",
+      "suggest": {
+        "vars": "变量",
+        "upstream": "上游产物",
+        "empty": "没有可插入的变量"
+      },
+      "cases": {
+        "add": "添加分支",
+        "idPlaceholder": "出口 id",
+        "whenPlaceholder": "条件,例如 vars.kind == \"bug\"",
+        "elseNote": "都不满足时走「否则」出口"
+      },
+      "actions": {
+        "add": "添加动作",
+        "note": "每个动作是一个出口,把它连到下一步"
+      }
+    },
+    "topbar": {
+      "projects": "项目",
+      "rename": "点击重命名",
+      "status": {
+        "saved": "已保存",
+        "saving": "保存中…",
+        "unsaved": "未保存",
+        "error": "保存失败"
+      },
+      "saveError": "自动保存失败:{error}",
+      "retrySave": "重试",
+      "issuesNone": "没有问题",
+      "run": "运行",
+      "publish": "发布",
+      "more": "更多",
+      "menu": {
+        "import": "导入",
+        "export": "导出",
+        "duplicate": "复制工作流",
+        "delete": "删除工作流",
+        "versions": "版本",
+        "details": "详情",
+        "favorite": "收藏",
+        "unfavorite": "取消收藏"
+      },
+      "tabs": {
+        "canvas": "编排",
+        "runs": "运行记录",
+        "api": "访问 API"
+      },
+      "deleteTitle": "删除工作流「{name}」?",
+      "deleteBody": "删除后无法恢复,已有的运行记录不受影响。",
+      "deleteFailed": "删除失败:{error}"
+    },
+    "toast": {
+      "edgeReplaced": "已替换原来连到「{label}」的连线",
+      "undo": "撤销"
+    }
+  }
+}

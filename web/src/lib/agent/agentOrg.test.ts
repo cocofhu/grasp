@@ -116,7 +116,7 @@ describe('recursive members + unique project label', () => {
     revision: 1,
     groups: [
       { id: 'root', name: 'Grasp项目组' },
-      { id: 'pipe', name: 'Pipeline', parentGroupId: 'root' },
+      { id: 'pipe', name: 'Workflow', parentGroupId: 'root' },
       { id: 'des', name: '设计组', parentGroupId: 'root' },
       { id: 'empty', name: '空组', parentGroupId: 'root' },
     ],

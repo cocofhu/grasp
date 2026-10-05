@@ -10,8 +10,8 @@ import OutputSourcesEditor from './OutputSourcesEditor.vue'
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warn: vi.fn(), info: vi.fn() }))
 vi.mock('@/lib/composables/useToast', () => ({ useToast: () => toast }))
 
-const research: WFNode = { id: 'research', type: 'research', label: '调研', position: { x: 0, y: 0 }, config: {} }
-const plan: WFNode = { id: 'plan', type: 'plan', label: '计划', position: { x: 0, y: 0 }, config: {} }
+const research: WFNode = { id: 'research', type: 'agent', label: '调研', position: { x: 0, y: 0 }, config: { agent_profile: 'r', prompt: '' } }
+const plan: WFNode = { id: 'plan', type: 'agent', label: '计划', position: { x: 0, y: 0 }, config: { agent_profile: 'p', prompt: '' } }
 
 function outputNode(results?: unknown): WFNode {
   return {

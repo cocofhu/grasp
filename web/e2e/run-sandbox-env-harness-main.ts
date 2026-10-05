@@ -74,7 +74,7 @@ async function boot() {
               ? h(RunLaunchModal, {
                   open: open.value,
                   workflowId: 'wf-env-1',
-                  workflowName: 'deploy-pipeline',
+                  workflowName: 'deploy-workflow',
                   fields: [{ key: 'topic', desc: '主题', required: true }],
                   runInputs: { topic: 'hotfix' },
                   runImages: {},

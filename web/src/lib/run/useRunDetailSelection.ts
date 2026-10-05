@@ -7,10 +7,10 @@ import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { useToast } from '@/lib/composables/useToast'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
-import { NODE_DEFS } from '@/data/nodeRegistry'
-import { PRODUCT_NODE_TYPES } from '@/lib/run/productNodeArtifacts'
+import { isProductNode } from '@/lib/run/productNodeArtifacts'
+import { isAppPreviewRemoteNode } from '@/lib/run/reactArtifactPreview'
 import { resolveOutputFocusNodeId } from '@/lib/run/runOutputSelection'
-import { isClarifyInteractive } from '@/lib/shared/clarifyInteractive'
+import { isClarifyNode } from '@/lib/shared/clarifyInteractive'
 import type { NodeRunStatus, Run, WFNode, Workflow } from '@/lib/shared/types'
 
 export function useRunDetailSelection(opts: {
@@ -33,12 +33,12 @@ export function useRunDetailSelection(opts: {
   // Gate/clarify nodes add their interaction tab; agent-like nodes (sandbox
   // execution) add the ACP execution-log tab.
   const gateActive = computed(() => !!run.value.gate && selected.value === run.value.gate.nodeId)
-  // A react node IS the clarify node — surface its tab as soon as the node is
+  // A clarify Agent IS the clarify node — surface its tab as soon as the node is
   // selected, even before the first turn has finished generating (the conversation
   // row is only created after ReactOpen returns). The panel then shows a loading
   // state until the dialogue is available.
-  const clarifyActive = computed(() => isClarifyInteractive(selNode.value?.type))
-  // The selected react node's own conversation (per-node), falling back to the
+  const clarifyActive = computed(() => isClarifyNode(selNode.value))
+  // The selected clarify node's own conversation (per-node), falling back to the
   // run's current clarify when it matches this node.
   const selClarify = computed(() => {
     const id = selected.value
@@ -50,30 +50,28 @@ export function useRunDetailSelection(opts: {
   const clarifyInputActive = computed(
     () => ['queued', 'running', 'waiting_human'].includes(run.value.status) && selStatus.value === 'waiting_human',
   )
-  // React node failed during sandbox setup — show error-box instead of chat/loader.
+  // Clarify node failed during sandbox setup — show error-box instead of chat/loader.
   const clarifySandboxFailed = computed(
-    () => isClarifyInteractive(selNode.value?.type) && selStatus.value === 'failed' && !!selRun.value?.error,
+    () => isClarifyNode(selNode.value) && selStatus.value === 'failed' && !!selRun.value?.error,
   )
 
-  // Every sandbox-backed node (all "Agent" category types: agent/react/plan/
-  // implement/research/test/review/proposal/submit_mr/visual) runs the in-container
-  // cursor-agent, so it gets both the ACP 执行日志 and 沙箱日志 tabs. Derive this
-  // from the node registry so new Agent node types are covered automatically.
-  const hasLog = computed(() => !!selNode.value && NODE_DEFS[selNode.value.type]?.category === 'nodes.categories.agent')
+  // Agent nodes run the in-container cursor-agent, so they get both the ACP
+  // 执行日志 and 沙箱日志 tabs.
+  const hasLog = computed(() => selNode.value?.type === 'agent')
 
-  // Non-generic Agent cards each expose a structured product; surface it in a
-  // dedicated "产物" tab. The generic `agent` node is intentionally excluded.
-  const hasProduct = computed(() => !!selNode.value && PRODUCT_NODE_TYPES.includes(selNode.value.type))
+  // Nodes owning structured products (declared writes / proposal_select) surface
+  // them in a dedicated "产物" tab.
+  const hasProduct = computed(() => isProductNode(selNode.value))
   const nodeCompleted = computed(() => selStatus.value === 'completed')
 
-  const hasAppPreview = computed(() => selNode.value?.type === 'app_preview')
+  const hasAppPreview = computed(() => isAppPreviewRemoteNode(selNode.value))
 
-  // Post-run ReAct review: a non-react producer node that has an open review
+  // Post-run ReAct review: a non-clarify producer node that has an open review
   // conversation (the backend only seeds one for review-capable producers). The
   // combined review tab shows the product view (annotatable) + the ReAct chat.
   const reviewActive = computed(() => {
     const n = selNode.value
-    if (!n || isClarifyInteractive(n.type)) return false
+    if (!n || isClarifyNode(n)) return false
     const conv = selClarify.value
     return !!conv && !conv.done
   })
@@ -81,10 +79,6 @@ export function useRunDetailSelection(opts: {
   const nodeTabs = computed(() => {
     const tabs: { id: string; label: string; ghosted?: boolean; disabled?: boolean }[] = []
     if (gateActive.value) tabs.push({ id: 'gate', label: t('pages.runDetail.tabs.gate') })
-    // app_preview: Gate shell removed — keep a ghosted Gate tab (Demo) that cannot enter.
-    else if (hasAppPreview.value && (reviewActive.value || selStatus.value === 'waiting_human')) {
-      tabs.push({ id: 'gate', label: t('pages.runDetail.tabs.gate'), ghosted: true, disabled: true })
-    }
     if (clarifyActive.value) tabs.push({ id: 'clarify', label: t('pages.runDetail.tabs.clarify') })
     if (reviewActive.value) tabs.push({ id: 'review', label: t('pages.runDetail.tabs.review') })
     if (hasAppPreview.value) tabs.push({ id: 'preview', label: t('pages.runDetail.tabs.appPreview') })
@@ -176,9 +170,7 @@ export function useRunDetailSelection(opts: {
         nodeTab.value = 'output'
         return
       }
-      // app_preview: Gate 仅壳，主交互为复审对话 + VNC
-      if (hasAppPreview.value && reviewActive.value) nodeTab.value = 'review'
-      else if (gateActive.value) nodeTab.value = 'gate'
+      if (gateActive.value) nodeTab.value = 'gate'
       else if (clarifyActive.value && !run.value.clarify?.done) nodeTab.value = 'clarify'
       else if (reviewActive.value) nodeTab.value = 'review'
       else if (hasProduct.value && nodeCompleted.value) nodeTab.value = 'product'
@@ -233,7 +225,7 @@ export function useRunDetailSelection(opts: {
     },
   )
   // If the current tab disappears (e.g. clarify resolved), fall back gracefully.
-  // Ghosted/disabled tabs (app_preview Gate) are never a valid active selection.
+  // Ghosted/disabled tabs are never a valid active selection.
   watch(nodeTabs, (tabs) => {
     const cur = tabs.find((t) => t.id === nodeTab.value)
     if (!cur || cur.ghosted || cur.disabled) {

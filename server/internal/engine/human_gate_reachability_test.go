@@ -10,7 +10,7 @@ func TestHasRemainingHumanGate_EdgeOnly(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "in", Type: "input"},
-			{ID: "work", Type: "agent"},
+			{ID: "work", Type: "agent", Caps: capsPlain},
 			{ID: "gate", Type: "human_gate"},
 			{ID: "out", Type: "output"},
 		},
@@ -28,78 +28,12 @@ func TestHasRemainingHumanGate_EdgeOnly(t *testing.T) {
 	}
 }
 
-func TestHasRemainingHumanGate_GotoOnly(t *testing.T) {
-	g := models.Graph{
-		Nodes: []models.Node{
-			{ID: "in", Type: "input"},
-			{ID: "branch", Type: "branch", Config: map[string]any{
-				"cases": []any{
-					map[string]any{"when": "true", "goto": "gate"},
-					map[string]any{"when": "false", "goto": "out"},
-				},
-			}},
-			{ID: "gate", Type: "human_gate"},
-			{ID: "out", Type: "output"},
-		},
-		Edges: []models.Edge{
-			{ID: "e1", Source: "in", Target: "branch"},
-			// no OutEdge to gate — only config goto
-		},
-	}
-	if !hasRemainingHumanGate(&g, "in") {
-		t.Fatal("want true via branch.cases[].goto")
-	}
-
-	g2 := models.Graph{
-		Nodes: []models.Node{
-			{ID: "in", Type: "input"},
-			{ID: "work", Type: "agent", Config: map[string]any{
-				"exits": map[string]any{
-					"pass": map[string]any{"goto": "gate"},
-					"fail": map[string]any{"goto": "out"},
-				},
-			}},
-			{ID: "gate", Type: "human_gate"},
-			{ID: "out", Type: "output"},
-		},
-		Edges: []models.Edge{
-			{ID: "e1", Source: "in", Target: "work"},
-		},
-	}
-	if !hasRemainingHumanGate(&g2, "in") {
-		t.Fatal("want true via structured exits.*.goto")
-	}
-
-	g3 := models.Graph{
-		Nodes: []models.Node{
-			{ID: "in", Type: "input"},
-			{ID: "gateA", Type: "human_gate", Config: map[string]any{
-				"actions": []any{
-					map[string]any{"id": "ok", "label": "OK", "goto": "gateB"},
-				},
-			}},
-			{ID: "gateB", Type: "human_gate"},
-			{ID: "out", Type: "output"},
-		},
-		Edges: []models.Edge{
-			{ID: "e1", Source: "in", Target: "gateA"},
-		},
-	}
-	// from gateA itself is human_gate → true; from after gateA via action goto also true
-	if !hasRemainingHumanGate(&g3, "gateA") {
-		t.Fatal("want true when start is human_gate")
-	}
-	if !hasRemainingHumanGate(&g3, "in") {
-		t.Fatal("want true reaching gateA via edge")
-	}
-}
-
 func TestHasRemainingHumanGate_CycleTerminates(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
-			{ID: "a", Type: "agent"},
-			{ID: "b", Type: "agent"},
-			{ID: "c", Type: "agent"},
+			{ID: "a", Type: "agent", Caps: capsPlain},
+			{ID: "b", Type: "agent", Caps: capsPlain},
+			{ID: "c", Type: "agent", Caps: capsPlain},
 		},
 		Edges: []models.Edge{
 			{ID: "e1", Source: "a", Target: "b"},
@@ -133,16 +67,18 @@ func TestHasRemainingHumanGate_AnyBranchReachable(t *testing.T) {
 			{ID: "in", Type: "input"},
 			{ID: "br", Type: "branch", Config: map[string]any{
 				"cases": []any{
-					map[string]any{"when": "x", "goto": "auto"},
-					map[string]any{"when": "y", "goto": "gate"},
+					map[string]any{"when": "x", "id": "c1"},
+					map[string]any{"when": "y", "id": "c2"},
 				},
 			}},
-			{ID: "auto", Type: "agent"},
+			{ID: "auto", Type: "agent", Caps: capsPlain},
 			{ID: "gate", Type: "human_gate"},
 			{ID: "out", Type: "output"},
 		},
 		Edges: []models.Edge{
 			{ID: "e1", Source: "in", Target: "br"},
+			{ID: "e1a", Source: "br", Target: "auto", SourceHandle: "c1"},
+			{ID: "e1b", Source: "br", Target: "gate", SourceHandle: "c2"},
 			{ID: "e2", Source: "auto", Target: "out"},
 			{ID: "e3", Source: "gate", Target: "out"},
 		},
@@ -160,7 +96,7 @@ func TestHasRemainingHumanGate_BadGraphFalse(t *testing.T) {
 	if hasRemainingHumanGate(&empty, "in") {
 		t.Fatal("empty graph missing from → false")
 	}
-	g := models.Graph{Nodes: []models.Node{{ID: "a", Type: "agent"}}}
+	g := models.Graph{Nodes: []models.Node{{ID: "a", Type: "agent", Caps: capsPlain}}}
 	if hasRemainingHumanGate(&g, "") {
 		t.Fatal("empty from → false")
 	}
@@ -173,7 +109,7 @@ func TestHasRemainingHumanGate_ReactAndProposalSelectNotGate(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "in", Type: "input"},
-			{ID: "react", Type: "react"},
+			{ID: "react", Type: "agent", Caps: capsClarify},
 			{ID: "select", Type: "proposal_select"},
 			{ID: "out", Type: "output"},
 		},
@@ -192,7 +128,7 @@ func TestContinueFromNodeID(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "in", Type: "input"},
-			{ID: "work", Type: "agent"},
+			{ID: "work", Type: "agent", Caps: capsPlain},
 		},
 		Edges: []models.Edge{{ID: "e1", Source: "in", Target: "work"}},
 	}

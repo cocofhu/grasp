@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/envauth"
-	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/rs/zerolog/log"
@@ -381,7 +380,7 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	if err := RequireOpenCodePlaceholderKey(OpenCodeConfigForEnvWithCatalog(context.Background(), c.backend, env, c.opts.OpenCodeCatalog), env); err != nil {
 		return sandbox.Spec{}, err
 	}
-	applyAppPreviewEnv(env, req.NodeType, req.Config, c.opts.PublicAdvertise)
+	applyPreviewEnv(env, req.Caps)
 
 	for k, v := range vars {
 		if strings.HasPrefix(k, "vars.") || v == "" {
@@ -424,66 +423,17 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		hosts = env["GIT_SSH_KNOWN_HOSTS"]
 	}
 	sandbox.ApplySSHCredentials(&spec, key, hosts)
-	if req.NodeType == "app_preview" {
-
-		spec.Resources = &sandbox.GWResources{CPUCores: 2, MemoryMB: 8192, DiskGi: 40}
-	}
 	return spec, nil
 }
 
-// applyAppPreviewEnv sets VNC_PREVIEW by default unless the merged env already
-// has an explicit off (0/false). When the node switch
-// direct_preview is on, skip the VNC stack and ask the gateway to 1:1-map a
-// PREVIEW_PORT instead (PREVIEW_DIRECT=1).
-//
-// Review agent nodes only get the direct-preview env (when their switch is on);
-// without it their review preview starts noVNC on demand at set_preview, so
-// ordinary runs do not pay for a headed Chromium.
-func applyAppPreviewEnv(env map[string]string, nodeType string, cfg map[string]any, publicAdvertise string) {
-	if env == nil {
+// applyPreviewEnv asks the gateway to 1:1-map a PREVIEW_PORT for Agents
+// granted set_preview: previews are IP-direct, with the pick script injected
+// by the in-sandbox proxy at a same-origin path.
+func applyPreviewEnv(env map[string]string, caps *models.AgentCapabilities) {
+	if env == nil || !caps.CanPreview() {
 		return
 	}
-	reviewNode := models.ReviewAgentNode(nodeType)
-	if !mcp.SetPreviewAllowed(nodeType) && !reviewNode {
-		return
-	}
-	if reviewNode && !configTruthy(cfg["direct_preview"]) {
-		return
-	}
-	if configTruthy(cfg["direct_preview"]) {
-		env["PREVIEW_DIRECT"] = "1"
-		if configDefaultOn(cfg["auto_inject"]) {
-			env["PREVIEW_AUTO_INJECT"] = "1"
-			// Same-origin path served by the in-sandbox injector. PublicAdvertise
-			// is often http://localhost:8080, which the reviewer's browser cannot
-			// load from an iframe at http://IP:PREVIEW_PORT/.
-			env["PREVIEW_PICK_SCRIPT_URL"] = "/__grasp/preview-pick.js"
-		} else {
-			env["PREVIEW_AUTO_INJECT"] = "0"
-			if u := previewPickScriptURL(publicAdvertise); u != "" {
-				env["PREVIEW_PICK_SCRIPT_URL"] = u
-			}
-		}
-		return
-	}
-	// Shared / Agent env can explicitly turn the stack off (first-install wizard).
-	if envFlagOff(env["VNC_PREVIEW"]) {
-		delete(env, "GRASP_VNC_PREVIEW")
-		return
-	}
-	env["VNC_PREVIEW"] = "1"
-	env["GRASP_VNC_PREVIEW"] = "1"
-}
-
-func envFlagOff(v string) bool {
-	s := strings.ToLower(strings.TrimSpace(v))
-	return s == "0" || s == "false" || s == "off" || s == "no"
-}
-
-func previewPickScriptURL(base string) string {
-	b := strings.TrimRight(strings.TrimSpace(base), "/")
-	if b == "" {
-		return ""
-	}
-	return b + "/preview-pick.js"
+	env["PREVIEW_DIRECT"] = "1"
+	env["PREVIEW_AUTO_INJECT"] = "1"
+	env["PREVIEW_PICK_SCRIPT_URL"] = "/__grasp/preview-pick.js"
 }

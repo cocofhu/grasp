@@ -10,6 +10,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -63,7 +64,7 @@ func (e *Engine) StartRunWithFirstMessage(workflowID string, inputs map[string]a
 	// archived WorkflowVersion keyed by def.Version: after a publish → edit(draft)
 	// cycle, Save overwrites def.Graph but leaves def.Version pointing at the old
 	// published snapshot, so keying off it would silently run (and snapshot) the
-	// stale graph — the "改了之后历史流水线对不上" bug. def.Graph is always the
+	// stale graph — the "改了之后历史工作流对不上" bug. def.Graph is always the
 	// graph the user just saved; for an unedited published head it equals the
 	// published snapshot anyway.
 	return e.startRun(def, def.Graph, inputs, trigger, pri, tags, env, title, firstMessage)
@@ -99,6 +100,13 @@ func (e *Engine) StartRunFromPublished(workflowID string, inputs map[string]any,
 func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map[string]any, trigger string, priority int, tags []string, env []models.EnvEntry, titleOverride string, firstMessage *models.CompositeText) (*models.Run, error) {
 
 	if err := graph.Validate(); err != nil {
+		return nil, err
+	}
+	if err := nodereg.ValidateNodeTypes(&graph); err != nil {
+		return nil, err
+	}
+	graph.Nodes = append([]models.Node(nil), graph.Nodes...)
+	if err := e.snapshotCaps(&graph); err != nil {
 		return nil, err
 	}
 	if !models.ValidPriorityInt(priority) {
@@ -426,4 +434,35 @@ func coerceVar(v any, t string) any {
 		}
 	}
 	return v
+}
+
+// snapshotCaps copies each Agent node's capabilities from its Agent onto the
+// run graph, so a run keeps the permissions it started with even if the Agent
+// is edited later. Without an Agent catalog (tests) pre-set caps are kept.
+func (e *Engine) snapshotCaps(g *models.Graph) error {
+	if e.skills == nil {
+		return nil
+	}
+	for i := range g.Nodes {
+		n := &g.Nodes[i]
+		if n.Type != "agent" {
+			continue
+		}
+		profile := models.AgentProfile(n.Config)
+		if profile == "" {
+			return fmt.Errorf("节点 %s 未选择 Agent", n.ID)
+		}
+		agent, ok := e.skills.Get(profile)
+		if !ok {
+			return fmt.Errorf("节点 %s 的 Agent %s 不存在", n.ID, profile)
+		}
+		if agent.Capabilities == nil {
+			return fmt.Errorf("Agent %s 未声明能力", profile)
+		}
+		if err := nodereg.ValidateCapabilities(profile, agent.Capabilities); err != nil {
+			return err
+		}
+		n.Caps = agent.Capabilities.Clone()
+	}
+	return nil
 }

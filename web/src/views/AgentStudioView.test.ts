@@ -992,12 +992,12 @@ describe('AgentStudio mobile core path', () => {
     expect(wrapper.find('agent-data-panel-stub').exists()).toBe(true)
   })
 
-  it('keeps mcp/env/prompts desktop-only while data is allowed', async () => {
+  it('keeps mcp/env/capabilities desktop-only while data is allowed', async () => {
     mocks.listAgents.mockResolvedValue([agentWithFiles()])
     const wrapper = await mountMobileStudio()
     await flushPromises()
 
-    for (const label of ['MCP', '环境变量', '提示词']) {
+    for (const label of ['MCP', '环境变量', '能力']) {
       const btn = wrapper.findAll('button').find((b) => b.text().startsWith(label))
       expect(btn).toBeTruthy()
       await btn!.trigger('click')
@@ -1103,14 +1103,14 @@ describe('AgentStudio mobile core path', () => {
     wrapper.unmount()
   })
 
-  it('deep-links to platform-rules on mobile with desktop-only empty state and back to Files', async () => {
+  it('deep-links to capabilities on mobile with desktop-only empty state and back to Files', async () => {
     mocks.listAgents.mockResolvedValue([{ ...agentWithFiles(), name: 'alpha' }])
     const i18n = createI18n({
       legacy: false,
       locale: 'zh-CN',
       messages: { 'zh-CN': { ...common, ...pages } },
     })
-    const router = await createStudioRouter({ agent: 'alpha', tab: 'platform-rules' })
+    const router = await createStudioRouter({ agent: 'alpha', tab: 'capabilities' })
     const wrapper = trackMount(
       mount(AgentStudioView, {
         global: {
@@ -1133,9 +1133,7 @@ describe('AgentStudio mobile core path', () => {
     )
     await flushPromises()
     expect(wrapper.text()).toContain('建议在桌面使用')
-    expect(wrapper.text()).toContain('不提供编辑 UI')
     expect(wrapper.find('[data-testid="studio-mobile-back-files"]').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('运行时加载优先级')
     wrapper.unmount()
   })
 
@@ -1825,7 +1823,7 @@ describe('AgentStudio org toast and remaining hints', () => {
     wrapper.unmount()
   })
 
-  it('keeps MCP hint, platform-rules subtitle, manageIntro, and data/meta tabs', async () => {
+  it('keeps MCP hint, manageIntro, and data/meta tabs', async () => {
     const wrapper = await mountHintStudio()
     await flushPromises()
 
@@ -1839,10 +1837,6 @@ describe('AgentStudio org toast and remaining hints', () => {
     expect(wrapper.get('[data-test="mcp-help-link"]').text()).toBe('帮助')
     expect(wrapper.text()).not.toContain('整份 mcp.json 由你配置')
     expect(wrapper.text()).not.toContain('/root/.codebuddy/mcp.json')
-
-    await wrapper.findAll('button').find((item) => item.text() === '平台规则')!.trigger('click')
-    await flushPromises()
-    expect(wrapper.text()).toContain('profiles/legacy/platform-rules/')
 
     await wrapper.get('[data-test="manage"]').trigger('click')
     await flushPromises()
@@ -2250,8 +2244,7 @@ describe('AgentStudioView entry assembly (g3 / Demo main path)', () => {
       'AgentFilesPanel',
       'AgentMcpPanel',
       'AgentEnvPanel',
-      'AgentPromptsPanel',
-      'AgentPlatformRulesPanel',
+      'AgentCapabilitiesPanel',
       'AgentDataPanel',
       'AgentMetaPanel',
     ]) {
@@ -2264,8 +2257,7 @@ describe('AgentStudioView entry assembly (g3 / Demo main path)', () => {
     expect(src).toMatch(/name="ui-fade"/)
     expect(src).toMatch(/v-else-if="tab === 'mcp'/)
     expect(src).toMatch(/v-else-if="tab === 'env'/)
-    expect(src).toMatch(/v-else-if="tab === 'prompts'/)
-    expect(src).toMatch(/tab === 'platform-rules'/)
+    expect(src).toMatch(/v-else-if="tab === 'capabilities'/)
     expect(src).toMatch(/tab === 'test'/)
     expect(src).toMatch(/tab === 'meta'/)
     // Chat test is a trailing Studio inner tab (g2.1 / g2.2).

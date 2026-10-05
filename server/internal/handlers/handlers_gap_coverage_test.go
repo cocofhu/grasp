@@ -408,7 +408,7 @@ func TestReactReplySuccess(t *testing.T) {
 	runID := "run-react-reply"
 	h.db.Create(&models.Run{
 		ID: runID, Status: "waiting_human", StartedAt: now,
-		Graph: models.Graph{Nodes: []models.Node{{ID: "react", Type: "react", Label: "澄清"}}},
+		Graph: models.Graph{Nodes: []models.Node{{ID: "react", Type: "agent", Caps: testClarifyCaps, Label: "澄清"}}},
 	})
 	h.db.Create(&models.ReactConversation{
 		RunID: runID, NodeID: "react", Iteration: 1, Done: false,
@@ -427,7 +427,7 @@ func TestReactReplyRetryLast(t *testing.T) {
 	runID := "run-react-retry"
 	h.db.Create(&models.Run{
 		ID: runID, Status: "waiting_human", StartedAt: now,
-		Graph: models.Graph{Nodes: []models.Node{{ID: "react", Type: "react", Label: "澄清"}}},
+		Graph: models.Graph{Nodes: []models.Node{{ID: "react", Type: "agent", Caps: testClarifyCaps, Label: "澄清"}}},
 	})
 	h.db.Create(&models.ReactConversation{
 		RunID: runID, NodeID: "react", Iteration: 1, Done: false,
@@ -449,7 +449,7 @@ func TestReactReplyRetryLastWithForceRejected(t *testing.T) {
 	runID := "run-react-retry-force"
 	h.db.Create(&models.Run{
 		ID: runID, Status: "waiting_human", StartedAt: now,
-		Graph: models.Graph{Nodes: []models.Node{{ID: "react", Type: "react", Label: "澄清"}}},
+		Graph: models.Graph{Nodes: []models.Node{{ID: "react", Type: "agent", Caps: testClarifyCaps, Label: "澄清"}}},
 	})
 	h.db.Create(&models.ReactConversation{
 		RunID: runID, NodeID: "react", Iteration: 1, Done: false,

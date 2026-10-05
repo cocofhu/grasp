@@ -10,25 +10,7 @@
       "agent": "Agent",
       "collaboration": "Collaboration",
       "searchPlaceholder": "Search nodes",
-      "footerHint": "Drag nodes onto the canvas to compose your pipeline. Repository (GitLab/generic git) is optional for artifact-only flows."
-    },
-    "shared": {
-      "reviewVar": {
-        "label": "Review control variable",
-        "placeholder": "Default: review. Undefined/falsy = skip review, truthy = enter ReAct review"
-      },
-      "reviewDirectPreview": {
-        "label": "Direct IP preview in review",
-        "help": "Only applies during review. The panel always shows the noVNC remote desktop and keeps the page state when you come back. On: you can also open http://IP:port/ directly in a new tab, with point picking, page tools and the chat drawer there. Takes effect for new sandboxes only."
-      },
-      "reviewAutoInject": {
-        "label": "Auto-inject pick script",
-        "help": "With direct preview, the sandbox proxy injects the pick script automatically. Turn off to have the agent include it in the app manually."
-      },
-      "reviewLiveVariants": {
-        "label": "Live variants",
-        "help": "Lets the agent build live variants for side-by-side comparison during review. Plan, research, proposal and visual nodes are preview-only: the adopted variant is written back to the plan or page.html, the source is restored, and nothing is committed."
-      }
+      "footerHint": "Drag nodes onto the canvas to compose your workflow. Repository (GitLab/generic git) is optional for artifact-only flows."
     },
     "input": {
       "label": "Input",
@@ -46,7 +28,7 @@
     },
     "output": {
       "label": "Output",
-      "desc": "Workflow exit: aggregate and emit final result (pipeline ends here)",
+      "desc": "Workflow exit: aggregate and emit final result (workflow ends here)",
       "fields": {
         "results": {
           "label": "Final result sources",
@@ -54,7 +36,7 @@
         },
         "auto_leftover_draft": {
           "label": "Auto-write leftover requirement draft",
-          "help": "When on, if this run still has leftovers (test defects, failed cases, review findings/action items, or open clarify questions), create one self-contained requirement draft in the project with the requirement spec and full leftover text; it remains usable after the original pipeline is deleted. Off by default."
+          "help": "When on, if this run still has leftovers (test defects, failed cases, review findings/action items, or open clarify questions), create one self-contained requirement draft in the project with the requirement spec and full leftover text; it remains usable after the original workflow is deleted. Off by default."
         }
       },
       "outputs": {
@@ -66,100 +48,19 @@
         }
       }
     },
-    "react": {
-      "label": "Clarify",
-      "desc": "Multi-turn ReAct dialogue to clarify requirements via set_clarified_requirement",
-      "fields": {
-        "agent_profile": {
-          "label": "Agent (user-defined · Agent Studio)"
-        },
-        "prompt": {
-          "label": "Prompt template",
-          "placeholder": "Ask clarifying questions until sufficient, then:\n{'{{vars.feature}}'}"
-        },
-        "max_rounds": {
-          "label": "Max rounds",
-          "placeholder": "6"
-        },
-        "auto_var": {
-          "label": "Auto-clarify variable (when true, auto-select recommended options)",
-          "placeholder": "auto_clarify"
-        },
-        "timeout": {
-          "label": "Timeout (minutes)"
-        },
-        "conditional_prompt": {
-          "label": "Conditional injection (append prompt when a global variable exists)"
-        }
-      },
-      "outputs": {
-        "clarified_requirement": {
-          "desc": "Structured clarified requirement (clarified_requirement.json render)"
-        },
-        "clarified_requirement_json": {
-          "desc": "Raw clarified requirement JSON"
-        },
-        "transcript": {
-          "desc": "Full conversation transcript"
-        }
-      },
-      "help": "### Clarify (react)\n\nMulti-turn ReAct dialogue to turn vague requirements into a **structured requirement**.\n\n**Mandatory deliverable**: call `set_clarified_requirement` to write `clarified_requirement.json`. Node fails if missing.\n\n**Questions**: use `ask_question` with optional `recommended` options (at most one for single-select; one or more for multi-select). Unmarked falls back to the first option in auto mode.\n\n**Auto-clarify**: when auto variable is true, platform auto-selects recommended options each round until done or max rounds.\n\n**Auto artifact**: only the reserved JSON `clarified_requirement.json` is auto-written; it can be shown structurally and gated with `exists(\"clarified_requirement.json\")` / `json(\"clarified_requirement.json\").field`.\n\n**Conditional injection**: append extra prompt when a configured global variable exists (e.g. after gate backfill)."
-    },
-    "preflight": {
-      "label": "Preflight",
-      "desc": "Check execution environment against plan/repo/vars; collect gaps via choices or plaintext forms, then set_preflight before the agent completes",
-      "fields": {
-        "agent_profile": {
-          "label": "Agent (user-defined · Agent Studio)"
-        },
-        "prompt": {
-          "label": "Prompt template",
-          "placeholder": "Check execution environment against plan/repo/vars…"
-        },
-        "max_rounds": {
-          "label": "Max rounds",
-          "placeholder": "6"
-        },
-        "timeout": {
-          "label": "Timeout (minutes)"
-        },
-        "conditional_prompt": {
-          "label": "Conditional injection (append prompt when a global variable exists)"
-        }
-      },
-      "outputs": {
-        "preflight": {
-          "desc": "Environment checklist (preflight.json render)"
-        },
-        "preflight_json": {
-          "desc": "Raw preflight JSON"
-        },
-        "transcript": {
-          "desc": "Full conversation transcript"
-        }
-      },
-      "help": "### Preflight\n\nCheck **execution environment** needed by later implement/test steps against upstream plan, repo, and vars.\n\n**Mandatory deliverable**: call `set_preflight` to write `preflight.json` (summary, confirmed=true; fields may be empty for no-gap; passwords plaintext). Missing or incomplete checklist blocks finish.\n\n**Gaps**: finite options via `ask_question`; free text via `ask_form` (type text|url only; passwords as plaintext text). Forms show human labels only; hover explains the plan gap. Form submit enters the dialogue and **does not** replace set_preflight.\n\n**No gaps**: write confirmed with empty fields, then `node_complete` — no inbox wait.\n\n**No 「Confirm & continue」** on this node; the agent calls `node_complete` after the gate passes. Confirmed fields are exported as plaintext run vars; SandboxEnv is unchanged."
-    },
     "agent": {
-      "label": "Generic",
-      "desc": "Run a user-defined agent (design/code/review, etc.) in sandbox with artifacts",
+      "label": "Agent",
+      "desc": "Run the chosen Agent toward a goal; tools, products, interaction and review come from the Agent's capabilities",
       "fields": {
         "agent_profile": {
-          "label": "Agent (user-defined · Agent Studio)"
+          "label": "Agent"
         },
         "prompt": {
-          "label": "Prompt template",
-          "placeholder": "Implement/produce based on approved proposal…"
+          "label": "Goal",
+          "placeholder": "What this step should achieve; reference variables with {'{{vars.feature}}'}"
         },
         "timeout": {
           "label": "Timeout (minutes)"
-        },
-        "produces": {
-          "label": "Artifact contract (write_artifact)",
-          "placeholder": "design.md"
-        },
-        "conditional_prompt": {
-          "label": "Conditional injection (append prompt when a global variable exists)"
         }
       },
       "outputs": {
@@ -169,17 +70,8 @@
         "narration_summary": {
           "desc": "Agent work summary"
         },
-        "artifact_id": {
-          "desc": "Artifact id written via artifact-store MCP"
-        },
         "branch": {
           "desc": "Current branch (sandbox change report)"
-        },
-        "base_branch": {
-          "desc": "Starting branch (baseline)"
-        },
-        "new_branch": {
-          "desc": "Whether a new branch was created"
         },
         "commit_sha": {
           "desc": "Current HEAD commit SHA"
@@ -194,203 +86,7 @@
           "desc": "Diff summary (files / +/- lines)"
         }
       },
-      "help": "### Generic Agent (agent)\n\nRuns any user-defined agent (design/code/review) in sandbox.\n\n**Artifacts**: declare `produces` for `write_artifact`, or engine captures text as `<nodeId>.md`.\n\n**Difference from framework cards**: no forced structured product; use research/proposal/test/review cards when needed.\n\n**Conditional injection**: append prompt when global variable exists."
-    },
-    "plan": {
-      "label": "Plan",
-      "desc": "Structured plan (goals→subgoals, optional six SDD sections) via set_plan; deliverable only, no code/files",
-      "fields": {
-        "agent_profile": {
-          "label": "Agent (user-defined · Agent Studio)"
-        },
-        "prompt": {
-          "label": "Prompt template",
-          "placeholder": "Create implementation plan (max two levels; six design sections or 不涉及 when writing design) with set_plan from upstream artifacts"
-        },
-        "timeout": {
-          "label": "Timeout (minutes)"
-        },
-        "conditional_prompt": {
-          "label": "Conditional injection (append prompt when a global variable exists)"
-        }
-      },
-      "outputs": {
-        "plan": {
-          "desc": "Structured plan (plan.json render with status per item)"
-        },
-        "plan_json": {
-          "desc": "Raw plan JSON"
-        }
-      },
-      "help": "### Plan (plan)\n\nBreak upstream artifacts into a **structured plan** (max two levels) for implement node.\n\n**Mandatory**: `set_plan` → `plan.json` with status per item. Optional SDD design zone (`architecture`/`data_design`/`interfaces`/`components`/`interaction`/`test_design`); when writing design, include all six or explicit 不涉及, with optional Mermaid diagrams. Goals-only remains valid. No code/files.\n\n**Auto artifact**: only the reserved JSON `plan.json` is auto-written; it can be shown structurally and used for branching. Progress / plan_coverage count goals leaves only.\n\n**Downstream**: implement uses `get_plan` / `update_plan_status`."
-    },
-    "implement": {
-      "label": "Implement",
-      "desc": "Consume plan via get_plan; update_plan_status; auto-nudge until done",
-      "fields": {
-        "agent_profile": {
-          "label": "Agent (user-defined · Agent Studio)"
-        },
-        "prompt": {
-          "label": "Prompt template",
-          "placeholder": "Read plan with get_plan, implement items, update_plan_status; use {'{{vars.preview_issues}}'} when present; then set_implementation_result"
-        },
-        "max_rounds": {
-          "label": "Incomplete nudge limit",
-          "placeholder": "3"
-        },
-        "timeout": {
-          "label": "Timeout (minutes)"
-        },
-        "conditional_prompt": {
-          "label": "Conditional injection (append prompt when a global variable exists)"
-        }
-      },
-      "outputs": {
-        "implementation_result": {
-          "desc": "Structured implementation result (implementation_result.json render)"
-        },
-        "implementation_result_json": {
-          "desc": "Raw implementation result JSON"
-        },
-        "branches": {
-          "desc": "Per-repo work branches (name→branch); written to vars.branches for downstream checkout"
-        },
-        "pushed": {
-          "desc": "Whether pushed to remote"
-        },
-        "changed_files": {
-          "desc": "Changed file list"
-        }
-      },
-      "help": "### Implement (implement)\n\nExecute plan items (usually code/repo changes).\n\n**Flow**: `get_plan` → implement → `update_plan_status`; system nudges until done (see nudge limit).\n\n**Mandatory finish**: `set_implementation_result` → `implementation_result.json`.\n\n**Push**: downstream clones fresh; agent should commit/push; platform may auto-push as fallback.\n\n**Branches**: writes `vars.branches` (name→branch map) for downstream sandbox checkout; reference via `{'{{vars.branches}}'}`.\n\n**Auto artifact**: only the reserved JSON `implementation_result.json` is auto-written; it can be shown structurally and used for branching."
-    },
-    "research": {
-      "label": "Research",
-      "desc": "Technical research / feasibility via set_research",
-      "fields": {
-        "agent_profile": {
-          "label": "Agent (user-defined · Agent Studio)"
-        },
-        "prompt": {
-          "label": "Prompt template",
-          "placeholder": "Research technical questions; write conclusions with set_research"
-        },
-        "timeout": {
-          "label": "Timeout (minutes)"
-        },
-        "conditional_prompt": {
-          "label": "Conditional injection (append prompt when a global variable exists)"
-        }
-      },
-      "outputs": {
-        "research": {
-          "desc": "Structured research (research.json render)"
-        },
-        "research_json": {
-          "desc": "Raw research JSON"
-        }
-      },
-      "help": "### Research (research)\n\nTechnical research / feasibility.\n\n**Mandatory**: `set_research` → `research.json`. Only the reserved JSON is auto-written; gate with `exists(\"research.json\")` / `json(\"research.json\").field`."
-    },
-    "test": {
-      "label": "Test",
-      "desc": "Test upstream implementation via set_test_result",
-      "fields": {
-        "agent_profile": {
-          "label": "Agent (user-defined · Agent Studio)"
-        },
-        "reason_var": {
-          "label": "Reason variable name",
-          "placeholder": "reason"
-        },
-        "repoScope": {
-          "label": "Test scope (repoScope)",
-          "placeholder": "all or repo name (e.g. frontend)"
-        },
-        "block_on_skipped": {
-          "label": "Block gate on skipped"
-        },
-        "prompt": {
-          "label": "Prompt template",
-          "placeholder": "Test upstream implementation; write summary with set_test_result"
-        },
-        "timeout": {
-          "label": "Timeout (minutes)"
-        },
-        "conditional_prompt": {
-          "label": "Conditional injection (append prompt when a global variable exists)"
-        }
-      },
-      "outputs": {
-        "test_result": {
-          "desc": "Structured test summary (test_result.json render)"
-        },
-        "test_result_json": {
-          "desc": "Raw test result JSON"
-        }
-      },
-      "help": "### Test (test)\n\nTest upstream implementation.\n\n**Mandatory**: `set_test_result` → `test_result.json`. Only the reserved JSON is auto-written; branch with `exists(\"test_result.json\")` or `json(\"test_result.json\").summary.failed == 0`."
-    },
-    "review": {
-      "label": "Review",
-      "desc": "Code/design review via set_review (verdict + findings)",
-      "fields": {
-        "agent_profile": {
-          "label": "Agent (user-defined · Agent Studio)"
-        },
-        "reason_var": {
-          "label": "Reason variable name",
-          "placeholder": "reason"
-        },
-        "prompt": {
-          "label": "Prompt template",
-          "placeholder": "Review upstream changes; write conclusion with set_review"
-        },
-        "timeout": {
-          "label": "Timeout (minutes)"
-        },
-        "conditional_prompt": {
-          "label": "Conditional injection (append prompt when a global variable exists)"
-        }
-      },
-      "outputs": {
-        "review": {
-          "desc": "Structured review (review.json render)"
-        },
-        "review_json": {
-          "desc": "Raw review JSON (includes verdict)"
-        }
-      },
-      "help": "### Review (review)\n\nCode/design review.\n\n**Mandatory**: `set_review` → `review.json` with verdict. Only the reserved JSON is auto-written; branch with `exists(\"review.json\")` or `json(\"review.json\").verdict == \"approve\"`."
-    },
-    "proposal": {
-      "label": "Proposal",
-      "desc": "Candidate solutions via set_proposals for downstream selection",
-      "fields": {
-        "agent_profile": {
-          "label": "Agent (user-defined · Agent Studio)"
-        },
-        "prompt": {
-          "label": "Prompt template",
-          "placeholder": "Provide candidate solutions with tradeoffs; write with set_proposals"
-        },
-        "timeout": {
-          "label": "Timeout (minutes)"
-        },
-        "conditional_prompt": {
-          "label": "Conditional injection (append prompt when a global variable exists)"
-        }
-      },
-      "outputs": {
-        "proposals": {
-          "desc": "Candidate proposals (proposals.json render)"
-        },
-        "proposals_json": {
-          "desc": "Raw proposals JSON"
-        }
-      },
-      "help": "### Proposal (proposal)\n\nOne or more **candidate solutions** for proposal_select.\n\n**Mandatory**: `set_proposals` → `proposals.json` with recommended flag. Only the reserved JSON is auto-written; it can be shown structurally and used for branching."
+      "help": "### Agent node (agent)\n\nA node only sets three things: which Agent, the goal and a timeout.\n\n**Capabilities belong to the Agent**: interaction (multi-turn clarify / one autonomous run), post-run human review, granted tools and readable/writable products are declared on the Agent Studio **Capabilities** tab. Every node using the same Agent has the same capabilities; nodes differ only by goal.\n\n**Outlets**: when the Agent writes a verdict product (test result, review verdict) the node has **Pass** and **Fail** outlets; otherwise a single outlet.\n\n**Products**: every product the Agent declares appears in the node outputs (rendered Markdown and raw JSON)."
     },
     "proposal_select": {
       "label": "Select proposal",
@@ -414,97 +110,11 @@
         }
       },
       "outputs": {
-        "proposal": {
-          "desc": "Final proposal (proposal.json render)"
-        },
-        "proposal_json": {
-          "desc": "Raw final proposal JSON"
-        },
         "selected_proposal": {
           "desc": "Selected proposal id"
         }
       },
       "help": "### Proposal select (proposal_select)\n\nConfirm **one** proposal from `proposals.json`.\n\n**Auto**: when auto variable true, pick recommended (or first).\n\n**Manual**: pause for a human pick when ≥2 candidates; with exactly 1 valid candidate, **auto-adopt** it and continue (no “waiting for human selection”).\n\n**Output**: `proposal.json` + output variable (default `selected_proposal`)."
-    },
-    "submit_mr": {
-      "label": "Submit MR",
-      "desc": "Merge target into source, push, create MR/PR by host (glab/gh), then mark done via node_complete",
-      "fields": {
-        "agent_profile": {
-          "label": "Agent (user-defined · Agent Studio)"
-        },
-        "repo": {
-          "label": "Target repo",
-          "placeholder": "empty / name / {'{{vars.repos}}'} / {'{{vars.target_repo}}'}"
-        },
-        "source_branch": {
-          "label": "Source branch (defaults per-repo upstream work branch)",
-          "placeholder": "empty or {'{{vars.feature_branch}}'}"
-        },
-        "target_branch": {
-          "label": "Target branch (defaults to repo default branch)",
-          "placeholder": "main or {'{{vars.base_branch}}'}"
-        },
-        "prompt": {
-          "label": "Prompt template (optional override)",
-          "placeholder": "Merge target into source, resolve conflicts, push, create MR/PR by host"
-        },
-        "conditional_prompt": {
-          "label": "Conditional injection (append prompt when a global variable exists)"
-        },
-        "timeout": {
-          "label": "Timeout (minutes)"
-        }
-      },
-      "outputs": {
-        "mr_url": {
-          "desc": "Merge request / pull request (MR/PR) URL"
-        },
-        "mr_has_conflicts": {
-          "desc": "Whether MR has conflicts"
-        },
-        "mr_mergeable": {
-          "desc": "Whether MR is mergeable"
-        },
-        "pushed": {
-          "desc": "Whether source branch was pushed"
-        },
-        "pushed_sha": {
-          "desc": "Pushed commit SHA"
-        },
-        "branch": {
-          "desc": "Source branch name"
-        }
-      },
-      "help": "### Submit MR (submit_mr)\n\nSupports merge requests (MR/PR). Configure `GITLAB_URL` / `GITHUB_URL` to match the repository host (also recognizes gitlab.com / github.com).\n\nAgent node in the sandbox; run these four steps:\n\n1. **Resolve conflicts**: merge the target branch into the source (`git fetch` + merge/rebase); resolve conflicts and commit.\n2. **Push**: `git push` the source branch (host-agnostic).\n3. **Create/reuse the merge request**: route by remote host — GitLab (gitlab.com or host matching `GITLAB_URL`) via `glab`; GitHub (github.com or host matching `GITHUB_URL`, including GHE) via `gh pr`; unmatched hosts (e.g. Gitea) do not support automatic MR/PR creation. Order: list open → create → parse idempotent errors (`already exists` / `No commits between`) → list merged/view. Reuse an open URL and skip create when present; treat already-merged-with-no-new-commits and synced-with-no-history as idempotent success (empty `mr_url` allowed). A non-zero create exit must not fail the node by itself.\n4. **Mark complete**: call `node_complete` (on success prefer `outputs.mr_url` as the open/merged Web URL; GitHub PR URLs use the same field. Idempotent success may leave `mr_url` empty).\n\n**Credentials & CLI**: `GITLAB_*` / `GITHUB_*`; preinstall `glab` (GitLab) or `gh` (GitHub). If the CLI is missing, the host cannot auto-create, or a true failure occurs (push/auth/unresolved conflicts): **still finish conflict resolution and push** when possible, then `node_complete(status=failed)`. The failure summary/error must state that conflicts were resolved and the source branch was pushed, plus the create/CLI/host reason. Closed-but-unmerged with no new commits is also failed. Do **not** treat “push succeeded” as success with an empty `mr_url` (except the idempotent success paths above).\n\n**Dual-path capability gap**: the Agent path may route glab/gh by host; platform auto-create (`detect_push`/`create_mr`) remains **GitLab-only** in this iteration — GitHub depends on Agent-side `gh`; the platform will not create PRs for you.\n\nThe platform does **not** verify push/MR/conflicts via git/glab/gh. Default checks only require `node_complete`; optional business RPC runs only after default checks pass.\n\n**Target repo modes**:\n- **Empty**: legacy default — Agent-guided multi-repo / lone-repo fallback.\n- **`{'{{vars.repos}}'}`**: engine iterates the runtime `vars.repos` list in order (fail-fast; no subset multi-select). Distinct from empty.\n- **Literal name / single-name string var** (e.g. `web` or `{'{{vars.target_repo}}'}`): strict interpolate, must be ∈ `vars.repos`.\n\n**Branches**: literal or single-branch string var; when set, shared across all repos in list mode. Empty source uses per-repo defaults (`vars.branches[name]` / `repo.branch`). Do **not** put the whole `{'{{vars.branches}}'}` map as the source branch value.\n\n**Auth from sandbox**: use sandbox `git` and the matching CLI (`glab`/`gh`); no external platform token setup.\n\n**Output**: `mr_url` → global `vars.mr_url` (last repo wins after a full list success).\n"
-    },
-    "visual": {
-      "label": "Visual page",
-      "desc": "High-fidelity target-state page.html grounded in the existing business frontend, with iframe preview",
-      "fields": {
-        "agent_profile": {
-          "label": "Agent (user-defined · Agent Studio)"
-        },
-        "prompt": {
-          "label": "Prompt template",
-          "placeholder": "From upstream requirements, read the existing UI then generate a high-fidelity target-state page"
-        },
-        "timeout": {
-          "label": "Timeout (minutes)"
-        },
-        "conditional_prompt": {
-          "label": "Conditional injection (append prompt when a global variable exists)"
-        }
-      },
-      "outputs": {
-        "page": {
-          "desc": "Generated HTML page (artifact page.html)"
-        },
-        "artifact_id": {
-          "desc": "Artifact id via artifact-store MCP"
-        }
-      },
-      "help": "### Visual page (visual)\n\nSelf-contained `page.html` that should match the existing business frontend as a high-fidelity **target-state** page (not a generic demo), with iframe preview.\n\nFor UI changes, the agent read-only locates routes, components, design tokens, and copy in the cloned repos, then applies the requested changes. Repo layout is for locating source only — never write workspace files.\n\n**Mandatory**: single-file HTML via `write_artifact` only (no workspace files).\n\n**Preview**: artifacts tab and human gates render iframe."
     },
     "human_gate": {
       "label": "Human gate",
@@ -519,7 +129,7 @@
           "help": "Primary whitelist: editable artifacts must use {'{{nodes.*.outputs.*}}'} or artifact(\"name\"); unreferenced produces are not editable; non-text are read-only"
         },
         "actions": {
-          "label": "Action buttons (optional goto target node)"
+          "label": "Action buttons (one outlet per action)"
         },
         "output_var": {
           "label": "Output variable (selected action id → global var)",
@@ -541,75 +151,24 @@
         },
         "reviewer_id": {
           "desc": "Reviewer"
-        }
-      },
-      "help": "### Human gate (human_gate)\n\nSuspends at the orchestrator and appears in the **Pending approvals** inbox. Review content and **Confirm & continue**. The same approval UI can also open from run detail.\n\n**Difference vs app preview**: human gate enters the inbox as a Gate; app preview enters Pending approvals as preview review (badge 「App Preview」) and can still be handled from the run-detail review tab. Both end with Confirm & continue — **no Approve / Send-back dual buttons**. When an approval session is available, keep picking/chatting to revise in place; confirm only when satisfied.\n\n**Display content / primary whitelist**\n\n- `body_template` controls which primary artifacts appear in the gate editor\n- Reference with `{'{{nodes.*.outputs.*}}'}` or `artifact(\"name\")`\n- **Any artifact humans must edit must be listed in body_template**; produces-only names are not editable\n- Non-text primaries (e.g. images) show as read-only tabs and cannot be saved\n\n**Config-layer actions (compat)**\n\n- Config may keep actions / when edges (including legacy fail/revise); the standard review UI only resumes on a positive action (approve/pass) and **does not** restore send-back buttons for compat\n- Canvas footnote: 「Confirm & continue · inbox」; subtitle 「Human approval」\n\n**Output variable**\n\n- Confirm writes the positive action id (default `action`) for downstream nodes and branches"
-    },
-    "app_preview": {
-      "label": "App preview",
-      "desc": "Start app in sandbox or register an external URL via set_preview; wait state is pick-annotate · await confirmation (single exit)",
-      "fields": {
-        "agent_profile": {
-          "label": "Agent profile"
-        },
-        "prompt": {
-          "label": "Prompt",
-          "placeholder": "Describe how to build/start the app and register preview…"
-        },
-        "max_rounds": {
-          "label": "Retry cap when preview not registered",
-          "placeholder": "Default 3"
-        },
-        "timeout": {
-          "label": "Timeout"
-        },
-        "conditional_prompt": {
-          "label": "Conditional prompt"
-        },
-        "direct_preview": {
-          "label": "Direct IP preview",
-          "help": "The panel always previews over noVNC and keeps the page state when you come back. When on, you can also open http://IP:port/ directly in a new tab. An in-sandbox proxy injects the pick script and leaves relative and root-absolute paths unchanged; the Chat button at the bottom right talks to the agent from inside the preview."
-        },
-        "auto_inject": {
-          "label": "Auto-inject pick script",
-          "help": "On direct IP preview, the sandbox injects preview-pick.js into inbound HTML so you do not edit the app. Turn off to add the script tag yourself (old images / CSP nonce)."
-        },
-        "live_variants": {
-          "label": "Live variants",
-          "help": "On by default; needs direct IP preview. Pick an element on the preview page and the agent writes several design variants into source, shown through hot reload; switch or compare them on the page, then accept or discard. Confirm & continue is blocked until every set is accepted or discarded."
-        },
-        "title": {
-          "label": "Title",
-          "placeholder": "App preview"
-        }
-      },
-      "outputs": {
-        "action": {
-          "desc": "Internal pass injected on confirm (legacy when-edge compat; no canvas action branches)"
         },
         "preview_issues": {
-          "desc": "In-session review issues; cleared on confirm — not snapshotted via fail edges"
-        },
-        "preview_ready": {
-          "desc": "true when set_preview is healthy"
+          "desc": "Preview send-back issues (selector and screenshot)"
         }
       },
-      "help": "### App preview (app_preview)\n\nAgent builds/starts the app in sandbox or registers a deployed external URL via `set_preview(port?, url?, label?)` (exactly one of port or url). After at least one successful registration the node enters preview review (**no Gate**). External http(s) URLs (port allowed) open in a browser iframe directly with no server-side probe; pick-annotate may be degraded. While waiting for human confirm it appears in the **Pending approvals** inbox (badge 「App Preview」) and can also be handled from the run-detail review tab: both support pick annotate → add to chat, and in-place edits when an approval session is available, then Confirm & continue on a single success exit; finishing either side clears both pending surfaces.\n\n**Direct IP preview** (node switch `direct_preview`, default off): the panel always previews over noVNC (the page state survives leaving and coming back; it is watch-only until you select Take over, and Return control hands it back), and when on you can also open `http://IP:port/` directly in a new tab. Direct traffic enters an in-sandbox proxy that only inserts the pick script and does not rewrite paths. **Auto-inject** (`auto_inject`, default on): the sandbox inserts `$PREVIEW_PICK_SCRIPT_URL` into inbound HTML so pick-annotate works without editing the app; turn off to add the script tag yourself.\n\n**Agent page control**: the chat drawer on the direct preview page has a \"Let the agent operate this page\" switch (off by default, this tab only). When on, the agent can use `page_state` / `page_click` / `page_input` / `page_select` / `page_scroll` to read and operate the page the **requester** is looking at, for example to fill in a login form; a banner appears at the top of the page and \"Stop\" takes control back at any time. Control pauses while the preview tab is in the background. Password fields are never echoed, but page content enters the conversation, so use a test account. Captchas, third-party sign-in pages and cross-origin iframes need you to finish them by hand. Off for direct preview keeps the existing noVNC pick flow.\n\n**Live variants** (switch `live_variants`, on by default with direct preview): use \"Pick\" on the preview bar, choose \"Edit\" for the element, then pick a design action; the agent writes 2–4 variants into source and hot reload shows them. Switch in place or compare side by side, then accept (keeps only the chosen one) or discard (restores the original). The Live card in the chat drawer drives the same actions; Confirm & continue waits until every set is accepted or discarded.\n\n**Same interaction as human gate**: both use pick + chat + Confirm & continue; both appear in Pending approvals with distinct badges. Missing Approve/Reject is not a bug — Confirm & continue is the end action.\n\n**The app must listen on `0.0.0.0:<port>`** (not just 127.0.0.1): the preview is reverse-proxied via the container's bridge IP, so a loopback-only bind is unreachable and the preview goes blank (502).\n\nCanvas footnote: 「Confirm & continue · inbox」; subtitle 「Pick annotate · Await confirmation」. Legacy pass/fail edges are silently compatible (confirm injects action=pass)."
+      "help": "### Human gate (human_gate)\n\nSuspends at the orchestrator and appears in the **Pending approvals** inbox. Review the content and pick an action to continue. The same approval UI can also open from run detail.\n\n**Outlets**: each action is one outlet on the node; connect it to the node that action should lead to.\n\n**Display content / primary whitelist**\n\n- `body_template` controls which primary artifacts appear in the gate editor\n- Reference with `{'{{nodes.*.outputs.*}}'}` or `artifact(\"name\")`\n- **Any artifact humans must edit must be listed in body_template**; other artifacts are not editable\n- Non-text primaries (e.g. images) show as read-only tabs and cannot be saved\n\n**Output variable**\n\n- The selected action id is written to the output variable (default `action`) for downstream nodes and branches"
     },
     "branch": {
       "label": "Branch",
-      "desc": "if/else-if/else routing by artifact/JSON/output conditions",
+      "desc": "if/else-if/else routing: the first true case wins; one outlet per case, else when none match",
       "fields": {
         "cases": {
-          "label": "Routing rules (IF / ELSE IF / ELSE)"
+          "label": "Cases (IF / ELSE IF; ELSE when none match)"
         }
       },
       "outputs": {
         "matched": {
-          "desc": "Matched branch (case index / else)"
-        },
-        "goto": {
-          "desc": "Routed target node"
+          "desc": "Matched case id (or else)"
         }
       }
     },
@@ -627,68 +186,105 @@
         }
       }
     },
-    "grasp": {
-      "label": "Grasp",
-      "desc": "One ReAct dialogue for pre-dev work: no prompt template, unlimited rounds; user speaks first, then the agent uses tools; mandatory clarified requirement + plan",
-      "fields": {
-        "agent_profile": {
-          "label": "Agent (user-defined · Agent Studio)"
+    "outlets": {
+      "default": "Next",
+      "pass": "Pass",
+      "fail": "Fail",
+      "else": "Else"
+    },
+    "schemas": {
+      "clarified_requirement": {
+        "label": "Requirement spec",
+        "markdown": "Requirement spec (Markdown)",
+        "json": "Requirement spec raw JSON"
+      },
+      "plan": {
+        "label": "Plan",
+        "markdown": "Plan (Markdown)",
+        "json": "Plan raw JSON"
+      },
+      "research": {
+        "label": "Research",
+        "markdown": "Research (Markdown)",
+        "json": "Research raw JSON"
+      },
+      "root_cause": {
+        "label": "Root cause",
+        "markdown": "Root cause (Markdown)",
+        "json": "Root cause raw JSON"
+      },
+      "proposals": {
+        "label": "Proposals",
+        "markdown": "Proposals (Markdown)",
+        "json": "Proposals raw JSON"
+      },
+      "implementation_result": {
+        "label": "Implementation result",
+        "markdown": "Implementation result (Markdown)",
+        "json": "Implementation result raw JSON"
+      },
+      "test_result": {
+        "label": "Test result",
+        "markdown": "Test result (Markdown)",
+        "json": "Test result raw JSON"
+      },
+      "review": {
+        "label": "Review verdict",
+        "markdown": "Review verdict (Markdown)",
+        "json": "Review verdict raw JSON"
+      },
+      "preflight": {
+        "label": "Environment check",
+        "markdown": "Environment check (Markdown)",
+        "json": "Environment check raw JSON"
+      },
+      "page": {
+        "label": "Page draft",
+        "markdown": "Page draft (Markdown)"
+      }
+    },
+    "capabilities": {
+      "interaction": {
+        "auto": "Autonomous run",
+        "clarify": "Multi-turn clarify"
+      },
+      "review": "Human review after run",
+      "tools": {
+        "ask_question": {
+          "label": "Ask questions",
+          "desc": "Ask the human multiple-choice questions (required for clarify)"
         },
-        "timeout": {
-          "label": "Timeout (minutes)"
+        "ask_form": {
+          "label": "Collect form",
+          "desc": "Have the human fill plaintext fields such as environment URLs or accounts"
         },
-        "direct_preview": {
-          "label": "Direct IP preview",
-          "help": "The panel always previews over noVNC and keeps the page state when you come back. When on, you can also open http://IP:port/ directly in a new tab. The in-sandbox proxy inserts the pick script and does not rewrite app paths; the Chat button at the bottom right talks to the agent from inside the preview. Default off."
+        "set_artifact_preview": {
+          "label": "Product preview",
+          "desc": "Show a product or page draft next to the conversation"
         },
-        "auto_inject": {
-          "label": "Auto-inject pick script",
-          "help": "On direct IP preview, the sandbox injects preview-pick.js into inbound HTML so the app source stays unchanged. Turn off to add the script tag yourself (old images / CSP nonce). Default on."
+        "set_preview": {
+          "label": "App preview",
+          "desc": "Start a service in the sandbox for live preview and element picking"
         },
-        "live_variants": {
-          "label": "Live variants",
-          "help": "On by default; needs direct IP preview. Pick an element on the preview page and the agent writes several design variants into source, shown through hot reload; switch or compare them on the page, then accept or discard. Confirm & continue is blocked until every set is accepted or discarded."
+        "update_plan_status": {
+          "label": "Plan progress",
+          "desc": "Mark plan items done; once granted, every plan item must be done before finishing"
         }
       },
-      "outputs": {
-        "clarified_requirement": {
-          "desc": "Structured clarified requirement (clarified_requirement.json render)"
-        },
-        "clarified_requirement_json": {
-          "desc": "Raw clarified requirement JSON"
-        },
-        "plan": {
-          "desc": "Structured plan (plan.json render)"
-        },
-        "plan_json": {
-          "desc": "Raw plan JSON"
-        },
-        "research": {
-          "desc": "Optional research (research.json render)"
-        },
-        "research_json": {
-          "desc": "Optional raw research JSON"
-        },
-        "root_cause": {
-          "desc": "Root cause for bug runs (root_cause.json render)"
-        },
-        "root_cause_json": {
-          "desc": "Optional raw root cause JSON"
-        },
-        "proposals": {
-          "desc": "Optional proposals (proposals.json render)"
-        },
-        "proposals_json": {
-          "desc": "Optional raw proposals JSON"
-        },
-        "page": {
-          "desc": "Optional visual page (page.html)"
-        },
-        "transcript": {
-          "desc": "Full conversation transcript"
-        }
-      },
-      "help": "### Grasp\n\nOne multi-turn ReAct dialogue for **pre-dev work**. This node configures an Agent, a timeout (default 30 minutes), **direct IP preview** (`direct_preview`, default off), and **auto-inject** (`auto_inject`, default on): **no prompt template**, **no round cap**, and no auto-clarify / conditional injection. `set_preview` always previews over noVNC in the panel (the page state survives leaving and coming back); with direct preview on, you can also open `http://IP:port/` in a new tab. The in-sandbox proxy inserts the pick script, so the app source and its paths stay unchanged. The platform injects run inputs and waits for the user to state the goal first; the agent then uses tools to align requirements and only `ask_question` when there is a real decision.\n\n**Two mandatory deliverables** (both required to finish — not a single unique delivery):\n1. `set_clarified_requirement` → `clarified_requirement.json` (`open_questions` must be empty; includes `work_kind`)\n2. `set_plan` → `plan.json` (at most two levels: goal → sub-goal; when writing the design zone, include all six sections or explicit 不涉及, optional Mermaid diagrams)\n\n**Bug-only extra deliverable**: when `work_kind` is `bug`, `set_root_cause` → `root_cause.json` (structured JSON, **not** `page.html` or generic `write_artifact`); non-bug runs must not keep this artifact.\n\n**Optional** (shown if present, missing does not fail): `set_research`; `set_proposals` (**only when ≥2 distinct alternatives need a user pick**; no single-candidate pseudo-choice); `write_artifact` for `page.html`; `set_preview` to register a running app (sandbox port or external url — not a completion condition, does not end this node).\n\nIf a skill pack says “unique delivery” or forbids those tools, **platform rule `rules/grasp.md` wins**. Outside a platform-authorized Live operation, do not write implementation code or change the repo. Live only authorizes the requested preview change; it does not authorize committing, pushing or unrelated development.\n\n**Live variants** (`live_variants`, on by default for direct IP preview): after the agent starts the app and registers it with `set_preview`, open the direct preview, use \"Pick\" on the bottom bar and choose \"Edit\". Draw marks or pin notes, generate 2–4 candidates, then switch in place or compare side by side. Accept or discard from the page or chat card, or refine and adopt the current candidate in Chat. Historical `approve` nodes have the same support without migration; existing direct-preview nodes that omit this switch default to enabled. Explicitly turning it off hides Live. External URL-only and noVNC previews do not provide this entry."
+      "readsAll": "All products",
+      "required": "Required",
+      "optional": "Optional",
+      "gated": "Pass / Fail outlets",
+      "errors": {
+        "missing": "No capabilities declared",
+        "interaction": "Invalid interaction \"{value}\" (auto / clarify)",
+        "tool": "Tool \"{value}\" cannot be granted",
+        "clarifyNeedsAskQuestion": "Clarify interaction must grant the ask_question tool",
+        "clarifyReview": "Clarify ends when the human confirms; review cannot be enabled",
+        "maxRounds": "Max rounds cannot be negative",
+        "unknownSchema": "Unknown product \"{value}\"",
+        "duplicateSchema": "Product \"{value}\" declared twice"
+      }
     }
   }
 }

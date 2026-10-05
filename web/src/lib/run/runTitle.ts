@@ -28,6 +28,17 @@ function reposTitleFromValue(raw: string): string {
   }
 }
 
+/** Repo names a run was started with, from its `repos`-typed variables. */
+export function runRepoNames(vars: readonly { type: string; value: unknown }[] | undefined | null): string[] {
+  return (vars ?? []).filter((v) => v.type === 'repos').flatMap((v) => repoNames(v.value))
+}
+
+/** Repo names joined for one line; the count stays language-neutral. */
+export function formatRepoNames(names: string[]): string {
+  if (names.length <= 2) return names.join(' · ')
+  return `${names[0]} · ${names[1]} +${names.length - 2}`
+}
+
 function repoNames(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   const names: string[] = []
@@ -44,11 +55,4 @@ function repoNames(value: unknown): string[] {
     if (fromUrl) names.push(fromUrl)
   }
   return names
-}
-
-function formatRepoNames(names: string[]): string {
-  if (names.length === 0) return ''
-  if (names.length === 1) return names[0]
-  if (names.length === 2) return `${names[0]} · ${names[1]}`
-  return `${names[0]} · ${names[1]} 等 ${names.length} 个仓库`
 }

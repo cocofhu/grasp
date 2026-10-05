@@ -10,7 +10,7 @@ description: PM Leader 编排检查清单：组织确认、任务分派、门禁
 ## 组织
 
 1. 已读 `rules/project-context.md`，理解目标、技术栈与仓库诉求
-2. `pm_get_org` 显示：根组存在；Pipeline 子组存在；9 名工程师均在 Pipeline 下（`directReports` 列出同项目成员）
+2. `pm_get_org` 显示：根组存在；工作流子组存在；3 名工程师均在工作流子组下（`directReports` 列出同项目成员）
 3. 若缺人：用模板创建 → `pm_set_org_membership` 挂组；已存在同名则跳过并报告，不覆盖
 4. 项目 PM Leader 绑定指向你；`pm-agent-fs` 等 MCP 可用
 

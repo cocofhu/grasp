@@ -21,8 +21,8 @@ func seedInboxReview(t *testing.T, h *harness, runID, nodeID string, withArtifac
 		ID: runID, WorkflowID: "wf-" + runID, WorkflowName: "review-" + runID, Status: "waiting_human",
 		StartedAt: now, Title: "复审运行",
 		Graph: models.Graph{Nodes: []models.Node{
-			{ID: nodeID, Type: "research", Label: "调研"},
-			{ID: "clarify", Type: "react", Label: "澄清"},
+			{ID: nodeID, Type: "agent", Caps: testReviewCaps, Label: "调研"},
+			{ID: "clarify", Type: "agent", Caps: testClarifyCaps, Label: "澄清"},
 			{ID: "hg-r", Type: "human_gate", Label: "审",
 				Config: map[string]any{"title": "审阅", "body_template": "请批准", "actions": []any{
 					map[string]any{"id": "approve", "label": "批准"},
@@ -35,7 +35,7 @@ func seedInboxReview(t *testing.T, h *harness, runID, nodeID string, withArtifac
 		Messages: []models.ReactMessage{{Role: "agent", Text: "请复审 research.json", At: now.Format(time.RFC3339)}},
 	})
 	h.db.Create(&models.StateRun{
-		RunID: runID, NodeID: nodeID, Iteration: 1, Status: "waiting_human", NodeType: "research",
+		RunID: runID, NodeID: nodeID, Iteration: 1, Status: "waiting_human", NodeType: "agent",
 	})
 	h.db.Create(&models.Gate{
 		RunID: runID, NodeID: "hg-r", Iteration: 1, WorkflowID: "wf-" + runID, WorkflowName: "review-" + runID,
@@ -350,7 +350,7 @@ func seedAppPreviewReview(t *testing.T, h *harness, runID, nodeID string) {
 		ID: runID, WorkflowID: "wf-" + runID, WorkflowName: "preview-" + runID, Status: "waiting_human",
 		StartedAt: now, Title: "应用预览运行",
 		Graph: models.Graph{Nodes: []models.Node{
-			{ID: nodeID, Type: "app_preview", Label: "应用预览"},
+			{ID: nodeID, Type: "agent", Label: "应用预览", Caps: testPreviewCaps},
 		}},
 	})
 	h.db.Create(&models.ReactConversation{
@@ -358,20 +358,20 @@ func seedAppPreviewReview(t *testing.T, h *harness, runID, nodeID string) {
 		Messages: []models.ReactMessage{{Role: "agent", Text: "应用预览已就绪", At: now.Format(time.RFC3339)}},
 	})
 	h.db.Create(&models.StateRun{
-		RunID: runID, NodeID: nodeID, Iteration: 1, Status: "waiting_human", NodeType: "app_preview",
+		RunID: runID, NodeID: nodeID, Iteration: 1, Status: "waiting_human", NodeType: "agent",
 	})
 }
 
 // TestAppPreviewShareCreateAttachPreviewAndGateAPIRejected covers plan g1/g3/g4.2:
-// waiting_human app_preview can mint review share links, inbox attaches shareLink,
-// public preview is productKind=app_preview (remote-capable, leak-free), and gates API must fail.
+// waiting_human preview review can mint review share links, inbox attaches shareLink,
+// public preview is productKind=app (remote-capable, leak-free), and gates API must fail.
 func TestAppPreviewShareCreateAttachPreviewAndGateAPIRejected(t *testing.T) {
 	h := newHarness(t)
-	seedAppPreviewReview(t, h, "run-ap-share", "app_preview1")
+	seedAppPreviewReview(t, h, "run-ap-share", "preview1")
 
-	w := h.do(http.MethodPost, "/api/runs/run-ap-share/reviews/app_preview1/share-link", map[string]any{"ttlTier": "24h"})
+	w := h.do(http.MethodPost, "/api/runs/run-ap-share/reviews/preview1/share-link", map[string]any{"ttlTier": "24h"})
 	if w.Code != http.StatusOK {
-		t.Fatalf("create app_preview share: %d %s", w.Code, w.Body.String())
+		t.Fatalf("create preview review share: %d %s", w.Code, w.Body.String())
 	}
 	created := parseJSON(t, w)
 	url, _ := created["url"].(string)
@@ -384,17 +384,17 @@ func TestAppPreviewShareCreateAttachPreviewAndGateAPIRejected(t *testing.T) {
 	}
 
 	var row models.GateShareLink
-	if err := h.db.Where("run_id = ? AND node_id = ?", "run-ap-share", "app_preview1").First(&row).Error; err != nil {
+	if err := h.db.Where("run_id = ? AND node_id = ?", "run-ap-share", "preview1").First(&row).Error; err != nil {
 		t.Fatalf("load link: %v", err)
 	}
 	if row.Kind != models.ShareLinkKindReview {
 		t.Fatalf("kind=%q want review", row.Kind)
 	}
 	if row.GateID != nil {
-		t.Fatalf("app_preview link must not fake GateID: %+v", row.GateID)
+		t.Fatalf("preview review link must not fake GateID: %+v", row.GateID)
 	}
 
-	st := parseJSON(t, h.do(http.MethodGet, "/api/runs/run-ap-share/reviews/app_preview1/share-link", nil))
+	st := parseJSON(t, h.do(http.MethodGet, "/api/runs/run-ap-share/reviews/preview1/share-link", nil))
 	if st["state"] != models.ShareLinkStateActive {
 		t.Fatalf("status: %+v", st)
 	}
@@ -404,11 +404,11 @@ func TestAppPreviewShareCreateAttachPreviewAndGateAPIRejected(t *testing.T) {
 		t.Fatalf("list: %d", list.Code)
 	}
 	body := list.Body.String()
-	if !strings.Contains(body, `"kind":"app_preview"`) {
-		t.Fatalf("inbox missing app_preview item: %s", body)
+	if !strings.Contains(body, `"nodeId":"preview1"`) || !strings.Contains(body, `"kind":"review"`) {
+		t.Fatalf("inbox missing preview review item: %s", body)
 	}
 	if !strings.Contains(body, `"shareLink"`) {
-		t.Fatalf("inbox missing shareLink for app_preview: %s", body)
+		t.Fatalf("inbox missing shareLink for preview review: %s", body)
 	}
 	if strings.Contains(body, token) {
 		t.Fatal("inbox leaked plaintext token")
@@ -422,11 +422,11 @@ func TestAppPreviewShareCreateAttachPreviewAndGateAPIRejected(t *testing.T) {
 	if p["kind"] != models.ShareLinkKindReview {
 		t.Fatalf("preview kind: %+v", p)
 	}
-	if p["productKind"] != "app_preview" {
-		t.Fatalf("productKind=%v want app_preview", p["productKind"])
+	if p["productKind"] != "app" {
+		t.Fatalf("productKind=%v want app", p["productKind"])
 	}
 	prevBody := prev.Body.String()
-	if strings.Contains(prevBody, "run-ap-share") || strings.Contains(prevBody, "app_preview1") {
+	if strings.Contains(prevBody, "run-ap-share") || strings.Contains(prevBody, "preview1") {
 		t.Fatalf("public preview leaked runId/nodeId: %s", prevBody)
 	}
 	if strings.Contains(prevBody, "/preview/") || strings.Contains(prevBody, "proxyUrl") {
@@ -440,14 +440,14 @@ func TestAppPreviewShareCreateAttachPreviewAndGateAPIRejected(t *testing.T) {
 		t.Fatalf("preview actions: %+v", actions)
 	}
 
-	// g3.3: app_preview must not succeed via human_gate share API
-	gateW := h.do(http.MethodPost, "/api/runs/run-ap-share/gates/app_preview1/share-link", map[string]any{"ttlTier": "24h"})
+	// g3.3: preview review must not succeed via human_gate share API
+	gateW := h.do(http.MethodPost, "/api/runs/run-ap-share/gates/preview1/share-link", map[string]any{"ttlTier": "24h"})
 	if gateW.Code == http.StatusOK {
-		t.Fatalf("gates API on app_preview must fail: %s", gateW.Body.String())
+		t.Fatalf("gates API on preview review must fail: %s", gateW.Body.String())
 	}
 	gateBody := gateW.Body.String()
 	if !strings.Contains(gateBody, "not_human_gate") && !strings.Contains(gateBody, "gate_not_pending") {
-		t.Fatalf("gates API on app_preview: %d %s", gateW.Code, gateBody)
+		t.Fatalf("gates API on preview review: %d %s", gateW.Code, gateBody)
 	}
 
 	nonce := publicPreviewNonce(t, h, token)
@@ -456,7 +456,7 @@ func TestAppPreviewShareCreateAttachPreviewAndGateAPIRejected(t *testing.T) {
 	}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
 	out := parseJSON(t, dec)
 	if dec.Code != 200 || (out["status"] != "confirmed" && out["status"] != "busy" && out["status"] != "validation_failed") {
-		t.Fatalf("decide app_preview: %d %s", dec.Code, dec.Body.String())
+		t.Fatalf("decide preview review: %d %s", dec.Code, dec.Body.String())
 	}
 }
 
@@ -471,7 +471,7 @@ func seedInboxClarify(t *testing.T, h *harness, runID, nodeID string) {
 		ID: runID, WorkflowID: "wf-" + runID, WorkflowName: "clarify-" + runID, Status: "waiting_human",
 		StartedAt: now, Title: "澄清运行",
 		Graph: models.Graph{Nodes: []models.Node{
-			{ID: nodeID, Type: "react", Label: "需求澄清"},
+			{ID: nodeID, Type: "agent", Caps: testClarifyCaps, Label: "需求澄清"},
 			{ID: "ps", Type: "proposal_select", Label: "方案选择"},
 		}},
 	})
@@ -480,7 +480,7 @@ func seedInboxClarify(t *testing.T, h *harness, runID, nodeID string) {
 		Messages: []models.ReactMessage{{Role: "agent", Text: "请补充验收标准", At: now.Format(time.RFC3339)}},
 	})
 	h.db.Create(&models.StateRun{
-		RunID: runID, NodeID: nodeID, Iteration: 1, Status: "waiting_human", NodeType: "react",
+		RunID: runID, NodeID: nodeID, Iteration: 1, Status: "waiting_human", NodeType: "agent",
 	})
 }
 
@@ -523,8 +523,8 @@ func TestClarifyShareCreatePreviewInboxAndPublicCancel(t *testing.T) {
 	if p["kind"] != models.ShareLinkKindReview {
 		t.Fatalf("preview kind must stay review: %+v", p)
 	}
-	if p["nodeType"] != "react" {
-		t.Fatalf("preview nodeType: %+v", p)
+	if p["nodeType"] != "agent" || p["interaction"] != models.InteractionClarify {
+		t.Fatalf("preview nodeType/interaction: %+v", p)
 	}
 	desc, _ := p["description"].(string)
 	if !strings.Contains(desc, "外部澄清") {

@@ -16,6 +16,7 @@ import GateApproval from '../src/components/run/GateApproval.vue'
 import ReviewShell from '../src/components/run/ReviewShell.vue'
 import ReviewComposer from '../src/components/run/ReviewComposer.vue'
 import type { Gate, Run, WFNode } from '../src/lib/shared/types'
+import { CLARIFY_CAPS, PAGE_CAPS, RESEARCH_CAPS } from '../src/test/capsFixtures'
 
 const params = new URLSearchParams(window.location.search)
 const scenario = (params.get('scenario') || 'completed') as 'completed' | 'gate' | 'review'
@@ -27,9 +28,9 @@ ${'<p>长内容段落用于预览区内滚动，确保决策按钮吸底常显�
 
 const nodesCompleted: WFNode[] = [
   { id: 'start', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
-  { id: 'clarify', type: 'react', label: '需求澄清', position: { x: 120, y: 0 }, config: {} },
-  { id: 'research', type: 'research', label: '代码调研', position: { x: 240, y: 0 }, config: {} },
-  { id: 'visual', type: 'visual', label: '视觉网页', position: { x: 360, y: 0 }, config: {} },
+  { id: 'clarify', type: 'agent', caps: CLARIFY_CAPS, label: '需求澄清', position: { x: 120, y: 0 }, config: {} },
+  { id: 'research', type: 'agent', caps: RESEARCH_CAPS, label: '代码调研', position: { x: 240, y: 0 }, config: {} },
+  { id: 'visual', type: 'agent', caps: PAGE_CAPS, label: '视觉网页', position: { x: 360, y: 0 }, config: {} },
   { id: 'end', type: 'output', label: '输出', position: { x: 480, y: 0 }, config: {} },
 ]
 
@@ -108,7 +109,7 @@ const gate: Gate = {
 
 const gateNodes: WFNode[] = [
   { id: 'start', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
-  { id: 'visual', type: 'visual', label: '视觉网页', position: { x: 120, y: 0 }, config: {} },
+  { id: 'visual', type: 'agent', caps: PAGE_CAPS, label: '视觉网页', position: { x: 120, y: 0 }, config: {} },
   {
     id: 'hg-visual',
     type: 'human_gate',
@@ -167,7 +168,7 @@ const gateRun: Run = {
 
 const reviewNodes: WFNode[] = [
   { id: 'start', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
-  { id: 'visual', type: 'visual', label: '视觉网页', position: { x: 120, y: 0 }, config: {} },
+  { id: 'visual', type: 'agent', caps: PAGE_CAPS, label: '视觉网页', position: { x: 120, y: 0 }, config: {} },
 ]
 
 const reviewRun: Run = {
@@ -263,8 +264,7 @@ const Fixture = defineComponent({
     function onSelect(nodeId: string, idx: number) {
       selected.value = nodeId
       selectedExecIdx.value = idx
-      const node = nodes.find((n) => n.id === nodeId)
-      if (node?.type === 'visual' && scenario === 'completed') nodeTab.value = 'product'
+      if (nodeId === 'visual' && scenario === 'completed') nodeTab.value = 'product'
       else if (nodeId === 'hg-visual') nodeTab.value = 'gate'
       else if (scenario === 'review' && nodeId === 'visual') nodeTab.value = 'review'
       else nodeTab.value = 'output'

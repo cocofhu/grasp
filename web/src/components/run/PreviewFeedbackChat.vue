@@ -26,7 +26,7 @@ const props = withDefaults(
     elementImage?: ClarifyImage | null
     /**
      * HtmlPreview path: body + selector + element screenshot are all required
-     * before submit. app_preview keeps the looser body-or-images rule.
+     * before submit. The app preview keeps the looser body-or-images rule.
      */
     requireElement?: boolean
     /** Compact bottom-bar layout: history collapsed by default, mt-4 shrink-0. */

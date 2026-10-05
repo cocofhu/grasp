@@ -264,9 +264,6 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 		BrowserMCP:           runtime.EnvEnabled(env["BROWSER_MCP"]),
 		Settings:             runtime.CodeBuddySettingsForEnv(backend, env),
 		OpenCodeConfig:       ocDoc,
-		AgentName:            profile,
-		ProfilesRoot:         s.profilesRoot,
-		GlobalRulesDir:       s.platformRulesRoot,
 	})
 	if err != nil {
 		fail(fmt.Errorf("build cursor home: %w", err))

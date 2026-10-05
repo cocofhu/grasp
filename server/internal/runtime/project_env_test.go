@@ -52,10 +52,10 @@ func TestSpecMergesSharedEnvExtendThenAgentOverlay(t *testing.T) {
 	}
 	req := NodeReq{
 		WorkflowID: "wf-1",
-		NodeType:   "agent",
-		Token:      "tok",
-		Config:     map[string]any{"agent_profile": "demo"},
-		Vars:       map[string]any{"region": "cn-east"},
+		NodeType:   "agent", Caps: testPlainCaps,
+		Token:  "tok",
+		Config: map[string]any{"agent_profile": "demo"},
+		Vars:   map[string]any{"region": "cn-east"},
 	}
 	spec, err := c.spec(req)
 	if err != nil {
@@ -154,9 +154,9 @@ func TestSpecSharedAuthKeyAloneSucceeds(t *testing.T) {
 	}
 	spec, err := c.spec(NodeReq{
 		WorkflowID: "wf-1",
-		NodeType:   "agent",
-		Token:      "tok",
-		Config:     map[string]any{"agent_profile": "demo"},
+		NodeType:   "agent", Caps: testPlainCaps,
+		Token:  "tok",
+		Config: map[string]any{"agent_profile": "demo"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -184,9 +184,9 @@ func TestSpecSkipsSharedEnvWithoutLookup(t *testing.T) {
 	}
 	spec, err := c.spec(NodeReq{
 		WorkflowID: "wf-1",
-		NodeType:   "agent",
-		Token:      "t",
-		Config:     map[string]any{"agent_profile": "demo"},
+		NodeType:   "agent", Caps: testPlainCaps,
+		Token:  "t",
+		Config: map[string]any{"agent_profile": "demo"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -237,9 +237,9 @@ func TestSpecMergesRunSandboxEnvAfterAgent(t *testing.T) {
 	spec, err := c.spec(NodeReq{
 		RunID:      "run-1",
 		WorkflowID: "wf-1",
-		NodeType:   "agent",
-		Token:      "tok",
-		Config:     map[string]any{"agent_profile": "demo"},
+		NodeType:   "agent", Caps: testPlainCaps,
+		Token:  "tok",
+		Config: map[string]any{"agent_profile": "demo"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -531,7 +531,7 @@ func TestSpecSkipsRunEnvWithoutLookup(t *testing.T) {
 		backend: BackendCursor,
 	}
 	spec, err := c.spec(NodeReq{
-		RunID: "run-1", NodeType: "agent", Token: "t",
+		RunID: "run-1", NodeType: "agent", Caps: testPlainCaps, Token: "t",
 		Config: map[string]any{"agent_profile": "demo"},
 	})
 	if err != nil {

@@ -118,7 +118,7 @@ func TestCopyAndImportResetShowOnHome(t *testing.T) {
 	svc := NewWorkflowService(db)
 
 	src := &models.WorkflowDef{
-		ID: "wf-home-src", ProjectID: models.DefaultProjectID, Name: "流水线 Home",
+		ID: "wf-home-src", ProjectID: models.DefaultProjectID, Name: "工作流 Home",
 		Graph: validGraph(),
 	}
 	if err := svc.Save(src); err != nil {
@@ -131,7 +131,7 @@ func TestCopyAndImportResetShowOnHome(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	copied, err := svc.Copy("wf-home-src", "流水线 Home 副本")
+	copied, err := svc.Copy("wf-home-src", "工作流 Home 副本")
 	if err != nil {
 		t.Fatalf("Copy: %v", err)
 	}

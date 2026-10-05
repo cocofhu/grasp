@@ -12,7 +12,6 @@ import (
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/runtime"
 
 	"github.com/google/uuid"
@@ -522,7 +521,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 		return false, loadErr
 	}
 	node := c.graph.FindNode(s.producerID)
-	if node == nil || !nodereg.ClarifyInteractive(node.Type) {
+	if node == nil || !node.Caps.Clarify() {
 		return false, errors.New("react node not found")
 	}
 
@@ -605,12 +604,6 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 		return true, nil
 	}
 
-	// Auto-clarify: recommended options while auto_var is on.
-	// autoAdvanceReact already appends human/agent turns to conv.
-	if !force && !t.Done && len(t.Questions) > 0 && len(t.Forms) == 0 && e.autoReactEnabled(c, node) {
-		t = e.autoAdvanceReact(c, node, &conv, req, t)
-	}
-
 	if !t.Done {
 		logDB(e.db.Save(&conv), s.runID, "save clarify conversation")
 		e.flushMcpCalls(s.runID, s.producerID)
@@ -637,7 +630,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	}
 
 	outcome := e.finishAgentOutcome(c, node, t.Result, func(r runtime.NodeResult) nodeOutcome {
-		return e.finalizeAgentProducts(c, node, r)
+		return e.finalizeAgent(c, node, r)
 	})
 	e.saveState(c, node, outcome)
 	e.appendTrace(c, models.TraceEntry{NodeID: s.producerID, Event: "resume", Detail: "react 完成"})

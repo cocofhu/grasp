@@ -14,9 +14,9 @@ import (
 
 func TestPublicPreviewAPIProxyAllowsSameOriginFraming(t *testing.T) {
 	hn := newHarness(t)
-	seedAppPreviewReview(t, hn, "run-ap-api", "app_preview_api")
+	seedAppPreviewReview(t, hn, "run-ap-api", "preview_api")
 
-	created := parseJSON(t, hn.do(http.MethodPost, "/api/runs/run-ap-api/reviews/app_preview_api/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, hn.do(http.MethodPost, "/api/runs/run-ap-api/reviews/preview_api/share-link", map[string]any{"ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
@@ -36,14 +36,14 @@ func TestPublicPreviewAPIProxyAllowsSameOriginFraming(t *testing.T) {
 	if err := hn.db.Where("id = ?", "run-ap-api").First(&run).Error; err != nil {
 		t.Fatal(err)
 	}
-	if n := run.Graph.FindNode("app_preview_api"); n != nil {
+	if n := run.Graph.FindNode("preview_api"); n != nil {
 		n.Config = map[string]any{"direct_preview": true}
 	}
 	if err := hn.db.Save(&run).Error; err != nil {
 		t.Fatal(err)
 	}
 	_ = preview.UpsertPreviewPort(mcp.PreviewPort{
-		RunID: "run-ap-api", NodeID: "app_preview_api", Port: 8080, Label: "API · 8080",
+		RunID: "run-ap-api", NodeID: "preview_api", Port: 8080, Label: "API · 8080",
 		Host: up.URL, Healthy: true, RegisteredAt: time.Now(),
 		Mode: "direct", DirectURL: "http://127.0.0.1:8080/",
 	})

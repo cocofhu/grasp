@@ -38,30 +38,23 @@ func isPageTool(name string) bool {
 }
 
 // pageToolsListed reports whether tools/list should carry page_* for the
-// run's active node. Whether a drawer is actually attached is only known at
-// call time. Review agent nodes list them from session start when direct
-// preview is on (agents rarely refetch tools/list mid-session); the review
-// phase itself is checked at call time.
+// run's active node: interactive Agents that may register a preview. Whether a
+// drawer is actually attached is only known at call time, and so is the review
+// phase (agents rarely refetch tools/list mid-session).
 func (h *Host) pageToolsListed(runID string) bool {
 	h.mu.RLock()
 	b := h.pageBridge
 	h.mu.RUnlock()
-	if b == nil {
-		return false
-	}
-	active := h.ActiveNodeType(runID)
-	if SetPreviewAllowed(active) {
-		return true
-	}
-	return models.ReviewAgentNode(active) && h.previewDirect(runID, h.ActiveNode(runID))
+	return b != nil && models.LiveNodeSupported(h.ActiveCaps(runID))
 }
 
 func (h *Host) runPageTool(runID, token, name string, args map[string]any) (string, bool) {
 	if !h.authorize(runID, token) {
 		return name + " failed: " + ErrUnauthorized.Error(), true
 	}
-	if !SetPreviewAllowed(h.ActiveNodeType(runID)) && !h.reviewAgentInReview(runID) {
-		return name + " 仅在 app_preview、Grasp 节点或复审阶段可用,当前节点不支持。", true
+	caps := h.ActiveCaps(runID)
+	if !models.LiveNodeSupported(caps) || (caps.ReviewEnabled() && !h.InReviewPhase(runID)) {
+		return name + " 仅在可预览 Agent 的澄清对话或复审阶段可用,当前节点不支持。", true
 	}
 	nodeID := h.ActiveNode(runID)
 	if !h.previewDirect(runID, nodeID) {

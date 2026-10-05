@@ -100,7 +100,7 @@ func slowGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "work", Type: "agent", Config: map[string]any{"agent_profile": "t", "prompt": "work"}},
+			{ID: "work", Type: "agent", Caps: capsPlain, Config: map[string]any{"agent_profile": "t", "prompt": "work"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -117,12 +117,12 @@ func gateThenWorkGraph() models.Graph {
 			{ID: "gate", Type: "human_gate", Config: map[string]any{
 				"actions": []any{map[string]any{"id": "ok", "label": "OK"}},
 			}},
-			{ID: "work", Type: "agent", Config: map[string]any{"agent_profile": "t", "prompt": "work"}},
+			{ID: "work", Type: "agent", Caps: capsPlain, Config: map[string]any{"agent_profile": "t", "prompt": "work"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "gate"},
-			{ID: "e2", Source: "gate", Target: "work", Kind: models.EdgeSuccess},
+			{ID: "e2", Source: "gate", Target: "work", SourceHandle: "ok", Kind: models.EdgeSuccess},
 			{ID: "e3", Source: "work", Target: "output", Kind: models.EdgeSuccess},
 		},
 	}
@@ -135,7 +135,7 @@ func workThenGateGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "work", Type: "agent", Config: map[string]any{"agent_profile": "t", "prompt": "work"}},
+			{ID: "work", Type: "agent", Caps: capsPlain, Config: map[string]any{"agent_profile": "t", "prompt": "work"}},
 			{ID: "gate", Type: "human_gate", Config: map[string]any{
 				"actions": []any{map[string]any{"id": "ok", "label": "OK"}},
 			}},
@@ -144,7 +144,7 @@ func workThenGateGraph() models.Graph {
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "work"},
 			{ID: "e2", Source: "work", Target: "gate", Kind: models.EdgeSuccess},
-			{ID: "e3", Source: "gate", Target: "output", Kind: models.EdgeSuccess},
+			{ID: "e3", Source: "gate", Target: "output", SourceHandle: "ok", Kind: models.EdgeSuccess},
 		},
 	}
 }

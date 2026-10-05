@@ -9,8 +9,6 @@ import type {
   HealthResponse,
   NotifyDeliveryReceipt,
   PaginatedResponse,
-  PlatformRuleContent,
-  PlatformRuleMeta,
   PlatformStatusMetrics,
   SettingItem,
 } from '../apiTypes'
@@ -63,33 +61,6 @@ export const settingsClient = {
       method: 'PUT',
       body: JSON.stringify(patch),
     }),
-
-  listPlatformRules: () => req<{ items: PlatformRuleMeta[] }>('/platform-rules'),
-  getPlatformRule: (file: string) => req<PlatformRuleContent>(`/platform-rules/${encodeURIComponent(file)}`),
-  savePlatformRule: (file: string, content: string) =>
-    req<PlatformRuleContent>(`/platform-rules/${encodeURIComponent(file)}`, {
-      method: 'PUT',
-      body: JSON.stringify({ content }),
-    }),
-  resetPlatformRule: (file: string) =>
-    req<PlatformRuleContent>(`/platform-rules/${encodeURIComponent(file)}/reset`, { method: 'POST' }),
-  getPlatformRuleEmbed: (file: string) =>
-    req<PlatformRuleContent>(`/platform-rules/${encodeURIComponent(file)}/embed`),
-
-  listAgentPlatformRules: (agent: string) =>
-    req<{ items: PlatformRuleMeta[] }>(`/agents/${encodeURIComponent(agent)}/platform-rules`),
-  getAgentPlatformRule: (agent: string, file: string) =>
-    req<PlatformRuleContent>(`/agents/${encodeURIComponent(agent)}/platform-rules/${encodeURIComponent(file)}`),
-  saveAgentPlatformRule: (agent: string, file: string, content: string) =>
-    req<PlatformRuleContent>(`/agents/${encodeURIComponent(agent)}/platform-rules/${encodeURIComponent(file)}`, {
-      method: 'PUT',
-      body: JSON.stringify({ content }),
-    }),
-  deleteAgentPlatformRule: (agent: string, file: string) =>
-    req<{ status: string }>(`/agents/${encodeURIComponent(agent)}/platform-rules/${encodeURIComponent(file)}`, {
-      method: 'DELETE',
-    }),
-
   // multi-channel QQ APIs (primary + secondary)
   listProjectNotifyReceipts: (projectId: string) =>
     req<{ items: NotifyDeliveryReceipt[] }>(

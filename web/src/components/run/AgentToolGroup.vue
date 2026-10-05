@@ -122,7 +122,7 @@ function openPreview() {
       data-testid="agent-tool-group-head"
       @click="open = !open"
     >
-      <Icon v-if="overall === 'running'" name="spinner" :size="12" class="shrink-0 text-accent-2" aria-hidden="true" />
+      <Icon v-if="overall === 'running'" name="spinner" :size="12" class="shrink-0 animate-spin text-accent-2" aria-hidden="true" />
       <Icon v-else-if="overall === 'failed'" name="alert" :size="12" class="shrink-0 text-warn" aria-hidden="true" />
       <Icon v-else name="check" :size="12" class="shrink-0 text-ok" aria-hidden="true" />
       <span class="shrink-0 text-txt2">{{ t('pages.clarify.toolsUsed', { n: tools.length }, tools.length) }}</span>
@@ -153,7 +153,7 @@ function openPreview() {
             :data-testid="r.details ? 'agent-tool-row-toggle' : undefined"
             @click="r.details && toggleRow(r, i)"
           >
-            <Icon v-if="r.state === 'running'" name="spinner" :size="11" class="shrink-0 text-accent-2" aria-hidden="true" />
+            <Icon v-if="r.state === 'running'" name="spinner" :size="11" class="shrink-0 animate-spin text-accent-2" aria-hidden="true" />
             <Icon v-else-if="r.state === 'failed'" name="alert" :size="11" class="shrink-0 text-warn" aria-hidden="true" />
             <Icon v-else :name="r.icon" :size="11" class="shrink-0 text-txt3" aria-hidden="true" data-testid="agent-tool-icon" />
             <span

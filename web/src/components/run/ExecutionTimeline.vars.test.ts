@@ -9,7 +9,7 @@ import ExecutionTimeline from './ExecutionTimeline.vue'
 
 const nodes: WFNode[] = [
   { id: 'input', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
-  { id: 'research', type: 'research', label: '调研', position: { x: 0, y: 0 }, config: {} },
+  { id: 'research', type: 'agent', label: '调研', position: { x: 0, y: 0 }, config: {} },
 ]
 
 function exec(over: Partial<NodeRun> = {}): NodeRun {

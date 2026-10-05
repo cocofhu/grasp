@@ -48,7 +48,8 @@ test('新建 Agent 五步向导浏览器验收', async ({ page }) => {
   await page.getByTestId('agent-wizard-backend-cursor').click()
   await page.getByRole('button', { name: /^下一步/ }).click()
   await expect(page.locator('.sec-head h3')).toHaveText('API Key')
-  await expect(page.getByText('GRASP_CURSOR_API_KEY', { exact: true })).toBeVisible()
+  await expect(page.getByText('如何获取', { exact: true })).toBeVisible()
+  await expect(page.getByText('GRASP_CURSOR_API_KEY')).toHaveCount(0)
   await expect(page.locator('a[href*="cursor.com/dashboard"]')).toBeVisible()
   await page.screenshot({ path: path.join(OUT, '03-api-key.png'), fullPage: true })
 
@@ -143,4 +144,32 @@ test('向导能取到项目共享 Git Token 时 Git 步仍出现三选（plan g3
   await expect(page.getByText(/预选类型/)).toBeVisible()
   await page.locator('[data-test="git-choice-ssh"]').click()
   await expect(page.locator('[data-test="git-choice-ssh"]')).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('English template dropdown shows localized names without Chinese or internal names', async ({ page }) => {
+  await page.route('**/api/**', async (route) => {
+    const url = new URL(route.request().url())
+    if (!url.pathname.startsWith('/api/')) return route.continue()
+    if (url.pathname === '/api/agent-teams/templates') {
+      return route.fulfill({
+        json: {
+          items: [
+            { id: 'clarify', embedName: 'ClarifyAgent', roleLabelZh: '需求澄清', summary: '多轮对话澄清需求、写出计划' },
+            { id: 'implement', embedName: 'ImplementAgent', roleLabelZh: '实现', summary: '按计划实现' },
+            { id: 'test_review', embedName: 'TestReviewAgent', roleLabelZh: '测试评审', summary: '执行测试并做代码评审' },
+          ],
+        },
+      })
+    }
+    return route.fulfill({ json: [] })
+  })
+  await page.goto('/agent-create-wizard.html?lang=en', { waitUntil: 'networkidle' })
+  await page.getByTestId('agent-template-select-trigger').click()
+  const list = page.getByTestId('agent-template-select-list')
+  await expect(list.getByTestId('agent-template-select-option-clarify')).toContainText('Clarify')
+  await expect(list.getByTestId('agent-template-select-option-test_review')).toContainText('Test & review')
+  const text = await list.innerText()
+  expect(text).not.toMatch(/[\u3400-\u9fff]/)
+  expect(text).not.toMatch(/ClarifyAgent|ImplementAgent|TestReviewAgent/)
+  await page.screenshot({ path: path.join(OUT, 'en-template-select.png') })
 })

@@ -194,9 +194,9 @@ func (h *Host) ClearOutcome(runID, nodeID string) {
 	h.clearOutcomeArtifact(runID)
 }
 
-// SetOutcomeAllowed controls whether Grasp may see/call node_complete for this
-// run. Flipping the flag bumps ToolsListGeneration (list_changed signal).
-// Non-Grasp nodes ignore the flag and always expose the tool.
+// SetOutcomeAllowed controls whether a clarify Agent may see/call
+// node_complete for this run. Flipping the flag bumps ToolsListGeneration
+// (list_changed signal). Auto Agents ignore the flag and always expose it.
 func (h *Host) SetOutcomeAllowed(runID string, allowed bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -208,18 +208,18 @@ func (h *Host) SetOutcomeAllowed(runID string, allowed bool) {
 	h.toolsListGen[runID]++
 	log.Info().Str("run_id", runID).Bool("allowed", allowed).
 		Int("tools_list_gen", h.toolsListGen[runID]).
-		Msg("grasp outcome tool surface refreshed")
+		Msg("clarify outcome tool surface refreshed")
 }
 
-// OutcomeAllowed reports whether Grasp Phase2 has opened the outcome tool for
-// this run. Defaults to false (Phase1 zero-visibility).
+// OutcomeAllowed reports whether the human confirm has opened the outcome tool
+// for this run's clarify dialogue. Defaults to false.
 func (h *Host) OutcomeAllowed(runID string) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.outcomeAllowed[runID]
 }
 
-// ToolsListGeneration is a monotonic counter bumped when the Grasp outcome
+// ToolsListGeneration is a monotonic counter bumped when the clarify outcome
 // tool surface changes. Tests (and future SSE clients) treat a bump as a
 // tools/list_changed refresh signal.
 func (h *Host) ToolsListGeneration(runID string) int {
@@ -229,33 +229,32 @@ func (h *Host) ToolsListGeneration(runID string) int {
 }
 
 // hideNodeComplete reports whether tools/list and tools/call must treat
-// node_complete as absent for this run (Grasp Phase1 only).
+// node_complete as absent for this run (clarify dialogue before confirm).
 func (h *Host) hideNodeComplete(runID string) bool {
-	if !isGrasp(h.ActiveNodeType(runID)) {
+	if !h.ActiveCaps(runID).Clarify() {
 		return false
 	}
 	return !h.OutcomeAllowed(runID)
 }
 
-// listedTools returns the MCP tools/list payload, omitting node_complete when
-// Grasp Phase1 must not know about it.
+// listedTools returns the MCP tools/list payload: only the tools the active
+// Agent may call, and no node_complete before a clarify dialogue is confirmed.
 func (h *Host) listedTools(runID string) []map[string]any {
-	all := artifactTools()
-	if h.pageToolsListed(runID) {
-		all = append(all, pageTools()...)
-	}
-	if h.liveToolListed(runID) {
-		all = append(all, liveTools()...)
-	}
-	if !h.hideNodeComplete(runID) {
-		return all
-	}
-	out := make([]map[string]any, 0, len(all))
-	for _, t := range all {
-		if name, _ := t["name"].(string); name == "node_complete" {
+	caps := h.ActiveCaps(runID)
+	hideOutcome := h.hideNodeComplete(runID)
+	var out []map[string]any
+	for _, t := range artifactTools() {
+		name, _ := t["name"].(string)
+		if (name == "node_complete" && hideOutcome) || !toolListed(caps, name) {
 			continue
 		}
 		out = append(out, t)
+	}
+	if h.pageToolsListed(runID) {
+		out = append(out, pageTools()...)
+	}
+	if h.liveToolListed(runID) {
+		out = append(out, liveTools()...)
 	}
 	return out
 }

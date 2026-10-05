@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/nodereg"
 )
 
 var gateBodyNodeRef = regexp.MustCompile(`\{\{\s*nodes\.([^.}\s]+)\.outputs\.`)
@@ -21,13 +20,13 @@ const (
 	InboxKindGate = "gate"
 	// InboxKindClarify is a react/approve node parked on a live conversation.
 	InboxKindClarify = "clarify"
-	// InboxKindClarifyStarting is an approve node whose sandbox is still booting:
+	// InboxKindClarifyStarting is a clarify Agent whose sandbox is still booting:
 	// listed in the inbox as a loading card, but with no conversation to serve.
 	InboxKindClarifyStarting = "clarify_starting"
 )
 
 // InboxContextKind reports whether run+node+iteration is a pending gate, a
-// parked clarify item, or a still-booting approve node. Gate takes priority when
+// parked clarify item, or a still-booting clarify node. Gate takes priority when
 // both could match. Returns ("", false) when nothing is pending.
 func (s *RunService) InboxContextKind(runID, nodeID string, iteration int) (string, bool) {
 	var gate models.Gate
@@ -40,21 +39,21 @@ func (s *RunService) InboxContextKind(runID, nodeID string, iteration int) (stri
 	if s.isPendingClarification(runID, nodeID, iteration) {
 		return InboxKindClarify, true
 	}
-	// A booting approve node has no conversation yet, but its loading card is
+	// A booting clarify Agent has no conversation yet, but its loading card is
 	// already listed in the inbox, so its context must resolve too. The distinct
 	// kind is what lets the handler serve the starting shell without re-deriving
 	// (and re-querying) the same verdict.
-	if s.IsStartingApprove(runID, nodeID, iteration) {
+	if s.IsStartingClarify(runID, nodeID, iteration) {
 		return InboxKindClarifyStarting, true
 	}
 	return "", false
 }
 
-// IsStartingApprove reports whether run+node+iteration is an approve node whose
+// IsStartingClarify reports whether run+node+iteration is a clarify Agent whose
 // sandbox is still booting: StateRun is running and no conversation exists yet.
-func (s *RunService) IsStartingApprove(runID, nodeID string, iteration int) bool {
+func (s *RunService) IsStartingClarify(runID, nodeID string, iteration int) bool {
 	var run models.Run
-	if err := s.db.Select("id", "status").First(&run, "id = ?", runID).Error; err != nil {
+	if err := s.db.Select("id", "status", "graph").First(&run, "id = ?", runID).Error; err != nil {
 		return false
 	}
 	if containsString(terminalRunStatuses, run.Status) {
@@ -71,7 +70,7 @@ func (s *RunService) IsStartingApprove(runID, nodeID string, iteration int) bool
 		Order("id desc").First(&sr).Error; err != nil {
 		return false
 	}
-	return nodereg.IsGrasp(sr.NodeType) && sr.Status == "running"
+	return sr.Status == "running" && run.Graph.FindNode(nodeID).Caps.Clarify()
 }
 
 func (s *RunService) isPendingClarification(runID, nodeID string, iteration int) bool {
@@ -85,11 +84,6 @@ func (s *RunService) isPendingClarification(runID, nodeID string, iteration int)
 		return false
 	}
 	if containsString(terminalRunStatuses, run.Status) {
-		return false
-	}
-	node := run.Graph.FindNode(nodeID)
-	vars := s.varsByRun([]string{runID})[runID]
-	if reactAutoEnabled(node, vars) {
 		return false
 	}
 	var sr models.StateRun

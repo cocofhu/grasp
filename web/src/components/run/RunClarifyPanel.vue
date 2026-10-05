@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { isGrasp } from '@/lib/shared/clarifyInteractive'
+import { findGraphNode, isPreviewNode } from '@/lib/shared/clarifyInteractive'
 /**
  * Run 详情「澄清」面板壳：OpenDesign 产物舞台 + ReAct 聊天。
  */
@@ -82,9 +82,9 @@ const reviewChatRef = ref<{
 
 const artifacts = computed(() => props.run?.artifacts || [])
 const previewArtifact = computed(() => props.clarify?.previewArtifact || '')
-const nodeType = computed(() => props.run?.nodes?.find((n) => n.id === props.nodeId)?.type || '')
-// Approve defaults to off; ReactArtifactStage silently probes previews and upgrades to app when registered.
-const remoteKind = computed(() => (isGrasp(nodeType.value) ? 'off' : 'sandbox'))
+const graphNode = computed(() => findGraphNode(props.run?.nodes, props.nodeId) || null)
+// set_preview defaults to off; ReactArtifactStage silently probes previews and upgrades to app when registered.
+const remoteKind = computed(() => (isPreviewNode(graphNode.value) ? 'off' : 'sandbox'))
 
 function onRemotePick(payload: AppPreviewPickPayload) {
   if (!props.inputActive) return
@@ -152,7 +152,7 @@ defineExpose({
         :run-id="runId"
         :run="run || undefined"
         :node-id="nodeId"
-        :node-type="nodeType"
+        :node="graphNode"
         :annotatable="inputActive"
         :remote-kind="remoteKind"
         @pick="onRemotePick"
@@ -169,7 +169,6 @@ defineExpose({
         :draft="draft"
         :attachments="attachments"
         :turns="clarify.turns ?? []"
-        :node-type="nodeType"
         :done="clarify.done"
         :active="inputActive"
         :confirm-error="confirmError"

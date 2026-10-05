@@ -45,7 +45,7 @@ const props = defineProps<{
   /** Optional run title override (home chat first message). */
   runTitle?: string
   /**
-   * Opening chat message for an approve-first pipeline (home chat). The engine
+   * Opening chat message for an approve-first workflow (home chat). The engine
    * delivers it into the approve node's sandbox once that node parks.
    */
   firstMessage?: { text: string; images?: ClarifyImage[] } | null

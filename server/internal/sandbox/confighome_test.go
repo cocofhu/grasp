@@ -25,11 +25,7 @@ func TestBuildConfigHome(t *testing.T) {
 	t.Cleanup(func() { HomeBaseDir = "" })
 
 	dir, err := BuildConfigHome(ConfigHomeSpec{
-		WorkDirSrc: src,
-		EmbeddedRules: []string{
-			"rules/react.md", "rules/plan.md", "rules/implement.md",
-			"rules/research.md", "rules/test.md", "rules/review.md", "rules/proposal.md",
-		},
+		WorkDirSrc:           src,
 		IncludeArtifactStore: true,
 		MCP: []MCPServerSpec{
 			{Name: "artifact-store", URL: "http://host:9099", Headers: map[string]string{"Authorization": "Bearer x"}},
@@ -50,8 +46,8 @@ func TestBuildConfigHome(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "skills", "s.md")); err != nil {
 		t.Error("nested skill file not copied")
 	}
-	// Base rule always present; a node-specific rule too.
-	for _, r := range []string{"rules/base.md", "rules/react.md", "rules/implement.md"} {
+	// Only the platform base and artifact-store rules are embedded.
+	for _, r := range []string{"rules/base.md", "rules/artifact-store.md"} {
 		if _, err := os.Stat(filepath.Join(dir, r)); err != nil {
 			t.Errorf("missing embedded rule %s: %v", r, err)
 		}
@@ -227,80 +223,6 @@ func TestBuildConfigHomeNoSettingsWhenEmpty(t *testing.T) {
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	if _, err := os.Stat(filepath.Join(dir, "settings.json")); !os.IsNotExist(err) {
 		t.Fatal("empty Settings must not write settings.json")
-	}
-}
-
-func TestBuildConfigHomeRulePriority(t *testing.T) {
-	HomeBaseDir = t.TempDir()
-	t.Cleanup(func() { HomeBaseDir = "" })
-
-	profiles := filepath.Join(t.TempDir(), "profiles")
-	global := filepath.Join(t.TempDir(), "global")
-	agent := "TestAgent"
-	overrideDir := filepath.Join(profiles, agent, "platform-rules")
-	if err := os.MkdirAll(overrideDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(global, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(global, "test.md"), []byte("global-test"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(overrideDir, "test.md"), []byte("override-test"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	dir, err := BuildConfigHome(ConfigHomeSpec{
-		EmbeddedRules:  []string{"rules/test.md"},
-		AgentName:      agent,
-		ProfilesRoot:   profiles,
-		GlobalRulesDir: global,
-	})
-	if err != nil {
-		t.Fatalf("BuildConfigHome: %v", err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
-
-	b, err := os.ReadFile(filepath.Join(dir, "rules/test.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(b) != "override-test" {
-		t.Fatalf("override priority: got %q", b)
-	}
-
-	dir2, err := BuildConfigHome(ConfigHomeSpec{
-		EmbeddedRules:  []string{"rules/test.md"},
-		AgentName:      "OtherAgent",
-		ProfilesRoot:   profiles,
-		GlobalRulesDir: global,
-	})
-	if err != nil {
-		t.Fatalf("BuildConfigHome global: %v", err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir2) })
-	b, err = os.ReadFile(filepath.Join(dir2, "rules/test.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(b) != "global-test" {
-		t.Fatalf("global priority: got %q", b)
-	}
-
-	dir3, err := BuildConfigHome(ConfigHomeSpec{
-		EmbeddedRules: []string{"rules/research.md"},
-	})
-	if err != nil {
-		t.Fatalf("BuildConfigHome embed: %v", err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir3) })
-	b, err = os.ReadFile(filepath.Join(dir3, "rules/research.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(b) == 0 {
-		t.Fatal("embed fallback empty")
 	}
 }
 

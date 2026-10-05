@@ -251,7 +251,7 @@ func TestPmProgressListBlockersGateAndClarify(t *testing.T) {
 	})
 	db.Create(&models.Run{
 		ID: "run-clarify", WorkflowID: wfID, WorkflowName: "Pipeline",
-		Title: "澄清", Status: "waiting_human", StartedAt: now, Graph: reactGraph(""),
+		Title: "澄清", Status: "waiting_human", StartedAt: now, Graph: reactGraph(),
 	})
 	db.Create(&models.ReactConversation{
 		RunID: "run-clarify", NodeID: "react", Iteration: 1, Done: false,

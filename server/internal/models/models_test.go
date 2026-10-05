@@ -136,16 +136,26 @@ func TestValidateSuccessFanout(t *testing.T) {
 	if err := passFail.Validate(); err != nil {
 		t.Fatalf("success+failure fan-out should pass: %v", err)
 	}
-	// A branch node routes via config, so multiple plain edges are allowed.
+	// Distinct outlets (branch cases, gate pass/fail) may each carry an edge.
 	branch := base([]Edge{
 		{Source: "in", Target: "br"},
-		{Source: "br", Target: "b"},
-		{Source: "br", Target: "c"},
+		{Source: "br", SourceHandle: "c1", Target: "b"},
+		{Source: "br", SourceHandle: "else", Target: "c"},
 		{Source: "b", Target: "out"},
 		{Source: "c", Target: "out"},
 	})
 	if err := branch.Validate(); err != nil {
-		t.Fatalf("branch fan-out should pass: %v", err)
+		t.Fatalf("per-outlet fan-out should pass: %v", err)
+	}
+	sameHandle := base([]Edge{
+		{Source: "in", Target: "br"},
+		{Source: "br", SourceHandle: "c1", Target: "b"},
+		{Source: "br", SourceHandle: "c1", Target: "c"},
+		{Source: "b", Target: "out"},
+		{Source: "c", Target: "out"},
+	})
+	if err := sameHandle.Validate(); err == nil {
+		t.Fatal("two guardless edges on one outlet must fail")
 	}
 }
 
@@ -155,131 +165,6 @@ func TestEdgeKindOrDefault(t *testing.T) {
 	}
 	if (Edge{Kind: EdgeFailure}).KindOrDefault() != EdgeFailure {
 		t.Error("explicit kind")
-	}
-}
-
-func TestAgentPromptsNilSafeDefaults(t *testing.T) {
-	var p *AgentPrompts
-	if p.UpstreamHeader() != DefaultUpstreamArtifactsHeader {
-		t.Error("UpstreamHeader nil")
-	}
-	if p.ReactOpenSuffixText() != DefaultReactOpenSuffix {
-		t.Error("ReactOpenSuffixText nil")
-	}
-	if p.PlanContractText() != DefaultPlanContract {
-		t.Error("PlanContractText nil")
-	}
-	if p.ImplementContractText() != DefaultImplementContract {
-		t.Error("ImplementContractText nil")
-	}
-	if p.ClarifiedRequirementContractText() != DefaultClarifiedRequirementContract {
-		t.Error("ClarifiedRequirementContractText nil")
-	}
-	if p.ImplementResultContractText() != DefaultImplementResultContract {
-		t.Error("ImplementResultContractText nil")
-	}
-	if p.ResearchContractText() != DefaultResearchContract {
-		t.Error("ResearchContractText nil")
-	}
-	if p.TestContractText() != DefaultTestContract {
-		t.Error("TestContractText nil")
-	}
-	if p.ReviewContractText() != DefaultReviewContract {
-		t.Error("ReviewContractText nil")
-	}
-	if p.ProposalContractText() != DefaultProposalContract {
-		t.Error("ProposalContractText nil")
-	}
-	if p.PreflightContractText() != DefaultPreflightContract {
-		t.Error("PreflightContractText nil")
-	}
-	if got := p.PreflightRetryText("need db"); !strings.Contains(got, "need db") {
-		t.Errorf("PreflightRetryText nil: %q", got)
-	}
-	if got := p.PreflightRetryText(""); !strings.Contains(got, "preflight.json 未就绪") {
-		t.Errorf("PreflightRetryText empty reason: %q", got)
-	}
-}
-
-func TestAgentPromptsContractOverrides(t *testing.T) {
-	p := &AgentPrompts{
-		PlanContract:                 "PLAN",
-		ImplementContract:            "IMPL",
-		ClarifiedRequirementContract: "CLAR",
-		ImplementResultContract:      "IMPLRES",
-		ResearchContract:             "RES",
-		TestContract:                 "TEST",
-		ReviewContract:               "REV",
-		ProposalContract:             "PROP",
-		PreflightContract:            "PRE",
-		PreflightRetry:               "PF {reason}",
-		ProducesRetry:                "RETRY {name}",
-		PlanIncompleteRetry:          "MISS {items}",
-	}
-	checks := map[string]string{
-		p.PlanContractText():                    "PLAN",
-		p.ImplementContractText():               "IMPL",
-		p.ClarifiedRequirementContractText():    "CLAR",
-		p.ImplementResultContractText():         "IMPLRES",
-		p.ResearchContractText():                "RES",
-		p.TestContractText():                    "TEST",
-		p.ReviewContractText():                  "REV",
-		p.ProposalContractText():                "PROP",
-		p.PreflightContractText():               "PRE",
-		p.PreflightRetryText("gap"):             "PF gap",
-		p.ProducesRetryFor("f.md"):              "RETRY f.md",
-		p.PlanIncompleteRetryFor([]string{"a"}): "MISS - a",
-	}
-	for got, want := range checks {
-		if got != want {
-			t.Errorf("override accessor = %q, want %q", got, want)
-		}
-	}
-
-	// contractText override branch directly.
-	if contractText("X", "def") != "X" {
-		t.Error("contractText override")
-	}
-	if contractText("  ", "def") != "def" {
-		t.Error("contractText blank -> default")
-	}
-}
-
-func TestAgentPromptsTemplatesAndOverrides(t *testing.T) {
-	if got := (&AgentPrompts{}).ProducesContractFor("plan.md"); got == "" {
-		t.Error("ProducesContractFor default")
-	}
-	if got := (&AgentPrompts{ProducesContract: "write {name} now"}).ProducesContractFor("x.md"); got != "write x.md now" {
-		t.Errorf("ProducesContractFor override: %q", got)
-	}
-	if got := (&AgentPrompts{}).ProducesRetryFor("x.md"); got == "" {
-		t.Error("ProducesRetryFor")
-	}
-	items := (&AgentPrompts{}).PlanIncompleteRetryFor([]string{"a", "b"})
-	if items == "" {
-		t.Error("PlanIncompleteRetryFor")
-	}
-	if got := (&AgentPrompts{PlanIncompleteRetry: "left: {items}"}).PlanIncompleteRetryFor([]string{"a", "b"}); got != "left: - a\n- b" {
-		t.Errorf("PlanIncompleteRetryFor override: %q", got)
-	}
-	if got := (&AgentPrompts{StructuredRetry: "{tool}->{name}"}).StructuredRetryFor("r.json", "set_research"); got != "set_research->r.json" {
-		t.Errorf("StructuredRetryFor override: %q", got)
-	}
-	if (&AgentPrompts{}).StructuredRetryFor("r.json", "set_research") == "" {
-		t.Error("StructuredRetryFor default")
-	}
-	// Override branches for the fixed-contract accessors.
-	if (&AgentPrompts{PlanContract: "P"}).PlanContractText() != "P" {
-		t.Error("PlanContract override")
-	}
-	if (&AgentPrompts{ResearchContract: "R"}).ResearchContractText() != "R" {
-		t.Error("ResearchContract override")
-	}
-	if (&AgentPrompts{UpstreamArtifactsHeader: "H"}).UpstreamHeader() != "H" {
-		t.Error("UpstreamHeader override")
-	}
-	if (&AgentPrompts{ReactOpenSuffix: "S"}).ReactOpenSuffixText() != "S" {
-		t.Error("ReactOpenSuffix override")
 	}
 }
 

@@ -11,7 +11,7 @@ function artifact(overrides: Partial<Artifact> & Pick<Artifact, 'id' | 'createdA
     nodeId: 'test',
     runId: 'run-1',
     workflowId: 'wf-a',
-    workflowName: '流水线 A',
+    workflowName: '工作流 A',
     sizeBytes: 100,
     content: '',
     ...overrides,
@@ -19,9 +19,9 @@ function artifact(overrides: Partial<Artifact> & Pick<Artifact, 'id' | 'createdA
 }
 
 const FIXTURE: Artifact[] = [
-  artifact({ id: 'a1', createdAt: '2026-07-03T10:00:00Z', workflowId: 'wf-a', workflowName: '流水线 A' }),
-  artifact({ id: 'a2', createdAt: '2026-07-02T15:00:00Z', workflowId: 'wf-b', workflowName: '流水线 B' }),
-  artifact({ id: 'a3', createdAt: '2026-07-02T16:00:00Z', workflowId: 'wf-b', workflowName: '流水线 B' }),
+  artifact({ id: 'a1', createdAt: '2026-07-03T10:00:00Z', workflowId: 'wf-a', workflowName: '工作流 A' }),
+  artifact({ id: 'a2', createdAt: '2026-07-02T15:00:00Z', workflowId: 'wf-b', workflowName: '工作流 B' }),
+  artifact({ id: 'a3', createdAt: '2026-07-02T16:00:00Z', workflowId: 'wf-b', workflowName: '工作流 B' }),
   artifact({ id: 'a4', createdAt: '2026-07-01T12:00:00Z', workflowId: 'wf-rand', workflowName: '' }),
   artifact({ id: 'a5', createdAt: '2026-06-30T08:00:00Z', workflowId: undefined, workflowName: '' }),
 ]
@@ -118,10 +118,10 @@ describe('useArtifactGroupSelection', () => {
     expect(activeGroup.value?.title).toBe('')
   })
 
-  it('applyPipelineFilter to a specific workflow clears unnamed highlight', async () => {
+  it('applyWorkflowFilter to a specific workflow clears unnamed highlight', async () => {
     const artifacts = ref(FIXTURE)
     const wfParam = ref('')
-    const { selectGroup, applyPipelineFilter, highlightUnnamed, activeGroup } = useArtifactGroupSelection(
+    const { selectGroup, applyWorkflowFilter, highlightUnnamed, activeGroup } = useArtifactGroupSelection(
       artifacts,
       wfParam,
     )
@@ -129,17 +129,17 @@ describe('useArtifactGroupSelection', () => {
     await nextTick()
     expect(highlightUnnamed.value).toBe(true)
 
-    applyPipelineFilter('wf-a')
+    applyWorkflowFilter('wf-a')
     await nextTick()
     expect(wfParam.value).toBe('wf-a')
     expect(highlightUnnamed.value).toBe(false)
     expect(activeGroup.value?.key).toBe('wf-a')
   })
 
-  it('applyPipelineFilter to all pipelines resets explicit selection and restores default group', async () => {
+  it('applyWorkflowFilter to all workflows resets explicit selection and restores default group', async () => {
     const artifacts = ref(FIXTURE)
     const wfParam = ref('')
-    const { selectGroup, applyPipelineFilter, highlightUnnamed, activeGroup } = useArtifactGroupSelection(
+    const { selectGroup, applyWorkflowFilter, highlightUnnamed, activeGroup } = useArtifactGroupSelection(
       artifacts,
       wfParam,
     )
@@ -147,21 +147,21 @@ describe('useArtifactGroupSelection', () => {
     await nextTick()
     expect(highlightUnnamed.value).toBe(true)
 
-    applyPipelineFilter('')
+    applyWorkflowFilter('')
     await nextTick()
     expect(wfParam.value).toBe('')
     expect(highlightUnnamed.value).toBe(false)
     expect(activeGroup.value?.key).toBe('wf-b')
   })
 
-  it('applyPipelineFilter from named wf to all shows all groups with default active group', async () => {
+  it('applyWorkflowFilter from named wf to all shows all groups with default active group', async () => {
     const artifacts = ref(FIXTURE)
     const wfParam = ref('wf-a')
-    const { applyPipelineFilter, groups, activeGroup } = useArtifactGroupSelection(artifacts, wfParam)
+    const { applyWorkflowFilter, groups, activeGroup } = useArtifactGroupSelection(artifacts, wfParam)
     await nextTick()
     expect(groups.value.length).toBeGreaterThan(1)
 
-    applyPipelineFilter('')
+    applyWorkflowFilter('')
     await nextTick()
     expect(groups.value.length).toBeGreaterThan(1)
     expect(activeGroup.value?.key).toBe('wf-b')

@@ -47,6 +47,6 @@ configured on Agent meta env, not in this platform config table.
 | `GRASP_AUTH_LOCK_DURATION` | `auth.lock_duration` | duration | `5m` | Public | Login failure lock duration |
 | `GRASP_AUTH_SESSION_TTL` | `auth.session_ttl` | duration | `168h` | Public | Session lifetime |
 | `GRASP_AUTH_USERS` | `auth.users` | YAML/JSON | `Not set` | Sensitive | Static user array; required explicitly outside local mode |
-| `GRASP_SECRETS_KEY` | `security.secrets_key` | string | `Not set` | Sensitive | Master AES key for encrypting channel credentials at rest (base64 32 bytes); treat as a fixed salt, do not rotate |
+| `GRASP_SECRETS_KEY` | `security.secrets_key` | string | `Not set` | Sensitive | Master AES key for encrypting credentials at rest (base64 32 bytes); treat as a fixed salt, do not rotate. When unset, non-production modes generate secrets.key next to the SQLite database |
 | `GRASP_STORAGE_DRIVER` | `storage.driver` | enum | `local` | Public | Attachment storage driver: local (cos reserved) |
 | `GRASP_BLOBS_ROOT` | `storage.blobs_root` | path | `data/blobs` | Public | Local attachment blob root directory |

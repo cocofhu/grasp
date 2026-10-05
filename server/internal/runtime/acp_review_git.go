@@ -16,15 +16,12 @@ const reviewDirtyFileCap = 80
 // files should be committed (skipping temp files), then pushes already-committed
 // working branches. No-op when the node does not touch repos, no session is
 // parked, or the tree is clean and already pushed. Never fails the confirm.
+// Clarify Agents get the offer for adopted Live edits; other Agents only when
+// they commit code.
 func (c *acpProvider) OfferCommitOnConfirm(ctx context.Context, req NodeReq) ReactTurn {
-	if !nodeTouchesRepos(req.NodeType) {
-		return ReactTurn{}
-	}
-	if models.ReviewDesignNode(req.NodeType) {
-		// Planning/design nodes never commit: review demos and Live trials stay
-		// in this node's sandbox, and downstream clones fresh.
-		log.Info().Str("run", req.RunID).Str("node", req.NodeID).Str("node_type", req.NodeType).
-			Msg("review confirm git wrap-up skipped: design node does not commit")
+	if req.Caps == nil || (!req.Caps.Clarify() && !req.Caps.CommitsCode()) {
+		// Agents that never commit keep review demos and Live trials in this
+		// node's sandbox; downstream clones fresh.
 		return ReactTurn{}
 	}
 	key := reactKey(req)
@@ -53,7 +50,7 @@ func (c *acpProvider) OfferCommitOnConfirm(ctx context.Context, req NodeReq) Rea
 				Msg("review confirm git wrap-up skipped: session disconnected")
 		} else {
 			files := formatDirtyFiles(ch)
-			prompt := c.agentPrompts(req).ReviewCommitWrapUpFor(files)
+			prompt := models.ReviewCommitWrapUpFor(files)
 			chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
 			res, err := c.streamChat(chatCtx, sess.acp, req, prompt, nil)
 			cancel()
@@ -69,7 +66,6 @@ func (c *acpProvider) OfferCommitOnConfirm(ctx context.Context, req NodeReq) Rea
 	}
 
 	log.Info().Str("run", req.RunID).Str("node", req.NodeID).
-		Str("node_type", req.NodeType).
 		Bool("dirty", dirty).Bool("unpushed", unpushed).
 		Bool("asked_agent", narration != "").
 		Msg("review confirm git wrap-up")

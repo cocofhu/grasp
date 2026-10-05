@@ -440,7 +440,7 @@
       groupName: 'Grasp项目组',
       prefix: 'Grasp',
       pmName: 'Grasp项目经理',
-      background: 'Grasp 是一套多 Agent 研发协作平台：支持工作流编排、沙箱执行、人工门禁与 PM 咨询。目标仓库为 GitHub monorepo，需要覆盖调研→计划→方案→澄清→视觉→实现→测试→Review→变更摘要的完整流水线。',
+      background: 'Grasp 是一套多 Agent 研发协作平台：支持工作流编排、沙箱执行、人工门禁与 PM 咨询。目标仓库为 GitHub monorepo，需要覆盖调研→计划→方案→澄清→视觉→实现→测试→Review→变更摘要的完整工作流。',
       acp: 'cursor',
       apiKey: '',
       gitUrl: 'https://github.com/example/approving.git',
@@ -513,7 +513,7 @@
           </div>
           <div class="field">
             <label>项目背景 <span class="req">*</span></label>
-            <textarea id="fBackground" rows="5" placeholder="描述项目目标、技术栈、仓库形态、流水线诉求等。将作为沙箱建团 Prompt。">${esc(state.background)}</textarea>
+            <textarea id="fBackground" rows="5" placeholder="描述项目目标、技术栈、仓库形态、工作流诉求等。将作为沙箱建团 Prompt。">${esc(state.background)}</textarea>
             <div class="help">类似 Prompt：确认后注入沙箱，PM 据此（并结合仓库）生成根组、上下级与工程师团队。</div>
           </div>
         `;

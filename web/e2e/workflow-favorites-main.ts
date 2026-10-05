@@ -106,7 +106,7 @@ for (let i = 0; i < WORKFLOW_FAVORITES_MAX; i++) {
   WF_CATALOG[id] = {
     id,
     projectId: 'p-checkout',
-    name: `满额流水线 ${i}`,
+    name: `满额工作流 ${i}`,
     description: '',
     status: 'published',
     version: 1,

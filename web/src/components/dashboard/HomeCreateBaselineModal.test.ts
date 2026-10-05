@@ -81,7 +81,7 @@ describe('HomeCreateBaselineModal (plan g2 / g3 / g4)', () => {
     mocks.createWorkflowFromBaseline.mockReset()
     mocks.toastSuccess.mockReset()
     mocks.listProjects.mockResolvedValue([p1])
-    mocks.createWorkflowFromBaseline.mockResolvedValue({ id: 'wf-new', name: '需求对齐流水线' })
+    mocks.createWorkflowFromBaseline.mockResolvedValue({ id: 'wf-new', name: '需求对齐工作流' })
   })
 
   afterEach(() => {
@@ -95,8 +95,8 @@ describe('HomeCreateBaselineModal (plan g2 / g3 / g4)', () => {
     expect(qExists('home-create-project-list')).toBe(false)
     const name = q('home-create-workflow-name')
     expect(name.element).toBe(document.activeElement)
-    await name.setValue('需求对齐流水线')
-    expect((name.element as HTMLInputElement).value).toBe('需求对齐流水线')
+    await name.setValue('需求对齐工作流')
+    expect((name.element as HTMLInputElement).value).toBe('需求对齐工作流')
     expect(document.body.textContent).toContain('项目：Grasp')
     expect(document.body.textContent).not.toContain('从零开始')
     wrapper.unmount()
@@ -158,7 +158,7 @@ describe('HomeCreateBaselineModal (plan g2 / g3 / g4)', () => {
     await flushPromises()
     const submit = q('home-create-submit')
     expect((submit.element as HTMLButtonElement).disabled).toBe(true)
-    await q('home-create-workflow-name').setValue('需求对齐流水线')
+    await q('home-create-workflow-name').setValue('需求对齐工作流')
     await flushPromises()
     expect((q('home-create-submit').element as HTMLButtonElement).disabled).toBe(true)
     const url = document.querySelector('input[placeholder*="https"]') as HTMLInputElement | null
@@ -170,11 +170,11 @@ describe('HomeCreateBaselineModal (plan g2 / g3 / g4)', () => {
     await flushPromises()
     expect(mocks.createWorkflowFromBaseline).toHaveBeenCalledWith(
       'proj-1',
-      '需求对齐流水线',
+      '需求对齐工作流',
       expect.arrayContaining([expect.objectContaining({ url: 'https://github.com/org/repo' })]),
     )
     expect(mocks.toastSuccess).toHaveBeenCalled()
-    expect(wrapper.emitted('created')).toEqual([[{ id: 'wf-new', name: '需求对齐流水线' }]])
+    expect(wrapper.emitted('created')).toEqual([[{ id: 'wf-new', name: '需求对齐工作流' }]])
     expect(wrapper.emitted('close')).toBeTruthy()
     wrapper.unmount()
   })

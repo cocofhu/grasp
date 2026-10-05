@@ -10,7 +10,7 @@ function stubRun(id: string, title: string, tags: string[] = []) {
   return {
     id,
     workflowId: 'wf-1',
-    workflowName: 'Demo Pipeline',
+    workflowName: 'Demo Workflow',
     title,
     status: 'waiting_human',
     trigger: 'manual',
@@ -89,7 +89,7 @@ async function mockApis(page: Page, capture: { runRequests: Request[] }) {
 
     if (path.endsWith('/api/workflows') || path === '/api/workflows') {
       await route.fulfill({
-        json: [{ id: 'wf-1', name: 'Demo Pipeline', status: 'published', version: 1, nodes: [], edges: [] }],
+        json: [{ id: 'wf-1', name: 'Demo Workflow', status: 'published', version: 1, nodes: [], edges: [] }],
       })
       return
     }

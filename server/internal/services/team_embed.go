@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"path"
 	"strings"
+
+	"github.com/cocofhu/grasp/internal/models"
 )
 
 //go:embed all:team_embed
@@ -14,66 +16,51 @@ var teamEmbedFS embed.FS
 
 const teamEmbedRoot = "team_embed"
 
-// TeamRoleTemplate describes one engineer role in the reference roster (1 PM + 9).
+// TeamRoleTemplate describes one built-in workflow Agent template.
 type TeamRoleTemplate struct {
 	ID          string `json:"id"`
 	EmbedName   string `json:"embedName"`
 	RoleLabelZH string `json:"roleLabelZh"`
 	Summary     string `json:"summary"`
+	// Capabilities is the template's declared capability set (from agent.json).
+	Capabilities *models.AgentCapabilities `json:"capabilities,omitempty"`
 }
 
 // TeamPMEmbedName is the embedded PM Leader package under team_embed/.
 const TeamPMEmbedName = "PMAgent"
 
-// TeamEngineerTemplates is the fixed 9-role pipeline roster (team bootstrap).
+// TeamEngineerTemplates are the built-in workflow Agents, in workflow order.
 var TeamEngineerTemplates = []TeamRoleTemplate{
-	{ID: "research", EmbedName: "ResearchAgent", RoleLabelZH: "调研工程师", Summary: "技术与竞品调研"},
-	{ID: "plan", EmbedName: "PlanAgent", RoleLabelZH: "计划工程师", Summary: "拆解实现计划"},
-	{ID: "proposal", EmbedName: "ProposalAgent", RoleLabelZH: "方案工程师", Summary: "方案提案"},
-	{ID: "clarify", EmbedName: "ClarifyAgent", RoleLabelZH: "澄清工程师", Summary: "需求澄清"},
-	{ID: "visual", EmbedName: "VisualAgent", RoleLabelZH: "视觉原型工程师", Summary: "可预览视觉原型"},
-	{ID: "implement", EmbedName: "ImplementAgent", RoleLabelZH: "实现工程师", Summary: "代码实现与推送"},
-	{ID: "test", EmbedName: "TestAgent", RoleLabelZH: "测试工程师", Summary: "测试验证"},
-	{ID: "review", EmbedName: "ReviewAgent", RoleLabelZH: "代码Review工程师", Summary: "代码复核"},
-	{ID: "preview", EmbedName: "PreviewAgent", RoleLabelZH: "变更摘要视觉工程师", Summary: "变更摘要视觉预览"},
+	{ID: "clarify", EmbedName: "ClarifyAgent", RoleLabelZH: "需求澄清", Summary: "多轮对话澄清需求、写出计划;缺陷时查清根因,可启动应用演示"},
+	{ID: "implement", EmbedName: "ImplementAgent", RoleLabelZH: "实现", Summary: "按计划实现、测试、提交推送并开 MR,实现后可启动应用复审"},
+	{ID: "test_review", EmbedName: "TestReviewAgent", RoleLabelZH: "测试评审", Summary: "执行测试并做代码评审,两项都通过才放行,测试后可启动应用复审"},
 }
 
-// SoloExtraTemplates are available for single-agent create / template list,
-// but are not part of the 1 PM + 9 team bootstrap roster.
-var SoloExtraTemplates = []TeamRoleTemplate{
-	{ID: "preflight", EmbedName: "PreflightAgent", RoleLabelZH: "环境确认工程师", Summary: "环境确认"},
-}
-
-// TeamEmbedPackageNames lists all packages under team_embed/ (PM + 9 + solo extras).
+// TeamEmbedPackageNames lists all packages under team_embed/.
 func TeamEmbedPackageNames() []string {
-	out := make([]string, 0, 1+len(TeamEngineerTemplates)+len(SoloExtraTemplates))
-	out = append(out, TeamPMEmbedName)
+	out := []string{TeamPMEmbedName}
 	for _, r := range TeamEngineerTemplates {
 		out = append(out, r.EmbedName)
 	}
-	for _, r := range SoloExtraTemplates {
-		out = append(out, r.EmbedName)
+	return out
+}
+
+// AllCreateTemplates returns the built-in templates with their capabilities.
+func AllCreateTemplates() []TeamRoleTemplate {
+	out := make([]TeamRoleTemplate, 0, len(TeamEngineerTemplates))
+	for _, t := range TeamEngineerTemplates {
+		if tmpl, err := loadTeamAgentTemplate(t.EmbedName); err == nil {
+			t.Capabilities = tmpl.Capabilities
+		}
+		out = append(out, t)
 	}
 	return out
 }
 
-// AllCreateTemplates returns engineer roles plus solo extras (for GET templates / create).
-func AllCreateTemplates() []TeamRoleTemplate {
-	out := make([]TeamRoleTemplate, 0, len(TeamEngineerTemplates)+len(SoloExtraTemplates))
-	out = append(out, TeamEngineerTemplates...)
-	out = append(out, SoloExtraTemplates...)
-	return out
-}
-
-// TeamRoleByID returns a template by id (bootstrap roster or solo extras).
+// TeamRoleByID returns a built-in template by id.
 func TeamRoleByID(id string) (TeamRoleTemplate, bool) {
 	id = strings.TrimSpace(id)
 	for _, t := range TeamEngineerTemplates {
-		if t.ID == id {
-			return t, true
-		}
-	}
-	for _, t := range SoloExtraTemplates {
 		if t.ID == id {
 			return t, true
 		}
@@ -125,17 +112,17 @@ func loadTeamAgentTemplate(embedName string) (Agent, error) {
 		layout = *cfg.Layout
 	}
 	return Agent{
-		Name:       embedName,
-		AcpBackend: NormalizeAcpBackend(cfg.AcpBackend),
-		Files:      files,
-		MCP:        mcp,
-		Env:        env,
-		Layout:     layout,
-		Prompts:    cfg.Prompts,
+		Name:         embedName,
+		AcpBackend:   NormalizeAcpBackend(cfg.AcpBackend),
+		Files:        files,
+		MCP:          mcp,
+		Env:          env,
+		Layout:       layout,
+		Capabilities: cfg.Capabilities,
 	}, nil
 }
 
-// LoadTeamAgentTemplate loads an embedded pack by folder name (e.g. TestAgent).
+// LoadTeamAgentTemplate loads an embedded pack by folder name (e.g. ImplementAgent).
 func LoadTeamAgentTemplate(embedName string) (Agent, error) {
 	return loadTeamAgentTemplate(embedName)
 }
@@ -187,8 +174,8 @@ func ApplyCreateTemplate(templateID string, agent *Agent) error {
 			agent.Layout.WorkspaceDir = DefaultWorkspaceDir
 		}
 	}
-	if agent.Prompts == nil && tmpl.Prompts != nil {
-		agent.Prompts = tmpl.Prompts
+	if agent.Capabilities == nil {
+		agent.Capabilities = tmpl.Capabilities.Clone()
 	}
 	return nil
 }
@@ -225,4 +212,30 @@ func readTeamEmbedWorkspaceFiles(root string) ([]AgentFile, error) {
 		return nil, fmt.Errorf("team embed workspace empty %s (check Docker .md allowlist for team_embed)", root)
 	}
 	return out, nil
+}
+
+// loadDefaultWorkflowEnvelope reads the built-in default workflow
+// (需求澄清 → 实现 → 测试评审, fail → 实现).
+func loadDefaultWorkflowEnvelope() (models.ExportEnvelope, error) {
+	raw, err := teamEmbedFS.ReadFile(path.Join(teamEmbedRoot, "default-workflow.json"))
+	if err != nil {
+		return models.ExportEnvelope{}, fmt.Errorf("read default workflow embed: %w", err)
+	}
+	env, err := ValidateImport(raw)
+	if err != nil {
+		return models.ExportEnvelope{}, err
+	}
+	env.Name = OnboardingWorkflowName
+	env.NeedsRepo = true
+	return env, nil
+}
+
+// onboardingTemplateAgent loads a built-in template as the Agent onboarding saves.
+func onboardingTemplateAgent(role TeamRoleTemplate) (Agent, error) {
+	tmpl, err := loadTeamAgentTemplate(role.EmbedName)
+	if err != nil {
+		return Agent{}, err
+	}
+	tmpl.Env = stripTokenKeysFromEnvMap(tmpl.Env)
+	return tmpl, nil
 }

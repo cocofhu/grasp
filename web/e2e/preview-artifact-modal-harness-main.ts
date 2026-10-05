@@ -12,6 +12,7 @@ import ReactArtifactStage from '../src/components/run/ReactArtifactStage.vue'
 import type { Artifact } from '../src/lib/shared/types'
 import { api } from '../src/lib/api/api'
 import { resetStageOpenStateForTests } from '../src/lib/run/reactArtifactPreview'
+import { CLARIFY_CAPS } from '../src/test/capsFixtures'
 
 const params = new URLSearchParams(location.search)
 const mode = params.get('mode') || 'stage'
@@ -88,7 +89,7 @@ async function mountStage() {
               artifacts: artifacts.value,
               runId: 'run-1',
               nodeId: 'approve_1',
-              nodeType: 'approve',
+              node: { type: 'agent', caps: CLARIFY_CAPS },
               hideAppPreview: true,
               remoteKind: 'app',
               annotatable: false,

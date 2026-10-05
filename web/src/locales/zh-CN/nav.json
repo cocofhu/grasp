@@ -9,8 +9,8 @@
     "gates": "待办",
     "artifacts": "产物",
     "notifications": "通知",
-    "quickPipelines": "快捷流水线",
-    "quickPipelinesEmpty": "在流水线上点星标即可收藏",
+    "quickWorkflows": "快捷工作流",
+    "quickWorkflowsEmpty": "在工作流上点星标即可收藏",
     "groupConfig": "配置",
     "groupPlatform": "平台配置",
     "agents": "智能体",
@@ -19,7 +19,6 @@
     "triggers": "触发器",
     "settings": "设置",
     "general": "通用",
-    "platformRules": "平台规则",
     "backHome": "返回首页"
   }
 }

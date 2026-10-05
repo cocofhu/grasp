@@ -8,7 +8,7 @@
  *
  * Clarify demoHtml / visual page.html and other srcdoc content must not depend
  * on Web Storage (localStorage/sessionStorage) or cookie-backed same-origin
- * state; need a full SPA or persistence → app_preview (noVNC).
+ * state; need a full SPA or persistence → the app preview (noVNC).
  */
 export const SANDBOX_ATTR = 'allow-scripts allow-forms'
 

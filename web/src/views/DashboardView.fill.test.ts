@@ -10,8 +10,8 @@ const particleBgSrc = readFileSync(
   join(dir, '../components/dashboard/HomeParticleMeshBackground.vue'),
   'utf8',
 )
-const pipelineSelectSrc = readFileSync(
-  join(dir, '../components/dashboard/HomePipelineSelect.vue'),
+const workflowSelectSrc = readFileSync(
+  join(dir, '../components/dashboard/HomeWorkflowSelect.vue'),
   'utf8',
 )
 const shellSrc = readFileSync(join(dir, '../components/shell/AppShell.vue'), 'utf8')
@@ -25,13 +25,13 @@ describe('DashboardView home chat layout', () => {
     expect(src).toMatch(/home-shell__content[^>]*overflow-y-auto/)
   })
 
-  it('centers composer, pipeline cards, and empty states', () => {
+  it('centers composer, workflow cards, and empty states', () => {
     expect(src).toMatch(/data-testid="home-composer"/)
-    expect(src).toMatch(/data-testid="home-pipeline-cards"/)
+    expect(src).toMatch(/data-testid="home-workflow-cards"/)
     expect(src).toMatch(/data-testid="home-composer-input"/)
     expect(src).not.toMatch(/data-testid="home-no-project"/)
     expect(src).not.toMatch(/data-testid="dashboard-select-project"/)
-    expect(src).toMatch(/data-testid="home-pipelines-empty"/)
+    expect(src).toMatch(/data-testid="home-workflows-empty"/)
     expect(src).toMatch(/data-testid="home-go-projects"/)
     expect(src).toMatch(/data-testid="home-new-workflow"/)
     expect(src).toMatch(/HomeCreateBaselineModal/)
@@ -75,11 +75,11 @@ describe('DashboardView home chat layout', () => {
     expect(src).toMatch(/home-composer__send/)
     expect(src).toMatch(/data-testid="home-composer"/)
     expect(src).toMatch(/data-testid="home-composer-plus"/)
-    expect(src).toMatch(/HomePipelineSelect/)
+    expect(src).toMatch(/HomeWorkflowSelect/)
     expect(src).toMatch(/HomePrioritySelect/)
     expect(src).toMatch(/:initial-priority="launchPriority"/)
-    expect(pipelineSelectSrc).toMatch(/data-testid="home-pipeline-select"/)
-    expect(src).not.toMatch(/<select[^>]*home-pipeline-select/)
+    expect(workflowSelectSrc).toMatch(/data-testid="home-workflow-select"/)
+    expect(src).not.toMatch(/<select[^>]*home-workflow-select/)
     expect(src).toMatch(/data-testid="home-composer-send"/)
     expect(src).toMatch(/<textarea/)
     expect(src).toMatch(/\.home-composer\s*\{[^}]*border-radius:\s*16px/s)
@@ -87,14 +87,14 @@ describe('DashboardView home chat layout', () => {
     expect(src).toMatch(/\.home-composer__send\s*\{[^}]*border-radius:\s*8px/s)
   })
 
-  // review — 无 subtitle；流水线卡片脱离全局 .card；圆角 Token 12px
-  it('omits home-subtitle and uses rounded pipeline cards', () => {
+  // review — 无 subtitle；工作流卡片脱离全局 .card；圆角 Token 12px
+  it('omits home-subtitle and uses rounded workflow cards', () => {
     expect(src).not.toMatch(/data-testid="home-subtitle"/)
     expect(src).toMatch(/class="home-shell__card[^"]*border border-line/)
     expect(src).not.toMatch(/class="[^"]*\bcard\b[^"]*home-shell__card|class="home-shell__card[^"]*\bcard\b/)
     expect(src).toMatch(/\.home-shell__card\s*\{[^}]*border-radius:\s*12px/s)
-    expect(src).toMatch(/data-testid="home-pipeline-card-name"/)
-    expect(src).toMatch(/home-pipeline-card-project/)
+    expect(src).toMatch(/data-testid="home-workflow-card-name"/)
+    expect(src).toMatch(/home-workflow-card-project/)
     expect(src).toMatch(/p\.projectName/)
     expect(src).toMatch(/rounded bg-err[\s\S]{0,80}data-testid="home-attach-remove"/)
     expect(src).not.toMatch(/rounded-none bg-err[\s\S]{0,80}data-testid="home-attach-remove"/)
@@ -115,26 +115,26 @@ describe('DashboardView home chat layout', () => {
     expect(src).toMatch(/prefers-reduced-motion/)
   })
 
-  // plan g1 — pipeline rail hides scrollbar and adds edge nav aligned to page.html demo
-  it('hides pipeline horizontal scrollbar and adds edge scroll arrows', () => {
-    expect(src).toMatch(/data-testid="home-pipeline-rail-wrap"/)
-    expect(src).toMatch(/data-testid="home-pipeline-scroll-prev"/)
-    expect(src).toMatch(/data-testid="home-pipeline-scroll-next"/)
-    expect(src).toMatch(/home-pipeline-rail/)
-    expect(src).toMatch(/home-pipeline-rail--overflow/)
+  // plan g1 — workflow rail hides scrollbar and adds edge nav aligned to page.html demo
+  it('hides workflow horizontal scrollbar and adds edge scroll arrows', () => {
+    expect(src).toMatch(/data-testid="home-workflow-rail-wrap"/)
+    expect(src).toMatch(/data-testid="home-workflow-scroll-prev"/)
+    expect(src).toMatch(/data-testid="home-workflow-scroll-next"/)
+    expect(src).toMatch(/home-workflow-rail/)
+    expect(src).toMatch(/home-workflow-rail--overflow/)
     expect(src).toMatch(/justify-content:\s*center/)
-    expect(src).toMatch(/home-pipeline-rail--overflow[\s\S]*justify-content:\s*flex-start/)
+    expect(src).toMatch(/home-workflow-rail--overflow[\s\S]*justify-content:\s*flex-start/)
     expect(src).not.toMatch(
-      /data-testid="home-pipeline-cards"[^>]*justify-center/,
+      /data-testid="home-workflow-cards"[^>]*justify-center/,
     )
     expect(src).toMatch(/scrollbar-width:\s*none/)
     expect(src).toMatch(/::-webkit-scrollbar/)
-    expect(src).toMatch(/home-pipeline-nav/)
-    expect(src).toMatch(/home-pipeline-fade/)
-    expect(src).toMatch(/syncPipelineNav/)
-    expect(src).toMatch(/scrollPipelineByDir/)
+    expect(src).toMatch(/home-workflow-nav/)
+    expect(src).toMatch(/home-workflow-fade/)
+    expect(src).toMatch(/syncWorkflowNav/)
+    expect(src).toMatch(/scrollWorkflowByDir/)
     expect(src).not.toMatch(
-      /data-testid="home-pipeline-cards"[^>]*overflow-x-auto/,
+      /data-testid="home-workflow-cards"[^>]*overflow-x-auto/,
     )
   })
 
@@ -183,20 +183,20 @@ describe('DashboardView home chat layout', () => {
   })
 
   // plan g1 / g2 — whole-rail enter: no loading copy; immediate 420ms group rise; reduced-motion
-  it('reveals pipeline rail as one enter group without loading copy or post-success wait', () => {
-    expect(src).not.toMatch(/data-testid="home-pipelines-loading"/)
+  it('reveals workflow rail as one enter group without loading copy or post-success wait', () => {
+    expect(src).not.toMatch(/data-testid="home-workflows-loading"/)
     expect(src).not.toMatch(/v-else-if="loading"/)
-    expect(src).toMatch(/data-testid="home-pipeline-enter"/)
-    expect(src).toMatch(/home-pipeline-enter--ready/)
-    expect(src).toMatch(/pipelineRailRevealed/)
+    expect(src).toMatch(/data-testid="home-workflow-enter"/)
+    expect(src).toMatch(/home-workflow-enter--ready/)
+    expect(src).toMatch(/workflowRailRevealed/)
     expect(src).toMatch(/prev === true && now === false && !loadError/)
-    expect(src).toMatch(/animation:\s*home-pipeline-rail-enter 420ms cubic-bezier\(0\.16,\s*1,\s*0\.3,\s*1\)/)
+    expect(src).toMatch(/animation:\s*home-workflow-rail-enter 420ms cubic-bezier\(0\.16,\s*1,\s*0\.3,\s*1\)/)
     expect(src).not.toMatch(/nth-child\([^)]+\)[^{]*animation-delay|animation-delay:[^;]+nth-child/)
     expect(src).not.toMatch(/DEFAULT_MIN_VISIBLE|SHOW_AFTER|minVisible|min-visible|show-after/)
-    expect(src).toMatch(/pipelineRailRevealed\.value = true/)
-    expect(src).not.toMatch(/pipelineRailRevealed\.value = false/)
+    expect(src).toMatch(/workflowRailRevealed\.value = true/)
+    expect(src).not.toMatch(/workflowRailRevealed\.value = false/)
     expect(src).toMatch(
-      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.home-pipeline-enter[\s\S]*animation:\s*none/,
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.home-workflow-enter[\s\S]*animation:\s*none/,
     )
   })
 })

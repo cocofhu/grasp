@@ -258,7 +258,7 @@ const runFailureReason = computed(() => {
 const showRunFailureBanner = computed(() => !!runFailureReason.value)
 const { draft: clarifyDraft, attachments: clarifyAttachments, annotations: clarifyAnnotations } = useClarifyDraft(() => runId.value, () => selected.value)
 
-/** VNC pick on app_preview review stage → same ReAct annotation chips as structured ⤴. */
+/** VNC pick on the app-preview review stage → same ReAct annotation chips as structured ⤴. */
 const lastStagedAppPreviewPick = ref<AppPreviewPickPayload | null>(null)
 
 function onAppPreviewStagedPick(payload: AppPreviewPickPayload | null) {

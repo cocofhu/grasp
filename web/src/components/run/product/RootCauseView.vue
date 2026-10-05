@@ -27,7 +27,8 @@ export type RootCauseDoc = {
 const props = defineProps<{ doc: RootCauseDoc; accent?: string; artifacts?: Artifact[] }>()
 
 const { t } = useI18n()
-const hex = computed(() => props.accent || '#818CF8')
+const hex = computed(() => props.accent || 'rgb(var(--c-hue-1))')
+const hexSoft = computed(() => `color-mix(in srgb, ${hex.value} 13%, transparent)`)
 
 const diagrams = computed(() =>
   (props.doc.diagrams || []).filter((d) => (d.source || '').trim()),
@@ -230,7 +231,7 @@ function selectDiagramTab(index: number) {
           role="tab"
           class="shrink-0 rounded-full px-2 py-0.5 text-[11px] leading-tight transition-colors"
           :class="activeDiagramTab.index === di ? '' : 'bg-base text-txt3'"
-          :style="activeDiagramTab.index === di ? { background: hex + '22', color: hex } : undefined"
+          :style="activeDiagramTab.index === di ? { background: hexSoft, color: hex } : undefined"
           :aria-selected="activeDiagramTab.index === di"
           :data-testid="`root-cause-diagram-tab-${di}`"
           @click="selectDiagramTab(di)"

@@ -193,13 +193,13 @@ describe('useAgentStudio', () => {
     app.unmount()
   })
 
-  it('g2.1: switching to prompts then back to files stays clean (empty prompts)', async () => {
+  it('switching to capabilities then back to files stays clean', async () => {
     const { studio, app } = await withAgentStudio()
     await flushPromises()
     expect(studio.agentDirty.value).toBe(false)
-    studio.requestStudioTab('prompts')
+    studio.requestStudioTab('capabilities')
     await nextTick()
-    expect(studio.tab.value).toBe('prompts')
+    expect(studio.tab.value).toBe('capabilities')
     expect(studio.agentDirty.value).toBe(false)
     studio.requestStudioTab('files')
     await nextTick()
@@ -207,58 +207,55 @@ describe('useAgentStudio', () => {
     app.unmount()
   })
 
-  it('g2.1: CRLF prompts + textarea LF writeback does not mark dirty', async () => {
+  it('editing capabilities marks dirty; save sends them and discard restores', async () => {
     mocks.listAgents.mockResolvedValue([
       {
         name: 'agent-a',
         projectId: 'proj-1',
         acpBackend: 'cursor',
-        prompts: { producesContract: '审查要求\r\n第二行' },
-        env: { GIT_SSH_PRIVATE_KEY: 'k', FOO: 'v' },
-      },
-    ])
-    const { studio, app } = await withAgentStudio()
-    await flushPromises()
-    expect(studio.agentDirty.value).toBe(false)
-    studio.requestStudioTab('prompts')
-    await nextTick()
-    const d = studio.draft.value
-    expect(d).toBeTruthy()
-    if (d) {
-      d.prompts.producesContract = d.prompts.producesContract.replace(/\r\n/g, '\n')
-    }
-    expect(studio.agentDirty.value).toBe(false)
-    studio.requestStudioTab('files')
-    expect(studio.agentDirty.value).toBe(false)
-    app.unmount()
-  })
-
-  it('g2.2: editing a prompt fragment marks dirty; save and discard clear it', async () => {
-    mocks.listAgents.mockResolvedValue([
-      {
-        name: 'agent-a',
-        projectId: 'proj-1',
-        acpBackend: 'cursor',
-        prompts: { reactOpenSuffix: 'hello' },
+        capabilities: { interaction: 'auto', reads: ['*'] },
       },
     ])
     mocks.saveAgent.mockImplementation(async (payload: { name: string }) => payload)
     const { studio, app } = await withAgentStudio()
     await flushPromises()
     expect(studio.agentDirty.value).toBe(false)
-    studio.requestStudioTab('prompts')
-    studio.draft.value!.prompts.reactOpenSuffix = 'hello-edited'
+    studio.requestStudioTab('capabilities')
+    studio.draft.value!.capabilities!.review = true
     expect(studio.agentDirty.value).toBe(true)
     const saved = await studio.save()
     expect(saved).toBe(true)
+    expect(mocks.saveAgent.mock.calls.at(-1)?.[0]).toMatchObject({
+      capabilities: { interaction: 'auto', review: true, reads: ['*'] },
+    })
     expect(studio.agentDirty.value).toBe(false)
 
-    studio.draft.value!.prompts.reactOpenSuffix = 'again'
+    studio.draft.value!.capabilities!.review = false
     expect(studio.agentDirty.value).toBe(true)
     studio.discardUnsavedChanges()
     await nextTick()
-    expect(studio.draft.value!.prompts.reactOpenSuffix).toBe('hello-edited')
+    expect(studio.draft.value!.capabilities!.review).toBe(true)
     expect(studio.agentDirty.value).toBe(false)
+    app.unmount()
+  })
+
+  it('save rejects invalid capabilities and opens the capabilities tab', async () => {
+    mocks.listAgents.mockResolvedValue([
+      {
+        name: 'agent-a',
+        projectId: 'proj-1',
+        acpBackend: 'cursor',
+        capabilities: { interaction: 'auto', reads: ['*'] },
+      },
+    ])
+    mocks.saveAgent.mockReset()
+    const { studio, app } = await withAgentStudio()
+    await flushPromises()
+    studio.requestStudioTab('files')
+    studio.draft.value!.capabilities = { interaction: 'clarify', reads: ['*'] }
+    expect(await studio.save()).toBe(false)
+    expect(mocks.saveAgent).not.toHaveBeenCalled()
+    expect(studio.tab.value).toBe('capabilities')
     app.unmount()
   })
 })

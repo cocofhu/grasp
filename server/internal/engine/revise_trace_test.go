@@ -48,7 +48,7 @@ func reviseLoopGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input", Label: "输入"},
-			{ID: "design", Type: "agent", Label: "视觉设计", Config: map[string]any{"prompt": "设计", "produces": "design.md"}},
+			{ID: "design", Type: "agent", Caps: capsPlain, Label: "视觉设计", Config: map[string]any{"prompt": "设计", "produces": "design.md"}},
 			{ID: "gate", Type: "human_gate", Label: "设计门禁", Config: map[string]any{"title": "确认设计",
 				"actions": []any{
 					map[string]any{"id": "approve", "label": "批准"},
@@ -59,8 +59,8 @@ func reviseLoopGraph() models.Graph {
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "design"},
 			{ID: "e2", Source: "design", Target: "gate"},
-			{ID: "e3", Source: "gate", Target: "output", When: "action == 'approve'", Kind: models.EdgeSuccess},
-			{ID: "e4", Source: "gate", Target: "design", When: "action == 'revise'", Kind: models.EdgeSuccess},
+			{ID: "e3", Source: "gate", Target: "output", SourceHandle: "approve", Kind: models.EdgeSuccess},
+			{ID: "e4", Source: "gate", Target: "design", SourceHandle: "revise", Kind: models.EdgeSuccess},
 		},
 	}
 }
@@ -143,7 +143,7 @@ func reactAccumGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "clarify", Type: "react", Label: "澄清", Config: map[string]any{"prompt": "澄清"}},
+			{ID: "clarify", Type: "agent", Caps: capsClarify, Label: "澄清", Config: map[string]any{"prompt": "澄清"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -154,10 +154,10 @@ func reactAccumGraph() models.Graph {
 }
 
 // TestReactMultiTurnTraceAccumulates verifies a react node accumulates every
-// turn's MCP calls on its single StateRun row (opening turn + each reply flush),
-// rather than only the opening turn or the last one.
+// turn's MCP calls on its single StateRun row (each reply flush), rather than
+// only the first turn or the last one.
 func TestReactMultiTurnTraceAccumulates(t *testing.T) {
-	fp := &fakeProvider{reactPending: 2} // 2 follow-up rounds before finishing
+	fp := &fakeProvider{reactPending: 3} // every reply asks one more question
 	eng, db, _ := setupRecEngine(t, reactAccumGraph(), fp)
 
 	run, err := eng.StartRun("wf", nil, "test")
@@ -165,9 +165,9 @@ func TestReactMultiTurnTraceAccumulates(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 
-	// Opening turn asks a question (ask #1) and pauses.
+	// The node parks without chatting; three replies each ask a question,
+	// then the confirm concludes it.
 	waitReactPause(t, db, run.ID, "clarify")
-	// Two follow-up rounds (ask #2, #3), then a final reply concludes it.
 	for _, msg := range []string{"答复1", "答复2", "答复3"} {
 		if err := eng.ReactReply(run.ID, "clarify", msg, nil, nil, false); err != nil {
 			t.Fatalf("reply %q: %v", msg, err)
@@ -175,6 +175,9 @@ func TestReactMultiTurnTraceAccumulates(t *testing.T) {
 		if err := eng.waitReviewReadyForTest(run.ID, "clarify", 5*time.Second); err != nil {
 			t.Fatalf("wait after %q: %v", msg, err)
 		}
+	}
+	if err := eng.ReactReply(run.ID, "clarify", "确认", nil, nil, true); err != nil {
+		t.Fatalf("confirm: %v", err)
 	}
 	waitRunStatus(t, db, run.ID, "completed")
 

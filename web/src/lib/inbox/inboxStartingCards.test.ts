@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
-  isApproveAwaitingHuman,
-  isApproveStillStarting,
+  isClarifyAwaitingHuman,
+  isClarifyStillStarting,
   isStartFailedRun,
   makeIncomingGhost,
   resolveIncomingApproval,
   vanishedStartingRows,
 } from './inboxStartingCards'
 import type { InboxItem, Run } from '@/lib/shared/types'
+import { CLARIFY_CAPS } from '@/test/capsFixtures'
 
 function clarify(over: Partial<InboxItem> = {}): InboxItem {
   return {
@@ -68,13 +69,13 @@ describe('makeIncomingGhost', () => {
   it('falls back to a placeholder label and node id', () => {
     const ghost = makeIncomingGhost({ runId: 'run-1', nodeId: '' }, '', 'T0')
     expect(ghost.label).toBe('…')
-    expect(ghost.nodeId).toBe('grasp')
+    expect(ghost.nodeId).toBe('incoming')
   })
 })
 
 describe('isStartFailedRun', () => {
   it('detects a sandbox-setup failure that leaves the run non-terminal', () => {
-    // The engine records an approve sandbox-setup failure on the node execution
+    // The engine records a clarify sandbox-setup failure on the node execution
     // and stops without failing the run, so run status alone says "running".
     const run = {
       status: 'running',
@@ -105,12 +106,12 @@ describe('isStartFailedRun', () => {
     expect(isStartFailedRun(run, '')).toBe(false)
   })
 
-  it('detects approve setup failure via graph when the hinted id misses', () => {
+  it('detects clarify setup failure via graph when the hinted id misses', () => {
     const run = {
       status: 'running',
       nodes: [
         { id: 'in', type: 'input' },
-        { id: 'approve_7gl6', type: 'approve' },
+        { id: 'approve_7gl6', type: 'agent', caps: CLARIFY_CAPS },
       ],
       nodeRuns: {
         approve_7gl6: { nodeId: 'approve_7gl6', status: 'failed', error: 'sandbox setup failed' },
@@ -121,10 +122,10 @@ describe('isStartFailedRun', () => {
   })
 })
 
-describe('isApproveStillStarting', () => {
-  it('is true only while the approve node (or whole run) looks like a fresh boot', () => {
+describe('isClarifyStillStarting', () => {
+  it('is true only while the clarify node (or whole run) looks like a fresh boot', () => {
     expect(
-      isApproveStillStarting(
+      isClarifyStillStarting(
         {
           status: 'running',
           nodeRuns: { ap: { nodeId: 'ap', status: 'running' } },
@@ -132,13 +133,13 @@ describe('isApproveStillStarting', () => {
         'ap',
       ),
     ).toBe(true)
-    expect(isApproveStillStarting({ status: 'queued' } as Run, 'ap')).toBe(true)
-    expect(isApproveStillStarting({ status: 'running' } as Run, '')).toBe(true)
+    expect(isClarifyStillStarting({ status: 'queued' } as Run, 'ap')).toBe(true)
+    expect(isClarifyStillStarting({ status: 'running' } as Run, '')).toBe(true)
   })
 
   it('is false once the approval parked, completed, or the run left the boot window', () => {
     expect(
-      isApproveStillStarting(
+      isClarifyStillStarting(
         {
           status: 'waiting_human',
           nodeRuns: { ap: { nodeId: 'ap', status: 'waiting_human' } },
@@ -147,7 +148,7 @@ describe('isApproveStillStarting', () => {
       ),
     ).toBe(false)
     expect(
-      isApproveStillStarting(
+      isClarifyStillStarting(
         {
           status: 'running',
           nodeRuns: {
@@ -158,8 +159,8 @@ describe('isApproveStillStarting', () => {
         'ap',
       ),
     ).toBe(false)
-    expect(isApproveStillStarting({ status: 'completed' } as Run, 'ap')).toBe(false)
-    expect(isApproveStillStarting({ status: 'failed' } as Run, 'ap')).toBe(false)
+    expect(isClarifyStillStarting({ status: 'completed' } as Run, 'ap')).toBe(false)
+    expect(isClarifyStillStarting({ status: 'failed' } as Run, 'ap')).toBe(false)
   })
 
   it('uses graph approve nodes when the hinted id misses (ap vs approve_7gl6)', () => {
@@ -167,7 +168,7 @@ describe('isApproveStillStarting', () => {
       status: 'running',
       nodes: [
         { id: 'in', type: 'input' },
-        { id: 'approve_7gl6', type: 'approve' },
+        { id: 'approve_7gl6', type: 'agent', caps: CLARIFY_CAPS },
         { id: 'implement_qnlc', type: 'implement' },
       ],
       nodeRuns: {
@@ -176,24 +177,24 @@ describe('isApproveStillStarting', () => {
         implement_qnlc: { nodeId: 'implement_qnlc', status: 'running' },
       },
     } as unknown as Run
-    expect(isApproveStillStarting(run, 'ap')).toBe(false)
-    expect(isApproveStillStarting(run, '')).toBe(false)
+    expect(isClarifyStillStarting(run, 'ap')).toBe(false)
+    expect(isClarifyStillStarting(run, '')).toBe(false)
   })
 
-  it('keeps the ghost while approve is still booting after input completed', () => {
+  it('keeps the ghost while clarify is still booting after input completed', () => {
     const run = {
       status: 'running',
       nodes: [
         { id: 'in', type: 'input' },
-        { id: 'approve_7gl6', type: 'approve' },
+        { id: 'approve_7gl6', type: 'agent', caps: CLARIFY_CAPS },
       ],
       nodeRuns: {
         in: { nodeId: 'in', status: 'completed' },
         approve_7gl6: { nodeId: 'approve_7gl6', status: 'running' },
       },
     } as unknown as Run
-    expect(isApproveStillStarting(run, 'ap')).toBe(true)
-    expect(isApproveStillStarting(run, '')).toBe(true)
+    expect(isClarifyStillStarting(run, 'ap')).toBe(true)
+    expect(isClarifyStillStarting(run, '')).toBe(true)
   })
 })
 
@@ -217,10 +218,10 @@ describe('vanishedStartingRows', () => {
   })
 })
 
-describe('isApproveAwaitingHuman', () => {
+describe('isClarifyAwaitingHuman', () => {
   it('is true while the approve node is parked at waiting_human (plan g2.1)', () => {
     expect(
-      isApproveAwaitingHuman(
+      isClarifyAwaitingHuman(
         {
           status: 'waiting_human',
           nodeRuns: { ap: { nodeId: 'ap', status: 'waiting_human' } },
@@ -232,7 +233,7 @@ describe('isApproveAwaitingHuman', () => {
 
   it('is false once the approve left pending or the run finished', () => {
     expect(
-      isApproveAwaitingHuman(
+      isClarifyAwaitingHuman(
         {
           status: 'running',
           nodeRuns: {
@@ -243,18 +244,18 @@ describe('isApproveAwaitingHuman', () => {
         'ap',
       ),
     ).toBe(false)
-    expect(isApproveAwaitingHuman({ status: 'completed' } as Run, 'ap')).toBe(false)
-    expect(isApproveAwaitingHuman({ status: 'failed' } as Run, 'ap')).toBe(false)
+    expect(isClarifyAwaitingHuman({ status: 'completed' } as Run, 'ap')).toBe(false)
+    expect(isClarifyAwaitingHuman({ status: 'failed' } as Run, 'ap')).toBe(false)
   })
 
   it('resolves via graph approve nodes when the hinted id misses', () => {
     expect(
-      isApproveAwaitingHuman(
+      isClarifyAwaitingHuman(
         {
           status: 'waiting_human',
           nodes: [
             { id: 'in', type: 'input' },
-            { id: 'approve_x', type: 'approve' },
+            { id: 'approve_x', type: 'agent', caps: CLARIFY_CAPS },
           ],
           nodeRuns: { approve_x: { nodeId: 'approve_x', status: 'waiting_human' } },
         } as unknown as Run,

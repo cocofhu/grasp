@@ -74,7 +74,7 @@ const App = defineComponent({
     return () =>
       h('div', { class: 'min-h-screen p-4 max-w-3xl mx-auto space-y-8', 'data-testid': 'preflight-ux-root' }, [
         h('section', { 'data-testid': 'preflight-form-section' }, [
-          h('h2', { class: 'mb-2 text-sm text-txt2' }, 'FormCard (nodeType=preflight)'),
+          h('h2', { class: 'mb-2 text-sm text-txt2' }, 'FormCard (preflight)'),
           h(ClarifyChat, {
             runId: 'run-preflight-e2e',
             nodeId: 'preflight_1',
@@ -85,7 +85,6 @@ const App = defineComponent({
             reviewMode: false,
             annotateEnabled: false,
             hideFinish: true,
-            nodeType: 'preflight',
             sendLabel: '提交环境信息',
           }),
         ]),

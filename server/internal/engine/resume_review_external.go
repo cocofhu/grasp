@@ -6,7 +6,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/nodereg"
 )
 
 // ResumeReviewExternal consumes a review share link (CAS) then force-confirms
@@ -128,13 +127,13 @@ func (e *Engine) ResumeReviewExternalOpts(share *gateshare.Service, token, actio
 	return &ExternalResumeResult{Status: "confirmed", Action: "confirm", Link: usedLink}, nil
 }
 
-// isShareableReviewConfirmNode allows Inbox review / app_preview producers and
-// classic react clarify. Must not flip isReviewNode (that would skip Agent wrap-up).
+// isShareableReviewConfirmNode allows review-enabled and clarify Agents.
+// Must not flip isReviewNode (that would skip Agent wrap-up).
 func isShareableReviewConfirmNode(node *models.Node) bool {
 	if node == nil {
 		return false
 	}
-	return nodereg.ClarifyInteractive(node.Type) || isReviewNode(node.Type)
+	return node.Caps.Clarify() || isReviewNode(node)
 }
 
 // shareConfirmSettled is the only success condition for burning a review share

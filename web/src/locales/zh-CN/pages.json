@@ -2,7 +2,7 @@
   "pages": {
     "dashboard": {
       "title": "从一句话开始一次开发前澄清",
-      "subtitle": "选择 Grasp 流水线，第一句话会成为 Run 标题",
+      "subtitle": "选择 Grasp 工作流，第一句话会成为 Run 标题",
       "placeholder": "快速开启你的迭代",
       "placeholders": [
         "快速开启你的迭代",
@@ -12,12 +12,12 @@
         "贴文档或截图，从附件开始澄清"
       ],
       "selectProject": "选择项目",
-      "noProject": "尚未选择项目。选择一个项目后可从首页启动 Grasp 流水线。",
-      "noPipelines": "没有可在首页使用的流水线。请到项目详情为已发布、Grasp 打头的流水线打开「首页可见」。",
+      "noProject": "尚未选择项目。选择一个项目后可从首页启动 Grasp 工作流。",
+      "noWorkflows": "没有可在首页使用的工作流。请到项目详情为已发布、Grasp 打头的工作流打开「首页可见」。",
       "goCanvas": "去画布把 Grasp 接到开始节点后",
-      "goProjects": "前往项目查看流水线",
-      "pickPipeline": "请先选择一条流水线",
-      "noPipelineShort": "未选择流水线",
+      "goProjects": "前往项目查看工作流",
+      "pickWorkflow": "请先选择一个工作流",
+      "noWorkflowShort": "未选择工作流",
       "needText": "请先描述目标或附加文件",
       "send": "发送",
       "sendShortcut": "Ctrl/⌘ + Enter 发送",
@@ -26,7 +26,7 @@
       "scrollLeft": "短按向左滚一张，按住到最左端",
       "scrollRight": "短按向右滚一张，按住到最右端",
       "draftRestored": "草稿已恢复",
-      "pipelineMenu": {
+      "workflowMenu": {
         "more": "更多操作",
         "hide": "隐藏",
         "edit": "编辑"
@@ -386,99 +386,81 @@
       "close": "关闭",
       "cta": "完成安装配置",
       "emptyTitle": "完成第一次安装",
-      "emptyDesc": "将配置 ACP 后端、Token 与 Git，并生成综合项目组与「默认工作流」。不会自动开跑。",
-      "emptyDescCreate": "将配置 ACP 后端、Token 与 Git，并生成本项目项目组与「默认工作流」（Agent 名按项目名派生）。不会自动开跑。",
+      "emptyDesc": "将配置模型后端、API Key 与 Git，创建需求澄清 / 实现 / 测试评审三个 Agent，并发布「默认工作流」。不会自动开跑。",
+      "emptyDescCreate": "将配置模型后端、API Key 与 Git，创建本项目的三个 Agent（名称带项目名前缀），并发布「默认工作流」。不会自动开跑。",
       "workflowName": "默认工作流",
-      "head": {
-        "projectName": "填写项目名称",
-        "language": "选择界面语言与主题",
-        "overview": "这次会写入什么",
-        "acp": "选择启动方式",
-        "apiKey": "填写 API Key",
-        "git": "配置仓库、Git 身份与预览（凭据可跳过）",
-        "review": "确认并生成",
-        "success": "已完成安装"
-      },
       "steps": {
-        "projectName": "项目名称",
-        "language": "语言与主题",
-        "overview": "概览",
-        "acp": "后端",
-        "apiKey": "API Key",
+        "prefs": "偏好",
+        "model": "模型后端",
+        "key": "API Key",
         "git": "Git",
-        "review": "确认"
+        "team": "团队",
+        "workflow": "工作流预览",
+        "done": "完成"
       },
       "projectName": {
-        "meta": "项目名称会用于派生 Agent 与项目组命名前缀。",
+        "meta": "项目名会作为 Agent 名称的前缀。",
         "label": "项目名称",
         "placeholder": "例如 支付中台",
         "required": "请填写项目名称",
         "invalid": "项目名称无法生成有效的 Agent 命名前缀，请换一个名称"
       },
       "language": {
-        "meta": "选择安装引导和控制面的显示语言。默认已根据你的系统语言选择。",
         "detected": "后续仍可在左下角随时切换语言。",
-        "themeLabel": "界面主题",
+        "languageLabel": "语言",
+        "themeLabel": "主题",
         "themeDark": "深色",
-        "themeDarkHint": "默认，适合长时间盯屏",
-        "themeLight": "浅色",
-        "themeLightHint": "适合明亮环境与投屏演示",
-        "themeHint": "选择后立即生效，后续仍可在左下角切换。"
-      },
-      "overview": {
-        "meta": "凭据写入默认项目共享 Agent 配置，供组内 Agent 继承。导入的团队包和工作流不含密钥。",
-        "itemBackend": "ACP 后端（及区域）",
-        "itemToken": "对应后端的 API Token",
-        "itemGit": "目标仓库、Git 提交身份，以及 Token / SSH（仓库与凭据可跳过）",
-        "itemPreview": "默认打开页面预览和浏览器工具，方便在沙箱里看页面、让 Agent 操作浏览器",
-        "agents": "Agent",
-        "agentsList": "综合项目组：产品 / 研发 / 测试 / 审查 / 运维 / 组长",
-        "agentsListDerived": "本项目项目组：产品 / 研发 / 测试 / 审查 / 运维 / 组长（名称按项目名派生）",
-        "workflow": "工作流",
-        "workflowHint": "仓库可现在填，也可运行时再填",
-        "banner": "密钥只放在共享配置里，不要写进 Agent 工作区。"
+        "themeLight": "浅色"
       },
       "acp": {
-        "meta": "先选启动方式：用模型厂商的 API Key，或用编码 CLI 的厂商账号。密钥都写入本项目共享 Agent 配置，供全部 Agent 共用。",
+        "meta": "先选接入方式：用模型厂商的 API Key，或用编码工具的账号。密钥保存在本项目，所有 Agent 共用。",
         "region": "站点",
         "paths": {
           "apiKey": {
-            "title": "从 API Key 开始",
-            "desc": "手上有模型厂商的 API Key（OpenAI / Anthropic / DeepSeek 等），由 OpenCode 后端直接调用，可自定义 API Base 与 model。"
+            "title": "用模型厂商的 API Key",
+            "desc": "已有 OpenAI、Anthropic、DeepSeek 等厂商的 API Key。可以自选模型，也能接入自建的兼容服务。"
           },
           "cli": {
-            "title": "用编码 CLI 账号",
-            "desc": "使用 Cursor / Claude Code / CodeBuddy / Trae 各自的 CLI 账号与密钥，模型由该 CLI 决定。"
+            "title": "用编码工具账号",
+            "desc": "使用 Cursor、Claude Code、CodeBuddy 或 Trae 的账号密钥，模型由对应工具决定。"
           }
         },
-        "cliLabel": "选择 CLI 后端",
+        "cliLabel": "选择编码工具",
         "apiKeyVendorsLabel": "常见模型厂商",
-        "apiKeyVendorsHint": "厂商与模型清单来自 OpenCode 的模型目录（models.dev），下一步可搜索选择；也可填自有兼容端点。配置目录"
+        "apiKeyVendorsHint": "下一步可以搜索选择厂商和模型，也可以填写自建服务的地址。"
       },
       "apiKey": {
-        "meta": "按所选后端填写 API Key。此项必填，未填写将无法生成配置。",
+        "meta": "填写所选服务的 API Key，这一项必填。",
         "required": "请先填写 API Key。",
-        "hint": "仅保存在项目共享配置中，不会写入日志或产物。"
+        "hint": "只保存在本项目，不会出现在日志或产物里。",
+        "howTo": "如何获取",
+        "placeholder": "粘贴你的 API Key",
+        "change": "更换后端",
+        "vendorTitle": "模型厂商 API Key"
       },
       "git": {
-        "meta": "填写仓库、Git 提交身份，并打开沙箱预览。凭据可跳过，稍后在「共享Agent配置」里补。",
-        "foot": "凭据写入共享配置，不进入综合项目组导出包。"
+        "meta": "Agent 提交代码时需要署名；仓库和访问凭据可以现在填，也可以跳过。",
+        "repoCredSection": "仓库与访问凭据",
+        "skip": "跳过",
+        "unskip": "现在配置",
+        "skippedHint": "已跳过：仓库可以在运行时再填，私有仓库的凭据之后到项目「凭据」里补。",
+        "foot": "凭据只保存在本项目，导出 Agent 时不会带上。"
       },
       "gitUser": {
-        "section": "Git 提交身份",
-        "nameLabel": "提交者姓名",
-        "emailLabel": "提交者邮箱",
+        "section": "提交署名",
+        "nameLabel": "姓名",
+        "emailLabel": "邮箱",
         "namePlaceholder": "例如 张三",
         "emailPlaceholder": "you{'@'}example.com",
-        "hint": "沙箱里 git commit 会用这两个值，写入项目共享配置。",
-        "chip": "Git 身份"
+        "hint": "Agent 提交代码时用这个姓名和邮箱署名。",
+        "chip": "提交署名"
       },
       "preview": {
-        "section": "沙箱预览",
+        "section": "预览",
         "vncLabel": "页面预览",
         "browserLabel": "浏览器工具",
-        "vncHint": "在控制面打开沙箱桌面，方便看页面。",
-        "browserHint": "让 Agent 能操作沙箱里的浏览器（会同时打开页面预览）。",
+        "vncHint": "在页面里直接查看 Agent 打开的应用。",
+        "browserHint": "让 Agent 能操作浏览器来检查页面（会同时打开页面预览）。",
         "vncOn": "页面预览已开",
         "vncOff": "页面预览已关",
         "browserOn": "浏览器工具已开",
@@ -490,42 +472,125 @@
         "urlLabel": "仓库地址",
         "branchLabel": "分支",
         "branchPlaceholder": "留空用仓库默认分支",
-        "hint": "留空则不预置仓库，启动 Run 时再填。",
-        "cloneTo": "将 clone 到 /root/workspace/{dir}/，写入默认工作流的 repos 变量。",
-        "chip": "仓库"
+        "hint": "留空则在运行时再填。",
+        "cloneTo": "运行时会把仓库下载到工作区的 {dir} 目录。",
+        "chip": "仓库",
+        "githubToken": "GitHub 访问令牌",
+        "gitlabToken": "GitLab 访问令牌",
+        "gitlabUrl": "GitLab 地址",
+        "sshKey": "SSH 私钥",
+        "knownHosts": "可信主机（可选）"
       },
-      "review": {
-        "meta": "确认下列信息。同名资源将复用并更新，不会重复创建。",
-        "needKey": "尚未配置 API Key，请返回上一步填写后再生成。",
-        "featureHint": "安装综合项目组与默认工作流；仓库在启动 Run 时再填。",
-        "featureHintDerived": "安装本项目项目组与默认工作流（Agent 名按项目名派生）；仓库在启动 Run 时再填。",
-        "agentsChip": "Agents · 6",
-        "wfChip": "工作流 · 默认工作流",
+      "team": {
+        "meta": "三个 Agent 组成「需求澄清 → 实现 → 测试评审」工作流，可改名并指定模型。",
+        "loading": "正在读取模板能力…",
+        "loadError": "模板能力读取失败，仍可按默认配置创建。",
+        "retry": "重试",
+        "required": "必选",
+        "optional": "可选",
+        "interactionClarify": "多轮对话澄清",
+        "interactionAuto": "自动执行",
+        "review": "跑完后人工复审",
+        "preview": "可启动应用预览",
+        "noPreview": "不启动预览",
+        "writes": "产出",
+        "nameLabel": "名称",
+        "namePlaceholder": "Agent 名称",
+        "modelLabel": "模型",
+        "modelPlaceholder": "留空沿用项目默认",
+        "modelInherit": "留空沿用 {model}",
+        "foot": "需求澄清和实现是工作流的骨架，不能取消；名称默认带项目名前缀，生成后仍可在 Agent 页修改。",
+        "toastFixNames": "请先修正 Agent 名称",
+        "nameIssues": {
+          "required": "请填写名称",
+          "invalid": "名称不能含空格、斜杠或标点",
+          "duplicate": "名称与其他 Agent 重复"
+        },
+        "templates": {
+          "clarify": {
+            "title": "需求澄清",
+            "desc": "和你多轮对话澄清需求、写出实施计划；是缺陷时查清根因，可启动应用演示。"
+          },
+          "implement": {
+            "title": "实现",
+            "desc": "按计划实现、本地测试，提交推送并开 MR；实现后可启动应用供你复审。"
+          },
+          "test_review": {
+            "title": "测试评审",
+            "desc": "执行测试并做代码评审，两项都通过才放行；未通过时退回实现修复。"
+          }
+        },
+        "schemaNames": {
+          "clarified_requirement": "需求规格",
+          "plan": "计划",
+          "research": "调研",
+          "root_cause": "问题根因",
+          "proposals": "候选方案",
+          "page": "页面",
+          "implementation_result": "实现结果",
+          "test_result": "测试结果",
+          "review": "评审结论"
+        },
+        "stage": "阶段 {n}",
+        "listSep": "、",
+        "moreWrites": "等 {n} 项可选",
+        "offNote": "不创建；工作流在实现完成后直接结束。"
+      },
+      "workflow": {
+        "meta": "生成后会发布下面这条「默认工作流」，之后可以在编辑器里继续调整。",
+        "input": "开始",
+        "output": "结束",
+        "pass": "通过",
+        "fail": "未通过",
+        "failLoop": "测试评审未通过时退回实现修复，最多 3 次。",
+        "noReview": "未选测试评审：实现完成后直接结束。",
+        "summary": "将写入",
         "keyOn": "已配置",
-        "keyOff": "未配置",
-        "gitSkip": "已跳过",
         "repoSkip": "运行时填写",
-        "gitUserOff": "未填写",
-        "flagOn": "开",
-        "flagOff": "关"
+        "gitSkip": "已跳过",
+        "reuseHint": "同名资源将复用并更新，不会重复创建；不会自动开跑。",
+        "gitCred": "Git 凭据",
+        "agentsValue": "{n} 个",
+        "wfLabel": "工作流",
+        "wfValue": "默认工作流（发布）",
+        "inputSub": "填写需求",
+        "outputSub": "交付结果"
       },
       "success": {
         "title": "配置已生成",
-        "desc": "已保存项目凭据，并生成综合项目组与已发布的「默认工作流」。",
-        "descDerived": "已保存项目凭据，并生成本项目项目组与已发布的「默认工作流」。",
-        "limit": "默认工作流的仓库 URL 为空，请在启动 Run 时填写。私有仓请优先在项目「凭据」确认 Git 凭据；环境变量 / 共享配置仅作兼容入口。",
-        "repoOk": "已写入默认工作流的 repos 变量，clone 到 /root/workspace/{dir}/。启动 Run 时仍可改。",
+        "desc": "已保存项目凭据，创建了下列 Agent，并发布了「默认工作流」。",
+        "runOnce": "运行一次",
+        "runOnceHint": "填写需求和仓库，马上跑一遍默认工作流。",
+        "editWorkflow": "去编辑工作流",
+        "editWorkflowHint": "在画布里调整节点、提示词和分支。",
+        "limit": "还没有设置仓库，运行时再填即可。私有仓库请到项目「凭据」里配置访问凭据。",
+        "repoOk": "已设置默认仓库 {dir}，运行时仍可修改。",
         "publishedLine": "默认工作流（已发布）",
-        "gitOk": "已写入 Git 凭据到项目「凭据」（值已打码）。",
-        "gitSkip": "未配置 Git。私有仓请到项目详情 → 共享Agent配置补 Token 或 SSH。",
-        "gitUserOk": "已写入提交身份：{name} <{email}>。",
-        "gitUserSkip": "未填写 Git 提交身份。沙箱会用默认 sandbox / sandbox{'@'}localhost。",
-        "preview": "已写入 {vnc}、{mcp} 到共享配置。"
+        "gitOk": "已保存 Git 凭据（内容已隐藏）。",
+        "gitSkip": "未配置 Git 凭据。私有仓库请到项目「凭据」里补充访问令牌或 SSH 密钥。",
+        "gitUserOk": "提交署名：{name} <{email}>。",
+        "preview": "预览设置：{vnc}，{mcp}。",
+        "created": "已创建",
+        "written": "已写入配置"
       },
       "toastOk": "生成成功，未自动开跑",
       "toastNeedKey": "请先填写 API Key",
       "toastNeedGitUser": "请填写提交者姓名和邮箱",
-      "toastErr": "生成失败"
+      "toastErr": "生成失败",
+      "railSub": "几分钟配好模型、团队和默认工作流。",
+      "railFoot": "所有配置之后都能在项目设置里修改。",
+      "stepOf": "第 {n} 步，共 {total} 步",
+      "railDesc": {
+        "prefs": "语言、主题与预览能力",
+        "model": "API Key 或编码工具账号",
+        "key": "填写模型与密钥",
+        "git": "提交署名、仓库与凭据",
+        "team": "确认要创建的 Agent",
+        "workflow": "预览将要发布的默认工作流",
+        "done": "生成配置，开始第一次运行"
+      },
+      "prefsMeta": "界面语言与主题，以及 Agent 可用的预览能力。",
+      "prefsMetaCreate": "项目名称，以及 Agent 可用的预览能力。"
     },
     "tokenByModel": {
       "tipTitle": "用量提示",
@@ -552,17 +617,17 @@
         "scratch": "从零开始",
         "scratchDesc": "空白画布，自己拖节点搭建",
         "baseline": "默认基线工作流",
-        "baselineDesc": "套用开箱流水线，填仓库即可运行",
+        "baselineDesc": "套用开箱工作流，填仓库即可运行",
         "modalTitle": "从默认基线创建",
         "modalHint": "仓库列表与运行启动页相同。可添加多个，启动时平级 clone 到工作区。",
         "nameLabel": "工作流名称（必填）",
-        "namePlaceholder": "例如 需求对齐流水线",
+        "namePlaceholder": "例如 需求对齐工作流",
         "create": "创建",
         "creating": "正在创建…",
         "created": "已创建工作流「{name}」"
       },
       "tabBoard": "看板",
-      "tabWorkflows": "流水线",
+      "tabWorkflows": "工作流",
       "tabRequirementDrafts": "需求草稿",
       "tabNotify": "通知",
       "tabPmLeader": "项目管理",
@@ -782,7 +847,7 @@
         "actorSystem": "系统",
         "actionProjectConfig": "配置",
         "actionWorkflow": "工作流",
-        "actionRun": "流水线",
+        "actionRun": "工作流",
         "actionGate": "门禁",
         "actionMcp": "MCP 调用",
         "actionExport": "导出"
@@ -1144,6 +1209,7 @@
         "noProjectAgents": "本项目尚无绑定 Agent。请前往 Agent 管理，在 Agent 元信息中绑定本项目后再试。"
       },
       "projectCredentials": {
+        "eyebrow": "安全凭据中心",
         "title": "项目凭据",
         "subtitle": "凭据由项目统一管理，供项目内 Agent 和运行继承。读取接口只返回状态或掩码，不回显明文。",
         "envFallbackHint": "环境变量仍可作为兼容入口，但建议优先在此配置和轮换凭据。",
@@ -1154,6 +1220,46 @@
         "empty": "该项目暂未提供可管理的凭据。",
         "create": "新增凭据",
         "createTitle": "新增项目凭据",
+        "createIntroTitle": "把密钥放在项目范围内统一管理",
+        "createIntro": "保存后只显示掩码。运行时会按环境变量键注入，明文不会回显到页面、日志或产物。",
+        "basicSection": "基本信息",
+        "bindingSection": "接入绑定",
+        "bindingHint": "填写目标或环境变量键中的至少一项；AI 凭据通常使用环境变量键。",
+        "secretSection": "凭据值",
+        "requiredHint": "名称和凭据值必填",
+        "namePlaceholder": "例如 OpenAI API Key",
+        "providerPlaceholder": "例如 openai、github",
+        "targetPlaceholder": "例如 model-provider / repo",
+        "fallbackPlaceholder": "留空表示不使用兼容回退",
+        "writeOnly": "仅写入",
+        "summary": {
+          "total": "凭据槽位",
+          "configured": "已配置",
+          "apiKeys": "API Key 槽位"
+        },
+        "groups": {
+          "ai": {
+            "title": "模型 API Key",
+            "hint": "ACP 后端和 OpenCode 使用的模型厂商密钥。"
+          },
+          "git": {
+            "title": "代码托管",
+            "hint": "用于仓库拉取、推送和合并请求的 Token 与地址。"
+          },
+          "ssh": {
+            "title": "Git SSH",
+            "hint": "私钥与 known_hosts 仅在需要 SSH 仓库时配置。"
+          },
+          "other": {
+            "title": "其他凭据",
+            "hint": "项目内自定义服务或 MCP 使用的密钥。"
+          }
+        },
+        "typeAi": "AI / API Key",
+        "typeGit": "Git",
+        "typeSsh": "SSH",
+        "typeMcp": "MCP",
+        "typeCustom": "自定义",
         "type": "类型",
         "name": "名称",
         "provider": "提供商",
@@ -1185,7 +1291,7 @@
       "addRow": "添加一行",
       "saved": "已保存",
       "deleteTitle": "删除项目 · {name}",
-      "deleteWarning": "仅当项目下已无流水线时可删除。删除后不可恢复。",
+      "deleteWarning": "仅当项目下已无工作流时可删除。删除后不可恢复。",
       "deleted": "项目已删除"
     },
     "workflowList": {
@@ -1202,7 +1308,7 @@
       "unnamedWorkflow": "未命名工作流",
       "descLabel": "描述（可选）",
       "descPlaceholder": "列表副文案 / 简要说明",
-      "projectRequired": "请先选择所属项目后再新建流水线",
+      "projectRequired": "请先选择所属项目后再新建工作流",
       "loadFailed": "加载工作流失败,后端可能未连接",
       "loading": "加载工作流…",
       "mobile": {
@@ -1217,14 +1323,19 @@
       "rollbackFailed": "回滚失败,请重试",
       "runDraftHint": " · 启动前会先保存当前草稿",
       "singleInputOnly": "工作流只能有一个输入节点",
-      "duplicateSuccessEdge": "该节点已有一条无条件的成功出边：流水线一次只会走其中一条。如需分流，请给出边设置条件或改用分支节点。",
+      "duplicateSuccessEdge": "该节点已有一条无条件的成功出边：工作流一次只会走其中一条。如需分流，请给出边设置条件或改用分支节点。",
       "graphErrors": {
         "missingInput": "缺少输入节点:工作流必须有且仅有一个输入节点作为起点",
         "tooManyInputs": "输入节点过多:工作流只能有一个输入节点",
         "missingOutput": "缺少输出节点:工作流必须至少有一个输出节点作为终点",
-        "inputHasIncoming": "输入节点不能有入边:流水线必须从输入节点开始",
-        "outputHasOutgoing": "输出节点不能有出边:流水线必须在输出节点结束",
-        "duplicateSuccessFanOut": "节点「{label}」有多条无条件的成功出边:流水线一次只会走其中一条,其余永远不会执行(不是并行分叉)。请给需要分流的成功边设置 when 条件、改用分支节点,或删除多余的连线。"
+        "inputHasIncoming": "输入节点不能有入边:工作流必须从输入节点开始",
+        "outputHasOutgoing": "输出节点不能有出边:工作流必须在输出节点结束",
+        "duplicateSuccessFanOut": "节点「{label}」的同一个出口有多条无条件连线:工作流一次只会走其中一条,其余永远不会执行(不是并行分叉)。请给连线设置条件,或删除多余的连线",
+        "unknownNodeType": "未知节点类型 {type}",
+        "agentMissingProfile": "节点「{label}」未选择 Agent",
+        "agentNotFound": "节点「{label}」的 Agent {name} 不存在",
+        "agentNoCapabilities": "Agent {name} 未声明能力",
+        "agentInvalidCapabilities": "Agent {name} 能力配置有误:{reason}"
       },
       "nodeChips": {
         "agent": "Agent {name}",
@@ -1418,7 +1529,7 @@
     },
     "runList": {
       "title": "运行记录",
-      "subtitle": "按项目、流水线与状态筛选",
+      "subtitle": "按项目、工作流与状态筛选",
       "tagsLabel": "标签",
       "queued": "入队",
       "cancelConfirm": "仅停止这一次 Run；取消成功后列表将刷新该行状态。",
@@ -1445,6 +1556,7 @@
       "retryUnavailable": "重试不可用",
       "branch": "分支",
       "sha": "SHA",
+      "repos": "仓库",
       "noRepo": "无仓库(产物流)",
       "duration": "耗时",
       "canvas": "画布",
@@ -1827,40 +1939,6 @@
         "note": "合计 = 测试占用 + running workflow · 不含 TTL 保活沙箱"
       }
     },
-    "platformRules": {
-      "title": "平台规则（全局默认）",
-      "subtitle": "10 个规则文件 · 仅管理员可写 · 存 data/platform-rules/",
-      "backToSettings": "返回设置",
-      "backToList": "返回列表",
-      "emptyList": "暂无平台规则文件",
-      "emptySummary": "暂无摘要",
-      "mtimeLabel": "更新时间",
-      "summaryTitle": "只读摘要",
-      "mobileStepChip": "单栏步进",
-      "mobileReadonlyHint": "桌面为两栏（列表 / 编辑器），说明改由页头「帮助」按钮弹出。窄屏仅浏览步进，不提供编辑或保存。",
-      "helpButton": "帮助",
-      "helpTitle": "平台规则说明",
-      "readOnlyHint": "只读模式（非管理员）",
-      "resetEmbed": "恢复内置默认",
-      "loadFailed": "加载平台规则失败",
-      "saveFailed": "保存失败",
-      "resetFailed": "恢复内置默认失败",
-      "fileListTitle": "规则文件",
-      "fileListDesc": "skills_embed/rules 下全部 10 个 .md 文件",
-      "sourceGlobal": "全局默认",
-      "sourceEmbed": "内置兜底",
-      "priorityTitle": "运行时加载优先级",
-      "priorityAgent": "Agent 覆盖",
-      "priorityGlobal": "全局默认",
-      "priorityEmbed": "内置兜底",
-      "injectTitle": "BuildCursorHome 注入顺序",
-      "injectAgentDir": "Agent 工作目录",
-      "injectPlatformRules": "平台规则（base + 节点专属）",
-      "constraintsTitle": "约束",
-      "constraintNodereg": "节点→规则映射仍由 nodereg 代码决定",
-      "constraintWholeFile": "Agent 覆盖为整文件替换",
-      "constraintScope": "不含 skills/、mcp.json 等其他 embed 资产"
-    },
     "sandboxes": {
       "title": "沙箱",
       "errorPrefix": "出错:",
@@ -1987,9 +2065,9 @@
     "agentStudio": {
       "title": "智能体",
       "errorPrefix": "出错:",
-      "empty": "暂无 Agent。可「创建 Agent 团队」一键拉起项目与流水线角色，或「新建 Agent」创建单个。",
+      "empty": "暂无 Agent。可「创建 Agent 团队」一键拉起项目与工作流角色，或「新建 Agent」创建单个。",
       "emptyTeamTitle": "用一个入口拉起整支团队",
-      "emptyTeamDesc": "填写项目背景与运行配置后自动起沙箱：创建项目、根组、项目经理与 9 名工程师，并挂好虚拟组。",
+      "emptyTeamDesc": "填写项目背景与运行配置后自动起沙箱：创建项目、根组、项目经理与 3 名工程师，并挂好虚拟组。",
       "emptyTeamCta": "创建 Agent 团队",
       "emptyTeamOrSingle": "或新建单个 Agent",
       "emptyProjectTitle": "本项目还没有 Agent",
@@ -2001,32 +2079,10 @@
         "files": "Agent 工作目录 ({n})",
         "mcp": "MCP ({n})",
         "env": "环境变量 ({n})",
-        "prompts": "提示词",
-        "promptsCount": "提示词 ({n})",
         "test": "对话测试",
         "meta": "元信息",
-        "platformRules": "平台规则",
-        "data": "数据"
-      },
-      "platformRules": {
-        "title": "平台规则覆盖",
-        "subtitle": "profiles/{agent}/platform-rules/ · 删除覆盖即回退全局",
-        "inherited": "继承全局",
-        "overridden": "已覆盖",
-        "inheritPath": "继承 data/platform-rules/{file}",
-        "createOverride": "创建覆盖",
-        "deleteOverride": "删除覆盖",
-        "loadFailed": "加载失败",
-        "saveFailed": "保存失败",
-        "deleteFailed": "删除覆盖失败",
-        "overrideCreated": "已创建覆盖",
-        "saved": "覆盖已保存",
-        "overrideDeleted": "已删除覆盖，回退全局默认",
-        "statusTitle": "覆盖状态",
-        "overriddenCount": "已覆盖 {n}",
-        "inheritedCount": "继承全局 {n}",
-        "diffHint": "与全局默认存在差异",
-        "promptsNote": "平台规则与 AgentPrompts 运行时 prompt 双轨并存，本次不联动。"
+        "data": "数据",
+        "capabilities": "能力"
       },
       "agentList": {
         "title": "Agents",
@@ -2348,12 +2404,6 @@
           "gitea": "Gitea / 自建"
         }
       },
-      "prompts": {
-        "title": "平台注入的提示词覆盖",
-        "intro": "以下内容由平台在运行时自动注入本 Agent。留空即使用内置默认(占位符所示);填写后仅对该 Agent 生效。带 {name} 的字段会在运行时替换为声明的产物文件名。",
-        "defaultPrefix": "默认:",
-        "rulesNote": "规则文件(rules/*.md)在「Agent 工作目录」标签页管理,随工作目录一起注入沙箱。"
-      },
       "meta": {
         "layoutTitle": "沙箱注入布局(WSP/1)",
         "layoutIntro": "本 Agent 的配置在沙箱内的注入位置,随 Agent 持久化保存,创建沙箱时按此挂载与设置 WORKSPACE_DIR。切换 ACP 后端会自动填充推荐 configRoot,手动修改后尊重覆盖值。",
@@ -2387,11 +2437,11 @@
         "sshPrivateKeyPh": "-----BEGIN OPENSSH PRIVATE KEY-----"
       },
       "openCode": {
-        "title": "OpenCode 厂商与模型",
-        "desc": "选好厂商和模型就能启动 OpenCode 沙箱。模型必填；用代理或自建接口时才需要填 API Base。",
+        "title": "模型厂商与模型",
+        "desc": "选好厂商和模型即可。模型必填；使用代理或自建服务时才需要填写接口地址。",
         "providerLabel": "模型厂商",
         "providerSearchPlaceholder": "搜索厂商，或直接输入厂商名…",
-        "providerSelfHosted": "这个厂商不在官方列表里，按自建服务处理：请在下面填写 API Base URL，并填写它提供的模型名。",
+        "providerSelfHosted": "这个厂商不在列表里，按自建服务处理：请在下面填写接口地址，并填写它提供的模型名。",
         "modelLabel": "模型",
         "modelPlaceholder": "选择，或直接输入模型名",
         "modelPlaceholderCustom": "输入模型名，例如 my-model",
@@ -2400,10 +2450,11 @@
         "modelUnknown": "列表里没有这个模型，可能无法启动。请从列表中选择，或确认你的服务确实提供它。",
         "modelSearchPlaceholder": "搜索，或直接输入模型名…",
         "modelRequired": "请选择或填写模型，例如 deepseek-v4-pro。",
-        "baseLabel": "API Base URL",
+        "baseLabel": "接口地址",
         "basePlaceholder": "https://api.example.com/v1",
         "baseHint": "一般不用填写。使用代理或自建接口时，填写它的地址。",
-        "baseRequired": "自定义厂商必须填写 API Base URL。",
+        "baseHintOwn": "OpenAI 兼容接口的根地址，通常以 /v1 结尾。",
+        "baseRequired": "自建服务必须填写接口地址。",
         "visionLabel": "视觉理解",
         "visionHint": "勾选后，模型才能看图。不勾选只处理文字。",
         "advancedSummary": "高级说明（点开查看技术细节）",
@@ -2417,7 +2468,7 @@
           "moonshotai": "Moonshot / Kimi",
           "alibaba": "Alibaba Qwen",
           "xai": "xAI Grok",
-          "custom": "Custom (OpenAI-compatible)"
+          "custom": "自建服务（兼容 OpenAI）"
         }
       },
       "mobile": {
@@ -2471,28 +2522,6 @@
         "importNoText": "未读取到可用文本文件(可能都是二进制或超过 512KB)",
         "jsonArray": "应为数组",
         "jsonObject": "应为对象"
-      },
-      "promptFields": {
-        "upstreamHeader": {
-          "label": "上游产物说明头",
-          "hint": "存在上游产物时,拼在产物文件清单之前。",
-          "placeholder": "\n\n## 上游产物(只读输入)\n以下文件由上游节点产出,已放置在 `.grasp/artifacts/` 供你读取:\n"
-        },
-        "producesContract": {
-          "label": "产物契约(agent 节点)",
-          "hint": "节点声明 produces 时追加。可用 {name} 代表产物文件名。",
-          "placeholder": "\n## 产物契约(强制)\n完成前必须在工作目录(/root/workspace)写出文件 `{name}`,这是本节点的强制产物;未写出将判定为失败。\n"
-        },
-        "reactOpening": {
-          "label": "ReAct 开场后缀",
-          "hint": "ReAct 澄清节点开场时追加到 prompt 末尾。",
-          "placeholder": "\n\n这是一次多轮澄清对话:先提出需要澄清的关键问题,等待我的回复后再继续,不要一次性给出最终结论。"
-        },
-        "reactMissingArtifact": {
-          "label": "ReAct 漏写产物催促语",
-          "hint": "react 节点结束但未写产物时的补写催促。可用 {name}。",
-          "placeholder": "澄清已结束,但你还没有写入本节点声明的产物 `{name}`。请立即用 write_artifact 工具写入它(内容为本次澄清得到的结论),不要再提问。"
-        }
       },
       "exportImport": {
         "export": "导出",
@@ -2586,11 +2615,11 @@
           "projectName": "项目 / 团队名",
           "prefix": "命名前缀",
           "rootGroup": "根组名称",
-          "pipelineGroup": "流水线子组",
-          "pipelineHint": "工程师默认挂到此子组",
+          "workflowGroup": "工作流子组",
+          "workflowGroupHint": "工程师默认挂到此子组",
           "pmName": "PM Agent 名称",
           "background": "项目背景",
-          "backgroundPlaceholder": "描述项目目标、技术栈、仓库形态、流水线诉求等。将作为沙箱建团 Prompt。",
+          "backgroundPlaceholder": "描述项目目标、技术栈、仓库形态、工作流诉求等。将作为沙箱建团 Prompt。",
           "backgroundHint": "类似 Prompt：确认后注入沙箱，据此生成根组与工程师团队。"
         },
         "acp": {
@@ -2613,16 +2642,16 @@
           "meta": "写入 PM；工程师创建时默认继承。"
         },
         "review": {
-          "meta": "确认后将创建项目与 PM，自动起沙箱并按参考编制生成 9 名工程师。",
+          "meta": "确认后将创建项目与 PM，自动起沙箱并按参考编制生成 3 名工程师。",
           "project": "项目",
           "root": "根组",
-          "pipeline": "子组",
+          "workflowGroup": "子组",
           "set": "已填写",
           "skip": "跳过（可稍后补）",
           "none": "无",
           "roster": "编制：1 PM + 9 工程师 · 共 10",
           "background": "项目背景（建团 Prompt）",
-          "noArtifactWarn": "流水线角色通常需要 artifact-store；当前 MCP 列表未包含它。"
+          "noArtifactWarn": "工作流角色通常需要 artifact-store；当前 MCP 列表未包含它。"
         },
         "errors": {
           "projectRequired": "请填写项目 / 团队名",
@@ -2673,7 +2702,6 @@
           "rules": "Rules",
           "skills": "Skills",
           "commands": "Commands",
-          "prompts": "Prompts",
           "review": "确认创建"
         },
         "basics": {
@@ -2698,44 +2726,43 @@
           "meta": "Token 类鉴权请写到「共享Agent配置」；本步可跳过，创建时不会把 API Key 写入单个 Agent。",
           "modeGroup": "鉴权方式",
           "modeApiKey": "粘贴 API Key",
-          "modeApiKeyHint": "仅作参考输入，创建时不会写入单个 Agent.env；请到共享Agent配置保存",
+          "modeApiKeyHint": "仅作参考，创建时不会写入单个 Agent；请到共享 Agent 配置保存",
           "modeCustomConfig": "自定义配置",
           "modeCustomConfigHint": "编辑 settings.json，创建时写入 Agent 文件树",
           "backendBanner": "当前 Backend：{backend}。",
-          "alias": "别名（任选其一）",
-          "inputLabel": "粘贴 API Key（可选，不会写入 Agent.env）",
+          "inputLabel": "粘贴 API Key（可选，不会写入单个 Agent）",
           "inputPlaceholder": "建议跳过，改到共享Agent配置填写",
           "skipHint": "推荐直接「跳过」或「下一步」；在项目详情 → 共享Agent配置中填写 Token。",
           "notes": {
             "codebuddySite": "Key 与站点绑定；请到与 Agent 步所选站点一致的控制台申请。",
             "traeToken": "官方 CLI 登录令牌须含 trae-lt- 前缀（旗舰版）。",
-            "opencode": "OpenCode 用厂商 API Key 启动；可指定 API Base 与 model。"
+            "opencode": "用模型厂商的 API Key 启动，可以指定模型和接口地址。"
           },
           "paths": {
             "cursor": {
               "step1": "打开 Cursor Dashboard → Settings → API Keys",
               "step2": "创建 API Key 并复制",
-              "step3": "将 Key 粘贴到下方（或稍后在 Studio Env 填写 GRASP_CURSOR_API_KEY / CURSOR_API_KEY）"
+              "step3": "将 Key 粘贴到下方"
             },
             "claude": {
               "step1": "打开 Anthropic Console → API Keys（或 Claude Platform → Settings → Keys）",
               "step2": "Create Key 并复制",
-              "step3": "将 Key 粘贴到下方（或填写 GRASP_CLAUDE_API_KEY / ANTHROPIC_API_KEY）"
+              "step3": "将 Key 粘贴到下方"
             },
             "codebuddy": {
               "step1": "确认 Agent 步所选站点（国际站 / 国内站等）",
               "step2": "打开对应站点控制台的 API Key / Profile Keys 页面并创建 Key",
-              "step3": "将 Key 粘贴到下方（GRASP_CODEBUDDY_API_KEY / CODEBUDDY_API_KEY）"
+              "step3": "将 Key 粘贴到下方"
             },
             "trae": {
               "step1": "打开 Trae 企业控制台：个人信息 → 访问令牌 → CLI 登录令牌",
               "step2": "生成含 trae-lt- 前缀的登录令牌并复制",
-              "step3": "将令牌粘贴到下方（GRASP_TRAE_API_KEY / TRAECLI_PERSONAL_ACCESS_TOKEN）"
+              "step3": "将令牌粘贴到下方"
             },
             "opencode": {
-              "step1": "选择模型厂商（OpenAI / Anthropic / OpenRouter 等，或 Custom）",
-              "step2": "在对应控制台创建 API Key；Custom 还需填写 API Base",
-              "step3": "粘贴 Key，并可选填写模型（provider/model）"
+              "step1": "选择模型厂商（OpenAI、Anthropic、OpenRouter 等，或自建服务）",
+              "step2": "在厂商控制台创建 API Key；自建服务还要填写接口地址",
+              "step3": "粘贴 Key，并选择模型"
             }
           },
           "links": {
@@ -2749,7 +2776,7 @@
             "codebuddyIoa": "iOA 申请 Key",
             "codebuddyStaging": "Staging 申请 Key",
             "traeTokenDocs": "Trae CLI 登录令牌文档",
-            "opencodeProviders": "OpenCode Providers"
+            "opencodeProviders": "支持的模型厂商"
           },
           "customConfig": {
             "cardTitle": "后端配置文件",
@@ -2763,7 +2790,8 @@
               "opencode": "写入 opencode.json（不是 settings.json）。可配置 provider、baseURL 与 model。",
               "generic": "文件仍写入 configRoot；是否被 CLI 消费取决于后端。推荐优先使用 Env Key，自定义配置为高级/兼容路径。"
             }
-          }
+          },
+          "howTo": "如何获取"
         },
         "git": {
           "meta": "点选 GitHub / GitLab / SSH 即可。已有 Token 时会预选类型，仍可改选或跳过，之后也可在 Studio 再配。"
@@ -2788,9 +2816,6 @@
           "namePlaceholder": "command 名称（字母数字 _ -）",
           "add": "添加 Command"
         },
-        "prompts": {
-          "meta": "覆盖平台注入的提示字段。跳过则使用平台默认，不会用空对象覆盖。"
-        },
         "review": {
           "meta": "确认摘要后一次性创建。取消或关闭不会落库。MCP / Rules 等能力可在创建后于 Studio 配置。",
           "name": "名称",
@@ -2807,9 +2832,7 @@
           "rulesDefault": "Rules · 将写入默认规则",
           "rulesCustom": "Rules · 已自定义",
           "skills": "Skills",
-          "commands": "Commands",
-          "promptsDefault": "Prompts · 使用平台默认",
-          "promptsCustom": "Prompts · 已自定义"
+          "commands": "Commands"
         }
       },
       "project": {
@@ -2882,6 +2905,32 @@
           "deliverOff": "已关闭推送到渠道",
           "deleted": "已删除定时任务"
         }
+      },
+      "capabilities": {
+        "subtitle": "决定这个 Agent 在工作流节点里能做什么、必须交付什么;用到它的所有节点共享这些能力",
+        "undeclaredTitle": "尚未声明能力",
+        "undeclaredDesc": "没有能力声明的 Agent 不能被工作流节点使用,运行会报「Agent 未声明能力」。",
+        "declare": "声明能力",
+        "invalid": "能力配置有误:{reason}",
+        "interactionTitle": "交互方式",
+        "interactionDesc": {
+          "auto": "自主跑完一次,中途不问人",
+          "clarify": "与人多轮对话,人确认后结束"
+        },
+        "reviewDesc": "跑完后进入人工复审,会话保持在线,可按批注继续修改",
+        "reviewDisabledClarify": "多轮澄清本身由人确认结束,不能再开启复审",
+        "toolsTitle": "工具",
+        "toolsDesc": "写产物用的 set_* 工具由「写入产物」自动授予,这里只列可额外授权的平台工具。",
+        "readsTitle": "读取产物",
+        "readsDesc": "Agent 能通过 list_artifacts / read_artifact 看到哪些产物。",
+        "readsOther": "其他产物名",
+        "readsOtherPlaceholder": "多个用逗号分隔,例如 design.md",
+        "writesTitle": "写入产物",
+        "writesDesc": "勾选后 Agent 获得对应的 set_* 工具;必写产物未由本节点写入时节点判定失败。",
+        "verdictBadge": "判定",
+        "verdictHint": "写入带判定的产物时,节点有「通过 / 不通过」两个出口",
+        "maxRoundsTitle": "最大催促轮数",
+        "maxRoundsDesc": "计划未全部完成时最多再催促几轮,留空为默认 3 轮"
       }
     },
     "runLaunch": {
@@ -3065,12 +3114,9 @@
       "connectingStagePullingTitle": "正在拉取镜像",
       "connectingStageHint": "产物会在会话就绪后出现在这里",
       "addImage": "添加附件",
-      "inputPlaceholder": "补充信息…",
-      "approveInputPlaceholder": "请先描述目标…",
-      "approveEmptyHint": "先说明本次要做的目标，Agent 会用工具对齐需求；只有真实分歧时才会提问。",
+      "clarifyInputPlaceholder": "请先描述目标…",
+      "clarifyEmptyHint": "先说明本次要做的目标，Agent 会用工具对齐需求；只有真实分歧时才会提问。",
       "reviewInputPlaceholder": "补充批注或修改说明…",
-      "finishEarly": "结束交互",
-      "finishEarlyTitle": "信息已够,让 Agent 立即收尾并进入下一步",
       "confirmFlow": "确认并流转",
       "confirmFlowTitle": "接受当前已落盘产物并流转（不触发 Agent）",
       "confirmFlowHint": "接受当前已落盘产物并流转（不触发 Agent）",
@@ -3124,7 +3170,7 @@
       "removeChip": "移除引用"
     },
     "reactArtifactStage": {
-      "pipelineTab": "流水线产物",
+      "workflowTab": "工作流产物",
       "closeTab": "关闭",
       "novncTab": "noVNC",
       "novncCardTitle": "远程桌面",
@@ -4147,8 +4193,9 @@
         "candidateMode": "页面候选",
         "candidateShortLabel": "页面候选",
         "candidateIntro": "发送需求后，在页面展示 3 个方案，选好再采用。",
-        "candidateHint": "开启后发送需求，在预览生成 3 个候选，选择后再采用。已有候选时继续细化或采用当前版本；关闭不会删除候选。",
+        "candidateHint": "开启后发送需求，在预览生成 3 个候选，选择后再采用。已有候选时继续细化或采用当前版本；停在原版时发送会放弃当前候选并重新生成；关闭不会删除候选。",
         "pendingCandidates": "已有候选正在生成、等待恢复或尚未显示。请等待，或先恢复／放弃现有候选。",
+        "candidatesBusy": "候选正在处理中，请稍候再发送。",
         "promptTooLong": "页面候选需求最多 2000 字，请精简后重试。",
         "previewUnavailable": "预览的 Live 设计工具不可用，请重新打开预览后重试。",
         "title": "页面候选",

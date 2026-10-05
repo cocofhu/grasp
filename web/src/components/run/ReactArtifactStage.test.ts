@@ -10,6 +10,19 @@ import { resetStageOpenStateForTests } from '@/lib/run/reactArtifactPreview'
 import ReactArtifactStage from './ReactArtifactStage.vue'
 import { api } from '@/lib/api/api'
 import { stageLinksFor } from '@/lib/run/stageLinks'
+import type { AgentCapabilities } from '@/lib/api/apiTypes'
+import { ASK_CAPS, CLARIFY_CAPS, IMPLEMENT_CAPS, PREVIEW_REVIEW_CAPS, writesCaps } from '@/test/capsFixtures'
+
+function gn(id: string, label: string, caps: AgentCapabilities) {
+  return { id, type: 'agent' as const, label, position: { x: 0, y: 0 }, config: {}, caps }
+}
+
+const CLARIFY_NODE = { type: 'agent' as const, caps: CLARIFY_CAPS }
+const ASK_NODE = { type: 'agent' as const, caps: ASK_CAPS }
+const PAGE_NODE = { type: 'agent' as const, caps: writesCaps('page') }
+const RESEARCH_NODE = { type: 'agent' as const, caps: writesCaps('research') }
+const IMPLEMENT_NODE = { type: 'agent' as const, caps: IMPLEMENT_CAPS }
+const PREVIEW_NODE = { type: 'agent' as const, caps: PREVIEW_REVIEW_CAPS }
 
 const { mockAddClarifyAnnotation } = vi.hoisted(() => ({
   mockAddClarifyAnnotation: vi.fn(() => 'added'),
@@ -134,7 +147,7 @@ describe('ReactArtifactStage', () => {
     })
   }
 
-  it('defaults to pipeline artifacts grid, then opens a named preview tab on card click (g2.1)', async () => {
+  it('defaults to workflow artifacts grid, then opens a named preview tab on card click (g2.1)', async () => {
     const wrapper = mount(ReactArtifactStage, {
       props: {
         artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json' })],
@@ -179,7 +192,7 @@ describe('ReactArtifactStage', () => {
     expect(stageLinksFor('run-links')).toBeNull()
   })
 
-  it('keeps pipeline artifact cards compact instead of stretching the row (g1.1 / g1.2 / g2.2)', async () => {
+  it('keeps workflow artifact cards compact instead of stretching the row (g1.1 / g1.2 / g2.2)', async () => {
     const wrapper = mount(ReactArtifactStage, {
       props: {
         artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json' })],
@@ -304,7 +317,7 @@ describe('ReactArtifactStage', () => {
     })
     await flushPromises()
     expect(wrapper.get('[data-testid="react-artifact-tabs"]').isVisible()).toBe(true)
-    expect(wrapper.get('[data-testid="react-artifact-tab-grid"]').text()).toContain('流水线产物')
+    expect(wrapper.get('[data-testid="react-artifact-tab-grid"]').text()).toContain('工作流产物')
     expect(wrapper.get('[data-testid="react-artifact-tab-page.html"]').attributes('aria-selected')).toBe('true')
     wrapper.unmount()
   })
@@ -398,7 +411,7 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('opens a noVNC tab from the pipeline card without replacing artifact tabs', async () => {
+  it('opens a noVNC tab from the workflow card without replacing artifact tabs', async () => {
     const wrapper = mount(ReactArtifactStage, {
       props: {
         artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json' })],
@@ -465,14 +478,14 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('hides app preview tab for Approve when no ports are registered (plan g1.4 / g2.3)', async () => {
+  it('hides app preview tab for a clarify Agent when no ports are registered (plan g1.4 / g2.3)', async () => {
     vi.mocked(api.nodePreviews).mockResolvedValue({ ports: [] })
     const wrapper = mount(ReactArtifactStage, {
       props: {
         artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json', nodeId: 'approve_1' })],
         runId: 'run-approve-empty',
         nodeId: 'approve_1',
-        nodeType: 'approve',
+        node: CLARIFY_NODE,
         // Even if a parent still passes app, stage must stay off until registration.
         remoteKind: 'app',
       },
@@ -486,7 +499,7 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('honors hideAppPreview even when Approve ports are registered (artifact embed modal)', async () => {
+  it('honors hideAppPreview even when clarify ports are registered (artifact embed modal)', async () => {
     vi.mocked(api.nodePreviews).mockClear()
     vi.mocked(api.nodePreviews).mockResolvedValue({
       ports: [
@@ -505,7 +518,7 @@ describe('ReactArtifactStage', () => {
         artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json', nodeId: 'approve_1' })],
         runId: 'run-approve-hide',
         nodeId: 'approve_1',
-        nodeType: 'approve',
+        node: CLARIFY_NODE,
         hideAppPreview: true,
         remoteKind: 'app',
       },
@@ -520,7 +533,7 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('shows app preview tab for Approve after silent probe finds ports (plan g2.2)', async () => {
+  it('shows app preview tab for a clarify Agent after silent probe finds ports (plan g2.2)', async () => {
     vi.mocked(api.nodePreviews).mockResolvedValue({
       ports: [
         {
@@ -538,7 +551,7 @@ describe('ReactArtifactStage', () => {
         artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json', nodeId: 'approve_1' })],
         runId: 'run-approve-ports',
         nodeId: 'approve_1',
-        nodeType: 'approve',
+        node: CLARIFY_NODE,
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },
@@ -550,7 +563,7 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('upgrades a review stage of a non-Grasp node to the app tab once set_preview registers', async () => {
+  it('upgrades a review stage of a non-clarify node to the app tab once set_preview registers', async () => {
     vi.mocked(api.nodePreviews).mockResolvedValue({
       ports: [
         { port: 5173, label: '前端', runId: 'run-impl-review', nodeId: 'impl_1', proxyUrl: '/p', healthy: true },
@@ -561,7 +574,7 @@ describe('ReactArtifactStage', () => {
         artifacts: [art({ id: 'a1', name: 'plan.json', kind: 'json', nodeId: 'impl_1' })],
         runId: 'run-impl-review',
         nodeId: 'impl_1',
-        nodeType: 'implement',
+        node: IMPLEMENT_NODE,
         remoteKind: 'off',
         probeRegisteredPreview: true,
       },
@@ -573,14 +586,14 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('keeps the remote kind for a non-Grasp node without the review probe', async () => {
+  it('keeps the remote kind for a non-clarify node without the review probe', async () => {
     vi.mocked(api.nodePreviews).mockClear()
     const wrapper = mount(ReactArtifactStage, {
       props: {
         artifacts: [art({ id: 'a1', name: 'plan.json', kind: 'json', nodeId: 'impl_1' })],
         runId: 'run-impl-plain',
         nodeId: 'impl_1',
-        nodeType: 'implement',
+        node: IMPLEMENT_NODE,
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },
@@ -591,12 +604,12 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('shows public app preview for Approve from share ports without probing', async () => {
+  it('shows public app preview for a clarify Agent from share ports without probing', async () => {
     vi.mocked(api.nodePreviews).mockClear()
     const wrapper = mount(ReactArtifactStage, {
       props: {
         artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json', nodeId: 'approve_1' })],
-        nodeType: 'approve',
+        node: CLARIFY_NODE,
         remoteKind: 'public',
         token: 't',
         ports: [{ port: 18080, kind: 'port', mode: 'vnc', directUrl: 'http://10.0.0.5:18080/' }],
@@ -612,7 +625,7 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('does not steal focus when Approve ports arrive after userMoved (plan g2.2)', async () => {
+  it('does not steal focus when clarify ports arrive after userMoved (plan g2.2)', async () => {
     vi.useFakeTimers()
     vi.mocked(api.nodePreviews).mockResolvedValue({ ports: [] })
     const wrapper = mount(ReactArtifactStage, {
@@ -620,7 +633,7 @@ describe('ReactArtifactStage', () => {
         artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json', nodeId: 'approve_1' })],
         runId: 'run-approve-moved',
         nodeId: 'approve_1',
-        nodeType: 'approve',
+        node: CLARIFY_NODE,
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },
@@ -655,13 +668,13 @@ describe('ReactArtifactStage', () => {
     vi.useRealTimers()
   })
 
-  it('keeps app_preview remote tab even when the port list is still empty (plan g2.3)', async () => {
+  it('keeps the reviewed preview Agent remote tab even when the port list is still empty (plan g2.3)', async () => {
     const wrapper = mount(ReactArtifactStage, {
       props: {
         artifacts: [],
         runId: 'run-app-preview',
         nodeId: 'preview_1',
-        nodeType: 'app_preview',
+        node: PREVIEW_NODE,
         remoteKind: 'app',
       },
       global: { plugins: [i18n()], stubs },
@@ -726,8 +739,8 @@ describe('ReactArtifactStage', () => {
         run: {
           id: 'run-1',
           nodes: [
-            { id: 'visual_1', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} },
-            { id: 'visual_other', type: 'visual', label: '另一页', position: { x: 0, y: 0 }, config: {} },
+            gn('visual_1', '视觉', writesCaps('page')),
+            gn('visual_other', '另一页', writesCaps('page')),
           ],
           nodeExecutions: {
             visual_1: [
@@ -782,7 +795,7 @@ describe('ReactArtifactStage', () => {
         runId: 'run-1',
         run: {
           id: 'run-1',
-          nodes: [{ id: 'visual_1', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} }],
+          nodes: [gn('visual_1', '视觉', writesCaps('page'))],
           nodeExecutions: {
             visual_1: [{ nodeId: 'visual_1', iteration: 1, status: 'completed', outputs: { page: '<p>only</p>' } }],
           },
@@ -815,7 +828,7 @@ describe('ReactArtifactStage', () => {
         runId: 'run-1',
         run: {
           id: 'run-1',
-          nodes: [{ id: 'visual_1', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} }],
+          nodes: [gn('visual_1', '视觉', writesCaps('page'))],
         } as any,
         nodeId: 'visual_1',
         annotatable: true,
@@ -836,7 +849,7 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('keeps approve page.html and agent-named HTML on the pipeline grid', async () => {
+  it('keeps clarify page.html and agent-named HTML on the workflow grid', async () => {
     const approvePage = art({ id: 'ap', name: 'page.html', kind: 'html', nodeId: 'approve_7gl6' })
     const demo = art({ id: 'd', name: 'brand-row-preview.html', kind: 'html', nodeId: 'approve_7gl6' })
     const complete = art({ id: 'nc', name: 'node_complete.json', kind: 'json', nodeId: 'approve_7gl6' })
@@ -846,10 +859,10 @@ describe('ReactArtifactStage', () => {
         runId: 'run-1',
         run: {
           id: 'run-1',
-          nodes: [{ id: 'approve_7gl6', type: 'approve', label: 'Approve', position: { x: 0, y: 0 }, config: {} }],
+          nodes: [gn('approve_7gl6', 'Approve', CLARIFY_CAPS)],
         } as any,
         nodeId: 'approve_7gl6',
-        nodeType: 'approve',
+        node: CLARIFY_NODE,
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },
@@ -875,7 +888,7 @@ describe('ReactArtifactStage', () => {
         runId: 'run-1',
         run: {
           id: 'run-1',
-          nodes: [{ id: 'visual_1', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} }],
+          nodes: [gn('visual_1', '视觉', writesCaps('page'))],
           nodeExecutions: {
             visual_1: [
               { nodeId: 'visual_1', iteration: 1, status: 'completed', outputs: { page: '<p>old</p>' } },
@@ -895,7 +908,7 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('defaults to page.html preview for visual nodes and hides duplicate visual_*.page.html (s1)', async () => {
+  it('defaults to page.html preview for page-writing nodes and hides duplicate visual_*.page.html (s1)', async () => {
     const live = art({ id: 'live', name: 'page.html', kind: 'html', nodeId: 'visual_bqc5' })
     const copy = art({ id: 'copy', name: 'visual_bqc5.page.html', kind: 'html', nodeId: 'visual_bqc5' })
     const wrapper = mount(ReactArtifactStage, {
@@ -903,7 +916,7 @@ describe('ReactArtifactStage', () => {
         artifacts: [copy, live],
         runId: 'run-1',
         nodeId: 'visual_bqc5',
-        nodeType: 'visual',
+        node: PAGE_NODE,
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },
@@ -920,7 +933,7 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('defaults to the newest own-node HTML for unpinned react and ignores upstream page.html (s2)', async () => {
+  it('defaults to the newest own-node HTML for unpinned clarify and ignores upstream page.html (s2)', async () => {
     const upstream = art({
       id: 'up',
       name: 'page.html',
@@ -947,7 +960,7 @@ describe('ReactArtifactStage', () => {
         artifacts: [upstream, older, newer],
         runId: 'run-1',
         nodeId: 'react_ymx0',
-        nodeType: 'react',
+        node: ASK_NODE,
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },
@@ -963,7 +976,7 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('keeps a react pin ahead of newest-HTML fallback (s2)', async () => {
+  it('keeps a clarify pin ahead of newest-HTML fallback (s2)', async () => {
     const html = art({ id: 'h', name: 'brand-row-preview.html', kind: 'html', nodeId: 'react_ymx0' })
     const md = art({ id: 'm', name: 'note.md', kind: 'markdown', nodeId: 'react_ymx0' })
     const wrapper = mount(ReactArtifactStage, {
@@ -972,7 +985,7 @@ describe('ReactArtifactStage', () => {
         previewArtifact: 'note.md',
         runId: 'run-1',
         nodeId: 'react_ymx0',
-        nodeType: 'react',
+        node: ASK_NODE,
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },
@@ -982,14 +995,14 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('stays on pipeline grid when only JSON is on stage and still opens on click (s4 g2.1)', async () => {
+  it('stays on workflow grid when only JSON is on stage and still opens on click (s4 g2.1)', async () => {
     const json = art({ id: 'j', name: 'research.json', kind: 'json', nodeId: 'research' })
     const wrapper = mount(ReactArtifactStage, {
       props: {
         artifacts: [json],
         runId: 'run-1',
         nodeId: 'research',
-        nodeType: 'research',
+        node: RESEARCH_NODE,
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },
@@ -1005,7 +1018,7 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('opens page.html once when it arrives while the user is still on the default pipeline grid (s5 g2.1)', async () => {
+  it('opens page.html once when it arrives while the user is still on the default workflow grid (s5 g2.1)', async () => {
     const json = art({ id: 'j', name: 'research.json', kind: 'json', nodeId: 'visual_bqc5' })
     const page = art({ id: 'p', name: 'page.html', kind: 'html', nodeId: 'visual_bqc5' })
     const wrapper = mount(ReactArtifactStage, {
@@ -1013,7 +1026,7 @@ describe('ReactArtifactStage', () => {
         artifacts: [json],
         runId: 'run-1',
         nodeId: 'visual_bqc5',
-        nodeType: 'visual',
+        node: PAGE_NODE,
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },
@@ -1034,7 +1047,7 @@ describe('ReactArtifactStage', () => {
         artifacts: [page],
         runId: 'run-1',
         nodeId: 'visual_bqc5',
-        nodeType: 'visual',
+        node: PAGE_NODE,
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },
@@ -1051,7 +1064,7 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('shows only known products on the visual pipeline grid and pins page.html (s6)', async () => {
+  it('shows only known products on the visual workflow grid and pins page.html (s6)', async () => {
     const research = art({ id: 'r', name: 'research.json', kind: 'json', nodeId: 'research' })
     const requirement = art({
       id: 'c',
@@ -1071,13 +1084,13 @@ describe('ReactArtifactStage', () => {
         run: {
           id: 'run-1',
           nodes: [
-            { id: 'visual_bqc5', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} },
-            { id: 'react_ymx0', type: 'react', label: '澄清', position: { x: 0, y: 0 }, config: {} },
-            { id: 'research', type: 'research', label: '调研', position: { x: 0, y: 0 }, config: {} },
+            gn('visual_bqc5', '视觉', writesCaps('page')),
+            gn('react_ymx0', '澄清', ASK_CAPS),
+            gn('research', '调研', writesCaps('research')),
           ],
         } as any,
         nodeId: 'visual_bqc5',
-        nodeType: 'visual',
+        node: PAGE_NODE,
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },
@@ -1094,7 +1107,7 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('keeps the react auto-pin on the grid so closing the tab remains reopenable', async () => {
+  it('keeps the clarify auto-pin on the grid so closing the tab remains reopenable', async () => {
     const requirement = art({
       id: 'c',
       name: 'clarified_requirement.json',
@@ -1109,10 +1122,10 @@ describe('ReactArtifactStage', () => {
         runId: 'run-1',
         run: {
           id: 'run-1',
-          nodes: [{ id: 'react_ymx0', type: 'react', label: '澄清', position: { x: 0, y: 0 }, config: {} }],
+          nodes: [gn('react_ymx0', '澄清', ASK_CAPS)],
         } as any,
         nodeId: 'react_ymx0',
-        nodeType: 'react',
+        node: ASK_NODE,
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },
@@ -1166,14 +1179,14 @@ describe('ReactArtifactStage', () => {
         run: {
           id: 'run-friendly',
           nodes: [
-            { id: 'visual_bqc5', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} },
-            { id: 'research', type: 'research', label: '调研', position: { x: 0, y: 0 }, config: {} },
-            { id: 'clarify', type: 'react', label: '澄清', position: { x: 0, y: 0 }, config: {} },
-            { id: 'proposal', type: 'proposal', label: '方案', position: { x: 0, y: 0 }, config: {} },
+            gn('visual_bqc5', '视觉', writesCaps('page')),
+            gn('research', '调研', writesCaps('research')),
+            gn('clarify', '澄清', ASK_CAPS),
+            gn('proposal', '方案', writesCaps('proposals')),
           ],
         } as any,
         nodeId: 'visual_bqc5',
-        nodeType: 'visual',
+        node: PAGE_NODE,
         remoteKind: 'off',
         inlineContent: true,
       },
@@ -1201,7 +1214,7 @@ describe('ReactArtifactStage', () => {
       name: 'research.json',
       kind: 'json',
       nodeId: 'research',
-      content: JSON.stringify({ title: '流水线产物卡片「简单预览」技术调研', summary: '上游诉求对照截图。' }),
+      content: JSON.stringify({ title: '工作流产物卡片「简单预览」技术调研', summary: '上游诉求对照截图。' }),
     })
     const empty = art({
       id: 'e',
@@ -1235,13 +1248,13 @@ describe('ReactArtifactStage', () => {
         run: {
           id: 'run-summary',
           nodes: [
-            { id: 'visual_bqc5', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} },
-            { id: 'research', type: 'research', label: '调研', position: { x: 0, y: 0 }, config: {} },
-            { id: 'plan', type: 'plan', label: '计划', position: { x: 0, y: 0 }, config: {} },
+            gn('visual_bqc5', '视觉', writesCaps('page')),
+            gn('research', '调研', writesCaps('research')),
+            gn('plan', '计划', writesCaps('plan')),
           ],
         } as any,
         nodeId: 'visual_bqc5',
-        nodeType: 'visual',
+        node: PAGE_NODE,
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },
@@ -1250,7 +1263,7 @@ describe('ReactArtifactStage', () => {
     const researchSummary = wrapper.get(
       '[data-testid="react-artifact-card-research.json"] [data-testid="react-artifact-card-summary"]',
     )
-    expect(researchSummary.text()).toContain('流水线产物卡片「简单预览」技术调研')
+    expect(researchSummary.text()).toContain('工作流产物卡片「简单预览」技术调研')
     expect(researchSummary.text()).toContain('上游诉求对照截图。')
     expect(
       wrapper.find('[data-testid="react-artifact-card-plan.json"] [data-testid="react-artifact-card-summary"]').exists(),
@@ -1279,13 +1292,13 @@ describe('ReactArtifactStage', () => {
       run: {
         id: 'run-restore',
         nodes: [
-          { id: 'visual_bqc5', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} },
-          { id: 'research', type: 'research', label: '调研', position: { x: 0, y: 0 }, config: {} },
-          { id: 'clarify', type: 'react', label: '澄清', position: { x: 0, y: 0 }, config: {} },
+          gn('visual_bqc5', '视觉', writesCaps('page')),
+          gn('research', '调研', writesCaps('research')),
+          gn('clarify', '澄清', ASK_CAPS),
         ],
       } as any,
       nodeId: 'visual_bqc5',
-      nodeType: 'visual',
+      node: PAGE_NODE,
       remoteKind: 'off' as const,
     }
     const first = mount(ReactArtifactStage, {
@@ -1343,12 +1356,12 @@ describe('ReactArtifactStage', () => {
         run: {
           id: 'run-gone',
           nodes: [
-            { id: 'visual_bqc5', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} },
-            { id: 'research', type: 'research', label: '调研', position: { x: 0, y: 0 }, config: {} },
+            gn('visual_bqc5', '视觉', writesCaps('page')),
+            gn('research', '调研', writesCaps('research')),
           ],
         } as any,
         nodeId: 'visual_bqc5',
-        nodeType: 'visual',
+        node: PAGE_NODE,
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },
@@ -1362,13 +1375,13 @@ describe('ReactArtifactStage', () => {
     resetStageOpenStateForTests()
   })
 
-  it('auto-pins clarified_requirement and plan on approve without set_artifact_preview (g1.1 / g1.2)', async () => {
+  it('auto-pins clarified_requirement and plan on clarify without set_artifact_preview (g1.1 / g1.2)', async () => {
     const wrapper = mount(ReactArtifactStage, {
       props: {
         artifacts: [],
         runId: 'run-auto-pin',
         nodeId: 'approve_1',
-        nodeType: 'approve',
+        node: CLARIFY_NODE,
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },
@@ -1405,7 +1418,7 @@ describe('ReactArtifactStage', () => {
         artifacts: [],
         runId: 'run-auto-idle',
         nodeId: 'approve_1',
-        nodeType: 'approve',
+        node: CLARIFY_NODE,
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },
@@ -1447,7 +1460,7 @@ describe('ReactArtifactStage', () => {
         artifacts: [clarified, plan],
         runId: 'run-auto-unread',
         nodeId: 'approve_1',
-        nodeType: 'approve',
+        node: CLARIFY_NODE,
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },
@@ -1504,10 +1517,10 @@ describe('ReactArtifactStage', () => {
         runId: 'run-auto-grid',
         run: {
           id: 'run-auto-grid',
-          nodes: [{ id: 'react_1', type: 'react', label: '澄清', position: { x: 0, y: 0 }, config: {} }],
+          nodes: [gn('react_1', '澄清', ASK_CAPS)],
         } as any,
         nodeId: 'react_1',
-        nodeType: 'react',
+        node: ASK_NODE,
         remoteKind: 'off',
       },
       global: { plugins: [i18n()], stubs },

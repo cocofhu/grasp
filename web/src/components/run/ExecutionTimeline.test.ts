@@ -9,8 +9,8 @@ import ExecutionTimeline from './ExecutionTimeline.vue'
 
 const nodes: WFNode[] = [
   { id: 'start', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
-  { id: 'research', type: 'research', label: '调研', position: { x: 0, y: 0 }, config: {} },
-  { id: 'react', type: 'react', label: '澄清', position: { x: 0, y: 0 }, config: {} },
+  { id: 'research', type: 'agent', label: '调研', position: { x: 0, y: 0 }, config: {} },
+  { id: 'react', type: 'agent', label: '澄清', position: { x: 0, y: 0 }, config: {} },
 ]
 
 function baseRun(overrides: Partial<Run> = {}): Run {

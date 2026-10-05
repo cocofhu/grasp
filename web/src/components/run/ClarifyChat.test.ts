@@ -10,9 +10,9 @@ import type { ClarifyTurn, ReactAnnotation } from '@/lib/shared/types'
 import ClarifyChat from './ClarifyChat.vue'
 import { LIVE_CARD_HOST, createLiveStore, type LiveCardHost } from '@/lib/inbox/liveVariants'
 
-function liveHost(): LiveCardHost {
+function liveHost(state = 'ready'): LiveCardHost {
   const live = createLiveStore()
-  live.apply({ sid: 'sid001', state: 'ready', summary: '页面候选', variants: [{ n: 1, label: '入场' }, { n: 2, label: '聚焦' }] })
+  live.apply({ sid: 'sid001', state, summary: '页面候选', variants: [{ n: 1, label: '入场' }, { n: 2, label: '聚焦' }] })
   live.setView('sid001', { current: 1, mode: 'inplace' })
   return { store: live.store, interactive: true, command: vi.fn() }
 }
@@ -30,7 +30,6 @@ function mountChat(opts: {
   active?: boolean
   draft?: string
   reviewMode?: boolean
-  nodeType?: string
   confirmError?: string | null
   confirmCanAbort?: boolean
   annotateEnabled?: boolean
@@ -57,7 +56,6 @@ function mountChat(opts: {
       active: opts.active ?? true,
       draft: opts.draft ?? '',
       reviewMode: opts.reviewMode ?? false,
-      nodeType: opts.nodeType ?? '',
       confirmError: opts.confirmError ?? null,
       confirmCanAbort: opts.confirmCanAbort ?? false,
       annotateEnabled: opts.annotateEnabled ?? false,
@@ -151,6 +149,20 @@ describe('ClarifyChat', () => {
     expect(cards).toHaveLength(1)
     expect(cards[0].find('[data-testid="live-variant-accept"]').exists()).toBe(true)
     wrapper.unmount()
+  })
+
+  it('shows no Live card while the agent is still working on the session', () => {
+    const at = '2026-07-18T00:00:00Z'
+    const request: ClarifyTurn = { role: 'human', text: '首页加点动效', at, live: { sid: 'sid001', op: 'generate' } }
+    const generating = mountChat({ turns: [request, { role: 'agent', text: '我先看看结构', at }], liveHost: liveHost('generating') })
+    expect(generating.find('[data-testid="live-variant-card"]').exists()).toBe(false)
+    generating.unmount()
+    const waiting = mountChat({ turns: [request], liveHost: liveHost('generating') })
+    expect(waiting.find('[data-testid="live-variant-card"]').exists()).toBe(false)
+    waiting.unmount()
+    const streaming = mountChat({ turns: [request, { role: 'agent', text: '已放上 2 个候选', at, streaming: true }], liveHost: liveHost() })
+    expect(streaming.find('[data-testid="live-variant-card"][data-side="agent"]').exists()).toBe(false)
+    streaming.unmount()
   })
 
   it('shows no Live card on the approval page', () => {
@@ -335,9 +347,9 @@ describe('ClarifyChat', () => {
 
   it('emits finish on early finish click', async () => {
     const wrapper = mountChat()
-    const finishBtn = wrapper.findAll('button').find((b) => b.text().includes('结束交互'))
-    expect(finishBtn).toBeTruthy()
-    await finishBtn!.trigger('click')
+    const finishBtn = wrapper.find('[data-testid="clarify-confirm-flow"]')
+    expect(finishBtn.text()).toContain('确认并流转')
+    await finishBtn.trigger('click')
     await flushPromises()
     expect(wrapper.emitted('finish')).toBeTruthy()
     wrapper.unmount()
@@ -495,7 +507,6 @@ describe('ClarifyChat', () => {
   // the user retry without being stranded on a fake next-turn chat state (g2.1/g2.2).
   it('approve confirm rejection releases validating chrome and shows why', async () => {
     const wrapper = mountChat({
-      nodeType: 'approve',
       turns: [{ role: 'agent', text: '要做登录吗', at: '2026-08-21T17:00:00+08:00' }],
     })
     const confirmBtn = wrapper.find('[data-testid="clarify-confirm-flow"]')
@@ -583,9 +594,9 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
-  it('uses clarify placeholder by default', () => {
+  it('uses the first-speaker placeholder by default', () => {
     const wrapper = mountChat()
-    expect(wrapper.find('[data-testid="clarify-input"]').attributes('placeholder')).toBe('补充信息…')
+    expect(wrapper.find('[data-testid="clarify-input"]').attributes('placeholder')).toBe('请先描述目标…')
     wrapper.unmount()
   })
 
@@ -597,8 +608,8 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
-  it('uses approve first-speaker placeholder and empty hint', () => {
-    const wrapper = mountChat({ nodeType: 'approve', turns: null })
+  it('uses first-speaker placeholder and empty hint with no turns', () => {
+    const wrapper = mountChat({ turns: null })
     const openingHint = '请先描述目标…'
     expect(wrapper.find('[data-testid="clarify-input"]').attributes('placeholder')).toBe(
       openingHint,
@@ -611,9 +622,8 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
-  it('seeds the first human bubble and hides the approve empty hint', () => {
+  it('seeds the first human bubble and hides the empty hint', () => {
     const wrapper = mountChat({
-      nodeType: 'approve',
       turns: [],
       seedHumanText: '把登录做清楚',
       seedHumanImages: [{ data: 'abc', mimeType: 'image/png', name: 'shot.png' }],
@@ -627,7 +637,6 @@ describe('ClarifyChat', () => {
 
   it('seeds file chips with the first bubble and keeps them after idle queue_state', async () => {
     const wrapper = mountChat({
-      nodeType: 'approve',
       turns: [],
       seedHumanText: '把登录做清楚',
       seedHumanImages: [
@@ -660,7 +669,6 @@ describe('ClarifyChat', () => {
   it('does not duplicate an image-only seed once the persisted human turn lands', async () => {
     const shot = { data: 'abc', mimeType: 'image/png', name: 'shot.png' }
     const wrapper = mountChat({
-      nodeType: 'approve',
       turns: [{ role: 'human', text: '', at: '2026-08-21T00:00:00Z', images: [shot] }],
       seedHumanText: '',
       seedHumanImages: [shot],

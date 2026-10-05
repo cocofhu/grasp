@@ -6,7 +6,7 @@ import StatusPill from '../ui/StatusPill.vue'
 import { renderMarkdown } from '@/lib/shared/markdown'
 import { fmtDuration } from '@/lib/shared/format'
 import { api } from '@/lib/api/api'
-import { nodeColorHex } from '@/data/nodeRegistry'
+import { nodeColor } from '@/data/nodeRegistry'
 import { useNodeDefs } from '@/lib/run/useNodeDefs'
 import { resolveNodeDisplayLabelFromNode } from '@/lib/run/resolveNodeDisplayLabel'
 import CompositeVarBlock from '@/components/ui/CompositeVarBlock.vue'
@@ -15,7 +15,8 @@ import StructuredArtifactView from './StructuredArtifactView.vue'
 import AppPreviewPanel from './AppPreviewPanel.vue'
 import OutputResultCards from './OutputResultCards.vue'
 import type { NodeRun, WFNode, Run, OutputCard } from '@/lib/shared/types'
-import { isClarifyInteractive } from '@/lib/shared/clarifyInteractive'
+import { isClarifyNode as isClarifyAgent, isPreviewNode } from '@/lib/shared/clarifyInteractive'
+import { declaredProducts, hasTool, writesSchema } from '@/lib/workflow/agentCapabilities'
 import { getAgentProfile } from '@/lib/run/workflowIO'
 
 const props = defineProps<{ node: WFNode; nodeRun: NodeRun; run: Run }>()
@@ -27,7 +28,8 @@ const def = computed(() => NODE_DEFS.value[props.node.type])
 const displayLabel = computed(() =>
   resolveNodeDisplayLabelFromNode(props.node, t, def.value?.label),
 )
-const hex = computed(() => nodeColorHex(props.node.type))
+const hex = computed(() => nodeColor(props.node.type))
+const hexSoft = computed(() => nodeColor(props.node.type, 0.13))
 
 // Live-ticking elapsed time. The backend leaves durationSec at 0 while a node is
 // still running, so a raw read would freeze at 00:00. Instead derive it from
@@ -76,17 +78,23 @@ const inputItems = computed(() => {
 const agentProfile = computed(() => getAgentProfile(props.node.config) || undefined)
 const narration = computed(() => outputs.value.narration_summary as string | undefined)
 
-// plan / implement: render the structured two-level plan.json artifact instead of
-// leaving it as an opaque blob. Implement nodes update statuses in the same file,
-// so we surface it there too. plan.json is a reserved run-scoped artifact name.
-// The run/artifact list DTOs omit `content` (server marks it json:"-"), so the
-// content is fetched by id and re-fetched whenever the plan artifact changes
-// (size/id) — e.g. as an implement node marks progress mid-run.
+const caps = computed(() => (props.node.type === 'agent' ? props.node.caps : undefined))
+const clarifyAgent = computed(() => isClarifyAgent(props.node))
+const previewAgent = computed(() => isPreviewNode(props.node) && !clarifyAgent.value)
+
+// plan writers / plan progress trackers: render the structured two-level plan.json
+// artifact instead of leaving it as an opaque blob. Agents granted
+// update_plan_status update statuses in the same file, so we surface it there too.
+// plan.json is a reserved run-scoped artifact name. The run/artifact list DTOs
+// omit `content` (server marks it json:"-"), so the content is fetched by id and
+// re-fetched whenever the plan artifact changes (size/id) — e.g. as an Agent
+// marks progress mid-run.
+const tracksPlan = computed(() => hasTool(caps.value, 'update_plan_status'))
 const planArtifact = computed(() => {
-  if (!['plan', 'implement', 'approve'].includes(props.node.type)) return null
+  if (!writesSchema(caps.value, 'plan') && !tracksPlan.value) return null
   return (
     props.run.artifacts.find(
-      (x) => x.name === 'plan.json' && (props.node.type === 'implement' || x.nodeId === props.node.id),
+      (x) => x.name === 'plan.json' && (tracksPlan.value || x.nodeId === props.node.id),
     ) || null
   )
 })
@@ -126,7 +134,7 @@ watch(
 )
 
 const clarifiedArtifact = computed(() => {
-  if (!isClarifyInteractive(props.node.type)) return null
+  if (!writesSchema(caps.value, 'clarified_requirement')) return null
   return (
     props.run.artifacts.find(
       (x) => x.name === 'clarified_requirement.json' && x.nodeId === props.node.id,
@@ -172,24 +180,26 @@ watch(
   { immediate: true },
 )
 
-// structured framework cards: render the node's rendered-markdown product.
-const STRUCTURED_OUT: Record<string, string> = {
-  research: 'research',
-  test: 'test_result',
-  review: 'review',
-  proposal: 'proposals',
-  proposal_select: 'proposal',
-}
+// structured products: render the first declared product's markdown. plan /
+// clarified_requirement / page have dedicated views above.
+const DEDICATED_SCHEMAS = new Set(['plan', 'clarified_requirement', 'page'])
 const structuredMd = computed<string | null>(() => {
-  const key = STRUCTURED_OUT[props.node.type]
-  if (!key) return null
-  const v = outputs.value[key]
-  return typeof v === 'string' && v.trim() ? v : null
+  const keys =
+    props.node.type === 'proposal_select'
+      ? ['proposal']
+      : declaredProducts(caps.value)
+          .filter((p) => !DEDICATED_SCHEMAS.has(p.name))
+          .map((p) => p.outputKey)
+  for (const key of keys) {
+    const v = outputs.value[key]
+    if (typeof v === 'string' && v.trim()) return v
+  }
+  return null
 })
 
-// react: resolve THIS node's dialogue. A run can hold several react nodes, so
+// clarify: resolve THIS node's dialogue. A run can hold several clarify Agents, so
 // read the per-node map (clarifyByNode) and only fall back to the single active
-// `clarify` for this node — otherwise a non-active react node would mirror the
+// `clarify` for this node — otherwise a non-active clarify node would mirror the
 // currently-paused node's state.
 const clarifyForNode = computed(
   () =>
@@ -201,9 +211,14 @@ const clarifyRounds = computed(() => (clarifyForNode.value?.turns || []).filter(
 const clarified = computed(() => outputs.value.clarified_requirement as string | undefined)
 
 // human_gate: resolve the chosen action id back to its button label + form values.
+// Gated Agents report the pass / fail outlet they took.
 const gateAction = computed(() => {
   const id = outputs.value.action
   if (!id) return null
+  if (props.node.type === 'agent') {
+    const outlet = String(id)
+    return { id: outlet, label: outlet === 'pass' || outlet === 'fail' ? t(`nodes.outlets.${outlet}`) : outlet }
+  }
   const a = ((props.node.config?.actions || []) as { id: string; label: string }[]).find((x) => x.id === id)
   return { id: String(id), label: a?.label || String(id) }
 })
@@ -263,7 +278,7 @@ function fileStatusClass(s: string): string {
   <div class="scroll-area h-full min-w-0 w-full max-w-full overflow-x-clip overflow-y-auto" data-testid="node-output-scroll">
     <div class="p-4">
     <div class="mb-3 flex min-w-0 items-center gap-2.5">
-      <div class="flex h-8 w-8 items-center justify-center rounded-md" :style="{ background: hex + '22', color: hex }">
+      <div class="flex h-8 w-8 items-center justify-center rounded-md" :style="{ background: hexSoft, color: hex }">
         <Icon :name="def.icon" :size="16" />
       </div>
       <div class="min-w-0 flex-1">
@@ -293,8 +308,8 @@ function fileStatusClass(s: string): string {
       <div v-else class="text-[12px] text-txt3">{{ t('pages.nodeOutput.noInputFields') }}</div>
     </div>
 
-    <!-- agent / plan / implement + framework cards: which agent ran + summary -->
-    <div v-else-if="['agent', 'plan', 'implement', 'research', 'test', 'review', 'proposal'].includes(node.type)" class="card mb-3 p-3">
+    <!-- auto Agent: which agent ran + summary -->
+    <div v-else-if="node.type === 'agent' && !clarifyAgent" class="card mb-3 p-3">
       <div class="mb-2 flex items-center gap-1.5 text-xs font-semibold text-txt2"><Icon name="robot" :size="13" :style="{ color: hex }" /> {{ t('pages.nodeOutput.agentInfo') }}</div>
       <div class="space-y-1.5 text-[12px]">
         <div class="flex min-w-0 max-w-full items-center gap-2"><span class="w-20 shrink-0 text-txt3">Agent</span><code class="min-w-0 max-w-full flex-1 overflow-x-auto whitespace-nowrap rounded bg-base px-1.5 py-0.5 font-mono text-accent-2">{{ agentProfile || '—' }}</code></div>
@@ -304,10 +319,20 @@ function fileStatusClass(s: string): string {
         <div class="mb-1 text-[10px] uppercase tracking-wider text-txt3">{{ t('pages.nodeOutput.workSummary') }}</div>
         <div class="text-[12px] leading-relaxed text-txt2 [overflow-wrap:anywhere]">{{ narration }}</div>
       </div>
+      <div v-if="previewAgent" class="mt-3 border-t border-line pt-2">
+        <div class="mb-2 flex items-center gap-1.5 text-xs font-semibold text-txt2">
+          <Icon name="dashboard" :size="13" :style="{ color: hex }" /> {{ t('pages.nodeOutput.appPreview') }}
+        </div>
+        <AppPreviewPanel :run-id="run.id" :node-id="node.id" compact />
+      </div>
+      <div v-if="gateAction" class="mt-3 border-t border-line pt-2 text-[12px]">
+        <span class="text-txt3">{{ t('pages.nodeOutput.chosenAction') }}</span>
+        <span class="ml-2 rounded-md bg-ok/15 px-2 py-0.5 text-[11px] font-medium text-ok">{{ gateAction.label }}</span>
+      </div>
     </div>
 
-    <!-- react / approve: clarification dialogue summary -->
-    <div v-else-if="isClarifyInteractive(node.type)" class="card mb-3 p-3">
+    <!-- clarify Agent: clarification dialogue summary -->
+    <div v-else-if="clarifyAgent" class="card mb-3 p-3">
       <div class="mb-2 flex items-center gap-1.5 text-xs font-semibold text-txt2"><Icon name="chat" :size="13" :style="{ color: hex }" /> {{ t('pages.nodeOutput.reactInteraction') }}</div>
       <div class="space-y-1.5 text-[12px]">
         <div class="flex min-w-0 max-w-full items-center gap-2"><span class="w-20 shrink-0 text-txt3">Agent</span><code class="min-w-0 max-w-full flex-1 overflow-x-auto whitespace-nowrap rounded bg-base px-1.5 py-0.5 font-mono text-accent-2">{{ agentProfile || '—' }}</code></div>
@@ -322,19 +347,6 @@ function fileStatusClass(s: string): string {
         <div class="md text-[12px] leading-relaxed text-txt2" v-html="renderMarkdown(clarified)" />
       </div>
       <p v-if="isClarifyNode && !clarifyForNode?.done" class="mt-2 text-[11px] text-txt3">{{ t('pages.nodeOutput.clarifyTabHint') }}</p>
-    </div>
-
-    <!-- app_preview: iframe thumbnail when no structured JSON product -->
-    <div v-else-if="node.type === 'app_preview'" class="card mb-3 p-3">
-      <div class="mb-2 flex items-center gap-1.5 text-xs font-semibold text-txt2">
-        <Icon name="dashboard" :size="13" :style="{ color: hex }" /> {{ t('pages.nodeOutput.appPreview') }}
-      </div>
-      <AppPreviewPanel :run-id="run.id" :node-id="node.id" compact />
-      <div v-if="gateAction" class="mt-3 border-t border-line pt-2 text-[12px]">
-        <span class="text-txt3">{{ t('pages.nodeOutput.chosenAction') }}</span>
-        <span class="ml-2 rounded-md bg-ok/15 px-2 py-0.5 text-[11px] font-medium text-ok">{{ gateAction.label }}</span>
-      </div>
-      <div v-else-if="nodeRun.status === 'waiting_human'" class="mt-2 text-[11px] text-txt3">{{ t('pages.nodeOutput.waitingApproval') }}</div>
     </div>
 
     <!-- human_gate: the decision made -->

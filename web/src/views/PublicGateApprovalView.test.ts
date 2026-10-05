@@ -299,7 +299,7 @@ describe('PublicGateApprovalView workbench', () => {
     mocks.preview.mockResolvedValue({
       status: 'active',
       kind: 'review',
-      nodeType: 'grasp',
+      nodeType: 'agent', interaction: 'clarify',
       remainingSec: 3600,
       nonce: 'nf',
       reactSessionAlive: true,
@@ -310,7 +310,7 @@ describe('PublicGateApprovalView workbench', () => {
     mocks.artifacts.mockResolvedValue({
       status: 'active',
       artifacts: [art('feedback.clarify.g1.r1.json'), art('feedback_index.json'), art('research.json')],
-      nodes: [{ id: 'g1', type: 'grasp', label: 'Grasp' }],
+      nodes: [{ id: 'g1', type: 'agent', label: '需求澄清', caps: { interaction: 'clarify' } }],
     })
     const w = mountView()
     await flushPromises()
@@ -326,7 +326,7 @@ describe('PublicGateApprovalView workbench', () => {
     mocks.artifacts.mockResolvedValue({
       status: 'active',
       artifacts: [art('feedback.clarify.g1.r1.json')],
-      nodes: [{ id: 'g1', type: 'grasp', label: 'Grasp' }],
+      nodes: [{ id: 'g1', type: 'agent', label: '需求澄清', caps: { interaction: 'clarify' } }],
     })
     const only = mountView()
     await flushPromises()
@@ -439,7 +439,7 @@ describe('PublicGateApprovalView workbench', () => {
 
   it('keeps page control reachable when an embedded read-only session ends or preview reload fails', async () => {
     const preview = {
-      status: 'active', kind: 'review', nodeType: 'grasp', reactSessionAlive: true,
+      status: 'active', kind: 'review', nodeType: 'agent', interaction: 'clarify', reactSessionAlive: true,
       permissionPreset: 'react_only', actions: { reply: 'reply' }, turns: [],
     }
     mocks.preview.mockResolvedValue(preview)
@@ -1571,10 +1571,10 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
     mocks.preview.mockResolvedValue({
       status: 'active',
       kind: 'review',
-      nodeType: 'app_preview',
+      nodeType: 'agent', interaction: 'auto',
       remainingSec: 3600,
       reactSessionAlive: true,
-      productKind: 'app_preview',
+      productKind: 'app',
       actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
       turns: [{ role: 'agent', text: '预览已就绪', at: '2026-08-01T00:00:00Z' }],
     })
@@ -1601,10 +1601,10 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
     mocks.preview.mockResolvedValue({
       status: 'active',
       kind: 'review',
-      nodeType: 'app_preview',
+      nodeType: 'agent', interaction: 'auto',
       remainingSec: 3600,
       reactSessionAlive: true,
-      productKind: 'app_preview',
+      productKind: 'app',
       actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
       turns: [{ role: 'agent', text: '预览已就绪', at: '2026-08-01T00:00:00Z' }],
     })
@@ -1634,10 +1634,10 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
     const busy = {
       status: 'active',
       kind: 'review',
-      nodeType: 'app_preview',
+      nodeType: 'agent', interaction: 'auto',
       remainingSec: 3600,
       reactSessionAlive: true,
-      productKind: 'app_preview',
+      productKind: 'app',
       sessionBusy: true,
       waiting: 0,
       activeItem: { text: '改文案' },
@@ -1721,7 +1721,7 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
     mocks.preview.mockResolvedValue({
       status: 'active',
       kind: 'review',
-      nodeType: 'grasp',
+      nodeType: 'agent', interaction: 'clarify',
       remainingSec: 3600,
       reactSessionAlive: false,
       actions: { confirm: 'confirm', reply: 'reply' },
@@ -1739,7 +1739,7 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
     mocks.preview.mockResolvedValue({
       status: 'active',
       kind: 'review',
-      nodeType: 'grasp',
+      nodeType: 'agent', interaction: 'clarify',
       remainingSec: 3600,
       reactSessionAlive: true,
       actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
@@ -1811,7 +1811,7 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
     mocks.preview.mockResolvedValue({
       status: 'active',
       kind: 'review',
-      nodeType: 'grasp',
+      nodeType: 'agent', interaction: 'clarify',
       remainingSec: 3600,
       reactSessionAlive: true,
       actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
@@ -1848,7 +1848,7 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
     mocks.preview.mockResolvedValue({
       status: 'active',
       kind: 'review',
-      nodeType: 'grasp',
+      nodeType: 'agent', interaction: 'clarify',
       remainingSec: 3600,
       reactSessionAlive: true,
       actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
@@ -1886,7 +1886,7 @@ describe('embedded Chat page candidate mode', () => {
   const token = `gse_${'ad'.repeat(16)}`
   async function setup(options: { enabled?: boolean; permission?: string; sessions?: unknown[] } = {}) {
     mocks.preview.mockResolvedValue({
-      status: 'active', kind: 'review', nodeType: 'grasp', reactSessionAlive: true,
+      status: 'active', kind: 'review', nodeType: 'agent', interaction: 'clarify', reactSessionAlive: true,
       permissionPreset: options.permission || 'full', actions: { reply: 'reply' },
       turns: [{ role: 'agent', text: 'Preview ready' }],
     })
@@ -1950,8 +1950,8 @@ describe('embedded Chat page candidate mode', () => {
     expect(requestPageContext).not.toHaveBeenCalled()
   })
 
-  for (const state of ['generating', 'failed', 'ready']) {
-    it(`retains the draft when an existing ${state} session has no displayed candidate`, async () => {
+  for (const state of ['generating', 'refining', 'accepting', 'discarding']) {
+    it(`retains the draft while an existing ${state} session is busy`, async () => {
       const { wrapper } = await setup({ sessions: [{ sid: 'existing', mode: 'replace', state }] })
       await wrapper.get('[data-testid="live-candidate-mode"]').trigger('click')
       await wrapper.get('[data-testid="clarify-input"]').setValue('new requirement')
@@ -1959,9 +1959,34 @@ describe('embedded Chat page candidate mode', () => {
       await flushPromises()
       expect(mocks.reply).not.toHaveBeenCalled()
       expect((wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement).value).toBe('new requirement')
-      expect(wrapper.text()).toContain('已有候选')
+      expect(wrapper.text()).toContain('候选正在处理中')
     })
   }
+
+  for (const state of ['ready', 'failed']) {
+    it(`replaces an existing ${state} session when the original is displayed`, async () => {
+      const { wrapper, vm } = await setup({ sessions: [{ sid: 'existing', mode: 'replace', state, variants: [{ n: 1 }, { n: 2 }, { n: 3 }] }] })
+      vm.setLiveView('existing', { current: 0, mode: 'inplace', original: true })
+      mocks.reply.mockImplementation(async (request) => ({ status: 'accepted', live: { sid: request.live.sid, mode: 'replace', state: 'generating' } }))
+      await wrapper.get('[data-testid="live-candidate-mode"]').trigger('click')
+      await wrapper.get('[data-testid="clarify-input"]').setValue('new requirement')
+      await wrapper.get('[data-testid="clarify-send-label"]').trigger('click')
+      await flushPromises()
+      expect(mocks.reply.mock.calls[0][0]).toMatchObject({ live: { op: 'generate', scope: 'page', prompt: 'new requirement', replace: true } })
+      expect(mocks.reply.mock.calls[0][0].live.sid).not.toBe('existing')
+      expect((wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement).value).toBe('')
+    })
+  }
+
+  it('does not mark a first page generate as a replacement', async () => {
+    const { wrapper } = await setup({ sessions: [{ sid: 'old', mode: 'replace', state: 'accepted' }] })
+    mocks.reply.mockImplementation(async (request) => ({ status: 'accepted', live: { sid: request.live.sid, mode: 'replace', state: 'generating' } }))
+    await wrapper.get('[data-testid="live-candidate-mode"]').trigger('click')
+    await wrapper.get('[data-testid="clarify-input"]').setValue('first request')
+    await wrapper.get('[data-testid="clarify-send-label"]').trigger('click')
+    await flushPromises()
+    expect(mocks.reply.mock.calls[0][0].live).not.toHaveProperty('replace')
+  })
 
   it('keeps a stable session ID and the draft after an uncertain HTTP failure', async () => {
     const { wrapper } = await setup()
@@ -2029,7 +2054,7 @@ describe('embedded Chat page candidate mode', () => {
   it('plan g1.1 g1.2 g2.1 g3.1: gear panel locale row switches preview chat copy and keeps the draft', async () => {
     await setLocale('en')
     mocks.preview.mockResolvedValue({
-      status: 'active', kind: 'review', nodeType: 'grasp', reactSessionAlive: true,
+      status: 'active', kind: 'review', nodeType: 'agent', interaction: 'clarify', reactSessionAlive: true,
       permissionPreset: 'full', actions: { reply: 'reply' },
       turns: [{ role: 'agent', text: 'Preview ready' }],
     })
@@ -2093,7 +2118,7 @@ describe('public approval page keeps its top-bar language select (plan g2)', () 
     mocks.preview.mockResolvedValue({
       status: 'active',
       kind: 'review',
-      nodeType: 'grasp',
+      nodeType: 'agent', interaction: 'clarify',
       reactSessionAlive: true,
       actions: { reply: 'reply' },
       turns: [],

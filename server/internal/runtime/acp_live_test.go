@@ -156,7 +156,7 @@ func TestCursorLiveRunAgent(t *testing.T) {
 		RunID:    runID,
 		Token:    token,
 		NodeID:   "implement",
-		NodeType: "agent",
+		NodeType: "agent", Caps: testPlainCaps,
 		Config: map[string]any{
 			"agent_profile": "backend-dev",
 			"prompt": "在工作目录创建文件 report.md。" +

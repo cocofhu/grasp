@@ -48,7 +48,6 @@ function withChat(over: Record<string, unknown> = {}) {
     active: true,
     reviewMode: false,
     annotateEnabled: false,
-    nodeType: 'react',
     confirmError: null,
     ...over,
   })
@@ -616,7 +615,7 @@ describe('useClarifyChat actions', () => {
   })
 
   it('supports finish and confirm flows and releases validation on errors', async () => {
-    const clarify = withChat({ nodeType: 'grasp' })
+    const clarify = withChat()
     clarify.chat.finishEarly()
     expect(clarify.emit).toHaveBeenCalledWith('finish')
     // Confirm-flow uses validating chrome, not thinking placeholder (plan g2.1).
@@ -815,10 +814,9 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
-  it('handles approve placeholders, done state and empty seed images', async () => {
-    const { chat, app, props } = withChat({ nodeType: 'approve', seedHumanImages: [image()] })
-    expect(chat.showApproveEmptyHint.value).toBe(false)
-    expect(chat.useConfirmFlowAction.value).toBe(true)
+  it('handles clarify placeholders, done state and empty seed images', async () => {
+    const { chat, app, props } = withChat({ seedHumanImages: [image()] })
+    expect(chat.showClarifyEmptyHint.value).toBe(false)
     expect(chat.inputPlaceholder.value).toBeTruthy()
     expect(chat.seedHumanTurn.value?.images).toHaveLength(1)
     chat.thinking.value = true
@@ -947,7 +945,6 @@ describe('useClarifyChat actions', () => {
 
   it('keeps failed Live operations on card recovery instead of text-only retry', () => {
     const { chat, app, emit } = withChat({
-      nodeType: 'approve',
       turns: [
         { role: 'human', text: '采用当前变体', at: '2026-09-30T00:00:00Z', live: { sid: 'live-1', op: 'accept', variant: 2 } },
         { role: 'agent', text: '', at: '2026-09-30T00:00:01Z' },

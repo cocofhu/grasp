@@ -2,7 +2,7 @@ package models
 
 import "time"
 
-// GateSharePreviewTicket is a short-lived credential for public app_preview
+// GateSharePreviewTicket is a short-lived credential for public preview
 // VNC / API proxy. Plaintext share tokens are never stored; tickets are keyed
 // by token hash and bind run/node/port for server-side Lookup.
 type GateSharePreviewTicket struct {

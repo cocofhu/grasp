@@ -132,6 +132,19 @@ describe('OpenCodeProviderFields', () => {
     wrapper.unmount()
   })
 
+  it('does not call a required service address optional', async () => {
+    const wrapper = mountFields()
+    await flushPromises()
+    expect(wrapper.get('[data-test="opencode-base-hint"]').text()).toContain('一般不用填写')
+
+    await wrapper.setProps({ provider: 'custom' })
+    await flushPromises()
+    const hint = wrapper.get('[data-test="opencode-base-hint"]').text()
+    expect(hint).not.toContain('一般不用填写')
+    expect(hint).toContain('/v1')
+    wrapper.unmount()
+  })
+
   it('stays quiet about a custom gateway model', async () => {
     openCodeModels.mockResolvedValue({ models: [] })
     const wrapper = mountFields({ provider: 'custom', model: 'my-model', baseUrl: 'https://llm.example/v1' })

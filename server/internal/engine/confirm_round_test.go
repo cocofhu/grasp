@@ -100,7 +100,7 @@ func TestSilentClarifyConfirmKeptWhenSummaryExists(t *testing.T) {
 // wrap-up commits anything, and the reconcile narration plus its summary are
 // what the ledger keeps for the confirm round.
 func TestReviewConfirmReconcilesBeforeWrapUpAndRecordsSummary(t *testing.T) {
-	eng, db, provider := setupReviewEngine(t, true)
+	eng, db, provider := setupReviewEngine(t)
 	provider.reconcileMsg = "已按聊天记录把第 3 条结论补上原始链接。"
 	provider.reconcileSummary = "用户要求补齐证据链,已落到 proposals.json。"
 	provider.wrapUpMsg = "已提交 src/a.go,跳过 tmp.log"
@@ -161,7 +161,7 @@ func TestReviewConfirmReconcilesBeforeWrapUpAndRecordsSummary(t *testing.T) {
 // The confirm round is not a place to invent content: an agent that answered
 // with prose instead of the JSON contract yields no summary at all.
 func TestConfirmRoundWithoutSummaryStillKeepsWrittenFeedback(t *testing.T) {
-	eng, db, provider := setupReviewEngine(t, true)
+	eng, db, provider := setupReviewEngine(t)
 	provider.reconcileSummary = ""
 
 	run, err := eng.StartRun("review-wf", map[string]any{"idea": "登录"}, "test")

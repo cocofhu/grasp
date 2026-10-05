@@ -68,12 +68,14 @@ func main() {
 	// At-rest secret encryption reads its key from the live config (security.
 	// secrets_key, with GRASP_SECRETS_KEY env override) so channel credentials
 	// stay encrypted in the DB and the key is managed like any other config value.
+	// Without one, non-production servers fall back to a key file beside the DB.
+	fallbackKey := secretsKeyFallback(cfg)
 	crypto.SetKeySource(func() string {
 		c := config.GetConfig()
-		if c == nil {
-			return ""
+		if c != nil && c.SecretsKey() != "" {
+			return c.SecretsKey()
 		}
-		return c.SecretsKey()
+		return fallbackKey
 	})
 
 	// Reload on ConfigMap writes. Values captured below at boot
@@ -117,7 +119,7 @@ func main() {
 	})
 	// Node-type gate fallback: when the in-memory SetActiveNode registration is
 	// gone (server restarted mid-run, or the MCP call is served by a replica
-	// that never executed the node — e.g. an app_preview sandbox kept alive
+	// that never executed the node — e.g. a preview-capable sandbox kept alive
 	// during waiting_human), resolve the run's current node + type from the DB
 	// so set_preview / set_plan / set_* keep passing their node-type gate
 	// instead of being wrongly rejected.
@@ -128,29 +130,29 @@ func main() {
 	// in-sandbox agent can still call set_preview / set_* while the container
 	// lives (otherwise ActiveNodeType is "" and node-scoped tools are wrongly
 	// rejected after UnregisterRun).
-	host.SetActiveNodeSource(func(runID string) (string, string, bool) {
+	host.SetActiveNodeSource(func(runID string) (string, *models.AgentCapabilities, bool) {
 		var run models.Run
 		if db.Select("id", "status", "graph").First(&run, "id = ?", runID).Error != nil {
-			return "", "", false
+			return "", nil, false
 		}
 		nodeID := runSvc.CurrentNodeIDs([]models.Run{run})[runID]
 		if nodeID == "" {
 			var sb models.Sandbox
 			if db.Where("run_id = ? AND purpose = ?", runID, "run").
 				Order("updated_at desc").First(&sb).Error != nil || strings.TrimSpace(sb.NodeID) == "" {
-				return "", "", false
+				return "", nil, false
 			}
 			nodeID = sb.NodeID
 		}
-		nodeType := ""
+		var caps *models.AgentCapabilities
 		if n := run.Graph.FindNode(nodeID); n != nil {
-			nodeType = n.Type
+			caps = n.Caps
 		}
-		return nodeID, nodeType, true
+		return nodeID, caps, true
 	})
 	host.SetReviewPhaseSource(func(runID string) bool {
 		nodeID := host.ActiveNode(runID)
-		if !models.ReviewAgentNode(host.ActiveNodeType(runID)) {
+		if !host.ActiveCaps(runID).ReviewEnabled() {
 			return false
 		}
 		var conv models.ReactConversation
@@ -204,7 +206,6 @@ func main() {
 		Runtime:              runtimeBundle,
 		Blobs:                blobStore,
 		ProfilesRoot:         cfg.Engine.ProfilesRoot,
-		PlatformRulesRoot:    cfg.Engine.PlatformRulesRoot,
 		ProjectIDForWorkflow: func(workflowID string) string {
 			var wf models.WorkflowDef
 			if err := db.Select("project_id").First(&wf, "id = ?", workflowID).Error; err != nil {
@@ -230,7 +231,6 @@ func main() {
 				Layout: runtime.SharedLayoutView{
 					ConfigRoot: cfg.Layout.ConfigRoot, WorkspaceDir: cfg.Layout.WorkspaceDir,
 				},
-				Prompts:   cfg.Prompts,
 				WorkDir:   sharedAgentSvc.WorkDir(projectID),
 				ProjectID: pickSharedProjectID(cfg),
 			}
@@ -333,10 +333,6 @@ func main() {
 	agentSvc := services.NewAgentService(cfg.Engine.ProfilesRoot)
 	eng.SetAgents(agentSvc)
 	orgSvc := services.NewOrgService(cfg.Engine.ProfilesRoot, agentSvc)
-	platformRuleSvc, err := services.NewPlatformRuleService(cfg.Engine.PlatformRulesRoot, cfg.Engine.ProfilesRoot)
-	if err != nil {
-		log.Fatal().Err(err).Msg("platform rules init failed")
-	}
 	sbxGateway := sandbox.NewGatewayClient(cfg.Sandbox.GatewayURL, cfg.Sandbox.GatewayAPIKey)
 	sbxMgr := sandbox.NewManager(sbxGateway, sandbox.ManagerOptions{
 		Image:           cfg.Sandbox.Image,
@@ -351,7 +347,6 @@ func main() {
 	log.Info().Str("gateway", cfg.Sandbox.GatewayURL).Msg("sandbox control plane: sandbox-gateway")
 	sbxSvc := services.NewSandboxService(db, sbxMgr, agentSvc, host, services.SandboxOptions{
 		ProfilesRoot:                cfg.Engine.ProfilesRoot,
-		PlatformRulesRoot:           cfg.Engine.PlatformRulesRoot,
 		MCPEndpoint:                 cfg.Server.MCPAdvertise,
 		Env:                         cfg.Sandbox.Env,
 		ChatTimeout:                 cfg.AgentChatTimeout(),
@@ -374,7 +369,7 @@ func main() {
 	sweeperCtx, stopSweeper := context.WithCancel(context.Background())
 	go sbxSvc.RunSweeper(sweeperCtx)
 
-	// In-sandbox VNC preview: dials each app_preview sandbox's CDP/websockify.
+	// In-sandbox VNC preview: dials each preview-capable sandbox's CDP/websockify.
 	browserSvc := browser.New(sbxMgr, browser.Config{
 		MaxTabs:             cfg.Browser.MaxTabs,
 		MaxTabsPerContainer: cfg.Browser.MaxTabsPerContainer,
@@ -397,7 +392,7 @@ func main() {
 	host.SetPreviewSandboxOps(previewSvc)
 	host.SetPreviewBaseURL(cfg.Server.PublicAdvertise)
 
-	// Preview feedback: humans report problems from the app_preview UI (one-way).
+	// Preview feedback: humans report problems from the preview UI (one-way).
 	// The engine snapshots them into the preview_issues run variable at gate
 	// resume so a downstream node consumes them via {{vars.preview_issues}}.
 	issueSvc := services.NewIssueService(db)
@@ -513,7 +508,6 @@ func main() {
 		Settings:           settingsSvc,
 		Shutdown:           coord,
 		Auth:               authSvc,
-		PlatformRules:      platformRuleSvc,
 		Channels:           channelSvc,
 		RunNotify:          runNotifySvc,
 		Browser:            browserSvc,
@@ -604,4 +598,23 @@ func pickSharedProjectID(cfg services.SharedAgentConfig) string {
 		return v
 	}
 	return strings.TrimSpace(cfg.ProjectID)
+}
+
+// secretsKeyFallback loads or creates the auto-generated secrets key when none
+// is configured; empty when a key is configured or the mode forbids a fallback.
+func secretsKeyFallback(cfg *config.Config) string {
+	if cfg == nil || cfg.SecretsKey() != "" {
+		return ""
+	}
+	path := cfg.SecretsKeyFile()
+	if path == "" {
+		return ""
+	}
+	key, err := crypto.LoadOrCreateKeyFile(path)
+	if err != nil {
+		log.Warn().Err(err).Str("path", path).Msg("secrets key file unavailable; credentials cannot be saved")
+		return ""
+	}
+	log.Warn().Str("path", path).Msg("no secrets key configured; using the generated key file (back it up with the database)")
+	return key
 }

@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import AgentEnvPanel from './AgentEnvPanel.vue'
-import { emptyPrompts, type AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
+import type { AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
 
 const getProjectSharedAgentConfig = vi.fn()
 
@@ -22,7 +22,7 @@ function draft(partial: Partial<AgentStudioDraft> = {}): AgentStudioDraft {
     env: [],
     mcp: [],
     files: [],
-    prompts: emptyPrompts(),
+    capabilities: null,
     gitCredentialType: undefined,
     acpBackend: 'cursor',
     layout: { configRoot: '/tmp/agent', workspaceDir: '/tmp/workspace' },

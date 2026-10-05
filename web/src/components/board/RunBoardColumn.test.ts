@@ -10,7 +10,7 @@ import RunBoardColumn from './RunBoardColumn.vue'
 function stubRun(partial: Partial<Run> & Pick<Run, 'id' | 'status'>): Run {
   return {
     workflowId: 'wf',
-    workflowName: 'Pipeline',
+    workflowName: 'Workflow',
     trigger: 'manual',
     startedAt: '2026-07-18T12:00:00Z',
     durationSec: 60,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { isGrasp } from '@/lib/shared/clarifyInteractive'
+import { findGraphNode, isClarifyNode, isPreviewNode, type CapsNode } from '@/lib/shared/clarifyInteractive'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
@@ -22,7 +22,7 @@ import type { Artifact, ReactAnnotation, Run } from '@/lib/shared/types'
 import {
   REACT_STAGE_TAB_GRID,
   REACT_STAGE_TAB_NOVNC,
-  approveStageRemoteKind,
+  clarifyStageRemoteKind,
   artifactFriendlyNameKey,
   artifactKindLabelKey,
   artifactTechnicalDisplayName,
@@ -70,8 +70,8 @@ const props = withDefaults(
     runId?: string
     run?: Run | null
     nodeId?: string
-    /** Graph node type (visual/react/…). Fallback: run.nodes lookup by nodeId. */
-    nodeType?: string
+    /** Graph node (type + caps snapshot). Fallback: run.nodes lookup by nodeId. */
+    node?: CapsNode
     /** When true, ArtifactPreview will not fetch (content already inlined). */
     inlineContent?: boolean
     /** Enable 取点 / 划选 / ⤴ 标注 on the current node's artifacts. */
@@ -83,7 +83,7 @@ const props = withDefaults(
     ports?: PublicPreviewPort[]
     publicActive?: boolean
     publicMobile?: boolean
-    /** Review stage of a non-Grasp node: show the app tab once set_preview registers. */
+    /** Review stage of a non-clarify node: show the app tab once set_preview registers. */
     probeRegisteredPreview?: boolean
   }>(),
   {
@@ -91,7 +91,7 @@ const props = withDefaults(
     runId: '',
     run: null,
     nodeId: '',
-    nodeType: '',
+    node: null,
     inlineContent: false,
     annotatable: false,
     hideAppPreview: false,
@@ -137,7 +137,7 @@ const initialOpen = restoreStageOpenState(
   loadStageOpenState(props.runId, props.nodeId),
   (props.artifacts || []).map((a) => a.name),
 )
-/** Default to pipeline artifacts grid (no standalone preview chrome Tab). */
+/** Default to workflow artifacts grid (no standalone preview chrome Tab). */
 const activeTab = ref(initialOpen?.activeTab || REACT_STAGE_TAB_GRID)
 /** True after the user picks a grid tab, card, preview tab, or noVNC — auto-open must not steal focus.
  *  Also set when session open-state restore succeeds so pin auto-activate loses to refresh restore. */
@@ -145,7 +145,7 @@ const userMoved = ref(!!initialOpen)
 const openNames = ref<string[]>(initialOpen?.openNames || [])
 /** Session-local 「新 / 已更新」 marks on non-active preview tabs. */
 const tabUnread = ref<Record<string, StageTabUnreadKind>>({})
-/** Seeded fingerprint map for react/approve auto-pin; null until first observe. */
+/** Seeded fingerprint map for clarify auto-pin; null until first observe. */
 const autoPinFingerprints = ref<ArtifactFingerprintMap | null>(null)
 const summaryThumbs = ref<Record<string, StageCardThumb>>({})
 const novncOpen = ref(!!initialOpen?.novncOpen)
@@ -165,16 +165,17 @@ const resolvedRemoteKind = computed(() =>
     inlineContent: props.inlineContent,
   }),
 )
-const stageNode = computed(() => props.run?.nodes?.find((n) => n.id === props.nodeId) || null)
-const resolvedNodeType = computed(() => String(props.nodeType || stageNode.value?.type || '').trim())
+const stageNode = computed(() => findGraphNode(props.run?.nodes, props.nodeId) || null)
+const resolvedNode = computed<CapsNode>(() => props.node || stageNode.value)
+const clarifyPreview = computed(() => isClarifyNode(resolvedNode.value) && isPreviewNode(resolvedNode.value))
 
-/** Grasp, or a review stage that opts in: silent probe for set_preview registrations. */
+/** Clarify with set_preview, or a review stage that opts in: silent probe for set_preview registrations. */
 const REGISTERED_PREVIEW_POLL_MS = 2500
 const previewRegistered = ref(false)
 let previewProbeTimer: ReturnType<typeof setInterval> | null = null
 let previewProbeAbort: AbortController | null = null
 let previewProbeGen = 0
-const probesRegisteredPreview = computed(() => isGrasp(resolvedNodeType.value) || props.probeRegisteredPreview)
+const probesRegisteredPreview = computed(() => clarifyPreview.value || props.probeRegisteredPreview)
 
 function stopRegisteredPreviewProbe() {
   if (previewProbeTimer) {
@@ -222,9 +223,9 @@ watch(
 
 const effectiveRemoteKind = computed(() => {
   if (props.hideAppPreview) return 'off'
-  if (isGrasp(resolvedNodeType.value)) {
+  if (clarifyPreview.value) {
     if (resolvedRemoteKind.value === 'public') return props.ports?.length ? 'public' : 'off'
-    return approveStageRemoteKind(previewRegistered.value)
+    return clarifyStageRemoteKind(previewRegistered.value)
   }
   if (props.probeRegisteredPreview && previewRegistered.value && resolvedRemoteKind.value !== 'public') return 'app'
   return resolvedRemoteKind.value
@@ -235,17 +236,17 @@ const effectivePin = computed(() =>
   resolveEffectivePreviewPin({
     previewArtifact: props.previewArtifact,
     artifacts: stageArtifacts.value,
-    nodeType: resolvedNodeType.value,
+    node: resolvedNode.value,
     nodeId: props.nodeId,
   }),
 )
-const autoPinEnabled = computed(() => isAutoPinStageNode(resolvedNodeType.value))
+const autoPinEnabled = computed(() => isAutoPinStageNode(resolvedNode.value))
 const gridArtifacts = computed(() =>
   stageGridArtifactsForNode(
     stageArtifacts.value,
     props.run,
     effectivePin.value,
-    resolvedNodeType.value,
+    resolvedNode.value,
   ),
 )
 const canOpenNovnc = computed(() => effectiveRemoteKind.value !== 'off')
@@ -505,7 +506,7 @@ watch(
   { immediate: true },
 )
 
-/** react/approve: auto-pin visible own-node artifacts on create/overwrite. */
+/** Clarify: auto-pin visible own-node artifacts on create/overwrite. */
 watch(
   () => {
     if (!autoPinEnabled.value) return 'off'
@@ -778,7 +779,7 @@ onBeforeUnmount(() => {
         @click="selectGridTab"
       >
         <Icon name="dashboard" :size="13" />
-        <span class="truncate">{{ t('pages.reactArtifactStage.pipelineTab') }}</span>
+        <span class="truncate">{{ t('pages.reactArtifactStage.workflowTab') }}</span>
       </button>
       <div
         v-for="name in openNames"

@@ -90,11 +90,11 @@ describe('radius zero clearance', () => {
     expect(src).toMatch(/class="[^"]*\brounded-xl\b[^"]*border border-line bg-surface/)
   })
 
-  it('HomePipelineSelect trigger 8px and panel 12px', () => {
-    const src = read('components/dashboard/HomePipelineSelect.vue')
-    expect(src).toMatch(/\.home-pipeline-select__trigger\s*\{[^}]*border-radius:\s*8px/s)
-    expect(src).toMatch(/\.home-pipeline-select__panel\s*\{[^}]*border-radius:\s*12px/s)
-    expect(src).toMatch(/\.home-pipeline-select__search\s*\{[^}]*border-radius:\s*8px/s)
+  it('HomeWorkflowSelect trigger 8px and panel 12px', () => {
+    const src = read('components/dashboard/HomeWorkflowSelect.vue')
+    expect(src).toMatch(/\.home-workflow-select__trigger\s*\{[^}]*border-radius:\s*8px/s)
+    expect(src).toMatch(/\.home-workflow-select__panel\s*\{[^}]*border-radius:\s*12px/s)
+    expect(src).toMatch(/\.home-workflow-select__search\s*\{[^}]*border-radius:\s*8px/s)
   })
 
   it('HomePrioritySelect trigger 8px and panel 12px (plan g1.1)', () => {

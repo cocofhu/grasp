@@ -42,7 +42,7 @@ describe('agentTeamWizard', () => {
     const d = freshTeamDraft()
     d.projectName = 'Demo'
     syncDerivedNames(d)
-    d.background = 'build a pipeline team'
+    d.background = 'build a workflow team'
     const payload = assembleTeamBootstrapPayload(d)
     expect(payload.acpBackend).toBe('opencode')
   })
@@ -70,7 +70,7 @@ describe('agentTeamWizard', () => {
     const d = freshTeamDraft()
     d.projectName = 'Demo'
     syncDerivedNames(d)
-    d.background = 'build a pipeline team'
+    d.background = 'build a workflow team'
     d.gitUrl = 'https://github.com/org/repo.git'
     const payload = assembleTeamBootstrapPayload(d)
     expect(payload.projectName).toBe('Demo')

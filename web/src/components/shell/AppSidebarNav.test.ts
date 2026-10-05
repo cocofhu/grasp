@@ -161,11 +161,11 @@ describe('AppSidebarNav', () => {
     vi.useRealTimers()
   })
 
-  it('hides quick-pipelines section when there are no favorites', async () => {
+  it('hides quick-workflows section when there are no favorites', async () => {
     const wrapper = mountNav()
     await flushPromises()
-    expect(wrapper.find('[data-testid="nav-quick-pipelines"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('快捷流水线')
+    expect(wrapper.find('[data-testid="nav-quick-workflows"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('快捷工作流')
     // Primary workspace nav still present (plan g1.1)
     expect(wrapper.find('[data-to="/runs"]').exists()).toBe(true)
     expect(wrapper.find('[data-to="/notifications"]').exists()).toBe(false)
@@ -182,7 +182,7 @@ describe('AppSidebarNav', () => {
     vi.useRealTimers()
   })
 
-  it('hides quick-pipelines section after the last favorite is removed', async () => {
+  it('hides quick-workflows section after the last favorite is removed', async () => {
     favMocks.displayItems.value = [
       {
         workflowId: 'wf-1',
@@ -198,11 +198,11 @@ describe('AppSidebarNav', () => {
     })
     const wrapper = mountNav()
     await flushPromises()
-    expect(wrapper.find('[data-testid="nav-quick-pipelines"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="nav-quick-workflows"]').exists()).toBe(true)
 
-    await wrapper.find('[data-testid="nav-quick-pipeline-unfavorite"]').trigger('click')
+    await wrapper.find('[data-testid="nav-quick-workflow-unfavorite"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="nav-quick-pipelines"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="nav-quick-workflows"]').exists()).toBe(false)
     wrapper.unmount()
     vi.useRealTimers()
   })
@@ -221,14 +221,14 @@ describe('AppSidebarNav', () => {
     favMocks.getFavoriteWorkflow.mockResolvedValue({ id: 'wf-1', name: '夜间回归', nodes: [], edges: [] })
     const wrapper = mountNav()
     await flushPromises()
-    expect(wrapper.find('[data-testid="nav-quick-pipeline-item"]').text()).toContain('夜间回归')
+    expect(wrapper.find('[data-testid="nav-quick-workflow-item"]').text()).toContain('夜间回归')
     expect(wrapper.text()).toContain('草稿')
 
-    await wrapper.find('[data-testid="nav-quick-pipeline-unfavorite"]').trigger('click')
+    await wrapper.find('[data-testid="nav-quick-workflow-unfavorite"]').trigger('click')
     expect(favMocks.unfavorite).toHaveBeenCalledWith('wf-1', { name: '夜间回归' })
     expect(launchMocks.openLaunch).not.toHaveBeenCalled()
 
-    await wrapper.find('[data-testid="nav-quick-pipeline-item"]').trigger('click')
+    await wrapper.find('[data-testid="nav-quick-workflow-item"]').trigger('click')
     await flushPromises()
     expect(favMocks.getFavoriteWorkflow).toHaveBeenCalledWith('wf-1')
     expect(launchMocks.openLaunch).toHaveBeenCalled()
@@ -243,9 +243,9 @@ describe('AppSidebarNav', () => {
     ]
     const wrapper = mountNav()
     await flushPromises()
-    const handles = wrapper.findAll('[data-testid="nav-quick-pipeline-drag-handle"]')
+    const handles = wrapper.findAll('[data-testid="nav-quick-workflow-drag-handle"]')
     expect(handles).toHaveLength(2)
-    await wrapper.find('[data-testid="nav-quick-pipeline-item"]').trigger('click')
+    await wrapper.find('[data-testid="nav-quick-workflow-item"]').trigger('click')
     expect(favMocks.getFavoriteWorkflow).toHaveBeenCalledWith('wf-1')
     expect(favMocks.reorderFavorites).not.toHaveBeenCalled()
     wrapper.unmount()
@@ -259,14 +259,14 @@ describe('AppSidebarNav', () => {
     ]
     const wrapper = mountNav()
     await flushPromises()
-    expect(wrapper.find('[data-testid="nav-quick-pipeline-drag-handle"]').exists()).toBe(false)
-    await wrapper.find('[data-testid="nav-quick-pipeline-item"]').trigger('click')
+    expect(wrapper.find('[data-testid="nav-quick-workflow-drag-handle"]').exists()).toBe(false)
+    await wrapper.find('[data-testid="nav-quick-workflow-item"]').trigger('click')
     expect(favMocks.getFavoriteWorkflow).toHaveBeenCalledWith('wf-1')
     wrapper.unmount()
     vi.useRealTimers()
   })
 
-  it('settings chrome replaces workspace four items and hides quick pipelines (plan g2.1 / g1.2)', async () => {
+  it('settings chrome replaces workspace four items and hides quick workflows (plan g2.1 / g1.2)', async () => {
     routeState.path = '/projects'
     favMocks.displayItems.value = [
       {
@@ -289,10 +289,9 @@ describe('AppSidebarNav', () => {
     expect(wrapper.find('[data-to="/runs"]').exists()).toBe(false)
     expect(wrapper.find('[data-to="/stats"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="nav-settings-integrations"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="nav-quick-pipelines"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="nav-quick-workflows"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('返回首页')
     expect(wrapper.text()).toContain('通用')
-    expect(wrapper.text()).toContain('平台规则')
     expect(wrapper.find('[data-to="/agents"]').text()).toContain('智能体')
     expect(wrapper.text()).not.toContain('待办')
     wrapper.unmount()
@@ -313,7 +312,7 @@ describe('AppSidebarNav', () => {
     const links = general.findAll('[data-to="/settings"]')
     const generalLink = links.find((l) => l.text().includes('通用'))
     expect(generalLink?.classes()).toContain('active')
-    expect(general.find('[data-to="/settings/platform-rules"]').classes()).not.toContain('active')
+    expect(general.find('[data-to="/settings/platform-rules"]').exists()).toBe(false)
     general.unmount()
     vi.useRealTimers()
   })
@@ -354,7 +353,7 @@ describe('AppSidebarNav', () => {
     const wrapper = mountNav()
     await flushPromises()
     expect(wrapper.find('[data-testid="nav-workspace-chrome"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="nav-quick-pipelines"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="nav-quick-workflows"]').exists()).toBe(true)
 
     routeState.path = '/agents'
     await flushPromises()
@@ -363,7 +362,7 @@ describe('AppSidebarNav', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="nav-settings-chrome"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="nav-back-home"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="nav-quick-pipelines"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="nav-quick-workflows"]').exists()).toBe(false)
     expect(wrapper.find('[data-to="/agents"]').text()).toContain('智能体')
 
     routeState.path = '/dashboard'
@@ -373,7 +372,7 @@ describe('AppSidebarNav', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="nav-workspace-chrome"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="nav-back-home"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="nav-quick-pipelines"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="nav-quick-workflows"]').exists()).toBe(true)
     wrapper.unmount()
     vi.useRealTimers()
   })

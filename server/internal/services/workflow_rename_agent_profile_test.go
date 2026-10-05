@@ -9,7 +9,7 @@ import (
 )
 
 func graphWithProfiles(profiles map[string]string) models.Graph {
-	// Build a linear valid pipeline: input → agent nodes… → output.
+	// Build a linear valid workflow: input → one agent node per key → output.
 	nodes := []models.Node{{ID: "in", Type: "input", Label: "Start"}}
 	// Stable order for deterministic edges.
 	types := make([]string, 0, len(profiles))
@@ -26,7 +26,7 @@ func graphWithProfiles(profiles map[string]string) models.Graph {
 	for _, typ := range types {
 		nodes = append(nodes, models.Node{
 			ID:    "n-" + typ,
-			Type:  typ,
+			Type:  "agent",
 			Label: typ,
 			Config: map[string]any{
 				"agent_profile": profiles[typ],
@@ -43,9 +43,9 @@ func graphWithProfiles(profiles map[string]string) models.Graph {
 	return models.Graph{Nodes: nodes, Edges: edges}
 }
 
-func agentProfileOf(g models.Graph, nodeType string) string {
+func agentProfileOf(g models.Graph, key string) string {
 	for _, n := range g.Nodes {
-		if n.Type != nodeType || n.Config == nil {
+		if n.ID != "n-"+key || n.Config == nil {
 			continue
 		}
 		return models.AgentProfile(n.Config)
@@ -61,11 +61,11 @@ func TestRenameAgentProfileRefs_multiNodeTypesExactReplace(t *testing.T) {
 	wf := &models.WorkflowDef{
 		ID: "wf-multi", ProjectID: models.DefaultProjectID, Name: "Multi",
 		Graph: graphWithProfiles(map[string]string{
-			"research":    old,
-			"app_preview": old,
-			"implement":   old,
-			"proposal":    "other-bot",
-			"agent":       old + "-extra", // substring must not match
+			"research":  old,
+			"preview":   old,
+			"implement": old,
+			"proposal":  "other-bot",
+			"agent":     old + "-extra", // substring must not match
 		}),
 	}
 	if err := s.Save(wf); err != nil {
@@ -100,7 +100,7 @@ func TestRenameAgentProfileRefs_multiNodeTypesExactReplace(t *testing.T) {
 	if !ok {
 		t.Fatal("missing wf-multi")
 	}
-	for _, typ := range []string{"research", "app_preview", "implement"} {
+	for _, typ := range []string{"research", "preview", "implement"} {
 		if agentProfileOf(got.Graph, typ) != neu {
 			t.Fatalf("%s agent_profile want %q got %q", typ, neu, agentProfileOf(got.Graph, typ))
 		}
@@ -125,9 +125,9 @@ func TestRenameAgentProfileRefs_multiNodeTypesExactReplace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("version graph: %v", err)
 	}
-	if agentProfileOf(snap, "research") != neu || agentProfileOf(snap, "app_preview") != neu {
-		t.Fatalf("version snapshot not rewritten: research=%q app_preview=%q",
-			agentProfileOf(snap, "research"), agentProfileOf(snap, "app_preview"))
+	if agentProfileOf(snap, "research") != neu || agentProfileOf(snap, "preview") != neu {
+		t.Fatalf("version snapshot not rewritten: research=%q preview=%q",
+			agentProfileOf(snap, "research"), agentProfileOf(snap, "preview"))
 	}
 
 	restored, err := s.Restore("wf-multi", got.Version)

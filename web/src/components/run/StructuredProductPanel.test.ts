@@ -8,6 +8,7 @@ import pages from '@/locales/zh-CN/pages.json'
 import type { Artifact, NodeRun, Run, WFNode } from '@/lib/shared/types'
 import { useReviewAnnotate } from '@/lib/inbox/reviewAnnotate'
 import StructuredProductPanel from './StructuredProductPanel.vue'
+import { ASK_CAPS, CLARIFY_CAPS, writesCaps } from '@/test/capsFixtures'
 
 const apiMocks = vi.hoisted(() => ({
   artifactContent: vi.fn(),
@@ -93,11 +94,11 @@ function artifact(overrides: Partial<Artifact> = {}): Artifact {
 }
 
 function visualNode(): WFNode {
-  return { id: 'visual', type: 'visual', label: '视觉', position: { x: 0, y: 0 }, config: {} }
+  return { id: 'visual', type: 'agent', caps: writesCaps('page', { review: true }), label: '视觉', position: { x: 0, y: 0 }, config: {} }
 }
 
 function reactNode(): WFNode {
-  return { id: 'react', type: 'react', label: '需求澄清', position: { x: 0, y: 0 }, config: {} }
+  return { id: 'react', type: 'agent', caps: ASK_CAPS, label: '需求澄清', position: { x: 0, y: 0 }, config: {} }
 }
 
 const REQ_DOC = {
@@ -147,7 +148,7 @@ describe('StructuredProductPanel', () => {
   it('loads research.json from node output snapshot', async () => {
     const node: WFNode = {
       id: 'research',
-      type: 'research',
+      type: 'agent', caps: writesCaps('research'),
       label: '调研',
       position: { x: 0, y: 0 },
       config: {},
@@ -182,7 +183,7 @@ describe('StructuredProductPanel', () => {
   it('renders visual node HTML preview from execution snapshot', async () => {
     const node: WFNode = {
       id: 'visual',
-      type: 'visual',
+      type: 'agent', caps: writesCaps('page', { review: true }),
       label: '视觉',
       position: { x: 0, y: 0 },
       config: {},
@@ -207,7 +208,7 @@ describe('StructuredProductPanel', () => {
     })
     const node: WFNode = {
       id: 'visual',
-      type: 'visual',
+      type: 'agent', caps: writesCaps('page', { review: true }),
       label: '视觉',
       position: { x: 0, y: 0 },
       config: {},
@@ -246,7 +247,7 @@ describe('StructuredProductPanel', () => {
     })
     const node: WFNode = {
       id: 'visual',
-      type: 'visual',
+      type: 'agent', caps: writesCaps('page', { review: true }),
       label: '视觉',
       position: { x: 0, y: 0 },
       config: {},
@@ -285,7 +286,7 @@ describe('StructuredProductPanel', () => {
     })
     const node: WFNode = {
       id: 'visual',
-      type: 'visual',
+      type: 'agent', caps: writesCaps('page', { review: true }),
       label: '视觉',
       position: { x: 0, y: 0 },
       config: {},
@@ -679,7 +680,7 @@ describe('StructuredProductPanel', () => {
   it('approve optional tabs ignore upstream same-named artifacts', async () => {
     const node: WFNode = {
       id: 'approve',
-      type: 'approve',
+      type: 'agent', caps: CLARIFY_CAPS,
       label: 'Approve',
       position: { x: 0, y: 0 },
       config: {},
@@ -727,7 +728,7 @@ describe('StructuredProductPanel', () => {
   it('approve optional tabs appear when this node owns the artifacts', async () => {
     const node: WFNode = {
       id: 'approve',
-      type: 'approve',
+      type: 'agent', caps: CLARIFY_CAPS,
       label: 'Approve',
       position: { x: 0, y: 0 },
       config: {},
@@ -776,7 +777,7 @@ describe('StructuredProductPanel', () => {
   it('approve plan tab still loads after implement rewrites plan.json nodeId', async () => {
     const node: WFNode = {
       id: 'approve',
-      type: 'approve',
+      type: 'agent', caps: CLARIFY_CAPS,
       label: 'Approve',
       position: { x: 0, y: 0 },
       config: {},

@@ -47,7 +47,6 @@ const Fixture = defineComponent({
             turns,
             done: false,
             active: !cold,
-            nodeType: 'approve',
             canPass: true,
             coldSession: cold,
             pageControl: 'offline',

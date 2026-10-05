@@ -19,7 +19,7 @@ const props = defineProps<{
   vision?: boolean
   requireBase?: boolean
   requireModel?: boolean
-  /** Use the two-column arrangement used by the project credential card. */
+  /** Two-column grid (vendor | model, base URL | vision) without the advanced notes; one column on narrow screens. */
   columns?: boolean
 }>()
 
@@ -173,7 +173,7 @@ watch(
 
 <template>
   <div
-    :class="columns ? 'grid grid-cols-1 gap-3 sm:grid-cols-2' : 'space-y-3'"
+    :class="columns ? 'grid grid-cols-1 items-start gap-x-4 gap-y-3 sm:grid-cols-2' : 'space-y-3'"
     data-test="opencode-provider-fields"
   >
     <div class="block">
@@ -223,6 +223,7 @@ watch(
         {{ t('pages.agentStudio.openCode.modelRequired') }}
       </p>
       <details
+        v-if="!columns"
         class="mt-1 rounded-md border border-dashed border-line bg-base px-3 py-2"
         data-test="opencode-advanced"
       >
@@ -249,7 +250,9 @@ watch(
         data-test="opencode-base-url"
         @input="emit('update:baseUrl', ($event.target as HTMLInputElement).value)"
       />
-      <p class="mt-1 text-[11px] text-txt3">{{ t('pages.agentStudio.openCode.baseHint') }}</p>
+      <p class="mt-1 text-[11px] text-txt3" data-test="opencode-base-hint">
+        {{ t(ownEndpoint ? 'pages.agentStudio.openCode.baseHintOwn' : 'pages.agentStudio.openCode.baseHint') }}
+      </p>
       <p v-if="requireBase" class="mt-1 text-[11px] text-err" data-test="opencode-base-required">
         {{ t('pages.agentStudio.openCode.baseRequired') }}
       </p>

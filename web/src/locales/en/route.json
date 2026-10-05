@@ -18,7 +18,6 @@
     "integrations": "Integrations",
     "triggers": "Triggers",
     "settings": "Settings",
-    "platformRules": "Platform rules",
     "login": "Login",
     "publicGateApproval": "One-time external decision",
     "embedChat": "Preview chat",

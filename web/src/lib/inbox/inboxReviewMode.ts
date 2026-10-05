@@ -1,5 +1,5 @@
 import type { ClarifyTurn, InboxItem, Run } from '@/lib/shared/types'
-import { isClarifyInteractive } from '@/lib/shared/clarifyInteractive'
+import { isClarifyNode } from '@/lib/shared/clarifyInteractive'
 
 export type InboxClarifySession = {
   nodeId: string
@@ -24,7 +24,7 @@ export function pickInboxClarifySession(
 
 /**
  * Mirror RunDetailView.reviewActive for inbox: post-run product review on a
- * non-react producer (backend only seeds clarify sessions for ReviewCapable).
+ * non-clarify Agent (backend only seeds review sessions for review-enabled caps).
  * Inbox API type stays "clarify"; mode is decided from the loaded graph.
  */
 export function resolveInboxReviewState(
@@ -39,7 +39,7 @@ export function resolveInboxReviewState(
   if (!n) {
     return { reviewActive: false, nodeMissing: true }
   }
-  if (isClarifyInteractive(n.type)) {
+  if (isClarifyNode(n)) {
     return { reviewActive: false, nodeMissing: false }
   }
   return { reviewActive: !!conv && !conv.done, nodeMissing: false }

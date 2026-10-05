@@ -112,7 +112,7 @@ describe('GatesInboxView empty inbox fill (plan g1 / g2.1 / g1.3)', () => {
     expect(src).not.toMatch(/<div v-else class="card">/)
   })
 
-  it('pipeline-filter empty and global empty share the same fill wrappers (g1.3)', () => {
+  it('workflow-filter empty and global empty share the same fill wrappers (g1.3)', () => {
     const blocks = [
       ...src.matchAll(
         /<div v-else(?:-if="!isMobile")? class="card flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto">[\s\S]*?<\/div>/g,
@@ -120,8 +120,8 @@ describe('GatesInboxView empty inbox fill (plan g1 / g2.1 / g1.3)', () => {
     ]
     expect(blocks.length).toBe(2)
     for (const block of blocks) {
-      expect(block[0]).toMatch(/listTotal \? t\('common\.empty\.noPendingGatesForPipeline'\)/)
-      expect(block[0]).toMatch(/listTotal\s+\?\s+t\('common\.empty\.noPendingGatesPipelineDesc'\)/)
+      expect(block[0]).toMatch(/listTotal \? t\('common\.empty\.noPendingGatesForWorkflow'\)/)
+      expect(block[0]).toMatch(/listTotal\s+\?\s+t\('common\.empty\.noPendingGatesWorkflowDesc'\)/)
       expect(block[0]).toMatch(/t\('common\.empty\.noPendingGates'\)/)
       expect(block[0]).toMatch(/t\('common\.empty\.noPendingGatesDesc'\)/)
     }
@@ -186,7 +186,7 @@ describe('GatesInboxView list first-load tri-state (plan g1 / g2 / g3.2)', () =>
   })
 })
 
-describe('GatesInboxView app_preview stage (g2.2)', () => {
+describe('GatesInboxView app-preview stage', () => {
   it('mounts the shared artifact stage with app remoteKind and pick wiring on both ReviewShell stages', () => {
     expect(src).toMatch(/inboxAppPreviewActive/)
     expect(src).toMatch(/addClarifyAnnotation/)
@@ -209,7 +209,7 @@ describe('GatesInboxView react artifact stage', () => {
     expect(stages.length).toBe(2)
     for (const block of stages) {
       expect(block).toMatch(/:node-id="active\.nodeId"/)
-      expect(block).toMatch(/:node-type="inboxStageNodeType"/)
+      expect(block).toMatch(/:node="inboxStageNode"/)
       expect(block).toMatch(/:annotatable="clarifyInputActive"/)
       expect(block).toMatch(/:preview-artifact="activeClarify\?\.previewArtifact"/)
     }

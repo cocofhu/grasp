@@ -11,7 +11,7 @@ import type { WFNode } from '../shared/types'
 
 describe('sanitizeFilename', () => {
   it('replaces illegal chars and adds .json', () => {
-    expect(sanitizeFilename('CI/CD 流水线')).toBe('CI_CD 流水线.json')
+    expect(sanitizeFilename('CI/CD 工作流')).toBe('CI_CD 工作流.json')
   })
 })
 
@@ -41,12 +41,12 @@ describe('buildEnvelope', () => {
 
 describe('agent profile helpers', () => {
   const nodes: WFNode[] = [
-    { id: 'a', type: 'implement', label: 'I', position: { x: 0, y: 0 }, config: { agent_profile: 'ImplementAgent' } },
+    { id: 'a', type: 'agent', label: 'I', position: { x: 0, y: 0 }, config: { agent_profile: 'ImplementAgent' } },
     { id: 'b', type: 'input', label: 'In', position: { x: 0, y: 0 }, config: {} },
-    { id: 'c', type: 'app_preview', label: 'P', position: { x: 0, y: 0 }, config: { agent_profile: 'PreviewAgent' } },
+    { id: 'c', type: 'agent', label: 'P', position: { x: 0, y: 0 }, config: { agent_profile: 'PreviewAgent' } },
   ]
 
-  it('collects agent node profiles including app_preview', () => {
+  it('collects agent node profiles', () => {
     expect(collectAgentProfiles(nodes).sort()).toEqual(['ImplementAgent', 'PreviewAgent'].sort())
   })
 
@@ -66,7 +66,7 @@ describe('agent profile helpers', () => {
     const withUnbound: WFNode[] = [
       ...nodes,
       { id: 'd', type: 'agent', label: 'A', position: { x: 0, y: 0 }, config: { agent_profile: 'unbound' } },
-      { id: 'e', type: 'plan', label: 'Pl', position: { x: 0, y: 0 }, config: { agent_profile: 'ghost' } },
+      { id: 'e', type: 'agent', label: 'Pl', position: { x: 0, y: 0 }, config: { agent_profile: 'ghost' } },
     ]
     const issues = agentProfileIssues(withUnbound, agents, 'alpha')
     expect(issues).toEqual([
@@ -76,7 +76,7 @@ describe('agent profile helpers', () => {
     ])
     // same-project only — no false positive
     expect(agentProfileIssues(
-      [{ id: 'a', type: 'implement', label: 'I', position: { x: 0, y: 0 }, config: { agent_profile: 'ImplementAgent' } }],
+      [{ id: 'a', type: 'agent', label: 'I', position: { x: 0, y: 0 }, config: { agent_profile: 'ImplementAgent' } }],
       agents,
       'alpha',
     )).toEqual([])

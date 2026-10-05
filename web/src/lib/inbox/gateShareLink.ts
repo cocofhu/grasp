@@ -7,6 +7,7 @@ import {
   migrateSessionStoragePrefix,
 } from '@/lib/shared/migrateBrandStorage'
 import type { EmbedTicket } from '@/lib/inbox/embedChat'
+import type { AgentInteraction } from '@/lib/api/apiTypes'
 
 export const GATE_SHARE_TTL_TIERS = ['1h', '8h', '24h', '72h', '7d'] as const
 export type GateShareTTLTier = (typeof GATE_SHARE_TTL_TIERS)[number]
@@ -128,30 +129,19 @@ function isReviewInboxItem(item: InboxItem | null | undefined): item is ClarifyI
   return !!item && item.type === 'clarify' && item.kind === 'review'
 }
 
-function isAppPreviewInboxItem(item: InboxItem | null | undefined): item is ClarifyInboxItem {
-  return !!item && item.type === 'clarify' && item.kind === 'app_preview'
-}
-
-/** Inbox 待澄清: kind=clarify, or legacy items with missing kind (not review/app_preview). */
+/** Inbox 待澄清: kind=clarify. */
 function isClarifyInboxItem(item: InboxItem | null | undefined): item is ClarifyInboxItem {
-  return !!item && item.type === 'clarify' && item.kind !== 'review' && item.kind !== 'app_preview'
+  return !!item && item.type === 'clarify' && item.kind === 'clarify'
 }
 
-/** Inbox share entry: human_gate, 待复审, app_preview, or 待澄清 (review share API). */
+/** Inbox share entry: human_gate, 待复审, or 待澄清 (review share API). */
 export function isShareableInboxItem(item: InboxItem | null | undefined): boolean {
-  return (
-    isHumanGateInboxItem(item) ||
-    isReviewInboxItem(item) ||
-    isAppPreviewInboxItem(item) ||
-    isClarifyInboxItem(item)
-  )
+  return isHumanGateInboxItem(item) || isReviewInboxItem(item) || isClarifyInboxItem(item)
 }
 
-/** Clarify / app preview / Inbox review all mint ShareLinkKindReview links — never /gates. */
+/** Clarify / Inbox review both mint ShareLinkKindReview links — never /gates. */
 export function inboxShareKind(item: InboxItem | null | undefined): 'human_gate' | 'review' {
-  return isReviewInboxItem(item) || isAppPreviewInboxItem(item) || isClarifyInboxItem(item)
-    ? 'review'
-    : 'human_gate'
+  return isReviewInboxItem(item) || isClarifyInboxItem(item) ? 'review' : 'human_gate'
 }
 
 const SHARE_API_ERROR_KEYS: Record<string, string> = {
@@ -365,12 +355,14 @@ export type PublicGatePreview = {
   waiting?: number
   queueItems?: PublicGateQueueItem[]
   activeItem?: PublicGateActiveItem | null
-  productKind?: 'visual' | 'structured' | 'app_preview' | string
+  productKind?: 'visual' | 'structured' | 'app' | string
   productName?: string
-  /** Desensitized app_preview ports for public remote / API iframe. */
+  /** Desensitized set_preview ports for public remote / API iframe. */
   ports?: PublicPreviewPort[]
-  /** Graph node type from preview DTO; react ⇒ 待澄清. Kind stays review. */
+  /** Graph node type from preview DTO. Kind stays review. */
   nodeType?: string
+  /** Agent interaction from the node's caps snapshot; clarify ⇒ 待澄清. */
+  interaction?: AgentInteraction
   /** In-flight ACP rails (message/thought) while sessionBusy — poll fallback. */
   liveEvents?: PublicGateLiveEvent[]
 }

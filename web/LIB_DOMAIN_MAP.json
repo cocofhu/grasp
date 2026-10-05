@@ -1,5 +1,5 @@
 {
-  "principle": "Align with components/{run,agent,inbox,pm,project}; api/ root=httpCore+apiTypes+api aggregate, clients/ under api/clients/; chat/ agent-chat session queue/frame core shared by every chat surface; composables/ cross-domain use*; shared/ types/regionPolicy/loading*/i18n/format/theme and other cross-cutting utils",
+  "principle": "Align with components/{run,agent,inbox,pm,project}; api/ root=httpCore+apiTypes+api aggregate, clients/ under api/clients/; chat/ agent-chat session queue/frame core shared by every chat surface; composables/ cross-domain use*; workflow/ graph model shared by the editor and run views (agent capabilities, outlets, validation); shared/ types/regionPolicy/loading*/i18n/format/theme and other cross-cutting utils",
   "domains": {
     "agent": [
       "agentCreateWizard.ts",
@@ -38,7 +38,6 @@
       "useFixedOverlayAbove.ts",
       "useImageAttachments.ts",
       "useNotificationsPageEntry.ts",
-      "usePipelineFilter.ts",
       "usePlatformStatusMetrics.ts",
       "useProjectContext.ts",
       "useServiceCommit.ts",
@@ -46,7 +45,8 @@
       "useStatusFilter.ts",
       "useTagFilter.ts",
       "useTestScreenshotLoad.ts",
-      "useToast.ts"
+      "useToast.ts",
+      "useWorkflowFilter.ts"
     ],
     "inbox": [
       "clarifyDemo.ts",
@@ -96,15 +96,14 @@
       "acpTools.ts",
       "acpUnpack.ts",
       "applyLiveWsAcpPage.ts",
-      "approveFirstPipeline.ts",
       "artifactGroups.ts",
       "busySeedRetry.ts",
       "canvasLayout.ts",
       "canvasPath.ts",
+      "clarifyFirstWorkflow.ts",
       "dialogueAcpDelivery.ts",
       "draftIdb.ts",
       "exportStructuredArtifact.ts",
-      "graspFirstPipeline.ts",
       "homeApproveHandoff.ts",
       "homeComposerDraft.ts",
       "isVisualHtmlCard.ts",
@@ -196,6 +195,11 @@
       "theme.ts",
       "types.ts",
       "vncReconnect.ts"
+    ],
+    "workflow": [
+      "agentCapabilities.ts",
+      "graphValidation.ts",
+      "nodeOutlets.ts"
     ]
   },
   "totals": {
@@ -206,7 +210,8 @@
     "inbox": 27,
     "pm": 7,
     "project": 4,
-    "run": 60,
-    "shared": 41
+    "run": 59,
+    "shared": 41,
+    "workflow": 3
   }
 }

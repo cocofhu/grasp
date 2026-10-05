@@ -57,8 +57,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/composables/useBreakpoint', () => ({
   useBreakpoint: () => ({ isMobile: shared.isMobile }),
 }))
-vi.mock('@/lib/composables/usePipelineFilter', () => ({
-  usePipelineFilter: () => ({ selected: shared.selected }),
+vi.mock('@/lib/composables/useWorkflowFilter', () => ({
+  useWorkflowFilter: () => ({ selected: shared.selected }),
 }))
 vi.mock('@/lib/composables/useProjectContext', () => ({
   useProjectContext: () => ({
@@ -136,6 +136,7 @@ vi.mock('@/lib/api/api', async () => {
 })
 
 import { useGatesInbox } from './useGatesInbox'
+import { CLARIFY_CAPS, PREVIEW_REVIEW_CAPS } from '@/test/capsFixtures'
 
 const gateItem = (id = 'run-gate', over: Record<string, unknown> = {}): InboxItem =>
   ({
@@ -153,6 +154,7 @@ const gateItem = (id = 'run-gate', over: Record<string, unknown> = {}): InboxIte
 const clarifyItem = (id = 'run-chat', over: Record<string, unknown> = {}): InboxItem =>
   ({
     type: 'clarify',
+    kind: 'clarify',
     runId: id,
     nodeId: 'react',
     iteration: 1,
@@ -166,8 +168,8 @@ const contextRun = (id: string, over: Record<string, unknown> = {}): Run =>
     id,
     status: 'waiting_human',
     nodes: [
-      { id: 'gate', type: 'approve', config: {} },
-      { id: 'react', type: 'react', config: {} },
+      { id: 'gate', type: 'agent', caps: CLARIFY_CAPS, config: {} },
+      { id: 'react', type: 'agent', caps: CLARIFY_CAPS, config: {} },
     ],
     artifacts: [],
     reactSessions: {},
@@ -299,12 +301,12 @@ describe('useGatesInbox actions', () => {
 
     inbox.projectFilterOpen.value = true
     await nextTick()
-    inbox.pipelineFilterOpen.value = true
+    inbox.workflowFilterOpen.value = true
     await nextTick()
     expect(inbox.projectFilterOpen.value).toBe(false)
     inbox.tagFilterOpen.value = true
     await nextTick()
-    expect(inbox.pipelineFilterOpen.value).toBe(false)
+    expect(inbox.workflowFilterOpen.value).toBe(false)
     app.unmount()
   })
 
@@ -806,11 +808,11 @@ describe('useGatesInbox actions', () => {
     inbox.active.value = clarify
     await flushPromises()
     inbox.activeRun.value = contextRun('run-chat', {
-      nodes: [{ id: 'react', type: 'app_preview', config: {} }],
+      nodes: [{ id: 'react', type: 'agent', caps: PREVIEW_REVIEW_CAPS, config: {} }],
       status: 'running',
     })
     expect(inbox.inboxAppPreviewActive.value).toBe(true)
-    expect(inbox.inboxStageNodeType.value).toBe('app_preview')
+    expect(inbox.inboxStageNode.value?.id).toBe('react')
     expect(inbox.clarifyInputActive.value).toBe(true)
     expect(inbox.clarifyComposerNodeId.value).toBe('react')
     expect(inbox.clarifyComposerIteration.value).toBe(1)

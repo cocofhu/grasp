@@ -37,7 +37,7 @@ func TestWaitAgentReactCompletes(t *testing.T) {
 
 	now := time.Now()
 	db.Create(&models.Run{ID: "r1", Status: "running", StartedAt: now, Graph: testClarifyGraph()})
-	db.Create(&models.StateRun{RunID: "r1", NodeID: "clarify", NodeType: "react", Iteration: 1, Status: "running", StartedAt: &now})
+	db.Create(&models.StateRun{RunID: "r1", NodeID: "clarify", NodeType: "agent", Iteration: 1, Status: "running", StartedAt: &now})
 
 	done := make(chan bool, 1)
 	go func() {

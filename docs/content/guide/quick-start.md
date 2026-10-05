@@ -32,7 +32,7 @@ cd approving
 
 默认 `./start.sh` / `-d` / `restart` **不会**预拉 sandbox runtime：首次创建沙箱时 Gateway 再按需拉取（可能数 GB），待办 starting / 运行页会显示「正在拉取镜像」。需要提前预热用 `./start.sh pull`。
 
-Agent / workspace / platform-rules 与 SQLite 持久在仓库根 `.localdata` 宿主机目录（bind mount：`gateway` / `db` / `app-data`）。`./start.sh restart` 与 `./start.sh down` 会保留该目录。清空数据：`./start.sh down && rm -rf .localdata`。
+Agent / workspace 与 SQLite 持久在仓库根 `.localdata` 宿主机目录（bind mount：`gateway` / `db` / `app-data`）。`./start.sh restart` 与 `./start.sh down` 会保留该目录。清空数据：`./start.sh down && rm -rf .localdata`。
 
 ### 数据库与附件同生命周期（备份 / 清理）
 

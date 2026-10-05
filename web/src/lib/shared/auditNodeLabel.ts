@@ -1,30 +1,18 @@
-/** Demo-first stage labels for audit (plan g2.2). Conflicts with nodereg
- *  (视觉网页 / 代码调研 / 人工门禁 / 应用预览) resolve to Demo copy. */
+/** Audit stage labels keyed by node-id prefix: the 7 node types plus the default template's role ids. */
 const AUDIT_STAGE_LABEL: Record<string, string> = {
-  research: '调研',
-  proposal: '方案',
-  human_gate: '门禁',
-  gate: '门禁',
-  visual: '视觉',
-  react: '需求澄清',
-  grasp: 'Grasp',
-  approve: 'Grasp',
-  preflight: '环境确认',
-  plan: '计划',
-  implement: '实现',
-  test: '测试',
-  review: '评审',
-  app_preview: '预览',
-  submit_mr: '提交 MR',
-  proposal_select: '方案确认',
   input: '输入',
   output: '输出',
   set_var: '赋值',
   branch: '分支',
-  agent: '通用',
+  agent: 'Agent',
+  human_gate: '门禁',
+  proposal_select: '方案确认',
+  clarify: '需求澄清',
+  implement: '实现',
+  test_review: '测试评审',
 }
 
-/** Longest-prefix first so proposal_select beats proposal, human_gate beats gate. */
+/** Longest prefix first so a type never shadows a longer one sharing its head. */
 const AUDIT_NODE_TYPES = Object.keys(AUDIT_STAGE_LABEL).sort((a, b) => b.length - a.length)
 
 export const AUDIT_SYSTEM_LABEL = '系统/未归属'

@@ -7,7 +7,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/nodereg"
 
 	"gorm.io/gorm"
 )
@@ -37,6 +36,15 @@ func assertRunVar(t *testing.T, db *gorm.DB, runID, name, want string) {
 	}
 }
 
+// verdictEdges wires input -> node and the node's pass/fail outlets.
+func verdictEdges(node, pass, fail string) []models.Edge {
+	return []models.Edge{
+		{ID: "e1", Source: "input", Target: node},
+		{ID: "pass", Source: node, Target: pass, SourceHandle: handlePass},
+		{ID: "fail", Source: node, Target: fail, SourceHandle: handleFail},
+	}
+}
+
 func assertNodeExecuted(t *testing.T, db *gorm.DB, runID, nodeID string, want bool) {
 	t.Helper()
 	var n int64
@@ -49,48 +57,39 @@ func assertNodeExecuted(t *testing.T, db *gorm.DB, runID, nodeID string, want bo
 	}
 }
 
-// TestStructuredGatePassGoto: test node with exits.pass.goto routes directly on pass.
+// TestStructuredGatePassGoto: a passing test verdict leaves through the pass outlet.
 func TestStructuredGatePassGoto(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "test", Type: "test", Config: map[string]any{
+			{ID: "test", Type: "agent", Caps: capsTest, Config: map[string]any{
 				"agent_profile": "t", "prompt": "测试",
-				"reason_var": "reason",
-				"exits": map[string]any{
-					"pass": map[string]any{"goto": "ok"},
-					"fail": map[string]any{"goto": "bad"},
-				},
 			}},
 			{ID: "ok", Type: "output", Config: map[string]any{"result": "pass"}},
 			{ID: "bad", Type: "output", Config: map[string]any{"result": "fail"}},
 		},
-		Edges: []models.Edge{{ID: "e1", Source: "input", Target: "test"}},
+		Edges: verdictEdges("test", "ok", "bad"),
 	}
 	eng, db, _ := setupEngineGraphP(t, g)
 	run, _ := eng.StartRun("wf", nil, "test")
 	waitRunStatus(t, db, run.ID, "completed")
 	assertNodeExecuted(t, db, run.ID, "ok", true)
 	assertNodeExecuted(t, db, run.ID, "bad", false)
-	assertRunVar(t, db, run.ID, "reason", "测试全部通过")
+	assertRunVar(t, db, run.ID, "reason", "验证全部通过")
 }
 
-// TestStructuredGateFailGoto: fail goto still routes downstream while node stays failed.
+// TestStructuredGateFailGoto: a failing verdict follows the fail outlet while the node stays failed.
 func TestStructuredGateFailGoto(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "test", Type: "test", Config: map[string]any{
+			{ID: "test", Type: "agent", Caps: capsTest, Config: map[string]any{
 				"agent_profile": "t", "prompt": "测试",
-				"exits": map[string]any{
-					"pass": map[string]any{"goto": "ok"},
-					"fail": map[string]any{"goto": "fix"},
-				},
 			}},
 			{ID: "ok", Type: "output", Config: map[string]any{"result": "pass"}},
-			{ID: "fix", Type: "output", Config: map[string]any{"result": "fix"}},
+			{ID: "bad", Type: "output", Config: map[string]any{"result": "fix"}},
 		},
-		Edges: []models.Edge{{ID: "e1", Source: "input", Target: "test"}},
+		Edges: verdictEdges("test", "ok", "bad"),
 	}
 	eng, db, p := setupEngineGraphP(t, g)
 	p.structuredBodies = map[string]string{
@@ -99,75 +98,41 @@ func TestStructuredGateFailGoto(t *testing.T) {
 	run, _ := eng.StartRun("wf", nil, "test")
 	waitRunStatus(t, db, run.ID, "completed")
 	waitNodeStatus(t, db, run.ID, "test", "failed")
-	assertNodeExecuted(t, db, run.ID, "fix", true)
+	assertNodeExecuted(t, db, run.ID, "bad", true)
 	assertNodeExecuted(t, db, run.ID, "ok", false)
 	assertRunVar(t, db, run.ID, "reason", "测试未通过:1 个用例失败,需修复后重新测试")
 	assertRunVar(t, db, run.ID, "last_error", "测试未通过:1 个用例失败,需修复后重新测试")
 }
 
-// TestStructuredGateFailWhenFallback: no fail goto falls back to when edge with action guard.
-func TestStructuredGateFailWhenFallback(t *testing.T) {
-	g := models.Graph{
-		Nodes: []models.Node{
-			{ID: "input", Type: "input"},
-			{ID: "test", Type: "test", Config: map[string]any{
-				"agent_profile": "t", "prompt": "测试",
-				"exits": map[string]any{
-					"pass": map[string]any{"goto": ""},
-					"fail": map[string]any{"goto": ""},
-				},
-			}},
-			{ID: "ok", Type: "output", Config: map[string]any{"result": "pass"}},
-			{ID: "fix", Type: "output", Config: map[string]any{"result": "fix"}},
-		},
-		Edges: []models.Edge{
-			{ID: "e1", Source: "input", Target: "test"},
-			{ID: "e2", Source: "test", Target: "fix", When: `action == "fail"`, Kind: models.EdgeSuccess},
-		},
-	}
-	eng, db, p := setupEngineGraphP(t, g)
-	p.structuredBodies = map[string]string{
-		"test": `{"summary":"bad","failed":1,"cases":[{"name":"x","status":"failed"}]}`,
-	}
-	run, _ := eng.StartRun("wf", nil, "test")
-	waitRunStatus(t, db, run.ID, "completed")
-	assertNodeExecuted(t, db, run.ID, "fix", true)
-}
-
 // TestReviewStructuredGateVerdicts exercises approve/reject routing and reason_var.
 func TestReviewStructuredGateVerdicts(t *testing.T) {
-	base := func(verdict, passGoto, failGoto string) models.Graph {
+	base := func() models.Graph {
 		return models.Graph{
 			Nodes: []models.Node{
 				{ID: "input", Type: "input"},
-				{ID: "review", Type: "review", Config: map[string]any{
+				{ID: "review", Type: "agent", Caps: capsCodeReview, Config: map[string]any{
 					"agent_profile": "v", "prompt": "评审",
-					"reason_var": "review_reason",
-					"exits": map[string]any{
-						"pass": map[string]any{"goto": passGoto},
-						"fail": map[string]any{"goto": failGoto},
-					},
 				}},
 				{ID: "ok", Type: "output", Config: map[string]any{"result": "ok"}},
 				{ID: "bad", Type: "output", Config: map[string]any{"result": "bad"}},
 			},
-			Edges: []models.Edge{{ID: "e1", Source: "input", Target: "review"}},
+			Edges: verdictEdges("review", "ok", "bad"),
 		}
 	}
 
 	t.Run("approve", func(t *testing.T) {
-		eng, db, p := setupEngineGraphP(t, base("approve", "ok", "bad"))
+		eng, db, p := setupEngineGraphP(t, base())
 		p.structuredBodies = map[string]string{
 			"review": `{"summary":"ok","verdict":"approve"}`,
 		}
 		run, _ := eng.StartRun("wf", nil, "test")
 		waitRunStatus(t, db, run.ID, "completed")
 		assertNodeExecuted(t, db, run.ID, "ok", true)
-		assertRunVar(t, db, run.ID, "review_reason", "评审已通过")
+		assertRunVar(t, db, run.ID, "reason", "验证全部通过")
 	})
 
-	t.Run("reject goto", func(t *testing.T) {
-		eng, db, p := setupEngineGraphP(t, base("reject", "ok", "bad"))
+	t.Run("reject", func(t *testing.T) {
+		eng, db, p := setupEngineGraphP(t, base())
 		p.structuredBodies = map[string]string{
 			"review": `{"summary":"no","verdict":"reject"}`,
 		}
@@ -175,35 +140,9 @@ func TestReviewStructuredGateVerdicts(t *testing.T) {
 		waitRunStatus(t, db, run.ID, "completed")
 		waitNodeStatus(t, db, run.ID, "review", "failed")
 		assertNodeExecuted(t, db, run.ID, "bad", true)
-		assertRunVar(t, db, run.ID, "review_reason", "评审结论为 reject:方案/实现被否决,需整改后重新评审")
+		assertRunVar(t, db, run.ID, "reason", "评审结论为 reject:方案/实现被否决,需整改后重新评审")
 		assertRunVar(t, db, run.ID, "last_error", "评审结论为 reject:方案/实现被否决,需整改后重新评审")
 	})
-}
-
-// TestLegacyStructuredGateRouting: graphs without exits keep success/failure edges.
-func TestLegacyStructuredGateRouting(t *testing.T) {
-	g := models.Graph{
-		Nodes: []models.Node{
-			{ID: "input", Type: "input"},
-			{ID: "test", Type: "test", Config: map[string]any{"agent_profile": "t", "prompt": "测试"}},
-			{ID: "ok", Type: "output"},
-			{ID: "bad", Type: "output"},
-		},
-		Edges: []models.Edge{
-			{ID: "e1", Source: "input", Target: "test"},
-			{ID: "e2", Source: "test", Target: "ok", Kind: models.EdgeSuccess},
-			{ID: "e3", Source: "test", Target: "bad", Kind: models.EdgeFailure},
-		},
-	}
-	eng, db, p := setupEngineGraphP(t, g)
-	p.structuredBodies = map[string]string{
-		"test": `{"summary":"bad","failed":1,"cases":[{"name":"x","status":"failed"}]}`,
-	}
-	run, _ := eng.StartRun("wf", nil, "test")
-	waitRunStatus(t, db, run.ID, "completed")
-	assertNodeExecuted(t, db, run.ID, "bad", true)
-	assertNodeExecuted(t, db, run.ID, "ok", false)
-	assertRunVar(t, db, run.ID, "reason", "测试未通过:1 个用例失败,需修复后重新测试")
 }
 
 // TestStructuredGateMalformed fails closed for bad test_result.json.
@@ -211,67 +150,19 @@ func TestStructuredGateMalformed(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "test", Type: "test", Config: map[string]any{
+			{ID: "test", Type: "agent", Caps: capsTest, Config: map[string]any{
 				"agent_profile": "t", "prompt": "测试",
-				"exits": map[string]any{
-					"pass": map[string]any{"goto": ""},
-					"fail": map[string]any{"goto": "bad"},
-				},
 			}},
+			{ID: "ok", Type: "output"},
 			{ID: "bad", Type: "output"},
 		},
-		Edges: []models.Edge{{ID: "e1", Source: "input", Target: "test"}},
+		Edges: verdictEdges("test", "ok", "bad"),
 	}
 	eng, db, p := setupEngineGraphP(t, g)
 	p.structuredBodies = map[string]string{"test": `{bad`}
 	run, _ := eng.StartRun("wf", nil, "test")
 	waitRunStatus(t, db, run.ID, "completed")
 	assertNodeExecuted(t, db, run.ID, "bad", true)
-}
-
-func TestFinalizeStructuredGateUnit(t *testing.T) {
-	e, db := setupEngine(t)
-	_ = db
-	c := &execCtx{
-		run:  &models.Run{ID: "r1"},
-		vars: map[string]any{},
-	}
-	node := &models.Node{
-		ID: "t", Type: "test",
-		Config: map[string]any{
-			"reason_var": "my_reason",
-			"exits": map[string]any{
-				"pass": map[string]any{"goto": "next"},
-				"fail": map[string]any{"goto": "fix"},
-			},
-		},
-	}
-	oc := nodeOutcome{status: "completed", outputs: map[string]any{}}
-	out := e.finalizeStructuredGate(c, node, oc, nodereg.GateTest)
-	if out.outputs["action"] != "pass" {
-		t.Fatalf("action = %v", out.outputs["action"])
-	}
-	if out.goto_ != "next" {
-		t.Fatalf("goto = %q", out.goto_)
-	}
-	if c.vars["my_reason"] != "测试全部通过" {
-		t.Fatalf("reason = %v", c.vars["my_reason"])
-	}
-	if c.vars["action"] != nil {
-		t.Fatal("action must not be persisted to vars")
-	}
-
-	node2 := &models.Node{ID: "r", Type: "review", Config: map[string]any{
-		"exits": map[string]any{
-			"pass": map[string]any{"goto": ""},
-			"fail": map[string]any{"goto": ""},
-		},
-	}}
-	oc2 := nodeOutcome{status: "failed", err: "reject reason", outputs: map[string]any{}}
-	out2 := e.finalizeStructuredGate(c, node2, oc2, nodereg.GateReview)
-	if out2.outputs["action"] != "reject" {
-		t.Fatalf("action = %v", out2.outputs["action"])
-	}
 }
 
 // TestStructuredGateRetrySnapshotsScreenshots: a test node that fails its gate,
@@ -286,15 +177,15 @@ func TestStructuredGateRetrySnapshotsScreenshots(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "test", Type: "test", Checkpoint: true, Config: map[string]any{
+			{ID: "test", Type: "agent", Caps: capsTest, Checkpoint: true, Config: map[string]any{
 				"agent_profile": "t", "prompt": "测试",
 			}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "test"},
-			{ID: "e2", Source: "test", Target: "output", Kind: models.EdgeSuccess},
-			{ID: "erb", Source: "test", Target: "test", Kind: models.EdgeRollback, MaxAttempts: 3},
+			{ID: "e2", Source: "test", Target: "output", SourceHandle: handlePass, Kind: models.EdgeSuccess},
+			{ID: "erb", Source: "test", Target: "test", SourceHandle: handleFail, Kind: models.EdgeRollback, MaxAttempts: 3},
 		},
 	}
 	eng, db, p := setupEngineGraphP(t, g)
@@ -342,22 +233,18 @@ func TestStructuredGateArtifactNames(t *testing.T) {
 	}
 }
 
-// TestStructuredGateSkippedOnlyPass: skipped-only results pass when block_on_skipped is false (default).
+// TestStructuredGateSkippedOnlyPass: skipped-only results pass the test verdict.
 func TestStructuredGateSkippedOnlyPass(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "test", Type: "test", Config: map[string]any{
+			{ID: "test", Type: "agent", Caps: capsTest, Config: map[string]any{
 				"agent_profile": "t", "prompt": "测试",
-				"exits": map[string]any{
-					"pass": map[string]any{"goto": "ok"},
-					"fail": map[string]any{"goto": "bad"},
-				},
 			}},
 			{ID: "ok", Type: "output", Config: map[string]any{"result": "pass"}},
 			{ID: "bad", Type: "output", Config: map[string]any{"result": "fail"}},
 		},
-		Edges: []models.Edge{{ID: "e1", Source: "input", Target: "test"}},
+		Edges: verdictEdges("test", "ok", "bad"),
 	}
 	eng, db, p := setupEngineGraphP(t, g)
 	p.structuredBodies = map[string]string{
@@ -368,89 +255,25 @@ func TestStructuredGateSkippedOnlyPass(t *testing.T) {
 	waitNodeStatus(t, db, run.ID, "test", "completed")
 	assertNodeExecuted(t, db, run.ID, "ok", true)
 	assertNodeExecuted(t, db, run.ID, "bad", false)
-	assertRunVar(t, db, run.ID, "reason", "测试全部通过")
-}
-
-// TestStructuredGateBlockOnSkipped: skipped cases fail the gate when block_on_skipped is true.
-func TestStructuredGateBlockOnSkipped(t *testing.T) {
-	g := models.Graph{
-		Nodes: []models.Node{
-			{ID: "input", Type: "input"},
-			{ID: "test", Type: "test", Config: map[string]any{
-				"agent_profile": "t", "prompt": "测试",
-				"block_on_skipped": true,
-				"exits": map[string]any{
-					"pass": map[string]any{"goto": "ok"},
-					"fail": map[string]any{"goto": "bad"},
-				},
-			}},
-			{ID: "ok", Type: "output", Config: map[string]any{"result": "pass"}},
-			{ID: "bad", Type: "output", Config: map[string]any{"result": "fail"}},
-		},
-		Edges: []models.Edge{{ID: "e1", Source: "input", Target: "test"}},
-	}
-	eng, db, p := setupEngineGraphP(t, g)
-	p.structuredBodies = map[string]string{
-		"test": `{"summary":"skipped","skipped":1,"cases":[{"name":"x","status":"skipped"}]}`,
-	}
-	run, _ := eng.StartRun("wf", nil, "test")
-	waitRunStatus(t, db, run.ID, "completed")
-	waitNodeStatus(t, db, run.ID, "test", "failed")
-	assertNodeExecuted(t, db, run.ID, "bad", true)
-	assertNodeExecuted(t, db, run.ID, "ok", false)
-	assertRunVar(t, db, run.ID, "reason", "测试未通过:1 个用例被跳过,需修复后重新测试")
-}
-
-func TestTestGateUnit(t *testing.T) {
-	pass, reason := testGate(`{"summary":"s","skipped":1,"cases":[{"name":"x","status":"skipped"}]}`, false, "")
-	if !pass || reason != "" {
-		t.Errorf("skipped-only default pass: pass=%v reason=%q", pass, reason)
-	}
-	pass, reason = testGate(`{"summary":"s","skipped":1,"cases":[{"name":"x","status":"skipped"}]}`, true, "")
-	if pass || !strings.Contains(reason, "跳过") {
-		t.Errorf("block_on_skipped: pass=%v reason=%q", pass, reason)
-	}
-	pass, reason = testGate(`{"summary":"s","failed":1,"cases":[{"name":"x","status":"failed"}]}`, false, "")
-	if pass || !strings.Contains(reason, "失败") {
-		t.Errorf("failed blocks: pass=%v reason=%q", pass, reason)
-	}
-	pass, _ = testGate(`{bad`, false, "")
-	if pass {
-		t.Error("malformed should fail")
-	}
-
-	plan := `{"goals":[{"id":"g1","title":"A","subgoals":[{"id":"g1.1","title":"x"},{"id":"g1.2","title":"y"}]}]}`
-	pass, reason = testGate(`{"summary":"s","cases":[{"name":"a","status":"passed"}]}`, false, plan)
-	if pass || !strings.Contains(reason, "plan_coverage") {
-		t.Errorf("missing plan_coverage should fail: pass=%v reason=%q", pass, reason)
-	}
-	pass, reason = testGate(`{"summary":"s","plan_coverage":[
-		{"plan_id":"g1.1","passed":true,"evidence":"ok"},
-		{"plan_id":"g1.2","passed":true,"evidence":"ok"}
-	]}`, false, plan)
-	if !pass || reason != "" {
-		t.Errorf("full coverage should pass: pass=%v reason=%q", pass, reason)
-	}
+	assertRunVar(t, db, run.ID, "reason", "验证全部通过")
 }
 
 func planCoverageGateGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "plan", Type: "plan", Config: map[string]any{"agent_profile": "p", "prompt": "计划"}},
-			{ID: "test", Type: "test", Config: map[string]any{
+			{ID: "plan", Type: "agent", Caps: capsPlan, Config: map[string]any{"agent_profile": "p", "prompt": "计划"}},
+			{ID: "test", Type: "agent", Caps: capsTest, Config: map[string]any{
 				"agent_profile": "t", "prompt": "测试",
-				"exits": map[string]any{
-					"pass": map[string]any{"goto": "ok"},
-					"fail": map[string]any{"goto": "fix"},
-				},
 			}},
 			{ID: "ok", Type: "output", Config: map[string]any{"result": "pass"}},
-			{ID: "fix", Type: "output", Config: map[string]any{"result": "fix"}},
+			{ID: "bad", Type: "output", Config: map[string]any{"result": "fix"}},
 		},
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "plan"},
 			{ID: "e2", Source: "plan", Target: "test", Kind: models.EdgeSuccess},
+			{ID: "pass", Source: "test", Target: "ok", SourceHandle: handlePass},
+			{ID: "fail", Source: "test", Target: "bad", SourceHandle: handleFail},
 		},
 	}
 }
@@ -464,7 +287,7 @@ func TestStructuredGatePlanCoverageMissingFailGoto(t *testing.T) {
 	run, _ := eng.StartRun("wf", nil, "test")
 	waitRunStatus(t, db, run.ID, "completed")
 	waitNodeStatus(t, db, run.ID, "test", "failed")
-	assertNodeExecuted(t, db, run.ID, "fix", true)
+	assertNodeExecuted(t, db, run.ID, "bad", true)
 	assertNodeExecuted(t, db, run.ID, "ok", false)
 	assertRunVar(t, db, run.ID, "reason", "计划贴合度校验失败:缺少 plan_coverage(有计划叶子时必填)")
 }
@@ -482,8 +305,8 @@ func TestStructuredGatePlanCoveragePassGoto(t *testing.T) {
 	waitRunStatus(t, db, run.ID, "completed")
 	waitNodeStatus(t, db, run.ID, "test", "completed")
 	assertNodeExecuted(t, db, run.ID, "ok", true)
-	assertNodeExecuted(t, db, run.ID, "fix", false)
-	assertRunVar(t, db, run.ID, "reason", "测试全部通过")
+	assertNodeExecuted(t, db, run.ID, "bad", false)
+	assertRunVar(t, db, run.ID, "reason", "验证全部通过")
 }
 
 func TestStructuredGatePlanCoverageNoPlanFailOpen(t *testing.T) {
@@ -491,17 +314,13 @@ func TestStructuredGatePlanCoverageNoPlanFailOpen(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "test", Type: "test", Config: map[string]any{
+			{ID: "test", Type: "agent", Caps: capsTest, Config: map[string]any{
 				"agent_profile": "t", "prompt": "测试",
-				"exits": map[string]any{
-					"pass": map[string]any{"goto": "ok"},
-					"fail": map[string]any{"goto": "fix"},
-				},
 			}},
 			{ID: "ok", Type: "output", Config: map[string]any{"result": "pass"}},
-			{ID: "fix", Type: "output", Config: map[string]any{"result": "fix"}},
+			{ID: "bad", Type: "output", Config: map[string]any{"result": "fix"}},
 		},
-		Edges: []models.Edge{{ID: "e1", Source: "input", Target: "test"}},
+		Edges: verdictEdges("test", "ok", "bad"),
 	}
 	eng, db, p := setupEngineGraphP(t, g)
 	p.structuredBodies = map[string]string{
@@ -510,5 +329,5 @@ func TestStructuredGatePlanCoverageNoPlanFailOpen(t *testing.T) {
 	run, _ := eng.StartRun("wf", nil, "test")
 	waitRunStatus(t, db, run.ID, "completed")
 	assertNodeExecuted(t, db, run.ID, "ok", true)
-	assertNodeExecuted(t, db, run.ID, "fix", false)
+	assertNodeExecuted(t, db, run.ID, "bad", false)
 }

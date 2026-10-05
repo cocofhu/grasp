@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/nodereg"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -23,7 +24,7 @@ var (
 	// ErrWorkflowProjectRequired is returned when creating a workflow without projectId.
 	ErrWorkflowProjectRequired = errors.New("必须指定所属项目")
 	// ErrWorkflowProjectImmutable is returned when an update tries to change projectId.
-	ErrWorkflowProjectImmutable = errors.New("流水线归属项目创建后不可变更")
+	ErrWorkflowProjectImmutable = errors.New("工作流归属项目创建后不可变更")
 	// ErrWorkflowProjectNotFound is returned when projectId does not exist.
 	ErrWorkflowProjectNotFound = errors.New("所属项目不存在")
 )
@@ -196,7 +197,7 @@ func (s *WorkflowService) Save(wf *models.WorkflowDef) error {
 		if err := s.validateWorkflowName(wf.Name, wf.ID, wf.ProjectID); err != nil {
 			return err
 		}
-		if err := s.validateAgentProfiles(wf); err != nil {
+		if err := s.validateGraph(wf); err != nil {
 			return err
 		}
 		if wf.Version == 0 {
@@ -242,7 +243,7 @@ func (s *WorkflowService) Save(wf *models.WorkflowDef) error {
 		wf.ShowOnHome = existing.ShowOnHome
 		return nil
 	}
-	if err := s.validateAgentProfiles(wf); err != nil {
+	if err := s.validateGraph(wf); err != nil {
 		return err
 	}
 	wf.NotifyPolicy = NormalizeWorkflowNotifyPolicy(wf.NotifyPolicy)
@@ -298,11 +299,11 @@ func (s *WorkflowService) Publish(id string) (models.WorkflowDef, error) {
 	if err := s.db.First(&wf, "id = ?", id).Error; err != nil {
 		return wf, errors.New("workflow not found")
 	}
-	// A published version must be a structurally valid, runnable pipeline.
+	// A published version must be a structurally valid, runnable workflow.
 	if err := wf.Graph.Validate(); err != nil {
 		return wf, err
 	}
-	if err := s.validateAgentProfiles(&wf); err != nil {
+	if err := s.validateGraph(&wf); err != nil {
 		return wf, err
 	}
 	wf.Version++
@@ -480,9 +481,13 @@ func (s *WorkflowService) Delete(id string) error {
 	})
 }
 
-func (s *WorkflowService) validateAgentProfiles(wf *models.WorkflowDef) error {
+// validateGraph rejects unknown node types and missing agent_profile refs.
+func (s *WorkflowService) validateGraph(wf *models.WorkflowDef) error {
 	if s == nil || wf == nil {
 		return nil
+	}
+	if err := nodereg.ValidateNodeTypes(&wf.Graph); err != nil {
+		return err
 	}
 	if s.skills == nil {
 		return nil

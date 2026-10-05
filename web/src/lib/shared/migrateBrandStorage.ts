@@ -11,7 +11,7 @@ export const LEGACY_STORAGE_KEYS = {
   runsStatusFilter: 'approving-runs-status-filter',
   onboardingSuppressPrefix: 'approving-onboarding-suppress:',
   workflowFavoritesPrefix: 'approving.workflowFavorites.',
-  homeLastPipelineId: 'approving.home.lastPipelineId',
+  homeLastWorkflowId: 'approving.home.lastPipelineId',
   homeLastPriority: 'approving.home.lastPriority',
   homeComposerDraft: 'approving.home.composerDraft',
   gateShareUrlPrefix: 'approving.gateShareUrl.',
@@ -28,7 +28,7 @@ export const GRASP_STORAGE_KEYS = {
   runsStatusFilter: 'grasp-runs-status-filter',
   onboardingSuppressPrefix: 'grasp-onboarding-suppress:',
   workflowFavoritesPrefix: 'grasp.workflowFavorites.',
-  homeLastPipelineId: 'grasp.home.lastPipelineId',
+  homeLastWorkflowId: 'grasp.home.lastPipelineId',
   homeLastPriority: 'grasp.home.lastPriority',
   homeComposerDraft: 'grasp.home.composerDraft',
   gateShareUrlPrefix: 'grasp.gateShareUrl.',
@@ -149,7 +149,7 @@ export function runBrandStorageMigration(): void {
   migrateLocalStorageKey(LEGACY_STORAGE_KEYS.sidebarHidden, GRASP_STORAGE_KEYS.sidebarHidden)
   migrateLocalStorageKey(LEGACY_STORAGE_KEYS.projectContext, GRASP_STORAGE_KEYS.projectContext)
   migrateLocalStorageKey(LEGACY_STORAGE_KEYS.runsStatusFilter, GRASP_STORAGE_KEYS.runsStatusFilter)
-  migrateLocalStorageKey(LEGACY_STORAGE_KEYS.homeLastPipelineId, GRASP_STORAGE_KEYS.homeLastPipelineId)
+  migrateLocalStorageKey(LEGACY_STORAGE_KEYS.homeLastWorkflowId, GRASP_STORAGE_KEYS.homeLastWorkflowId)
   migrateLocalStorageKey(LEGACY_STORAGE_KEYS.homeLastPriority, GRASP_STORAGE_KEYS.homeLastPriority)
   migrateLocalStorageKey(LEGACY_STORAGE_KEYS.homeComposerDraft, GRASP_STORAGE_KEYS.homeComposerDraft)
   migrateLocalStoragePrefix(

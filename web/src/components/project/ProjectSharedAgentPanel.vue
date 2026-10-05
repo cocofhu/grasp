@@ -5,7 +5,6 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AgentFilesPanel from '@/components/agent/AgentFilesPanel.vue'
 import AgentMcpPanel from '@/components/agent/AgentMcpPanel.vue'
 import AgentEnvPanel from '@/components/agent/AgentEnvPanel.vue'
-import AgentPromptsPanel from '@/components/agent/AgentPromptsPanel.vue'
 import { api, type ProjectSharedAgentConfig } from '@/lib/api/api'
 import {
   DEFAULT_CONFIG_ROOT,
@@ -15,7 +14,6 @@ import {
   fromDraft,
   hydrateStudioDraft,
   kvToRec,
-  PROMPT_KEYS,
   recToKV,
   type AgentStudioDraft,
 } from '@/lib/agent/agentStudioDraft'
@@ -47,7 +45,7 @@ const { t } = useI18n()
 const toast = useToast()
 const { isMobile } = useBreakpoint()
 
-type SubTab = 'files' | 'mcp' | 'env' | 'prompts' | 'meta'
+type SubTab = 'files' | 'mcp' | 'env' | 'meta'
 
 const loading = ref(true)
 const loadError = ref('')
@@ -64,24 +62,15 @@ const dirty = computed(() => {
   return draftPayloadJson(draft.value) !== originalJson.value
 })
 
-const promptCount = computed(() =>
-  draft.value ? PROMPT_KEYS.filter((k) => draft.value!.prompts[k].trim()).length : 0,
-)
-
 const subTabs = computed(() => {
   if (!draft.value) return [] as { k: SubTab; l: string }[]
   const d = draft.value
-  const pc = promptCount.value
   return [
     { k: 'files' as const, l: t('pages.agentStudio.tabs.files', { n: d.files.length }) },
     { k: 'mcp' as const, l: t('pages.agentStudio.tabs.mcp', { n: d.mcp.length }) },
     {
       k: 'env' as const,
       l: t('pages.agentStudio.tabs.env', { n: d.env.filter((e) => !isManagedRegionKey(e.k)).length }),
-    },
-    {
-      k: 'prompts' as const,
-      l: pc ? t('pages.agentStudio.tabs.promptsCount', { n: pc }) : t('pages.agentStudio.tabs.prompts'),
     },
     { k: 'meta' as const, l: t('pages.agentStudio.tabs.meta') },
   ]
@@ -161,7 +150,6 @@ function sharedToDraft(cfg: ProjectSharedAgentConfig): AgentStudioDraft {
     mcp: cfg.mcp || [],
     env: cfg.env || {},
     layout: cfg.layout || {},
-    prompts: cfg.prompts,
   })
 }
 
@@ -201,7 +189,6 @@ async function save(): Promise<boolean> {
       mcp: payload.mcp || [],
       env: payload.env || {},
       layout: payload.layout || {},
-      prompts: payload.prompts,
     })
     applyLoaded(saved)
     toast.success(t('pages.projectDetail.saved'))
@@ -368,11 +355,6 @@ onMounted(() => {
         context="shared"
         @toast="toast.success($event)"
         @open-settings-file="openSettingsInFiles"
-      />
-
-      <AgentPromptsPanel
-        v-if="subTab === 'prompts'"
-        :draft="draft"
       />
 
       <div

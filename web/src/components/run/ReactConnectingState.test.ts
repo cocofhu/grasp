@@ -134,14 +134,14 @@ describe('ReactConnectingState', () => {
   it('stage chrome shows centered spinner and two-line copy without placeholders (g1.1 g1.2 g2.1 g3.2 g4.1 g4.2)', () => {
     const wrapper = mountStage('zh-CN')
     expect(wrapper.get('[data-testid="react-connecting-stage"]').attributes('aria-busy')).toBe('true')
-    const pipeline = wrapper.get('[data-testid="react-connecting-tab-pipeline"]')
-    expect(pipeline.element.tagName).toBe('BUTTON')
-    expect(pipeline.attributes('role')).toBe('tab')
-    expect(pipeline.attributes('aria-selected')).toBe('true')
-    expect(pipeline.text()).toContain('流水线产物')
+    const workflow = wrapper.get('[data-testid="react-connecting-tab-workflow"]')
+    expect(workflow.element.tagName).toBe('BUTTON')
+    expect(workflow.attributes('role')).toBe('tab')
+    expect(workflow.attributes('aria-selected')).toBe('true')
+    expect(workflow.text()).toContain('工作流产物')
     expect(wrapper.find('[data-testid="react-connecting-tab-preview"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="hard-load-layer"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="react-connecting-pipeline-skeleton"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-connecting-workflow-skeleton"]').exists()).toBe(false)
     expect(wrapper.find('.animate-pulse').exists()).toBe(false)
 
     const spinner = wrapper.get('[data-testid="react-connecting-stage-spinner"]')
@@ -171,8 +171,8 @@ describe('ReactConnectingState', () => {
 
   it('stage chrome English shows Preparing / Pulling titles (g2.1 g2.2)', () => {
     const ready = mountStage('en')
-    expect(ready.get('[data-testid="react-connecting-tab-pipeline"]').attributes('aria-selected')).toBe('true')
-    expect(ready.get('[data-testid="react-connecting-tab-pipeline"]').text()).toContain('Pipeline artifacts')
+    expect(ready.get('[data-testid="react-connecting-tab-workflow"]').attributes('aria-selected')).toBe('true')
+    expect(ready.get('[data-testid="react-connecting-tab-workflow"]').text()).toContain('Workflow artifacts')
     expect(ready.find('[data-testid="react-connecting-tab-preview"]').exists()).toBe(false)
     expect(ready.find('[data-testid="hard-load-layer"]').exists()).toBe(false)
     expect(ready.get('[data-testid="react-connecting-stage-title"]').text()).toBe('Preparing the session')

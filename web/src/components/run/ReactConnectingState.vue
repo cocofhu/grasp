@@ -54,9 +54,9 @@ onMounted(() => {
         role="tab"
         class="rounded-md bg-elevated px-2.5 py-1 text-[11px] text-txt2 transition"
         aria-selected="true"
-        data-testid="react-connecting-tab-pipeline"
+        data-testid="react-connecting-tab-workflow"
       >
-        {{ t('pages.reactArtifactStage.pipelineTab') }}
+        {{ t('pages.reactArtifactStage.workflowTab') }}
       </button>
     </div>
     <div

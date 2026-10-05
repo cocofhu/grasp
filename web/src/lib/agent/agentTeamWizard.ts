@@ -51,12 +51,12 @@ export type TeamWizardDraft = {
   projectName: string
   prefix: string
   rootGroupName: string
-  pipelineGroupName: string
+  workflowGroupName: string
   pmName: string
   background: string
   prefixTouched: boolean
   rootTouched: boolean
-  pipelineTouched: boolean
+  workflowGroupTouched: boolean
   pmTouched: boolean
   startPath: StartPath
   acpBackend: WizardBackendId
@@ -89,12 +89,12 @@ export function freshTeamDraft(): TeamWizardDraft {
     projectName: '',
     prefix: '',
     rootGroupName: '',
-    pipelineGroupName: 'Pipeline(GitHub)',
+    workflowGroupName: '工作流(GitHub)',
     pmName: '',
     background: '',
     prefixTouched: false,
     rootTouched: false,
-    pipelineTouched: false,
+    workflowGroupTouched: false,
     pmTouched: false,
     startPath: 'apiKey',
     acpBackend: APIKEY_BACKEND,
@@ -190,7 +190,7 @@ export type TeamBootstrapPayload = {
   projectName: string
   prefix: string
   rootGroupName: string
-  pipelineGroupName: string
+  workflowGroupName: string
   pmName: string
   background: string
   acpBackend: string
@@ -231,7 +231,7 @@ export function assembleTeamBootstrapPayload(d: TeamWizardDraft): TeamBootstrapP
     projectName: d.projectName.trim(),
     prefix: d.prefix.trim(),
     rootGroupName: (d.rootGroupName.trim() || `${d.prefix.trim()}项目组`),
-    pipelineGroupName: d.pipelineGroupName.trim() || 'Pipeline(GitHub)',
+    workflowGroupName: d.workflowGroupName.trim() || '工作流(GitHub)',
     pmName: normalizeAgentName(d.pmName),
     background: d.background.trim(),
     acpBackend: d.acpBackend || APIKEY_BACKEND,

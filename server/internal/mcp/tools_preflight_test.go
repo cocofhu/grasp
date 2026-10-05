@@ -1,48 +1,52 @@
 package mcp
 
-import "testing"
+import (
+	"testing"
 
-func TestToolAllowedPreflight(t *testing.T) {
-	if !toolAllowed("preflight", "set_preflight") {
-		t.Fatal("set_preflight on preflight")
-	}
-	if !toolAllowed("preflight", "ask_form") {
-		t.Fatal("ask_form on preflight")
-	}
-	if !toolAllowed("preflight", "ask_question") {
-		t.Fatal("ask_question on preflight")
-	}
-	if !toolAllowed("preflight", "set_artifact_preview") {
-		t.Fatal("set_artifact_preview on preflight")
-	}
-	if toolAllowed("react", "set_preflight") || toolAllowed("react", "ask_form") {
-		t.Fatal("preflight tools must not be allowed on react")
-	}
-	if toolAllowed("preflight", "set_clarified_requirement") {
-		t.Fatal("set_clarified_requirement must not be allowed on preflight")
-	}
-	if toolAllowed("approve", "ask_form") || toolAllowed("grasp", "ask_form") {
-		t.Fatal("ask_form must not be allowed on grasp/approve")
+	"github.com/cocofhu/grasp/internal/models"
+)
+
+func TestToolAllowedFollowsCapabilities(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		caps  *models.AgentCapabilities
+		allow []string
+		deny  []string
+	}{
+		{"preflight", capsPreflight,
+			[]string{"set_preflight", "ask_form", "ask_question", "set_artifact_preview"},
+			[]string{"set_clarified_requirement", "set_preview", "update_plan_status"}},
+		{"clarify", capsClarify,
+			[]string{"set_plan", "set_clarified_requirement", "set_research", "set_proposals", "ask_question", "set_artifact_preview", "set_preview"},
+			[]string{"set_root_cause", "set_preflight", "ask_form", "set_test_result", "update_plan_status"}},
+		{"clarify+root_cause", capsClarifyRootCause, []string{"set_root_cause"}, nil},
+		{"implement", capsImplement,
+			[]string{"set_implementation_result", "set_preview", "update_plan_status"},
+			[]string{"set_plan", "ask_question", "set_review"}},
+		{"nil", nil, nil, []string{"set_plan", "ask_question", "set_preview", "unknown_tool"}},
+	} {
+		for _, tool := range tc.allow {
+			if !toolAllowed(tc.caps, tool) {
+				t.Errorf("%s: %s should be allowed", tc.name, tool)
+			}
+		}
+		for _, tool := range tc.deny {
+			if toolAllowed(tc.caps, tool) {
+				t.Errorf("%s: %s should be denied", tc.name, tool)
+			}
+		}
 	}
 }
 
-func TestToolAllowedGraspAlias(t *testing.T) {
-	for _, typ := range []string{"grasp", "approve"} {
-		if !toolAllowed(typ, "set_plan") || !toolAllowed(typ, "set_clarified_requirement") {
-			t.Fatalf("set_plan/set_clarified_requirement must allow %s", typ)
-		}
-		if !toolAllowed(typ, "set_research") || !toolAllowed(typ, "set_proposals") {
-			t.Fatalf("optional set_* must allow %s", typ)
-		}
-		if !toolAllowed(typ, "set_root_cause") {
-			t.Fatalf("set_root_cause must allow %s", typ)
-		}
-		if !toolAllowed(typ, "ask_question") || !toolAllowed(typ, "set_artifact_preview") {
-			t.Fatalf("ask_question/set_artifact_preview must allow %s", typ)
-		}
+func TestToolListedReviewAsk(t *testing.T) {
+	if !toolListed(capsImplement, "ask_question") {
+		t.Fatal("review Agents list ask_question for the review phase")
 	}
-	if toolAllowed("human_gate", "set_plan") || toolAllowed("react", "set_plan") {
-		t.Fatal("set_plan must stay blocked on human_gate/react")
+	if toolListed(capsPlain, "ask_question") || toolListed(capsPlain, "set_plan") {
+		t.Fatal("plain Agent must not list ungranted tools")
+	}
+	if !toolListed(capsPlain, "write_artifact") {
+		t.Fatal("non-capability tools are always listed")
 	}
 }
 
@@ -103,7 +107,7 @@ func TestPreflightToolsDispatch(t *testing.T) {
 		return `{"jsonrpc":"2.0","id":` + itoa(id) + `,"method":"tools/call","params":{"name":"` + name + `","arguments":` + argsJSON + `}}`
 	}
 
-	h.SetActiveNode(runID, "n", "agent")
+	h.SetActiveNode(runID, "n", capsPlain)
 	if _, isErr := toolText(t, call(t, h, runID, tok, tc(1, "ask_form", `{"fields":[{"name":"h","label":"主机","type":"text"}]}`))); !isErr {
 		t.Fatal("ask_form on agent")
 	}
@@ -114,7 +118,7 @@ func TestPreflightToolsDispatch(t *testing.T) {
 		t.Fatal("ask_form bad token")
 	}
 
-	h.SetActiveNode(runID, "pf", "preflight")
+	h.SetActiveNode(runID, "pf", capsPreflight)
 	if _, isErr := toolText(t, call(t, h, runID, tok, tc(4, "ask_form", `{"fields":[]}`))); !isErr {
 		t.Fatal("ask_form empty fields")
 	}

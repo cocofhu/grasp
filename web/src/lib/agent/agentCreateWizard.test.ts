@@ -91,25 +91,6 @@ describe('assembleCreatePayload', () => {
     expect(payload.files![0].content).toBe('# custom')
   })
 
-  it('omits prompts when skipped or all empty', () => {
-    const d = freshDraft()
-    d.name = 'x'
-    d.skipped.prompts = true
-    d.prompts.producesContract = 'should-not-send'
-    expect(assembleCreatePayload(d).prompts).toBeUndefined()
-
-    const d2 = freshDraft()
-    d2.name = 'y'
-    expect(assembleCreatePayload(d2).prompts).toBeUndefined()
-  })
-
-  it('includes non-empty prompt overrides', () => {
-    const d = freshDraft()
-    d.name = 'x'
-    d.prompts.reactOpenSuffix = 'hello'
-    expect(assembleCreatePayload(d).prompts).toEqual({ reactOpenSuffix: 'hello' })
-  })
-
   it('maps skills and commands into files[]', () => {
     const d = freshDraft()
     d.name = 'x'

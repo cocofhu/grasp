@@ -1,23 +1,11 @@
 package engine
 
 import (
+	"strings"
 	"testing"
-	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 )
-
-func TestStructuredGatesFailClosed(t *testing.T) {
-	if pass, _ := testGate(`{bad`, false, ""); pass {
-		t.Error("malformed test_result should fail gate")
-	}
-	if pass, _ := reviewGate(`{"verdict":"bogus"}`); pass {
-		t.Error("invalid review should fail gate")
-	}
-	if pass, reason := reviewGate(`{"summary":"s","verdict":"reject"}`); pass || reason == "" {
-		t.Errorf("reject verdict should fail gate: pass=%v reason=%q", pass, reason)
-	}
-}
 
 func TestUnknownNodeTypeFails(t *testing.T) {
 	g := models.Graph{
@@ -31,22 +19,9 @@ func TestUnknownNodeTypeFails(t *testing.T) {
 			{Source: "bad", Target: "output", Kind: models.EdgeSuccess},
 		},
 	}
-	eng, db, _ := setupEngineGraphP(t, g)
-	run, err := eng.StartRun("wf", nil, "test")
-	if err != nil {
-		t.Fatalf("StartRun: %v", err)
+	eng, _, _ := setupEngineGraphP(t, g)
+	_, err := eng.StartRun("wf", nil, "test")
+	if err == nil || !strings.Contains(err.Error(), "未知节点类型 not_a_real_type") {
+		t.Fatalf("StartRun err = %v, want 未知节点类型", err)
 	}
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
-		var r models.Run
-		db.First(&r, "id = ?", run.ID)
-		if r.Status == "failed" || r.Status == "completed" {
-			if r.Status != "failed" {
-				t.Fatalf("run status = %q, want failed", r.Status)
-			}
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	t.Fatal("run did not fail on unknown node type")
 }

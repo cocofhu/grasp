@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 
+	"github.com/cocofhu/grasp/internal/auth"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/gin-gonic/gin"
 )
@@ -54,4 +55,14 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items, "brand": h.Settings.Brand()})
+}
+
+// requireAdmin writes 403 and returns false unless the session is an admin.
+func (h *Handlers) requireAdmin(c *gin.Context) bool {
+	sess, ok := auth.GetSession(c)
+	if !ok || h.Auth == nil || !h.Auth.IsAdmin(sess.Username) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "admin required"})
+		return false
+	}
+	return true
 }

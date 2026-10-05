@@ -65,7 +65,7 @@ func indexRounds(t *testing.T, db *gorm.DB, runID string) []map[string]any {
 // Three push-backs on one execution must converge on one cumulative product.
 // The individual reasoning remains in FeedbackEvent and feedback_index.json.
 func TestReviseRoundsProduceOneCumulativeArtifact(t *testing.T) {
-	eng, db, _ := setupReviewEngine(t, true)
+	eng, db, _ := setupReviewEngine(t)
 
 	run, err := eng.StartRun("review-wf", map[string]any{"idea": "登录"}, "test")
 	if err != nil {

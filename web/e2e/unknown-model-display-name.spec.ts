@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dismissOnboardingIfOpen, seedOnboardingDismissed } from './helpers/onboarding'
+import { RESEARCH_CAPS } from '../src/test/capsFixtures'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const shotDir = path.join(__dirname, '..', 'test-results', 'unknown-model-display-shots')
@@ -303,7 +304,7 @@ test.describe('未知模型显示名', () => {
 
     const nodes = [
       { id: 'start', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
-      { id: 'research', type: 'research', label: '调研', position: { x: 180, y: 0 }, config: {} },
+      { id: 'research', type: 'agent', caps: RESEARCH_CAPS, label: '调研', position: { x: 180, y: 0 }, config: {} },
     ]
     const usage = {
       inputTokens: 100,

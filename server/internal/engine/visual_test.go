@@ -10,7 +10,7 @@ func visualGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "page", Type: "visual", Config: map[string]any{}},
+			{ID: "page", Type: "agent", Caps: capsPageAuto, Config: map[string]any{}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{

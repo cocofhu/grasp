@@ -84,6 +84,7 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // non-JSON error body; keep the status line
     }
+    if (extra.code === 'secrets_key_missing') msg = i18n.global.t('common.errors.secretsKeyMissing')
     throw Object.assign(new Error(msg), { status: res.status, ...extra })
   }
   apiState.online = true

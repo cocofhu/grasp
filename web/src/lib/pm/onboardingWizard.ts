@@ -32,61 +32,182 @@ export {
 /** Matches models.DefaultProjectID — first-install wizard only opens here. */
 export const DEFAULT_PROJECT_ID = 'proj-default'
 
-export const ONBOARDING_WORKFLOW_NAME = '默认工作流'
-export const FIRST_INSTALL_GROUP_NAME = '综合项目组'
-export const ONBOARDING_NAME_MARKER = '综合'
+/** The default workflow's name in every UI language (mirrors server onboardingLocales). */
+export const ONBOARDING_WORKFLOW_NAMES: readonly string[] = ['默认工作流', 'Default Workflow']
+/** Mirrors services.FirstInstallGroupName. */
+export const FIRST_INSTALL_GROUP_NAME = '默认项目组'
 
-/** Longest role suffix after replacing 综合 (代码审查工程师). */
-const LONGEST_ONBOARDING_ROLE_SUFFIX = 7
+/** Built-in templates the wizard creates, in workflow order (server TeamEngineerTemplates). */
+export type OnboardingTemplateId = 'clarify' | 'implement' | 'test_review'
+
+export const ONBOARDING_TEMPLATES: readonly { id: OnboardingTemplateId; label: string }[] = [
+  { id: 'clarify', label: '需求澄清' },
+  { id: 'implement', label: '实现' },
+  { id: 'test_review', label: '测试评审' },
+]
+
+/**
+ * The default workflow cannot run without clarify → implement; only test_review
+ * may be unchecked (implement then ends the workflow). Mirrors the server.
+ */
+export const ONBOARDING_REQUIRED_TEMPLATE_IDS: readonly OnboardingTemplateId[] = ['clarify', 'implement']
+
+const ONBOARDING_ROLE_NAMES_EN: Record<OnboardingTemplateId, string> = {
+  clarify: 'Clarify',
+  implement: 'Implement',
+  test_review: 'TestReview',
+}
+
+/** Longest role suffix in any locale (TestReview). */
+const LONGEST_ONBOARDING_ROLE_SUFFIX = 10
 const MAX_AGENT_NAME_RUNES = 64
 
-export const ONBOARDING_AGENT_NAMES = [
-  '综合AI技术产品',
-  '综合研发工程师',
-  '综合测试工程师',
-  '综合代码审查工程师',
-  '综合运维工程师',
-  '综合项目组组长',
-] as const
+/** Canonical default-project Agent names (the server's template labels); used for conflict checks. */
+export const ONBOARDING_AGENT_NAMES: readonly string[] = ONBOARDING_TEMPLATES.map((t) => t.label)
+
+/** Default role names shown and saved for the given UI language. */
+export function onboardingRoleNames(lang: AppLocale): string[] {
+  return ONBOARDING_TEMPLATES.map((t) => (lang === 'en' ? ONBOARDING_ROLE_NAMES_EN[t.id] : t.label))
+}
 
 export type OnboardingMode = 'firstInstall' | 'createProject' | 'retry'
 
-export type OnboardingStepId =
-  | 'projectName'
-  | 'language'
-  | 'overview'
-  | 'acp'
-  | 'apiKey'
-  | 'git'
-  | 'review'
+export type OnboardingStepId = 'prefs' | 'model' | 'key' | 'git' | 'team' | 'workflow' | 'done'
 
 export type OnboardingStep = {
   id: OnboardingStepId
   labelKey: string
-  skip?: boolean
 }
 
-const BASE_ONBOARDING_STEPS: OnboardingStep[] = [
-  { id: 'language', labelKey: 'pages.onboarding.steps.language' },
-  { id: 'overview', labelKey: 'pages.onboarding.steps.overview' },
-  { id: 'acp', labelKey: 'pages.onboarding.steps.acp' },
-  { id: 'apiKey', labelKey: 'pages.onboarding.steps.apiKey' },
-  { id: 'git', labelKey: 'pages.onboarding.steps.git', skip: true },
-  { id: 'review', labelKey: 'pages.onboarding.steps.review' },
+/** Same steps in every mode, one topic per page; `done` is the success page after generating. */
+export const ONBOARDING_STEPS: OnboardingStep[] = [
+  { id: 'prefs', labelKey: 'pages.onboarding.steps.prefs' },
+  { id: 'model', labelKey: 'pages.onboarding.steps.model' },
+  { id: 'key', labelKey: 'pages.onboarding.steps.key' },
+  { id: 'git', labelKey: 'pages.onboarding.steps.git' },
+  { id: 'team', labelKey: 'pages.onboarding.steps.team' },
+  { id: 'workflow', labelKey: 'pages.onboarding.steps.workflow' },
+  { id: 'done', labelKey: 'pages.onboarding.steps.done' },
 ]
 
-/** Default-project / retry steps (no project name). */
-export const ONBOARDING_STEPS: OnboardingStep[] = BASE_ONBOARDING_STEPS
+export type OnboardingTeamMember = {
+  templateId: OnboardingTemplateId
+  enabled: boolean
+  /** Full Agent name; '' lets the server derive it from the project name. */
+  name: string
+  /** True once the user typed a name, so default refreshes leave it alone. */
+  nameEdited: boolean
+  /** ACP_BRIDGE_MODEL for this Agent; '' inherits the project default. */
+  model: string
+}
 
-export function onboardingStepsForMode(mode: OnboardingMode): OnboardingStep[] {
-  if (mode === 'createProject') {
-    // New project is not first-install: skip language/theme; inherit app prefs.
-    return [
-      { id: 'projectName', labelKey: 'pages.onboarding.steps.projectName' },
-      ...BASE_ONBOARDING_STEPS.filter((s) => s.id !== 'language'),
-    ]
+export function freshOnboardingTeam(): OnboardingTeamMember[] {
+  return ONBOARDING_TEMPLATES.map((t) => ({
+    templateId: t.id,
+    enabled: true,
+    name: '',
+    nameEdited: false,
+    model: '',
+  }))
+}
+
+export function isRequiredTemplate(id: OnboardingTemplateId): boolean {
+  return ONBOARDING_REQUIRED_TEMPLATE_IDS.includes(id)
+}
+
+/** Required templates stay checked. */
+export function setTeamMemberEnabled(team: OnboardingTeamMember[], id: OnboardingTemplateId, enabled: boolean): void {
+  const m = team.find((x) => x.templateId === id)
+  if (!m) return
+  m.enabled = isRequiredTemplate(id) ? true : enabled
+}
+
+/** Fill names the user has not edited with the derived defaults (same order as ONBOARDING_TEMPLATES). */
+export function applyDefaultTeamNames(team: OnboardingTeamMember[], defaults: readonly string[]): void {
+  ONBOARDING_TEMPLATES.forEach((t, i) => {
+    const m = team.find((x) => x.templateId === t.id)
+    if (m && !m.nameEdited) m.name = defaults[i] || ''
+  })
+}
+
+export type TeamNameIssue = '' | 'required' | 'invalid' | 'duplicate'
+
+/** Per-member name problems for enabled members. Blank is fine only when the server derives it. */
+export function teamNameIssues(
+  team: OnboardingTeamMember[],
+  opts: { allowBlank?: boolean } = {},
+): Record<OnboardingTemplateId, TeamNameIssue> {
+  const out = { clarify: '', implement: '', test_review: '' } as Record<OnboardingTemplateId, TeamNameIssue>
+  const counts = new Map<string, number>()
+  for (const m of team) {
+    if (!m.enabled) continue
+    const n = normalizeAgentName(m.name)
+    if (n) counts.set(n, (counts.get(n) || 0) + 1)
   }
-  return BASE_ONBOARDING_STEPS
+  for (const m of team) {
+    if (!m.enabled) continue
+    const n = normalizeAgentName(m.name)
+    if (!n) {
+      if (!opts.allowBlank) out[m.templateId] = 'required'
+      continue
+    }
+    if (validateAgentName(n)) out[m.templateId] = 'invalid'
+    else if ((counts.get(n) || 0) > 1) out[m.templateId] = 'duplicate'
+  }
+  return out
+}
+
+export function teamValid(team: OnboardingTeamMember[], opts: { allowBlank?: boolean } = {}): boolean {
+  return Object.values(teamNameIssues(team, opts)).every((v) => !v)
+}
+
+export type OnboardingPreviewNode = {
+  id: string
+  kind: 'input' | 'agent' | 'output'
+  templateId?: OnboardingTemplateId
+  name?: string
+}
+
+export type OnboardingPreviewEdge = {
+  from: string
+  to: string
+  handle?: 'pass' | 'fail'
+}
+
+export type OnboardingWorkflowPreview = {
+  nodes: OnboardingPreviewNode[]
+  edges: OnboardingPreviewEdge[]
+}
+
+/**
+ * The default workflow bootstrap will publish for this team:
+ * input → 需求澄清 → 实现 → 测试评审 -pass→ output, -fail→ 实现.
+ * Without test_review, 实现 goes straight to output (same pruning as the server).
+ */
+export function buildOnboardingWorkflowPreview(team: OnboardingTeamMember[]): OnboardingWorkflowPreview {
+  const agents = ONBOARDING_TEMPLATES.filter(
+    (t) => isRequiredTemplate(t.id) || team.find((m) => m.templateId === t.id)?.enabled,
+  )
+  const nodes: OnboardingPreviewNode[] = [
+    { id: 'input', kind: 'input' },
+    ...agents.map((t) => ({
+      id: t.id,
+      kind: 'agent' as const,
+      templateId: t.id,
+      name: normalizeAgentName(team.find((m) => m.templateId === t.id)?.name || '') || t.label,
+    })),
+    { id: 'output', kind: 'output' },
+  ]
+  const edges: OnboardingPreviewEdge[] = []
+  for (let i = 0; i < nodes.length - 1; i++) {
+    const from = nodes[i]!
+    const to = nodes[i + 1]!
+    edges.push(from.id === 'test_review' ? { from: from.id, to: to.id, handle: 'pass' } : { from: from.id, to: to.id })
+  }
+  if (agents.some((t) => t.id === 'test_review')) {
+    edges.push({ from: 'test_review', to: 'implement', handle: 'fail' })
+  }
+  return { nodes, edges }
 }
 
 export const ONBOARDING_GIT_TYPES: { id: GitCredentialType; labelKey: string }[] = [
@@ -114,6 +235,8 @@ export type OnboardingDraft = {
   gitSshKnownHosts: string
   repoUrl: string
   repoBranch: string
+  /** Repo + credentials skipped on the connect page (identity is still required). */
+  gitSkipped: boolean
   gitUserName: string
   gitUserEmail: string
   vncPreview: boolean
@@ -122,11 +245,20 @@ export type OnboardingDraft = {
   openCodeBaseURL: string
   openCodeModel: string
   openCodeModelVision: boolean
+  team: OnboardingTeamMember[]
+}
+
+export type OnboardingAgentChoice = {
+  templateId: OnboardingTemplateId
+  name?: string
+  model?: string
 }
 
 export type OnboardingBootstrapBody = {
   acpBackend: BackendId
   apiKey: string
+  /** Names the default workflow, its start/end nodes and the org group in this language. */
+  language: AppLocale
   region?: string
   gitCredentialType?: GitCredentialType
   githubToken?: string
@@ -144,6 +276,7 @@ export type OnboardingBootstrapBody = {
   openCodeBaseURL?: string
   openCodeModel?: string
   openCodeModelVision?: boolean
+  agents?: OnboardingAgentChoice[]
 }
 
 export type OnboardingBootstrapResult = {
@@ -206,11 +339,12 @@ export function sanitizeOnboardingPrefix(projectName: string): string {
 }
 
 /** Agent names that bootstrap will create for this project. */
-export function deriveOnboardingAgentNames(projectId: string, projectName: string): string[] {
-  if (projectId === DEFAULT_PROJECT_ID) return [...ONBOARDING_AGENT_NAMES]
+export function deriveOnboardingAgentNames(projectId: string, projectName: string, lang: AppLocale = 'zh-CN'): string[] {
+  const roles = onboardingRoleNames(lang)
+  if (projectId === DEFAULT_PROJECT_ID) return roles
   const prefix = sanitizeOnboardingPrefix(projectName)
   if (!prefix) return []
-  return ONBOARDING_AGENT_NAMES.map((n) => n.replace(ONBOARDING_NAME_MARKER, prefix))
+  return roles.map((n) => prefix + n)
 }
 
 function hasOnboardingNameConflict(
@@ -242,16 +376,16 @@ export function isEmptyProjectForOnboarding(
   if (bound.length > 0) return false
   const names = deriveOnboardingAgentNames(projectId, projectName)
   if (!names.length) return projectId === DEFAULT_PROJECT_ID
-  return !hasOnboardingNameConflict(agents, projectId, names)
+  return !hasOnboardingNameConflict(agents, projectId, [...names, ...deriveOnboardingAgentNames(projectId, projectName, 'en')])
 }
 
 /** The default workflow is the completion marker for first install. */
 export function hasDefaultWorkflow(workflows: { name?: string }[]): boolean {
-  return workflows.some((w) => (w.name || '').trim() === ONBOARDING_WORKFLOW_NAME)
+  return workflows.some((w) => ONBOARDING_WORKFLOW_NAMES.includes((w.name || '').trim()))
 }
 
 /**
- * App-level auto-open only for the default project until 默认工作流 exists.
+ * App-level auto-open only for the default project until the default workflow exists.
  */
 export function needsOnboarding(
   workflows: { name?: string }[],
@@ -260,7 +394,7 @@ export function needsOnboarding(
 ): boolean {
   if (projectId !== DEFAULT_PROJECT_ID) return false
   if (hasDefaultWorkflow(workflows)) return false
-  return !hasOnboardingNameConflict(agents, projectId, ONBOARDING_AGENT_NAMES)
+  return !hasOnboardingNameConflict(agents, projectId, [...ONBOARDING_AGENT_NAMES, ...onboardingRoleNames('en')])
 }
 
 export function shouldAutoOpenOnboarding(
@@ -296,6 +430,7 @@ export function freshOnboardingDraft(opts?: { inheritAppLocale?: boolean }): Onb
     gitSshKnownHosts: '',
     repoUrl: '',
     repoBranch: '',
+    gitSkipped: false,
     gitUserName: '',
     gitUserEmail: '',
     vncPreview: true,
@@ -304,6 +439,7 @@ export function freshOnboardingDraft(opts?: { inheritAppLocale?: boolean }): Onb
     openCodeBaseURL: '',
     openCodeModel: '',
     openCodeModelVision: false,
+    team: freshOnboardingTeam(),
   }
 }
 
@@ -338,7 +474,7 @@ export function repoNameFromUrl(raw: string): string {
 }
 
 export function repoConfigured(draft: OnboardingDraft): boolean {
-  return Boolean(draft.repoUrl.trim())
+  return !draft.gitSkipped && Boolean(draft.repoUrl.trim())
 }
 
 export function gitIdentityConfigured(draft: OnboardingDraft): boolean {
@@ -352,7 +488,7 @@ export function detectSystemLocale(): AppLocale {
 }
 
 export function gitConfigured(draft: OnboardingDraft): boolean {
-  if (!draft.gitCredentialType) return false
+  if (draft.gitSkipped || !draft.gitCredentialType) return false
   if (draft.gitCredentialType === 'github_https') return Boolean(draft.githubToken.trim())
   if (draft.gitCredentialType === 'gitlab_https') return Boolean(draft.gitlabToken.trim())
   if (draft.gitCredentialType === 'ssh') return Boolean(draft.gitSshPrivateKey.trim())
@@ -363,22 +499,25 @@ export function assembleBootstrapBody(draft: OnboardingDraft): OnboardingBootstr
   const body: OnboardingBootstrapBody = {
     acpBackend: draft.acpBackend,
     apiKey: draft.apiKey.trim(),
+    language: draft.language,
   }
   const policy = getRegionPolicy(draft.acpBackend)
   if (policy && draft.region.trim()) {
     body.region = draft.region.trim()
   }
-  if (draft.gitCredentialType) {
-    body.gitCredentialType = draft.gitCredentialType
-  }
-  if (draft.githubToken.trim()) body.githubToken = draft.githubToken.trim()
-  if (draft.gitlabToken.trim()) body.gitlabToken = draft.gitlabToken.trim()
-  if (draft.gitlabUrl.trim()) body.gitlabUrl = draft.gitlabUrl.trim()
-  if (draft.gitSshPrivateKey.trim()) body.gitSshPrivateKey = draft.gitSshPrivateKey.trim()
-  if (draft.gitSshKnownHosts.trim()) body.gitSshKnownHosts = draft.gitSshKnownHosts.trim()
-  if (draft.repoUrl.trim()) {
-    body.repoUrl = draft.repoUrl.trim()
-    if (draft.repoBranch.trim()) body.repoBranch = draft.repoBranch.trim()
+  if (!draft.gitSkipped) {
+    if (draft.gitCredentialType) {
+      body.gitCredentialType = draft.gitCredentialType
+    }
+    if (draft.githubToken.trim()) body.githubToken = draft.githubToken.trim()
+    if (draft.gitlabToken.trim()) body.gitlabToken = draft.gitlabToken.trim()
+    if (draft.gitlabUrl.trim()) body.gitlabUrl = draft.gitlabUrl.trim()
+    if (draft.gitSshPrivateKey.trim()) body.gitSshPrivateKey = draft.gitSshPrivateKey.trim()
+    if (draft.gitSshKnownHosts.trim()) body.gitSshKnownHosts = draft.gitSshKnownHosts.trim()
+    if (draft.repoUrl.trim()) {
+      body.repoUrl = draft.repoUrl.trim()
+      if (draft.repoBranch.trim()) body.repoBranch = draft.repoBranch.trim()
+    }
   }
   if (draft.gitUserName.trim()) body.gitUserName = draft.gitUserName.trim()
   if (draft.gitUserEmail.trim()) body.gitUserEmail = draft.gitUserEmail.trim()
@@ -390,5 +529,14 @@ export function assembleBootstrapBody(draft: OnboardingDraft): OnboardingBootstr
     if (draft.openCodeModel.trim()) body.openCodeModel = draft.openCodeModel.trim()
     body.openCodeModelVision = draft.openCodeModelVision
   }
+  body.agents = draft.team
+    .filter((m) => m.enabled || isRequiredTemplate(m.templateId))
+    .map((m) => {
+      const choice: OnboardingAgentChoice = { templateId: m.templateId }
+      const name = normalizeAgentName(m.name)
+      if (name) choice.name = name
+      if (m.model.trim()) choice.model = m.model.trim()
+      return choice
+    })
   return body
 }

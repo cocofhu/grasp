@@ -941,7 +941,7 @@ func toolSchemas(mcpID string) []map[string]any {
 				"agentName": map[string]any{"type": "string"},
 				"groupIds":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 			}),
-			platformmcp.Tool("pm_ensure_child_group", "在授权根组下幂等确保子组存在（如 Pipeline(GitHub)）。", map[string]any{
+			platformmcp.Tool("pm_ensure_child_group", "在授权根组下幂等确保子组存在（如 工作流(GitHub)）。", map[string]any{
 				"name":          map[string]any{"type": "string"},
 				"parentGroupId": map[string]any{"type": "string", "description": "父组 id；省略则用建团结会话根组"},
 			}),

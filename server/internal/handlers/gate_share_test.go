@@ -684,7 +684,7 @@ func TestGateSharePreviewDoesNotLeakOtherNodeArtifacts(t *testing.T) {
 		ID: runID, WorkflowID: "wf-" + runID, WorkflowName: "share-" + runID, Status: "waiting_human",
 		StartedAt: now,
 		Graph: models.Graph{Nodes: []models.Node{
-			{ID: "research", Type: "research", Label: "调研", Config: map[string]any{"produces": "research.json,page.html"}},
+			{ID: "research", Type: "agent", Caps: testReviewCaps, Label: "调研", Config: map[string]any{"produces": "research.json,page.html"}},
 			{ID: nodeID, Type: "human_gate", Label: "审",
 				Config: map[string]any{"title": "仅说明", "body_template": "请根据说明批准，不要展示上游调研", "actions": []any{
 					map[string]any{"id": "approve", "label": "批准"},

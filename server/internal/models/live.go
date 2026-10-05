@@ -11,74 +11,23 @@ import (
 	"time"
 )
 
-// LiveNodeSupported restricts Live source edits to the preview and Grasp
-// dialogues (including the persisted legacy Grasp alias) and to review-capable
-// agent nodes, whose Live requests are only accepted during their review.
-func LiveNodeSupported(nodeType string) bool {
-	return previewHostNode(nodeType) || ReviewAgentNode(nodeType)
-}
-
-func previewHostNode(nodeType string) bool {
-	return nodeType == "app_preview" || nodeType == "grasp" || nodeType == "approve"
-}
-
-// ReviewAgentNode reports the review-capable agent node types that gain the
-// full review toolset (cross-node set_*, set_preview, page_*, Live) while
-// parked in their post-run review phase. Must stay a subset of
-// nodereg.ReviewCapable.
-func ReviewAgentNode(nodeType string) bool {
-	return ReviewDesignNode(nodeType) || nodeType == "implement" || nodeType == "review"
-}
-
-// ReviewDesignNode reports the planning/design node types that must not commit
-// code: in review their Live adoptions are written back into products and the
-// source is restored.
-func ReviewDesignNode(nodeType string) bool {
-	switch nodeType {
-	case "plan", "research", "proposal", "visual":
-		return true
-	}
-	return false
+// LiveNodeSupported reports whether a node accepts Live source edits on its
+// running preview: interactive Agents (clarify dialogue or post-run review)
+// that may register a preview. Review Agents only accept them while parked in
+// review.
+func LiveNodeSupported(caps *AgentCapabilities) bool {
+	return caps.Interactive() && caps.CanPreview()
 }
 
 // PreviewCapableNode reports whether a node can host a direct preview with the
-// embed drawer and page control: app_preview / Grasp always (subject to their
-// own direct_preview switch downstream), review agent nodes only when their
-// direct_preview switch is on.
-func PreviewCapableNode(nodeType string, cfg map[string]any) bool {
-	if previewHostNode(nodeType) {
-		return true
-	}
-	return ReviewAgentNode(nodeType) && liveConfigTruthy(cfg["direct_preview"])
+// embed drawer and page control.
+func PreviewCapableNode(caps *AgentCapabilities) bool {
+	return caps.CanPreview()
 }
 
-// LiveVariantsEnabled is shared by the API, engine and runtime. Existing direct
-// previews default to Live on unless explicitly disabled in their node config.
-func LiveVariantsEnabled(nodeType string, cfg map[string]any) bool {
-	if !LiveNodeSupported(nodeType) || !liveConfigTruthy(cfg["direct_preview"]) {
-		return false
-	}
-	v := cfg["live_variants"]
-	if s, ok := v.(string); v == nil || (ok && strings.TrimSpace(s) == "") {
-		return true
-	}
-	return liveConfigTruthy(v)
-}
-
-func liveConfigTruthy(v any) bool {
-	switch v := v.(type) {
-	case bool:
-		return v
-	case string:
-		s := strings.ToLower(strings.TrimSpace(v))
-		return s == "true" || s == "1" || s == "yes"
-	case float64:
-		return v != 0
-	case int:
-		return v != 0
-	default:
-		return false
-	}
+// LiveVariantsEnabled is shared by the API, engine and runtime.
+func LiveVariantsEnabled(caps *AgentCapabilities) bool {
+	return LiveNodeSupported(caps)
 }
 
 // Live variant session states. A session moves generating → ready, may loop
@@ -262,9 +211,10 @@ type LiveEvent struct {
 	Params   map[string]any `json:"params,omitempty"`   // accept: final knob values
 	Notes    []string       `json:"notes,omitempty"`    // annotations on the element
 	Marks    []LiveMark     `json:"marks,omitempty"`
-	Error    string         `json:"error,omitempty"` // mount_failed
-	Auto     bool           `json:"auto,omitempty"`  // mount_failed detected by the page, not sent by the person
-	Retry    bool           `json:"-"`               // server-derived acceptance recovery
+	Error    string         `json:"error,omitempty"`   // mount_failed
+	Auto     bool           `json:"auto,omitempty"`    // mount_failed detected by the page, not sent by the person
+	Replace  bool           `json:"replace,omitempty"` // page generate: discard idle open candidate sets first
+	Retry    bool           `json:"-"`                 // server-derived acceptance recovery
 }
 
 // LiveCtx rides on a plain chat message while a session is open so "this"
@@ -312,6 +262,9 @@ func (ev *LiveEvent) Normalize() error {
 	}
 	if ev.Scope != "" && (ev.Scope != "page" || ev.Op != LiveOpGenerate) {
 		return errors.New("scope=page 仅用于从聊天生成页面候选")
+	}
+	if ev.Scope != "page" {
+		ev.Replace = false
 	}
 	if ev.Scope == "page" && len([]rune(strings.TrimSpace(ev.Prompt))) > livePromptMax {
 		return fmt.Errorf("页面候选需求最多 %d 字,请精简后重试", livePromptMax)

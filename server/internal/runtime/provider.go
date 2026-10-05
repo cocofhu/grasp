@@ -63,8 +63,6 @@ type Options struct {
 	// ProfilesRoot is where agent_profile rules live (<root>/<profile>/rules.md),
 	// copied into the per-node /root/.cursor mount.
 	ProfilesRoot string
-	// PlatformRulesRoot is where global platform-rule defaults are stored.
-	PlatformRulesRoot string
 	// SharedAgentForProject, when set, returns the current project's shared
 	// Agent baseline used as the extend layer before overlaying the Agent.
 	// Wired for workflow Run sandboxes and project-context chat tests only —
@@ -89,7 +87,7 @@ type Options struct {
 	// snapshot for this Run (plaintext). Applied in acpProvider.spec after Agent
 	// env and before mergeAuthEnv / mcpVars / passwords / CONFIG_ROOT so run-level
 	// keys overlay shared+Agent but never win over platform reserved write-backs.
-	// Only pipeline openSandbox paths should wire this; Agent Studio / interactive
+	// Only workflow openSandbox paths should wire this; Agent Studio / interactive
 	// test / PM chat / Cron must leave it nil so run env does not leak.
 	// KeepAliveForReview reuses an already-created sandbox and therefore keeps
 	// the environ from create time (no hot update); a later new sandbox for the
@@ -112,7 +110,6 @@ type SharedAgentView struct {
 	MCP              []SharedMCPView
 	Env              map[string]string
 	Layout           SharedLayoutView
-	Prompts          *models.AgentPrompts
 	WorkDir          string // host path to shared workspace/, empty if none
 	ProjectID        string // defaultProjectId or project id for fill-empty
 }
@@ -141,8 +138,10 @@ type NodeReq struct {
 	Token        string // run-scoped MCP token, injected to the sandbox
 	NodeID       string
 	NodeType     string
-	Config       map[string]any
-	Vars         map[string]any
+	// Caps is the Agent's capability snapshot for this run (nil for non-Agent nodes).
+	Caps   *models.AgentCapabilities
+	Config map[string]any
+	Vars   map[string]any
 	// PromptImages are vars-referenced image attachments collected by the engine
 	// for the node's first streamChat turn (react open / agent / rehydrate).
 	PromptImages []models.PromptImage

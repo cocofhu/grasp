@@ -49,7 +49,7 @@ const indexDoc = {
 const roundDoc = {
   runId: 'run-1',
   kind: 'review',
-  node: { id: 'research-1', label: '调研', type: 'research' },
+  node: { id: 'research-1', label: '调研', type: 'agent' },
   iteration: 2,
   round: 3,
   at: '2026-08-13T15:07:22+08:00',
@@ -178,7 +178,7 @@ describe('FeedbackLedgerView', () => {
     const cumulative = {
       runId: 'run-1',
       kind: 'clarify',
-      node: { id: 'approve-1', label: '需求对齐', type: 'approve' },
+      node: { id: 'approve-1', label: '需求对齐', type: 'agent' },
       iteration: 1,
       roundCount: 3,
       latestRound: 3,

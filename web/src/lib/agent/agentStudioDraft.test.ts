@@ -1,15 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Agent } from '@/lib/api/api'
-import {
-  draftPayloadJson,
-  draftPromptsToApi,
-  fromDraft,
-  fromDraftRaw,
-  hydrateStudioDraft,
-  normalizePromptText,
-  PROMPT_KEYS,
-  toDraft,
-} from './agentStudioDraft'
+import { draftPayloadJson, fromDraft, fromDraftRaw, hydrateStudioDraft, toDraft } from './agentStudioDraft'
 
 const baseAgent: Agent = {
   name: '综合代码审查工程师',
@@ -21,53 +12,36 @@ const baseAgent: Agent = {
   layout: { configRoot: '/root/.cursor', workspaceDir: '/root/workspace' },
 }
 
-describe('prompt dirty serialization (g1.1 / g1.2)', () => {
-  it('normalizePromptText maps CRLF and CR to LF', () => {
-    expect(normalizePromptText('a\r\nb\rc')).toBe('a\nb\nc')
+describe('capabilities draft round-trip', () => {
+  it('toDraft deep-clones capabilities and keeps null when undeclared', () => {
+    const caps = { interaction: 'auto' as const, writes: [{ schema: 'plan', required: true }] }
+    const d = toDraft({ ...baseAgent, capabilities: caps })
+    expect(d.capabilities).toEqual({ ...caps, tools: [], reads: [] })
+    d.capabilities!.writes![0].required = false
+    expect(caps.writes[0].required).toBe(true)
+    expect(toDraft({ ...baseAgent }).capabilities).toBeNull()
   })
 
-  it('omits empty and whitespace-only prompts the same as missing prompts', () => {
-    expect(draftPromptsToApi({
-      upstreamArtifactsHeader: '',
-      producesContract: '  \n',
-      reactOpenSuffix: '',
-      producesRetry: '',
-    })).toBeUndefined()
-    expect(draftPromptsToApi(toDraft({ ...baseAgent }).prompts)).toBeUndefined()
-  })
-
-  it('toDraft hydrates missing prompts as empty strings with LF', () => {
-    const d = toDraft({
+  it('fromDraft normalizes capabilities and omits them when undeclared', () => {
+    const d = hydrateStudioDraft({
       ...baseAgent,
-      prompts: { producesContract: 'hello\r\nworld' },
+      capabilities: { interaction: 'clarify', review: true, tools: ['ask_question'], reads: ['*', 'plan.json'], writes: [] },
     })
-    expect(d.prompts.producesContract).toBe('hello\nworld')
-    expect(d.prompts.upstreamArtifactsHeader).toBe('')
+    expect(fromDraft(d).capabilities).toEqual({ interaction: 'clarify', tools: ['ask_question'], reads: ['*'] })
+    expect(fromDraftRaw(d).capabilities).toEqual(fromDraft(d).capabilities)
+    expect('capabilities' in fromDraft(toDraft({ ...baseAgent }))).toBe(false)
   })
 
-  it('fromDraft and fromDraftRaw agree on prompts; fromDraft is the dirty baseline', () => {
+  it('draftPayloadJson matches the canonical payload', () => {
     const d = hydrateStudioDraft({
       ...baseAgent,
       env: { GIT_SSH_PRIVATE_KEY: 'secret', FOO: '1' },
-      prompts: { reactOpenSuffix: 'x\r\ny' },
+      capabilities: { interaction: 'auto', reads: ['*'] },
     })
     const raw = fromDraftRaw(d)
     const canonical = fromDraft(d)
-    expect(raw.prompts).toEqual(canonical.prompts)
     expect(canonical.env?.GIT_SSH_PRIVATE_KEY).toBeUndefined()
     expect(raw.env?.GIT_SSH_PRIVATE_KEY).toBe('secret')
     expect(JSON.parse(draftPayloadJson(d))).toEqual(canonical)
-  })
-
-  it('textarea-style LF writeback does not change canonical payload', () => {
-    const d = hydrateStudioDraft({
-      ...baseAgent,
-      prompts: { producesRetry: 'line1\r\nline2' },
-    })
-    const before = draftPayloadJson(d)
-    for (const k of PROMPT_KEYS) {
-      d.prompts[k] = normalizePromptText(d.prompts[k])
-    }
-    expect(draftPayloadJson(d)).toBe(before)
   })
 })

@@ -29,25 +29,6 @@ function buildAdjacency(nodes: WFNode[], edges: WFEdge[]) {
 
   for (const e of edges) addEdge(adj, inDeg, e.source, e.target)
 
-  for (const n of nodes) {
-    if (n.type === 'branch') {
-      for (const c of (n.config?.cases as { goto?: string }[]) || []) {
-        if (c?.goto) addEdge(adj, inDeg, n.id, c.goto)
-      }
-    }
-    if (n.type === 'human_gate') {
-      for (const a of (n.config?.actions as { id?: string; goto?: string }[]) || []) {
-        if (a?.goto) addEdge(adj, inDeg, n.id, a.goto)
-      }
-    }
-    if (n.type === 'test' || n.type === 'review') {
-      const exits = (n.config?.exits as Record<string, { goto?: string }>) || {}
-      for (const key of ['pass', 'fail']) {
-        if (exits[key]?.goto) addEdge(adj, inDeg, n.id, exits[key].goto!)
-      }
-    }
-  }
-
   return { adj, inDeg, ids }
 }
 

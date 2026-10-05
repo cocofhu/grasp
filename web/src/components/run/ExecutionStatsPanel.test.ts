@@ -25,8 +25,8 @@ vi.mock('@/lib/api/api', async () => {
 })
 
 const nodes: WFNode[] = [
-  { id: 'research', type: 'research', label: '调研', position: { x: 0, y: 0 }, config: {} },
-  { id: 'react', type: 'react', label: '澄清', position: { x: 0, y: 0 }, config: {} },
+  { id: 'research', type: 'agent', label: '调研', position: { x: 0, y: 0 }, config: {} },
+  { id: 'react', type: 'agent', label: '澄清', position: { x: 0, y: 0 }, config: {} },
 ]
 
 function baseRun(withUsage = false): Run {

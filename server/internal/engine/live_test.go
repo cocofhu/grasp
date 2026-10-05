@@ -13,24 +13,25 @@ import (
 	"gorm.io/gorm"
 )
 
-func liveGraph(cfg map[string]any) models.Graph {
+// liveGraph wires one plain (no verdict product) agent, so it leaves through
+// the plain outlet.
+func liveGraph(caps *models.AgentCapabilities) models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "preview", Type: "app_preview", Label: "预览", Config: cfg},
+			{ID: "preview", Type: "agent", Caps: caps, Label: "预览"},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "preview"},
-			{ID: "e2", Source: "preview", Target: "output", When: "action == 'pass'"},
+			{ID: "e2", Source: "preview", Target: "output"},
 		},
 	}
 }
 
 func setupLive(t *testing.T) (*Engine, *gorm.DB, *fakeProvider, string) {
 	t.Helper()
-	eng, db, p := setupEngineGraphP(t, liveGraph(map[string]any{"direct_preview": true, "live_variants": true}))
-	p.skipOutcome = true
+	eng, db, p := setupEngineGraphP(t, liveGraph(capsPreview))
 	run, err := eng.StartRun("wf", nil, "test")
 	if err != nil {
 		t.Fatal(err)
@@ -74,36 +75,40 @@ func agentReports(eng *Engine, p *fakeProvider, report func(human string) *mcp.L
 	p.mu.Unlock()
 }
 
-func TestLiveEnabledRequiresDirectAndSwitch(t *testing.T) {
+func TestLiveEnabledRequiresInteractivePreviewCaps(t *testing.T) {
+	autoPreview := &models.AgentCapabilities{
+		Interaction: models.InteractionAuto, Tools: []string{models.ToolSetPreview}, Reads: []string{"*"},
+	}
 	for _, c := range []struct {
-		cfg  map[string]any
-		want bool
+		name   string
+		caps   *models.AgentCapabilities
+		status string
+		want   bool
 	}{
-		{map[string]any{"direct_preview": true, "live_variants": true}, true},
-		{map[string]any{"direct_preview": true}, true},
-		{map[string]any{"direct_preview": true, "live_variants": ""}, true},
-		{map[string]any{"direct_preview": true, "live_variants": false}, false},
-		{map[string]any{"live_variants": "true"}, false},
-		{nil, false},
+		{"review-preview", capsPreview, "waiting_human", true},
+		{"clarify-preview", capsClarify, "waiting_human", true},
+		{"review-no-preview", capsResearch, "waiting_human", false},
+		{"auto-preview-no-review", autoPreview, "completed", false},
 	} {
-		eng, db, p := setupEngineGraphP(t, liveGraph(c.cfg))
-		p.skipOutcome = true
-		run, err := eng.StartRun("wf", nil, "test")
-		if err != nil {
-			t.Fatal(err)
-		}
-		waitRunStatus(t, db, run.ID, "waiting_human")
-		if got := eng.LiveEnabled(run.ID, "preview"); got != c.want {
-			t.Errorf("cfg %v: LiveEnabled=%v", c.cfg, got)
-		}
-		if eng.LiveEnabled(run.ID, "nope") || eng.LiveEnabled("no-run", "preview") {
-			t.Error("unknown node/run must be disabled")
-		}
-		if !c.want {
-			if _, err := eng.ReactLiveAs("user:a", run.ID, "preview", genEvent("sid001")); !errors.Is(err, ErrLiveDisabled) {
-				t.Errorf("cfg %v: err=%v, want ErrLiveDisabled", c.cfg, err)
+		t.Run(c.name, func(t *testing.T) {
+			eng, db, _ := setupEngineGraphP(t, liveGraph(c.caps))
+			run, err := eng.StartRun("wf", nil, "test")
+			if err != nil {
+				t.Fatal(err)
 			}
-		}
+			waitRunStatus(t, db, run.ID, c.status)
+			if got := eng.LiveEnabled(run.ID, "preview"); got != c.want {
+				t.Errorf("LiveEnabled=%v, want %v", got, c.want)
+			}
+			if eng.LiveEnabled(run.ID, "nope") || eng.LiveEnabled("no-run", "preview") {
+				t.Error("unknown node/run must be disabled")
+			}
+			if !c.want {
+				if _, err := eng.ReactLiveAs("user:a", run.ID, "preview", genEvent("sid001")); !errors.Is(err, ErrLiveDisabled) {
+					t.Errorf("err=%v, want ErrLiveDisabled", err)
+				}
+			}
+		})
 	}
 }
 
@@ -153,6 +158,79 @@ func TestChatLiveRequiresChoicesAndDoesNotAutoComplete(t *testing.T) {
 	}
 	if err := eng.checkLiveClosed(runID, "preview"); !errors.Is(err, ErrLiveOpen) {
 		t.Fatalf("ready page candidates must wait for user selection: %v", err)
+	}
+}
+
+func TestLivePageReplaceDiscardsIdleCandidatesFirst(t *testing.T) {
+	eng, _, p, runID := setupLive(t)
+	hold := make(chan struct{})
+	prompts := make(chan string, 8)
+	p.mu.Lock()
+	p.reviseHold = hold
+	p.reviseHook = func(_ runtime.NodeReq, human string) { prompts <- human }
+	p.mu.Unlock()
+	released := false
+	defer func() {
+		if !released {
+			close(hold)
+		}
+		_ = eng.waitReviewReadyForTest(runID, "preview", 5*time.Second)
+	}()
+	nextPrompt := func() string {
+		t.Helper()
+		select {
+		case s := <-prompts:
+			return s
+		case <-time.After(5 * time.Second):
+			t.Fatal("turn never reached the provider")
+			return ""
+		}
+	}
+
+	first := models.LiveEvent{Op: models.LiveOpGenerate, SID: "page01", Scope: "page", Prompt: "重新设计登录弹窗"}
+	if _, err := eng.ReactLiveAs("user:a", runID, "preview", first); err != nil {
+		t.Fatal(err)
+	}
+	nextPrompt()
+	replace := models.LiveEvent{Op: models.LiveOpGenerate, SID: "page02", Scope: "page", Prompt: "换一种风格", Replace: true}
+	if _, err := eng.ReactLiveAs("user:a", runID, "preview", replace); !errors.Is(err, ErrLiveBusy) {
+		t.Fatalf("replace while generating: err=%v, want ErrLiveBusy", err)
+	}
+	if s, _ := eng.liveSession(runID, "preview", "page01"); s == nil || s.State != models.LiveStateGenerating {
+		t.Fatalf("busy replace touched the open session: %+v", s)
+	}
+	if _, err := eng.ApplyLiveReport(runID, "preview", mcp.LiveReport{SID: "page01", State: models.LiveStateReady, Variants: []models.LiveVariant{{N: 1}, {N: 2}, {N: 3}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	plain := replace
+	plain.Replace = false
+	if _, err := eng.ReactLiveAs("user:a", runID, "preview", plain); err == nil {
+		t.Fatal("generate without replace bypassed the one-open-session limit")
+	}
+	if s, _ := eng.liveSession(runID, "preview", "page01"); s == nil || s.State != models.LiveStateReady {
+		t.Fatalf("plain generate changed the ready session: %+v", s)
+	}
+
+	sess, err := eng.ReactLiveAs("user:a", runID, "preview", replace)
+	if err != nil || sess.State != models.LiveStateGenerating {
+		t.Fatalf("replace generate: %+v, %v", sess, err)
+	}
+	if s, _ := eng.liveSession(runID, "preview", "page01"); s == nil || s.State != models.LiveStateDiscarding {
+		t.Fatalf("old session not discarding: %+v", s)
+	}
+	if again, err := eng.ReactLiveAs("user:a", runID, "preview", replace); err != nil || again.ID != "page02" {
+		t.Fatalf("retried replace generate: %+v, %v", again, err)
+	}
+
+	close(hold)
+	released = true
+	discard, generate := nextPrompt(), nextPrompt()
+	if !strings.Contains(discard, "sid: `page01`") || !strings.Contains(discard, "op: discard") {
+		t.Fatalf("first queued turn is not the discard: %q", discard)
+	}
+	if !strings.Contains(generate, "sid: `page02`") || !strings.Contains(generate, "op: generate") {
+		t.Fatalf("second queued turn is not the generate: %q", generate)
 	}
 }
 
@@ -598,7 +676,7 @@ func TestSettleLiveState(t *testing.T) {
 }
 
 func TestLiveScanUnavailable(t *testing.T) {
-	eng, _, p, runID := setupLive(t)
+	eng, db, p, runID := setupLive(t)
 	p.mu.Lock()
 	p.liveNotParked = true
 	p.mu.Unlock()
@@ -612,6 +690,11 @@ func TestLiveScanUnavailable(t *testing.T) {
 	if _, scanned := eng.liveMarkerPresent(runID, "preview", "sid"); scanned {
 		t.Fatal("scan error → not scanned")
 	}
+	// A review dialogue that never used Live does not depend on the scan.
+	if err := eng.checkLiveClosed(runID, "preview"); err != nil {
+		t.Fatalf("never-used Live must not block confirm: %v", err)
+	}
+	db.Create(&models.LiveSession{ID: "used01", RunID: runID, NodeID: "preview", Mode: "replace", State: models.LiveStateDiscarded})
 	if err := eng.checkLiveClosed(runID, "preview"); !errors.Is(err, ErrLiveScanFailed) {
 		t.Fatalf("scan error must block confirm: %v", err)
 	}

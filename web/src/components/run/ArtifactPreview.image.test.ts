@@ -36,7 +36,7 @@ const imageArtifact = {
   kind: 'image' as const,
   nodeId: 'test',
   runId: 'run-1',
-  workflowName: '测试流水线',
+  workflowName: '测试工作流',
   sizeBytes: 1024,
   createdAt: '2026-07-21T09:30:00Z',
 }

@@ -62,13 +62,13 @@ async function mockApi(
 }
 
 function emptyCard(page: Page) {
-  return page.locator('.card').filter({ hasText: /没有待审批项|该流水线没有待审批项/ })
+  return page.locator('.card').filter({ hasText: /没有待审批项|该工作流没有待审批项/ })
 }
 
 async function emptyMetrics(page: Page) {
   return page.evaluate(() => {
     const cards = Array.from(document.querySelectorAll('.card')).filter((el) =>
-      /没有待审批项|该流水线没有待审批项/.test(el.textContent || ''),
+      /没有待审批项|该工作流没有待审批项/.test(el.textContent || ''),
     )
     const card = cards[0] as HTMLElement | undefined
     const empty = card?.firstElementChild as HTMLElement | undefined
@@ -172,11 +172,11 @@ test.describe('Inbox empty fill layout (plan g2.3)', () => {
     await expectEmptyCardClasses(page)
   })
 
-  test('pipeline filter empty uses same fill wrapper + pipeline copy (g1.3 g2.3)', async ({ page }) => {
+  test('workflow filter empty uses same fill wrapper + workflow copy (g1.3 g2.3)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await mockApi(page, { filterEmpty: true })
     await page.goto('/inbox-empty-fill.html?theme=light&wf=wf-1')
-    await expect(page.getByText('该流水线没有待审批项')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText('该工作流没有待审批项')).toBeVisible({ timeout: 15_000 })
     const m = await emptyMetrics(page)
     expectFillGeometry(m)
     await expectEmptyCardClasses(page)
@@ -227,7 +227,7 @@ test.describe('Inbox first-load skeleton / fail (plan g3.3)', () => {
     await expect(page.getByTestId('inbox-pending-card-skeleton')).toHaveCount(6)
     await expect(page.getByText('列表加载后可选择一项')).toBeVisible()
     await expect(page.getByText('没有待审批项')).toHaveCount(0)
-    await expect(page.getByText('该流水线没有待审批项')).toHaveCount(0)
+    await expect(page.getByText('该工作流没有待审批项')).toHaveCount(0)
     await expect(page.getByRole('heading', { name: '待办' })).toBeVisible()
     await expect(page.getByRole('button', { name: '刷新' })).toBeVisible()
 

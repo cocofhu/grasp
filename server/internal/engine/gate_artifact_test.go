@@ -27,7 +27,7 @@ func TestGateArtifactSaveAndListPrimary(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "research", Type: "research"},
+			{ID: "research", Type: "agent", Caps: capsResearch},
 			{ID: "gate", Type: "human_gate", Config: map[string]any{
 				"title":         "审阅",
 				"body_template": "{{nodes.research.outputs.research}}",
@@ -43,7 +43,7 @@ func TestGateArtifactSaveAndListPrimary(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Create(&models.StateRun{
-		RunID: runID, NodeID: "research", NodeType: "research", Iteration: 1, Status: "completed",
+		RunID: runID, NodeID: "research", NodeType: "agent", Iteration: 1, Status: "completed",
 		Outputs: map[string]any{"research_json": researchJSON, "research": "md"},
 	})
 	db.Create(&models.Gate{
@@ -117,7 +117,7 @@ func TestSaveGateArtifactRecordsPageHistory(t *testing.T) {
 	newHTML := "<!doctype html><html><body>v2</body></html>"
 	g := models.Graph{
 		Nodes: []models.Node{
-			{ID: "page", Type: "visual"},
+			{ID: "page", Type: "agent", Caps: capsPage},
 			{ID: "gate", Type: "human_gate", Config: map[string]any{
 				"title":         "审阅",
 				"body_template": "{{nodes.page.outputs.page}}",
@@ -132,7 +132,7 @@ func TestSaveGateArtifactRecordsPageHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Create(&models.StateRun{
-		RunID: runID, NodeID: "page", NodeType: "visual", Iteration: 1, Status: "completed",
+		RunID: runID, NodeID: "page", NodeType: "agent", Iteration: 1, Status: "completed",
 		Outputs: map[string]any{"page": oldHTML},
 	})
 	db.Create(&models.Gate{
@@ -140,10 +140,10 @@ func TestSaveGateArtifactRecordsPageHistory(t *testing.T) {
 		UpstreamNodeID: "page", UpstreamIteration: 1, BodyMd: oldHTML,
 		Actions: []models.GateAction{{ID: "approve", Label: "批准"}},
 	})
-	if _, err := eng.store.Save(runID, "page", visualPageName, "html", oldHTML); err != nil {
+	if _, err := eng.store.Save(runID, "page", mcp.PageArtifactName, "html", oldHTML); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := eng.SaveGateArtifact(runID, "gate", visualPageName, newHTML, ""); err != nil {
+	if _, err := eng.SaveGateArtifact(runID, "gate", mcp.PageArtifactName, newHTML, ""); err != nil {
 		t.Fatalf("save page: %v", err)
 	}
 	var sr models.StateRun
