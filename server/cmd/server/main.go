@@ -68,12 +68,14 @@ func main() {
 	// At-rest secret encryption reads its key from the live config (security.
 	// secrets_key, with GRASP_SECRETS_KEY env override) so channel credentials
 	// stay encrypted in the DB and the key is managed like any other config value.
+	// Without one, non-production servers fall back to a key file beside the DB.
+	fallbackKey := secretsKeyFallback(cfg)
 	crypto.SetKeySource(func() string {
 		c := config.GetConfig()
-		if c == nil {
-			return ""
+		if c != nil && c.SecretsKey() != "" {
+			return c.SecretsKey()
 		}
-		return c.SecretsKey()
+		return fallbackKey
 	})
 
 	// Reload on ConfigMap writes. Values captured below at boot
@@ -596,4 +598,23 @@ func pickSharedProjectID(cfg services.SharedAgentConfig) string {
 		return v
 	}
 	return strings.TrimSpace(cfg.ProjectID)
+}
+
+// secretsKeyFallback loads or creates the auto-generated secrets key when none
+// is configured; empty when a key is configured or the mode forbids a fallback.
+func secretsKeyFallback(cfg *config.Config) string {
+	if cfg == nil || cfg.SecretsKey() != "" {
+		return ""
+	}
+	path := cfg.SecretsKeyFile()
+	if path == "" {
+		return ""
+	}
+	key, err := crypto.LoadOrCreateKeyFile(path)
+	if err != nil {
+		log.Warn().Err(err).Str("path", path).Msg("secrets key file unavailable; credentials cannot be saved")
+		return ""
+	}
+	log.Warn().Str("path", path).Msg("no secrets key configured; using the generated key file (back it up with the database)")
+	return key
 }

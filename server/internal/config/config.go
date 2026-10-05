@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -53,6 +54,23 @@ type SecurityConfig struct {
 	// SecretsKey is a base64-encoded 32-byte AES-256 key. Empty disables
 	// credential encryption (channel app_secret cannot be saved).
 	SecretsKey string `yaml:"secrets_key"`
+}
+
+// SecretsKeyFile is where a non-production server keeps an auto-generated
+// secrets key when none is configured: next to the SQLite database. Empty for
+// production, MySQL and in-memory databases, which must configure a key.
+func (c *Config) SecretsKeyFile() string {
+	if strings.EqualFold(strings.TrimSpace(c.Server.DeploymentMode), "production") {
+		return ""
+	}
+	if c.Database.Driver != "sqlite" {
+		return ""
+	}
+	p := strings.TrimSpace(c.Database.Path)
+	if p == "" || p == ":memory:" || strings.HasPrefix(p, "file:") {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(p), "secrets.key")
 }
 
 // SecretsKey returns the configured at-rest encryption key (base64, 32 bytes),

@@ -356,6 +356,9 @@
       "loading": "Loading",
       "cannotDisplay": "Cannot display",
       "attachmentUnavailable": "Attachment unavailable"
+    },
+    "errors": {
+      "secretsKeyMissing": "The server has no encryption key set, so credentials cannot be saved yet. Ask your admin to restart it with the startup script."
     }
   }
 }

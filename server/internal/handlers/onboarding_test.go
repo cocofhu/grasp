@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cocofhu/grasp/internal/crypto"
+	"github.com/cocofhu/grasp/internal/handlers"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 )
@@ -203,5 +205,26 @@ func TestCreateWorkflowFromBaselineAPI(t *testing.T) {
 	w = hn.do("GET", "/api/workflows?projectId="+pid, nil)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), services.OnboardingWorkflowName) {
 		t.Fatalf("default workflow was overwritten: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestBootstrapOnboardingWithoutSecretsKeyReturnsCode(t *testing.T) {
+	hn := newHarness(t)
+	t.Setenv(crypto.SecretsKeyEnv, "")
+	creds := services.NewProjectCredentialService(hn.db)
+	hn.h.ProjectCredentials = creds
+	hn.h.Onboarding.Credentials = creds
+	pid := models.DefaultProjectID
+	for path, body := range map[string]map[string]any{
+		"/api/projects/" + pid + "/bootstrap-onboarding": {"acpBackend": "cursor", "apiKey": "crsr_test"},
+		"/api/projects/" + pid + "/credentials":          {"type": "custom", "name": "x", "envKey": "X_TOKEN", "value": "v"},
+	} {
+		w := hn.do("POST", path, body)
+		if w.Code != http.StatusPreconditionFailed {
+			t.Fatalf("%s: status = %d %s, want 412", path, w.Code, w.Body.String())
+		}
+		if code := jsonField(w.Body.String(), "code"); code != handlers.SecretsKeyMissingCode {
+			t.Fatalf("%s: code = %q, want %q", path, code, handlers.SecretsKeyMissingCode)
+		}
 	}
 }

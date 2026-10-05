@@ -356,6 +356,9 @@
       "loading": "加载中",
       "cannotDisplay": "无法显示",
       "attachmentUnavailable": "附件不可用"
+    },
+    "errors": {
+      "secretsKeyMissing": "服务器尚未配置加密密钥，暂时无法保存凭据。请让管理员用启动脚本重新启动服务。"
     }
   }
 }

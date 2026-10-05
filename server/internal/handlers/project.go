@@ -312,14 +312,26 @@ func (h *Handlers) ClearProjectCredential(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "cleared"})
 }
 
+// SecretsKeyMissingCode tells the UI to show a plain "server has no encryption
+// key" message instead of the operator-facing error text.
+const SecretsKeyMissingCode = "secrets_key_missing"
+
+func isSecretsKeyErr(err error) bool {
+	return errors.Is(err, crypto.ErrNoSecretsKey) || errors.Is(err, crypto.ErrInvalidSecretsKey)
+}
+
+func writeSecretsKeyErr(c *gin.Context, err error) {
+	c.JSON(http.StatusPreconditionFailed, gin.H{"error": err.Error(), "code": SecretsKeyMissingCode})
+}
+
 func writeCredentialErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, services.ErrCredentialProject), errors.Is(err, services.ErrCredentialType), errors.Is(err, services.ErrCredentialName), errors.Is(err, services.ErrCredentialTarget), errors.Is(err, services.ErrCredentialEnvKey):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, services.ErrProjectNotFound), errors.Is(err, services.ErrCredentialNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-	case errors.Is(err, crypto.ErrNoSecretsKey), errors.Is(err, crypto.ErrInvalidSecretsKey):
-		c.JSON(http.StatusPreconditionFailed, gin.H{"error": err.Error()})
+	case isSecretsKeyErr(err):
+		writeSecretsKeyErr(c, err)
 	default:
 		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

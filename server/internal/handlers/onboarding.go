@@ -37,6 +37,8 @@ func (h *Handlers) BootstrapProjectOnboarding(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		case errors.Is(err, services.ErrOnboardingAgentConflict):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		case isSecretsKeyErr(err):
+			writeSecretsKeyErr(c, err)
 		default:
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		}

@@ -53,7 +53,7 @@ func OptionDescriptors() []OptionDescriptor {
 		{Env: "GRASP_AUTH_LOCK_DURATION", YAML: "auth.lock_duration", Type: "duration", Default: "5m", ZH: "登录失败锁定时长", EN: "Login failure lock duration"},
 		{Env: "GRASP_AUTH_SESSION_TTL", YAML: "auth.session_ttl", Type: "duration", Default: "168h", ZH: "会话有效期", EN: "Session lifetime"},
 		{Env: "GRASP_AUTH_USERS", YAML: "auth.users", Type: "YAML/JSON", Sensitive: true, ZH: "静态账号数组；非本地部署必须显式配置", EN: "Static user array; required explicitly outside local mode"},
-		{Env: "GRASP_SECRETS_KEY", YAML: "security.secrets_key", Type: "string", Sensitive: true, ZH: "外部渠道凭据加密主密钥（base64 32 字节）；用于加密存储渠道 app_secret，视作固定盐、请勿轮换", EN: "Master AES key for encrypting channel credentials at rest (base64 32 bytes); treat as a fixed salt, do not rotate"},
+		{Env: "GRASP_SECRETS_KEY", YAML: "security.secrets_key", Type: "string", Sensitive: true, ZH: "凭据加密主密钥（base64 32 字节）；视作固定盐、请勿轮换。未设置时非 production 模式在 SQLite 库旁自动生成 secrets.key", EN: "Master AES key for encrypting credentials at rest (base64 32 bytes); treat as a fixed salt, do not rotate. When unset, non-production modes generate secrets.key next to the SQLite database"},
 		{Env: "GRASP_STORAGE_DRIVER", YAML: "storage.driver", Type: "enum", Default: "local", ZH: "附件存储驱动：local（预留 cos）", EN: "Attachment storage driver: local (cos reserved)"},
 		{Env: "GRASP_BLOBS_ROOT", YAML: "storage.blobs_root", Type: "path", Default: "data/blobs", ZH: "本地附件 blob 根目录", EN: "Local attachment blob root directory"},
 	}
