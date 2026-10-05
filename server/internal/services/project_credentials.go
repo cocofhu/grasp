@@ -10,6 +10,7 @@ import (
 	"github.com/cocofhu/grasp/internal/crypto"
 	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
@@ -192,6 +193,12 @@ func safeCredentialMetadata(metadata map[string]any) map[string]any {
 		if value, ok := metadata[key].(string); ok && strings.TrimSpace(value) != "" {
 			out[key] = value
 		}
+	}
+	// Vision is a routing capability for OpenCode's manually declared models,
+	// rather than secret material. Preserve the boolean so the runtime can opt
+	// image input in for gateways that are absent from models.dev.
+	if value, ok := metadata["vision"].(bool); ok {
+		out["vision"] = value
 	}
 	if len(out) == 0 {
 		return nil
@@ -486,12 +493,21 @@ func (s *ProjectCredentialService) ResolveEnv(projectID string) map[string]strin
 
 func addOpenCodeMetadata(out map[string]string, metadata map[string]any) {
 	for metaKey, envKey := range map[string]string{
-		"provider": "GRASP_OPENCODE_PROVIDER",
-		"baseUrl":  "GRASP_OPENCODE_BASE_URL",
-		"model":    "GRASP_OPENCODE_MODEL",
+		"provider": runtime.EnvOpenCodeProvider,
+		"baseUrl":  runtime.EnvOpenCodeBaseURL,
+		// The ACP bridge receives its selected model through ACP_BRIDGE_MODEL;
+		// GRASP_OPENCODE_MODEL was never consumed by the runtime.
+		"model": runtime.EnvACPBridgeModel,
 	} {
 		if raw, ok := metadata[metaKey].(string); ok && strings.TrimSpace(raw) != "" {
 			out[envKey] = raw
+		}
+	}
+	if vision, ok := metadata["vision"].(bool); ok {
+		if vision {
+			out[runtime.EnvOpenCodeModelVision] = "1"
+		} else {
+			delete(out, runtime.EnvOpenCodeModelVision)
 		}
 	}
 }

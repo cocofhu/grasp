@@ -23,6 +23,14 @@
 ### 2026-10-05
 
 - 日期：2026-10-05
+- 范围：`web/src/components/{agent/OpenCodeProviderFields.vue,project/ProjectCredentialsPanel.{vue,test.ts}}`、`web/src/locales/{zh-CN,en}/pages.json`、`server/internal/services/project_credentials.{go,test.go}`
+- 做了什么：在项目凭据页增加模型厂商 API Key 专用卡片，复用 OpenCode 的厂商、模型、API Base 和视觉能力选择器；Key 仍为仅写入并掩码展示，路由配置保存为非敏感元数据。修正 OpenCode 凭据模型元数据注入到实际读取的 `ACP_BRIDGE_MODEL`，并支持视觉能力环境变量。
+- 为什么：模型 API Key 需要把密钥与模型路由放在同一个项目凭据入口管理，避免用户继续在 Agent 环境变量里手工拼接配置；原有模型元数据环境键不会被运行时读取。
+- 如何验证：`npm test -- --coverage`（3983 passed，8 skipped，Lines 90.98%）、`npm run lint`、`npx vue-tsc --noEmit`、`npm run build`、`go test ./...`、`go vet ./...`、`go run ./cmd/gen-configdoc -out CONFIGURATION.md -check`、`./scripts/cover-check-server.sh 90`（91.7%）通过。
+
+### 2026-10-05
+
+- 日期：2026-10-05
 - 范围：`server/internal/{nodereg,engine,runtime,pmmcp,mcp,models,services,handlers,gateshare,sandbox}`、`agents/`、`web/src/{components/canvas,components/agent,lib/workflow,lib/inbox,lib/run,views,locales}`、`web/e2e/workflow-canvas*`、`sandbox-gateway/sandbox/docs/PROTOCOL.md`
 - 做了什么：把 13 种 Agent 类节点合并为一个 `agent` 节点，节点类型收敛为 input / output / set_var / branch / agent / human_gate / proposal_select 7 种；Agent 行为由 `capabilities`（interaction clarify|auto、review、tools、reads、writes、maxRounds）一次声明，节点保存能力快照，引擎只有一个按 interaction 分流的执行器和统一收尾（必填产物、schema 钩子、review 出口路由）。删除平台规则覆盖（页面、Agent 标签页、`/api/platform-rules`、嵌入规则读取）和全部旧类型字符串判断；收件箱 kind 只剩 clarify / review，公开分享预览 productKind 改为 `app` 并带 `interaction`。内置模板改为需求澄清 / 实现 / 测试评审，向导四步。工作流画布重做：自动保存、可折叠节点面板、滑出检查器、带标签出口、边上条件编辑、快速添加、撤销重做、8px 网格吸附和对齐参考线、ELK 自动布局；运行页复用只读画布并跟随运行节点，快照无坐标时只在显示层自动布局。移除 `nodeColorHex`，节点颜色改用 `--c-hue-*` 主题色。
 - 为什么：旧模型每种 Agent 类型各有一套执行器、提示词契约和前端分支，组合新能力需要新增类型并改动全栈；能力声明化后同一节点即可组合澄清、评审、预览与产物契约，代码路径和配置面都显著收敛。

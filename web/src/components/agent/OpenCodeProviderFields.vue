@@ -19,7 +19,7 @@ const props = defineProps<{
   vision?: boolean
   requireBase?: boolean
   requireModel?: boolean
-  /** Two-column grid (vendor | model, base URL | vision) without the advanced notes, for wide, short containers. */
+  /** Two-column grid (vendor | model, base URL | vision) without the advanced notes; one column on narrow screens. */
   columns?: boolean
 }>()
 
@@ -172,7 +172,10 @@ watch(
 </script>
 
 <template>
-  <div :class="columns ? 'grid grid-cols-2 items-start gap-x-4 gap-y-3' : 'space-y-3'" data-test="opencode-provider-fields">
+  <div
+    :class="columns ? 'grid grid-cols-1 items-start gap-x-4 gap-y-3 sm:grid-cols-2' : 'space-y-3'"
+    data-test="opencode-provider-fields"
+  >
     <div class="block">
       <span class="mb-1.5 block text-[12px] font-medium text-txt2">
         {{ t('pages.agentStudio.openCode.providerLabel') }}
