@@ -432,10 +432,11 @@
       "apiKey": {
         "meta": "按所选后端填写 API Key。此项必填，未填写将无法生成配置。",
         "required": "请先填写 API Key。",
-        "hint": "，只存于项目共享配置，不会写入日志或产物。",
+        "hint": "只存于项目共享配置，不会写入日志或产物。",
         "howTo": "如何获取",
         "placeholder": "粘贴你的 API Key",
-        "savedAs": "保存为"
+        "savedAs": "保存为",
+        "change": "更换后端"
       },
       "git": {
         "meta": "沙箱里 git commit 需要提交身份；仓库和访问凭据可以现在填，也可以跳过。",
@@ -487,10 +488,7 @@
         "review": "跑完后人工复审",
         "preview": "可启动应用预览",
         "noPreview": "不启动预览",
-        "tools": "工具",
         "writes": "产出",
-        "writeRequired": "必须产出",
-        "writeOptional": "可选产出",
         "nameLabel": "名称",
         "namePlaceholder": "Agent 名称",
         "modelLabel": "模型",
@@ -517,13 +515,6 @@
             "desc": "执行测试并做代码评审，两项都通过才放行；未通过时退回实现修复。"
           }
         },
-        "toolNames": {
-          "ask_question": "提问澄清",
-          "ask_form": "表单提问",
-          "set_artifact_preview": "产物预览",
-          "set_preview": "应用预览",
-          "update_plan_status": "更新计划进度"
-        },
         "schemaNames": {
           "clarified_requirement": "需求规格",
           "plan": "计划",
@@ -534,7 +525,11 @@
           "implementation_result": "实现结果",
           "test_result": "测试结果",
           "review": "评审结论"
-        }
+        },
+        "stage": "阶段 {n}",
+        "listSep": "、",
+        "moreWrites": "等 {n} 项可选",
+        "offNote": "不创建；工作流在实现完成后直接结束。"
       },
       "workflow": {
         "meta": "生成后会发布下面这条「默认工作流」，之后可以在编辑器里继续调整。",

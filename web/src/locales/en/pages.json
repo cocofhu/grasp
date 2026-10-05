@@ -432,10 +432,11 @@
       "apiKey": {
         "meta": "API Key is required for the selected backend.",
         "required": "Please enter an API Key.",
-        "hint": " — stored only in the project shared config, never in logs or artifacts.",
+        "hint": "Stored only in the project shared config, never in logs or artifacts.",
         "howTo": "How to get it",
         "placeholder": "Paste your API key",
-        "savedAs": "Saved as"
+        "savedAs": "Saved as",
+        "change": "Change backend"
       },
       "git": {
         "meta": "git commit in the sandbox needs a commit identity; the repository and access credentials can be filled in now or skipped.",
@@ -487,10 +488,7 @@
         "review": "Human review after run",
         "preview": "Can start an app preview",
         "noPreview": "No preview",
-        "tools": "Tools",
         "writes": "Writes",
-        "writeRequired": "Required product",
-        "writeOptional": "Optional product",
         "nameLabel": "Name",
         "namePlaceholder": "Agent name",
         "modelLabel": "Model",
@@ -517,13 +515,6 @@
             "desc": "Runs the tests and reviews the code; passes only when both pass, otherwise sends the work back to Implement."
           }
         },
-        "toolNames": {
-          "ask_question": "Ask questions",
-          "ask_form": "Ask via form",
-          "set_artifact_preview": "Artifact preview",
-          "set_preview": "App preview",
-          "update_plan_status": "Plan progress"
-        },
         "schemaNames": {
           "clarified_requirement": "Requirement spec",
           "plan": "Plan",
@@ -534,7 +525,11 @@
           "implementation_result": "Implementation result",
           "test_result": "Test result",
           "review": "Review verdict"
-        }
+        },
+        "stage": "Stage {n}",
+        "listSep": ", ",
+        "moreWrites": "+{n} optional",
+        "offNote": "Not created; the workflow ends after Implement."
       },
       "workflow": {
         "meta": "Generating publishes this Default Workflow; you can keep editing it in the editor afterwards.",

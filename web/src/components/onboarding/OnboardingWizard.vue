@@ -334,6 +334,11 @@ function memberIssue(id: OnboardingTemplateId) {
   return issue
 }
 
+function goToStep(id: OnboardingStepId) {
+  draft.value.step = steps.findIndex((s) => s.id === id)
+  stepAnimKey.value++
+}
+
 function goPrev() {
   if (draft.value.step === 0 || creating.value || phase.value === 'success') return
   draft.value.step--
@@ -376,8 +381,7 @@ async function submitBootstrap() {
   ]
   const failed = checks.find(([, ok]) => !ok())
   if (failed) {
-    draft.value.step = steps.findIndex((s) => s.id === failed[0])
-    stepAnimKey.value++
+    goToStep(failed[0])
     return
   }
   creating.value = true
@@ -825,64 +829,74 @@ function editWorkflow() {
                   <p class="onb-lede">
                     {{ t('pages.onboarding.apiKey.meta') }}
                   </p>
-                  <section class="mt-5" data-testid="onboarding-section-key">
-                    <div v-if="authGuide.pathStepKeys.length" class="onb-guide">
-                      <div class="flex flex-wrap items-center gap-2">
-                        <div class="onb-sub flex-1">{{ t('pages.onboarding.apiKey.howTo') }}</div>
-                        <a
-                          v-for="link in authGuide.links"
-                          :key="link.url"
-                          :href="link.url"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="onb-link"
-                          >{{ t(link.labelKey) }}<Icon name="arrow-up" :size="11" class="rotate-45"
-                        /></a>
+                  <section class="onb-cred mt-6" data-testid="onboarding-section-key">
+                    <header class="onb-cred-head">
+                      <span class="onb-tile-icon"><Icon :name="draft.startPath === 'apiKey' ? 'lock' : 'terminal'" :size="16" /></span>
+                      <div class="min-w-0 flex-1">
+                        <div class="text-[14px] font-semibold text-txt">{{ backendLabel }}</div>
+                        <div class="mt-0.5 text-[12px] text-txt3">
+                          {{ t('pages.onboarding.apiKey.savedAs') }}
+                          <code class="onb-keyname" :title="primaryAuthAlt">{{ primaryAuthKey }}</code>
+                        </div>
                       </div>
-                      <ol class="onb-guide-steps">
-                        <li v-for="(k, i) in authGuide.pathStepKeys" :key="i">
-                          <span class="onb-steps-num">{{ i + 1 }}</span>
-                          <span>{{ t(k) }}</span>
-                        </li>
-                      </ol>
-                    </div>
-
-                    <OpenCodeProviderFields
-                      v-if="draft.acpBackend === 'opencode'"
-                      class="mt-4"
-                      columns
-                      :provider="(draft.openCodeProvider || 'openai') as OpenCodeProviderId"
-                      :base-url="draft.openCodeBaseURL"
-                      :model="draft.openCodeModel"
-                      :vision="draft.openCodeModelVision"
-                      :require-base="openCodeCustomBaseRequired(draft.openCodeProvider, draft.openCodeBaseURL)"
-                      :require-model="modelError"
-                      @update:provider="draft.openCodeProvider = $event"
-                      @update:base-url="draft.openCodeBaseURL = $event"
-                      @update:model="selectOpenCodeModel"
-                      @update:vision="draft.openCodeModelVision = $event"
-                    />
-                    <label class="block" :class="draft.acpBackend === 'opencode' ? 'mt-4' : 'mt-6'">
-                      <span class="onb-label">API Key <span class="text-err">*</span></span>
-                      <input
-                        id="onb-api-key"
-                        v-model="draft.apiKey"
-                        type="password"
-                        autocomplete="off"
-                        class="onb-input is-lg font-mono"
-                        :class="{ 'is-invalid': keyError }"
-                        :placeholder="t('pages.onboarding.apiKey.placeholder')"
-                        data-testid="onboarding-api-key"
-                        @input="keyError = false"
+                      <a
+                        v-for="link in authGuide.links"
+                        :key="link.url"
+                        :href="link.url"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="onb-link"
+                        >{{ t(link.labelKey) }}<Icon name="arrow-up" :size="11" class="rotate-45"
+                      /></a>
+                      <span class="h-4 w-px bg-line" aria-hidden="true" />
+                      <button type="button" class="onb-text-btn" data-testid="onboarding-key-change" @click="goToStep('model')">
+                        {{ t('pages.onboarding.apiKey.change') }}
+                      </button>
+                    </header>
+                    <div class="onb-cred-body">
+                      <OpenCodeProviderFields
+                        v-if="draft.acpBackend === 'opencode'"
+                        class="mb-4"
+                        columns
+                        :provider="(draft.openCodeProvider || 'openai') as OpenCodeProviderId"
+                        :base-url="draft.openCodeBaseURL"
+                        :model="draft.openCodeModel"
+                        :vision="draft.openCodeModelVision"
+                        :require-base="openCodeCustomBaseRequired(draft.openCodeProvider, draft.openCodeBaseURL)"
+                        :require-model="modelError"
+                        @update:provider="draft.openCodeProvider = $event"
+                        @update:base-url="draft.openCodeBaseURL = $event"
+                        @update:model="selectOpenCodeModel"
+                        @update:vision="draft.openCodeModelVision = $event"
                       />
-                      <p class="onb-hint">
-                        {{ t('pages.onboarding.apiKey.savedAs') }}
-                        <code class="onb-keyname" :title="primaryAuthAlt">{{ primaryAuthKey }}</code
-                        >{{ t('pages.onboarding.apiKey.hint') }}
-                      </p>
-                      <p v-if="keyError" class="onb-error">{{ t('pages.onboarding.apiKey.required') }}</p>
-                    </label>
+                      <label class="block">
+                        <span class="onb-label">API Key <span class="text-err">*</span></span>
+                        <input
+                          id="onb-api-key"
+                          v-model="draft.apiKey"
+                          type="password"
+                          autocomplete="off"
+                          class="onb-input is-lg font-mono"
+                          :class="{ 'is-invalid': keyError }"
+                          :placeholder="t('pages.onboarding.apiKey.placeholder')"
+                          data-testid="onboarding-api-key"
+                          @input="keyError = false"
+                        />
+                        <p class="onb-hint">{{ t('pages.onboarding.apiKey.hint') }}</p>
+                        <p v-if="keyError" class="onb-error">{{ t('pages.onboarding.apiKey.required') }}</p>
+                      </label>
+                    </div>
                   </section>
+
+                  <div v-if="draft.acpBackend !== 'opencode' && authGuide.pathStepKeys.length" class="onb-howto">
+                    <div class="text-[12px] font-medium text-txt2">{{ t('pages.onboarding.apiKey.howTo') }}</div>
+                    <ol class="onb-howto-steps">
+                      <li v-for="(k, i) in authGuide.pathStepKeys" :key="i">
+                        <span class="onb-steps-num">{{ i + 1 }}</span>
+                        <span>{{ t(k) }}</span>
+                      </li>
+                    </ol>
+                  </div>
                 </template>
 
                 <template v-else-if="currentStep.id === 'git'">
@@ -1050,10 +1064,13 @@ function editWorkflow() {
                       {{ t('pages.onboarding.team.retry') }}
                     </AppButton>
                   </div>
-                  <div class="mt-6 grid grid-cols-3 items-stretch gap-3">
+                  <div class="onb-team mt-6">
+                  <template v-for="(m, i) in draft.team" :key="m.templateId">
+                    <div v-if="i" class="onb-team-arrow" :class="{ 'is-off': !m.enabled }" aria-hidden="true">
+                      <Icon name="chevron-right" :size="13" />
+                    </div>
                     <OnboardingTeamCard
-                      v-for="m in draft.team"
-                      :key="m.templateId"
+                      :index="i"
                       :member="m"
                       :capabilities="templateFor(m.templateId)?.capabilities"
                       :summary="templateFor(m.templateId)?.summary"
@@ -1064,7 +1081,8 @@ function editWorkflow() {
                       @update:name="renameMember(m, $event)"
                       @update:model="m.model = $event"
                     />
-                  </div>
+                  </template>
+                </div>
                   <p class="onb-hint mt-3">
                     {{ t('pages.onboarding.team.foot') }}
                   </p>
@@ -1471,24 +1489,46 @@ function editWorkflow() {
   color: rgb(var(--c-accent-2));
   background: rgb(var(--c-accent) / 0.1);
 }
-.onb-guide {
-  border-radius: 12px;
+.onb-cred {
+  border-radius: 14px;
   border: 1px solid rgb(var(--c-line));
-  background: rgb(var(--c-elevated));
-  padding: 12px 16px 14px;
+  background: rgb(var(--c-base));
+  overflow: hidden;
 }
-.onb-guide-steps {
+.onb-cred-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgb(var(--c-line));
+  background: rgb(var(--c-elevated) / 0.6);
+}
+.onb-cred-body {
+  padding: 16px 18px 18px;
+}
+.onb-text-btn {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: rgb(var(--c-accent-2));
+}
+.onb-text-btn:hover {
+  text-decoration: underline;
+}
+.onb-howto {
+  margin-top: 18px;
+}
+.onb-howto-steps {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20px;
-  margin-top: 12px;
+  margin-top: 10px;
 }
-.onb-guide-steps li {
+.onb-howto-steps li {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   font-size: 12px;
-  line-height: 1.65;
-  color: rgb(var(--c-txt2));
+  line-height: 1.6;
+  color: rgb(var(--c-txt3));
 }
 .onb-steps-num {
   display: grid;
@@ -1579,6 +1619,27 @@ function editWorkflow() {
 .onb-note.is-err {
   color: rgb(var(--c-err));
   background: rgb(var(--c-err) / 0.1);
+}
+.onb-team {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr) 20px minmax(0, 1fr);
+  align-items: stretch;
+}
+.onb-team-arrow {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  color: rgb(var(--c-accent-2));
+  background: rgb(var(--c-accent) / 0.12);
+  margin: 0 -4px;
+  z-index: 1;
+}
+.onb-team-arrow.is-off {
+  color: rgb(var(--c-txt3));
+  background: rgb(var(--c-elevated));
 }
 .onb-canvas {
   padding: 16px 20px 14px;

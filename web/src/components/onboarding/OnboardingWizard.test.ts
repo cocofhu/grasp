@@ -276,9 +276,9 @@ describe('OnboardingWizard', () => {
 
     const clarifyCaps = wrapper.find('[data-testid="onboarding-team-caps-clarify"]').text()
     expect(clarifyCaps).toContain('pages.onboarding.team.interactionClarify')
-    // te() is stubbed to false, so tools fall back to ids and schemas to manifest labels.
-    expect(clarifyCaps).toContain('ask_question')
+    // te() is stubbed to false, so schemas fall back to manifest labels; optional ones collapse into a count.
     expect(clarifyCaps).toContain('计划')
+    expect(clarifyCaps).toContain('pages.onboarding.team.moreWrites')
     expect(wrapper.find('[data-testid="onboarding-team-preview-clarify"]').text()).toBe('pages.onboarding.team.preview')
     expect(wrapper.find('[data-testid="onboarding-team-preview-test_review"]').text()).toBe(
       'pages.onboarding.team.noPreview',
@@ -287,10 +287,10 @@ describe('OnboardingWizard', () => {
       'pages.onboarding.team.review',
     )
 
-    const toggle = (id: string) => wrapper.find(`[data-testid="onboarding-team-toggle-${id}"]`).element as HTMLInputElement
-    expect(toggle('clarify').disabled).toBe(true)
-    expect(toggle('implement').disabled).toBe(true)
-    expect(toggle('test_review').disabled).toBe(false)
+    const toggle = (id: string) => wrapper.find(`[data-testid="onboarding-team-toggle-${id}"]`)
+    expect(toggle('clarify').exists()).toBe(false)
+    expect(toggle('implement').exists()).toBe(false)
+    expect((toggle('test_review').element as HTMLInputElement).checked).toBe(true)
   })
 
   it('renames, picks a model, and unchecking test_review trims the preview and the request', async () => {

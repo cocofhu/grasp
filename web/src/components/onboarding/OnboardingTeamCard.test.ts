@@ -33,26 +33,28 @@ function mountCard(templateId: 'clarify' | 'test_review', locale: 'zh-CN' | 'en'
             }
           : { interaction: 'auto', review: true, writes: [{ schema: 'test_result', required: true }] },
       modelPlaceholder: 'm',
+      index: templateId === 'clarify' ? 0 : 2,
     },
     global: { plugins: [i18n] },
   })
 }
 
 describe('OnboardingTeamCard', () => {
-  it('renders localized title, tools, products and the preview badge', () => {
+  it('renders localized title, stage, products and the preview line', () => {
     const zh = mountCard('clarify', 'zh-CN')
     expect(zh.text()).toContain('需求澄清')
-    expect(zh.text()).toContain('提问澄清')
-    expect(zh.text()).toContain('应用预览')
+    expect(zh.text()).toContain('阶段 1')
     expect(zh.text()).toContain('可启动应用预览')
-    expect(zh.text()).toContain('调研?')
+    expect(zh.text()).toContain('计划')
+    expect(zh.text()).toContain('等 1 项可选')
     expect(zh.text()).toContain('必选')
+    expect(zh.find('[data-testid="onboarding-team-toggle-clarify"]').exists()).toBe(false)
 
     const en = mountCard('test_review', 'en')
     expect(en.text()).toContain('Test & review')
     expect(en.text()).toContain('Human review after run')
     expect(en.text()).toContain('No preview')
-    expect(en.text()).toContain('Optional')
+    expect(en.text()).toContain('Stage 3')
   })
 
   it('emits toggle, name and model edits', async () => {
