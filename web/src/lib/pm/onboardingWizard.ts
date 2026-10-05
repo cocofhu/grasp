@@ -32,7 +32,8 @@ export {
 /** Matches models.DefaultProjectID — first-install wizard only opens here. */
 export const DEFAULT_PROJECT_ID = 'proj-default'
 
-export const ONBOARDING_WORKFLOW_NAME = '默认工作流'
+/** The default workflow's name in every UI language (mirrors server onboardingLocales). */
+export const ONBOARDING_WORKFLOW_NAMES: readonly string[] = ['默认工作流', 'Default Workflow']
 /** Mirrors services.FirstInstallGroupName. */
 export const FIRST_INSTALL_GROUP_NAME = '默认项目组'
 
@@ -256,6 +257,8 @@ export type OnboardingAgentChoice = {
 export type OnboardingBootstrapBody = {
   acpBackend: BackendId
   apiKey: string
+  /** Names the default workflow, its start/end nodes and the org group in this language. */
+  language: AppLocale
   region?: string
   gitCredentialType?: GitCredentialType
   githubToken?: string
@@ -378,11 +381,11 @@ export function isEmptyProjectForOnboarding(
 
 /** The default workflow is the completion marker for first install. */
 export function hasDefaultWorkflow(workflows: { name?: string }[]): boolean {
-  return workflows.some((w) => (w.name || '').trim() === ONBOARDING_WORKFLOW_NAME)
+  return workflows.some((w) => ONBOARDING_WORKFLOW_NAMES.includes((w.name || '').trim()))
 }
 
 /**
- * App-level auto-open only for the default project until 默认工作流 exists.
+ * App-level auto-open only for the default project until the default workflow exists.
  */
 export function needsOnboarding(
   workflows: { name?: string }[],
@@ -391,7 +394,7 @@ export function needsOnboarding(
 ): boolean {
   if (projectId !== DEFAULT_PROJECT_ID) return false
   if (hasDefaultWorkflow(workflows)) return false
-  return !hasOnboardingNameConflict(agents, projectId, ONBOARDING_AGENT_NAMES)
+  return !hasOnboardingNameConflict(agents, projectId, [...ONBOARDING_AGENT_NAMES, ...onboardingRoleNames('en')])
 }
 
 export function shouldAutoOpenOnboarding(
@@ -496,6 +499,7 @@ export function assembleBootstrapBody(draft: OnboardingDraft): OnboardingBootstr
   const body: OnboardingBootstrapBody = {
     acpBackend: draft.acpBackend,
     apiKey: draft.apiKey.trim(),
+    language: draft.language,
   }
   const policy = getRegionPolicy(draft.acpBackend)
   if (policy && draft.region.trim()) {

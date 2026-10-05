@@ -43,6 +43,7 @@ export const agentsClient = {
     body: {
       acpBackend: string
       apiKey: string
+      language?: string
       region?: string
       gitCredentialType?: string
       githubToken?: string

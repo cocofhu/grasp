@@ -247,7 +247,9 @@ watch(
         data-test="opencode-base-url"
         @input="emit('update:baseUrl', ($event.target as HTMLInputElement).value)"
       />
-      <p class="mt-1 text-[11px] text-txt3">{{ t('pages.agentStudio.openCode.baseHint') }}</p>
+      <p class="mt-1 text-[11px] text-txt3" data-test="opencode-base-hint">
+        {{ t(ownEndpoint ? 'pages.agentStudio.openCode.baseHintOwn' : 'pages.agentStudio.openCode.baseHint') }}
+      </p>
       <p v-if="requireBase" class="mt-1 text-[11px] text-err" data-test="opencode-base-required">
         {{ t('pages.agentStudio.openCode.baseRequired') }}
       </p>

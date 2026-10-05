@@ -7,7 +7,7 @@ import {
   DEFAULT_PROJECT_ID,
   suppressOnboarding,
   isOnboardingSuppressed,
-  ONBOARDING_WORKFLOW_NAME,
+  ONBOARDING_WORKFLOW_NAMES,
   shouldAutoOpenOnboarding,
 } from '@/lib/pm/onboardingWizard'
 
@@ -463,7 +463,7 @@ describe('OnboardingWizard', () => {
     expect(wrapper.router.currentRoute.value.path).toBe(`/projects/${DEFAULT_PROJECT_ID}`)
     // The created default workflow is what stops the wizard from re-opening.
     expect(isOnboardingSuppressed(DEFAULT_PROJECT_ID)).toBe(false)
-    expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [{ name: ONBOARDING_WORKFLOW_NAME }], [])).toBe(false)
+    expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [{ name: ONBOARDING_WORKFLOW_NAMES[0] }], [])).toBe(false)
   })
 
   it('done page: edit workflow opens the editor', async () => {

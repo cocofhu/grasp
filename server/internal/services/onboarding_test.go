@@ -418,6 +418,33 @@ func TestOnboardingBootstrapIdempotent(t *testing.T) {
 	}
 }
 
+func TestOnboardingBootstrapLanguageSwitchReusesWorkflow(t *testing.T) {
+	svc, projectID := newOnboardingHarness(t)
+	req := services.OnboardingBootstrapRequest{AcpBackend: "cursor", APIKey: "k", Language: "en"}
+	r1, err := svc.Bootstrap(projectID, req)
+	if err != nil {
+		t.Fatalf("en: %v", err)
+	}
+	req.Language = "zh-CN"
+	r2, err := svc.Bootstrap(projectID, req)
+	if err != nil {
+		t.Fatalf("zh: %v", err)
+	}
+	if r1.WorkflowID != r2.WorkflowID {
+		t.Fatalf("workflow id changed: %s vs %s", r1.WorkflowID, r2.WorkflowID)
+	}
+	if n := len(svc.WF.List(projectID)); n != 1 {
+		t.Fatalf("workflows doubled: %d", n)
+	}
+	wf, _ := svc.WF.Get(r2.WorkflowID)
+	if wf.Name != services.OnboardingWorkflowName {
+		t.Fatalf("name = %q, want %q", wf.Name, services.OnboardingWorkflowName)
+	}
+	if r2.GroupName != services.FirstInstallGroupName {
+		t.Fatalf("group = %q", r2.GroupName)
+	}
+}
+
 func TestOnboardingBootstrapRejectsCrossProjectAgentConflict(t *testing.T) {
 	svc, projectA := newOnboardingHarness(t)
 	other, err := svc.Projects.Create("Other", "", nil, nil)
@@ -584,6 +611,7 @@ func TestOnboardingBootstrapEnglishNamesLabelTheWorkflow(t *testing.T) {
 	res, err := svc.Bootstrap(projectID, services.OnboardingBootstrapRequest{
 		AcpBackend: "cursor",
 		APIKey:     "k",
+		Language:   "en",
 		Agents: []services.OnboardingAgentChoice{
 			{TemplateID: "clarify", Name: "Clarify"},
 			{TemplateID: "implement", Name: "Implement"},
@@ -594,10 +622,25 @@ func TestOnboardingBootstrapEnglishNamesLabelTheWorkflow(t *testing.T) {
 		t.Fatalf("bootstrap: %v", err)
 	}
 	wf, _ := svc.WF.Get(res.WorkflowID)
-	want := map[string]string{"clarify": "Clarify", "implement": "Implement", "test_review": "TestReview"}
+	if wf.Name != services.OnboardingWorkflowNameEN || strings.ContainsAny(wf.Description, "需求澄清") {
+		t.Fatalf("workflow copy not English: name=%q desc=%q", wf.Name, wf.Description)
+	}
+	if res.GroupName != "Default Team" {
+		t.Fatalf("group name = %q, want Default Team", res.GroupName)
+	}
+	want := map[string]string{
+		"input": "Start", "output": "End",
+		"clarify": "Clarify", "implement": "Implement", "test_review": "TestReview",
+	}
 	for _, n := range wf.Graph.Nodes {
 		name, ok := want[n.ID]
 		if !ok {
+			continue
+		}
+		if n.Type == "input" || n.Type == "output" {
+			if n.Label != name {
+				t.Fatalf("node %s label = %q, want %q", n.ID, n.Label, name)
+			}
 			continue
 		}
 		if got := models.AgentProfile(n.Config); got != name {

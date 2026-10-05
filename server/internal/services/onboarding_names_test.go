@@ -27,7 +27,7 @@ func TestSanitizeOnboardingPrefix(t *testing.T) {
 }
 
 func TestBuildOnboardingNamePlan_defaultAndDerived(t *testing.T) {
-	def, err := services.BuildOnboardingNamePlan(models.DefaultProjectID, "默认项目", models.DefaultProjectID)
+	def, err := services.BuildOnboardingNamePlan(models.DefaultProjectID, "默认项目", models.DefaultProjectID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestBuildOnboardingNamePlan_defaultAndDerived(t *testing.T) {
 		t.Fatalf("default agents = %v", def.AgentNames)
 	}
 
-	plan, err := services.BuildOnboardingNamePlan("proj-abc", "Acme Corp", models.DefaultProjectID)
+	plan, err := services.BuildOnboardingNamePlan("proj-abc", "Acme Corp", models.DefaultProjectID, "")
 	if err != nil {
 		t.Fatal(err)
 	}

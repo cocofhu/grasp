@@ -6,7 +6,7 @@ import {
   ONBOARDING_CLI_BACKENDS,
   ONBOARDING_REQUIRED_TEMPLATE_IDS,
   ONBOARDING_STEPS,
-  ONBOARDING_WORKFLOW_NAME,
+  ONBOARDING_WORKFLOW_NAMES,
   applyDefaultTeamNames,
   applyOnboardingBackend,
   applyStartPath,
@@ -136,6 +136,14 @@ describe('onboardingWizard', () => {
     expect(body.openCodeBaseURL).toBe('https://llm.example/v1')
     expect(body.openCodeModel).toBe('custom/my-model')
     expect(body.openCodeModelVision).toBe(true)
+  })
+
+  it('sends the wizard language so the server names the workflow in it', () => {
+    const d = freshOnboardingDraft()
+    d.language = 'en'
+    expect(assembleBootstrapBody(d).language).toBe('en')
+    d.language = 'zh-CN'
+    expect(assembleBootstrapBody(d).language).toBe('zh-CN')
   })
 
   it('defaults a custom OpenCode model to text-only until vision is opted in', () => {
@@ -338,7 +346,7 @@ describe('onboardingWizard', () => {
   it('auto-open keys on the default workflow, not on having been seen', () => {
     expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [], [])).toBe(true)
     expect(shouldAutoOpenOnboarding('p1', [], [])).toBe(false)
-    expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [{ name: ONBOARDING_WORKFLOW_NAME }], [])).toBe(
+    expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [{ name: ONBOARDING_WORKFLOW_NAMES[0] }], [])).toBe(
       false,
     )
     // Unrelated workflows do not count as a finished first install.
@@ -349,6 +357,11 @@ describe('onboardingWizard', () => {
     ).toBe(true)
     // A fixed-name agent owned elsewhere would fail bootstrap, so stay closed.
     expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [], [{ name: '需求澄清', projectId: 'other' }])).toBe(false)
+    expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [], [{ name: 'Clarify', projectId: 'other' }])).toBe(false)
+  })
+
+  it('an English first install also counts as finished', () => {
+    expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [{ name: 'Default Workflow' }], [])).toBe(false)
   })
 
   it('the storage escape hatch suppresses auto-open for tests and debugging', () => {

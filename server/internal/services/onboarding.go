@@ -13,8 +13,11 @@ import (
 )
 
 const (
-	// OnboardingWorkflowName is the first-install published workflow.
+	// OnboardingWorkflowName is the first-install published workflow in Chinese;
+	// see onboardingLocales for every language.
 	OnboardingWorkflowName = "默认工作流"
+	// OnboardingWorkflowNameEN is the first-install published workflow in English.
+	OnboardingWorkflowNameEN = "Default Workflow"
 	// FirstInstallGroupName is the org folder created on first install.
 	FirstInstallGroupName = "默认项目组"
 	// FirstInstallGroupID is a stable group id so re-bootstrap is idempotent.
@@ -42,6 +45,9 @@ var (
 type OnboardingBootstrapRequest struct {
 	AcpBackend          string `json:"acpBackend"`
 	APIKey              string `json:"apiKey"`
+	// Language is the wizard's UI language (zh-CN | en); it names the default
+	// workflow, its start/end nodes and the org group. Empty means Chinese.
+	Language            string `json:"language,omitempty"`
 	Region              string `json:"region,omitempty"`
 	OpenCodeProvider    string `json:"openCodeProvider,omitempty"`
 	OpenCodeBaseURL     string `json:"openCodeBaseURL,omitempty"`
@@ -243,7 +249,8 @@ func (s *OnboardingService) Bootstrap(projectID string, req OnboardingBootstrapR
 		defID = models.DefaultProjectID
 	}
 
-	plan, err := BuildOnboardingNamePlan(projectID, proj.Name, defID)
+	loc := onboardingLocaleFor(req.Language)
+	plan, err := BuildOnboardingNamePlan(projectID, proj.Name, defID, req.Language)
 	if err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
@@ -270,6 +277,7 @@ func (s *OnboardingService) Bootstrap(projectID string, req OnboardingBootstrapR
 	if err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
+	localizeOnboardingWorkflow(&envelope, loc)
 	assignOnboardingAgentProfiles(&envelope.Graph, nameMap)
 	for _, role := range TeamEngineerTemplates {
 		if _, ok := nameMap[role.RoleLabelZH]; !ok {
@@ -699,7 +707,7 @@ func (s *OnboardingService) upsertDefaultWorkflow(projectID string, envelope mod
 
 	var existing *models.WorkflowDef
 	for _, wf := range s.WF.List(projectID) {
-		if wf.Name == OnboardingWorkflowName {
+		if isOnboardingWorkflowName(wf.Name) {
 			full, ok := s.WF.Get(wf.ID)
 			if !ok {
 				continue
@@ -709,10 +717,8 @@ func (s *OnboardingService) upsertDefaultWorkflow(projectID string, envelope mod
 		}
 	}
 	desc := strings.TrimSpace(envelope.Description)
-	if desc == "" {
-		desc = "第一次安装默认工作流。仓库与凭据在运行时 / 共享 Agent 配置中填写。"
-	}
 	if existing != nil {
+		existing.Name = envelope.Name
 		existing.Description = desc
 		existing.NeedsRepo = true
 		existing.Graph = graph
@@ -724,7 +730,7 @@ func (s *OnboardingService) upsertDefaultWorkflow(projectID string, envelope mod
 	wf := models.WorkflowDef{
 		ID:          uuid.NewString(),
 		ProjectID:   projectID,
-		Name:        OnboardingWorkflowName,
+		Name:        envelope.Name,
 		Description: desc,
 		Status:      "draft",
 		Version:     1,
