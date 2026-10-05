@@ -192,7 +192,7 @@ describe('api req helpers', () => {
     expect(api.runEventsWsUrl('r1')).toMatch(/\/runs\/r1\/events$/)
   })
 
-  it('covers agents, sandboxes, artifacts, settings and platform rules', async () => {
+  it('covers agents, sandboxes, artifacts, and settings', async () => {
     const agent = { name: 'a1', files: [] }
     fetchMock
       .mockResolvedValueOnce(jsonResponse([agent]))
@@ -237,15 +237,6 @@ describe('api req helpers', () => {
       .mockResolvedValueOnce(jsonResponse({ running: 0, waitingHuman: 0, failed: 0, completed: 0, workflows: 0, artifacts: 0 }))
       .mockResolvedValueOnce(jsonResponse({ items: [] }))
       .mockResolvedValueOnce(jsonResponse({ items: [] }))
-      .mockResolvedValueOnce(jsonResponse({ items: [] }))
-      .mockResolvedValueOnce(jsonResponse({ file: 'a.md', source: 'global', content: 'c' }))
-      .mockResolvedValueOnce(jsonResponse({ file: 'a.md', source: 'override', content: 'c2' }))
-      .mockResolvedValueOnce(jsonResponse({ file: 'a.md', source: 'global', content: 'c' }))
-      .mockResolvedValueOnce(jsonResponse({ file: 'a.md', source: 'embed', content: 'e' }))
-      .mockResolvedValueOnce(jsonResponse({ items: [] }))
-      .mockResolvedValueOnce(jsonResponse({ file: 'a.md', source: 'override', content: 'c' }))
-      .mockResolvedValueOnce(jsonResponse({ file: 'a.md', source: 'override', content: 'c2' }))
-      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
       .mockResolvedValueOnce(jsonResponse({ username: 'u', expires_at: 't' }))
       .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
       .mockResolvedValueOnce(jsonResponse({ username: 'u', expires_at: 't' }))
@@ -312,15 +303,6 @@ describe('api req helpers', () => {
     await expect(api.dashboard()).resolves.toMatchObject({ running: 0 })
     await expect(api.getSettings()).resolves.toEqual({ items: [] })
     await expect(api.updateSettings({ a: 1 })).resolves.toEqual({ items: [] })
-    await expect(api.listPlatformRules()).resolves.toEqual({ items: [] })
-    await expect(api.getPlatformRule('a.md')).resolves.toMatchObject({ file: 'a.md' })
-    await expect(api.savePlatformRule('a.md', 'c2')).resolves.toMatchObject({ content: 'c2' })
-    await expect(api.resetPlatformRule('a.md')).resolves.toMatchObject({ source: 'global' })
-    await expect(api.getPlatformRuleEmbed('a.md')).resolves.toMatchObject({ source: 'embed' })
-    await expect(api.listAgentPlatformRules('a1')).resolves.toEqual({ items: [] })
-    await expect(api.getAgentPlatformRule('a1', 'a.md')).resolves.toMatchObject({ file: 'a.md' })
-    await expect(api.saveAgentPlatformRule('a1', 'a.md', 'c2')).resolves.toMatchObject({ content: 'c2' })
-    await expect(api.deleteAgentPlatformRule('a1', 'a.md')).resolves.toEqual({ status: 'ok' })
 
     await expect(authApi.login('u', 'p', '/runs')).resolves.toMatchObject({ username: 'u' })
     await expect(authApi.logout()).resolves.toEqual({ status: 'ok' })

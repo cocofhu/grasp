@@ -356,7 +356,7 @@ describe('ReviewComposer share panel entry removed', () => {
       props: {
         mode: 'review',
         runId: 'run-1',
-        nodeId: 'app_preview',
+        nodeId: 'implement',
         iteration: 1,
         turns: [],
         done: false,
@@ -381,23 +381,11 @@ describe('ReviewComposer share panel entry removed', () => {
     wrapper.unmount()
   })
 
-  it('classic clarify hides 确认并流转; Grasp and approve alias show it', async () => {
-    const classic = mountClarify({ nodeType: 'react' })
+  it('clarify mode shows 确认并流转', async () => {
+    const wrapper = mountClarify({ nodeId: 'clarify_1' })
     await flushPromises()
-    expect(classic.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
-    classic.unmount()
-
-    const grasp = mountClarify({ nodeType: 'grasp', nodeId: 'grasp_1' })
-    await flushPromises()
-    expect(grasp.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(true)
-    expect(grasp.find('[data-testid="clarify-confirm-flow"]').text()).toContain('确认并流转')
-    grasp.unmount()
-
-    const approve = mountClarify({ nodeType: 'approve', nodeId: 'ap' })
-    await flushPromises()
-    expect(approve.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(true)
-    expect(approve.find('[data-testid="clarify-confirm-flow"]').text()).toContain('确认并流转')
-    approve.unmount()
+    expect(wrapper.find('[data-testid="clarify-confirm-flow"]').text()).toContain('确认并流转')
+    wrapper.unmount()
   })
 })
 

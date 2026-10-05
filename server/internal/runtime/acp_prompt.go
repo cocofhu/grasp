@@ -5,24 +5,17 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/nodereg"
 )
 
 func (c *acpProvider) buildAgentPrompt(req NodeReq, seeded []string) string {
 	var b strings.Builder
-	if sys := str2(req.Config["system"]); sys != "" {
-		b.WriteString(sys + "\n\n")
+	b.WriteString(str2(req.Config["prompt"]))
+	if req.Caps.Clarify() {
+		b.WriteString(runInputSeed(req))
 	}
-	if nodereg.IsGrasp(req.NodeType) {
-		b.WriteString(approveInputSeed(req))
-	} else {
-		b.WriteString(str2(req.Config["prompt"]))
-	}
-	prompts := c.agentPrompts(req)
 	if len(seeded) > 0 {
-		b.WriteString(prompts.UpstreamHeader())
+		b.WriteString(models.UpstreamArtifactsHeader)
 		for _, n := range seeded {
 			fmt.Fprintf(&b, "- `%s`\n", n)
 		}
@@ -33,46 +26,49 @@ func (c *acpProvider) buildAgentPrompt(req NodeReq, seeded []string) string {
 			fmt.Fprintf(&b, "- %s\n", cite)
 		}
 	}
-
-	source, target := mrBranches(req)
-	if clause := nodereg.PromptContractText(prompts, req.NodeType, source, mrTargetDisplay(target)); clause != "" {
-		b.WriteString(clause)
-	} else if produces := str2(req.Config["produces"]); produces != "" {
-		b.WriteString(prompts.ProducesContractFor(produces))
+	b.WriteString(capabilityContracts(req.Caps))
+	// A clarify Agent must not see the outcome contract before the human
+	// confirms; the confirm turn introduces node_complete.
+	if !req.Caps.Clarify() {
+		b.WriteString(models.OutcomeContract)
 	}
-
-	// Grasp Phase1 must not see the outcome contract (or the tool name). Phase2
-	// ConfirmSuffix / OutcomeRetry introduce node_complete after human confirm.
-	if nodeNeedsOutcome(req.NodeType) && !nodereg.IsGrasp(req.NodeType) {
-		b.WriteString(prompts.OutcomeContractText())
-	}
-
-	if inject := conditionalInjection(req); inject != "" {
-		b.WriteString("\n\n" + inject)
-	}
-	if extra := testNodePromptExtras(req); extra != "" {
-		b.WriteString(extra)
-	}
-	if extra := previewNodePromptExtras(req); extra != "" {
-		b.WriteString(extra)
-	}
-
-	if nodeTouchesRepos(req.NodeType) {
-		if layout := multiRepoLayoutText(req); layout != "" {
-			b.WriteString(layout)
-		}
-	}
-	if note := submitMRRepoNote(req); note != "" {
-		b.WriteString(note)
+	if layout := multiRepoLayoutText(req); layout != "" {
+		b.WriteString(layout)
 	}
 	return strings.TrimSpace(b.String())
 }
 
-// approveInputSeed replaces the user prompt template for Approve: the node has
-// no inspector prompt, so run vars are the only opening context.
-func approveInputSeed(req NodeReq) string {
+// capabilityContracts renders the platform protocol an Agent's capabilities
+// imply: one field contract per declared product, the clarify dialogue rules,
+// plan progress tracking and the preview protocol.
+func capabilityContracts(caps *models.AgentCapabilities) string {
+	if caps == nil {
+		return ""
+	}
 	var b strings.Builder
-	b.WriteString("以下是本次运行输入,供对齐需求时参考。")
+	for _, w := range caps.Writes {
+		b.WriteString(models.SchemaContract(w.Schema))
+	}
+	if caps.Clarify() {
+		b.WriteString(models.ClarifyContract)
+	}
+	if caps.TracksPlanProgress() {
+		b.WriteString(models.PlanProgressContract)
+	}
+	if caps.CanPreview() {
+		b.WriteString(models.PreviewContract)
+		if caps.Clarify() {
+			b.WriteString(models.PreviewPageControlContract)
+			b.WriteString(models.PreviewLiveIndex)
+		}
+	}
+	return b.String()
+}
+
+// runInputSeed lists the run inputs as opening context of a clarify dialogue.
+func runInputSeed(req NodeReq) string {
+	var b strings.Builder
+	b.WriteString("\n\n以下是本次运行输入,供对齐需求时参考。")
 	names := make([]string, 0, len(req.Vars))
 	for name := range req.Vars {
 		names = append(names, name)
@@ -100,49 +96,6 @@ func approveInputSeed(req NodeReq) string {
 	return b.String()
 }
 
-// nodeTouchesRepos reports whether a node type operates on the cloned repos
-// (and thus benefits from the flat multi-repo layout description).
-// visual is included so the agent can read-only locate existing business UI;
-// the VisualContract still forbids writing, formatting, or committing repo files.
-func nodeTouchesRepos(nodeType string) bool {
-	switch nodeType {
-	case "agent", "implement", "review", "test", "submit_mr", "research", "app_preview", "grasp", "approve", "visual":
-		return true
-	default:
-		return false
-	}
-}
-
-// conditionalInjection returns the node's conditional_prompt text when its
-// when_var global variable is present and non-empty; otherwise "". The text is
-// already interpolated by the engine (nodeReq) before reaching here.
-// Approve has no conditional injection; leftover config is ignored.
-func conditionalInjection(req NodeReq) string {
-	if nodereg.IsGrasp(req.NodeType) {
-		return ""
-	}
-	cp, ok := req.Config["conditional_prompt"].(map[string]any)
-	if !ok {
-		return ""
-	}
-	whenVar := strings.TrimSpace(str2(cp["when_var"]))
-	text := strings.TrimSpace(str2(cp["text"]))
-	if whenVar == "" || text == "" {
-		return ""
-	}
-	if v, ok := req.Vars[whenVar]; ok && !models.IsBlankVar(v) && models.VarDisplayText(v) != "false" {
-		return text
-	}
-	return ""
-}
-
-// agentPrompts returns the Agent's per-profile prompt overrides (from its
-// agent.json), or nil when unset — the *models.AgentPrompts helpers are all
-// nil-safe and fall back to the built-in defaults.
-func (c *acpProvider) agentPrompts(req NodeReq) *models.AgentPrompts {
-	return c.effectiveAgent(req).Prompts
-}
-
 // upstreamArtifacts lists this run's existing artifact names so the agent can
 // pull them on demand through the read_artifact MCP tool. It deliberately does
 // NOT write anything into the workspace: seeding files under .grasp/artifacts/
@@ -158,35 +111,6 @@ func (c *acpProvider) upstreamArtifacts(req NodeReq) []string {
 		names = append(names, info.Name)
 	}
 	return names
-}
-
-// testNodePromptExtras injects block_on_skipped and, in multi-repo mode, the
-// repoScope testing guidance. The flat multi-repo layout itself is injected
-// separately (multiRepoLayoutText) for every workspace-touching node.
-func testNodePromptExtras(req NodeReq) string {
-	if req.NodeType != "test" {
-		return ""
-	}
-	var b strings.Builder
-	if configTruthy(req.Config["block_on_skipped"]) {
-		b.WriteString("\n\n## 节点配置:block_on_skipped\n本节点已启用 **block_on_skipped=true**:任一 skipped 用例将阻塞测试门禁,请尽量避免无理由跳过,或在 detail 说明具体原因。\n")
-	}
-
-	repos := parseReposVar(req.Vars["repos"])
-	if len(repos) == 0 {
-		return b.String()
-	}
-	repoScope := strings.TrimSpace(str2(req.Config["repoScope"]))
-	if repoScope == "" {
-		repoScope = "all"
-	}
-	b.WriteString("\n\n## 多仓测试范围\n")
-	if strings.EqualFold(repoScope, "all") {
-		b.WriteString("- **repoScope=all**:须对全部相关仓分别执行测试并汇总至单一 `set_test_result`;cases 的 `name` 使用 `[仓名] 用例描述` 前缀。\n")
-	} else {
-		fmt.Fprintf(&b, "- **repoScope=%s**:仅在该仓目录 `%s/` 内执行测试、读写文件与运行命令;不要操作其它仓。\n", repoScope, repoWorkspacePath(repoScope))
-	}
-	return b.String()
 }
 
 // multiRepoLayoutText describes the flat workspace layout for the agent: the
@@ -209,61 +133,29 @@ func multiRepoLayoutText(req NodeReq) string {
 	return b.String()
 }
 
-// submitMRRepoNote tells a submit_mr node which repo directory to operate in
-// when the run is multi-repo. Returns "" for single-repo or non-submit_mr nodes.
-func submitMRRepoNote(req NodeReq) string {
-	if req.NodeType != "submit_mr" {
+// clarifyPreviewExtras repeats a clarify Agent's preview protocol for chats
+// that do not carry its opening prompt (visitor lanes).
+func clarifyPreviewExtras(req NodeReq) string {
+	if !req.Caps.Clarify() || !req.Caps.CanPreview() {
 		return ""
 	}
-	repos := resolveRepos(req)
-	if len(repos) == 0 {
-		return ""
-	}
-	repo := strings.TrimSpace(str2(req.Config["repo"]))
-	if repo == "" {
-		return "\n\n## 多仓 MR 目标仓\n本节点未配置 `repo`(目标仓名)。请对存在待合并工作分支的仓分别 `cd` 进其目录后完成 push 与按托管商建单（git + 对应 CLI glab/gh）。\n"
-	}
-	return fmt.Sprintf("\n\n## 多仓 MR 目标仓\n本节点针对仓 `%s`:所有 `git` 与对应 CLI（`glab`/`gh`）操作前先 `cd %s`,仅在该仓目录内 push 源分支并建合并请求。\n", repo, repoWorkspacePath(repo))
+	return models.PreviewContract + models.PreviewPageControlContract + models.PreviewLiveIndex
 }
 
-// previewNodePromptExtras overrides proxy/noVNC instructions when IP-direct is on.
-func previewNodePromptExtras(req NodeReq) string {
-	if !mcp.SetPreviewAllowed(req.NodeType) || !configTruthy(req.Config["direct_preview"]) {
-		return ""
-	}
-	direct := models.DefaultPreviewDirectContract
-	if !configDefaultOn(req.Config["auto_inject"]) {
-		direct = models.DefaultPreviewDirectManualContract
-	}
-	out := direct + models.DefaultPreviewPageControlContract
-	if liveVariantsEnabled(req) {
-		out += models.DefaultPreviewLiveIndex
-	}
-	return out
-}
-
-// reviewCapabilityExtras is the review-phase toolset note for review agent
-// nodes (empty for other types): design nodes are told not to commit, and
-// direct preview adds the PREVIEW_PORT, page_* and Live instructions.
+// reviewCapabilityExtras is the review-phase toolset note for auto Agents
+// with review on: Agents that never commit are told so, and preview-capable
+// Agents get the page_* and Live instructions.
 func reviewCapabilityExtras(req NodeReq) string {
-	if !models.ReviewAgentNode(req.NodeType) {
+	caps := req.Caps
+	if !caps.ReviewEnabled() {
 		return ""
 	}
-	out := models.DefaultReviewCapabilityDevContract
-	if models.ReviewDesignNode(req.NodeType) {
-		out = models.DefaultReviewCapabilityDesignContract
+	out := models.ReviewCapabilityDevContract
+	if !caps.CommitsCode() {
+		out = models.ReviewCapabilityDesignContract
 	}
-	if !configTruthy(req.Config["direct_preview"]) {
-		return out
-	}
-	if configDefaultOn(req.Config["auto_inject"]) {
-		out += models.DefaultReviewPreviewDirectContract
-	} else {
-		out += models.DefaultReviewPreviewDirectManualContract
-	}
-	out += models.DefaultPreviewPageControlContract
-	if liveVariantsEnabled(req) {
-		out += models.DefaultPreviewLiveIndex
+	if caps.CanPreview() {
+		out += models.PreviewPageControlContract + models.PreviewLiveIndex
 	}
 	return out
 }
@@ -273,7 +165,7 @@ const liveVariantSkillDir = "skills/live-variants"
 
 // liveVariantsEnabled shares the capability gate with the engine and API.
 func liveVariantsEnabled(req NodeReq) bool {
-	return models.LiveVariantsEnabled(req.NodeType, req.Config)
+	return models.LiveVariantsEnabled(req.Caps)
 }
 
 // liveVariantSkills returns the platform skill dirs to embed for req.
@@ -292,17 +184,17 @@ func isLiveTurn(human string) bool {
 }
 
 // liveVariantPromptExtras is injected only on Live turns, every time: a resumed
-// dialogue can still contain the older Grasp rule that forbids every source edit.
+// dialogue can still contain the Agent's own rule that forbids source edits.
 func liveVariantPromptExtras(req NodeReq, human string) string {
 	if !liveVariantsEnabled(req) || !isLiveTurn(human) {
 		return ""
 	}
-	out := models.DefaultPreviewLiveContract
-	if req.NodeType == "grasp" || req.NodeType == "approve" {
-		out += models.DefaultGraspLiveContract
-	}
-	if models.ReviewDesignNode(req.NodeType) {
-		out += models.DefaultReviewDesignLiveContract
+	out := models.PreviewLiveContract
+	switch {
+	case req.Caps.Clarify():
+		out += models.ClarifyLiveContract
+	case !req.Caps.CommitsCode():
+		out += models.DesignLiveContract
 	}
 	return out
 }

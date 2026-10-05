@@ -459,11 +459,15 @@ func (s *ProjectCredentialService) ResolveEnv(projectID string) map[string]strin
 		if key == "" || envauth.IsPlatformReservedEnvKey(key) {
 			continue
 		}
-		v, err := crypto.Decrypt(row.ValueEnc)
-		if err != nil {
-			log.Warn().Err(err).Str("project", projectID).Str("credential", row.ID).Msg("skip undecryptable project credential")
+		v := ""
+		if strings.TrimSpace(row.ValueEnc) != "" {
+			dec, err := crypto.Decrypt(row.ValueEnc)
+			if err != nil {
+				log.Warn().Err(err).Str("project", projectID).Str("credential", row.ID).Msg("skip undecryptable project credential")
+			}
+			v = dec
 		}
-		if err != nil || v == "" {
+		if v == "" {
 			if strings.EqualFold(row.Provider, "opencode") {
 				addOpenCodeMetadata(out, row.Metadata)
 			}

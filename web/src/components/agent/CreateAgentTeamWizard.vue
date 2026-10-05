@@ -76,10 +76,9 @@ const currentRegion = computed(() => {
 })
 const authGuide = computed(() => authGuideFor(draft.value.acpBackend, currentRegion.value))
 const primaryAuthKey = computed(() => authGuide.value.keys[0]?.key || '')
-const primaryAuthAlt = computed(() => authGuide.value.keys[0]?.alt || '')
 const previewLine = computed(() => {
   const root = draft.value.rootGroupName || '—'
-  const pipe = draft.value.pipelineGroupName || 'Pipeline(GitHub)'
+  const pipe = draft.value.workflowGroupName || '工作流(GitHub)'
   const pm = draft.value.pmName || '—'
   return t('pages.agentStudio.teamWizard.previewLine', {
     root,
@@ -452,13 +451,13 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                       />
                     </label>
                     <label class="block">
-                      <span class="mb-1.5 block text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.teamWizard.team.pipelineGroup') }}</span>
+                      <span class="mb-1.5 block text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.teamWizard.team.workflowGroup') }}</span>
                       <input
-                        v-model="draft.pipelineGroupName"
+                        v-model="draft.workflowGroupName"
                         class="rounded-md w-full border border-line bg-base px-3 py-2 text-[13px] text-txt outline-none focus:border-accent"
-                        @input="draft.pipelineTouched = true"
+                        @input="draft.workflowGroupTouched = true"
                       />
-                      <p class="mt-1 text-[11px] text-txt3">{{ t('pages.agentStudio.teamWizard.team.pipelineHint') }}</p>
+                      <p class="mt-1 text-[11px] text-txt3">{{ t('pages.agentStudio.teamWizard.team.workflowGroupHint') }}</p>
                     </label>
                   </div>
                   <label class="mb-4 block">
@@ -515,8 +514,6 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                     :custom-config-content="draft.customConfigContent"
                     :custom-config-error="customConfigError"
                     :auth-guide="authGuide"
-                    :primary-auth-key="primaryAuthKey"
-                    :primary-auth-alt="primaryAuthAlt"
                     :env="kvToRec(draft.env)"
                     :open-code-base-error="openCodeBaseError"
                     :open-code-model-error="openCodeModelError"
@@ -630,7 +627,7 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                   <div class="rounded-lg border border-line bg-elevated px-4 py-3 text-[13px] leading-7 text-txt2">
                     <div>{{ t('pages.agentStudio.teamWizard.review.project') }}：<strong class="text-txt">{{ draft.projectName }}</strong></div>
                     <div>{{ t('pages.agentStudio.teamWizard.review.root') }}：<strong class="text-txt">{{ draft.rootGroupName }}</strong></div>
-                    <div>{{ t('pages.agentStudio.teamWizard.review.pipeline') }}：<strong class="text-txt">{{ draft.pipelineGroupName }}</strong></div>
+                    <div>{{ t('pages.agentStudio.teamWizard.review.workflowGroup') }}：<strong class="text-txt">{{ draft.workflowGroupName }}</strong></div>
                     <div>PM：<strong class="text-txt">{{ draft.pmName }}</strong></div>
                     <div>ACP：<strong class="text-txt">{{ draft.acpBackend }}</strong></div>
                     <div>API Key：<strong class="text-txt">{{ teamHasAuth(draft) ? (draft.authMode === 'customConfig' ? t('pages.agentStudio.wizard.review.customConfigWritten') : t('pages.agentStudio.teamWizard.review.set')) : t('pages.agentStudio.teamWizard.review.skip') }}</strong></div>

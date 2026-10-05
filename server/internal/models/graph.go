@@ -22,6 +22,9 @@ type Node struct {
 	Position   Position       `json:"position"`
 	Config     map[string]any `json:"config"`
 	Checkpoint bool           `json:"checkpoint,omitempty"`
+	// Caps is the agent node's Agent capabilities, snapshotted at run start.
+	// Workflow definitions never carry it.
+	Caps *AgentCapabilities `json:"caps,omitempty"`
 }
 
 // Position is the canvas coordinate (carried for round-tripping the UI).
@@ -40,15 +43,21 @@ const (
 )
 
 // Edge is an FSM transition between two states.
+//
+// SourceHandle names the source node outlet the edge leaves from. Nodes with
+// named outlets (branch cases, gate agents' pass/fail, human gate actions)
+// report the taken outlet as outputs.action; the engine follows the edge whose
+// SourceHandle equals it. Edges without a handle leave the default outlet.
 type Edge struct {
-	ID          string   `json:"id"`
-	Source      string   `json:"source"`
-	Target      string   `json:"target"`
-	When        string   `json:"when,omitempty"`
-	Label       string   `json:"label,omitempty"`
-	Kind        EdgeKind `json:"kind,omitempty"`
-	Carry       []string `json:"carry,omitempty"`
-	MaxAttempts int      `json:"maxAttempts,omitempty"`
+	ID           string   `json:"id"`
+	Source       string   `json:"source"`
+	SourceHandle string   `json:"sourceHandle,omitempty"`
+	Target       string   `json:"target"`
+	When         string   `json:"when,omitempty"`
+	Label        string   `json:"label,omitempty"`
+	Kind         EdgeKind `json:"kind,omitempty"`
+	Carry        []string `json:"carry,omitempty"`
+	MaxAttempts  int      `json:"maxAttempts,omitempty"`
 }
 
 // KindOrDefault returns the transition kind, defaulting to success for
@@ -216,10 +225,10 @@ func (g Graph) StartNode() *Node {
 	return nil
 }
 
-// Validate enforces the structural contract for a runnable pipeline: it must
+// Validate enforces the structural contract for a runnable workflow: it must
 // have exactly one input node (the start) and at least one output node (the
 // end), with the input having no incoming edges and outputs no outgoing edges,
-// so the pipeline always begins at the input and terminates at an output.
+// so the workflow always begins at the input and terminates at an output.
 func (g Graph) Validate() error {
 	if len(g.Nodes) == 0 {
 		return errors.New("工作流为空:至少需要一个输入节点和一个输出节点")
@@ -249,49 +258,40 @@ func (g Graph) Validate() error {
 		outgoing[e.Source] = true
 	}
 	if incoming[inputs[0].ID] {
-		return errors.New("输入节点不能有入边:流水线必须从输入节点开始")
+		return errors.New("输入节点不能有入边:工作流必须从输入节点开始")
 	}
 	for _, o := range outputs {
 		if outgoing[o.ID] {
-			return errors.New("输出节点不能有出边:流水线必须在输出节点结束")
+			return errors.New("输出节点不能有出边:工作流必须在输出节点结束")
 		}
 	}
-	if err := g.validateSuccessFanout(); err != nil {
-		return err
+	for _, e := range g.Edges {
+		if g.FindNode(e.Source) == nil || g.FindNode(e.Target) == nil {
+			return fmt.Errorf("连线 %s 指向不存在的节点", e.ID)
+		}
 	}
-	return nil
+	return g.validateSuccessFanout()
 }
 
-// validateSuccessFanout rejects an ambiguous success fan-out: a node with more
-// than one *unconditional* (no `when` guard) success edge. The FSM takes exactly
-// one outgoing edge per node — it never forks — so two guardless success targets
-// mean only the first ever runs and the rest are silently dead. This looks like
-// "run both branches in parallel" but isn't, so it's caught as a config error.
-//
-// Legitimate multi-target patterns are unaffected: guarded success edges
-// (conditional routing, one `when` per target), failure/rollback edges, and
-// branch nodes (which route by their own config.cases[].goto, ignoring edges).
+// validateSuccessFanout rejects an ambiguous success fan-out: more than one
+// unconditional (no `when` guard) success edge leaving the same outlet. The
+// FSM takes exactly one outgoing edge per node — it never forks — so two
+// guardless edges on one outlet mean only the first ever runs.
 func (g Graph) validateSuccessFanout() error {
-	counts := map[string]int{}
+	type outlet struct{ source, handle string }
+	counts := map[outlet]int{}
 	for _, e := range g.Edges {
-		if e.KindOrDefault() != EdgeSuccess {
+		if e.KindOrDefault() != EdgeSuccess || strings.TrimSpace(e.When) != "" {
 			continue
 		}
-		if strings.TrimSpace(e.When) != "" {
-			continue // guarded: conditional routing, not ambiguous
-		}
-		if n := g.FindNode(e.Source); n != nil && n.Type == "branch" {
-			continue // branch routes via config, not real edges
-		}
-		counts[e.Source]++
-	}
-	for _, e := range g.Edges {
-		if counts[e.Source] > 1 {
+		key := outlet{e.Source, e.SourceHandle}
+		counts[key]++
+		if counts[key] > 1 {
 			name := e.Source
 			if n := g.FindNode(e.Source); n != nil && strings.TrimSpace(n.Label) != "" {
 				name = n.Label
 			}
-			return fmt.Errorf("节点「%s」有多条无条件的成功出边:流水线一次只会走其中一条,其余永远不会执行(不是并行分叉)。请给需要分流的成功边设置 when 条件、改用分支节点,或删除多余的连线", name)
+			return fmt.Errorf("节点「%s」的同一个出口有多条无条件连线:工作流一次只会走其中一条,其余永远不会执行(不是并行分叉)。请给连线设置条件,或删除多余的连线", name)
 		}
 	}
 	return nil

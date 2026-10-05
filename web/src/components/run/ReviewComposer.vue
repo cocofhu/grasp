@@ -8,7 +8,6 @@ import ParagraphInput from '../ui/ParagraphInput.vue'
 import GateReactStreamPanel from './GateReactStreamPanel.vue'
 import PendingSendQueuePanel, { type PendingQueueRow } from './PendingSendQueuePanel.vue'
 import type { AgentTool, ClarifyTurn, ClarifyImage, ReactAnnotation, AcpEvent } from '@/lib/shared/types'
-import { isGrasp } from '@/lib/shared/clarifyInteractive'
 import AnnotationChip from './AnnotationChip.vue'
 import PageControlStatus from './PageControlStatus.vue'
 import type { PageControlState } from '@/lib/inbox/embedPageControl'
@@ -29,7 +28,6 @@ const props = withDefaults(
     nodeId?: string
     iteration?: number
     turns?: ClarifyTurn[]
-    nodeType?: string
     done?: boolean
     active?: boolean
     /** Gate: hot ReAct send/revise available (unmount send when false / cold). */
@@ -44,8 +42,6 @@ const props = withDefaults(
     textOnly?: boolean
     /** Gate: disable confirm (e.g. open PreviewIssues). */
     passDisabled?: boolean
-    /** Adapter-only override for react nodes that own a final decision action. */
-    forceConfirm?: boolean
     /**
      * Gate: when true, send may fire without draft/attachments/annotations
      * (e.g. PreviewIssues n_open≥1 — issues already recorded elsewhere).
@@ -82,7 +78,6 @@ const props = withDefaults(
   {
     iteration: 1,
     turns: () => [],
-    nodeType: '',
     done: false,
     active: true,
     canReject: true,
@@ -92,7 +87,6 @@ const props = withDefaults(
     coldSession: false,
     textOnly: false,
     passDisabled: false,
-    forceConfirm: false,
     rejectAllowEmpty: false,
     passLabel: '',
     rejectLabel: '',
@@ -256,15 +250,13 @@ function onConfirm() {
       v-model:attachments="attachments"
       v-model:annotations="annotations"
       :turns="turns ?? []"
-      :node-type="nodeType"
       :done="done"
       :active="active"
       :cold-session="coldSession"
       :finish-disabled="passDisabled"
-      :force-confirm-flow="forceConfirm"
       :review-mode="mode === 'review'"
       :annotate-enabled="mode === 'clarify' || mode === 'review'"
-      :hide-finish="!canPass || (mode === 'clarify' && !isGrasp(nodeType) && !forceConfirm)"
+      :hide-finish="!canPass"
       :seed-human-text="seedHumanText"
       :seed-human-images="seedHumanImages"
       :send-request="sendRequest"

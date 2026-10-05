@@ -1,11 +1,11 @@
 ---
 name: clarify-checklist
-description: ClarifyAgent 专业质量检查清单（简体中文）
+description: 需求澄清 Agent 专业质量检查清单（简体中文）
 ---
 
-# ClarifyAgent 检查清单
+# 需求澄清检查清单
 
-在调用唯一交付工具之前，逐项自检：
+在调用对应交付工具之前，逐项自检：
 
 1. 凡未决点都已用 ask_question 让用户拍板；信息已充分时可直接收束，不必为提问而提问
 2. 必填段齐全：`title` / `summary` / `background` / `goals` / `in_scope` / `out_of_scope` / `assumptions` / `dependencies` / `constraints`
@@ -19,7 +19,7 @@ description: ClarifyAgent 专业质量检查清单（简体中文）
 - [ ] 最终必须调用 set_clarified_requirement，且 open_questions 为空；凡未决点须先经 ask_question，不得把未决项留在结论里
 - [ ] 未使用 `write_artifact` 旁路门禁
 - [ ] 未写入任何密钥或可用凭据
-- [ ] 未越权完成其他节点的 `set_*` 交付
+- [ ] 只写入本 Agent 能力中声明的产物
 - [ ] 未削弱平台门禁语义
 
 ## 质量棘轮

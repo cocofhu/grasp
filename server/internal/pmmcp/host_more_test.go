@@ -345,7 +345,7 @@ func TestPmMCPGetArtifactAndReactReply(t *testing.T) {
 	arts := services.NewArtifactService(db)
 	wfDef := &models.WorkflowDef{
 		ID: "wf-pm-art", ProjectID: p.ID, Name: "PM Artifact WF",
-		Graph: models.Graph{Nodes: []models.Node{{ID: "visual", Type: "visual"}, {ID: "out", Type: "output"}}},
+		Graph: models.Graph{Nodes: []models.Node{{ID: "visual", Type: "agent"}, {ID: "out", Type: "output"}}},
 	}
 	if err := wf.Save(wfDef); err != nil {
 		t.Fatal(err)
@@ -443,7 +443,7 @@ func TestPmMCPGetArtifactAndReactReply(t *testing.T) {
 	}
 	otherWF := &models.WorkflowDef{
 		ID: "wf-other-art", ProjectID: otherProj.ID, Name: "Other Artifact WF",
-		Graph: models.Graph{Nodes: []models.Node{{ID: "visual", Type: "visual"}}},
+		Graph: models.Graph{Nodes: []models.Node{{ID: "visual", Type: "agent"}}},
 	}
 	if err := wf.Save(otherWF); err != nil {
 		t.Fatal(err)

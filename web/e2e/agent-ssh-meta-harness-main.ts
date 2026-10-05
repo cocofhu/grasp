@@ -4,7 +4,7 @@ import { i18n } from '../src/lib/shared/i18n'
 import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { setTheme } from '../src/lib/shared/theme'
 import AgentMetaPanel from '../src/components/agent/AgentMetaPanel.vue'
-import { emptyPrompts, type AgentStudioDraft } from '../src/lib/agent/agentStudioDraft'
+import type { AgentStudioDraft } from '../src/lib/agent/agentStudioDraft'
 import type { AgentOrg } from '../src/lib/api/api'
 
 async function boot() {
@@ -26,7 +26,7 @@ async function boot() {
       { k: 'GITLAB_TOKEN', v: '${vars.gitlab_token}' },
     ],
     layout: { configRoot: '/root/.cursor', workspaceDir: '/root/workspace' },
-    prompts: emptyPrompts(),
+    capabilities: null,
   })
   const org = reactive<AgentOrg>({ revision: 0, groups: [], agents: {} })
 

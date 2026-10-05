@@ -47,7 +47,7 @@ func setupProviderBackend(t *testing.T, backend AcpBackend, chatFor func(attempt
 	opts := testOpts()
 	opts.ProfilesRoot = profiles
 	p, reg := newTestProviderBackend(t, host, opts, mgr, backend)
-	req := NodeReq{RunID: runID, NodeID: nodeID, NodeType: "agent", Token: tok,
+	req := NodeReq{RunID: runID, NodeID: nodeID, NodeType: "agent", Caps: testPlainCaps, Token: tok,
 		Config: map[string]any{"prompt": "do it", "produces": "report.md", "agent_profile": "test-agent"}, Vars: map[string]any{}}
 	return p, host, store, mgr, reg, req
 }
@@ -180,9 +180,19 @@ func reactSetupBackend(t *testing.T, backend AcpBackend, chatFor func(attempt in
 	opts := testOpts()
 	opts.ProfilesRoot = profiles
 	p, _ := newTestProviderBackend(t, host, opts, mgr, backend)
-	req := NodeReq{RunID: runID, NodeID: nodeID, NodeType: "react", Token: tok,
+	req := NodeReq{RunID: runID, NodeID: nodeID, NodeType: "agent", Caps: testClarifyCaps, Token: tok,
 		Config: map[string]any{"prompt": "clarify", "max_rounds": 3, "agent_profile": "react-agent"}, Vars: map[string]any{}}
 	return p, host, store, mgr, req
+}
+
+// clarifyFirstTurn parks the session and sends the user's first message —
+// the opening LLM turn of a clarify Agent.
+func clarifyFirstTurn(p *acpProvider, req NodeReq) ReactTurn {
+	if open := p.ReactOpen(context.Background(), req); open.SetupErr != nil {
+		return open
+	}
+	first := []models.ReactMessage{{Role: "human", Text: "start"}}
+	return p.ReactReply(context.Background(), req, first, "start", nil, false)
 }
 
 func clarified() map[string]string {
@@ -198,7 +208,7 @@ func TestReactOpenPausesThenReplyFinishes(t *testing.T) {
 			return turnAction{narration: "clarified", produces: clarified()}
 		}
 	})
-	open := p.ReactOpen(context.Background(), req)
+	open := clarifyFirstTurn(p, req)
 	if open.Done {
 		t.Fatal("opening turn with a question should pause, not finish")
 	}
@@ -206,7 +216,7 @@ func TestReactOpenPausesThenReplyFinishes(t *testing.T) {
 		t.Fatal("expected questions on the opening turn")
 	}
 	hist := []models.ReactMessage{{Role: "agent", Text: "need info"}, {Role: "human", Text: "answer"}}
-	reply := p.ReactReply(context.Background(), req, hist, "answer", nil, false)
+	reply := p.ReactReply(context.Background(), req, hist, "answer", nil, true)
 	if !reply.Done {
 		t.Fatalf("reply should finish the clarification, got %+v", reply)
 	}
@@ -228,7 +238,7 @@ func TestReactReplyRehydratesAfterSessionLoss(t *testing.T) {
 			return turnAction{narration: "clarified", produces: clarified()}
 		}
 	})
-	open := p.ReactOpen(context.Background(), req)
+	open := clarifyFirstTurn(p, req)
 	if len(open.Questions) == 0 {
 		t.Fatal("expected opening question")
 	}
@@ -243,7 +253,7 @@ func TestReactReplyRehydratesAfterSessionLoss(t *testing.T) {
 	sess.acp.Close()
 
 	hist := []models.ReactMessage{{Role: "agent", Text: "need info"}, {Role: "human", Text: "answer"}}
-	reply := p.ReactReply(context.Background(), req, hist, "answer", nil, false)
+	reply := p.ReactReply(context.Background(), req, hist, "answer", nil, true)
 	if !reply.Done {
 		t.Fatalf("rehydrated reply should finish, got %+v", reply)
 	}
@@ -273,7 +283,7 @@ func TestReactReplyRehydrateFailureNotDone(t *testing.T) {
 		}
 		return nil
 	}
-	open := p.ReactOpen(context.Background(), req)
+	open := clarifyFirstTurn(p, req)
 	if len(open.Questions) == 0 {
 		t.Fatal("expected opening question")
 	}
@@ -364,11 +374,12 @@ func testReactBackend(t *testing.T, backend AcpBackend) {
 			return turnAction{narration: "done", produces: clarified()}
 		}
 	})
-	open := p.ReactOpen(context.Background(), req)
+	open := clarifyFirstTurn(p, req)
 	if open.Done {
 		t.Fatal("expected pause")
 	}
-	reply := p.ReactReply(context.Background(), req, []models.ReactMessage{{Role: "human", Text: "a"}}, "a", nil, false)
+	hist := []models.ReactMessage{{Role: "agent", Text: "q"}, {Role: "human", Text: "a"}}
+	reply := p.ReactReply(context.Background(), req, hist, "a", nil, true)
 	if !reply.Done {
 		t.Fatalf("expected done, got %+v", reply)
 	}
@@ -399,7 +410,7 @@ func promptsContainOutcomeRetry(mgr *fakeManager) bool {
 		if p == "" {
 			return false
 		}
-		if strings.Contains(p, "立即调用 `node_complete`") || strings.Contains(p, models.DefaultOutcomeRetry) {
+		if strings.Contains(p, "立即调用 `node_complete`") || strings.Contains(p, models.OutcomeRetry) {
 			return true
 		}
 	}
@@ -420,7 +431,7 @@ func TestReactAskQuestionNotKilledByForceOutcomeRetry(t *testing.T) {
 			return turnAction{narration: "still clarifying", questions: qs}
 		}
 	})
-	open := p.ReactOpen(context.Background(), req)
+	open := clarifyFirstTurn(p, req)
 	if open.Done || len(open.Questions) == 0 {
 		t.Fatalf("expected opening pause with questions, got Done=%v qs=%d", open.Done, len(open.Questions))
 	}
@@ -458,7 +469,7 @@ func TestReactAskQuestionSurvivesMaxRoundsCap(t *testing.T) {
 		}
 	})
 	req.Config["max_rounds"] = 1
-	open := p.ReactOpen(context.Background(), req)
+	open := clarifyFirstTurn(p, req)
 	if open.Done || len(open.Questions) == 0 {
 		t.Fatalf("expected opening pause, got Done=%v qs=%d", open.Done, len(open.Questions))
 	}
@@ -483,15 +494,19 @@ func TestReactPendingDuringEnsureStructuredReturnsQuestions(t *testing.T) {
 	qs := samplePendingQuestion()
 	p, _, _, mgr, req := reactSetup(t, func(int) chatFunc {
 		return func(turn int) turnAction {
-			if turn == 0 {
-				// No questions → finishReact → ensureStructured re-prompt.
+			if turn <= 1 {
+				// No questions → confirm → finishReact → ensureStructured re-prompt.
 				return turnAction{narration: "wrapping up"}
 			}
 			// StructuredRetry turn raises ask_question instead of set_*.
 			return turnAction{narration: "need a decision first", questions: qs}
 		}
 	})
-	open := p.ReactOpen(context.Background(), req)
+	if first := clarifyFirstTurn(p, req); first.Done {
+		t.Fatal("a reply without confirm must not finish")
+	}
+	hist := []models.ReactMessage{{Role: "human", Text: "start"}, {Role: "agent", Text: "wrapping up"}, {Role: "human", Text: "ok"}}
+	open := p.ReactReply(context.Background(), req, hist, "ok", nil, true)
 	if open.Done {
 		t.Fatal("pending raised during ensureStructured must not Done-finish")
 	}
@@ -513,7 +528,8 @@ func TestReactPendingDuringEnsureStructuredReturnsQuestions(t *testing.T) {
 func approveSetup(t *testing.T, chatFor func(attempt int) chatFunc) (*acpProvider, *mcp.Host, *memStore, *fakeManager, NodeReq) {
 	t.Helper()
 	p, host, store, mgr, req := reactSetup(t, chatFor)
-	req.NodeType = "approve"
+	req.NodeType = "agent"
+	req.Caps = testClarifyCaps
 	req.Config = map[string]any{"agent_profile": "react-agent"}
 	return p, host, store, mgr, req
 }

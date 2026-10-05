@@ -6,6 +6,7 @@ import EnvCredentialHelpModal from '@/components/agent/EnvCredentialHelpModal.vu
 import WizardApiKeyStepPanel from '@/components/agent/WizardApiKeyStepPanel.vue'
 import WizardAcpStartPathPanel from '@/components/agent/WizardAcpStartPathPanel.vue'
 import AgentTemplateSelect from '@/components/agent/AgentTemplateSelect.vue'
+import AgentCapabilitySummary from '@/components/agent/AgentCapabilitySummary.vue'
 
 import { kvToRec } from '@/lib/agent/agentCreateWizard'
 import { useAgentCreateWizard } from '@/lib/agent/useAgentCreateWizard'
@@ -36,12 +37,11 @@ const {
   authGuide,
   authConfigured,
   showAuthReminder,
-  primaryAuthKey,
-  primaryAuthAlt,
   headSub,
   templateOptions,
   showDescField,
   templateHint,
+  selectedTemplate,
   onTemplateSelect,
   close,
   upsertEnv,
@@ -151,7 +151,7 @@ const {
                     />
                     <p v-if="nameError" class="mt-1.5 text-[12px] text-err">{{ nameError }}</p>
                   </label>
-                  <!-- plan g1 — pipeline-style template dropdown; name stays independent (g1.4) -->
+                  <!-- plan g1 — workflow-style template dropdown; name stays independent (g1.4) -->
                   <div class="mb-4 block max-w-[38rem]">
                     <span class="mb-1.5 block text-[12px] font-medium text-txt2">
                       {{ t('pages.agentStudio.wizard.basics.templateLabel') }}
@@ -163,6 +163,16 @@ const {
                       @update:model-value="onTemplateSelect"
                     />
                     <p class="mt-1.5 text-[11px] text-txt3">{{ templateHint }}</p>
+                    <div
+                      v-if="selectedTemplate"
+                      class="mt-3 rounded-lg border border-line bg-base/50 p-3"
+                      data-testid="wizard-template-detail"
+                    >
+                      <p v-if="selectedTemplate.description" class="mb-2 text-[12px] leading-6 text-txt">
+                        {{ selectedTemplate.description }}
+                      </p>
+                      <AgentCapabilitySummary :caps="selectedTemplate.capabilities" />
+                    </div>
                   </div>
                   <label v-if="showDescField" class="block">
                     <span class="mb-1.5 block text-[12px] font-medium text-txt2">
@@ -207,8 +217,6 @@ const {
                     :custom-config-content="draft.customConfigContent"
                     :custom-config-error="customConfigError"
                     :auth-guide="authGuide"
-                    :primary-auth-key="primaryAuthKey"
-                    :primary-auth-alt="primaryAuthAlt"
                     :env="kvToRec(draft.env)"
                     :open-code-base-error="openCodeBaseError"
                     :open-code-model-error="openCodeModelError"

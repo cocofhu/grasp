@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cocofhu/grasp/internal/crypto"
+	"github.com/cocofhu/grasp/internal/handlers"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 )
@@ -20,6 +22,15 @@ func TestBootstrapOnboardingAPI(t *testing.T) {
 	})
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("no key: %d %s", w.Code, w.Body.String())
+	}
+
+	w = hn.do("POST", "/api/projects/"+pid+"/bootstrap-onboarding", map[string]any{
+		"acpBackend": "cursor",
+		"apiKey":     "crsr_test",
+		"agents":     []map[string]any{{"templateId": "implement"}},
+	})
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "clarify") {
+		t.Fatalf("team without clarify: %d %s", w.Code, w.Body.String())
 	}
 
 	w = hn.do("POST", "/api/projects", map[string]any{"name": "BootProj"})
@@ -38,11 +49,11 @@ func TestBootstrapOnboardingAPI(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &otherRes); err != nil {
 		t.Fatal(err)
 	}
-	if len(otherRes.AgentIDs) != 6 {
+	if len(otherRes.AgentIDs) != len(services.OnboardingAgentNames) {
 		t.Fatalf("non-default agents: %+v", otherRes)
 	}
 	for _, id := range otherRes.AgentIDs {
-		if strings.HasPrefix(id, "综合") {
+		if !strings.HasPrefix(id, "BootProj") {
 			t.Fatalf("non-default must derive names, got %q", id)
 		}
 	}
@@ -58,7 +69,7 @@ func TestBootstrapOnboardingAPI(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
 		t.Fatal(err)
 	}
-	if len(res.AgentIDs) != 6 || res.WorkflowID == "" || !res.Published {
+	if len(res.AgentIDs) != len(services.OnboardingAgentNames) || res.WorkflowID == "" || !res.Published {
 		t.Fatalf("bad result: %+v", res)
 	}
 
@@ -194,5 +205,26 @@ func TestCreateWorkflowFromBaselineAPI(t *testing.T) {
 	w = hn.do("GET", "/api/workflows?projectId="+pid, nil)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), services.OnboardingWorkflowName) {
 		t.Fatalf("default workflow was overwritten: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestBootstrapOnboardingWithoutSecretsKeyReturnsCode(t *testing.T) {
+	hn := newHarness(t)
+	t.Setenv(crypto.SecretsKeyEnv, "")
+	creds := services.NewProjectCredentialService(hn.db)
+	hn.h.ProjectCredentials = creds
+	hn.h.Onboarding.Credentials = creds
+	pid := models.DefaultProjectID
+	for path, body := range map[string]map[string]any{
+		"/api/projects/" + pid + "/bootstrap-onboarding": {"acpBackend": "cursor", "apiKey": "crsr_test"},
+		"/api/projects/" + pid + "/credentials":          {"type": "custom", "name": "x", "envKey": "X_TOKEN", "value": "v"},
+	} {
+		w := hn.do("POST", path, body)
+		if w.Code != http.StatusPreconditionFailed {
+			t.Fatalf("%s: status = %d %s, want 412", path, w.Code, w.Body.String())
+		}
+		if code := jsonField(w.Body.String(), "code"); code != handlers.SecretsKeyMissingCode {
+			t.Fatalf("%s: code = %q, want %q", path, code, handlers.SecretsKeyMissingCode)
+		}
 	}
 }

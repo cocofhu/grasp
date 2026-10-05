@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
@@ -14,8 +13,8 @@ func reactSandboxGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "clarify", Type: "react", Label: "需求澄清", Config: map[string]any{"prompt": "澄清"}},
-			{ID: "plan", Type: "plan", Label: "计划", Config: map[string]any{"prompt": "计划"}},
+			{ID: "clarify", Type: "agent", Caps: capsClarify, Label: "需求澄清", Config: map[string]any{"prompt": "澄清"}},
+			{ID: "plan", Type: "agent", Caps: capsPlan, Label: "计划", Config: map[string]any{"prompt": "计划"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -116,8 +115,8 @@ func TestPlanSandboxFailureStillFinishesRun(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "clarify", Type: "react", Config: map[string]any{"prompt": "澄清"}},
-			{ID: "plan", Type: "plan", Config: map[string]any{"prompt": "计划"}},
+			{ID: "clarify", Type: "agent", Caps: capsClarify, Config: map[string]any{"prompt": "澄清"}},
+			{ID: "plan", Type: "agent", Caps: capsPlan, Config: map[string]any{"prompt": "计划"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -144,11 +143,8 @@ func TestPlanSandboxFailureStillFinishesRun(t *testing.T) {
 		t.Fatalf("start run: %v", err)
 	}
 	waitReactPause(t, db, run.ID, "clarify")
-	if err := eng.ReactReply(run.ID, "clarify", "ok", nil, nil, false); err != nil {
-		t.Fatalf("clarify reply: %v", err)
-	}
-	if err := eng.waitReviewReadyForTest(run.ID, "clarify", 5*time.Second); err != nil {
-		t.Fatalf("wait clarify: %v", err)
+	if err := eng.ReactReply(run.ID, "clarify", "ok", nil, nil, true); err != nil {
+		t.Fatalf("clarify confirm: %v", err)
 	}
 
 	waitRunStatus(t, db, run.ID, "failed")

@@ -146,7 +146,7 @@ func TestMcpCallTrace(t *testing.T) {
 	h := NewHost(store)
 	runID := "run-trace"
 	tok := h.RegisterRun(runID)
-	h.SetActiveNode(runID, "n1", "agent")
+	h.SetActiveNode(runID, "n1", capsPlain)
 
 	call(t, h, runID, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"write_artifact","arguments":{"name":"page.html","content":"<h1>hi</h1>"}}}`)
 	call(t, h, runID, tok, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"read_artifact","arguments":{"name":"page.html"}}}`)
@@ -170,7 +170,7 @@ func TestMcpCallTrace(t *testing.T) {
 	}
 
 	// A failed call is flagged IsError.
-	h.SetActiveNode(runID, "n2", "agent")
+	h.SetActiveNode(runID, "n2", capsPlain)
 	call(t, h, runID, tok, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"read_artifact","arguments":{"name":"missing.md"}}}`)
 	c2 := h.TakeMcpCalls(runID, "n2")
 	if len(c2) != 1 || !c2[0].IsError {
@@ -185,7 +185,7 @@ func TestPeekMcpCallsAndHostHooks(t *testing.T) {
 	h := NewHost(store)
 	runID := "run-peek"
 	tok := h.RegisterRun(runID)
-	h.SetActiveNode(runID, "n1", "agent")
+	h.SetActiveNode(runID, "n1", capsPlain)
 
 	if peek := h.PeekMcpCalls(runID, "n1"); peek != nil {
 		t.Fatalf("empty peek should be nil, got %+v", peek)

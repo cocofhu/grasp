@@ -239,26 +239,6 @@ func (e *Engine) confirmRoundFeedbackEvent(runID, nodeID, kind string, iteration
 	}
 }
 
-// recordAutoClarifyRound logs a platform auto-answered clarify round.
-//
-// It is index-only: the round shaped the requirement and later rounds need that
-// context, but there is no human prose to warrant a file of its own.
-func (e *Engine) recordAutoClarifyRound(runID, nodeID string, iteration int, human, agent models.ReactMessage) {
-	e.recordFeedback(models.FeedbackEvent{
-		RunID:      runID,
-		Kind:       models.FeedbackKindClarify,
-		NodeID:     nodeID,
-		Iteration:  iteration,
-		CallerKind: models.CallerKindSystem,
-		Actor:      "system",
-		Action:     "auto_answer",
-		Text:       human.Text,
-		Turns:      []models.ReactMessage{human, withoutParts(agent)},
-		IndexOnly:  true,
-		OccurredAt: time.Now(),
-	})
-}
-
 // lastHumanMessage returns the most recent human turn, i.e. the text the
 // reviewer submitted alongside「确认并流转」. Zero value when the dialogue holds
 // none (a gate-seeded review conversation confirmed without any push-back).
@@ -314,11 +294,6 @@ func (e *Engine) recordGateFeedback(c *execCtx, node *models.Node, gate models.G
 	if opts.externalName != "" {
 		detail["externalName"] = opts.externalName
 		detail["external"] = true
-	}
-	for _, a := range parseActions(node.Config["actions"]) {
-		if a.ID == action && a.Goto != "" {
-			detail["goto"] = a.Goto
-		}
 	}
 	if len(detail) > 0 {
 		ev.Detail = detail

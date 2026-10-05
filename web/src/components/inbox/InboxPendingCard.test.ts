@@ -34,6 +34,7 @@ function gate(over: Partial<GateInboxItem> = {}): GateInboxItem {
 function clarify(over: Partial<ClarifyInboxItem> = {}): ClarifyInboxItem {
   return {
     type: 'clarify',
+    kind: 'clarify',
     runId: 'run-2',
     nodeId: 'react1',
     workflowName: 'wf',
@@ -46,7 +47,7 @@ function clarify(over: Partial<ClarifyInboxItem> = {}): ClarifyInboxItem {
 }
 
 describe('InboxPendingCard share entry', () => {
-  it('shows copy button and status for human_gate, default-kind clarify, kind=review, and kind=app_preview', async () => {
+  it('shows copy button and status for human_gate, kind=clarify and kind=review', async () => {
     const w = mount(InboxPendingCard, {
       props: { item: gate() },
       global: { plugins: [i18n] },
@@ -70,16 +71,6 @@ describe('InboxPendingCard share entry', () => {
     expect(review.get('[data-testid="gate-share-copy-btn"]').text()).toContain('复制临时链接')
     expect(review.get('[data-testid="gate-share-status"]').text()).toContain('尚未创建')
 
-    // Legacy Inbox 待澄清: missing kind is treated as clarify and must show share entry (F1).
-    const c = mount(InboxPendingCard, {
-      props: { item: clarify({ shareLink: { state: 'none', canCreate: true } }) },
-      global: { plugins: [i18n] },
-    })
-    expect(c.get('[data-testid="gate-share-copy-btn"]').text()).toContain('复制临时链接')
-    expect(c.get('[data-testid="gate-share-status"]').text()).toContain('尚未创建')
-    await c.get('[data-testid="gate-share-copy-btn"]').trigger('click')
-    expect(c.emitted('open-share')).toHaveLength(1)
-
     const explicitClarify = mount(InboxPendingCard, {
       props: {
         item: clarify({
@@ -90,21 +81,6 @@ describe('InboxPendingCard share entry', () => {
       global: { plugins: [i18n] },
     })
     expect(explicitClarify.get('[data-testid="gate-share-copy-btn"]').text()).toContain('复制临时链接')
-
-    const preview = mount(InboxPendingCard, {
-      props: {
-        item: clarify({
-          kind: 'app_preview',
-          label: '应用预览',
-          shareLink: { state: 'none', canCreate: true },
-        }),
-      },
-      global: { plugins: [i18n] },
-    })
-    expect(preview.find('[data-testid="gate-share-copy-btn"]').exists()).toBe(true)
-    expect(preview.get('[data-testid="gate-share-status"]').text()).toContain('尚未创建')
-    await preview.get('[data-testid="gate-share-copy-btn"]').trigger('click')
-    expect(preview.emitted('open-share')).toHaveLength(1)
 
     const ps = mount(InboxPendingCard, {
       props: { item: gate({ nodeId: 'ps1', nodeType: 'proposal_select', title: '选择方案' }) },

@@ -30,9 +30,10 @@ describe('useNodeDefs', () => {
     expect(defs!.value.input.label).toBeTruthy()
     expect(groups!.value.length).toBeGreaterThan(0)
     expect(groups!.value[0].title).toBeTruthy()
-    const agentGroup = groups!.value.find((g) => g.types.includes('grasp'))
-    expect(agentGroup?.types).toContain('grasp')
-    expect(agentGroup?.types).not.toContain('agent')
-    expect(defs!.value.approve.label).toBe('Grasp')
+    const agentGroup = groups!.value.find((g) => g.types.includes('agent'))
+    expect(agentGroup?.types).toEqual(['agent'])
+    expect(Object.keys(defs!.value).sort()).toEqual(
+      ['agent', 'branch', 'human_gate', 'input', 'output', 'proposal_select', 'set_var'],
+    )
   })
 })

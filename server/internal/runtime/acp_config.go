@@ -10,7 +10,6 @@ import (
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/rs/zerolog/log"
 )
@@ -38,10 +37,9 @@ func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) string
 	home, err := sandbox.BuildConfigHome(sandbox.ConfigHomeSpec{
 		BaseWorkDirSrc:       c.sharedWorkDir(req),
 		WorkDirSrc:           c.workDir(profile),
-		EmbeddedRules:        nodereg.EmbeddedRuleFiles(req.NodeType),
 		EmbeddedSkills:       liveVariantSkills(req),
 		IncludeArtifactStore: hasArtifactStore(specs),
-		OmitOutcomeRule:      nodereg.IsGrasp(req.NodeType),
+		OmitOutcomeRule:      req.Caps.Clarify(),
 		MCP:                  specs,
 		OpenCode:             c.backend == BackendOpenCode,
 		BrowserMCP:           EnvEnabled(env["BROWSER_MCP"]),
@@ -49,9 +47,6 @@ func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) string
 		OpenCodeConfig: OpenCodeConfigForEnvWithCatalog(
 			context.Background(), c.backend, env, c.opts.OpenCodeCatalog,
 		),
-		AgentName:      profile,
-		ProfilesRoot:   c.opts.ProfilesRoot,
-		GlobalRulesDir: c.opts.PlatformRulesRoot,
 	})
 	if err != nil {
 		log.Warn().Err(err).Str("node", req.NodeID).Msg("build cursor home failed; running without /root/.cursor mount")
@@ -105,16 +100,14 @@ type agentLayout struct {
 	WorkspaceDir string `json:"workspaceDir"`
 }
 
-// agentFile mirrors <ProfilesRoot>/<profile>/agent.json (mcp + env + layout +
-// per-Agent prompt overrides).
+// agentFile mirrors <ProfilesRoot>/<profile>/agent.json (mcp + env + layout).
 type agentFile struct {
-	AcpBackend       string               `json:"acpBackend"`
-	GitSshKnownHosts string               `json:"gitSshKnownHosts,omitempty"`
-	GitSshPrivateKey string               `json:"gitSshPrivateKey,omitempty"`
-	MCP              []agentMCP           `json:"mcp"`
-	Env              map[string]string    `json:"env"`
-	Layout           agentLayout          `json:"layout"`
-	Prompts          *models.AgentPrompts `json:"prompts"`
+	AcpBackend       string            `json:"acpBackend"`
+	GitSshKnownHosts string            `json:"gitSshKnownHosts,omitempty"`
+	GitSshPrivateKey string            `json:"gitSshPrivateKey,omitempty"`
+	MCP              []agentMCP        `json:"mcp"`
+	Env              map[string]string `json:"env"`
+	Layout           agentLayout       `json:"layout"`
 }
 
 // agentConfig reads the Agent's agent.json (best effort; empty on miss).
@@ -206,7 +199,6 @@ func overlayAgentFile(shared SharedAgentView, agent agentFile) agentFile {
 	if strings.TrimSpace(agent.Layout.WorkspaceDir) == "" && strings.TrimSpace(shared.Layout.WorkspaceDir) != "" {
 		out.Layout.WorkspaceDir = shared.Layout.WorkspaceDir
 	}
-	out.Prompts = mergePromptPtrs(shared.Prompts, agent.Prompts)
 	// SSH meta literals: non-empty agent wins (same as other meta).
 	if strings.TrimSpace(agent.GitSshKnownHosts) == "" && strings.TrimSpace(shared.GitSshKnownHosts) != "" {
 		out.GitSshKnownHosts = shared.GitSshKnownHosts
@@ -215,43 +207,6 @@ func overlayAgentFile(shared SharedAgentView, agent agentFile) agentFile {
 		out.GitSshPrivateKey = shared.GitSshPrivateKey
 	}
 	return out
-}
-
-func mergePromptPtrs(base, overlay *models.AgentPrompts) *models.AgentPrompts {
-	if base == nil && overlay == nil {
-		return nil
-	}
-	bm := map[string]string{}
-	om := map[string]string{}
-	if base != nil {
-		b, _ := json.Marshal(base)
-		_ = json.Unmarshal(b, &bm)
-	}
-	if overlay != nil {
-		b, _ := json.Marshal(overlay)
-		_ = json.Unmarshal(b, &om)
-	}
-	out := map[string]string{}
-	for k, v := range bm {
-		out[k] = v
-	}
-	for k, v := range om {
-		if strings.TrimSpace(v) != "" {
-			out[k] = v
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	b, err := json.Marshal(out)
-	if err != nil {
-		return overlay
-	}
-	var p models.AgentPrompts
-	if err := json.Unmarshal(b, &p); err != nil {
-		return overlay
-	}
-	return &p
 }
 
 // reservedArtifactStore is the conventional name for the platform's run-scoped

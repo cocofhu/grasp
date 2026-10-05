@@ -70,7 +70,7 @@ const stubRun = {
 
 const stubNode = {
   id: 'approve_7gl6',
-  type: 'approve',
+  type: 'agent',
   label: '澄清',
   position: { x: 0, y: 0 },
   config: {},
@@ -116,7 +116,6 @@ describe('empty-fail retry survives the wrapper chain', () => {
         nodeId: 'approve_7gl6',
         iteration: 2,
         turns: emptyFailTurns,
-        nodeType: 'approve',
         done: false,
         active: true,
       },

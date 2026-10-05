@@ -9,7 +9,6 @@ import UpstreamRequirementContext from '../UpstreamRequirementContext.vue'
 import PreviewFeedbackChat from '../PreviewFeedbackChat.vue'
 import GateProductEditor from '../GateProductEditor.vue'
 import ArtifactLoadingPane from '../ArtifactLoadingPane.vue'
-import AppPreviewPanel from '../AppPreviewPanel.vue'
 import PlanView from '../PlanView.vue'
 import ProposalSelectView from '../ProposalSelectView.vue'
 import StructuredArtifactView from '../StructuredArtifactView.vue'
@@ -39,7 +38,6 @@ const {
   canEditProducts,
   isVisualBody,
   isProposalSelect,
-  isAppPreview,
   bodyTemplate,
   usesPreviewIssues,
   openPreviewIssueCount,
@@ -67,7 +65,6 @@ const {
   previewFromArtifactFallback,
   shouldFillPreview,
   shouldFitStructured,
-  shouldFillAppPreview,
   useFillLayout,
   useUnifiedPreviewBudget,
   contentFitChromeOffsetPx,
@@ -109,7 +106,6 @@ const {
   onProductRefresh,
   retryLoadProduct,
   onHtmlPreviewPick,
-  onAppPreviewPick,
   clearHtmlPreviewPick,
   onAnnotateSave,
   onAnnotateSendChat,
@@ -326,20 +322,6 @@ const {
               </div>
             </aside>
           </div>
-        </div>
-        <div
-          v-else-if="isAppPreview && run"
-          :class="shouldFillAppPreview ? 'flex min-h-0 flex-1 flex-col overflow-hidden p-4' : 'p-4'"
-          data-testid="app-preview-host"
-        >
-          <AppPreviewPanel
-            :run-id="run.id"
-            :node-id="gate.nodeId"
-            :fill="shouldFillAppPreview"
-            :show-feedback="!canReactRevise"
-            @issues-changed="loadPreviewIssues()"
-            @pick="onAppPreviewPick"
-          />
         </div>
         <ArtifactLoadingPane
           v-else-if="planLoading"

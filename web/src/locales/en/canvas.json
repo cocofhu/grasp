@@ -1,0 +1,267 @@
+{
+  "canvas": {
+    "aria": {
+      "canvas": "Workflow canvas",
+      "node": "{type} node: {label}",
+      "inPort": "Input",
+      "outPort": "Outlet: {label}",
+      "outPortPlain": "Outlet",
+      "edge": "From {source} to {target}",
+      "nodeMenu": "Node actions",
+      "insertNode": "Insert a node on this connection",
+      "deleteEdge": "Delete connection",
+      "editCondition": "Edit connection condition",
+      "closeInspector": "Close inspector",
+      "togglePalette": "Expand or collapse the node panel",
+      "palette": "Node panel",
+      "inspector": "Node inspector"
+    },
+    "outlet": {
+      "pass": "Pass",
+      "fail": "Fail",
+      "else": "Else",
+      "caseN": "Case {n}",
+      "stale": "{handle} (stale)"
+    },
+    "caps": {
+      "undeclared": "No capabilities declared",
+      "review": "Review",
+      "preview": "Preview",
+      "writes": "Writes {list}",
+      "listSep": ", ",
+      "ask": "Asks people questions",
+      "previewFull": "Can start an app preview",
+      "reviewFull": "Parks for human review after the run",
+      "gateFull": "Leaves through Pass or Fail by verdict"
+    },
+    "node": {
+      "goalEmpty": "Click to set a goal",
+      "noAgent": "No Agent selected",
+      "agentMissing": "Agent \"{name}\" not found",
+      "iteration": "Run {n}",
+      "reply": "Reply",
+      "issues": "{n} issues",
+      "menu": {
+        "edit": "Edit",
+        "rename": "Rename",
+        "duplicate": "Duplicate",
+        "delete": "Delete"
+      },
+      "status": {
+        "running": "Running",
+        "waiting_human": "Waiting for reply",
+        "completed": "Completed",
+        "failed": "Failed",
+        "skipped": "Skipped",
+        "cancelled": "Cancelled",
+        "pending": "Not started"
+      },
+      "summary": {
+        "variables": "{n} variables",
+        "sources": "{n} output sources",
+        "noSources": "No output sources",
+        "assignments": "{n} assignments",
+        "cases": "{n} cases",
+        "actions": "{n} actions",
+        "proposals": "Pick a proposal from {from}"
+      }
+    },
+    "edge": {
+      "editorTitle": "Connection condition",
+      "when": "Condition (when)",
+      "whenPlaceholder": "e.g. vars.attempt < 3; empty means always",
+      "kind": "Kind",
+      "note": "Note",
+      "notePlaceholder": "Shown on the connection",
+      "done": "Done",
+      "delete": "Delete connection"
+    },
+    "palette": {
+      "search": "Search nodes or Agents",
+      "agents": "Agents",
+      "control": "Control",
+      "collab": "Collaboration",
+      "fromTemplate": "New from template",
+      "blankAgent": "Blank Agent node",
+      "blankAgentDesc": "Pick the Agent later in the inspector",
+      "noAgents": "No Agents in this project yet",
+      "noMatch": "No matching nodes",
+      "dragHint": "Drag onto the canvas, or click to add",
+      "collapse": "Collapse panel",
+      "expand": "Expand panel"
+    },
+    "quickAdd": {
+      "placeholder": "Search nodes or Agents…",
+      "titleCommand": "Add a node",
+      "titleConnect": "Add after \"{label}\"",
+      "titleInsert": "Insert on connection",
+      "empty": "No matching nodes",
+      "hint": "↑↓ select · Enter add · Esc close"
+    },
+    "toolbar": {
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "fitView": "Fit view (Shift+1)",
+      "autoLayout": "Auto layout (Shift+L)",
+      "minimap": "Show or hide the minimap",
+      "undo": "Undo",
+      "redo": "Redo",
+      "help": "Shortcuts (?)",
+      "follow": "Follow",
+      "followOn": "Following the running node",
+      "followOff": "Click to follow the running node"
+    },
+    "shortcuts": {
+      "title": "Keyboard shortcuts",
+      "actions": {
+        "undo": "Undo",
+        "redo": "Redo",
+        "copy": "Copy",
+        "paste": "Paste",
+        "duplicate": "Duplicate",
+        "delete": "Delete selection",
+        "selectAll": "Select all",
+        "save": "Save now",
+        "fitView": "Fit view",
+        "autoLayout": "Auto layout",
+        "quickAdd": "Quick add",
+        "rename": "Rename node",
+        "navigate": "Move between connected nodes",
+        "help": "Shortcut help",
+        "escape": "Close popover or clear selection"
+      },
+      "mouse": {
+        "title": "Mouse and trackpad",
+        "pan": "Hold Space and drag, or two-finger scroll: pan",
+        "zoom": "Ctrl/⌘ + wheel, or pinch: zoom",
+        "select": "Drag on blank space: box select; Shift + click: multi-select",
+        "dblclick": "Double-click blank space: quick add; double-click a node: edit goal"
+      }
+    },
+    "empty": {
+      "title": "Build your workflow",
+      "templateTitle": "Start from the default template",
+      "templateDesc": "Clarify → Implement → Test & review; a failed review goes back to Implement",
+      "blankTitle": "Start blank",
+      "blankDesc": "Just input and output; build the steps in between yourself",
+      "hint": "Press / anytime to search and add nodes"
+    },
+    "template": {
+      "labels": {
+        "input": "Input",
+        "clarify": "Clarify",
+        "implement": "Implement",
+        "test_review": "Test & review",
+        "output": "Output"
+      },
+      "goals": {
+        "clarify": "Clarify the following request with the requester until it is complete, then write the requirement spec and the plan:\n{'{{vars.feature}}'}",
+        "implement": "Implement the requirement spec and plan, update plan progress item by item, and write the implementation result.",
+        "test_review": "Test and review the upstream implementation, and write the test result and review verdict truthfully."
+      }
+    },
+    "rules": {
+      "missingEnd": "Both ends of a connection must be nodes",
+      "selfLoop": "A node cannot connect to itself",
+      "inputNoIncoming": "The input node cannot have incoming connections",
+      "outputNoOutgoing": "The output node cannot have outgoing connections",
+      "duplicate": "These nodes are already connected this way",
+      "singleInput": "Only one input node is allowed"
+    },
+    "issues": {
+      "count": "{n} issues",
+      "none": "No issues",
+      "next": "Jump to the next issue",
+      "missingInput": "Missing input node",
+      "missingOutput": "Missing output node",
+      "tooManyInputs": "Only one input node is allowed",
+      "unknownType": "Unknown node type {type}",
+      "inputHasIncoming": "The input node cannot have incoming connections",
+      "outputHasOutgoing": "The output node cannot have outgoing connections",
+      "unreachable": "No connection leads into this node",
+      "noAgent": "No Agent selected",
+      "agentNotFound": "Agent \"{name}\" does not exist or is not in this project",
+      "agentNoCaps": "Agent {name} has not declared capabilities",
+      "agentBadCaps": "Agent {name} has invalid capabilities: {reason}",
+      "noGoal": "No goal set",
+      "staleOutlet": "Outlet \"{handle}\" no longer exists; reconnect it",
+      "duplicateFanOut": "One outlet has several unconditional connections; only the first runs"
+    },
+    "inspector": {
+      "close": "Close",
+      "sections": {
+        "agent": "Agent",
+        "goal": "Goal",
+        "timeout": "Timeout",
+        "capabilities": "Capabilities",
+        "basics": "Basics",
+        "settings": "Settings",
+        "outputs": "Outputs"
+      },
+      "agentPlaceholder": "Select an Agent",
+      "goalPlaceholder": "What should this step achieve? Type {'{{'} to insert a variable or upstream product",
+      "goalHint": "Type {'{{'} to insert a variable or upstream product",
+      "timeoutPlaceholder": "No limit",
+      "interaction": "Interaction",
+      "tools": "Tools",
+      "reads": "Reads",
+      "writes": "Writes",
+      "none": "None",
+      "editInStudio": "Edit in Agent Studio",
+      "noCapsBody": "This Agent has not declared capabilities; runs will fail validation.",
+      "suggest": {
+        "vars": "Variables",
+        "upstream": "Upstream products",
+        "empty": "Nothing to insert"
+      },
+      "cases": {
+        "add": "Add case",
+        "idPlaceholder": "Outlet id",
+        "whenPlaceholder": "Condition, e.g. vars.kind == \"bug\"",
+        "elseNote": "When no case matches, the Else outlet is taken"
+      },
+      "actions": {
+        "add": "Add action",
+        "note": "Each action is an outlet; connect it to the next step"
+      }
+    },
+    "topbar": {
+      "projects": "Projects",
+      "rename": "Click to rename",
+      "status": {
+        "saved": "Saved",
+        "saving": "Saving…",
+        "unsaved": "Unsaved",
+        "error": "Save failed"
+      },
+      "saveError": "Autosave failed: {error}",
+      "retrySave": "Retry",
+      "issuesNone": "No issues",
+      "run": "Run",
+      "publish": "Publish",
+      "more": "More",
+      "menu": {
+        "import": "Import",
+        "export": "Export",
+        "duplicate": "Duplicate workflow",
+        "delete": "Delete workflow",
+        "versions": "Versions",
+        "details": "Details",
+        "favorite": "Favorite",
+        "unfavorite": "Unfavorite"
+      },
+      "tabs": {
+        "canvas": "Canvas",
+        "runs": "Runs",
+        "api": "API access"
+      },
+      "deleteTitle": "Delete workflow \"{name}\"?",
+      "deleteBody": "This cannot be undone. Existing runs are not affected.",
+      "deleteFailed": "Delete failed: {error}"
+    },
+    "toast": {
+      "edgeReplaced": "Replaced the previous connection to \"{label}\"",
+      "undo": "Undo"
+    }
+  }
+}

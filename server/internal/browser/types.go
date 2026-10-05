@@ -1,4 +1,4 @@
-// Package browser implements the server-side VNC preview: each app_preview
+// Package browser implements the server-side VNC preview: each preview-capable
 // sandbox runs Xvfb+Chromium+x11vnc+websockify in-process; the platform dials
 // that sandbox's CDP (:9222) and websockify (:6080). Pick/navigate use CDP;
 // the desktop is streamed to the UI via noVNC.

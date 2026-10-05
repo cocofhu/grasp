@@ -4,7 +4,7 @@ import { createI18n } from 'vue-i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-import { emptyPrompts, type AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
+import type { AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
 import { useAgentFilesPanel } from './useAgentFilesPanel'
 
 const baseDraft = (): AgentStudioDraft => ({
@@ -18,7 +18,7 @@ const baseDraft = (): AgentStudioDraft => ({
   mcp: [],
   env: [],
   layout: { configRoot: '/root/.cursor', workspaceDir: '/root/workspace' },
-  prompts: emptyPrompts(),
+  capabilities: null,
 })
 
 function withFilesPanel(isMobile = false) {

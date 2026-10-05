@@ -31,7 +31,7 @@ type TeamBootstrapRequest struct {
 	ProjectName   string            `json:"projectName"`
 	Prefix        string            `json:"prefix"`
 	RootGroupName string            `json:"rootGroupName"`
-	PipelineGroup string            `json:"pipelineGroupName"`
+	WorkflowGroup string            `json:"workflowGroupName"`
 	PMName        string            `json:"pmName"`
 	Background    string            `json:"background"`
 	AcpBackend    string            `json:"acpBackend"`
@@ -65,7 +65,7 @@ type TeamBootstrapSession struct {
 	Error           string `json:"error,omitempty"`
 	ProjectID       string `json:"projectId,omitempty"`
 	RootGroupID     string `json:"rootGroupId,omitempty"`
-	PipelineGroupID string `json:"pipelineGroupId,omitempty"`
+	WorkflowGroupID string `json:"workflowGroupId,omitempty"`
 	PMAgent         string `json:"pmAgent,omitempty"`
 	SandboxID       string `json:"sandboxId,omitempty"`
 	// SandboxStatus mirrors gateway/local sandbox lifecycle (pulling|creating|running|error).
@@ -112,8 +112,7 @@ func NewTeamService(projects *ProjectService, skills *AgentService, org *OrgServ
 	}
 }
 
-// ListTemplates returns engineer roles plus solo create extras (e.g. preflight).
-// Team bootstrap still uses TeamEngineerTemplates only (1 PM + 9).
+// ListTemplates returns the built-in workflow Agent templates.
 func (s *TeamService) ListTemplates() []TeamRoleTemplate {
 	return AllCreateTemplates()
 }
@@ -134,7 +133,7 @@ func (s *TeamService) GetSession(id string) (TeamBootstrapSession, error) {
 	return cp, nil
 }
 
-// Bootstrap creates project + org + PM + 9 engineers, then starts a PM sandbox.
+// Bootstrap creates project + org + PM + the built-in engineers, then starts a PM sandbox.
 func (s *TeamService) Bootstrap(ctx context.Context, req TeamBootstrapRequest) (TeamBootstrapSession, error) {
 	norm, err := s.normalizeRequest(req)
 	if err != nil {
@@ -197,7 +196,7 @@ type normalizedTeamReq struct {
 	ProjectName   string
 	Prefix        string
 	RootGroupName string
-	PipelineGroup string
+	WorkflowGroup string
 	PMName        string
 	Background    string
 	AcpBackend    string
@@ -238,9 +237,9 @@ func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeam
 	if root == "" {
 		root = prefix + "项目组"
 	}
-	pipeline := strings.TrimSpace(req.PipelineGroup)
-	if pipeline == "" {
-		pipeline = "Pipeline(GitHub)"
+	workflowGroup := strings.TrimSpace(req.WorkflowGroup)
+	if workflowGroup == "" {
+		workflowGroup = "工作流(GitHub)"
 	}
 	mcp := req.MCP
 	if len(mcp) == 0 {
@@ -261,7 +260,7 @@ func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeam
 		ProjectName:   projectName,
 		Prefix:        prefix,
 		RootGroupName: root,
-		PipelineGroup: pipeline,
+		WorkflowGroup: workflowGroup,
 		PMName:        pmName,
 		Background:    background,
 		AcpBackend:    NormalizeAcpBackend(req.AcpBackend),
@@ -324,11 +323,11 @@ func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req no
 	s.appendEvent(sessionID, "ok", "project created: "+proj.ID)
 
 	rootID := NewGroupID()
-	pipeID := NewGroupID()
+	workflowGroupID := NewGroupID()
 	s.patchSession(sessionID, func(sess *TeamBootstrapSession) {
 		sess.RootGroupID = rootID
-		sess.PipelineGroupID = pipeID
-		sess.AllowedGroupIDs = []string{rootID, pipeID}
+		sess.WorkflowGroupID = workflowGroupID
+		sess.AllowedGroupIDs = []string{rootID, workflowGroupID}
 	})
 
 	// Create PM agent
@@ -357,7 +356,7 @@ func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req no
 	}
 	s.appendEvent(sessionID, "ok", "PM Leader bound")
 
-	// Org: root + pipeline + PM membership
+	// Org: root + workflow group + PM membership
 	org, err := s.Org.Get()
 	if err != nil {
 		fail(err)
@@ -365,7 +364,7 @@ func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req no
 	}
 	org.Groups = append(org.Groups,
 		OrgGroup{ID: rootID, Name: req.RootGroupName},
-		OrgGroup{ID: pipeID, Name: req.PipelineGroup, ParentGroupID: rootID},
+		OrgGroup{ID: workflowGroupID, Name: req.WorkflowGroup, ParentGroupID: rootID},
 	)
 	if org.Agents == nil {
 		org.Agents = map[string]OrgAgentMembership{}
@@ -376,11 +375,11 @@ func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req no
 		return
 	}
 	s.addResource(sessionID, "group", req.RootGroupName, "root")
-	s.addResource(sessionID, "group", req.PipelineGroup, "pipeline · 9 engineers")
-	s.appendEvent(sessionID, "mcp", "pm_ensure_child_group\nparent="+req.RootGroupName+"\nchild="+req.PipelineGroup+"\n✓ ok")
+	s.addResource(sessionID, "group", req.WorkflowGroup, fmt.Sprintf("workflow · %d engineers", len(TeamEngineerTemplates)))
+	s.appendEvent(sessionID, "mcp", "pm_ensure_child_group\nparent="+req.RootGroupName+"\nchild="+req.WorkflowGroup+"\n✓ ok")
 
 	s.appendEvent(sessionID, "warn", "inject Prompt（项目背景）:\n"+truncateRunes(req.Background, 400))
-	s.appendEvent(sessionID, "warn", "provision 9 engineers from templates (inherit mcp/env)")
+	s.appendEvent(sessionID, "warn", fmt.Sprintf("provision %d engineers from templates (inherit mcp/env)", len(TeamEngineerTemplates)))
 
 	for _, role := range TeamEngineerTemplates {
 		name := EngineerDisplayName(req.Prefix, role.RoleLabelZH)
@@ -401,16 +400,16 @@ func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req no
 			fail(err)
 			return
 		}
-		s.appendEvent(sessionID, "mcp", "pm_set_org_membership\nagent="+created.Name+"\ngroup="+req.PipelineGroup+"\n✓ ok")
+		s.appendEvent(sessionID, "mcp", "pm_set_org_membership\nagent="+created.Name+"\ngroup="+req.WorkflowGroup+"\n✓ ok")
 		if err := s.SetOrgMembership(SetOrgMembershipArgs{
 			SessionID: sessionID,
 			AgentName: created.Name,
-			GroupIDs:  []string{pipeID},
+			GroupIDs:  []string{workflowGroupID},
 		}); err != nil {
 			fail(err)
 			return
 		}
-		s.addResource(sessionID, "agent", created.Name, "template "+role.ID+" · "+req.PipelineGroup)
+		s.addResource(sessionID, "agent", created.Name, "template "+role.ID+" · "+req.WorkflowGroup)
 		s.patchSession(sessionID, func(sess *TeamBootstrapSession) {
 			sess.AgentNames = append(sess.AgentNames, created.Name)
 		})
@@ -438,12 +437,12 @@ func (s *TeamService) runRetry(ctx context.Context, sessionID string, req normal
 	s.appendEvent(sessionID, "sys", "retry: continue engineer provision (skip existing)")
 
 	projID := cur.ProjectID
-	pipeID := cur.PipelineGroupID
-	if pipeID == "" {
-		pipeID = NewGroupID()
+	workflowGroupID := cur.WorkflowGroupID
+	if workflowGroupID == "" {
+		workflowGroupID = NewGroupID()
 		s.patchSession(sessionID, func(sess *TeamBootstrapSession) {
-			sess.PipelineGroupID = pipeID
-			sess.AllowedGroupIDs = uniqueNonEmptyStrings(append(sess.AllowedGroupIDs, pipeID))
+			sess.WorkflowGroupID = workflowGroupID
+			sess.AllowedGroupIDs = uniqueNonEmptyStrings(append(sess.AllowedGroupIDs, workflowGroupID))
 		})
 	}
 	pmName := cur.PMAgent
@@ -474,7 +473,7 @@ func (s *TeamService) runRetry(ctx context.Context, sessionID string, req normal
 		if err := s.SetOrgMembership(SetOrgMembershipArgs{
 			SessionID: sessionID,
 			AgentName: created.Name,
-			GroupIDs:  []string{pipeID},
+			GroupIDs:  []string{workflowGroupID},
 		}); err != nil {
 			fail(err)
 			return
@@ -504,7 +503,7 @@ func (s *TeamService) runRetry(ctx context.Context, sessionID string, req normal
 		} else {
 			s.appendEvent(sessionID, "warn", "skip existing agent "+created.Name)
 		}
-		s.appendEvent(sessionID, "mcp", "pm_set_org_membership\nagent="+created.Name+"\ngroup="+req.PipelineGroup+"\nparent="+pmName+"\n✓ ok")
+		s.appendEvent(sessionID, "mcp", "pm_set_org_membership\nagent="+created.Name+"\ngroup="+req.WorkflowGroup+"\nparent="+pmName+"\n✓ ok")
 	}
 
 	s.finishBootstrap(ctx, sessionID, req)
@@ -813,15 +812,15 @@ func teamPMProjectContextMarkdown(req normalizedTeamReq) string {
 	b.WriteString("\n\n## 编制约定\n\n")
 	b.WriteString("- 命名前缀：`" + req.Prefix + "`\n")
 	b.WriteString("- 根组：`" + req.RootGroupName + "`（你在此组）\n")
-	b.WriteString("- 流水线子组：`" + req.PipelineGroup + "`（9 名工程师挂此组，上级为你）\n")
+	b.WriteString(fmt.Sprintf("- 工作流子组：`%s`（%d 名工程师挂此组，上级为你）\n", req.WorkflowGroup, len(TeamEngineerTemplates)))
 	b.WriteString("- PM：`" + req.PMName + "`\n")
-	b.WriteString("- 工程师命名：`{前缀}{角色}工程师`（调研/计划/方案/澄清/视觉原型/实现/测试/代码Review/变更摘要视觉）\n\n")
+	b.WriteString("- 工程师命名：`{前缀}{角色}`（" + teamRoleLabels() + "）\n\n")
 	if req.GitURL != "" {
 		b.WriteString("## 仓库\n\n")
 		b.WriteString("- Git URL：`" + req.GitURL + "`\n\n")
 	}
 	b.WriteString("## 工作方式\n\n")
-	b.WriteString("先 `pm_get_org` 确认编制，再按流水线分派工程师；缺人时用模板补齐，勿覆盖重名。\n")
+	b.WriteString("先 `pm_get_org` 确认编制，再按工作流分派工程师；缺人时用模板补齐，勿覆盖重名。\n")
 	return b.String()
 }
 
@@ -909,4 +908,12 @@ func truncateRunes(s string, max int) string {
 		return s
 	}
 	return string(r[:max]) + "…"
+}
+
+func teamRoleLabels() string {
+	labels := make([]string, 0, len(TeamEngineerTemplates))
+	for _, r := range TeamEngineerTemplates {
+		labels = append(labels, r.RoleLabelZH)
+	}
+	return strings.Join(labels, "/")
 }

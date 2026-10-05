@@ -11,6 +11,10 @@ const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   listWorkflows: vi.fn(),
   listProjects: vi.fn(),
+  listAgents: vi.fn(async () => [
+    { name: 'clarifier', capabilities: { interaction: 'clarify', tools: ['ask_question'] } },
+    { name: 'worker', capabilities: { interaction: 'auto' } },
+  ]),
   patchWorkflowHomeVisibility: vi.fn(),
   startRun: vi.fn(),
   getRun: vi.fn(),
@@ -31,6 +35,7 @@ vi.mock('@/lib/api/api', async () => {
       ...actual.api,
       listWorkflows: mocks.listWorkflows,
       listProjects: mocks.listProjects,
+      listAgents: mocks.listAgents,
       patchWorkflowHomeVisibility: mocks.patchWorkflowHomeVisibility,
       startRun: mocks.startRun,
       getRun: mocks.getRun,
@@ -80,7 +85,7 @@ const approveWf: Workflow = {
   showOnHome: true,
   nodes: [
     { id: 'in', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
-    { id: 'ap', type: 'approve', label: '澄清', position: { x: 0, y: 0 }, config: {} },
+    { id: 'ap', type: 'agent', label: '澄清', position: { x: 0, y: 0 }, config: { agent_profile: 'clarifier' } },
   ],
   edges: [{ id: 'e1', source: 'in', target: 'ap' }],
 }
@@ -104,7 +109,7 @@ function mountDashboard() {
   })
 }
 
-/** HomePipelineSelect teleports its panel to document.body. */
+/** HomeWorkflowSelect teleports its panel to document.body. */
 function teleported(testid: string) {
   const el = document.querySelector(`[data-testid="${testid}"]`)
   if (!el) {
@@ -118,13 +123,13 @@ function teleportedExists(testid: string) {
 }
 
 /** plan g1.1 — press shorter than this stays a one-card step. */
-const PIPELINE_NAV_HOLD_MS = 400
+const WORKFLOW_NAV_HOLD_MS = 400
 
 function manyHomeWorkflows(count = 8): Workflow[] {
   return Array.from({ length: count }, (_, i) => ({
     ...approveWf,
     id: i === 0 ? approveWf.id : `wf-${i}`,
-    name: `流水线 ${i}`,
+    name: `工作流 ${i}`,
   }))
 }
 
@@ -215,7 +220,7 @@ describe('DashboardView home composer', () => {
     mocks.getRun.mockResolvedValue({
       id: 'run-9',
       status: 'waiting_human',
-      nodes: [{ id: 'ap', type: 'approve', label: '', position: { x: 0, y: 0 }, config: {} }],
+      nodes: [{ id: 'ap', type: 'agent', label: '', position: { x: 0, y: 0 }, config: { agent_profile: 'clarifier' } }],
       nodeRuns: { ap: { nodeId: 'ap', status: 'waiting_human' } },
     })
     mocks.reactReply.mockResolvedValue({ status: 'ok' })
@@ -234,15 +239,15 @@ describe('DashboardView home composer', () => {
     document.body.innerHTML = ''
   })
 
-  it('renders composer and approve-first cards without a project gate', async () => {
+  it('renders composer and clarify-first cards without a project gate', async () => {
     mocks.readStoredProjectId.mockReturnValue('')
     const wrapper = mountDashboard()
     await flushPromises()
     expect(wrapper.get('[data-testid="home-title"]').text()).toContain('从一句话开始一次开发前澄清')
     expect(wrapper.find('[data-testid="home-composer"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="home-no-project"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="home-pipeline-card-wf-ap"]').text()).toContain('自我迭代PRO')
-    expect(wrapper.get('[data-testid="home-pipeline-card-project-wf-ap"]').text()).toBe('综合项目组')
+    expect(wrapper.get('[data-testid="home-workflow-card-wf-ap"]').text()).toContain('自我迭代PRO')
+    expect(wrapper.get('[data-testid="home-workflow-card-project-wf-ap"]').text()).toBe('综合项目组')
     expect(mocks.listWorkflows).toHaveBeenCalledWith(expect.objectContaining({ signal: expect.any(AbortSignal) }))
     const call = mocks.listWorkflows.mock.calls[0]?.[0] || {}
     expect(call).not.toHaveProperty('projectId')
@@ -265,26 +270,26 @@ describe('DashboardView home composer', () => {
     ])
     const wrapper = mountDashboard()
     await flushPromises()
-    const a = wrapper.get('[data-testid="home-pipeline-card-wf-ap"]')
-    const b = wrapper.get('[data-testid="home-pipeline-card-wf-ap-b"]')
-    expect(a.get('[data-testid="home-pipeline-card-name"]').text()).toBe('自我迭代PRO')
-    expect(b.get('[data-testid="home-pipeline-card-name"]').text()).toBe('自我迭代PRO')
-    expect(wrapper.get('[data-testid="home-pipeline-card-project-wf-ap"]').text()).toBe('综合项目组')
-    expect(wrapper.get('[data-testid="home-pipeline-card-project-wf-ap-b"]').text()).toBe('SkillHub')
-    expect(a.get('[data-testid="home-pipeline-card-name"]').attributes('title')).toBe('自我迭代PRO')
-    expect(wrapper.get('[data-testid="home-pipeline-card-project-wf-ap"]').attributes('title')).toBe(
+    const a = wrapper.get('[data-testid="home-workflow-card-wf-ap"]')
+    const b = wrapper.get('[data-testid="home-workflow-card-wf-ap-b"]')
+    expect(a.get('[data-testid="home-workflow-card-name"]').text()).toBe('自我迭代PRO')
+    expect(b.get('[data-testid="home-workflow-card-name"]').text()).toBe('自我迭代PRO')
+    expect(wrapper.get('[data-testid="home-workflow-card-project-wf-ap"]').text()).toBe('综合项目组')
+    expect(wrapper.get('[data-testid="home-workflow-card-project-wf-ap-b"]').text()).toBe('SkillHub')
+    expect(a.get('[data-testid="home-workflow-card-name"]').attributes('title')).toBe('自我迭代PRO')
+    expect(wrapper.get('[data-testid="home-workflow-card-project-wf-ap"]').attributes('title')).toBe(
       '综合项目组',
     )
     wrapper.unmount()
   })
 
-  it('omits the project name row when the pipeline has no projectId', async () => {
+  it('omits the project name row when the workflow has no projectId', async () => {
     mocks.listWorkflows.mockResolvedValue([{ ...approveWf, projectId: undefined }])
     mocks.listProjects.mockResolvedValue([{ id: 'proj-1', name: '综合项目组', description: '', variables: [] }])
     const wrapper = mountDashboard()
     await flushPromises()
-    expect(wrapper.get('[data-testid="home-pipeline-card-wf-ap"]').text()).toContain('自我迭代PRO')
-    expect(wrapper.find('[data-testid="home-pipeline-card-project-wf-ap"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-workflow-card-wf-ap"]').text()).toContain('自我迭代PRO')
+    expect(wrapper.find('[data-testid="home-workflow-card-project-wf-ap"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -316,15 +321,15 @@ describe('DashboardView home composer', () => {
     expect(wrapper.get('[data-testid="home-title"]').text()).toBe('从一句话开始一次开发前澄清')
     expect(wrapper.find('[data-testid="home-subtitle"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-filter-hint"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('仅显示开始后是 Approve 的已发布流水线')
+    expect(wrapper.text()).not.toContain('仅显示开始后是 Approve 的已发布工作流')
     wrapper.unmount()
   })
 
-  // plan g1 — pipeline cards use card-role 12px via scoped CSS (not global .card)
-  it('renders rounded pipeline cards via home-shell__card', async () => {
+  // plan g1 — workflow cards use card-role 12px via scoped CSS (not global .card)
+  it('renders rounded workflow cards via home-shell__card', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
-    const card = wrapper.get('[data-testid="home-pipeline-card-wf-ap"]')
+    const card = wrapper.get('[data-testid="home-workflow-card-wf-ap"]')
     expect(card.classes()).toContain('home-shell__card')
     expect(card.classes()).not.toContain('card')
     expect(card.classes()).toContain('border')
@@ -334,7 +339,7 @@ describe('DashboardView home composer', () => {
   it('opens the icon menu on contextmenu and prevents the browser menu', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
-    const card = wrapper.get('[data-testid="home-pipeline-card-wf-ap"]')
+    const card = wrapper.get('[data-testid="home-workflow-card-wf-ap"]')
     const event = new MouseEvent('contextmenu', {
       bubbles: true,
       cancelable: true,
@@ -345,65 +350,65 @@ describe('DashboardView home composer', () => {
     await flushPromises()
 
     expect(event.defaultPrevented).toBe(true)
-    const menu = teleported('home-pipeline-menu')
+    const menu = teleported('home-workflow-menu')
     expect(menu.text()).toContain('隐藏')
     expect(menu.text()).toContain('编辑')
-    expect(teleported('home-pipeline-menu-hide').find('svg').exists()).toBe(true)
-    expect(teleported('home-pipeline-menu-edit').find('svg').exists()).toBe(true)
+    expect(teleported('home-workflow-menu-hide').find('svg').exists()).toBe(true)
+    expect(teleported('home-workflow-menu-edit').find('svg').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('opens the same menu from more without changing the selected pipeline and edits the target', async () => {
+  it('opens the same menu from more without changing the selected workflow and edits the target', async () => {
     const second: Workflow = { ...approveWf, id: 'wf-lite', name: '快速澄清 Lite' }
     mocks.listWorkflows.mockResolvedValue([approveWf, second])
     const wrapper = mountDashboard()
     await flushPromises()
 
-    await wrapper.get('[data-testid="home-pipeline-more-wf-lite"]').trigger('click')
+    await wrapper.get('[data-testid="home-workflow-more-wf-lite"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="home-pipeline-card-wf-ap"]').classes()).toContain(
+    expect(wrapper.get('[data-testid="home-workflow-card-wf-ap"]').classes()).toContain(
       'home-shell__card--selected',
     )
-    expect(teleportedExists('home-pipeline-menu')).toBe(true)
-    await teleported('home-pipeline-menu-edit').trigger('click')
+    expect(teleportedExists('home-workflow-menu')).toBe(true)
+    await teleported('home-workflow-menu-edit').trigger('click')
     expect(mocks.push).toHaveBeenCalledWith('/workflows/wf-lite/edit')
-    expect(teleportedExists('home-pipeline-menu')).toBe(false)
+    expect(teleportedExists('home-workflow-menu')).toBe(false)
     wrapper.unmount()
   })
 
   it('opens on a 500ms touch hold and cancels when the finger moves', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
-    const card = wrapper.get('[data-testid="home-pipeline-card-wf-ap"]')
+    const card = wrapper.get('[data-testid="home-workflow-card-wf-ap"]')
 
     await card.trigger('pointerdown', { pointerType: 'touch', clientX: 20, clientY: 20 })
     await card.trigger('pointermove', { pointerType: 'touch', clientX: 40, clientY: 20 })
     await vi.advanceTimersByTimeAsync(500)
     await flushPromises()
-    expect(teleportedExists('home-pipeline-menu')).toBe(false)
+    expect(teleportedExists('home-workflow-menu')).toBe(false)
 
     await card.trigger('pointerdown', { pointerType: 'touch', clientX: 20, clientY: 20 })
     await vi.advanceTimersByTimeAsync(500)
     await flushPromises()
-    expect(teleportedExists('home-pipeline-menu')).toBe(true)
+    expect(teleportedExists('home-workflow-menu')).toBe(true)
     await card.trigger('click')
     await flushPromises()
     expect(card.classes()).toContain('home-shell__card--selected')
     wrapper.unmount()
   })
 
-  it('hides a pipeline through home-visibility and falls back to the next card', async () => {
+  it('hides a workflow through home-visibility and falls back to the next card', async () => {
     const second: Workflow = { ...approveWf, id: 'wf-lite', name: '快速澄清 Lite' }
     mocks.listWorkflows.mockResolvedValue([approveWf, second])
     const wrapper = mountDashboard()
     await flushPromises()
 
-    await wrapper.get('[data-testid="home-pipeline-card-wf-ap"]').trigger('contextmenu')
-    await teleported('home-pipeline-menu-hide').trigger('click')
+    await wrapper.get('[data-testid="home-workflow-card-wf-ap"]').trigger('contextmenu')
+    await teleported('home-workflow-menu-hide').trigger('click')
     await flushPromises()
     expect(mocks.patchWorkflowHomeVisibility).toHaveBeenCalledWith('wf-ap', false)
-    expect(wrapper.find('[data-testid="home-pipeline-card-wf-ap"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="home-pipeline-card-wf-lite"]').classes()).toContain(
+    expect(wrapper.find('[data-testid="home-workflow-card-wf-ap"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-workflow-card-wf-lite"]').classes()).toContain(
       'home-shell__card--selected',
     )
     wrapper.unmount()
@@ -502,19 +507,19 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
-  // plan g2.1 — no project gate; still loads cross-project pipelines
-  it('loads pipelines without a stored project and does not show project empty state', async () => {
+  // plan g2.1 — no project gate; still loads cross-project workflows
+  it('loads workflows without a stored project and does not show project empty state', async () => {
     mocks.readStoredProjectId.mockReturnValue('')
     const wrapper = mountDashboard()
     await flushPromises()
     expect(wrapper.find('[data-testid="home-no-project"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="home-pipeline-cards"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="home-workflow-cards"]').exists()).toBe(true)
     expect(mocks.listWorkflows).toHaveBeenCalled()
     wrapper.unmount()
   })
 
   // plan g2.2 — combobox and card selection stay in sync
-  it('keeps pipeline combobox and card selection in sync', async () => {
+  it('keeps workflow combobox and card selection in sync', async () => {
     const second: Workflow = {
       ...approveWf,
       id: 'wf-lite',
@@ -524,29 +529,29 @@ describe('DashboardView home composer', () => {
     mocks.listWorkflows.mockResolvedValue([approveWf, second])
     const wrapper = mountDashboard()
     await flushPromises()
-    const trigger = wrapper.get('[data-testid="home-pipeline-select-trigger"]')
+    const trigger = wrapper.get('[data-testid="home-workflow-select-trigger"]')
     expect(trigger.text()).toContain('自我迭代PRO')
-    expect(wrapper.get('[data-testid="home-pipeline-card-wf-ap"]').classes()).toContain(
+    expect(wrapper.get('[data-testid="home-workflow-card-wf-ap"]').classes()).toContain(
       'home-shell__card--selected',
     )
-    await wrapper.get('[data-testid="home-pipeline-card-wf-lite"]').trigger('click')
+    await wrapper.get('[data-testid="home-workflow-card-wf-lite"]').trigger('click')
     await flushPromises()
     expect(trigger.text()).toContain('快速澄清 Lite')
-    expect(wrapper.get('[data-testid="home-pipeline-card-wf-lite"]').classes()).toContain(
+    expect(wrapper.get('[data-testid="home-workflow-card-wf-lite"]').classes()).toContain(
       'home-shell__card--selected',
     )
     await trigger.trigger('click')
     await flushPromises()
-    await teleported('home-pipeline-select-option-wf-ap').trigger('click')
+    await teleported('home-workflow-select-option-wf-ap').trigger('click')
     await flushPromises()
     expect(trigger.text()).toContain('自我迭代PRO')
-    expect(wrapper.get('[data-testid="home-pipeline-card-wf-ap"]').classes()).toContain(
+    expect(wrapper.get('[data-testid="home-workflow-card-wf-ap"]').classes()).toContain(
       'home-shell__card--selected',
     )
     wrapper.unmount()
   })
 
-  it('filters pipelines by keyword in the combobox search', async () => {
+  it('filters workflows by keyword in the combobox search', async () => {
     const second: Workflow = {
       ...approveWf,
       id: 'wf-lite',
@@ -556,20 +561,20 @@ describe('DashboardView home composer', () => {
     mocks.listWorkflows.mockResolvedValue([approveWf, second])
     const wrapper = mountDashboard()
     await flushPromises()
-    await wrapper.get('[data-testid="home-pipeline-select-trigger"]').trigger('click')
+    await wrapper.get('[data-testid="home-workflow-select-trigger"]').trigger('click')
     await flushPromises()
-    const search = teleported('home-pipeline-select-search')
+    const search = teleported('home-workflow-select-search')
     await search.setValue('Lite')
     await flushPromises()
-    expect(teleportedExists('home-pipeline-select-option-wf-lite')).toBe(true)
-    expect(teleportedExists('home-pipeline-select-option-wf-ap')).toBe(false)
+    expect(teleportedExists('home-workflow-select-option-wf-lite')).toBe(true)
+    expect(teleportedExists('home-workflow-select-option-wf-ap')).toBe(false)
     await search.setValue('nomatch-xyz')
     await flushPromises()
-    expect(teleportedExists('home-pipeline-select-empty')).toBe(true)
-    expect(teleported('home-pipeline-select-empty').text()).toContain('无匹配流水线')
+    expect(teleportedExists('home-workflow-select-empty')).toBe(true)
+    expect(teleported('home-workflow-select-empty').text()).toContain('无匹配工作流')
     await search.setValue('')
     await flushPromises()
-    expect(teleportedExists('home-pipeline-select-option-wf-ap')).toBe(true)
+    expect(teleportedExists('home-workflow-select-option-wf-ap')).toBe(true)
     wrapper.unmount()
   })
 
@@ -588,20 +593,20 @@ describe('DashboardView home composer', () => {
     ])
     const wrapper = mountDashboard()
     await flushPromises()
-    expect(wrapper.get('[data-testid="home-pipeline-select-trigger"]').text()).toContain(
+    expect(wrapper.get('[data-testid="home-workflow-select-trigger"]').text()).toContain(
       '综合项目组 · 自我迭代PRO',
     )
-    await wrapper.get('[data-testid="home-pipeline-select-trigger"]').trigger('click')
+    await wrapper.get('[data-testid="home-workflow-select-trigger"]').trigger('click')
     await flushPromises()
-    const search = teleported('home-pipeline-select-search')
+    const search = teleported('home-workflow-select-search')
     await search.setValue('Skill')
     await flushPromises()
-    expect(teleportedExists('home-pipeline-select-option-wf-lite')).toBe(true)
-    expect(teleportedExists('home-pipeline-select-option-wf-ap')).toBe(false)
+    expect(teleportedExists('home-workflow-select-option-wf-lite')).toBe(true)
+    expect(teleportedExists('home-workflow-select-option-wf-ap')).toBe(false)
     wrapper.unmount()
   })
 
-  it('selects pipeline from combobox via Enter after keyword filter', async () => {
+  it('selects workflow from combobox via Enter after keyword filter', async () => {
     const second: Workflow = {
       ...approveWf,
       id: 'wf-lite',
@@ -611,36 +616,36 @@ describe('DashboardView home composer', () => {
     mocks.listWorkflows.mockResolvedValue([approveWf, second])
     const wrapper = mountDashboard()
     await flushPromises()
-    await wrapper.get('[data-testid="home-pipeline-select-trigger"]').trigger('click')
+    await wrapper.get('[data-testid="home-workflow-select-trigger"]').trigger('click')
     await flushPromises()
-    const search = teleported('home-pipeline-select-search')
+    const search = teleported('home-workflow-select-search')
     await search.setValue('Lite')
     await flushPromises()
     await search.trigger('keydown', { key: 'Enter' })
     await flushPromises()
-    expect(wrapper.get('[data-testid="home-pipeline-select-trigger"]').text()).toContain('快速澄清 Lite')
-    expect(wrapper.get('[data-testid="home-pipeline-card-wf-lite"]').classes()).toContain(
+    expect(wrapper.get('[data-testid="home-workflow-select-trigger"]').text()).toContain('快速澄清 Lite')
+    expect(wrapper.get('[data-testid="home-workflow-card-wf-lite"]').classes()).toContain(
       'home-shell__card--selected',
     )
     wrapper.unmount()
   })
 
   // plan g1.3 / g3.2 — empty list: trigger stays openable for create (not disabled)
-  it('keeps pipeline combobox openable when no pipelines are available', async () => {
+  it('keeps workflow combobox openable when no workflows are available', async () => {
     mocks.listWorkflows.mockResolvedValue([])
     const wrapper = mountDashboard()
     await flushPromises()
-    const triggerEl = wrapper.get('[data-testid="home-pipeline-select-trigger"]').element as HTMLButtonElement
+    const triggerEl = wrapper.get('[data-testid="home-workflow-select-trigger"]').element as HTMLButtonElement
     expect(triggerEl.disabled).toBe(false)
-    expect(wrapper.get('[data-testid="home-pipeline-select-trigger"]').text()).toContain('未选择流水线')
-    await wrapper.get('[data-testid="home-pipeline-select-trigger"]').trigger('click')
+    expect(wrapper.get('[data-testid="home-workflow-select-trigger"]').text()).toContain('未选择工作流')
+    await wrapper.get('[data-testid="home-workflow-select-trigger"]').trigger('click')
     await flushPromises()
-    expect(teleportedExists('home-pipeline-select-panel')).toBe(true)
-    expect(teleportedExists('home-pipeline-select-create')).toBe(true)
+    expect(teleportedExists('home-workflow-select-panel')).toBe(true)
+    expect(teleportedExists('home-workflow-select-create')).toBe(true)
     wrapper.unmount()
   })
 
-  it('shows pipeline empty state when none are approve-first', async () => {
+  it('shows workflow empty state when none are clarify-first', async () => {
     mocks.listWorkflows.mockResolvedValue([
       {
         ...approveWf,
@@ -648,50 +653,50 @@ describe('DashboardView home composer', () => {
         name: '实现',
         nodes: [
           { id: 'in', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
-          { id: 'r', type: 'react', label: '实现', position: { x: 0, y: 0 }, config: {} },
+          { id: 'r', type: 'agent', label: '实现', position: { x: 0, y: 0 }, config: { agent_profile: 'worker' } },
         ],
         edges: [{ id: 'e1', source: 'in', target: 'r' }],
       },
     ])
     const wrapper = mountDashboard()
     await flushPromises()
-    expect(wrapper.find('[data-testid="home-pipelines-empty"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="home-pipelines-empty"]').text()).not.toContain('选择项目')
+    expect(wrapper.find('[data-testid="home-workflows-empty"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="home-workflows-empty"]').text()).not.toContain('选择项目')
     expect(wrapper.find('[data-testid="home-go-projects"]').exists()).toBe(true)
     await wrapper.get('[data-testid="home-go-projects"]').trigger('click')
     expect(mocks.push).toHaveBeenCalledWith('/projects')
     wrapper.unmount()
   })
 
-  it('shows empty state prompting project Show on Home when pipelines are hidden (g3.2 / g3.3)', async () => {
+  it('shows empty state prompting project Show on Home when workflows are hidden (g3.2 / g3.3)', async () => {
     mocks.listWorkflows.mockResolvedValue([{ ...approveWf, showOnHome: false }])
     const wrapper = mountDashboard()
     await flushPromises()
-    const empty = wrapper.get('[data-testid="home-pipelines-empty"]')
+    const empty = wrapper.get('[data-testid="home-workflows-empty"]')
     expect(empty.text()).toContain('首页可见')
     expect(empty.text()).not.toContain('丢失')
-    // plan g1.3 — zero visible pipelines: select still openable for create
-    expect(wrapper.get('[data-testid="home-pipeline-select-trigger"]').element).toHaveProperty(
+    // plan g1.3 — zero visible workflows: select still openable for create
+    expect(wrapper.get('[data-testid="home-workflow-select-trigger"]').element).toHaveProperty(
       'disabled',
       false,
     )
     wrapper.unmount()
   })
 
-  // plan g1.1 — toolbar chip to the right of pipeline select, default 普通
-  it('renders a compact priority chip next to the pipeline select defaulting to 普通', async () => {
+  // plan g1.1 — toolbar chip to the right of workflow select, default 普通
+  it('renders a compact priority chip next to the workflow select defaulting to 普通', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
     const trigger = wrapper.get('[data-testid="home-priority-select-trigger"]')
     expect(trigger.text()).toContain('普通')
     expect(trigger.attributes('aria-label')).toBe('优先级')
     expect(wrapper.get('[data-testid="home-priority-select"]').element.compareDocumentPosition(
-      wrapper.get('[data-testid="home-pipeline-select"]').element,
+      wrapper.get('[data-testid="home-workflow-select"]').element,
     ) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
     wrapper.unmount()
   })
 
-  it('disables the priority chip when no home pipelines are visible (plan g1.1)', async () => {
+  it('disables the priority chip when no home workflows are visible (plan g1.1)', async () => {
     mocks.listWorkflows.mockResolvedValue([{ ...approveWf, showOnHome: false }])
     const wrapper = mountDashboard()
     await flushPromises()
@@ -908,24 +913,24 @@ describe('DashboardView home composer', () => {
     vi.unstubAllGlobals()
   })
 
-  // plan g1 — pipeline rail scroll: hidden scrollbar + edge arrows
-  it('renders pipeline scroll arrows and hides horizontal scrollbar on cards rail', async () => {
+  // plan g1 — workflow rail scroll: hidden scrollbar + edge arrows
+  it('renders workflow scroll arrows and hides horizontal scrollbar on cards rail', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
-    expect(wrapper.find('[data-testid="home-pipeline-rail-wrap"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="home-pipeline-scroll-prev"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="home-pipeline-scroll-next"]').exists()).toBe(true)
-    const rail = wrapper.get('[data-testid="home-pipeline-cards"]')
-    expect(rail.classes()).toContain('home-pipeline-rail')
+    expect(wrapper.find('[data-testid="home-workflow-rail-wrap"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="home-workflow-scroll-prev"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="home-workflow-scroll-next"]').exists()).toBe(true)
+    const rail = wrapper.get('[data-testid="home-workflow-cards"]')
+    expect(rail.classes()).toContain('home-workflow-rail')
     expect(rail.classes()).not.toContain('overflow-x-auto')
     wrapper.unmount()
   })
 
-  it('disables scroll arrows when pipeline list does not overflow', async () => {
+  it('disables scroll arrows when workflow list does not overflow', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
-    const prev = wrapper.get('[data-testid="home-pipeline-scroll-prev"]').element as HTMLButtonElement
-    const next = wrapper.get('[data-testid="home-pipeline-scroll-next"]').element as HTMLButtonElement
+    const prev = wrapper.get('[data-testid="home-workflow-scroll-prev"]').element as HTMLButtonElement
+    const next = wrapper.get('[data-testid="home-workflow-scroll-next"]').element as HTMLButtonElement
     expect(prev.disabled).toBe(true)
     expect(next.disabled).toBe(true)
     wrapper.unmount()
@@ -935,13 +940,13 @@ describe('DashboardView home composer', () => {
     const many = Array.from({ length: 8 }, (_, i) => ({
       ...approveWf,
       id: `wf-${i}`,
-      name: `流水线 ${i}`,
+      name: `工作流 ${i}`,
     }))
     mocks.listWorkflows.mockResolvedValue(many)
     const wrapper = mountDashboard()
     await flushPromises()
 
-    const rail = wrapper.get('[data-testid="home-pipeline-cards"]').element as HTMLDivElement
+    const rail = wrapper.get('[data-testid="home-workflow-cards"]').element as HTMLDivElement
     Object.defineProperty(rail, 'clientWidth', { configurable: true, value: 400 })
     Object.defineProperty(rail, 'scrollWidth', { configurable: true, value: 1600 })
     let scrollLeft = 0
@@ -955,44 +960,44 @@ describe('DashboardView home composer', () => {
 
     await rail.dispatchEvent(new Event('scroll'))
     await flushPromises()
-    expect(wrapper.get('[data-testid="home-pipeline-cards"]').classes()).toContain(
-      'home-pipeline-rail--overflow',
+    expect(wrapper.get('[data-testid="home-workflow-cards"]').classes()).toContain(
+      'home-workflow-rail--overflow',
     )
-    const prev = wrapper.get('[data-testid="home-pipeline-scroll-prev"]').element as HTMLButtonElement
-    const next = wrapper.get('[data-testid="home-pipeline-scroll-next"]').element as HTMLButtonElement
+    const prev = wrapper.get('[data-testid="home-workflow-scroll-prev"]').element as HTMLButtonElement
+    const next = wrapper.get('[data-testid="home-workflow-scroll-next"]').element as HTMLButtonElement
     expect(prev.disabled).toBe(true)
     expect(next.disabled).toBe(false)
-    expect(wrapper.find('.home-pipeline-rail-wrap--has-right').exists()).toBe(true)
-    expect(wrapper.find('.home-pipeline-rail-wrap--has-left').exists()).toBe(false)
+    expect(wrapper.find('.home-workflow-rail-wrap--has-right').exists()).toBe(true)
+    expect(wrapper.find('.home-workflow-rail-wrap--has-left').exists()).toBe(false)
 
     scrollLeft = 1200
     await rail.dispatchEvent(new Event('scroll'))
     await flushPromises()
     expect(prev.disabled).toBe(false)
     expect(next.disabled).toBe(true)
-    expect(wrapper.find('.home-pipeline-rail-wrap--has-left').exists()).toBe(true)
-    expect(wrapper.find('.home-pipeline-rail-wrap--has-right').exists()).toBe(false)
+    expect(wrapper.find('.home-workflow-rail-wrap--has-left').exists()).toBe(true)
+    expect(wrapper.find('.home-workflow-rail-wrap--has-right').exists()).toBe(false)
 
     scrollLeft = 0
     await rail.dispatchEvent(new Event('scroll'))
     await flushPromises()
     expect(prev.disabled).toBe(true)
-    expect(wrapper.find('.home-pipeline-rail-wrap--has-left').exists()).toBe(false)
+    expect(wrapper.find('.home-workflow-rail-wrap--has-left').exists()).toBe(false)
 
     wrapper.unmount()
   })
 
-  it('left-aligns pipeline rail when overflowing so first card is not clipped', async () => {
+  it('left-aligns workflow rail when overflowing so first card is not clipped', async () => {
     const many = Array.from({ length: 6 }, (_, i) => ({
       ...approveWf,
       id: `wf-${i}`,
-      name: `流水线 ${i}`,
+      name: `工作流 ${i}`,
     }))
     mocks.listWorkflows.mockResolvedValue(many)
     const wrapper = mountDashboard()
     await flushPromises()
 
-    const rail = wrapper.get('[data-testid="home-pipeline-cards"]')
+    const rail = wrapper.get('[data-testid="home-workflow-cards"]')
     const railEl = rail.element as HTMLDivElement
     Object.defineProperty(railEl, 'clientWidth', { configurable: true, value: 400 })
     Object.defineProperty(railEl, 'scrollWidth', { configurable: true, value: 1200 })
@@ -1001,16 +1006,16 @@ describe('DashboardView home composer', () => {
     await railEl.dispatchEvent(new Event('scroll'))
     await flushPromises()
 
-    expect(rail.classes()).toContain('home-pipeline-rail--overflow')
+    expect(rail.classes()).toContain('home-workflow-rail--overflow')
     expect(rail.classes()).not.toContain('justify-center')
     wrapper.unmount()
   })
 
-  it('keeps pipeline rail centered when cards do not overflow', async () => {
+  it('keeps workflow rail centered when cards do not overflow', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
 
-    const rail = wrapper.get('[data-testid="home-pipeline-cards"]')
+    const rail = wrapper.get('[data-testid="home-workflow-cards"]')
     const railEl = rail.element as HTMLDivElement
     Object.defineProperty(railEl, 'clientWidth', { configurable: true, value: 800 })
     Object.defineProperty(railEl, 'scrollWidth', { configurable: true, value: 200 })
@@ -1019,11 +1024,11 @@ describe('DashboardView home composer', () => {
     await railEl.dispatchEvent(new Event('scroll'))
     await flushPromises()
 
-    expect(rail.classes()).not.toContain('home-pipeline-rail--overflow')
+    expect(rail.classes()).not.toContain('home-workflow-rail--overflow')
     wrapper.unmount()
   })
 
-  it('arrow click does not change pipeline card selection', async () => {
+  it('arrow click does not change workflow card selection', async () => {
     const second: Workflow = {
       ...approveWf,
       id: 'wf-lite',
@@ -1034,7 +1039,7 @@ describe('DashboardView home composer', () => {
     const wrapper = mountDashboard()
     await flushPromises()
 
-    const rail = wrapper.get('[data-testid="home-pipeline-cards"]').element as HTMLDivElement
+    const rail = wrapper.get('[data-testid="home-workflow-cards"]').element as HTMLDivElement
     Object.defineProperty(rail, 'clientWidth', { configurable: true, value: 200 })
     Object.defineProperty(rail, 'scrollWidth', { configurable: true, value: 800 })
     Object.defineProperty(rail, 'scrollLeft', {
@@ -1045,16 +1050,16 @@ describe('DashboardView home composer', () => {
     await rail.dispatchEvent(new Event('scroll'))
     await flushPromises()
 
-    await wrapper.get('[data-testid="home-pipeline-scroll-next"]').trigger('click')
+    await wrapper.get('[data-testid="home-workflow-scroll-next"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="home-pipeline-card-wf-ap"]').classes()).toContain(
+    expect(wrapper.get('[data-testid="home-workflow-card-wf-ap"]').classes()).toContain(
       'home-shell__card--selected',
     )
     wrapper.unmount()
   })
 
   // plan g1.3 — zh/en hover copy distinguishes a short press from a hold-to-end
-  it('explains short-press and hold-to-end on pipeline arrows in zh and en', async () => {
+  it('explains short-press and hold-to-end on workflow arrows in zh and en', async () => {
     expect(pages.pages.dashboard.scrollLeft).toContain('按住')
     expect(pages.pages.dashboard.scrollLeft).toContain('最左')
     expect(pages.pages.dashboard.scrollRight).toContain('按住')
@@ -1066,8 +1071,8 @@ describe('DashboardView home composer', () => {
 
     const wrapper = mountDashboard()
     await flushPromises()
-    const prev = wrapper.get('[data-testid="home-pipeline-scroll-prev"]')
-    const next = wrapper.get('[data-testid="home-pipeline-scroll-next"]')
+    const prev = wrapper.get('[data-testid="home-workflow-scroll-prev"]')
+    const next = wrapper.get('[data-testid="home-workflow-scroll-next"]')
     expect(prev.attributes('title')).toBe(pages.pages.dashboard.scrollLeft)
     expect(prev.attributes('aria-label')).toBe(pages.pages.dashboard.scrollLeft)
     expect(next.attributes('title')).toBe(pages.pages.dashboard.scrollRight)
@@ -1084,17 +1089,17 @@ describe('DashboardView home composer', () => {
     mocks.listWorkflows.mockResolvedValue(manyHomeWorkflows())
     const wrapper = mountDashboard()
     await flushPromises()
-    const rail = wrapper.get('[data-testid="home-pipeline-cards"]').element as HTMLDivElement
+    const rail = wrapper.get('[data-testid="home-workflow-cards"]').element as HTMLDivElement
     const scroller = installOverflowRail(rail, 480)
     await rail.dispatchEvent(new Event('scroll'))
     await flushPromises()
 
-    const prev = wrapper.get('[data-testid="home-pipeline-scroll-prev"]')
+    const prev = wrapper.get('[data-testid="home-workflow-scroll-prev"]')
     expect((prev.element as HTMLButtonElement).disabled).toBe(false)
     const capture = vi.spyOn(prev.element as HTMLElement, 'setPointerCapture')
     await prev.trigger('pointerdown', { button: 0, pointerId: 3 })
     expect(capture).toHaveBeenCalledWith(3)
-    await vi.advanceTimersByTimeAsync(PIPELINE_NAV_HOLD_MS)
+    await vi.advanceTimersByTimeAsync(WORKFLOW_NAV_HOLD_MS)
     expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 0, behavior: 'smooth' })
     expect(scroller.left).toBe(0)
     expect(scroller.scrollBy).not.toHaveBeenCalled()
@@ -1106,8 +1111,8 @@ describe('DashboardView home composer', () => {
     await rail.dispatchEvent(new Event('scroll'))
     await flushPromises()
     expect((prev.element as HTMLButtonElement).disabled).toBe(true)
-    expect(wrapper.find('.home-pipeline-rail-wrap--has-left').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="home-pipeline-card-wf-ap"]').classes()).toContain(
+    expect(wrapper.find('.home-workflow-rail-wrap--has-left').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-workflow-card-wf-ap"]').classes()).toContain(
       'home-shell__card--selected',
     )
     wrapper.unmount()
@@ -1117,15 +1122,15 @@ describe('DashboardView home composer', () => {
     mocks.listWorkflows.mockResolvedValue(manyHomeWorkflows())
     const wrapper = mountDashboard()
     await flushPromises()
-    const rail = wrapper.get('[data-testid="home-pipeline-cards"]').element as HTMLDivElement
+    const rail = wrapper.get('[data-testid="home-workflow-cards"]').element as HTMLDivElement
     const scroller = installOverflowRail(rail, 0)
     await rail.dispatchEvent(new Event('scroll'))
     await flushPromises()
 
-    const next = wrapper.get('[data-testid="home-pipeline-scroll-next"]')
+    const next = wrapper.get('[data-testid="home-workflow-scroll-next"]')
     expect((next.element as HTMLButtonElement).disabled).toBe(false)
     await next.trigger('pointerdown', { button: 0, pointerId: 4 })
-    await vi.advanceTimersByTimeAsync(PIPELINE_NAV_HOLD_MS)
+    await vi.advanceTimersByTimeAsync(WORKFLOW_NAV_HOLD_MS)
     expect(scroller.scrollTo).toHaveBeenCalledWith({ left: scroller.max, behavior: 'smooth' })
     expect(scroller.left).toBe(scroller.max)
     await next.trigger('pointerup', { button: 0, pointerId: 4 })
@@ -1135,8 +1140,8 @@ describe('DashboardView home composer', () => {
     await rail.dispatchEvent(new Event('scroll'))
     await flushPromises()
     expect((next.element as HTMLButtonElement).disabled).toBe(true)
-    expect(wrapper.find('.home-pipeline-rail-wrap--has-right').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="home-pipeline-card-wf-ap"]').classes()).toContain(
+    expect(wrapper.find('.home-workflow-rail-wrap--has-right').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-workflow-card-wf-ap"]').classes()).toContain(
       'home-shell__card--selected',
     )
     wrapper.unmount()
@@ -1146,25 +1151,25 @@ describe('DashboardView home composer', () => {
     mocks.listWorkflows.mockResolvedValue(manyHomeWorkflows())
     const wrapper = mountDashboard()
     await flushPromises()
-    const rail = wrapper.get('[data-testid="home-pipeline-cards"]').element as HTMLDivElement
+    const rail = wrapper.get('[data-testid="home-workflow-cards"]').element as HTMLDivElement
     const scroller = installOverflowRail(rail, 100)
     await rail.dispatchEvent(new Event('scroll'))
     await flushPromises()
 
-    const next = wrapper.get('[data-testid="home-pipeline-scroll-next"]')
+    const next = wrapper.get('[data-testid="home-workflow-scroll-next"]')
     const before = scroller.left
     await next.trigger('pointerdown', { button: 0, pointerId: 5 })
-    await vi.advanceTimersByTimeAsync(PIPELINE_NAV_HOLD_MS - 1)
+    await vi.advanceTimersByTimeAsync(WORKFLOW_NAV_HOLD_MS - 1)
     await next.trigger('pointerup', { button: 0, pointerId: 5 })
     await next.trigger('click')
     expect(scroller.scrollTo).not.toHaveBeenCalled()
     expect(scroller.scrollBy).toHaveBeenCalledTimes(1)
     expect(scroller.scrollBy).toHaveBeenCalledWith({ left: scroller.cardStep(), behavior: 'smooth' })
     expect(scroller.left - before).toBe(scroller.cardStep())
-    await vi.advanceTimersByTimeAsync(PIPELINE_NAV_HOLD_MS)
+    await vi.advanceTimersByTimeAsync(WORKFLOW_NAV_HOLD_MS)
     expect(scroller.scrollTo).not.toHaveBeenCalled()
     expect(scroller.left - before).toBe(scroller.cardStep())
-    expect(wrapper.get('[data-testid="home-pipeline-card-wf-ap"]').classes()).toContain(
+    expect(wrapper.get('[data-testid="home-workflow-card-wf-ap"]').classes()).toContain(
       'home-shell__card--selected',
     )
     wrapper.unmount()
@@ -1175,14 +1180,14 @@ describe('DashboardView home composer', () => {
     mocks.listWorkflows.mockResolvedValue(manyHomeWorkflows())
     const wrapper = mountDashboard()
     await flushPromises()
-    const rail = wrapper.get('[data-testid="home-pipeline-cards"]').element as HTMLDivElement
+    const rail = wrapper.get('[data-testid="home-workflow-cards"]').element as HTMLDivElement
     const scroller = installOverflowRail(rail, 360)
     await rail.dispatchEvent(new Event('scroll'))
     await flushPromises()
 
-    const prev = wrapper.get('[data-testid="home-pipeline-scroll-prev"]')
+    const prev = wrapper.get('[data-testid="home-workflow-scroll-prev"]')
     await prev.trigger('pointerdown', { button: 0, pointerId: 6 })
-    await vi.advanceTimersByTimeAsync(PIPELINE_NAV_HOLD_MS)
+    await vi.advanceTimersByTimeAsync(WORKFLOW_NAV_HOLD_MS)
     expect(scroller.scrollTo).not.toHaveBeenCalled()
     expect(scroller.left).toBe(0)
     expect(scroller.scrollBy).not.toHaveBeenCalled()
@@ -1193,7 +1198,7 @@ describe('DashboardView home composer', () => {
     mocks.listWorkflows.mockResolvedValue(manyHomeWorkflows())
     const wrapper = mountDashboard()
     await flushPromises()
-    const rail = wrapper.get('[data-testid="home-pipeline-cards"]').element as HTMLDivElement
+    const rail = wrapper.get('[data-testid="home-workflow-cards"]').element as HTMLDivElement
     const scroller = installOverflowRail(rail, 480)
     scroller.scrollTo.mockImplementation(() => {
       /* leave scrollLeft mid-flight until the opposite press */
@@ -1201,10 +1206,10 @@ describe('DashboardView home composer', () => {
     await rail.dispatchEvent(new Event('scroll'))
     await flushPromises()
 
-    const next = wrapper.get('[data-testid="home-pipeline-scroll-next"]')
-    const prev = wrapper.get('[data-testid="home-pipeline-scroll-prev"]')
+    const next = wrapper.get('[data-testid="home-workflow-scroll-next"]')
+    const prev = wrapper.get('[data-testid="home-workflow-scroll-prev"]')
     await next.trigger('pointerdown', { button: 0, pointerId: 8 })
-    await vi.advanceTimersByTimeAsync(PIPELINE_NAV_HOLD_MS)
+    await vi.advanceTimersByTimeAsync(WORKFLOW_NAV_HOLD_MS)
     expect(scroller.scrollTo).toHaveBeenCalledWith({ left: scroller.max, behavior: 'smooth' })
     expect(scroller.left).toBe(480)
     await next.trigger('pointerup', { button: 0, pointerId: 8 })
@@ -1212,13 +1217,13 @@ describe('DashboardView home composer', () => {
     expect(scroller.left).toBe(480)
 
     await prev.trigger('pointerdown', { button: 0, pointerId: 9 })
-    expect(rail.classList.contains('home-pipeline-rail--instant')).toBe(true)
+    expect(rail.classList.contains('home-workflow-rail--instant')).toBe(true)
     expect(scroller.left).toBe(480)
     scroller.scrollTo.mockImplementation((opts?: ScrollToOptions | number) => {
       if (typeof opts === 'number') scroller.left = opts
       else if (opts && typeof opts.left === 'number') scroller.left = opts.left
     })
-    await vi.advanceTimersByTimeAsync(PIPELINE_NAV_HOLD_MS)
+    await vi.advanceTimersByTimeAsync(WORKFLOW_NAV_HOLD_MS)
     expect(scroller.left).toBe(0)
     expect(scroller.scrollBy).not.toHaveBeenCalled()
     wrapper.unmount()
@@ -1227,18 +1232,18 @@ describe('DashboardView home composer', () => {
   it('does not scroll when a disabled arrow is held and keeps arrows disabled without overflow', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
-    const rail = wrapper.get('[data-testid="home-pipeline-cards"]').element as HTMLDivElement
+    const rail = wrapper.get('[data-testid="home-workflow-cards"]').element as HTMLDivElement
     const scroller = installOverflowRail(rail, 0)
     Object.defineProperty(rail, 'scrollWidth', { configurable: true, value: 200 })
     Object.defineProperty(rail, 'clientWidth', { configurable: true, value: 800 })
     await rail.dispatchEvent(new Event('scroll'))
     await flushPromises()
-    const prev = wrapper.get('[data-testid="home-pipeline-scroll-prev"]')
-    const next = wrapper.get('[data-testid="home-pipeline-scroll-next"]')
+    const prev = wrapper.get('[data-testid="home-workflow-scroll-prev"]')
+    const next = wrapper.get('[data-testid="home-workflow-scroll-next"]')
     expect((prev.element as HTMLButtonElement).disabled).toBe(true)
     expect((next.element as HTMLButtonElement).disabled).toBe(true)
     await next.trigger('pointerdown', { button: 0, pointerId: 2 })
-    await vi.advanceTimersByTimeAsync(PIPELINE_NAV_HOLD_MS)
+    await vi.advanceTimersByTimeAsync(WORKFLOW_NAV_HOLD_MS)
     await next.trigger('click')
     expect(scroller.scrollTo).not.toHaveBeenCalled()
     expect(scroller.scrollBy).not.toHaveBeenCalled()
@@ -1246,17 +1251,17 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
-  // plan g1.1 — plus card at the end of the rail; not a selectable pipeline
+  // plan g1.1 — plus card at the end of the rail; not a selectable workflow
   it('appends a new-workflow card that opens the baseline modal and ignores context menu', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
-    const rail = wrapper.get('[data-testid="home-pipeline-cards"]')
+    const rail = wrapper.get('[data-testid="home-workflow-cards"]')
     const add = wrapper.get('[data-testid="home-new-workflow"]')
     expect(rail.element.lastElementChild).toBe(add.element)
     expect(add.text()).toContain('新建工作流')
     await add.trigger('contextmenu')
     await flushPromises()
-    expect(wrapper.find('[data-testid="home-pipeline-menu"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-workflow-menu"]').exists()).toBe(false)
     await add.trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="home-create-workflow-name"]').exists()).toBe(true)
@@ -1304,12 +1309,12 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
-  // plan g1.2 — empty pipeline list still offers the same plus card
-  it('keeps the new-workflow card when the home pipeline list is empty', async () => {
+  // plan g1.2 — empty workflow list still offers the same plus card
+  it('keeps the new-workflow card when the home workflow list is empty', async () => {
     mocks.listWorkflows.mockResolvedValue([])
     const wrapper = mountDashboard()
     await flushPromises()
-    expect(wrapper.find('[data-testid="home-pipelines-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="home-workflows-empty"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="home-new-workflow"]').exists()).toBe(true)
     await wrapper.get('[data-testid="home-new-workflow"]').trigger('click')
     await flushPromises()
@@ -1317,7 +1322,7 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
-  // plan g2.1 / g2.2 — successful home create reloads cards and selects the new pipeline
+  // plan g2.1 / g2.2 — successful home create reloads cards and selects the new workflow
   it('reloads home cards after a successful baseline create', async () => {
     const created: Workflow = { ...approveWf, id: 'wf-new', name: '首页新建' }
     mocks.createWorkflowFromBaseline.mockResolvedValue(created)
@@ -1336,14 +1341,14 @@ describe('DashboardView home composer', () => {
     await flushPromises()
     expect(mocks.createWorkflowFromBaseline).toHaveBeenCalled()
     expect(mocks.listWorkflows.mock.calls.length).toBeGreaterThan(callsAfterMount)
-    expect(wrapper.find('[data-testid="home-pipeline-card-wf-new"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="home-pipeline-card-wf-new"]').classes()).toContain(
+    expect(wrapper.find('[data-testid="home-workflow-card-wf-new"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="home-workflow-card-wf-new"]').classes()).toContain(
       'home-shell__card--selected',
     )
     wrapper.unmount()
   })
 
-  // plan g2.2 — failed create must not refresh the home pipeline list
+  // plan g2.2 — failed create must not refresh the home workflow list
   it('does not reload home cards when baseline create fails', async () => {
     mocks.createWorkflowFromBaseline.mockRejectedValue(new Error('create failed'))
     const wrapper = mountDashboard()
@@ -1359,20 +1364,20 @@ describe('DashboardView home composer', () => {
     await flushPromises()
     expect(wrapper.get('[data-testid="home-create-error"]').text()).toContain('create failed')
     expect(mocks.listWorkflows.mock.calls.length).toBe(callsAfterMount)
-    expect(wrapper.find('[data-testid="home-pipeline-card-wf-ap"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="home-workflow-card-wf-ap"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
   // plan g2.1 / g3.2 — dropdown create opens the same HomeCreateBaselineModal
-  it('opens the baseline modal from the pipeline select create footer', async () => {
+  it('opens the baseline modal from the workflow select create footer', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
-    await wrapper.get('[data-testid="home-pipeline-select-trigger"]').trigger('click')
+    await wrapper.get('[data-testid="home-workflow-select-trigger"]').trigger('click')
     await flushPromises()
-    expect(teleportedExists('home-pipeline-select-create')).toBe(true)
-    await teleported('home-pipeline-select-create').trigger('click')
+    expect(teleportedExists('home-workflow-select-create')).toBe(true)
+    await teleported('home-workflow-select-create').trigger('click')
     await flushPromises()
-    expect(teleportedExists('home-pipeline-select-panel')).toBe(false)
+    expect(teleportedExists('home-workflow-select-panel')).toBe(false)
     expect(wrapper.find('[data-testid="home-create-workflow-name"]').exists()).toBe(true)
     // plan g2.2 — rail card and composer + unchanged
     expect(wrapper.find('[data-testid="home-new-workflow"]').exists()).toBe(true)
@@ -1381,13 +1386,13 @@ describe('DashboardView home composer', () => {
   })
 
   // plan g3.2 — empty list can create from dropdown; composer + still attaches files only
-  it('allows create from dropdown when home pipelines are empty without changing plus', async () => {
+  it('allows create from dropdown when home workflows are empty without changing plus', async () => {
     mocks.listWorkflows.mockResolvedValue([])
     const wrapper = mountDashboard()
     await flushPromises()
-    await wrapper.get('[data-testid="home-pipeline-select-trigger"]').trigger('click')
+    await wrapper.get('[data-testid="home-workflow-select-trigger"]').trigger('click')
     await flushPromises()
-    await teleported('home-pipeline-select-create').trigger('click')
+    await teleported('home-workflow-select-create').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="home-create-workflow-name"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="home-composer-plus"]').attributes('title')).toBeTruthy()
@@ -1395,14 +1400,14 @@ describe('DashboardView home composer', () => {
   })
 
   // plan g2.1 / g3.2 — select create success path shares reloadAfterCreate
-  it('selects the new pipeline after create started from the dropdown footer', async () => {
+  it('selects the new workflow after create started from the dropdown footer', async () => {
     const created: Workflow = { ...approveWf, id: 'wf-from-select', name: '下拉新建' }
     mocks.createWorkflowFromBaseline.mockResolvedValue(created)
     const wrapper = mountDashboard()
     await flushPromises()
-    await wrapper.get('[data-testid="home-pipeline-select-trigger"]').trigger('click')
+    await wrapper.get('[data-testid="home-workflow-select-trigger"]').trigger('click')
     await flushPromises()
-    await teleported('home-pipeline-select-create').trigger('click')
+    await teleported('home-workflow-select-create').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="home-create-workflow-name"]').setValue('下拉新建')
     const url = wrapper.find('input[placeholder*="https"]')
@@ -1411,15 +1416,15 @@ describe('DashboardView home composer', () => {
     mocks.listWorkflows.mockResolvedValue([approveWf, created])
     await wrapper.get('[data-testid="home-create-submit"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="home-pipeline-card-wf-from-select"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="home-pipeline-card-wf-from-select"]').classes()).toContain(
+    expect(wrapper.find('[data-testid="home-workflow-card-wf-from-select"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="home-workflow-card-wf-from-select"]').classes()).toContain(
       'home-shell__card--selected',
     )
     wrapper.unmount()
   })
 
   // plan g1.1 — wait blank: no loading copy, cards, or add card
-  it('plan g1.1 — while pipelines load, composer stays and rail stays blank', async () => {
+  it('plan g1.1 — while workflows load, composer stays and rail stays blank', async () => {
     let resolveList!: (value: Workflow[]) => void
     mocks.listWorkflows.mockImplementation(
       () => new Promise<Workflow[]>((resolve) => { resolveList = resolve }),
@@ -1427,52 +1432,52 @@ describe('DashboardView home composer', () => {
     const wrapper = mountDashboard()
     await flushPromises()
     expect(wrapper.find('[data-testid="home-composer"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="home-pipelines-loading"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="home-pipeline-enter"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-workflows-loading"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-workflow-enter"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-new-workflow"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="home-pipeline-cards"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-workflow-cards"]').exists()).toBe(false)
     expect(wrapper.text()).not.toMatch(/加载中/)
 
     resolveList([approveWf])
     await flushPromises()
     // plan g1.2 — same settle: enter group ready with cards + add
-    const enter = wrapper.get('[data-testid="home-pipeline-enter"]')
-    expect(enter.classes()).toContain('home-pipeline-enter--ready')
-    expect(enter.find('[data-testid="home-pipeline-card-wf-ap"]').exists()).toBe(true)
+    const enter = wrapper.get('[data-testid="home-workflow-enter"]')
+    expect(enter.classes()).toContain('home-workflow-enter--ready')
+    expect(enter.find('[data-testid="home-workflow-card-wf-ap"]').exists()).toBe(true)
     expect(enter.find('[data-testid="home-new-workflow"]').exists()).toBe(true)
-    expect(dashboardSource).not.toMatch(/setTimeout\([^)]*pipelineRail|minVisible|SHOW_AFTER/)
+    expect(dashboardSource).not.toMatch(/setTimeout\([^)]*workflowRail|minVisible|SHOW_AFTER/)
     wrapper.unmount()
   })
 
   // plan g1.3 — many cards share the same group enter (no per-card delay in source)
-  it('plan g1.3 — many pipeline cards share one enter group without nth-child delays', async () => {
+  it('plan g1.3 — many workflow cards share one enter group without nth-child delays', async () => {
     const many = Array.from({ length: 8 }, (_, i) => ({
       ...approveWf,
       id: `wf-many-${i}`,
-      name: `流水线 ${i + 1}`,
+      name: `工作流 ${i + 1}`,
     }))
     mocks.listWorkflows.mockResolvedValue(many)
     const wrapper = mountDashboard()
     await flushPromises()
-    const enter = wrapper.get('[data-testid="home-pipeline-enter"]')
-    expect(enter.findAll('[data-testid^="home-pipeline-card-wf-many-"]').filter(
-      (n) => /^home-pipeline-card-wf-many-\d+$/.test(n.attributes('data-testid') || ''),
+    const enter = wrapper.get('[data-testid="home-workflow-enter"]')
+    expect(enter.findAll('[data-testid^="home-workflow-card-wf-many-"]').filter(
+      (n) => /^home-workflow-card-wf-many-\d+$/.test(n.attributes('data-testid') || ''),
     ).length).toBe(8)
     expect(enter.find('[data-testid="home-new-workflow"]').exists()).toBe(true)
     expect(dashboardSource).not.toMatch(/nth-child\([^)]+\)[^{]*\{[^}]*animation-delay/)
-    expect(dashboardSource).toMatch(/home-pipeline-rail-enter 420ms/)
+    expect(dashboardSource).toMatch(/home-workflow-rail-enter 420ms/)
     wrapper.unmount()
   })
 
   // plan g2.1 — empty list: empty copy + add card in the same enter group
-  it('plan g2.1 — empty pipelines reveal empty state and add card together', async () => {
+  it('plan g2.1 — empty workflows reveal empty state and add card together', async () => {
     mocks.listWorkflows.mockResolvedValue([])
     const wrapper = mountDashboard()
     await flushPromises()
-    const enter = wrapper.get('[data-testid="home-pipeline-enter"]')
-    expect(enter.find('[data-testid="home-pipelines-empty"]').exists()).toBe(true)
+    const enter = wrapper.get('[data-testid="home-workflow-enter"]')
+    expect(enter.find('[data-testid="home-workflows-empty"]').exists()).toBe(true)
     expect(enter.find('[data-testid="home-new-workflow"]').exists()).toBe(true)
-    expect(enter.classes()).toContain('home-pipeline-enter--ready')
+    expect(enter.classes()).toContain('home-workflow-enter--ready')
     wrapper.unmount()
   })
 
@@ -1482,24 +1487,24 @@ describe('DashboardView home composer', () => {
     const wrapper = mountDashboard()
     await flushPromises()
     expect(wrapper.find('[data-testid="dashboard-load-error"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="home-pipeline-enter"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-workflow-enter"]').exists()).toBe(false)
 
     mocks.listWorkflows.mockResolvedValue([approveWf])
     await wrapper.get('[data-testid="dashboard-retry"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="dashboard-load-error"]').exists()).toBe(false)
-    const enter = wrapper.get('[data-testid="home-pipeline-enter"]')
-    expect(enter.classes()).toContain('home-pipeline-enter--ready')
-    expect(enter.find('[data-testid="home-pipeline-card-wf-ap"]').exists()).toBe(true)
+    const enter = wrapper.get('[data-testid="home-workflow-enter"]')
+    expect(enter.classes()).toContain('home-workflow-enter--ready')
+    expect(enter.find('[data-testid="home-workflow-card-wf-ap"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  // plan g2.2 — reloadAfterCreate keeps revealed rail (no reset of pipelineRailRevealed)
+  // plan g2.2 — reloadAfterCreate keeps revealed rail (no reset of workflowRailRevealed)
   it('plan g2.2 — reloadAfterCreate keeps enter group mounted without resetting reveal', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
-    const enterBefore = wrapper.get('[data-testid="home-pipeline-enter"]').element
-    expect(dashboardSource).not.toMatch(/pipelineRailRevealed\.value = false/)
+    const enterBefore = wrapper.get('[data-testid="home-workflow-enter"]').element
+    expect(dashboardSource).not.toMatch(/workflowRailRevealed\.value = false/)
 
     const created = {
       ...approveWf,
@@ -1516,14 +1521,14 @@ describe('DashboardView home composer', () => {
     await flushPromises()
     await wrapper.get('[data-testid="home-create-submit"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="home-pipeline-enter"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="home-pipeline-enter"]').element).toBe(enterBefore)
-    expect(wrapper.find('[data-testid="home-pipeline-card-wf-reload-keep"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="home-workflow-enter"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="home-workflow-enter"]').element).toBe(enterBefore)
+    expect(wrapper.find('[data-testid="home-workflow-card-wf-reload-keep"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
   // plan g2.2 — hide does not remount enter group
-  it('plan g2.2 — hidePipelineFromHome updates cards without remounting enter group', async () => {
+  it('plan g2.2 — hideWorkflowFromHome updates cards without remounting enter group', async () => {
     const second = {
       ...approveWf,
       id: 'wf-keep',
@@ -1537,19 +1542,19 @@ describe('DashboardView home composer', () => {
     ])
     const wrapper = mountDashboard()
     await flushPromises()
-    const enterBefore = wrapper.get('[data-testid="home-pipeline-enter"]').element
-    await wrapper.get('[data-testid="home-pipeline-card-wf-ap"]').trigger('contextmenu')
-    await teleported('home-pipeline-menu-hide').trigger('click')
+    const enterBefore = wrapper.get('[data-testid="home-workflow-enter"]').element
+    await wrapper.get('[data-testid="home-workflow-card-wf-ap"]').trigger('contextmenu')
+    await teleported('home-workflow-menu-hide').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="home-pipeline-card-wf-ap"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="home-pipeline-enter"]').element).toBe(enterBefore)
+    expect(wrapper.find('[data-testid="home-workflow-card-wf-ap"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-workflow-enter"]').element).toBe(enterBefore)
     wrapper.unmount()
   })
 
   // plan g2.3 — reduced-motion rules cover the enter classes (source)
-  it('plan g2.3 — prefers-reduced-motion disables pipeline enter animation', () => {
+  it('plan g2.3 — prefers-reduced-motion disables workflow enter animation', () => {
     expect(dashboardSource).toMatch(
-      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.home-pipeline-enter--ready[\s\S]*animation:\s*none/,
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.home-workflow-enter--ready[\s\S]*animation:\s*none/,
     )
   })
 })

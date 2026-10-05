@@ -11,7 +11,7 @@ func approveGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "in", Type: "input", Label: "Start"},
-			{ID: "ap", Type: "approve", Label: "开发前澄清"},
+			agentNode("ap", "开发前澄清", testClarifyCaps),
 			{ID: "out", Type: "output", Label: "End"},
 		},
 		Edges: []models.Edge{
@@ -23,7 +23,7 @@ func approveGraph() models.Graph {
 
 // A booting approve node has no conversation yet; it must still be listed so an
 // approval appears the moment the run starts.
-func TestStartingApproveListedAsStarting(t *testing.T) {
+func TestStartingClarifyListedAsStarting(t *testing.T) {
 	db := newTestDB(t)
 	s := NewRunService(db)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -34,7 +34,7 @@ func TestStartingApproveListedAsStarting(t *testing.T) {
 		Title: "把登录做清楚", Status: "running", StartedAt: now.Add(-time.Minute), Graph: approveGraph(),
 	})
 	db.Create(&models.StateRun{
-		RunID: "run-start", NodeID: "ap", NodeType: "approve", Iteration: 1,
+		RunID: "run-start", NodeID: "ap", NodeType: "agent", Iteration: 1,
 		Status: "running", StartedAt: &started,
 	})
 
@@ -61,8 +61,8 @@ func TestStartingApproveListedAsStarting(t *testing.T) {
 	if it.RunTitle != "把登录做清楚" {
 		t.Fatalf("runTitle = %q", it.RunTitle)
 	}
-	if !s.IsStartingApprove("run-start", "ap", 1) {
-		t.Fatal("IsStartingApprove should be true while booting")
+	if !s.IsStartingClarify("run-start", "ap", 1) {
+		t.Fatal("IsStartingClarify should be true while booting")
 	}
 	if kind, ok := s.InboxContextKind("run-start", "ap", 1); !ok || kind != InboxKindClarifyStarting {
 		t.Fatalf("InboxContextKind = %q,%v, want %q,true", kind, ok, InboxKindClarifyStarting)
@@ -71,7 +71,7 @@ func TestStartingApproveListedAsStarting(t *testing.T) {
 
 // Once the sandbox parks, the same node must appear exactly once and without
 // the starting flag (the parked clarify path owns it).
-func TestStartingApproveBecomesParkedWithoutDuplicate(t *testing.T) {
+func TestStartingClarifyBecomesParkedWithoutDuplicate(t *testing.T) {
 	db := newTestDB(t)
 	s := NewRunService(db)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -81,7 +81,7 @@ func TestStartingApproveBecomesParkedWithoutDuplicate(t *testing.T) {
 		Status: "waiting_human", StartedAt: now, Graph: approveGraph(),
 	})
 	db.Create(&models.StateRun{
-		RunID: "run-parked", NodeID: "ap", NodeType: "approve", Iteration: 1, Status: "waiting_human",
+		RunID: "run-parked", NodeID: "ap", NodeType: "agent", Iteration: 1, Status: "waiting_human",
 	})
 	db.Create(&models.ReactConversation{
 		RunID: "run-parked", NodeID: "ap", Iteration: 1, Done: false,
@@ -96,48 +96,49 @@ func TestStartingApproveBecomesParkedWithoutDuplicate(t *testing.T) {
 	if it.State != "" {
 		t.Fatalf("parked item state = %q, want empty", it.State)
 	}
-	if s.IsStartingApprove("run-parked", "ap", 1) {
+	if s.IsStartingClarify("run-parked", "ap", 1) {
 		t.Fatal("a parked approve is not starting")
 	}
 }
 
 // Failed / terminal runs and non-approve running nodes stay out of the inbox.
-func TestStartingApproveExcludesFailedAndNonApprove(t *testing.T) {
+func TestStartingClarifyExcludesFailedAndAutoAgents(t *testing.T) {
 	db := newTestDB(t)
 	s := NewRunService(db)
 	now := time.Now().UTC().Truncate(time.Second)
 
 	db.Create(&models.Run{ID: "run-failed", Status: "failed", StartedAt: now, Graph: approveGraph()})
 	db.Create(&models.StateRun{
-		RunID: "run-failed", NodeID: "ap", NodeType: "approve", Iteration: 1, Status: "running",
+		RunID: "run-failed", NodeID: "ap", NodeType: "agent", Iteration: 1, Status: "running",
 	})
 
 	db.Create(&models.Run{ID: "run-boot-failed", Status: "running", StartedAt: now, Graph: approveGraph()})
 	db.Create(&models.StateRun{
-		RunID: "run-boot-failed", NodeID: "ap", NodeType: "approve", Iteration: 1, Status: "failed",
+		RunID: "run-boot-failed", NodeID: "ap", NodeType: "agent", Iteration: 1, Status: "failed",
 		Error: "sandbox setup failed",
 	})
 
-	db.Create(&models.Run{ID: "run-agent", Status: "running", StartedAt: now, Graph: reactGraph("")})
+	autoGraph := models.Graph{Nodes: []models.Node{agentNode("impl", "实现", testAutoCaps)}}
+	db.Create(&models.Run{ID: "run-agent", Status: "running", StartedAt: now, Graph: autoGraph})
 	db.Create(&models.StateRun{
-		RunID: "run-agent", NodeID: "react", NodeType: "react", Iteration: 1, Status: "running",
+		RunID: "run-agent", NodeID: "impl", NodeType: "agent", Iteration: 1, Status: "running",
 	})
 
 	if items := s.AllPendingInboxItems(); len(items) != 0 {
 		t.Fatalf("expected no inbox items, got %d: %+v", len(items), items)
 	}
-	if s.IsStartingApprove("run-failed", "ap", 1) {
+	if s.IsStartingClarify("run-failed", "ap", 1) {
 		t.Error("terminal run must not report starting")
 	}
-	if s.IsStartingApprove("run-boot-failed", "ap", 1) {
+	if s.IsStartingClarify("run-boot-failed", "ap", 1) {
 		t.Error("failed node must not report starting")
 	}
-	if s.IsStartingApprove("run-agent", "react", 1) {
-		t.Error("react node must not report starting")
+	if s.IsStartingClarify("run-agent", "impl", 1) {
+		t.Error("auto Agent must not report starting")
 	}
 }
 
-func TestStartingApproveRespectsWorkflowFilter(t *testing.T) {
+func TestStartingClarifyRespectsWorkflowFilter(t *testing.T) {
 	db := newTestDB(t)
 	s := NewRunService(db)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -145,9 +146,9 @@ func TestStartingApproveRespectsWorkflowFilter(t *testing.T) {
 	db.Create(&models.WorkflowDef{ID: "wf-a", Name: "A", ProjectID: "proj-1"})
 	db.Create(&models.WorkflowDef{ID: "wf-b", Name: "B", ProjectID: "proj-2"})
 	db.Create(&models.Run{ID: "run-a", WorkflowID: "wf-a", Status: "running", StartedAt: now, Graph: approveGraph()})
-	db.Create(&models.StateRun{RunID: "run-a", NodeID: "ap", NodeType: "approve", Iteration: 1, Status: "running"})
+	db.Create(&models.StateRun{RunID: "run-a", NodeID: "ap", NodeType: "agent", Iteration: 1, Status: "running"})
 	db.Create(&models.Run{ID: "run-b", WorkflowID: "wf-b", Status: "running", StartedAt: now, Graph: approveGraph()})
-	db.Create(&models.StateRun{RunID: "run-b", NodeID: "ap", NodeType: "approve", Iteration: 1, Status: "running"})
+	db.Create(&models.StateRun{RunID: "run-b", NodeID: "ap", NodeType: "agent", Iteration: 1, Status: "running"})
 
 	items, total := s.PendingInboxItems("wf-a", "", nil, 0, 0)
 	if total != 1 || len(items) != 1 {

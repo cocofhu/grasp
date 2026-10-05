@@ -30,8 +30,8 @@ func TestProviderBudgetHelpers(t *testing.T) {
 		t.Errorf("chatTimeout = %v", p.chatTimeout())
 	}
 	// Per-node override.
-	req := NodeReq{Config: map[string]any{"chat_timeout": 7}}
-	if p.nodeChatTimeout(req) != 7*time.Second {
+	req := NodeReq{Config: map[string]any{"timeout": 7}}
+	if p.nodeChatTimeout(req) != 7*time.Minute {
 		t.Errorf("nodeChatTimeout override = %v", p.nodeChatTimeout(req))
 	}
 	if p.nodeChatTimeout(NodeReq{Config: map[string]any{}}) != 42*time.Second {
@@ -66,30 +66,6 @@ func TestProviderBudgetHelpers(t *testing.T) {
 	// gitToken with no ProfilesRoot -> empty.
 	if pd.gitToken(NodeReq{Config: map[string]any{"agent_profile": "x"}}) != "" {
 		t.Error("gitToken with no profiles root should be empty")
-	}
-}
-
-func TestReactCapReached(t *testing.T) {
-	// Default cap is 3 human turns.
-	req := NodeReq{Config: map[string]any{}}
-	if reactCapReached(req, nil) { // 1 turn (the reply) < 3
-		t.Error("1 turn should not reach cap")
-	}
-	hist := []models.ReactMessage{{Role: "human"}, {Role: "agent"}, {Role: "human"}}
-	if !reactCapReached(req, hist) { // 1 + 2 human = 3 >= 3
-		t.Error("3 human turns should reach cap")
-	}
-	// Custom max_rounds.
-	if reactCapReached(NodeReq{Config: map[string]any{"max_rounds": 5}}, hist) {
-		t.Error("with max_rounds=5, 3 turns should not reach cap")
-	}
-	// Approve never caps, even with leftover config.max_rounds and many turns.
-	many := make([]models.ReactMessage, 0, 40)
-	for i := 0; i < 20; i++ {
-		many = append(many, models.ReactMessage{Role: "human"}, models.ReactMessage{Role: "agent"})
-	}
-	if reactCapReached(NodeReq{NodeType: "approve", Config: map[string]any{"max_rounds": 1}}, many) {
-		t.Error("approve must ignore max_rounds and never reach cap")
 	}
 }
 
@@ -251,7 +227,7 @@ func TestRunAgentRetiresToStore(t *testing.T) {
 	reg := &retiringRegistry{}
 	p.registry = reg
 
-	req := reqWithProfile(NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Token: tok,
+	req := reqWithProfile(NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testPlainCaps, Token: tok,
 		Config: map[string]any{"prompt": "go", "produces": "report.md"}, Vars: map[string]any{}})
 	if _, err := p.RunAgent(context.Background(), req); err != nil {
 		t.Fatalf("RunAgent: %v", err)

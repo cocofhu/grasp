@@ -73,7 +73,7 @@ export function useProjectContext() {
       typeof route.query.run === 'string' ? route.query.run.trim() : ''
     if (deepLinkRun) {
       // Waiting on a specific run: keep current (possibly empty) project filter
-      // so a stored proj-a cannot filter out a just-submitted proj-b pipeline.
+      // so a stored proj-a cannot filter out a just-submitted proj-b workflow.
       return
     }
     const stored = readStoredProjectId()

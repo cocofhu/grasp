@@ -75,11 +75,11 @@ func ValidateImport(raw []byte) (models.ExportEnvelope, error) {
 	if env.Graph.Variables == nil {
 		env.Graph.Variables = []models.Variable{}
 	}
+	if err := nodereg.ValidateNodeTypes(&env.Graph); err != nil {
+		return models.ExportEnvelope{}, err
+	}
 	nodeIDs := make(map[string]struct{}, len(env.Graph.Nodes))
 	for _, n := range env.Graph.Nodes {
-		if _, ok := nodereg.Get(n.Type); !ok {
-			return models.ExportEnvelope{}, fmt.Errorf("节点 %s 的 type「%s」未在 nodereg 注册表中注册。", n.ID, n.Type)
-		}
 		nodeIDs[n.ID] = struct{}{}
 	}
 	for _, e := range env.Graph.Edges {

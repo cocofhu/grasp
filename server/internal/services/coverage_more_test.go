@@ -38,27 +38,3 @@ func TestCurrentNodeIDsAndFailedError(t *testing.T) {
 		t.Fatal("empty")
 	}
 }
-
-func TestPlatformRuleEmptyAgent(t *testing.T) {
-	root := t.TempDir()
-	svc, err := NewPlatformRuleService(root+"/g", root+"/p")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.ListAgent(""); err == nil {
-		t.Fatal("empty agent list")
-	}
-	if _, err := svc.GetAgent("", "test.md"); err == nil {
-		t.Fatal("empty agent get")
-	}
-	if _, err := svc.SaveAgent("", "test.md", "x"); err == nil {
-		t.Fatal("empty agent save")
-	}
-	if err := svc.DeleteAgent("", "test.md"); err == nil {
-		t.Fatal("empty agent delete")
-	}
-	items, err := svc.ListAgent("Ag")
-	if err != nil || len(items) == 0 {
-		t.Fatalf("list agent: %v %d", err, len(items))
-	}
-}

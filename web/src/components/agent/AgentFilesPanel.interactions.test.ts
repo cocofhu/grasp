@@ -31,7 +31,7 @@ function draft(files = [
     mcp: [],
     env: [],
     layout: { configRoot: '/root/.cursor', workspaceDir: '/root/workspace' },
-    prompts: { upstreamArtifactsHeader: '', producesContract: '', reactOpenSuffix: '', producesRetry: '' },
+    capabilities: null,
   } as any
 }
 

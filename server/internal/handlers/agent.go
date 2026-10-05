@@ -25,19 +25,19 @@ func (h *Handlers) GetAgent(c *gin.Context) {
 }
 
 type agentBody struct {
-	Name              string               `json:"name"`
-	ProjectID         *string              `json:"projectId"`
-	TemplateID        string               `json:"templateId"`
-	AcpBackend        string               `json:"acpBackend"`
-	GitCredentialType string               `json:"gitCredentialType"`
-	GitSshKnownHosts  string               `json:"gitSshKnownHosts"`
-	GitSshPrivateKey  string               `json:"gitSshPrivateKey"`
-	Files             []services.AgentFile `json:"files"`
-	MCP               []services.MCPServer `json:"mcp"`
-	Env               map[string]string    `json:"env"`
-	Layout            services.AgentLayout `json:"layout"`
-	Prompts           *models.AgentPrompts `json:"prompts"`
-	Reason            string               `json:"reason,omitempty"`
+	Name              string                    `json:"name"`
+	ProjectID         *string                   `json:"projectId"`
+	TemplateID        string                    `json:"templateId"`
+	AcpBackend        string                    `json:"acpBackend"`
+	GitCredentialType string                    `json:"gitCredentialType"`
+	GitSshKnownHosts  string                    `json:"gitSshKnownHosts"`
+	GitSshPrivateKey  string                    `json:"gitSshPrivateKey"`
+	Files             []services.AgentFile      `json:"files"`
+	MCP               []services.MCPServer      `json:"mcp"`
+	Env               map[string]string         `json:"env"`
+	Layout            services.AgentLayout      `json:"layout"`
+	Capabilities      *models.AgentCapabilities `json:"capabilities"`
+	Reason            string                    `json:"reason,omitempty"`
 }
 
 // toAgent builds an Agent. When projectId is omitted (nil), prevProjectID is kept
@@ -53,7 +53,7 @@ func (b agentBody) toAgent(name, prevProjectID string) services.Agent {
 		GitCredentialType: b.GitCredentialType,
 		GitSshKnownHosts:  b.GitSshKnownHosts,
 		GitSshPrivateKey:  b.GitSshPrivateKey,
-		Files:             b.Files, MCP: b.MCP, Env: b.Env, Layout: b.Layout, Prompts: b.Prompts,
+		Files:             b.Files, MCP: b.MCP, Env: b.Env, Layout: b.Layout, Capabilities: b.Capabilities,
 	}
 }
 

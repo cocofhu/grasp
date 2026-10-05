@@ -14,7 +14,7 @@ func TestResumeFromFailedNode(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "risky", Type: "agent", Config: map[string]any{"prompt": "x", "produces": "out.md"}},
+			{ID: "risky", Type: "agent", Caps: capsPlain, Config: map[string]any{"prompt": "x", "produces": "out.md"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -56,7 +56,7 @@ func TestResumeFromExplicitNode(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "risky", Type: "agent", Config: map[string]any{"prompt": "x", "produces": "out.md"}},
+			{ID: "risky", Type: "agent", Caps: capsPlain, Config: map[string]any{"prompt": "x", "produces": "out.md"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -81,7 +81,7 @@ func TestResumeFromRejectsNonResumable(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "work", Type: "agent", Config: map[string]any{"prompt": "x", "produces": "out.md"}},
+			{ID: "work", Type: "agent", Caps: capsPlain, Config: map[string]any{"prompt": "x", "produces": "out.md"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -109,7 +109,7 @@ func TestResumeRestoresVarsAtThatTime(t *testing.T) {
 	eng, db := setupEngine(t)
 	run := models.Run{
 		ID: "rv", WorkflowID: "x", WorkflowName: "x", Status: "failed",
-		Graph: models.Graph{Nodes: []models.Node{{ID: "n", Type: "agent"}}},
+		Graph: models.Graph{Nodes: []models.Node{{ID: "n", Type: "agent", Caps: capsPlain}}},
 	}
 	if err := db.Create(&run).Error; err != nil {
 		t.Fatalf("create run: %v", err)
@@ -165,7 +165,7 @@ func TestResumeRewindsDownstreamMutationE2E(t *testing.T) {
 			{ID: "bump", Type: "set_var", Config: map[string]any{"assignments": []any{
 				map[string]any{"var": "x", "expr": "x + 1"},
 			}}},
-			{ID: "risky", Type: "agent", Config: map[string]any{"prompt": "p", "produces": "out.md"}},
+			{ID: "risky", Type: "agent", Caps: capsPlain, Config: map[string]any{"prompt": "p", "produces": "out.md"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -206,7 +206,7 @@ func TestResumeFromUnknownNode(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "risky", Type: "agent", Config: map[string]any{"prompt": "x", "produces": "out.md"}},
+			{ID: "risky", Type: "agent", Caps: capsPlain, Config: map[string]any{"prompt": "x", "produces": "out.md"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{

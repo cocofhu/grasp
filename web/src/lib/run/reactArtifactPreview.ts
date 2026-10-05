@@ -1,6 +1,12 @@
 import type { Artifact, Run, WFNode } from '@/lib/shared/types'
-import { productArtifactName } from '@/lib/run/productNodeArtifacts'
-import { isClarifyInteractive, isGrasp } from '@/lib/shared/clarifyInteractive'
+import { schemaByName } from '@/lib/workflow/agentCapabilities'
+import {
+  findGraphNode,
+  isClarifyNode,
+  isPreviewNode,
+  isReviewNode,
+  type CapsNode,
+} from '@/lib/shared/clarifyInteractive'
 
 const NODE_COMPLETE_ARTIFACT = 'node_complete.json'
 const FEEDBACK_INDEX_NAME = 'feedback_index.json'
@@ -67,7 +73,7 @@ export function historicalStageArtifactName(baseName: string, iteration: number)
 }
 
 export function visualProductPageName(): string {
-  return productArtifactName('visual') || 'page.html'
+  return schemaByName('page')?.artifactName || 'page.html'
 }
 
 /** Physical copy written by finalizeVisual: `{nodeId}.page.html`. */
@@ -173,7 +179,7 @@ function isHumanGateBodySnapshot(
   return run.nodes.some((n) => n.id === nodeId && n.type === 'human_gate')
 }
 
-/** Platform bookkeeping — hidden from the pipeline grid. Everything else stays. */
+/** Platform bookkeeping — hidden from the workflow grid. Everything else stays. */
 export function isBookkeepingArtifact(
   artifact: Pick<Artifact, 'name' | 'nodeId'> | null | undefined,
   run?: Run | null,
@@ -188,14 +194,14 @@ export function isBookkeepingArtifact(
   return false
 }
 
-/** Pipeline-grid subset; preview tabs / pins still use the unfiltered stage list. */
+/** Workflow-grid subset; preview tabs / pins still use the unfiltered stage list. */
 export function filterStageGridArtifacts(artifacts: Artifact[], run?: Run | null): Artifact[] {
   return artifacts.filter((a) => !isBookkeepingArtifact(a, run))
 }
 
 /**
  * Grid cards: known products, plus the effective pin so a closed auto-pin
- * (e.g. react demo HTML) remains reopenable from the pipeline grid.
+ * (e.g. react demo HTML) remains reopenable from the workflow grid.
  */
 export function stageGridArtifactsWithPin(
   artifacts: Artifact[],
@@ -252,7 +258,7 @@ export function closeStagePreviewTab(openNames: string[], name: string): string[
   return openNames.filter((n) => n !== name)
 }
 
-/** After closing a tab, stay on the current one, else neighbor, else noVNC / pipeline grid. */
+/** After closing a tab, stay on the current one, else neighbor, else noVNC / workflow grid. */
 export function nextTabAfterClose(
   openNames: string[],
   closed: string,
@@ -272,7 +278,7 @@ export function nextTabAfterClose(
   return previewTabId(pick)
 }
 
-/** Coalesce legacy chrome preview id (and empty) to pipeline grid. */
+/** Coalesce legacy chrome preview id (and empty) to workflow grid. */
 export function coalesceStageTab(tab: string | null | undefined): string {
   const t = String(tab || '').trim()
   if (!t || t === REACT_STAGE_TAB_PREVIEW) return REACT_STAGE_TAB_GRID
@@ -306,7 +312,7 @@ export function findArtifactByName(artifacts: Artifact[], name: string | null | 
   return artifacts.find((a) => a.name === n) || null
 }
 
-const VISUAL_LIVE_PAGE = productArtifactName('visual') || 'page.html'
+const VISUAL_LIVE_PAGE = visualProductPageName()
 
 /** HTML kind, or .html/.htm name (runtime.artifactKind). History cards excluded by name. */
 export function isHtmlStageArtifact(artifact: Pick<Artifact, 'kind' | 'name'> | null | undefined): boolean {
@@ -347,14 +353,14 @@ export function latestOwnNodeHtmlName(artifacts: Artifact[], nodeId?: string | n
 /**
  * Effective default pin for Inbox / RunClarify / RunReview:
  * 1. previewArtifact if the name is already on the stage
- * 2. visual → live page.html only (never visual_*.page.html or #iter- snapshots)
- * 3. react → newest own-node HTML
- * 4. else empty (stay on pipeline grid)
+ * 2. clarify → newest own-node HTML
+ * 3. writes the page schema → live page.html only (never {node}.page.html or #iter- snapshots)
+ * 4. else empty (stay on workflow grid)
  */
 export function resolveEffectivePreviewPin(opts: {
   previewArtifact?: string | null
   artifacts: Artifact[]
-  nodeType?: string | null
+  node?: CapsNode
   nodeId?: string | null
 }): string {
   const artifacts = opts.artifacts || []
@@ -363,47 +369,50 @@ export function resolveEffectivePreviewPin(opts: {
   if (pin) {
     return names.includes(pin) ? pin : ''
   }
-  const nodeType = String(opts.nodeType || '').trim()
-  if (nodeType === 'visual') {
+  if (isClarifyNode(opts.node)) {
+    return latestOwnNodeHtmlName(artifacts, opts.nodeId)
+  }
+  if (opts.node?.type === 'agent' && writesPage(opts.node)) {
     const live = artifacts.find(
       (a) => a.name === VISUAL_LIVE_PAGE && isOwnNodeArtifact(a, opts.nodeId) && !isHistoricalStageArtifact(a),
     )
     return live ? VISUAL_LIVE_PAGE : ''
   }
-  if (isClarifyInteractive(nodeType)) {
-    return latestOwnNodeHtmlName(artifacts, opts.nodeId)
-  }
   return ''
 }
 
-/** Dedicated app_preview nodes always expose the remote app tab. Grasp does not. */
-export function isAppPreviewRemoteNode(type: string | null | undefined): boolean {
-  return type === 'app_preview'
+function writesPage(node: CapsNode): boolean {
+  return !!node?.caps?.writes?.some((w) => w.schema === 'page')
 }
 
-/** Grasp only upgrades to app after set_preview registers a port/URL. */
-export function approveStageRemoteKind(hasRegisteredPreview: boolean): ReactStageRemoteKind {
+/** Reviewed Agents with set_preview always expose the remote app tab. Clarify does not. */
+export function isAppPreviewRemoteNode(node: CapsNode): boolean {
+  return isReviewNode(node) && isPreviewNode(node)
+}
+
+/** Clarify only upgrades to app after set_preview registers a port/URL. */
+export function clarifyStageRemoteKind(hasRegisteredPreview: boolean): ReactStageRemoteKind {
   return hasRegisteredPreview ? 'app' : 'off'
 }
 
-export function isClarifyInteractiveGraphNode(run: Run | null | undefined, nodeId: string | null | undefined): boolean {
-  if (!run?.nodes?.length || !nodeId) return false
-  return run.nodes.some((n: WFNode) => n.id === nodeId && isClarifyInteractive(n.type))
+export function isClarifyGraphNode(run: Run | null | undefined, nodeId: string | null | undefined): boolean {
+  return isClarifyNode(findGraphNode(run?.nodes, nodeId))
 }
 
 export function inboxStageRemoteKind(opts: {
   appPreview: boolean
   run?: Run | null
   nodeId?: string | null
-  /** When the active node is Grasp: true once set_preview has registered ports/URLs. */
+  /** When the active node is a clarify Agent: true once set_preview has registered ports/URLs. */
   hasRegisteredPreview?: boolean
 }): ReactStageRemoteKind {
   if (opts.appPreview) return 'app'
-  const n = opts.run?.nodes?.find((node: WFNode) => node.id === opts.nodeId)
-  if (isAppPreviewRemoteNode(n?.type)) return 'app'
-  // Grasp is clarify-interactive but must not default to sandbox/app without a registration.
-  if (isGrasp(n?.type)) return approveStageRemoteKind(!!opts.hasRegisteredPreview)
-  if (isClarifyInteractiveGraphNode(opts.run, opts.nodeId)) return 'sandbox'
+  const n = findGraphNode(opts.run?.nodes, opts.nodeId)
+  if (isAppPreviewRemoteNode(n)) return 'app'
+  if (isClarifyNode(n)) {
+    // A clarify Agent that may register a preview must not default to sandbox without one.
+    return isPreviewNode(n) ? clarifyStageRemoteKind(!!opts.hasRegisteredPreview) : 'sandbox'
+  }
   return 'off'
 }
 
@@ -457,9 +466,9 @@ export function artifactFingerprint(a: Artifact | null | undefined): string {
   return `${a.id}:${a.updatedAt || ''}:${a.revision ?? ''}:${a.sizeBytes}:${a.content?.length ?? ''}`
 }
 
-/** react / Grasp stages auto-pin visible own-node artifacts on create/update. */
-export function isAutoPinStageNode(type: string | null | undefined): boolean {
-  return isClarifyInteractive(type)
+/** Clarify stages auto-pin visible own-node artifacts on create/update. */
+export function isAutoPinStageNode(node: CapsNode): boolean {
+  return isClarifyNode(node)
 }
 
 /**
@@ -481,23 +490,23 @@ export function isVisibleAutoPinArtifact(
   return true
 }
 
-/** Visible products shown on the react/approve pipeline grid (incl. custom names). */
+/** Visible products shown on the clarify workflow grid (incl. custom names). */
 export function filterVisibleStageArtifacts(artifacts: Artifact[], run?: Run | null): Artifact[] {
   return artifacts.filter((a) => isVisibleAutoPinArtifact(a, artifacts, run))
 }
 
 /**
  * Grid cards for the current stage node.
- * react/approve: every visible product (so custom HTML stays reopenable).
+ * Clarify: every visible product (so custom HTML stays reopenable).
  * Other nodes: known contract products + effective pin.
  */
 export function stageGridArtifactsForNode(
   artifacts: Artifact[],
   run?: Run | null,
   pin?: string | null,
-  nodeType?: string | null,
+  node?: CapsNode,
 ): Artifact[] {
-  if (isAutoPinStageNode(nodeType)) {
+  if (isAutoPinStageNode(node)) {
     return filterVisibleStageArtifacts(artifacts, run)
   }
   return stageGridArtifactsWithPin(artifacts, run, pin)

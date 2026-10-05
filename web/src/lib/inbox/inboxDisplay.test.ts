@@ -43,24 +43,12 @@ describe('inboxBadgeLabelKey', () => {
     expect(inboxBadgeLabelKey({ type: 'gate' })).toBe('pages.gatesInbox.gateType')
   })
 
-  it('maps clarify kind to clarifyType (react)', () => {
+  it('maps clarify kind to clarifyType', () => {
     expect(inboxBadgeLabelKey({ type: 'clarify', kind: 'clarify' })).toBe('pages.gatesInbox.clarifyType')
   })
 
-  it('maps review kind to reviewType (research / proposal)', () => {
+  it('maps review kind to reviewType', () => {
     expect(inboxBadgeLabelKey({ type: 'clarify', kind: 'review' })).toBe('pages.gatesInbox.reviewType')
-  })
-
-  it('maps app_preview kind to previewType (application preview)', () => {
-    expect(inboxBadgeLabelKey({ type: 'clarify', kind: 'app_preview' })).toBe(
-      'pages.gatesInbox.previewType',
-    )
-  })
-
-  it('maps preflight kind to preflightType (env confirmation)', () => {
-    expect(inboxBadgeLabelKey({ type: 'clarify', kind: 'preflight' })).toBe(
-      'pages.gatesInbox.preflightType',
-    )
   })
 
   it('falls back to clarifyType when kind omitted', () => {
@@ -78,9 +66,6 @@ describe('inboxBadgeLabelKey', () => {
       'pages.gatesInbox.replyingType',
     )
     expect(inboxBadgeLabelKey({ type: 'clarify', kind: 'review', state: 'replying' })).toBe(
-      'pages.gatesInbox.replyingType',
-    )
-    expect(inboxBadgeLabelKey({ type: 'clarify', kind: 'app_preview', state: 'replying' })).toBe(
       'pages.gatesInbox.replyingType',
     )
   })
@@ -146,11 +131,9 @@ describe('applyInboxReplyingState / mergeInboxReplyingFromRemote', () => {
 })
 
 describe('inboxBadgeTone', () => {
-  it('splits gate / preview / review / clarify for Demo badge colors', () => {
+  it('splits gate / review / clarify for Demo badge colors', () => {
     expect(inboxBadgeTone({ type: 'gate' })).toBe('gate')
-    expect(inboxBadgeTone({ type: 'clarify', kind: 'app_preview' })).toBe('preview')
     expect(inboxBadgeTone({ type: 'clarify', kind: 'review' })).toBe('review')
-    expect(inboxBadgeTone({ type: 'clarify', kind: 'preflight' })).toBe('preflight')
     expect(inboxBadgeTone({ type: 'clarify', kind: 'clarify' })).toBe('clarify')
     expect(inboxBadgeTone({ type: 'clarify', kind: 'clarify', state: 'replying' })).toBe('replying')
     expect(inboxBadgeTone({ type: 'clarify', kind: 'clarify', state: 'starting' })).toBe('clarify')

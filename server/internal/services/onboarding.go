@@ -13,10 +13,13 @@ import (
 )
 
 const (
-	// OnboardingWorkflowName is the first-install published workflow.
+	// OnboardingWorkflowName is the first-install published workflow in Chinese;
+	// see onboardingLocales for every language.
 	OnboardingWorkflowName = "默认工作流"
+	// OnboardingWorkflowNameEN is the first-install published workflow in English.
+	OnboardingWorkflowNameEN = "Default Workflow"
 	// FirstInstallGroupName is the org folder created on first install.
-	FirstInstallGroupName = "综合项目组"
+	FirstInstallGroupName = "默认项目组"
 	// FirstInstallGroupID is a stable group id so re-bootstrap is idempotent.
 	FirstInstallGroupID = "g_first_install_zonghe"
 )
@@ -33,12 +36,18 @@ var (
 	ErrOnboardingNotDefaultProject = errors.New("first-install onboarding is only allowed on the default project")
 	// ErrBaselineReposRequired is returned when no non-empty repository URL is submitted.
 	ErrBaselineReposRequired = errors.New("at least one repository URL is required")
+	// ErrOnboardingInvalidTeam is returned when the chosen templates are unknown,
+	// duplicated, miss a required template, or produce duplicate Agent names.
+	ErrOnboardingInvalidTeam = errors.New("invalid onboarding team")
 )
 
 // OnboardingBootstrapRequest is the body for POST .../bootstrap-onboarding.
 type OnboardingBootstrapRequest struct {
 	AcpBackend          string `json:"acpBackend"`
 	APIKey              string `json:"apiKey"`
+	// Language is the wizard's UI language (zh-CN | en); it names the default
+	// workflow, its start/end nodes and the org group. Empty means Chinese.
+	Language            string `json:"language,omitempty"`
 	Region              string `json:"region,omitempty"`
 	OpenCodeProvider    string `json:"openCodeProvider,omitempty"`
 	OpenCodeBaseURL     string `json:"openCodeBaseURL,omitempty"`
@@ -57,7 +66,22 @@ type OnboardingBootstrapRequest struct {
 	// VncPreview / BrowserMcp default on when omitted (first-install preview stack).
 	VncPreview *bool `json:"vncPreview"`
 	BrowserMcp *bool `json:"browserMcp"`
+	// Agents picks the built-in templates to create. Empty = all templates with
+	// derived names. clarify and implement are required; test_review is optional.
+	Agents []OnboardingAgentChoice `json:"agents,omitempty"`
 }
+
+// OnboardingAgentChoice is one chosen built-in template in the wizard's team step.
+type OnboardingAgentChoice struct {
+	TemplateID string `json:"templateId"`
+	// Name overrides the derived Agent name when non-empty.
+	Name string `json:"name,omitempty"`
+	// Model is written to the Agent's ACP_BRIDGE_MODEL env when non-empty.
+	Model string `json:"model,omitempty"`
+}
+
+// OnboardingRequiredTemplateIDs must always be part of the onboarding team.
+var OnboardingRequiredTemplateIDs = []string{"clarify", "implement"}
 
 // OnboardingBootstrapResult is returned after a successful (idempotent) bootstrap.
 type OnboardingBootstrapResult struct {
@@ -81,7 +105,7 @@ type CreateBaselineWorkflowRequest struct {
 	Repos     []BaselineRepo `json:"repos"`
 }
 
-// OnboardingService bootstraps first-install auth + 综合项目组 + 默认工作流.
+// OnboardingService bootstraps first-install auth + the built-in Agents + 默认工作流.
 type OnboardingService struct {
 	Projects    *ProjectService
 	Skills      *AgentService
@@ -118,7 +142,7 @@ func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest
 	if len(repos) == 0 {
 		return models.WorkflowDef{}, ErrBaselineReposRequired
 	}
-	envelope, err := loadFirstInstallWorkflowEnvelope()
+	envelope, err := loadDefaultWorkflowEnvelope()
 	if err != nil {
 		return models.WorkflowDef{}, err
 	}
@@ -200,7 +224,7 @@ func applyBaselineRepos(graph *models.Graph, repos []BaselineRepo) {
 }
 
 // Bootstrap writes shared-agent env auth, saves the install-group agents, and publishes
-// 默认工作流. Allowed on any project: default keeps 综合* names; others derive names
+// 默认工作流. Allowed on any project: default keeps the template names; others derive names
 // from the project name. Idempotent within a project. Cross-project name conflicts
 // are rejected with ErrOnboardingAgentConflict. It never starts a Run. Missing
 // apiKey rejects without creating resources.
@@ -225,7 +249,8 @@ func (s *OnboardingService) Bootstrap(projectID string, req OnboardingBootstrapR
 		defID = models.DefaultProjectID
 	}
 
-	plan, err := BuildOnboardingNamePlan(projectID, proj.Name, defID)
+	loc := onboardingLocaleFor(req.Language)
+	plan, err := BuildOnboardingNamePlan(projectID, proj.Name, defID, req.Language)
 	if err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
@@ -233,23 +258,40 @@ func (s *OnboardingService) Bootstrap(projectID string, req OnboardingBootstrapR
 	backend := NormalizeAcpBackend(req.AcpBackend)
 	region := strings.TrimSpace(req.Region)
 
-	if err := s.checkOnboardingAgentConflicts(projectID, plan.AgentNames); err != nil {
-		return OnboardingBootstrapResult{}, err
-	}
-
-	envelope, err := loadFirstInstallWorkflowEnvelope()
+	team, err := resolveOnboardingTeam(req.Agents, plan.NameMap)
 	if err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
-	RemapOnboardingAgentProfiles(&envelope.Graph, plan.NameMap)
+	teamNames := make([]string, 0, len(team))
+	nameMap := make(map[string]string, len(team))
+	for _, m := range team {
+		teamNames = append(teamNames, m.Name)
+		nameMap[m.Role.RoleLabelZH] = m.Name
+	}
 
-	templates := make([]Agent, 0, len(OnboardingAgentNames))
-	for _, canonical := range OnboardingAgentNames {
-		tmpl, err := loadFirstInstallAgentTemplate(canonical)
+	if err := s.checkOnboardingAgentConflicts(projectID, teamNames); err != nil {
+		return OnboardingBootstrapResult{}, err
+	}
+
+	envelope, err := loadDefaultWorkflowEnvelope()
+	if err != nil {
+		return OnboardingBootstrapResult{}, err
+	}
+	localizeOnboardingWorkflow(&envelope, loc)
+	assignOnboardingAgentProfiles(&envelope.Graph, nameMap)
+	for _, role := range TeamEngineerTemplates {
+		if _, ok := nameMap[role.RoleLabelZH]; !ok {
+			dropOnboardingAgentNode(&envelope.Graph, role.ID)
+		}
+	}
+
+	templates := make([]Agent, 0, len(team))
+	for _, m := range team {
+		tmpl, err := onboardingTemplateAgent(m.Role)
 		if err != nil {
 			return OnboardingBootstrapResult{}, err
 		}
-		tmpl.Name = plan.NameMap[canonical]
+		tmpl.Name = m.Name
 		tmpl.ProjectID = projectID
 		tmpl.AcpBackend = backend
 		tmpl.Layout.ConfigRoot = DefaultConfigRootForBackend(backend)
@@ -262,6 +304,9 @@ func (s *OnboardingService) Bootstrap(projectID string, req OnboardingBootstrapR
 		tmpl.Env = stripTokenKeysFromEnvMap(tmpl.Env)
 		delete(tmpl.Env, runtime.EnvCodeBuddyRegion)
 		delete(tmpl.Env, runtime.EnvTraeRegion)
+		if m.Model != "" {
+			tmpl.Env[runtime.EnvACPBridgeModel] = m.Model
+		}
 		templates = append(templates, tmpl)
 	}
 
@@ -302,6 +347,155 @@ func (s *OnboardingService) Bootstrap(projectID string, req OnboardingBootstrapR
 		Published:  published.Status == "published",
 		GroupName:  plan.GroupName,
 	}, nil
+}
+
+type onboardingTeamMember struct {
+	Role  TeamRoleTemplate
+	Name  string
+	Model string
+}
+
+// resolveOnboardingTeam turns the wizard's choices into the Agents to save, in
+// workflow order. Empty choices keep every template with its derived name.
+func resolveOnboardingTeam(choices []OnboardingAgentChoice, derived map[string]string) ([]onboardingTeamMember, error) {
+	picked := map[string]OnboardingAgentChoice{}
+	for _, c := range choices {
+		id := strings.TrimSpace(c.TemplateID)
+		if _, ok := TeamRoleByID(id); !ok {
+			return nil, fmt.Errorf("%w: unknown template %q", ErrOnboardingInvalidTeam, id)
+		}
+		if _, dup := picked[id]; dup {
+			return nil, fmt.Errorf("%w: duplicate template %q", ErrOnboardingInvalidTeam, id)
+		}
+		picked[id] = c
+	}
+	if len(choices) > 0 {
+		for _, id := range OnboardingRequiredTemplateIDs {
+			if _, ok := picked[id]; !ok {
+				return nil, fmt.Errorf("%w: template %q is required", ErrOnboardingInvalidTeam, id)
+			}
+		}
+	}
+	out := make([]onboardingTeamMember, 0, len(TeamEngineerTemplates))
+	seen := map[string]bool{}
+	for _, role := range TeamEngineerTemplates {
+		c, ok := picked[role.ID]
+		if len(choices) > 0 && !ok {
+			continue
+		}
+		name := derived[role.RoleLabelZH]
+		if custom := strings.TrimSpace(c.Name); custom != "" {
+			normalized, err := NormalizeAndValidateAgentName(custom)
+			if err != nil {
+				return nil, err
+			}
+			name = normalized
+		}
+		if seen[name] {
+			return nil, fmt.Errorf("%w: duplicate agent name %q", ErrOnboardingInvalidTeam, name)
+		}
+		seen[name] = true
+		out = append(out, onboardingTeamMember{Role: role, Name: name, Model: strings.TrimSpace(c.Model)})
+	}
+	return out, nil
+}
+
+// assignOnboardingAgentProfiles points each template node at its chosen Agent
+// name in one pass, so a custom name equal to another template label cannot chain.
+// The node label follows the name so the canvas shows what the user chose.
+func assignOnboardingAgentProfiles(g *models.Graph, nameMap map[string]string) {
+	if g == nil {
+		return
+	}
+	for i := range g.Nodes {
+		cfg := g.Nodes[i].Config
+		if cfg == nil {
+			continue
+		}
+		if name, ok := nameMap[models.AgentProfile(cfg)]; ok {
+			models.SetAgentProfile(cfg, name)
+			g.Nodes[i].Label = name
+		}
+	}
+}
+
+// dropOnboardingAgentNode removes an unchosen template node: its forward
+// predecessors are wired straight to its forward successors (pass / plain
+// outlets), rollback edges into or out of it are dropped, and output results
+// that read its products are removed.
+func dropOnboardingAgentNode(g *models.Graph, nodeID string) {
+	if g == nil {
+		return
+	}
+	idx := -1
+	for i, n := range g.Nodes {
+		if n.ID == nodeID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return
+	}
+	var incoming, outgoing []models.Edge
+	kept := make([]models.Edge, 0, len(g.Edges))
+	for _, e := range g.Edges {
+		switch {
+		case e.Target == nodeID && e.Source != nodeID:
+			if e.KindOrDefault() == models.EdgeSuccess {
+				incoming = append(incoming, e)
+			}
+		case e.Source == nodeID && e.Target != nodeID:
+			if e.KindOrDefault() == models.EdgeSuccess && (e.SourceHandle == "" || e.SourceHandle == "pass") {
+				outgoing = append(outgoing, e)
+			}
+		case e.Source == nodeID || e.Target == nodeID:
+		default:
+			kept = append(kept, e)
+		}
+	}
+	exists := func(src, handle, dst string) bool {
+		for _, e := range kept {
+			if e.Source == src && e.SourceHandle == handle && e.Target == dst {
+				return true
+			}
+		}
+		return false
+	}
+	for _, in := range incoming {
+		for _, out := range outgoing {
+			if in.Source == out.Target || exists(in.Source, in.SourceHandle, out.Target) {
+				continue
+			}
+			kept = append(kept, models.Edge{
+				ID:           "e_" + in.Source + "_" + out.Target,
+				Source:       in.Source,
+				SourceHandle: in.SourceHandle,
+				Target:       out.Target,
+				Kind:         models.EdgeSuccess,
+			})
+		}
+	}
+	g.Edges = kept
+	g.Nodes = append(g.Nodes[:idx:idx], g.Nodes[idx+1:]...)
+	ref := "nodes." + nodeID + "."
+	for i := range g.Nodes {
+		if g.Nodes[i].Type != "output" || g.Nodes[i].Config == nil {
+			continue
+		}
+		results, ok := g.Nodes[i].Config["results"].([]any)
+		if !ok {
+			continue
+		}
+		filtered := make([]any, 0, len(results))
+		for _, r := range results {
+			if s, ok := r.(string); ok && strings.Contains(s, ref) {
+				continue
+			}
+			filtered = append(filtered, r)
+		}
+		g.Nodes[i].Config["results"] = filtered
+	}
 }
 
 func (s *OnboardingService) checkOnboardingAgentConflicts(projectID string, agentNames []string) error {
@@ -513,7 +707,7 @@ func (s *OnboardingService) upsertDefaultWorkflow(projectID string, envelope mod
 
 	var existing *models.WorkflowDef
 	for _, wf := range s.WF.List(projectID) {
-		if wf.Name == OnboardingWorkflowName {
+		if isOnboardingWorkflowName(wf.Name) {
 			full, ok := s.WF.Get(wf.ID)
 			if !ok {
 				continue
@@ -523,10 +717,8 @@ func (s *OnboardingService) upsertDefaultWorkflow(projectID string, envelope mod
 		}
 	}
 	desc := strings.TrimSpace(envelope.Description)
-	if desc == "" {
-		desc = "第一次安装默认工作流。仓库与凭据在运行时 / 共享 Agent 配置中填写。"
-	}
 	if existing != nil {
+		existing.Name = envelope.Name
 		existing.Description = desc
 		existing.NeedsRepo = true
 		existing.Graph = graph
@@ -538,7 +730,7 @@ func (s *OnboardingService) upsertDefaultWorkflow(projectID string, envelope mod
 	wf := models.WorkflowDef{
 		ID:          uuid.NewString(),
 		ProjectID:   projectID,
-		Name:        OnboardingWorkflowName,
+		Name:        envelope.Name,
 		Description: desc,
 		Status:      "draft",
 		Version:     1,

@@ -68,11 +68,6 @@ func newHarness(t *testing.T) *harness {
 	host := mcp.NewHost(arts)
 	profilesRoot := t.TempDir()
 	skills := services.NewAgentService(profilesRoot)
-	globalRules := t.TempDir() + "/platform-rules"
-	platformRules, err := services.NewPlatformRuleService(globalRules, profilesRoot)
-	if err != nil {
-		t.Fatalf("platform rules: %v", err)
-	}
 	fg := sandboxtest.New(t)
 	mgr := sandbox.NewManager(fg.Client(), sandbox.ManagerOptions{WorkspaceDir: "/root/workspace"})
 	sbx := services.NewSandboxService(db, mgr, skills, host, services.SandboxOptions{Max: 2, TTL: time.Minute})
@@ -140,7 +135,6 @@ func newHarness(t *testing.T) *harness {
 		Eng:               eng,
 		MCP:               host,
 		Auth:              authSvc,
-		PlatformRules:     platformRules,
 		Issues:            services.NewIssueService(db),
 		Audit:             auditSvc,
 		Onboarding:        services.NewOnboardingService(projectSvc, skills, sharedAgent, wfSvc, services.NewOrgService(profilesRoot, skills)),
@@ -517,7 +511,7 @@ func TestGateAndArtifactEndpoints(t *testing.T) {
 	h.db.Create(&models.Run{
 		ID: "r1", WorkflowID: "wf1", WorkflowName: "WF", Status: "waiting_human",
 		StartedAt: now, Graph: models.Graph{
-			Nodes: []models.Node{{ID: "react", Type: "react", Label: "需求澄清"}},
+			Nodes: []models.Node{{ID: "react", Type: "agent", Caps: testClarifyCaps, Label: "需求澄清"}},
 		},
 	})
 	h.db.Create(&models.Gate{RunID: "r1", NodeID: "g", Resolved: false, RequestedAt: now})
@@ -746,11 +740,11 @@ func TestAgentEndpoints(t *testing.T) {
 	if w := h.do("POST", "/api/agents", map[string]any{"name": "a1"}); w.Code != 409 {
 		t.Fatalf("conflict: %d", w.Code)
 	}
-	// plan g2.1 / g3.2 — optional templateId copies TestAgent / PreflightAgent workspace
+	// optional templateId copies a built-in Agent's workspace and capabilities
 	if w := h.do("POST", "/api/agents", map[string]any{
-		"name": "qa-test", "templateId": "test", "acpBackend": "cursor",
+		"name": "qa-test", "templateId": "test_review", "acpBackend": "cursor",
 	}); w.Code != 201 {
-		t.Fatalf("create test template: %d %s", w.Code, w.Body)
+		t.Fatalf("create test_review template: %d %s", w.Code, w.Body)
 	}
 	if w := h.do("GET", "/api/agents/qa-test", nil); w.Code != 200 {
 		t.Fatalf("get qa-test: %d", w.Code)
@@ -761,11 +755,9 @@ func TestAgentEndpoints(t *testing.T) {
 		if len(files) == 0 {
 			t.Fatal("qa-test should have template files")
 		}
-	}
-	if w := h.do("POST", "/api/agents", map[string]any{
-		"name": "qa-pf", "templateId": "preflight",
-	}); w.Code != 201 {
-		t.Fatalf("create preflight template: %d %s", w.Code, w.Body)
+		if body["capabilities"] == nil {
+			t.Fatal("qa-test should inherit template capabilities")
+		}
 	}
 	if w := h.do("POST", "/api/agents", map[string]any{
 		"name": "bad-tpl", "templateId": "nope",
@@ -776,7 +768,7 @@ func TestAgentEndpoints(t *testing.T) {
 	if w := h.do("POST", "/api/agents", map[string]any{"name": "blank-ok"}); w.Code != 201 {
 		t.Fatalf("blank create: %d %s", w.Code, w.Body)
 	}
-	// Templates list includes preflight; engineer roster conceptually still 9 via bootstrap
+	// Templates list exposes the three built-in Agents
 	if w := h.do("GET", "/api/agent-teams/templates", nil); w.Code != 200 {
 		t.Fatalf("templates: %d", w.Code)
 	} else {
@@ -786,17 +778,12 @@ func TestAgentEndpoints(t *testing.T) {
 			} `json:"items"`
 		}
 		_ = json.Unmarshal(w.Body.Bytes(), &body)
-		var hasPF, hasTest bool
+		var ids []string
 		for _, it := range body.Items {
-			if it.ID == "preflight" {
-				hasPF = true
-			}
-			if it.ID == "test" {
-				hasTest = true
-			}
+			ids = append(ids, it.ID)
 		}
-		if !hasPF || !hasTest {
-			t.Fatalf("templates missing preflight/test: %+v", body.Items)
+		if strings.Join(ids, ",") != "clarify,implement,test_review" {
+			t.Fatalf("templates = %v", ids)
 		}
 	}
 	if w := h.do("GET", "/api/agents/a1", nil); w.Code != 200 {
@@ -1347,7 +1334,7 @@ func uintToStr(u uint) string {
 func TestRunDetailRichBranches(t *testing.T) {
 	h := newHarness(t)
 	h.db.Create(&models.Run{ID: "rd", Status: "waiting_human", StartedAt: time.Now().Add(-time.Minute), Graph: models.Graph{
-		Nodes: []models.Node{{ID: "impl", Type: "implement"}, {ID: "gate", Type: "human_gate"}},
+		Nodes: []models.Node{{ID: "impl", Type: "agent", Caps: testAutoCaps}, {ID: "gate", Type: "human_gate"}},
 	}})
 	// A node execution carrying git push info -> git block.
 	h.db.Create(&models.StateRun{RunID: "rd", NodeID: "impl", Iteration: 1, Status: "completed",
@@ -1398,7 +1385,7 @@ func TestRunDetailRichBranches(t *testing.T) {
 func TestRunDetailFailedExposesRunLevelError(t *testing.T) {
 	h := newHarness(t)
 	h.db.Create(&models.Run{ID: "rd-fail", Status: "failed", StartedAt: time.Now().Add(-time.Minute), Graph: models.Graph{
-		Nodes: []models.Node{{ID: "research", Type: "research"}, {ID: "out", Type: "output"}},
+		Nodes: []models.Node{{ID: "research", Type: "agent", Caps: testReviewCaps}, {ID: "out", Type: "output"}},
 	}})
 	h.db.Create(&models.StateRun{RunID: "rd-fail", NodeID: "research", Iteration: 1, Status: "failed",
 		Error: "sandbox setup failed: create timeout"})

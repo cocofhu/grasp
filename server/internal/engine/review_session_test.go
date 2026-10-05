@@ -13,7 +13,7 @@ import (
 // TestReviewSessionQueueAndCancel: FIFO enqueue + Cancel clears pending and
 // interrupts the held active turn (plan g1/g3 evidence).
 func TestReviewSessionQueueAndCancel(t *testing.T) {
-	eng, db, provider := setupReviewEngine(t, true)
+	eng, db, provider := setupReviewEngine(t)
 	hold := make(chan struct{})
 	provider.reviseHold = hold
 
@@ -79,7 +79,7 @@ func TestReviewSessionQueueAndCancel(t *testing.T) {
 
 // TestReviewEnqueueCapacity: platform FIFO rejects beyond MaxReviewQueueItems.
 func TestReviewEnqueueCapacity(t *testing.T) {
-	eng, db, provider := setupReviewEngine(t, true)
+	eng, db, provider := setupReviewEngine(t)
 	hold := make(chan struct{})
 	provider.reviseHold = hold
 
@@ -117,7 +117,7 @@ func TestReviewEnqueueCapacity(t *testing.T) {
 
 // TestReviewQueueRemoveAndReorder: item-level cancel/reorder on waiting FIFO only.
 func TestReviewQueueRemoveAndReorder(t *testing.T) {
-	eng, db, provider := setupReviewEngine(t, true)
+	eng, db, provider := setupReviewEngine(t)
 	hold := make(chan struct{})
 	provider.reviseHold = hold
 
@@ -198,7 +198,7 @@ func TestReviewQueueRemoveAndReorder(t *testing.T) {
 // TestQueueSnapshotIncludesAnnotationsAndImages: waiting queue_state items must
 // carry annotations + images (plan g1.1) so clients can refill chips after edit.
 func TestQueueSnapshotIncludesAnnotationsAndImages(t *testing.T) {
-	eng, db, provider := setupReviewEngine(t, true)
+	eng, db, provider := setupReviewEngine(t)
 	hold := make(chan struct{})
 	provider.reviseHold = hold
 
@@ -265,7 +265,7 @@ func TestQueueSnapshotIncludesAnnotationsAndImages(t *testing.T) {
 // id in its prompt only; page tools resolve it to that sender until the turn
 // is cancelled.
 func TestPageSessionRoutesToSender(t *testing.T) {
-	eng, db, provider := setupReviewEngine(t, true)
+	eng, db, provider := setupReviewEngine(t)
 	hold := make(chan struct{})
 	provider.reviseHold = hold
 	prompts := make(chan string, 4)

@@ -17,21 +17,7 @@ const (
 	PreviewKindURL  = "url"
 )
 
-// isGrasp reports whether nodeType is the Grasp pre-dev node (canonical
-// "grasp" or historical alias "approve"). Kept local to avoid an mcp↔nodereg
-// import cycle.
-func isGrasp(nodeType string) bool {
-	return nodeType == "grasp" || nodeType == "approve"
-}
-
-// SetPreviewAllowed reports whether set_preview may run on this node type.
-// app_preview requires it; Grasp may register a live app as an optional preview
-// without parking the ReAct session.
-func SetPreviewAllowed(nodeType string) bool {
-	return nodeType == "app_preview" || isGrasp(nodeType)
-}
-
-// PreviewPort is a registered preview endpoint for an app_preview or Grasp node.
+// PreviewPort is a registered preview endpoint of an Agent node (set_preview).
 type PreviewPort struct {
 	RunID       string `json:"runId"`
 	NodeID      string `json:"nodeId"`
@@ -46,7 +32,7 @@ type PreviewPort struct {
 	// "http://172.17.0.5:9090"), persisted so the proxy needn't re-resolve the
 	// container IP through the sandbox manager on every request.
 	Host string `json:"-"`
-	// Mode is "direct" when the node switch direct_preview is on; empty/vnc otherwise.
+	// Mode is "direct" for an IP-direct preview; empty/vnc otherwise.
 	Mode string `json:"mode,omitempty"`
 	// DirectURL is the browser-facing http://IP:port/ when Mode=direct.
 	DirectURL string `json:"directUrl,omitempty"`
@@ -499,7 +485,7 @@ func (h *Host) setPreviewURL(runID, nodeID, rawURL, label string) (string, error
 }
 
 // PutPreviewPortForTest seeds a memory-only healthy preview port without sandbox ops.
-// Used by engine unit tests that exercise app_preview pause paths offline.
+// Used by engine unit tests that exercise preview pause paths offline.
 func (h *Host) PutPreviewPortForTest(runID, nodeID string, port int, label string) {
 	if h == nil || port <= 0 {
 		return

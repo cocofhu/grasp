@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import HomeParticleMeshBackground from '@/components/dashboard/HomeParticleMeshBackground.vue'
-import HomePipelineSelect from '@/components/dashboard/HomePipelineSelect.vue'
+import HomeWorkflowSelect from '@/components/dashboard/HomeWorkflowSelect.vue'
 import HomePrioritySelect from '@/components/dashboard/HomePrioritySelect.vue'
 import Icon from '@/components/ui/Icon.vue'
 import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
@@ -25,13 +25,13 @@ const { productName, homeSubtitle } = useBrandSettings()
 const effectiveSubtitle = computed(() => homeSubtitle.value || String(t('pages.dashboard.title')))
 const {
   projectId,
-  pipelines,
+  homeWorkflows,
   selected,
   selectedId,
   launchPriority,
   draft,
   sending,
-  hidingPipelineId,
+  hidingWorkflowId,
   canSend,
   loading,
   loadError,
@@ -51,9 +51,9 @@ const {
   removeAttachment,
   load,
   reloadAfterCreate,
-  selectPipeline,
+  selectWorkflow,
   selectPriority,
-  hidePipelineFromHome,
+  hideWorkflowFromHome,
   send,
   closeLaunch,
   onLaunchStarted,
@@ -68,31 +68,31 @@ const composerFocused = ref(false)
 const composing = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const overflowScroll = ref(false)
-const pipelineCardsEl = ref<HTMLDivElement | null>(null)
-const pipelineCanScrollPrev = ref(false)
-const pipelineCanScrollNext = ref(false)
-const pipelineFadeLeft = ref(false)
-const pipelineFadeRight = ref(false)
-const pipelineOverflows = ref(false)
-let pipelineStripObserver: ResizeObserver | null = null
-/** First successful load reveal for the home pipeline rail (plan g1 / g2.2). */
-const pipelineRailRevealed = ref(false)
+const workflowCardsEl = ref<HTMLDivElement | null>(null)
+const workflowCanScrollPrev = ref(false)
+const workflowCanScrollNext = ref(false)
+const workflowFadeLeft = ref(false)
+const workflowFadeRight = ref(false)
+const workflowOverflows = ref(false)
+let workflowStripObserver: ResizeObserver | null = null
+/** First successful load reveal for the home workflow rail (plan g1 / g2.2). */
+const workflowRailRevealed = ref(false)
 const phVisible = ref('')
 const phCursor = ref(false)
 let phTimer: ReturnType<typeof setTimeout> | null = null
 let phHoldTimer: ReturnType<typeof setTimeout> | null = null
 const createBaselineOpen = ref(false)
-const pipelineMenuOpen = ref(false)
-const pipelineMenuX = ref(0)
-const pipelineMenuY = ref(0)
-const pipelineMenuTarget = ref<Workflow | null>(null)
+const workflowMenuOpen = ref(false)
+const workflowMenuX = ref(0)
+const workflowMenuY = ref(0)
+const workflowMenuTarget = ref<Workflow | null>(null)
 let longPressTimer: ReturnType<typeof setTimeout> | null = null
 let longPressStart: { x: number; y: number } | null = null
 let suppressNextCardClick = false
 
-const PIPELINE_MENU_WIDTH = 168
-const PIPELINE_MENU_HEIGHT = 70
-const PIPELINE_MENU_MARGIN = 8
+const WORKFLOW_MENU_WIDTH = 168
+const WORKFLOW_MENU_HEIGHT = 70
+const WORKFLOW_MENU_MARGIN = 8
 const LONG_PRESS_MS = 500
 const LONG_PRESS_MOVE_PX = 10
 
@@ -250,12 +250,12 @@ function goProjects() {
 function openCreateBaseline(e?: Event) {
   e?.preventDefault()
   e?.stopPropagation()
-  closePipelineMenu()
+  closeWorkflowMenu()
   clearLongPress()
   createBaselineOpen.value = true
 }
 
-/** plan g2.1 — HomePipelineSelect create footer → same baseline modal as rail card */
+/** plan g2.1 — HomeWorkflowSelect create footer → same baseline modal as rail card */
 function onCreateFromSelect() {
   openCreateBaseline()
 }
@@ -265,35 +265,35 @@ async function onBaselineCreated(payload?: { id?: string }) {
   await reloadAfterCreate(payload?.id)
 }
 
-function closePipelineMenu() {
-  pipelineMenuOpen.value = false
-  pipelineMenuTarget.value = null
+function closeWorkflowMenu() {
+  workflowMenuOpen.value = false
+  workflowMenuTarget.value = null
 }
 
-function positionPipelineMenu(x: number, y: number) {
-  const maxX = Math.max(PIPELINE_MENU_MARGIN, window.innerWidth - PIPELINE_MENU_WIDTH - PIPELINE_MENU_MARGIN)
-  const maxY = Math.max(PIPELINE_MENU_MARGIN, window.innerHeight - PIPELINE_MENU_HEIGHT - PIPELINE_MENU_MARGIN)
-  pipelineMenuX.value = Math.min(Math.max(PIPELINE_MENU_MARGIN, x), maxX)
-  pipelineMenuY.value = Math.min(Math.max(PIPELINE_MENU_MARGIN, y), maxY)
+function positionWorkflowMenu(x: number, y: number) {
+  const maxX = Math.max(WORKFLOW_MENU_MARGIN, window.innerWidth - WORKFLOW_MENU_WIDTH - WORKFLOW_MENU_MARGIN)
+  const maxY = Math.max(WORKFLOW_MENU_MARGIN, window.innerHeight - WORKFLOW_MENU_HEIGHT - WORKFLOW_MENU_MARGIN)
+  workflowMenuX.value = Math.min(Math.max(WORKFLOW_MENU_MARGIN, x), maxX)
+  workflowMenuY.value = Math.min(Math.max(WORKFLOW_MENU_MARGIN, y), maxY)
 }
 
-function openPipelineMenu(pipeline: Workflow, x: number, y: number) {
-  pipelineMenuTarget.value = pipeline
-  positionPipelineMenu(x, y)
-  pipelineMenuOpen.value = true
+function openWorkflowMenu(workflow: Workflow, x: number, y: number) {
+  workflowMenuTarget.value = workflow
+  positionWorkflowMenu(x, y)
+  workflowMenuOpen.value = true
 }
 
-function onPipelineContextMenu(e: MouseEvent, pipeline: Workflow) {
+function onWorkflowContextMenu(e: MouseEvent, workflow: Workflow) {
   e.preventDefault()
   e.stopPropagation()
   clearLongPress()
-  openPipelineMenu(pipeline, e.clientX, e.clientY)
+  openWorkflowMenu(workflow, e.clientX, e.clientY)
 }
 
-function onPipelineMore(e: MouseEvent, pipeline: Workflow) {
+function onWorkflowMore(e: MouseEvent, workflow: Workflow) {
   e.stopPropagation()
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  openPipelineMenu(pipeline, rect.right, rect.bottom + 4)
+  openWorkflowMenu(workflow, rect.right, rect.bottom + 4)
 }
 
 function clearLongPress() {
@@ -304,18 +304,18 @@ function clearLongPress() {
   longPressStart = null
 }
 
-function onPipelinePointerDown(e: PointerEvent, pipeline: Workflow) {
+function onWorkflowPointerDown(e: PointerEvent, workflow: Workflow) {
   if (e.pointerType !== 'touch') return
   clearLongPress()
   longPressStart = { x: e.clientX, y: e.clientY }
   longPressTimer = setTimeout(() => {
     longPressTimer = null
     suppressNextCardClick = true
-    openPipelineMenu(pipeline, e.clientX, e.clientY)
+    openWorkflowMenu(workflow, e.clientX, e.clientY)
   }, LONG_PRESS_MS)
 }
 
-function onPipelinePointerMove(e: PointerEvent) {
+function onWorkflowPointerMove(e: PointerEvent) {
   if (!longPressStart) return
   if (
     Math.hypot(e.clientX - longPressStart.x, e.clientY - longPressStart.y)
@@ -325,35 +325,35 @@ function onPipelinePointerMove(e: PointerEvent) {
   }
 }
 
-function onPipelineCardClick(id: string) {
+function onWorkflowCardClick(id: string) {
   clearLongPress()
   if (suppressNextCardClick) {
     suppressNextCardClick = false
     return
   }
-  selectPipeline(id)
+  selectWorkflow(id)
 }
 
-async function hideMenuPipeline() {
-  const target = pipelineMenuTarget.value
+async function hideMenuWorkflow() {
+  const target = workflowMenuTarget.value
   if (!target) return
-  closePipelineMenu()
-  await hidePipelineFromHome(target)
+  closeWorkflowMenu()
+  await hideWorkflowFromHome(target)
 }
 
-function editMenuPipeline() {
-  const target = pipelineMenuTarget.value
+function editMenuWorkflow() {
+  const target = workflowMenuTarget.value
   if (!target) return
-  closePipelineMenu()
+  closeWorkflowMenu()
   void router.push(`/workflows/${target.id}/edit`)
 }
 
 function onWindowPointerDown() {
-  if (pipelineMenuOpen.value) closePipelineMenu()
+  if (workflowMenuOpen.value) closeWorkflowMenu()
 }
 
 function onWindowKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') closePipelineMenu()
+  if (e.key === 'Escape') closeWorkflowMenu()
 }
 
 function onComposerSubmit(e: Event) {
@@ -361,17 +361,17 @@ function onComposerSubmit(e: Event) {
   void send()
 }
 
-const PIPELINE_SCROLL_EPS = 2
+const WORKFLOW_SCROLL_EPS = 2
 /** plan g1.1 — keep past this threshold counts as a hold and scrolls to the rail end. */
-const PIPELINE_NAV_HOLD_MS = 400
+const WORKFLOW_NAV_HOLD_MS = 400
 
-let pipelineNavHoldTimer: ReturnType<typeof setTimeout> | null = null
-let pipelineNavGestureSeq = 0
+let workflowNavHoldTimer: ReturnType<typeof setTimeout> | null = null
+let workflowNavGestureSeq = 0
 /** Direction of an in-flight scroll-to-edge; cleared once that end is reached. plan g1.2 */
-let pipelineEdgeDir: number | null = null
+let workflowEdgeDir: number | null = null
 
-function pipelineCardStep(): number {
-  const rail = pipelineCardsEl.value
+function workflowCardStep(): number {
+  const rail = workflowCardsEl.value
   if (!rail) return 204
   const card = rail.querySelector('.home-shell__card')
   if (!card) return 204
@@ -380,93 +380,93 @@ function pipelineCardStep(): number {
   return card.getBoundingClientRect().width + gap
 }
 
-function syncPipelineNav() {
-  const rail = pipelineCardsEl.value
+function syncWorkflowNav() {
+  const rail = workflowCardsEl.value
   if (!rail) {
-    pipelineCanScrollPrev.value = false
-    pipelineCanScrollNext.value = false
-    pipelineFadeLeft.value = false
-    pipelineFadeRight.value = false
-    pipelineOverflows.value = false
+    workflowCanScrollPrev.value = false
+    workflowCanScrollNext.value = false
+    workflowFadeLeft.value = false
+    workflowFadeRight.value = false
+    workflowOverflows.value = false
     return
   }
   const max = Math.max(0, rail.scrollWidth - rail.clientWidth)
   const left = rail.scrollLeft
-  const atStart = left <= PIPELINE_SCROLL_EPS
-  const atEnd = left >= max - PIPELINE_SCROLL_EPS
-  const overflow = max > PIPELINE_SCROLL_EPS
-  pipelineOverflows.value = overflow
-  pipelineCanScrollPrev.value = overflow && !atStart
-  pipelineCanScrollNext.value = overflow && !atEnd
-  pipelineFadeLeft.value = overflow && !atStart
-  pipelineFadeRight.value = overflow && !atEnd
-  if (pipelineEdgeDir != null) {
-    if ((pipelineEdgeDir < 0 && atStart) || (pipelineEdgeDir > 0 && atEnd)) {
-      pipelineEdgeDir = null
+  const atStart = left <= WORKFLOW_SCROLL_EPS
+  const atEnd = left >= max - WORKFLOW_SCROLL_EPS
+  const overflow = max > WORKFLOW_SCROLL_EPS
+  workflowOverflows.value = overflow
+  workflowCanScrollPrev.value = overflow && !atStart
+  workflowCanScrollNext.value = overflow && !atEnd
+  workflowFadeLeft.value = overflow && !atStart
+  workflowFadeRight.value = overflow && !atEnd
+  if (workflowEdgeDir != null) {
+    if ((workflowEdgeDir < 0 && atStart) || (workflowEdgeDir > 0 && atEnd)) {
+      workflowEdgeDir = null
     }
   }
 }
 
-function scrollPipelineByDir(dir: number) {
-  const rail = pipelineCardsEl.value
+function scrollWorkflowByDir(dir: number) {
+  const rail = workflowCardsEl.value
   if (!rail) return
-  const delta = pipelineCardStep() * dir
+  const delta = workflowCardStep() * dir
   if (prefersReducedMotion()) {
-    rail.classList.add('home-pipeline-rail--instant')
+    rail.classList.add('home-workflow-rail--instant')
     rail.scrollLeft += delta
-    requestAnimationFrame(() => rail.classList.remove('home-pipeline-rail--instant'))
+    requestAnimationFrame(() => rail.classList.remove('home-workflow-rail--instant'))
   } else {
     rail.scrollBy({ left: delta, behavior: 'smooth' })
   }
 }
 
-function clearPipelineNavHold() {
-  if (pipelineNavHoldTimer != null) {
-    clearTimeout(pipelineNavHoldTimer)
-    pipelineNavHoldTimer = null
+function clearWorkflowNavHold() {
+  if (workflowNavHoldTimer != null) {
+    clearTimeout(workflowNavHoldTimer)
+    workflowNavHoldTimer = null
   }
 }
 
 /** plan g1.2 — assigning scrollLeft stops an in-flight smooth scroll at the current offset. */
-function stopPipelineSmoothScroll() {
-  const rail = pipelineCardsEl.value
-  pipelineEdgeDir = null
+function stopWorkflowSmoothScroll() {
+  const rail = workflowCardsEl.value
+  workflowEdgeDir = null
   if (!rail) return
   const left = rail.scrollLeft
-  rail.classList.add('home-pipeline-rail--instant')
+  rail.classList.add('home-workflow-rail--instant')
   rail.scrollLeft = left
-  requestAnimationFrame(() => rail.classList.remove('home-pipeline-rail--instant'))
+  requestAnimationFrame(() => rail.classList.remove('home-workflow-rail--instant'))
 }
 
 /** plan g1.2 — left end is 0; right end is scrollWidth − clientWidth. */
-function scrollPipelineToEdge(dir: number) {
-  const rail = pipelineCardsEl.value
+function scrollWorkflowToEdge(dir: number) {
+  const rail = workflowCardsEl.value
   if (!rail) return
   const max = Math.max(0, rail.scrollWidth - rail.clientWidth)
   const target = dir < 0 ? 0 : max
-  pipelineEdgeDir = dir
+  workflowEdgeDir = dir
   if (prefersReducedMotion()) {
-    rail.classList.add('home-pipeline-rail--instant')
+    rail.classList.add('home-workflow-rail--instant')
     rail.scrollLeft = target
-    requestAnimationFrame(() => rail.classList.remove('home-pipeline-rail--instant'))
+    requestAnimationFrame(() => rail.classList.remove('home-workflow-rail--instant'))
   } else {
     rail.scrollTo({ left: target, behavior: 'smooth' })
   }
 }
 
-function onPipelineNavPointerDown(e: PointerEvent, dir: number) {
+function onWorkflowNavPointerDown(e: PointerEvent, dir: number) {
   if (e.button != null && e.button !== 0) return
   const el = e.currentTarget as HTMLButtonElement | null
   if (!el || el.disabled) return
 
-  if (pipelineEdgeDir != null && pipelineEdgeDir !== dir) {
-    stopPipelineSmoothScroll()
+  if (workflowEdgeDir != null && workflowEdgeDir !== dir) {
+    stopWorkflowSmoothScroll()
   }
 
-  clearPipelineNavHold()
-  const token = String(++pipelineNavGestureSeq)
-  el.dataset.pipelineNavGesture = token
-  delete el.dataset.pipelineNavBlockClick
+  clearWorkflowNavHold()
+  const token = String(++workflowNavGestureSeq)
+  el.dataset.workflowNavGesture = token
+  delete el.dataset.workflowNavBlockClick
 
   if (typeof el.setPointerCapture === 'function' && Number.isFinite(e.pointerId)) {
     try {
@@ -476,18 +476,18 @@ function onPipelineNavPointerDown(e: PointerEvent, dir: number) {
     }
   }
 
-  pipelineNavHoldTimer = setTimeout(() => {
-    pipelineNavHoldTimer = null
-    if (el.dataset.pipelineNavGesture !== token) return
+  workflowNavHoldTimer = setTimeout(() => {
+    workflowNavHoldTimer = null
+    if (el.dataset.workflowNavGesture !== token) return
     // plan g1.1 — swallow the click that follows this press so it does not step again
-    el.dataset.pipelineNavBlockClick = token
-    scrollPipelineToEdge(dir)
-  }, PIPELINE_NAV_HOLD_MS)
+    el.dataset.workflowNavBlockClick = token
+    scrollWorkflowToEdge(dir)
+  }, WORKFLOW_NAV_HOLD_MS)
 }
 
-function releasePipelineNavPointer(e: PointerEvent) {
+function releaseWorkflowNavPointer(e: PointerEvent) {
   const el = e.currentTarget as HTMLElement | null
-  clearPipelineNavHold()
+  clearWorkflowNavHold()
   if (!el || !Number.isFinite(e.pointerId) || typeof el.releasePointerCapture !== 'function') return
   try {
     if (typeof el.hasPointerCapture === 'function' && !el.hasPointerCapture(e.pointerId)) return
@@ -497,30 +497,30 @@ function releasePipelineNavPointer(e: PointerEvent) {
   }
 }
 
-function onPipelineNavPointerUp(e: PointerEvent) {
-  releasePipelineNavPointer(e)
+function onWorkflowNavPointerUp(e: PointerEvent) {
+  releaseWorkflowNavPointer(e)
 }
 
-function onPipelineNavPointerCancel(e: PointerEvent) {
-  releasePipelineNavPointer(e)
+function onWorkflowNavPointerCancel(e: PointerEvent) {
+  releaseWorkflowNavPointer(e)
 }
 
-function onPipelineNavClick(e: MouseEvent, dir: number) {
+function onWorkflowNavClick(e: MouseEvent, dir: number) {
   const el = e.currentTarget as HTMLButtonElement | null
   if (!el || el.disabled) return
   if (
-    el.dataset.pipelineNavBlockClick
-    && el.dataset.pipelineNavBlockClick === el.dataset.pipelineNavGesture
+    el.dataset.workflowNavBlockClick
+    && el.dataset.workflowNavBlockClick === el.dataset.workflowNavGesture
   ) {
-    delete el.dataset.pipelineNavBlockClick
+    delete el.dataset.workflowNavBlockClick
     return
   }
-  scrollPipelineByDir(dir)
+  scrollWorkflowByDir(dir)
 }
 
-function onPipelineWheel(e: WheelEvent) {
-  closePipelineMenu()
-  const rail = pipelineCardsEl.value
+function onWorkflowWheel(e: WheelEvent) {
+  closeWorkflowMenu()
+  const rail = workflowCardsEl.value
   if (!rail) return
   if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && !e.shiftKey) return
   const dx = e.shiftKey ? e.deltaY : e.deltaX
@@ -529,13 +529,13 @@ function onPipelineWheel(e: WheelEvent) {
   rail.scrollLeft += dx
 }
 
-function bindPipelineStripObserver() {
+function bindWorkflowStripObserver() {
   if (typeof ResizeObserver === 'undefined') return
-  pipelineStripObserver?.disconnect()
-  pipelineStripObserver = null
-  if (!pipelineCardsEl.value) return
-  pipelineStripObserver = new ResizeObserver(() => syncPipelineNav())
-  pipelineStripObserver.observe(pipelineCardsEl.value)
+  workflowStripObserver?.disconnect()
+  workflowStripObserver = null
+  if (!workflowCardsEl.value) return
+  workflowStripObserver = new ResizeObserver(() => syncWorkflowNav())
+  workflowStripObserver.observe(workflowCardsEl.value)
 }
 
 function openFilePicker() {
@@ -550,48 +550,48 @@ watch(placeholderLines, () => {
 })
 
 watch(
-  () => pipelines.value.length,
+  () => homeWorkflows.value.length,
   () => nextTick(() => {
-    syncPipelineNav()
-    bindPipelineStripObserver()
+    syncWorkflowNav()
+    bindWorkflowStripObserver()
   }),
 )
 
 // plan g1.2 — loading true→false with no error: reveal rail on that update (no post-success wait)
 watch(loading, (now, prev) => {
   if (prev === true && now === false && !loadError.value) {
-    pipelineRailRevealed.value = true
+    workflowRailRevealed.value = true
   }
 })
 
-function onPipelineEnterAnimationEnd(e: AnimationEvent) {
+function onWorkflowEnterAnimationEnd(e: AnimationEvent) {
   if (e.target !== e.currentTarget) return
-  syncPipelineNav()
+  syncWorkflowNav()
 }
 
 onMounted(() => {
   nextTick(() => {
     autoGrow()
-    syncPipelineNav()
-    bindPipelineStripObserver()
+    syncWorkflowNav()
+    bindWorkflowStripObserver()
   })
-  window.addEventListener('resize', syncPipelineNav)
+  window.addEventListener('resize', syncWorkflowNav)
   window.addEventListener('pointerdown', onWindowPointerDown)
   window.addEventListener('keydown', onWindowKeydown)
-  window.addEventListener('scroll', closePipelineMenu, true)
+  window.addEventListener('scroll', closeWorkflowMenu, true)
 })
 
 onBeforeUnmount(() => {
   clearBrandTimers()
   clearPhTimers()
   clearLongPress()
-  clearPipelineNavHold()
-  pipelineStripObserver?.disconnect()
-  pipelineStripObserver = null
-  window.removeEventListener('resize', syncPipelineNav)
+  clearWorkflowNavHold()
+  workflowStripObserver?.disconnect()
+  workflowStripObserver = null
+  window.removeEventListener('resize', syncWorkflowNav)
   window.removeEventListener('pointerdown', onWindowPointerDown)
   window.removeEventListener('keydown', onWindowKeydown)
-  window.removeEventListener('scroll', closePipelineMenu, true)
+  window.removeEventListener('scroll', closeWorkflowMenu, true)
 })
 </script>
 
@@ -721,17 +721,17 @@ onBeforeUnmount(() => {
             >
               <Icon name="plus" :size="16" />
             </button>
-            <label class="sr-only" for="home-pipeline-select">{{ t('pages.dashboard.pickPipeline') }}</label>
-            <HomePipelineSelect
-              :pipelines="pipelines"
+            <label class="sr-only" for="home-workflow-select">{{ t('pages.dashboard.pickWorkflow') }}</label>
+            <HomeWorkflowSelect
+              :workflows="homeWorkflows"
               :model-value="selectedId"
               :disabled="sending"
-              @update:model-value="selectPipeline"
+              @update:model-value="selectWorkflow"
               @create="onCreateFromSelect"
             />
             <HomePrioritySelect
               :model-value="launchPriority"
-              :disabled="!pipelines.length || sending"
+              :disabled="!homeWorkflows.length || sending"
               @update:model-value="selectPriority"
             />
             <div class="flex-1" />
@@ -767,17 +767,17 @@ onBeforeUnmount(() => {
 
       <!-- plan g1: wait blank (no loading copy); reveal whole rail+add together on first success -->
       <div
-        v-else-if="pipelineRailRevealed"
-        class="home-pipeline-enter home-pipeline-enter--ready w-full"
-        data-testid="home-pipeline-enter"
-        @animationend="onPipelineEnterAnimationEnd"
+        v-else-if="workflowRailRevealed"
+        class="home-workflow-enter home-workflow-enter--ready w-full"
+        data-testid="home-workflow-enter"
+        @animationend="onWorkflowEnterAnimationEnd"
       >
         <div
-          v-if="!pipelines.length"
+          v-if="!homeWorkflows.length"
           class="mt-10 text-center"
-          data-testid="home-pipelines-empty"
+          data-testid="home-workflows-empty"
         >
-          <p class="text-sm text-txt3">{{ t('pages.dashboard.noPipelines') }}</p>
+          <p class="text-sm text-txt3">{{ t('pages.dashboard.noWorkflows') }}</p>
           <button
             type="button"
             class="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] text-txt2 hover:bg-elevated"
@@ -789,67 +789,67 @@ onBeforeUnmount(() => {
         </div>
 
         <div
-          class="home-pipeline-rail-wrap w-full"
+          class="home-workflow-rail-wrap w-full"
           :class="{
-            'mt-10': pipelines.length > 0,
-            'mt-4': pipelines.length === 0,
-            'home-pipeline-rail-wrap--has-left': pipelineFadeLeft,
-            'home-pipeline-rail-wrap--has-right': pipelineFadeRight,
+            'mt-10': homeWorkflows.length > 0,
+            'mt-4': homeWorkflows.length === 0,
+            'home-workflow-rail-wrap--has-left': workflowFadeLeft,
+            'home-workflow-rail-wrap--has-right': workflowFadeRight,
           }"
-          data-testid="home-pipeline-rail-wrap"
+          data-testid="home-workflow-rail-wrap"
         >
           <button
             type="button"
-            class="home-pipeline-nav home-pipeline-nav--prev"
-            data-testid="home-pipeline-scroll-prev"
-            :disabled="!pipelineCanScrollPrev"
+            class="home-workflow-nav home-workflow-nav--prev"
+            data-testid="home-workflow-scroll-prev"
+            :disabled="!workflowCanScrollPrev"
             :aria-label="t('pages.dashboard.scrollLeft')"
             :title="t('pages.dashboard.scrollLeft')"
-            @pointerdown="onPipelineNavPointerDown($event, -1)"
-            @pointerup="onPipelineNavPointerUp"
-            @pointercancel="onPipelineNavPointerCancel"
-            @click="onPipelineNavClick($event, -1)"
+            @pointerdown="onWorkflowNavPointerDown($event, -1)"
+            @pointerup="onWorkflowNavPointerUp"
+            @pointercancel="onWorkflowNavPointerCancel"
+            @click="onWorkflowNavClick($event, -1)"
             @contextmenu.prevent
           >
             <Icon name="chevron-left" :size="16" />
           </button>
-          <div class="home-pipeline-fade home-pipeline-fade--left" aria-hidden="true" />
-          <div class="home-pipeline-fade home-pipeline-fade--right" aria-hidden="true" />
+          <div class="home-workflow-fade home-workflow-fade--left" aria-hidden="true" />
+          <div class="home-workflow-fade home-workflow-fade--right" aria-hidden="true" />
 
           <div
-            ref="pipelineCardsEl"
-            class="home-pipeline-rail flex w-full gap-3 pb-1"
-            :class="{ 'home-pipeline-rail--overflow': pipelineOverflows }"
-            data-testid="home-pipeline-cards"
+            ref="workflowCardsEl"
+            class="home-workflow-rail flex w-full gap-3 pb-1"
+            :class="{ 'home-workflow-rail--overflow': workflowOverflows }"
+            data-testid="home-workflow-cards"
             tabindex="0"
             role="list"
-            @scroll.passive="syncPipelineNav"
-            @wheel="onPipelineWheel"
+            @scroll.passive="syncWorkflowNav"
+            @wheel="onWorkflowWheel"
           >
             <div
-              v-for="p in pipelines"
+              v-for="p in homeWorkflows"
               :key="p.id"
               tabindex="0"
               role="listitem"
               class="home-shell__card w-48 shrink-0 overflow-hidden rounded-lg border border-line p-0 text-left"
               :class="p.id === selected?.id ? 'home-shell__card--selected' : 'hover:border-line-strong'"
-              :data-testid="`home-pipeline-card-${p.id}`"
-              @click="onPipelineCardClick(p.id)"
-              @keydown.enter.space.prevent="selectPipeline(p.id)"
-              @contextmenu="onPipelineContextMenu($event, p)"
-              @pointerdown="onPipelinePointerDown($event, p)"
-              @pointermove="onPipelinePointerMove"
+              :data-testid="`home-workflow-card-${p.id}`"
+              @click="onWorkflowCardClick(p.id)"
+              @keydown.enter.space.prevent="selectWorkflow(p.id)"
+              @contextmenu="onWorkflowContextMenu($event, p)"
+              @pointerdown="onWorkflowPointerDown($event, p)"
+              @pointermove="onWorkflowPointerMove"
               @pointerup="clearLongPress"
               @pointercancel="clearLongPress"
               @pointerleave="clearLongPress"
             >
               <button
                 type="button"
-                class="home-pipeline-more absolute right-2 top-2 z-[1] flex h-7 w-7 items-center justify-center rounded-lg text-txt2"
-                :aria-label="t('pages.dashboard.pipelineMenu.more')"
-                :title="t('pages.dashboard.pipelineMenu.more')"
-                :data-testid="`home-pipeline-more-${p.id}`"
-                @click="onPipelineMore($event, p)"
+                class="home-workflow-more absolute right-2 top-2 z-[1] flex h-7 w-7 items-center justify-center rounded-lg text-txt2"
+                :aria-label="t('pages.dashboard.workflowMenu.more')"
+                :title="t('pages.dashboard.workflowMenu.more')"
+                :data-testid="`home-workflow-more-${p.id}`"
+                @click="onWorkflowMore($event, p)"
               >
                 <Icon name="more" :size="16" />
               </button>
@@ -866,13 +866,13 @@ onBeforeUnmount(() => {
                 <div
                   class="truncate text-[13px] font-medium text-txt"
                   :title="p.name"
-                  data-testid="home-pipeline-card-name"
+                  data-testid="home-workflow-card-name"
                 >{{ p.name }}</div>
                 <div
                   v-if="p.projectName"
                   class="mt-0.5 truncate text-[11px] text-txt2"
                   :title="p.projectName"
-                  :data-testid="`home-pipeline-card-project-${p.id}`"
+                  :data-testid="`home-workflow-card-project-${p.id}`"
                 >{{ p.projectName }}</div>
                 <div
                   class="mt-0.5 line-clamp-2 text-[11px] text-txt3"
@@ -900,15 +900,15 @@ onBeforeUnmount(() => {
 
           <button
             type="button"
-            class="home-pipeline-nav home-pipeline-nav--next"
-            data-testid="home-pipeline-scroll-next"
-            :disabled="!pipelineCanScrollNext"
+            class="home-workflow-nav home-workflow-nav--next"
+            data-testid="home-workflow-scroll-next"
+            :disabled="!workflowCanScrollNext"
             :aria-label="t('pages.dashboard.scrollRight')"
             :title="t('pages.dashboard.scrollRight')"
-            @pointerdown="onPipelineNavPointerDown($event, 1)"
-            @pointerup="onPipelineNavPointerUp"
-            @pointercancel="onPipelineNavPointerCancel"
-            @click="onPipelineNavClick($event, 1)"
+            @pointerdown="onWorkflowNavPointerDown($event, 1)"
+            @pointerup="onWorkflowNavPointerUp"
+            @pointercancel="onWorkflowNavPointerCancel"
+            @click="onWorkflowNavClick($event, 1)"
             @contextmenu.prevent
           >
             <Icon name="chevron-right" :size="16" />
@@ -919,34 +919,34 @@ onBeforeUnmount(() => {
 
     <Teleport to="body">
       <div
-        v-if="pipelineMenuOpen && pipelineMenuTarget"
-        class="home-pipeline-menu fixed z-[9999] min-w-[168px] rounded-lg border border-line bg-elevated py-1 shadow-card"
+        v-if="workflowMenuOpen && workflowMenuTarget"
+        class="home-workflow-menu fixed z-[9999] min-w-[168px] rounded-lg border border-line bg-elevated py-1 shadow-card"
         role="menu"
-        data-testid="home-pipeline-menu"
-        :style="{ left: pipelineMenuX + 'px', top: pipelineMenuY + 'px' }"
+        data-testid="home-workflow-menu"
+        :style="{ left: workflowMenuX + 'px', top: workflowMenuY + 'px' }"
         @pointerdown.stop
         @click.stop
       >
         <button
           type="button"
-          class="home-pipeline-menu__item"
+          class="home-workflow-menu__item"
           role="menuitem"
-          data-testid="home-pipeline-menu-hide"
-          :disabled="hidingPipelineId === pipelineMenuTarget.id"
-          @click="hideMenuPipeline"
+          data-testid="home-workflow-menu-hide"
+          :disabled="hidingWorkflowId === workflowMenuTarget.id"
+          @click="hideMenuWorkflow"
         >
           <Icon name="eye-off" :size="14" aria-hidden="true" />
-          <span>{{ t('pages.dashboard.pipelineMenu.hide') }}</span>
+          <span>{{ t('pages.dashboard.workflowMenu.hide') }}</span>
         </button>
         <button
           type="button"
-          class="home-pipeline-menu__item"
+          class="home-workflow-menu__item"
           role="menuitem"
-          data-testid="home-pipeline-menu-edit"
-          @click="editMenuPipeline"
+          data-testid="home-workflow-menu-edit"
+          @click="editMenuWorkflow"
         >
           <Icon name="edit" :size="14" aria-hidden="true" />
-          <span>{{ t('pages.dashboard.pipelineMenu.edit') }}</span>
+          <span>{{ t('pages.dashboard.workflowMenu.edit') }}</span>
         </button>
       </div>
     </Teleport>
@@ -1184,19 +1184,19 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid rgb(var(--c-line) / 0.55);
 }
 
-.home-pipeline-more {
+.home-workflow-more {
   border: 0;
   background: color-mix(in srgb, rgb(var(--c-surface)) 78%, transparent);
 }
 
-.home-pipeline-more:hover,
-.home-pipeline-more:focus-visible {
+.home-workflow-more:hover,
+.home-workflow-more:focus-visible {
   color: rgb(var(--c-txt));
   background: rgb(var(--c-overlay));
   outline: none;
 }
 
-.home-pipeline-menu__item {
+.home-workflow-menu__item {
   display: flex;
   width: 100%;
   align-items: center;
@@ -1209,14 +1209,14 @@ onBeforeUnmount(() => {
   text-align: left;
 }
 
-.home-pipeline-menu__item:hover,
-.home-pipeline-menu__item:focus-visible {
+.home-workflow-menu__item:hover,
+.home-workflow-menu__item:focus-visible {
   color: rgb(var(--c-txt));
   background: rgb(var(--c-overlay));
   outline: none;
 }
 
-.home-pipeline-menu__item svg {
+.home-workflow-menu__item svg {
   flex-shrink: 0;
   color: rgb(var(--c-txt3));
 }
@@ -1225,31 +1225,31 @@ onBeforeUnmount(() => {
   background: rgb(244 244 245);
 }
 
-/* g2 — pipeline rail: hidden scrollbar + edge arrows (aligned to page.html demo) */
-.home-pipeline-rail-wrap {
+/* g2 — workflow rail: hidden scrollbar + edge arrows (aligned to page.html demo) */
+.home-workflow-rail-wrap {
   position: relative;
 }
 
 /* plan g1.2 / g1.3 — whole-rail enter: 420ms opacity + translateY, no per-card delay */
-.home-pipeline-enter {
+.home-workflow-enter {
   opacity: 0;
   transform: translateY(10px);
   pointer-events: none;
 }
 
-.home-pipeline-enter--ready {
-  animation: home-pipeline-rail-enter 420ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+.home-workflow-enter--ready {
+  animation: home-workflow-rail-enter 420ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
   pointer-events: auto;
 }
 
-@keyframes home-pipeline-rail-enter {
+@keyframes home-workflow-rail-enter {
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
 
-.home-pipeline-rail {
+.home-workflow-rail {
   justify-content: center;
   overflow-x: auto;
   overflow-y: hidden;
@@ -1261,22 +1261,22 @@ onBeforeUnmount(() => {
   -ms-overflow-style: none;
 }
 
-.home-pipeline-rail--overflow {
+.home-workflow-rail--overflow {
   justify-content: flex-start;
 }
 
-.home-pipeline-rail::-webkit-scrollbar {
+.home-workflow-rail::-webkit-scrollbar {
   width: 0;
   height: 0;
   display: none;
   background: transparent;
 }
 
-.home-pipeline-rail--instant {
+.home-workflow-rail--instant {
   scroll-behavior: auto;
 }
 
-.home-pipeline-nav {
+.home-workflow-nav {
   position: absolute;
   top: 50%;
   transform: translateY(calc(-50% - 4px));
@@ -1302,26 +1302,26 @@ onBeforeUnmount(() => {
     background-color 0.15s ease;
 }
 
-.home-pipeline-nav:hover:not(:disabled) {
+.home-workflow-nav:hover:not(:disabled) {
   color: rgb(var(--c-txt));
   border-color: rgb(var(--c-line-strong));
   background: rgb(var(--c-surface));
 }
 
-.home-pipeline-nav:disabled {
+.home-workflow-nav:disabled {
   opacity: 0;
   pointer-events: none;
 }
 
-.home-pipeline-nav--prev {
+.home-workflow-nav--prev {
   left: -6px;
 }
 
-.home-pipeline-nav--next {
+.home-workflow-nav--next {
   right: -6px;
 }
 
-.home-pipeline-fade {
+.home-workflow-fade {
   pointer-events: none;
   position: absolute;
   top: 0;
@@ -1332,18 +1332,18 @@ onBeforeUnmount(() => {
   transition: opacity 0.2s ease;
 }
 
-.home-pipeline-fade--left {
+.home-workflow-fade--left {
   left: 0;
   background: linear-gradient(90deg, rgb(var(--c-base)), transparent);
 }
 
-.home-pipeline-fade--right {
+.home-workflow-fade--right {
   right: 0;
   background: linear-gradient(270deg, rgb(var(--c-base)), transparent);
 }
 
-.home-pipeline-rail-wrap--has-left .home-pipeline-fade--left,
-.home-pipeline-rail-wrap--has-right .home-pipeline-fade--right {
+.home-workflow-rail-wrap--has-left .home-workflow-fade--left,
+.home-workflow-rail-wrap--has-right .home-workflow-fade--right {
   opacity: 1;
 }
 
@@ -1386,12 +1386,12 @@ onBeforeUnmount(() => {
     opacity: 1;
   }
 
-  .home-pipeline-rail {
+  .home-workflow-rail {
     scroll-behavior: auto;
   }
 
-  .home-pipeline-enter,
-  .home-pipeline-enter--ready {
+  .home-workflow-enter,
+  .home-workflow-enter--ready {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
@@ -1408,11 +1408,11 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 640px) {
-  .home-pipeline-nav--prev {
+  .home-workflow-nav--prev {
     left: 0;
   }
 
-  .home-pipeline-nav--next {
+  .home-workflow-nav--next {
     right: 0;
   }
 }

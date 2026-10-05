@@ -99,7 +99,7 @@ func (h *Handlers) PublicGateEvents(c *gin.Context) {
 	// Only drawer tokens may offer their page to the agent; a share-link
 	// workbench is not a preview page.
 	var pc *pagebridge.Conn
-	if h.PageBridge != nil && embed.IsSessionToken(token) && lookup.Node != nil && models.PreviewCapableNode(lookup.Node.Type, lookup.Node.Config) {
+	if h.PageBridge != nil && embed.IsSessionToken(token) && lookup.Node != nil && models.PreviewCapableNode(lookup.Node.Caps) {
 		pc = h.PageBridge.Attach(pagebridge.Key{RunID: runID, NodeID: producerID, Owner: h.publicTurnOwner(token, lane)}, w.write)
 		defer pc.Detach()
 	}

@@ -15,7 +15,7 @@ func TestSaveAnnotationArtifactUpsertAndIsolation(t *testing.T) {
 	now := time.Now()
 	g := models.Graph{
 		Nodes: []models.Node{
-			{ID: "visual", Type: "visual"},
+			{ID: "visual", Type: "agent", Caps: capsPage},
 			{ID: "gate", Type: "human_gate", Config: map[string]any{
 				"title":         "审阅",
 				"body_template": "{{nodes.visual.outputs.page}}",

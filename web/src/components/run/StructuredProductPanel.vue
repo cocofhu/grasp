@@ -3,14 +3,14 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
 import { api } from '@/lib/api/api'
-import { nodeColorHex } from '@/data/nodeRegistry'
+import { nodeColor } from '@/data/nodeRegistry'
 import { useNodeDefs } from '@/lib/run/useNodeDefs'
 import StructuredArtifactView from './StructuredArtifactView.vue'
 import HtmlPreview from '../ui/HtmlPreview.vue'
 import SelectionAddToChat from './SelectionAddToChat.vue'
 import UpstreamRequirementContext from './UpstreamRequirementContext.vue'
 import { ARTIFACT_TO_OUTPUT_JSON } from '@/lib/run/structuredArtifacts'
-import { productArtifactName, productArtifactsForType, resolveStructuredProductArtifact } from '@/lib/run/productNodeArtifacts'
+import { productArtifactName, productArtifactsForNode, resolveStructuredProductArtifact } from '@/lib/run/productNodeArtifacts'
 import { artifactFriendlyNameKey } from '@/lib/run/reactArtifactPreview'
 import { provideReviewAnnotate } from '@/lib/inbox/reviewAnnotate'
 import { addClarifyAnnotation } from '@/lib/inbox/useClarifyDraft'
@@ -64,10 +64,10 @@ function onQuoteAdd(ann: ReactAnnotation) {
 const { NODE_DEFS } = useNodeDefs()
 
 const productTabs = computed(() => {
-  const listed = productArtifactsForType(props.node.type)
+  const listed = productArtifactsForNode(props.node)
   if (listed.length <= 1) return listed
   // Only this node's writes count — same-named upstream leftovers must not
-  // surface as Approve (or other multi-product) optional tabs.
+  // surface as optional tabs of a multi-product Agent.
   const ownedNames = new Set(
     (props.run.artifacts || []).filter((a) => a.nodeId === props.node.id).map((a) => a.name),
   )
@@ -94,10 +94,11 @@ watch(
 )
 
 const spec = computed(() => {
-  const name = selectedArtifactName.value || productArtifactName(props.node.type)
+  const name = selectedArtifactName.value || productArtifactName(props.node)
   return name ? { name } : undefined
 })
-const hex = computed(() => nodeColorHex(props.node.type))
+const hex = computed(() => nodeColor(props.node.type))
+const hexSoft = computed(() => nodeColor(props.node.type, 0.13))
 const def = computed(() => NODE_DEFS.value[props.node.type])
 
 const artifact = computed(() => {
@@ -108,7 +109,7 @@ const artifact = computed(() => {
   return resolveStructuredProductArtifact({
     name,
     nodeId: props.node.id,
-    nodeType: props.node.type,
+    node: props.node,
     nodeStatus: props.nodeRun.status,
     hasSnapshot: typeof snap === 'string' && snap.trim().length > 0,
     artifacts: props.run.artifacts || [],
@@ -117,7 +118,7 @@ const artifact = computed(() => {
 
 const doc = ref<any>(null)
 const rawHtml = ref('')
-const isVisual = computed(() => props.node.type === 'visual' || spec.value?.name === 'page.html')
+const isVisual = computed(() => spec.value?.name === 'page.html')
 
 function artifactTabLabel(name: string): string {
   const key = artifactFriendlyNameKey(name)
@@ -310,7 +311,7 @@ const pending = computed(() => props.nodeRun.status === 'pending')
       class="flex shrink-0 items-center gap-2.5 px-4 pt-4 pb-3"
       data-testid="structured-product-header"
     >
-      <div class="flex h-8 w-8 items-center justify-center rounded-md" :style="{ background: hex + '22', color: hex }">
+      <div class="flex h-8 w-8 items-center justify-center rounded-md" :style="{ background: hexSoft, color: hex }">
         <Icon :name="def.icon" :size="16" />
       </div>
       <div class="min-w-0 flex-1">

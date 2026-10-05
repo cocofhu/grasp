@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { adaptInboxContextToRun } from './inboxContext'
+import { CLARIFY_CAPS, IMPLEMENT_CAPS } from '@/test/capsFixtures'
 
 describe('adaptInboxContextToRun', () => {
   it('maps gate context to Run subset', () => {
@@ -46,8 +47,8 @@ describe('adaptInboxContextToRun', () => {
         type: 'clarify',
         status: 'waiting_human',
         nodes: [
-          { id: 'research_1', type: 'research', label: '调研', position: { x: 0, y: 0 }, config: {} },
-          { id: 'react', type: 'react', label: '澄清', position: { x: 1, y: 0 }, config: {} },
+          { id: 'research_1', type: 'agent', caps: IMPLEMENT_CAPS, label: '调研', position: { x: 0, y: 0 }, config: {} },
+          { id: 'react', type: 'agent', caps: CLARIFY_CAPS, label: '澄清', position: { x: 1, y: 0 }, config: {} },
         ],
         artifacts: [
           {
@@ -81,7 +82,7 @@ describe('adaptInboxContextToRun', () => {
       },
       'r3',
     )
-    expect(run.nodes?.find((n) => n.id === 'research_1')?.type).toBe('research')
+    expect(run.nodes?.find((n) => n.id === 'research_1')?.type).toBe('agent')
     expect(run.artifacts[0].name).toBe('research.json')
     expect(run.nodeExecutions?.research_1[0].outputs?.research).toContain('ok')
     expect(run.clarifyByNode?.research_1.done).toBe(false)
@@ -121,7 +122,7 @@ describe('adaptInboxContextToRun', () => {
       {
         type: 'clarify',
         status: 'waiting_human',
-        nodes: [{ id: 'predev', type: 'approve', label: 'Approve', position: { x: 0, y: 0 }, config: {} }],
+        nodes: [{ id: 'predev', type: 'agent', caps: CLARIFY_CAPS, label: 'Approve', position: { x: 0, y: 0 }, config: {} }],
         artifacts: [],
         nodeExecutions: {},
         clarify: {

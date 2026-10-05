@@ -81,11 +81,11 @@ describe('user-facing copy remediation keys', () => {
 
   // Freeze contract: Approve opening hint stays exact zh「请先描述目标…」(en existing).
   // Scope is this placeholder only — skipInputPlaceholder is intentionally not locked here.
-  it('approve empty chat asks the user to state the goal first', () => {
-    expect(zh.global.t('pages.clarify.approveInputPlaceholder')).toBe('请先描述目标…')
-    expect(en.global.t('pages.clarify.approveInputPlaceholder')).toMatch(/goal first/i)
-    expect(zh.global.t('pages.clarify.approveEmptyHint')).toContain('先说明本次要做的目标')
-    expect(en.global.t('pages.clarify.approveEmptyHint')).toMatch(/goal first/i)
+  it('clarify empty chat asks the user to state the goal first', () => {
+    expect(zh.global.t('pages.clarify.clarifyInputPlaceholder')).toBe('请先描述目标…')
+    expect(en.global.t('pages.clarify.clarifyInputPlaceholder')).toMatch(/goal first/i)
+    expect(zh.global.t('pages.clarify.clarifyEmptyHint')).toContain('先说明本次要做的目标')
+    expect(en.global.t('pages.clarify.clarifyEmptyHint')).toMatch(/goal first/i)
   })
 
   it('clarify empty-fail retry copy is user-facing (plan g1.1)', () => {
@@ -98,7 +98,7 @@ describe('user-facing copy remediation keys', () => {
   it('run list page title is 运行记录 not the terse 运行', () => {
     expect(zh.global.t('pages.runList.title')).toBe('运行记录')
     expect(en.global.t('pages.runList.title')).toBe('Run history')
-    expect(zh.global.t('pages.runList.subtitle')).toBe('按项目、流水线与状态筛选')
+    expect(zh.global.t('pages.runList.subtitle')).toBe('按项目、工作流与状态筛选')
     expect(zh.global.t('common.table.title')).toBe('标题')
     expect(zhRoute.route.runs).toBe('运行记录')
     expect(enRoute.route.runs).toBe('Run history')
@@ -141,12 +141,12 @@ describe('user-facing copy remediation keys', () => {
     expect(zh.global.t('pages.gatesInbox.detailPane')).toBe('详情')
     expect(en.global.t('pages.gatesInbox.detailPane')).toBe('Details')
     expect(zh.global.t('common.empty.noPendingGates')).toBe('没有待审批项')
-    expect(zh.global.t('common.empty.noPendingGatesForPipeline')).toBe('该流水线没有待审批项')
+    expect(zh.global.t('common.empty.noPendingGatesForWorkflow')).toBe('该工作流没有待审批项')
     expect(zh.global.t('common.empty.noPendingGatesDesc')).toBe(
       '当工作流到达人工门禁或需求澄清节点时会出现在这里',
     )
-    expect(zh.global.t('common.empty.noPendingGatesPipelineDesc')).toBe(
-      '试试选择其他流水线,或查看全部流水线',
+    expect(zh.global.t('common.empty.noPendingGatesWorkflowDesc')).toBe(
+      '试试选择其他工作流,或查看全部工作流',
     )
   })
 
@@ -351,10 +351,6 @@ describe('user-facing copy remediation keys', () => {
     expect(en.global.t('pages.appPreview.novnc.cancelInspect')).toBe('Cancel annotation')
     expect(zh.global.t('pages.appPreview.novnc.cancelInspect')).not.toMatch(/取消取点/)
 
-    expect(zh.global.t('pages.platformRules.subtitle')).toMatch(/10 个规则文件/)
-    expect(en.global.t('pages.platformRules.subtitle')).toMatch(/10 rule files/)
-    expect(zh.global.t('pages.platformRules.fileListDesc')).toMatch(/全部 10 个/)
-    expect(en.global.t('pages.platformRules.fileListDesc')).toMatch(/All 10/)
 
     const tokenSourceNoPmKeys = [
       'pages.board.tokenStats.workflow',
@@ -369,5 +365,24 @@ describe('user-facing copy remediation keys', () => {
     // MCP server ids stay as protocol names
     expect(zh.global.t('mcp.pmProgress.name')).toBe('pm-progress')
     expect(en.global.t('mcp.pmProgress.name')).toBe('pm-progress')
+  })
+
+  it('zh-CN bundle says 工作流, never the retired pipeline wording', () => {
+    const retired = '\u6d41\u6c34\u7ebf'
+    const bundles = import.meta.glob<Record<string, unknown>>('./zh-CN/*.json', {
+      eager: true,
+      import: 'default',
+    })
+    expect(Object.keys(bundles).length).toBeGreaterThan(0)
+    const hits: string[] = []
+    const walk = (node: unknown, path: string) => {
+      if (typeof node === 'string') {
+        if (node.includes(retired)) hits.push(`${path}: ${node}`)
+      } else if (node && typeof node === 'object') {
+        for (const [k, v] of Object.entries(node)) walk(v, path ? `${path}.${k}` : k)
+      }
+    }
+    for (const [file, messages] of Object.entries(bundles)) walk(messages, file)
+    expect(hits).toEqual([])
   })
 })

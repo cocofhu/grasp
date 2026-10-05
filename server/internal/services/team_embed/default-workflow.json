@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "name": "默认工作流",
+  "description": "需求澄清 → 实现 → 测试评审;测试评审未通过时回到实现。仓库在运行时填写。",
+  "needsRepo": true,
+  "graph": {
+    "variables": [
+      {
+        "name": "repos",
+        "type": "repos",
+        "value": [
+          {
+            "branch": "",
+            "name": "",
+            "url": ""
+          }
+        ],
+        "desc": "仓库列表(平级,每个 clone 到 /root/workspace/<name>/;留空则纯产物流)",
+        "ask": true,
+        "editable": true
+      }
+    ],
+    "nodes": [
+      {
+        "id": "input",
+        "type": "input",
+        "label": "开始",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "config": {}
+      },
+      {
+        "id": "clarify",
+        "type": "agent",
+        "label": "需求澄清",
+        "position": {
+          "x": 280,
+          "y": 0
+        },
+        "config": {
+          "agent_profile": "需求澄清",
+          "prompt": "和我对齐本次要做的事:澄清需求、写出实施计划;是缺陷时查清根因。"
+        }
+      },
+      {
+        "id": "implement",
+        "type": "agent",
+        "label": "实现",
+        "position": {
+          "x": 560,
+          "y": 0
+        },
+        "config": {
+          "agent_profile": "实现",
+          "prompt": "按需求与计划实现,本地测试通过后提交并推送工作分支。若测试评审未通过,先读 test_result 与 review 逐条修复,复用已有工作分支。"
+        }
+      },
+      {
+        "id": "test_review",
+        "type": "agent",
+        "label": "测试评审",
+        "position": {
+          "x": 840,
+          "y": 0
+        },
+        "config": {
+          "agent_profile": "测试评审",
+          "prompt": "对上游实现执行测试并做代码评审,如实写入测试结果与评审结论。"
+        }
+      },
+      {
+        "id": "output",
+        "type": "output",
+        "label": "结束",
+        "position": {
+          "x": 1120,
+          "y": 0
+        },
+        "config": {
+          "results": [
+            "{{nodes.clarify.outputs.clarified_requirement}}",
+            "{{nodes.implement.outputs.implementation_result}}",
+            "{{nodes.test_review.outputs.test_result}}",
+            "{{nodes.test_review.outputs.review}}"
+          ]
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e_input_clarify",
+        "source": "input",
+        "target": "clarify",
+        "kind": "success"
+      },
+      {
+        "id": "e_clarify_implement",
+        "source": "clarify",
+        "target": "implement",
+        "kind": "success"
+      },
+      {
+        "id": "e_implement_test",
+        "source": "implement",
+        "target": "test_review",
+        "kind": "success"
+      },
+      {
+        "id": "e_test_pass",
+        "source": "test_review",
+        "target": "output",
+        "kind": "success",
+        "sourceHandle": "pass"
+      },
+      {
+        "id": "e_test_fail",
+        "source": "test_review",
+        "target": "implement",
+        "kind": "rollback",
+        "sourceHandle": "fail",
+        "maxAttempts": 3
+      }
+    ]
+  }
+}

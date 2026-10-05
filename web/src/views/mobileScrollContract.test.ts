@@ -156,7 +156,6 @@ describe('mobile scroll contract — shell single-exit lock (plan g3.2)', () => 
     expect(read('RunListView.vue')).toMatch(/overflow-y-auto/)
     expect(read('NotificationsView.vue')).toMatch(/min-h-0 flex-1 overflow-y-auto/)
     expect(read('ArtifactsView.vue')).toMatch(/overflow-y-auto/)
-    expect(read('PlatformRulesView.vue')).toMatch(/overflow-y-auto/)
     expect(read('GatesInboxView.vue')).toMatch(/overflow-y-auto/)
   })
 })

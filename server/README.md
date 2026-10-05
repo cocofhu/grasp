@@ -41,12 +41,12 @@ engine → ProviderRegistry → baseACPProvider → sandbox-gateway REST(创建�
   - 工具:`write_artifact` / `read_artifact` / `list_artifacts` / `node_complete` 等。Agent **原生调用** `write_artifact` 写回产物,结束前必须 `node_complete` 标记完成(已 live 验证:cursor-agent 完成 initialize→tools/list→tools/call 全链路)。
 - **`{configRoot}` 配置树(对齐 auto-coder)**:每个节点按 Agent profile 的 `acpBackend` 解析 configRoot(Agent 卡片可覆盖),在控制面生成一份配置树后注入沙箱:
   - 默认映射:`cursor`→`/root/.cursor`、`claude_code`→`/root/.claude`、`codebuddy`→`/root/.codebuddy`、`trae`→`/root/.trae`、`opencode`→`/root/.config/opencode`;
-  - `rules/base.md`(基础约束,alwaysApply)、`rules/artifact-store.md`(produces 契约 + MCP 用法)、`react` 节点附 `rules/react.md`;
-  - `rules/<profile>.md` 来自平台 `AgentService`(`GRASP_PROFILES_ROOT`);
+  - `rules/base.md`(基础约束,alwaysApply)、`rules/artifact-store.md`(产物 MCP 与 `node_complete` 用法),两者内嵌、不可修改;
+  - Agent 的行为规则来自 Agent 工作目录的 `AGENTS.md` 与 skills(`GRASP_PROFILES_ROOT`),能力来自 `agent.json` 的 `capabilities`;
   - 需要 push/MR 的节点可在 Agent 工作目录附 `skills/git/SKILL.md`;
   - `mcp.json` 写入 artifact-store MCP 配置(含改写后的 `GRASP_ARTIFACT_URL`);
   - 注入路径:**gateway `config.bundleUrl` 启动前 inject** — 控制面把 ConfigHome 打成 `.tgz`，经 `/sandbox-inject/:id` 短时下载；gateway 设 `SANDBOX_INJECT`，镜像 `startup.sh` 在 acp-bridge/agent 启动**之前**解压到 `{configRoot}`。URL 基址与 `mcp_advertise` 相同(沙箱可达)。Attach 重连仍可 SSH 补种。不使用 `config.hostPath`(远程 K8s 会挂空卷)。
-- **产物契约(produces) + 完成标记**:节点完成时引擎要求已调用 `node_complete`,并校验声明的产物必须存在于平台 store。优先由 Agent 经 MCP `write_artifact` 写入;若只在工作区留了文件,provider 仍会从容器取回该 `produces` 文件并写入 store,**双保险**。默认校验通过后才可能调用业务 RPC 校验;`submit_mr` 不再由平台代验 git 推送/MR/冲突。
+- **产物契约 + 完成标记**:节点完成时引擎要求已调用 `node_complete`,并校验 Agent 在 `capabilities.writes` 中声明为必填的结构化产物已经由对应的 `set_*` 工具写入平台 store,缺失即失败。推分支、开 MR 由实现模板的 git-mr skill 负责,平台不代验。
 - **上游产物读取**:run 内已有产物名会在 prompt 中列出,Agent 用 MCP `read_artifact` / `list_artifacts` 按名读取(按 run token 隔离)。产物**不**落盘到工作区,以免污染节点的代码变更报告。
 - **隔离**:每个 run 一枚 token,artifact-store 按 run 命名空间读写、token 绑定校验,run 间互不可见;容器 ACP 端口只绑定 `127.0.0.1` 临时端口。
 - **token 生命周期 = 沙箱生命周期**:token 无单独的过期时间。内存注册命中即放行;run 结束或服务重启后,只要该 run 仍有存活的沙箱(回合执行中或回合结束后的 `run_sandbox_ttl_minutes` 保活窗口内),持久化 token 依旧可鉴权,让仍存活的沙箱 agent 继续写产物而非 401;最后一个沙箱销毁后 token 自然失效。
@@ -55,7 +55,7 @@ engine → ProviderRegistry → baseACPProvider → sandbox-gateway REST(创建�
 
 五个后端共用配置入口：项目详情中的**项目凭据**（最高优先级），以及兼容的**项目/Agent env**回退。
 Agent Studio → Meta 仍可选择 `acpBackend` 和填写 env，但不会覆盖已保存的项目凭据；项目凭据 UI >
-项目 env > Agent env。`MergeAuthEnv` 最终把解析出的别名收成 CLI 认的变量后注入流水线沙箱。
+项目 env > Agent env。`MergeAuthEnv` 最终把解析出的别名收成 CLI 认的变量后注入工作流沙箱。
 
 下面各后端的 env 示例是回退写法；新部署应先在项目凭据 UI 保存 Key，再按需补充 env 选项。
 
@@ -269,7 +269,7 @@ sandbox: { image, env, cursor_auth_path, agent_chat_timeout_seconds, ... }
 `GRASP_SANDBOX_IMAGE`、`GRASP_AGENT_MODEL`、`GRASP_AGENT_TIMEOUT_SEC` 等。
 
 > **ACP 鉴权首选项目凭据 UI**:各后端 API Key / 站点从项目凭据解析；未配置 UI 凭据时，才从
-> **项目/Agent 元信息 env**回退注入流水线沙箱(见「ACP 后端怎么用」)。
+> **项目/Agent 元信息 env**回退注入工作流沙箱(见「ACP 后端怎么用」)。
 > `sandbox.cursor_api_key` / `GRASP_CURSOR_API_KEY` 若仍出现在旧配置中会打 WARN 且**不会**
 > 注入沙箱。Agent Studio 不继承项目 env。
 > Git 托管凭据（`GITLAB_*` / `GITHUB_*` / SSH）同样优先在项目凭据 UI 管理；兼容 Agent env
@@ -280,7 +280,7 @@ sandbox: { image, env, cursor_auth_path, agent_chat_timeout_seconds, ... }
 
 ### VNC 预览（沙箱内置）
 
-app_preview 前端 Tab 与沙箱控台 noVNC 走沙箱内置 VNC 栈（`VNC_PREVIEW=1` 时启动
+应用预览 Tab 与沙箱控台 noVNC 走沙箱内置 VNC 栈（`VNC_PREVIEW=1` 时启动
 Xvfb+Chromium+x11vnc+websockify）。VNC 栈由 sandbox-gateway 的 `universal-sandbox`
 镜像提供；本仓不构建沙箱镜像。
 
@@ -299,7 +299,7 @@ CDP/noVNC。K8s 存量 LB 在 gateway 启动调和完成前仍可能对外暴露
 
 ## 种子数据
 
-首次启动不自动写入样例流水线或密钥。「默认项目」为空时走第一次安装引导：在项目凭据 UI 配置 ACP 后端 / Token / Git（Git 可跳过），再生成综合项目组与「默认工作流」。兼容的项目/Agent env 仅作为回退。
+首次启动不自动写入样例工作流或密钥。「默认项目」为空时走第一次安装引导：在项目凭据 UI 配置 ACP 后端 / Token / Git（Git 可跳过），再生成综合项目组与「默认工作流」。兼容的项目/Agent env 仅作为回退。
 
 ## 运行(真实沙箱)
 
@@ -327,7 +327,7 @@ go run ./cmd/server
 ```
 
 CodeBuddy 国际站 / Trae 国内站等其它后端的 env 写法见上文「ACP 后端怎么用」。
-创建并发布流水线后,用 `POST /api/workflows/<id>/runs` 触发 run。
+创建并发布工作流后,用 `POST /api/workflows/<id>/runs` 触发 run。
 
 ## 测试
 
@@ -365,7 +365,7 @@ Git/代码托管由**用户自己配置**，不是平台级设置。仓库地址
 
 ### 托管商支持矩阵
 
-| 方式 | 托管商 | 环境变量 | Agent `submit_mr`（建单） | 平台 `detect_push` + `create_mr` |
+| 方式 | 托管商 | 环境变量 | Agent 建单（git-mr skill） | 平台 `detect_push` + `create_mr` |
 |------|--------|----------|--------------------------|----------------------------------|
 | HTTPS | GitHub (github.com) | `GITHUB_TOKEN` | `gh pr`（需沙箱预装 `gh`） | 不代建 PR（仍仅推送检测） |
 | HTTPS | 自建 GitHub/GHE | `GITHUB_TOKEN` + `GITHUB_URL` | 同上（主机与 `GITHUB_URL` 一致） | 不代建 PR |

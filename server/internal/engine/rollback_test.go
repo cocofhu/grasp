@@ -15,7 +15,7 @@ func TestRollbackRestoresCheckpoint(t *testing.T) {
 	run := models.Run{
 		ID: "rb1", WorkflowID: "x", WorkflowName: "x", Status: "running",
 		Checkpoints: map[string]map[string]any{},
-		Graph:       models.Graph{Nodes: []models.Node{{ID: "cp", Type: "agent", Checkpoint: true}}},
+		Graph:       models.Graph{Nodes: []models.Node{{ID: "cp", Type: "agent", Caps: capsPlain, Checkpoint: true}}},
 	}
 	if err := db.Create(&run).Error; err != nil {
 		t.Fatalf("create run: %v", err)

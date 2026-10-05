@@ -29,7 +29,7 @@ const emit = defineEmits<{
 
 const props = withDefaults(
   defineProps<{
-    /** Preview mode: run/node/port triple (app_preview). */
+    /** Preview mode: run/node/port triple (app preview). */
     runId?: string
     nodeId?: string
     port?: number

@@ -18,17 +18,17 @@ const AgentExportSchemaVersion = 1
 
 // agentExportJSON is the root agent.json inside an export ZIP.
 type agentExportJSON struct {
-	Name              string               `json:"name"`
-	GitCredentialType string               `json:"gitCredentialType,omitempty"`
-	GitSshKnownHosts  string               `json:"gitSshKnownHosts,omitempty"`
-	GitSshPrivateKey  string               `json:"gitSshPrivateKey,omitempty"`
-	AcpBackend        string               `json:"acpBackend,omitempty"`
-	MCP               []MCPServer          `json:"mcp,omitempty"`
-	Env               map[string]string    `json:"env,omitempty"`
-	Layout            *AgentLayout         `json:"layout,omitempty"`
-	Prompts           *models.AgentPrompts `json:"prompts,omitempty"`
-	SchemaVersion     int                  `json:"schemaVersion"`
-	ExportedAt        string               `json:"exportedAt"`
+	Name              string                    `json:"name"`
+	GitCredentialType string                    `json:"gitCredentialType,omitempty"`
+	GitSshKnownHosts  string                    `json:"gitSshKnownHosts,omitempty"`
+	GitSshPrivateKey  string                    `json:"gitSshPrivateKey,omitempty"`
+	AcpBackend        string                    `json:"acpBackend,omitempty"`
+	MCP               []MCPServer               `json:"mcp,omitempty"`
+	Env               map[string]string         `json:"env,omitempty"`
+	Layout            *AgentLayout              `json:"layout,omitempty"`
+	Capabilities      *models.AgentCapabilities `json:"capabilities,omitempty"`
+	SchemaVersion     int                       `json:"schemaVersion"`
+	ExportedAt        string                    `json:"exportedAt"`
 }
 
 // ExportZIP builds a portable ZIP for one agent from on-disk state.
@@ -65,7 +65,7 @@ func (s *AgentService) writeAgentToZip(zw *zip.Writer, name, prefix string) erro
 		MCP:               a.MCP,
 		Env:               a.Env,
 		Layout:            &layout,
-		Prompts:           a.Prompts,
+		Capabilities:      a.Capabilities,
 		SchemaVersion:     AgentExportSchemaVersion,
 		ExportedAt:        time.Now().UTC().Format(time.RFC3339),
 	}
@@ -268,7 +268,7 @@ func (s *AgentService) applyAgentExport(export agentExportJSON, files []AgentFil
 		MCP:               export.MCP,
 		Env:               export.Env,
 		Layout:            layout,
-		Prompts:           export.Prompts,
+		Capabilities:      export.Capabilities,
 	}
 	if mode == ImportZIPCreate && len(agent.MCP) == 0 {
 		agent.MCP = DefaultPlatformMCP()

@@ -53,7 +53,7 @@ func TestCancelAbortsLiveAgent(t *testing.T) {
 		RunID:    runID,
 		Token:    token,
 		NodeID:   "work",
-		NodeType: "agent",
+		NodeType: "agent", Caps: testPlainCaps,
 		Config: map[string]any{
 			"agent_profile": "backend-dev",
 			// Keep the agent busy long enough for AbortRun to race mid-turn.

@@ -7,7 +7,7 @@ import pages from '@/locales/zh-CN/pages.json'
 import AgentEnvPanel from './AgentEnvPanel.vue'
 import AgentGitGuide from './AgentGitGuide.vue'
 import AgentMcpPanel from './AgentMcpPanel.vue'
-import { emptyPrompts, type AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
+import type { AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
 
 function createI18nPlugin() {
   return createI18n({
@@ -32,7 +32,7 @@ const baseDraft: AgentStudioDraft = {
   env: [],
   mcp: [],
   files: [],
-  prompts: emptyPrompts(),
+  capabilities: null,
   gitCredentialType: undefined,
   acpBackend: 'codebuddy',
   layout: { configRoot: '/tmp/agent', workspaceDir: '/tmp/workspace' },

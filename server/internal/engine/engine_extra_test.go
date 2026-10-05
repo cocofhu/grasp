@@ -98,7 +98,7 @@ func TestRollbackOnFailureCarriesLastError(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "risky", Type: "agent", Checkpoint: true, Config: map[string]any{"prompt": "干活:{{vars.last_error}}", "produces": "out.md"}},
+			{ID: "risky", Type: "agent", Caps: capsPlain, Checkpoint: true, Config: map[string]any{"prompt": "干活:{{vars.last_error}}", "produces": "out.md"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -135,7 +135,7 @@ func TestFailureEdgeRoutes(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "risky", Type: "agent", Config: map[string]any{"prompt": "x", "produces": "out.md"}},
+			{ID: "risky", Type: "agent", Caps: capsPlain, Config: map[string]any{"prompt": "x", "produces": "out.md"}},
 			{ID: "onfail", Type: "output", Config: map[string]any{"result": "handled"}},
 			{ID: "output", Type: "output"},
 		},
@@ -160,7 +160,7 @@ func TestFailureNoTransition(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "risky", Type: "agent", Config: map[string]any{"prompt": "x", "produces": "out.md"}},
+			{ID: "risky", Type: "agent", Caps: capsPlain, Config: map[string]any{"prompt": "x", "produces": "out.md"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -185,8 +185,8 @@ func TestSetVarAndBranch(t *testing.T) {
 				map[string]any{"var": "score", "expr": "7"},
 			}}},
 			{ID: "branch", Type: "branch", Config: map[string]any{"cases": []any{
-				map[string]any{"when": "score > 5", "goto": "high"},
-				map[string]any{"when": "score <= 5", "goto": "low"},
+				map[string]any{"when": "score > 5", "id": "high"},
+				map[string]any{"when": "score <= 5", "id": "low"},
 			}}},
 			{ID: "high", Type: "output", Config: map[string]any{"result": "HIGH"}},
 			{ID: "low", Type: "output", Config: map[string]any{"result": "LOW"}},
@@ -194,6 +194,8 @@ func TestSetVarAndBranch(t *testing.T) {
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "assign"},
 			{ID: "e2", Source: "assign", Target: "branch"},
+			{ID: "e3", Source: "branch", Target: "high", SourceHandle: "high"},
+			{ID: "e4", Source: "branch", Target: "low", SourceHandle: "low"},
 		},
 	}
 	eng, db, _ := setupEngineGraphP(t, g)
@@ -207,13 +209,13 @@ func TestSetVarAndBranch(t *testing.T) {
 	}
 }
 
-// TestBranchNoMatch: a branch node with no matching case completes without a goto.
+// TestBranchNoMatch: a branch node with no matching case completes when no outlet matches.
 func TestBranchNoMatch(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
 			{ID: "branch", Type: "branch", Config: map[string]any{"cases": []any{
-				map[string]any{"when": "false", "goto": "never"},
+				map[string]any{"when": "false", "id": "never"},
 			}}},
 			{ID: "never", Type: "output"},
 		},
@@ -231,7 +233,7 @@ func TestAutoCaptureDeliverable(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "work", Type: "agent", Config: map[string]any{"prompt": "干活"}}, // no produces
+			{ID: "work", Type: "agent", Caps: capsPlain, Config: map[string]any{"prompt": "干活"}}, // no produces
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -289,8 +291,8 @@ func TestPlanAndImplementNodes(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "plan", Type: "plan", Config: map[string]any{"prompt": "计划"}},
-			{ID: "impl", Type: "implement", Config: map[string]any{"prompt": "实现"}},
+			{ID: "plan", Type: "agent", Caps: capsPlan, Config: map[string]any{"prompt": "计划"}},
+			{ID: "impl", Type: "agent", Caps: capsImplement, Config: map[string]any{"prompt": "实现"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -346,27 +348,9 @@ func TestPlanAndImplementNodes(t *testing.T) {
 	}
 }
 
-// TestNoCompanionForReactAndProposal covers finalizeStructured via
-// finalizeAgentProducts (react) and execStructuredAgent (proposal): reserved JSON
-// exists, clarified_requirement.md / proposals.md companions do not.
-func TestNoCompanionForReactAndProposal(t *testing.T) {
-	t.Run("react", func(t *testing.T) {
-		eng, db, _ := setupEngineGraphP(t, autoReactGraph(true))
-		run, err := eng.StartRun("wf", nil, "test")
-		if err != nil {
-			t.Fatalf("start: %v", err)
-		}
-		waitRunStatus(t, db, run.ID, "completed")
-		var c int64
-		db.Model(&models.Artifact{}).Where("run_id = ? AND name = ?", run.ID, "clarified_requirement.json").Count(&c)
-		if c == 0 {
-			t.Error("expected clarified_requirement.json")
-		}
-		db.Model(&models.Artifact{}).Where("run_id = ? AND name = ?", run.ID, "clarified_requirement.md").Count(&c)
-		if c != 0 {
-			t.Error("unexpected companion clarified_requirement.md")
-		}
-	})
+// TestNoCompanionForProposal: the reserved proposals.json exists and no
+// proposals.md companion is written.
+func TestNoCompanionForProposal(t *testing.T) {
 	t.Run("proposal", func(t *testing.T) {
 		eng, db, _ := setupEngineGraphP(t, proposalGraph())
 		run, err := eng.StartRun("wf", nil, "test")

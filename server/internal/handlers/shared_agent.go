@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -21,7 +20,6 @@ type sharedAgentBody struct {
 	MCP               []services.MCPServer `json:"mcp"`
 	Env               map[string]string    `json:"env"`
 	Layout            services.AgentLayout `json:"layout"`
-	Prompts           *models.AgentPrompts `json:"prompts"`
 }
 
 func sharedAgentDTO(cfg services.SharedAgentConfig) gin.H {
@@ -48,7 +46,6 @@ func sharedAgentDTO(cfg services.SharedAgentConfig) gin.H {
 		"mcp":               mcp,
 		"env":               env,
 		"layout":            cfg.Layout,
-		"prompts":           cfg.Prompts,
 	}
 }
 
@@ -93,7 +90,6 @@ func (h *Handlers) PutProjectSharedAgent(c *gin.Context) {
 		MCP:               b.MCP,
 		Env:               b.Env,
 		Layout:            b.Layout,
-		Prompts:           b.Prompts,
 	}
 	if cfg.Env == nil {
 		cfg.Env = map[string]string{}

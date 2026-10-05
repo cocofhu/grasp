@@ -11,7 +11,6 @@ import (
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/runtime"
 
 	"github.com/google/uuid"
@@ -43,7 +42,7 @@ func (e *Engine) LiveEnabled(runID, nodeID string) bool {
 		return false
 	}
 	n := c.graph.FindNode(nodeID)
-	return n != nil && models.LiveVariantsEnabled(n.Type, n.Config)
+	return n != nil && models.LiveVariantsEnabled(n.Caps)
 }
 
 func (e *Engine) reviewAgentNode(runID, nodeID string) bool {
@@ -52,14 +51,14 @@ func (e *Engine) reviewAgentNode(runID, nodeID string) bool {
 		return false
 	}
 	n := c.graph.FindNode(nodeID)
-	return n != nil && models.ReviewAgentNode(n.Type)
+	return n != nil && n.Caps.ReviewEnabled()
 }
 
-// liveQueueKind preserves the node's normal execution contract. Grasp uses
-// ReactReply (clarification/force-confirm), while app_preview uses review.
+// liveQueueKind preserves the node's normal execution contract: clarify
+// Agents use ReactReply (clarification/force-confirm), others use review.
 func (e *Engine) liveQueueKind(runID, nodeID string) sessionKind {
 	if c, err := e.loadCtx(runID); err == nil {
-		if n := c.graph.FindNode(nodeID); n != nil && nodereg.ClarifyInteractive(n.Type) {
+		if n := c.graph.FindNode(nodeID); n != nil && n.Caps.Clarify() {
 			return sessionKindClarify
 		}
 	}
@@ -709,11 +708,10 @@ func (e *Engine) checkLiveClosed(runID, nodeID string) error {
 	if len(e.LiveSessions(runID, nodeID, true)) > 0 {
 		return ErrLiveOpen
 	}
-	// A Grasp dialogue may register a preview without ever editing source.
-	// Do not make ordinary clarification depend on a live sandbox merely
-	// because direct_preview was enabled. Once Live has been used, retain the
-	// same fail-closed scan as app_preview, including terminal sessions.
-	// Review agent nodes are the same: direct preview is optional there.
+	// A clarify or review dialogue may register a preview without ever
+	// editing source, so it does not depend on a live sandbox merely because
+	// it can preview. Once Live has been used, the fail-closed scan applies,
+	// including terminal sessions.
 	if e.liveQueueKind(runID, nodeID) == sessionKindClarify || e.reviewAgentNode(runID, nodeID) {
 		var count int64
 		if err := e.db.Model(&models.LiveSession{}).Where("run_id = ? AND node_id = ?", runID, nodeID).Count(&count).Error; err != nil {

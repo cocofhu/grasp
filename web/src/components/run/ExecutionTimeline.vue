@@ -7,7 +7,7 @@ import VarValueDisplay from '../ui/VarValueDisplay.vue'
 import TruncatedTextTooltip from '../ui/TruncatedTextTooltip.vue'
 import { fmtTime, fmtDuration } from '@/lib/shared/format'
 import { formatVarChip, formatVarValue } from '@/lib/shared/compositeText'
-import { NODE_DEFS, nodeColorHex } from '@/data/nodeRegistry'
+import { NODE_DEFS, nodeColor } from '@/data/nodeRegistry'
 import { resolveNodeDisplayLabel } from '@/lib/run/resolveNodeDisplayLabel'
 import { compareTimelineOrder, resolveProcessDuration, resolveRunWallSec } from '@/lib/run/runStats'
 import {
@@ -277,7 +277,7 @@ const DOT: Record<string, string> = {
               <div class="flex min-w-0 items-center gap-2.5">
                 <span
                   class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md"
-                  :style="{ background: nodeColorHex(it.type as any) + '22', color: nodeColorHex(it.type as any) }"
+                  :style="{ background: nodeColor(it.type as any, 0.13), color: nodeColor(it.type as any) }"
                 >
                   <Icon :name="iconOf(it.type)" :size="16" />
                 </span>

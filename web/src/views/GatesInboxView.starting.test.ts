@@ -49,14 +49,14 @@ vi.mock('@/lib/composables/useToast', () => ({
 }))
 
 const filterState = vi.hoisted(() => ({
-  pipelineSelected: null as { value: string } | null,
+  workflowSelected: null as { value: string } | null,
   projectSelected: null as { value: string } | null,
 }))
 
-vi.mock('@/lib/composables/usePipelineFilter', async () => {
+vi.mock('@/lib/composables/useWorkflowFilter', async () => {
   const { ref } = await import('vue')
-  filterState.pipelineSelected = ref('')
-  return { usePipelineFilter: () => ({ selected: filterState.pipelineSelected! }) }
+  filterState.workflowSelected = ref('')
+  return { useWorkflowFilter: () => ({ selected: filterState.workflowSelected! }) }
 })
 
 vi.mock('@/lib/composables/useProjectContext', async () => {
@@ -80,6 +80,7 @@ vi.mock('@/lib/inbox/useClarifyDraft', async () => {
 import GatesInboxView from './GatesInboxView.vue'
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { setHomeApproveHandoff, takeHomeApproveHandoff } from '@/lib/run/homeApproveHandoff'
+import { CLARIFY_CAPS } from '@/test/capsFixtures'
 
 function paged(items: InboxItem[]) {
   return { items, total: items.length, page: 1, pageSize: 20 }
@@ -112,7 +113,7 @@ function parkedItem(): InboxItem {
 const startingContext = {
   type: 'clarify',
   status: 'running',
-  nodes: [{ id: 'ap', type: 'approve', label: '开发前澄清' }],
+  nodes: [{ id: 'ap', type: 'agent', caps: CLARIFY_CAPS, label: '开发前澄清' }],
   artifacts: [],
   nodeExecutions: {},
   clarify: { nodeId: 'ap', iteration: 1, turns: [], done: false, label: '开发前澄清', starting: true },
@@ -121,7 +122,7 @@ const startingContext = {
 const parkedContext = {
   type: 'clarify',
   status: 'waiting_human',
-  nodes: [{ id: 'ap', type: 'approve', label: '开发前澄清' }],
+  nodes: [{ id: 'ap', type: 'agent', caps: CLARIFY_CAPS, label: '开发前澄清' }],
   artifacts: [],
   nodeExecutions: {},
   clarify: {
@@ -190,7 +191,7 @@ function mountInbox() {
       stubs: {
         Icon: true,
         EmptyState: true,
-        PipelineFilter: true,
+        WorkflowFilter: true,
         ProjectFilter: true,
         TagFilter: true,
         Pagination: true,
@@ -215,7 +216,7 @@ beforeEach(async () => {
   vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket)
   mocks.nodeEvents.mockResolvedValue({ events: [], live: false })
   mocks.runArtifacts.mockResolvedValue([])
-  if (filterState.pipelineSelected) filterState.pipelineSelected.value = ''
+  if (filterState.workflowSelected) filterState.workflowSelected.value = ''
   if (filterState.projectSelected) filterState.projectSelected.value = ''
   mocks.listGates.mockResolvedValue(paged([]))
   mocks.getRun.mockResolvedValue({ id: 'run-unknown', status: 'running' })
@@ -373,7 +374,7 @@ describe('GatesInboxView starting approvals', () => {
       status: 'running',
       nodes: [
         { id: 'in', type: 'input' },
-        { id: 'approve_7gl6', type: 'approve' },
+        { id: 'approve_7gl6', type: 'agent', caps: CLARIFY_CAPS },
         { id: 'implement_qnlc', type: 'implement' },
       ],
       nodeRuns: {
@@ -400,7 +401,7 @@ describe('GatesInboxView starting approvals', () => {
       status: 'running',
       nodes: [
         { id: 'in', type: 'input' },
-        { id: 'approve_7gl6', type: 'approve' },
+        { id: 'approve_7gl6', type: 'agent', caps: CLARIFY_CAPS },
         { id: 'implement_qnlc', type: 'implement' },
       ],
       nodeRuns: {

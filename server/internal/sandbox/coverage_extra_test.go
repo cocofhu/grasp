@@ -22,20 +22,6 @@ func TestSupportsPreviewAndChanges(t *testing.T) {
 	}
 }
 
-func TestEmbeddedRules(t *testing.T) {
-	names, err := EmbeddedRuleBasenames()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(names) == 0 {
-		t.Fatal("expected embedded rule names")
-	}
-	b, err := ReadEmbeddedRule("rules/" + names[0])
-	if err != nil || len(b) == 0 {
-		t.Fatalf("ReadEmbeddedRule: %v len=%d", err, len(b))
-	}
-}
-
 func TestAggregateFrames(t *testing.T) {
 	frames := []json.RawMessage{
 		json.RawMessage(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"agent_message_chunk","content":{"text":"hello"}}}}`),

@@ -5,9 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"sync/atomic"
+
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
-	"sync/atomic"
 )
 
 func TestAcpTimelineStoreUpsertAndPage(t *testing.T) {

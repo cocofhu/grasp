@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import Icon from '@/components/ui/Icon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
-import PipelineFilter from '@/components/ui/PipelineFilter.vue'
+import WorkflowFilter from '@/components/ui/WorkflowFilter.vue'
 import ProjectFilter from '@/components/ui/ProjectFilter.vue'
 import TagFilter from '@/components/ui/TagFilter.vue'
 import GateApproval from '@/components/run/GateApproval.vue'
@@ -135,7 +135,7 @@ const {
   inboxConfirmFlowToken,
   pendingAcpFrames,
   projectFilterOpen,
-  pipelineFilterOpen,
+  workflowFilterOpen,
   tagFilterOpen,
   showUpdateBanner,
   showProcessedBanner,
@@ -177,13 +177,12 @@ const {
   activeClarify,
   inboxAppPreviewActive,
   inboxRemoteKind,
-  inboxStageNodeType,
+  inboxStageNode,
   showClarifyReviewShell,
   clarifyComposerNodeId,
   clarifyComposerIteration,
   clarifyComposerTurns,
   clarifyComposerDone,
-  clarifyComposerNodeType,
   inboxClarifyStageKind,
   inboxReviewState,
   reviewActive,
@@ -302,9 +301,9 @@ const listFadeKey = computed(() =>
             v-model:open="projectFilterOpen"
             :count="listTotal"
           />
-          <PipelineFilter
+          <WorkflowFilter
             v-model="selected"
-            v-model:open="pipelineFilterOpen"
+            v-model:open="workflowFilterOpen"
             :count="listTotal"
           />
         </div>
@@ -412,10 +411,10 @@ const listFadeKey = computed(() =>
       <div v-else class="card flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto">
         <EmptyState
           icon="gate"
-          :title="listTotal ? t('common.empty.noPendingGatesForPipeline') : t('common.empty.noPendingGates')"
+          :title="listTotal ? t('common.empty.noPendingGatesForWorkflow') : t('common.empty.noPendingGates')"
           :desc="
             listTotal
-              ? t('common.empty.noPendingGatesPipelineDesc')
+              ? t('common.empty.noPendingGatesWorkflowDesc')
               : t('common.empty.noPendingGatesDesc')
           "
         />
@@ -479,7 +478,7 @@ const listFadeKey = computed(() =>
               :run-id="active.runId"
               :run="activeRun || undefined"
               :node-id="active.nodeId"
-              :node-type="inboxStageNodeType"
+              :node="inboxStageNode"
               :annotatable="clarifyInputActive"
               :remote-kind="inboxRemoteKind"
               :probe-registered-preview="composerMode === 'review'"
@@ -504,7 +503,6 @@ const listFadeKey = computed(() =>
               v-model:attachments="clarifyAttachments"
               v-model:annotations="clarifyAnnotations"
               :turns="clarifyComposerTurns"
-              :node-type="clarifyComposerNodeType"
               :seed-human-text="activeHomeSeed?.text"
               :seed-human-images="activeHomeSeed?.images ?? []"
               :done="clarifyComposerDone"
@@ -619,7 +617,7 @@ const listFadeKey = computed(() =>
                   :run-id="active.runId"
                   :run="activeRun || undefined"
                   :node-id="active.nodeId"
-                  :node-type="inboxStageNodeType"
+                  :node="inboxStageNode"
                   :annotatable="clarifyInputActive"
                   :remote-kind="inboxRemoteKind"
                   :probe-registered-preview="composerMode === 'review'"
@@ -644,7 +642,6 @@ const listFadeKey = computed(() =>
                   v-model:attachments="clarifyAttachments"
                   v-model:annotations="clarifyAnnotations"
                   :turns="clarifyComposerTurns"
-                  :node-type="clarifyComposerNodeType"
                   :seed-human-text="activeHomeSeed?.text"
                   :seed-human-images="activeHomeSeed?.images ?? []"
                   :done="clarifyComposerDone"
@@ -734,10 +731,10 @@ const listFadeKey = computed(() =>
     <div v-else-if="!isMobile" class="card flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto">
       <EmptyState
         icon="gate"
-        :title="listTotal ? t('common.empty.noPendingGatesForPipeline') : t('common.empty.noPendingGates')"
+        :title="listTotal ? t('common.empty.noPendingGatesForWorkflow') : t('common.empty.noPendingGates')"
         :desc="
           listTotal
-            ? t('common.empty.noPendingGatesPipelineDesc')
+            ? t('common.empty.noPendingGatesWorkflowDesc')
             : t('common.empty.noPendingGatesDesc')
         "
       />

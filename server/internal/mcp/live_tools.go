@@ -38,7 +38,7 @@ func (h *Host) liveUpdaterFor(runID string) (LiveUpdater, string, bool) {
 	h.mu.RLock()
 	u := h.liveUpdater
 	h.mu.RUnlock()
-	if u == nil || !models.LiveNodeSupported(h.ActiveNodeType(runID)) {
+	if u == nil || !models.LiveNodeSupported(h.ActiveCaps(runID)) {
 		return nil, "", false
 	}
 	nodeID := h.ActiveNode(runID)
@@ -60,9 +60,9 @@ func (h *Host) runLiveUpdate(runID, token string, args map[string]any) (string, 
 	}
 	u, nodeID, ok := h.liveUpdaterFor(runID)
 	if !ok {
-		return liveUpdateTool + " 仅在开启了 Live 变体的直连应用预览、Grasp 节点或复审阶段可用。", true
+		return liveUpdateTool + " 仅在可预览 Agent 的澄清对话或复审阶段可用。", true
 	}
-	if models.ReviewAgentNode(h.ActiveNodeType(runID)) && !h.InReviewPhase(runID) {
+	if h.ActiveCaps(runID).ReviewEnabled() && !h.InReviewPhase(runID) {
 		return liveUpdateTool + " 仅在复审阶段可用。", true
 	}
 	r, err := parseLiveReport(args)

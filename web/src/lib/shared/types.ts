@@ -1,24 +1,13 @@
+import type { AgentCapabilities } from '../api/apiTypes'
+
 export type NodeType =
   | 'input'
   | 'output'
-  | 'react'
-  | 'grasp'
-  | 'approve' // historical alias of grasp
-  | 'preflight'
-  | 'agent'
-  | 'plan'
-  | 'implement'
-  | 'research'
-  | 'test'
-  | 'review'
-  | 'proposal'
-  | 'proposal_select'
-  | 'submit_mr'
-  | 'visual'
-  | 'human_gate'
-  | 'app_preview'
-  | 'branch'
   | 'set_var'
+  | 'branch'
+  | 'agent'
+  | 'human_gate'
+  | 'proposal_select'
 
 export type NodeRunStatus =
   | 'pending'
@@ -37,6 +26,8 @@ export interface WFNode {
   config: Record<string, any>
   // FSM: 标记为可回滚检查点(失败可恢复到此处的变量快照重跑)
   checkpoint?: boolean
+  /** Agent capabilities snapshotted onto run graphs at run start (never on definitions). */
+  caps?: AgentCapabilities
 }
 
 // FSM 转移类型:正常成功路由 / 失败转移 / 回滚到 checkpoint
@@ -45,6 +36,8 @@ export type EdgeKind = 'success' | 'failure' | 'rollback'
 export interface WFEdge {
   id: string
   source: string
+  /** Source outlet: branch case id / "else", human_gate action id, "pass" / "fail"; empty = plain outlet. */
+  sourceHandle?: string
   target: string
   when?: string
   label?: string
@@ -973,11 +966,9 @@ export interface ClarifyInboxItem {
   type: 'clarify'
   /**
    * Badge semantic for list rendering. Channel remains `type: 'clarify'`.
-   * `clarify` = react needs clarify; `review` = ReviewCapable product review;
-   * `app_preview` = application preview waiting for confirm & continue.
-   * Older backends may omit this; UI falls back to clarify.
+   * `clarify` = clarify Agent dialogue; `review` = auto Agent post-run review.
    */
-  kind?: 'clarify' | 'review' | 'app_preview' | 'preflight'
+  kind?: 'clarify' | 'review'
   /**
    * `starting` = the node's sandbox is still booting: no transcript yet and no
    * reply accepted, so the card renders as a loading row.
@@ -1019,7 +1010,7 @@ export interface StateTraceEntry {
 // 全局变量运行期取值
 export interface RunVar {
   name: string
-  type: 'int' | 'string' | 'bool'
+  type: 'int' | 'string' | 'bool' | 'repos'
   value: any
 }
 

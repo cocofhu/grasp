@@ -13,7 +13,7 @@ func TestRunInboxContextGate(t *testing.T) {
 	now := time.Now()
 	h.db.Create(&models.Run{ID: "ic-gate", Status: "waiting_human", StartedAt: now, Graph: models.Graph{
 		Nodes: []models.Node{
-			{ID: "visual", Type: "visual", Config: map[string]any{}},
+			{ID: "visual", Type: "agent", Caps: testReviewCaps, Config: map[string]any{}},
 			{ID: "gate", Type: "human_gate", Config: map[string]any{
 				"body_template": "preview {{nodes.visual.outputs.page}}",
 			}},
@@ -64,8 +64,8 @@ func TestRunInboxContextClarify(t *testing.T) {
 	h.db.Create(&models.Run{
 		ID: "ic-clarify", Status: "waiting_human", StartedAt: now,
 		Graph: models.Graph{Nodes: []models.Node{
-			{ID: "research", Type: "research", Label: "调研"},
-			{ID: "react", Type: "react", Label: "需求澄清", Config: map[string]any{
+			{ID: "research", Type: "agent", Caps: testReviewCaps, Label: "调研"},
+			{ID: "react", Type: "agent", Caps: testClarifyCaps, Label: "需求澄清", Config: map[string]any{
 				"prompt": "upstream {{nodes.research.outputs.research}}",
 			}},
 		}},
@@ -117,7 +117,7 @@ func TestRunInboxContextClarifyResearchReview(t *testing.T) {
 	h.db.Create(&models.Run{
 		ID: "ic-research", Status: "waiting_human", StartedAt: now,
 		Graph: models.Graph{Nodes: []models.Node{
-			{ID: "research_1", Type: "research", Label: "调研结论"},
+			{ID: "research_1", Type: "agent", Caps: testReviewCaps, Label: "调研结论"},
 		}},
 	})
 	h.db.Create(&models.ReactConversation{
@@ -150,15 +150,15 @@ func TestRunInboxContextClarifyResearchReview(t *testing.T) {
 
 // A booting approve node has no conversation row yet, but its loading card is
 // already listed, so the context must resolve with an empty starting transcript.
-func TestRunInboxContextStartingApprove(t *testing.T) {
+func TestRunInboxContextStartingClarify(t *testing.T) {
 	h := newHarness(t)
 	now := time.Now()
 	h.db.Create(&models.Run{
 		ID: "ic-starting", Status: "running", StartedAt: now,
-		Graph: models.Graph{Nodes: []models.Node{{ID: "ap", Type: "approve", Label: "开发前澄清"}}},
+		Graph: models.Graph{Nodes: []models.Node{{ID: "ap", Type: "agent", Caps: testClarifyCaps, Label: "开发前澄清"}}},
 	})
 	h.db.Create(&models.StateRun{
-		RunID: "ic-starting", NodeID: "ap", NodeType: "approve", Iteration: 1, Status: "running",
+		RunID: "ic-starting", NodeID: "ap", NodeType: "agent", Iteration: 1, Status: "running",
 	})
 
 	w := h.do("GET", "/api/runs/ic-starting/inbox-context?nodeId=ap&iteration=1", nil)

@@ -5,9 +5,10 @@ import {
   resolveClarifyProductStage,
 } from './clarifyInboxStage'
 import type { Run, WFNode } from '../shared/types'
+import { CLARIFY_CAPS, IMPLEMENT_CAPS } from '@/test/capsFixtures'
 
-function node(id: string, type: WFNode['type']): WFNode {
-  return { id, type, label: id, position: { x: 0, y: 0 }, config: {} }
+function node(id: string, type: WFNode['type'], caps?: WFNode['caps']): WFNode {
+  return { id, type, label: id, position: { x: 0, y: 0 }, config: {}, caps }
 }
 
 function run(partial: Partial<Run>): Run {
@@ -30,7 +31,7 @@ describe('listClarifyProductNodes / defaultClarifyProductId', () => {
   it('lists PRODUCT nodes with executions and defaults to current', () => {
     const products = listClarifyProductNodes(
       run({
-        nodes: [node('research_1', 'research'), node('plan', 'plan'), node('gate', 'human_gate')],
+        nodes: [node('research_1', 'agent', CLARIFY_CAPS), node('plan', 'agent', IMPLEMENT_CAPS), node('gate', 'human_gate')],
         nodeExecutions: {
           research_1: [{ nodeId: 'research_1', status: 'waiting_human', iteration: 1 }],
           plan: [{ nodeId: 'plan', status: 'completed', iteration: 1 }],

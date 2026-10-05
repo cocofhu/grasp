@@ -58,15 +58,10 @@ func (e *Engine) resolveGateUpstreamPointer(c *execCtx, node *models.Node) (stri
 	return "", 0
 }
 
-// captureDeliverable persists an agent/react node's primary textual output as a
-// run artifact when the node does not declare an explicit produces contract and
-// has not already written one via the artifact-store MCP. This guarantees that
-// a node which produced a document is reflected in the run's artifacts even if
-// the author did not wire up produces / write_artifact.
+// captureDeliverable persists an Agent's primary textual output as a run
+// artifact when it has not already written one via the artifact-store MCP, so
+// an Agent that declares no products is still reflected in the run's artifacts.
 func (e *Engine) captureDeliverable(c *execCtx, node *models.Node, res runtime.NodeResult) {
-	if str(node.Config["produces"]) != "" {
-		return
-	}
 	content := pickDeliverable(res)
 	if strings.TrimSpace(content) == "" {
 		return

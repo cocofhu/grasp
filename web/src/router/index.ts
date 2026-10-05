@@ -45,7 +45,6 @@ const routes: RouteRecordRaw[] = [
   { path: '/integrations', redirect: { path: '/settings', query: { integrations: '1' } } },
   { path: '/triggers', redirect: '/settings' },
   { path: '/settings', name: 'settings', component: () => import('@/views/SettingsView.vue'), meta: { titleKey: 'route.settings' } },
-  { path: '/settings/platform-rules', name: 'platform-rules', component: () => import('@/views/PlatformRulesView.vue'), meta: { titleKey: 'route.platformRules' } },
 ]
 
 export const router = createRouter({

@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../../ui/Icon.vue'
 import StatusPill from '../../ui/StatusPill.vue'
-import { NODE_DEFS, nodeColorHex } from '@/data/nodeRegistry'
+import { NODE_DEFS, nodeColor } from '@/data/nodeRegistry'
 import { fmtDuration } from '@/lib/shared/format'
 import { fmtTokenCount, tokenUsageTotal } from '@/lib/run/tokenUsage'
 import { fmtClock, type LlmTranscriptItem } from '@/lib/run/llmTranscript'
@@ -79,7 +79,7 @@ const detailLong = computed(() => detail.value.length > DETAIL_PREVIEW || detail
     <div class="flex min-w-0 max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-full border border-line bg-surface px-3 py-1 text-[12px]">
       <span
         class="flex h-5 w-5 shrink-0 items-center justify-center rounded"
-        :style="{ background: nodeColorHex(item.nodeType as any) + '22', color: nodeColorHex(item.nodeType as any) }"
+        :style="{ background: nodeColor(item.nodeType as any, 0.13), color: nodeColor(item.nodeType as any) }"
       >
         <Icon :name="iconOf(item.nodeType)" :size="12" />
       </span>

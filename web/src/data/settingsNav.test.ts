@@ -16,7 +16,6 @@ describe('settingsNav (plan g2.1 / g2.2 / g2.3)', () => {
       'nav.agents',
       'nav.sandboxes',
       'nav.general',
-      'nav.platformRules',
       'nav.integrations',
     ])
     expect(settingsNavItems.map((i) => i.to)).toEqual([
@@ -27,14 +26,13 @@ describe('settingsNav (plan g2.1 / g2.2 / g2.3)', () => {
       '/agents',
       '/sandboxes',
       '/settings',
-      '/settings/platform-rules',
       '/settings',
     ])
   })
 
   it('treats settings-state routes as chrome and skips full pages (plan g3.1)', () => {
     expect(isSettingsChrome('/settings')).toBe(true)
-    expect(isSettingsChrome('/settings/platform-rules')).toBe(true)
+    expect(isSettingsChrome('/settings/other')).toBe(true)
     expect(isSettingsChrome('/projects')).toBe(true)
     expect(isSettingsChrome('/projects/abc')).toBe(true)
     expect(isSettingsChrome('/notifications')).toBe(true)
@@ -49,14 +47,12 @@ describe('settingsNav (plan g2.1 / g2.2 / g2.3)', () => {
   it('highlights prefix routes and exact general vs integrations (plan g2.2 / g2.3)', () => {
     const projects = settingsNavItems[0]
     const general = settingsNavItems.find((i) => i.labelKey === 'nav.general')!
-    const rules = settingsNavItems.find((i) => i.labelKey === 'nav.platformRules')!
     const integ = settingsNavItems.find((i) => i.labelKey === 'nav.integrations')!
     expect(settingsItemActive(projects, '/projects/p1', {})).toBe(true)
     expect(settingsItemActive(projects, '/runs', {})).toBe(false)
     expect(settingsItemActive(general, '/settings', {})).toBe(true)
-    expect(settingsItemActive(general, '/settings/platform-rules', {})).toBe(false)
+    expect(settingsItemActive(general, '/settings/other', {})).toBe(false)
     expect(settingsItemActive(general, '/settings', { integrations: '1' })).toBe(false)
-    expect(settingsItemActive(rules, '/settings/platform-rules', {})).toBe(true)
     expect(settingsItemActive(integ, '/settings', { integrations: '1' })).toBe(true)
     expect(settingsItemActive(integ, '/settings', {})).toBe(false)
   })
@@ -66,6 +62,6 @@ describe('settingsNav (plan g2.1 / g2.2 / g2.3)', () => {
     expect(paths).toContain('/dashboard')
     expect(paths).toContain('/settings')
     expect(paths).toContain('/projects')
-    expect(paths).toContain('/settings/platform-rules')
+    expect(paths).not.toContain('/settings/platform-rules')
   })
 })

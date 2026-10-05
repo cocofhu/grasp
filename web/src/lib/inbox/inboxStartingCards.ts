@@ -1,4 +1,4 @@
-import { isGrasp } from '@/lib/shared/clarifyInteractive'
+import { isClarifyNode } from '@/lib/shared/clarifyInteractive'
 import { isStartingInboxItem } from '@/lib/inbox/inboxDisplay'
 import { clipRunTitle } from '@/lib/run/runTitle'
 import type { ClarifyInboxItem, InboxItem, Run } from '@/lib/shared/types'
@@ -8,7 +8,7 @@ export type IncomingApproval = { runId: string; nodeId: string }
 
 /**
  * The approval the inbox is waiting for, from `?run=&node=` or the pending home
- * handoff. The published-graph node id may differ from the parked Approve id
+ * handoff. The published-graph node id may differ from the parked clarify id
  * (`ap` vs `approve_7gl8`), so nodeId is a hint and runId is the identity.
  */
 export function resolveIncomingApproval(
@@ -21,6 +21,9 @@ export function resolveIncomingApproval(
   return { runId, nodeId: String(queryNode ?? '').trim() || seed?.nodeId || '' }
 }
 
+/** Ghost row node id when neither the query nor the handoff names the node. */
+export const INCOMING_GHOST_NODE_ID = 'incoming'
+
 /** Optimistic loading row shown until listGates returns the real approval. */
 export function makeIncomingGhost(
   target: IncomingApproval,
@@ -32,7 +35,7 @@ export function makeIncomingGhost(
     type: 'clarify',
     state: 'starting',
     runId: target.runId,
-    nodeId: target.nodeId || 'grasp',
+    nodeId: target.nodeId || INCOMING_GHOST_NODE_ID,
     iteration: 1,
     workflowName: '',
     runTitle: label,
@@ -49,7 +52,7 @@ export function makeIncomingGhost(
  * A clarify/approve sandbox-setup failure records the failure on the node
  * execution and stops the run *without* marking the run terminal, so run status
  * alone would miss exactly the case this has to detect. A whole-run failure or
- * cancel still counts. When the hinted node id misses, fall back to Approve
+ * cancel still counts. When the hinted node id misses, fall back to clarify
  * nodes on `run.nodes` so `ap` vs `approve_7gl6` cannot hide a setup failure.
  */
 export function isStartFailedRun(
@@ -61,8 +64,8 @@ export function isStartFailedRun(
   if (nodeStatus === 'failed' || nodeStatus === 'cancelled') return true
   if (nodeStatus !== undefined) return false
 
-  const approveIds = (run.nodes || []).filter((n) => isGrasp(n.type)).map((n) => n.id)
-  for (const id of approveIds) {
+  const clarifyIds = (run.nodes || []).filter((n) => isClarifyNode(n)).map((n) => n.id)
+  for (const id of clarifyIds) {
     const st = run.nodeRuns?.[id]?.status
     if (st === 'failed' || st === 'cancelled') return true
   }
@@ -86,11 +89,11 @@ function nodeRunStatus(
  * the approval already parked, completed, or moved on.
  *
  * `nodeId` is only a hint (`ap` vs `approve_7gl6` may differ). Prefer that
- * node's status when present; otherwise consult approve nodes from `run.nodes`
+ * node's status when present; otherwise consult clarify nodes from `run.nodes`
  * so a completed input + still-booting approve is not mistaken for "already
  * moved on", and a completed approve + running implement still drops the ghost.
  */
-export function isApproveStillStarting(
+export function isClarifyStillStarting(
   run: Pick<Run, 'status'> & { nodeRuns?: Run['nodeRuns']; nodes?: Run['nodes'] },
   nodeId: string,
 ): boolean {
@@ -104,18 +107,18 @@ export function isApproveStillStarting(
     if (hinted === 'running') return true
   }
 
-  const approveIds = (run.nodes || []).filter((n) => isGrasp(n.type)).map((n) => n.id)
-  if (approveIds.length > 0) {
-    let sawApprove = false
-    for (const id of approveIds) {
+  const clarifyIds = (run.nodes || []).filter((n) => isClarifyNode(n)).map((n) => n.id)
+  if (clarifyIds.length > 0) {
+    let sawClarify = false
+    for (const id of clarifyIds) {
       const st = nodeRunStatus(run, id)
       if (!st) continue
-      sawApprove = true
+      sawClarify = true
       if (st === 'running') return true
       if (leftBootStatuses.has(st)) return false
     }
-    // Graph has Approve, but no StateRun yet — still launching.
-    if (!sawApprove) return run.status === 'queued' || run.status === 'running'
+    // Graph has a clarify node, but no StateRun yet — still launching.
+    if (!sawClarify) return run.status === 'queued' || run.status === 'running'
     return false
   }
 
@@ -130,7 +133,7 @@ export function isApproveStillStarting(
  * Used to pin `?run=&node=` after boot when the filtered list omits the row
  * (cross-project / wf / tag mismatch) — only leave once the node left pending.
  */
-export function isApproveAwaitingHuman(
+export function isClarifyAwaitingHuman(
   run: Pick<Run, 'status'> & { nodeRuns?: Run['nodeRuns']; nodes?: Run['nodes'] },
   nodeId: string,
 ): boolean {
@@ -142,8 +145,8 @@ export function isApproveAwaitingHuman(
   if (hinted === 'waiting_human') return true
   if (hinted !== undefined) return false
 
-  const approveIds = (run.nodes || []).filter((n) => isGrasp(n.type)).map((n) => n.id)
-  for (const id of approveIds) {
+  const clarifyIds = (run.nodes || []).filter((n) => isClarifyNode(n)).map((n) => n.id)
+  for (const id of clarifyIds) {
     if (nodeRunStatus(run, id) === 'waiting_human') return true
   }
   return run.status === 'waiting_human'

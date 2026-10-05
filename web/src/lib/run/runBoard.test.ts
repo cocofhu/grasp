@@ -5,7 +5,7 @@ import type { Run } from '../shared/types'
 function stubRun(partial: Partial<Run> & Pick<Run, 'id'>): Run {
   return {
     workflowId: 'wf',
-    workflowName: 'Pipeline',
+    workflowName: 'Workflow',
     status: 'running',
     trigger: 'manual',
     startedAt: '',

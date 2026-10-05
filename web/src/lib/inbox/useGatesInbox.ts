@@ -5,7 +5,7 @@ import { REVIEW_SHELL_WIDTH_KEY_APPROVAL } from '@/lib/inbox/reviewLayoutBudget'
 import { api, isPaginated } from '@/lib/api/api'
 import { isSandboxBusyError } from '@/lib/api/httpCore'
 import { adaptInboxContextToRun } from '@/lib/inbox/inboxContext'
-import { usePipelineFilter } from '@/lib/composables/usePipelineFilter'
+import { useWorkflowFilter } from '@/lib/composables/useWorkflowFilter'
 import { useTagFilter } from '@/lib/composables/useTagFilter'
 import { useProjectContext } from '@/lib/composables/useProjectContext'
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
@@ -31,15 +31,17 @@ import {
   pickNextActiveAfterRemove,
 } from '@/lib/inbox/inboxActiveSelection'
 import {
-  isApproveAwaitingHuman,
-  isApproveStillStarting,
+  isClarifyAwaitingHuman,
+  isClarifyStillStarting,
+  INCOMING_GHOST_NODE_ID,
   isStartFailedRun,
   makeIncomingGhost,
   resolveIncomingApproval,
   vanishedStartingRows,
 } from '@/lib/inbox/inboxStartingCards'
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
-import { applyPreviewArtifactName, inboxStageRemoteKind } from '@/lib/run/reactArtifactPreview'
+import { applyPreviewArtifactName, inboxStageRemoteKind, isAppPreviewRemoteNode } from '@/lib/run/reactArtifactPreview'
+import { findGraphNode } from '@/lib/shared/clarifyInteractive'
 import { createPendingAcpBuffer, pickAcpRails } from '@/lib/run/pendingAcpBuffer'
 import { deliverOrBufferDialogueAcp } from '@/lib/run/dialogueAcpDelivery'
 import {
@@ -163,20 +165,20 @@ let pendingReviewFrames: Record<string, unknown>[] = []
 const pendingAcpFrames = createPendingAcpBuffer()
 /** Snapshot reactSessions stashed when activeRun is still null during hard load. */
 let pendingSnapshotSessions: Run['reactSessions'] | null = null
-const { selected } = usePipelineFilter()
+const { selected } = useWorkflowFilter()
 const { selected: selectedProject, ensureHydrated: hydrateProject } = useProjectContext()
 const { selectedTags } = useTagFilter()
 const projectFilterOpen = ref(false)
-const pipelineFilterOpen = ref(false)
+const workflowFilterOpen = ref(false)
 const tagFilterOpen = ref(false)
 
 watch(projectFilterOpen, (v) => {
   if (v) {
-    pipelineFilterOpen.value = false
+    workflowFilterOpen.value = false
     tagFilterOpen.value = false
   }
 })
-watch(pipelineFilterOpen, (v) => {
+watch(workflowFilterOpen, (v) => {
   if (v) {
     projectFilterOpen.value = false
     tagFilterOpen.value = false
@@ -185,7 +187,7 @@ watch(pipelineFilterOpen, (v) => {
 watch(tagFilterOpen, (v) => {
   if (v) {
     projectFilterOpen.value = false
-    pipelineFilterOpen.value = false
+    workflowFilterOpen.value = false
   }
 })
 
@@ -469,7 +471,7 @@ function mergeIncomingGhost(items: InboxItem[]): InboxItem[] {
  */
 let incomingGhostConfirmInFlight = ''
 async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: string }) {
-  const nodeId = target.nodeId || 'grasp'
+  const nodeId = target.nodeId || INCOMING_GHOST_NODE_ID
   const key = `${target.runId}:${nodeId}`
   // loadList / starting-poll can call this every few seconds for the same deep
   // link; one in-flight check is enough.
@@ -479,7 +481,7 @@ async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: 
     const run = await api.getRun(target.runId)
     // A newer navigation may have re-armed a different target while we awaited.
     const cur = incomingTarget()
-    if (!cur || `${cur.runId}:${cur.nodeId || 'grasp'}` !== key) return
+    if (!cur || `${cur.runId}:${cur.nodeId || INCOMING_GHOST_NODE_ID}` !== key) return
     if (isStartFailedRun(run, nodeId)) {
       const ghost =
         incomingGhost.value && itemKey(incomingGhost.value) === key
@@ -491,16 +493,16 @@ async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: 
       await confirmStartingVanished(ghost)
       return
     }
-    if (isApproveStillStarting(run, nodeId)) return
+    if (isClarifyStillStarting(run, nodeId)) return
 
     // Parked but maybe filtered out of loadList — pin the real pending row
     // and keep armed so later filtered loadList passes still merge it (g2.1).
-    if (isApproveAwaitingHuman(run, nodeId)) {
+    if (isClarifyAwaitingHuman(run, nodeId)) {
       try {
         const data = await api.listGates({ page: 1, pageSize: 100 })
         if (!incomingArmed.value) return
         const curAfter = incomingTarget()
-        if (!curAfter || `${curAfter.runId}:${curAfter.nodeId || 'grasp'}` !== key) return
+        if (!curAfter || `${curAfter.runId}:${curAfter.nodeId || INCOMING_GHOST_NODE_ID}` !== key) return
         const rows = isPaginated(data) ? data.items : data
         const hit = rows.find((it) => it.runId === target.runId)
         if (hit) {
@@ -867,7 +869,7 @@ const {
   () => (active.value?.type === 'clarify' ? active.value.nodeId : null),
 )
 
-/** VNC pick on app_preview inbox stage → same ReAct annotation chips as Run review. */
+/** VNC pick on the app-preview inbox stage → same ReAct annotation chips as Run review. */
 const lastStagedAppPreviewPick = ref<AppPreviewPickPayload | null>(null)
 
 watch(
@@ -1584,29 +1586,25 @@ const activeClarify = computed(() => {
   return pickInboxClarifySession(activeRun.value, active.value.nodeId)
 })
 
-/** Inbox app_preview waiting: prefer API kind, fall back to loaded graph node type (not approve). */
-const inboxAppPreviewActive = computed(() => {
-  if (active.value?.type !== 'clarify') return false
-  if (active.value.kind === 'app_preview') return true
-  const n = activeRun.value?.nodes?.find((node) => node.id === active.value!.nodeId)
-  return n?.type === 'app_preview'
+const inboxStageNode = computed(() => {
+  const id = active.value?.type === 'clarify' ? active.value.nodeId : ''
+  return findGraphNode(activeRun.value?.nodes, id) || null
 })
+
+/** Inbox review of an Agent with set_preview: the stage exposes the remote app. */
+const inboxAppPreviewActive = computed(
+  () => active.value?.type === 'clarify' && isAppPreviewRemoteNode(inboxStageNode.value),
+)
 
 const inboxRemoteKind = computed(() =>
   inboxStageRemoteKind({
     appPreview: inboxAppPreviewActive.value,
     run: activeRun.value,
     nodeId: active.value?.type === 'clarify' ? active.value.nodeId : '',
-    // Approve upgrades inside ReactArtifactStage after silent probe; parents stay off.
+    // Clarify upgrades inside ReactArtifactStage after silent probe; parents stay off.
     hasRegisteredPreview: false,
   }),
 )
-
-const inboxStageNodeType = computed(() => {
-  const id = active.value?.type === 'clarify' ? active.value.nodeId : ''
-  if (!id) return ''
-  return activeRun.value?.nodes?.find((node) => node.id === id)?.type || ''
-})
 
 /** Keep the chat (and home-chat attachments) up while the product stage is still loading. */
 const showClarifyReviewShell = computed(
@@ -1622,9 +1620,6 @@ const clarifyComposerNodeId = computed(
 const clarifyComposerIteration = computed(() => activeClarify.value?.iteration ?? 1)
 const clarifyComposerTurns = computed(() => activeClarify.value?.turns ?? [])
 const clarifyComposerDone = computed(() => activeClarify.value?.done ?? false)
-const clarifyComposerNodeType = computed(
-  () => inboxStageNodeType.value || (activeHomeSeed.value ? 'grasp' : ''),
-)
 
 const inboxClarifyStageKind = computed(() => (activeRunLoadError.value ? 'loadFailed' : 'pending'))
 
@@ -2139,7 +2134,7 @@ function itemSecondary(it: InboxItem) {
     inboxConfirmFlowToken: inboxConfirmFlow.playToken,
     pendingAcpFrames,
     projectFilterOpen,
-    pipelineFilterOpen,
+    workflowFilterOpen,
     tagFilterOpen,
     showUpdateBanner,
     showProcessedBanner,
@@ -2182,13 +2177,12 @@ function itemSecondary(it: InboxItem) {
     activeClarify,
     inboxAppPreviewActive,
     inboxRemoteKind,
-    inboxStageNodeType,
+    inboxStageNode,
     showClarifyReviewShell,
     clarifyComposerNodeId,
     clarifyComposerIteration,
     clarifyComposerTurns,
     clarifyComposerDone,
-    clarifyComposerNodeType,
     inboxClarifyStageKind,
     inboxReviewState,
     reviewActive,

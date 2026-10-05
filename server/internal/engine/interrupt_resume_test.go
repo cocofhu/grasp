@@ -14,7 +14,7 @@ func TestFinalizeRunningStateRunsOnFinish(t *testing.T) {
 
 	t.Run("failed", func(t *testing.T) {
 		run := models.Run{ID: "f1", WorkflowID: "x", WorkflowName: "x", Status: "running",
-			Graph: models.Graph{Nodes: []models.Node{{ID: "n", Type: "agent"}}}}
+			Graph: models.Graph{Nodes: []models.Node{{ID: "n", Type: "agent", Caps: capsPlain}}}}
 		if err := db.Create(&run).Error; err != nil {
 			t.Fatalf("create run: %v", err)
 		}
@@ -42,7 +42,7 @@ func TestFinalizeRunningStateRunsOnFinish(t *testing.T) {
 
 	t.Run("cancelled", func(t *testing.T) {
 		run := models.Run{ID: "c1", WorkflowID: "x", WorkflowName: "x", Status: "running",
-			Graph: models.Graph{Nodes: []models.Node{{ID: "n", Type: "agent"}}}}
+			Graph: models.Graph{Nodes: []models.Node{{ID: "n", Type: "agent", Caps: capsPlain}}}}
 		if err := db.Create(&run).Error; err != nil {
 			t.Fatalf("create run: %v", err)
 		}
@@ -65,7 +65,7 @@ func TestFinalizeRunningStateRunsOnFinish(t *testing.T) {
 
 	t.Run("already_failed_noop", func(t *testing.T) {
 		run := models.Run{ID: "f2", WorkflowID: "x", WorkflowName: "x", Status: "running",
-			Graph: models.Graph{Nodes: []models.Node{{ID: "n", Type: "agent"}}}}
+			Graph: models.Graph{Nodes: []models.Node{{ID: "n", Type: "agent", Caps: capsPlain}}}}
 		if err := db.Create(&run).Error; err != nil {
 			t.Fatalf("create run: %v", err)
 		}
@@ -92,7 +92,7 @@ func TestPickAutoResumeNodeLevels(t *testing.T) {
 	t.Run("level1_cancelled", func(t *testing.T) {
 		runID := "l1"
 		db.Create(&models.Run{ID: runID, WorkflowID: "x", WorkflowName: "x", Status: "cancelled",
-			Graph: models.Graph{Nodes: []models.Node{{ID: "a", Type: "agent"}, {ID: "b", Type: "agent"}}}})
+			Graph: models.Graph{Nodes: []models.Node{{ID: "a", Type: "agent", Caps: capsPlain}, {ID: "b", Type: "agent", Caps: capsPlain}}}})
 		db.Create(&models.StateRun{RunID: runID, NodeID: "a", Iteration: 1, Status: "completed"})
 		db.Create(&models.StateRun{RunID: runID, NodeID: "b", Iteration: 1, Status: "cancelled"})
 
@@ -105,7 +105,7 @@ func TestPickAutoResumeNodeLevels(t *testing.T) {
 	t.Run("level2_running", func(t *testing.T) {
 		runID := "l2"
 		db.Create(&models.Run{ID: runID, WorkflowID: "x", WorkflowName: "x", Status: "failed",
-			Graph: models.Graph{Nodes: []models.Node{{ID: "a", Type: "agent"}, {ID: "b", Type: "agent"}}}})
+			Graph: models.Graph{Nodes: []models.Node{{ID: "a", Type: "agent", Caps: capsPlain}, {ID: "b", Type: "agent", Caps: capsPlain}}}})
 		db.Create(&models.StateRun{RunID: runID, NodeID: "a", Iteration: 1, Status: "completed"})
 		db.Create(&models.StateRun{RunID: runID, NodeID: "b", Iteration: 1, Status: "running"})
 
@@ -118,7 +118,7 @@ func TestPickAutoResumeNodeLevels(t *testing.T) {
 	t.Run("level3_last_any", func(t *testing.T) {
 		runID := "l3"
 		db.Create(&models.Run{ID: runID, WorkflowID: "x", WorkflowName: "x", Status: "failed",
-			Graph: models.Graph{Nodes: []models.Node{{ID: "a", Type: "agent"}, {ID: "b", Type: "agent"}}}})
+			Graph: models.Graph{Nodes: []models.Node{{ID: "a", Type: "agent", Caps: capsPlain}, {ID: "b", Type: "agent", Caps: capsPlain}}}})
 		db.Create(&models.StateRun{RunID: runID, NodeID: "a", Iteration: 1, Status: "completed"})
 		db.Create(&models.StateRun{RunID: runID, NodeID: "b", Iteration: 1, Status: "completed"})
 
@@ -131,7 +131,7 @@ func TestPickAutoResumeNodeLevels(t *testing.T) {
 	t.Run("empty_no_state_runs", func(t *testing.T) {
 		runID := "l4"
 		db.Create(&models.Run{ID: runID, WorkflowID: "x", WorkflowName: "x", Status: "failed",
-			Graph: models.Graph{Nodes: []models.Node{{ID: "a", Type: "agent"}}}})
+			Graph: models.Graph{Nodes: []models.Node{{ID: "a", Type: "agent", Caps: capsPlain}}}})
 
 		got := eng.pickAutoResumeNode(runID)
 		if got != "" {
@@ -146,7 +146,7 @@ func TestResumeFromOrphanRunning(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "risky", Type: "agent", Config: map[string]any{"prompt": "x", "produces": "out.md"}},
+			{ID: "risky", Type: "agent", Caps: capsPlain, Config: map[string]any{"prompt": "x", "produces": "out.md"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -175,7 +175,7 @@ func TestResumeFromCancelledRun(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "work", Type: "agent", Config: map[string]any{"prompt": "x", "produces": "out.md"}},
+			{ID: "work", Type: "agent", Caps: capsPlain, Config: map[string]any{"prompt": "x", "produces": "out.md"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -257,7 +257,7 @@ func TestResumeFromNoStateRunsError(t *testing.T) {
 	eng, db := setupEngine(t)
 	run := models.Run{
 		ID: "empty", WorkflowID: "x", WorkflowName: "x", Status: "failed",
-		Graph: models.Graph{Nodes: []models.Node{{ID: "n", Type: "agent"}}},
+		Graph: models.Graph{Nodes: []models.Node{{ID: "n", Type: "agent", Caps: capsPlain}}},
 	}
 	if err := db.Create(&run).Error; err != nil {
 		t.Fatalf("create run: %v", err)

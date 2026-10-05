@@ -52,7 +52,7 @@ type vncClientMsg struct {
 	URL    string `json:"url"`    // navigate goto target (about:blank / http…)
 }
 
-// PreviewVNC proxies noVNC (RFB over WebSocket) to the app_preview sandbox's
+// PreviewVNC proxies noVNC (RFB over WebSocket) to the preview sandbox's
 // in-container websockify while handling JSON control messages (Pick/navigate)
 // over CDP on the same Chromium instance inside that sandbox.
 func (h *Handlers) PreviewVNC(c *gin.Context) {

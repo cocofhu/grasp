@@ -19,7 +19,7 @@ type startRunBody struct {
 	Env      []models.EnvEntry `json:"env"`   // optional run-scoped sandbox env snapshot
 	Title    string            `json:"title"` // optional; overrides computeRunTitle when non-blank
 	// FirstMessage is the opening chat message (text + attachments) for an
-	// approve-first pipeline. The engine delivers it into the approve node's
+	// clarify-first workflow. The engine delivers it into the clarify node's
 	// sandbox once that node parks, so the caller can navigate away at once.
 	FirstMessage *models.CompositeText `json:"firstMessage"`
 }

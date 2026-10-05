@@ -349,7 +349,7 @@ test.describe('Run NotifyPolicy UI (P0)', () => {
     await expect(page.getByTestId('notify-tpl-input')).toHaveValue('')
 
     // Workflow inline: mode/events only — no template controls
-    await page.getByRole('button', { name: '流水线' }).click()
+    await page.getByRole('button', { name: '工作流' }).click()
     await expect(page.getByTestId('wf-notify-cell').first()).toBeVisible({ timeout: 5_000 })
     await expect(page.getByTestId('notify-template-section')).toHaveCount(0)
     await expect(page.getByTestId('notify-tpl-input')).toHaveCount(0)
@@ -361,10 +361,10 @@ test.describe('Run NotifyPolicy UI (P0)', () => {
     })
   })
 
-  test('流水线行内：off/继承/自定义 + 事件勾选即持久化', async ({ page }) => {
+  test('工作流行内：off/继承/自定义 + 事件勾选即持久化', async ({ page }) => {
     const harness = await setupNotifyHarness(page, { hasChannel: true })
 
-    await page.getByRole('button', { name: '流水线' }).click()
+    await page.getByRole('button', { name: '工作流' }).click()
     await expect(page.getByTestId('wf-notify-cell').first()).toBeVisible({ timeout: 5_000 })
 
     await page.screenshot({

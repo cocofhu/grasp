@@ -14,79 +14,20 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// ReactOpen launches a sandbox and parks the session. React nodes also run an
-// opening LLM turn (which can itself finish via finishReact when the agent
-// asks nothing). Grasp parks without chatting — the first LLM turn is the
-// user's first message, injected in ReactReply.
+// ReactOpen launches a sandbox and parks the clarify session without
+// chatting: the first LLM turn is the user's first message, injected in
+// ReactReply together with the opening contract.
 func (c *acpProvider) ReactOpen(ctx context.Context, req NodeReq) (out ReactTurn) {
-	var chatOp string
-	defer func() {
-		if out.OpID == "" && chatOp != "" {
-			out.OpID = chatOp
-		}
-		c.drainCarriedUsage(reactKey(req), &out)
-	}()
+	defer c.drainCarriedUsage(reactKey(req), &out)
 	n := c.sandboxAttempts()
-	seeded := c.upstreamArtifacts(req)
 	for attempt := 1; ; attempt++ {
-
 		c.host.ClearOutcome(req.RunID, req.NodeID)
-		if nodereg.IsGrasp(req.NodeType) {
-			c.host.SetOutcomeAllowed(req.RunID, false)
-		}
+		c.host.SetOutcomeAllowed(req.RunID, false)
 		sb, acp, home, err := c.openSandbox(ctx, req)
 		if err == nil {
-			if nodereg.IsGrasp(req.NodeType) {
-				c.parkReactSession(req, sb, acp, home)
-				return ReactTurn{}
-			}
-			chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
-			var res *sandbox.ChatResult
-			res, err = c.streamChat(chatCtx, acp, req, c.buildReactOpenPrompt(req, seeded), req.PromptImages)
-			cancel()
-			if err == nil {
-				if res != nil && res.OpID != "" {
-					chatOp = res.OpID
-				}
-				sess := c.parkReactSession(req, sb, acp, home)
-				pending := takeClarifyPending(c.host, req.RunID, req.NodeID)
-				var usage *models.TokenUsage
-				var usageByModel models.TokenUsageByModel
-				var events []models.AcpEvent
-				absorbChat(&usage, &usageByModel, &events, res)
-
-				if pending.any() {
-					return ReactTurn{Msg: res.Narration, Questions: pending.Questions, Forms: pending.Forms, Events: events, Usage: usage, UsageByModel: usageByModel}
-				}
-
-				// Provider failed after prompt_done (quota / 4xx): keep the
-				// dialogue open with the real error instead of silently finishing.
-				if fail := chatFailure(res); fail != "" {
-					msg := withFailureBanner(res.Narration, "澄清开场失败", fail)
-					events = append(events, models.AcpEvent{Kind: "message", Text: "react open chat failed: " + fail})
-					return ReactTurn{Msg: msg, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel}
-				}
-
-				// No human dialogue happened yet, so there is nothing to induce.
-				return c.finishReact(ctx, req, reactKey(req), sess, res.Narration, nil, events, usage, usageByModel, false)
-			}
-
-			c.carryChatUsage(reactKey(req), res)
-			if isRetryableSandboxErr(err) {
-				c.discardSandbox(ctx, req, sb, acp, home, nil)
-			} else {
-				c.retireRunSandbox(sb, acp, home)
-				log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).
-					Msg("react open chat failed")
-				return ReactTurn{
-					Msg: "(澄清开场失败:" + err.Error() + ")",
-					Events: []models.AcpEvent{{
-						Kind: "message", Text: "react open chat failed: " + err.Error(),
-					}},
-				}
-			}
+			c.parkReactSession(req, sb, acp, home)
+			return ReactTurn{}
 		}
-
 		if isRetryableSandboxErr(err) && attempt < n && ctx.Err() == nil {
 			c.emitRetryNotice(req, attempt, n, err)
 			if c.backoff(ctx, attempt) {
@@ -111,11 +52,11 @@ func (c *acpProvider) rehydrateReact(ctx context.Context, req NodeReq, history [
 	for attempt := 1; ; attempt++ {
 		sb, acp, home, err := c.openSandbox(ctx, req)
 		if err == nil {
-			if nodereg.IsGrasp(req.NodeType) && !approveHasOpenedTurn(history) {
+			if req.Caps.Clarify() && !clarifyHasOpenedTurn(history) {
 				_ = takeClarifyPending(c.host, req.RunID, req.NodeID)
 				sess := c.parkReactSession(req, sb, acp, home)
 				log.Info().Str("run", req.RunID).Str("node", req.NodeID).
-					Msg("approve session rehydrated without priming chat")
+					Msg("clarify session rehydrated without priming chat")
 				return sess
 			}
 			chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
@@ -187,25 +128,23 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 
 	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
 	defer cancel()
-	// Grasp Phase2 (force): expose node_complete before the confirm turn so
-	// tools/list includes it and tools/call can succeed. Phase1 keeps it hidden.
-	if nodereg.IsGrasp(req.NodeType) {
+	// Confirm (force) exposes node_complete before the confirm turn so
+	// tools/list includes it and tools/call can succeed; the dialogue hides it.
+	if req.Caps.Clarify() {
 		c.host.SetOutcomeAllowed(req.RunID, force)
 	}
 	prompt := human
 	chatImages := images
-	if approveInjectOpenPrompt(req, history) {
+	if clarifyInjectOpenPrompt(req, history) {
 		prompt = c.buildReactOpenPrompt(req, c.upstreamArtifacts(req)) + "\n\n## 用户消息\n" + strings.TrimRight(human, "\n")
 		chatImages = mergePromptImages(req.PromptImages, images)
 		if force {
 			prompt = c.reactConfirmPrefix(req) + "\n\n" + prompt
 		}
 	} else if force {
-		// Human confirmed: reconcile products against the transcript before the
-		// node wraps up. Grasp additionally names its two products and demands
-		// node_complete (phased contract). When both products are already in
-		// the store, the prefix also tells the agent a no-op rewrite is
-		// unnecessary.
+		// Human confirmed: reconcile products against the transcript and call
+		// node_complete. When the required products are already settled, the
+		// prefix also tells the agent a no-op rewrite is unnecessary.
 		prompt = c.reactConfirmPrefix(req) + "\n\n" + strings.TrimRight(human, "\n")
 	}
 	if extra := liveVariantPromptExtras(req, human); extra != "" {
@@ -247,22 +186,18 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 	// on the failure card and keep the dialogue open for Retry.
 	if fail := chatFailure(res); fail != "" {
 		msg := withFailureBanner(narration, "澄清回复失败", fail)
-		if nodereg.IsGrasp(req.NodeType) {
-			c.host.ClearOutcome(req.RunID, req.NodeID)
-		}
+		c.host.ClearOutcome(req.RunID, req.NodeID)
 		events = c.snapshotEvents(ctx, sess.sb, events)
 		events = append(events, models.AcpEvent{Kind: "message", Text: "react reply chat failed: " + fail})
 		return withHandoffs(ReactTurn{Msg: msg, Done: false, Err: errors.New(fail), Events: events, Usage: usage, UsageByModel: usageByModel,
 			Interrupted: res.Interrupted})
 	}
 
-	if !force && !reactCapReached(req, history) {
+	if !force {
 		// Empty narration with no questions: keep the dialogue open as an empty
-		// failure (plan g2.2) — do not Done / finishReact / node-failed.
+		// failure — do not Done / finishReact / node-failed.
 		if strings.TrimSpace(narration) == "" {
-			if nodereg.IsGrasp(req.NodeType) {
-				c.host.ClearOutcome(req.RunID, req.NodeID)
-			}
+			c.host.ClearOutcome(req.RunID, req.NodeID)
 			events = c.snapshotEvents(ctx, sess.sb, events)
 			return withHandoffs(ReactTurn{Msg: narration, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel})
 		}
@@ -279,7 +214,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 			usage = models.AddTokenUsage(usage, gu)
 			usageByModel = models.AddTokenUsageByModel(usageByModel, gum)
 		}
-		if req.NodeType == "preflight" {
+		if req.Caps.WritesSchema(models.SchemaPreflight) {
 			if gp, msg, ge, gu, gum, ok := c.enforcePreflightGate(ctx, req, sess); ok {
 				events = append(events, ge...)
 				usage = models.AddTokenUsage(usage, gu)
@@ -294,8 +229,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 				usageByModel = models.AddTokenUsageByModel(usageByModel, gum)
 			}
 		}
-	}
-	if !force && nodereg.IsGrasp(req.NodeType) {
+		// The dialogue only ends when the human confirms.
 		c.host.ClearOutcome(req.RunID, req.NodeID)
 		events = c.snapshotEvents(ctx, sess.sb, events)
 		return withHandoffs(ReactTurn{Msg: narration, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel})
@@ -378,11 +312,11 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 	return ReactTurn{Msg: res.Narration, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel, Handoffs: handoffs}
 }
 
-// reviewTurnPrompt prefixes a review agent node's turn with its Live contract
-// (Live turns only) and, on the first review turn or after a rehydrate lost
-// the agent context, the review-phase capability note.
+// reviewTurnPrompt prefixes a review turn with its Live contract (Live turns
+// only) and, on the first review turn or after a rehydrate lost the agent
+// context, the review-phase capability note.
 func reviewTurnPrompt(req NodeReq, history []models.ReactMessage, human string, rehydrated bool) string {
-	if !models.ReviewAgentNode(req.NodeType) {
+	if !req.Caps.ReviewEnabled() {
 		return human
 	}
 	prompt := human
@@ -490,7 +424,7 @@ func (c *acpProvider) AbortSessionTurn(runID, nodeID string) bool {
 
 // ReconcileOnConfirm runs the confirm-time pair against a review producer's
 // parked session: one visible turn reconciling the structured products with the
-// whole transcript, then the hidden summary turn. Approve/clarify nodes get the
+// whole transcript, then the hidden summary turn. Clarify Agents get the
 // same pair inside ReactReply(force=true) instead, because their reconcile
 // prompt must also require node_complete.
 //
@@ -510,7 +444,7 @@ func (c *acpProvider) ReconcileOnConfirm(ctx context.Context, req NodeReq) React
 	var usageByModel models.TokenUsageByModel
 	var events []models.AcpEvent
 
-	prompt := c.agentPrompts(req).ReviewConfirmReconcileText()
+	prompt := models.ReviewConfirmReconcile
 	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
 	res, err := c.streamChat(chatCtx, sess.acp, req, prompt, nil)
 	cancel()
@@ -540,7 +474,7 @@ func (c *acpProvider) confirmSummaryTurn(ctx context.Context, req NodeReq, sess 
 	if sess == nil || sess.acp == nil || !sess.acp.IsConnected() {
 		return ""
 	}
-	prompt := c.agentPrompts(req).ConfirmSummaryContractText()
+	prompt := models.ConfirmSummaryContract
 	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
 	res, err := c.streamChat(chatCtx, sess.acp, req, prompt, nil)
 	cancel()
@@ -563,52 +497,67 @@ func (c *acpProvider) confirmSummaryTurn(ctx context.Context, req NodeReq, sess 
 	return agentSummary
 }
 
-// reactConfirmPrefix is the force-turn instruction prepended to the human
-// message. Grasp names its two products and requires node_complete; when
-// those products are already settled it also appends the skip-rewrite note.
+// reactConfirmPrefix is the confirm-turn instruction prepended to the human
+// message; when the required products are already settled it also appends
+// the skip-rewrite note.
 func (c *acpProvider) reactConfirmPrefix(req NodeReq) string {
-	if !nodereg.IsGrasp(req.NodeType) {
-		return models.DefaultReactConfirmSuffix
+	out := models.ClarifyConfirmSuffix + requiredProductsLine(req.Caps)
+	if c.clarifyProductsSettled(req) {
+		out += models.ClarifyConfirmProductsReadyNote
 	}
-	confirm := models.DefaultGraspConfirmSuffix
-	if c.approveProductsSettled(req) {
-		confirm += models.DefaultGraspConfirmProductsReadyNote
-	}
-	return confirm
+	return out
 }
 
-// approveProductsSettled reports whether the store already holds both
-// Approve deliverables with no leftover open_questions, and work_kind /
-// root_cause consistency when applicable. Missing or unparseable artifacts
-// return false so the confirm prompt stays at the full "补齐或修正" wording.
-func (c *acpProvider) approveProductsSettled(req NodeReq) bool {
-	if c == nil || c.host == nil {
+// requiredProductsLine names the tools that write the Agent's required
+// products, so the confirm turn knows exactly what to reconcile.
+func requiredProductsLine(caps *models.AgentCapabilities) string {
+	var tools []string
+	for _, s := range nodereg.RequiredSchemas(caps, "") {
+		tool := s.SetTool
+		if tool == "" {
+			tool = "write_artifact"
+		}
+		tools = append(tools, "`"+tool+"`("+s.ArtifactName+")")
+	}
+	if len(tools) == 0 {
+		return ""
+	}
+	return "\n\n必填产物:" + strings.Join(tools, "、") + "。"
+}
+
+// clarifyProductsSettled reports whether the store already holds every
+// required product written by this node, with no open questions left and
+// work_kind / root_cause consistent. Any doubt returns false so the confirm
+// prompt keeps the full "补齐或修正" wording.
+func (c *acpProvider) clarifyProductsSettled(req NodeReq) bool {
+	if c == nil || c.host == nil || req.Caps == nil {
 		return false
 	}
-	cr, err := c.host.ReadArtifact(req.RunID, req.Token, mcp.ClarifiedRequirementArtifactName)
-	if err != nil || !json.Valid([]byte(cr)) || len(mcp.ClarifiedOpenQuestions(cr)) > 0 {
-		return false
-	}
-	pl, err := c.host.ReadArtifact(req.RunID, req.Token, mcp.PlanArtifactName)
-	if err != nil || !json.Valid([]byte(pl)) {
-		return false
-	}
-	wk := mcp.ClarifiedWorkKind(cr)
-	if wk == "" {
-		return false
-	}
-	hasRC := artifactOwnedByNode(c.host, req.RunID, req.Token, req.NodeID, mcp.RootCauseArtifactName)
-	if wk == "bug" {
-		if !hasRC {
+	workKind := ""
+	if req.Caps.WritesSchema(models.SchemaClarifiedRequirement) {
+		cr, err := c.host.ReadArtifact(req.RunID, req.Token, mcp.ClarifiedRequirementArtifactName)
+		if err != nil || !json.Valid([]byte(cr)) || len(mcp.ClarifiedOpenQuestions(cr)) > 0 {
 			return false
 		}
-		raw, rerr := c.host.ReadArtifact(req.RunID, req.Token, mcp.RootCauseArtifactName)
-		if rerr != nil || parseRootCauseJSON(raw) != nil {
+		workKind = mcp.ClarifiedWorkKind(cr)
+	}
+	for _, s := range nodereg.RequiredSchemas(req.Caps, workKind) {
+		if !artifactOwnedByNode(c.host, req.RunID, req.Token, req.NodeID, s.ArtifactName) {
 			return false
 		}
+	}
+	if !req.Caps.WritesSchema(models.SchemaRootCause) {
 		return true
 	}
-	return !artifactPresent(c.host, req.RunID, req.Token, mcp.RootCauseArtifactName)
+	switch workKind {
+	case "":
+		return false
+	case "bug":
+		raw, err := c.host.ReadArtifact(req.RunID, req.Token, mcp.RootCauseArtifactName)
+		return err == nil && parseRootCauseJSON(raw) == nil
+	default:
+		return !artifactPresent(c.host, req.RunID, req.Token, mcp.RootCauseArtifactName)
+	}
 }
 
 // enforceOpenQuestionsGate implements the clarification gate: when the agent
@@ -633,7 +582,7 @@ func (c *acpProvider) enforceOpenQuestionsGate(ctx context.Context, req NodeReq,
 	if len(open) == 0 {
 		return nil, "", nil, nil, nil, false
 	}
-	prompt := c.agentPrompts(req).ClarifiedOpenQuestionsRetryFor(open)
+	prompt := models.ClarifiedOpenQuestionsRetryFor(open)
 	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
 	res, err := c.streamChat(chatCtx, sess.acp, req, prompt, nil)
 	cancel()
@@ -670,7 +619,7 @@ func (c *acpProvider) enforcePreflightGate(ctx context.Context, req NodeReq, ses
 	} else {
 		return clarifyPending{}, "", nil, nil, nil, false
 	}
-	prompt := c.agentPrompts(req).PreflightRetryText(reason)
+	prompt := models.PreflightRetryFor(reason)
 	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
 	res, err := c.streamChat(chatCtx, sess.acp, req, prompt, nil)
 	cancel()
@@ -719,7 +668,7 @@ func (c *acpProvider) finishReact(ctx context.Context, req NodeReq, key string, 
 		return ReactTurn{Done: true, Err: err, Msg: err.Error(), Events: events, Usage: usage,
 			Result: NodeResult{Events: events, Usage: usage, UsageByModel: usageByModel}}
 	}
-	if req.NodeType == "preflight" {
+	if req.Caps.WritesSchema(models.SchemaPreflight) {
 		if gp, msg, ge, gu, gum, ok := c.enforcePreflightGate(ctx, req, sess); ok {
 			events = append(events, ge...)
 			usage = models.AddTokenUsage(usage, gu)
@@ -759,11 +708,7 @@ func (c *acpProvider) finishReact(ctx context.Context, req NodeReq, key string, 
 }
 
 func (c *acpProvider) buildReactOpenPrompt(req NodeReq, seeded []string) string {
-	p := c.buildAgentPrompt(req, seeded)
-	if nodereg.IsGrasp(req.NodeType) {
-		return p + models.DefaultGraspOpenSuffix
-	}
-	return p + c.agentPrompts(req).ReactOpenSuffixText()
+	return c.buildAgentPrompt(req, seeded) + models.ClarifyOpenSuffix
 }
 
 // buildReactRehydratePrompt re-opens a dialogue after a crash/restart: the base
@@ -798,7 +743,7 @@ func (c *acpProvider) parkReactSession(req NodeReq, sb *sandbox.Sandbox, acp *sa
 }
 
 // reactHistoryHasDialogue reports whether history contains a real turn
-// (non-empty text, questions, or images). An Approve session parked for the
+// (non-empty text, questions, or images). A clarify session parked for the
 // user's first message has none.
 func reactHistoryHasDialogue(history []models.ReactMessage) bool {
 	for _, m := range history {
@@ -809,29 +754,29 @@ func reactHistoryHasDialogue(history []models.ReactMessage) bool {
 	return false
 }
 
-// approveInjectOpenPrompt is true until Approve has completed a real opening
-// LLM turn. Failed / interrupted agent bubbles do not count — retry must still
-// receive the open contract (ReactOpen never chatted).
-func approveInjectOpenPrompt(req NodeReq, history []models.ReactMessage) bool {
-	if !nodereg.IsGrasp(req.NodeType) {
+// clarifyInjectOpenPrompt is true until a clarify dialogue has completed a
+// real opening LLM turn. Failed / interrupted agent bubbles do not count —
+// retry must still receive the open contract (ReactOpen never chatted).
+func clarifyInjectOpenPrompt(req NodeReq, history []models.ReactMessage) bool {
+	if !req.Caps.Clarify() {
 		return false
 	}
 	prior := history
 	if len(prior) > 0 && prior[len(prior)-1].Role == "human" {
 		prior = prior[:len(prior)-1]
 	}
-	return !approveHasOpenedTurn(prior)
+	return !clarifyHasOpenedTurn(prior)
 }
 
-// approveHasOpenedTurn reports a successful Approve agent turn (not a
+// clarifyHasOpenedTurn reports a successful clarify agent turn (not a
 // platform failure / interrupt placeholder). Used to decide open-prompt
 // injection and whether rehydrate may skip priming.
-func approveHasOpenedTurn(history []models.ReactMessage) bool {
+func clarifyHasOpenedTurn(history []models.ReactMessage) bool {
 	for _, m := range history {
 		if m.Role != "agent" {
 			continue
 		}
-		if m.Interrupted || isApproveFailedOpenText(m.Text) {
+		if m.Interrupted || isClarifyFailedOpenText(m.Text) {
 			continue
 		}
 		if strings.TrimSpace(m.Text) != "" || len(m.Questions) > 0 || len(m.Images) > 0 {
@@ -880,12 +825,10 @@ func withFailureBanner(narration, prefix, fail string) string {
 	return n + "\n" + banner
 }
 
-func isApproveFailedOpenText(text string) bool {
+func isClarifyFailedOpenText(text string) bool {
 	s := strings.TrimSpace(text)
 	switch {
 	case s == "(已中断)":
-		return true
-	case strings.HasPrefix(s, "(澄清开场失败:"):
 		return true
 	case strings.HasPrefix(s, "(澄清回复失败:"):
 		return true
@@ -908,39 +851,6 @@ func mergePromptImages(a, b []models.PromptImage) []models.PromptImage {
 	out = append(out, a...)
 	out = append(out, b...)
 	return out
-}
-
-// ReactCapReached exposes the same max_rounds safety cap the provider enforces
-// so the engine's auto-clarify loop (auto_var) stops after the same number of
-// rounds instead of replying forever. Approve dialogues have no round cap.
-func ReactCapReached(req NodeReq, history []models.ReactMessage) bool {
-	return reactCapReached(req, history)
-}
-
-// reactCapReached reports whether the max_rounds safety cap is hit (counting
-// the reply currently being processed). When true and there is no pending
-// ask_question, the dialogue finishes. Pending ask_question still outranks the
-// cap (ReactOpen/ReactReply return Questions). Completion is otherwise
-// agent-driven (no questions raised this turn).
-//
-// Approve never hits the cap (unlimited human / auto-clarify turns). Leftover
-// config.max_rounds on old graphs is ignored. Product write retries in
-// ensureRequiredProducts still use their own default and are unrelated.
-func reactCapReached(req NodeReq, history []models.ReactMessage) bool {
-	if nodereg.IsGrasp(req.NodeType) {
-		return false
-	}
-	humanTurns := 1
-	for _, h := range history {
-		if h.Role == "human" {
-			humanTurns++
-		}
-	}
-	maxRounds := 3
-	if mr, ok := toInt(req.Config["max_rounds"]); ok && mr > 0 {
-		maxRounds = mr
-	}
-	return humanTurns >= maxRounds
 }
 
 // chatResultToEvents flattens a ChatResult into ordered AcpEvents for the run

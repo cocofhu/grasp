@@ -43,7 +43,7 @@ func TestInboxContextKindClarify(t *testing.T) {
 
 	db.Create(&models.Run{
 		ID: "run-clarify", WorkflowID: "wf2", Status: "waiting_human",
-		StartedAt: now, Graph: reactGraph(""),
+		StartedAt: now, Graph: reactGraph(),
 	})
 	db.Create(&models.ReactConversation{
 		RunID: "run-clarify", NodeID: "react", Iteration: 1, Done: false,
@@ -80,7 +80,7 @@ func TestGateUpstreamNodeIDs(t *testing.T) {
 
 func TestClarifySlimNodeIDs(t *testing.T) {
 	// research post-run review: no template refs → current node only
-	research := &models.Node{ID: "research_1", Type: "research", Config: map[string]any{}}
+	research := &models.Node{ID: "research_1", Type: "agent", Caps: testReviewCaps, Config: map[string]any{}}
 	ids := ClarifySlimNodeIDs(research, "research_1", nil)
 	if len(ids) != 1 || ids[0] != "research_1" {
 		t.Fatalf("research only current: %v", ids)
@@ -88,7 +88,7 @@ func TestClarifySlimNodeIDs(t *testing.T) {
 
 	// react with upstream refs in prompt/config
 	react := &models.Node{
-		ID: "react", Type: "react",
+		ID: "react", Type: "agent", Caps: testClarifyCaps,
 		Config: map[string]any{
 			"prompt": `see {{nodes.research.outputs.research}} and artifact("plan.json")`,
 		},

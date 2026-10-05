@@ -7,8 +7,7 @@ import AgentDataPanel, { type DataSubTab } from '@/components/agent/AgentDataPan
 import AgentFilesPanel from '@/components/agent/AgentFilesPanel.vue'
 import AgentMcpPanel from '@/components/agent/AgentMcpPanel.vue'
 import AgentEnvPanel from '@/components/agent/AgentEnvPanel.vue'
-import AgentPromptsPanel from '@/components/agent/AgentPromptsPanel.vue'
-import AgentPlatformRulesPanel from '@/components/agent/AgentPlatformRulesPanel.vue'
+import AgentCapabilitiesPanel from '@/components/agent/AgentCapabilitiesPanel.vue'
 import AgentMetaPanel from '@/components/agent/AgentMetaPanel.vue'
 import AgentChatTester from '@/components/agent/AgentChatTester.vue'
 import AgentCreateWizard from '@/components/agent/AgentCreateWizard.vue'
@@ -173,7 +172,6 @@ const {
   onMoveGroup,
   onMoveAgent,
   onRemoveFromGroup,
-  promptCount,
   studioTabs,
   studioTabLabel,
   showToast,
@@ -614,18 +612,10 @@ async function createStudioChatTest(
             @open-settings-file="openSettingsInFiles"
           />
 
-          <AgentPromptsPanel
-            v-else-if="tab === 'prompts' && draft && !isMobile"
-            key="prompts"
+          <AgentCapabilitiesPanel
+            v-else-if="tab === 'capabilities' && draft && !isMobile"
+            key="capabilities"
             :draft="draft"
-          />
-
-          <AgentPlatformRulesPanel
-            v-else-if="tab === 'platform-rules' && !isMobile"
-            key="platform-rules"
-            :agent-name="activeName"
-            :active="tab === 'platform-rules'"
-            @toast="showToast"
           />
 
           <!-- data: Agent-scoped memory / context / cron-job management (whitelist on mobile) -->

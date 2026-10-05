@@ -132,7 +132,7 @@ func TestBuildOutputCardBranches(t *testing.T) {
 func TestBuildOutputCardSelectedProposalIsStructured(t *testing.T) {
 	e, db := setupEngine(t)
 	run := &models.Run{ID: "run-proposal-card", WorkflowID: "wf", Status: "running", Graph: models.Graph{
-		Nodes: []models.Node{{ID: "proposal_select", Label: "确认方案"}},
+		Nodes: []models.Node{{ID: "proposal_select", Type: "proposal_select", Label: "确认方案"}},
 	}}
 	if err := db.Create(run).Error; err != nil {
 		t.Fatal(err)

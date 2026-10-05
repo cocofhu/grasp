@@ -36,9 +36,9 @@ func takeClarifyPending(h *mcp.Host, runID, nodeID string) clarifyPending {
 // still missing (best-effort; engine fails closed if ultimately absent).
 // Aligns with ensureStructured: when Host memory HasOutcome is false, first
 // adopt a parseable node_complete.json before re-prompting / fail-closed.
-// For react nodes, a pending ask_question raised during the re-prompt aborts
+// For clarify Agents, a pending ask_question raised during the re-prompt aborts
 // the completion push and returns those questions (caller must not discard).
-// Non-react callers keep the prior discard-and-continue semantics.
+// Auto Agents keep the discard-and-continue semantics.
 func (c *acpProvider) ensureOutcome(ctx context.Context, req NodeReq, acp *sandbox.ACPClient, events *[]models.AcpEvent, usage **models.TokenUsage, byModel *models.TokenUsageByModel) (clarifyPending, error) {
 	outcomeReady := func() bool {
 		if c.host.HasOutcome(req.RunID, req.NodeID) {
@@ -59,7 +59,7 @@ func (c *acpProvider) ensureOutcome(ctx context.Context, req NodeReq, acp *sandb
 				Msg("node_complete still missing after re-prompt; engine will fail closed")
 			return clarifyPending{}, nil
 		}
-		prompt := c.agentPrompts(req).OutcomeRetryText()
+		prompt := models.OutcomeRetry
 		chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
 		res, err := c.streamChat(chatCtx, acp, req, prompt, nil)
 		cancel()
@@ -73,21 +73,21 @@ func (c *acpProvider) ensureOutcome(ctx context.Context, req NodeReq, acp *sandb
 		}
 		absorbChat(usage, byModel, events, res)
 		pending := takeClarifyPending(c.host, req.RunID, req.NodeID)
-		if pending.any() && nodereg.ClarifyInteractive(req.NodeType) {
+		if pending.any() && req.Caps.Clarify() {
 			return pending, nil
 		}
 	}
 	return clarifyPending{}, nil
 }
 
-// ensureStructured makes a framework node's reserved structured product exist
+// ensureStructured makes an Agent's required product exist
 // before the node completes: it checks the run store and, while absent (or
 // only present as an upstream same-name write), re-prompts the agent (same
 // session) to call the naming set_* tool, looping up to producesRetry times.
 // Intermediate turns are folded into events. Unlike the old produces path
 // there is no workspace harvest — structured products are written only
 // through MCP.
-// For react/approve/preflight nodes, a pending ask_question/ask_form raised
+// For clarify Agents, a pending ask_question/ask_form raised
 // during the re-prompt aborts the StructuredRetry push and returns those
 // interactions. Other callers keep discard-and-continue semantics.
 func (c *acpProvider) ensureStructured(ctx context.Context, req NodeReq, acp *sandbox.ACPClient, name, tool string, events *[]models.AcpEvent, usage **models.TokenUsage, byModel *models.TokenUsageByModel) (clarifyPending, error) {
@@ -105,7 +105,7 @@ func (c *acpProvider) ensureStructured(ctx context.Context, req NodeReq, acp *sa
 				Msg("structured product still missing after re-prompt; engine will fail closed")
 			return clarifyPending{}, nil
 		}
-		prompt := c.agentPrompts(req).StructuredRetryFor(name, tool)
+		prompt := models.StructuredRetryFor(name, tool)
 		chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
 		res, err := c.streamChat(chatCtx, acp, req, prompt, nil)
 		cancel()
@@ -116,7 +116,7 @@ func (c *acpProvider) ensureStructured(ctx context.Context, req NodeReq, acp *sa
 		}
 		absorbChat(usage, byModel, events, res)
 		pending := takeClarifyPending(c.host, req.RunID, req.NodeID)
-		if pending.any() && nodereg.ClarifyInteractive(req.NodeType) {
+		if pending.any() && req.Caps.Clarify() {
 			return pending, nil
 		}
 
@@ -139,24 +139,28 @@ func artifactOwnedByNode(host *mcp.Host, runID, token, nodeID, name string) bool
 	return false
 }
 
-// ensureRequiredProducts re-prompts until every RequiredProducts artifact is
-// owned by the current node (not merely present under the same name).
+// ensureRequiredProducts re-prompts until every required product is owned by
+// the current node (not merely present under the same name).
 func (c *acpProvider) ensureRequiredProducts(ctx context.Context, req NodeReq, acp *sandbox.ACPClient, events *[]models.AcpEvent, usage **models.TokenUsage, byModel *models.TokenUsageByModel) (clarifyPending, error) {
-	for _, p := range nodereg.RequiredProducts(req.NodeType) {
-		pending, err := c.ensureStructured(ctx, req, acp, p.ArtifactName, p.SetTool, events, usage, byModel)
+	for _, s := range nodereg.RequiredSchemas(req.Caps, "") {
+		tool := s.SetTool
+		if tool == "" {
+			tool = "write_artifact"
+		}
+		pending, err := c.ensureStructured(ctx, req, acp, s.ArtifactName, tool, events, usage, byModel)
 		if pending.any() || err != nil {
 			return pending, err
 		}
 	}
-	if nodereg.IsGrasp(req.NodeType) {
+	if req.Caps.WritesSchema(models.SchemaRootCause) {
 		return c.ensureRootCauseConsistency(ctx, req, acp, events, usage, byModel)
 	}
 	return clarifyPending{}, nil
 }
 
-// ensureRootCauseConsistency enforces Grasp work_kind ↔ root_cause.json rules.
-// root_cause is never a permanent Required product: only bug runs need it;
-// non-bug runs must not keep it.
+// ensureRootCauseConsistency enforces the work_kind ↔ root_cause.json rule for
+// Agents that declare root_cause: bug work needs a valid report; other work
+// must not keep one.
 func (c *acpProvider) ensureRootCauseConsistency(ctx context.Context, req NodeReq, acp *sandbox.ACPClient, events *[]models.AcpEvent, usage **models.TokenUsage, byModel *models.TokenUsageByModel) (clarifyPending, error) {
 	reason := func() string {
 		cr, err := c.host.ReadArtifact(req.RunID, req.Token, mcp.ClarifiedRequirementArtifactName)
@@ -166,7 +170,7 @@ func (c *acpProvider) ensureRootCauseConsistency(ctx context.Context, req NodeRe
 		wk := mcp.ClarifiedWorkKind(cr)
 		hasRC := artifactOwnedByNode(c.host, req.RunID, req.Token, req.NodeID, mcp.RootCauseArtifactName)
 		if wk == "" {
-			return "Grasp 清需求缺少 work_kind(bug|feature|other)。请立即调用 set_clarified_requirement 补上工作类型;若为 bug 还需 set_root_cause 写入 root_cause.json。"
+			return "需求缺少 work_kind(bug|feature|other)。请立即调用 set_clarified_requirement 补上工作类型;若为 bug 还需 set_root_cause 写入 root_cause.json。"
 		}
 		if wk == "bug" {
 			if !hasRC {
@@ -210,7 +214,7 @@ func (c *acpProvider) ensureRootCauseConsistency(ctx context.Context, req NodeRe
 		}
 		absorbChat(usage, byModel, events, res)
 		pending := takeClarifyPending(c.host, req.RunID, req.NodeID)
-		if pending.any() && nodereg.ClarifyInteractive(req.NodeType) {
+		if pending.any() && req.Caps.Clarify() {
 			return pending, nil
 		}
 	}
@@ -239,15 +243,15 @@ func parseRootCauseJSON(raw string) error {
 	return err
 }
 
-// ensurePlanComplete drives an implement node's run plan to completion. It
+// ensurePlanComplete drives the run plan to completion for an Agent that tracks plan progress. It
 // reads the plan's outstanding items (host.PlanIncomplete); while any remain it
 // re-prompts the agent (same session) to finish them, up to max_rounds times.
 // A missing/unparseable plan is treated as "nothing to enforce" (nil). If items
 // still remain after the loop it returns an error so the engine fails the node.
 func (c *acpProvider) ensurePlanComplete(ctx context.Context, req NodeReq, acp *sandbox.ACPClient, events *[]models.AcpEvent, usage **models.TokenUsage, byModel *models.TokenUsageByModel) error {
 	maxRounds := 3
-	if mr, ok := toInt(req.Config["max_rounds"]); ok && mr > 0 {
-		maxRounds = mr
+	if req.Caps != nil && req.Caps.MaxRounds > 0 {
+		maxRounds = req.Caps.MaxRounds
 	}
 	for i := 0; i < maxRounds; i++ {
 		inc, err := c.host.PlanIncomplete(req.RunID, req.Token)
@@ -262,7 +266,7 @@ func (c *acpProvider) ensurePlanComplete(ctx context.Context, req NodeReq, acp *
 		if len(inc) == 0 {
 			return nil
 		}
-		prompt := c.agentPrompts(req).PlanIncompleteRetryFor(inc)
+		prompt := models.PlanIncompleteRetryFor(inc)
 		chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
 		res, err := c.streamChat(chatCtx, acp, req, prompt, nil)
 		cancel()
@@ -285,44 +289,4 @@ func (c *acpProvider) ensurePlanComplete(ctx context.Context, req NodeReq, acp *
 		return fmt.Errorf("计划未全部完成,仍有 %d 项未完成: %s", len(inc), strings.Join(inc, "; "))
 	}
 	return nil
-}
-
-// ensurePreviewRegistered drives an app_preview node to register at least one
-// preview port via set_preview, re-prompting up to max_rounds when absent.
-func (c *acpProvider) ensurePreviewRegistered(ctx context.Context, req NodeReq, acp *sandbox.ACPClient, events *[]models.AcpEvent, usage **models.TokenUsage, byModel *models.TokenUsageByModel) error {
-	maxRounds := 3
-	if mr, ok := toInt(req.Config["max_rounds"]); ok && mr > 0 {
-		maxRounds = mr
-	}
-	for i := 0; i < maxRounds; i++ {
-		if c.host.HasPreviewPorts(req.RunID, req.NodeID) {
-			return nil
-		}
-		prompt := c.agentPrompts(req).PreviewRetryText()
-		chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
-		res, err := c.streamChat(chatCtx, acp, req, prompt, nil)
-		cancel()
-		if err != nil {
-			log.Warn().Err(err).Str("node", req.NodeID).Msg("app_preview set_preview re-prompt failed")
-			return fmt.Errorf("agent chat: %w", err)
-		}
-		absorbChat(usage, byModel, events, res)
-		_ = takeClarifyPending(c.host, req.RunID, req.NodeID)
-	}
-	if !c.host.HasPreviewPorts(req.RunID, req.NodeID) {
-		return fmt.Errorf("预览契约未满足:未调用 set_preview")
-	}
-	return nil
-}
-
-// nodeNeedsOutcome reports whether this node type must call node_complete.
-func nodeNeedsOutcome(nodeType string) bool {
-	switch nodeType {
-	case "agent", "plan", "implement", "react", "grasp", "approve", "preflight", "research", "proposal",
-		"test", "review", "submit_mr", "visual":
-		return true
-
-	default:
-		return false
-	}
 }

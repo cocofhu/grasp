@@ -1,13 +1,18 @@
 package services
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/crypto"
 	"github.com/cocofhu/grasp/internal/models"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 func setCredentialKey(t *testing.T) {
@@ -70,6 +75,31 @@ func TestProjectCredentialsCRUDAndResolution(t *testing.T) {
 	}
 	if _, ok := s.ResolveEnv(p.ID)["GRASP_CURSOR_API_KEY"]; ok {
 		t.Fatal("revoked credential still resolved")
+	}
+}
+
+// Unfilled slots store no ciphertext; reading them must not report a key mismatch.
+func TestProjectCredentialResolveEnvSkipsEmptySlotsQuietly(t *testing.T) {
+	setCredentialKey(t)
+	db := newTestDB(t)
+	p, err := NewProjectService(db).Create("Empty slots", "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewProjectCredentialService(db)
+	if rows, err := s.List(p.ID); err != nil || len(rows) == 0 {
+		t.Fatalf("list defaults: n=%d err=%v", len(rows), err)
+	}
+	var buf bytes.Buffer
+	prev := log.Logger
+	log.Logger = zerolog.New(&buf)
+	t.Cleanup(func() { log.Logger = prev })
+
+	if env := s.ResolveEnv(p.ID); len(env) != 0 {
+		t.Fatalf("empty slots resolved: %v", env)
+	}
+	if strings.Contains(buf.String(), "undecryptable") {
+		t.Fatalf("empty slots logged as undecryptable:\n%s", buf.String())
 	}
 }
 

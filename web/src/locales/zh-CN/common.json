@@ -116,7 +116,7 @@
     },
     "search": {
       "placeholder": "搜索工作流、运行…",
-      "pipelinePlaceholder": "搜索流水线…",
+      "workflowPlaceholder": "搜索工作流…",
       "agentPlaceholder": "搜索 Agent…",
       "nodePlaceholder": "搜索节点",
       "optionPlaceholder": "搜索…",
@@ -169,7 +169,7 @@
       "noWorkflows": "暂无工作流",
       "noRuns": "暂无运行记录",
       "noMatchingRuns": "无匹配运行记录",
-      "noMatchingPipelines": "无匹配流水线",
+      "noMatchingWorkflows": "无匹配工作流",
       "noMatchingAgents": "无匹配 Agent",
       "noArtifacts": "暂无产物",
       "noArtifactsInGroup": "该分组暂无产物",
@@ -179,9 +179,9 @@
       "noSandboxes": "暂无沙箱。运行工作流时会按需创建节点沙箱，或前往 Agent Studio「对话测试」启动测试沙箱。",
       "noAgents": "暂无 Agent。点击右上角\"新建 Agent\"创建,或后端首启会落盘默认 Agent。",
       "noPendingGates": "没有待审批项",
-      "noPendingGatesForPipeline": "该流水线没有待审批项",
+      "noPendingGatesForWorkflow": "该工作流没有待审批项",
       "noPendingGatesDesc": "当工作流到达人工门禁或需求澄清节点时会出现在这里",
-      "noPendingGatesPipelineDesc": "试试选择其他流水线,或查看全部流水线",
+      "noPendingGatesWorkflowDesc": "试试选择其他工作流,或查看全部工作流",
       "selectNode": "选择一个节点",
       "selectNodeDesc": "在左侧画布点选节点查看输出与日志"
     },
@@ -202,7 +202,7 @@
       "favoriteAdded": "已收藏「{name}」，已置顶到侧栏",
       "favoriteRemoved": "已取消收藏「{name}」",
       "favoriteFull": "已达 {max} 条上限，请先取消其它快捷",
-      "favoriteLaunchFailed": "无法启动该流水线，请稍后重试"
+      "favoriteLaunchFailed": "无法启动该工作流，请稍后重试"
     },
     "action": "动作",
     "optional": "可选",
@@ -260,10 +260,10 @@
         "desc": "回到目标 checkpoint 重跑,恢复变量快照并注入错误"
       }
     },
-    "pipelineFilter": {
-      "all": "全部流水线",
-      "noMatch": "无匹配流水线",
-      "loadFailed": "流水线列表加载失败"
+    "workflowFilter": {
+      "all": "全部工作流",
+      "noMatch": "无匹配工作流",
+      "loadFailed": "工作流列表加载失败"
     },
     "projectFilter": {
       "all": "全部项目",
@@ -356,6 +356,9 @@
       "loading": "加载中",
       "cannotDisplay": "无法显示",
       "attachmentUnavailable": "附件不可用"
+    },
+    "errors": {
+      "secretsKeyMissing": "服务器尚未配置加密密钥，暂时无法保存凭据。请让管理员用启动脚本重新启动服务。"
     }
   }
 }

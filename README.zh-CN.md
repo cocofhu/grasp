@@ -66,7 +66,7 @@ https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
 | 能力 | 在 FSM 里的位置 |
 |---|---|
 | 可视化画布 | 节点 + 成功 / 失败 / 回滚 + `when` + checkpoint |
-| 可视化澄清 | Grasp 节点 → 规格 + 计划 + 可选 `page.html` |
+| 可视化澄清 | 需求澄清 Agent → 规格 + 计划 + 可选 `page.html` |
 | 人工门禁 | 收件箱、运行详情、可分享的临时链接 |
 | 并行 run | 多台机器同时跑；人在一个收件箱里审批 |
 | Artifact MCP | 按 run 隔离；必要产物卡住转移 |
@@ -133,9 +133,9 @@ cd grasp
 
 ## 四步创建第一个工作流
 
-1. 使用本地演示账号登录。全新安装默认是空项目，不会自动创建样例流水线。
+1. 使用本地演示账号登录。全新安装默认是空项目，不会自动创建样例工作流。
 2. 在 **Agent Studio** 创建 Agent，选择 `cursor`、`claude_code`、`codebuddy`、`trae` 或 `opencode`，并配置对应 API Key。
-3. 打开画布：把 Grasp 接到开始节点，再接 Visual / 门禁 / 实现。画出成功、失败与回滚，并在该重入的地方标 checkpoint。
+3. 打开画布：从默认模板（需求澄清 → 实现 → 测试评审）开始，或从左侧面板拖入 Agent 和门禁。画出成功、失败与回滚，并在该重入的地方标 checkpoint。
 4. 发布并启动 run（也可从**首页**用一句话启动）。观察状态轨迹、`page.html` 预览，以及停在门禁上的收件箱项。
 
 后端鉴权和 Agent env 配置详见 [`server/README.md`](server/README.md)。

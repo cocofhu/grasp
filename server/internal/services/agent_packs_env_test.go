@@ -11,7 +11,6 @@ func TestAgentPacksUseGraspEnv(t *testing.T) {
 	roots := []string{
 		filepath.Join("..", "..", "..", "agents"),
 		"team_embed",
-		"first_install_embed",
 	}
 	var files []string
 	for _, root := range roots {

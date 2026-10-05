@@ -1,79 +1,61 @@
 import { describe, expect, it } from 'vitest'
-import { PRODUCT_ARTIFACT_BY_TYPE, PRODUCT_NODE_TYPES, productArtifactName, productArtifactsForType, productOutputDefs, resolveStructuredProductArtifact } from './productNodeArtifacts'
+import {
+  isProductNode,
+  productArtifactName,
+  productArtifactsForNode,
+  resolveStructuredProductArtifact,
+} from './productNodeArtifacts'
+import { AUTO_CAPS, CLARIFY_CAPS, IMPLEMENT_CAPS, TEST_REVIEW_CAPS } from '@/test/capsFixtures'
+
+const clarify = { type: 'agent' as const, caps: CLARIFY_CAPS }
 
 describe('productNodeArtifacts', () => {
-  it('covers StructuredProductPanel node types including proposal_select', () => {
-    expect(PRODUCT_NODE_TYPES).toEqual(expect.arrayContaining(['react', 'research', 'plan', 'proposal_select', 'visual']))
-    expect(productArtifactName('research')).toBe('research.json')
-    expect(productArtifactName('proposal_select')).toBe('proposal.json')
-    expect(PRODUCT_ARTIFACT_BY_TYPE.react).toBe('clarified_requirement.json')
-  })
-
-  it('lists Approve required + optional products', () => {
-    expect(PRODUCT_NODE_TYPES).toContain('grasp')
-    expect(productArtifactName('grasp')).toBe('clarified_requirement.json')
-    const arts = productArtifactsForType('grasp')
-    expect(arts.filter((a) => a.required).map((a) => a.name)).toEqual([
-      'clarified_requirement.json',
-      'plan.json',
-    ])
+  it('derives products from the agent caps snapshot', () => {
+    expect(productArtifactName(clarify)).toBe('clarified_requirement.json')
+    const arts = productArtifactsForNode(clarify)
+    expect(arts.filter((a) => a.required).map((a) => a.name)).toEqual(['clarified_requirement.json', 'plan.json'])
     expect(arts.filter((a) => !a.required).map((a) => a.name)).toEqual(
       expect.arrayContaining(['research.json', 'root_cause.json', 'proposals.json', 'page.html']),
     )
-  })
-
-  it('includes outputKey for single-product and multi-product types', () => {
-    expect(productArtifactsForType('plan')[0]?.outputKey).toBe('plan')
-    expect(productArtifactsForType('research')[0]?.outputKey).toBe('research')
-    expect(productArtifactsForType('grasp').map((a) => a.outputKey)).toEqual([
-      'clarified_requirement',
-      'plan',
-      'research',
-      'root_cause',
-      'proposals',
-      'page',
+    expect(arts.map((a) => a.outputKey)).toEqual(['clarified_requirement', 'plan', 'research', 'proposals', 'root_cause', 'page'])
+    expect(productArtifactName({ type: 'agent', caps: IMPLEMENT_CAPS })).toBe('implementation_result.json')
+    expect(productArtifactsForNode({ type: 'agent', caps: TEST_REVIEW_CAPS }).map((a) => a.name)).toEqual([
+      'test_result.json',
+      'review.json',
     ])
   })
 
-  it('builds inspector output defs from the manifest', () => {
-    expect(productOutputDefs('plan')).toEqual([
-      { key: 'plan', desc: 'nodes.plan.outputs.plan.desc' },
-      { key: 'plan_json', desc: 'nodes.plan.outputs.plan_json.desc' },
-    ])
-    expect(productOutputDefs('visual', [{ key: 'artifact_id', desc: 'nodes.visual.outputs.artifact_id.desc' }])).toEqual([
-      { key: 'page', desc: 'nodes.visual.outputs.page.desc' },
-      { key: 'artifact_id', desc: 'nodes.visual.outputs.artifact_id.desc' },
-    ])
+  it('covers proposal_select and skips nodes without products', () => {
+    expect(productArtifactName({ type: 'proposal_select' })).toBe('proposal.json')
+    expect(isProductNode({ type: 'agent', caps: AUTO_CAPS })).toBe(false)
+    expect(isProductNode({ type: 'agent' })).toBe(false)
+    expect(isProductNode({ type: 'human_gate' })).toBe(false)
+    expect(isProductNode(null)).toBe(false)
   })
 
-  it('keeps Approve plan.json visible after implement steals the store nodeId', () => {
+  it('keeps plan.json visible after a later node steals the store nodeId', () => {
     const plan = { name: 'plan.json', nodeId: 'implement' }
-    expect(
-      resolveStructuredProductArtifact({
-        name: 'plan.json',
-        nodeId: 'approve',
-        nodeType: 'approve',
-        nodeStatus: 'completed',
-        artifacts: [plan],
-      }),
-    ).toEqual(plan)
-    expect(
-      resolveStructuredProductArtifact({
-        name: 'plan.json',
-        nodeId: 'approve',
-        nodeType: 'approve',
-        nodeStatus: 'waiting_human',
-        artifacts: [plan],
-      }),
-    ).toBeNull()
+    const base = { name: 'plan.json', nodeId: 'clarify', node: clarify, artifacts: [plan] }
+    expect(resolveStructuredProductArtifact({ ...base, nodeStatus: 'completed' })).toEqual(plan)
+    expect(resolveStructuredProductArtifact({ ...base, nodeStatus: 'waiting_human' })).toBeNull()
+    expect(resolveStructuredProductArtifact({ ...base, nodeStatus: 'running', hasSnapshot: true })).toEqual(plan)
     expect(
       resolveStructuredProductArtifact({
         name: 'research.json',
-        nodeId: 'approve',
-        nodeType: 'approve',
+        nodeId: 'clarify',
+        node: clarify,
         nodeStatus: 'completed',
         artifacts: [{ name: 'research.json', nodeId: 'research' }],
       }),
     ).toBeNull()
+    expect(
+      resolveStructuredProductArtifact({
+        name: 'implementation_result.json',
+        nodeId: 'impl',
+        node: { type: 'agent', caps: IMPLEMENT_CAPS },
+        artifacts: [{ name: 'implementation_result.json', nodeId: 'other' }],
+      }),
+    ).toEqual({ name: 'implementation_result.json', nodeId: 'other' })
+    expect(resolveStructuredProductArtifact({ ...base, name: '' })).toBeNull()
   })
 })

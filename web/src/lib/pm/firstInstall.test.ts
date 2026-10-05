@@ -10,7 +10,7 @@ vi.mock('@/lib/api/api', () => ({
 }))
 
 import { api } from '@/lib/api/api'
-import { DEFAULT_PROJECT_ID, ONBOARDING_WORKFLOW_NAME, suppressOnboarding } from './onboardingWizard'
+import { DEFAULT_PROJECT_ID, ONBOARDING_WORKFLOW_NAMES, suppressOnboarding } from './onboardingWizard'
 import {
   closeFirstInstall,
   firstInstallCompletedAt,
@@ -57,7 +57,7 @@ describe('firstInstall', () => {
   it('stays closed once the default workflow exists', async () => {
     stubEmptyDefaultProject()
     mocked.listWorkflows.mockResolvedValue([
-      { id: 'wf-1', name: ONBOARDING_WORKFLOW_NAME },
+      { id: 'wf-1', name: ONBOARDING_WORKFLOW_NAMES[0] },
     ] as never)
     await probeFirstInstall()
     expect(firstInstallOpen.value).toBe(false)

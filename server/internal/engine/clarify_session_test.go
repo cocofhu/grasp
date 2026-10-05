@@ -338,9 +338,9 @@ func TestClarifyRetryLastRejectsSuccessAgent(t *testing.T) {
 	}
 }
 
-// TestClarifyOpenPersistsToolSummary: the opening agent turn keeps the tool
-// calls (name + status only) so the chat can re-render the folded tool row.
-func TestClarifyOpenPersistsToolSummary(t *testing.T) {
+// TestClarifyTurnPersistsToolSummary: an agent turn keeps the tool calls
+// (name + status only) so the chat can re-render the folded tool row.
+func TestClarifyTurnPersistsToolSummary(t *testing.T) {
 	eng, db, provider := setupEngineGraphP(t, reactOnlyGraph())
 	provider.reactPending = 10
 	provider.reactTools = []models.AcpEvent{
@@ -357,20 +357,33 @@ func TestClarifyOpenPersistsToolSummary(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 	waitReactPause(t, db, run.ID, "clarify")
+	if err := eng.ReactReply(run.ID, "clarify", "做登录", nil, nil, false); err != nil {
+		t.Fatalf("reply: %v", err)
+	}
+	if err := eng.waitReviewReadyForTest(run.ID, "clarify", 5*time.Second); err != nil {
+		t.Fatalf("wait: %v", err)
+	}
 	var conv models.ReactConversation
 	if err := db.Where("run_id = ? AND node_id = ?", run.ID, "clarify").First(&conv).Error; err != nil {
 		t.Fatalf("load conv: %v", err)
 	}
-	if len(conv.Messages) == 0 || conv.Messages[0].Role != "agent" {
+	var agentMsg *models.ReactMessage
+	for i := range conv.Messages {
+		if conv.Messages[i].Role == "agent" {
+			agentMsg = &conv.Messages[i]
+			break
+		}
+	}
+	if agentMsg == nil {
 		t.Fatalf("messages: %+v", conv.Messages)
 	}
-	got := conv.Messages[0].Tools
+	got := agentMsg.Tools
 	if len(got) != 2 || got[0].Title != "read_file" || got[1].Title != "ask_question" || got[1].Status != "completed" {
 		t.Fatalf("tools: %+v", got)
 	}
-	parts := conv.Messages[0].Parts
+	parts := agentMsg.Parts
 	if len(parts) != 3 || parts[0].Text != "look first" || parts[1].Summary != "a.md" ||
-		parts[2].Kind != "message" || parts[2].Text != conv.Messages[0].Text {
-		t.Fatalf("timeline must persist with the stored reply text: %+v (text %q)", parts, conv.Messages[0].Text)
+		parts[2].Kind != "message" || parts[2].Text != agentMsg.Text {
+		t.Fatalf("timeline must persist with the stored reply text: %+v (text %q)", parts, agentMsg.Text)
 	}
 }

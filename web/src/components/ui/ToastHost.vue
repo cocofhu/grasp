@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useToast } from '@/lib/composables/useToast'
 
-const { toasts } = useToast()
+const { toasts, runAction } = useToast()
 </script>
 
 <template>
@@ -16,14 +16,23 @@ const { toasts } = useToast()
         <div
           v-for="t in toasts"
           :key="t.id"
-          class="rounded-lg border border-line bg-elevated px-4 py-2.5 text-[13px] font-medium text-txt shadow-card"
+          class="flex items-center gap-3 rounded-lg border border-line bg-elevated px-4 py-2.5 text-[13px] font-medium text-txt shadow-card"
           :class="{
             'border-ok/40 text-ok': t.type === 'success',
             'border-err/40 text-err': t.type === 'error',
             'border-warn/40 text-warn': t.type === 'warn',
           }"
         >
-          {{ t.message }}
+          <span>{{ t.message }}</span>
+          <button
+            v-if="t.action"
+            type="button"
+            class="pointer-events-auto -my-1 rounded-md px-2 py-1 text-[12px] font-semibold text-accent-2 hover:bg-accent-dim"
+            data-testid="toast-action"
+            @click="runAction(t.id)"
+          >
+            {{ t.action.label }}
+          </button>
         </div>
       </TransitionGroup>
     </div>

@@ -1,573 +1,802 @@
 <script setup lang="ts">
-import { computed, markRaw, ref, watch } from 'vue'
+import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { VueFlow, useVueFlow, MarkerType } from '@vue-flow/core'
+import { VueFlow, useVueFlow, type Connection, type Edge, type EdgeChange, type NodeChange } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
-import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
-import BaseNode from './BaseNode.vue'
-import ConditionEdge from './ConditionEdge.vue'
-import { getEdgeStroke, type EdgeTone } from './edgeColors'
-import { nodeColorHex } from '@/data/nodeRegistry'
-import { computeSessionLayout, isInvalidPosition } from '@/lib/run/canvasLayout'
-import {
-  flowFingerprint,
-  pruneFlowCache,
-  reuseFlowElement,
-  type FlowNodeCacheEntry,
-} from '@/lib/run/workflowCanvasFlow'
+import './canvas.css'
+import AgentNode from './nodes/AgentNode.vue'
+import ControlNode from './nodes/ControlNode.vue'
+import CollabNode from './nodes/CollabNode.vue'
+import FlowEdge from './edges/FlowEdge.vue'
+import EdgeLabelEditor from './edges/EdgeLabelEditor.vue'
+import CanvasToolbar from './chrome/CanvasToolbar.vue'
+import QuickAdd from './chrome/QuickAdd.vue'
+import ShortcutHelp from './chrome/ShortcutHelp.vue'
+import EmptyCanvas from './chrome/EmptyCanvas.vue'
+import Icon from '../ui/Icon.vue'
+import { useNodeDefs } from '@/lib/run/useNodeDefs'
 import { theme } from '@/lib/shared/theme'
-import type { WFNode, WFEdge, NodeType, NodeRunStatus } from '@/lib/shared/types'
+import type { NodeRunStatus, NodeType, WFEdge, WFNode } from '@/lib/shared/types'
+import { CANVAS_CTX, type CanvasContext, type CanvasMode, type NodeMenuAction } from './composables/canvasContext'
+import type { AddLink, CanvasEditor } from './composables/useCanvasEditor'
+import { agentLookup, normHandle, type CanvasAgent } from './composables/outlets'
+import { useFlowElements } from './composables/useFlowElements'
+import { useCanvasShortcuts } from './composables/useCanvasShortcuts'
+import { buildPaletteItems, decodePaletteDrag, PALETTE_MIME, type PaletteItem } from './composables/paletteItems'
+import { computeAutoLayout, estimateNodeSize, needsInitialLayout, prefersReducedMotion, type Point } from './composables/useAutoLayout'
+import { buildDefaultWorkflow } from './composables/defaultTemplate'
+import { createNode } from './composables/graphOps'
+import { alignmentGuides, type AlignmentGuides } from './composables/alignmentGuides'
 
-const { t } = useI18n()
-
-const dotColor = computed(() => (theme.value === 'light' ? '#d3d9e4' : '#1c2330'))
-const maskColor = computed(() => (theme.value === 'light' ? 'rgba(226,230,238,0.7)' : 'rgba(11,14,20,0.7)'))
-
-const edgeStrokes = computed(() => {
-  void theme.value
-  return {
-    ok: getEdgeStroke('ok'),
-    err: getEdgeStroke('err'),
-    warn: getEdgeStroke('warn'),
-  }
-})
-
-const props = defineProps<{
-  nodes: WFNode[]
-  edges: WFEdge[]
-  mode?: 'edit' | 'run'
-  statusMap?: Record<string, NodeRunStatus>
-  selectedNode?: string | null
-  selectedEdge?: string | null
-  activePath?: string[] // edge ids to animate (run mode)
-}>()
+const props = withDefaults(
+  defineProps<{
+    nodes: WFNode[]
+    edges: WFEdge[]
+    mode?: CanvasMode
+    /** Required in edit mode. */
+    editor?: CanvasEditor | null
+    /** Run mode: project agents used to resolve outlets when nodes carry no caps snapshot. */
+    agents?: CanvasAgent[]
+    statusMap?: Record<string, NodeRunStatus>
+    iterations?: Record<string, number>
+    failReasons?: Record<string, string>
+    activePath?: string[]
+    selectedNode?: string | null
+    /** Run mode follow toggle; undefined hides it. */
+    follow?: boolean
+    followNodeId?: string | null
+    /** Lay the graph out once when it is opened without usable positions. */
+    autoLayoutOnInit?: boolean
+  }>(),
+  {
+    mode: 'edit',
+    editor: null,
+    agents: () => [],
+    statusMap: undefined,
+    iterations: undefined,
+    failReasons: undefined,
+    activePath: undefined,
+    selectedNode: null,
+    follow: undefined,
+    followNodeId: null,
+    autoLayoutOnInit: false,
+  },
+)
 
 const emit = defineEmits<{
   (e: 'select-node', id: string): void
-  (e: 'select-edge', id: string): void
   (e: 'pane-click'): void
-  (e: 'drop-node', payload: { type: NodeType; x: number; y: number }): void
-  (e: 'connect', payload: { source: string; target: string; sourceHandle?: string | null }): void
-  (e: 'move-node', payload: { id: string; x: number; y: number }): void
-  (e: 'remove-node', id: string): void
-  (e: 'remove-edge', id: string): void
-  (e: 'clear-structured-goto', payload: { edgeId: string }): void
+  (e: 'reply', id: string): void
+  (e: 'save'): void
+  (e: 'update:follow', value: boolean): void
 }>()
 
-const nodeTypes = { custom: markRaw(BaseNode) } as any
-const edgeTypes = { condition: markRaw(ConditionEdge) } as any
+const { t } = useI18n()
+const { NODE_DEFS } = useNodeDefs()
+const tr = (key: string, named?: Record<string, unknown>) => (named ? t(key, named) : t(key))
+const typeText = (type: NodeType) => ({
+  label: NODE_DEFS.value[type]?.label ?? String(type),
+  desc: NODE_DEFS.value[type]?.desc ?? '',
+})
 
-const { project, vueFlowRef } = useVueFlow()
+const nodeTypes = { agent: markRaw(AgentNode), control: markRaw(ControlNode), collab: markRaw(CollabNode) } as any
+const edgeTypes = { flow: markRaw(FlowEdge) } as any
 
-const sessionLayout = ref(new Map<string, { x: number; y: number }>())
+const flowId = `wf-canvas-${Math.random().toString(36).slice(2, 8)}`
+const {
+  fitView,
+  zoomIn,
+  zoomOut,
+  setCenter,
+  screenToFlowCoordinate,
+  viewport,
+  findNode,
+  dimensions,
+} = useVueFlow(flowId)
 
-function layoutStructureKey() {
-  return JSON.stringify({
-    mode: props.mode,
-    nodes: props.nodes.map((n) => ({
-      id: n.id,
-      type: n.type,
-      pos: isInvalidPosition(n.position) ? null : n.position,
-      cases: n.type === 'branch' ? (n.config?.cases as { goto?: string }[])?.map((c) => c?.goto) : undefined,
-      actions:
-        n.type === 'human_gate'
-          ? (n.config?.actions as { id?: string; goto?: string }[])?.map((a) => ({ id: a?.id, goto: a?.goto }))
-          : undefined,
-      exits:
-        n.type === 'test' || n.type === 'review'
-          ? ['pass', 'fail'].map((k) => (n.config?.exits as Record<string, { goto?: string }>)?.[k]?.goto)
-          : undefined,
-    })),
-    edges: props.edges.map((e) => ({ s: e.source, t: e.target })),
-  })
+const editing = computed(() => props.mode === 'edit' && !!props.editor)
+const host = ref<HTMLElement | null>(null)
+const hostSize = ref({ width: 0, height: 0 })
+const connecting = ref<{ source: string; sourceHandle: string } | null>(null)
+const hoveredEdge = ref<string | null>(null)
+const showMinimap = ref(false)
+const showHelp = ref(false)
+const panning = ref(false)
+
+type QuickAddState = { x: number; y: number; flow: Point; link?: AddLink; title: string; centered?: boolean }
+const quickAdd = shallowRef<QuickAddState | null>(null)
+const edgeEditor = shallowRef<{ id: string; x: number; y: number } | null>(null)
+let lastPointer: { x: number; y: number } | null = null
+
+const runLookup = computed(() => agentLookup(props.agents))
+const displayLayout = shallowRef<Map<string, Point> | null>(null)
+const { flowNodes, flowEdges } = useFlowElements({
+  nodes: () => props.nodes,
+  edges: () => props.edges,
+  mode: () => props.mode,
+  agents: () => props.editor?.agents.value ?? props.agents,
+  lookup: () => props.editor?.lookup.value ?? runLookup.value,
+  statusMap: () => props.statusMap,
+  iterations: () => props.iterations,
+  failReasons: () => props.failReasons,
+  activePath: () => props.activePath,
+  issues: () => props.editor?.nodeIssues.value,
+  selectedNodes: () =>
+    props.editor ? props.editor.selectedNodeIds.value : props.selectedNode ? [props.selectedNode] : [],
+  selectedEdges: () => props.editor?.selectedEdgeIds.value ?? [],
+  renamingId: () => props.editor?.renamingId.value ?? null,
+  connecting,
+  typeText,
+  t: tr,
+  positions: () => displayLayout.value,
+})
+
+
+const paletteItems = computed<PaletteItem[]>(() =>
+  props.editor ? buildPaletteItems(props.editor.agents.value, typeText, tr) : [],
+)
+
+// ── Theme-dependent SVG colours (attributes cannot read CSS variables) ──
+const colors = ref({ dot: '#1f1f26', node: '#36363e', mask: 'rgba(10,10,11,0.7)', ok: '', err: '', accent: '' })
+function readColors() {
+  if (typeof window === 'undefined') return
+  const cs = getComputedStyle(document.documentElement)
+  const rgb = (name: string, a?: number) => {
+    const v = cs.getPropertyValue(name).trim()
+    if (!v) return ''
+    return a === undefined ? `rgb(${v})` : `rgb(${v} / ${a})`
+  }
+  colors.value = {
+    dot: cs.getPropertyValue('--flow-dot').trim() || colors.value.dot,
+    node: rgb('--c-line-strong') || colors.value.node,
+    mask: rgb('--c-base', 0.7) || colors.value.mask,
+    ok: rgb('--c-ok'),
+    err: rgb('--c-err'),
+    accent: rgb('--c-accent'),
+  }
+}
+watch(theme, () => void nextTick(() => requestAnimationFrame(readColors)))
+
+function minimapColor(n: { id: string }): string {
+  const s = props.statusMap?.[n.id]
+  if (s === 'completed') return colors.value.ok || colors.value.node
+  if (s === 'failed') return colors.value.err || colors.value.node
+  if (s === 'running' || s === 'waiting_human') return colors.value.accent || colors.value.node
+  return colors.value.node
 }
 
+// ── Geometry helpers ──
+function hostPoint(clientX: number, clientY: number) {
+  const r = host.value?.getBoundingClientRect()
+  return { x: clientX - (r?.left ?? 0), y: clientY - (r?.top ?? 0) }
+}
+
+function updateHostSize() {
+  const r = host.value?.getBoundingClientRect()
+  if (r) hostSize.value = { width: r.width, height: r.height }
+}
+
+function measure(n: WFNode) {
+  const d = findNode(n.id)?.dimensions
+  return d && d.width && d.height ? { width: d.width, height: d.height } : estimateNodeSize(n)
+}
+
+function freeSpot(p: Point): Point {
+  let at = { ...p }
+  for (let i = 0; i < 20; i++) {
+    const hit = props.nodes.some((n) => Math.abs((n.position?.x ?? 0) - at.x) < 24 && Math.abs((n.position?.y ?? 0) - at.y) < 24)
+    if (!hit) break
+    at = { x: at.x + 32, y: at.y + 32 }
+  }
+  return at
+}
+
+function viewCenter(): Point {
+  const r = host.value?.getBoundingClientRect()
+  if (!r) return { x: 0, y: 0 }
+  const c = screenToFlowCoordinate({ x: r.left + r.width / 2, y: r.top + r.height / 2 })
+  return freeSpot({ x: c.x - 110, y: c.y - 40 })
+}
+
+function pointerFlow(): Point | undefined {
+  if (!lastPointer) return undefined
+  return screenToFlowCoordinate(lastPointer)
+}
+
+function nodeAnchor(spec: { type: NodeType }, p: Point): Point {
+  const w = estimateNodeSize(createNode({ type: spec.type }, { x: 0, y: 0 }, [])).width
+  return { x: p.x - w / 2, y: p.y - 28 }
+}
+
+// ── Editor wiring ──
 watch(
-  layoutStructureKey,
-  () => {
-    if (props.mode === 'run') {
-      sessionLayout.value = new Map()
-      return
-    }
-    sessionLayout.value = computeSessionLayout(props.nodes, props.edges)
+  () => props.editor,
+  (ed) => {
+    if (!ed) return
+    ed.setPlaceHint(viewCenter)
+    ed.setMeasure(measure)
   },
   { immediate: true },
 )
 
-function resolvePosition(n: WFNode) {
-  if (props.mode === 'run' || !isInvalidPosition(n.position)) return n.position
-  return sessionLayout.value.get(n.id) ?? n.position
-}
-
-function branchHandles(n: WFNode) {
-  const cases = (n.config?.cases as any[]) || []
-  return cases.map((c, i) => {
-    const isDefault = c?.when === 'default'
-    const when = String(c?.when || '')
-    return {
-      id: `case-${i}`,
-      isDefault,
-      label: isDefault
-        ? t('pages.workflowEditor.canvas.defaultBranch')
-        : when.length > 20
-          ? when.slice(0, 19) + '…'
-          : when || t('pages.workflowEditor.canvas.branchN', { n: i + 1 }),
-    }
-  })
-}
-
-// human_gate exposes one source handle per action so a line can be dragged from
-// each action to its target (like branch cases). Keyed by the stable action id.
-function actionHandles(n: WFNode) {
-  const actions = (n.config?.actions as any[]) || []
-  return actions
-    .map((a) => ({ id: String(a?.id ?? ''), label: String(a?.label || a?.id || '') }))
-    .filter((a) => a.id)
-}
-
-function isPositiveGateAction(id: string): boolean {
-  return id === 'approve' || id === 'pass'
-}
-
-// human_gate actions render like review/test structured exits (ok/bad chips +
-// right-side handles). Routing still comes from config.actions[].goto.
-function humanGateExitHandles(n: WFNode) {
-  return actionHandles(n).map((a) => ({
-    id: a.id,
-    label: a.label || a.id,
-    tone: (isPositiveGateAction(a.id) ? 'ok' : 'bad') as 'ok' | 'bad',
-  }))
-}
-
-// test/review expose fixed pass/fail handles for structured gate routing.
-function structuredExitHandles(n: WFNode) {
-  if (n.type === 'test') {
-    return [
-      { id: 'pass', label: t('common.structuredExits.testPass'), tone: 'ok' as const },
-      { id: 'fail', label: t('common.structuredExits.testFail'), tone: 'bad' as const },
-    ]
+function onNodesChange(changes: NodeChange[]) {
+  const ed = props.editor
+  if (!ed || props.mode !== 'edit') return
+  let ids: string[] | null = null
+  for (const c of changes) {
+    if (c.type !== 'select') continue
+    ids ??= [...ed.selectedNodeIds.value]
+    if (c.selected && !ids.includes(c.id)) ids.push(c.id)
+    if (!c.selected) ids = ids.filter((x) => x !== c.id)
   }
-  if (n.type === 'review') {
-    return [
-      { id: 'pass', label: t('common.structuredExits.reviewPass'), tone: 'ok' as const },
-      { id: 'fail', label: t('common.structuredExits.reviewFail'), tone: 'bad' as const },
-    ]
+  if (ids && !sameSet(ids, ed.selectedNodeIds.value)) ed.setSelection(ids, ed.selectedEdgeIds.value)
+}
+
+function onEdgesChange(changes: EdgeChange[]) {
+  const ed = props.editor
+  if (!ed || props.mode !== 'edit') return
+  let ids: string[] | null = null
+  for (const c of changes) {
+    if (c.type !== 'select') continue
+    ids ??= [...ed.selectedEdgeIds.value]
+    if (c.selected && !ids.includes(c.id)) ids.push(c.id)
+    if (!c.selected) ids = ids.filter((x) => x !== c.id)
   }
-  return []
+  if (ids && !sameSet(ids, ed.selectedEdgeIds.value)) ed.setSelection(ed.selectedNodeIds.value, ids)
 }
 
-// Cache flow node objects so a selection-only change rebuilds only the
-// previously/newly selected nodes — Vue Flow skips reconcile for stable refs.
-type FlowNodeObj = {
-  id: string
-  type: string
-  position: { x: number; y: number }
-  draggable: boolean
-  selected: boolean
-  data: Record<string, unknown>
-}
-const flowNodeCache = new Map<string, FlowNodeCacheEntry<FlowNodeObj>>()
-
-const flowNodes = computed(() => {
-  const selectedId = props.selectedNode
-  const modeRun = props.mode === 'run'
-  const out = props.nodes.map((n) => {
-    const position = resolvePosition(n)
-    const status = props.statusMap?.[n.id]
-    const branches = n.type === 'branch' ? branchHandles(n) : undefined
-    const appPreviewReview = n.type === 'app_preview'
-    const structuredExits =
-      n.type === 'test' || n.type === 'review'
-        ? structuredExitHandles(n)
-        : n.type === 'human_gate'
-          ? humanGateExitHandles(n)
-          : undefined
-    const selected = selectedId === n.id
-    const fingerprint = flowFingerprint({
-      type: n.type,
-      label: n.label,
-      status,
-      checkpoint: n.checkpoint,
-      position,
-      draggable: !modeRun,
-      branches,
-      appPreviewReview,
-      structuredExits,
-    })
-    return reuseFlowElement(flowNodeCache, n.id, fingerprint, selected, () => ({
-      id: n.id,
-      type: 'custom',
-      position,
-      draggable: !modeRun,
-      selected,
-      data: {
-        type: n.type as NodeType,
-        label: n.label,
-        status,
-        checkpoint: n.checkpoint,
-        branches,
-        appPreviewReview,
-        structuredExits,
-      },
-    }))
-  })
-  pruneFlowCache(flowNodeCache, props.nodes.map((n) => n.id))
-  return out
-})
-
-const BRANCH_COLOR = '#E879F9'
-
-function isStructuredGateNode(n: WFNode | undefined): n is WFNode {
-  return n?.type === 'test' || n?.type === 'review'
+function sameSet(a: string[], b: string[]) {
+  return a.length === b.length && a.every((x) => b.includes(x))
 }
 
-function whenHasAction(when: string, action: string): boolean {
-  return new RegExp(`action\\s*==\\s*["']${action}["']`).test(when)
+function onNodeClick({ node }: { node: { id: string } }) {
+  if (props.mode === 'run') emit('select-node', node.id)
 }
 
-function whenHasFailAction(when: string): boolean {
-  return (
-    whenHasAction(when, 'fail') ||
-    whenHasAction(when, 'reject') ||
-    whenHasAction(when, 'revise')
-  )
+function onNodeDoubleClick({ node }: { node: { id: string } }) {
+  if (editing.value) props.editor!.openInspector(node.id, true)
 }
 
-function inferEdgeTone(e: WFEdge, sourceNode: WFNode | undefined): 'ok' | 'err' | 'warn' | 'default' {
-  const kind = e.kind || 'success'
-  const when = e.when || ''
-  const label = e.label || ''
+const guides = ref<AlignmentGuides | null>(null)
 
-  if (isStructuredGateNode(sourceNode)) {
-    if (
-      whenHasAction(when, 'fail') ||
-      whenHasAction(when, 'reject') ||
-      label === t('common.structuredExits.testFail') ||
-      label === t('common.structuredExits.reviewFail')
-    ) {
-      return 'err'
-    }
-    if (
-      whenHasAction(when, 'pass') ||
-      label === t('common.structuredExits.testPass') ||
-      label === t('common.structuredExits.reviewPass') ||
-      label === t('common.edgeLabels.pass')
-    ) {
-      return 'ok'
-    }
-  }
-
-  if (kind === 'rollback') return 'warn'
-  if (kind === 'failure') return 'err'
-  if (
-    when.includes('approve') ||
-    label === t('common.edgeLabels.approve') ||
-    label === t('common.edgeLabels.pass') ||
-    label === '批准' ||
-    label === '通过'
-  ) {
-    return 'ok'
-  }
-  if (
-    label === t('common.edgeLabels.revise') ||
-    label === t('common.edgeLabels.limit') ||
-    label === '退回' ||
-    label === '超限'
-  ) {
-    return 'warn'
-  }
-  return 'default'
+function onNodeDrag(e: { node: { id: string; position: Point }; nodes: { id: string }[] }) {
+  if (!editing.value) return
+  const dragged = new Set(e.nodes.map((n) => n.id))
+  const own = props.nodes.find((n) => n.id === e.node.id)
+  if (!own) return
+  const others = props.nodes
+    .filter((n) => !dragged.has(n.id))
+    .map((n) => ({ id: n.id, x: n.position?.x ?? 0, y: n.position?.y ?? 0, ...measure(n) }))
+  guides.value = alignmentGuides({ id: own.id, ...e.node.position, ...measure(own) }, others)
 }
 
-// Branch nodes route by their `config.cases[].goto` target (see engine
-// execBranch), not by real edges. Derive display-only edges from those rules so
-// the routing shows as connection lines on the canvas. They carry a `br:` id
-// prefix so change/click handlers can tell them apart from real edges.
-const branchEdges = computed(() => {
-  const ids = new Set(props.nodes.map((n) => n.id))
-  const out: any[] = []
-  for (const n of props.nodes) {
-    if (n.type !== 'branch') continue
-    const cases = (n.config?.cases as any[]) || []
-    cases.forEach((c, i) => {
-      const target = c?.goto
-      if (!target || !ids.has(target)) return
-      const isDefault = c?.when === 'default'
-      const when = String(c?.when || '')
-      const label = isDefault
-        ? 'ELSE'
-        : when.length > 24
-          ? when.slice(0, 23) + '…'
-          : when || t('pages.workflowEditor.canvas.branchN', { n: i + 1 })
-      out.push({
-        id: `br:${n.id}:${i}`,
-        source: n.id,
-        sourceHandle: `case-${i}`,
-        target,
-        type: 'condition',
-        selectable: false,
-        data: { label, tone: isDefault ? 'warn' : 'default', shape: 'step' },
-        markerEnd: MarkerType.ArrowClosed,
-        style: { stroke: BRANCH_COLOR, strokeWidth: 1.6, strokeDasharray: '5 4' },
-      })
-    })
-  }
-  return out
-})
-
-// human_gate actions route by their `config.actions[].goto` target (see engine
-// ResumeGate), not by real edges — mirror the branch approach and derive
-// display-only edges from each action's goto. Prefixed `ga:` so handlers can
-// tell them apart from real edges. Stroke tones match review/test exits.
-const gateEdges = computed(() => {
-  const ids = new Set(props.nodes.map((n) => n.id))
-  const strokes = edgeStrokes.value
-  const out: any[] = []
-  for (const n of props.nodes) {
-    if (n.type !== 'human_gate') continue
-    const actions = (n.config?.actions as any[]) || []
-    for (const a of actions) {
-      const aid = String(a?.id ?? '')
-      const target = a?.goto
-      if (!aid || !target || !ids.has(target)) continue
-      const label = String(a?.label || aid)
-      const isOk = isPositiveGateAction(aid)
-      out.push({
-        id: `ga:${n.id}:${aid}`,
-        source: n.id,
-        sourceHandle: `action-${aid}`,
-        target,
-        type: 'condition',
-        selectable: false,
-        data: { label, tone: isOk ? 'ok' : 'err', shape: 'step' },
-        markerEnd: MarkerType.ArrowClosed,
-        style: { stroke: isOk ? strokes.ok : strokes.err, strokeWidth: 1.6 },
-      })
-    }
-  }
-  return out
-})
-
-// test/review exits route by config.exits.pass.goto / exits.fail.goto (see engine
-// finalizeStructuredGate). Derive display-only edges prefixed `sg:`.
-// Edge badge copy is product-canonical (locale-independent); node exit chips keep
-// short i18n labels from structuredExitHandles.
-const STRUCTURED_EDGE_LABEL_OK = 'Pass · ok'
-const STRUCTURED_EDGE_LABEL_ERR = 'Fail / Reject · err'
-
-const structuredGateEdges = computed(() => {
-  const ids = new Set(props.nodes.map((n) => n.id))
-  const out: any[] = []
-  for (const n of props.nodes) {
-    if (n.type !== 'test' && n.type !== 'review') continue
-    const exits = (n.config?.exits as any) || {}
-    const handles = structuredExitHandles(n)
-    for (const h of handles) {
-      const target = exits[h.id]?.goto
-      if (!target || !ids.has(target)) continue
-      const isOk = h.id === 'pass' || h.tone === 'ok'
-      out.push({
-        id: `sg:${n.id}:${h.id}`,
-        source: n.id,
-        sourceHandle: `action-${h.id}`,
-        target,
-        type: 'condition',
-        selectable: false,
-        data: {
-          label: isOk ? STRUCTURED_EDGE_LABEL_OK : STRUCTURED_EDGE_LABEL_ERR,
-          tone: isOk ? 'ok' : 'err',
-          shape: 'step',
-        },
-        markerEnd: MarkerType.ArrowClosed,
-        style: { stroke: isOk ? edgeStrokes.value.ok : edgeStrokes.value.err, strokeWidth: 1.6 },
-      })
-    }
-  }
-  return out
-})
-
-type FlowEdgeObj = {
-  id: string
-  source: string
-  target: string
-  type: string
-  animated: boolean
-  selected: boolean
-  data: Record<string, unknown>
-  markerEnd: any
-  style: Record<string, unknown>
-  sourceHandle?: string
-  selectable?: boolean
+function onNodeDragStop(e: { nodes: { id: string; position: Point }[] }) {
+  guides.value = null
+  props.editor?.moveNodes(e.nodes.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y })))
 }
-const flowEdgeCache = new Map<string, FlowNodeCacheEntry<FlowEdgeObj>>()
 
-const flowEdges = computed(() => {
-  const nodeById = new Map(props.nodes.map((n) => [n.id, n]))
-  const selectedEdge = props.selectedEdge
-  const strokes = edgeStrokes.value
-  const realEdges = props.edges.map((e) => {
-    const kind = e.kind || 'success'
-    const active = !!props.activePath?.includes(e.id)
-    const sourceNode = nodeById.get(e.source)
-    const isStructuredGate = isStructuredGateNode(sourceNode)
-    const isAppPreview = sourceNode?.type === 'app_preview'
-    // Legacy app_preview fail/reject when-edges stay in the graph for silent
-    // compat but are not drawn (confirm injects action=pass; fail never routes).
-    if (isAppPreview && whenHasFailAction(e.when || '')) {
-      return null
-    }
-    const tone = inferEdgeTone(e, sourceNode)
-    // Legacy pass when-edges from app_preview render as the default success exit.
-    const treatAsDefaultSuccess =
-      isAppPreview && (whenHasAction(e.when || '', 'pass') || whenHasAction(e.when || '', 'approve'))
-    const stroke = active
-      ? '#7B61FF'
-      : isStructuredGate && (tone === 'ok' || tone === 'err') && kind === 'success'
-        ? strokes[tone as EdgeTone]
-        : treatAsDefaultSuccess
-          ? strokes.ok
-          : kind === 'failure'
-            ? strokes.err
-            : kind === 'rollback'
-              ? strokes.warn
-              : undefined
-    const selected = selectedEdge === e.id
-    const fingerprint = flowFingerprint({
-      source: e.source,
-      target: e.target,
-      kind,
-      label: treatAsDefaultSuccess ? '' : e.label,
-      carry: e.carry,
-      tone: treatAsDefaultSuccess ? 'ok' : tone,
-      active,
-      stroke,
-      strokeWidth: kind !== 'success' ? 1.6 : undefined,
-      dash: kind === 'rollback' ? '6 4' : undefined,
-      edgeType: treatAsDefaultSuccess ? 'default' : e.label || kind !== 'success' ? 'condition' : 'default',
-      animated: active || kind === 'rollback',
-    })
-    return reuseFlowElement(flowEdgeCache, e.id, fingerprint, selected, () => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      type: treatAsDefaultSuccess ? 'default' : e.label || kind !== 'success' ? 'condition' : 'default',
-      animated: !!active || kind === 'rollback',
-      selected,
-      data: {
-        label: treatAsDefaultSuccess ? undefined : e.label,
-        tone: treatAsDefaultSuccess ? 'ok' : tone,
-        kind,
-        carry: e.carry,
-      },
-      markerEnd: MarkerType.ArrowClosed,
-      style: {
-        stroke,
-        strokeWidth: kind !== 'success' ? 1.6 : undefined,
-        strokeDasharray: kind === 'rollback' ? '6 4' : undefined,
-      },
-    }))
-  }).filter(Boolean) as FlowEdgeObj[]
-  // Derived edges (branch/gate/structured) are rebuild-cheap and not selection-driven;
-  // keep them as-is. Only real edges participate in selected-edge identity reuse.
-  const derived = [...branchEdges.value, ...gateEdges.value, ...structuredGateEdges.value]
-  pruneFlowCache(
-    flowEdgeCache,
-    props.edges.map((e) => e.id),
-  )
-  return [...realEdges, ...derived]
-})
-
-function onNodeClick(e: any) {
-  emit('select-node', e.node.id)
-}
-function onEdgeClick(e: any) {
-  const id = e.edge?.id as string
-  // Derived branch/gate-routing edges aren't real edges; clicking one opens the
-  // owning node so the rule/action can be edited in the inspector.
-  if ((id?.startsWith('br:') || id?.startsWith('ga:') || id?.startsWith('sg:')) && e.edge?.source) {
-    emit('select-node', e.edge.source)
-    return
-  }
-  emit('select-edge', id)
-}
 function onPaneClick() {
+  closeOverlays()
+  props.editor?.clearSelection()
   emit('pane-click')
 }
-function onConnect(c: any) {
-  if (c?.source && c?.target) emit('connect', { source: c.source, target: c.target, sourceHandle: c.sourceHandle })
-}
-function onNodeDragStop(e: any) {
-  const n = e?.node
-  if (!n) return
-  const { x, y } = n.position
-  if (props.mode !== 'run' && isInvalidPosition(props.nodes.find((nd) => nd.id === n.id)?.position)) {
-    sessionLayout.value = new Map(sessionLayout.value).set(n.id, { x, y })
-  }
-  emit('move-node', { id: n.id, x, y })
-}
-// VueFlow manages its own internal store; mirror its remove changes (e.g. the
-// Backspace/Delete key) back to the parent's workflow model so deletions stick.
-function onNodesChange(changes: any[]) {
-  for (const ch of changes || []) {
-    if (ch?.type === 'remove' && ch.id) emit('remove-node', ch.id)
-  }
-}
-function onEdgesChange(changes: any[]) {
-  for (const ch of changes || []) {
-    if (ch?.type === 'remove' && ch.id) {
-      const id = String(ch.id)
-      if (id.startsWith('sg:')) {
-        emit('clear-structured-goto', { edgeId: id })
-        continue
-      }
-      // Skip derived branch/gate-routing edges: they mirror node config, not real edges.
-      if (!id.startsWith('br:') && !id.startsWith('ga:')) emit('remove-edge', ch.id)
-    }
-  }
-}
-function onDragOver(ev: DragEvent) {
-  ev.preventDefault()
-  if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move'
-}
-function onDrop(ev: DragEvent) {
-  const type = ev.dataTransfer?.getData('application/grasp-node') as NodeType
-  if (!type || !vueFlowRef.value) return
-  const bounds = vueFlowRef.value.getBoundingClientRect()
-  const pos = project({ x: ev.clientX - bounds.left, y: ev.clientY - bounds.top })
-  emit('drop-node', { type, x: pos.x - 88, y: pos.y - 24 })
+
+let connected = false
+function onConnectStart(e: { nodeId?: string; handleId?: string | null; handleType?: string }) {
+  if (!editing.value || e.handleType !== 'source' || !e.nodeId) return
+  connected = false
+  connecting.value = { source: e.nodeId, sourceHandle: normHandle(e.handleId) }
 }
 
-function minimapColor(n: any) {
-  return nodeColorHex(n.data.type as NodeType)
+function onConnect(c: Connection) {
+  connected = true
+  props.editor?.connect({ source: c.source, sourceHandle: normHandle(c.sourceHandle), target: c.target })
 }
+
+function onConnectEnd(ev?: MouseEvent | TouchEvent) {
+  const from = connecting.value
+  connecting.value = null
+  if (!from || connected || !ev) return
+  const pt = 'changedTouches' in ev ? ev.changedTouches[0] : (ev as MouseEvent)
+  if (!pt) return
+  const el = document.elementFromPoint(pt.clientX, pt.clientY) as HTMLElement | null
+  if (el?.closest('.vue-flow__node, .vue-flow__handle')) return
+  const src = props.nodes.find((n) => n.id === from.source)
+  openQuickAdd(
+    pt.clientX,
+    pt.clientY,
+    { kind: 'outlet', source: from.source, sourceHandle: from.sourceHandle },
+    t('canvas.quickAdd.titleConnect', { label: src?.label || from.source }),
+  )
+}
+
+function isValidConnection(c: Connection | Edge): boolean {
+  if (!props.editor) return false
+  if ('id' in c && props.edges.some((e) => e.id === c.id)) return true
+  return props.editor.checkConnection({ source: c.source, sourceHandle: normHandle(c.sourceHandle), target: c.target }).ok
+}
+
+// ── Adding nodes ──
+function openQuickAdd(clientX: number, clientY: number, link: AddLink | undefined, title: string) {
+  if (!editing.value) return
+  updateHostSize()
+  edgeEditor.value = null
+  const p = hostPoint(clientX, clientY)
+  quickAdd.value = { x: p.x, y: p.y, flow: screenToFlowCoordinate({ x: clientX, y: clientY }), link, title }
+}
+
+function openCommandPalette() {
+  if (!editing.value) return
+  updateHostSize()
+  edgeEditor.value = null
+  const ed = props.editor!
+  const sel = ed.selectedNodeIds.value.length === 1 ? props.nodes.find((n) => n.id === ed.selectedNodeIds.value[0]) : null
+  let flow: Point
+  let link: AddLink | undefined
+  if (sel) {
+    const size = measure(sel)
+    flow = freeSpot({ x: (sel.position?.x ?? 0) + size.width + 96, y: sel.position?.y ?? 0 })
+    link = { kind: 'after', nodeId: sel.id }
+  } else {
+    const p = pointerFlow()
+    flow = p ? { x: p.x - 110, y: p.y - 28 } : viewCenter()
+  }
+  quickAdd.value = { x: 0, y: 0, flow, link, title: t('canvas.quickAdd.titleCommand'), centered: true }
+}
+
+function onQuickPick(item: PaletteItem) {
+  const q = quickAdd.value
+  quickAdd.value = null
+  if (!q || !props.editor) return
+  const at = q.centered ? q.flow : q.link?.kind === 'outlet' ? { x: q.flow.x + 16, y: q.flow.y - 28 } : nodeAnchor(item.spec, q.flow)
+  props.editor.addNode(item.spec, at, q.link)
+}
+
+function onDragOver(ev: DragEvent) {
+  if (!editing.value || !ev.dataTransfer?.types.includes(PALETTE_MIME)) return
+  ev.preventDefault()
+  ev.dataTransfer.dropEffect = 'copy'
+}
+
+function onDrop(ev: DragEvent) {
+  if (!editing.value) return
+  const spec = decodePaletteDrag(ev.dataTransfer?.getData(PALETTE_MIME))
+  if (!spec) return
+  ev.preventDefault()
+  const p = screenToFlowCoordinate({ x: ev.clientX, y: ev.clientY })
+  props.editor!.addNode(spec, nodeAnchor(spec, p))
+}
+
+function onHostDblClick(ev: MouseEvent) {
+  const el = ev.target as HTMLElement
+  if (!editing.value || el.closest('.vue-flow__node, .vue-flow__edge, .cedge-mid, .cchrome, .vue-flow__minimap')) return
+  if (!el.closest('.vue-flow')) return
+  openQuickAdd(ev.clientX, ev.clientY, undefined, t('canvas.quickAdd.titleCommand'))
+}
+
+function onPointerMove(ev: PointerEvent) {
+  lastPointer = { x: ev.clientX, y: ev.clientY }
+}
+
+function onPointerLeave() {
+  lastPointer = null
+}
+
+// ── Context for nodes / edges ──
+function onNodeMenu(id: string, action: NodeMenuAction) {
+  const ed = props.editor
+  if (!ed) return
+  if (action === 'edit') ed.openInspector(id, true)
+  else if (action === 'rename') {
+    ed.setSelection([id])
+    ed.startRename(id)
+  } else if (action === 'duplicate') ed.duplicate([id])
+  else if (action === 'delete') ed.removeNodes([id])
+}
+
+function midpointClient(ev: MouseEvent) {
+  const el = (ev.currentTarget as HTMLElement | null)?.closest('.cedge-mid') as HTMLElement | null
+  const r = el?.getBoundingClientRect()
+  return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : { x: ev.clientX, y: ev.clientY }
+}
+
+const ctx: CanvasContext = {
+  mode: computed(() => props.mode),
+  hoveredEdge,
+  setEdgeHover: (id) => {
+    hoveredEdge.value = id
+  },
+  onNodeMenu,
+  onRename: (id, label) => {
+    const ed = props.editor
+    if (!ed) return
+    if (label === null) ed.renamingId.value = null
+    else ed.renameNode(id, label)
+  },
+  onReply: (id) => emit('reply', id),
+  onEdgeInsert: (id, ev) => {
+    const c = midpointClient(ev)
+    openQuickAdd(c.x, c.y + 12, { kind: 'edge', edgeId: id }, t('canvas.quickAdd.titleInsert'))
+  },
+  onEdgeDelete: (id) => {
+    if (edgeEditor.value?.id === id) edgeEditor.value = null
+    props.editor?.removeEdge(id)
+  },
+  onEdgeEdit: (id, ev) => {
+    if (!editing.value) return
+    updateHostSize()
+    quickAdd.value = null
+    const c = midpointClient(ev)
+    const p = hostPoint(c.x, c.y)
+    edgeEditor.value = { id, x: p.x, y: p.y }
+  },
+}
+provide(CANVAS_CTX, ctx)
+
+const editingEdge = computed(() => (edgeEditor.value ? props.edges.find((e) => e.id === edgeEditor.value!.id) ?? null : null))
+
+function closeEdgeEditor() {
+  edgeEditor.value = null
+  props.editor?.history.flush()
+}
+
+function closeOverlays(): boolean {
+  if (showHelp.value) {
+    showHelp.value = false
+    return true
+  }
+  if (quickAdd.value) {
+    quickAdd.value = null
+    return true
+  }
+  if (edgeEditor.value) {
+    closeEdgeEditor()
+    return true
+  }
+  return false
+}
+
+// ── Layout / viewport ──
+const reduced = prefersReducedMotion()
+
+async function fit(duration = reduced ? 0 : 240) {
+  await nextTick()
+  await fitView({ padding: 0.2, maxZoom: 1, duration })
+}
+
+async function layout(animate = true) {
+  if (!props.editor) return
+  await props.editor.autoLayout(animate && !reduced)
+  await fit()
+}
+
+function waitFrame() {
+  return new Promise<void>((r) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => r()) : r()))
+}
+
+async function startFromTemplate() {
+  const ed = props.editor
+  if (!ed) return
+  const g = buildDefaultWorkflow(ed.agents.value, tr)
+  ed.history.begin()
+  try {
+    ed.replaceGraph(g.nodes, g.edges)
+    await nextTick()
+    await waitFrame()
+    await ed.autoLayout(false)
+  } finally {
+    ed.history.end()
+  }
+  await fit(0)
+}
+
+function startBlank() {
+  const ed = props.editor
+  if (!ed) return
+  ed.history.begin()
+  try {
+    ed.addNode({ type: 'input' }, { x: 0, y: 0 })
+    ed.addNode({ type: 'output' }, { x: 320, y: 0 })
+  } finally {
+    ed.history.end()
+  }
+  ed.clearSelection()
+  void fit(0)
+}
+
+let initialized = false
+async function onNodesInitialized() {
+  if (initialized) return
+  initialized = true
+  if (props.autoLayoutOnInit && needsInitialLayout(props.nodes)) {
+    if (props.editor) {
+      await props.editor.autoLayout(false)
+      props.editor.history.reset()
+    } else {
+      displayLayout.value = await computeAutoLayout(props.nodes, props.edges, measure)
+      await nextTick()
+    }
+  }
+  await fit(0)
+}
+
+// ── Follow (run mode) ──
+function onMoveStart() {
+  if (props.follow) emit('update:follow', false)
+}
+
+function centerOn(id: string) {
+  const n = findNode(id)
+  if (!n) return
+  const w = n.dimensions?.width || 220
+  const h = n.dimensions?.height || 80
+  void setCenter(n.computedPosition.x + w / 2, n.computedPosition.y + h / 2, {
+    zoom: Math.max(viewport.value.zoom, 0.8),
+    duration: reduced ? 0 : 400,
+  })
+}
+
+watch(
+  () => [props.follow, props.followNodeId] as const,
+  ([on, id]) => {
+    if (on && id) void nextTick(() => centerOn(id))
+  },
+)
+
+// ── Keyboard ──
+function focusNode(id: string) {
+  const el = host.value?.querySelector<HTMLElement>(`.vue-flow__node[data-id="${CSS.escape(id)}"]`)
+  el?.focus({ preventScroll: true })
+  const n = findNode(id)
+  if (!n || !host.value) return
+  const z = viewport.value.zoom
+  const x = n.computedPosition.x * z + viewport.value.x
+  const y = n.computedPosition.y * z + viewport.value.y
+  const w = (n.dimensions?.width || 220) * z
+  const h = (n.dimensions?.height || 80) * z
+  if (x < 0 || y < 0 || x + w > dimensions.value.width || y + h > dimensions.value.height) centerOn(id)
+}
+
+function focusedNodeId(): string | null {
+  const el = document.activeElement as HTMLElement | null
+  if (!el || !host.value?.contains(el)) return null
+  return el.closest<HTMLElement>('.vue-flow__node')?.dataset.id ?? null
+}
+
+function nav(dir: 'left' | 'right' | 'up' | 'down') {
+  const focused = focusedNodeId()
+  if (props.mode === 'run') {
+    if (focused) emit('select-node', focused)
+    return false
+  }
+  const ed = props.editor!
+  if (focused && !ed.selectedNodeIds.value.includes(focused)) ed.setSelection([focused])
+  const id = ed.navigate(dir)
+  if (id) focusNode(id)
+}
+
+function onHostKeydown(ev: KeyboardEvent) {
+  if (ev.key !== 'Enter' && ev.key !== ' ') return
+  const id = (ev.target as HTMLElement).closest<HTMLElement>('.vue-flow__node')?.dataset.id
+  if (!id || (ev.target as HTMLElement).closest('input, textarea, button')) return
+  ev.preventDefault()
+  if (props.mode === 'run') emit('select-node', id)
+  else props.editor?.openInspector(id, ev.key === 'Enter')
+}
+
+function shortcutsActive(): boolean {
+  const el = host.value
+  if (!el || !el.isConnected || el.offsetParent === null) return false
+  const modal = document.querySelector('[aria-modal="true"]')
+  return !modal || el.contains(modal)
+}
+
+const ed = () => props.editor!
+useCanvasShortcuts(
+  {
+    undo: () => (editing.value ? void ed().undo() : false),
+    redo: () => (editing.value ? void ed().redo() : false),
+    copy: () => (editing.value ? ed().copy() : false),
+    paste: () => (editing.value && ed().canPaste() ? ed().paste(pointerFlow()) : false),
+    duplicate: () => (editing.value ? void ed().duplicate() : false),
+    delete: () => (editing.value ? ed().removeSelection() : false),
+    selectAll: () => (editing.value ? void ed().selectAll() : false),
+    save: () => (editing.value ? void emit('save') : false),
+    fitView: () => void fit(),
+    autoLayout: () => (editing.value ? void layout() : false),
+    quickAdd: () => (editing.value ? void openCommandPalette() : false),
+    help: () => {
+      showHelp.value = true
+    },
+    rename: () => (editing.value ? void ed().startRename() : false),
+    escape: () => {
+      if (closeOverlays()) return
+      if (props.editor?.renamingId.value) {
+        props.editor.renamingId.value = null
+        return
+      }
+      if (props.editor && (props.editor.selectedNodeIds.value.length || props.editor.selectedEdgeIds.value.length)) {
+        props.editor.clearSelection()
+        return
+      }
+      return false
+    },
+    navLeft: () => nav('left'),
+    navRight: () => nav('right'),
+    navUp: () => nav('up'),
+    navDown: () => nav('down'),
+  },
+  shortcutsActive,
+)
+
+// Space-drag pan cursor feedback.
+function onSpace(ev: KeyboardEvent) {
+  if (ev.code !== 'Space' || (ev.target as HTMLElement)?.closest?.('input, textarea, select, [contenteditable="true"]')) return
+  panning.value = ev.type === 'keydown'
+}
+
+let ro: ResizeObserver | null = null
+onMounted(() => {
+  readColors()
+  updateHostSize()
+  window.addEventListener('keydown', onSpace)
+  window.addEventListener('keyup', onSpace)
+  if (typeof ResizeObserver !== 'undefined' && host.value) {
+    ro = new ResizeObserver(updateHostSize)
+    ro.observe(host.value)
+  }
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onSpace)
+  window.removeEventListener('keyup', onSpace)
+  ro?.disconnect()
+})
+
+const showEmpty = computed(() => editing.value && props.nodes.length === 0)
+
+defineExpose({ fit, layout, centerOn, openCommandPalette })
 </script>
 
 <template>
-  <div class="h-full w-full" @drop="onDrop" @dragover="onDragOver">
+  <div
+    ref="host"
+    class="canvas-host relative h-full w-full"
+    :class="{ 'is-panning': panning, 'is-connecting': !!connecting }"
+    :aria-label="t('canvas.aria.canvas')"
+    role="application"
+    data-testid="workflow-canvas"
+    @drop="onDrop"
+    @dragover="onDragOver"
+    @dblclick="onHostDblClick"
+    @pointermove="onPointerMove"
+    @pointerleave="onPointerLeave"
+    @keydown="onHostKeydown"
+  >
     <VueFlow
+      :id="flowId"
       :nodes="flowNodes"
       :edges="flowEdges"
       :node-types="nodeTypes"
       :edge-types="edgeTypes"
-      :nodes-draggable="mode !== 'run'"
-      :nodes-connectable="mode !== 'run'"
+      :nodes-draggable="editing"
+      :nodes-connectable="editing"
       :elements-selectable="true"
-      :min-zoom="0.3"
-      :max-zoom="1.75"
-      fit-view-on-init
-      :default-edge-options="{ type: 'default', markerEnd: MarkerType.ArrowClosed }"
-      @node-click="onNodeClick"
-      @edge-click="onEdgeClick"
-      @pane-click="onPaneClick"
-      @connect="onConnect"
-      @node-drag-stop="onNodeDragStop"
+      :nodes-focusable="true"
+      :edges-focusable="editing"
+      :disable-keyboard-a11y="true"
+      :selection-key-code="editing ? true : null"
+      :multi-selection-key-code="'Shift'"
+      :delete-key-code="null"
+      :pan-on-drag="editing ? false : true"
+      :pan-activation-key-code="'Space'"
+      :pan-on-scroll="true"
+      :zoom-activation-key-code="['Control', 'Meta']"
+      :zoom-on-double-click="false"
+      :snap-to-grid="true"
+      :snap-grid="[8, 8]"
+      :min-zoom="0.25"
+      :max-zoom="2"
+      :connection-radius="28"
+      :is-valid-connection="isValidConnection"
+      :connection-line-options="{ type: 'smoothstep' as any, style: { stroke: 'var(--flow-edge-active)', strokeWidth: 1.75 } }"
       @nodes-change="onNodesChange"
       @edges-change="onEdgesChange"
+      @node-click="onNodeClick"
+      @node-double-click="onNodeDoubleClick"
+      @node-drag="onNodeDrag"
+      @node-drag-stop="onNodeDragStop"
+      @pane-click="onPaneClick"
+      @connect-start="onConnectStart"
+      @connect="onConnect"
+      @connect-end="onConnectEnd"
+      @move-start="onMoveStart"
+      @nodes-initialized="onNodesInitialized"
     >
-      <Background :gap="18" :size="1.4" :pattern-color="dotColor" />
-      <Controls :show-interactive="false" position="bottom-left" />
-      <MiniMap pannable :node-color="minimapColor" :mask-color="maskColor" />
+      <Background variant="dots" :gap="16" :size="1.2" :pattern-color="colors.dot" />
+      <MiniMap
+        v-if="showMinimap"
+        pannable
+        zoomable
+        :node-color="minimapColor"
+        :mask-color="colors.mask"
+        class="cchrome !bottom-14 !left-3 !right-auto"
+        data-testid="canvas-minimap"
+      />
     </VueFlow>
+
+    <div v-if="guides" class="pointer-events-none absolute inset-0 z-[4] overflow-hidden" aria-hidden="true" data-testid="canvas-guides">
+      <div
+        v-for="x in guides.vertical"
+        :key="`v${x}`"
+        class="canvas-guide canvas-guide-v"
+        :style="{ left: `${x * viewport.zoom + viewport.x}px` }"
+      />
+      <div
+        v-for="y in guides.horizontal"
+        :key="`h${y}`"
+        class="canvas-guide canvas-guide-h"
+        :style="{ top: `${y * viewport.zoom + viewport.y}px` }"
+      />
+    </div>
+
+    <EmptyCanvas v-if="showEmpty" @template="startFromTemplate" @blank="startBlank" />
+
+    <CanvasToolbar
+      :zoom="viewport.zoom"
+      :editable="editing"
+      :minimap="showMinimap"
+      :can-undo="editor?.history.canUndo.value"
+      :can-redo="editor?.history.canRedo.value"
+      @zoom-in="zoomIn({ duration: reduced ? 0 : 160 })"
+      @zoom-out="zoomOut({ duration: reduced ? 0 : 160 })"
+      @fit="fit()"
+      @layout="layout()"
+      @toggle-minimap="showMinimap = !showMinimap"
+      @undo="editor?.undo()"
+      @redo="editor?.redo()"
+      @help="showHelp = true"
+    />
+
+    <button
+      v-if="mode === 'run' && follow !== undefined"
+      type="button"
+      class="cchrome absolute right-3 top-3 z-10 inline-flex h-8 items-center gap-1.5 px-2.5 text-[12px]"
+      :class="follow ? 'text-accent-2' : 'text-txt2 hover:text-txt'"
+      :aria-pressed="follow"
+      :title="follow ? t('canvas.toolbar.followOn') : t('canvas.toolbar.followOff')"
+      data-testid="canvas-follow"
+      @click="emit('update:follow', !follow)"
+    >
+      <Icon name="crosshair" :size="14" />{{ t('canvas.toolbar.follow') }}
+    </button>
+
+    <QuickAdd
+      v-if="quickAdd"
+      :items="paletteItems"
+      :title="quickAdd.title"
+      :x="quickAdd.x"
+      :y="quickAdd.y"
+      :centered="quickAdd.centered"
+      :bounds="hostSize"
+      @pick="onQuickPick"
+      @close="quickAdd = null"
+    />
+
+    <EdgeLabelEditor
+      v-if="edgeEditor && editingEdge"
+      :key="edgeEditor.id"
+      :edge="editingEdge"
+      :x="edgeEditor.x"
+      :y="edgeEditor.y"
+      :bounds="hostSize"
+      @update="(p) => editor?.updateEdge(edgeEditor!.id, p)"
+      @delete="ctx.onEdgeDelete(edgeEditor!.id)"
+      @close="closeEdgeEditor"
+    />
+
+    <ShortcutHelp v-if="showHelp" @close="showHelp = false" />
+
+    <slot />
   </div>
 </template>

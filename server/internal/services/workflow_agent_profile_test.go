@@ -23,7 +23,7 @@ func TestValidateAgentProfilesProject(t *testing.T) {
 
 	t.Run("empty agent_profile skipped", func(t *testing.T) {
 		g := models.Graph{Nodes: []models.Node{
-			{ID: "n1", Type: "research", Label: "调研", Config: map[string]any{"agent_profile": ""}},
+			{ID: "n1", Type: "agent", Label: "调研", Config: map[string]any{"agent_profile": ""}},
 			{ID: "n2", Type: "human_gate", Label: "门禁", Config: map[string]any{}},
 		}}
 		if err := ValidateAgentProfilesProject(skills, "alpha", g); err != nil {
@@ -33,8 +33,8 @@ func TestValidateAgentProfilesProject(t *testing.T) {
 
 	t.Run("same project ok", func(t *testing.T) {
 		g := models.Graph{Nodes: []models.Node{
-			{ID: "n1", Type: "implement", Label: "实现", Config: map[string]any{"agent_profile": "ok-agent"}},
-			{ID: "n2", Type: "app_preview", Label: "预览", Config: map[string]any{"agent_profile": "ok-agent"}},
+			{ID: "n1", Type: "agent", Label: "实现", Config: map[string]any{"agent_profile": "ok-agent"}},
+			{ID: "n2", Type: "agent", Label: "预览", Config: map[string]any{"agent_profile": "ok-agent"}},
 		}}
 		if err := ValidateAgentProfilesProject(skills, "alpha", g); err != nil {
 			t.Fatalf("unexpected: %v", err)
@@ -44,13 +44,13 @@ func TestValidateAgentProfilesProject(t *testing.T) {
 	t.Run("allows cross project and unbound; rejects deleted", func(t *testing.T) {
 		g := models.Graph{Nodes: []models.Node{
 			{ID: "a", Type: "agent", Label: "执行", Config: map[string]any{"agent_profile": "other-agent"}},
-			{ID: "b", Type: "react", Label: "澄清", Config: map[string]any{"agent_profile": "unbound-agent"}},
+			{ID: "b", Type: "agent", Label: "澄清", Config: map[string]any{"agent_profile": "unbound-agent"}},
 		}}
 		if err := ValidateAgentProfilesProject(skills, "alpha", g); err != nil {
 			t.Fatalf("cross/unbound should pass for shared extend: %v", err)
 		}
 		g2 := models.Graph{Nodes: []models.Node{
-			{ID: "c", Type: "plan", Label: "计划", Config: map[string]any{"agent_profile": "ghost"}},
+			{ID: "c", Type: "agent", Label: "计划", Config: map[string]any{"agent_profile": "ghost"}},
 		}}
 		err := ValidateAgentProfilesProject(skills, "alpha", g2)
 		if err == nil || !strings.Contains(err.Error(), "已删除") || !strings.Contains(err.Error(), "计划 → ghost") {
@@ -58,17 +58,6 @@ func TestValidateAgentProfilesProject(t *testing.T) {
 		}
 	})
 
-	t.Run("covers all agent_profile node types not only agent", func(t *testing.T) {
-		types := []string{"react", "preflight", "agent", "grasp", "plan", "implement", "research", "test", "review", "proposal", "submit_mr", "visual", "app_preview"}
-		for _, typ := range types {
-			g := models.Graph{Nodes: []models.Node{
-				{ID: "n", Type: typ, Label: typ, Config: map[string]any{"agent_profile": "ghost"}},
-			}}
-			if err := ValidateAgentProfilesProject(skills, "alpha", g); err == nil {
-				t.Fatalf("type %s: expected rejection for deleted agent", typ)
-			}
-		}
-	})
 }
 
 func TestWorkflowServiceSavePublishAgentProfileGate(t *testing.T) {

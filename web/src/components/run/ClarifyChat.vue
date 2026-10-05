@@ -37,13 +37,10 @@ const props = withDefaults(
     coldSession?: boolean
     /** Host-level lock for the final confirmation action. */
     finishDisabled?: boolean
-    /** Public adapters may expose confirm for a live react node. */
-    forceConfirmFlow?: boolean
     sendLabel?: string
     sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[]) => Promise<boolean>
     confirmError?: string | null
     confirmCanAbort?: boolean
-    nodeType?: string
     seedHumanText?: string
     seedHumanImages?: ClarifyImage[]
   }>(),
@@ -55,10 +52,8 @@ const props = withDefaults(
     hideFinish: false,
     coldSession: false,
     finishDisabled: false,
-    forceConfirmFlow: false,
     confirmError: null,
     confirmCanAbort: false,
-    nodeType: '',
     turns: () => [],
     seedHumanText: '',
     seedHumanImages: () => [],
@@ -189,8 +184,7 @@ const {
   validating,
   queued,
   liveTurns,
-  showApproveEmptyHint,
-  useConfirmFlowAction,
+  showClarifyEmptyHint,
   seedHumanTurn,
   liveAgentIdx,
   showSandboxOrphanBanner,
@@ -335,11 +329,11 @@ function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
         </button>
       </div>
       <p
-        v-if="showApproveEmptyHint"
+        v-if="showClarifyEmptyHint"
         class="text-[12px] leading-relaxed text-txt2"
         data-testid="clarify-approve-empty-hint"
       >
-        {{ translate('pages.clarify.approveEmptyHint') }}
+        {{ translate('pages.clarify.clarifyEmptyHint') }}
       </p>
       <template v-for="(t, i) in displayTurns" :key="i">
       <div v-if="!isEmptyLiveTurn(t)" class="flex gap-2.5" :class="t.role === 'human' ? 'flex-row-reverse' : ''">
@@ -942,7 +936,6 @@ function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
       <ComposerShell :show-chrome="false" :show-footer="true">
         <template #footer>
           <button
-            v-if="useConfirmFlowAction"
             type="button"
             class="inline-flex h-9 shrink-0 items-center gap-1 rounded-md bg-ok px-3.5 text-sm font-medium text-white hover:bg-ok/90 disabled:opacity-50"
             data-testid="clarify-confirm-flow"
@@ -1081,7 +1074,6 @@ function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
         </template>
         <template #footer>
           <button
-            v-if="useConfirmFlowAction"
             type="button"
             class="inline-flex h-9 shrink-0 items-center gap-1 rounded-md bg-ok px-3.5 text-sm font-medium text-white hover:bg-ok/90 disabled:opacity-50"
             data-testid="clarify-confirm-flow"
@@ -1091,16 +1083,6 @@ function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
           >
             <Icon name="check" :size="13" />
             {{ validating ? translate('pages.clarify.validating') : translate('pages.clarify.confirmFlow') }}
-          </button>
-          <button
-            v-else
-            type="button"
-            class="inline-flex h-9 shrink-0 items-center gap-1 rounded-md border border-line bg-elevated px-3 text-sm font-medium text-txt2 hover:border-line-strong disabled:opacity-50"
-            :disabled="confirmDisabled"
-            :title="translate('pages.clarify.finishEarlyTitle')"
-            @click="finishEarly"
-          >
-            <Icon name="check" :size="13" /> {{ translate('pages.clarify.finishEarly') }}
           </button>
         </template>
       </ComposerShell>

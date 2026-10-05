@@ -131,7 +131,7 @@
         },
         "set_preview": {
           "signature": "set_preview(port?, url?, label?)",
-          "desc": "仅 app_preview 或 Grasp 节点:注册沙箱端口或外部 http(s) URL(二选一);URL 可含端口,iframe 直连,无服务端探测。Grasp 上为可选预览,不结束节点"
+          "desc": "仅开启预览能力的 Agent 节点:注册沙箱端口或外部 http(s) URL(二选一);URL 可含端口,iframe 直连,无服务端探测。注册预览不会结束节点"
         },
         "page_state": {
           "signature": "page_state() -> stateId + 页面内容",

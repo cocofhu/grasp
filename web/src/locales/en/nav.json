@@ -9,8 +9,8 @@
     "gates": "Needs attention",
     "artifacts": "Artifacts",
     "notifications": "Notifications",
-    "quickPipelines": "Quick pipelines",
-    "quickPipelinesEmpty": "Star a pipeline to save a shortcut",
+    "quickWorkflows": "Quick workflows",
+    "quickWorkflowsEmpty": "Star a workflow to save a shortcut",
     "groupConfig": "Configuration",
     "groupPlatform": "Platform",
     "agents": "Agent studio",
@@ -19,7 +19,6 @@
     "triggers": "Triggers",
     "settings": "Settings",
     "general": "General",
-    "platformRules": "Platform rules",
     "backHome": "Back to home"
   }
 }

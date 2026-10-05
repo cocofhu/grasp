@@ -12,6 +12,7 @@ import Icon from '../src/components/ui/Icon.vue'
 import ExecutionStatsPanel from '../src/components/run/ExecutionStatsPanel.vue'
 import ExecutionTimeline from '../src/components/run/ExecutionTimeline.vue'
 import type { Run, WFNode } from '../src/lib/shared/types'
+import { CLARIFY_CAPS, RESEARCH_CAPS } from '../src/test/capsFixtures'
 
 const LONG_REPOS = {
   repos: [
@@ -22,8 +23,8 @@ const LONG_REPOS = {
 
 const nodes: WFNode[] = [
   { id: 'input', type: 'input', label: '输入', position: { x: 0, y: 0 }, config: {} },
-  { id: 'clarify', type: 'react', label: '需求澄清', position: { x: 120, y: 0 }, config: {} },
-  { id: 'research', type: 'research', label: '技术调研', position: { x: 240, y: 0 }, config: {} },
+  { id: 'clarify', type: 'agent', caps: CLARIFY_CAPS, label: '需求澄清', position: { x: 120, y: 0 }, config: {} },
+  { id: 'research', type: 'agent', caps: RESEARCH_CAPS, label: '技术调研', position: { x: 240, y: 0 }, config: {} },
 ]
 
 const mockRun: Run = {
@@ -87,8 +88,8 @@ const RunDetailMobileFixture = defineComponent({
             'header',
             { class: 'shrink-0 overflow-x-hidden border-b border-line bg-surface px-5 py-3', 'data-testid': 'run-header' },
             [
-              h('div', { class: 'flex min-w-0 flex-col gap-2 md:flex-row md:items-center md:gap-3' }, [
-                h('div', { class: 'flex min-w-0 flex-1 items-center gap-2 md:gap-3', 'data-testid': 'run-header-row1' }, [
+              h('div', { class: 'flex min-w-0 flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:gap-3' }, [
+                h('div', { class: 'flex min-w-0 flex-1 items-center gap-2 md:min-w-[20rem] md:gap-3', 'data-testid': 'run-header-row1' }, [
                   h('button', { class: 'flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-txt2', 'aria-label': '返回' }, [
                     h(Icon, { name: 'arrow-left', size: 18 }),
                   ]),
@@ -108,7 +109,7 @@ const RunDetailMobileFixture = defineComponent({
                 h(
                   'div',
                   {
-                    class: 'flex flex-wrap items-center gap-2 pl-10 md:ml-auto md:shrink-0 md:pl-0',
+                    class: 'flex flex-wrap items-center gap-2 pl-10 md:ml-auto md:justify-end md:pl-0',
                     'data-testid': 'run-header-actions',
                   },
                   [

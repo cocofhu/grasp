@@ -5,6 +5,7 @@ import {
   resolveInboxReviewState,
 } from './inboxReviewMode'
 import type { Run } from '@/lib/shared/types'
+import { CLARIFY_CAPS, IMPLEMENT_CAPS } from '@/test/capsFixtures'
 
 function runFixture(partial: Partial<Run> & { nodes?: Run['nodes'] }): Run {
   return {
@@ -53,9 +54,9 @@ describe('resolveInboxReviewState', () => {
   const openConv = { nodeId: 'research', turns: [], done: false }
   const doneConv = { nodeId: 'research', turns: [], done: true }
 
-  it('research + open session → reviewActive', () => {
+  it('review agent + open session → reviewActive', () => {
     const run = runFixture({
-      nodes: [{ id: 'research', type: 'research', label: 'Research', position: { x: 0, y: 0 }, config: {} }],
+      nodes: [{ id: 'research', type: 'agent', label: 'Research', position: { x: 0, y: 0 }, config: {}, caps: IMPLEMENT_CAPS }],
     })
     expect(
       resolveInboxReviewState({ type: 'clarify', nodeId: 'research' }, run, openConv),
@@ -63,9 +64,9 @@ describe('resolveInboxReviewState', () => {
     expect(inboxComposerMode(true)).toBe('review')
   })
 
-  it('react + open session → clarify (not review)', () => {
+  it('clarify agent + open session → clarify (not review)', () => {
     const run = runFixture({
-      nodes: [{ id: 'react1', type: 'react', label: 'React', position: { x: 0, y: 0 }, config: {} }],
+      nodes: [{ id: 'react1', type: 'agent', label: 'React', position: { x: 0, y: 0 }, config: {}, caps: CLARIFY_CAPS }],
     })
     expect(
       resolveInboxReviewState(
@@ -77,22 +78,9 @@ describe('resolveInboxReviewState', () => {
     expect(inboxComposerMode(false)).toBe('clarify')
   })
 
-  it('approve + open session → clarify (not review)', () => {
-    const run = runFixture({
-      nodes: [{ id: 'predev', type: 'approve', label: 'Approve', position: { x: 0, y: 0 }, config: {} }],
-    })
-    expect(
-      resolveInboxReviewState(
-        { type: 'clarify', nodeId: 'predev' },
-        run,
-        { nodeId: 'predev', turns: [], done: false },
-      ),
-    ).toEqual({ reviewActive: false, nodeMissing: false })
-  })
-
   it('done session → not review', () => {
     const run = runFixture({
-      nodes: [{ id: 'plan', type: 'plan', label: 'Plan', position: { x: 0, y: 0 }, config: {} }],
+      nodes: [{ id: 'plan', type: 'agent', label: 'Plan', position: { x: 0, y: 0 }, config: {}, caps: IMPLEMENT_CAPS }],
     })
     expect(
       resolveInboxReviewState({ type: 'clarify', nodeId: 'plan' }, run, doneConv),
@@ -108,7 +96,7 @@ describe('resolveInboxReviewState', () => {
 
   it('gate inbox item never activates review', () => {
     const run = runFixture({
-      nodes: [{ id: 'research', type: 'research', label: 'Research', position: { x: 0, y: 0 }, config: {} }],
+      nodes: [{ id: 'research', type: 'agent', label: 'Research', position: { x: 0, y: 0 }, config: {}, caps: IMPLEMENT_CAPS }],
     })
     expect(
       resolveInboxReviewState({ type: 'gate', nodeId: 'research' } as any, run, openConv),

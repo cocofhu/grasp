@@ -31,8 +31,6 @@ function mountPanel(overrides: Record<string, unknown> = {}) {
       customConfigContent: '{\n  "env": {}\n}',
       customConfigError: false,
       authGuide: guide,
-      primaryAuthKey: guide.keys[0].key,
-      primaryAuthAlt: guide.keys[0].alt ?? '',
       ...overrides,
     },
     global: {
@@ -88,8 +86,6 @@ describe('WizardApiKeyStepPanel custom config editor', () => {
       configRoot: '/root/.config/opencode',
       authMode: 'apiKey',
       authGuide: guide,
-      primaryAuthKey: guide.keys[0].key,
-      primaryAuthAlt: guide.keys[0].alt ?? '',
       env: { GRASP_OPENCODE_PROVIDER: 'custom' },
     })
     expect(wrapper.find('[data-test="opencode-provider-fields"]').exists()).toBe(true)

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { CLARIFY_CAPS } from '../src/test/capsFixtures'
 
 function stubRun(partial: {
   id: string
@@ -13,7 +14,7 @@ function stubRun(partial: {
   return {
     id: partial.id,
     workflowId: 'wf-1',
-    workflowName: partial.workflowName || 'Demo Pipeline',
+    workflowName: partial.workflowName || 'Demo Workflow',
     title: partial.title,
     status: partial.status,
     trigger: 'manual',
@@ -100,7 +101,7 @@ async function mockBoardApis(page: import('@playwright/test').Page) {
             showOnHome: true,
             nodes: [
               { id: 'in', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
-              { id: 'ap', type: 'approve', label: '澄清', position: { x: 0, y: 0 }, config: {} },
+              { id: 'ap', type: 'agent', caps: CLARIFY_CAPS, label: '澄清', position: { x: 0, y: 0 }, config: {} },
               { id: 'out', type: 'output', label: '结束', position: { x: 0, y: 0 }, config: {} },
             ],
             edges: [
@@ -118,7 +119,7 @@ async function mockBoardApis(page: import('@playwright/test').Page) {
             needsRepo: false,
             nodes: [
               { id: 'in', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
-              { id: 'r', type: 'react', label: '实现', position: { x: 0, y: 0 }, config: {} },
+              { id: 'r', type: 'agent', caps: CLARIFY_CAPS, label: '实现', position: { x: 0, y: 0 }, config: {} },
             ],
             edges: [{ id: 'e1', source: 'in', target: 'r' }],
           },
@@ -182,22 +183,22 @@ async function gotoBoardHarness(
 }
 
 test.describe('需求进度看板（项目级）', () => {
-  test('Dashboard 有项目记忆：首页 Composer + Approve 流水线卡片', async ({ page }) => {
+  test('Dashboard 有项目记忆：首页 Composer + Approve 工作流卡片', async ({ page }) => {
     await gotoBoardHarness(page, { width: 1280, start: 'dashboard', memory: '1', projectId: 'proj-1' })
     await expect(page.getByTestId('dashboard-view')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByTestId('home-title')).toBeVisible()
     await expect(page.getByTestId('home-composer')).toBeVisible()
-    await expect(page.getByTestId('home-pipeline-card-wf-approve')).toContainText('自我迭代PRO')
+    await expect(page.getByTestId('home-workflow-card-wf-approve')).toContainText('自我迭代PRO')
     await expect(page.getByTestId('home-no-project')).toHaveCount(0)
     await expect(page.getByTestId('run-board-column')).toHaveCount(0)
   })
 
-  test('Dashboard 无项目记忆：跨项目展示流水线，无先选项目门槛', async ({ page }) => {
+  test('Dashboard 无项目记忆：跨项目展示工作流，无先选项目门槛', async ({ page }) => {
     await gotoBoardHarness(page, { width: 1280, start: 'dashboard', memory: '0' })
     await expect(page.getByTestId('dashboard-view')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByTestId('home-no-project')).toHaveCount(0)
     await expect(page.getByTestId('home-composer')).toBeVisible()
-    await expect(page.getByTestId('home-pipeline-card-wf-approve')).toContainText('自我迭代PRO')
+    await expect(page.getByTestId('home-workflow-card-wf-approve')).toContainText('自我迭代PRO')
     await expect(page.getByTestId('run-board-column')).toHaveCount(0)
   })
 

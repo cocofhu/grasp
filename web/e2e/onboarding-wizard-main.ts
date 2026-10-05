@@ -1,6 +1,6 @@
 import '../src/styles/global.css'
 import { createApp, h, ref } from 'vue'
-import { createMemoryHistory, createRouter } from 'vue-router'
+import { RouterView, createMemoryHistory, createRouter } from 'vue-router'
 import { i18n } from '../src/lib/shared/i18n'
 import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { setTheme } from '../src/lib/shared/theme'
@@ -27,6 +27,12 @@ async function boot() {
           render: () => h('div', { 'data-testid': 'project-agents-landing' }, 'agents'),
         },
       },
+      {
+        path: '/workflows/:id/edit',
+        component: {
+          render: () => h('div', { 'data-testid': 'workflow-editor-landing' }, 'editor'),
+        },
+      },
     ],
   })
   await router.push('/')
@@ -36,6 +42,7 @@ async function boot() {
     setup() {
       return () =>
         h('div', [
+          h(RouterView),
           // Mirrors ProjectDetailView empty CTA copy for shell i18n e2e assertions.
           h(
             'p',

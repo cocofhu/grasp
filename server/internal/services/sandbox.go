@@ -37,7 +37,6 @@ type SandboxService struct {
 	shared *SharedAgentService
 
 	profilesRoot                string
-	platformRulesRoot           string
 	mcpEndpoint                 string
 	env                         map[string]string
 	projectCredentials          func(projectID string) map[string]string
@@ -88,9 +87,8 @@ func resolveSandboxImage(backend string) string {
 
 // SandboxOptions configures the service.
 type SandboxOptions struct {
-	ProfilesRoot      string
-	PlatformRulesRoot string
-	MCPEndpoint       string
+	ProfilesRoot string
+	MCPEndpoint  string
 	// Env is the vendor-neutral sandbox env (e.g. CURSOR_API_KEY for the
 	// reference image), injected into interactive test sandboxes.
 	Env         map[string]string
@@ -150,7 +148,6 @@ func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, 
 		db: db, mgr: mgr, skills: skills, host: host,
 		shared:                      opts.SharedAgent,
 		profilesRoot:                opts.ProfilesRoot,
-		platformRulesRoot:           opts.PlatformRulesRoot,
 		mcpEndpoint:                 opts.MCPEndpoint,
 		env:                         opts.Env,
 		projectCredentials:          opts.ProjectCredentials,

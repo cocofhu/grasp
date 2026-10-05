@@ -17,7 +17,7 @@ const apiMocks = vi.hoisted(() => ({
 }))
 
 const filterState = vi.hoisted(() => ({
-  pipelineSelected: null as { value: string } | null,
+  workflowSelected: null as { value: string } | null,
   projectSelected: null as { value: string } | null,
 }))
 
@@ -39,10 +39,10 @@ vi.mock('@/lib/composables/useBreakpoint', async () => {
   return { useBreakpoint: () => ({ isMobile: ref(false) }) }
 })
 
-vi.mock('@/lib/composables/usePipelineFilter', async () => {
+vi.mock('@/lib/composables/useWorkflowFilter', async () => {
   const { ref } = await import('vue')
-  filterState.pipelineSelected = ref('')
-  return { usePipelineFilter: () => ({ selected: filterState.pipelineSelected! }) }
+  filterState.workflowSelected = ref('')
+  return { useWorkflowFilter: () => ({ selected: filterState.workflowSelected! }) }
 })
 
 vi.mock('@/lib/composables/useProjectContext', async () => {

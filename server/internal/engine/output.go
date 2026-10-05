@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/nodereg"
 )
@@ -122,7 +123,7 @@ const (
 // nodes in one run stay independently addressable. The logical alias page.html
 // is unchanged (Agent write_artifact + gate / single-visual fallback).
 func visualNodePageName(nodeID string) string {
-	return nodeID + "." + visualPageName
+	return nodeID + "." + mcp.PageArtifactName
 }
 
 func markFailCard(card map[string]any, failTitle, reason string) map[string]any {

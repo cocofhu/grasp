@@ -1,14 +1,15 @@
 import { expect, test, type Page } from '@playwright/test'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { CLARIFY_CAPS, RESEARCH_CAPS } from '../src/test/capsFixtures'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const shotDir = path.join(__dirname, '..', 'test-results', 'timeline-token-shots')
 
 const nodes = [
   { id: 'start', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
-  { id: 'research', type: 'research', label: '代码调研', position: { x: 180, y: 0 }, config: {} },
-  { id: 'react', type: 'react', label: '需求澄清', position: { x: 360, y: 0 }, config: {} },
+  { id: 'research', type: 'agent', caps: RESEARCH_CAPS, label: '代码调研', position: { x: 180, y: 0 }, config: {} },
+  { id: 'react', type: 'agent', caps: CLARIFY_CAPS, label: '需求澄清', position: { x: 360, y: 0 }, config: {} },
 ]
 
 function buildRun(opts: {

@@ -21,7 +21,7 @@ function artifact(overrides: Partial<Artifact> & Pick<Artifact, 'id' | 'createdA
     nodeId: 'test',
     runId: 'run-1',
     workflowId: 'wf-a',
-    workflowName: '流水线 A',
+    workflowName: '工作流 A',
     sizeBytes: 100,
     content: '',
     ...overrides,
@@ -133,19 +133,19 @@ describe('buildGroups', () => {
         id: 'a1',
         createdAt: '2026-06-20T08:00:00Z',
         workflowId: 'wf-deleted',
-        workflowName: '已删除流水线(旧名)',
+        workflowName: '已删除工作流(旧名)',
       }),
       artifact({
         id: 'a2',
         createdAt: '2026-06-25T08:00:00Z',
         workflowId: 'wf-deleted',
-        workflowName: '已删除流水线',
+        workflowName: '已删除工作流',
       }),
     ]
     const groups = buildGroups(artifacts)
     expect(groups).toHaveLength(1)
     expect(groups[0].workflowId).toBe('wf-deleted')
-    expect(groups[0].title).toBe('已删除流水线')
+    expect(groups[0].title).toBe('已删除工作流')
   })
 
   it('sorts artifacts within group by createdAt desc', () => {
@@ -188,11 +188,11 @@ describe('buildGroups', () => {
         id: 'a1',
         createdAt: '2026-06-20T08:00:00Z',
         workflowId: 'wf-deleted',
-        workflowName: '已删除流水线',
+        workflowName: '已删除工作流',
       }),
     ]
     const groups = buildGroups(artifacts, {})
-    expect(groups[0].title).toBe('已删除流水线')
+    expect(groups[0].title).toBe('已删除工作流')
   })
 })
 

@@ -183,7 +183,7 @@ type clarifiedRequirementDoc struct {
 	Title      string `json:"title,omitempty"`
 	Summary    string `json:"summary"`
 	Background string `json:"background,omitempty"`
-	// WorkKind is bug|feature|other. Required for Grasp; optional for independent react.
+	// WorkKind is bug|feature|other.
 	WorkKind                  string          `json:"work_kind,omitempty"`
 	Goals                     flexStrings     `json:"goals,omitempty"`
 	SuccessMetrics            flexStrings     `json:"success_metrics,omitempty"`

@@ -45,7 +45,6 @@ export type GateApprovalState = {
   canEditProducts: boolean
   isVisualBody: boolean
   isProposalSelect: boolean
-  isAppPreview: boolean
   bodyTemplate: string
   usesPreviewIssues: boolean
   openPreviewIssueCount: number
@@ -89,7 +88,6 @@ export type GateApprovalState = {
   previewFromArtifactFallback: boolean
   shouldFillPreview: boolean
   shouldFitStructured: boolean
-  shouldFillAppPreview: boolean
   useFillLayout: boolean
   useUnifiedPreviewBudget: boolean
   contentFitChromeOffsetPx: number

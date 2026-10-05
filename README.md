@@ -63,7 +63,7 @@ https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
 | Capability | In the FSM |
 |---|---|
 | Visual canvas | Nodes + success / fail / rollback + `when` + checkpoints |
-| Visual clarify | Grasp node → spec + plan + optional `page.html` |
+| Visual clarify | Clarify Agent → spec + plan + optional `page.html` |
 | Human gates | Inbox, run detail, shareable temp links |
 | Parallel runs | Many machines at once; humans approve from one inbox |
 | Artifact MCP | Isolated per run; required outputs gate transitions |
@@ -130,9 +130,9 @@ Override image tags or digests in `.env`; see [`.env.example`](.env.example).
 
 ## Build your first workflow
 
-1. Sign in with the local demo account. A fresh installation starts with an empty project and does not create a sample pipeline.
+1. Sign in with the local demo account. A fresh installation starts with an empty project and does not create a sample workflow.
 2. Open the project credential settings, select `cursor`, `claude_code`, `codebuddy`, `trae`, or `opencode`, and save the matching API key there. Agent env values remain available as a fallback.
-3. Open the canvas: connect a Grasp node after start, then Visual / gate / implement nodes. Draw success, fail, and rollback — mark checkpoints where a retry should re-enter.
+3. Open the canvas: start from the default template (Clarify → Implement → Test & review), or drag Agents and gates from the palette. Draw success, fail, and rollback — mark checkpoints where a retry should re-enter.
 4. Publish and start a run (or launch from **Home** in one sentence). Watch the state trace, `page.html` preview, and inbox items waiting at gates.
 
 See [`server/README.md`](server/README.md) for backend authentication, project credential settings, and environment-variable fallback.

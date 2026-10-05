@@ -17,7 +17,7 @@ type createPreviewIssueBody struct {
 	Images   []models.PromptImage `json:"images"`
 }
 
-// CreatePreviewIssue records a human-reported problem against an app_preview
+// CreatePreviewIssue records a human-reported problem against a preview-capable
 // node from the UI feedback chat. It is one-way feedback: the engine snapshots
 // the issues into the preview_issues run variable at gate resume so a
 // downstream node consumes them via {{vars.preview_issues}}.

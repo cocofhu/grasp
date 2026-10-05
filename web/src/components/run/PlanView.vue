@@ -63,7 +63,8 @@ export type PlanDoc = {
 const props = defineProps<{ doc: PlanDoc; accent?: string; artifacts?: Artifact[] }>()
 
 const { t } = useI18n()
-const hex = computed(() => props.accent || '#818CF8')
+const hex = computed(() => props.accent || 'rgb(var(--c-hue-1))')
+const hexSoft = computed(() => `color-mix(in srgb, ${hex.value} 13%, transparent)`)
 const NA = computed(() => t('pages.plan.notApplicable'))
 
 const progress = computed(() => {
@@ -206,7 +207,7 @@ function diagramJsonPath(section: string, list: PlanDiagram[], active: PlanDiagr
 <template>
   <div>
     <div class="mb-3 flex items-center gap-2">
-      <div class="flex h-7 w-7 items-center justify-center rounded-md" :style="{ background: hex + '22', color: hex }">
+      <div class="flex h-7 w-7 items-center justify-center rounded-md" :style="{ background: hexSoft, color: hex }">
         <Icon name="check" :size="15" />
       </div>
       <div class="group min-w-0 flex-1">
@@ -256,7 +257,7 @@ function diagramJsonPath(section: string, list: PlanDiagram[], active: PlanDiagr
             :class="(activeTab.architecture ?? 0) === di ? '' : 'bg-base text-txt3'"
             :style="
               (activeTab.architecture ?? 0) === di
-                ? { background: hex + '22', color: hex }
+                ? { background: hexSoft, color: hex }
                 : undefined
             "
             :aria-selected="(activeTab.architecture ?? 0) === di"
@@ -369,7 +370,7 @@ function diagramJsonPath(section: string, list: PlanDiagram[], active: PlanDiagr
             :class="(activeTab.data_design ?? 0) === di ? '' : 'bg-base text-txt3'"
             :style="
               (activeTab.data_design ?? 0) === di
-                ? { background: hex + '22', color: hex }
+                ? { background: hexSoft, color: hex }
                 : undefined
             "
             :aria-selected="(activeTab.data_design ?? 0) === di"
@@ -449,7 +450,7 @@ function diagramJsonPath(section: string, list: PlanDiagram[], active: PlanDiagr
             :class="(activeTab.interaction ?? 0) === di ? '' : 'bg-base text-txt3'"
             :style="
               (activeTab.interaction ?? 0) === di
-                ? { background: hex + '22', color: hex }
+                ? { background: hexSoft, color: hex }
                 : undefined
             "
             :aria-selected="(activeTab.interaction ?? 0) === di"

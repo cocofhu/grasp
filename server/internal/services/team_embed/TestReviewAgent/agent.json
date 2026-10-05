@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "TestReviewAgent",
+  "acpBackend": "cursor",
+  "mcp": [
+    {
+      "name": "artifact-store",
+      "url": "${GRASP_ARTIFACT_URL}",
+      "headers": {
+        "Authorization": "Bearer ${GRASP_ARTIFACT_TOKEN}"
+      }
+    }
+  ],
+  "env": {
+    "GIT_REPOS": "${vars.repos}"
+  },
+  "capabilities": {
+    "interaction": "auto",
+    "review": true,
+    "tools": [
+      "set_preview"
+    ],
+    "reads": [
+      "*"
+    ],
+    "writes": [
+      {
+        "schema": "test_result",
+        "required": true
+      },
+      {
+        "schema": "review",
+        "required": true
+      }
+    ]
+  }
+}

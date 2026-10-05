@@ -10,7 +10,7 @@ import Icon from '@/components/ui/Icon.vue'
 import { api, isPaginated } from '@/lib/api/api'
 import { groupByRun, UNNAMED_GROUP_KEY } from '@/lib/run/artifactGroups'
 import { useArtifactGroupSelection } from '@/lib/run/useArtifactGroupSelection'
-import { usePipelineFilter } from '@/lib/composables/usePipelineFilter'
+import { useWorkflowFilter } from '@/lib/composables/useWorkflowFilter'
 import { useProjectContext } from '@/lib/composables/useProjectContext'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import ProjectFilter from '@/components/ui/ProjectFilter.vue'
@@ -42,7 +42,7 @@ const workflowsMap = computed(() => {
   return map
 })
 
-const { selected } = usePipelineFilter()
+const { selected } = useWorkflowFilter()
 const { selected: selectedProject, ensureHydrated: hydrateProject } = useProjectContext()
 const {
   groups,

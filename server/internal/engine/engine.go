@@ -90,8 +90,8 @@ type Engine struct {
 	// (nil falls back to a short-lived IssueService on e.db).
 	issues IssueResolver
 
-	// gateAuto is an optional async observer for human_gate / proposal_select /
-	// app_preview pauses (PM auto-invoke). Engine never blocks on it.
+	// gateAuto is an optional async observer for human_gate / proposal_select
+	// pauses (PM auto-invoke). Engine never blocks on it.
 	gateAuto GateAutoInvoker
 
 	// shareRevoker invalidates unused GateShareLinks when a gate/run ends.

@@ -28,7 +28,7 @@ async function bootstrap() {
       { path: '/gates', component: stub('page-gates', '待审批页') },
       { path: '/projects', component: stub('page-projects', '项目页') },
       { path: '/runs/:id', component: stub('page-run', '运行详情'), meta: { full: true } },
-      { path: '/workflows/:id/edit', component: stub('page-editor', '流水线编辑器'), meta: { full: true } },
+      { path: '/workflows/:id/edit', component: stub('page-editor', '工作流编辑器'), meta: { full: true } },
       { path: '/sandboxes/:id/console', component: stub('page-console', '沙箱控制台'), meta: { full: true } },
     ],
   })

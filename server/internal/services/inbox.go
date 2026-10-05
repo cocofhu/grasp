@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/nodereg"
 	"gorm.io/gorm"
 )
 
@@ -21,46 +20,6 @@ func pendingGateScope(db *gorm.DB) *gorm.DB {
 		Joins("JOIN state_runs ON state_runs.run_id = gates.run_id AND state_runs.node_id = gates.node_id AND state_runs.iteration = gates.iteration").
 		Where("gates.resolved = ? AND state_runs.status = ? AND runs.status NOT IN ?",
 			false, "waiting_human", terminalRunStatuses)
-}
-
-// reactAutoEnabled reports whether a react node should self-answer without
-// waiting for a human (mirrors engine.autoReactEnabled).
-func reactAutoEnabled(node *models.Node, vars map[string]any) bool {
-	if node == nil {
-		return false
-	}
-	if nodereg.IsGrasp(node.Type) {
-		return false
-	}
-	autoVar := strings.TrimSpace(configStr(node.Config["auto_var"]))
-	if autoVar == "" {
-		return false
-	}
-	return varTruthy(vars[autoVar])
-}
-
-func configStr(v any) string {
-	if v == nil {
-		return ""
-	}
-	return fmt.Sprint(v)
-}
-
-func varTruthy(v any) bool {
-	switch n := v.(type) {
-	case bool:
-		return n
-	case float64:
-		return n != 0
-	case int:
-		return n != 0
-	case string:
-		return n != "" && n != "false"
-	case nil:
-		return false
-	default:
-		return true
-	}
 }
 
 func nodeLabel(g models.Graph, nodeID string) string {
@@ -133,13 +92,13 @@ func gateInboxItem(g models.Gate, meta runInboxMeta) GateInboxItem {
 	}
 }
 
-// ClarifyInboxItem is a pending react clarification or product review in the
+// ClarifyInboxItem is a pending clarify dialogue or post-run review in the
 // unified inbox. Type is the inbox channel (always "clarify" for this path);
-// Kind is the list-badge semantic: "clarify" (react), "review" (ReviewCapable),
-// or "app_preview" (application preview waiting for confirm & continue).
+// Kind is the list-badge semantic: "clarify" (clarify Agent) or "review"
+// (auto Agent with review on).
 type ClarifyInboxItem struct {
 	Type string `json:"type"`
-	Kind string `json:"kind"` // clarify | review | app_preview | preflight
+	Kind string `json:"kind"` // clarify | review
 	// State is "starting" while the node's sandbox is still booting (no
 	// conversation yet, so no transcript and no reply accepted). "replying"
 	// means the item is parked at waiting_human and the review/clarify session
@@ -160,32 +119,17 @@ type ClarifyInboxItem struct {
 	ShareLink    *GateShareInboxStatus `json:"shareLink,omitempty"`
 }
 
-// IsShareableReviewSession reports whether the node can mint a ShareLinkKindReview
-// temp link (Inbox kind=review, kind=app_preview, or kind=clarify / node.Type=react).
-// Badge kind stays clarifyInboxKind: react → clarify, app_preview stays distinct,
-// and proposal_select (default "clarify" kind but not Type=react) stays excluded.
+// IsShareableReviewSession reports whether the node can mint a
+// ShareLinkKindReview temp link: any Agent node holding a human conversation
+// (clarify dialogue or post-run review).
 func IsShareableReviewSession(node *models.Node) bool {
-	if node != nil && nodereg.ClarifyInteractive(node.Type) {
-		return true
-	}
-	k := clarifyInboxKind(node)
-	return k == "review" || k == "app_preview"
+	return node != nil && node.Caps.Interactive()
 }
 
-// clarifyInboxKind returns badge semantic for a waiting_human conversation.
-// react/approve → clarify; preflight → preflight; app_preview → app_preview;
-// other ReviewCapable product nodes → review; default clarify.
+// clarifyInboxKind returns the badge semantic for a waiting_human
+// conversation: review for an auto Agent's post-run review, else clarify.
 func clarifyInboxKind(node *models.Node) string {
-	if node == nil {
-		return "clarify"
-	}
-	if node.Type == "app_preview" {
-		return "app_preview"
-	}
-	if node.Type == "preflight" {
-		return "preflight"
-	}
-	if node.Type != "react" && !nodereg.IsGrasp(node.Type) && nodereg.ReviewCapable(node.Type) {
+	if node != nil && node.Caps.ReviewEnabled() {
 		return "review"
 	}
 	return "clarify"
@@ -228,7 +172,7 @@ func (s *RunService) PendingInboxItems(wf, projectID string, tags []string, offs
 func (s *RunService) pendingInboxEntries(wf, projectID string, tags []string) []inboxEntry {
 	gates := s.pendingGatesFiltered(wf, projectID, tags)
 	clarifies := s.pendingClarificationsFiltered(wf, projectID, tags)
-	clarifies = append(clarifies, s.startingApprovesFiltered(wf, projectID, tags)...)
+	clarifies = append(clarifies, s.startingClarifiesFiltered(wf, projectID, tags)...)
 
 	runIDs := make([]string, 0, len(gates)+len(clarifies))
 	seen := map[string]bool{}
@@ -302,8 +246,8 @@ func (s *RunService) pendingClarificationsFiltered(wf, projectID string, tags []
 	return s.filterClarifyByWorkflow(s.pendingClarifications(tags), wf, projectID)
 }
 
-func (s *RunService) startingApprovesFiltered(wf, projectID string, tags []string) []ClarifyInboxItem {
-	return s.filterClarifyByWorkflow(s.startingApproves(tags), wf, projectID)
+func (s *RunService) startingClarifiesFiltered(wf, projectID string, tags []string) []ClarifyInboxItem {
+	return s.filterClarifyByWorkflow(s.startingClarifies(tags), wf, projectID)
 }
 
 func (s *RunService) filterClarifyByWorkflow(clarifies []ClarifyInboxItem, wf, projectID string) []ClarifyInboxItem {
@@ -361,8 +305,6 @@ func (s *RunService) pendingClarifications(tags []string) []ClarifyInboxItem {
 		runByID[r.ID] = r
 	}
 
-	varsByRun := s.varsByRun(runIDs)
-
 	seen := map[string]bool{}
 	out := make([]ClarifyInboxItem, 0, len(convs))
 	for _, conv := range convs {
@@ -377,12 +319,9 @@ func (s *RunService) pendingClarifications(tags []string) []ClarifyInboxItem {
 			continue
 		}
 		node := run.Graph.FindNode(conv.NodeID)
-		if reactAutoEnabled(node, varsByRun[conv.RunID]) {
-			continue
-		}
-		// app_preview waits via pure ReAct (no Gate row). Surface it on the
-		// clarify inbox channel with kind=app_preview so Gates Inbox / MCP /
-		// badge counts stay aligned with Run review.
+		// Review waits have no Gate row. Surface them on the clarify inbox
+		// channel with kind=review so Gates Inbox / MCP / badge counts stay
+		// aligned with Run review.
 		// Only surface clarifications where the node is genuinely waiting for
 		// human input — exclude failed sandbox-setup paths (even if a stale
 		// conversation row exists from before the fix).
@@ -405,17 +344,17 @@ func (s *RunService) pendingClarifications(tags []string) []ClarifyInboxItem {
 	return out
 }
 
-// startingApproves lists Grasp nodes whose sandbox is still booting: the
+// startingClarifies lists clarify Agents whose sandbox is still booting: the
 // StateRun row is already "running" (written the moment the FSM enters the node)
 // but no conversation exists yet, so pendingClarifications cannot see them. They
 // surface as loading cards so an approval appears in the inbox the instant the
 // run starts, on any tab and across refreshes.
-func (s *RunService) startingApproves(tags []string) []ClarifyInboxItem {
+func (s *RunService) startingClarifies(tags []string) []ClarifyInboxItem {
 	var states []models.StateRun
 	s.db.Model(&models.StateRun{}).
 		Joins("JOIN runs ON runs.id = state_runs.run_id").
-		Where("state_runs.node_type IN ? AND state_runs.status = ? AND runs.status NOT IN ?",
-			[]string{"grasp", "approve"}, "running", terminalRunStatuses).
+		Where("state_runs.node_type = ? AND state_runs.status = ? AND runs.status NOT IN ?",
+			"agent", "running", terminalRunStatuses).
 		Scopes(func(db *gorm.DB) *gorm.DB { return applyRunTagsFilter(db, "runs.tags", tags) }).
 		Order("state_runs.id asc").
 		Find(&states)
@@ -453,7 +392,7 @@ func (s *RunService) startingApproves(tags []string) []ClarifyInboxItem {
 			continue
 		}
 		run, ok := runByID[sr.RunID]
-		if !ok {
+		if !ok || !run.Graph.FindNode(sr.NodeID).Caps.Clarify() {
 			continue
 		}
 		startedAt := run.StartedAt
@@ -501,20 +440,4 @@ func AttachInboxReplyingState(items []any, busy ReviewSessionBusy) {
 			items[i] = c
 		}
 	}
-}
-
-func (s *RunService) varsByRun(runIDs []string) map[string]map[string]any {
-	out := make(map[string]map[string]any, len(runIDs))
-	if len(runIDs) == 0 {
-		return out
-	}
-	var vars []models.RunVariable
-	s.db.Where("run_id IN ?", runIDs).Find(&vars)
-	for _, v := range vars {
-		if out[v.RunID] == nil {
-			out[v.RunID] = map[string]any{}
-		}
-		out[v.RunID][v.Name] = v.Value
-	}
-	return out
 }

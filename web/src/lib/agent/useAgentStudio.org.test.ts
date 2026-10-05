@@ -239,10 +239,8 @@ describe('useAgentStudio org and dialogs', () => {
     // Nothing changed → no extra replace.
     studio.syncStudioQuery()
 
-    expect(studio.studioTabs.value).toHaveLength(8)
-    expect(studio.studioTabs.value.map((t) => t.k)).toContain('test')
+    expect(studio.studioTabs.value.map((t) => t.k)).toEqual(['files', 'mcp', 'env', 'capabilities', 'data', 'meta', 'test'])
     expect(studio.studioTabLabel.value).toBeTruthy()
-    expect(studio.promptCount.value).toBe(0)
 
     app.unmount()
   })

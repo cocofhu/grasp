@@ -1,5 +1,5 @@
 import { expect, test, type FrameLocator, type Page } from '@playwright/test'
-import { LIVE_ORIGINAL } from './live-variants-mock'
+import { LIVE_CAPS, LIVE_ORIGINAL } from './live-variants-mock'
 
 const origin = 'http://127.0.0.1:5174'
 const overlay = (page: Page) => page.locator('grasp-live-overlay')
@@ -295,17 +295,17 @@ test.describe('Live preview and Chat browser bridge', () => {
 
 // Entry regression uses the production EmbedNodeChatView and public Chat with
 // real HTTP + WebSocket + postMessage. The HTTP surrogate derives capability
-// from a saved node, including the omitted switch on historical approve runs.
-// Go tests cover that same configuration against the actual handler/engine;
+// from the node's Agent capabilities (interactive + set_preview).
+// Go tests cover that same policy against the actual handler/engine;
 // source generation here remains a deterministic agent/HMR surrogate.
 test.describe('Live entry on Grasp direct previews', () => {
-  for (const nodeType of ['approve', 'grasp']) {
-    test(`${nodeType} with an omitted Live switch supports pick, annotate, generate and Chat adopt`, async ({ page }, testInfo) => {
+  for (const nodeType of ['clarify', 'review']) {
+    test(`${nodeType} Agent with set_preview supports pick, annotate, generate and Chat adopt`, async ({ page }, testInfo) => {
       const key = `entry-${nodeType}`
       await page.setViewportSize({ width: 1440, height: 1000 })
-      await page.request.post(`${origin}/__e2e/live/reset?key=${key}&nodeType=${nodeType}`)
+      await page.request.post(`${origin}/__e2e/live/reset?key=${key}&caps=${nodeType}`)
       const configured = await state(page, key)
-      expect(configured.node).toEqual({ type: nodeType, config: { direct_preview: true } })
+      expect(configured.node).toEqual({ type: 'agent', caps: LIVE_CAPS[nodeType] })
       const capability = page.waitForResponse((response) => response.url().endsWith('/public/gate-approvals/live-sessions'))
       await page.goto(`${origin}/live-variants.html?key=${key}`)
       await expect(drawer(page).getByTestId('embed-chat-root')).toBeVisible({ timeout: 15_000 })
@@ -357,7 +357,8 @@ test.describe('Live entry on Grasp direct previews', () => {
       await expect(overlay(page).locator('[data-act="next"]')).toBeVisible()
       await page.screenshot({ path: testInfo.outputPath(`live-${nodeType}-variants.png`), animations: 'disabled' })
       await drawer(page).getByTestId('clarify-input').fill('就用这个')
-      await drawer(page).getByTestId('clarify-send-label').click()
+      // Clarify chats show a labelled send; review chats use the icon button.
+      await drawer(page).getByTestId(/^clarify-send-(label|icon)$/).click()
       await expect(drawer(page).getByTestId('live-variant-card').last()).toHaveAttribute('data-state', 'accepted')
       expect((await state(page, key)).requests.at(-1)).toMatchObject({ text: '就用这个', liveCtx: { current: 2 } })
       await expectCleanSource(page, key, 'Newsletter variant 2')
@@ -367,10 +368,10 @@ test.describe('Live entry on Grasp direct previews', () => {
     })
   }
 
-  for (const setting of ['live=false', 'direct=false']) {
-    test(`legacy approve hides Live when ${setting} while retaining Chat`, async ({ page }) => {
-      const key = `entry-disabled-${setting.split('=')[0]}`
-      await page.request.post(`${origin}/__e2e/live/reset?key=${key}&nodeType=approve&${setting}`)
+  {
+    test('an Agent without set_preview hides Live while retaining Chat', async ({ page }) => {
+      const key = 'entry-disabled-no-preview'
+      await page.request.post(`${origin}/__e2e/live/reset?key=${key}&caps=no-preview`)
       const capability = page.waitForResponse((response) => response.url().endsWith('/public/gate-approvals/live-sessions'))
       await page.goto(`${origin}/live-variants.html?key=${key}`)
       await expect(drawer(page).getByTestId('clarify-input')).toBeVisible({ timeout: 15_000 })
@@ -386,7 +387,7 @@ test.describe('production Chat composer page candidates', () => {
   async function entry(page: Page, key: string, options = '') {
     await page.setViewportSize({ width: 1440, height: 1000 })
     await page.evaluate(() => localStorage.removeItem('__grasp_embed')).catch(() => {})
-    await page.request.post(`${origin}/__e2e/live/reset?key=${key}&nodeType=grasp${options}`)
+    await page.request.post(`${origin}/__e2e/live/reset?key=${key}${options}`)
     await page.goto(`${origin}/live-variants.html?key=${key}&tab=layout`)
     await expect(drawer(page).getByTestId('clarify-input')).toBeVisible({ timeout: 15_000 })
   }
@@ -483,7 +484,7 @@ test.describe('production Chat composer page candidates', () => {
   })
 
   test('read-only and disabled previews do not expose candidate sending', async ({ page }) => {
-    for (const options of ['&permission=react_only', '&live=false']) {
+    for (const options of ['&permission=react_only', '&caps=no-preview']) {
       const key = `entry-composer-${options.includes('permission') ? 'readonly' : 'disabled'}`
       await entry(page, key, options)
       await openControls(page)

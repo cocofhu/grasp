@@ -4,6 +4,35 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Breaking — one Agent node:** workflows now have seven node types:
+  input, output, set variable, branch, Agent, human gate and proposal select.
+  The old Agent-like types (Grasp, approve, react, plan, preflight, research,
+  proposal, test, review, submit MR, visual, app preview, conditional prompt)
+  are removed. An Agent node only picks an Agent, a goal and a timeout; what
+  the Agent may do is declared once in its `capabilities` (interaction, review,
+  tools, readable artifacts, written products) and edited on the new
+  **Capabilities** tab in Agent Studio. Agents that write a test result or a
+  review get **Pass** / **Fail** outlets. Workflows that still contain a
+  removed type fail validation with "未知节点类型 X", and Agents without
+  capabilities fail with "Agent X 未声明能力"; there is no migration, so
+  delete and recreate them.
+- **Breaking — platform rule overrides removed:** the platform rules settings
+  page, the per-Agent platform rules tab and the `/api/platform-rules` APIs are
+  gone. Behaviour now lives in each Agent's `AGENTS.md` and skills; the
+  platform keeps only its fixed common protocol.
+- **Built-in templates:** Clarify, Implement and Test & review replace the
+  previous engineer templates. All three can start a preview with
+  `set_preview`. Onboarding has four steps (connect, team, workflow preview,
+  done) and generates input → Clarify → Implement → Test & review, with Fail
+  looping back to Implement.
+- **Workflow canvas:** redesigned with autosave, a collapsible palette, a
+  slide-out inspector, labelled outlets, inline edge conditions, quick add
+  (`/`, Ctrl/Cmd+K, dragging an outlet to empty space, or the + on an edge),
+  undo/redo, keyboard shortcuts, 8px grid snapping with alignment guides and
+  automatic layout. Run details use the same canvas read-only, follow the
+  running node and lay out workflows that have no saved positions.
+- **Wording:** "流水线" / "pipeline" is now "工作流" / "workflow" everywhere in
+  the product.
 - **Direct preview toolbar:** refresh the Pick / Artifact / Chat controls with consistent icons, spacing, states, responsive wrapping, and an accessible custom hint for the original-page preview action.
 - **Project credentials UI:** reorganize credentials into API key, Git, SSH, and other sections with responsive cards, configuration summary, and a structured add-credential form.
 - **Project credentials:** ACP and Git credentials can be managed in project

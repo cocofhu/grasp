@@ -19,8 +19,8 @@ func leftoverGraph(autoOn bool) models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "test1", Type: "test", Label: "集成测试"},
-			{ID: "review1", Type: "review", Label: "代码评审"},
+			{ID: "test1", Type: "agent", Caps: capsTest, Label: "集成测试"},
+			{ID: "review1", Type: "agent", Caps: capsCodeReview, Label: "代码评审"},
 			{ID: "output", Type: "output", Label: "结束", Config: cfg},
 		},
 		Edges: []models.Edge{
@@ -39,12 +39,12 @@ func leftoverGraphWithClarify(autoOn bool) models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "react1", Type: "react", Label: "需求澄清"},
-			{ID: "grasp1", Type: "grasp", Label: "Grasp"},
-			{ID: "test1", Type: "test", Label: "集成测试"},
-			{ID: "review1", Type: "review", Label: "代码评审"},
-			{ID: "plan1", Type: "plan", Label: "计划"},
-			{ID: "impl1", Type: "implement", Label: "实现"},
+			{ID: "react1", Type: "agent", Caps: capsClarify, Label: "需求澄清"},
+			{ID: "grasp1", Type: "agent", Caps: capsClarify, Label: "Grasp"},
+			{ID: "test1", Type: "agent", Caps: capsTest, Label: "集成测试"},
+			{ID: "review1", Type: "agent", Caps: capsCodeReview, Label: "代码评审"},
+			{ID: "plan1", Type: "agent", Caps: capsPlan, Label: "计划"},
+			{ID: "impl1", Type: "agent", Caps: capsImplement, Label: "实现"},
 			{ID: "output", Type: "output", Label: "结束", Config: cfg},
 		},
 	}
@@ -59,7 +59,7 @@ func seedLeftoverRun(t *testing.T, eng *Engine, runID string, g models.Graph, ou
 	run := &models.Run{
 		ID:              runID,
 		WorkflowID:      "wf",
-		WorkflowName:    "遗留入库流水线",
+		WorkflowName:    "遗留入库工作流",
 		WorkflowVersion: 3,
 		Status:          "running",
 		Trigger:         models.TriggerManual,
@@ -217,7 +217,7 @@ func TestExecOutputLeftoverDraftHappyPath(t *testing.T) {
 		t.Fatalf("itemCount=%v", oc.outputs[leftoverItemCountKey])
 	}
 	title, _ := oc.outputs[leftoverDraftTitleKey].(string)
-	if !strings.Contains(title, "遗留入库流水线") || !strings.Contains(title, "run-lef") {
+	if !strings.Contains(title, "遗留入库工作流") || !strings.Contains(title, "run-lef") {
 		t.Fatalf("title=%q", title)
 	}
 
@@ -235,14 +235,14 @@ func TestExecOutputLeftoverDraftHappyPath(t *testing.T) {
 	body := draft.BodyMarkdown
 	for _, needle := range []string{
 		"背景", "自包含", "原始需求输入", "未经结构化澄清", "仍须完成", "来源注记",
-		"遗留入库流水线", "run-leftover-1", "manual", "泄漏", "未关连接", "日志", "缺字段", "log.go", "跟进",
+		"遗留入库工作流", "run-leftover-1", "manual", "泄漏", "未关连接", "日志", "缺字段", "log.go", "跟进",
 		"集成测试", "代码评审", "不是**执行依据",
 	} {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("body missing %q:\n%s", needle, body)
 		}
 	}
-	if strings.Contains(body, "必须打开原 Run") || strings.Contains(body, "必须打开原流水线") {
+	if strings.Contains(body, "必须打开原 Run") || strings.Contains(body, "必须打开原工作流") {
 		t.Fatalf("body must not require opening original run:\n%s", body)
 	}
 
@@ -461,7 +461,7 @@ func TestBuildLeftoverDraftBodyTruncationPriority(t *testing.T) {
 	}`
 	c := &execCtx{
 		run: &models.Run{
-			ID: "run-trunc", WorkflowID: "wf-trunc", WorkflowName: "截断流水线",
+			ID: "run-trunc", WorkflowID: "wf-trunc", WorkflowName: "截断工作流",
 			WorkflowVersion: 1, Trigger: "manual",
 			StartedAt: time.Date(2026, 9, 22, 1, 0, 0, 0, time.UTC),
 			Inputs:    map[string]any{},

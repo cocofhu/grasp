@@ -65,7 +65,7 @@ func TestExecGatePersistsUpstreamPointer(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "visual", Type: "visual"},
+			{ID: "visual", Type: "agent", Caps: capsPageAuto},
 			{ID: "gate", Type: "human_gate", Config: map[string]any{
 				"title":         "审阅视觉",
 				"body_template": "{{nodes.visual.outputs.page}}",
@@ -76,7 +76,7 @@ func TestExecGatePersistsUpstreamPointer(t *testing.T) {
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "visual"},
 			{ID: "e2", Source: "visual", Target: "gate", Kind: models.EdgeSuccess},
-			{ID: "e3", Source: "gate", Target: "output", When: "action == 'approve'", Kind: models.EdgeSuccess},
+			{ID: "e3", Source: "gate", Target: "output", SourceHandle: "approve", Kind: models.EdgeSuccess},
 		},
 	}
 	eng, db := setupEngineGraph(t, g)

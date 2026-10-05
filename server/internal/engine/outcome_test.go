@@ -28,7 +28,7 @@ func TestAfterDefaultChecksSkipsRPCOnFailure(t *testing.T) {
 	rpc := &countingRPC{accept: true}
 	eng.host.SetRPCOutcomeValidator(rpc)
 
-	oc := eng.afterDefaultChecks(&execCtx{run: &models.Run{ID: "r"}}, &models.Node{ID: "n", Type: "research"},
+	oc := eng.afterDefaultChecks(&execCtx{run: &models.Run{ID: "r"}}, &models.Node{ID: "n", Type: "agent", Caps: capsResearch},
 		nodeOutcome{status: "failed", err: "missing artifact"})
 	if oc.status != "failed" {
 		t.Fatalf("status = %s", oc.status)
@@ -43,7 +43,7 @@ func TestAfterDefaultChecksRunsRPCOnSuccess(t *testing.T) {
 	rpc := &countingRPC{accept: false, msg: "biz no"}
 	eng.host.SetRPCOutcomeValidator(rpc)
 
-	oc := eng.afterDefaultChecks(&execCtx{run: &models.Run{ID: "r"}}, &models.Node{ID: "n", Type: "research"},
+	oc := eng.afterDefaultChecks(&execCtx{run: &models.Run{ID: "r"}}, &models.Node{ID: "n", Type: "agent", Caps: capsResearch},
 		nodeOutcome{status: "completed", outputs: map[string]any{"outcome_status": "success"}})
 	if oc.status != "failed" || oc.err != "biz no" {
 		t.Fatalf("want rpc reject, got status=%s err=%q", oc.status, oc.err)
@@ -60,10 +60,10 @@ func TestConsumeNodeOutcomeEmptyMCPSurface(t *testing.T) {
 	runID := "r-empty-mcp"
 	nodeID := "research"
 	eng.host.RegisterRun(runID)
-	eng.host.SetActiveNode(runID, nodeID, "research")
+	eng.host.SetActiveNode(runID, nodeID, capsResearch)
 
 	c := &execCtx{run: &models.Run{ID: runID}}
-	node := &models.Node{ID: nodeID, Type: "research"}
+	node := &models.Node{ID: nodeID, Type: "agent", Caps: capsResearch}
 	res := &runtime.NodeResult{}
 	fail, ok := eng.consumeNodeOutcome(c, node, res)
 	if ok {
@@ -87,7 +87,7 @@ func TestConsumeNodeOutcomeMissingNodeComplete(t *testing.T) {
 	runID := "r-has-mcp"
 	nodeID := "research"
 	tok := eng.host.RegisterRun(runID)
-	eng.host.SetActiveNode(runID, nodeID, "research")
+	eng.host.SetActiveNode(runID, nodeID, capsResearch)
 
 	st, resp := eng.host.ServeRPC(runID, tok, []byte(
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"write_artifact","arguments":{"name":"note.md","content":"x","kind":"markdown"}}}`))
@@ -99,7 +99,7 @@ func TestConsumeNodeOutcomeMissingNodeComplete(t *testing.T) {
 	}
 
 	c := &execCtx{run: &models.Run{ID: runID}}
-	node := &models.Node{ID: nodeID, Type: "research"}
+	node := &models.Node{ID: nodeID, Type: "agent", Caps: capsResearch}
 	res := &runtime.NodeResult{}
 	fail, ok := eng.consumeNodeOutcome(c, node, res)
 	if ok {
@@ -123,7 +123,7 @@ func TestConsumeNodeOutcomeAdoptsArtifactAfterFlush(t *testing.T) {
 	runID := "r-adopt"
 	nodeID := "react_rlze"
 	tok := eng.host.RegisterRun(runID)
-	eng.host.SetActiveNode(runID, nodeID, "react")
+	eng.host.SetActiveNode(runID, nodeID, capsClarify)
 
 	// Business call then node_complete (writes Host mark + artifact).
 	st, resp := eng.host.ServeRPC(runID, tok, []byte(
@@ -145,7 +145,7 @@ func TestConsumeNodeOutcomeAdoptsArtifactAfterFlush(t *testing.T) {
 		t.Fatalf("want buffered calls before flush, got %d", len(calls))
 	}
 	if err := db.Create(&models.StateRun{
-		RunID: runID, NodeID: nodeID, NodeType: "react", Iteration: 1,
+		RunID: runID, NodeID: nodeID, NodeType: "agent", Iteration: 1,
 		Status: "running", McpCalls: calls, StartedAt: &now,
 	}).Error; err != nil {
 		t.Fatalf("state_run: %v", err)
@@ -164,7 +164,7 @@ func TestConsumeNodeOutcomeAdoptsArtifactAfterFlush(t *testing.T) {
 	}
 
 	c := &execCtx{run: &models.Run{ID: runID}, token: tok}
-	node := &models.Node{ID: nodeID, Type: "react"}
+	node := &models.Node{ID: nodeID, Type: "agent", Caps: capsClarify}
 	res := &runtime.NodeResult{Outputs: map[string]any{}}
 	fail, ok := eng.consumeNodeOutcome(c, node, res)
 	if !ok {
@@ -182,11 +182,11 @@ func TestConsumeNodeOutcomeStateRunOnlyNotEmptySurface(t *testing.T) {
 	runID := "r-state-only"
 	nodeID := "research"
 	eng.host.RegisterRun(runID)
-	eng.host.SetActiveNode(runID, nodeID, "research")
+	eng.host.SetActiveNode(runID, nodeID, capsResearch)
 
 	now := time.Now()
 	if err := db.Create(&models.StateRun{
-		RunID: runID, NodeID: nodeID, NodeType: "research", Iteration: 1,
+		RunID: runID, NodeID: nodeID, NodeType: "agent", Iteration: 1,
 		Status: "running", StartedAt: &now,
 		McpCalls: []models.McpCall{{Tool: "write_artifact"}, {Tool: "set_research"}},
 	}).Error; err != nil {
@@ -194,7 +194,7 @@ func TestConsumeNodeOutcomeStateRunOnlyNotEmptySurface(t *testing.T) {
 	}
 
 	c := &execCtx{run: &models.Run{ID: runID}}
-	node := &models.Node{ID: nodeID, Type: "research"}
+	node := &models.Node{ID: nodeID, Type: "agent", Caps: capsResearch}
 	fail, ok := eng.consumeNodeOutcome(c, node, &runtime.NodeResult{})
 	if ok {
 		t.Fatal("want failure")
@@ -211,7 +211,7 @@ func TestConsumeNodeOutcomeCorruptArtifact(t *testing.T) {
 	runID := "r-corrupt"
 	nodeID := "test"
 	tok := eng.host.RegisterRun(runID)
-	eng.host.SetActiveNode(runID, nodeID, "test")
+	eng.host.SetActiveNode(runID, nodeID, capsTest)
 	if _, err := eng.store.Save(runID, nodeID, mcp.NodeOutcomeArtifactName, "json", "{not-json"); err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestConsumeNodeOutcomeCorruptArtifact(t *testing.T) {
 		t.Fatalf("status=%d resp=%s", st, resp)
 	}
 
-	fail, ok := eng.consumeNodeOutcome(&execCtx{run: &models.Run{ID: runID}}, &models.Node{ID: nodeID, Type: "test"}, &runtime.NodeResult{})
+	fail, ok := eng.consumeNodeOutcome(&execCtx{run: &models.Run{ID: runID}}, &models.Node{ID: nodeID, Type: "agent", Caps: capsTest}, &runtime.NodeResult{})
 	if ok {
 		t.Fatal("want failure")
 	}
@@ -237,14 +237,14 @@ func TestConsumeNodeOutcomeAdoptsFailedArtifact(t *testing.T) {
 	runID := "r-failed-mark"
 	nodeID := "implement"
 	eng.host.RegisterRun(runID)
-	eng.host.SetActiveNode(runID, nodeID, "implement")
+	eng.host.SetActiveNode(runID, nodeID, capsImplement)
 	if _, err := eng.store.Save(runID, nodeID, mcp.NodeOutcomeArtifactName, "json",
 		mcp.OutcomeJSON(mcp.NodeOutcome{Status: mcp.OutcomeFailed, Error: "plan incomplete"})); err != nil {
 		t.Fatal(err)
 	}
 
 	fail, ok := eng.consumeNodeOutcome(&execCtx{run: &models.Run{ID: runID}},
-		&models.Node{ID: nodeID, Type: "implement"}, &runtime.NodeResult{})
+		&models.Node{ID: nodeID, Type: "agent", Caps: capsImplement}, &runtime.NodeResult{})
 	if ok {
 		t.Fatal("want failed outcome (agent-reported)")
 	}
@@ -260,9 +260,9 @@ func TestConsumeNodeOutcomeAdoptsFailedArtifact(t *testing.T) {
 func TestNodeReqDoesNotClearOutcome(t *testing.T) {
 	eng, _ := setupEngine(t)
 	runID := "r-keep-mark"
-	nodeID := "react"
+	nodeID := "work"
 	tok := eng.host.RegisterRun(runID)
-	eng.host.SetActiveNode(runID, nodeID, "react")
+	eng.host.SetActiveNode(runID, nodeID, capsPlain)
 	st, resp := eng.host.ServeRPC(runID, tok, []byte(
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"node_complete","arguments":{"status":"success","summary":"ok"}}}`))
 	if st != 200 {
@@ -272,7 +272,7 @@ func TestNodeReqDoesNotClearOutcome(t *testing.T) {
 		t.Fatal("want mark")
 	}
 	c := &execCtx{run: &models.Run{ID: runID}, token: tok, vars: map[string]any{}}
-	_ = eng.nodeReq(c, &models.Node{ID: nodeID, Type: "react", Config: map[string]any{}})
+	_ = eng.nodeReq(c, &models.Node{ID: nodeID, Type: "agent", Caps: capsPlain, Config: map[string]any{}})
 	if !eng.host.HasOutcome(runID, nodeID) {
 		t.Fatal("nodeReq must not ClearOutcome on same visit")
 	}
@@ -284,7 +284,7 @@ func TestStartNodeRunClearsOutcome(t *testing.T) {
 	runID := "r-clear-visit"
 	nodeID := "research"
 	tok := eng.host.RegisterRun(runID)
-	eng.host.SetActiveNode(runID, nodeID, "research")
+	eng.host.SetActiveNode(runID, nodeID, capsResearch)
 	_, _ = eng.host.ServeRPC(runID, tok, []byte(
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"node_complete","arguments":{"status":"success"}}}`))
 	if !eng.host.HasOutcome(runID, nodeID) {
@@ -294,7 +294,7 @@ func TestStartNodeRunClearsOutcome(t *testing.T) {
 		t.Fatal("want artifact")
 	}
 	c := &execCtx{run: &models.Run{ID: runID}, iter: map[string]int{nodeID: 2}, vars: map[string]any{}}
-	eng.startNodeRun(c, &models.Node{ID: nodeID, Type: "research"})
+	eng.startNodeRun(c, &models.Node{ID: nodeID, Type: "agent", Caps: capsResearch})
 	if eng.host.HasOutcome(runID, nodeID) {
 		t.Fatal("startNodeRun must ClearOutcome")
 	}

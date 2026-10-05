@@ -4,11 +4,12 @@
  */
 import { test, expect, type Page } from '@playwright/test'
 import type { Artifact, OutputCard } from '../src/lib/shared/types'
+import { PAGE_CAPS } from '../src/test/capsFixtures'
 
 const nodes = [
   { id: 'start', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
-  { id: 'visual_a', type: 'visual', label: '视觉网页', position: { x: 180, y: 0 }, config: {} },
-  { id: 'visual_l6zc', type: 'visual', label: '', position: { x: 360, y: 0 }, config: {} },
+  { id: 'visual_a', type: 'agent', caps: PAGE_CAPS, label: '视觉网页', position: { x: 180, y: 0 }, config: {} },
+  { id: 'visual_l6zc', type: 'agent', caps: PAGE_CAPS, label: '', position: { x: 360, y: 0 }, config: {} },
   { id: 'end', type: 'output', label: '结束', position: { x: 540, y: 0 }, config: {} },
 ]
 

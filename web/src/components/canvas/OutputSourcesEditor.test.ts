@@ -20,10 +20,10 @@ function mountEditor(opts?: { withUpstream?: boolean; results?: string[] }) {
   }
   const upstream: WFNode = {
     id: 'research',
-    type: 'research',
+    type: 'agent',
     label: '调研',
     position: { x: -200, y: 0 },
-    config: {},
+    config: { agent_profile: 'researcher', prompt: '' },
   }
   const edges: WFEdge[] =
     opts?.withUpstream === false

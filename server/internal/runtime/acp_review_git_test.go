@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
@@ -98,11 +99,11 @@ func TestPushWorkingBranchesOmitsGitAdd(t *testing.T) {
 func TestOfferCommitOnConfirmNoSessionOrNonRepoNode(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{}).(*acpProvider)
-	if t0 := p.OfferCommitOnConfirm(context.Background(), NodeReq{RunID: "r", NodeID: "n", NodeType: "implement"}); t0.Msg != "" {
+	if t0 := p.OfferCommitOnConfirm(context.Background(), NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testImplementCaps}); t0.Msg != "" {
 		t.Fatalf("no session: %+v", t0)
 	}
 	p.sessions["r|n"] = &reactSession{sb: &sandbox.Sandbox{Name: "sb"}}
-	if t1 := p.OfferCommitOnConfirm(context.Background(), NodeReq{RunID: "r", NodeID: "n", NodeType: "proposal"}); t1.Msg != "" {
+	if t1 := p.OfferCommitOnConfirm(context.Background(), NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testCapsWriting(models.SchemaProposals)}); t1.Msg != "" {
 		t.Fatalf("proposal: %+v", t1)
 	}
 }
@@ -110,7 +111,7 @@ func TestOfferCommitOnConfirmNoSessionOrNonRepoNode(t *testing.T) {
 func TestReconcileOnConfirmWithoutSessionIsNoOp(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{}).(*acpProvider)
-	req := NodeReq{RunID: "r", NodeID: "n", NodeType: "proposal"}
+	req := NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testCapsWriting(models.SchemaProposals)}
 	if turn := p.ReconcileOnConfirm(context.Background(), req); turn.Msg != "" || turn.AgentSummary != "" {
 		t.Fatalf("no session: %+v", turn)
 	}
@@ -160,7 +161,7 @@ func TestOfferCommitOnConfirmDirtyWithoutACPStillPushes(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{}).(*acpProvider)
 	sb := &sandbox.Sandbox{Name: "sb", Host: "127.0.0.1", Port: 1, WorkspaceDir: "/root/workspace"}
-	req := NodeReq{RunID: "r", NodeID: "n", NodeType: "implement",
+	req := NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testImplementCaps,
 		Vars: map[string]any{"repos": `[{"name":"app","url":"https://h/app.git"}]`}}
 	p.sessions[reactKey(req)] = &reactSession{sb: sb}
 	turn := p.OfferCommitOnConfirm(context.Background(), req)
@@ -213,7 +214,7 @@ func TestRunAgentReviewConfirmGitWrapUp(t *testing.T) {
 	})
 	p, _ := newTestProvider(t, host, testOpts(), mgr)
 	req := reqWithProfile(NodeReq{
-		RunID: runID, NodeID: nodeID, NodeType: "implement", Token: tok,
+		RunID: runID, NodeID: nodeID, NodeType: "agent", Caps: testImplementCaps, Token: tok,
 		KeepAliveForReview: true,
 		Config:             map[string]any{"prompt": "build"},
 		Vars:               map[string]any{"repos": `[{"name":"app","url":"https://h/app.git"}]`},

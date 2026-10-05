@@ -10,7 +10,7 @@ import (
 
 // TestHumanGateResumeSnapshotsPreviewIssues: Fail/resume on human_gate (HtmlPreview
 // path) must write vars.preview_issues with selector context + screenshot images,
-// same protocol as app_preview — not form.comment. After a successful snapshot the
+// same protocol as the preview review agent — not form.comment. After a successful snapshot the
 // open issues for this node must become resolved.
 func TestHumanGateResumeSnapshotsPreviewIssues(t *testing.T) {
 	g := models.Graph{
@@ -21,14 +21,15 @@ func TestHumanGateResumeSnapshotsPreviewIssues(t *testing.T) {
 				"body_template": "{{nodes.visual.outputs.page}}",
 				"actions": []any{
 					map[string]any{"id": "approve", "label": "通过"},
-					map[string]any{"id": "revise", "label": "退回", "goto": "done"},
+					map[string]any{"id": "revise", "label": "退回"},
 				},
 			}},
 			{ID: "done", Type: "output"},
 		},
 		Edges: []models.Edge{
+			{ID: "e_revise_1", Source: "gate", Target: "done", SourceHandle: "revise"},
 			{ID: "e1", Source: "input", Target: "gate"},
-			{ID: "e2", Source: "gate", Target: "done", When: "action == 'approve'", Kind: models.EdgeSuccess},
+			{ID: "e2", Source: "gate", Target: "done", SourceHandle: "approve", Kind: models.EdgeSuccess},
 		},
 	}
 	eng, db := setupEngineGraph(t, g)
@@ -116,7 +117,7 @@ func TestCommentOnlyHumanGateDoesNotWipePreviewIssues(t *testing.T) {
 				"body_template": "{{nodes.visual.outputs.page}}",
 				"actions": []any{
 					map[string]any{"id": "approve", "label": "通过"},
-					map[string]any{"id": "revise", "label": "退回", "goto": "review"},
+					map[string]any{"id": "revise", "label": "退回"},
 				},
 			}},
 			{ID: "review", Type: "human_gate", Config: map[string]any{
@@ -133,8 +134,8 @@ func TestCommentOnlyHumanGateDoesNotWipePreviewIssues(t *testing.T) {
 			{ID: "done", Type: "output"},
 		},
 		Edges: []models.Edge{
+			{ID: "e_revise_2", Source: "visual_gate", Target: "review", SourceHandle: "revise"},
 			{ID: "e1", Source: "input", Target: "visual_gate"},
-			{ID: "e2", Source: "visual_gate", Target: "review"},
 			{ID: "e3", Source: "review", Target: "done"},
 		},
 	}
@@ -211,14 +212,15 @@ func TestSnapshotOnlyIncludesOpenIssues(t *testing.T) {
 				"body_template": "{{nodes.visual.outputs.page}}",
 				"actions": []any{
 					map[string]any{"id": "approve", "label": "通过"},
-					map[string]any{"id": "revise", "label": "退回", "goto": "done"},
+					map[string]any{"id": "revise", "label": "退回"},
 				},
 			}},
 			{ID: "done", Type: "output"},
 		},
 		Edges: []models.Edge{
+			{ID: "e_revise_3", Source: "gate", Target: "done", SourceHandle: "revise"},
 			{ID: "e1", Source: "input", Target: "gate"},
-			{ID: "e2", Source: "gate", Target: "done", When: "action == 'approve'", Kind: models.EdgeSuccess},
+			{ID: "e2", Source: "gate", Target: "done", SourceHandle: "approve", Kind: models.EdgeSuccess},
 		},
 	}
 	eng, db := setupEngineGraph(t, g)
@@ -285,14 +287,15 @@ func TestPassForceClearsPreviewIssueVars(t *testing.T) {
 				"body_template": "{{nodes.visual.outputs.page}}",
 				"actions": []any{
 					map[string]any{"id": "approve", "label": "通过"},
-					map[string]any{"id": "revise", "label": "退回", "goto": "done"},
+					map[string]any{"id": "revise", "label": "退回"},
 				},
 			}},
 			{ID: "done", Type: "output"},
 		},
 		Edges: []models.Edge{
+			{ID: "e_revise_4", Source: "gate", Target: "done", SourceHandle: "revise"},
 			{ID: "e1", Source: "input", Target: "gate"},
-			{ID: "e2", Source: "gate", Target: "done", When: "action == 'approve'", Kind: models.EdgeSuccess},
+			{ID: "e2", Source: "gate", Target: "done", SourceHandle: "approve", Kind: models.EdgeSuccess},
 		},
 	}
 	eng, db := setupEngineGraph(t, g)
@@ -355,14 +358,15 @@ func TestFailThenRereviewWithOnlyResolvedCanPass(t *testing.T) {
 				"body_template": "{{nodes.visual.outputs.page}}",
 				"actions": []any{
 					map[string]any{"id": "approve", "label": "通过"},
-					map[string]any{"id": "revise", "label": "退回", "goto": "gate"},
+					map[string]any{"id": "revise", "label": "退回"},
 				},
 			}},
 			{ID: "done", Type: "output"},
 		},
 		Edges: []models.Edge{
+			{ID: "e_revise_5", Source: "gate", Target: "gate", SourceHandle: "revise"},
 			{ID: "e1", Source: "input", Target: "gate"},
-			{ID: "e2", Source: "gate", Target: "done", When: "action == 'approve'", Kind: models.EdgeSuccess},
+			{ID: "e2", Source: "gate", Target: "done", SourceHandle: "approve", Kind: models.EdgeSuccess},
 		},
 	}
 	eng, db := setupEngineGraph(t, g)
@@ -434,7 +438,7 @@ func TestPreviewPathSkipsRequireFormValidation(t *testing.T) {
 				"body_template": "{{nodes.visual.outputs.page}}",
 				"actions": []any{
 					map[string]any{"id": "approve", "label": "通过", "requireForm": true},
-					map[string]any{"id": "revise", "label": "退回", "requireForm": true, "goto": "done"},
+					map[string]any{"id": "revise", "label": "退回", "requireForm": true},
 				},
 				"form": []any{
 					map[string]any{"key": "comment", "label": "评审意见", "required": true},
@@ -443,8 +447,9 @@ func TestPreviewPathSkipsRequireFormValidation(t *testing.T) {
 			{ID: "done", Type: "output"},
 		},
 		Edges: []models.Edge{
+			{ID: "e_revise_6", Source: "gate", Target: "done", SourceHandle: "revise"},
 			{ID: "e1", Source: "input", Target: "gate"},
-			{ID: "e2", Source: "gate", Target: "done", When: "action == 'approve'", Kind: models.EdgeSuccess},
+			{ID: "e2", Source: "gate", Target: "done", SourceHandle: "approve", Kind: models.EdgeSuccess},
 		},
 	}
 	eng, db := setupEngineGraph(t, g)
@@ -462,10 +467,8 @@ func TestPreviewPathSkipsRequireFormValidation(t *testing.T) {
 }
 
 func TestShouldSnapshotPreviewIssues(t *testing.T) {
-	if !shouldSnapshotPreviewIssues(&models.Node{Type: "app_preview"}) {
-		// app_preview no longer snapshots via Gate resume
-	} else {
-		t.Fatal("app_preview should not snapshot via Gate resume")
+	if shouldSnapshotPreviewIssues(&models.Node{Type: "agent", Caps: capsPreview}) {
+		t.Fatal("preview review agent should not snapshot via Gate resume")
 	}
 	if !shouldSnapshotPreviewIssues(&models.Node{
 		Type:   "human_gate",

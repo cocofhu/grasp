@@ -11,7 +11,6 @@ import (
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/runtime"
 
 	"github.com/google/uuid"
@@ -395,7 +394,7 @@ func (e *Engine) executeVisitorTurn(ctx context.Context, s *reviewSession, item 
 		}
 		return true, nil
 	}
-	if nodereg.ClarifyInteractive(producer.Type) {
+	if producer.Caps.Clarify() {
 		return false, nil
 	}
 	unlock := e.lockResume(s.runID + ":" + s.producerID)

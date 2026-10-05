@@ -9,7 +9,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/tokenledger"
 	"github.com/rs/zerolog/log"
@@ -50,44 +49,21 @@ func (e *Engine) nodeReq(c *execCtx, node *models.Node) runtime.NodeReq {
 		cfg["prompt"] = e.interpolate(c, p)
 	}
 
-	if cp, ok := cfg["conditional_prompt"].(map[string]any); ok {
-		merged := map[string]any{}
-		for k, v := range cp {
-			merged[k] = v
-		}
-		if txt, ok := merged["text"].(string); ok {
-			merged["text"] = e.interpolate(c, txt)
-		}
-		cfg["conditional_prompt"] = merged
-	}
-
-	if nodereg.IsGrasp(node.Type) {
-		delete(cfg, "prompt")
-		delete(cfg, "max_rounds")
-		delete(cfg, "auto_var")
-		delete(cfg, "timeout")
-		delete(cfg, "chat_timeout")
-		delete(cfg, "conditional_prompt")
-	}
-
-	e.host.SetActiveNode(c.run.ID, node.ID, node.Type)
+	e.host.SetActiveNode(c.run.ID, node.ID, node.Caps)
 
 	// ClearOutcome is intentionally NOT called here: same-visit react multi-round
 	// replies rebuild NodeReq via this helper and must keep a legal Host mark.
 	// New visit/iteration clears in startNodeRun; sandbox retries clear in
 	// ReactOpen / runAgentOnce.
-	if node.Type == "app_preview" {
-		e.host.ResetPreviewReady(c.run.ID, node.ID)
-	}
 	promptImages := collectPromptVarImages(c, promptScanTemplates(node.Config)...)
-	if nodereg.IsGrasp(node.Type) {
+	if node.Caps.Clarify() {
 		promptImages = collectAllVarImages(c)
 	}
 	req := runtime.NodeReq{RunID: c.run.ID, WorkflowID: c.run.WorkflowID, WorkflowName: c.run.WorkflowName,
 		Token: c.token, NodeID: node.ID, NodeType: node.Type, Config: cfg, Vars: c.vars,
-		PromptImages: promptImages}
+		Caps: node.Caps, PromptImages: promptImages}
 
-	req.KeepAliveForReview = e.reviewEnabled(c, node) || e.hasDownstreamReactGate(c, node)
+	req.KeepAliveForReview = node.Caps.ReviewEnabled() || e.hasDownstreamReactGate(c, node)
 	return req
 }
 
@@ -99,11 +75,6 @@ func promptScanTemplates(cfg map[string]any) []string {
 	var out []string
 	if p, ok := cfg["prompt"].(string); ok {
 		out = append(out, p)
-	}
-	if cp, ok := cfg["conditional_prompt"].(map[string]any); ok {
-		if txt, ok := cp["text"].(string); ok {
-			out = append(out, txt)
-		}
 	}
 	if bt, ok := cfg["body_template"].(string); ok {
 		out = append(out, bt)
@@ -318,7 +289,7 @@ func parseActions(v any) []models.GateAction {
 			continue
 		}
 		reqForm, _ := m["requireForm"].(bool)
-		out = append(out, models.GateAction{ID: str(m["id"]), Label: str(m["label"]), Goto: str(m["goto"]), RequireForm: reqForm})
+		out = append(out, models.GateAction{ID: str(m["id"]), Label: str(m["label"]), RequireForm: reqForm})
 	}
 	return out
 }

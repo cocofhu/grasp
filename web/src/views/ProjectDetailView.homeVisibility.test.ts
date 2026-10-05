@@ -8,10 +8,10 @@ const viewsDir = dirname(fileURLToPath(import.meta.url))
 const localesDir = join(viewsDir, '../locales')
 const detailSrc = readFileSync(join(viewsDir, 'ProjectDetailView.vue'), 'utf8')
 const enPages = JSON.parse(readFileSync(join(localesDir, 'en/pages.json'), 'utf8')) as {
-  pages: { projectDetail: { homeVisibility: Record<string, string> }; dashboard: { noPipelines: string } }
+  pages: { projectDetail: { homeVisibility: Record<string, string> }; dashboard: { noWorkflows: string } }
 }
 const zhPages = JSON.parse(readFileSync(join(localesDir, 'zh-CN/pages.json'), 'utf8')) as {
-  pages: { projectDetail: { homeVisibility: Record<string, string> }; dashboard: { noPipelines: string } }
+  pages: { projectDetail: { homeVisibility: Record<string, string> }; dashboard: { noWorkflows: string } }
 }
 
 function mobileWorkflowsBlock(): string {
@@ -60,10 +60,10 @@ describe('ProjectDetailView home visibility switch (g2.1 / g2.2 / g2.3)', () => 
     expect(en.updateFailed.toLowerCase()).toMatch(/fail/)
   })
 
-  it('empty Home copy points at enabling in a project, not at lost pipelines (g3.2)', () => {
-    expect(zhPages.pages.dashboard.noPipelines).toContain('首页可见')
-    expect(zhPages.pages.dashboard.noPipelines).not.toMatch(/丢失/)
-    expect(enPages.pages.dashboard.noPipelines).toMatch(/Show on Home/)
-    expect(enPages.pages.dashboard.noPipelines).not.toMatch(/missing|lost|deleted/i)
+  it('empty Home copy points at enabling in a project, not at lost workflows (g3.2)', () => {
+    expect(zhPages.pages.dashboard.noWorkflows).toContain('首页可见')
+    expect(zhPages.pages.dashboard.noWorkflows).not.toMatch(/丢失/)
+    expect(enPages.pages.dashboard.noWorkflows).toMatch(/Show on Home/)
+    expect(enPages.pages.dashboard.noWorkflows).not.toMatch(/missing|lost|deleted/i)
   })
 })

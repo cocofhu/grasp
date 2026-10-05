@@ -22,11 +22,12 @@ func (f *fakeLiveUpdater) ApplyLiveReport(_, _ string, r LiveReport) (*models.Li
 	return f.sess, f.err
 }
 
-func liveHost(t *testing.T, nodeType string, enabled bool) (*Host, string, *fakeLiveUpdater) {
+func liveHost(t *testing.T, caps *models.AgentCapabilities, enabled bool) (*Host, string, *fakeLiveUpdater) {
 	t.Helper()
 	h := NewHost(&memStore{})
 	tok := h.RegisterRun("r1")
-	h.SetActiveNode("r1", "p1", nodeType)
+	h.SetActiveNode("r1", "p1", caps)
+	h.SetActiveReview("r1", caps.ReviewEnabled())
 	u := &fakeLiveUpdater{enabled: enabled, sess: &models.LiveSession{ID: "sid001", State: models.LiveStateReady, Variants: []models.LiveVariant{{N: 1}, {N: 2}}}}
 	h.SetLiveUpdater(u)
 	return h, tok, u
@@ -38,7 +39,7 @@ func liveCall(t *testing.T, h *Host, tok, args string) (string, bool) {
 }
 
 func TestLiveUpdateListedOnlyWhenEnabled(t *testing.T) {
-	h, tok, u := liveHost(t, "app_preview", true)
+	h, tok, u := liveHost(t, capsPreview, true)
 	if !listedNames(t, h, tok)["live_update"] {
 		t.Fatal("live_update should be listed")
 	}
@@ -46,20 +47,20 @@ func TestLiveUpdateListedOnlyWhenEnabled(t *testing.T) {
 	if listedNames(t, h, tok)["live_update"] {
 		t.Fatal("disabled node must not list live_update")
 	}
-	h2, tok2, _ := liveHost(t, "react", true)
+	h2, tok2, _ := liveHost(t, capsWriting(models.SchemaPlan), true)
 	if listedNames(t, h2, tok2)["live_update"] {
-		t.Fatal("react must not list live_update")
+		t.Fatal("an Agent without set_preview must not list live_update")
 	}
 	h3 := NewHost(&memStore{})
 	tok3 := h3.RegisterRun("r1")
-	h3.SetActiveNode("r1", "p1", "app_preview")
+	h3.SetActiveNode("r1", "p1", capsPreview)
 	if listedNames(t, h3, tok3)["live_update"] {
 		t.Fatal("no updater: not listed")
 	}
 }
 
 func TestLiveUpdateCall(t *testing.T) {
-	h, tok, u := liveHost(t, "app_preview", true)
+	h, tok, u := liveHost(t, capsPreview, true)
 	txt, isErr := liveCall(t, h, tok, `{"session_id":"sid001","state":"ready","file":"src/App.vue","variants":[{"n":1,"label":"层级"},{"n":2}]}`)
 	if isErr || !strings.Contains(txt, "ready") || !strings.Contains(txt, "2 个变体") {
 		t.Fatalf("txt=%q isErr=%v", txt, isErr)
@@ -79,7 +80,7 @@ func TestLiveUpdateCall(t *testing.T) {
 }
 
 func TestLiveUpdateValidation(t *testing.T) {
-	h, tok, u := liveHost(t, "app_preview", true)
+	h, tok, u := liveHost(t, capsPreview, true)
 	for _, args := range []string{`{}`, `{"session_id":"sid001"}`, `{"session_id":"sid001","state":"ready","variants":"x"}`, `{"session_id":"sid001","state":"ready","variants":[1]}`} {
 		if _, isErr := liveCall(t, h, tok, args); !isErr {
 			t.Fatalf("args %s should fail", args)
@@ -89,7 +90,7 @@ func TestLiveUpdateValidation(t *testing.T) {
 		t.Fatal("invalid calls must not reach the updater")
 	}
 	u.enabled = false
-	if txt, isErr := liveCall(t, h, tok, `{"session_id":"sid001","state":"ready"}`); !isErr || !strings.Contains(txt, "Live") {
+	if txt, isErr := liveCall(t, h, tok, `{"session_id":"sid001","state":"ready"}`); !isErr {
 		t.Fatalf("disabled txt=%q", txt)
 	}
 	if txt, isErr := liveCall(t, h, "bad-token", `{"session_id":"sid001","state":"ready"}`); !isErr || txt == "" {
@@ -101,7 +102,7 @@ func TestLiveUpdateValidation(t *testing.T) {
 }
 
 func TestLiveChatBeginToolProtocol(t *testing.T) {
-	h, tok, u := liveHost(t, "app_preview", true)
+	h, tok, u := liveHost(t, capsPreview, true)
 	u.sess = &models.LiveSession{ID: "sid001", State: models.LiveStateRefining, Selected: 2}
 	text, isErr := liveCall(t, h, tok, `{"session_id":"sid001","state":"refining","variant":2}`)
 	if isErr || !strings.Contains(text, "只修改变体 2") || u.got[0].Variant != 2 {
@@ -119,19 +120,19 @@ func TestLiveChatBeginToolProtocol(t *testing.T) {
 	}
 }
 
-func TestLiveToolsAvailableInDirectGraspDialogue(t *testing.T) {
-	for _, nodeType := range []string{"grasp", "approve"} {
-		t.Run(nodeType, func(t *testing.T) {
-			h, tok, u := liveHost(t, nodeType, true)
+func TestLiveToolsAvailableInClarifyDialogue(t *testing.T) {
+	for _, caps := range []*models.AgentCapabilities{capsClarify} {
+		t.Run(caps.Interaction, func(t *testing.T) {
+			h, tok, u := liveHost(t, caps, true)
 			if !listedNames(t, h, tok)["live_update"] {
-				t.Fatal("enabled Grasp must list live_update")
+				t.Fatal("enabled clarify Agent must list live_update")
 			}
 			if txt, isErr := liveCall(t, h, tok, `{"session_id":"sid001","state":"ready"}`); isErr {
 				t.Fatalf("live_update: %s", txt)
 			}
 			u.enabled = false
 			if listedNames(t, h, tok)["live_update"] {
-				t.Fatal("disabled Grasp must not list live_update")
+				t.Fatal("disabled clarify Agent must not list live_update")
 			}
 		})
 	}

@@ -17,7 +17,7 @@ const studioSrc = read('views/AgentStudioView.vue')
 const sharedSrc = read('components/project/ProjectSharedAgentPanel.vue')
 const mcpSrc = read('components/agent/AgentMcpPanel.vue')
 const envSrc = read('components/agent/AgentEnvPanel.vue')
-const rulesSrc = read('components/agent/AgentPlatformRulesPanel.vue')
+const capsSrc = read('components/agent/AgentCapabilitiesPanel.vue')
 const chatSrc = read('components/agent/AgentChatTester.vue')
 
 describe('toolbar Tab clearance tokens (g1.4)', () => {
@@ -60,10 +60,10 @@ describe('same-row toolbars leave the border-b (g1.3)', () => {
     expect(sharedSrc).not.toMatch(/border-b border-line px-2 py-1/)
   })
 
-  it('MCP / Env / platform rules / chat tester headers use toolbar-inline-row', () => {
+  it('MCP / Env / capabilities / chat tester headers use toolbar-inline-row', () => {
     expect(mcpSrc).toMatch(/class="toolbar-inline-row flex items-center gap-2 border-b border-line px-4"/)
     expect(envSrc).toMatch(/class="toolbar-inline-row flex items-center gap-2 border-b border-line px-4"/)
-    expect(rulesSrc).toMatch(
+    expect(capsSrc).toMatch(
       /class="toolbar-inline-row flex items-center justify-between gap-2 border-b border-line px-4"/,
     )
     expect(chatSrc).toMatch(

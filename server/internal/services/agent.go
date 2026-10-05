@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/nodereg"
 
 	"github.com/rs/zerolog/log"
 )
@@ -188,23 +189,23 @@ type Agent struct {
 	// Layout is the sandbox-injection layout (config root + workspace dir).
 	// Always returned with defaults applied so callers can use it verbatim.
 	Layout AgentLayout `json:"layout"`
-	// Prompts optionally overrides the platform-injected prompt text and rule
-	// files for this Agent. Nil = use platform defaults for everything.
-	Prompts *models.AgentPrompts `json:"prompts,omitempty"`
+	// Capabilities is what the Agent may do and must deliver when a workflow
+	// node runs it. Nil means the Agent cannot be used by workflow nodes.
+	Capabilities *models.AgentCapabilities `json:"capabilities,omitempty"`
 }
 
 // agentConfig is the on-disk shape of agent.json (working-dir files live under
 // the workspace/ subfolder).
 type agentConfig struct {
-	ProjectID         string               `json:"projectId,omitempty"`
-	AcpBackend        string               `json:"acpBackend,omitempty"`
-	GitCredentialType string               `json:"gitCredentialType,omitempty"`
-	GitSshKnownHosts  string               `json:"gitSshKnownHosts,omitempty"`
-	GitSshPrivateKey  string               `json:"gitSshPrivateKey,omitempty"`
-	MCP               []MCPServer          `json:"mcp,omitempty"`
-	Env               map[string]string    `json:"env,omitempty"`
-	Layout            *AgentLayout         `json:"layout,omitempty"`
-	Prompts           *models.AgentPrompts `json:"prompts,omitempty"`
+	ProjectID         string                    `json:"projectId,omitempty"`
+	AcpBackend        string                    `json:"acpBackend,omitempty"`
+	GitCredentialType string                    `json:"gitCredentialType,omitempty"`
+	GitSshKnownHosts  string                    `json:"gitSshKnownHosts,omitempty"`
+	GitSshPrivateKey  string                    `json:"gitSshPrivateKey,omitempty"`
+	MCP               []MCPServer               `json:"mcp,omitempty"`
+	Env               map[string]string         `json:"env,omitempty"`
+	Layout            *AgentLayout              `json:"layout,omitempty"`
+	Capabilities      *models.AgentCapabilities `json:"capabilities,omitempty"`
 }
 
 // DefaultPlatformMCP returns the platform's built-in MCP server (the run-scoped
@@ -269,7 +270,7 @@ func (s *AgentService) Get(name string) (Agent, bool) {
 		MCP:               cfg.MCP,
 		Env:               env,
 		Layout:            layout,
-		Prompts:           cfg.Prompts,
+		Capabilities:      cfg.Capabilities,
 	}, true
 }
 
@@ -398,6 +399,11 @@ func (s *AgentService) saveUnlocked(a Agent) error {
 	if name == "" {
 		return fmt.Errorf("invalid agent name")
 	}
+	if a.Capabilities != nil {
+		if err := nodereg.ValidateCapabilities(name, a.Capabilities); err != nil {
+			return err
+		}
+	}
 	if err := ValidateAgentSSHMeta(a.GitSshKnownHosts, a.GitSshPrivateKey); err != nil {
 		return err
 	}
@@ -420,7 +426,7 @@ func (s *AgentService) saveUnlocked(a Agent) error {
 		MCP:               a.MCP,
 		Env:               a.Env,
 		Layout:            &layout,
-		Prompts:           a.Prompts,
+		Capabilities:      a.Capabilities,
 	}
 	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {

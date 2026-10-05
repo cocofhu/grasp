@@ -1,15 +1,13 @@
 import type { NodeRun, Run, WFNode } from '../shared/types'
-import { PRODUCT_NODE_TYPES } from '../run/productNodeArtifacts'
+import { isProductNode } from '../run/productNodeArtifacts'
 
-export { PRODUCT_NODE_TYPES }
-
-/** PRODUCT nodes present in the slim inbox-context range (have an execution). */
+/** Product-owning nodes present in the slim inbox-context range (have an execution). */
 export function listClarifyProductNodes(run: Run | null | undefined): WFNode[] {
   if (!run?.nodes) return []
   const execs = run.nodeExecutions || {}
   return run.nodes.filter(
     (n) =>
-      PRODUCT_NODE_TYPES.includes(n.type) &&
+      isProductNode(n) &&
       !!(execs[n.id]?.length || run.nodeRuns?.[n.id]),
   )
 }

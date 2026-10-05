@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import StatusPill from '@/components/ui/StatusPill.vue'
 import PriorityBadge from '@/components/ui/PriorityBadge.vue'
 import StatusFilter from '@/components/ui/StatusFilter.vue'
-import PipelineFilter from '@/components/ui/PipelineFilter.vue'
+import WorkflowFilter from '@/components/ui/WorkflowFilter.vue'
 import ProjectFilter from '@/components/ui/ProjectFilter.vue'
 import TagFilter from '@/components/ui/TagFilter.vue'
 import Pagination from '@/components/ui/Pagination.vue'
@@ -14,7 +14,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import { api, isPaginated } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
-import { usePipelineFilter } from '@/lib/composables/usePipelineFilter'
+import { useWorkflowFilter } from '@/lib/composables/useWorkflowFilter'
 import { useTagFilter } from '@/lib/composables/useTagFilter'
 import { useProjectContext } from '@/lib/composables/useProjectContext'
 import {
@@ -60,11 +60,11 @@ const initialLoadFailed = ref(false)
 const showTableLoading = computed(() => loading.value && hasInitialLoaded)
 let requestSeq = 0
 let activeLoadingSeq = 0
-const { selected: selectedWf } = usePipelineFilter()
+const { selected: selectedWf } = useWorkflowFilter()
 const { selected: selectedProject, ensureHydrated: hydrateProject } = useProjectContext()
 const { selectedStatuses } = useStatusFilter()
 const statusFilterOpen = ref(false)
-const pipelineFilterOpen = ref(false)
+const workflowFilterOpen = ref(false)
 const projectFilterOpen = ref(false)
 const tagFilterOpen = ref(false)
 const { selectedTags } = useTagFilter()
@@ -260,12 +260,12 @@ async function confirmDeleteRun() {
 
 watch(statusFilterOpen, (v) => {
   if (v) {
-    pipelineFilterOpen.value = false
+    workflowFilterOpen.value = false
     projectFilterOpen.value = false
     tagFilterOpen.value = false
   }
 })
-watch(pipelineFilterOpen, (v) => {
+watch(workflowFilterOpen, (v) => {
   if (v) {
     statusFilterOpen.value = false
     projectFilterOpen.value = false
@@ -275,14 +275,14 @@ watch(pipelineFilterOpen, (v) => {
 watch(projectFilterOpen, (v) => {
   if (v) {
     statusFilterOpen.value = false
-    pipelineFilterOpen.value = false
+    workflowFilterOpen.value = false
     tagFilterOpen.value = false
   }
 })
 watch(tagFilterOpen, (v) => {
   if (v) {
     statusFilterOpen.value = false
-    pipelineFilterOpen.value = false
+    workflowFilterOpen.value = false
     projectFilterOpen.value = false
   }
 })
@@ -482,9 +482,9 @@ onUnmounted(() => {
           v-model:open="statusFilterOpen"
           :count="total"
         />
-        <PipelineFilter
+        <WorkflowFilter
           v-model="selectedWf"
-          v-model:open="pipelineFilterOpen"
+          v-model:open="workflowFilterOpen"
           :count="total"
         />
       </div>

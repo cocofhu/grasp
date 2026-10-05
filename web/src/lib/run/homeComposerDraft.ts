@@ -252,7 +252,7 @@ export async function clearHomeComposerDraft(): Promise<void> {
 /**
  * Persist home composer draft to IndexedDB (attachments as Blob).
  * Empty content clears the record instead of writing a shell.
- * On IDB failure: text(+pipeline) may fall back to localStorage → partial / quota_exceeded.
+ * On IDB failure: text(+workflow) may fall back to localStorage → partial / quota_exceeded.
  */
 export async function saveHomeComposerDraft(
   text: string,

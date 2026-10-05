@@ -142,7 +142,6 @@ const looksLikeProposalActions = computed(
 const isProposalSelect = computed(
   () => gateNode.value?.type === 'proposal_select' || looksLikeProposalActions.value,
 )
-const isAppPreview = computed(() => gateNode.value?.type === 'app_preview')
 
 const PASS_ACTION_IDS = new Set(['pass', 'approve'])
 const FAIL_ACTION_IDS = new Set(['fail', 'revise'])
@@ -360,7 +359,7 @@ async function onWriteCommentArtifact() {
   }
 }
 
-/** VNC/app_preview pick payload uses outerHTML (no imageDataUrl); url is page href at pick. */
+/** VNC app-preview pick payload uses outerHTML (no imageDataUrl); url is page href at pick. */
 function onAppPreviewPick(payload: AppPreviewPickPayload) {
   pickedSelector.value = payload.selector
   pickedElementImage.value = null
@@ -564,8 +563,8 @@ const selectionQuoteEnabled = computed(
     isStructuredArtifactName(productName.value) &&
     !isVisualBody.value,
 )
-/** page.html HtmlPreview path shares PreviewIssue + Pass/Fail-by-count with app_preview. */
-const usesPreviewIssues = computed(() => isAppPreview.value || isVisualBody.value)
+/** page.html HtmlPreview path uses PreviewIssue + Pass/Fail-by-count. */
+const usesPreviewIssues = computed(() => isVisualBody.value)
 
 async function loadPreviewIssues() {
   if (!usesPreviewIssues.value || !props.run?.id) {
@@ -715,11 +714,7 @@ const useMobileFillRemaining = computed(
     isMobile.value &&
     useFillLayout.value &&
     isVisualBody.value &&
-    !isAppPreview.value &&
     !isProposalSelect.value,
-)
-const shouldFillAppPreview = computed(
-  () => useFillLayout.value && isAppPreview.value && !isMobile.value,
 )
 const productDoc = ref<any>(null)
 const productHtml = ref('')
@@ -1738,7 +1733,7 @@ const useReviewShellLayout = computed(
   () =>
     !isProposalSelect.value &&
     (shouldContentFit.value ||
-      (canEditProducts.value && !!props.fillPreview && !isAppPreview.value)) &&
+      (canEditProducts.value && !!props.fillPreview)) &&
     !useMobileFillRemaining.value,
 )
 
@@ -1806,7 +1801,6 @@ provide(gateApprovalKey, {
     canEditProducts,
     isVisualBody,
     isProposalSelect,
-    isAppPreview,
     bodyTemplate,
     usesPreviewIssues,
     openPreviewIssueCount,
@@ -1834,7 +1828,6 @@ provide(gateApprovalKey, {
     previewFromArtifactFallback,
     shouldFillPreview,
     shouldFitStructured,
-    shouldFillAppPreview,
     useFillLayout,
     useUnifiedPreviewBudget,
     contentFitChromeOffsetPx,
@@ -1967,7 +1960,6 @@ provide(gateApprovalKey, {
     gateNode,
     looksLikeProposalActions,
     isProposalSelect,
-    isAppPreview,
     PASS_ACTION_IDS,
     FAIL_ACTION_IDS,
     previewIssues,
@@ -2021,7 +2013,6 @@ provide(gateApprovalKey, {
     useFillLayout,
     shouldFillPreview,
     useMobileFillRemaining,
-    shouldFillAppPreview,
     productDoc,
     productHtml,
     productLoading,

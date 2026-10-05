@@ -11,7 +11,6 @@ import (
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/rs/zerolog/log"
@@ -278,20 +277,14 @@ func (c *acpProvider) chatTimeout() time.Duration {
 	return 10 * time.Minute
 }
 
-// nodeChatTimeout is the hard per-turn deadline for a node, honoring a per-node
-// override before falling back to the global budget. Lets a heavy node (e.g.
-// implement) get more headroom than a quick research. Two override keys are
-// accepted: the editor card field `timeout` (minutes) and the legacy
-// `chat_timeout` (seconds); `chat_timeout` wins when both are set.
-// Approve with neither key defaults to 30 minutes (not the global 10).
+// nodeChatTimeout is the hard per-turn deadline for a node: the node's
+// `timeout` (minutes) when set, else 30 minutes for a clarify dialogue turn and
+// the global budget otherwise.
 func (c *acpProvider) nodeChatTimeout(req NodeReq) time.Duration {
-	if v, ok := toInt(req.Config["chat_timeout"]); ok && v > 0 {
-		return time.Duration(v) * time.Second
-	}
 	if v, ok := toInt(req.Config["timeout"]); ok && v > 0 {
 		return time.Duration(v) * time.Minute
 	}
-	if nodereg.IsGrasp(req.NodeType) {
+	if req.Caps.Clarify() {
 		return 30 * time.Minute
 	}
 	return c.chatTimeout()

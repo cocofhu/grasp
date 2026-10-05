@@ -35,7 +35,7 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 		ProjectName: "TeamProj",
 		Prefix:      "Demo",
 		PMName:      "Demo项目经理",
-		Background:  "demo background for pipeline team",
+		Background:  "demo background for workflow team",
 		AcpBackend:  "cursor",
 		APIKey:      "sk-test",
 		MCP:         DefaultPlatformMCP(),
@@ -62,8 +62,8 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 	if cur.PMAgent != "Demo项目经理" {
 		t.Fatalf("pm=%s", cur.PMAgent)
 	}
-	if len(cur.AgentNames) != 10 {
-		t.Fatalf("agents=%d want 10: %v", len(cur.AgentNames), cur.AgentNames)
+	if len(cur.AgentNames) != 1+len(TeamEngineerTemplates) {
+		t.Fatalf("agents=%d want %d: %v", len(cur.AgentNames), 1+len(TeamEngineerTemplates), cur.AgentNames)
 	}
 	pmAg, ok := skills.Get("Demo项目经理")
 	if !ok {
@@ -79,13 +79,13 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 		t.Fatalf("PM missing orchestrate skill files=%v", filePaths(pmAg))
 	}
 	ctx := agentFileContent(pmAg, "rules/project-context.md")
-	if !strings.Contains(ctx, "demo background for pipeline team") {
+	if !strings.Contains(ctx, "demo background for workflow team") {
 		t.Fatalf("project-context missing background: %q", ctx)
 	}
 	if !strings.Contains(ctx, "alwaysApply: true") {
 		t.Fatalf("project-context should be alwaysApply: %q", ctx)
 	}
-	impl := "Demo实现工程师"
+	impl := "Demo实现"
 	ag, ok := skills.Get(impl)
 	if !ok {
 		t.Fatalf("missing %s", impl)
@@ -101,8 +101,8 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 		t.Fatal(err)
 	}
 	mem := doc.Agents[impl]
-	if _, ok := doc.Agents[impl]; !ok || len(mem.GroupIDs) != 1 || mem.GroupIDs[0] != cur.PipelineGroupID {
-		t.Fatalf("groups=%v want pipeline %s", mem.GroupIDs, cur.PipelineGroupID)
+	if _, ok := doc.Agents[impl]; !ok || len(mem.GroupIDs) != 1 || mem.GroupIDs[0] != cur.WorkflowGroupID {
+		t.Fatalf("groups=%v want workflow %s", mem.GroupIDs, cur.WorkflowGroupID)
 	}
 }
 
@@ -234,7 +234,7 @@ func TestSetOrgMembership_ScopeDenied(t *testing.T) {
 
 	err = team.SetOrgMembership(SetOrgMembershipArgs{
 		SessionID: cur.ID,
-		AgentName: "Sc实现工程师",
+		AgentName: "Sc实现",
 		GroupIDs:  []string{"grp_foreign"},
 	})
 	if !errors.Is(err, ErrTeamScopeDenied) {
@@ -243,8 +243,8 @@ func TestSetOrgMembership_ScopeDenied(t *testing.T) {
 
 	err = team.SetOrgMembership(SetOrgMembershipArgs{
 		SessionID: cur.ID,
-		AgentName: "Sc实现工程师",
-		GroupIDs:  []string{cur.PipelineGroupID},
+		AgentName: "Sc实现",
+		GroupIDs:  []string{cur.WorkflowGroupID},
 	})
 	if err != nil {
 		t.Fatalf("valid membership: %v", err)

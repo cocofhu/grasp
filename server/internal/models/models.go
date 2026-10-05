@@ -116,7 +116,7 @@ type WorkflowDef struct {
 	Status      string `json:"status"` // draft | published
 	Version     int    `json:"version"`
 	NeedsRepo   bool   `json:"needsRepo"`
-	// ShowOnHome gates Home cards + Home pipeline search. Missing/zero = false
+	// ShowOnHome gates Home cards + Home workflow search. Missing/zero = false
 	// so existing rows stay hidden after AutoMigrate (plan g1.1).
 	ShowOnHome bool `json:"showOnHome"`
 	// NotifyPolicy is the workflow-level override (off|inherit|custom + events).
@@ -158,12 +158,12 @@ type Run struct {
 	// failing every subsequent artifact write with ErrUnauthorized.
 	McpToken string `json:"-"`
 	// SandboxEnv is the immutable run-scoped sandbox OS env snapshot taken at
-	// StartRun (optional). Injected into this Run's pipeline node sandboxes
+	// StartRun (optional). Injected into this Run's workflow node sandboxes
 	// after Agent env and before platform reserved/auth write-backs. Plaintext
 	// in DB for injection; GET/audit must mask Secret entries.
 	SandboxEnv []EnvEntry `gorm:"serializer:json" json:"sandboxEnv,omitempty"`
 	// FirstMessage is the launcher's opening message (text + attachments) for an
-	// approve-first pipeline. The engine delivers it into the approve node's
+	// clarify-first workflow. The engine delivers it into the clarify node's
 	// sandbox once the node parks, so the caller does not have to poll for the
 	// pause and re-send. FirstMessageDeliveredAt is the delivery latch: a
 	// conditional UPDATE on it guarantees exactly-once delivery.
@@ -389,15 +389,13 @@ type Gate struct {
 	RequestedAt       time.Time `json:"requestedAt"`
 }
 
-// GateAction is a button on a human gate. Goto, when set, routes the run
-// directly to that node id when this action is chosen (branch-style routing);
-// when empty the engine falls back to edge guards evaluated against `action`.
-// RequireForm, when set, forces every gate form field to be filled before this
-// action can be submitted (e.g. a "reject" action that mandates a comment).
+// GateAction is a button on a human gate. Choosing it routes the run along the
+// edge whose sourceHandle equals ID. RequireForm, when set, forces every gate
+// form field to be filled before this action can be submitted (e.g. a "reject"
+// action that mandates a comment).
 type GateAction struct {
 	ID          string `json:"id"`
 	Label       string `json:"label"`
-	Goto        string `json:"goto,omitempty"`
 	RequireForm bool   `json:"requireForm,omitempty"`
 }
 
@@ -839,7 +837,7 @@ type Setting struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// RunPreviewPort records a preview proxy registration for an app_preview node.
+// RunPreviewPort records a preview proxy registration for a preview-capable Agent node.
 type RunPreviewPort struct {
 	ID          uint   `gorm:"primaryKey" json:"id"`
 	RunID       string `gorm:"index:idx_preview_run_node_item,unique" json:"runId"`
@@ -864,7 +862,7 @@ type RunPreviewPort struct {
 	RegisteredAt time.Time `json:"registeredAt"`
 }
 
-// PreviewIssue is a problem a human reported against an app_preview node from
+// PreviewIssue is a problem a human reported against a preview-capable Agent node from
 // the UI feedback chat. It is one-way feedback: the human submits it via REST
 // while reviewing the preview, and the engine snapshots the issues into the
 // preview_issues run variable at gate resume so a downstream node consumes them
