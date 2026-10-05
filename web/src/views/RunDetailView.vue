@@ -31,6 +31,7 @@ import AppDrawer from '@/components/ui/AppDrawer.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 
 import { useRunDetail } from '@/lib/run/useRunDetail'
+import { formatRepoNames, runRepoNames } from '@/lib/run/runTitle'
 
 
 const {
@@ -221,6 +222,7 @@ const {
 } = useRunDetail()
 
 const followCanvas = ref(true)
+const runRepos = computed(() => formatRepoNames(runRepoNames(run.value.vars)))
 const canvasIterations = computed(() => {
   const m: Record<string, number> = {}
   for (const [id, nr] of Object.entries(run.value.nodeRuns)) if (nr.iteration) m[id] = nr.iteration
@@ -258,8 +260,8 @@ const canvasFollowNodeId = computed(() => {
         }}</span>
       </div>
       <template v-else>
-        <div class="flex min-w-0 flex-col gap-2 md:flex-row md:items-center md:gap-3">
-          <div data-testid="run-header-row1" class="flex min-w-0 flex-1 items-center gap-2 md:gap-3">
+        <div class="flex min-w-0 flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:gap-3">
+          <div data-testid="run-header-row1" class="flex min-w-0 flex-1 items-center gap-2 md:min-w-[20rem] md:gap-3">
             <button class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-txt2 hover:bg-elevated hover:text-txt" @click="router.push('/runs')">
               <Icon name="arrow-left" :size="18" />
             </button>
@@ -306,7 +308,7 @@ const canvasFollowNodeId = computed(() => {
               class="shrink-0"
             />
           </div>
-          <div data-testid="run-header-actions" class="flex flex-wrap items-center gap-2 pl-10 md:ml-auto md:shrink-0 md:pl-0">
+          <div data-testid="run-header-actions" class="flex flex-wrap items-center gap-2 pl-10 md:ml-auto md:justify-end md:pl-0">
             <AppButton variant="ghost" size="sm" icon="edit" @click="router.push('/workflows/' + run.workflowId + '/edit')">{{ t('common.buttons.edit') }}</AppButton>
             <AppButton variant="ghost" size="sm" icon="doc" @click="showDetail = true">{{ t('common.buttons.details') }}</AppButton>
             <AppButton
@@ -344,11 +346,6 @@ const canvasFollowNodeId = computed(() => {
               :title="deleteRunHint || t('common.buttons.deleteRun')"
               @click="openDeleteConfirm"
             >{{ t('common.buttons.deleteRun') }}</AppButton>
-            <span
-              v-if="deleteRunHint"
-              data-testid="delete-run-hint"
-              class="text-[11px] text-txt3"
-            >{{ deleteRunHint }}</span>
             <AppButton v-if="canResume" variant="primary" size="sm" icon="refresh" :disabled="resuming" @click="onResume('')">
               {{ resuming ? t('common.buttons.resuming') : t('common.buttons.resumeFromFail') }}
             </AppButton>
@@ -361,7 +358,9 @@ const canvasFollowNodeId = computed(() => {
           <span>{{ t('pages.runDetail.duration') }} {{ fmtDuration(elapsedSec) }}</span>
           <span v-if="run.branch" class="min-w-0 max-w-full">{{ t('pages.runDetail.branch') }} <code class="inline-block max-w-full overflow-x-auto whitespace-nowrap align-bottom font-mono text-accent-2">{{ run.branch }}</code></span>
           <span v-if="run.git?.pushedSha" class="min-w-0 max-w-full">{{ t('pages.runDetail.sha') }} <code class="inline-block max-w-full overflow-x-auto whitespace-nowrap align-bottom font-mono text-accent-2">{{ run.git.pushedSha }}</code></span>
+          <span v-else-if="runRepos" data-testid="run-repos" class="min-w-0 max-w-full">{{ t('pages.runDetail.repos') }} <code class="font-mono text-txt2">{{ runRepos }}</code></span>
           <span v-else class="text-txt3">{{ t('pages.runDetail.noRepo') }}</span>
+          <span v-if="deleteRunHint" data-testid="delete-run-hint" class="text-[11px] md:ml-auto">{{ deleteRunHint }}</span>
         </div>
         <div v-if="run.tags?.length" class="mt-2 flex flex-wrap items-center gap-1.5 pl-11">
           <span class="text-[12px] text-txt3">{{ t('pages.runDetail.tagsLabel') }}</span>

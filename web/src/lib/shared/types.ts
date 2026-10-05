@@ -1010,7 +1010,7 @@ export interface StateTraceEntry {
 // 全局变量运行期取值
 export interface RunVar {
   name: string
-  type: 'int' | 'string' | 'bool'
+  type: 'int' | 'string' | 'bool' | 'repos'
   value: any
 }
 
