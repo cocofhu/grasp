@@ -229,10 +229,10 @@ func (s *WorkflowService) Save(wf *models.WorkflowDef) error {
 		wf.NeedsRepo != existing.NeedsRepo ||
 		wf.ShowOnHome != existing.ShowOnHome ||
 		!WorkflowNotifyPoliciesEqual(wf.NotifyPolicy, existing.NotifyPolicy)
-	if graphChanged {
+	if graphChanged && !GraphsEqualIgnoringLayout(wf.Graph, existing.Graph) {
 		wf.Status = "draft"
 	} else {
-		// Keep published/draft as-is; never promote draft → published here.
+		// Keep published/draft as-is (layout-only moves included); never promote draft → published here.
 		wf.Status = existing.Status
 	}
 	if !graphChanged && !metaChanged {

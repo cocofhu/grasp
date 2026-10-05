@@ -132,9 +132,9 @@
       },
       "mouse": {
         "title": "Mouse and trackpad",
-        "pan": "Hold Space and drag, or two-finger scroll: pan",
-        "zoom": "Ctrl/⌘ + wheel, or pinch: zoom",
-        "select": "Drag on blank space: box select; Shift + click: multi-select",
+        "pan": "Drag on blank space, or hold Space and drag: pan",
+        "zoom": "Mouse wheel, or pinch: zoom",
+        "select": "Shift + drag: box select; Shift + click: multi-select",
         "dblclick": "Double-click blank space: quick add; double-click a node: edit goal"
       }
     },

@@ -6,7 +6,7 @@ import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { useImageAttachments } from '@/lib/composables/useImageAttachments'
 import { readStoredProjectId } from '@/lib/composables/useProjectContext'
-import { clarifyFirstNodeId, isPublishedClarifyFirst } from '@/lib/run/clarifyFirstWorkflow'
+import { clarifyFirstNodeId, isClarifyFirstWorkflow, isPublishedClarifyFirst } from '@/lib/run/clarifyFirstWorkflow'
 import {
   clearHomeComposerDraft,
   loadHomeComposerDraft,
@@ -151,6 +151,12 @@ export function useHomeApproveChat() {
         ...w,
         projectName: resolveHomeProjectName(w.projectId, projectNamesById.value),
       })),
+  )
+  /** Home-visible clarify-first workflows hidden only because they hold unpublished edits. */
+  const unpublishedHomeWorkflows = computed(() =>
+    workflows.value.filter(
+      (w) => !!w.showOnHome && w.status !== 'published' && isClarifyFirstWorkflow(w, agentsByName.value),
+    ),
   )
   const selected = computed(
     () => homeWorkflows.value.find((w) => w.id === selectedId.value) || homeWorkflows.value[0] || null,
@@ -482,6 +488,7 @@ export function useHomeApproveChat() {
   return {
     projectId,
     homeWorkflows,
+    unpublishedHomeWorkflows,
     selected,
     selectedId,
     launchPriority,

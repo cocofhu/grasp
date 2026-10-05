@@ -90,7 +90,23 @@ func normalizeGraph(g models.Graph) models.Graph {
 // nil/empty collections. Compare after LiftInputVariables so DTO↔Lift
 // round-trips do not look like a graph change.
 func GraphsEqual(a, b models.Graph) bool {
+	return graphJSONEqual(normalizeGraph(a), normalizeGraph(b))
+}
+
+// GraphsEqualIgnoringLayout is GraphsEqual without node positions: moving
+// nodes on the canvas does not change what the workflow runs.
+func GraphsEqualIgnoringLayout(a, b models.Graph) bool {
 	na, nb := normalizeGraph(a), normalizeGraph(b)
+	for i := range na.Nodes {
+		na.Nodes[i].Position = models.Position{}
+	}
+	for i := range nb.Nodes {
+		nb.Nodes[i].Position = models.Position{}
+	}
+	return graphJSONEqual(na, nb)
+}
+
+func graphJSONEqual(na, nb models.Graph) bool {
 	ba, err1 := json.Marshal(na)
 	bb, err2 := json.Marshal(nb)
 	if err1 != nil || err2 != nil {

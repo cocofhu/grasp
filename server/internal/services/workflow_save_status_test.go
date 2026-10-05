@@ -73,6 +73,33 @@ func TestSaveStatusLifecycle_publishGraphChangeBecomesDraft(t *testing.T) {
 	}
 }
 
+func TestSaveStatusLifecycle_publishLayoutOnlyKeepsPublished(t *testing.T) {
+	db := newTestDB(t)
+	s := NewWorkflowService(db)
+
+	wf := &models.WorkflowDef{ID: "wf-move", ProjectID: models.DefaultProjectID, Name: "M", Graph: validGraph()}
+	if err := s.Save(wf); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Publish("wf-move"); err != nil {
+		t.Fatal(err)
+	}
+
+	g := validGraph()
+	g.Nodes[0].Position = models.Position{X: -136, Y: -88}
+	upd := &models.WorkflowDef{ID: "wf-move", Name: "M", Status: "draft", Graph: g}
+	if err := s.Save(upd); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Get("wf-move")
+	if got.Status != "published" {
+		t.Fatalf("moving nodes should keep published, got %s", got.Status)
+	}
+	if p := got.Graph.Nodes[0].Position; p.X != -136 || p.Y != -88 {
+		t.Fatalf("new position not stored: %+v", p)
+	}
+}
+
 func TestSaveStatusLifecycle_publishIdenticalPUTKeepsPublished(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)

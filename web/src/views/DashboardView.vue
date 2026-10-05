@@ -26,6 +26,7 @@ const effectiveSubtitle = computed(() => homeSubtitle.value || String(t('pages.d
 const {
   projectId,
   homeWorkflows,
+  unpublishedHomeWorkflows,
   selected,
   selectedId,
   launchPriority,
@@ -245,6 +246,10 @@ function onComposerBlur() {
 
 function goProjects() {
   void router.push('/projects')
+}
+
+function goEditWorkflow(id: string) {
+  void router.push(`/workflows/${id}/edit`)
 }
 
 function openCreateBaseline(e?: Event) {
@@ -777,15 +782,30 @@ onBeforeUnmount(() => {
           class="mt-10 text-center"
           data-testid="home-workflows-empty"
         >
-          <p class="text-sm text-txt3">{{ t('pages.dashboard.noWorkflows') }}</p>
-          <button
-            type="button"
-            class="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] text-txt2 hover:bg-elevated"
-            data-testid="home-go-projects"
-            @click="goProjects"
-          >
-            {{ t('pages.dashboard.goProjects') }}
-          </button>
+          <template v-if="unpublishedHomeWorkflows.length">
+            <p class="text-sm text-txt3" data-testid="home-workflows-unpublished">
+              {{ t('pages.dashboard.unpublishedWorkflows', { name: unpublishedHomeWorkflows[0]!.name }) }}
+            </p>
+            <button
+              type="button"
+              class="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] text-txt2 hover:bg-elevated"
+              data-testid="home-go-publish"
+              @click="goEditWorkflow(unpublishedHomeWorkflows[0]!.id)"
+            >
+              {{ t('pages.dashboard.goPublish') }}
+            </button>
+          </template>
+          <template v-else>
+            <p class="text-sm text-txt3">{{ t('pages.dashboard.noWorkflows') }}</p>
+            <button
+              type="button"
+              class="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] text-txt2 hover:bg-elevated"
+              data-testid="home-go-projects"
+              @click="goProjects"
+            >
+              {{ t('pages.dashboard.goProjects') }}
+            </button>
+          </template>
         </div>
 
         <div

@@ -2,7 +2,7 @@ import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/minimap/dist/style.css'
 import '../src/styles/global.css'
-import { createApp, defineComponent, h } from 'vue'
+import { createApp, defineComponent, h, onMounted, shallowRef } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { i18n } from '../src/lib/shared/i18n'
 import { initLocale, setLocale } from '../src/lib/shared/locale'
@@ -28,11 +28,22 @@ const RunCanvasFixture = defineComponent({
       : { input: 'completed', clarify: 'completed', implement: 'running' }
     const iterations = failed ? { implement: 2, test_review: 2 } : { implement: 2 }
     const failReasons = failed ? { test_review: '单测 3 项失败：登录接口返回 500' } : {}
+    // async=1 mirrors the run page: the canvas mounts with an empty graph and the run arrives later.
+    const lateGraph = params.get('async') === '1'
+    const nodes = shallowRef(lateGraph ? [] : graph.nodes)
+    const edges = shallowRef(lateGraph ? [] : graph.edges)
+    onMounted(() => {
+      if (!lateGraph) return
+      setTimeout(() => {
+        nodes.value = graph.nodes
+        edges.value = graph.edges
+      }, 50)
+    })
     return () =>
       h('div', { class: 'h-screen w-screen bg-base' }, [
         h(WorkflowCanvas, {
-          nodes: graph.nodes,
-          edges: graph.edges,
+          nodes: nodes.value,
+          edges: edges.value,
           mode: 'run',
           agents: CANVAS_AGENTS,
           statusMap,
