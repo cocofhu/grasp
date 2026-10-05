@@ -8,6 +8,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/crypto"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/runtime"
 )
 
 func setCredentialKey(t *testing.T) {
@@ -70,6 +71,51 @@ func TestProjectCredentialsCRUDAndResolution(t *testing.T) {
 	}
 	if _, ok := s.ResolveEnv(p.ID)["GRASP_CURSOR_API_KEY"]; ok {
 		t.Fatal("revoked credential still resolved")
+	}
+}
+
+func TestProjectCredentialOpenCodeMetadataResolvesRuntimeSettings(t *testing.T) {
+	setCredentialKey(t)
+	db := newTestDB(t)
+	p, err := NewProjectService(db).Create("OpenCode metadata", "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewProjectCredentialService(db)
+	created, err := s.Create(p.ID, ProjectCredentialInput{
+		Type:     "ai",
+		Provider: "opencode",
+		Name:     "Model API Key",
+		EnvKey:   runtime.EnvGraspOpenCodeAPIKey,
+		Value:    "sk-model",
+		Metadata: map[string]any{
+			"provider": "openrouter",
+			"baseUrl":  "https://gateway.example/v1",
+			"model":    "openrouter/anthropic/claude-sonnet-4-5",
+			"vision":   true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Metadata["vision"] != true {
+		t.Fatalf("vision metadata was not retained: %#v", created.Metadata)
+	}
+	env := s.ResolveEnv(p.ID)
+	want := map[string]string{
+		runtime.EnvGraspOpenCodeAPIKey: "sk-model",
+		runtime.EnvOpenCodeProvider:    "openrouter",
+		runtime.EnvOpenCodeBaseURL:     "https://gateway.example/v1",
+		runtime.EnvACPBridgeModel:      "openrouter/anthropic/claude-sonnet-4-5",
+		runtime.EnvOpenCodeModelVision: "1",
+	}
+	for key, value := range want {
+		if env[key] != value {
+			t.Fatalf("resolved %s=%q, want %q (env=%v)", key, env[key], value, env)
+		}
+	}
+	if _, legacy := env["GRASP_OPENCODE_MODEL"]; legacy {
+		t.Fatalf("legacy model env key must not be emitted: %v", env)
 	}
 }
 

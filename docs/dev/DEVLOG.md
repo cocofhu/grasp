@@ -23,6 +23,14 @@
 ### 2026-10-05
 
 - 日期：2026-10-05
+- 范围：`web/src/components/{agent/OpenCodeProviderFields.vue,project/ProjectCredentialsPanel.{vue,test.ts}}`、`web/src/locales/{zh-CN,en}/pages.json`、`server/internal/services/project_credentials.{go,test.go}`
+- 做了什么：在项目凭据页增加模型厂商 API Key 专用卡片，复用 OpenCode 的厂商、模型、API Base 和视觉能力选择器；Key 仍为仅写入并掩码展示，路由配置保存为非敏感元数据。修正 OpenCode 凭据模型元数据注入到实际读取的 `ACP_BRIDGE_MODEL`，并支持视觉能力环境变量。
+- 为什么：模型 API Key 需要把密钥与模型路由放在同一个项目凭据入口管理，避免用户继续在 Agent 环境变量里手工拼接配置；原有模型元数据环境键不会被运行时读取。
+- 如何验证：`npm test -- --coverage`（3983 passed，8 skipped，Lines 90.98%）、`npm run lint`、`npx vue-tsc --noEmit`、`npm run build`、`go test ./...`、`go vet ./...`、`go run ./cmd/gen-configdoc -out CONFIGURATION.md -check`、`./scripts/cover-check-server.sh 90`（91.7%）通过。
+
+### 2026-10-05
+
+- 日期：2026-10-05
 - 范围：`server/internal/{envauth,services,runtime,handlers}`、`README.md`、`server/README.md`
 - 做了什么：项目凭据收口安全边界。去掉沙箱从服务进程环境读取 `GITHUB_TOKEN` / `*_API_KEY` 等的回退（含 `gitToken` / `gitLabURL`）；`fallbackEnvKey` 只从项目/Agent env 取值，不再 `os.LookupEnv`。凭据 env key 必须是合法标识符，且不能是平台保留变量（新增 `envauth.IsPlatformReservedEnvKey`）；交互/测试沙箱叠加凭据时跳过保留键，流水线沙箱的 `GRASP_*` 平台变量恢复为最后写入。渠道/外部 MCP/工作流类型只作为只读视图，不能新建。未填值的内置槽位不再挡住 Run env。项目凭据中的 SSH 私钥/known_hosts 优先于 Agent 元信息。删除项目时一并删除凭据。
 - 为什么：原实现会把服务端宿主机的 Token 注入所有项目的沙箱；项目用户可通过 `fallbackEnvKey`（如 `GRASP_SECRETS_KEY`）读出服务端任意环境变量；自定义凭据可覆盖 `GRASP_ARTIFACT_TOKEN` / `GRASP_PM_TOKEN` 等平台令牌；打开凭据页即生成空槽位，会让 Run 级 `GITHUB_TOKEN` 静默失效。

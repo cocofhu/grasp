@@ -19,6 +19,8 @@ const props = defineProps<{
   vision?: boolean
   requireBase?: boolean
   requireModel?: boolean
+  /** Use the two-column arrangement used by the project credential card. */
+  columns?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -170,7 +172,10 @@ watch(
 </script>
 
 <template>
-  <div class="space-y-3" data-test="opencode-provider-fields">
+  <div
+    :class="columns ? 'grid grid-cols-1 gap-3 sm:grid-cols-2' : 'space-y-3'"
+    data-test="opencode-provider-fields"
+  >
     <div class="block">
       <span class="mb-1.5 block text-[12px] font-medium text-txt2">
         {{ t('pages.agentStudio.openCode.providerLabel') }}

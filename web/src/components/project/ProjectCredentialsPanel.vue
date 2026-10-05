@@ -3,9 +3,18 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
+import Icon from '@/components/ui/Icon.vue'
+import OpenCodeProviderFields from '@/components/agent/OpenCodeProviderFields.vue'
 import { api, type ProjectCredentialItem } from '@/lib/api/api'
 import { fmtTime } from '@/lib/shared/format'
 import { useToast } from '@/lib/composables/useToast'
+import {
+  DEFAULT_OPENCODE_PROVIDER,
+  openCodeCustomBaseRequired,
+  openCodeModelWithProvider,
+  normalizeOpenCodeProvider,
+  type OpenCodeProviderId,
+} from '@/lib/agent/openCodeProvider'
 
 const props = defineProps<{ projectId: string }>()
 
@@ -16,6 +25,13 @@ const loading = ref(true)
 const loadError = ref('')
 const items = ref<ProjectCredentialItem[]>([])
 const drafts = reactive<Record<string, string>>({})
+type OpenCodeDraft = {
+  provider: OpenCodeProviderId
+  baseUrl: string
+  model: string
+  vision: boolean
+}
+const openCodeDrafts = reactive<Record<string, OpenCodeDraft>>({})
 const saving = reactive<Record<string, boolean>>({})
 const clearing = reactive<Record<string, boolean>>({})
 const showCreate = ref(false)
@@ -35,6 +51,11 @@ const createTargetMissing = computed(() =>
 
 const orderedItems = computed(() =>
   [...items.value].sort((a, b) => {
+    // Put the model API key first so the primary setup path is visible without
+    // making users scan past Git/SSH slots.
+    const aModel = isOpenCodeModelCredential(a) ? 0 : 1
+    const bModel = isOpenCodeModelCredential(b) ? 0 : 1
+    if (aModel !== bModel) return aModel - bModel
     const aName = (a.name || a.provider || a.id).toLocaleLowerCase()
     const bName = (b.name || b.provider || b.id).toLocaleLowerCase()
     return aName.localeCompare(bName)
@@ -52,6 +73,48 @@ function itemTarget(item: ProjectCredentialItem): string {
   return item.type || item.kind || ''
 }
 
+function isOpenCodeModelCredential(item: ProjectCredentialItem): boolean {
+  return (
+    (item.type || item.kind || '').toLowerCase() === 'ai' &&
+    (item.provider || '').toLowerCase() === 'opencode' &&
+    (!item.source || item.source === 'project')
+  )
+}
+
+function openCodeDraftFor(item: ProjectCredentialItem): OpenCodeDraft {
+  const metadata = item.metadata || {}
+  const provider = typeof metadata.provider === 'string' ? metadata.provider : ''
+  const baseUrl = typeof metadata.baseUrl === 'string'
+    ? metadata.baseUrl
+    : typeof metadata.baseURL === 'string'
+      ? metadata.baseURL
+      : ''
+  const model = typeof metadata.model === 'string' ? metadata.model : ''
+  const vision = metadata.vision === true || metadata.vision === '1' || metadata.vision === 'true'
+  return {
+    provider: normalizeOpenCodeProvider(provider || DEFAULT_OPENCODE_PROVIDER),
+    baseUrl,
+    model,
+    vision,
+  }
+}
+
+function ensureOpenCodeDraft(item: ProjectCredentialItem) {
+  if (isOpenCodeModelCredential(item) && !openCodeDrafts[item.id]) {
+    openCodeDrafts[item.id] = openCodeDraftFor(item)
+  }
+}
+
+function patchOpenCodeDraft(id: string, patch: Partial<OpenCodeDraft>) {
+  const current = openCodeDrafts[id]
+  if (!current) return
+  Object.assign(current, patch)
+}
+
+function openCodeBaseRequired(fields: OpenCodeDraft | undefined): boolean {
+  return fields ? openCodeCustomBaseRequired(fields.provider, fields.baseUrl) : false
+}
+
 function isMultiline(item: ProjectCredentialItem): boolean {
   const key = `${item.type || item.kind || ''} ${item.provider || ''} ${item.envKey || ''}`.toLowerCase()
   return key.includes('ssh') || key.includes('private') || key.includes('known_hosts')
@@ -66,12 +129,16 @@ function updateItems(next: ProjectCredentialItem) {
   if (i < 0) items.value = [...items.value, next]
   else items.value = items.value.map((item, index) => (index === i ? next : item))
   drafts[next.id] = ''
+  delete openCodeDrafts[next.id]
+  ensureOpenCodeDraft(next)
 }
 
 function setItems(next: ProjectCredentialItem[]) {
   items.value = next
   for (const key of Object.keys(drafts)) delete drafts[key]
+  for (const key of Object.keys(openCodeDrafts)) delete openCodeDrafts[key]
   for (const item of next) drafts[item.id] = ''
+  for (const item of next) ensureOpenCodeDraft(item)
 }
 
 function openCreate() {
@@ -151,6 +218,41 @@ async function save(item: ProjectCredentialItem) {
   }
 }
 
+async function saveOpenCode(item: ProjectCredentialItem) {
+  const fields = openCodeDrafts[item.id]
+  if (!fields || (!drafts[item.id]?.trim() && !item.configured) || !fields.model.trim() || openCodeBaseRequired(fields) || saving[item.id]) return
+  saving[item.id] = true
+  try {
+    const saved = await api.putProjectCredential(props.projectId, item.id, {
+      type: item.type || item.kind,
+      name: item.name,
+      target: item.target,
+      targetType: item.targetType,
+      targetId: item.targetId,
+      // The row remains the OpenCode adapter slot. The selected vendor is kept
+      // in metadata so one API key can carry both routing and authentication.
+      provider: item.provider,
+      envKey: item.envKey,
+      fallbackEnvKey: item.fallbackEnvKey,
+      value: drafts[item.id] || undefined,
+      metadata: {
+        ...(item.metadata || {}),
+        provider: fields.provider.trim(),
+        baseUrl: fields.baseUrl.trim(),
+        model: openCodeModelWithProvider(fields.model, fields.provider),
+        vision: fields.vision,
+      },
+      enabled: item.enabled,
+    })
+    updateItems(saved)
+    toast.success(t('pages.projectDetail.projectCredentials.saved'))
+  } catch (e: unknown) {
+    toast.error(String((e as { message?: string })?.message || e))
+  } finally {
+    saving[item.id] = false
+  }
+}
+
 async function clear(item: ProjectCredentialItem) {
   if (clearing[item.id] || !item.configured) return
   clearing[item.id] = true
@@ -210,81 +312,164 @@ onMounted(() => {
         {{ t('pages.projectDetail.projectCredentials.empty') }}
       </div>
       <div v-else class="scroll-area min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-        <div class="mx-auto max-w-3xl space-y-3">
+        <div class="mx-auto w-full max-w-5xl space-y-3">
           <article
             v-for="item in orderedItems"
             :key="item.id"
-            class="rounded-lg border border-line bg-base/40 p-4"
+            class="rounded-lg border border-line bg-base/40"
+            :class="isOpenCodeModelCredential(item) ? 'overflow-hidden' : 'p-4'"
             data-testid="project-credential-row"
           >
-            <div class="flex flex-wrap items-start justify-between gap-3">
-              <div class="min-w-0">
-                <h3 class="m-0 text-sm font-semibold text-txt">{{ itemLabel(item) }}</h3>
-                <p class="mt-1 font-mono text-[11px] text-txt3">{{ itemTarget(item) }}</p>
-              </div>
-              <span
-                class="rounded-full border px-2 py-0.5 text-[11px]"
-                :class="item.configured ? 'border-ok/40 bg-ok/10 text-ok' : 'border-line text-txt3'"
-                data-testid="project-credential-status"
-              >
-                {{ configuredText(item) }}
-              </span>
-            </div>
-
-            <div v-if="item.masked" class="mt-3 rounded-md border border-line bg-surface px-3 py-2 font-mono text-[12px] text-txt2" data-testid="project-credential-masked">
-              {{ item.masked }}
-            </div>
-
-            <p v-if="item.source && item.source !== 'project'" class="mt-3 rounded-md border border-line bg-surface px-3 py-2 text-[11px] leading-5 text-txt3">
-              {{ t('pages.projectDetail.projectCredentials.managedByAdapter', { source: item.source }) }}
-            </p>
-            <div v-else class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-start">
-              <textarea
-                v-if="isMultiline(item)"
-                v-model="drafts[item.id]"
-                rows="3"
-                class="min-h-[74px] min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
-                :placeholder="item.configured ? t('pages.projectDetail.projectCredentials.replacePlaceholder') : t('pages.projectDetail.projectCredentials.valuePlaceholder')"
-                :data-testid="`project-credential-input-${item.id}`"
-                autocomplete="off"
-                style="-webkit-text-security: disc;"
-              />
-              <input
-                v-else
-                v-model="drafts[item.id]"
-                type="password"
-                class="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
-                :placeholder="item.configured ? t('pages.projectDetail.projectCredentials.replacePlaceholder') : t('pages.projectDetail.projectCredentials.valuePlaceholder')"
-                :data-testid="`project-credential-input-${item.id}`"
-                autocomplete="new-password"
-              />
-              <div class="flex shrink-0 gap-2">
-                <AppButton
-                  size="sm"
-                  variant="primary"
-                  :disabled="!drafts[item.id]?.trim() || !!saving[item.id]"
-                  :loading="!!saving[item.id]"
-                  :data-testid="`project-credential-save-${item.id}`"
-                  @click="save(item)"
+            <template v-if="isOpenCodeModelCredential(item)">
+              <div class="flex flex-wrap items-start justify-between gap-3 border-b border-line bg-surface px-4 py-4 sm:px-5">
+                <div class="flex min-w-0 items-start gap-3">
+                  <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-dim text-accent">
+                    <Icon name="lock" :size="18" />
+                  </span>
+                  <div class="min-w-0">
+                    <h3 class="m-0 text-base font-semibold text-txt">{{ t('pages.projectDetail.projectCredentials.modelApiKeyTitle') }}</h3>
+                    <p class="mt-1 max-w-xl text-[12px] leading-5 text-txt3">{{ t('pages.projectDetail.projectCredentials.modelApiKeySubtitle') }}</p>
+                  </div>
+                </div>
+                <span
+                  class="rounded-full border px-2 py-0.5 text-[11px]"
+                  :class="item.configured ? 'border-ok/40 bg-ok/10 text-ok' : 'border-line text-txt3'"
+                  data-testid="project-credential-status"
                 >
-                  {{ t('pages.projectDetail.projectCredentials.save') }}
-                </AppButton>
-                <AppButton
-                  v-if="item.configured"
-                  size="sm"
-                  variant="danger"
-                  :disabled="!!clearing[item.id]"
-                  :loading="!!clearing[item.id]"
-                  :data-testid="`project-credential-clear-${item.id}`"
-                  @click="clear(item)"
-                >
-                  {{ t('pages.projectDetail.projectCredentials.clear') }}
-                </AppButton>
+                  {{ configuredText(item) }}
+                </span>
               </div>
-            </div>
-            <p v-if="item.updatedAt" class="mt-2 text-[11px] text-txt3">
-              {{ t('pages.projectDetail.projectCredentials.updatedAt', { time: fmtTime(item.updatedAt) }) }}
-            </p>
+              <div class="space-y-4 p-4 sm:p-5" data-testid="project-credential-opencode">
+                <OpenCodeProviderFields
+                  v-if="openCodeDrafts[item.id]"
+                  :provider="openCodeDrafts[item.id].provider"
+                  :base-url="openCodeDrafts[item.id].baseUrl"
+                  :model="openCodeDrafts[item.id].model"
+                  :vision="openCodeDrafts[item.id].vision"
+                  :require-base="openCodeBaseRequired(openCodeDrafts[item.id])"
+                  :require-model="!openCodeDrafts[item.id].model.trim()"
+                  :columns="true"
+                  @update:provider="patchOpenCodeDraft(item.id, { provider: $event })"
+                  @update:base-url="patchOpenCodeDraft(item.id, { baseUrl: $event })"
+                  @update:model="patchOpenCodeDraft(item.id, { model: $event })"
+                  @update:vision="patchOpenCodeDraft(item.id, { vision: $event })"
+                />
+                <div v-if="item.masked" class="rounded-md border border-line bg-surface px-3 py-2 font-mono text-[12px] text-txt2" data-testid="project-credential-masked">
+                  {{ item.masked }}
+                </div>
+                <label class="block">
+                  <span class="mb-1.5 block text-[12px] font-medium text-txt2">
+                    {{ t('pages.projectDetail.projectCredentials.apiKeyLabel') }} <span class="text-err">*</span>
+                  </span>
+                  <input
+                    v-model="drafts[item.id]"
+                    type="password"
+                    class="w-full rounded-md border border-line bg-surface px-3 py-2 font-mono text-[13px] text-txt outline-none focus:border-accent"
+                    :placeholder="item.configured ? t('pages.projectDetail.projectCredentials.replacePlaceholder') : t('pages.projectDetail.projectCredentials.valuePlaceholder')"
+                    :data-testid="`project-credential-input-${item.id}`"
+                    autocomplete="new-password"
+                  />
+                  <p class="mt-1.5 text-[11px] text-txt3">{{ t('pages.projectDetail.projectCredentials.apiKeyHint') }}</p>
+                </label>
+                <div class="flex flex-wrap justify-end gap-2">
+                  <AppButton
+                    size="sm"
+                    variant="primary"
+                    :disabled="(!drafts[item.id]?.trim() && !item.configured) || !openCodeDrafts[item.id]?.model.trim() || openCodeBaseRequired(openCodeDrafts[item.id]) || !!saving[item.id]"
+                    :loading="!!saving[item.id]"
+                    :data-testid="`project-credential-save-${item.id}`"
+                    @click="saveOpenCode(item)"
+                  >
+                    {{ t('pages.projectDetail.projectCredentials.save') }}
+                  </AppButton>
+                  <AppButton
+                    v-if="item.configured"
+                    size="sm"
+                    variant="danger"
+                    :disabled="!!clearing[item.id]"
+                    :loading="!!clearing[item.id]"
+                    :data-testid="`project-credential-clear-${item.id}`"
+                    @click="clear(item)"
+                  >
+                    {{ t('pages.projectDetail.projectCredentials.clear') }}
+                  </AppButton>
+                </div>
+                <p v-if="item.updatedAt" class="text-[11px] text-txt3">
+                  {{ t('pages.projectDetail.projectCredentials.updatedAt', { time: fmtTime(item.updatedAt) }) }}
+                </p>
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <h3 class="m-0 text-sm font-semibold text-txt">{{ itemLabel(item) }}</h3>
+                  <p class="mt-1 font-mono text-[11px] text-txt3">{{ itemTarget(item) }}</p>
+                </div>
+                <span
+                  class="rounded-full border px-2 py-0.5 text-[11px]"
+                  :class="item.configured ? 'border-ok/40 bg-ok/10 text-ok' : 'border-line text-txt3'"
+                  data-testid="project-credential-status"
+                >
+                  {{ configuredText(item) }}
+                </span>
+              </div>
+
+              <div v-if="item.masked" class="mt-3 rounded-md border border-line bg-surface px-3 py-2 font-mono text-[12px] text-txt2" data-testid="project-credential-masked">
+                {{ item.masked }}
+              </div>
+
+              <p v-if="item.source && item.source !== 'project'" class="mt-3 rounded-md border border-line bg-surface px-3 py-2 text-[11px] leading-5 text-txt3">
+                {{ t('pages.projectDetail.projectCredentials.managedByAdapter', { source: item.source }) }}
+              </p>
+              <div v-else class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-start">
+                <textarea
+                  v-if="isMultiline(item)"
+                  v-model="drafts[item.id]"
+                  rows="3"
+                  class="min-h-[74px] min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
+                  :placeholder="item.configured ? t('pages.projectDetail.projectCredentials.replacePlaceholder') : t('pages.projectDetail.projectCredentials.valuePlaceholder')"
+                  :data-testid="`project-credential-input-${item.id}`"
+                  autocomplete="off"
+                  style="-webkit-text-security: disc;"
+                />
+                <input
+                  v-else
+                  v-model="drafts[item.id]"
+                  type="password"
+                  class="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
+                  :placeholder="item.configured ? t('pages.projectDetail.projectCredentials.replacePlaceholder') : t('pages.projectDetail.projectCredentials.valuePlaceholder')"
+                  :data-testid="`project-credential-input-${item.id}`"
+                  autocomplete="new-password"
+                />
+                <div class="flex shrink-0 gap-2">
+                  <AppButton
+                    size="sm"
+                    variant="primary"
+                    :disabled="!drafts[item.id]?.trim() || !!saving[item.id]"
+                    :loading="!!saving[item.id]"
+                    :data-testid="`project-credential-save-${item.id}`"
+                    @click="save(item)"
+                  >
+                    {{ t('pages.projectDetail.projectCredentials.save') }}
+                  </AppButton>
+                  <AppButton
+                    v-if="item.configured"
+                    size="sm"
+                    variant="danger"
+                    :disabled="!!clearing[item.id]"
+                    :loading="!!clearing[item.id]"
+                    :data-testid="`project-credential-clear-${item.id}`"
+                    @click="clear(item)"
+                  >
+                    {{ t('pages.projectDetail.projectCredentials.clear') }}
+                  </AppButton>
+                </div>
+              </div>
+              <p v-if="item.updatedAt" class="mt-2 text-[11px] text-txt3">
+                {{ t('pages.projectDetail.projectCredentials.updatedAt', { time: fmtTime(item.updatedAt) }) }}
+              </p>
+            </template>
           </article>
         </div>
       </div>

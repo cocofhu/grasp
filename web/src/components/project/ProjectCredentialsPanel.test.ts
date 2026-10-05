@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   put: vi.fn(),
   del: vi.fn(),
+  providers: vi.fn(),
+  models: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
 }))
@@ -21,6 +23,8 @@ vi.mock('@/lib/api/api', () => ({
     createProjectCredential: mocks.create,
     putProjectCredential: mocks.put,
     deleteProjectCredential: mocks.del,
+    openCodeProviders: mocks.providers,
+    openCodeModels: mocks.models,
   },
 }))
 vi.mock('@/lib/composables/useToast', () => ({ useToast: () => mocks }))
@@ -42,8 +46,9 @@ const config = {
   ],
 }
 
-function mountPanel() {
+function mountPanel(response = config) {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
+  mocks.get.mockResolvedValue(response)
   return mount(ProjectCredentialsPanel, {
     props: { projectId: 'p1' },
     global: { plugins: [i18n], stubs: { Icon: true, Teleport: true } },
@@ -59,6 +64,8 @@ describe('ProjectCredentialsPanel', () => {
     }))
     mocks.create.mockResolvedValue({ id: 'cred-custom', type: 'custom', name: 'Custom', configured: true, masked: '••••' })
     mocks.del.mockResolvedValue({ status: 'ok' })
+    mocks.providers.mockResolvedValue({ providers: [{ id: 'openai', name: 'OpenAI' }] })
+    mocks.models.mockResolvedValue({ models: [{ id: 'gpt-4o', name: 'GPT-4o' }] })
   })
 
   it('loads project credentials and masks values in the form', async () => {
@@ -98,6 +105,29 @@ describe('ProjectCredentialsPanel', () => {
     await wrapper.get('[data-testid="project-credential-create-submit"]').trigger('click')
     await flushPromises()
     expect(mocks.create).toHaveBeenCalledWith('p1', expect.objectContaining({ type: 'custom', name: 'Custom', envKey: 'CUSTOM_TOKEN', value: 'custom-secret' }))
+    wrapper.unmount()
+  })
+
+  it('renders the model API key card and saves OpenCode routing metadata with the key', async () => {
+    const opencode = {
+      id: 'opencode', type: 'ai', kind: 'ai', name: 'OpenCode API Key', provider: 'opencode',
+      envKey: 'GRASP_OPENCODE_API_KEY', configured: false,
+      metadata: { provider: 'openai', model: 'openai/gpt-4o', baseUrl: '', vision: false },
+    }
+    const wrapper = mountPanel({ items: [...config.items, opencode] })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="project-credential-opencode"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="opencode-provider-fields"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="project-credential-input-opencode"]').setValue('sk-test')
+    await wrapper.get('[data-test="opencode-base-url"]').setValue('https://api.example.com/v1')
+    mocks.put.mockResolvedValueOnce({ ...opencode, configured: true, masked: '••••' })
+    await wrapper.get('[data-testid="project-credential-save-opencode"]').trigger('click')
+    await flushPromises()
+    expect(mocks.put).toHaveBeenCalledWith('p1', 'opencode', expect.objectContaining({
+      value: 'sk-test',
+      metadata: { provider: 'openai', baseUrl: 'https://api.example.com/v1', model: 'openai/gpt-4o', vision: false },
+    }))
     wrapper.unmount()
   })
 

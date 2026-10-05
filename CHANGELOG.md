@@ -4,6 +4,7 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Project credentials:** add a model-provider API Key card with provider/model/API Base/vision settings; keys remain write-only and masked, while routing metadata is injected into OpenCode Runs.
 - **Project credentials:** ACP and Git credentials can be managed in project
   credential settings, which take precedence at runtime; compatible
   project/Agent environment variables remain a fallback. Platform service
