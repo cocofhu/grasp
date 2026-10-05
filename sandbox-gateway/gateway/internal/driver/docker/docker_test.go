@@ -586,6 +586,9 @@ func TestCreateDoesNotPublishInternalPortsAndBackfillsContainerIP(t *testing.T) 
 			if strings.Contains(format, "HostPort") {
 				return "30100", nil
 			}
+			if isTopLevelIPFormat(format) {
+				return "", errDocker29TopLevelIP
+			}
 			if strings.Contains(format, "IPAddress") {
 				return "172.17.0.4", nil
 			}
@@ -643,8 +646,8 @@ func TestCreateInternalIPFromCustomNetwork(t *testing.T) {
 			if strings.Contains(format, "HostPort") {
 				return "40000", nil
 			}
-			if strings.Contains(format, ".NetworkSettings.IPAddress") && !strings.Contains(format, "Networks") {
-				return "", nil // top-level empty on custom networks
+			if isTopLevelIPFormat(format) {
+				return "", errDocker29TopLevelIP
 			}
 			if strings.Contains(format, `Networks "sbx-net"`) || strings.Contains(format, `Networks \"sbx-net\"`) {
 				return "10.8.0.12", nil
@@ -719,6 +722,13 @@ func TestEndpointsMissingInternalIPFails(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "empty container IP") {
 		t.Fatalf("want empty container IP error, got %v", err)
 	}
+}
+
+// errDocker29TopLevelIP is what Docker 29 prints for the removed NetworkSettings.IPAddress.
+var errDocker29TopLevelIP = errors.New(`template parsing error: map has no entry for key "IPAddress"`)
+
+func isTopLevelIPFormat(format string) bool {
+	return strings.Contains(format, ".NetworkSettings.IPAddress")
 }
 
 func inspectFormat(args []string) string {
