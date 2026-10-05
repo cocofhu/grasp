@@ -268,40 +268,49 @@ const hue = computed(() => {
           </div>
           <p v-if="!agentName" class="text-[12px] text-txt3">{{ t('canvas.inspector.none') }}</p>
           <p v-else-if="!summary" class="insp-warn !mt-0">{{ t('canvas.inspector.noCapsBody') }}</p>
-          <dl v-else class="space-y-2 text-[12px]">
+          <dl v-else class="insp-caps" data-testid="inspector-caps-list">
             <div class="insp-row">
               <dt>{{ t('canvas.inspector.interaction') }}</dt>
               <dd>
-                {{ t(`nodes.capabilities.interaction.${summary.interaction}`) }}
-                <span v-if="summary.review" class="cnode-cap ml-1">{{ t('canvas.caps.review') }}</span>
-                <span v-if="summary.gated" class="cnode-cap ml-1">{{ t('nodes.capabilities.gated') }}</span>
+                <span class="insp-chip is-main">{{ t(`nodes.capabilities.interaction.${summary.interaction}`) }}</span>
+                <span v-if="summary.review" class="insp-chip">{{ t('canvas.caps.review') }}</span>
+                <span v-if="summary.gated" class="insp-chip">{{ t('nodes.capabilities.gated') }}</span>
               </dd>
             </div>
             <div class="insp-row">
               <dt>{{ t('canvas.inspector.tools') }}</dt>
-              <dd class="flex flex-wrap gap-1">
-                <span v-for="tool in summary.tools" :key="tool" class="cnode-cap">{{ t(`nodes.capabilities.tools.${tool}.label`) }}</span>
-                <span v-if="!summary.tools.length" class="text-txt3">{{ t('canvas.inspector.none') }}</span>
+              <dd>
+                <span v-for="tool in summary.tools" :key="tool" class="insp-chip">{{ t(`nodes.capabilities.tools.${tool}.label`) }}</span>
+                <span v-if="!summary.tools.length" class="insp-none">{{ t('canvas.inspector.none') }}</span>
               </dd>
             </div>
             <div class="insp-row">
               <dt>{{ t('canvas.inspector.reads') }}</dt>
-              <dd class="flex flex-wrap gap-1">
-                <span v-if="summary.readsAll" class="cnode-cap">{{ t('nodes.capabilities.readsAll') }}</span>
-                <span v-for="r in summary.reads" :key="r" class="cnode-cap font-mono">{{ r }}</span>
-                <span v-if="!summary.readsAll && !summary.reads.length" class="text-txt3">{{ t('canvas.inspector.none') }}</span>
+              <dd>
+                <span v-if="summary.readsAll" class="insp-chip">{{ t('nodes.capabilities.readsAll') }}</span>
+                <span v-for="r in summary.reads" :key="r" class="insp-chip font-mono">{{ r }}</span>
+                <span v-if="!summary.readsAll && !summary.reads.length" class="insp-none">{{ t('canvas.inspector.none') }}</span>
               </dd>
             </div>
             <div class="insp-row">
               <dt>{{ t('canvas.inspector.writes') }}</dt>
-              <dd class="flex flex-wrap gap-1">
-                <span v-for="w in summary.writes" :key="w.name" class="cnode-cap">
-                  {{ schemaLabel(w.name, tr) }}<span class="text-txt3">·{{ w.required ? t('nodes.capabilities.required') : t('nodes.capabilities.optional') }}</span>
+              <dd>
+                <span
+                  v-for="w in summary.writes"
+                  :key="w.name"
+                  class="insp-chip"
+                  :title="`${schemaLabel(w.name, tr)} · ${w.required ? t('nodes.capabilities.required') : t('nodes.capabilities.optional')}`"
+                >
+                  <span class="insp-dot" :class="w.required ? 'is-required' : ''" />{{ schemaLabel(w.name, tr) }}
                 </span>
-                <span v-if="!summary.writes.length" class="text-txt3">{{ t('canvas.inspector.none') }}</span>
+                <span v-if="!summary.writes.length" class="insp-none">{{ t('canvas.inspector.none') }}</span>
               </dd>
             </div>
           </dl>
+          <p v-if="summary && summary.writes.length" class="insp-legend">
+            <span class="insp-dot is-required" />{{ t('nodes.capabilities.required') }}
+            <span class="insp-dot ml-2" />{{ t('nodes.capabilities.optional') }}
+          </p>
           <p v-if="capsIssue" class="insp-warn">{{ capsIssue }}</p>
         </section>
       </template>
@@ -448,17 +457,72 @@ const hue = computed(() => {
   line-height: 1.45;
   color: rgb(var(--c-warn));
 }
-.insp-row {
+.insp-caps {
   display: grid;
-  grid-template-columns: 64px 1fr;
-  gap: 8px;
-  align-items: start;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 8px;
+  font-size: 12px;
+}
+.insp-row {
+  display: contents;
 }
 .insp-row dt {
+  align-self: start;
   color: rgb(var(--c-txt3));
-  padding-top: 2px;
+  line-height: 22px;
+  white-space: nowrap;
 }
 .insp-row dd {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px;
   color: rgb(var(--c-txt));
+}
+.insp-chip {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 6px;
+  background: rgb(var(--c-surface));
+  font-size: 11.5px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.insp-chip.is-main {
+  border-color: rgb(var(--c-accent) / 0.35);
+  background: rgb(var(--c-accent-dim));
+  color: rgb(var(--c-accent-2));
+}
+.insp-none {
+  line-height: 22px;
+  color: rgb(var(--c-txt3));
+}
+.insp-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 9999px;
+  border: 1px solid rgb(var(--c-txt3));
+}
+.insp-dot.is-required {
+  border-color: rgb(var(--c-accent-2));
+  background: rgb(var(--c-accent-2));
+}
+.insp-legend {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: rgb(var(--c-txt3));
 }
 </style>

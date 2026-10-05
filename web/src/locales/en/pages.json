@@ -499,7 +499,7 @@
         "modelLabel": "Model",
         "modelPlaceholder": "Empty = project default",
         "modelInherit": "Empty = {model}",
-        "foot": "Clarify and Implement are the backbone of the workflow and cannot be removed. Names are prefixed with the project name and can be changed later on the Agents page.",
+        "foot": "Clarify and Implement are required. You can rename any Agent later on the Agents page.",
         "toastFixNames": "Fix the Agent names first",
         "nameIssues": {
           "required": "Enter a name",
@@ -509,15 +509,15 @@
         "templates": {
           "clarify": {
             "title": "Clarify",
-            "desc": "Clarifies the requirement with you over several turns and writes the plan; for bugs it finds the root cause. Can start an app demo."
+            "desc": "Clarifies the requirement with you and writes the plan; finds the root cause of bugs."
           },
           "implement": {
             "title": "Implement",
-            "desc": "Implements the plan, tests locally, commits, pushes and opens an MR; can start the app for your review."
+            "desc": "Implements the plan, tests locally, then commits, pushes and opens an MR."
           },
           "test_review": {
             "title": "Test & review",
-            "desc": "Runs the tests and reviews the code; passes only when both pass, otherwise sends the work back to Implement."
+            "desc": "Runs the tests and reviews the code; sends the work back unless both pass."
           }
         },
         "schemaNames": {
@@ -540,8 +540,8 @@
         "meta": "Generating publishes this Default Workflow; you can keep editing it in the editor afterwards.",
         "input": "Start",
         "output": "End",
-        "pass": "pass",
-        "fail": "fail",
+        "pass": "Pass",
+        "fail": "Fail",
         "failLoop": "When Test & review fails, the work goes back to Implement (up to 3 times).",
         "noReview": "Test & review is not selected: the workflow ends after Implement.",
         "summary": "Will write",
@@ -558,16 +558,16 @@
       },
       "success": {
         "title": "Setup ready",
-        "desc": "Project credentials are saved, the Agents below were created, and the Default Workflow is published.",
+        "desc": "Credentials are saved, the Agents are created and the Default Workflow is published.",
         "runOnce": "Run once",
-        "runOnceHint": "Enter a requirement and repository and run the default workflow now.",
+        "runOnceHint": "Enter a requirement and repository, then run it.",
         "editWorkflow": "Edit workflow",
-        "editWorkflowHint": "Adjust nodes, prompts and branches on the canvas.",
-        "limit": "No repository yet; pick one when you start a run. For private repositories, add access credentials under Project credentials.",
-        "repoOk": "Default repository set to {dir}; you can still change it when you start a run.",
+        "editWorkflowHint": "Adjust nodes, prompts and branches.",
+        "limit": "No repository yet; pick one when you start a run.",
+        "repoOk": "Default repository: {dir}; you can change it per run.",
         "publishedLine": "Default Workflow (published)",
         "gitOk": "Git credentials saved (values hidden).",
-        "gitSkip": "No Git credentials. For private repositories, add an access token or SSH key under Project credentials.",
+        "gitSkip": "No Git credentials; add a token or SSH key later for private repositories.",
         "gitUserOk": "Commit signature: {name} <{email}>.",
         "preview": "Preview: {vnc}, {mcp}.",
         "created": "Created",
@@ -577,14 +577,14 @@
       "toastNeedKey": "Please enter an API Key",
       "toastNeedGitUser": "Please enter a committer name and email",
       "toastErr": "Bootstrap failed",
-      "railSub": "Set up the model, team and default workflow in a few minutes.",
-      "railFoot": "Everything here can be changed later in project settings.",
+      "railSub": "Model, team and workflow in a few minutes.",
+      "railFoot": "You can change all of this later.",
       "stepOf": "Step {n} of {total}",
       "railDesc": {
         "prefs": "Language, theme, previews",
         "model": "API key or coding tool",
         "key": "Model and key",
-        "git": "Signature, repository, credentials",
+        "git": "Signature and repository",
         "team": "Agents to create",
         "workflow": "Default workflow to publish",
         "done": "Generate and run once"

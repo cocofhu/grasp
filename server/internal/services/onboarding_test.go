@@ -579,6 +579,36 @@ func TestOnboardingBootstrapRenamesAndSetsModel(t *testing.T) {
 	}
 }
 
+func TestOnboardingBootstrapEnglishNamesLabelTheWorkflow(t *testing.T) {
+	svc, projectID := newOnboardingHarness(t)
+	res, err := svc.Bootstrap(projectID, services.OnboardingBootstrapRequest{
+		AcpBackend: "cursor",
+		APIKey:     "k",
+		Agents: []services.OnboardingAgentChoice{
+			{TemplateID: "clarify", Name: "Clarify"},
+			{TemplateID: "implement", Name: "Implement"},
+			{TemplateID: "test_review", Name: "TestReview"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	wf, _ := svc.WF.Get(res.WorkflowID)
+	want := map[string]string{"clarify": "Clarify", "implement": "Implement", "test_review": "TestReview"}
+	for _, n := range wf.Graph.Nodes {
+		name, ok := want[n.ID]
+		if !ok {
+			continue
+		}
+		if got := models.AgentProfile(n.Config); got != name {
+			t.Fatalf("node %s agent_profile = %q, want %q", n.ID, got, name)
+		}
+		if n.Label != name {
+			t.Fatalf("node %s label = %q, want %q", n.ID, n.Label, name)
+		}
+	}
+}
+
 func TestOnboardingBootstrapWithoutTestReview(t *testing.T) {
 	svc, projectID := newOnboardingHarness(t)
 	res, err := svc.Bootstrap(projectID, services.OnboardingBootstrapRequest{

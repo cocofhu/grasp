@@ -28,6 +28,7 @@ import {
 } from '@/lib/agent/agentCreateWizard'
 import { buildTemplateOptions } from '@/lib/agent/agentTemplateOptions'
 import type { AgentTemplateOption } from '@/components/agent/AgentTemplateSelect.vue'
+import type { AgentTemplate } from '@/lib/api/apiTypes'
 import { backendForStartPath } from '@/lib/shared/startPath'
 import { authGuideFor, defaultSettingsPlaceholder, hasAuthKeyConfigured } from '@/lib/agent/backendAuthGuide'
 import type { GitCredentialType } from '@/lib/agent/gitCredentialAnalysis'
@@ -55,7 +56,7 @@ export type AgentCreateWizardEmit = {
 
 
 export function useAgentCreateWizard(props: AgentCreateWizardProps, emit: AgentCreateWizardEmit) {
-const { t } = useI18n()
+const { t, te } = useI18n()
 const { inheritedEnv } = useInheritedGitEnv(() => props.projectId)
 
 const draft = ref<WizardDraft>(freshDraft())
@@ -71,7 +72,8 @@ const customConfigError = ref(false)
 const openCodeBaseError = ref(false)
 const openCodeModelError = ref(false)
 const customConfigDraft = ref('')
-const templateOptions = ref<AgentTemplateOption[]>([])
+const templateRows = ref<AgentTemplate[]>([])
+const templateOptions = computed<AgentTemplateOption[]>(() => buildTemplateOptions(templateRows.value, t, te))
 
 const showDescField = computed(() => !hasRoleTemplate(draft.value))
 const selectedTemplate = computed(() => {
@@ -89,18 +91,10 @@ const templateHint = computed(() => {
 async function loadTemplates() {
   try {
     const res = await api.listAgentTeamTemplates()
-    templateOptions.value = buildTemplateOptions(
-      res.items || [],
-      t('pages.agentStudio.wizard.basics.templateBlank'),
-      t('pages.agentStudio.wizard.basics.templateBlankSub'),
-    )
+    templateRows.value = res.items || []
   } catch {
     // Offline / API miss: blank stays usable.
-    templateOptions.value = buildTemplateOptions(
-      [],
-      t('pages.agentStudio.wizard.basics.templateBlank'),
-      t('pages.agentStudio.wizard.basics.templateBlankSub'),
-    )
+    templateRows.value = []
   }
 }
 

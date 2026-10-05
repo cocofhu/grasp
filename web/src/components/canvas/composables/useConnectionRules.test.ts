@@ -32,16 +32,16 @@ describe('connection rules', () => {
     expect(reason(checkConnection(graph(), { source: 'out', target: 'a' }))).toBe('canvas.rules.outputNoOutgoing')
   })
 
-  it('rejects duplicates and a second unguarded edge on the same outlet', () => {
+  it('rejects duplicates and replaces the unguarded edge already on the outlet', () => {
     const g = graph([{ id: 'e1', source: 'a', target: 'b' }])
     expect(reason(checkConnection(g, { source: 'a', target: 'b', sourceHandle: null }))).toBe('canvas.rules.duplicate')
-    expect(reason(checkConnection(g, { source: 'a', target: 'out' }))).toBe('canvas.rules.outletTaken')
-    expect(checkConnection(g, { source: 'a', sourceHandle: 'fail', target: 'out' }).ok).toBe(true)
+    expect(checkConnection(g, { source: 'a', target: 'out' })).toEqual({ ok: true, replaces: 'e1' })
+    expect(checkConnection(g, { source: 'a', sourceHandle: 'fail', target: 'out' })).toEqual({ ok: true })
   })
 
-  it('allows another edge when the existing one is guarded or a rollback', () => {
-    expect(checkConnection(graph([{ id: 'e1', source: 'a', target: 'b', when: 'x > 1' }]), { source: 'a', target: 'out' }).ok).toBe(true)
-    expect(checkConnection(graph([{ id: 'e1', source: 'a', target: 'b', kind: 'rollback' }]), { source: 'a', target: 'out' }).ok).toBe(true)
+  it('adds alongside guarded or rollback edges instead of replacing them', () => {
+    expect(checkConnection(graph([{ id: 'e1', source: 'a', target: 'b', when: 'x > 1' }]), { source: 'a', target: 'out' })).toEqual({ ok: true })
+    expect(checkConnection(graph([{ id: 'e1', source: 'a', target: 'b', kind: 'rollback' }]), { source: 'a', target: 'out' })).toEqual({ ok: true })
   })
 
   it('allows only one input node', () => {

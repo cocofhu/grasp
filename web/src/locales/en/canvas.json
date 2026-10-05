@@ -166,7 +166,6 @@
       "inputNoIncoming": "The input node cannot have incoming connections",
       "outputNoOutgoing": "The output node cannot have outgoing connections",
       "duplicate": "These nodes are already connected this way",
-      "outletTaken": "This outlet already has an unconditional connection; give it a condition first",
       "singleInput": "Only one input node is allowed"
     },
     "issues": {
@@ -259,6 +258,10 @@
       "deleteTitle": "Delete workflow \"{name}\"?",
       "deleteBody": "This cannot be undone. Existing runs are not affected.",
       "deleteFailed": "Delete failed: {error}"
+    },
+    "toast": {
+      "edgeReplaced": "Replaced the previous connection to \"{label}\"",
+      "undo": "Undo"
     }
   }
 }

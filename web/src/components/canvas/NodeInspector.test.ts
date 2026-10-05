@@ -62,6 +62,20 @@ describe('NodeInspector · agent node', () => {
     w.unmount()
   })
 
+  it('renders capabilities as text chips, never the fixed-size node icon chip', () => {
+    const target = node('agent', { agent_profile: '需求澄清', prompt: 'x' }, 'a1', '需求澄清')
+    const w = mountInspector(target)
+    const caps = w.find('[data-testid="inspector-caps-list"]')
+    expect(caps.findAll('.cnode-cap')).toHaveLength(0)
+    const chips = caps.findAll('.insp-chip')
+    expect(chips.length).toBeGreaterThan(3)
+    expect(chips.map((c) => c.text())).toContain(t('nodes.capabilities.interaction.clarify'))
+    const writes = caps.findAll('.insp-row')[3]!.findAll('.insp-chip')
+    expect(writes.length).toBe(CLARIFY_CAPS.writes!.length)
+    expect(writes[0]!.attributes('title')).toMatch(new RegExp(`${t('nodes.capabilities.required')}|${t('nodes.capabilities.optional')}`))
+    w.unmount()
+  })
+
   it('picks an agent from the list and adopts its name as the default label', async () => {
     const target = node('agent', { agent_profile: '', prompt: '' }, 'a1', 'agent')
     const w = mountInspector(target)

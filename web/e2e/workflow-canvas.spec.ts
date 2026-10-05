@@ -135,6 +135,71 @@ test('insert at edge midpoint, undo and redo', async ({ page }) => {
   await expect(nodes(page)).toHaveCount(6)
 })
 
+test('connecting an occupied outlet replaces its edge, previews it while dragging, and Undo restores it', async ({ page }) => {
+  await openEditor(page, freshStore())
+  await startFromTemplate(page)
+  const outlet = page.getByTestId('canvas-node-input').getByTestId('canvas-outlet-default')
+  const port = page.getByTestId('canvas-node-implement').getByTestId('canvas-port-in')
+  const ob = (await outlet.boundingBox())!
+  const pb = (await port.boundingBox())!
+
+  await page.mouse.move(ob.x + ob.width / 2, ob.y + ob.height / 2)
+  await page.mouse.down()
+  await page.mouse.move((ob.x + pb.x) / 2, (ob.y + pb.y) / 2 + 40, { steps: 6 })
+  await expect(page.getByTestId('canvas-edge-e_input_clarify')).toHaveAttribute('data-replacing', 'true')
+  await page.mouse.move(pb.x + pb.width / 2, pb.y + pb.height / 2, { steps: 6 })
+  await page.mouse.up()
+
+  await expect(page.getByTestId('canvas-edge-e_input_clarify')).toHaveCount(0)
+  await expect(edges(page)).toHaveCount(5)
+  await expect(page.locator('[data-testid^="canvas-edge-"][data-replacing]')).toHaveCount(0)
+  const toastHost = page.getByTestId('toast-host')
+  await expect(toastHost).toContainText('已替换')
+  await expect(toastHost).not.toContainText('无条件连线')
+  await page.screenshot({ path: `${SHOT}/edge-replaced.png` })
+
+  await toastHost.getByTestId('toast-action').click()
+  await expect(page.getByTestId('canvas-edge-e_input_clarify')).toHaveCount(1)
+  await expect(edges(page)).toHaveCount(5)
+})
+
+test('inspector capabilities chips do not overlap or overflow in English', async ({ page }) => {
+  await mockApis(page, freshStore())
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/workflow-canvas.html?lang=en')
+  await expect(page.getByTestId('workflow-canvas')).toBeVisible({ timeout: 15_000 })
+  await startFromTemplate(page)
+  await page.getByTestId('canvas-node-clarify').click()
+  const caps = page.getByTestId('inspector-caps-list')
+  await expect(caps).toBeVisible()
+  await expect(caps).not.toContainText(/[\u3400-\u9fff]/)
+  await page.getByTestId('inspector-capabilities').screenshot({ path: `${SHOT}/inspector-caps-en.png` })
+
+  const problems = await caps.evaluate((root) => {
+    const out: string[] = []
+    const chips = [...root.querySelectorAll<HTMLElement>('.insp-chip')]
+    const rects = chips.map((c) => c.getBoundingClientRect())
+    chips.forEach((c, i) => {
+      if (c.scrollWidth > c.clientWidth + 1 || c.scrollHeight > c.clientHeight + 1) out.push(`clipped: ${c.textContent}`)
+      const parent = c.parentElement!.getBoundingClientRect()
+      if (rects[i]!.right > parent.right + 0.5) out.push(`overflows row: ${c.textContent}`)
+      for (let j = i + 1; j < chips.length; j++) {
+        const a = rects[i]!
+        const b = rects[j]!
+        if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) {
+          out.push(`overlap: ${c.textContent} / ${chips[j]!.textContent}`)
+        }
+      }
+    })
+    for (const dt of root.querySelectorAll<HTMLElement>('dt')) {
+      if (dt.scrollWidth > dt.clientWidth + 1 || dt.getClientRects().length !== 1 || dt.getBoundingClientRect().height > 26) out.push(`label wraps: ${dt.textContent}`)
+    }
+    return { out, chips: chips.length }
+  })
+  expect(problems.chips).toBeGreaterThan(5)
+  expect(problems.out).toEqual([])
+})
+
 test('edge condition edit autosaves and survives reload; node drag snaps to the grid', async ({ page }) => {
   const store = freshStore()
   await openEditor(page, store)

@@ -446,6 +446,10 @@
 .vue-flow__edge.selected .cedge-path:not(.tone-ok):not(.tone-err) {
   stroke: var(--flow-edge-active);
 }
+.cedge-path.is-replacing {
+  opacity: 0.3;
+  stroke-dasharray: 3 4;
+}
 @keyframes cedge-dash {
   to {
     stroke-dashoffset: -12;

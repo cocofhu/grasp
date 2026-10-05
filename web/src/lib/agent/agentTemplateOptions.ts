@@ -9,19 +9,26 @@ export function blankTemplateOption(label: string, subtitle: string): AgentTempl
   return { id: 'blank', name: label, subtitle }
 }
 
+type Translate = (key: string) => string
+type TranslateExists = (key: string) => boolean
+
+/** Built-in templates show localized copy; unknown ids fall back to the server's label and summary. */
 export function buildTemplateOptions(
   rows: AgentTemplate[],
-  blankLabel: string,
-  blankSubtitle: string,
+  t: Translate,
+  te: TranslateExists,
 ): AgentTemplateOption[] {
-  const out: AgentTemplateOption[] = [blankTemplateOption(blankLabel, blankSubtitle)]
+  const out: AgentTemplateOption[] = [
+    blankTemplateOption(t('pages.agentStudio.wizard.basics.templateBlank'), t('pages.agentStudio.wizard.basics.templateBlankSub')),
+  ]
   for (const r of rows) {
     if (!r.id || r.id === 'blank') continue
+    const key = `pages.onboarding.team.templates.${r.id}`
+    const known = te(`${key}.title`)
     out.push({
       id: r.id,
-      name: r.roleLabelZh || r.embedName,
-      subtitle: r.embedName,
-      description: r.summary || '',
+      name: known ? t(`${key}.title`) : r.roleLabelZh || r.embedName,
+      description: known ? t(`${key}.desc`) : r.summary || '',
       capabilities: r.capabilities,
     })
   }

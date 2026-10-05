@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import OnboardingWizard from './OnboardingWizard.vue'
@@ -170,9 +170,17 @@ async function lastBody() {
 }
 
 describe('OnboardingWizard', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     localStorage.clear()
     vi.clearAllMocks()
+    // Chinese UI by default; English cases switch explicitly.
+    const { locale } = await import('@/lib/shared/locale')
+    locale.value = 'zh-CN'
+    vi.stubGlobal('navigator', { ...navigator, language: 'zh-CN' })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('shows one topic per step: preferences, model, key, Git, team, workflow, done', async () => {
@@ -291,6 +299,25 @@ describe('OnboardingWizard', () => {
     expect(toggle('clarify').exists()).toBe(false)
     expect(toggle('implement').exists()).toBe(false)
     expect((toggle('test_review').element as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('defaults the team to English names when English is chosen, and sends them', async () => {
+    const wrapper = await mountWizard()
+    await wrapper.find('[data-testid="onboarding-language-en"]').trigger('click')
+    await flushPromises()
+    await walkToTeam(wrapper)
+    const name = (id: string) =>
+      (wrapper.find(`[data-testid="onboarding-team-name-${id}"]`).element as HTMLInputElement).value
+    expect([name('clarify'), name('implement'), name('test_review')]).toEqual(['Clarify', 'Implement', 'TestReview'])
+    await next(wrapper)
+    expect(wrapper.find('[data-testid="onboarding-preview-node-clarify"]').text()).toContain('Clarify')
+    expect(wrapper.find('[data-testid="onboarding-preview-node-clarify"]').text()).not.toMatch(/[\u3400-\u9fff]/)
+    await next(wrapper)
+    expect((await lastBody())?.agents).toEqual([
+      { templateId: 'clarify', name: 'Clarify' },
+      { templateId: 'implement', name: 'Implement' },
+      { templateId: 'test_review', name: 'TestReview' },
+    ])
   })
 
   it('renames, picks a model, and unchecking test_review trims the preview and the request', async () => {

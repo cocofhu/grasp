@@ -10,6 +10,7 @@ import { setTheme } from '../src/lib/shared/theme'
 import { vHoverInk } from '../src/lib/shared/hoverInkDirective'
 import WorkflowEditorView from '../src/views/WorkflowEditorView.vue'
 import WorkflowCanvas from '../src/components/canvas/WorkflowCanvas.vue'
+import ToastHost from '../src/components/ui/ToastHost.vue'
 import { buildDefaultWorkflow } from '../src/components/canvas/composables/defaultTemplate'
 import type { NodeRunStatus } from '../src/lib/shared/types'
 import { CANVAS_AGENTS } from './workflow-canvas-fixtures'
@@ -47,7 +48,7 @@ const RunCanvasFixture = defineComponent({
 
 async function bootstrap() {
   await initLocale()
-  await setLocale('zh-CN')
+  await setLocale(params.get('lang') === 'en' ? 'en' : 'zh-CN')
   setTheme(params.get('theme') === 'dark' ? 'dark' : 'light')
 
   const router = createRouter({
@@ -60,7 +61,7 @@ async function bootstrap() {
   })
   await router.push(params.get('view') === 'run' ? '/run' : `/workflows/${params.get('wf') || 'wf-canvas'}/edit`)
 
-  createApp({ render: () => h(RouterView) })
+  createApp({ render: () => [h(RouterView), h(ToastHost)] })
     .directive('hover-ink', vHoverInk)
     .use(i18n)
     .use(router)

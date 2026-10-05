@@ -54,6 +54,7 @@ const pathClass = computed(() => [
   {
     'is-dashed': props.data.dashed || geo.value.back,
     'is-hovered': hovered.value,
+    'is-replacing': !!props.data.replacing,
     [`run-${props.data.run}`]: !!props.data.run,
   },
 ])
@@ -78,6 +79,7 @@ function leave() {
     :marker-end="markerEnd"
     :data-testid="`canvas-edge-${id}`"
     :data-back="geo.back ? 'true' : undefined"
+    :data-replacing="data.replacing ? 'true' : undefined"
   />
   <path
     :d="geo.path"

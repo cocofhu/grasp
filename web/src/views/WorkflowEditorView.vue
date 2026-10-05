@@ -119,7 +119,7 @@ const editor = useCanvasEditor({
   agents: projectAgents,
   t: tr,
   typeLabel: (type: NodeType) => NODE_DEFS.value[type]?.label ?? type,
-  notify: (m) => toast.warn(m),
+  notify: (m, action) => (action ? toast.show(m, 'default', { action }) : toast.warn(m)),
 })
 provide(CANVAS_EDITOR, editor)
 

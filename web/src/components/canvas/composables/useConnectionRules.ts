@@ -12,8 +12,11 @@ export interface ConnectionAttempt {
   target: string
 }
 
-/** Rejection reasons are i18n keys under canvas.rules. */
-export type ConnectionResult = { ok: true } | { ok: false, reason: string }
+/**
+ * Rejection reasons are i18n keys under canvas.rules. An outlet holds one
+ * unconditional edge, so connecting it again replaces that edge (`replaces`).
+ */
+export type ConnectionResult = { ok: true; replaces?: string } | { ok: false; reason: string }
 
 const OK: ConnectionResult = { ok: true }
 
@@ -32,10 +35,8 @@ export function checkConnection(graph: GraphLike, c: ConnectionAttempt): Connect
   const handle = normHandle(c.sourceHandle)
   const sameOutlet = graph.edges.filter((e) => e.source === c.source && normHandle(e.sourceHandle) === handle)
   if (sameOutlet.some((e) => e.target === c.target)) return fail('duplicate')
-  if (sameOutlet.some((e) => !String(e.when ?? '').trim() && (e.kind ?? 'success') === 'success')) {
-    return fail('outletTaken')
-  }
-  return OK
+  const taken = sameOutlet.find((e) => !String(e.when ?? '').trim() && (e.kind ?? 'success') === 'success')
+  return taken ? { ok: true, replaces: taken.id } : OK
 }
 
 /** Whether a node of this type may be added (only one input per workflow). */

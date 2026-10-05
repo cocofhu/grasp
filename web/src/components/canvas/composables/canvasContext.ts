@@ -43,6 +43,8 @@ export interface CanvasEdgeData {
   editable: boolean
   sourceLabel: string
   targetLabel: string
+  /** A connection being dragged from this edge's outlet would replace it. */
+  replacing?: boolean
 }
 
 export interface CanvasContext {

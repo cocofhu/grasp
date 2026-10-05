@@ -51,12 +51,23 @@ export const ONBOARDING_TEMPLATES: readonly { id: OnboardingTemplateId; label: s
  */
 export const ONBOARDING_REQUIRED_TEMPLATE_IDS: readonly OnboardingTemplateId[] = ['clarify', 'implement']
 
-/** Longest template label (需求澄清 / 测试评审). */
-const LONGEST_ONBOARDING_ROLE_SUFFIX = 4
+const ONBOARDING_ROLE_NAMES_EN: Record<OnboardingTemplateId, string> = {
+  clarify: 'Clarify',
+  implement: 'Implement',
+  test_review: 'TestReview',
+}
+
+/** Longest role suffix in any locale (TestReview). */
+const LONGEST_ONBOARDING_ROLE_SUFFIX = 10
 const MAX_AGENT_NAME_RUNES = 64
 
-/** Default-project Agent names: the bare template labels. */
+/** Canonical default-project Agent names (the server's template labels); used for conflict checks. */
 export const ONBOARDING_AGENT_NAMES: readonly string[] = ONBOARDING_TEMPLATES.map((t) => t.label)
+
+/** Default role names shown and saved for the given UI language. */
+export function onboardingRoleNames(lang: AppLocale): string[] {
+  return ONBOARDING_TEMPLATES.map((t) => (lang === 'en' ? ONBOARDING_ROLE_NAMES_EN[t.id] : t.label))
+}
 
 export type OnboardingMode = 'firstInstall' | 'createProject' | 'retry'
 
@@ -325,11 +336,12 @@ export function sanitizeOnboardingPrefix(projectName: string): string {
 }
 
 /** Agent names that bootstrap will create for this project. */
-export function deriveOnboardingAgentNames(projectId: string, projectName: string): string[] {
-  if (projectId === DEFAULT_PROJECT_ID) return [...ONBOARDING_AGENT_NAMES]
+export function deriveOnboardingAgentNames(projectId: string, projectName: string, lang: AppLocale = 'zh-CN'): string[] {
+  const roles = onboardingRoleNames(lang)
+  if (projectId === DEFAULT_PROJECT_ID) return roles
   const prefix = sanitizeOnboardingPrefix(projectName)
   if (!prefix) return []
-  return ONBOARDING_AGENT_NAMES.map((n) => prefix + n)
+  return roles.map((n) => prefix + n)
 }
 
 function hasOnboardingNameConflict(
@@ -361,7 +373,7 @@ export function isEmptyProjectForOnboarding(
   if (bound.length > 0) return false
   const names = deriveOnboardingAgentNames(projectId, projectName)
   if (!names.length) return projectId === DEFAULT_PROJECT_ID
-  return !hasOnboardingNameConflict(agents, projectId, names)
+  return !hasOnboardingNameConflict(agents, projectId, [...names, ...deriveOnboardingAgentNames(projectId, projectName, 'en')])
 }
 
 /** The default workflow is the completion marker for first install. */

@@ -8,7 +8,7 @@ import type { Agent } from '../src/lib/api/api'
 
 async function boot() {
   await initLocale()
-  await setLocale('zh-CN')
+  await setLocale(new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'zh-CN')
   setTheme('dark')
 
   const open = ref(true)

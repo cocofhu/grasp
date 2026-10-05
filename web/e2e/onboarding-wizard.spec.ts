@@ -142,6 +142,8 @@ async function expectNoScroll(page: Page, testId = 'onboarding-body') {
   const body = page.getByTestId(testId)
   const overflow = await body.evaluate((el) => el.scrollHeight - el.clientHeight)
   expect(overflow).toBeLessThanOrEqual(1)
+  const railOverflow = await page.getByTestId('onboarding-rail').evaluate((el) => el.scrollHeight - el.clientHeight)
+  expect(railOverflow).toBeLessThanOrEqual(1)
   const text = await page.getByTestId('onboarding-wizard').innerText()
   expect(text).not.toMatch(/\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b|\/root\//)
 }
@@ -290,27 +292,87 @@ test('unchecking 测试评审 trims the preview and the bootstrap request', asyn
   expect(state.bootstrapBody?.repoUrl).toBeUndefined()
 })
 
-test('onboarding wizard English copy', async ({ page }) => {
+/** English pages must not leak Chinese text (template labels, default names, server copy). */
+async function expectNoChinese(page: Page) {
+  const text = await page.getByTestId('onboarding-wizard').innerText()
+  const lines = text.split('\n').filter((l) => /[\u3400-\u9fff]/.test(l) && l.trim() !== '简体中文')
+  expect(lines).toEqual([])
+}
+
+test('English walkthrough: every step is English, fits without scrolling, and saves English names', async ({ page }) => {
   const state = await mockOnboardingApi(page)
   await page.goto('/onboarding-wizard.html', { waitUntil: 'networkidle' })
   await page.getByTestId('onboarding-language-en').click()
   await expect(page.locator('.onb-step-title', { hasText: 'Preferences' })).toBeVisible()
   await expect(page.getByTestId('onboarding-empty-desc')).toContainText('Default Workflow')
-  await page.screenshot({ path: path.join(OUT, 'en-prefs.png') })
-  await expectNoScroll(page)
+  const check = async (shot: string) => {
+    await page.screenshot({ path: path.join(OUT, `en-${shot}.png`) })
+    await expectNoScroll(page)
+    await expectNoChinese(page)
+  }
+  await check('01-prefs')
 
-  await walkToTeam(page, 'crsr_e2e_en')
+  await next(page)
+  await expectStep(page, 'model')
+  await check('02-model')
+  await next(page)
+  await expectStep(page, 'key')
+  await fillKey(page, 'crsr_e2e_en')
+  await check('03-key')
+  await next(page)
+  await expectStep(page, 'git')
+  await fillIdentity(page)
+  await check('04-git')
+  await next(page)
+
+  await expectStep(page, 'team')
   await expect(page.getByTestId('onboarding-team-card-test_review')).toContainText('Test & review')
   await expect(page.getByTestId('onboarding-team-preview-clarify')).toHaveText('Can start an app preview')
-  await page.getByTestId('onboarding-next').click()
+  await expect(page.getByTestId('onboarding-team-name-clarify')).toHaveValue('Clarify')
+  await expect(page.getByTestId('onboarding-team-name-test_review')).toHaveValue('TestReview')
+  await check('05-team')
+  await next(page)
+
+  await expectStep(page, 'workflow')
+  const preview = page.getByTestId('onboarding-workflow-preview')
+  await expect(preview.getByTestId('onboarding-preview-node-clarify')).toContainText('Clarify')
+  await expect(preview.getByText('Fail', { exact: true })).toBeVisible()
   await expect(page.getByTestId('onboarding-review-workflow')).toContainText('Default Workflow')
-  await page.getByTestId('onboarding-next').click()
+  await check('06-workflow')
+  await next(page)
 
   await expect(page.getByText('Default Workflow (published)')).toBeVisible()
   await expect(page.getByTestId('onboarding-run-once')).toContainText('Run once')
+  await page.screenshot({ path: path.join(OUT, 'en-07-done.png') })
+  await expectNoScroll(page, 'onboarding-success')
+  await expectNoChinese(page)
+  expect(state.bootstrapBody?.agents).toEqual([
+    { templateId: 'clarify', name: 'Clarify' },
+    { templateId: 'implement', name: 'Implement' },
+    { templateId: 'test_review', name: 'TestReview' },
+  ])
   expect(state.bootstrapBody?.featureHint).toBeUndefined()
   expect(state.bootstrapBody?.repos).toBeUndefined()
-  await page.screenshot({ path: path.join(OUT, 'en-done.png') })
+})
+
+test('a missing server encryption key shows plain copy, not config names', async ({ page }) => {
+  await mockOnboardingApi(page)
+  await page.route('**/api/projects/*/bootstrap-onboarding', (route) =>
+    route.fulfill({
+      status: 412,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'encrypt credential: 加密主密钥未配置(config: security.secrets_key 或 GRASP_SECRETS_KEY)', code: 'secrets_key_missing' }),
+    }),
+  )
+  await page.goto('/onboarding-wizard.html', { waitUntil: 'networkidle' })
+  await walkToTeam(page, 'crsr_nokey', { skipGit: true })
+  await next(page)
+  await next(page)
+  const wizard = page.getByTestId('onboarding-wizard')
+  await expect(wizard).toContainText('加密密钥')
+  await expect(wizard).not.toContainText('secrets_key')
+  await expect(wizard).not.toContainText('GRASP_SECRETS_KEY')
+  await page.screenshot({ path: path.join(OUT, 'secrets-key-missing.png') })
 })
 
 test('新建项目 create 模式：偏好页填项目名 → 名称带前缀 → create+bootstrap', async ({ page }) => {

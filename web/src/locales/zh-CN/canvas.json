@@ -166,7 +166,6 @@
       "inputNoIncoming": "输入节点不能有入边",
       "outputNoOutgoing": "输出节点不能有出边",
       "duplicate": "这两个节点之间已经有这条连线",
-      "outletTaken": "这个出口已经有一条无条件连线,先给它设置条件",
       "singleInput": "输入节点只能有一个"
     },
     "issues": {
@@ -259,6 +258,10 @@
       "deleteTitle": "删除工作流「{name}」?",
       "deleteBody": "删除后无法恢复,已有的运行记录不受影响。",
       "deleteFailed": "删除失败:{error}"
+    },
+    "toast": {
+      "edgeReplaced": "已替换原来连到「{label}」的连线",
+      "undo": "撤销"
     }
   }
 }

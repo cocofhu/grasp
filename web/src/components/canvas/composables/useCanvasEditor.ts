@@ -20,7 +20,13 @@ export interface CanvasEditorOptions {
   t: Translate
   /** Default label for a new node of a type. */
   typeLabel: (type: WFNode['type']) => string
-  notify?: (message: string) => void
+  /** Show a message; `action` (e.g. Undo) is offered next to it when given. */
+  notify?: (message: string, action?: NotifyAction) => void
+}
+
+export interface NotifyAction {
+  label: string
+  run: () => void
 }
 
 /** Shared editing state and commands for one workflow canvas (edit mode). */
@@ -114,6 +120,7 @@ export function useCanvasEditor(opts: CanvasEditorOptions) {
     }
     const label = spec.label || spec.agentProfile || opts.typeLabel(spec.type)
     const node = createNode({ ...spec, label }, at ?? placeHint(), graph.nodes.map((n) => n.id))
+    let replaced: WFEdge | null = null
     if (link?.kind === 'edge') {
       const out = firstOutlet(node)
       if (!insertOnEdge(graph, link.edgeId, node, out ?? '')) graph.nodes.push(node)
@@ -126,11 +133,35 @@ export function useCanvasEditor(opts: CanvasEditorOptions) {
         const h = src ? freeOutlet(src) : null
         if (src && h !== null) from = { source: src.id, sourceHandle: h, target: node.id }
       }
-      if (from && checkConnection(graph, from).ok) graph.edges.push(makeEdge(graph, from))
+      const res = from ? checkConnection(graph, from) : null
+      if (from && res?.ok) replaced = pushEdge(from, res.replaces)
     }
     history.commit()
     setSelection([node.id])
+    if (replaced) offerUndoReplace(replaced)
     return node
+  }
+
+  /** Adds the edge, first removing the one it replaces; returns the removed edge. */
+  function pushEdge(c: ConnectionAttempt, replaces?: string): WFEdge | null {
+    let removed: WFEdge | null = null
+    if (replaces) {
+      const i = graph.edges.findIndex((e) => e.id === replaces)
+      if (i >= 0) removed = graph.edges.splice(i, 1)[0]!
+    }
+    graph.edges.push(makeEdge(graph, c))
+    return removed
+  }
+
+  function offerUndoReplace(old: WFEdge) {
+    const target = graph.nodes.find((n) => n.id === old.target)
+    const at = history.size.value
+    opts.notify?.(t('canvas.toast.edgeReplaced', { label: target?.label || old.target }), {
+      label: t('canvas.toast.undo'),
+      run: () => {
+        if (history.size.value === at && !history.canRedo.value) undo()
+      },
+    })
   }
 
   function connect(c: ConnectionAttempt): boolean {
@@ -139,8 +170,9 @@ export function useCanvasEditor(opts: CanvasEditorOptions) {
       notify(res.reason)
       return false
     }
-    graph.edges.push(makeEdge(graph, c))
+    const replaced = pushEdge(c, res.replaces)
     history.commit()
+    if (replaced) offerUndoReplace(replaced)
     return true
   }
 

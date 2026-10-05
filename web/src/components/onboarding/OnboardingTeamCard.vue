@@ -45,21 +45,23 @@ function schemaLabel(schema: string, fallback: string) {
     <header class="flex items-center gap-3">
       <span class="team-avatar">{{ title.slice(0, 1) }}</span>
       <div class="min-w-0 flex-1">
-        <div class="truncate text-[14.5px] font-semibold leading-5 text-txt">{{ title }}</div>
-        <div class="text-[11px] leading-4 text-txt3">{{ t('pages.onboarding.team.stage', { n: index + 1 }) }}</div>
+        <div class="truncate text-[14.5px] font-semibold leading-5 text-txt" :title="title">{{ title }}</div>
+        <div class="mt-0.5 flex items-center gap-1.5 text-[11px] leading-4 text-txt3">
+          {{ t('pages.onboarding.team.stage', { n: index + 1 }) }}
+          <span v-if="required" class="team-badge">{{ t('pages.onboarding.team.required') }}</span>
+          <label v-else class="team-switch" :title="t('pages.onboarding.team.optional')">
+            <input
+              type="checkbox"
+              class="team-native"
+              :checked="member.enabled"
+              :aria-label="title"
+              :data-testid="`onboarding-team-toggle-${member.templateId}`"
+              @change="emit('toggle', ($event.target as HTMLInputElement).checked)"
+            />
+            <span class="team-switch-track" aria-hidden="true" />
+          </label>
+        </div>
       </div>
-      <span v-if="required" class="team-badge">{{ t('pages.onboarding.team.required') }}</span>
-      <label v-else class="team-switch" :title="t('pages.onboarding.team.optional')">
-        <input
-          type="checkbox"
-          class="team-native"
-          :checked="member.enabled"
-          :aria-label="title"
-          :data-testid="`onboarding-team-toggle-${member.templateId}`"
-          @change="emit('toggle', ($event.target as HTMLInputElement).checked)"
-        />
-        <span class="team-switch-track" aria-hidden="true" />
-      </label>
     </header>
 
     <p class="mt-3 text-[12.5px] leading-[1.65] text-txt2">{{ desc }}</p>
@@ -163,9 +165,10 @@ function schemaLabel(schema: string, fallback: string) {
 }
 .team-badge {
   flex-shrink: 0;
-  padding: 2px 8px;
+  padding: 0 6px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 10.5px;
+  line-height: 16px;
   color: rgb(var(--c-txt3));
   background: rgb(var(--c-elevated));
 }
@@ -185,8 +188,8 @@ function schemaLabel(schema: string, fallback: string) {
 .team-switch-track {
   display: block;
   position: relative;
-  width: 32px;
-  height: 18px;
+  width: 26px;
+  height: 14px;
   border-radius: 999px;
   background: rgb(var(--c-line-strong));
   transition: background 0.15s;
@@ -196,8 +199,8 @@ function schemaLabel(schema: string, fallback: string) {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 14px;
-  height: 14px;
+  width: 10px;
+  height: 10px;
   border-radius: 999px;
   background: #fff;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
@@ -207,7 +210,7 @@ function schemaLabel(schema: string, fallback: string) {
   background: rgb(var(--c-accent));
 }
 .team-native:checked + .team-switch-track::after {
-  transform: translateX(14px);
+  transform: translateX(12px);
 }
 .team-native:focus-visible + .team-switch-track {
   box-shadow: 0 0 0 3px rgb(var(--c-accent) / 0.25);

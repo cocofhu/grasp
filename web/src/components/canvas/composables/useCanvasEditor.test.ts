@@ -70,6 +70,38 @@ describe('useCanvasEditor', () => {
     expect(graph.edges.at(-1)).toMatchObject({ sourceHandle: 'pass', target: 'out' })
   })
 
+  it('replaces the unconditional edge on an outlet as one undoable step with an Undo action', () => {
+    const { graph, editor, notify } = setup()
+    const extra = editor.addNode({ type: 'output' }, { x: 640, y: 200 })!
+    const steps = editor.history.size.value
+    expect(editor.connect({ source: 'in', target: extra.id })).toBe(true)
+    expect(graph.edges.filter((e) => e.source === 'in').map((e) => e.target)).toEqual([extra.id])
+    expect(editor.history.size.value).toBe(steps + 1)
+    expect(notify).toHaveBeenLastCalledWith('canvas.toast.edgeReplaced', { label: 'canvas.toast.undo', run: expect.any(Function) })
+
+    notify.mock.lastCall![1].run()
+    expect(graph.edges.filter((e) => e.source === 'in').map((e) => e.target)).toEqual(['a'])
+  })
+
+  it('ignores a stale Undo after further edits', () => {
+    const { graph, editor, notify } = setup()
+    const extra = editor.addNode({ type: 'output' }, { x: 640, y: 200 })!
+    editor.connect({ source: 'in', target: extra.id })
+    const undoReplace = notify.mock.lastCall![1].run
+    editor.renameNode(extra.id, 'Later')
+    undoReplace()
+    expect(graph.edges.find((e) => e.source === 'in')?.target).toBe(extra.id)
+  })
+
+  it('replaces the outlet edge when a node is added from an occupied outlet', () => {
+    const { graph, editor } = setup()
+    const n = editor.addNode({ type: 'set_var' }, { x: 160, y: 200 }, { kind: 'outlet', source: 'in', sourceHandle: null })!
+    expect(graph.edges.filter((e) => e.source === 'in').map((e) => e.target)).toEqual([n.id])
+    editor.undo()
+    expect(graph.edges.filter((e) => e.source === 'in').map((e) => e.target)).toEqual(['a'])
+    expect(graph.nodes.some((x) => x.id === n.id)).toBe(false)
+  })
+
   it('updates edge fields, dropping empty values and the default kind', () => {
     const { graph, editor } = setup()
     editor.updateEdge('e1', { when: 'x > 1', kind: 'rollback', label: 'note' })

@@ -21,9 +21,10 @@ var OnboardingAgentNames = func() []string {
 	return out
 }()
 
-// longestOnboardingRoleSuffixRunes is the longest template label (需求澄清 /
-// 测试评审 = 4) so prefixed names stay within MaxAgentNameRunes.
-const longestOnboardingRoleSuffixRunes = 4
+// longestOnboardingRoleSuffixRunes is the longest role name the wizard may
+// append in any UI language (TestReview = 10) so prefixed names stay within
+// MaxAgentNameRunes.
+const longestOnboardingRoleSuffixRunes = 10
 
 // OnboardingNamePlan holds per-project agent / org naming for bootstrap.
 type OnboardingNamePlan struct {

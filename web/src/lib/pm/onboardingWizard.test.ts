@@ -13,6 +13,7 @@ import {
   assembleBootstrapBody,
   buildOnboardingWorkflowPreview,
   deriveOnboardingAgentNames,
+  onboardingRoleNames,
   startPathForBackend,
   detectSystemLocale,
   suppressOnboarding,
@@ -33,6 +34,7 @@ import {
   shouldAutoOpenOnboarding,
 } from './onboardingWizard'
 import { i18n } from '@/lib/shared/i18n'
+import { validateAgentName } from '@/lib/agent/agentIO'
 import { loadLocaleMessages } from '@/lib/shared/loadLocaleMessages'
 import { locale } from '@/lib/shared/locale'
 
@@ -305,7 +307,22 @@ describe('onboardingWizard', () => {
     expect(deriveOnboardingAgentNames(DEFAULT_PROJECT_ID, 'ignored')).toEqual([...ONBOARDING_AGENT_NAMES])
     expect(deriveOnboardingAgentNames('p1', '支付中台')).toEqual(['支付中台需求澄清', '支付中台实现', '支付中台测试评审'])
     expect(deriveOnboardingAgentNames('p1', '...')).toEqual([])
-    expect(Array.from(sanitizeOnboardingPrefix('长'.repeat(80))).length).toBe(60)
+    expect(Array.from(sanitizeOnboardingPrefix('长'.repeat(80))).length).toBe(54)
+  })
+
+  it('localizes default role names and keeps every one a valid Agent name', () => {
+    expect(onboardingRoleNames('zh-CN')).toEqual([...ONBOARDING_AGENT_NAMES])
+    expect(onboardingRoleNames('en')).toEqual(['Clarify', 'Implement', 'TestReview'])
+    expect(deriveOnboardingAgentNames(DEFAULT_PROJECT_ID, '', 'en')).toEqual(['Clarify', 'Implement', 'TestReview'])
+    expect(deriveOnboardingAgentNames('p1', 'Payments', 'en')).toEqual(['PaymentsClarify', 'PaymentsImplement', 'PaymentsTestReview'])
+    const long = deriveOnboardingAgentNames('p1', 'x'.repeat(80), 'en')
+    for (const name of [...long, ...onboardingRoleNames('en'), ...onboardingRoleNames('zh-CN')]) {
+      expect(validateAgentName(name)).toBe('')
+    }
+  })
+
+  it('treats English default names owned by another project as a conflict', () => {
+    expect(isEmptyProjectForOnboarding(0, [{ name: 'Clarify', projectId: 'other' }], DEFAULT_PROJECT_ID)).toBe(false)
   })
 
   it('createProject draft inherits app locale, not browser language (g1.2)', () => {

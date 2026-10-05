@@ -394,6 +394,7 @@ func resolveOnboardingTeam(choices []OnboardingAgentChoice, derived map[string]s
 
 // assignOnboardingAgentProfiles points each template node at its chosen Agent
 // name in one pass, so a custom name equal to another template label cannot chain.
+// The node label follows the name so the canvas shows what the user chose.
 func assignOnboardingAgentProfiles(g *models.Graph, nameMap map[string]string) {
 	if g == nil {
 		return
@@ -405,6 +406,7 @@ func assignOnboardingAgentProfiles(g *models.Graph, nameMap map[string]string) {
 		}
 		if name, ok := nameMap[models.AgentProfile(cfg)]; ok {
 			models.SetAgentProfile(cfg, name)
+			g.Nodes[i].Label = name
 		}
 	}
 }

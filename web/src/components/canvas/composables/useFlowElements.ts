@@ -200,6 +200,7 @@ export function useFlowElements(inp: FlowInputs) {
     const selected = new Set(inp.selectedEdges())
     const label = new Map(inp.nodes().map((n) => [n.id, n.label || n.id]))
     const runOf = edgeRun.value
+    const conn = run ? null : inp.connecting.value
     const ids = new Set(inp.nodes().map((n) => n.id))
     const out: FlowEdgeObj[] = []
     for (const e of inp.edges()) {
@@ -220,6 +221,7 @@ export function useFlowElements(inp: FlowInputs) {
         editable: !run,
         sourceLabel: label.get(e.source) || e.source,
         targetLabel: label.get(e.target) || e.target,
+        replacing: !!conn && conn.source === e.source && conn.sourceHandle === handle && !when && kind === 'success',
       }
       const color = data.run === 'traversed' || data.run === 'active' ? 'var(--flow-edge-active)' : TONE_VAR[tone]
       const fp = flowFingerprint({ s: e.source, t: e.target, h: handle, data, color })

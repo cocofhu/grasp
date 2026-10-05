@@ -26,7 +26,6 @@ import { useWorkflowRunLaunch } from '@/lib/run/useWorkflowRunLaunch'
 import type { GitCredentialType } from '@/lib/agent/gitCredentialAnalysis'
 import {
   DEFAULT_PROJECT_ID,
-  ONBOARDING_AGENT_NAMES,
   ONBOARDING_CLI_BACKENDS,
   ONBOARDING_GIT_TYPES,
   ONBOARDING_STEPS,
@@ -129,6 +128,15 @@ const gitCredLabel = computed(() => {
   const type = ONBOARDING_GIT_TYPES.find((g) => g.id === draft.value.gitCredentialType)
   return type ? t(type.labelKey) : ''
 })
+const summaryItems = computed(() => [
+  { id: 'backend', label: t('pages.onboarding.steps.model'), value: backendSummary.value, ok: true },
+  { id: 'key', label: 'API Key', value: t('pages.onboarding.workflow.keyOn'), ok: true },
+  { id: 'repo', label: t('pages.onboarding.repo.chip'), value: repoOk.value ? repoDirName.value : t('pages.onboarding.workflow.repoSkip'), ok: repoOk.value },
+  { id: 'git-user', label: t('pages.onboarding.gitUser.chip'), value: draft.value.gitUserName, ok: true },
+  { id: 'git-cred', label: t('pages.onboarding.workflow.gitCred'), value: gitOk.value ? gitCredLabel.value : t('pages.onboarding.workflow.gitSkip'), ok: gitOk.value },
+  { id: 'agents', label: 'Agent', value: t('pages.onboarding.workflow.agentsValue', { n: enabledTeam.value.length }), ok: true },
+  { id: 'workflow', label: t('pages.onboarding.workflow.wfLabel'), value: t('pages.onboarding.workflow.wfValue'), ok: true, wide: true },
+])
 const targetProjectId = computed(() => createdProjectId.value || (props.projectId || '').trim())
 const wizardTitle = computed(() => {
   if (isCreate.value) return t('pages.onboarding.titleCreate')
@@ -142,10 +150,10 @@ const repoDirName = computed(() => repoNameFromUrl(draft.value.repoUrl))
 
 /** Names the server would derive; empty when the project name is not known yet. */
 const defaultAgentNames = computed<string[]>(() => {
-  if (isCreate.value) return deriveOnboardingAgentNames('new', draft.value.projectName)
+  const lang = draft.value.language
+  if (isCreate.value) return deriveOnboardingAgentNames('new', draft.value.projectName, lang)
   const pid = (props.projectId || DEFAULT_PROJECT_ID).trim() || DEFAULT_PROJECT_ID
-  if (pid === DEFAULT_PROJECT_ID) return [...ONBOARDING_AGENT_NAMES]
-  return deriveOnboardingAgentNames(pid, retryProjectName.value)
+  return deriveOnboardingAgentNames(pid, retryProjectName.value, lang)
 })
 const allowBlankNames = computed(() => defaultAgentNames.value.length === 0)
 const nameIssues = computed(() => teamNameIssues(draft.value.team, { allowBlank: allowBlankNames.value }))
@@ -475,7 +483,7 @@ function editWorkflow() {
     <div v-if="open" class="fixed inset-0 z-50 flex items-center justify-center p-4" data-testid="onboarding-wizard">
       <div class="onb-backdrop absolute inset-0" data-testid="onboarding-backdrop" @click="closeWizard" />
       <div class="onb-dialog relative z-10 flex w-full overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="onb-title">
-        <aside class="onb-rail flex w-[248px] shrink-0 flex-col">
+        <aside class="onb-rail flex w-[248px] shrink-0 flex-col" data-testid="onboarding-rail">
           <div class="px-6 pt-6">
             <div class="onb-brand grid h-10 w-10 place-items-center rounded-xl">
               <Icon name="sparkles" :size="20" />
@@ -1106,49 +1114,16 @@ function editWorkflow() {
                       {{ t('pages.onboarding.workflow.summary') }}
                     </div>
                     <dl class="onb-summary mt-3">
-                      <div>
-                        <dt>{{ t('pages.onboarding.steps.model') }}</dt>
-                        <dd>
-                          <span class="onb-dot is-ok" /><span class="truncate" :title="backendSummary">{{ backendSummary }}</span>
+                      <div
+                        v-for="item in summaryItems"
+                        :key="item.id"
+                        :class="{ 'col-span-2': 'wide' in item }"
+                        :data-testid="`onboarding-review-${item.id}`"
+                      >
+                        <dt>{{ item.label }}</dt>
+                        <dd :title="item.value">
+                          <span class="onb-dot" :class="{ 'is-ok': item.ok }" /><span class="truncate">{{ item.value }}</span>
                         </dd>
-                      </div>
-                      <div>
-                        <dt>API Key</dt>
-                        <dd><span class="onb-dot is-ok" />{{ t('pages.onboarding.workflow.keyOn') }}</dd>
-                      </div>
-                      <div data-testid="onboarding-review-repo">
-                        <dt>{{ t('pages.onboarding.repo.chip') }}</dt>
-                        <dd>
-                          <span class="onb-dot" :class="{ 'is-ok': repoOk }" />{{
-                            repoOk ? repoDirName : t('pages.onboarding.workflow.repoSkip')
-                          }}
-                        </dd>
-                      </div>
-                      <div data-testid="onboarding-review-git-user">
-                        <dt>{{ t('pages.onboarding.gitUser.chip') }}</dt>
-                        <dd><span class="onb-dot is-ok" />{{ draft.gitUserName }}</dd>
-                      </div>
-                      <div>
-                        <dt>{{ t('pages.onboarding.workflow.gitCred') }}</dt>
-                        <dd>
-                          <span class="onb-dot" :class="{ 'is-ok': gitOk }" />{{
-                            gitOk ? gitCredLabel : t('pages.onboarding.workflow.gitSkip')
-                          }}
-                        </dd>
-                      </div>
-                      <div data-testid="onboarding-review-agents">
-                        <dt>Agent</dt>
-                        <dd>
-                          <span class="onb-dot is-ok" />{{
-                            t('pages.onboarding.workflow.agentsValue', {
-                              n: enabledTeam.length,
-                            })
-                          }}
-                        </dd>
-                      </div>
-                      <div data-testid="onboarding-review-workflow">
-                        <dt>{{ t('pages.onboarding.workflow.wfLabel') }}</dt>
-                        <dd><span class="onb-dot is-ok" />{{ t('pages.onboarding.workflow.wfValue') }}</dd>
                       </div>
                     </dl>
                     <p class="onb-hint mt-3">
@@ -1642,30 +1617,28 @@ function editWorkflow() {
 }
 .onb-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px 20px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 20px;
 }
 .onb-summary > div {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px dashed rgb(var(--c-line));
-  font-size: 12.5px;
+  min-width: 0;
 }
 .onb-summary dt {
-  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 11px;
+  line-height: 16px;
   color: rgb(var(--c-txt3));
 }
 .onb-summary dd {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  margin-top: 2px;
+  font-size: 12.5px;
+  line-height: 18px;
   white-space: nowrap;
   color: rgb(var(--c-txt));
   font-weight: 500;
