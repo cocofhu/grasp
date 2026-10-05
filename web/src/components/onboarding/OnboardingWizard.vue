@@ -114,9 +114,21 @@ const themeOptions: { id: ThemeName; labelKey: string }[] = [
 const startPathOptions = START_PATH_OPTIONS
 const regionPolicy = computed(() => getRegionPolicy(draft.value.acpBackend))
 const authGuide = computed(() => authGuideFor(draft.value.acpBackend, draft.value.region))
-const primaryAuthKey = computed(() => authGuide.value.keys[0]?.key || '')
-const primaryAuthAlt = computed(() => authGuide.value.keys[0]?.alt || '')
 const backendLabel = computed(() => ACP_BACKENDS.find((b) => b.id === draft.value.acpBackend)?.label || '')
+const credTitle = computed(() => (draft.value.acpBackend === 'opencode' ? t('pages.onboarding.apiKey.vendorTitle') : backendLabel.value))
+const backendSummary = computed(() => {
+  if (draft.value.acpBackend === 'opencode') {
+    const vendor = OPENCODE_FALLBACK_PROVIDERS.find((p) => p.id === draft.value.openCodeProvider)
+    const model = draft.value.openCodeModel.replace(`${draft.value.openCodeProvider}/`, '')
+    return [vendor ? t(vendor.labelKey) : draft.value.openCodeProvider, model].filter(Boolean).join(' · ')
+  }
+  const region = regionPolicy.value?.options.find((o) => o.id === draft.value.region)
+  return region ? `${backendLabel.value} · ${t(region.labelKey)}` : backendLabel.value
+})
+const gitCredLabel = computed(() => {
+  const type = ONBOARDING_GIT_TYPES.find((g) => g.id === draft.value.gitCredentialType)
+  return type ? t(type.labelKey) : ''
+})
 const targetProjectId = computed(() => createdProjectId.value || (props.projectId || '').trim())
 const wizardTitle = computed(() => {
   if (isCreate.value) return t('pages.onboarding.titleCreate')
@@ -772,10 +784,7 @@ function editWorkflow() {
                       <div class="flex flex-wrap gap-1.5">
                         <span v-for="p in OPENCODE_FALLBACK_PROVIDERS" :key="p.id" class="onb-chip">{{ t(p.labelKey) }}</span>
                       </div>
-                      <p class="onb-hint">
-                        {{ t('pages.onboarding.acp.apiKeyVendorsHint') }}
-                        <code class="ml-1 font-mono text-txt2">/root/.config/opencode</code>
-                      </p>
+                      <p class="onb-hint">{{ t('pages.onboarding.acp.apiKeyVendorsHint') }}</p>
                     </div>
                     <div v-else class="mt-4">
                       <div class="onb-label">
@@ -796,10 +805,7 @@ function editWorkflow() {
                           :data-testid="`onboarding-backend-${b.id}`"
                           @click="selectBackend(b.id)"
                         >
-                          <span class="min-w-0 flex-1">
-                            <strong class="block truncate text-[13px] text-txt">{{ b.label }}</strong>
-                            <span class="mt-0.5 block truncate font-mono text-[10.5px] text-txt3">{{ b.configRoot }}</span>
-                          </span>
+                          <strong class="block min-w-0 flex-1 truncate text-[13px] text-txt">{{ b.label }}</strong>
                           <span class="onb-check"><Icon name="check" :size="11" /></span>
                         </button>
                       </div>
@@ -833,11 +839,8 @@ function editWorkflow() {
                     <header class="onb-cred-head">
                       <span class="onb-tile-icon"><Icon :name="draft.startPath === 'apiKey' ? 'lock' : 'terminal'" :size="16" /></span>
                       <div class="min-w-0 flex-1">
-                        <div class="text-[14px] font-semibold text-txt">{{ backendLabel }}</div>
-                        <div class="mt-0.5 text-[12px] text-txt3">
-                          {{ t('pages.onboarding.apiKey.savedAs') }}
-                          <code class="onb-keyname" :title="primaryAuthAlt">{{ primaryAuthKey }}</code>
-                        </div>
+                        <div class="text-[14px] font-semibold text-txt">{{ credTitle }}</div>
+                        <div class="mt-0.5 text-[12px] text-txt3">{{ t('pages.onboarding.apiKey.hint') }}</div>
                       </div>
                       <a
                         v-for="link in authGuide.links"
@@ -882,7 +885,6 @@ function editWorkflow() {
                           data-testid="onboarding-api-key"
                           @input="keyError = false"
                         />
-                        <p class="onb-hint">{{ t('pages.onboarding.apiKey.hint') }}</p>
                         <p v-if="keyError" class="onb-error">{{ t('pages.onboarding.apiKey.required') }}</p>
                       </label>
                     </div>
@@ -995,7 +997,7 @@ function editWorkflow() {
                         </button>
                       </div>
                       <label v-if="draft.gitCredentialType === 'github_https'" class="mt-3 block">
-                        <span class="onb-label">GITHUB_TOKEN</span>
+                        <span class="onb-label">{{ t('pages.onboarding.repo.githubToken') }}</span>
                         <input
                           v-model="draft.githubToken"
                           type="password"
@@ -1006,7 +1008,7 @@ function editWorkflow() {
                       </label>
                       <div v-else-if="draft.gitCredentialType === 'gitlab_https'" class="mt-3 grid gap-3 sm:grid-cols-2">
                         <label class="block">
-                          <span class="onb-label">GITLAB_TOKEN</span>
+                          <span class="onb-label">{{ t('pages.onboarding.repo.gitlabToken') }}</span>
                           <input
                             v-model="draft.gitlabToken"
                             type="password"
@@ -1016,7 +1018,7 @@ function editWorkflow() {
                           />
                         </label>
                         <label class="block">
-                          <span class="onb-label">GITLAB_URL</span>
+                          <span class="onb-label">{{ t('pages.onboarding.repo.gitlabUrl') }}</span>
                           <input
                             v-model="draft.gitlabUrl"
                             type="text"
@@ -1028,7 +1030,7 @@ function editWorkflow() {
                       </div>
                       <div v-else-if="draft.gitCredentialType === 'ssh'" class="mt-3 grid gap-3">
                         <label class="block">
-                          <span class="onb-label">SSH private key</span>
+                          <span class="onb-label">{{ t('pages.onboarding.repo.sshKey') }}</span>
                           <textarea
                             v-model="draft.gitSshPrivateKey"
                             rows="4"
@@ -1037,7 +1039,7 @@ function editWorkflow() {
                           />
                         </label>
                         <label class="block">
-                          <span class="onb-label">known_hosts</span>
+                          <span class="onb-label">{{ t('pages.onboarding.repo.knownHosts') }}</span>
                           <textarea v-model="draft.gitSshKnownHosts" rows="2" class="onb-input is-area font-mono" />
                         </label>
                       </div>
@@ -1107,8 +1109,7 @@ function editWorkflow() {
                       <div>
                         <dt>{{ t('pages.onboarding.steps.model') }}</dt>
                         <dd>
-                          <span class="onb-dot is-ok" />{{ backendLabel
-                          }}<template v-if="regionPolicy && draft.region"> · {{ draft.region }}</template>
+                          <span class="onb-dot is-ok" /><span class="truncate" :title="backendSummary">{{ backendSummary }}</span>
                         </dd>
                       </div>
                       <div>
@@ -1131,7 +1132,7 @@ function editWorkflow() {
                         <dt>{{ t('pages.onboarding.workflow.gitCred') }}</dt>
                         <dd>
                           <span class="onb-dot" :class="{ 'is-ok': gitOk }" />{{
-                            gitOk ? draft.gitCredentialType : t('pages.onboarding.workflow.gitSkip')
+                            gitOk ? gitCredLabel : t('pages.onboarding.workflow.gitSkip')
                           }}
                         </dd>
                       </div>
@@ -1481,14 +1482,6 @@ function editWorkflow() {
   color: rgb(var(--c-txt2));
   background: rgb(var(--c-elevated));
 }
-.onb-keyname {
-  padding: 1px 6px;
-  border-radius: 5px;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
-  color: rgb(var(--c-accent-2));
-  background: rgb(var(--c-accent) / 0.1);
-}
 .onb-cred {
   border-radius: 14px;
   border: 1px solid rgb(var(--c-line));
@@ -1662,6 +1655,8 @@ function editWorkflow() {
   font-size: 12.5px;
 }
 .onb-summary dt {
+  flex-shrink: 0;
+  white-space: nowrap;
   color: rgb(var(--c-txt3));
 }
 .onb-summary dd {

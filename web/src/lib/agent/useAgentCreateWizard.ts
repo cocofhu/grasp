@@ -136,7 +136,6 @@ const authConfigured = computed(() => {
 const showAuthReminder = computed(() => !authConfigured.value)
 
 const primaryAuthKey = computed(() => authGuide.value.keys[0]?.key || '')
-const primaryAuthAlt = computed(() => authGuide.value.keys[0]?.alt || '')
 
 const headSub = computed(() => {
   const id = currentStep.value.id
@@ -452,7 +451,6 @@ function chipClass(kind: string) {
   authConfigured,
   showAuthReminder,
   primaryAuthKey,
-  primaryAuthAlt,
   headSub,
   templateOptions,
   selectedTemplate,

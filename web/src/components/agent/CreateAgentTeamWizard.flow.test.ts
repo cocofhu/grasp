@@ -34,8 +34,6 @@ const ApiKeyStub = {
     'customConfigContent',
     'customConfigError',
     'authGuide',
-    'primaryAuthKey',
-    'primaryAuthAlt',
   ],
   emits: ['update:authMode', 'update:apiKeyInput', 'update:customConfigContent'],
   template: '<div class="api-key-stub" />',

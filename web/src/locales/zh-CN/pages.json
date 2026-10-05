@@ -413,54 +413,54 @@
         "themeLight": "浅色"
       },
       "acp": {
-        "meta": "先选启动方式：用模型厂商的 API Key，或用编码 CLI 的厂商账号。密钥都写入本项目共享 Agent 配置，供全部 Agent 共用。",
+        "meta": "先选接入方式：用模型厂商的 API Key，或用编码工具的账号。密钥保存在本项目，所有 Agent 共用。",
         "region": "站点",
         "paths": {
           "apiKey": {
-            "title": "从 API Key 开始",
-            "desc": "手上有模型厂商的 API Key（OpenAI / Anthropic / DeepSeek 等），由 OpenCode 后端直接调用，可自定义 API Base 与 model。"
+            "title": "用模型厂商的 API Key",
+            "desc": "已有 OpenAI、Anthropic、DeepSeek 等厂商的 API Key。可以自选模型，也能接入自建的兼容服务。"
           },
           "cli": {
-            "title": "用编码 CLI 账号",
-            "desc": "使用 Cursor / Claude Code / CodeBuddy / Trae 各自的 CLI 账号与密钥，模型由该 CLI 决定。"
+            "title": "用编码工具账号",
+            "desc": "使用 Cursor、Claude Code、CodeBuddy 或 Trae 的账号密钥，模型由对应工具决定。"
           }
         },
-        "cliLabel": "选择 CLI 后端",
+        "cliLabel": "选择编码工具",
         "apiKeyVendorsLabel": "常见模型厂商",
-        "apiKeyVendorsHint": "厂商与模型清单来自 OpenCode 的模型目录（models.dev），下一步可搜索选择；也可填自有兼容端点。配置目录"
+        "apiKeyVendorsHint": "下一步可以搜索选择厂商和模型，也可以填写自建服务的地址。"
       },
       "apiKey": {
-        "meta": "按所选后端填写 API Key。此项必填，未填写将无法生成配置。",
+        "meta": "填写所选服务的 API Key，这一项必填。",
         "required": "请先填写 API Key。",
-        "hint": "只存于项目共享配置，不会写入日志或产物。",
+        "hint": "只保存在本项目，不会出现在日志或产物里。",
         "howTo": "如何获取",
         "placeholder": "粘贴你的 API Key",
-        "savedAs": "保存为",
-        "change": "更换后端"
+        "change": "更换后端",
+        "vendorTitle": "模型厂商 API Key"
       },
       "git": {
-        "meta": "沙箱里 git commit 需要提交身份；仓库和访问凭据可以现在填，也可以跳过。",
+        "meta": "Agent 提交代码时需要署名；仓库和访问凭据可以现在填，也可以跳过。",
         "repoCredSection": "仓库与访问凭据",
         "skip": "跳过",
         "unskip": "现在配置",
-        "skippedHint": "已跳过：仓库在启动运行时再填，私有仓的凭据稍后在项目「凭据」里补。",
-        "foot": "凭据写入项目凭据，不进入 Agent 导出包。"
+        "skippedHint": "已跳过：仓库可以在运行时再填，私有仓库的凭据之后到项目「凭据」里补。",
+        "foot": "凭据只保存在本项目，导出 Agent 时不会带上。"
       },
       "gitUser": {
-        "section": "Git 提交身份",
-        "nameLabel": "提交者姓名",
-        "emailLabel": "提交者邮箱",
+        "section": "提交署名",
+        "nameLabel": "姓名",
+        "emailLabel": "邮箱",
         "namePlaceholder": "例如 张三",
         "emailPlaceholder": "you{'@'}example.com",
-        "hint": "沙箱里 git commit 会用这两个值，写入项目共享配置。",
-        "chip": "Git 身份"
+        "hint": "Agent 提交代码时用这个姓名和邮箱署名。",
+        "chip": "提交署名"
       },
       "preview": {
-        "section": "沙箱预览",
+        "section": "预览",
         "vncLabel": "页面预览",
         "browserLabel": "浏览器工具",
-        "vncHint": "在控制面打开沙箱桌面，方便看页面。",
-        "browserHint": "让 Agent 能操作沙箱里的浏览器（会同时打开页面预览）。",
+        "vncHint": "在页面里直接查看 Agent 打开的应用。",
+        "browserHint": "让 Agent 能操作浏览器来检查页面（会同时打开页面预览）。",
         "vncOn": "页面预览已开",
         "vncOff": "页面预览已关",
         "browserOn": "浏览器工具已开",
@@ -472,9 +472,14 @@
         "urlLabel": "仓库地址",
         "branchLabel": "分支",
         "branchPlaceholder": "留空用仓库默认分支",
-        "hint": "留空则不预置仓库，启动 Run 时再填。",
-        "cloneTo": "将 clone 到 /root/workspace/{dir}/，写入默认工作流的 repos 变量。",
-        "chip": "仓库"
+        "hint": "留空则在运行时再填。",
+        "cloneTo": "运行时会把仓库下载到工作区的 {dir} 目录。",
+        "chip": "仓库",
+        "githubToken": "GitHub 访问令牌",
+        "gitlabToken": "GitLab 访问令牌",
+        "gitlabUrl": "GitLab 地址",
+        "sshKey": "SSH 私钥",
+        "knownHosts": "可信主机（可选）"
       },
       "team": {
         "meta": "三个 Agent 组成「需求澄清 → 实现 → 测试评审」工作流，可改名并指定模型。",
@@ -547,7 +552,9 @@
         "gitCred": "Git 凭据",
         "agentsValue": "{n} 个",
         "wfLabel": "工作流",
-        "wfValue": "默认工作流（发布）"
+        "wfValue": "默认工作流（发布）",
+        "inputSub": "填写需求",
+        "outputSub": "交付结果"
       },
       "success": {
         "title": "配置已生成",
@@ -556,13 +563,13 @@
         "runOnceHint": "填写需求和仓库，马上跑一遍默认工作流。",
         "editWorkflow": "去编辑工作流",
         "editWorkflowHint": "在画布里调整节点、提示词和分支。",
-        "limit": "默认工作流的仓库 URL 为空，请在启动 Run 时填写。私有仓请优先在项目「凭据」确认 Git 凭据；环境变量 / 共享配置仅作兼容入口。",
-        "repoOk": "已写入默认工作流的 repos 变量，clone 到 /root/workspace/{dir}/。启动 Run 时仍可改。",
+        "limit": "还没有设置仓库，运行时再填即可。私有仓库请到项目「凭据」里配置访问凭据。",
+        "repoOk": "已设置默认仓库 {dir}，运行时仍可修改。",
         "publishedLine": "默认工作流（已发布）",
-        "gitOk": "已写入 Git 凭据到项目「凭据」（值已打码）。",
-        "gitSkip": "未配置 Git。私有仓请到项目详情 → 共享Agent配置补 Token 或 SSH。",
-        "gitUserOk": "已写入提交身份：{name} <{email}>。",
-        "preview": "已把{vnc}、{mcp}写入共享配置。",
+        "gitOk": "已保存 Git 凭据（内容已隐藏）。",
+        "gitSkip": "未配置 Git 凭据。私有仓库请到项目「凭据」里补充访问令牌或 SSH 密钥。",
+        "gitUserOk": "提交署名：{name} <{email}>。",
+        "preview": "预览设置：{vnc}，{mcp}。",
         "created": "已创建",
         "written": "已写入配置"
       },
@@ -575,15 +582,15 @@
       "stepOf": "第 {n} 步，共 {total} 步",
       "railDesc": {
         "prefs": "语言、主题与预览能力",
-        "model": "API Key 或编码 CLI 账号",
+        "model": "API Key 或编码工具账号",
         "key": "填写模型与密钥",
-        "git": "提交身份、仓库与凭据",
+        "git": "提交署名、仓库与凭据",
         "team": "确认要创建的 Agent",
         "workflow": "预览将要发布的默认工作流",
         "done": "生成配置，开始第一次运行"
       },
-      "prefsMeta": "界面语言与主题，以及 Agent 在沙箱里可用的预览能力。",
-      "prefsMetaCreate": "项目名称，以及 Agent 在沙箱里可用的预览能力。"
+      "prefsMeta": "界面语言与主题，以及 Agent 可用的预览能力。",
+      "prefsMetaCreate": "项目名称，以及 Agent 可用的预览能力。"
     },
     "tokenByModel": {
       "tipTitle": "用量提示",
@@ -2425,11 +2432,11 @@
         "sshPrivateKeyPh": "-----BEGIN OPENSSH PRIVATE KEY-----"
       },
       "openCode": {
-        "title": "OpenCode 厂商与模型",
-        "desc": "选好厂商和模型就能启动 OpenCode 沙箱。模型必填；用代理或自建接口时才需要填 API Base。",
+        "title": "模型厂商与模型",
+        "desc": "选好厂商和模型即可。模型必填；使用代理或自建服务时才需要填写接口地址。",
         "providerLabel": "模型厂商",
         "providerSearchPlaceholder": "搜索厂商，或直接输入厂商名…",
-        "providerSelfHosted": "这个厂商不在官方列表里，按自建服务处理：请在下面填写 API Base URL，并填写它提供的模型名。",
+        "providerSelfHosted": "这个厂商不在列表里，按自建服务处理：请在下面填写接口地址，并填写它提供的模型名。",
         "modelLabel": "模型",
         "modelPlaceholder": "选择，或直接输入模型名",
         "modelPlaceholderCustom": "输入模型名，例如 my-model",
@@ -2438,10 +2445,10 @@
         "modelUnknown": "列表里没有这个模型，可能无法启动。请从列表中选择，或确认你的服务确实提供它。",
         "modelSearchPlaceholder": "搜索，或直接输入模型名…",
         "modelRequired": "请选择或填写模型，例如 deepseek-v4-pro。",
-        "baseLabel": "API Base URL",
+        "baseLabel": "接口地址",
         "basePlaceholder": "https://api.example.com/v1",
         "baseHint": "一般不用填写。使用代理或自建接口时，填写它的地址。",
-        "baseRequired": "自定义厂商必须填写 API Base URL。",
+        "baseRequired": "自建服务必须填写接口地址。",
         "visionLabel": "视觉理解",
         "visionHint": "勾选后，模型才能看图。不勾选只处理文字。",
         "advancedSummary": "高级说明（点开查看技术细节）",
@@ -2455,7 +2462,7 @@
           "moonshotai": "Moonshot / Kimi",
           "alibaba": "Alibaba Qwen",
           "xai": "xAI Grok",
-          "custom": "Custom (OpenAI-compatible)"
+          "custom": "自建服务（兼容 OpenAI）"
         }
       },
       "mobile": {
@@ -2713,44 +2720,43 @@
           "meta": "Token 类鉴权请写到「共享Agent配置」；本步可跳过，创建时不会把 API Key 写入单个 Agent。",
           "modeGroup": "鉴权方式",
           "modeApiKey": "粘贴 API Key",
-          "modeApiKeyHint": "仅作参考输入，创建时不会写入单个 Agent.env；请到共享Agent配置保存",
+          "modeApiKeyHint": "仅作参考，创建时不会写入单个 Agent；请到共享 Agent 配置保存",
           "modeCustomConfig": "自定义配置",
           "modeCustomConfigHint": "编辑 settings.json，创建时写入 Agent 文件树",
           "backendBanner": "当前 Backend：{backend}。",
-          "alias": "别名（任选其一）",
-          "inputLabel": "粘贴 API Key（可选，不会写入 Agent.env）",
+          "inputLabel": "粘贴 API Key（可选，不会写入单个 Agent）",
           "inputPlaceholder": "建议跳过，改到共享Agent配置填写",
           "skipHint": "推荐直接「跳过」或「下一步」；在项目详情 → 共享Agent配置中填写 Token。",
           "notes": {
             "codebuddySite": "Key 与站点绑定；请到与 Agent 步所选站点一致的控制台申请。",
             "traeToken": "官方 CLI 登录令牌须含 trae-lt- 前缀（旗舰版）。",
-            "opencode": "OpenCode 用厂商 API Key 启动；可指定 API Base 与 model。"
+            "opencode": "用模型厂商的 API Key 启动，可以指定模型和接口地址。"
           },
           "paths": {
             "cursor": {
               "step1": "打开 Cursor Dashboard → Settings → API Keys",
               "step2": "创建 API Key 并复制",
-              "step3": "将 Key 粘贴到下方（或稍后在 Studio Env 填写 GRASP_CURSOR_API_KEY / CURSOR_API_KEY）"
+              "step3": "将 Key 粘贴到下方"
             },
             "claude": {
               "step1": "打开 Anthropic Console → API Keys（或 Claude Platform → Settings → Keys）",
               "step2": "Create Key 并复制",
-              "step3": "将 Key 粘贴到下方（或填写 GRASP_CLAUDE_API_KEY / ANTHROPIC_API_KEY）"
+              "step3": "将 Key 粘贴到下方"
             },
             "codebuddy": {
               "step1": "确认 Agent 步所选站点（国际站 / 国内站等）",
               "step2": "打开对应站点控制台的 API Key / Profile Keys 页面并创建 Key",
-              "step3": "将 Key 粘贴到下方（GRASP_CODEBUDDY_API_KEY / CODEBUDDY_API_KEY）"
+              "step3": "将 Key 粘贴到下方"
             },
             "trae": {
               "step1": "打开 Trae 企业控制台：个人信息 → 访问令牌 → CLI 登录令牌",
               "step2": "生成含 trae-lt- 前缀的登录令牌并复制",
-              "step3": "将令牌粘贴到下方（GRASP_TRAE_API_KEY / TRAECLI_PERSONAL_ACCESS_TOKEN）"
+              "step3": "将令牌粘贴到下方"
             },
             "opencode": {
-              "step1": "选择模型厂商（OpenAI / Anthropic / OpenRouter 等，或 Custom）",
-              "step2": "在对应控制台创建 API Key；Custom 还需填写 API Base",
-              "step3": "粘贴 Key，并可选填写模型（provider/model）"
+              "step1": "选择模型厂商（OpenAI、Anthropic、OpenRouter 等，或自建服务）",
+              "step2": "在厂商控制台创建 API Key；自建服务还要填写接口地址",
+              "step3": "粘贴 Key，并选择模型"
             }
           },
           "links": {
@@ -2764,7 +2770,7 @@
             "codebuddyIoa": "iOA 申请 Key",
             "codebuddyStaging": "Staging 申请 Key",
             "traeTokenDocs": "Trae CLI 登录令牌文档",
-            "opencodeProviders": "OpenCode Providers"
+            "opencodeProviders": "支持的模型厂商"
           },
           "customConfig": {
             "cardTitle": "后端配置文件",
@@ -2778,7 +2784,8 @@
               "opencode": "写入 opencode.json（不是 settings.json）。可配置 provider、baseURL 与 model。",
               "generic": "文件仍写入 configRoot；是否被 CLI 消费取决于后端。推荐优先使用 Env Key，自定义配置为高级/兼容路径。"
             }
-          }
+          },
+          "howTo": "如何获取"
         },
         "git": {
           "meta": "点选 GitHub / GitLab / SSH 即可。已有 Token 时会预选类型，仍可改选或跳过，之后也可在 Studio 再配。"

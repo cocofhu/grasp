@@ -24,8 +24,6 @@ const props = defineProps<{
   customConfigContent: string
   customConfigError: boolean
   authGuide: BackendAuthGuide
-  primaryAuthKey: string
-  primaryAuthAlt: string
   env?: Record<string, string>
   openCodeBaseError?: boolean
   openCodeModelError?: boolean
@@ -130,13 +128,7 @@ function setMode(mode: WizardAuthMode) {
         @update:vision="emit('update:openCodeVision', $event)"
       />
       <div class="mb-4 rounded-lg border border-line bg-base p-3.5">
-        <div class="text-[13px] font-semibold text-txt">
-          <code class="text-accent-2">{{ primaryAuthKey }}</code>
-        </div>
-        <p v-if="primaryAuthAlt" class="mt-1 text-[11px] text-txt3">
-          {{ t('pages.agentStudio.wizard.apiKey.alias') }}
-          <code>{{ primaryAuthAlt }}</code>
-        </p>
+        <div class="text-[13px] font-semibold text-txt">{{ t('pages.agentStudio.wizard.apiKey.howTo') }}</div>
         <p v-if="authGuide.noteKey" class="mt-2 text-[11px] leading-5 text-txt2">
           {{ t(authGuide.noteKey) }}
         </p>

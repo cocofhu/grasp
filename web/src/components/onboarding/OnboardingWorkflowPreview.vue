@@ -67,9 +67,10 @@ function nodeTitle(n: (typeof layout.value)[number]) {
 }
 
 function nodeSub(n: (typeof layout.value)[number]) {
-  if (n.kind !== 'agent') return n.kind
+  if (n.kind === 'input') return t('pages.onboarding.workflow.inputSub')
+  if (n.kind === 'output') return t('pages.onboarding.workflow.outputSub')
   const title = n.templateId ? t(`pages.onboarding.team.templates.${n.templateId}.title`) : ''
-  return title && title !== n.name ? title : 'agent'
+  return title && title !== n.name ? title : 'Agent'
 }
 </script>
 

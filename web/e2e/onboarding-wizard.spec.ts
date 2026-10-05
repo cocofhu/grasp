@@ -137,11 +137,13 @@ async function expectStep(page: Page, id: string) {
   await expect(page.getByTestId(`onboarding-rail-${id}`)).toHaveAttribute('data-active', '1')
 }
 
-/** Every page must fit the dialog without scrolling. */
+/** Every page must fit the dialog without scrolling and must not show env var names or sandbox paths. */
 async function expectNoScroll(page: Page, testId = 'onboarding-body') {
   const body = page.getByTestId(testId)
   const overflow = await body.evaluate((el) => el.scrollHeight - el.clientHeight)
   expect(overflow).toBeLessThanOrEqual(1)
+  const text = await page.getByTestId('onboarding-wizard').innerText()
+  expect(text).not.toMatch(/\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b|\/root\//)
 }
 
 async function fillKey(page: Page, apiKey: string) {
@@ -215,7 +217,7 @@ test('首次安装分步引导：偏好 → 模型 → 密钥 → Git → 团队
   await expectStep(page, 'git')
   await fillIdentity(page)
   await page.getByTestId('onboarding-repo-url').fill('https://github.com/org/web.git')
-  await expect(page.getByTestId('onboarding-repo-hint')).toContainText('/root/workspace/web/')
+  await expect(page.getByTestId('onboarding-repo-hint')).toContainText('web')
   await page.getByTestId('onboarding-git-type-github_https').click()
   await page.screenshot({ path: path.join(OUT, '04-git.png') })
   await expectNoScroll(page)

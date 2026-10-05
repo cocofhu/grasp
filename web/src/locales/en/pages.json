@@ -413,54 +413,54 @@
         "themeLight": "Light"
       },
       "acp": {
-        "meta": "Pick how to start: a model-vendor API key, or a coding-CLI vendor account. Either way the key is stored in this project's shared Agent config.",
+        "meta": "Pick how to connect: a model vendor API key, or a coding tool account. The key is stored in this project and shared by all Agents.",
         "region": "Region",
         "paths": {
           "apiKey": {
-            "title": "Start from an API key",
-            "desc": "You already have a model-vendor key (OpenAI / Anthropic / DeepSeek and more). The OpenCode backend calls it directly, with optional API Base and model."
+            "title": "Use a model vendor API key",
+            "desc": "You already have a key from OpenAI, Anthropic, DeepSeek or another vendor. Pick any model, or connect your own compatible service."
           },
           "cli": {
-            "title": "Use a coding-CLI account",
-            "desc": "Use the Cursor / Claude Code / CodeBuddy / Trae CLI account and key; that CLI decides the model."
+            "title": "Use a coding tool account",
+            "desc": "Use your Cursor, Claude Code, CodeBuddy or Trae account key; that tool decides the model."
           }
         },
-        "cliLabel": "Choose a CLI backend",
+        "cliLabel": "Choose a coding tool",
         "apiKeyVendorsLabel": "Common model vendors",
-        "apiKeyVendorsHint": "The vendor and model lists come from OpenCode's model catalog (models.dev) and are searchable in the next step; a private compatible endpoint works too. Config root"
+        "apiKeyVendorsHint": "You can search vendors and models in the next step, or enter the address of your own service."
       },
       "apiKey": {
-        "meta": "API Key is required for the selected backend.",
+        "meta": "Enter the API key for the selected service. This is required.",
         "required": "Please enter an API Key.",
-        "hint": "Stored only in the project shared config, never in logs or artifacts.",
+        "hint": "Stored only in this project, never shown in logs or artifacts.",
         "howTo": "How to get it",
         "placeholder": "Paste your API key",
-        "savedAs": "Saved as",
-        "change": "Change backend"
+        "change": "Change backend",
+        "vendorTitle": "Model vendor API key"
       },
       "git": {
-        "meta": "git commit in the sandbox needs a commit identity; the repository and access credentials can be filled in now or skipped.",
+        "meta": "Agents sign their commits; the repository and access credentials can be added now or skipped.",
         "repoCredSection": "Repository and access credentials",
         "skip": "Skip",
         "unskip": "Configure now",
-        "skippedHint": "Skipped: fill the repository when starting a run, and add private-repo credentials later under Project credentials.",
-        "foot": "Credentials are stored in Project credentials, not in Agent export packs."
+        "skippedHint": "Skipped: pick the repository when you start a run, and add private-repo credentials later under Project credentials.",
+        "foot": "Credentials stay in this project and are never included when an Agent is exported."
       },
       "gitUser": {
-        "section": "Git commit identity",
-        "nameLabel": "Committer name",
-        "emailLabel": "Committer email",
+        "section": "Commit signature",
+        "nameLabel": "Name",
+        "emailLabel": "Email",
         "namePlaceholder": "e.g. Ada Lovelace",
         "emailPlaceholder": "you{'@'}example.com",
-        "hint": "Sandbox git commits use these values. They are stored in project shared config.",
-        "chip": "Git identity"
+        "hint": "Agents sign their commits with this name and email.",
+        "chip": "Commit signature"
       },
       "preview": {
-        "section": "Sandbox preview",
+        "section": "Preview",
         "vncLabel": "Page preview",
         "browserLabel": "Browser tools",
-        "vncHint": "Opens the sandbox desktop in the control plane so you can see the page.",
-        "browserHint": "Lets the agent drive the sandbox browser (also turns on page preview).",
+        "vncHint": "See the app an Agent opens right inside the page.",
+        "browserHint": "Lets Agents use a browser to check pages (also turns on page preview).",
         "vncOn": "page preview on",
         "vncOff": "page preview off",
         "browserOn": "browser tools on",
@@ -472,9 +472,14 @@
         "urlLabel": "Repository URL",
         "branchLabel": "Branch",
         "branchPlaceholder": "empty uses the default branch",
-        "hint": "Leave empty to pick a repository when you start a Run.",
-        "cloneTo": "Clones to /root/workspace/{dir}/ and fills the Default Workflow repos variable.",
-        "chip": "Repo"
+        "hint": "Leave empty to pick a repository when you start a run.",
+        "cloneTo": "Runs download the repository into the {dir} folder of the workspace.",
+        "chip": "Repo",
+        "githubToken": "GitHub access token",
+        "gitlabToken": "GitLab access token",
+        "gitlabUrl": "GitLab address",
+        "sshKey": "SSH private key",
+        "knownHosts": "Trusted hosts (optional)"
       },
       "team": {
         "meta": "Three Agents form the Clarify → Implement → Test & review workflow; rename them or pick a model.",
@@ -547,7 +552,9 @@
         "gitCred": "Git credentials",
         "agentsValue": "{n}",
         "wfLabel": "Workflow",
-        "wfValue": "Default Workflow (published)"
+        "wfValue": "Default Workflow (published)",
+        "inputSub": "Your request",
+        "outputSub": "Delivery"
       },
       "success": {
         "title": "Setup ready",
@@ -556,13 +563,13 @@
         "runOnceHint": "Enter a requirement and repository and run the default workflow now.",
         "editWorkflow": "Edit workflow",
         "editWorkflowHint": "Adjust nodes, prompts and branches on the canvas.",
-        "limit": "Default Workflow has an empty repo URL — fill it when starting a Run. For private repos, confirm Git credentials in Project credentials first; env/shared config remain compatibility fallbacks.",
-        "repoOk": "Saved to the Default Workflow repos variable, cloning to /root/workspace/{dir}/. You can still change it at run start.",
+        "limit": "No repository yet; pick one when you start a run. For private repositories, add access credentials under Project credentials.",
+        "repoOk": "Default repository set to {dir}; you can still change it when you start a run.",
         "publishedLine": "Default Workflow (published)",
-        "gitOk": "Git credentials were saved to Project credentials (values are masked).",
-        "gitSkip": "Git was skipped. For private repos, add a token or SSH under Project → shared Agent config.",
-        "gitUserOk": "Saved commit identity: {name} <{email}>.",
-        "preview": "Wrote {vnc} and {mcp} to shared config.",
+        "gitOk": "Git credentials saved (values hidden).",
+        "gitSkip": "No Git credentials. For private repositories, add an access token or SSH key under Project credentials.",
+        "gitUserOk": "Commit signature: {name} <{email}>.",
+        "preview": "Preview: {vnc}, {mcp}.",
         "created": "Created",
         "written": "Configuration written"
       },
@@ -575,15 +582,15 @@
       "stepOf": "Step {n} of {total}",
       "railDesc": {
         "prefs": "Language, theme, previews",
-        "model": "API key or CLI account",
+        "model": "API key or coding tool",
         "key": "Model and key",
-        "git": "Identity and repository",
+        "git": "Signature, repository, credentials",
         "team": "Agents to create",
         "workflow": "Default workflow to publish",
         "done": "Generate and run once"
       },
-      "prefsMeta": "Interface language and theme, plus the preview abilities Agents get in the sandbox.",
-      "prefsMetaCreate": "Project name, plus the preview abilities Agents get in the sandbox."
+      "prefsMeta": "Interface language and theme, plus the preview abilities Agents get.",
+      "prefsMetaCreate": "Project name, plus the preview abilities Agents get."
     },
     "tokenByModel": {
       "tipTitle": "Usage tip",
@@ -2425,11 +2432,11 @@
         "sshPrivateKeyPh": "-----BEGIN OPENSSH PRIVATE KEY-----"
       },
       "openCode": {
-        "title": "OpenCode provider and model",
-        "desc": "Pick a provider and a model to start the OpenCode sandbox. The model is required; fill in API Base only for a proxy or your own endpoint.",
+        "title": "Model vendor and model",
+        "desc": "Pick a vendor and a model. The model is required; the service address is only needed for a proxy or your own service.",
         "providerLabel": "Provider",
         "providerSearchPlaceholder": "Search vendors, or type a vendor name…",
-        "providerSelfHosted": "This vendor isn't in the official list, so we treat it as your own service: fill in the API Base URL below and type the model name it provides.",
+        "providerSelfHosted": "This vendor is not in the list, so it is treated as your own service: enter its address below and type the model name it provides.",
         "modelLabel": "Model",
         "modelPlaceholder": "Pick, or type a model name",
         "modelPlaceholderCustom": "Type a model name, e.g. my-model",
@@ -2438,10 +2445,10 @@
         "modelUnknown": "This model isn't in the list and may fail to start. Pick one from the list, or make sure your service really provides it.",
         "modelSearchPlaceholder": "Search, or type a model name…",
         "modelRequired": "Pick or type a model, e.g. deepseek-v4-pro.",
-        "baseLabel": "API Base URL",
+        "baseLabel": "Service address",
         "basePlaceholder": "https://api.example.com/v1",
         "baseHint": "Usually not needed. Fill this in for a proxy or your own endpoint.",
-        "baseRequired": "Custom providers must fill in an API Base URL.",
+        "baseRequired": "Your own service needs a service address.",
         "visionLabel": "Vision",
         "visionHint": "Turn this on so the model can see images. Off means text only.",
         "advancedSummary": "Advanced (tap to see the technical details)",
@@ -2455,7 +2462,7 @@
           "moonshotai": "Moonshot / Kimi",
           "alibaba": "Alibaba Qwen",
           "xai": "xAI Grok",
-          "custom": "Custom (OpenAI-compatible)"
+          "custom": "Own service (OpenAI-compatible)"
         }
       },
       "mobile": {
@@ -2713,44 +2720,43 @@
           "meta": "Put Token auth in Project shared Agent config; you can skip this step — create will not write API Keys into a single Agent.",
           "modeGroup": "Auth method",
           "modeApiKey": "Paste API Key",
-          "modeApiKeyHint": "Reference only; create will not write it into Agent.env — save Tokens in Project shared Agent config",
+          "modeApiKeyHint": "Reference only; it is not written into a single Agent. Save it in the project shared Agent config",
           "modeCustomConfig": "Custom config",
           "modeCustomConfigHint": "Edit settings.json; written to Agent files on create",
           "backendBanner": "Current Backend: {backend}.",
-          "alias": "Alias (either works)",
-          "inputLabel": "Paste API Key (optional; not written to Agent.env)",
+          "inputLabel": "Paste API key (optional; not written into a single Agent)",
           "inputPlaceholder": "Prefer skipping; configure in Project shared Agent config",
           "skipHint": "Prefer Skip / Next; set Tokens under Project → shared Agent config.",
           "notes": {
             "codebuddySite": "Keys are bound to a site; apply in the console that matches the site chosen in the Agent step.",
             "traeToken": "Official CLI login tokens must start with trae-lt- (Enterprise plan).",
-            "opencode": "OpenCode starts with a vendor API key; you can set API Base and model."
+            "opencode": "Starts with a model vendor API key; you can set the model and the service address."
           },
           "paths": {
             "cursor": {
               "step1": "Open Cursor Dashboard → Settings → API Keys",
               "step2": "Create an API Key and copy it",
-              "step3": "Paste below (or later set GRASP_CURSOR_API_KEY / CURSOR_API_KEY in Studio Env)"
+              "step3": "Paste the key below"
             },
             "claude": {
               "step1": "Open Anthropic Console → API Keys (or Claude Platform → Settings → Keys)",
               "step2": "Create a key and copy it",
-              "step3": "Paste below (or set GRASP_CLAUDE_API_KEY / ANTHROPIC_API_KEY)"
+              "step3": "Paste the key below"
             },
             "codebuddy": {
               "step1": "Confirm the site selected in the Agent step (International / China / …)",
               "step2": "Open that site's console Profile / API Keys page and create a key",
-              "step3": "Paste below (GRASP_CODEBUDDY_API_KEY / CODEBUDDY_API_KEY)"
+              "step3": "Paste the key below"
             },
             "trae": {
               "step1": "In the Trae enterprise console: Profile → Access tokens → CLI login token",
               "step2": "Generate a trae-lt-… token and copy it",
-              "step3": "Paste below (GRASP_TRAE_API_KEY / TRAECLI_PERSONAL_ACCESS_TOKEN)"
+              "step3": "Paste the token below"
             },
             "opencode": {
-              "step1": "Pick a vendor (OpenAI / Anthropic / OpenRouter, or Custom)",
-              "step2": "Create an API key in that console; Custom also needs an API Base",
-              "step3": "Paste the key and optionally set model (provider/model)"
+              "step1": "Pick a vendor (OpenAI, Anthropic, OpenRouter and more, or your own service)",
+              "step2": "Create an API key in the vendor console; your own service also needs its address",
+              "step3": "Paste the key and pick a model"
             }
           },
           "links": {
@@ -2764,7 +2770,7 @@
             "codebuddyIoa": "Apply key (iOA)",
             "codebuddyStaging": "Apply key (Staging)",
             "traeTokenDocs": "Trae CLI login-token docs",
-            "opencodeProviders": "OpenCode providers"
+            "opencodeProviders": "Supported vendors"
           },
           "customConfig": {
             "cardTitle": "Backend config file",
@@ -2778,7 +2784,8 @@
               "opencode": "Writes opencode.json (not settings.json). Configure provider, baseURL, and model.",
               "generic": "File is still written under configRoot; whether the CLI consumes it depends on the backend. Prefer Env keys; custom config is an advanced path."
             }
-          }
+          },
+          "howTo": "How to get it"
         },
         "git": {
           "meta": "Pick GitHub / GitLab / SSH. An existing token preselects the type; you can still change it or skip, and configure later in Studio."

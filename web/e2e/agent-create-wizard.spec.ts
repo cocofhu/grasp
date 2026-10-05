@@ -48,7 +48,8 @@ test('新建 Agent 五步向导浏览器验收', async ({ page }) => {
   await page.getByTestId('agent-wizard-backend-cursor').click()
   await page.getByRole('button', { name: /^下一步/ }).click()
   await expect(page.locator('.sec-head h3')).toHaveText('API Key')
-  await expect(page.getByText('GRASP_CURSOR_API_KEY', { exact: true })).toBeVisible()
+  await expect(page.getByText('如何获取', { exact: true })).toBeVisible()
+  await expect(page.getByText('GRASP_CURSOR_API_KEY')).toHaveCount(0)
   await expect(page.locator('a[href*="cursor.com/dashboard"]')).toBeVisible()
   await page.screenshot({ path: path.join(OUT, '03-api-key.png'), fullPage: true })
 

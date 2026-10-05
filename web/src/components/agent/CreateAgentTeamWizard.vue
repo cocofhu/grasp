@@ -76,7 +76,6 @@ const currentRegion = computed(() => {
 })
 const authGuide = computed(() => authGuideFor(draft.value.acpBackend, currentRegion.value))
 const primaryAuthKey = computed(() => authGuide.value.keys[0]?.key || '')
-const primaryAuthAlt = computed(() => authGuide.value.keys[0]?.alt || '')
 const previewLine = computed(() => {
   const root = draft.value.rootGroupName || '—'
   const pipe = draft.value.workflowGroupName || '工作流(GitHub)'
@@ -515,8 +514,6 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                     :custom-config-content="draft.customConfigContent"
                     :custom-config-error="customConfigError"
                     :auth-guide="authGuide"
-                    :primary-auth-key="primaryAuthKey"
-                    :primary-auth-alt="primaryAuthAlt"
                     :env="kvToRec(draft.env)"
                     :open-code-base-error="openCodeBaseError"
                     :open-code-model-error="openCodeModelError"

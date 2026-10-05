@@ -37,8 +37,6 @@ const {
   authGuide,
   authConfigured,
   showAuthReminder,
-  primaryAuthKey,
-  primaryAuthAlt,
   headSub,
   templateOptions,
   showDescField,
@@ -219,8 +217,6 @@ const {
                     :custom-config-content="draft.customConfigContent"
                     :custom-config-error="customConfigError"
                     :auth-guide="authGuide"
-                    :primary-auth-key="primaryAuthKey"
-                    :primary-auth-alt="primaryAuthAlt"
                     :env="kvToRec(draft.env)"
                     :open-code-base-error="openCodeBaseError"
                     :open-code-model-error="openCodeModelError"
