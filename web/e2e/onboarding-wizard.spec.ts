@@ -144,9 +144,9 @@ test('首次安装四步引导：连接 → 团队 → 工作流预览 → 完�
   await page.goto('/onboarding-wizard.html', { waitUntil: 'networkidle' })
   await expect(page.getByTestId('onboarding-wizard-root')).toBeVisible()
   await expect(page.getByTestId('onboarding-empty-desc')).toContainText('默认工作流')
-  await expect(page.getByTestId('onboarding-language-zh-CN')).toHaveClass(/border-accent/)
-  for (const label of ['1. 连接', '2. 团队', '3. 工作流预览', '4. 完成']) {
-    await expect(page.getByText(label)).toBeVisible()
+  await expect(page.getByTestId('onboarding-language-zh-CN')).toHaveAttribute('aria-checked', 'true')
+  for (const label of ['连接', '团队', '工作流预览', '完成']) {
+    await expect(page.locator('.onb-step-title', { hasText: label }).first()).toBeVisible()
   }
   await expect(page.getByTestId('onboarding-section-git')).toBeVisible()
   await page.screenshot({ path: path.join(OUT, '01-connect.png'), fullPage: true })
@@ -180,10 +180,10 @@ test('首次安装四步引导：连接 → 团队 → 工作流预览 → 完�
   }
   await expect(preview.getByText('未通过')).toBeVisible()
   await expect(page.getByTestId('onboarding-review-repo')).toContainText('web')
-  await expect(page.getByText('工作流 · 默认工作流')).toBeVisible()
+  await expect(page.getByTestId('onboarding-review-workflow')).toContainText('默认工作流')
   await page.screenshot({ path: path.join(OUT, '03-workflow.png'), fullPage: true })
 
-  await page.getByText('生成配置').click()
+  await page.getByTestId('onboarding-next').click()
   await expect(page.getByTestId('onboarding-success')).toBeVisible()
   await expect(page.getByTestId('onboarding-rail-done')).toHaveAttribute('data-active', '1')
   await expect(page.getByTestId('onboarding-success-agents')).toContainText('测试评审')
@@ -228,7 +228,7 @@ test('onboarding wizard English copy', async ({ page }) => {
   const state = await mockOnboardingApi(page)
   await page.goto('/onboarding-wizard.html', { waitUntil: 'networkidle' })
   await page.getByTestId('onboarding-language-en').click()
-  await expect(page.getByText('1. Connect')).toBeVisible()
+  await expect(page.locator('.onb-step-title', { hasText: 'Connect' })).toBeVisible()
   await expect(page.getByTestId('onboarding-empty-desc')).toContainText('Default Workflow')
 
   await fillConnect(page, 'crsr_e2e_en')
@@ -236,8 +236,8 @@ test('onboarding wizard English copy', async ({ page }) => {
   await expect(page.getByTestId('onboarding-team-card-test_review')).toContainText('Test & review')
   await expect(page.getByTestId('onboarding-team-preview-clarify')).toHaveText('Can start an app preview')
   await page.getByTestId('onboarding-next').click()
-  await expect(page.getByText('Workflow · Default Workflow')).toBeVisible()
-  await page.getByText('Generate setup').click()
+  await expect(page.getByTestId('onboarding-review-workflow')).toContainText('Default Workflow')
+  await page.getByTestId('onboarding-next').click()
 
   await expect(page.getByText('Default Workflow (published)')).toBeVisible()
   await expect(page.getByTestId('onboarding-run-once')).toContainText('Run once')

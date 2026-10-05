@@ -389,13 +389,6 @@
       "emptyDesc": "将配置模型后端、API Key 与 Git，创建需求澄清 / 实现 / 测试评审三个 Agent，并发布「默认工作流」。不会自动开跑。",
       "emptyDescCreate": "将配置模型后端、API Key 与 Git，创建本项目的三个 Agent（名称带项目名前缀），并发布「默认工作流」。不会自动开跑。",
       "workflowName": "默认工作流",
-      "head": {
-        "connect": "语言、模型后端、API Key 与 Git",
-        "team": "确认要创建的 Agent",
-        "workflow": "预览将要发布的默认工作流",
-        "done": "已完成",
-        "success": "已完成安装"
-      },
       "steps": {
         "connect": "连接",
         "team": "团队",
@@ -556,9 +549,11 @@
         "keyOn": "已配置",
         "repoSkip": "运行时填写",
         "gitSkip": "已跳过",
-        "agentsChip": "Agents · {n}",
-        "wfChip": "工作流 · 默认工作流",
-        "reuseHint": "同名资源将复用并更新，不会重复创建；不会自动开跑。"
+        "reuseHint": "同名资源将复用并更新，不会重复创建；不会自动开跑。",
+        "gitCred": "Git 凭据",
+        "agentsValue": "{n} 个",
+        "wfLabel": "工作流",
+        "wfValue": "默认工作流（发布）"
       },
       "success": {
         "title": "配置已生成",
@@ -573,12 +568,23 @@
         "gitOk": "已写入 Git 凭据到项目「凭据」（值已打码）。",
         "gitSkip": "未配置 Git。私有仓请到项目详情 → 共享Agent配置补 Token 或 SSH。",
         "gitUserOk": "已写入提交身份：{name} <{email}>。",
-        "preview": "已写入 {vnc}、{mcp} 到共享配置。"
+        "preview": "已把{vnc}、{mcp}写入共享配置。",
+        "created": "已创建",
+        "written": "已写入配置"
       },
       "toastOk": "生成成功，未自动开跑",
       "toastNeedKey": "请先填写 API Key",
       "toastNeedGitUser": "请填写提交者姓名和邮箱",
-      "toastErr": "生成失败"
+      "toastErr": "生成失败",
+      "railSub": "几分钟配好模型、团队和默认工作流。",
+      "railFoot": "所有配置之后都能在项目设置里修改。",
+      "stepOf": "第 {n} 步，共 {total} 步",
+      "railDesc": {
+        "connect": "语言、模型后端、API Key 与 Git",
+        "team": "确认要创建的 Agent",
+        "workflow": "预览将要发布的默认工作流",
+        "done": "生成配置，开始第一次运行"
+      }
     },
     "tokenByModel": {
       "tipTitle": "用量提示",

@@ -10,7 +10,7 @@ const uid = useId()
 
 const NODE_W = 104
 const NODE_H = 52
-const GAP = 40
+const GAP = 32
 const PAD_X = 6
 const NODE_Y = 22
 const LOOP_DEPTH = 46
@@ -113,12 +113,12 @@ function nodeSub(n: (typeof layout.value)[number]) {
         v-for="n in layout"
         :key="n.id"
         class="rounded-lg absolute flex flex-col justify-center border px-2.5"
-        :class="n.kind === 'agent' ? 'border-accent/45 bg-accent-dim' : 'border-line bg-base'"
+        :class="n.kind === 'agent' ? 'border-accent/50 bg-surface shadow-card' : 'border-line bg-elevated'"
         :style="{ left: n.x + 'px', top: n.y + 'px', width: NODE_W + 'px', height: NODE_H + 'px' }"
         :data-testid="`onboarding-preview-node-${n.id}`"
       >
         <strong class="block truncate text-[12px] font-medium text-txt" :title="nodeTitle(n)">{{ nodeTitle(n) }}</strong>
-        <span class="mt-0.5 block truncate font-mono text-[10px] text-txt3">{{ nodeSub(n) }}</span>
+        <span class="mt-0.5 block truncate text-[10.5px] text-txt3">{{ nodeSub(n) }}</span>
       </div>
     </div>
   </div>

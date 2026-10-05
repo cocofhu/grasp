@@ -389,13 +389,6 @@
       "emptyDesc": "Configure the model backend, API key and Git, create the Clarify / Implement / Test & review Agents, and publish the Default Workflow. Does not start a run.",
       "emptyDescCreate": "Configure the model backend, API key and Git, create this project's three Agents (prefixed with the project name), and publish the Default Workflow. Does not start a run.",
       "workflowName": "Default Workflow",
-      "head": {
-        "connect": "Language, model backend, API key and Git",
-        "team": "Confirm the Agents to create",
-        "workflow": "Preview the default workflow to publish",
-        "done": "Done",
-        "success": "Setup complete"
-      },
       "steps": {
         "connect": "Connect",
         "team": "Team",
@@ -556,9 +549,11 @@
         "keyOn": "Set",
         "repoSkip": "Filled at run start",
         "gitSkip": "Skipped",
-        "agentsChip": "Agents · {n}",
-        "wfChip": "Workflow · Default Workflow",
-        "reuseHint": "Resources with the same name are reused and updated, never duplicated. Nothing runs automatically."
+        "reuseHint": "Resources with the same name are reused and updated, never duplicated. Nothing runs automatically.",
+        "gitCred": "Git credentials",
+        "agentsValue": "{n}",
+        "wfLabel": "Workflow",
+        "wfValue": "Default Workflow (published)"
       },
       "success": {
         "title": "Setup ready",
@@ -573,12 +568,23 @@
         "gitOk": "Git credentials were saved to Project credentials (values are masked).",
         "gitSkip": "Git was skipped. For private repos, add a token or SSH under Project → shared Agent config.",
         "gitUserOk": "Saved commit identity: {name} <{email}>.",
-        "preview": "Wrote {vnc} and {mcp} to shared config."
+        "preview": "Wrote {vnc} and {mcp} to shared config.",
+        "created": "Created",
+        "written": "Configuration written"
       },
       "toastOk": "Generated — Run not started automatically",
       "toastNeedKey": "Please enter an API Key",
       "toastNeedGitUser": "Please enter a committer name and email",
-      "toastErr": "Bootstrap failed"
+      "toastErr": "Bootstrap failed",
+      "railSub": "Set up the model, team and default workflow in a few minutes.",
+      "railFoot": "Everything here can be changed later in project settings.",
+      "stepOf": "Step {n} of {total}",
+      "railDesc": {
+        "connect": "Language, model backend, API key and Git",
+        "team": "Confirm the Agents to create",
+        "workflow": "Preview the default workflow to publish",
+        "done": "Generate the setup and run it once"
+      }
     },
     "tokenByModel": {
       "tipTitle": "Usage tip",
