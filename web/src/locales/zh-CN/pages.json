@@ -411,7 +411,8 @@
       },
       "language": {
         "detected": "后续仍可在左下角随时切换语言。",
-        "themeLabel": "界面主题",
+        "languageLabel": "语言",
+        "themeLabel": "主题",
         "themeDark": "深色",
         "themeLight": "浅色"
       },

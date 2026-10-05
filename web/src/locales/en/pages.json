@@ -411,7 +411,8 @@
       },
       "language": {
         "detected": "You can switch languages later from the bottom-left corner.",
-        "themeLabel": "Interface theme",
+        "languageLabel": "Language",
+        "themeLabel": "Theme",
         "themeDark": "Dark",
         "themeLight": "Light"
       },

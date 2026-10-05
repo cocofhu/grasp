@@ -105,8 +105,8 @@ const languageOptions: { id: AppLocale; label: string; hint: string }[] = [
   { id: 'en', label: 'English', hint: '英语' },
 ]
 const themeOptions: { id: ThemeName; labelKey: string }[] = [
-  { id: 'dark', labelKey: 'pages.onboarding.language.themeDark' },
   { id: 'light', labelKey: 'pages.onboarding.language.themeLight' },
+  { id: 'dark', labelKey: 'pages.onboarding.language.themeDark' },
 ]
 const startPathOptions = START_PATH_OPTIONS
 const progressPct = computed(() => ((activeIndex.value + 1) / steps.length) * 100)
@@ -602,34 +602,43 @@ function editWorkflow() {
                     <div class="mb-2 text-[11px] uppercase tracking-[0.06em] text-txt3">
                       {{ t('pages.onboarding.connect.sectionLanguage') }}
                     </div>
-                    <div class="flex flex-wrap gap-2">
-                      <button
-                        v-for="option in languageOptions"
-                        :key="option.id"
-                        type="button"
-                        class="rounded-lg border px-3 py-2 text-left transition"
-                        :class="draft.language === option.id ? 'border-accent bg-accent-dim' : 'border-line bg-base hover:border-line-strong'"
-                        :data-testid="`onboarding-language-${option.id}`"
-                        @click="selectLanguage(option.id)"
-                      >
-                        <strong class="block text-[13px] text-txt">{{ option.label }}</strong>
-                        <span class="block text-[10px] text-txt3">{{ option.hint }}</span>
-                      </button>
-                      <span class="mx-1 w-px self-stretch bg-line" />
-                      <button
-                        v-for="option in themeOptions"
-                        :key="option.id"
-                        type="button"
-                        class="rounded-lg border px-3 py-2 text-left transition"
-                        :class="draft.theme === option.id ? 'border-accent bg-accent-dim' : 'border-line bg-base hover:border-line-strong'"
-                        :data-testid="`onboarding-theme-${option.id}`"
-                        @click="selectTheme(option.id)"
-                      >
-                        <strong class="block text-[13px] text-txt">{{ t(option.labelKey) }}</strong>
-                        <span class="block text-[10px] text-txt3">{{ t('pages.onboarding.language.themeLabel') }}</span>
-                      </button>
+                    <div class="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-3">
+                      <span class="text-[12px] text-txt2">{{ t('pages.onboarding.language.languageLabel') }}</span>
+                      <div class="flex flex-wrap gap-2" role="radiogroup" :aria-label="t('pages.onboarding.language.languageLabel')">
+                        <button
+                          v-for="option in languageOptions"
+                          :key="option.id"
+                          type="button"
+                          role="radio"
+                          :aria-checked="draft.language === option.id"
+                          class="min-w-[132px] rounded-lg border px-3 py-2 text-left transition"
+                          :class="draft.language === option.id ? 'border-accent bg-accent-dim' : 'border-line bg-base hover:border-line-strong'"
+                          :data-testid="`onboarding-language-${option.id}`"
+                          @click="selectLanguage(option.id)"
+                        >
+                          <strong class="block text-[13px] text-txt">{{ option.label }}</strong>
+                          <span class="block text-[10px] text-txt3">{{ option.hint }}</span>
+                        </button>
+                      </div>
+                      <span class="text-[12px] text-txt2">{{ t('pages.onboarding.language.themeLabel') }}</span>
+                      <div class="flex flex-wrap gap-2" role="radiogroup" :aria-label="t('pages.onboarding.language.themeLabel')">
+                        <button
+                          v-for="option in themeOptions"
+                          :key="option.id"
+                          type="button"
+                          role="radio"
+                          :aria-checked="draft.theme === option.id"
+                          class="inline-flex min-w-[132px] items-center gap-2 rounded-lg border px-3 py-2 text-left text-[13px] font-semibold text-txt transition"
+                          :class="draft.theme === option.id ? 'border-accent bg-accent-dim' : 'border-line bg-base hover:border-line-strong'"
+                          :data-testid="`onboarding-theme-${option.id}`"
+                          @click="selectTheme(option.id)"
+                        >
+                          <Icon :name="option.id === 'dark' ? 'moon' : 'sun'" :size="14" class="text-txt2" />
+                          {{ t(option.labelKey) }}
+                        </button>
+                      </div>
                     </div>
-                    <p class="mt-2 text-[11px] text-txt3">{{ t('pages.onboarding.language.detected') }}</p>
+                    <p class="mt-3 text-[11px] text-txt3">{{ t('pages.onboarding.language.detected') }}</p>
                   </section>
 
                   <section class="mt-5 border-t border-dashed border-line pt-4" data-testid="onboarding-section-backend">
