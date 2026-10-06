@@ -41,6 +41,7 @@ type SandboxService struct {
 	env                         map[string]string
 	projectCredentials          func(projectID string) map[string]string
 	projectCredentialReferences func(projectID string) map[string]string
+	openCodeCredential          func(projectID, credentialID string) map[string]string
 	chatTimeout                 time.Duration
 	// ttl / runTTL / max are runtime-tunable via the settings page, so they are
 	// held atomically (read from many sites, some already under s.mu) rather
@@ -114,6 +115,8 @@ type SandboxOptions struct {
 	// ProjectCredentialReferences resolves ${credential:<id>} values for MCP
 	// templates without placing those values in the process environment.
 	ProjectCredentialReferences func(projectID string) map[string]string
+	// OpenCodeCredential resolves the model-vendor key selected by one Agent.
+	OpenCodeCredential func(projectID, credentialID string) map[string]string
 	// OpenCodeCatalog lets a gateway absent from OpenCode's provider catalog be
 	// declared with an adapter in opencode.json. Nil keeps `custom`-only.
 	OpenCodeCatalog runtime.OpenCodeCatalog
@@ -160,6 +163,7 @@ func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, 
 		env:                         opts.Env,
 		projectCredentials:          opts.ProjectCredentials,
 		projectCredentialReferences: opts.ProjectCredentialReferences,
+		openCodeCredential:          opts.OpenCodeCredential,
 		chatTimeout:                 opts.ChatTimeout,
 		openCodeCatalog:             opts.OpenCodeCatalog,
 		live:                        map[uint]*liveSandbox{},

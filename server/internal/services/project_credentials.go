@@ -86,6 +86,8 @@ var (
 	ErrCredentialName     = errors.New("credential name is required")
 	ErrCredentialTarget   = errors.New("custom credential target is required")
 	ErrCredentialEnvKey   = errors.New("credential env key must be a valid identifier and not a platform-reserved key")
+	ErrCredentialModel    = errors.New("model is required")
+	ErrCredentialBaseURL  = errors.New("base url is required for a custom provider")
 )
 
 // ProjectCredentialService persists encrypted project credentials and resolves
@@ -274,6 +276,9 @@ func (s *ProjectCredentialService) Create(projectID string, in ProjectCredential
 	if strings.TrimSpace(in.Value) == "" {
 		return ProjectCredentialView{}, errors.New("credential value is required")
 	}
+	if err := validateOpenCodeMetadata(in.Provider, in.Metadata, true); err != nil {
+		return ProjectCredentialView{}, err
+	}
 	if err := rejectCodexLoginValue(in.Provider, in.EnvKey, in.Value); err != nil {
 		return ProjectCredentialView{}, err
 	}
@@ -334,6 +339,13 @@ func (s *ProjectCredentialService) Update(projectID, id string, in ProjectCreden
 		return ProjectCredentialView{}, ErrCredentialEnvKey
 	}
 	if in.Metadata != nil {
+		provider := row.Provider
+		if strings.TrimSpace(in.Provider) != "" {
+			provider = strings.TrimSpace(in.Provider)
+		}
+		if err := validateOpenCodeMetadata(provider, in.Metadata, true); err != nil {
+			return ProjectCredentialView{}, err
+		}
 		row.Metadata = safeCredentialMetadata(in.Metadata)
 	}
 	if in.Enabled != nil {
@@ -410,22 +422,48 @@ func (s *ProjectCredentialService) Revoke(projectID, id string) error {
 	return nil
 }
 
-// Clear removes the encrypted value while retaining the credential slot for
-// later replacement. This is the DELETE semantics exposed by the UI.
+// Clear removes a credential from use. Built-in slots keep their row so the
+// project page still has a place to configure them. An extra model-vendor key
+// is deleted so the row disappears. Callers that track an Agent selection
+// should forget that id after a successful clear.
 func (s *ProjectCredentialService) Clear(projectID, id string) error {
 	if err := s.ensureProject(projectID); err != nil {
 		return err
 	}
-	res := s.db.Model(&models.ProjectCredential{}).
-		Where("id = ? AND project_id = ?", id, projectID).
-		Updates(map[string]any{"value_enc": "", "revoked_at": nil, "enabled": true, "updated_at": time.Now()})
-	if res.Error != nil {
-		return res.Error
+	id = strings.TrimSpace(id)
+	var row models.ProjectCredential
+	if err := s.db.Where("id = ? AND project_id = ?", id, projectID).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrCredentialNotFound
+		}
+		return err
 	}
-	if res.RowsAffected == 0 {
-		return ErrCredentialNotFound
+	if isOpenCodeModelCredentialRow(row) && row.ID != defaultOpenCodeCredentialID(projectID) {
+		return s.db.Delete(&models.ProjectCredential{}, "id = ? AND project_id = ?", row.ID, projectID).Error
 	}
-	return nil
+	row.ValueEnc = ""
+	row.RevokedAt = nil
+	row.Enabled = true
+	row.UpdatedAt = time.Now()
+	if isOpenCodeModelCredentialRow(row) {
+		row.Metadata = map[string]any{}
+	}
+	return s.db.Save(&row).Error
+}
+
+// Get returns one credential view. The secret is never included.
+func (s *ProjectCredentialService) Get(projectID, id string) (ProjectCredentialView, error) {
+	if err := s.ensureProject(projectID); err != nil {
+		return ProjectCredentialView{}, err
+	}
+	var row models.ProjectCredential
+	if err := s.db.Where("id = ? AND project_id = ?", strings.TrimSpace(id), projectID).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ProjectCredentialView{}, ErrCredentialNotFound
+		}
+		return ProjectCredentialView{}, err
+	}
+	return credentialView(row), nil
 }
 
 // ResolveEnv decrypts active runtime credentials. Service-only credentials are
@@ -445,6 +483,12 @@ func (s *ProjectCredentialService) ResolveEnv(projectID string) map[string]strin
 		switch strings.ToLower(strings.TrimSpace(row.Type)) {
 		case "ai", "git", "ssh", "mcp", "custom":
 		default:
+			continue
+		}
+		// Model-vendor keys share one env name. Merging them here would inject
+		// a key the Agent did not choose. ResolveOpenCodeCredential applies
+		// only the selected row.
+		if isOpenCodeModelCredentialRow(row) {
 			continue
 		}
 		key := strings.TrimSpace(row.EnvKey)
@@ -607,6 +651,78 @@ func (s *ProjectCredentialService) ResolveReferences(projectID string) map[strin
 		if err == nil && v != "" {
 			out["credential:"+row.ID] = v
 		}
+	}
+	return out
+}
+
+func defaultOpenCodeCredentialID(projectID string) string {
+	return "cred-" + strings.TrimSpace(projectID) + "-opencode"
+}
+
+func isOpenCodeModelCredentialRow(row models.ProjectCredential) bool {
+	return strings.EqualFold(strings.TrimSpace(row.Type), "ai") && strings.EqualFold(strings.TrimSpace(row.Provider), "opencode")
+}
+
+// validateOpenCodeMetadata checks a model-vendor write. Non-opencode providers
+// skip the check. required is true when the caller is storing routing metadata;
+// a replace that only rotates the secret leaves metadata nil and skips this.
+func validateOpenCodeMetadata(provider string, metadata map[string]any, required bool) error {
+	if !strings.EqualFold(strings.TrimSpace(provider), "opencode") || !required {
+		return nil
+	}
+	if metadata == nil {
+		return ErrCredentialModel
+	}
+	model, _ := metadata["model"].(string)
+	if strings.TrimSpace(model) == "" {
+		return ErrCredentialModel
+	}
+	vendor, _ := metadata["provider"].(string)
+	base, _ := metadata["baseUrl"].(string)
+	if base == "" {
+		if raw, ok := metadata["baseURL"].(string); ok {
+			base = raw
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(vendor), "custom") && strings.TrimSpace(base) == "" {
+		return ErrCredentialBaseURL
+	}
+	return nil
+}
+
+// ResolveOpenCodeCredential returns env for the one credential id an Agent
+// selected. An empty, unknown, cleared, or non-model-vendor id returns nil
+// and never falls back to another key of the same kind.
+func (s *ProjectCredentialService) ResolveOpenCodeCredential(projectID, credentialID string) map[string]string {
+	projectID = strings.TrimSpace(projectID)
+	credentialID = strings.TrimSpace(credentialID)
+	if projectID == "" || credentialID == "" || s == nil || s.db == nil {
+		return nil
+	}
+	var row models.ProjectCredential
+	err := s.db.Where("id = ? AND project_id = ? AND enabled = ? AND revoked_at IS NULL", credentialID, projectID, true).First(&row).Error
+	if err != nil || !isOpenCodeModelCredentialRow(row) || strings.TrimSpace(row.ValueEnc) == "" {
+		return nil
+	}
+	dec, err := crypto.Decrypt(row.ValueEnc)
+	if err != nil || strings.TrimSpace(dec) == "" {
+		log.Warn().Err(err).Str("project", projectID).Str("credential", row.ID).Msg("skip undecryptable opencode credential")
+		return nil
+	}
+	out := map[string]string{runtime.EnvGraspOpenCodeAPIKey: dec}
+	if len(safeCredentialMetadata(row.Metadata)) == 0 {
+		return out
+	}
+	provider, _ := row.Metadata["provider"].(string)
+	base, _ := row.Metadata["baseUrl"].(string)
+	model, _ := row.Metadata["model"].(string)
+	out[runtime.EnvOpenCodeProvider] = strings.TrimSpace(provider)
+	out[runtime.EnvOpenCodeBaseURL] = strings.TrimSpace(base)
+	out[runtime.EnvACPBridgeModel] = strings.TrimSpace(model)
+	if vision, ok := row.Metadata["vision"].(bool); ok && vision {
+		out[runtime.EnvOpenCodeModelVision] = "1"
+	} else {
+		out[runtime.EnvOpenCodeModelVision] = ""
 	}
 	return out
 }

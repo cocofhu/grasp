@@ -364,6 +364,11 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 			env[k] = e.Value
 		}
 	}
+	// The selected model-vendor credential wins over a merged project env and
+	// over the run snapshot. An empty selection injects nothing.
+	if c.backend == BackendOpenCode && c.opts.OpenCodeCredentialForProject != nil {
+		ApplyOpenCodeSelection(env, c.opts.OpenCodeCredentialForProject(c.projectIDForReq(req), agentCfg.OpenCodeCredentialID))
+	}
 	// Capture the login file before PrepareAuthEnv strips it from the sandbox env.
 	codexLogin := CodexLoginFileFromEnv(c.backend, env)
 	// Align auth gate with buildConfigHome BaseWorkDirSrc (project-shared workspace).

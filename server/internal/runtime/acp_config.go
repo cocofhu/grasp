@@ -102,10 +102,11 @@ type agentLayout struct {
 
 // agentFile mirrors <ProfilesRoot>/<profile>/agent.json (mcp + env + layout).
 type agentFile struct {
-	AcpBackend string            `json:"acpBackend"`
-	MCP        []agentMCP        `json:"mcp"`
-	Env        map[string]string `json:"env"`
-	Layout     agentLayout       `json:"layout"`
+	AcpBackend           string            `json:"acpBackend"`
+	OpenCodeCredentialID string            `json:"openCodeCredentialId,omitempty"`
+	MCP                  []agentMCP        `json:"mcp"`
+	Env                  map[string]string `json:"env"`
+	Layout               agentLayout       `json:"layout"`
 }
 
 // agentConfig reads the Agent's agent.json (best effort; empty on miss).

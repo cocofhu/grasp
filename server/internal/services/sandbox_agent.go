@@ -294,6 +294,9 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 		fail(err)
 		return
 	}
+	if backend == runtime.BackendOpenCode && s.openCodeCredential != nil {
+		runtime.ApplyOpenCodeSelection(env, s.openCodeCredential(projectID, agent.OpenCodeCredentialID))
+	}
 	workDir := s.skills.WorkDir(profile)
 	sharedWorkDir := ""
 	if s.shared != nil && strings.TrimSpace(projectID) != "" {

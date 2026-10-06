@@ -73,6 +73,9 @@ type Options struct {
 	// ProjectCredentialReferences resolves ${credential:<id>} placeholders in
 	// MCP headers/command/env without exposing values as global environment keys.
 	ProjectCredentialReferences func(projectID string) map[string]string
+	// OpenCodeCredentialForProject resolves the single model-vendor credential
+	// selected by an Agent. A missing id returns nil and must not fall back.
+	OpenCodeCredentialForProject func(projectID, credentialID string) map[string]string
 	// ProjectIDForWorkflow resolves workflow → owning project for extend.
 	ProjectIDForWorkflow func(workflowID string) string
 	// RunSandboxEnvForRun, when set, returns the immutable StartRun sandbox env

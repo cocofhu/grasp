@@ -111,26 +111,34 @@ describe('ProjectCredentialsPanel', () => {
     wrapper.unmount()
   })
 
-  it('renders the model API key card and saves OpenCode routing metadata with the key', async () => {
+  it('lists model vendor keys without the required model form, and replaces or clears a row', async () => {
     const opencode = {
-      id: 'opencode', type: 'ai', kind: 'ai', name: 'OpenCode API Key', provider: 'opencode',
-      envKey: 'GRASP_OPENCODE_API_KEY', configured: false,
-      metadata: { provider: 'openai', model: 'openai/gpt-4o', baseUrl: '', vision: false },
+      id: 'opencode', type: 'ai', kind: 'ai', name: 'DeepSeek', provider: 'opencode',
+      envKey: 'GRASP_OPENCODE_API_KEY', configured: true, masked: 'sk-…9999',
+      metadata: { provider: 'deepseek', model: 'deepseek/deepseek-flash', vision: false },
     }
     const wrapper = mountPanel({ items: [...config.items, opencode] })
     await flushPromises()
     expect(wrapper.find('[data-testid="project-credential-opencode"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="opencode-provider-fields"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="opencode-credential-current"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('DeepSeek')
+    expect(wrapper.text()).toContain('sk-…9999')
+    expect(wrapper.find('[data-testid="project-credential-input-cursor-api"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="opencode-credential-add"]').trigger('click')
     expect(wrapper.find('[data-test="opencode-provider-fields"]').exists()).toBe(true)
 
-    await wrapper.get('[data-testid="project-credential-input-opencode"]').setValue('sk-test')
-    await wrapper.get('[data-test="opencode-base-url"]').setValue('https://api.example.com/v1')
-    mocks.put.mockResolvedValueOnce({ ...opencode, configured: true, masked: '••••' })
-    await wrapper.get('[data-testid="project-credential-save-opencode"]').trigger('click')
+    await wrapper.get('[data-testid="opencode-credential-replace-opencode"]').trigger('click')
+    await wrapper.get('[data-testid="opencode-credential-replace-key"]').setValue('sk-new')
+    mocks.put.mockResolvedValueOnce({ ...opencode, masked: '••••' })
+    await wrapper.get('[data-testid="opencode-credential-replace-form-opencode"]').trigger('submit')
     await flushPromises()
-    expect(mocks.put).toHaveBeenCalledWith('p1', 'opencode', expect.objectContaining({
-      value: 'sk-test',
-      metadata: { provider: 'openai', baseUrl: 'https://api.example.com/v1', model: 'openai/gpt-4o', vision: false },
-    }))
+    expect(mocks.put).toHaveBeenCalledWith('p1', 'opencode', { value: 'sk-new' })
+
+    await wrapper.get('[data-testid="opencode-credential-clear-opencode"]').trigger('click')
+    await flushPromises()
+    expect(mocks.del).toHaveBeenCalledWith('p1', 'opencode')
     wrapper.unmount()
   })
 
