@@ -57,6 +57,7 @@ vi.mock('@vue-flow/core', async () => {
       dimensions: vref({ width: 800, height: 600 }),
     }),
     MarkerType: { ArrowClosed: 'arrowclosed' },
+    ConnectionLineType: { SmoothStep: 'smoothstep' },
     Handle: dc({ template: '<div />' }),
     Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
     getSmoothStepPath: () => ['M0 0', 0, 0],
@@ -269,6 +270,78 @@ describe('WorkflowCanvas · edit mode', () => {
     expect(added.type).toBe('set_var')
     expect(overlapsAny(added, editor.graph.nodes)).toBe(false)
     expect(editor.placing.value).toEqual({ type: 'set_var' })
+  })
+
+  it('stays responsive while placing an Agent through continuous pointer moves', async () => {
+    const graph = sampleGraph()
+    const editor = useCanvasEditor({
+      graph,
+      agents: ref([...AGENTS, { name: '交付', capabilities: IMPLEMENT_CAPS }]),
+      t,
+      typeLabel: (type) => type,
+    })
+    const w = mountCanvas({ nodes: editor.graph.nodes, edges: editor.graph.edges, editor })
+    const inst = w.vm.$ as unknown as { bu: Array<() => void> | null }
+    inst.bu ??= []
+    let updates = 0
+    inst.bu.push(() => {
+      updates++
+    })
+    w.vm.$forceUpdate()
+    await flushPromises()
+    expect(updates).toBeGreaterThan(0)
+
+    editor.togglePlacing({ type: 'agent', agentProfile: '交付' })
+    await flushPromises()
+    expect(editor.graph.nodes).toHaveLength(3)
+    expect(w.find('[data-testid="canvas-place-hint"]').text()).toContain('交付')
+    expect(w.find('[data-testid="canvas-place-ghost"]').exists()).toBe(false)
+    expect(vueFlow(w).props('selectionKeyCode')).toBeNull()
+
+    const host = w.find('[data-testid="workflow-canvas"]').element
+    const before = updates
+    for (let i = 0; i < 40; i++) {
+      host.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 480 + (i % 5), clientY: 280 }))
+      await flushPromises()
+    }
+    // One reveal of the preview; further moves must not re-render the canvas.
+    expect(updates - before).toBeLessThanOrEqual(2)
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    const ghost = w.find('[data-testid="canvas-place-ghost"]')
+    expect(ghost.exists()).toBe(true)
+    expect(ghost.text()).toBe('交付')
+    expect(ghost.attributes('style') ?? '').toContain('left:')
+
+    await w.find('[data-testid="canvas-place-cancel"]').trigger('click')
+    expect(editor.placing.value).toBeNull()
+    expect(editor.graph.nodes).toHaveLength(3)
+    expect(w.find('[data-testid="canvas-place-ghost"]').exists()).toBe(false)
+    expect(vueFlow(w).props('selectionKeyCode')).toBe(true)
+
+    editor.togglePlacing({ type: 'agent', agentProfile: '交付' })
+    await flushPromises()
+    const pane = w.find('.vue-flow').element
+    pane.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 500, clientY: 300 }))
+    // A slight move must still drop; box-select used to swallow this click.
+    pane.dispatchEvent(pointer('click', 503, 302))
+    await flushPromises()
+    const added = editor.graph.nodes.at(-1)!
+    expect(added.type).toBe('agent')
+    expect(added.config.agent_profile).toBe('交付')
+    expect(added.position).toEqual({ x: 384, y: 272 })
+    expect(editor.placing.value).toBeNull()
+
+    editor.togglePlacing({ type: 'agent', agentProfile: '交付' })
+    pane.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 520, clientY: 320 }))
+    pane.dispatchEvent(pointer('click', 520, 320, { shiftKey: true }))
+    await flushPromises()
+    expect(editor.graph.nodes.at(-1)).toMatchObject({ type: 'agent', config: { agent_profile: '交付' } })
+    expect(editor.placing.value).toEqual({ type: 'agent', agentProfile: '交付' })
+
+    host.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }))
+    await flushPromises()
+    expect(w.find('[data-testid="canvas-place-ghost"]').exists()).toBe(false)
+    expect(editor.placing.value).toEqual({ type: 'agent', agentProfile: '交付' })
   })
 
   it('cancels placement with Esc, right click or the hint button, and ignores drags', async () => {
