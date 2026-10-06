@@ -1,4 +1,5 @@
 /** Run-scoped sandbox env helpers (StartRun snapshot). */
+import { isSecretEnvKey } from '@/lib/agent/secretEnvKeys'
 
 export type RunSandboxEnvEntry = {
   key: string
@@ -7,21 +8,8 @@ export type RunSandboxEnvEntry = {
 }
 
 const DENIED_EXACT = new Set([
-  'CURSOR_API_KEY',
-  'ANTHROPIC_API_KEY',
-  'CODEBUDDY_API_KEY',
-  'TRAE_API_KEY',
-  'TRAECLI_PERSONAL_ACCESS_TOKEN',
-  'GRASP_CURSOR_API_KEY',
-  'GRASP_CLAUDE_API_KEY',
-  'GRASP_CODEBUDDY_API_KEY',
-  'GRASP_TRAE_API_KEY',
-  'GRASP_OPENCODE_API_KEY',
-  'OPENCODE_API_KEY',
-  'PASSWORD',
   'ROOT_PASSWORD',
   'ACP_BRIDGE_PASSWORD',
-  'CURSOR_ACP_PASSWORD',
   'GRASP_ARTIFACT_URL',
   'GRASP_ARTIFACT_TOKEN',
   'GRASP_RUN_ID',
@@ -35,7 +23,7 @@ const DENIED_EXACT = new Set([
 export function isDeniedRunSandboxEnvKey(key: string): boolean {
   const k = key.trim()
   if (!k) return false
-  if (DENIED_EXACT.has(k)) return true
+  if (DENIED_EXACT.has(k) || isSecretEnvKey(k)) return true
   return k.startsWith('GRASP_ARTIFACT_')
 }
 

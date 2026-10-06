@@ -11,7 +11,7 @@ import (
 )
 
 // ChatResult is the structured aggregation of one prompt turn's
-// session_update events from cursor-agent (via the cursor-acp bridge).
+// session_update events from cursor-agent (via the acp-bridge).
 //
 //   - Narration: concatenated agent_message_chunk text (the visible reply)
 //   - Thought:   concatenated agent_thought_chunk text (internal reasoning)
@@ -36,7 +36,7 @@ type ChatResult struct {
 	UsageByModel models.TokenUsageByModel `json:"usageByModel,omitempty"`
 
 	// Busy carries the latest authoritative queue_state.busy flag from the
-	// cursor-acp bridge (true while a session/prompt is in flight). BusySet
+	// acp-bridge (true while a session/prompt is in flight). BusySet
 	// reports whether a queue_state frame has been observed at all, so callers
 	// can distinguish "not yet reported" from an explicit false. Neither is
 	// persisted to snapshots; they only drive the live running/idle indicator.

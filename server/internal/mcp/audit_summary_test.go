@@ -56,17 +56,6 @@ func TestFormatMCPAuditSummary_CommonTools(t *testing.T) {
 			want: "读取调研结论",
 		},
 		{
-			name: "set_proposals",
-			tool: "set_proposals",
-			args: map[string]any{},
-			want: "写入方案结论 proposals.json",
-		},
-		{
-			name: "get_proposals",
-			tool: "get_proposals",
-			want: "读取方案结论",
-		},
-		{
 			name: "set_clarified_requirement",
 			tool: "set_clarified_requirement",
 			want: "写入澄清需求结论 clarified_requirement.json",
@@ -277,8 +266,8 @@ func TestFormatMCPAuditSummary_EdgeBranches(t *testing.T) {
 		{name: "node_complete without status", tool: "node_complete", want: "节点完成"},
 		{name: "set_preview bare", tool: "set_preview", want: "注册预览"},
 		{name: "update_plan_status bare", tool: "update_plan_status", want: "更新计划状态"},
-		{name: "get_proposal", tool: "get_proposal", want: "读取方案结论"},
-		{name: "set_proposal", tool: "set_proposal", want: "写入方案结论 proposal.json"},
+		{name: "get_root_cause", tool: "get_root_cause", want: "读取问题根因"},
+		{name: "set_root_cause", tool: "set_root_cause", want: "写入问题根因 root_cause.json"},
 		{name: "unknown get stem", tool: "get_mystery", want: "调用 get_mystery"},
 		{name: "unknown set stem", tool: "set_mystery", want: "调用 set_mystery"},
 		{name: "join without name", tool: "read_artifact", args: map[string]any{}, want: "读取产物"},

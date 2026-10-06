@@ -27,6 +27,7 @@ func (h *Handlers) BootstrapAgentTeam(c *gin.Context) {
 		case errors.Is(err, services.ErrTeamAgentConflict), errors.Is(err, services.ErrProjectNameExists):
 			status = http.StatusConflict
 		case errors.Is(err, services.ErrTeamValidation), errors.Is(err, services.ErrInvalidAgentName),
+			errors.Is(err, services.ErrInvalidAcpBackend),
 			errors.Is(err, services.ErrEmptyProjectName):
 			status = http.StatusBadRequest
 		default:

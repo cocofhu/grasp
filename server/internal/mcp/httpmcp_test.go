@@ -236,8 +236,8 @@ func TestReviewPhaseTools(t *testing.T) {
 	runID := "run-review"
 	tok := h.RegisterRun(runID)
 
-	// A proposal node finished its automated run and is now in the review phase.
-	h.SetActiveNode(runID, "prop", capsReviewWriting(models.SchemaProposals))
+	// A research node finished its automated run and is now in the review phase.
+	h.SetActiveNode(runID, "res", capsReviewWriting(models.SchemaResearch))
 	h.SetActiveReview(runID, true)
 	if !h.InReviewPhase(runID) {
 		t.Fatalf("run should be marked in review phase")
@@ -249,17 +249,17 @@ func TestReviewPhaseTools(t *testing.T) {
 	if _, isErr := toolText(t, aq); isErr {
 		t.Fatalf("ask_question should be allowed during review, got %v", aq)
 	}
-	if qs := h.TakePendingQuestions(runID, "prop"); len(qs) != 1 {
+	if qs := h.TakePendingQuestions(runID, "res"); len(qs) != 1 {
 		t.Fatalf("review ask_question should record one question, got %d", len(qs))
 	}
 
-	// set_proposals stays authorized so the producer rewrites proposals.json.
-	rw := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"set_proposals","arguments":{"context":"复审重写","proposals":[{"title":"A2"},{"title":"B2","recommended":true}]}}}`)
+	// set_research stays authorized so the producer rewrites research.json.
+	rw := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"set_research","arguments":{"summary":"复审重写","findings":[{"title":"F2","detail":"d"}]}}}`)
 	if _, isErr := toolText(t, rw); isErr {
-		t.Fatalf("set_proposals should stay authorized during review: %v", rw)
+		t.Fatalf("set_research should stay authorized during review: %v", rw)
 	}
-	if pc, ok := store.Get(runID, ProposalsArtifactName); !ok || !strings.Contains(pc, "B2") {
-		t.Fatalf("proposals not rewritten during review: %q", pc)
+	if rc, ok := store.Get(runID, ResearchArtifactName); !ok || !strings.Contains(rc, "F2") {
+		t.Fatalf("research not rewritten during review: %q", rc)
 	}
 
 	// Leaving the review phase re-arms the clarify-only guard on ask_question.
@@ -323,24 +323,6 @@ func TestStructuredTools(t *testing.T) {
 	missing := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"set_clarified_requirement","arguments":{"summary":"only","functional_requirements":[{"title":"f"}]}}}`)
 	if _, isErr := toolText(t, missing); !isErr {
 		t.Fatalf("thin clarified requirement should error")
-	}
-
-	// set_proposals on a proposal node, then SelectProposal picks the recommended.
-	h.SetActiveNode(runID, "prop", capsWriting(models.SchemaProposals))
-	pr := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"set_proposals","arguments":{"context":"选型","proposals":[{"title":"A"},{"title":"B","recommended":true}]}}}`)
-	if _, isErr := toolText(t, pr); isErr {
-		t.Fatalf("set_proposals failed: %v", pr)
-	}
-	pc, _ := store.Get(runID, ProposalsArtifactName)
-	if choices := ProposalChoices(pc); len(choices) != 2 || choices[0].ID != "p1" {
-		t.Fatalf("proposal choices wrong: %+v", choices)
-	}
-	final, id, okSel := SelectProposal(pc, "")
-	if !okSel || id != "p2" {
-		t.Fatalf("auto-select should pick recommended p2, got %q (ok=%v)", id, okSel)
-	}
-	if !strings.Contains(final, `"status": "accepted"`) {
-		t.Fatalf("final proposal missing accepted status: %s", final)
 	}
 
 	// set_review normalizes verdict and sorts findings by severity.
@@ -443,10 +425,6 @@ func TestClarifyAgentPreDevTools(t *testing.T) {
 			res := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"set_research","arguments":{"summary":"调研概述","findings":[{"title":"F1","detail":"d"}]}}}`)
 			if _, isErr := toolText(t, res); isErr {
 				t.Fatalf("set_research on %s: %v", nodeType, res)
-			}
-			pr := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"set_proposals","arguments":{"context":"选型","proposals":[{"title":"A"}]}}}`)
-			if _, isErr := toolText(t, pr); isErr {
-				t.Fatalf("set_proposals on %s: %v", nodeType, pr)
 			}
 			if _, err := h.WriteArtifact(runID, tok, "pre", "page.html", "<!doctype html><html></html>", "html"); err != nil {
 				t.Fatal(err)

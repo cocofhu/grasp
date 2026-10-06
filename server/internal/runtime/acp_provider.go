@@ -264,9 +264,6 @@ func resolveProviderImage(opts Options, backend AcpBackend) string {
 }
 
 func (c *acpProvider) Name() string {
-	if c.backend == "" {
-		return string(BackendCursor)
-	}
 	return string(c.backend)
 }
 

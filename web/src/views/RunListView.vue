@@ -12,7 +12,7 @@ import Pagination from '@/components/ui/Pagination.vue'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
-import { api, isPaginated } from '@/lib/api/api'
+import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { useWorkflowFilter } from '@/lib/composables/useWorkflowFilter'
 import { useTagFilter } from '@/lib/composables/useTagFilter'
@@ -337,14 +337,9 @@ async function load({ showLoading = false }: { showLoading?: boolean } = {}) {
   try {
     const data = await api.listRuns(listParams())
     if (localSeq === requestSeq) {
-      if (isPaginated(data)) {
-        if (!runsListUnchanged(data.items, data.total)) {
-          runs.value = data.items
-          total.value = data.total
-        }
-      } else if (!runsListUnchanged(data, data.length)) {
-        runs.value = data
-        total.value = data.length
+      if (!runsListUnchanged(data.items, data.total)) {
+        runs.value = data.items
+        total.value = data.total
       }
       if (initialLoadFailed.value) initialLoadFailed.value = false
     }

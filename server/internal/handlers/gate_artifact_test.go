@@ -31,6 +31,7 @@ func TestSaveGateArtifactHTTP(t *testing.T) {
 		ID: runID, WorkflowID: "w", WorkflowName: "w", Status: "waiting_human",
 		Graph: g, StartedAt: now, CreatedAt: now,
 	})
+	seedArtifactOwner(t, h.db, runID)
 	h.db.Create(&models.StateRun{
 		RunID: runID, NodeID: "research", NodeType: "agent", Iteration: 1, Status: "completed",
 		Outputs: map[string]any{"research_json": researchJSON, "research": "md"},
@@ -110,6 +111,7 @@ func TestSaveAnnotationArtifactHTTP(t *testing.T) {
 		ID: runID, WorkflowID: "w", WorkflowName: "w", Status: "waiting_human",
 		Graph: g, StartedAt: now, CreatedAt: now,
 	})
+	seedArtifactOwner(t, h.db, runID)
 	h.db.Create(&models.Gate{
 		RunID: runID, NodeID: "gate", Iteration: 2, Title: "审阅", RequestedAt: now,
 		UpstreamNodeID: "visual", UpstreamIteration: 1,

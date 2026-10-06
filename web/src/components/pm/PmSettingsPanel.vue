@@ -114,7 +114,6 @@ const channelProject = computed<Project>(() => {
     id: props.projectId,
     name: '',
     description: '',
-    sandboxEnv: [],
     variables: [],
     notifyPolicy: { enabled: true, defaultEvents: ['waiting_human', 'failed'], channelIds: [] },
   }

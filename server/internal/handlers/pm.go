@@ -31,13 +31,6 @@ func (h *Handlers) sessionUser(c *gin.Context) (string, bool) {
 	return sess.Username, true
 }
 
-// requirePmAdmin gates legacy project-level /pm/memories write paths and
-// Studio threads / Job writes (still platform is_admin).
-// Agent Studio /agents/:name/memories* use session auth instead.
-func (h *Handlers) requirePmAdmin(c *gin.Context) bool {
-	return h.requireAdmin(c)
-}
-
 // GetPmLeader handles GET /api/projects/:id/pm-leader
 func (h *Handlers) GetPmLeader(c *gin.Context) {
 	if h.Pm == nil {
@@ -53,7 +46,7 @@ func (h *Handlers) GetPmLeader(c *gin.Context) {
 }
 
 // UpdatePmLeader handles PUT /api/projects/:id/pm-leader.
-// Any authenticated user may enable/rebind/disable (APIMiddleware); memory writes stay admin-only.
+// Any authenticated user may enable/rebind/disable (APIMiddleware).
 func (h *Handlers) UpdatePmLeader(c *gin.Context) {
 	if h.Pm == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
@@ -133,101 +126,6 @@ func (h *Handlers) ListPmMemories(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items})
-}
-
-// UpsertPmMemory handles POST /api/projects/:id/pm/memories (admin)
-func (h *Handlers) UpsertPmMemory(c *gin.Context) {
-	if h.Pm == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
-		return
-	}
-	if !h.requirePmAdmin(c) {
-		return
-	}
-	user, ok := h.sessionUser(c)
-	if !ok {
-		return
-	}
-	var body struct {
-		Title   string `json:"title"`
-		Content string `json:"content"`
-	}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	agent := ""
-	if b, err := h.Pm.GetBinding(c.Param("id")); err == nil {
-		agent = b.AgentConfigRef
-	}
-	item, err := h.Pm.UpsertMemory(c.Param("id"), agent, body.Title, body.Content, "user", user)
-	if err != nil {
-		writePmErr(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, item)
-}
-
-// UpdatePmMemory handles PUT /api/projects/:id/pm/memories/:mid (admin)
-func (h *Handlers) UpdatePmMemory(c *gin.Context) {
-	if h.Pm == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
-		return
-	}
-	if !h.requirePmAdmin(c) {
-		return
-	}
-	user, ok := h.sessionUser(c)
-	if !ok {
-		return
-	}
-	var body struct {
-		Title   string `json:"title"`
-		Content string `json:"content"`
-	}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	item, err := h.Pm.UpdateMemoryByID(c.Param("id"), c.Param("mid"), body.Title, body.Content, user)
-	if err != nil {
-		writePmErr(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, item)
-}
-
-// DeletePmMemory handles DELETE /api/projects/:id/pm/memories/:mid (admin)
-func (h *Handlers) DeletePmMemory(c *gin.Context) {
-	if h.Pm == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
-		return
-	}
-	if !h.requirePmAdmin(c) {
-		return
-	}
-	if err := h.Pm.DeleteMemory(c.Param("id"), c.Param("mid")); err != nil {
-		writePmErr(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
-}
-
-// ClearPmMemories handles DELETE /api/projects/:id/pm/memories (admin)
-func (h *Handlers) ClearPmMemories(c *gin.Context) {
-	if h.Pm == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
-		return
-	}
-	if !h.requirePmAdmin(c) {
-		return
-	}
-	n, err := h.Pm.ClearMemories(c.Param("id"))
-	if err != nil {
-		writePmErr(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"status": "cleared", "count": n})
 }
 
 // ListPmThreads handles GET /api/projects/:id/pm/threads
@@ -334,7 +232,6 @@ func (h *Handlers) DeletePmThread(c *gin.Context) {
 // ListPmMessages handles GET /api/projects/:id/pm/threads/:tid/messages
 //
 // Query:
-//   - no limit/before: full oldest→newest list (Channel / legacy callers)
 //   - limit[=20]: newest-tail window of that size, oldest→newest, plus hasMore
 //   - before=<messageId>&limit: older page before the anchor, oldest→newest, plus hasMore
 func (h *Handlers) ListPmMessages(c *gin.Context) {
@@ -352,20 +249,10 @@ func (h *Handlers) ListPmMessages(c *gin.Context) {
 	}
 	limitRaw := strings.TrimSpace(c.Query("limit"))
 	beforeID := strings.TrimSpace(c.Query("before"))
-	// No pagination params → full list (backward compatible).
-	if limitRaw == "" && beforeID == "" {
-		msgs, err := h.Pm.ListMessages(c.Param("tid"))
-		if err != nil {
-			writePmErr(c, err)
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"items": msgs})
-		return
-	}
-	limit := 20
+	limit := defaultLimit
 	if limitRaw != "" {
 		n, err := strconv.Atoi(limitRaw)
-		if err != nil || n <= 0 {
+		if err != nil || n <= 0 || n > maxLimit {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit"})
 			return
 		}
@@ -481,7 +368,6 @@ func (h *Handlers) EnsurePmSandbox(c *gin.Context) {
 		writePmErr(c, err)
 		return
 	}
-	h.backfillPmThreadAgent(&thread, proj.PmLeaderAgent)
 
 	var body struct {
 		AttachedContext *models.AttachedContext `json:"attachedContext"`
@@ -508,16 +394,6 @@ func (h *Handlers) EnsurePmSandbox(c *gin.Context) {
 		"preamble": preamble,
 		"thread":   thread,
 	})
-}
-
-func (h *Handlers) backfillPmThreadAgent(thread *models.ChatThread, agent string) {
-	if thread.AgentName != "" || agent == "" {
-		return
-	}
-	thread.AgentName = agent
-	if err := h.Pm.SetThreadAgentName(thread.ID, agent); err != nil {
-		log.Warn().Err(err).Str("thread", thread.ID).Msg("backfill thread agent name failed")
-	}
 }
 
 // openPmSandbox opens or reuses the thread-bound consult sandbox, wires its
@@ -593,8 +469,7 @@ func (h *Handlers) StartPmTurn(c *gin.Context) {
 		writePmErr(c, err)
 		return
 	}
-	thread, err := h.Pm.RequireWritableThread(projectID, tid, user)
-	if err != nil {
+	if _, err := h.Pm.RequireWritableThread(projectID, tid, user); err != nil {
 		writePmErr(c, err)
 		return
 	}
@@ -632,7 +507,6 @@ func (h *Handlers) StartPmTurn(c *gin.Context) {
 			return
 		}
 	}
-	h.backfillPmThreadAgent(&thread, proj.PmLeaderAgent)
 
 	agent := proj.PmLeaderAgent
 	attached := body.AttachedContext

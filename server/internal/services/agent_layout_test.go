@@ -16,6 +16,7 @@ func TestAgentLayoutPersistRoundTrip(t *testing.T) {
 
 	// Save with a custom workspaceDir but no configRoot.
 	in := Agent{
+		AcpBackend:        AcpBackendCursor,
 		Name:              "x-agent",
 		GitCredentialType: "gitlab_https",
 		Files:             []AgentFile{{Path: "rules/x.md", Content: "# x"}},
@@ -64,6 +65,7 @@ func TestGitCredentialTypeInvalidClearedOnSave(t *testing.T) {
 	root := t.TempDir()
 	s := NewAgentService(root)
 	if err := s.Save(Agent{
+		AcpBackend:        AcpBackendCursor,
 		Name:              "dirty-git",
 		GitCredentialType: "gitea_https",
 		Files:             []AgentFile{{Path: "rules/x.md", Content: "# x"}},

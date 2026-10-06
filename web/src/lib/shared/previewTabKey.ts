@@ -1,7 +1,7 @@
 import type { PreviewPort } from '@/lib/api/apiTypes'
 
 export function isUrlPreview(p: PreviewPort): boolean {
-  return p.kind === 'url' || !!(p.url || '').trim()
+  return p.kind === 'url'
 }
 
 export function previewTabKey(p: PreviewPort): string {

@@ -38,18 +38,20 @@ func TestGraphsEqual_detectsConfigChange(t *testing.T) {
 	}
 }
 
-func TestGraphsEqual_legacyOutputResultEqualsCleaned(t *testing.T) {
-	legacy := validGraph()
-	legacy.Nodes[1].Config = map[string]any{"result": "{{artifact(\"x.md\")}}"}
-	cleaned := validGraph()
-	cleaned.Nodes[1].Config = map[string]any{"results": []any{"{{artifact(\"x.md\")}}"}}
-	if !GraphsEqual(legacy, cleaned) {
-		t.Fatal("legacy result should equal cleaned results after normalize")
+func TestGraphsEqual_missingOutputResultsEqualsEmpty(t *testing.T) {
+	missing := validGraph()
+	missing.Nodes[1].Config = map[string]any{}
+	empty := validGraph()
+	empty.Nodes[1].Config = map[string]any{"results": []any{}}
+	if !GraphsEqual(missing, empty) {
+		t.Fatal("missing results should equal empty results")
 	}
-	changed := validGraph()
-	changed.Nodes[1].Config = map[string]any{"results": []any{"{{artifact(\"y.md\")}}"}}
-	if GraphsEqual(legacy, changed) {
-		t.Fatal("different results content should still differ")
+	singular := validGraph()
+	singular.Nodes[1].Config = map[string]any{"result": "{{artifact(\"x.md\")}}"}
+	plural := validGraph()
+	plural.Nodes[1].Config = map[string]any{"results": []any{"{{artifact(\"x.md\")}}"}}
+	if GraphsEqual(singular, plural) {
+		t.Fatal("singular result is not an alias of results")
 	}
 }
 
@@ -73,12 +75,5 @@ func TestGraphsEqual_positionMatters(t *testing.T) {
 	b.Nodes[0].Position = models.Position{X: 10, Y: 20}
 	if GraphsEqual(a, b) {
 		t.Fatal("position change should differ")
-	}
-	if !GraphsEqualIgnoringLayout(a, b) {
-		t.Fatal("position-only change should be equal ignoring layout")
-	}
-	b.Nodes[0].Label = "Renamed"
-	if GraphsEqualIgnoringLayout(a, b) {
-		t.Fatal("label change should still differ ignoring layout")
 	}
 }

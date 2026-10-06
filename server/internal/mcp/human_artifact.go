@@ -85,40 +85,6 @@ func ValidateHumanArtifactContent(name, content string) (HumanArtifactNormalized
 		out.Rendered = structured.RenderRootCauseMarkdown(out.Content)
 		out.JSONKey = "root_cause_json"
 		return out, nil
-	case ProposalsArtifactName:
-		doc, err := structured.ParseProposals(jsonToArgs(content))
-		if err != nil {
-			return out, err
-		}
-		b, err := json.MarshalIndent(doc, "", "  ")
-		if err != nil {
-			return out, err
-		}
-		out.Content = string(b)
-		out.Rendered = structured.RenderProposalsMarkdown(out.Content)
-		out.JSONKey = "proposals_json"
-		return out, nil
-	case ProposalArtifactName:
-		// Selected proposal is a single proposal object (+ status fields).
-		// Minimal check: valid JSON object with a title or summary.
-		var m map[string]any
-		if err := json.Unmarshal([]byte(content), &m); err != nil {
-			return out, fmt.Errorf("解析方案失败: %w", err)
-		}
-		title, _ := m["title"].(string)
-		summary, _ := m["summary"].(string)
-		if strings.TrimSpace(title) == "" && strings.TrimSpace(summary) == "" {
-			return out, errors.New("proposal 需要 title 或 summary")
-		}
-		b, err := json.MarshalIndent(m, "", "  ")
-		if err != nil {
-			return out, err
-		}
-		out.Content = string(b)
-		out.Rendered = RenderProposalMarkdown(out.Content)
-		out.JSONKey = "proposal_json"
-		out.OutKey = "proposal"
-		return out, nil
 	case TestResultArtifactName:
 		doc, err := structured.ParseTestResult(jsonToArgs(content))
 		if err != nil {
@@ -157,6 +123,19 @@ func ValidateHumanArtifactContent(name, content string) (HumanArtifactNormalized
 		out.Content = string(b)
 		out.Rendered = structured.RenderImplementationResultMarkdown(out.Content)
 		out.JSONKey = "implementation_result_json"
+		return out, nil
+	case MergeRequestArtifactName:
+		doc, err := structured.ParseMergeRequest(jsonToArgs(content))
+		if err != nil {
+			return out, err
+		}
+		b, err := json.MarshalIndent(doc, "", "  ")
+		if err != nil {
+			return out, err
+		}
+		out.Content = string(b)
+		out.Rendered = structured.RenderMergeRequestMarkdown(out.Content)
+		out.JSONKey = "merge_request_json"
 		return out, nil
 	case PreflightArtifactName:
 		doc, err := structured.ParsePreflight(jsonToArgs(content))

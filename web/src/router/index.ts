@@ -28,10 +28,8 @@ const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/dashboard' },
   { path: '/dashboard', name: 'dashboard', component: () => import('@/views/DashboardView.vue'), meta: { titleKey: 'route.dashboard' } },
   { path: '/stats', name: 'stats', component: () => import('@/views/TokenAnalyticsView.vue'), meta: { titleKey: 'route.stats' } },
-  { path: '/board', name: 'board', component: () => import('@/views/BoardRedirectView.vue'), meta: { titleKey: 'route.board' } },
   { path: '/projects', name: 'projects', component: () => import('@/views/ProjectListView.vue'), meta: { titleKey: 'route.projects' } },
   { path: '/projects/:id', name: 'project-detail', component: () => import('@/views/ProjectDetailView.vue'), meta: { titleKey: 'route.projectDetail' } },
-  { path: '/workflows', redirect: '/projects' },
   { path: '/workflows/:id/edit', name: 'workflow-editor', component: () => import('@/views/WorkflowEditorView.vue'), meta: { titleKey: 'route.workflowEditor', full: true } },
   { path: '/runs', name: 'runs', component: () => import('@/views/RunListView.vue'), meta: { titleKey: 'route.runs' } },
   { path: '/runs/:id', name: 'run-detail', component: () => import('@/views/RunDetailView.vue'), meta: { titleKey: 'route.runDetail', full: true } },
@@ -41,9 +39,6 @@ const routes: RouteRecordRaw[] = [
   { path: '/agents', name: 'agents', component: () => import('@/views/AgentStudioView.vue'), meta: { titleKey: 'route.agents' } },
   { path: '/sandboxes', name: 'sandboxes', component: () => import('@/views/SandboxListView.vue'), meta: { titleKey: 'route.sandboxes' } },
   { path: '/sandboxes/:id/console', name: 'sandbox-console', component: () => import('@/views/SandboxConsoleView.vue'), meta: { titleKey: 'route.sandboxConsole', full: true } },
-  // plan g1.2 / g1.3: retire standalone pages; redirect old bookmarks into settings
-  { path: '/integrations', redirect: { path: '/settings', query: { integrations: '1' } } },
-  { path: '/triggers', redirect: '/settings' },
   { path: '/settings', name: 'settings', component: () => import('@/views/SettingsView.vue'), meta: { titleKey: 'route.settings' } },
 ]
 

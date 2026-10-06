@@ -102,12 +102,10 @@ type agentLayout struct {
 
 // agentFile mirrors <ProfilesRoot>/<profile>/agent.json (mcp + env + layout).
 type agentFile struct {
-	AcpBackend       string            `json:"acpBackend"`
-	GitSshKnownHosts string            `json:"gitSshKnownHosts,omitempty"`
-	GitSshPrivateKey string            `json:"gitSshPrivateKey,omitempty"`
-	MCP              []agentMCP        `json:"mcp"`
-	Env              map[string]string `json:"env"`
-	Layout           agentLayout       `json:"layout"`
+	AcpBackend string            `json:"acpBackend"`
+	MCP        []agentMCP        `json:"mcp"`
+	Env        map[string]string `json:"env"`
+	Layout     agentLayout       `json:"layout"`
 }
 
 // agentConfig reads the Agent's agent.json (best effort; empty on miss).
@@ -163,8 +161,8 @@ func (c *acpProvider) effectiveAgent(req NodeReq) agentFile {
 
 func overlayAgentFile(shared SharedAgentView, agent agentFile) agentFile {
 	out := agent
-	// Env: shared base, Agent overlay; Token keys keep shared when present.
-	out.Env = envauth.MergeEnvSharedTokenPriority(shared.Env, agent.Env)
+	// Env: shared base, Agent overlay.
+	out.Env = envauth.OverlayEnv(shared.Env, agent.Env)
 	// MCP by name
 	byName := map[string]agentMCP{}
 	order := make([]string, 0, len(shared.MCP)+len(agent.MCP))
@@ -199,13 +197,6 @@ func overlayAgentFile(shared SharedAgentView, agent agentFile) agentFile {
 	if strings.TrimSpace(agent.Layout.WorkspaceDir) == "" && strings.TrimSpace(shared.Layout.WorkspaceDir) != "" {
 		out.Layout.WorkspaceDir = shared.Layout.WorkspaceDir
 	}
-	// SSH meta literals: non-empty agent wins (same as other meta).
-	if strings.TrimSpace(agent.GitSshKnownHosts) == "" && strings.TrimSpace(shared.GitSshKnownHosts) != "" {
-		out.GitSshKnownHosts = shared.GitSshKnownHosts
-	}
-	if strings.TrimSpace(agent.GitSshPrivateKey) == "" && strings.TrimSpace(shared.GitSshPrivateKey) != "" {
-		out.GitSshPrivateKey = shared.GitSshPrivateKey
-	}
 	return out
 }
 
@@ -217,41 +208,18 @@ func overlayAgentFile(shared SharedAgentView, agent agentFile) agentFile {
 // The name is used only to gate the convention doc rule and as the UI default.
 const reservedArtifactStore = "artifact-store"
 
-// mcpVars are the run-scoped template variables substituted into the Agent's
-// MCP config and env values at runtime. They are the only way the dynamic
-// artifact-store URL/token reach the user-authored mcp.json — so the token is
-// never persisted in config and stays bound to this run (per-run isolation).
-// gitToken resolves GITLAB_TOKEN from the platform env and the Agent-meta env
-// (with ${...} substitution), mirroring how spec() builds the sandbox env. It
-// gates optional MR creation; empty means "no credentials, skip MR".
+// gitToken resolves GITLAB_TOKEN from project credentials. It gates optional
+// MR creation; empty means "no credentials, skip MR".
 func (c *acpProvider) gitToken(req NodeReq) string {
-	vars := c.mcpVars(req)
-	if c.opts.ProjectCredentialsForProject != nil {
-		if v := c.opts.ProjectCredentialsForProject(c.projectIDForReq(req))["GITLAB_TOKEN"]; v != "" {
-			return v
-		}
-	}
-	if v := substVars(c.effectiveAgent(req).Env["GITLAB_TOKEN"], vars); v != "" {
-		return v
-	}
-	return c.opts.Env["GITLAB_TOKEN"]
+	return c.projectCredential(req, envauth.EnvGitLabToken)
 }
 
-// gitLabURL resolves GITLAB_URL for GitLab detection and MR gating. Explicit
-// agent GITLAB_URL wins; otherwise derive from the node's repo URL only when
+// gitLabURL resolves GITLAB_URL for GitLab detection and MR gating. The
+// project credential wins; otherwise derive from the node's repo URL only when
 // GITLAB_TOKEN is configured and the repo is not GitHub (avoids a misconfigured
 // token on GitHub).
 func (c *acpProvider) gitLabURL(req NodeReq) string {
-	vars := c.mcpVars(req)
-	if c.opts.ProjectCredentialsForProject != nil {
-		if v := strings.TrimSpace(c.opts.ProjectCredentialsForProject(c.projectIDForReq(req))["GITLAB_URL"]); v != "" {
-			return v
-		}
-	}
-	if v := substVars(c.effectiveAgent(req).Env["GITLAB_URL"], vars); v != "" {
-		return v
-	}
-	if v := strings.TrimSpace(c.opts.Env["GITLAB_URL"]); v != "" {
+	if v := c.projectCredential(req, "GITLAB_URL"); v != "" {
 		return v
 	}
 	repo := c.nodeRepoURL(req)
@@ -265,6 +233,17 @@ func (c *acpProvider) gitLabURL(req NodeReq) string {
 	return ""
 }
 
+func (c *acpProvider) projectCredential(req NodeReq, key string) string {
+	if c.opts.ProjectCredentialsForProject == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.opts.ProjectCredentialsForProject(c.projectIDForReq(req))[key])
+}
+
+// mcpVars are the run-scoped template variables substituted into the Agent's
+// MCP config and env values at runtime. They are the only way the dynamic
+// artifact-store URL/token reach the user-authored mcp.json — so the token is
+// never persisted in config and stays bound to this run (per-run isolation).
 func (c *acpProvider) mcpVars(req NodeReq) map[string]string {
 	m := map[string]string{
 		"GRASP_ARTIFACT_URL":   c.mcpURL(req),

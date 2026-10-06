@@ -2,7 +2,7 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { REVIEW_SHELL_WIDTH_KEY_APPROVAL } from '@/lib/inbox/reviewLayoutBudget'
-import { api, isPaginated } from '@/lib/api/api'
+import { api } from '@/lib/api/api'
 import { isSandboxBusyError } from '@/lib/api/httpCore'
 import { adaptInboxContextToRun } from '@/lib/inbox/inboxContext'
 import { useWorkflowFilter } from '@/lib/composables/useWorkflowFilter'
@@ -503,8 +503,7 @@ async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: 
         if (!incomingArmed.value) return
         const curAfter = incomingTarget()
         if (!curAfter || `${curAfter.runId}:${curAfter.nodeId || INCOMING_GHOST_NODE_ID}` !== key) return
-        const rows = isPaginated(data) ? data.items : data
-        const hit = rows.find((it) => it.runId === target.runId)
+        const hit = data.items.find((it) => it.runId === target.runId)
         if (hit) {
           incomingGhost.value = hit
           const hitKey = itemKey(hit)
@@ -810,8 +809,8 @@ async function loadList({ showLoading = false }: { showLoading?: boolean } = {})
     // Discard overdue snapshots so they cannot resurrect a just-removed gate.
     if (gen !== listLoadGeneration) return
     listSnapshotForNeighbor = listItems.value.slice()
-    const rows = isPaginated(data) ? data.items : data
-    const total = isPaginated(data) ? data.total : data.length
+    const rows = data.items
+    const total = data.total
     detectStartingFailures(listItems.value, rows)
     // Hide locally-confirmed rows even if the server list still lags (f4 ghost guard).
     const visible = rows.filter((it) => !isProcessedTriple(it))

@@ -182,7 +182,7 @@ func TestManagerCreateRuntimeURL(t *testing.T) {
 	if m.Runtime() != rt {
 		t.Fatal("Runtime() accessor")
 	}
-	sb, err := m.Create(context.Background(), Spec{Name: "grasp-sb-rt"})
+	sb, err := m.Create(context.Background(), Spec{Name: "grasp-sb-rt", Env: map[string]string{BridgePasswordEnv: testBridgePassword}})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestManagerCreateRuntimeURL(t *testing.T) {
 	// Runtime plus ConfigHome share one token; SANDBOX_INJECT keeps the config part only.
 	home := t.TempDir()
 	_ = os.WriteFile(filepath.Join(home, "mcp.json"), []byte(`{}`), 0o644)
-	if _, err := m.Create(context.Background(), Spec{Name: "grasp-sb-rt2", ConfigHome: home, ConfigRoot: "/root/.cursor"}); err != nil {
+	if _, err := m.Create(context.Background(), Spec{Name: "grasp-sb-rt2", ConfigHome: home, ConfigRoot: "/root/.cursor", Env: map[string]string{BridgePasswordEnv: testBridgePassword}}); err != nil {
 		t.Fatal(err)
 	}
 	env, _ = fg.lastCreate["env"].(map[string]any)
@@ -229,14 +229,14 @@ func TestManagerCreateRuntimeErrors(t *testing.T) {
 
 	gw, _ := newInlineGW(t)
 	missing := NewManager(gw, ManagerOptions{Image: "img:test", Runtime: NewRuntimeBundle(filepath.Join(t.TempDir(), "none.tgz"))})
-	if _, err := missing.Create(context.Background(), Spec{Name: "a"}); err == nil || !strings.Contains(err.Error(), "runtime bundle") {
+	if _, err := missing.Create(context.Background(), Spec{Name: "a", Env: map[string]string{BridgePasswordEnv: testBridgePassword}}); err == nil || !strings.Contains(err.Error(), "runtime bundle") {
 		t.Fatalf("missing bundle err=%v", err)
 	}
 
 	path := filepath.Join(t.TempDir(), "rt.tgz")
 	writeRuntime(t, path, testVersion('d'), 1)
 	noStore := NewManager(gw, ManagerOptions{Image: "img:test", Runtime: NewRuntimeBundle(path)})
-	if _, err := noStore.Create(context.Background(), Spec{Name: "b"}); err == nil || !strings.Contains(err.Error(), "inject store") {
+	if _, err := noStore.Create(context.Background(), Spec{Name: "b", Env: map[string]string{BridgePasswordEnv: testBridgePassword}}); err == nil || !strings.Contains(err.Error(), "inject store") {
 		t.Fatalf("no store err=%v", err)
 	}
 }

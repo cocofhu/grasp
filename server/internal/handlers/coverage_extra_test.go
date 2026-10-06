@@ -117,6 +117,7 @@ func TestExportImportAgentHandlers(t *testing.T) {
 	mw := multipart.NewWriter(&buf)
 	_ = mw.WriteField("targetName", "ImportedAgent")
 	_ = mw.WriteField("mode", "create")
+	_ = mw.WriteField("projectId", models.DefaultProjectID)
 	fw, err := mw.CreateFormFile("file", "agent.zip")
 	if err != nil {
 		t.Fatal(err)

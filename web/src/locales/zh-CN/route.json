@@ -2,7 +2,6 @@
   "route": {
     "dashboard": "开始",
     "stats": "用量统计",
-    "board": "看板",
     "projects": "项目",
     "projectDetail": "项目详情",
     "workflows": "工作流",

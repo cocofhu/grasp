@@ -33,7 +33,7 @@ describe('useNodeDefs', () => {
     const agentGroup = groups!.value.find((g) => g.types.includes('agent'))
     expect(agentGroup?.types).toEqual(['agent'])
     expect(Object.keys(defs!.value).sort()).toEqual(
-      ['agent', 'branch', 'human_gate', 'input', 'output', 'proposal_select', 'set_var'],
+      ['agent', 'branch', 'human_gate', 'input', 'output', 'set_var'],
     )
   })
 })

@@ -23,8 +23,7 @@ import {
 } from '@/lib/inbox/embedChat'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { setThemeOverride } from '@/lib/shared/theme'
-import { locale, setLocale } from '@/lib/shared/locale'
-import { GRASP_STORAGE_KEYS } from '@/lib/shared/migrateBrandStorage'
+import { LOCALE_STORAGE_KEY, locale, setLocale } from '@/lib/shared/locale'
 import { createEmbedLiveContext } from '@/lib/inbox/embedLiveContext'
 import { usePageControl } from '@/lib/inbox/embedPageControl'
 import {
@@ -217,7 +216,7 @@ watch(locale, () => {
 // The main Grasp tab shares this origin's localStorage, so a language switch
 // there reaches the drawer (and through it, the page toolbar) without a reload.
 function onStorage(e: StorageEvent) {
-  if (e.key !== GRASP_STORAGE_KEYS.locale) return
+  if (e.key !== LOCALE_STORAGE_KEY) return
   if (e.newValue === 'zh-CN' || e.newValue === 'en') void setLocale(e.newValue)
 }
 

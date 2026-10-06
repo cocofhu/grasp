@@ -71,7 +71,7 @@ func newLaneShare(t *testing.T) (*harness, *laneProvider, string) {
 	eng.SetBlobStore(blob.NewMemory())
 	h.h.Eng = eng
 	t.Cleanup(eng.Close)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/"+runID+"/reviews/"+nodeID+"/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/"+runID+"/reviews/"+nodeID+"/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	i := strings.Index(url, "#t=")
 	if i < 0 {

@@ -301,7 +301,7 @@ func TestSetTestResultValidatesScreenshotArtifacts(t *testing.T) {
 		t.Fatal("test_result.json should not be written when validation fails")
 	}
 
-	// All artifacts present: stored JSON keeps artifact ref, no inline data.
+	// All artifacts present: stored JSON keeps artifact ref and metadata.
 	call(t, h, runID, tok, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"set_test_result","arguments":{"summary":"s","cases":[{"name":"c1","status":"passed"}],"screenshots":[{"artifact":"shot-1.png","caption":"home","mimeType":"image/png"}]}}}`)
 
 	content, ok := store.Get(runID, TestResultArtifactName)
@@ -310,7 +310,6 @@ func TestSetTestResultValidatesScreenshotArtifacts(t *testing.T) {
 	}
 	var doc struct {
 		Screenshots []struct {
-			Data     string `json:"data"`
 			Artifact string `json:"artifact"`
 			MimeType string `json:"mimeType"`
 			Caption  string `json:"caption"`
@@ -323,25 +322,8 @@ func TestSetTestResultValidatesScreenshotArtifacts(t *testing.T) {
 		t.Fatalf("screenshots = %d, want 1: %+v", len(doc.Screenshots), doc.Screenshots)
 	}
 	s := doc.Screenshots[0]
-	if s.Data != "" || s.Artifact != "shot-1.png" || s.Caption != "home" || s.MimeType != "image/png" {
+	if s.Artifact != "shot-1.png" || s.Caption != "home" || s.MimeType != "image/png" {
 		t.Errorf("want artifact-only with metadata preserved, got: %+v", s)
-	}
-
-	// Input with both data and artifact: data stripped, metadata kept.
-	call(t, h, runID, tok, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"set_test_result","arguments":{"summary":"s2","cases":[{"name":"c1","status":"passed"}],"screenshots":[{"artifact":"shot-1.png","data":"SHOULD_NOT_STORE","caption":"with-data","mimeType":"image/webp"}]}}}`)
-	content2, ok := store.Get(runID, TestResultArtifactName)
-	if !ok {
-		t.Fatal("test_result.json not rewritten")
-	}
-	if err := json.Unmarshal([]byte(content2), &doc); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if len(doc.Screenshots) != 1 {
-		t.Fatalf("screenshots = %d, want 1", len(doc.Screenshots))
-	}
-	s2 := doc.Screenshots[0]
-	if s2.Data != "" || s2.Artifact != "shot-1.png" || s2.Caption != "with-data" || s2.MimeType != "image/webp" {
-		t.Errorf("data+artifact input should store ref+metadata only: %+v", s2)
 	}
 }
 
@@ -431,10 +413,6 @@ func TestRenderMarkdownAll(t *testing.T) {
 			`{"title":"T","summary":"s","background":"bg","goals":["g"],"in_scope":["in"],"out_of_scope":["out"],"functional_requirements":[{"id":"f1","title":"登录","detail":"d","priority":"must","acceptance_criteria":["ok"]}],"assumptions":["a"],"dependencies":["d"],"constraints":["c1"],"open_questions":["q1"]}`, "登录"},
 		{"research", RenderResearchMarkdown,
 			`{"summary":"s","questions":[{"question":"q1","answer":"a1"}],"findings":[{"title":"F","detail":"d"}],"recommendation":"r"}`, "F"},
-		{"proposals", RenderProposalsMarkdown,
-			`{"context":"ctx","proposals":[{"id":"p1","title":"A","pros":["good"],"cons":["bad"]},{"id":"p2","title":"B","recommended":true}]}`, "A"},
-		{"proposal", RenderProposalMarkdown,
-			`{"id":"p2","title":"B","summary":"chosen","pros":["x"],"cons":["y"],"status":"accepted"}`, "B"},
 		{"test", RenderTestResultMarkdown,
 			`{"summary":"s","passed":2,"failed":1,"skipped":0,"cases":[{"name":"c1","status":"passed"},{"name":"c2","status":"failed","detail":"boom"}]}`, "c2"},
 		{"review", RenderReviewMarkdown,

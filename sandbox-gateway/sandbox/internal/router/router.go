@@ -31,9 +31,6 @@ type Dependencies struct {
 	LoginHTMLPath string      // login.html 绝对路径（启用 Auth 时必填）
 }
 
-// Options 为 Dependencies 的类型别名，便于与旧调用处兼容。
-type Options = Dependencies
-
 // New 构建 Gin 引擎并注册路由。
 func New(deps *Dependencies) *gin.Engine {
 	if deps == nil {

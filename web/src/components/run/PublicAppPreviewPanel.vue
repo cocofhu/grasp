@@ -41,11 +41,11 @@ let ticketAbort: AbortController | null = null
 let ticketGen = 0
 
 const sortedPorts = computed(() =>
-  props.ports.filter((p) => p.port > 0 || (p.kind || '') === 'url' || !!(p.url || '').trim()),
+  props.ports.filter((p) => p.port > 0 || p.kind === 'url'),
 )
 
 function isUrlPreview(p: PublicPreviewPort): boolean {
-  return p.kind === 'url' || !!(p.url || '').trim()
+  return p.kind === 'url'
 }
 
 function publicTabKey(p: PublicPreviewPort): string {

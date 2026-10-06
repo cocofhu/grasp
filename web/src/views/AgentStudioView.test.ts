@@ -17,12 +17,10 @@ const mocks = vi.hoisted(() => ({
   listAgents: vi.fn(),
   listProjects: vi.fn(),
   saveAgent: vi.fn(),
-  patchAgentProject: vi.fn(),
-  getAgentsOrg: vi.fn(),
-  saveAgentsOrg: vi.fn(),
   renameAgent: vi.fn(),
   listProjectRunTags: vi.fn(),
   createProjectSharedAgentTest: vi.fn(),
+  exportProjectAgents: vi.fn(),
 }))
 
 const breakpointMocks = vi.hoisted(() => {
@@ -40,12 +38,10 @@ vi.mock('@/lib/api/api', async () => {
       listAgents: mocks.listAgents,
       listProjects: mocks.listProjects,
       saveAgent: mocks.saveAgent,
-      patchAgentProject: mocks.patchAgentProject,
-      getAgentsOrg: mocks.getAgentsOrg,
-      saveAgentsOrg: mocks.saveAgentsOrg,
       renameAgent: mocks.renameAgent,
       listProjectRunTags: mocks.listProjectRunTags,
       createProjectSharedAgentTest: mocks.createProjectSharedAgentTest,
+      exportProjectAgents: mocks.exportProjectAgents,
     },
   }
 })
@@ -89,7 +85,10 @@ function agent(region?: string): Agent {
 async function createStudioRouter(query: Record<string, string> = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/agents', component: { render: () => h('div') } }],
+    routes: [
+      { path: '/agents', component: { render: () => h('div') } },
+      { path: '/projects/:id', name: 'project-detail', component: { render: () => h('div') } },
+    ],
   })
   await router.push({ path: '/agents', query })
   await router.isReady()
@@ -128,7 +127,7 @@ async function mountStudio(query: Record<string, string> = {}) {
           AgentChatTester: true,
           AgentGitGuide: true,
           AgentCreateWizard: true,
-          AgentOrgSidebar: true,
+          AgentProjectSidebar: true,
           AgentDataPanel: true,
         },
       },
@@ -143,17 +142,6 @@ beforeEach(() => {
   mocks.listProjects.mockResolvedValue([{ id: 'proj-default', name: 'Default' }])
   mocks.listProjectRunTags.mockResolvedValue({ tags: [] })
   mocks.saveAgent.mockImplementation(async (payload: Agent) => payload)
-  mocks.patchAgentProject.mockImplementation(async (name: string, projectId: string) => ({
-    status: 'saved',
-    projectId,
-  }))
-  mocks.getAgentsOrg.mockResolvedValue({ revision: 0, groups: [], agents: {} })
-  mocks.saveAgentsOrg.mockImplementation(async (org: { revision?: number }) => ({
-    revision: (org.revision || 0) + 1,
-    groups: [],
-    agents: {},
-    ...org,
-  }))
   mocks.createProjectSharedAgentTest.mockResolvedValue({ id: 1 })
 })
 
@@ -358,40 +346,6 @@ describe('AgentStudio MCP PM leader prefills', () => {
     expect(wrapper.findAll('[data-mcp-name="memory-store"]')).toHaveLength(1)
   })
 
-  it('shows legacy upgrade hint for pm-leader and upgrades in place', async () => {
-    mocks.listAgents.mockResolvedValue([
-      {
-        ...agent(),
-        mcp: [
-          {
-            name: 'artifact-store',
-            url: '${GRASP_ARTIFACT_URL}',
-            headers: { Authorization: 'Bearer ${GRASP_ARTIFACT_TOKEN}' },
-          },
-          {
-            name: 'pm-leader',
-            url: '${GRASP_PM_URL}',
-            headers: { Authorization: 'Bearer ${GRASP_PM_TOKEN}' },
-          },
-        ],
-      },
-    ])
-    const wrapper = await mountStudio()
-    await flushPromises()
-    await openMcpTab(wrapper)
-
-    expect(wrapper.text()).toContain('检测到旧约定名 pm-leader')
-    expect(wrapper.find('[data-test="mcp-legacy-pm-hint"]').exists()).toBe(true)
-    await wrapper.get('[data-test="mcp-upgrade-legacy"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('[data-mcp-name="pm-leader"]').exists()).toBe(false)
-    expect(wrapper.find('[data-mcp-name="memory-store"]').exists()).toBe(true)
-    expect(wrapper.find('[data-mcp-name="context-store"]').exists()).toBe(true)
-    expect(wrapper.find('[data-mcp-name="task-scheduler"]').exists()).toBe(true)
-    expect(wrapper.find('[data-mcp-name="artifact-store"]').exists()).toBe(true)
-  })
-
   it('drops platform display after renaming memory-store in raw JSON', async () => {
     mocks.listAgents.mockResolvedValue([
       {
@@ -492,7 +446,7 @@ describe('AgentStudio MCP config help', () => {
             AgentChatTester: true,
             AgentGitGuide: true,
             AgentCreateWizard: true,
-            AgentOrgSidebar: true,
+            AgentProjectSidebar: true,
             AgentDataPanel: true,
           },
         },
@@ -595,10 +549,10 @@ describe('AgentStudio rename entry migration', () => {
     template: '<div v-if="open" data-test="modal"><h2>{{ title }}</h2><slot /><slot name="footer" /></div>',
   })
   const SidebarStub = defineComponent({
-    emits: ['rename-agent', 'open-manage', 'select-agent'],
+    emits: ['open-manage', 'select'],
     template:
       '<div data-test="sidebar">' +
-      '<button data-test="pencil" @click="$emit(\'rename-agent\', \'legacy\')">pencil</button>' +
+      '<button data-test="rename-via-manage" @click="$emit(\'open-manage\', \'legacy\')">rename</button>' +
       '<button data-test="manage" @click="$emit(\'open-manage\')">manage</button>' +
       '</div>',
   })
@@ -624,7 +578,7 @@ describe('AgentStudio rename entry migration', () => {
             AgentChatTester: true,
             AgentGitGuide: true,
             AgentCreateWizard: true,
-            AgentOrgSidebar: SidebarStub,
+            AgentProjectSidebar: SidebarStub,
             AgentDataPanel: true,
           },
         },
@@ -632,27 +586,12 @@ describe('AgentStudio rename entry migration', () => {
     )
   }
 
-  it('blocks sidebar pencil rename and does not call api.renameAgent', async () => {
+  it('agent row rename opens Agent management focused on that agent', async () => {
     mocks.listAgents.mockResolvedValue([agent('public')])
     const wrapper = await mountRenameStudio()
     await flushPromises()
 
-    await wrapper.get('[data-test="pencil"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('这里不支持修改 Agent 名字')
-    expect(wrapper.text()).toContain('前往 Agent 管理')
-    expect(mocks.renameAgent).not.toHaveBeenCalled()
-  })
-
-  it('opens Agent management with Rename and focuses the blocked target', async () => {
-    mocks.listAgents.mockResolvedValue([agent('public')])
-    const wrapper = await mountRenameStudio()
-    await flushPromises()
-
-    await wrapper.get('[data-test="pencil"]').trigger('click')
-    await flushPromises()
-    await wrapper.findAll('button').find((b) => b.text() === '前往 Agent 管理')!.trigger('click')
+    await wrapper.get('[data-test="rename-via-manage"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('Agent 管理')
@@ -743,7 +682,7 @@ describe('AgentStudio rename entry migration', () => {
     await flushPromises()
 
     expect(wrapper.text()).not.toContain('工作流引用不会自动更新')
-    expect(wrapper.text()).toContain('将同步更新目录、项目管理、组织关系，以及工作流中的 Agent 配置引用')
+    expect(wrapper.text()).toContain('将同步更新目录、项目管理，以及工作流中的 Agent 配置引用')
     await wrapper.findAll('button').find((b) => b.text() === '取消')!.trigger('click')
     await flushPromises()
     expect(mocks.renameAgent).not.toHaveBeenCalled()
@@ -836,7 +775,7 @@ describe('AgentStudio mobile core path', () => {
             AgentChatTester: true,
             AgentGitGuide: true,
             AgentCreateWizard: true,
-            AgentOrgSidebar: true,
+            AgentProjectSidebar: true,
             AgentDataPanel: true,
           },
         },
@@ -1030,7 +969,7 @@ describe('AgentStudio mobile core path', () => {
       locale: 'zh-CN',
       messages: { 'zh-CN': { ...common, ...pages } },
     })
-    const router = await createStudioRouter({ agent: 'alpha', tab: 'test' })
+    const router = await createStudioRouter({ agent: 'alpha', studioTab: 'test' })
     const wrapper = trackMount(
       mount(AgentStudioView, {
         global: {
@@ -1049,7 +988,7 @@ describe('AgentStudio mobile core path', () => {
             },
             AgentGitGuide: true,
             AgentCreateWizard: true,
-            AgentOrgSidebar: true,
+            AgentProjectSidebar: true,
             AgentDataPanel: true,
           },
         },
@@ -1073,7 +1012,7 @@ describe('AgentStudio mobile core path', () => {
       locale: 'zh-CN',
       messages: { 'zh-CN': { ...common, ...pages } },
     })
-    const router = await createStudioRouter({ agent: 'alpha', tab: 'data', sub: 'jobs' })
+    const router = await createStudioRouter({ agent: 'alpha', studioTab: 'data', sub: 'jobs' })
     const wrapper = trackMount(
       mount(AgentStudioView, {
         global: {
@@ -1088,7 +1027,7 @@ describe('AgentStudio mobile core path', () => {
             AgentChatTester: true,
             AgentGitGuide: true,
             AgentCreateWizard: true,
-            AgentOrgSidebar: true,
+            AgentProjectSidebar: true,
             AgentDataPanel: true,
           },
         },
@@ -1110,7 +1049,7 @@ describe('AgentStudio mobile core path', () => {
       locale: 'zh-CN',
       messages: { 'zh-CN': { ...common, ...pages } },
     })
-    const router = await createStudioRouter({ agent: 'alpha', tab: 'capabilities' })
+    const router = await createStudioRouter({ agent: 'alpha', studioTab: 'capabilities' })
     const wrapper = trackMount(
       mount(AgentStudioView, {
         global: {
@@ -1125,7 +1064,7 @@ describe('AgentStudio mobile core path', () => {
             AgentChatTester: true,
             AgentGitGuide: true,
             AgentCreateWizard: true,
-            AgentOrgSidebar: true,
+            AgentProjectSidebar: true,
             AgentDataPanel: true,
           },
         },
@@ -1137,76 +1076,38 @@ describe('AgentStudio mobile core path', () => {
     wrapper.unmount()
   })
 
-  it('unbound agent shows desktop-bind empty state without goBind on mobile', async () => {
-    mocks.listAgents.mockResolvedValue([
-      {
-        ...agentWithFiles(),
-        projectId: '',
-      },
+  it('shows switch entry and opens the project sheet tree', async () => {
+    mocks.listProjects.mockResolvedValue([
+      { id: 'proj-default', name: '默认项目' },
+      { id: 'proj-2', name: '第二项目' },
     ])
-    const wrapper = await mountMobileStudio()
-    await flushPromises()
-
-    await wrapper.findAll('button').find((b) => b.text() === '数据')!.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('尚未绑定主项目')
-    expect(wrapper.text()).toContain('请在桌面端')
-    expect(wrapper.text()).not.toContain('去绑定主项目')
-    expect(wrapper.find('agent-data-panel-stub').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('建议在桌面使用')
-  })
-
-  it('shows switch entry and opens org sheet with groups/ungrouped', async () => {
     mocks.listAgents.mockResolvedValue([
       { ...agentWithFiles(), name: 'alpha' },
-      { ...agentWithFiles(), name: 'beta' },
+      { ...agentWithFiles(), name: 'beta', projectId: 'proj-2' },
     ])
-    mocks.getAgentsOrg.mockResolvedValue({
-      revision: 1,
-      groups: [{ id: 'g1', name: '工程部' }],
-      agents: {
-        alpha: { groupIds: ['g1'] },
-        beta: { groupIds: [] },
-      },
-    })
     const wrapper = await mountMobileStudio()
     await flushPromises()
 
-    const switchBtn = wrapper.get('[data-test="org-switch"]')
+    const switchBtn = wrapper.get('[data-test="project-switch"]')
     expect(switchBtn.text()).toContain('切换')
     await switchBtn.trigger('click')
     await flushPromises()
 
-    const sheet = document.querySelector('[data-test="org-sheet"]')
+    const sheet = document.querySelector('[data-test="project-sheet"]')
     expect(sheet).toBeTruthy()
-    expect(sheet!.textContent).toContain('Agent 组织树')
-    expect(sheet!.textContent).toContain('工程部')
-    expect(sheet!.textContent).toContain('未分组')
-    expect(sheet!.textContent).toContain('alpha')
-    expect(sheet!.textContent).not.toContain('beta')
-
-    const ugBtn = sheet!.querySelector(
-      '[data-org-kind="ungrouped-header"] button',
-    ) as HTMLElement | null
-    ugBtn?.click()
-    await flushPromises()
-    expect(sheet!.textContent).toContain('beta')
-
-    // Agent 叶子名称主文字色契约（选中/未选中均 text-txt，非灰）
-    const agentBtns = Array.from(document.querySelectorAll('[data-test="org-sheet-agent"]'))
-    for (const btn of agentBtns) {
-      const nameSpan = btn.querySelector('.truncate.text-txt') as HTMLElement | null
-      expect(nameSpan).toBeTruthy()
-      expect(nameSpan!.className).not.toMatch(/text-txt2|text-txt3/)
-    }
-    const alphaRow = document.querySelector('[data-org-kind="agent"][data-org-name="alpha"]')
-    expect(alphaRow?.className).toContain('bg-accent-dim')
-    const groupName = sheet!.querySelector('.truncate.font-medium.text-txt2')
-    expect(groupName?.textContent).toContain('工程部')
-
+    expect(sheet!.textContent).toContain('项目 Agent')
+    expect(sheet!.textContent).toContain('默认项目')
+    expect(sheet!.textContent).toContain('第二项目')
+    expect(sheet!.querySelector('[data-tree-key="c:proj-default:alpha"]')).toBeTruthy()
+    expect(sheet!.querySelector('[data-tree-key="p:proj-2"]')).toBeTruthy()
     wrapper.unmount()
   })
+
+  function sheetAgent(name: string) {
+    return document.querySelector(
+      `[data-test="project-sheet"] [data-tree-key="c:proj-default:${name}"]`,
+    ) as HTMLElement
+  }
 
   it('switches agent without dirty and closes sheet', async () => {
     mocks.listAgents.mockResolvedValue([
@@ -1217,25 +1118,18 @@ describe('AgentStudio mobile core path', () => {
         files: [{ path: 'README.md', content: '# beta\n' }],
       },
     ])
-    mocks.getAgentsOrg.mockResolvedValue({
-      revision: 1,
-      groups: [],
-      agents: {},
-    })
     const wrapper = await mountMobileStudio()
     await flushPromises()
     expect(wrapper.text()).toContain('alpha')
 
-    await wrapper.get('[data-test="org-switch"]').trigger('click')
+    await wrapper.get('[data-test="project-switch"]').trigger('click')
     await flushPromises()
-    const betaBtn = Array.from(document.querySelectorAll('[data-test="org-sheet-agent"]')).find(
-      (el) => el.textContent?.includes('beta'),
-    ) as HTMLElement
+    const betaBtn = sheetAgent('beta')
     expect(betaBtn).toBeTruthy()
     betaBtn.click()
     await flushPromises()
 
-    expect(document.querySelector('[data-test="org-sheet"]')).toBeNull()
+    expect(document.querySelector('[data-test="project-sheet"]')).toBeNull()
     expect(wrapper.text()).toContain('beta')
     expect(wrapper.text()).toContain('README.md')
     wrapper.unmount()
@@ -1254,23 +1148,21 @@ describe('AgentStudio mobile core path', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('未保存')
 
-    await wrapper.get('[data-test="org-switch"]').trigger('click')
+    await wrapper.get('[data-test="project-switch"]').trigger('click')
     await flushPromises()
-    const betaBtn = Array.from(document.querySelectorAll('[data-test="org-sheet-agent"]')).find(
-      (el) => el.textContent?.includes('beta'),
-    ) as HTMLElement
+    const betaBtn = sheetAgent('beta')
     betaBtn.click()
     await flushPromises()
 
     expect(wrapper.text()).toContain('保存并切换')
     expect(wrapper.text()).toContain('丢弃并切换')
     expect(wrapper.text()).toContain('取消')
-    expect(document.querySelector('[data-test="org-sheet"]')).toBeTruthy()
+    expect(document.querySelector('[data-test="project-sheet"]')).toBeTruthy()
 
     await wrapper.findAll('button').find((b) => b.text() === '取消')!.trigger('click')
     await flushPromises()
 
-    expect(document.querySelector('[data-test="org-sheet"]')).toBeTruthy()
+    expect(document.querySelector('[data-test="project-sheet"]')).toBeTruthy()
     expect(wrapper.text()).toContain('未保存')
     expect(wrapper.text()).toContain('alpha')
     wrapper.unmount()
@@ -1293,11 +1185,9 @@ describe('AgentStudio mobile core path', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('未保存')
 
-    await wrapper.get('[data-test="org-switch"]').trigger('click')
+    await wrapper.get('[data-test="project-switch"]').trigger('click')
     await flushPromises()
-    const betaBtn = Array.from(document.querySelectorAll('[data-test="org-sheet-agent"]')).find(
-      (el) => el.textContent?.includes('beta'),
-    ) as HTMLElement
+    const betaBtn = sheetAgent('beta')
     betaBtn.click()
     await flushPromises()
 
@@ -1305,7 +1195,7 @@ describe('AgentStudio mobile core path', () => {
     await flushPromises()
 
     expect(mocks.saveAgent).toHaveBeenCalled()
-    expect(document.querySelector('[data-test="org-sheet"]')).toBeNull()
+    expect(document.querySelector('[data-test="project-sheet"]')).toBeNull()
     expect(wrapper.text()).toContain('beta')
     expect(wrapper.text()).toContain('README.md')
     expect(wrapper.text()).not.toContain('未保存')
@@ -1329,11 +1219,9 @@ describe('AgentStudio mobile core path', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('未保存')
 
-    await wrapper.get('[data-test="org-switch"]').trigger('click')
+    await wrapper.get('[data-test="project-switch"]').trigger('click')
     await flushPromises()
-    const betaBtn = Array.from(document.querySelectorAll('[data-test="org-sheet-agent"]')).find(
-      (el) => el.textContent?.includes('beta'),
-    ) as HTMLElement
+    const betaBtn = sheetAgent('beta')
     betaBtn.click()
     await flushPromises()
 
@@ -1341,20 +1229,20 @@ describe('AgentStudio mobile core path', () => {
     await flushPromises()
 
     expect(mocks.saveAgent).not.toHaveBeenCalled()
-    expect(document.querySelector('[data-test="org-sheet"]')).toBeNull()
+    expect(document.querySelector('[data-test="project-sheet"]')).toBeNull()
     expect(wrapper.text()).toContain('beta')
     expect(wrapper.text()).toContain('README.md')
     wrapper.unmount()
   })
 
-  it('org sheet manage opens existing agent manage modal', async () => {
+  it('project sheet manage opens existing agent manage modal', async () => {
     mocks.listAgents.mockResolvedValue([agentWithFiles()])
     const wrapper = await mountMobileStudio()
     await flushPromises()
 
-    await wrapper.get('[data-test="org-switch"]').trigger('click')
+    await wrapper.get('[data-test="project-switch"]').trigger('click')
     await flushPromises()
-    const manageBtn = document.querySelector('[data-test="org-sheet-manage"]') as HTMLButtonElement
+    const manageBtn = document.querySelector('[data-test="project-sheet-manage"]') as HTMLButtonElement
     expect(manageBtn).toBeTruthy()
     manageBtn.click()
     await flushPromises()
@@ -1398,37 +1286,37 @@ describe('AgentStudio mobile core path', () => {
     wrapper.unmount()
   })
 
-  it('closes org sheet when breakpoint flips to desktop', async () => {
+  it('closes project sheet when breakpoint flips to desktop', async () => {
     mocks.listAgents.mockResolvedValue([agentWithFiles()])
     const wrapper = await mountMobileStudio()
     await flushPromises()
 
-    await wrapper.get('[data-test="org-switch"]').trigger('click')
+    await wrapper.get('[data-test="project-switch"]').trigger('click')
     await flushPromises()
-    expect(document.querySelector('[data-test="org-sheet"]')).toBeTruthy()
+    expect(document.querySelector('[data-test="project-sheet"]')).toBeTruthy()
 
     breakpointMocks.isMobile.value = false
     await nextTick()
     await flushPromises()
-    expect(document.querySelector('[data-test="org-sheet"]')).toBeNull()
+    expect(document.querySelector('[data-test="project-sheet"]')).toBeNull()
     wrapper.unmount()
   })
 
-  it('keeps switch and exposes import/new via org sheet header', async () => {
+  it('keeps switch and exposes import/new via project sheet header', async () => {
     mocks.listAgents.mockResolvedValue([agentWithFiles()])
     const wrapper = await mountMobileStudio()
     await flushPromises()
 
-    expect(wrapper.find('[data-test="org-switch"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="project-switch"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="agent-studio-action-row"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('配置可复用的 Agent')
     expect(wrapper.text()).not.toContain('复制进沙箱')
 
-    await wrapper.get('[data-test="org-switch"]').trigger('click')
+    await wrapper.get('[data-test="project-switch"]').trigger('click')
     await flushPromises()
-    expect(document.querySelector('[data-test="org-sheet"]')).toBeTruthy()
-    expect(document.querySelector('[data-test="org-sheet-import"]')).toBeTruthy()
-    expect(document.querySelector('[data-test="org-sheet-create-agent"]')).toBeTruthy()
+    expect(document.querySelector('[data-test="project-sheet"]')).toBeTruthy()
+    expect(document.querySelector('[data-test="project-sheet-import"]')).toBeTruthy()
+    expect(document.querySelector('[data-test="project-sheet-create-agent"]')).toBeTruthy()
     wrapper.unmount()
   })
 })
@@ -1479,7 +1367,7 @@ describe('AgentStudio mobile chrome', () => {
             AgentChatTester: true,
             AgentGitGuide: true,
             AgentCreateWizard: true,
-            AgentOrgSidebar: true,
+            AgentProjectSidebar: true,
             AgentDataPanel: true,
           },
         },
@@ -1499,7 +1387,7 @@ describe('AgentStudio mobile chrome', () => {
     expect(wrapper.find('[data-test="studio-name-row-top"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="studio-name-row-bottom"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="agent-name"]').text()).toContain('Grasp代办助手')
-    expect(wrapper.get('[data-test="org-switch"]').classes().join(' ')).toMatch(/min-h-11/)
+    expect(wrapper.get('[data-test="project-switch"]').classes().join(' ')).toMatch(/min-h-11/)
     expect(wrapper.get('[data-test="studio-export"]').classes().join(' ')).toMatch(/min-h-11/)
     expect(wrapper.find('[data-test="studio-save"]').exists()).toBe(false)
     expect(wrapper.findAll('button').filter((b) => b.text() === '已保存').length).toBe(0)
@@ -1630,7 +1518,7 @@ describe('AgentStudio desktop chrome unchanged', () => {
 
     expect(wrapper.find('[data-test="studio-name-row-top"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="studio-name-row-bottom"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="org-switch"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="project-switch"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="file-row-more"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="tab-fade-right"]').exists()).toBe(false)
     const save = wrapper.get('[data-test="studio-save"]')
@@ -1646,7 +1534,6 @@ describe('AgentStudio copy removal (subtitle + toolbar)', () => {
   const subtitleEn = ['Reusable agents', 'copied to', '/root/.cursor']
   const demoShell = [
     '可复用 Agent 配置 · 组织与 Agent 配置引用',
-    '已拖入未分组',
     'clearToast',
   ]
 
@@ -1670,11 +1557,11 @@ describe('AgentStudio copy removal (subtitle + toolbar)', () => {
           AgentChatTester: true,
           AgentGitGuide: true,
           AgentCreateWizard: true,
-          AgentOrgSidebar: {
+          AgentProjectSidebar: {
             template:
               '<div data-test="sidebar">' +
-              '<button data-testid="agent-org-import" aria-label="Import">Import</button>' +
-              '<button data-testid="agent-org-create-agent" aria-label="New agent">New agent</button>' +
+              '<button data-testid="agent-tree-import" aria-label="Import">Import</button>' +
+              '<button data-testid="agent-tree-create-agent" aria-label="New agent">New agent</button>' +
               '</div>',
           },
           AgentDataPanel: true,
@@ -1703,11 +1590,11 @@ describe('AgentStudio copy removal (subtitle + toolbar)', () => {
           AgentChatTester: true,
           AgentGitGuide: true,
           AgentCreateWizard: true,
-          AgentOrgSidebar: {
+          AgentProjectSidebar: {
             template:
               '<div data-test="sidebar">' +
-              '<button data-testid="agent-org-import" aria-label="导入">导入</button>' +
-              '<button data-testid="agent-org-create-agent" aria-label="新建 Agent">新建 Agent</button>' +
+              '<button data-testid="agent-tree-import" aria-label="导入">导入</button>' +
+              '<button data-testid="agent-tree-create-agent" aria-label="新建 Agent">新建 Agent</button>' +
               '</div>',
           },
           AgentDataPanel: true,
@@ -1728,10 +1615,10 @@ describe('AgentStudio copy removal (subtitle + toolbar)', () => {
     expect(wrapper.findAll('h1,h2').some((el) => /Agent\s*(管理|Studio)/i.test(el.text()))).toBe(false)
 
     expect(wrapper.find('[data-testid="agent-studio-action-row"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="agent-org-import"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="agent-org-create-agent"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="agent-org-import"]').attributes('aria-label')).toBe('导入')
-    expect(wrapper.find('[data-testid="agent-org-create-agent"]').attributes('aria-label')).toBe('新建 Agent')
+    expect(wrapper.find('[data-testid="agent-tree-import"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="agent-tree-create-agent"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="agent-tree-import"]').attributes('aria-label')).toBe('导入')
+    expect(wrapper.find('[data-testid="agent-tree-create-agent"]').attributes('aria-label')).toBe('新建 Agent')
     wrapper.unmount()
   })
 
@@ -1743,26 +1630,21 @@ describe('AgentStudio copy removal (subtitle + toolbar)', () => {
     const text = wrapper.text()
     for (const s of subtitleEn) expect(text).not.toContain(s)
     expect(wrapper.find('[data-testid="agent-studio-action-row"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="agent-org-import"]').attributes('aria-label')).toBe('Import')
-    expect(wrapper.find('[data-testid="agent-org-create-agent"]').attributes('aria-label')).toBe('New agent')
+    expect(wrapper.find('[data-testid="agent-tree-import"]').attributes('aria-label')).toBe('Import')
+    expect(wrapper.find('[data-testid="agent-tree-create-agent"]').attributes('aria-label')).toBe('New agent')
     wrapper.unmount()
   })
 })
 
-describe('AgentStudio org toast and remaining hints', () => {
+describe('AgentStudio remaining hints', () => {
   const ModalStub = defineComponent({
     props: { open: Boolean, title: String },
     emits: ['close'],
     template: '<div v-if="open" data-test="modal"><h2>{{ title }}</h2><slot /><slot name="footer" /></div>',
   })
   const SidebarStub = defineComponent({
-    emits: ['remove-from-group', 'move-agent', 'open-manage', 'select-agent'],
-    template:
-      '<div data-test="sidebar">' +
-      '<button data-test="remove-from-group" @click="$emit(\'remove-from-group\', \'legacy\', \'g1\')">remove</button>' +
-      '<button data-test="move-ungrouped" @click="$emit(\'move-agent\', \'legacy\', \'g1\', \'\')">ungroup</button>' +
-      '<button data-test="manage" @click="$emit(\'open-manage\')">manage</button>' +
-      '</div>',
+    emits: ['open-manage', 'select'],
+    template: '<div data-test="sidebar"><button data-test="manage" @click="$emit(\'open-manage\')">manage</button></div>',
   })
 
   async function mountHintStudio() {
@@ -1785,7 +1667,7 @@ describe('AgentStudio org toast and remaining hints', () => {
           AgentChatTester: true,
           AgentGitGuide: true,
           AgentCreateWizard: true,
-          AgentOrgSidebar: SidebarStub,
+          AgentProjectSidebar: SidebarStub,
           AgentDataPanel: true,
         },
       },
@@ -1794,33 +1676,6 @@ describe('AgentStudio org toast and remaining hints', () => {
 
   beforeEach(() => {
     mocks.listAgents.mockResolvedValue([agent('public')])
-    mocks.getAgentsOrg.mockResolvedValue({
-      revision: 1,
-      groups: [{ id: 'g1', name: 'Dev' }],
-      agents: { legacy: { groupIds: ['g1'] } },
-    })
-    mocks.saveAgentsOrg.mockImplementation(async (org: { revision?: number; groups?: unknown; agents?: unknown }) => ({
-      revision: (org.revision || 0) + 1,
-      groups: org.groups || [],
-      agents: org.agents || {},
-    }))
-  })
-
-  it('toasts on 移出本组 but not when dragging to ungrouped', async () => {
-    const wrapper = await mountHintStudio()
-    await flushPromises()
-
-    await wrapper.get('[data-test="move-ungrouped"]').trigger('click')
-    await flushPromises()
-    expect(document.body.textContent || '').not.toContain('已拖入未分组')
-    expect(document.body.textContent || '').not.toContain('已移出本组并立即保存')
-    expect(mocks.saveAgentsOrg).toHaveBeenCalled()
-
-    await wrapper.get('[data-test="remove-from-group"]').trigger('click')
-    await flushPromises()
-    expect(document.body.textContent || '').toContain('已移出本组并立即保存 · 实体仍在')
-    expect(document.body.textContent || '').not.toContain('已拖入未分组')
-    wrapper.unmount()
   })
 
   it('keeps MCP hint, manageIntro, and data/meta tabs', async () => {
@@ -1880,7 +1735,7 @@ describe('AgentStudio env credential help', () => {
           AgentChatTester: true,
           AgentGitGuide: GitGuideHelpStub,
           AgentCreateWizard: true,
-          AgentOrgSidebar: true,
+          AgentProjectSidebar: true,
           AgentDataPanel: true,
         },
       },
@@ -1972,31 +1827,29 @@ describe('AgentStudio env credential help', () => {
   })
 })
 
-describe('AgentStudio group assign project', () => {
+describe('AgentStudio project tree actions', () => {
   const ModalStub = defineComponent({
     props: { open: Boolean, title: String },
     emits: ['close'],
     template: '<div v-if="open" data-test="modal"><h2>{{ title }}</h2><slot /><slot name="footer" /></div>',
   })
   const SidebarStub = defineComponent({
-    props: { org: Object, agents: Array, projects: Array },
-    emits: ['assign-project', 'select-agent'],
-    template: '<div data-test="sidebar"><button data-test="assign-g1" @click="$emit(\'assign-project\', \'g1\')">assign</button></div>',
+    props: { nodes: Array, activeKey: String },
+    emits: ['create-agent', 'import', 'export-project', 'import-project', 'select'],
+    template:
+      '<div data-test="sidebar" :data-active-key="activeKey" :data-projects="nodes.map((n) => n.id).join(\',\')">' +
+      '<button data-test="create-in-p2" @click="$emit(\'create-agent\', \'proj-2\')">create</button>' +
+      '<button data-test="header-import" @click="$emit(\'import\')">import</button>' +
+      '<button data-test="export-p1" @click="$emit(\'export-project\', \'proj-default\')">export</button>' +
+      '<button data-test="import-p2" @click="$emit(\'import-project\', \'proj-2\')">import p2</button>' +
+      '</div>',
+  })
+  const WizardStub = defineComponent({
+    props: { open: Boolean, projectId: String, projects: Array },
+    template: '<div v-if="open" data-test="create-wizard" :data-project-id="projectId" />',
   })
 
-  function studioAgent(name: string, projectId: string): Agent {
-    return {
-      name,
-      projectId,
-      acpBackend: 'cursor',
-      files: [{ path: 'AGENTS.md', content: `# ${name}\n` }],
-      mcp: [],
-      env: {},
-      layout: { configRoot: '/root/.cursor', workspaceDir: '/root/workspace' },
-    }
-  }
-
-  async function mountAssignStudio() {
+  async function mountTreeStudio() {
     const i18n = createI18n({
       legacy: false,
       locale: 'zh-CN',
@@ -2005,6 +1858,7 @@ describe('AgentStudio group assign project', () => {
     const router = await createStudioRouter()
     return trackMount(
       mount(AgentStudioView, {
+        attachTo: document.body,
         global: {
           plugins: [i18n, router],
           stubs: {
@@ -2016,8 +1870,8 @@ describe('AgentStudio group assign project', () => {
             ExplorerContextMenu: true,
             AgentChatTester: true,
             AgentGitGuide: true,
-            AgentCreateWizard: true,
-            AgentOrgSidebar: SidebarStub,
+            AgentCreateWizard: WizardStub,
+            AgentProjectSidebar: SidebarStub,
             AgentDataPanel: true,
           },
         },
@@ -2026,136 +1880,66 @@ describe('AgentStudio group assign project', () => {
   }
 
   beforeEach(() => {
-    breakpointMocks.isMobile.value = false
     mocks.listProjects.mockResolvedValue([
-      { id: 'github', name: 'GitHub' },
-      { id: 'figma', name: 'Figma' },
+      { id: 'proj-default', name: '默认项目' },
+      { id: 'proj-2', name: '第二项目' },
     ])
-    mocks.getAgentsOrg.mockResolvedValue({
-      revision: 1,
-      groups: [{ id: 'g1', name: '设计组' }],
-      agents: {
-        alice: { groupIds: ['g1'] },
-        bob: { groupIds: ['g1'] },
-      },
-    })
+    mocks.listAgents.mockResolvedValue([agent('public')])
   })
 
-  it('集合内非 dirty 成功后同步草稿 projectId，不弹草稿冲突', async () => {
-    mocks.listAgents.mockResolvedValue([
-      studioAgent('alice', 'figma'),
-      studioAgent('bob', 'github'),
-    ])
-    mocks.listAgents
-      .mockResolvedValueOnce([
-        studioAgent('alice', 'figma'),
-        studioAgent('bob', 'github'),
-      ])
-      .mockResolvedValueOnce([
-        studioAgent('alice', 'github'),
-        studioAgent('bob', 'github'),
-      ])
-    const wrapper = await mountAssignStudio()
+  it('feeds the sidebar project nodes and the active agent key', async () => {
+    const wrapper = await mountTreeStudio()
     await flushPromises()
-
-    await wrapper.get('[data-test="assign-g1"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.text()).toContain('指定项目 · 设计组')
-    expect(wrapper.text()).toContain('alice')
-    expect(wrapper.text()).toContain('bob')
-
-    await wrapper.get('[data-test="org-assign-submit"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.text()).toContain('确认切换主项目')
-    expect(wrapper.text()).toContain('立即生效')
-    expect(wrapper.text()).not.toContain('草稿主项目冲突')
-
-    await wrapper.get('[data-test="org-assign-cover-ok"]').trigger('click')
-    await flushPromises()
-
-    expect(mocks.patchAgentProject).toHaveBeenCalledTimes(2)
-    expect(mocks.patchAgentProject).toHaveBeenNthCalledWith(1, 'alice', 'github')
-    expect(mocks.patchAgentProject).toHaveBeenNthCalledWith(2, 'bob', 'github')
-    expect(document.querySelector('[data-test="studio-toast"]')?.textContent).toContain('已绑定到 GitHub')
-    wrapper.unmount()
+    const sidebar = wrapper.get('[data-test="sidebar"]')
+    expect(sidebar.attributes('data-projects')).toBe('proj-default,proj-2')
+    expect(sidebar.attributes('data-active-key')).toBe('c:proj-default:legacy')
   })
 
-  it('dirty 保留草稿则整次不写 PATCH', async () => {
-    mocks.listAgents.mockResolvedValue([
-      studioAgent('alice', 'figma'),
-      studioAgent('bob', 'github'),
-    ])
-    const wrapper = await mountAssignStudio()
+  it('project row create opens the wizard prefilled with that project', async () => {
+    const wrapper = await mountTreeStudio()
     await flushPromises()
-
-    await wrapper.findAll('button').find((b) => b.text() === '元信息')!.trigger('click')
+    await wrapper.get('[data-test="create-in-p2"]').trigger('click')
     await flushPromises()
-    const select = wrapper.get('[data-test="agent-project-select"]')
-    await select.setValue('github')
-    await flushPromises()
-    // confirm single-agent draft switch modal if it appears
-    const confirmSwitch = wrapper.findAll('button').find((b) => b.text().includes('切换到'))
-    if (confirmSwitch) {
-      await confirmSwitch.trigger('click')
-      await flushPromises()
-    }
-
-    await wrapper.get('[data-test="assign-g1"]').trigger('click')
-    await flushPromises()
-    await wrapper.get('[data-test="org-assign-submit"]').trigger('click')
-    await flushPromises()
-    await wrapper.get('[data-test="org-assign-cover-ok"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('草稿主项目冲突')
-    await wrapper.get('[data-test="org-assign-draft-keep"]').trigger('click')
-    await flushPromises()
-
-    expect(mocks.patchAgentProject).not.toHaveBeenCalled()
-    expect(document.querySelector('[data-test="studio-toast"]')?.textContent).toContain('组级指定未执行')
-    wrapper.unmount()
+    expect(wrapper.get('[data-test="create-wizard"]').attributes('data-project-id')).toBe('proj-2')
   })
 
-  it('部分失败 err-box 列出原因，当前 Agent fail 不同步草稿', async () => {
-    mocks.listAgents.mockResolvedValue([
-      studioAgent('alice', 'figma'),
-      studioAgent('bob', 'github'),
-    ])
-    mocks.patchAgentProject.mockImplementation(async (name: string, projectId: string) => {
-      if (name === 'alice') throw Object.assign(new Error('绑定不被允许（含项目级 MCP 约束）'), { status: 400 })
-      return { status: 'saved', projectId }
-    })
-    mocks.listAgents
-      .mockResolvedValueOnce([
-        studioAgent('alice', 'figma'),
-        studioAgent('bob', 'github'),
-      ])
-      .mockResolvedValueOnce([
-        studioAgent('alice', 'figma'),
-        studioAgent('bob', 'github'),
-      ])
+  it('header import asks for the target project before opening the file picker', async () => {
+    const wrapper = await mountTreeStudio()
+    await flushPromises()
+    const fileInput = wrapper.get('input[type="file"][accept=".zip"]').element as HTMLInputElement
+    const click = vi.spyOn(fileInput, 'click').mockImplementation(() => {})
 
-    const wrapper = await mountAssignStudio()
+    await wrapper.get('[data-test="header-import"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-test="assign-g1"]').trigger('click')
+    expect(wrapper.text()).toContain('导入到项目')
+    expect(click).not.toHaveBeenCalled()
+    await wrapper.get('[data-test="import-project-select"]').setValue('proj-2')
+    await wrapper.get('[data-test="import-project-confirm"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-test="org-assign-submit"]').trigger('click')
-    await flushPromises()
-    await wrapper.get('[data-test="org-assign-cover-ok"]').trigger('click')
-    await flushPromises()
+    expect(click).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).not.toContain('导入到项目')
 
-    const failBox = wrapper.get('[data-test="org-assign-fail"]')
-    expect(failBox.text()).toContain('部分成功')
-    expect(failBox.text()).toContain('alice')
-    expect(failBox.text()).toContain('绑定不被允许')
-    expect(failBox.text()).toContain('括号按完成后实际绑定刷新')
-    expect(mocks.patchAgentProject).toHaveBeenCalledTimes(2)
-    wrapper.unmount()
+    await wrapper.get('[data-test="import-p2"]').trigger('click')
+    expect(click).toHaveBeenCalledTimes(2)
+  })
+
+  it('exports a project bundle after the secrets warning', async () => {
+    mocks.exportProjectAgents.mockResolvedValue({ blob: new Blob(['zip']), filename: '默认项目-agents.zip' })
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:x'), revokeObjectURL: vi.fn() }))
+    const wrapper = await mountTreeStudio()
+    await flushPromises()
+    await wrapper.get('[data-test="export-p1"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('导出项目将带走密钥')
+    await wrapper.findAll('button').find((b) => b.text() === '确认并下载')!.trigger('click')
+    await flushPromises()
+    expect(mocks.exportProjectAgents).toHaveBeenCalledWith('proj-default')
+    vi.unstubAllGlobals()
   })
 })
 
 describe('AgentStudioView loading / four-state', () => {
-  it('first load shows org-tree skeleton, not centered 加载中…', async () => {
+  it('first load shows the tree skeleton, not centered 加载中…', async () => {
     let release!: (v: unknown) => void
     mocks.listAgents.mockReturnValue(new Promise((resolve) => { release = resolve }))
     const wrapper = await mountStudio()
@@ -2215,7 +1999,7 @@ describe('AgentStudioView loading / four-state', () => {
             AgentChatTester: true,
             AgentGitGuide: true,
             AgentCreateWizard: true,
-            AgentOrgSidebar: true,
+            AgentProjectSidebar: true,
             AgentDataPanel: true,
           },
         },
@@ -2240,7 +2024,7 @@ describe('AgentStudioView entry assembly (g3 / Demo main path)', () => {
     )
     const src = viewSrc + '\n' + orchestrationSrc
     for (const panel of [
-      'AgentOrgSidebar',
+      'AgentProjectSidebar',
       'AgentFilesPanel',
       'AgentMcpPanel',
       'AgentEnvPanel',

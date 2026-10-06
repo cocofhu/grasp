@@ -35,17 +35,18 @@ func TestListPmMessagesTailWindowAndBefore(t *testing.T) {
 		}
 	}
 
-	// No params → full list, no hasMore field required.
+	// No params → default tail window of 20.
 	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages", nil)
 	if w.Code != 200 {
-		t.Fatalf("full: %d %s", w.Code, w.Body.String())
+		t.Fatalf("default: %d %s", w.Code, w.Body.String())
 	}
-	var full struct {
-		Items []map[string]any `json:"items"`
+	var def struct {
+		Items   []map[string]any `json:"items"`
+		HasMore bool             `json:"hasMore"`
 	}
-	_ = json.Unmarshal(w.Body.Bytes(), &full)
-	if len(full.Items) != 25 {
-		t.Fatalf("full items=%d", len(full.Items))
+	_ = json.Unmarshal(w.Body.Bytes(), &def)
+	if len(def.Items) != 20 || !def.HasMore {
+		t.Fatalf("default items=%d hasMore=%v", len(def.Items), def.HasMore)
 	}
 
 	// limit=20 → tail window + hasMore.

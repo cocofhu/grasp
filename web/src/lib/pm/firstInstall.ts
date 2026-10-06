@@ -14,9 +14,6 @@ export const onboardingOpen = ref(false)
 export const onboardingMode = ref<OnboardingMode>('firstInstall')
 export const onboardingProjectId = ref(DEFAULT_PROJECT_ID)
 
-/** @deprecated alias — prefer onboardingOpen */
-export const firstInstallOpen = onboardingOpen
-
 /** Bumped after a successful bootstrap so open views can refetch. */
 export const firstInstallCompletedAt = ref(0)
 

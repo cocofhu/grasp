@@ -8,13 +8,10 @@
 #
 # 优先级:显式环境变量 > 本文件(经 ConfigMap 下发)> 代码默认值。
 # 平台服务的高敏密钥生产走 K8s Secret 注入环境变量,不放本文件。
-# ACP / Git 运行时凭据优先在项目详情的项目凭据 UI 管理，兼容的项目/Agent
-# 环境变量仅作回退；旧的 cursor_api_key 不再注入沙箱。
+# ACP / Git 运行时凭据只在项目详情的项目凭据 UI 管理，不在本文件配置。
 #
 # 注意:GitLab/代码托管不是平台级配置。仓库地址由工作流全局变量 repo_url 提供,
-# 兼容回退凭据(GITLAB_TOKEN / GITLAB_URL 等)可在项目/Agent 元信息的环境变量里
-# 配置(可引用 ${vars.<全局变量名>}),按 run 注入对应沙箱;平台本身不依赖任何固定
-# 的 GitLab 地址或令牌。
+# 凭据来自项目凭据,按 run 注入对应沙箱;平台本身不依赖任何固定的 GitLab 地址或令牌。
 
 server:
   port: 8080
@@ -29,8 +26,7 @@ server:
   #
   # 生产值请显式写 API 入口(示例):
   #   mcp_advertise: "https://approving-api.example.com"
-  # 若误配为 SPA 主机,进程会在加载配置时改写为 approving-server(见
-  # RewriteMisconfiguredMCPAdvertise);DinD/本地请留空以使用 host.docker.internal。
+  # DinD/本地请留空以使用 host.docker.internal。
   mcp_advertise: ""
 
 database:
@@ -38,8 +34,6 @@ database:
   path: "grasp.db"
 
 engine:
-  # exec_provider 默认中性的 "sandbox"(代码内 "cursor" 为兼容别名);只有一个
-  # Docker 沙箱后端,通常无需在此显式设置,留默认即可。
   max_concurrent_runs: 5
   profiles_root: "data/profiles"
 
@@ -52,16 +46,8 @@ sandbox:
   # 通用环境变量透传(厂商无关):逐条注入沙箱容器。
   # 默认 SKIP_INNER_DOCKER=0(启用 DinD);设为 "1" 则不启动内层 dockerd。
   env: {}
-  # ACP 后端密钥与选项(厂商中立兼容入口):合并进沙箱 Env。项目凭据 UI 优先；
-  # 仅在 UI 未配置时使用这里的回退值。各键保持后端语义,例如:
-  #   GRASP_CURSOR_API_KEY — Cursor 后端
-  #   ANTHROPIC_API_KEY       — Claude Code 后端
-  #   CODEBUDDY_API_KEY       — CodeBuddy 后端
+  # ACP 后端非密钥选项(厂商中立):合并进沙箱 Env。密钥请在项目凭据中配置。
   acp_env: {}
-  # deprecated: 请改用项目凭据 UI（或兼容回退 acp_env.GRASP_CURSOR_API_KEY）；计划 0.2.0 移除。
-  cursor_api_key: ""
-  # deprecated: 参考实现 cursor CLI 登录复用;计划 0.2.0 移除。
-  cursor_auth_path: ""
   # 单轮 agent/react 回合的硬超时(秒),即回合最多跑多久。单个节点可在其
   # Agent 卡片上填「超时(分钟)」单独放宽(耗时任务用),不填则用此全局值。
   agent_chat_timeout_seconds: 600
@@ -89,7 +75,6 @@ sandbox:
 # paths require a valid Session cookie. Preview HTTP /preview/:runId/...
 # stays session-free (iframe credential is runId+nodeId+port).
 browser:
-  enabled: true
   # Global LRU cap on concurrent preview tabs (one per viewer session).
   max_tabs: 16
   # Tabs per Chromium container before spawning another container.

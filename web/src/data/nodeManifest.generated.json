@@ -29,11 +29,6 @@
       "type": "human_gate",
       "label": "人工门禁",
       "category": "门禁"
-    },
-    {
-      "type": "proposal_select",
-      "label": "方案确认",
-      "category": "门禁"
     }
   ],
   "schemas": [
@@ -70,14 +65,6 @@
       "outputJsonKey": "root_cause_json"
     },
     {
-      "name": "proposals",
-      "label": "候选方案",
-      "artifactName": "proposals.json",
-      "setTool": "set_proposals",
-      "outputKey": "proposals",
-      "outputJsonKey": "proposals_json"
-    },
-    {
       "name": "implementation_result",
       "label": "实现结果",
       "artifactName": "implementation_result.json",
@@ -104,6 +91,14 @@
       "verdict": true
     },
     {
+      "name": "merge_request",
+      "label": "合并请求",
+      "artifactName": "merge_request.json",
+      "setTool": "set_merge_request",
+      "outputKey": "merge_request",
+      "outputJsonKey": "merge_request_json"
+    },
+    {
       "name": "preflight",
       "label": "环境确认",
       "artifactName": "preflight.json",
@@ -128,10 +123,10 @@
   "outputKeyToArtifact": {
     "clarified_requirement": "clarified_requirement.json",
     "implementation_result": "implementation_result.json",
+    "merge_request": "merge_request.json",
     "page": "page.html",
     "plan": "plan.json",
     "preflight": "preflight.json",
-    "proposals": "proposals.json",
     "research": "research.json",
     "review": "review.json",
     "root_cause": "root_cause.json",
@@ -140,9 +135,9 @@
   "artifactToOutputJSON": {
     "clarified_requirement.json": "clarified_requirement_json",
     "implementation_result.json": "implementation_result_json",
+    "merge_request.json": "merge_request_json",
     "plan.json": "plan_json",
     "preflight.json": "preflight_json",
-    "proposals.json": "proposals_json",
     "research.json": "research_json",
     "review.json": "review_json",
     "root_cause.json": "root_cause_json",

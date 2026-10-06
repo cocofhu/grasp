@@ -9,7 +9,7 @@ import AgentStudioView from '../src/views/AgentStudioView.vue'
 
 const params = new URLSearchParams(window.location.search)
 const agent = params.get('agent') || 'GraspPM'
-const tab = params.get('tab') || 'data'
+const studioTab = params.get('studioTab') || 'data'
 const sub = params.get('sub') || 'memory'
 
 async function boot() {
@@ -22,7 +22,7 @@ async function boot() {
     history: createMemoryHistory(),
     routes: [{ path: '/agents', component: AgentStudioView }],
   })
-  await router.push({ path: '/agents', query: { agent, tab, sub } })
+  await router.push({ path: '/agents', query: { agent, studioTab, sub } })
   await router.isReady()
 
   const app = createApp(AgentStudioView)

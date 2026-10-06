@@ -207,11 +207,6 @@ describe('RunLlmTranscript', () => {
     expect(answer.html()).not.toContain('max-w-[min(820px,92%)]')
     expect(answer.classes()).toContain('w-full')
 
-    const legacy = w.get('[data-testid="llm-legacy"]')
-    expect(legacy.classes()).toContain('w-full')
-    expect(legacy.classes()).not.toContain('mx-auto')
-    expect(legacy.classes().join(' ')).not.toContain('max-w-[min(720px,92%)]')
-
     const err = w.get('[data-testid="llm-exec-error"]')
     expect(err.classes()).toContain('w-full')
     expect(err.classes()).not.toContain('mx-auto')

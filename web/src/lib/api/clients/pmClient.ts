@@ -53,7 +53,7 @@ export const pmClient = {
     if (params?.limit != null) qs.set('limit', String(params.limit))
     if (params?.before) qs.set('before', params.before)
     const q = qs.toString()
-    return req<{ items: ChatMessage[]; hasMore?: boolean }>(
+    return req<{ items: ChatMessage[]; hasMore: boolean }>(
       `/projects/${projectId}/pm/threads/${tid}/messages${q ? `?${q}` : ''}`,
     )
   },

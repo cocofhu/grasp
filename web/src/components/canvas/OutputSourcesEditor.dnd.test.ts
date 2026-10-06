@@ -221,17 +221,4 @@ describe('OutputSourcesEditor', () => {
     expect((w.vm as any).dragId).toBeNull()
     w.unmount()
   })
-
-  it('renders the migration banner only when asked', async () => {
-    const node = outputNode([])
-    const w = mountEditor(node)
-    await flushPromises()
-    const plain = w.html()
-
-    const migrated = mountEditor(outputNode([]), { showMigration: true })
-    await flushPromises()
-    expect(migrated.html().length).toBeGreaterThan(plain.length)
-    w.unmount()
-    migrated.unmount()
-  })
 })

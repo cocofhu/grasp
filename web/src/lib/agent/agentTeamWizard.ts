@@ -20,9 +20,9 @@ import {
   stripAuthKeysFromEnv,
 } from '@/lib/agent/agentCreateWizard'
 import { normalizeAgentName, validateAgentName } from '@/lib/agent/agentIO'
-import type { GitCredentialType } from '@/lib/agent/gitCredentialAnalysis'
+import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
 import { authGuideFor, hasAuthKeyConfigured } from '@/lib/agent/backendAuthGuide'
-import { stripTokenKeysFromKV, stripTokenKeysFromRecord } from '@/lib/agent/tokenEnvKeys'
+import { stripSecretKeysFromKV, stripSecretKeysFromRecord } from '@/lib/agent/secretEnvKeys'
 import { getRegionPolicy } from '@/lib/shared/regionPolicy'
 import { APIKEY_BACKEND, CLI_BACKEND_DEFAULT } from '@/lib/shared/startPath'
 
@@ -44,19 +44,16 @@ export const TEAM_WIZARD_STEPS: TeamWizardStepDef[] = [
   { id: 'review', labelKey: 'pages.agentStudio.teamWizard.steps.review', skip: false },
 ]
 
-export const TEAM_ENGINEER_COUNT = 9
+/** Mirrors server TeamEngineerTemplates: 需求澄清 / 实现 / 测试评审 / 交付. */
+export const TEAM_ENGINEER_COUNT = 4
 
 export type TeamWizardDraft = {
   step: number
   projectName: string
   prefix: string
-  rootGroupName: string
-  workflowGroupName: string
   pmName: string
   background: string
   prefixTouched: boolean
-  rootTouched: boolean
-  workflowGroupTouched: boolean
   pmTouched: boolean
   startPath: StartPath
   acpBackend: WizardBackendId
@@ -88,13 +85,9 @@ export function freshTeamDraft(): TeamWizardDraft {
     step: 0,
     projectName: '',
     prefix: '',
-    rootGroupName: '',
-    workflowGroupName: '工作流(GitHub)',
     pmName: '',
     background: '',
     prefixTouched: false,
-    rootTouched: false,
-    workflowGroupTouched: false,
     pmTouched: false,
     startPath: 'apiKey',
     acpBackend: APIKEY_BACKEND,
@@ -113,7 +106,6 @@ export function freshTeamDraft(): TeamWizardDraft {
 export function syncDerivedNames(d: TeamWizardDraft) {
   const base = (d.prefixTouched ? d.prefix : d.projectName).trim() || d.projectName.trim()
   if (!d.prefixTouched) d.prefix = d.projectName.trim()
-  if (!d.rootTouched) d.rootGroupName = base ? `${base}项目组` : ''
   if (!d.pmTouched) d.pmName = base ? `${base}项目经理` : ''
 }
 
@@ -189,11 +181,9 @@ function mcpToApi(m: WizardMCP): MCPServer {
 export type TeamBootstrapPayload = {
   projectName: string
   prefix: string
-  rootGroupName: string
-  workflowGroupName: string
   pmName: string
   background: string
-  acpBackend: string
+  acpBackend: WizardBackendId
   apiKey?: string
   customConfig?: string
   region?: string
@@ -224,14 +214,12 @@ export function assembleTeamBootstrapPayload(d: TeamWizardDraft): TeamBootstrapP
   if (w.authMode === 'customConfig') {
     w.env = stripAuthKeysFromEnv(w.env, w.acpBackend)
   }
-  w.env = stripTokenKeysFromKV(w.env)
-  const env = stripTokenKeysFromRecord(normalizeWizardRegions(w))
+  w.env = stripSecretKeysFromKV(w.env)
+  const env = stripSecretKeysFromRecord(normalizeWizardRegions(w))
   d.env = w.env
   return {
     projectName: d.projectName.trim(),
     prefix: d.prefix.trim(),
-    rootGroupName: (d.rootGroupName.trim() || `${d.prefix.trim()}项目组`),
-    workflowGroupName: d.workflowGroupName.trim() || '工作流(GitHub)',
     pmName: normalizeAgentName(d.pmName),
     background: d.background.trim(),
     acpBackend: d.acpBackend || APIKEY_BACKEND,

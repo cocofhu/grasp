@@ -63,7 +63,7 @@ describe('Agent Studio help buttons', () => {
   it('MCP 顶栏帮助为描边按钮', () => {
     const draft = structuredClone(baseDraft)
     const wrapper = mount(AgentMcpPanel, {
-      props: { draft, isProjectBound: true },
+      props: { draft },
       global: {
         plugins: [createI18nPlugin()],
         stubs: { McpConfigHelpModal: true, CodeEditor: true },

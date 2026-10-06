@@ -116,7 +116,7 @@ func TestFormatAuditText(t *testing.T) {
 	}
 }
 
-func TestListFacetsDistinctActorsAndResources(t *testing.T) {
+func TestListFacetsRunsAndResources(t *testing.T) {
 	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "audit-facets.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -147,9 +147,6 @@ func TestListFacetsDistinctActorsAndResources(t *testing.T) {
 	facets, err := s.ListFacets(AuditListFilter{ProjectID: "proj-f"})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if len(facets.Actors) != 2 {
-		t.Fatalf("actors want 2 got %v", facets.Actors)
 	}
 	if len(facets.Runs) != 1 || facets.Runs[0].RunID != "run-1" {
 		t.Fatalf("runs: %#v", facets.Runs)
@@ -239,32 +236,6 @@ func TestListFilterByRunIDIncludesMCP(t *testing.T) {
 	}
 	if nTotal != 1 || len(narrowed) != 1 || narrowed[0].ResourceID != "read_artifact" {
 		t.Fatalf("resource narrow: total=%d %#v", nTotal, narrowed)
-	}
-}
-
-func TestBackfillAuditElevatedFields(t *testing.T) {
-	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "audit-backfill.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Insert legacy-shaped row bypassing Record elevation.
-	legacy := models.ProjectAuditEvent{
-		ID: "aud-legacy1", ProjectID: "p", OccurredAt: time.Now(),
-		Actor: "system", Unattributable: true, Action: models.AuditActionMCPCall,
-		ResourceType: "mcp", ResourceID: "tool.x", Outcome: models.AuditOutcomeOK,
-		Summary: "legacy mcp", Payload: map[string]any{"runId": "run-legacy", "nodeId": "react"},
-		CreatedAt: time.Now(),
-	}
-	if err := db.Create(&legacy).Error; err != nil {
-		t.Fatal(err)
-	}
-	BackfillAuditElevatedFields(db)
-	var got models.ProjectAuditEvent
-	if err := db.First(&got, "id = ?", "aud-legacy1").Error; err != nil {
-		t.Fatal(err)
-	}
-	if got.RunID != "run-legacy" || got.NodeID != "react" || got.CallerKind != models.CallerKindSystem {
-		t.Fatalf("backfill incomplete: %#v", got)
 	}
 }
 

@@ -17,7 +17,7 @@ func TestToolAllowedFollowsCapabilities(t *testing.T) {
 			[]string{"set_preflight", "ask_form", "ask_question", "set_artifact_preview"},
 			[]string{"set_clarified_requirement", "set_preview", "update_plan_status"}},
 		{"clarify", capsClarify,
-			[]string{"set_plan", "set_clarified_requirement", "set_research", "set_proposals", "ask_question", "set_artifact_preview", "set_preview"},
+			[]string{"set_plan", "set_clarified_requirement", "set_research", "ask_question", "set_artifact_preview", "set_preview"},
 			[]string{"set_root_cause", "set_preflight", "ask_form", "set_test_result", "update_plan_status"}},
 		{"clarify+root_cause", capsClarifyRootCause, []string{"set_root_cause"}, nil},
 		{"implement", capsImplement,

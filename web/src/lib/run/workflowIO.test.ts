@@ -61,17 +61,14 @@ describe('agent profile helpers', () => {
     const agents = [
       { name: 'ImplementAgent', projectId: 'alpha' },
       { name: 'PreviewAgent', projectId: 'beta' },
-      { name: 'unbound', projectId: '' },
     ]
-    const withUnbound: WFNode[] = [
+    const withGhost: WFNode[] = [
       ...nodes,
-      { id: 'd', type: 'agent', label: 'A', position: { x: 0, y: 0 }, config: { agent_profile: 'unbound' } },
       { id: 'e', type: 'agent', label: 'Pl', position: { x: 0, y: 0 }, config: { agent_profile: 'ghost' } },
     ]
-    const issues = agentProfileIssues(withUnbound, agents, 'alpha')
+    const issues = agentProfileIssues(withGhost, agents, 'alpha')
     expect(issues).toEqual([
       { name: 'PreviewAgent', reason: 'foreign' },
-      { name: 'unbound', reason: 'foreign' },
       { name: 'ghost', reason: 'missing' },
     ])
     // same-project only — no false positive

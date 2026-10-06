@@ -23,7 +23,7 @@ func (s *Service) statusFromReview(link *models.GateShareLink, convDone bool, ru
 		st.UsedAt = link.UsedAt
 		st.RevokedAt = link.RevokedAt
 		if st.State == models.ShareLinkStateActive {
-			st.PermissionPreset = NormalizePermissionPreset(link.PermissionPreset)
+			st.PermissionPreset = link.PermissionPreset
 			rem := int64(time.Until(link.ExpiresAt).Seconds())
 			if rem < 0 {
 				rem = 0
@@ -186,7 +186,7 @@ func (s *Service) RegenerateReview(runID, nodeID, createdBy, publicOrigin string
 		return nil, ErrNotActive
 	}
 	tier := latest.TTLTier
-	preset := NormalizePermissionPreset(latest.PermissionPreset)
+	preset := latest.PermissionPreset
 	token, err := GenerateToken()
 	if err != nil {
 		return nil, err
@@ -273,7 +273,7 @@ func (s *Service) RevokeReview(runID, nodeID, actor string) error {
 		"createdAt":        latest.CreatedAt,
 		"linkId":           latest.ID,
 		"ttlTier":          latest.TTLTier,
-		"permissionPreset": NormalizePermissionPreset(latest.PermissionPreset),
+		"permissionPreset": latest.PermissionPreset,
 		"kind":             models.ShareLinkKindReview,
 	})
 	return nil

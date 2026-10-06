@@ -59,7 +59,7 @@ export interface FlowInputs {
 
 function componentFor(type: string): string {
   if (type === 'agent') return 'agent'
-  if (type === 'human_gate' || type === 'proposal_select') return 'collab'
+  if (type === 'human_gate') return 'collab'
   return 'control'
 }
 
@@ -77,8 +77,6 @@ function controlSummary(n: WFNode, t: Translate): string | undefined {
       return t('canvas.node.summary.cases', { n: len(c.cases) })
     case 'human_gate':
       return String(c.title || '') || t('canvas.node.summary.actions', { n: len(c.actions) })
-    case 'proposal_select':
-      return String(c.title || '') || t('canvas.node.summary.proposals', { from: String(c.from || 'proposals.json') })
     default:
       return undefined
   }
@@ -115,6 +113,7 @@ export function useFlowElements(inp: FlowInputs) {
   const flowNodes = computed<FlowNodeObj[]>(() => {
     const mode = inp.mode()
     const run = mode === 'run'
+    const readonly = mode !== 'edit'
     const status = inp.statusMap() || {}
     const iters = inp.iterations() || {}
     const fails = inp.failReasons() || {}
@@ -134,10 +133,10 @@ export function useFlowElements(inp: FlowInputs) {
       const agentName = isAgent ? String(cfg.agent_profile ?? '').trim() : ''
       const caps = isAgent ? nodeCapabilities(n, lookup) : undefined
       let connect: CanvasNodeData['connect'] = null
-      if (conn && !run && n.type !== 'input') {
+      if (conn && !readonly && n.type !== 'input') {
         const res = checkConnection(graph, { source: conn.source, sourceHandle: conn.sourceHandle, target: n.id })
         connect = res.ok ? { valid: true } : { valid: false, reason: inp.t(res.reason) }
-      } else if (conn && !run && n.type === 'input' && n.id !== conn.source) {
+      } else if (conn && !readonly && n.type === 'input' && n.id !== conn.source) {
         connect = { valid: false, reason: inp.t('canvas.rules.inputNoIncoming') }
       }
       const data: CanvasNodeData = {
@@ -156,19 +155,19 @@ export function useFlowElements(inp: FlowInputs) {
         status: run ? status[n.id] || 'pending' : undefined,
         iteration: run ? iters[n.id] : undefined,
         failReason: run ? fails[n.id] : undefined,
-        issues: run ? undefined : issues?.get(n.id),
+        issues: readonly ? undefined : issues?.get(n.id),
         connect: n.id === conn?.source ? null : connect,
         renaming: renaming === n.id,
       }
       const position = positions?.get(n.id) ?? { x: n.position?.x ?? 0, y: n.position?.y ?? 0 }
       const isSel = selected.has(n.id)
-      const fp = flowFingerprint({ data, position, run })
+      const fp = flowFingerprint({ data, position, readonly })
       return reuseFlowElement(nodeCache, n.id, fp, isSel, () => ({
         id: n.id,
         type: componentFor(n.type),
         position,
-        draggable: !run,
-        connectable: !run,
+        draggable: !readonly,
+        connectable: !readonly,
         selectable: true,
         focusable: true,
         selected: isSel,
@@ -196,11 +195,11 @@ export function useFlowElements(inp: FlowInputs) {
   })
 
   const flowEdges = computed<FlowEdgeObj[]>(() => {
-    const run = inp.mode() === 'run'
+    const readonly = inp.mode() !== 'edit'
     const selected = new Set(inp.selectedEdges())
     const label = new Map(inp.nodes().map((n) => [n.id, n.label || n.id]))
     const runOf = edgeRun.value
-    const conn = run ? null : inp.connecting.value
+    const conn = readonly ? null : inp.connecting.value
     const ids = new Set(inp.nodes().map((n) => n.id))
     const out: FlowEdgeObj[] = []
     for (const e of inp.edges()) {
@@ -218,7 +217,7 @@ export function useFlowElements(inp: FlowInputs) {
         label: note || when || kindLabel,
         hasCondition: !!when,
         run: runOf ? runOf(e) : undefined,
-        editable: !run,
+        editable: !readonly,
         sourceLabel: label.get(e.source) || e.source,
         targetLabel: label.get(e.target) || e.target,
         replacing: !!conn && conn.source === e.source && conn.sourceHandle === handle && !when && kind === 'success',
@@ -234,8 +233,8 @@ export function useFlowElements(inp: FlowInputs) {
           ...(handle ? { sourceHandle: handle } : {}),
           type: 'flow',
           selected: isSel,
-          selectable: !run,
-          focusable: !run,
+          selectable: !readonly,
+          focusable: !readonly,
           ariaLabel: inp.t('canvas.aria.edge', { source: data.sourceLabel, target: data.targetLabel }),
           markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
           data,

@@ -12,9 +12,6 @@ func TestNormalizers(t *testing.T) {
 	if normSeverity("CRITICAL") != "critical" || normSeverity("bogus") != "medium" {
 		t.Error("normSeverity wrong")
 	}
-	if normLowMedHigh("High") != "high" || normLowMedHigh("nope") != "" {
-		t.Error("normLowMedHigh wrong")
-	}
 	for _, v := range []string{"approve", "approve_with_comments", "request_changes", "reject"} {
 		if !validVerdict(v) {
 			t.Errorf("validVerdict(%q) should be true", v)

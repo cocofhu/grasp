@@ -5,8 +5,7 @@ package structured
 // by its get_* tool, enforced by the engine, and rendered to human-readable
 // markdown for human_gate bodies / the UI. Field designs are grounded in
 // software-engineering standards (see the plan): ISO/IEC/IEEE 29148 SRS
-// (clarified_requirement), ADR/MADR + design-doc/RFC (proposals), technical
-// spike (research), IEEE 829 Test Summary Report (test_result), code-review
+// (clarified_requirement), technical spike (research), IEEE 829 Test Summary Report (test_result), code-review
 // verdict practice (review), and PR-description conventions (implementation).
 
 import (
@@ -22,8 +21,6 @@ import (
 const (
 	ClarifiedRequirementArtifactName = "clarified_requirement.json"
 	ResearchArtifactName             = "research.json"
-	ProposalsArtifactName            = "proposals.json"
-	ProposalArtifactName             = "proposal.json"
 	TestResultArtifactName           = "test_result.json"
 	ReviewArtifactName               = "review.json"
 	ImplementationResultArtifactName = "implementation_result.json"
@@ -714,228 +711,6 @@ func RenderResearchMarkdown(content string) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// --- proposals (proposal) --------------------------------------------------
-
-type proposalItem struct {
-	ID          string      `json:"id"`
-	Title       string      `json:"title"`
-	Summary     string      `json:"summary,omitempty"`
-	Pros        flexStrings `json:"pros,omitempty"`
-	Cons        flexStrings `json:"cons,omitempty"`
-	Tradeoffs   string      `json:"tradeoffs,omitempty"`
-	Effort      string      `json:"effort,omitempty"`
-	Risk        string      `json:"risk,omitempty"`
-	Recommended bool        `json:"recommended,omitempty"`
-}
-
-type proposalsDoc struct {
-	Context         string         `json:"context"`
-	DecisionDrivers flexStrings    `json:"decision_drivers,omitempty"`
-	Proposals       []proposalItem `json:"proposals"`
-}
-
-func normLowMedHigh(s string) string {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "low", "medium", "high":
-		return strings.ToLower(strings.TrimSpace(s))
-	default:
-		return ""
-	}
-}
-
-func ParseProposals(args map[string]any) (proposalsDoc, error) {
-	var doc proposalsDoc
-	if err := decodeArgs(args, &doc); err != nil {
-		return doc, fmt.Errorf("解析方案失败: %w", err)
-	}
-	doc.Context = strings.TrimSpace(doc.Context)
-	if doc.Context == "" {
-		return doc, errors.New("context 不能为空")
-	}
-	ps := make([]proposalItem, 0, len(doc.Proposals))
-	recommendedSeen := false
-	for _, p := range doc.Proposals {
-		if strings.TrimSpace(p.Title) == "" {
-			continue
-		}
-		p.ID = fmt.Sprintf("p%d", len(ps)+1)
-		p.Title = strings.TrimSpace(p.Title)
-		p.Summary = strings.TrimSpace(p.Summary)
-		p.Tradeoffs = strings.TrimSpace(p.Tradeoffs)
-		p.Effort = normLowMedHigh(p.Effort)
-		p.Risk = normLowMedHigh(p.Risk)
-		if p.Recommended {
-			if recommendedSeen {
-				p.Recommended = false // at most one recommended
-			} else {
-				recommendedSeen = true
-			}
-		}
-		ps = append(ps, p)
-	}
-	if len(ps) == 0 {
-		return doc, errors.New("proposals 至少需要 1 个方案")
-	}
-	doc.Proposals = ps
-	return doc, nil
-}
-
-// fillProposalIDs backfills positional ids (p1, p2, …) for any proposal whose
-// id is empty. Older artifacts were written before ParseProposals assigned ids,
-// so reads must self-heal or the ids never match on select (empty id → the gate
-// action / picker card can't be resolved).
-func fillProposalIDs(doc *proposalsDoc) {
-	for i := range doc.Proposals {
-		if strings.TrimSpace(doc.Proposals[i].ID) == "" {
-			doc.Proposals[i].ID = fmt.Sprintf("p%d", i+1)
-		}
-	}
-}
-
-// RenderProposalsMarkdown renders proposals.json (all options). Raw on error.
-func RenderProposalsMarkdown(content string) string {
-	var doc proposalsDoc
-	if json.Unmarshal([]byte(content), &doc) != nil || len(doc.Proposals) == 0 {
-		return content
-	}
-	fillProposalIDs(&doc)
-	var b strings.Builder
-	if doc.Context != "" {
-		b.WriteString("### 背景\n" + doc.Context + "\n")
-	}
-	writeBulletSection(&b, "决策驱动", doc.DecisionDrivers)
-	b.WriteString("\n#### 备选方案\n")
-	for _, p := range doc.Proposals {
-		b.WriteString(renderProposalItem(p))
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-func renderProposalItem(p proposalItem) string {
-	var b strings.Builder
-	star := ""
-	if p.Recommended {
-		star = " ⭐推荐"
-	}
-	b.WriteString(fmt.Sprintf("- **`%s` %s**%s\n", p.ID, p.Title, star))
-	if p.Summary != "" {
-		b.WriteString("  - " + p.Summary + "\n")
-	}
-	var meta []string
-	if p.Effort != "" {
-		meta = append(meta, "工作量:"+p.Effort)
-	}
-	if p.Risk != "" {
-		meta = append(meta, "风险:"+p.Risk)
-	}
-	if len(meta) > 0 {
-		b.WriteString("  - _(" + strings.Join(meta, " · ") + ")_\n")
-	}
-	for _, pro := range p.Pros {
-		b.WriteString("  - ✅ " + pro + "\n")
-	}
-	for _, con := range p.Cons {
-		b.WriteString("  - ⚠️ " + con + "\n")
-	}
-	if p.Tradeoffs != "" {
-		b.WriteString("  - 权衡:" + p.Tradeoffs + "\n")
-	}
-	return b.String()
-}
-
-// ProposalChoice is a selectable option surfaced to the human confirmation gate.
-type ProposalChoice struct {
-	ID    string
-	Title string
-}
-
-// ProposalChoices lists the proposals in proposals.json as gate actions.
-func ProposalChoices(content string) []ProposalChoice {
-	var doc proposalsDoc
-	if json.Unmarshal([]byte(content), &doc) != nil {
-		return nil
-	}
-	fillProposalIDs(&doc)
-	out := make([]ProposalChoice, 0, len(doc.Proposals))
-	for _, p := range doc.Proposals {
-		out = append(out, ProposalChoice{ID: p.ID, Title: p.Title})
-	}
-	return out
-}
-
-// SelectProposal resolves the final single proposal from proposals.json. When
-// id is empty it auto-selects the recommended one (or the first). It returns
-// the final proposal.json content (the chosen proposal plus an accepted status)
-// and the chosen id.
-func SelectProposal(content, id string) (finalJSON, chosenID string, ok bool) {
-	var doc proposalsDoc
-	if json.Unmarshal([]byte(content), &doc) != nil || len(doc.Proposals) == 0 {
-		return "", "", false
-	}
-	fillProposalIDs(&doc)
-	var chosen *proposalItem
-	if id != "" {
-		for i := range doc.Proposals {
-			if doc.Proposals[i].ID == id {
-				chosen = &doc.Proposals[i]
-				break
-			}
-		}
-	}
-	if chosen == nil {
-		for i := range doc.Proposals {
-			if doc.Proposals[i].Recommended {
-				chosen = &doc.Proposals[i]
-				break
-			}
-		}
-	}
-	if chosen == nil {
-		chosen = &doc.Proposals[0]
-	}
-	final := struct {
-		proposalItem
-		Status       string `json:"status"`
-		SelectedFrom string `json:"selected_from"`
-		Context      string `json:"context,omitempty"`
-	}{proposalItem: *chosen, Status: "accepted", SelectedFrom: ProposalsArtifactName, Context: doc.Context}
-	b, err := json.MarshalIndent(final, "", "  ")
-	if err != nil {
-		return "", "", false
-	}
-	return string(b), chosen.ID, true
-}
-
-// RenderProposalMarkdown renders the final proposal.json (single chosen option).
-func RenderProposalMarkdown(content string) string {
-	var p struct {
-		proposalItem
-		Status  string `json:"status"`
-		Context string `json:"context"`
-	}
-	if json.Unmarshal([]byte(content), &p) != nil || p.Title == "" {
-		return content
-	}
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("### 已选方案:%s\n", p.Title))
-	if p.Context != "" {
-		b.WriteString("\n**背景**:" + p.Context + "\n")
-	}
-	if p.Summary != "" {
-		b.WriteString("\n" + p.Summary + "\n")
-	}
-	for _, pro := range p.Pros {
-		b.WriteString("- ✅ " + pro + "\n")
-	}
-	for _, con := range p.Cons {
-		b.WriteString("- ⚠️ " + con + "\n")
-	}
-	if p.Tradeoffs != "" {
-		b.WriteString("\n权衡:" + p.Tradeoffs + "\n")
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
 // --- test_result (test) ----------------------------------------------------
 
 type testCase struct {
@@ -954,15 +729,9 @@ type testDefect struct {
 }
 
 // testScreenshot is one browser/UI test screenshot attached to a test result.
-// New writes store Artifact (+ optional MimeType/Caption) only; Data is never
-// written by set_test_result. Legacy rows may still carry inline Data from
-// older hydrate-on-write behavior; readers prefer Data when present, else lazy-
-// load via Artifact.
+// It stores an Artifact reference (+ optional MimeType/Caption) only; readers
+// lazy-load the image via Artifact.
 type testScreenshot struct {
-	// Data is legacy inline base64 (no data: prefix). Not accepted as tool
-	// input (stripped by normTestScreenshots). New writes leave this empty;
-	// historical test_result.json may still contain it for display compatibility.
-	Data string `json:"data,omitempty"`
 	// Artifact references a screenshot uploaded via the artifact-upload CLI
 	// (an artifact name in this run). This is the only supported way to attach
 	// a screenshot on write; the stored test_result.json keeps the reference
@@ -1085,9 +854,8 @@ func normPlanCoverage(in []planCoverageItem) []planCoverageItem {
 }
 
 // normTestScreenshots sanitizes attached screenshots. Only artifact references
-// (uploaded via the artifact-upload CLI) are accepted: any inline `data` in the
-// input is ignored, entries without an `artifact` are dropped, captions/mime are
-// trimmed, and the count is capped at maxTestScreenshots. Artifact-only entries
+// (uploaded via the artifact-upload CLI) are accepted: entries without an
+// `artifact` are dropped, captions/mime are trimmed, and the count is capped at maxTestScreenshots. Artifact-only entries
 // are stored as-is; the MCP host validates each reference exists before write.
 func normTestScreenshots(in []testScreenshot) []testScreenshot {
 	if len(in) == 0 {
@@ -1147,92 +915,6 @@ func guessImageMIME(name string) string {
 	default:
 		return "image/png"
 	}
-}
-
-// normalizeScreenshotData trims whitespace and strips an optional data: URL prefix
-// so stored screenshots carry raw base64 only.
-func normalizeScreenshotData(content string) string {
-	content = strings.TrimSpace(content)
-	if strings.HasPrefix(content, "data:") {
-		if idx := strings.Index(content, ";base64,"); idx >= 0 {
-			content = content[idx+len(";base64,"):]
-		}
-	}
-	return strings.TrimSpace(content)
-}
-
-// HydrateScreenshotArtifacts resolves each screenshot artifact reference into
-// inline base64 data. Write path (set_test_result) no longer calls this — new
-// storage keeps artifact refs only. Kept for tests and any caller that still
-// needs an explicit in-memory hydrate; prefer HydrateTestResultContent for
-// read-time buffering of API responses.
-func (d *testResultDoc) HydrateScreenshotArtifacts(read func(name string) (string, error)) error {
-	if len(d.Screenshots) == 0 || read == nil {
-		return nil
-	}
-	out := make([]testScreenshot, 0, len(d.Screenshots))
-	for _, s := range d.Screenshots {
-		if s.Artifact == "" {
-			continue
-		}
-		raw, err := read(s.Artifact)
-		if err != nil {
-			return fmt.Errorf("screenshot artifact read failed: %s: %w", s.Artifact, err)
-		}
-		mime := strings.TrimSpace(s.MimeType)
-		if mime == "" {
-			mime = guessImageMIME(s.Artifact)
-		}
-		out = append(out, testScreenshot{
-			Data:     normalizeScreenshotData(raw),
-			MimeType: mime,
-			Caption:  s.Caption,
-		})
-	}
-	d.Screenshots = out
-	return nil
-}
-
-// HydrateTestResultContent injects inline data for artifact-only screenshot entries
-// in a test_result.json payload (response buffering only; does not rewrite storage).
-// Used by get_test_result / node outputs as a short-term buffer; the frontend
-// ArtifactContent path bypasses this so TestResultView can lazy-load by artifact.
-// Read failures leave those entries unchanged. Non-test_result or malformed JSON
-// is returned as-is.
-func HydrateTestResultContent(raw string, read func(name string) (string, error)) (string, error) {
-	var doc testResultDoc
-	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
-		return raw, nil
-	}
-	if len(doc.Screenshots) == 0 || read == nil {
-		return raw, nil
-	}
-	changed := false
-	for i, s := range doc.Screenshots {
-		if s.Artifact == "" || strings.TrimSpace(s.Data) != "" {
-			continue
-		}
-		content, err := read(s.Artifact)
-		if err != nil {
-			continue
-		}
-		mime := strings.TrimSpace(s.MimeType)
-		if mime == "" {
-			mime = guessImageMIME(s.Artifact)
-		}
-		doc.Screenshots[i].Data = normalizeScreenshotData(content)
-		doc.Screenshots[i].MimeType = mime
-		doc.Screenshots[i].Artifact = ""
-		changed = true
-	}
-	if !changed {
-		return raw, nil
-	}
-	b, err := json.Marshal(doc)
-	if err != nil {
-		return raw, err
-	}
-	return string(b), nil
 }
 
 // TestFailedCount returns how many test cases failed in a stored

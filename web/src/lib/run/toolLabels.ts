@@ -19,10 +19,10 @@ const STRUCTURED: Record<string, string> = {
   set_clarified_requirement: 'clarified_requirement.json',
   set_research: 'research.json',
   set_root_cause: 'root_cause.json',
-  set_proposals: 'proposals.json',
   set_test_result: 'test_result.json',
   set_review: 'review.json',
   set_implementation_result: 'implementation_result.json',
+  set_merge_request: 'merge_request.json',
   set_preflight: 'preflight.json',
 }
 
@@ -50,7 +50,7 @@ const GRASP_KIND: Record<string, ToolKind> = {
   get_history_detail: 'read',
 }
 for (const n of Object.keys(STRUCTURED)) GRASP_KIND[n] ??= 'artifact'
-for (const n of ['get_clarified_requirement', 'get_research', 'get_root_cause', 'get_proposals', 'get_test_result', 'get_review', 'get_implementation_result', 'get_preflight']) {
+for (const n of ['get_clarified_requirement', 'get_research', 'get_root_cause', 'get_test_result', 'get_review', 'get_implementation_result', 'get_merge_request', 'get_preflight']) {
   GRASP_KIND[n] = 'read'
 }
 const GRASP_NAMES = Object.keys(GRASP_KIND).sort((a, b) => b.length - a.length)

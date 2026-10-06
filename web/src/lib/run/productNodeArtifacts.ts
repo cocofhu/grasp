@@ -1,20 +1,16 @@
 // Structured products a run node owns: an agent node's declared writes (from
-// its caps snapshot), or proposal_select's confirmed pick.
+// its caps snapshot).
 
 import type { WFNode } from '@/lib/shared/types'
 import { declaredProducts } from '@/lib/workflow/agentCapabilities'
 
 type ProductNode = Pick<WFNode, 'type' | 'caps'>
 
-/** Confirmed single proposal — same card as proposals.json, highlighted as selected. */
-export const PROPOSAL_SELECT_ARTIFACT = 'proposal.json'
-
 export type ProductArtifactSpec = { name: string; required: boolean; outputKey?: string }
 
 /** Every structured deliverable of a node, in declaration order. */
 export function productArtifactsForNode(node: ProductNode | null | undefined): ProductArtifactSpec[] {
   if (!node) return []
-  if (node.type === 'proposal_select') return [{ name: PROPOSAL_SELECT_ARTIFACT, required: true }]
   if (node.type !== 'agent') return []
   return declaredProducts(node.caps).map((p) => ({ name: p.artifactName, required: p.required, outputKey: p.outputKey }))
 }

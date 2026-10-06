@@ -1,7 +1,6 @@
 export { apiState, blobContentUrl } from './httpCore'
 export type * from './apiTypes'
 
-import type { PaginatedResponse } from './apiTypes'
 import { authRedirectPath } from '../composables/useAuth'
 import { req } from './httpCore'
 import type { AuthLoginResponse, AuthMeResponse } from './apiTypes'
@@ -15,10 +14,6 @@ import { artifactsClient } from './clients/artifactsClient'
 import { settingsClient } from './clients/settingsClient'
 import { statsClient } from './clients/statsClient'
 import { notificationsClient } from './clients/notificationsClient'
-
-export function isPaginated<T>(data: T[] | PaginatedResponse<T>): data is PaginatedResponse<T> {
-  return data != null && typeof data === 'object' && !Array.isArray(data) && 'items' in data
-}
 
 export const api = {
   ...projectsClient,

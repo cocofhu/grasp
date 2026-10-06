@@ -8,17 +8,22 @@ const props = defineProps<{ preview: OnboardingWorkflowPreview }>()
 const { t } = useI18n()
 const uid = useId()
 
-const NODE_W = 104
 const NODE_H = 52
-const GAP = 32
-const PAD_X = 6
+const PAD_X = 4
 const NODE_Y = 22
 const LOOP_DEPTH = 46
 
+// The full six-node workflow must fit the wizard card without scrolling.
+const compact = computed(() => props.preview.nodes.length > 5)
+const nodeW = computed(() => (compact.value ? 88 : 104))
+const gap = computed(() => (compact.value ? 26 : 32))
+
 const layout = computed(() =>
-  props.preview.nodes.map((n, i) => ({ ...n, x: PAD_X + i * (NODE_W + GAP), y: NODE_Y })),
+  props.preview.nodes.map((n, i) => ({ ...n, x: PAD_X + i * (nodeW.value + gap.value), y: NODE_Y })),
 )
-const width = computed(() => PAD_X * 2 + props.preview.nodes.length * NODE_W + (props.preview.nodes.length - 1) * GAP)
+const width = computed(
+  () => PAD_X * 2 + props.preview.nodes.length * nodeW.value + (props.preview.nodes.length - 1) * gap.value,
+)
 const hasLoop = computed(() => props.preview.edges.some((e) => e.handle === 'fail'))
 const height = computed(() => NODE_Y + NODE_H + (hasLoop.value ? LOOP_DEPTH + 10 : 12))
 
@@ -34,8 +39,8 @@ const edges = computed<DrawnEdge[]>(() =>
     const b = nodeAt(e.to)
     if (!a || !b) return []
     if (e.handle === 'fail') {
-      const x1 = a.x + NODE_W / 2
-      const x2 = b.x + NODE_W / 2
+      const x1 = a.x + nodeW.value / 2
+      const x2 = b.x + nodeW.value / 2
       const y = a.y + NODE_H
       return [
         {
@@ -47,7 +52,7 @@ const edges = computed<DrawnEdge[]>(() =>
         },
       ]
     }
-    const x1 = a.x + NODE_W
+    const x1 = a.x + nodeW.value
     const x2 = b.x - 3
     const y = a.y + NODE_H / 2
     return [{ key: `${e.from}-${e.to}`, handle: e.handle, d: `M ${x1} ${y} L ${x2} ${y}`, lx: (x1 + x2) / 2, ly: y - 8 }]
@@ -115,7 +120,7 @@ function nodeSub(n: (typeof layout.value)[number]) {
         :key="n.id"
         class="rounded-lg absolute flex flex-col justify-center border px-2.5"
         :class="n.kind === 'agent' ? 'border-accent/50 bg-surface shadow-card' : 'border-line bg-elevated'"
-        :style="{ left: n.x + 'px', top: n.y + 'px', width: NODE_W + 'px', height: NODE_H + 'px' }"
+        :style="{ left: n.x + 'px', top: n.y + 'px', width: nodeW + 'px', height: NODE_H + 'px' }"
         :data-testid="`onboarding-preview-node-${n.id}`"
       >
         <strong class="block truncate text-[12px] font-medium text-txt" :title="nodeTitle(n)">{{ nodeTitle(n) }}</strong>

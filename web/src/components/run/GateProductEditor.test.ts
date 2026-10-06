@@ -405,97 +405,6 @@ describe('GateProductEditor', () => {
     wrapper.unmount()
   })
 
-  const proposalsContent = JSON.stringify(
-    {
-      context: '选择方案上下文',
-      proposals: [
-        { title: '方案 A', summary: '摘要 A', recommended: true },
-        { title: '方案 B', summary: '摘要 B' },
-      ],
-    },
-    null,
-    2,
-  )
-
-  function mountProposalsEditor(overrides: Record<string, unknown> = {}) {
-    return mountEditor(true, {
-      products: [{ name: 'proposals.json', kind: 'json' as const }],
-      savedContent: { 'proposals.json': proposalsContent },
-      savedMeta: { 'proposals.json': { etag: 'W/"p1"' } },
-      ...overrides,
-    })
-  }
-
-  it('defaults proposals.json edit to raw JSON with context/proposals visible', async () => {
-    const wrapper = mountProposalsEditor()
-    await flushPromises()
-    await wrapper.find('[data-testid="gate-mode-edit"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="gate-struct-json"]').classes()).toContain('bg-overlay')
-    expect(wrapper.find('[data-testid="gate-struct-form"]').exists()).toBe(true)
-    const ta = wrapper.find('[data-testid="gate-artifact-textarea"]')
-    expect(ta.exists()).toBe(true)
-    const taEl = ta.element as HTMLTextAreaElement
-    expect(taEl.value).toContain('"context"')
-    expect(taEl.value).toContain('"proposals"')
-    expect(wrapper.find('[data-testid="gate-struct-form-pane"]').exists()).toBe(false)
-    wrapper.unmount()
-  })
-
-  it('shows proposals form unsupported callout with disabled empty controls', async () => {
-    const wrapper = mountProposalsEditor()
-    await flushPromises()
-    await wrapper.find('[data-testid="gate-mode-edit"]').trigger('click')
-    await flushPromises()
-    await wrapper.find('[data-testid="gate-struct-form"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="gate-proposals-form-unsupported"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="gate-proposals-form-unsupported"]').text()).toContain(
-      '无顶层 title',
-    )
-    const title = wrapper.find('[data-testid="gate-form-title"]')
-    const summary = wrapper.find('[data-testid="gate-form-summary"]')
-    expect((title.element as HTMLInputElement).disabled).toBe(true)
-    expect((summary.element as HTMLTextAreaElement).disabled).toBe(true)
-    expect((title.element as HTMLInputElement).value).toBe('')
-    expect((summary.element as HTMLTextAreaElement).value).toBe('')
-    wrapper.unmount()
-  })
-
-  it('hard-blocks proposals.json form-mode save without calling API', async () => {
-    const wrapper = mountProposalsEditor()
-    await flushPromises()
-    await wrapper.find('[data-testid="gate-mode-edit"]').trigger('click')
-    await flushPromises()
-    // Dirty via raw JSON first so Save stays clickable under isDirty rules.
-    const ta = wrapper.find('[data-testid="gate-artifact-textarea"]')
-    await ta.setValue(
-      JSON.stringify(
-        {
-          context: '改过的上下文',
-          proposals: [{ title: '方案 A', summary: '摘要 A', recommended: true }],
-        },
-        null,
-        2,
-      ),
-    )
-    await flushPromises()
-    await wrapper.find('[data-testid="gate-struct-form"]').trigger('click')
-    await flushPromises()
-
-    const saveBtn = wrapper.find('[data-testid="gate-artifact-save"]')
-    expect((saveBtn.element as HTMLButtonElement).disabled).toBe(false)
-    await saveBtn.trigger('click')
-    await flushPromises()
-
-    expect(apiMocks.saveGateArtifact).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-testid="gate-save-error"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="gate-save-error"]').text()).toContain('原始 JSON')
-    wrapper.unmount()
-  })
-
   it('keeps research.json default form mode and allows save', async () => {
     const wrapper = mountEditor()
     await flushPromises()
@@ -504,7 +413,6 @@ describe('GateProductEditor', () => {
 
     expect(wrapper.find('[data-testid="gate-struct-form"]').classes()).toContain('bg-overlay')
     expect(wrapper.find('[data-testid="gate-struct-form-pane"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="gate-proposals-form-unsupported"]').exists()).toBe(false)
 
     const title = wrapper.find('[data-testid="gate-form-title"]')
     await title.setValue('调研标题')
@@ -512,30 +420,6 @@ describe('GateProductEditor', () => {
     await wrapper.find('[data-testid="gate-artifact-save"]').trigger('click')
     await flushPromises()
     expect(apiMocks.saveGateArtifact).toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('does not inject top-level title/summary when switching proposals form→json', async () => {
-    const wrapper = mountProposalsEditor()
-    await flushPromises()
-    await wrapper.find('[data-testid="gate-mode-edit"]').trigger('click')
-    await flushPromises()
-    const beforeEl = wrapper.find('[data-testid="gate-artifact-textarea"]')
-      .element as HTMLTextAreaElement
-    const before = beforeEl.value
-    await wrapper.find('[data-testid="gate-struct-form"]').trigger('click')
-    await flushPromises()
-    await wrapper.find('[data-testid="gate-struct-json"]').trigger('click')
-    await flushPromises()
-    const afterEl = wrapper.find('[data-testid="gate-artifact-textarea"]')
-      .element as HTMLTextAreaElement
-    const after = afterEl.value
-    expect(after).toBe(before)
-    const doc = JSON.parse(after) as Record<string, unknown>
-    expect(doc).not.toHaveProperty('title')
-    expect(doc).not.toHaveProperty('summary')
-    expect(doc).toHaveProperty('context')
-    expect(Array.isArray(doc.proposals)).toBe(true)
     wrapper.unmount()
   })
 })

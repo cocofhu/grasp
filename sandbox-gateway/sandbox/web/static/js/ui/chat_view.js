@@ -18,7 +18,6 @@ import {
 } from './chat_payload.js';
 import {
     deleteSnapshot,
-    ensureLegacyMigrated,
     getSnapshot,
     putSnapshot,
 } from './chat_persist_db.js';
@@ -77,7 +76,6 @@ export class ChatView {
         this._persistDisabled = false;
         /** 持久化失败横幅每页签最多展示一次 */
         this._persistBannerShown = false;
-        void ensureLegacyMigrated();
         /** Markdown 内 Mermaid：流式更新时节流，避免每字符 import/run */
         /** @type {Map<HTMLElement, ReturnType<typeof setTimeout>>} */
         this._mermaidTimers = new Map();
@@ -448,7 +446,6 @@ export class ChatView {
         if (!sid || this._restoreAttempted) return false;
         this._restoreAttempted = true;
         try {
-            await ensureLegacyMigrated();
             const data = await getSnapshot(sid);
             if (!data || typeof data.html !== 'string') return false;
             if (data.sessionId != null && String(data.sessionId) !== sid) return false;

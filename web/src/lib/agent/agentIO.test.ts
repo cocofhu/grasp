@@ -180,23 +180,25 @@ function storeZip(files: Record<string, string>): Uint8Array {
 }
 
 describe('peekZipPackage', () => {
-  it('prefers folder.json org-folder over agent.json', async () => {
+  it('prefers project.json project bundle over agent.json', async () => {
     const raw = storeZip({
-      'folder.json': JSON.stringify({
-        kind: 'org-folder',
+      'project.json': JSON.stringify({
+        kind: 'project-agents',
         schemaVersion: 1,
-        rootGroupId: 'g1',
-        groups: [{ id: 'g1', name: 'Grasp项目组' }],
         agentNames: ['alice', 'bob'],
       }),
       'agent.json': JSON.stringify({ name: 'should-not-win', schemaVersion: 1 }),
     })
-    const peek = await peekZipPackage(new File([Uint8Array.from(raw)], 'folder.zip', { type: 'application/zip' }))
-    expect(peek).toEqual({
-      kind: 'org-folder',
-      agentNames: ['alice', 'bob'],
-      rootGroupName: 'Grasp项目组',
+    const peek = await peekZipPackage(new File([Uint8Array.from(raw)], 'demo-agents.zip', { type: 'application/zip' }))
+    expect(peek).toEqual({ kind: 'project-bundle', agentNames: ['alice', 'bob'] })
+  })
+
+  it('ignores project.json with a foreign kind', async () => {
+    const raw = storeZip({
+      'project.json': JSON.stringify({ kind: 'something-else', agentNames: ['alice'] }),
     })
+    const peek = await peekZipPackage(new File([Uint8Array.from(raw)], 'x.zip', { type: 'application/zip' }))
+    expect(peek.kind).toBe('unknown')
   })
 
   it('falls back to root agent.json for single-agent zip', async () => {

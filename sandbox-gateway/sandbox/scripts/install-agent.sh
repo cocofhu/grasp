@@ -96,7 +96,7 @@ install_one() {
   case "$provider" in
     cursor|cursor_acp)
       install_cursor ;;                                      # 同一 cursor-agent 二进制（stream-json / ACP 两用）
-    claude_code|claude_stream_json)
+    claude_code)
       install_claude_native ;;                               # 原生 claude CLI（stream-json，默认）
     claude_code_acp)
       install_claude_native && npm_global @zed-industries/claude-code-acp ;;

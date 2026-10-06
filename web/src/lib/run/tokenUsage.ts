@@ -1,6 +1,6 @@
 import type { ModelTokenUsage, TokenUsage, TokenUsageByModel } from '../shared/types'
 
-/** Persistence / API key for legacy / unbucketed usage (matches server). */
+/** Persistence / API key for unbucketed usage (matches server). */
 export const TOKEN_USAGE_UNKNOWN_MODEL = '未知/未分桶'
 
 /** Default user-visible label when no project alias is configured. */
@@ -15,7 +15,7 @@ function isUnsetUnknownAlias(v: string): boolean {
 
 /**
  * Resolve display text for the unknown token bucket.
- * Empty / whitespace / equal to legacy or new default label → 「未知模型」.
+ * Empty / whitespace / equal to the bucket key or default label → 「未知模型」.
  */
 export function unknownDisplayName(modelKey: string, alias?: string | null): string {
   if (modelKey !== TOKEN_USAGE_UNKNOWN_MODEL) return modelKey

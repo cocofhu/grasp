@@ -82,12 +82,12 @@ describe('InboxPendingCard share entry', () => {
     })
     expect(explicitClarify.get('[data-testid="gate-share-copy-btn"]').text()).toContain('复制临时链接')
 
-    const ps = mount(InboxPendingCard, {
-      props: { item: gate({ nodeId: 'ps1', nodeType: 'proposal_select', title: '选择方案' }) },
+    const untyped = mount(InboxPendingCard, {
+      props: { item: gate({ nodeId: 'g2', nodeType: undefined, title: '旧门禁' }) },
       global: { plugins: [i18n] },
     })
-    expect(ps.find('[data-testid="gate-share-copy-btn"]').exists()).toBe(false)
-    expect(ps.find('[data-testid="gate-share-status"]').exists()).toBe(false)
+    expect(untyped.find('[data-testid="gate-share-copy-btn"]').exists()).toBe(false)
+    expect(untyped.find('[data-testid="gate-share-status"]').exists()).toBe(false)
   })
 
   it('copy button uses chip-sized classes at all breakpoints and is not taller than the status chip', () => {

@@ -13,7 +13,6 @@ const MOCK_PROJECT = {
   id: 'proj-1',
   name: 'Demo Project',
   description: 'Notify UI e2e',
-  sandboxEnv: [],
   variables: [],
   notifyPolicy: {
     enabled: true,

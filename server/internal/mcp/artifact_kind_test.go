@@ -24,8 +24,6 @@ func TestExpectedKindForReservedName(t *testing.T) {
 		{PlanArtifactName, "json", true},
 		{ClarifiedRequirementArtifactName, "json", true},
 		{ResearchArtifactName, "json", true},
-		{ProposalsArtifactName, "json", true},
-		{ProposalArtifactName, "json", true},
 		{TestResultArtifactName, "json", true},
 		{ReviewArtifactName, "json", true},
 		{ImplementationResultArtifactName, "json", true},

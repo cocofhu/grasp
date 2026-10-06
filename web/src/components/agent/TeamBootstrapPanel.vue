@@ -12,7 +12,7 @@ const emit = defineEmits<{
   openPm: [name: string]
   selectPm: [name: string]
   done: []
-  refreshOrg: []
+  refresh: []
 }>()
 
 const { t } = useI18n()
@@ -59,10 +59,10 @@ async function poll() {
     pollError.value = ''
     if ((s.resources?.length || 0) !== lastResourceCount) {
       lastResourceCount = s.resources?.length || 0
-      emit('refreshOrg')
+      emit('refresh')
     }
     if (s.status === 'ready' || s.status === 'failed') {
-      emit('refreshOrg')
+      emit('refresh')
       if (s.status === 'ready' && s.pmAgent && !highlightedPm) {
         highlightedPm = true
         emit('selectPm', s.pmAgent)
@@ -94,7 +94,7 @@ async function onRetry() {
   try {
     session.value = await api.retryAgentTeamBootstrap(props.sessionId)
     lastResourceCount = session.value.resources?.length || 0
-    emit('refreshOrg')
+    emit('refresh')
     startPolling()
   } catch (e: any) {
     pollError.value = e?.message || String(e)

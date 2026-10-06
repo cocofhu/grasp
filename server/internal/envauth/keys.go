@@ -2,50 +2,61 @@ package envauth
 
 import "strings"
 
-// IsPlatformAuthEnvKey reports official ACP CLI auth keys that must not be
-// injected via platform-level sandbox.env / opts.Env. Project sandbox env may
-// store them as a workflow baseline (forced Secret); Agent env overrides.
-//
-// Kept in a tiny dependency-free package so services and runtime can share the
-// rule without services→runtime coupling.
+// Env keys written by the built-in project credential presets. Each ACP
+// backend has exactly one credential key; runtime maps it onto the CLI key.
+const (
+	EnvCursorAPIKey     = "GRASP_CURSOR_API_KEY"
+	EnvClaudeAPIKey     = "GRASP_CLAUDE_API_KEY"
+	EnvCodeBuddyAPIKey  = "GRASP_CODEBUDDY_API_KEY"
+	EnvTraeAPIKey       = "GRASP_TRAE_API_KEY"
+	EnvOpenCodeAPIKey   = "GRASP_OPENCODE_API_KEY"
+	EnvGitHubToken      = "GITHUB_TOKEN"
+	EnvGitLabToken      = "GITLAB_TOKEN"
+	EnvGitSSHPrivateKey = "GIT_SSH_PRIVATE_KEY"
+	EnvGitSSHKnownHosts = "GIT_SSH_KNOWN_HOSTS"
+)
+
+// cliAuthEnvKeys are the env names the in-container ACP CLIs read. They are
+// filled from the matching credential key at sandbox start.
+var cliAuthEnvKeys = []string{
+	"CURSOR_API_KEY", "ANTHROPIC_API_KEY", "CODEBUDDY_API_KEY",
+	"TRAECLI_PERSONAL_ACCESS_TOKEN", "OPENCODE_API_KEY",
+}
+
+// credentialEnvKeys are the secret preset keys of project credentials.
+var credentialEnvKeys = []string{
+	EnvCursorAPIKey, EnvClaudeAPIKey, EnvCodeBuddyAPIKey, EnvTraeAPIKey, EnvOpenCodeAPIKey,
+	EnvGitHubToken, EnvGitLabToken, EnvGitSSHPrivateKey, EnvGitSSHKnownHosts,
+}
+
+// IsPlatformAuthEnvKey reports official ACP CLI auth keys.
 func IsPlatformAuthEnvKey(k string) bool {
-	switch k {
-	case "CURSOR_API_KEY", "ANTHROPIC_API_KEY", "CODEBUDDY_API_KEY",
-		"TRAE_API_KEY", "TRAECLI_PERSONAL_ACCESS_TOKEN", "OPENCODE_API_KEY":
-		return true
-	default:
-		return false
+	for _, key := range cliAuthEnvKeys {
+		if k == key {
+			return true
+		}
 	}
+	return false
 }
 
-// TokenEnvKeys is the canonical list of Token-class environment variable names
-// (ACP auth keys + aliases, and Git tokens). Shared Agent config is the
-// preferred place to edit these; Agent Studio should not newly inject them.
-func TokenEnvKeys() []string {
-	return []string{
-		"GRASP_CURSOR_API_KEY", "CURSOR_API_KEY",
-		"GRASP_CLAUDE_API_KEY", "ANTHROPIC_API_KEY",
-		"GRASP_CODEBUDDY_API_KEY", "CODEBUDDY_API_KEY",
-		"GRASP_TRAE_API_KEY", "TRAE_API_KEY", "TRAECLI_PERSONAL_ACCESS_TOKEN",
-		"GRASP_OPENCODE_API_KEY", "OPENCODE_API_KEY",
-		"GITHUB_TOKEN", "GITLAB_TOKEN", "GIT_SSH_PRIVATE_KEY",
-	}
+// SecretEnvKeys lists env keys that may only be supplied by project
+// credentials: the credential preset keys plus the CLI auth keys they map to.
+// Agent env, shared Agent env, run env and platform sandbox.env never carry them.
+func SecretEnvKeys() []string {
+	out := make([]string, 0, len(credentialEnvKeys)+len(cliAuthEnvKeys))
+	out = append(out, credentialEnvKeys...)
+	return append(out, cliAuthEnvKeys...)
 }
 
-// IsTokenEnvKey reports whether k is a Token-class env key (literal name match).
-// Does not include GIT_REPOS, URL hosts, known_hosts, or region keys.
-func IsTokenEnvKey(k string) bool {
-	switch k {
-	case "GRASP_CURSOR_API_KEY", "CURSOR_API_KEY",
-		"GRASP_CLAUDE_API_KEY", "ANTHROPIC_API_KEY",
-		"GRASP_CODEBUDDY_API_KEY", "CODEBUDDY_API_KEY",
-		"GRASP_TRAE_API_KEY", "TRAE_API_KEY", "TRAECLI_PERSONAL_ACCESS_TOKEN",
-		"GRASP_OPENCODE_API_KEY", "OPENCODE_API_KEY",
-		"GITHUB_TOKEN", "GITLAB_TOKEN", "GIT_SSH_PRIVATE_KEY":
-		return true
-	default:
-		return false
+// IsSecretEnvKey reports whether k (exact name) is in SecretEnvKeys.
+func IsSecretEnvKey(k string) bool {
+	k = strings.TrimSpace(k)
+	for _, key := range credentialEnvKeys {
+		if k == key {
+			return true
+		}
 	}
+	return IsPlatformAuthEnvKey(k)
 }
 
 // IsPlatformReservedEnvKey reports env keys the platform injects into every
@@ -54,7 +65,7 @@ func IsTokenEnvKey(k string) bool {
 func IsPlatformReservedEnvKey(k string) bool {
 	switch k {
 	case "GRASP_RUN_ID", "GRASP_NODE_ID", "CONFIG_ROOT", "AGENT_PROVIDER",
-		"PASSWORD", "ROOT_PASSWORD", "ACP_BRIDGE_PASSWORD", "CURSOR_ACP_PASSWORD":
+		"ROOT_PASSWORD", "ACP_BRIDGE_PASSWORD":
 		return true
 	}
 	for _, prefix := range []string{"GRASP_ARTIFACT_", "GRASP_MEMORY_", "GRASP_CONTEXT_", "GRASP_SCHEDULER_", "GRASP_PM_"} {
@@ -65,9 +76,8 @@ func IsPlatformReservedEnvKey(k string) bool {
 	return false
 }
 
-// MergeEnvSharedTokenPriority: non-Token keys use Agent-over-shared; Token keys
-// keep shared when the key exists on shared, otherwise keep Agent stock.
-func MergeEnvSharedTokenPriority(shared, agent map[string]string) map[string]string {
+// OverlayEnv merges shared (base) and agent (overlay) env; Agent wins per key.
+func OverlayEnv(shared, agent map[string]string) map[string]string {
 	out := map[string]string{}
 	for k, v := range shared {
 		if strings.TrimSpace(k) == "" {
@@ -80,10 +90,17 @@ func MergeEnvSharedTokenPriority(shared, agent map[string]string) map[string]str
 		if k == "" {
 			continue
 		}
-		if IsTokenEnvKey(k) {
-			if _, ok := shared[k]; ok {
-				continue
-			}
+		out[k] = v
+	}
+	return out
+}
+
+// StripSecretEnvKeys returns a copy of env without SecretEnvKeys.
+func StripSecretEnvKeys(env map[string]string) map[string]string {
+	out := make(map[string]string, len(env))
+	for k, v := range env {
+		if IsSecretEnvKey(k) {
+			continue
 		}
 		out[k] = v
 	}

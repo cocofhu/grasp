@@ -11,7 +11,6 @@ description: 调研产物质量检查清单（简体中文）
 2. findings 可追溯到代码/文档/实验，避免空泛建议
 3. recommendation 与澄清范围一致，不擅自扩大需求
 4. 指出风险、约束与 follow_ups，便于方案取舍
-5. 调研结论与候选方案分开写
 
 ## 交付核对
 
@@ -25,4 +24,4 @@ description: 调研产物质量检查清单（简体中文）
 
 - 每个 question 都有可核查的 answer，或明确标注「未验证/缺口」及影响
 - findings 能指向具体路径、文档或实验结果，而非仅口号式建议
-- recommendation 不写成多方案对比集(那属于候选方案产物)
+- recommendation 给出明确方向，不写成多方案对比集

@@ -68,19 +68,6 @@ and {{nodes.visual.outputs.page}}`,
 	}
 }
 
-func TestGatePrimaryProducts_proposalSelect(t *testing.T) {
-	gate := &models.Node{ID: "sel", Type: "proposal_select", Config: map[string]any{}}
-	got := GatePrimaryProducts(gate, nil)
-	if len(got) != 1 || got[0].Name != "proposals.json" {
-		t.Fatalf("proposal_select default: %+v", got)
-	}
-	gate.Config["from"] = "alts.json"
-	got = GatePrimaryProducts(gate, nil)
-	if len(got) != 1 || got[0].Name != "alts.json" {
-		t.Fatalf("proposal_select from: %+v", got)
-	}
-}
-
 func TestInferArtifactKind_imageAndReadonly(t *testing.T) {
 	cases := []struct {
 		name     string

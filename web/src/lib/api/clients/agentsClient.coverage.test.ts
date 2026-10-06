@@ -20,9 +20,8 @@ describe('agentsClient request coverage', () => {
 
   afterEach(() => vi.unstubAllGlobals())
 
-  it('builds agent, team, organization, revision, memory, thread, and cron requests', async () => {
+  it('builds agent, team, project bundle, revision, memory, thread, and cron requests', async () => {
     const agent = { name: 'agent / one', description: 'reviewer' } as never
-    const org = { groups: [] } as never
 
     await agentsClient.listAgents()
     await agentsClient.getAgent('agent / one')
@@ -34,11 +33,8 @@ describe('agentsClient request coverage', () => {
     await agentsClient.getAgentTeamBootstrap('team / 1')
     await agentsClient.retryAgentTeamBootstrap('team / 1')
     await agentsClient.listAgentTeamTemplates()
-    await agentsClient.getAgentsOrg()
-    await agentsClient.saveAgentsOrg(org)
     await agentsClient.createAgent(agent)
     await agentsClient.saveAgent(agent, { reason: 'update' })
-    await agentsClient.patchAgentProject('agent / one', 'p2')
     await agentsClient.renameAgent('agent / one', 'renamed')
     await agentsClient.deleteAgent('agent / one')
     await agentsClient.listAgentWorkspaceRevisions('agent / one')
@@ -55,8 +51,6 @@ describe('agentsClient request coverage', () => {
     await agentsClient.listAgentCronJobs('agent / one')
     await agentsClient.patchAgentCronJob('agent / one', 'j1', { enabled: true })
     await agentsClient.deleteAgentCronJob('agent / one', 'j1')
-    await agentsClient.scanOrgSensitiveKeys('group / 1')
-    await agentsClient.stripOrgSensitiveKeys('g1', ['TOKEN'])
 
     expect(fetchMock).toHaveBeenCalledWith('/api/agents/agent%20%2F%20one/rename', expect.objectContaining({
       method: 'POST',
@@ -70,10 +64,6 @@ describe('agentsClient request coverage', () => {
       '/api/agents/agent%20%2F%20one/workspace/revisions/sha%20%2F%201/restore',
       expect.objectContaining({ method: 'POST', body: JSON.stringify({ reason: '' }) }),
     )
-    expect(fetchMock).toHaveBeenCalledWith('/api/agents/org/strip-sensitive-keys', expect.objectContaining({
-      method: 'POST',
-      body: JSON.stringify({ groupId: 'g1', keys: ['TOKEN'] }),
-    }))
   })
 
   it('exports agents and maps JSON and non-JSON failures', async () => {
@@ -90,12 +80,12 @@ describe('agentsClient request coverage', () => {
     await expect(agentsClient.exportAgent('a')).rejects.toThrow('502 export failed')
   })
 
-  it('exports folders with every content-disposition filename form', async () => {
+  it('exports project bundles with every content-disposition filename form', async () => {
     const cases = [
       ["attachment; filename*=UTF-8''report%20pack.zip", 'report pack.zip'],
       ['attachment; filename="quoted.zip"', 'quoted.zip'],
       ['attachment; filename=plain.zip', 'plain.zip'],
-      ['attachment', 'folder.zip'],
+      ['attachment', 'project.zip'],
       ["attachment; filename*=UTF-8''%E0%A4%A; filename=\"fallback.zip\"", 'fallback.zip'],
     ]
     for (const [header, filename] of cases) {
@@ -105,48 +95,46 @@ describe('agentsClient request coverage', () => {
           headers: { 'Content-Disposition': header },
         }),
       )
-      await expect(agentsClient.exportOrgFolder('g / 1')).resolves.toMatchObject({ filename })
+      await expect(agentsClient.exportProjectAgents('p / 1')).resolves.toMatchObject({ filename })
     }
-    expect(fetchMock).toHaveBeenCalledWith('/api/agents/org/export?groupId=g%20%2F%201', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/projects/p%20%2F%201/agents/export', {
       credentials: 'include',
     })
 
-    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'folder denied' }, { status: 403 }))
-    await expect(agentsClient.exportOrgFolder('g')).rejects.toThrow('folder denied')
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'project denied' }, { status: 403 }))
+    await expect(agentsClient.exportProjectAgents('p')).rejects.toThrow('project denied')
     fetchMock.mockResolvedValueOnce(new Response('oops', { status: 500 }))
-    await expect(agentsClient.exportOrgFolder('g')).rejects.toThrow('500 export failed')
+    await expect(agentsClient.exportProjectAgents('p')).rejects.toThrow('500 export failed')
   })
 
-  it('imports folders and agents with exact multipart fields and handles failures', async () => {
+  it('imports project bundles and agents with exact multipart fields and handles failures', async () => {
     const file = new File(['zip'], 'agents.zip')
-    fetchMock.mockResolvedValueOnce(jsonResponse({ imported: 2 }))
-    await agentsClient.importOrgFolder(file, { targetGroupId: 'g1', mode: 'overwrite' })
+    fetchMock.mockResolvedValueOnce(jsonResponse({ created: ['a'], overwritten: ['b'] }))
+    await expect(agentsClient.importProjectAgents('p / 1', file, { mode: 'overwrite' })).resolves.toEqual({
+      created: ['a'],
+      overwritten: ['b'],
+    })
     let [, init] = fetchMock.mock.calls.at(-1)!
-    expect(fetchMock.mock.calls.at(-1)![0]).toBe('/api/agents/org/import')
+    expect(fetchMock.mock.calls.at(-1)![0]).toBe('/api/projects/p%20%2F%201/agents/import')
     expect(init).toMatchObject({ method: 'POST', credentials: 'include' })
     expect((init.body as FormData).get('file')).toBe(file)
-    expect((init.body as FormData).get('targetGroupId')).toBe('g1')
     expect((init.body as FormData).get('mode')).toBe('overwrite')
 
-    fetchMock.mockResolvedValueOnce(jsonResponse({ imported: 1 }))
-    await agentsClient.importOrgFolder(file, { mode: 'rename' })
-    ;[, init] = fetchMock.mock.calls.at(-1)!
-    expect((init.body as FormData).has('targetGroupId')).toBe(false)
-
     fetchMock.mockResolvedValueOnce(jsonResponse({ name: 'new-agent' }))
-    await agentsClient.importAgent(file, { targetName: 'new-agent', mode: 'create' })
+    await agentsClient.importAgent(file, { projectId: 'p1', targetName: 'new-agent', mode: 'create' })
     ;[, init] = fetchMock.mock.calls.at(-1)!
     expect(fetchMock.mock.calls.at(-1)![0]).toBe('/api/agents/import')
+    expect((init.body as FormData).get('projectId')).toBe('p1')
     expect((init.body as FormData).get('targetName')).toBe('new-agent')
     expect((init.body as FormData).get('mode')).toBe('create')
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'bad archive' }, { status: 400 }))
-    await expect(agentsClient.importOrgFolder(file, { mode: 'rename' })).rejects.toThrow('bad archive')
+    await expect(agentsClient.importProjectAgents('p1', file, { mode: 'rename' })).rejects.toThrow('bad archive')
     fetchMock.mockResolvedValueOnce(new Response('invalid', { status: 422 }))
-    await expect(agentsClient.importOrgFolder(file, { mode: 'rename' })).rejects.toThrow('422 import failed')
+    await expect(agentsClient.importProjectAgents('p1', file, { mode: 'rename' })).rejects.toThrow('422 import failed')
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'name exists' }, { status: 409 }))
-    await expect(agentsClient.importAgent(file, { targetName: 'a', mode: 'create' })).rejects.toThrow('name exists')
+    await expect(agentsClient.importAgent(file, { projectId: 'p1', targetName: 'a', mode: 'create' })).rejects.toThrow('name exists')
     fetchMock.mockResolvedValueOnce(new Response('invalid', { status: 500 }))
-    await expect(agentsClient.importAgent(file, { targetName: 'a', mode: 'create' })).rejects.toThrow('500 import failed')
+    await expect(agentsClient.importAgent(file, { projectId: 'p1', targetName: 'a', mode: 'create' })).rejects.toThrow('500 import failed')
   })
 })

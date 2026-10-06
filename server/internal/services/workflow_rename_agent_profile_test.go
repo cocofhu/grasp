@@ -64,7 +64,7 @@ func TestRenameAgentProfileRefs_multiNodeTypesExactReplace(t *testing.T) {
 			"research":  old,
 			"preview":   old,
 			"implement": old,
-			"proposal":  "other-bot",
+			"review":    "other-bot",
 			"agent":     old + "-extra", // substring must not match
 		}),
 	}
@@ -75,8 +75,8 @@ func TestRenameAgentProfileRefs_multiNodeTypesExactReplace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("publish: %v", err)
 	}
-	if pub.Status != "published" || pub.Version != 2 {
-		t.Fatalf("precondition: status=%s version=%d", pub.Status, pub.Version)
+	if pub.Status() != "published" || pub.Version != 1 {
+		t.Fatalf("precondition: status=%s version=%d", pub.Status(), pub.Version)
 	}
 
 	// Unrelated workflow must stay untouched.
@@ -105,8 +105,8 @@ func TestRenameAgentProfileRefs_multiNodeTypesExactReplace(t *testing.T) {
 			t.Fatalf("%s agent_profile want %q got %q", typ, neu, agentProfileOf(got.Graph, typ))
 		}
 	}
-	if agentProfileOf(got.Graph, "proposal") != "other-bot" {
-		t.Fatalf("unrelated profile rewritten: %q", agentProfileOf(got.Graph, "proposal"))
+	if agentProfileOf(got.Graph, "review") != "other-bot" {
+		t.Fatalf("unrelated profile rewritten: %q", agentProfileOf(got.Graph, "review"))
 	}
 	if agentProfileOf(got.Graph, "agent") != old+"-extra" {
 		t.Fatalf("substring profile rewritten: %q", agentProfileOf(got.Graph, "agent"))
@@ -161,15 +161,16 @@ func TestRenameAgentProfileRefs_versionOnlyCountsAndSkipsRun(t *testing.T) {
 	}
 	// Current Def no longer references old name; Version snapshot still does.
 	upd := &models.WorkflowDef{
-		ID: "wf-ver", Name: "VerOnly",
+		ProjectID: models.DefaultProjectID,
+		ID:        "wf-ver", Name: "VerOnly",
 		Graph: graphWithProfiles(map[string]string{"react": "orchestrator"}),
 	}
 	if err := s.Save(upd); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := s.Get("wf-ver")
-	if got.Status != "draft" {
-		t.Fatalf("expected draft after graph edit, got %s", got.Status)
+	if got.Status() != "draft" {
+		t.Fatalf("expected draft after graph edit, got %s", got.Status())
 	}
 	ver := got.Version
 
@@ -195,7 +196,7 @@ func TestRenameAgentProfileRefs_versionOnlyCountsAndSkipsRun(t *testing.T) {
 	if agentProfileOf(def.Graph, "react") != "orchestrator" {
 		t.Fatalf("def current graph should stay orchestrator, got %q", agentProfileOf(def.Graph, "react"))
 	}
-	snap, err := s.VersionGraph("wf-ver", ver)
+	snap, err := s.VersionGraph("wf-ver", got.PublishedVersion)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,8 +248,8 @@ func TestRenameAgentProfileRefs_keepsPublishedAndDraftStatus(t *testing.T) {
 	}
 
 	gotPub, _ := s.Get("wf-pub")
-	if gotPub.Status != "published" {
-		t.Fatalf("published downgraded to %s", gotPub.Status)
+	if gotPub.Status() != "published" {
+		t.Fatalf("published downgraded to %s", gotPub.Status())
 	}
 	if gotPub.Version != pubVer {
 		t.Fatalf("version bumped %d → %d", pubVer, gotPub.Version)
@@ -258,8 +259,8 @@ func TestRenameAgentProfileRefs_keepsPublishedAndDraftStatus(t *testing.T) {
 	}
 
 	gotDraft, _ := s.Get("wf-draft2")
-	if gotDraft.Status != "draft" {
-		t.Fatalf("draft promoted to %s", gotDraft.Status)
+	if gotDraft.Status() != "draft" {
+		t.Fatalf("draft promoted to %s", gotDraft.Status())
 	}
 	if agentProfileOf(gotDraft.Graph, "review") != neu {
 		t.Fatalf("draft profile not updated: %q", agentProfileOf(gotDraft.Graph, "review"))

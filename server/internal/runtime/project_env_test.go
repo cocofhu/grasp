@@ -46,7 +46,8 @@ func TestSpecMergesSharedEnvExtendThenAgentOverlay(t *testing.T) {
 					},
 				}
 			},
-			ProfilesRoot: root,
+			ProjectCredentialsForProject: testCredentials,
+			ProfilesRoot:                 root,
 		},
 		backend: BackendCursor,
 	}
@@ -76,14 +77,11 @@ func TestSpecMergesSharedEnvExtendThenAgentOverlay(t *testing.T) {
 	if spec.Env["TEMPLATED"] != "cn-east" {
 		t.Fatalf("templated = %q", spec.Env["TEMPLATED"])
 	}
-	if spec.Env["ANTHROPIC_API_KEY"] != "shared-anthropic" {
-		t.Fatalf("shared anthropic = %q", spec.Env["ANTHROPIC_API_KEY"])
+	if v, ok := spec.Env["ANTHROPIC_API_KEY"]; ok {
+		t.Fatalf("shared env secret must be dropped, got %q", v)
 	}
-	if spec.Env["CURSOR_API_KEY"] != "shared-cursor" {
-		t.Fatalf("shared token wins = %q", spec.Env["CURSOR_API_KEY"])
-	}
-	if spec.Env["CURSOR_API_KEY"] == "should-skip-platform" {
-		t.Fatal("platform CURSOR_API_KEY must stay skipped")
+	if spec.Env["CURSOR_API_KEY"] != "fake" {
+		t.Fatalf("auth must come from project credentials, got %q", spec.Env["CURSOR_API_KEY"])
 	}
 }
 
@@ -105,12 +103,11 @@ func TestSpecSetsAgentProviderForEveryBackend(t *testing.T) {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			agentJSON := `{"env":{"` + tc.authKey + `":"k"}}`
-			if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(agentJSON), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{}`), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			c := &acpProvider{
-				opts:    Options{ProfilesRoot: root},
+				opts:    Options{ProfilesRoot: root, ProjectCredentialsForProject: testCredentials},
 				backend: tc.backend,
 			}
 			spec, err := c.spec(NodeReq{
@@ -123,6 +120,9 @@ func TestSpecSetsAgentProviderForEveryBackend(t *testing.T) {
 			if got := spec.Env["AGENT_PROVIDER"]; got != string(tc.backend) {
 				t.Fatalf("AGENT_PROVIDER=%q, want %q", got, tc.backend)
 			}
+			if spec.Env[tc.authKey] != "fake" {
+				t.Fatalf("%s=%q, want credential value", tc.authKey, spec.Env[tc.authKey])
+			}
 			if _, ok := spec.Env["ACP_BACKEND"]; ok {
 				t.Fatal("ACP_BACKEND must not be injected")
 			}
@@ -130,7 +130,7 @@ func TestSpecSetsAgentProviderForEveryBackend(t *testing.T) {
 	}
 }
 
-func TestSpecSharedAuthKeyAloneSucceeds(t *testing.T) {
+func TestSpecSharedEnvSecretIsNotAuthSource(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "demo")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -152,17 +152,13 @@ func TestSpecSharedAuthKeyAloneSucceeds(t *testing.T) {
 		},
 		backend: BackendCursor,
 	}
-	spec, err := c.spec(NodeReq{
+	if _, err := c.spec(NodeReq{
 		WorkflowID: "wf-1",
 		NodeType:   "agent", Caps: testPlainCaps,
 		Token:  "tok",
 		Config: map[string]any{"agent_profile": "demo"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if spec.Env["CURSOR_API_KEY"] != "shared-only-key" {
-		t.Fatalf("shared-only auth = %q", spec.Env["CURSOR_API_KEY"])
+	}); err == nil {
+		t.Fatal("shared/platform env secrets must not satisfy the auth gate")
 	}
 }
 
@@ -172,13 +168,14 @@ func TestSpecSkipsSharedEnvWithoutLookup(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"env":{"GRASP_CURSOR_API_KEY":"k"}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c := &acpProvider{
 		opts: Options{
-			Env:          map[string]string{"P": "1"},
-			ProfilesRoot: root,
+			Env:                          map[string]string{"P": "1"},
+			ProfilesRoot:                 root,
+			ProjectCredentialsForProject: testCredentials,
 		},
 		backend: BackendCursor,
 	}
@@ -202,7 +199,7 @@ func TestSpecMergesRunSandboxEnvAfterAgent(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	agentJSON := `{"env":{"SHARED":"from-agent","AGENT_ONLY":"a1","CURSOR_API_KEY":"agent-cursor","EMPTY_TARGET":"agent-val"}}`
+	agentJSON := `{"env":{"SHARED":"from-agent","AGENT_ONLY":"a1","EMPTY_TARGET":"agent-val"}}`
 	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(agentJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +227,8 @@ func TestSpecMergesRunSandboxEnvAfterAgent(t *testing.T) {
 					{Key: "EMPTY_TARGET", Value: ""},
 				}
 			},
-			ProfilesRoot: root,
+			ProjectCredentialsForProject: testCredentials,
+			ProfilesRoot:                 root,
 		},
 		backend: BackendCursor,
 	}
@@ -262,11 +260,11 @@ func TestSpecMergesRunSandboxEnvAfterAgent(t *testing.T) {
 	if spec.Env["AGENT_PROVIDER"] != string(BackendCursor) {
 		t.Fatalf("AGENT_PROVIDER=%q", spec.Env["AGENT_PROVIDER"])
 	}
-	if spec.Env["CURSOR_API_KEY"] != "agent-cursor" {
-		t.Fatalf("auth from agent must remain: %q", spec.Env["CURSOR_API_KEY"])
+	if spec.Env["CURSOR_API_KEY"] != "fake" {
+		t.Fatalf("auth from project credentials must remain: %q", spec.Env["CURSOR_API_KEY"])
 	}
-	if spec.Env["PASSWORD"] != "tok" {
-		t.Fatalf("ApplyPasswords must win: %q", spec.Env["PASSWORD"])
+	if spec.Env["ACP_BRIDGE_PASSWORD"] != "tok" {
+		t.Fatalf("ApplyPasswords must win: %q", spec.Env["ACP_BRIDGE_PASSWORD"])
 	}
 }
 
@@ -276,17 +274,18 @@ func TestSpecRunSandboxEnvDoesNotOverrideReservedAfterInject(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"env":{"GRASP_CURSOR_API_KEY":"k"}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c := &acpProvider{
 		opts: Options{
-			ProfilesRoot: root,
+			ProfilesRoot:                 root,
+			ProjectCredentialsForProject: testCredentials,
 			RunSandboxEnvForRun: func(string) []models.EnvEntry {
 				return []models.EnvEntry{
 					{Key: "AGENT_PROVIDER", Value: "evil"},
 					{Key: "GRASP_RUN_ID", Value: "evil-run"},
-					{Key: "PASSWORD", Value: "evil-pw"},
+					{Key: "ACP_BRIDGE_PASSWORD", Value: "evil-pw"},
 					{Key: "CONFIG_ROOT", Value: "/evil"},
 				}
 			},
@@ -304,8 +303,8 @@ func TestSpecRunSandboxEnvDoesNotOverrideReservedAfterInject(t *testing.T) {
 	if spec.Env["AGENT_PROVIDER"] == "evil" {
 		t.Fatal("AGENT_PROVIDER must not be overridden by run env")
 	}
-	if spec.Env["PASSWORD"] == "evil-pw" {
-		t.Fatal("PASSWORD must not be overridden by run env")
+	if spec.Env["ACP_BRIDGE_PASSWORD"] == "evil-pw" {
+		t.Fatal("ACP_BRIDGE_PASSWORD must not be overridden by run env")
 	}
 }
 
@@ -349,20 +348,17 @@ func TestSpecProjectCredentialsDoNotReadProcessEnvOrShadowPlatformKeys(t *testin
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"env":{"GRASP_CURSOR_API_KEY":"agent-key","PROJECT_ALIAS_SRC":"alias"}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"env":{"GRASP_CURSOR_API_KEY":"agent-key","GITHUB_TOKEN":"agent-gh","FEATURE":"1"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("GITHUB_TOKEN", "server-process-token")
-	t.Setenv("SERVER_ONLY_SECRET", "server-secret")
 	c := &acpProvider{
 		opts: Options{
 			ProfilesRoot:         root,
+			Env:                  map[string]string{"GITLAB_TOKEN": "platform-gl", "CURSOR_API_KEY": "platform-cursor"},
 			ProjectIDForWorkflow: func(string) string { return "proj-1" },
 			ProjectCredentialsForProject: func(string) map[string]string {
-				return map[string]string{"GRASP_ARTIFACT_TOKEN": "user-token"}
-			},
-			ProjectCredentialFallbackEnvForProject: func(string) map[string]string {
-				return map[string]string{"LEAK": "SERVER_ONLY_SECRET", "ALIASED": "PROJECT_ALIAS_SRC"}
+				return map[string]string{"GRASP_ARTIFACT_TOKEN": "user-token", "GRASP_CURSOR_API_KEY": "cred-key"}
 			},
 		},
 		backend: BackendCursor,
@@ -371,17 +367,34 @@ func TestSpecProjectCredentialsDoNotReadProcessEnvOrShadowPlatformKeys(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := spec.Env["GITHUB_TOKEN"]; ok {
-		t.Fatalf("server process GITHUB_TOKEN leaked into sandbox: %q", spec.Env["GITHUB_TOKEN"])
+	for _, k := range []string{"GITHUB_TOKEN", "GITLAB_TOKEN"} {
+		if v, ok := spec.Env[k]; ok {
+			t.Fatalf("%s must come only from project credentials, got %q", k, v)
+		}
 	}
-	if _, ok := spec.Env["LEAK"]; ok {
-		t.Fatal("fallback binding must not read the server process environment")
+	if spec.Env["GRASP_CURSOR_API_KEY"] != "cred-key" || spec.Env["CURSOR_API_KEY"] != "cred-key" {
+		t.Fatalf("auth must come from project credentials: %#v", spec.Env)
 	}
-	if spec.Env["ALIASED"] != "alias" {
-		t.Fatalf("fallback from project env not applied: %q", spec.Env["ALIASED"])
+	if spec.Env["FEATURE"] != "1" {
+		t.Fatalf("non-secret Agent env dropped: %#v", spec.Env)
 	}
 	if spec.Env["GRASP_ARTIFACT_TOKEN"] != "platform-token" {
 		t.Fatalf("platform token shadowed by credential: %q", spec.Env["GRASP_ARTIFACT_TOKEN"])
+	}
+}
+
+func TestSpecAgentEnvSecretIsNotAuthSource(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "demo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"env":{"GRASP_CURSOR_API_KEY":"agent-key"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := &acpProvider{opts: Options{ProfilesRoot: root}, backend: BackendCursor}
+	if _, err := c.spec(NodeReq{RunID: "run-1", Config: map[string]any{"agent_profile": "demo"}}); err == nil {
+		t.Fatal("Agent env secret must not satisfy the auth gate")
 	}
 }
 
@@ -391,7 +404,7 @@ func TestResolvedMCPSpecsSubstitutesSharedEnv(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	agentJSON := `{"mcp":[{"name":"server-log","url":"https://logs.example/mcp","headers":{"Authorization":"Bearer ${LOG_CENTER_TOKEN}"}},{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":{"GRASP_ARTIFACT_TOKEN":"evil-agent","GRASP_CURSOR_API_KEY":"k"}}`
+	agentJSON := `{"mcp":[{"name":"server-log","url":"https://logs.example/mcp","headers":{"Authorization":"Bearer ${LOG_CENTER_TOKEN}"}},{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":{"GRASP_ARTIFACT_TOKEN":"evil-agent"}}`
 	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(agentJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -403,8 +416,9 @@ func TestResolvedMCPSpecsSubstitutesSharedEnv(t *testing.T) {
 					"LOG_CENTER_TOKEN": "secret-from-shared",
 				}}
 			},
-			ProfilesRoot: root,
-			MCPEndpoint:  "http://mcp.local",
+			ProjectCredentialsForProject: testCredentials,
+			ProfilesRoot:                 root,
+			MCPEndpoint:                  "http://mcp.local",
 		},
 		backend: BackendCursor,
 	}
@@ -523,11 +537,11 @@ func TestSpecSkipsRunEnvWithoutLookup(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"env":{"GRASP_CURSOR_API_KEY":"k"}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c := &acpProvider{
-		opts:    Options{ProfilesRoot: root},
+		opts:    Options{ProfilesRoot: root, ProjectCredentialsForProject: testCredentials},
 		backend: BackendCursor,
 	}
 	spec, err := c.spec(NodeReq{

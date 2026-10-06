@@ -1,6 +1,6 @@
 import type { Agent, AgentCapabilities, MCPServer } from '@/lib/api/api'
 import { normalizeCapabilities } from '@/lib/workflow/agentCapabilities'
-import type { GitCredentialType } from '@/lib/agent/gitCredentialAnalysis'
+import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
 import {
   ACP_BACKENDS,
   normalizeRegions,
@@ -23,8 +23,6 @@ export type AgentStudioDraft = {
   projectId: string
   acpBackend: BackendId
   gitCredentialType?: GitCredentialType
-  gitSshKnownHosts?: string
-  gitSshPrivateKey?: string
   files: DraftFile[]
   mcp: DraftMCP[]
   env: KV[]
@@ -33,14 +31,10 @@ export type AgentStudioDraft = {
   capabilities: AgentCapabilities | null
 }
 
-/** @deprecated Prefer AgentStudioDraft; kept as Draft alias for local call sites. */
-export type Draft = AgentStudioDraft
-
 export const DEFAULT_CONFIG_ROOT = '/root/.cursor'
 export const DEFAULT_WORKSPACE_DIR = '/root/workspace'
 
 export const ARTIFACT_STORE = 'artifact-store'
-export const LEGACY_PM_LEADER = 'pm-leader'
 export const MEMORY_STORE = 'memory-store'
 export const CONTEXT_STORE = 'context-store'
 export const TASK_SCHEDULER = 'task-scheduler'
@@ -120,11 +114,9 @@ function cloneCapabilities(c: AgentCapabilities): AgentCapabilities {
 export function toDraft(a: Agent): AgentStudioDraft {
   return {
     name: a.name,
-    projectId: a.projectId || '',
+    projectId: a.projectId,
     acpBackend: (a.acpBackend as BackendId) || 'cursor',
     gitCredentialType: a.gitCredentialType,
-    gitSshKnownHosts: a.gitSshKnownHosts || '',
-    gitSshPrivateKey: a.gitSshPrivateKey || '',
     files: (a.files || []).map((f) => ({ path: f.path, content: f.content })),
     mcp: (a.mcp || []).map(apiMcpToDraft),
     env: recToKV(a.env),
@@ -139,11 +131,9 @@ export function toDraft(a: Agent): AgentStudioDraft {
 export function fromDraftRaw(d: AgentStudioDraft): Agent {
   return {
     name: d.name,
-    projectId: d.projectId?.trim() || '',
+    projectId: d.projectId.trim(),
     acpBackend: d.acpBackend || 'cursor',
     ...(d.gitCredentialType ? { gitCredentialType: d.gitCredentialType } : {}),
-    gitSshKnownHosts: d.gitSshKnownHosts || '',
-    gitSshPrivateKey: d.gitSshPrivateKey || '',
     files: d.files.filter((f) => f.path.trim()).map((f) => ({ path: f.path.trim(), content: f.content })),
     mcp: d.mcp.filter((m) => m.name.trim()).map(draftMcpToApi),
     env: kvToRec(d.env),
@@ -158,11 +148,6 @@ export function fromDraftRaw(d: AgentStudioDraft): Agent {
 export function fromDraft(d: AgentStudioDraft): Agent {
   const payload = fromDraftRaw(d)
   payload.env = normalizeRegions(payload.env || {}, d.acpBackend, 'preserve-special').env
-  // SSH credentials live in meta; do not persist GIT_SSH_* in ordinary env.
-  if (payload.env) {
-    delete payload.env.GIT_SSH_PRIVATE_KEY
-    delete payload.env.GIT_SSH_KNOWN_HOSTS
-  }
   return payload
 }
 
@@ -191,8 +176,4 @@ export function platformPresetKind(name: string): PlatformPresetKind | null {
 
 export function isPlatformPresetName(name: string) {
   return platformPresetKind(name) !== null
-}
-
-export function isLegacyPmLeaderName(name: string) {
-  return name.trim() === LEGACY_PM_LEADER
 }

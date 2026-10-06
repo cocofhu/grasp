@@ -298,17 +298,17 @@ RUN npm install -g chrome-devtools-mcp
 # Grasp 运行时（backend/ACP 桥接、preview-inject 与 startup.sh 等脚本）不打进镜像：
 # 由 Grasp 服务端下发运行时包（scripts/build-sandbox-runtime.sh 构建），
 # grasp-bootstrap.sh 安装到 /opt/grasp-runtime/<version> 并切换 current。
-# 旧路径保留为指向 current 的软链，服务端与脚本里的调用不变。
+# 固定路径（/usr/local/bin、/usr/local/share）为指向 current 的软链。
 # IMAGE_LEVEL：镜像提供的能力级别，运行时包 MANIFEST 的 min_image 必须 ≤ 它。
 COPY IMAGE_LEVEL /etc/grasp-image-level
 COPY scripts/grasp-bootstrap.sh /grasp-bootstrap.sh
 RUN chmod +x /grasp-bootstrap.sh && \
     mkdir -p /opt/grasp-runtime && \
     cur=/opt/grasp-runtime/current && \
-    for b in backend acp-bridge acp-gateway cursor-acp; do ln -sfn "$cur/bin/backend" "/usr/local/bin/$b"; done && \
+    for b in backend acp-bridge; do ln -sfn "$cur/bin/backend" "/usr/local/bin/$b"; done && \
     ln -sfn "$cur/bin/preview-inject" /usr/local/bin/preview-inject && \
     for s in preview-inject.sh vnc-preview.sh services.sh; do ln -sfn "$cur/scripts/$s" "/usr/local/bin/$s"; done && \
-    for d in backend acp-bridge acp-gateway cursor-acp; do ln -sfn "$cur/share/backend" "/usr/local/share/$d"; done
+    for d in backend acp-bridge; do ln -sfn "$cur/share/backend" "/usr/local/share/$d"; done
 
 ENV ACP_BRIDGE_PORT=8765
 

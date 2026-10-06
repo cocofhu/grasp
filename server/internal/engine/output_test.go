@@ -14,9 +14,8 @@ func TestResolveOutputResults(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("results len = %d", len(got))
 	}
-	fallback := resolveOutputResults(map[string]any{"result": "{{nodes.old.outputs.content}}"})
-	if len(fallback) != 1 || fallback[0] != "{{nodes.old.outputs.content}}" {
-		t.Fatalf("fallback = %v", fallback)
+	if got := resolveOutputResults(map[string]any{"result": "{{nodes.old.outputs.content}}"}); len(got) != 0 {
+		t.Fatalf("singular result must be ignored: %v", got)
 	}
 	if len(resolveOutputResults(map[string]any{})) != 0 {
 		t.Fatal("empty config should yield no templates")
@@ -73,34 +72,6 @@ func TestExecOutputMultiSourceAndFallback(t *testing.T) {
 		t.Errorf("missing artifact card = %#v", c2)
 	}
 	_ = fp
-}
-
-func TestExecOutputLegacyResultFallback(t *testing.T) {
-	g := models.Graph{
-		Nodes: []models.Node{
-			{ID: "input", Type: "input"},
-			{ID: "agent", Type: "agent", Caps: capsPlain, Label: "A", Config: map[string]any{"agent_profile": "ImplementAgent"}},
-			{ID: "output", Type: "output", Config: map[string]any{
-				"result": "{{nodes.agent.outputs.content}}",
-			}},
-		},
-		Edges: []models.Edge{
-			{ID: "e1", Source: "input", Target: "agent"},
-			{ID: "e2", Source: "agent", Target: "output"},
-		},
-	}
-	eng, db, _ := setupEngineGraphP(t, g)
-	run, err := eng.StartRun("wf", nil, "test")
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	waitRunStatus(t, db, run.ID, "completed")
-	var sr models.StateRun
-	db.Where("run_id = ? AND node_id = ?", run.ID, "output").First(&sr)
-	cards := sr.Outputs["outputCards"].([]any)
-	if len(cards) != 1 {
-		t.Fatalf("expected 1 card from legacy result, got %d", len(cards))
-	}
 }
 
 func TestExecOutputEmptyResults(t *testing.T) {

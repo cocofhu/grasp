@@ -64,7 +64,6 @@ const sampleProject = {
   id: 'proj-a',
   name: 'Project A',
   description: 'desc',
-  sandboxEnv: [],
   variables: [],
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
@@ -143,7 +142,7 @@ describe('useProjectDetail', () => {
     expect(detail.workflows.value.length).toBe(1)
     expect(detail.hasInitialLoaded.value).toBe(true)
     expect(detail.parseProjectTab('board')).toBe('board')
-    expect(detail.parseProjectTab('pmSettings')).toBe('pmLeader')
+    expect(detail.parseProjectTab('pmSettings')).toBe('board')
 
     detail.setTab('workflows')
     expect(detail.tab.value).toBe('workflows')
@@ -172,20 +171,6 @@ describe('useProjectDetail', () => {
     document.dispatchEvent(new Event('click'))
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     window.dispatchEvent(new Event('scroll'))
-
-    app.unmount()
-  })
-
-  it('rewrites legacy pmMemory tab query', async () => {
-    const { detail, app, router } = await withProjectDetail('/projects/proj-a?tab=pmMemory')
-    await flushPromises()
-    await nextTick()
-
-    expect(detail.initialLegacyPmMemory).toBe(true)
-    detail.dismissPmMemoryMigration()
-    expect(detail.showPmMemoryMigration.value).toBe(false)
-    await detail.rewriteLegacyPmMemoryQuery()
-    expect(String(router.currentRoute.value.query.tab || '')).not.toBe('pmMemory')
 
     app.unmount()
   })

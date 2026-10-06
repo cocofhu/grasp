@@ -11,7 +11,7 @@ setTheme('light')
 const App = defineComponent({
   name: 'ReviewSessionUxHarness',
   setup() {
-    const surface = ref<'visual' | 'proposal'>('visual')
+    const surface = ref<'visual' | 'research'>('visual')
     const chatRef = ref<{
       applyReviewFrame?: (f: Record<string, unknown>) => void
       applyAcpEvents?: (e: { kind: string; text: string }[]) => void
@@ -22,7 +22,7 @@ const App = defineComponent({
       ;(window as unknown as { __reviewChat: typeof chatRef.value }).__reviewChat = chatRef.value
     })
 
-    function switchSurface(next: 'visual' | 'proposal') {
+    function switchSurface(next: 'visual' | 'research') {
       surface.value = next
       nextTick(() => {
         ;(window as unknown as { __reviewChat: typeof chatRef.value }).__reviewChat = chatRef.value
@@ -33,7 +33,7 @@ const App = defineComponent({
       const c = chatRef.value
       if (!c?.applyReviewFrame) return
       const text =
-        surface.value === 'visual' ? '视觉意见甲（队列首条）' : '方案意见甲（队列首条）'
+        surface.value === 'visual' ? '视觉意见甲（队列首条）' : '调研意见甲（队列首条）'
       c.applyReviewFrame({
         event: 'turn_begin',
         item: { text },
@@ -65,14 +65,14 @@ const App = defineComponent({
             'button',
             {
               type: 'button',
-              'data-testid': 'surface-proposal',
+              'data-testid': 'surface-research',
               class:
-                surface.value === 'proposal'
+                surface.value === 'research'
                   ? 'px-3 py-1.5 rounded bg-accent text-white text-sm'
                   : 'px-3 py-1.5 rounded border text-sm',
-              onClick: () => switchSurface('proposal'),
+              onClick: () => switchSurface('research'),
             },
-            '方案复审',
+            '调研复审',
           ),
           h(
             'button',

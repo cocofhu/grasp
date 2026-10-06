@@ -24,7 +24,7 @@ func seedPublishedWorkflow(t *testing.T, hn *harness, id string) {
 	t.Helper()
 	graph := minimalGraph()
 	wf := models.WorkflowDef{
-		ID: id, ProjectID: models.DefaultProjectID, Name: "API WF " + id, Status: "published", Version: 1,
+		ID: id, ProjectID: models.DefaultProjectID, Name: "API WF " + id, Version: 1, PublishedVersion: 1,
 		Graph: graph,
 	}
 	if err := hn.db.Create(&wf).Error; err != nil {
@@ -144,7 +144,7 @@ func TestV1APIAuthAndIsolation(t *testing.T) {
 func TestV1DraftWorkflowRejected(t *testing.T) {
 	hn := newHarness(t)
 	graph := minimalGraph()
-	wf := models.WorkflowDef{ID: "wf-draft", Name: "Draft", Status: "draft", Version: 0, Graph: graph}
+	wf := models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf-draft", Name: "Draft", Version: 0, Graph: graph}
 	if err := hn.db.Create(&wf).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +254,7 @@ func TestInternalStartRunUsesDraftGraph(t *testing.T) {
 	hn := newHarness(t)
 	graph := minimalGraph()
 	graph.Nodes[0].Label = "draft-head"
-	wf := models.WorkflowDef{ID: "wf-internal", Name: "Internal", Status: "draft", Version: 0, Graph: graph}
+	wf := models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf-internal", Name: "Internal", Version: 0, Graph: graph}
 	if err := hn.db.Create(&wf).Error; err != nil {
 		t.Fatal(err)
 	}

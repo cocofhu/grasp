@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue'
-import { api, isPaginated } from '@/lib/api/api'
+import { api } from '@/lib/api/api'
 import { i18n } from '@/lib/shared/i18n'
 import { beginRefresh, endRefresh } from '@/lib/shared/refreshChrome'
 import { createTimeoutController, isAbortError } from '@/lib/shared/loadingRequest'
@@ -79,8 +79,6 @@ function diffMembership(remote: InboxItem[]): PendingMeta {
   return { added, removed }
 }
 
-// Backward-compatible alias: list UI binds to displayedItems.
-const items = displayedItems
 const count = computed(() => totalCount.value)
 
 /** Separate flight slots so force/submit never joins an in-flight peek. */
@@ -105,10 +103,7 @@ async function fetchPeek(signal?: AbortSignal): Promise<{ items: InboxItem[]; to
     projectId: filters.projectId,
     tag: filters.tag,
   })
-  if (isPaginated(data)) {
-    return { items: data.items, total: data.total }
-  }
-  return { items: data, total: data.length }
+  return { items: data.items, total: data.total }
 }
 
 /** URL `?wf=&projectId=&tag=` — same source of truth as the inbox page filters. */
@@ -374,7 +369,6 @@ async function refresh(opts?: RefreshOptions): Promise<void> {
 
 export function usePendingGates() {
   return {
-    items,
     displayedItems,
     remoteItems,
     totalCount,

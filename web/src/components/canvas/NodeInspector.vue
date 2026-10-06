@@ -25,7 +25,6 @@ const props = defineProps<{
   edges: WFEdge[]
   agents: CanvasAgent[]
   agentsLoaded?: boolean
-  outputMigration?: boolean
   focusGoalTick?: number
 }>()
 const emit = defineEmits<{ (e: 'close'): void; (e: 'delete'): void }>()
@@ -44,7 +43,7 @@ watch(
 )
 const cfg = computed<Record<string, any>>(() => props.node.config)
 const isAgent = computed(() => props.node.type === 'agent')
-const isCollab = computed(() => props.node.type === 'human_gate' || props.node.type === 'proposal_select')
+const isCollab = computed(() => props.node.type === 'human_gate')
 
 watch(
   () => (props.node.type === 'human_gate' ? String(props.node.config?.body_template ?? '') : null),
@@ -108,7 +107,6 @@ const globalVars = computed(() => {
       add(n.config?.output_var || 'action')
       for (const f of (n.config?.form as any[]) || []) add(f?.key, 'paragraph')
     }
-    if (n.type === 'proposal_select') add(n.config?.output_var || 'selected_proposal')
     if (n.type === 'set_var') for (const a of (n.config?.assignments as any[]) || []) add(a?.var)
   }
   return names
@@ -343,7 +341,6 @@ const hue = computed(() => {
             :node="node"
             :all-nodes="allNodes"
             :edges="edges"
-            :show-migration="outputMigration && node.type === 'output'"
           />
 
           <VariablesField v-else-if="f.type === 'variables'" :config="cfg" />

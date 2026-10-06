@@ -57,7 +57,7 @@ func newSandboxService(t *testing.T, db *gorm.DB, ds *dockerState) *SandboxServi
 	skillsRoot := t.TempDir()
 	skills := NewAgentService(skillsRoot)
 	// Create an agent so Open can resolve a profile.
-	if err := skills.Save(Agent{Name: "agentA", AcpBackend: AcpBackendCursor, Env: map[string]string{"GRASP_CURSOR_API_KEY": "test-key"}, Files: []AgentFile{{Path: "rules/a.md", Content: "# a"}}}); err != nil {
+	if err := skills.Save(Agent{Name: "agentA", AcpBackend: AcpBackendCursor, Files: []AgentFile{{Path: "rules/a.md", Content: "# a"}}}); err != nil {
 		t.Fatal(err)
 	}
 	host := mcp.NewHost(NewArtifactService(db))
@@ -67,6 +67,9 @@ func newSandboxService(t *testing.T, db *gorm.DB, ds *dockerState) *SandboxServi
 		TTL:          time.Minute,
 		RunTTL:       time.Minute,
 		Max:          2,
+		ProjectCredentials: func(string) map[string]string {
+			return map[string]string{"GRASP_CURSOR_API_KEY": "test-key", "GRASP_OPENCODE_API_KEY": "sk-test"}
+		},
 	})
 }
 
@@ -495,7 +498,7 @@ func TestSandboxReconcileDestroysNonRunningGateway(t *testing.T) {
 	ds.setStatus("gw-error", "error")
 	db.Create(&models.Sandbox{Name: "gw-stopped", Purpose: "agent", Status: "stopped"})
 	ds.setStatus("gw-stopped", "stopped")
-	db.Create(&models.Sandbox{Name: "gw-pm-dead", Purpose: "pm", Status: "error"})
+	db.Create(&models.Sandbox{Name: "gw-pm-dead", Purpose: "agent", Status: "error"})
 	ds.setStatus("gw-pm-dead", "error")
 
 	s.ReconcileOnStartup(ctx)
@@ -669,13 +672,17 @@ func TestSandboxLogFallback(t *testing.T) {
 }
 
 // eventLogWSServer starts an httptest server whose /ws endpoint mimics the
-// cursor-acp bridge handshake, replying to {op:connect} with a connected frame
+// acp-bridge handshake, replying to {op:connect} with a connected frame
 // carrying a small eventLog. Returns the server and its host/port.
 func eventLogWSServer(t *testing.T) (*httptest.Server, string, int) {
 	t.Helper()
 	up := websocket.Upgrader{}
 	frame := `{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"hello"}}}}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/login" {
+			http.SetCookie(w, &http.Cookie{Name: "agentchat_session", Value: "test", Path: "/"})
+			return
+		}
 		c, err := up.Upgrade(w, r, nil)
 		if err != nil {
 			return
@@ -726,7 +733,7 @@ func TestSandboxEventsAndLog(t *testing.T) {
 	srv, host, port := eventLogWSServer(t)
 	defer srv.Close()
 
-	row := &models.Sandbox{Name: "grasp-sb-ev", Purpose: "test", Status: "running", Host: host, ACPPort: port}
+	row := &models.Sandbox{Name: "grasp-sb-ev", Purpose: "test", Status: "running", Host: host, ACPPort: port, Token: "test-password"}
 	db.Create(row)
 
 	events, err := s.Events(ctx, row.ID)
@@ -1081,7 +1088,7 @@ func fakeACPServer(t *testing.T) (*httptest.Server, int) {
 	// Mirror the real bridge's unified-auth login: hand out a session cookie so
 	// the platform's WaitForACPReady / ACP client can authenticate before /ws.
 	mux.HandleFunc("/api/login", func(w http.ResponseWriter, r *http.Request) {
-		http.SetCookie(w, &http.Cookie{Name: "cursor_acp_session", Value: "test-cookie", Path: "/"})
+		http.SetCookie(w, &http.Cookie{Name: "agentchat_session", Value: "test-cookie", Path: "/"})
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true,"next":"/"}`))
 	})
@@ -1097,21 +1104,22 @@ func fakeACPServer(t *testing.T) (*httptest.Server, int) {
 				return
 			}
 			var m struct {
-				Op string `json:"op"`
+				Op   string `json:"op"`
+				OpID string `json:"opId"`
 			}
 			json.Unmarshal(msg, &m)
 			switch m.Op {
 			case "connect":
 				c.WriteJSON(map[string]any{"op": "connected", "sessionId": "sess-1"})
 			case "chat":
-				c.WriteJSON(map[string]any{"op": "event", "data": map[string]any{
+				c.WriteJSON(map[string]any{"op": "event", "opId": m.OpID, "data": map[string]any{
 					"type": "session_update",
 					"update": map[string]any{
 						"sessionUpdate": "agent_message_chunk",
 						"content":       map[string]any{"type": "text", "text": "hi"},
 					},
 				}})
-				c.WriteJSON(map[string]any{"op": "event", "data": map[string]any{"type": "prompt_done"}})
+				c.WriteJSON(map[string]any{"op": "event", "opId": m.OpID, "data": map[string]any{"type": "prompt_done"}})
 			}
 		}
 	})
@@ -1180,7 +1188,6 @@ func TestSandboxOpenWithEffectiveKeepsNormalizedOpenCodeModel(t *testing.T) {
 		Name:       "agentA",
 		AcpBackend: "opencode",
 		Env: map[string]string{
-			"GRASP_OPENCODE_API_KEY":  "sk-test",
 			"GRASP_OPENCODE_PROVIDER": "tencent-tokenhub",
 			"ACP_BRIDGE_MODEL":        "deepseek/deepseek-flash",
 			"BROWSER_MCP":             "1",
@@ -1226,7 +1233,7 @@ func TestSandboxChatReconnect(t *testing.T) {
 	// re-attach (Attach -> ACP Connect) lazily.
 	name := "grasp-sb-reconn"
 	ds.setStatus(name, "running")
-	row := &models.Sandbox{Name: name, Profile: "agentA", Purpose: "test", Status: "running"}
+	row := &models.Sandbox{Name: name, Profile: "agentA", Purpose: "test", Status: "running", Token: "test-password"}
 	db.Create(row)
 
 	if err := s.Chat(ctx, row.ID, "hi", nil, func(json.RawMessage) {}); err != nil {

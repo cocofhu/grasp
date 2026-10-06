@@ -10,7 +10,6 @@ const props = defineProps<{
   node: WFNode
   allNodes: WFNode[]
   edges: WFEdge[]
-  showMigration?: boolean
 }>()
 
 const { t } = useI18n()
@@ -79,12 +78,6 @@ function onDrop(target: string) {
 
 <template>
   <div>
-    <div
-      v-if="showMigration"
-      class="rounded-lg mb-3 border border-info/35 bg-info/10 px-3 py-2.5 text-[11px] leading-relaxed text-txt2"
-      v-html="t('pages.workflowEditor.inspector.outputSources.migrationBanner')"
-    />
-
     <div class="rounded-lg border border-line bg-base">
       <template v-if="selected.length">
         <div

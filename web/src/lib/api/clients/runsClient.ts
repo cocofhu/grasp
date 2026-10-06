@@ -19,6 +19,16 @@ import type {
   SandboxView,
 } from '../apiTypes'
 
+type SharePermissionPreset = NonNullable<GateShareInboxStatus['permissionPreset']>
+type ShareLinkResult = {
+  id: string
+  url: string
+  ttlTier: string
+  permissionPreset: SharePermissionPreset
+  expiresAt: string
+  state: string
+}
+
 /** Body fragment for startRun's opening message; blank messages are omitted. */
 function startRunFirstMessage(
   msg?: { text?: string; images?: ClarifyImage[] } | null,
@@ -63,10 +73,7 @@ export const runsClient = {
     const q = qs.toString()
     const path = q ? `/runs?${q}` : '/runs'
     const init = params?.signal ? { signal: params.signal } : undefined
-    if (params?.page != null || params?.pageSize != null) {
-      return req<PaginatedResponse<Run>>(path, init)
-    }
-    return req<Run[]>(path, init)
+    return req<PaginatedResponse<Run>>(path, init)
   },
   getRun: (id: string) => req<Run>(`/runs/${id}`),
   runArtifacts: (id: string) => req<Artifact[]>(`/runs/${id}/artifacts`),
@@ -128,29 +135,29 @@ export const runsClient = {
       method: 'POST',
       body: JSON.stringify({ action, form }),
     }),
-  createGateShareLink: (runId: string, nodeId: string, ttlTier = '24h', permissionPreset = 'full') =>
-    req<{ id: string; url: string; ttlTier: string; permissionPreset: string; expiresAt: string; state: string }>(
+  createGateShareLink: (runId: string, nodeId: string, ttlTier = '24h', permissionPreset: SharePermissionPreset = 'full') =>
+    req<ShareLinkResult>(
       `/runs/${runId}/gates/${nodeId}/share-link`,
       { method: 'POST', body: JSON.stringify({ ttlTier, permissionPreset }) },
     ),
   getGateShareLink: (runId: string, nodeId: string) =>
     req<GateShareInboxStatus>(`/runs/${runId}/gates/${nodeId}/share-link`),
   regenGateShareLink: (runId: string, nodeId: string) =>
-    req<{ id: string; url: string; ttlTier: string; permissionPreset: string; expiresAt: string; state: string }>(
+    req<ShareLinkResult>(
       `/runs/${runId}/gates/${nodeId}/share-link/regen`,
       { method: 'POST' },
     ),
   revokeGateShareLink: (runId: string, nodeId: string) =>
     req<{ status: string }>(`/runs/${runId}/gates/${nodeId}/share-link/revoke`, { method: 'POST' }),
-  createReviewShareLink: (runId: string, nodeId: string, ttlTier = '24h', permissionPreset = 'full') =>
-    req<{ id: string; url: string; ttlTier: string; permissionPreset: string; expiresAt: string; state: string }>(
+  createReviewShareLink: (runId: string, nodeId: string, ttlTier = '24h', permissionPreset: SharePermissionPreset = 'full') =>
+    req<ShareLinkResult>(
       `/runs/${runId}/reviews/${nodeId}/share-link`,
       { method: 'POST', body: JSON.stringify({ ttlTier, permissionPreset }) },
     ),
   getReviewShareLink: (runId: string, nodeId: string) =>
     req<GateShareInboxStatus>(`/runs/${runId}/reviews/${nodeId}/share-link`),
   regenReviewShareLink: (runId: string, nodeId: string) =>
-    req<{ id: string; url: string; ttlTier: string; permissionPreset: string; expiresAt: string; state: string }>(
+    req<ShareLinkResult>(
       `/runs/${runId}/reviews/${nodeId}/share-link/regen`,
       { method: 'POST' },
     ),
@@ -161,7 +168,7 @@ export const runsClient = {
       items: {
         name: string
         kind: string
-        readonly?: boolean
+        readonly: boolean
         nodeId?: string
         outputKey?: string
       }[]

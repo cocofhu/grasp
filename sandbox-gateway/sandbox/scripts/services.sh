@@ -28,7 +28,7 @@ truthy() {
   esac
 }
 
-backend_port() { echo "${ACP_BRIDGE_PORT:-${CURSOR_ACP_PORT:-8765}}"; }
+backend_port() { echo "${ACP_BRIDGE_PORT:-8765}"; }
 
 pid_alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
 
@@ -71,9 +71,8 @@ start_backend() {
     return 1
   fi
   local args=(-listen "0.0.0.0:${port}" -web "$SHARE_DIR/web" -gin-mode release)
-  pw="${ACP_BRIDGE_PASSWORD:-${CURSOR_ACP_PASSWORD:-}}"
+  pw="${ACP_BRIDGE_PASSWORD:-}"
   [ -n "$pw" ] && args+=(-password "$pw")
-  export ACP_BRIDGE_MODEL="${ACP_BRIDGE_MODEL:-${CURSOR_ACP_MODEL:-}}"
   (
     service_log_redirect
     cd "${WORKSPACE_DIR:-/root/workspace}" || exit 1

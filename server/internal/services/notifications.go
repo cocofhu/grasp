@@ -149,7 +149,7 @@ func (s *NotificationService) ListPage(username, filter string, page, pageSize i
 	}, nil
 }
 
-// List returns all terminal runs (legacy helper for tests); prefer ListPage in handlers.
+// List returns all terminal runs unpaged; handlers use ListPage.
 func (s *NotificationService) List(username string) ([]NotificationItemDTO, error) {
 	res, err := s.ListPage(username, "all", 1, 1<<31-1)
 	if err != nil {

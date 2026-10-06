@@ -19,13 +19,18 @@ func TestNormalizeBackend(t *testing.T) {
 		{"codebuddy", BackendCodeBuddy},
 		{"trae", BackendTrae},
 		{"opencode", BackendOpenCode},
-		{"", BackendCursor},
-		{" unknown ", BackendCursor},
-		{"CURSOR", BackendCursor}, // case-sensitive; unknown → cursor
+		{" opencode ", BackendOpenCode},
+		{"", ""},
+		{" unknown ", ""},
+		{"CURSOR", ""}, // case-sensitive
 	}
 	for _, tc := range cases {
 		if got := NormalizeBackend(tc.in); got != tc.want {
 			t.Fatalf("NormalizeBackend(%q)=%q want %q", tc.in, got, tc.want)
+		}
+		got, err := ParseBackend(tc.in)
+		if got != tc.want || (err == nil) != (tc.want != "") {
+			t.Fatalf("ParseBackend(%q)=%q,%v want %q", tc.in, got, err, tc.want)
 		}
 	}
 }
@@ -66,61 +71,34 @@ func TestAgentRuntimeLabel(t *testing.T) {
 	}
 }
 
-func TestMergeAuthEnv_TraeAliases(t *testing.T) {
+func TestMergeAuthEnv_CredentialKeyOnly(t *testing.T) {
 	cases := []struct {
-		name string
-		env  map[string]string
-		want string
+		backend AcpBackend
+		credKey string
+		cliKey  string
 	}{
-		{"APPROVING", map[string]string{"GRASP_TRAE_API_KEY": "trae-lt-a"}, "trae-lt-a"},
-		{"legacy TRAE_API_KEY", map[string]string{"TRAE_API_KEY": "trae-lt-b"}, "trae-lt-b"},
-		{"official token", map[string]string{EnvTraeCLIToken: "trae-lt-c"}, "trae-lt-c"},
+		{BackendCursor, envauth.EnvCursorAPIKey, "CURSOR_API_KEY"},
+		{BackendClaudeCode, envauth.EnvClaudeAPIKey, "ANTHROPIC_API_KEY"},
+		{BackendCodeBuddy, envauth.EnvCodeBuddyAPIKey, "CODEBUDDY_API_KEY"},
+		{BackendTrae, envauth.EnvTraeAPIKey, EnvTraeCLIToken},
+		{BackendOpenCode, envauth.EnvOpenCodeAPIKey, "OPENCODE_API_KEY"},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			out, err := MergeAuthEnv(BackendTrae, tc.env)
+		t.Run(string(tc.backend), func(t *testing.T) {
+			out, err := MergeAuthEnv(tc.backend, map[string]string{tc.credKey: "cred"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := out[EnvTraeCLIToken]; got != tc.want {
-				t.Fatalf("%s=%q want %q (env=%#v)", EnvTraeCLIToken, got, tc.want, out)
+			if out[tc.cliKey] != "cred" {
+				t.Fatalf("%s=%q want cred (env=%#v)", tc.cliKey, out[tc.cliKey], out)
+			}
+			if _, err := MergeAuthEnv(tc.backend, map[string]string{tc.cliKey: "cli"}); err == nil {
+				t.Fatalf("%s alone must not satisfy auth", tc.cliKey)
 			}
 		})
 	}
-}
-
-func TestMergeAuthEnv_TraeKeyPreference(t *testing.T) {
-	// agentKeys order: APPROVING → TRAE_API_KEY → TRAECLI token
-	out, err := MergeAuthEnv(BackendTrae, map[string]string{
-		"GRASP_TRAE_API_KEY": "trae-lt-first",
-		"TRAE_API_KEY":       "trae-lt-second",
-		EnvTraeCLIToken:      "trae-lt-third",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if out[EnvTraeCLIToken] != "trae-lt-first" {
-		t.Fatalf("preference=%q want trae-lt-first", out[EnvTraeCLIToken])
-	}
-}
-
-func TestMergeAuthEnv_CodeBuddyAliases(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		env  map[string]string
-	}{
-		{"APPROVING", map[string]string{"GRASP_CODEBUDDY_API_KEY": "ck_a"}},
-		{"official", map[string]string{"CODEBUDDY_API_KEY": "ck_b"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			out, err := MergeAuthEnv(BackendCodeBuddy, tc.env)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if out["CODEBUDDY_API_KEY"] == "" {
-				t.Fatalf("CODEBUDDY_API_KEY unset: %#v", out)
-			}
-		})
+	if _, err := MergeAuthEnv(BackendTrae, map[string]string{"TRAE_API_KEY": "legacy"}); err == nil {
+		t.Fatal("TRAE_API_KEY must not satisfy auth")
 	}
 }
 
@@ -140,9 +118,9 @@ func TestMergeAuthEnv_MissingKey(t *testing.T) {
 
 func TestMergeAuthEnv_CursorNoRegionMutation(t *testing.T) {
 	out, err := MergeAuthEnv(BackendCursor, map[string]string{
-		"CURSOR_API_KEY":   "ck",
-		EnvCodeBuddyRegion: "staging",
-		EnvTraeRegion:      "intl",
+		"GRASP_CURSOR_API_KEY": "ck",
+		EnvCodeBuddyRegion:     "staging",
+		EnvTraeRegion:          "intl",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -161,7 +139,7 @@ func TestMergeAuthEnv_CursorNoRegionMutation(t *testing.T) {
 func TestMergeRegionEnv_CodeBuddy(t *testing.T) {
 	t.Run("default public", func(t *testing.T) {
 		out, err := MergeAuthEnv(BackendCodeBuddy, map[string]string{
-			"CODEBUDDY_API_KEY": "ck_x",
+			"GRASP_CODEBUDDY_API_KEY": "ck_x",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -176,8 +154,8 @@ func TestMergeRegionEnv_CodeBuddy(t *testing.T) {
 	t.Run("internal via region alias", func(t *testing.T) {
 		for _, alias := range []string{"cn", "china", "internal"} {
 			out, err := MergeAuthEnv(BackendCodeBuddy, map[string]string{
-				"CODEBUDDY_API_KEY": "ck_x",
-				EnvCodeBuddyRegion:  alias,
+				"GRASP_CODEBUDDY_API_KEY": "ck_x",
+				EnvCodeBuddyRegion:        alias,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -190,8 +168,8 @@ func TestMergeRegionEnv_CodeBuddy(t *testing.T) {
 	t.Run("intl aliases map to public", func(t *testing.T) {
 		for _, alias := range []string{"public", "intl", "international"} {
 			out, err := MergeAuthEnv(BackendCodeBuddy, map[string]string{
-				"CODEBUDDY_API_KEY": "ck_x",
-				EnvCodeBuddyRegion:  alias,
+				"GRASP_CODEBUDDY_API_KEY": "ck_x",
+				EnvCodeBuddyRegion:        alias,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -203,8 +181,8 @@ func TestMergeRegionEnv_CodeBuddy(t *testing.T) {
 	})
 	t.Run("ioa via region", func(t *testing.T) {
 		out, err := MergeAuthEnv(BackendCodeBuddy, map[string]string{
-			"CODEBUDDY_API_KEY": "ck_x",
-			EnvCodeBuddyRegion:  "ioa",
+			"GRASP_CODEBUDDY_API_KEY": "ck_x",
+			EnvCodeBuddyRegion:        "ioa",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -215,8 +193,8 @@ func TestMergeRegionEnv_CodeBuddy(t *testing.T) {
 	})
 	t.Run("internet-only without region", func(t *testing.T) {
 		out, err := MergeAuthEnv(BackendCodeBuddy, map[string]string{
-			"CODEBUDDY_API_KEY":  "ck_x",
-			EnvCodeBuddyInternet: "internal",
+			"GRASP_CODEBUDDY_API_KEY": "ck_x",
+			EnvCodeBuddyInternet:      "internal",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -230,8 +208,8 @@ func TestMergeRegionEnv_CodeBuddy(t *testing.T) {
 	})
 	t.Run("unknown region passthrough", func(t *testing.T) {
 		out, err := MergeAuthEnv(BackendCodeBuddy, map[string]string{
-			"CODEBUDDY_API_KEY": "ck_x",
-			EnvCodeBuddyRegion:  "custom-site",
+			"GRASP_CODEBUDDY_API_KEY": "ck_x",
+			EnvCodeBuddyRegion:        "custom-site",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -275,9 +253,9 @@ func TestMergeRegionEnv_CodeBuddy(t *testing.T) {
 	t.Run("staging keeps custom BASE_URL for settings endpoint", func(t *testing.T) {
 		custom := "https://staging.example.com"
 		out, err := MergeAuthEnv(BackendCodeBuddy, map[string]string{
-			"CODEBUDDY_API_KEY": "ck_x",
-			EnvCodeBuddyRegion:  "staging",
-			EnvCodeBuddyBaseURL: custom,
+			"GRASP_CODEBUDDY_API_KEY": "ck_x",
+			EnvCodeBuddyRegion:        "staging",
+			EnvCodeBuddyBaseURL:       custom,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -292,9 +270,9 @@ func TestMergeRegionEnv_CodeBuddy(t *testing.T) {
 	})
 	t.Run("explicit official vars win", func(t *testing.T) {
 		out, err := MergeAuthEnv(BackendCodeBuddy, map[string]string{
-			"CODEBUDDY_API_KEY":  "ck_x",
-			EnvCodeBuddyRegion:   "cn",
-			EnvCodeBuddyInternet: "ioa",
+			"GRASP_CODEBUDDY_API_KEY": "ck_x",
+			EnvCodeBuddyRegion:        "cn",
+			EnvCodeBuddyInternet:      "ioa",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -330,7 +308,7 @@ func TestCodeBuddySettingsForEnv(t *testing.T) {
 func TestMergeRegionEnv_Trae(t *testing.T) {
 	t.Run("cn default no host", func(t *testing.T) {
 		out, err := MergeAuthEnv(BackendTrae, map[string]string{
-			EnvTraeCLIToken: "trae-lt-x",
+			"GRASP_TRAE_API_KEY": "trae-lt-x",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -342,8 +320,8 @@ func TestMergeRegionEnv_Trae(t *testing.T) {
 	t.Run("cn aliases leave host unset", func(t *testing.T) {
 		for _, alias := range []string{"cn", "china", "internal"} {
 			out, err := MergeAuthEnv(BackendTrae, map[string]string{
-				EnvTraeCLIToken: "trae-lt-x",
-				EnvTraeRegion:   alias,
+				"GRASP_TRAE_API_KEY": "trae-lt-x",
+				EnvTraeRegion:        alias,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -372,8 +350,8 @@ func TestMergeRegionEnv_Trae(t *testing.T) {
 	})
 	t.Run("unknown region no host mutation", func(t *testing.T) {
 		out, err := MergeAuthEnv(BackendTrae, map[string]string{
-			EnvTraeCLIToken: "trae-lt-x",
-			EnvTraeRegion:   "corp-custom",
+			"GRASP_TRAE_API_KEY": "trae-lt-x",
+			EnvTraeRegion:        "corp-custom",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -384,9 +362,9 @@ func TestMergeRegionEnv_Trae(t *testing.T) {
 	})
 	t.Run("explicit host wins", func(t *testing.T) {
 		out, err := MergeAuthEnv(BackendTrae, map[string]string{
-			EnvTraeCLIToken: "trae-lt-x",
-			EnvTraeRegion:   "intl",
-			EnvTraeCLIHost:  "https://corp.example",
+			"GRASP_TRAE_API_KEY": "trae-lt-x",
+			EnvTraeRegion:        "intl",
+			EnvTraeCLIHost:       "https://corp.example",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -398,7 +376,7 @@ func TestMergeRegionEnv_Trae(t *testing.T) {
 }
 
 func TestIsPlatformAuthEnvKey(t *testing.T) {
-	for _, k := range []string{"CURSOR_API_KEY", "ANTHROPIC_API_KEY", "CODEBUDDY_API_KEY", "TRAE_API_KEY", EnvTraeCLIToken} {
+	for _, k := range []string{"CURSOR_API_KEY", "ANTHROPIC_API_KEY", "CODEBUDDY_API_KEY", EnvTraeCLIToken} {
 		if !envauth.IsPlatformAuthEnvKey(k) {
 			t.Fatalf("%s should be platform auth key", k)
 		}
@@ -441,7 +419,7 @@ func TestPrepareAuthEnv_SettingsOnly(t *testing.T) {
 func TestPrepareAuthEnv_EnvOnly(t *testing.T) {
 	workDir := t.TempDir()
 	out, err := PrepareAuthEnv(BackendCursor, map[string]string{
-		"CURSOR_API_KEY": "crsr-env",
+		"GRASP_CURSOR_API_KEY": "crsr-env",
 	}, workDir)
 	if err != nil {
 		t.Fatalf("PrepareAuthEnv: %v", err)
@@ -486,7 +464,7 @@ func TestPrepareAuthEnv_EnvOverridesSettings(t *testing.T) {
 	writeSettingsJSON(workDir, `{"env":{"ANTHROPIC_API_KEY":"from-settings"}}`)
 
 	out, err := PrepareAuthEnv(BackendClaudeCode, map[string]string{
-		"ANTHROPIC_API_KEY": "from-env",
+		"GRASP_CLAUDE_API_KEY": "from-env",
 	}, workDir)
 	if err != nil {
 		t.Fatalf("PrepareAuthEnv: %v", err)
@@ -590,7 +568,7 @@ func TestPrepareAuthEnv_SettingsFileExistsNoEnvNoKeys(t *testing.T) {
 func TestPrepareAuthEnv_NoSettingsEnvConfigured(t *testing.T) {
 	workDir := t.TempDir()
 	out, err := PrepareAuthEnv(BackendCursor, map[string]string{
-		"CURSOR_API_KEY": "crsr-env",
+		"GRASP_CURSOR_API_KEY": "crsr-env",
 	}, workDir)
 	if err != nil {
 		t.Fatalf("PrepareAuthEnv: %v", err)

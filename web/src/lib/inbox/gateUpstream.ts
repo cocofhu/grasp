@@ -22,7 +22,7 @@ export type NodeExecLike = {
 
 export type ResolveUpstreamResult = {
   outputs: Record<string, any> | null
-  /** Iteration used for the preview banner (pointer N, or legacy pick). */
+  /** Iteration used for the preview banner (pointer N; null without a pointer). */
   selectedIteration: number | null
   /** Gate has upstreamNodeId + upstreamIteration. */
   usedPointer: boolean
@@ -87,10 +87,7 @@ export function pickProductRef(bodyTemplate: string): GateUpstreamRef | null {
  * artifact("name"). Dedupes by artifact name; preserves discovery order
  * (output refs first, then artifact() refs).
  */
-export function listPrimaryProducts(
-  bodyTemplate: string,
-  opts?: { proposalSelectFrom?: string; isProposalSelect?: boolean },
-): GatePrimaryProductRef[] {
+export function listPrimaryProducts(bodyTemplate: string): GatePrimaryProductRef[] {
   const seen = new Set<string>()
   const out: GatePrimaryProductRef[] = []
 
@@ -119,11 +116,6 @@ export function listPrimaryProducts(
     add({ name, outputKey, kind: inferArtifactKind(name) })
   }
 
-  if (!out.length && opts?.isProposalSelect) {
-    const from = (opts.proposalSelectFrom || 'proposals.json').trim() || 'proposals.json'
-    add({ name: from, outputKey: 'proposals', kind: inferArtifactKind(from) })
-  }
-
   return out
 }
 
@@ -141,9 +133,8 @@ export type NodeConfigLike = {
 export function listExcludedProduces(
   bodyTemplate: string,
   nodes: NodeConfigLike[] | undefined,
-  opts?: { proposalSelectFrom?: string; isProposalSelect?: boolean },
 ): string[] {
-  const products = listPrimaryProducts(bodyTemplate, opts)
+  const products = listPrimaryProducts(bodyTemplate)
   const primary = new Set(products.map((p) => p.name))
   const excluded: string[] = []
   const seen = new Set<string>()
@@ -165,32 +156,17 @@ export function listExcludedProduces(
   return excluded
 }
 
-function maxByIteration(execs: NodeExecLike[]): NodeExecLike | null {
-  if (!execs.length) return null
-  return [...execs].sort((a, b) => (b.iteration ?? 0) - (a.iteration ?? 0))[0]
-}
-
 /**
- * Resolve upstream outputs for a gate preview.
- * New gates with a pointer: exact iteration match → miss (no equals fallback).
- * Legacy gates without a pointer: pending → max(completed); resolved → ≤ gate.iteration.
+ * Resolve upstream outputs for a gate preview: exact pointer iteration match,
+ * else a pointer miss (no equals fallback). Gates without a pointer have no
+ * upstream snapshot.
  */
 export function resolveUpstreamOutputs(opts: {
-  productNodeId: string
   execsByNode: Record<string, NodeExecLike[] | undefined>
   upstreamNodeId?: string
   upstreamIteration?: number
-  gateIteration?: number
-  pending: boolean
 }): ResolveUpstreamResult {
-  const {
-    productNodeId,
-    execsByNode,
-    upstreamNodeId,
-    upstreamIteration,
-    gateIteration,
-    pending,
-  } = opts
+  const { execsByNode, upstreamNodeId, upstreamIteration } = opts
 
   const hasPointer =
     !!upstreamNodeId &&
@@ -217,35 +193,10 @@ export function resolveUpstreamOutputs(opts: {
     }
   }
 
-  const execs = execsByNode[productNodeId] || []
-  if (!execs.length) {
-    return { outputs: null, selectedIteration: null, usedPointer: false, pointerMiss: false }
-  }
-
-  if (pending) {
-    const completed = execs.filter((e) => e.status === 'completed')
-    const pool = completed.length ? completed : execs
-    const best = maxByIteration(pool)
-    return {
-      outputs: best?.outputs || null,
-      selectedIteration: best?.iteration ?? null,
-      usedPointer: false,
-      pointerMiss: false,
-    }
-  }
-
-  const cap = gateIteration ?? Number.MAX_SAFE_INTEGER
-  const candidates = execs.filter((e) => (e.iteration ?? 0) <= cap)
-  const best = maxByIteration(candidates.length ? candidates : execs)
-  return {
-    outputs: best?.outputs || null,
-    selectedIteration: best?.iteration ?? null,
-    usedPointer: false,
-    pointerMiss: false,
-  }
+  return { outputs: null, selectedIteration: null, usedPointer: false, pointerMiss: false }
 }
 
-/** Banner N: pointer iteration when set, else the legacy-selected iteration. */
+/** Banner N: pointer iteration when set, else the resolved iteration. */
 export function reviewingUpstreamN(opts: {
   upstreamIteration?: number
   selectedIteration: number | null

@@ -57,7 +57,7 @@ conversation/      … session/update 路由与扩展点（见下）
 
 - **事件与快照**：`Bridge.Broadcast` 下发 `op:event`、`connected`、`queue_state` 等，驱动前端与会话状态同步。
 - **队列与串行**：`ChatWithOpID` 配合 `enqueueMu`、`pumpPromptQueue` 实现每会话 FIFO 与单 worker 消费。
-- **持久化**：助手侧卡片在浏览器 **IndexedDB**（`acp-bridge-chat`，按 `sessionId` 单键）；legacy localStorage 一次性迁移；用户侧已发送句由 **`userTimeline`** 补齐，刷新后可重建交替流；IndexedDB 失败时依赖 eventLog 降级。
+- **持久化**：助手侧卡片在浏览器 **IndexedDB**（`acp-bridge-chat`，按 `sessionId` 单键）；用户侧已发送句由 **`userTimeline`** 补齐，刷新后可重建交替流；IndexedDB 失败时依赖 eventLog 降级。
 
 ## 日志约定（现状）
 

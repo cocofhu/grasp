@@ -206,12 +206,13 @@ describe('onboardingWizard', () => {
     const d = freshOnboardingDraft()
     d.apiKey = 'k'
     applyDefaultTeamNames(d.team, deriveOnboardingAgentNames('p1', '支付'))
-    expect(d.team.map((m) => m.name)).toEqual(['支付需求澄清', '支付实现', '支付测试评审'])
+    expect(d.team.map((m) => m.name)).toEqual(['支付需求澄清', '支付实现', '支付测试评审', '支付交付'])
     d.team[1]!.model = ' gpt-5 '
     setTeamMemberEnabled(d.team, 'test_review', false)
     expect(assembleBootstrapBody(d).agents).toEqual([
       { templateId: 'clarify', name: '支付需求澄清' },
       { templateId: 'implement', name: '支付实现', model: 'gpt-5' },
+      { templateId: 'deliver', name: '支付交付' },
     ])
   })
 
@@ -221,13 +222,14 @@ describe('onboardingWizard', () => {
     setTeamMemberEnabled(team, 'implement', false)
     expect(team.every((m) => m.enabled)).toBe(true)
     expect(isRequiredTemplate('test_review')).toBe(false)
+    expect(isRequiredTemplate('deliver')).toBe(false)
     expect(ONBOARDING_REQUIRED_TEMPLATE_IDS).toEqual(['clarify', 'implement'])
 
-    applyDefaultTeamNames(team, ['A需求澄清', 'A实现', 'A测试评审'])
+    applyDefaultTeamNames(team, ['A需求澄清', 'A实现', 'A测试评审', 'A交付'])
     team[0]!.name = '澄清官'
     team[0]!.nameEdited = true
-    applyDefaultTeamNames(team, ['B需求澄清', 'B实现', 'B测试评审'])
-    expect(team.map((m) => m.name)).toEqual(['澄清官', 'B实现', 'B测试评审'])
+    applyDefaultTeamNames(team, ['B需求澄清', 'B实现', 'B测试评审', 'B交付'])
+    expect(team.map((m) => m.name)).toEqual(['澄清官', 'B实现', 'B测试评审', 'B交付'])
   })
 
   it('validates team names: required, invalid, duplicate; unchecked members are ignored', () => {
@@ -251,17 +253,24 @@ describe('onboardingWizard', () => {
     applyDefaultTeamNames(team, [...ONBOARDING_AGENT_NAMES])
     team[1]!.name = '编码'
     const full = buildOnboardingWorkflowPreview(team)
-    expect(full.nodes.map((n) => n.id)).toEqual(['input', 'clarify', 'implement', 'test_review', 'output'])
+    expect(full.nodes.map((n) => n.id)).toEqual(['input', 'clarify', 'implement', 'test_review', 'deliver', 'output'])
     expect(full.nodes.find((n) => n.id === 'implement')?.name).toBe('编码')
     expect(full.edges).toEqual([
       { from: 'input', to: 'clarify' },
       { from: 'clarify', to: 'implement' },
       { from: 'implement', to: 'test_review' },
-      { from: 'test_review', to: 'output', handle: 'pass' },
+      { from: 'test_review', to: 'deliver', handle: 'pass' },
+      { from: 'deliver', to: 'output' },
       { from: 'test_review', to: 'implement', handle: 'fail' },
     ])
 
     setTeamMemberEnabled(team, 'test_review', false)
+    const noReview = buildOnboardingWorkflowPreview(team)
+    expect(noReview.nodes.map((n) => n.id)).toEqual(['input', 'clarify', 'implement', 'deliver', 'output'])
+    expect(noReview.edges).toContainEqual({ from: 'implement', to: 'deliver' })
+    expect(noReview.edges.some((e) => e.handle)).toBe(false)
+
+    setTeamMemberEnabled(team, 'deliver', false)
     const trimmed = buildOnboardingWorkflowPreview(team)
     expect(trimmed.nodes.map((n) => n.id)).toEqual(['input', 'clarify', 'implement', 'output'])
     expect(trimmed.edges.at(-1)).toEqual({ from: 'implement', to: 'output' })
@@ -306,23 +315,22 @@ describe('onboardingWizard', () => {
 
   it('treats cross-project first-install agent names as non-empty', () => {
     expect(isEmptyProjectForOnboarding(0, [{ name: '需求澄清', projectId: 'other' }], DEFAULT_PROJECT_ID)).toBe(false)
-    expect(isEmptyProjectForOnboarding(0, [{ name: '需求澄清', projectId: '' }], DEFAULT_PROJECT_ID)).toBe(true)
   })
 
   it('derives agent names from the template labels with the project prefix', () => {
-    expect(ONBOARDING_AGENT_NAMES).toEqual(['需求澄清', '实现', '测试评审'])
+    expect(ONBOARDING_AGENT_NAMES).toEqual(['需求澄清', '实现', '测试评审', '交付'])
     expect(sanitizeOnboardingPrefix('支付中台')).toBe('支付中台')
     expect(deriveOnboardingAgentNames(DEFAULT_PROJECT_ID, 'ignored')).toEqual([...ONBOARDING_AGENT_NAMES])
-    expect(deriveOnboardingAgentNames('p1', '支付中台')).toEqual(['支付中台需求澄清', '支付中台实现', '支付中台测试评审'])
+    expect(deriveOnboardingAgentNames('p1', '支付中台')).toEqual(['支付中台需求澄清', '支付中台实现', '支付中台测试评审', '支付中台交付'])
     expect(deriveOnboardingAgentNames('p1', '...')).toEqual([])
     expect(Array.from(sanitizeOnboardingPrefix('长'.repeat(80))).length).toBe(54)
   })
 
   it('localizes default role names and keeps every one a valid Agent name', () => {
     expect(onboardingRoleNames('zh-CN')).toEqual([...ONBOARDING_AGENT_NAMES])
-    expect(onboardingRoleNames('en')).toEqual(['Clarify', 'Implement', 'TestReview'])
-    expect(deriveOnboardingAgentNames(DEFAULT_PROJECT_ID, '', 'en')).toEqual(['Clarify', 'Implement', 'TestReview'])
-    expect(deriveOnboardingAgentNames('p1', 'Payments', 'en')).toEqual(['PaymentsClarify', 'PaymentsImplement', 'PaymentsTestReview'])
+    expect(onboardingRoleNames('en')).toEqual(['Clarify', 'Implement', 'TestReview', 'Deliver'])
+    expect(deriveOnboardingAgentNames(DEFAULT_PROJECT_ID, '', 'en')).toEqual(['Clarify', 'Implement', 'TestReview', 'Deliver'])
+    expect(deriveOnboardingAgentNames('p1', 'Payments', 'en')).toEqual(['PaymentsClarify', 'PaymentsImplement', 'PaymentsTestReview', 'PaymentsDeliver'])
     const long = deriveOnboardingAgentNames('p1', 'x'.repeat(80), 'en')
     for (const name of [...long, ...onboardingRoleNames('en'), ...onboardingRoleNames('zh-CN')]) {
       expect(validateAgentName(name)).toBe('')

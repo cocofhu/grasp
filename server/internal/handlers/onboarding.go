@@ -31,6 +31,7 @@ func (h *Handlers) BootstrapProjectOnboarding(c *gin.Context) {
 		switch {
 		case errors.Is(err, services.ErrOnboardingAPIKeyRequired),
 			errors.Is(err, services.ErrInvalidAgentName),
+			errors.Is(err, services.ErrInvalidAcpBackend),
 			errors.Is(err, services.ErrOnboardingInvalidTeam):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		case errors.Is(err, services.ErrOnboardingProjectNotFound):

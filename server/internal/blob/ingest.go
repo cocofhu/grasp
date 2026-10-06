@@ -94,9 +94,6 @@ func promptImagesToAny(imgs []models.PromptImage) []any {
 		m := map[string]any{"mimeType": im.MimeType}
 		if im.Ref != "" {
 			m["ref"] = im.Ref
-		} else if im.Data != "" {
-			// Legacy dual-read: keep inline data when not yet externalized.
-			m["data"] = im.Data
 		}
 		if im.Name != "" {
 			m["name"] = im.Name
@@ -109,20 +106,13 @@ func promptImagesToAny(imgs []models.PromptImage) []any {
 	return out
 }
 
-// ResolveForWire returns copies with Data filled for ACP/LLM transport.
-// Ref-backed images are loaded from store; legacy inline Data is kept.
-// When store is nil, only inline Data images are returned.
+// ResolveForWire returns copies with Data loaded from store for ACP/LLM transport.
 func ResolveForWire(ctx context.Context, store Store, images []models.PromptImage) ([]models.PromptImage, error) {
 	if len(images) == 0 {
 		return images, nil
 	}
 	out := make([]models.PromptImage, 0, len(images))
 	for i, im := range images {
-		if data := strings.TrimSpace(im.Data); data != "" {
-			cp := im
-			out = append(out, cp)
-			continue
-		}
 		ref := strings.TrimSpace(im.Ref)
 		if ref == "" {
 			continue
@@ -162,8 +152,7 @@ func ResolveForWire(ctx context.Context, store Store, images []models.PromptImag
 	return out, nil
 }
 
-// StripData clears inline Data when Ref is already set (defensive before persist).
-// Legacy rows with only Data are left untouched for dual-read.
+// StripData clears inline Data before persist; images are always Ref-backed.
 func StripData(images []models.PromptImage) []models.PromptImage {
 	if len(images) == 0 {
 		return images
@@ -171,9 +160,7 @@ func StripData(images []models.PromptImage) []models.PromptImage {
 	out := make([]models.PromptImage, len(images))
 	for i, im := range images {
 		out[i] = im
-		if strings.TrimSpace(im.Ref) != "" {
-			out[i].Data = ""
-		}
+		out[i].Data = ""
 	}
 	return out
 }

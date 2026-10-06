@@ -22,11 +22,20 @@ import { CANVAS_CTX, type CanvasContext, type CanvasMode, type NodeMenuAction } 
 import type { AddLink, CanvasEditor } from './composables/useCanvasEditor'
 import { agentLookup, normHandle, type CanvasAgent } from './composables/outlets'
 import { useFlowElements } from './composables/useFlowElements'
-import { useCanvasShortcuts } from './composables/useCanvasShortcuts'
-import { buildPaletteItems, decodePaletteDrag, PALETTE_MIME, type PaletteItem } from './composables/paletteItems'
-import { computeAutoLayout, estimateNodeSize, needsInitialLayout, prefersReducedMotion, type Point } from './composables/useAutoLayout'
+import { useCanvasShortcuts, isMac } from './composables/useCanvasShortcuts'
+import { buildPaletteItems, decodePaletteDrag, paletteKey, PALETTE_MIME, type PaletteItem } from './composables/paletteItems'
+import {
+  AGENT_NODE_WIDTH,
+  computeAutoLayout,
+  estimateNodeSize,
+  needsInitialLayout,
+  prefersReducedMotion,
+  type Point,
+  type Size,
+} from './composables/useAutoLayout'
 import { buildDefaultWorkflow } from './composables/defaultTemplate'
-import { createNode } from './composables/graphOps'
+import { createNode, type NodeSpec } from './composables/graphOps'
+import { findFreeSpot } from './composables/placement'
 import { alignmentGuides, type AlignmentGuides } from './composables/alignmentGuides'
 
 const props = withDefaults(
@@ -182,14 +191,17 @@ function measure(n: WFNode) {
   return d && d.width && d.height ? { width: d.width, height: d.height } : estimateNodeSize(n)
 }
 
-function freeSpot(p: Point): Point {
-  let at = { ...p }
-  for (let i = 0; i < 20; i++) {
-    const hit = props.nodes.some((n) => Math.abs((n.position?.x ?? 0) - at.x) < 24 && Math.abs((n.position?.y ?? 0) - at.y) < 24)
-    if (!hit) break
-    at = { x: at.x + 32, y: at.y + 32 }
-  }
-  return at
+/** Size used when the new node's type is unknown (the largest card). */
+const DEFAULT_PLACE_SIZE: Size = { width: AGENT_NODE_WIDTH, height: 108 }
+
+function specSize(spec: NodeSpec): Size {
+  return estimateNodeSize(createNode(spec, { x: 0, y: 0 }, []))
+}
+
+/** Nearest spot to `p` where a `size` card does not overlap an existing node. */
+function freeSpot(p: Point, size: Size = DEFAULT_PLACE_SIZE): Point {
+  const others = props.nodes.map((n) => ({ x: n.position?.x ?? 0, y: n.position?.y ?? 0, ...measure(n) }))
+  return findFreeSpot(p, size, others)
 }
 
 function viewCenter(): Point {
@@ -204,9 +216,8 @@ function pointerFlow(): Point | undefined {
   return screenToFlowCoordinate(lastPointer)
 }
 
-function nodeAnchor(spec: { type: NodeType }, p: Point): Point {
-  const w = estimateNodeSize(createNode({ type: spec.type }, { x: 0, y: 0 }, [])).width
-  return { x: p.x - w / 2, y: p.y - 28 }
+function nodeAnchor(spec: NodeSpec, p: Point): Point {
+  return { x: p.x - specSize(spec).width / 2, y: p.y - 28 }
 }
 
 // ── Editor wiring ──
@@ -356,7 +367,7 @@ function onQuickPick(item: PaletteItem) {
   quickAdd.value = null
   if (!q || !props.editor) return
   const at = q.centered ? q.flow : q.link?.kind === 'outlet' ? { x: q.flow.x + 16, y: q.flow.y - 28 } : nodeAnchor(item.spec, q.flow)
-  props.editor.addNode(item.spec, at, q.link)
+  props.editor.addNode(item.spec, q.link?.kind === 'edge' ? at : freeSpot(at, specSize(item.spec)), q.link)
 }
 
 function onDragOver(ev: DragEvent) {
@@ -371,7 +382,59 @@ function onDrop(ev: DragEvent) {
   if (!spec) return
   ev.preventDefault()
   const p = screenToFlowCoordinate({ x: ev.clientX, y: ev.clientY })
-  props.editor!.addNode(spec, nodeAnchor(spec, p))
+  props.editor!.cancelPlacing()
+  props.editor!.addNode(spec, freeSpot(nodeAnchor(spec, p), specSize(spec)))
+}
+
+// ── Click-to-place (palette click) ──
+const placing = computed(() => (editing.value ? props.editor!.placing.value : null))
+const ghostPointer = ref<{ x: number; y: number } | null>(null)
+let placeDownAt: { x: number; y: number } | null = null
+
+const placingItem = computed(() => {
+  const spec = placing.value
+  if (!spec) return null
+  const key = paletteKey(spec)
+  return paletteItems.value.find((i) => i.key === key) ?? null
+})
+
+const ghost = computed(() => {
+  const spec = placing.value
+  const p = ghostPointer.value
+  if (!spec || !p) return null
+  const size = specSize(spec)
+  const flow = freeSpot(nodeAnchor(spec, screenToFlowCoordinate(p)), size)
+  const { x, y, zoom } = viewport.value
+  return { left: flow.x * zoom + x, top: flow.y * zoom + y, width: size.width * zoom, height: size.height * zoom }
+})
+
+watch(placing, (spec) => {
+  if (!spec) ghostPointer.value = null
+  else if (lastPointer) ghostPointer.value = { ...lastPointer }
+})
+
+function onPlacePointerDown(ev: PointerEvent) {
+  placeDownAt = placing.value ? { x: ev.clientX, y: ev.clientY } : null
+}
+
+function onPlaceClick(ev: MouseEvent) {
+  const spec = placing.value
+  if (!spec || ev.button !== 0) return
+  const el = ev.target as HTMLElement
+  if (!el.closest('.vue-flow') || el.closest('.cchrome, .vue-flow__minimap')) return
+  if (placeDownAt && Math.hypot(ev.clientX - placeDownAt.x, ev.clientY - placeDownAt.y) > 5) return
+  ev.preventDefault()
+  ev.stopPropagation()
+  const p = screenToFlowCoordinate({ x: ev.clientX, y: ev.clientY })
+  const ed = props.editor!
+  if (!ev.shiftKey) ed.cancelPlacing()
+  ed.addNode(spec, freeSpot(nodeAnchor(spec, p), specSize(spec)))
+}
+
+function onPlaceContextMenu(ev: MouseEvent) {
+  if (!placing.value) return
+  ev.preventDefault()
+  props.editor!.cancelPlacing()
 }
 
 function onHostDblClick(ev: MouseEvent) {
@@ -383,10 +446,12 @@ function onHostDblClick(ev: MouseEvent) {
 
 function onPointerMove(ev: PointerEvent) {
   lastPointer = { x: ev.clientX, y: ev.clientY }
+  if (placing.value) ghostPointer.value = lastPointer
 }
 
 function onPointerLeave() {
   lastPointer = null
+  ghostPointer.value = null
 }
 
 // ── Context for nodes / edges ──
@@ -576,8 +641,8 @@ function focusedNodeId(): string | null {
 
 function nav(dir: 'left' | 'right' | 'up' | 'down') {
   const focused = focusedNodeId()
-  if (props.mode === 'run') {
-    if (focused) emit('select-node', focused)
+  if (!editing.value) {
+    if (focused && props.mode === 'run') emit('select-node', focused)
     return false
   }
   const ed = props.editor!
@@ -621,6 +686,7 @@ useCanvasShortcuts(
     },
     rename: () => (editing.value ? void ed().startRename() : false),
     escape: () => {
+      if (props.editor?.cancelPlacing()) return
       if (closeOverlays()) return
       if (props.editor?.renamingId.value) {
         props.editor.renamingId.value = null
@@ -658,12 +724,30 @@ onMounted(() => {
   }
 })
 onBeforeUnmount(() => {
+  props.editor?.cancelPlacing()
   window.removeEventListener('keydown', onSpace)
   window.removeEventListener('keyup', onSpace)
   ro?.disconnect()
 })
 
-const showEmpty = computed(() => editing.value && props.nodes.length === 0)
+const showEmpty = computed(() => editing.value && props.nodes.length === 0 && !placing.value)
+
+const selectedCount = computed(() => (editing.value ? props.editor!.selectedNodeIds.value.length : 0))
+
+/**
+ * Edit mode: dragging empty canvas draws a selection box; Space + drag, the middle /
+ * right button or a two-finger scroll pans; pinch or Mod + scroll zooms.
+ */
+const flowInteraction = computed(() =>
+  editing.value
+    ? {
+        selectionKeyCode: true,
+        panOnDrag: [1, 2],
+        panOnScroll: true,
+        zoomActivationKeyCode: isMac() ? 'Meta' : 'Control',
+      }
+    : { selectionKeyCode: null, panOnDrag: true, panOnScroll: false },
+)
 
 defineExpose({ fit, layout, centerOn, openCommandPalette })
 </script>
@@ -672,7 +756,7 @@ defineExpose({ fit, layout, centerOn, openCommandPalette })
   <div
     ref="host"
     class="canvas-host relative h-full w-full"
-    :class="{ 'is-panning': panning, 'is-connecting': !!connecting }"
+    :class="{ 'is-panning': panning, 'is-connecting': !!connecting, 'is-placing': !!placing }"
     :aria-label="t('canvas.aria.canvas')"
     role="application"
     data-testid="workflow-canvas"
@@ -681,6 +765,9 @@ defineExpose({ fit, layout, centerOn, openCommandPalette })
     @dblclick="onHostDblClick"
     @pointermove="onPointerMove"
     @pointerleave="onPointerLeave"
+    @pointerdown.capture="onPlacePointerDown"
+    @click.capture="onPlaceClick"
+    @contextmenu.capture="onPlaceContextMenu"
     @keydown="onHostKeydown"
   >
     <VueFlow
@@ -695,10 +782,9 @@ defineExpose({ fit, layout, centerOn, openCommandPalette })
       :nodes-focusable="true"
       :edges-focusable="editing"
       :disable-keyboard-a11y="true"
-      :selection-key-code="editing ? 'Shift' : null"
+      v-bind="flowInteraction"
       :multi-selection-key-code="'Shift'"
       :delete-key-code="null"
-      :pan-on-drag="true"
       :pan-activation-key-code="'Space'"
       :zoom-on-scroll="true"
       :zoom-on-pinch="true"
@@ -751,6 +837,49 @@ defineExpose({ fit, layout, centerOn, openCommandPalette })
     </div>
 
     <EmptyCanvas v-if="showEmpty" @template="startFromTemplate" @blank="startBlank" />
+
+    <div
+      v-if="ghost && placingItem"
+      class="canvas-ghost pointer-events-none absolute z-[5]"
+      :style="{ left: `${ghost.left}px`, top: `${ghost.top}px`, width: `${ghost.width}px`, height: `${ghost.height}px` }"
+      aria-hidden="true"
+      data-testid="canvas-place-ghost"
+    >
+      <span class="truncate">{{ placingItem.label }}</span>
+    </div>
+
+    <div class="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2">
+      <div
+        v-if="placing"
+        class="cchrome pointer-events-auto inline-flex items-center gap-2 px-3 py-1.5 text-[12px] text-txt2"
+        role="status"
+        data-testid="canvas-place-hint"
+      >
+        <Icon name="plus" :size="13" class="text-accent-2" />
+        <span>{{ t('canvas.placement.hint', { label: placingItem?.label ?? '' }) }}</span>
+        <button type="button" class="text-txt3 underline hover:text-txt" data-testid="canvas-place-cancel" @click.stop="editor?.cancelPlacing()">
+          {{ t('common.buttons.cancel') }}
+        </button>
+      </div>
+      <div
+        v-else-if="selectedCount > 0"
+        class="cchrome pointer-events-auto inline-flex items-center gap-1 py-1 pl-3 pr-1 text-[12px] text-txt2"
+        role="toolbar"
+        :aria-label="t('canvas.selection.count', { n: selectedCount })"
+        data-testid="canvas-selection-bar"
+      >
+        <span>{{ t('canvas.selection.count', { n: selectedCount }) }}</span>
+        <span class="text-txt3" aria-hidden="true">·</span>
+        <button
+          type="button"
+          class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-err hover:bg-err/10"
+          data-testid="canvas-selection-delete"
+          @click.stop="editor?.removeSelection()"
+        >
+          <Icon name="trash" :size="13" />{{ t('canvas.selection.delete') }}
+        </button>
+      </div>
+    </div>
 
     <CanvasToolbar
       :zoom="viewport.zoom"

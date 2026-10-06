@@ -220,7 +220,7 @@ func TestExternalMcpAuditExternalCallerKind(t *testing.T) {
 	}
 }
 
-func wireExternalAgentFS(t *testing.T, hn *harness) *services.OrgService {
+func wireExternalAgentFS(t *testing.T, hn *harness) {
 	t.Helper()
 	root := t.TempDir()
 	skill := services.NewAgentService(root)
@@ -230,12 +230,9 @@ func wireExternalAgentFS(t *testing.T, hn *harness) *services.OrgService {
 	hn.h.PmProgress = services.NewPmProgress(pm, hn.h.Runs, hn.h.Arts)
 	hn.h.PMMCP = pmmcp.NewHost(pm, hn.h.PmProgress, hn.h.WF, hn.h.Runs, hn.h.Arts, nil)
 	hn.h.PMMCP.SetAuditRecorder(hn.h.Audit.Record)
-	org := services.NewOrgService(root, skill)
-	hn.h.Org = org
-	team := services.NewTeamService(hn.h.Projects, skill, org, pm, nil)
-	hn.h.PMMCP.SetOrgAndAgent(org, skill)
+	team := services.NewTeamService(hn.h.Projects, skill, pm, nil)
+	hn.h.PMMCP.SetAgents(skill)
 	hn.h.PMMCP.SetTeam(team)
-	return org
 }
 
 func externalToolCallResult(t *testing.T, body []byte) (result map[string]any, isError bool, raw string) {
@@ -268,21 +265,12 @@ func externalToolCallResult(t *testing.T, body []byte) (result map[string]any, i
 // unbound leader returns distinguishable "pm leader not bound".
 func TestExternalMcpAgentFSUsesPmLeader(t *testing.T) {
 	hn, pid := setupExternalMcpHarness(t)
-	org := wireExternalAgentFS(t, hn)
+	wireExternalAgentFS(t, hn)
 
-	if err := hn.h.Agents.Save(services.Agent{Name: "pm-leader", ProjectID: pid}); err != nil {
+	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-leader", ProjectID: pid}); err != nil {
 		t.Fatal(err)
 	}
-	if err := hn.h.Agents.Save(services.Agent{Name: "member-a", ProjectID: pid}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := org.Put(services.AgentOrg{
-		Groups: []services.OrgGroup{{ID: "g-pipe", Name: "Pipeline"}},
-		Agents: map[string]services.OrgAgentMembership{
-			"pm-leader": {},
-			"member-a":  {},
-		},
-	}, 0); err != nil {
+	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "member-a", ProjectID: pid}); err != nil {
 		t.Fatal(err)
 	}
 	en := true
@@ -321,34 +309,31 @@ func TestExternalMcpAgentFSUsesPmLeader(t *testing.T) {
 		t.Fatalf("pm_fs_list result=%v", result)
 	}
 
-	memBody, _ := json.Marshal(map[string]any{
+	membersBody, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-		"params": map[string]any{
-			"name": "pm_set_org_membership",
-			"arguments": map[string]any{
-				"agentName": "member-a",
-				"groupIds":  []string{"g-pipe"},
-			},
-		},
+		"params": map[string]any{"name": "pm_list_project_agents", "arguments": map[string]any{}},
 	})
-	resp = postExternalMcpRPC(hn, pid, "pm-agent-fs", plain, memBody)
+	resp = postExternalMcpRPC(hn, pid, "pm-agent-fs", plain, membersBody)
 	if resp.Code != http.StatusOK {
-		t.Fatalf("pm_set_org_membership status=%d %s", resp.Code, resp.Body.String())
+		t.Fatalf("pm_list_project_agents status=%d %s", resp.Code, resp.Body.String())
 	}
 	result, isErr, raw = externalToolCallResult(t, resp.Body.Bytes())
 	if isErr {
-		t.Fatalf("pm_set_org_membership isError raw=%s", raw)
+		t.Fatalf("pm_list_project_agents isError raw=%s", raw)
 	}
-	if result["ok"] != true {
-		t.Fatalf("membership result=%v", result)
+	if result["self"] != "pm-leader" || result["projectId"] != pid {
+		t.Fatalf("project agents result=%v", result)
+	}
+	if agents, _ := result["agents"].([]any); len(agents) != 2 {
+		t.Fatalf("project agents=%v", result["agents"])
 	}
 }
 
 func TestExternalMcpAgentFSRequiresPmLeader(t *testing.T) {
 	hn, pid := setupExternalMcpHarness(t)
-	_ = wireExternalAgentFS(t, hn)
+	wireExternalAgentFS(t, hn)
 
-	if err := hn.h.Agents.Save(services.Agent{Name: "orphan", ProjectID: pid}); err != nil {
+	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "orphan", ProjectID: pid}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -386,11 +371,8 @@ func TestExternalMcpAgentFSRequiresPmLeader(t *testing.T) {
 	teamBody, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
 		"params": map[string]any{
-			"name": "pm_set_org_membership",
-			"arguments": map[string]any{
-				"agentName": "orphan",
-				"groupIds":  []string{"g1"},
-			},
+			"name":      "pm_list_agent_templates",
+			"arguments": map[string]any{},
 		},
 	})
 	resp = postExternalMcpRPC(hn, pid, "pm-agent-fs", plain, teamBody)

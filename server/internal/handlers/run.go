@@ -131,16 +131,6 @@ func (h *Handlers) ListRuns(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if !pg.Active {
-		runs := h.Runs.ListByTags(statuses, wf, projectID, tags, sort, order)
-		labels := h.Runs.CurrentNodeLabels(runs)
-		out := make([]gin.H, 0, len(runs))
-		for _, r := range runs {
-			out = append(out, runSummaryDTO(r, labels[r.ID]))
-		}
-		c.JSON(http.StatusOK, out)
-		return
-	}
 	runs, total := h.Runs.ListPageByTags(statuses, wf, projectID, tags, pg.Page, pg.PageSize, sort, order)
 	labels := h.Runs.CurrentNodeLabels(runs)
 	items := make([]gin.H, 0, len(runs))

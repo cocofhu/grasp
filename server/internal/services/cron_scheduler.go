@@ -34,10 +34,8 @@ type CronDelivery struct {
 
 // ChannelDeliverer pushes a cron result to a project's configured channel.
 // Implemented by channels.Manager and injected via SetChannelDeliverer.
-// Deliver is the legacy plain-text path; DeliverCron is the coordinated egress
-// (busy → silent push queue, idle → immediate).
+// DeliverCron is the coordinated egress (busy → silent push queue, idle → immediate).
 type ChannelDeliverer interface {
-	Deliver(projectID, text string) error
 	DeliverCron(d CronDelivery) error
 }
 

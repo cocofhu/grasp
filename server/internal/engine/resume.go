@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
-	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	gatenode "github.com/cocofhu/grasp/internal/models/nodereg"
 	"github.com/cocofhu/grasp/internal/runtime"
@@ -74,7 +73,7 @@ func (e *Engine) resumeGateLocked(runID, nodeID, action string, form map[string]
 		return err
 	}
 	node := c.graph.FindNode(nodeID)
-	if node == nil || (node.Type != "human_gate" && node.Type != "proposal_select") {
+	if node == nil || node.Type != "human_gate" {
 		return errors.New("gate node not found")
 	}
 	// A gate on a terminated run is no longer actionable (the run was cancelled
@@ -96,74 +95,56 @@ func (e *Engine) resumeGateLocked(runID, nodeID, action string, form map[string]
 	// Validate the form before locking the gate as resolved: a field marked
 	// required, or any field when the chosen action requires the form (e.g. a
 	// "reject" action that mandates a comment), must be non-blank.
-	if node.Type == "human_gate" && !opts.skipFormValidate {
-		if !shouldSnapshotPreviewIssues(node) {
-			if err := validateGateForm(gate, action, form); err != nil {
-				return err
-			}
+	if !opts.skipFormValidate && !shouldSnapshotPreviewIssues(node) {
+		if err := validateGateForm(gate, action, form); err != nil {
+			return err
 		}
 	}
 	gate.Resolved = true
 	logDB(e.db.Save(&gate), runID, "resolve gate")
 
-	var outcome nodeOutcome
-	if node.Type == "proposal_select" {
-		// action is the chosen proposal id; finalize the single proposal.
-		from := firstNonEmptyStr(str(node.Config["from"]), mcp.ProposalsArtifactName)
-		content, ok := e.store.Get(runID, from)
-		if !ok {
-			return errors.New("no upstream proposals")
+	// Expose action, assign it to the configured global var,
+	// and leave through the edge whose sourceHandle is the action id.
+	outVar := firstNonEmptyStr(str(node.Config["output_var"]), "action")
+	c.setVar(outVar, action)
+	e.persistVar(runID, outVar, action)
+	// Persist each form field as a global variable too, so downstream nodes
+	// and conditional injection can reference the reviewer's input (e.g. the
+	// review comment) via {{vars.<key>}}.
+	for k, v := range form {
+		if k == "" {
+			continue
 		}
-		final, id, ok := mcp.SelectProposal(content, action)
-		if !ok {
-			return errors.New("proposal selection failed")
-		}
-		outVar := firstNonEmptyStr(str(node.Config["output_var"]), "selected_proposal")
-		outcome = e.finalizeProposal(c, node, final, id, outVar)
-	} else if node.Type == "human_gate" {
-		// human_gate: expose action, assign it to the configured global var,
-		// and leave through the edge whose sourceHandle is the action id.
-		outVar := firstNonEmptyStr(str(node.Config["output_var"]), "action")
-		c.setVar(outVar, action)
-		e.persistVar(runID, outVar, action)
-		// Persist each form field as a global variable too, so downstream nodes
-		// and conditional injection can reference the reviewer's input (e.g. the
-		// review comment) via {{vars.<key>}}.
-		for k, v := range form {
-			if k == "" {
-				continue
-			}
-			c.setVar(k, v)
-			e.persistVar(runID, k, v)
-		}
-		// human_gate only when body is page.html (HtmlPreview Issue path).
-		// Avoid wiping vars.preview_issues on comment-only gates.
-		if shouldSnapshotPreviewIssues(node) {
-			var lifeErr error
-			if isPassGateAction(action) {
-				// Pass must force-clear snapshot vars (bypass empty-list skip) and
-				// resolve any residual open issues for this node.
-				e.forceClearPreviewIssueVars(c, runID)
-				lifeErr = e.markPreviewIssuesResolvedByNode(runID, nodeID)
-			} else {
-				lifeErr = e.snapshotPreviewIssues(c, runID, nodeID)
-			}
-			if lifeErr != nil {
-				// Gate was already marked resolved above; roll it back so the
-				// reviewer can retry instead of leaving "vars snapshotted / DB
-				// still open" half-success that falsely re-locks Pass.
-				gate.Resolved = false
-				logDB(e.db.Save(&gate), runID, "rollback gate after preview-issue lifecycle failure")
-				return lifeErr
-			}
-		}
-		reviewerActor := services.ActorFromUsername(reviewer)
-		outputs := map[string]any{"action": action, "form": form, "reviewer_id": reviewerActor.Username, outVar: action}
-		if reviewerActor.Unattributable {
-			outputs["reviewer_unattributable"] = true
-		}
-		outcome = nodeOutcome{status: "completed", outputs: outputs, outputMd: "审批:" + action, handle: action}
+		c.setVar(k, v)
+		e.persistVar(runID, k, v)
 	}
+	// human_gate only when body is page.html (HtmlPreview Issue path).
+	// Avoid wiping vars.preview_issues on comment-only gates.
+	if shouldSnapshotPreviewIssues(node) {
+		var lifeErr error
+		if isPassGateAction(action) {
+			// Pass must force-clear snapshot vars (bypass empty-list skip) and
+			// resolve any residual open issues for this node.
+			e.forceClearPreviewIssueVars(c, runID)
+			lifeErr = e.markPreviewIssuesResolvedByNode(runID, nodeID)
+		} else {
+			lifeErr = e.snapshotPreviewIssues(c, runID, nodeID)
+		}
+		if lifeErr != nil {
+			// Gate was already marked resolved above; roll it back so the
+			// reviewer can retry instead of leaving "vars snapshotted / DB
+			// still open" half-success that falsely re-locks Pass.
+			gate.Resolved = false
+			logDB(e.db.Save(&gate), runID, "rollback gate after preview-issue lifecycle failure")
+			return lifeErr
+		}
+	}
+	reviewerActor := services.ActorFromUsername(reviewer)
+	outputs := map[string]any{"action": action, "form": form, "reviewer_id": reviewerActor.Username, outVar: action}
+	if reviewerActor.Unattributable {
+		outputs["reviewer_unattributable"] = true
+	}
+	outcome := nodeOutcome{status: "completed", outputs: outputs, outputMd: "审批:" + action, handle: action}
 	e.saveState(c, node, outcome)
 	c.nodeOutputs[nodeID] = outcome.outputs
 	// Retire the upstream producer's parked review session (kept alive so this
@@ -699,7 +680,7 @@ func (e *Engine) ResumeFrom(runID, nodeID string) error {
 	// Restore the variable state as it was when the target node last started, so
 	// the re-run sees exactly "当时的状态" instead of values that later nodes have
 	// since mutated. Persisted to RunVariable so execute()'s fresh loadCtx picks
-	// it up. Skipped for nodes with no recorded entry snapshot (e.g. older runs).
+	// it up. Skipped for nodes with no recorded entry snapshot.
 	if snap, ok := e.nodeStartVars(runID, nodeID); ok {
 		e.restoreVars(c, snap)
 	}

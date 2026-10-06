@@ -158,7 +158,6 @@ describe('shared Pagination consumers keep existing page interaction (g5.2)', ()
   it('Artifacts L2 listArtifacts uses groupBy=run (pageTotal is Run count)', () => {
     expect(artifactsSrc).toMatch(/groupBy:\s*['"]run['"]/)
     expect(artifactsSrc).toMatch(/const PAGE_SIZE = 20/)
-    expect(artifactsSrc).toMatch(/:group-total="activeGroup\?\.count/)
-    expect(artifactsSrc).toMatch(/:match-total="pageTotal"/)
+    expect(artifactsSrc).toMatch(/:group-total="selectionInfo\?\.count/)
   })
 })

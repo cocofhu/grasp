@@ -33,7 +33,7 @@ func setupCronDeliver(t *testing.T) (*CronScheduler, *PmService, models.ChatThre
 	t.Helper()
 	db := newTestDB(t)
 	pm := NewPmService(db, nil)
-	p, err := NewProjectService(db).Create("CronProj", "", nil, nil)
+	p, err := NewProjectService(db).Create("CronProj", "", nil)
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}

@@ -78,7 +78,7 @@ func protectedEventLogServer(t *testing.T, cookieName string) (string, int, *eve
 }
 
 func TestAuthenticatedEventLogReaders(t *testing.T) {
-	for _, cookieName := range []string{"agentchat_session", "cursor_acp_session"} {
+	for _, cookieName := range []string{acpSessionCookieName} {
 		t.Run(cookieName, func(t *testing.T) {
 			host, port, counts := protectedEventLogServer(t, cookieName)
 			ctx := context.Background()

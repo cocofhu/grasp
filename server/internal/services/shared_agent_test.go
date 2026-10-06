@@ -3,9 +3,6 @@ package services
 import (
 	"path/filepath"
 	"testing"
-
-	"github.com/cocofhu/grasp/internal/database"
-	"github.com/cocofhu/grasp/internal/models"
 )
 
 func TestExtendOverlay_AgentWinsSameKeys(t *testing.T) {
@@ -76,42 +73,21 @@ func TestExtendOverlay_AgentWinsSameKeys(t *testing.T) {
 	}
 }
 
-func TestExtendOverlay_TokenSharedPriority(t *testing.T) {
+func TestExtendOverlay_AgentEnvWins(t *testing.T) {
 	shared := SharedAgentConfig{
-		Env: map[string]string{
-			"GRASP_CURSOR_API_KEY": "shared-key",
-			"FEATURE_FLAG":         "shared-flag",
-		},
+		Env: map[string]string{"FEATURE_FLAG": "shared-flag", "SHARED_ONLY": "1"},
 	}
-	agent := Agent{
-		Name: "demo",
-		Env: map[string]string{
-			"GRASP_CURSOR_API_KEY": "agent-key",
-			"GITLAB_TOKEN":         "agent-gl",
-			"FEATURE_FLAG":         "agent-flag",
-		},
-	}
+	agent := Agent{Name: "demo", Env: map[string]string{"FEATURE_FLAG": "agent-flag"}}
 	got := ExtendOverlay(shared, agent)
-	if got.Env["GRASP_CURSOR_API_KEY"] != "shared-key" {
-		t.Fatalf("token both present → shared wins: %#v", got.Env)
-	}
-	if got.Env["GITLAB_TOKEN"] != "agent-gl" {
-		t.Fatalf("token only on agent → keep stock: %#v", got.Env)
-	}
-	if got.Env["FEATURE_FLAG"] != "agent-flag" {
-		t.Fatalf("non-token still agent wins: %#v", got.Env)
+	if got.Env["FEATURE_FLAG"] != "agent-flag" || got.Env["SHARED_ONLY"] != "1" {
+		t.Fatalf("env = %#v", got.Env)
 	}
 }
 
-func TestExtendOverlay_ProjectIDFillEmptyOnly(t *testing.T) {
-	shared := SharedAgentConfig{ProjectID: "proj-a", DefaultProjectID: "proj-default"}
-	got := ExtendOverlay(shared, Agent{Name: "x"})
-	if got.ProjectID != "proj-default" {
-		t.Fatalf("fill empty projectId = %q", got.ProjectID)
-	}
-	got2 := ExtendOverlay(shared, Agent{Name: "x", ProjectID: "proj-agent"})
-	if got2.ProjectID != "proj-agent" {
-		t.Fatalf("keep agent projectId = %q", got2.ProjectID)
+func TestExtendOverlay_KeepsAgentProjectID(t *testing.T) {
+	got := ExtendOverlay(SharedAgentConfig{ProjectID: "proj-a"}, Agent{Name: "x", ProjectID: "proj-agent"})
+	if got.ProjectID != "proj-agent" {
+		t.Fatalf("keep agent projectId = %q", got.ProjectID)
 	}
 }
 
@@ -142,45 +118,5 @@ func TestSharedAgentService_SaveGetRoundTrip(t *testing.T) {
 	empty := svc.Get("missing")
 	if empty.Env == nil || len(empty.Files) != 0 {
 		t.Fatalf("missing should be empty valid: %#v", empty)
-	}
-}
-
-func TestMigrateProjectSandboxEnv_SameKeyKeepsShared(t *testing.T) {
-	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "migrate.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	projects := NewProjectService(db)
-	shared := NewSharedAgentService(t.TempDir())
-
-	p, err := projects.Create("Demo", "", []models.EnvEntry{
-		{Key: "BOTH", Value: "from-project"},
-		{Key: "PROJ_ONLY", Value: "p1"},
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := shared.Save(SharedAgentConfig{
-		ProjectID: p.ID,
-		Env:       map[string]string{"BOTH": "from-shared", "SHARED_ONLY": "s1"},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	MigrateProjectSandboxEnvOnce(db, projects, shared)
-	got := shared.Get(p.ID)
-	if got.Env["BOTH"] != "from-shared" {
-		t.Fatalf("BOTH should keep shared: %#v", got.Env)
-	}
-	if got.Env["PROJ_ONLY"] != "p1" || got.Env["SHARED_ONLY"] != "s1" {
-		t.Fatalf("env after migrate: %#v", got.Env)
-	}
-	p2, ok := projects.Get(p.ID)
-	if !ok || len(p2.SandboxEnv) != 0 {
-		t.Fatalf("project SandboxEnv should be cleared: %#v", p2.SandboxEnv)
-	}
-	MigrateProjectSandboxEnvOnce(db, projects, shared)
-	got2 := shared.Get(p.ID)
-	if got2.Env["BOTH"] != "from-shared" || got2.Env["PROJ_ONLY"] != "p1" {
-		t.Fatalf("idempotent env: %#v", got2.Env)
 	}
 }

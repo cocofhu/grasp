@@ -88,34 +88,6 @@
       },
       "help": "### Agent 节点(agent)\n\n节点只配置三项:选哪个 Agent、目标、超时。\n\n**能力归 Agent 管**:交互方式(多轮澄清 / 一次跑完)、跑完后是否进入人工复审、可用工具、可读写的产物,都在 Agent Studio 的「能力」标签页里声明。同一个 Agent 放进多个节点时,这些节点的能力完全相同,节点之间只靠目标区分。\n\n**出口**:Agent 写入带判定的产物(测试结果、评审结论)时,节点有「通过」和「不通过」两个出口;否则只有一个出口。\n\n**产物**:Agent 声明的每个产物都会出现在节点输出里(渲染后的 Markdown 与原始 JSON)。"
     },
-    "proposal_select": {
-      "label": "方案确认",
-      "desc": "从上游候选方案中确认最终方案:auto_var 为真或仅 1 候选时自动采纳,否则人工选择;输出 proposal.json",
-      "fields": {
-        "title": {
-          "label": "标题",
-          "placeholder": "选择方案"
-        },
-        "from": {
-          "label": "来源方案产物",
-          "placeholder": "proposals.json"
-        },
-        "auto_var": {
-          "label": "自动确认变量(为真则自动选推荐方案)",
-          "placeholder": "auto_confirm"
-        },
-        "output_var": {
-          "label": "输出变量(所选方案 id)",
-          "placeholder": "selected_proposal"
-        }
-      },
-      "outputs": {
-        "selected_proposal": {
-          "desc": "所选方案 id"
-        }
-      },
-      "help": "### 方案确认(proposal_select)\n\n从上游候选方案(`proposals.json`)中确认**唯一最终方案**。\n\n**自动模式**:当「自动确认变量」为真时,自动选择推荐方案(无推荐则取第一个)并继续。\n\n**人工模式**:候选 ≥2 时挂起供人点选;若仅 1 个有效候选则**自动采纳**该候选并继续,不进入「等待人工选择方案」。\n\n**产出**:所选方案写入 `proposal.json`,其 id 赋值给「输出变量」(默认 `selected_proposal`)。"
-    },
     "human_gate": {
       "label": "人工门禁",
       "desc": "待审批入口 · 等待人工确认并流转",
@@ -213,11 +185,6 @@
         "markdown": "问题根因(Markdown)",
         "json": "问题根因原始 JSON"
       },
-      "proposals": {
-        "label": "候选方案",
-        "markdown": "候选方案(Markdown)",
-        "json": "候选方案原始 JSON"
-      },
       "implementation_result": {
         "label": "实现结果",
         "markdown": "实现结果(Markdown)",
@@ -232,6 +199,11 @@
         "label": "评审结论",
         "markdown": "评审结论(Markdown)",
         "json": "评审结论原始 JSON"
+      },
+      "merge_request": {
+        "label": "合并请求",
+        "markdown": "合并请求(Markdown)",
+        "json": "合并请求原始 JSON"
       },
       "preflight": {
         "label": "环境确认",

@@ -29,7 +29,7 @@ function stableStringify(v: unknown): string {
   return JSON.stringify(v)
 }
 
-/** Capture nodes/edges after hydrate (including migrate) as the graph baseline. */
+/** Capture nodes/edges after hydrate as the graph baseline. */
 export function snapshotGraph(wf: Pick<WorkflowDirtySource, 'nodes' | 'edges'>): GraphBaseline {
   return cloneJSON({
     nodes: wf.nodes ?? [],

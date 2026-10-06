@@ -3,15 +3,15 @@ package services
 import (
 	"testing"
 
-	"github.com/cocofhu/grasp/internal/tokenledger"
+	"github.com/cocofhu/grasp/internal/tokenledger/ledgertest"
 	"gorm.io/gorm"
 )
 
-// syncTokenLedger re-imports StateRun / ChatMessage usage seeded directly by a
-// test into the token ledger that every stats surface reads.
+// syncTokenLedger rebuilds the token ledger from StateRun / ChatMessage usage
+// seeded directly by a test.
 func syncTokenLedger(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	if err := tokenledger.Backfill(db); err != nil {
+	if err := ledgertest.Sync(db); err != nil {
 		t.Fatal(err)
 	}
 }

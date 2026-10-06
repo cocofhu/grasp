@@ -8,7 +8,7 @@
 - **多会话 Tab**：页面顶栏可开多个 Tab，每个 Tab 是同一 provider 下独立的 Agent 会话（各自的队列、事件日志与模型），可并发运行。`/ws` 不带 `chat` 参数时落到 **`default`** 会话（平台调用即走这里，行为与单会话时代一致）；多个浏览器窗口打开同一 Tab 看到的是同一会话。会话列表只存于进程内存：刷新或换浏览器可恢复，关闭 Tab 才销毁，容器重启后只剩 `default`。
 - **队列与取消**：用户消息按 FIFO 与一轮 `session/prompt` 对应；顶栏 **停止** 图标仅在 **有待处理队列**（含「进行中 / 等待模型」或仍有排队未消费）时显示，用于取消当前轮次。
 - **权限与自动授权**：可在连接时开启自动授权；否则通过页面处理 `session/request_permission`。
-- **聊天记录**：按 ACP `sessionId` 落在浏览器 **IndexedDB**（库 `acp-bridge-chat`），刷新可对齐同一会话；旧版 **localStorage** 键会一次性迁移。后端也可在 `connected` 时下发事件日志用于恢复界面。
+- **聊天记录**：按 ACP `sessionId` 落在浏览器 **IndexedDB**（库 `acp-bridge-chat`），刷新可对齐同一会话。后端也可在 `connected` 时下发事件日志用于恢复界面。
 - **主题**：浅色 / 深色可切换，键名 **`acp-bridge-theme`**（`light` / `dark`）。
 
 更细的分层与扩展点见 **[ARCHITECTURE.md](./ARCHITECTURE.md)**。
@@ -40,7 +40,7 @@
 | provider | 归一化后的原生变量 | 也接受的别名 |
 | --- | --- | --- |
 | `cursor` / `cursor_acp` | `CURSOR_API_KEY` | `ACP_CURSOR_API_KEY` |
-| `claude_code` / `claude_code_acp` / `claude_stream_json` | `ANTHROPIC_API_KEY` | `ACP_CLAUDE_API_KEY` |
+| `claude_code` / `claude_code_acp` | `ANTHROPIC_API_KEY` | `ACP_CLAUDE_API_KEY` |
 | `codebuddy` / `codebuddy_acp` | `CODEBUDDY_API_KEY` | `ACP_CODEBUDDY_API_KEY` |
 | `gemini` | `GEMINI_API_KEY` | `ACP_GEMINI_API_KEY` / `GOOGLE_API_KEY` |
 | `codex` | `OPENAI_API_KEY` | `ACP_CODEX_API_KEY` / `CODEX_API_KEY` |
@@ -126,7 +126,7 @@ go build -o backend ./cmd/backend
 ### Agent、刷新与聊天记录
 
 - **Agent 子进程**在运行 `acp-bridge` 的那台机器上、随进程常驻**；关掉终端或结束 `acp-bridge` 才会结束 Agent。**只刷新浏览器**不会停 Agent；只要服务仍在且仍是同一个 ACP `sessionId`，会重新连上同一会话。
-- **聊天记录**缓存在浏览器 **IndexedDB**（库 **`acp-bridge-chat`**，键为 `sessionId`）。旧版 **`acp-bridge-log:<sessionId>`** / **`acp-bridge-chat-v1`** 会在首次加载时一次性迁移并删除。刷新后若 `sessionId` 一致会自动还原；IndexedDB 不可用时展示固定文案横幅，并依赖后端 eventLog 降级。**「重启」** 会拿到新的 `sessionId`：界面清空，并删除上一会话对应的本地快照；后端事件日志与用户时间线也会在重建 Agent 时清空。
+- **聊天记录**缓存在浏览器 **IndexedDB**（库 **`acp-bridge-chat`**，键为 `sessionId`）。刷新后若 `sessionId` 一致会自动还原；IndexedDB 不可用时展示固定文案横幅，并依赖后端 eventLog 降级。**「重启」** 会拿到新的 `sessionId`：界面清空，并删除上一会话对应的本地快照；后端事件日志与用户时间线也会在重建 Agent 时清空。
 - 离开页面前会尽量 **立即落盘**（`pagehide` / `visibilitychange`），减少「刚发完就刷新导致没写上」的情况。
 
 ### 界面与操作（简要）
@@ -142,6 +142,7 @@ go build -o backend ./cmd/backend
 | `-gin-mode`   | `debug`           | `debug` / `release` / `test`。 |
 | `-web`        | `web`             | 静态资源根目录，须含 `index.html` 与 `static/`（相对当前工作目录或绝对路径）。 |
 | `-model`      | *(空，即 auto)*   | 默认 Agent 模型。也可通过环境变量 `ACP_BRIDGE_MODEL` 设置（优先级低于本参数）。各 Tab 可另选。 |
+| `-password`   | *(空)*            | 登录口令，也可通过环境变量 `ACP_BRIDGE_PASSWORD` 设置。设置后须先 `POST /api/login`，凭 `agentchat_session` cookie 访问 `/ws` 与 `/api/*`。Grasp 创建的沙箱总会设置。 |
 
 环境变量 `SANDBOX_MAX_CHATS`（默认 `8`，含 `default`）限制同时存在的会话数，超出时 `POST /api/chats` 返回 409。
 
@@ -149,9 +150,6 @@ go build -o backend ./cmd/backend
 
 每个 Tab（会话）可在顶栏模型按钮里单独选模型，切换只重启该 Tab 的 Agent。未选择（或选「默认」）时用默认模型：`-model` → `ACP_BRIDGE_MODEL` → 都没有则 `auto`（不传模型，由 CLI 自行决定）。默认会话 `default` 不选模型时行为与之前一致。
 配置方式与环境变量见上面 **[启动沙箱 · 选模型](#3-选模型--acp_bridge_model)**。
-
-> 旧别名 `CURSOR_ACP_MODEL` / `CURSOR_ACP_PASSWORD` / `CURSOR_ACP_PORT` 仍被 `startup.sh` 兼容识别，
-> 但新部署请统一用 `ACP_BRIDGE_MODEL` / `ACP_BRIDGE_PASSWORD` / `ACP_BRIDGE_PORT`。
 
 ## HTTP 路由（摘要）
 

@@ -102,7 +102,7 @@ func TestSilentClarifyConfirmKeptWhenSummaryExists(t *testing.T) {
 func TestReviewConfirmReconcilesBeforeWrapUpAndRecordsSummary(t *testing.T) {
 	eng, db, provider := setupReviewEngine(t)
 	provider.reconcileMsg = "已按聊天记录把第 3 条结论补上原始链接。"
-	provider.reconcileSummary = "用户要求补齐证据链,已落到 proposals.json。"
+	provider.reconcileSummary = "用户要求补齐证据链,已落到 research.json。"
 	provider.wrapUpMsg = "已提交 src/a.go,跳过 tmp.log"
 
 	run, err := eng.StartRun("review-wf", map[string]any{"idea": "登录"}, "test")

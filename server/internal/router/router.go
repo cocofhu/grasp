@@ -13,7 +13,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// New builds the gin engine with all approving routes registered.
+// New builds the gin engine with all routes registered.
 func New(h *handlers.Handlers) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -92,6 +92,8 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.PATCH("/projects/:id/credentials/:credentialId", h.UpdateProjectCredential)
 		api.DELETE("/projects/:id/credentials/:credentialId", h.ClearProjectCredential)
 		api.POST("/projects/:id/credentials/:credentialId/revoke", h.RevokeProjectCredential)
+		api.GET("/projects/:id/agents/export", h.ExportProjectAgents)
+		api.POST("/projects/:id/agents/import", h.ImportProjectAgents)
 		api.GET("/projects/:id/shared-agent-config", h.GetProjectSharedAgent)
 		api.PUT("/projects/:id/shared-agent-config", h.PutProjectSharedAgent)
 		api.POST("/projects/:id/shared-agent-config/test", h.CreateProjectSharedAgentTest)
@@ -121,15 +123,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.POST("/projects/:id/channels", h.CreateProjectChannel)
 		api.PUT("/projects/:id/channels/:channelId", h.UpdateProjectChannel)
 		api.DELETE("/projects/:id/channels/:channelId", h.DeleteProjectChannelByID)
-		// Legacy singular aliases → primary channel.
-		api.GET("/projects/:id/channel", h.GetProjectChannel)
-		api.PUT("/projects/:id/channel", h.PutProjectChannel)
-		api.DELETE("/projects/:id/channel", h.DeleteProjectChannel)
 		api.GET("/projects/:id/pm/memories", h.ListPmMemories)
-		api.POST("/projects/:id/pm/memories", h.UpsertPmMemory)
-		api.DELETE("/projects/:id/pm/memories", h.ClearPmMemories)
-		api.PUT("/projects/:id/pm/memories/:mid", h.UpdatePmMemory)
-		api.DELETE("/projects/:id/pm/memories/:mid", h.DeletePmMemory)
 		api.GET("/projects/:id/pm/threads", h.ListPmThreads)
 		api.POST("/projects/:id/pm/threads", h.CreatePmThread)
 		api.GET("/projects/:id/pm/threads/:tid", h.GetPmThread)
@@ -208,6 +202,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 
 		api.GET("/gates", h.ListGates)
 		api.GET("/artifacts", h.ListArtifacts)
+		api.GET("/artifacts/tree", h.ArtifactTree)
 		api.GET("/artifacts/:id/content", h.ArtifactContent)
 		api.GET("/artifacts/:id/versions", h.ArtifactVersions)
 		api.GET("/artifacts/:id/versions/:rev/content", h.ArtifactVersionContent)
@@ -217,13 +212,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 
 		api.GET("/agents", h.ListAgents)
 		api.POST("/agents", h.CreateAgent)
-		// /agents/org must be registered before /agents/:name so "org" is not captured as a name.
-		api.GET("/agents/org", h.GetAgentsOrg)
-		api.PUT("/agents/org", h.PutAgentsOrg)
-		api.GET("/agents/org/export", h.ExportOrgFolder)
-		api.POST("/agents/org/import", h.ImportOrgFolder)
-		api.GET("/agents/org/sensitive-keys", h.ScanOrgSensitiveKeys)
-		api.POST("/agents/org/strip-sensitive-keys", h.StripOrgSensitiveKeys)
 		api.GET("/agents/:name/export", h.ExportAgent)
 		api.POST("/agents/import", h.ImportAgent)
 		api.GET("/agents/:name/workspace/revisions", h.ListAgentWorkspaceRevisions)
@@ -231,7 +219,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.POST("/agents/:name/workspace/revisions/:sha/restore", h.RestoreAgentWorkspaceRevision)
 		api.GET("/agents/:name", h.GetAgent)
 		api.PUT("/agents/:name", h.SaveAgent)
-		api.PATCH("/agents/:name/project", h.PatchAgentProject)
 		api.POST("/agents/:name/rename", h.RenameAgent)
 		api.DELETE("/agents/:name", h.DeleteAgent)
 		// Agent-scoped data (Studio). Project resolved from agent.projectId.
@@ -275,9 +262,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 	r.POST("/embed-api/session", h.RedeemEmbedSession)
 
 	// Project-scoped PM MCP hosts (outside /api).
-	r.POST("/mcp/pm/:projectId", h.PMMCPRPC)
-	r.GET("/mcp/pm/:projectId", h.PMMCPRPC)
-	r.DELETE("/mcp/pm/:projectId", h.PMMCPRPC)
 	r.POST("/mcp/pm/:projectId/:mcpId", h.PMMCPRPC)
 	r.GET("/mcp/pm/:projectId/:mcpId", h.PMMCPRPC)
 	r.DELETE("/mcp/pm/:projectId/:mcpId", h.PMMCPRPC)
@@ -331,7 +315,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 	}
 	sandboxRoutes.Any("/sandbox/:id/*path", h.SandboxProxy)
 	sandboxRoutes.Any("/sandbox-bridge/:id/*path", h.SandboxACPProxy)
-	sandboxRoutes.Any("/sandbox-acp/:id/*path", h.SandboxACPProxy)
 
 	// Preview proxy is intentionally outside SandboxRedirectMiddleware: iframe
 	// requests cannot carry cf_session; runId+nodeId+port acts as the credential.
@@ -398,7 +381,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 			strings.HasPrefix(p, "/mcp/") ||
 			strings.HasPrefix(p, "/sandbox/") ||
 			strings.HasPrefix(p, "/sandbox-bridge/") ||
-			strings.HasPrefix(p, "/sandbox-acp/") ||
 			strings.HasPrefix(p, "/sandbox-vnc/") ||
 			strings.HasPrefix(p, "/preview/") ||
 			strings.HasPrefix(p, "/preview-vnc/") ||

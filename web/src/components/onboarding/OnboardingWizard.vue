@@ -23,7 +23,7 @@ import type { AppLocale } from '@/lib/shared/loadLocaleMessages'
 import { useToast } from '@/lib/composables/useToast'
 import { writeStoredProjectId } from '@/lib/composables/useProjectContext'
 import { useWorkflowRunLaunch } from '@/lib/run/useWorkflowRunLaunch'
-import type { GitCredentialType } from '@/lib/agent/gitCredentialAnalysis'
+import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
 import {
   DEFAULT_PROJECT_ID,
   ONBOARDING_CLI_BACKENDS,
@@ -1040,7 +1040,7 @@ function editWorkflow() {
                         <label class="block">
                           <span class="onb-label">{{ t('pages.onboarding.repo.sshKey') }}</span>
                           <textarea
-                            v-model="draft.gitSshPrivateKey"
+                            v-model="draft.sshPrivateKey"
                             rows="4"
                             class="onb-input is-area font-mono"
                             data-testid="onboarding-ssh-key"
@@ -1048,8 +1048,11 @@ function editWorkflow() {
                         </label>
                         <label class="block">
                           <span class="onb-label">{{ t('pages.onboarding.repo.knownHosts') }}</span>
-                          <textarea v-model="draft.gitSshKnownHosts" rows="2" class="onb-input is-area font-mono" />
+                          <textarea v-model="draft.sshKnownHosts" rows="2" class="onb-input is-area font-mono" />
                         </label>
+                        <p class="onb-hint" data-testid="onboarding-ssh-credentials-hint">
+                          {{ t('pages.onboarding.repo.sshSavedToCredentials') }}
+                        </p>
                       </div>
                       <p class="onb-hint">
                         {{ t('pages.onboarding.git.foot') }}
@@ -1590,7 +1593,7 @@ function editWorkflow() {
 }
 .onb-team {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr) 20px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr) 20px minmax(0, 1fr) 20px minmax(0, 1fr);
   align-items: stretch;
 }
 .onb-team-arrow {

@@ -113,7 +113,7 @@ const gateNodes: WFNode[] = [
   {
     id: 'hg-visual',
     type: 'human_gate',
-    label: '方案确认',
+    label: '视觉确认',
     position: { x: 240, y: 0 },
     config: { body_template: '{{nodes.visual.outputs.page}}' },
   },

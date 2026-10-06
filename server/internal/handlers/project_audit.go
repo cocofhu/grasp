@@ -111,10 +111,6 @@ func (h *Handlers) parseAuditListFilter(c *gin.Context, projectID string) (servi
 	if !ok {
 		return services.AuditListFilter{}, false
 	}
-	page, pageSize := 1, defaultPageSize
-	if pg.Active {
-		page, pageSize = pg.Page, pg.PageSize
-	}
 	return services.AuditListFilter{
 		ProjectID:  projectID,
 		From:       from,
@@ -126,8 +122,8 @@ func (h *Handlers) parseAuditListFilter(c *gin.Context, projectID string) (servi
 		RunID:      c.Query("runId"),
 		NodeID:     c.Query("nodeId"),
 		Search:     c.Query("search"),
-		Page:       page,
-		PageSize:   pageSize,
+		Page:       pg.Page,
+		PageSize:   pg.PageSize,
 	}, true
 }
 

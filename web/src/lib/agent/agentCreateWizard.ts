@@ -1,13 +1,12 @@
 import type { Agent, AgentCapabilities, AgentFile, MCPServer } from '@/lib/api/api'
-import type { GitCredentialType } from '@/lib/agent/gitCredentialAnalysis'
+import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
 import { validateAgentName, normalizeAgentName } from '@/lib/agent/agentIO'
 import {
   AGENT_SETTINGS_REL_PATH,
-  authGuideFor,
   BACKEND_AUTH_HINTS,
   hasAuthKeyConfigured,
 } from '@/lib/agent/backendAuthGuide'
-import { stripTokenKeysFromKV, stripTokenKeysFromRecord } from '@/lib/agent/tokenEnvKeys'
+import { stripSecretKeysFromKV, stripSecretKeysFromRecord } from '@/lib/agent/secretEnvKeys'
 import { switchOpenCodeEnv } from '@/lib/agent/openCodeProvider'
 import { agentConfigRelPath } from '@/lib/agent/backendAuthGuide'
 import {
@@ -67,6 +66,8 @@ export const AGENT_SETTINGS_PATH = AGENT_SETTINGS_REL_PATH
 export type WizardDraft = {
   step: number
   name: string
+  /** Home project (required). */
+  projectId: string
   description: string
   /**
    * Role pack id for POST /agents templateId.
@@ -128,6 +129,7 @@ export function freshDraft(): WizardDraft {
   return {
     step: 0,
     name: '',
+    projectId: '',
     description: '',
     templateId: 'blank',
     startPath: 'apiKey',
@@ -253,17 +255,8 @@ export function hasCustomConfigWritten(draft: WizardDraft): boolean {
 }
 
 export function stripAuthKeysFromEnv(env: WizardKV[], backend: WizardBackendId): WizardKV[] {
-  const guide = authGuideFor(backend)
-  const keys = new Set<string>()
-  for (const spec of guide.keys) {
-    keys.add(spec.key)
-    if (spec.alt) keys.add(spec.alt)
-  }
-  const hint = BACKEND_AUTH_HINTS[backend]
-  keys.add(hint.key)
-  if (hint.alt) keys.add(hint.alt)
-  if (backend === 'trae') keys.add('TRAE_API_KEY')
-  return env.filter((e) => !keys.has(e.k.trim()))
+  const key = BACKEND_AUTH_HINTS[backend].key
+  return env.filter((e) => e.k.trim() !== key)
 }
 
 function collectFiles(draft: WizardDraft): AgentFile[] {
@@ -319,17 +312,18 @@ export function assembleCreatePayload(draft: WizardDraft): Agent & { templateId?
   const name = normalizeAgentName(draft.name)
   const envDraft: WizardDraft = {
     ...draft,
-    env: stripTokenKeysFromKV(
+    env: stripSecretKeysFromKV(
       draft.authMode === 'customConfig'
         ? stripAuthKeysFromEnv(draft.env, draft.acpBackend)
         : draft.env,
     ),
   }
-  const env = stripTokenKeysFromRecord(normalizeWizardRegions(envDraft))
+  const env = stripSecretKeysFromRecord(normalizeWizardRegions(envDraft))
   const useTemplate = hasRoleTemplate(draft)
   const files = collectFiles(draft)
   return {
     name,
+    projectId: draft.projectId.trim(),
     acpBackend: draft.acpBackend || APIKEY_BACKEND,
     ...(draft.gitCredentialType ? { gitCredentialType: draft.gitCredentialType } : {}),
     ...(useTemplate ? { templateId: draft.templateId.trim() } : {}),
@@ -350,6 +344,7 @@ export function validateBasics(draft: WizardDraft, existingNames: string[]): str
   if (code === 'invalid') return 'invalid'
   const normalized = normalizeAgentName(draft.name)
   if (existingNames.includes(normalized)) return 'exists'
+  if (!draft.projectId.trim()) return 'projectRequired'
   return ''
 }
 

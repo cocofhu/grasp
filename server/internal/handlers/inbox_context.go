@@ -63,14 +63,8 @@ func (h *Handlers) inboxContextGate(c *gin.Context, runID, gateNodeID string, it
 	}
 
 	gateNode := run.Graph.FindNode(gateNodeID)
-	upstreamIDs := services.GateUpstreamNodeIDs(gateNode, arts)
+	upstreamIDs := services.GateUpstreamNodeIDs(gateNode)
 	slimExecs := h.Runs.SlimNodeExecutions(runID, upstreamIDs)
-	for _, execs := range slimExecs {
-		for i := range execs {
-			outs, _ := execs[i]["outputs"].(map[string]any)
-			h.hydrateTestResultOutputs(outs, runID)
-		}
-	}
 
 	out := gin.H{
 		"type":           "gate",
@@ -140,12 +134,6 @@ func (h *Handlers) inboxContextClarify(c *gin.Context, runID, nodeID string, ite
 	clarifyNode := run.Graph.FindNode(nodeID)
 	slimIDs := services.ClarifySlimNodeIDs(clarifyNode, nodeID, arts)
 	slimExecs := h.Runs.SlimNodeExecutions(runID, slimIDs)
-	for _, execs := range slimExecs {
-		for i := range execs {
-			outs, _ := execs[i]["outputs"].(map[string]any)
-			h.hydrateTestResultOutputs(outs, runID)
-		}
-	}
 
 	clarify := gin.H{
 		"nodeId":    conv.NodeID,

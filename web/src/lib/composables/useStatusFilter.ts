@@ -1,15 +1,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter, type RouteLocationNormalizedLoaded, type Router } from 'vue-router'
 
-import {
-  GRASP_STORAGE_KEYS,
-  LEGACY_STORAGE_KEYS,
-  migrateLocalStorageKey,
-} from '@/lib/shared/migrateBrandStorage'
-
-export const STATUS_FILTER_STORAGE_KEY = GRASP_STORAGE_KEYS.runsStatusFilter
-
-migrateLocalStorageKey(LEGACY_STORAGE_KEYS.runsStatusFilter, STATUS_FILTER_STORAGE_KEY)
+export const STATUS_FILTER_STORAGE_KEY = 'grasp-runs-status-filter'
 
 const VALID_RUN_STATUSES = new Set([
   'running',

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/tokenledger"
+	"github.com/cocofhu/grasp/internal/tokenledger/ledgertest"
 )
 
 func TestProjectCRUDAndErrors(t *testing.T) {
@@ -66,14 +66,14 @@ func TestProjectCRUDAndErrors(t *testing.T) {
 		t.Fatalf("bad json create: %d", w.Code)
 	}
 
-	// Shared agent config stores project-level env (replaces sandboxEnv API)
+	// Shared agent config stores project-level non-secret env.
 	w = hn.do("PUT", "/api/projects/"+id+"/shared-agent-config", map[string]any{
-		"env": map[string]string{"CURSOR_API_KEY": "x"},
+		"env": map[string]string{"GITLAB_URL": "https://gl"},
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("shared agent put: %d %s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "CURSOR_API_KEY") {
+	if !strings.Contains(w.Body.String(), "GITLAB_URL") {
 		t.Fatalf("shared agent env missing: %s", w.Body.String())
 	}
 
@@ -130,7 +130,7 @@ func TestProjectDeleteWithWorkflows(t *testing.T) {
 	id := jsonField(w.Body.String(), "id")
 
 	wf := models.WorkflowDef{
-		ID: "wf-proj-block", Name: "blocked", Status: "draft", Version: 1,
+		ID: "wf-proj-block", Name: "blocked", Version: 1,
 		ProjectID: id, Graph: models.Graph{},
 	}
 	if err := hn.db.Create(&wf).Error; err != nil {
@@ -205,14 +205,14 @@ func TestProjectTotalTokensInListAndGet(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	must(hn.db.Create(&models.WorkflowDef{ID: "wf-tok", ProjectID: id, Name: "w", Status: "draft", Version: 1}).Error)
+	must(hn.db.Create(&models.WorkflowDef{ID: "wf-tok", ProjectID: id, Name: "w", Version: 1}).Error)
 	must(hn.db.Create(&models.Run{ID: "run-tok", WorkflowID: "wf-tok", Status: "completed"}).Error)
 	must(hn.db.Create(&models.StateRun{
 		RunID: "run-tok", NodeID: "n1", Status: "completed",
 		Usage: &models.TokenUsage{InputTokens: 128000, OutputTokens: 400},
 	}).Error)
 
-	must(tokenledger.Backfill(hn.db))
+	must(ledgertest.Sync(hn.db))
 
 	w = hn.do("GET", "/api/projects/"+id, nil)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"totalTokens":128400`) {
@@ -257,7 +257,7 @@ func TestGetProjectTokenStats(t *testing.T) {
 		}
 	}
 	now := time.Now().UTC()
-	must(hn.db.Create(&models.WorkflowDef{ID: "wf-stats", ProjectID: id, Name: "w", Status: "draft", Version: 1}).Error)
+	must(hn.db.Create(&models.WorkflowDef{ID: "wf-stats", ProjectID: id, Name: "w", Version: 1}).Error)
 	must(hn.db.Create(&models.Run{
 		ID: "run-stats", WorkflowID: "wf-stats", WorkflowName: "approve-main",
 		Status: "completed", StartedAt: now,
@@ -268,7 +268,7 @@ func TestGetProjectTokenStats(t *testing.T) {
 		Usage:     &models.TokenUsage{InputTokens: 10, OutputTokens: 5},
 	}).Error)
 
-	must(tokenledger.Backfill(hn.db))
+	must(ledgertest.Sync(hn.db))
 
 	w = hn.do("GET", "/api/projects/"+id+"/token-stats?window=all&timezone=UTC", nil)
 	if w.Code != http.StatusOK {

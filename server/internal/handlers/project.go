@@ -79,7 +79,7 @@ func (h *Handlers) CreateProject(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	p, err := h.Projects.Create(b.Name, b.Description, nil, b.Variables)
+	p, err := h.Projects.Create(b.Name, b.Description, b.Variables)
 	if err != nil {
 		writeProjectErr(c, err)
 		return
@@ -112,7 +112,7 @@ func (h *Handlers) UpdateProject(c *gin.Context) {
 		return
 	}
 	id := c.Param("id")
-	p, err := h.Projects.Update(id, b.Name, b.Description, nil, b.Variables, b.NotifyPolicy, b.UnknownModelDisplayName)
+	p, err := h.Projects.Update(id, b.Name, b.Description, b.Variables, b.NotifyPolicy, b.UnknownModelDisplayName)
 	if err != nil {
 		writeProjectErr(c, err)
 		return
@@ -211,7 +211,7 @@ func (h *Handlers) projectCredentialAdapters(projectID string) []services.Projec
 					masked = "••••••••"
 				}
 				out = append(out, services.ProjectCredentialView{
-					ID: "channel:" + ch.ID, ProjectID: projectID, Type: "channel", Kind: "channel",
+					ID: "channel:" + ch.ID, ProjectID: projectID, Type: "channel",
 					Provider: ch.Type, Name: ch.Name, Target: ch.ID, TargetType: "channel", TargetID: ch.ID,
 					Masked: masked, Source: "channel", Configured: ch.AppSecretSet, Enabled: ch.Enabled,
 					CreatedAt: ch.CreatedAt, UpdatedAt: ch.UpdatedAt,
@@ -222,7 +222,7 @@ func (h *Handlers) projectCredentialAdapters(projectID string) []services.Projec
 	if h.ProjectMcpKeys != nil {
 		for _, key := range h.ProjectMcpKeys.List(projectID) {
 			out = append(out, services.ProjectCredentialView{
-				ID: "external_mcp:" + key.ID, ProjectID: projectID, Type: "external_mcp", Kind: "external_mcp",
+				ID: "external_mcp:" + key.ID, ProjectID: projectID, Type: "external_mcp",
 				Name: key.Name, Target: key.ID, TargetType: "external_mcp", TargetID: key.ID,
 				Masked: key.KeyPrefix, Source: "external_mcp", Configured: true, Enabled: key.RevokedAt == nil,
 				RevokedAt: key.RevokedAt, CreatedAt: key.CreatedAt,
@@ -233,7 +233,7 @@ func (h *Handlers) projectCredentialAdapters(projectID string) []services.Projec
 		for _, wf := range h.WF.List(projectID) {
 			for _, key := range h.APIKeys.List(wf.ID) {
 				out = append(out, services.ProjectCredentialView{
-					ID: "workflow:" + key.ID, ProjectID: projectID, Type: "workflow", Kind: "workflow",
+					ID: "workflow:" + key.ID, ProjectID: projectID, Type: "workflow",
 					Name: key.Name, Target: wf.ID, TargetType: "workflow", TargetID: wf.ID,
 					Masked: key.KeyPrefix, Source: "workflow", Configured: true, Enabled: key.RevokedAt == nil,
 					RevokedAt: key.RevokedAt, CreatedAt: key.CreatedAt,

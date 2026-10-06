@@ -70,7 +70,7 @@ https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
 | Git delivery | `gh` / `glab` / SSH inside the sandbox |
 | Observability | Timeline, sandbox logs, artifacts, token usage |
 
-The repository includes Clarify, Visual, Research, Proposal, Plan, Implement, Test, Preview, and Review role packs. Run `agents/pack.sh` and import them in Agent Studio.
+The repository includes Clarify, Visual, Research, Plan, Implement, Test, Preview, and Review role packs. Run `agents/pack.sh` and import them in Agent Studio.
 
 ## Typical workflow
 
@@ -83,7 +83,7 @@ One sentence → Grasp (clarify / plan / page.html) → Human gate → build
 Fuller delivery machine:
 
 ```text
-Clarify → Research → Proposal → Human gate
+Clarify → Research → Human gate
         → Plan → Implement → Test → Review
         → Human confirm → PR / MR
 ```
@@ -161,7 +161,7 @@ See [`server/README.md`](server/README.md) for backend authentication, project c
 
 Configuration precedence is explicit environment variables > mounted config file > defaults. See [`server/CONFIGURATION.md`](server/CONFIGURATION.md) for all options and [`GATEWAY.md`](GATEWAY.md) for the gateway contract.
 
-For runtime credentials, the precedence is project credential UI > project shared env > Agent env; the server's own process environment is never injected into sandboxes. Compatible project/Agent environment variables are used only when no UI credential is configured. The precedence above applies to platform service configuration, not runtime credentials.
+Runtime credentials (ACP API keys, Git tokens and SSH keys) come only from the project credential UI; Agent env, project shared env and `sandbox.env` reject secret keys, and the server's own process environment is never injected into sandboxes. The precedence above applies to platform service configuration, not runtime credentials.
 
 ## Development and quality
 
@@ -176,7 +176,7 @@ Module-specific lint, test, coverage, and E2E commands are documented in [`AGENT
 ## Deployment and security notes
 
 - The default account is for local demos only. Configure your own authentication users before any shared or production deployment.
-- Manage ACP API keys and Git credentials in the project's credential UI. Environment variables remain a fallback for compatible deployments; never commit credentials.
+- Manage ACP API keys and Git credentials in the project's credential UI only; never commit credentials.
 - Pin production images by digest; see [Release images and smoke](CONTRIBUTING.md#release-images-and-smoke).
 - 1.0.0 is the first stable public release. Perform your own security review, backups, and capacity validation before production use.
 - **Reverse proxy Host:** temporary approval share links mint from this request's `Host` (never client `X-Forwarded-Host`). Preserve the browser Host (for example nginx `proxy_set_header Host $host`) and forward `X-Forwarded-Proto` when TLS terminates upstream. See [`SECURITY.md`](SECURITY.md).

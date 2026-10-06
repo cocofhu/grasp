@@ -30,10 +30,10 @@ var schemaLabels = map[string]string{
 	models.SchemaPlan:                 "计划",
 	models.SchemaResearch:             "调研",
 	models.SchemaRootCause:            "问题根因",
-	models.SchemaProposals:            "候选方案",
 	models.SchemaImplementationResult: "实现结果",
 	models.SchemaTestResult:           "测试结果",
 	models.SchemaReview:               "评审结论",
+	models.SchemaMergeRequest:         "合并请求",
 	models.SchemaPreflight:            "环境确认",
 	models.SchemaPage:                 "页面稿",
 }
@@ -43,10 +43,10 @@ var schemaRenderers = map[string]func(string) string{
 	models.SchemaPlan:                 mcp.RenderPlanMarkdown,
 	models.SchemaResearch:             mcp.RenderResearchMarkdown,
 	models.SchemaRootCause:            mcp.RenderRootCauseMarkdown,
-	models.SchemaProposals:            mcp.RenderProposalsMarkdown,
 	models.SchemaImplementationResult: mcp.RenderImplementationResultMarkdown,
 	models.SchemaTestResult:           mcp.RenderTestResultMarkdown,
 	models.SchemaReview:               mcp.RenderReviewMarkdown,
+	models.SchemaMergeRequest:         mcp.RenderMergeRequestMarkdown,
 	models.SchemaPreflight:            mcp.RenderPreflightMarkdown,
 }
 

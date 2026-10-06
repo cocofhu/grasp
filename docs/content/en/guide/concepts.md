@@ -7,7 +7,7 @@ description: FSM orchestration, human gates, sandboxed execution, and artifact c
 
 Grasp turns coding agents into steps in a workflow. You orchestrate on a finite state machine:
 
-- **Nodes** are states: Agent, input, output, set variable, branch, human gate, and proposal select — seven in total
+- **Nodes** are states: Agent, input, output, set variable, branch, and human gate — six in total
 - **Edges** are transitions, with configurable success, failure, and rollback paths
 - Use `when` guards and checkpoints to make risky steps explicit
 
@@ -40,8 +40,7 @@ Approval moments are first-class — not an afterthought. Grasp bets that agents
 In the pending-gates inbox, only **human_gate** cards (and the visual preview toolbar when a page artifact exists) offer **Copy temp link**. A signed-in operator can mint a one-shot URL so an unauthenticated person can approve or reject once.
 
 - Default TTL is 24 hours (1h / 8h / 24h / 72h / 7d). At most one active link per instance.
-- When minting, operators pick a permission preset: **Full access** (default — hot session reply / cancel / confirm+reject) or **ReAct chat only** (reply + cancel; every public confirm/reject decide is denied). The preset is stored on the link row and enforced on Preview.actions and public decide/reply/cancel together — hiding buttons alone is not enough. Legacy rows with an empty preset are treated as full access.
-- The management panel masks the URL by default; Copy writes the full fragment URL. Refreshing the same browser tab still lets you copy the same active URL. **Regen (inherit preset)** immediately revokes the old link and reuses the same TTL tier and permission preset; changing permission requires creating a new link (which revokes the prior active one). Revoke now disables the link. While the gate is still pending, revoked/expired links can be replaced; after the gate is decided the entry is read-only. `proposal_select` and pending clarify have no share entry (app preview uses the review-share path below).
+- When minting, operators pick a permission preset: **Full access** (default — hot session reply / cancel / confirm+reject) or **ReAct chat only** (reply + cancel; every public confirm/reject decide is denied). The preset is stored on the link row and enforced on Preview.actions and public decide/reply/cancel together — hiding buttons alone is not enough.- The management panel masks the URL by default; Copy writes the full fragment URL. Refreshing the same browser tab still lets you copy the same active URL. **Regen (inherit preset)** immediately revokes the old link and reuses the same TTL tier and permission preset; changing permission requires creating a new link (which revokes the prior active one). Revoke now disables the link. While the gate is still pending, revoked/expired links can be replaced; after the gate is decided the entry is read-only. Pending clarify has no share entry here (app preview uses the review-share path below).
 - The external page needs no login. It shows the title, description, redacted artifacts, a preset chip, and actions allowed by the preset. It does not expose project, run, members, or internal URLs. A cold **ReAct-only** link shows a dead-end message and never falls back to decide.
 - The token is bound to that one approval. Expiry, revoke, a **successful** decide, a login-side decision, or run completion invalidate unused links immediately. Denied decide calls on ReAct-only links do not mark the link used.
 - **Each visitor has their own conversation.** When one link is shared with several people, every browser (identified by an anonymous visitor id kept in local storage, so refreshes and new tabs keep it) gets its own dialogue and its own Agent context; visitors never see each other's messages. Before speaking, a visitor sees the node's dialogue so far. The Agent runs each visitor in a separate sandbox chat, but the **workspace and artifacts stay shared**: product edits one visitor asks for are visible to the others and in-product. Up to 6 visitors per link can talk at once; past that the page asks them to try again later. A visitor idle for 30 minutes has their sandbox chat closed, and their next message resumes with the existing conversation.
@@ -49,7 +48,7 @@ In the pending-gates inbox, only **human_gate** cards (and the visual preview to
 
 ### Temporary review links (Inbox kind=review)
 
-Inbox **pending review** and **app preview** cards reuse the same management panel and token rules (`ShareLinkKindReview`, including TTL and permission presets), but authenticated APIs live under `/api/runs/:id/reviews/:nodeId/share-link*` — not `/gates/...`, and no fake Gate row is created. In-product entries: card **Copy temp link** and the mobile detail top bar button with the same label. The public page is labeled **External review**; hot sessions support multi-turn ReAct. When the node registered an app preview, the public page defaults to remote desktop and picking via a short-lived ticket channel (desensitized ports; API ports use a same-origin iframe); mobile shows a degrade hint only. The only footer action is **Confirm and advance**. Per-visitor conversations, the shared workspace, and first-decision-wins apply as above. Run-detail review tabs and the logged-in review composer do not add a temp-link entry; `proposal_select` and pending clarify stay out of scope.
+Inbox **pending review** and **app preview** cards reuse the same management panel and token rules (`ShareLinkKindReview`, including TTL and permission presets), but authenticated APIs live under `/api/runs/:id/reviews/:nodeId/share-link*` — not `/gates/...`, and no fake Gate row is created. In-product entries: card **Copy temp link** and the mobile detail top bar button with the same label. The public page is labeled **External review**; hot sessions support multi-turn ReAct. When the node registered an app preview, the public page defaults to remote desktop and picking via a short-lived ticket channel (desensitized ports; API ports use a same-origin iframe); mobile shows a degrade hint only. The only footer action is **Confirm and advance**. Per-visitor conversations, the shared workspace, and first-decision-wins apply as above. Run-detail review tabs and the logged-in review composer do not add a temp-link entry; pending clarify stays out of scope.
 
 ### App preview: noVNC and direct IP
 
@@ -86,7 +85,7 @@ The page and chat card share the current candidate. "Use this one" keeps the ver
 
 Agents are not black-box prompts on a laptop. They execute in Docker containers through the in-repo [sandbox-gateway](https://github.com/cocofhu/approving/tree/main/sandbox-gateway), talking over ACP.
 
-Supported backends: **Cursor**, **Claude Code**, **CodeBuddy**, **Trae**, and **OpenCode**. Configure `acpBackend` per agent; save backend keys, sites, and other runtime credentials in the project's credential UI first. Compatible project or Agent meta environment variables are a fallback only when no project credential is configured (OpenCode also takes vendor, optional API Base, and model).
+Supported backends: **Cursor**, **Claude Code**, **CodeBuddy**, **Trae**, and **OpenCode**. Configure `acpBackend` per agent; backend keys are saved only in the project's credential UI; non-secret options such as sites may go in Agent meta env (OpenCode also takes vendor, optional API Base, and model).
 
 ## Artifact contract and MCP
 
@@ -98,11 +97,11 @@ Each run has an isolated artifact MCP. Agents call tools such as:
 
 Isolation is by run token, leaving an inspectable paper trail.
 
-## PM: `pm-agent-fs` (org + Agent workspace)
+## PM: `pm-agent-fs` (project members + Agent workspace)
 
 A project-bound PM Leader can enable the dedicated MCP `pm-agent-fs` (on by default for new projects; older projects with an explicit EnabledMcps list must opt in under PM settings):
 
-- `pm_get_org`: read virtual groups and flat same-project members (self / direct / other relative to the PM)
+- `pm_list_project_agents`: list every Agent in the current project (self / other relative to the PM)
 - `pm_fs_*`: list/read/write/delete/mkdir/rename the **host-side** `workspace/` of any same-project agent (**not** Run sandbox FS)
 
 Writes land on the same disk tree as Agent Studio「Agent workspace」and are visible after **refresh or reopen** (no live hot-reload). If Studio still has an unsaved dirty draft for the same Agent, a later Save may overwrite MCP writes — refresh and avoid concurrent dirty edits during demos.

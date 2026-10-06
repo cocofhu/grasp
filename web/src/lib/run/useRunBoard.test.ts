@@ -8,8 +8,6 @@ vi.mock('@/lib/api/api', () => ({
   api: {
     listRuns: (...args: unknown[]) => listRuns(...args),
   },
-  isPaginated: (data: unknown) =>
-    data != null && typeof data === 'object' && !Array.isArray(data) && 'items' in (data as object),
 }))
 
 import { useRunBoard } from './useRunBoard'

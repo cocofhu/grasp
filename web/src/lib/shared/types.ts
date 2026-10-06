@@ -7,7 +7,6 @@ export type NodeType =
   | 'branch'
   | 'agent'
   | 'human_gate'
-  | 'proposal_select'
 
 export type NodeRunStatus =
   | 'pending'
@@ -41,7 +40,7 @@ export interface WFEdge {
   target: string
   when?: string
   label?: string
-  // FSM 转移语义(缺省按 success 处理,兼容旧数据)
+  // FSM 转移语义(缺省按 success 处理)
   kind?: EdgeKind
   // rollback/failure 时携带回上游的变量/错误(如 last_error)
   carry?: string[]
@@ -56,8 +55,12 @@ export interface Workflow {
   description: string
   /** Client-only display name resolved from Project.id (home cards/select). */
   projectName?: string
+  /** Computed by the server: published when publishedVersion is the latest version. */
   status: 'draft' | 'published'
+  /** Latest saved version (every content-changing save appends one). */
   version: number
+  /** Version that API runs execute; 0 = never published. */
+  publishedVersion?: number
   updatedAt: string
   lastRunAt?: string
   needsRepo: boolean
@@ -66,6 +69,7 @@ export interface Workflow {
   notifyPolicy?: WorkflowNotifyPolicy
   nodes: WFNode[]
   edges: WFEdge[]
+  variables?: WorkflowGraph['variables']
 }
 
 /** Project-level Run→IM notification defaults. */
@@ -74,9 +78,9 @@ export interface ProjectNotifyPolicy {
   defaultEvents?: string[]
   /** Explicit 0~N channel fan-out targets (may include primary). Empty = no deliver. */
   channelIds?: string[]
-  /** Full QQ body for waiting_human; trim-empty → legacy FormatRunNotifyMessage. */
+  /** Full QQ body for waiting_human; trim-empty → default FormatRunNotifyMessage. */
   waitingHumanTemplate?: string
-  /** Full QQ body for failed; trim-empty → legacy FormatRunNotifyMessage. */
+  /** Full QQ body for failed; trim-empty → default FormatRunNotifyMessage. */
   failedTemplate?: string
   /** Full QQ body for completed; trim-empty → FormatRunNotifyMessage. Opt-in. */
   completedTemplate?: string
@@ -93,8 +97,6 @@ export interface ProjectEnvEntry {
   key: string
   value: string
   secret?: boolean
-  /** When false, skipped at injection; missing/undefined means enabled (legacy compat). */
-  enabled?: boolean
 }
 
 /** Project-level workflow variable (vars.*); secret values masked on read. */
@@ -114,11 +116,6 @@ export interface Project {
   id: string
   name: string
   description: string
-  /**
-   * @deprecated Removed from Project API — use project shared Agent config env instead.
-   * Kept optional only for transitional mocks; do not read/write in UI.
-   */
-  sandboxEnv?: ProjectEnvEntry[]
   variables: ProjectVariable[]
   workflowCount?: number
   /**
@@ -183,7 +180,6 @@ export interface ProjectAuditFacets {
   runs: ProjectAuditFacetRun[]
   nodes: ProjectAuditFacetNode[]
   resources: ProjectAuditFacetResource[]
-  actors?: string[]
 }
 
 export interface ProjectAuditStats {
@@ -497,7 +493,7 @@ export interface RequirementDraft {
   title: string
   bodyMarkdown: string
   status: 'open' | 'done'
-  /** requirement|milestone; legacy rows default to requirement. */
+  /** requirement | milestone */
   kind: RequirementDraftKind
   /** YYYY-MM-DD begin date (requirements); empty when unscheduled. */
   startAt: string
@@ -586,7 +582,7 @@ export interface ChatMessage {
   threadId: string
   role: 'user' | 'assistant' | 'system' | string
   content: string
-  /** ok | failed; empty/legacy treated as ok */
+  /** ok | failed; empty treated as ok */
   status?: 'ok' | 'failed' | string
   /** connection | sandbox | empty | unknown | stopped */
   failKind?: 'connection' | 'sandbox' | 'empty' | 'unknown' | 'stopped' | string
@@ -603,10 +599,19 @@ export interface ChatMessage {
 }
 
 // A published, immutable snapshot of a workflow's graph.
+export type WorkflowVersionSource = 'save' | 'restore' | 'import' | 'pm'
+
 export interface WorkflowVersion {
   workflowId: string
   version: number
-  publishedAt: string
+  name: string
+  description: string
+  nodeCount: number
+  source: WorkflowVersionSource
+  /** Set when source is restore: the version whose content was restored. */
+  restoredFrom?: number
+  createdAt: string
+  publishedAt?: string
 }
 
 export interface WorkflowGraph {
@@ -726,7 +731,7 @@ export interface ModelTokenUsage extends TokenUsage {
   filled?: boolean
 }
 
-/** modelKey → bucket (keys are ingest-merged;「未知/未分桶」for legacy). */
+/** modelKey → bucket (keys are ingest-merged;「未知/未分桶」when the model is unknown). */
 export type TokenUsageByModel = Record<string, ModelTokenUsage>
 
 export interface NodeRun {
@@ -776,8 +781,25 @@ export interface Artifact {
   content?: string
 }
 
+/** One workflow bucket under a project in GET /api/artifacts/tree. */
+export interface ArtifactTreeWorkflow {
+  workflowId: string
+  workflowName: string
+  count: number
+}
+
+/** One project bucket of GET /api/artifacts/tree (only projects owning artifacts). */
+export interface ArtifactTreeProject {
+  projectId: string
+  projectName: string
+  count: number
+  /** Workflow-less artifacts (Agent sessions). */
+  sessionCount: number
+  workflows: ArtifactTreeWorkflow[]
+}
+
 export interface ClarifyImage {
-  /** Base64 (no data: prefix) on upload / legacy rows; omitted after blob externalization. */
+  /** Base64 (no data: prefix) on upload; omitted after blob externalization. */
   data?: string
   /** blob:{id} reference after server-side externalization. */
   ref?: string
@@ -918,7 +940,7 @@ export interface Gate {
   bodyMd: string
   actions: { id: string; label: string; requireForm?: boolean }[]
   form?: { key: string; label: string; required?: boolean }[]
-  /** Upstream execution bound at gate create (page preferred). Absent on legacy gates. */
+  /** Upstream execution bound at gate create (page preferred). Absent when the template has no upstream product. */
   upstreamNodeId?: string
   upstreamIteration?: number
   // The upstream producer node whose still-alive review session a ReAct reject
@@ -934,8 +956,8 @@ export interface Gate {
 export interface GateShareInboxStatus {
   state: 'none' | 'active' | 'used' | 'revoked' | 'expired' | string
   ttlTier?: string
-  /** Link-level capability: full | react_only. Absent/empty ⇒ full. */
-  permissionPreset?: 'full' | 'react_only' | string
+  /** Link-level capability; absent only when no link exists (state none). */
+  permissionPreset?: 'full' | 'react_only'
   expiresAt?: string
   remainingSec?: number
   usedAt?: string
@@ -948,7 +970,7 @@ export interface GateShareInboxStatus {
 
 export interface GateInboxItem extends Gate {
   type: 'gate'
-  /** Graph node type (human_gate / proposal_select). Share entry only for human_gate. */
+  /** Graph node type. Share entry only for human_gate. */
   nodeType?: string
   shareLink?: GateShareInboxStatus
 }
@@ -1082,8 +1104,6 @@ export interface Run {
   vars?: RunVar[]
   /** Run-level human failure reason (failed runs only). */
   error?: string
-  /** Alias of error for API consumers expecting failedReason. */
-  failedReason?: string
   failedNode?: string
   noSandboxLog?: boolean
   logSummaryOrRef?: string

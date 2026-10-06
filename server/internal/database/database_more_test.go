@@ -20,25 +20,27 @@ func TestOpenSQLiteTestBadParent(t *testing.T) {
 	}
 }
 
-func TestEnsureDefaultProjectUsesOldestWhenDefaultMissing(t *testing.T) {
-	db, err := OpenSQLite(filepath.Join(t.TempDir(), "oldest.db"))
+func TestEnsureDefaultProjectOnlyOnEmptyDB(t *testing.T) {
+	db, err := OpenSQLite(filepath.Join(t.TempDir(), "default.db"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	var p models.Project
+	if err := db.First(&p, "id = ?", models.DefaultProjectID).Error; err != nil {
+		t.Fatalf("default project missing on fresh db: %v", err)
 	}
 	db.Exec("DELETE FROM projects")
 	now := time.Now()
 	if err := db.Create(&models.Project{
-		ID: "custom-oldest", Name: "Oldest", SandboxEnv: []models.EnvEntry{},
-		Variables: []models.ProjectVariable{}, CreatedAt: now.Add(-time.Hour), UpdatedAt: now,
+		ID: "custom", Name: "Custom", Variables: []models.ProjectVariable{},
+		CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	db.Exec(`INSERT INTO workflow_defs (id, name, status, version, needs_repo, graph, project_id, created_at, updated_at)
-		VALUES ('wf-empty-pid', 'W', 'draft', 1, 0, '{}', '', datetime('now'), datetime('now'))`)
 	ensureDefaultProject(db)
-	var pid string
-	db.Raw("SELECT project_id FROM workflow_defs WHERE id = ?", "wf-empty-pid").Scan(&pid)
-	if pid != "custom-oldest" {
-		t.Fatalf("expected backfill to oldest project, got %q", pid)
+	var n int64
+	db.Model(&models.Project{}).Count(&n)
+	if n != 1 {
+		t.Fatalf("ensureDefaultProject must not create when projects exist, got %d", n)
 	}
 }

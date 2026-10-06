@@ -3,7 +3,6 @@ package handlers
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -84,52 +83,5 @@ func TestPreviewVNCNilDeps(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/ws/preview/r/n/3000/vnc", nil))
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("nil browser: %d %s", w.Code, w.Body.String())
-	}
-}
-
-func TestHydrateHelpers(t *testing.T) {
-	db, err := database.OpenSQLiteTest(t.TempDir() + "/hyd.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	arts := services.NewArtifactService(db)
-	h := &Handlers{Arts: arts}
-
-	if got := h.hydrateTestResultJSON("", "r1"); got != "" {
-		t.Fatalf("empty raw: %q", got)
-	}
-	if got := h.hydrateTestResultJSON(`{"x":1}`, ""); got != `{"x":1}` {
-		t.Fatalf("empty run: %q", got)
-	}
-
-	h.hydrateTestResultOutputs(nil, "r1")
-	outs := map[string]any{"other": 1}
-	h.hydrateTestResultOutputs(outs, "r1")
-	if outs["other"] != 1 {
-		t.Fatal("non-string field mutated")
-	}
-	outs["test_result_json"] = `{"screenshots":[{"artifact":"shot.png"}]}`
-	if _, err := arts.Save("r1", "n1", "shot.png", "image", "img"); err != nil {
-		t.Fatal(err)
-	}
-	h.hydrateTestResultOutputs(outs, "r1")
-	hydrated, _ := outs["test_result_json"].(string)
-	// Hydrate inlines artifact bytes as data/mimeType and drops the artifact name.
-	if !strings.Contains(hydrated, `"data":"img"`) || !strings.Contains(hydrated, "image/png") {
-		t.Fatalf("hydrate did not inline artifact content: %s", hydrated)
-	}
-
-	nodeExecs := map[string][]gin.H{
-		"n1": {
-			{"outputs": map[string]any{"test_result_json": `{"summary":"ok","screenshots":[{"artifact":"shot.png"}]}`}},
-			{"outputs": "bad"},
-			{"no": "outputs"},
-		},
-	}
-	h.hydrateNodeExecutions(nodeExecs, "r1")
-	outs0, _ := nodeExecs["n1"][0]["outputs"].(map[string]any)
-	got, _ := outs0["test_result_json"].(string)
-	if !strings.Contains(got, `"data":"img"`) {
-		t.Fatalf("hydrateNodeExecutions did not inline artifact: %v", outs0)
 	}
 }

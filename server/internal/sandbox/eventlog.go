@@ -64,7 +64,7 @@ func (r *EventLogReader) dial(ctx context.Context) (*websocket.Conn, error) {
 		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
 		}
-		if !unauthorized || r.password == "" || attempt > 0 {
+		if !unauthorized || attempt > 0 {
 			return nil, fmt.Errorf("ws dial: %w", err)
 		}
 		cookie, err = r.sessionCookie(ctx, cookie)
@@ -75,7 +75,7 @@ func (r *EventLogReader) dial(ctx context.Context) (*websocket.Conn, error) {
 }
 
 // FetchEventLog reads the full agent event history straight from a live
-// sandbox's cursor-acp bridge — the bridge records every op:event payload it
+// sandbox's acp-bridge — the bridge records every op:event payload it
 // ever broadcast and serves them via the {op:connect} handshake (eventLog +
 // totalTurns + hasMoreTurns) and GET /api/events?before=&limit= for older
 // turns. We connect as a passive observer (autoPermission=true), aggregate the
@@ -89,12 +89,9 @@ func (r *EventLogReader) dial(ctx context.Context) (*websocket.Conn, error) {
 // Streaming bubble seeds and timeline ingest must use FetchEventLogLastTurn /
 // AggregateLastTurnFrames instead — otherwise a hard refresh stitches the
 // previous turn into the live bubble.
-func FetchEventLog(ctx context.Context, host string, port int) (*ChatResult, string, error) {
-	return FetchEventLogWithPassword(ctx, host, port, "")
-}
-
-// FetchEventLogWithPassword authenticates with the sandbox token before reading
-// history. The cookie is shared by the WebSocket handshake and older HTTP pages.
+//
+// It authenticates with the sandbox token before reading history. The cookie is
+// shared by the WebSocket handshake and older HTTP pages.
 func FetchEventLogWithPassword(ctx context.Context, host string, port int, password string) (*ChatResult, string, error) {
 	return NewEventLogReader(host, port, password).Fetch(ctx)
 }
@@ -112,15 +109,10 @@ func (r *EventLogReader) Fetch(ctx context.Context) (*ChatResult, string, error)
 	return result, sessionID, nil
 }
 
-// FetchEventLogLastTurn is like FetchEventLog but only folds frames after the
-// last prompt_begin. Used for nodeEvents / timeline streaming seeds so the
-// live bubble never receives cross-turn narration. The sandbox still keeps the
-// full eventLog for console replay via FetchEventLog / FetchEventLogRaw.
-func FetchEventLogLastTurn(ctx context.Context, host string, port int) (*ChatResult, string, error) {
-	return FetchEventLogLastTurnWithPassword(ctx, host, port, "")
-}
-
-// FetchEventLogLastTurnWithPassword is the authenticated current-turn reader.
+// FetchEventLogLastTurnWithPassword is like FetchEventLogWithPassword but only
+// folds frames after the last prompt_begin. Used for nodeEvents / timeline
+// streaming seeds so the live bubble never receives cross-turn narration. The
+// sandbox still keeps the full eventLog for console replay.
 func FetchEventLogLastTurnWithPassword(ctx context.Context, host string, port int, password string) (*ChatResult, string, error) {
 	return NewEventLogReader(host, port, password).LastTurn(ctx)
 }
@@ -138,17 +130,13 @@ func (r *EventLogReader) LastTurn(ctx context.Context) (*ChatResult, string, err
 	return result, sessionID, nil
 }
 
-// FetchEventLogRaw is like FetchEventLog but returns the raw event frames
-// (full {op:"event",...} / bare {type,update} JSON) instead of an aggregated
-// ChatResult. Callers that need per-turn structure — e.g. rebuilding a Q→A→Q→A
-// transcript with the original user prompts (prompt_begin frames carry
-// promptText + imageURLs, which the aggregate drops) — use this.
-func FetchEventLogRaw(ctx context.Context, host string, port int) ([]json.RawMessage, string, error) {
-	return FetchEventLogRawWithPassword(ctx, host, port, "")
-}
-
-// FetchEventLogRawWithPassword reads authenticated raw history. Login failures
-// are returned directly; a rejected token must never trigger an anonymous retry.
+// FetchEventLogRawWithPassword is like FetchEventLogWithPassword but returns the
+// raw event frames (full {op:"event",...} / bare {type,update} JSON) instead of
+// an aggregated ChatResult. Callers that need per-turn structure — e.g.
+// rebuilding a Q→A→Q→A transcript with the original user prompts (prompt_begin
+// frames carry promptText + imageURLs, which the aggregate drops) — use this.
+// Login failures are returned directly; a rejected token is never retried
+// anonymously.
 func FetchEventLogRawWithPassword(ctx context.Context, host string, port int, password string) ([]json.RawMessage, string, error) {
 	return NewEventLogReader(host, port, password).Raw(ctx)
 }
@@ -226,7 +214,7 @@ func (r *EventLogReader) fetchEventsBefore(ctx context.Context, before, limit in
 		if err != nil {
 			return nil, false, fmt.Errorf("acp events GET: %w", err)
 		}
-		if resp.StatusCode == http.StatusUnauthorized && r.password != "" && attempt == 0 {
+		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
 			_ = resp.Body.Close()
 			cookie, err = r.sessionCookie(ctx, cookie)
 			if err != nil {
@@ -264,15 +252,11 @@ type EventLogPageResult struct {
 	HasMore    bool
 }
 
-// FetchEventLogPage returns a page of raw event frames from a live sandbox.
-// Without cursor it returns the most recent limit turns; with cursor (turn index
-// as string) it fetches older history via GET /api/events?before=&limit=.
-func FetchEventLogPage(ctx context.Context, host string, port int, cursor string, limit int) (*EventLogPageResult, error) {
-	return FetchEventLogPageWithPassword(ctx, host, port, cursor, limit, "")
-}
-
-// FetchEventLogPageWithPassword authenticates both the initial WebSocket page
-// and subsequent HTTP pages using the same sandbox token as the driving client.
+// FetchEventLogPageWithPassword returns a page of raw event frames from a live
+// sandbox. Without cursor it returns the most recent limit turns; with cursor
+// (turn index as string) it fetches older history via
+// GET /api/events?before=&limit=. Both the initial WebSocket page and later HTTP
+// pages use the same sandbox token as the driving client.
 func FetchEventLogPageWithPassword(ctx context.Context, host string, port int, cursor string, limit int, password string) (*EventLogPageResult, error) {
 	return NewEventLogReader(host, port, password).Page(ctx, cursor, limit)
 }
@@ -371,7 +355,7 @@ func AggregateLastTurnFrames(frames []json.RawMessage) []models.AcpEvent {
 
 // FramesAfterLastPromptBegin returns frames from the last prompt_begin onward
 // (inclusive). When no prompt_begin is present, frames are returned unchanged
-// (single-turn / legacy logs).
+// (single-turn logs).
 func FramesAfterLastPromptBegin(frames []json.RawMessage) []json.RawMessage {
 	last := -1
 	for i, raw := range frames {

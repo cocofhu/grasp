@@ -100,6 +100,7 @@ func TestManagerCreateSSHFallbackWhenNoInject(t *testing.T) {
 		Name:       "grasp-sb-cfg",
 		ConfigHome: home,
 		ConfigRoot: "/root/.cursor",
+		Env:        map[string]string{BridgePasswordEnv: testBridgePassword},
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)

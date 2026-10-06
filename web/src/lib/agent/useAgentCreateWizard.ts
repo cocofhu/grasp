@@ -31,9 +31,8 @@ import type { AgentTemplateOption } from '@/components/agent/AgentTemplateSelect
 import type { AgentTemplate } from '@/lib/api/apiTypes'
 import { backendForStartPath } from '@/lib/shared/startPath'
 import { authGuideFor, defaultSettingsPlaceholder, hasAuthKeyConfigured } from '@/lib/agent/backendAuthGuide'
-import type { GitCredentialType } from '@/lib/agent/gitCredentialAnalysis'
+import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
 import { getRegionPolicy, setRegion } from '@/lib/shared/regionPolicy'
-import { useInheritedGitEnv } from '@/lib/agent/useInheritedGitEnv'
 import {
   applyOpenCodeFields,
   openCodeCustomBaseRequired,
@@ -45,7 +44,9 @@ import {
 export interface AgentCreateWizardProps {
   open: boolean
   existingNames: string[]
-  /** When set, Git step can inherit project shared Agent env for hide/infer. */
+  /** Selectable home projects; the wizard requires one. */
+  projects: { id: string; name: string }[]
+  /** Prefilled home project (project row menu / current context). */
   projectId?: string
 }
 
@@ -57,10 +58,13 @@ export type AgentCreateWizardEmit = {
 
 export function useAgentCreateWizard(props: AgentCreateWizardProps, emit: AgentCreateWizardEmit) {
 const { t, te } = useI18n()
-const { inheritedEnv } = useInheritedGitEnv(() => props.projectId)
+function openDraft(): WizardDraft {
+  return { ...freshDraft(), projectId: props.projectId || props.projects[0]?.id || '' }
+}
+const draft = ref<WizardDraft>(openDraft())
 
-const draft = ref<WizardDraft>(freshDraft())
 const nameError = ref('')
+const projectError = ref('')
 const creating = ref(false)
 const createError = ref('')
 const pendingAcp = ref<WizardBackendId | null>(null)
@@ -142,8 +146,9 @@ watch(
   () => props.open,
   (open) => {
     if (open) {
-      draft.value = freshDraft()
+      draft.value = openDraft()
       nameError.value = ''
+      projectError.value = ''
       createError.value = ''
       creating.value = false
       pendingAcp.value = null
@@ -361,21 +366,25 @@ function validateApiKeyStep(): boolean {
   return true
 }
 
+/** Show the basics-step error for err; returns true when there is none. */
+function applyBasicsError(err: string): boolean {
+  nameError.value =
+    err === 'required'
+      ? t('pages.agentStudio.dialogs.nameRequired')
+      : err === 'invalid'
+        ? t('pages.agentStudio.dialogs.nameInvalid')
+        : err === 'exists'
+          ? t('pages.agentStudio.dialogs.nameExists')
+          : ''
+  projectError.value = err === 'projectRequired' ? t('pages.agentStudio.project.required') : ''
+  return !err
+}
+
 function goNext() {
   if (creating.value) return
   const step = currentStep.value
   if (step.id === 'basics') {
-    const err = validateBasics(draft.value, props.existingNames)
-    if (err) {
-      nameError.value =
-        err === 'required'
-          ? t('pages.agentStudio.dialogs.nameRequired')
-          : err === 'invalid'
-            ? t('pages.agentStudio.dialogs.nameInvalid')
-            : t('pages.agentStudio.dialogs.nameExists')
-      return
-    }
-    nameError.value = ''
+    if (!applyBasicsError(validateBasics(draft.value, props.existingNames))) return
   }
   if (step.id === 'apiKey' && !validateApiKeyStep()) return
   if (step.id === 'review') {
@@ -389,15 +398,8 @@ function goNext() {
 }
 
 async function submitCreate() {
-  const err = validateBasics(draft.value, props.existingNames)
-  if (err) {
+  if (!applyBasicsError(validateBasics(draft.value, props.existingNames))) {
     draft.value.step = 0
-    nameError.value =
-      err === 'required'
-        ? t('pages.agentStudio.dialogs.nameRequired')
-        : err === 'invalid'
-          ? t('pages.agentStudio.dialogs.nameInvalid')
-          : t('pages.agentStudio.dialogs.nameExists')
     stepAnimKey.value++
     return
   }
@@ -405,7 +407,6 @@ async function submitCreate() {
   createError.value = ''
   try {
     const payload = assembleCreatePayload(draft.value)
-    if (props.projectId) payload.projectId = props.projectId
     const created = await api.createAgent(payload)
     emit('created', created)
     emit('close')
@@ -426,6 +427,7 @@ function chipClass(kind: string) {
   t,
   draft,
   nameError,
+  projectError,
   creating,
   createError,
   pendingAcp,
@@ -468,7 +470,6 @@ function chipClass(kind: string) {
   onOpenCodeModel,
   onOpenCodeVision,
   onGitCredentialType,
-  inheritedEnv,
   goPrev,
   goSkip,
   goNext,

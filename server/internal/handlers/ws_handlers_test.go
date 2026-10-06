@@ -48,7 +48,7 @@ func TestRunEventsWS(t *testing.T) {
 func TestRunEventsWSReviewEnqueueError(t *testing.T) {
 	h := newHarness(t)
 	h.db.Create(&models.Run{ID: "rw-rev", Status: "running", StartedAt: time.Now(), Graph: models.Graph{
-		Nodes: []models.Node{{ID: "proposal", Type: "agent"}},
+		Nodes: []models.Node{{ID: "research", Type: "agent"}},
 	}})
 	srv := httptest.NewServer(h.r)
 	defer srv.Close()
@@ -65,7 +65,7 @@ func TestRunEventsWSReviewEnqueueError(t *testing.T) {
 	}
 	// Empty content → EnqueueReviewTurn error → review/error frame.
 	if err := c.WriteJSON(map[string]any{
-		"type": "review_chat", "nodeId": "proposal", "content": "",
+		"type": "review_chat", "nodeId": "research", "content": "",
 	}); err != nil {
 		t.Fatalf("write: %v", err)
 	}

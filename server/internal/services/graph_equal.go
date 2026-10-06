@@ -3,52 +3,21 @@ package services
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
-	"math"
-	"strings"
 
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-// normalizeOutputConfig mirrors web migrateOutputConfig + cleanOutputConfigForSave:
-// ensure results[], drop legacy result. Used so a client that cleaned on hydrate
-// does not look like a graph change vs a DB head that still stores result.
+// normalizeOutputConfig treats a missing results list as empty so a client
+// that seeds results:[] does not look like a graph change.
 func normalizeOutputConfig(cfg map[string]any) map[string]any {
-	// Saturate capacity hint so len(cfg)+1 cannot overflow (CodeQL #23).
-	hint := len(cfg)
-	if hint < math.MaxInt {
-		hint++
+	if _, ok := cfg["results"]; ok {
+		return cfg
 	}
-	out := make(map[string]any, hint)
+	out := make(map[string]any, len(cfg))
 	for k, v := range cfg {
 		out[k] = v
 	}
-	if _, ok := out["results"]; ok {
-		if _, isArr := out["results"].([]any); !isArr {
-			// JSON arrays sometimes decode as []string; coerce via remarshal path below.
-			if raw, err := json.Marshal(out["results"]); err == nil {
-				var arr []any
-				if json.Unmarshal(raw, &arr) == nil {
-					out["results"] = arr
-				} else {
-					out["results"] = []any{}
-				}
-			} else {
-				out["results"] = []any{}
-			}
-		}
-	} else {
-		result := ""
-		if r, ok := out["result"]; ok && r != nil {
-			result = strings.TrimSpace(fmt.Sprint(r))
-		}
-		if result != "" {
-			out["results"] = []any{result}
-		} else {
-			out["results"] = []any{}
-		}
-	}
-	delete(out, "result")
+	out["results"] = []any{}
 	return out
 }
 
@@ -91,19 +60,6 @@ func normalizeGraph(g models.Graph) models.Graph {
 // round-trips do not look like a graph change.
 func GraphsEqual(a, b models.Graph) bool {
 	return graphJSONEqual(normalizeGraph(a), normalizeGraph(b))
-}
-
-// GraphsEqualIgnoringLayout is GraphsEqual without node positions: moving
-// nodes on the canvas does not change what the workflow runs.
-func GraphsEqualIgnoringLayout(a, b models.Graph) bool {
-	na, nb := normalizeGraph(a), normalizeGraph(b)
-	for i := range na.Nodes {
-		na.Nodes[i].Position = models.Position{}
-	}
-	for i := range nb.Nodes {
-		nb.Nodes[i].Position = models.Position{}
-	}
-	return graphJSONEqual(na, nb)
 }
 
 func graphJSONEqual(na, nb models.Graph) bool {

@@ -18,11 +18,11 @@ func TestTokenStatsAggregation(t *testing.T) {
 	}
 	s := NewProjectService(db)
 
-	proj, err := s.Create("TokStats", "", nil, nil)
+	proj, err := s.Create("TokStats", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	emptyProj, err := s.Create("EmptyTok", "", nil, nil)
+	emptyProj, err := s.Create("EmptyTok", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,9 +42,9 @@ func TestTokenStatsAggregation(t *testing.T) {
 	}
 	ptr := func(tt time.Time) *time.Time { return &tt }
 
-	must(&models.WorkflowDef{ID: "wf-a", ProjectID: proj.ID, Name: "approve-main", Status: "draft", Version: 1})
-	must(&models.WorkflowDef{ID: "wf-b", ProjectID: proj.ID, Name: "doc-review", Status: "draft", Version: 1})
-	must(&models.WorkflowDef{ID: "wf-c", ProjectID: proj.ID, Name: "misc", Status: "draft", Version: 1})
+	must(&models.WorkflowDef{ID: "wf-a", ProjectID: proj.ID, Name: "approve-main", Version: 1})
+	must(&models.WorkflowDef{ID: "wf-b", ProjectID: proj.ID, Name: "doc-review", Version: 1})
+	must(&models.WorkflowDef{ID: "wf-c", ProjectID: proj.ID, Name: "misc", Version: 1})
 
 	// Day in window (2026-07-24 local): reported usage on completed run.
 	dayIn := time.Date(2026, 7, 24, 10, 0, 0, 0, loc).UTC()
@@ -204,7 +204,7 @@ func TestTokenStatsAggregation(t *testing.T) {
 
 	t.Run("top10_plus_other_sums_to_total", func(t *testing.T) {
 		// Seed 12 workflows with distinct totals so other appears.
-		extraProj, err := s.Create("TopN", "", nil, nil)
+		extraProj, err := s.Create("TopN", "", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -212,7 +212,7 @@ func TestTokenStatsAggregation(t *testing.T) {
 		var sum int64
 		for i := 1; i <= 12; i++ {
 			wfID := "wf-top-" + itoa(i)
-			must(&models.WorkflowDef{ID: wfID, ProjectID: extraProj.ID, Name: "w" + itoa(i), Status: "draft", Version: 1})
+			must(&models.WorkflowDef{ID: wfID, ProjectID: extraProj.ID, Name: "w" + itoa(i), Version: 1})
 			runID := "run-top-" + itoa(i)
 			tokens := int64(i * 100)
 			sum += tokens
@@ -265,12 +265,12 @@ func TestTokenStatsAggregation(t *testing.T) {
 	})
 
 	t.Run("started_at_fallback_to_run", func(t *testing.T) {
-		p, err := s.Create("Fallback", "", nil, nil)
+		p, err := s.Create("Fallback", "", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		ts := time.Date(2026, 7, 22, 15, 0, 0, 0, loc).UTC()
-		must(&models.WorkflowDef{ID: "wf-fb", ProjectID: p.ID, Name: "fb", Status: "draft", Version: 1})
+		must(&models.WorkflowDef{ID: "wf-fb", ProjectID: p.ID, Name: "fb", Version: 1})
 		must(&models.Run{
 			ID: "run-fb", WorkflowID: "wf-fb", WorkflowName: "fb",
 			Status: "completed", StartedAt: ts,
@@ -386,12 +386,12 @@ func TestTokenStatsAggregation(t *testing.T) {
 
 	t.Run("pm_usage_in_trend_composition_rank", func(t *testing.T) {
 		// g2.1–g2.4: PM ChatMessage.Usage merges into total/trend/composition/rank.
-		p, err := s.Create("WithPM", "", nil, nil)
+		p, err := s.Create("WithPM", "", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		ts := time.Date(2026, 7, 24, 12, 0, 0, 0, loc).UTC()
-		must(&models.WorkflowDef{ID: "wf-pm", ProjectID: p.ID, Name: "wf-pm", Status: "draft", Version: 1})
+		must(&models.WorkflowDef{ID: "wf-pm", ProjectID: p.ID, Name: "wf-pm", Version: 1})
 		must(&models.Run{
 			ID: "run-pm-wf", WorkflowID: "wf-pm", WorkflowName: "wf-pm",
 			Status: "completed", StartedAt: ts,
@@ -781,13 +781,13 @@ func TestBuildModelStatsDemoScenes(t *testing.T) {
 	})
 }
 
-func TestTokenStatsLegacyMapsToUnknown(t *testing.T) {
-	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "token_stats_legacy.db"))
+func TestTokenStatsUsageWithoutModelMapsToUnknown(t *testing.T) {
+	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "token_stats_unknown.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := NewProjectService(db)
-	proj, err := s.Create("LegacyTok", "", nil, nil)
+	proj, err := s.Create("LegacyTok", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -795,13 +795,13 @@ func TestTokenStatsLegacyMapsToUnknown(t *testing.T) {
 	loc, _ := time.LoadLocation("Asia/Shanghai")
 	day := time.Date(2026, 7, 24, 10, 0, 0, 0, loc).UTC()
 	ptr := func(tt time.Time) *time.Time { return &tt }
-	if err := db.Create(&models.WorkflowDef{ID: "wf-leg", ProjectID: proj.ID, Name: "leg", Status: "draft", Version: 1}).Error; err != nil {
+	if err := db.Create(&models.WorkflowDef{ID: "wf-leg", ProjectID: proj.ID, Name: "leg", Version: 1}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&models.Run{ID: "run-leg", WorkflowID: "wf-leg", WorkflowName: "leg", Status: "completed", StartedAt: day}).Error; err != nil {
 		t.Fatal(err)
 	}
-	// Legacy flattened Usage only (no UsageByModel).
+	// Usage reported without a per-model breakdown.
 	if err := db.Create(&models.StateRun{
 		RunID: "run-leg", NodeID: "n1", Status: "completed", StartedAt: ptr(day),
 		Usage: &models.TokenUsage{InputTokens: 40, OutputTokens: 10},
@@ -969,7 +969,7 @@ func TestTokenStats24hHourFillAcrossMidnight(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewProjectService(db)
-	proj, err := s.Create("Tok24h", "", nil, nil)
+	proj, err := s.Create("Tok24h", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -986,7 +986,7 @@ func TestTokenStats24hHourFillAcrossMidnight(t *testing.T) {
 	ptr := func(tt time.Time) *time.Time { return &tt }
 	// now = 02:15 July 25 local → window [01:15 July 24, 02:15 July 25] wait: 02:15-24h = 02:15 July 24.
 	now := time.Date(2026, 7, 24, 18, 15, 0, 0, time.UTC) // 2026-07-25 02:15 Shanghai
-	must(&models.WorkflowDef{ID: "wf-24", ProjectID: proj.ID, Name: "hourly", Status: "draft", Version: 1})
+	must(&models.WorkflowDef{ID: "wf-24", ProjectID: proj.ID, Name: "hourly", Version: 1})
 
 	before := time.Date(2026, 7, 24, 1, 0, 0, 0, loc).UTC() // 01:00 July 24 — outside
 	must(&models.Run{ID: "run-before", WorkflowID: "wf-24", WorkflowName: "hourly", Status: "completed", StartedAt: before})

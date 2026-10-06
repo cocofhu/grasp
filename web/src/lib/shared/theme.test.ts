@@ -4,8 +4,6 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { applyPublicLightChrome, reapplyThemeChrome, setTheme, theme, toggleTheme } from './theme'
-import { migrateLocalStorageKey } from './migrateBrandStorage'
-
 describe('theme', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -35,16 +33,6 @@ describe('theme', () => {
     expect(document.documentElement.classList.contains('light')).toBe(false)
     expect(document.documentElement.style.colorScheme).toBe('dark')
     expect(localStorage.getItem('grasp-theme')).toBe('dark')
-  })
-
-  it('migrates approving-theme to grasp-theme (g1.1 evidence)', () => {
-    localStorage.setItem('approving-theme', 'light')
-    migrateLocalStorageKey('approving-theme', 'grasp-theme')
-    expect(localStorage.getItem('grasp-theme')).toBe('light')
-    expect(localStorage.getItem('approving-theme')).toBeNull()
-    setTheme('dark')
-    expect(localStorage.getItem('grasp-theme')).toBe('dark')
-    expect(localStorage.getItem('approving-theme')).toBeNull()
   })
 })
 

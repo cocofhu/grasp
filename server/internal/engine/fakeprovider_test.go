@@ -328,8 +328,6 @@ func fakeStructured(schema string) (name, body string) {
 		return mcp.TestResultArtifactName, `{"summary":"tested","passed":1,"failed":0,"skipped":0}`
 	case models.SchemaReview:
 		return mcp.ReviewArtifactName, `{"summary":"reviewed","verdict":"approve"}`
-	case models.SchemaProposals:
-		return mcp.ProposalsArtifactName, `{"context":"ctx","proposals":[{"id":"p1","title":"A"},{"id":"p2","title":"B","recommended":true}]}`
 	}
 	return "", ""
 }

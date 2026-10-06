@@ -61,8 +61,8 @@ func TestRenameAgent_cascadesWorkflowAndReturnsCount(t *testing.T) {
 	if !ok {
 		t.Fatal("missing workflow")
 	}
-	if got.Status != "published" {
-		t.Fatalf("status=%s", got.Status)
+	if got.Status() != "published" {
+		t.Fatalf("status=%s", got.Status())
 	}
 	for _, n := range got.Graph.Nodes {
 		if n.Config == nil {
@@ -74,10 +74,9 @@ func TestRenameAgent_cascadesWorkflowAndReturnsCount(t *testing.T) {
 	}
 }
 
-func TestRenameAgent_workflowCascadeFailureRollsBackSkillPmOrg(t *testing.T) {
+func TestRenameAgent_workflowCascadeFailureRollsBackSkillPm(t *testing.T) {
 	hn := newHarness(t)
 	skills := hn.h.Agents
-	hn.h.Org = services.NewOrgService(t.TempDir(), skills)
 	hn.h.Pm = services.NewPmService(hn.db, skills)
 
 	seedAgent(t, hn, "old-agent")
@@ -87,13 +86,6 @@ func TestRenameAgent_workflowCascadeFailureRollsBackSkillPmOrg(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := hn.h.Pm.UpsertMemory(models.DefaultProjectID, "old-agent", "T", "c", "admin", "u"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := hn.h.Org.Put(services.AgentOrg{
-		Revision: 0,
-		Groups:   []services.OrgGroup{{ID: "g1", Name: "Group"}},
-		Agents:   map[string]services.OrgAgentMembership{"old-agent": {GroupIDs: []string{"g1"}}},
-	}, 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -119,15 +111,5 @@ func TestRenameAgent_workflowCascadeFailureRollsBackSkillPmOrg(t *testing.T) {
 	memNew, _ := hn.h.Pm.ListMemories(models.DefaultProjectID, "new-agent")
 	if len(memNew) != 0 {
 		t.Fatalf("pm memories leaked under new-agent: %d", len(memNew))
-	}
-	orgAfter, err := hn.h.Org.Get()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := orgAfter.Agents["old-agent"]; !ok {
-		t.Fatalf("org membership should roll back to old-agent: %+v", orgAfter.Agents)
-	}
-	if _, ok := orgAfter.Agents["new-agent"]; ok {
-		t.Fatalf("org membership leaked under new-agent: %+v", orgAfter.Agents)
 	}
 }

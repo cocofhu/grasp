@@ -118,9 +118,6 @@ func (e *Engine) SaveGateArtifact(runID, gateNodeID, name, content, ifMatch stri
 			gate.BodyMd = e.interpolate(c2, bt)
 			logDB(e.db.Save(&gate), runID, "refresh gate body after human artifact edit")
 		}
-	} else if node.Type == "proposal_select" && norm.Name == firstNonEmptyStr(str(node.Config["from"]), mcp.ProposalsArtifactName) {
-		gate.BodyMd = mcp.RenderProposalsMarkdown(norm.Content)
-		logDB(e.db.Save(&gate), runID, "refresh proposal_select body after human artifact edit")
 	}
 
 	detail := fmt.Sprintf("人改产物 name=%s kind=%s size=%d reviewer=operator", norm.Name, norm.Kind, len(norm.Content))
@@ -171,7 +168,7 @@ func (e *Engine) loadPendingGate(runID, gateNodeID string) (*execCtx, models.Gat
 		return nil, models.Gate{}, nil, fmt.Errorf("run 状态 %q 不允许编辑产物（需要 waiting_human）", c.run.Status)
 	}
 	node := c.graph.FindNode(gateNodeID)
-	if node == nil || (node.Type != "human_gate" && node.Type != "proposal_select") {
+	if node == nil || node.Type != "human_gate" {
 		return nil, models.Gate{}, nil, errors.New("gate node not found")
 	}
 	var gate models.Gate
@@ -364,8 +361,6 @@ func structuredRenderForArtifact(name string) func(string) string {
 	switch name {
 	case mcp.ResearchArtifactName:
 		return mcp.RenderResearchMarkdown
-	case mcp.ProposalsArtifactName:
-		return mcp.RenderProposalsMarkdown
 	case mcp.PlanArtifactName:
 		return mcp.RenderPlanMarkdown
 	case mcp.ReviewArtifactName:
@@ -376,8 +371,8 @@ func structuredRenderForArtifact(name string) func(string) string {
 		return mcp.RenderClarifiedRequirementMarkdown
 	case mcp.ImplementationResultArtifactName:
 		return mcp.RenderImplementationResultMarkdown
-	case mcp.ProposalArtifactName:
-		return mcp.RenderProposalMarkdown
+	case mcp.MergeRequestArtifactName:
+		return mcp.RenderMergeRequestMarkdown
 	default:
 		return nil
 	}

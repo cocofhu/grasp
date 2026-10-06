@@ -1,55 +1,49 @@
 package services
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-func TestSaveStatusLifecycle_publishMetaOnlyKeepsPublished(t *testing.T) {
+func versionCount(t *testing.T, s *WorkflowService, id string) int {
+	t.Helper()
+	return len(s.Versions(id))
+}
+
+func TestSaveIdenticalContentIsNoop(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
 
-	wf := &models.WorkflowDef{ID: "wf-meta", ProjectID: models.DefaultProjectID, Name: "Orig", Graph: validGraph()}
+	wf := &models.WorkflowDef{ID: "wf-same", ProjectID: models.DefaultProjectID, Name: "S", Graph: validGraph()}
 	if err := s.Save(wf); err != nil {
-		t.Fatalf("create: %v", err)
+		t.Fatal(err)
 	}
-	pub, err := s.Publish("wf-meta")
-	if err != nil {
-		t.Fatalf("publish: %v", err)
+	if _, err := s.Publish("wf-same"); err != nil {
+		t.Fatal(err)
 	}
-	if pub.Status != "published" {
-		t.Fatalf("want published, got %s", pub.Status)
-	}
-	prevUpdated := pub.UpdatedAt
+	before, _ := s.Get("wf-same")
 
-	// Same graph, rename only — must stay published and update name.
 	time.Sleep(2 * time.Millisecond)
-	upd := &models.WorkflowDef{
-		ID: "wf-meta", Name: "Renamed", Description: "d", NeedsRepo: true,
-		Status: "draft", // client may always send draft; server must not honor it
-		Graph:  validGraph(),
-	}
+	upd := &models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf-same", Name: "S", Version: 99, Graph: validGraph()}
 	if err := s.Save(upd); err != nil {
-		t.Fatalf("meta save: %v", err)
+		t.Fatal(err)
 	}
-	got, ok := s.Get("wf-meta")
-	if !ok {
-		t.Fatal("missing")
+	got, _ := s.Get("wf-same")
+	if got.Version != 1 || got.Status() != models.WorkflowStatusPublished {
+		t.Fatalf("identical save changed head: v=%d status=%s", got.Version, got.Status())
 	}
-	if got.Status != "published" {
-		t.Fatalf("meta-only save downgraded status to %s", got.Status)
+	if !got.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Fatalf("UpdatedAt bumped on no-op save")
 	}
-	if got.Name != "Renamed" || got.Description != "d" || !got.NeedsRepo {
-		t.Fatalf("metadata not updated: %+v", got)
-	}
-	if !got.UpdatedAt.After(prevUpdated) {
-		t.Fatal("UpdatedAt should bump on meta change")
+	if n := versionCount(t, s, "wf-same"); n != 1 {
+		t.Fatalf("no-op save created a version: %d", n)
 	}
 }
 
-func TestSaveStatusLifecycle_publishGraphChangeBecomesDraft(t *testing.T) {
+func TestSaveContentChangeAppendsVersion(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
 
@@ -61,129 +55,183 @@ func TestSaveStatusLifecycle_publishGraphChangeBecomesDraft(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	g := validGraph()
-	g.Nodes[0].Label = "Changed"
-	upd := &models.WorkflowDef{ID: "wf-graph", Name: "G", Status: "draft", Graph: g}
-	if err := s.Save(upd); err != nil {
-		t.Fatal(err)
+	for i, mutate := range []func(*models.WorkflowDef){
+		func(w *models.WorkflowDef) { w.Graph.Nodes[0].Label = "Changed" },
+		func(w *models.WorkflowDef) { w.Graph.Nodes[0].Position = models.Position{X: -136, Y: -88} },
+		func(w *models.WorkflowDef) { w.Name = "G renamed" },
+		func(w *models.WorkflowDef) { w.Description = "d" },
+	} {
+		cur, _ := s.Get("wf-graph")
+		upd := &models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: cur.ID, Name: cur.Name, Description: cur.Description, Graph: cur.Graph}
+		mutate(upd)
+		if err := s.Save(upd); err != nil {
+			t.Fatalf("save %d: %v", i, err)
+		}
+		if upd.Version != i+2 {
+			t.Fatalf("save %d: version = %d, want %d", i, upd.Version, i+2)
+		}
 	}
 	got, _ := s.Get("wf-graph")
-	if got.Status != "draft" {
-		t.Fatalf("graph change should draft, got %s", got.Status)
+	if got.Version != 5 || got.PublishedVersion != 1 || got.Status() != models.WorkflowStatusDraft {
+		t.Fatalf("head: v=%d pub=%d status=%s", got.Version, got.PublishedVersion, got.Status())
+	}
+	vs := s.Versions("wf-graph")
+	if len(vs) != 5 || vs[0].Version != 5 || vs[0].Name != "G renamed" || vs[0].Description != "d" || vs[0].Source != models.VersionSourceSave {
+		t.Fatalf("versions: %+v", vs[0])
+	}
+	if vs[0].NodeCount != len(validGraph().Nodes) {
+		t.Fatalf("nodeCount = %d", vs[0].NodeCount)
 	}
 }
 
-func TestSaveStatusLifecycle_publishLayoutOnlyKeepsPublished(t *testing.T) {
+func TestSaveSettingsOnlyKeepsVersion(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
 
-	wf := &models.WorkflowDef{ID: "wf-move", ProjectID: models.DefaultProjectID, Name: "M", Graph: validGraph()}
+	wf := &models.WorkflowDef{ID: "wf-meta", ProjectID: models.DefaultProjectID, Name: "M", Graph: validGraph()}
 	if err := s.Save(wf); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Publish("wf-move"); err != nil {
+	if _, err := s.Publish("wf-meta"); err != nil {
 		t.Fatal(err)
 	}
-
-	g := validGraph()
-	g.Nodes[0].Position = models.Position{X: -136, Y: -88}
-	upd := &models.WorkflowDef{ID: "wf-move", Name: "M", Status: "draft", Graph: g}
+	upd := &models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf-meta", Name: "M", NeedsRepo: true, Graph: validGraph()}
 	if err := s.Save(upd); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := s.Get("wf-move")
-	if got.Status != "published" {
-		t.Fatalf("moving nodes should keep published, got %s", got.Status)
+	got, _ := s.Get("wf-meta")
+	if !got.NeedsRepo {
+		t.Fatal("needsRepo not persisted")
 	}
-	if p := got.Graph.Nodes[0].Position; p.X != -136 || p.Y != -88 {
-		t.Fatalf("new position not stored: %+v", p)
+	if got.Version != 1 || got.Status() != models.WorkflowStatusPublished || versionCount(t, s, "wf-meta") != 1 {
+		t.Fatalf("settings-only save must not version: v=%d status=%s", got.Version, got.Status())
 	}
 }
 
-func TestSaveStatusLifecycle_publishIdenticalPUTKeepsPublished(t *testing.T) {
+func TestSaveAsRecordsSource(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
 
-	wf := &models.WorkflowDef{ID: "wf-same", ProjectID: models.DefaultProjectID, Name: "S", Graph: validGraph()}
+	wf := &models.WorkflowDef{ID: "wf-pm", ProjectID: models.DefaultProjectID, Name: "P", Graph: validGraph()}
+	if err := s.SaveAs(wf, models.VersionSourcePM); err != nil {
+		t.Fatal(err)
+	}
+	g := validGraph()
+	g.Nodes[0].Label = "by pm"
+	if err := s.SaveAs(&models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf-pm", Name: "P", Graph: g}, models.VersionSourcePM); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range s.Versions("wf-pm") {
+		if v.Source != models.VersionSourcePM {
+			t.Fatalf("v%d source = %q", v.Version, v.Source)
+		}
+	}
+}
+
+func TestPublishStampsVersionRow(t *testing.T) {
+	db := newTestDB(t)
+	s := NewWorkflowService(db)
+
+	wf := &models.WorkflowDef{ID: "wf-pub", ProjectID: models.DefaultProjectID, Name: "P", Graph: validGraph()}
 	if err := s.Save(wf); err != nil {
 		t.Fatal(err)
 	}
-	pub, err := s.Publish("wf-same")
+	g := validGraph()
+	g.Nodes[0].Label = "v2"
+	if err := s.Save(&models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf-pub", Name: "P", Graph: g}); err != nil {
+		t.Fatal(err)
+	}
+	pub, err := s.Publish("wf-pub")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pub.Status != "published" {
-		t.Fatalf("want published, got %s", pub.Status)
+	if pub.PublishedVersion != 2 || pub.Version != 2 {
+		t.Fatalf("publish: %+v", pub)
 	}
-	before, _ := s.Get("wf-same")
-	prevUpdated := before.UpdatedAt
-
-	time.Sleep(2 * time.Millisecond)
-	upd := &models.WorkflowDef{ID: "wf-same", Name: "S", Status: "draft", Graph: validGraph()}
-	if err := s.Save(upd); err != nil {
-		t.Fatal(err)
+	vs := s.Versions("wf-pub")
+	if vs[0].Version != 2 || vs[0].PublishedAt == nil {
+		t.Fatalf("v2 not stamped: %+v", vs[0])
 	}
-	got, _ := s.Get("wf-same")
-	if got.Status != "published" {
-		t.Fatalf("identical PUT should stay published, got %s", got.Status)
+	if vs[1].PublishedAt != nil {
+		t.Fatalf("v1 must stay unpublished: %+v", vs[1])
 	}
-	if !got.UpdatedAt.Equal(prevUpdated) {
-		t.Fatalf("UpdatedAt should not bump on no-op save: was %v now %v", prevUpdated, got.UpdatedAt)
+	if n := versionCount(t, s, "wf-pub"); n != 2 {
+		t.Fatalf("publish must not add a version, got %d", n)
 	}
 }
 
-func TestSaveStatusLifecycle_draftNoDiffStaysDraft(t *testing.T) {
+func TestRestoreAppendsVersion(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
 
-	wf := &models.WorkflowDef{ID: "wf-draft", ProjectID: models.DefaultProjectID, Name: "D", Graph: validGraph()}
+	wf := &models.WorkflowDef{ID: "wf-r", ProjectID: models.DefaultProjectID, Name: "R", Graph: validGraph()}
 	if err := s.Save(wf); err != nil {
 		t.Fatal(err)
 	}
-	upd := &models.WorkflowDef{ID: "wf-draft", Name: "D", Status: "published", Graph: validGraph()}
-	if err := s.Save(upd); err != nil {
-		t.Fatal(err)
-	}
-	got, _ := s.Get("wf-draft")
-	if got.Status != "draft" {
-		t.Fatalf("must not promote draft→published via Save, got %s", got.Status)
-	}
-}
-
-// publish + legacy output.result in DB; client sends cleaned results + rename
-// must stay published (review v1: meta-only must not demote on migrate/clean).
-func TestSaveStatusLifecycle_publishLegacyOutputMetaOnlyKeepsPublished(t *testing.T) {
-	db := newTestDB(t)
-	s := NewWorkflowService(db)
-
 	g := validGraph()
-	g.Nodes[1].Config = map[string]any{"result": "{{artifact(\"plan.md\")}}"}
-	wf := &models.WorkflowDef{ID: "wf-legacy", ProjectID: models.DefaultProjectID, Name: "Legacy", Graph: g}
-	if err := s.Save(wf); err != nil {
-		t.Fatalf("create: %v", err)
+	g.Nodes[0].Label = "v2"
+	if err := s.Save(&models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf-r", Name: "R", Graph: g}); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := s.Publish("wf-legacy"); err != nil {
-		t.Fatalf("publish: %v", err)
+	got, err := s.Restore("wf-r", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != 3 || got.Graph.Nodes[0].Label != validGraph().Nodes[0].Label {
+		t.Fatalf("restore head: v=%d label=%s", got.Version, got.Graph.Nodes[0].Label)
+	}
+	v2, _ := s.VersionGraph("wf-r", 2)
+	if v2.Nodes[0].Label != "v2" {
+		t.Fatal("restore must not rewrite history")
+	}
+	// Restoring the head content again is a no-op.
+	if again, err := s.Restore("wf-r", 3); err != nil || again.Version != 3 {
+		t.Fatalf("restore head again: v=%d err=%v", again.Version, err)
+	}
+}
+
+func TestPruneKeepsPublishedAndRunReferencedVersions(t *testing.T) {
+	db := newTestDB(t)
+	s := NewWorkflowService(db)
+
+	wf := &models.WorkflowDef{ID: "wf-prune", ProjectID: models.DefaultProjectID, Name: "P", Graph: validGraph()}
+	if err := s.Save(wf); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Publish("wf-prune"); err != nil { // v1 published
+		t.Fatal(err)
+	}
+	save := func(i int) {
+		g := validGraph()
+		g.Nodes[0].Label = fmt.Sprintf("rev %d", i)
+		if err := s.Save(&models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf-prune", Name: "P", Graph: g}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save(2) // v2, referenced by a run below
+	if err := db.Create(&models.Run{ID: "run-v2", WorkflowID: "wf-prune", WorkflowVersion: 2, Status: "completed"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	total := MaxUnpinnedWorkflowVersions + 5
+	for i := 3; i <= total; i++ {
+		save(i)
 	}
 
-	cleaned := validGraph()
-	cleaned.Nodes[1].Config = map[string]any{"results": []any{"{{artifact(\"plan.md\")}}"}}
-	upd := &models.WorkflowDef{
-		ID: "wf-legacy", Name: "Renamed Legacy",
-		Status: "draft",
-		Graph:  cleaned,
+	present := map[int]bool{}
+	for _, v := range s.Versions("wf-prune") {
+		present[v.Version] = true
 	}
-	if err := s.Save(upd); err != nil {
-		t.Fatalf("meta+clean save: %v", err)
+	if !present[1] || !present[2] {
+		t.Fatalf("published v1 / run-referenced v2 pruned: v1=%v v2=%v", present[1], present[2])
 	}
-	got, ok := s.Get("wf-legacy")
-	if !ok {
-		t.Fatal("missing")
+	if !present[total] {
+		t.Fatal("head pruned")
 	}
-	if got.Status != "published" {
-		t.Fatalf("legacy clean + rename should stay published, got %s", got.Status)
+	// Unpinned: v3..total; only the newest MaxUnpinnedWorkflowVersions + head survive.
+	if present[3] || present[4] {
+		t.Fatal("oldest unpinned versions should be pruned")
 	}
-	if got.Name != "Renamed Legacy" {
-		t.Fatalf("name not updated: %s", got.Name)
+	if got := len(present); got != MaxUnpinnedWorkflowVersions+3 {
+		t.Fatalf("kept %d versions, want %d", got, MaxUnpinnedWorkflowVersions+3)
 	}
 }

@@ -864,7 +864,7 @@ describe('useRunDetail actions', () => {
 
   it('shows the run failure banner with the backend reason', async () => {
     mocks.getRun.mockResolvedValue(
-      sampleRun({ status: 'failed', failedReason: '  sandbox boot failed  ' } as Partial<Run>),
+      sampleRun({ status: 'failed', error: '  sandbox boot failed  ' } as Partial<Run>),
     )
     const { detail, app } = await withRunDetail()
     expect(detail.showRunFailureBanner.value).toBe(true)

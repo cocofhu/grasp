@@ -18,7 +18,7 @@ import (
 const MaxPromptQueueItems = 32
 
 // PromptQueueEntry：队列条目与 InMessage 展示字段：
-// action + content 为导出主字段；id / opId / text 便于前端与旧载荷兼容。
+// action + content 为主字段；id / opId / text 供前端队列面板展示。
 type PromptQueueEntry struct {
 	ID         string `json:"id,omitempty"`
 	Action     string `json:"action,omitempty"`

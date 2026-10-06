@@ -185,3 +185,15 @@ func resolve(db *gorm.DB, e *Entry) {
 		}
 	}
 }
+
+// StatusFromNode maps a StateRun / node outcome status onto a ledger status.
+func StatusFromNode(s string) string {
+	switch s {
+	case "failed":
+		return models.TokenLedgerStatusFailed
+	case "cancelled":
+		return models.TokenLedgerStatusCancelled
+	default:
+		return models.TokenLedgerStatusOK
+	}
+}

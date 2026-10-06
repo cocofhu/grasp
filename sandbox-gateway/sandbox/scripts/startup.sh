@@ -10,10 +10,10 @@ set -e
 #   不依赖当前 clone 仓库属于哪个平台。
 #   HTTPS clone 仍按仓库 URL 的 host 匹配（github.com→GITHUB_TOKEN; gitlab.com→GITLAB_TOKEN;
 #           自建实例通过 GITHUB_URL / GITLAB_URL 与 repo host 精确匹配）。
-#   SSH   — 元信息原文特殊注入 ~/.ssh（或兼容旧 env GIT_SSH_*）；id_rsa 600；known_hosts 按行追加。
+#   SSH   — 平台从项目凭据注入 ~/.ssh（单独运行镜像时可用 env GIT_SSH_*）；id_rsa 600；known_hosts 按行追加。
 # 主要环境变量：WORKSPACE_DIR, ROOT_PASSWORD, CODE_SERVER_PORT, SSH_KEY, SKIP_INNER_DOCKER,
-#   GIT_REPOS(多仓 name|url|branch) / GIT_CLONE_URL(单仓兼容),
-#   GITHUB_TOKEN, GITHUB_URL, GITLAB_TOKEN, GITLAB_URL, GIT_SSH_PRIVATE_KEY, GIT_SSH_KNOWN_HOSTS（兼容回退）,
+#   GIT_REPOS(多仓 name|url|branch),
+#   GITHUB_TOKEN, GITHUB_URL, GITLAB_TOKEN, GITLAB_URL, GIT_SSH_PRIVATE_KEY, GIT_SSH_KNOWN_HOSTS（仅单独运行镜像）,
 #   SANDBOX_INJECT（含 SSH staging + ConfigHome，须早于 clone）,
 #   AGENT_PROVIDER, ACP_BRIDGE_PORT, ACP_BRIDGE_PASSWORD, ACP_BRIDGE_MODEL
 
@@ -66,7 +66,7 @@ CODE_SERVER_PORT=${CODE_SERVER_PORT:-8744}
 AGENT_PROVIDER=${AGENT_PROVIDER:-cursor}
 case "$AGENT_PROVIDER" in
   cursor|cursor_acp)                              CONFIG_ROOT=${CONFIG_ROOT:-/root/.cursor} ;;
-  claude_code|claude_code_acp|claude_stream_json) CONFIG_ROOT=${CONFIG_ROOT:-/root/.claude} ;;
+  claude_code|claude_code_acp)                    CONFIG_ROOT=${CONFIG_ROOT:-/root/.claude} ;;
   codebuddy|codebuddy_acp)                        CONFIG_ROOT=${CONFIG_ROOT:-/root/.codebuddy} ;;
   opencode)                                       CONFIG_ROOT=${CONFIG_ROOT:-/root/.config/opencode} ;;
   *)                                              CONFIG_ROOT=${CONFIG_ROOT:-/root/.$AGENT_PROVIDER} ;;
@@ -191,7 +191,7 @@ setup_https_credentials() {
 
     echo "startup.sh: HTTPS clone 未找到匹配凭据 (host=${host})" >&2
     echo "  支持: GitHub (GITHUB_TOKEN) / GitLab (GITLAB_TOKEN + GITLAB_URL); 自建实例配 GITHUB_URL / GITLAB_URL" >&2
-    echo "  其它托管商请改用 SSH: GIT_SSH_PRIVATE_KEY + GIT_SSH_KNOWN_HOSTS" >&2
+    echo "  其它托管商请改用 SSH: 在项目凭据中配置 SSH 私钥 + known_hosts" >&2
     return 1
 }
 
@@ -209,11 +209,11 @@ setup_ssh_credentials() {
     fi
 
     if [ "$has_key" != "1" ] && [ -z "$GIT_SSH_PRIVATE_KEY" ]; then
-        echo "startup.sh: SSH repo_url 需要私钥 (meta 注入或 GIT_SSH_PRIVATE_KEY; host=${host:-unknown})" >&2
+        echo "startup.sh: SSH repo_url 需要私钥 (项目凭据注入或 GIT_SSH_PRIVATE_KEY; host=${host:-unknown})" >&2
         return 1
     fi
     if [ "$has_hosts" != "1" ] && [ -z "$GIT_SSH_KNOWN_HOSTS" ]; then
-        echo "startup.sh: SSH repo_url 需要 known_hosts (meta 注入或 GIT_SSH_KNOWN_HOSTS; host=${host:-unknown})" >&2
+        echo "startup.sh: SSH repo_url 需要 known_hosts (项目凭据注入或 GIT_SSH_KNOWN_HOSTS; host=${host:-unknown})" >&2
         echo "  获取指纹示例: ssh-keyscan -t ed25519,rsa ${host}" >&2
         return 1
     fi
@@ -307,8 +307,6 @@ configure_git_credentials() {
             fi
         done
         unset _entries _entry _name _url _branch
-    elif [ -n "$GIT_CLONE_URL" ]; then
-        setup_repo_credentials "$GIT_CLONE_URL" || return 1
     fi
     if [ -n "$GITLAB_TOKEN" ]; then
         setup_bare_gitlab_credentials
@@ -504,26 +502,6 @@ if [ -n "$GIT_REPOS" ]; then
     printf '[%s]' "$_manifest" > /root/.sandbox/repos.json
     echo "Recorded repo manifest: $(cat /root/.sandbox/repos.json)"
     unset _entries _entry _manifest _name _url _branch _dest _entry_json
-elif [ -n "$GIT_CLONE_URL" ]; then
-    # 单仓兼容：clone 到 $WORKSPACE_DIR 根（兼容 K8S PVC 空挂载点）
-    if [ -d "$WORKSPACE_DIR/.git" ]; then
-        echo "Repository already exists in ${WORKSPACE_DIR}, skipping clone"
-    elif [ -d "$WORKSPACE_DIR" ] && [ -n "$(ls -A "$WORKSPACE_DIR" 2>/dev/null)" ]; then
-        echo "Workspace directory ${WORKSPACE_DIR} is not empty, skipping clone"
-    else
-        echo "Cloning repository from ${GIT_CLONE_URL}..."
-        rm -rf "$WORKSPACE_DIR"/{..?*,.[!.]*,*} 2>/dev/null || true
-        mkdir -p "$WORKSPACE_DIR"
-        if git clone "$GIT_CLONE_URL" "$WORKSPACE_DIR"; then
-            echo "Repository cloned successfully to ${WORKSPACE_DIR}"
-        else
-            echo "Failed to clone repository, using default workspace directory" >&2
-            if [ "$(repo_scheme "$GIT_CLONE_URL")" = "ssh" ]; then
-                echo "startup.sh: SSH clone 失败，fail-fast" >&2
-                exit 1
-            fi
-        fi
-    fi
 else
     mkdir -p "$WORKSPACE_DIR"
     echo "Using workspace directory: ${WORKSPACE_DIR}"
@@ -607,7 +585,7 @@ service ssh start
 
 # noVNC 预览栈（headed Chromium + CDP:9222 + websockify:6080）：仅当显式开启时启动，
 # 避免普通场景吃 headed Chromium 资源。
-_vnc_flag="${VNC_PREVIEW:-${ENABLE_VNC_PREVIEW:-}}"
+_vnc_flag="${VNC_PREVIEW:-}"
 if [ "$_vnc_flag" = "1" ] || [ "$_vnc_flag" = "true" ]; then
   if [ -x /usr/local/bin/vnc-preview.sh ]; then
     echo "启动沙箱内 noVNC 预览栈（VNC_PREVIEW=1）…"
@@ -619,8 +597,7 @@ fi
 
 # backend 与直连预览注入由 services.sh 管理：Grasp 热更新运行时包后经 SSH 调
 # services.sh restart，SSH 会话拿不到 PID1 的环境，所以先把环境落盘（600）。
-# ACP_BRIDGE_* 为主环境变量；CURSOR_ACP_* 为 deprecated 兼容别名
-export ACP_BRIDGE_PORT=${ACP_BRIDGE_PORT:-${CURSOR_ACP_PORT:-8765}}
+export ACP_BRIDGE_PORT=${ACP_BRIDGE_PORT:-8765}
 export WORKSPACE_DIR CODE_SERVER_PORT
 GRASP_RUNTIME_RUN_DIR="${GRASP_RUNTIME_RUN_DIR:-/run/grasp-runtime}"
 _services="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/services.sh"

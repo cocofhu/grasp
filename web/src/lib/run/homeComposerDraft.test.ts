@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   HOME_COMPOSER_DRAFT_KEY,
-  __resetHomeComposerDraftMigrationForTests,
   clearHomeComposerDraft,
   loadHomeComposerDraft,
   saveHomeComposerDraft,
@@ -21,7 +20,6 @@ describe('homeComposerDraft', () => {
     store = {}
     backend = createMemoryDraftIdb()
     __setDraftIdbBackendForTests(backend)
-    __resetHomeComposerDraftMigrationForTests()
     vi.stubGlobal('localStorage', {
       getItem: (k: string) => store[k] ?? null,
       setItem: (k: string, v: string) => {
@@ -39,7 +37,6 @@ describe('homeComposerDraft', () => {
 
   afterEach(() => {
     __resetDraftIdbForTests()
-    __resetHomeComposerDraftMigrationForTests()
     vi.unstubAllGlobals()
   })
 
@@ -74,12 +71,12 @@ describe('homeComposerDraft', () => {
     expect((await loadHomeComposerDraft())?.attachments).toHaveLength(1)
   })
 
-  it('returns null when IDB empty and legacy corrupt', async () => {
+  it('returns null when IDB empty and text fallback corrupt', async () => {
     store[HOME_COMPOSER_DRAFT_KEY] = '{not json'
     expect(await loadHomeComposerDraft()).toBeNull()
   })
 
-  it('returns null for missing required fields in legacy', async () => {
+  it('returns null for missing required fields in text fallback', async () => {
     store[HOME_COMPOSER_DRAFT_KEY] = JSON.stringify({ text: 'ok' })
     expect(await loadHomeComposerDraft()).toBeNull()
   })
@@ -88,20 +85,6 @@ describe('homeComposerDraft', () => {
     await saveHomeComposerDraft('x', [], 'wf-ap')
     await clearHomeComposerDraft()
     expect(await loadHomeComposerDraft()).toBeNull()
-  })
-
-  it('migrates legacy localStorage key into IDB then deletes it (plan g2.1)', async () => {
-    store[HOME_COMPOSER_DRAFT_KEY] = JSON.stringify({
-      schemaVersion: '1',
-      savedAt: 1000,
-      pipelineId: 'wf-ap',
-      text: '旧草稿',
-      attachments: [{ data: btoa('img'), mimeType: 'image/png', name: 'a.png' }],
-    })
-    const draft = await loadHomeComposerDraft()
-    expect(draft?.text).toBe('旧草稿')
-    expect(draft?.attachments).toHaveLength(1)
-    expect(store[HOME_COMPOSER_DRAFT_KEY]).toBeUndefined()
   })
 
   it('falls back to text-only when IDB put throws QuotaExceededError (plan g1.2)', async () => {
@@ -189,7 +172,6 @@ describe('homeComposerDraft', () => {
       text: 'fresh after quota',
       attachments: [],
     })
-    __resetHomeComposerDraftMigrationForTests()
     const draft = await loadHomeComposerDraft()
     expect(draft?.text).toBe('fresh after quota')
     expect(draft?.pipelineId).toBe('wf-new')

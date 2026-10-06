@@ -10,7 +10,7 @@ Legend: **内化** = unexport / keep as test helper; **删除** = remove thin wr
 |--------|----------------|-------|
 | 内化 | majority of test-only exports | Prefer shrinking export surface |
 | 删除 | thin aliases with no production callers | SelectRecommendedOption, ClarifyInboxKind, IsInboxReviewNode, NormalizePmEnabledMcps, BuildPmPlatformMCPSpecs, EnsureChildGroup, CreateSession |
-| 保留 | sandboxtest/*, *ForTest, OpenSQLiteTest, blob.Memory, SetExecHook, TeamEmbedPackageNames, already-unexported internals, 0.2.0 compat | Not business dead modules |
+| 保留 | sandboxtest/*, *ForTest, OpenSQLiteTest, blob.Memory, SetExecHook, TeamEmbedPackageNames, already-unexported internals | Not business dead modules |
 | PR2 | memory/context/scheduler/pm Host.Register | Production mint path unification |
 
 ## Full checklist (69)
@@ -56,7 +56,6 @@ Legend: **内化** = unexport / keep as test helper; **删除** = remove thin wr
 
 ## Explicit non-goals (记账)
 
-- **0.2.0 兼容窗**：legacy `cursor/` workdir、`CURSOR_ACP_PASSWORD`、旧软链、`GRASP_EXEC_PROVIDER`、`sandbox.cursor_api_key` — 本轮不删。
 - **embed Agent 树**：`agents/`、`team_embed`、`first_install_embed` — 保留。
 - **pmmcp.Host.Register**：随 PR2 与生产铸币统一一并收口（基线 deadcode 未单列因生产仍调用）。
 

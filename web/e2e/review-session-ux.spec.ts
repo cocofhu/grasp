@@ -40,29 +40,29 @@ test.describe('ClarifyChat reviewMode 双面三项', () => {
     await page.screenshot({ path: path.join(shotDir, '03-visual-cancel.png'), fullPage: true })
   })
 
-  test('方案：排队 → 流式 → Cancel', async ({ page }) => {
+  test('调研：排队 → 流式 → Cancel', async ({ page }) => {
     await page.setViewportSize({ width: 1100, height: 900 })
     await page.goto('/review-session-ux.html')
     await expect(page.getByTestId('review-ux-root')).toBeVisible({ timeout: 15_000 })
-    await page.getByTestId('surface-proposal').click()
+    await page.getByTestId('surface-research').click()
     // remount after surface switch
     await page.waitForTimeout(200)
 
-    await sendOpinion(page, '方案意见甲（队列首条）')
-    await sendOpinion(page, '方案意见乙（仍在队列）')
+    await sendOpinion(page, '调研意见甲（队列首条）')
+    await sendOpinion(page, '调研意见乙（仍在队列）')
     const queue = page.getByTestId('clarify-review-queue')
     await expect(queue).toBeVisible()
-    await expect(queue).toContainText('方案意见甲')
-    await expect(queue).toContainText('方案意见乙')
-    await page.screenshot({ path: path.join(shotDir, '04-proposal-queue.png'), fullPage: true })
+    await expect(queue).toContainText('调研意见甲')
+    await expect(queue).toContainText('调研意见乙')
+    await page.screenshot({ path: path.join(shotDir, '04-research-queue.png'), fullPage: true })
 
     await page.getByTestId('sim-turn-stream').click()
     await expect(page.getByText('流式产出正文（非整轮一次性）。')).toBeVisible()
-    await page.screenshot({ path: path.join(shotDir, '05-proposal-stream.png'), fullPage: true })
+    await page.screenshot({ path: path.join(shotDir, '05-research-stream.png'), fullPage: true })
 
     await page.getByTestId('clarify-review-cancel').click()
     await expect(page.getByTestId('clarify-review-queue')).toHaveCount(0)
     await expect(page.getByTestId('clarify-interrupted')).toBeVisible()
-    await page.screenshot({ path: path.join(shotDir, '06-proposal-cancel.png'), fullPage: true })
+    await page.screenshot({ path: path.join(shotDir, '06-research-cancel.png'), fullPage: true })
   })
 })

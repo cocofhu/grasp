@@ -9,12 +9,12 @@ import (
 )
 
 // ValidateRunSandboxEnv validates optional StartRun env entries.
-// Rules (stricter than project sanitizeEnvEntries):
+// Rules:
 //   - rows with both Key (trimmed empty) and Value empty are ignored
 //   - Key empty with non-empty Value → reject (lists row index)
 //   - duplicate keys → reject
 //   - denied reserved/auth keys → reject
-//   - no Enabled switch: every kept row is effective; empty Value is kept (override-to-empty)
+//   - every kept row is effective; empty Value is kept (override-to-empty)
 //
 // On success returns a clean snapshot slice (nil when nothing to apply).
 // On failure the error lists problem keys / row hints; callers must not create a Run.

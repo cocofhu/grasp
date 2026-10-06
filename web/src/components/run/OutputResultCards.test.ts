@@ -554,7 +554,7 @@ describe('OutputResultCards master-detail list + enlarge (g4.1)', () => {
     wrapper.unmount()
   })
 
-  const legacyHtmlMarkdown = `<!doctype html>
+  const fullHtmlMarkdown = `<!doctype html>
 <html>
 <body>
 <div class="scenes" id="scenes">
@@ -563,46 +563,14 @@ describe('OutputResultCards master-detail list + enlarge (g4.1)', () => {
 </body>
 </html>`
 
-  it('legacy typeTag=结构化产物 + structuredArtifactName=page.html uses HtmlPreview (g2.1/g2.2/g2.3/g4.1)', async () => {
-    const legacy: OutputCard = {
-      index: 1,
-      template: '{{nodes.visual.outputs.page}}',
-      title: '网页预览 · 视觉网页',
-      status: 'ok',
-      typeTag: '结构化产物',
-      structuredArtifactName: 'page.html',
-      outputKey: 'page',
-      markdown: legacyHtmlMarkdown,
-    }
-    const wrapper = mountCards([legacy])
-    await flushPromises()
-    expect(wrapper.get('[data-testid="output-result-detail-kind"]').text()).toBe('自定义产物 · HTML')
-    expect(wrapper.text()).not.toContain('结构化产物')
-    expect(wrapper.find('[data-testid="html-preview"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="structured-view"]').exists()).toBe(false)
-    expect(wrapper.find('.md').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('<div class="scenes"')
-    expect(wrapper.text()).not.toContain('scene-btn')
-    expect(wrapper.text()).not.toContain('<!doctype html>')
-    expect(wrapper.find('[data-testid="output-result-enlarge"]').exists()).toBe(true)
-    await wrapper.get('[data-testid="output-result-enlarge"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="output-result-enlarge-html-viewport"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="output-result-enlarge-body"]').text()).not.toContain(
-      '<div class="scenes"',
-    )
-    expect(apiMocks.artifactContent).toHaveBeenCalledWith('a-page')
-    wrapper.unmount()
-  })
-
   it('.htm artifactName is treated as visual HTML (g4.1)', async () => {
     const htmCard: OutputCard = {
       index: 1,
-      template: 'artifact("legacy.htm")',
-      title: '旧 HTM',
+      template: 'artifact("report.htm")',
+      title: 'HTM',
       status: 'ok',
       typeTag: '自定义产物',
-      artifactName: 'legacy.htm',
+      artifactName: 'report.htm',
       markdown: '<!doctype html><html><body><p>htm</p></body></html>',
     }
     const wrapper = mountCards([htmCard])
@@ -622,7 +590,7 @@ describe('OutputResultCards master-detail list + enlarge (g4.1)', () => {
       typeTag: '自定义产物',
       artifactName: 'visual-page',
       outputKey: 'page',
-      markdown: legacyHtmlMarkdown,
+      markdown: fullHtmlMarkdown,
     }
     const wrapper = mountCards([pageKey])
     await flushPromises()
@@ -640,7 +608,7 @@ describe('OutputResultCards master-detail list + enlarge (g4.1)', () => {
       status: 'ok',
       typeTag: '自定义产物',
       artifactName: 'unnamed',
-      markdown: legacyHtmlMarkdown,
+      markdown: fullHtmlMarkdown,
     }
     const wrapper = mountCards([sniffed])
     await flushPromises()

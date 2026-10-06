@@ -27,7 +27,7 @@ func (e *Engine) StartRun(workflowID string, inputs map[string]any, trigger stri
 
 // StartRunWithPriority is like StartRun but accepts a priority label
 // (high|normal|low). Empty string defaults to normal; invalid values error.
-// tags and env are optional (nil/empty = unchanged legacy behavior).
+// tags and env are optional (nil/empty = none).
 // env is validated then snapshotted onto Run.SandboxEnv (immutable after start).
 func (e *Engine) StartRunWithPriority(workflowID string, inputs map[string]any, trigger, priorityLabel string, tags []string, env []models.EnvEntry) (*models.Run, error) {
 	return e.StartRunWithTitle(workflowID, inputs, trigger, priorityLabel, tags, env, "")
@@ -56,24 +56,14 @@ func (e *Engine) StartRunWithFirstMessage(workflowID string, inputs map[string]a
 	if err := e.db.First(&def, "id = ?", workflowID).Error; err != nil {
 		return nil, fmt.Errorf("workflow not found: %w", err)
 	}
-	// Snapshot the workflow's current graph head and run against it. Every run
-	// freezes its own immutable copy into Run.Graph (below), so later edits /
-	// re-publishes never change what a historical run executed or displays.
-	//
-	// We deliberately use the live definition head (def.Graph) rather than an
-	// archived WorkflowVersion keyed by def.Version: after a publish → edit(draft)
-	// cycle, Save overwrites def.Graph but leaves def.Version pointing at the old
-	// published snapshot, so keying off it would silently run (and snapshot) the
-	// stale graph — the "改了之后历史工作流对不上" bug. def.Graph is always the
-	// graph the user just saved; for an unedited published head it equals the
-	// published snapshot anyway.
+	// def.Graph is the latest saved version (def.Version); the run freezes its
+	// own copy into Run.Graph.
 	return e.startRun(def, def.Graph, inputs, trigger, pri, tags, env, title, firstMessage)
 }
 
-// StartRunFromPublished creates a run using the published WorkflowVersion
-// snapshot. Only workflows with status=published are accepted. Empty trigger
-// defaults to api; explicit values must be whitelist codes (manual|api|pm_mcp).
-// Used exclusively by /v1 external API.
+// StartRunFromPublished creates a run from the WorkflowVersion numbered
+// def.PublishedVersion. Empty trigger defaults to api; explicit values must be
+// whitelist codes (manual|api|pm_mcp). Used exclusively by /v1 external API.
 // Priority is always normal (non-UI paths cannot set priority this period).
 func (e *Engine) StartRunFromPublished(workflowID string, inputs map[string]any, trigger string, tags []string, env []models.EnvEntry) (*models.Run, error) {
 	if e.IsHalted() {
@@ -87,13 +77,14 @@ func (e *Engine) StartRunFromPublished(workflowID string, inputs map[string]any,
 	if err := e.db.First(&def, "id = ?", workflowID).Error; err != nil {
 		return nil, fmt.Errorf("workflow not found: %w", err)
 	}
-	if def.Status != "published" {
+	if def.PublishedVersion == 0 {
 		return nil, fmt.Errorf("workflow not published")
 	}
 	var snap models.WorkflowVersion
-	if err := e.db.Where("workflow_id = ? AND version = ?", def.ID, def.Version).First(&snap).Error; err != nil {
+	if err := e.db.Where("workflow_id = ? AND version = ?", def.ID, def.PublishedVersion).First(&snap).Error; err != nil {
 		return nil, fmt.Errorf("published version not found: %w", err)
 	}
+	def.Version = def.PublishedVersion
 	return e.startRun(def, snap.Graph, inputs, resolved, models.PriorityNormal, tags, env, "", nil)
 }
 

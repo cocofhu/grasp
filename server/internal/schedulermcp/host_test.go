@@ -23,7 +23,7 @@ func setupSchedDB(t *testing.T) (*gorm.DB, *services.PmService, models.Project) 
 		t.Fatal(err)
 	}
 	ps := services.NewProjectService(db)
-	p, err := ps.Create("SchedMCP", "", nil, nil)
+	p, err := ps.Create("SchedMCP", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -16,7 +16,7 @@ func TestPublicPreviewAPIProxyAllowsSameOriginFraming(t *testing.T) {
 	hn := newHarness(t)
 	seedAppPreviewReview(t, hn, "run-ap-api", "preview_api")
 
-	created := parseJSON(t, hn.do(http.MethodPost, "/api/runs/run-ap-api/reviews/preview_api/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, hn.do(http.MethodPost, "/api/runs/run-ap-api/reviews/preview_api/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 

@@ -1,21 +1,12 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
-import {
-  inferGitCredentialTypeFromTokens,
-  type GitCredentialType,
-  type GitEnv,
-} from '@/lib/agent/gitCredentialAnalysis'
-import { isGitTokenEnvKey } from '@/lib/agent/tokenEnvKeys'
+import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
 
 type KV = { k: string; v: string }
 
-const GIT_ENV_KEYS = new Set([
-  'GIT_REPOS',
-  'GITHUB_TOKEN', 'GITHUB_URL', 'GITLAB_TOKEN', 'GITLAB_URL',
-  'GIT_SSH_PRIVATE_KEY', 'GIT_SSH_KNOWN_HOSTS',
-])
+const GIT_ENV_KEYS = new Set(['GIT_REPOS', 'GITHUB_URL', 'GITLAB_URL'])
 
 const CHOICES: GitCredentialType[] = ['github_https', 'gitlab_https', 'ssh']
 
@@ -23,10 +14,6 @@ const props = defineProps<{
   env: KV[]
   upsertEnv: (key: string, value: string) => void
   credentialType?: GitCredentialType
-  /** When false (Agent Studio / create wizards), skip injecting Git Token keys. Default true for shared config. */
-  allowTokenRecommend?: boolean
-  /** Project shared Agent env used only for preselect / infer (agent context). */
-  inheritedEnv?: GitEnv
 }>()
 const emit = defineEmits<{
   'update:credentialType': [value: GitCredentialType]
@@ -34,43 +21,20 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 
-const inferredType = computed(() => inferGitCredentialTypeFromTokens(props.env, props.inheritedEnv))
-const allowTokens = computed(() => props.allowTokenRecommend !== false)
-const showRecommend = computed(() => allowTokens.value && !!props.credentialType)
+const showRecommend = computed(() => !!props.credentialType)
 
-const recommendations: Record<GitCredentialType, { key: string; value: string }[]> = {
-  github_https: [
-    { key: 'GIT_REPOS', value: '${vars.repos}' },
-    { key: 'GITHUB_TOKEN', value: '${vars.github_pat}' },
-  ],
-  gitlab_https: [
-    { key: 'GIT_REPOS', value: '${vars.repos}' },
-    { key: 'GITLAB_TOKEN', value: '${vars.gitlab_pat}' },
-  ],
-  ssh: [
-    { key: 'GIT_REPOS', value: '${vars.repos}' },
-  ],
-}
-
-watch(
-  [() => props.credentialType, inferredType],
-  ([selected, inferred]) => {
-    // Preselect only when a single token type can be inferred and the user has not chosen yet.
-    if (selected || !inferred) return
-    emit('update:credentialType', inferred)
-  },
-  { immediate: true },
-)
+// Git tokens / SSH keys come from project credentials; only GIT_REPOS goes into env.
+const recommendations: { key: string; value: string }[] = [
+  { key: 'GIT_REPOS', value: '${vars.repos}' },
+]
 
 function selectType(type: GitCredentialType) {
   emit('update:credentialType', type)
 }
 
 function applyRecommended() {
-  const type = props.credentialType
-  if (!type) return
-  for (const item of recommendations[type]) {
-    if (!allowTokens.value && isGitTokenEnvKey(item.key)) continue
+  if (!props.credentialType) return
+  for (const item of recommendations) {
     if (!props.env.some((entry) => entry.k === item.key)) {
       props.upsertEnv(item.key, item.value)
     }

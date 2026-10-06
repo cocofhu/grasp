@@ -233,7 +233,7 @@ func TestPublicEmbedTicketFlow(t *testing.T) {
 	hn := newHarness(t)
 	seedAppPreviewReview(t, hn, "run-emb-pub", "ap1")
 	seedDirectPreview(t, hn, "run-emb-pub", "ap1")
-	created := parseJSON(t, hn.do(http.MethodPost, "/api/runs/run-emb-pub/reviews/ap1/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, hn.do(http.MethodPost, "/api/runs/run-emb-pub/reviews/ap1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	share := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 

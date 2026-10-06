@@ -25,8 +25,7 @@ vi.mock('@/views/PublicGateApprovalView.vue', () => ({
 
 import EmbedNodeChatView from './EmbedNodeChatView.vue'
 import { loadEmbedSession, saveEmbedSession } from '@/lib/inbox/embedChat'
-import { locale, setLocale } from '@/lib/shared/locale'
-import { GRASP_STORAGE_KEYS } from '@/lib/shared/migrateBrandStorage'
+import { LOCALE_STORAGE_KEY, locale, setLocale } from '@/lib/shared/locale'
 
 function mountView() {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': pages } })
@@ -119,7 +118,7 @@ describe('EmbedNodeChatView', () => {
       await w.getComponent('[data-testid="chat-stub"]').vm.$emit('status', 'active')
       parent.postMessage.mockClear()
       const next = before === 'en' ? 'zh-CN' : 'en'
-      window.dispatchEvent(new StorageEvent('storage', { key: GRASP_STORAGE_KEYS.locale, newValue: next }))
+      window.dispatchEvent(new StorageEvent('storage', { key: LOCALE_STORAGE_KEY, newValue: next }))
       await vi.waitFor(() => expect(parent.postMessage).toHaveBeenCalledWith({ type: 'grasp-embed:lang', lang: next }, '*'))
     } finally {
       await setLocale(before)

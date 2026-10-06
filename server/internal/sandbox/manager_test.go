@@ -150,10 +150,13 @@ func TestManagerCreateInjectsEnvAndLabels(t *testing.T) {
 	m := NewManager(gw, ManagerOptions{Image: "img:test", WorkspaceDir: "/root/workspace"})
 	sb, err := m.Create(context.Background(), Spec{
 		Name: "grasp-sb-abc",
-		Env:  map[string]string{"GIT_REPOS": "web|https://x/y.git", "K": "V"},
+		Env:  map[string]string{"GIT_REPOS": "web|https://x/y.git", "K": "V", BridgePasswordEnv: testBridgePassword},
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
+	}
+	if sb.Password != testBridgePassword {
+		t.Errorf("password = %q", sb.Password)
 	}
 	if sb.Port != 34567 || sb.Host != "127.0.0.1" {
 		t.Errorf("session endpoint = %+v", sb)
@@ -185,8 +188,16 @@ func TestManagerCreateFailure(t *testing.T) {
 	gw, fg := newInlineGW(t)
 	fg.failCreate = true
 	m := NewManager(gw, ManagerOptions{})
-	if _, err := m.Create(context.Background(), Spec{}); err == nil {
+	if _, err := m.Create(context.Background(), Spec{Env: map[string]string{BridgePasswordEnv: "x"}}); err == nil {
 		t.Fatal("expected create error")
+	}
+}
+
+func TestManagerCreateRequiresBridgePassword(t *testing.T) {
+	gw, _ := newInlineGW(t)
+	m := NewManager(gw, ManagerOptions{})
+	if _, err := m.Create(context.Background(), Spec{Env: map[string]string{BridgePasswordEnv: " "}}); err == nil || !strings.Contains(err.Error(), BridgePasswordEnv) {
+		t.Fatalf("err=%v", err)
 	}
 }
 

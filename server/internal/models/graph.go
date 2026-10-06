@@ -60,8 +60,7 @@ type Edge struct {
 	MaxAttempts  int      `json:"maxAttempts,omitempty"`
 }
 
-// KindOrDefault returns the transition kind, defaulting to success for
-// backward compatibility with edges that predate the FSM model.
+// KindOrDefault returns the transition kind; an omitted kind means success.
 func (e Edge) KindOrDefault() EdgeKind {
 	if e.Kind == "" {
 		return EdgeSuccess

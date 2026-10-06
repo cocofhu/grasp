@@ -2,8 +2,9 @@ package models
 
 import "strings"
 
-// Display / persistence key for usage that has no model dimension (legacy
-// flattened totals, or weak keys when ACP_BRIDGE_MODEL was not configured).
+// Display / persistence key for usage that has no model dimension (reported
+// totals not covered by a model bucket, or weak keys when ACP_BRIDGE_MODEL was
+// not configured).
 const TokenUsageModelUnknown = "未知/未分桶"
 
 // TokenUsageModelUnknownDisplay is the default user-visible label when no project alias is set.
@@ -111,26 +112,4 @@ func CloneTokenUsageByModel(src TokenUsageByModel) TokenUsageByModel {
 		out[k] = v
 	}
 	return out
-}
-
-// EffectiveUsageByModel returns by-model buckets for aggregation/display.
-// When byModel is present it is returned as-is. When only a legacy flattened
-// Usage exists, it is mapped to a single 「未知/未分桶」 bucket (no guessing
-// of model names from events/logs).
-func EffectiveUsageByModel(usage *TokenUsage, byModel TokenUsageByModel) TokenUsageByModel {
-	if byModel != nil {
-		return byModel
-	}
-	if usage == nil {
-		return nil
-	}
-	return TokenUsageByModel{
-		TokenUsageModelUnknown: ModelTokenUsage{
-			InputTokens:      usage.InputTokens,
-			OutputTokens:     usage.OutputTokens,
-			CacheReadTokens:  usage.CacheReadTokens,
-			CacheWriteTokens: usage.CacheWriteTokens,
-			Source:           TokenUsageSourceUnknown,
-		},
-	}
 }

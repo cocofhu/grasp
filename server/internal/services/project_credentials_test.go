@@ -28,7 +28,7 @@ func setCredentialKey(t *testing.T) {
 func TestProjectCredentialsCRUDAndResolution(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	p, err := NewProjectService(db).Create("Credential project", "", nil, nil)
+	p, err := NewProjectService(db).Create("Credential project", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestProjectCredentialsCRUDAndResolution(t *testing.T) {
 func TestProjectCredentialOpenCodeMetadataResolvesRuntimeSettings(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	p, err := NewProjectService(db).Create("OpenCode metadata", "", nil, nil)
+	p, err := NewProjectService(db).Create("OpenCode metadata", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestProjectCredentialOpenCodeMetadataResolvesRuntimeSettings(t *testing.T) 
 func TestProjectCredentialResolveEnvSkipsEmptySlotsQuietly(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	p, err := NewProjectService(db).Create("Empty slots", "", nil, nil)
+	p, err := NewProjectService(db).Create("Empty slots", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestProjectCredentialResolveEnvSkipsEmptySlotsQuietly(t *testing.T) {
 func TestProjectCredentialRejectsReservedAndInvalidKeys(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	p, err := NewProjectService(db).Create("Reserved keys", "", nil, nil)
+	p, err := NewProjectService(db).Create("Reserved keys", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,8 +162,7 @@ func TestProjectCredentialRejectsReservedAndInvalidKeys(t *testing.T) {
 		{Type: "custom", Name: "pm", EnvKey: "GRASP_PM_TOKEN", Value: "v"},
 		{Type: "custom", Name: "root", EnvKey: "CONFIG_ROOT", Value: "v"},
 		{Type: "custom", Name: "bad", EnvKey: "vars.repo_url", Value: "v"},
-		{Type: "custom", Name: "fallback", EnvKey: "X", FallbackEnvKey: "GRASP_RUN_ID", Value: "v"},
-		{Type: "custom", Name: "fallback-bad", EnvKey: "X", FallbackEnvKey: "A-B", Value: "v"},
+		{Type: "custom", Name: "bad-chars", EnvKey: "A-B", Value: "v"},
 	} {
 		if _, err := s.Create(p.ID, in); !errors.Is(err, ErrCredentialEnvKey) {
 			t.Fatalf("%s: want ErrCredentialEnvKey, got %v", in.Name, err)
@@ -186,7 +185,7 @@ func TestProjectCredentialRejectsReservedAndInvalidKeys(t *testing.T) {
 func TestProjectCredentialEnvKeysIgnoreEmptySlots(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	p, err := NewProjectService(db).Create("Empty slots", "", nil, nil)
+	p, err := NewProjectService(db).Create("Empty slots", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +217,7 @@ func TestDeleteProjectRemovesCredentials(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
 	projects := NewProjectService(db)
-	p, err := projects.Create("Delete creds", "", nil, nil)
+	p, err := projects.Create("Delete creds", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +236,7 @@ func TestDeleteProjectRemovesCredentials(t *testing.T) {
 
 func TestProjectCredentialRequiresMasterKey(t *testing.T) {
 	db := newTestDB(t)
-	p, err := NewProjectService(db).Create("No key", "", nil, nil)
+	p, err := NewProjectService(db).Create("No key", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

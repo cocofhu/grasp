@@ -133,7 +133,7 @@ test.describe('shell notification center (IA separation)', () => {
       .locator('[data-testid="notifications-item"][data-status="completed"]')
       .first()
       .click()
-    // run-new-ok has outputCards → result-cards path (not legacy artifact deck)
+    // run-new-ok has outputCards → result-cards path (not the artifact deck)
     await expect(page.getByTestId('run-output-result-cards')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByTestId('run-output-focus-bar')).toContainText('聚焦输出节点')
     await expect(page.getByTestId('output-result-cards')).toBeVisible()
@@ -176,36 +176,6 @@ test.describe('shell notification center (IA separation)', () => {
     await expect(page.getByRole('dialog')).not.toContainText(
       '展示聚焦输出节点的最终结果卡；与 Run 详情输出 Tab 一致，不是全量产物列表。',
     )
-  })
-
-  test('legacy structured page card: iframe visible, no source leak, kind=自定义产物 · HTML (g4.3)', async ({
-    page,
-  }) => {
-    await page.goto('/notifications-center.html?scene=legacy-structured-page')
-    await expect(page.getByTestId('shell-main-dashboard')).toBeVisible({ timeout: 15_000 })
-    await settleAuth(page)
-    await page.getByTestId('run-notifications-bell').click()
-    await page
-      .locator('[data-testid="run-notifications-item"][data-status="completed"]')
-      .first()
-      .click()
-    await expect(page.getByTestId('notifications-page')).toBeVisible()
-    await page
-      .locator('[data-testid="notifications-item"][data-status="completed"]')
-      .first()
-      .click()
-    await expect(page.getByTestId('run-output-result-cards')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('output-result-detail-kind')).toHaveText('自定义产物 · HTML')
-    await expect(page.getByTestId('output-result-detail-kind')).not.toHaveText('结构化产物')
-    await expect(page.getByTestId('html-preview-toolbar')).toBeVisible()
-    await expect(page.locator('iframe').first()).toBeVisible()
-    const parent = page.getByTestId('run-output-result-cards')
-    await expect(parent).not.toContainText('<!doctype')
-    await expect(parent).not.toContainText('<div class="scenes"')
-    await expect(parent).not.toContainText('scene-btn')
-    await expect(parent).not.toContainText('<!-- Inbox')
-    await expect(page.getByTestId('output-result-html-load-error')).toHaveCount(0)
-    await expect(page.getByTestId('output-result-html-empty')).toHaveCount(0)
   })
 
   test('auth settle: badge matches unread immediately after /auth/me (no focus needed)', async ({

@@ -39,8 +39,8 @@ func TestSanitizeRejectsDotDotAndSeparators(t *testing.T) {
 	if sanitize("Approve需求澄清视觉研发") != "Approve需求澄清视觉研发" {
 		t.Fatalf("unicode sanitize: got %q", sanitize("Approve需求澄清视觉研发"))
 	}
-	if sanitize("clarify.v1") != "clarify.v1" {
-		t.Fatalf("legacy dotted sanitize: got %q", sanitize("clarify.v1"))
+	if sanitize("clarify.v1") != "" {
+		t.Fatalf("dotted sanitize must be rejected: got %q", sanitize("clarify.v1"))
 	}
 	if sanitize("a/b") != "b" && sanitize("a/b") != "" {
 		// Base("a/b") == "b" which is allowlisted — acceptable.
@@ -76,7 +76,7 @@ func TestImportZIPRejectsAbsolutePath(t *testing.T) {
 	s := NewAgentService(t.TempDir())
 	meta := []byte(`{"name":"x","schemaVersion":1,"exportedAt":"2026-01-01T00:00:00Z"}`)
 	raw := buildTestZip(t, meta, map[string][]byte{"/tmp/evil.txt": []byte("bad")})
-	if _, err := s.ImportZIP(raw, "x", ImportZIPCreate); err == nil {
+	if _, err := s.ImportZIP(raw, "x", "p1", ImportZIPCreate); err == nil {
 		t.Fatal("expected absolute path rejection")
 	}
 }

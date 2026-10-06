@@ -22,9 +22,6 @@ var ErrInvalidAgentName = errors.New("invalid agent name")
 // Write identity: Unicode letters/digits plus ASCII _/- only (no '.').
 var agentNameWritePattern = regexp.MustCompile(`^[\p{L}\p{N}_-]+$`)
 
-// Path safety: same as write, plus '.' so legacy names like clarify.v1 still resolve.
-var agentNamePathPattern = regexp.MustCompile(`^[\p{L}\p{N}._-]+$`)
-
 // fullwidthPunctRe rejects common fullwidth punctuation that must not become identity keys.
 var fullwidthPunctRe = regexp.MustCompile(`[－＿．／＼、，。！？：；（）【】]`)
 
@@ -82,14 +79,11 @@ func NormalizeAndValidateAgentName(raw string) (string, error) {
 }
 
 // sanitizeAgentPath returns a single-segment path-safe agent directory name, or "".
-// Accepts Unicode L/N + `._-` so legacy dotted names remain readable/runnable.
+// Accepts the write-identity charset (Unicode L/N + `_-`).
 func sanitizeAgentPath(name string) string {
 	name = strings.Trim(name, "/\\ ")
 	base := filepath.Base(name)
-	if base == "" || base == "." || base == ".." {
-		return ""
-	}
-	if !agentNamePathPattern.MatchString(base) {
+	if !agentNameWritePattern.MatchString(base) {
 		return ""
 	}
 	return base

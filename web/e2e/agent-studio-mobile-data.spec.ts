@@ -22,8 +22,6 @@ const BOUND_AGENT = {
   layout: { configRoot: '/root/.codebuddy', workspaceDir: '/root/workspace' },
 }
 
-const UNBOUND_AGENT = { ...BOUND_AGENT, name: 'UnboundAgent', projectId: '' }
-
 const SAMPLE_JOB = {
   id: 'cron-1',
   name: '每日汇报',
@@ -34,8 +32,8 @@ const SAMPLE_JOB = {
   nextRunAt: '2026-07-26T01:00:00Z',
 }
 
-async function mockStudioApi(page: Page, opts: { unbound?: boolean } = {}) {
-  const agent = opts.unbound ? UNBOUND_AGENT : BOUND_AGENT
+async function mockStudioApi(page: Page) {
+  const agent = BOUND_AGENT
   let memories = [
     {
       id: 'm1',
@@ -76,10 +74,6 @@ async function mockStudioApi(page: Page, opts: { unbound?: boolean } = {}) {
     }
     if (path === '/agents' && method === 'GET') {
       await route.fulfill({ json: [agent] })
-      return
-    }
-    if (path === '/agents/org' && method === 'GET') {
-      await route.fulfill({ json: { revision: 0, groups: [], agents: {} } })
       return
     }
     if (path === `/agents/${encodeURIComponent(agent.name)}` && method === 'PUT') {
@@ -172,7 +166,7 @@ test.describe('Agent Studio 窄屏数据 Tab', () => {
 
   test('已绑定：数据三子 Tab 可用，MCP 仍桌面完成', async ({ page }) => {
     await mockStudioApi(page)
-    await page.goto('/agent-studio-mobile-data.html?agent=GraspPM&tab=data&sub=memory')
+    await page.goto('/agent-studio-mobile-data.html?agent=GraspPM&studioTab=data&sub=memory')
     await expect(page.getByTestId('agent-studio-mobile-data-root')).toBeVisible({ timeout: 15_000 })
 
     await expect(page.getByText('建议在桌面使用')).toHaveCount(0)
@@ -202,24 +196,15 @@ test.describe('Agent Studio 窄屏数据 Tab', () => {
 
   test('深链 sub=jobs 直达卡片列表', async ({ page }) => {
     await mockStudioApi(page)
-    await page.goto('/agent-studio-mobile-data.html?agent=GraspPM&tab=data&sub=jobs')
+    await page.goto('/agent-studio-mobile-data.html?agent=GraspPM&studioTab=data&sub=jobs')
     await expect(page.getByTestId('agent-cron-mobile-cards')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText('建议在桌面使用')).toHaveCount(0)
     await expect(page.getByText('每日汇报')).toBeVisible()
   })
 
-  test('未绑定：桌面绑定提示且无去绑定死链', async ({ page }) => {
-    await mockStudioApi(page, { unbound: true })
-    await page.goto('/agent-studio-mobile-data.html?agent=UnboundAgent&tab=data&sub=memory')
-    await expect(page.getByText('尚未绑定主项目')).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByText(/请在桌面端/)).toBeVisible()
-    await expect(page.getByRole('button', { name: '去绑定主项目' })).toHaveCount(0)
-    await expect(page.getByText('建议在桌面使用')).toHaveCount(0)
-  })
-
   test('记忆增删在窄屏可用', async ({ page }) => {
     await mockStudioApi(page)
-    await page.goto('/agent-studio-mobile-data.html?agent=GraspPM&tab=data&sub=memory')
+    await page.goto('/agent-studio-mobile-data.html?agent=GraspPM&studioTab=data&sub=memory')
     await expect(page.getByText('项目约定')).toBeVisible({ timeout: 15_000 })
 
     await page.getByPlaceholder('标题').fill('新记忆')

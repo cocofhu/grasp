@@ -82,12 +82,11 @@ var leftoverArtifactPreferredOrder = []string{
 	mcp.RootCauseArtifactName,
 	mcp.PlanArtifactName,
 	mcp.ResearchArtifactName,
-	mcp.ProposalsArtifactName,
-	mcp.ProposalArtifactName,
 	mcp.PreflightArtifactName,
 	mcp.ImplementationResultArtifactName,
 	mcp.TestResultArtifactName,
 	mcp.ReviewArtifactName,
+	mcp.MergeRequestArtifactName,
 	"page.html",
 }
 
@@ -756,10 +755,6 @@ func renderLeftoverArtifactContent(name, content string) string {
 		return strings.TrimSpace(mcp.RenderPlanMarkdown(content))
 	case mcp.ResearchArtifactName:
 		return strings.TrimSpace(mcp.RenderResearchMarkdown(content))
-	case mcp.ProposalsArtifactName:
-		return strings.TrimSpace(mcp.RenderProposalsMarkdown(content))
-	case mcp.ProposalArtifactName:
-		return strings.TrimSpace(mcp.RenderProposalMarkdown(content))
 	case mcp.PreflightArtifactName:
 		return strings.TrimSpace(mcp.RenderPreflightMarkdown(content))
 	case mcp.ImplementationResultArtifactName:
@@ -768,6 +763,8 @@ func renderLeftoverArtifactContent(name, content string) string {
 		return strings.TrimSpace(mcp.RenderTestResultMarkdown(content))
 	case mcp.ReviewArtifactName:
 		return strings.TrimSpace(mcp.RenderReviewMarkdown(content))
+	case mcp.MergeRequestArtifactName:
+		return strings.TrimSpace(mcp.RenderMergeRequestMarkdown(content))
 	default:
 		return content
 	}

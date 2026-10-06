@@ -89,13 +89,18 @@ func TestMcpServersFromAgentConfig(t *testing.T) {
 		{"name":"cmd","command":"run","args":["a"],"env":{"K":"v"}},
 		{"name":"","url":"x"},
 		{"name":"empty"}
-	],"env":{"GITLAB_TOKEN":"tok"}}`
+	]}`
 	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(agentJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	host := mcp.NewHost(newMemStore())
-	p := newACPProvider(host, Options{ProfilesRoot: root, MCPEndpoint: "http://mcp.local"}).(*acpProvider)
+	p := newACPProvider(host, Options{
+		ProfilesRoot: root, MCPEndpoint: "http://mcp.local",
+		ProjectCredentialsForProject: func(string) map[string]string {
+			return map[string]string{"GITLAB_TOKEN": "tok"}
+		},
+	}).(*acpProvider)
 	req := NodeReq{RunID: "r1", Token: "t1", NodeID: "n1", Config: map[string]any{"agent_profile": "a"}}
 
 	specs := p.resolvedMCPSpecs(req)
@@ -110,7 +115,7 @@ func TestMcpServersFromAgentConfig(t *testing.T) {
 	if !strings.Contains(s, `"type":"http"`) {
 		t.Fatalf("mcpServers HTTP entry missing type:http (codebuddy skips url-only): %s", s)
 	}
-	// gitToken resolves from the agent env.
+	// gitToken resolves from project credentials.
 	if tok := p.gitToken(req); tok != "tok" {
 		t.Errorf("gitToken = %q, want tok", tok)
 	}
@@ -152,7 +157,7 @@ func TestSnapshotEvents(t *testing.T) {
 	// Live event log server -> snapshot events.
 	srv, host2, port := eventWSServer(t)
 	defer srv.Close()
-	sb := &sandbox.Sandbox{Host: host2, Port: port}
+	sb := &sandbox.Sandbox{Host: host2, Port: port, Password: testBridgePassword}
 	got := p.snapshotEvents(context.Background(), sb, fallback)
 	if len(got) == 0 || got[0].Text == "fb" {
 		t.Fatalf("expected snapshot events, got %+v", got)
@@ -243,12 +248,15 @@ func TestRunAgentRetiresToStore(t *testing.T) {
 	}
 }
 
-// eventWSServer mimics the cursor-acp bridge event-log handshake so
+// eventWSServer mimics the acp-bridge event-log handshake so
 // FetchEventLog returns one aggregated event.
 func eventWSServer(t *testing.T) (*httptest.Server, string, int) {
 	t.Helper()
 	up := websocket.Upgrader{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveTestBridgeLogin(w, r) {
+			return
+		}
 		c, err := up.Upgrade(w, r, nil)
 		if err != nil {
 			return

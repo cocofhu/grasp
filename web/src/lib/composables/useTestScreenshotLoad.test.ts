@@ -86,26 +86,6 @@ describe('useTestScreenshotLoad', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders legacy data URL immediately without fetch', async () => {
-    const screenshots = ref([{ data: 'abc', mimeType: 'image/png' }])
-    const artifacts = ref<Artifact[]>([])
-    const { states } = useTestScreenshotLoad(screenshots, artifacts)
-    await nextTick()
-    expect(states.value[0]?.status).toBe('legacy')
-    expect(states.value[0]?.status === 'legacy' && states.value[0].src).toContain('base64,abc')
-    expect(fetch).not.toHaveBeenCalled()
-  })
-
-  it('prefers inline data when both artifact and data exist', async () => {
-    const screenshots = ref([{ artifact: 'shot.png', data: 'legacy', mimeType: 'image/png' }])
-    const artifacts = ref([artifact('shot.png', 'a1')])
-    const { states } = useTestScreenshotLoad(screenshots, artifacts)
-    await flush()
-    expect(fetch).not.toHaveBeenCalled()
-    expect(states.value[0]?.status).toBe('legacy')
-    expect(states.value[0]?.status === 'legacy' && states.value[0].src).toContain('base64,legacy')
-  })
-
   it('keeps loading (not error) when artifact is missing in non-terminal run', async () => {
     const screenshots = ref([{ artifact: 'missing.png' }])
     const artifacts = ref<Artifact[]>([])
@@ -205,18 +185,14 @@ describe('useTestScreenshotLoad', () => {
     await flush()
     expect(states.value[0]?.status).toBe('success')
     const src =
-      states.value[0]?.status === 'success' || states.value[0]?.status === 'legacy'
-        ? states.value[0].src
-        : ''
+      states.value[0]?.status === 'success' ? states.value[0].src : ''
     expect(fetch).toHaveBeenCalledTimes(1)
 
     artifacts.value = [artifact('shot.png', 'a1', { sizeBytes: 10, updatedAt: 't', etag: 'e' })]
     await flush()
     expect(states.value[0]?.status).toBe('success')
     expect(
-      states.value[0]?.status === 'success' || states.value[0]?.status === 'legacy'
-        ? states.value[0].src
-        : '',
+      states.value[0]?.status === 'success' ? states.value[0].src : '',
     ).toBe(src)
     expect(fetch).toHaveBeenCalledTimes(1)
   })
@@ -351,9 +327,9 @@ describe('useTestScreenshotLoad', () => {
     const screenshots = ref([
       { artifact: 'ok.png' },
       { artifact: 'bad.png' },
-      { data: 'x', mimeType: 'image/png' },
+      { artifact: 'ok2.png' },
     ])
-    const artifacts = ref([artifact('ok.png', 'a1')])
+    const artifacts = ref([artifact('ok.png', 'a1'), artifact('ok2.png', 'a2')])
     const { states, successIndices } = useTestScreenshotLoad(screenshots, artifacts)
     await flush()
     expect(states.value[1]?.status).toBe('error')

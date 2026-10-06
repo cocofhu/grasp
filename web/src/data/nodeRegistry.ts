@@ -1,4 +1,4 @@
-// Node palette definitions for the workflow editor. The seven node types match
+// Node palette definitions for the workflow editor. The six node types match
 // server/internal/nodereg; agent node products and outlets follow the chosen
 // Agent's capabilities (see web/src/lib/workflow/).
 
@@ -126,31 +126,12 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
     },
     help: 'nodes.human_gate.help',
   },
-  proposal_select: {
-    type: 'proposal_select',
-    label: 'nodes.proposal_select.label',
-    desc: 'nodes.proposal_select.desc',
-    icon: 'gate',
-    color: 'text-n-gate',
-    category: 'nodes.categories.collaboration',
-    fields: [
-      { key: 'title', label: 'nodes.proposal_select.fields.title.label', type: 'text', placeholder: 'nodes.proposal_select.fields.title.placeholder' },
-      { key: 'from', label: 'nodes.proposal_select.fields.from.label', type: 'text', placeholder: 'nodes.proposal_select.fields.from.placeholder', optional: true },
-      { key: 'auto_var', label: 'nodes.proposal_select.fields.auto_var.label', type: 'text', placeholder: 'nodes.proposal_select.fields.auto_var.placeholder', optional: true },
-      { key: 'output_var', label: 'nodes.proposal_select.fields.output_var.label', type: 'text', placeholder: 'nodes.proposal_select.fields.output_var.placeholder', optional: true },
-    ],
-    outputs: [
-      { key: 'selected_proposal', desc: 'nodes.proposal_select.outputs.selected_proposal.desc' },
-    ],
-    defaults: { title: '选择方案', from: 'proposals.json', auto_var: 'auto_confirm', output_var: 'selected_proposal' },
-    help: 'nodes.proposal_select.help',
-  },
 }
 
 export const PALETTE_GROUPS: { title: string; types: NodeType[] }[] = [
   { title: 'nodes.palette.control', types: ['input', 'output', 'set_var', 'branch'] },
   { title: 'nodes.palette.agent', types: ['agent'] },
-  { title: 'nodes.palette.collaboration', types: ['human_gate', 'proposal_select'] },
+  { title: 'nodes.palette.collaboration', types: ['human_gate'] },
 ]
 
 /**
@@ -195,7 +176,6 @@ const NODE_HUE: Record<NodeType, number> = {
   branch: 8,
   agent: 1,
   human_gate: 6,
-  proposal_select: 6,
 }
 
 /** Theme-aware accent for a node type (`--c-hue-*` tokens); unknown types use the agent hue. */

@@ -122,7 +122,6 @@ function seedFavorites() {
   const seedKey = `workflow-favorites.seeded.${scene}.${username}`
   if (sessionStorage.getItem(seedKey) === '1') return
   localStorage.removeItem(key)
-  localStorage.removeItem(`${key}.order-v2`)
   sessionStorage.setItem(seedKey, '1')
   if (scene === 'empty') {
     localStorage.setItem(key, JSON.stringify([]))
@@ -146,13 +145,12 @@ function seedFavorites() {
     )
     return
   }
-  // Legacy source data: hydrate migrates this once to newest-first initial manual order.
   localStorage.setItem(
     key,
     JSON.stringify([
-      { workflowId: 'wf-bill', favoritedAt: 1 },
-      { workflowId: 'wf-hotfix', favoritedAt: 4 },
       { workflowId: 'wf-night', favoritedAt: 5 },
+      { workflowId: 'wf-hotfix', favoritedAt: 4 },
+      { workflowId: 'wf-bill', favoritedAt: 1 },
     ]),
   )
 }

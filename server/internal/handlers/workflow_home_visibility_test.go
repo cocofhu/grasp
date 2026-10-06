@@ -127,8 +127,9 @@ func TestSaveWorkflowOmitsShowOnHomePreservesTrue(t *testing.T) {
 	if after["showOnHome"] != true {
 		t.Fatalf("omitted showOnHome reset flag to %v", after["showOnHome"])
 	}
-	if after["status"] != "published" {
-		t.Fatalf("status=%v", after["status"])
+	// A description edit is a content change: new head version, published stays v1.
+	if after["status"] != "draft" || after["publishedVersion"] != float64(1) {
+		t.Fatalf("status=%v publishedVersion=%v", after["status"], after["publishedVersion"])
 	}
 	if after["description"] != "renamed subtitle" {
 		t.Fatalf("description=%v", after["description"])

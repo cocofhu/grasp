@@ -139,7 +139,7 @@ func deepCopyGraph(g models.Graph) (models.Graph, error) {
 }
 
 // Copy creates a draft v1 clone of the source workflow's editable definition.
-// Run records and published version snapshots are not copied.
+// Run records and version history are not copied.
 func (s *WorkflowService) Copy(sourceID, name string) (models.WorkflowDef, error) {
 	var newWF models.WorkflowDef
 	err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -163,31 +163,56 @@ func (s *WorkflowService) Copy(sourceID, name string) (models.WorkflowDef, error
 			Description: src.Description,
 			NeedsRepo:   src.NeedsRepo,
 			ShowOnHome:  false, // copies never inherit Home visibility (plan g1.3)
-			Status:      "draft",
 			Version:     1,
 			Graph:       graph,
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
-		return tx.Create(&newWF).Error
+		return createWorkflowWithHead(tx, &newWF, models.VersionSourceSave)
 	})
 	return newWF, err
 }
 
-// Save creates or updates a workflow definition. Create always stores draft.
-// On update, status follows the graph: a graph diff forces draft; no graph
-// diff keeps existing.Status (published stays published — metadata-only
-// updates must not downgrade). The incoming body carries no version (owned
-// by Publish), so on update we preserve the stored version.
-// ProjectID is required on create and immutable on update.
+// createWorkflowWithHead inserts a new definition plus its v1 version row.
+func createWorkflowWithHead(tx *gorm.DB, wf *models.WorkflowDef, source string) error {
+	wf.Version = 1
+	wf.PublishedVersion = 0
+	if err := tx.Create(wf).Error; err != nil {
+		return err
+	}
+	return tx.Create(newVersionRow(wf, source, nil, wf.UpdatedAt)).Error
+}
+
+func newVersionRow(wf *models.WorkflowDef, source string, restoredFrom *int, at time.Time) *models.WorkflowVersion {
+	return &models.WorkflowVersion{
+		WorkflowID:   wf.ID,
+		Version:      wf.Version,
+		Graph:        wf.Graph,
+		Name:         wf.Name,
+		Description:  wf.Description,
+		NodeCount:    len(wf.Graph.Nodes),
+		Source:       source,
+		RestoredFrom: restoredFrom,
+		CreatedAt:    at,
+	}
+}
+
+// Save creates or updates a workflow definition from the editor (Source=save).
 func (s *WorkflowService) Save(wf *models.WorkflowDef) error {
+	return s.SaveAs(wf, models.VersionSourceSave)
+}
+
+// SaveAs creates or updates a workflow definition. Create stores v1. On update,
+// identical graph/name/description is a version no-op (non-versioned settings
+// such as NeedsRepo / ShowOnHome / NotifyPolicy still persist); any content
+// change appends Version+1 with the given source in one transaction.
+// The incoming Version/PublishedVersion are ignored: the service owns them.
+// ProjectID is required on create and immutable on update.
+func (s *WorkflowService) SaveAs(wf *models.WorkflowDef, source string) error {
 	var existing models.WorkflowDef
 	if err := s.db.First(&existing, "id = ?", wf.ID).Error; err != nil {
-		// Create path: projectId is required (Import uses DefaultProjectID explicitly).
-		wf.UpdatedAt = time.Now()
-		if wf.Status == "" {
-			wf.Status = "draft"
-		}
+		wf.CreatedAt = time.Now()
+		wf.UpdatedAt = wf.CreatedAt
 		if strings.TrimSpace(wf.ProjectID) == "" {
 			return ErrWorkflowProjectRequired
 		}
@@ -200,16 +225,15 @@ func (s *WorkflowService) Save(wf *models.WorkflowDef) error {
 		if err := s.validateGraph(wf); err != nil {
 			return err
 		}
-		if wf.Version == 0 {
-			wf.Version = 1
-		}
 		wf.NotifyPolicy = NormalizeWorkflowNotifyPolicy(wf.NotifyPolicy)
 		if wf.NotifyPolicy.Mode == "" {
 			wf.NotifyPolicy.Mode = models.NotifyModeInherit
 		}
 		// Create always starts hidden on Home (plan g1.3).
 		wf.ShowOnHome = false
-		return s.db.Create(wf).Error
+		return s.db.Transaction(func(tx *gorm.DB) error {
+			return createWorkflowWithHead(tx, wf, source)
+		})
 	}
 	if wf.ProjectID != "" && wf.ProjectID != existing.ProjectID {
 		return ErrWorkflowProjectImmutable
@@ -219,42 +243,80 @@ func (s *WorkflowService) Save(wf *models.WorkflowDef) error {
 		return err
 	}
 	wf.CreatedAt = existing.CreatedAt
-	if wf.Version == 0 {
-		wf.Version = existing.Version
-	}
+	wf.LastRunAt = existing.LastRunAt
+	wf.Version = existing.Version
+	wf.PublishedVersion = existing.PublishedVersion
 
-	graphChanged := !GraphsEqual(wf.Graph, existing.Graph)
-	metaChanged := wf.Name != existing.Name ||
-		wf.Description != existing.Description ||
-		wf.NeedsRepo != existing.NeedsRepo ||
+	contentChanged := !GraphsEqual(wf.Graph, existing.Graph) ||
+		wf.Name != existing.Name ||
+		wf.Description != existing.Description
+	settingsChanged := wf.NeedsRepo != existing.NeedsRepo ||
 		wf.ShowOnHome != existing.ShowOnHome ||
 		!WorkflowNotifyPoliciesEqual(wf.NotifyPolicy, existing.NotifyPolicy)
-	if graphChanged && !GraphsEqualIgnoringLayout(wf.Graph, existing.Graph) {
-		wf.Status = "draft"
-	} else {
-		// Keep published/draft as-is (layout-only moves included); never promote draft → published here.
-		wf.Status = existing.Status
-	}
-	if !graphChanged && !metaChanged {
+	if !contentChanged && !settingsChanged {
 		// True no-op: skip DB write so GORM does not bump UpdatedAt.
 		wf.UpdatedAt = existing.UpdatedAt
-		wf.LastRunAt = existing.LastRunAt
 		wf.NotifyPolicy = existing.NotifyPolicy
-		wf.ShowOnHome = existing.ShowOnHome
 		return nil
 	}
-	if err := s.validateGraph(wf); err != nil {
-		return err
+	if contentChanged {
+		if err := s.validateGraph(wf); err != nil {
+			return err
+		}
 	}
 	wf.NotifyPolicy = NormalizeWorkflowNotifyPolicy(wf.NotifyPolicy)
 	wf.UpdatedAt = time.Now()
-	return s.db.Save(wf).Error
+	if !contentChanged {
+		return s.db.Save(wf).Error
+	}
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		return appendVersion(tx, wf, source, nil)
+	})
+}
+
+// appendVersion bumps wf.Version, persists the def and the new version row,
+// then prunes old unpinned versions.
+func appendVersion(tx *gorm.DB, wf *models.WorkflowDef, source string, restoredFrom *int) error {
+	var maxV int
+	if err := tx.Model(&models.WorkflowVersion{}).Where("workflow_id = ?", wf.ID).
+		Select("COALESCE(MAX(version), 0)").Scan(&maxV).Error; err != nil {
+		return err
+	}
+	if maxV < wf.Version {
+		maxV = wf.Version
+	}
+	wf.Version = maxV + 1
+	if err := tx.Save(wf).Error; err != nil {
+		return err
+	}
+	if err := tx.Create(newVersionRow(wf, source, restoredFrom, wf.UpdatedAt)).Error; err != nil {
+		return err
+	}
+	return pruneWorkflowVersions(tx, wf.ID, wf.Version)
+}
+
+// MaxUnpinnedWorkflowVersions caps unpublished, run-unreferenced versions kept
+// per workflow. Published and run-referenced versions are always kept.
+const MaxUnpinnedWorkflowVersions = 200
+
+func pruneWorkflowVersions(tx *gorm.DB, workflowID string, head int) error {
+	var candidates []int
+	if err := tx.Model(&models.WorkflowVersion{}).
+		Where("workflow_id = ? AND published_at IS NULL AND version <> ?", workflowID, head).
+		Where("version NOT IN (?)", tx.Model(&models.Run{}).Select("workflow_version").Where("workflow_id = ?", workflowID)).
+		Order("version desc").Pluck("version", &candidates).Error; err != nil {
+		return err
+	}
+	if len(candidates) <= MaxUnpinnedWorkflowVersions {
+		return nil
+	}
+	return tx.Where("workflow_id = ? AND version IN ?", workflowID, candidates[MaxUnpinnedWorkflowVersions:]).
+		Delete(&models.WorkflowVersion{}).Error
 }
 
 // UpdateNotifyPolicy persists only the workflow-level NotifyPolicy override.
-// It loads the current row and never touches Graph / Status / Version, so a
-// list-row inline edit cannot roll back a newer editor graph or demote
-// published → draft (review v1 / plan g1.3 notify-only path).
+// It loads the current row and never touches Graph / Version, so a list-row
+// inline edit cannot roll back a newer editor graph (notify-only path).
 func (s *WorkflowService) UpdateNotifyPolicy(id string, policy models.WorkflowNotifyPolicy) (models.WorkflowDef, error) {
 	var wf models.WorkflowDef
 	if err := s.db.First(&wf, "id = ?", id).Error; err != nil {
@@ -273,9 +335,8 @@ func (s *WorkflowService) UpdateNotifyPolicy(id string, policy models.WorkflowNo
 }
 
 // UpdateShowOnHome persists only the Home-visibility flag.
-// It loads the current row and never touches Graph / Status / Version, so a
-// list-row inline toggle cannot roll back a newer editor graph or demote
-// published → draft (plan g1.2).
+// It loads the current row and never touches Graph / Version, so a list-row
+// inline toggle cannot roll back a newer editor graph (plan g1.2).
 func (s *WorkflowService) UpdateShowOnHome(id string, show bool) (models.WorkflowDef, error) {
 	var wf models.WorkflowDef
 	if err := s.db.First(&wf, "id = ?", id).Error; err != nil {
@@ -292,12 +353,18 @@ func (s *WorkflowService) UpdateShowOnHome(id string, show bool) (models.Workflo
 	return wf, nil
 }
 
-// Publish freezes the current graph as an immutable version snapshot and
-// marks the definition published. In-flight runs pin to a version.
+// ErrWorkflowVersionNotFound is returned when a requested version row is missing.
+var ErrWorkflowVersionNotFound = errors.New("version not found")
+
+// Publish marks the latest saved version as the one /v1 API runs execute and
+// stamps its PublishedAt. Publishing an already-published head is a no-op.
 func (s *WorkflowService) Publish(id string) (models.WorkflowDef, error) {
 	var wf models.WorkflowDef
 	if err := s.db.First(&wf, "id = ?", id).Error; err != nil {
-		return wf, errors.New("workflow not found")
+		return wf, ErrWorkflowNotFound
+	}
+	if wf.PublishedVersion == wf.Version {
+		return wf, nil
 	}
 	// A published version must be a structurally valid, runnable workflow.
 	if err := wf.Graph.Validate(); err != nil {
@@ -306,54 +373,76 @@ func (s *WorkflowService) Publish(id string) (models.WorkflowDef, error) {
 	if err := s.validateGraph(&wf); err != nil {
 		return wf, err
 	}
-	wf.Version++
-	wf.Status = "published"
-	wf.UpdatedAt = time.Now()
-	if err := s.db.Save(&wf).Error; err != nil {
+	now := time.Now()
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&models.WorkflowVersion{}).
+			Where("workflow_id = ? AND version = ?", wf.ID, wf.Version).
+			Update("published_at", now)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrWorkflowVersionNotFound
+		}
+		return tx.Model(&models.WorkflowDef{}).Where("id = ?", wf.ID).
+			UpdateColumn("published_version", wf.Version).Error
+	})
+	if err != nil {
 		return wf, err
 	}
-	snap := models.WorkflowVersion{WorkflowID: wf.ID, Version: wf.Version, Graph: wf.Graph, PublishedAt: time.Now()}
-	if err := s.db.Create(&snap).Error; err != nil {
-		return wf, err
-	}
+	wf.PublishedVersion = wf.Version
 	return wf, nil
 }
 
-// Versions lists published snapshots for a workflow, newest first.
+// Versions lists version metadata for a workflow, newest first (no graphs).
 func (s *WorkflowService) Versions(id string) []models.WorkflowVersion {
 	var vs []models.WorkflowVersion
-	s.db.Where("workflow_id = ?", id).Order("version desc").Find(&vs)
+	s.db.Omit("graph").Where("workflow_id = ?", id).Order("version desc").Find(&vs)
 	return vs
 }
 
-// VersionGraph returns the graph snapshot for a published version.
+// VersionGraph returns the graph of any stored version.
 func (s *WorkflowService) VersionGraph(id string, version int) (models.Graph, error) {
 	var snap models.WorkflowVersion
 	if err := s.db.Where("workflow_id = ? AND version = ?", id, version).First(&snap).Error; err != nil {
-		return models.Graph{}, errors.New("version not found")
+		return models.Graph{}, ErrWorkflowVersionNotFound
 	}
 	return snap.Graph, nil
 }
 
-// Restore loads a published version's graph back onto the editable definition
-// as a draft. The user reviews and re-publishes to mint a new version; the
-// historical snapshot itself is left untouched.
+// Restore appends a new head version (Source=restore, RestoredFrom=version)
+// carrying vN's graph, name and description. History is never rewritten.
+// Restoring content identical to the head is a no-op.
 func (s *WorkflowService) Restore(id string, version int) (models.WorkflowDef, error) {
 	var wf models.WorkflowDef
 	if err := s.db.First(&wf, "id = ?", id).Error; err != nil {
-		return wf, errors.New("workflow not found")
+		return wf, ErrWorkflowNotFound
 	}
 	var snap models.WorkflowVersion
 	if err := s.db.Where("workflow_id = ? AND version = ?", id, version).First(&snap).Error; err != nil {
-		return wf, errors.New("version not found")
+		return wf, ErrWorkflowVersionNotFound
+	}
+	name := snap.Name
+	if strings.TrimSpace(name) == "" {
+		name = wf.Name
+	}
+	if GraphsEqual(snap.Graph, wf.Graph) && name == wf.Name && snap.Description == wf.Description {
+		return wf, nil
+	}
+	if name != wf.Name {
+		if err := s.validateWorkflowName(name, wf.ID, wf.ProjectID); err != nil {
+			return wf, err
+		}
 	}
 	wf.Graph = snap.Graph
-	wf.Status = "draft"
+	wf.Name = name
+	wf.Description = snap.Description
 	wf.UpdatedAt = time.Now()
-	if err := s.db.Save(&wf).Error; err != nil {
-		return wf, err
-	}
-	return wf, nil
+	from := version
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		return appendVersion(tx, &wf, models.VersionSourceRestore, &from)
+	})
+	return wf, err
 }
 
 // renameAgentProfileRefsFailHook, when non-nil, is invoked inside
@@ -370,8 +459,8 @@ func SetRenameAgentProfileRefsFailHookForTest(fn func() error) func() {
 
 // RenameAgentProfileRefs rewrites nodes[].config.agent_profile from oldName to
 // newName across WorkflowDef and WorkflowVersion graphs. Matching is exact
-// string equality (no substring replace). Persistence keeps Status and Version
-// unchanged — it does not go through Save's graphChanged→draft path.
+// string equality (no substring replace). Persistence keeps Version and
+// PublishedVersion unchanged — it does not go through Save's versioning path.
 // Run.Graph is never touched. Returns the number of distinct WorkflowDef IDs
 // that had at least one Def or Version graph rewritten.
 func (s *WorkflowService) RenameAgentProfileRefs(oldName, newName string) (int, error) {
@@ -410,7 +499,7 @@ func (s *WorkflowService) renameAgentProfileRefsTx(oldName, newName string) (int
 			continue
 		}
 		wf.UpdatedAt = now
-		// Save the loaded row as-is so Status/Version are preserved.
+		// Save the loaded row as-is so Version/PublishedVersion are preserved.
 		if err := s.db.Save(wf).Error; err != nil {
 			return 0, err
 		}
@@ -455,8 +544,8 @@ func renameAgentProfileInGraph(g *models.Graph, oldName, newName string) bool {
 	return changed
 }
 
-// Delete removes a workflow definition along with its published version
-// snapshots and every run it spawned (and that run's dependent records). Runs
+// Delete removes a workflow definition along with its version history and
+// every run it spawned (and that run's dependent records). Runs
 // are cascaded because they are meaningless without their workflow.
 func (s *WorkflowService) Delete(id string) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
@@ -501,7 +590,7 @@ type AgentGetter interface {
 }
 
 // ValidateAgentProfilesProject rejects non-empty agent_profile refs that are
-// missing. Unbound / cross-project Agents are allowed: at Run time they extend
+// missing. Cross-project Agents are allowed: at Run time they extend
 // the current workflow project's shared Agent config. Empty agent_profile is skipped.
 func ValidateAgentProfilesProject(skills AgentGetter, projectID string, g models.Graph) error {
 	if skills == nil {

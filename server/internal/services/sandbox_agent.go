@@ -18,12 +18,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Thread-bound agent sandbox purposes. "pm" is a legacy alias of "agent"
-// (older consult sandboxes); both are treated as agent-session sandboxes.
-const (
-	SandboxPurposeAgent = "agent"
-	SandboxPurposePM    = "pm" // legacy
-)
+// SandboxPurposeAgent marks thread-bound agent session sandboxes.
+const SandboxPurposeAgent = "agent"
 
 // AgentSandboxDestroyHook is invoked when a thread-bound agent sandbox is
 // destroyed so MCP session tokens (and thread sandbox refs) can be revoked.
@@ -82,20 +78,16 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 	}
 	home := strings.TrimSpace(agent.ProjectID)
 	runtimePID := strings.TrimSpace(opts.ProjectID)
-	if home == "" {
-		if runtimePID != "" {
-			return nil, false, fmt.Errorf("agent %q 未绑定主项目，无法在项目 %q 下打开沙箱", profile, runtimePID)
-		}
-	} else if home != runtimePID {
+	if home != runtimePID {
 		return nil, false, fmt.Errorf("agent %q 主项目为 %q，与运行项目 %q 不一致", profile, home, runtimePID)
 	}
-	// Merge SharedAgent SSH meta / Token env (Agent → Shared → env 选源).
+	// Merge SharedAgent Token env / meta (Agent → Shared 选源).
 	agent = s.effectiveAgent(agent, runtimePID)
 
 	if opts.Reuse {
 		var existing models.Sandbox
-		if err := s.db.Where("purpose IN ? AND thread_id = ? AND status IN ?",
-			[]string{SandboxPurposeAgent, SandboxPurposePM}, threadID, []string{"running", "creating", "pulling"}).
+		if err := s.db.Where("purpose = ? AND thread_id = ? AND status IN ?",
+			SandboxPurposeAgent, threadID, []string{"running", "creating", "pulling"}).
 			Order("created_at desc").First(&existing).Error; err == nil {
 			if existing.Status == "running" && s.mgr.Status(ctx, existing.Name) == "running" {
 				at := time.Now().Add(s.TTL())
@@ -192,13 +184,14 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 		case TaskSchedulerMCP:
 			vars["GRASP_SCHEDULER_URL"] = sp.URL
 			vars["GRASP_SCHEDULER_TOKEN"] = sharedToken
-		case PmProgressMCP, PmWorkflowReadMCP, PmWorkflowWriteMCP, PmMCPName:
+		case PmProgressMCP, PmWorkflowReadMCP, PmWorkflowWriteMCP:
 			vars["GRASP_PM_URL"] = sp.URL
 			vars["GRASP_PM_TOKEN"] = sharedToken
 		}
 	}
 
-	vars = runtime.MergeEnvIntoTemplateVars(vars, agent.Env)
+	agentEnv := envauth.StripSecretEnvKeys(agent.Env)
+	vars = runtime.MergeEnvIntoTemplateVars(vars, agentEnv)
 	mcpVars := vars
 	if s.projectCredentialReferences != nil {
 		// Credential references are scoped to user-authored MCP templates. Keep
@@ -212,13 +205,13 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 
 	env := map[string]string{}
 	for k, v := range s.env {
-		if envauth.IsPlatformAuthEnvKey(k) {
-			log.Warn().Str("key", k).Msg("dropped platform sandbox.env official CLI auth key; use GRASP_* on Agent or shared env")
+		if envauth.IsSecretEnvKey(k) {
+			log.Warn().Str("key", k).Msg("dropped secret key from platform sandbox.env; configure it in project credentials")
 			continue
 		}
 		env[k] = v
 	}
-	for k, v := range agent.Env {
+	for k, v := range agentEnv {
 		if strings.Contains(v, "GRASP_ARTIFACT") {
 			continue
 		}
@@ -235,7 +228,11 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 		projectCreds = s.projectCredentials(projectID)
 		overlayProjectCredentialEnv(env, projectCreds)
 	}
-	backend := runtime.NormalizeBackend(agent.AcpBackend)
+	backend, err := runtime.ParseBackend(agent.AcpBackend)
+	if err != nil {
+		fail(err)
+		return
+	}
 	workDir := s.skills.WorkDir(profile)
 	sharedWorkDir := ""
 	if s.shared != nil && strings.TrimSpace(projectID) != "" {
@@ -286,7 +283,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 		ConfigRoot:   agent.Layout.ConfigRoot,
 		WorkspaceDir: agent.Layout.WorkspaceDir,
 	}
-	ApplyAgentSSHToSpec(&spec, agentWithProjectSSH(agent, projectCreds))
+	ApplyProjectSSHToSpec(&spec, projectCreds)
 	sb, err := s.mgr.Create(ctx, spec)
 	if err != nil {
 		_ = os.RemoveAll(home)
@@ -333,21 +330,14 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 func (s *SandboxService) activeAgentSandboxCount() int {
 	var n int64
 	s.db.Model(&models.Sandbox{}).
-		Where("status IN ? AND purpose IN ?",
-			[]string{"running", "creating", "pulling"},
-			[]string{SandboxPurposeAgent, SandboxPurposePM}).
+		Where("status IN ? AND purpose = ?",
+			[]string{"running", "creating", "pulling"}, SandboxPurposeAgent).
 		Count(&n)
 	return int(n)
 }
 
 func isAgentSandboxPurpose(p string) bool {
-	return p == SandboxPurposeAgent || p == SandboxPurposePM
-}
-
-// AgentMayUseProjectPlatformMCP reports whether an Agent may use project-scoped
-// platform MCPs (memory-store / context-store / task-scheduler).
-func AgentMayUseProjectPlatformMCP(a Agent) bool {
-	return strings.TrimSpace(a.ProjectID) != ""
+	return p == SandboxPurposeAgent
 }
 
 // AgentProjectMatches reports whether the Agent's home project equals projectID.
@@ -368,33 +358,6 @@ func IsProjectPlatformMCP(name, url string) bool {
 		strings.Contains(url, "/mcp/task-scheduler/")
 }
 
-// AgentDeclaresProjectPlatformMCP reports whether mcp[] references any
-// project-scoped platform MCP by name or URL path.
-func AgentDeclaresProjectPlatformMCP(mcp []MCPServer) bool {
-	for _, m := range mcp {
-		if IsProjectPlatformMCP(m.Name, m.URL) {
-			return true
-		}
-	}
-	return false
-}
-
-// StripProjectPlatformMCP drops memory/context/scheduler declarations so an
-// unbound Agent import cannot persist them.
-func StripProjectPlatformMCP(mcp []MCPServer) []MCPServer {
-	if len(mcp) == 0 {
-		return mcp
-	}
-	out := make([]MCPServer, 0, len(mcp))
-	for _, m := range mcp {
-		if IsProjectPlatformMCP(m.Name, m.URL) {
-			continue
-		}
-		out = append(out, m)
-	}
-	return out
-}
-
 // filterAgentPlatformMCP drops artifact-store and platform MCP names so they
 // are not double-injected from Agent mcp[] (platform appends real endpoints).
 func filterAgentPlatformMCP(in []sandbox.MCPServerSpec) []sandbox.MCPServerSpec {
@@ -402,8 +365,7 @@ func filterAgentPlatformMCP(in []sandbox.MCPServerSpec) []sandbox.MCPServerSpec 
 		return nil
 	}
 	deny := map[string]bool{
-		ArtifactStoreMCP: true, "artifact_store": true,
-		PmMCPName: true, MemoryStoreMCP: true, ContextStoreMCP: true,
+		ArtifactStoreMCP: true, MemoryStoreMCP: true, ContextStoreMCP: true,
 		TaskSchedulerMCP: true, PmProgressMCP: true,
 		PmWorkflowReadMCP: true, PmWorkflowWriteMCP: true, PmAgentFSMCP: true,
 		PmPrdManagerMCP: true,

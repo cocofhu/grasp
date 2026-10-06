@@ -42,9 +42,7 @@ func (e *Engine) fireGateAutoInvoke(c *execCtx, node *models.Node) {
 	if e.gateAuto == nil || c == nil || node == nil {
 		return
 	}
-	switch node.Type {
-	case "human_gate", "proposal_select":
-	default:
+	if node.Type != "human_gate" {
 		return
 	}
 	var wf models.WorkflowDef

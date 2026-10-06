@@ -17,18 +17,18 @@ func TestInboxContextKind(t *testing.T) {
 		StartedAt: now, Graph: validGraph(),
 	})
 	db.Create(&models.Gate{
-		RunID: "run-gate", NodeID: "gate-proposal", Iteration: 2,
+		RunID: "run-gate", NodeID: "gate-approve", Iteration: 2,
 		Resolved: false, RequestedAt: now,
 	})
 	db.Create(&models.StateRun{
-		RunID: "run-gate", NodeID: "gate-proposal", Iteration: 2, Status: "waiting_human",
+		RunID: "run-gate", NodeID: "gate-approve", Iteration: 2, Status: "waiting_human",
 	})
 
-	kind, ok := s.InboxContextKind("run-gate", "gate-proposal", 2)
+	kind, ok := s.InboxContextKind("run-gate", "gate-approve", 2)
 	if !ok || kind != "gate" {
 		t.Fatalf("gate pending: got %q %v", kind, ok)
 	}
-	if kind, ok := s.InboxContextKind("run-gate", "gate-proposal", 1); ok {
+	if kind, ok := s.InboxContextKind("run-gate", "gate-approve", 1); ok {
 		t.Fatalf("wrong iteration should not match: %q", kind)
 	}
 	if _, ok := s.InboxContextKind("run-gate", "missing", 2); ok {
@@ -62,19 +62,9 @@ func TestGateUpstreamNodeIDs(t *testing.T) {
 		ID: "gate", Type: "human_gate",
 		Config: map[string]any{"body_template": "see {{nodes.visual.outputs.page}}"},
 	}
-	ids := GateUpstreamNodeIDs(gate, nil)
+	ids := GateUpstreamNodeIDs(gate)
 	if len(ids) != 1 || ids[0] != "visual" {
 		t.Fatalf("body_template refs: %v", ids)
-	}
-
-	ps := &models.Node{
-		ID: "sel", Type: "proposal_select",
-		Config: map[string]any{"from": "proposals.json"},
-	}
-	arts := []models.Artifact{{Name: "proposals.json", NodeID: "proposal"}}
-	ids = GateUpstreamNodeIDs(ps, arts)
-	if len(ids) != 1 || ids[0] != "proposal" {
-		t.Fatalf("proposal_select from: %v", ids)
 	}
 }
 

@@ -141,11 +141,9 @@ const derivedPaths = computed(() => {
 function sharedToDraft(cfg: ProjectSharedAgentConfig): AgentStudioDraft {
   return hydrateStudioDraft({
     name: '__project_shared__',
-    projectId: cfg.defaultProjectId || '',
-    acpBackend: (cfg.acpBackend as BackendId) || 'cursor',
+    projectId: cfg.projectId,
+    acpBackend: cfg.acpBackend,
     gitCredentialType: cfg.gitCredentialType as AgentStudioDraft['gitCredentialType'],
-    gitSshKnownHosts: cfg.gitSshKnownHosts || '',
-    gitSshPrivateKey: cfg.gitSshPrivateKey || '',
     files: cfg.files || [],
     mcp: cfg.mcp || [],
     env: cfg.env || {},
@@ -180,11 +178,8 @@ async function save(): Promise<boolean> {
   try {
     const payload = fromDraft(draft.value)
     const saved = await api.putProjectSharedAgentConfig(props.projectId, {
-      acpBackend: payload.acpBackend || '',
-      defaultProjectId: payload.projectId || '',
+      acpBackend: payload.acpBackend,
       gitCredentialType: payload.gitCredentialType || '',
-      gitSshKnownHosts: payload.gitSshKnownHosts || '',
-      gitSshPrivateKey: payload.gitSshPrivateKey || '',
       files: payload.files || [],
       mcp: payload.mcp || [],
       env: payload.env || {},
@@ -440,21 +435,6 @@ onMounted(() => {
           </div>
 
           <label class="block">
-            <span class="text-[12px] font-medium text-txt2">
-              {{ t('pages.projectDetail.sharedAgent.defaultProjectId') }}
-            </span>
-            <p class="mb-1.5 text-[11px] text-txt3">
-              {{ t('pages.projectDetail.sharedAgent.defaultProjectIdDesc') }}
-            </p>
-            <input
-              v-model="draft.projectId"
-              spellcheck="false"
-              class="rounded-md w-full border border-line bg-base px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
-              :placeholder="projectId"
-            />
-          </label>
-
-          <label class="block">
             <span class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.configRoot') }}</span>
             <p class="mb-1.5 text-[11px] text-txt3">{{ t('pages.agentStudio.meta.configRootDesc') }}</p>
             <input
@@ -475,41 +455,6 @@ onMounted(() => {
               class="rounded-md w-full border border-line bg-base px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
             />
           </label>
-        </div>
-
-        <div class="mt-8 max-w-3xl border-t border-line pt-5">
-          <h3 class="text-sm font-semibold text-txt">{{ t('pages.agentStudio.meta.sshTitle') }}</h3>
-          <p class="mt-1 text-[12px] leading-6 text-txt3">{{ t('pages.agentStudio.meta.sshIntro') }}</p>
-          <p class="mt-2 border-l-2 border-accent-2 bg-accent-dim px-2.5 py-1.5 text-[11px] leading-5 text-txt2">
-            {{ t('pages.agentStudio.meta.sshNoVars') }}
-          </p>
-          <div class="mt-4 space-y-4">
-            <label class="block">
-              <span class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.sshKnownHosts') }}</span>
-              <p class="mb-1.5 text-[11px] text-txt3">{{ t('pages.agentStudio.meta.sshKnownHostsDesc') }}</p>
-              <textarea
-                v-model="draft.gitSshKnownHosts"
-                data-test="shared-ssh-known-hosts"
-                rows="4"
-                spellcheck="false"
-                class="rounded-md w-full border border-line bg-base px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
-                :placeholder="t('pages.agentStudio.meta.sshKnownHostsPh')"
-              />
-            </label>
-            <label class="block">
-              <span class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.sshPrivateKey') }}</span>
-              <p class="mb-1.5 text-[11px] text-txt3">{{ t('pages.agentStudio.meta.sshPrivateKeyDesc') }}</p>
-              <textarea
-                v-model="draft.gitSshPrivateKey"
-                data-test="shared-ssh-private-key"
-                rows="5"
-                spellcheck="false"
-                class="rounded-md w-full border border-line bg-base px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
-                :placeholder="t('pages.agentStudio.meta.sshPrivateKeyPh')"
-                :style="draft.gitSshPrivateKey ? { WebkitTextSecurity: 'disc' } as Record<string, string> : undefined"
-              />
-            </label>
-          </div>
         </div>
 
         <div class="mt-5 max-w-3xl">

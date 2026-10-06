@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "name": "DeliverAgent",
+  "acpBackend": "cursor",
+  "mcp": [
+    {
+      "name": "artifact-store",
+      "url": "${GRASP_ARTIFACT_URL}",
+      "headers": {
+        "Authorization": "Bearer ${GRASP_ARTIFACT_TOKEN}"
+      }
+    }
+  ],
+  "env": {
+    "GIT_REPOS": "${vars.repos}"
+  },
+  "capabilities": {
+    "interaction": "auto",
+    "reads": [
+      "*"
+    ],
+    "writes": [
+      {
+        "schema": "merge_request",
+        "required": true
+      }
+    ]
+  }
+}

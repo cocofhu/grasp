@@ -4,27 +4,29 @@
     "agent": [
       "agentCreateWizard.ts",
       "agentIO.ts",
-      "agentOrg.ts",
+      "agentProjectTree.ts",
       "agentStudioDraft.ts",
       "agentTeamWizard.ts",
       "agentTemplateOptions.ts",
       "backendAuthGuide.ts",
-      "gitCredentialAnalysis.ts",
+      "gitCredentialType.ts",
       "openCodeCatalog.ts",
       "openCodeProvider.ts",
       "sandboxPurposeLabel.ts",
-      "tokenEnvKeys.ts",
+      "secretEnvKeys.ts",
       "useAgentCreateWizard.ts",
       "useAgentFilesPanel.ts",
       "useAgentImport.ts",
       "useAgentStudio.ts",
-      "useInheritedGitEnv.ts",
       "workspaceHistoryDiff.ts"
     ],
     "api": [
       "api.ts",
       "apiTypes.ts",
       "httpCore.ts"
+    ],
+    "artifacts": [
+      "artifactTree.ts"
     ],
     "chat": [
       "sessionQueue.ts"
@@ -132,7 +134,6 @@
       "structuredArtifacts.ts",
       "tokenUsage.ts",
       "toolLabels.ts",
-      "useArtifactGroupSelection.ts",
       "useArtifactPreview.ts",
       "useArtifactVersions.ts",
       "useExecutionStats.ts",
@@ -179,8 +180,6 @@
       "loadingTypes.ts",
       "locale.ts",
       "markdown.ts",
-      "migrateBrandStorage.ts",
-      "migrateOutputConfig.ts",
       "previewFps.ts",
       "previewPickUrl.ts",
       "previewTabKey.ts",
@@ -203,15 +202,16 @@
     ]
   },
   "totals": {
-    "agent": 18,
+    "agent": 17,
     "api": 3,
+    "artifacts": 1,
     "chat": 1,
     "composables": 17,
     "inbox": 27,
     "pm": 7,
     "project": 4,
-    "run": 59,
-    "shared": 41,
+    "run": 58,
+    "shared": 39,
     "workflow": 3
   }
 }

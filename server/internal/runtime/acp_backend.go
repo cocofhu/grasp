@@ -2,11 +2,13 @@ package runtime
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/rs/zerolog/log"
 )
 
@@ -76,14 +78,28 @@ func DefaultConfigRoot(b AcpBackend) string {
 	}
 }
 
-// NormalizeBackend coerces unknown/empty values to cursor for backward compat.
+// NormalizeBackend returns the trimmed backend when it is a known product
+// backend, or "" when raw is empty or unknown. Use ParseBackend where a missing
+// backend must be reported.
 func NormalizeBackend(raw string) AcpBackend {
-	switch AcpBackend(strings.TrimSpace(raw)) {
+	switch b := AcpBackend(strings.TrimSpace(raw)); b {
 	case BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode:
-		return AcpBackend(strings.TrimSpace(raw))
+		return b
 	default:
-		return BackendCursor
+		return ""
 	}
+}
+
+// ParseBackend is NormalizeBackend with an error for empty or unknown values;
+// acpBackend is required on every Agent.
+func ParseBackend(raw string) (AcpBackend, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", errors.New("acpBackend is required")
+	}
+	if b := NormalizeBackend(raw); b != "" {
+		return b, nil
+	}
+	return "", fmt.Errorf("unknown acpBackend %q", strings.TrimSpace(raw))
 }
 
 // ResolveConfigRoot applies backend default when layout configRoot is empty.
@@ -94,45 +110,25 @@ func ResolveConfigRoot(backend AcpBackend, layoutConfigRoot string) string {
 	return DefaultConfigRoot(backend)
 }
 
-// authSpec describes how agent env keys map to in-container CLI env.
+// authSpec maps the project credential key of a backend onto the env var its
+// in-container CLI reads.
 type authSpec struct {
-	agentKeys []string // GRASP_* aliases accepted in agent.json env
-	cliKey    string   // env var the bridge CLI reads
+	credKey string // project credential env key (envauth preset)
+	cliKey  string // env var the bridge CLI reads
 }
 
 func authSpecFor(b AcpBackend) authSpec {
 	switch b {
 	case BackendClaudeCode:
-		return authSpec{
-			agentKeys: []string{"GRASP_CLAUDE_API_KEY", "ANTHROPIC_API_KEY"},
-			cliKey:    "ANTHROPIC_API_KEY",
-		}
+		return authSpec{credKey: envauth.EnvClaudeAPIKey, cliKey: "ANTHROPIC_API_KEY"}
 	case BackendCodeBuddy:
-		return authSpec{
-			agentKeys: []string{"GRASP_CODEBUDDY_API_KEY", "CODEBUDDY_API_KEY"},
-			cliKey:    "CODEBUDDY_API_KEY",
-		}
+		return authSpec{credKey: envauth.EnvCodeBuddyAPIKey, cliKey: "CODEBUDDY_API_KEY"}
 	case BackendTrae:
-		// Official traecli headless auth uses TRAECLI_PERSONAL_ACCESS_TOKEN;
-		// keep TRAE_API_KEY / GRASP_TRAE_API_KEY as aliases.
-		return authSpec{
-			agentKeys: []string{
-				"GRASP_TRAE_API_KEY",
-				"TRAE_API_KEY",
-				EnvTraeCLIToken,
-			},
-			cliKey: EnvTraeCLIToken,
-		}
+		return authSpec{credKey: envauth.EnvTraeAPIKey, cliKey: EnvTraeCLIToken}
 	case BackendOpenCode:
-		return authSpec{
-			agentKeys: []string{EnvGraspOpenCodeAPIKey, EnvOpenCodeAPIKey},
-			cliKey:    EnvOpenCodeAPIKey,
-		}
+		return authSpec{credKey: EnvGraspOpenCodeAPIKey, cliKey: EnvOpenCodeAPIKey}
 	default:
-		return authSpec{
-			agentKeys: []string{"GRASP_CURSOR_API_KEY", "CURSOR_API_KEY"},
-			cliKey:    "CURSOR_API_KEY",
-		}
+		return authSpec{credKey: envauth.EnvCursorAPIKey, cliKey: "CURSOR_API_KEY"}
 	}
 }
 
@@ -223,7 +219,7 @@ func PrepareAuthEnv(backend AcpBackend, env map[string]string, workDirSrc string
 		}
 		log.Warn().
 			Str("backend", string(backend)).
-			Strs("tried_keys", spec.agentKeys).
+			Str("cred_key", spec.credKey).
 			Str("cli_key", spec.cliKey).
 			Str("auth_dir", settingsDir).
 			Str("gate_file", hint).
@@ -232,8 +228,8 @@ func PrepareAuthEnv(backend AcpBackend, env map[string]string, workDirSrc string
 	return out, nil
 }
 
-// ReadSettingsAuthEnv reads backend-relevant auth keys from settings.json under
-// workDirSrc. Missing file, invalid JSON, or absent keys return nil (not an error).
+// ReadSettingsAuthEnv reads the backend CLI auth key from settings.json under
+// workDirSrc. Missing file, invalid JSON, or absent key return nil (not an error).
 func ReadSettingsAuthEnv(workDirSrc string, backend AcpBackend) map[string]string {
 	if workDirSrc == "" {
 		return nil
@@ -251,19 +247,11 @@ func ReadSettingsAuthEnv(workDirSrc string, backend AcpBackend) map[string]strin
 	if len(settingsEnv) == 0 {
 		return nil
 	}
-	spec := authSpecFor(backend)
-	keys := append([]string{}, spec.agentKeys...)
-	keys = append(keys, spec.cliKey)
-	out := map[string]string{}
-	for _, k := range keys {
-		if v, ok := settingsEnv[k]; ok && strings.TrimSpace(v) != "" {
-			out[k] = v
-		}
+	cliKey := authSpecFor(backend).cliKey
+	if v := settingsEnv[cliKey]; strings.TrimSpace(v) != "" {
+		return map[string]string{cliKey: v}
 	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
+	return nil
 }
 
 func settingsEnvFromDoc(doc map[string]any) map[string]string {
@@ -304,7 +292,8 @@ func mergeSettingsAuthIntoEnv(env, settingsAuth map[string]string) map[string]st
 	return out
 }
 
-// by the sandbox bridge. When requireAuth is false (workspace settings.json
+// mergeAuthEnv copies the project credential key onto the CLI key read by the
+// sandbox bridge. When requireAuth is false (workspace settings.json
 // exists), missing keys do not error; region normalization still applies.
 func mergeAuthEnv(backend AcpBackend, env map[string]string, requireAuth bool) (map[string]string, error) {
 	spec := authSpecFor(backend)
@@ -312,18 +301,7 @@ func mergeAuthEnv(backend AcpBackend, env map[string]string, requireAuth bool) (
 	for k, v := range env {
 		out[k] = v
 	}
-	var val string
-	for _, k := range spec.agentKeys {
-		if v := strings.TrimSpace(out[k]); v != "" {
-			val = v
-			break
-		}
-	}
-	if val == "" {
-		if v := strings.TrimSpace(out[spec.cliKey]); v != "" {
-			val = v
-		}
-	}
+	val := strings.TrimSpace(out[spec.credKey])
 	if val == "" {
 		if requireAuth {
 			cfgHint := "settings.json"
@@ -331,9 +309,9 @@ func mergeAuthEnv(backend AcpBackend, env map[string]string, requireAuth bool) (
 				cfgHint = "opencode.json 或 settings.json"
 			}
 			return out, fmt.Errorf(
-				"鉴权未配置:请在项目共享 Agent 工作目录或该 Agent 工作目录添加 %s，或在项目沙箱 env、Agent 环境变量中设置 %s",
+				"鉴权未配置:请在项目凭据中配置 %s，或在项目共享 Agent 工作目录或该 Agent 工作目录添加 %s",
+				spec.credKey,
 				cfgHint,
-				strings.Join(spec.agentKeys, " 或 "),
 			)
 		}
 		mergeRegionEnv(backend, out)
@@ -435,13 +413,5 @@ func AgentRuntimeLabel(b AcpBackend) string {
 		return "opencode-json"
 	default:
 		return "cursor-agent"
-	}
-}
-
-// WarnDeprecatedExecProvider logs when GRASP_EXEC_PROVIDER is set but ignored.
-func WarnDeprecatedExecProvider(name string) {
-	if n := strings.TrimSpace(name); n != "" && n != "sandbox" && n != "cursor" {
-		log.Warn().Str("GRASP_EXEC_PROVIDER", n).
-			Msg("GRASP_EXEC_PROVIDER is deprecated and ignored; route agents via agent_profile acpBackend")
 	}
 }

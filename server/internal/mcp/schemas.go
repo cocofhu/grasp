@@ -23,10 +23,10 @@ var productSchemas = []ProductSchema{
 	{models.SchemaPlan, PlanArtifactName, "set_plan"},
 	{models.SchemaResearch, ResearchArtifactName, "set_research"},
 	{models.SchemaRootCause, RootCauseArtifactName, "set_root_cause"},
-	{models.SchemaProposals, ProposalsArtifactName, "set_proposals"},
 	{models.SchemaImplementationResult, ImplementationResultArtifactName, "set_implementation_result"},
 	{models.SchemaTestResult, TestResultArtifactName, "set_test_result"},
 	{models.SchemaReview, ReviewArtifactName, "set_review"},
+	{models.SchemaMergeRequest, MergeRequestArtifactName, "set_merge_request"},
 	{models.SchemaPreflight, PreflightArtifactName, "set_preflight"},
 	{models.SchemaPage, PageArtifactName, ""},
 }

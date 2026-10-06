@@ -57,8 +57,8 @@ func TestValidateRunSandboxEnvRejects(t *testing.T) {
 		},
 		{
 			name: "password",
-			in:   []models.EnvEntry{{Key: "PASSWORD", Value: "p"}},
-			want: "PASSWORD",
+			in:   []models.EnvEntry{{Key: "ACP_BRIDGE_PASSWORD", Value: "p"}},
+			want: "ACP_BRIDGE_PASSWORD",
 		},
 		{
 			name: "alias",

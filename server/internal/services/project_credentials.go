@@ -40,59 +40,43 @@ func overlayProjectCredentialEnv(env, creds map[string]string) {
 	}
 }
 
-// agentWithProjectSSH drops Agent meta SSH literals that a project credential
-// supplies, so ApplyAgentSSHToSpec picks the project value from Spec.Env.
-func agentWithProjectSSH(agent Agent, creds map[string]string) Agent {
-	if strings.TrimSpace(creds[EnvGitSSHPrivateKey]) != "" {
-		agent.GitSshPrivateKey = ""
-	}
-	if strings.TrimSpace(creds[EnvGitSSHKnownHosts]) != "" {
-		agent.GitSshKnownHosts = ""
-	}
-	return agent
-}
-
 // ProjectCredentialInput is the write shape used by the project credential API.
 // Value is optional on update: an omitted/blank value keeps the current secret
 // unless Clear is true. The service never returns Value.
 type ProjectCredentialInput struct {
-	Type           string         `json:"type"`
-	Kind           string         `json:"kind"`
-	Provider       string         `json:"provider"`
-	Name           string         `json:"name"`
-	Target         string         `json:"target"`
-	TargetType     string         `json:"targetType"`
-	TargetID       string         `json:"targetId"`
-	EnvKey         string         `json:"envKey"`
-	FallbackEnvKey string         `json:"fallbackEnvKey"`
-	Value          string         `json:"value"`
-	Metadata       map[string]any `json:"metadata"`
-	Enabled        *bool          `json:"enabled"`
-	Clear          bool           `json:"clear"`
+	Type       string         `json:"type"`
+	Provider   string         `json:"provider"`
+	Name       string         `json:"name"`
+	Target     string         `json:"target"`
+	TargetType string         `json:"targetType"`
+	TargetID   string         `json:"targetId"`
+	EnvKey     string         `json:"envKey"`
+	Value      string         `json:"value"`
+	Metadata   map[string]any `json:"metadata"`
+	Enabled    *bool          `json:"enabled"`
+	Clear      bool           `json:"clear"`
 }
 
 // ProjectCredentialView is safe for API/UI use. Masked is derived from the
 // encrypted value and never contains any plaintext.
 type ProjectCredentialView struct {
-	ID             string         `json:"id"`
-	ProjectID      string         `json:"projectId"`
-	Type           string         `json:"type"`
-	Kind           string         `json:"kind"`
-	Provider       string         `json:"provider,omitempty"`
-	Name           string         `json:"name"`
-	Target         string         `json:"target,omitempty"`
-	TargetType     string         `json:"targetType,omitempty"`
-	TargetID       string         `json:"targetId,omitempty"`
-	EnvKey         string         `json:"envKey,omitempty"`
-	FallbackEnvKey string         `json:"fallbackEnvKey,omitempty"`
-	Masked         string         `json:"masked,omitempty"`
-	Source         string         `json:"source,omitempty"`
-	Configured     bool           `json:"configured"`
-	Enabled        bool           `json:"enabled"`
-	RevokedAt      *time.Time     `json:"revokedAt,omitempty"`
-	Metadata       map[string]any `json:"metadata,omitempty"`
-	CreatedAt      time.Time      `json:"createdAt"`
-	UpdatedAt      time.Time      `json:"updatedAt"`
+	ID         string         `json:"id"`
+	ProjectID  string         `json:"projectId"`
+	Type       string         `json:"type"`
+	Provider   string         `json:"provider,omitempty"`
+	Name       string         `json:"name"`
+	Target     string         `json:"target,omitempty"`
+	TargetType string         `json:"targetType,omitempty"`
+	TargetID   string         `json:"targetId,omitempty"`
+	EnvKey     string         `json:"envKey,omitempty"`
+	Masked     string         `json:"masked,omitempty"`
+	Source     string         `json:"source,omitempty"`
+	Configured bool           `json:"configured"`
+	Enabled    bool           `json:"enabled"`
+	RevokedAt  *time.Time     `json:"revokedAt,omitempty"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
+	CreatedAt  time.Time      `json:"createdAt"`
+	UpdatedAt  time.Time      `json:"updatedAt"`
 }
 
 var (
@@ -143,33 +127,33 @@ func defaultCredentialEnvKey(in ProjectCredentialInput) string {
 	case "ai":
 		switch p {
 		case "cursor":
-			return "GRASP_CURSOR_API_KEY"
+			return envauth.EnvCursorAPIKey
 		case "claude", "claude_code", "anthropic":
-			return "GRASP_CLAUDE_API_KEY"
+			return envauth.EnvClaudeAPIKey
 		case "codebuddy":
-			return "GRASP_CODEBUDDY_API_KEY"
+			return envauth.EnvCodeBuddyAPIKey
 		case "trae":
-			return "GRASP_TRAE_API_KEY"
+			return envauth.EnvTraeAPIKey
 		case "opencode":
-			return "GRASP_OPENCODE_API_KEY"
+			return envauth.EnvOpenCodeAPIKey
 		}
 	case "git":
 		switch p {
 		case "github", "gh":
-			return "GITHUB_TOKEN"
+			return envauth.EnvGitHubToken
 		case "gitlab", "glab":
-			return "GITLAB_TOKEN"
+			return envauth.EnvGitLabToken
 		}
 	case "ssh":
-		return "GIT_SSH_PRIVATE_KEY"
+		return envauth.EnvGitSSHPrivateKey
 	}
 	return ""
 }
 
 func credentialView(row models.ProjectCredential) ProjectCredentialView {
 	return ProjectCredentialView{
-		ID: row.ID, ProjectID: row.ProjectID, Type: row.Type, Kind: row.Type, Provider: row.Provider,
-		Name: row.Name, Target: row.Target, TargetID: row.Target, EnvKey: row.EnvKey, FallbackEnvKey: row.FallbackEnvKey,
+		ID: row.ID, ProjectID: row.ProjectID, Type: row.Type, Provider: row.Provider,
+		Name: row.Name, Target: row.Target, TargetID: row.Target, EnvKey: row.EnvKey,
 		Masked: func() string {
 			if strings.TrimSpace(row.ValueEnc) == "" {
 				return ""
@@ -211,16 +195,16 @@ func safeCredentialMetadata(metadata map[string]any) map[string]any {
 // not a migration of legacy environment values.
 func (s *ProjectCredentialService) ensureDefaultRows(projectID string) error {
 	defaults := []models.ProjectCredential{
-		{ID: "cred-" + projectID + "-cursor", Type: "ai", Provider: "cursor", Name: "Cursor API Key", EnvKey: "GRASP_CURSOR_API_KEY"},
-		{ID: "cred-" + projectID + "-claude", Type: "ai", Provider: "claude_code", Name: "Claude Code API Key", EnvKey: "GRASP_CLAUDE_API_KEY"},
-		{ID: "cred-" + projectID + "-codebuddy", Type: "ai", Provider: "codebuddy", Name: "CodeBuddy API Key", EnvKey: "GRASP_CODEBUDDY_API_KEY"},
-		{ID: "cred-" + projectID + "-trae", Type: "ai", Provider: "trae", Name: "Trae API Token", EnvKey: "GRASP_TRAE_API_KEY"},
-		{ID: "cred-" + projectID + "-opencode", Type: "ai", Provider: "opencode", Name: "OpenCode API Key", EnvKey: "GRASP_OPENCODE_API_KEY"},
-		{ID: "cred-" + projectID + "-github", Type: "git", Provider: "github", Name: "GitHub HTTPS Token", EnvKey: "GITHUB_TOKEN"},
-		{ID: "cred-" + projectID + "-gitlab", Type: "git", Provider: "gitlab", Name: "GitLab HTTPS Token", EnvKey: "GITLAB_TOKEN"},
+		{ID: "cred-" + projectID + "-cursor", Type: "ai", Provider: "cursor", Name: "Cursor API Key", EnvKey: envauth.EnvCursorAPIKey},
+		{ID: "cred-" + projectID + "-claude", Type: "ai", Provider: "claude_code", Name: "Claude Code API Key", EnvKey: envauth.EnvClaudeAPIKey},
+		{ID: "cred-" + projectID + "-codebuddy", Type: "ai", Provider: "codebuddy", Name: "CodeBuddy API Key", EnvKey: envauth.EnvCodeBuddyAPIKey},
+		{ID: "cred-" + projectID + "-trae", Type: "ai", Provider: "trae", Name: "Trae API Token", EnvKey: envauth.EnvTraeAPIKey},
+		{ID: "cred-" + projectID + "-opencode", Type: "ai", Provider: "opencode", Name: "OpenCode API Key", EnvKey: envauth.EnvOpenCodeAPIKey},
+		{ID: "cred-" + projectID + "-github", Type: "git", Provider: "github", Name: "GitHub HTTPS Token", EnvKey: envauth.EnvGitHubToken},
+		{ID: "cred-" + projectID + "-gitlab", Type: "git", Provider: "gitlab", Name: "GitLab HTTPS Token", EnvKey: envauth.EnvGitLabToken},
 		{ID: "cred-" + projectID + "-gitlab-url", Type: "git", Provider: "gitlab", Name: "GitLab URL", EnvKey: "GITLAB_URL"},
-		{ID: "cred-" + projectID + "-ssh-key", Type: "ssh", Provider: "ssh", Name: "Git SSH Private Key", EnvKey: "GIT_SSH_PRIVATE_KEY"},
-		{ID: "cred-" + projectID + "-ssh-hosts", Type: "ssh", Provider: "ssh", Name: "Git SSH Known Hosts", EnvKey: "GIT_SSH_KNOWN_HOSTS"},
+		{ID: "cred-" + projectID + "-ssh-key", Type: "ssh", Provider: "ssh", Name: "Git SSH Private Key", EnvKey: envauth.EnvGitSSHPrivateKey},
+		{ID: "cred-" + projectID + "-ssh-hosts", Type: "ssh", Provider: "ssh", Name: "Git SSH Known Hosts", EnvKey: envauth.EnvGitSSHKnownHosts},
 	}
 	for _, row := range defaults {
 		var existing models.ProjectCredential
@@ -266,13 +250,9 @@ func (s *ProjectCredentialService) Create(projectID string, in ProjectCredential
 		return ProjectCredentialView{}, err
 	}
 	in.Type = strings.ToLower(strings.TrimSpace(in.Type))
-	if in.Type == "" {
-		in.Type = strings.ToLower(strings.TrimSpace(in.Kind))
-	}
 	in.Provider = strings.TrimSpace(in.Provider)
 	in.Name = strings.TrimSpace(in.Name)
 	in.EnvKey = strings.TrimSpace(in.EnvKey)
-	in.FallbackEnvKey = strings.TrimSpace(in.FallbackEnvKey)
 	if in.Type == "" || !validCredentialType(in.Type) {
 		return ProjectCredentialView{}, ErrCredentialType
 	}
@@ -282,7 +262,7 @@ func (s *ProjectCredentialService) Create(projectID string, in ProjectCredential
 	if in.EnvKey == "" {
 		in.EnvKey = defaultCredentialEnvKey(in)
 	}
-	if !validCredentialEnvKey(in.EnvKey) || !validCredentialEnvKey(in.FallbackEnvKey) {
+	if !validCredentialEnvKey(in.EnvKey) {
 		return ProjectCredentialView{}, ErrCredentialEnvKey
 	}
 	if in.Type == "custom" && strings.TrimSpace(in.EnvKey) == "" && strings.TrimSpace(in.Target) == "" && strings.TrimSpace(in.TargetID) == "" {
@@ -302,7 +282,7 @@ func (s *ProjectCredentialService) Create(projectID string, in ProjectCredential
 	now := time.Now()
 	row := models.ProjectCredential{ID: "cred-" + uuid.NewString()[:12], ProjectID: projectID,
 		Type: in.Type, Provider: in.Provider, Name: in.Name, Target: target,
-		EnvKey: in.EnvKey, FallbackEnvKey: in.FallbackEnvKey, ValueEnc: enc, Metadata: safeCredentialMetadata(in.Metadata),
+		EnvKey: in.EnvKey, ValueEnc: enc, Metadata: safeCredentialMetadata(in.Metadata),
 		Enabled: in.Enabled == nil || *in.Enabled, CreatedAt: now, UpdatedAt: now}
 	if err := s.db.Create(&row).Error; err != nil {
 		return ProjectCredentialView{}, err
@@ -321,9 +301,6 @@ func (s *ProjectCredentialService) Update(projectID, id string, in ProjectCreden
 			return ProjectCredentialView{}, ErrCredentialNotFound
 		}
 		return ProjectCredentialView{}, err
-	}
-	if strings.TrimSpace(in.Type) == "" {
-		in.Type = in.Kind
 	}
 	if v := strings.TrimSpace(in.Type); v != "" {
 		v = strings.ToLower(v)
@@ -347,10 +324,7 @@ func (s *ProjectCredentialService) Update(projectID, id string, in ProjectCreden
 	if strings.TrimSpace(in.EnvKey) != "" {
 		row.EnvKey = strings.TrimSpace(in.EnvKey)
 	}
-	if strings.TrimSpace(in.FallbackEnvKey) != "" {
-		row.FallbackEnvKey = strings.TrimSpace(in.FallbackEnvKey)
-	}
-	if !validCredentialEnvKey(row.EnvKey) || !validCredentialEnvKey(row.FallbackEnvKey) {
+	if !validCredentialEnvKey(row.EnvKey) {
 		return ProjectCredentialView{}, ErrCredentialEnvKey
 	}
 	if in.Metadata != nil {
@@ -513,7 +487,7 @@ func addOpenCodeMetadata(out map[string]string, metadata map[string]any) {
 }
 
 // CredentialEnvKeys returns the environment keys bound by active project
-// credentials that carry a value or an explicit fallback. Callers use this set
+// credentials that carry a value. Callers use this set
 // to prevent a per-run environment snapshot from shadowing a project
 // credential binding. Empty built-in slots (materialized just by opening the
 // UI) are excluded so they do not silently block Run env values.
@@ -529,7 +503,7 @@ func (s *ProjectCredentialService) CredentialEnvKeys(projectID string) map[strin
 	}
 	out := make(map[string]struct{})
 	for _, row := range rows {
-		if strings.TrimSpace(row.ValueEnc) == "" && strings.TrimSpace(row.FallbackEnvKey) == "" {
+		if strings.TrimSpace(row.ValueEnc) == "" {
 			continue
 		}
 		if key := strings.TrimSpace(row.EnvKey); key != "" {
@@ -538,34 +512,6 @@ func (s *ProjectCredentialService) CredentialEnvKeys(projectID string) map[strin
 				out[key] = struct{}{}
 			}
 		}
-	}
-	return out
-}
-
-// FallbackEnvKeys returns target→fallback env key bindings for credentials
-// that have no UI value. Runtime resolves the fallback only from the
-// sandbox env assembled for the project (shared/Agent layers), never from the
-// server process environment.
-func (s *ProjectCredentialService) FallbackEnvKeys(projectID string) map[string]string {
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		return nil
-	}
-	var rows []models.ProjectCredential
-	if s.db.Where("project_id = ? AND enabled = ? AND revoked_at IS NULL", projectID, true).Find(&rows).Error != nil {
-		return nil
-	}
-	out := map[string]string{}
-	for _, row := range rows {
-		if row.ValueEnc != "" || strings.TrimSpace(row.EnvKey) == "" || strings.TrimSpace(row.FallbackEnvKey) == "" {
-			continue
-		}
-		switch row.Type {
-		case "ai", "git", "ssh", "mcp", "custom":
-		default:
-			continue
-		}
-		out[row.EnvKey] = strings.TrimSpace(row.FallbackEnvKey)
 	}
 	return out
 }

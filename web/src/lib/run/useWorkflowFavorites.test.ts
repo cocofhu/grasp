@@ -93,8 +93,7 @@ describe('useWorkflowFavorites', () => {
     vi.useRealTimers()
   })
 
-  it('migrates legacy favorites once to the former newest-first initial order', () => {
-    localStorage.removeItem(`${favoritesKeyForUser('dev.li')}.order-v2`)
+  it('hydrates stored array order as-is', () => {
     localStorage.setItem(
       favoritesKeyForUser('dev.li'),
       JSON.stringify([
@@ -104,17 +103,6 @@ describe('useWorkflowFavorites', () => {
     )
     hydrateFromStorage()
     const fav = withSetup(() => useWorkflowFavorites())
-    expect(fav.listSorted.value.map((entry) => entry.workflowId)).toEqual(['wf-new', 'wf-old'])
-    expect(loadFavoriteEntries('dev.li').map((entry) => entry.workflowId)).toEqual(['wf-new', 'wf-old'])
-
-    localStorage.setItem(
-      favoritesKeyForUser('dev.li'),
-      JSON.stringify([
-        { workflowId: 'wf-old', favoritedAt: 1000 },
-        { workflowId: 'wf-new', favoritedAt: 2000 },
-      ]),
-    )
-    hydrateFromStorage()
     expect(fav.listSorted.value.map((entry) => entry.workflowId)).toEqual(['wf-old', 'wf-new'])
   })
 

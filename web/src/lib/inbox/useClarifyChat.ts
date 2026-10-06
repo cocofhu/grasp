@@ -343,27 +343,27 @@ onBeforeUnmount(() => {
   thoughtPreview.reset()
 })
 
-/** Legacy zh-CN prefix for messages persisted before i18n. */
-const LEGACY_CHOICE_PREFIX = '我的选择:'
+/** zh-CN choice prefix; server-formatted replies (models.FormatChoiceReply) always use it. */
+const CHOICE_PREFIX_ZH = '我的选择:'
 const choicePrefix = computed(() => translate('pages.clarify.choicePrefix'))
-/** Legacy zh-CN form-summary prefix. */
-const LEGACY_FORM_PREFIX = '我的填写:'
+/** zh-CN form-summary prefix, recognized regardless of the viewer's locale. */
+const FORM_PREFIX_ZH = '我的填写:'
 const formPrefix = computed(() => translate('pages.clarify.formPrefix'))
 /** Skip-envelope first line (zh / en) — not a choice reply. */
-const LEGACY_SKIP_PREFIX = '回答已跳过'
-const LEGACY_SKIP_USER_LABEL = '用户回复'
+const SKIP_PREFIX_ZH = '回答已跳过'
+const SKIP_USER_LABEL_ZH = '用户回复'
 const SKIP_PREFIX_EN = 'Answers skipped'
 const SKIP_USER_LABEL_EN = 'User reply'
 const skipPrefix = computed(() => translate('pages.clarify.skipPrefix'))
 const skipUserReplyLabel = computed(() => translate('pages.clarify.skipUserReplyLabel'))
 
 function textHasChoicePrefix(text: string): boolean {
-  return text.startsWith(choicePrefix.value) || text.startsWith(LEGACY_CHOICE_PREFIX)
+  return text.startsWith(choicePrefix.value) || text.startsWith(CHOICE_PREFIX_ZH)
 }
 
 function stripChoicePrefix(text: string): string {
   if (text.startsWith(choicePrefix.value)) return text.slice(choicePrefix.value.length)
-  if (text.startsWith(LEGACY_CHOICE_PREFIX)) return text.slice(LEGACY_CHOICE_PREFIX.length)
+  if (text.startsWith(CHOICE_PREFIX_ZH)) return text.slice(CHOICE_PREFIX_ZH.length)
   return text
 }
 
@@ -372,12 +372,12 @@ function isChoiceReply(text: string): boolean {
 }
 
 function textHasFormPrefix(text: string): boolean {
-  return text.startsWith(formPrefix.value) || text.startsWith(LEGACY_FORM_PREFIX)
+  return text.startsWith(formPrefix.value) || text.startsWith(FORM_PREFIX_ZH)
 }
 
 function stripFormPrefix(text: string): string {
   if (text.startsWith(formPrefix.value)) return text.slice(formPrefix.value.length)
-  if (text.startsWith(LEGACY_FORM_PREFIX)) return text.slice(LEGACY_FORM_PREFIX.length)
+  if (text.startsWith(FORM_PREFIX_ZH)) return text.slice(FORM_PREFIX_ZH.length)
   return text
 }
 
@@ -389,7 +389,7 @@ function textHasSkipPrefix(text: string): boolean {
   if (!text) return false
   return (
     text.startsWith(skipPrefix.value + '\n') ||
-    text.startsWith(LEGACY_SKIP_PREFIX + '\n') ||
+    text.startsWith(SKIP_PREFIX_ZH + '\n') ||
     text.startsWith(SKIP_PREFIX_EN + '\n')
   )
 }
@@ -1875,12 +1875,12 @@ function retryLastFailed() {
     sessionBusy,
     AUTO_GROW_MIN,
     AUTO_GROW_MAX,
-    LEGACY_CHOICE_PREFIX,
+    CHOICE_PREFIX_ZH,
     choicePrefix,
-    LEGACY_FORM_PREFIX,
+    FORM_PREFIX_ZH,
     formPrefix,
-    LEGACY_SKIP_PREFIX,
-    LEGACY_SKIP_USER_LABEL,
+    SKIP_PREFIX_ZH,
+    SKIP_USER_LABEL_ZH,
     SKIP_PREFIX_EN,
     SKIP_USER_LABEL_EN,
     skipPrefix,

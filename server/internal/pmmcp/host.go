@@ -20,7 +20,7 @@ import (
 
 // MCP ids. Workflow tools are split into a read-only surface and a write
 // surface so a project can grant one without the other. pm-agent-fs exposes
-// org read + host-side agent workspace FS (not Run sandbox). pm-prd-manager
+// project member listing + host-side agent workspace FS (not Run sandbox). pm-prd-manager
 // exposes project requirement drafts (list / get / create in the first cut).
 const (
 	MCPProgress      = "pm-progress"
@@ -63,7 +63,6 @@ type Host struct {
 	wf       *services.WorkflowService
 	runs     *services.RunService
 	arts     *services.ArtifactService
-	org      *services.OrgService
 	skill    *services.AgentService
 	team     *services.TeamService
 	drafts   *services.RequirementDraftService
@@ -95,11 +94,10 @@ func NewHost(pm *services.PmService, progress *services.PmProgress, wf *services
 	}
 }
 
-// SetOrgAndAgent wires OrgService + AgentService for pm-agent-fs tools.
-// Safe to call after NewHost (main wiring); nil leaves org/FS tools unavailable.
-func (h *Host) SetOrgAndAgent(org *services.OrgService, skill *services.AgentService) {
+// SetAgents wires AgentService for pm-agent-fs tools.
+// Safe to call after NewHost (main wiring); nil leaves member/FS tools unavailable.
+func (h *Host) SetAgents(skill *services.AgentService) {
 	h.mu.Lock()
-	h.org = org
 	h.skill = skill
 	h.mu.Unlock()
 }
@@ -276,9 +274,6 @@ func (h *Host) ServeRPC(projectID, mcpID, token string, body []byte) (status int
 		return platformmcp.Unauthorized()
 	}
 	mcpID = strings.TrimSpace(mcpID)
-	if mcpID == "" {
-		mcpID = MCPProgress // legacy /mcp/pm/:projectId
-	}
 	if mcpID != MCPProgress && mcpID != MCPWorkflowRead && mcpID != MCPWorkflowWrite && mcpID != MCPAgentFS && mcpID != MCPPrdManager {
 		return 404, platformmcp.MustJSON(platformmcp.RPCResponse{
 			JSONRPC: "2.0",
@@ -551,7 +546,7 @@ func (h *Host) callWorkflowRead(projectID, name string, args map[string]any) (an
 		rows := make([]map[string]any, 0, len(list))
 		for _, w := range list {
 			rows = append(rows, map[string]any{
-				"id": w.ID, "name": w.Name, "status": w.Status, "version": w.Version,
+				"id": w.ID, "name": w.Name, "status": w.Status(), "version": w.Version, "publishedVersion": w.PublishedVersion,
 				"updatedAt": w.UpdatedAt,
 			})
 		}
@@ -562,7 +557,7 @@ func (h *Host) callWorkflowRead(projectID, name string, args map[string]any) (an
 			return map[string]any{"error": "workflow not found"}, true
 		}
 		return map[string]any{
-			"id": w.ID, "name": w.Name, "status": w.Status, "version": w.Version,
+			"id": w.ID, "name": w.Name, "status": w.Status(), "version": w.Version, "publishedVersion": w.PublishedVersion,
 			"description": w.Description, "needsRepo": w.NeedsRepo,
 		}, false
 	case "pm_get_workflow_graph":
@@ -714,7 +709,6 @@ func (h *Host) callWorkflowWrite(projectID, token, name string, args map[string]
 		if err != nil {
 			return map[string]any{"error": err.Error()}, true
 		}
-		services.LiftInputVariables(&graph)
 		wf := &models.WorkflowDef{
 			ID:          "wf-" + uuid.NewString()[:8],
 			ProjectID:   projectID,
@@ -723,10 +717,10 @@ func (h *Host) callWorkflowWrite(projectID, token, name string, args map[string]
 			NeedsRepo:   platformmcp.BoolArg(args, "needsRepo"),
 			Graph:       graph,
 		}
-		if err := h.wf.Save(wf); err != nil {
+		if err := h.wf.SaveAs(wf, models.VersionSourcePM); err != nil {
 			return map[string]any{"error": err.Error()}, true
 		}
-		return map[string]any{"id": wf.ID, "name": wf.Name, "status": wf.Status, "version": wf.Version}, false
+		return map[string]any{"id": wf.ID, "name": wf.Name, "status": wf.Status(), "version": wf.Version}, false
 	case "pm_update_workflow":
 		w, ok := h.workflowInProject(projectID, platformmcp.StrArg(args, "workflowId"))
 		if !ok {
@@ -748,13 +742,12 @@ func (h *Host) callWorkflowWrite(projectID, token, name string, args map[string]
 		if graph, present, err := parseGraphArgs(args); err != nil {
 			return map[string]any{"error": err.Error()}, true
 		} else if present {
-			services.LiftInputVariables(&graph)
 			w.Graph = graph
 		}
-		if err := h.wf.Save(&w); err != nil {
+		if err := h.wf.SaveAs(&w, models.VersionSourcePM); err != nil {
 			return map[string]any{"error": err.Error()}, true
 		}
-		return map[string]any{"id": w.ID, "name": w.Name, "status": w.Status, "version": w.Version}, false
+		return map[string]any{"id": w.ID, "name": w.Name, "status": w.Status(), "version": w.Version}, false
 	case "pm_copy_workflow":
 		if _, ok := h.workflowInProject(projectID, platformmcp.StrArg(args, "workflowId")); !ok {
 			return map[string]any{"error": "workflow not found"}, true
@@ -763,7 +756,7 @@ func (h *Host) callWorkflowWrite(projectID, token, name string, args map[string]
 		if err != nil {
 			return map[string]any{"error": err.Error()}, true
 		}
-		return map[string]any{"id": out.ID, "name": out.Name, "status": out.Status, "version": out.Version}, false
+		return map[string]any{"id": out.ID, "name": out.Name, "status": out.Status(), "version": out.Version}, false
 	case "pm_delete_workflow":
 		if _, ok := h.workflowInProject(projectID, platformmcp.StrArg(args, "workflowId")); !ok {
 			return map[string]any{"error": "workflow not found"}, true
@@ -781,7 +774,7 @@ func (h *Host) callWorkflowWrite(projectID, token, name string, args map[string]
 		if err != nil {
 			return map[string]any{"error": err.Error()}, true
 		}
-		return map[string]any{"id": out.ID, "status": out.Status, "version": out.Version}, false
+		return map[string]any{"id": out.ID, "status": out.Status(), "version": out.Version, "publishedVersion": out.PublishedVersion}, false
 	case "pm_start_run":
 		if h.eng == nil {
 			return map[string]any{"error": "engine unavailable"}, true
@@ -931,19 +924,11 @@ func toolSchemas(mcpID string) []map[string]any {
 		}
 	case MCPAgentFS:
 		return []map[string]any{
-			platformmcp.Tool("pm_get_org", "读取组织架构：全量 groups/agents（含相对当前 PM 的 self/direct/other 项目成员标注）以及同项目成员扁平列表（directReports/subtree）。只读，不可改 groups。", nil),
+			platformmcp.Tool("pm_list_project_agents", "列出当前项目的全部 Agent 成员（name、acpBackend、relation：self 为当前 PM 自身，other 为同项目其他成员）。只读。", nil),
 			platformmcp.Tool("pm_list_agent_templates", "列出内置工程师角色模板（id、中文角色名、简介），用于组建团队。", nil),
 			platformmcp.Tool("pm_create_agent_from_template", "从模板创建工程师 Agent（同项目；默认继承 Leader 的 mcp/env；禁止覆盖重名）。", map[string]any{
 				"templateId": map[string]any{"type": "string", "description": "模板 id，如 implement / clarify"},
 				"name":       map[string]any{"type": "string", "description": "新 Agent 名称，如 Grasp实现工程师"},
-			}),
-			platformmcp.Tool("pm_set_org_membership", "设置 Agent 的虚拟组成员（groupIds 须在授权范围内）。", map[string]any{
-				"agentName": map[string]any{"type": "string"},
-				"groupIds":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-			}),
-			platformmcp.Tool("pm_ensure_child_group", "在授权根组下幂等确保子组存在（如 工作流(GitHub)）。", map[string]any{
-				"name":          map[string]any{"type": "string"},
-				"parentGroupId": map[string]any{"type": "string", "description": "父组 id；省略则用建团结会话根组"},
 			}),
 			platformmcp.Tool("pm_fs_list", "列出授权 Agent 的 host 侧 workspace 目录（非 Run 沙箱）。", map[string]any{
 				"agentName": map[string]any{"type": "string", "description": "目标 Agent 名（同项目任意成员或自身）"},

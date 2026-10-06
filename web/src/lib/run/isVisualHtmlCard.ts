@@ -6,10 +6,7 @@ export type VisualHtmlCardInput = Pick<
   'outputKey' | 'artifactName' | 'structuredArtifactName' | 'markdown' | 'jsonSnapshot'
 >
 
-/**
- * page.html, or any name ending in .html / .htm (case-insensitive).
- * Used for both artifactName and structuredArtifactName (legacy cards).
- */
+/** page.html, or any name ending in .html / .htm (case-insensitive). */
 export function isHtmlArtifactName(name?: string): boolean {
   if (!name) return false
   const n = name.trim().toLowerCase()
@@ -25,15 +22,6 @@ export function looksLikeFullHtmlDocument(body?: string): boolean {
   if (!body) return false
   const s = body.replace(/^\s+/, '')
   return /^<!doctype\s+html\b/i.test(s) || /^<html[\s>]/i.test(s)
-}
-
-/**
- * Prefer artifactName; legacy structured page cards only have structuredArtifactName.
- */
-export function visualHtmlArtifactName(card: VisualHtmlCardInput): string | undefined {
-  if (card.artifactName) return card.artifactName
-  if (card.structuredArtifactName) return card.structuredArtifactName
-  return undefined
 }
 
 export function parseOutputCardDoc(card: Pick<OutputCard, 'jsonSnapshot'>): unknown {
@@ -59,10 +47,10 @@ export type IsVisualHtmlCardOptions = {
 /**
  * Clarification three-rule recognizer: any hit is a visual HTML card.
  * (1) outputKey === page
- * (2) artifactName or structuredArtifactName is page.html or ends with .html/.htm
+ * (2) artifactName is page.html or ends with .html/.htm
  * (3) available body (fetched artifact, else markdown) looks like a full HTML document
  *
- * Real structured JSON (non-html structuredArtifactName + successful parse)
+ * Real structured JSON (structuredArtifactName + successful parse)
  * stays on StructuredArtifactView and is never sniffed into a preview.
  */
 export function isVisualHtmlCard(
@@ -70,14 +58,9 @@ export function isVisualHtmlCard(
   options?: IsVisualHtmlCardOptions,
 ): boolean {
   const parsed = options && 'parsedDoc' in options ? options.parsedDoc : parseOutputCardDoc(card)
-  const structuredName = card.structuredArtifactName
-  if (structuredName && !isHtmlArtifactName(structuredName) && parsed != null) {
-    return false
-  }
+  if (card.structuredArtifactName && parsed != null) return false
   if (card.outputKey === 'page') return true
-  if (isHtmlArtifactName(card.artifactName) || isHtmlArtifactName(card.structuredArtifactName)) {
-    return true
-  }
+  if (isHtmlArtifactName(card.artifactName)) return true
   const available = options?.artifactHtml?.trim() ? options.artifactHtml : card.markdown
   return looksLikeFullHtmlDocument(available)
 }

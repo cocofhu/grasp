@@ -30,8 +30,6 @@ import {
   pickProductRef,
   resolveUpstreamOutputs,
   reviewingUpstreamN,
-  inferArtifactKind,
-  isReadonlyArtifactKind,
   type GatePrimaryProductRef,
 } from '@/lib/inbox/gateUpstream'
 import type { AcpEvent, AgentTool, ClarifyImage, Gate, GateShareInboxStatus, Run, ReactAnnotation } from '@/lib/shared/types'
@@ -40,7 +38,6 @@ import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/
 import { REVERT_ACTION_IDS, POSITIVE_ACTION_IDS } from '@/components/run/gateApproval/gateApprovalActions'
 import { gateApprovalKey } from '@/components/run/gateApproval/gateApprovalContext'
 import { type PlanDoc } from '@/components/run/PlanView.vue'
-import { type ProposalsDoc } from '@/components/run/ProposalSelectView.vue'
 import { isStructuredArtifactName } from '@/components/run/StructuredArtifactView.vue'
 import {
   cloneAnnotations as cloneReactAnnotations,
@@ -130,18 +127,7 @@ watch(
   },
 )
 
-// A proposal_select gate presents candidate proposals as a card picker (parsed
-// from the upstream proposals artifact) instead of a markdown wall + generic
-// buttons. Detected via the gate's originating node type; defensively also when
-// the gate's actions look like proposal ids (p1, p2, …) so it still engages if
-// the run's pinned graph / node config differs.
 const gateNode = computed(() => props.run?.nodes?.find((n) => n.id === props.gate.nodeId))
-const looksLikeProposalActions = computed(
-  () => !!props.gate.actions?.length && props.gate.actions.every((a) => /^p\d+$/.test(a.id)),
-)
-const isProposalSelect = computed(
-  () => gateNode.value?.type === 'proposal_select' || looksLikeProposalActions.value,
-)
 
 const PASS_ACTION_IDS = new Set(['pass', 'approve'])
 const FAIL_ACTION_IDS = new Set(['fail', 'revise'])
@@ -370,38 +356,6 @@ function clearHtmlPreviewPick() {
   pickedSelector.value = ''
   pickedElementImage.value = null
 }
-const proposalsDoc = ref<ProposalsDoc | null>(null)
-const proposalsLoading = ref(false)
-async function loadProposals() {
-  if (!isProposalSelect.value) {
-    proposalsDoc.value = null
-    return
-  }
-  const from = (gateNode.value?.config?.from || 'proposals.json').toString()
-  // Prefer the configured source; fall back to the conventional proposals.json.
-  const a =
-    props.run?.artifacts.find((x) => x.name === from) ||
-    props.run?.artifacts.find((x) => x.name === 'proposals.json')
-  if (!a) {
-    proposalsDoc.value = null
-    return
-  }
-  proposalsLoading.value = true
-  try {
-    const full = await api.artifactContent(a.id)
-    const doc = JSON.parse(full.content || '{}') as ProposalsDoc
-    proposalsDoc.value = Array.isArray(doc.proposals) && doc.proposals.length ? doc : null
-  } catch {
-    proposalsDoc.value = null
-  } finally {
-    proposalsLoading.value = false
-  }
-}
-watch(
-  () => [props.gate.nodeId, isProposalSelect.value, props.run?.artifacts.map((x) => x.name).join(',')],
-  loadProposals,
-  { immediate: true },
-)
 
 // A plan gate resolves its body to the plan checklist markdown (see
 // RenderPlanMarkdown); rendering that raw is ugly, so when we detect it we swap
@@ -432,16 +386,14 @@ watch(() => [props.gate.bodyMd, props.run?.artifacts.find((x) => x.name === 'pla
 // upstream node's structured product ({{nodes.<id>.outputs.<key>}}), render it
 // with the SAME structured views as the node's 产物 tab — not raw markdown.
 const bodyTemplate = computed(() => (gateNode.value?.config?.body_template || '').toString())
-/** Client-side parse of body_template; used offline / when API is unavailable. */
+/** Client-side parse of body_template; used when the gate is not pending (history / resolved). */
 const clientPrimaryProducts = computed<GatePrimaryProductRef[]>(() =>
-  listPrimaryProducts(bodyTemplate.value, {
-    isProposalSelect: isProposalSelect.value,
-    proposalSelectFrom: (gateNode.value?.config?.from || 'proposals.json').toString(),
-  }),
+  listPrimaryProducts(bodyTemplate.value),
 )
 /**
- * Server ListGatePrimaryProducts is the SSOT for kind/readonly (store Kind may
- * mark image even when the filename has no image suffix). null = use client fallback.
+ * Server ListGatePrimaryProducts is the SSOT for kind/readonly while the gate is
+ * pending (store Kind may mark image even when the filename has no image suffix).
+ * null = gate not pending; use the client parse.
  */
 const apiPrimaryProducts = ref<GatePrimaryProductRef[] | null>(null)
 /** True after listGatePrimaryArtifacts settles (success/offline); gates first loadProduct. */
@@ -450,15 +402,14 @@ const primaryProductsHydrated = ref(false)
 function normalizeApiPrimaryItem(item: {
   name: string
   kind: string
-  readonly?: boolean
+  readonly: boolean
   nodeId?: string
   outputKey?: string
 }): GatePrimaryProductRef {
-  const kind = (item.kind || inferArtifactKind(item.name)) as GatePrimaryProductRef['kind']
   return {
     name: item.name,
-    kind,
-    readonly: item.readonly ?? isReadonlyArtifactKind(kind),
+    kind: item.kind as GatePrimaryProductRef['kind'],
+    readonly: item.readonly,
     nodeId: item.nodeId,
     outputKey: item.outputKey,
   }
@@ -481,12 +432,10 @@ async function loadPrimaryProductsFromApi() {
   try {
     const r = await api.listGatePrimaryArtifacts(props.run.id, props.gate.nodeId)
     const items = r.items || []
-    apiPrimaryProducts.value = items.length
-      ? items.map(normalizeApiPrimaryItem)
-      : null
+    apiPrimaryProducts.value = items.map(normalizeApiPrimaryItem)
   } catch {
-    // Offline / older server: keep client listPrimaryProducts as fallback.
-    apiPrimaryProducts.value = null
+    // Transient failure keeps the last server list.
+    apiPrimaryProducts.value ??= []
   } finally {
     primaryProductsHydrated.value = true
   }
@@ -511,10 +460,7 @@ const primaryProducts = computed<GatePrimaryProductRef[]>(
   () => apiPrimaryProducts.value ?? clientPrimaryProducts.value,
 )
 const excludedProduces = computed(() =>
-  listExcludedProduces(bodyTemplate.value, props.run?.nodes, {
-    isProposalSelect: isProposalSelect.value,
-    proposalSelectFrom: (gateNode.value?.config?.from || 'proposals.json').toString(),
-  }),
+  listExcludedProduces(bodyTemplate.value, props.run?.nodes),
 )
 // page/page.html preferred over the first template ref (aligned with backend pointer).
 const productRef = computed<{ nodeId: string; key: string } | null>(() =>
@@ -605,8 +551,8 @@ const openPreviewIssueCount = computed(
  *   would silently drop it. Keep the gate's own configured label (e.g.
  *   「退回修改」/「取消需求」) so the actual downstream effect stays clear.
  * - Otherwise: the positive exit (approve/pass → 确认并流转), same as before.
- * Config-layer actions beyond these two remain on the gate DTO for silent
- * edge compat but are never rendered as dual buttons.
+ * Config-layer actions beyond these two remain on the gate DTO so their
+ * edges still resolve, but are never rendered as dual buttons.
  */
 const visibleActions = computed(() => {
   if (usesPreviewIssues.value && openPreviewIssueCount.value >= 1) {
@@ -713,11 +659,21 @@ const useMobileFillRemaining = computed(
     !!props.mobileFillRemaining &&
     isMobile.value &&
     useFillLayout.value &&
-    isVisualBody.value &&
-    !isProposalSelect.value,
+    isVisualBody.value,
 )
-const productDoc = ref<any>(null)
-const productHtml = ref('')
+/** Loaded body of the main product, read from the multi-product content map. */
+const productText = computed(() =>
+  productName.value ? savedProductContent.value[productName.value] || '' : '',
+)
+const productHtml = computed(() => (isVisualBody.value ? productText.value : ''))
+const productDoc = computed<unknown>(() => {
+  if (!productName.value || !isStructuredArtifactName(productName.value) || !productText.value) return null
+  try {
+    return JSON.parse(productText.value)
+  } catch {
+    return null
+  }
+})
 const productLoading = ref(false)
 /** Distinguishes load failure from empty body; null when last load succeeded. */
 const productLoadError = ref<string | null>(null)
@@ -729,13 +685,10 @@ let productLoadAbort: AbortController | null = null
 /**
  * Structured artifact + fillPreview: same content-fit column as visual.
  * Requires a parsed productDoc; loading / parse failure stay on the v-else path.
- * Exclude proposal_select — interactive ProposalSelectView must stay on the
- * default path (p1/p2 select); ReviewShell would swap in readonly StructuredArtifactView.
  */
 const shouldFitStructured = computed(
   () =>
     useFillLayout.value &&
-    !isProposalSelect.value &&
     !!productName.value &&
     isStructuredArtifactName(productName.value) &&
     !!productDoc.value &&
@@ -815,14 +768,7 @@ function buildProductLoadFingerprint(): string {
       const ref =
         p.nodeId && p.outputKey ? { nodeId: p.nodeId, key: p.outputKey } : productRef.value
       if (ref && props.run) {
-        const result = resolveUpstreamOutputs({
-          productNodeId: ref.nodeId,
-          execsByNode: props.run.nodeExecutions || {},
-          upstreamNodeId: props.gate.upstreamNodeId,
-          upstreamIteration: props.gate.upstreamIteration,
-          gateIteration: props.gate.iteration,
-          pending,
-        })
+        const result = gateUpstreamOutputs(props.run)
         const snap = result.outputs?.page
         if (typeof snap === 'string') parts.push(`snap:${hashContentFingerprint(snap)}`)
       }
@@ -830,14 +776,7 @@ function buildProductLoadFingerprint(): string {
       const ref =
         p.nodeId && p.outputKey ? { nodeId: p.nodeId, key: p.outputKey } : productRef.value
       if (ref && props.run) {
-        const result = resolveUpstreamOutputs({
-          productNodeId: ref.nodeId,
-          execsByNode: props.run.nodeExecutions || {},
-          upstreamNodeId: props.gate.upstreamNodeId,
-          upstreamIteration: props.gate.upstreamIteration,
-          gateIteration: props.gate.iteration,
-          pending,
-        })
+        const result = gateUpstreamOutputs(props.run)
         const snap = result.outputs?.[`${p.outputKey}_json`]
         if (typeof snap === 'string') parts.push(`snap:${hashContentFingerprint(snap)}`)
       }
@@ -849,22 +788,22 @@ function buildProductLoadFingerprint(): string {
 
 const lastProductLoadFingerprint = ref<string | null>(null)
 
-// Upstream outputs for this gate: pointer → exact exec; miss → artifact store;
-// legacy (no pointer) → max(completed) while pending, else ≤ gate.iteration.
+function gateUpstreamOutputs(run: Run) {
+  return resolveUpstreamOutputs({
+    execsByNode: run.nodeExecutions || {},
+    upstreamNodeId: props.gate.upstreamNodeId,
+    upstreamIteration: props.gate.upstreamIteration,
+  })
+}
+
+// Upstream outputs for this gate: pointer → exact exec; miss → artifact store.
 function upstreamOutputs(): { outputs: Record<string, any> | null; pointerMiss: boolean } {
   const ref = productRef.value
   if (!ref || !props.run) {
     selectedUpstreamIteration.value = null
     return { outputs: null, pointerMiss: false }
   }
-  const result = resolveUpstreamOutputs({
-    productNodeId: ref.nodeId,
-    execsByNode: props.run.nodeExecutions || {},
-    upstreamNodeId: props.gate.upstreamNodeId,
-    upstreamIteration: props.gate.upstreamIteration,
-    gateIteration: props.gate.iteration,
-    pending: resolved.value == null,
-  })
+  const result = gateUpstreamOutputs(props.run)
   selectedUpstreamIteration.value = result.selectedIteration
   if (result.pointerMiss) return { outputs: null, pointerMiss: true }
   return { outputs: result.outputs, pointerMiss: false }
@@ -878,14 +817,7 @@ async function loadOneProductContent(
   const pending = resolved.value == null
   const ref = p.nodeId && p.outputKey ? { nodeId: p.nodeId, key: p.outputKey } : productRef.value
   if (ref && props.run) {
-    const result = resolveUpstreamOutputs({
-      productNodeId: ref.nodeId,
-      execsByNode: props.run.nodeExecutions || {},
-      upstreamNodeId: props.gate.upstreamNodeId,
-      upstreamIteration: props.gate.upstreamIteration,
-      gateIteration: props.gate.iteration,
-      pending,
-    })
+    const result = gateUpstreamOutputs(props.run)
     selectedUpstreamIteration.value = result.selectedIteration
     if (!result.pointerMiss && result.outputs) {
       if (p.name === 'page.html' || p.outputKey === 'page') {
@@ -923,8 +855,6 @@ async function loadProduct(opts?: { force?: boolean }) {
   productLoadError.value = null
   const products = primaryProducts.value
   if (!products.length) {
-    productDoc.value = null
-    productHtml.value = ''
     selectedUpstreamIteration.value = null
     savedProductContent.value = {}
     lastProductLoadFingerprint.value = null
@@ -971,24 +901,6 @@ async function loadProduct(opts?: { force?: boolean }) {
       lastProductLoadFingerprint.value = fingerprint
     }
     savedProductContent.value = next
-    // Keep legacy single-product fields for read-only / content-fit paths.
-    const primary = products[0]
-    const text = next[primary.name] || ''
-    if (primary.name === 'page.html') {
-      // Avoid HtmlPreview srcdoc reassignment when body is unchanged (no iframe flicker).
-      if (productHtml.value !== text) productHtml.value = text
-      productDoc.value = null
-    } else if (isStructuredArtifactName(primary.name)) {
-      try {
-        productDoc.value = JSON.parse(text || '{}')
-      } catch {
-        productDoc.value = null
-      }
-      productHtml.value = ''
-    } else {
-      productDoc.value = null
-      productHtml.value = ''
-    }
   } finally {
     if (gen === productLoadGen) productLoading.value = false
   }
@@ -1034,19 +946,6 @@ function onProductSaved(payload: {
       sizeBytes: payload.sizeBytes,
     },
   }
-  if (payload.name === 'page.html') {
-    productHtml.value = payload.content
-  } else if (isStructuredArtifactName(payload.name)) {
-    try {
-      productDoc.value = JSON.parse(payload.content || '{}')
-    } catch {
-      /* keep */
-    }
-  }
-  // Refresh proposals picker if that artifact was edited.
-  if (payload.name === 'proposals.json' || payload.name.endsWith('proposals.json')) {
-    loadProposals()
-  }
 }
 
 async function onProductRefresh(name: string) {
@@ -1058,15 +957,6 @@ async function onProductRefresh(name: string) {
   try {
     const content = await loadOneProductContent(p, { preferSnapshot: false })
     savedProductContent.value = { ...savedProductContent.value, [name]: content }
-    if (name === 'page.html') {
-      productHtml.value = content
-    } else if (isStructuredArtifactName(name)) {
-      try {
-        productDoc.value = JSON.parse(content || '{}')
-      } catch {
-        /* keep prior parse */
-      }
-    }
     lastProductLoadFingerprint.value = buildProductLoadFingerprint()
   } catch (e: any) {
     const msg = e?.message || String(e)
@@ -1731,9 +1621,7 @@ async function onSidebarAction(id: string) {
 /** Desktop/narrow ReviewShell for content-fit gates (stage | sidebar). */
 const useReviewShellLayout = computed(
   () =>
-    !isProposalSelect.value &&
-    (shouldContentFit.value ||
-      (canEditProducts.value && !!props.fillPreview)) &&
+    (shouldContentFit.value || (canEditProducts.value && !!props.fillPreview)) &&
     !useMobileFillRemaining.value,
 )
 
@@ -1758,7 +1646,6 @@ const passAction = computed(() => {
 const composerPassDisabled = computed(
   () =>
     !passAction.value ||
-    isProposalSelect.value ||
     isActionDisabled(passAction.value.id) ||
     reactThinking.value ||
     reactQueued.value.length > 0 ||
@@ -1800,7 +1687,6 @@ provide(gateApprovalKey, {
     productName,
     canEditProducts,
     isVisualBody,
-    isProposalSelect,
     bodyTemplate,
     usesPreviewIssues,
     openPreviewIssueCount,
@@ -1815,8 +1701,6 @@ provide(gateApprovalKey, {
     commentArtifactWriting,
     commentArtifactWriteError,
     annotateDraft,
-    proposalsDoc,
-    proposalsLoading,
     planDoc,
     planLoading,
     productDoc,
@@ -1911,7 +1795,6 @@ provide(gateApprovalKey, {
     onWriteCommentArtifact,
     onAppPreviewPick,
     clearHtmlPreviewPick,
-    loadProposals,
     loadPlan,
     normalizeApiPrimaryItem,
     loadPrimaryProductsFromApi,
@@ -1958,8 +1841,6 @@ provide(gateApprovalKey, {
     savedProductContent,
     savedProductMeta,
     gateNode,
-    looksLikeProposalActions,
-    isProposalSelect,
     PASS_ACTION_IDS,
     FAIL_ACTION_IDS,
     previewIssues,
@@ -1979,8 +1860,6 @@ provide(gateApprovalKey, {
     commentPinBadges,
     annotateEnabled,
     annotationArtifactWriteGen,
-    proposalsDoc,
-    proposalsLoading,
     isPlanBody,
     planDoc,
     planLoading,

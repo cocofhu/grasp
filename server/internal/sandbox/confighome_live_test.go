@@ -78,6 +78,7 @@ func TestLiveGatewayConfigHomeInject(t *testing.T) {
 			"GRASP_ARTIFACT_TOKEN": "live-tok",
 			"GRASP_RUN_ID":         "live-inject-test",
 			"SKIP_INNER_DOCKER":    "1",
+			BridgePasswordEnv:      "live-inject-pw",
 		},
 	})
 	if err != nil {

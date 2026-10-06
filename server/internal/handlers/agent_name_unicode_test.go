@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 )
 
@@ -13,9 +14,10 @@ func TestCreateAndRenameAgent_unicodeNameAndInvalid400(t *testing.T) {
 	h := newHarness(t)
 
 	// Create with screenshot sample Chinese name → 201.
-	w := h.do("POST", "/api/agents", map[string]any{
-		"name":  "Approve需求澄清视觉研发",
-		"files": []any{},
+	w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor",
+		"name":      "Approve需求澄清视觉研发",
+		"projectId": models.DefaultProjectID,
+		"files":     []any{},
 	})
 	if w.Code != 201 {
 		t.Fatalf("create chinese: %d %s", w.Code, w.Body.String())
@@ -32,7 +34,7 @@ func TestCreateAndRenameAgent_unicodeNameAndInvalid400(t *testing.T) {
 	}
 
 	// Illegal write name (contains '.') → 400 business error, not 500.
-	w = h.do("POST", "/api/agents", map[string]any{"name": "clarify.v1", "files": []any{}})
+	w = h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor", "name": "clarify.v1", "files": []any{}})
 	if w.Code != 400 {
 		t.Fatalf("create dotted: want 400 got %d %s", w.Code, w.Body.String())
 	}
@@ -40,16 +42,16 @@ func TestCreateAndRenameAgent_unicodeNameAndInvalid400(t *testing.T) {
 		t.Fatalf("expected invalid agent name error, got %s", w.Body.String())
 	}
 
-	w = h.do("POST", "/api/agents", map[string]any{"name": "Approve 需求", "files": []any{}})
+	w = h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor", "name": "Approve 需求", "files": []any{}})
 	if w.Code != 400 {
 		t.Fatalf("create space: want 400 got %d %s", w.Code, w.Body.String())
 	}
 
-	// Seed a legacy-style ASCII agent then rename to Chinese.
-	if err := h.h.Agents.Save(services.Agent{Name: "legacy-agent"}); err != nil {
+	// Seed an ASCII agent then rename to Chinese.
+	if err := h.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "ascii-agent"}); err != nil {
 		t.Fatal(err)
 	}
-	w = h.do("POST", "/api/agents/"+url.PathEscape("legacy-agent")+"/rename", map[string]any{"name": "视觉研发助手"})
+	w = h.do("POST", "/api/agents/"+url.PathEscape("ascii-agent")+"/rename", map[string]any{"name": "视觉研发助手"})
 	if w.Code != 200 {
 		t.Fatalf("rename to chinese: %d %s", w.Code, w.Body.String())
 	}
@@ -61,25 +63,5 @@ func TestCreateAndRenameAgent_unicodeNameAndInvalid400(t *testing.T) {
 	w = h.do("POST", "/api/agents/"+url.PathEscape("视觉研发助手")+"/rename", map[string]any{"name": "agent.v2"})
 	if w.Code != 400 {
 		t.Fatalf("rename dotted target: want 400 got %d %s", w.Code, w.Body.String())
-	}
-}
-
-func TestRenameAgent_fromLegacyDottedName(t *testing.T) {
-	h := newHarness(t)
-	// Path layer still accepts legacy dotted names for Get/Rename(old).
-	if err := h.h.Agents.Save(services.Agent{Name: "clarify.v1"}); err != nil {
-		t.Fatal(err)
-	}
-	w := h.do("POST", "/api/agents/"+url.PathEscape("clarify.v1")+"/rename", map[string]any{
-		"name": "Approve-需求澄清",
-	})
-	if w.Code != 200 {
-		t.Fatalf("rename legacy dotted → unicode: %d %s", w.Code, w.Body.String())
-	}
-	if h.h.Agents.Exists("clarify.v1") {
-		t.Fatal("old dotted name should be gone")
-	}
-	if !h.h.Agents.Exists("Approve-需求澄清") {
-		t.Fatal("new unicode name should exist")
 	}
 }

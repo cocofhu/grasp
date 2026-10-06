@@ -121,6 +121,7 @@ func TestConsumeNodeOutcomeMissingNodeComplete(t *testing.T) {
 func TestConsumeNodeOutcomeAdoptsArtifactAfterFlush(t *testing.T) {
 	eng, db := setupEngine(t)
 	runID := "r-adopt"
+	seedArtifactOwner(t, eng.db, runID)
 	nodeID := "react_rlze"
 	tok := eng.host.RegisterRun(runID)
 	eng.host.SetActiveNode(runID, nodeID, capsClarify)
@@ -209,6 +210,7 @@ func TestConsumeNodeOutcomeStateRunOnlyNotEmptySurface(t *testing.T) {
 func TestConsumeNodeOutcomeCorruptArtifact(t *testing.T) {
 	eng, _ := setupEngine(t)
 	runID := "r-corrupt"
+	seedArtifactOwner(t, eng.db, runID)
 	nodeID := "test"
 	tok := eng.host.RegisterRun(runID)
 	eng.host.SetActiveNode(runID, nodeID, capsTest)
@@ -235,6 +237,7 @@ func TestConsumeNodeOutcomeCorruptArtifact(t *testing.T) {
 func TestConsumeNodeOutcomeAdoptsFailedArtifact(t *testing.T) {
 	eng, _ := setupEngine(t)
 	runID := "r-failed-mark"
+	seedArtifactOwner(t, eng.db, runID)
 	nodeID := "implement"
 	eng.host.RegisterRun(runID)
 	eng.host.SetActiveNode(runID, nodeID, capsImplement)
@@ -282,6 +285,7 @@ func TestNodeReqDoesNotClearOutcome(t *testing.T) {
 func TestStartNodeRunClearsOutcome(t *testing.T) {
 	eng, _ := setupEngine(t)
 	runID := "r-clear-visit"
+	seedArtifactOwner(t, eng.db, runID)
 	nodeID := "research"
 	tok := eng.host.RegisterRun(runID)
 	eng.host.SetActiveNode(runID, nodeID, capsResearch)

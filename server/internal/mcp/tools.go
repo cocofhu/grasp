@@ -249,17 +249,10 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 			fmt.Sprintf("ok: 已写入根因报告(%d 证据 / %d 图)", len(doc.Evidence), len(doc.Diagrams)))
 	case "get_root_cause":
 		return h.structuredGet(runID, token, "get_root_cause", structured.RootCauseArtifactName)
-	case "set_proposals":
-		doc, err := structured.ParseProposals(args)
-		return h.structuredSet(runID, token, "set_proposals", structured.ProposalsArtifactName, doc, err,
-			fmt.Sprintf("ok: 已写入 %d 个候选方案", len(doc.Proposals)))
-	case "get_proposals":
-		return h.structuredGet(runID, token, "get_proposals", structured.ProposalsArtifactName)
 	case "set_test_result":
 		doc, err := structured.ParseTestResult(args)
 		if err == nil {
-			// Validate refs then store artifact-only screenshots (no write-time
-			// hydrate). Inline data in input is already stripped by ParseTestResult.
+			// Validate refs then store artifact-only screenshots.
 			if valErr := doc.ValidateScreenshotArtifacts(func(name string) bool {
 				_, rerr := h.ReadArtifact(runID, token, name)
 				return rerr == nil
@@ -283,6 +276,12 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 			"ok: 已写入实现结果")
 	case "get_implementation_result":
 		return h.structuredGet(runID, token, "get_implementation_result", structured.ImplementationResultArtifactName)
+	case "set_merge_request":
+		doc, err := structured.ParseMergeRequest(args)
+		return h.structuredSet(runID, token, "set_merge_request", structured.MergeRequestArtifactName, doc, err,
+			fmt.Sprintf("ok: 已写入合并请求(%d 个仓库)", len(doc.Items)))
+	case "get_merge_request":
+		return h.structuredGet(runID, token, "get_merge_request", structured.MergeRequestArtifactName)
 	case "set_preflight":
 		doc, err := structured.ParsePreflight(args)
 		return h.structuredSet(runID, token, "set_preflight", structured.PreflightArtifactName, doc, err,
@@ -455,20 +454,6 @@ func (h *Host) structuredGet(runID, token, tool, name string) (string, bool) {
 	content, err := h.ReadArtifact(runID, token, name)
 	if err != nil {
 		return tool + " failed: 尚无 " + name, true
-	}
-	if name == structured.TestResultArtifactName {
-		// Short-term buffer for Agent/MCP readers: inject inline data in the
-		// response only. Storage stays artifact-only; ArtifactContent bypasses
-		// this so the web UI lazy-loads by reference.
-		hydrated, hydrErr := structured.HydrateTestResultContent(content, func(artName string) (string, error) {
-			return h.ReadArtifact(runID, token, artName)
-		})
-		if hydrErr != nil {
-			log.Warn().Err(hydrErr).Str("run_id", runID).Str("tool", tool).
-				Msg("test_result hydrate failed; returning raw content")
-		} else {
-			content = hydrated
-		}
 	}
 	return content, false
 }
@@ -686,7 +671,7 @@ func artifactTools() []map[string]any {
 	planDiagramsSchema := func() map[string]any {
 		return map[string]any{
 			"type":        "array",
-			"description": "按需多图(可空);有项则每项 source 必填。与单数 diagram 并存且 source 不同时都保留。前端同节≥2 张用节内小 Tab,不是左目录。",
+			"description": "按需多图(可空);有项则每项 source 必填,source 重复的项只保留一张。前端同节≥2 张用节内小 Tab,不是左目录。",
 			"items":       planDiagramSchema(),
 		}
 	}
@@ -825,10 +810,10 @@ func artifactTools() []map[string]any {
 			"name": "set_plan",
 			"description": "仅计划(plan)、Grasp 节点,或可复审 Agent 节点的复审阶段可用:写入本次运行的全局结构化计划。计划最多两级:大目标 goals[] → 小目标 subgoals[](小目标是叶子,其下不能再有子目标)。" +
 				"可选 SDD 设计区(architecture/data_design/interfaces/components/interaction/test_design);写入设计区时应六节齐全,无内容用「不涉及」占位。" +
-				"图按需、非强制:architecture/data_design/interaction 可挂 diagrams[](及兼容单数 diagram);interfaces/components 项亦可选同结构。" +
+				"图按需、非强制:architecture/data_design/interaction 可挂 diagrams[];interfaces/components 项亦可选同结构。" +
 				"一等图种 activity/flowchart/sequence/er——涉及活动/业务流/时序/数据时尽量都提供便于审批,缺可选图种不失败;禁止「必须四种图」。多子模块按需补图并写 scope。" +
 				"前端同节多图用节内小 Tab(不是左目录+右画布)。" +
-				"当 data_design.summary 非「不涉及」/N/A 时(实质数据设计),必须提供至少一张 ER(diagrams[] 中 kind=er 或兼容单数 diagram)、至少 1 个实体,且每个实体至少 1 个结构化 fields[](name+type 必填;可选 pk/nullable/fk/description);仅 legacy attributes 不足以通过。" +
+				"当 data_design.summary 非「不涉及」/N/A 时(实质数据设计),必须提供至少一张 ER(diagrams[] 中 kind=er)、至少 1 个实体,且每个实体至少 1 个结构化 fields[](name+type 必填;可选 pk/nullable/fk/description)。" +
 				"流程:Agent 调用 set_plan → 解析与硬门禁 → 入库 → PlanView 展示。存量仅 goals 的计划仍合法。" +
 				"在计划节点这是唯一交付;在 Grasp 节点这是两份强制交付之一(另一份是 set_clarified_requirement)。不要写代码或改仓库。",
 			"inputSchema": map[string]any{
@@ -837,16 +822,15 @@ func artifactTools() []map[string]any {
 					"title": strProp("可选:计划标题"),
 					"architecture": map[string]any{
 						"type":        "object",
-						"description": "架构设计;summary 可为「不涉及」;按需 diagrams[]/diagram(默认 kind=flowchart)",
+						"description": "架构设计;summary 可为「不涉及」;按需 diagrams[](默认 kind=flowchart)",
 						"properties": map[string]any{
 							"summary":  strProp("架构摘要,可为「不涉及」"),
 							"diagrams": planDiagramsSchema(),
-							"diagram":  planDiagramSchema(),
 						},
 					},
 					"data_design": map[string]any{
 						"type":        "object",
-						"description": "数据设计;summary 可为「不涉及」;实质启用时须至少一张 ER + entities[].fields;legacy attributes 只读兼容;按需 diagrams[]",
+						"description": "数据设计;summary 可为「不涉及」;实质启用时须至少一张 ER + entities[].fields;按需 diagrams[]",
 						"properties": map[string]any{
 							"summary": strProp("数据设计摘要,可为「不涉及」"),
 							"entities": map[string]any{
@@ -871,7 +855,6 @@ func artifactTools() []map[string]any {
 												"required": []string{"name", "type"},
 											},
 										},
-										"attributes":    strList("可选:legacy 属性列表(不满足硬门禁)"),
 										"description":   strProp("可选:说明"),
 										"relationships": strList("可选:实体级关系说明"),
 									},
@@ -880,7 +863,6 @@ func artifactTools() []map[string]any {
 							},
 							"relationships": strList("可选:顶层关系说明"),
 							"diagrams":      planDiagramsSchema(),
-							"diagram":       planDiagramSchema(),
 						},
 					},
 					"interfaces": map[string]any{
@@ -895,7 +877,6 @@ func artifactTools() []map[string]any {
 								"summary":   strProp("可选:摘要"),
 								"detail":    strProp("可选:细节"),
 								"diagrams":  planDiagramsSchema(),
-								"diagram":   planDiagramSchema(),
 							},
 							"required": []string{"name"},
 						},
@@ -911,18 +892,16 @@ func artifactTools() []map[string]any {
 								"dependencies":   strList("可选:依赖"),
 								"detail":         strProp("可选:细节"),
 								"diagrams":       planDiagramsSchema(),
-								"diagram":        planDiagramSchema(),
 							},
 							"required": []string{"name"},
 						},
 					},
 					"interaction": map[string]any{
 						"type":        "object",
-						"description": "交互设计;summary 可为「不涉及」;按需 diagrams[]/diagram(默认 kind=sequence)",
+						"description": "交互设计;summary 可为「不涉及」;按需 diagrams[](默认 kind=sequence)",
 						"properties": map[string]any{
 							"summary":  strProp("交互摘要,可为「不涉及」"),
 							"diagrams": planDiagramsSchema(),
-							"diagram":  planDiagramSchema(),
 						},
 					},
 					"test_design": strProp("测试设计说明,可为「不涉及」"),
@@ -1050,7 +1029,7 @@ func artifactTools() []map[string]any {
 		getTool("get_clarified_requirement", "读取本次运行的需求澄清结论(clarified_requirement.json)。"),
 		{
 			"name": "set_root_cause",
-			"description": "仅 Grasp(含历史 approve 别名)可用:提交一份问题根因 JSON(root_cause.json)。" +
+			"description": "仅 Grasp 可用:提交一份问题根因 JSON(root_cause.json)。" +
 				"仅当清需求 work_kind 为 bug(或尚未写入清需求)时可写;非 bug 直接拒绝。" +
 				"必填 title/summary/symptom/expected/actual/reproduction/impact/root_cause/evidence/diagrams。" +
 				"根因须是原因说明,不接受只有符号名;不接受修复步骤、补丁或日期字段。图源按计划图同一套 Mermaid 11 规则校验。" +
@@ -1114,31 +1093,6 @@ func artifactTools() []map[string]any {
 			},
 		},
 		getTool("get_research", "读取本次运行的调研结论(research.json)。"),
-		{
-			"name": "set_proposals",
-			"description": "仅方案(proposal)、Grasp 节点,或可复审 Agent 节点的复审阶段可用:写入结构化的候选方案集(对齐 ADR/MADR 与设计文档),可含多个方案供后续确认。" +
-				"在方案节点这是唯一交付(至少 1 个候选即可)。" +
-				"在 Grasp 节点为可选且**非凑产物**:仅当存在至少两个方向不同、取舍有意义的候选且需要用户择一时才调用(写入 ≥2 个);无真实分歧则不要调用,禁止单候选「伪选择」。",
-			"inputSchema": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"context":          strProp("背景与问题陈述"),
-					"decision_drivers": strList("可选:决策驱动/关注点"),
-					"proposals": objList("候选方案(至少 1 个)", map[string]any{
-						"title":       strProp("方案标题"),
-						"summary":     strProp("可选:方案概述"),
-						"pros":        strList("可选:优点"),
-						"cons":        strList("可选:缺点"),
-						"tradeoffs":   strProp("可选:权衡说明"),
-						"effort":      strProp("可选:工作量 low|medium|high"),
-						"risk":        strProp("可选:风险 low|medium|high"),
-						"recommended": map[string]any{"type": "boolean", "description": "可选:是否推荐(最多一个)"},
-					}, "title"),
-				},
-				"required": []string{"context", "proposals"},
-			},
-		},
-		getTool("get_proposals", "读取本次运行的候选方案集(proposals.json)。"),
 		{
 			"name": "set_test_result",
 			"description": "仅测试(test)节点可用:写入结构化的测试总结报告(对齐 IEEE 829 Test Summary Report)。" +
@@ -1221,6 +1175,28 @@ func artifactTools() []map[string]any {
 			},
 		},
 		getTool("get_implementation_result", "读取本次运行的实现结果(implementation_result.json)。"),
+		{
+			"name": "set_merge_request",
+			"description": "仅交付(deliver)节点可用:写入结构化的合并请求结果(merge_request.json),每个有改动的仓库一条。" +
+				"把目标分支合入工作分支、创建或复用 MR/PR 后调用,如实填写链接与状态;state 不是 unsupported 时 url 必填。",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"summary": strProp("交付概述"),
+					"items": objList("每个仓库的合并请求", map[string]any{
+						"repo":         strProp("仓库名(/root/workspace/<name>)"),
+						"sourceBranch": strProp("源分支(工作分支)"),
+						"targetBranch": strProp("目标分支"),
+						"url":          strProp("MR/PR 链接;state=unsupported 时可省略"),
+						"provider":     strProp("github|gitlab|other"),
+						"state":        strProp("created|reused|merged|unsupported"),
+						"note":         strProp("可选:说明(unsupported 时写原因与手动操作方式)"),
+					}, "repo", "sourceBranch", "targetBranch", "provider", "state"),
+				},
+				"required": []string{"summary", "items"},
+			},
+		},
+		getTool("get_merge_request", "读取本次运行的合并请求结果(merge_request.json)。"),
 		{
 			"name": "set_preflight",
 			"description": "仅环境确认(preflight)节点可用:写入已确认的环境清单(preflight.json)。" +

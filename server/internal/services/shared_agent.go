@@ -9,10 +9,6 @@ import (
 	"sync"
 
 	"github.com/cocofhu/grasp/internal/envauth"
-	"github.com/cocofhu/grasp/internal/models"
-
-	"github.com/rs/zerolog/log"
-	"gorm.io/gorm"
 )
 
 // SharedAgentConfig is the project-level Agent baseline used as the extend layer
@@ -21,10 +17,7 @@ import (
 type SharedAgentConfig struct {
 	ProjectID         string            `json:"projectId"`
 	AcpBackend        string            `json:"acpBackend,omitempty"`
-	DefaultProjectID  string            `json:"defaultProjectId,omitempty"`
 	GitCredentialType string            `json:"gitCredentialType,omitempty"`
-	GitSshKnownHosts  string            `json:"gitSshKnownHosts,omitempty"`
-	GitSshPrivateKey  string            `json:"gitSshPrivateKey,omitempty"`
 	Files             []AgentFile       `json:"files"`
 	MCP               []MCPServer       `json:"mcp"`
 	Env               map[string]string `json:"env"`
@@ -34,10 +27,7 @@ type SharedAgentConfig struct {
 // sharedAgentDisk mirrors agent.json under data/project-shared/<projectId>/.
 type sharedAgentDisk struct {
 	AcpBackend        string            `json:"acpBackend,omitempty"`
-	DefaultProjectID  string            `json:"defaultProjectId,omitempty"`
 	GitCredentialType string            `json:"gitCredentialType,omitempty"`
-	GitSshKnownHosts  string            `json:"gitSshKnownHosts,omitempty"`
-	GitSshPrivateKey  string            `json:"gitSshPrivateKey,omitempty"`
 	MCP               []MCPServer       `json:"mcp,omitempty"`
 	Env               map[string]string `json:"env,omitempty"`
 	Layout            *AgentLayout      `json:"layout,omitempty"`
@@ -100,10 +90,10 @@ func (s *SharedAgentService) Get(projectID string) SharedAgentConfig {
 	if backend != "" {
 		backend = NormalizeAcpBackend(backend)
 	}
-	layout = layout.withDefaults()
-	if strings.TrimSpace(layout.ConfigRoot) == DefaultConfigRoot && backend != "" && backend != AcpBackendCursor {
+	if strings.TrimSpace(layout.ConfigRoot) == "" {
 		layout.ConfigRoot = DefaultConfigRootForBackend(backend)
 	}
+	layout = layout.withDefaults()
 	env := cfg.Env
 	if env == nil {
 		env = map[string]string{}
@@ -111,10 +101,7 @@ func (s *SharedAgentService) Get(projectID string) SharedAgentConfig {
 	return SharedAgentConfig{
 		ProjectID:         strings.TrimSpace(projectID),
 		AcpBackend:        backend,
-		DefaultProjectID:  strings.TrimSpace(cfg.DefaultProjectID),
 		GitCredentialType: normalizeGitCredentialType(cfg.GitCredentialType),
-		GitSshKnownHosts:  cfg.GitSshKnownHosts,
-		GitSshPrivateKey:  cfg.GitSshPrivateKey,
 		Files:             s.readFiles(pid),
 		MCP:               cfg.MCP,
 		Env:               env,
@@ -130,10 +117,9 @@ func (s *SharedAgentService) Save(cfg SharedAgentConfig) error {
 	if pid == "" {
 		return fmt.Errorf("invalid project id")
 	}
-	if err := ValidateAgentSSHMeta(cfg.GitSshKnownHosts, cfg.GitSshPrivateKey); err != nil {
+	if err := RejectSecretEnvKeys(cfg.Env); err != nil {
 		return err
 	}
-	StripSSHEnvKeys(cfg.Env)
 	dir := filepath.Join(s.root, pid)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -141,17 +127,17 @@ func (s *SharedAgentService) Save(cfg SharedAgentConfig) error {
 	layout := cfg.Layout.withDefaults()
 	backend := strings.TrimSpace(cfg.AcpBackend)
 	if backend != "" {
-		backend = NormalizeAcpBackend(backend)
+		var err error
+		if backend, err = ParseAcpBackend(backend); err != nil {
+			return err
+		}
 		if strings.TrimSpace(cfg.Layout.ConfigRoot) == "" {
 			layout.ConfigRoot = DefaultConfigRootForBackend(backend)
 		}
 	}
 	disk := sharedAgentDisk{
 		AcpBackend:        backend,
-		DefaultProjectID:  strings.TrimSpace(cfg.DefaultProjectID),
 		GitCredentialType: normalizeGitCredentialType(cfg.GitCredentialType),
-		GitSshKnownHosts:  cfg.GitSshKnownHosts,
-		GitSshPrivateKey:  cfg.GitSshPrivateKey,
 		MCP:               cfg.MCP,
 		Env:               cfg.Env,
 		Layout:            &layout,
@@ -204,21 +190,15 @@ func (s *SharedAgentService) WorkDir(projectID string) string {
 
 // AsAgent views the shared config as an Agent-shaped value for merge helpers.
 func (c SharedAgentConfig) AsAgent() Agent {
-	projectID := strings.TrimSpace(c.DefaultProjectID)
-	if projectID == "" {
-		projectID = strings.TrimSpace(c.ProjectID)
-	}
 	env := c.Env
 	if env == nil {
 		env = map[string]string{}
 	}
 	return Agent{
 		Name:              "",
-		ProjectID:         projectID,
+		ProjectID:         strings.TrimSpace(c.ProjectID),
 		AcpBackend:        c.AcpBackend,
 		GitCredentialType: c.GitCredentialType,
-		GitSshKnownHosts:  c.GitSshKnownHosts,
-		GitSshPrivateKey:  c.GitSshPrivateKey,
 		Files:             c.Files,
 		MCP:               c.MCP,
 		Env:               env,
@@ -226,11 +206,7 @@ func (c SharedAgentConfig) AsAgent() Agent {
 	}
 }
 
-// ExtendOverlay merges shared (base) then agent (overlay).
-// Non-Token same-key: Agent wins. Token-class keys: shared wins when present;
-// if shared lacks the key, Agent stock value is kept so legacy agents keep auth.
-// SSH meta literals: Agent wins when non-empty, else shared (same as other meta).
-// projectId: only fill when Agent.ProjectID is empty (does not persist back).
+// ExtendOverlay merges shared (base) then agent (overlay); Agent wins per key.
 func ExtendOverlay(shared SharedAgentConfig, agent Agent) Agent {
 	base := shared.AsAgent()
 	out := Agent{
@@ -238,15 +214,10 @@ func ExtendOverlay(shared SharedAgentConfig, agent Agent) Agent {
 		ProjectID:         strings.TrimSpace(agent.ProjectID),
 		AcpBackend:        pickNonEmpty(agent.AcpBackend, base.AcpBackend),
 		GitCredentialType: pickNonEmpty(agent.GitCredentialType, base.GitCredentialType),
-		GitSshKnownHosts:  pickNonEmpty(agent.GitSshKnownHosts, base.GitSshKnownHosts),
-		GitSshPrivateKey:  pickNonEmpty(agent.GitSshPrivateKey, base.GitSshPrivateKey),
 		Files:             mergeFiles(base.Files, agent.Files),
 		MCP:               mergeMCP(base.MCP, agent.MCP),
-		Env:               envauth.MergeEnvSharedTokenPriority(base.Env, agent.Env),
+		Env:               envauth.OverlayEnv(base.Env, agent.Env),
 		Layout:            mergeLayout(base.Layout, agent.Layout),
-	}
-	if strings.TrimSpace(out.ProjectID) == "" {
-		out.ProjectID = strings.TrimSpace(base.ProjectID)
 	}
 	if out.AcpBackend != "" {
 		out.AcpBackend = NormalizeAcpBackend(out.AcpBackend)
@@ -346,64 +317,4 @@ func sanitizeProjectID(id string) string {
 	}
 	// Reuse agent-name sanitizer: strips path separators / unsafe runes.
 	return sanitize(id)
-}
-
-// MigrateProjectSandboxEnvOnce copies Project.SandboxEnv into shared env
-// (same key: shared wins / not overwritten), then clears Project.SandboxEnv
-// after a successful round-trip check. Idempotent: projects with empty
-// SandboxEnv are no-ops. On failure the project field is left intact.
-func MigrateProjectSandboxEnvOnce(db *gorm.DB, projects *ProjectService, shared *SharedAgentService) {
-	if db == nil || projects == nil || shared == nil {
-		return
-	}
-	var rows []models.Project
-	if err := db.Find(&rows).Error; err != nil {
-		log.Warn().Err(err).Msg("shared-agent migrate: list projects failed")
-		return
-	}
-	for _, p := range rows {
-		if len(p.SandboxEnv) == 0 {
-			continue
-		}
-		if err := migrateOneProjectSandboxEnv(projects, shared, p); err != nil {
-			log.Warn().Err(err).Str("project", p.ID).Msg("shared-agent migrate: project failed; keeping SandboxEnv")
-			continue
-		}
-		log.Info().Str("project", p.ID).Int("keys", len(p.SandboxEnv)).Msg("shared-agent migrate: Project.SandboxEnv → shared env")
-	}
-}
-
-func migrateOneProjectSandboxEnv(projects *ProjectService, shared *SharedAgentService, p models.Project) error {
-	cfg := shared.Get(p.ID)
-	if cfg.Env == nil {
-		cfg.Env = map[string]string{}
-	}
-	for _, e := range p.SandboxEnv {
-		k := strings.TrimSpace(e.Key)
-		if k == "" || !e.IsEnabled() {
-			continue
-		}
-		if _, exists := cfg.Env[k]; exists {
-			continue // same-key: shared wins
-		}
-		cfg.Env[k] = e.Value
-	}
-	cfg.ProjectID = p.ID
-	if err := shared.Save(cfg); err != nil {
-		return err
-	}
-	// Validate: every enabled migrated key is present in shared (or was already there).
-	got := shared.Get(p.ID)
-	for _, e := range p.SandboxEnv {
-		k := strings.TrimSpace(e.Key)
-		if k == "" || !e.IsEnabled() {
-			continue
-		}
-		if _, ok := got.Env[k]; !ok {
-			return fmt.Errorf("migration validation missing key %q", k)
-		}
-	}
-	empty := []models.EnvEntry{}
-	_, err := projects.Update(p.ID, nil, nil, &empty, nil, nil, nil)
-	return err
 }

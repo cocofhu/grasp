@@ -105,22 +105,20 @@ func TestHasRemainingHumanGate_BadGraphFalse(t *testing.T) {
 	}
 }
 
-func TestHasRemainingHumanGate_ReactAndProposalSelectNotGate(t *testing.T) {
+func TestHasRemainingHumanGate_ReactNotGate(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{
 			{ID: "in", Type: "input"},
 			{ID: "react", Type: "agent", Caps: capsClarify},
-			{ID: "select", Type: "proposal_select"},
 			{ID: "out", Type: "output"},
 		},
 		Edges: []models.Edge{
 			{ID: "e1", Source: "in", Target: "react"},
-			{ID: "e2", Source: "react", Target: "select"},
-			{ID: "e3", Source: "select", Target: "out"},
+			{ID: "e2", Source: "react", Target: "out"},
 		},
 	}
 	if hasRemainingHumanGate(&g, "in") {
-		t.Fatal("react / proposal_select must not count as human_gate")
+		t.Fatal("react must not count as human_gate")
 	}
 }
 

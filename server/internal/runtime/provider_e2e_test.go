@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"github.com/cocofhu/grasp/internal/blob"
 	"strings"
 	"testing"
 	"time"
@@ -578,7 +579,12 @@ func TestReactApproveFirstReplyInjectsContract(t *testing.T) {
 		}
 	})
 	req.Vars = map[string]any{"feature": "邮箱验证码登录"}
-	req.PromptImages = []models.PromptImage{{Data: "abc", MimeType: "image/png", Name: "shot.png"}}
+	mgr.blobs = blob.NewMemory()
+	imgs, err := blob.IngestPromptImages(context.Background(), mgr.blobs, []models.PromptImage{{Data: "iVBORw0KGgo=", MimeType: "image/png", Name: "shot.png"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.PromptImages = imgs
 	open := p.ReactOpen(context.Background(), req)
 	if open.Done || len(open.Questions) != 0 {
 		t.Fatalf("expected idle park, got Done=%v qs=%d", open.Done, len(open.Questions))

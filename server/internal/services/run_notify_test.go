@@ -63,7 +63,7 @@ func seedNotifyProject(t *testing.T, db *gorm.DB, enabled bool, events []string,
 		t.Fatal(err)
 	}
 	wf := models.WorkflowDef{
-		ID: "wf-n1", ProjectID: p.ID, Name: "自我迭代", Status: "published", Version: 1,
+		ID: "wf-n1", ProjectID: p.ID, Name: "自我迭代", Version: 1, PublishedVersion: 1,
 		NotifyPolicy: models.WorkflowNotifyPolicy{Mode: wfMode, Events: wfEvents},
 	}
 	if err := db.Create(&wf).Error; err != nil {
@@ -291,7 +291,7 @@ func TestAttemptDeliver_usesCustomTemplate(t *testing.T) {
 		t.Fatal(err)
 	}
 	wf := models.WorkflowDef{
-		ID: "wf-n1", ProjectID: p.ID, Name: "自我迭代", Status: "published", Version: 1,
+		ID: "wf-n1", ProjectID: p.ID, Name: "自我迭代", Version: 1, PublishedVersion: 1,
 		NotifyPolicy: models.WorkflowNotifyPolicy{Mode: "inherit"},
 	}
 	if err := db.Create(&wf).Error; err != nil {
@@ -338,7 +338,7 @@ func TestAttemptDeliver_kindsIndependent(t *testing.T) {
 		t.Fatal(err)
 	}
 	wf := models.WorkflowDef{
-		ID: "wf-n1", ProjectID: p.ID, Name: "WF", Status: "published", Version: 1,
+		ID: "wf-n1", ProjectID: p.ID, Name: "WF", Version: 1, PublishedVersion: 1,
 		NotifyPolicy: models.WorkflowNotifyPolicy{Mode: "inherit"},
 	}
 	if err := db.Create(&wf).Error; err != nil {
@@ -445,7 +445,7 @@ func TestAttemptDeliver_completedCustomTemplate(t *testing.T) {
 		t.Fatal(err)
 	}
 	wf := models.WorkflowDef{
-		ID: "wf-n1", ProjectID: p.ID, Name: "WF", Status: "published", Version: 1,
+		ID: "wf-n1", ProjectID: p.ID, Name: "WF", Version: 1, PublishedVersion: 1,
 		NotifyPolicy: models.WorkflowNotifyPolicy{Mode: "inherit"},
 	}
 	if err := db.Create(&wf).Error; err != nil {

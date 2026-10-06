@@ -78,7 +78,7 @@ func TestValidPmCitationShape(t *testing.T) {
 func TestFilterAndEnrichCitationsFailClosedAndSnippet(t *testing.T) {
 	db := setupPmDB(t)
 	ps := NewProjectService(db)
-	p, err := ps.Create("CiteProj", "", nil, nil)
+	p, err := ps.Create("CiteProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestFilterAndEnrichCitationsFailClosedAndSnippet(t *testing.T) {
 func TestFilterAndEnrichCitationsUnavailableDepsDropAll(t *testing.T) {
 	db := setupPmDB(t)
 	ps := NewProjectService(db)
-	p, err := ps.Create("CiteFail", "", nil, nil)
+	p, err := ps.Create("CiteFail", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

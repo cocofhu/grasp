@@ -322,7 +322,7 @@ describe('useGatesInbox actions', () => {
     expect(inbox.listItems.value).toHaveLength(1)
     expect(inbox.showListError.value).toBe(false)
 
-    mocks.listGates.mockResolvedValue([])
+    mocks.listGates.mockResolvedValue({ items: [], total: 0 })
     inbox.retryListLoad()
     await flushPromises()
     expect(inbox.listItems.value).toEqual([])

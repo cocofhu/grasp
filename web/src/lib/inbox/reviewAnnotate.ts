@@ -1,7 +1,7 @@
 import { inject, provide, type InjectionKey } from 'vue'
 
 // A review-annotate channel lets deeply-nested product views (requirement /
-// proposal / structured-artifact cards) offer a hover "⤴ 标注" affordance that
+// structured-artifact cards) offer a hover "⤴ 标注" affordance that
 // stages a precise JSON-path (or DOM selector) chip onto the review composer,
 // without threading callbacks through every intermediate component.
 export interface ReviewAnnotateApi {

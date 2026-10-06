@@ -2,7 +2,6 @@ package structured
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"testing"
 )
@@ -128,8 +127,7 @@ func TestParseTestResultScreenshots(t *testing.T) {
 	// entries without an artifact drop, captions are trimmed, count is capped.
 	shots := []map[string]any{
 		{"artifact": " shot-1.png ", "caption": " 首页 "}, // trimmed
-		{"data": "AAAA", "caption": "inline dropped"},   // no artifact -> dropped
-		{"caption": "empty"},                            // no artifact -> dropped
+		{"caption": "empty"}, // no artifact -> dropped
 	}
 	// pad well past the cap to prove truncation to maxTestScreenshots
 	for i := 0; i < 20; i++ {
@@ -142,8 +140,8 @@ func TestParseTestResultScreenshots(t *testing.T) {
 	if len(doc.Screenshots) != maxTestScreenshots {
 		t.Fatalf("screenshots = %d, want cap %d", len(doc.Screenshots), maxTestScreenshots)
 	}
-	if doc.Screenshots[0].Artifact != "shot-1.png" || doc.Screenshots[0].Data != "" {
-		t.Errorf("artifact not preserved/trimmed or inline data leaked: %+v", doc.Screenshots[0])
+	if doc.Screenshots[0].Artifact != "shot-1.png" {
+		t.Errorf("artifact not preserved/trimmed: %+v", doc.Screenshots[0])
 	}
 	if doc.Screenshots[0].Caption != "首页" {
 		t.Errorf("caption not trimmed: %q", doc.Screenshots[0].Caption)
@@ -166,36 +164,12 @@ func TestParseTestResultScreenshots(t *testing.T) {
 	}
 }
 
-func TestParseTestResultDropsInlineData(t *testing.T) {
-	// Inline base64 is no longer supported: entries without an artifact are
-	// dropped entirely, even if they carry data.
+func TestParseTestResultKeepsScreenshotMetadata(t *testing.T) {
 	doc, err := ParseTestResult(map[string]any{
 		"summary": "s",
 		"screenshots": []map[string]any{
-			{"data": "AAAA", "mimeType": "image/png"}, // dropped
-			{"artifact": "keep.png", "caption": "ok"}, // kept
-		},
-	})
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	if len(doc.Screenshots) != 1 || doc.Screenshots[0].Artifact != "keep.png" || doc.Screenshots[0].Data != "" {
-		t.Fatalf("inline data not dropped / artifact not kept: %+v", doc.Screenshots)
-	}
-}
-
-// TestParseTestResultStripsDataKeepsMetadata: when input has both data and
-// artifact, data is ignored and caption/mimeType are preserved (F2).
-func TestParseTestResultStripsDataKeepsMetadata(t *testing.T) {
-	doc, err := ParseTestResult(map[string]any{
-		"summary": "s",
-		"screenshots": []map[string]any{
-			{
-				"artifact": "shot.png",
-				"data":     "IGNORED_BASE64",
-				"caption":  "home",
-				"mimeType": "image/webp",
-			},
+			{"mimeType": "image/png"}, // no artifact -> dropped
+			{"artifact": "shot.png", "caption": "home", "mimeType": "image/webp"},
 		},
 	})
 	if err != nil {
@@ -205,9 +179,6 @@ func TestParseTestResultStripsDataKeepsMetadata(t *testing.T) {
 		t.Fatalf("screenshots = %d, want 1", len(doc.Screenshots))
 	}
 	s := doc.Screenshots[0]
-	if s.Data != "" {
-		t.Errorf("data should be stripped, got %q", s.Data)
-	}
 	if s.Artifact != "shot.png" || s.Caption != "home" || s.MimeType != "image/webp" {
 		t.Errorf("metadata not preserved: %+v", s)
 	}
@@ -241,125 +212,6 @@ func TestValidateScreenshotArtifacts(t *testing.T) {
 	if err := doc2.ValidateScreenshotArtifacts(func(name string) bool { return store[name] }); err != nil {
 		t.Errorf("all exist: %v", err)
 	}
-}
-
-func TestHydrateScreenshotArtifacts(t *testing.T) {
-	t.Run("empty", func(t *testing.T) {
-		doc := testResultDoc{Summary: "s"}
-		if err := doc.HydrateScreenshotArtifacts(nil); err != nil {
-			t.Fatalf("empty: %v", err)
-		}
-	})
-
-	t.Run("mime inference and data URL strip", func(t *testing.T) {
-		doc, err := ParseTestResult(map[string]any{
-			"summary": "s",
-			"screenshots": []map[string]any{
-				{"artifact": "a.png", "caption": "png"},
-				{"artifact": "b.jpg", "mimeType": "image/jpeg"},
-				{"artifact": "c.bin"},
-			},
-		})
-		if err != nil {
-			t.Fatalf("parse: %v", err)
-		}
-		store := map[string]string{
-			"a.png": "  rawA  ",
-			"b.jpg": "data:image/jpeg;base64,rawB",
-			"c.bin": "rawC",
-		}
-		if err := doc.HydrateScreenshotArtifacts(func(name string) (string, error) {
-			v, ok := store[name]
-			if !ok {
-				return "", fmt.Errorf("missing")
-			}
-			return v, nil
-		}); err != nil {
-			t.Fatalf("hydrate: %v", err)
-		}
-		if len(doc.Screenshots) != 3 {
-			t.Fatalf("screenshots = %d", len(doc.Screenshots))
-		}
-		if doc.Screenshots[0].Data != "rawA" || doc.Screenshots[0].MimeType != "image/png" || doc.Screenshots[0].Artifact != "" || doc.Screenshots[0].Caption != "png" {
-			t.Errorf("png: %+v", doc.Screenshots[0])
-		}
-		if doc.Screenshots[1].Data != "rawB" || doc.Screenshots[1].MimeType != "image/jpeg" {
-			t.Errorf("jpeg: %+v", doc.Screenshots[1])
-		}
-		if doc.Screenshots[2].MimeType != "image/png" {
-			t.Errorf("default mime: %+v", doc.Screenshots[2])
-		}
-	})
-
-	t.Run("read failure", func(t *testing.T) {
-		doc, _ := ParseTestResult(map[string]any{
-			"summary":     "s",
-			"screenshots": []map[string]any{{"artifact": "gone.png"}},
-		})
-		err := doc.HydrateScreenshotArtifacts(func(name string) (string, error) {
-			return "", fmt.Errorf("read err")
-		})
-		if err == nil || !strings.Contains(err.Error(), "gone.png") {
-			t.Fatalf("want read error, got %v", err)
-		}
-	})
-}
-
-func TestHydrateTestResultContent(t *testing.T) {
-	t.Run("artifact-only resolves to inline data", func(t *testing.T) {
-		raw := `{"summary":"s","screenshots":[{"artifact":"a.png","caption":"c"}]}`
-		out, err := HydrateTestResultContent(raw, func(name string) (string, error) {
-			if name == "a.png" {
-				return "rawB64", nil
-			}
-			return "", fmt.Errorf("missing")
-		})
-		if err != nil {
-			t.Fatalf("hydrate: %v", err)
-		}
-		var doc testResultDoc
-		if json.Unmarshal([]byte(out), &doc) != nil {
-			t.Fatal("invalid json")
-		}
-		if len(doc.Screenshots) != 1 || doc.Screenshots[0].Data != "rawB64" || doc.Screenshots[0].Artifact != "" {
-			t.Fatalf("shot: %+v", doc.Screenshots[0])
-		}
-	})
-
-	t.Run("missing artifact keeps original entry", func(t *testing.T) {
-		raw := `{"summary":"s","screenshots":[{"artifact":"gone.png"}]}`
-		out, err := HydrateTestResultContent(raw, func(name string) (string, error) {
-			return "", fmt.Errorf("missing")
-		})
-		if err != nil {
-			t.Fatalf("hydrate: %v", err)
-		}
-		if out != raw {
-			t.Fatalf("expected unchanged payload, got %s", out)
-		}
-	})
-
-	t.Run("non test_result content unchanged", func(t *testing.T) {
-		raw := `not json`
-		out, err := HydrateTestResultContent(raw, func(name string) (string, error) {
-			t.Fatal("read should not be called")
-			return "", nil
-		})
-		if err != nil || out != raw {
-			t.Fatalf("got %q, %v", out, err)
-		}
-	})
-
-	t.Run("existing data preserved", func(t *testing.T) {
-		raw := `{"summary":"s","screenshots":[{"artifact":"a.png","data":"keep","mimeType":"image/png"}]}`
-		out, err := HydrateTestResultContent(raw, func(name string) (string, error) {
-			t.Fatal("read should not be called when data exists")
-			return "", nil
-		})
-		if err != nil || out != raw {
-			t.Fatalf("got %q, %v", out, err)
-		}
-	})
 }
 
 func TestParseAndRenderClarifiedRequirement(t *testing.T) {
@@ -688,86 +540,6 @@ func TestParseAndRenderReview(t *testing.T) {
 	}
 }
 
-func TestRenderProposalsFullList(t *testing.T) {
-	content := `{"context":"背景","decision_drivers":["速度","成本"],"proposals":[
-		{"id":"p1","title":"方案A","summary":"sa","pros":["快"],"cons":["贵"],"tradeoffs":"权衡A","effort":"低","risk":"中","recommended":true},
-		{"id":"p2","title":"方案B"}
-	]}`
-	md := RenderProposalsMarkdown(content)
-	for _, want := range []string{"背景", "方案A", "⭐", "工作量:低", "风险:中", "✅ 快", "⚠️ 贵", "权衡:权衡A", "方案B"} {
-		if !strings.Contains(md, want) {
-			t.Fatalf("proposals md missing %q: %s", want, md)
-		}
-	}
-	if RenderProposalsMarkdown(`{bad`) != `{bad` {
-		t.Error("bad json raw")
-	}
-}
-
-func TestSelectProposalAndRender(t *testing.T) {
-	content := `{"context":"ctx","decision_drivers":["speed"],"proposals":[
-		{"id":"p1","title":"A","summary":"sa","pros":["fast"],"cons":["risky"],"tradeoffs":"t","effort":"low","risk":"low"},
-		{"id":"p2","title":"B","recommended":true}
-	]}`
-	// Choose explicit id.
-	fj, cid, ok := SelectProposal(content, "p1")
-	if !ok || cid != "p1" || !strings.Contains(fj, "accepted") {
-		t.Fatalf("select p1: %v %s", ok, fj)
-	}
-	// Default to recommended when id empty.
-	_, cid, ok = SelectProposal(content, "")
-	if !ok || cid != "p2" {
-		t.Fatalf("select recommended: %s ok=%v", cid, ok)
-	}
-	// Unknown id falls back to recommended.
-	_, cid, _ = SelectProposal(content, "ghost")
-	if cid != "p2" {
-		t.Fatalf("unknown id fallback: %s", cid)
-	}
-	// No recommended + no id -> first.
-	noRec := `{"proposals":[{"id":"x","title":"X"},{"id":"y","title":"Y"}]}`
-	_, cid, _ = SelectProposal(noRec, "")
-	if cid != "x" {
-		t.Fatalf("first fallback: %s", cid)
-	}
-	// Legacy artifacts written without ids: reads backfill positional ids so
-	// the picker can select a specific proposal (e.g. p2 = second) instead of
-	// silently matching nothing and falling back to the recommended/first.
-	noIDs := `{"context":"c","proposals":[{"title":"甲"},{"title":"乙"},{"title":"丙"}]}`
-	if choices := ProposalChoices(noIDs); len(choices) != 3 || choices[0].ID != "p1" || choices[2].ID != "p3" {
-		t.Fatalf("choices backfill ids: %+v", choices)
-	}
-	if _, cid, ok := SelectProposal(noIDs, "p2"); !ok || cid != "p2" {
-		t.Fatalf("select p2 on id-less doc: %s ok=%v", cid, ok)
-	}
-	if md := RenderProposalsMarkdown(noIDs); !strings.Contains(md, "`p1`") || !strings.Contains(md, "`p3`") {
-		t.Fatalf("md backfill ids: %s", md)
-	}
-	// Empty proposals -> not ok.
-	if _, _, ok := SelectProposal(`{"proposals":[]}`, ""); ok {
-		t.Fatal("empty proposals should be !ok")
-	}
-	if _, _, ok := SelectProposal(`{bad`, ""); ok {
-		t.Fatal("bad json should be !ok")
-	}
-
-	if len(ProposalChoices(content)) != 2 {
-		t.Fatal("proposal choices")
-	}
-	if ProposalChoices(`{bad`) != nil {
-		t.Fatal("bad proposal choices")
-	}
-
-	// Render the accepted proposal.
-	md := RenderProposalMarkdown(fj)
-	if !strings.Contains(md, "已选方案") || !strings.Contains(md, "A") {
-		t.Fatalf("proposal md: %s", md)
-	}
-	if RenderProposalMarkdown(`{bad`) != `{bad` {
-		t.Fatal("bad proposal raw")
-	}
-}
-
 func TestParseAndRenderResearch(t *testing.T) {
 	args := map[string]any{
 		"title":   "调研",
@@ -809,29 +581,7 @@ func TestParseAndRenderResearch(t *testing.T) {
 	}
 }
 
-func TestParseProposalsAndClarifiedOpenQuestions(t *testing.T) {
-	args := map[string]any{
-		"context": "背景",
-		"proposals": []map[string]any{
-			{"title": "A", "effort": "LOW", "risk": "HIGH", "recommended": true},
-			{"title": "B", "recommended": true},
-			{"title": ""},
-		},
-	}
-	doc, err := ParseProposals(args)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	if len(doc.Proposals) != 2 {
-		t.Fatalf("proposals: %d", len(doc.Proposals))
-	}
-	if !doc.Proposals[0].Recommended || doc.Proposals[1].Recommended {
-		t.Fatal("only first recommended kept")
-	}
-	if _, err := ParseProposals(map[string]any{}); err == nil {
-		t.Fatal("empty context should error")
-	}
-
+func TestClarifiedOpenQuestions(t *testing.T) {
 	qs := ClarifiedOpenQuestions(`{"summary":"s","open_questions":[" q1 ","","q2"]}`)
 	if len(qs) != 2 || qs[0] != "q1" {
 		t.Fatalf("open questions: %+v", qs)

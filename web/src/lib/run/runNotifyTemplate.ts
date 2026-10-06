@@ -47,7 +47,7 @@ export function runNotifyTitle(kind: RunNotifyKind): string {
 }
 
 /**
- * Editable skeleton equivalent to the legacy default body (with placeholders).
+ * Editable skeleton equivalent to the default body (with placeholders).
  * Filling + saving this counts as a custom non-empty template (no auto line-omit).
  */
 export function defaultEditableRunNotifyTemplate(_kind: RunNotifyKind): string {
@@ -89,7 +89,7 @@ export function replaceRunNotifyPlaceholders(
 }
 
 /**
- * Legacy FormatRunNotifyMessage equivalent (omits「节点：」line when node is empty).
+ * Server FormatRunNotifyMessage equivalent (omits「节点：」line when node is empty).
  */
 export function formatDefaultRunNotifyMessage(
   kind: RunNotifyKind,

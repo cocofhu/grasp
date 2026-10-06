@@ -28,8 +28,6 @@ import { DEFAULT_PROJECT_ID } from '@/lib/pm/onboardingWizard'
 
 const {
   PROJECT_TABS,
-  LEGACY_PM_SETTINGS_TAB,
-  LEGACY_PM_MEMORY_TAB,
   isProjectTab,
   parseProjectTab,
   route,
@@ -55,24 +53,17 @@ const {
   workflowSeq,
   initialLoading,
   showRefreshProgress,
-  initialLegacyPmSettings,
-  initialLegacyPmMemory,
   tab,
   draftsPanelRef,
   confirmDraftsLeave,
   pmView,
-  showPmMemoryMigration,
   setTab,
   pmRestoreMobileChat,
   openPmSettings,
   backToPmChat,
   resetPmViewForProjectContext,
-  rewriteLegacyPmSettingsQuery,
-  rewriteLegacyPmMemoryQuery,
   syncTabFromRoute,
   ensureTabQuery,
-  dismissPmMemoryMigration,
-  goStudioMemory,
   savingMeta,
   savingVars,
   editName,
@@ -352,30 +343,6 @@ const onboardingEmptyDesc = computed(() =>
         class="toolbar-below-tabs flex min-h-0 flex-1 flex-col overflow-hidden"
         data-testid="project-detail-tab-panel"
       >
-      <div
-        v-if="showPmMemoryMigration"
-        data-testid="pm-memory-migration-banner"
-        class="rounded-lg mb-3 flex flex-col gap-2 border border-warn/35 bg-warn/10 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
-      >
-        <div class="min-w-0">
-          <div class="text-[12px] font-medium text-txt">{{ t('pages.projectDetail.pm.memoryMigratedTitle') }}</div>
-          <p class="mt-0.5 text-[11px] text-txt2">{{ t('pages.projectDetail.pm.memoryMigratedDesc') }}</p>
-        </div>
-        <div class="flex shrink-0 flex-wrap gap-2">
-          <AppButton
-            size="sm"
-            variant="primary"
-            data-testid="pm-memory-go-studio"
-            @click="goStudioMemory()"
-          >
-            {{ t('pages.projectDetail.pm.goStudioMemory') }}
-          </AppButton>
-          <AppButton size="sm" variant="ghost" data-testid="pm-memory-migration-dismiss" @click="dismissPmMemoryMigration">
-            {{ t('common.buttons.close') }}
-          </AppButton>
-        </div>
-      </div>
-
       <div
         v-if="initialLoading"
         data-testid="project-detail-content-skeleton"

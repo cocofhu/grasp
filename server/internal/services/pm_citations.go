@@ -234,7 +234,7 @@ func existArtifactCitation(projectID, target string, arts *ArtifactService, runs
 		return true, name
 	}
 	// Name lookup within project scope.
-	items, _ := arts.AllPage("", projectID, 1, 50, target)
+	items, _ := arts.AllPage(ArtifactFilter{ProjectID: projectID, Q: target}, 1, 50)
 	for _, a := range items {
 		if strings.EqualFold(a.Name, target) {
 			return true, a.Name

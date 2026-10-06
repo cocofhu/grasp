@@ -9,7 +9,7 @@ import (
 )
 
 func TestNodeTypes(t *testing.T) {
-	want := []string{"input", "output", "set_var", "branch", "agent", "human_gate", "proposal_select"}
+	want := []string{"input", "output", "set_var", "branch", "agent", "human_gate"}
 	specs := Specs()
 	if len(specs) != len(want) {
 		t.Fatalf("specs = %d, want %d", len(specs), len(want))

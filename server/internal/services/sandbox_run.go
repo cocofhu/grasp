@@ -86,7 +86,7 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 	}
 	// Adopt the pre-registered creating/pulling placeholder row (by run+node) in place,
 	// swapping its placeholder name for the gateway id. Falls back to an upsert
-	// by name when no placeholder exists (legacy path / no BeginRunSandbox).
+	// by name when no placeholder exists (registry without RunSandboxBeginner).
 	var existing models.Sandbox
 	err := s.db.Where("run_id = ? AND node_id = ? AND purpose = ? AND status IN ?",
 		info.RunID, info.NodeID, "run", []string{"creating", "pulling"}).

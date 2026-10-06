@@ -9,16 +9,12 @@ import (
 )
 
 // profileNamePattern restricts agent_profile directory names to a single safe
-// segment. Allows Unicode letters/digits plus `._-` so Chinese names and legacy
-// dotted profiles (e.g. clarify.v1) resolve at runtime.
-var profileNamePattern = regexp.MustCompile(`^[\p{L}\p{N}._-]+$`)
+// segment: Unicode letters/digits plus `_-` (same charset as Agent names).
+var profileNamePattern = regexp.MustCompile(`^[\p{L}\p{N}_-]+$`)
 
 // safeProfileName returns a single-segment profile directory name or "".
 func safeProfileName(profile string) string {
 	base := filepath.Base(strings.TrimSpace(profile))
-	if base == "" || base == "." || base == ".." {
-		return ""
-	}
 	if !profileNamePattern.MatchString(base) {
 		return ""
 	}

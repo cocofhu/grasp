@@ -3,9 +3,6 @@
  * Attachments stored as Blob; injectable backend for unit tests.
  */
 
-
-import { LEGACY_DRAFT_IDB_NAME } from '@/lib/shared/migrateBrandStorage'
-
 export const DRAFT_IDB_NAME = 'grasp-drafts'
 export const DRAFT_IDB_VERSION = 1
 export const HOME_DRAFT_STORE = 'homeDraft'
@@ -143,8 +140,7 @@ function openNativeDb(): Promise<IDBDatabase | null> {
   if (dbPromise) return dbPromise
   dbPromise = (async () => {
     if (typeof indexedDB === 'undefined') return null
-    let createdFresh = false
-    const db = await new Promise<IDBDatabase | null>((resolve) => {
+    return new Promise<IDBDatabase | null>((resolve) => {
       let req: IDBOpenDBRequest
       try {
         req = indexedDB.open(DRAFT_IDB_NAME, DRAFT_IDB_VERSION)
@@ -154,7 +150,6 @@ function openNativeDb(): Promise<IDBDatabase | null> {
       }
       req.onerror = () => resolve(null)
       req.onupgradeneeded = () => {
-        createdFresh = true
         const next = req.result
         if (!next.objectStoreNames.contains(HOME_DRAFT_STORE)) {
           next.createObjectStore(HOME_DRAFT_STORE, { keyPath: 'id' })
@@ -180,96 +175,8 @@ function openNativeDb(): Promise<IDBDatabase | null> {
         resolve(opened)
       }
     })
-    if (!db) return null
-    if (createdFresh) {
-      try {
-        await copyLegacyDraftIdbIfPresent(db)
-      } catch {
-        /* best-effort migration */
-      }
-    }
-    return db
   })()
   return dbPromise
-}
-
-/** One-shot: copy stores from approving-drafts into grasp-drafts, then drop legacy DB. */
-function copyLegacyDraftIdbIfPresent(target: IDBDatabase): Promise<void> {
-  return new Promise((resolve) => {
-    let req: IDBOpenDBRequest
-    try {
-      req = indexedDB.open(LEGACY_DRAFT_IDB_NAME)
-    } catch {
-      resolve()
-      return
-    }
-    req.onerror = () => resolve()
-    req.onupgradeneeded = () => {
-      // Legacy DB did not exist — abort creation by deleting immediately after.
-    }
-    req.onsuccess = () => {
-      const legacy = req.result
-      // If we just created an empty legacy DB via onupgradeneeded, drop it.
-      const storeNames = Array.from(legacy.objectStoreNames)
-      if (storeNames.length === 0) {
-        legacy.close()
-        try {
-          indexedDB.deleteDatabase(LEGACY_DRAFT_IDB_NAME)
-        } catch {
-          /* ignore */
-        }
-        resolve()
-        return
-      }
-      const tx = legacy.transaction(storeNames, 'readonly')
-      const reads: Promise<unknown[]>[] = storeNames.map(
-        (name) =>
-          new Promise((res, rej) => {
-            const r = tx.objectStore(name).getAll()
-            r.onsuccess = () => res(r.result as unknown[])
-            r.onerror = () => rej(r.error)
-          }),
-      )
-      Promise.all(reads)
-        .then(async (allRows) => {
-          await new Promise<void>((res, rej) => {
-            tx.oncomplete = () => res()
-            tx.onerror = () => rej(tx.error)
-          })
-          legacy.close()
-          const writeNames = storeNames.filter((n) => target.objectStoreNames.contains(n))
-          if (writeNames.length === 0) {
-            resolve()
-            return
-          }
-          const wtx = target.transaction(writeNames, 'readwrite')
-          for (let i = 0; i < storeNames.length; i++) {
-            const name = storeNames[i]
-            if (!target.objectStoreNames.contains(name)) continue
-            const store = wtx.objectStore(name)
-            for (const row of allRows[i] || []) store.put(row)
-          }
-          await new Promise<void>((res, rej) => {
-            wtx.oncomplete = () => res()
-            wtx.onerror = () => rej(wtx.error)
-          })
-          try {
-            indexedDB.deleteDatabase(LEGACY_DRAFT_IDB_NAME)
-          } catch {
-            /* ignore */
-          }
-          resolve()
-        })
-        .catch(() => {
-          try {
-            legacy.close()
-          } catch {
-            /* ignore */
-          }
-          resolve()
-        })
-    }
-  })
 }
 
 function idbReq<T>(req: IDBRequest<T>): Promise<T> {

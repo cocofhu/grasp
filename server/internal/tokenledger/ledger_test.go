@@ -3,7 +3,6 @@ package tokenledger_test
 import (
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/cocofhu/grasp/internal/database"
 	"github.com/cocofhu/grasp/internal/models"
@@ -68,7 +67,7 @@ func TestRecordResolvesRunWorkflowAndProject(t *testing.T) {
 		}
 	}
 	must(&models.Project{ID: "p1", Name: "Alpha"})
-	must(&models.WorkflowDef{ID: "wf1", ProjectID: "p1", Name: "main", Status: "draft", Version: 1})
+	must(&models.WorkflowDef{ID: "wf1", ProjectID: "p1", Name: "main", Version: 1})
 	must(&models.Run{ID: "r1", WorkflowID: "wf1", WorkflowName: "main", Title: "Run One", Status: "running"})
 
 	tokenledger.Record(db, tokenledger.Entry{
@@ -111,127 +110,5 @@ func TestRecordResolvesThreadProject(t *testing.T) {
 	}
 	if r.ProjectID != "p2" || r.ProjectName != "Beta" || r.Status != models.TokenLedgerStatusCancelled {
 		t.Fatalf("row=%+v", r)
-	}
-}
-
-func TestBackfillIsIdempotentAndKeepsLiveRows(t *testing.T) {
-	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "ledger_backfill.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	must := func(v any) {
-		t.Helper()
-		if err := db.Create(v).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-	ts := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
-	must(&models.Project{ID: "p1", Name: "Alpha"})
-	must(&models.WorkflowDef{ID: "wf1", ProjectID: "p1", Name: "main", Status: "draft", Version: 1})
-	must(&models.Run{ID: "r1", WorkflowID: "wf1", WorkflowName: "main", Status: "completed", StartedAt: ts})
-	must(&models.StateRun{RunID: "r1", NodeID: "n1", NodeType: "agent", Status: "failed",
-		Usage:        &models.TokenUsage{InputTokens: 50},
-		UsageByModel: models.TokenUsageByModel{"m1": {InputTokens: 50}}})
-	// Orphan run: workflow deleted → still imported, project unassigned.
-	must(&models.Run{ID: "r-orphan", WorkflowID: "wf-gone", WorkflowName: "gone", Status: "completed", StartedAt: ts})
-	must(&models.StateRun{RunID: "r-orphan", NodeID: "n1", Status: "completed",
-		Usage: &models.TokenUsage{OutputTokens: 7}})
-	must(&models.ChatThread{ID: "th1", ProjectID: "p1", UserID: "u", Title: "t"})
-	must(&models.ChatMessage{ID: "m1", ThreadID: "th1", Role: "assistant", Content: "x", Status: "ok",
-		CreatedAt: ts, Usage: &models.TokenUsage{InputTokens: 3}})
-
-	tokenledger.Record(db, tokenledger.Entry{Source: models.TokenLedgerSourceStudio, ProjectID: "p1", Usage: &models.TokenUsage{InputTokens: 1000}})
-
-	for i := 0; i < 2; i++ {
-		if err := tokenledger.Backfill(db); err != nil {
-			t.Fatal(err)
-		}
-	}
-	var rows []models.TokenUsageEvent
-	if err := db.Order("id").Find(&rows).Error; err != nil {
-		t.Fatal(err)
-	}
-	if got := sumRows(rows); got != 1060 {
-		t.Fatalf("sum after double backfill=%d want 1060 (rows=%+v)", got, rows)
-	}
-	var orphan, failed bool
-	for _, r := range rows {
-		if r.RunID == "r-orphan" && r.ProjectID == "" && r.WorkflowName == "gone" {
-			orphan = true
-		}
-		if r.RunID == "r1" && r.Status == models.TokenLedgerStatusFailed && r.ModelKey == "m1" && r.ProjectName == "Alpha" {
-			failed = true
-		}
-	}
-	if !orphan || !failed {
-		t.Fatalf("orphan=%v failed=%v rows=%+v", orphan, failed, rows)
-	}
-}
-
-func TestBackfillOnceRunsOnlyOnce(t *testing.T) {
-	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "ledger_once.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The template DB already ran tokenledger.BackfillOnce during migrate → marker present.
-	must := func(v any) {
-		t.Helper()
-		if err := db.Create(v).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-	ts := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
-	must(&models.Run{ID: "r1", WorkflowID: "wf", Status: "completed", StartedAt: ts})
-	must(&models.StateRun{RunID: "r1", NodeID: "n1", Status: "completed", Usage: &models.TokenUsage{InputTokens: 5}})
-	if err := tokenledger.BackfillOnce(db); err != nil {
-		t.Fatal(err)
-	}
-	var n int64
-	db.Model(&models.TokenUsageEvent{}).Count(&n)
-	if n != 0 {
-		t.Fatalf("tokenledger.BackfillOnce re-ran after marker: %d rows", n)
-	}
-	db.Where(&models.Setting{Key: tokenledger.BackfillMarkerKey}).Delete(&models.Setting{})
-	if err := tokenledger.BackfillOnce(db); err != nil {
-		t.Fatal(err)
-	}
-	db.Model(&models.TokenUsageEvent{}).Count(&n)
-	if n != 1 {
-		t.Fatalf("tokenledger.BackfillOnce without marker rows=%d want 1", n)
-	}
-}
-
-func TestBackfillOnceSkipsWhenLiveRowsExistWithoutMarker(t *testing.T) {
-	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "ledger_live.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	ts := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
-	for _, v := range []any{
-		&models.Run{ID: "r1", WorkflowID: "wf", Status: "completed", StartedAt: ts},
-		&models.StateRun{RunID: "r1", NodeID: "n1", Status: "completed", Usage: &models.TokenUsage{InputTokens: 5}},
-	} {
-		if err := db.Create(v).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-	// The same node's usage was already written live (it also sits in StateRun.usage).
-	tokenledger.Record(db, tokenledger.Entry{
-		At: ts, Source: models.TokenLedgerSourceWorkflow, RunID: "r1", NodeID: "n1",
-		Usage: &models.TokenUsage{InputTokens: 5},
-	})
-	db.Where(&models.Setting{Key: tokenledger.BackfillMarkerKey}).Delete(&models.Setting{})
-	if err := tokenledger.BackfillOnce(db); err != nil {
-		t.Fatal(err)
-	}
-	var total int64
-	db.Model(&models.TokenUsageEvent{}).Select("COALESCE(SUM(input_tokens), 0)").Scan(&total)
-	if total != 5 {
-		t.Fatalf("ledger input total=%d want 5 (no double count)", total)
-	}
-	var marker int64
-	db.Model(&models.Setting{}).Where(&models.Setting{Key: tokenledger.BackfillMarkerKey}).Count(&marker)
-	if marker != 1 {
-		t.Fatalf("marker rows=%d want 1", marker)
 	}
 }

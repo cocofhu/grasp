@@ -157,7 +157,7 @@ type AuditListFilter struct {
 	ProjectID  string
 	From       *time.Time
 	To         *time.Time
-	Actor      string // legacy exact actor username
+	Actor      string // exact actor username
 	CallerKind string // pm | apikey | system | external
 	Action     string // exact or prefix (e.g. "workflow" matches workflow.*)
 	Resource   string // substring match on resource_type, resource_id, or summary
@@ -285,16 +285,13 @@ type AuditFacets struct {
 	Runs      []AuditFacetRun      `json:"runs"`
 	Nodes     []AuditFacetNode     `json:"nodes"`
 	Resources []AuditFacetResource `json:"resources"`
-	// Actors kept for backward compatibility; dual-mode UI uses callerKind instead.
-	Actors []string `json:"actors"`
 }
 
-// ListFacets returns Run list (time window), nodes/resources for an optional Run,
-// and distinct actors. Action cascade narrowing is no longer applied.
+// ListFacets returns Run list (time window) and nodes/resources for an optional Run.
 func (s *ProjectAuditService) ListFacets(f AuditListFilter) (AuditFacets, error) {
 	empty := AuditFacets{
 		Runs: []AuditFacetRun{}, Nodes: []AuditFacetNode{},
-		Resources: []AuditFacetResource{}, Actors: []string{},
+		Resources: []AuditFacetResource{},
 	}
 	if s == nil || s.db == nil {
 		return empty, fmt.Errorf("audit unavailable")
@@ -303,19 +300,6 @@ func (s *ProjectAuditService) ListFacets(f AuditListFilter) (AuditFacets, error)
 		ProjectID: f.ProjectID,
 		From:      f.From,
 		To:        f.To,
-	}
-
-	var actors []string
-	actorQ := s.applyFilter(s.db.Model(&models.ProjectAuditEvent{}), base).
-		Where("actor <> ''").
-		Select("actor").
-		Group("actor").
-		Order("actor asc")
-	if err := actorQ.Pluck("actor", &actors).Error; err != nil {
-		return empty, err
-	}
-	if actors == nil {
-		actors = []string{}
 	}
 
 	runs, err := s.listFacetRuns(base)
@@ -335,7 +319,7 @@ func (s *ProjectAuditService) ListFacets(f AuditListFilter) (AuditFacets, error)
 	}
 
 	return AuditFacets{
-		Runs: runs, Nodes: nodes, Resources: resources, Actors: actors,
+		Runs: runs, Nodes: nodes, Resources: resources,
 	}, nil
 }
 
@@ -506,53 +490,6 @@ func (s *ProjectAuditService) applyFilter(q *gorm.DB, f AuditListFilter) *gorm.D
 		)
 	}
 	return q
-}
-
-// BackfillAuditElevatedFields lifts runId/nodeId/callerKind from legacy rows.
-// Safe to call repeatedly; only fills empty first-class columns. Never fabricates
-// run association when payload/resource lack it.
-func BackfillAuditElevatedFields(db *gorm.DB) {
-	if db == nil {
-		return
-	}
-	var events []models.ProjectAuditEvent
-	// Cap per boot to avoid long startup on huge histories.
-	if err := db.Where("run_id = '' OR run_id IS NULL OR node_id = '' OR node_id IS NULL OR caller_kind = '' OR caller_kind IS NULL").
-		Order("occurred_at desc").
-		Limit(5000).
-		Find(&events).Error; err != nil {
-		log.Warn().Err(err).Msg("audit elevated-field backfill query failed")
-		return
-	}
-	updated := 0
-	for _, ev := range events {
-		runID, nodeID := elevateRunNode(ev.RunID, ev.NodeID, ev.ResourceType, ev.ResourceID, ev.Payload)
-		caller := strings.TrimSpace(ev.CallerKind)
-		if caller == "" {
-			caller = resolveCallerKind("", AuditActor{Username: ev.Actor, Unattributable: ev.Unattributable})
-		}
-		changes := map[string]any{}
-		if strings.TrimSpace(ev.RunID) == "" && runID != "" {
-			changes["run_id"] = runID
-		}
-		if strings.TrimSpace(ev.NodeID) == "" && nodeID != "" {
-			changes["node_id"] = nodeID
-		}
-		if strings.TrimSpace(ev.CallerKind) == "" && caller != "" {
-			changes["caller_kind"] = caller
-		}
-		if len(changes) == 0 {
-			continue
-		}
-		if err := db.Model(&models.ProjectAuditEvent{}).Where("id = ?", ev.ID).Updates(changes).Error; err != nil {
-			log.Warn().Err(err).Str("id", ev.ID).Msg("audit elevated-field backfill update failed")
-			continue
-		}
-		updated++
-	}
-	if updated > 0 {
-		log.Info().Int("updated", updated).Msg("audit elevated-field backfill complete")
-	}
 }
 
 // FormatAuditText renders events as human-readable plain text.

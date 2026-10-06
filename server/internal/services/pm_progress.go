@@ -155,7 +155,7 @@ func (p *PmProgress) ArtifactSummary(projectID, runID string, limit int) map[str
 		}
 		items = p.arts.ByRun(runID)
 	} else {
-		items, _ = p.arts.AllPage("", projectID, 1, limit, "")
+		items, _ = p.arts.AllPage(ArtifactFilter{ProjectID: projectID}, 1, limit)
 	}
 	if len(items) == 0 {
 		out := map[string]any{"empty": true, "message": "暂无产物"}

@@ -15,7 +15,7 @@ func seedInboxReview(t *testing.T, h *harness, runID, nodeID string, withArtifac
 	now := time.Now()
 	h.db.Create(&models.WorkflowDef{
 		ID: "wf-" + runID, ProjectID: models.DefaultProjectID, Name: "review-" + runID,
-		Status: "published", Version: 1,
+		Version: 1, PublishedVersion: 1,
 	})
 	h.db.Create(&models.Run{
 		ID: runID, WorkflowID: "wf-" + runID, WorkflowName: "review-" + runID, Status: "waiting_human",
@@ -57,7 +57,7 @@ func TestReviewShareCreateLookupConfirmAndInboxStatus(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-rev-1", "research1", true)
 
-	w := h.do(http.MethodPost, "/api/runs/run-rev-1/reviews/research1/share-link", map[string]any{"ttlTier": "24h"})
+	w := h.do(http.MethodPost, "/api/runs/run-rev-1/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
@@ -153,7 +153,7 @@ func TestReviewShareCreateLookupConfirmAndInboxStatus(t *testing.T) {
 	if stUsed != models.ShareLinkStateUsed {
 		t.Fatalf("after confirm preview=%v body=%s", stUsed, prevUsed.Body.String())
 	}
-	re := h.do(http.MethodPost, "/api/runs/run-rev-1/reviews/research1/share-link", map[string]any{"ttlTier": "24h"})
+	re := h.do(http.MethodPost, "/api/runs/run-rev-1/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if re.Code != http.StatusConflict {
 		t.Fatalf("recreate after confirm: %d %s", re.Code, re.Body.String())
 	}
@@ -163,22 +163,22 @@ func TestReviewShareKindIsolationAndHumanGateUnchanged(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-rev-iso", "research1", true)
 
-	rev := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-iso/reviews/research1/share-link", map[string]any{"ttlTier": "24h"}))
-	gate := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-iso/gates/hg-r/share-link", map[string]any{"ttlTier": "8h"}))
+	rev := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-iso/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
+	gate := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-iso/gates/hg-r/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "8h"}))
 	revURL, _ := rev["url"].(string)
 	gateURL, _ := gate["url"].(string)
 	revTok := strings.TrimPrefix(revURL[strings.Index(revURL, "#t="):], "#t=")
 	gateTok := strings.TrimPrefix(gateURL[strings.Index(gateURL, "#t="):], "#t=")
 
-	if w := h.do(http.MethodPost, "/api/runs/run-rev-iso/gates/research1/share-link", map[string]any{"ttlTier": "24h"}); w.Code == 200 {
+	if w := h.do(http.MethodPost, "/api/runs/run-rev-iso/gates/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}); w.Code == 200 {
 		t.Fatalf("gates API on research must not mint a link: %s", w.Body.String())
 	} else if !strings.Contains(w.Body.String(), "not_human_gate") && !strings.Contains(w.Body.String(), "gate_not_pending") {
 		t.Fatalf("gates API on research: %d %s", w.Code, w.Body.String())
 	}
-	if w := h.do(http.MethodPost, "/api/runs/run-rev-iso/reviews/hg-r/share-link", map[string]any{"ttlTier": "24h"}); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "not_review_session") {
+	if w := h.do(http.MethodPost, "/api/runs/run-rev-iso/reviews/hg-r/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "not_review_session") {
 		t.Fatalf("reviews API on human_gate: %d %s", w.Code, w.Body.String())
 	}
-	if w := h.do(http.MethodPost, "/api/runs/run-rev-iso/reviews/clarify/share-link", map[string]any{"ttlTier": "24h"}); strings.Contains(w.Body.String(), "not_review_session") {
+	if w := h.do(http.MethodPost, "/api/runs/run-rev-iso/reviews/clarify/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}); strings.Contains(w.Body.String(), "not_review_session") {
 		t.Fatalf("clarify must be a shareable review session: %d %s", w.Code, w.Body.String())
 	} else if w.Code != http.StatusNotFound && w.Code != http.StatusBadRequest {
 		t.Fatalf("reviews API on react clarify without pending conv: %d %s", w.Code, w.Body.String())
@@ -235,7 +235,7 @@ func TestReviewShareValidationFailureDoesNotBurnLink(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-rev-val", "research1", false)
 
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-val/reviews/research1/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-val/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
@@ -267,7 +267,7 @@ func TestReviewShareLoginConfirmRevokesUnusedLink(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-rev-login", "research1", true)
 
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-login/reviews/research1/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-login/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
@@ -282,7 +282,7 @@ func TestReviewShareLoginConfirmRevokesUnusedLink(t *testing.T) {
 	if st != models.ShareLinkStateRevoked && st != models.ShareLinkStateUsed {
 		t.Fatalf("after login confirm preview=%v body=%s", st, prev.Body.String())
 	}
-	re := h.do(http.MethodPost, "/api/runs/run-rev-login/reviews/research1/share-link", map[string]any{"ttlTier": "24h"})
+	re := h.do(http.MethodPost, "/api/runs/run-rev-login/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if re.Code != http.StatusConflict {
 		t.Fatalf("recreate after login confirm: %d %s", re.Code, re.Body.String())
 	}
@@ -294,7 +294,7 @@ func TestReviewShareDoneConversationCannotCreate(t *testing.T) {
 	if err := h.db.Model(&models.ReactConversation{}).Where("run_id = ?", "run-rev-done").Update("done", true).Error; err != nil {
 		t.Fatalf("mark done: %v", err)
 	}
-	w := h.do(http.MethodPost, "/api/runs/run-rev-done/reviews/research1/share-link", map[string]any{"ttlTier": "24h"})
+	w := h.do(http.MethodPost, "/api/runs/run-rev-done/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if w.Code != http.StatusConflict && w.Code != http.StatusNotFound {
 		t.Fatalf("create on done conv: %d %s", w.Code, w.Body.String())
 	}
@@ -303,7 +303,7 @@ func TestReviewShareDoneConversationCannotCreate(t *testing.T) {
 func TestReviewShareReplyAndCancelDoNotConsume(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-rev-reply", "research1", true)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-reply/reviews/research1/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-reply/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
@@ -344,7 +344,7 @@ func seedAppPreviewReview(t *testing.T, h *harness, runID, nodeID string) {
 	now := time.Now()
 	h.db.Create(&models.WorkflowDef{
 		ID: "wf-" + runID, ProjectID: models.DefaultProjectID, Name: "preview-" + runID,
-		Status: "published", Version: 1,
+		Version: 1, PublishedVersion: 1,
 	})
 	h.db.Create(&models.Run{
 		ID: runID, WorkflowID: "wf-" + runID, WorkflowName: "preview-" + runID, Status: "waiting_human",
@@ -369,7 +369,7 @@ func TestAppPreviewShareCreateAttachPreviewAndGateAPIRejected(t *testing.T) {
 	h := newHarness(t)
 	seedAppPreviewReview(t, h, "run-ap-share", "preview1")
 
-	w := h.do(http.MethodPost, "/api/runs/run-ap-share/reviews/preview1/share-link", map[string]any{"ttlTier": "24h"})
+	w := h.do(http.MethodPost, "/api/runs/run-ap-share/reviews/preview1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("create preview review share: %d %s", w.Code, w.Body.String())
 	}
@@ -441,7 +441,7 @@ func TestAppPreviewShareCreateAttachPreviewAndGateAPIRejected(t *testing.T) {
 	}
 
 	// g3.3: preview review must not succeed via human_gate share API
-	gateW := h.do(http.MethodPost, "/api/runs/run-ap-share/gates/preview1/share-link", map[string]any{"ttlTier": "24h"})
+	gateW := h.do(http.MethodPost, "/api/runs/run-ap-share/gates/preview1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if gateW.Code == http.StatusOK {
 		t.Fatalf("gates API on preview review must fail: %s", gateW.Body.String())
 	}
@@ -465,14 +465,14 @@ func seedInboxClarify(t *testing.T, h *harness, runID, nodeID string) {
 	now := time.Now()
 	h.db.Create(&models.WorkflowDef{
 		ID: "wf-" + runID, ProjectID: models.DefaultProjectID, Name: "clarify-" + runID,
-		Status: "published", Version: 1,
+		Version: 1, PublishedVersion: 1,
 	})
 	h.db.Create(&models.Run{
 		ID: runID, WorkflowID: "wf-" + runID, WorkflowName: "clarify-" + runID, Status: "waiting_human",
 		StartedAt: now, Title: "澄清运行",
 		Graph: models.Graph{Nodes: []models.Node{
 			{ID: nodeID, Type: "agent", Caps: testClarifyCaps, Label: "需求澄清"},
-			{ID: "ps", Type: "proposal_select", Label: "方案选择"},
+			{ID: "gate", Type: "human_gate", Label: "人工门禁"},
 		}},
 	})
 	h.db.Create(&models.ReactConversation{
@@ -488,11 +488,11 @@ func TestClarifyShareCreatePreviewInboxAndPublicCancel(t *testing.T) {
 	h := newHarness(t)
 	seedInboxClarify(t, h, "run-clarify-share", "clarify1")
 
-	if w := h.do(http.MethodPost, "/api/runs/run-clarify-share/reviews/ps/share-link", map[string]any{"ttlTier": "24h"}); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "not_review_session") {
-		t.Fatalf("proposal_select must stay excluded: %d %s", w.Code, w.Body.String())
+	if w := h.do(http.MethodPost, "/api/runs/run-clarify-share/reviews/gate/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "not_review_session") {
+		t.Fatalf("human_gate must stay excluded: %d %s", w.Code, w.Body.String())
 	}
 
-	w := h.do(http.MethodPost, "/api/runs/run-clarify-share/reviews/clarify1/share-link", map[string]any{"ttlTier": "24h"})
+	w := h.do(http.MethodPost, "/api/runs/run-clarify-share/reviews/clarify1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("create clarify share: %d %s", w.Code, w.Body.String())
 	}
@@ -593,7 +593,7 @@ func TestReviewSharePublicArtifactsListAndContent(t *testing.T) {
 		h.h.Arts.Save("run-rev-arts", "research1", name, "json", `{"reviewer":"FEEDBACK-LEAK"}`)
 	}
 
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-arts/reviews/research1/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-arts/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
@@ -646,8 +646,8 @@ func TestReviewSharePublicArtifactsInactiveAndHumanGateDenied(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-rev-arts-deny", "research1", true)
 
-	rev := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-arts-deny/reviews/research1/share-link", map[string]any{"ttlTier": "24h"}))
-	gate := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-arts-deny/gates/hg-r/share-link", map[string]any{"ttlTier": "8h"}))
+	rev := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-arts-deny/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
+	gate := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-arts-deny/gates/hg-r/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "8h"}))
 	revTok := strings.TrimPrefix(rev["url"].(string)[strings.Index(rev["url"].(string), "#t="):], "#t=")
 	gateTok := strings.TrimPrefix(gate["url"].(string)[strings.Index(gate["url"].(string), "#t="):], "#t=")
 

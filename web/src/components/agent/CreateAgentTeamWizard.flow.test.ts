@@ -41,7 +41,7 @@ const ApiKeyStub = {
 
 const GitGuideStub = {
   name: 'AgentGitGuide',
-  props: ['env', 'inheritedEnv', 'allowTokenRecommend', 'upsertEnv', 'credentialType'],
+  props: ['env', 'upsertEnv', 'credentialType'],
   emits: ['update:credentialType'],
   template: '<div class="git-guide-stub" />',
 }
@@ -114,15 +114,15 @@ describe('CreateAgentTeamWizard flow', () => {
     fillBasics(vm)
     await flushPromises()
     expect(vm.draft.prefix).toBe('登月')
-    expect(vm.draft.rootGroupName).toBe('登月项目组')
     expect(vm.draft.pmName).toBe('登月项目经理')
-    expect(vm.previewLine).toContain('登月项目组')
+    expect(vm.previewLine).toContain('登月')
+    expect(vm.previewLine).toContain('登月项目经理')
 
     // A touched prefix wins over the project name for derived values.
     vm.draft.prefixTouched = true
     vm.draft.prefix = 'Luna'
     vm.onProjectInput()
-    expect(vm.draft.rootGroupName).toBe('Luna项目组')
+    expect(vm.draft.pmName).toBe('Luna项目经理')
 
     vm.goNext()
     await flushPromises()
@@ -293,7 +293,6 @@ describe('CreateAgentTeamWizard flow', () => {
     const w = mountWizard({ projectId: 'proj-a' })
     await flushPromises()
     const vm = w.vm as any
-    expect(mocks.getProjectSharedAgentConfig).toHaveBeenCalledWith('proj-a')
 
     fillBasics(vm)
     vm.goNext()
@@ -389,7 +388,7 @@ describe('CreateAgentTeamWizard flow', () => {
     goNextThrough(vm, 4)
     await flushPromises()
     expect(vm.currentStep.id).toBe('review')
-    expect(w.html()).toContain('登月项目组')
+    expect(w.html()).toContain('登月项目经理')
 
     vm.bgExpanded = false
     await flushPromises()
@@ -402,7 +401,6 @@ describe('CreateAgentTeamWizard flow', () => {
     const payload = mocks.bootstrapAgentTeam.mock.calls[0][0]
     expect(payload.projectName).toBe('登月')
     expect(payload.pmName).toBe('登月项目经理')
-    expect(payload.rootGroupName).toBe('登月项目组')
     expect(payload.apiKey).toBe('sk-live')
     expect(w.emitted('started')).toBeTruthy()
     expect(w.emitted('close')).toBeTruthy()

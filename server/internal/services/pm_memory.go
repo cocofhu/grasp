@@ -16,7 +16,6 @@ import (
 
 // ListMemories returns memory items for a project (newest first).
 // When agentName is non-empty, results are scoped to that Agent.
-// Does not claim legacy (empty agent_name) rows — use BackfillLegacyMemoriesToPMAgent.
 func (s *PmService) ListMemories(projectID, agentName string) ([]models.ProjectMemoryItem, error) {
 	if _, ok := s.project(projectID); !ok {
 		return nil, ErrProjectNotFound
@@ -30,23 +29,6 @@ func (s *PmService) ListMemories(projectID, agentName string) ([]models.ProjectM
 		return nil, err
 	}
 	return items, nil
-}
-
-// BackfillLegacyMemoriesToPMAgent assigns empty-agent_name memories to the
-// project's bound PM Leader agent only. Safe to call repeatedly; no-op when
-// no PM agent is bound. Never claim legacy rows for an arbitrary Agent.
-func (s *PmService) BackfillLegacyMemoriesToPMAgent(projectID string) error {
-	p, ok := s.project(projectID)
-	if !ok {
-		return ErrProjectNotFound
-	}
-	agent := strings.TrimSpace(p.PmLeaderAgent)
-	if agent == "" {
-		return nil
-	}
-	return s.db.Model(&models.ProjectMemoryItem{}).
-		Where("project_id = ? AND (agent_name = '' OR agent_name IS NULL)", projectID).
-		Update("agent_name", agent).Error
 }
 
 // UpsertMemory creates or updates a memory item by title within a project+agent.
@@ -89,11 +71,6 @@ func (s *PmService) UpsertMemory(projectID, agentName, title, content, source, u
 	return item, nil
 }
 
-// UpdateMemoryByID patches content/title of an existing item (project-wide).
-func (s *PmService) UpdateMemoryByID(projectID, id, title, content, updatedBy string) (models.ProjectMemoryItem, error) {
-	return s.patchMemory(projectID, "", id, title, content, updatedBy)
-}
-
 // UpdateMemoryForAgent patches a memory only when it belongs to project+agent.
 func (s *PmService) UpdateMemoryForAgent(projectID, agentName, id, title, content, updatedBy string) (models.ProjectMemoryItem, error) {
 	agentName = strings.TrimSpace(agentName)
@@ -105,11 +82,8 @@ func (s *PmService) UpdateMemoryForAgent(projectID, agentName, id, title, conten
 
 func (s *PmService) patchMemory(projectID, agentName, id, title, content, updatedBy string) (models.ProjectMemoryItem, error) {
 	var item models.ProjectMemoryItem
-	q := s.db.Where("id = ? AND project_id = ?", id, projectID)
-	if agentName != "" {
-		q = q.Where("agent_name = ?", agentName)
-	}
-	if err := q.First(&item).Error; err != nil {
+	if err := s.db.Where("id = ? AND project_id = ? AND agent_name = ?", id, projectID, agentName).
+		First(&item).Error; err != nil {
 		return models.ProjectMemoryItem{}, ErrPmMemoryNotFound
 	}
 	if t := strings.TrimSpace(title); t != "" {
@@ -123,18 +97,6 @@ func (s *PmService) patchMemory(projectID, agentName, id, title, content, update
 		return models.ProjectMemoryItem{}, err
 	}
 	return item, nil
-}
-
-// DeleteMemory removes one memory item by project+id (admin / project-wide).
-func (s *PmService) DeleteMemory(projectID, id string) error {
-	res := s.db.Where("id = ? AND project_id = ?", id, projectID).Delete(&models.ProjectMemoryItem{})
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return ErrPmMemoryNotFound
-	}
-	return nil
 }
 
 // DeleteMemoryForAgent removes one memory only when it belongs to project+agent.
@@ -153,15 +115,6 @@ func (s *PmService) DeleteMemoryForAgent(projectID, agentName, id string) error 
 		return ErrPmMemoryNotFound
 	}
 	return nil
-}
-
-// ClearMemories deletes all memory items for a project (admin).
-func (s *PmService) ClearMemories(projectID string) (int64, error) {
-	if _, ok := s.project(projectID); !ok {
-		return 0, ErrProjectNotFound
-	}
-	res := s.db.Where("project_id = ?", projectID).Delete(&models.ProjectMemoryItem{})
-	return res.RowsAffected, res.Error
 }
 
 // ClearMemoriesForAgent deletes memories for one agent in a project.

@@ -3,14 +3,12 @@ import { api } from '@/lib/api/api'
 import type { Artifact } from '@/lib/shared/types'
 
 export type TestScreenshotInput = {
-  data?: string
   artifact?: string
   mimeType?: string
   caption?: string
 }
 
 export type TestScreenshotState =
-  | { status: 'legacy'; src: string; caption?: string }
   | { status: 'loading'; artifact: string; caption?: string }
   | { status: 'success'; src: string; caption?: string; blobUrl: string }
   | { status: 'error'; artifact: string; caption?: string }
@@ -24,32 +22,16 @@ export function allowsScreenshotError(runStatus?: string | null): boolean {
   return TERMINAL_RUN_STATUSES.has(runStatus)
 }
 
-function legacySrc(s: TestScreenshotInput): string | null {
-  if (!s.data?.trim()) return null
-  return `data:${s.mimeType || 'image/png'};base64,${s.data}`
-}
-
-function legacyDataKey(s: TestScreenshotInput): string {
-  const data = s.data?.trim()
-  if (!data) return ''
-  // Length + small prefix avoids huge fingerprints while catching content swaps.
-  return `${s.mimeType || 'image/png'}:${data.length}:${data.slice(0, 24)}`
-}
-
 function resolveArtifact(name: string, artifacts: Artifact[]): Artifact | undefined {
   return artifacts.find((a) => a.name === name)
 }
 
-/** Content identity: screenshot name + legacy digest + matched artifact id|size|updatedAt|etag. */
+/** Content identity: screenshot name + matched artifact id|size|updatedAt|etag. */
 export function buildScreenshotContentFingerprint(
   s: TestScreenshotInput,
   artifacts: Artifact[],
 ): string {
   const artifactName = s.artifact?.trim() || ''
-  const legacy = legacyDataKey(s)
-  if (legacy) {
-    return `legacy:${artifactName}:${legacy}`
-  }
   if (!artifactName) return 'unknown'
   const art = resolveArtifact(artifactName, artifacts)
   if (!art) return `${artifactName}|missing`
@@ -61,7 +43,7 @@ function withCaption(st: TestScreenshotState, caption?: string): TestScreenshotS
   return { ...st, caption }
 }
 
-/** Lazy-load test screenshots by artifact name; legacy inline base64 renders immediately. */
+/** Lazy-load test screenshots by artifact name. */
 export function useTestScreenshotLoad(
   screenshots: Ref<TestScreenshotInput[]>,
   artifacts: Ref<Artifact[]>,
@@ -90,7 +72,7 @@ export function useTestScreenshotLoad(
     caption: string | undefined,
     prev: TestScreenshotState | undefined,
   ): TestScreenshotState {
-    if (prev && (prev.status === 'success' || prev.status === 'legacy')) {
+    if (prev?.status === 'success') {
       return withCaption(prev, caption)
     }
     if (allowsScreenshotError(runStatus?.value)) {
@@ -162,13 +144,9 @@ export function useTestScreenshotLoad(
         const prevFp = prevFps[i]
 
         // F1: same content identity + already painted → keep frame (poll noise / new array refs).
-        // If a prior SWR fetch soft-failed while we still show a success/legacy frame, keep the
+        // If a prior SWR fetch soft-failed while we still show a success frame, keep the
         // frame but background-retry when the artifact is still resolvable (transient 5xx).
-        if (
-          contentFp === prevFp &&
-          prev &&
-          (prev.status === 'success' || prev.status === 'legacy')
-        ) {
+        if (contentFp === prevFp && prev?.status === 'success') {
           nextStates[i] = withCaption(prev, s.caption)
           if (softFailed[i]) {
             const artifact = s.artifact?.trim()
@@ -182,7 +160,7 @@ export function useTestScreenshotLoad(
           if (prev.status === 'loading' || prev.status === 'error') {
             const artifact = s.artifact?.trim() || '(unknown)'
             const art = artifact !== '(unknown)' ? resolveArtifact(artifact, arts) : undefined
-            if (!art && !legacySrc(s)) {
+            if (!art) {
               softFailed[i] = true
               nextStates[i] = failureState(artifact, s.caption, undefined)
             } else if (prev.status === 'error' && !allowsScreenshotError(runStatus?.value)) {
@@ -207,14 +185,6 @@ export function useTestScreenshotLoad(
         }
 
         // Identity changed or first paint.
-        const src = legacySrc(s)
-        if (src) {
-          if (prev?.status === 'success') revokeOne(prev.blobUrl)
-          softFailed[i] = false
-          nextStates[i] = { status: 'legacy', src, caption: s.caption }
-          continue
-        }
-
         const artifact = s.artifact?.trim()
         if (!artifact) {
           softFailed[i] = true
@@ -223,8 +193,8 @@ export function useTestScreenshotLoad(
         }
 
         const art = resolveArtifact(artifact, arts)
-        // F3: keep prior success/legacy until the new blob is ready (silent replace).
-        if (prev && (prev.status === 'success' || prev.status === 'legacy')) {
+        // F3: keep prior success until the new blob is ready (silent replace).
+        if (prev?.status === 'success') {
           nextStates[i] = withCaption(prev, s.caption)
           if (art) toFetch.push(i)
           else {
@@ -266,7 +236,7 @@ export function useTestScreenshotLoad(
 
   const successIndices = () =>
     states.value
-      .map((st, i) => (st.status === 'success' || st.status === 'legacy' ? i : -1))
+      .map((st, i) => (st.status === 'success' ? i : -1))
       .filter((i) => i >= 0)
 
   return { states, successIndices }

@@ -4,7 +4,6 @@ import { api } from '@/lib/api/api'
 import { useAuth } from '@/lib/composables/useAuth'
 import { useToast } from '@/lib/composables/useToast'
 import { httpStatusOf } from '@/lib/shared/listRequestSeq'
-import { migrateLocalStorageKey } from '@/lib/shared/migrateBrandStorage'
 import type { Workflow } from '@/lib/shared/types'
 
 /** Personal quick-launch favorites hard limit (clarified requirement / Demo). */
@@ -12,7 +11,7 @@ export const WORKFLOW_FAVORITES_MAX = 8
 
 export type WorkflowFavoriteEntry = {
   workflowId: string
-  /** Epoch ms; retained as favorite metadata and for the one-time legacy-order migration. */
+  /** Epoch ms when the workflow was favorited. */
   favoritedAt: number
 }
 
@@ -30,14 +29,6 @@ export function favoritesKeyForUser(username: string): string {
   return `grasp.workflowFavorites.${username || 'anonymous'}`
 }
 
-function legacyFavoritesKeyForUser(username: string): string {
-  return `approving.workflowFavorites.${username || 'anonymous'}`
-}
-
-function favoritesOrderMigrationKeyForUser(username: string): string {
-  return `${favoritesKeyForUser(username)}.order-v2`
-}
-
 function resolveUsername(): { name: string; settled: boolean } {
   const { user, ready } = useAuth()
   const name = user.value?.username?.trim() || ''
@@ -49,11 +40,6 @@ function resolveUsername(): { name: string; settled: boolean } {
 export function loadFavoriteEntries(username: string): WorkflowFavoriteEntry[] {
   if (typeof localStorage === 'undefined') return []
   try {
-    migrateLocalStorageKey(legacyFavoritesKeyForUser(username), favoritesKeyForUser(username))
-    migrateLocalStorageKey(
-      `${legacyFavoritesKeyForUser(username)}.order-v2`,
-      `${favoritesKeyForUser(username)}.order-v2`,
-    )
     const raw = localStorage.getItem(favoritesKeyForUser(username))
     if (!raw) return []
     const parsed = JSON.parse(raw) as unknown
@@ -113,24 +99,7 @@ export function hydrateFromStorage() {
   const { name, settled } = resolveUsername()
   if (!settled) return
   usernameKey.value = name
-  const loaded = loadFavoriteEntries(name)
-  const migrationKey = favoritesOrderMigrationKeyForUser(name)
-  const needsLegacyOrderMigration =
-    typeof localStorage !== 'undefined' && localStorage.getItem(migrationKey) !== '1'
-
-  // Existing entries previously displayed by newest favorite first. Persist that as
-  // the initial manual order once, then treat the stored array order as authoritative.
-  entries.value = needsLegacyOrderMigration
-    ? loaded.slice().sort((a, b) => b.favoritedAt - a.favoritedAt || a.workflowId.localeCompare(b.workflowId))
-    : loaded
-  if (needsLegacyOrderMigration && typeof localStorage !== 'undefined') {
-    persistEntries(name, entries.value)
-    try {
-      localStorage.setItem(migrationKey, '1')
-    } catch {
-      // Private mode/quota: retain the in-memory initial order.
-    }
-  }
+  entries.value = loadFavoriteEntries(name)
   prefsHydrated = true
 }
 

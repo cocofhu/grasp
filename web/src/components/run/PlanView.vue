@@ -19,7 +19,6 @@ export type PlanField = {
 export type PlanEntity = {
   name?: string
   fields?: PlanField[]
-  attributes?: string[]
   description?: string
   relationships?: string[]
 }
@@ -30,7 +29,6 @@ export type PlanInterfaceItem = {
   summary?: string
   detail?: string
   diagrams?: PlanDiagram[]
-  diagram?: PlanDiagram
 }
 export type PlanComponentItem = {
   name?: string
@@ -38,17 +36,15 @@ export type PlanComponentItem = {
   dependencies?: string[]
   detail?: string
   diagrams?: PlanDiagram[]
-  diagram?: PlanDiagram
 }
-export type PlanArchitecture = { summary?: string; diagrams?: PlanDiagram[]; diagram?: PlanDiagram }
+export type PlanArchitecture = { summary?: string; diagrams?: PlanDiagram[] }
 export type PlanDataDesign = {
   summary?: string
   entities?: PlanEntity[]
   relationships?: string[]
   diagrams?: PlanDiagram[]
-  diagram?: PlanDiagram
 }
-export type PlanInteraction = { summary?: string; diagrams?: PlanDiagram[]; diagram?: PlanDiagram }
+export type PlanInteraction = { summary?: string; diagrams?: PlanDiagram[] }
 export type PlanDoc = {
   title?: string
   architecture?: PlanArchitecture
@@ -116,8 +112,8 @@ function st(s?: string) {
   return { label: t(meta.labelKey), cls: meta.cls, dot: meta.dot }
 }
 
-/** Collect diagrams[] + legacy singular diagram (dedupe by source). Evidence: g2.1 */
-function collectSectionDiagrams(diagrams?: PlanDiagram[], diagram?: PlanDiagram): PlanDiagram[] {
+/** Collect non-empty diagrams[] entries (dedupe by source). */
+function collectSectionDiagrams(diagrams?: PlanDiagram[]): PlanDiagram[] {
   const out: PlanDiagram[] = []
   const seen = new Set<string>()
   const push = (d?: PlanDiagram) => {
@@ -127,7 +123,6 @@ function collectSectionDiagrams(diagrams?: PlanDiagram[], diagram?: PlanDiagram)
     out.push(d)
   }
   for (const d of diagrams || []) push(d)
-  push(diagram)
   return out
 }
 
@@ -148,9 +143,9 @@ function tabLabel(d: PlanDiagram, index: number) {
   return `${index + 1}`
 }
 
-const archDiagrams = computed(() => collectSectionDiagrams(props.doc.architecture?.diagrams, props.doc.architecture?.diagram))
-const dataDiagrams = computed(() => collectSectionDiagrams(props.doc.data_design?.diagrams, props.doc.data_design?.diagram))
-const ixDiagrams = computed(() => collectSectionDiagrams(props.doc.interaction?.diagrams, props.doc.interaction?.diagram))
+const archDiagrams = computed(() => collectSectionDiagrams(props.doc.architecture?.diagrams))
+const dataDiagrams = computed(() => collectSectionDiagrams(props.doc.data_design?.diagrams))
+const ixDiagrams = computed(() => collectSectionDiagrams(props.doc.interaction?.diagrams))
 
 /** Active tab index per section key. Reset when diagram set identity changes. */
 const activeTab = reactive<Record<string, number>>({})
@@ -185,22 +180,10 @@ function currentDiagram(key: string, list: PlanDiagram[]): PlanDiagram | undefin
   return list[Math.min(Math.max(i, 0), list.length - 1)]
 }
 
-function diagramJsonPath(section: string, list: PlanDiagram[], active: PlanDiagram | undefined): string {
-  if (!active) return `${section}.diagram`
-  const fromArr = (list === archDiagrams.value && section === 'architecture') ||
-    (list === dataDiagrams.value && section === 'data_design') ||
-    (list === ixDiagrams.value && section === 'interaction')
-  // Prefer diagrams[i] when the active item lives in diagrams[]
-  const diagramsField =
-    section === 'architecture'
-      ? props.doc.architecture?.diagrams
-      : section === 'data_design'
-        ? props.doc.data_design?.diagrams
-        : props.doc.interaction?.diagrams
-  const idx = (diagramsField || []).findIndex((d) => (d.source || '').trim() === (active.source || '').trim())
-  if (idx >= 0) return `${section}.diagrams[${idx}]`
-  void fromArr
-  return `${section}.diagram`
+function diagramJsonPath(section: 'architecture' | 'data_design' | 'interaction', active: PlanDiagram | undefined): string {
+  const src = (active?.source || '').trim()
+  const idx = (props.doc[section]?.diagrams || []).findIndex((d) => (d.source || '').trim() === src)
+  return `${section}.diagrams[${Math.max(idx, 0)}]`
 }
 </script>
 
@@ -271,7 +254,7 @@ function diagramJsonPath(section: string, list: PlanDiagram[], active: PlanDiagr
         <MermaidDiagram
           v-if="currentDiagram('architecture', archDiagrams)"
           :diagram="currentDiagram('architecture', archDiagrams)!"
-          :json-path="diagramJsonPath('architecture', archDiagrams, currentDiagram('architecture', archDiagrams))"
+          :json-path="diagramJsonPath('architecture', currentDiagram('architecture', archDiagrams))"
           :artifacts="artifacts"
         />
       </section>
@@ -334,11 +317,6 @@ function diagramJsonPath(section: string, list: PlanDiagram[], active: PlanDiagr
                 </tbody>
               </table>
             </div>
-            <ul v-if="e.attributes?.length" class="mt-1 space-y-0.5 border-l border-line pl-2" data-testid="plan-entity-attributes">
-              <li v-for="(a, ai) in e.attributes" :key="ai" class="text-[11px] text-txt3">
-                <span class="italic">legacy</span> {{ a }}
-              </li>
-            </ul>
             <ul v-if="e.relationships?.length" class="mt-1 space-y-0.5 border-l border-line pl-2" data-testid="plan-entity-relationships">
               <li v-for="(r, ri) in e.relationships" :key="ri" class="text-[11px] text-txt2">{{ r }}</li>
             </ul>
@@ -384,7 +362,7 @@ function diagramJsonPath(section: string, list: PlanDiagram[], active: PlanDiagr
         <MermaidDiagram
           v-if="currentDiagram('data_design', dataDiagrams)"
           :diagram="currentDiagram('data_design', dataDiagrams)!"
-          :json-path="diagramJsonPath('data_design', dataDiagrams, currentDiagram('data_design', dataDiagrams))"
+          :json-path="diagramJsonPath('data_design', currentDiagram('data_design', dataDiagrams))"
           :artifacts="artifacts"
         />
       </section>
@@ -464,7 +442,7 @@ function diagramJsonPath(section: string, list: PlanDiagram[], active: PlanDiagr
         <MermaidDiagram
           v-if="currentDiagram('interaction', ixDiagrams)"
           :diagram="currentDiagram('interaction', ixDiagrams)!"
-          :json-path="diagramJsonPath('interaction', ixDiagrams, currentDiagram('interaction', ixDiagrams))"
+          :json-path="diagramJsonPath('interaction', currentDiagram('interaction', ixDiagrams))"
           :artifacts="artifacts"
         />
       </section>

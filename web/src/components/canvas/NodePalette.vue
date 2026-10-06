@@ -16,9 +16,16 @@ import type { NodeSpec } from './composables/graphOps'
 const props = defineProps<{
   items: PaletteItem[]
   agentsLoading?: boolean
+  /** Key of the item currently being placed on the canvas. */
+  placingKey?: string | null
 }>()
 
-const emit = defineEmits<{ (e: 'add', spec: NodeSpec): void }>()
+const emit = defineEmits<{
+  /** Click: start (or cancel) click-to-place on the canvas. */
+  (e: 'place', spec: NodeSpec): void
+  /** Keyboard: add right away at a free spot in view. */
+  (e: 'add', spec: NodeSpec): void
+}>()
 
 const { t } = useI18n()
 const COLLAPSE_KEY = 'grasp.canvas.paletteCollapsed'
@@ -136,15 +143,18 @@ function onDragStart(ev: DragEvent, item: PaletteItem) {
         <div
           v-for="it in g.items"
           :key="it.key"
-          class="group mb-1 flex cursor-grab items-center gap-2.5 rounded-lg border border-transparent px-2 py-1.5 transition-colors hover:border-line hover:bg-elevated active:cursor-grabbing"
+          class="group mb-1 flex cursor-grab items-center gap-2.5 rounded-lg border px-2 py-1.5 transition-colors active:cursor-grabbing"
+          :class="placingKey === it.key ? 'border-accent/60 bg-accent-dim' : 'border-transparent hover:border-line hover:bg-elevated'"
           draggable="true"
           role="button"
           tabindex="0"
           :title="t('canvas.palette.dragHint')"
           :aria-label="`${it.label}. ${it.desc}`"
+          :aria-pressed="placingKey === it.key"
           :data-testid="`palette-item-${it.key}`"
+          :data-placing="placingKey === it.key ? 'true' : undefined"
           @dragstart="onDragStart($event, it)"
-          @click="emit('add', it.spec)"
+          @click="emit('place', it.spec)"
           @keydown.enter.prevent="emit('add', it.spec)"
           @keydown.space.prevent="emit('add', it.spec)"
         >

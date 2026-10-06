@@ -163,14 +163,4 @@ describe('locale', () => {
     expect(p1).toBe(p2)
     await p1
   })
-
-  it('migrates approving-locale to grasp-locale (g1.1 evidence)', async () => {
-    localStorage.setItem('approving-locale', 'en')
-    expect(detectLocale()).toBe('en')
-    expect(localStorage.getItem('grasp-locale')).toBe('en')
-    expect(localStorage.getItem('approving-locale')).toBeNull()
-    await setLocale('zh-CN')
-    expect(localStorage.getItem('grasp-locale')).toBe('zh-CN')
-    expect(localStorage.getItem('approving-locale')).toBeNull()
-  })
 })

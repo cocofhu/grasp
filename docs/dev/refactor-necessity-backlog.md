@@ -1,6 +1,6 @@
 # 迭代热点结构重构 — 零影响协议与落点约定
 
-> 本轮目标：对后续大量迭代一致的热点一次做透**纯结构**边界；**零功能影响**；兼容旁路完整保留；近期不必再为同一热点结构重拆。
+> 本轮目标：对后续大量迭代一致的热点一次做透**纯结构**边界；**零功能影响**；近期不必再为同一热点结构重拆。
 
 ## 1. 手段白名单与黑名单（强制）
 
@@ -17,7 +17,6 @@
 - 改业务分支条件、默认值、文案、时序、字段语义、错误码
 - 改 `api.xxx` 方法名 / 请求体语义 / 返回类型语义
 - 改 Go `SandboxService` / `PmService` 导出方法签名或行为
-- 删除或关闭 0.2.0 兼容窗（见 §4）
 - 夹带修 bug 或行为优化（发现只记账到 follow-up）
 - 删减断言凑绿、降低覆盖率阈值
 
@@ -40,7 +39,7 @@
 
 - `engine/` / `gateway/` 大改
 - 清单外上帝文件强拆（必要引用修复除外）
-- 任何兼容删除或语义收紧
+- 任何语义收紧
 - 新功能、UI 改版、性能专项
 
 ## 3. 做透 DoD
@@ -61,15 +60,10 @@
 | 前端 | `api.xxx` / `authApi` / `apiState` / `blobContentUrl` / `isPaginated` 名称与语义 |
 | Go | `SandboxService` / `PmService` 导出方法签名 |
 | 协议 | HTTP / MCP / 产物字段语义 |
-| 兼容 | 0.2.0 窗内入口不删、不改语义（见下） |
 
-### 兼容旁路（必须保留）
+### 兼容逻辑
 
-- `CURSOR_ACP_PASSWORD` 等密码别名
-- `GRASP_EXEC_PROVIDER`
-- 旧软链 / legacy gate / routing / 字段 fallback
-- `SandboxPurposePM` / `purpose=pm` legacy 沙箱用途
-- 其它文档标明计划 0.2.0 移除但仍可用的入口
+项目按全新项目处理：旧数据迁移、旧配置项、旧路由与字段别名、旧沙箱协议均已删除，不再保留兼容旁路。
 
 ## 5. 域 → 金锁映射
 
@@ -81,7 +75,6 @@
 | Agent Studio | `web/src/lib/agent/**/*.test.ts`；`AgentStudioView.test.ts`；Agent 组件测 |
 | Run / 产物 / 统计 | `web/src/lib/run/**/*.test.ts`；Run 相关组件测；必要 e2e |
 | SandboxService | `sandbox_*_test.go`、`sandbox_service_test.go`；`cover-check-server.sh 90`；golangci / vet / configdoc |
-| 兼容专项 | 含 password 别名 / exec_provider / legacy gate / purpose=pm 的既有测试 |
 | 总回归 | 触及树：web lint + vue-tsc + unit(lines≥85) + e2e:ci；server golangci + vet + configdoc + go test + cover≥90 |
 
 **无锁规则**：无表征测试则先补测，或将该点标为不动，不得裸改。
@@ -98,12 +91,12 @@
 | Run / 产物 / 统计 | `web/src/lib/run/` |
 | 沙箱生命周期 | server `sandbox_*.go`（保留 `sandbox_agent` / `sandbox_pm`） |
 
-**禁止**：把业务编排重新堆回上帝 SFC；禁止误删兼容旁路。
+**禁止**：把业务编排重新堆回上帝 SFC。
 
 ## 7. 施工顺序
 
 ```
-协议/金锁映射 → api → Inbox/Gate → Project/PM(+pm.go) → Agent → Run → Sandbox → 兼容专项+跨域复跑+CI
+协议/金锁映射 → api → Inbox/Gate → Project/PM(+pm.go) → Agent → Run → Sandbox → 跨域复跑+CI
 ```
 
 每域：金锁确认 → 纯结构改 → 同一金锁复测 → 绿则下一域。
@@ -122,4 +115,4 @@
 | PM server | `pm_{memory,thread,message}.go`；签名不变 |
 | 协议文档 | 本文件 §1–§7 |
 
-兼容旁路未删除；金锁与 CI 阈值未降低。
+金锁与 CI 阈值未降低。

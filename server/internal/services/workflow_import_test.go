@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -109,8 +110,8 @@ func TestWorkflowImportCreatesDraft(t *testing.T) {
 	if imported.Name != "工作流 A 副本" {
 		t.Fatalf("name = %q, want 工作流 A 副本", imported.Name)
 	}
-	if imported.Status != "draft" || imported.Version != 1 {
-		t.Fatalf("status/version = %s/%d", imported.Status, imported.Version)
+	if imported.Status() != "draft" || imported.Version != 1 {
+		t.Fatalf("status/version = %s/%d", imported.Status(), imported.Version)
 	}
 	if imported.ShowOnHome {
 		t.Fatal("import ShowOnHome want false (plan g1.3)")
@@ -119,10 +120,9 @@ func TestWorkflowImportCreatesDraft(t *testing.T) {
 		t.Fatal("expected new id")
 	}
 
-	var verCount int64
-	db.Model(&models.WorkflowVersion{}).Where("workflow_id = ?", imported.ID).Count(&verCount)
-	if verCount != 0 {
-		t.Fatalf("versions copied: %d", verCount)
+	vs := s.Versions(imported.ID)
+	if len(vs) != 1 || vs[0].Version != 1 || vs[0].Source != models.VersionSourceImport {
+		t.Fatalf("import should create a single v1 Source=import: %+v", vs)
 	}
 	var runCount int64
 	db.Model(&models.Run{}).Where("workflow_id = ?", imported.ID).Count(&runCount)
@@ -141,41 +141,15 @@ func TestWorkflowVersionGraph(t *testing.T) {
 	if _, err := s.Publish("wf-v"); err != nil {
 		t.Fatal(err)
 	}
-	g, err := s.VersionGraph("wf-v", 2)
+	g, err := s.VersionGraph("wf-v", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(g.Nodes) != 2 {
 		t.Fatalf("graph nodes = %d", len(g.Nodes))
 	}
-}
-
-func TestMigrateOutputNodes(t *testing.T) {
-	g := models.Graph{
-		Nodes: []models.Node{
-			{ID: "in", Type: "input", Label: "S"},
-			{ID: "o1", Type: "output", Label: "E1", Config: map[string]any{"result": "  alpha  "}},
-			{ID: "o2", Type: "output", Label: "E2", Config: map[string]any{"results": []any{"keep"}}},
-			{ID: "o3", Type: "output", Label: "E3"},
-			{ID: "o4", Type: "output", Label: "E4", Config: map[string]any{"result": "  "}},
-		},
-	}
-	MigrateOutputNodes(&g)
-	if got, ok := g.Nodes[1].Config["results"].([]any); !ok || len(got) != 1 || got[0] != "alpha" {
-		t.Fatalf("o1 results = %#v", g.Nodes[1].Config["results"])
-	}
-	if got := g.Nodes[2].Config["results"].([]any); len(got) != 1 || got[0] != "keep" {
-		t.Fatalf("o2 should keep existing results: %#v", got)
-	}
-	if g.Nodes[3].Config == nil {
-		t.Fatal("o3 config should be initialized")
-	}
-	// fmt.Sprint(nil) yields "<nil>", which is treated as a legacy result string.
-	if got, ok := g.Nodes[3].Config["results"].([]any); !ok || len(got) != 1 || got[0] != "<nil>" {
-		t.Fatalf("o3 results from nil result key = %#v", g.Nodes[3].Config["results"])
-	}
-	if got, ok := g.Nodes[4].Config["results"].([]any); !ok || len(got) != 0 {
-		t.Fatalf("o4 blank result → empty results = %#v", got)
+	if _, err := s.VersionGraph("wf-v", 2); !errors.Is(err, ErrWorkflowVersionNotFound) {
+		t.Fatalf("missing version: %v", err)
 	}
 }
 
@@ -188,7 +162,6 @@ func TestLiftInputVariables(t *testing.T) {
 					"variables": []any{
 						map[string]any{"name": "x", "label": "X", "type": "string"},
 					},
-					"inputs": "legacy",
 				},
 			},
 			{ID: "out", Type: "output", Label: "E"},
@@ -201,9 +174,6 @@ func TestLiftInputVariables(t *testing.T) {
 	if _, ok := g.Nodes[0].Config["variables"]; ok {
 		t.Fatal("variables should be removed from input config")
 	}
-	if _, ok := g.Nodes[0].Config["inputs"]; ok {
-		t.Fatal("inputs should be removed from input config")
-	}
 
 	g2 := models.Graph{Nodes: []models.Node{{ID: "out", Type: "output", Label: "E", Config: map[string]any{}}}}
 	LiftInputVariables(&g2)
@@ -213,7 +183,7 @@ func TestLiftInputVariables(t *testing.T) {
 
 	g3 := models.Graph{Nodes: []models.Node{{
 		ID: "in", Type: "input", Label: "S",
-		Config: map[string]any{"variables": "not-array", "inputs": 1},
+		Config: map[string]any{"variables": "not-array"},
 	}}}
 	LiftInputVariables(&g3)
 	if _, ok := g3.Nodes[0].Config["variables"]; ok {
@@ -236,47 +206,5 @@ func TestValidateImportNilVariablesDefaults(t *testing.T) {
 	}
 	if env.Graph.Variables == nil {
 		t.Fatal("Variables should default to empty slice")
-	}
-}
-
-func TestWorkflowImportLiftsAndMigrates(t *testing.T) {
-	db := newTestDB(t)
-	s := NewWorkflowService(db)
-	env := models.ExportEnvelope{
-		SchemaVersion: models.ExportSchemaVersion,
-		Name:          "Mig",
-		Graph: models.Graph{
-			Nodes: []models.Node{
-				{
-					ID: "in", Type: "input", Label: "S",
-					Config: map[string]any{
-						"variables": []any{map[string]any{"name": "n", "label": "N", "type": "string"}},
-					},
-				},
-				{ID: "out", Type: "output", Label: "E", Config: map[string]any{"result": "r1"}},
-			},
-			Edges: []models.Edge{{ID: "e1", Source: "in", Target: "out"}},
-		},
-	}
-	imported, err := s.Import(envelopeJSON(env), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(imported.Graph.Variables) != 1 || imported.Graph.Variables[0].Name != "n" {
-		t.Fatalf("lifted vars: %+v", imported.Graph.Variables)
-	}
-	var outCfg map[string]any
-	for _, n := range imported.Graph.Nodes {
-		if n.Type == "output" {
-			outCfg = n.Config
-		}
-		if n.Type == "input" {
-			if _, ok := n.Config["variables"]; ok {
-				t.Fatal("input variables should be lifted away")
-			}
-		}
-	}
-	if got, ok := outCfg["results"].([]any); !ok || len(got) != 1 {
-		t.Fatalf("migrated results: %#v", outCfg["results"])
 	}
 }

@@ -7,7 +7,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/services"
 )
 
 func TestCopyWorkflowPreviewAndCopyErrors(t *testing.T) {
@@ -63,14 +62,11 @@ func TestRenameAgentBranches(t *testing.T) {
 	}
 }
 
-func TestDeleteAgentWithOrgCascade(t *testing.T) {
+func TestDeleteAgent(t *testing.T) {
 	hn := newHarness(t)
 	enableAdmin(t)
-	root := t.TempDir()
-	skills := services.NewAgentService(root)
-	hn.h.Org = services.NewOrgService(root, skills)
-	seedAgent(t, hn, "OrgAgent")
-	w := hn.do(http.MethodDelete, "/api/agents/OrgAgent", nil)
+	seedAgent(t, hn, "DelAgent")
+	w := hn.do(http.MethodDelete, "/api/agents/DelAgent", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("delete agent: %d %s", w.Code, w.Body.String())
 	}
@@ -78,6 +74,7 @@ func TestDeleteAgentWithOrgCascade(t *testing.T) {
 
 func TestArtifactContentReturnsETag(t *testing.T) {
 	hn := newHarness(t)
+	seedArtifactOwner(t, hn.db, "run-et")
 	content := `{"summary":"x"}`
 	if _, err := hn.h.Arts.Save("run-et", "node", mcp.ResearchArtifactName, "json", content); err != nil {
 		t.Fatal(err)
@@ -100,6 +97,7 @@ func TestArtifactContentReturnsETag(t *testing.T) {
 
 func TestArtifactVersionListAndContent(t *testing.T) {
 	hn := newHarness(t)
+	seedArtifactOwner(t, hn.db, "run-ver")
 	if _, err := hn.h.Arts.Save("run-ver", "node", mcp.ResearchArtifactName, "json", `{"v":1}`); err != nil {
 		t.Fatal(err)
 	}

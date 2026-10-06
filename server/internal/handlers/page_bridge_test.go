@@ -189,7 +189,7 @@ func TestShareTokenCannotOfferPage(t *testing.T) {
 	hn.h.PageBridge = hub
 	seedAppPreviewReview(t, hn, "run-page-share", "ap1")
 	seedDirectPreview(t, hn, "run-page-share", "ap1")
-	created := parseJSON(t, hn.do(http.MethodPost, "/api/runs/run-page-share/reviews/ap1/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, hn.do(http.MethodPost, "/api/runs/run-page-share/reviews/ap1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	share := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 

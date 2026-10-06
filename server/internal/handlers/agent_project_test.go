@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/config"
+	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/pmmcp"
 	"github.com/cocofhu/grasp/internal/services"
@@ -45,30 +46,55 @@ func grantAdmin(t *testing.T) {
 	})
 }
 
-func TestSaveAgentRejectsPlatformMCPWithoutProject(t *testing.T) {
+func TestAgentProjectIDRequired(t *testing.T) {
 	hn := newHarness(t)
-	w := hn.do(http.MethodPost, "/api/agents", map[string]any{
-		"name": "no-home",
-		"mcp": []map[string]any{
-			{"name": "memory-store", "url": "${GRASP_MEMORY_URL}"},
-		},
-	})
+	w := hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor", "name": "no-home"})
 	if w.Code != http.StatusBadRequest {
-		t.Fatalf("create unbound+memory want 400 got %d %s", w.Code, w.Body.String())
+		t.Fatalf("create without projectId want 400 got %d %s", w.Code, w.Body.String())
+	}
+	w = hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor", "name": "no-home", "projectId": "proj_dead"})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("create with missing project want 400 got %d %s", w.Code, w.Body.String())
+	}
+	if hn.h.Agents.Exists("no-home") {
+		t.Fatal("rejected create must not persist")
 	}
 
-	w = hn.do(http.MethodPost, "/api/agents", map[string]any{"name": "no-home"})
+	w = hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor", "name": "home", "projectId": models.DefaultProjectID})
 	if w.Code != http.StatusCreated {
-		t.Fatalf("create unbound artifact-only: %d %s", w.Code, w.Body.String())
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
-	w = hn.do(http.MethodPut, "/api/agents/no-home", map[string]any{
-		"name": "no-home",
-		"mcp": []map[string]any{
-			{"name": "context-store", "url": "${GRASP_CONTEXT_URL}"},
-		},
+	w = hn.do(http.MethodPut, "/api/agents/home", map[string]any{"acpBackend": "cursor", "name": "home"})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("save without projectId want 400 got %d %s", w.Code, w.Body.String())
+	}
+	ag, ok := hn.h.Agents.Get("home")
+	if !ok || ag.ProjectID != models.DefaultProjectID {
+		t.Fatalf("binding must survive rejected save, got %+v", ag)
+	}
+}
+
+func TestAgentSaveRejectsSecretEnvKeys(t *testing.T) {
+	hn := newHarness(t)
+	for _, key := range envauth.SecretEnvKeys() {
+		w := hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor",
+			"name": "ssh-env", "projectId": models.DefaultProjectID,
+			"env": map[string]string{key: "x"},
+		})
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("create with %s want 400 got %d %s", key, w.Code, w.Body.String())
+		}
+	}
+	w := hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor", "name": "ssh-env", "projectId": models.DefaultProjectID})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	}
+	w = hn.do(http.MethodPut, "/api/agents/ssh-env", map[string]any{"acpBackend": "cursor",
+		"name": "ssh-env", "projectId": models.DefaultProjectID,
+		"env": map[string]string{"GIT_SSH_PRIVATE_KEY": "x"},
 	})
 	if w.Code != http.StatusBadRequest {
-		t.Fatalf("save unbound+context want 400 got %d %s", w.Code, w.Body.String())
+		t.Fatalf("save with secret env want 400 got %d %s", w.Code, w.Body.String())
 	}
 }
 
@@ -92,7 +118,7 @@ func TestSaveAgentPurgesOnProjectSwitch(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &projB)
 	pidB := projB["id"].(string)
 
-	w = hn.do(http.MethodPost, "/api/agents", map[string]any{
+	w = hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor",
 		"name": "switcher", "projectId": pidA,
 	})
 	if w.Code != http.StatusCreated {
@@ -105,7 +131,7 @@ func TestSaveAgentPurgesOnProjectSwitch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w = hn.do(http.MethodPut, "/api/agents/switcher", map[string]any{
+	w = hn.do(http.MethodPut, "/api/agents/switcher", map[string]any{"acpBackend": "cursor",
 		"name": "switcher", "projectId": pidB,
 	})
 	if w.Code != http.StatusOK {
@@ -118,48 +144,6 @@ func TestSaveAgentPurgesOnProjectSwitch(t *testing.T) {
 	threads, _ := pm.ListThreadsForAgent(pidA, "switcher")
 	if len(threads) != 0 {
 		t.Fatalf("old threads should be purged: %v", threads)
-	}
-
-	w = hn.do(http.MethodPut, "/api/agents/switcher", map[string]any{
-		"name": "switcher", "projectId": "",
-	})
-	if w.Code != http.StatusOK {
-		t.Fatalf("unbind: %d %s", w.Code, w.Body.String())
-	}
-	ag, ok := hn.h.Agents.Get("switcher")
-	if !ok || ag.ProjectID != "" {
-		t.Fatalf("expected unbound agent, got %+v", ag)
-	}
-}
-
-func TestSaveAgentOmitsProjectIDPreservesBinding(t *testing.T) {
-	hn := newHarness(t)
-	attachPm(t, hn)
-
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "KeepHome"})
-	if w.Code != 200 {
-		t.Fatalf("project: %d %s", w.Code, w.Body.String())
-	}
-	var proj map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &proj)
-	pid := proj["id"].(string)
-
-	w = hn.do(http.MethodPost, "/api/agents", map[string]any{
-		"name": "keep-bound", "projectId": pid,
-	})
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create: %d %s", w.Code, w.Body.String())
-	}
-	// Omitted projectId must not unbind.
-	w = hn.do(http.MethodPut, "/api/agents/keep-bound", map[string]any{
-		"name": "keep-bound", "acpBackend": "cursor",
-	})
-	if w.Code != http.StatusOK {
-		t.Fatalf("save omit: %d %s", w.Code, w.Body.String())
-	}
-	ag, ok := hn.h.Agents.Get("keep-bound")
-	if !ok || ag.ProjectID != pid {
-		t.Fatalf("binding should be preserved, got %+v", ag)
 	}
 }
 
@@ -175,7 +159,7 @@ func TestDeleteAgentPurgesScopedData(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &proj)
 	pid := proj["id"].(string)
 
-	w = hn.do(http.MethodPost, "/api/agents", map[string]any{
+	w = hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor",
 		"name": "to-delete", "projectId": pid,
 	})
 	if w.Code != http.StatusCreated {
@@ -194,21 +178,12 @@ func TestDeleteAgentPurgesScopedData(t *testing.T) {
 	}
 }
 
-func TestAgentDataAPIRequiresHomeProject(t *testing.T) {
+func TestAgentDataAPIUsesHomeProject(t *testing.T) {
 	hn := newHarness(t)
 	attachPm(t, hn)
 	grantAdmin(t)
 
-	w := hn.do(http.MethodPost, "/api/agents", map[string]any{"name": "data-agent"})
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create: %d %s", w.Code, w.Body.String())
-	}
-	w = hn.do(http.MethodGet, "/api/agents/data-agent/memories", nil)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("unbound memories want 400 got %d %s", w.Code, w.Body.String())
-	}
-
-	w = hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "DataHome"})
+	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "DataHome"})
 	if w.Code != 200 {
 		t.Fatalf("project: %d %s", w.Code, w.Body.String())
 	}
@@ -216,11 +191,9 @@ func TestAgentDataAPIRequiresHomeProject(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &proj)
 	pid := proj["id"].(string)
 
-	w = hn.do(http.MethodPut, "/api/agents/data-agent", map[string]any{
-		"name": "data-agent", "projectId": pid,
-	})
-	if w.Code != http.StatusOK {
-		t.Fatalf("bind: %d %s", w.Code, w.Body.String())
+	w = hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor", "name": "data-agent", "projectId": pid})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
 
 	w = hn.do(http.MethodPost, "/api/agents/data-agent/memories", map[string]any{
@@ -259,11 +232,7 @@ func TestAgentCronJobsListAllowedForNonAdmin(t *testing.T) {
 	attachPm(t, hn)
 	grantAdmin(t)
 
-	w := hn.do(http.MethodPost, "/api/agents", map[string]any{"name": "cron-acl-agent"})
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create agent: %d %s", w.Code, w.Body.String())
-	}
-	w = hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "CronACLHome"})
+	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "CronACLHome"})
 	if w.Code != 200 {
 		t.Fatalf("project: %d %s", w.Code, w.Body.String())
 	}
@@ -271,11 +240,9 @@ func TestAgentCronJobsListAllowedForNonAdmin(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &proj)
 	pid := proj["id"].(string)
 
-	w = hn.do(http.MethodPut, "/api/agents/cron-acl-agent", map[string]any{
-		"name": "cron-acl-agent", "projectId": pid,
-	})
-	if w.Code != http.StatusOK {
-		t.Fatalf("bind: %d %s", w.Code, w.Body.String())
+	w = hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor", "name": "cron-acl-agent", "projectId": pid})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create agent: %d %s", w.Code, w.Body.String())
 	}
 
 	now := time.Now().UTC()
@@ -414,144 +381,6 @@ func TestAgentCronJobsListAllowedForNonAdmin(t *testing.T) {
 	}
 }
 
-func TestPatchAgentProjectFirstBindAndRejectUnbind(t *testing.T) {
-	hn := newHarness(t)
-	attachPm(t, hn)
-
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "FirstHome"})
-	if w.Code != 200 {
-		t.Fatalf("project: %d %s", w.Code, w.Body.String())
-	}
-	var proj map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &proj)
-	pid := proj["id"].(string)
-
-	w = hn.do(http.MethodPost, "/api/agents", map[string]any{
-		"name": "first-bind",
-		"files": []map[string]any{
-			{"path": "AGENTS.md", "content": "# stay\n"},
-		},
-	})
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create: %d %s", w.Code, w.Body.String())
-	}
-
-	w = hn.do(http.MethodPatch, "/api/agents/first-bind/project", map[string]any{
-		"projectId": pid,
-	})
-	if w.Code != http.StatusOK {
-		t.Fatalf("first bind: %d %s", w.Code, w.Body.String())
-	}
-	ag, ok := hn.h.Agents.Get("first-bind")
-	if !ok || ag.ProjectID != pid {
-		t.Fatalf("expected bound agent, got %+v", ag)
-	}
-	found := false
-	for _, f := range ag.Files {
-		if f.Path == "AGENTS.md" && f.Content == "# stay\n" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("workspace should be preserved after PATCH, files=%+v", ag.Files)
-	}
-
-	w = hn.do(http.MethodPatch, "/api/agents/first-bind/project", map[string]any{
-		"projectId": "",
-	})
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("unbind via PATCH want 400 got %d %s", w.Code, w.Body.String())
-	}
-	ag, _ = hn.h.Agents.Get("first-bind")
-	if ag.ProjectID != pid {
-		t.Fatalf("unbind must be rejected, got projectId=%q", ag.ProjectID)
-	}
-}
-
-func TestPatchAgentProjectSwitchPurgesAndKeepsWorkspace(t *testing.T) {
-	hn := newHarness(t)
-	pm := attachPm(t, hn)
-
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "PatchOld"})
-	if w.Code != 200 {
-		t.Fatalf("project A: %d %s", w.Code, w.Body.String())
-	}
-	var projA map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &projA)
-	pidA := projA["id"].(string)
-
-	w = hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "PatchNew"})
-	if w.Code != 200 {
-		t.Fatalf("project B: %d %s", w.Code, w.Body.String())
-	}
-	var projB map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &projB)
-	pidB := projB["id"].(string)
-
-	w = hn.do(http.MethodPost, "/api/agents", map[string]any{
-		"name": "patch-switch", "projectId": pidA,
-		"files": []map[string]any{
-			{"path": "notes.md", "content": "keep\n"},
-		},
-		"mcp": []map[string]any{
-			{"name": "artifact-store", "url": "${GRASP_ARTIFACT_URL}"},
-		},
-	})
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create: %d %s", w.Code, w.Body.String())
-	}
-	if _, err := pm.UpsertMemory(pidA, "patch-switch", "记", "old", "agent", "u"); err != nil {
-		t.Fatal(err)
-	}
-
-	w = hn.do(http.MethodPatch, "/api/agents/patch-switch/project", map[string]any{
-		"projectId": pidB,
-	})
-	if w.Code != http.StatusOK {
-		t.Fatalf("switch: %d %s", w.Code, w.Body.String())
-	}
-	mem, _ := pm.ListMemories(pidA, "patch-switch")
-	if len(mem) != 0 {
-		t.Fatalf("old memories should be purged: %v", mem)
-	}
-	ag, ok := hn.h.Agents.Get("patch-switch")
-	if !ok || ag.ProjectID != pidB {
-		t.Fatalf("expected new binding, got %+v", ag)
-	}
-	found := false
-	for _, f := range ag.Files {
-		if f.Path == "notes.md" && f.Content == "keep\n" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("workspace cleared on PATCH switch, files=%+v", ag.Files)
-	}
-	if len(ag.MCP) == 0 || ag.MCP[0].Name != "artifact-store" {
-		t.Fatalf("mcp mutated: %+v", ag.MCP)
-	}
-}
-
-func TestPatchAgentProjectRejectsMissingProject(t *testing.T) {
-	hn := newHarness(t)
-	attachPm(t, hn)
-
-	w := hn.do(http.MethodPost, "/api/agents", map[string]any{"name": "bad-target"})
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create: %d %s", w.Code, w.Body.String())
-	}
-	w = hn.do(http.MethodPatch, "/api/agents/bad-target/project", map[string]any{
-		"projectId": "proj_dead",
-	})
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("missing project want 400 got %d %s", w.Code, w.Body.String())
-	}
-	ag, _ := hn.h.Agents.Get("bad-target")
-	if ag.ProjectID != "" {
-		t.Fatalf("binding should stay empty, got %+v", ag)
-	}
-}
-
 func TestPmLeaderBindRejectsWrongHomeProject(t *testing.T) {
 	hn := newHarness(t)
 	attachPm(t, hn)
@@ -572,8 +401,8 @@ func TestPmLeaderBindRejectsWrongHomeProject(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &other)
 
 	if err := hn.h.Agents.Save(services.Agent{
-		Name: "elsewhere", ProjectID: other["id"].(string),
-		Env: map[string]string{"GRASP_CURSOR_API_KEY": "k"},
+		AcpBackend: services.AcpBackendCursor,
+		Name:       "elsewhere", ProjectID: other["id"].(string),
 	}); err != nil {
 		t.Fatal(err)
 	}

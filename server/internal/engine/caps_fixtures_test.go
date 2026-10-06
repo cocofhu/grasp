@@ -22,10 +22,6 @@ var (
 		Interaction: models.InteractionAuto, Review: true,
 		Reads: []string{"*"}, Writes: writes(true, models.SchemaResearch),
 	}
-	capsProposal = &models.AgentCapabilities{
-		Interaction: models.InteractionAuto, Review: true,
-		Reads: []string{"*"}, Writes: writes(true, models.SchemaProposals),
-	}
 	capsPage = &models.AgentCapabilities{
 		Interaction: models.InteractionAuto, Review: true,
 		Reads: []string{"*"}, Writes: writes(true, models.SchemaPage),
@@ -54,9 +50,6 @@ var (
 var (
 	capsResearchAuto = &models.AgentCapabilities{
 		Interaction: models.InteractionAuto, Reads: []string{"*"}, Writes: writes(true, models.SchemaResearch),
-	}
-	capsProposalAuto = &models.AgentCapabilities{
-		Interaction: models.InteractionAuto, Reads: []string{"*"}, Writes: writes(true, models.SchemaProposals),
 	}
 	capsPageAuto = &models.AgentCapabilities{
 		Interaction: models.InteractionAuto, Reads: []string{"*"}, Writes: writes(true, models.SchemaPage),

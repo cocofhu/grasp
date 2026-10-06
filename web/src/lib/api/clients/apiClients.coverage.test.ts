@@ -114,16 +114,14 @@ describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
     expect(pmClient.pmThreadChatWsUrl('p1', 't1')).toContain('/chat')
   })
 
-  it('agentsClient list/get plus org import error path', async () => {
+  it('agentsClient list/get plus import error path', async () => {
     await agentsClient.listAgents()
     await agentsClient.getAgent('a1')
-    await agentsClient.scanOrgSensitiveKeys('g1')
-    await agentsClient.stripOrgSensitiveKeys('g1', ['KEY'])
     const file = new File(['x'], 'a.zip')
-    await agentsClient.importAgent(file, { targetName: 'n', mode: 'create' })
+    await agentsClient.importAgent(file, { projectId: 'p1', targetName: 'n', mode: 'create' })
     ;(fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       new Response('not-json', { status: 500 }),
     )
-    await expect(agentsClient.importAgent(file, { targetName: 'n', mode: 'overwrite' })).rejects.toThrow()
+    await expect(agentsClient.importAgent(file, { projectId: 'p1', targetName: 'n', mode: 'overwrite' })).rejects.toThrow()
   })
 })

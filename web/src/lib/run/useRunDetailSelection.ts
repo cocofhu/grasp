@@ -59,7 +59,7 @@ export function useRunDetailSelection(opts: {
   // 执行日志 and 沙箱日志 tabs.
   const hasLog = computed(() => selNode.value?.type === 'agent')
 
-  // Nodes owning structured products (declared writes / proposal_select) surface
+  // Nodes owning structured products (declared writes) surface
   // them in a dedicated "产物" tab.
   const hasProduct = computed(() => isProductNode(selNode.value))
   const nodeCompleted = computed(() => selStatus.value === 'completed')

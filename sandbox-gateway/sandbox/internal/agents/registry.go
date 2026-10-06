@@ -108,18 +108,6 @@ var registry = map[Name]provider.Provider{
 		ModelFlag:  "-m",
 		AuthEnvFn:  genericAuthEnv("GEMINI_API_KEY", "ACP_GEMINI_API_KEY", "GOOGLE_API_KEY"),
 	}),
-	// ClaudeStream: backward-compatible synonym for the claude stream-json path.
-	provider.ClaudeStream: streamjson.New(streamjson.Config{
-		AgentName:  provider.ClaudeStream,
-		Bin:        "claude",
-		Runtime:    "claude-stream-json",
-		ConfigRoot: "/root/.claude",
-		PromptMode: streamjson.PromptStdinJSON,
-		BaseArgs:   []string{"--verbose", "--strict-mcp-config", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion"},
-		ResumeFlag: "--resume",
-		ModelFlag:  "--model",
-		AuthEnvFn:  streamjson.ClaudeAuthEnv,
-	}),
 
 	// --- run --format json family (one-shot NDJSON) ------------------------
 	// opencode/deveco: `run --format json --dangerously-skip-permissions

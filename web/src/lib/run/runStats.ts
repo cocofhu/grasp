@@ -10,7 +10,7 @@ import {
 import type { NodeRun, NodeRunStatus, NodeType, Run, TokenUsage, TokenUsageByModel, WFNode } from '@/lib/shared/types'
 
 /** Node types that always pause for human input (wait is baked into durationSec). */
-const HUMAN_WAIT_TYPES: ReadonlySet<NodeType> = new Set(['human_gate', 'proposal_select'])
+const HUMAN_WAIT_TYPES: ReadonlySet<NodeType> = new Set(['human_gate'])
 
 export type SingleDimension = 'process' | 'node' | 'type'
 export type MultiDimension = 'node' | 'type'

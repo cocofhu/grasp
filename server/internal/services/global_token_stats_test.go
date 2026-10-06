@@ -53,11 +53,11 @@ func TestGlobalTokenStatsAggregation(t *testing.T) {
 	}
 	ptr := func(tt time.Time) *time.Time { return &tt }
 
-	proj, err := s.Create("GlobalStats", "", nil, nil)
+	proj, err := s.Create("GlobalStats", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	must(&models.WorkflowDef{ID: "wf-g", ProjectID: proj.ID, Name: "main", Status: "draft", Version: 1})
+	must(&models.WorkflowDef{ID: "wf-g", ProjectID: proj.ID, Name: "main", Version: 1})
 	dayIn := time.Date(2026, 7, 24, 10, 0, 0, 0, loc).UTC()
 	must(&models.Run{ID: "run-g1", WorkflowID: "wf-g", WorkflowName: "main", Status: "completed", StartedAt: dayIn, Title: "Global Run"})
 	must(&models.StateRun{
@@ -115,14 +115,14 @@ func TestGlobalTokenStatsModelRebucketByDefaultModel(t *testing.T) {
 	}
 	ptr := func(tt time.Time) *time.Time { return &tt }
 
-	proj, err := s.Create("Grasp", "", nil, nil)
+	proj, err := s.Create("Grasp", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Update(proj.ID, nil, nil, nil, nil, nil, aliasPtr("kimi-k3")); err != nil {
+	if _, err := s.Update(proj.ID, nil, nil, nil, nil, aliasPtr("kimi-k3")); err != nil {
 		t.Fatal(err)
 	}
-	must(&models.WorkflowDef{ID: "wf-rb", ProjectID: proj.ID, Name: "main", Status: "draft", Version: 1})
+	must(&models.WorkflowDef{ID: "wf-rb", ProjectID: proj.ID, Name: "main", Version: 1})
 	dayIn := time.Date(2026, 7, 24, 10, 0, 0, 0, loc).UTC()
 	must(&models.Run{ID: "run-rb1", WorkflowID: "wf-rb", WorkflowName: "main", Status: "completed", StartedAt: dayIn, Title: "Rebucket Run"})
 	must(&models.StateRun{
@@ -192,14 +192,14 @@ func TestGlobalTokenStatsModelFilterAfterRebucket(t *testing.T) {
 	}
 	ptr := func(tt time.Time) *time.Time { return &tt }
 
-	proj, err := s.Create("Grasp", "", nil, nil)
+	proj, err := s.Create("Grasp", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Update(proj.ID, nil, nil, nil, nil, nil, aliasPtr("kimi-k3")); err != nil {
+	if _, err := s.Update(proj.ID, nil, nil, nil, nil, aliasPtr("kimi-k3")); err != nil {
 		t.Fatal(err)
 	}
-	must(&models.WorkflowDef{ID: "wf-rbf", ProjectID: proj.ID, Name: "main", Status: "draft", Version: 1})
+	must(&models.WorkflowDef{ID: "wf-rbf", ProjectID: proj.ID, Name: "main", Version: 1})
 	dayIn := time.Date(2026, 7, 24, 10, 0, 0, 0, loc).UTC()
 	must(&models.Run{ID: "run-rbf1", WorkflowID: "wf-rbf", WorkflowName: "main", Status: "completed", StartedAt: dayIn, Title: "Rebucket Filter Run"})
 	must(&models.StateRun{
@@ -274,11 +274,11 @@ func TestGlobalTokenStats24hPrevWindowDelta(t *testing.T) {
 	}
 	ptr := func(tt time.Time) *time.Time { return &tt }
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC) // 20:00 Shanghai
-	proj, err := s.Create("G24h", "", nil, nil)
+	proj, err := s.Create("G24h", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	must(&models.WorkflowDef{ID: "wf-g24", ProjectID: proj.ID, Name: "main", Status: "draft", Version: 1})
+	must(&models.WorkflowDef{ID: "wf-g24", ProjectID: proj.ID, Name: "main", Version: 1})
 
 	// Previous 24h: [Jul 23 20:00, Jul 24 20:00) Shanghai — 100 tokens at Jul 24 10:00.
 	prevTS := time.Date(2026, 7, 24, 10, 0, 0, 0, loc).UTC()
@@ -336,7 +336,7 @@ func TestGlobalTokenStats24hEmptyWindow(t *testing.T) {
 	}
 	s := NewProjectService(db)
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
-	if _, err := s.Create("EmptyG24h", "", nil, nil); err != nil {
+	if _, err := s.Create("EmptyG24h", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	syncTokenLedger(t, db)

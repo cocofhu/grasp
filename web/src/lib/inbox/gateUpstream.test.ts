@@ -38,12 +38,6 @@ describe('listPrimaryProducts', () => {
     ])
   })
 
-  it('falls back to proposals.json for proposal_select', () => {
-    expect(listPrimaryProducts('', { isProposalSelect: true })).toEqual([
-      { name: 'proposals.json', outputKey: 'proposals', kind: 'json', readonly: false },
-    ])
-  })
-
   it('marks image artifacts as readonly', () => {
     const got = listPrimaryProducts('{{artifact("shot.png")}} {{nodes.visual.outputs.page}}')
     expect(got).toEqual([
@@ -100,12 +94,9 @@ describe('resolveUpstreamOutputs', () => {
 
   it('binds visual iter=3 when gate iter=2 and pointer points at 3', () => {
     const r = resolveUpstreamOutputs({
-      productNodeId: 'visual',
       execsByNode,
       upstreamNodeId: 'visual',
       upstreamIteration: 3,
-      gateIteration: 2,
-      pending: true,
     })
     expect(r.usedPointer).toBe(true)
     expect(r.pointerMiss).toBe(false)
@@ -115,12 +106,9 @@ describe('resolveUpstreamOutputs', () => {
 
   it('marks pointerMiss without falling back to equals heuristic', () => {
     const r = resolveUpstreamOutputs({
-      productNodeId: 'visual',
       execsByNode,
       upstreamNodeId: 'visual',
       upstreamIteration: 9,
-      gateIteration: 2,
-      pending: true,
     })
     expect(r.usedPointer).toBe(true)
     expect(r.pointerMiss).toBe(true)
@@ -134,28 +122,13 @@ describe('resolveUpstreamOutputs', () => {
     })).toBe(9)
   })
 
-  it('legacy pending gate picks max completed (skips failed retry)', () => {
-    const r = resolveUpstreamOutputs({
-      productNodeId: 'visual',
-      execsByNode,
-      gateIteration: 2,
-      pending: true,
+  it('has no upstream snapshot without a pointer', () => {
+    expect(resolveUpstreamOutputs({ execsByNode })).toEqual({
+      outputs: null,
+      selectedIteration: null,
+      usedPointer: false,
+      pointerMiss: false,
     })
-    expect(r.usedPointer).toBe(false)
-    expect(r.selectedIteration).toBe(3)
-    expect(r.outputs?.page).toBe('<html>v3</html>')
-  })
-
-  it('legacy resolved gate picks nearest iteration ≤ gate.iteration', () => {
-    const r = resolveUpstreamOutputs({
-      productNodeId: 'visual',
-      execsByNode,
-      gateIteration: 2,
-      pending: false,
-    })
-    expect(r.usedPointer).toBe(false)
-    expect(r.selectedIteration).toBe(2)
-    expect(r.outputs?.page).toBe('<html>fail</html>')
   })
 })
 
@@ -166,7 +139,7 @@ describe('reviewingUpstreamN', () => {
     ).toBe(3)
   })
 
-  it('falls back to selected iteration for legacy gates', () => {
-    expect(reviewingUpstreamN({ selectedIteration: 2 })).toBe(2)
+  it('is null without a pointer', () => {
+    expect(reviewingUpstreamN({ selectedIteration: null })).toBeNull()
   })
 })

@@ -109,7 +109,7 @@ describe('outputSourceOptions', () => {
     const graph = [agent('clarify', '需求澄清', CLARIFY_CAPS), node('output', 'output', '输出')]
     const realEdges: WFEdge[] = [{ id: 'e1', source: 'clarify', target: 'output' }]
     const opts = buildOutputSourceOptions(graph, realEdges, 'output', t)
-    for (const key of ['clarified_requirement', 'plan', 'research', 'proposals', 'page']) {
+    for (const key of ['clarified_requirement', 'plan', 'research', 'page']) {
       expect(opts.some((o) => o.value === `{{nodes.clarify.outputs.${key}}}`)).toBe(true)
     }
   })

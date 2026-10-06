@@ -13,6 +13,7 @@ func countVersions(t *testing.T, s *ArtifactService, artifactID string) int {
 
 func TestArtifactSaveBumpsRevision(t *testing.T) {
 	db := newTestDB(t)
+	db.Create(&models.WorkflowDef{ID: "wf", ProjectID: "p1", Name: "wf"})
 	db.Create(&models.Run{ID: "r1", WorkflowID: "wf", WorkflowName: "wf"})
 	s := NewArtifactService(db)
 
@@ -48,6 +49,7 @@ func TestArtifactSaveBumpsRevision(t *testing.T) {
 
 func TestArtifactSaveIdenticalContentDoesNotArchive(t *testing.T) {
 	db := newTestDB(t)
+	db.Create(&models.WorkflowDef{ID: "wf", ProjectID: "p1", Name: "wf"})
 	db.Create(&models.Run{ID: "r1", WorkflowID: "wf", WorkflowName: "wf"})
 	s := NewArtifactService(db)
 
@@ -73,6 +75,7 @@ func TestArtifactSaveIdenticalContentDoesNotArchive(t *testing.T) {
 
 func TestArtifactSaveThreeDistinctOverwrites(t *testing.T) {
 	db := newTestDB(t)
+	db.Create(&models.WorkflowDef{ID: "wf", ProjectID: "p1", Name: "wf"})
 	db.Create(&models.Run{ID: "r1", WorkflowID: "wf", WorkflowName: "wf"})
 	s := NewArtifactService(db)
 
@@ -105,6 +108,7 @@ func TestArtifactSaveThreeDistinctOverwrites(t *testing.T) {
 
 func TestArtifactDeleteCascadesVersions(t *testing.T) {
 	db := newTestDB(t)
+	db.Create(&models.WorkflowDef{ID: "wf", ProjectID: "p1", Name: "wf"})
 	db.Create(&models.Run{ID: "r1", WorkflowID: "wf", WorkflowName: "wf", Status: "completed"})
 	db.Create(&models.Run{ID: "r2", WorkflowID: "wf", WorkflowName: "wf", Status: "completed"})
 	s := NewArtifactService(db)

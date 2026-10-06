@@ -193,8 +193,8 @@ func TestStructuredGateRetrySnapshotsScreenshots(t *testing.T) {
 	// attempt 2 passes and carries a different screenshot SHOTB.
 	p.structuredBodySeq = map[string][]string{
 		"test": {
-			`{"summary":"a1","failed":1,"cases":[{"name":"x","status":"failed"}],"screenshots":[{"data":"SHOTA","mimeType":"image/png","caption":"first"}]}`,
-			`{"summary":"a2","passed":1,"screenshots":[{"data":"SHOTB","mimeType":"image/png","caption":"second"}]}`,
+			`{"summary":"a1","failed":1,"cases":[{"name":"x","status":"failed"}],"screenshots":[{"artifact":"SHOTA.png","mimeType":"image/png","caption":"first"}]}`,
+			`{"summary":"a2","passed":1,"screenshots":[{"artifact":"SHOTB.png","mimeType":"image/png","caption":"second"}]}`,
 		},
 	}
 	run, _ := eng.StartRun("wf", nil, "test")
@@ -213,17 +213,14 @@ func TestStructuredGateRetrySnapshotsScreenshots(t *testing.T) {
 		return s
 	}
 	first, second := snap(rows[0]), snap(rows[1])
-	if !strings.Contains(first, `"data":"SHOTA"`) {
-		t.Errorf("first attempt snapshot missing its own inline screenshot data (SHOTA): %q", first)
+	if !strings.Contains(first, `"artifact":"SHOTA.png"`) {
+		t.Errorf("first attempt snapshot missing its own screenshot ref (SHOTA): %q", first)
 	}
 	if strings.Contains(first, "SHOTB") {
-		t.Errorf("first attempt snapshot leaked the retry's screenshot data (SHOTB): %q", first)
+		t.Errorf("first attempt snapshot leaked the retry's screenshot ref (SHOTB): %q", first)
 	}
-	if !strings.Contains(second, `"data":"SHOTB"`) {
-		t.Errorf("retry snapshot missing its own inline screenshot data (SHOTB): %q", second)
-	}
-	if strings.Contains(first, `"artifact"`) || strings.Contains(second, `"artifact"`) {
-		t.Errorf("snapshots should not carry artifact refs after hydrate: first=%q second=%q", first, second)
+	if !strings.Contains(second, `"artifact":"SHOTB.png"`) {
+		t.Errorf("retry snapshot missing its own screenshot ref (SHOTB): %q", second)
 	}
 }
 

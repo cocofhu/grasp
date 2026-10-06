@@ -107,19 +107,6 @@ async function stubProjectApis(page: import('@playwright/test').Page) {
       })
       return
     }
-    if (path === '/agents/org' && method === 'GET') {
-      await route.fulfill({
-        json: {
-          revision: 1,
-          groups: [{ id: 'g1', name: 'Demo项目组', parentGroupId: null }],
-          agents: {
-            Demo研发工程师: { groupIds: ['g1'] },
-            Other项目Agent: { groupIds: ['g1'] },
-          },
-        },
-      })
-      return
-    }
     if (path.startsWith('/agents/') && method === 'GET') {
       const name = decodeURIComponent(path.replace('/agents/', ''))
       await route.fulfill({
@@ -150,14 +137,14 @@ test('项目详情智能体 Tab：嵌入 Studio、过滤他项目、隐藏创建
   await expect(page.getByTestId('project-agents-tab')).toBeVisible()
   await expect(page).toHaveURL(/tab=agents/)
 
-  await expect(page.getByRole('button', { name: 'Demo研发工程师' })).toBeVisible()
+  await expect(page.getByRole('treeitem', { name: 'Demo研发工程师' })).toBeVisible()
   await expect(page.getByText('Other项目Agent')).toHaveCount(0)
 
   const body = await page.locator('[data-testid="project-agents-tab"]').innerText()
   expect(body).not.toContain('创建 Agent 团队')
   await expect(page.getByTestId('agent-studio-action-row')).toHaveCount(0)
-  await expect(page.getByTestId('agent-org-import')).toBeVisible()
-  await expect(page.getByTestId('agent-org-create-agent')).toBeVisible()
+  await expect(page.getByTestId('agent-tree-import')).toBeVisible()
+  await expect(page.getByTestId('agent-tree-create-agent')).toBeVisible()
   await expect(page.getByRole('button', { name: '新建 Agent' })).toBeVisible()
   await expect(page.getByRole('button', { name: '导入' })).toBeVisible()
 

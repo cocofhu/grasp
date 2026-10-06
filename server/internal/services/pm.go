@@ -8,7 +8,6 @@ import (
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/models"
 
-	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
@@ -49,16 +48,6 @@ func IsChannelUserID(userID string) bool {
 		}
 	}
 	return false
-}
-
-// IsChannelSyntheticUserID is kept for newer callers and aliases IsChannelUserID.
-func IsChannelSyntheticUserID(userID string) bool {
-	return IsChannelUserID(userID)
-}
-
-// IsQQChannelUserID is kept as a historical alias for existing callers.
-func IsQQChannelUserID(userID string) bool {
-	return IsChannelUserID(userID)
 }
 
 // ChannelTypeFromUserID returns the registered channel type prefix, or "".
@@ -268,12 +257,6 @@ func (s *PmService) UpdateBinding(projectID string, enabled *bool, agent *string
 	p.UpdatedAt = time.Now()
 	if err := s.db.Save(&p).Error; err != nil {
 		return PmLeaderBinding{}, err
-	}
-	// Backfill legacy memories when a PM agent is bound (write path, not GetBinding).
-	if strings.TrimSpace(p.PmLeaderAgent) != "" {
-		if err := s.BackfillLegacyMemoriesToPMAgent(projectID); err != nil {
-			log.Warn().Err(err).Str("project", projectID).Msg("backfill legacy memories failed")
-		}
 	}
 	return s.GetBinding(projectID)
 }

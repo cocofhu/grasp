@@ -13,7 +13,7 @@ func setupPmProgressFixtures(t *testing.T) (*PmProgress, *gorm.DB, string, strin
 	t.Helper()
 	db := setupPmDB(t)
 	ps := NewProjectService(db)
-	p, err := ps.Create("ProgProj", "", nil, nil)
+	p, err := ps.Create("ProgProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestPmProgressListBlockers(t *testing.T) {
 		t.Fatalf("blockers: %+v", got)
 	}
 	// Empty project with no waiting runs.
-	other, _ := NewProjectService(db).Create("Empty", "", nil, nil)
+	other, _ := NewProjectService(db).Create("Empty", "", nil)
 	got2 := p.ListBlockers(other.ID)
 	if got2["empty"] != true {
 		t.Fatalf("no blockers: %+v", got2)
@@ -153,7 +153,7 @@ func TestPmProgressRiskTrends(t *testing.T) {
 	if !ok || len(signals) == 0 {
 		t.Fatalf("signals: %+v", signals)
 	}
-	other, _ := NewProjectService(db).Create("RiskEmpty", "", nil, nil)
+	other, _ := NewProjectService(db).Create("RiskEmpty", "", nil)
 	if got := p.RiskTrends(other.ID); got["empty"] != true {
 		t.Fatalf("empty risk: %+v", got)
 	}

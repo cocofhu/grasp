@@ -933,6 +933,7 @@ func TestBuildLeftoverDraftBodyArtifactTruncation(t *testing.T) {
 		graph:       g,
 		nodeOutputs: map[string]map[string]any{},
 	}
+	seedArtifactOwner(t, eng.db, runID)
 	if _, err := eng.store.Save(runID, "r", mcp.ClarifiedRequirementArtifactName, "json", clarified); err != nil {
 		t.Fatal(err)
 	}

@@ -30,8 +30,8 @@ func TestParsePlanFullSixSections(t *testing.T) {
 	doc, err := parsePlan(map[string]any{
 		"title": "完整",
 		"architecture": map[string]any{
-			"summary": "arch",
-			"diagram": map[string]any{"source": "flowchart LR\n  A-->B", "caption": "架构"},
+			"summary":  "arch",
+			"diagrams": []any{map[string]any{"source": "flowchart LR\n  A-->B", "caption": "架构"}},
 		},
 		"data_design": map[string]any{
 			"summary": "data",
@@ -41,15 +41,14 @@ func TestParsePlanFullSixSections(t *testing.T) {
 					map[string]any{"name": "title", "type": "string"},
 					map[string]any{"name": "goals", "type": "json"},
 				},
-				"attributes": []any{"title", "goals"},
 			}},
-			"diagram": map[string]any{"format": "mermaid", "source": "erDiagram\n  A ||--o{ B : has"},
+			"diagrams": []any{map[string]any{"format": "mermaid", "source": "erDiagram\n  A ||--o{ B : has"}},
 		},
 		"interfaces": []any{map[string]any{"name": "set_plan", "kind": "software", "summary": "写入"}},
 		"components": []any{map[string]any{"name": "plan.go", "responsibility": "parse"}},
 		"interaction": map[string]any{
-			"summary": "flow",
-			"diagram": map[string]any{"source": "sequenceDiagram\n  A->>B: hi"},
+			"summary":  "flow",
+			"diagrams": []any{map[string]any{"source": "sequenceDiagram\n  A->>B: hi"}},
 		},
 		"test_design": "S1-S7",
 		"goals":       []any{map[string]any{"title": "G", "subgoals": []any{map[string]any{"title": "S"}}}},
@@ -57,7 +56,7 @@ func TestParsePlanFullSixSections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("full plan: %v", err)
 	}
-	if doc.Architecture == nil || doc.Architecture.Diagram == nil || doc.Architecture.Diagram.Format != "mermaid" {
+	if doc.Architecture == nil || len(doc.Architecture.Diagrams) != 1 || doc.Architecture.Diagrams[0].Format != "mermaid" {
 		t.Fatalf("architecture diagram format default: %+v", doc.Architecture)
 	}
 	if doc.DataDesign == nil || len(doc.DataDesign.Entities) != 1 || doc.DataDesign.Entities[0].Name != "planDoc" {
@@ -72,7 +71,7 @@ func TestParsePlanFullSixSections(t *testing.T) {
 	if len(doc.Components) != 1 || doc.Components[0].Name != "plan.go" {
 		t.Fatalf("components: %+v", doc.Components)
 	}
-	if doc.Interaction == nil || doc.Interaction.Diagram == nil {
+	if doc.Interaction == nil || len(doc.Interaction.Diagrams) != 1 {
 		t.Fatalf("interaction: %+v", doc.Interaction)
 	}
 	if doc.TestDesign != "S1-S7" {
@@ -110,10 +109,10 @@ func TestParsePlanAllNotApplicable(t *testing.T) {
 
 func TestParsePlanDiagramEmptySource(t *testing.T) {
 	_, err := parsePlan(map[string]any{
-		"architecture": map[string]any{"summary": "a", "diagram": map[string]any{"source": "  "}},
+		"architecture": map[string]any{"summary": "a", "diagrams": []any{map[string]any{"source": "  "}}},
 		"goals":        []any{map[string]any{"title": "G"}},
 	})
-	if err == nil || !strings.Contains(err.Error(), "architecture.diagram.source") {
+	if err == nil || !strings.Contains(err.Error(), "architecture.diagrams[0].source") {
 		t.Fatalf("want source error, got %v", err)
 	}
 }
@@ -140,7 +139,7 @@ func TestParsePlanEntityMissingName(t *testing.T) {
 
 func TestApplyPlanStatusPreservesDesign(t *testing.T) {
 	doc, err := parsePlan(map[string]any{
-		"architecture": map[string]any{"summary": "keep-me", "diagram": map[string]any{"source": "flowchart LR\n  A-->B"}},
+		"architecture": map[string]any{"summary": "keep-me", "diagrams": []any{map[string]any{"source": "flowchart LR\n  A-->B"}}},
 		"test_design":  "T",
 		"goals": []any{map[string]any{
 			"title": "G",
@@ -156,7 +155,7 @@ func TestApplyPlanStatusPreservesDesign(t *testing.T) {
 	if !applyPlanStatus(&doc, "g1.1", planStatusDone) {
 		t.Fatal("status apply failed")
 	}
-	if doc.Architecture == nil || doc.Architecture.Summary != "keep-me" || doc.Architecture.Diagram == nil {
+	if doc.Architecture == nil || doc.Architecture.Summary != "keep-me" || len(doc.Architecture.Diagrams) != 1 {
 		t.Fatalf("design lost after status update: %+v", doc.Architecture)
 	}
 	if doc.TestDesign != "T" {
@@ -173,7 +172,7 @@ func TestApplyPlanStatusPreservesDesign(t *testing.T) {
 
 func TestPlanCoverageDenominatorIgnoresDesign(t *testing.T) {
 	planJSON := `{
-  "architecture": {"summary": "a", "diagram": {"source": "flowchart LR\n  A-->B"}},
+  "architecture": {"summary": "a", "diagrams": [{"source": "flowchart LR\n  A-->B"}]},
   "data_design": {"summary": "不涉及"},
   "interfaces": [{"name": "不涉及"}],
   "components": [{"name": "不涉及"}],
@@ -210,7 +209,7 @@ func TestParsePlanDataDesignHardGate(t *testing.T) {
 				map[string]any{"name": "email", "type": "string"},
 			},
 		}},
-		"diagram": map[string]any{"source": "erDiagram\n  USER ||--o{ ORDER : places"},
+		"diagrams": []any{map[string]any{"source": "erDiagram\n  USER ||--o{ ORDER : places"}},
 	}
 
 	t.Run("goals-only passes", func(t *testing.T) {
@@ -252,7 +251,7 @@ func TestParsePlanDataDesignHardGate(t *testing.T) {
 
 	t.Run("missing diagram", func(t *testing.T) {
 		dd := copyMap(substantive)
-		delete(dd, "diagram")
+		delete(dd, "diagrams")
 		_, err := parsePlan(map[string]any{"data_design": dd, "goals": base["goals"]})
 		if err == nil || !strings.Contains(err.Error(), "ER") {
 			t.Fatalf("want ER diagram error, got %v", err)
@@ -261,7 +260,6 @@ func TestParsePlanDataDesignHardGate(t *testing.T) {
 
 	t.Run("diagrams er only ok", func(t *testing.T) {
 		dd := copyMap(substantive)
-		delete(dd, "diagram")
 		dd["diagrams"] = []any{map[string]any{
 			"kind": "er", "title": "模型", "source": "erDiagram\n  USER ||--o{ ORDER : places",
 		}}
@@ -284,7 +282,6 @@ func TestParsePlanDataDesignHardGate(t *testing.T) {
 
 	t.Run("substantive without er kind fails", func(t *testing.T) {
 		dd := copyMap(substantive)
-		delete(dd, "diagram")
 		dd["diagrams"] = []any{map[string]any{
 			"kind": "flowchart", "source": "flowchart LR\n  A-->B",
 		}}
@@ -309,18 +306,6 @@ func TestParsePlanDataDesignHardGate(t *testing.T) {
 		_, err := parsePlan(map[string]any{"data_design": dd, "goals": base["goals"]})
 		if err == nil || !strings.Contains(err.Error(), "data_design.entities[0].fields") {
 			t.Fatalf("want fields error, got %v", err)
-		}
-	})
-
-	t.Run("legacy attributes only", func(t *testing.T) {
-		dd := map[string]any{
-			"summary":  "db",
-			"entities": []any{map[string]any{"name": "User", "attributes": []any{"id", "email"}}},
-			"diagram":  map[string]any{"source": "erDiagram\n  USER {}"},
-		}
-		_, err := parsePlan(map[string]any{"data_design": dd, "goals": base["goals"]})
-		if err == nil || !strings.Contains(err.Error(), "data_design.entities[0].fields") {
-			t.Fatalf("want fields error for legacy attrs, got %v", err)
 		}
 	})
 
@@ -366,15 +351,15 @@ func mustPlanJSON(doc planDoc) []byte {
 }
 
 func TestParsePlanMultiDiagrams(t *testing.T) {
-	t.Run("singular promotes with inferred kind", func(t *testing.T) {
+	t.Run("kind inferred from section", func(t *testing.T) {
 		doc, err := parsePlan(map[string]any{
 			"architecture": map[string]any{
-				"summary": "a",
-				"diagram": map[string]any{"source": "flowchart LR\n  A-->B", "title": "总览"},
+				"summary":  "a",
+				"diagrams": []any{map[string]any{"source": "flowchart LR\n  A-->B", "title": "总览"}},
 			},
 			"interaction": map[string]any{
-				"summary": "i",
-				"diagram": map[string]any{"source": "sequenceDiagram\n  A->>B: hi"},
+				"summary":  "i",
+				"diagrams": []any{map[string]any{"source": "sequenceDiagram\n  A->>B: hi"}},
 			},
 			"goals": []any{map[string]any{"title": "G"}},
 		})
@@ -383,9 +368,6 @@ func TestParsePlanMultiDiagrams(t *testing.T) {
 		}
 		if len(doc.Architecture.Diagrams) != 1 || doc.Architecture.Diagrams[0].Kind != "flowchart" {
 			t.Fatalf("arch diagrams: %+v", doc.Architecture.Diagrams)
-		}
-		if doc.Architecture.Diagram == nil || doc.Architecture.Diagram.Title != "总览" {
-			t.Fatalf("legacy singular: %+v", doc.Architecture.Diagram)
 		}
 		if len(doc.Interaction.Diagrams) != 1 || doc.Interaction.Diagrams[0].Kind != "sequence" {
 			t.Fatalf("ix diagrams: %+v", doc.Interaction.Diagrams)
@@ -396,14 +378,14 @@ func TestParsePlanMultiDiagrams(t *testing.T) {
 		}
 	})
 
-	t.Run("diagrams and singular different sources both kept", func(t *testing.T) {
+	t.Run("multiple diagrams kept", func(t *testing.T) {
 		doc, err := parsePlan(map[string]any{
 			"architecture": map[string]any{
 				"summary": "a",
 				"diagrams": []any{
 					map[string]any{"kind": "activity", "title": "审批活动", "scope": "approve", "source": "flowchart TD\n  S-->E"},
+					map[string]any{"source": "flowchart LR\n  A-->B"},
 				},
-				"diagram": map[string]any{"source": "flowchart LR\n  A-->B"},
 			},
 			"goals": []any{map[string]any{"title": "G"}},
 		})
@@ -426,9 +408,11 @@ func TestParsePlanMultiDiagrams(t *testing.T) {
 		src := "flowchart LR\n  A-->B"
 		doc, err := parsePlan(map[string]any{
 			"architecture": map[string]any{
-				"summary":  "a",
-				"diagrams": []any{map[string]any{"kind": "flowchart", "source": src}},
-				"diagram":  map[string]any{"source": src},
+				"summary": "a",
+				"diagrams": []any{
+					map[string]any{"kind": "flowchart", "source": src},
+					map[string]any{"source": src},
+				},
 			},
 			"goals": []any{map[string]any{"title": "G"}},
 		})
@@ -440,7 +424,7 @@ func TestParsePlanMultiDiagrams(t *testing.T) {
 		}
 	})
 
-	t.Run("empty diagrams array with no singular ok", func(t *testing.T) {
+	t.Run("empty diagrams array ok", func(t *testing.T) {
 		doc, err := parsePlan(map[string]any{
 			"architecture": map[string]any{"summary": "纯文字", "diagrams": []any{}},
 			"goals":        []any{map[string]any{"title": "G"}},
@@ -448,7 +432,7 @@ func TestParsePlanMultiDiagrams(t *testing.T) {
 		if err != nil {
 			t.Fatalf("empty diagrams: %v", err)
 		}
-		if len(doc.Architecture.Diagrams) != 0 || doc.Architecture.Diagram != nil {
+		if len(doc.Architecture.Diagrams) != 0 {
 			t.Fatalf("want no diagrams: %+v", doc.Architecture)
 		}
 	})
@@ -473,8 +457,8 @@ func TestParsePlanMermaidSyntaxGate(t *testing.T) {
 	t.Run("legal flowchart passes", func(t *testing.T) {
 		_, err := parsePlan(map[string]any{
 			"architecture": map[string]any{
-				"summary": "a",
-				"diagram": map[string]any{"source": "flowchart LR\n  A-->B"},
+				"summary":  "a",
+				"diagrams": []any{map[string]any{"source": "flowchart LR\n  A-->B"}},
 			},
 			"goals": goals,
 		})
@@ -486,12 +470,12 @@ func TestParsePlanMermaidSyntaxGate(t *testing.T) {
 	t.Run("legal er and sequence pass", func(t *testing.T) {
 		_, err := parsePlan(map[string]any{
 			"data_design": map[string]any{
-				"summary": "不涉及",
-				"diagram": map[string]any{"format": "mermaid", "source": "erDiagram\n  A ||--o{ B : has"},
+				"summary":  "不涉及",
+				"diagrams": []any{map[string]any{"format": "mermaid", "source": "erDiagram\n  A ||--o{ B : has"}},
 			},
 			"interaction": map[string]any{
-				"summary": "i",
-				"diagram": map[string]any{"source": "sequenceDiagram\n  A->>B: hi"},
+				"summary":  "i",
+				"diagrams": []any{map[string]any{"source": "sequenceDiagram\n  A->>B: hi"}},
 			},
 			"goals": goals,
 		})
@@ -522,35 +506,22 @@ func TestParsePlanMermaidSyntaxGate(t *testing.T) {
 		}
 	})
 
-	t.Run("singular diagram path in error", func(t *testing.T) {
-		_, err := parsePlan(map[string]any{
-			"architecture": map[string]any{
-				"summary": "a",
-				"diagram": map[string]any{"source": "notadiagram {{{"},
-			},
-			"goals": goals,
-		})
-		if err == nil || !strings.Contains(err.Error(), "architecture.diagram.source") {
-			t.Fatalf("want architecture.diagram.source error, got %v", err)
-		}
-	})
-
 	t.Run("non-mermaid format skips syntax parse", func(t *testing.T) {
 		doc, err := parsePlan(map[string]any{
 			"architecture": map[string]any{
 				"summary": "a",
-				"diagram": map[string]any{
+				"diagrams": []any{map[string]any{
 					"format": "plantuml",
 					"source": "@startuml\nAlice -> Bob\n@enduml",
-				},
+				}},
 			},
 			"goals": goals,
 		})
 		if err != nil {
 			t.Fatalf("non-mermaid should skip mermaid parse: %v", err)
 		}
-		if doc.Architecture.Diagram.Format != "plantuml" {
-			t.Fatalf("format=%q", doc.Architecture.Diagram.Format)
+		if doc.Architecture.Diagrams[0].Format != "plantuml" {
+			t.Fatalf("format=%q", doc.Architecture.Diagrams[0].Format)
 		}
 	})
 
@@ -569,12 +540,12 @@ func TestParsePlanMermaidSyntaxGate(t *testing.T) {
 		}
 		_, err = parsePlan(map[string]any{
 			"components": []any{map[string]any{
-				"name":    "MermaidDiagram.vue",
-				"diagram": map[string]any{"source": "flowchart LR\n  A-->["},
+				"name":     "MermaidDiagram.vue",
+				"diagrams": []any{map[string]any{"source": "flowchart LR\n  A-->["}},
 			}},
 			"goals": goals,
 		})
-		if err == nil || !strings.Contains(err.Error(), "components[0].diagram.source") {
+		if err == nil || !strings.Contains(err.Error(), "components[0].diagrams[0].source") {
 			t.Fatalf("want components path error, got %v", err)
 		}
 	})

@@ -27,7 +27,7 @@ describe('agentTeamWizard', () => {
     const d = freshTeamDraft()
     expect(d.mcp[0]).toMatchObject(artifactStorePreset())
     expect(d.env.some((e) => e.k === 'GIT_REPOS')).toBe(true)
-    expect(TEAM_ENGINEER_COUNT).toBe(9)
+    expect(TEAM_ENGINEER_COUNT).toBe(4)
   })
 
   it('defaults to OpenCode API Key path (g1.3)', () => {
@@ -52,7 +52,6 @@ describe('agentTeamWizard', () => {
     d.projectName = 'Demo'
     syncDerivedNames(d)
     expect(d.prefix).toBe('Demo')
-    expect(d.rootGroupName).toBe('Demo项目组')
     expect(d.pmName).toBe('Demo项目经理')
   })
 

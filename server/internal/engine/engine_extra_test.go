@@ -24,7 +24,7 @@ func setupEngineGraphP(t *testing.T, g models.Graph) (*Engine, *gorm.DB, *fakePr
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	wf := models.WorkflowDef{ID: "wf", Name: "wf", Status: "published", Version: 1, Graph: g}
+	wf := models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf", Name: "wf", Version: 1, PublishedVersion: 1, Graph: g}
 	if err := db.Create(&wf).Error; err != nil {
 		t.Fatalf("create workflow: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestJSONMsgAndCancel(t *testing.T) {
 	if string(msg) != `{"type":"state","runId":"r1","nodeId":"n1"}` {
 		t.Fatalf("jsonMsg = %q", msg)
 	}
-	// proposalGraph finishes instantly under the fake provider, racing Cancel
+	// Fast graphs finish instantly under the fake provider, racing Cancel
 	// into "already finished". Block on an agent node so Cancel is deterministic.
 	eng, db, _ := setupBlockingEngine(t, slowGraph(), 5)
 	run, err := eng.StartRun("wf", nil, "test")
@@ -346,26 +346,4 @@ func TestPlanAndImplementNodes(t *testing.T) {
 	if v.Value != `{"app":"feature/impl"}` {
 		t.Errorf("branches var = %v, want {\"app\":\"feature/impl\"}", v.Value)
 	}
-}
-
-// TestNoCompanionForProposal: the reserved proposals.json exists and no
-// proposals.md companion is written.
-func TestNoCompanionForProposal(t *testing.T) {
-	t.Run("proposal", func(t *testing.T) {
-		eng, db, _ := setupEngineGraphP(t, proposalGraph())
-		run, err := eng.StartRun("wf", nil, "test")
-		if err != nil {
-			t.Fatalf("start: %v", err)
-		}
-		waitRunStatus(t, db, run.ID, "completed")
-		var c int64
-		db.Model(&models.Artifact{}).Where("run_id = ? AND name = ?", run.ID, "proposals.json").Count(&c)
-		if c == 0 {
-			t.Error("expected proposals.json")
-		}
-		db.Model(&models.Artifact{}).Where("run_id = ? AND name = ?", run.ID, "proposals.md").Count(&c)
-		if c != 0 {
-			t.Error("unexpected companion proposals.md")
-		}
-	})
 }

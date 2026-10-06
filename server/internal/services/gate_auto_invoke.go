@@ -49,7 +49,7 @@ type gateAutoProjectQueue struct {
 }
 
 // GateAutoInvokeService decides, queues, and starts PM turns for gate pauses.
-// Queue is process-local and serial per projectId (proposal p1). Failures only log;
+// Queue is process-local and serial per projectId. Failures only log;
 // they never finish(failed) the run or resolve the Gate.
 type GateAutoInvokeService struct {
 	db    *gorm.DB

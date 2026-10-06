@@ -66,7 +66,7 @@ describe('EnvCredentialHelpModal', () => {
     await nextTick()
     expect(document.body.querySelectorAll('[data-test="env-credential-help"]')).toHaveLength(1)
     expect(document.body.querySelector('[data-help-chip="acp"]')?.className).toContain('border-accent')
-    expect(document.body.textContent).toContain('GRASP_CURSOR_API_KEY / CURSOR_API_KEY')
+    expect(document.body.textContent).toContain('GRASP_CURSOR_API_KEY')
     expect(document.body.textContent).toContain('Cursor ACP 鉴权')
     expect(document.body.textContent).not.toMatch(/sk-[a-z0-9]{8,}/i)
     wrapper.unmount()

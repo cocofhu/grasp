@@ -16,7 +16,7 @@ export interface PaletteItem {
 }
 
 export const CONTROL_TYPES: NodeType[] = ['input', 'output', 'set_var', 'branch']
-export const COLLAB_TYPES: NodeType[] = ['human_gate', 'proposal_select']
+export const COLLAB_TYPES: NodeType[] = ['human_gate']
 
 export const NODE_ICONS: Record<NodeType, string> = {
   input: 'input',
@@ -25,7 +25,6 @@ export const NODE_ICONS: Record<NodeType, string> = {
   branch: 'branch',
   agent: 'robot',
   human_gate: 'gate',
-  proposal_select: 'check',
 }
 
 export const PALETTE_MIME = 'application/grasp-node'
@@ -43,14 +42,6 @@ export function buildPaletteItems(
     desc: capabilitySummary(a.capabilities, t),
     agent: a.name,
   }))
-  items.push({
-    key: 'agent:',
-    group: 'agent',
-    spec: { type: 'agent' },
-    label: t('canvas.palette.blankAgent'),
-    desc: t('canvas.palette.blankAgentDesc'),
-    icon: NODE_ICONS.agent,
-  })
   for (const [group, types] of [
     ['control', CONTROL_TYPES],
     ['collab', COLLAB_TYPES],
@@ -74,6 +65,10 @@ export function filterPaletteItems(items: PaletteItem[], q: string): PaletteItem
   )
 }
 
+export function paletteKey(spec: NodeSpec): string {
+  return spec.type === 'agent' ? `agent:${spec.agentProfile ?? ''}` : `type:${spec.type}`
+}
+
 export function encodePaletteDrag(spec: NodeSpec): string {
   return JSON.stringify({ type: spec.type, agentProfile: spec.agentProfile })
 }
@@ -82,7 +77,8 @@ export function decodePaletteDrag(raw: string | undefined | null): NodeSpec | nu
   if (!raw) return null
   try {
     const v = JSON.parse(raw) as NodeSpec
-    return v && typeof v.type === 'string' ? { type: v.type, agentProfile: v.agentProfile || undefined } : null
+    if (!v || typeof v.type !== 'string' || (v.type === 'agent' && !v.agentProfile)) return null
+    return { type: v.type, agentProfile: v.agentProfile || undefined }
   } catch {
     return null
   }

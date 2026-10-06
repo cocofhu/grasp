@@ -6,6 +6,7 @@ import { flushPromises } from '@vue/test-utils'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { Gate, Run } from '@/lib/shared/types'
+import { listPrimaryProducts } from '@/lib/inbox/gateUpstream'
 
 const isMobile = ref(false)
 
@@ -103,6 +104,15 @@ function pageGateRun(): Run {
   })
 }
 
+/** Server primary-artifacts answer for the mounted run: the backend parses the same body_template. */
+let mountedProps: GateApprovalProps | null = null
+function serverPrimaryArtifacts(_runId: string, nodeId: string) {
+  const tpl = String(mountedProps?.run?.nodes?.find((n) => n.id === nodeId)?.config?.body_template ?? '')
+  return Promise.resolve({
+    items: listPrimaryProducts(tpl).map((p) => ({ ...p, readonly: !!p.readonly })),
+  })
+}
+
 function withApproval(over: Partial<GateApprovalProps> = {}) {
   let approval!: ReturnType<typeof useGateApproval>
   const emit = vi.fn()
@@ -117,6 +127,7 @@ function withApproval(over: Partial<GateApprovalProps> = {}) {
     shareLink: null,
     ...over,
   }) as GateApprovalProps
+  mountedProps = props
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
@@ -140,7 +151,7 @@ describe('useGateApproval actions', () => {
     isMobile.value = false
     for (const fn of Object.values(mocks)) (fn as ReturnType<typeof vi.fn>).mockReset()
     mocks.artifactContent.mockResolvedValue({ content: '', etag: 'v1' })
-    mocks.listGatePrimaryArtifacts.mockResolvedValue({ items: [] })
+    mocks.listGatePrimaryArtifacts.mockImplementation(serverPrimaryArtifacts)
     mocks.listPreviewIssues.mockResolvedValue({ issues: [] })
     mocks.createPreviewIssue.mockResolvedValue({ id: 'issue-1' })
     mocks.saveAnnotationArtifact.mockResolvedValue({})
@@ -405,31 +416,21 @@ describe('useGateApproval actions', () => {
     app.unmount()
   })
 
-  it('loads proposal and plan artifacts and tolerates malformed content', async () => {
-    const proposalRun = run({
-      nodes: [{ id: 'gate-1', type: 'proposal_select', config: { from: 'ideas.json' } }],
-      artifacts: [
-        { id: 'ideas', name: 'ideas.json' },
-        { id: 'plan', name: 'plan.json' },
-      ],
+  it('loads plan artifacts and tolerates malformed content', async () => {
+    const planRun = run({
+      nodes: [{ id: 'gate-1', type: 'human_gate', config: {} }],
+      artifacts: [{ id: 'plan', name: 'plan.json' }],
     })
-    mocks.artifactContent.mockImplementation(async (id: string) =>
-      id === 'ideas'
-        ? { content: JSON.stringify({ proposals: [{ id: 'p1', title: 'One' }] }) }
-        : { content: JSON.stringify({ goals: [{ id: 'g1' }] }) },
-    )
+    mocks.artifactContent.mockResolvedValue({ content: JSON.stringify({ goals: [{ id: 'g1' }] }) })
     const { approval, app, props } = withApproval({
-      gate: gate({ bodyMd: '- [ ] `g1` goal', actions: [{ id: 'p1', label: 'One' }] }),
-      run: proposalRun,
+      gate: gate({ bodyMd: '- [ ] `g1` goal' }),
+      run: planRun,
     })
     await flushPromises()
-    expect(approval.proposalsDoc.value?.proposals).toHaveLength(1)
     expect(approval.planDoc.value?.goals).toHaveLength(1)
 
     mocks.artifactContent.mockRejectedValue(new Error('bad artifact'))
-    await approval.loadProposals()
     await approval.loadPlan()
-    expect(approval.proposalsDoc.value).toBeNull()
     expect(approval.planDoc.value).toBeNull()
 
     props.gate = gate({ bodyMd: 'plain' })
@@ -463,7 +464,11 @@ describe('useGateApproval actions', () => {
       updatedAt: 'now',
       sizeBytes: 18,
     })
-    const { approval, app } = withApproval({ run: productRun, fillPreview: true })
+    const { approval, app } = withApproval({
+      gate: gate({ upstreamNodeId: 'producer', upstreamIteration: 1 }),
+      run: productRun,
+      fillPreview: true,
+    })
     await flushPromises()
     expect(approval.productHtml.value).toBe('<main>store</main>')
     expect(approval.shouldFillPreview.value).toBe(true)
@@ -490,16 +495,16 @@ describe('useGateApproval actions', () => {
   it('normalizes API primary products and skips requests for ineligible runs', async () => {
     const { approval, app, props } = withApproval({ run: run({ status: 'running' }) })
     await flushPromises()
-    expect(approval.normalizeApiPrimaryItem({ name: 'data.json', kind: '' }).name).toBe('data.json')
+    expect(approval.normalizeApiPrimaryItem({ name: 'data.json', kind: 'json', readonly: false }).name).toBe('data.json')
     mocks.listGatePrimaryArtifacts.mockClear()
     await approval.loadPrimaryProductsFromApi()
     expect(mocks.listGatePrimaryArtifacts).not.toHaveBeenCalled()
     expect(approval.primaryProductsHydrated.value).toBe(true)
 
     props.run = run()
-    mocks.listGatePrimaryArtifacts.mockRejectedValueOnce(new Error('old server'))
+    mocks.listGatePrimaryArtifacts.mockRejectedValueOnce(new Error('network down'))
     await approval.loadPrimaryProductsFromApi()
-    expect(approval.apiPrimaryProducts.value).toBeNull()
+    expect(approval.apiPrimaryProducts.value).toEqual([])
     app.unmount()
   })
 
@@ -735,9 +740,8 @@ describe('useGateApproval actions', () => {
     await approval.loadProduct({ force: true })
     expect(approval.productDoc.value).toBeNull()
 
-    props.gate = gate({ actions: [{ id: 'p1', label: 'Proposal' }] })
+    props.gate = gate({ actions: [{ id: 'other', label: 'Other' }] })
     await nextTick()
-    expect(approval.isProposalSelect.value).toBe(true)
     expect(approval.composerPassDisabled.value).toBe(true)
     approval.onComposerPass()
     approval.onComposerReject()
@@ -789,24 +793,14 @@ describe('useGateApproval actions', () => {
   it('updates structured saved products and reports annotation invalidation errors', async () => {
     const { approval, app } = withApproval()
     await flushPromises()
-    approval.onProductSaved({ name: 'plan.json', content: '{"name":"new"}' })
-    expect(approval.productDoc.value).toEqual({ name: 'new' })
-    approval.onProductSaved({ name: 'plan.json', content: '{invalid' })
-    expect(approval.productDoc.value).toEqual({ name: 'new' })
+    approval.onProductSaved({ name: 'plan.json', content: '{"name":"new"}', etag: 'v2' })
+    expect(approval.savedProductContent.value['plan.json']).toBe('{"name":"new"}')
+    expect(approval.savedProductMeta.value['plan.json']?.etag).toBe('v2')
 
     mocks.saveAnnotationArtifact.mockRejectedValueOnce(new Error('invalidate denied'))
     await approval.invalidateServerAnnotationArtifact()
     expect(approval.commentArtifactWriteError.value).toBe('invalidate denied')
     expect(mocks.toastWarn).toHaveBeenCalled()
-
-    const noProposalArtifact = withApproval({
-      gate: gate({ actions: [{ id: 'p1', label: 'One' }] }),
-      run: run({ nodes: [{ id: 'gate-1', type: 'proposal_select', config: {} }], artifacts: [] }),
-    })
-    await flushPromises()
-    await noProposalArtifact.approval.loadProposals()
-    expect(noProposalArtifact.approval.proposalsDoc.value).toBeNull()
-    noProposalArtifact.app.unmount()
     app.unmount()
   })
 })

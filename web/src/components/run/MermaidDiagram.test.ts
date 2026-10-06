@@ -34,7 +34,7 @@ function mountDiagram(source = 'flowchart LR\n  A-->B', extra?: { format?: strin
   return mount(MermaidDiagram, {
     props: {
       diagram: { format: extra?.format ?? 'mermaid', source, caption: extra?.caption },
-      jsonPath: 'architecture.diagram',
+      jsonPath: 'architecture.diagrams[0]',
     },
     global: { plugins: [createI18nPlugin()] },
   })
@@ -333,7 +333,7 @@ describe('MermaidDiagram parse-first and sticky parse fallback (g2.1 / g2.2 / g2
 
     await wrapper.setProps({
       diagram: { format: 'mermaid', source: 'flowchart LR\n  SAME-->SVG' },
-      jsonPath: 'architecture.diagram',
+      jsonPath: 'architecture.diagrams[0]',
     })
     document.documentElement.classList.add('overflow-hidden')
     await flushPromises()
@@ -360,7 +360,7 @@ describe('MermaidDiagram parse-first and sticky parse fallback (g2.1 / g2.2 / g2
 
     await wrapper.setProps({
       diagram: { format: 'mermaid', source: 'flowchart LR\n  GOOD-->Y' },
-      jsonPath: 'architecture.diagram',
+      jsonPath: 'architecture.diagrams[0]',
     })
     await flushPromises()
     await flushMermaidQueue()
@@ -424,7 +424,7 @@ describe('MermaidDiagram serial isolation (g1.1 / g1.2 / g3.1 / g3.2)', () => {
     const i18n = createI18nPlugin()
     const wrappers = [
       mount(MermaidDiagram, {
-        props: { diagram: { format: 'mermaid', source: THREE_SECTION_FIXTURE.architecture }, jsonPath: 'architecture.diagram' },
+        props: { diagram: { format: 'mermaid', source: THREE_SECTION_FIXTURE.architecture }, jsonPath: 'architecture.diagrams[0]' },
         global: { plugins: [i18n] },
       }),
       mount(MermaidDiagram, {
@@ -474,7 +474,7 @@ describe('MermaidDiagram serial isolation (g1.1 / g1.2 / g3.1 / g3.2)', () => {
     })
     const i18n = createI18nPlugin()
     const bad = mount(MermaidDiagram, {
-      props: { diagram: { format: 'mermaid', source: 'flowchart LR\n  BAD-->X' }, jsonPath: 'architecture.diagram' },
+      props: { diagram: { format: 'mermaid', source: 'flowchart LR\n  BAD-->X' }, jsonPath: 'architecture.diagrams[0]' },
       global: { plugins: [i18n] },
     })
     const goodA = mount(MermaidDiagram, {
@@ -512,7 +512,7 @@ describe('MermaidDiagram serial isolation (g1.1 / g1.2 / g3.1 / g3.2)', () => {
     const i18n = createI18nPlugin()
     const wrappers = [
       mount(MermaidDiagram, {
-        props: { diagram: { format: 'mermaid', source: 'flowchart LR\n  T_ARCH-->A' }, jsonPath: 'architecture.diagram' },
+        props: { diagram: { format: 'mermaid', source: 'flowchart LR\n  T_ARCH-->A' }, jsonPath: 'architecture.diagrams[0]' },
         global: { plugins: [i18n] },
       }),
       mount(MermaidDiagram, {
@@ -568,9 +568,9 @@ describe('MermaidDiagram serial isolation (g1.1 / g1.2 / g3.1 / g3.2)', () => {
     const wrapper = mountDiagram('flowchart LR\n  V1-->A')
     await flushPromises()
 
-    await wrapper.setProps({ diagram: { format: 'mermaid', source: 'flowchart LR\n  V2-->A' }, jsonPath: 'architecture.diagram' })
-    await wrapper.setProps({ diagram: { format: 'mermaid', source: 'flowchart LR\n  V3-->A' }, jsonPath: 'architecture.diagram' })
-    await wrapper.setProps({ diagram: { format: 'mermaid', source: 'flowchart LR\n  V4-->A' }, jsonPath: 'architecture.diagram' })
+    await wrapper.setProps({ diagram: { format: 'mermaid', source: 'flowchart LR\n  V2-->A' }, jsonPath: 'architecture.diagrams[0]' })
+    await wrapper.setProps({ diagram: { format: 'mermaid', source: 'flowchart LR\n  V3-->A' }, jsonPath: 'architecture.diagrams[0]' })
+    await wrapper.setProps({ diagram: { format: 'mermaid', source: 'flowchart LR\n  V4-->A' }, jsonPath: 'architecture.diagrams[0]' })
 
     await flushPromises()
     await flushMermaidQueue()

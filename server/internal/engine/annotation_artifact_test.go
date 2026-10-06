@@ -29,6 +29,7 @@ func TestSaveAnnotationArtifactUpsertAndIsolation(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	seedArtifactOwner(t, db, runID)
 	db.Create(&models.StateRun{
 		RunID: runID, NodeID: "gate", NodeType: "human_gate", Iteration: 1, Status: "waiting_human",
 		Outputs: map[string]any{},
@@ -172,6 +173,7 @@ func TestSaveAnnotationArtifactOversizedScreenshotBecomesMissing(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	seedArtifactOwner(t, db, runID)
 	db.Create(&models.StateRun{
 		RunID: runID, NodeID: "gate", NodeType: "human_gate", Iteration: 1, Status: "waiting_human",
 		Outputs: map[string]any{},

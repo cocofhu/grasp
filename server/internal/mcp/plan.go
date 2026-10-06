@@ -44,8 +44,7 @@ type planGoal struct {
 
 // planDiagram is an optional Mermaid (or other) diagram attached to a design section.
 // When the object is present, source must be non-empty after trim.
-// kind/title/scope support multi-diagram tabs; diagrams[] is preferred, singular
-// diagram remains for backward compatibility.
+// kind/title/scope support multi-diagram tabs.
 type planDiagram struct {
 	Kind             string `json:"kind,omitempty"`
 	Title            string `json:"title,omitempty"`
@@ -59,7 +58,6 @@ type planDiagram struct {
 type planArchitecture struct {
 	Summary  string        `json:"summary"`
 	Diagrams []planDiagram `json:"diagrams,omitempty"`
-	Diagram  *planDiagram  `json:"diagram,omitempty"`
 }
 
 type planField struct {
@@ -74,7 +72,6 @@ type planField struct {
 type planEntity struct {
 	Name          string      `json:"name"`
 	Fields        []planField `json:"fields,omitempty"`
-	Attributes    []string    `json:"attributes,omitempty"`
 	Description   string      `json:"description,omitempty"`
 	Relationships []string    `json:"relationships,omitempty"`
 }
@@ -84,7 +81,6 @@ type planDataDesign struct {
 	Entities      []planEntity  `json:"entities,omitempty"`
 	Relationships []string      `json:"relationships,omitempty"`
 	Diagrams      []planDiagram `json:"diagrams,omitempty"`
-	Diagram       *planDiagram  `json:"diagram,omitempty"`
 }
 
 type planInterfaceItem struct {
@@ -94,7 +90,6 @@ type planInterfaceItem struct {
 	Summary   string        `json:"summary,omitempty"`
 	Detail    string        `json:"detail,omitempty"`
 	Diagrams  []planDiagram `json:"diagrams,omitempty"`
-	Diagram   *planDiagram  `json:"diagram,omitempty"`
 }
 
 type planComponentItem struct {
@@ -103,13 +98,11 @@ type planComponentItem struct {
 	Dependencies   []string      `json:"dependencies,omitempty"`
 	Detail         string        `json:"detail,omitempty"`
 	Diagrams       []planDiagram `json:"diagrams,omitempty"`
-	Diagram        *planDiagram  `json:"diagram,omitempty"`
 }
 
 type planInteraction struct {
 	Summary  string        `json:"summary"`
 	Diagrams []planDiagram `json:"diagrams,omitempty"`
-	Diagram  *planDiagram  `json:"diagram,omitempty"`
 }
 
 type planDoc struct {
@@ -186,18 +179,15 @@ func diagramSourceKey(d planDiagram) string {
 	return strings.TrimSpace(d.Source)
 }
 
-// mergeSectionDiagrams normalizes diagrams[] with optional singular diagram.
-// Only-singular: promote to one entry and infer kind from section when empty.
-// Both present with different sources: keep both. Same source: keep one.
-// Returns the normalized list and a singular pointer (first entry) for legacy readers.
-func mergeSectionDiagrams(section, singularPath string, singular *planDiagram, plural []planDiagram) ([]planDiagram, *planDiagram, error) {
+// parseSectionDiagrams normalizes diagrams[]: validates each entry, infers kind
+// from section when empty, and drops duplicate sources.
+func parseSectionDiagrams(section string, in []planDiagram) ([]planDiagram, error) {
 	var out []planDiagram
 	seen := map[string]struct{}{}
-
-	for i, raw := range plural {
+	for i, raw := range in {
 		d, err := parsePlanDiagram(fmt.Sprintf("%s.diagrams[%d]", section, i), &raw)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		if d == nil {
 			continue
@@ -212,33 +202,7 @@ func mergeSectionDiagrams(section, singularPath string, singular *planDiagram, p
 		seen[key] = struct{}{}
 		out = append(out, *d)
 	}
-
-	sing, err := parsePlanDiagram(singularPath, singular)
-	if err != nil {
-		return nil, nil, err
-	}
-	if sing != nil {
-		if sing.Kind == "" {
-			sing.Kind = defaultDiagramKind(section)
-		}
-		key := diagramSourceKey(*sing)
-		if _, ok := seen[key]; !ok {
-			seen[key] = struct{}{}
-			// Prefer elevating singular first when it was the only legacy field,
-			// but when diagrams[] already had items, append singular if source differs.
-			if len(plural) == 0 {
-				out = append([]planDiagram{*sing}, out...)
-			} else {
-				out = append(out, *sing)
-			}
-		}
-	}
-
-	if len(out) == 0 {
-		return nil, nil, nil
-	}
-	first := out[0]
-	return out, &first, nil
+	return out, nil
 }
 
 func isDataDesignSubstantive(summary string) bool {
@@ -281,13 +245,6 @@ func hasERDiagram(dd *planDataDesign) bool {
 			return true
 		}
 	}
-	if dd.Diagram != nil && strings.TrimSpace(dd.Diagram.Source) != "" {
-		k := strings.TrimSpace(dd.Diagram.Kind)
-		// Legacy singular diagram on data_design is treated as ER when kind empty.
-		if k == "" || strings.EqualFold(k, "er") {
-			return true
-		}
-	}
 	return false
 }
 
@@ -296,7 +253,7 @@ func validateDataDesignHardGate(dd *planDataDesign) error {
 		return nil
 	}
 	if !hasERDiagram(dd) {
-		return errors.New("data_design 实质内容须至少一张 ER 图(diagrams[] 中 kind=er，或兼容单数 diagram)")
+		return errors.New("data_design 实质内容须至少一张 ER 图(diagrams[] 中 kind=er)")
 	}
 	if len(dd.Entities) == 0 {
 		return errors.New("data_design.entities 不能为空")
@@ -314,14 +271,14 @@ func parseArchitecture(in *planArchitecture) (*planArchitecture, error) {
 		return nil, nil
 	}
 	summary := strings.TrimSpace(in.Summary)
-	diagrams, diagram, err := mergeSectionDiagrams("architecture", "architecture.diagram", in.Diagram, in.Diagrams)
+	diagrams, err := parseSectionDiagrams("architecture", in.Diagrams)
 	if err != nil {
 		return nil, err
 	}
 	if summary == "" && len(diagrams) == 0 {
 		return nil, nil
 	}
-	return &planArchitecture{Summary: summary, Diagrams: diagrams, Diagram: diagram}, nil
+	return &planArchitecture{Summary: summary, Diagrams: diagrams}, nil
 }
 
 func parseDataDesign(in *planDataDesign) (*planDataDesign, error) {
@@ -329,7 +286,7 @@ func parseDataDesign(in *planDataDesign) (*planDataDesign, error) {
 		return nil, nil
 	}
 	summary := strings.TrimSpace(in.Summary)
-	diagrams, diagram, err := mergeSectionDiagrams("data_design", "data_design.diagram", in.Diagram, in.Diagrams)
+	diagrams, err := parseSectionDiagrams("data_design", in.Diagrams)
 	if err != nil {
 		return nil, err
 	}
@@ -347,11 +304,6 @@ func parseDataDesign(in *planDataDesign) (*planDataDesign, error) {
 			Name:        name,
 			Fields:      fields,
 			Description: strings.TrimSpace(e.Description),
-		}
-		for _, a := range e.Attributes {
-			if t := strings.TrimSpace(a); t != "" {
-				ent.Attributes = append(ent.Attributes, t)
-			}
 		}
 		for _, r := range e.Relationships {
 			if t := strings.TrimSpace(r); t != "" {
@@ -374,7 +326,6 @@ func parseDataDesign(in *planDataDesign) (*planDataDesign, error) {
 		Entities:      entities,
 		Relationships: rels,
 		Diagrams:      diagrams,
-		Diagram:       diagram,
 	}
 	if err := validateDataDesignHardGate(out); err != nil {
 		return nil, err
@@ -393,7 +344,7 @@ func parseInterfaces(in []planInterfaceItem) ([]planInterfaceItem, error) {
 			return nil, fmt.Errorf("interfaces[%d] 缺少 name", i)
 		}
 		prefix := fmt.Sprintf("interfaces[%d]", i)
-		diagrams, diagram, err := mergeSectionDiagrams(prefix, prefix+".diagram", item.Diagram, item.Diagrams)
+		diagrams, err := parseSectionDiagrams(prefix, item.Diagrams)
 		if err != nil {
 			return nil, err
 		}
@@ -404,7 +355,6 @@ func parseInterfaces(in []planInterfaceItem) ([]planInterfaceItem, error) {
 			Summary:   strings.TrimSpace(item.Summary),
 			Detail:    strings.TrimSpace(item.Detail),
 			Diagrams:  diagrams,
-			Diagram:   diagram,
 		})
 	}
 	return out, nil
@@ -421,7 +371,7 @@ func parseComponents(in []planComponentItem) ([]planComponentItem, error) {
 			return nil, fmt.Errorf("components[%d] 缺少 name", i)
 		}
 		prefix := fmt.Sprintf("components[%d]", i)
-		diagrams, diagram, err := mergeSectionDiagrams(prefix, prefix+".diagram", item.Diagram, item.Diagrams)
+		diagrams, err := parseSectionDiagrams(prefix, item.Diagrams)
 		if err != nil {
 			return nil, err
 		}
@@ -430,7 +380,6 @@ func parseComponents(in []planComponentItem) ([]planComponentItem, error) {
 			Responsibility: strings.TrimSpace(item.Responsibility),
 			Detail:         strings.TrimSpace(item.Detail),
 			Diagrams:       diagrams,
-			Diagram:        diagram,
 		}
 		for _, d := range item.Dependencies {
 			if t := strings.TrimSpace(d); t != "" {
@@ -447,21 +396,21 @@ func parseInteraction(in *planInteraction) (*planInteraction, error) {
 		return nil, nil
 	}
 	summary := strings.TrimSpace(in.Summary)
-	diagrams, diagram, err := mergeSectionDiagrams("interaction", "interaction.diagram", in.Diagram, in.Diagrams)
+	diagrams, err := parseSectionDiagrams("interaction", in.Diagrams)
 	if err != nil {
 		return nil, err
 	}
 	if summary == "" && len(diagrams) == 0 {
 		return nil, nil
 	}
-	return &planInteraction{Summary: summary, Diagrams: diagrams, Diagram: diagram}, nil
+	return &planInteraction{Summary: summary, Diagrams: diagrams}, nil
 }
 
 // parsePlan coerces the loosely-typed set_plan arguments into a normalized
 // planDoc: it enforces the two-level limit (a subgoal may not carry its own
 // subgoals), requires non-empty titles, and assigns stable ids (g1, g1.2) plus
 // an initial pending status to every item. Optional SDD design sections are
-// validated when present; missing design keys remain compatible with goals-only plans.
+// validated when present; design keys are optional (goals-only plans are valid).
 func parsePlan(args map[string]any) (planDoc, error) {
 	raw, _ := json.Marshal(args)
 	var in struct {
@@ -705,22 +654,18 @@ func renderDiagramMarkdown(b *strings.Builder, path string, d *planDiagram) {
 	}
 }
 
-func renderDiagramsMarkdown(b *strings.Builder, section string, diagrams []planDiagram, legacy *planDiagram) {
-	if len(diagrams) > 0 {
-		for i, d := range diagrams {
-			d := d
-			renderDiagramMarkdown(b, fmt.Sprintf("%s.diagrams[%d]", section, i), &d)
-		}
-		return
+func renderDiagramsMarkdown(b *strings.Builder, section string, diagrams []planDiagram) {
+	for i, d := range diagrams {
+		d := d
+		renderDiagramMarkdown(b, fmt.Sprintf("%s.diagrams[%d]", section, i), &d)
 	}
-	renderDiagramMarkdown(b, section+".diagram", legacy)
 }
 
 // RenderPlanMarkdown turns a plan.json content string into a human-readable
 // GitHub-flavored task list (checkbox per item, with status chips), so the plan
 // can be surfaced verbatim in a human_gate body or any markdown consumer. When
 // design sections are present they are rendered above the goals tree; goals-only
-// plans keep the historical output. On any parse error it returns the raw content unchanged.
+// plans render just the task list. On any parse error it returns the raw content unchanged.
 func RenderPlanMarkdown(content string) string {
 	var doc planDoc
 	if err := json.Unmarshal([]byte(content), &doc); err != nil || len(doc.Goals) == 0 {
@@ -738,7 +683,7 @@ func RenderPlanMarkdown(content string) string {
 				sum = planNAPlaceholder
 			}
 			b.WriteString("**Architecture** — " + sum + "\n")
-			renderDiagramsMarkdown(&b, "architecture", doc.Architecture.Diagrams, doc.Architecture.Diagram)
+			renderDiagramsMarkdown(&b, "architecture", doc.Architecture.Diagrams)
 			b.WriteString("\n")
 		}
 		if doc.DataDesign != nil {
@@ -773,9 +718,6 @@ func RenderPlanMarkdown(content string) string {
 					}
 					b.WriteString(line + "\n")
 				}
-				for _, a := range e.Attributes {
-					b.WriteString("  - attr(legacy) `" + a + "`\n")
-				}
 				for _, r := range e.Relationships {
 					b.WriteString("  - rel: " + r + "\n")
 				}
@@ -783,7 +725,7 @@ func RenderPlanMarkdown(content string) string {
 			for _, r := range doc.DataDesign.Relationships {
 				b.WriteString("- relationship: " + r + "\n")
 			}
-			renderDiagramsMarkdown(&b, "data_design", doc.DataDesign.Diagrams, doc.DataDesign.Diagram)
+			renderDiagramsMarkdown(&b, "data_design", doc.DataDesign.Diagrams)
 			b.WriteString("\n")
 		}
 		if len(doc.Interfaces) > 0 {
@@ -794,7 +736,7 @@ func RenderPlanMarkdown(content string) string {
 					line += " — " + it.Summary
 				}
 				b.WriteString(line + "\n")
-				renderDiagramsMarkdown(&b, fmt.Sprintf("interfaces[%d]", i), it.Diagrams, it.Diagram)
+				renderDiagramsMarkdown(&b, fmt.Sprintf("interfaces[%d]", i), it.Diagrams)
 			}
 			b.WriteString("\n")
 		}
@@ -806,7 +748,7 @@ func RenderPlanMarkdown(content string) string {
 					line += " — " + c.Responsibility
 				}
 				b.WriteString(line + "\n")
-				renderDiagramsMarkdown(&b, fmt.Sprintf("components[%d]", i), c.Diagrams, c.Diagram)
+				renderDiagramsMarkdown(&b, fmt.Sprintf("components[%d]", i), c.Diagrams)
 			}
 			b.WriteString("\n")
 		}
@@ -816,7 +758,7 @@ func RenderPlanMarkdown(content string) string {
 				sum = planNAPlaceholder
 			}
 			b.WriteString("**Interaction** — " + sum + "\n")
-			renderDiagramsMarkdown(&b, "interaction", doc.Interaction.Diagrams, doc.Interaction.Diagram)
+			renderDiagramsMarkdown(&b, "interaction", doc.Interaction.Diagrams)
 			b.WriteString("\n")
 		}
 		if doc.TestDesign != "" {

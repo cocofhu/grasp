@@ -17,13 +17,12 @@ type conclusionMeta struct {
 var auditConclusionByStem = map[string]conclusionMeta{
 	"research":              {object: "调研结论", artifact: ResearchArtifactName},
 	"root_cause":            {object: "问题根因", artifact: RootCauseArtifactName},
-	"proposals":             {object: "方案结论", artifact: ProposalsArtifactName},
-	"proposal":              {object: "方案结论", artifact: ProposalArtifactName},
 	"clarified_requirement": {object: "澄清需求结论", artifact: ClarifiedRequirementArtifactName},
 	"plan":                  {object: "计划结论", artifact: PlanArtifactName},
 	"test_result":           {object: "测试结论", artifact: TestResultArtifactName},
 	"review":                {object: "评审结论", artifact: ReviewArtifactName},
 	"implementation_result": {object: "实现结论", artifact: ImplementationResultArtifactName},
+	"merge_request":         {object: "合并请求", artifact: MergeRequestArtifactName},
 	"preflight":             {object: "环境确认", artifact: PreflightArtifactName},
 }
 

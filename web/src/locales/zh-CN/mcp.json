@@ -97,14 +97,6 @@
           "signature": "get_root_cause() -> root_cause.json",
           "desc": "读取问题根因 JSON"
         },
-        "set_proposals": {
-          "signature": "set_proposals(context, proposals)",
-          "desc": "方案节点强制交付;Grasp 仅在真实多方案分歧(≥2)时可选写入,禁止单候选伪选择"
-        },
-        "get_proposals": {
-          "signature": "get_proposals() -> proposals.json",
-          "desc": "读取候选方案集"
-        },
         "set_test_result": {
           "signature": "set_test_result(summary, cases?, defects?, …)",
           "desc": "仅测试(test)节点:写入测试总结 test_result.json"
@@ -128,6 +120,14 @@
         "get_implementation_result": {
           "signature": "get_implementation_result() -> implementation_result.json",
           "desc": "读取实现结果说明"
+        },
+        "set_merge_request": {
+          "signature": "set_merge_request(summary, items)",
+          "desc": "仅交付(deliver)节点:写入合并请求 merge_request.json(每仓一条 MR/PR)"
+        },
+        "get_merge_request": {
+          "signature": "get_merge_request() -> merge_request.json",
+          "desc": "读取合并请求结果"
         },
         "set_preview": {
           "signature": "set_preview(port?, url?, label?)",
@@ -377,13 +377,13 @@
     },
     "pmAgentFs": {
       "name": "pm-agent-fs",
-      "desc": "项目管理专用 · 读组织架构与编辑下属 Agent 工作目录",
-      "overview": "读取 _org.json 虚拟组与同项目成员扁平视图（self/direct/other），并对同项目任意 Agent 的 host 侧 workspace/ 做 list/read/write/delete/mkdir/rename。不触及 Run 沙箱，不改 agent.json 元配置。",
+      "desc": "项目管理专用 · 列出项目 Agent 与编辑同项目 Agent 工作目录",
+      "overview": "列出当前项目的全部 Agent 成员（self 为当前 PM，other 为同项目其他成员），并对同项目任意 Agent 的 host 侧 workspace/ 做 list/read/write/delete/mkdir/rename。不触及 Run 沙箱，不改 agent.json 元配置。",
       "convention": "项目详情 → 项目管理设置中启用 pm-agent-fs（新项目默认启用；旧项目若已显式保存 EnabledMcps 需手动勾选）。变更在 Agent Studio「Agent 工作目录」刷新或重开后可见（非热更新）。注意：若 Studio 打开同一 Agent 且存在未保存草稿，随后 Save 可能覆盖 MCP 已写入内容——Demo/使用时请刷新并避免并行脏写。",
       "tools": {
-        "pm_get_org": {
-          "signature": "pm_get_org()",
-          "desc": "读组织架构与同项目成员"
+        "pm_list_project_agents": {
+          "signature": "pm_list_project_agents()",
+          "desc": "列出同项目 Agent 成员"
         },
         "pm_list_agent_templates": {
           "signature": "pm_list_agent_templates()",
@@ -392,14 +392,6 @@
         "pm_create_agent_from_template": {
           "signature": "pm_create_agent_from_template(templateId, name)",
           "desc": "从模板创建工程师 Agent（同项目，禁止覆盖重名）"
-        },
-        "pm_set_org_membership": {
-          "signature": "pm_set_org_membership(agentName, groupIds)",
-          "desc": "设置虚拟组成员（groupIds 须在授权范围内）"
-        },
-        "pm_ensure_child_group": {
-          "signature": "pm_ensure_child_group(name, parentGroupId?)",
-          "desc": "在授权根组下幂等确保子组存在"
         },
         "pm_fs_list": {
           "signature": "pm_fs_list(agentName, path?)",
@@ -463,7 +455,7 @@
       "name": "external-project-mcp",
       "desc": "项目级外部 MCP · Bearer 项目 API Key · 独立于内部 PM Leader",
       "overview": "在项目详情 → 外部 MCP 开启总开关、勾选能力包并创建项目 API Key 后，外部 AI（Cursor/Claude 等）可通过 HTTP MCP 调用与内部 PM 同名的五包工具面。默认关闭；未授权或包未启用时拒绝 list/call。",
-      "convention": "配置入口：项目详情 → 外部 MCP。写范围：pm-workflow-write（工作流/Run/门禁）、pm-agent-fs（组织与 Agent workspace FS）、pm-prd-manager（仅创建草稿）；pm-progress 与 pm-workflow-read 为只读。不含 PM Leader 绑定、人类协作者或 Run 沙箱内文件。",
+      "convention": "配置入口：项目详情 → 外部 MCP。写范围：pm-workflow-write（工作流/Run/门禁）、pm-agent-fs（项目 Agent 与 workspace FS）、pm-prd-manager（仅创建草稿）；pm-progress 与 pm-workflow-read 为只读。不含 PM Leader 绑定、人类协作者或 Run 沙箱内文件。",
       "entryPath": "项目详情 → 外部 MCP"
     }
   }

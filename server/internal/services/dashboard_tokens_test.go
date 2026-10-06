@@ -95,11 +95,11 @@ func TestPlatformTokenBreakdown_matchesPerProjectSum(t *testing.T) {
 	}
 
 	// No usage anywhere → null (not 0).
-	_, err = s.Create("EmptyA", "", nil, nil)
+	_, err = s.Create("EmptyA", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.Create("EmptyB", "", nil, nil)
+	_, err = s.Create("EmptyB", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,27 +109,27 @@ func TestPlatformTokenBreakdown_matchesPerProjectSum(t *testing.T) {
 			st.TotalTokens, st.WorkflowTokens, st.PMTokens)
 	}
 
-	partial, err := s.Create("Partial", "", nil, nil)
+	partial, err := s.Create("Partial", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	zero, err := s.Create("Zero", "", nil, nil)
+	zero, err := s.Create("Zero", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pmOnly, err := s.Create("PMOnly", "", nil, nil)
+	pmOnly, err := s.Create("PMOnly", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	mustCreate(&models.WorkflowDef{ID: "wf-partial", ProjectID: partial.ID, Name: "w", Status: "draft", Version: 1})
+	mustCreate(&models.WorkflowDef{ID: "wf-partial", ProjectID: partial.ID, Name: "w", Version: 1})
 	mustCreate(&models.Run{ID: "run-partial", WorkflowID: "wf-partial", Status: "completed"})
 	mustCreate(&models.StateRun{
 		RunID: "run-partial", NodeID: "n1", Status: "completed",
 		Usage: &models.TokenUsage{InputTokens: 100, OutputTokens: 28},
 	})
 
-	mustCreate(&models.WorkflowDef{ID: "wf-zero", ProjectID: zero.ID, Name: "w", Status: "draft", Version: 1})
+	mustCreate(&models.WorkflowDef{ID: "wf-zero", ProjectID: zero.ID, Name: "w", Version: 1})
 	mustCreate(&models.Run{ID: "run-zero", WorkflowID: "wf-zero", Status: "cancelled"})
 	mustCreate(&models.StateRun{
 		RunID: "run-zero", NodeID: "n1", Status: "cancelled",
@@ -187,11 +187,11 @@ func TestPlatformTokenBreakdown_matchesPerProjectSum(t *testing.T) {
 		t.Fatal(err)
 	}
 	s2 := NewProjectService(db2)
-	z, err := s2.Create("OnlyZero", "", nil, nil)
+	z, err := s2.Create("OnlyZero", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db2.Create(&models.WorkflowDef{ID: "wf-z", ProjectID: z.ID, Name: "w", Status: "draft", Version: 1}).Error; err != nil {
+	if err := db2.Create(&models.WorkflowDef{ID: "wf-z", ProjectID: z.ID, Name: "w", Version: 1}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db2.Create(&models.Run{ID: "run-z", WorkflowID: "wf-z", Status: "completed"}).Error; err != nil {

@@ -23,6 +23,10 @@ async function boot() {
           h(AgentCreateWizard, {
             open: open.value,
             existingNames: [],
+            projects: [
+              { id: 'proj-e2e', name: 'E2E' },
+              { id: 'proj-shared', name: 'Shared' },
+            ],
             projectId: new URLSearchParams(location.search).get('projectId') || undefined,
             onClose: () => {
               open.value = false

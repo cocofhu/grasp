@@ -172,18 +172,14 @@ func (f turnFrame) dataType() string {
 	return d.Type
 }
 
-// belongsTo reports whether f is part of the turn opID. Tagged frames match by
-// opId. Untagged event frames only count against a legacy bridge that never
-// tags; untagged errors (a rejected chat, sent only to this connection) and
-// queue_state (global) always count.
+// belongsTo reports whether f is part of the turn opID. Event frames must carry
+// a matching opId; untagged errors (a rejected chat, sent only to this
+// connection) and queue_state (global) always count.
 func (c *ACPClient) belongsTo(f turnFrame, opID string) bool {
 	if f.OpID != "" {
-		c.opIDTagged.Store(true)
 		return f.OpID == opID
 	}
 	switch f.Op {
-	case "event":
-		return !c.opIDTagged.Load()
 	case "error", "queue_state":
 		return true
 	}
@@ -367,15 +363,11 @@ func (c *ACPClient) cancelConfirmed(f turnFrame, opID string) bool {
 		if f.dataType() != "prompt_done" {
 			return false
 		}
-		if f.OpID != "" {
-			c.opIDTagged.Store(true)
-			if opID == "" || f.OpID == opID {
-				c.lastDoneOpID.Store(f.OpID)
-				return true
-			}
-			return false
+		if f.OpID != "" && (opID == "" || f.OpID == opID) {
+			c.lastDoneOpID.Store(f.OpID)
+			return true
 		}
-		return opID == "" || !c.opIDTagged.Load()
+		return false
 	}
 	return false
 }

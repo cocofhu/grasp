@@ -24,7 +24,6 @@ test.describe('workflow favorites quick-launch', () => {
     await expect(page.getByTestId('nav-quick-workflow-item').first()).toBeVisible({ timeout: 15_000 })
     const items = page.getByTestId('nav-quick-workflow-item')
     await expect(items).toHaveCount(3)
-    // Legacy favorites migrate once to newest-first as the initial manual order.
     await expect(items.nth(0)).toContainText('夜间回归')
     await expect(items.nth(0)).toContainText('checkout-service')
     await expect(items.nth(0)).toContainText('草稿')

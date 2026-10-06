@@ -11,10 +11,7 @@ import {
   createMemoryDraftIdb,
   type DraftIdbBackend,
 } from './draftIdb'
-import {
-  __resetHomeComposerDraftMigrationForTests,
-  saveHomeComposerDraft,
-} from './homeComposerDraft'
+import { saveHomeComposerDraft } from './homeComposerDraft'
 
 describe('draft capacity vs send gate (plan g3.1 / g3.2)', () => {
   let store: Record<string, string>
@@ -22,7 +19,6 @@ describe('draft capacity vs send gate (plan g3.1 / g3.2)', () => {
   beforeEach(() => {
     store = {}
     __setDraftIdbBackendForTests(createMemoryDraftIdb())
-    __resetHomeComposerDraftMigrationForTests()
     vi.stubGlobal('localStorage', {
       getItem: (k: string) => store[k] ?? null,
       setItem: (k: string, v: string) => {
@@ -40,7 +36,6 @@ describe('draft capacity vs send gate (plan g3.1 / g3.2)', () => {
 
   afterEach(() => {
     __resetDraftIdbForTests()
-    __resetHomeComposerDraftMigrationForTests()
     vi.unstubAllGlobals()
   })
 

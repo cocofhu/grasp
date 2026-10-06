@@ -1,13 +1,6 @@
 package nodereg
 
-import (
-	"github.com/cocofhu/grasp/internal/mcp"
-	"github.com/cocofhu/grasp/internal/models"
-)
-
-// selectedProposalKey is the proposal_select output carrying the chosen
-// proposal; it is a node product, not an Agent-writable schema.
-const selectedProposalKey = "proposal"
+import "github.com/cocofhu/grasp/internal/models"
 
 // ManifestSchema is the web-facing summary of a product schema.
 type ManifestSchema struct {
@@ -49,7 +42,5 @@ func BuildManifest() Manifest {
 		m.OutputKeyToArtifact[e.OutputKey] = s.ArtifactName
 		m.Schemas = append(m.Schemas, e)
 	}
-	m.OutputKeyToArtifact[selectedProposalKey] = mcp.ProposalArtifactName
-	m.ArtifactToOutputJSON[mcp.ProposalArtifactName] = selectedProposalKey + "_json"
 	return m
 }

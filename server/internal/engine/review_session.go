@@ -10,7 +10,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/chatsession"
-	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 
@@ -481,7 +480,7 @@ func (e *Engine) cancelReactSession(runID, producerID string, clearQueue bool) e
 func (e *Engine) cancelLaneSession(runID, producerID, lane string, clearQueue bool) error {
 	s := e.laneSession(runID, producerID, lane)
 	if s == nil {
-		// Still best-effort ACP cancel in case a legacy sync turn is in flight.
+		// Still best-effort ACP cancel in case a turn is in flight without a session.
 		e.cancelLaneProviderTurn(runID, producerID, lane)
 		e.publishReviewLane(runID, producerID, lane, "queue_state", map[string]any{"waiting": 0, "items": []any{}, "busy": false})
 		return nil
@@ -660,7 +659,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 // executeReviewTurn persists the human turn, runs ReviseInPlace, persists the
 // agent turn (marking interrupted on cancel), and refreshes outputs/gates.
 func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *reviewQueueItem) (interrupted bool, err error) {
-	// Serialize against force confirm / legacy paths on the same producer key.
+	// Serialize against force confirm on the same producer key.
 	unlock := e.lockResume(s.runID + ":" + s.producerID)
 	defer unlock()
 
@@ -804,12 +803,6 @@ func (e *Engine) refreshGateBodyAfterRevise(c *execCtx, gateNodeID string) {
 	if bt, _ := gateNode.Config["body_template"].(string); strings.TrimSpace(bt) != "" {
 		gate.BodyMd = e.interpolate(c2, bt)
 		logDB(e.db.Save(&gate), c.run.ID, "refresh gate body after gate-react revise")
-	} else if gateNode.Type == "proposal_select" {
-		from := firstNonEmptyStr(str(gateNode.Config["from"]), mcp.ProposalsArtifactName)
-		if s, ok := e.store.Get(c.run.ID, from); ok {
-			gate.BodyMd = mcp.RenderProposalsMarkdown(s)
-			logDB(e.db.Save(&gate), c.run.ID, "refresh proposal_select body after gate-react revise")
-		}
 	}
 }
 

@@ -13,7 +13,6 @@ const MOCK_PROJECTS = [
     pmTokens: 28400,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-07-25T03:42:00Z',
-    sandboxEnv: [],
     variables: [],
   },
   {
@@ -24,7 +23,6 @@ const MOCK_PROJECTS = [
     totalTokens: 1_020_000,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-07-24T10:06:00Z',
-    sandboxEnv: [],
     variables: [],
   },
   {
@@ -35,7 +33,6 @@ const MOCK_PROJECTS = [
     totalTokens: 42,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-07-22T00:00:00Z',
-    sandboxEnv: [],
     variables: [],
   },
   {
@@ -46,7 +43,6 @@ const MOCK_PROJECTS = [
     totalTokens: null,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-07-18T00:00:00Z',
-    sandboxEnv: [],
     variables: [],
   },
   {
@@ -57,14 +53,12 @@ const MOCK_PROJECTS = [
     totalTokens: 0,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-07-25T01:10:00Z',
-    sandboxEnv: [],
     variables: [],
   },
 ]
 
 const MOCK_DETAIL = {
   ...MOCK_PROJECTS[0],
-  sandboxEnv: [],
   variables: [],
 }
 
@@ -100,7 +94,7 @@ async function stubProjectDetailApis(
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([]),
+        body: JSON.stringify({ items: [], total: 0, page: 1, pageSize: 20, hasMore: false }),
       })
       return
     }
@@ -307,7 +301,6 @@ test.describe('项目 Token 总体消耗 UI', () => {
       totalTokens: null,
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-07-18T00:00:00Z',
-      sandboxEnv: [],
       variables: [],
     })
     await page.route('**/api/projects/*/token-stats**', async (route) => {

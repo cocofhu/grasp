@@ -60,33 +60,26 @@ export function suggestRename(name: string, existing: string[]): string {
 }
 
 export type ZipPeek =
-  | { kind: 'org-folder'; agentNames: string[]; rootGroupName?: string }
+  | { kind: 'project-bundle'; agentNames: string[] }
   | { kind: 'agent'; name?: string }
   | { kind: 'unknown'; error: string }
 
-/** Peek a ZIP: folder.json (org-folder) first, then root agent.json. */
+export const PROJECT_BUNDLE_MANIFEST = 'project.json'
+export const PROJECT_BUNDLE_KIND = 'project-agents'
+
+/** Peek a ZIP: project.json (project bundle) first, then root agent.json. */
 export async function peekZipPackage(file: File): Promise<ZipPeek> {
   try {
     const buf = new Uint8Array(await file.arrayBuffer())
-    const folderText = await readZipTextEntry(buf, 'folder.json')
-    if (folderText != null) {
+    const manifestText = await readZipTextEntry(buf, PROJECT_BUNDLE_MANIFEST)
+    if (manifestText != null) {
       try {
-        const json = JSON.parse(folderText) as {
-          kind?: string
-          agentNames?: unknown
-          agents?: Record<string, unknown>
-          groups?: { id?: string; name?: string }[]
-          rootGroupId?: string
-        }
-        if (json?.kind === 'org-folder') {
-          let names: string[] = []
-          if (Array.isArray(json.agentNames)) {
-            names = json.agentNames.map((n) => String(n).trim()).filter(Boolean)
-          } else if (json.agents && typeof json.agents === 'object') {
-            names = Object.keys(json.agents)
-          }
-          const rootGroupName = json.groups?.find((g) => g.id === json.rootGroupId)?.name
-          return { kind: 'org-folder', agentNames: names, rootGroupName }
+        const json = JSON.parse(manifestText) as { kind?: string; agentNames?: unknown }
+        if (json?.kind === PROJECT_BUNDLE_KIND) {
+          const names = Array.isArray(json.agentNames)
+            ? json.agentNames.map((n) => String(n).trim()).filter(Boolean)
+            : []
+          return { kind: 'project-bundle', agentNames: names }
         }
       } catch {
         return { kind: 'unknown', error: 'invalid zip' }

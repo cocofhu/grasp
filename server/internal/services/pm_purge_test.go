@@ -13,18 +13,18 @@ func TestPurgeAgentProjectData(t *testing.T) {
 	skills := NewAgentService(t.TempDir())
 	pm := NewPmService(db, skills)
 	ps := NewProjectService(db)
-	pA, err := ps.Create("ProjA", "", nil, nil)
+	pA, err := ps.Create("ProjA", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pB, err := ps.Create("ProjB", "", nil, nil)
+	pB, err := ps.Create("ProjB", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := skills.Save(Agent{Name: "agent-x", ProjectID: pA.ID}); err != nil {
+	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "agent-x", ProjectID: pA.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if err := skills.Save(Agent{Name: "agent-y", ProjectID: pA.ID}); err != nil {
+	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "agent-y", ProjectID: pA.ID}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -110,15 +110,15 @@ func TestUpdateBindingRequiresAgentHomeProject(t *testing.T) {
 	skills := NewAgentService(t.TempDir())
 	pm := NewPmService(db, skills)
 	ps := NewProjectService(db)
-	pA, err := ps.Create("BindA", "", nil, nil)
+	pA, err := ps.Create("BindA", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pB, err := ps.Create("BindB", "", nil, nil)
+	pB, err := ps.Create("BindB", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := skills.Save(Agent{Name: "home-b", ProjectID: pB.ID}); err != nil {
+	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "home-b", ProjectID: pB.ID}); err != nil {
 		t.Fatal(err)
 	}
 	en := true
@@ -126,7 +126,7 @@ func TestUpdateBindingRequiresAgentHomeProject(t *testing.T) {
 	if _, err := pm.UpdateBinding(pA.ID, &en, &agent, nil, nil, nil); !errors.Is(err, ErrPmLeaderProjectMismatch) {
 		t.Fatalf("want ErrPmLeaderProjectMismatch, got %v", err)
 	}
-	if err := skills.Save(Agent{Name: "home-a", ProjectID: pA.ID}); err != nil {
+	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "home-a", ProjectID: pA.ID}); err != nil {
 		t.Fatal(err)
 	}
 	agent = "home-a"
@@ -140,7 +140,7 @@ func TestUpdateMemoryForAgentScoped(t *testing.T) {
 	skills := NewAgentService(t.TempDir())
 	pm := NewPmService(db, skills)
 	ps := NewProjectService(db)
-	p, err := ps.Create("MemScope", "", nil, nil)
+	p, err := ps.Create("MemScope", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestRenameAgentScopedData(t *testing.T) {
 	skills := NewAgentService(t.TempDir())
 	pm := NewPmService(db, skills)
 	ps := NewProjectService(db)
-	p, err := ps.Create("RenameHome", "", nil, nil)
+	p, err := ps.Create("RenameHome", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,23 +186,11 @@ func TestRenameAgentScopedData(t *testing.T) {
 	}
 }
 
-func TestAgentDeclaresAndMatchesHelpers(t *testing.T) {
-	if AgentMayUseProjectPlatformMCP(Agent{}) {
-		t.Fatal("unbound agent must not use project platform MCP")
-	}
-	if !AgentMayUseProjectPlatformMCP(Agent{ProjectID: "p1"}) {
-		t.Fatal("bound agent may use project platform MCP")
-	}
-	if !AgentProjectMatches(Agent{ProjectID: "p1"}, "p1") {
+func TestAgentProjectMatches(t *testing.T) {
+	if !AgentProjectMatches(Agent{AcpBackend: AcpBackendCursor, ProjectID: "p1"}, "p1") {
 		t.Fatal("expected match")
 	}
-	if AgentProjectMatches(Agent{ProjectID: "p1"}, "p2") {
+	if AgentProjectMatches(Agent{AcpBackend: AcpBackendCursor, ProjectID: "p1"}, "p2") {
 		t.Fatal("expected mismatch")
-	}
-	if !AgentDeclaresProjectPlatformMCP([]MCPServer{{Name: "memory-store"}}) {
-		t.Fatal("memory-store should count")
-	}
-	if AgentDeclaresProjectPlatformMCP([]MCPServer{{Name: "artifact-store"}}) {
-		t.Fatal("artifact-store alone should not count")
 	}
 }

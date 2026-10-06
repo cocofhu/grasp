@@ -17,13 +17,12 @@
 
 ## 0. 传输与端点
 
-- 沙箱在容器内监听一个 HTTP/WebSocket 端口(参考实现:`8765`,可由 `ACP_BRIDGE_PORT` 覆盖;
-  deprecated 别名 `CURSOR_ACP_PORT`,计划 0.2.0 移除)。
-- code-flow 通过宿主已发布的 `127.0.0.1:<port>` 访问;浏览器经 `/sandbox-bridge/:id/`
-  反向代理(兼容期 `/sandbox-acp/:id/` 双注册,不做重定向)。
+- 沙箱在容器内监听一个 HTTP/WebSocket 端口(参考实现:`8765`,可由 `ACP_BRIDGE_PORT` 覆盖)。
+- Grasp 通过沙箱的 session 端点访问;浏览器经 `/sandbox-bridge/:id/` 反向代理。
 - 所有 `/api/*` 端点与 `/ws` 同源同端口。
-- 鉴权:默认 loopback 免鉴权;参考实现可设 `ACP_BRIDGE_PASSWORD` 启用登录(deprecated
-  别名 `CURSOR_ACP_PASSWORD`,计划 0.2.0 移除)。code-flow 默认不启用。
+- 鉴权:口令只从 `ACP_BRIDGE_PASSWORD` 读取。Grasp 创建的沙箱**总会**设置该口令,并且
+  拒绝在口令为空时连接:先 `POST /api/login {"password"}`,从响应取 `agentchat_session`
+  cookie,再带该 cookie 访问 `/ws` 与 `/api/*`。只认这一个 cookie 名。
 
 协议表面:
 
@@ -101,11 +100,12 @@ WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST
   `← {op:"event", opId?, data:{type:"session_update"|...}}`,以轮次边界事件收尾(见下)。
   `opId` 由客户端生成;沙箱在该轮的**每一帧** `event`(含 `prompt_begin`/`prompt_done`)
   以及该轮的 `error` 上原样带回,客户端据此只认本轮的帧、忽略其它轮次的残留帧。
+  Grasp 每轮都带 `opId`,并丢弃没有 `opId` 的 `event` 帧。
   `deadlineSec` 可选,覆盖本轮的总时长上限(见 3.3)。
 - `← {op:"queue_state", busy, queue_length, queue_capacity, queue_entries, running?}` ——
   每次入队/出队以及**轮次开始/结束时**广播;`busy` 是**权威的会话忙/闲信号**
   (`true` 表示一次 `session/prompt` 正在处理中,`false` 表示当前空闲)。
-- `→ {op:"cancel", opId?}` 取消。不带 `opId`:取消当前轮并清空排队(旧语义)。带 `opId`:
+- `→ {op:"cancel", opId?}` 取消。不带 `opId`:取消当前轮并清空排队。带 `opId`:
   只取消该轮——正在运行则中断它,仍在排队则移出队列。沙箱回
   `← {op:"cancel_ack", opId, status}`,`status` 为 `cancelling`(运行中,随后以该轮
   `prompt_done{stopReason:"cancelled"}` 收尾)、`removed`(已从队列移除)或
@@ -342,7 +342,7 @@ iframe 内嵌它。跨源页面无法由 Grasp 注入脚本,参考实现在**沙
 - 只改 `text/html`; WebSocket `101` / 非 HTML 原样转发;保留 `Host`;不改 `Location`。
 - 已知限制:明文 HTTP; brotli 响应不改写; CSP nonce / `strict-dynamic` 仍可能挡脚本;
   仅 IPv4 `iptables`; 只覆盖 `PREVIEW_PORT`。无 `iptables` / 非 privileged 时跳过。
-- 旧镜像没有该进程时,Agent 在 HTML 入口手写
+- 注入层未运行时(如 `PREVIEW_AUTO_INJECT=0`),Agent 在 HTML 入口手写
   `<script src="$PREVIEW_PICK_SCRIPT_URL"></script>` 兜底。
 
 ### 5.4 生命周期

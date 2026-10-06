@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -20,8 +21,6 @@ const AgentExportSchemaVersion = 1
 type agentExportJSON struct {
 	Name              string                    `json:"name"`
 	GitCredentialType string                    `json:"gitCredentialType,omitempty"`
-	GitSshKnownHosts  string                    `json:"gitSshKnownHosts,omitempty"`
-	GitSshPrivateKey  string                    `json:"gitSshPrivateKey,omitempty"`
 	AcpBackend        string                    `json:"acpBackend,omitempty"`
 	MCP               []MCPServer               `json:"mcp,omitempty"`
 	Env               map[string]string         `json:"env,omitempty"`
@@ -48,7 +47,7 @@ func (s *AgentService) ExportZIP(name string) ([]byte, error) {
 }
 
 // writeAgentToZip writes one agent's export snapshot into zw under prefix
-// ("" for single-agent ZIP, "agents/{name}/" for folder packages).
+// ("" for single-agent ZIP, "agents/{name}/" for project packages).
 // agent.json is stored uncompressed. Caller must hold s.mu.
 func (s *AgentService) writeAgentToZip(zw *zip.Writer, name, prefix string) error {
 	a, ok := s.Get(name)
@@ -59,8 +58,6 @@ func (s *AgentService) writeAgentToZip(zw *zip.Writer, name, prefix string) erro
 	export := agentExportJSON{
 		Name:              name,
 		GitCredentialType: a.GitCredentialType,
-		GitSshKnownHosts:  a.GitSshKnownHosts,
-		GitSshPrivateKey:  a.GitSshPrivateKey,
 		AcpBackend:        a.AcpBackend,
 		MCP:               a.MCP,
 		Env:               a.Env,
@@ -122,15 +119,21 @@ const (
 	ImportZIPOverwrite ImportZIPMode = "overwrite"
 )
 
-// ImportZIP parses a ZIP export and writes the agent to disk.
-func (s *AgentService) ImportZIP(raw []byte, targetName string, mode ImportZIPMode) (Agent, error) {
+// ErrAgentProjectRequired is returned when an Agent write has no home project.
+var ErrAgentProjectRequired = errors.New("请选择 Agent 所属项目")
+
+// ImportZIP parses a ZIP export and writes the agent to disk under projectID.
+func (s *AgentService) ImportZIP(raw []byte, targetName, projectID string, mode ImportZIPMode) (Agent, error) {
+	if strings.TrimSpace(projectID) == "" {
+		return Agent{}, ErrAgentProjectRequired
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	export, files, err := parseZipAgent(bytes.NewReader(raw), int64(len(raw)), "", 0)
 	if err != nil {
 		return Agent{}, err
 	}
-	return s.applyAgentExport(export, files, targetName, mode)
+	return s.applyAgentExport(export, files, targetName, projectID, mode)
 }
 
 // parseZipAgent reads agent.json + workspace files from a ZIP, optionally under prefix.
@@ -161,7 +164,7 @@ func parseZipAgent(r io.ReaderAt, size int64, prefix string, maxFileBytes int) (
 			}
 			name = strings.TrimPrefix(name, prefix)
 		} else if strings.HasPrefix(name, "agents/") {
-			// Single-agent ZIP must not be confused with folder layout entries.
+			// Single-agent ZIP must not be confused with project package entries.
 			continue
 		}
 		if name == "agent.json" {
@@ -213,7 +216,7 @@ func parseZipAgent(r io.ReaderAt, size int64, prefix string, maxFileBytes int) (
 }
 
 // applyAgentExport writes a parsed export to disk. Caller must hold s.mu.
-func (s *AgentService) applyAgentExport(export agentExportJSON, files []AgentFile, targetName string, mode ImportZIPMode) (Agent, error) {
+func (s *AgentService) applyAgentExport(export agentExportJSON, files []AgentFile, targetName, projectID string, mode ImportZIPMode) (Agent, error) {
 	targetName = strings.TrimSpace(targetName)
 	if targetName == "" {
 		return Agent{}, fmt.Errorf("target name is required")
@@ -249,21 +252,13 @@ func (s *AgentService) applyAgentExport(export agentExportJSON, files []AgentFil
 		layout = AgentLayout{}.withDefaults()
 	}
 
-	// Home project is environment-specific and never travels in the ZIP.
-	// Overwrite keeps the existing binding; create stays unbound.
-	projectID := ""
-	if mode == ImportZIPOverwrite {
-		if prev, ok := s.Get(targetName); ok {
-			projectID = strings.TrimSpace(prev.ProjectID)
-		}
-	}
+	// Home project is environment-specific and never travels in the ZIP; the
+	// caller picks the target project.
 	agent := Agent{
 		Name:              targetName,
-		ProjectID:         projectID,
+		ProjectID:         strings.TrimSpace(projectID),
 		AcpBackend:        export.AcpBackend,
 		GitCredentialType: export.GitCredentialType,
-		GitSshKnownHosts:  export.GitSshKnownHosts,
-		GitSshPrivateKey:  export.GitSshPrivateKey,
 		Files:             files,
 		MCP:               export.MCP,
 		Env:               export.Env,
@@ -272,9 +267,6 @@ func (s *AgentService) applyAgentExport(export agentExportJSON, files []AgentFil
 	}
 	if mode == ImportZIPCreate && len(agent.MCP) == 0 {
 		agent.MCP = DefaultPlatformMCP()
-	}
-	if projectID == "" {
-		agent.MCP = StripProjectPlatformMCP(agent.MCP)
 	}
 	if err := s.saveUnlocked(agent); err != nil {
 		return Agent{}, err

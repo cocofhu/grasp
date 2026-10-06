@@ -22,7 +22,18 @@ vi.mock('@vue-flow/core', async () => {
   return {
     VueFlow: dc({
       name: 'VueFlow',
-      props: ['nodes', 'edges', 'nodeTypes', 'edgeTypes', 'isValidConnection', 'nodesDraggable', 'nodesConnectable'],
+      props: [
+        'nodes',
+        'edges',
+        'nodeTypes',
+        'edgeTypes',
+        'isValidConnection',
+        'nodesDraggable',
+        'nodesConnectable',
+        'selectionKeyCode',
+        'panOnDrag',
+        'panOnScroll',
+      ],
       emits: [
         'nodes-change',
         'edges-change',
@@ -83,8 +94,25 @@ function sampleGraph() {
   })
 }
 
-function makeEditor(graph = sampleGraph()) {
-  return useCanvasEditor({ graph, agents: ref(AGENTS), t, typeLabel: (type) => type })
+function makeEditor(graph = sampleGraph(), notify?: (m: string, action?: { label: string; run: () => void }) => void) {
+  return useCanvasEditor({ graph, agents: ref(AGENTS), t, typeLabel: (type) => type, notify })
+}
+
+const SIZE = { width: 240, height: 100 }
+function overlapsAny(n: WFNode, others: WFNode[]) {
+  return others.some(
+    (o) =>
+      o.id !== n.id &&
+      n.position!.x < o.position!.x + SIZE.width &&
+      o.position!.x < n.position!.x + SIZE.width &&
+      n.position!.y < o.position!.y + SIZE.height &&
+      o.position!.y < n.position!.y + SIZE.height,
+  )
+}
+
+function pointer(type: string, x: number, y: number, init: MouseEventInit = {}) {
+  const ev = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, ...init })
+  return ev
 }
 
 const mounted: { unmount: () => void }[] = []
@@ -174,6 +202,138 @@ describe('WorkflowCanvas · edit mode', () => {
     expect(added.type).toBe('branch')
     expect(added.position!.x % 8).toBe(0)
     expect(editor.selectedNodeIds.value).toEqual([added.id])
+  })
+
+  it('nudges a dropped node off the nodes it would overlap', async () => {
+    const editor = makeEditor()
+    const w = mountCanvas({ nodes: editor.graph.nodes, edges: editor.graph.edges, editor })
+    const ev = new Event('drop', { bubbles: true, cancelable: true }) as DragEvent
+    Object.assign(ev, {
+      clientX: 440,
+      clientY: 40,
+      dataTransfer: { types: [PALETTE_MIME], getData: () => JSON.stringify({ type: 'set_var' }) },
+    })
+    w.find('[data-testid="workflow-canvas"]').element.dispatchEvent(ev)
+    await flushPromises()
+    const added = editor.graph.nodes.at(-1)!
+    expect(added.type).toBe('set_var')
+    expect(overlapsAny(added, editor.graph.nodes)).toBe(false)
+  })
+
+  it('ignores a dropped Agent without a profile', async () => {
+    const editor = makeEditor()
+    const w = mountCanvas({ nodes: editor.graph.nodes, edges: editor.graph.edges, editor })
+    const ev = new Event('drop', { bubbles: true, cancelable: true }) as DragEvent
+    Object.assign(ev, { clientX: 500, clientY: 300, dataTransfer: { types: [PALETTE_MIME], getData: () => JSON.stringify({ type: 'agent' }) } })
+    w.find('[data-testid="workflow-canvas"]').element.dispatchEvent(ev)
+    expect(editor.graph.nodes).toHaveLength(3)
+    expect(editor.addNode({ type: 'agent' })).toBeNull()
+  })
+
+  it('places a palette node where the canvas is clicked, with a ghost preview and hint', async () => {
+    const editor = makeEditor()
+    const w = mountCanvas({ nodes: editor.graph.nodes, edges: editor.graph.edges, editor })
+    editor.togglePlacing({ type: 'branch' })
+    await flushPromises()
+    expect(w.find('[data-testid="canvas-place-hint"]').exists()).toBe(true)
+    expect(w.find('[data-testid="canvas-place-ghost"]').exists()).toBe(false)
+    const host = w.find('[data-testid="workflow-canvas"]').element
+    host.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 500, clientY: 300 }))
+    await flushPromises()
+    const ghost = w.find('[data-testid="canvas-place-ghost"]')
+    expect(ghost.exists()).toBe(true)
+    expect(ghost.text()).toBe(t('nodes.branch.label'))
+    const pane = w.find('.vue-flow').element
+    pane.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 500, clientY: 300 }))
+    pane.dispatchEvent(pointer('click', 500, 300))
+    await flushPromises()
+    const added = editor.graph.nodes.at(-1)!
+    expect(added.type).toBe('branch')
+    expect(added.position).toEqual({ x: 400, y: 272 })
+    expect(editor.placing.value).toBeNull()
+    expect(w.emitted('pane-click')).toBeUndefined()
+    expect(w.find('[data-testid="canvas-place-hint"]').exists()).toBe(false)
+  })
+
+  it('nudges a placed node off occupied space and keeps placing with Shift', async () => {
+    const editor = makeEditor()
+    const w = mountCanvas({ nodes: editor.graph.nodes, edges: editor.graph.edges, editor })
+    editor.togglePlacing({ type: 'output' })
+    editor.togglePlacing({ type: 'set_var' })
+    await flushPromises()
+    const pane = w.find('.vue-flow').element
+    pane.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 440, clientY: 40 }))
+    pane.dispatchEvent(pointer('click', 440, 40, { shiftKey: true }))
+    await flushPromises()
+    const added = editor.graph.nodes.at(-1)!
+    expect(added.type).toBe('set_var')
+    expect(overlapsAny(added, editor.graph.nodes)).toBe(false)
+    expect(editor.placing.value).toEqual({ type: 'set_var' })
+  })
+
+  it('cancels placement with Esc, right click or the hint button, and ignores drags', async () => {
+    const editor = makeEditor()
+    const w = mountCanvas({ nodes: editor.graph.nodes, edges: editor.graph.edges, editor })
+    Object.defineProperty(w.element, 'offsetParent', { configurable: true, get: () => document.body })
+    const pane = w.find('.vue-flow').element
+
+    editor.togglePlacing({ type: 'branch' })
+    pane.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 100, clientY: 300 }))
+    pane.dispatchEvent(pointer('click', 300, 300))
+    expect(editor.graph.nodes).toHaveLength(3)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }))
+    expect(editor.placing.value).toBeNull()
+
+    editor.togglePlacing({ type: 'branch' })
+    const ctx = pointer('contextmenu', 300, 300)
+    pane.dispatchEvent(ctx)
+    expect(ctx.defaultPrevented).toBe(true)
+    expect(editor.placing.value).toBeNull()
+
+    editor.togglePlacing({ type: 'branch' })
+    await flushPromises()
+    await w.find('[data-testid="canvas-place-cancel"]').trigger('click')
+    expect(editor.placing.value).toBeNull()
+    expect(editor.graph.nodes).toHaveLength(3)
+  })
+
+  it('box-selects on drag and pans with Space, middle button or scroll in edit mode', () => {
+    const editor = makeEditor()
+    const w = mountCanvas({ nodes: editor.graph.nodes, edges: editor.graph.edges, editor })
+    expect(vueFlow(w).props('selectionKeyCode')).toBe(true)
+    expect(vueFlow(w).props('panOnDrag')).toEqual([1, 2])
+    expect(vueFlow(w).props('panOnScroll')).toBe(true)
+  })
+
+  it('shows a selection bar that deletes the selection with an undo toast', async () => {
+    const notify = vi.fn()
+    const editor = makeEditor(sampleGraph(), notify)
+    const w = mountCanvas({ nodes: editor.graph.nodes, edges: editor.graph.edges, editor })
+    Object.defineProperty(w.element, 'offsetParent', { configurable: true, get: () => document.body })
+    expect(w.find('[data-testid="canvas-selection-bar"]').exists()).toBe(false)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, cancelable: true }))
+    await flushPromises()
+    const bar = w.get('[data-testid="canvas-selection-bar"]')
+    expect(bar.text()).toContain(t('canvas.selection.count', { n: 3 }))
+    await bar.get('[data-testid="canvas-selection-delete"]').trigger('click')
+    expect(editor.graph.nodes).toHaveLength(0)
+    expect(w.find('[data-testid="canvas-selection-bar"]').exists()).toBe(false)
+    const [message, action] = notify.mock.calls.at(-1)!
+    expect(message).toBe(t('canvas.toast.deleted', { n: 3 }))
+    action!.run()
+    expect(editor.graph.nodes.map((n) => n.id)).toEqual(['in', 'test', 'out'])
+    expect(editor.graph.edges).toHaveLength(1)
+  })
+
+  it('does not delete while typing in a text field', () => {
+    const editor = makeEditor()
+    mountCanvas({ nodes: editor.graph.nodes, edges: editor.graph.edges, editor })
+    editor.setSelection(['out'])
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }))
+    input.remove()
+    expect(editor.graph.nodes).toHaveLength(3)
   })
 
   it('records a node drag as a single snapped step', async () => {
@@ -329,5 +489,20 @@ describe('WorkflowCanvas · run mode', () => {
 
   it('hides the follow toggle when follow is not bound', () => {
     expect(mountCanvas(runProps()).find('[data-testid="canvas-follow"]').exists()).toBe(false)
+  })
+})
+
+describe('WorkflowCanvas · view mode', () => {
+  it('shows a read-only snapshot without run status or editing chrome', () => {
+    const g = sampleGraph()
+    const w = mountCanvas({ nodes: g.nodes, edges: g.edges, mode: 'view', agents: AGENTS })
+    expect(vueFlow(w).props('nodesDraggable')).toBe(false)
+    expect(vueFlow(w).props('nodesConnectable')).toBe(false)
+    expect(vueFlow(w).props('panOnDrag')).toBe(true)
+    const fnodes = vueFlow(w).props('nodes') as any[]
+    expect(fnodes.every((n) => n.data.status === undefined && !n.draggable)).toBe(true)
+    expect((vueFlow(w).props('edges') as any[])[0].data.editable).toBe(false)
+    expect(w.find('[data-testid="empty-canvas"]').exists()).toBe(false)
+    expect(w.find('[data-testid="canvas-undo"]').exists()).toBe(false)
   })
 })

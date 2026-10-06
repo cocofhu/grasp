@@ -2,7 +2,7 @@ package models
 
 // sumTokenUsageByModel returns the component-wise total across buckets.
 // nil byModel → nil; non-nil (incl. empty) → non-nil total (reported).
-// Test-only helper (production aggregation uses EffectiveUsageByModel paths).
+// Test-only helper.
 func sumTokenUsageByModel(byModel TokenUsageByModel) *TokenUsage {
 	if byModel == nil {
 		return nil

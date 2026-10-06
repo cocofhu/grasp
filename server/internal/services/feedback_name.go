@@ -33,8 +33,8 @@ func IsFeedbackArtifactName(name string) bool { return mcp.IsFeedbackArtifactNam
 // FeedbackArtifactName builds a feedback product name. ReAct feedback
 // (review/clarify) is a current-state document, so every round of one
 // node+iteration intentionally shares the same name and upserts its cumulative
-// conclusion. Gate and preview feedback retain their historical per-round
-// names: they are discrete submissions rather than a dialogue.
+// conclusion. Gate and preview feedback use per-round names: they are
+// discrete submissions rather than a dialogue.
 //
 // The result always satisfies the citation name shape
 // ^[a-z0-9][a-z0-9._-]*\.[a-z0-9]{1,16}$.

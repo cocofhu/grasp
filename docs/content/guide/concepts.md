@@ -7,7 +7,7 @@ description: FSM 编排、人审门禁、沙箱执行与产物契约。
 
 Grasp 把 coding agent 变成工作流里的步骤。你在有限状态机上编排：
 
-- **节点**即状态：Agent、输入、输出、赋值、分支、人工门禁、方案确认，共七种
+- **节点**即状态：Agent、输入、输出、赋值、分支、人工门禁，共六种
 - **边**即转移，可配置成功、失败、回滚路径
 - 可用 `when` 守卫、检查点，把风险步骤显式化
 
@@ -41,7 +41,7 @@ Grasp 把 coding agent 变成工作流里的步骤。你在有限状态机上编
 
 - 默认 24 小时，可选 1h / 8h / 24h / 72h / 7d；每个实例最多 1 条有效链接。
 - 铸造时可单选权限预设：**全权限**（默认，热态可 reply / cancel / 确认与驳回）或 **仅 ReAct 聊天**（可 reply / cancel，禁止一切公开 confirm/reject 流转）。预设写在链接行上，Preview.actions 与公开 decide/reply/cancel 同源服务端强制；仅藏按钮不够。存量无字段链接按全权限解释。
-- 管理面板默认掩码展示；复制写入完整 URL。同一浏览器标签刷新后仍可再复制同一有效链。**Regen（继承预设）**立刻作废旧链并沿用原 TTL 档位与权限预设；换权限须新建（作废旧活跃链），不可热改。立即撤销后链接不可用。门禁仍 pending 时，已撤销/已过期可再创建；审批已完成后只读，不能再创建。`proposal_select` 没有此入口（澄清与应用预览走下方「待复审临时链接」同策略）。
+- 管理面板默认掩码展示；复制写入完整 URL。同一浏览器标签刷新后仍可再复制同一有效链。**Regen（继承预设）**立刻作废旧链并沿用原 TTL 档位与权限预设；换权限须新建（作废旧活跃链），不可热改。立即撤销后链接不可用。门禁仍 pending 时，已撤销/已过期可再创建；审批已完成后只读，不能再创建。澄清与应用预览走下方「待复审临时链接」同策略。
 - 外部页无需登录。顶栏仅种类标签「外部一次决策」+ 剩余时间 + 预设芯片（冷态可附「会话已结束」）；不展示 Grasp 品牌、应用侧栏、Run# 或「打开运行详情」。
 - 热会话可在右侧发送 / 取消，视觉网页可取点标注。全权限冷态只读历史，底栏仍可最终处置；**仅 ReAct 冷态**展示死胡同说明（无法继续操作 / 禁止流转），绝不回退为可 decide。确认与驳回均须填写姓名与意见。确认并流转不触发 Agent。
 - 一次性令牌仅在确认或驳回**成功**后消耗；中间 ReAct 发送 / 取消不烧链；仅 ReAct 链上的越权 decide 被拒绝时也不消耗（生命周期依赖 TTL / 撤销 / 站内完成 / Run 结束）。过期、撤销、登录侧先审完或 Run 结束都会立刻失效。不可用态保持深色工作台空态，不再使用紫色一次确认镜框。
@@ -50,7 +50,7 @@ Grasp 把 coding agent 变成工作流里的步骤。你在有限状态机上编
 
 ### 待复审临时链接（Inbox kind=review / clarify）
 
-Inbox **待复审**、**应用预览**与 **待澄清**卡片使用同一套管理面板与令牌规则（`ShareLinkKindReview`，含 TTL 与权限预设），认证 API 走 `/api/runs/:id/reviews/:nodeId/share-link*`，不复用 `/gates/...`，也不伪造 Gate 行。站内入口：卡片「复制临时链接」、移动端详情顶栏同名按钮。公开页：待复审标识为「外部复审」；待澄清标识为「待澄清 / 外部澄清」。热态可多轮 ReAct（发送 / 流式轮询 / 取消）；节点登记了应用预览时，公开页默认提供远程桌面与取点（短时 ticket 通道，脱敏 ports；API 端口同源 iframe）；移动端仅降级提示。底栏仅「确认并流转」（无驳回、无姓名意见）。访客对话隔离、共享工作区与先决者生效的规则同上。澄清确认走 Agent 收尾写入结构化需求，取消仅清当前轮并保留队列。运行详情澄清/复审 Tab / 登录侧复审面板 / 产物预览工具条不提供临时链接入口；`proposal_select` 没有此入口。
+Inbox **待复审**、**应用预览**与 **待澄清**卡片使用同一套管理面板与令牌规则（`ShareLinkKindReview`，含 TTL 与权限预设），认证 API 走 `/api/runs/:id/reviews/:nodeId/share-link*`，不复用 `/gates/...`，也不伪造 Gate 行。站内入口：卡片「复制临时链接」、移动端详情顶栏同名按钮。公开页：待复审标识为「外部复审」；待澄清标识为「待澄清 / 外部澄清」。热态可多轮 ReAct（发送 / 流式轮询 / 取消）；节点登记了应用预览时，公开页默认提供远程桌面与取点（短时 ticket 通道，脱敏 ports；API 端口同源 iframe）；移动端仅降级提示。底栏仅「确认并流转」（无驳回、无姓名意见）。访客对话隔离、共享工作区与先决者生效的规则同上。澄清确认走 Agent 收尾写入结构化需求，取消仅清当前轮并保留队列。运行详情澄清/复审 Tab / 登录侧复审面板 / 产物预览工具条不提供临时链接入口。
 
 ### 应用预览：noVNC 与 IP 直连
 
@@ -87,7 +87,7 @@ Agent 授予了 `set_preview` 时，noVNC 工具栏会多一个「新标签页�
 
 Agent 不是在笔记本上跑的黑盒 prompt。它们通过仓库内嵌的 [sandbox-gateway](https://github.com/cocofhu/approving/tree/main/sandbox-gateway) 在 Docker 容器中执行，经 ACP 通信。
 
-支持 **Cursor**、**Claude Code**、**CodeBuddy**、**Trae**、**OpenCode**。按 Agent 配置 `acpBackend`；优先在项目详情的项目凭据 UI 中保存密钥、站点和其他后端选项。兼容的项目/Agent meta env 仅在项目凭据未配置时作为回退（OpenCode 还可指定厂商、API Base 与 model）。
+支持 **Cursor**、**Claude Code**、**CodeBuddy**、**Trae**、**OpenCode**。按 Agent 配置 `acpBackend`；密钥只在项目详情的项目凭据 UI 中保存；站点等非敏感选项可写在 Agent meta env（OpenCode 还可指定厂商、API Base 与 model）。
 
 ## 产物契约与 MCP
 
@@ -99,12 +99,12 @@ Agent 不是在笔记本上跑的黑盒 prompt。它们通过仓库内嵌的 [sa
 
 按 run token 隔离，留下可检查的纸面轨迹。
 
-## PM：`pm-agent-fs`（组织架构 + Agent 工作目录）
+## PM：`pm-agent-fs`（项目成员 + Agent 工作目录）
 
 项目绑定的 PM Leader 可启用独立 MCP `pm-agent-fs`（新项目默认启用；旧项目若已显式保存过 EnabledMcps 需在 PM 设置中手动勾选）：
 
-- `pm_get_org`：读取组织架构，并标注相对 Leader 的 self / direct / indirect / other
-- `pm_fs_*`：对自身与汇报闭包内下属的 **host 侧** `workspace/` 做 list/read/write/delete/mkdir/rename（**不是** Run 沙箱 FS）
+- `pm_list_project_agents`：列出当前项目的全部 Agent，并标注相对 Leader 的 self / other
+- `pm_fs_*`：对同项目 Agent 的 **host 侧** `workspace/` 做 list/read/write/delete/mkdir/rename（**不是** Run 沙箱 FS）
 
 写入结果与 Agent Studio「Agent 工作目录」同一磁盘树；**刷新或重新打开该 Agent 后可见**（不做热更新）。若 Studio 仍打开同一 Agent 且存在未保存草稿，随后 Save 可能覆盖 MCP 已写入内容——使用/Demo 时请刷新并避免并行脏写。
 

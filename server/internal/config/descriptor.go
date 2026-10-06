@@ -3,14 +3,13 @@ package config
 // OptionDescriptor is the public, machine-readable configuration contract used
 // by runtime validation and generated documentation.
 type OptionDescriptor struct {
-	Env        string
-	YAML       string
-	Type       string
-	Default    string
-	Sensitive  bool
-	Deprecated bool
-	ZH         string
-	EN         string
+	Env       string
+	YAML      string
+	Type      string
+	Default   string
+	Sensitive bool
+	ZH        string
+	EN        string
 }
 
 // OptionDescriptors returns all environment variables accepted by the runtime.
@@ -24,7 +23,6 @@ func OptionDescriptors() []OptionDescriptor {
 		{Env: "GRASP_DB", YAML: "database.path", Type: "path", Default: "grasp.db", ZH: "SQLite 数据库文件", EN: "SQLite database file"},
 		{Env: "GRASP_DB_DRIVER", YAML: "database.driver", Type: "enum", Default: "sqlite", ZH: "数据库驱动：sqlite 或 mysql", EN: "Database driver: sqlite or mysql"},
 		{Env: "GRASP_DB_DSN", YAML: "database.dsn", Type: "string", Sensitive: true, ZH: "MySQL DSN", EN: "MySQL DSN"},
-		{Env: "GRASP_EXEC_PROVIDER", YAML: "engine.exec_provider", Type: "string", Default: "sandbox", Deprecated: true, ZH: "已弃用；执行后端由 Agent acpBackend 决定", EN: "Deprecated; Agent acpBackend selects the execution backend"},
 		{Env: "GRASP_MAX_RUNS", YAML: "engine.max_concurrent_runs", Type: "integer", Default: "5", ZH: "最大并发运行数", EN: "Maximum concurrent runs"},
 		{Env: "GRASP_PROFILES_ROOT", YAML: "engine.profiles_root", Type: "path", Default: "data/profiles", ZH: "Agent profile 根目录", EN: "Agent profile root"},
 		{Env: "GRASP_NODE_AUTO_RETRY", YAML: "engine.node_auto_retry_max", Type: "integer", Default: "3", ZH: "节点自动重试上限", EN: "Node automatic retry limit"},
@@ -37,10 +35,6 @@ func OptionDescriptors() []OptionDescriptor {
 		{Env: "GRASP_SANDBOX_GATEWAY_URL", YAML: "sandbox.gateway_url", Type: "URL", Default: "http://127.0.0.1:8899", ZH: "sandbox-gateway 控制面地址", EN: "sandbox-gateway control-plane URL"},
 		{Env: "GRASP_SANDBOX_GATEWAY_API_KEY", YAML: "sandbox.gateway_api_key", Type: "string", Sensitive: true, ZH: "gateway Bearer token", EN: "Gateway bearer token"},
 		{Env: "GRASP_OPENCODE_CATALOG_URL", YAML: "sandbox.opencode_catalog_url", Type: "URL", Default: "https://models.dev/api.json", ZH: "OpenCode 模型目录地址；出网受限时改指镜像", EN: "OpenCode model catalog URL; point at a mirror when egress is restricted"},
-		{Env: "GRASP_BROWSER_ENABLED", YAML: "browser.enabled", Type: "boolean", Deprecated: true, ZH: "兼容字段；VNC 预览始终可用", EN: "Compatibility field; VNC preview is always available"},
-		{Env: "GRASP_CURSOR_API_KEY", YAML: "sandbox.cursor_api_key", Type: "string", Sensitive: true, Deprecated: true, ZH: "已弃用；改用 Agent env", EN: "Deprecated; use agent env"},
-		{Env: "CURSOR_API_KEY", YAML: "sandbox.cursor_api_key", Type: "string", Sensitive: true, Deprecated: true, ZH: "已弃用别名；改用 Agent env", EN: "Deprecated alias; use agent env"},
-		{Env: "GRASP_CURSOR_AUTH", YAML: "sandbox.cursor_auth_path", Type: "path", Sensitive: true, Deprecated: true, ZH: "已弃用的 Cursor 认证目录", EN: "Deprecated Cursor authentication directory"},
 		{Env: "GRASP_SANDBOX_ENV", YAML: "sandbox.env", Type: "key-value list", Sensitive: true, ZH: "注入所有沙箱的通用环境变量", EN: "Generic environment injected into every sandbox"},
 		{Env: "GRASP_AGENT_TIMEOUT_SEC", YAML: "sandbox.agent_chat_timeout_seconds", Type: "integer", Default: "600", ZH: "单次 Agent turn 总超时秒数", EN: "Overall timeout for one agent turn in seconds"},
 		{Env: "GRASP_CHAT_IDLE_SEC", YAML: "sandbox.chat_idle_timeout_seconds", Type: "integer", Default: "720", ZH: "无 ACP 事件的空闲超时秒数", EN: "Idle timeout without ACP events in seconds"},

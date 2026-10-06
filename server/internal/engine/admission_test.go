@@ -172,7 +172,8 @@ func setupBlockingEngineDual(t *testing.T, maxRuns int) (*Engine, *gorm.DB, *blo
 	t.Helper()
 	eng, db, _ := setupEngineGraphP(t, slowGraph())
 	if err := db.Create(&models.WorkflowDef{
-		ID: "wf-gate", Name: "wf-gate", Status: "published", Version: 1, Graph: gateThenWorkGraph(),
+		ProjectID: models.DefaultProjectID,
+		ID:        "wf-gate", Name: "wf-gate", Version: 1, PublishedVersion: 1, Graph: gateThenWorkGraph(),
 	}).Error; err != nil {
 		t.Fatalf("create gate workflow: %v", err)
 	}
@@ -180,7 +181,8 @@ func setupBlockingEngineDual(t *testing.T, maxRuns int) (*Engine, *gorm.DB, *blo
 		t.Fatalf("create gate version: %v", err)
 	}
 	if err := db.Create(&models.WorkflowDef{
-		ID: "wf-work-gate", Name: "wf-work-gate", Status: "published", Version: 1, Graph: workThenGateGraph(),
+		ProjectID: models.DefaultProjectID,
+		ID:        "wf-work-gate", Name: "wf-work-gate", Version: 1, PublishedVersion: 1, Graph: workThenGateGraph(),
 	}).Error; err != nil {
 		t.Fatalf("create work-then-gate workflow: %v", err)
 	}
@@ -578,12 +580,9 @@ func TestStartRunFromPublishedForcesNormal(t *testing.T) {
 	eng, db, p := setupBlockingEngine(t, slowGraph(), 5)
 	// Mark workflow published with a version snapshot.
 	if err := db.Model(&models.WorkflowDef{}).Where("id = ?", "wf").Updates(map[string]any{
-		"status": "published", "version": 1,
+		"published_version": 1, "version": 1,
 	}).Error; err != nil {
 		t.Fatalf("publish wf: %v", err)
-	}
-	if err := db.Create(&models.WorkflowVersion{WorkflowID: "wf", Version: 1, Graph: slowGraph()}).Error; err != nil {
-		t.Fatalf("version: %v", err)
 	}
 	run, err := eng.StartRunFromPublished("wf", nil, "", nil, nil)
 	if err != nil {

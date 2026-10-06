@@ -28,7 +28,7 @@ type platformMCPWire struct {
 }
 
 // agentBoundToProject is true when the Agent exists and its home project equals
-// projectID. Unbound or mismatched Agents must not receive memory/context/
+// projectID. Agents of other projects must not receive memory/context/
 // scheduler tokens for this project.
 func (w *platformMCPWire) agentBoundToProject(projectID, agent string) bool {
 	projectID = strings.TrimSpace(projectID)
@@ -76,7 +76,7 @@ func (w *platformMCPWire) clearSandboxRef(threadID string) {
 func (w *platformMCPWire) registerCron(projectID, threadID, agent string) (string, []sandbox.MCPServerSpec) {
 	if !w.agentBoundToProject(projectID, agent) {
 		log.Warn().Str("project", projectID).Str("agent", agent).
-			Msg("cron platform MCP skipped: agent home project mismatch or unbound")
+			Msg("cron platform MCP skipped: agent home project mismatch")
 		return "", nil
 	}
 	tok := platformmcp.NewToken()
@@ -112,7 +112,7 @@ func (w *platformMCPWire) registerChannel(projectID, threadID, userID, agent str
 	}
 	if !w.agentBoundToProject(projectID, agent) {
 		log.Warn().Str("project", projectID).Str("agent", agent).
-			Msg("channel platform MCP skipped: agent home project mismatch or unbound")
+			Msg("channel platform MCP skipped: agent home project mismatch")
 		return "", nil
 	}
 	tok := platformmcp.NewToken()
@@ -139,7 +139,7 @@ func (w *platformMCPWire) registerChannel(projectID, threadID, userID, agent str
 func (w *platformMCPWire) restoreChannel(projectID, threadID, userID, agent, token string, enabledMcps []string, caps channels.SessionCaps) {
 	if !w.agentBoundToProject(projectID, agent) {
 		log.Warn().Str("project", projectID).Str("agent", agent).
-			Msg("channel platform MCP restore skipped: agent home project mismatch or unbound")
+			Msg("channel platform MCP restore skipped: agent home project mismatch")
 		return
 	}
 	if w.pm != nil {

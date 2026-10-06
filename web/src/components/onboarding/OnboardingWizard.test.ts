@@ -54,6 +54,17 @@ const TEMPLATES = [
       ],
     },
   },
+  {
+    id: 'deliver',
+    embedName: 'DeliverAgent',
+    roleLabelZh: '交付',
+    summary: 's4',
+    capabilities: {
+      interaction: 'auto',
+      reads: ['*'],
+      writes: [{ schema: 'merge_request', required: true }],
+    },
+  },
 ]
 
 const launchMocks = vi.hoisted(() => ({ openLaunch: vi.fn(async () => {}) }))
@@ -268,19 +279,19 @@ describe('OnboardingWizard', () => {
     expect(activeStep(wrapper)).toBe('onboarding-rail-team')
   })
 
-  it('team step shows three template cards with capabilities', async () => {
+  it('team step shows four template cards with capabilities', async () => {
     const { api } = await import('@/lib/api/api')
     const wrapper = await mountWizard()
     expect(api.listAgentTeamTemplates).toHaveBeenCalled()
     await walkToTeam(wrapper)
 
-    for (const id of ['clarify', 'implement', 'test_review']) {
+    for (const id of ['clarify', 'implement', 'test_review', 'deliver']) {
       expect(wrapper.find(`[data-testid="onboarding-team-card-${id}"]`).exists()).toBe(true)
       expect(wrapper.find(`[data-testid="onboarding-team-caps-${id}"]`).exists()).toBe(true)
     }
     const name = (id: string) =>
       (wrapper.find(`[data-testid="onboarding-team-name-${id}"]`).element as HTMLInputElement).value
-    expect([name('clarify'), name('implement'), name('test_review')]).toEqual(['需求澄清', '实现', '测试评审'])
+    expect([name('clarify'), name('implement'), name('test_review'), name('deliver')]).toEqual(['需求澄清', '实现', '测试评审', '交付'])
 
     const clarifyCaps = wrapper.find('[data-testid="onboarding-team-caps-clarify"]').text()
     expect(clarifyCaps).toContain('pages.onboarding.team.interactionClarify')
@@ -308,7 +319,12 @@ describe('OnboardingWizard', () => {
     await walkToTeam(wrapper)
     const name = (id: string) =>
       (wrapper.find(`[data-testid="onboarding-team-name-${id}"]`).element as HTMLInputElement).value
-    expect([name('clarify'), name('implement'), name('test_review')]).toEqual(['Clarify', 'Implement', 'TestReview'])
+    expect([name('clarify'), name('implement'), name('test_review'), name('deliver')]).toEqual([
+      'Clarify',
+      'Implement',
+      'TestReview',
+      'Deliver',
+    ])
     await next(wrapper)
     expect(wrapper.find('[data-testid="onboarding-preview-node-clarify"]').text()).toContain('Clarify')
     expect(wrapper.find('[data-testid="onboarding-preview-node-clarify"]').text()).not.toMatch(/[\u3400-\u9fff]/)
@@ -317,6 +333,7 @@ describe('OnboardingWizard', () => {
       { templateId: 'clarify', name: 'Clarify' },
       { templateId: 'implement', name: 'Implement' },
       { templateId: 'test_review', name: 'TestReview' },
+      { templateId: 'deliver', name: 'Deliver' },
     ])
   })
 
@@ -333,13 +350,14 @@ describe('OnboardingWizard', () => {
     expect(activeStep(wrapper)).toBe('onboarding-rail-workflow')
     expect(wrapper.find('[data-testid="onboarding-preview-node-test_review"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="onboarding-preview-node-implement"]').text()).toContain('编码')
-    expect(wrapper.find('[data-testid="onboarding-preview-edge-implement-output"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="onboarding-preview-edge-implement-deliver"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="onboarding-workflow-note"]').text()).toBe('pages.onboarding.workflow.noReview')
 
     await next(wrapper)
     expect((await lastBody())?.agents).toEqual([
       { templateId: 'clarify', name: '需求澄清' },
       { templateId: 'implement', name: '编码', model: 'gpt-5' },
+      { templateId: 'deliver', name: '交付' },
     ])
   })
 
@@ -347,12 +365,13 @@ describe('OnboardingWizard', () => {
     const wrapper = await mountWizard()
     await walkToTeam(wrapper)
     await next(wrapper)
-    for (const id of ['input', 'clarify', 'implement', 'test_review', 'output']) {
+    for (const id of ['input', 'clarify', 'implement', 'test_review', 'deliver', 'output']) {
       expect(wrapper.find(`[data-testid="onboarding-preview-node-${id}"]`).exists()).toBe(true)
     }
-    expect(wrapper.find('[data-testid="onboarding-preview-edge-test_review-output"]').text()).toContain(
+    expect(wrapper.find('[data-testid="onboarding-preview-edge-test_review-deliver"]').text()).toContain(
       'pages.onboarding.workflow.pass',
     )
+    expect(wrapper.find('[data-testid="onboarding-preview-edge-deliver-output"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="onboarding-preview-edge-test_review-implement-fail"]').text()).toContain(
       'pages.onboarding.workflow.fail',
     )

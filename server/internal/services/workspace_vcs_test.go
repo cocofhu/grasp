@@ -21,7 +21,7 @@ func TestParseVcsMessageReasonSpaces(t *testing.T) {
 func TestWorkspaceVcsBaselineAndWrite(t *testing.T) {
 	root := t.TempDir()
 	s := NewAgentService(root)
-	if err := s.Save(Agent{Name: "coder", ProjectID: "p1"}); err != nil {
+	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "coder", ProjectID: "p1"}); err != nil {
 		t.Fatal(err)
 	}
 	sha, err := s.WriteWorkspaceFileVcs("coder", "AGENTS.md", "# hi", WorkspaceWriteOpts{
@@ -59,7 +59,7 @@ func TestWorkspaceVcsBaselineAndWrite(t *testing.T) {
 func TestWorkspaceVcsListWithoutSidecar(t *testing.T) {
 	root := t.TempDir()
 	s := NewAgentService(root)
-	if err := s.Save(Agent{Name: "a"}); err != nil {
+	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "a"}); err != nil {
 		t.Fatal(err)
 	}
 	revs, err := s.Vcs.ListRevisions("a", 10)
@@ -76,7 +76,7 @@ func TestWorkspaceVcsListWithoutSidecar(t *testing.T) {
 
 func TestWorkspaceVcsReasonRequired(t *testing.T) {
 	s := NewAgentService(t.TempDir())
-	if err := s.Save(Agent{Name: "a"}); err != nil {
+	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "a"}); err != nil {
 		t.Fatal(err)
 	}
 	_, err := s.WriteWorkspaceFileVcs("a", "x.md", "x", WorkspaceWriteOpts{Author: "u", Source: VcsSourcePmMCP})
@@ -91,7 +91,7 @@ func TestWorkspaceVcsReasonRequired(t *testing.T) {
 
 func TestWorkspaceVcsRestore(t *testing.T) {
 	s := NewAgentService(t.TempDir())
-	if err := s.Save(Agent{Name: "a"}); err != nil {
+	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "a"}); err != nil {
 		t.Fatal(err)
 	}
 	sha1, err := s.WriteWorkspaceFileVcs("a", "a.md", "v1", WorkspaceWriteOpts{
@@ -116,7 +116,7 @@ func TestWorkspaceVcsRestore(t *testing.T) {
 
 func TestWorkspaceVcsRenameAgent(t *testing.T) {
 	s := NewAgentService(t.TempDir())
-	if err := s.Save(Agent{Name: "old"}); err != nil {
+	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "old"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.WriteWorkspaceFileVcs("old", "f.md", "x", WorkspaceWriteOpts{
@@ -135,7 +135,7 @@ func TestWorkspaceVcsRenameAgent(t *testing.T) {
 
 func TestWorkspaceVcsDiffRevision(t *testing.T) {
 	s := NewAgentService(t.TempDir())
-	if err := s.Save(Agent{Name: "a"}); err != nil {
+	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "a"}); err != nil {
 		t.Fatal(err)
 	}
 	sha, err := s.WriteWorkspaceFileVcs("a", "a.md", "hello", WorkspaceWriteOpts{
@@ -158,7 +158,7 @@ func TestWorkspaceVcsDiffRevision(t *testing.T) {
 
 func TestWorkspaceVcsDeleteAndRestoreDropsExtra(t *testing.T) {
 	s := NewAgentService(t.TempDir())
-	if err := s.Save(Agent{Name: "a"}); err != nil {
+	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "a"}); err != nil {
 		t.Fatal(err)
 	}
 	sha, err := s.WriteWorkspaceFileVcs("a", "keep.md", "keep", WorkspaceWriteOpts{
@@ -186,7 +186,7 @@ func TestWorkspaceVcsDeleteAndRestoreDropsExtra(t *testing.T) {
 func TestWorkspaceVcsWorksWithoutGitOnPATH(t *testing.T) {
 	t.Setenv("PATH", "")
 	s := NewAgentService(t.TempDir())
-	if err := s.Save(Agent{Name: "a"}); err != nil {
+	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "a"}); err != nil {
 		t.Fatal(err)
 	}
 	sha, err := s.WriteWorkspaceFileVcs("a", "a.md", "v1", WorkspaceWriteOpts{

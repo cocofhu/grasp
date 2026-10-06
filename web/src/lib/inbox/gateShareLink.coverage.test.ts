@@ -8,7 +8,6 @@ import {
   isLoopbackShareHost,
   isShareableInboxItem,
   mergePublicGatePreview,
-  normalizePermissionPreset,
   parseShareTokenFromHash,
   publicGateApi,
   publicGateContentKey,
@@ -43,8 +42,6 @@ describe('gateShareLink additional coverage', () => {
   })
 
   it('covers normalization, invalid inputs, status fallbacks, and error messages', () => {
-    expect(normalizePermissionPreset('react_only')).toBe('react_only')
-    expect(normalizePermissionPreset('unknown')).toBe('full')
     expect(isShareableInboxItem(null)).toBe(false)
     expect(isShareableInboxItem({ type: 'gate', nodeType: 'other' } as never)).toBe(false)
     expect(inboxShareKind(undefined)).toBe('human_gate')

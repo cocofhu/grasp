@@ -16,7 +16,6 @@ const apiMocks = vi.hoisted(() => ({
   listAgents: vi.fn(),
   getPmLeader: vi.fn(),
   listProjectCronJobs: vi.fn(),
-  getProjectChannel: vi.fn(),
   listProjectChannels: vi.fn(),
 }))
 
@@ -31,7 +30,6 @@ vi.mock('@/lib/api/api', async () => {
       listAgents: apiMocks.listAgents,
       getPmLeader: apiMocks.getPmLeader,
       listProjectCronJobs: apiMocks.listProjectCronJobs,
-      getProjectChannel: apiMocks.getProjectChannel,
       listProjectChannels: apiMocks.listProjectChannels,
     },
   }
@@ -63,7 +61,6 @@ const PROJ_A = {
   id: 'proj-a',
   name: 'Project A',
   description: 'A',
-  sandboxEnv: [],
   variables: [],
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
@@ -148,7 +145,6 @@ describe('ProjectDetailView project switch race', () => {
     apiMocks.listAgents.mockResolvedValue([])
     apiMocks.getPmLeader.mockResolvedValue({ enabled: false })
     apiMocks.listProjectCronJobs.mockResolvedValue({ items: [] })
-    apiMocks.getProjectChannel.mockResolvedValue({})
     apiMocks.listProjectChannels.mockResolvedValue({ items: [], freeAgents: [], secretsKeyConfigured: true })
   })
 

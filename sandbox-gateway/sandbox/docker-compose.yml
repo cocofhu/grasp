@@ -24,9 +24,7 @@ services:
       # VNC_PREVIEW: "1"               # 启动 headed Chromium + noVNC 预览栈
       # PREVIEW_DIRECT: "1"            # 直连预览 HTML 注入（须 PREVIEW_PORT + PREVIEW_PICK_SCRIPT_URL）
       # SKIP_INNER_DOCKER: "1"
-      # 单仓：
-      # GIT_CLONE_URL: "https://github.com/owner/repo.git"
-      # 多仓（逗号分隔，name|url|branch，branch/name 可省）：
+      # 仓库（逗号分隔，name|url|branch，branch/name 可省）：
       # GIT_REPOS: "api|https://github.com/owner/api.git|main,web|https://github.com/owner/web.git"
       # 凭据（按 repo host 精确匹配路由）：
       # GITHUB_TOKEN: ""

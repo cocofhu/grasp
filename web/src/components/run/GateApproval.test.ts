@@ -7,6 +7,7 @@ import { TEST_REVIEW_CAPS, writesCaps } from '@/test/capsFixtures'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { Gate, Run } from '@/lib/shared/types'
+import { listPrimaryProducts } from '@/lib/inbox/gateUpstream'
 import { CONTENT_FIT_PREVIEW_MAX_VH } from '@/lib/shared/htmlPreviewSandbox'
 
 vi.mock('@novnc/novnc/lib/rfb.js', () => ({
@@ -228,23 +229,6 @@ const ParagraphInputStub = defineComponent({
   `,
 })
 
-/** Interactive picker stub — mirrors ProposalSelectView select emit (not readonly). */
-const ProposalSelectStub = defineComponent({
-  name: 'ProposalSelectView',
-  props: { doc: Object, resolvedId: String, readonly: Boolean, disabled: Boolean },
-  emits: ['select'],
-  template: `
-    <div data-testid="proposal-select-view" :data-readonly="readonly ? '1' : '0'">
-      <button
-        v-if="!readonly && !resolvedId"
-        type="button"
-        data-testid="proposal-select-pick"
-        @click="$emit('select', 'p1')"
-      >选此方案</button>
-    </div>
-  `,
-})
-
 function baseGate(overrides: Partial<Gate> = {}): Gate {
   return {
     runId: 'run-1',
@@ -278,6 +262,31 @@ function baseRun(overrides: Partial<Run> = {}): Run {
   } as Run
 }
 
+/** Plain human_gate (no primary product) whose producer session is parked for gate ReAct. */
+function plainReactGate() {
+  return {
+    gate: baseGate({
+      nodeId: 'hg-plain',
+      reactSessionAlive: true,
+      reactUpstreamNodeId: 'producer',
+      form: [],
+    }),
+    run: baseRun({
+      nodes: [{ id: 'hg-plain', type: 'human_gate', label: '人工审批', position: { x: 0, y: 0 }, config: {} }],
+    }),
+  }
+}
+
+let mountedRun: Run | undefined
+
+/** Server primary-artifacts answer: the backend parses the same gate body_template. */
+function serverPrimaryArtifacts(_runId: string, nodeId: string) {
+  const tpl = String(mountedRun?.nodes?.find((n) => n.id === nodeId)?.config?.body_template ?? '')
+  return Promise.resolve({
+    items: listPrimaryProducts(tpl).map((p) => ({ ...p, readonly: !!p.readonly })),
+  })
+}
+
 function mountApproval(opts: {
   gate?: Gate
   run?: Run
@@ -291,6 +300,7 @@ function mountApproval(opts: {
     locale: 'zh-CN',
     messages: { 'zh-CN': { ...common, ...pages } },
   })
+  mountedRun = opts.run
   return mount(GateApproval, {
     props: {
       gate: opts.gate ?? baseGate(),
@@ -309,7 +319,6 @@ function mountApproval(opts: {
           name: 'ArtifactLoadingPane',
           template: '<div data-testid="artifact-loading-pane" />',
         }),
-        ProposalSelectView: ProposalSelectStub,
         HtmlPreview: HtmlPreviewStub,
         StructuredArtifactView: StructuredStub,
         AppPreviewPanel: AppPreviewStub,
@@ -323,7 +332,7 @@ function mountApproval(opts: {
 
 function visualGateRun(pageHtml: string) {
   return {
-    gate: baseGate({ nodeId: 'hg-visual' }),
+    gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
     run: baseRun({
       nodes: [
         {
@@ -431,8 +440,7 @@ describe('GateApproval content-fit layout branches', () => {
       createdAt: '2026-07-18T00:02:00Z',
     })
     apiMocks.artifactContent.mockResolvedValue({ content: '{}' })
-    // Default: API unavailable → client listPrimaryProducts fallback (existing tests).
-    apiMocks.listGatePrimaryArtifacts.mockRejectedValue(new Error('offline'))
+    apiMocks.listGatePrimaryArtifacts.mockImplementation(serverPrimaryArtifacts)
   })
 
   it('uses content-fit shell for short structured + fillPreview (preview capped, form pinned)', async () => {
@@ -518,68 +526,6 @@ describe('GateApproval content-fit layout branches', () => {
     )
     expect(form.classes()).not.toContain('sticky')
     expectApprovalActionsVisible(wrapper)
-    wrapper.unmount()
-  })
-
-  it('keeps proposal_select interactive picker under fillPreview (no ReviewShell readonly)', async () => {
-    const proposalsDoc = {
-      context: '选型',
-      proposals: [
-        { id: 'p1', title: '方案甲', summary: '共享壳', recommended: true },
-        { id: 'p2', title: '方案乙', summary: '另起炉灶' },
-      ],
-    }
-    apiMocks.artifactContent.mockResolvedValue({ content: JSON.stringify(proposalsDoc) })
-    const wrapper = mountApproval({
-      fillPreview: true,
-      gate: baseGate({
-        nodeId: 'pick-proposal',
-        actions: [
-          { id: 'p1', label: '方案甲' },
-          { id: 'p2', label: '方案乙' },
-        ],
-        form: [],
-      }),
-      run: baseRun({
-        nodes: [
-          {
-            id: 'pick-proposal',
-            type: 'proposal_select',
-            label: '选方案',
-            position: { x: 0, y: 0 },
-            config: { from: 'proposals.json' },
-          },
-        ],
-        artifacts: [
-          {
-            id: 'a-proposals',
-            name: 'proposals.json',
-            kind: 'json',
-            nodeId: 'proposal',
-            runId: 'run-1',
-            workflowName: 'wf',
-            sizeBytes: 10,
-            createdAt: '2026-07-18T00:00:00Z',
-          },
-        ],
-      }),
-    })
-    await flushPromises()
-
-    // Must stay on default path: interactive picker, not content-fit/ReviewShell readonly stage.
-    expect(contentFitRoot(wrapper).exists()).toBe(false)
-    expect(wrapper.find('[data-testid="review-shell"]').exists()).toBe(false)
-
-    const picker = wrapper.find('[data-testid="proposal-select-view"]')
-    expect(picker.exists()).toBe(true)
-    expect(picker.attributes('data-readonly')).toBe('0')
-    // GateProductEditor may preview proposals.json, but select must remain interactive.
-    const pickBtn = wrapper.find('[data-testid="proposal-select-pick"]')
-    expect(pickBtn.exists()).toBe(true)
-    await pickBtn.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.emitted('resolve')?.[0]?.[0]).toBe('p1')
     wrapper.unmount()
   })
 
@@ -682,7 +628,7 @@ describe('GateApproval content-fit layout branches', () => {
     const pageHtml = '<!doctype html><html><body><h1>视觉稿</h1></body></html>'
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: baseRun({
         nodes: [
           {
@@ -730,7 +676,7 @@ describe('GateApproval content-fit layout branches', () => {
     const shortPage = '<!doctype html><html><body><p>短</p></body></html>'
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: baseRun({
         nodes: [
           {
@@ -777,7 +723,7 @@ describe('GateApproval content-fit layout branches', () => {
       '<!doctype html><html><body style="height:100vh;margin:0"><div style="height:100%">满屏</div></body></html>'
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: baseRun({
         nodes: [
           {
@@ -820,7 +766,7 @@ describe('GateApproval content-fit layout branches', () => {
     const tallPage = `<!doctype html><html><body style="min-height:200vh">${'<p>长内容</p>'.repeat(80)}</body></html>`
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: baseRun({
         nodes: [
           {
@@ -890,7 +836,7 @@ describe('GateApproval content-fit layout branches', () => {
     })
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: baseRun({
         nodes: [
           {
@@ -973,7 +919,7 @@ describe('GateApproval content-fit layout branches', () => {
     })
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: baseRun({
         nodes: [
           {
@@ -1132,7 +1078,7 @@ describe('GateApproval content-fit layout branches', () => {
     const wrapper = mountApproval({
       fillPreview: true,
       unifiedPreviewBudget: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: baseRun({
         nodes: [
           {
@@ -1202,7 +1148,7 @@ describe('GateApproval content-fit layout branches', () => {
     const wrapper = mountApproval({
       fillPreview: true,
       unifiedPreviewBudget: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: baseRun({
         nodes: [
           {
@@ -1258,7 +1204,7 @@ describe('GateApproval content-fit layout branches', () => {
     const wrapper = mountApproval({
       fillPreview: true,
       unifiedPreviewBudget: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: baseRun({
         nodes: [
           {
@@ -1580,7 +1526,7 @@ describe('GateApproval product editor state machine', () => {
       nodeId: 'gate-1',
       content: JSON.stringify({ summary: 'normalized', findings: [{ title: 'f1' }] }, null, 2),
     })
-    apiMocks.listGatePrimaryArtifacts.mockRejectedValue(new Error('offline'))
+    apiMocks.listGatePrimaryArtifacts.mockImplementation(serverPrimaryArtifacts)
   })
 
   function editableResearchRun() {
@@ -1827,7 +1773,7 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
     )
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: visualEditableRun(),
     })
     await flushPromises()
@@ -1861,7 +1807,7 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
     })
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: visualEditableRun({ page: '' }),
     })
     await flushPromises()
@@ -1885,7 +1831,7 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
       })
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       // Snapshot empty so load goes to artifact store and can fail.
       run: visualEditableRun({ page: '' }),
     })
@@ -1913,7 +1859,7 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
     )
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: visualEditableRun(),
     })
     await flushPromises()
@@ -1940,7 +1886,7 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
   it('keeps non-empty HTML preview after edit↔preview round-trip (s4)', async () => {
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: visualEditableRun(),
     })
     await flushPromises()
@@ -1974,7 +1920,7 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
       )
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: visualEditableRun({ page: '' }),
     })
     await flushPromises()
@@ -2012,7 +1958,7 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
     const run = visualEditableRun()
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run,
     })
     await flushPromises()
@@ -2049,7 +1995,7 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
     const run = visualEditableRun()
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run,
     })
     await flushPromises()
@@ -2091,7 +2037,7 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
     const run = visualEditableRun()
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run,
     })
     await flushPromises()
@@ -2138,7 +2084,7 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
     const run = visualEditableRun()
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run,
     })
     await flushPromises()
@@ -2176,7 +2122,7 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
     const run = visualEditableRun({ page: '<!doctype html><html><body>stale-snap</body></html>' })
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run,
     })
     await flushPromises()
@@ -2206,7 +2152,7 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
     })
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: visualEditableRun(),
     })
     await flushPromises()
@@ -2220,7 +2166,7 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
   it('editable page.html desktop uses fillParent for edit and preview tabs (g2.2/g3.2)', async () => {
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: visualEditableRun(),
     })
     await flushPromises()
@@ -2297,7 +2243,7 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
   it('hides reject without open preview issues on page.html path', async () => {
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: visualEditableRun(),
     })
     await flushPromises()
@@ -2343,7 +2289,7 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
     })
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: visualEditableRun(),
     })
     await flushPromises()
@@ -2379,7 +2325,7 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
     const confirmSpy = vi.spyOn(window, 'confirm')
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: visualEditableRun(),
     })
     await flushPromises()
@@ -2451,7 +2397,7 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
     )
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({ nodeId: 'hg-visual' }),
+      gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }),
       run: visualEditableRun(),
     })
     await flushPromises()
@@ -2479,7 +2425,7 @@ describe('GateApproval mobileFillRemaining layout', () => {
     breakpointMocks.isMobile.value = true
     apiMocks.listPreviewIssues.mockResolvedValue({ issues: [] })
     apiMocks.artifactContent.mockResolvedValue({ content: '{}' })
-    apiMocks.listGatePrimaryArtifacts.mockRejectedValue(new Error('offline'))
+    apiMocks.listGatePrimaryArtifacts.mockImplementation(serverPrimaryArtifacts)
   })
 
   it('uses ReviewShell drawer with fillParent preview and cold sticky actions', async () => {
@@ -2788,60 +2734,20 @@ describe('GateApproval mobileFillRemaining layout', () => {
     wrapper.unmount()
   })
 
-  it('exposes gate-react queue/Cancel on proposal_select ReviewComposer(gate)', async () => {
+  it('exposes gate-react queue/Cancel on a plain human_gate ReviewComposer(gate)', async () => {
     breakpointMocks.isMobile.value = false
     apiMocks.gateReactRevise.mockResolvedValue({ status: 'accepted', waiting: 1 })
     apiMocks.gateReactCancel.mockResolvedValue({})
-    const proposalsDoc = {
-      context: '选型',
-      proposals: [
-        { id: 'p1', title: '方案甲', summary: '共享壳', recommended: true },
-        { id: 'p2', title: '方案乙', summary: '另起炉灶' },
-      ],
-    }
-    apiMocks.artifactContent.mockResolvedValue({ content: JSON.stringify(proposalsDoc) })
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({
-        nodeId: 'pick-proposal',
-        reactSessionAlive: true,
-        reactUpstreamNodeId: 'proposal',
-        actions: [
-          { id: 'p1', label: '方案甲' },
-          { id: 'p2', label: '方案乙' },
-        ],
-        form: [],
-      }),
-      run: baseRun({
-        nodes: [
-          {
-            id: 'pick-proposal',
-            type: 'proposal_select',
-            label: '选方案',
-            position: { x: 0, y: 0 },
-            config: { from: 'proposals.json' },
-          },
-        ],
-        artifacts: [
-          {
-            id: 'a-proposals',
-            name: 'proposals.json',
-            kind: 'json',
-            nodeId: 'proposal',
-            runId: 'run-1',
-            workflowName: 'wf',
-            sizeBytes: 10,
-            createdAt: '2026-07-18T00:00:00Z',
-          },
-        ],
-      }),
+      ...plainReactGate(),
     })
     await flushPromises()
 
     expect(wrapper.find('[data-testid="content-fit-scroll"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="review-composer-gate"]').exists()).toBe(true)
 
-    await wrapper.find('[data-testid="paragraph-input"]').setValue('换推荐方案')
+    await wrapper.find('[data-testid="paragraph-input"]').setValue('换个方向')
     await flushPromises()
     await wrapper.find('[data-testid="review-composer-send"]').trigger('click')
     await flushPromises()
@@ -2852,7 +2758,7 @@ describe('GateApproval mobileFillRemaining layout', () => {
 
     await wrapper.find('[data-testid="gate-react-cancel"]').trigger('click')
     await flushPromises()
-    expect(apiMocks.gateReactCancel).toHaveBeenCalledWith('run-1', 'pick-proposal')
+    expect(apiMocks.gateReactCancel).toHaveBeenCalledWith('run-1', 'hg-plain')
     expect(wrapper.find('[data-testid="gate-react-queue"]').exists()).toBe(false)
     wrapper.unmount()
   })
@@ -2860,49 +2766,9 @@ describe('GateApproval mobileFillRemaining layout', () => {
   it('clears gate-react ghost queue on remote queue_state waiting=0 (FR5)', async () => {
     breakpointMocks.isMobile.value = false
     apiMocks.gateReactRevise.mockResolvedValue({ status: 'accepted', waiting: 1 })
-    const proposalsDoc = {
-      context: '选型',
-      proposals: [
-        { id: 'p1', title: '方案甲', summary: '共享壳', recommended: true },
-        { id: 'p2', title: '方案乙', summary: '另起炉灶' },
-      ],
-    }
-    apiMocks.artifactContent.mockResolvedValue({ content: JSON.stringify(proposalsDoc) })
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({
-        nodeId: 'pick-proposal',
-        reactSessionAlive: true,
-        reactUpstreamNodeId: 'proposal',
-        actions: [
-          { id: 'p1', label: '方案甲' },
-          { id: 'p2', label: '方案乙' },
-        ],
-        form: [],
-      }),
-      run: baseRun({
-        nodes: [
-          {
-            id: 'pick-proposal',
-            type: 'proposal_select',
-            label: '选方案',
-            position: { x: 0, y: 0 },
-            config: { from: 'proposals.json' },
-          },
-        ],
-        artifacts: [
-          {
-            id: 'a-proposals',
-            name: 'proposals.json',
-            kind: 'json',
-            nodeId: 'proposal',
-            runId: 'run-1',
-            workflowName: 'wf',
-            sizeBytes: 10,
-            createdAt: '2026-07-18T00:00:00Z',
-          },
-        ],
-      }),
+      ...plainReactGate(),
     })
     await flushPromises()
     await wrapper.find('[data-testid="paragraph-input"]').setValue('跨入口幽灵')
@@ -2913,7 +2779,7 @@ describe('GateApproval mobileFillRemaining layout', () => {
     const vm = wrapper.vm as any
     vm.applyReviewFrame?.({
       event: 'queue_state',
-      nodeId: 'proposal',
+      nodeId: 'producer',
       waiting: 0,
       items: [],
     })
@@ -2926,56 +2792,16 @@ describe('GateApproval mobileFillRemaining layout', () => {
     breakpointMocks.isMobile.value = false
     apiMocks.gateReactRevise.mockResolvedValue({ status: 'accepted', waiting: 1 })
     apiMocks.gateReactQueueRemove.mockResolvedValue({})
-    const proposalsDoc = {
-      context: '选型',
-      proposals: [
-        { id: 'p1', title: '方案甲', summary: '共享壳', recommended: true },
-        { id: 'p2', title: '方案乙', summary: '另起炉灶' },
-      ],
-    }
-    apiMocks.artifactContent.mockResolvedValue({ content: JSON.stringify(proposalsDoc) })
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({
-        nodeId: 'pick-proposal',
-        reactSessionAlive: true,
-        reactUpstreamNodeId: 'proposal',
-        actions: [
-          { id: 'p1', label: '方案甲' },
-          { id: 'p2', label: '方案乙' },
-        ],
-        form: [],
-      }),
-      run: baseRun({
-        nodes: [
-          {
-            id: 'pick-proposal',
-            type: 'proposal_select',
-            label: '选方案',
-            position: { x: 0, y: 0 },
-            config: { from: 'proposals.json' },
-          },
-        ],
-        artifacts: [
-          {
-            id: 'a-proposals',
-            name: 'proposals.json',
-            kind: 'json',
-            nodeId: 'proposal',
-            runId: 'run-1',
-            workflowName: 'wf',
-            sizeBytes: 10,
-            createdAt: '2026-07-18T00:00:00Z',
-          },
-        ],
-      }),
+      ...plainReactGate(),
     })
     await flushPromises()
     const vm = wrapper.vm as any
     // Authoritative frame only (no local hit): annotations must survive rebuild.
     vm.applyReviewFrame?.({
       event: 'queue_state',
-      nodeId: 'proposal',
+      nodeId: 'producer',
       waiting: 1,
       busy: false,
       items: [
@@ -2983,7 +2809,7 @@ describe('GateApproval mobileFillRemaining layout', () => {
           id: 'gate-q-1',
           text: '门禁排队带标注',
           images: [],
-          annotations: [{ label: '门禁点', selector: '#gate-hero', jsonPath: 'proposals[0].title' }],
+          annotations: [{ label: '门禁点', selector: '#gate-hero', jsonPath: 'title' }],
         },
       ],
     })
@@ -3000,67 +2826,27 @@ describe('GateApproval mobileFillRemaining layout', () => {
 
     expect(vm.reactText).toBe('门禁排队带标注')
     expect(vm.reactAnnotations).toEqual([
-      { label: '门禁点', selector: '#gate-hero', jsonPath: 'proposals[0].title' },
+      { label: '门禁点', selector: '#gate-hero', jsonPath: 'title' },
     ])
     // Stashed draft still on queue with its chip badge.
     expect(wrapper.find('[data-testid="gate-react-queue"]').text()).toContain('门禁草稿')
     expect(wrapper.find('[data-testid="gate-react-queue"]').text()).toMatch(/批注/)
-    expect(apiMocks.gateReactQueueRemove).toHaveBeenCalledWith('run-1', 'pick-proposal', 'gate-q-1')
+    expect(apiMocks.gateReactQueueRemove).toHaveBeenCalledWith('run-1', 'hg-plain', 'gate-q-1')
     wrapper.unmount()
   })
 
   it('gate edit stash race still refills from snapshot (review v2)', async () => {
     breakpointMocks.isMobile.value = false
     apiMocks.gateReactQueueRemove.mockResolvedValue({})
-    const proposalsDoc = {
-      context: '选型',
-      proposals: [
-        { id: 'p1', title: '方案甲', summary: '共享壳', recommended: true },
-        { id: 'p2', title: '方案乙', summary: '另起炉灶' },
-      ],
-    }
-    apiMocks.artifactContent.mockResolvedValue({ content: JSON.stringify(proposalsDoc) })
     const wrapper = mountApproval({
       fillPreview: true,
-      gate: baseGate({
-        nodeId: 'pick-proposal',
-        reactSessionAlive: true,
-        reactUpstreamNodeId: 'proposal',
-        actions: [
-          { id: 'p1', label: '方案甲' },
-          { id: 'p2', label: '方案乙' },
-        ],
-        form: [],
-      }),
-      run: baseRun({
-        nodes: [
-          {
-            id: 'pick-proposal',
-            type: 'proposal_select',
-            label: '选方案',
-            position: { x: 0, y: 0 },
-            config: { from: 'proposals.json' },
-          },
-        ],
-        artifacts: [
-          {
-            id: 'a-proposals',
-            name: 'proposals.json',
-            kind: 'json',
-            nodeId: 'proposal',
-            runId: 'run-1',
-            workflowName: 'wf',
-            sizeBytes: 10,
-            createdAt: '2026-07-18T00:00:00Z',
-          },
-        ],
-      }),
+      ...plainReactGate(),
     })
     await flushPromises()
     const vm = wrapper.vm as any
     vm.applyReviewFrame?.({
       event: 'queue_state',
-      nodeId: 'proposal',
+      nodeId: 'producer',
       waiting: 1,
       busy: false,
       items: [
@@ -3079,7 +2865,7 @@ describe('GateApproval mobileFillRemaining layout', () => {
     apiMocks.gateReactRevise.mockImplementation(async () => {
       vm.applyReviewFrame?.({
         event: 'queue_state',
-        nodeId: 'proposal',
+        nodeId: 'producer',
         waiting: 1,
         busy: false,
         items: [
@@ -3096,7 +2882,7 @@ describe('GateApproval mobileFillRemaining layout', () => {
     await flushPromises()
     expect(vm.reactText).toBe('竞态目标带标注')
     expect(vm.reactAnnotations).toEqual([{ label: '目标点', selector: '#race-target' }])
-    expect(apiMocks.gateReactQueueRemove).toHaveBeenCalledWith('run-1', 'pick-proposal', 'gate-q-race')
+    expect(apiMocks.gateReactQueueRemove).toHaveBeenCalledWith('run-1', 'hg-plain', 'gate-q-race')
     wrapper.unmount()
   })
 
@@ -3319,8 +3105,8 @@ describe('GateApproval mobileFillRemaining layout', () => {
   })
 
   it('keeps sticky actions reachable when preview load fails', async () => {
-    // Offline primary list + empty snapshot → visual body via client fallback, load error pane.
-    apiMocks.listGatePrimaryArtifacts.mockRejectedValue(new Error('offline'))
+    // Empty snapshot + failed artifact fetch → visual body with load error pane.
+    apiMocks.listGatePrimaryArtifacts.mockImplementation(serverPrimaryArtifacts)
     apiMocks.artifactContent.mockRejectedValue(new Error('boom'))
     const wrapper = mountApproval({
       fillPreview: true,
@@ -3392,7 +3178,7 @@ describe('GateApproval ReAct annotations', () => {
       status: 'open',
       createdAt: '2026-07-18T00:02:00Z',
     })
-    apiMocks.listGatePrimaryArtifacts.mockResolvedValue({ artifacts: [] })
+    apiMocks.listGatePrimaryArtifacts.mockImplementation(serverPrimaryArtifacts)
     apiMocks.gateReactRevise.mockResolvedValue({ status: 'ok' })
   })
 
@@ -3831,7 +3617,7 @@ describe('GateApproval record issue refreshes real PreviewFeedbackChat history',
       createdAt: '2026-07-18T00:04:00Z',
     })
     apiMocks.artifactContent.mockResolvedValue({ content: '{}' })
-    apiMocks.listGatePrimaryArtifacts.mockRejectedValue(new Error('offline'))
+    apiMocks.listGatePrimaryArtifacts.mockImplementation(serverPrimaryArtifacts)
     apiMocks.gateReactRevise.mockResolvedValue({})
   })
 
@@ -3843,6 +3629,7 @@ describe('GateApproval record issue refreshes real PreviewFeedbackChat history',
     })
     const pageHtml = '<!doctype html><html><body><h1>记入刷新</h1></body></html>'
     const { gate, run } = visualGateRun(pageHtml)
+    mountedRun = run
     const wrapper = mount(GateApproval, {
       props: {
         gate: { ...gate, reactSessionAlive: true, reactUpstreamNodeId: 'visual' },
@@ -3859,7 +3646,6 @@ describe('GateApproval record issue refreshes real PreviewFeedbackChat history',
             name: 'ArtifactLoadingPane',
             template: '<div data-testid="artifact-loading-pane" />',
           }),
-          ProposalSelectView: ProposalSelectStub,
           HtmlPreview: HtmlPreviewStub,
           StructuredArtifactView: StructuredStub,
           AppPreviewPanel: AppPreviewStub,
@@ -3900,7 +3686,7 @@ describe('GateApproval cold footer pending + loadProduct gen (专项三 g4)', ()
     vi.clearAllMocks()
     breakpointMocks.isMobile.value = false
     apiMocks.listPreviewIssues.mockResolvedValue({ issues: [] })
-    apiMocks.listGatePrimaryArtifacts.mockRejectedValue(new Error('offline'))
+    apiMocks.listGatePrimaryArtifacts.mockImplementation(serverPrimaryArtifacts)
     apiMocks.artifactContent.mockResolvedValue({ content: '# doc' })
   })
 

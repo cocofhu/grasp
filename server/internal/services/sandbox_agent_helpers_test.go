@@ -29,7 +29,7 @@ func TestFilterAgentPlatformMCPAndDedupe(t *testing.T) {
 }
 
 func TestIsAgentSandboxPurpose(t *testing.T) {
-	if !isAgentSandboxPurpose(SandboxPurposeAgent) || !isAgentSandboxPurpose(SandboxPurposePM) {
+	if !isAgentSandboxPurpose(SandboxPurposeAgent) || isAgentSandboxPurpose("pm") {
 		t.Fatal("agent purposes")
 	}
 	if isAgentSandboxPurpose("test") {

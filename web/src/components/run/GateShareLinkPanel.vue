@@ -17,7 +17,6 @@ import {
   isGateShareActive,
   isLoopbackShareHost,
   maskShareUrl,
-  normalizePermissionPreset,
   recallShareUrl,
   rememberShareUrl,
   shareApiErrorMessage,
@@ -63,7 +62,7 @@ const displayUrl = computed(() => {
   if (!fullUrl.value) return ''
   return revealUrl.value ? fullUrl.value : maskShareUrl(fullUrl.value)
 })
-const activePreset = computed(() => normalizePermissionPreset(status.value.permissionPreset))
+const activePreset = computed(() => status.value.permissionPreset ?? DEFAULT_GATE_SHARE_PERMISSION)
 const activePresetChip = computed(() =>
   activePreset.value === 'react_only'
     ? t('pages.gatesInbox.share.permission.reactOnlyChip')
@@ -93,7 +92,7 @@ watch(
     localStatus.value = props.target?.shareLink || { state: 'none' }
     ttlTier.value =
       (props.target?.shareLink?.ttlTier as GateShareTTLTier) || DEFAULT_GATE_SHARE_TTL
-    permissionPreset.value = normalizePermissionPreset(props.target?.shareLink?.permissionPreset)
+    permissionPreset.value = props.target?.shareLink?.permissionPreset ?? DEFAULT_GATE_SHARE_PERMISSION
     revealUrl.value = false
     fullUrl.value = recallShareUrl(props.target?.runId || '', props.target?.nodeId || '', props.target?.iteration)
     confirmKind.value = null
@@ -155,7 +154,7 @@ async function createAndCopy() {
     const next: GateShareInboxStatus = {
       state: res.state || 'active',
       ttlTier: res.ttlTier,
-      permissionPreset: normalizePermissionPreset(res.permissionPreset || permissionPreset.value),
+      permissionPreset: res.permissionPreset,
       expiresAt: res.expiresAt,
       canCreate: false,
       canManage: true,
@@ -210,7 +209,7 @@ async function confirmRegen() {
     const next: GateShareInboxStatus = {
       state: res.state || 'active',
       ttlTier: res.ttlTier,
-      permissionPreset: normalizePermissionPreset(res.permissionPreset || activePreset.value),
+      permissionPreset: res.permissionPreset,
       expiresAt: res.expiresAt,
       canCreate: false,
       canManage: true,

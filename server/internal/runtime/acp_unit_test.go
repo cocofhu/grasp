@@ -139,7 +139,7 @@ func TestSubstHelpers(t *testing.T) {
 func TestBuildAgentPromptPerType(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{}).(*acpProvider)
-	for _, nt := range []string{"plan", "implement", "react", "research", "test", "review", "proposal", "agent"} {
+	for _, nt := range []string{"plan", "implement", "react", "research", "test", "review", "agent"} {
 		req := NodeReq{NodeType: nt, Config: map[string]any{"prompt": "P", "produces": "out.md"}}
 		got := p.buildAgentPrompt(req, []string{"up.md"})
 		if !strings.Contains(got, "P") {
@@ -209,12 +209,9 @@ func TestBuildAgentPromptInjectsFeedbackOnlyWhenInScope(t *testing.T) {
 
 func TestProviderWiringAndAbort(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
-	p := NewProvider("cursor", host, Options{})
+	p := NewProvider(host, Options{})
 	if p.Name() != "registry" {
 		t.Errorf("Name = %q", p.Name())
-	}
-	if NewProvider("weird", host, Options{}) == nil {
-		t.Error("NewProvider fallback nil")
 	}
 	reg := p.(*ProviderRegistry)
 	cp := reg.providers[BackendCursor].(*acpProvider)
@@ -297,6 +294,9 @@ func TestLiveNodeEvents(t *testing.T) {
 func TestLiveNodeEventsPageSuccessPath(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveTestBridgeLogin(w, r) {
+			return
+		}
 		if r.URL.Path != "/ws" {
 			http.NotFound(w, r)
 			return
@@ -331,7 +331,7 @@ func TestLiveNodeEventsPageSuccessPath(t *testing.T) {
 	host, port := "127.0.0.1", srv.Listener.Addr().(*net.TCPAddr).Port
 
 	p := newACPProvider(mcp.NewHost(newMemStore()), Options{}).(*acpProvider)
-	p.registerLive(NodeReq{RunID: "run1", NodeID: "node1"}, &sandbox.Sandbox{Host: host, Port: port}, nil)
+	p.registerLive(NodeReq{RunID: "run1", NodeID: "node1"}, &sandbox.Sandbox{Host: host, Port: port, Password: testBridgePassword}, nil)
 
 	ev, next, more, ok, err := p.LiveNodeEventsPage(context.Background(), "run1", "node1", "", 20)
 	if err != nil || !ok {
@@ -386,9 +386,14 @@ func writeAgent(t *testing.T, profile, agentJSON string) string {
 }
 
 func TestAgentConfigAndMCP(t *testing.T) {
-	root := writeAgent(t, "dev", `{"mcp":[{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":{"GITLAB_TOKEN":"tok-${GRASP_RUN_ID}","GRASP_CURSOR_API_KEY":"test-key"}}`)
+	root := writeAgent(t, "dev", `{"mcp":[{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":{"GITLAB_TOKEN":"agent-tok"}}`)
 	host := mcp.NewHost(newMemStore())
-	p := newACPProvider(host, Options{ProfilesRoot: root, MCPEndpoint: "http://host.docker.internal:9099"}).(*acpProvider)
+	p := newACPProvider(host, Options{
+		ProfilesRoot: root, MCPEndpoint: "http://host.docker.internal:9099",
+		ProjectCredentialsForProject: func(string) map[string]string {
+			return map[string]string{"GITLAB_TOKEN": "cred-tok", "GRASP_CURSOR_API_KEY": "test-key"}
+		},
+	}).(*acpProvider)
 	req := NodeReq{RunID: "run9", NodeID: "n", Token: "tkn", NodeType: "agent", Caps: testPlainCaps,
 		Config: map[string]any{"agent_profile": "dev"}, Vars: map[string]any{"repos": `[{"name":"p","url":"https://gitlab.com/g/p.git"}]`}}
 
@@ -403,7 +408,7 @@ func TestAgentConfigAndMCP(t *testing.T) {
 	if raw := p.mcpServers(req); len(raw) == 0 {
 		t.Error("mcpServers should be non-empty when artifact-store present")
 	}
-	if tok := p.gitToken(req); tok != "tok-run9" {
+	if tok := p.gitToken(req); tok != "cred-tok" {
 		t.Errorf("gitToken = %q", tok)
 	}
 	if wd := p.workDir("dev"); wd != "" { // no cursor/ dir exists
@@ -544,7 +549,9 @@ func TestEnsurePushedAndDetectPush(t *testing.T) {
 	defer restore()
 
 	host := mcp.NewHost(newMemStore())
-	p := newACPProvider(host, Options{Env: map[string]string{"GITLAB_TOKEN": "gl-token"}}).(*acpProvider)
+	p := newACPProvider(host, Options{ProjectCredentialsForProject: func(string) map[string]string {
+		return map[string]string{"GITLAB_TOKEN": "gl-token"}
+	}}).(*acpProvider)
 	sb := &sandbox.Sandbox{Name: "sb", Host: "127.0.0.1", Port: 1, WorkspaceDir: "/root/workspace"}
 
 	req := NodeReq{
@@ -672,6 +679,9 @@ func TestDebugFetchPage(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Logf("path=%s", r.URL.Path)
+		if serveTestBridgeLogin(w, r) {
+			return
+		}
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			t.Logf("upgrade err: %v", err)
@@ -698,7 +708,7 @@ func TestDebugFetchPage(t *testing.T) {
 	t.Cleanup(srv.Close)
 	host, port := "127.0.0.1", srv.Listener.Addr().(*net.TCPAddr).Port
 	t.Logf("host=%s port=%d", host, port)
-	page, err := sandbox.FetchEventLogPage(context.Background(), host, port, "", 20)
+	page, err := sandbox.FetchEventLogPageWithPassword(context.Background(), host, port, "", 20, testBridgePassword)
 	t.Logf("page=%+v err=%v", page, err)
 	if page != nil {
 		ev := sandbox.AggregateFrames(page.Events)

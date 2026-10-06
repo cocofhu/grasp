@@ -77,10 +77,8 @@ export default defineConfig(({ command }) => {
         // and would also capture the SPA routes under "/sandboxes/*", breaking
         // the sandbox console page. "/sandbox/" only matches the IDE proxy.
         '/sandbox/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },
-        // Sandbox acp-bridge native UI reverse-proxy lives at /sandbox-bridge/:id/*
-        // (legacy /sandbox-acp/ still proxied by the server for compatibility).
+        // Sandbox acp-bridge native UI reverse-proxy lives at /sandbox-bridge/:id/*.
         '/sandbox-bridge/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },
-        '/sandbox-acp/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },
         // App preview reverse-proxy lives at /preview/:runId/:nodeId/:port/* (outside
         // /api). Without this, Vite dev swallows iframe requests and returns SPA HTML.
         '/preview/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },

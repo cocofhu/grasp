@@ -100,7 +100,7 @@ func TestEnsurePmSandboxUnavailable(t *testing.T) {
 	var proj map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &proj)
 	pid := proj["id"].(string)
-	if err := hn.h.Agents.Save(services.Agent{Name: "pm-agent", ProjectID: pid, Env: map[string]string{"GRASP_CURSOR_API_KEY": "test-key"}}); err != nil {
+	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-agent", ProjectID: pid}); err != nil {
 		t.Fatal(err)
 	}
 	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/pm-leader", map[string]any{
@@ -131,17 +131,17 @@ func TestPmMCPRPCEndpoints(t *testing.T) {
 	hn.h.PmProgress = progress
 	hn.h.PMMCP = pmmcp.NewHost(pm, progress, hn.h.WF, hn.h.Runs, hn.h.Arts, nil)
 
-	w := hn.do(http.MethodGet, "/mcp/pm/proj-1", nil)
+	w := hn.do(http.MethodGet, "/mcp/pm/proj-1/pm-progress", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET pm mcp: %d", w.Code)
 	}
-	w = hn.do(http.MethodDelete, "/mcp/pm/proj-1", nil)
+	w = hn.do(http.MethodDelete, "/mcp/pm/proj-1/pm-progress", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("DELETE pm mcp: %d", w.Code)
 	}
 
 	hn.h.PMMCP = nil
-	w = hn.do(http.MethodPost, "/mcp/pm/proj-1", map[string]any{"jsonrpc": "2.0", "id": 1})
+	w = hn.do(http.MethodPost, "/mcp/pm/proj-1/pm-progress", map[string]any{"jsonrpc": "2.0", "id": 1})
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("nil host: %d", w.Code)
 	}
@@ -183,20 +183,6 @@ func TestPlatformMCPUnavailable(t *testing.T) {
 	w = doRaw(r, http.MethodPost, "/mcp/task-scheduler/a1", `{}`, "")
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("scheduler mcp: %d", w.Code)
-	}
-}
-
-func TestClearPmMemoriesHandler(t *testing.T) {
-	hn, pid, _ := setupPmEnabledHarness(t)
-	w := hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/memories", map[string]any{
-		"title": "x", "content": "y",
-	})
-	if w.Code != 200 {
-		t.Fatal(w.Body.String())
-	}
-	w = hn.do(http.MethodDelete, "/api/projects/"+pid+"/pm/memories", nil)
-	if w.Code != 200 {
-		t.Fatalf("clear: %d %s", w.Code, w.Body.String())
 	}
 }
 

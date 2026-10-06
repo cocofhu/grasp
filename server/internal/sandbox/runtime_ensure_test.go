@@ -146,10 +146,6 @@ func TestEnsureRuntimeSkips(t *testing.T) {
 		replies map[string]func() ([]byte, error)
 		calls   string
 	}{
-		"legacy image": {
-			replies: map[string]func() ([]byte, error){"version": reply("", fakeExit(runtimeExitNotFound))},
-			calls:   "version",
-		},
 		"image too old": {
 			replies: map[string]func() ([]byte, error){
 				"version":       reply("", nil),
