@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { VueFlow, useVueFlow, type Connection, type Edge, type EdgeChange, type NodeChange } from '@vue-flow/core'
+import { ConnectionLineType, VueFlow, useVueFlow, type Connection, type Edge, type EdgeChange, type NodeChange } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { MiniMap } from '@vue-flow/minimap'
 import './canvas.css'
@@ -183,7 +183,9 @@ function hostPoint(clientX: number, clientY: number) {
 
 function updateHostSize() {
   const r = host.value?.getBoundingClientRect()
-  if (r) hostSize.value = { width: r.width, height: r.height }
+  if (!r) return
+  if (hostSize.value.width === r.width && hostSize.value.height === r.height) return
+  hostSize.value = { width: r.width, height: r.height }
 }
 
 function measure(n: WFNode) {
@@ -388,7 +390,11 @@ function onDrop(ev: DragEvent) {
 
 // ── Click-to-place (palette click) ──
 const placing = computed(() => (editing.value ? props.editor!.placing.value : null))
-const ghostPointer = ref<{ x: number; y: number } | null>(null)
+const ghostEl = ref<HTMLElement | null>(null)
+/** Shown while the pointer is over the canvas; position itself is not reactive. */
+const ghostShown = ref(false)
+let ghostPoint: { x: number; y: number } | null = null
+let ghostFrame = 0
 let placeDownAt: { x: number; y: number } | null = null
 
 const placingItem = computed(() => {
@@ -398,20 +404,72 @@ const placingItem = computed(() => {
   return paletteItems.value.find((i) => i.key === key) ?? null
 })
 
-const ghost = computed(() => {
+/**
+ * Pointer moves used to write a reactive coordinate and re-render the whole canvas.
+ * The ghost computed then called screenToFlowCoordinate and read node dimensions,
+ * which forced layout and subscribed to Vue Flow's size writeback — an unbounded
+ * update loop. Follow the pointer in screen space, once per frame. Collision
+ * avoidance (freeSpot / node dimensions) runs only when the click drops a node.
+ */
+function paintGhost() {
+  const el = ghostEl.value
+  const hostEl = host.value
   const spec = placing.value
-  const p = ghostPointer.value
-  if (!spec || !p) return null
+  const p = ghostPoint
+  if (!el || !hostEl || !spec || !p) return
   const size = specSize(spec)
-  const flow = freeSpot(nodeAnchor(spec, screenToFlowCoordinate(p)), size)
-  const { x, y, zoom } = viewport.value
-  return { left: flow.x * zoom + x, top: flow.y * zoom + y, width: size.width * zoom, height: size.height * zoom }
-})
+  const zoom = viewport.value.zoom
+  const rect = hostEl.getBoundingClientRect()
+  const width = size.width * zoom
+  const height = size.height * zoom
+  // nodeAnchor is (pointer − half width, pointer − 28) in flow space. Viewport
+  // pan cancels out, so the preview sits on the pointer without asking Vue Flow
+  // to convert coordinates or measure existing nodes.
+  el.style.left = `${p.x - rect.left - width / 2}px`
+  el.style.top = `${p.y - rect.top - 28 * zoom}px`
+  el.style.width = `${width}px`
+  el.style.height = `${height}px`
+  el.style.visibility = 'visible'
+}
+
+function scheduleGhost() {
+  if (ghostFrame) return
+  ghostFrame = requestAnimationFrame(() => {
+    ghostFrame = 0
+    paintGhost()
+  })
+}
+
+function hideGhost() {
+  ghostPoint = null
+  ghostShown.value = false
+  if (ghostFrame) cancelAnimationFrame(ghostFrame)
+  ghostFrame = 0
+}
+
+function showGhostAt(p: { x: number; y: number }) {
+  ghostPoint = p
+  if (!ghostShown.value) {
+    ghostShown.value = true
+    // Mount hidden (canvas-ghost starts visibility:hidden). Paint in this turn,
+    // before the browser frames the element, so it never flashes at the origin.
+    void nextTick(() => paintGhost())
+    return
+  }
+  scheduleGhost()
+}
 
 watch(placing, (spec) => {
-  if (!spec) ghostPointer.value = null
-  else if (lastPointer) ghostPointer.value = { ...lastPointer }
+  if (!spec) hideGhost()
+  else if (lastPointer) showGhostAt(lastPointer)
 })
+
+watch(
+  () => [viewport.value.x, viewport.value.y, viewport.value.zoom] as const,
+  () => {
+    if (ghostPoint && placing.value) scheduleGhost()
+  },
+)
 
 function onPlacePointerDown(ev: PointerEvent) {
   placeDownAt = placing.value ? { x: ev.clientX, y: ev.clientY } : null
@@ -446,12 +504,12 @@ function onHostDblClick(ev: MouseEvent) {
 
 function onPointerMove(ev: PointerEvent) {
   lastPointer = { x: ev.clientX, y: ev.clientY }
-  if (placing.value) ghostPointer.value = lastPointer
+  if (placing.value) showGhostAt(lastPointer)
 }
 
 function onPointerLeave() {
   lastPointer = null
-  ghostPointer.value = null
+  hideGhost()
 }
 
 // ── Context for nodes / edges ──
@@ -724,6 +782,7 @@ onMounted(() => {
   }
 })
 onBeforeUnmount(() => {
+  if (ghostFrame) cancelAnimationFrame(ghostFrame)
   props.editor?.cancelPlacing()
   window.removeEventListener('keydown', onSpace)
   window.removeEventListener('keyup', onSpace)
@@ -734,14 +793,21 @@ const showEmpty = computed(() => editing.value && props.nodes.length === 0 && !p
 
 const selectedCount = computed(() => (editing.value ? props.editor!.selectedNodeIds.value.length : 0))
 
+/** Stable identity so a canvas re-render does not hand Vue Flow a fresh options object. */
+const connectionLineOptions = {
+  type: ConnectionLineType.SmoothStep,
+  style: { stroke: 'var(--flow-edge-active)', strokeWidth: 1.75 },
+}
+
 /**
  * Edit mode: dragging empty canvas draws a selection box; Space + drag, the middle /
  * right button or a two-finger scroll pans; pinch or Mod + scroll zooms.
+ * While placing, the left button drops a node, so box-select must not capture it.
  */
 const flowInteraction = computed(() =>
   editing.value
     ? {
-        selectionKeyCode: true,
+        selectionKeyCode: placing.value ? null : true,
         panOnDrag: [1, 2],
         panOnScroll: true,
         zoomActivationKeyCode: isMac() ? 'Meta' : 'Control',
@@ -795,7 +861,7 @@ defineExpose({ fit, layout, centerOn, openCommandPalette })
       :max-zoom="2"
       :connection-radius="28"
       :is-valid-connection="isValidConnection"
-      :connection-line-options="{ type: 'smoothstep' as any, style: { stroke: 'var(--flow-edge-active)', strokeWidth: 1.75 } }"
+      :connection-line-options="connectionLineOptions"
       @nodes-change="onNodesChange"
       @edges-change="onEdgesChange"
       @node-click="onNodeClick"
@@ -839,9 +905,9 @@ defineExpose({ fit, layout, centerOn, openCommandPalette })
     <EmptyCanvas v-if="showEmpty" @template="startFromTemplate" @blank="startBlank" />
 
     <div
-      v-if="ghost && placingItem"
+      v-if="ghostShown && placingItem"
+      ref="ghostEl"
       class="canvas-ghost pointer-events-none absolute z-[5]"
-      :style="{ left: `${ghost.left}px`, top: `${ghost.top}px`, width: `${ghost.width}px`, height: `${ghost.height}px` }"
       aria-hidden="true"
       data-testid="canvas-place-ghost"
     >
