@@ -408,20 +408,28 @@ const placingItem = computed(() => {
  * Pointer moves used to write a reactive coordinate and re-render the whole canvas.
  * The ghost computed then called screenToFlowCoordinate and read node dimensions,
  * which forced layout and subscribed to Vue Flow's size writeback — an unbounded
- * update loop. Position is now applied to the preview element once per frame.
+ * update loop. Follow the pointer in screen space, once per frame. Collision
+ * avoidance (freeSpot / node dimensions) runs only when the click drops a node.
  */
 function paintGhost() {
   const el = ghostEl.value
+  const hostEl = host.value
   const spec = placing.value
   const p = ghostPoint
-  if (!el || !spec || !p) return
+  if (!el || !hostEl || !spec || !p) return
   const size = specSize(spec)
-  const flow = freeSpot(nodeAnchor(spec, screenToFlowCoordinate(p)), size)
-  const { x, y, zoom } = viewport.value
-  el.style.left = `${flow.x * zoom + x}px`
-  el.style.top = `${flow.y * zoom + y}px`
-  el.style.width = `${size.width * zoom}px`
-  el.style.height = `${size.height * zoom}px`
+  const zoom = viewport.value.zoom
+  const rect = hostEl.getBoundingClientRect()
+  const width = size.width * zoom
+  const height = size.height * zoom
+  // nodeAnchor is (pointer − half width, pointer − 28) in flow space. Viewport
+  // pan cancels out, so the preview sits on the pointer without asking Vue Flow
+  // to convert coordinates or measure existing nodes.
+  el.style.left = `${p.x - rect.left - width / 2}px`
+  el.style.top = `${p.y - rect.top - 28 * zoom}px`
+  el.style.width = `${width}px`
+  el.style.height = `${height}px`
+  el.style.visibility = 'visible'
 }
 
 function scheduleGhost() {
@@ -443,8 +451,9 @@ function showGhostAt(p: { x: number; y: number }) {
   ghostPoint = p
   if (!ghostShown.value) {
     ghostShown.value = true
-    // The element mounts on the next flush; paint after it exists.
-    void nextTick(scheduleGhost)
+    // Mount hidden (canvas-ghost starts visibility:hidden). Paint in this turn,
+    // before the browser frames the element, so it never flashes at the origin.
+    void nextTick(() => paintGhost())
     return
   }
   scheduleGhost()

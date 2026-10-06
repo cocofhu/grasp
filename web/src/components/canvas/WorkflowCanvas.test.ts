@@ -15,6 +15,8 @@ const flow = vi.hoisted(() => ({
   zoomIn: vi.fn(),
   zoomOut: vi.fn(),
   setCenter: vi.fn(async () => true),
+  screenToFlowCoordinate: vi.fn((p: { x: number; y: number }) => ({ x: p.x, y: p.y })),
+  findNode: vi.fn((id: string) => ({ id, dimensions: { width: 240, height: 100 }, computedPosition: { x: 10, y: 20 } })),
 }))
 
 vi.mock('@vue-flow/core', async () => {
@@ -51,9 +53,7 @@ vi.mock('@vue-flow/core', async () => {
     }),
     useVueFlow: () => ({
       ...flow,
-      screenToFlowCoordinate: (p: { x: number; y: number }) => ({ x: p.x, y: p.y }),
       viewport: vref({ x: 0, y: 0, zoom: 1 }),
-      findNode: (id: string) => ({ id, dimensions: { width: 240, height: 100 }, computedPosition: { x: 10, y: 20 } }),
       dimensions: vref({ width: 800, height: 600 }),
     }),
     MarkerType: { ArrowClosed: 'arrowclosed' },
@@ -300,17 +300,24 @@ describe('WorkflowCanvas · edit mode', () => {
 
     const host = w.find('[data-testid="workflow-canvas"]').element
     const before = updates
+    const findsBefore = flow.findNode.mock.calls.length
+    const screensBefore = flow.screenToFlowCoordinate.mock.calls.length
     for (let i = 0; i < 40; i++) {
       host.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 480 + (i % 5), clientY: 280 }))
       await flushPromises()
     }
-    // One reveal of the preview; further moves must not re-render the canvas.
+    // One reveal of the preview; further moves must not re-render the canvas
+    // or measure nodes / ask Vue Flow to convert coordinates.
     expect(updates - before).toBeLessThanOrEqual(2)
+    expect(flow.findNode.mock.calls.length).toBe(findsBefore)
+    expect(flow.screenToFlowCoordinate.mock.calls.length).toBe(screensBefore)
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
     const ghost = w.find('[data-testid="canvas-place-ghost"]')
     expect(ghost.exists()).toBe(true)
     expect(ghost.text()).toBe('交付')
-    expect(ghost.attributes('style') ?? '').toContain('left:')
+    const ghostStyle = ghost.attributes('style') ?? ''
+    expect(ghostStyle).toContain('visibility: visible')
+    expect(ghostStyle).toMatch(/left:\s*[1-9]/)
 
     await w.find('[data-testid="canvas-place-cancel"]').trigger('click')
     expect(editor.placing.value).toBeNull()

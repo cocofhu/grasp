@@ -314,6 +314,113 @@ for (const theme of ['light', 'dark'] as const) {
   })
 }
 
+test('clicking 交付 stays responsive through pointer moves, cancel and drop', async ({ page }) => {
+  await openEditor(page, freshStore())
+  await startFromTemplate(page)
+  await expect(page.getByTestId('palette-item-agent:交付')).toBeVisible()
+
+  await page.getByTestId('palette-item-agent:交付').click()
+  await expect(page.getByTestId('palette-item-agent:交付')).toHaveAttribute('data-placing', 'true')
+  const hint = page.getByTestId('canvas-place-hint')
+  await expect(hint).toContainText('点击画布放置')
+  await expect(hint).toContainText('交付')
+  await expect(nodes(page)).toHaveCount(5)
+
+  const pane = await paneBox(page)
+  await page.evaluate(() => {
+    const w = window as unknown as { __frames: number[]; __stop: boolean; __long: number[] }
+    w.__frames = []
+    w.__long = []
+    w.__stop = false
+    try {
+      const obs = new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) if (e.duration >= 50) w.__long.push(e.duration)
+      })
+      obs.observe({ type: 'longtask' })
+    } catch {
+      /* longtask is optional; frame gaps below are the responsiveness signal */
+    }
+    const tick = (ts: number) => {
+      w.__frames.push(ts)
+      if (!w.__stop) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  })
+
+  const x0 = pane.x + pane.width * 0.72
+  const y0 = pane.y + pane.height * 0.78
+  for (let s = 0; s < 40; s++) await page.mouse.move(x0 + (s % 8) * 14, y0 + Math.floor(s / 8) * 12)
+
+  const ghost = page.getByTestId('canvas-place-ghost')
+  await expect(ghost).toBeVisible()
+  await expect(ghost).toContainText('交付')
+  const spot = await ghost.evaluate((el) => {
+    const host = el.offsetParent?.getBoundingClientRect() ?? el.parentElement!.getBoundingClientRect()
+    const r = el.getBoundingClientRect()
+    return { visibility: getComputedStyle(el).visibility, left: r.left, top: r.top, hostLeft: host.left, hostTop: host.top }
+  })
+  expect(spot.visibility).toBe('visible')
+  expect(spot.left).toBeGreaterThan(spot.hostLeft + 24)
+  expect(spot.top).toBeGreaterThan(spot.hostTop + 24)
+
+  const timing = await page.evaluate(() => {
+    const w = window as unknown as { __frames: number[]; __stop: boolean; __long: number[] }
+    w.__stop = true
+    const f = w.__frames
+    const gaps = f.slice(1).map((t, i) => t - f[i]!)
+    return {
+      frames: f.length,
+      maxGap: gaps.length ? Math.max(...gaps) : Number.POSITIVE_INFINITY,
+      longest: w.__long.length ? Math.max(...w.__long) : 0,
+    }
+  })
+  expect(timing.frames).toBeGreaterThan(8)
+  expect(timing.maxGap).toBeLessThan(400)
+  expect(timing.longest).toBeLessThan(250)
+
+  await page.getByTestId('canvas-place-cancel').click()
+  await expect(hint).toHaveCount(0)
+  await expect(nodes(page)).toHaveCount(5)
+
+  const paneEl = page.locator('.vue-flow__pane')
+  await page.getByTestId('palette-item-agent:交付').click()
+  await page.mouse.move(x0, y0)
+  await expect(ghost).toBeVisible()
+  await paneEl.click({ position: { x: pane.width * 0.72, y: pane.height * 0.78 } })
+  await expect(nodes(page)).toHaveCount(6)
+  await expect(page.locator('.vue-flow__node').filter({ hasText: '交付' })).toBeVisible()
+  await expect(hint).toHaveCount(0)
+
+  await page.getByTestId('palette-item-agent:交付').click()
+  await paneEl.click({ position: { x: pane.width * 0.62, y: pane.height * 0.55 }, modifiers: ['Shift'] })
+  await expect(nodes(page)).toHaveCount(7)
+  await expect(hint).toContainText('交付')
+
+  await page.keyboard.press('Escape')
+  await expect(hint).toHaveCount(0)
+  await expect(nodes(page)).toHaveCount(7)
+
+  await page.getByTestId('palette-item-agent:交付').click()
+  await expect(hint).toBeVisible()
+  await page.getByTestId('palette-item-agent:交付').click()
+  await expect(hint).toHaveCount(0)
+
+  for (const id of ['palette-item-type:branch', 'palette-item-type:human_gate']) {
+    const before = await nodes(page).count()
+    await page.getByTestId(id).click()
+    await expect(hint).toBeVisible()
+    await page.mouse.move(pane.x + pane.width * 0.4, pane.y + pane.height * 0.42, { steps: 8 })
+    await expect(ghost).toBeVisible()
+    await page.getByTestId('canvas-place-cancel').click()
+    await expect(hint).toHaveCount(0)
+    await expect(nodes(page)).toHaveCount(before)
+    await page.getByTestId(id).click()
+    await paneEl.click({ position: { x: pane.width * 0.4, y: pane.height * 0.42 } })
+    await expect(nodes(page)).toHaveCount(before + 1)
+    await expect(hint).toHaveCount(0)
+  }
+})
+
 test('200-node graph stays responsive while dragging', async ({ page }) => {
   const big: Graph = { nodes: [], edges: [] }
   for (let i = 0; i < 200; i++) {
