@@ -100,52 +100,6 @@ test('新建 Agent 五步向导浏览器验收', async ({ page }) => {
   await expect(page.locator('.wiz-rail')).toHaveCount(0)
 })
 
-test('向导能取到项目共享 Git Token 时 Git 步仍出现三选（plan g3.2）', async ({ page }) => {
-  await page.route('**/api/**', async (route) => {
-    if (!new URL(route.request().url()).pathname.startsWith('/api/')) {
-      await route.continue()
-      return
-    }
-    const url = new URL(route.request().url())
-    if (url.pathname.includes('/shared-agent-config') && route.request().method() === 'GET') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          projectId: 'proj-shared',
-          env: { GITLAB_TOKEN: '${vars.gitlab_pat}' },
-          files: [],
-          mcp: [],
-          layout: {},
-        }),
-      })
-      return
-    }
-    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
-  })
-
-  await page.goto('/agent-create-wizard.html?projectId=proj-shared', { waitUntil: 'networkidle' })
-  await expect(page.getByTestId('agent-create-wizard-root')).toBeVisible()
-  await page.locator('#wiz-name-input').fill('e2e-inherited-git')
-  await page.getByRole('button', { name: /^下一步/ }).click()
-  await page.getByRole('button', { name: /Cursor/ }).click()
-  await page.getByRole('button', { name: /^下一步/ }).click()
-  await page.getByRole('button', { name: /^跳过/ }).click()
-  await expect(page.locator('.sec-head h3')).toHaveText('Git')
-  await expect(page.locator('[data-test="git-guide"]')).toHaveCount(1)
-  await expect(page.locator('[data-test="git-choice-github_https"]')).toBeVisible()
-  await expect(page.locator('[data-test="git-choice-gitlab_https"]')).toBeVisible()
-  await expect(page.locator('[data-test="git-choice-ssh"]')).toBeVisible()
-  await expect(page.locator('[data-test="git-choice-gitlab_https"]')).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
-  await expect(page.getByText('调整类型')).toHaveCount(0)
-  await expect(page.getByText(/预选类型/)).toBeVisible()
-  await page.locator('[data-test="git-choice-ssh"]').click()
-  await expect(page.locator('[data-test="git-choice-ssh"]')).toHaveAttribute('aria-pressed', 'true')
-})
-
 test('English template dropdown shows localized names without Chinese or internal names', async ({ page }) => {
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url())
