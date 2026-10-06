@@ -22,6 +22,9 @@ type startRunBody struct {
 	// clarify-first workflow. The engine delivers it into the clarify node's
 	// sandbox once that node parks, so the caller can navigate away at once.
 	FirstMessage *models.CompositeText `json:"firstMessage"`
+	// PublishedSnapshot selects the home-page start: execute PublishedVersion
+	// instead of the latest saved head. Editor, project, and sidebar starts omit it.
+	PublishedSnapshot bool `json:"publishedSnapshot"`
 }
 
 func (h *Handlers) StartRun(c *gin.Context) {
@@ -40,7 +43,12 @@ func (h *Handlers) StartRun(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	run, err := h.Eng.StartRunWithFirstMessage(c.Param("id"), b.Inputs, trigger, b.Priority, tags, b.Env, b.Title, b.FirstMessage)
+	var run *models.Run
+	if b.PublishedSnapshot {
+		run, err = h.Eng.StartRunFromPublishedWithFirstMessage(c.Param("id"), b.Inputs, trigger, b.Priority, tags, b.Env, b.Title, b.FirstMessage)
+	} else {
+		run, err = h.Eng.StartRunWithFirstMessage(c.Param("id"), b.Inputs, trigger, b.Priority, tags, b.Env, b.Title, b.FirstMessage)
+	}
 	if err != nil {
 		_ = c.Error(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

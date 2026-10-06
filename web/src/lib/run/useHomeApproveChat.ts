@@ -6,7 +6,12 @@ import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { useImageAttachments } from '@/lib/composables/useImageAttachments'
 import { readStoredProjectId } from '@/lib/composables/useProjectContext'
-import { clarifyFirstNodeId, isClarifyFirstWorkflow, isPublishedClarifyFirst } from '@/lib/run/clarifyFirstWorkflow'
+import {
+  clarifyFirstNodeId,
+  isClarifyFirstWorkflow,
+  isPublishedClarifyFirst,
+  withPublishedSnapshot,
+} from '@/lib/run/clarifyFirstWorkflow'
 import {
   clearHomeComposerDraft,
   loadHomeComposerDraft,
@@ -139,14 +144,21 @@ export function useHomeApproveChat() {
     workflows.value
       .filter((w) => isPublishedClarifyFirst(w, agentsByName.value) && !!w.showOnHome)
       .map((w) => ({
-        ...w,
+        ...withPublishedSnapshot(w),
         projectName: resolveHomeProjectName(w.projectId, projectNamesById.value),
       })),
   )
-  /** Home-visible clarify-first workflows hidden only because they hold unpublished edits. */
+  /**
+   * Home-visible clarify-first heads that are not startable: never published,
+   * or the published snapshot itself is not clarify-first. Shown only when
+   * homeWorkflows is empty.
+   */
   const unpublishedHomeWorkflows = computed(() =>
     workflows.value.filter(
-      (w) => !!w.showOnHome && w.status !== 'published' && isClarifyFirstWorkflow(w, agentsByName.value),
+      (w) =>
+        !!w.showOnHome &&
+        !isPublishedClarifyFirst(w, agentsByName.value) &&
+        isClarifyFirstWorkflow(w, agentsByName.value),
     ),
   )
   const selected = computed(
@@ -420,6 +432,7 @@ export function useHomeApproveChat() {
       const res = await api.startRun(wf.id, {}, 'manual', launchPriority.value, [], {
         title: titleFromDraft(text, images),
         firstMessage: { text, images },
+        publishedSnapshot: true,
       })
       // Success path: clear composer + local draft (plan g2.3).
       suppressSave = true

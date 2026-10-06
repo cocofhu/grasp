@@ -57,10 +57,13 @@ func graphNodesDTO(g models.Graph) []gin.H {
 	return nodes
 }
 
-// workflowDTO shapes a workflow for the frontend.
-func workflowDTO(wf models.WorkflowDef) gin.H {
+// workflowDTO shapes a workflow for the frontend. nodes/edges stay the latest
+// saved head so the editor is unchanged. When published is the row for
+// wf.PublishedVersion, publishedSnapshot carries that version's name,
+// description, nodes, and edges for the home page.
+func workflowDTO(wf models.WorkflowDef, published ...*models.WorkflowVersion) gin.H {
 	policy := services.NormalizeWorkflowNotifyPolicy(wf.NotifyPolicy)
-	return gin.H{
+	out := gin.H{
 		"id": wf.ID, "projectId": wf.ProjectID, "name": wf.Name, "description": wf.Description,
 		"status": wf.Status(), "version": wf.Version, "publishedVersion": wf.PublishedVersion,
 		"needsRepo":    wf.NeedsRepo,
@@ -68,6 +71,24 @@ func workflowDTO(wf models.WorkflowDef) gin.H {
 		"notifyPolicy": policy,
 		"updatedAt":    wf.UpdatedAt, "lastRunAt": wf.LastRunAt,
 		"nodes": graphNodesDTO(wf.Graph), "edges": wf.Graph.Edges, "variables": wf.Graph.Variables,
+	}
+	if snap := publishedSnapshotDTO(wf, published); snap != nil {
+		out["publishedSnapshot"] = snap
+	}
+	return out
+}
+
+func publishedSnapshotDTO(wf models.WorkflowDef, published []*models.WorkflowVersion) gin.H {
+	if wf.PublishedVersion <= 0 || len(published) == 0 || published[0] == nil {
+		return nil
+	}
+	snap := published[0]
+	if snap.Version != wf.PublishedVersion {
+		return nil
+	}
+	return gin.H{
+		"version": snap.Version, "name": snap.Name, "description": snap.Description,
+		"nodes": graphNodesDTO(snap.Graph), "edges": snap.Graph.Edges,
 	}
 }
 

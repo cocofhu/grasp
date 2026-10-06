@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { clarifyFirstNodeId, isClarifyFirstWorkflow, isPublishedClarifyFirst } from './clarifyFirstWorkflow'
+import {
+  clarifyFirstNodeId,
+  isClarifyFirstWorkflow,
+  isPublishedClarifyFirst,
+  withPublishedSnapshot,
+} from './clarifyFirstWorkflow'
 import { AUTO_CAPS, CLARIFY_CAPS } from '@/test/capsFixtures'
 import type { WFEdge, WFNode } from '@/lib/shared/types'
 
@@ -113,7 +118,7 @@ describe('isClarifyFirstWorkflow', () => {
     expect(isClarifyFirstWorkflow(g, AGENTS)).toBe(false)
   })
 
-  it('isPublishedClarifyFirst requires published status', () => {
+  it('treats a published head as the snapshot and ignores a never-published draft', () => {
     const g = graph(
       [
         { id: 'in', type: 'input' },
@@ -121,8 +126,74 @@ describe('isClarifyFirstWorkflow', () => {
       ],
       [{ source: 'in', target: 'ask' }],
     )
-    expect(isPublishedClarifyFirst({ status: 'draft', ...g }, AGENTS)).toBe(false)
-    expect(isPublishedClarifyFirst({ status: 'published', ...g }, AGENTS)).toBe(true)
+    expect(isPublishedClarifyFirst({ status: 'draft', version: 1, publishedVersion: 0, ...g }, AGENTS)).toBe(false)
+    expect(isPublishedClarifyFirst({ status: 'published', version: 1, publishedVersion: 1, ...g }, AGENTS)).toBe(true)
     expect(clarifyFirstNodeId(g, AGENTS)).toBe('ask')
+  })
+
+  it('uses the published snapshot even when the draft head is no longer clarify-first', () => {
+    const head = graph(
+      [
+        { id: 'in', type: 'input' },
+        { id: 'work', profile: 'worker' },
+      ],
+      [{ source: 'in', target: 'work' }],
+    )
+    const snap = graph(
+      [
+        { id: 'in', type: 'input' },
+        { id: 'ask', profile: 'clarifier' },
+      ],
+      [{ source: 'in', target: 'ask' }],
+    )
+    const wf = {
+      status: 'draft' as const,
+      version: 2,
+      publishedVersion: 1,
+      name: '草稿名',
+      description: '草稿说明',
+      ...head,
+      publishedSnapshot: {
+        version: 1,
+        name: '已发布名',
+        description: '已发布说明',
+        nodes: snap.nodes!,
+        edges: snap.edges!,
+      },
+    }
+    expect(isPublishedClarifyFirst(wf, AGENTS)).toBe(true)
+    const card = withPublishedSnapshot({ id: 'wf', updatedAt: '', needsRepo: false, ...wf })
+    expect(card.name).toBe('已发布名')
+    expect(card.description).toBe('已发布说明')
+    expect(clarifyFirstNodeId(card, AGENTS)).toBe('ask')
+  })
+
+  it('rejects a clarify-first draft whose published snapshot is not clarify-first', () => {
+    const head = graph(
+      [
+        { id: 'in', type: 'input' },
+        { id: 'ask', profile: 'clarifier' },
+      ],
+      [{ source: 'in', target: 'ask' }],
+    )
+    const snap = graph(
+      [
+        { id: 'in', type: 'input' },
+        { id: 'work', profile: 'worker' },
+      ],
+      [{ source: 'in', target: 'work' }],
+    )
+    expect(
+      isPublishedClarifyFirst(
+        {
+          status: 'draft',
+          version: 2,
+          publishedVersion: 1,
+          ...head,
+          publishedSnapshot: { version: 1, name: '旧版', description: '', nodes: snap.nodes!, edges: snap.edges! },
+        },
+        AGENTS,
+      ),
+    ).toBe(false)
   })
 })

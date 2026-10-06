@@ -1,4 +1,4 @@
-import type { WFEdge, WFNode, Workflow } from '@/lib/shared/types'
+import type { PublishedWorkflowSnapshot, WFEdge, WFNode, Workflow } from '@/lib/shared/types'
 import { isClarify } from '@/lib/workflow/agentCapabilities'
 import { nodeCapabilities, type AgentCapsLookup } from '@/lib/workflow/nodeOutlets'
 
@@ -40,9 +40,45 @@ export function isClarifyFirstWorkflow(graph: GraphLike, agents?: AgentCapsLooku
   return !!clarifyFirstNodeId(graph, agents)
 }
 
+type HomeWorkflowPick = Pick<
+  Workflow,
+  'status' | 'version' | 'publishedVersion' | 'publishedSnapshot'
+> &
+  GraphLike
+
+/**
+ * Graph the home page should treat as the published snapshot.
+ * A newer draft head is ignored once publishedSnapshot (or an equal version
+ * pair) is present. Status published still means the head itself is that snapshot.
+ */
+export function publishedHomeGraph(wf: HomeWorkflowPick): (GraphLike & Partial<Pick<PublishedWorkflowSnapshot, 'name' | 'description'>>) | null {
+  const ver = wf.publishedVersion ?? 0
+  const snap = wf.publishedSnapshot
+  if (snap && (ver > 0 || (snap.version ?? 0) > 0)) return snap
+  if (wf.status === 'published') return wf
+  if (ver > 0 && ver === wf.version) return wf
+  return null
+}
+
+/** True when the published snapshot (not merely the head status) is clarify-first. */
 export function isPublishedClarifyFirst(
-  wf: Pick<Workflow, 'status'> & GraphLike,
+  wf: HomeWorkflowPick,
   agents?: AgentCapsLookup,
 ): boolean {
-  return wf.status === 'published' && isClarifyFirstWorkflow(wf, agents)
+  const graph = publishedHomeGraph(wf)
+  return !!graph && isClarifyFirstWorkflow(graph, agents)
+}
+
+/** Card fields for home: name, description, and graph come from the published snapshot. */
+export function withPublishedSnapshot<T extends Workflow>(wf: T): T {
+  const snap = wf.publishedSnapshot
+  if (!snap || publishedHomeGraph(wf) !== snap) return wf
+  const name = snap.name?.trim() ? snap.name : wf.name
+  return {
+    ...wf,
+    name,
+    description: snap.description ?? wf.description,
+    nodes: snap.nodes ?? wf.nodes,
+    edges: snap.edges ?? wf.edges,
+  }
 }

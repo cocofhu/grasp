@@ -101,6 +101,8 @@ export const runsClient = {
       title?: string
       /** Opening chat message; the engine delivers it once the approve node parks. */
       firstMessage?: { text: string; images?: ClarifyImage[] }
+      /** Home page: execute the published snapshot instead of the draft head. */
+      publishedSnapshot?: boolean
     },
   ) =>
     req<{ id: string; status: string; priority?: string }>(`/workflows/${workflowId}/runs`, {
@@ -113,6 +115,7 @@ export const runsClient = {
         ...(opts?.env && opts.env.length ? { env: opts.env } : {}),
         ...(opts?.title && opts.title.trim() ? { title: opts.title.trim() } : {}),
         ...(startRunFirstMessage(opts?.firstMessage) ?? {}),
+        ...(opts?.publishedSnapshot ? { publishedSnapshot: true } : {}),
       }),
       ...(opts?.signal ? { signal: opts.signal } : {}),
     }),

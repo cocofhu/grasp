@@ -163,7 +163,6 @@ function absorb(res: Partial<Workflow> | null | undefined) {
   if (res.id) wf.id = res.id
   if (res.version !== undefined) wf.version = res.version
   if (res.publishedVersion !== undefined) wf.publishedVersion = res.publishedVersion
-  if (res.status === 'draft' && wf.status === 'published' && wf.showOnHome) toast.warn(t('pages.workflowEditor.hiddenFromHome'))
   if (res.status) wf.status = res.status
   if (res.updatedAt) wf.updatedAt = res.updatedAt
   if (res.projectId && !wf.projectId) wf.projectId = res.projectId
