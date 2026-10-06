@@ -14,6 +14,7 @@ func TestNormalizeAcpBackend(t *testing.T) {
 		"codebuddy":   AcpBackendCodeBuddy,
 		"trae":        AcpBackendTrae,
 		"opencode":    AcpBackendOpenCode,
+		"codex":       AcpBackendCodex,
 		"":            "",
 		"  trae  ":    AcpBackendTrae,
 		"CURSOR":      "", // case-sensitive
@@ -33,6 +34,7 @@ func TestDefaultConfigRootForBackend(t *testing.T) {
 		AcpBackendCodeBuddy:  "/root/.codebuddy",
 		AcpBackendTrae:       "/root/.trae",
 		AcpBackendOpenCode:   "/root/.config/opencode",
+		AcpBackendCodex:      "/root/.codex",
 		"unknown":            "/root/.cursor",
 	}
 	for backend, want := range cases {
@@ -60,6 +62,7 @@ func TestSaveGetBackendConfigRoot(t *testing.T) {
 		{"buddy-agent", AcpBackendCodeBuddy, "/root/.codebuddy", AcpBackendCodeBuddy},
 		{"trae-agent", AcpBackendTrae, "/root/.trae", AcpBackendTrae},
 		{"opencode-agent", AcpBackendOpenCode, "/root/.config/opencode", AcpBackendOpenCode},
+		{"codex-agent", AcpBackendCodex, "/root/.codex", AcpBackendCodex},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

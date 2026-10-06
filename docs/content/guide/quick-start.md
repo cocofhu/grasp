@@ -54,7 +54,7 @@ Agent / workspace 与 SQLite 持久在仓库根 `.localdata` 宿主机目录（b
 ./start.sh dev -d        # 源码栈：go run + Vite HMR
 ```
 
-镜像 tag / digest 可在 `.env` 覆盖 — 见仓库根目录 [`.env.example`](https://github.com/cocofhu/approving/blob/main/.env.example)。默认一张 `universal-sandbox`（五个 CLI 预装，运行时按 Agent 后端切换）。发布与 smoke 见 [Contributing](https://github.com/cocofhu/approving/blob/main/CONTRIBUTING.md)。
+镜像 tag / digest 可在 `.env` 覆盖 — 见仓库根目录 [`.env.example`](https://github.com/cocofhu/approving/blob/main/.env.example)。默认一张 `universal-sandbox`（六个 CLI 预装，含 Codex；Codex 使用登录文件而不是 API Key，运行时按 Agent 后端切换）。发布与 smoke 见 [Contributing](https://github.com/cocofhu/approving/blob/main/CONTRIBUTING.md)。
 
 ## 下一步
 

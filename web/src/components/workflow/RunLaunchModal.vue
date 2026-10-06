@@ -54,6 +54,11 @@ const props = defineProps<{
    * Unset / invalid values still default to normal (plan g2.2).
    */
   initialPriority?: RunPriority
+  /**
+   * Home page only. Editor, project detail, and sidebar quick launch leave this
+   * unset so the run still executes the latest saved head.
+   */
+  publishedSnapshot?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -363,6 +368,7 @@ async function startRun() {
       env: envEntries.length ? envEntries : undefined,
       title: props.runTitle?.trim() || undefined,
       firstMessage: props.firstMessage ?? undefined,
+      ...(props.publishedSnapshot ? { publishedSnapshot: true } : {}),
     })
     if (gen !== startGen) return
     successRunId.value = res.id

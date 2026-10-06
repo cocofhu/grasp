@@ -35,6 +35,67 @@ func (s *SandboxService) SetTestSchedulerHooks(h TestSchedulerHooks) {
 	s.testScheduler = h
 }
 
+// SetCodexLoginWriteBack registers the project-credential update used when a
+// Codex sandbox's auth.json changes. The callback must not log the file body.
+func (s *SandboxService) SetCodexLoginWriteBack(fn func(projectID, content string) error) {
+	s.codexLoginWriteBack = fn
+}
+
+func codexLiveAuthPath(backend runtime.AcpBackend, configRoot string) string {
+	if runtime.NormalizeBackend(string(backend)) != runtime.BackendCodex {
+		return ""
+	}
+	return runtime.CodexAuthPath(configRoot)
+}
+
+// writeBackLiveCodex reads auth.json before the container is destroyed. A read
+// failure, an unchanged file, or a confirmed login refusal keeps the previous
+// credential. The body is not logged.
+func (s *SandboxService) writeBackLiveCodex(ctx context.Context, id uint, projectID string) {
+	if s.codexLoginWriteBack == nil || strings.TrimSpace(projectID) == "" {
+		return
+	}
+	s.mu.Lock()
+	ls := s.live[id]
+	rejected := false
+	if ls != nil {
+		rejected = ls.codexAuthRejected
+	}
+	s.mu.Unlock()
+	if ls == nil || ls.sb == nil || ls.codexAuthPath == "" {
+		return
+	}
+	body, err := ls.sb.ReadFile(ctx, ls.codexAuthPath)
+	next, ok := runtime.ShouldWriteBackCodexLogin(err, string(body), ls.codexAuthInjected, rejected)
+	if !ok {
+		if err != nil {
+			log.Warn().Err(err).Uint("sandbox", id).Msg("codex login writeback skipped; sandbox file unreadable")
+		}
+		return
+	}
+	if werr := s.codexLoginWriteBack(projectID, next); werr != nil {
+		log.Warn().Err(werr).Str("project", projectID).Uint("sandbox", id).Msg("codex login writeback failed")
+	}
+}
+
+// noteLiveCodexAuth records whether the latest turn's CLI error refused the
+// login. A later successful turn clears the flag so a refreshed auth.json can
+// still be written back. Narration and tool output are not consulted.
+func (s *SandboxService) noteLiveCodexAuth(id uint, result *sandbox.ChatResult, err error) {
+	errorText := ""
+	failed := false
+	if result != nil {
+		errorText = result.ErrorText
+		failed = result.Failed
+	}
+	rejected := runtime.CodexTurnAuthRejected(err, errorText, failed)
+	s.mu.Lock()
+	if ls := s.live[id]; ls != nil && ls.codexAuthPath != "" {
+		ls.codexAuthRejected = rejected
+	}
+	s.mu.Unlock()
+}
+
 func (s *SandboxService) registerTestScheduler(projectID, profile, runID, token string) {
 	if s.testScheduler.Register != nil && strings.TrimSpace(projectID) != "" {
 		s.testScheduler.Register(projectID, profile, runID, token)
@@ -241,6 +302,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 	if s.shared != nil && strings.TrimSpace(projectID) != "" {
 		sharedWorkDir = s.shared.WorkDir(projectID)
 	}
+	codexLogin := runtime.CodexLoginFileFromEnv(backend, env)
 	merged, err := runtime.PrepareAuthEnv(backend, env, workDir, sharedWorkDir)
 	if err != nil {
 		fail(err)
@@ -269,9 +331,21 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 		fail(fmt.Errorf("build cursor home: %w", err))
 		return
 	}
+	if err := runtime.InstallCodexLoginFile(backend, home, codexLogin); err != nil {
+		_ = os.RemoveAll(home)
+		fail(err)
+		return
+	}
 
 	env["AGENT_PROVIDER"] = string(backend)
-	env["CONFIG_ROOT"] = agent.Layout.ConfigRoot
+	configRoot := agent.Layout.ConfigRoot
+	if backend == runtime.BackendCodex && strings.TrimSpace(configRoot) == "" {
+		configRoot = runtime.CodexConfigRoot
+	}
+	env["CONFIG_ROOT"] = configRoot
+	if backend == runtime.BackendCodex {
+		env["CODEX_HOME"] = configRoot
+	}
 	env["GRASP_PROJECT_ID"] = projectID
 	env["GRASP_THREAD_ID"] = threadID
 	env["GRASP_RUN_ID"] = runID
@@ -283,7 +357,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 		Image:        resolveSandboxImage(string(backend)),
 		Env:          env,
 		ConfigHome:   home,
-		ConfigRoot:   agent.Layout.ConfigRoot,
+		ConfigRoot:   configRoot,
 		WorkspaceDir: agent.Layout.WorkspaceDir,
 	}
 	ApplyProjectSSHToSpec(&spec, projectCreds)
@@ -324,7 +398,11 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 		return
 	}
 	s.mu.Lock()
-	s.live[id] = &liveSandbox{sb: sb, acp: acp, home: home}
+	s.live[id] = &liveSandbox{
+		sb: sb, acp: acp, home: home,
+		codexAuthInjected: codexLogin,
+		codexAuthPath:     codexLiveAuthPath(backend, configRoot),
+	}
 	s.mu.Unlock()
 	log.Info().Str("name", sb.Name).Str("profile", profile).Str("thread", threadID).
 		Uint("id", id).Msg("agent sandbox opened")

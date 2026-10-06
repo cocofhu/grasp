@@ -5,7 +5,7 @@
 - **运行环境**（来自 ai-tool/sandbox）：Ubuntu 22.04、多语言工具链、容器内 **Docker（DinD）**、**SSH**、**code-server**（浏览器 IDE）、DB 客户端（mysql/redis/psql/mongosh）、Cursor CLI、Claude Code、glab、gh。
 - **agent 与代码能力**（来自 code-flow/sandbox）：多后端 **backend**（ACP 桥接服务）、**多仓库 PULL**、多托管商 **git 凭据路由**、**Playwright（Chromium）+ noVNC 预览栈**。
 
-五类 agent 后端 CLI 均已预装，`AGENT_PROVIDER` 单活切换：`cursor`（Cursor CLI）、`claude_code`（原生 Claude CLI）、`codebuddy`（`@tencent-ai/codebuddy-code`）、`trae`（Trae CLI）、`opencode`（`opencode-ai`，`run --format json`）。
+六类 agent 后端 CLI 均已预装，`AGENT_PROVIDER` 单活切换：`cursor`（Cursor CLI）、`claude_code`（原生 Claude CLI）、`codebuddy`（`@tencent-ai/codebuddy-code`）、`trae`（Trae CLI）、`opencode`（`opencode-ai`，`run --format json`）、`codex`（`@openai/codex`，`exec --json`）。Codex 使用 `CODEX_HOME/auth.json`，不使用 API Key。
 发布一张图 `ghcr.io/cocofhu/universal-sandbox`。本地打薄镜像：`--build-arg AGENT_PROVIDERS=cursor`。
 
 ## 镜像与运行时包
@@ -149,12 +149,12 @@ docker run --privileged -d --add-host host.docker.internal:host-gateway \
 
 | 变量 | 默认值 | 作用 |
 | --- | --- | --- |
-| `AGENT_PROVIDER` | `cursor` | agent 后端，单活：`cursor` / `claude_code` / `codebuddy` / `trae` / `opencode` |
+| `AGENT_PROVIDER` | `cursor` | agent 后端，单活：`cursor` / `claude_code` / `codebuddy` / `trae` / `opencode` / `codex` |
 | `ACP_BRIDGE_PORT` | `8765` | backend 监听端口 |
 | `ACP_BRIDGE_PASSWORD` | 空 | backend 登录口令（`POST /api/login` 下发 `agentchat_session` cookie）。Grasp 创建的沙箱总会设置；留空仅用于本地脚本调试 |
 | `ACP_BRIDGE_MODEL` | 空 | 默认 agent 模型（不设则用后端默认）；AgentChat 各 Tab 可另选 |
 | `SANDBOX_MAX_CHATS` | `8` | AgentChat 同时存在的会话（Tab）上限，含 `default` |
-| `CONFIG_ROOT` | 随后端 | 能力发现的配置树根，默认按后端取 `/root/.cursor` `/.claude` `/.codebuddy` `/.trae` `/.config/opencode` |
+| `CONFIG_ROOT` | 随后端 | 能力发现的配置树根，默认按后端取 `/root/.cursor` `/.claude` `/.codebuddy` `/.trae` `/.config/opencode` `/.codex` |
 
 ### 6. 后端鉴权（通用别名，归一化到各 CLI 原生变量）
 
@@ -170,6 +170,8 @@ docker run --privileged -d --add-host host.docker.internal:host-gateway \
 | `ACP_TRAE_REGION` | `TRAECLI_HOST` | Trae 区域：`intl` → `https://www.trae.ai`；`cn` 用默认 |
 
 > 也可直接注入各 CLI 原生变量（`CURSOR_API_KEY` / `ANTHROPIC_API_KEY` / `CODEBUDDY_API_KEY` 等）；`ACP_*` 仅为跨后端统一命名的便捷别名。
+>
+> Codex 不走这张别名表。登录态是 `CODEX_HOME`（默认 `/root/.codex`）下的 `auth.json`，不会把 `OPENAI_API_KEY` 归一化成 Codex 鉴权。
 
 ### 7. Claude Code 环境（`claude_code` 后端 / `ai-code` 便捷命令）
 
@@ -213,7 +215,7 @@ docker run --privileged -d --add-host host.docker.internal:host-gateway \
 - **声明式** `SANDBOX_INJECT`：逗号分隔，每项 `src[|dest]`
   - `src`：容器内已存在的文件/目录/归档（bind-mount 或 `docker cp` 进来），或 `http(s)://` URL；
   - 归档（`.tar` / `.tar.gz` / `.tgz` / `.tar.bz2` / `.tar.xz` / `.zip`）**解压**到 `dest`，其余**复制**到 `dest`；
-  - `dest` 省略时默认 `$CONFIG_ROOT`（随 `AGENT_PROVIDER` 取 `/root/.cursor` `/.claude` `/.codebuddy` `/.trae`）。
+  - `dest` 省略时默认 `$CONFIG_ROOT`（随 `AGENT_PROVIDER` 取 `/root/.cursor` `/.claude` `/.codebuddy` `/.trae` `/.codex`）。
 
 ```bash
 # 把已就位的目录复制进配置根，并从 URL 下载一个 tgz 解压到工作区

@@ -18,9 +18,11 @@ describe('startPath shared model (g1.1)', () => {
       'claude_code',
       'codebuddy',
       'trae',
+      'codex',
     ])
     expect(startPathForBackend('opencode')).toBe('apiKey')
     expect(startPathForBackend('cursor')).toBe('cli')
+    expect(startPathForBackend('codex')).toBe('cli')
     expect(backendForStartPath('apiKey', 'trae')).toBe('opencode')
     expect(backendForStartPath('cli', 'trae')).toBe('trae')
     expect(backendForStartPath('cli', 'cursor')).toBe('cursor')

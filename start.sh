@@ -201,7 +201,7 @@ ensure_dev_sandbox_image() {
   echo "building local sandbox image ${sandbox_image} (first run is slow)..."
   docker build --network=host \
     -t "$sandbox_image" \
-    --build-arg AGENT_PROVIDERS="${AGENT_PROVIDERS:-cursor,claude_code,codebuddy,trae,opencode}" \
+    --build-arg AGENT_PROVIDERS="${AGENT_PROVIDERS:-cursor,claude_code,codebuddy,trae,opencode,codex}" \
     -f "${gateway_dir}/sandbox/Dockerfile" \
     "${gateway_dir}/sandbox"
 }
@@ -296,7 +296,7 @@ case "$cmd" in
     sandbox_image="${GRASP_GATEWAY_SANDBOX_IMAGE:-universal-sandbox:local}"
     docker build --network=host \
       -t "$sandbox_image" \
-      --build-arg AGENT_PROVIDERS="${AGENT_PROVIDERS:-cursor,claude_code,codebuddy,trae,opencode}" \
+      --build-arg AGENT_PROVIDERS="${AGENT_PROVIDERS:-cursor,claude_code,codebuddy,trae,opencode,codex}" \
       -f "${gateway_dir}/sandbox/Dockerfile" \
       "${gateway_dir}/sandbox"
     echo "built ${sandbox_image}"

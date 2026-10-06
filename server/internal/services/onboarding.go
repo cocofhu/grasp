@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -512,7 +513,7 @@ func (s *OnboardingService) writeProjectAuth(projectID, backend, apiKey, region 
 	cfg.AcpBackend = backend
 	primaryKey := primaryAuthEnvKey(backend)
 	creds := []ProjectCredentialInput{
-		{Type: "ai", Provider: backend, Name: backend + " API Key", EnvKey: primaryKey, Value: apiKey},
+		{Type: "ai", Provider: backend, Name: aiCredentialName(backend), EnvKey: primaryKey, Value: apiKey},
 		{Type: "git", Provider: "github", Name: "GitHub HTTPS Token", EnvKey: "GITHUB_TOKEN", Value: req.GitHubToken},
 		{Type: "git", Provider: "gitlab", Name: "GitLab HTTPS Token", EnvKey: "GITLAB_TOKEN", Value: req.GitLabToken},
 		{Type: "git", Provider: "gitlab", Name: "GitLab URL", EnvKey: "GITLAB_URL", Value: req.GitLabURL},
@@ -583,6 +584,8 @@ func primaryAuthEnvKey(backend string) string {
 		return "GRASP_TRAE_API_KEY"
 	case AcpBackendOpenCode:
 		return "GRASP_OPENCODE_API_KEY"
+	case AcpBackendCodex:
+		return envauth.EnvCodexAuthFile
 	default:
 		return "GRASP_CURSOR_API_KEY"
 	}

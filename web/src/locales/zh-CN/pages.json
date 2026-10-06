@@ -424,7 +424,7 @@
           },
           "cli": {
             "title": "用编码工具账号",
-            "desc": "使用 Cursor、Claude Code、CodeBuddy 或 Trae 的账号密钥，模型由对应工具决定。"
+            "desc": "使用 Cursor、Claude Code、CodeBuddy、Trae 或 Codex 的账号。Codex 粘贴 ChatGPT 登录文件，其余工具使用各自的账号密钥。模型由对应工具决定。"
           }
         },
         "cliLabel": "选择编码工具",
@@ -437,6 +437,10 @@
         "hint": "只保存在本项目，不会出现在日志或产物里。",
         "howTo": "如何获取",
         "placeholder": "粘贴你的 API Key",
+        "codexMeta": "粘贴本机 codex login 产生的 ChatGPT 登录文件，这一项必填。",
+        "codexLabel": "ChatGPT 登录文件",
+        "codexPlaceholder": "粘贴 ~/.codex/auth.json 的全部内容",
+        "codexRequired": "请先粘贴 Codex 登录文件。",
         "change": "更换后端",
         "vendorTitle": "模型厂商 API Key"
       },
@@ -2317,7 +2321,7 @@
         "layoutTitle": "沙箱注入布局(WSP/1)",
         "layoutIntro": "本 Agent 的配置在沙箱内的注入位置,随 Agent 持久化保存,创建沙箱时按此挂载与设置 WORKSPACE_DIR。切换 ACP 后端会自动填充推荐 configRoot,手动修改后尊重覆盖值。",
         "acpBackend": "ACP 后端 (acpBackend)",
-        "acpBackendDesc": "每个 Agent 配置绑定一个 ACP 后端;Run 执行时按此路由到对应 bridge,不支持节点级覆盖。缺省 cursor。OpenCode 用 API Key 接主流模型厂商。",
+        "acpBackendDesc": "每个 Agent 配置绑定一个 ACP 后端;Run 执行时按此路由到对应 bridge,不支持节点级覆盖。缺省 cursor。OpenCode 用 API Key 接主流模型厂商。Codex 使用 ChatGPT 登录文件，不使用 API Key。",
         "configRoot": "配置根目录(configRoot)",
         "configRootDesc": "Agent 工作目录(rules / skills / mcp.json)RW 挂载到容器内的此路径。",
         "workspaceDir": "工作区目录(workspaceDir)",
@@ -2647,10 +2651,14 @@
           "inputLabel": "粘贴 API Key（可选，不会写入单个 Agent）",
           "inputPlaceholder": "建议跳过，改到共享Agent配置填写",
           "skipHint": "推荐直接「跳过」或「下一步」；在项目详情 → 共享Agent配置中填写 Token。",
+          "codexInputLabel": "粘贴 ChatGPT 登录文件（可选，不会写入单个 Agent）",
+          "codexInputPlaceholder": "粘贴 ~/.codex/auth.json 的全部内容",
+          "codexSkipHint": "推荐直接「跳过」或「下一步」；在项目详情 → 共享Agent配置中粘贴登录文件。",
           "notes": {
             "codebuddySite": "Key 与站点绑定；请到与 Agent 步所选站点一致的控制台申请。",
             "traeToken": "官方 CLI 登录令牌须含 trae-lt- 前缀（旗舰版）。",
-            "opencode": "用模型厂商的 API Key 启动，可以指定模型和接口地址。"
+            "opencode": "用模型厂商的 API Key 启动，可以指定模型和接口地址。",
+            "codex": "Codex 使用 ChatGPT 登录文件，不使用 API Key。用 API Key 接 OpenAI 请改用 OpenCode。运行会更新这份文件，不要和正在使用的本机登录共用同一份。"
           },
           "paths": {
             "cursor": {
@@ -2677,6 +2685,12 @@
               "step1": "选择模型厂商（OpenAI、Anthropic、OpenRouter 等，或自建服务）",
               "step2": "在厂商控制台创建 API Key；自建服务还要填写接口地址",
               "step3": "粘贴 Key，并选择模型"
+            },
+            "codex": {
+              "step1": "在能打开浏览器的电脑上执行 codex login，完成 ChatGPT 登录",
+              "step2": "复制 ~/.codex/auth.json 的全部内容",
+              "step3": "如果登录只在系统钥匙串里，先改成文件存储并重新登录，再复制该文件",
+              "step4": "把文件内容粘贴到下方"
             }
           },
           "links": {
@@ -2690,7 +2704,8 @@
             "codebuddyIoa": "iOA 申请 Key",
             "codebuddyStaging": "Staging 申请 Key",
             "traeTokenDocs": "Trae CLI 登录令牌文档",
-            "opencodeProviders": "支持的模型厂商"
+            "opencodeProviders": "支持的模型厂商",
+            "codexAuth": "Codex 登录说明"
           },
           "customConfig": {
             "cardTitle": "后端配置文件",

@@ -10,13 +10,14 @@ import {
 } from './regionPolicy'
 
 describe('region policy', () => {
-  it('lists five backends including OpenCode', () => {
+  it('lists product backends including OpenCode and Codex', () => {
     expect(ACP_BACKENDS.map((b) => b.id)).toEqual([
       'cursor',
       'claude_code',
       'codebuddy',
       'trae',
       'opencode',
+      'codex',
     ])
   })
 
@@ -36,6 +37,7 @@ describe('region policy', () => {
     expect(getRegionPolicy('trae')?.options.map((item) => item.id)).toEqual(['cn', 'intl'])
     expect(getRegionPolicy('cursor')).toBeUndefined()
     expect(getRegionPolicy('opencode')).toBeUndefined()
+    expect(getRegionPolicy('codex')).toBeUndefined()
   })
 
   it('switches backend by clearing all managed keys and writing the target default', () => {

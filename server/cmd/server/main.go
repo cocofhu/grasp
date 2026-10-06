@@ -237,8 +237,9 @@ func main() {
 			}
 			return run.SandboxEnv
 		},
-		PublicAdvertise: cfg.Server.PublicAdvertise,
-		OpenCodeCatalog: openCodeCatalog,
+		PublicAdvertise:         cfg.Server.PublicAdvertise,
+		OpenCodeCatalog:         openCodeCatalog,
+		WriteBackCodexLoginFile: projectCredentialSvc.WriteBackCodexLoginFile,
 	})
 	eng := engine.New(db, provider, host, artifactSvc, cfg.Engine.MaxConcurrentRuns)
 	eng.SetBlobStore(blobStore)
@@ -349,6 +350,7 @@ func main() {
 		OpenCodeCredential:          projectCredentialSvc.ResolveOpenCodeCredential,
 		OpenCodeCatalog:             openCodeCatalog,
 	})
+	sbxSvc.SetCodexLoginWriteBack(projectCredentialSvc.WriteBackCodexLoginFile)
 	// Let the exec provider record per-run node sandboxes in the same store so
 	// they show up in the sandbox UI alongside interactive test sandboxes.
 	if rr, ok := provider.(runtime.SandboxRegistrar); ok {

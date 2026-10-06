@@ -203,6 +203,24 @@ describe('WorkflowEditorView', () => {
     expect(wrapper.get('[data-testid="editor-save-status"]').text()).toBe(t('canvas.save.saved', { n: 4 }))
   })
 
+  it('does not warn that Home hid the workflow when a save turns it into a draft', async () => {
+    apiMocks.getWorkflow.mockResolvedValue(workflow({ status: 'published', publishedVersion: 3, showOnHome: true }))
+    const { wrapper } = await mountEditor()
+    await wrapper.get('[data-testid="editor-name"]').setValue('renamed draft')
+    apiMocks.saveWorkflow.mockImplementationOnce(async (wf: any) => ({
+      ...wf,
+      status: 'draft',
+      version: 4,
+      publishedVersion: 3,
+      showOnHome: true,
+    }))
+    toast.warn.mockClear()
+    await wrapper.get('[data-testid="editor-save"]').trigger('click')
+    await flushPromises()
+    expect(toast.warn).not.toHaveBeenCalledWith(t('pages.workflowEditor.hiddenFromHome'))
+    expect(wrapper.getComponent({ name: 'RunLaunchModal' }).props('publishedSnapshot')).toBeFalsy()
+  })
+
   it('saves on Ctrl+S and the canvas save shortcut, and surfaces failures', async () => {
     const { wrapper } = await mountEditor()
     canvasSpy.editor!.graph.nodes[1]!.label = 'changed'

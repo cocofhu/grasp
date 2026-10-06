@@ -51,7 +51,7 @@ const form = reactive({
 const source = computed(() => (props.items === undefined ? remoteItems.value : props.items))
 const rows = computed(() => source.value.filter(isModelVendor))
 const baseRequired = computed(() => {
-  catalogTick.value
+  void catalogTick.value
   return openCodeCustomBaseRequired(form.provider, form.baseUrl)
 })
 const description = computed(() =>

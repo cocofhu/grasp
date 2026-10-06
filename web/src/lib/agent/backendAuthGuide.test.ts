@@ -33,6 +33,15 @@ describe('backendAuthGuide', () => {
     expect(hasAuthKeyConfigured({ GRASP_OPENCODE_API_KEY: 'sk-oc' }, 'opencode')).toBe(true)
   })
 
+  it('describes Codex as a ChatGPT login file, not an API key', () => {
+    const guide = authGuideFor('codex')
+    expect(guide.keys[0]).toMatchObject({ key: 'GRASP_CODEX_AUTH_JSON' })
+    expect(guide.pathStepKeys.some((k) => k.includes('codex'))).toBe(true)
+    expect(guide.links.some((l) => l.url.includes('developers.openai.com/codex/auth'))).toBe(true)
+    expect(guide.noteKey).toContain('codex')
+    expect(hasAuthKeyConfigured({ GRASP_CODEX_AUTH_JSON: '{"auth_mode":"chatgpt"}' }, 'codex')).toBe(true)
+  })
+
   it('routes OpenCode custom config to opencode.json and provider docs', () => {
     const guide = authGuideFor('opencode')
     expect(guide.keys[0]).toMatchObject({

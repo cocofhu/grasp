@@ -645,6 +645,63 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
+  it('keeps the published card after an unpublished save and skips the empty state', async () => {
+    mocks.listWorkflows.mockResolvedValue([
+      {
+        ...approveWf,
+        name: '草稿名',
+        description: '草稿说明',
+        status: 'draft',
+        version: 2,
+        publishedVersion: 1,
+        publishedSnapshot: {
+          version: 1,
+          name: '已发布名',
+          description: '已发布说明',
+          nodes: approveWf.nodes,
+          edges: approveWf.edges,
+        },
+      },
+      {
+        ...approveWf,
+        id: 'wf-never',
+        name: '从未发布',
+        status: 'draft',
+        version: 1,
+        publishedVersion: 0,
+        showOnHome: true,
+      },
+    ])
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const card = wrapper.get('[data-testid="home-workflow-card-wf-ap"]')
+    expect(card.text()).toContain('已发布名')
+    expect(card.text()).toContain('已发布说明')
+    expect(card.text()).not.toContain('草稿名')
+    expect(wrapper.find('[data-testid="home-workflow-card-wf-never"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-workflows-unpublished"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('keeps the unpublished empty state only when nothing is startable', async () => {
+    mocks.listWorkflows.mockResolvedValue([
+      {
+        ...approveWf,
+        id: 'wf-never',
+        name: '从未发布',
+        status: 'draft',
+        version: 1,
+        publishedVersion: 0,
+        showOnHome: true,
+      },
+    ])
+    const wrapper = mountDashboard()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="home-workflows-unpublished"]').text()).toContain('从未发布')
+    expect(wrapper.get('[data-testid="home-go-publish"]').text()).toContain('去编辑页发布')
+    wrapper.unmount()
+  })
+
   it('shows workflow empty state when none are clarify-first', async () => {
     mocks.listWorkflows.mockResolvedValue([
       {
@@ -719,7 +776,9 @@ describe('DashboardView home composer', () => {
     expect(mocks.startRun).toHaveBeenCalledWith('wf-ap', {}, 'manual', 'high', [], {
       title: '紧急登录',
       firstMessage: { text: '紧急登录', images: [] },
+      publishedSnapshot: true,
     })
+    expect(wrapper.getComponent({ name: 'RunLaunchModal' }).props('publishedSnapshot')).toBe(true)
     wrapper.unmount()
   })
 
@@ -732,6 +791,7 @@ describe('DashboardView home composer', () => {
     expect(mocks.startRun).toHaveBeenCalledWith('wf-ap', {}, 'manual', 'normal', [], {
       title: '把登录做清楚',
       firstMessage: { text: '把登录做清楚', images: [] },
+      publishedSnapshot: true,
     })
     expect(mocks.reactReply).not.toHaveBeenCalled()
     expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap', projectId: 'proj-1' } })
@@ -900,6 +960,7 @@ describe('DashboardView home composer', () => {
     await flushPromises()
     expect(mocks.startRun).toHaveBeenCalledWith('wf-ap', {}, 'manual', 'normal', [], {
       title: 'brief.pdf',
+      publishedSnapshot: true,
       firstMessage: {
         text: '',
         images: expect.arrayContaining([

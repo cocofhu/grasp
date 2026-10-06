@@ -94,6 +94,10 @@ type Options struct {
 	// a gateway absent from its catalog can be declared with an adapter instead
 	// of failing at run time. Nil keeps the conservative `custom`-only behavior.
 	OpenCodeCatalog OpenCodeCatalog
+	// WriteBackCodexLoginFile replaces the project's Codex login file when a
+	// run's auth.json changed. Nil skips write-back (tests). The callback must
+	// not log the file body.
+	WriteBackCodexLoginFile func(projectID, content string) error
 }
 
 // SharedAgentView is the runtime-facing slice of project shared Agent config

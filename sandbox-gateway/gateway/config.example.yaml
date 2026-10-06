@@ -37,7 +37,7 @@ database:
 # startup reconcile / Start / Reinstall; until then old bookmarks may work.
 image:
   ref: universal-sandbox:local
-  # 默认一张图预装五个对外 CLI；运行时 AGENT_PROVIDER 单活。
+  # 默认一张图预装六个对外 CLI（含 Codex，使用登录文件而不是 API Key）；运行时 AGENT_PROVIDER 单活。
   # 解析顺序：请求 image 覆盖 > ref。
   ports:
     session: 8765     # ACP bridge / WSP session (readiness probe target)

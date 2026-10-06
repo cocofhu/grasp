@@ -110,6 +110,7 @@ const (
 	AcpBackendCodeBuddy  = "codebuddy"
 	AcpBackendTrae       = "trae"
 	AcpBackendOpenCode   = "opencode"
+	AcpBackendCodex      = "codex"
 )
 
 // ErrInvalidAcpBackend is returned when a required acpBackend is empty or unknown.
@@ -118,7 +119,7 @@ var ErrInvalidAcpBackend = errors.New("invalid acpBackend")
 // NormalizeAcpBackend returns the trimmed backend when it is known, else "".
 func NormalizeAcpBackend(raw string) string {
 	switch strings.TrimSpace(raw) {
-	case AcpBackendCursor, AcpBackendClaudeCode, AcpBackendCodeBuddy, AcpBackendTrae, AcpBackendOpenCode:
+	case AcpBackendCursor, AcpBackendClaudeCode, AcpBackendCodeBuddy, AcpBackendTrae, AcpBackendOpenCode, AcpBackendCodex:
 		return strings.TrimSpace(raw)
 	default:
 		return ""
@@ -167,6 +168,8 @@ func DefaultConfigRootForBackend(backend string) string {
 		return "/root/.trae"
 	case AcpBackendOpenCode:
 		return "/root/.config/opencode"
+	case AcpBackendCodex:
+		return "/root/.codex"
 	default:
 		return DefaultConfigRoot
 	}
@@ -180,7 +183,7 @@ type Agent struct {
 	// purges the Agent's data under the old project (see
 	// PmService.PurgeAgentProjectData).
 	ProjectID string `json:"projectId,omitempty"`
-	// AcpBackend selects the ACP bridge (cursor | claude_code | codebuddy | trae | opencode).
+	// AcpBackend selects the ACP bridge (cursor | claude_code | codebuddy | trae | opencode | codex).
 	// Required on save.
 	AcpBackend string `json:"acpBackend"`
 	// GitCredentialType is the Agent-level credential contract selected in Studio.

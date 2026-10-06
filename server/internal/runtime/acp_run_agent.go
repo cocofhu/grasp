@@ -62,6 +62,7 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 		if parked {
 			return
 		}
+		err = c.settleCodexLogin(req, sb, err, res.Events)
 		if keepForDebug {
 			c.retireRunSandbox(sb, acp, home)
 		} else {

@@ -239,7 +239,7 @@ jobs:
           load: true
           tags: universal-sandbox:ci
           build-args: |
-            AGENT_PROVIDERS=cursor,claude_code,codebuddy,trae,opencode
+            AGENT_PROVIDERS=cursor,claude_code,codebuddy,trae,opencode,codex
             BASE_IMAGE=ubuntu:22.04
             USE_CN_MIRROR=false
           cache-from: type=gha,scope=sandbox-image

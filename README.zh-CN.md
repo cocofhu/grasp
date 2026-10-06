@@ -134,7 +134,7 @@ cd grasp
 ## 四步创建第一个工作流
 
 1. 使用本地演示账号登录。全新安装默认是空项目，不会自动创建样例工作流。
-2. 在 **Agent Studio** 创建 Agent，选择 `cursor`、`claude_code`、`codebuddy`、`trae` 或 `opencode`，并配置对应 API Key。
+2. 在 **Agent Studio** 创建 Agent，选择 `cursor`、`claude_code`、`codebuddy`、`trae`、`opencode` 或 `codex`，并配置对应 API Key。Codex 使用 ChatGPT 登录文件（本机 `~/.codex/auth.json`），不使用 API Key。
 3. 打开画布：从默认模板（需求澄清 → 实现 → 测试评审）开始，或从左侧面板拖入 Agent 和门禁。画出成功、失败与回滚，并在该重入的地方标 checkpoint。
 4. 发布并启动 run（也可从**首页**用一句话启动）。观察状态轨迹、`page.html` 预览，以及停在门禁上的收件箱项。
 
