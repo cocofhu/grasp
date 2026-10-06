@@ -37,7 +37,7 @@
     "mermaid": "^11.17.0",
     "monaco-editor": "^0.52.2",
     "pinia": "^2.3.0",
-    "vue": "^3.5.13",
+    "vue": "^3.5.43",
     "vue-echarts": "^8.2.0",
     "vue-i18n": "^10.0.7",
     "vue-router": "^4.5.0"
