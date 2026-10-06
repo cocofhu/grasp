@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # install-agent.sh — 构建期安装一个或多个 Agent CLI。
 #
-# 由 Dockerfile 调用。默认装齐五个对外后端（cursor / claude_code / codebuddy /
-# trae / opencode）；运行时仍由 AGENT_PROVIDER 单活选后端。
+# 由 Dockerfile 调用。默认装齐六个对外后端（cursor / claude_code / codebuddy /
+# trae / opencode / codex）；运行时仍由 AGENT_PROVIDER 单活选后端。
 # 本地打薄镜像：--build-arg AGENT_PROVIDERS=cursor
 #
 # 约定：

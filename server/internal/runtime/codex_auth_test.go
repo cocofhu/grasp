@@ -131,6 +131,13 @@ func TestCodexAuthRejectedRewrite(t *testing.T) {
 	if got := RewriteCodexAuthError("could not refresh"); got != CodexLoginRepasteMessage {
 		t.Fatalf("rewrite=%q", got)
 	}
+	raw := "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses"
+	if !IsCodexAuthRejectionText(raw) || RewriteCodexAuthError(raw) != CodexLoginRepasteMessage {
+		t.Fatal("codex-cli 401 missing bearer should ask the user to paste the login file again")
+	}
+	if IsCodexAuthRejectionText("upstream returned 401 Unauthorized for the project API") {
+		t.Fatal("a generic 401 must not be treated as a Codex login failure")
+	}
 }
 
 func TestCodexSpecInstallsLoginFile(t *testing.T) {

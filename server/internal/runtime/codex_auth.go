@@ -185,11 +185,17 @@ func IsCodexAuthRejectionText(text string) bool {
 		"authentication failed",
 		"login required",
 		"chatgpt login",
+		"missing bearer",
 	}
 	for _, p := range phrases {
 		if strings.Contains(s, p) {
 			return true
 		}
+	}
+	// codex-cli 0.160.1 reports a missing or rejected ChatGPT login as
+	// "401 Unauthorized" against api.openai.com, not "please log in".
+	if strings.Contains(s, "401 unauthorized") && strings.Contains(s, "api.openai.com") {
+		return true
 	}
 	return false
 }

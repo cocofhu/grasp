@@ -77,6 +77,33 @@ func TestParseThreadEvents(t *testing.T) {
 	}
 }
 
+func TestParseCapturedUnauthenticatedExec(t *testing.T) {
+	// Captured from codex-cli 0.160.1: `codex exec --json --skip-git-repo-check`
+	// with no ChatGPT login. The CLI emits thread.started, then 401s against
+	// api.openai.com, and ends with turn.failed. Request ids are omitted.
+	var c codec
+	lines := []string{
+		`{"type":"thread.started","thread_id":"01a111df-5174-7100-b248-f5a9d4076a15"}`,
+		`{"type":"turn.started"}`,
+		`{"type":"error","message":"Reconnecting... 1/5 (unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses)"}`,
+		`{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Falling back from WebSockets to HTTPS transport. unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: wss://api.openai.com/v1/responses"}}`,
+		`{"type":"turn.failed","error":{"message":"unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses"}}`,
+	}
+	started := c.ParseLine([]byte(lines[0]))
+	if started.SessionID != "01a111df-5174-7100-b248-f5a9d4076a15" {
+		t.Fatalf("sid=%q", started.SessionID)
+	}
+	if turn := c.ParseLine([]byte(lines[1])); turn.StopReason != "" || len(turn.Msgs) != 0 {
+		t.Fatalf("turn.started=%+v", turn)
+	}
+	for _, line := range lines[2:] {
+		got := c.ParseLine([]byte(line))
+		if got.StopReason != "failed" || len(got.Msgs) != 1 || got.Msgs[0].Kind != oneshot.KindError || got.Msgs[0].Text != codexLoginRepaste {
+			t.Fatalf("line %s => %+v", line, got)
+		}
+	}
+}
+
 func TestArgsResume(t *testing.T) {
 	var c codec
 	fresh := c.Args(provider.OpenOptions{Model: "gpt-5"}, "hi", "")
