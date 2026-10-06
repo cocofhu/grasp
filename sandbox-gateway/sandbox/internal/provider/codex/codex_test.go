@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"strings"
 	"testing"
 
 	"backend/internal/provider"
@@ -101,6 +102,22 @@ func TestParseCapturedUnauthenticatedExec(t *testing.T) {
 		if got.StopReason != "failed" || len(got.Msgs) != 1 || got.Msgs[0].Kind != oneshot.KindError || got.Msgs[0].Text != codexLoginRepaste {
 			t.Fatalf("line %s => %+v", line, got)
 		}
+	}
+}
+
+func TestRefreshMentionIsNotLoginFailure(t *testing.T) {
+	var c codec
+	msg := c.ParseLine([]byte(`{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"Rotated the refresh token and kept the session"}}`))
+	if len(msg.Msgs) != 1 || msg.Msgs[0].Kind != oneshot.KindText || msg.Msgs[0].Text != "Rotated the refresh token and kept the session" {
+		t.Fatalf("msg=%+v", msg.Msgs)
+	}
+	tool := c.ParseLine([]byte(`{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"echo","aggregated_output":"codex login refreshed the refresh token","status":"completed"}}`))
+	if len(tool.Msgs) != 1 || strings.Contains(tool.Msgs[0].Text, "请重新粘贴登录文件") {
+		t.Fatalf("tool=%+v", tool.Msgs)
+	}
+	fail := c.ParseLine([]byte(`{"type":"turn.failed","error":{"message":"Rotated the refresh token and kept the session"}}`))
+	if len(fail.Msgs) != 1 || fail.Msgs[0].Text == codexLoginRepaste || strings.Contains(fail.Msgs[0].Text, "请重新粘贴登录文件") {
+		t.Fatalf("success wording must not be rewritten: %+v", fail.Msgs)
 	}
 }
 

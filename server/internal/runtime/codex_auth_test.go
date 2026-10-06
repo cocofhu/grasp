@@ -125,8 +125,10 @@ func TestCodexAuthRejectedRewrite(t *testing.T) {
 	if !CodexAuthRejected(errors.New("failed to refresh token"), nil) {
 		t.Fatal("error text should reject")
 	}
-	if !CodexAuthRejected(nil, []models.AcpEvent{{Parts: []models.AcpPart{{Output: "invalid_grant"}}}}) {
-		t.Fatal("event part should reject")
+	if !CodexAuthRejected(nil, []models.AcpEvent{{
+		Kind: models.AcpKindTurnEnd, Status: "failed", Text: "invalid_grant",
+	}}) {
+		t.Fatal("failed turn should reject")
 	}
 	if got := RewriteCodexAuthError("could not refresh"); got != CodexLoginRepasteMessage {
 		t.Fatalf("rewrite=%q", got)
@@ -138,6 +140,52 @@ func TestCodexAuthRejectedRewrite(t *testing.T) {
 	if IsCodexAuthRejectionText("upstream returned 401 Unauthorized for the project API") {
 		t.Fatal("a generic 401 must not be treated as a Codex login failure")
 	}
+}
+
+func TestCodexAuthRejectionIgnoresRefreshMention(t *testing.T) {
+	text := "Rotated the refresh token and kept the session"
+	if IsCodexAuthRejectionText(text) || IsCodexAuthRejectionText("run codex login locally") {
+		t.Fatal("success text must not be a login rejection")
+	}
+	events := []models.AcpEvent{{
+		Kind: "message",
+		Text: text,
+	}, {
+		Kind: models.AcpKindTimeline,
+		Parts: []models.AcpPart{{
+			Kind:   "tool",
+			Text:   "codex login",
+			Output: "Rotated the refresh token and kept the session",
+		}},
+	}}
+	if CodexAuthRejected(nil, events) {
+		t.Fatal("narration and tool output must not block writeback")
+	}
+	next, ok := ShouldWriteBackCodexLogin(nil, chatgptLogin+"\n", chatgptLogin, CodexAuthRejected(nil, events))
+	if !ok || next != chatgptLogin+"\n" {
+		t.Fatalf("changed file must write back: ok=%v next=%q", ok, next)
+	}
+	fail := []models.AcpEvent{{
+		Kind:   models.AcpKindTurnEnd,
+		Status: "failed",
+		Text:   "unexpected status 401 Unauthorized: Missing bearer, url: https://api.openai.com/v1/responses",
+	}}
+	if !CodexAuthRejected(nil, fail) {
+		t.Fatal("turn failure 401 must reject")
+	}
+	if _, ok := ShouldWriteBackCodexLogin(nil, chatgptLogin+"\n", chatgptLogin, true); ok {
+		t.Fatal("confirmed rejection must not write")
+	}
+	if !CodexTurnAuthRejected(nil, raw401(), true) {
+		t.Fatal("live turn error text must reject")
+	}
+	if CodexTurnAuthRejected(nil, text, false) {
+		t.Fatal("successful live turn must not reject")
+	}
+}
+
+func raw401() string {
+	return "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses"
 }
 
 func TestCodexSpecInstallsLoginFile(t *testing.T) {

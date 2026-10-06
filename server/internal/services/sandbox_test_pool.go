@@ -395,6 +395,7 @@ func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text stri
 	chatCtx, cancel := context.WithTimeout(ctx, turnTimeout)
 	defer cancel()
 	result, err := ls.acp.ChatStream(chatCtx, text, images, onEvent)
+	s.noteLiveCodexAuth(id, result, err)
 	_ = row
 	if result == nil {
 		return nil, nil, err
@@ -469,13 +470,16 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 		return nil, nil, fmt.Errorf("reconnect acp: %w", err)
 	}
 	injected := ""
+	rejected := false
 	if ls != nil {
 		injected = ls.codexAuthInjected
+		rejected = ls.codexAuthRejected
 	}
 	ls = &liveSandbox{
 		sb: sb, acp: acp,
 		codexAuthInjected: injected,
 		codexAuthPath:     codexLiveAuthPath(runtime.NormalizeBackend(agent.AcpBackend), agent.Layout.ConfigRoot),
+		codexAuthRejected: rejected,
 	}
 	s.mu.Lock()
 	s.live[id] = ls

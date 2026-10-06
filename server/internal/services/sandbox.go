@@ -83,6 +83,9 @@ type liveSandbox struct {
 	busy              bool
 	codexAuthInjected string
 	codexAuthPath     string
+	// codexAuthRejected is set from the latest turn's CLI error, not from
+	// narration. A login refusal keeps the previously saved file.
+	codexAuthRejected bool
 }
 
 // resolveSandboxImage picks the per-acpBackend image from live config (nil-safe).

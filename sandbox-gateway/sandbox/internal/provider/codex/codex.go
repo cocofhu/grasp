@@ -215,10 +215,10 @@ func codexAuthRejected(text string) bool {
 		return true
 	}
 	for _, p := range []string{
-		"not logged in", "please log in", "please login", "codex login",
-		"refresh token", "failed to refresh", "could not refresh", "couldn't refresh",
+		"not logged in", "please log in", "please login",
+		"failed to refresh", "could not refresh", "couldn't refresh",
 		"unable to refresh", "invalid_grant", "re-authenticate", "reauthenticate",
-		"authentication required", "authentication failed", "login required", "chatgpt login",
+		"authentication required", "authentication failed", "login required",
 		"missing bearer",
 	} {
 		if strings.Contains(s, p) {

@@ -149,17 +149,21 @@ func DecideCodexWriteBack(readErr error, body, injected string) (string, bool) {
 	return body, true
 }
 
-// ShouldWriteBackCodexLogin is DecideCodexWriteBack plus the auth-failure rule:
-// a login rejection does not replace the saved file.
+// ShouldWriteBackCodexLogin compares the sandbox file with the injected body,
+// then keeps the saved credential when the turn's login was refused. A phrase
+// in narration or tool output is not a refusal; callers pass authRejected only
+// after a confirmed CLI login failure.
 func ShouldWriteBackCodexLogin(readErr error, body, injected string, authRejected bool) (string, bool) {
-	if authRejected {
+	next, ok := DecideCodexWriteBack(readErr, body, injected)
+	if !ok || authRejected {
 		return "", false
 	}
-	return DecideCodexWriteBack(readErr, body, injected)
+	return next, true
 }
 
-// IsCodexAuthRejectionText reports CLI output that means the login was refused
-// or could not be refreshed.
+// IsCodexAuthRejectionText reports a CLI login-failure body: the login was
+// refused or could not be refreshed. It does not match incidental phrases such
+// as "refresh token" or "codex login" in a successful turn.
 func IsCodexAuthRejectionText(text string) bool {
 	s := strings.ToLower(text)
 	if s == "" {
@@ -172,8 +176,6 @@ func IsCodexAuthRejectionText(text string) bool {
 		"not logged in",
 		"please log in",
 		"please login",
-		"codex login",
-		"refresh token",
 		"failed to refresh",
 		"could not refresh",
 		"couldn't refresh",
@@ -184,7 +186,6 @@ func IsCodexAuthRejectionText(text string) bool {
 		"authentication required",
 		"authentication failed",
 		"login required",
-		"chatgpt login",
 		"missing bearer",
 	}
 	for _, p := range phrases {
@@ -200,23 +201,42 @@ func IsCodexAuthRejectionText(text string) bool {
 	return false
 }
 
-// CodexAuthRejected reports whether a run error or its events say the login
-// was refused or could not be refreshed.
+// codexFailureEvent is a turn that ended in failure. Narration, thoughts, and
+// tool output are not login failures even when they mention a refresh token.
+func codexFailureEvent(ev models.AcpEvent) bool {
+	return ev.Kind == models.AcpKindTurnEnd && strings.EqualFold(strings.TrimSpace(ev.Status), "failed")
+}
+
+// CodexAuthRejected reports whether the run error or a failed turn says the
+// login was refused or could not be refreshed. Tool output and ordinary
+// message text are ignored.
 func CodexAuthRejected(err error, events []models.AcpEvent) bool {
 	if err != nil && IsCodexAuthRejectionText(err.Error()) {
 		return true
 	}
 	for _, ev := range events {
-		if strings.Contains(ev.Text, CodexLoginRepasteMessage) || IsCodexAuthRejectionText(ev.Text) || IsCodexAuthRejectionText(ev.Title) {
-			return true
+		if !codexFailureEvent(ev) {
+			continue
 		}
-		for _, p := range ev.Parts {
-			if strings.Contains(p.Text, CodexLoginRepasteMessage) || IsCodexAuthRejectionText(p.Text) || IsCodexAuthRejectionText(p.Output) {
-				return true
-			}
+		if IsCodexAuthRejectionText(ev.Text) || IsCodexAuthRejectionText(ev.Title) {
+			return true
 		}
 	}
 	return false
+}
+
+// CodexTurnAuthRejected is CodexAuthRejected for a live sandbox turn, using
+// the CLI error body (ChatResult.ErrorText) rather than narration or tool output.
+func CodexTurnAuthRejected(err error, errorText string, failed bool) bool {
+	events := []models.AcpEvent(nil)
+	if failed || strings.TrimSpace(errorText) != "" {
+		events = []models.AcpEvent{{
+			Kind:   models.AcpKindTurnEnd,
+			Status: "failed",
+			Text:   errorText,
+		}}
+	}
+	return CodexAuthRejected(err, events)
 }
 
 // RewriteCodexAuthError replaces a login failure with the re-paste message.

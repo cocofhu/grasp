@@ -54,7 +54,7 @@ Ops rules:
 ./start.sh dev -d        # source stack: go run + Vite HMR
 ```
 
-Image tags / digests can be overridden in `.env` — see [`.env.example`](https://github.com/cocofhu/approving/blob/main/.env.example) at the repo root. The default is one `universal-sandbox` image (five CLIs; runtime switches by Agent backend). Publish and smoke checks are covered in [Contributing](https://github.com/cocofhu/approving/blob/main/CONTRIBUTING.md).
+Image tags / digests can be overridden in `.env` — see [`.env.example`](https://github.com/cocofhu/approving/blob/main/.env.example) at the repo root. The default is one `universal-sandbox` image (six CLIs, including Codex, which uses a ChatGPT login file rather than an API key; runtime switches by Agent backend). Publish and smoke checks are covered in [Contributing](https://github.com/cocofhu/approving/blob/main/CONTRIBUTING.md).
 
 ## Next steps
 

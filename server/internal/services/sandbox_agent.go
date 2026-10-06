@@ -49,19 +49,24 @@ func codexLiveAuthPath(backend runtime.AcpBackend, configRoot string) string {
 }
 
 // writeBackLiveCodex reads auth.json before the container is destroyed. A read
-// failure or an unchanged file keeps the previous credential. The body is not logged.
+// failure, an unchanged file, or a confirmed login refusal keeps the previous
+// credential. The body is not logged.
 func (s *SandboxService) writeBackLiveCodex(ctx context.Context, id uint, projectID string) {
 	if s.codexLoginWriteBack == nil || strings.TrimSpace(projectID) == "" {
 		return
 	}
 	s.mu.Lock()
 	ls := s.live[id]
+	rejected := false
+	if ls != nil {
+		rejected = ls.codexAuthRejected
+	}
 	s.mu.Unlock()
 	if ls == nil || ls.sb == nil || ls.codexAuthPath == "" {
 		return
 	}
 	body, err := ls.sb.ReadFile(ctx, ls.codexAuthPath)
-	next, ok := runtime.ShouldWriteBackCodexLogin(err, string(body), ls.codexAuthInjected, false)
+	next, ok := runtime.ShouldWriteBackCodexLogin(err, string(body), ls.codexAuthInjected, rejected)
 	if !ok {
 		if err != nil {
 			log.Warn().Err(err).Uint("sandbox", id).Msg("codex login writeback skipped; sandbox file unreadable")
@@ -71,6 +76,24 @@ func (s *SandboxService) writeBackLiveCodex(ctx context.Context, id uint, projec
 	if werr := s.codexLoginWriteBack(projectID, next); werr != nil {
 		log.Warn().Err(werr).Str("project", projectID).Uint("sandbox", id).Msg("codex login writeback failed")
 	}
+}
+
+// noteLiveCodexAuth records whether the latest turn's CLI error refused the
+// login. A later successful turn clears the flag so a refreshed auth.json can
+// still be written back. Narration and tool output are not consulted.
+func (s *SandboxService) noteLiveCodexAuth(id uint, result *sandbox.ChatResult, err error) {
+	errorText := ""
+	failed := false
+	if result != nil {
+		errorText = result.ErrorText
+		failed = result.Failed
+	}
+	rejected := runtime.CodexTurnAuthRejected(err, errorText, failed)
+	s.mu.Lock()
+	if ls := s.live[id]; ls != nil && ls.codexAuthPath != "" {
+		ls.codexAuthRejected = rejected
+	}
+	s.mu.Unlock()
 }
 
 func (s *SandboxService) registerTestScheduler(projectID, profile, runID, token string) {

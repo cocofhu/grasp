@@ -448,11 +448,11 @@ func (c *acpProvider) settleCodexLogin(req NodeReq, sb *sandbox.Sandbox, runErr 
 	if rejected && runErr != nil && !strings.Contains(runErr.Error(), CodexLoginRepasteMessage) {
 		runErr = fmt.Errorf("%s: %w", CodexLoginRepasteMessage, runErr)
 	}
-	if !ok || sb == nil || rejected {
+	if !ok || sb == nil {
 		return runErr
 	}
 	body, readErr := sb.ReadFile(context.Background(), state.path)
-	next, write := ShouldWriteBackCodexLogin(readErr, string(body), state.body, false)
+	next, write := ShouldWriteBackCodexLogin(readErr, string(body), state.body, rejected)
 	if !write {
 		if readErr != nil {
 			log.Warn().Err(readErr).Str("run", req.RunID).Str("node", req.NodeID).Msg("codex login writeback skipped; sandbox file unreadable")
