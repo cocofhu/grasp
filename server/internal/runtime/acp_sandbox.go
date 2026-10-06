@@ -267,6 +267,7 @@ func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandb
 func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, error) {
 	spec, err := c.spec(req)
 	if err != nil {
+		c.forgetCodexLogin(codexLoginKey(req))
 		return nil, nil, "", fmt.Errorf("%w: %v", errSandboxSetup, err)
 	}
 	home := spec.ConfigHome
@@ -276,11 +277,13 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 	c.beginRunSandbox(req, placeholder, home)
 	sb, err := c.mgr.Create(ctx, spec)
 	if err != nil {
+		c.forgetCodexLogin(codexLoginKey(req))
 		c.deregisterRunSandbox(placeholder)
 		removeHome(home)
 		return nil, nil, "", fmt.Errorf("%w: create sandbox: %v", errSandboxSetup, err)
 	}
 	if err := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 120*time.Second); err != nil {
+		c.forgetCodexLogin(codexLoginKey(req))
 		c.deregisterRunSandbox(placeholder)
 		sb.Destroy(context.Background())
 		removeHome(home)
@@ -291,6 +294,7 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 		WithIdleTimeout(c.opts.ChatIdleTimeout).
 		WithBridgeModel(spec.Env["ACP_BRIDGE_MODEL"])
 	if err := acp.Connect(ctx); err != nil {
+		c.forgetCodexLogin(codexLoginKey(req))
 		c.deregisterRunSandbox(placeholder)
 		acp.Close()
 		sb.Destroy(context.Background())
@@ -360,6 +364,8 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 			env[k] = e.Value
 		}
 	}
+	// Capture the login file before PrepareAuthEnv strips it from the sandbox env.
+	codexLogin := CodexLoginFileFromEnv(c.backend, env)
 	// Align auth gate with buildConfigHome BaseWorkDirSrc (project-shared workspace).
 	merged, err := PrepareAuthEnv(c.backend, env, c.workDir(profile), c.sharedWorkDir(req))
 	if err != nil {
@@ -393,12 +399,22 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	}
 	layout := c.agentLayout(profile, agentCfg)
 	env["CONFIG_ROOT"] = layout.ConfigRoot
+	if c.backend == BackendCodex {
+		env["CODEX_HOME"] = layout.ConfigRoot
+	}
 
 	sandbox.ApplyPasswords(env, req.Token)
+	home := c.buildConfigHome(req, env)
+	if err := InstallCodexLoginFile(c.backend, home, codexLogin); err != nil {
+		return sandbox.Spec{}, err
+	}
+	if c.backend == BackendCodex && strings.TrimSpace(codexLogin) != "" {
+		c.rememberCodexLogin(codexLoginKey(req), codexLogin, CodexAuthPath(layout.ConfigRoot))
+	}
 	spec := sandbox.Spec{
 		Image:        resolveProviderImage(c.opts, c.backend),
 		Env:          env,
-		ConfigHome:   c.buildConfigHome(req, env),
+		ConfigHome:   home,
 		ConfigRoot:   layout.ConfigRoot,
 		WorkspaceDir: layout.WorkspaceDir,
 	}
@@ -417,4 +433,38 @@ func applyPreviewEnv(env map[string]string, caps *models.AgentCapabilities) {
 	env["PREVIEW_DIRECT"] = "1"
 	env["PREVIEW_AUTO_INJECT"] = "1"
 	env["PREVIEW_PICK_SCRIPT_URL"] = "/__grasp/preview-pick.js"
+}
+
+// settleCodexLogin writes a changed auth.json back to the same project credential
+// after a Codex run. A login rejection, an unreadable sandbox, or an unchanged
+// file leaves the previous credential in place. The file body is not logged.
+func (c *acpProvider) settleCodexLogin(req NodeReq, sb *sandbox.Sandbox, runErr error, events []models.AcpEvent) error {
+	if c.backend != BackendCodex {
+		c.forgetCodexLogin(codexLoginKey(req))
+		return runErr
+	}
+	state, ok := c.takeCodexLogin(codexLoginKey(req))
+	rejected := CodexAuthRejected(runErr, events)
+	if rejected && runErr != nil && !strings.Contains(runErr.Error(), CodexLoginRepasteMessage) {
+		runErr = fmt.Errorf("%s: %w", CodexLoginRepasteMessage, runErr)
+	}
+	if !ok || sb == nil || rejected {
+		return runErr
+	}
+	body, readErr := sb.ReadFile(context.Background(), state.path)
+	next, write := ShouldWriteBackCodexLogin(readErr, string(body), state.body, false)
+	if !write {
+		if readErr != nil {
+			log.Warn().Err(readErr).Str("run", req.RunID).Str("node", req.NodeID).Msg("codex login writeback skipped; sandbox file unreadable")
+		}
+		return runErr
+	}
+	if c.opts.WriteBackCodexLoginFile == nil {
+		return runErr
+	}
+	pid := c.projectIDForReq(req)
+	if err := c.opts.WriteBackCodexLoginFile(pid, next); err != nil {
+		log.Warn().Err(err).Str("project", pid).Str("run", req.RunID).Msg("codex login writeback failed")
+	}
+	return runErr
 }

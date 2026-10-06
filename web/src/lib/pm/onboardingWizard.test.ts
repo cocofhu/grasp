@@ -73,6 +73,7 @@ describe('onboardingWizard', () => {
       'claude_code',
       'codebuddy',
       'trae',
+      'codex',
     ])
     expect(startPathForBackend('opencode')).toBe('apiKey')
     expect(startPathForBackend('trae')).toBe('cli')

@@ -11,7 +11,7 @@
 #   $AGENT_INSTALL_CMD             可选：完全接管安装（用于未内置方式或私有源）。
 set -euo pipefail
 
-DEFAULT_PROVIDERS="cursor,claude_code,codebuddy,trae,opencode"
+DEFAULT_PROVIDERS="cursor,claude_code,codebuddy,trae,opencode,codex"
 raw="${1:-${AGENT_PROVIDERS:-all}}"
 custom_cmd="${AGENT_INSTALL_CMD:-}"
 optional_raw="${AGENT_OPTIONAL_PROVIDERS:-}"

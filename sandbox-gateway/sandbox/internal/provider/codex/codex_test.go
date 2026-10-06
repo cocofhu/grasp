@@ -29,6 +29,54 @@ func TestParseSessionAndUsageAndComplete(t *testing.T) {
 	}
 }
 
+func TestAuthEnvDropsAPIKey(t *testing.T) {
+	var c codec
+	got := c.AuthEnv([]string{"OPENAI_API_KEY=sk-test", "CODEX_API_KEY=sk-2", "FOO=bar", "ACP_CODEX_API_KEY=sk-3"})
+	if len(got) != 1 || got[0] != "FOO=bar" {
+		t.Fatalf("env=%v", got)
+	}
+}
+
+func TestParseThreadEvents(t *testing.T) {
+	var c codec
+	sid := c.ParseLine([]byte(`{"type":"thread.started","thread_id":"0199a213-81c0-7800-8aa1-bbab2a035a53"}`))
+	if sid.SessionID != "0199a213-81c0-7800-8aa1-bbab2a035a53" {
+		t.Fatalf("sid=%q", sid.SessionID)
+	}
+	started := c.ParseLine([]byte(`{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"bash -lc ls","aggregated_output":"","status":"in_progress"}}`))
+	if len(started.Msgs) != 1 || started.Msgs[0].Kind != oneshot.KindToolUse || started.Msgs[0].ToolCallID != "item_1" || started.Msgs[0].ToolTitle != "bash -lc ls" {
+		t.Fatalf("start=%+v", started.Msgs)
+	}
+	done := c.ParseLine([]byte(`{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"bash -lc ls","aggregated_output":"docs\n","exit_code":0,"status":"completed"}}`))
+	if len(done.Msgs) != 1 || done.Msgs[0].Kind != oneshot.KindToolResult || done.Msgs[0].Text != "docs\n" {
+		t.Fatalf("done=%+v", done.Msgs)
+	}
+	msg := c.ParseLine([]byte(`{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"Repo contains docs."}}`))
+	if len(msg.Msgs) != 1 || msg.Msgs[0].Kind != oneshot.KindText || msg.Msgs[0].Text != "Repo contains docs." {
+		t.Fatalf("msg=%+v", msg.Msgs)
+	}
+	think := c.ParseLine([]byte(`{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"planning"}}`))
+	if len(think.Msgs) != 1 || think.Msgs[0].Kind != oneshot.KindThinking {
+		t.Fatalf("think=%+v", think.Msgs)
+	}
+	mcp := c.ParseLine([]byte(`{"type":"item.completed","item":{"id":"item_9","type":"mcp_tool_call","server":"github","tool":"search_issues","status":"completed"}}`))
+	if len(mcp.Msgs) != 1 || mcp.Msgs[0].ToolTitle != "github/search_issues" {
+		t.Fatalf("mcp=%+v", mcp.Msgs)
+	}
+	patch := c.ParseLine([]byte(`{"type":"item.completed","item":{"id":"item_4","type":"file_change","changes":[{"path":"a.go","kind":"update"}],"status":"completed"}}`))
+	if len(patch.Msgs) != 2 || patch.Msgs[0].Kind != oneshot.KindToolUse || patch.Msgs[1].Text != "a.go" {
+		t.Fatalf("patch=%+v", patch.Msgs)
+	}
+	usage := c.ParseLine([]byte(`{"type":"turn.completed","usage":{"input_tokens":24763,"cached_input_tokens":24448,"output_tokens":122,"reasoning_output_tokens":0}}`))
+	if usage.StopReason != "end_turn" || usage.Usage["default"].InputTokens != 24763 || usage.Usage["default"].CacheReadTokens != 24448 || usage.Usage["default"].OutputTokens != 122 {
+		t.Fatalf("usage=%+v stop=%s", usage.Usage, usage.StopReason)
+	}
+	fail := c.ParseLine([]byte(`{"type":"turn.failed","error":{"message":"failed to refresh token"}}`))
+	if fail.StopReason != "failed" || len(fail.Msgs) != 1 || fail.Msgs[0].Text != codexLoginRepaste {
+		t.Fatalf("fail=%+v", fail)
+	}
+}
+
 func TestArgsResume(t *testing.T) {
 	var c codec
 	fresh := c.Args(provider.OpenOptions{Model: "gpt-5"}, "hi", "")

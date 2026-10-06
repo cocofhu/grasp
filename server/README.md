@@ -4,7 +4,7 @@
 
 ## 执行后端(ExecProvider)
 
-支持五类 ACP 后端(`cursor` / `claude_code` / `codebuddy` / `trae` / `opencode`),由 Agent 卡片
+支持六类 ACP 后端(`cursor` / `claude_code` / `codebuddy` / `trae` / `opencode` / `codex`),由 Agent 卡片
 `agent.json` 的 `acpBackend` 字段选择;`ProviderRegistry` 按 Agent profile (`agent_profile`) 路由到
 对应 Provider。统一沙箱镜像内 `acp-bridge` 按 `AGENT_PROVIDER` 单活启动 bridge(:8765)。
 
@@ -16,16 +16,16 @@ Agent env、项目共享 env、Run env 与平台 `sandbox.env` 中出现密钥�
 
 | 管理项 | UI 内容 | 注入/使用 |
 |---|---|---|
-| AI CLI/API（Cursor、Claude Code、CodeBuddy、Trae、OpenCode） | API Key/Token；OpenCode provider、base URL、model 为非敏感配置 | 新沙箱解析为 CLI 标准变量 |
+| AI CLI/API（Cursor、Claude Code、CodeBuddy、Trae、OpenCode、Codex） | API Key/Token；OpenCode provider、base URL、model 为非敏感配置。Codex 只保存 ChatGPT 登录文件 | 新沙箱解析为 CLI 标准变量；Codex 写成 `{configRoot}/auth.json`，不注入环境变量 |
 | Git HTTPS | GitHub/GitLab Token、GitLab URL | 注入沙箱，由 startup 配置 `git`、`gh`/`glab` |
 | Git SSH | 私钥、known_hosts | 写入 `~/.ssh/id_rsa`、`~/.ssh/known_hosts`，不作为普通 env |
 | MCP / 自定义 | MCP Header/command env 或明确目标环境键；支持 `${credential:<id>}` | 仅展开到目标 MCP 或绑定键，不扩散到所有 Agent |
 | 渠道、外部 MCP、工作流 Key | 在项目凭据页汇总查看 | 复用现有加密/hash 适配器；渠道/鉴权服务端使用，不注入沙箱 |
 
 只能来自项目凭据的密钥键：`GRASP_CURSOR_API_KEY`、`GRASP_CLAUDE_API_KEY`、`GRASP_CODEBUDDY_API_KEY`、
-`GRASP_TRAE_API_KEY`、`GRASP_OPENCODE_API_KEY`、`GITHUB_TOKEN`、`GITLAB_TOKEN`、`GIT_SSH_PRIVATE_KEY`、
+`GRASP_TRAE_API_KEY`、`GRASP_OPENCODE_API_KEY`、`GRASP_CODEX_AUTH_JSON`、`GITHUB_TOKEN`、`GITLAB_TOKEN`、`GIT_SSH_PRIVATE_KEY`、
 `GIT_SSH_KNOWN_HOSTS`，以及它们映射到的 CLI 变量 `CURSOR_API_KEY`、`ANTHROPIC_API_KEY`、`CODEBUDDY_API_KEY`、
-`TRAECLI_PERSONAL_ACCESS_TOKEN`、`OPENCODE_API_KEY`。站点、厂商、模型、`GITLAB_URL` 等非敏感项仍可写在 Agent env。
+`TRAECLI_PERSONAL_ACCESS_TOKEN`、`OPENCODE_API_KEY`。`GRASP_CODEX_AUTH_JSON` 只是登录文件槽位，不会映射成 CLI 环境变量。站点、厂商、模型、`GITLAB_URL` 等非敏感项仍可写在 Agent env。
 已配置值的凭据键不能被每次 Run 的临时 env 覆盖。平台注入的保留变量（`GRASP_ARTIFACT_*`、`GRASP_RUN_ID`、`GRASP_NODE_ID`、`GRASP_MEMORY_*`、`GRASP_CONTEXT_*`、`GRASP_SCHEDULER_*`、`GRASP_PM_*`、`CONFIG_ROOT`、`AGENT_PROVIDER`、沙箱密码）不能作为凭据键。部署密钥、数据库密码、Session/Gate/Artifact Token 等仍是平台配置或系统自动管理项，不进入项目凭据页。
 
 ### 真实沙箱链路(多后端)
@@ -41,7 +41,7 @@ engine → ProviderRegistry → baseACPProvider → sandbox-gateway REST(创建�
   - 容器经 `host.docker.internal:<GRASP_PORT>` 回连平台(`--add-host host.docker.internal:host-gateway` 已设)。
   - 工具:`write_artifact` / `read_artifact` / `list_artifacts` / `node_complete` 等。Agent **原生调用** `write_artifact` 写回产物,结束前必须 `node_complete` 标记完成(已 live 验证:cursor-agent 完成 initialize→tools/list→tools/call 全链路)。
 - **`{configRoot}` 配置树(对齐 auto-coder)**:每个节点按 Agent profile 的 `acpBackend` 解析 configRoot(Agent 卡片可覆盖),在控制面生成一份配置树后注入沙箱:
-  - 默认映射:`cursor`→`/root/.cursor`、`claude_code`→`/root/.claude`、`codebuddy`→`/root/.codebuddy`、`trae`→`/root/.trae`、`opencode`→`/root/.config/opencode`;
+  - 默认映射:`cursor`→`/root/.cursor`、`claude_code`→`/root/.claude`、`codebuddy`→`/root/.codebuddy`、`trae`→`/root/.trae`、`opencode`→`/root/.config/opencode`、`codex`→`/root/.codex`;
   - `rules/base.md`(基础约束,alwaysApply)、`rules/artifact-store.md`(产物 MCP 与 `node_complete` 用法),两者内嵌、不可修改;
   - Agent 的行为规则来自 Agent 工作目录的 `AGENTS.md` 与 skills(`GRASP_PROFILES_ROOT`),能力来自 `agent.json` 的 `capabilities`;
   - 需要 push/MR 的节点可在 Agent 工作目录附 `skills/git/SKILL.md`;
@@ -54,7 +54,7 @@ engine → ProviderRegistry → baseACPProvider → sandbox-gateway REST(创建�
 
 ## ACP 后端怎么用
 
-五个后端的 Key 统一保存在项目详情的**项目凭据**中。Agent Studio → Meta 选择 `acpBackend`，
+各后端的 Key 统一保存在项目详情的**项目凭据**中。Codex 保存的是 ChatGPT 登录文件，启动前写入沙箱 `auth.json`，不注入 CLI 环境变量。Agent Studio → Meta 选择 `acpBackend`，
 并可在 env 中填写站点、厂商、模型等非敏感选项。运行时把凭据键映射成 CLI 认的变量后注入工作流沙箱。
 
 | acpBackend | 沙箱内 CLI | 默认 configRoot | 容器内鉴权变量 |
@@ -64,6 +64,7 @@ engine → ProviderRegistry → baseACPProvider → sandbox-gateway REST(创建�
 | `codebuddy` | `codebuddy --acp` | `/root/.codebuddy` | `CODEBUDDY_API_KEY` |
 | `trae` | `traecli acp serve` | `/root/.trae` | `TRAECLI_PERSONAL_ACCESS_TOKEN` |
 | `opencode` | `opencode run --format json` | `/root/.config/opencode` | 厂商原生 Key(由 `OPENCODE_API_KEY` 映射) |
+| `codex` | `codex exec --json` | `/root/.codex` | 登录文件 `{configRoot}/auth.json`（不注入环境变量） |
 
 Agent Studio 的 Env 页会按当前后端提示所需 Key;CodeBuddy / Trae 另有「站点」下拉,
 写入 `GRASP_*_REGION`(运行时再规范化成官方变量)。OpenCode 另有厂商 / API Base / model
@@ -155,6 +156,13 @@ Agent Studio 的 Env 页会按当前后端提示所需 Key;CodeBuddy / Trae 另�
 }
 ```
 
+### Codex
+
+1. Meta:`acpBackend = codex`。没有站点选择，也不提供模型目录。
+2. 项目凭据「Codex Login File」粘贴本机 `codex login` 产生的 `~/.codex/auth.json`。空白、以 `sk-` 开头的 API Key，以及标明 API Key 模式的 JSON 会被拒绝，并提示改用 OpenCode。
+3. 启动沙箱前把文件写到 `/root/.codex/auth.json`（`CODEX_HOME=/root/.codex`）。缺文件时 CLI 不会启动。不会注入 `OPENAI_API_KEY`。
+4. 一轮运行结束后，若沙箱里的 `auth.json` 与注入内容不同，加密写回同一条凭据。登录被拒绝或无法刷新时不写回，并提示重新粘贴登录文件。
+
 ### 速查:凭据键 → 容器变量
 
 | acpBackend | 项目凭据键 | 容器内 CLI 变量 |
@@ -164,6 +172,7 @@ Agent Studio 的 Env 页会按当前后端提示所需 Key;CodeBuddy / Trae 另�
 | `codebuddy` | `GRASP_CODEBUDDY_API_KEY` | `CODEBUDDY_API_KEY` |
 | `trae` | `GRASP_TRAE_API_KEY` | `TRAECLI_PERSONAL_ACCESS_TOKEN` |
 | `opencode` | `GRASP_OPENCODE_API_KEY` | 按厂商映射(`OPENAI_API_KEY` 等) + `OPENCODE_API_KEY` |
+| `codex` | `GRASP_CODEX_AUTH_JSON` | 无（写入 `/root/.codex/auth.json`） |
 
 ## 环境变量
 

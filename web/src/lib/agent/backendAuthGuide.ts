@@ -87,6 +87,24 @@ const OPENCODE_GUIDE: BackendAuthGuide = {
   noteKey: 'pages.agentStudio.wizard.apiKey.notes.opencode',
 }
 
+const CODEX_GUIDE: BackendAuthGuide = {
+  backend: 'codex',
+  keys: [{ key: 'GRASP_CODEX_AUTH_JSON' }],
+  pathStepKeys: [
+    'pages.agentStudio.wizard.apiKey.paths.codex.step1',
+    'pages.agentStudio.wizard.apiKey.paths.codex.step2',
+    'pages.agentStudio.wizard.apiKey.paths.codex.step3',
+    'pages.agentStudio.wizard.apiKey.paths.codex.step4',
+  ],
+  links: [
+    {
+      labelKey: 'pages.agentStudio.wizard.apiKey.links.codexAuth',
+      url: 'https://developers.openai.com/codex/auth',
+    },
+  ],
+  noteKey: 'pages.agentStudio.wizard.apiKey.notes.codex',
+}
+
 const TRAE_GUIDE: BackendAuthGuide = {
   backend: 'trae',
   keys: [{ key: 'GRASP_TRAE_API_KEY' }],
@@ -145,6 +163,10 @@ export const BACKEND_AUTH_HINTS: Record<
     key: 'GRASP_OPENCODE_API_KEY',
     note: 'OpenCode API Key 鉴权',
   },
+  codex: {
+    key: 'GRASP_CODEX_AUTH_JSON',
+    note: 'Codex ChatGPT 登录文件',
+  },
 }
 
 /** Resolve apply guide for the current Backend (+ CodeBuddy/Trae site when applicable). */
@@ -153,6 +175,7 @@ export function authGuideFor(backend: BackendId, region = ''): BackendAuthGuide 
   if (backend === 'claude_code') return CLAUDE_GUIDE
   if (backend === 'trae') return TRAE_GUIDE
   if (backend === 'opencode') return OPENCODE_GUIDE
+  if (backend === 'codex') return CODEX_GUIDE
 
   const siteLink = CODEBUDDY_SITE_LINKS[region] || CODEBUDDY_SITE_LINKS.public
   return {

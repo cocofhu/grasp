@@ -273,7 +273,7 @@ func (s *TeamService) writeProjectAuth(projectID string, req normalizedTeamReq) 
 	}
 	backend := NormalizeAcpBackend(req.AcpBackend)
 	if _, err := s.Credentials.SetByEnvKey(projectID, ProjectCredentialInput{
-		Type: "ai", Provider: backend, Name: backend + " API Key",
+		Type: "ai", Provider: backend, Name: aiCredentialName(backend),
 		EnvKey: primaryAuthEnvKey(backend), Value: req.APIKey,
 	}); err != nil {
 		return err

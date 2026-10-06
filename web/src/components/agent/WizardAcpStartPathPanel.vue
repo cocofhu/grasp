@@ -80,7 +80,7 @@ const { t } = useI18n()
     <div class="mb-2 text-[12px] font-medium text-txt2">
       {{ t('pages.onboarding.acp.cliLabel') }}
     </div>
-    <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+    <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
       <button
         v-for="b in CLI_BACKENDS"
         :key="b.id"

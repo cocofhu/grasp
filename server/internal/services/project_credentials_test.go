@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/crypto"
+	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 
@@ -231,6 +233,100 @@ func TestDeleteProjectRemovesCredentials(t *testing.T) {
 	db.Model(&models.ProjectCredential{}).Where("project_id = ?", p.ID).Count(&n)
 	if n != 0 {
 		t.Fatalf("orphan credentials: %d", n)
+	}
+}
+
+func TestCodexLoginFileSlotMaskRejectAndWriteBack(t *testing.T) {
+	setCredentialKey(t)
+	db := newTestDB(t)
+	p, err := NewProjectService(db).Create("Codex login", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewProjectCredentialService(db)
+	rows, err := s.List(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var slot ProjectCredentialView
+	found := false
+	for _, row := range rows {
+		if row.EnvKey == envauth.EnvCodexAuthFile {
+			slot = row
+			found = true
+		}
+	}
+	if !found || slot.Configured || slot.Provider != "codex" || slot.Name != "Codex Login File" {
+		t.Fatalf("codex slot=%+v found=%v", slot, found)
+	}
+	login := `{"auth_mode":"chatgpt","tokens":{"access_token":"at","refresh_token":"rt"}}`
+	saved, err := s.Update(p.ID, slot.ID, ProjectCredentialInput{Value: login})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawView, err := json.Marshal(saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(rawView), "access_token") || strings.Contains(string(rawView), login) || saved.Masked != "••••••••" {
+		t.Fatalf("view leaked login file: %s", rawView)
+	}
+	if s.ResolveEnv(p.ID)[envauth.EnvCodexAuthFile] != login {
+		t.Fatal("resolve lost the login file")
+	}
+	var before models.ProjectCredential
+	if err := db.First(&before, "id = ?", slot.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"sk-live", `{"auth_mode":"apikey","OPENAI_API_KEY":"sk-live"}`, "  \n"} {
+		if _, err := s.Update(p.ID, slot.ID, ProjectCredentialInput{Value: bad}); !errors.Is(err, runtime.ErrCodexLoginFileAPIKey) && !errors.Is(err, runtime.ErrCodexLoginFileEmpty) {
+			t.Fatalf("reject %q: %v", bad, err)
+		}
+	}
+	if _, err := s.Create(p.ID, ProjectCredentialInput{Type: "ai", Provider: "codex", Name: "extra", Value: "sk-live"}); !errors.Is(err, runtime.ErrCodexLoginFileAPIKey) {
+		t.Fatalf("create api key: %v", err)
+	}
+	var afterReject models.ProjectCredential
+	if err := db.First(&afterReject, "id = ?", slot.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if afterReject.ValueEnc != before.ValueEnc || !afterReject.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Fatal("rejected paste overwrote the login file")
+	}
+	if err := s.WriteBackCodexLoginFile(p.ID, login); err != nil {
+		t.Fatal(err)
+	}
+	var same models.ProjectCredential
+	if err := db.First(&same, "id = ?", slot.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if same.ValueEnc != before.ValueEnc || !same.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Fatal("unchanged writeback touched the credential")
+	}
+	refreshed := `{"auth_mode":"chatgpt","tokens":{"access_token":"new","refresh_token":"rt2"}}`
+	if err := s.WriteBackCodexLoginFile(p.ID, refreshed); err != nil {
+		t.Fatal(err)
+	}
+	later := `{"auth_mode":"chatgpt","tokens":{"access_token":"later","refresh_token":"rt3"}}`
+	if err := s.WriteBackCodexLoginFile(p.ID, later); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.ResolveEnv(p.ID)[envauth.EnvCodexAuthFile]; got != later {
+		t.Fatalf("last writeback=%q", got)
+	}
+	if err := s.WriteBackCodexLoginFile(p.ID, "sk-nope"); !errors.Is(err, runtime.ErrCodexLoginFileAPIKey) {
+		t.Fatalf("invalid writeback: %v", err)
+	}
+	if got := s.ResolveEnv(p.ID)[envauth.EnvCodexAuthFile]; got != later {
+		t.Fatalf("invalid writeback overwrote %q", got)
+	}
+	listed, err := s.List(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, _ := json.Marshal(listed)
+	if strings.Contains(string(blob), "later") || strings.Contains(string(blob), "refresh_token") {
+		t.Fatalf("list leaked login file: %s", blob)
 	}
 }
 

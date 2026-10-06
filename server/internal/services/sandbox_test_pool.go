@@ -212,6 +212,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 		return
 	}
 	workDir := s.skills.WorkDir(profile)
+	codexLogin := runtime.CodexLoginFileFromEnv(backend, env)
 	// Align auth gate with BuildConfigHome: shared extend then Agent overlay.
 	merged, err := runtime.PrepareAuthEnv(backend, env, workDir, sharedWorkDir)
 	if err != nil {
@@ -241,9 +242,21 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 		fail(fmt.Errorf("build cursor home: %w", err))
 		return
 	}
+	if err := runtime.InstallCodexLoginFile(backend, home, codexLogin); err != nil {
+		_ = os.RemoveAll(home)
+		fail(err)
+		return
+	}
 
 	env["AGENT_PROVIDER"] = string(backend)
-	env["CONFIG_ROOT"] = agent.Layout.ConfigRoot
+	configRoot := agent.Layout.ConfigRoot
+	if backend == runtime.BackendCodex && strings.TrimSpace(configRoot) == "" {
+		configRoot = runtime.CodexConfigRoot
+	}
+	env["CONFIG_ROOT"] = configRoot
+	if backend == runtime.BackendCodex {
+		env["CODEX_HOME"] = configRoot
+	}
 	// remote-dev parity: ROOT_PASSWORD / ACP_BRIDGE_PASSWORD so
 	// code-server (8744) and ACP bridge (8765) accept the same secret for
 	// proxied auto-login and direct host:port access.
@@ -258,7 +271,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 		Image:        resolveSandboxImage(string(backend)),
 		Env:          env,
 		ConfigHome:   home,
-		ConfigRoot:   agent.Layout.ConfigRoot,
+		ConfigRoot:   configRoot,
 		WorkspaceDir: agent.Layout.WorkspaceDir,
 	}
 	ApplyProjectSSHToSpec(&spec, projectCreds)
@@ -306,7 +319,11 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 		return
 	}
 	s.mu.Lock()
-	s.live[id] = &liveSandbox{sb: sb, acp: acp, home: home}
+	s.live[id] = &liveSandbox{
+		sb: sb, acp: acp, home: home,
+		codexAuthInjected: codexLogin,
+		codexAuthPath:     codexLiveAuthPath(backend, configRoot),
+	}
 	s.mu.Unlock()
 	log.Info().Str("name", sb.Name).Str("profile", profile).Uint("id", id).Msg("test sandbox opened")
 }
@@ -451,7 +468,15 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 		acp.Close()
 		return nil, nil, fmt.Errorf("reconnect acp: %w", err)
 	}
-	ls = &liveSandbox{sb: sb, acp: acp}
+	injected := ""
+	if ls != nil {
+		injected = ls.codexAuthInjected
+	}
+	ls = &liveSandbox{
+		sb: sb, acp: acp,
+		codexAuthInjected: injected,
+		codexAuthPath:     codexLiveAuthPath(runtime.NormalizeBackend(agent.AcpBackend), agent.Layout.ConfigRoot),
+	}
 	s.mu.Lock()
 	s.live[id] = ls
 	s.mu.Unlock()
@@ -467,6 +492,7 @@ func (s *SandboxService) Stop(ctx context.Context, id uint) error {
 	if s.isBusyRow(row) {
 		return fmt.Errorf("sandbox 正在执行任务,无法停止")
 	}
+	s.writeBackLiveCodex(ctx, id, row.ProjectID)
 	s.teardownLive(id)
 	s.archiveLog(ctx, row.Name)
 	_ = s.mgr.DestroyByName(ctx, row.Name)
@@ -483,6 +509,7 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 	if s.isBusyRow(row) {
 		return fmt.Errorf("sandbox 正在执行任务,无法销毁")
 	}
+	s.writeBackLiveCodex(ctx, id, row.ProjectID)
 	s.teardownLive(id)
 	s.archiveLog(ctx, row.Name)
 	_ = s.mgr.DestroyByName(ctx, row.Name)
@@ -541,6 +568,7 @@ func (s *SandboxService) ShutdownAllTestSandboxes(ctx context.Context, force boo
 		if force {
 			s.Cancel(row.ID)
 		}
+		s.writeBackLiveCodex(ctx, row.ID, row.ProjectID)
 		s.teardownLive(row.ID)
 		s.archiveLog(ctx, row.Name)
 		_ = s.mgr.DestroyByName(ctx, row.Name)
@@ -667,6 +695,7 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context) {
 // destroyLocalSandbox tears down the gateway instance (by Name and by
 // grasp.name correlation) then deletes the local list row.
 func (s *SandboxService) destroyLocalSandbox(ctx context.Context, row *models.Sandbox) {
+	s.writeBackLiveCodex(ctx, row.ID, row.ProjectID)
 	s.archiveLog(ctx, row.Name)
 	_ = s.mgr.DestroyByName(ctx, row.Name)
 	// Placeholder Name cannot address the real gateway id; also destroy by
