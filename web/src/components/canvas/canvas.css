@@ -571,8 +571,10 @@
   cursor: copy;
 }
 
-/* Click-to-place preview */
+/* Click-to-place preview. Hidden until paintGhost writes a position, so the
+   mount frame does not sit at the canvas origin. */
 .canvas-ghost {
+  visibility: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
