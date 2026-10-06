@@ -154,8 +154,8 @@ func FeedbackDigest(content string) string {
 	return hex.EncodeToString(sum[:])[:16]
 }
 
-// MarshalRoundJSON renders one round's standalone product. It remains the
-// legacy/discrete-product representation used by gate and preview feedback.
+// MarshalRoundJSON renders one round's standalone product, the discrete-product
+// representation used by gate and preview feedback.
 //
 // The body holds only this round's increment. Prior rounds appear as one-line
 // summaries plus a pointer to the previous product, so the file is

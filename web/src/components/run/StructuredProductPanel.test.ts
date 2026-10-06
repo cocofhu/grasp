@@ -712,13 +712,11 @@ describe('StructuredProductPanel', () => {
       }),
       // Upstream leftovers — must not open optional Approve tabs.
       artifact({ id: 'a-up-res', name: 'research.json', kind: 'json', nodeId: 'research' }),
-      artifact({ id: 'a-up-prop', name: 'proposals.json', kind: 'json', nodeId: 'proposal' }),
       artifact({ id: 'a-up-page', name: 'page.html', kind: 'html', nodeId: 'visual' }),
     ])
     const wrapper = mountPanel(node, nodeRun, run)
     await flushPromises()
     expect(wrapper.find('[data-testid="structured-product-tab-research.json"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="structured-product-tab-proposals.json"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="structured-product-tab-page.html"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="structured-product-tab-clarified_requirement.json"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="structured-product-tab-plan.json"]').exists()).toBe(true)

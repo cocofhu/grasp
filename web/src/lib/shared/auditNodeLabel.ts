@@ -1,4 +1,4 @@
-/** Audit stage labels keyed by node-id prefix: the 7 node types plus the default template's role ids. */
+/** Audit stage labels keyed by node-id prefix: the 6 node types plus the default template's role ids. */
 const AUDIT_STAGE_LABEL: Record<string, string> = {
   input: '输入',
   output: '输出',
@@ -6,10 +6,10 @@ const AUDIT_STAGE_LABEL: Record<string, string> = {
   branch: '分支',
   agent: 'Agent',
   human_gate: '门禁',
-  proposal_select: '方案确认',
   clarify: '需求澄清',
   implement: '实现',
   test_review: '测试评审',
+  deliver: '交付',
 }
 
 /** Longest prefix first so a type never shadows a longer one sharing its head. */

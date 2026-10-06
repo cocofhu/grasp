@@ -409,7 +409,7 @@ func TestReactContractMiss(t *testing.T) {
 }
 
 func TestBrokerGetterLiveEventsAndPublishAcp(t *testing.T) {
-	eng, _, _ := setupEngineGraphP(t, proposalGraph())
+	eng, _, _ := setupEngineGraphP(t, researchContractGraph())
 	if eng.Broker() == nil {
 		t.Fatal("Broker() nil")
 	}

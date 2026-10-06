@@ -15,7 +15,6 @@ const apiMocks = vi.hoisted(() => ({
   updatePmLeader: vi.fn(),
   listAgents: vi.fn(),
   listProjectCronJobs: vi.fn(),
-  getProjectChannel: vi.fn(),
   listProjectChannels: vi.fn(),
 }))
 
@@ -31,7 +30,6 @@ vi.mock('@/lib/api/api', async () => {
       updatePmLeader: apiMocks.updatePmLeader,
       listAgents: apiMocks.listAgents,
       listProjectCronJobs: apiMocks.listProjectCronJobs,
-      getProjectChannel: apiMocks.getProjectChannel,
       listProjectChannels: apiMocks.listProjectChannels,
     },
   }
@@ -54,7 +52,6 @@ const MOCK_PROJECT = {
   id: 'proj-1',
   name: 'Demo Project',
   description: '',
-  sandboxEnv: [],
   variables: [],
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
@@ -70,14 +67,24 @@ const DISABLED_BINDING: PmLeaderBinding = {
   enabled: false,
   agentAvailable: false,
   agentConfigRef: '',
-  aclNote: '记忆请在已绑定主项目的 Agent Studio「数据 → 记忆」中管理；任意已登录用户可编辑。',
+  aclNote: '记忆请在 Agent Studio「数据 → 记忆」中管理；任意已登录用户可编辑。',
 }
 
 const ENABLED_BINDING: PmLeaderBinding = {
   enabled: true,
   agentAvailable: true,
   agentConfigRef: 'agent-1',
-  aclNote: '记忆请在已绑定主项目的 Agent Studio「数据 → 记忆」中管理；任意已登录用户可编辑。',
+  aclNote: '记忆请在 Agent Studio「数据 → 记忆」中管理；任意已登录用户可编辑。',
+}
+
+/** Opens PM Leader settings via the disabled empty state's「前往设置」entry. */
+async function mountSettings() {
+  const mounted = await mountDetail('pmLeader')
+  await flushPromises()
+  const go = mounted.wrapper.findAll('button').find((b) => b.text().includes('前往设置'))
+  await go!.trigger('click')
+  await nextTick()
+  return mounted
 }
 
 async function mountDetail(tabQuery?: string, binding: PmLeaderBinding = DISABLED_BINDING) {
@@ -88,7 +95,6 @@ async function mountDetail(tabQuery?: string, binding: PmLeaderBinding = DISABLE
   apiMocks.getPmLeader.mockResolvedValue(binding)
   apiMocks.listAgents.mockResolvedValue([{ name: 'agent-1' }])
   apiMocks.listProjectCronJobs.mockResolvedValue({ items: [] })
-  apiMocks.getProjectChannel.mockResolvedValue({ channel: null })
   apiMocks.listProjectChannels.mockResolvedValue({ items: [], freeAgents: [], secretsKeyConfigured: true })
   apiMocks.updatePmLeader.mockImplementation(async (_id: string, body: Partial<PmLeaderBinding>) => ({
     ...ENABLED_BINDING,
@@ -194,15 +200,6 @@ describe('ProjectDetailView PM Leader settings inline', () => {
     expect(wrapper.text()).not.toContain('任意已登录用户开关是否推送到项目绑定渠道')
   })
 
-  it('maps legacy ?tab=pmSettings to PM Leader settings and rewrites URL', async () => {
-    const { wrapper, router } = await mountDetail('pmSettings')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="project-pm-settings-view"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('返回咨询')
-    expect(wrapper.text()).toContain('项目管理设置')
-    expect(router.currentRoute.value.query.tab).toBe('pmLeader')
-  })
-
   it('opens inline settings from disabled empty state without top-bar tab', async () => {
     const { wrapper } = await mountDetail('pmLeader')
     expect(wrapper.text()).toContain('项目管理未启用')
@@ -216,8 +213,7 @@ describe('ProjectDetailView PM Leader settings inline', () => {
   })
 
   it('resets to chat after leaving PM Leader top-bar tab', async () => {
-    const { wrapper } = await mountDetail('pmSettings')
-    await flushPromises()
+    const { wrapper } = await mountSettings()
     expect(wrapper.find('[data-testid="project-pm-settings-view"]').exists()).toBe(true)
 
     await wrapper.get('[data-testid="project-tab-cronJobs"]').trigger('click')
@@ -230,19 +226,8 @@ describe('ProjectDetailView PM Leader settings inline', () => {
     expect(wrapper.text()).toContain('项目管理未启用')
   })
 
-  it('maps legacy ?tab=pmMemory to board with migration banner', async () => {
-    const { wrapper, router } = await mountDetail('pmMemory')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="project-board-panel"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="pm-memory-migration-banner"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="pm-memory-go-studio"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="project-tab-pmMemory"]').exists()).toBe(false)
-    expect(router.currentRoute.value.query.tab).toBe('board')
-  })
-
   it('returns to chat after successful save and refreshes binding', async () => {
-    const { wrapper } = await mountDetail('pmSettings')
-    await flushPromises()
+    const { wrapper } = await mountSettings()
     expect(wrapper.find('[data-testid="project-pm-settings-view"]').exists()).toBe(true)
 
     // Enable + select agent + save
@@ -263,8 +248,7 @@ describe('ProjectDetailView PM Leader settings inline', () => {
 
   it('stays on settings when save fails', async () => {
     apiMocks.updatePmLeader.mockRejectedValueOnce(new Error('save failed'))
-    const { wrapper } = await mountDetail('pmSettings')
-    await flushPromises()
+    const { wrapper } = await mountSettings()
 
     const enable = wrapper.find('button[role="switch"]')
     await enable.trigger('click')
@@ -277,8 +261,7 @@ describe('ProjectDetailView PM Leader settings inline', () => {
   })
 
   it('back button returns to chat without saving', async () => {
-    const { wrapper } = await mountDetail('pmSettings')
-    await flushPromises()
+    const { wrapper } = await mountSettings()
     await wrapper.get('[data-testid="pm-settings-back"]').trigger('click')
     await nextTick()
     expect(wrapper.find('[data-testid="project-pm-settings-view"]').exists()).toBe(false)
@@ -297,9 +280,8 @@ describe('ProjectDetailView PM Leader settings inline', () => {
     expect(wrapper.find('[data-testid="project-pm-settings-view"]').exists()).toBe(true)
   })
 
-  it('resets pmView when navigating to another project without legacy deep-link', async () => {
-    const { wrapper, router } = await mountDetail('pmSettings')
-    await flushPromises()
+  it('resets pmView when navigating to another project', async () => {
+    const { wrapper, router } = await mountSettings()
     expect(wrapper.find('[data-testid="project-pm-settings-view"]').exists()).toBe(true)
 
     await router.push('/projects/proj-2?tab=pmLeader')
@@ -307,21 +289,6 @@ describe('ProjectDetailView PM Leader settings inline', () => {
 
     expect(wrapper.find('[data-testid="project-pm-settings-view"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('项目管理未启用')
-  })
-
-  it('opens settings on cross-project navigation when target has legacy deep-link', async () => {
-    const { wrapper, router } = await mountDetail('pmLeader')
-    await flushPromises()
-    const go = wrapper.findAll('button').find((b) => b.text().includes('前往设置'))
-    await go!.trigger('click')
-    await nextTick()
-    expect(wrapper.find('[data-testid="project-pm-settings-view"]').exists()).toBe(true)
-
-    await router.push('/projects/proj-2?tab=pmSettings')
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="project-pm-settings-view"]').exists()).toBe(true)
-    expect(router.currentRoute.value.query.tab).toBe('pmLeader')
   })
 
   it('does not retain settings sub-view after remount (refresh)', async () => {

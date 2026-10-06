@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,11 +22,35 @@ import (
 
 var testUpgrader = websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 
+// testBridgePassword is the acp-bridge secret every fake bridge accepts.
+const testBridgePassword = "test-bridge-pw"
+
+// testChatOpID is the opId of the chat the fake bridge last received; the frame
+// helpers tag with it like the real bridge does.
+var testChatOpID atomic.Value
+
+func withTestOpID(frame map[string]any) map[string]any {
+	if op, _ := testChatOpID.Load().(string); op != "" {
+		frame["opId"] = op
+	}
+	return frame
+}
+
+// handleTestLogin registers the bridge POST /api/login endpoint on mux.
+func handleTestLogin(mux *http.ServeMux) {
+	mux.HandleFunc("/api/login", func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{Name: acpSessionCookieName, Value: "test-session", Path: "/"})
+		w.WriteHeader(http.StatusOK)
+	})
+}
+
 // wsServer starts an httptest server whose /ws endpoint upgrades to a WebSocket
 // and calls handle for each received frame; handle drives the scripted replies.
 func wsServer(t *testing.T, handle func(conn *websocket.Conn, op string, msg map[string]any)) (string, int) {
 	t.Helper()
+	testChatOpID.Store("")
 	mux := http.NewServeMux()
+	handleTestLogin(mux)
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := testUpgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -39,6 +64,10 @@ func wsServer(t *testing.T, handle func(conn *websocket.Conn, op string, msg map
 			}
 			var m map[string]any
 			_ = json.Unmarshal(b, &m)
+			if m["op"] == "chat" {
+				op, _ := m["opId"].(string)
+				testChatOpID.Store(op)
+			}
 			handle(conn, fmt.Sprint(m["op"]), m)
 		}
 	})
@@ -49,19 +78,24 @@ func wsServer(t *testing.T, handle func(conn *websocket.Conn, op string, msg map
 }
 
 func chunkFrame(text string) map[string]any {
-	return map[string]any{"op": "event", "data": map[string]any{
+	return withTestOpID(map[string]any{"op": "event", "data": map[string]any{
 		"type":   "session_update",
 		"update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"text": text}},
-	}}
+	}})
 }
 
 func doneFrame() map[string]any {
-	return map[string]any{"op": "event", "data": map[string]any{"type": "prompt_done"}}
+	return withTestOpID(map[string]any{"op": "event", "data": map[string]any{"type": "prompt_done"}})
+}
+
+func untagged(frame map[string]any) map[string]any {
+	delete(frame, "opId")
+	return frame
 }
 
 func connectAndClient(t *testing.T, h string, p int) *ACPClient {
 	t.Helper()
-	c := NewACPClient(h, p).WithSession("/root/workspace", nil)
+	c := NewACPClient(h, p).WithPassword(testBridgePassword).WithSession("/root/workspace", nil)
 	if err := c.Connect(context.Background()); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -98,7 +132,7 @@ func TestACPConnectError(t *testing.T) {
 			_ = conn.WriteJSON(map[string]any{"op": "error", "message": "handshake refused"})
 		}
 	})
-	c := NewACPClient(h, p)
+	c := NewACPClient(h, p).WithPassword(testBridgePassword)
 	err := c.Connect(context.Background())
 	if err == nil || !contains(err.Error(), "handshake refused") {
 		t.Fatalf("Connect error = %v", err)
@@ -139,7 +173,7 @@ func TestACPConnectAuthWarmupRetry(t *testing.T) {
 		_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "sess-warm"})
 	})
 
-	c := NewACPClient(h, p)
+	c := NewACPClient(h, p).WithPassword(testBridgePassword)
 	if err := c.Connect(context.Background()); err != nil {
 		t.Fatalf("Connect should retry through auth warmup: %v", err)
 	}
@@ -169,7 +203,7 @@ func TestACPConnectAuthBudgetExhausted(t *testing.T) {
 			_ = conn.WriteJSON(map[string]any{"op": "error", "message": "Authentication required"})
 		}
 	})
-	c := NewACPClient(h, p)
+	c := NewACPClient(h, p).WithPassword(testBridgePassword)
 	err := c.Connect(context.Background())
 	if err == nil || !contains(err.Error(), "Authentication required") {
 		t.Fatalf("expected auth failure after budget, got %v", err)
@@ -222,7 +256,7 @@ func TestACPChatIdleTimeout(t *testing.T) {
 		}
 		// chat: intentionally send nothing -> idle watchdog trips
 	})
-	c := NewACPClient(h, p).WithIdleTimeout(60 * time.Millisecond)
+	c := NewACPClient(h, p).WithPassword(testBridgePassword).WithIdleTimeout(60 * time.Millisecond)
 	if err := c.Connect(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -371,13 +405,13 @@ func TestNewIdleWatch(t *testing.T) {
 
 func TestWaitForACPReady(t *testing.T) {
 	h, p := wsServer(t, func(conn *websocket.Conn, op string, _ map[string]any) {})
-	if err := WaitForACPReady(context.Background(), h, p, "", time.Second); err != nil {
+	if err := WaitForACPReady(context.Background(), h, p, testBridgePassword, time.Second); err != nil {
 		t.Fatalf("ready server: %v", err)
 	}
 	// Cancelled context returns promptly.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := WaitForACPReady(ctx, "127.0.0.1", 1, "", time.Second); err == nil {
+	if err := WaitForACPReady(ctx, "127.0.0.1", 1, testBridgePassword, time.Second); err == nil {
 		t.Error("expected error for cancelled context")
 	}
 }

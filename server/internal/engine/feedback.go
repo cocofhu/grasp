@@ -50,7 +50,7 @@ func (e *Engine) recordFeedback(ev models.FeedbackEvent) {
 
 // renderFeedbackProducts rewrites the index from the table. ReAct products are
 // current-state summaries and are deliberately saved on every render; discrete
-// gate/preview products retain their historical write-once backfill behavior.
+// gate/preview products are written once.
 func (e *Engine) renderFeedbackProducts(runID string, svc *services.FeedbackService) {
 	if e.store == nil {
 		return

@@ -103,15 +103,15 @@ func TestOfferCommitOnConfirmNoSessionOrNonRepoNode(t *testing.T) {
 		t.Fatalf("no session: %+v", t0)
 	}
 	p.sessions["r|n"] = &reactSession{sb: &sandbox.Sandbox{Name: "sb"}}
-	if t1 := p.OfferCommitOnConfirm(context.Background(), NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testCapsWriting(models.SchemaProposals)}); t1.Msg != "" {
-		t.Fatalf("proposal: %+v", t1)
+	if t1 := p.OfferCommitOnConfirm(context.Background(), NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testCapsWriting(models.SchemaResearch)}); t1.Msg != "" {
+		t.Fatalf("research: %+v", t1)
 	}
 }
 
 func TestReconcileOnConfirmWithoutSessionIsNoOp(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{}).(*acpProvider)
-	req := NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testCapsWriting(models.SchemaProposals)}
+	req := NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testCapsWriting(models.SchemaResearch)}
 	if turn := p.ReconcileOnConfirm(context.Background(), req); turn.Msg != "" || turn.AgentSummary != "" {
 		t.Fatalf("no session: %+v", turn)
 	}

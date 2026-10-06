@@ -16,8 +16,6 @@ const apiMocks = vi.hoisted(() => ({
   listAgents: vi.fn(),
   getProject: vi.fn(),
   listProjectChannels: vi.fn(),
-  getProjectChannel: vi.fn(),
-  putProjectChannel: vi.fn(),
   listPmThreads: vi.fn(),
 }))
 
@@ -37,8 +35,6 @@ vi.mock('@/lib/api/api', async () => {
       listAgents: apiMocks.listAgents,
       getProject: apiMocks.getProject,
       listProjectChannels: apiMocks.listProjectChannels,
-      getProjectChannel: apiMocks.getProjectChannel,
-      putProjectChannel: apiMocks.putProjectChannel,
       listPmThreads: apiMocks.listPmThreads,
     },
   }
@@ -96,10 +92,6 @@ async function mountPanel(
     secretsKeyConfigured: channelFixture.secretsKeyConfigured ?? true,
     freeAgents: ['agent-1'],
   })
-  apiMocks.getProjectChannel.mockResolvedValue({
-    channel: channelFixture.channel ?? null,
-    secretsKeyConfigured: channelFixture.secretsKeyConfigured ?? true,
-  })
   apiMocks.updatePmLeader.mockImplementation(async (_id: string, body: Record<string, unknown>) => ({
     ...BINDING,
     ...body,
@@ -129,18 +121,6 @@ async function mountPanel(
   })
   await flushPromises()
   return w
-}
-
-function cronDeliverSwitch(w: Awaited<ReturnType<typeof mountPanel>>) {
-  return w.find('[data-testid="cron-deliver-enable"]')
-}
-
-async function setSwitch(
-  el: ReturnType<Awaited<ReturnType<typeof mountPanel>>['find']>,
-  on: boolean,
-) {
-  const checked = el.attributes('aria-checked') === 'true'
-  if (checked !== on) await el.trigger('click')
 }
 
 function mcpSwitches(w: Awaited<ReturnType<typeof mountPanel>>) {
@@ -240,329 +220,6 @@ describe('PmSettingsPanel enabledMcps', () => {
   })
 })
 
-describe.skip('PmSettingsPanel session capabilities', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    apiMocks.listPmThreads.mockResolvedValue({ items: [] })
-  })
-
-  it('defaults session caps off and saves with sandbox preserved', async () => {
-    apiMocks.putProjectChannel.mockResolvedValue({
-      id: 'chn-1',
-      type: 'qq',
-      name: 'bot',
-      enabled: true,
-      projectId: 'proj-1',
-      appId: 'app',
-      appSecretSet: true,
-      turnTimeoutSeconds: 0,
-      cronDeliver: false,
-      config: { sandbox: true, allowMemoryWrite: true, allowSchedulerWrite: false },
-      createdAt: '',
-      updatedAt: '',
-    })
-    const w = await mountPanel(BINDING, {
-      channel: {
-        id: 'chn-1',
-        type: 'qq',
-        name: 'bot',
-        enabled: true,
-        projectId: 'proj-1',
-        appId: 'app',
-        appSecretSet: true,
-        turnTimeoutSeconds: 0,
-        cronDeliver: false,
-        config: { sandbox: true },
-        createdAt: '',
-        updatedAt: '',
-      },
-    })
-
-    expect(w.find('[data-testid="channel-session-caps"]').exists()).toBe(true)
-    expect(w.text()).toContain('会话能力')
-    expect(w.text()).toContain('风险提示')
-    const mem = w.find('[data-testid="channel-allow-memory-write"]')
-    const sch = w.find('[data-testid="channel-allow-scheduler-write"]')
-    expect(mem.attributes('aria-checked')).toBe('false')
-    expect(sch.attributes('aria-checked')).toBe('false')
-
-    await setSwitch(mem, true)
-    const saveBtns = w.findAll('button').filter((b) => b.text().includes('保存并连接'))
-    await saveBtns[0].trigger('click')
-    await flushPromises()
-
-    const body = apiMocks.putProjectChannel.mock.calls[0][1] as {
-      config: { sandbox: boolean; allowMemoryWrite: boolean; allowSchedulerWrite: boolean }
-    }
-    expect(body.config).toEqual({
-      sandbox: true,
-      allowMemoryWrite: true,
-      allowSchedulerWrite: false,
-    })
-    expect(mem.attributes('aria-checked')).toBe('true')
-    expect(sch.attributes('aria-checked')).toBe('false')
-  })
-
-  it('loads saved session caps and keeps sandbox when toggling scheduler write', async () => {
-    apiMocks.putProjectChannel.mockResolvedValue({
-      id: 'chn-1',
-      type: 'qq',
-      name: 'bot',
-      enabled: true,
-      projectId: 'proj-1',
-      appId: 'app',
-      appSecretSet: true,
-      turnTimeoutSeconds: 0,
-      cronDeliver: false,
-      config: { sandbox: false, allowMemoryWrite: true, allowSchedulerWrite: true },
-      createdAt: '',
-      updatedAt: '',
-    })
-    const w = await mountPanel(BINDING, {
-      channel: {
-        id: 'chn-1',
-        type: 'qq',
-        name: 'bot',
-        enabled: true,
-        projectId: 'proj-1',
-        appId: 'app',
-        appSecretSet: true,
-        turnTimeoutSeconds: 0,
-        cronDeliver: false,
-        config: { sandbox: false, allowMemoryWrite: true, allowSchedulerWrite: false },
-        createdAt: '',
-        updatedAt: '',
-      },
-    })
-
-    const mem = w.find('[data-testid="channel-allow-memory-write"]')
-    const sch = w.find('[data-testid="channel-allow-scheduler-write"]')
-    expect(mem.attributes('aria-checked')).toBe('true')
-    expect(sch.attributes('aria-checked')).toBe('false')
-
-    await setSwitch(sch, true)
-    const saveBtns = w.findAll('button').filter((b) => b.text().includes('保存并连接'))
-    await saveBtns[0].trigger('click')
-    await flushPromises()
-
-    const body = apiMocks.putProjectChannel.mock.calls[0][1] as {
-      config: { sandbox: boolean; allowMemoryWrite: boolean; allowSchedulerWrite: boolean }
-    }
-    expect(body.config).toEqual({
-      sandbox: false,
-      allowMemoryWrite: true,
-      allowSchedulerWrite: true,
-    })
-  })
-})
-
-describe.skip('PmSettingsPanel cron deliver target Combobox', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    apiMocks.listPmThreads.mockResolvedValue({ items: [] })
-  })
-
-  it('does not fetch recent targets until cron deliver is checked', async () => {
-    await mountPanel()
-    expect(apiMocks.listPmThreads).not.toHaveBeenCalled()
-    expect(document.querySelector('[data-testid="cron-deliver-target-input"]')).toBeNull()
-  })
-
-  it('fetches once on check, reuses cache on reopen, and refetches after uncheck', async () => {
-    const w = await mountPanel()
-    apiMocks.listPmThreads.mockResolvedValue({
-      items: [
-        {
-          id: 't1',
-          projectId: 'proj-1',
-          userId: 'qq:guild:111',
-          title: '周会',
-          updatedAt: '2026-01-02T00:00:00Z',
-          createdAt: '2026-01-01T00:00:00Z',
-        },
-        {
-          id: 't2',
-          projectId: 'proj-1',
-          userId: 'cron:job',
-          title: 'cron',
-          updatedAt: '2026-01-03T00:00:00Z',
-          createdAt: '2026-01-01T00:00:00Z',
-        },
-      ],
-    })
-    await setSwitch(cronDeliverSwitch(w), true)
-    await flushPromises()
-    expect(apiMocks.listPmThreads).toHaveBeenCalledTimes(1)
-
-    const input = w.find('[data-testid="cron-deliver-target-input"]')
-    await input.trigger('focus')
-    await flushPromises()
-    expect(apiMocks.listPmThreads).toHaveBeenCalledTimes(1)
-    expect(w.find('[data-testid="cron-deliver-target-listbox"]').text()).toContain('周会')
-    expect(w.find('[data-testid="cron-deliver-target-listbox"]').text()).toContain('guild:111')
-    expect(w.find('[data-testid="cron-deliver-target-listbox"]').text()).not.toContain('cron')
-
-    await w.find('[data-testid="cron-deliver-target-toggle"]').trigger('click')
-    await flushPromises()
-    expect(w.find('[data-testid="cron-deliver-target-listbox"]').exists()).toBe(false)
-
-    await w.find('[data-testid="cron-deliver-target-toggle"]').trigger('click')
-    await flushPromises()
-    expect(apiMocks.listPmThreads).toHaveBeenCalledTimes(1)
-
-    await setSwitch(cronDeliverSwitch(w), false)
-    await flushPromises()
-    await setSwitch(cronDeliverSwitch(w), true)
-    await flushPromises()
-    expect(apiMocks.listPmThreads).toHaveBeenCalledTimes(2)
-  })
-
-  it('selects an option into the input without qq: prefix and keeps hand-edit path', async () => {
-    apiMocks.putProjectChannel.mockResolvedValue({
-      id: 'chn-1',
-      type: 'qq',
-      name: 'bot',
-      enabled: true,
-      projectId: 'proj-1',
-      appId: 'app',
-      appSecretSet: true,
-      turnTimeoutSeconds: 0,
-      cronDeliver: true,
-      cronDeliverTarget: 'group:ABC',
-      createdAt: '',
-      updatedAt: '',
-    })
-    const w = await mountPanel()
-    apiMocks.listPmThreads.mockResolvedValue({
-      items: [
-        {
-          id: 't1',
-          projectId: 'proj-1',
-          userId: 'qq:group:ABC',
-          title: '值班群',
-          updatedAt: '2026-01-02T00:00:00Z',
-          createdAt: '2026-01-01T00:00:00Z',
-        },
-      ],
-    })
-    await setSwitch(cronDeliverSwitch(w), true)
-    await flushPromises()
-    await w.find('[data-testid="cron-deliver-target-toggle"]').trigger('click')
-    await flushPromises()
-    const opt = w
-      .findAll('[data-testid="cron-deliver-target-listbox"] [role="option"]')
-      .find((b) => b.text().includes('值班群'))
-    expect(opt).toBeTruthy()
-    await opt!.trigger('click')
-    await flushPromises()
-    const input = w.find('[data-testid="cron-deliver-target-input"]')
-    expect((input.element as HTMLInputElement).value).toBe('group:ABC')
-    await input.setValue('group:ABC-edited')
-    const saveBtns = w.findAll('button').filter((b) => b.text().includes('保存并连接'))
-    await saveBtns[0].trigger('click')
-    await flushPromises()
-    const body = apiMocks.putProjectChannel.mock.calls[0][1] as { cronDeliverTarget: string }
-    expect(body.cronDeliverTarget).toBe('group:ABC-edited')
-  })
-
-  it('keeps orphan saved value and shows empty-state when list is empty', async () => {
-    const w = await mountPanel(BINDING, {
-      channel: {
-        id: 'chn-1',
-        type: 'qq',
-        name: 'bot',
-        enabled: true,
-        projectId: 'proj-1',
-        appId: 'app',
-        appSecretSet: true,
-        turnTimeoutSeconds: 0,
-        cronDeliver: true,
-        cronDeliverTarget: 'guild:legacy-999',
-        createdAt: '',
-        updatedAt: '',
-      },
-      secretsKeyConfigured: true,
-    })
-    await flushPromises()
-    const input = w.find('[data-testid="cron-deliver-target-input"]')
-    expect((input.element as HTMLInputElement).value).toBe('guild:legacy-999')
-    expect(apiMocks.listPmThreads).toHaveBeenCalledTimes(1)
-
-    await w.find('[data-testid="cron-deliver-target-toggle"]').trigger('click')
-    await flushPromises()
-    expect(w.find('[data-testid="cron-deliver-target-listbox"]').text()).toContain(
-      '暂无最近渠道会话',
-    )
-    expect((input.element as HTMLInputElement).value).toBe('guild:legacy-999')
-  })
-
-  it('degrades to empty list on fetch failure and still allows save', async () => {
-    apiMocks.putProjectChannel.mockResolvedValue({
-      id: 'chn-1',
-      type: 'qq',
-      name: 'bot',
-      enabled: true,
-      projectId: 'proj-1',
-      appId: 'app',
-      appSecretSet: true,
-      turnTimeoutSeconds: 0,
-      cronDeliver: true,
-      cronDeliverTarget: 'guild:hand',
-      createdAt: '',
-      updatedAt: '',
-    })
-    const w = await mountPanel()
-    apiMocks.listPmThreads.mockRejectedValue(new Error('network down'))
-    await setSwitch(cronDeliverSwitch(w), true)
-    await flushPromises()
-    expect(toastMocks.error).toHaveBeenCalled()
-    const toastMsg = String(toastMocks.error.mock.calls[0]?.[0] ?? '')
-    expect(toastMsg).toContain('最近目标加载失败')
-    expect(toastMsg).toContain('network down')
-    await w.find('[data-testid="cron-deliver-target-input"]').setValue('guild:hand')
-    const saveBtns = w.findAll('button').filter((b) => b.text().includes('保存并连接'))
-    await saveBtns[0].trigger('click')
-    await flushPromises()
-    expect(apiMocks.putProjectChannel).toHaveBeenCalled()
-    const body = apiMocks.putProjectChannel.mock.calls[0][1] as { cronDeliverTarget: string }
-    expect(body.cronDeliverTarget).toBe('guild:hand')
-  })
-
-  it('exposes Combobox ARIA attributes on input and toggle', async () => {
-    const w = await mountPanel()
-    apiMocks.listPmThreads.mockResolvedValue({
-      items: [
-        {
-          id: 't1',
-          projectId: 'proj-1',
-          userId: 'qq:guild:111',
-          title: '周会',
-          updatedAt: '2026-01-02T00:00:00Z',
-          createdAt: '2026-01-01T00:00:00Z',
-        },
-      ],
-    })
-    await setSwitch(cronDeliverSwitch(w), true)
-    await flushPromises()
-    const input = w.find('[data-testid="cron-deliver-target-input"]')
-    const toggle = w.find('[data-testid="cron-deliver-target-toggle"]')
-    expect(input.attributes('aria-autocomplete')).toBe('list')
-    expect(input.attributes('aria-controls')).toBe('ch-cron-target-listbox')
-    expect(input.attributes('aria-expanded')).toBe('false')
-    expect(toggle.attributes('aria-controls')).toBe('ch-cron-target-listbox')
-    expect(toggle.attributes('aria-expanded')).toBe('false')
-    expect(toggle.attributes('aria-label')).toContain('最近目标')
-    await toggle.trigger('click')
-    await flushPromises()
-    expect(input.attributes('aria-expanded')).toBe('true')
-    expect(toggle.attributes('aria-expanded')).toBe('true')
-    expect(input.attributes('aria-activedescendant')).toBeUndefined()
-    await input.trigger('keydown', { key: 'ArrowDown' })
-    expect(input.attributes('aria-activedescendant')).toBe('ch-cron-target-listbox-opt-0')
-    expect(w.find('#ch-cron-target-listbox-opt-0').exists()).toBe(true)
-  })
-})
-
 describe('PmSettingsPanel gate-auto config', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -622,7 +279,7 @@ describe('PmSettingsPanel header without settingsHint', () => {
 
     expect(text).toContain('任意已登录用户可启用/换绑/停用')
     expect(text).toContain('通用记忆/上下文/调度器始终注入，不受此列表控制')
-    expect(text).toContain('记忆请在已绑定主项目的 Agent Studio「数据 → 记忆」中管理')
+    expect(text).toContain('记忆请在 Agent Studio「数据 → 记忆」中管理')
   })
 
   it('still shows noAgents hint when no bindable Agent exists', async () => {

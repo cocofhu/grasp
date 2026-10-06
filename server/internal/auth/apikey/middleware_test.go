@@ -58,7 +58,7 @@ func TestMiddlewareAndWorkflowID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&models.WorkflowDef{ID: "wf-1", Name: "W", Status: "published"}).Error; err != nil {
+	if err := db.Create(&models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf-1", Name: "W", Version: 1, PublishedVersion: 1}).Error; err != nil {
 		t.Fatal(err)
 	}
 	svc := services.NewAPIKeyService(db)

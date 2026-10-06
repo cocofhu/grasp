@@ -1,10 +1,12 @@
 package engine
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/models"
 )
 
@@ -40,7 +42,12 @@ func TestHumanGateResumeSnapshotsPreviewIssues(t *testing.T) {
 	waitGatePending(t, db, run.ID, "gate")
 	waitRunStatus(t, db, run.ID, "waiting_human")
 
-	img := models.PromptImage{Data: "iVBORw0KGgo=", MimeType: "image/png"}
+	imgs, err := blob.IngestPromptImages(context.Background(), eng.blobs,
+		[]models.PromptImage{{Data: "iVBORw0KGgo=", MimeType: "image/png"}})
+	if err != nil {
+		t.Fatalf("ingest image: %v", err)
+	}
+	img := imgs[0]
 	issue := models.PreviewIssue{
 		ID: "iss-hg1", RunID: run.ID, NodeID: "gate",
 		Body: "标题间距过大", Selector: "h1.title", Port: 0,
@@ -85,7 +92,7 @@ func TestHumanGateResumeSnapshotsPreviewIssues(t *testing.T) {
 	if !strings.Contains(ct.Text, "标题间距过大") {
 		t.Fatalf("preview_issues text missing body: %q", ct.Text)
 	}
-	if len(ct.Images) != 1 || ct.Images[0].Data != img.Data {
+	if len(ct.Images) != 1 || ct.Images[0].Ref != img.Ref {
 		t.Fatalf("preview_issues images = %+v, want 1 screenshot", ct.Images)
 	}
 
@@ -147,7 +154,12 @@ func TestCommentOnlyHumanGateDoesNotWipePreviewIssues(t *testing.T) {
 	waitGatePending(t, db, run.ID, "visual_gate")
 	waitRunStatus(t, db, run.ID, "waiting_human")
 
-	img := models.PromptImage{Data: "iVBORw0KGgo=", MimeType: "image/png"}
+	imgs, err := blob.IngestPromptImages(context.Background(), eng.blobs,
+		[]models.PromptImage{{Data: "iVBORw0KGgo=", MimeType: "image/png"}})
+	if err != nil {
+		t.Fatalf("ingest image: %v", err)
+	}
+	img := imgs[0]
 	issue := models.PreviewIssue{
 		ID: "iss-keep", RunID: run.ID, NodeID: "visual_gate",
 		Body: "按钮太小", Selector: "#cta", Port: 0,

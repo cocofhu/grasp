@@ -60,7 +60,7 @@ function mountTab() {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.useFakeTimers()
-  apiMocks.listRuns.mockResolvedValue([sampleRun()])
+  apiMocks.listRuns.mockResolvedValue({ items: [sampleRun()], total: 1, page: 1, pageSize: 20, hasMore: false })
 })
 
 describe('WorkflowRunHistoryTab', () => {

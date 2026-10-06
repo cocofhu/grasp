@@ -52,10 +52,6 @@ type TokenUsageEvent struct {
 	OutputTokens     int64 `json:"outputTokens"`
 	CacheReadTokens  int64 `json:"cacheReadTokens"`
 	CacheWriteTokens int64 `json:"cacheWriteTokens"`
-
-	// Backfilled marks rows imported from legacy StateRun / ChatMessage usage
-	// so the import can be re-run idempotently (delete + reinsert).
-	Backfilled bool `gorm:"index" json:"backfilled,omitempty"`
 }
 
 // Total returns the four-component sum.

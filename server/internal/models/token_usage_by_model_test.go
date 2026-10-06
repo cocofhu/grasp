@@ -29,24 +29,6 @@ func TestAddTokenUsageByModelMergeFilled(t *testing.T) {
 	}
 }
 
-func TestEffectiveUsageByModelLegacy(t *testing.T) {
-	t.Parallel()
-	if EffectiveUsageByModel(nil, nil) != nil {
-		t.Fatal("nil+nil")
-	}
-	u := &TokenUsage{InputTokens: 3, OutputTokens: 1}
-	m := EffectiveUsageByModel(u, nil)
-	unk, ok := m[TokenUsageModelUnknown]
-	if !ok || unk.InputTokens != 3 || unk.Source != TokenUsageSourceUnknown {
-		t.Fatalf("legacy map = %+v", m)
-	}
-	// Explicit by-model wins even when empty.
-	empty := TokenUsageByModel{}
-	if EffectiveUsageByModel(u, empty) == nil || len(EffectiveUsageByModel(u, empty)) != 0 {
-		t.Fatal("empty by-model must not invent unknown")
-	}
-}
-
 func TestSumTokenUsageByModel(t *testing.T) {
 	t.Parallel()
 	if sumTokenUsageByModel(nil) != nil {

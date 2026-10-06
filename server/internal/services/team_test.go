@@ -26,10 +26,12 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 	}
 	root := t.TempDir()
 	skills := NewAgentService(filepath.Join(root, "profiles"))
-	org := NewOrgService(filepath.Join(root, "profiles"), skills)
 	projects := NewProjectService(db)
 	pm := NewPmService(db, skills)
-	team := NewTeamService(projects, skills, org, pm, nil)
+	team := NewTeamService(projects, skills, pm, nil)
+	setCredentialKey(t)
+	team.SharedAgent = NewSharedAgentService(filepath.Join(root, "shared"))
+	team.Credentials = NewProjectCredentialService(db)
 
 	sess, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{
 		ProjectName: "TeamProj",
@@ -96,13 +98,13 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 	if len(ag.MCP) == 0 || ag.MCP[0].Name != "artifact-store" {
 		t.Fatalf("mcp=%+v", ag.MCP)
 	}
-	doc, err := org.Get()
-	if err != nil {
-		t.Fatal(err)
+	if !strings.Contains(ctx, "pm_list_project_agents") || strings.Contains(ctx, "组") {
+		t.Fatalf("project-context should describe project members only: %q", ctx)
 	}
-	mem := doc.Agents[impl]
-	if _, ok := doc.Agents[impl]; !ok || len(mem.GroupIDs) != 1 || mem.GroupIDs[0] != cur.WorkflowGroupID {
-		t.Fatalf("groups=%v want workflow %s", mem.GroupIDs, cur.WorkflowGroupID)
+	for _, r := range cur.Resources {
+		if r.Kind != "project" && r.Kind != "agent" {
+			t.Fatalf("unexpected resource kind %q", r.Kind)
+		}
 	}
 }
 
@@ -161,12 +163,11 @@ func TestCreateAgentFromTemplate_Conflict(t *testing.T) {
 	}
 	root := t.TempDir()
 	skills := NewAgentService(filepath.Join(root, "profiles"))
-	org := NewOrgService(filepath.Join(root, "profiles"), skills)
 	projects := NewProjectService(db)
 	pm := NewPmService(db, skills)
-	team := NewTeamService(projects, skills, org, pm, nil)
+	team := NewTeamService(projects, skills, pm, nil)
 
-	p, err := projects.Create("P1", "", nil, nil)
+	p, err := projects.Create("P1", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,8 +192,8 @@ func TestCreateAgentFromTemplate_Conflict(t *testing.T) {
 	}
 }
 
-func TestSetOrgMembership_ScopeDenied(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:team_scope_org_"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+func TestCreateAgentFromTemplate_SessionScopeDenied(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:team_scope_session_"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,10 +202,9 @@ func TestSetOrgMembership_ScopeDenied(t *testing.T) {
 	}
 	root := t.TempDir()
 	skills := NewAgentService(filepath.Join(root, "profiles"))
-	org := NewOrgService(filepath.Join(root, "profiles"), skills)
 	projects := NewProjectService(db)
 	pm := NewPmService(db, skills)
-	team := NewTeamService(projects, skills, org, pm, nil)
+	team := NewTeamService(projects, skills, pm, nil)
 
 	sess, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{
 		ProjectName: "ScopeProj",
@@ -230,24 +230,6 @@ func TestSetOrgMembership_ScopeDenied(t *testing.T) {
 	}
 	if cur.Status != "ready" {
 		t.Fatalf("status=%s err=%s", cur.Status, cur.Error)
-	}
-
-	err = team.SetOrgMembership(SetOrgMembershipArgs{
-		SessionID: cur.ID,
-		AgentName: "Sc实现",
-		GroupIDs:  []string{"grp_foreign"},
-	})
-	if !errors.Is(err, ErrTeamScopeDenied) {
-		t.Fatalf("want scope denied, got %v", err)
-	}
-
-	err = team.SetOrgMembership(SetOrgMembershipArgs{
-		SessionID: cur.ID,
-		AgentName: "Sc实现",
-		GroupIDs:  []string{cur.WorkflowGroupID},
-	})
-	if err != nil {
-		t.Fatalf("valid membership: %v", err)
 	}
 
 	_, err = team.CreateAgentFromTemplate(CreateFromTemplateArgs{
@@ -301,7 +283,6 @@ func TestFinishBootstrap_WaitsForPullingBeforeReady(t *testing.T) {
 	}
 	root := t.TempDir()
 	skills := NewAgentService(filepath.Join(root, "profiles"))
-	org := NewOrgService(filepath.Join(root, "profiles"), skills)
 	projects := NewProjectService(db)
 	pm := NewPmService(db, skills)
 
@@ -314,7 +295,7 @@ func TestFinishBootstrap_WaitsForPullingBeforeReady(t *testing.T) {
 			{Sandbox: models.Sandbox{ID: 42, Status: "running"}},
 		},
 	}
-	team := NewTeamService(projects, skills, org, pm, fake)
+	team := NewTeamService(projects, skills, pm, fake)
 
 	sess, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{
 		ProjectName: "PullProj",
@@ -377,7 +358,6 @@ func TestFinishBootstrap_SandboxErrorFailsSession(t *testing.T) {
 	}
 	root := t.TempDir()
 	skills := NewAgentService(filepath.Join(root, "profiles"))
-	org := NewOrgService(filepath.Join(root, "profiles"), skills)
 	projects := NewProjectService(db)
 	pm := NewPmService(db, skills)
 
@@ -388,7 +368,7 @@ func TestFinishBootstrap_SandboxErrorFailsSession(t *testing.T) {
 			{Sandbox: models.Sandbox{ID: 7, Status: "error", Error: "pull denied"}},
 		},
 	}
-	team := NewTeamService(projects, skills, org, pm, fake)
+	team := NewTeamService(projects, skills, pm, fake)
 
 	sess, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{
 		ProjectName: "ErrProj",

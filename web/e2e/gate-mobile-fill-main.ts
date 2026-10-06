@@ -26,6 +26,8 @@ const gate: Gate = {
   // Hot session so mobile-fill drawer exposes ReviewComposer reject/pass (f9).
   reactSessionAlive: true,
   reactUpstreamNodeId: 'visual',
+  upstreamNodeId: 'visual',
+  upstreamIteration: 1,
 }
 
 const run = {

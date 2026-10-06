@@ -9,7 +9,7 @@ import (
 // hasRemainingHumanGate reports whether a node with Type=="human_gate" is
 // reachable forward from fromNodeID (inclusive) on the given graph snapshot.
 //
-// Reachability follows OutEdges targets. Only human_gate counts — proposal_select, ReAct review waits, and platform
+// Reachability follows OutEdges targets. Only human_gate counts — ReAct review waits and platform
 // auto gates do not. Missing/empty graph, missing from node, or unresolvable
 // structure returns false (conservative: avoid falsely prioritizing).
 // Cycles terminate via a visited set.

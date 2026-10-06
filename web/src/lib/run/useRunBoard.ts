@@ -1,5 +1,5 @@
 import { getCurrentInstance, onUnmounted, ref, type Ref } from 'vue'
-import { api, isPaginated } from '@/lib/api/api'
+import { api } from '@/lib/api/api'
 import { i18n } from '@/lib/shared/i18n'
 import { isAbortError, createTimeoutController, LoadingTimeoutError } from '@/lib/shared/loadingRequest'
 import {
@@ -86,9 +86,8 @@ async function fetchColumn(
     projectId,
     signal,
   })
-  let items = isPaginated(data) ? data.items : data
-  const total = isPaginated(data) ? data.total : data.length
-  const hasMore = isPaginated(data) ? data.hasMore : false
+  let items = data.items
+  const { total, hasMore } = data
   if (query.localSort) {
     items = sortRunsByStartedAtDesc(items)
   }

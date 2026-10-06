@@ -10,7 +10,7 @@ import (
 	"github.com/cocofhu/grasp/internal/services"
 )
 
-// TestTeamEmbedMatchesAgentsSource guards agents/ ↔ team_embed/ drift (PM + 9 engineers).
+// TestTeamEmbedMatchesAgentsSource guards agents/ ↔ team_embed/ drift (PM + every engineer template).
 func TestTeamEmbedMatchesAgentsSource(t *testing.T) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {

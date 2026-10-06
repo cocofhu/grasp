@@ -84,7 +84,7 @@ describe('TeamBootstrapPanel interactions', () => {
     expect(w.text()).toContain('created')
     expect(w.text()).toContain('mcp setup')
     expect(w.text()).toContain('agent · lead')
-    expect(w.emitted('refreshOrg')).toHaveLength(1)
+    expect(w.emitted('refresh')).toHaveLength(1)
 
     await vi.advanceTimersByTimeAsync(800)
     await flushPromises()
@@ -121,7 +121,7 @@ describe('TeamBootstrapPanel interactions', () => {
     expect(mocks.retry).toHaveBeenCalledTimes(1)
     release(session('running', { resources: [{ name: 'x', kind: 'agent' }] }))
     await flushPromises()
-    expect(w.emitted('refreshOrg')).toBeTruthy()
+    expect(w.emitted('refresh')).toBeTruthy()
 
     mocks.get.mockResolvedValueOnce(session('failed'))
     await vi.advanceTimersByTimeAsync(800)

@@ -140,7 +140,7 @@ type TokenStatsResult struct {
 type tokenUsageRow struct {
 	ts           time.Time
 	usage        models.TokenUsage
-	byModel      models.TokenUsageByModel // effective (legacy → unknown)
+	byModel      models.TokenUsageByModel // effective (unattributed → unknown)
 	workflowID   string
 	workflowName string
 	source       string // workflow | pm

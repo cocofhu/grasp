@@ -1491,8 +1491,8 @@ describe('PmLeaderChat tail window + lazyload', () => {
     wrapper.unmount()
   })
 
-  it('Channel first load keeps full list without limit/lazyload tip', async () => {
-    const items = Array.from({ length: 30 }, (_, i) => ({
+  it('Channel first load uses the newest window and shows the lazyload tip', async () => {
+    const items = Array.from({ length: 20 }, (_, i) => ({
       id: `c-${i}`,
       role: 'user',
       content: `qq-${i}`,
@@ -1508,15 +1508,14 @@ describe('PmLeaderChat tail window + lazyload', () => {
         },
       ],
     })
-    apiMocks.listPmMessages.mockResolvedValue({ items })
+    apiMocks.listPmMessages.mockResolvedValue({ items, hasMore: true })
 
     const wrapper = mountChat()
     await flushPromises()
 
-    expect(apiMocks.listPmMessages).toHaveBeenCalledWith('proj-1', 'thr-qq')
-    expect(apiMocks.listPmMessages.mock.calls[0].length).toBe(2)
-    expect(wrapper.find('[data-testid="pm-history-tip"]').exists()).toBe(false)
-    expect(wrapper.findAll('[data-msg-id]').length).toBe(30)
+    expect(apiMocks.listPmMessages).toHaveBeenCalledWith('proj-1', 'thr-qq', { limit: 20 })
+    expect(wrapper.find('[data-testid="pm-history-tip"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-msg-id]').length).toBe(20)
     wrapper.unmount()
   })
 

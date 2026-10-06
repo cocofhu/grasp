@@ -43,7 +43,7 @@ type testRepoInput struct {
 
 // resolveTestRepos picks the clone list for interactive test sandboxes:
 // non-empty repos[] (trimmed, deduped by name, skip partial rows) wins over
-// legacy repoUrl (ReposFromURL), then an empty list (pure artifact workspace).
+// the single repoUrl (ReposFromURL), then an empty list (pure artifact workspace).
 func resolveTestRepos(repos []testRepoInput, repoURL string) []sandbox.RepoSpec {
 	if len(repos) > 0 {
 		seen := map[string]bool{}
@@ -428,8 +428,7 @@ func (h *Handlers) SandboxProxy(c *gin.Context) {
 	h.serveSandboxUpstream(c, id, "IDE", dialAddr, row.Token)
 }
 
-// SandboxACPProxy reverse-proxies /sandbox-bridge/:id/* and /sandbox-acp/:id/*
-// to the sandbox's in-container acp-bridge server (port 8765). This exposes the
+// SandboxACPProxy reverse-proxies /sandbox-bridge/:id/* to the sandbox's in-container acp-bridge server (port 8765). This exposes the
 // native ACP web UI (and its /ws + /api/* endpoints) directly in the browser,
 // complementing the platform-mediated chat tester. The mount prefix is stripped
 // so acp-bridge sees root paths; its web UI resolves assets/WS against
@@ -463,10 +462,7 @@ func (h *Handlers) SandboxACPProxy(c *gin.Context) {
 // before the reverse proxy runs (remote-dev SandboxProxy / VibeCodingProxy).
 func (h *Handlers) serveSandboxUpstream(c *gin.Context, sandboxID uint, channel, dialAddr, password string) {
 	idStr := strconv.FormatUint(uint64(sandboxID), 10)
-	acpMount := "/sandbox-acp/" + idStr
-	if strings.HasPrefix(c.Request.URL.Path, "/sandbox-bridge/") {
-		acpMount = "/sandbox-bridge/" + idStr
-	}
+	acpMount := "/sandbox-bridge/" + idStr
 	if strings.TrimSpace(password) != "" {
 		switch channel {
 		case "IDE":
@@ -532,13 +528,7 @@ func (h *Handlers) serveSandboxUpstream(c *gin.Context, sandboxID uint, channel,
 	case "IDE":
 		mountPrefix = sandboxMountPrefix(sandboxID)
 	case "ACP":
-		// Prefer the request's actual mount (/sandbox-bridge or legacy /sandbox-acp).
-		idStr := strconv.FormatUint(uint64(sandboxID), 10)
-		if strings.HasPrefix(c.Request.URL.Path, "/sandbox-bridge/") {
-			mountPrefix = "/sandbox-bridge/" + idStr
-		} else {
-			mountPrefix = "/sandbox-acp/" + idStr
-		}
+		mountPrefix = acpMount
 	}
 
 	orig := proxy.Director
@@ -561,7 +551,7 @@ func (h *Handlers) serveSandboxUpstream(c *gin.Context, sandboxID uint, channel,
 		}
 	}
 
-	// Strip the /sandbox/:id (or /sandbox-bridge|/sandbox-acp/:id) mount prefix
+	// Strip the /sandbox/:id (or /sandbox-bridge/:id) mount prefix
 	// so the upstream sees root paths.
 	path := c.Param("path")
 	if path == "" {

@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// reviewGraph: input → proposal (review on) → output.
+// reviewGraph: input → research (review on) → output.
 func reviewGraph() models.Graph {
 	return models.Graph{
 		Variables: []models.Variable{
@@ -21,7 +21,7 @@ func reviewGraph() models.Graph {
 		},
 		Nodes: []models.Node{
 			{ID: "input", Type: "input", Label: "输入"},
-			{ID: "prop", Type: "agent", Caps: capsProposal, Label: "方案", Config: map[string]any{"agent_profile": "pm-agent", "prompt": "给方案"}},
+			{ID: "prop", Type: "agent", Caps: capsResearch, Label: "调研", Config: map[string]any{"agent_profile": "pm-agent", "prompt": "做调研"}},
 			{ID: "output", Type: "output", Label: "输出"},
 		},
 		Edges: []models.Edge{
@@ -38,7 +38,7 @@ func setupReviewEngine(t *testing.T) (*Engine, *gorm.DB, *fakeProvider) {
 		t.Fatalf("open db: %v", err)
 	}
 	g := reviewGraph()
-	wf := models.WorkflowDef{ID: "review-wf", Name: "review-wf", Status: "published", Version: 1, Graph: g}
+	wf := models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "review-wf", Name: "review-wf", Version: 1, PublishedVersion: 1, Graph: g}
 	if err := db.Create(&wf).Error; err != nil {
 		t.Fatalf("create workflow: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestReviewEnterReviseFinish(t *testing.T) {
 	}
 
 	// A revise turn with an annotation keeps the node paused (in-place edit).
-	anns := []models.ReactAnnotation{{JSONPath: "proposals[p2]", Note: "把 B 说得更具体"}}
+	anns := []models.ReactAnnotation{{JSONPath: "findings[r1]", Note: "把发现说得更具体"}}
 	if err := eng.ReactReply(run.ID, "prop", "按标注改一下", nil, anns, false); err != nil {
 		t.Fatalf("revise reply: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestReviewEnterReviseFinish(t *testing.T) {
 	db.Where("run_id = ? AND node_id = ?", run.ID, "prop").First(&conv)
 	var sawAnnotation bool
 	for _, m := range conv.Messages {
-		if m.Role == "human" && len(m.Annotations) == 1 && m.Annotations[0].JSONPath == "proposals[p2]" {
+		if m.Role == "human" && len(m.Annotations) == 1 && m.Annotations[0].JSONPath == "findings[r1]" {
 			sawAnnotation = true
 		}
 	}
@@ -127,8 +127,8 @@ func TestReviewEnterReviseFinish(t *testing.T) {
 	}
 
 	// The reserved product survived the review and remains in the store.
-	if _, ok := arts(db, run.ID, mcp.ProposalsArtifactName); !ok {
-		t.Fatalf("proposals.json missing after review finish")
+	if _, ok := arts(db, run.ID, mcp.ResearchArtifactName); !ok {
+		t.Fatalf("research.json missing after review finish")
 	}
 }
 
@@ -309,26 +309,28 @@ func arts(db *gorm.DB, runID, name string) (models.Artifact, bool) {
 	return a, true
 }
 
-// gateReactGraph: input → proposal → proposal_select (manual) → output.
+// gateReactGraph: input → research → human_gate → output.
 // No review control variable: the producer's session is kept alive solely via
-// hasDownstreamReactGate so the select gate can issue a ReAct reject.
+// hasDownstreamReactGate so the gate can issue a ReAct reject.
 func gateReactGraph() models.Graph {
 	return models.Graph{
 		Variables: []models.Variable{
 			{Name: "idea", Type: "paragraph", Ask: true, Required: true, Editable: true},
-			{Name: "auto_confirm", Type: "bool", Value: false},
 		},
 		Nodes: []models.Node{
 			{ID: "input", Type: "input", Label: "输入"},
-			{ID: "prop", Type: "agent", Caps: capsProposalAuto, Label: "方案", Config: map[string]any{"agent_profile": "pm-agent", "prompt": "给方案"}},
-			{ID: "select", Type: "proposal_select", Label: "确认",
-				Config: map[string]any{"auto_var": "auto_confirm", "output_var": "selected_proposal"}},
+			{ID: "prop", Type: "agent", Caps: capsResearchAuto, Label: "调研", Config: map[string]any{"agent_profile": "pm-agent", "prompt": "做调研"}},
+			{ID: "select", Type: "human_gate", Label: "确认", Config: map[string]any{
+				"title":         "确认调研",
+				"body_template": "{{nodes.prop.outputs.research}}",
+				"actions":       []any{map[string]any{"id": "approve", "label": "通过"}},
+			}},
 			{ID: "output", Type: "output", Label: "输出"},
 		},
 		Edges: []models.Edge{
 			{ID: "e1", Source: "input", Target: "prop"},
 			{ID: "e2", Source: "prop", Target: "select"},
-			{ID: "e3", Source: "select", Target: "output"},
+			{ID: "e3", Source: "select", SourceHandle: "approve", Target: "output"},
 		},
 	}
 }
@@ -340,7 +342,7 @@ func setupGateReactEngine(t *testing.T) (*Engine, *gorm.DB, *fakeProvider) {
 		t.Fatalf("open db: %v", err)
 	}
 	g := gateReactGraph()
-	wf := models.WorkflowDef{ID: "gate-react-wf", Name: "gate-react-wf", Status: "published", Version: 1, Graph: g}
+	wf := models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "gate-react-wf", Name: "gate-react-wf", Version: 1, PublishedVersion: 1, Graph: g}
 	if err := db.Create(&wf).Error; err != nil {
 		t.Fatalf("create workflow: %v", err)
 	}
@@ -355,7 +357,7 @@ func setupGateReactEngine(t *testing.T) (*Engine, *gorm.DB, *fakeProvider) {
 	return eng, db, provider
 }
 
-// TestGateReactReviseInPlace: a pending proposal_select can push a ReAct reject
+// TestGateReactReviseInPlace: a pending human_gate can push a ReAct reject
 // into the upstream producer; the gate stays pending and the producer session
 // is retired only when the gate is finally resolved.
 func TestGateReactReviseInPlace(t *testing.T) {
@@ -375,7 +377,7 @@ func TestGateReactReviseInPlace(t *testing.T) {
 		t.Fatalf("GateReactInfo = (%q, %v), want (prop, true)", pid, alive)
 	}
 
-	anns := []models.ReactAnnotation{{JSONPath: "proposals[p1]", Note: "标题更具体"}}
+	anns := []models.ReactAnnotation{{JSONPath: "findings[r1]", Note: "标题更具体"}}
 	if err := eng.GateReactRevise(run.ID, "select", "按标注改", nil, anns); err != nil {
 		t.Fatalf("GateReactRevise: %v", err)
 	}
@@ -398,7 +400,7 @@ func TestGateReactReviseInPlace(t *testing.T) {
 	}
 	var sawAnn bool
 	for _, m := range conv.Messages {
-		if m.Role == "human" && len(m.Annotations) == 1 && m.Annotations[0].JSONPath == "proposals[p1]" {
+		if m.Role == "human" && len(m.Annotations) == 1 && m.Annotations[0].JSONPath == "findings[r1]" {
 			sawAnn = true
 		}
 	}
@@ -407,7 +409,7 @@ func TestGateReactReviseInPlace(t *testing.T) {
 	}
 
 	// Approve retires the upstream parked session.
-	if err := eng.ResumeGate(run.ID, "select", "p1", nil); err != nil {
+	if err := eng.ResumeGate(run.ID, "select", "approve", nil); err != nil {
 		t.Fatalf("ResumeGate: %v", err)
 	}
 	waitRunStatus(t, db, run.ID, "completed")
@@ -420,35 +422,22 @@ func TestGateReactReviseInPlace(t *testing.T) {
 	}
 }
 
-// TestNodeProducesArtifactAndDownstreamGateKeepAlive covers the pre-artifact
-// binding used while a producer is still running (proposal_select source not
-// written yet) plus the direct helper.
-func TestNodeProducesArtifactAndDownstreamGateKeepAlive(t *testing.T) {
+// TestDownstreamGateKeepAlive: a producer bound by a downstream human_gate
+// body template keeps its session alive for a ReAct reject.
+func TestDownstreamGateKeepAlive(t *testing.T) {
 	eng, _, _ := setupGateReactEngine(t)
-	prop := &models.Node{ID: "prop", Type: "agent", Caps: capsProposal}
-	if !eng.nodeProducesArtifact(prop, mcp.ProposalsArtifactName) {
-		t.Fatalf("proposal node should produce proposals.json")
-	}
-	if eng.nodeProducesArtifact(prop, "plan.json") {
-		t.Fatalf("proposal node should not produce plan.json")
-	}
-	if eng.nodeProducesArtifact(nil, mcp.ProposalsArtifactName) {
-		t.Fatalf("nil node must not produce")
-	}
-
-	// Build an execCtx-shaped graph check via hasDownstreamReactGate.
 	c := &execCtx{
 		graph: models.Graph{
 			Nodes: []models.Node{
-				{ID: "prop", Type: "agent", Caps: capsProposal},
-				{ID: "select", Type: "proposal_select", Config: map[string]any{}},
+				{ID: "prop", Type: "agent", Caps: capsResearch},
+				{ID: "select", Type: "human_gate", Config: map[string]any{"body_template": "{{nodes.prop.outputs.research}}"}},
 			},
 			Edges: []models.Edge{{ID: "e", Source: "prop", Target: "select"}},
 		},
 		run: &models.Run{ID: "r-keep"},
 	}
 	if !eng.hasDownstreamReactGate(c, &c.graph.Nodes[0]) {
-		t.Fatalf("proposal → proposal_select should keep-alive even before artifact exists")
+		t.Fatalf("research → human_gate should keep-alive")
 	}
 }
 

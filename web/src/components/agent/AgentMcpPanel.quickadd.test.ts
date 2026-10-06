@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { reactive } from 'vue'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-import { ARTIFACT_STORE, LEGACY_PM_LEADER, type AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
+import { ARTIFACT_STORE, type AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
 import AgentMcpPanel from './AgentMcpPanel.vue'
 
 /** Reactive so component-side mutations and test-side edits both re-render. */
@@ -23,14 +23,14 @@ function draft(over: Partial<AgentStudioDraft> = {}): AgentStudioDraft {
   }) as AgentStudioDraft
 }
 
-function mountPanel(d: AgentStudioDraft, isProjectBound = true) {
+function mountPanel(d: AgentStudioDraft) {
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
     messages: { 'zh-CN': { ...common, ...pages } },
   })
   return mount(AgentMcpPanel, {
-    props: { draft: d, isProjectBound },
+    props: { draft: d },
     global: {
       plugins: [i18n],
       stubs: {
@@ -84,21 +84,6 @@ describe('AgentMcpPanel', () => {
     w.unmount()
   })
 
-  it('refuses platform MCPs until the agent is bound to a project', async () => {
-    const d = draft({ projectId: '' })
-    const w = mountPanel(d, false)
-    await flushPromises()
-
-    expect(w.find('[data-test="mcp-project-required-warn"]').exists()).toBe(true)
-    expect(w.get('[data-test="mcp-add-memory"]').attributes('disabled')).toBeDefined()
-
-    ;(w.vm as any).addAgentPlatformMcp('memory-store')
-    await flushPromises()
-    expect(d.mcp).toHaveLength(0)
-    expect(w.emitted('toast')).toHaveLength(1)
-    w.unmount()
-  })
-
   it('adds each platform MCP at most once', async () => {
     const d = draft()
     const w = mountPanel(d)
@@ -130,42 +115,6 @@ describe('AgentMcpPanel', () => {
     ;(w.vm as any).addAgentPlatformMcp('nope' as never)
     expect(d.mcp).toHaveLength(0)
     expect(w.emitted('toast')).toBeFalsy()
-    w.unmount()
-  })
-
-  it('upgrades a legacy pm-leader entry into the platform presets', async () => {
-    const d = draft({
-      mcp: [
-        { name: LEGACY_PM_LEADER, transport: 'url', url: 'u', headers: [], command: '', args: '', env: [] },
-      ] as never,
-    })
-    const w = mountPanel(d)
-    await flushPromises()
-
-    expect(w.find('[data-test="mcp-legacy-pm-hint"]').exists()).toBe(true)
-    await w.get('[data-test="mcp-upgrade-legacy"]').trigger('click')
-    await flushPromises()
-
-    expect(d.mcp.map((m) => m.name)).toEqual(['memory-store', 'context-store', 'task-scheduler'])
-    expect(w.find('[data-test="mcp-legacy-pm-hint"]').exists()).toBe(false)
-    expect(w.emitted('toast')).toHaveLength(1)
-    w.unmount()
-  })
-
-  it('keeps presets that already exist while upgrading', async () => {
-    const d = draft({
-      mcp: [
-        { name: LEGACY_PM_LEADER, transport: 'url', url: 'u', headers: [], command: '', args: '', env: [] },
-        { name: 'memory-store', transport: 'url', url: 'm', headers: [], command: '', args: '', env: [] },
-      ] as never,
-    })
-    const w = mountPanel(d)
-    await flushPromises()
-    await w.get('[data-test="mcp-upgrade-legacy"]').trigger('click')
-    await flushPromises()
-
-    expect(d.mcp.filter((m) => m.name === 'memory-store')).toHaveLength(1)
-    expect(d.mcp[0].url).toBe('m')
     w.unmount()
   })
 

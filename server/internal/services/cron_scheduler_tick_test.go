@@ -13,7 +13,7 @@ func TestCronSchedulerTickClaimsDueJob(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("CronTick", "", nil, nil)
+	p, err := ps.Create("CronTick", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

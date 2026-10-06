@@ -25,7 +25,7 @@ func setupRecEngine(t *testing.T, g models.Graph, fp *fakeProvider) (*Engine, *g
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	wf := models.WorkflowDef{ID: "wf", Name: "wf", Status: "published", Version: 1, Graph: g}
+	wf := models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf", Name: "wf", Version: 1, PublishedVersion: 1, Graph: g}
 	if err := db.Create(&wf).Error; err != nil {
 		t.Fatalf("create workflow: %v", err)
 	}

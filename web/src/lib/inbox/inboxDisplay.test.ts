@@ -39,7 +39,7 @@ describe('inboxSecondaryLine', () => {
 })
 
 describe('inboxBadgeLabelKey', () => {
-  it('maps gate to gateType (proposal_select / human gate)', () => {
+  it('maps gate to gateType', () => {
     expect(inboxBadgeLabelKey({ type: 'gate' })).toBe('pages.gatesInbox.gateType')
   })
 

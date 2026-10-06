@@ -38,8 +38,8 @@ Inbox operators can mint a one-shot external approval URL for a single pending
   same Allow(preset, action) check: `react_only` may reply/cancel but every
   decide and every Live write (generate / accept / discard / steer, including
   discard-all) is rejected with `403 permission_denied` **before** ConsumeCAS, so the
-  one-shot token is not marked used and the gate does not advance. Empty /
-  missing presets on legacy rows mean `full`. Regenerating immediately revokes
+  one-shot token is not marked used and the gate does not advance. The preset is
+  required when minting. Regenerating immediately revokes
   the previous URL and reuses the same TTL tier **and** permission preset from
   the new mint time (change permission only via Create). Revoke, expiry,
   successful decide, login-side resume, run cancel/complete, or a new gate

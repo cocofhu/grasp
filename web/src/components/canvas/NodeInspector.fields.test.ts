@@ -125,17 +125,16 @@ describe('NodeInspector · control and collaboration fields', () => {
     expect(target.config.auto_leftover_draft).toBe(true)
   })
 
-  it('offers human gate and proposal outputs as goal variables to agents', async () => {
+  it('offers human gate outputs as goal variables to agents', async () => {
     const gate = node('human_gate', { actions: [], form: [{ key: 'notes' }] }, 'g')
-    const pick = node('proposal_select', {}, 'p')
     const target = node('agent', { agent_profile: '', prompt: '' }, 'a')
-    const w = mountInspector(target, [gate, pick, target])
+    const w = mountInspector(target, [gate, target])
     const ta = w.find('[data-testid="goal-input"]')
     const el = ta.element as HTMLTextAreaElement
     el.value = '{{'
     el.setSelectionRange(2, 2)
     await ta.trigger('input')
     const text = w.find('[data-testid="goal-suggest"]').text()
-    for (const v of ['action', 'notes', 'selected_proposal']) expect(text).toContain(`{{vars.${v}}}`)
+    for (const v of ['action', 'notes']) expect(text).toContain(`{{vars.${v}}}`)
   })
 })

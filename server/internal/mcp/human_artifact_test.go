@@ -63,16 +63,6 @@ func TestValidateHumanArtifactContent_allStructured(t *testing.T) {
 			"clarified_requirement",
 		},
 		{
-			ProposalsArtifactName,
-			`{"context":"c","proposals":[{"title":"A","summary":"s"}]}`,
-			"proposals",
-		},
-		{
-			ProposalArtifactName,
-			`{"title":"chosen","summary":"s","status":"accepted"}`,
-			"proposal",
-		},
-		{
 			TestResultArtifactName,
 			`{"summary":"ok","cases":[{"name":"c1","status":"passed"}]}`,
 			"test_result",
@@ -125,12 +115,6 @@ func TestValidateHumanArtifactContent_freeformJSON(t *testing.T) {
 	norm, err = ValidateHumanArtifactContent("plain.txt", "hello")
 	if err != nil || norm.Kind != "text" {
 		t.Fatalf("text: %+v err=%v", norm, err)
-	}
-}
-
-func TestValidateHumanArtifactContent_proposalNeedsTitleOrSummary(t *testing.T) {
-	if _, err := ValidateHumanArtifactContent(ProposalArtifactName, `{"id":"p1"}`); err == nil {
-		t.Fatal("expected title/summary required")
 	}
 }
 

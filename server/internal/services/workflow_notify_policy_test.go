@@ -15,11 +15,11 @@ func TestUpdateNotifyPolicyDoesNotDemotePublished(t *testing.T) {
 	svc := NewWorkflowService(db)
 
 	wf := models.WorkflowDef{
-		ID:        "wf-notify-only",
-		ProjectID: models.DefaultProjectID,
-		Name:      "SelfIter",
-		Status:    "published",
-		Version:   3,
+		ID:               "wf-notify-only",
+		ProjectID:        models.DefaultProjectID,
+		Name:             "SelfIter",
+		Version:          3,
+		PublishedVersion: 3,
 		Graph: models.Graph{
 			Nodes: []models.Node{
 				{ID: "in", Type: "input", Label: "Fresh Start"},
@@ -46,8 +46,8 @@ func TestUpdateNotifyPolicyDoesNotDemotePublished(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateNotifyPolicy: %v", err)
 	}
-	if got.Status != "published" {
-		t.Fatalf("status demoted to %q", got.Status)
+	if got.Status() != "published" {
+		t.Fatalf("status demoted to %q", got.Status())
 	}
 	if got.Version != 3 {
 		t.Fatalf("version mutated to %d", got.Version)
@@ -63,8 +63,8 @@ func TestUpdateNotifyPolicyDoesNotDemotePublished(t *testing.T) {
 	if !ok {
 		t.Fatal("missing after update")
 	}
-	if reloaded.Status != "published" || reloaded.Graph.Nodes[0].Label != "Fresh Start" {
-		t.Fatalf("persisted row corrupted: status=%s label=%s", reloaded.Status, reloaded.Graph.Nodes[0].Label)
+	if reloaded.Status() != "published" || reloaded.Graph.Nodes[0].Label != "Fresh Start" {
+		t.Fatalf("persisted row corrupted: status=%s label=%s", reloaded.Status(), reloaded.Graph.Nodes[0].Label)
 	}
 }
 

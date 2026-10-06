@@ -15,12 +15,9 @@ const (
 	ActionLive = "live"
 )
 
-// ParsePermissionPreset validates a create-time preset. Empty → full (default).
+// ParsePermissionPreset validates a create-time preset (required).
 func ParsePermissionPreset(raw string) (string, bool) {
 	p := strings.TrimSpace(raw)
-	if p == "" {
-		return models.SharePermissionFull, true
-	}
 	switch p {
 	case models.SharePermissionFull, models.SharePermissionReactOnly:
 		return p, true
@@ -29,21 +26,10 @@ func ParsePermissionPreset(raw string) (string, bool) {
 	}
 }
 
-// NormalizePermissionPreset maps stored / empty values for read paths.
-// Unknown legacy values fall back to full so existing links stay usable.
-func NormalizePermissionPreset(raw string) string {
-	p, ok := ParsePermissionPreset(raw)
-	if !ok {
-		return models.SharePermissionFull
-	}
-	return p
-}
-
 // Allow reports whether preset permits the given public action.
 // full: reply + cancel + decide + live.
 // react_only: reply + cancel only; decide and Live writes are denied.
 func Allow(preset, action string) bool {
-	preset = NormalizePermissionPreset(preset)
 	switch strings.TrimSpace(action) {
 	case ActionReply, ActionCancel:
 		return true

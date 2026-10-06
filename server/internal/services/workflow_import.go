@@ -13,30 +13,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// MigrateOutputNodes promotes legacy config.result on output nodes to config.results.
-func MigrateOutputNodes(g *models.Graph) {
-	for i := range g.Nodes {
-		if g.Nodes[i].Type != "output" {
-			continue
-		}
-		cfg := g.Nodes[i].Config
-		if cfg == nil {
-			cfg = map[string]any{}
-			g.Nodes[i].Config = cfg
-		}
-		if raw, ok := cfg["results"].([]any); ok && len(raw) > 0 {
-			continue
-		}
-		if s := strings.TrimSpace(fmt.Sprint(cfg["result"])); s != "" {
-			cfg["results"] = []any{s}
-		} else {
-			cfg["results"] = []any{}
-		}
-	}
-}
-
-// LiftInputVariables promotes variables stored inside the input node config to
-// Graph.Variables, then drops the duplicate from node config.
+// LiftInputVariables moves the editor's input-node variables into
+// Graph.Variables. The editor DTO (handlers.graphNodesDTO) mirrors
+// Graph.Variables into the input node config, so SaveWorkflow lifts them back.
 func LiftInputVariables(g *models.Graph) {
 	for i := range g.Nodes {
 		if g.Nodes[i].Type != "input" {
@@ -49,7 +28,6 @@ func LiftInputVariables(g *models.Graph) {
 			}
 			delete(g.Nodes[i].Config, "variables")
 		}
-		delete(g.Nodes[i].Config, "inputs")
 		return
 	}
 }
@@ -118,8 +96,6 @@ func (s *WorkflowService) Import(raw []byte, projectID string) (models.WorkflowD
 		if err != nil {
 			return err
 		}
-		LiftInputVariables(&graph)
-		MigrateOutputNodes(&graph)
 		now := time.Now()
 		newWF = models.WorkflowDef{
 			ID:          "wf-" + uuid.NewString()[:8],
@@ -128,13 +104,11 @@ func (s *WorkflowService) Import(raw []byte, projectID string) (models.WorkflowD
 			Description: env.Description,
 			NeedsRepo:   env.NeedsRepo,
 			ShowOnHome:  false, // import never inherits Home visibility (plan g1.3)
-			Status:      "draft",
-			Version:     1,
 			Graph:       graph,
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
-		return tx.Create(&newWF).Error
+		return createWorkflowWithHead(tx, &newWF, models.VersionSourceImport)
 	})
 	return newWF, err
 }

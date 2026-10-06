@@ -11,7 +11,7 @@ import (
 func setupWorkspaceAgent(t *testing.T, name string) *AgentService {
 	t.Helper()
 	s := NewAgentService(t.TempDir())
-	if err := s.Save(Agent{Name: name, ProjectID: "proj-1", MCP: []MCPServer{{Name: "keep-me", URL: "http://x"}}}); err != nil {
+	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: name, ProjectID: "proj-1", MCP: []MCPServer{{Name: "keep-me", URL: "http://x"}}}); err != nil {
 		t.Fatal(err)
 	}
 	return s

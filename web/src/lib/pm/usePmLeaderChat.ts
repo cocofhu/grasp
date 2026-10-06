@@ -87,10 +87,10 @@ const scroller = ref<HTMLElement | null>(null)
 const STICK_THRESHOLD = 48
 /** Align with approved Demo: near-top auto lazyload threshold (px). */
 const TOP_THRESHOLD = 56
-/** Fixed page size for non-Channel PM sessions (message rows). */
+/** Fixed page size for PM session message windows. */
 const PAGE_SIZE = 20
 const stickToBottom = ref(true)
-/** True when older messages remain beyond the loaded window (non-Channel only). */
+/** True when older messages remain beyond the loaded window. */
 const hasMoreEarlier = ref(false)
 const historyLoading = ref(false)
 const historyLoadFailed = ref(false)
@@ -326,10 +326,9 @@ const showEmptyHint = computed(
     !messages.value.length &&
     !showStreamBubble.value,
 )
-/** Top non-button history tip (Demo four-state); Channel never shows it. */
+/** Top non-button history tip (Demo four-state). */
 const showHistoryTip = computed(
   () =>
-    !activeIsChannel.value &&
     mainViewState.value === 'content' &&
     !showEmptyHint.value &&
     (messages.value.length > 0 || historyLoading.value || historyLoadFailed.value),
@@ -501,15 +500,10 @@ async function loadMessages(tid: string) {
   historyLoadFailed.value = false
   historyLoading.value = false
   try {
-    const th = threads.value.find((x) => x.id === tid)
-    const channel = isChannelThread(th)
-    // Channel: keep full-list strategy. Non-Channel: newest-tail window of PAGE_SIZE.
-    const res = channel
-      ? await api.listPmMessages(props.projectId, tid)
-      : await api.listPmMessages(props.projectId, tid, { limit: PAGE_SIZE })
+    const res = await api.listPmMessages(props.projectId, tid, { limit: PAGE_SIZE })
     if (gen !== threadLoadGen || tid !== activeId.value) return
     messages.value = res.items || []
-    hasMoreEarlier.value = channel ? false : !!res.hasMore
+    hasMoreEarlier.value = !!res.hasMore
   } catch {
     if (gen !== threadLoadGen || tid !== activeId.value) return
     messagesLoadFailed.value = true
@@ -542,7 +536,6 @@ async function loadEarlier() {
   if (
     historyLoading.value ||
     !hasMoreEarlier.value ||
-    activeIsChannel.value ||
     !activeId.value ||
     messagesLoading.value ||
     !messages.value.length
@@ -823,19 +816,16 @@ function clearFinalizingStream() {
   resuming.value = false
 }
 
-/** Tail refetch merged into the loaded window (full list for channel threads). */
+/** Tail refetch merged into the loaded window. */
 async function refreshMessages(): Promise<boolean> {
   if (!activeId.value) return false
   const tid = activeId.value
   const gen = threadLoadGen
-  const channel = isChannelThread(threads.value.find((x) => x.id === tid))
-  const res = channel
-    ? await api.listPmMessages(props.projectId, tid)
-    : await api.listPmMessages(props.projectId, tid, { limit: PAGE_SIZE })
+  const res = await api.listPmMessages(props.projectId, tid, { limit: PAGE_SIZE })
   if (gen !== threadLoadGen || tid !== activeId.value) return false
   const incoming = res.items || []
-  messages.value = channel ? incoming : mergeMessagesKeepPrefix(messages.value, incoming)
-  if (!channel && typeof res.hasMore === 'boolean' && messages.value.length <= PAGE_SIZE) {
+  messages.value = mergeMessagesKeepPrefix(messages.value, incoming)
+  if (typeof res.hasMore === 'boolean' && messages.value.length <= PAGE_SIZE) {
     // Only trust hasMore when we have not prepended beyond the tail window.
     hasMoreEarlier.value = res.hasMore
   }

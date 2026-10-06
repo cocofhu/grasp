@@ -41,7 +41,7 @@ function mountView(doc: TestResultDoc, props: Record<string, unknown> = {}) {
   })
 }
 
-const LEGACY = 'aGVsbG8='
+const SHOT_ARTIFACTS = [artifact('a.png', 'a1'), artifact('b.png', 'b1'), artifact('c.png', 'c1')]
 
 beforeEach(() => {
   vi.stubGlobal(
@@ -174,19 +174,20 @@ describe('TestResultView', () => {
     w.unmount()
   })
 
-  it('renders legacy inline screenshots immediately and opens the lightbox', async () => {
-    const w = mountView({
-      screenshots: [
-        { data: LEGACY, mimeType: 'image/jpeg', caption: '首页' },
-        { data: LEGACY, caption: '详情页' },
-      ],
-    })
+  it('renders artifact screenshots and opens the lightbox', async () => {
+    const w = mountView(
+      {
+        screenshots: [
+          { artifact: 'a.png', mimeType: 'image/jpeg', caption: '首页' },
+          { artifact: 'b.png', caption: '详情页' },
+        ],
+      },
+      { artifacts: SHOT_ARTIFACTS, runStatus: 'completed' },
+    )
     await flushPromises()
     const vm = w.vm as any
 
-    expect(vm.shotStates.map((s: any) => s.status)).toEqual(['legacy', 'legacy'])
-    expect(vm.shotStates[0].src.startsWith('data:image/jpeg;base64,')).toBe(true)
-    expect(vm.shotStates[1].src.startsWith('data:image/png;base64,')).toBe(true)
+    expect(vm.shotStates.map((s: any) => s.status)).toEqual(['success', 'success'])
     expect(vm.galleryIndices).toEqual([0, 1])
     expect(w.find('[data-testid="lightbox"]').exists()).toBe(false)
 
@@ -207,9 +208,10 @@ describe('TestResultView', () => {
   })
 
   it('wraps around the gallery with arrow keys and ignores other keys', async () => {
-    const w = mountView({
-      screenshots: [{ data: LEGACY }, { data: LEGACY }, { data: LEGACY }],
-    })
+    const w = mountView(
+      { screenshots: [{ artifact: 'a.png' }, { artifact: 'b.png' }, { artifact: 'c.png' }] },
+      { artifacts: SHOT_ARTIFACTS, runStatus: 'completed' },
+    )
     await flushPromises()
     const vm = w.vm as any
 
@@ -241,7 +243,10 @@ describe('TestResultView', () => {
   })
 
   it('detaches the key listener on unmount', async () => {
-    const w = mountView({ screenshots: [{ data: LEGACY }, { data: LEGACY }] })
+    const w = mountView(
+      { screenshots: [{ artifact: 'a.png' }, { artifact: 'b.png' }] },
+      { artifacts: SHOT_ARTIFACTS, runStatus: 'completed' },
+    )
     await flushPromises()
     const vm = w.vm as any
     vm.openLightbox(0)
@@ -317,13 +322,12 @@ describe('TestResultView', () => {
 
   it('derives stable keys and captions for each screenshot slot', async () => {
     const w = mountView({
-      screenshots: [{ artifact: ' a.png ', caption: '有说明' }, { data: LEGACY }, {}],
+      screenshots: [{ artifact: ' a.png ', caption: '有说明' }, {}],
     })
     await flushPromises()
     const vm = w.vm as any
 
     expect(vm.shotKey({ artifact: ' a.png ' }, 0)).toBe('a.png')
-    expect(vm.shotKey({ data: LEGACY }, 1)).toBe('legacy-1')
     expect(vm.shotKey({}, 2)).toBe('shot-2')
 
     expect(vm.shotCaption({ caption: '有说明' }, 0)).toBe('有说明')

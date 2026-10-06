@@ -13,8 +13,14 @@ func TestParsePaginationDefaults(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("GET", "/?page=2", nil)
 	pg, ok := parsePagination(c)
-	if !ok || !pg.Active || pg.Page != 2 || pg.PageSize != defaultPageSize {
+	if !ok || pg.Page != 2 || pg.PageSize != defaultPageSize {
 		t.Fatalf("pg=%+v ok=%v", pg, ok)
+	}
+	c, _ = gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("GET", "/", nil)
+	pg, ok = parsePagination(c)
+	if !ok || pg.Page != 1 || pg.PageSize != defaultPageSize {
+		t.Fatalf("no params pg=%+v ok=%v", pg, ok)
 	}
 }
 

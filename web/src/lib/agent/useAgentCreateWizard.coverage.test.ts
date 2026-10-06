@@ -6,7 +6,6 @@ import { flushPromises } from '@vue/test-utils'
 const mocks = vi.hoisted(() => ({
   createAgent: vi.fn(),
   listAgentTeamTemplates: vi.fn(async () => ({ items: [] })),
-  inheritedEnv: [{ k: 'GIT_REPOS', v: 'repo|https://example.test/repo.git' }],
 }))
 
 vi.mock('vue-i18n', () => ({
@@ -20,10 +19,6 @@ vi.mock('@/lib/api/api', () => ({
   },
 }))
 
-vi.mock('@/lib/agent/useInheritedGitEnv', () => ({
-  useInheritedGitEnv: () => ({ inheritedEnv: { value: mocks.inheritedEnv } }),
-}))
-
 import { useAgentCreateWizard, type AgentCreateWizardProps } from './useAgentCreateWizard'
 
 function mountWizard(over: Partial<AgentCreateWizardProps> = {}) {
@@ -32,6 +27,7 @@ function mountWizard(over: Partial<AgentCreateWizardProps> = {}) {
   const props = reactive<AgentCreateWizardProps>({
     open: true,
     existingNames: [],
+    projects: [{ id: 'p1', name: 'P1' }],
     projectId: 'p1',
     ...over,
   })
@@ -191,7 +187,6 @@ describe('useAgentCreateWizard coverage', () => {
     wizard.onGitCredentialType('ssh')
     expect(wizard.draft.value.gitCredentialType).toBe('ssh')
     expect(wizard.draft.value.skipped.git).toBeUndefined()
-    expect(wizard.inheritedEnv.value).toEqual(mocks.inheritedEnv)
     expect(wizard.chipClass('ok')).toContain('border-ok')
     expect(wizard.chipClass('def')).toContain('border-accent')
     expect(wizard.chipClass('empty')).toContain('border-line')

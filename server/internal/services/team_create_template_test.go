@@ -3,11 +3,12 @@ package services
 import (
 	"testing"
 
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/nodereg"
 )
 
 func TestAllCreateTemplates_BuiltInAgentsDeclareCapabilities(t *testing.T) {
-	want := []string{"clarify", "implement", "test_review"}
+	want := []string{"clarify", "implement", "test_review", "deliver"}
 	all := AllCreateTemplates()
 	if len(all) != len(want) {
 		t.Fatalf("templates = %d, want %d", len(all), len(want))
@@ -26,16 +27,20 @@ func TestAllCreateTemplates_BuiltInAgentsDeclareCapabilities(t *testing.T) {
 			t.Fatalf("TeamRoleByID(%s) missing", r.ID)
 		}
 	}
-	if !all[0].Capabilities.Clarify() || all[1].Capabilities.Clarify() || all[2].Capabilities.Clarify() {
+	if !all[0].Capabilities.Clarify() || all[1].Capabilities.Clarify() || all[2].Capabilities.Clarify() || all[3].Capabilities.Clarify() {
 		t.Fatal("only 需求澄清 is a clarify Agent")
 	}
 	if !all[1].Capabilities.CommitsCode() {
 		t.Fatal("实现 must write implementation_result")
 	}
-	for _, r := range all {
+	for _, r := range all[:3] {
 		if !r.Capabilities.CanPreview() {
 			t.Fatalf("%s must be granted set_preview", r.ID)
 		}
+	}
+	deliver := all[3].Capabilities
+	if deliver.CanPreview() || len(deliver.Writes) != 1 || deliver.Writes[0].Schema != models.SchemaMergeRequest || !deliver.Writes[0].Required {
+		t.Fatalf("交付 must only require merge_request: %+v", deliver)
 	}
 }
 
@@ -63,7 +68,7 @@ func TestApplyCreateTemplate(t *testing.T) {
 
 func TestTeamEmbedPackageNames(t *testing.T) {
 	got := TeamEmbedPackageNames()
-	want := []string{TeamPMEmbedName, "ClarifyAgent", "ImplementAgent", "TestReviewAgent"}
+	want := []string{TeamPMEmbedName, "ClarifyAgent", "ImplementAgent", "TestReviewAgent", "DeliverAgent"}
 	if len(got) != len(want) {
 		t.Fatalf("packages = %v", got)
 	}

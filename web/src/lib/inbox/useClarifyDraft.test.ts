@@ -24,11 +24,11 @@ describe('useClarifyDraft', () => {
     const { annotations } = useClarifyDraft('run-ann', () => 'prop')
     expect(annotations.value).toEqual([])
 
-    addClarifyAnnotation('run-ann', 'prop', { jsonPath: 'proposals[p1]', label: 'A' })
-    addClarifyAnnotation('run-ann', 'prop', { jsonPath: 'proposals[p1]', label: 'A again' })
+    addClarifyAnnotation('run-ann', 'prop', { jsonPath: 'findings[r1]', label: 'A' })
+    addClarifyAnnotation('run-ann', 'prop', { jsonPath: 'findings[r1]', label: 'A again' })
     addClarifyAnnotation('run-ann', 'prop', { selector: '#hero', label: 'Hero' })
     expect(annotations.value).toHaveLength(2)
-    expect(annotations.value[0].jsonPath).toBe('proposals[p1]')
+    expect(annotations.value[0].jsonPath).toBe('findings[r1]')
     expect(annotations.value[1].selector).toBe('#hero')
 
     annotations.value = []

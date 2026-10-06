@@ -41,12 +41,6 @@ const PROJECT_TABS = [
   'meta',
 ] as const
 type Tab = (typeof PROJECT_TABS)[number]
-/** Legacy deep-link id; no longer a visible top-bar tab. */
-const LEGACY_PM_SETTINGS_TAB = 'pmSettings'
-/** Legacy project-memory deep-link; removed tab — fall back to board + migration banner. */
-const LEGACY_PM_MEMORY_TAB = 'pmMemory'
-/** Legacy project sandbox-env tab; replaced by shared Agent config. */
-const LEGACY_SANDBOX_ENV_TAB = 'sandboxEnv'
 type PmView = 'chat' | 'settings'
 
 function isProjectTab(q: unknown): q is Tab {
@@ -54,9 +48,6 @@ function isProjectTab(q: unknown): q is Tab {
 }
 
 function parseProjectTab(q: unknown): Tab {
-  if (q === LEGACY_PM_SETTINGS_TAB) return 'pmLeader'
-  if (q === LEGACY_PM_MEMORY_TAB) return 'board'
-  if (q === LEGACY_SANDBOX_ENV_TAB) return 'sharedAgent'
   if (isProjectTab(q)) return q
   return 'board'
 }
@@ -92,8 +83,6 @@ const initialLoading = computed(() => loading.value && !project.value)
 const showRefreshProgress = computed(
   () => (loading.value && !!project.value) || wfRefreshing.value,
 )
-const initialLegacyPmSettings = route.query.tab === LEGACY_PM_SETTINGS_TAB
-const initialLegacyPmMemory = route.query.tab === LEGACY_PM_MEMORY_TAB
 const tab = ref<Tab>(parseProjectTab(route.query.tab))
 const draftsPanelRef = ref<{ isDirty: boolean; requestLeave: () => Promise<boolean> } | null>(null)
 
@@ -103,9 +92,7 @@ async function confirmDraftsLeave(): Promise<boolean> {
   return panel.requestLeave()
 }
 /** Inline sub-view inside PM Leader; page-local, not a shareable URL param. */
-const pmView = ref<PmView>(initialLegacyPmSettings ? 'settings' : 'chat')
-/** Show once when landing via legacy ?tab=pmMemory. */
-const showPmMemoryMigration = ref(initialLegacyPmMemory)
+const pmView = ref<PmView>('chat')
 
 async function setTab(id: Tab) {
   if (tab.value === 'requirementDrafts' && id !== 'requirementDrafts') {
@@ -138,51 +125,14 @@ function backToPmChat() {
   pmRestoreMobileChat.value = true
 }
 
-/** Reset inline PM view when project context changes; legacy deep-link still opens settings. */
+/** Reset inline PM view when project context changes. */
 function resetPmViewForProjectContext() {
-  pmView.value = route.query.tab === LEGACY_PM_SETTINGS_TAB ? 'settings' : 'chat'
+  pmView.value = 'chat'
   pmRestoreMobileChat.value = false
-  if (route.query.tab === LEGACY_PM_MEMORY_TAB) {
-    showPmMemoryMigration.value = true
-  }
-}
-
-function rewriteLegacyPmSettingsQuery() {
-  if (route.query.tab !== LEGACY_PM_SETTINGS_TAB) return
-  void router.replace({ query: { ...route.query, tab: 'pmLeader' } })
-}
-
-function rewriteLegacyPmMemoryQuery() {
-  if (route.query.tab !== LEGACY_PM_MEMORY_TAB) return
-  showPmMemoryMigration.value = true
-  void router.replace({ query: { ...route.query, tab: 'board' } })
-}
-
-function rewriteLegacySandboxEnvQuery() {
-  if (route.query.tab !== LEGACY_SANDBOX_ENV_TAB) return
-  void router.replace({ query: { ...route.query, tab: 'sharedAgent' } })
 }
 
 function syncTabFromRoute() {
-  const q = route.query.tab
-  if (q === LEGACY_PM_SETTINGS_TAB) {
-    tab.value = 'pmLeader'
-    pmView.value = 'settings'
-    rewriteLegacyPmSettingsQuery()
-    return
-  }
-  if (q === LEGACY_PM_MEMORY_TAB) {
-    tab.value = 'board'
-    pmView.value = 'chat'
-    rewriteLegacyPmMemoryQuery()
-    return
-  }
-  if (q === LEGACY_SANDBOX_ENV_TAB) {
-    tab.value = 'sharedAgent'
-    rewriteLegacySandboxEnvQuery()
-    return
-  }
-  const next = parseProjectTab(q)
+  const next = parseProjectTab(route.query.tab)
   if (tab.value !== next) {
     if (tab.value === 'requirementDrafts' && next !== 'requirementDrafts') {
       void confirmDraftsLeave().then((ok) => {
@@ -207,44 +157,12 @@ function syncTabFromRoute() {
 }
 
 function ensureTabQuery() {
-  if (route.query.tab === LEGACY_PM_SETTINGS_TAB) {
-    tab.value = 'pmLeader'
-    pmView.value = 'settings'
-    rewriteLegacyPmSettingsQuery()
-    return
-  }
-  if (route.query.tab === LEGACY_PM_MEMORY_TAB) {
-    tab.value = 'board'
-    rewriteLegacyPmMemoryQuery()
-    return
-  }
-  if (route.query.tab === LEGACY_SANDBOX_ENV_TAB) {
-    tab.value = 'sharedAgent'
-    rewriteLegacySandboxEnvQuery()
-    return
-  }
   if (isProjectTab(route.query.tab)) {
     return
   }
   void router.replace({ query: { ...route.query, tab: tab.value } })
 }
 
-function dismissPmMemoryMigration() {
-  showPmMemoryMigration.value = false
-}
-
-function goStudioMemory(agent?: string) {
-  const pid = projectId.value
-  const name = (agent || pmBinding.value?.agentConfigRef || '').trim()
-  if (name) {
-    void router.push({
-      path: `/projects/${pid}`,
-      query: { tab: 'agents', agent: name, studioTab: 'data', sub: 'memory' },
-    })
-    return
-  }
-  void router.push({ path: `/projects/${pid}`, query: { tab: 'agents' } })
-}
 const savingMeta = ref(false)
 const savingVars = ref(false)
 const editName = ref('')
@@ -882,8 +800,6 @@ onBeforeRouteUpdate(async (to, from) => {
 
   return {
   PROJECT_TABS,
-  LEGACY_PM_SETTINGS_TAB,
-  LEGACY_PM_MEMORY_TAB,
   isProjectTab,
   parseProjectTab,
   route,
@@ -909,24 +825,17 @@ onBeforeRouteUpdate(async (to, from) => {
   workflowSeq,
   initialLoading,
   showRefreshProgress,
-  initialLegacyPmSettings,
-  initialLegacyPmMemory,
   tab,
   draftsPanelRef,
   confirmDraftsLeave,
   pmView,
-  showPmMemoryMigration,
   setTab,
   pmRestoreMobileChat,
   openPmSettings,
   backToPmChat,
   resetPmViewForProjectContext,
-  rewriteLegacyPmSettingsQuery,
-  rewriteLegacyPmMemoryQuery,
   syncTabFromRoute,
   ensureTabQuery,
-  dismissPmMemoryMigration,
-  goStudioMemory,
   savingMeta,
   savingVars,
   editName,

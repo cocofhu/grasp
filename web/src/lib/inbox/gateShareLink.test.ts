@@ -93,7 +93,6 @@ describe('gateShareLink helpers', () => {
     expect(
       isHumanGateInboxItem({
         type: 'gate',
-        nodeType: 'proposal_select',
         runId: 'r',
         nodeId: 'n',
         workflowName: 'w',

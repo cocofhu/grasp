@@ -52,18 +52,18 @@ func TestWorkflowServiceCRUDPublishRestore(t *testing.T) {
 	if err := s.Save(wf); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if wf.Version != 1 || wf.Status != "draft" {
-		t.Fatalf("defaults wrong: v=%d status=%s", wf.Version, wf.Status)
+	if wf.Version != 1 || wf.Status() != "draft" {
+		t.Fatalf("defaults wrong: v=%d status=%s", wf.Version, wf.Status())
 	}
 
-	// Update path preserves version.
+	// Rename is a content change: v2. A client-sent Version is ignored.
 	wf.Name = "Demo v2"
 	wf.Version = 0
 	if err := s.Save(wf); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if wf.Version != 1 {
-		t.Fatalf("version clobbered to %d", wf.Version)
+	if wf.Version != 2 {
+		t.Fatalf("version = %d, want 2", wf.Version)
 	}
 
 	got, ok := s.Get("wf1")
@@ -74,16 +74,20 @@ func TestWorkflowServiceCRUDPublishRestore(t *testing.T) {
 		t.Fatal("list should have one")
 	}
 
-	// Publish -> version bumps, snapshot created.
+	// Publish marks the head; no new version.
 	pub, err := s.Publish("wf1")
 	if err != nil {
 		t.Fatalf("publish: %v", err)
 	}
-	if pub.Version != 2 || pub.Status != "published" {
+	if pub.Version != 2 || pub.PublishedVersion != 2 || pub.Status() != "published" {
 		t.Fatalf("publish result: %+v", pub)
 	}
-	if vs := s.Versions("wf1"); len(vs) != 1 || vs[0].Version != 2 {
+	vs := s.Versions("wf1")
+	if len(vs) != 2 || vs[0].Version != 2 || vs[0].PublishedAt == nil || vs[1].PublishedAt != nil {
 		t.Fatalf("versions: %+v", vs)
+	}
+	if vs[0].Graph.Nodes != nil {
+		t.Fatal("version list must not carry graphs")
 	}
 
 	// Publish missing.
@@ -91,13 +95,20 @@ func TestWorkflowServiceCRUDPublishRestore(t *testing.T) {
 		t.Fatal("publish missing should error")
 	}
 
-	// Restore back to draft.
-	rest, err := s.Restore("wf1", 2)
+	// Restore v1 appends v3 (draft), history untouched.
+	rest, err := s.Restore("wf1", 1)
 	if err != nil {
 		t.Fatalf("restore: %v", err)
 	}
-	if rest.Status != "draft" {
-		t.Fatalf("restore status = %s", rest.Status)
+	if rest.Version != 3 || rest.PublishedVersion != 2 || rest.Status() != "draft" || rest.Name != "Demo" {
+		t.Fatalf("restore result: v=%d pub=%d status=%s name=%s", rest.Version, rest.PublishedVersion, rest.Status(), rest.Name)
+	}
+	vs = s.Versions("wf1")
+	if len(vs) != 3 || vs[0].Source != models.VersionSourceRestore || vs[0].RestoredFrom == nil || *vs[0].RestoredFrom != 1 {
+		t.Fatalf("restore version row: %+v", vs[0])
+	}
+	if g, err := s.VersionGraph("wf1", 1); err != nil || len(g.Nodes) == 0 {
+		t.Fatalf("VersionGraph for unpublished v1: %v", err)
 	}
 	if _, err := s.Restore("wf1", 99); err == nil {
 		t.Fatal("restore missing version should error")
@@ -193,7 +204,7 @@ func TestWorkflowCopy(t *testing.T) {
 
 	src := &models.WorkflowDef{
 		ID: "wf-src", ProjectID: models.DefaultProjectID, Name: "工作流 A", Description: "desc", NeedsRepo: true,
-		Status: "published", Version: 3, Graph: validGraph(),
+		Graph: validGraph(),
 	}
 	if err := s.Save(src); err != nil {
 		t.Fatal(err)
@@ -215,8 +226,8 @@ func TestWorkflowCopy(t *testing.T) {
 	if copied.ID == "wf-src" || copied.Name != suggested {
 		t.Fatalf("copy identity: id=%s name=%s", copied.ID, copied.Name)
 	}
-	if copied.Status != "draft" || copied.Version != 1 {
-		t.Fatalf("copy defaults: status=%s version=%d", copied.Status, copied.Version)
+	if copied.Status() != "draft" || copied.Version != 1 {
+		t.Fatalf("copy defaults: status=%s version=%d", copied.Status(), copied.Version)
 	}
 	if copied.Description != "desc" || !copied.NeedsRepo {
 		t.Fatalf("metadata not copied: %+v", copied)
@@ -235,8 +246,8 @@ func TestWorkflowCopy(t *testing.T) {
 	}
 	var verCount int64
 	db.Model(&models.WorkflowVersion{}).Where("workflow_id = ?", copied.ID).Count(&verCount)
-	if verCount != 0 {
-		t.Fatalf("versions copied: %d", verCount)
+	if verCount != 1 {
+		t.Fatalf("copy should start with its own v1 only, got %d versions", verCount)
 	}
 
 	suggested2, _, _, err := s.CopyPreview("wf-src")
@@ -684,7 +695,8 @@ func idsOf(runs []models.Run) []string {
 
 func TestArtifactService(t *testing.T) {
 	db := newTestDB(t)
-	db.Create(&models.Run{ID: "r1", WorkflowName: "WF"})
+	db.Create(&models.WorkflowDef{ID: "wf", ProjectID: "p1", Name: "WF"})
+	db.Create(&models.Run{ID: "r1", WorkflowID: "wf", WorkflowName: "WF"})
 	s := NewArtifactService(db)
 
 	id, err := s.Save("r1", "n1", "doc", "markdown", "hello")
@@ -719,10 +731,11 @@ func TestArtifactService(t *testing.T) {
 			t.Fatalf("ByRun meta incomplete: %+v", a)
 		}
 	}
-	if len(s.All()) != 2 {
+	all, total := s.AllPage(ArtifactFilter{ProjectID: "p1"}, 1, 10)
+	if total != 2 || len(all) != 2 {
 		t.Fatal("all")
 	}
-	for _, a := range s.All() {
+	for _, a := range all {
 		if a.Content != "" {
 			t.Fatalf("All should omit Content, got %q for %s", a.Content, a.Name)
 		}
@@ -745,6 +758,7 @@ func TestArtifactService(t *testing.T) {
 func TestArtifactServiceDeleteByID(t *testing.T) {
 	db := newTestDB(t)
 	s := NewArtifactService(db)
+	db.Create(&models.WorkflowDef{ID: "wf", ProjectID: "p1", Name: "WF"})
 
 	if err := s.DeleteByID("ghost"); !errors.Is(err, ErrArtifactNotFound) {
 		t.Fatalf("missing id: %v", err)
@@ -752,7 +766,7 @@ func TestArtifactServiceDeleteByID(t *testing.T) {
 
 	for _, status := range []string{"completed", "failed", "cancelled"} {
 		runID := "r-" + status
-		db.Create(&models.Run{ID: runID, Status: status, WorkflowName: "WF"})
+		db.Create(&models.Run{ID: runID, Status: status, WorkflowID: "wf", WorkflowName: "WF"})
 		artID, err := s.Save(runID, "n1", "doc-"+status, "text", "body")
 		if err != nil {
 			t.Fatalf("save %s: %v", status, err)
@@ -770,7 +784,7 @@ func TestArtifactServiceDeleteByID(t *testing.T) {
 
 	for _, status := range []string{"running", "waiting_human"} {
 		runID := "r-" + status
-		db.Create(&models.Run{ID: runID, Status: status})
+		db.Create(&models.Run{ID: runID, Status: status, WorkflowID: "wf"})
 		artID, err := s.Save(runID, "n1", "keep", "text", "x")
 		if err != nil {
 			t.Fatalf("save %s: %v", status, err)
@@ -784,7 +798,7 @@ func TestArtifactServiceDeleteByID(t *testing.T) {
 	}
 
 	// Same-name Save after hard delete creates a new id.
-	db.Create(&models.Run{ID: "r-rewrite", Status: "completed"})
+	db.Create(&models.Run{ID: "r-rewrite", Status: "completed", WorkflowID: "wf"})
 	oldID, err := s.Save("r-rewrite", "n1", "doc", "text", "v1")
 	if err != nil {
 		t.Fatal(err)
@@ -814,7 +828,7 @@ func TestDashboardService(t *testing.T) {
 	db.Create(&models.Run{ID: "c", Status: "failed"})
 	db.Create(&models.Run{ID: "d", Status: "completed"})
 	db.Create(&models.Run{ID: "e", Status: "completed"})
-	db.Create(&models.WorkflowDef{ID: "wf"})
+	db.Create(&models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf"})
 	db.Create(&models.Artifact{ID: "art", RunID: "a", Name: "n"})
 
 	st := s.Compute()

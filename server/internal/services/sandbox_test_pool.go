@@ -175,18 +175,19 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 		}
 	}()
 
-	vars := runtime.MergeEnvIntoTemplateVars(s.testMcpVars(runID, token, projectID, profile), agent.Env)
+	agentEnv := envauth.StripSecretEnvKeys(agent.Env)
+	vars := runtime.MergeEnvIntoTemplateVars(s.testMcpVars(runID, token, projectID, profile), agentEnv)
 	specs := s.buildTestSandboxSpecs(projectID, profile, runID, token, agent, vars)
 
 	env := map[string]string{}
 	for k, v := range s.env {
-		if envauth.IsPlatformAuthEnvKey(k) {
-			log.Warn().Str("key", k).Msg("dropped platform sandbox.env official CLI auth key; use GRASP_* on Agent or shared env")
+		if envauth.IsSecretEnvKey(k) {
+			log.Warn().Str("key", k).Msg("dropped secret key from platform sandbox.env; configure it in project credentials")
 			continue
 		}
 		env[k] = v
 	}
-	for k, v := range agent.Env {
+	for k, v := range agentEnv {
 		env[k] = substTemplate(v, vars)
 	}
 	// Expose run-scoped coordinates as process env. Do this before auth/model
@@ -205,7 +206,11 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 		projectCreds = s.projectCredentials(projectID)
 		overlayProjectCredentialEnv(env, projectCreds)
 	}
-	backend := runtime.NormalizeBackend(agent.AcpBackend)
+	backend, err := runtime.ParseBackend(agent.AcpBackend)
+	if err != nil {
+		fail(err)
+		return
+	}
 	workDir := s.skills.WorkDir(profile)
 	// Align auth gate with BuildConfigHome: shared extend then Agent overlay.
 	merged, err := runtime.PrepareAuthEnv(backend, env, workDir, sharedWorkDir)
@@ -239,7 +244,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 
 	env["AGENT_PROVIDER"] = string(backend)
 	env["CONFIG_ROOT"] = agent.Layout.ConfigRoot
-	// remote-dev parity: PASSWORD / ROOT_PASSWORD / CURSOR_ACP_PASSWORD so
+	// remote-dev parity: ROOT_PASSWORD / ACP_BRIDGE_PASSWORD so
 	// code-server (8744) and ACP bridge (8765) accept the same secret for
 	// proxied auto-login and direct host:port access.
 	sandbox.ApplyPasswords(env, token)
@@ -256,7 +261,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 		ConfigRoot:   agent.Layout.ConfigRoot,
 		WorkspaceDir: agent.Layout.WorkspaceDir,
 	}
-	ApplyAgentSSHToSpec(&spec, agentWithProjectSSH(agent, projectCreds))
+	ApplyProjectSSHToSpec(&spec, projectCreds)
 	sb, err := s.mgr.Create(ctx, spec)
 	if err != nil {
 		_ = os.RemoveAll(home)

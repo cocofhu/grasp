@@ -11,13 +11,6 @@ const STORE_NAME = 'snapshots';
 let _db = null;
 /** @type {Promise<IDBDatabase|null>|null} */
 let _openPromise = null;
-/** @type {Promise<void>|null} */
-let _migrationPromise = null;
-
-/** 兼容旧版单键存储（迁移用） */
-export const CHAT_STORAGE_KEY = 'acp-bridge-chat-v1';
-/** 按 ACP sessionId 分键（迁移用） */
-export const LOG_KEY_PREFIX = 'acp-bridge-log:';
 
 /**
  * @returns {Promise<IDBDatabase|null>}
@@ -184,95 +177,4 @@ export async function deleteOtherSnapshots(keepSessionIds) {
             cursor.continue();
         };
     });
-}
-
-/**
- * @param {string} lsKey
- * @returns {{ v: number, sessionId: string, html: string, ts: number }|null}
- */
-function parseLegacyLocalStorageEntry(lsKey) {
-    try {
-        const raw = localStorage.getItem(lsKey);
-        if (!raw) return null;
-        const parsed = parseSnapshot(JSON.parse(raw));
-        if (!parsed) return null;
-        if (lsKey.startsWith(LOG_KEY_PREFIX)) {
-            const sidFromKey = lsKey.slice(LOG_KEY_PREFIX.length);
-            if (sidFromKey && parsed.sessionId !== sidFromKey) {
-                parsed.sessionId = sidFromKey;
-            }
-        }
-        return parsed;
-    } catch (e) {
-        console.warn('acp-bridge: skip corrupt localStorage chat key', lsKey, e);
-        return null;
-    }
-}
-
-/**
- * 确保 legacy localStorage 一次性迁移已完成（幂等，可多处 await）。
- * @returns {Promise<void>}
- */
-export function ensureLegacyMigrated() {
-    if (!_migrationPromise) {
-        _migrationPromise = migrateLegacyFromLocalStorage();
-    }
-    return _migrationPromise;
-}
-
-/** 扫描 legacy localStorage 键，写入 IndexedDB 后删除；同 sessionId 以较新 ts 为准。 */
-async function migrateLegacyFromLocalStorage() {
-    /** @type {Map<string, { snapshot: { v: number, sessionId: string, html: string, ts: number }, lsKeys: string[] }>} */
-    const bySession = new Map();
-
-    /** @param {string} lsKey */
-    function collect(lsKey) {
-        const snapshot = parseLegacyLocalStorageEntry(lsKey);
-        if (!snapshot) return;
-        const sid = snapshot.sessionId;
-        const existing = bySession.get(sid);
-        if (!existing || snapshot.ts >= existing.snapshot.ts) {
-            bySession.set(sid, {snapshot, lsKeys: existing ? [...existing.lsKeys, lsKey] : [lsKey]});
-        } else {
-            existing.lsKeys.push(lsKey);
-        }
-    }
-
-    try {
-        collect(CHAT_STORAGE_KEY);
-        for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key && key.startsWith(LOG_KEY_PREFIX)) {
-                collect(key);
-            }
-        }
-    } catch (e) {
-        console.warn('acp-bridge: localStorage migration scan failed', e);
-        return;
-    }
-
-    if (bySession.size === 0) return;
-
-    for (const [sid, {snapshot, lsKeys}] of bySession) {
-        try {
-            const existing = await getSnapshot(sid);
-            let shouldWrite = !existing;
-            if (existing && snapshot.ts > existing.ts) {
-                shouldWrite = true;
-            }
-            if (shouldWrite) {
-                const ok = await putSnapshot(sid, snapshot.html, snapshot.ts);
-                if (!ok) continue;
-            }
-            for (const lsKey of lsKeys) {
-                try {
-                    localStorage.removeItem(lsKey);
-                } catch {
-                    /* ignore */
-                }
-            }
-        } catch (e) {
-            console.warn('acp-bridge: migrate legacy chat key failed', sid, e);
-        }
-    }
 }

@@ -17,7 +17,7 @@ type channelBody struct {
 	Name               string         `json:"name"`
 	Enabled            bool           `json:"enabled"`
 	AgentName          string         `json:"agentName"`
-	IsPrimary          *bool          `json:"isPrimary"`
+	IsPrimary          bool           `json:"isPrimary"`
 	EnabledMcps        []string       `json:"enabledMcps"`
 	AppID              string         `json:"appId"`
 	AppSecret          string         `json:"appSecret"`
@@ -36,20 +36,13 @@ type channelDeleteBody struct {
 }
 
 func (b channelBody) toInput(projectID string) services.ChannelConfigInput {
-	typ := strings.TrimSpace(strings.ToLower(b.Type))
-	if typ == "" {
-		typ = models.ChannelTypeQQ
-	}
 	in := services.ChannelConfigInput{
-		Type: typ, Name: b.Name, Enabled: b.Enabled, ProjectID: projectID,
+		Type: strings.TrimSpace(strings.ToLower(b.Type)), Name: b.Name, Enabled: b.Enabled, ProjectID: projectID,
+		IsPrimary: b.IsPrimary,
 		AgentName: b.AgentName, EnabledMcps: b.EnabledMcps,
 		AppID: b.AppID, AppSecret: b.AppSecret, TurnTimeoutSeconds: b.TurnTimeoutSeconds,
 		CronDeliver: b.CronDeliver, CronDeliverTarget: b.CronDeliverTarget, Config: b.Config,
 		SyncPmLeader: b.SyncPmLeader,
-	}
-	if b.IsPrimary != nil {
-		in.IsPrimary = *b.IsPrimary
-		in.IsPrimarySet = true
 	}
 	return in
 }
@@ -172,79 +165,6 @@ func (h *Handlers) DeleteProjectChannelByID(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
 }
 
-// GetProjectChannel handles GET /api/projects/:id/channel (legacy primary alias).
-func (h *Handlers) GetProjectChannel(c *gin.Context) {
-	if h.Channels == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "channels unavailable"})
-		return
-	}
-	dto, err := h.Channels.GetByProject(c.Param("id"))
-	if err != nil {
-		_ = c.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"channel":              dto,
-		"secretsKeyConfigured": crypto.Available(),
-	})
-}
-
-// PutProjectChannel handles PUT /api/projects/:id/channel (legacy primary alias).
-func (h *Handlers) PutProjectChannel(c *gin.Context) {
-	if h.Channels == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "channels unavailable"})
-		return
-	}
-	var b channelBody
-	if err := c.ShouldBindJSON(&b); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	dto, err := h.Channels.UpsertForProject(c.Param("id"), b.toInput(c.Param("id")))
-	if err != nil {
-		writeChannelErr(c, err)
-		return
-	}
-	h.recordAudit(services.AuditRecord{
-		ProjectID:    c.Param("id"),
-		Actor:        h.auditActorFromContext(c),
-		Action:       models.AuditActionChannel,
-		ResourceType: "channel",
-		ResourceID:   dto.ID,
-		Outcome:      models.AuditOutcomeOK,
-		Summary:      "upsert project channel",
-		Payload: map[string]any{
-			"type": dto.Type, "enabled": dto.Enabled, "appId": dto.AppID,
-			"agentName": dto.AgentName, "isPrimary": dto.IsPrimary,
-		},
-	})
-	c.JSON(http.StatusOK, dto)
-}
-
-// DeleteProjectChannel handles DELETE /api/projects/:id/channel (legacy primary alias).
-func (h *Handlers) DeleteProjectChannel(c *gin.Context) {
-	if h.Channels == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "channels unavailable"})
-		return
-	}
-	if err := h.Channels.DeleteByProject(c.Param("id")); err != nil {
-		writeChannelErr(c, err)
-		return
-	}
-	h.recordAudit(services.AuditRecord{
-		ProjectID:    c.Param("id"),
-		Actor:        h.auditActorFromContext(c),
-		Action:       models.AuditActionChannel,
-		ResourceType: "channel",
-		ResourceID:   c.Param("id"),
-		Outcome:      models.AuditOutcomeOK,
-		Summary:      "delete project channel",
-		Payload:      map[string]any{"deleted": true},
-	})
-	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
-}
-
 func writeChannelErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, services.ErrChannelNotFound):
@@ -252,8 +172,7 @@ func writeChannelErr(c *gin.Context, err error) {
 	case errors.Is(err, services.ErrChannelAppIDExists),
 		errors.Is(err, services.ErrChannelBotIDExists),
 		errors.Is(err, services.ErrChannelAgentTaken),
-		errors.Is(err, services.ErrChannelDualPrimary),
-		errors.Is(err, services.ErrChannelLegacyDeleteMulti):
+		errors.Is(err, services.ErrChannelDualPrimary):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	case errors.Is(err, services.ErrProjectNotFound),
 		errors.Is(err, services.ErrChannelProjectRequired),
@@ -262,11 +181,10 @@ func writeChannelErr(c *gin.Context, err error) {
 		errors.Is(err, services.ErrChannelSecretKeyMissing),
 		errors.Is(err, services.ErrChannelSecretKeyInvalid),
 		errors.Is(err, services.ErrChannelTypeUnsupported),
+		errors.Is(err, services.ErrChannelTypeRequired),
 		errors.Is(err, services.ErrChannelTypeFrozen),
 		errors.Is(err, services.ErrChannelBotIDFrozen),
 		errors.Is(err, services.ErrChannelNameRequired),
-		errors.Is(err, services.ErrChannelTypeFrozen),
-		errors.Is(err, services.ErrChannelBotIDFrozen),
 		errors.Is(err, services.ErrChannelCronTargetRequired),
 		errors.Is(err, services.ErrChannelCronTargetInvalid),
 		errors.Is(err, services.ErrChannelAgentRequired),

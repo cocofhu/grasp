@@ -184,12 +184,9 @@ watch(
 // clarified_requirement / page have dedicated views above.
 const DEDICATED_SCHEMAS = new Set(['plan', 'clarified_requirement', 'page'])
 const structuredMd = computed<string | null>(() => {
-  const keys =
-    props.node.type === 'proposal_select'
-      ? ['proposal']
-      : declaredProducts(caps.value)
-          .filter((p) => !DEDICATED_SCHEMAS.has(p.name))
-          .map((p) => p.outputKey)
+  const keys = declaredProducts(caps.value)
+    .filter((p) => !DEDICATED_SCHEMAS.has(p.name))
+    .map((p) => p.outputKey)
   for (const key of keys) {
     const v = outputs.value[key]
     if (typeof v === 'string' && v.trim()) return v
@@ -415,7 +412,7 @@ function fileStatusClass(s: string): string {
     </div>
 
     <!-- structured framework-card product: rendered markdown of the reserved
-         JSON (research / test / review / proposals / selected proposal). -->
+         JSON (research / test / review / …). -->
     <div v-if="structuredMd" class="card mb-3 p-3">
       <div class="mb-2 flex items-center gap-1.5 text-xs font-semibold text-txt2"><Icon :name="def.icon" :size="13" :style="{ color: hex }" /> {{ def.label }}{{ t('pages.nodeOutput.resultSuffix') }}</div>
       <div class="md text-[12px] leading-relaxed text-txt2" v-html="renderMarkdown(structuredMd)" />

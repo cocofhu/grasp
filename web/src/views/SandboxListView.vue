@@ -105,7 +105,7 @@ function shortId(id?: string): string {
 function purposeOf(s: SandboxView): { label: string; cls: string } {
   const label = t(sandboxPurposeLabelKey(s.purpose))
   if (s.purpose === 'run') return { label, cls: 'border-accent/40 text-accent-2' }
-  if (s.purpose === 'agent' || s.purpose === 'pm') return { label, cls: 'border-accent/55 text-accent-2 bg-accent/8' }
+  if (s.purpose === 'agent') return { label, cls: 'border-accent/55 text-accent-2 bg-accent/8' }
   return { label, cls: 'border-line text-txt3' }
 }
 

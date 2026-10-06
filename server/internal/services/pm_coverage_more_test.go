@@ -20,7 +20,7 @@ func TestPmMemoryUpdateDeleteAndPagination(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("CRUDMem", "", nil, nil)
+	p, err := ps.Create("CRUDMem", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,20 +28,20 @@ func TestPmMemoryUpdateDeleteAndPagination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated, err := pm.UpdateMemoryByID(p.ID, item.ID, "新标题", "内容二", "bob")
+	updated, err := pm.UpdateMemoryForAgent(p.ID, "agent-a", item.ID, "新标题", "内容二", "bob")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if updated.Title != "新标题" || updated.Content != "内容二" {
 		t.Fatalf("updated=%+v", updated)
 	}
-	if _, err := pm.UpdateMemoryByID(p.ID, "missing", "x", "y", "bob"); !errors.Is(err, ErrPmMemoryNotFound) {
+	if _, err := pm.UpdateMemoryForAgent(p.ID, "agent-a", "missing", "x", "y", "bob"); !errors.Is(err, ErrPmMemoryNotFound) {
 		t.Fatalf("update missing: %v", err)
 	}
-	if err := pm.DeleteMemory(p.ID, item.ID); err != nil {
+	if err := pm.DeleteMemoryForAgent(p.ID, "agent-a", item.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := pm.DeleteMemory(p.ID, item.ID); !errors.Is(err, ErrPmMemoryNotFound) {
+	if err := pm.DeleteMemoryForAgent(p.ID, "agent-a", item.ID); !errors.Is(err, ErrPmMemoryNotFound) {
 		t.Fatalf("delete twice: %v", err)
 	}
 
@@ -68,7 +68,7 @@ func TestPmSearchMessagesAndFailDraft(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("SearchMsg", "", nil, nil)
+	p, err := ps.Create("SearchMsg", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestPmTurnRunnerStartCancelAndFinish(t *testing.T) {
 	sbx := newSandboxService(t, db, ds)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("TurnProj", "", nil, nil)
+	p, err := ps.Create("TurnProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func newHangServer(t *testing.T) *httptestHang {
 	up := websocket.Upgrader{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/login", func(w http.ResponseWriter, r *http.Request) {
-		http.SetCookie(w, &http.Cookie{Name: "cursor_acp_session", Value: "test", Path: "/"})
+		http.SetCookie(w, &http.Cookie{Name: "agentchat_session", Value: "test", Path: "/"})
 		w.WriteHeader(200)
 	})
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {

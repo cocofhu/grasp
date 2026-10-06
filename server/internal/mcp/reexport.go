@@ -8,15 +8,12 @@ const (
 	ClarifiedRequirementArtifactName = s.ClarifiedRequirementArtifactName
 	ResearchArtifactName             = s.ResearchArtifactName
 	RootCauseArtifactName            = s.RootCauseArtifactName
-	ProposalsArtifactName            = s.ProposalsArtifactName
-	ProposalArtifactName             = s.ProposalArtifactName
 	TestResultArtifactName           = s.TestResultArtifactName
 	ReviewArtifactName               = s.ReviewArtifactName
 	ImplementationResultArtifactName = s.ImplementationResultArtifactName
+	MergeRequestArtifactName         = s.MergeRequestArtifactName
 	PreflightArtifactName            = s.PreflightArtifactName
 )
-
-type ProposalChoice = s.ProposalChoice
 
 var (
 	ClarifiedOpenQuestions             = s.ClarifiedOpenQuestions
@@ -24,15 +21,12 @@ var (
 	RenderClarifiedRequirementMarkdown = s.RenderClarifiedRequirementMarkdown
 	RenderResearchMarkdown             = s.RenderResearchMarkdown
 	RenderRootCauseMarkdown            = s.RenderRootCauseMarkdown
-	RenderProposalsMarkdown            = s.RenderProposalsMarkdown
-	RenderProposalMarkdown             = s.RenderProposalMarkdown
 	RenderTestResultMarkdown           = s.RenderTestResultMarkdown
 	RenderReviewMarkdown               = s.RenderReviewMarkdown
 	RenderImplementationResultMarkdown = s.RenderImplementationResultMarkdown
+	RenderMergeRequestMarkdown         = s.RenderMergeRequestMarkdown
 	RenderPreflightMarkdown            = s.RenderPreflightMarkdown
 	PreflightIncomplete                = s.PreflightIncomplete
-	ProposalChoices                    = s.ProposalChoices
-	SelectProposal                     = s.SelectProposal
 	TestFailedCount                    = s.TestFailedCount
 	TestSkippedCount                   = s.TestSkippedCount
 	ReviewVerdict                      = s.ReviewVerdict

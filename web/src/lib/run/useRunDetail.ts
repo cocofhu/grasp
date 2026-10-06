@@ -253,7 +253,7 @@ const {
 // Run-level failure banner for any failed run (research/agent early fails included).
 const runFailureReason = computed(() => {
   if (run.value.status !== 'failed') return ''
-  return (run.value.error || run.value.failedReason || '').trim()
+  return (run.value.error || '').trim()
 })
 const showRunFailureBanner = computed(() => !!runFailureReason.value)
 const { draft: clarifyDraft, attachments: clarifyAttachments, annotations: clarifyAnnotations } = useClarifyDraft(() => runId.value, () => selected.value)

@@ -48,6 +48,19 @@ describe('nodeRegistry', () => {
     expect(agentOutputDefs(undefined)).toEqual(NODE_DEFS.agent.outputs)
   })
 
+  it('exposes merge_request as a non-verdict product of the deliver Agent', () => {
+    const mr = manifest.schemas.find((s) => s.name === 'merge_request')
+    expect(mr).toMatchObject({
+      artifactName: 'merge_request.json',
+      setTool: 'set_merge_request',
+      outputKey: 'merge_request',
+      outputJsonKey: 'merge_request_json',
+    })
+    expect(mr && 'verdict' in mr).toBe(false)
+    const caps = { interaction: 'auto' as const, reads: ['*'], writes: [{ schema: 'merge_request', required: true }] }
+    expect(agentOutputDefs(caps).map((o) => o.key).slice(0, 2)).toEqual(['merge_request', 'merge_request_json'])
+  })
+
   it('every i18n key referenced by node defs exists in both locales', () => {
     const keys = new Set<string>()
     for (const def of Object.values(NODE_DEFS)) {
@@ -56,6 +69,11 @@ describe('nodeRegistry', () => {
       for (const o of def.outputs) keys.add(o.desc)
     }
     for (const o of agentOutputDefs(CLARIFY_CAPS)) keys.add(o.desc)
+    for (const s of manifest.schemas) {
+      keys.add(`nodes.schemas.${s.name}.label`)
+      keys.add(`nodes.schemas.${s.name}.markdown`)
+      if ('outputJsonKey' in s && s.outputJsonKey) keys.add(`nodes.schemas.${s.name}.json`)
+    }
     for (const k of keys) {
       expect(typeof lookup(zhNodes, k), k).toBe('string')
       expect(typeof lookup(enNodes, k), k).toBe('string')

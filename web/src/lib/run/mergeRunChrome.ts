@@ -31,7 +31,6 @@ export function runChromeFingerprint(run: Run): string {
     artifactsListFingerprint(run.artifacts),
     run.gate?.nodeId || '',
     run.error || '',
-    run.failedReason || '',
     run.failedNode || '',
   ].join('#')
 }
@@ -238,7 +237,6 @@ export function mergeRunChromeFields(current: Run, snapshot: Run): Run {
     trace: snapshot.trace ?? current.trace,
     git: snapshot.git !== undefined ? snapshot.git : current.git,
     error: snapshot.error,
-    failedReason: snapshot.failedReason,
     failedNode: snapshot.failedNode,
     priority: snapshot.priority ?? current.priority,
     // reactSessions, clarify, clarifyByNode stay on `current` via spread.

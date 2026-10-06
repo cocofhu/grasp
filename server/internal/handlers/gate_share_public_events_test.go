@@ -18,7 +18,7 @@ import (
 func TestPublicGateEventsWSStreamsSanitizedAcp(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-pub-ws", "research-ws", true)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-pub-ws/reviews/research-ws/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-pub-ws/reviews/research-ws/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 	if !gateshare.ValidTokenShape(token) {
@@ -116,7 +116,7 @@ func TestPublicGateEventsWSSkipsStaleSeedWhenIdle(t *testing.T) {
 		h.h.Eng = old
 	})
 	seedInboxReview(t, h, "run-pub-idle", "research-idle", true)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-pub-idle/reviews/research-idle/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-pub-idle/reviews/research-idle/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 

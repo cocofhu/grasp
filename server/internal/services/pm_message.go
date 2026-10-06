@@ -62,7 +62,7 @@ func (s *PmService) ListMessagesWindow(threadID string, limit int, beforeID stri
 }
 
 // AppendMessage persists one chat message and bumps thread updated_at.
-// Optional source tags the turn origin (user | cron); empty keeps legacy rows.
+// AppendMessageSource additionally tags the turn origin (user | cron).
 func (s *PmService) AppendMessage(threadID, role, content string, citations []models.ProgressCitation, attached *models.AttachedContext, images []models.PromptImage) (models.ChatMessage, error) {
 	return s.AppendMessageSource(threadID, role, content, "", citations, attached, images, nil, nil)
 }

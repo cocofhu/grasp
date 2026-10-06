@@ -1,11 +1,14 @@
 package services_test
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/cocofhu/grasp/internal/crypto"
 	"github.com/cocofhu/grasp/internal/database"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
@@ -30,7 +33,7 @@ func TestOnboardingBootstrapRequiresAPIKey(t *testing.T) {
 
 func TestOnboardingBootstrapAllowsNonDefaultProjectWithDerivedNames(t *testing.T) {
 	svc, defaultID := newOnboardingHarness(t)
-	other, err := svc.Projects.Create("中国象棋", "", nil, nil)
+	other, err := svc.Projects.Create("中国象棋", "", nil)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -60,9 +63,6 @@ func TestOnboardingBootstrapAllowsNonDefaultProjectWithDerivedNames(t *testing.T
 	}
 	if !found {
 		t.Fatalf("missing derived agent %q in %v", wantName, res.AgentIDs)
-	}
-	if res.GroupName != "中国象棋项目组" {
-		t.Fatalf("groupName = %q", res.GroupName)
 	}
 	// Default project agents must remain untouched.
 	if n := len(svc.Skills.List()); n != len(services.OnboardingAgentNames) {
@@ -116,19 +116,20 @@ func TestOnboardingBootstrapCreatesTeamAndDefaultWorkflow(t *testing.T) {
 	if res.WorkflowID == "" {
 		t.Fatal("missing workflowId")
 	}
-	if len(res.AgentIDs) != len(services.OnboardingAgentNames) {
-		t.Fatalf("want %d agents, got %v", len(services.OnboardingAgentNames), res.AgentIDs)
-	}
-	if res.GroupName != services.FirstInstallGroupName {
-		t.Fatalf("groupName = %q", res.GroupName)
+	if got := strings.Join(res.AgentIDs, ","); got != "需求澄清,实现,测试评审,交付" {
+		t.Fatalf("want 4 engineers in workflow order, got %v", res.AgentIDs)
 	}
 
 	shared := svc.SharedAgent.Get(projectID)
-	if shared.Env["GRASP_CURSOR_API_KEY"] != "test-key-cursor" {
-		t.Fatalf("shared env missing auth key: %+v", shared.Env)
+	creds := svc.Credentials.ResolveEnv(projectID)
+	if creds["GRASP_CURSOR_API_KEY"] != "test-key-cursor" {
+		t.Fatalf("project credentials missing auth key: %+v", creds)
 	}
-	if shared.Env["GITHUB_TOKEN"] != "ghp_test" {
-		t.Fatalf("shared git token missing: %+v", shared.Env)
+	if creds["GITHUB_TOKEN"] != "ghp_test" {
+		t.Fatalf("project git token missing: %+v", creds)
+	}
+	if _, ok := shared.Env["GRASP_CURSOR_API_KEY"]; ok {
+		t.Fatalf("shared env must not store auth key: %+v", shared.Env)
 	}
 	if shared.GitCredentialType != "github_https" {
 		t.Fatalf("gitCredentialType = %q", shared.GitCredentialType)
@@ -160,8 +161,8 @@ func TestOnboardingBootstrapCreatesTeamAndDefaultWorkflow(t *testing.T) {
 	if !ok {
 		t.Fatal("workflow missing")
 	}
-	if wf.Name != services.OnboardingWorkflowName || wf.Status != "published" || !wf.NeedsRepo {
-		t.Fatalf("workflow meta: name=%s status=%s needsRepo=%v", wf.Name, wf.Status, wf.NeedsRepo)
+	if wf.Name != services.OnboardingWorkflowName || wf.Status() != "published" || !wf.NeedsRepo {
+		t.Fatalf("workflow meta: name=%s status=%s needsRepo=%v", wf.Name, wf.Status(), wf.NeedsRepo)
 	}
 	if !wf.ShowOnHome {
 		t.Fatal("default workflow should be visible on Home")
@@ -333,8 +334,8 @@ func TestOnboardingBootstrapWritesOpenCodeEnvToShared(t *testing.T) {
 		}
 	}
 	shared := svc.SharedAgent.Get(projectID)
-	if shared.Env["GRASP_OPENCODE_API_KEY"] != "sk-oc" {
-		t.Fatalf("shared key: %+v", shared.Env)
+	if got := svc.Credentials.ResolveEnv(projectID)["GRASP_OPENCODE_API_KEY"]; got != "sk-oc" {
+		t.Fatalf("project credential key = %q", got)
 	}
 	if shared.Env["GRASP_OPENCODE_PROVIDER"] != "anthropic" {
 		t.Fatalf("shared provider: %+v", shared.Env)
@@ -408,9 +409,8 @@ func TestOnboardingBootstrapIdempotent(t *testing.T) {
 	if n := len(svc.WF.List(projectID)); n != 1 {
 		t.Fatalf("workflows doubled: %d", n)
 	}
-	shared := svc.SharedAgent.Get(projectID)
-	if shared.Env["GRASP_CURSOR_API_KEY"] != "k2-rotated" {
-		t.Fatalf("auth not updated: %+v", shared.Env)
+	if got := svc.Credentials.ResolveEnv(projectID)["GRASP_CURSOR_API_KEY"]; got != "k2-rotated" {
+		t.Fatalf("auth not updated: %q", got)
 	}
 	wf, ok := svc.WF.Get(r2.WorkflowID)
 	if !ok || !wf.ShowOnHome {
@@ -440,14 +440,11 @@ func TestOnboardingBootstrapLanguageSwitchReusesWorkflow(t *testing.T) {
 	if wf.Name != services.OnboardingWorkflowName {
 		t.Fatalf("name = %q, want %q", wf.Name, services.OnboardingWorkflowName)
 	}
-	if r2.GroupName != services.FirstInstallGroupName {
-		t.Fatalf("group = %q", r2.GroupName)
-	}
 }
 
 func TestOnboardingBootstrapRejectsCrossProjectAgentConflict(t *testing.T) {
 	svc, projectA := newOnboardingHarness(t)
-	other, err := svc.Projects.Create("Other", "", nil, nil)
+	other, err := svc.Projects.Create("Other", "", nil)
 	if err != nil {
 		t.Fatalf("create B: %v", err)
 	}
@@ -468,34 +465,6 @@ func TestOnboardingBootstrapRejectsCrossProjectAgentConflict(t *testing.T) {
 	}
 	if n := len(svc.WF.List(projectA)); n != 0 {
 		t.Fatalf("must not get workflow on conflict, got %d", n)
-	}
-}
-
-func TestOnboardingBootstrapAllowsClaimingUnboundAgents(t *testing.T) {
-	svc, projectID := newOnboardingHarness(t)
-	unbound := services.Agent{
-		Name:       services.OnboardingAgentNames[0],
-		AcpBackend: "cursor",
-		ProjectID:  "",
-		Files:      []services.AgentFile{{Path: "AGENTS.md", Content: "# unbound\n"}},
-		Env:        map[string]string{},
-	}
-	if err := svc.Skills.Save(unbound); err != nil {
-		t.Fatalf("seed unbound: %v", err)
-	}
-	res, err := svc.Bootstrap(projectID, services.OnboardingBootstrapRequest{
-		AcpBackend: "cursor",
-		APIKey:     "claim-key",
-	})
-	if err != nil {
-		t.Fatalf("bootstrap should claim unbound: %v", err)
-	}
-	if len(res.AgentIDs) != len(services.OnboardingAgentNames) {
-		t.Fatalf("want %d agents, got %v", len(services.OnboardingAgentNames), res.AgentIDs)
-	}
-	a, ok := svc.Skills.Get(services.OnboardingAgentNames[0])
-	if !ok || a.ProjectID != projectID {
-		t.Fatalf("agent not claimed: ok=%v projectId=%q", ok, a.ProjectID)
 	}
 }
 
@@ -523,27 +492,48 @@ func assertDefaultWorkflowGraph(t *testing.T, g models.Graph) {
 	for _, n := range g.Nodes {
 		byID[n.ID] = n
 	}
-	for _, id := range []string{"input", "clarify", "implement", "test_review", "output"} {
+	for _, id := range []string{"input", "clarify", "implement", "test_review", "deliver", "output"} {
 		if _, ok := byID[id]; !ok {
 			t.Fatalf("missing node %s", id)
 		}
 	}
-	if len(g.Nodes) != 5 {
-		t.Fatalf("default workflow nodes = %d, want 5", len(g.Nodes))
+	if len(g.Nodes) != 6 {
+		t.Fatalf("default workflow nodes = %d, want 6", len(g.Nodes))
 	}
-	for _, id := range []string{"clarify", "implement", "test_review"} {
+	for _, id := range []string{"clarify", "implement", "test_review", "deliver"} {
 		if byID[id].Type != "agent" {
 			t.Fatalf("%s type = %s, want agent", id, byID[id].Type)
 		}
 	}
-	var failBack bool
+	type edgeKey struct{ src, handle, dst string }
+	edges := map[edgeKey]bool{}
 	for _, e := range g.Edges {
-		if e.Source == "test_review" && e.SourceHandle == "fail" && e.Target == "implement" {
-			failBack = true
+		edges[edgeKey{e.Source, e.SourceHandle, e.Target}] = true
+	}
+	for _, want := range []edgeKey{
+		{"input", "", "clarify"},
+		{"clarify", "", "implement"},
+		{"implement", "", "test_review"},
+		{"test_review", "pass", "deliver"},
+		{"test_review", "fail", "implement"},
+		{"deliver", "", "output"},
+	} {
+		if !edges[want] {
+			t.Fatalf("missing edge %s -%s-> %s in %+v", want.src, want.handle, want.dst, g.Edges)
 		}
 	}
-	if !failBack {
-		t.Fatal("test_review fail must route back to implement")
+	if len(g.Edges) != 6 {
+		t.Fatalf("default workflow edges = %d, want 6", len(g.Edges))
+	}
+	results, _ := byID["output"].Config["results"].([]any)
+	var readsMR bool
+	for _, r := range results {
+		if s, _ := r.(string); s == "{{nodes.deliver.outputs.merge_request}}" {
+			readsMR = true
+		}
+	}
+	if !readsMR {
+		t.Fatalf("output must read deliver merge_request: %v", results)
 	}
 	var reposVar *models.Variable
 	for i := range g.Variables {
@@ -625,9 +615,6 @@ func TestOnboardingBootstrapEnglishNamesLabelTheWorkflow(t *testing.T) {
 	if wf.Name != services.OnboardingWorkflowNameEN || strings.ContainsAny(wf.Description, "需求澄清") {
 		t.Fatalf("workflow copy not English: name=%q desc=%q", wf.Name, wf.Description)
 	}
-	if res.GroupName != "Default Team" {
-		t.Fatalf("group name = %q, want Default Team", res.GroupName)
-	}
 	want := map[string]string{
 		"input": "Start", "output": "End",
 		"clarify": "Clarify", "implement": "Implement", "test_review": "TestReview",
@@ -702,6 +689,42 @@ func TestOnboardingBootstrapWithoutTestReview(t *testing.T) {
 	}
 }
 
+func TestOnboardingBootstrapDeliverWithoutTestReview(t *testing.T) {
+	svc, projectID := newOnboardingHarness(t)
+	res, err := svc.Bootstrap(projectID, services.OnboardingBootstrapRequest{
+		AcpBackend: "cursor",
+		APIKey:     "k",
+		Agents: []services.OnboardingAgentChoice{
+			{TemplateID: "clarify"},
+			{TemplateID: "implement"},
+			{TemplateID: "deliver"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	if got := strings.Join(res.AgentIDs, ","); got != "需求澄清,实现,交付" {
+		t.Fatalf("agents = %s", got)
+	}
+	wf, _ := svc.WF.Get(res.WorkflowID)
+	g := wf.Graph
+	if err := g.Validate(); err != nil {
+		t.Fatalf("graph invalid: %v", err)
+	}
+	var implDeliver, deliverOut bool
+	for _, e := range g.Edges {
+		if e.Source == "implement" && e.Target == "deliver" && e.SourceHandle == "" {
+			implDeliver = true
+		}
+		if e.Source == "deliver" && e.Target == "output" {
+			deliverOut = true
+		}
+	}
+	if !implDeliver || !deliverOut || len(g.Edges) != 4 {
+		t.Fatalf("want input→clarify→implement→deliver→output, got %+v", g.Edges)
+	}
+}
+
 func TestOnboardingBootstrapRejectsInvalidTeam(t *testing.T) {
 	cases := map[string][]services.OnboardingAgentChoice{
 		"missing clarify": {{TemplateID: "implement"}, {TemplateID: "test_review"}},
@@ -741,15 +764,15 @@ func TestCreateFromBaselineDefaultsShowOnHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateFromBaseline: %v", err)
 	}
-	if wf.Status != "published" || !wf.ShowOnHome {
-		t.Fatalf("returned status=%s showOnHome=%v (plan g1.1)", wf.Status, wf.ShowOnHome)
+	if wf.Status() != "published" || !wf.ShowOnHome {
+		t.Fatalf("returned status=%s showOnHome=%v (plan g1.1)", wf.Status(), wf.ShowOnHome)
 	}
 	stored, ok := svc.WF.Get(wf.ID)
 	if !ok {
 		t.Fatal("workflow not persisted")
 	}
-	if stored.Status != "published" || !stored.ShowOnHome {
-		t.Fatalf("persisted status=%s showOnHome=%v (plan g1.1)", stored.Status, stored.ShowOnHome)
+	if stored.Status() != "published" || !stored.ShowOnHome {
+		t.Fatalf("persisted status=%s showOnHome=%v (plan g1.1)", stored.Status(), stored.ShowOnHome)
 	}
 
 	if _, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{
@@ -775,58 +798,13 @@ func TestCreateFromBaselineDefaultsShowOnHome(t *testing.T) {
 	}
 }
 
-func TestOnboardingBootstrapDoesNotReuseSameNamedForeignGroup(t *testing.T) {
-	svc, _ := newOnboardingHarness(t)
-	org, err := svc.Org.Get()
-	if err != nil {
-		t.Fatalf("org: %v", err)
-	}
-	org.Groups = append(org.Groups, services.OrgGroup{ID: "g_foreign_same_name", Name: "支付中台项目组"})
-	if _, err := svc.Org.Put(org, org.Revision); err != nil {
-		t.Fatalf("seed org: %v", err)
-	}
-
-	p, err := svc.Projects.Create("支付中台", "", nil, nil)
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	res, err := svc.Bootstrap(p.ID, services.OnboardingBootstrapRequest{AcpBackend: "cursor", APIKey: "k-pay"})
-	if err != nil {
-		t.Fatalf("bootstrap: %v", err)
-	}
-	if res.GroupName != "支付中台项目组" {
-		t.Fatalf("groupName = %q", res.GroupName)
-	}
-
-	org2, err := svc.Org.Get()
-	if err != nil {
-		t.Fatalf("org2: %v", err)
-	}
-	wantID := "g_onb_" + p.ID
-	var foundWant, agentsOnForeign bool
-	for _, g := range org2.Groups {
-		if g.ID == wantID {
-			foundWant = true
-		}
-	}
-	if !foundWant {
-		t.Fatalf("expected new group %s, groups=%+v", wantID, org2.Groups)
-	}
-	for _, name := range res.AgentIDs {
-		m := org2.Agents[name]
-		for _, gid := range m.GroupIDs {
-			if gid == "g_foreign_same_name" {
-				agentsOnForeign = true
-			}
-		}
-	}
-	if agentsOnForeign {
-		t.Fatal("agents must not join the foreign same-named group")
-	}
-}
-
 func newOnboardingHarness(t *testing.T) (*services.OnboardingService, string) {
 	t.Helper()
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(crypto.SecretsKeyEnv, base64.StdEncoding.EncodeToString(key))
 	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "onboarding.db"))
 	if err != nil {
 		t.Fatalf("db: %v", err)
@@ -843,7 +821,7 @@ func newOnboardingHarness(t *testing.T) (*services.OnboardingService, string) {
 	}
 	root := t.TempDir()
 	skills := services.NewAgentService(root)
-	org := services.NewOrgService(root, skills)
 	wf := services.NewWorkflowService(db)
-	return services.NewOnboardingService(projects, skills, services.NewSharedAgentService(t.TempDir()), wf, org), projectID
+	creds := services.NewProjectCredentialService(db)
+	return services.NewOnboardingService(projects, skills, services.NewSharedAgentService(t.TempDir()), wf, creds), projectID
 }

@@ -20,8 +20,7 @@ vi.mock('@/lib/composables/useToast', () => ({ useToast: () => mocks }))
 import ProjectSharedAgentPanel from './ProjectSharedAgentPanel.vue'
 
 const cfg = {
-  acpBackend: 'cursor', defaultProjectId: 'p1', gitCredentialType: '',
-  gitSshKnownHosts: '', gitSshPrivateKey: '', files: [], mcp: [], env: {},
+  projectId: 'p1', acpBackend: 'cursor', gitCredentialType: '', files: [], mcp: [], env: {},
   layout: { configRoot: '~/.cursor', workspaceDir: '/workspace' },
 }
 const FilesStub = { name: 'AgentFilesPanel', props: ['draft', 'save'], methods: { openPathOrCreate: vi.fn() }, template: '<div data-testid="files"/>' }
@@ -57,10 +56,13 @@ describe('ProjectSharedAgentPanel interactions', () => {
     await flushPromises()
     expect(vm.draft.acpBackend).toBe('claude_code')
     if (vm.metaRegionOptions.length) vm.selectRegion(vm.metaRegionOptions[0].id)
-    vm.draft.projectId = 'p-new'
+    vm.draft.layout.workspaceDir = '/srv/work'
     expect(vm.dirty).toBe(true)
     expect(await vm.save()).toBe(true)
-    expect(mocks.putConfig).toHaveBeenCalledWith('p1', expect.objectContaining({ defaultProjectId: 'p-new', files: [] }))
+    expect(mocks.putConfig).toHaveBeenCalledWith('p1', expect.objectContaining({
+      layout: expect.objectContaining({ workspaceDir: '/srv/work' }),
+      files: [],
+    }))
     expect(mocks.success).toHaveBeenCalled()
     expect(vm.dirty).toBe(false)
     w.unmount()
@@ -74,13 +76,13 @@ describe('ProjectSharedAgentPanel interactions', () => {
     expect(w.text()).toContain('load failed')
     mocks.getConfig.mockResolvedValue(cfg)
     await vm.load()
-    vm.draft.projectId = 'dirty'
+    vm.draft.layout.workspaceDir = '/dirty'
     mocks.putConfig.mockRejectedValueOnce(new Error('save failed'))
     expect(await vm.save()).toBe(false)
     expect(mocks.error).toHaveBeenCalledWith('save failed')
     vm.discard()
     await flushPromises()
-    expect(vm.draft.projectId).toBe('p1')
+    expect(vm.draft.layout.workspaceDir).toBe('/workspace')
     vm.draft = null
     expect(await vm.save()).toBe(false)
     vm.discard()
@@ -113,8 +115,8 @@ describe('ProjectSharedAgentPanel interactions', () => {
     w.unmount()
   })
 
-  it('renders every remaining subpanel plus special-region and SSH metadata states', async () => {
-    mocks.getConfig.mockResolvedValueOnce({ ...cfg, env: { CURSOR_REGION: 'legacy-special' }, gitSshPrivateKey: 'private', gitSshKnownHosts: 'host key' })
+  it('renders every remaining subpanel plus special-region state, without an SSH block', async () => {
+    mocks.getConfig.mockResolvedValueOnce({ ...cfg, env: { CURSOR_REGION: 'legacy-special' } })
     const w = mountPanel(); await flushPromises()
     const vm = w.vm as any
     for (const tab of ['mcp', 'env', 'meta']) {
@@ -122,7 +124,7 @@ describe('ProjectSharedAgentPanel interactions', () => {
       await flushPromises()
     }
     vm.subTab = 'meta'; await w.vm.$nextTick()
-    expect((w.find('[data-test="shared-ssh-private-key"]').element as HTMLTextAreaElement).value).toBe('private')
+    expect(w.find('[data-test="shared-ssh-private-key"]').exists()).toBe(false)
     vm.draft.layout.configRoot = ''
     await w.vm.$nextTick()
     expect(vm.derivedPaths[0].path).toContain('mcp.json')

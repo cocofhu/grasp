@@ -73,7 +73,7 @@ https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
 | Git 交付 | 沙箱内 `gh` / `glab` / SSH |
 | 可观测 | 时间线、沙箱日志、产物、Token |
 
-仓库内提供 Clarify、Visual、Research、Proposal、Plan、Implement、Test、Preview、Review 等角色包。用 `agents/pack.sh` 打包后导入 Agent Studio。
+仓库内提供 Clarify、Visual、Research、Plan、Implement、Test、Preview、Review 等角色包。用 `agents/pack.sh` 打包后导入 Agent Studio。
 
 ## 典型工作流
 
@@ -86,7 +86,7 @@ https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
 更完整的交付机器：
 
 ```text
-需求澄清 → 技术调研 → 方案设计 → 人工门禁
+需求澄清 → 技术调研 → 人工门禁
         → 执行计划 → 代码实现 → 测试验证 → 代码评审
         → 人工确认 → PR / MR
 ```
@@ -177,7 +177,7 @@ cd grasp
 ## 部署与安全提示
 
 - 默认账号仅用于本地演示；共享或生产环境必须配置自己的鉴权用户。
-- ACP API Key 与 Git 凭据应配置在项目或 Agent env，不应提交到仓库。
+- ACP API Key 与 Git 凭据只在项目凭据 UI 中配置，不应提交到仓库。
 - 发布环境建议使用 digest 固定镜像，参考 [Release images and smoke](CONTRIBUTING.md#release-images-and-smoke)。
 - 1.0.0 为首个稳定公开发布版本。请在实际环境中完成安全评估、备份和容量验证。
 - **反向代理 Host：** 临时审批分享链接按本请求的 `Host` 铸造（不信任客户端 `X-Forwarded-Host`）。代理须保留浏览器原始 Host（如 nginx `proxy_set_header Host $host`）；TLS 终止时正确转发 `X-Forwarded-Proto`。详见 [`SECURITY.md`](SECURITY.md)。

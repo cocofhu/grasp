@@ -52,7 +52,7 @@ type RuntimeBundle struct {
 type runtimeState struct {
 	version        string
 	backendPending bool
-	skip           string // non-empty: never retry (legacy image / image too old)
+	skip           string // non-empty: never retry (image too old)
 }
 
 // NewRuntimeBundle reads the bundle lazily from path on first use.

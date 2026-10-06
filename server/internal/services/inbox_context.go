@@ -104,9 +104,8 @@ func containsString(ss []string, v string) bool {
 }
 
 // GateUpstreamNodeIDs collects upstream node ids referenced by a gate's
-// body_template ({{nodes.<id>.outputs.*}}) and, for proposal_select gates,
-// the node that produced the configured proposals artifact.
-func GateUpstreamNodeIDs(gateNode *models.Node, artifacts []models.Artifact) []string {
+// body_template ({{nodes.<id>.outputs.*}}).
+func GateUpstreamNodeIDs(gateNode *models.Node) []string {
 	seen := map[string]bool{}
 	var out []string
 	add := func(id string) {
@@ -122,18 +121,6 @@ func GateUpstreamNodeIDs(gateNode *models.Node, artifacts []models.Artifact) []s
 			for _, m := range gateBodyNodeRef.FindAllStringSubmatch(bt, -1) {
 				if len(m) > 1 {
 					add(m[1])
-				}
-			}
-		}
-		if gateNode.Type == "proposal_select" {
-			from := "proposals.json"
-			if v, ok := gateNode.Config["from"].(string); ok && strings.TrimSpace(v) != "" {
-				from = strings.TrimSpace(v)
-			}
-			for _, a := range artifacts {
-				if a.Name == from {
-					add(a.NodeID)
-					break
 				}
 			}
 		}
@@ -157,7 +144,7 @@ func ClarifySlimNodeIDs(node *models.Node, currentNodeID string, artifacts []mod
 		out = append(out, id)
 	}
 	add(currentNodeID)
-	for _, id := range GateUpstreamNodeIDs(node, artifacts) {
+	for _, id := range GateUpstreamNodeIDs(node) {
 		add(id)
 	}
 	if node == nil {

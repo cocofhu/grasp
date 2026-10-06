@@ -213,7 +213,6 @@ const {
   sessionBusy,
   AUTO_GROW_MIN,
   AUTO_GROW_MAX,
-  LEGACY_CHOICE_PREFIX,
   choicePrefix,
   latestQuestionIdx,
   latestQuestions,

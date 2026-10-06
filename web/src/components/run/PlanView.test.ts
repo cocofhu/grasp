@@ -23,7 +23,7 @@ const designDoc: PlanDoc = {
   title: '完整计划',
   architecture: {
     summary: 'arch summary',
-    diagram: { format: 'mermaid', source: 'flowchart LR\n  A-->B', caption: '架构' },
+    diagrams: [{ format: 'mermaid', source: 'flowchart LR\n  A-->B', caption: '架构' }],
   },
   data_design: {
     summary: 'data',
@@ -36,13 +36,13 @@ const designDoc: PlanDoc = {
       relationships: ['1..* planGoal'],
     }],
     relationships: ['planDoc contains planGoal'],
-    diagram: { source: 'erDiagram\n  A ||--o{ B : has' },
+    diagrams: [{ source: 'erDiagram\n  A ||--o{ B : has' }],
   },
   interfaces: [{ name: 'set_plan', summary: '写入' }],
   components: [{ name: 'plan.go', responsibility: 'parse' }],
   interaction: {
     summary: 'flow',
-    diagram: { source: 'sequenceDiagram\n  A->>B: hi' },
+    diagrams: [{ source: 'sequenceDiagram\n  A->>B: hi' }],
   },
   test_design: 'S1-S7',
   goals: [
@@ -86,7 +86,7 @@ describe('PlanView', () => {
     mermaidRender.mockResolvedValue({ svg: '<svg data-ok="1"></svg>' })
   })
 
-  it('renders goals and progress (legacy goals-only)', () => {
+  it('renders goals and progress (goals-only)', () => {
     const doc: PlanDoc = {
       title: '实施计划',
       goals: [
@@ -150,22 +150,6 @@ describe('PlanView', () => {
     expect(wrapper.text()).toContain('1..* planGoal')
     expect(wrapper.find('[data-testid="plan-data-relationships"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('planDoc contains planGoal')
-    wrapper.unmount()
-  })
-
-  it('renders legacy attributes when fields absent (g2.1)', () => {
-    const doc: PlanDoc = {
-      data_design: {
-        summary: 'legacy',
-        entities: [{ name: 'Old', attributes: ['id', 'name'] }],
-      },
-      goals: [{ id: 'g1', title: 'G', status: 'pending' }],
-    }
-    const wrapper = mountPlan(doc)
-    expect(wrapper.find('[data-testid="plan-entity-fields"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="plan-entity-attributes"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('legacy')
-    expect(wrapper.text()).toContain('id')
     wrapper.unmount()
   })
 
@@ -251,7 +235,7 @@ describe('PlanView', () => {
     const doc: PlanDoc = {
       architecture: {
         summary: 'arch',
-        diagram: { source: 'flowchart LR\n  FAIL-->HERE' },
+        diagrams: [{ source: 'flowchart LR\n  FAIL-->HERE' }],
       },
       goals: [{ id: 'g1', title: 'G', status: 'pending' }],
     }
@@ -338,7 +322,7 @@ describe('PlanView', () => {
     const one = mountPlan({
       architecture: {
         summary: '单图',
-        diagram: { source: 'flowchart LR\n  A-->B', title: '总览' },
+        diagrams: [{ source: 'flowchart LR\n  A-->B', title: '总览' }],
       },
       goals: [{ id: 'g1', title: 'G', status: 'pending' }],
     })
@@ -379,23 +363,6 @@ describe('PlanView', () => {
     expect(mermaidRender).toHaveBeenCalledWith(expect.any(String), 'flowchart TD\n  S-->E')
     // still no sidebar
     expect(wrapper.find('[data-testid="plan-diagram-sidebar"]').exists()).toBe(false)
-    wrapper.unmount()
-  })
-
-  it('merges diagrams[] with singular diagram for display (g2.1)', async () => {
-    const doc: PlanDoc = {
-      architecture: {
-        summary: '合并',
-        diagrams: [{ kind: 'activity', title: '活动', source: 'flowchart TD\n  S-->E' }],
-        diagram: { source: 'flowchart LR\n  A-->B', title: '兼容单图' },
-      },
-      goals: [{ id: 'g1', title: 'G', status: 'pending' }],
-    }
-    const wrapper = mountPlan(doc)
-    await flushPromises()
-    expect(wrapper.findAll('[data-testid^="plan-diagram-tab-"]')).toHaveLength(2)
-    expect(wrapper.text()).toContain('活动')
-    expect(wrapper.text()).toContain('兼容单图')
     wrapper.unmount()
   })
 })

@@ -42,6 +42,7 @@ func TestGateArtifactSaveAndListPrimary(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	seedArtifactOwner(t, db, runID)
 	db.Create(&models.StateRun{
 		RunID: runID, NodeID: "research", NodeType: "agent", Iteration: 1, Status: "completed",
 		Outputs: map[string]any{"research_json": researchJSON, "research": "md"},
@@ -131,6 +132,7 @@ func TestSaveGateArtifactRecordsPageHistory(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	seedArtifactOwner(t, db, runID)
 	db.Create(&models.StateRun{
 		RunID: runID, NodeID: "page", NodeType: "agent", Iteration: 1, Status: "completed",
 		Outputs: map[string]any{"page": oldHTML},

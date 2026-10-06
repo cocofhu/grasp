@@ -3,18 +3,17 @@ const STRUCTURED_ARTIFACT_NAMES = new Set([
   'clarified_requirement.json',
   'research.json',
   'root_cause.json',
-  'proposals.json',
-  'proposal.json',
   'plan.json',
   'implementation_result.json',
   'test_result.json',
   'review.json',
+  'merge_request.json',
   'preflight.json',
 ])
 
 // Feedback ledger products are matched by prefix. New ReAct products use one
-// stable feedback.<kind>.<node>.i<n>.json name per execution while legacy and
-// gate/preview products may retain their i<n>r<n> form.
+// stable feedback.<kind>.<node>.i<n>.json name per execution while gate/preview
+// products use the i<n>r<n> form.
 const FEEDBACK_INDEX_NAME = 'feedback_index.json'
 const FEEDBACK_PREFIX = 'feedback.'
 
@@ -30,13 +29,13 @@ export function isStructuredArtifactName(name: string): boolean {
 <script setup lang="ts">
 import { computed } from 'vue'
 import PlanView from './PlanView.vue'
-import ProposalSelectView from './ProposalSelectView.vue'
 import ClarifiedRequirementView from './product/ClarifiedRequirementView.vue'
 import ResearchView from './product/ResearchView.vue'
 import RootCauseView from './product/RootCauseView.vue'
 import TestResultView from './product/TestResultView.vue'
 import ReviewView from './product/ReviewView.vue'
 import ImplementationResultView from './product/ImplementationResultView.vue'
+import MergeRequestView from './product/MergeRequestView.vue'
 import FeedbackLedgerView from './product/FeedbackLedgerView.vue'
 import PreflightView from './product/PreflightView.vue'
 
@@ -55,9 +54,6 @@ const props = defineProps<{
   runStatus?: string
 }>()
 
-// proposal.json is a single accepted proposal; adapt it to the proposals card
-// list (one item) and highlight it as the selected one.
-const asProposals = computed(() => ({ context: props.doc?.context, proposals: props.doc ? [props.doc] : [] }))
 const isFeedback = computed(() => isFeedbackArtifactName(props.name))
 </script>
 
@@ -66,6 +62,7 @@ const isFeedback = computed(() => isFeedbackArtifactName(props.name))
   <PreflightView v-else-if="name === 'preflight.json'" :doc="doc" :accent="accent" />
   <PlanView v-else-if="name === 'plan.json'" :doc="doc" :accent="accent" :artifacts="artifacts" />
   <ImplementationResultView v-else-if="name === 'implementation_result.json'" :doc="doc" :accent="accent" />
+  <MergeRequestView v-else-if="name === 'merge_request.json'" :doc="doc" :accent="accent" />
   <ResearchView v-else-if="name === 'research.json'" :doc="doc" :accent="accent" />
   <RootCauseView v-else-if="name === 'root_cause.json'" :doc="doc" :accent="accent" :artifacts="artifacts" />
   <TestResultView
@@ -77,8 +74,6 @@ const isFeedback = computed(() => isFeedbackArtifactName(props.name))
     :run-status="runStatus"
   />
   <ReviewView v-else-if="name === 'review.json'" :doc="doc" />
-  <ProposalSelectView v-else-if="name === 'proposals.json'" :doc="doc" readonly />
-  <ProposalSelectView v-else-if="name === 'proposal.json'" :doc="asProposals" :resolved-id="doc?.id" readonly />
   <FeedbackLedgerView
     v-else-if="isFeedback"
     :name="name"

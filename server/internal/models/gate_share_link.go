@@ -14,7 +14,7 @@ const (
 type GateShareLink struct {
 	ID        string `gorm:"primaryKey;size:40" json:"id"`
 	TokenHash string `gorm:"uniqueIndex;size:64;not null" json:"-"`
-	Kind      string `gorm:"size:32;index:idx_gsl_kind_instance,priority:1;not null;default:human_gate" json:"kind"`
+	Kind      string `gorm:"size:32;index:idx_gsl_kind_instance,priority:1;not null" json:"kind"`
 	RunID     string `gorm:"index:idx_gsl_instance,priority:1;index:idx_gsl_kind_instance,priority:2;index;size:64" json:"runId"`
 	NodeID    string `gorm:"index:idx_gsl_instance,priority:2;index:idx_gsl_kind_instance,priority:3;size:128" json:"nodeId"`
 	Iteration int    `gorm:"index:idx_gsl_instance,priority:3;index:idx_gsl_kind_instance,priority:4" json:"iteration"`
@@ -22,8 +22,7 @@ type GateShareLink struct {
 	CreatedBy string `gorm:"size:128" json:"createdBy"`
 	TTLTier   string `gorm:"size:8" json:"ttlTier"`
 	// PermissionPreset is the link-level capability preset (full|react_only).
-	// Empty / missing rows are treated as full for backward compatibility.
-	PermissionPreset string     `gorm:"size:32" json:"permissionPreset,omitempty"`
+	PermissionPreset string     `gorm:"size:32;not null" json:"permissionPreset"`
 	ExpiresAt        time.Time  `gorm:"index" json:"expiresAt"`
 	RevokedAt        *time.Time `json:"revokedAt,omitempty"`
 	UsedAt           *time.Time `json:"usedAt,omitempty"`

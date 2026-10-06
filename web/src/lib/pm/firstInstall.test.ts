@@ -14,7 +14,7 @@ import { DEFAULT_PROJECT_ID, ONBOARDING_WORKFLOW_NAMES, suppressOnboarding } fro
 import {
   closeFirstInstall,
   firstInstallCompletedAt,
-  firstInstallOpen,
+  onboardingOpen,
   markFirstInstallCompleted,
   openFirstInstall,
   probeFirstInstall,
@@ -43,14 +43,14 @@ describe('firstInstall', () => {
   it('opens on entry when the default project is still empty', async () => {
     stubEmptyDefaultProject()
     await probeFirstInstall()
-    expect(firstInstallOpen.value).toBe(true)
+    expect(onboardingOpen.value).toBe(true)
   })
 
   it('stays closed while suppressed and never calls the API', async () => {
     stubEmptyDefaultProject()
     suppressOnboarding(DEFAULT_PROJECT_ID)
     await probeFirstInstall()
-    expect(firstInstallOpen.value).toBe(false)
+    expect(onboardingOpen.value).toBe(false)
     expect(mocked.getProject).not.toHaveBeenCalled()
   })
 
@@ -60,14 +60,14 @@ describe('firstInstall', () => {
       { id: 'wf-1', name: ONBOARDING_WORKFLOW_NAMES[0] },
     ] as never)
     await probeFirstInstall()
-    expect(firstInstallOpen.value).toBe(false)
+    expect(onboardingOpen.value).toBe(false)
   })
 
   it('still opens when other workflows exist but the default one is missing', async () => {
     stubEmptyDefaultProject()
     mocked.listWorkflows.mockResolvedValue([{ id: 'wf-1', name: '我的流程' }] as never)
     await probeFirstInstall()
-    expect(firstInstallOpen.value).toBe(true)
+    expect(onboardingOpen.value).toBe(true)
   })
 
   it('probes once per session so route changes do not reopen it', async () => {
@@ -75,7 +75,7 @@ describe('firstInstall', () => {
     await probeFirstInstall()
     closeFirstInstall()
     await probeFirstInstall()
-    expect(firstInstallOpen.value).toBe(false)
+    expect(onboardingOpen.value).toBe(false)
     expect(mocked.getProject).toHaveBeenCalledTimes(1)
   })
 
@@ -83,7 +83,7 @@ describe('firstInstall', () => {
     stubEmptyDefaultProject()
     mocked.listAgents.mockRejectedValue(new Error('network'))
     await expect(probeFirstInstall()).resolves.toBeUndefined()
-    expect(firstInstallOpen.value).toBe(false)
+    expect(onboardingOpen.value).toBe(false)
   })
 
   it('stays silent when the default project is missing', async () => {
@@ -91,14 +91,14 @@ describe('firstInstall', () => {
     mocked.listWorkflows.mockResolvedValue([] as never)
     mocked.listAgents.mockResolvedValue([] as never)
     await expect(probeFirstInstall()).resolves.toBeUndefined()
-    expect(firstInstallOpen.value).toBe(false)
+    expect(onboardingOpen.value).toBe(false)
   })
 
   it('open/close and completion signal are manual controls', () => {
     openFirstInstall()
-    expect(firstInstallOpen.value).toBe(true)
+    expect(onboardingOpen.value).toBe(true)
     closeFirstInstall()
-    expect(firstInstallOpen.value).toBe(false)
+    expect(onboardingOpen.value).toBe(false)
 
     const before = firstInstallCompletedAt.value
     markFirstInstallCompleted()

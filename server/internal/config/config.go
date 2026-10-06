@@ -6,9 +6,9 @@
 // (see watcher.go). **Do not bake config into the image.**
 //
 // Precedence: explicit env > config file > code defaults.
-// High-sensitivity secrets (e.g. cursor_api_key) should be injected via K8s
-// Secret env overrides, not ConfigMap / image. Git host credentials are not
-// platform config; they live on Agent meta env / connectors.
+// High-sensitivity secrets (e.g. gateway_api_key) should be injected via K8s
+// Secret env overrides, not ConfigMap / image. ACP and Git host credentials
+// are not platform config; they live in project credentials.
 package config
 
 import (
@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )
@@ -82,10 +83,8 @@ func (c *Config) SecretsKey() string {
 // BrowserConfig configures the server-side VNC preview path. Each preview
 // sandbox embeds Xvfb+Chromium+x11vnc+websockify; the platform dials that
 // sandbox over CDP/websockify (no global browser pool). See internal/browser.
+// VNC preview is always available.
 type BrowserConfig struct {
-	// Enabled is deprecated: VNC preview is always available when the service
-	// starts. Kept for config compatibility only.
-	Enabled bool `yaml:"enabled"`
 	// MaxTabs caps globally concurrent preview tabs (one per viewer session).
 	MaxTabs int `yaml:"max_tabs"`
 	// MaxTabsPerContainer caps tabs per sandbox desktop; VNC shows one X display
@@ -178,11 +177,6 @@ type DatabaseConfig struct {
 }
 
 type EngineConfig struct {
-	// ExecProvider selects the agent/sandbox execution backend. The product
-	// ships a single Docker-sandbox backend; the neutral name is "sandbox"
-	// (default), with "cursor" accepted as a compatibility alias. Other values
-	// fall back to the sandbox backend.
-	ExecProvider string `yaml:"exec_provider"`
 	// MaxConcurrentRuns caps simultaneously executing runs.
 	MaxConcurrentRuns int `yaml:"max_concurrent_runs"`
 	// ProfilesRoot is where skill profiles (rules) are stored.
@@ -214,18 +208,11 @@ type SandboxConfig struct {
 	// (models.dev by default). Point it at a mirror when egress is restricted.
 	OpenCodeCatalogURL string `yaml:"opencode_catalog_url"`
 	// Env is the vendor-neutral set of environment variables injected into
-	// every sandbox container. ACP API keys belong in Agent env or acp_env, not here.
+	// every sandbox container.
 	Env map[string]string `yaml:"env"`
-	// AcpEnv is the vendor-neutral map of ACP backend secrets and options merged
-	// into every sandbox container's environment (after Env). Per-backend keys
-	// keep their vendor semantics (e.g. GRASP_CURSOR_API_KEY, ANTHROPIC_API_KEY).
+	// AcpEnv is the vendor-neutral map of ACP backend options merged into
+	// every sandbox container's environment (after Env).
 	AcpEnv map[string]string `yaml:"acp_env"`
-	// CursorAPIKey is deprecated: use sandbox.acp_env or Agent env instead.
-	// When set, a deprecation warning is logged and the value is NOT injected.
-	CursorAPIKey string `yaml:"cursor_api_key"`
-	// CursorAuthPath is deprecated: reference-implementation only. When set, a
-	// host dir is mounted read-only at /root/.config/cursor for the cursor CLI.
-	CursorAuthPath string `yaml:"cursor_auth_path"`
 	// AgentChatTimeoutSeconds bounds a single agent/react turn (hard wall-clock
 	// cap). A slow-but-productive turn is bounded by this; a stuck one is caught
 	// sooner by ChatIdleTimeoutSeconds below.
@@ -362,17 +349,28 @@ func parse(path string) (*Config, error) {
 	}
 	applyEnvOverrides(c)
 	setDefaults(c)
+	if err := rejectSandboxSecretEnv(c); err != nil {
+		return nil, err
+	}
 	return c, nil
 }
 
-// applyEnvOverrides lets explicit env vars win over the file. The cursor_api_key
-// secret is injected here from K8s Secret-backed env.
-func applyEnvOverrides(c *Config) {
-	for _, option := range OptionDescriptors() {
-		if option.Deprecated && os.Getenv(option.Env) != "" {
-			log.Warn().Str("env", option.Env).Msg("deprecated configuration option is set")
+// rejectSandboxSecretEnv keeps credentials out of platform-wide sandbox env:
+// they are injected per project from project credentials only.
+func rejectSandboxSecretEnv(c *Config) error {
+	for field, env := range map[string]map[string]string{"sandbox.env": c.Sandbox.Env, "sandbox.acp_env": c.Sandbox.AcpEnv} {
+		for k := range env {
+			if envauth.IsSecretEnvKey(k) {
+				return fmt.Errorf("%s: %s must be configured as a project credential", field, k)
+			}
 		}
 	}
+	return nil
+}
+
+// applyEnvOverrides lets explicit env vars win over the file. Secrets such as
+// gateway_api_key are injected here from K8s Secret-backed env.
+func applyEnvOverrides(c *Config) {
 	if v := envInt("GRASP_PORT"); v != 0 {
 		c.Server.Port = v
 	}
@@ -393,9 +391,6 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := env("GRASP_DB_DSN"); v != "" {
 		c.Database.DSN = v
-	}
-	if v := env("GRASP_EXEC_PROVIDER"); v != "" {
-		c.Engine.ExecProvider = v
 	}
 	if v := envInt("GRASP_MAX_RUNS"); v != 0 {
 		c.Engine.MaxConcurrentRuns = v
@@ -418,17 +413,6 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := env("GRASP_OPENCODE_CATALOG_URL"); v != "" {
 		c.Sandbox.OpenCodeCatalogURL = v
-	}
-	if v := env("GRASP_BROWSER_ENABLED"); v != "" {
-		lv := strings.ToLower(v)
-		c.Browser.Enabled = lv == "1" || lv == "true" || lv == "yes"
-	}
-	// Accept both the GRASP_-prefixed and bare names for the secrets.
-	if v := first(env("GRASP_CURSOR_API_KEY"), env("CURSOR_API_KEY")); v != "" {
-		c.Sandbox.CursorAPIKey = v
-	}
-	if v := env("GRASP_CURSOR_AUTH"); v != "" {
-		c.Sandbox.CursorAuthPath = v
 	}
 	if v := env("GRASP_SANDBOX_ENV"); v != "" {
 		mergeEnvList(c, v)
@@ -503,10 +487,6 @@ func setDefaults(c *Config) {
 	if c.Database.Driver == "sqlite" && c.Database.Path == "" {
 		c.Database.Path = "grasp.db"
 	}
-	if c.Engine.ExecProvider == "" {
-		c.Engine.ExecProvider = "sandbox"
-	}
-	c.Engine.ExecProvider = strings.ToLower(c.Engine.ExecProvider)
 	if c.Engine.MaxConcurrentRuns == 0 {
 		c.Engine.MaxConcurrentRuns = 5
 	}
@@ -531,12 +511,6 @@ func setDefaults(c *Config) {
 	}
 	if c.Sandbox.GatewayURL == "" {
 		c.Sandbox.GatewayURL = "http://127.0.0.1:8899"
-	}
-	if c.Sandbox.CursorAPIKey != "" {
-		log.Warn().Msg("sandbox.cursor_api_key / GRASP_CURSOR_API_KEY is deprecated; use sandbox.acp_env or Agent env instead")
-	}
-	if c.Sandbox.CursorAuthPath != "" {
-		log.Warn().Msg("sandbox.cursor_auth_path is deprecated; configure auth per Agent/backend via acp_env")
 	}
 	mergeAcpEnv(c)
 	if c.Sandbox.AgentChatTimeoutSeconds == 0 {
@@ -712,13 +686,4 @@ func envInt(key string) int {
 		}
 	}
 	return 0
-}
-
-func first(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }

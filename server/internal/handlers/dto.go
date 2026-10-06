@@ -62,7 +62,8 @@ func workflowDTO(wf models.WorkflowDef) gin.H {
 	policy := services.NormalizeWorkflowNotifyPolicy(wf.NotifyPolicy)
 	return gin.H{
 		"id": wf.ID, "projectId": wf.ProjectID, "name": wf.Name, "description": wf.Description,
-		"status": wf.Status, "version": wf.Version, "needsRepo": wf.NeedsRepo,
+		"status": wf.Status(), "version": wf.Version, "publishedVersion": wf.PublishedVersion,
+		"needsRepo":    wf.NeedsRepo,
 		"showOnHome":   wf.ShowOnHome,
 		"notifyPolicy": policy,
 		"updatedAt":    wf.UpdatedAt, "lastRunAt": wf.LastRunAt,
@@ -256,6 +257,5 @@ func (h *Handlers) runDetailDTO(r models.Run) gin.H {
 			out["logSummaryOrRef"] = info.LogSummaryOrRef
 		}
 	}
-	h.hydrateNodeExecutions(nodeExecutions, r.ID)
 	return out
 }

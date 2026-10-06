@@ -326,13 +326,13 @@ func TestRenderAnnotations(t *testing.T) {
 		t.Fatal("nil annotations should render empty")
 	}
 	got := RenderAnnotations([]ReactAnnotation{
-		{JSONPath: "proposals[p1].title", Label: "方案 A", Note: "更具体"},
+		{JSONPath: "findings[r1].title", Label: "发现 A", Note: "更具体"},
 		{Selector: "#hero h1", URL: "http://127.0.0.1:5173/settings?tab=1", Note: ""},
 		{JSONPath: "summary", Quote: "划选的一段原文", Label: "概述", Note: "改这句"},
 		{Quote: "未绑定摘录", Truncated: true, Note: ""},
 	})
 	for _, part := range []string{
-		"字段路径", "proposals[p1].title", "(方案 A)", "更具体",
+		"字段路径", "findings[r1].title", "(发现 A)", "更具体",
 		"页面元素", "#hero h1", "(见下方文字说明)",
 		"页面 URL: http://127.0.0.1:5173/settings?tab=1",
 		"引用原文", "划选的一段原文", "未绑定摘录", "已截断", "段落摘录",

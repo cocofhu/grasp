@@ -16,9 +16,8 @@ func (f fakeAgentLookup) Get(name string) (Agent, bool) {
 
 func TestValidateAgentProfilesProject(t *testing.T) {
 	skills := fakeAgentLookup{
-		"ok-agent":      {Name: "ok-agent", ProjectID: "alpha"},
-		"other-agent":   {Name: "other-agent", ProjectID: "beta"},
-		"unbound-agent": {Name: "unbound-agent", ProjectID: ""},
+		"ok-agent":    {Name: "ok-agent", ProjectID: "alpha"},
+		"other-agent": {Name: "other-agent", ProjectID: "beta"},
 	}
 
 	t.Run("empty agent_profile skipped", func(t *testing.T) {
@@ -41,13 +40,12 @@ func TestValidateAgentProfilesProject(t *testing.T) {
 		}
 	})
 
-	t.Run("allows cross project and unbound; rejects deleted", func(t *testing.T) {
+	t.Run("allows cross project; rejects deleted", func(t *testing.T) {
 		g := models.Graph{Nodes: []models.Node{
 			{ID: "a", Type: "agent", Label: "执行", Config: map[string]any{"agent_profile": "other-agent"}},
-			{ID: "b", Type: "agent", Label: "澄清", Config: map[string]any{"agent_profile": "unbound-agent"}},
 		}}
 		if err := ValidateAgentProfilesProject(skills, "alpha", g); err != nil {
-			t.Fatalf("cross/unbound should pass for shared extend: %v", err)
+			t.Fatalf("cross project should pass for shared extend: %v", err)
 		}
 		g2 := models.Graph{Nodes: []models.Node{
 			{ID: "c", Type: "agent", Label: "计划", Config: map[string]any{"agent_profile": "ghost"}},
@@ -72,7 +70,6 @@ func TestWorkflowServiceSavePublishAgentProfileGate(t *testing.T) {
 		ID:        "wf-skill-1",
 		ProjectID: models.DefaultProjectID,
 		Name:      "skill-gate",
-		Status:    "draft",
 		Version:   1,
 		Graph: models.Graph{Nodes: []models.Node{
 			{ID: "in", Type: "input", Label: "输入", Position: models.Position{}, Config: map[string]any{}},

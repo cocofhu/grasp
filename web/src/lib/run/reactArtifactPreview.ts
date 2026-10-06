@@ -22,12 +22,6 @@ const BOOKKEEPING_EXACT_NAMES = new Set([
 ])
 
 export const REACT_STAGE_TAB_GRID = 'grid'
-/**
- * Legacy chrome “产物预览” empty surface id.
- * Kept for session restore / idle checks; UI no longer renders this chrome tab.
- * Persisted `activeTab=preview` is coalesced to {@link REACT_STAGE_TAB_GRID}.
- */
-export const REACT_STAGE_TAB_PREVIEW = 'preview'
 export const REACT_STAGE_TAB_NOVNC = 'novnc'
 export const PREVIEW_TAB_PREFIX = 'preview:'
 
@@ -232,7 +226,6 @@ export function resolveStageRemoteKind(opts: {
 
 export type ReactStageTab =
   | typeof REACT_STAGE_TAB_GRID
-  | typeof REACT_STAGE_TAB_PREVIEW
   | typeof REACT_STAGE_TAB_NOVNC
   | string
 
@@ -276,13 +269,6 @@ export function nextTabAfterClose(
   const i = openNames.indexOf(closed)
   const pick = remaining[Math.min(Math.max(i, 0), remaining.length - 1)] ?? remaining[remaining.length - 1]
   return previewTabId(pick)
-}
-
-/** Coalesce legacy chrome preview id (and empty) to workflow grid. */
-export function coalesceStageTab(tab: string | null | undefined): string {
-  const t = String(tab || '').trim()
-  if (!t || t === REACT_STAGE_TAB_PREVIEW) return REACT_STAGE_TAB_GRID
-  return t
 }
 
 export type ArtifactKindKey = Artifact['kind']
@@ -553,9 +539,7 @@ export type StageTabUnreadKind = 'new' | 'updated'
 
 /** Idle chrome tabs where auto-pin / pin may steal focus without interrupting reading. */
 export function isIdleStageTab(activeTab: string | null | undefined): boolean {
-  const tab = String(activeTab || '').trim()
-  // Legacy PREVIEW still counts as idle so in-flight / unrestored state can focus pins.
-  return tab === REACT_STAGE_TAB_GRID || tab === REACT_STAGE_TAB_PREVIEW
+  return String(activeTab || '').trim() === REACT_STAGE_TAB_GRID
 }
 
 /**
@@ -610,11 +594,10 @@ const FRIENDLY_NAME_KEYS: Record<string, string> = {
   'clarified_requirement.json': 'common.gateBodyLabels.clarifiedRequirement',
   'research.json': 'common.gateBodyLabels.research',
   'root_cause.json': 'common.gateBodyLabels.rootCause',
-  'proposals.json': 'common.gateBodyLabels.proposals',
-  'proposal.json': 'common.gateBodyLabels.proposal',
   'test_result.json': 'common.gateBodyLabels.testResult',
   'review.json': 'common.gateBodyLabels.review',
   'implementation_result.json': 'common.gateBodyLabels.implementationResult',
+  'merge_request.json': 'common.gateBodyLabels.mergeRequest',
   'preflight.json': 'common.gateBodyLabels.preflight',
 }
 
@@ -832,21 +815,21 @@ export function restoreStageOpenState(
 ): StageOpenState | null {
   if (!saved) return null
   const hasAny = saved.openNames.length > 0 || !!saved.novncOpen
-  const coalescedSaved = coalesceStageTab(saved.activeTab)
-  if (!hasAny && coalescedSaved === REACT_STAGE_TAB_GRID) return null
+  const savedTab = String(saved.activeTab || '').trim() || REACT_STAGE_TAB_GRID
+  if (!hasAny && savedTab === REACT_STAGE_TAB_GRID) return null
 
   // Artifacts may not be loaded on first paint — keep names; gone-filter watch prunes later.
   if (!availableNames.length) {
     return {
       openNames: [...saved.openNames],
-      activeTab: coalescedSaved,
+      activeTab: savedTab,
       novncOpen: !!saved.novncOpen,
     }
   }
 
   const nameSet = new Set(availableNames)
   const openNames = saved.openNames.filter((n) => nameSet.has(n))
-  let activeTab = coalescedSaved
+  let activeTab = savedTab
   const activeName = previewTabName(activeTab)
   if (activeName && !openNames.includes(activeName)) {
     activeTab = openNames.length

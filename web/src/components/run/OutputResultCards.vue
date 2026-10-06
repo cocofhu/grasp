@@ -5,7 +5,6 @@ import { api } from '@/lib/api/api'
 import {
   isVisualHtmlCard,
   parseOutputCardDoc,
-  visualHtmlArtifactName,
 } from '@/lib/run/isVisualHtmlCard'
 import OutputResultCardBody from './OutputResultCardBody.vue'
 import AppButton from '../ui/AppButton.vue'
@@ -27,12 +26,12 @@ const loadErrors = ref<Record<string, boolean>>({})
 const loading = ref(false)
 
 function artifactCacheKey(card: OutputCard): string {
-  const name = visualHtmlArtifactName(card) || card.artifactName || ''
+  const name = card.artifactName || ''
   return `${card.nodeId || ''}:${name}`
 }
 
 function findCardArtifact(card: OutputCard) {
-  const name = visualHtmlArtifactName(card) || card.artifactName
+  const name = card.artifactName
   if (!name) return undefined
   const matches = props.run.artifacts.filter((a) => a.name === name)
   if (card.nodeId) {
@@ -43,7 +42,7 @@ function findCardArtifact(card: OutputCard) {
 }
 
 async function loadArtifactContent(card: OutputCard) {
-  const name = visualHtmlArtifactName(card) || card.artifactName
+  const name = card.artifactName
   if (!name) return
   const key = artifactCacheKey(card)
   if (contentCache.value[key] !== undefined) return
@@ -81,7 +80,7 @@ watch(
     const c = props.cards[selectedIndex.value]
     if (!c) return
     const parsed = parseDoc(c)
-    const name = visualHtmlArtifactName(c)
+    const name = c.artifactName
     if (isVisualHtmlCard(c, { parsedDoc: parsed }) && name) {
       void loadArtifactContent(c)
       return
@@ -130,7 +129,7 @@ const canEnlarge = computed(() => hasRenderableBody(currentCard.value))
 
 function artifactContent(card: OutputCard | undefined): string {
   if (!card) return ''
-  if (!(visualHtmlArtifactName(card) || card.artifactName)) return ''
+  if (!card.artifactName) return ''
   return contentCache.value[artifactCacheKey(card)] ?? ''
 }
 
@@ -160,7 +159,7 @@ function detailKindLabel(card: OutputCard): string {
 
 function artifactLoadError(card: OutputCard | undefined): boolean {
   if (!card) return false
-  if (!(visualHtmlArtifactName(card) || card.artifactName)) return false
+  if (!card.artifactName) return false
   return !!loadErrors.value[artifactCacheKey(card)]
 }
 

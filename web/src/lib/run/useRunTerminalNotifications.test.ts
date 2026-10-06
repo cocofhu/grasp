@@ -240,7 +240,6 @@ describe('useRunTerminalNotifications', () => {
       expect(api.markNotificationRead).toHaveBeenCalledWith('a')
       expect(serverItems.value.find((x) => x.runId === 'a')?.unread).toBe(false)
     })
-    expect(localStorage.getItem('approving.notifications.prefs.alice')).toBeNull()
     expect(n.previewItems.value.find((x) => x.runId === 'b')?.unread).toBe(true)
   })
 
@@ -259,7 +258,6 @@ describe('useRunTerminalNotifications', () => {
       expect(api.markAllNotificationsRead).toHaveBeenCalledWith()
       expect(serverItems.value.every((x) => x.unread === false)).toBe(true)
     })
-    expect(localStorage.getItem('approving.notifications.prefs.alice')).toBeNull()
   })
 
   it('previewItems caps at 5 and remainingCount is T-5', async () => {
@@ -321,16 +319,11 @@ describe('useRunTerminalNotifications', () => {
   })
 
   it('does not use localStorage as unread authority', async () => {
-    seedList([item(run({ id: 'legacy-1', status: 'completed' }), { unread: false })])
-    localStorage.setItem(
-      'approving.notifications.prefs.alice',
-      JSON.stringify({ enabledAt: '1999-01-01T00:00:00Z', readIds: [] }),
-    )
-    localStorage.setItem('approving.runTerminalNotifications.readIds.alice', JSON.stringify(['ignored']))
+    seedList([item(run({ id: 'read-1', status: 'completed' }), { unread: false })])
     const n = useRunTerminalNotifications()
     await n.refresh({ source: 'mount' })
     expect(n.unreadCount.value).toBe(0)
-    expect(n.previewItems.value.find((x) => x.runId === 'legacy-1')?.unread).toBe(false)
+    expect(n.previewItems.value.find((x) => x.runId === 'read-1')?.unread).toBe(false)
     localStorage.clear()
     expect(n.unreadCount.value).toBe(0)
   })
@@ -358,7 +351,7 @@ describe('useRunTerminalNotifications', () => {
       expect(n.unreadCount.value).toBe(3)
       expect(n.badgeLabel.value).toBe('3')
     })
-    expect(localStorage.getItem('approving.notifications.prefs.anonymous')).toBeNull()
+    expect(localStorage.length).toBe(0)
     n.stopPolling()
   })
 
@@ -433,8 +426,7 @@ describe('useRunTerminalNotifications', () => {
     const n = useRunTerminalNotifications()
     n.markRead('ghost')
     expect(api.markNotificationRead).not.toHaveBeenCalled()
-    expect(localStorage.getItem('approving.notifications.prefs.anonymous')).toBeNull()
-    expect(localStorage.getItem('approving.notifications.prefs.alice')).toBeNull()
+    expect(localStorage.length).toBe(0)
   })
 
   it('markAllRead before auth settle does not call server or stamp anonymous prefs', async () => {
@@ -444,8 +436,7 @@ describe('useRunTerminalNotifications', () => {
     const n = useRunTerminalNotifications()
     n.markAllRead()
     expect(api.markAllNotificationsRead).not.toHaveBeenCalled()
-    expect(localStorage.getItem('approving.notifications.prefs.anonymous')).toBeNull()
-    expect(localStorage.getItem('approving.notifications.prefs.alice')).toBeNull()
+    expect(localStorage.length).toBe(0)
   })
 
   it('new terminal events after markAllRead still count as unread', async () => {

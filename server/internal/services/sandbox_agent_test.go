@@ -31,11 +31,11 @@ func TestOpenAgentSandboxValidationAndReuse(t *testing.T) {
 	if _, _, err := s.OpenAgentSandbox(ctx, AgentSandboxOpenOpts{Profile: "missing", ThreadID: "thr-1"}); err == nil {
 		t.Fatal("missing agent should fail")
 	}
-	// Unbound agent cannot open under a project id.
+	// Agent whose home project differs cannot open under a project id.
 	if _, _, err := s.OpenAgentSandbox(ctx, AgentSandboxOpenOpts{
-		Profile: "agentA", ProjectID: "p1", ThreadID: "thr-unbound",
+		Profile: "agentA", ProjectID: "p1", ThreadID: "thr-mismatch",
 	}); err == nil {
-		t.Fatal("unbound agent under project should fail")
+		t.Fatal("agent of another home project should fail")
 	}
 
 	bindTestAgentHome(t, s, "agentA", "p1")

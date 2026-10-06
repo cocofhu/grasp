@@ -1171,10 +1171,9 @@ describe('ReactArtifactStage', () => {
       nodeId: 'visual_bqc5',
       content: '<html><head><title>视觉 Demo</title></head><body><p>视觉摘要</p></body></html>',
     })
-    const proposals = art({ id: 'pr', name: 'proposals.json', kind: 'json', nodeId: 'proposal' })
     const wrapper = mount(ReactArtifactStage, {
       props: {
-        artifacts: [research, clarified, page, proposals],
+        artifacts: [research, clarified, page],
         runId: 'run-friendly',
         run: {
           id: 'run-friendly',
@@ -1182,7 +1181,6 @@ describe('ReactArtifactStage', () => {
             gn('visual_bqc5', '视觉', writesCaps('page')),
             gn('research', '调研', writesCaps('research')),
             gn('clarify', '澄清', ASK_CAPS),
-            gn('proposal', '方案', writesCaps('proposals')),
           ],
         } as any,
         nodeId: 'visual_bqc5',
@@ -1201,7 +1199,6 @@ describe('ReactArtifactStage', () => {
       '需求澄清',
     )
     expect(wrapper.get('[data-testid="react-artifact-card-page.html"]').text()).toContain('网页预览')
-    expect(wrapper.get('[data-testid="react-artifact-card-proposals.json"]').text()).toContain('候选方案')
     await wrapper.get('[data-testid="react-artifact-card-research.json"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-testid="react-artifact-tab-research.json"]').text()).toContain('调研')

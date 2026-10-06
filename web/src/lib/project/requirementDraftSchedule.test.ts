@@ -28,7 +28,7 @@ function d(partial: Partial<RequirementDraft> & { id: string }): RequirementDraf
 }
 
 describe('requirementDraftSchedule', () => {
-  it('normalizes legacy empty kind and single-day bar range', () => {
+  it('normalizes empty kind and single-day bar range', () => {
     const row = normalizeDraft({
       id: 'rd-1',
       projectId: 'p',

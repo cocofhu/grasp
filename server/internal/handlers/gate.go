@@ -330,15 +330,6 @@ func (h *Handlers) ListGates(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if !pg.Active {
-		items, _ := h.Runs.PendingInboxItems(wf, projectID, tags, 0, 0)
-		h.attachInboxReplying(items)
-		if h.GateShare != nil {
-			h.GateShare.AttachInboxStatus(items)
-		}
-		c.JSON(http.StatusOK, items)
-		return
-	}
 	offset := (pg.Page - 1) * pg.PageSize
 	items, total := h.Runs.PendingInboxItems(wf, projectID, tags, offset, pg.PageSize)
 	h.attachInboxReplying(items)

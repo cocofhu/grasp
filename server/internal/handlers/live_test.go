@@ -41,7 +41,7 @@ func TestLiveSessionsHTTP(t *testing.T) {
 func TestPublicLiveSessionsHTTP(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-live-pub", "research1", true)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-live-pub/reviews/research1/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-live-pub/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 

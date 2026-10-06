@@ -17,9 +17,6 @@ func TestSetDefaults(t *testing.T) {
 	if c.Database.Path != "grasp.db" {
 		t.Errorf("default db = %q, want grasp.db", c.Database.Path)
 	}
-	if c.Engine.ExecProvider != "sandbox" {
-		t.Errorf("default exec_provider = %q, want sandbox", c.Engine.ExecProvider)
-	}
 	if c.Engine.MaxConcurrentRuns != 5 {
 		t.Errorf("default max runs = %d, want 5", c.Engine.MaxConcurrentRuns)
 	}
@@ -104,37 +101,23 @@ func TestResolveMCPAdvertiseFallsBack(t *testing.T) {
 func TestApplyEnvOverrides(t *testing.T) {
 	c := &Config{}
 	t.Setenv("GRASP_PORT", "7000")
-	t.Setenv("GRASP_CURSOR_API_KEY", "crsr_env")
 	t.Setenv("GRASP_SANDBOX_IMAGE", "env/img:1")
 	applyEnvOverrides(c)
 
 	if c.Server.Port != 7000 {
 		t.Errorf("GRASP_PORT not applied: %d", c.Server.Port)
 	}
-	if c.Sandbox.CursorAPIKey != "crsr_env" {
-		t.Errorf("GRASP_CURSOR_API_KEY not applied: %q", c.Sandbox.CursorAPIKey)
-	}
 	if c.Sandbox.Image != "env/img:1" {
 		t.Errorf("GRASP_SANDBOX_IMAGE not applied: %q", c.Sandbox.Image)
 	}
 }
 
-func TestApplyEnvOverridesBareSecretName(t *testing.T) {
-	c := &Config{}
-	t.Setenv("CURSOR_API_KEY", "bare_key")
-	applyEnvOverrides(c)
-	if c.Sandbox.CursorAPIKey != "bare_key" {
-		t.Errorf("CURSOR_API_KEY not applied: %q", c.Sandbox.CursorAPIKey)
-	}
-}
-
 func TestApplyEnvOverridesEmptyDoesNotOverwrite(t *testing.T) {
-	c := &Config{Sandbox: SandboxConfig{CursorAPIKey: "keep"}}
-	t.Setenv("GRASP_CURSOR_API_KEY", "")
-	t.Setenv("CURSOR_API_KEY", "")
+	c := &Config{Sandbox: SandboxConfig{GatewayAPIKey: "keep"}}
+	t.Setenv("GRASP_SANDBOX_GATEWAY_API_KEY", "")
 	applyEnvOverrides(c)
-	if c.Sandbox.CursorAPIKey != "keep" {
-		t.Errorf("empty env overwrote cursor key: %q", c.Sandbox.CursorAPIKey)
+	if c.Sandbox.GatewayAPIKey != "keep" {
+		t.Errorf("empty env overwrote gateway key: %q", c.Sandbox.GatewayAPIKey)
 	}
 }
 
@@ -147,19 +130,18 @@ server:
 database:
   path: "/tmp/file.db"
 engine:
-  exec_provider: cursor
   max_concurrent_runs: 9
 sandbox:
   image: "file/img:1"
-  cursor_api_key: "file_key"
+  gateway_api_key: "file_key"
   agent_chat_timeout_seconds: 120
 `
 	if err := os.WriteFile(path, []byte(yamlBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// env wins over file for port + the cursor secret.
+	// env wins over file for port + the gateway secret.
 	t.Setenv("GRASP_PORT", "7777")
-	t.Setenv("GRASP_CURSOR_API_KEY", "env_key")
+	t.Setenv("GRASP_SANDBOX_GATEWAY_API_KEY", "env_key")
 
 	if err := Load(path); err != nil {
 		t.Fatalf("Load: %v", err)
@@ -168,8 +150,8 @@ sandbox:
 	if c.Server.Port != 7777 {
 		t.Errorf("env should win for port: %d", c.Server.Port)
 	}
-	if c.Sandbox.CursorAPIKey != "env_key" {
-		t.Errorf("env should win for cursor key: %q", c.Sandbox.CursorAPIKey)
+	if c.Sandbox.GatewayAPIKey != "env_key" {
+		t.Errorf("env should win for gateway key: %q", c.Sandbox.GatewayAPIKey)
 	}
 	if c.Database.Path != "/tmp/file.db" {
 		t.Errorf("file value lost: %q", c.Database.Path)
@@ -191,9 +173,6 @@ func TestLoadMissingFileUsesDefaults(t *testing.T) {
 	c := GetConfig()
 	if c.Server.Port != 8080 {
 		t.Errorf("missing-file boot lost defaults: port=%d", c.Server.Port)
-	}
-	if c.Engine.ExecProvider != "sandbox" {
-		t.Errorf("missing-file boot lost defaults: exec=%q", c.Engine.ExecProvider)
 	}
 }
 
@@ -233,5 +212,20 @@ func TestParseMalformedYAMLErrors(t *testing.T) {
 	}
 	if _, err := parse(path); err == nil {
 		t.Fatal("expected error for malformed YAML, got nil")
+	}
+}
+
+func TestParseRejectsSecretSandboxEnv(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("sandbox:\n  env:\n    GITLAB_TOKEN: glpat\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parse(path); err == nil {
+		t.Fatal("expected error for secret key in sandbox.env, got nil")
+	}
+	t.Setenv("GRASP_SANDBOX_ENV", "CURSOR_API_KEY=x")
+	if _, err := parse(filepath.Join(dir, "missing.yaml")); err == nil {
+		t.Fatal("expected error for secret key in GRASP_SANDBOX_ENV, got nil")
 	}
 }

@@ -1,6 +1,6 @@
 import type { BackendId } from '@/lib/shared/regionPolicy'
 import { getRegionPolicy } from '@/lib/shared/regionPolicy'
-import type { GitCredentialType } from '@/lib/agent/gitCredentialAnalysis'
+import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
 import type { AppLocale } from '@/lib/shared/loadLocaleMessages'
 import type { ThemeName } from '@/lib/shared/theme'
 import { locale } from '@/lib/shared/locale'
@@ -15,11 +15,6 @@ import {
   startPathForBackend,
   syncStartPathFields,
 } from '@/lib/shared/startPath'
-import {
-  GRASP_STORAGE_KEYS,
-  LEGACY_STORAGE_KEYS,
-  migrateLocalStorageKey,
-} from '@/lib/shared/migrateBrandStorage'
 
 export {
   APIKEY_BACKEND as ONBOARDING_APIKEY_BACKEND,
@@ -34,21 +29,20 @@ export const DEFAULT_PROJECT_ID = 'proj-default'
 
 /** The default workflow's name in every UI language (mirrors server onboardingLocales). */
 export const ONBOARDING_WORKFLOW_NAMES: readonly string[] = ['默认工作流', 'Default Workflow']
-/** Mirrors services.FirstInstallGroupName. */
-export const FIRST_INSTALL_GROUP_NAME = '默认项目组'
 
 /** Built-in templates the wizard creates, in workflow order (server TeamEngineerTemplates). */
-export type OnboardingTemplateId = 'clarify' | 'implement' | 'test_review'
+export type OnboardingTemplateId = 'clarify' | 'implement' | 'test_review' | 'deliver'
 
 export const ONBOARDING_TEMPLATES: readonly { id: OnboardingTemplateId; label: string }[] = [
   { id: 'clarify', label: '需求澄清' },
   { id: 'implement', label: '实现' },
   { id: 'test_review', label: '测试评审' },
+  { id: 'deliver', label: '交付' },
 ]
 
 /**
- * The default workflow cannot run without clarify → implement; only test_review
- * may be unchecked (implement then ends the workflow). Mirrors the server.
+ * The default workflow cannot run without clarify → implement; test_review and
+ * deliver may be unchecked (their neighbours are wired together). Mirrors the server.
  */
 export const ONBOARDING_REQUIRED_TEMPLATE_IDS: readonly OnboardingTemplateId[] = ['clarify', 'implement']
 
@@ -56,6 +50,7 @@ const ONBOARDING_ROLE_NAMES_EN: Record<OnboardingTemplateId, string> = {
   clarify: 'Clarify',
   implement: 'Implement',
   test_review: 'TestReview',
+  deliver: 'Deliver',
 }
 
 /** Longest role suffix in any locale (TestReview). */
@@ -137,7 +132,7 @@ export function teamNameIssues(
   team: OnboardingTeamMember[],
   opts: { allowBlank?: boolean } = {},
 ): Record<OnboardingTemplateId, TeamNameIssue> {
-  const out = { clarify: '', implement: '', test_review: '' } as Record<OnboardingTemplateId, TeamNameIssue>
+  const out = { clarify: '', implement: '', test_review: '', deliver: '' } as Record<OnboardingTemplateId, TeamNameIssue>
   const counts = new Map<string, number>()
   for (const m of team) {
     if (!m.enabled) continue
@@ -181,8 +176,8 @@ export type OnboardingWorkflowPreview = {
 
 /**
  * The default workflow bootstrap will publish for this team:
- * input → 需求澄清 → 实现 → 测试评审 -pass→ output, -fail→ 实现.
- * Without test_review, 实现 goes straight to output (same pruning as the server).
+ * input → 需求澄清 → 实现 → 测试评审 -pass→ 交付 → output, 测试评审 -fail→ 实现.
+ * Unchecked test_review / deliver nodes are skipped (same pruning as the server).
  */
 export function buildOnboardingWorkflowPreview(team: OnboardingTeamMember[]): OnboardingWorkflowPreview {
   const agents = ONBOARDING_TEMPLATES.filter(
@@ -231,8 +226,8 @@ export type OnboardingDraft = {
   githubToken: string
   gitlabToken: string
   gitlabUrl: string
-  gitSshPrivateKey: string
-  gitSshKnownHosts: string
+  sshPrivateKey: string
+  sshKnownHosts: string
   repoUrl: string
   repoBranch: string
   /** Repo + credentials skipped on the connect page (identity is still required). */
@@ -257,15 +252,15 @@ export type OnboardingAgentChoice = {
 export type OnboardingBootstrapBody = {
   acpBackend: BackendId
   apiKey: string
-  /** Names the default workflow, its start/end nodes and the org group in this language. */
+  /** Names the default workflow and its start/end nodes in this language. */
   language: AppLocale
   region?: string
   gitCredentialType?: GitCredentialType
   githubToken?: string
   gitlabToken?: string
   gitlabUrl?: string
-  gitSshPrivateKey?: string
-  gitSshKnownHosts?: string
+  sshPrivateKey?: string
+  sshKnownHosts?: string
   repoUrl?: string
   repoBranch?: string
   gitUserName?: string
@@ -283,23 +278,17 @@ export type OnboardingBootstrapResult = {
   agentIds: string[]
   workflowId: string
   published: boolean
-  groupName?: string
 }
 
 /**
  * Hard suppression for tests and local debugging only. The wizard's "later"
  * button deliberately does NOT write this: closing it is per-view, and a reload
  * re-opens the wizard until the default workflow exists (see needsOnboarding).
- * The key differs from the old `approving-onboarding-dismiss:` one so browsers
- * that dismissed the wizard before this rule change are not stuck forever.
- * Brand clear: migrate from approving-onboarding-suppress: → grasp-… once.
  */
-const SUPPRESS_PREFIX = GRASP_STORAGE_KEYS.onboardingSuppressPrefix
+const SUPPRESS_PREFIX = 'grasp-onboarding-suppress:'
 
 export function onboardingSuppressKey(projectId: string): string {
-  const key = `${SUPPRESS_PREFIX}${projectId}`
-  migrateLocalStorageKey(`${LEGACY_STORAGE_KEYS.onboardingSuppressPrefix}${projectId}`, key)
-  return key
+  return `${SUPPRESS_PREFIX}${projectId}`
 }
 
 export function isOnboardingSuppressed(projectId: string): boolean {
@@ -355,8 +344,7 @@ function hasOnboardingNameConflict(
   return agents.some((a) => {
     const name = (a.name || '').trim()
     if (!name || !(names as readonly string[]).includes(name)) return false
-    const owner = (a.projectId || '').trim()
-    return owner !== '' && owner !== projectId
+    return (a.projectId || '').trim() !== projectId
   })
 }
 
@@ -426,8 +414,8 @@ export function freshOnboardingDraft(opts?: { inheritAppLocale?: boolean }): Onb
     githubToken: '',
     gitlabToken: '',
     gitlabUrl: '',
-    gitSshPrivateKey: '',
-    gitSshKnownHosts: '',
+    sshPrivateKey: '',
+    sshKnownHosts: '',
     repoUrl: '',
     repoBranch: '',
     gitSkipped: false,
@@ -491,7 +479,7 @@ export function gitConfigured(draft: OnboardingDraft): boolean {
   if (draft.gitSkipped || !draft.gitCredentialType) return false
   if (draft.gitCredentialType === 'github_https') return Boolean(draft.githubToken.trim())
   if (draft.gitCredentialType === 'gitlab_https') return Boolean(draft.gitlabToken.trim())
-  if (draft.gitCredentialType === 'ssh') return Boolean(draft.gitSshPrivateKey.trim())
+  if (draft.gitCredentialType === 'ssh') return Boolean(draft.sshPrivateKey.trim())
   return false
 }
 
@@ -512,8 +500,8 @@ export function assembleBootstrapBody(draft: OnboardingDraft): OnboardingBootstr
     if (draft.githubToken.trim()) body.githubToken = draft.githubToken.trim()
     if (draft.gitlabToken.trim()) body.gitlabToken = draft.gitlabToken.trim()
     if (draft.gitlabUrl.trim()) body.gitlabUrl = draft.gitlabUrl.trim()
-    if (draft.gitSshPrivateKey.trim()) body.gitSshPrivateKey = draft.gitSshPrivateKey.trim()
-    if (draft.gitSshKnownHosts.trim()) body.gitSshKnownHosts = draft.gitSshKnownHosts.trim()
+    if (draft.sshPrivateKey.trim()) body.sshPrivateKey = draft.sshPrivateKey.trim()
+    if (draft.sshKnownHosts.trim()) body.sshKnownHosts = draft.sshKnownHosts.trim()
     if (draft.repoUrl.trim()) {
       body.repoUrl = draft.repoUrl.trim()
       if (draft.repoBranch.trim()) body.repoBranch = draft.repoBranch.trim()

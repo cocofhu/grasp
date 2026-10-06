@@ -25,7 +25,7 @@ type RequirementDraft struct {
 	BodyMarkdown string `gorm:"type:text" json:"bodyMarkdown"`
 	// Status is open (未完成) or done (已完成/归档).
 	Status string `gorm:"index:idx_req_draft_proj_status_updated,priority:2" json:"status"`
-	// Kind is requirement|milestone (default requirement for legacy rows).
+	// Kind is requirement|milestone (default requirement).
 	Kind string `gorm:"index;default:requirement" json:"kind"`
 	// StartAt is optional begin date YYYY-MM-DD (requirements only; milestones ignore).
 	StartAt string `json:"startAt"`

@@ -69,8 +69,6 @@ func (e *Engine) executeNode(c *execCtx, node *models.Node) nodeOutcome {
 		return e.execBranch(c, node)
 	case nodereg.ExecAgent:
 		return e.execAgent(c, node)
-	case nodereg.ExecProposalSelect:
-		return e.execProposalSelect(c, node)
 	case nodereg.ExecHumanGate:
 		return e.execGate(c, node)
 	default:

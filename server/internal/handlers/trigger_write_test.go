@@ -14,7 +14,7 @@ import (
 func TestInternalStartRunTriggerDefaultsAndRejects(t *testing.T) {
 	hn := newHarness(t)
 	graph := minimalGraph()
-	wf := models.WorkflowDef{ID: "wf-trig", Name: "Trig", Status: "draft", Version: 0, Graph: graph}
+	wf := models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf-trig", Name: "Trig", Version: 0, Graph: graph}
 	if err := hn.db.Create(&wf).Error; err != nil {
 		t.Fatal(err)
 	}

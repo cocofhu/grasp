@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { RouterLink } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import CodeEditor from '@/components/ui/CodeEditor.vue'
@@ -9,7 +10,7 @@ import EnvCredentialHelpModal, {
   type EnvCredentialHelpSection,
 } from '@/components/agent/EnvCredentialHelpModal.vue'
 import { BACKEND_AUTH_HINTS, settingsFileAbsPath } from '@/lib/agent/backendAuthGuide'
-import { useInheritedGitEnv } from '@/lib/agent/useInheritedGitEnv'
+import { isSecretEnvKey } from '@/lib/agent/secretEnvKeys'
 import {
   getRegionPolicy,
   isManagedRegionKey,
@@ -23,7 +24,7 @@ import {
 
 const props = defineProps<{
   draft: AgentStudioDraft
-  /** agent = Studio 单 Agent；shared = 项目共享配置（可继续写 Token） */
+  /** agent = Studio 单 Agent；shared = 项目共享配置 */
   context?: 'agent' | 'shared'
 }>()
 const emit = defineEmits<{ toast: [msg: string]; 'open-settings-file': [] }>()
@@ -31,12 +32,6 @@ const emit = defineEmits<{ toast: [msg: string]; 'open-settings-file': [] }>()
 const { t } = useI18n()
 
 const envContext = computed(() => props.context ?? 'agent')
-const preferSharedAuth = computed(() => envContext.value === 'agent')
-/** Agent context inherits project shared env; shared editor only looks at this surface. */
-const inheritedProjectId = computed(() =>
-  envContext.value === 'agent' ? props.draft.projectId : '',
-)
-const { inheritedEnv } = useInheritedGitEnv(inheritedProjectId)
 
 const envRaw = ref(false)
 const envRawText = ref('')
@@ -55,9 +50,17 @@ function openEnvHelp(section: EnvCredentialHelpSection) {
   envHelpOpen.value = true
 }
 
+/** Secrets are owned by project credentials; env rows with these keys are rejected on save. */
+const credentialsRoute = computed(() =>
+  props.draft.projectId
+    ? { name: 'project-detail', params: { id: props.draft.projectId }, query: { tab: 'credentials' } }
+    : null,
+)
+const rawHasSecretEnvKey = computed(() => props.draft.env.some((e) => isSecretEnvKey(e.k)))
+
 function upsertEnv(key: string, value: string) {
-  if (key === 'GIT_SSH_PRIVATE_KEY' || key === 'GIT_SSH_KNOWN_HOSTS') {
-    emit('toast', t('pages.agentStudio.env.sshMetaOnly'))
+  if (isSecretEnvKey(key)) {
+    emit('toast', t('pages.agentStudio.env.secretCredentialsOnly'))
     return
   }
   const row = props.draft.env.find((e) => e.k === key)
@@ -75,11 +78,6 @@ function updateEnvKey(i: number, value: string) {
   if (isManagedRegionKey(value)) {
     props.draft.env[i].k = ''
     emit('toast', t('pages.agentStudio.region.managedConflict'))
-    return
-  }
-  if (value === 'GIT_SSH_PRIVATE_KEY' || value === 'GIT_SSH_KNOWN_HOSTS') {
-    props.draft.env[i].k = ''
-    emit('toast', t('pages.agentStudio.env.sshMetaOnly'))
     return
   }
   props.draft.env[i].k = value
@@ -136,6 +134,10 @@ watch(
 
     <div v-if="envRaw" class="flex min-h-0 flex-1 flex-col">
       <div v-if="rawError" class="border-b border-err/30 bg-err/10 px-4 py-1.5 text-[11px] text-err">{{ rawError }}</div>
+      <div v-if="rawHasSecretEnvKey" class="border-b border-warn/30 bg-warn/10 px-4 py-1.5 text-[11px] text-warn" data-test="env-secret-hint">
+        {{ t('pages.agentStudio.env.secretCredentialsOnly') }}
+        <RouterLink v-if="credentialsRoute" :to="credentialsRoute" class="ml-1 text-accent-2 underline underline-offset-[3px]" data-test="env-secret-credentials-link">{{ t('pages.agentStudio.env.goCredentials') }}</RouterLink>
+      </div>
       <div class="min-h-0 flex-1"><CodeEditor :model-value="envRawText" language="json" @update:model-value="onEnvRaw" /></div>
     </div>
     <div v-else class="scroll-area flex-1 space-y-2 overflow-y-auto p-4">
@@ -155,22 +157,14 @@ watch(
       </div>
       <AgentGitGuide
         :env="draft.env"
-        :inherited-env="inheritedEnv"
         :upsert-env="upsertEnv"
         :credential-type="draft.gitCredentialType"
-        :allow-token-recommend="!preferSharedAuth"
         @update:credential-type="draft.gitCredentialType = $event"
         @help="openEnvHelp('git')"
       />
       <div class="mb-3 rounded-lg border border-line bg-base/50 p-3 text-[11px] leading-6 text-txt3">
         <div class="mb-1 flex items-center justify-between gap-2">
-          <div class="font-medium text-txt2">
-            {{
-              preferSharedAuth
-                ? t('pages.agentStudio.env.backendAuthPreferShared')
-                : t('pages.agentStudio.env.backendAuthTitle')
-            }}
-          </div>
+          <div class="font-medium text-txt2">{{ t('pages.agentStudio.env.backendAuthTitle') }}</div>
           <AppButton
             type="button"
             size="sm"
@@ -182,10 +176,11 @@ watch(
             {{ t('pages.agentStudio.envHelp.link') }}
           </AppButton>
         </div>
-        <p v-if="preferSharedAuth" class="mb-1 text-txt2" data-test="env-auth-prefer-shared">
-          {{ t('pages.agentStudio.env.backendAuthPreferSharedBody') }}
+        <p class="mb-1 text-txt2" data-test="env-auth-credentials-only">
+          {{ t('pages.agentStudio.env.backendAuthCredentialsBody') }}
+          <RouterLink v-if="credentialsRoute" :to="credentialsRoute" class="ml-1 text-accent-2 underline underline-offset-[3px]">{{ t('pages.agentStudio.env.goCredentials') }}</RouterLink>
         </p>
-        <p class="font-mono text-accent-2">{{ currentAuthHint.key }}<span v-if="currentAuthHint.alt"> / {{ currentAuthHint.alt }}</span></p>
+        <p class="font-mono text-accent-2">{{ currentAuthHint.key }}</p>
       </div>
       <template v-for="(e, i) in draft.env" :key="i">
         <div v-if="!isManagedRegionKey(e.k)" class="flex items-center gap-1.5">
@@ -193,6 +188,10 @@ watch(
           <input v-model="e.v" placeholder="value" class="flex-1 rounded border border-line bg-surface px-2 py-1.5 font-mono text-[12px] text-txt2 outline-none focus:border-accent" />
           <button class="text-txt3 hover:text-err" @click="draft.env.splice(i, 1)"><Icon name="close" :size="14" /></button>
         </div>
+        <p v-if="isSecretEnvKey(e.k)" class="pl-1 text-[11px] text-warn" data-test="env-secret-hint">
+          {{ t('pages.agentStudio.env.secretCredentialsOnly') }}
+          <RouterLink v-if="credentialsRoute" :to="credentialsRoute" class="ml-1 text-accent-2 underline underline-offset-[3px]" data-test="env-secret-credentials-link">{{ t('pages.agentStudio.env.goCredentials') }}</RouterLink>
+        </p>
       </template>
       <div v-if="currentRegionPolicy" class="rounded-lg border border-accent/30 bg-accent-dim/40 p-3">
         <div class="mb-2 text-[11px] text-txt3">{{ t('pages.agentStudio.region.managedByAcp') }}</div>

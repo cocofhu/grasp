@@ -184,6 +184,8 @@ describe('validateBasics', () => {
     expect(validateBasics(d, [])).toBe('invalid')
     d.name = 'ok'
     expect(validateBasics(d, ['ok'])).toBe('exists')
+    expect(validateBasics(d, [])).toBe('projectRequired')
+    d.projectId = 'p1'
     expect(validateBasics(d, [])).toBe('')
   })
 })

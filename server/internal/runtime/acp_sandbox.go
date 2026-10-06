@@ -162,7 +162,7 @@ func (c *acpProvider) ArchiveRunSandboxLogs(ctx context.Context, runID string) (
 // beginRunSandbox records a "creating" placeholder row for a node sandbox before
 // the (slow) gateway provisioning, so it shows up in the sandbox list / node
 // live log as "starting" instead of a 404. No-op when the registry is absent or
-// does not implement RunSandboxBeginner (e.g. test fakes → legacy behavior).
+// does not implement RunSandboxBeginner (e.g. test fakes).
 func (c *acpProvider) beginRunSandbox(req NodeReq, name, home string) {
 	if c.registry == nil || name == "" {
 		return
@@ -312,9 +312,11 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	repos := resolveRepos(req)
 	env := map[string]string{}
 
+	// Secrets come only from project credentials: platform sandbox.env and
+	// Agent/shared env never supply envauth.SecretEnvKeys.
 	for k, v := range c.opts.Env {
-		if envauth.IsPlatformAuthEnvKey(k) {
-			log.Warn().Str("key", k).Msg("dropped platform sandbox.env official CLI auth key; use GRASP_* on Agent or shared env")
+		if envauth.IsSecretEnvKey(k) {
+			log.Warn().Str("key", k).Msg("dropped secret key from platform sandbox.env; configure it in project credentials")
 			continue
 		}
 		env[k] = v
@@ -323,23 +325,11 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	agentCfg := c.effectiveAgent(req)
 	vars := c.mcpVars(req)
 
-	for k, v := range agentCfg.Env {
+	for k, v := range envauth.StripSecretEnvKeys(agentCfg.Env) {
 		env[k] = substVars(v, vars)
 	}
-	// Explicit fallback bindings alias a key already present in the project's
-	// own sandbox env. The server process environment is never consulted.
-	if c.opts.ProjectCredentialFallbackEnvForProject != nil {
-		for target, fallback := range c.opts.ProjectCredentialFallbackEnvForProject(c.projectIDForReq(req)) {
-			if _, exists := env[target]; exists {
-				continue
-			}
-			if v := env[strings.TrimSpace(fallback)]; v != "" {
-				env[target] = v
-			}
-		}
-	}
-	// Project UI credentials are the highest-priority source. They are resolved
-	// only for the owning project and never copied into persisted Agent config.
+	// Project credentials are the only secret source. They are resolved only
+	// for the owning project and never copied into persisted Agent config.
 	// Platform-reserved keys from mcpVars are re-applied below and still win.
 	var projectCreds map[string]string
 	if c.opts.ProjectCredentialsForProject != nil {
@@ -412,17 +402,8 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		ConfigRoot:   layout.ConfigRoot,
 		WorkspaceDir: layout.WorkspaceDir,
 	}
-	// SSH: meta literal preferred; env fallback already vars-expanded above.
-	// Project credentials outrank the Agent meta literal.
-	key := agentCfg.GitSshPrivateKey
-	if strings.TrimSpace(projectCreds["GIT_SSH_PRIVATE_KEY"]) != "" || strings.TrimSpace(key) == "" {
-		key = env["GIT_SSH_PRIVATE_KEY"]
-	}
-	hosts := agentCfg.GitSshKnownHosts
-	if strings.TrimSpace(projectCreds["GIT_SSH_KNOWN_HOSTS"]) != "" || strings.TrimSpace(hosts) == "" {
-		hosts = env["GIT_SSH_KNOWN_HOSTS"]
-	}
-	sandbox.ApplySSHCredentials(&spec, key, hosts)
+	// SSH comes only from project credentials.
+	sandbox.ApplySSHCredentials(&spec, projectCreds["GIT_SSH_PRIVATE_KEY"], projectCreds["GIT_SSH_KNOWN_HOSTS"])
 	return spec, nil
 }
 

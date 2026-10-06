@@ -36,11 +36,11 @@ func setupPrdManagerHost(t *testing.T, enabled []string) *prdManagerFixture {
 		t.Fatal(err)
 	}
 	ps := services.NewProjectService(db)
-	proj, err := ps.Create("PrdProj", "", nil, nil)
+	proj, err := ps.Create("PrdProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := ps.Create("OtherPrd", "", nil, nil)
+	other, err := ps.Create("OtherPrd", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

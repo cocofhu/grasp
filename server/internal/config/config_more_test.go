@@ -51,16 +51,10 @@ func TestMergeEnvListViaEnv(t *testing.T) {
 	}
 }
 
-func TestEnvIntInvalidAndFirst(t *testing.T) {
+func TestEnvIntInvalid(t *testing.T) {
 	t.Setenv("GRASP_PORT", "not-a-number")
 	if v := envInt("GRASP_PORT"); v != 0 {
 		t.Errorf("invalid int should be 0, got %d", v)
-	}
-	if first("", "", "x", "y") != "x" {
-		t.Error("first non-empty")
-	}
-	if first("", "") != "" {
-		t.Error("first all-empty")
 	}
 }
 
@@ -68,10 +62,8 @@ func TestApplyAllEnvOverrides(t *testing.T) {
 	c := &Config{}
 	t.Setenv("GRASP_MCP_ADVERTISE", "http://adv")
 	t.Setenv("GRASP_DB", "/db")
-	t.Setenv("GRASP_EXEC_PROVIDER", "cursor")
 	t.Setenv("GRASP_MAX_RUNS", "7")
 	t.Setenv("GRASP_PROFILES_ROOT", "/pr")
-	t.Setenv("GRASP_CURSOR_AUTH", "/auth")
 	t.Setenv("GRASP_AGENT_TIMEOUT_SEC", "11")
 	t.Setenv("GRASP_CHAT_IDLE_SEC", "12")
 	t.Setenv("GRASP_SANDBOX_MAX_ATTEMPTS", "4")
@@ -81,8 +73,7 @@ func TestApplyAllEnvOverrides(t *testing.T) {
 	t.Setenv("GRASP_BLOBS_ROOT", "/blobs")
 	applyEnvOverrides(c)
 	if c.Server.MCPAdvertise != "http://adv" || c.Database.Path != "/db" ||
-		c.Engine.ExecProvider != "cursor" || c.Engine.MaxConcurrentRuns != 7 ||
-		c.Engine.ProfilesRoot != "/pr" || c.Sandbox.CursorAuthPath != "/auth" ||
+		c.Engine.MaxConcurrentRuns != 7 || c.Engine.ProfilesRoot != "/pr" ||
 		c.Sandbox.AgentChatTimeoutSeconds != 11 || c.Sandbox.ChatIdleTimeoutSeconds != 12 ||
 		c.Sandbox.MaxAttempts != 4 || c.Sandbox.RetryBackoffSeconds != 3 || c.Sandbox.WorkDir != "/wd" ||
 		c.Storage.Driver != "local" || c.Storage.BlobsRoot != "/blobs" {

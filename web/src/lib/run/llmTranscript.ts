@@ -74,7 +74,6 @@ export type LlmTranscriptItem =
       turnCount: number
     }
   | { type: 'turn'; key: string; nodeId: string; execIdx: number; turn: LlmTurn; models: string[] }
-  | { type: 'legacy'; key: string; nodeId: string; execIdx: number }
   | { type: 'error'; key: string; nodeId: string; execIdx: number; text: string }
   | {
       type: 'trace'
@@ -380,10 +379,6 @@ export function buildLlmTranscript(input: BuildLlmTranscriptInput): LlmTranscrip
       models,
       turnCount: turns.filter((t) => t.prompt).length,
     })
-    const hasEvents = !!ex.events?.some((e) => e.kind !== 'commands')
-    if (hasEvents && !turns.some((t) => t.prompt)) {
-      push(start, { type: 'legacy', key: `legacy:${keyBase}`, nodeId: ex.nodeId, execIdx })
-    }
     let last = start
     turns.forEach((turn, i) => {
       const pt = ms(turn.prompt?.at)

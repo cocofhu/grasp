@@ -64,8 +64,8 @@ func filterP0NotifyEvents(in []string) []string {
 // (completed is not added automatically). Known kinds including completed may be
 // stored; unknown kinds are stripped. Template fields: whitespace-only is trimmed
 // to ""; empty is NOT rewritten to the default QQ body.
-// ChannelIDs: nil stays nil (unmigrated / unset); non-nil is de-duped & trimmed
-// (explicit empty means "deliver to none").
+// ChannelIDs is the explicit target list, de-duped & trimmed; nil is stored as
+// empty ("deliver to none").
 func NormalizeProjectNotifyPolicy(p models.ProjectNotifyPolicy) models.ProjectNotifyPolicy {
 	if p.Enabled == nil {
 		on := true
@@ -76,9 +76,7 @@ func NormalizeProjectNotifyPolicy(p models.ProjectNotifyPolicy) models.ProjectNo
 	} else {
 		p.DefaultEvents = normalizeStoredEvents(p.DefaultEvents)
 	}
-	if p.ChannelIDs != nil {
-		p.ChannelIDs = NormalizeNotifyChannelIDs(p.ChannelIDs)
-	}
+	p.ChannelIDs = NormalizeNotifyChannelIDs(p.ChannelIDs)
 	if strings.TrimSpace(p.WaitingHumanTemplate) == "" {
 		p.WaitingHumanTemplate = ""
 	}
@@ -93,9 +91,6 @@ func NormalizeProjectNotifyPolicy(p models.ProjectNotifyPolicy) models.ProjectNo
 
 // NormalizeNotifyChannelIDs trims, drops empties, and de-duplicates channel ids.
 func NormalizeNotifyChannelIDs(in []string) []string {
-	if in == nil {
-		return nil
-	}
 	seen := map[string]bool{}
 	out := make([]string, 0, len(in))
 	for _, id := range in {

@@ -2,7 +2,6 @@
   "route": {
     "dashboard": "Start",
     "stats": "Token usage",
-    "board": "Board",
     "projects": "Projects",
     "projectDetail": "Project detail",
     "workflows": "Workflows",

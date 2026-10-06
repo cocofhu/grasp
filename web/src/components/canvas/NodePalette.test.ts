@@ -21,7 +21,7 @@ function items(agents = [{ name: '测试评审', capabilities: TEST_REVIEW_CAPS 
   return buildPaletteItems(agents, (type) => ({ label: `L-${type}`, desc: `D-${type}` }), t)
 }
 
-function mountPalette(props: { items?: PaletteItem[]; agentsLoading?: boolean } = {}) {
+function mountPalette(props: { items?: PaletteItem[]; agentsLoading?: boolean; placingKey?: string | null } = {}) {
   return mount(NodePalette, {
     props: { items: items(), ...props },
     global: { plugins: [i18n], stubs: { Icon: true, RouterLink: RouterLinkStub } },
@@ -35,14 +35,14 @@ describe('NodePalette', () => {
     const w = mountPalette()
     const agent = w.find('[data-testid="palette-group-agent"]')
     expect(agent.find('[data-testid="palette-item-agent:测试评审"]').exists()).toBe(true)
-    expect(agent.find('[data-testid="palette-item-agent:"]').exists()).toBe(true)
+    expect(agent.findAll('[data-testid^="palette-item-"]')).toHaveLength(1)
     expect(agent.find('[data-testid="palette-from-template"]').exists()).toBe(true)
     const control = w.find('[data-testid="palette-group-control"]')
     for (const type of ['input', 'output', 'set_var', 'branch']) {
       expect(control.find(`[data-testid="palette-item-type:${type}"]`).exists()).toBe(true)
     }
     const collab = w.find('[data-testid="palette-group-collab"]')
-    expect(collab.findAll('[data-testid^="palette-item-"]')).toHaveLength(2)
+    expect(collab.findAll('[data-testid^="palette-item-"]').map((i) => i.attributes('data-testid'))).toEqual(['palette-item-type:human_gate'])
   })
 
   it('shows a one-line capability summary for agents', () => {
@@ -62,11 +62,21 @@ describe('NodePalette', () => {
     expect(w.text()).toContain(t('canvas.palette.noMatch'))
   })
 
-  it('emits add on click and keyboard', async () => {
+  it('starts placement on click and adds right away from the keyboard', async () => {
     const w = mountPalette()
     await w.find('[data-testid="palette-item-agent:测试评审"]').trigger('click')
+    expect(w.emitted('place')).toEqual([[{ type: 'agent', agentProfile: '测试评审' }]])
+    expect(w.emitted('add')).toBeUndefined()
     await w.find('[data-testid="palette-item-type:output"]').trigger('keydown', { key: 'Enter' })
-    expect(w.emitted('add')).toEqual([[{ type: 'agent', agentProfile: '测试评审' }], [{ type: 'output' }]])
+    expect(w.emitted('add')).toEqual([[{ type: 'output' }]])
+  })
+
+  it('highlights the item being placed', async () => {
+    const w = mountPalette({ placingKey: 'type:branch' })
+    const item = w.find('[data-testid="palette-item-type:branch"]')
+    expect(item.attributes('data-placing')).toBe('true')
+    expect(item.attributes('aria-pressed')).toBe('true')
+    expect(w.find('[data-testid="palette-item-type:input"]').attributes('data-placing')).toBeUndefined()
   })
 
   it('puts the node spec on the drag payload', async () => {

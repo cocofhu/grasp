@@ -13,7 +13,7 @@ func TestListMessagesWindowTailAndBefore(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("WinProj", "", nil, nil)
+	p, err := ps.Create("WinProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

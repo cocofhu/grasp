@@ -100,10 +100,10 @@ func TestNormalizeAndValidateAgentName_NFCAndRuneLimit(t *testing.T) {
 	}
 }
 
-func TestSanitizeAgentPath_legacyDotAndUnicode(t *testing.T) {
+func TestSanitizeAgentPath_dotRejectedAndUnicode(t *testing.T) {
 	t.Parallel()
-	if got := sanitizeAgentPath("clarify.v1"); got != "clarify.v1" {
-		t.Fatalf("legacy dotted name: got %q", got)
+	if got := sanitizeAgentPath("clarify.v1"); got != "" {
+		t.Fatalf("dotted name must be rejected: got %q", got)
 	}
 	if got := sanitizeAgentPath("Approve需求澄清视觉研发"); got != "Approve需求澄清视觉研发" {
 		t.Fatalf("unicode path: got %q", got)
@@ -116,32 +116,6 @@ func TestSanitizeAgentPath_legacyDotAndUnicode(t *testing.T) {
 	}
 	if sanitizeAgentPath("..") != "" {
 		t.Fatal(".. must be rejected")
-	}
-}
-
-func TestSaveAndGet_legacyDottedName(t *testing.T) {
-	t.Parallel()
-	s := NewAgentService(t.TempDir())
-	// Simulate legacy on-disk agent with '.' in the directory name.
-	if err := s.Save(Agent{Name: "clarify.v1", Files: []AgentFile{{Path: "rules/a.md", Content: "x"}}}); err != nil {
-		t.Fatal(err)
-	}
-	a, ok := s.Get("clarify.v1")
-	if !ok {
-		t.Fatal("legacy dotted agent must remain Get-able")
-	}
-	if a.Name != "clarify.v1" {
-		t.Fatalf("got name %q", a.Name)
-	}
-	// Rename away from dotted name to a strict write-valid Chinese name.
-	if err := s.Rename("clarify.v1", "需求澄清"); err != nil {
-		t.Fatal(err)
-	}
-	if s.Exists("clarify.v1") {
-		t.Fatal("old dotted name should be gone")
-	}
-	if !s.Exists("需求澄清") {
-		t.Fatal("renamed chinese name should exist")
 	}
 }
 

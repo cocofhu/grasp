@@ -76,7 +76,7 @@ func (h *Handlers) CreateRequirementDraft(c *gin.Context) {
 		return
 	}
 	var body createRequirementDraftBody
-	// Body is optional for backward compatibility (empty POST still creates a requirement).
+	// Body is optional: an empty POST creates a requirement.
 	_ = c.ShouldBindJSON(&body)
 	item, err := h.RequirementDrafts.Create(c.Param("id"), services.RequirementDraftCreateInput{
 		Kind:     body.Kind,

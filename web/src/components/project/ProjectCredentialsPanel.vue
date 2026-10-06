@@ -41,7 +41,6 @@ const createProvider = ref('')
 const createName = ref('')
 const createTarget = ref('')
 const createEnvKey = ref('')
-const createFallbackEnvKey = ref('')
 const createValue = ref('')
 
 const credentialTypes = ['ai', 'git', 'ssh', 'mcp', 'custom'] as const
@@ -60,7 +59,7 @@ type CredentialGroup = 'ai' | 'git' | 'ssh' | 'other'
 const groupOrder: CredentialGroup[] = ['ai', 'git', 'ssh', 'other']
 
 function groupFor(item: ProjectCredentialItem): CredentialGroup {
-  const kind = (item.type || item.kind || '').toLowerCase()
+  const kind = (item.type || '').toLowerCase()
   if (kind === 'ai') return 'ai'
   if (kind === 'git') return 'git'
   if (kind === 'ssh') return 'ssh'
@@ -105,12 +104,12 @@ function itemTarget(item: ProjectCredentialItem): string {
   if (item.target) return item.target
   if (item.envKey) return item.envKey
   if (item.provider) return item.provider
-  return item.type || item.kind || ''
+  return item.type || ''
 }
 
 function isOpenCodeModelCredential(item: ProjectCredentialItem): boolean {
   return (
-    (item.type || item.kind || '').toLowerCase() === 'ai' &&
+    (item.type || '').toLowerCase() === 'ai' &&
     (item.provider || '').toLowerCase() === 'opencode' &&
     (!item.source || item.source === 'project')
   )
@@ -151,7 +150,7 @@ function openCodeBaseRequired(fields: OpenCodeDraft | undefined): boolean {
 }
 
 function isMultiline(item: ProjectCredentialItem): boolean {
-  const key = `${item.type || item.kind || ''} ${item.provider || ''} ${item.envKey || ''}`.toLowerCase()
+  const key = `${item.type || ''} ${item.provider || ''} ${item.envKey || ''}`.toLowerCase()
   return key.includes('ssh') || key.includes('private') || key.includes('known_hosts')
 }
 
@@ -160,7 +159,7 @@ function configuredText(item: ProjectCredentialItem): string {
 }
 
 function typeLabel(item: ProjectCredentialItem): string {
-  const key = (item.type || item.kind || 'custom') as keyof typeof credentialTypeKeys
+  const key = (item.type || 'custom') as keyof typeof credentialTypeKeys
   return t(credentialTypeKeys[key] || credentialTypeKeys.custom)
 }
 
@@ -187,7 +186,6 @@ function openCreate() {
   createName.value = ''
   createTarget.value = ''
   createEnvKey.value = ''
-  createFallbackEnvKey.value = ''
   createValue.value = ''
   showCreate.value = true
 }
@@ -202,7 +200,6 @@ async function create() {
       name: createName.value.trim(),
       target: createTarget.value.trim(),
       envKey: createEnvKey.value.trim(),
-      fallbackEnvKey: createFallbackEnvKey.value.trim(),
       value: createValue.value,
     })
     updateItems(created)
@@ -220,9 +217,7 @@ async function load() {
   loadError.value = ''
   try {
     const response = await api.getProjectCredentials(props.projectId)
-    // Keep the client tolerant of an early backend response that returns the array directly.
-    const next = Array.isArray(response) ? response : response?.items || []
-    setItems(next)
+    setItems(response.items)
   } catch (e: unknown) {
     loadError.value = String((e as { message?: string })?.message || e)
     setItems([])
@@ -237,14 +232,13 @@ async function save(item: ProjectCredentialItem) {
   saving[item.id] = true
   try {
     const saved = await api.putProjectCredential(props.projectId, item.id, {
-      type: item.type || item.kind,
+      type: item.type,
       name: item.name,
       target: item.target,
       targetType: item.targetType,
       targetId: item.targetId,
       provider: item.provider,
       envKey: item.envKey,
-      fallbackEnvKey: item.fallbackEnvKey,
       value,
       metadata: item.metadata,
       enabled: item.enabled,
@@ -264,7 +258,7 @@ async function saveOpenCode(item: ProjectCredentialItem) {
   saving[item.id] = true
   try {
     const saved = await api.putProjectCredential(props.projectId, item.id, {
-      type: item.type || item.kind,
+      type: item.type,
       name: item.name,
       target: item.target,
       targetType: item.targetType,
@@ -273,7 +267,6 @@ async function saveOpenCode(item: ProjectCredentialItem) {
       // in metadata so one API key can carry both routing and authentication.
       provider: item.provider,
       envKey: item.envKey,
-      fallbackEnvKey: item.fallbackEnvKey,
       value: drafts[item.id] || undefined,
       metadata: {
         ...(item.metadata || {}),
@@ -350,10 +343,6 @@ onMounted(() => {
             </div>
           </div>
           <p class="mt-3 max-w-2xl text-[13px] leading-6 text-txt2">{{ t('pages.projectDetail.projectCredentials.subtitle') }}</p>
-          <div class="mt-3 flex items-start gap-2 rounded-lg border border-info/30 bg-info/10 px-3 py-2.5 text-[11px] leading-5 text-info">
-            <Icon name="help" :size="14" class="mt-0.5 shrink-0" aria-hidden="true" />
-            <span>{{ t('pages.projectDetail.projectCredentials.envFallbackHint') }}</span>
-          </div>
         </div>
         <AppButton
           variant="primary"
@@ -633,10 +622,6 @@ onMounted(() => {
             <label class="block">
               <span class="label">{{ t('pages.projectDetail.projectCredentials.envKey') }}</span>
               <input v-model="createEnvKey" class="input w-full font-mono" data-testid="project-credential-create-env" autocomplete="off" placeholder="MY_API_KEY" />
-            </label>
-            <label class="block sm:col-span-2">
-              <span class="label">{{ t('pages.projectDetail.projectCredentials.fallbackEnvKey') }}</span>
-              <input v-model="createFallbackEnvKey" class="input w-full font-mono" data-testid="project-credential-create-fallback-env" autocomplete="off" :placeholder="t('pages.projectDetail.projectCredentials.fallbackPlaceholder')" />
             </label>
           </div>
         </section>

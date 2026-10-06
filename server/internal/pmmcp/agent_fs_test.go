@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func setupAgentFSHost(t *testing.T) (projectID, token string, h *Host, skill *services.AgentService, org *services.OrgService) {
+func setupAgentFSHost(t *testing.T) (projectID, token string, h *Host, skill *services.AgentService) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:pmmcp_agent_fs_"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -25,33 +25,21 @@ func setupAgentFSHost(t *testing.T) (projectID, token string, h *Host, skill *se
 		t.Fatal(err)
 	}
 	ps := services.NewProjectService(db)
-	p, err := ps.Create("AgentFSProj", "", nil, nil)
+	p, err := ps.Create("AgentFSProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	root := t.TempDir()
 	skill = services.NewAgentService(root)
-	org = services.NewOrgService(root, skill)
 	for _, name := range []string{"leader", "alice", "bob", "outsider"} {
-		if err := skill.Save(services.Agent{Name: name, ProjectID: p.ID}); err != nil {
+		if err := skill.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: name, ProjectID: p.ID}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	// Cross-project agent
-	if err := skill.Save(services.Agent{Name: "otherproj", ProjectID: "other-project"}); err != nil {
+	if err := skill.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "otherproj", ProjectID: "other-project"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := org.Put(services.AgentOrg{
-		Agents: map[string]services.OrgAgentMembership{
-			"leader":   {},
-			"alice":    {},
-			"bob":      {},
-			"outsider": {},
-		},
-	}, 0); err != nil {
-		t.Fatal(err)
-	}
-
 	pm := services.NewPmService(db, skill)
 	en := true
 	agent := "leader"
@@ -59,10 +47,10 @@ func setupAgentFSHost(t *testing.T) (projectID, token string, h *Host, skill *se
 		t.Fatal(err)
 	}
 	h = NewHost(pm, services.NewPmProgress(pm, nil, nil), nil, nil, services.NewArtifactService(db), nil)
-	h.SetOrgAndAgent(org, skill)
+	h.SetAgents(skill)
 	tok := platformmcp.NewToken()
 	h.Restore(p.ID, "thr-fs", "alice-user", "leader", tok)
-	return p.ID, tok, h, skill, org
+	return p.ID, tok, h, skill
 }
 
 func callAgentFSTool(t *testing.T, h *Host, projectID, token, tool string, args map[string]any) (status int, result map[string]any, isError bool, raw string) {
@@ -96,14 +84,14 @@ func callAgentFSTool(t *testing.T, h *Host, projectID, token, tool string, args 
 	return st, result, isError, raw
 }
 
-func TestPmGetOrgRelations(t *testing.T) {
-	pid, tok, h, _, _ := setupAgentFSHost(t)
-	st, result, isErr, raw := callAgentFSTool(t, h, pid, tok, "pm_get_org", map[string]any{})
+func TestPmListProjectAgentsRelations(t *testing.T) {
+	pid, tok, h, _ := setupAgentFSHost(t)
+	st, result, isErr, raw := callAgentFSTool(t, h, pid, tok, "pm_list_project_agents", map[string]any{})
 	if st != 200 || isErr {
 		t.Fatalf("status=%d isErr=%v raw=%s", st, isErr, raw)
 	}
-	if result["leader"] != "leader" {
-		t.Fatalf("leader=%v raw=%s", result["leader"], raw)
+	if result["self"] != "leader" || result["projectId"] != pid {
+		t.Fatalf("self/projectId wrong raw=%s", raw)
 	}
 	agents, _ := result["agents"].([]any)
 	rel := map[string]string{}
@@ -111,13 +99,16 @@ func TestPmGetOrgRelations(t *testing.T) {
 		m, _ := a.(map[string]any)
 		rel[m["name"].(string)] = m["relation"].(string)
 	}
-	if rel["leader"] != "self" || rel["alice"] != "direct" || rel["bob"] != "direct" || rel["outsider"] != "direct" {
+	if rel["leader"] != "self" || rel["alice"] != "other" || rel["bob"] != "other" || rel["outsider"] != "other" {
 		t.Fatalf("relations=%v", rel)
+	}
+	if _, leaked := rel["otherproj"]; leaked || len(rel) != 4 {
+		t.Fatalf("cross-project agent leaked: %v", rel)
 	}
 }
 
 func TestPmFSDirectIndirectSelfWrite(t *testing.T) {
-	pid, tok, h, skill, _ := setupAgentFSHost(t)
+	pid, tok, h, skill := setupAgentFSHost(t)
 	for _, agent := range []string{"leader", "alice", "bob"} {
 		st, result, isErr, raw := callAgentFSTool(t, h, pid, tok, "pm_fs_write", map[string]any{
 			"agentName": agent,
@@ -147,7 +138,7 @@ func TestPmFSDirectIndirectSelfWrite(t *testing.T) {
 }
 
 func TestPmFSRejectNonReportAndCrossProject(t *testing.T) {
-	pid, tok, h, _, _ := setupAgentFSHost(t)
+	pid, tok, h, _ := setupAgentFSHost(t)
 	_, result, isErr, _ := callAgentFSTool(t, h, pid, tok, "pm_fs_write", map[string]any{
 		"agentName": "outsider",
 		"path":      "AGENTS.md",
@@ -167,7 +158,7 @@ func TestPmFSRejectNonReportAndCrossProject(t *testing.T) {
 }
 
 func TestPmFSPathEscapeRejected(t *testing.T) {
-	pid, tok, h, _, _ := setupAgentFSHost(t)
+	pid, tok, h, _ := setupAgentFSHost(t)
 	_, result, isErr, _ := callAgentFSTool(t, h, pid, tok, "pm_fs_write", map[string]any{
 		"agentName": "alice",
 		"path":      "../escape.md",
@@ -186,7 +177,7 @@ func TestPmFSDisabledMCP(t *testing.T) {
 	}
 	_ = db.AutoMigrate(models.AllModels()...)
 	ps := services.NewProjectService(db)
-	p, _ := ps.Create("Off", "", nil, nil)
+	p, _ := ps.Create("Off", "", nil)
 	pm := services.NewPmService(db, nil)
 	en := true
 	agent := "leader"
@@ -198,7 +189,7 @@ func TestPmFSDisabledMCP(t *testing.T) {
 	h.Restore(p.ID, "t", "u", agent, tok)
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "pm_get_org", "arguments": map[string]any{}},
+		"params": map[string]any{"name": "pm_list_project_agents", "arguments": map[string]any{}},
 	})
 	st, resp := h.ServeRPC(p.ID, MCPAgentFS, tok, body)
 	if st != 404 || !strings.Contains(string(resp), "mcp disabled") {
@@ -207,7 +198,7 @@ func TestPmFSDisabledMCP(t *testing.T) {
 }
 
 func TestPmFSTooLargeRejected(t *testing.T) {
-	pid, tok, h, _, _ := setupAgentFSHost(t)
+	pid, tok, h, _ := setupAgentFSHost(t)
 	big := strings.Repeat("x", services.WorkspaceFileMaxBytes+1)
 	_, result, isErr, _ := callAgentFSTool(t, h, pid, tok, "pm_fs_write", map[string]any{
 		"agentName": "alice",
@@ -221,7 +212,7 @@ func TestPmFSTooLargeRejected(t *testing.T) {
 }
 
 func TestPmFSListDeleteMkdirRename(t *testing.T) {
-	pid, tok, h, skill, _ := setupAgentFSHost(t)
+	pid, tok, h, skill := setupAgentFSHost(t)
 	callAgentFSTool(t, h, pid, tok, "pm_fs_mkdir", map[string]any{"agentName": "bob", "path": "rules", "reason": "mkdir test"})
 	_, _, isErr, raw := callAgentFSTool(t, h, pid, tok, "pm_fs_write", map[string]any{
 		"agentName": "bob", "path": "rules/a.md", "content": "rule-a", "reason": "write rule",
@@ -261,7 +252,7 @@ func TestPmFSListDeleteMkdirRename(t *testing.T) {
 }
 
 func TestPmFSReasonRequired(t *testing.T) {
-	pid, tok, h, skill, _ := setupAgentFSHost(t)
+	pid, tok, h, skill := setupAgentFSHost(t)
 	_, result, isErr, _ := callAgentFSTool(t, h, pid, tok, "pm_fs_write", map[string]any{
 		"agentName": "alice",
 		"path":      "AGENTS.md",
@@ -276,7 +267,7 @@ func TestPmFSReasonRequired(t *testing.T) {
 }
 
 func TestPmFSHistoryDiffRestore(t *testing.T) {
-	pid, tok, h, skill, _ := setupAgentFSHost(t)
+	pid, tok, h, skill := setupAgentFSHost(t)
 	_, result, isErr, _ := callAgentFSTool(t, h, pid, tok, "pm_fs_write", map[string]any{
 		"agentName": "alice",
 		"path":      "AGENTS.md",
@@ -314,7 +305,7 @@ func TestPmFSHistoryDiffRestore(t *testing.T) {
 }
 
 func TestPmAgentFSToolsList(t *testing.T) {
-	pid, tok, h, _, _ := setupAgentFSHost(t)
+	pid, tok, h, _ := setupAgentFSHost(t)
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
 	st, resp := h.ServeRPC(pid, MCPAgentFS, tok, body)
 	if st != 200 {
@@ -331,7 +322,7 @@ func TestPmAgentFSToolsList(t *testing.T) {
 		names[tool["name"].(string)] = true
 	}
 	for _, want := range []string{
-		"pm_get_org", "pm_fs_list", "pm_fs_read", "pm_fs_write", "pm_fs_delete", "pm_fs_mkdir", "pm_fs_rename",
+		"pm_list_project_agents", "pm_fs_list", "pm_fs_read", "pm_fs_write", "pm_fs_delete", "pm_fs_mkdir", "pm_fs_rename",
 		"pm_fs_history", "pm_fs_diff", "pm_fs_restore",
 	} {
 		if !names[want] {

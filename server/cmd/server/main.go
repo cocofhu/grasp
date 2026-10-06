@@ -91,9 +91,6 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("open database failed")
 	}
-	if err := database.Seed(db); err != nil {
-		log.Error().Err(err).Msg("seed failed")
-	}
 
 	artifactSvc := services.NewArtifactService(db)
 	host := mcp.NewHost(artifactSvc)
@@ -182,20 +179,17 @@ func main() {
 	externalMcpSvc := services.NewProjectExternalMcpService(db, cfg.Server.MCPAdvertise)
 	projectMcpKeySvc := services.NewProjectMcpApiKeyService(db)
 	projectCredentialSvc := services.NewProjectCredentialService(db)
-	services.BackfillAuditElevatedFields(db)
 	sharedAgentSvc := services.NewSharedAgentService(services.DefaultSharedAgentRoot(cfg.Engine.ProfilesRoot))
-	services.MigrateProjectSandboxEnvOnce(db, projectSvc, sharedAgentSvc)
 	// One snapshot of OpenCode's provider catalog, shared by the pickers and by
 	// every path that generates opencode.json, so both agree on which vendor ids
 	// OpenCode can resolve without an adapter of our own.
 	openCodeCatalog := opencodecatalog.New(cfg.Sandbox.OpenCodeCatalogURL)
-	provider := runtime.NewProvider(cfg.Engine.ExecProvider, host, runtime.Options{
+	provider := runtime.NewProvider(host, runtime.Options{
 		SandboxImage:         cfg.Sandbox.Image,
 		SandboxImages:        cfg.Sandbox.Images,
 		GatewayURL:           cfg.Sandbox.GatewayURL,
 		GatewayAPIKey:        cfg.Sandbox.GatewayAPIKey,
 		Env:                  cfg.Sandbox.Env,
-		CursorAuthPath:       cfg.Sandbox.CursorAuthPath,
 		ChatTimeout:          cfg.AgentChatTimeout(),
 		ChatIdleTimeout:      cfg.ChatIdleTimeout(),
 		SandboxMaxAttempts:   cfg.Sandbox.MaxAttempts,
@@ -223,22 +217,18 @@ func main() {
 				})
 			}
 			return runtime.SharedAgentView{
-				AcpBackend:       cfg.AcpBackend,
-				GitSshKnownHosts: cfg.GitSshKnownHosts,
-				GitSshPrivateKey: cfg.GitSshPrivateKey,
-				MCP:              mcp,
-				Env:              cfg.Env,
+				AcpBackend: cfg.AcpBackend,
+				MCP:        mcp,
+				Env:        cfg.Env,
 				Layout: runtime.SharedLayoutView{
 					ConfigRoot: cfg.Layout.ConfigRoot, WorkspaceDir: cfg.Layout.WorkspaceDir,
 				},
-				WorkDir:   sharedAgentSvc.WorkDir(projectID),
-				ProjectID: pickSharedProjectID(cfg),
+				WorkDir: sharedAgentSvc.WorkDir(projectID),
 			}
 		},
-		ProjectCredentialsForProject:           projectCredentialSvc.ResolveEnv,
-		ProjectCredentialKeysForProject:        projectCredentialSvc.CredentialEnvKeys,
-		ProjectCredentialFallbackEnvForProject: projectCredentialSvc.FallbackEnvKeys,
-		ProjectCredentialReferences:            projectCredentialSvc.ResolveReferences,
+		ProjectCredentialsForProject:    projectCredentialSvc.ResolveEnv,
+		ProjectCredentialKeysForProject: projectCredentialSvc.CredentialEnvKeys,
+		ProjectCredentialReferences:     projectCredentialSvc.ResolveReferences,
 		RunSandboxEnvForRun: func(runID string) []models.EnvEntry {
 			var run models.Run
 			if err := db.Select("sandbox_env").First(&run, "id = ?", runID).Error; err != nil {
@@ -332,7 +322,6 @@ func main() {
 
 	agentSvc := services.NewAgentService(cfg.Engine.ProfilesRoot)
 	eng.SetAgents(agentSvc)
-	orgSvc := services.NewOrgService(cfg.Engine.ProfilesRoot, agentSvc)
 	sbxGateway := sandbox.NewGatewayClient(cfg.Sandbox.GatewayURL, cfg.Sandbox.GatewayAPIKey)
 	sbxMgr := sandbox.NewManager(sbxGateway, sandbox.ManagerOptions{
 		Image:           cfg.Sandbox.Image,
@@ -411,7 +400,7 @@ func main() {
 	wfSvc := services.NewWorkflowService(db)
 	wfSvc.SetAgents(agentSvc)
 	pmMCP := pmmcp.NewHost(pmSvc, pmProgress, wfSvc, runSvc, artifactSvc, eng)
-	pmMCP.SetOrgAndAgent(orgSvc, agentSvc)
+	pmMCP.SetAgents(agentSvc)
 	pmMCP.SetRequirementDrafts(requirementDraftSvc)
 	memoryMCP := memorymcp.NewHost(pmSvc)
 	contextMCP := contextmcp.NewHost(pmSvc)
@@ -488,7 +477,6 @@ func main() {
 		APIKeys:            services.NewAPIKeyService(db),
 		Agents:             agentSvc,
 		SharedAgent:        sharedAgentSvc,
-		Org:                orgSvc,
 		Dash:               services.NewDashboardService(db, projectSvc),
 		Sbx:                sbxSvc,
 		SbxChats:           services.NewSandboxChats(sbxSvc),
@@ -525,10 +513,12 @@ func main() {
 		PublicAdvertise:    cfg.Server.PublicAdvertise,
 		InjectBundles:      injectStore,
 		Blobs:              blobStore,
-		Onboarding:         services.NewOnboardingService(projectSvc, agentSvc, sharedAgentSvc, wfSvc, orgSvc, projectCredentialSvc),
-		Team:               services.NewTeamService(projectSvc, agentSvc, orgSvc, pmSvc, sbxSvc),
+		Onboarding:         services.NewOnboardingService(projectSvc, agentSvc, sharedAgentSvc, wfSvc, projectCredentialSvc),
+		Team:               services.NewTeamService(projectSvc, agentSvc, pmSvc, sbxSvc),
 		OpenCodeCatalog:    openCodeCatalog,
 	}
+	h.Team.SharedAgent = sharedAgentSvc
+	h.Team.Credentials = projectCredentialSvc
 	if h.Team != nil && h.PMMCP != nil {
 		h.PMMCP.SetTeam(h.Team)
 	}
@@ -542,7 +532,7 @@ func main() {
 	}
 	srv := &http.Server{Handler: r}
 
-	log.Info().Str("port", port).Str("exec_provider", provider.Name()).
+	log.Info().Str("port", port).
 		Str("config_path", cfgPath).Msg("approving server starting")
 
 	go func() {
@@ -591,13 +581,6 @@ func main() {
 	}
 	log.Info().Msg("exit")
 	os.Exit(0)
-}
-
-func pickSharedProjectID(cfg services.SharedAgentConfig) string {
-	if v := strings.TrimSpace(cfg.DefaultProjectID); v != "" {
-		return v
-	}
-	return strings.TrimSpace(cfg.ProjectID)
 }
 
 // secretsKeyFallback loads or creates the auto-generated secrets key when none

@@ -308,7 +308,7 @@ func ReplaceRunNotifyPlaceholders(tmpl string, project, workflow, runID, node, l
 }
 
 // RenderRunNotifyMessage uses a custom template when trim-non-empty; otherwise
-// falls back to FormatRunNotifyMessage (byte-compatible with legacy hardcode).
+// uses the built-in FormatRunNotifyMessage.
 func RenderRunNotifyMessage(ev RunNotifyEvent, base, template string) string {
 	if strings.TrimSpace(template) == "" {
 		return FormatRunNotifyMessage(ev, base)

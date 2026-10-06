@@ -61,13 +61,6 @@ describe('BrandLogo', () => {
     expect(loginLogo.get('.brand-logo__name').text()).toBe('Grasp')
     shellLogo.unmount()
     loginLogo.unmount()
-    setBrandSettings({ product_name: 'Approving' })
-    const upgraded = mount(BrandLogo, {
-      props: { useCustomBrand: true },
-      global: { plugins: [i18n] },
-    })
-    expect(upgraded.get('.brand-logo__name').text()).toBe('Grasp')
-    upgraded.unmount()
     setBrandSettings(null)
   })
 

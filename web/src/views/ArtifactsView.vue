@@ -1,212 +1,239 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import ArtifactList from '@/components/run/ArtifactList.vue'
 import ArtifactPreview from '@/components/run/ArtifactPreview.vue'
 import RefreshStrip from '@/components/run/RefreshStrip.vue'
-import HardLoadLayer from '@/components/run/HardLoadLayer.vue'
-import Pagination from '@/components/ui/Pagination.vue'
+import AppButton from '@/components/ui/AppButton.vue'
+import AppSkeleton from '@/components/ui/AppSkeleton.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import Icon from '@/components/ui/Icon.vue'
-import { api, isPaginated } from '@/lib/api/api'
-import { groupByRun, UNNAMED_GROUP_KEY } from '@/lib/run/artifactGroups'
-import { useArtifactGroupSelection } from '@/lib/run/useArtifactGroupSelection'
-import { useWorkflowFilter } from '@/lib/composables/useWorkflowFilter'
-import { useProjectContext } from '@/lib/composables/useProjectContext'
+import Pagination from '@/components/ui/Pagination.vue'
+import ProjectTree from '@/components/ui/ProjectTree.vue'
+import { api } from '@/lib/api/api'
+import {
+  buildArtifactTreeNodes,
+  describeSelection,
+  resolveArtifactSelection,
+  selectionFromQuery,
+  selectionFromTreeKey,
+  selectionScope,
+  selectionToQuery,
+  selectionTreeKey,
+  type ArtifactSelection,
+} from '@/lib/artifacts/artifactTree'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
-import ProjectFilter from '@/components/ui/ProjectFilter.vue'
-import type { Artifact, Run, Workflow } from '@/lib/shared/types'
+import { groupByRun } from '@/lib/run/artifactGroups'
+import type { Artifact, ArtifactTreeProject, Run } from '@/lib/shared/types'
 
-type MobileStep = 'groups' | 'list' | 'preview'
+type MobileStep = 'list' | 'preview'
 
 const PAGE_SIZE = 20
-const WF_SEARCH_THRESHOLD = 8
 const SEARCH_DEBOUNCE_MS = 300
+const SELECTION_QUERY_KEYS = ['project', 'workflow', 'session'] as const
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 const { isMobile } = useBreakpoint()
 
-const groupArtifacts = ref<Artifact[]>([])
+const tree = ref<ArtifactTreeProject[]>([])
+/** True before onMounted so the empty state never flashes on first paint. */
+const treeLoading = ref(true)
+const treeFailed = ref(false)
+let treeLoadGen = 0
+
 const pageArtifacts = ref<Artifact[]>([])
+/** Run count when paging with groupBy=run. */
 const pageTotal = ref(0)
 const page = ref(1)
-const pageLoading = ref(false)
+const listLoading = ref(false)
+const listFailed = ref(false)
 let pageLoadGen = 0
-/** First paint + reloadGroups window — true before onMounted so empty groups never flash. */
-const groupsLoading = ref(true)
-let groupsLoadGen = 0
-const workflows = ref<Workflow[]>([])
-const workflowsMap = computed(() => {
-  const map = new Map<string, { name: string }>()
-  const list = Array.isArray(workflows.value) ? workflows.value : []
-  for (const wf of list) map.set(wf.id, { name: wf.name })
-  return map
-})
-
-const { selected } = useWorkflowFilter()
-const { selected: selectedProject, ensureHydrated: hydrateProject } = useProjectContext()
-const {
-  groups,
-  activeGroup,
-  shouldAutoSelectArtifact,
-  selectGroup,
-} = useArtifactGroupSelection(groupArtifacts, selected, workflowsMap)
-
-/** Dual-track surface: groups and/or paginated list loading. */
-const surfaceBusy = computed(() => groupsLoading.value || pageLoading.value)
-/** Prefer RefreshStrip when any group/list rows are already on screen. */
-const hasCachedSurface = computed(
-  () => groups.value.length > 0 || pageArtifacts.value.length > 0,
-)
 
 const activeArtifact = ref<Artifact | null>(null)
 const previewArtifacts = ref<Artifact[]>([])
 /** Full Run for page.html version choices; null when load fails (degrade: no chip). */
 const previewRun = ref<Run | null>(null)
-const wfFilter = ref('')
-const artSearch = ref('')
+const searchText = ref('')
 const searchQ = ref('')
-const artifactListRef = ref<InstanceType<typeof ArtifactList> | null>(null)
-const mobileStep = ref<MobileStep>('groups')
-
 let searchTimer: ReturnType<typeof setTimeout> | null = null
+const artifactListRef = ref<InstanceType<typeof ArtifactList> | null>(null)
+const mobileStep = ref<MobileStep>('list')
+const treeSheetOpen = ref(false)
+
+const treeLabels = computed(() => ({
+  session: t('pages.artifacts.sessionArtifacts'),
+  unnamedWorkflow: t('pages.workflowEditor.unnamedWorkflow'),
+}))
+const treeNodes = computed(() => buildArtifactTreeNodes(tree.value, treeLabels.value))
+const treeTotal = computed(() => tree.value.reduce((n, p) => n + p.count, 0))
+
+const selection = computed(() => resolveArtifactSelection(tree.value, selectionFromQuery(route.query)))
+const activeKey = computed(() => selectionTreeKey(selection.value))
+const selectionInfo = computed(() => describeSelection(tree.value, selection.value, treeLabels.value))
+const listTitle = computed(() => selectionInfo.value?.childLabel || selectionInfo.value?.projectLabel || '')
 
 const runSections = computed(() => groupByRun(pageArtifacts.value))
 
-const showWfSearch = computed(() => groups.value.length >= WF_SEARCH_THRESHOLD)
-
-const visibleWfGroups = computed(() => {
-  const q = wfFilter.value.trim().toLowerCase()
-  if (!q) return groups.value
-  return groups.value.filter((g) => groupDisplayTitle(g).toLowerCase().includes(q))
-})
-
-const listEmptyText = computed(() => t('common.empty.noArtifactsInGroup'))
-
-const mobileStepLabel = computed(() => {
-  if (mobileStep.value === 'list') return t('pages.artifacts.stepList')
-  if (mobileStep.value === 'preview') return t('pages.artifacts.stepPreview')
-  return t('pages.artifacts.stepGroups')
-})
-
-const showMobileChrome = computed(() => isMobile.value && mobileStep.value !== 'groups')
-
-function groupDisplayTitle(g: { title: string; isUnnamed: boolean }): string {
-  if (g.isUnnamed || !g.title) return t('pages.workflowEditor.unnamedWorkflow')
-  return g.title
-}
-
-function matchWfGroup(g: { title: string; isUnnamed: boolean }): boolean {
-  const q = wfFilter.value.trim().toLowerCase()
-  if (!q) return true
-  return groupDisplayTitle(g).toLowerCase().includes(q)
-}
-
-const activeGroupTitle = computed(() => {
-  if (!activeGroup.value) return t('pages.artifacts.platformArtifacts')
-  return groupDisplayTitle(activeGroup.value)
-})
-
-function wfParamForGroup(g: typeof activeGroup.value): string | undefined {
-  if (!g) return undefined
-  if (g.isUnnamed) return UNNAMED_GROUP_KEY
-  return g.workflowId ?? undefined
-}
+const firstLoad = computed(() => treeLoading.value && !tree.value.length)
+const noArtifacts = computed(() => !treeLoading.value && !treeFailed.value && !tree.value.length)
+const treeFailedNoCache = computed(() => treeFailed.value && !tree.value.length)
+const surfaceBusy = computed(() => treeLoading.value || listLoading.value)
+const listSkeleton = computed(() => listLoading.value && !pageArtifacts.value.length)
 
 function resetListScroll() {
   nextTick(() => artifactListRef.value?.scrollToTop())
 }
 
-async function loadPageArtifacts({ showLoading = false }: { showLoading?: boolean } = {}) {
-  const g = activeGroup.value
-  if (!g) {
+function queryWithSelection(sel: ArtifactSelection) {
+  const rest = { ...route.query }
+  for (const k of SELECTION_QUERY_KEYS) delete rest[k]
+  return { ...rest, ...selectionToQuery(sel) }
+}
+
+const ownRouteName = route.name
+
+/** The global route keeps changing while this view leaves; never rewrite another page's query. */
+function onOwnRoute(): boolean {
+  return route.name === ownRouteName
+}
+
+function isCanonicalQuery(sel: ArtifactSelection): boolean {
+  const want: Record<string, string> = selectionToQuery(sel)
+  return SELECTION_QUERY_KEYS.every((k) => (route.query[k] ?? undefined) === want[k])
+}
+
+async function loadTree() {
+  const gen = ++treeLoadGen
+  treeLoading.value = true
+  try {
+    const data = await api.getArtifactTree()
+    if (gen !== treeLoadGen) return
+    tree.value = Array.isArray(data) ? data : []
+    treeFailed.value = false
+  } catch {
+    if (gen !== treeLoadGen) return
+    // Keep the cached tree on refresh failure; only a cold failure blocks the page.
+    if (!tree.value.length) treeFailed.value = true
+  } finally {
+    if (gen === treeLoadGen) treeLoading.value = false
+  }
+}
+
+async function loadPage({ showLoading = true }: { showLoading?: boolean } = {}) {
+  const sel = selection.value
+  const gen = ++pageLoadGen
+  if (!sel) {
     pageArtifacts.value = []
     pageTotal.value = 0
+    listLoading.value = false
     return
   }
-  const gen = ++pageLoadGen
-  if (showLoading) pageLoading.value = true
+  if (showLoading) listLoading.value = true
   try {
     const data = await api.listArtifacts({
-      wf: wfParamForGroup(g),
-      projectId: selectedProject.value || undefined,
+      ...selectionScope(sel),
+      q: searchQ.value || undefined,
       page: page.value,
       pageSize: PAGE_SIZE,
-      q: searchQ.value || undefined,
       groupBy: 'run',
     })
     if (gen !== pageLoadGen) return
-    if (isPaginated(data)) {
-      pageArtifacts.value = Array.isArray(data.items) ? data.items : []
-      pageTotal.value = data.total
-    } else {
-      pageArtifacts.value = Array.isArray(data) ? data : []
-      pageTotal.value = pageArtifacts.value.length
-    }
+    pageArtifacts.value = Array.isArray(data.items) ? data.items : []
+    pageTotal.value = data.total
+    listFailed.value = false
   } catch {
     if (gen !== pageLoadGen) return
-    if (!pageArtifacts.value.length) {
-      pageArtifacts.value = []
-      pageTotal.value = 0
-    }
+    if (!pageArtifacts.value.length) listFailed.value = true
   } finally {
-    if (gen === pageLoadGen) pageLoading.value = false
+    if (gen === pageLoadGen) listLoading.value = false
   }
 }
 
-function onSelectGroup(key: string, isUnnamed: boolean) {
-  activeArtifact.value = null
-  page.value = 1
-  selectGroup(key, isUnnamed)
-  resetListScroll()
-  if (isMobile.value) mobileStep.value = 'list'
+function onTreeSelect(key: string) {
+  treeSheetOpen.value = false
+  const sel = selectionFromTreeKey(key)
+  if (!sel || key === activeKey.value) return
+  void router.push({ query: queryWithSelection(sel) })
 }
 
-/** User-initiated selection; advances mobile step. Auto-highlight must not call this. */
+function selectProjectCrumb() {
+  const sel = selection.value
+  if (!sel || sel.kind === 'project') return
+  onTreeSelect(selectionTreeKey({ kind: 'project', projectId: sel.projectId }))
+}
+
+/** User-initiated selection; advances the mobile step. */
 function selectArtifact(a: Artifact) {
   activeArtifact.value = a
   if (isMobile.value) mobileStep.value = 'preview'
 }
 
-function mobileBack() {
-  if (mobileStep.value === 'preview') {
-    mobileStep.value = 'list'
-  } else if (mobileStep.value === 'list') {
-    mobileStep.value = 'groups'
-    activeArtifact.value = null
-  }
-}
-
 function onSearchUpdate(q: string) {
-  artSearch.value = q
+  searchText.value = q
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
     searchQ.value = q.trim()
-    page.value = 1
   }, SEARCH_DEBOUNCE_MS)
 }
 
-watch(searchQ, () => {
-  loadPageArtifacts({ showLoading: true })
+function retryTree() {
+  void loadTree()
+}
+
+function retryList() {
+  void loadPage()
+}
+
+async function onArtifactDeleted(id: string) {
+  const prevIdx = pageArtifacts.value.findIndex((a) => a.id === id)
+  const keyBefore = activeKey.value
+  pageArtifacts.value = pageArtifacts.value.filter((a) => a.id !== id)
+  previewArtifacts.value = previewArtifacts.value.filter((a) => a.id !== id)
+
+  await loadTree()
+  // The selected bucket vanished: selection fell back and the activeKey watcher reloads.
+  if (activeKey.value !== keyBefore) return
+
+  await loadPage({ showLoading: false })
+  if (!pageArtifacts.value.length && page.value > 1) {
+    page.value -= 1
+    return
+  }
+  const list = pageArtifacts.value
+  activeArtifact.value = list.length && prevIdx >= 0 ? list[Math.min(prevIdx, list.length - 1)] : (list[0] ?? null)
+  if (isMobile.value && !activeArtifact.value) mobileStep.value = 'list'
+}
+
+watch(selection, (sel) => {
+  if (!onOwnRoute()) return
+  if (sel && !isCanonicalQuery(sel)) void router.replace({ query: queryWithSelection(sel) })
 })
 
-watch(page, () => {
-  loadPageArtifacts({ showLoading: true })
+watch([activeKey, searchQ], ([key], [prevKey]) => {
+  if (!onOwnRoute()) return
+  if (key !== prevKey) {
+    activeArtifact.value = null
+    mobileStep.value = 'list'
+  }
+  if (page.value !== 1) {
+    page.value = 1
+    return
+  }
+  void loadPage()
   resetListScroll()
 })
 
-watch(activeGroup, (g) => {
-  if (!g) activeArtifact.value = null
-  page.value = 1
-  loadPageArtifacts({ showLoading: true })
+watch(page, () => {
+  void loadPage()
   resetListScroll()
 })
 
 watch(pageArtifacts, (list) => {
-  if (activeArtifact.value && !list.some((a) => a.id === activeArtifact.value!.id)) {
-    activeArtifact.value = shouldAutoSelectArtifact.value ? (list[0] ?? null) : null
-  } else if (!activeArtifact.value && list.length && shouldAutoSelectArtifact.value) {
-    activeArtifact.value = list[0]
-  }
+  if (activeArtifact.value && list.some((a) => a.id === activeArtifact.value!.id)) return
+  activeArtifact.value = isMobile.value ? null : (list[0] ?? null)
 })
 
 watch(
@@ -217,302 +244,277 @@ watch(
     if (!runId) return
     try {
       const run = await api.getRun(runId)
+      if (activeArtifact.value?.runId !== runId) return
       previewArtifacts.value = Array.isArray(run.artifacts) ? run.artifacts : []
       previewRun.value = run
     } catch {
-      // Run detail unavailable: still preview list content, no version chip (f3).
+      if (activeArtifact.value?.runId !== runId) return
+      // Run detail unavailable: still preview list content, no version chip.
       previewArtifacts.value = pageArtifacts.value.filter((a) => a.runId === runId)
       previewRun.value = null
     }
   },
-  { immediate: true },
 )
 
 watch(isMobile, (mobile) => {
-  if (mobile) mobileStep.value = 'groups'
+  mobileStep.value = 'list'
+  if (!mobile) treeSheetOpen.value = false
 })
 
-async function onArtifactDeleted(id: string) {
-  const prevPageIdx = pageArtifacts.value.findIndex((a) => a.id === id)
-  const prevGroupKey = activeGroup.value?.key ?? null
-  const prevGroupIdx = groups.value.findIndex((g) => g.key === prevGroupKey)
-
-  // Precompute next group before filter so activeGroup watch does not briefly
-  // fall through to resolveDefaultGroup and trigger a wrong loadPageArtifacts.
-  const remaining = groupArtifacts.value.filter((a) => a.id !== id)
-  const groupWillExist =
-    prevGroupKey != null &&
-    remaining.some((a) => (a.workflowId ? a.workflowId : UNNAMED_GROUP_KEY) === prevGroupKey)
-
-  let nextGroup: { key: string; isUnnamed: boolean } | null = null
-  if (!groupWillExist) {
-    const listWithoutCurrent = groups.value.filter((g) => g.key !== prevGroupKey)
-    if (listWithoutCurrent.length > 0) {
-      const g =
-        prevGroupIdx >= 0
-          ? listWithoutCurrent[Math.min(prevGroupIdx, listWithoutCurrent.length - 1)]
-          : listWithoutCurrent[0]
-      nextGroup = { key: g.key, isUnnamed: g.isUnnamed }
-    }
-  }
-
-  groupArtifacts.value = remaining
-  previewArtifacts.value = previewArtifacts.value.filter((a) => a.id !== id)
-
-  if (!groupWillExist) {
-    if (nextGroup) {
-      activeArtifact.value = null
-      page.value = 1
-      selectGroup(nextGroup.key, nextGroup.isUnnamed)
-      // activeGroup watch reloads page; pageArtifacts watch auto-selects first
-    } else {
-      activeArtifact.value = null
-      pageArtifacts.value = []
-      pageTotal.value = 0
-      if (isMobile.value) mobileStep.value = 'groups'
-    }
-    return
-  }
-
-  await loadPageArtifacts()
-
-  if (pageArtifacts.value.length === 0 && page.value > 1) {
-    page.value = page.value - 1
-    await loadPageArtifacts()
-  }
-
-  if (pageArtifacts.value.length === 0) {
-    activeArtifact.value = null
-    if (isMobile.value) mobileStep.value = 'list'
-    return
-  }
-
-  if (prevPageIdx >= 0) {
-    const nextIdx = Math.min(prevPageIdx, pageArtifacts.value.length - 1)
-    activeArtifact.value = pageArtifacts.value[nextIdx]
-  } else if (!pageArtifacts.value.some((a) => a.id === activeArtifact.value?.id)) {
-    activeArtifact.value = pageArtifacts.value[0]
-  }
-
-  if (isMobile.value && !activeArtifact.value) mobileStep.value = 'list'
-}
-
-function onSurfaceRetry() {
-  if (groupsLoading.value) {
-    void reloadGroups()
-    return
-  }
-  void loadPageArtifacts({ showLoading: true })
-}
-
-async function reloadGroups() {
-  const gen = ++groupsLoadGen
-  groupsLoading.value = true
-  let failedNoCache = false
-  try {
-    const pid = selectedProject.value || undefined
-    const [arts, wfs] = await Promise.all([
-      api.listArtifacts({ projectId: pid }),
-      api.listWorkflows({ projectId: pid }),
-    ])
-    if (gen !== groupsLoadGen) return
-    groupArtifacts.value = isPaginated(arts)
-      ? (Array.isArray(arts.items) ? arts.items : [])
-      : (Array.isArray(arts) ? arts : [])
-    // Defend for…of in workflowsMap: never assign a non-array (e.g. unexpected payload shape)
-    workflows.value = Array.isArray(wfs) ? wfs : []
-  } catch {
-    if (gen !== groupsLoadGen) return
-    // Keep prior groups/list on failure; only treat as hard-fail when nothing to show.
-    if (!groupArtifacts.value.length && !pageArtifacts.value.length) {
-      failedNoCache = true
-    }
-  }
-  if (gen !== groupsLoadGen) return
-  if (failedNoCache) {
-    // Leave groupsLoading true so HardLoadLayer stuck+retry stays (not success empty).
-    return
-  }
-  // Start list load before clearing groupsLoading to avoid a no-overlay gap.
-  const pagePromise = loadPageArtifacts({ showLoading: true })
-  if (gen === groupsLoadGen) groupsLoading.value = false
-  await pagePromise
-}
-
-watch(selectedProject, () => {
-  page.value = 1
-  void reloadGroups()
+onMounted(() => {
+  void loadTree()
 })
 
-onMounted(async () => {
-  hydrateProject()
-  await reloadGroups()
+onBeforeUnmount(() => {
+  if (searchTimer) clearTimeout(searchTimer)
 })
 </script>
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <div class="mb-5 flex shrink-0 flex-col gap-3 md:flex-row md:items-start md:justify-between">
-      <div>
-        <h2 class="text-lg font-semibold text-txt">{{ t('pages.artifacts.title') }}</h2>
-        <p class="text-sm text-txt3" v-html="t('pages.artifacts.subtitle')" />
-      </div>
-      <ProjectFilter v-model="selectedProject" />
+    <div class="mb-5 min-w-0 shrink-0">
+      <h2 class="text-lg font-semibold text-txt">{{ t('pages.artifacts.title') }}</h2>
+      <p class="text-sm text-txt3" v-html="t('pages.artifacts.subtitle')" />
     </div>
 
     <div
-      v-if="showMobileChrome"
-      class="mb-2 flex shrink-0 items-center gap-1.5"
-    >
-      <button
-        type="button"
-        class="inline-flex items-center gap-1 rounded-md border border-line bg-elevated px-2.5 py-1.5 text-[12px] text-txt2 transition hover:border-line-strong hover:text-txt"
-        @click="mobileBack"
-      >
-        <Icon name="arrow-left" :size="14" />
-        {{ t('common.buttons.back') }}
-      </button>
-      <span class="ml-auto text-[11px] text-txt3">{{ mobileStepLabel }}</span>
-    </div>
-
-    <div
-      class="card relative flex min-h-0 flex-1 flex-col overflow-hidden"
+      class="card relative flex min-h-0 flex-1 overflow-hidden"
+      data-testid="artifacts-surface"
       :aria-busy="surfaceBusy ? 'true' : 'false'"
     >
-      <RefreshStrip v-if="surfaceBusy && hasCachedSurface" />
-      <HardLoadLayer
-        v-else-if="surfaceBusy && !hasCachedSurface"
-        :overlay="true"
-        :stuck-after-ms="10_000"
-        :stage="t('common.loading.label')"
-        @retry="onSurfaceRetry"
-      />
-      <div class="flex min-h-0 flex-1" :class="isMobile ? 'flex-col' : ''">
+      <!-- cold load failure -->
+      <div
+        v-if="treeFailedNoCache"
+        role="status"
+        data-testid="artifacts-load-failed"
+        class="flex flex-1 flex-col items-center justify-center px-6 text-center"
+      >
+        <Icon name="alert" :size="22" class="mb-3 text-err" />
+        <h3 class="text-sm font-semibold text-txt">{{ t('common.asyncState.loadFailedTitle') }}</h3>
+        <p class="mt-1 max-w-md text-xs text-txt2">{{ t('common.asyncState.loadFailedDesc') }}</p>
+        <AppButton class="mt-4" variant="outline" data-testid="artifacts-retry" @click="retryTree">
+          {{ t('common.buttons.retry') }}
+        </AppButton>
+      </div>
+
+      <!-- nothing produced anywhere yet -->
+      <div v-else-if="noArtifacts" class="flex flex-1 items-center justify-center" data-testid="artifacts-empty">
+        <EmptyState
+          icon="artifact"
+          :title="t('pages.artifacts.emptyTitle')"
+          :desc="t('pages.artifacts.emptyDesc')"
+        />
+      </div>
+
+      <template v-else>
         <aside
-          v-if="!isMobile || mobileStep === 'groups'"
-          class="flex min-h-0 flex-col"
-          :class="
-            isMobile
-              ? 'w-full flex-1 min-w-0 scroll-area overflow-y-auto'
-              : 'w-[200px] min-w-[160px] shrink-0 border-r border-line'
-          "
+          v-if="!isMobile"
+          class="flex w-[260px] min-w-[220px] shrink-0 flex-col border-r border-line bg-base/40"
+          data-testid="artifacts-tree-pane"
         >
-          <div class="shrink-0 border-b border-line px-3.5 py-2.5 text-xs font-medium text-txt2">
-            {{ t('pages.artifacts.groupsTitle') }}
-            <span class="font-normal text-txt3">{{ t('pages.artifacts.groupsCount', { n: groups.length }) }}</span>
-          </div>
-          <div v-if="showWfSearch" class="shrink-0 border-b border-line px-2.5 py-2">
-            <input
-              v-model="wfFilter"
-              type="search"
-              class="w-full rounded-md border border-line bg-base py-1.5 pl-7 pr-2 text-[12px] text-txt outline-none focus:border-accent/55 focus:ring-2 focus:ring-accent/12"
-              :placeholder="t('pages.artifacts.wfSearchPlaceholder')"
-            />
-          </div>
-          <div class="scroll-area min-h-0 flex-1 overflow-y-auto p-1.5">
-            <div
-              v-if="!groups.length && !surfaceBusy"
-              class="px-2 py-8 text-center text-[12px] text-txt3"
-            >
-              {{ t('common.empty.noMatchingGroups') }}
-            </div>
-            <div
-              v-else-if="groups.length && !visibleWfGroups.length"
-              class="px-2 py-8 text-center text-[12px] text-txt3"
-            >
-              {{ t('pages.artifacts.noMatchingWorkflows') }}
-            </div>
-            <template v-else>
-              <button
-                v-for="g in groups"
-                v-show="matchWfGroup(g)"
-                :key="g.key"
-                type="button"
-                class="mb-1 flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left text-[13px] transition-[background-color,border-color,color] duration-[var(--dur-ui)] ease-out"
-                :class="
-                  g.key === activeGroup?.key
-                    ? 'border-accent/45 bg-accent-dim/55 text-txt'
-                    : 'border-transparent text-txt2 hover:border-line hover:bg-elevated'
-                "
-                @click="onSelectGroup(g.key, g.isUnnamed)"
-              >
-                <span class="min-w-0 flex-1 truncate" :title="groupDisplayTitle(g)">{{ groupDisplayTitle(g) }}</span>
-                <span
-                  class="chip shrink-0 text-[11px]"
-                  :class="g.key === activeGroup?.key ? 'border-accent/30 text-accent-2' : ''"
-                >
-                  {{ g.count }}
-                </span>
-              </button>
-            </template>
-          </div>
+          <ProjectTree
+            :nodes="treeNodes"
+            :active-key="activeKey"
+            :title="t('pages.artifacts.treeTitle')"
+            :total="tree.length ? treeTotal : undefined"
+            :search-placeholder="t('pages.artifacts.treeSearchPlaceholder')"
+            :loading="treeLoading"
+            :empty-text="t('pages.artifacts.emptyTitle')"
+            storage-key="artifacts-tree"
+            @select="onTreeSelect"
+          />
         </aside>
 
-        <section
-          v-if="!isMobile || mobileStep === 'list'"
-          class="flex min-h-0 flex-col"
-          :class="
-            isMobile
-              ? 'w-full flex-1 min-w-0'
-              : 'w-[36%] min-w-[200px] shrink-0 border-r border-line'
-          "
-        >
-          <Transition name="ui-fade" mode="out-in">
-            <div
-              :key="activeGroup?.key ?? '__none__'"
-              class="flex min-h-0 flex-1 flex-col"
+        <section class="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div
+            class="flex h-10 shrink-0 items-center gap-2 border-b border-line px-3"
+            :class="isMobile ? 'min-h-11 h-auto py-1.5' : ''"
+          >
+            <button
+              v-if="isMobile && mobileStep === 'preview'"
+              type="button"
+              data-testid="artifacts-mobile-back"
+              class="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-md border border-line bg-elevated px-2 text-[12px] text-txt2 transition hover:border-line-strong hover:text-txt"
+              @click="mobileStep = 'list'"
             >
-              <ArtifactList
-                ref="artifactListRef"
-                :artifacts="pageArtifacts"
-                :run-sections="runSections"
-                :active-id="activeArtifact?.id"
+              <Icon name="arrow-left" :size="14" />
+              {{ t('common.buttons.back') }}
+            </button>
+            <nav
+              class="flex min-w-0 flex-1 items-center gap-1 text-[12.5px]"
+              :aria-label="t('pages.artifacts.breadcrumbAria')"
+              data-testid="artifacts-breadcrumb"
+            >
+              <div v-if="firstLoad" class="h-3 w-40 animate-pulse rounded bg-elevated" aria-hidden="true" />
+              <template v-else-if="selectionInfo">
+                <Icon name="folder" :size="13" class="shrink-0 text-warn" />
+                <button
+                  v-if="selectionInfo.childLabel"
+                  type="button"
+                  data-testid="artifacts-crumb-project"
+                  class="min-w-0 truncate rounded px-0.5 text-txt3 transition hover:text-txt"
+                  :title="selectionInfo.projectLabel"
+                  @click="selectProjectCrumb"
+                >{{ selectionInfo.projectLabel }}</button>
+                <span
+                  v-else
+                  class="min-w-0 truncate font-medium text-txt"
+                  aria-current="page"
+                  :title="selectionInfo.projectLabel"
+                >{{ selectionInfo.projectLabel }}</span>
+                <template v-if="selectionInfo.childLabel">
+                  <Icon name="chevron-right" :size="12" class="shrink-0 text-txt3" />
+                  <Icon
+                    :name="selection?.kind === 'session' ? 'robot' : 'workflow'"
+                    :size="13"
+                    class="shrink-0 text-accent-2"
+                  />
+                  <span
+                    class="min-w-0 truncate font-medium text-txt"
+                    aria-current="page"
+                    :title="selectionInfo.childLabel"
+                  >{{ selectionInfo.childLabel }}</span>
+                </template>
+              </template>
+            </nav>
+            <button
+              v-if="isMobile"
+              type="button"
+              data-testid="artifacts-tree-toggle"
+              class="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-md border border-line bg-elevated px-2.5 text-[12px] text-txt2 transition hover:border-line-strong hover:text-txt"
+              :aria-label="t('pages.artifacts.switchScope')"
+              :aria-expanded="treeSheetOpen"
+              @click="treeSheetOpen = true"
+            >
+              <Icon name="menu" :size="14" />
+              <span>{{ t('pages.artifacts.switchScope') }}</span>
+            </button>
+          </div>
+
+          <div class="flex min-h-0 flex-1" :class="isMobile ? 'flex-col' : ''">
+            <div
+              v-if="!isMobile || mobileStep === 'list'"
+              class="relative flex min-h-0 flex-col"
+              :class="isMobile ? 'w-full flex-1' : 'w-[38%] min-w-[260px] max-w-[460px] shrink-0 border-r border-line'"
+              data-testid="artifacts-list-pane"
+            >
+              <RefreshStrip v-if="surfaceBusy && !firstLoad && !listSkeleton" class="shrink-0" />
+              <div v-if="firstLoad || listSkeleton" class="p-3" data-testid="artifacts-list-skeleton">
+                <div class="mb-3 h-8 w-full animate-pulse rounded-md bg-elevated" aria-hidden="true" />
+                <AppSkeleton list :rows="6" />
+              </div>
+              <div
+                v-else-if="listFailed"
+                role="status"
+                data-testid="artifacts-list-failed"
+                class="flex flex-1 flex-col items-center justify-center px-6 text-center"
+              >
+                <h3 class="text-sm font-semibold text-txt">{{ t('common.asyncState.loadFailedTitle') }}</h3>
+                <p class="mt-1 max-w-xs text-xs text-txt2">{{ t('common.asyncState.loadFailedDesc') }}</p>
+                <AppButton class="mt-4" size="sm" variant="outline" @click="retryList">
+                  {{ t('common.buttons.retry') }}
+                </AppButton>
+              </div>
+              <Transition v-else name="ui-fade" mode="out-in">
+                <div :key="activeKey" class="flex min-h-0 flex-1 flex-col">
+                  <ArtifactList
+                    ref="artifactListRef"
+                    :artifacts="pageArtifacts"
+                    :run-sections="runSections"
+                    :active-id="activeArtifact?.id"
+                    scope="platform"
+                    server-search
+                    :search="searchText"
+                    :group-total="selectionInfo?.count ?? 0"
+                    :header-title="listTitle"
+                    :header-subtitle="t('pages.artifacts.headerSubtitle')"
+                    :empty-text="t('pages.artifacts.emptySelection')"
+                    class="min-h-0 flex-1"
+                    @select="selectArtifact"
+                    @update:search="onSearchUpdate"
+                  />
+                  <Pagination
+                    v-if="pageTotal > PAGE_SIZE"
+                    v-model:page="page"
+                    :page-size="PAGE_SIZE"
+                    :total="pageTotal"
+                    class="shrink-0"
+                  />
+                </div>
+              </Transition>
+            </div>
+
+            <div
+              v-if="!isMobile || mobileStep === 'preview'"
+              class="flex min-h-0 min-w-0 flex-1 flex-col"
+              :class="isMobile ? 'scroll-area w-full overflow-y-auto' : ''"
+              data-testid="artifacts-preview-pane"
+            >
+              <div v-if="firstLoad" class="p-4" aria-hidden="true">
+                <div class="mb-3 h-6 w-48 animate-pulse rounded bg-elevated" />
+                <div class="h-64 w-full animate-pulse rounded-md bg-elevated" />
+              </div>
+              <ArtifactPreview
+                v-else
+                :artifact="activeArtifact"
                 scope="platform"
-                server-search
-                :search="artSearch"
-                :group-total="activeGroup?.count ?? 0"
-                :match-total="pageTotal"
-                :header-title="activeGroupTitle"
-                :header-subtitle="t('pages.artifacts.headerSubtitle')"
-                :empty-text="surfaceBusy ? '' : listEmptyText"
-                class="min-h-0 flex-1"
-                @select="selectArtifact"
-                @update:search="onSearchUpdate"
-              />
-              <Pagination
-                v-if="pageTotal > PAGE_SIZE"
-                v-model:page="page"
-                :page-size="PAGE_SIZE"
-                :total="pageTotal"
-                class="shrink-0"
+                :artifacts="previewArtifacts"
+                :run="previewRun"
+                :run-id="activeArtifact?.runId"
+                @deleted="onArtifactDeleted"
               />
             </div>
-          </Transition>
+          </div>
         </section>
-
-        <section
-          v-if="!isMobile || mobileStep === 'preview'"
-          class="flex min-h-0 min-w-0 flex-col"
-          :class="isMobile ? 'w-full flex-1 scroll-area overflow-y-auto' : 'flex-1'"
-        >
-          <ArtifactPreview
-            :artifact="activeArtifact"
-            scope="platform"
-            :artifacts="previewArtifacts"
-            :run="previewRun"
-            :run-id="activeArtifact?.runId"
-            @deleted="onArtifactDeleted"
-          />
-        </section>
-      </div>
+      </template>
     </div>
+
+    <!-- narrow-screen project tree sheet -->
+    <Teleport to="body">
+      <Transition name="ui-fade">
+        <div
+          v-if="isMobile && treeSheetOpen"
+          data-testid="artifacts-tree-sheet"
+          class="fixed inset-0 z-40"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="t('pages.artifacts.treeTitle')"
+        >
+          <div class="absolute inset-0 bg-black/50" @click="treeSheetOpen = false" />
+          <div
+            class="absolute inset-x-0 bottom-0 flex h-[70vh] max-h-[70vh] flex-col overflow-hidden rounded-t-xl border-t border-line bg-elevated shadow-card"
+          >
+            <div class="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-line-strong/70" aria-hidden="true" />
+            <div class="flex shrink-0 items-center gap-1.5 border-b border-line px-3 py-2.5">
+              <h3 class="min-w-0 flex-1 truncate text-[14px] font-semibold text-txt">
+                {{ t('pages.artifacts.switchScope') }}
+              </h3>
+              <button
+                type="button"
+                data-testid="artifacts-tree-sheet-close"
+                class="flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
+                :aria-label="t('common.buttons.close')"
+                @click="treeSheetOpen = false"
+              >
+                <Icon name="close" :size="14" />
+              </button>
+            </div>
+            <div class="min-h-0 flex-1 overflow-hidden">
+              <ProjectTree
+                :nodes="treeNodes"
+                :active-key="activeKey"
+                :title="t('pages.artifacts.treeTitle')"
+                :total="tree.length ? treeTotal : undefined"
+                :search-placeholder="t('pages.artifacts.treeSearchPlaceholder')"
+                :loading="treeLoading"
+                :empty-text="t('pages.artifacts.emptyTitle')"
+                storage-key="artifacts-tree"
+                @select="onTreeSelect"
+              />
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
-
-<style scoped>
-input[type='search'] {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%236e6e78' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: 9px center;
-}
-</style>

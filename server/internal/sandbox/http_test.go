@@ -83,6 +83,7 @@ func TestFetchChanges(t *testing.T) {
 func eventLogServer(t *testing.T, eventLog []map[string]any, totalTurns int, hasMore bool, pageStatus int) (string, int) {
 	t.Helper()
 	mux := http.NewServeMux()
+	handleTestLogin(mux)
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := testUpgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -124,7 +125,7 @@ func chunkEvent(text string) map[string]any {
 func TestFetchEventLogWithPaging(t *testing.T) {
 	log := []map[string]any{chunkEvent("recent")}
 	h, p := eventLogServer(t, log, 60, true, http.StatusOK)
-	res, sess, err := FetchEventLog(context.Background(), h, p)
+	res, sess, err := FetchEventLogWithPassword(context.Background(), h, p, testBridgePassword)
 	if err != nil {
 		t.Fatalf("FetchEventLog: %v", err)
 	}
@@ -140,7 +141,7 @@ func TestFetchEventLogWithPaging(t *testing.T) {
 func TestFetchEventLogPagingErrorIsPartial(t *testing.T) {
 	log := []map[string]any{chunkEvent("recent")}
 	h, p := eventLogServer(t, log, 60, true, http.StatusInternalServerError)
-	res, _, err := FetchEventLog(context.Background(), h, p)
+	res, _, err := FetchEventLogWithPassword(context.Background(), h, p, testBridgePassword)
 	if err != nil {
 		t.Fatalf("FetchEventLog: %v", err)
 	}
@@ -150,10 +151,10 @@ func TestFetchEventLogPagingErrorIsPartial(t *testing.T) {
 }
 
 func TestFetchEventLogDialError(t *testing.T) {
-	if _, _, err := FetchEventLog(context.Background(), "127.0.0.1", 1); err == nil {
+	if _, _, err := FetchEventLogWithPassword(context.Background(), "127.0.0.1", 1, testBridgePassword); err == nil {
 		t.Error("expected dial error")
 	}
-	if _, _, err := FetchEventLogRaw(context.Background(), "127.0.0.1", 1); err == nil {
+	if _, _, err := FetchEventLogRawWithPassword(context.Background(), "127.0.0.1", 1, testBridgePassword); err == nil {
 		t.Error("expected raw dial error")
 	}
 }

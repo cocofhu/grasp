@@ -530,7 +530,7 @@ describe('ClarifyChat', () => {
   })
 
   it('enqueue shows queue panel (not optimistic transcript bubble)', async () => {
-    const anns: ReactAnnotation[] = [{ label: '提案标题', jsonPath: 'proposals[0].title' }]
+    const anns: ReactAnnotation[] = [{ label: '需求标题', jsonPath: 'title' }]
     const wrapper = mountChat({
       annotateEnabled: true,
       annotations: anns,

@@ -6,18 +6,18 @@ import {
   prefetchLocale,
   type AppLocale,
 } from './loadLocaleMessages'
-import {
-  GRASP_STORAGE_KEYS,
-  LEGACY_STORAGE_KEYS,
-  migrateLocalStorageKey,
-} from './migrateBrandStorage'
 
 export type { AppLocale }
 
-const STORAGE_KEY = GRASP_STORAGE_KEYS.locale
+export const LOCALE_STORAGE_KEY = 'grasp-locale'
+const STORAGE_KEY = LOCALE_STORAGE_KEY
 
 function readLocaleStorage(): string | null {
-  return migrateLocalStorageKey(LEGACY_STORAGE_KEYS.locale, STORAGE_KEY)
+  try {
+    return localStorage.getItem(STORAGE_KEY)
+  } catch {
+    return null
+  }
 }
 
 export function detectLocale(): AppLocale {

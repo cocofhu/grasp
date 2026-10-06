@@ -24,7 +24,7 @@ var (
 		Reads:       []string{"*"},
 		Writes: []models.ProductWrite{
 			{Schema: models.SchemaClarifiedRequirement, Required: true}, {Schema: models.SchemaPlan, Required: true},
-			{Schema: models.SchemaResearch}, {Schema: models.SchemaProposals}, {Schema: models.SchemaPage},
+			{Schema: models.SchemaResearch}, {Schema: models.SchemaPage},
 		},
 	}
 	capsClarifyRootCause = func() *models.AgentCapabilities {

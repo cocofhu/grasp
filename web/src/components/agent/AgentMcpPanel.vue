@@ -10,16 +10,14 @@ import {
   AGENT_PLATFORM_MCPS,
   ARTIFACT_STORE,
   DEFAULT_CONFIG_ROOT,
-  LEGACY_PM_LEADER,
   apiMcpToDraft,
   draftMcpToApi,
-  isLegacyPmLeaderName,
   isPlatformPresetName,
   platformPresetKind,
   type AgentStudioDraft,
 } from '@/lib/agent/agentStudioDraft'
 
-const props = defineProps<{ draft: AgentStudioDraft; isProjectBound: boolean }>()
+const props = defineProps<{ draft: AgentStudioDraft }>()
 const emit = defineEmits<{ toast: [msg: string] }>()
 
 const { t } = useI18n()
@@ -30,7 +28,6 @@ const rawError = ref('')
 const mcpHelpOpen = ref(false)
 
 const hasArtifactStore = computed(() => !!props.draft.mcp.some((m) => m.name.trim() === ARTIFACT_STORE))
-const hasLegacyPmLeader = computed(() => !!props.draft.mcp.some((m) => m.name.trim() === LEGACY_PM_LEADER))
 
 function hasAgentPlatformMcp(name: string) {
   return !!props.draft.mcp.some((m) => m.name.trim() === name)
@@ -58,10 +55,6 @@ function addArtifactStore() {
 }
 
 function addAgentPlatformMcp(name: (typeof AGENT_PLATFORM_MCPS)[number]['name']) {
-  if (!props.isProjectBound) {
-    emit('toast', t('pages.agentStudio.mcp.projectRequiredForPlatformMcp'))
-    return
-  }
   const spec = AGENT_PLATFORM_MCPS.find((m) => m.name === name)
   if (!spec) return
   if (hasAgentPlatformMcp(name)) {
@@ -77,16 +70,6 @@ function addAgentPlatformMcp(name: (typeof AGENT_PLATFORM_MCPS)[number]['name'])
     args: '',
     env: [],
   })
-}
-
-function upgradeLegacyPmLeader() {
-  props.draft.mcp = props.draft.mcp.filter((m) => m.name.trim() !== LEGACY_PM_LEADER)
-  for (const spec of AGENT_PLATFORM_MCPS) {
-    if (!hasAgentPlatformMcp(spec.name)) {
-      addAgentPlatformMcp(spec.name)
-    }
-  }
-  emit('toast', t('pages.agentStudio.mcp.legacyPmUpgraded'))
 }
 
 function toggleMcpRaw() {
@@ -150,53 +133,29 @@ watch(
           @click="addArtifactStore"
         >{{ t('pages.agentStudio.mcp.addArtifactStore') }}</button>
         <button
-          class="rounded border border-accent/40 px-2 py-1 text-[11px] text-accent-2 hover:bg-accent-dim disabled:cursor-not-allowed disabled:opacity-40"
+          class="rounded border border-accent/40 px-2 py-1 text-[11px] text-accent-2 hover:bg-accent-dim"
           type="button"
           data-test="mcp-add-memory"
-          :disabled="!isProjectBound"
           @click="addAgentPlatformMcp('memory-store')"
         >{{ t('pages.agentStudio.mcp.addMemoryStore') }}</button>
         <button
-          class="rounded border border-accent/40 px-2 py-1 text-[11px] text-accent-2 hover:bg-accent-dim disabled:cursor-not-allowed disabled:opacity-40"
+          class="rounded border border-accent/40 px-2 py-1 text-[11px] text-accent-2 hover:bg-accent-dim"
           type="button"
           data-test="mcp-add-context"
-          :disabled="!isProjectBound"
           @click="addAgentPlatformMcp('context-store')"
         >{{ t('pages.agentStudio.mcp.addContextStore') }}</button>
         <button
-          class="rounded border border-accent/40 px-2 py-1 text-[11px] text-accent-2 hover:bg-accent-dim disabled:cursor-not-allowed disabled:opacity-40"
+          class="rounded border border-accent/40 px-2 py-1 text-[11px] text-accent-2 hover:bg-accent-dim"
           type="button"
           data-test="mcp-add-scheduler"
-          :disabled="!isProjectBound"
           @click="addAgentPlatformMcp('task-scheduler')"
         >{{ t('pages.agentStudio.mcp.addTaskScheduler') }}</button>
       </div>
       <div
-        v-if="!isProjectBound"
-        class="rounded border border-dashed border-warn/40 bg-warn/10 p-2 text-[10.5px] leading-5 text-warn"
-        data-test="mcp-project-required-warn"
-      >
-        {{ t('pages.agentStudio.mcp.projectRequiredForPlatformMcp') }}
-      </div>
-      <div
-        v-if="hasLegacyPmLeader"
-        class="rounded border border-dashed border-warn/40 bg-warn/10 p-2 text-[10.5px] leading-5 text-warn"
-        data-test="mcp-legacy-pm-hint"
-      >
-        <div>{{ t('pages.agentStudio.mcp.legacyPmHint') }}</div>
-        <button
-          class="mt-1.5 rounded border border-warn/40 px-2 py-1 text-warn hover:bg-warn/15"
-          type="button"
-          data-test="mcp-upgrade-legacy"
-          @click="upgradeLegacyPmLeader"
-        >{{ t('pages.agentStudio.mcp.upgradeLegacyPm') }}</button>
-      </div>
-
-      <div
         v-for="(m, i) in draft.mcp"
         :key="i"
         class="rounded-md border bg-base p-3"
-        :class="isPlatformPresetName(m.name) || isLegacyPmLeaderName(m.name) ? 'border-ok/30' : 'border-line'"
+        :class="isPlatformPresetName(m.name) ? 'border-ok/30' : 'border-line'"
         data-test="mcp-card"
         :data-mcp-name="m.name.trim()"
       >
@@ -249,10 +208,6 @@ watch(
           data-test="mcp-scope-note"
         >
           {{ t(`pages.agentStudio.mcp.scopeNote.${platformPresetKind(m.name)}`) }}
-        </div>
-        <div v-else-if="isLegacyPmLeaderName(m.name)" class="rounded-lg mt-2.5 flex items-start gap-2 border border-dashed border-warn/40 bg-warn/10 p-2 text-[10.5px] leading-5 text-warn">
-          <Icon name="alert" :size="14" class="mt-0.5 shrink-0 text-warn" />
-          <div>{{ t('pages.agentStudio.mcp.legacyPmEntryBadge') }}</div>
         </div>
       </div>
       <AppButton size="sm" variant="outline" icon="plus" @click="addMcp">{{ t('pages.agentStudio.mcp.addService') }}</AppButton>

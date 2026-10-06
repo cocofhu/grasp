@@ -39,7 +39,7 @@ func TestReviewReplySyncsOutputsAndBodyMd(t *testing.T) {
 			{ID: "e2", Source: "page", Target: "output"},
 		},
 	}
-	wf := models.WorkflowDef{ID: "vr-sync", Name: "vr-sync", Status: "published", Version: 1, Graph: g}
+	wf := models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "vr-sync", Name: "vr-sync", Version: 1, PublishedVersion: 1, Graph: g}
 	if err := db.Create(&wf).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -139,6 +139,7 @@ func TestWriteArtifactSyncsOutputsAndPendingBodyMd(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	seedArtifactOwner(t, db, runID)
 	db.Create(&models.StateRun{
 		RunID: runID, NodeID: "page", NodeType: "agent", Iteration: 1, Status: "completed",
 		Outputs: map[string]any{"page": oldHTML},
@@ -201,6 +202,7 @@ func TestWriteArtifactFailureDoesNotClearOutputs(t *testing.T) {
 		ID: runID, WorkflowID: "w", WorkflowName: "w", Status: "waiting_human",
 		Graph: g, StartedAt: now, CreatedAt: now,
 	})
+	seedArtifactOwner(t, db, runID)
 	db.Create(&models.StateRun{
 		RunID: runID, NodeID: "page", NodeType: "agent", Iteration: 1, Status: "waiting_human",
 		Outputs: map[string]any{"page": oldHTML},
@@ -234,6 +236,7 @@ func TestSyncAfterPrimaryArtifactWriteSkipsNonPrimaryAndNonWaiting(t *testing.T)
 		ID: runID, WorkflowID: "w", WorkflowName: "w", Status: "running",
 		Graph: g, StartedAt: now, CreatedAt: now,
 	})
+	seedArtifactOwner(t, db, runID)
 	db.Create(&models.StateRun{
 		RunID: runID, NodeID: "page", NodeType: "agent", Iteration: 1, Status: "running",
 		Outputs: map[string]any{"page": old},
@@ -283,6 +286,7 @@ func TestSyncAfterPrimaryArtifactWriteStructuredProduct(t *testing.T) {
 		ID: runID, WorkflowID: "w", WorkflowName: "w", Status: "waiting_human",
 		Graph: g, StartedAt: now, CreatedAt: now,
 	})
+	seedArtifactOwner(t, db, runID)
 	db.Create(&models.StateRun{
 		RunID: runID, NodeID: "research", NodeType: "agent", Iteration: 1, Status: "completed",
 		Outputs: map[string]any{"research_json": oldJSON, "research": "old-md"},
@@ -318,13 +322,11 @@ func TestSyncAfterPrimaryArtifactWriteStructuredProduct(t *testing.T) {
 func TestStructuredRenderForArtifactCoversKnownNames(t *testing.T) {
 	for _, name := range []string{
 		mcp.ResearchArtifactName,
-		mcp.ProposalsArtifactName,
 		mcp.PlanArtifactName,
 		mcp.ReviewArtifactName,
 		mcp.TestResultArtifactName,
 		mcp.ClarifiedRequirementArtifactName,
 		mcp.ImplementationResultArtifactName,
-		mcp.ProposalArtifactName,
 	} {
 		if structuredRenderForArtifact(name) == nil {
 			t.Fatalf("expected renderer for %s", name)
@@ -355,7 +357,7 @@ func TestReviewReplyFailureDoesNotSyncOutputs(t *testing.T) {
 			{ID: "e2", Source: "page", Target: "output"},
 		},
 	}
-	wf := models.WorkflowDef{ID: "vr-fail", Name: "vr-fail", Status: "published", Version: 1, Graph: g}
+	wf := models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "vr-fail", Name: "vr-fail", Version: 1, PublishedVersion: 1, Graph: g}
 	db.Create(&wf)
 	db.Create(&models.WorkflowVersion{WorkflowID: wf.ID, Version: 1, Graph: g})
 	arts := services.NewArtifactService(db)

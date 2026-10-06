@@ -29,13 +29,9 @@ type Options struct {
 	// the gateway runs with auth disabled).
 	GatewayAPIKey string
 	// Env is the vendor-neutral set of environment variables injected into
-	// every sandbox (protocol config.env channel). For the reference image it
-	// typically carries CURSOR_API_KEY; other images carry whatever they need.
-	Env map[string]string
-	// CursorAuthPath, if set, is mounted read-only into the reference image so
-	// its cursor CLI reuses a host login. Reference-implementation only.
-	CursorAuthPath string
-	ChatTimeout    time.Duration
+	// every sandbox (protocol config.env channel).
+	Env         map[string]string
+	ChatTimeout time.Duration
 	// ChatIdleTimeout aborts a chat turn when no ACP event arrives within the
 	// window (0 disables). Detects a stuck agent/sandbox without killing a
 	// slow-but-productive turn that keeps streaming events.
@@ -68,16 +64,12 @@ type Options struct {
 	// Wired for workflow Run sandboxes and project-context chat tests only —
 	// Agent Studio interactive tests must leave it unused.
 	SharedAgentForProject func(projectID string) SharedAgentView
-	// ProjectCredentialsForProject resolves UI-managed credential environment
-	// values. It is applied after process/shared/Agent env so UI wins.
+	// ProjectCredentialsForProject resolves project credential environment
+	// values, the only source of secret keys in the sandbox env.
 	ProjectCredentialsForProject func(projectID string) map[string]string
 	// ProjectCredentialKeysForProject returns registered credential bindings,
 	// including empty slots. Run-scoped env entries cannot shadow these keys.
 	ProjectCredentialKeysForProject func(projectID string) map[string]struct{}
-	// ProjectCredentialFallbackEnvForProject maps target keys to explicit
-	// deployment environment fallback keys. Runtime applies these below shared
-	// and Agent env layers.
-	ProjectCredentialFallbackEnvForProject func(projectID string) map[string]string
 	// ProjectCredentialReferences resolves ${credential:<id>} placeholders in
 	// MCP headers/command/env without exposing values as global environment keys.
 	ProjectCredentialReferences func(projectID string) map[string]string
@@ -104,14 +96,11 @@ type Options struct {
 // SharedAgentView is the runtime-facing slice of project shared Agent config
 // needed for extend→overlay (avoids importing services into every call site).
 type SharedAgentView struct {
-	AcpBackend       string
-	GitSshKnownHosts string
-	GitSshPrivateKey string
-	MCP              []SharedMCPView
-	Env              map[string]string
-	Layout           SharedLayoutView
-	WorkDir          string // host path to shared workspace/, empty if none
-	ProjectID        string // defaultProjectId or project id for fill-empty
+	AcpBackend string
+	MCP        []SharedMCPView
+	Env        map[string]string
+	Layout     SharedLayoutView
+	WorkDir    string // host path to shared workspace/, empty if none
 }
 
 // SharedMCPView mirrors one MCP entry from shared agent.json.
@@ -232,7 +221,7 @@ type ReactTurn struct {
 
 // ExecProvider runs the two user-defined agent node kinds.
 type ExecProvider interface {
-	// Name identifies the backend; "cursor" is the only product backend.
+	// Name identifies the provider.
 	Name() string
 	// RunAgent executes an autonomous agent node to completion.
 	RunAgent(ctx context.Context, req NodeReq) (NodeResult, error)
@@ -372,7 +361,7 @@ type RunSandboxInfo struct {
 // SandboxRegistry records and clears live per-run node sandboxes. It is
 // implemented by the platform SandboxService so per-run (ephemeral) node
 // sandboxes appear in the same sandbox list as interactive test sandboxes.
-// Optional: when nil, run sandboxes stay invisible (legacy behavior).
+// Optional: when nil (e.g. unit tests), run sandboxes stay invisible.
 type SandboxRegistry interface {
 	RegisterRunSandbox(info RunSandboxInfo)
 	UnregisterRunSandbox(name string)
@@ -383,8 +372,8 @@ type SandboxRegistry interface {
 // is visible in the sandbox list and the node's live log as "starting" instead
 // of a 404 during the cold-start window. On success the row is adopted by
 // RegisterRunSandbox (real id + "running"); on failure it is removed by
-// UnregisterRunSandbox. When the registry does not implement this, run sandboxes
-// only appear once running (legacy behavior).
+// UnregisterRunSandbox. When the registry does not implement this (e.g. test
+// fakes), run sandboxes only appear once running.
 type RunSandboxBeginner interface {
 	BeginRunSandbox(info RunSandboxInfo)
 }
@@ -412,10 +401,8 @@ type SandboxRegistrar interface {
 	SetSandboxRegistry(r SandboxRegistry)
 }
 
-// NewProvider builds the multi-backend ProviderRegistry. The name argument is
-// kept for backward compatibility; GRASP_EXEC_PROVIDER is deprecated and
-// routing is driven by each Agent's acpBackend field.
-func NewProvider(name string, host *mcp.Host, opts Options) ExecProvider {
-	WarnDeprecatedExecProvider(name)
+// NewProvider builds the multi-backend ProviderRegistry. Routing is driven by
+// each Agent's acpBackend field.
+func NewProvider(host *mcp.Host, opts Options) ExecProvider {
 	return NewProviderRegistry(host, opts)
 }

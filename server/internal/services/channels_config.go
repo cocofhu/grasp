@@ -38,10 +38,7 @@ var (
 	ErrChannelPromoteForbidden      = errors.New("不允许将副 Channel 提升为主；请通过删除主流指定新主")
 	ErrChannelDeletePrimaryNeedsAck = errors.New("删除主 Channel 须指定新主或确认无主")
 	ErrChannelNewPrimaryNotFound    = errors.New("指定的新主 Channel 不存在或不属于本项目")
-	// ErrChannelLegacyDeleteMulti rejects legacy DELETE /channel when the project
-	// already has more than one channel — callers must use DELETE /channels/:id
-	// with newPrimaryId or confirmNoPrimary.
-	ErrChannelLegacyDeleteMulti = errors.New("项目存在多个 Channel，请使用按 id 删除并指定新主或确认无主")
+	ErrChannelTypeRequired          = errors.New("渠道类型必填")
 )
 
 // supportedChannelTypes gates the Type field. Extend as adapters are added.
@@ -55,16 +52,12 @@ var supportedChannelTypes = map[string]bool{
 // ChannelConfigInput is the create/update payload (plaintext AppSecret).
 // For updates, an empty or masked AppSecret keeps the stored value.
 type ChannelConfigInput struct {
-	Type      string
-	Name      string
-	Enabled   bool
-	ProjectID string
-	AgentName string
-	IsPrimary bool
-	// IsPrimarySet is true when the client explicitly sent isPrimary
-	// (including false). Omitted values keep legacy auto-primary when
-	// the project has no primary yet.
-	IsPrimarySet       bool
+	Type               string
+	Name               string
+	Enabled            bool
+	ProjectID          string
+	AgentName          string
+	IsPrimary          bool
 	EnabledMcps        []string
 	AppID              string
 	AppSecret          string
@@ -213,6 +206,9 @@ func (s *ChannelConfigService) GetPrimaryByProject(projectID string) (*ChannelCo
 func (s *ChannelConfigService) Create(in ChannelConfigInput) (ChannelConfigDTO, error) {
 	in.ProjectID = strings.TrimSpace(in.ProjectID)
 	in.AgentName = strings.TrimSpace(in.AgentName)
+	if strings.TrimSpace(in.Type) == "" {
+		return ChannelConfigDTO{}, ErrChannelTypeRequired
+	}
 	if err := s.validate(in, ""); err != nil {
 		return ChannelConfigDTO{}, err
 	}
@@ -248,12 +244,7 @@ func (s *ChannelConfigService) Create(in ChannelConfigInput) (ChannelConfigDTO, 
 		if in.IsPrimary && hasPrimary {
 			return ErrChannelDualPrimary
 		}
-		// Legacy clients omit isPrimary → auto-primary when none exists.
-		// Explicit IsPrimary=false must be honored (new Feishu default).
-		isPrimary := !hasPrimary
-		if in.IsPrimarySet {
-			isPrimary = in.IsPrimary
-		}
+		isPrimary := in.IsPrimary
 
 		agent := in.AgentName
 		if agent == "" && isPrimary {
@@ -312,9 +303,11 @@ func (s *ChannelConfigService) Update(id string, in ChannelConfigInput) (Channel
 	if in.AgentName == "" {
 		in.AgentName = row.AgentName
 	}
-	// Type is frozen after create. Empty type on update keeps the stored value
-	// so legacy clients that omit type still work.
-	if want := strings.TrimSpace(in.Type); want != "" && want != row.Type {
+	// Type is required and frozen after create.
+	switch want := strings.TrimSpace(in.Type); {
+	case want == "":
+		return ChannelConfigDTO{}, ErrChannelTypeRequired
+	case want != row.Type:
 		return ChannelConfigDTO{}, ErrChannelTypeFrozen
 	}
 	in.Type = row.Type
@@ -400,83 +393,6 @@ func (s *ChannelConfigService) Update(id string, in ChannelConfigInput) (Channel
 
 	s.notify()
 	return s.attachRuntime(s.toChannelDTO(row)), nil
-}
-
-// GetByProject returns the primary channel bound to a project (legacy alias),
-// or nil when none exists. Falls back to earliest channel if no primary marked.
-func (s *ChannelConfigService) GetByProject(projectID string) (*ChannelConfigDTO, error) {
-	dto, err := s.GetPrimaryByProject(projectID)
-	if err != nil || dto != nil {
-		return dto, err
-	}
-	var r models.ChannelConfig
-	err = s.db.Order("created_at asc").First(&r, "project_id = ?", strings.TrimSpace(projectID)).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	out := s.attachRuntime(s.toChannelDTO(r))
-	return &out, nil
-}
-
-// UpsertForProject creates or updates the primary channel (legacy single-channel
-// API alias). ProjectID is forced from the path argument.
-func (s *ChannelConfigService) UpsertForProject(projectID string, in ChannelConfigInput) (ChannelConfigDTO, error) {
-	in.ProjectID = strings.TrimSpace(projectID)
-	primary, err := s.GetPrimaryByProject(in.ProjectID)
-	if err != nil {
-		return ChannelConfigDTO{}, err
-	}
-	if primary == nil {
-		// Preserve legacy: if any channel exists without primary flag, patch earliest.
-		var existing models.ChannelConfig
-		err := s.db.Order("created_at asc").First(&existing, "project_id = ?", in.ProjectID).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			in.IsPrimary = true
-			if strings.TrimSpace(in.AgentName) == "" {
-				in.AgentName = s.defaultPrimaryAgent(in.ProjectID)
-			}
-			return s.Create(in)
-		}
-		if err != nil {
-			return ChannelConfigDTO{}, err
-		}
-		in.IsPrimary = true
-		return s.Update(existing.ID, in)
-	}
-	in.IsPrimary = true
-	if strings.TrimSpace(in.AgentName) == "" {
-		in.AgentName = primary.AgentName
-	}
-	return s.Update(primary.ID, in)
-}
-
-// DeleteByProject removes the sole channel for a project (legacy alias).
-// When more than one channel exists, rejects so callers use Delete-by-id with
-// newPrimaryId / confirmNoPrimary (avoids silent ConfirmNoPrimary on multi).
-func (s *ChannelConfigService) DeleteByProject(projectID string) error {
-	projectID = strings.TrimSpace(projectID)
-	var n int64
-	if err := s.db.Model(&models.ChannelConfig{}).Where("project_id = ?", projectID).Count(&n).Error; err != nil {
-		return err
-	}
-	if n == 0 {
-		return nil
-	}
-	if n > 1 {
-		return ErrChannelLegacyDeleteMulti
-	}
-	var row models.ChannelConfig
-	if err := s.db.Where("project_id = ?", projectID).First(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		return err
-	}
-	// Single-channel legacy clients may delete without an explicit primary ack.
-	return s.Delete(row.ID, ChannelDeleteOpts{ConfirmNoPrimary: true})
 }
 
 // Delete removes a channel by id. Deleting the primary requires NewPrimaryID or ConfirmNoPrimary.

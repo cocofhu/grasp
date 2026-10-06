@@ -1,16 +1,19 @@
 import { nextTick, ref } from 'vue'
-import {
-  GRASP_STORAGE_KEYS,
-  LEGACY_STORAGE_KEYS,
-  migrateLocalStorageKey,
-} from './migrateBrandStorage'
 
 export type ThemeName = 'dark' | 'light'
 
-const STORAGE_KEY = GRASP_STORAGE_KEYS.theme
+const STORAGE_KEY = 'grasp-theme'
+
+function readStored(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
 
 function initial(): ThemeName {
-  const saved = migrateLocalStorageKey(LEGACY_STORAGE_KEYS.theme, STORAGE_KEY) as ThemeName | null
+  const saved = readStored()
   if (saved === 'dark' || saved === 'light') return saved
   return 'dark'
 }

@@ -426,19 +426,6 @@ func (m *Manager) sendOutbound(ctx context.Context, rc *runningChannel, out Outb
 	}
 }
 
-// Deliver pushes cron/proactive text to a project's configured delivery channel.
-// Legacy entry: treats body as "changed" and routes through coordinated egress.
-// Without AgentName it cannot pick among multiple channels — returns ErrNoDeliveryChannel.
-// Implements services.ChannelDeliverer.
-func (m *Manager) Deliver(projectID, text string) error {
-	return m.DeliverCron(services.CronDelivery{
-		ProjectID: projectID,
-		Category:  "cron",
-		Kind:      string(CronResultChanged),
-		Text:      text,
-	})
-}
-
 // DeliverCron is the coordinated cron→QQ egress: busy conversations silent-enqueue
 // (no enqueue side-chat); idle sends immediately. Routes by job AgentName → the
 // Channel bound to that Agent (respecting that Channel's CronDeliver flag).

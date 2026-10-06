@@ -3,7 +3,7 @@ title: Configuration
 description: Configuration highlights; full details live in source CONFIGURATION.md.
 ---
 
-Grasp platform service configuration is primarily YAML / environment variables (local examples: `server/config.example.yaml` and the root `.env.example`). Runtime credentials such as ACP and Git credentials are managed in the project's credential UI first; compatible project or Agent environment variables remain fallback options.
+Grasp platform service configuration is primarily YAML / environment variables (local examples: `server/config.example.yaml` and the root `.env.example`). Runtime credentials such as ACP and Git credentials are managed only in the project's credential UI.
 
 ## Full documentation
 
@@ -20,7 +20,7 @@ That document is generated/checked by `go run ./cmd/gen-configdoc`; CI runs `-ch
 ./start.sh dev -d      # source + HMR
 ```
 
-Image tags / digests, gateway, and sandbox-related variables are in `.env.example`. Save Agent API keys, `GITHUB_*` / `GITLAB_*` / SSH, and similar credentials in the project's credential UI first; compatible project-shared or Agent meta environment variables remain a fallback (values may reference `${vars.<name>}`).
+Image tags / digests, gateway, and sandbox-related variables are in `.env.example`. Agent API keys, GitHub / GitLab tokens, SSH keys, and similar credentials can only be saved in the project's credential UI; putting them in project-shared, Agent meta, or platform `sandbox.env` is rejected. Non-secret options such as sites and models may still go in Agent meta env (values may reference `${vars.<name>}`).
 
 ## Database and attachment lifecycle
 

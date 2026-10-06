@@ -253,13 +253,11 @@ func (h *Handler) Destroy(c *gin.Context) {
 func (h *Handler) Reinstall(c *gin.Context) {
 	var req struct {
 		PreserveData bool `json:"preserveData"`
-		// remote-dev compatibility
-		PreserveDataSnake bool `json:"preserve_data"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		log.Warn().Err(err).Str("sandbox_id", c.Param("id")).Msg("reinstall body parse failed; using defaults")
 	}
-	preserve := req.PreserveData || req.PreserveDataSnake
+	preserve := req.PreserveData
 
 	if err := h.svc.Reinstall(c.Request.Context(), c.Param("id"), preserve); err != nil {
 		h.notFoundOr500(c, err)

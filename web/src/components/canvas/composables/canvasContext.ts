@@ -2,7 +2,8 @@ import { inject, type InjectionKey, type Ref } from 'vue'
 import type { NodeRunStatus, NodeType } from '@/lib/shared/types'
 import type { CapabilityFlags, Outlet } from './outlets'
 
-export type CanvasMode = 'edit' | 'run'
+/** edit: editable; run: read-only with run status; view: read-only snapshot (version preview). */
+export type CanvasMode = 'edit' | 'run' | 'view'
 export type NodeMenuAction = 'edit' | 'rename' | 'duplicate' | 'delete'
 export type EdgeRunState = 'traversed' | 'active' | 'dim'
 

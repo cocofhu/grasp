@@ -15,7 +15,7 @@ vi.mock('../composables/useShutdownState', async () => {
   }
 })
 
-import { api, apiState, authApi, isPaginated } from './api'
+import { api, apiState, authApi } from './api'
 import { mutationsBlocked, showDrainToast, shutdownState } from '../composables/useShutdownState'
 
 const fetchMock = vi.fn()
@@ -39,15 +39,6 @@ function jsonResponse(data: unknown, status = 200, headers?: Record<string, stri
     headers: { 'Content-Type': 'application/json', ...headers },
   })
 }
-
-describe('isPaginated', () => {
-  it('detects paginated envelope vs array', () => {
-    expect(isPaginated([{ id: '1' } as never])).toBe(false)
-    expect(
-      isPaginated({ items: [], total: 0, page: 1, pageSize: 20, hasMore: false }),
-    ).toBe(true)
-  })
-})
 
 describe('notifications client', () => {
   it('lists items and posts read / read-all without id arrays', async () => {
@@ -99,7 +90,9 @@ describe('api req helpers', () => {
       .mockResolvedValueOnce(jsonResponse({ nodes: [], edges: [] }))
       .mockResolvedValueOnce(jsonResponse({ id: 'imp' }))
       .mockResolvedValueOnce(jsonResponse({ id: 'imp2' }))
-      .mockResolvedValueOnce(jsonResponse([{ id: 'r1' }]))
+      .mockResolvedValueOnce(
+        jsonResponse({ items: [{ id: 'r1' }], total: 1, page: 1, pageSize: 20, hasMore: false }),
+      )
       .mockResolvedValueOnce(
         jsonResponse({ items: [{ id: 'r1' }], total: 1, page: 1, pageSize: 10, hasMore: false }),
       )
@@ -158,7 +151,7 @@ describe('api req helpers', () => {
     await expect(api.importWorkflow('{}')).resolves.toMatchObject({ id: 'imp' })
     await expect(api.importWorkflow('{}', 'p1')).resolves.toMatchObject({ id: 'imp2' })
 
-    await expect(api.listRuns()).resolves.toEqual([{ id: 'r1' }])
+    await expect(api.listRuns()).resolves.toMatchObject({ items: [{ id: 'r1' }] })
     await expect(api.listRuns({ status: 'running', tag: 'bugfix', wf: 'w1', projectId: 'p1', page: 1, pageSize: 10 })).resolves.toMatchObject({
       total: 1,
     })
@@ -207,7 +200,9 @@ describe('api req helpers', () => {
       .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
       .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
       .mockResolvedValueOnce(jsonResponse({ destroyed: 1, skipped: 0 }))
-      .mockResolvedValueOnce(jsonResponse([{ id: 'art' }]))
+      .mockResolvedValueOnce(
+        jsonResponse([{ projectId: 'p', projectName: 'P', count: 1, sessionCount: 0, workflows: [] }]),
+      )
       .mockResolvedValueOnce(
         jsonResponse({ items: [{ id: 'art' }], total: 1, page: 1, pageSize: 10, hasMore: false }),
       )
@@ -230,7 +225,9 @@ describe('api req helpers', () => {
       .mockResolvedValueOnce(jsonResponse({ id: 'i1', runId: 'r', nodeId: 'n', body: 'b', status: 'open', createdAt: 't' }))
       .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
       .mockResolvedValueOnce(jsonResponse({ status: 'ok', ready: true }))
-      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(
+        jsonResponse({ items: [], total: 0, page: 1, pageSize: 20, hasMore: false }),
+      )
       .mockResolvedValueOnce(
         jsonResponse({ items: [], total: 0, page: 1, pageSize: 10, hasMore: false }),
       )
@@ -248,7 +245,7 @@ describe('api req helpers', () => {
     await expect(api.deleteAgent('a1')).resolves.toEqual({ status: 'ok' })
     await expect(api.exportAgent('a1')).resolves.toBeInstanceOf(Blob)
     await expect(
-      api.importAgent(new File(['z'], 'a.zip'), { targetName: 'a1', mode: 'create' }),
+      api.importAgent(new File(['z'], 'a.zip'), { projectId: 'p1', targetName: 'a1', mode: 'create' }),
     ).resolves.toEqual(agent)
 
     await expect(api.listSandboxes()).resolves.toEqual([])
@@ -261,13 +258,20 @@ describe('api req helpers', () => {
     expect(api.sandboxIdeUrl(1)).toContain('/sandbox/1/')
     expect(api.sandboxBridgeUrl(1)).toContain('/sandbox-bridge/1/')
 
-    await expect(api.listArtifacts()).resolves.toEqual([{ id: 'art' }])
+    await expect(api.getArtifactTree()).resolves.toMatchObject([{ projectId: 'p', sessionCount: 0 }])
+    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toMatch(/\/artifacts\/tree$/)
     await expect(
-      api.listArtifacts({ page: 1, pageSize: 10, wf: 'w', projectId: 'p', q: 'x' }),
+      api.listArtifacts({ projectId: 'p', workflowId: 'w', q: 'x', page: 1, pageSize: 10 }),
     ).resolves.toMatchObject({ total: 1 })
+    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toMatch(
+      /\/artifacts\?projectId=p&workflowId=w&q=x&page=1&pageSize=10$/,
+    )
     await expect(
-      api.listArtifacts({ page: 1, pageSize: 20, groupBy: 'run', wf: 'w' }),
+      api.listArtifacts({ projectId: 'p', session: true, page: 1, pageSize: 20, groupBy: 'run' }),
     ).resolves.toMatchObject({ total: 1 })
+    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toMatch(
+      /\/artifacts\?projectId=p&session=1&page=1&pageSize=20&groupBy=run$/,
+    )
     await expect(api.artifactContent('art')).resolves.toMatchObject({ id: 'art' })
     await expect(api.artifactVersions('art')).resolves.toMatchObject([{ revision: 1 }])
     await expect(api.artifactVersionContent('art', 1)).resolves.toMatchObject({ content: 'old' })
@@ -296,7 +300,7 @@ describe('api req helpers', () => {
     expect(api.previewVncWsUrl('r', 'n', 1)).toMatch(/\/preview-vnc\/r\/n\/1\/ws$/)
     expect(api.sandboxVncWsUrl(3)).toMatch(/\/sandbox-vnc\/3\/ws$/)
 
-    await expect(api.listGates()).resolves.toEqual([])
+    await expect(api.listGates()).resolves.toMatchObject({ items: [] })
     await expect(api.listGates({ page: 1, pageSize: 10, wf: 'w', projectId: 'p', tag: 'bugfix' })).resolves.toMatchObject({
       total: 0,
     })
@@ -335,7 +339,7 @@ describe('api req helpers', () => {
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'import fail' }, 400))
     await expect(
-      api.importAgent(new File(['z'], 'a.zip'), { targetName: 'a', mode: 'create' }),
+      api.importAgent(new File(['z'], 'a.zip'), { projectId: 'p1', targetName: 'a', mode: 'create' }),
     ).rejects.toThrow('import fail')
 
     vi.mocked(mutationsBlocked).mockReturnValue(true)

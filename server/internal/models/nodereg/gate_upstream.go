@@ -36,14 +36,13 @@ type GatePrimaryProduct struct {
 var OutputKeyToArtifact = map[string]string{
 	"clarified_requirement": "clarified_requirement.json",
 	"implementation_result": "implementation_result.json",
+	"merge_request":         "merge_request.json",
 	"page":                  "page.html",
 	"plan":                  "plan.json",
-	"proposals":             "proposals.json",
 	"research":              "research.json",
 	"root_cause":            "root_cause.json",
 	"review":                "review.json",
 	"test_result":           "test_result.json",
-	"proposal":              "proposal.json",
 	"preflight":             "preflight.json",
 }
 
@@ -80,9 +79,6 @@ func GatePrimaryUpstreamNodeID(gateNode *models.Node) string {
 // body_template. outputKey→artifact mapping is the preview-pointer source of
 // truth; producesNames (upstream produces) are an alignment check — names that
 // appear only in produces and never in the template are NOT added.
-//
-// For proposal_select with an empty template, config.from (default
-// proposals.json) is treated as the sole primary product.
 func GatePrimaryProducts(gateNode *models.Node, producesNames []string) []GatePrimaryProduct {
 	if gateNode == nil {
 		return nil
@@ -123,19 +119,6 @@ func GatePrimaryProducts(gateNode *models.Node, producesNames []string) []GatePr
 		}
 		key := ArtifactToOutputKey[name]
 		add(GatePrimaryProduct{Name: name, OutputKey: key, Kind: InferArtifactKind(name)})
-	}
-
-	// proposal_select: body is rendered markdown (no template refs); the
-	// selectable source artifact is still the primary editable product.
-	if len(out) == 0 && gateNode.Type == "proposal_select" {
-		from, _ := gateNode.Config["from"].(string)
-		from = strings.TrimSpace(from)
-		if from == "" {
-			from = "proposals.json"
-		}
-		add(GatePrimaryProduct{
-			Name: from, OutputKey: ArtifactToOutputKey[from], Kind: InferArtifactKind(from),
-		})
 	}
 
 	// Align with produces: keep only names that are already template-derived.

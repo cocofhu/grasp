@@ -41,7 +41,7 @@ func TestPublicGateImageByOpaqueIndex(t *testing.T) {
 		},
 	})
 
-	w := h.do(http.MethodPost, "/api/runs/"+runID+"/reviews/"+nodeID+"/share-link", map[string]any{"ttlTier": "24h"})
+	w := h.do(http.MethodPost, "/api/runs/"+runID+"/reviews/"+nodeID+"/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}

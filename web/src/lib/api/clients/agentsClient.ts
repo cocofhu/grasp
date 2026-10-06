@@ -4,14 +4,14 @@ import type {
   ChatMessage,
   ProjectMemoryItem,
 } from '../../shared/types'
+import type { BackendId } from '../../shared/regionPolicy'
 import { BASE, req } from '../httpCore'
 import type {
   Agent,
-  AgentOrg,
   AgentTemplate,
   OpenCodeModelsResponse,
   OpenCodeProvidersResponse,
-  OrgFolderImportResult,
+  ProjectAgentsImportResult,
   TeamBootstrapRequest,
   TeamBootstrapSession,
 } from '../apiTypes'
@@ -41,7 +41,7 @@ export const agentsClient = {
   bootstrapProjectOnboarding: (
     projectId: string,
     body: {
-      acpBackend: string
+      acpBackend: BackendId
       apiKey: string
       language?: string
       region?: string
@@ -49,8 +49,8 @@ export const agentsClient = {
       githubToken?: string
       gitlabToken?: string
       gitlabUrl?: string
-      gitSshPrivateKey?: string
-      gitSshKnownHosts?: string
+      sshPrivateKey?: string
+      sshKnownHosts?: string
       repoUrl?: string
       repoBranch?: string
       gitUserName?: string
@@ -68,7 +68,6 @@ export const agentsClient = {
       agentIds: string[]
       workflowId: string
       published: boolean
-      groupName?: string
     }>(`/projects/${encodeURIComponent(projectId)}/bootstrap-onboarding`, {
       method: 'POST',
       body: JSON.stringify(body),
@@ -86,21 +85,12 @@ export const agentsClient = {
     }),
   listAgentTeamTemplates: () =>
     req<{ items: AgentTemplate[] }>('/agent-teams/templates'),
-  getAgentsOrg: () => req<AgentOrg>('/agents/org'),
-  saveAgentsOrg: (org: AgentOrg) =>
-    req<AgentOrg>('/agents/org', { method: 'PUT', body: JSON.stringify(org) }),
   createAgent: (agent: Agent) =>
     req<Agent>('/agents', { method: 'POST', body: JSON.stringify(agent) }),
   saveAgent: (agent: Agent, opts?: { reason?: string }) =>
     req<{ status: string }>(`/agents/${encodeURIComponent(agent.name)}`, {
       method: 'PUT',
       body: JSON.stringify({ ...agent, reason: opts?.reason }),
-    }),
-  /** Group-level assign: only changes projectId; does not rewrite workspace. Unbind is not allowed. */
-  patchAgentProject: (name: string, projectId: string) =>
-    req<{ status: string; projectId: string }>(`/agents/${encodeURIComponent(name)}/project`, {
-      method: 'PATCH',
-      body: JSON.stringify({ projectId }),
     }),
   renameAgent: (name: string, newName: string) =>
     req<Agent & { updatedWorkflowCount?: number }>(`/agents/${encodeURIComponent(name)}/rename`, {
@@ -176,8 +166,8 @@ export const agentsClient = {
     }
     return res.blob()
   },
-  exportOrgFolder: async (groupId: string): Promise<{ blob: Blob; filename: string }> => {
-    const res = await fetch(`${BASE}/agents/org/export?groupId=${encodeURIComponent(groupId)}`, {
+  exportProjectAgents: async (projectId: string): Promise<{ blob: Blob; filename: string }> => {
+    const res = await fetch(`${BASE}/projects/${encodeURIComponent(projectId)}/agents/export`, {
       credentials: 'include',
     })
     if (!res.ok) {
@@ -193,19 +183,19 @@ export const agentsClient = {
     const blob = await res.blob()
     const filename = filenameFromContentDisposition(
       res.headers.get('Content-Disposition'),
-      'folder.zip',
+      'project.zip',
     )
     return { blob, filename }
   },
-  importOrgFolder: async (
+  importProjectAgents: async (
+    projectId: string,
     zipFile: File,
-    opts: { targetGroupId?: string; mode: 'rename' | 'overwrite' },
-  ): Promise<OrgFolderImportResult> => {
+    opts: { mode: 'rename' | 'overwrite' },
+  ): Promise<ProjectAgentsImportResult> => {
     const fd = new FormData()
     fd.append('file', zipFile)
-    if (opts.targetGroupId) fd.append('targetGroupId', opts.targetGroupId)
     fd.append('mode', opts.mode)
-    const res = await fetch(`${BASE}/agents/org/import`, {
+    const res = await fetch(`${BASE}/projects/${encodeURIComponent(projectId)}/agents/import`, {
       method: 'POST',
       credentials: 'include',
       body: fd,
@@ -220,30 +210,20 @@ export const agentsClient = {
       }
       throw new Error(msg)
     }
-    return (await res.json()) as OrgFolderImportResult
+    return (await res.json()) as ProjectAgentsImportResult
   },
-  scanOrgSensitiveKeys: (groupId: string) =>
-    req<{ keys: { key: string; agentCount: number }[] }>(
-      `/agents/org/sensitive-keys?groupId=${encodeURIComponent(groupId)}`,
-    ),
-  stripOrgSensitiveKeys: (groupId: string, keys: string[]) =>
-    req<{
-      cleared: number
-      failed?: string[]
-      strippedKeys: string[]
-      agentNames: string[]
-    }>(`/agents/org/strip-sensitive-keys`, {
-      method: 'POST',
-      body: JSON.stringify({ groupId, keys }),
-    }),
   /** Vendors OpenCode can resolve models for (models.dev, cached server-side). */
   openCodeProviders: () => req<OpenCodeProvidersResponse>(`/opencode/providers`),
   /** One vendor's models; empty for a gateway the catalog does not know. */
   openCodeModels: (provider: string) =>
     req<OpenCodeModelsResponse>(`/opencode/providers/${encodeURIComponent(provider)}/models`),
-  importAgent: async (zipFile: File, opts: { targetName: string; mode: 'create' | 'overwrite' }): Promise<Agent> => {
+  importAgent: async (
+    zipFile: File,
+    opts: { projectId: string; targetName: string; mode: 'create' | 'overwrite' },
+  ): Promise<Agent> => {
     const fd = new FormData()
     fd.append('file', zipFile)
+    fd.append('projectId', opts.projectId)
     fd.append('targetName', opts.targetName)
     fd.append('mode', opts.mode)
     const res = await fetch(`${BASE}/agents/import`, {

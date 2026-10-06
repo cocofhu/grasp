@@ -113,7 +113,7 @@ func (s *SandboxService) IDEUpstream(ctx context.Context, id uint) (string, erro
 }
 
 // Events reads the sandbox's full agent event log directly from the container
-// (the cursor-acp bridge is the single source of truth) and returns it as the
+// (the acp-bridge is the single source of truth) and returns it as the
 // AcpEvent timeline. Works the same way for every sandbox — interactive test
 // sandboxes here and per-run node sandboxes in the engine.
 func (s *SandboxService) Events(ctx context.Context, id uint) ([]models.AcpEvent, error) {

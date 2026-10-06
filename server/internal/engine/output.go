@@ -38,21 +38,14 @@ func parseOutputSourceRef(tmpl string) outputSourceRef {
 }
 
 func resolveOutputResults(cfg map[string]any) []string {
-	if raw, ok := cfg["results"].([]any); ok && len(raw) > 0 {
-		out := make([]string, 0, len(raw))
-		for _, item := range raw {
-			if s := strings.TrimSpace(fmt.Sprint(item)); s != "" {
-				out = append(out, s)
-			}
-		}
-		if len(out) > 0 {
-			return out
+	raw, _ := cfg["results"].([]any)
+	var out []string
+	for _, item := range raw {
+		if s := strings.TrimSpace(fmt.Sprint(item)); s != "" {
+			out = append(out, s)
 		}
 	}
-	if s := strings.TrimSpace(str(cfg["result"])); s != "" {
-		return []string{s}
-	}
-	return nil
+	return out
 }
 
 func (e *Engine) nodeLatestStatus(c *execCtx, nodeID string) string {
@@ -83,16 +76,14 @@ func cardTitleForNodeRef(c *execCtx, ref outputSourceRef) string {
 		return "需求澄清 · " + label
 	case "research":
 		return "调研 · " + label
-	case "proposals":
-		return "候选方案 · " + label
-	case "proposal":
-		return "已选方案 · " + label
 	case "test_result":
 		return "测试结果 · " + label
 	case "review":
 		return "评审结论 · " + label
 	case "implementation_result":
 		return "实现结果 · " + label
+	case "merge_request":
+		return "合并请求 · " + label
 	case "page":
 		return "网页预览 · " + label
 	case "content":

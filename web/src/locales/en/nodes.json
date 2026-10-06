@@ -88,34 +88,6 @@
       },
       "help": "### Agent node (agent)\n\nA node only sets three things: which Agent, the goal and a timeout.\n\n**Capabilities belong to the Agent**: interaction (multi-turn clarify / one autonomous run), post-run human review, granted tools and readable/writable products are declared on the Agent Studio **Capabilities** tab. Every node using the same Agent has the same capabilities; nodes differ only by goal.\n\n**Outlets**: when the Agent writes a verdict product (test result, review verdict) the node has **Pass** and **Fail** outlets; otherwise a single outlet.\n\n**Products**: every product the Agent declares appears in the node outputs (rendered Markdown and raw JSON)."
     },
-    "proposal_select": {
-      "label": "Select proposal",
-      "desc": "Confirm one proposal; auto when auto_var is true or only one candidate, else manual pick",
-      "fields": {
-        "title": {
-          "label": "Title",
-          "placeholder": "Select proposal"
-        },
-        "from": {
-          "label": "Source proposals artifact",
-          "placeholder": "proposals.json"
-        },
-        "auto_var": {
-          "label": "Auto-confirm variable (pick recommended when true)",
-          "placeholder": "auto_confirm"
-        },
-        "output_var": {
-          "label": "Output variable (selected proposal id)",
-          "placeholder": "selected_proposal"
-        }
-      },
-      "outputs": {
-        "selected_proposal": {
-          "desc": "Selected proposal id"
-        }
-      },
-      "help": "### Proposal select (proposal_select)\n\nConfirm **one** proposal from `proposals.json`.\n\n**Auto**: when auto variable true, pick recommended (or first).\n\n**Manual**: pause for a human pick when ≥2 candidates; with exactly 1 valid candidate, **auto-adopt** it and continue (no “waiting for human selection”).\n\n**Output**: `proposal.json` + output variable (default `selected_proposal`)."
-    },
     "human_gate": {
       "label": "Human gate",
       "desc": "Inbox entry · await human confirmation (Confirm & continue)",
@@ -213,11 +185,6 @@
         "markdown": "Root cause (Markdown)",
         "json": "Root cause raw JSON"
       },
-      "proposals": {
-        "label": "Proposals",
-        "markdown": "Proposals (Markdown)",
-        "json": "Proposals raw JSON"
-      },
       "implementation_result": {
         "label": "Implementation result",
         "markdown": "Implementation result (Markdown)",
@@ -232,6 +199,11 @@
         "label": "Review verdict",
         "markdown": "Review verdict (Markdown)",
         "json": "Review verdict raw JSON"
+      },
+      "merge_request": {
+        "label": "Merge request",
+        "markdown": "Merge request (Markdown)",
+        "json": "Merge request raw JSON"
       },
       "preflight": {
         "label": "Environment check",

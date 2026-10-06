@@ -9,23 +9,12 @@ import (
 	"unicode/utf8"
 )
 
-// EnvEntry is one project sandbox OS environment variable (key/value + secret flag).
+// EnvEntry is one run-scoped sandbox OS environment variable (key/value + secret flag).
 // Secret only affects API/UI read masking; the DB stores plaintext for runtime injection.
-// Enabled=nil means default ON (legacy JSON without the field stays injectable).
 type EnvEntry struct {
-	Key     string `json:"key"`
-	Value   string `json:"value"`
-	Secret  bool   `json:"secret,omitempty"`
-	Enabled *bool  `json:"enabled,omitempty"`
-}
-
-// IsEnabled reports whether this entry should be injected into the sandbox.
-// Missing Enabled (nil) defaults to true so upgrades stay opt-out, not silent.
-func (e EnvEntry) IsEnabled() bool {
-	if e.Enabled == nil {
-		return true
-	}
-	return *e.Enabled
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+	Secret bool   `json:"secret,omitempty"`
 }
 
 // ProjectVariable is a project-level workflow variable definition (vars.* namespace).
@@ -47,34 +36,30 @@ type ProjectVariable struct {
 // Hash-based credentials (external MCP/workflow keys) keep their existing
 // dedicated models; this model is for reusable runtime secrets.
 type ProjectCredential struct {
-	ID             string         `gorm:"primaryKey" json:"id"`
-	ProjectID      string         `gorm:"index" json:"projectId"`
-	Type           string         `json:"type"` // ai | git | ssh | mcp | custom | channel | external_mcp | workflow
-	Provider       string         `json:"provider,omitempty"`
-	Name           string         `json:"name"`
-	Target         string         `json:"target,omitempty"`
-	EnvKey         string         `gorm:"index" json:"envKey,omitempty"`
-	FallbackEnvKey string         `json:"fallbackEnvKey,omitempty"`
-	ValueEnc       string         `json:"-"`
-	Metadata       map[string]any `gorm:"serializer:json" json:"metadata,omitempty"`
-	Enabled        bool           `json:"enabled"`
-	RevokedAt      *time.Time     `json:"revokedAt,omitempty"`
-	CreatedAt      time.Time      `json:"createdAt"`
-	UpdatedAt      time.Time      `json:"updatedAt"`
+	ID        string         `gorm:"primaryKey" json:"id"`
+	ProjectID string         `gorm:"index" json:"projectId"`
+	Type      string         `json:"type"` // ai | git | ssh | mcp | custom | channel | external_mcp | workflow
+	Provider  string         `json:"provider,omitempty"`
+	Name      string         `json:"name"`
+	Target    string         `json:"target,omitempty"`
+	EnvKey    string         `gorm:"index" json:"envKey,omitempty"`
+	ValueEnc  string         `json:"-"`
+	Metadata  map[string]any `gorm:"serializer:json" json:"metadata,omitempty"`
+	Enabled   bool           `json:"enabled"`
+	RevokedAt *time.Time     `json:"revokedAt,omitempty"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
 }
 
 // Project is a workspace that owns workflows and holds workflow variable
-// defaults. ProjectCredential is the preferred project-level secret store;
-// shared Agent env remains the compatibility extend layer. Run.SandboxEnv
-// remains the per-run snapshot for non-credential variables.
+// defaults. ProjectCredential is the project-level secret store; shared Agent
+// env holds non-secret sandbox env. Run.SandboxEnv is the per-run snapshot for
+// non-credential variables.
 type Project struct {
-	ID          string `gorm:"primaryKey" json:"id"`
-	Name        string `gorm:"uniqueIndex" json:"name"`
-	Description string `json:"description"`
-	// SandboxEnv is deprecated legacy storage cleared by MigrateProjectSandboxEnvOnce.
-	// Kept on the model so upgrades can read then wipe; API no longer exposes it.
-	SandboxEnv []EnvEntry        `gorm:"serializer:json" json:"-"`
-	Variables  []ProjectVariable `gorm:"serializer:json" json:"variables"`
+	ID          string            `gorm:"primaryKey" json:"id"`
+	Name        string            `gorm:"uniqueIndex" json:"name"`
+	Description string            `json:"description"`
+	Variables   []ProjectVariable `gorm:"serializer:json" json:"variables"`
 	// PmLeaderEnabled toggles the project-level PM Leader consult entry.
 	PmLeaderEnabled bool `json:"pmLeaderEnabled"`
 	// PmLeaderAgent is the bound Agent config name (agent_profile). Empty when
@@ -103,21 +88,20 @@ type Project struct {
 	UpdatedAt               time.Time `json:"updatedAt"`
 }
 
-// WorkflowDef is the editable workflow (draft or published head).
+// WorkflowDef is the editable workflow head. Graph/Name/Description always
+// equal the WorkflowVersion row numbered Version (the latest save).
 type WorkflowDef struct {
 	ID string `gorm:"primaryKey" json:"id"`
-	// ProjectID is required by the API/service layer. It is intentionally not
-	// tagged not null: SQLite rejects ALTER TABLE … ADD COLUMN … NOT NULL with
-	// no non-NULL default when the table already has rows (preview PVC upgrade).
-	// database.ensureDefaultProject backfills legacy rows after AutoMigrate.
+	// ProjectID is required by the API/service layer.
 	ProjectID   string `gorm:"index;uniqueIndex:idx_wf_proj_name" json:"projectId"`
 	Name        string `gorm:"uniqueIndex:idx_wf_proj_name" json:"name"`
 	Description string `json:"description"`
-	Status      string `json:"status"` // draft | published
-	Version     int    `json:"version"`
-	NeedsRepo   bool   `json:"needsRepo"`
-	// ShowOnHome gates Home cards + Home workflow search. Missing/zero = false
-	// so existing rows stay hidden after AutoMigrate (plan g1.1).
+	// Version is the latest saved WorkflowVersion number.
+	Version int `json:"version"`
+	// PublishedVersion is the version /v1 API runs execute; 0 = never published.
+	PublishedVersion int  `gorm:"default:0" json:"publishedVersion"`
+	NeedsRepo        bool `json:"needsRepo"`
+	// ShowOnHome gates Home cards + Home workflow search.
 	ShowOnHome bool `json:"showOnHome"`
 	// NotifyPolicy is the workflow-level override (off|inherit|custom + events).
 	// Zero value (empty mode) is treated as inherit at resolve time.
@@ -128,13 +112,43 @@ type WorkflowDef struct {
 	LastRunAt    *time.Time           `json:"lastRunAt,omitempty"`
 }
 
-// WorkflowVersion is an immutable published snapshot pinned by in-flight runs.
+// Workflow status values derived by WorkflowDef.Status.
+const (
+	WorkflowStatusDraft     = "draft"
+	WorkflowStatusPublished = "published"
+)
+
+// Status is published when the latest saved version is the published one.
+func (w WorkflowDef) Status() string {
+	if w.PublishedVersion > 0 && w.PublishedVersion == w.Version {
+		return WorkflowStatusPublished
+	}
+	return WorkflowStatusDraft
+}
+
+// WorkflowVersion sources.
+const (
+	VersionSourceSave    = "save"
+	VersionSourceRestore = "restore"
+	VersionSourceImport  = "import"
+	VersionSourcePM      = "pm"
+)
+
+// WorkflowVersion is one immutable saved revision of a workflow. Every save
+// with changed content appends Version+1; publishing stamps PublishedAt.
 type WorkflowVersion struct {
-	ID          uint      `gorm:"primaryKey" json:"-"`
-	WorkflowID  string    `gorm:"index" json:"workflowId"`
-	Version     int       `json:"version"`
-	Graph       Graph     `gorm:"serializer:json" json:"-"`
-	PublishedAt time.Time `json:"publishedAt"`
+	ID          uint   `gorm:"primaryKey" json:"-"`
+	WorkflowID  string `gorm:"index;uniqueIndex:idx_wf_version" json:"workflowId"`
+	Version     int    `gorm:"uniqueIndex:idx_wf_version" json:"version"`
+	Graph       Graph  `gorm:"serializer:json" json:"-"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	NodeCount   int    `gorm:"default:0" json:"nodeCount"`
+	// Source is save | restore | import | pm.
+	Source       string     `json:"source"`
+	RestoredFrom *int       `json:"restoredFrom,omitempty"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	PublishedAt  *time.Time `json:"publishedAt,omitempty"`
 }
 
 // Run is one workflow execution (FSM instance).
@@ -300,8 +314,8 @@ type StateRun struct {
 	// across chat turns in this StateRun. nil = provider never reported usage.
 	Usage *TokenUsage `gorm:"serializer:json" json:"usage,omitempty"`
 	// UsageByModel is the per-model breakdown after ingest weak-key merge /
-	// ACP_BRIDGE_MODEL backfill. nil = legacy / not reported by model; when
-	// Usage is set but UsageByModel is nil, readers map Usage →「未知/未分桶」.
+	// ACP_BRIDGE_MODEL fill. nil = not reported by model; the token ledger
+	// attributes Usage not covered by a bucket to「未知/未分桶」.
 	UsageByModel TokenUsageByModel `gorm:"serializer:json" json:"usageByModel,omitempty"`
 	Error        string            `json:"error,omitempty"`
 	Attempt      int               `json:"attempt"`
@@ -333,6 +347,7 @@ type Artifact struct {
 	ID           string    `gorm:"primaryKey" json:"id"`
 	RunID        string    `gorm:"index" json:"runId"`
 	NodeID       string    `json:"nodeId"`
+	ProjectID    string    `gorm:"index" json:"projectId"`
 	WorkflowID   string    `gorm:"index" json:"workflowId"`
 	WorkflowName string    `json:"workflowName"`
 	Name         string    `json:"name"`
@@ -382,7 +397,7 @@ type Gate struct {
 	Form         []GateField  `gorm:"serializer:json" json:"form"`
 	// UpstreamNodeID + UpstreamIteration bind the gate preview to the upstream
 	// execution that was current when the gate opened (page/page.html ref
-	// preferred). Empty on legacy gates and gates with no body_template refs.
+	// preferred). Empty on gates with no body_template refs.
 	UpstreamNodeID    string    `json:"upstreamNodeId,omitempty"`
 	UpstreamIteration int       `json:"upstreamIteration,omitempty"`
 	Resolved          bool      `json:"resolved"`
@@ -471,7 +486,7 @@ type ReactMessage struct {
 	// the live stream is replaced by the persisted transcript.
 	Tools []ReactTool `json:"tools,omitempty"`
 	// Parts keep the agent turn's thought, tool and message steps in order
-	// so the chat shows the same timeline after a refresh. Empty on older rows.
+	// so the chat shows the same timeline after a refresh.
 	Parts []AcpPart `json:"parts,omitempty"`
 }
 
@@ -757,12 +772,11 @@ type PromptImage struct {
 //   - "run":   per-run workflow node sandbox, recorded for its (short) lifetime
 //     so it shows in the sandbox UI; the runtime provider owns its lifecycle.
 //   - "agent": thread-bound agent session sandbox (consult / cron / future roles).
-//   - "pm":    legacy alias of "agent" (older PM Leader consult rows).
 type Sandbox struct {
 	ID             uint   `gorm:"primaryKey" json:"id"`
 	Name           string `gorm:"uniqueIndex" json:"name"` // docker container name
 	Profile        string `json:"profile"`                 // bound Agent name
-	Purpose        string `json:"purpose"`                 // "test" | "run" | "agent" | "pm"(legacy)
+	Purpose        string `json:"purpose"`                 // "test" | "run" | "agent"
 	Status         string `json:"status"`                  // pulling|creating|running|stopped|error
 	Host           string `json:"-"`
 	ACPPort        int    `json:"-"`
@@ -770,7 +784,7 @@ type Sandbox struct {
 	RepoURL        string `json:"repoUrl,omitempty"`
 	// Origin attribution (populated for purpose="run"): which run/workflow/node
 	// produced this sandbox. RunID for test sandboxes is a synthetic id used by
-	// the artifact-store MCP. For purpose="agent"|"pm", RunID is a synthetic
+	// the artifact-store MCP. For purpose="agent", RunID is a synthetic
 	// agent-{project}-{thread} id used by platform MCP token binding, and
 	// ProjectID / ThreadID identify the session thread.
 	RunID        string `json:"runId,omitempty"`
@@ -911,8 +925,7 @@ func AllModels() []any {
 	}
 }
 
-// DefaultProjectID is the stable id used when AutoMigrate creates the initial
-// 「默认项目」 for backfilling legacy workflows with no project ownership.
+// DefaultProjectID is the stable id of the 「默认项目」 created on an empty database.
 const DefaultProjectID = "proj-default"
 
 // DefaultProjectName is the display name of the auto-created default project.

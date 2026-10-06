@@ -11,11 +11,10 @@ const OUTPUT_LABEL_KEY: Record<string, string> = {
   clarified_requirement: 'common.gateBodyLabels.clarifiedRequirement',
   plan: 'common.gateBodyLabels.plan',
   research: 'common.gateBodyLabels.research',
-  proposals: 'common.gateBodyLabels.proposals',
-  proposal: 'common.gateBodyLabels.proposal',
   test_result: 'common.gateBodyLabels.testResult',
   review: 'common.gateBodyLabels.review',
   implementation_result: 'common.gateBodyLabels.implementationResult',
+  merge_request: 'common.gateBodyLabels.mergeRequest',
   page: 'common.gateBodyLabels.pagePreview',
 }
 

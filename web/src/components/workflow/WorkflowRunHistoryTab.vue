@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import StatusPill from '@/components/ui/StatusPill.vue'
 import AppInlineError from '@/components/ui/AppInlineError.vue'
-import { api, isPaginated } from '@/lib/api/api'
+import { api } from '@/lib/api/api'
 import { fmtTime, fmtDuration, formatTrigger } from '@/lib/shared/format'
 import type { Run } from '@/lib/shared/types'
 
@@ -26,7 +26,7 @@ function runIdShort(id: string) {
 async function load() {
   try {
     const data = await api.listRuns({ wf: props.workflowId })
-    runs.value = isPaginated(data) ? data.items : data
+    runs.value = data.items
     loadError.value = null
     hasLoadedOnce.value = true
   } catch (err) {

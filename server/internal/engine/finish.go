@@ -100,7 +100,7 @@ func (e *Engine) runStatus(runID string) string {
 // pause unwind, the waiting_human transition must not apply.
 func (e *Engine) pauseStillPending(runID string, node *models.Node) bool {
 	switch node.Type {
-	case "human_gate", "proposal_select":
+	case "human_gate":
 		var gate models.Gate
 		if err := e.db.Where("run_id = ? AND node_id = ?", runID, node.ID).
 			Order("iteration desc, id desc").First(&gate).Error; err != nil {

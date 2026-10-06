@@ -169,7 +169,6 @@ GITLAB_TOKEN="glpat_fail"
 GITHUB_URL=""
 GITLAB_URL="https://gitlab.com"
 GIT_REPOS="proj|https://gitlab.com/group/project.git|main"
-GIT_CLONE_URL=""
 _GIT_CRED_RESET=0
 glab_fail_out="$TMP/glab-fail.out"
 glab_fail_err="$TMP/glab-fail.err"
@@ -195,7 +194,6 @@ GITLAB_TOKEN="gl_dual"
 GITHUB_URL=""
 GITLAB_URL="https://gitlab.com"
 GIT_REPOS="proj|https://gitlab.com/group/project.git|main"
-GIT_CLONE_URL=""
 _GIT_CRED_RESET=0
 configure_git_credentials
 grep -q 'oauth2:gl_dual@gitlab.com' "$TMP/root/.git-credentials"
@@ -211,7 +209,6 @@ GITLAB_TOKEN="gl_dual"
 GITHUB_URL=""
 GITLAB_URL=""
 GIT_REPOS="app|https://github.com/acme/app.git|main"
-GIT_CLONE_URL=""
 _GIT_CRED_RESET=0
 configure_git_credentials
 grep -q 'x-access-token:gh_dual@github.com' "$TMP/root/.git-credentials"
@@ -227,7 +224,6 @@ GITLAB_TOKEN="gl_dual"
 GITHUB_URL=""
 GITLAB_URL="https://github.com"
 GIT_REPOS="app|https://github.com/acme/app.git|main"
-GIT_CLONE_URL=""
 _GIT_CRED_RESET=0
 configure_git_credentials
 grep -q 'x-access-token:gh_dual@github.com' "$TMP/root/.git-credentials"
@@ -245,7 +241,6 @@ GITLAB_TOKEN="gl_only"
 GITHUB_URL=""
 GITLAB_URL="https://git.example.com"
 GIT_REPOS="api|https://git.example.com/team/api.git|main"
-GIT_CLONE_URL=""
 _GIT_CRED_RESET=0
 configure_git_credentials
 grep -q 'oauth2:gl_only@git.example.com' "$TMP/root/.git-credentials"
@@ -262,7 +257,6 @@ GITLAB_TOKEN=""
 GITHUB_URL=""
 GITLAB_URL=""
 GIT_REPOS="app|https://github.com/acme/app.git|main"
-GIT_CLONE_URL=""
 _GIT_CRED_RESET=0
 configure_git_credentials
 grep -q 'x-access-token:gh_only@github.com' "$TMP/root/.git-credentials"
@@ -279,7 +273,6 @@ GITLAB_TOKEN=""
 GITHUB_URL=""
 GITLAB_URL=""
 GIT_REPOS="pub|https://example.com/pub.git|"
-GIT_CLONE_URL=""
 _GIT_CRED_RESET=0
 configure_git_credentials
 echo "OK: empty tokens + GIT_REPOS does not abort"
@@ -288,7 +281,6 @@ rm -f "$HOME/gh.last" "$HOME/gh.token" "$HOME/glab.last" "$TMP/root/.git-credent
 GITHUB_TOKEN=""
 GITLAB_TOKEN=""
 GIT_REPOS=""
-GIT_CLONE_URL=""
 _GIT_CRED_RESET=0
 configure_git_credentials
 echo "OK: empty tokens without repos does not abort"

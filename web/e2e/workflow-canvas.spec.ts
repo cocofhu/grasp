@@ -200,7 +200,7 @@ test('inspector capabilities chips do not overlap or overflow in English', async
   expect(problems.out).toEqual([])
 })
 
-test('edge condition edit autosaves and survives reload; node drag snaps to the grid', async ({ page }) => {
+test('edge condition edit saves manually and survives reload; node drag snaps to the grid', async ({ page }) => {
   const store = freshStore()
   await openEditor(page, store)
   await startFromTemplate(page)
@@ -220,6 +220,8 @@ test('edge condition edit autosaves and survives reload; node drag snaps to the 
   await expect(page.getByTestId('canvas-guides')).toBeAttached()
   await page.mouse.up()
 
+  await expect(page.getByTestId('editor-save-status')).toContainText('未保存')
+  await page.getByTestId('editor-save').click()
   await expect(page.getByTestId('editor-save-status')).toContainText('已保存', { timeout: 10_000 })
   await expect
     .poll(() => (store.wf.edges as { id: string; when?: string }[]).find((e) => e.id === 'e_clarify_implement')?.when)
@@ -260,27 +262,26 @@ test('run canvas draws every edge when the graph arrives after mount', async ({ 
   await page.screenshot({ path: `${SHOT}/run-async.png` })
 })
 
-test('editor: dragging blank space pans, Shift + drag box-selects', async ({ page }) => {
+test('editor: middle-button drag pans, dragging blank space box-selects', async ({ page }) => {
   await openEditor(page, freshStore())
   await startFromTemplate(page)
   const transform = () => page.locator('.vue-flow__transformationpane').getAttribute('style')
   const pane = await paneBox(page)
   const before = await transform()
   await page.mouse.move(pane.x + 40, pane.y + pane.height - 60)
-  await page.mouse.down()
+  await page.mouse.down({ button: 'middle' })
   await page.mouse.move(pane.x + 140, pane.y + pane.height - 120, { steps: 6 })
-  await page.mouse.up()
+  await page.mouse.up({ button: 'middle' })
   await expect.poll(transform).not.toBe(before)
   await expect(page.locator('.vue-flow__node.selected')).toHaveCount(0)
 
   const first = (await nodes(page).first().boundingBox())!
-  await page.keyboard.down('Shift')
   await page.mouse.move(first.x - 30, first.y - 30)
   await page.mouse.down()
   await page.mouse.move(first.x + first.width + 20, first.y + first.height + 20, { steps: 6 })
   await page.mouse.up()
-  await page.keyboard.up('Shift')
   await expect(page.locator('.vue-flow__node.selected')).not.toHaveCount(0)
+  await expect(page.getByTestId('canvas-selection-bar')).toBeVisible()
 })
 
 test('mouse wheel zooms the canvas', async ({ page }) => {

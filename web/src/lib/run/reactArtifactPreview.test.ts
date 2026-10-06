@@ -4,7 +4,6 @@ import type { Artifact, Run } from '@/lib/shared/types'
 import {
   REACT_STAGE_TAB_GRID,
   REACT_STAGE_TAB_NOVNC,
-  REACT_STAGE_TAB_PREVIEW,
   applyPreviewArtifactFromRun,
   applyPreviewArtifactName,
   artifactFingerprint,
@@ -41,7 +40,6 @@ import {
   nextTabAfterClose,
   openStagePreviewTab,
   previewTabId,
-  coalesceStageTab,
   clarifyStageRemoteKind,
   resolveEffectivePreviewPin,
   resolveStageRemoteKind,
@@ -260,7 +258,6 @@ describe('reactArtifactPreview helpers', () => {
 
   it('keeps unread marks and idle focus helpers for auto-pin (g1.3 / g2.1)', () => {
     expect(isIdleStageTab(REACT_STAGE_TAB_GRID)).toBe(true)
-    expect(isIdleStageTab(REACT_STAGE_TAB_PREVIEW)).toBe(true)
     expect(isIdleStageTab(previewTabId('plan.json'))).toBe(false)
     expect(isIdleStageTab(REACT_STAGE_TAB_NOVNC)).toBe(false)
     expect(shouldFocusPinnedOrAutoTab({ userMoved: false, activeTab: previewTabId('a') })).toBe(true)
@@ -578,8 +575,6 @@ describe('reactArtifactPreview helpers', () => {
       'common.gateBodyLabels.clarifiedRequirement',
     )
     expect(artifactFriendlyNameKey('plan.json')).toBe('common.gateBodyLabels.plan')
-    expect(artifactFriendlyNameKey('proposals.json')).toBe('common.gateBodyLabels.proposals')
-    expect(artifactFriendlyNameKey('proposal.json')).toBe('common.gateBodyLabels.proposal')
     expect(artifactFriendlyNameKey('test_result.json')).toBe('common.gateBodyLabels.testResult')
     expect(artifactFriendlyNameKey('review.json')).toBe('common.gateBodyLabels.review')
     expect(artifactFriendlyNameKey('implementation_result.json')).toBe(
@@ -707,21 +702,12 @@ describe('reactArtifactPreview helpers', () => {
       ).toBeNull()
     })
 
-    it('coalesces legacy chrome preview id to workflow grid (g1.3)', () => {
-      expect(coalesceStageTab(REACT_STAGE_TAB_PREVIEW)).toBe(REACT_STAGE_TAB_GRID)
-      expect(coalesceStageTab('')).toBe(REACT_STAGE_TAB_GRID)
-      expect(coalesceStageTab(previewTabId('a.html'))).toBe(previewTabId('a.html'))
+    it('treats an empty saved tab as the workflow grid', () => {
       expect(
-        restoreStageOpenState(
-          { openNames: [], activeTab: REACT_STAGE_TAB_PREVIEW, novncOpen: false },
-          ['page.html'],
-        ),
+        restoreStageOpenState({ openNames: [], activeTab: '', novncOpen: false }, ['page.html']),
       ).toBeNull()
       expect(
-        restoreStageOpenState(
-          { openNames: ['page.html'], activeTab: REACT_STAGE_TAB_PREVIEW, novncOpen: false },
-          ['page.html'],
-        ),
+        restoreStageOpenState({ openNames: ['page.html'], activeTab: '', novncOpen: false }, ['page.html']),
       ).toEqual({
         openNames: ['page.html'],
         activeTab: REACT_STAGE_TAB_GRID,

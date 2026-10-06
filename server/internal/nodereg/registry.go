@@ -19,7 +19,6 @@ const (
 	ExecBranch
 	ExecAgent
 	ExecHumanGate
-	ExecProposalSelect
 )
 
 // Spec describes one workflow node type.
@@ -37,7 +36,6 @@ var specs = []Spec{
 	{Type: "branch", Label: "分支", Category: "控制", Exec: ExecBranch},
 	{Type: "agent", Label: "Agent", Category: "Agent", Exec: ExecAgent},
 	{Type: "human_gate", Label: "人工门禁", Category: "门禁", Exec: ExecHumanGate},
-	{Type: "proposal_select", Label: "方案确认", Category: "门禁", Exec: ExecProposalSelect},
 }
 
 // Get returns the spec for a node type.

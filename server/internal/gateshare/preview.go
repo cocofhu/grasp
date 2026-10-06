@@ -129,7 +129,7 @@ func BuildPreviewDTO(st string, lookup *LookupResult, visualHTML, structuredName
 		rem = 0
 	}
 	dto.RemainingSec = &rem
-	preset := NormalizePermissionPreset(lookup.Link.PermissionPreset)
+	preset := lookup.Link.PermissionPreset
 	dto.PermissionPreset = preset
 	dto.Actions = map[string]string{}
 	if p := ResolvePassAction(lookup.Gate.Actions); p != "" {
@@ -174,7 +174,7 @@ func BuildReviewPreviewDTO(st string, lookup *LookupResult, visualHTML, structur
 		rem = 0
 	}
 	dto.RemainingSec = &rem
-	preset := NormalizePermissionPreset(lookup.Link.PermissionPreset)
+	preset := lookup.Link.PermissionPreset
 	dto.PermissionPreset = preset
 	dto.Actions = map[string]string{"confirm": "confirm"}
 	if extras.ReactSessionAlive {

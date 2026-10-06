@@ -46,8 +46,8 @@ type Capabilities struct {
 }
 
 // SupportsChanges reports whether the sandbox declares a change-reporting
-// endpoint. A nil descriptor (older image without /api/capabilities) returns
-// false here; callers should still attempt the endpoint best-effort.
+// endpoint. A nil descriptor (unavailable /api/capabilities) returns false
+// here; callers should still attempt the endpoint best-effort.
 //
 // Unwired protocol stub: not yet called from Manager / live session paths;
 // retained for Workflow Sandbox Protocol completeness and unit tests.

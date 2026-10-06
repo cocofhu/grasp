@@ -3,7 +3,6 @@ import type { AgentTool, ClarifyImage, Gate, ReactAnnotation, Run } from '@/lib/
 import type { GatePrimaryProductRef } from '@/lib/inbox/gateUpstream'
 import type { CommentPin } from '@/lib/inbox/useCommentPins'
 import type { PlanDoc } from '../PlanView.vue'
-import type { ProposalsDoc } from '../ProposalSelectView.vue'
 
 export type GateApprovalProductEditorExpose = {
   isDirty: { value: boolean }
@@ -44,7 +43,6 @@ export type GateApprovalState = {
   productName: string | null
   canEditProducts: boolean
   isVisualBody: boolean
-  isProposalSelect: boolean
   bodyTemplate: string
   usesPreviewIssues: boolean
   openPreviewIssueCount: number
@@ -74,8 +72,6 @@ export type GateApprovalState = {
     style?: { color?: string; fontSize?: string; fontWeight?: string; fontFamily?: string; lineHeight?: string } | null
   } | null
 
-  proposalsDoc: ProposalsDoc | null
-  proposalsLoading: boolean
   planDoc: PlanDoc | null
   planLoading: boolean
   productDoc: unknown

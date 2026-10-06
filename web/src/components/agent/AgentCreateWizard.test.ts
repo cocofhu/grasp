@@ -43,6 +43,8 @@ vi.mock('@/lib/api/api', () => ({
   },
 }))
 
+const PROJECTS = [{ id: 'p1', name: 'P1' }]
+
 function mountWizard(locale: 'zh-CN' | 'en' = 'zh-CN', projectId?: string) {
   const i18n = createI18n({
     legacy: false,
@@ -54,7 +56,7 @@ function mountWizard(locale: 'zh-CN' | 'en' = 'zh-CN', projectId?: string) {
   })
   return mount(AgentCreateWizard, {
     attachTo: document.body,
-    props: { open: true, existingNames: [], projectId },
+    props: { open: true, existingNames: [], projects: PROJECTS, projectId },
     global: { plugins: [i18n] },
   })
 }
@@ -96,6 +98,28 @@ describe('AgentCreateWizard 5-step IA', () => {
     expect(labels.join(' ')).not.toContain('ENV')
     expect(labels.join(' ')).not.toMatch(/MCP|Rules|Skills|Commands|Prompts/)
     wrapper.unmount()
+  })
+
+  it('prefills the home project and blocks basics until a project is chosen', async () => {
+    const wrapper = mountWizard('zh-CN', 'p1')
+    const select = document.body.querySelector('[data-testid="wizard-project-select"]') as HTMLSelectElement
+    expect(select.value).toBe('p1')
+    wrapper.unmount()
+    document.body.innerHTML = ''
+
+    const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...commonZh, ...pagesZh } } })
+    const empty = mount(AgentCreateWizard, {
+      attachTo: document.body,
+      props: { open: true, existingNames: [], projects: [] },
+      global: { plugins: [i18n] },
+    })
+    fillName('needs-project')
+    await empty.vm.$nextTick()
+    buttonByText('下一步').click()
+    await empty.vm.$nextTick()
+    expect(document.body.textContent).toContain(pagesZh.pages.agentStudio.project.required)
+    expect(document.body.querySelector('#wiz-name-input')).not.toBeNull()
+    empty.unmount()
   })
 
   it('defaults CodeBuddy to international on the Agent step', async () => {
@@ -272,50 +296,6 @@ describe('AgentCreateWizard 5-step IA', () => {
     wrapper.unmount()
   })
 
-  it('Git 步在共享 Token 存在时仍渲染三选并可改选（plan g1.2 / g3.2）', async () => {
-    getProjectSharedAgentConfig.mockResolvedValue({
-      projectId: 'proj-shared',
-      env: { GITLAB_TOKEN: '${vars.gitlab_pat}' },
-      files: [],
-      mcp: [],
-      layout: {},
-    })
-    const wrapper = mountWizard('zh-CN', 'proj-shared')
-    fillName('inherit-agent')
-    await wrapper.vm.$nextTick()
-    buttonByText('下一步').click()
-    await wrapper.vm.$nextTick()
-    buttonByText('下一步').click()
-    await wrapper.vm.$nextTick()
-    buttonByText('跳过').click()
-    await wrapper.vm.$nextTick()
-    await vi.waitFor(() => {
-      expect(getProjectSharedAgentConfig).toHaveBeenCalledWith('proj-shared')
-    })
-    await vi.waitFor(() => {
-      expect(document.body.querySelector('[data-test="git-guide"]')).toBeTruthy()
-      expect(document.body.querySelector('[data-test="git-choice-github_https"]')).toBeTruthy()
-      expect(document.body.querySelector('[data-test="git-choice-gitlab_https"]')).toBeTruthy()
-      expect(document.body.querySelector('[data-test="git-choice-ssh"]')).toBeTruthy()
-    })
-    expect(document.body.textContent).toContain('Git')
-    expect(document.body.textContent).toContain('预选类型')
-    expect(document.body.textContent).toContain('仍可改选或跳过')
-    expect(document.body.textContent).not.toContain('无需选择')
-    expect(document.body.textContent).not.toContain('调整类型')
-
-    const gitlab = document.body.querySelector(
-      '[data-test="git-choice-gitlab_https"]',
-    ) as HTMLButtonElement
-    expect(gitlab.getAttribute('aria-pressed')).toBe('true')
-
-    const ssh = document.body.querySelector('[data-test="git-choice-ssh"]') as HTMLButtonElement
-    ssh.click()
-    await wrapper.vm.$nextTick()
-    expect(ssh.getAttribute('aria-pressed')).toBe('true')
-    wrapper.unmount()
-  })
-
   it('renders equivalent English site semantics and Agent step label', async () => {
     const wrapper = mountWizard('en')
     expect(railLabels()).toEqual(['Basics', 'Agent', 'API Key', 'Git', 'Confirm'])
@@ -348,7 +328,7 @@ describe('AgentCreateWizard 5-step IA', () => {
     })
     const wrapper = mount(AgentCreateWizard, {
       attachTo: document.body,
-      props: { open: true, existingNames: [] },
+      props: { open: true, existingNames: [], projects: PROJECTS },
       global: { plugins: [i18n], stubs: { Teleport: false } },
     })
     await flushPromises()

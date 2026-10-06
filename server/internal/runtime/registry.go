@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -79,55 +80,81 @@ func (r *ProviderRegistry) InstallLiveGuard(ctx context.Context, runID, nodeID s
 	}
 }
 
-func (r *ProviderRegistry) backendFor(req NodeReq) AcpBackend {
+func (r *ProviderRegistry) backendFor(req NodeReq) (AcpBackend, error) {
 	profile := models.AgentProfile(req.Config)
-	if profile == "" || r.profilesRoot == "" {
-		return BackendCursor
+	if profile == "" {
+		return "", errors.New("节点未绑定 Agent")
+	}
+	if r.profilesRoot == "" {
+		return "", errors.New("未配置 Agent 根目录")
 	}
 	dir, err := profileDir(r.profilesRoot, profile)
 	if err != nil {
-		return BackendCursor
+		return "", err
 	}
 	b, err := os.ReadFile(filepath.Join(dir, "agent.json"))
 	if err != nil {
-		return BackendCursor
+		return "", fmt.Errorf("读取 Agent %q 配置失败: %w", profile, err)
 	}
 	var cfg struct {
 		AcpBackend string `json:"acpBackend"`
 	}
-	_ = json.Unmarshal(b, &cfg)
-	return NormalizeBackend(cfg.AcpBackend)
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return "", fmt.Errorf("解析 Agent %q 配置失败: %w", profile, err)
+	}
+	backend, err := ParseBackend(cfg.AcpBackend)
+	if err != nil {
+		return "", fmt.Errorf("Agent %q: %w", profile, err)
+	}
+	return backend, nil
 }
 
-func (r *ProviderRegistry) providerFor(req NodeReq) ExecProvider {
-	b := r.backendFor(req)
+func (r *ProviderRegistry) providerFor(req NodeReq) (ExecProvider, error) {
+	b, err := r.backendFor(req)
+	if err != nil {
+		return nil, err
+	}
 	p := r.providers[b]
 	if p == nil {
-		return r.providers[BackendCursor]
+		return nil, fmt.Errorf("执行后端 %q 不可用", b)
 	}
-	return p
+	return p, nil
 }
 
 func (r *ProviderRegistry) RunAgent(ctx context.Context, req NodeReq) (NodeResult, error) {
-	b := r.backendFor(req)
+	p, err := r.providerFor(req)
+	if err != nil {
+		return NodeResult{}, err
+	}
 	log.Debug().Str("run", req.RunID).Str("node", req.NodeID).
-		Str("acpBackend", string(b)).Str("bridge", AgentRuntimeLabel(b)).
+		Str("acpBackend", p.Name()).Str("bridge", AgentRuntimeLabel(AcpBackend(p.Name()))).
 		Msg("provider route")
-	return r.providerFor(req).RunAgent(ctx, req)
+	return p.RunAgent(ctx, req)
 }
 
 func (r *ProviderRegistry) ReactOpen(ctx context.Context, req NodeReq) ReactTurn {
-	return r.providerFor(req).ReactOpen(ctx, req)
+	p, err := r.providerFor(req)
+	if err != nil {
+		return ReactTurn{SetupErr: err, Msg: "(" + err.Error() + ")"}
+	}
+	return p.ReactOpen(ctx, req)
 }
 
 func (r *ProviderRegistry) ReactReply(ctx context.Context, req NodeReq, history []models.ReactMessage, human string, images []models.PromptImage, force bool) ReactTurn {
-	return r.providerFor(req).ReactReply(ctx, req, history, human, images, force)
+	p, err := r.providerFor(req)
+	if err != nil {
+		return ReactTurn{SetupErr: err, Msg: "(" + err.Error() + ")"}
+	}
+	return p.ReactReply(ctx, req, history, human, images, force)
 }
 
 // ReviseInPlace forwards a post-run review edit to the backend that owns the
 // node's parked session (same agent_profile routing as RunAgent/ReactReply).
 func (r *ProviderRegistry) ReviseInPlace(ctx context.Context, req NodeReq, history []models.ReactMessage, human string, images []models.PromptImage) ReactTurn {
-	p := r.providerFor(req)
+	p, err := r.providerFor(req)
+	if err != nil {
+		return ReactTurn{Err: err}
+	}
 	rp, ok := p.(ReviewProvider)
 	if !ok {
 		return ReactTurn{Msg: "(当前执行后端不支持 ReAct 复审)", Done: false,
@@ -139,7 +166,10 @@ func (r *ProviderRegistry) ReviseInPlace(ctx context.Context, req NodeReq, histo
 // OfferCommitOnConfirm forwards confirm-time git wrap-up to the backend that
 // owns the parked session (same agent_profile routing as ReviseInPlace).
 func (r *ProviderRegistry) OfferCommitOnConfirm(ctx context.Context, req NodeReq) ReactTurn {
-	p := r.providerFor(req)
+	p, err := r.providerFor(req)
+	if err != nil {
+		return ReactTurn{}
+	}
 	rp, ok := p.(ReviewProvider)
 	if !ok {
 		return ReactTurn{}
@@ -150,7 +180,10 @@ func (r *ProviderRegistry) OfferCommitOnConfirm(ctx context.Context, req NodeReq
 // ReconcileOnConfirm forwards the confirm-time reconcile + summary pair to the
 // backend that owns the parked session (same routing as OfferCommitOnConfirm).
 func (r *ProviderRegistry) ReconcileOnConfirm(ctx context.Context, req NodeReq) ReactTurn {
-	p := r.providerFor(req)
+	p, err := r.providerFor(req)
+	if err != nil {
+		return ReactTurn{}
+	}
 	rp, ok := p.(ReviewProvider)
 	if !ok {
 		return ReactTurn{}

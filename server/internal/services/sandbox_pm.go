@@ -7,9 +7,8 @@ import (
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
-// Legacy / platform MCP names.
+// Platform MCP names.
 const (
-	PmMCPName          = "pm-leader"
 	MemoryStoreMCP     = "memory-store"
 	ContextStoreMCP    = "context-store"
 	TaskSchedulerMCP   = "task-scheduler"

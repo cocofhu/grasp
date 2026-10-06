@@ -15,8 +15,6 @@ describe('resolveArtifactPreviewBranch (ArtifactPreview routing)', () => {
       'review.json',
       'plan.json',
       'clarified_requirement.json',
-      'proposals.json',
-      'proposal.json',
       'implementation_result.json',
       'test_result.json',
     ]) {

@@ -6,8 +6,8 @@ export type AuthApplyLink = {
 }
 
 export type AuthKeySpec = {
+  /** Project credential env key (one per backend). */
   key: string
-  alt?: string
 }
 
 export type BackendAuthGuide = {
@@ -23,7 +23,7 @@ export type BackendAuthGuide = {
 
 const CURSOR_GUIDE: BackendAuthGuide = {
   backend: 'cursor',
-  keys: [{ key: 'GRASP_CURSOR_API_KEY', alt: 'CURSOR_API_KEY' }],
+  keys: [{ key: 'GRASP_CURSOR_API_KEY' }],
   pathStepKeys: [
     'pages.agentStudio.wizard.apiKey.paths.cursor.step1',
     'pages.agentStudio.wizard.apiKey.paths.cursor.step2',
@@ -37,7 +37,7 @@ const CURSOR_GUIDE: BackendAuthGuide = {
 
 const CLAUDE_GUIDE: BackendAuthGuide = {
   backend: 'claude_code',
-  keys: [{ key: 'GRASP_CLAUDE_API_KEY', alt: 'ANTHROPIC_API_KEY' }],
+  keys: [{ key: 'GRASP_CLAUDE_API_KEY' }],
   pathStepKeys: [
     'pages.agentStudio.wizard.apiKey.paths.claude.step1',
     'pages.agentStudio.wizard.apiKey.paths.claude.step2',
@@ -61,7 +61,7 @@ const CLAUDE_GUIDE: BackendAuthGuide = {
 
 const CODEBUDDY_BASE: Omit<BackendAuthGuide, 'links'> = {
   backend: 'codebuddy',
-  keys: [{ key: 'GRASP_CODEBUDDY_API_KEY', alt: 'CODEBUDDY_API_KEY' }],
+  keys: [{ key: 'GRASP_CODEBUDDY_API_KEY' }],
   pathStepKeys: [
     'pages.agentStudio.wizard.apiKey.paths.codebuddy.step1',
     'pages.agentStudio.wizard.apiKey.paths.codebuddy.step2',
@@ -72,7 +72,7 @@ const CODEBUDDY_BASE: Omit<BackendAuthGuide, 'links'> = {
 
 const OPENCODE_GUIDE: BackendAuthGuide = {
   backend: 'opencode',
-  keys: [{ key: 'GRASP_OPENCODE_API_KEY', alt: 'OPENCODE_API_KEY' }],
+  keys: [{ key: 'GRASP_OPENCODE_API_KEY' }],
   pathStepKeys: [
     'pages.agentStudio.wizard.apiKey.paths.opencode.step1',
     'pages.agentStudio.wizard.apiKey.paths.opencode.step2',
@@ -89,9 +89,7 @@ const OPENCODE_GUIDE: BackendAuthGuide = {
 
 const TRAE_GUIDE: BackendAuthGuide = {
   backend: 'trae',
-  keys: [
-    { key: 'GRASP_TRAE_API_KEY', alt: 'TRAECLI_PERSONAL_ACCESS_TOKEN' },
-  ],
+  keys: [{ key: 'GRASP_TRAE_API_KEY' }],
   pathStepKeys: [
     'pages.agentStudio.wizard.apiKey.paths.trae.step1',
     'pages.agentStudio.wizard.apiKey.paths.trae.step2',
@@ -128,27 +126,23 @@ const CODEBUDDY_SITE_LINKS: Record<string, AuthApplyLink> = {
 /** Studio Env badge text (short). Kept for reuse with wizard auth step. */
 export const BACKEND_AUTH_HINTS: Record<
   BackendId,
-  { key: string; alt?: string; note: string }
+  { key: string; note: string }
 > = {
-  cursor: { key: 'GRASP_CURSOR_API_KEY', alt: 'CURSOR_API_KEY', note: 'Cursor ACP 鉴权' },
+  cursor: { key: 'GRASP_CURSOR_API_KEY', note: 'Cursor ACP 鉴权' },
   claude_code: {
     key: 'GRASP_CLAUDE_API_KEY',
-    alt: 'ANTHROPIC_API_KEY',
     note: 'Claude Code ACP 鉴权',
   },
   codebuddy: {
     key: 'GRASP_CODEBUDDY_API_KEY',
-    alt: 'CODEBUDDY_API_KEY',
     note: 'CodeBuddy ACP 鉴权',
   },
   trae: {
     key: 'GRASP_TRAE_API_KEY',
-    alt: 'TRAECLI_PERSONAL_ACCESS_TOKEN',
     note: 'Trae ACP 鉴权 (CLI 登录令牌)',
   },
   opencode: {
     key: 'GRASP_OPENCODE_API_KEY',
-    alt: 'OPENCODE_API_KEY',
     note: 'OpenCode API Key 鉴权',
   },
 }
@@ -229,7 +223,7 @@ export function customConfigNoteKey(backend: BackendId): string {
   }
 }
 
-/** True when any primary/alias auth key for the backend has a non-empty value. */
+/** True when the backend's credential key has a non-empty value. */
 export function hasAuthKeyConfigured(
   env: Record<string, string> | { k: string; v: string }[],
   backend: BackendId,
@@ -237,14 +231,5 @@ export function hasAuthKeyConfigured(
   const rec = Array.isArray(env)
     ? Object.fromEntries(env.filter((e) => e.k.trim()).map((e) => [e.k.trim(), e.v]))
     : env
-  const guide = authGuideFor(backend)
-  const hint = BACKEND_AUTH_HINTS[backend]
-  const keys = new Set<string>([hint.key, ...(hint.alt ? [hint.alt] : [])])
-  for (const spec of guide.keys) {
-    keys.add(spec.key)
-    if (spec.alt) keys.add(spec.alt)
-  }
-  // Trae also accepts legacy TRAE_API_KEY alias at runtime.
-  if (backend === 'trae') keys.add('TRAE_API_KEY')
-  return [...keys].some((k) => (rec[k] ?? '').trim() !== '')
+  return (rec[BACKEND_AUTH_HINTS[backend].key] ?? '').trim() !== ''
 }

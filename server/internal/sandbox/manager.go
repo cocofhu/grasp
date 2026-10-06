@@ -262,10 +262,12 @@ type Sandbox struct {
 	WorkspaceDir   string // resolved WORKSPACE_DIR inside the sandbox
 	ConfigRoot     string // in-sandbox agent config root (e.g. /root/.cursor)
 	// Password is the sandbox token the acp-bridge (8765) requires
-	// (CURSOR_ACP_PASSWORD). ACP() attaches it so the platform's client logs in
-	// before dialing /ws. Empty when the bridge is unauthenticated.
+	// (ACP_BRIDGE_PASSWORD). ACP() attaches it so the platform's client logs in
+	// before dialing /ws.
 	Password string
-	mgr      *Manager
+	// Blobs resolves Ref-backed prompt images before they are sent to the bridge.
+	Blobs blob.Store
+	mgr   *Manager
 	// hostKeys is used when mgr is nil (detached test handles) so TOFU state
 	// survives across dials on the same Sandbox.
 	hostKeys *hostKeyCache
@@ -333,7 +335,7 @@ func (m *Manager) sandboxFromGW(sb *GWSandbox, workspaceDir string) *Sandbox {
 	}
 	return &Sandbox{
 		ID: sb.ID, Name: sb.ID, Host: sh, Port: sp, CodeServerPort: ide,
-		SSHHost: sshHost, SSHPort: sshPort, WorkspaceDir: workspaceDir, mgr: m,
+		SSHHost: sshHost, SSHPort: sshPort, WorkspaceDir: workspaceDir, mgr: m, Blobs: m.blobs,
 	}
 }
 
@@ -356,6 +358,10 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 	env := map[string]string{}
 	for k, v := range spec.Env {
 		env[k] = v
+	}
+	bridgePassword := strings.TrimSpace(env[BridgePasswordEnv])
+	if bridgePassword == "" {
+		return nil, fmt.Errorf("sandbox spec missing %s", BridgePasswordEnv)
 	}
 	// Inner Docker (DinD): default SKIP_INNER_DOCKER=0 so startup.sh starts
 	// dockerd. Callers may set SKIP_INNER_DOCKER=1 to skip (faster boot).
@@ -454,13 +460,8 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 	if runtimeData != nil {
 		m.runtime.noteInstalled(sb.ID, runtimeMan.Version)
 	}
-	// Carry the acp-bridge secret so ACP() / WaitForACPReady can log in. The
-	// image treats these as the same unified token (see ApplyPasswords).
-	if pw := strings.TrimSpace(env["CURSOR_ACP_PASSWORD"]); pw != "" {
-		sb.Password = pw
-	} else {
-		sb.Password = strings.TrimSpace(env["PASSWORD"])
-	}
+	// Carry the acp-bridge secret so ACP() / WaitForACPReady can log in.
+	sb.Password = bridgePassword
 	// Do NOT Delete inject bundles here. WaitRunning can return before
 	// startup.sh finishes SANDBOX_INJECT fetch; early Delete → 401 and no
 	// mcp.json. Images without sshd also cannot SSH-heal. Bundles expire via
@@ -970,8 +971,8 @@ func (s *Sandbox) Destroy(ctx context.Context) {
 // pre-authenticated with the sandbox token when the bridge requires it.
 func (s *Sandbox) ACP() *ACPClient {
 	c := NewACPClient(s.Host, s.Port).WithPassword(s.Password)
-	if s.mgr != nil && s.mgr.blobs != nil {
-		c = c.WithBlobs(s.mgr.blobs)
+	if s.Blobs != nil {
+		c = c.WithBlobs(s.Blobs)
 	}
 	return c
 }

@@ -5,7 +5,7 @@ import type { NodeType, WFEdge, WFNode } from '@/lib/shared/types'
 import { capabilityIssueKey, validateCapabilities } from './agentCapabilities'
 import type { AgentCapsLookup } from './nodeOutlets'
 
-export const NODE_TYPES: NodeType[] = ['input', 'output', 'set_var', 'branch', 'agent', 'human_gate', 'proposal_select']
+export const NODE_TYPES: NodeType[] = ['input', 'output', 'set_var', 'branch', 'agent', 'human_gate']
 
 export function isKnownNodeType(type: unknown): type is NodeType {
   return NODE_TYPES.includes(type as NodeType)
@@ -54,11 +54,16 @@ export function workflowGraphError(
     }
   }
 
+  for (const n of nodes) {
+    if (n.type === 'agent' && !String(n.config?.agent_profile ?? '').trim()) {
+      return t('pages.workflowEditor.graphErrors.agentMissingProfile', { label: n.label || n.id })
+    }
+  }
+
   if (agents) {
     for (const n of nodes) {
       if (n.type !== 'agent') continue
       const profile = String(n.config?.agent_profile ?? '').trim()
-      if (!profile) return t('pages.workflowEditor.graphErrors.agentMissingProfile', { label: n.label || n.id })
       const agent = agentEntry(agents, profile)
       if (!agent) return t('pages.workflowEditor.graphErrors.agentNotFound', { label: n.label || n.id, name: profile })
       const issue = validateCapabilities(agent.capabilities)

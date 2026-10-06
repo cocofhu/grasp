@@ -6,7 +6,7 @@ import { buildDefaultWorkflow, pickTemplateAgents } from './defaultTemplate'
 import { edgeGeometry, isBackward } from './edgePath'
 import { collectGraphIssues, issuesByNode } from './useGraphIssues'
 import { formatKey, resolveShortcut, useCanvasShortcuts } from './useCanvasShortcuts'
-import { buildPaletteItems, decodePaletteDrag, encodePaletteDrag, filterPaletteItems } from './paletteItems'
+import { buildPaletteItems, decodePaletteDrag, encodePaletteDrag, filterPaletteItems, paletteKey } from './paletteItems'
 
 const t = (k: string, n?: Record<string, unknown>) => (n ? `${k}:${JSON.stringify(n)}` : k)
 const key = (k: string, mods: Partial<Record<'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey', boolean>> = {}, target?: EventTarget) => ({
@@ -173,17 +173,17 @@ describe('avatars and palette items', () => {
     const items = buildPaletteItems([{ name: 'impl', capabilities: IMPLEMENT_CAPS }], (type) => ({ label: type, desc: '' }), t)
     expect(items.map((i) => i.key)).toEqual([
       'agent:impl',
-      'agent:',
       'type:input',
       'type:output',
       'type:set_var',
       'type:branch',
       'type:human_gate',
-      'type:proposal_select',
     ])
     expect(filterPaletteItems(items, 'IMPL').map((i) => i.key)).toEqual(['agent:impl'])
     expect(filterPaletteItems(items, '  ')).toBe(items)
     expect(decodePaletteDrag(encodePaletteDrag({ type: 'agent', agentProfile: 'impl' }))).toEqual({ type: 'agent', agentProfile: 'impl' })
+    expect(decodePaletteDrag(encodePaletteDrag({ type: 'agent' }))).toBeNull()
+    expect(items.map((i) => i.key)).toEqual(items.map((i) => paletteKey(i.spec)))
     expect(decodePaletteDrag('not json')).toBeNull()
     expect(decodePaletteDrag('')).toBeNull()
   })

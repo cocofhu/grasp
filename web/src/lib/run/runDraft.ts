@@ -18,33 +18,14 @@ export interface RunDraftPayload {
 /** ok = full save; partial = fields persisted without images; quota_exceeded / error. */
 export type SaveRunDraftResult = 'ok' | 'partial' | 'quota_exceeded' | 'error'
 
-const LEGACY_PREFIX = 'run-draft:'
-
-let runMigrationDone = false
-
-/** Test-only: re-run legacy localStorage migration. */
-export function __resetRunDraftMigrationForTests(): void {
-  runMigrationDone = false
-}
+/** localStorage text fallback used when IndexedDB writes fail. */
+const FALLBACK_PREFIX = 'run-draft:'
 
 function draftKey(workflowId: string): string {
-  return `${LEGACY_PREFIX}${workflowId}`
+  return `${FALLBACK_PREFIX}${workflowId}`
 }
 
-function listLegacyKeys(): string[] {
-  const keys: string[] = []
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i)
-      if (k && k.startsWith(LEGACY_PREFIX)) keys.push(k)
-    }
-  } catch {
-    /* ignore */
-  }
-  return keys
-}
-
-function readLegacy(workflowId: string): RunDraftPayload | null {
+function readTextFallback(workflowId: string): RunDraftPayload | null {
   try {
     const raw = localStorage.getItem(draftKey(workflowId))
     if (!raw) return null
@@ -54,7 +35,7 @@ function readLegacy(workflowId: string): RunDraftPayload | null {
   }
 }
 
-function clearLegacy(workflowId: string): void {
+function clearTextFallback(workflowId: string): void {
   try {
     localStorage.removeItem(draftKey(workflowId))
   } catch {
@@ -62,7 +43,7 @@ function clearLegacy(workflowId: string): void {
   }
 }
 
-function writeLegacyTextFallback(payload: RunDraftPayload): SaveRunDraftResult {
+function writeTextFallback(payload: RunDraftPayload): SaveRunDraftResult {
   const slim: RunDraftPayload = {
     ...payload,
     images: {},
@@ -130,53 +111,16 @@ function isRunDraftEmpty(inputs: Record<string, string>, images: Record<string, 
   return true
 }
 
-async function migrateLegacyRunIfNeeded(): Promise<void> {
-  if (runMigrationDone) return
-  runMigrationDone = true
-  const keys = listLegacyKeys()
-  if (keys.length === 0) return
-  const idb = getDraftIdb()
-  for (const key of keys) {
-    const workflowId = key.slice(LEGACY_PREFIX.length)
-    if (!workflowId) continue
-    const legacy = readLegacy(workflowId)
-    if (!legacy) {
-      clearLegacy(workflowId)
-      continue
-    }
-    try {
-      const existing = await idb.getRun(workflowId)
-      if (existing) {
-        // Keep newer LS text-fallback for load to prefer (review v2); only drop stale LS.
-        if ((legacy.savedAt || 0) <= existing.record.savedAt) {
-          clearLegacy(workflowId)
-        }
-        continue
-      }
-      const record: RunDraftRecord = {
-        workflowId,
-        savedAt: legacy.savedAt || Date.now(),
-        inputsJson: JSON.stringify(legacy.inputs || {}),
-      }
-      await idb.putRun(record, flattenImages(workflowId, legacy.images || {}))
-      clearLegacy(workflowId)
-    } catch {
-      /* leave legacy key on failure */
-    }
-  }
-}
-
 export async function loadRunDraft(workflowId: string): Promise<RunDraftPayload | null> {
-  await migrateLegacyRunIfNeeded()
-  const legacy = readLegacy(workflowId)
+  const fallback = readTextFallback(workflowId)
   try {
     const packed = await getDraftIdb().getRun(workflowId)
-    if (packed && legacy) {
+    if (packed && fallback) {
       // Prefer newer savedAt so quota-fallback LS fields win over stale IDB (review v2 / F4).
-      if ((legacy.savedAt || 0) > packed.record.savedAt) {
-        return legacy
+      if ((fallback.savedAt || 0) > packed.record.savedAt) {
+        return fallback
       }
-      clearLegacy(workflowId)
+      clearTextFallback(workflowId)
       return draftFromIdbRun(packed)
     }
     if (packed) {
@@ -185,7 +129,7 @@ export async function loadRunDraft(workflowId: string): Promise<RunDraftPayload 
   } catch {
     /* fall through */
   }
-  return legacy
+  return fallback
 }
 
 async function draftFromIdbRun(packed: {
@@ -212,7 +156,7 @@ export async function clearRunDraft(workflowId: string): Promise<void> {
   } catch {
     /* ignore */
   }
-  clearLegacy(workflowId)
+  clearTextFallback(workflowId)
 }
 
 export async function saveRunDraft(
@@ -220,7 +164,6 @@ export async function saveRunDraft(
   inputs: Record<string, string>,
   images: Record<string, ClarifyImage[]>,
 ): Promise<SaveRunDraftResult> {
-  await migrateLegacyRunIfNeeded()
   if (isRunDraftEmpty(inputs, images)) {
     await clearRunDraft(workflowId)
     return 'ok'
@@ -238,10 +181,10 @@ export async function saveRunDraft(
   }
   try {
     await getDraftIdb().putRun(record, flattenImages(workflowId, images))
-    clearLegacy(workflowId)
+    clearTextFallback(workflowId)
     return 'ok'
   } catch (e: unknown) {
-    const fb = writeLegacyTextFallback(payload)
+    const fb = writeTextFallback(payload)
     if (isQuotaError(e)) {
       return fb === 'ok' || fb === 'partial' ? 'quota_exceeded' : fb
     }

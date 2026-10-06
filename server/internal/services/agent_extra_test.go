@@ -15,10 +15,10 @@ func TestAgentServiceCRUD(t *testing.T) {
 		t.Fatal("exists false")
 	}
 
-	if err := s.Save(Agent{Name: "a1", MCP: DefaultPlatformMCP()}); err != nil {
+	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "a1", MCP: DefaultPlatformMCP()}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Save(Agent{Name: "a2"}); err != nil {
+	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "a2"}); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.List(); len(got) != 2 || got[0].Name != "a1" {
@@ -62,8 +62,9 @@ func TestSkillSaveFilesAndWorkDir(t *testing.T) {
 
 	// Save an agent with a working-dir tree; a traversal path is dropped.
 	err := s.Save(Agent{
-		Name: "coder",
-		Env:  map[string]string{"K": "V"},
+		AcpBackend: AcpBackendCursor,
+		Name:       "coder",
+		Env:        map[string]string{"K": "V"},
 		Files: []AgentFile{
 			{Path: "rules/base.md", Content: "base"},
 			{Path: "skills/x/y.md", Content: "nested"},

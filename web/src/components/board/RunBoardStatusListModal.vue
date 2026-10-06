@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import AppModal from '@/components/ui/AppModal.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import PriorityBadge from '@/components/ui/PriorityBadge.vue'
-import { api, type PaginatedResponse } from '@/lib/api/api'
+import { api } from '@/lib/api/api'
 import { fmtDuration } from '@/lib/shared/format'
 import { runBoardTitle, runIdShort } from '@/lib/run/runBoard'
 import type { Run } from '@/lib/shared/types'
@@ -100,24 +100,24 @@ async function fetchPage(nextPage: number, mode: 'initial' | 'more') {
   }
 
   try {
-    const data = (await api.listRuns({
+    const data = await api.listRuns({
       projectId: props.projectId,
       status: props.status,
       page: nextPage,
       pageSize: PAGE_SIZE,
-    })) as PaginatedResponse<Run>
+    })
 
     if (seq !== requestSeq) return
 
-    const batch = data.items || []
+    const batch = data.items
     if (mode === 'initial') {
       items.value = batch
     } else {
       items.value = [...items.value, ...batch]
     }
-    total.value = data.total ?? items.value.length
-    page.value = data.page ?? nextPage
-    hasMore.value = Boolean(data.hasMore)
+    total.value = data.total
+    page.value = data.page
+    hasMore.value = data.hasMore
     loadFailed.value = false
     failKind.value = null
   } catch {

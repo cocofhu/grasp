@@ -137,7 +137,7 @@ func (e *Engine) dropCompletedSandboxEcho(runID, nodeID string, st runtime.Bridg
 
 // latestNormallyCompletedAgentOp reports the newest persisted assistant reply
 // when it finished normally. ok is false when the tail is a human, an
-// interrupt, a handoff-only row, or empty. opID may be empty on older rows.
+// interrupt, a handoff-only row, or empty. opID may be empty.
 func (e *Engine) latestNormallyCompletedAgentOp(runID, nodeID string) (opID string, ok bool) {
 	var conv models.ReactConversation
 	if err := e.db.Where("run_id = ? AND node_id = ?", runID, nodeID).

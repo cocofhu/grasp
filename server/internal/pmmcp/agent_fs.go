@@ -14,24 +14,17 @@ func (h *Host) callAgentFS(projectID, token, name string, args map[string]any) (
 		return map[string]any{"error": "unauthorized"}, true
 	}
 	h.mu.RLock()
-	org := h.org
 	skill := h.skill
 	h.mu.RUnlock()
-	if org == nil || skill == nil {
-		return map[string]any{"error": "org/skill service unavailable"}, true
+	if skill == nil {
+		return map[string]any{"error": "agent service unavailable"}, true
 	}
 
 	switch name {
-	case "pm_get_org":
-		doc, err := org.Get()
-		if err != nil {
-			return map[string]any{"error": "failed to load org: " + err.Error()}, true
-		}
-		allAgents := skill.List()
-		view := services.BuildOrgLeaderView(doc, sess.AgentName, allAgents)
-		return view, false
+	case "pm_list_project_agents":
+		return services.ListProjectAgents(skill.List(), sess.ProjectID, sess.AgentName), false
 
-	case "pm_list_agent_templates", "pm_create_agent_from_template", "pm_set_org_membership", "pm_ensure_child_group":
+	case "pm_list_agent_templates", "pm_create_agent_from_template":
 		return h.callTeamTools(sess, skill, name, args)
 
 	case "pm_fs_list", "pm_fs_read", "pm_fs_write", "pm_fs_delete", "pm_fs_mkdir", "pm_fs_rename",
@@ -40,7 +33,7 @@ func (h *Host) callAgentFS(projectID, token, name string, args map[string]any) (
 		if agentName == "" {
 			return map[string]any{"error": "agentName is required"}, true
 		}
-		if errMsg, deny := h.authorizeAgentFSTarget(sess, skill, org, agentName); deny {
+		if errMsg, deny := h.authorizeAgentFSTarget(sess, skill, agentName); deny {
 			return map[string]any{"error": errMsg}, true
 		}
 		path := platformmcp.StrArg(args, "path")
@@ -155,7 +148,7 @@ func (h *Host) workspaceWriteOpts(sess *Session) services.WorkspaceWriteOpts {
 }
 
 // authorizeAgentFSTarget allows PM to manage any agent bound to the same project (incl. self).
-func (h *Host) authorizeAgentFSTarget(sess *Session, skill *services.AgentService, _ *services.OrgService, target string) (errMsg string, deny bool) {
+func (h *Host) authorizeAgentFSTarget(sess *Session, skill *services.AgentService, target string) (errMsg string, deny bool) {
 	if strings.TrimSpace(sess.AgentName) == "" {
 		return "pm leader not bound", true
 	}
@@ -164,7 +157,7 @@ func (h *Host) authorizeAgentFSTarget(sess *Session, skill *services.AgentServic
 		return "agent not found: " + target, true
 	}
 	if !services.AgentProjectMatches(ag, sess.ProjectID) {
-		return "agent not in project / not home-project bound: " + target, true
+		return "agent not in project: " + target, true
 	}
 	return "", false
 }

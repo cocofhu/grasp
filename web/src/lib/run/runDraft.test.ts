@@ -7,7 +7,6 @@ import {
   type DraftIdbBackend,
 } from './draftIdb'
 import {
-  __resetRunDraftMigrationForTests,
   clearRunDraft,
   loadRunDraft,
   mergeRunDraft,
@@ -32,7 +31,6 @@ describe('runDraft (IndexedDB)', () => {
     store = {}
     backend = createMemoryDraftIdb()
     __setDraftIdbBackendForTests(backend)
-    __resetRunDraftMigrationForTests()
     vi.stubGlobal('localStorage', {
       getItem: (k: string) => store[k] ?? null,
       setItem: (k: string, v: string) => {
@@ -50,7 +48,6 @@ describe('runDraft (IndexedDB)', () => {
 
   afterEach(() => {
     __resetDraftIdbForTests()
-    __resetRunDraftMigrationForTests()
     vi.unstubAllGlobals()
   })
 
@@ -86,7 +83,7 @@ describe('runDraft (IndexedDB)', () => {
     expect(images.p).toEqual([])
   })
 
-  it('silently degrades when stored legacy JSON is corrupt', async () => {
+  it('silently degrades when the text fallback JSON is corrupt', async () => {
     store[`run-draft:${WF}`] = '{not json'
     const { inputs, restored } = await mergeRunDraft(WF, seed().inputs, seed().images, seed().keys)
     expect(restored).toBe(false)
@@ -109,19 +106,6 @@ describe('runDraft (IndexedDB)', () => {
     await saveRunDraft(WF, { a: 'x' }, {})
     await clearRunDraft(WF)
     expect(await loadRunDraft(WF)).toBeNull()
-  })
-
-  it('migrates legacy run-draft:* keys then deletes them (plan g2.1)', async () => {
-    store[`run-draft:${WF}`] = JSON.stringify({
-      workflowId: WF,
-      savedAt: 1,
-      inputs: { a: 'from-ls' },
-      images: { p: [{ data: btoa('pic'), mimeType: 'image/png' }] },
-    })
-    const draft = await loadRunDraft(WF)
-    expect(draft?.inputs.a).toBe('from-ls')
-    expect(draft?.images.p).toHaveLength(1)
-    expect(store[`run-draft:${WF}`]).toBeUndefined()
   })
 
   it('falls back to text when IDB quota exceeded (plan g1.3)', async () => {
@@ -185,7 +169,6 @@ describe('runDraft (IndexedDB)', () => {
       inputs: { a: 'fresh-ls' },
       images: {},
     })
-    __resetRunDraftMigrationForTests()
     const draft = await loadRunDraft(WF)
     expect(draft?.inputs.a).toBe('fresh-ls')
     expect(draft?.images).toEqual({})

@@ -37,22 +37,8 @@ func (e *Engine) hasDownstreamReactGate(c *execCtx, node *models.Node) bool {
 			if gn == nil {
 				continue
 			}
-			switch gn.Type {
-			case "human_gate":
-				if e.gateProducerNodeID(c, gn) == node.ID {
-					return true
-				}
-			case "proposal_select":
-				// Prefer the artifact's recorded producer when it already exists;
-				// while the producer is still running the artifact is missing, so
-				// fall back to "does this node write the select's source artifact?".
-				if e.gateProducerNodeID(c, gn) == node.ID {
-					return true
-				}
-				from := firstNonEmptyStr(str(gn.Config["from"]), mcp.ProposalsArtifactName)
-				if e.nodeProducesArtifact(node, from) {
-					return true
-				}
+			if gn.Type == "human_gate" && e.gateProducerNodeID(c, gn) == node.ID {
+				return true
 			}
 			queue = append(queue, ed.Target)
 		}
@@ -60,43 +46,16 @@ func (e *Engine) hasDownstreamReactGate(c *execCtx, node *models.Node) bool {
 	return false
 }
 
-// nodeProducesArtifact reports whether node declares a product stored under
-// name (binds a still-running producer to a downstream proposal_select before
-// the artifact row exists).
-func (e *Engine) nodeProducesArtifact(node *models.Node, name string) bool {
-	name = strings.TrimSpace(name)
-	if node == nil || name == "" {
-		return false
-	}
-	for _, sc := range nodereg.DeclaredSchemas(node.Caps) {
-		if sc.ArtifactName == name {
-			return true
-		}
-	}
-	return false
-}
-
 // gateProducerNodeID resolves the upstream producer node whose product an
-// approval gate reviews (and whose parked session a ReAct reject edits):
-//   - human_gate: the primary upstream node bound by its body template.
-//   - proposal_select: the node that wrote the upstream proposals.json.
+// approval gate reviews (and whose parked session a ReAct reject edits): the
+// primary upstream node bound by the human_gate body template.
 //
 // Returns "" when it cannot be resolved.
-func (e *Engine) gateProducerNodeID(c *execCtx, gate *models.Node) string {
-	switch gate.Type {
-	case "human_gate":
-		return gatenode.GatePrimaryUpstreamNodeID(gate)
-	case "proposal_select":
-		from := firstNonEmptyStr(str(gate.Config["from"]), mcp.ProposalsArtifactName)
-		var art models.Artifact
-		if err := e.db.Where("run_id = ? AND name = ?", c.run.ID, from).
-			Order("updated_at desc, created_at desc").First(&art).Error; err == nil && art.NodeID != "" {
-			return art.NodeID
-		}
-		return ""
-	default:
+func (e *Engine) gateProducerNodeID(_ *execCtx, gate *models.Node) string {
+	if gate.Type != "human_gate" {
 		return ""
 	}
+	return gatenode.GatePrimaryUpstreamNodeID(gate)
 }
 
 // enterReview seeds a review ReactConversation (agent turn = product summary +
@@ -414,12 +373,6 @@ func (e *Engine) refreshPendingGatesForProducer(c *execCtx, producerID string) {
 		if bt, _ := gateNode.Config["body_template"].(string); strings.TrimSpace(bt) != "" {
 			gate.BodyMd = e.interpolate(c2, bt)
 			logDB(e.db.Save(gate), c.run.ID, "refresh gate body after producer revise")
-		} else if gateNode.Type == "proposal_select" {
-			from := firstNonEmptyStr(str(gateNode.Config["from"]), mcp.ProposalsArtifactName)
-			if s, ok := e.store.Get(c.run.ID, from); ok {
-				gate.BodyMd = mcp.RenderProposalsMarkdown(s)
-				logDB(e.db.Save(gate), c.run.ID, "refresh proposal_select body after producer revise")
-			}
 		}
 		e.broker.Publish(c.run.ID, jsonMsg("artifact_edit", c.run.ID, gate.NodeID))
 	}

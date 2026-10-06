@@ -80,7 +80,7 @@ describe('round-trip', () => {
     expect(serializeStatusQuery(parsed)).toBe('running,failed,cancelled')
   })
 
-  it('single-value legacy URL remains valid', () => {
+  it('single-value URL remains valid', () => {
     expect(parseStatusQuery('running')).toEqual(['running'])
     expect(serializeStatusQuery(['running'])).toBe('running')
   })

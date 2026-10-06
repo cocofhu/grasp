@@ -7,8 +7,7 @@ import (
 
 // ProjectMemoryItem is one long-term memory entry scoped to a project + agent.
 // Human edits/clears go through Agent Studio (any authenticated user);
-// project-level /pm/memories write APIs remain platform-admin only (legacy).
-// Agents may write via memory-store MCP (source=agent).
+// agents write via memory-store MCP (source=agent).
 type ProjectMemoryItem struct {
 	ID        string `gorm:"primaryKey" json:"id"`
 	ProjectID string `gorm:"index;uniqueIndex:idx_pm_mem_proj_agent_title" json:"projectId"`
@@ -56,7 +55,7 @@ type ChatMessage struct {
 	ThreadID string `gorm:"index" json:"threadId"`
 	Role     string `json:"role"` // user | assistant | system
 	Content  string `json:"content"`
-	// Status is the turn outcome for this message. Empty/legacy rows are treated as "ok".
+	// Status is the turn outcome for this message. Empty is treated as "ok".
 	// user messages may be "failed" when the assistant side never produced a valid reply.
 	Status string `json:"status,omitempty"` // ok | failed
 	// FailKind classifies why a turn failed (only when Status=failed).
@@ -69,13 +68,13 @@ type ChatMessage struct {
 	Citations       []ProgressCitation `gorm:"serializer:json" json:"citations,omitempty"`
 	AttachedContext *AttachedContext   `gorm:"serializer:json" json:"attachedContext,omitempty"`
 	// Usage is the assistant turn's token accounting from prompt_done (components
-	// summed across model buckets). nil / absent = not reported / pre-feature
-	// history (not backfilled); non-nil (incl. all zeros) = explicitly reported.
+	// summed across model buckets). nil / absent = not reported; non-nil
+	// (incl. all zeros) = explicitly reported.
 	// Only assistant messages from successful PM turns carry this; Stdio never
 	// writes here.
 	Usage *TokenUsage `gorm:"serializer:json" json:"usage,omitempty"`
 	// UsageByModel is the per-model breakdown after ingest weak-key merge /
-	// ACP_BRIDGE_MODEL backfill. nil with non-nil Usage → readers map to
+	// ACP_BRIDGE_MODEL fill. Usage not covered by a bucket is ledgered as
 	// 「未知/未分桶」. Stdio never writes here.
 	UsageByModel TokenUsageByModel `gorm:"serializer:json" json:"usageByModel,omitempty"`
 	CreatedAt    time.Time         `json:"createdAt"`
@@ -163,8 +162,8 @@ type ChannelConfig struct {
 	// At most one channel per Agent (enforced in service + partial unique index).
 	AgentName string `gorm:"index" json:"agentName"`
 	// IsPrimary marks the project's primary channel (at most one per project).
-	// Compatible with Project.PmLeader for Web/gate paths; secondary channels
-	// have equal channel capabilities.
+	// Its agent mirrors Project.PmLeaderAgent for Web/gate paths; secondary
+	// channels have equal channel capabilities.
 	IsPrimary bool `gorm:"index" json:"isPrimary"`
 	// EnabledMcps lists platform PM role MCP ids for channel turns only
 	// (pm-progress / pm-workflow-read / pm-workflow-write / pm-agent-fs / pm-prd-manager).

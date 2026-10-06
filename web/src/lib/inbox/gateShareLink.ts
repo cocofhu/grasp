@@ -1,11 +1,5 @@
 import type { LiveCtx, LiveEvent } from '@/lib/inbox/liveVariants'
 import type { AgentPart, Artifact, ClarifyImage, ClarifyInboxItem, GateInboxItem, GateShareInboxStatus, InboxItem, ReactForm, ReactQuestion } from '@/lib/shared/types'
-import {
-  GRASP_STORAGE_KEYS,
-  LEGACY_STORAGE_KEYS,
-  migrateSessionStorageKey,
-  migrateSessionStoragePrefix,
-} from '@/lib/shared/migrateBrandStorage'
 import type { EmbedTicket } from '@/lib/inbox/embedChat'
 import type { AgentInteraction } from '@/lib/api/apiTypes'
 
@@ -16,13 +10,6 @@ export const DEFAULT_GATE_SHARE_TTL: GateShareTTLTier = '24h'
 export const GATE_SHARE_PERMISSION_PRESETS = ['full', 'react_only'] as const
 export type GateSharePermissionPreset = (typeof GATE_SHARE_PERMISSION_PRESETS)[number]
 export const DEFAULT_GATE_SHARE_PERMISSION: GateSharePermissionPreset = 'full'
-
-/** Normalize API / stored preset; empty/unknown ⇒ full (legacy compatible). */
-export function normalizePermissionPreset(
-  raw?: string | null,
-): GateSharePermissionPreset {
-  return raw === 'react_only' ? 'react_only' : 'full'
-}
 
 const GATE_SHARE_TOKEN_HEADER = 'X-Gate-Share-Token'
 const GATE_SHARE_REQUEST_HEADER = 'X-Gate-Share-Requested'
@@ -69,12 +56,7 @@ function publicShareHeaders(token?: string, json = false): Record<string, string
   return headers
 }
 
-const SHARE_URL_STORAGE_PREFIX = GRASP_STORAGE_KEYS.gateShareUrlPrefix
-
-migrateSessionStoragePrefix(
-  LEGACY_STORAGE_KEYS.gateShareUrlPrefix,
-  SHARE_URL_STORAGE_PREFIX,
-)
+const SHARE_URL_STORAGE_PREFIX = 'grasp.gateShareUrl.'
 
 /** In-memory cache plus sessionStorage so refresh can copy the same active URL. */
 const shareUrlMemory = new Map<string, string>()
@@ -103,10 +85,7 @@ export function recallShareUrl(runId: string, nodeId: string, iteration?: number
   const mem = shareUrlMemory.get(shareMemoryKey(runId, nodeId, iteration))
   if (mem) return mem
   try {
-    const key = storageKey(runId, nodeId, iteration)
-    const legacy = LEGACY_STORAGE_KEYS.gateShareUrlPrefix + shareMemoryKey(runId, nodeId, iteration)
-    migrateSessionStorageKey(legacy, key)
-    return sessionStorage.getItem(key) || ''
+    return sessionStorage.getItem(storageKey(runId, nodeId, iteration)) || ''
   } catch {
     return ''
   }
@@ -319,8 +298,8 @@ export type PublicGatePreview = {
   description?: string
   remainingSec?: number
   expiresAt?: string
-  /** Link-level capability: full | react_only. Absent/empty ⇒ full. */
-  permissionPreset?: 'full' | 'react_only' | string
+  /** Link-level capability; absent only when no link matched the token. */
+  permissionPreset?: GateSharePermissionPreset
   actions?: { approve?: string; reject?: string; confirm?: string; reply?: string; cancel?: string }
   visualHtml?: string
   /** Content hash for sparse silent poll; always present when server computed it. */
@@ -376,7 +355,7 @@ export type PublicGateLiveEvent = {
 export type PublicPreviewPort = {
   port: number
   label?: string
-  kind?: 'port' | 'url' | string
+  kind: 'port' | 'url' | string
   url?: string
   /** vnc = remote+pick; api = same-origin iframe (no pick). */
   mode?: 'vnc' | 'api' | 'url' | string

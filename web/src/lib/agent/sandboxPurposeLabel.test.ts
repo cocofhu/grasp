@@ -7,14 +7,12 @@ import enPages from '@/locales/en/pages.json'
 import { sandboxPurposeLabelKey, sandboxSourceTextKey } from './sandboxPurposeLabel'
 
 describe('sandboxPurposeLabel', () => {
-  it('maps agent and pm to Project Management keys, test to chat-test, run separate', () => {
-    expect(sandboxPurposeLabelKey('agent')).toBe('pages.sandboxes.purpose.pm')
-    expect(sandboxPurposeLabelKey('pm')).toBe('pages.sandboxes.purpose.pm')
+  it('maps agent to Project Management keys, test to chat-test, run separate', () => {
+    expect(sandboxPurposeLabelKey('agent')).toBe('pages.sandboxes.purpose.agent')
     expect(sandboxPurposeLabelKey('test')).toBe('pages.sandboxes.purpose.test')
     expect(sandboxPurposeLabelKey('run')).toBe('pages.sandboxes.purpose.run')
 
     expect(sandboxSourceTextKey('agent')).toBe('pages.sandboxes.source.pmConsult')
-    expect(sandboxSourceTextKey('pm')).toBe('pages.sandboxes.source.pmConsult')
     expect(sandboxSourceTextKey('test')).toBe('pages.sandboxes.source.chatTest')
     expect(sandboxSourceTextKey('run')).toBeNull()
   })
@@ -32,14 +30,13 @@ describe('sandboxPurposeLabel', () => {
     })
 
     expect(zh.global.t(sandboxPurposeLabelKey('agent'))).toBe('项目管理')
-    expect(zh.global.t(sandboxPurposeLabelKey('pm'))).toBe('项目管理')
     expect(zh.global.t(sandboxPurposeLabelKey('test'))).toBe('测试')
     expect(zh.global.t(sandboxSourceTextKey('agent')!)).toBe('项目管理咨询')
     expect(zh.global.t(sandboxSourceTextKey('test')!)).toBe('对话测试')
 
     expect(en.global.t(sandboxPurposeLabelKey('agent'))).toBe('Project Management')
     expect(en.global.t(sandboxPurposeLabelKey('test'))).toBe('Test')
-    expect(en.global.t(sandboxSourceTextKey('pm')!)).toBe('Project Management consult')
+    expect(en.global.t(sandboxSourceTextKey('agent')!)).toBe('Project Management consult')
     expect(en.global.t(sandboxSourceTextKey('test')!)).toBe('Chat test')
 
     expect(zh.global.t(sandboxPurposeLabelKey('agent'))).not.toMatch(/\bPM\b/)

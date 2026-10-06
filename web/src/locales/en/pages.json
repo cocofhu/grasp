@@ -388,8 +388,8 @@
       "close": "Close",
       "cta": "Finish install setup",
       "emptyTitle": "Finish first-time setup",
-      "emptyDesc": "Configure the model backend, API key and Git, create the Clarify / Implement / Test & review Agents, and publish the Default Workflow. Does not start a run.",
-      "emptyDescCreate": "Configure the model backend, API key and Git, create this project's three Agents (prefixed with the project name), and publish the Default Workflow. Does not start a run.",
+      "emptyDesc": "Configure the model backend, API key and Git, create the Clarify / Implement / Test & review / Deliver Agents, and publish the Default Workflow. Does not start a run.",
+      "emptyDescCreate": "Configure the model backend, API key and Git, create this project's four Agents (prefixed with the project name), and publish the Default Workflow. Does not start a run.",
       "workflowName": "Default Workflow",
       "steps": {
         "prefs": "Preferences",
@@ -481,19 +481,20 @@
         "gitlabToken": "GitLab access token",
         "gitlabUrl": "GitLab address",
         "sshKey": "SSH private key",
-        "knownHosts": "Trusted hosts (optional)"
+        "knownHosts": "Trusted hosts (optional)",
+        "sshSavedToCredentials": "The SSH private key and trusted hosts will be saved to the project credentials."
       },
       "team": {
-        "meta": "Three Agents form the Clarify → Implement → Test & review workflow; rename them or pick a model.",
+        "meta": "Four Agents form the default workflow; rename them or pick a model.",
         "loading": "Loading template capabilities…",
         "loadError": "Could not load template capabilities. You can still create the default team.",
         "retry": "Retry",
         "required": "Required",
         "optional": "Optional",
-        "interactionClarify": "Multi-turn clarification",
-        "interactionAuto": "Runs automatically",
-        "review": "Human review after run",
-        "preview": "Can start an app preview",
+        "interactionClarify": "Multi-turn chat",
+        "interactionAuto": "Runs on its own",
+        "review": "Human review",
+        "preview": "App preview",
         "noPreview": "No preview",
         "writes": "Writes",
         "nameLabel": "Name",
@@ -511,15 +512,19 @@
         "templates": {
           "clarify": {
             "title": "Clarify",
-            "desc": "Clarifies the requirement with you and writes the plan; finds the root cause of bugs."
+            "desc": "Clarifies the need with you and writes the plan."
           },
           "implement": {
             "title": "Implement",
-            "desc": "Implements the plan, tests locally, then commits, pushes and opens an MR."
+            "desc": "Implements and tests the plan, pushes the branch."
           },
           "test_review": {
             "title": "Test & review",
-            "desc": "Runs the tests and reviews the code; sends the work back unless both pass."
+            "desc": "Runs tests and reviews code; both must pass."
+          },
+          "deliver": {
+            "title": "Deliver",
+            "desc": "Merges the target branch in, then opens or reuses the MR/PR."
           }
         },
         "schemaNames": {
@@ -527,16 +532,16 @@
           "plan": "Plan",
           "research": "Research",
           "root_cause": "Root cause",
-          "proposals": "Proposals",
           "page": "Page",
           "implementation_result": "Implementation result",
           "test_result": "Test result",
-          "review": "Review verdict"
+          "review": "Review verdict",
+          "merge_request": "Merge request"
         },
         "stage": "Stage {n}",
         "listSep": ", ",
         "moreWrites": "+{n} optional",
-        "offNote": "Not created; the workflow ends after Implement."
+        "offNote": "Not created; the workflow skips this step."
       },
       "workflow": {
         "meta": "Generating publishes this Default Workflow; you can keep editing it in the editor afterwards.",
@@ -545,7 +550,7 @@
         "pass": "Pass",
         "fail": "Fail",
         "failLoop": "When Test & review fails, the work goes back to Implement (up to 3 times).",
-        "noReview": "Test & review is not selected: the workflow ends after Implement.",
+        "noReview": "Test & review is not selected: the workflow moves on right after Implement.",
         "summary": "Will write",
         "keyOn": "Set",
         "repoSkip": "Filled at run start",
@@ -879,16 +884,13 @@
         "settingsTitle": "Project Management settings",
         "enable": "Enable Project Management",
         "enablePermissionHint": "Any signed-in user may enable, rebind, or disable",
-        "aclMemoryNote": "Manage memories in the bound Agent Studio under Data → Memory; any signed-in user may edit.",
-        "goStudioMemory": "Go to Agent Studio",
-        "memoryMigratedTitle": "Legacy “Project memory” entry removed",
-        "memoryMigratedDesc": "Memory management moved to the bound Agent Studio under Data → Memory. This project page no longer provides a writable memory UI.",
+        "aclMemoryNote": "Manage memories in Agent Studio under Data → Memory; any signed-in user may edit.",
         "enabledMcps": "Project Management MCPs",
         "enabledMcpsHint": "Injected into the consult sandbox when checked. Shared memory/context/scheduler always inject and are not controlled here.",
         "mcpProgress": "Project progress, blockers, risks (read-only)",
         "mcpWorkflowRead": "Same-project workflow read queries (list / graph / versions / runs / pending gates)",
         "mcpWorkflowWrite": "Same-project workflow writes (create / update / publish / start / approve / cancel)",
-        "mcpAgentFs": "Read org + edit self/report Agent workspaces (host-side, not Run sandbox; visible after Studio refresh)",
+        "mcpAgentFs": "List project agents + edit same-project Agent workspaces (host-side, not Run sandbox; visible after Studio refresh)",
         "mcpPrdManager": "Project Management only · list / get / create requirement drafts",
         "gateAutoVar": "Auto-invoke Project Management on gates · switch variable",
         "gateAutoVarPlaceholder": "Project boolean variable name, e.g. pm_auto_gate",
@@ -1002,8 +1004,8 @@
           "statusOn": "On",
           "statusOff": "Off",
           "edit": "Edit",
-          "compatTitle": "Compatibility: ",
-          "compatHint": "Web consult and gates still use Project.PmLeader. Primary defaults to that Agent; secondary expands capacity.",
+          "noteTitle": "Note: ",
+          "noteHint": "Web consult and gates still use Project.PmLeader. Primary defaults to that Agent; secondary expands capacity.",
           "editTitle": "Edit channel",
           "editPrimaryHint": "Primary channel · compatible with PmLeader",
           "editSecondaryHint": "Secondary channel · same capabilities as primary",
@@ -1122,19 +1124,7 @@
         "failInterruptedDesc": "The server restarted while this reply was generating. Retry to run it again.",
         "openSource": "Open source",
         "citationMissing": "Citation target missing or inaccessible",
-        "citationInvalid": "Invalid citation or target does not exist",
-        "memoryTitle": "Project memory",
-        "memoryHint": "Memory management moved to Agent Studio under Data → Memory; any signed-in user may edit. This panel is legacy read-only if still mounted.",
-        "memoryReadonly": "Manage memories in Agent Studio under Data → Memory; the project page no longer provides a writable entry.",
-        "memoryTitlePh": "Title",
-        "memoryContentPh": "Content",
-        "memoryAdd": "Add memory",
-        "memoryTitleRequired": "Title is required",
-        "memoryClear": "Clear all",
-        "memoryClearConfirm": "Clear all shared memory for this project? New chats will not use the old entries.",
-        "memoryCleared": "Project memory cleared",
-        "memoryEmptyTitle": "No project memory yet",
-        "memoryEmptyDesc": "Admins can add entries, or an Agent can persist them via MCP."
+        "citationInvalid": "Invalid citation or target does not exist"
       },
       "externalMcp": {
         "title": "External MCP access",
@@ -1190,10 +1180,6 @@
       "varsHint": "{'${vars.*}'} defaults at launch; not dumped as a whole into sandbox OS env.",
       "envKey": "KEY",
       "envValue": "value",
-      "envEnabled": "Enabled",
-      "envOn": "On",
-      "envOff": "Off",
-      "envEnabledAria": "Enable env var {key}",
       "envEmptyTitle": "No sandbox env yet",
       "envEmptyDesc": "Add KEY/VALUE rows to write into node Spec.Env. Secret values are masked on read.",
       "varsEmptyTitle": "No workflow variables yet",
@@ -1201,8 +1187,6 @@
       "sharedAgent": {
         "extendHint": "Project Runs and Agent Studio Chat test extend this shared config first, then the chosen Agent overlays same-named keys (Agent wins).",
         "discard": "Discard",
-        "defaultProjectId": "Default project ID",
-        "defaultProjectIdDesc": "Stored as defaultProjectId; may fill in when an Agent has no home project.",
         "testTab": "Chat test",
         "pickAgent": "Pick Agent",
         "pickAgentPlaceholder": "Select an Agent to overlay",
@@ -1214,7 +1198,6 @@
         "eyebrow": "SECURITY CREDENTIALS",
         "title": "Project credentials",
         "subtitle": "Manage credentials once at project scope for Agents and Runs. Read responses contain only status or a masked value, never plaintext.",
-        "envFallbackHint": "Environment variables remain available for compatibility, but configure and rotate credentials here first.",
         "modelApiKeyTitle": "Model provider API Key",
         "modelApiKeySubtitle": "Stored only in this project and never written to logs or artifacts. Configure the provider, model, and endpoint once for project Agents and Runs.",
         "apiKeyLabel": "API Key",
@@ -1232,7 +1215,6 @@
         "namePlaceholder": "e.g. OpenAI API Key",
         "providerPlaceholder": "e.g. openai, github",
         "targetPlaceholder": "e.g. model-provider / repo",
-        "fallbackPlaceholder": "Leave empty to disable compatibility fallback",
         "writeOnly": "WRITE ONLY",
         "summary": {
           "total": "Credential slots",
@@ -1267,7 +1249,6 @@
         "provider": "Provider",
         "target": "Target",
         "envKey": "Environment key (optional)",
-        "fallbackEnvKey": "Fallback environment key (explicit only)",
         "value": "Credential value",
         "configured": "Configured",
         "notConfigured": "Not configured",
@@ -1323,7 +1304,6 @@
       },
       "publishFailed": "Publish failed:",
       "hiddenFromHome": "This workflow has unpublished changes and is hidden from Home until you publish it.",
-      "rollbackFailed": "Rollback failed; try again",
       "runDraftHint": " · saves draft before start",
       "singleInputOnly": "A workflow may have only one input node",
       "duplicateSuccessEdge": "This node already has an unconditional success edge; the workflow takes only one path. To split, add a condition on the edge or use a branch node.",
@@ -1355,22 +1335,7 @@
         "nodeList": "Node list"
       },
       "publish": {
-        "title": "Publish workflow · {name}",
-        "toolbar": "Publish v{version}",
-        "published": "Published v{version}",
-        "frozen": "This version is frozen as an immutable snapshot",
-        "current": "Current v{version}",
-        "next": "New v{version}",
-        "body": "Publishing saves the draft and freezes the graph as immutable v{version}. Existing runs stay on their pinned versions.",
-        "dirtyWarning": "You have unsaved changes; they will be saved as part of publish."
-      },
-      "versions": {
-        "title": "Version history",
-        "intro": "Each publish freezes an immutable snapshot. Rollback loads that graph as the current draft; publish again to create a new version.",
-        "empty": "No published versions yet",
-        "version": "Version {n}",
-        "current": "Current",
-        "publishedAt": "Published {time}"
+        "title": "Publish workflow · {name}"
       },
       "canvas": {
         "emptyTitle": "Drag nodes from the left",
@@ -1426,12 +1391,11 @@
         "nodeName": "Node name",
         "noAgents": "No agents yet — create one in Agent Studio",
         "emptyAgent": "(empty · no Agent)",
-        "agentProfileHint": "List is filtered to this workflow's project; unbound and other-project Agents are hidden. Empty is allowed.",
+        "agentProfileHint": "List is filtered to this workflow's project; agents from other projects are hidden. Empty is allowed.",
         "staleBannerTitle": "stale reference",
         "staleBannerBody": "Current Agent profile \"{name}\" is {reason}. Pick a same-project Agent before saving.",
         "staleReasons": {
           "foreign": "not this project",
-          "unbound": "unbound",
           "deleted": "deleted"
         },
         "selectBody": "— Select content to show —",
@@ -1518,7 +1482,6 @@
           "noVars": "No global variables yet — add them on the Input node."
         },
         "outputSources": {
-          "migrationBanner": "Legacy field <code>config.result</code> detected and migrated to <code>config.results = [result]</code>. Save to persist the new field.",
           "emptySelected": "No sources selected — runtime will show \"Workflow complete.\"",
           "emptyAvailable": "Connect upstream nodes first. After linking a branch, test/review gate, or human gate to this output node, mappable structured artifacts will appear in this list.",
           "availableSection": "Available upstream sources",
@@ -1835,19 +1798,19 @@
     "artifacts": {
       "title": "Artifacts",
       "subtitle": "<strong class=\"font-medium text-warn\">Store them in the hills</strong>, <em class=\"not-italic text-n-clarify\">pass them to those who will</em>",
-      "groupsTitle": "Workflow groups",
-      "groupsCount": "· {n} groups",
-      "platformArtifacts": "Platform artifacts",
       "headerSubtitle": "(by run · newest first)",
-      "wfSearchPlaceholder": "Search workflows…",
-      "noMatchingWorkflows": "No matching workflows",
-      "stepGroups": "① Workflow groups",
-      "stepList": "② Artifact list",
-      "stepPreview": "③ Artifact preview"
+      "treeTitle": "Projects",
+      "treeSearchPlaceholder": "Search projects or workflows…",
+      "sessionArtifacts": "Agent session artifacts",
+      "breadcrumbAria": "Current artifact scope",
+      "switchScope": "Switch project",
+      "emptyTitle": "No artifacts yet",
+      "emptyDesc": "Artifacts written by workflow runs and Agent sessions are filed here by project.",
+      "emptySelection": "No artifacts in this scope"
     },
     "integrations": {
       "title": "Integrations",
-      "subtitle": "Built-in MCP always available · configure repo/CI credentials in Project credentials first; env remains a compatibility fallback; reference {'${vars.<name>}'}",
+      "subtitle": "Built-in MCP always available · repo/CI secrets (e.g. GITLAB_TOKEN) can only be configured in Project credentials; env values can reference {'${vars.<name>}'}",
       "sectionTitle": "Built-in MCP · run-scoped injection",
       "noConfigNeeded": "No setup required",
       "alwaysAvailable": "Always available"
@@ -1962,7 +1925,7 @@
       "purpose": {
         "run": "Run",
         "test": "Test",
-        "pm": "Project Management"
+        "agent": "Project Management"
       },
       "status": {
         "busy": "In chat",
@@ -2070,7 +2033,7 @@
       "errorPrefix": "Error:",
       "empty": "No agents yet. Use \"Create Agent team\" for a full roster, or \"New Agent\" for a single one.",
       "emptyTeamTitle": "Launch a full team from one entry",
-      "emptyTeamDesc": "After you fill project background and runtime config, a sandbox creates the project, root group, PM, and 9 engineers with virtual groups.",
+      "emptyTeamDesc": "After you fill project background and runtime config, a sandbox creates the project, PM, and 4 engineers.",
       "emptyTeamCta": "Create Agent team",
       "emptyTeamOrSingle": "or create a single Agent",
       "emptyProjectTitle": "No agents in this project yet",
@@ -2092,25 +2055,15 @@
         "collapse": "Collapse agent list",
         "expand": "Expand agent list"
       },
-      "org": {
-        "ungrouped": "Ungrouped",
-        "multiGroup": "Multi",
-        "reportsTo": "Reports to: {name}",
-        "newRootGroup": "New root group",
+      "tree": {
         "newTeam": "Create Agent team",
-        "newChildGroup": "New subgroup",
-        "renameGroup": "Rename group",
-        "groupNameLabel": "Group name",
-        "groupNamePlaceholder": "e.g. Engineering",
-        "deleteGroupTitle": "Delete virtual group",
-        "deleteGroupMessage": "Delete group \"{name}\"? Subgroups promote to its parent; members move to the parent or become ungrouped.",
-        "groupCycle": "Cannot move a group into itself or its descendants (cycle)",
-        "reportingCycle": "Cannot set that parent: it would create a reporting cycle",
-        "removeFromGroup": "Remove from group",
-        "removeFromGroupToast": "Removed from group and saved · entity kept",
+        "title": "Project agents",
+        "searchPlaceholder": "Search projects or agents",
+        "empty": "No projects yet. Create a project first.",
+        "createAgentHere": "New agent in this project",
         "manage": "Manage",
         "manageTitle": "Agent management",
-        "manageIntro": "All agents. Use Rename here to change the identity name; Delete permanently destroys the entity. The org tree only removes from a group.",
+        "manageIntro": "All agents. Use Rename here to change the identity name; Delete permanently destroys the entity.",
         "manageEmpty": "No agents",
         "manageRename": "Rename",
         "manageSearchPlaceholder": "Search agent names",
@@ -2119,51 +2072,9 @@
         "manageNoMatchTitle": "No matching agents",
         "manageNoMatchDesc": "Try a different name keyword.",
         "manageClearSearch": "Clear search",
-        "gotoManage": "Go to Agent management",
         "renameViaManage": "Rename (open management)",
-        "renameBlockedTitle": "Cannot rename here",
-        "renameBlockedMessage": "Agent names cannot be changed here",
-        "renameBlockedBody": "The org-tree pencil is not the Agent identity rename entry.",
-        "renameBlockedHint": "Open Manage → Agent management, then use Rename on the list row.",
         "noSelection": "No agent selected. Pick one from the tree, or open Agent management.",
-        "metaTitle": "Organization",
-        "metaIntro": "Configure this agent's virtual group memberships. Studio display only; does not change Agent profile runtime. Unrelated to the project's Project Management consult channel.",
-        "metaRenameHint": "Rename this agent in Agent management. The identity name is not editable here.",
-        "groupsLabel": "Virtual groups",
-        "groupsMeta": "Multi-select",
-        "groupsHint": "Tiles show name and path (to disambiguate duplicate names). Clearing all puts the agent in Ungrouped.",
-        "noGroups": "No virtual groups yet. Create a root group from the sidebar header.",
-        "parentLabel": "Parent agent",
-        "parentMeta": "Single or none",
-        "parentHint": "Org reporting line (not a Project Management binding). Save validates self-loops and cycles.",
-        "parentNone": "No parent",
-        "assignProject": "Assign project",
-        "assignNewBadge": "NEW",
-        "clearSensitiveConfig": "Clear sensitive config in this group",
-        "clearSensitive": {
-          "title": "Clear sensitive config in this group",
-          "lead": "Group “{name}” and subgroups include {count} agent(s). Select variable names to delete; confirm saves immediately.",
-          "selectAll": "Select all",
-          "selectNone": "Clear selection",
-          "agentCount": "{n} agent(s)",
-          "cancel": "Cancel",
-          "confirm": "Delete and save",
-          "empty": "No sensitive variables to clear in this group",
-          "success": "Removed {keys} variable(s) from {agents} agent(s) and saved",
-          "partialFail": "Processed {cleared} agent(s); failed: {failed}"
-        },
-        "assignTitle": "Assign project · {name}",
-        "assignIntro": "Recursively assign {n} deduped agent(s) including subgroups. Existing projects only; unbind is not available here.",
-        "assignMembers": "Members: {list}",
-        "assignSubmit": "Assign",
-        "assignEmpty": "No agents to assign",
-        "assignNoProjects": "No projects available to assign",
-        "assignAlready": "Already this project",
-        "assignCancelled": "Cancelled; bindings unchanged",
-        "assignDraftKept": "Draft project kept; group assign was not run",
-        "assignPartialToast": "Partial success: {ok} ok, {fail} failed",
-        "assignOkToast": "{n} agent(s) bound to {project}",
-        "assignApplying": "Assigning…"
+        "metaRenameHint": "Rename this agent in Agent management. The identity name is not editable here."
       },
       "explorer": {
         "title": "Explorer",
@@ -2254,10 +2165,6 @@
         },
         "agentMcpAlreadyExists": "{name} already exists; no duplicate entry added",
         "agentScopeBadge": "Agent-scoped platform MCP: used in test sandboxes and declared scenes; Project Management consult injects the same endpoints automatically. Independent from artifact-store (run-scoped).",
-        "legacyPmHint": "Legacy name pm-leader detected. Platform split it into memory-store / context-store / task-scheduler; enable Project Management-only tools in project Project Management settings.",
-        "upgradeLegacyPm": "Upgrade to new platform MCPs",
-        "legacyPmUpgraded": "Removed pm-leader and added new platform MCPs",
-        "legacyPmEntryBadge": "Legacy pm-leader entry: upgrade recommended. Runtime filters/expands it — prefer the new names.",
         "pmVarsTitle": "Project Management consult variables",
         "pmScopeTag": "project / Project Management",
         "pmUrl": "Project Management MCP endpoint (consult scenes only)",
@@ -2275,16 +2182,14 @@
         "env": "Environment",
         "addEnv": "+ Add variable",
         "addService": "Add MCP server",
-        "parseError": "Invalid MCP JSON:",
-        "projectRequiredForPlatformMcp": "Bind a primary project in Metadata first to add memory-store / context-store / task-scheduler."
+        "parseError": "Invalid MCP JSON:"
       },
       "env": {
-        "hint": "Ordinary environment variables are injected into the Agent sandbox. Configure ACP / Git credentials in Project credentials first; env vars remain a compatibility fallback. Values support run-scoped and {'${vars.<name>}'} globals.",
-        "backendAuthTitle": "Auth vars for current backend",
-        "backendAuthPreferShared": "Do not add new Tokens on a single Agent",
-        "backendAuthPreferSharedBody": "Keep ACP / Git credentials in Project credentials first. Env rows remain editable as a compatibility fallback; project credentials win for same-named values at runtime.",
-        "backendAuthIntro": "When acpBackend={backend}, add the matching key below (values are not shown in plain text):",
-        "backendAuthMasked": "Saved to agent.json and injected at runtime",
+        "hint": "Ordinary environment variables are injected into the Agent sandbox. Secrets (ACP keys, Git tokens, SSH) can only be configured in Project credentials. Values support run-scoped and {'${vars.<name>}'} globals.",
+        "backendAuthTitle": "Auth credential for current backend",
+        "backendAuthCredentialsBody": "This secret can only be configured in Project credentials and is injected into the sandbox at runtime; env vars must not contain it.",
+        "backendAuthIntro": "When acpBackend={backend}, configure the matching key in Project credentials (values are not shown in plain text):",
+        "backendAuthMasked": "Stored encrypted in project credentials and injected at runtime",
         "regionLabel": "Site",
         "regionPublic": "International (public)",
         "regionInternal": "China (internal)",
@@ -2295,7 +2200,8 @@
         "add": "Add env var",
         "parseError": "Invalid env JSON:",
         "customConfigCallout": "Manage project credentials first. Besides Env keys, advanced auth / params can still go in the backend config file: {path}.",
-        "sshMetaOnly": "Configure SSH credentials in Project credentials first; GIT_SSH_PRIVATE_KEY / GIT_SSH_KNOWN_HOSTS env or meta values remain compatibility fallbacks.",
+        "secretCredentialsOnly": "Secrets (ACP keys, Git tokens, SSH) must be configured in Project credentials; env vars cannot contain this key",
+        "goCredentials": "Open credentials",
         "openSettingsFile": "Open in Files"
       },
       "mcpHelp": {
@@ -2333,8 +2239,8 @@
       },
       "git": {
         "title": "Git connection",
-        "subtitle": "Pick a recommended setup; it can coexist with existing Tokens and SSH meta — runtime is not mutually exclusive.",
-        "choiceHint": "Pick a recommended setup; it can coexist with existing Tokens and SSH meta — runtime is not mutually exclusive.",
+        "subtitle": "Pick a recommended setup; it can coexist with existing Tokens — runtime is not mutually exclusive. Configure SSH in the project Credentials tab.",
+        "choiceHint": "Pick a recommended setup; it can coexist with existing Tokens — runtime is not mutually exclusive. Configure SSH in the project Credentials tab.",
         "openWizard": "Configuration wizard",
         "adjustType": "Adjust type",
         "chooseTitle": "Choose Git credential type",
@@ -2344,7 +2250,7 @@
         "unresolved": "Runtime resolve",
         "runtimeResolve": "Runtime resolve",
         "runtimeResolveHint": "When the repo list uses a recommended variable, this page does not expand per repository; resolution happens at runtime. That is expected, not an error.",
-        "envHint": "Configure GitHub / GitLab tokens or SSH in Project credentials first; GITHUB_TOKEN / GITLAB_TOKEN env vars remain a compatibility fallback. Configure concrete repo URLs in Studio.",
+        "envHint": "GitHub / GitLab tokens and SSH can only be configured in Project credentials; env vars must not contain GITHUB_TOKEN / GITLAB_TOKEN. Configure concrete repo URLs in Studio.",
         "done": "Done",
         "varsHint": "Supports {'${vars.*}'} references",
         "schemeHttps": "HTTPS",
@@ -2428,16 +2334,7 @@
         "regionHintCodebuddyInternal": "copilot.tencent.com",
         "regionHintCodebuddyPublic": "codebuddy.ai",
         "regionHintTraeCn": "docs.trae.cn",
-        "regionHintTraeIntl": "www.trae.ai",
-        "sshTitle": "Git SSH credentials (meta literals)",
-        "sshIntro": "Private key and known_hosts are stored as literals in metadata and file-injected into ~/.ssh at sandbox start. They can coexist with GitHub / GitLab tokens.",
-        "sshNoVars": "{'${vars.*}'} references are not supported. Paste full literals; a whole-string {'${vars.xxx}'} value is rejected.",
-        "sshKnownHosts": "SSH known_hosts",
-        "sshKnownHostsDesc": "Plaintext, multi-line. New lines are appended when the file already exists.",
-        "sshKnownHostsPh": "host.example.com ssh-ed25519 AAAA…",
-        "sshPrivateKey": "SSH private key",
-        "sshPrivateKeyDesc": "Full PEM literal; written to ~/.ssh/id_rsa (mode 600), never concatenated with other PEMs.",
-        "sshPrivateKeyPh": "-----BEGIN OPENSSH PRIVATE KEY-----"
+        "regionHintTraeIntl": "www.trae.ai"
       },
       "openCode": {
         "title": "Model vendor and model",
@@ -2477,10 +2374,9 @@
       "mobile": {
         "back": "Back",
         "switch": "Switch",
-        "switchTitle": "Switch agent / org tree",
-        "switchAria": "Open agent organization tree",
-        "orgSheetTitle": "Agent organization",
-        "orgSheetHint": "Read-only: expand groups and switch agents. No group create or drag reorder. Close via backdrop or the close button.",
+        "switchTitle": "Switch agent / project",
+        "switchAria": "Open project agent list",
+        "sheetTitle": "Project agents",
         "desktopOnlyTitle": "Use on desktop",
         "desktopOnlyDesc": "\"{tab}\" needs a multi-pane workspace. Mobile only shows this guide and does not provide an editing UI.",
         "backToFiles": "Back to Files",
@@ -2505,11 +2401,11 @@
         "createPlaceholder": "Letters / digits / - / _",
         "renameTitle": "Rename agent",
         "renameLabel": "New name",
-        "renameCascadeHint": "Directory, Project Management, organization links, and workflow Agent profile references will be updated together",
+        "renameCascadeHint": "Directory, Project Management, and workflow Agent profile references will be updated together",
         "renameSuccess": "Renamed successfully",
         "renameSuccessWithWorkflows": "Renamed successfully, updated {n} workflow(s)",
         "deleteAgentTitle": "Delete agent",
-        "deleteAgentMessage": "Delete \"{name}\"? This permanently destroys the agent entity and cannot be undone. Organization membership will also be cleared.",
+        "deleteAgentMessage": "Delete \"{name}\"? This permanently destroys the agent entity and cannot be undone.",
         "deleteFolderTitle": "Delete folder",
         "deleteFolderMessage": "Delete folder \"{path}/\" and all contents?",
         "deleteFileTitle": "Delete file",
@@ -2531,12 +2427,17 @@
         "import": "Import",
         "exportSuccess": "Downloaded {name}.zip",
         "importSuccess": "Agent \"{name}\" imported",
-        "folderExportSuccess": "Downloaded {name}.zip",
-        "folderImportSuccess": "Folder imported",
-        "folderSecrets": {
-          "title": "Exporting a folder takes secrets with it",
+        "bundleExportSuccess": "Downloaded {name}.zip",
+        "bundleImportSuccess": "Project agents imported",
+        "bundleSecrets": {
+          "title": "Exporting a project takes secrets with it",
           "body": "The package includes environment variables/secrets. After download it leaves this environment; only share with trusted recipients.",
           "confirm": "Confirm and download"
+        },
+        "pickProject": {
+          "title": "Import into project",
+          "intro": "Choose the project that will own the imported agents.",
+          "confirm": "Choose file"
         },
         "batchConflict": {
           "title": "Duplicate agent names detected",
@@ -2544,9 +2445,9 @@
           "rename": "Rename all",
           "renameDesc": "Create conflicting agents with a name_v2 suffix; do not overwrite existing workspaces",
           "overwrite": "Overwrite all",
-          "overwriteDesc": "Clear target workspaces and remove these agents from other groups here; keep only membership from the import package",
+          "overwriteDesc": "Clear the workspaces of same-name agents and overwrite them with the package contents",
           "cancel": "Cancel entire import",
-          "cancelDesc": "Abort import without creating or changing any agents or groups"
+          "cancelDesc": "Abort import without creating or changing any agents"
         },
         "unsavedExport": {
           "title": "Cannot export",
@@ -2578,9 +2479,7 @@
           "invalidZip": "Invalid ZIP file.",
           "missingAgentJson": "ZIP is missing root agent.json.",
           "invalidName": "Agent name does not match naming rules.",
-          "unrecognized": "Unrecognized ZIP: neither a folder package nor a single-agent export.",
-          "singleAgentOnGroup": "This is a single-agent ZIP. Group import only accepts a folder package; use the top-bar Import instead.",
-          "folderTooLarge": "Folder package exceeds the 64MiB limit.",
+          "unrecognized": "Unrecognized ZIP: neither a project agent bundle nor a single-agent export.",
           "rolledBack": "Import failed and was fully rolled back.",
           "ok": "OK"
         }
@@ -2603,7 +2502,7 @@
         "headSub": "Project background + runtime config → confirm to start sandbox",
         "confirmStart": "Confirm & start sandbox",
         "submitting": "Submitting",
-        "previewLine": "Will create: {root} / {pipe} · {pm} + {n} engineers",
+        "previewLine": "Will create: project {project} · {pm} + {n} engineers",
         "steps": {
           "team": "Team info",
           "acp": "Agent",
@@ -2617,19 +2516,16 @@
           "meta": "Define project and naming first; engineers are provisioned from the reference roster in the sandbox.",
           "projectName": "Project / team name",
           "prefix": "Name prefix",
-          "rootGroup": "Root group name",
-          "workflowGroup": "Workflow subgroup",
-          "workflowGroupHint": "Engineers join this subgroup by default",
           "pmName": "PM Agent name",
           "background": "Project background",
           "backgroundPlaceholder": "Goals, stack, repos, workflow needs… Used as the sandbox team-build prompt.",
-          "backgroundHint": "Like a prompt: injected into the sandbox to generate groups and engineers."
+          "backgroundHint": "Like a prompt: injected into the sandbox to generate the engineer team."
         },
         "acp": {
           "meta": "Used as the default ACP for the PM and engineers. Pick a start path first — same as onboarding and New Agent."
         },
         "git": {
-          "meta": "Optional. Pick GitHub / GitLab / SSH; an existing token preselects the type—you can still change it or skip.",
+          "meta": "Optional. Pick GitHub / GitLab / SSH, or skip; tokens are configured in project credentials.",
           "url": "Repository URL"
         },
         "mcp": {
@@ -2645,14 +2541,12 @@
           "meta": "Written to the PM; engineers inherit by default."
         },
         "review": {
-          "meta": "Creates the project and PM, starts a sandbox, and provisions 9 engineers from the reference roster.",
+          "meta": "Creates the project and PM, starts a sandbox, and provisions 4 engineers from the reference roster.",
           "project": "Project",
-          "root": "Root group",
-          "workflowGroup": "Subgroup",
           "set": "Set",
           "skip": "Skipped (add later)",
           "none": "None",
-          "roster": "Roster: 1 PM + 9 engineers · 10 total",
+          "roster": "Roster: 1 PM + 4 engineers · 5 total",
           "background": "Project background (team prompt)",
           "noArtifactWarn": "Workflow roles usually need artifact-store; it is missing from the MCP list."
         },
@@ -2666,7 +2560,7 @@
         },
         "progress": {
           "title": "Sandbox · {name}",
-          "sub": "Auto-provision: project / org / engineer agents",
+          "sub": "Auto-provision: project / PM / engineer agents",
           "starting": "sandbox starting…",
           "running": "sandbox running",
           "pulling": "Pulling image…",
@@ -2797,7 +2691,7 @@
           "howTo": "How to get it"
         },
         "git": {
-          "meta": "Pick GitHub / GitLab / SSH. An existing token preselects the type; you can still change it or skip, and configure later in Studio."
+          "meta": "Pick GitHub / GitLab / SSH, or skip and configure later in Studio; tokens are configured in project credentials."
         },
         "env": {
           "meta": "Environment variables injected into the sandbox. Region keys are managed by the Agent step; secrets stay in the Agent config."
@@ -2840,9 +2734,10 @@
       },
       "project": {
         "label": "Home project",
-        "hint": "Required for memory-store / context-store / task-scheduler. Switching or clearing purges this Agent's memories, threads, and jobs under the old project.",
-        "unbound": "Unbound",
-        "unboundWarn": "Without a home project only artifact-store is available.",
+        "hint": "Owns memory-store / context-store / task-scheduler data. Switching purges this Agent's memories, threads, and jobs under the old project.",
+        "required": "Select a home project",
+        "placeholder": "Select a project",
+        "noProjects": "No projects yet. Create a project first.",
         "switchTitle": "Switch home project?",
         "switchWarn": "This clears the Agent's data under the old project (not migrated):",
         "switchItemMemory": "Long-term memories",
@@ -2850,29 +2745,12 @@
         "switchItemJobs": "Cron jobs",
         "switchItemPm": "Project Management binding on the old project (if this Agent) will be disabled",
         "switchApplyHint": "Applied to the draft; takes effect when you save the Agent.",
-        "switchConfirm": "Switch to {name}",
-        "unbindConfirm": "Unbind and clear",
-        "assignCoverTitle": "Switch home project?",
-        "assignCoverLead": "This overwrites {n} agent(s) already bound to another project (takes effect immediately, not via draft save).",
-        "assignCoverWarn": "This clears those agents' data under the old project (not migrated):",
-        "assignCoverCross": "Home project is on the Agent; the same Agent will change in other groups too.",
-        "assignCoverAffected": "Affected this time: {list}.",
-        "assignImmediateHint": "Group assign takes effect immediately, not via draft save.",
-        "assignDraftTitle": "Draft home project conflict",
-        "assignDraftBody": "The Agent you are editing, \"{name}\", already changed its draft home project ({draft}) and has not been saved. Group assign will overwrite the draft to {target}.",
-        "assignDraftKeep": "Keep draft",
-        "assignDraftOverwrite": "Overwrite draft and assign",
-        "assignFailTitle": "Partial success",
-        "assignFailSummary": "{ok} ok · {fail} failed",
-        "assignFailHint": "Brackets refresh from actual bindings after completion; success is not assumed."
+        "switchConfirm": "Switch to {name}"
       },
       "data": {
         "title": "Agent data",
         "hint": "Data belongs to home project \"{project}\". Manage memories, threads, and jobs here.",
-        "unsavedBinding": "Home project binding is unsaved; the data panel still uses the saved binding.",
-        "emptyTitle": "No home project",
-        "emptyDesc": "Please bind a home project under Metadata on desktop before managing memories, threads, or jobs.",
-        "goBind": "Bind home project",
+        "unsavedBinding": "Home project change is unsaved; the data panel still uses the saved project.",
         "tabs": {
           "memory": "Memory",
           "context": "Context",
@@ -3082,14 +2960,14 @@
           "get_research": "Read research",
           "set_root_cause": "Write root cause",
           "get_root_cause": "Read root cause",
-          "set_proposals": "Write proposals",
-          "get_proposals": "Read proposals",
           "set_test_result": "Write test result",
           "get_test_result": "Read test result",
           "set_review": "Write review",
           "get_review": "Read review",
           "set_implementation_result": "Write implementation result",
           "get_implementation_result": "Read implementation result",
+          "set_merge_request": "Write merge request",
+          "get_merge_request": "Read merge request",
           "set_preflight": "Write preflight",
           "get_preflight": "Read preflight",
           "ask_question": "Ask you",
@@ -3294,7 +3172,6 @@
       "reactRevise": {
         "title": "ReAct reject & revise (no sandbox restart)",
         "placeholder": "Describe what to change (attach images optional); sent to the upstream producer to edit its product in place…",
-        "placeholderProposals": "Explain how the proposals should change (images optional); sent upstream to rewrite the candidates in place…",
         "send": "Reject & revise",
         "sending": "Sending…",
         "failed": "ReAct revise failed",
@@ -3356,9 +3233,6 @@
       "structForm": "Form",
       "structJson": "Raw JSON",
       "formSubsetHint": "Form covers a savable field subset; use Raw JSON for the full document. Save runs the same validation as Agent writes.",
-      "proposalsFormUnsupportedTitle": "Form mode is not applicable for this artifact",
-      "proposalsFormUnsupportedBody": "proposals.json uses context + proposals[] and has no top-level title / summary. Switch to Raw JSON to edit the real content, then save.",
-      "proposalsFormSaveBlocked": "Cannot save proposals.json in Form mode: this artifact has no top-level title/summary. Switch to Raw JSON before saving.",
       "discardSwitchConfirm": "This artifact has unsaved changes. Switch and discard the draft?",
       "discardConfirmApprove": "You have unsaved edit drafts. OK discards them and runs {label}; Cancel returns to editing. (Approve does not auto-save the draft.)",
       "discardConfirmRevise": "You have unsaved edit drafts. OK discards them and runs {label} (revise to Agent); Cancel returns to editing.",
@@ -3557,7 +3431,6 @@
       "waitingAnswer": "Waiting for the model…",
       "noReply": "No text reply this turn",
       "turnFailed": "Turn failed",
-      "legacy": "This execution ran before prompts were recorded (older run); only replies are shown",
       "execError": "Execution failed",
       "locate": "View in timeline",
       "turns": "{n} turns",
@@ -3792,27 +3665,6 @@
         "pending": "Pending"
       }
     },
-    "proposalSelect": {
-      "title": "Select proposal",
-      "titleReadonly": "Proposal details",
-      "subtitle": "{n} candidates · pick one as the final proposal",
-      "subtitleSingle": "Single candidate · no selection needed",
-      "subtitleEmpty": "No candidates",
-      "context": "Context",
-      "prev": "Previous",
-      "next": "Next",
-      "recommended": "Recommended",
-      "selected": "Selected",
-      "effort": "Effort {level}",
-      "risk": "Risk {level}",
-      "tradeoffs": "Tradeoffs:",
-      "pickThis": "Select this proposal",
-      "level": {
-        "low": "Low",
-        "medium": "Medium",
-        "high": "High"
-      }
-    },
     "artifactList": {
       "platform": "Platform artifacts",
       "run": "Run artifacts",
@@ -3938,6 +3790,20 @@
         "tests": "Tests",
         "breakingChanges": "Breaking changes",
         "followUps": "Follow-ups"
+      },
+      "mergeRequest": {
+        "items": "Merge requests · {n} repos",
+        "states": {
+          "created": "Created",
+          "reused": "Reused",
+          "merged": "Merged",
+          "unsupported": "Unsupported"
+        },
+        "open": {
+          "github": "Open PR",
+          "gitlab": "Open MR",
+          "other": "Open link"
+        }
       },
       "feedback": {
         "total": "{n} rounds of human feedback",
@@ -4076,10 +3942,6 @@
       "destroyTitle": "End and destroy sandbox",
       "destroyWarning": "Cannot be undone: ends this test and deletes the sandbox container and workspace.",
       "destroyConfirm": "End and destroy this test sandbox?",
-      "projectRequired": {
-        "title": "No home project: scheduled tasks unavailable",
-        "desc": "Bind a primary project under Metadata first. Tests can still start (artifact-store only) without a binding, but read-only task-scheduler is not injected."
-      },
       "toolFallback": "Tool call",
       "tools": {
         "read_file": "Read file",

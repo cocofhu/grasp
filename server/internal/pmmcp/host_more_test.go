@@ -24,7 +24,7 @@ func setupPmMCPHost(t *testing.T) (*gorm.DB, *services.PmService, *Host, models.
 		t.Fatal(err)
 	}
 	ps := services.NewProjectService(db)
-	p, err := ps.Create("MoreMCP", "", nil, nil)
+	p, err := ps.Create("MoreMCP", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestPmMCPServeRPCBranches(t *testing.T) {
 		t.Fatalf("unknown mcp: %d %s", st, body)
 	}
 
-	disabled, err := services.NewProjectService(db).Create("NoMCP", "", nil, nil)
+	disabled, err := services.NewProjectService(db).Create("NoMCP", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +325,7 @@ func TestPmMCPWorkflowToolsWithEngine(t *testing.T) {
 	if st, resp := call(MCPWorkflowRead, "pm_get_workflow", map[string]any{"workflowId": "missing"}); st != 200 || !strings.Contains(string(resp), `"isError":true`) {
 		t.Fatalf("missing wf: %d %s", st, resp)
 	}
-	otherProj, err := services.NewProjectService(db).Create("OtherProj", "", nil, nil)
+	otherProj, err := services.NewProjectService(db).Create("OtherProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +437,7 @@ func TestPmMCPGetArtifactAndReactReply(t *testing.T) {
 		t.Fatalf("oversized limit should clamp to %d: %s", pmGetArtifactMaxLimit, artifactJSON)
 	}
 
-	otherProj, err := services.NewProjectService(db).Create("OtherProjArtifact", "", nil, nil)
+	otherProj, err := services.NewProjectService(db).Create("OtherProjArtifact", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

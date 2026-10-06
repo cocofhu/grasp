@@ -303,17 +303,17 @@ describe('SandboxConsoleView IDE/ACP lazy mount', () => {
     wrapper.unmount()
   })
 
-  it('?tab=acp-native deep link mounts ACP iframe; legacy ?tab=acp does not', async () => {
-    const native = await mountConsole('acp-native')
+  it('?tab=acp deep link mounts ACP iframe; unknown tabs fall back to terminal', async () => {
+    const acp = await mountConsole('acp')
     await flushPromises()
-    expect(native.find('iframe[title="ACP bridge"]').exists()).toBe(true)
-    native.unmount()
+    expect(acp.find('iframe[title="ACP bridge"]').exists()).toBe(true)
+    acp.unmount()
 
-    const legacy = await mountConsole('acp')
+    const unknown = await mountConsole('acp-native')
     await flushPromises()
-    expect(legacy.find('iframe[title="ACP bridge"]').exists()).toBe(false)
-    expect(legacy.find('iframe[title="code-server"]').exists()).toBe(false)
-    legacy.unmount()
+    expect(unknown.find('iframe[title="ACP bridge"]').exists()).toBe(false)
+    expect(unknown.find('iframe[title="code-server"]').exists()).toBe(false)
+    unknown.unmount()
   })
 
   it('syncs IDE/ACP loading copy in zh-CN and en (g1.5)', () => {
@@ -456,7 +456,7 @@ describe('SandboxConsoleView IDE/ACP lazy mount', () => {
 
   it('dismisses the ACP overlay on AgentChat ready and keeps its theme in sync', async () => {
     setTheme('dark')
-    const wrapper = await mountConsole('acp-native')
+    const wrapper = await mountConsole('acp')
     await flushPromises()
     const iframe = wrapper.get('iframe[title="ACP bridge"]').element as HTMLIFrameElement
     expect(iframe.getAttribute('src')).toBe('about:blank#acp#theme=dark')
@@ -491,7 +491,7 @@ describe('SandboxConsoleView IDE/ACP lazy mount', () => {
   })
 
   it('does not flash acp unavailable while meta is pending and only shows it when hasAcp is false (g2.1 g3.2)', async () => {
-    const pending = await mountConsole('acp-native', { holdMeta: true })
+    const pending = await mountConsole('acp', { holdMeta: true })
     expect(acpLayer(pending).exists()).toBe(true)
     expect(pending.find('[data-testid="sandbox-console-acp-unavailable"]').exists()).toBe(false)
     expect(pending.text()).not.toContain('该沙箱未提供 ACP 桥接服务')
@@ -501,7 +501,7 @@ describe('SandboxConsoleView IDE/ACP lazy mount', () => {
     expect(pending.find('iframe[title="ACP bridge"]').exists()).toBe(false)
     pending.unmount()
 
-    const none = await mountConsole('acp-native', { sandbox: { hasAcp: false } })
+    const none = await mountConsole('acp', { sandbox: { hasAcp: false } })
     expect(none.find('[data-testid="sandbox-console-acp-unavailable"]').exists()).toBe(true)
     expect(acpLayer(none).exists()).toBe(false)
     none.unmount()

@@ -10,7 +10,7 @@ import (
 var allNames = []provider.Name{
 	provider.Cursor, provider.ClaudeCode, provider.CodeBuddy, provider.Trae,
 	provider.Kiro, provider.Qoder, provider.Grok, provider.Kimi, provider.Hermes,
-	provider.Codex, provider.ClaudeStream, provider.Gemini, provider.OpenCode,
+	provider.Codex, provider.Gemini, provider.OpenCode,
 	provider.DevEco, provider.Copilot, provider.OpenClaw, provider.Antigravity, provider.Pi,
 }
 
@@ -137,7 +137,7 @@ func indexOfArg(args []string, want string) int {
 // TestClaudeCodeArgsGoldenStrictPlusMcpConfig: headless -p ignores ConfigRoot/mcp.json
 // unless --strict-mcp-config triggers streamjson to attach --mcp-config <root>/mcp.json.
 func TestClaudeCodeArgsGoldenStrictPlusMcpConfig(t *testing.T) {
-	for _, n := range []provider.Name{provider.ClaudeCode, provider.ClaudeStream} {
+	for _, n := range []provider.Name{provider.ClaudeCode} {
 		t.Run(string(n), func(t *testing.T) {
 			args := mustArgsForTest(t, registry[n])
 			if !containsArg(args, "--strict-mcp-config") {

@@ -6,8 +6,6 @@ vi.mock('@/lib/api/api', () => ({
   api: {
     listGates: vi.fn(),
   },
-  isPaginated: (data: unknown): data is { items: unknown[]; total: number } =>
-    data != null && typeof data === 'object' && !Array.isArray(data) && 'items' in data,
 }))
 
 import { api } from '@/lib/api/api'
@@ -55,7 +53,7 @@ describe('usePendingGates', () => {
   it('shares items and count across composable instances', async () => {
     const a = usePendingGates()
     const b = usePendingGates()
-    expect(a.items).toBe(b.items)
+    expect(a.displayedItems).toBe(b.displayedItems)
     expect(a.displayedItems).toBe(b.displayedItems)
     expect(a.count).toBe(b.count)
 
@@ -68,7 +66,7 @@ describe('usePendingGates', () => {
 
   it('updates items and count from listGates on force refresh', async () => {
     vi.mocked(api.listGates).mockResolvedValue(paged([gate('1')], 1))
-    const { items, count, refresh } = usePendingGates()
+    const { displayedItems: items, count, refresh } = usePendingGates()
     await refresh({ mode: 'force' })
     expect(items.value).toHaveLength(1)
     expect(count.value).toBe(1)
@@ -76,7 +74,7 @@ describe('usePendingGates', () => {
 
   it('keeps last known items when refresh fails', async () => {
     vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
-    const { items, count, refresh, error } = usePendingGates()
+    const { displayedItems: items, count, refresh, error } = usePendingGates()
     await refresh({ mode: 'force' })
     expect(count.value).toBe(1)
 

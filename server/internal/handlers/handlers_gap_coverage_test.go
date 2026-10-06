@@ -6,14 +6,11 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/auth"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/services"
 )
 
 type errReader struct{}
@@ -73,7 +70,7 @@ func TestRestoreWorkflowVersionHTTP(t *testing.T) {
 	if w := h.do(http.MethodPost, "/api/workflows/wf-restore/versions/bad/restore", nil); w.Code != http.StatusBadRequest {
 		t.Fatalf("bad version: %d", w.Code)
 	}
-	if w := h.do(http.MethodPost, "/api/workflows/ghost/versions/1/restore", nil); w.Code != http.StatusBadRequest {
+	if w := h.do(http.MethodPost, "/api/workflows/ghost/versions/1/restore", nil); w.Code != http.StatusNotFound {
 		t.Fatalf("missing wf restore: %d", w.Code)
 	}
 }
@@ -209,63 +206,6 @@ func TestSaveGateArtifactBadBody(t *testing.T) {
 	}
 }
 
-func TestPutAgentsOrgHTTPErrors(t *testing.T) {
-	h := newHarness(t)
-	enableAdmin(t)
-	root := t.TempDir()
-	skills := services.NewAgentService(root)
-	h.h.Org = services.NewOrgService(root, skills)
-
-	w := h.do(http.MethodPut, "/api/agents/org", map[string]any{
-		"revision": 0,
-		"groups":   []map[string]any{{"id": "g1", "name": "G"}},
-		"agents":   map[string]any{},
-	})
-	if w.Code != http.StatusOK {
-		t.Fatalf("initial put: %d %s", w.Code, w.Body.String())
-	}
-
-	w = h.do(http.MethodPut, "/api/agents/org", map[string]any{
-		"revision": 0,
-		"groups":   []map[string]any{{"id": "g1", "name": "Stale"}},
-		"agents":   map[string]any{},
-	})
-	if w.Code != http.StatusConflict {
-		t.Fatalf("revision conflict: %d %s", w.Code, w.Body.String())
-	}
-
-	w = h.do(http.MethodPut, "/api/agents/org", map[string]any{
-		"revision": 1,
-		"groups": []map[string]any{
-			{"id": "a", "name": "A", "parentGroupId": "b"},
-			{"id": "b", "name": "B", "parentGroupId": "a"},
-		},
-		"agents": map[string]any{},
-	})
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("validation error: %d %s", w.Code, w.Body.String())
-	}
-
-	w = h.do(http.MethodPut, "/api/agents/org", "bad")
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("bad body: %d", w.Code)
-	}
-}
-
-func TestGetAgentsOrgLoadError(t *testing.T) {
-	h := newHarness(t)
-	root := t.TempDir()
-	skills := services.NewAgentService(root)
-	h.h.Org = services.NewOrgService(root, skills)
-	if err := os.WriteFile(filepath.Join(root, "_org.json"), []byte("{"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	w := h.do(http.MethodGet, "/api/agents/org", nil)
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("corrupt org: %d %s", w.Code, w.Body.String())
-	}
-}
-
 func TestImportAgentValidationBranches(t *testing.T) {
 	h := newHarness(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/agents/import", nil)
@@ -333,12 +273,12 @@ func TestListGatesBareAndArtifactsPaged(t *testing.T) {
 	now := time.Now()
 	h.db.Create(&models.Run{ID: "run-gate-bare", Status: "waiting_human", WorkflowID: "wf-1", StartedAt: now})
 	h.db.Create(&models.Gate{RunID: "run-gate-bare", NodeID: "gate", Title: "G", RequestedAt: now})
-	h.db.Create(&models.Artifact{ID: "art-page", RunID: "run-gate-bare", Name: "a.md", Kind: "markdown", CreatedAt: now})
+	h.db.Create(&models.Artifact{ProjectID: models.DefaultProjectID, ID: "art-page", RunID: "run-gate-bare", Name: "a.md", Kind: "markdown", CreatedAt: now})
 
 	if w := h.do(http.MethodGet, "/api/gates", nil); w.Code != http.StatusOK {
 		t.Fatalf("bare gates: %d %s", w.Code, w.Body.String())
 	}
-	if w := h.do(http.MethodGet, "/api/artifacts?page=1&pageSize=5", nil); w.Code != http.StatusOK {
+	if w := h.do(http.MethodGet, "/api/artifacts?projectId="+models.DefaultProjectID+"&page=1&pageSize=5", nil); w.Code != http.StatusOK {
 		t.Fatalf("paged artifacts: %d %s", w.Code, w.Body.String())
 	}
 }
@@ -475,6 +415,7 @@ func TestImportAgentDefaultMode(t *testing.T) {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	_ = mw.WriteField("targetName", "ImportedDefaultMode")
+	_ = mw.WriteField("projectId", models.DefaultProjectID)
 	fw, _ := mw.CreateFormFile("file", "agent.zip")
 	_, _ = fw.Write(zipBytes)
 	_ = mw.Close()

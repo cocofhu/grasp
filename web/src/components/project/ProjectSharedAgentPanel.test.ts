@@ -29,7 +29,7 @@ vi.mock('@/lib/api/api', async () => {
 
 const sharedCfg = {
   acpBackend: 'cursor',
-  defaultProjectId: 'proj-a',
+  projectId: 'proj-a',
   gitCredentialType: '',
   files: [],
   mcp: [],

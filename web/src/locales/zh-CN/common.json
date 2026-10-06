@@ -68,7 +68,6 @@
       "export": "导出",
       "import": "导入",
       "delete": "删除",
-      "rollback": "回滚",
       "details": "详情",
       "close": "关闭",
       "viewAll": "查看全部 →",
@@ -105,7 +104,6 @@
       "saving": "保存中…",
       "publishing": "发布中…",
       "starting": "启动中…",
-      "rollingBack": "回滚中…",
       "resuming": "续跑中…",
       "destroying": "销毁中…",
       "cleaning": "清理中…"
@@ -172,9 +170,7 @@
       "noMatchingWorkflows": "无匹配工作流",
       "noMatchingAgents": "无匹配 Agent",
       "noArtifacts": "暂无产物",
-      "noArtifactsInGroup": "该分组暂无产物",
       "selectWorkflowGroup": "请在左侧选择工作流分组",
-      "noMatchingGroups": "无匹配分组",
       "noMatchingOptions": "无匹配项",
       "noSandboxes": "暂无沙箱。运行工作流时会按需创建节点沙箱，或前往 Agent Studio「对话测试」启动测试沙箱。",
       "noAgents": "暂无 Agent。点击右上角\"新建 Agent\"创建,或后端首启会落盘默认 Agent。",
@@ -227,11 +223,10 @@
       "clarifiedRequirement": "需求澄清",
       "research": "调研",
       "rootCause": "问题根因",
-      "proposals": "候选方案",
-      "proposal": "已选方案",
       "testResult": "测试结果",
       "review": "评审结论",
       "implementationResult": "实现结果",
+      "mergeRequest": "合并请求",
       "preflight": "环境确认",
       "pagePreview": "网页预览",
       "artifact": "产物",
@@ -271,6 +266,14 @@
       "searchPlaceholder": "搜索项目…",
       "empty": "暂无项目",
       "loadFailed": "项目列表加载失败"
+    },
+    "projectTree": {
+      "searchPlaceholder": "搜索项目…",
+      "clearSearch": "清空搜索",
+      "empty": "暂无项目",
+      "noMatch": "没有匹配「{q}」的项目",
+      "expand": "展开",
+      "collapse": "折叠"
     },
     "tagFilter": {
       "label": "标签",

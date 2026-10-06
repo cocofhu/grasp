@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, nextTick, onBeforeUnmount, watch, provide } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -8,6 +8,7 @@ import StatusPill from '@/components/ui/StatusPill.vue'
 import WorkflowCanvas from '@/components/canvas/WorkflowCanvas.vue'
 import NodePalette from '@/components/canvas/NodePalette.vue'
 import NodeInspector from '@/components/canvas/NodeInspector.vue'
+import WorkflowVersionDrawer from '@/components/canvas/WorkflowVersionDrawer.vue'
 import AppDrawer from '@/components/ui/AppDrawer.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import RunLaunchModal, { type InputField } from '@/components/workflow/RunLaunchModal.vue'
@@ -21,19 +22,18 @@ import { api } from '@/lib/api/api'
 import type { Agent } from '@/lib/api/apiTypes'
 import { useWorkflowImport } from '@/lib/run/useWorkflowImport'
 import { useNodeDefs } from '@/lib/run/useNodeDefs'
-import { cleanOutputConfigForSave, migrateAndCleanOutputNodes } from '@/lib/shared/migrateOutputConfig'
 import { fmtTime } from '@/lib/shared/format'
 import { clearRunDraft, mergeRunDraft, saveRunDraft } from '@/lib/run/runDraft'
 import { useToast } from '@/lib/composables/useToast'
 import { useWorkflowFavorites } from '@/lib/run/useWorkflowFavorites'
 import { workflowGraphError } from '@/lib/workflow/graphValidation'
-import type { ClarifyImage, NodeType, Workflow, WorkflowVersion } from '@/lib/shared/types'
+import type { ClarifyImage, NodeType, WFEdge, WFNode, Workflow } from '@/lib/shared/types'
 import { readStoredProjectId } from '@/lib/composables/useProjectContext'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { CANVAS_EDITOR, useCanvasEditor } from '@/components/canvas/composables/useCanvasEditor'
-import { useAutosave } from '@/components/canvas/composables/useAutosave'
-import { buildPaletteItems } from '@/components/canvas/composables/paletteItems'
-import { NODE_ICONS } from '@/components/canvas/composables/paletteItems'
+import { pendingBackup, useWorkflowSave, type WorkflowBackup } from '@/components/canvas/composables/useWorkflowSave'
+import { buildPaletteItems, NODE_ICONS, paletteKey } from '@/components/canvas/composables/paletteItems'
+import { isMac, resolveShortcut } from '@/components/canvas/composables/useCanvasShortcuts'
 
 const route = useRoute()
 const router = useRouter()
@@ -84,6 +84,7 @@ const wf = reactive<Workflow>({
   description: '',
   status: 'draft',
   version: 1,
+  publishedVersion: 0,
   updatedAt: '',
   needsRepo: false,
   nodes: [],
@@ -106,7 +107,6 @@ const running = ref(false)
 const errorMsg = ref('')
 const hydrating = ref(routeId !== 'new')
 const hydrateFailed = ref(false)
-const outputMigrated = ref(false)
 
 // ── Agents & editor ──
 const allAgents = ref<Agent[] | null>(null)
@@ -154,9 +154,7 @@ async function loadProjectName() {
 
 // ── Save ──
 function payload(): Workflow {
-  const out = JSON.parse(JSON.stringify(wf)) as Workflow
-  for (const n of out.nodes) if (n.type === 'output' && n.config) n.config = cleanOutputConfigForSave(n.config)
-  return out
+  return JSON.parse(JSON.stringify(wf)) as Workflow
 }
 
 function absorb(res: Partial<Workflow> | null | undefined) {
@@ -164,6 +162,7 @@ function absorb(res: Partial<Workflow> | null | undefined) {
   const wasNew = !wf.id
   if (res.id) wf.id = res.id
   if (res.version !== undefined) wf.version = res.version
+  if (res.publishedVersion !== undefined) wf.publishedVersion = res.publishedVersion
   if (res.status === 'draft' && wf.status === 'published' && wf.showOnHome) toast.warn(t('pages.workflowEditor.hiddenFromHome'))
   if (res.status) wf.status = res.status
   if (res.updatedAt) wf.updatedAt = res.updatedAt
@@ -174,37 +173,105 @@ function absorb(res: Partial<Workflow> | null | undefined) {
   }
 }
 
+/** The editable content; a change from the last saved value means unsaved changes. */
+type EditableSnapshot = Pick<Workflow, 'name' | 'description' | 'needsRepo' | 'nodes' | 'edges'>
+function snapshotOf(w: EditableSnapshot): string {
+  return JSON.stringify({ name: w.name, description: w.description, needsRepo: w.needsRepo, nodes: w.nodes, edges: w.edges })
+}
+
 let deleting = false
-const autosave = useAutosave({
-  source: () =>
-    JSON.stringify({ name: wf.name, description: wf.description, needsRepo: wf.needsRepo, nodes: wf.nodes, edges: wf.edges }),
+/** Read-only version shown on the canvas instead of the editable graph. */
+const preview = ref<{ version: number; nodes: WFNode[]; edges: WFEdge[] } | null>(null)
+
+const saver = useWorkflowSave({
+  source: () => snapshotOf(wf),
   save: async () => {
     absorb(await api.saveWorkflow(payload()))
-    outputMigrated.value = false
   },
+  backupId: () => wf.id,
   enabled: () => !hydrating.value && !hydrateFailed.value && !!wf.projectId && !deleting,
 })
 
+/** Saves unsaved changes (a new workflow is created even when untouched). */
 async function saveNow(silent = false): Promise<boolean> {
+  if (!saver.dirty.value && wf.id) return true
+  const ok = await saver.save(!wf.id)
+  if (!ok && !silent) toast.error(t('canvas.topbar.saveError', { error: saver.error.value || t('canvas.save.error') }))
+  return ok
+}
+
+const saveShortcut = (isMac() ? '⌘' : 'Ctrl+') + 'S'
+const saveLabel = computed(() => {
+  switch (saver.status.value) {
+    case 'saving':
+      return t('canvas.save.saving')
+    case 'dirty':
+      return t('canvas.save.dirty')
+    case 'error':
+      return t('canvas.save.error')
+    default:
+      return wf.id ? t('canvas.save.saved', { n: wf.version }) : t('canvas.save.notCreated')
+  }
+})
+
+function onSaveKey(e: KeyboardEvent) {
+  if (resolveShortcut(e) !== 'save') return
+  if (e.defaultPrevented) return
+  e.preventDefault()
+  if (editable.value && !preview.value) void saveNow()
+}
+
+// ── Unsaved-change backup ──
+const backupOffer = ref<WorkflowBackup | null>(null)
+
+function restoreBackup() {
+  const b = backupOffer.value
+  backupOffer.value = null
+  if (!b) return
   try {
-    await autosave.flush()
-    return true
-  } catch (e: any) {
-    if (!silent) toast.error(t('canvas.topbar.saveError', { error: String(e?.message || e) }))
-    return false
+    const snap = JSON.parse(b.snapshot) as EditableSnapshot
+    editor.clearSelection()
+    Object.assign(wf, { name: snap.name, description: snap.description, needsRepo: snap.needsRepo })
+    editor.replaceGraph(snap.nodes || [], snap.edges || [])
+  } catch {
+    saver.discardBackup()
   }
 }
 
-const saveLabel = computed(() => t(`canvas.topbar.status.${autosave.status.value}`))
+function discardBackupOffer() {
+  backupOffer.value = null
+  saver.discardBackup()
+}
+
+// ── Leaving with unsaved changes ──
+type LeaveChoice = 'save' | 'discard' | 'cancel'
+const leavePrompt = ref<((choice: LeaveChoice) => void) | null>(null)
+
+function chooseLeave(choice: LeaveChoice) {
+  const resolve = leavePrompt.value
+  leavePrompt.value = null
+  resolve?.(choice)
+}
+
+/** Resolves true when it is fine to drop the editor state (saved, saved now, or discarded). */
+async function confirmUnsaved(): Promise<boolean> {
+  if (!saver.dirty.value || deleting) return true
+  const choice = await new Promise<LeaveChoice>((resolve) => (leavePrompt.value = resolve))
+  if (choice === 'cancel') return false
+  if (choice === 'discard') {
+    saver.discardBackup()
+    return true
+  }
+  return saveNow()
+}
 
 // ── Load ──
 async function hydrate(fn: () => Promise<Partial<Workflow>>) {
   Object.assign(wf, await fn())
-  outputMigrated.value = migrateAndCleanOutputNodes(wf.nodes)
   await nextTick()
   editor.clearSelection()
   editor.history.reset()
-  autosave.markSaved()
+  saver.markSaved()
 }
 
 async function loadExistingWorkflow() {
@@ -213,6 +280,7 @@ async function loadExistingWorkflow() {
   errorMsg.value = ''
   try {
     await hydrate(() => api.getWorkflow(routeId))
+    backupOffer.value = pendingBackup(wf.id, snapshotOf(wf), wf.updatedAt)
     void loadProjectName()
   } catch {
     hydrateFailed.value = true
@@ -223,21 +291,23 @@ async function loadExistingWorkflow() {
 }
 
 function onBeforeUnload(e: BeforeUnloadEvent) {
-  if (!autosave.isDirty()) return
-  void saveNow(true)
+  if (!saver.dirty.value || deleting) return
+  saver.flushBackup()
   e.preventDefault()
+  e.returnValue = ''
 }
 
 onMounted(async () => {
   void nextTick(updateEditorTabIndicator)
   window.addEventListener('resize', updateEditorTabIndicator)
   window.addEventListener('beforeunload', onBeforeUnload)
+  window.addEventListener('keydown', onSaveKey)
   void loadAgents()
   if (routeId === 'new') {
     hydrating.value = false
     if (!wf.projectId) errorMsg.value = t('pages.workflowEditor.projectRequired')
     else void loadProjectName()
-    autosave.markSaved()
+    saver.markSaved()
     editor.history.reset()
     return
   }
@@ -247,11 +317,11 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateEditorTabIndicator)
   window.removeEventListener('beforeunload', onBeforeUnload)
+  window.removeEventListener('keydown', onSaveKey)
 })
 
-onBeforeRouteLeave(async () => {
-  if (autosave.isDirty()) await saveNow(true)
-})
+onBeforeRouteLeave(() => confirmUnsaved())
+onBeforeRouteUpdate((to) => (to.params.id === wf.id ? true : confirmUnsaved()))
 
 watch(
   () => route.params.id,
@@ -275,6 +345,7 @@ function nodeLabel(id?: string) {
 function jumpToIssue(nodeId?: string) {
   showIssues.value = false
   if (!nodeId) return
+  exitPreview()
   activeTab.value = 'canvas'
   editor.setSelection([nodeId])
   canvasRef.value?.centerOn(nodeId)
@@ -297,9 +368,19 @@ function menu(action: () => void) {
 }
 
 const showExport = ref(false)
+async function openExport() {
+  if (!wf.id || !(await saveNow())) return
+  showExport.value = true
+}
 const { fileInput, showDiscardConfirm, triggerImport, onDiscardCancel, onDiscardConfirm, handleFileChange } = useWorkflowImport({
-  dirty: () => autosave.isDirty(),
+  dirty: () => saver.dirty.value,
   projectId: () => wf.projectId,
+  onImported: async (imported) => {
+    // Unsaved changes were already discarded in the import confirmation.
+    saver.discardBackup()
+    saver.markSaved()
+    await router.push('/workflows/' + imported.id + '/edit')
+  },
 })
 
 const copyModal = ref<{ sourceId: string; sourceName: string; suggestedName: string; existing: string[] } | null>(null)
@@ -330,7 +411,8 @@ async function confirmDelete() {
   try {
     await api.deleteWorkflow(wf.id)
     showDelete.value = false
-    autosave.stop()
+    saver.discardBackup()
+    saver.stop()
     void router.push(projectLink())
   } catch (e: any) {
     deleting = false
@@ -360,9 +442,8 @@ async function confirmPublish() {
   publishing.value = true
   publishError.value = ''
   try {
-    if (!(await saveNow(true)) || !wf.id) throw new Error(autosave.error.value || t('canvas.topbar.status.error'))
+    if (!(await saveNow(true)) || !wf.id) throw new Error(saver.error.value || t('canvas.save.error'))
     absorb(await api.publishWorkflow(wf.id))
-    autosave.markSaved()
     published.value = true
     setTimeout(() => {
       showPublish.value = false
@@ -418,7 +499,7 @@ async function saveRunDraftClick() {
 
 async function beforeRunStart() {
   errorMsg.value = ''
-  await autosave.flush()
+  if (!(await saveNow(true))) throw new Error(saver.error.value || t('canvas.save.saveFirstFailed'))
 }
 
 function onRunStarted() {
@@ -431,10 +512,6 @@ function onViewRun(runId: string) {
 
 // ── Drawers ──
 const showOverview = ref(false)
-const showVersions = ref(false)
-const versions = ref<WorkflowVersion[]>([])
-const loadingVersions = ref(false)
-const restoring = ref(0)
 
 function nodeChips(n: (typeof wf.nodes)[number]): string[] {
   const c = (n.config || {}) as Record<string, any>
@@ -447,29 +524,62 @@ function nodeChips(n: (typeof wf.nodes)[number]): string[] {
   return out
 }
 
-async function openVersions() {
+// ── Versions ──
+const showVersions = ref(false)
+const restoreAsk = ref<number | null>(null)
+const restoringVersion = ref<number | null>(null)
+let previewSeq = 0
+
+function toggleVersions() {
   if (!wf.id) return
-  showVersions.value = true
-  loadingVersions.value = true
+  showVersions.value = !showVersions.value
+  if (!showVersions.value) exitPreview()
+}
+
+function closeVersions() {
+  showVersions.value = false
+  exitPreview()
+}
+
+async function previewVersion(version: number) {
+  if (!wf.id) return
+  if (preview.value?.version === version) return
+  const seq = ++previewSeq
   try {
-    versions.value = await api.listWorkflowVersions(wf.id)
+    const g = await api.getWorkflowVersionGraph(wf.id, version)
+    if (seq !== previewSeq) return
+    editor.cancelPlacing()
+    preview.value = { version, nodes: g?.nodes || [], edges: g?.edges || [] }
   } catch {
-    versions.value = []
-  } finally {
-    loadingVersions.value = false
+    if (seq === previewSeq) toast.error(t('canvas.versions.previewFailed'))
   }
 }
 
-async function rollback(version: number) {
-  if (!wf.id) return
-  restoring.value = version
+function exitPreview() {
+  previewSeq++
+  preview.value = null
+}
+
+function askRestore(version: number) {
+  restoreAsk.value = version
+}
+
+async function confirmRestore() {
+  const version = restoreAsk.value
+  if (!wf.id || version === null) return
+  restoringVersion.value = version
   try {
-    await hydrate(() => api.restoreWorkflowVersion(wf.id, version))
-    showVersions.value = false
-  } catch {
-    errorMsg.value = t('pages.workflowEditor.rollbackFailed')
+    const res = await api.restoreWorkflowVersion(wf.id, version)
+    saver.discardBackup()
+    backupOffer.value = null
+    restoreAsk.value = null
+    exitPreview()
+    await hydrate(async () => res)
+    toast.success(t('canvas.versions.restored', { from: version, to: wf.version }))
+  } catch (e: any) {
+    toast.error(t('canvas.versions.restoreFailed', { error: String(e?.message || e) }))
   } finally {
-    restoring.value = 0
+    restoringVersion.value = null
   }
 }
 
@@ -479,10 +589,19 @@ function deleteInspectorNode() {
   if (inspectorNode.value) editor.removeNodes([inspectorNode.value.id])
 }
 
-function addFromPalette(spec: Parameters<typeof editor.addNode>[0]) {
-  const sel = editor.selectedNodeIds.value.length === 1 ? editor.selectedNodeIds.value[0] : null
-  editor.addNode(spec, undefined, sel ? { kind: 'after', nodeId: sel } : undefined)
+type PaletteSpec = Parameters<typeof editor.addNode>[0]
+
+function placeFromPalette(spec: PaletteSpec) {
+  activeTab.value = 'canvas'
+  editor.togglePlacing(spec)
 }
+
+function addFromPalette(spec: PaletteSpec) {
+  editor.cancelPlacing()
+  editor.addNode(spec)
+}
+
+const placingKey = computed(() => (editor.placing.value ? paletteKey(editor.placing.value) : null))
 
 const editable = computed(() => !hydrating.value && !hydrateFailed.value)
 </script>
@@ -558,27 +677,25 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
         </span>
       </nav>
       <StatusPill :status="wf.status" size="sm" />
-      <span class="chip shrink-0">v{{ wf.version }}</span>
       <span
         class="inline-flex shrink-0 items-center gap-1 text-[11.5px]"
         :class="{
-          'text-txt3': autosave.status.value === 'saved',
-          'text-txt2': autosave.status.value === 'saving',
-          'text-warn': autosave.status.value === 'unsaved',
-          'text-err': autosave.status.value === 'error',
+          'text-txt3': saver.status.value === 'saved',
+          'text-txt2': saver.status.value === 'saving',
+          'text-warn': saver.status.value === 'dirty',
+          'text-err': saver.status.value === 'error',
         }"
         role="status"
         aria-live="polite"
-        :title="autosave.error.value || undefined"
+        :title="saver.error.value || undefined"
         data-testid="editor-save-status"
-        :data-status="autosave.status.value"
+        :data-status="saver.status.value"
       >
-        <Icon v-if="autosave.status.value === 'saving'" name="spinner" :size="12" class="animate-spin" />
-        <Icon v-else-if="autosave.status.value === 'saved'" name="check" :size="12" />
-        <Icon v-else-if="autosave.status.value === 'error'" name="alert" :size="12" />
+        <Icon v-if="saver.status.value === 'saving'" name="spinner" :size="12" class="animate-spin" />
+        <Icon v-else-if="saver.status.value === 'saved'" name="check" :size="12" />
+        <Icon v-else-if="saver.status.value === 'error'" name="alert" :size="12" />
         <span v-else class="h-1.5 w-1.5 rounded-full bg-warn" aria-hidden="true" />
         {{ saveLabel }}
-        <button v-if="autosave.status.value === 'error'" type="button" class="ml-1 underline" @click="saveNow()">{{ t('canvas.topbar.retrySave') }}</button>
       </span>
 
       <div class="flex-1" />
@@ -625,6 +742,29 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
         :aria-label="isFavorite(wf.id) ? t('common.buttons.unfavorite') : t('common.buttons.favorite')"
         @click="toggleCurrentFavorite"
       />
+      <AppButton
+        variant="ghost"
+        size="sm"
+        icon="history"
+        :disabled="!wf.id || !editable"
+        :class="{ 'text-accent-2': showVersions }"
+        :aria-pressed="showVersions"
+        data-testid="editor-versions"
+        @click="toggleVersions"
+      >
+        {{ t('canvas.topbar.versions') }}
+      </AppButton>
+      <AppButton
+        :variant="saver.dirty.value || !wf.id ? 'primary' : 'outline'"
+        size="sm"
+        icon="check"
+        :disabled="!editable || !!preview || saver.status.value === 'saving' || (!saver.dirty.value && !!wf.id)"
+        :title="t('canvas.save.title', { key: saveShortcut })"
+        data-testid="editor-save"
+        @click="saveNow()"
+      >
+        {{ saver.status.value === 'saving' ? t('canvas.save.saving') : t('canvas.save.button') }}
+      </AppButton>
       <AppButton variant="outline" size="sm" icon="check" :disabled="publishing || !editable" data-testid="editor-publish" @click="openPublish">
         {{ t('canvas.topbar.publish') }}
       </AppButton>
@@ -647,7 +787,7 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
           <button type="button" role="menuitem" class="editor-menu-item" data-testid="editor-menu-import" @click="menu(triggerImport)">
             <Icon name="input" :size="14" />{{ t('canvas.topbar.menu.import') }}
           </button>
-          <button type="button" role="menuitem" class="editor-menu-item" :disabled="!wf.id" data-testid="editor-menu-export" @click="menu(() => (showExport = true))">
+          <button type="button" role="menuitem" class="editor-menu-item" :disabled="!wf.id" data-testid="editor-menu-export" @click="menu(openExport)">
             <Icon name="download" :size="14" />{{ t('canvas.topbar.menu.export') }}
           </button>
           <button type="button" role="menuitem" class="editor-menu-item" :disabled="!wf.id" data-testid="editor-menu-duplicate" @click="menu(openCopy)">
@@ -656,9 +796,6 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
           <div class="my-1 h-px bg-line" />
           <button type="button" role="menuitem" class="editor-menu-item" :disabled="!wf.nodes.length" @click="menu(() => (showOverview = true))">
             <Icon name="doc" :size="14" />{{ t('canvas.topbar.menu.details') }}
-          </button>
-          <button type="button" role="menuitem" class="editor-menu-item" :disabled="!wf.id" @click="menu(openVersions)">
-            <Icon name="history" :size="14" />{{ t('canvas.topbar.menu.versions') }}
           </button>
           <div class="my-1 h-px bg-line" />
           <button
@@ -689,6 +826,18 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
       <button v-else class="ml-auto text-err/70 hover:text-err" :aria-label="t('common.buttons.close')" @click="errorMsg = ''"><Icon name="close" :size="14" /></button>
     </div>
 
+    <div
+      v-if="backupOffer"
+      class="flex shrink-0 items-center gap-2 border-b border-warn/30 bg-warn/10 px-4 py-2 text-[12px] text-txt"
+      role="status"
+      data-testid="editor-backup-banner"
+    >
+      <Icon name="alert" :size="14" class="shrink-0 text-warn" />
+      <span class="min-w-0 flex-1">{{ t('canvas.backup.banner', { time: fmtTime(new Date(backupOffer.savedAt).toISOString()) }) }}</span>
+      <AppButton size="sm" variant="primary" data-testid="editor-backup-restore" @click="restoreBackup">{{ t('canvas.backup.restore') }}</AppButton>
+      <AppButton size="sm" variant="ghost" data-testid="editor-backup-discard" @click="discardBackupOffer">{{ t('canvas.backup.discard') }}</AppButton>
+    </div>
+
     <div ref="editorTabTrack" class="relative flex shrink-0 gap-1 border-b border-line bg-surface px-4" role="tablist">
       <button
         v-for="tab in TABS"
@@ -714,10 +863,27 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
     </div>
 
     <div v-show="activeTab === 'canvas'" class="flex min-h-0 flex-1">
-      <NodePalette :items="paletteItems" :agents-loading="!editor.agentsLoaded.value" @add="addFromPalette" />
+      <NodePalette
+        v-if="!preview"
+        :items="paletteItems"
+        :agents-loading="!editor.agentsLoaded.value"
+        :placing-key="placingKey"
+        @place="placeFromPalette"
+        @add="addFromPalette"
+      />
       <div class="relative min-w-0 flex-1 overflow-hidden" data-testid="workflow-editor-canvas-host">
         <WorkflowCanvas
-          v-if="editable"
+          v-if="editable && preview"
+          :key="`preview-${preview.version}`"
+          :nodes="preview.nodes"
+          :edges="preview.edges"
+          mode="view"
+          :agents="editor.agents.value"
+          auto-layout-on-init
+          data-testid="workflow-editor-preview-canvas"
+        />
+        <WorkflowCanvas
+          v-else-if="editable"
           ref="canvasRef"
           :nodes="wf.nodes"
           :edges="wf.edges"
@@ -725,6 +891,37 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
           :editor="editor"
           auto-layout-on-init
           @save="saveNow()"
+        />
+        <div
+          v-if="preview"
+          class="cchrome absolute left-1/2 top-3 z-20 inline-flex -translate-x-1/2 items-center gap-2 py-1 pl-3 pr-1 text-[12px] text-txt"
+          role="status"
+          data-testid="editor-preview-banner"
+        >
+          <Icon name="history" :size="13" class="text-accent-2" />
+          <span>{{ t('canvas.versions.previewing', { n: preview.version }) }}</span>
+          <AppButton
+            v-if="preview.version !== wf.version"
+            size="sm"
+            variant="primary"
+            :disabled="restoringVersion !== null"
+            data-testid="editor-preview-restore"
+            @click="askRestore(preview.version)"
+          >
+            {{ t('canvas.versions.restoreThis') }}
+          </AppButton>
+          <AppButton size="sm" variant="ghost" data-testid="editor-preview-exit" @click="exitPreview">{{ t('canvas.versions.exitPreview') }}</AppButton>
+        </div>
+        <WorkflowVersionDrawer
+          v-if="showVersions && wf.id && editable"
+          :workflow-id="wf.id"
+          :latest-version="wf.version"
+          :published-version="wf.publishedVersion ?? 0"
+          :preview-version="preview?.version ?? null"
+          :restoring="restoringVersion"
+          @close="closeVersions"
+          @preview="previewVersion"
+          @restore="askRestore"
         />
         <HardLoadLayer
           v-if="hydrating"
@@ -750,7 +947,7 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
         </div>
 
         <Transition name="insp">
-          <div v-if="inspectorNode" class="absolute bottom-0 right-0 top-0 z-20 flex">
+          <div v-if="inspectorNode && !preview && !showVersions" class="absolute bottom-0 right-0 top-0 z-20 flex">
             <NodeInspector
               :key="inspectorNode.id"
               :node="inspectorNode"
@@ -758,7 +955,6 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
               :edges="wf.edges"
               :agents="editor.agents.value"
               :agents-loaded="editor.agentsLoaded.value"
-              :output-migration="outputMigrated && inspectorNode.type === 'output'"
               :focus-goal-tick="editor.focusGoalTick.value"
               @close="editor.closeInspector()"
               @delete="deleteInspectorNode"
@@ -779,16 +975,20 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
           <div class="pub-pop mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-ok/15 text-ok">
             <Icon name="check" :size="34" />
           </div>
-          <div class="text-[15px] font-semibold text-txt">{{ t('pages.workflowEditor.publish.published', { version: wf.version }) }}</div>
-          <div class="mt-1 text-[12px] text-txt3">{{ t('pages.workflowEditor.publish.frozen') }}</div>
+          <div class="text-[15px] font-semibold text-txt">{{ t('canvas.publish.done', { n: wf.publishedVersion }) }}</div>
+          <div class="mt-1 text-[12px] text-txt3">{{ t('canvas.publish.doneNote') }}</div>
         </div>
         <div v-else key="confirm" class="space-y-4">
           <div class="flex items-center justify-center gap-3 py-1">
-            <span class="chip text-txt2">{{ t('pages.workflowEditor.publish.current', { version: wf.version }) }}</span>
+            <span class="chip text-txt2">
+              {{ wf.publishedVersion ? t('canvas.publish.currentPublished', { n: wf.publishedVersion }) : t('canvas.publish.neverPublished') }}
+            </span>
             <Icon name="arrow-left" :size="16" class="rotate-180 text-txt3" />
-            <span class="rounded-md bg-accent-dim px-2.5 py-1 text-[13px] font-semibold text-accent-2">{{ t('pages.workflowEditor.publish.next', { version: wf.version + 1 }) }}</span>
+            <span class="rounded-md bg-accent-dim px-2.5 py-1 text-[13px] font-semibold text-accent-2">{{ t('canvas.publish.target', { n: wf.version }) }}</span>
           </div>
-          <p class="text-[12px] leading-5 text-txt3" v-html="t('pages.workflowEditor.publish.body', { version: wf.version + 1 })" />
+          <p class="text-[12px] leading-5 text-txt3">{{ t('canvas.publish.body') }}</p>
+          <p v-if="saver.dirty.value" class="text-[12px] leading-5 text-warn" data-testid="editor-publish-dirty">{{ t('canvas.publish.dirtyNote') }}</p>
+          <p v-else-if="wf.status === 'published'" class="text-[12px] leading-5 text-ok">{{ t('canvas.publish.alreadyPublished') }}</p>
           <div v-if="graphError" class="flex items-start gap-2 rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err">
             <Icon name="alert" :size="14" class="mt-0.5 shrink-0" />{{ graphError }}
           </div>
@@ -799,8 +999,14 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
       </Transition>
       <template v-if="!published" #footer>
         <AppButton variant="ghost" :disabled="publishing" @click="showPublish = false">{{ t('common.buttons.cancel') }}</AppButton>
-        <AppButton variant="primary" icon="check" :disabled="publishing || !!graphError" data-testid="editor-publish-confirm" @click="confirmPublish">
-          {{ publishing ? t('common.buttons.publishing') : t('common.buttons.confirmPublish') + ' v' + (wf.version + 1) }}
+        <AppButton
+          variant="primary"
+          icon="check"
+          :disabled="publishing || !!graphError || (wf.status === 'published' && !saver.dirty.value)"
+          data-testid="editor-publish-confirm"
+          @click="confirmPublish"
+        >
+          {{ publishing ? t('common.buttons.publishing') : t('common.buttons.confirmPublish') }}
         </AppButton>
       </template>
     </AppModal>
@@ -877,28 +1083,30 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
       </div>
     </AppDrawer>
 
-    <AppDrawer :open="showVersions" :title="t('pages.workflowEditor.versions.title')" :width="380" @close="showVersions = false">
-      <div class="p-4">
-        <p class="mb-3 text-[12px] leading-5 text-txt3">{{ t('pages.workflowEditor.versions.intro') }}</p>
-        <div v-if="loadingVersions" class="py-8 text-center text-sm text-txt3">{{ t('common.buttons.loading') }}</div>
-        <div v-else-if="!versions.length" class="py-8 text-center text-sm text-txt3">{{ t('pages.workflowEditor.versions.empty') }}</div>
-        <div v-else class="space-y-2">
-          <div v-for="v in versions" :key="v.version" class="flex items-center gap-3 rounded-md border border-line bg-base/40 px-3 py-2.5">
-            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-dim font-mono text-[12px] font-semibold text-accent-2">v{{ v.version }}</div>
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-1.5 text-[13px] font-medium text-txt">
-                {{ t('pages.workflowEditor.versions.version', { n: v.version }) }}
-                <span v-if="v.version === wf.version" class="chip border-ok/30 text-ok">{{ t('pages.workflowEditor.versions.current') }}</span>
-              </div>
-              <div class="text-[11px] text-txt3">{{ t('pages.workflowEditor.versions.publishedAt', { time: fmtTime(v.publishedAt) }) }}</div>
-            </div>
-            <AppButton size="sm" variant="outline" icon="refresh" :disabled="restoring !== 0 || v.version === wf.version" @click="rollback(v.version)">
-              {{ restoring === v.version ? t('common.buttons.rollingBack') : t('common.buttons.rollback') }}
-            </AppButton>
-          </div>
-        </div>
-      </div>
-    </AppDrawer>
+    <AppModal
+      :open="restoreAsk !== null"
+      :title="t('canvas.versions.restoreTitle', { n: restoreAsk ?? 0 })"
+      :width="420"
+      @close="restoringVersion === null && (restoreAsk = null)"
+    >
+      <p class="text-sm text-txt2">{{ t('canvas.versions.restoreBody', { n: restoreAsk ?? 0, next: wf.version + 1 }) }}</p>
+      <p v-if="saver.dirty.value" class="mt-2 text-sm text-warn" data-testid="editor-restore-dirty">{{ t('canvas.versions.restoreDirty') }}</p>
+      <template #footer>
+        <AppButton variant="ghost" :disabled="restoringVersion !== null" @click="restoreAsk = null">{{ t('common.buttons.cancel') }}</AppButton>
+        <AppButton variant="primary" icon="refresh" :disabled="restoringVersion !== null" data-testid="editor-restore-confirm" @click="confirmRestore">
+          {{ restoringVersion !== null ? t('canvas.versions.restoring') : t('canvas.versions.restoreConfirm') }}
+        </AppButton>
+      </template>
+    </AppModal>
+
+    <AppModal :open="!!leavePrompt" :title="t('canvas.leave.title')" :width="440" :close-on-backdrop="false" close-on-esc @close="chooseLeave('cancel')">
+      <p class="text-sm text-txt2">{{ t('canvas.leave.body', { name: wf.name }) }}</p>
+      <template #footer>
+        <AppButton variant="ghost" data-testid="editor-leave-cancel" @click="chooseLeave('cancel')">{{ t('canvas.leave.cancel') }}</AppButton>
+        <AppButton variant="outline" data-testid="editor-leave-discard" @click="chooseLeave('discard')">{{ t('canvas.leave.discard') }}</AppButton>
+        <AppButton variant="primary" icon="check" data-testid="editor-leave-save" @click="chooseLeave('save')">{{ t('canvas.leave.save') }}</AppButton>
+      </template>
+    </AppModal>
 
     <ExportVersionModal
       v-if="showExport && wf.id"

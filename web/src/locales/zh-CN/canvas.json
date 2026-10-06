@@ -62,8 +62,7 @@
         "noSources": "未选择输出来源",
         "assignments": "{n} 个赋值",
         "cases": "{n} 个分支",
-        "actions": "{n} 个动作",
-        "proposals": "从 {from} 选择方案"
+        "actions": "{n} 个动作"
       }
     },
     "edge": {
@@ -82,11 +81,9 @@
       "control": "控制",
       "collab": "协作",
       "fromTemplate": "从模板新建",
-      "blankAgent": "空白 Agent 节点",
-      "blankAgentDesc": "稍后在检查器中选择 Agent",
       "noAgents": "项目里还没有 Agent",
       "noMatch": "没有匹配的节点",
-      "dragHint": "拖到画布上,或点击添加",
+      "dragHint": "拖到画布上，或点击后在画布上放置",
       "collapse": "收起面板",
       "expand": "展开面板"
     },
@@ -121,7 +118,7 @@
         "duplicate": "原地复制",
         "delete": "删除选中",
         "selectAll": "全选",
-        "save": "立即保存",
+        "save": "保存",
         "fitView": "适应画布",
         "autoLayout": "自动布局",
         "quickAdd": "快速添加",
@@ -132,9 +129,9 @@
       },
       "mouse": {
         "title": "鼠标和触控板",
-        "pan": "在空白处拖动,或按住空格拖动:平移",
-        "zoom": "滚轮,或双指捏合:缩放",
-        "select": "Shift + 拖动:框选;Shift + 单击:多选",
+        "pan": "按住空格拖动、鼠标中键拖动，或双指滑动：平移",
+        "zoom": "双指捏合，或按住 Ctrl/⌘ 滚动：缩放",
+        "select": "在空白处拖动：框选；Shift + 单击：多选",
         "dblclick": "双击空白处:快速添加;双击节点:编辑目标"
       }
     },
@@ -228,14 +225,7 @@
     "topbar": {
       "projects": "项目",
       "rename": "点击重命名",
-      "status": {
-        "saved": "已保存",
-        "saving": "保存中…",
-        "unsaved": "未保存",
-        "error": "保存失败"
-      },
-      "saveError": "自动保存失败:{error}",
-      "retrySave": "重试",
+      "saveError": "保存失败：{error}",
       "issuesNone": "没有问题",
       "run": "运行",
       "publish": "发布",
@@ -245,7 +235,6 @@
         "export": "导出",
         "duplicate": "复制工作流",
         "delete": "删除工作流",
-        "versions": "版本",
         "details": "详情",
         "favorite": "收藏",
         "unfavorite": "取消收藏"
@@ -257,11 +246,80 @@
       },
       "deleteTitle": "删除工作流「{name}」?",
       "deleteBody": "删除后无法恢复,已有的运行记录不受影响。",
-      "deleteFailed": "删除失败:{error}"
+      "deleteFailed": "删除失败:{error}",
+      "versions": "版本"
     },
     "toast": {
       "edgeReplaced": "已替换原来连到「{label}」的连线",
-      "undo": "撤销"
+      "undo": "撤销",
+      "deleted": "已删除 {n} 个节点"
+    },
+    "placement": {
+      "hint": "点击画布放置「{label}」，Esc 取消"
+    },
+    "selection": {
+      "count": "已选 {n} 个",
+      "delete": "删除"
+    },
+    "save": {
+      "button": "保存",
+      "title": "保存（{key}）",
+      "saved": "已保存 v{n}",
+      "notCreated": "尚未保存",
+      "dirty": "未保存更改",
+      "saving": "保存中…",
+      "error": "保存失败",
+      "saveFirstFailed": "请先保存更改"
+    },
+    "leave": {
+      "title": "有未保存的更改",
+      "body": "离开前要保存对「{name}」的更改吗？",
+      "save": "保存并离开",
+      "discard": "不保存离开",
+      "cancel": "取消"
+    },
+    "backup": {
+      "banner": "发现 {time} 未保存的更改。",
+      "restore": "恢复未保存的更改",
+      "discard": "丢弃"
+    },
+    "versions": {
+      "title": "版本历史",
+      "intro": "每次保存都会生成一个版本。点击版本可只读预览；恢复会以所选版本的内容生成一个新版本，历史不会被改写。",
+      "empty": "暂无版本",
+      "loadFailed": "版本列表加载失败",
+      "current": "当前",
+      "published": "已发布",
+      "nodes": "{n} 个节点",
+      "restore": "恢复",
+      "restoring": "恢复中…",
+      "source": {
+        "save": "保存",
+        "restore": "恢复",
+        "restoredFrom": "恢复自 v{n}",
+        "import": "导入",
+        "pm": "PM 修改"
+      },
+      "previewing": "正在预览 v{n}（只读）",
+      "restoreThis": "恢复此版本",
+      "exitPreview": "退出预览",
+      "previewFailed": "版本加载失败",
+      "restoreTitle": "恢复到 v{n}？",
+      "restoreBody": "会以 v{n} 的内容生成新版本 v{next}，之前的版本都会保留。",
+      "restoreDirty": "当前有未保存的更改，恢复后这些更改将丢失。",
+      "restoreConfirm": "恢复",
+      "restored": "已恢复 v{from} 的内容，当前为 v{to}",
+      "restoreFailed": "恢复失败：{error}"
+    },
+    "publish": {
+      "body": "发布会把最新版本设为 API 运行使用的版本。已有运行固定在各自的版本上，不受影响。",
+      "target": "发布 v{n}",
+      "currentPublished": "当前发布 v{n}",
+      "neverPublished": "尚未发布",
+      "dirtyNote": "有未保存的更改，发布前会先保存为新版本。",
+      "alreadyPublished": "最新版本已发布",
+      "done": "已发布 v{n}",
+      "doneNote": "API 运行将使用这个版本。"
     }
   }
 }

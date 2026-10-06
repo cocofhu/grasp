@@ -3,7 +3,7 @@
  */
 import { computed, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { api, isPaginated } from '@/lib/api/api'
+import { api } from '@/lib/api/api'
 import { NODE_DEFS } from '@/data/nodeRegistry'
 import { fmtCompactDuration, fmtDuration, fmtMultiAvgDuration, fmtTime } from '@/lib/shared/format'
 import { resolveNodeDisplayLabel } from '@/lib/run/resolveNodeDisplayLabel'
@@ -328,7 +328,7 @@ async function loadCandidates() {
   candidatesError.value = null
   try {
     const data = await api.listRuns({ wf: wfId, page: 1, pageSize: 20 })
-    const items = isPaginated(data) ? data.items : data
+    const items = data.items
     let nextCandidates: Candidate[] = items.map((r) => ({
       id: r.id,
       label: '#' + r.id.replace(/^run-/, ''),

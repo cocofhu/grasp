@@ -566,6 +566,24 @@
 .canvas-host.is-panning .vue-flow__pane {
   cursor: grab;
 }
+.canvas-host.is-placing .vue-flow__pane,
+.canvas-host.is-placing .vue-flow__node {
+  cursor: copy;
+}
+
+/* Click-to-place preview */
+.canvas-ghost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1.5px dashed rgb(var(--c-accent) / 0.8);
+  border-radius: 10px;
+  background: rgb(var(--c-accent) / 0.08);
+  color: rgb(var(--c-accent-2));
+  font-size: 12px;
+  font-weight: 500;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .cnode,

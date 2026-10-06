@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/cocofhu/grasp/internal/blob"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -30,7 +31,7 @@ type turnAction struct {
 	sendError string // emit {op:error} -> a non-retryable agent error
 	// oneshot-style provider failure: error_text frame then prompt_done{stopReason:failed}.
 	// Distinct from sendError, which uses the top-level {op:error} envelope the
-	// legacy fake path exercised (and which ChatStructured already turns into a Go error).
+	// fake path exercises (and which ChatStructured already turns into a Go error).
 	errorText string
 	failed    bool
 }
@@ -38,10 +39,10 @@ type turnAction struct {
 // chatFunc returns the action for the turn-th chat on a given sandbox (0-based).
 type chatFunc func(turn int) turnAction
 
-// fakeBridge is an in-process cursor-acp WebSocket bridge: it speaks just enough
-// of the protocol (connect/chat/cancel) for a real *sandbox.ACPClient to drive
-// it, with scripted per-turn behavior. It serves only /ws; /api/* 404s, which
-// the provider tolerates (snapshot falls back to the streamed aggregation).
+// fakeBridge is an in-process acp-bridge: it speaks just enough of the protocol
+// (login/connect/chat/cancel) for a real *sandbox.ACPClient to drive it, with
+// scripted per-turn behavior. It serves /api/login and /ws; other /api/* 404s,
+// which the provider tolerates (snapshot falls back to the streamed aggregation).
 type fakeBridge struct {
 	srv    *httptest.Server
 	host   *mcp.Host
@@ -66,6 +67,7 @@ func startFakeBridge(t *testing.T, host *mcp.Host, runID, nodeID, token string, 
 	t.Helper()
 	b := &fakeBridge{host: host, runID: runID, nodeID: nodeID, token: token, chat: chat}
 	mux := http.NewServeMux()
+	handleTestBridgeLogin(mux)
 	mux.HandleFunc("/ws", b.serveWS)
 	b.srv = httptest.NewServer(mux)
 	t.Cleanup(b.srv.Close)
@@ -127,7 +129,8 @@ func (b *fakeBridge) serveWS(w http.ResponseWriter, r *http.Request) {
 			b.prompts = append(b.prompts, content)
 			b.images = append(b.images, nImg)
 			b.mu.Unlock()
-			if !b.applyTurn(conn, b.chat(turn)) {
+			opID, _ := m["opId"].(string)
+			if !b.applyTurn(conn, b.chat(turn), opID) {
 				return // dropConn: leave the read loop so the socket closes
 			}
 		}
@@ -136,15 +139,16 @@ func (b *fakeBridge) serveWS(w http.ResponseWriter, r *http.Request) {
 
 // applyTurn plays one scripted action; returns false when the connection must
 // be dropped (simulating a mid-turn sandbox/ACP crash).
-func (b *fakeBridge) applyTurn(conn *websocket.Conn, act turnAction) bool {
+func (b *fakeBridge) applyTurn(conn *websocket.Conn, act turnAction, opID string) bool {
+	write := func(frame map[string]any) { _ = conn.WriteJSON(withOpID(frame, opID)) }
 	if act.dropConn {
 		return false
 	}
 	if act.sendError != "" {
 		if act.narration != "" {
-			_ = conn.WriteJSON(agentMessageFrame(act.narration))
+			write(agentMessageFrame(act.narration))
 		}
-		_ = conn.WriteJSON(map[string]any{"op": "error", "message": act.sendError})
+		write(map[string]any{"op": "error", "message": act.sendError})
 		return true
 	}
 	if act.stall {
@@ -162,21 +166,51 @@ func (b *fakeBridge) applyTurn(conn *websocket.Conn, act turnAction) bool {
 		b.host.SetPendingQuestions(b.runID, b.nodeID, act.questions)
 	}
 	if act.narration != "" {
-		_ = conn.WriteJSON(agentMessageFrame(act.narration))
+		write(agentMessageFrame(act.narration))
 	}
 	if act.errorText != "" {
-		_ = conn.WriteJSON(map[string]any{"op": "event", "data": map[string]any{
+		write(map[string]any{"op": "event", "data": map[string]any{
 			"type": "error_text", "text": act.errorText,
 		}})
 	}
 	if act.failed {
-		_ = conn.WriteJSON(map[string]any{"op": "event", "data": map[string]any{
+		write(map[string]any{"op": "event", "data": map[string]any{
 			"type": "prompt_done", "stopReason": "failed",
 		}})
 		return true
 	}
-	_ = conn.WriteJSON(promptDoneFrame())
+	write(promptDoneFrame())
 	return true
+}
+
+// testBridgePassword is the acp-bridge secret every fake bridge accepts.
+const testBridgePassword = "test-bridge-pw"
+
+// handleTestBridgeLogin registers the bridge POST /api/login endpoint on mux.
+func handleTestBridgeLogin(mux *http.ServeMux) {
+	mux.HandleFunc("/api/login", func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{Name: "agentchat_session", Value: "test-session", Path: "/"})
+		w.WriteHeader(http.StatusOK)
+	})
+}
+
+// serveTestBridgeLogin answers POST /api/login for hand-rolled fake bridges;
+// it reports whether the request was handled.
+func serveTestBridgeLogin(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Path != "/api/login" {
+		return false
+	}
+	http.SetCookie(w, &http.Cookie{Name: "agentchat_session", Value: "test-session", Path: "/"})
+	w.WriteHeader(http.StatusOK)
+	return true
+}
+
+// withOpID tags a frame with the turn's opId like the real bridge does.
+func withOpID(frame map[string]any, opID string) map[string]any {
+	if opID != "" {
+		frame["opId"] = opID
+	}
+	return frame
 }
 
 func agentMessageFrame(text string) map[string]any {
@@ -217,6 +251,7 @@ type fakeManager struct {
 	token     string
 	chatFor   func(attempt int) chatFunc
 	createErr func(attempt int) error
+	blobs     blob.Store
 
 	mu      sync.Mutex
 	bridges []*fakeBridge
@@ -244,7 +279,7 @@ func (m *fakeManager) Create(ctx context.Context, spec sandbox.Spec) (*sandbox.S
 	m.mu.Unlock()
 
 	host, port := b.hostPort()
-	return &sandbox.Sandbox{Name: fmt.Sprintf("fake-sb-%d", attempt), Host: host, Port: port, WorkspaceDir: "/root/workspace"}, nil
+	return &sandbox.Sandbox{Name: fmt.Sprintf("fake-sb-%d", attempt), Host: host, Port: port, WorkspaceDir: "/root/workspace", Password: testBridgePassword, Blobs: m.blobs}, nil
 }
 
 func (m *fakeManager) createCount() int {
@@ -309,10 +344,11 @@ func newTestProvider(t *testing.T, host *mcp.Host, opts Options, mgr sandboxMana
 const testAgentProfile = "test-agent"
 
 func ensureTestProfiles(t *testing.T, opts Options) Options {
+	opts = withTestCredentials(opts)
 	if opts.ProfilesRoot != "" {
 		return opts
 	}
-	opts.ProfilesRoot = writeAgent(t, testAgentProfile, `{"env":{"GRASP_CURSOR_API_KEY":"fake","GRASP_CLAUDE_API_KEY":"fake","GRASP_CODEBUDDY_API_KEY":"fake","GRASP_TRAE_API_KEY":"fake"}}`)
+	opts.ProfilesRoot = writeAgent(t, testAgentProfile, `{}`)
 	return opts
 }
 

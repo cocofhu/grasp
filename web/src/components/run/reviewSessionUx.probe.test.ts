@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 /**
  * Acceptance probes: ClarifyChat reviewMode queue / stream / Cancel
- * (shared by visual + proposal node-inline review via ReviewComposer).
+ * (shared by visual + research node-inline review via ReviewComposer).
  */
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -42,13 +42,13 @@ async function sendText(wrapper: ReturnType<typeof mountReview>, text: string) {
   await flushPromises()
 }
 
-describe('[approving] ClarifyChat reviewMode UX (visual/proposal shared)', () => {
+describe('[approving] ClarifyChat reviewMode UX (visual/research shared)', () => {
   beforeEach(() => {
     sessionStorage.clear()
   })
 
-  it('proposal surface: enqueue shows queue panel; confirm disabled before turn_begin', async () => {
-    const w = mountReview('proposal')
+  it('research surface: enqueue shows queue panel; confirm disabled before turn_begin', async () => {
+    const w = mountReview('research')
     await sendText(w, '方案意见甲')
     await sendText(w, '方案意见乙')
     const queue = w.find('[data-testid="clarify-review-queue"]')
@@ -91,7 +91,7 @@ describe('[approving] ClarifyChat reviewMode UX (visual/proposal shared)', () =>
   })
 
   it('enqueue failure: discardLastQueued restores confirm gate (v1)', async () => {
-    const w = mountReview('proposal')
+    const w = mountReview('research')
     await sendText(w, '将失败的意见')
     expect(w.find('[data-testid="clarify-review-queue"]').exists()).toBe(true)
     expect((w.find('[data-testid="clarify-confirm-flow"]').element as HTMLButtonElement).disabled).toBe(
@@ -129,7 +129,7 @@ describe('[approving] ClarifyChat reviewMode UX (visual/proposal shared)', () =>
   })
 
   it('ignores review frames for other nodeId (v3)', async () => {
-    const w = mountReview('proposal')
+    const w = mountReview('research')
     await sendText(w, '本节点意见')
     const vm = w.vm as unknown as { applyReviewFrame: (f: Record<string, unknown>) => void }
     vm.applyReviewFrame({

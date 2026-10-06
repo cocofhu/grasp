@@ -33,11 +33,11 @@ func TestAllPendingInboxItems(t *testing.T) {
 		Title: "网关鉴权改造", Status: "waiting_human", StartedAt: now.Add(-time.Hour), Graph: validGraph(),
 	})
 	db.Create(&models.Gate{
-		RunID: "run-gate", NodeID: "gate-proposal", WorkflowID: "wf1", WorkflowName: "API 重构",
+		RunID: "run-gate", NodeID: "gate-approve", WorkflowID: "wf1", WorkflowName: "API 重构",
 		Title: "方案评审门禁", Resolved: false, RequestedAt: gateAt,
 	})
 	db.Create(&models.StateRun{
-		RunID: "run-gate", NodeID: "gate-proposal", Iteration: 0, Status: "waiting_human",
+		RunID: "run-gate", NodeID: "gate-approve", Iteration: 0, Status: "waiting_human",
 	})
 
 	db.Create(&models.Run{
@@ -111,7 +111,7 @@ func TestPendingInboxItemsIncludesGateNodeType(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	graph := models.Graph{Nodes: []models.Node{
 		{ID: "hg1", Type: "human_gate", Label: "审"},
-		{ID: "ps1", Type: "proposal_select", Label: "选"},
+		{ID: "hg2", Type: "human_gate", Label: "复审"},
 	}}
 	db.Create(&models.Run{
 		ID: "run-nt", WorkflowID: "wf-nt", WorkflowName: "NT", Status: "waiting_human",
@@ -123,10 +123,10 @@ func TestPendingInboxItemsIncludesGateNodeType(t *testing.T) {
 	})
 	db.Create(&models.StateRun{RunID: "run-nt", NodeID: "hg1", Iteration: 0, Status: "waiting_human"})
 	db.Create(&models.Gate{
-		RunID: "run-nt", NodeID: "ps1", WorkflowID: "wf-nt", WorkflowName: "NT",
-		Title: "方案选择", Resolved: false, RequestedAt: now,
+		RunID: "run-nt", NodeID: "hg2", WorkflowID: "wf-nt", WorkflowName: "NT",
+		Title: "复审", Resolved: false, RequestedAt: now,
 	})
-	db.Create(&models.StateRun{RunID: "run-nt", NodeID: "ps1", Iteration: 0, Status: "waiting_human"})
+	db.Create(&models.StateRun{RunID: "run-nt", NodeID: "hg2", Iteration: 0, Status: "waiting_human"})
 	items := s.AllPendingInboxItems()
 	if len(items) != 2 {
 		t.Fatalf("expected 2 gates, got %d", len(items))
@@ -139,7 +139,7 @@ func TestPendingInboxItemsIncludesGateNodeType(t *testing.T) {
 		}
 		byNode[g.NodeID] = g.NodeType
 	}
-	if byNode["hg1"] != "human_gate" || byNode["ps1"] != "proposal_select" {
+	if byNode["hg1"] != "human_gate" || byNode["hg2"] != "human_gate" {
 		t.Fatalf("nodeType map=%v", byNode)
 	}
 }
@@ -154,11 +154,11 @@ func TestPendingInboxItemsOmitsEmptyRunTitle(t *testing.T) {
 		Title: "", Status: "waiting_human", StartedAt: now, Graph: validGraph(),
 	})
 	db.Create(&models.Gate{
-		RunID: "run-empty-title", NodeID: "gate-proposal", WorkflowID: "wf1", WorkflowName: "API 重构",
+		RunID: "run-empty-title", NodeID: "gate-approve", WorkflowID: "wf1", WorkflowName: "API 重构",
 		Title: "方案评审门禁", Resolved: false, RequestedAt: now,
 	})
 	db.Create(&models.StateRun{
-		RunID: "run-empty-title", NodeID: "gate-proposal", Iteration: 0, Status: "waiting_human",
+		RunID: "run-empty-title", NodeID: "gate-approve", Iteration: 0, Status: "waiting_human",
 	})
 
 	items := s.AllPendingInboxItems()
@@ -215,16 +215,16 @@ func TestPendingClarificationsKind(t *testing.T) {
 	})
 	db.Create(&models.StateRun{RunID: "run-research", NodeID: "research", Iteration: 1, Status: "waiting_human"})
 
-	// proposal review session → kind=review
+	// design review session → kind=review
 	db.Create(&models.Run{
-		ID: "run-proposal", WorkflowID: "wf-p", WorkflowName: "方案流",
-		Status: "waiting_human", StartedAt: now, Graph: reviewCapableGraph("proposal", "方案"),
+		ID: "run-design", WorkflowID: "wf-p", WorkflowName: "设计流",
+		Status: "waiting_human", StartedAt: now, Graph: reviewCapableGraph("design", "设计"),
 	})
 	db.Create(&models.ReactConversation{
-		RunID: "run-proposal", NodeID: "proposal", Iteration: 1, Done: false,
-		Messages: []models.ReactMessage{{Role: "agent", Text: "proposals", At: now.Add(2 * time.Minute).Format(time.RFC3339)}},
+		RunID: "run-design", NodeID: "design", Iteration: 1, Done: false,
+		Messages: []models.ReactMessage{{Role: "agent", Text: "design", At: now.Add(2 * time.Minute).Format(time.RFC3339)}},
 	})
-	db.Create(&models.StateRun{RunID: "run-proposal", NodeID: "proposal", Iteration: 1, Status: "waiting_human"})
+	db.Create(&models.StateRun{RunID: "run-design", NodeID: "design", Iteration: 1, Status: "waiting_human"})
 
 	// preview-capable review Agent → kind=review
 	db.Create(&models.Run{
@@ -244,7 +244,7 @@ func TestPendingClarificationsKind(t *testing.T) {
 			byRun[c.RunID] = c
 		}
 	}
-	for _, id := range []string{"run-react", "run-research", "run-proposal", "run-app-preview"} {
+	for _, id := range []string{"run-react", "run-research", "run-design", "run-app-preview"} {
 		if _, ok := byRun[id]; !ok {
 			t.Fatalf("missing inbox item for %s among %d items", id, len(items))
 		}
@@ -255,14 +255,14 @@ func TestPendingClarificationsKind(t *testing.T) {
 	if byRun["run-research"].Type != "clarify" || byRun["run-research"].Kind != "review" {
 		t.Fatalf("research: type=%q kind=%q", byRun["run-research"].Type, byRun["run-research"].Kind)
 	}
-	if byRun["run-proposal"].Type != "clarify" || byRun["run-proposal"].Kind != "review" {
-		t.Fatalf("proposal: type=%q kind=%q", byRun["run-proposal"].Type, byRun["run-proposal"].Kind)
+	if byRun["run-design"].Type != "clarify" || byRun["run-design"].Kind != "review" {
+		t.Fatalf("design: type=%q kind=%q", byRun["run-design"].Type, byRun["run-design"].Kind)
 	}
 	if byRun["run-app-preview"].Type != "clarify" || byRun["run-app-preview"].Kind != "review" {
 		t.Fatalf("preview review: type=%q kind=%q", byRun["run-app-preview"].Type, byRun["run-app-preview"].Kind)
 	}
-	if byRun["run-research"].Label != "调研" || byRun["run-proposal"].Label != "方案" {
-		t.Fatalf("labels: research=%q proposal=%q", byRun["run-research"].Label, byRun["run-proposal"].Label)
+	if byRun["run-research"].Label != "调研" || byRun["run-design"].Label != "设计" {
+		t.Fatalf("labels: research=%q design=%q", byRun["run-research"].Label, byRun["run-design"].Label)
 	}
 }
 
@@ -386,11 +386,11 @@ func TestPendingInboxIncludesAppPreview(t *testing.T) {
 		Title: "方案门禁", Status: "waiting_human", StartedAt: now.Add(-time.Hour), Graph: validGraph(),
 	})
 	db.Create(&models.Gate{
-		RunID: "run-gate", NodeID: "gate-proposal", WorkflowID: "wf1", WorkflowName: "门禁工作流",
+		RunID: "run-gate", NodeID: "gate-approve", WorkflowID: "wf1", WorkflowName: "门禁工作流",
 		Title: "方案评审门禁", Resolved: false, RequestedAt: gateAt,
 	})
 	db.Create(&models.StateRun{
-		RunID: "run-gate", NodeID: "gate-proposal", Iteration: 0, Status: "waiting_human",
+		RunID: "run-gate", NodeID: "gate-approve", Iteration: 0, Status: "waiting_human",
 	})
 
 	items = s.AllPendingInboxItems()
@@ -449,11 +449,11 @@ func TestPendingInboxExcludesTransferred(t *testing.T) {
 		Title: "仍待门禁", Status: "waiting_human", StartedAt: now.Add(-time.Hour), Graph: validGraph(),
 	})
 	db.Create(&models.Gate{
-		RunID: "run-gate-live", NodeID: "gate-proposal", WorkflowID: "wf1", WorkflowName: "W",
+		RunID: "run-gate-live", NodeID: "gate-approve", WorkflowID: "wf1", WorkflowName: "W",
 		Title: "方案评审门禁", Resolved: false, RequestedAt: now.Add(-30 * time.Minute),
 	})
 	db.Create(&models.StateRun{
-		RunID: "run-gate-live", NodeID: "gate-proposal", Iteration: 0, Status: "waiting_human",
+		RunID: "run-gate-live", NodeID: "gate-approve", Iteration: 0, Status: "waiting_human",
 	})
 
 	// Dangling unresolved gate: node already left waiting_human (transferred).
@@ -462,11 +462,11 @@ func TestPendingInboxExcludesTransferred(t *testing.T) {
 		Title: "已流转门禁", Status: "running", StartedAt: now.Add(-2 * time.Hour), Graph: validGraph(),
 	})
 	db.Create(&models.Gate{
-		RunID: "run-gate-gone", NodeID: "gate-proposal", WorkflowID: "wf1", WorkflowName: "W",
+		RunID: "run-gate-gone", NodeID: "gate-approve", WorkflowID: "wf1", WorkflowName: "W",
 		Title: "残留门禁", Resolved: false, RequestedAt: now.Add(-90 * time.Minute),
 	})
 	db.Create(&models.StateRun{
-		RunID: "run-gate-gone", NodeID: "gate-proposal", Iteration: 0, Status: "completed",
+		RunID: "run-gate-gone", NodeID: "gate-approve", Iteration: 0, Status: "completed",
 	})
 
 	// Still-pending clarify (must remain).
@@ -555,13 +555,13 @@ func TestPendingInboxExcludesTransferred(t *testing.T) {
 	}
 
 	// Context helpers must agree with list eligibility (reopen path).
-	if kind, ok := s.InboxContextKind("run-gate-gone", "gate-proposal", 0); ok {
+	if kind, ok := s.InboxContextKind("run-gate-gone", "gate-approve", 0); ok {
 		t.Fatalf("transferred gate context must be empty, got %q", kind)
 	}
-	if _, ok := s.PendingGateAt("run-gate-gone", "gate-proposal", 0); ok {
+	if _, ok := s.PendingGateAt("run-gate-gone", "gate-approve", 0); ok {
 		t.Fatal("PendingGateAt must exclude transferred gate")
 	}
-	if kind, ok := s.InboxContextKind("run-gate-live", "gate-proposal", 0); !ok || kind != "gate" {
+	if kind, ok := s.InboxContextKind("run-gate-live", "gate-approve", 0); !ok || kind != "gate" {
 		t.Fatalf("live gate context: %q %v", kind, ok)
 	}
 }

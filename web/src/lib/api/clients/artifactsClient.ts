@@ -1,4 +1,4 @@
-import type { Artifact, InboxItem } from '../../shared/types'
+import type { Artifact, ArtifactTreeProject } from '../../shared/types'
 import { i18n } from '../../shared/i18n'
 import {
   isDraining,
@@ -26,29 +26,31 @@ function filenameFromContentDisposition(header: string | null, fallback: string)
   return fallback
 }
 
+/** Scope of one artifacts page: a whole project, one workflow, or its Agent-session bucket. */
+export type ArtifactListScope =
+  | { projectId: string; workflowId?: undefined; session?: undefined }
+  | { projectId: string; workflowId: string; session?: undefined }
+  | { projectId: string; workflowId?: undefined; session: true }
+
+export type ListArtifactsParams = ArtifactListScope & {
+  page?: number
+  pageSize?: number
+  q?: string
+  /** Page by Run (total/pageSize = Run count; items = whole-Run flat list). */
+  groupBy?: 'run'
+}
+
 export const artifactsClient = {
-  listArtifacts: (params?: {
-    page?: number
-    pageSize?: number
-    wf?: string
-    projectId?: string
-    q?: string
-    /** Opt-in: page by Run (total/pageSize = Run count; items = whole-Run flat list). */
-    groupBy?: 'run'
-  }) => {
-    const qs = new URLSearchParams()
-    if (params?.page != null) qs.set('page', String(params.page))
-    if (params?.pageSize != null) qs.set('pageSize', String(params.pageSize))
-    if (params?.wf) qs.set('wf', params.wf)
-    if (params?.projectId) qs.set('projectId', params.projectId)
-    if (params?.q) qs.set('q', params.q)
-    if (params?.groupBy) qs.set('groupBy', params.groupBy)
-    const q = qs.toString()
-    const path = q ? `/artifacts?${q}` : '/artifacts'
-    if (params?.page != null || params?.pageSize != null) {
-      return req<PaginatedResponse<Artifact>>(path)
-    }
-    return req<Artifact[]>(path)
+  getArtifactTree: () => req<ArtifactTreeProject[]>('/artifacts/tree'),
+  listArtifacts: (params: ListArtifactsParams) => {
+    const qs = new URLSearchParams({ projectId: params.projectId })
+    if (params.workflowId) qs.set('workflowId', params.workflowId)
+    if (params.session) qs.set('session', '1')
+    if (params.q) qs.set('q', params.q)
+    if (params.page != null) qs.set('page', String(params.page))
+    if (params.pageSize != null) qs.set('pageSize', String(params.pageSize))
+    if (params.groupBy) qs.set('groupBy', params.groupBy)
+    return req<PaginatedResponse<Artifact>>(`/artifacts?${qs.toString()}`)
   },
   artifactContent: (id: string, opts?: { signal?: AbortSignal }) =>
     req<Artifact>(`/artifacts/${id}/content`, opts?.signal ? { signal: opts.signal } : undefined),

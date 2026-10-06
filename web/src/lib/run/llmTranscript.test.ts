@@ -88,7 +88,7 @@ describe('splitTurns', () => {
     expect(turns[0]!.answers[1]!.parts).toEqual(parts)
   })
 
-  it('keeps legacy events (no prompt) as a single reply-only turn', () => {
+  it('keeps events without a prompt as a single reply-only turn', () => {
     const turns = splitTurns([ev({ kind: 'thought', text: 't' }), ev({ kind: 'message', text: 'm' })])
     expect(turns).toHaveLength(1)
     expect(turns[0]!.prompt).toBeUndefined()
@@ -158,16 +158,6 @@ describe('buildLlmTranscript', () => {
     const node = items[0]
     expect(node).toMatchObject({ type: 'node', label: 'L-clarify', models: ['claude-x'], turnCount: 2 })
     expect(summarizeLlmTranscript(items)).toEqual({ turns: 2, nodes: 2, totalTokens: 12 })
-  })
-
-  it('adds a legacy notice for executions recorded before prompts were persisted', () => {
-    const run = baseRun({
-      nodeExecutions: {
-        a: [{ nodeId: 'a', status: 'completed', startedAt: '2026-10-01T00:00:00Z', events: [ev({ kind: 'message', text: 'old' })] }],
-      },
-    })
-    const items = buildLlmTranscript({ run, transcript: null, nodeInfo })
-    expect(items.map((i) => i.type)).toEqual(['node', 'legacy', 'turn'])
   })
 
   it('appends a live turn from inflight prompt and WS events for the running execution', () => {

@@ -3,18 +3,14 @@ info:
   title: Grasp Platform API (partial)
   version: 0.1.0
   description: |
-    Minimal OpenAPI contract for platform list endpoints. This file is introduced
-    to document GET /api/artifacts optional pagination behavior.
+    Minimal OpenAPI contract for platform list endpoints.
 
-    **Pagination pattern (shared):** GET /api/runs and GET /api/gates use the
-    same optional page/pageSize query parameters and paginated envelope as
-    implemented in `internal/handlers/pagination.go` (`parsePagination`,
-    `paginatedResponse`). Constants: `defaultPageSize=20`, `maxPageSize=100`,
+    **Pagination pattern (shared):** GET /api/artifacts, GET /api/runs,
+    GET /api/gates and GET /api/projects/{id}/audit always return the paginated
+    envelope `{ items, total, page, pageSize, hasMore }` as implemented in
+    `internal/handlers/pagination.go` (`parsePagination`, `paginatedResponse`).
+    Omitted `page` / `pageSize` default to `1` / `20`; `maxPageSize=100`;
     `hasMore = page × pageSize < total`.
-
-    **Backward compatibility:** When neither `page` nor `pageSize` is present,
-    list handlers return a plain JSON array. When either is present, they return
-    a pagination envelope object instead.
 
 servers:
   - url: /api
@@ -72,8 +68,8 @@ paths:
       summary: List primary artifacts for a pending gate
       description: |
         Returns the whitelist of primary artifacts for a `waiting_human` unresolved
-        gate, derived from body_template `{{nodes.*.outputs.*}}` and `artifact("…")`
-        (plus proposal_select `from`). Each item includes `kind` and `readonly`
+        gate, derived from body_template `{{nodes.*.outputs.*}}` and `artifact("…")`.
+        Each item includes `kind` and `readonly`
         (true for non-text kinds such as image). Auth matches ResumeGate (session).
       parameters:
         - name: id
@@ -171,17 +167,12 @@ paths:
     get:
       operationId: listArtifacts
       tags: [artifacts]
-      summary: List platform artifacts (optional pagination)
+      summary: List platform artifacts (paginated)
       description: |
-        Returns artifacts across all runs for the Artifacts view and integrations.
+        Returns artifacts across all runs for the Artifacts view and integrations,
+        always as the paginated envelope `{ items, total, page, pageSize, hasMore }`.
 
-        **Dual response modes (backward compatible):**
-        - No `page` / `pageSize` → `Artifact[]` full array (used by L1 sidebar
-          `listArtifacts()` without pagination params).
-        - Either `page` or `pageSize` present → paginated envelope
-          `{ items, total, page, pageSize, hasMore }` (used by L2 list).
-
-        **Pagination unit (paginated requests only):**
+        **Pagination unit:**
         - Default (no `groupBy`, or any value other than `run`): `pageSize` /
           `total` count **artifact rows**; `items` is a slice of artifacts.
         - `groupBy=run` (opt-in, ArtifactsView L2): `pageSize` / `total` count
@@ -200,8 +191,8 @@ paths:
           `artifacts.node_id`, and `runs.title` (via LEFT JOIN).
 
         **List item shape:** `items` omit heavy `content`; `runTitle` is
-        populated from `runs.title` when non-empty. Empty paginated results
-        normalize `items` to `[]` (never JSON `null`).
+        populated from `runs.title` when non-empty. Empty results normalize
+        `items` to `[]` (never JSON `null`).
 
         Pagination validation matches `/api/runs` and `/api/gates`: invalid
         `page`/`pageSize` or `pageSize > 100` → HTTP 400.
@@ -213,35 +204,14 @@ paths:
         - $ref: '#/components/parameters/ArtifactGroupByQuery'
       responses:
         '200':
-          description: Success — response shape depends on pagination params
+          description: Paginated artifact list
           content:
             application/json:
               schema:
-                oneOf:
-                  - type: array
-                    items:
-                      $ref: '#/components/schemas/ArtifactListItem'
-                    description: Full array when no pagination query params
-                  - $ref: '#/components/schemas/ArtifactPaginatedResponse'
-                description: |
-                  Use `page` or `pageSize` to receive the paginated envelope;
-                  omit both for the legacy full array.
+                $ref: '#/components/schemas/ArtifactPaginatedResponse'
               examples:
-                fullArray:
-                  summary: No pagination params (L1 sidebar)
-                  value:
-                    - id: art-abc123
-                      runId: run-1
-                      nodeId: plan
-                      workflowId: wf-product
-                      workflowName: 产品需求流程
-                      name: plan.json
-                      kind: json
-                      sizeBytes: 1024
-                      createdAt: '2026-07-12T00:00:00Z'
-                      runTitle: Sprint Planning
                 paginated:
-                  summary: With page/pageSize (default — by artifact)
+                  summary: Default — by artifact
                   value:
                     items:
                       - id: art-abc123
@@ -284,7 +254,7 @@ paths:
                     pageSize: 20
                     hasMore: false
                 emptyPage:
-                  summary: No matches (paginated)
+                  summary: No matches
                   value:
                     items: []
                     total: 0
@@ -308,19 +278,18 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /agents/org/export:
+  /projects/{id}/agents/export:
     get:
-      operationId: exportOrgFolder
+      operationId: exportProjectAgents
       tags: [agents]
-      summary: Export a virtual-group subtree as a folder ZIP
+      summary: Export every Agent of a project as one ZIP
       description: |
-        Downloads a folder package (`folder.json` + `agents/{name}/`) for the
-        given virtual group and all descendant groups (including empty groups).
-        Auth matches other Agent APIs (session cookie / APIMiddleware). Must be
-        registered before `/agents/{name}/export` so `name=org` is not captured.
+        Downloads a project package (`project.json` with `kind: project-agents`,
+        `schemaVersion: 1` + `agents/{name}/`) containing every Agent whose home
+        project is `id`. Filename is `<project name>-agents.zip`.
       parameters:
-        - name: groupId
-          in: query
+        - name: id
+          in: path
           required: true
           schema: { type: string }
       responses:
@@ -332,22 +301,28 @@ paths:
                 type: string
                 format: binary
         '400':
-          description: Missing groupId or package too large
+          description: Package too large
         '401':
           description: Unauthenticated
         '404':
-          description: Group not found
+          description: Project not found
 
-  /agents/org/import:
+  /projects/{id}/agents/import:
     post:
-      operationId: importOrgFolder
+      operationId: importProjectAgents
       tags: [agents]
-      summary: Import a folder ZIP (atomic)
+      summary: Import a project Agent package (atomic)
       description: |
-        Multipart import of an `org-folder` ZIP. Optional `targetGroupId` mounts
-        the package root as a child of that group; omit it to create a new root
-        group. `mode` is `rename` (default, `name_v2`) or `overwrite`.
-        Failures roll back to the pre-import environment. Auth is session only.
+        Multipart import of a `project-agents` ZIP (max 64MiB). Every imported
+        Agent is bound to project `id`. `mode` is `rename` (default, name
+        conflicts get a new name) or `overwrite` (only Agents already in this
+        project may be overwritten). Single-agent ZIPs are rejected. Failures
+        roll back the whole import.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
       requestBody:
         required: true
         content:
@@ -359,20 +334,17 @@ paths:
                 file:
                   type: string
                   format: binary
-                targetGroupId:
-                  type: string
                 mode:
                   type: string
                   enum: [rename, overwrite]
       responses:
         '200':
-          description: Imported org snapshot
+          description: Import result
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  org: { type: object }
                   created:
                     type: array
                     items: { type: string }
@@ -383,11 +355,11 @@ paths:
                     type: object
                     additionalProperties: { type: string }
         '400':
-          description: Invalid package, single-agent ZIP, oversize, or validation
+          description: Invalid package, single-agent ZIP, oversize, foreign-project overwrite, or validation
         '401':
           description: Unauthenticated
         '404':
-          description: Target group not found
+          description: Project not found
 
   /agents/{name}/export:
     get:
@@ -423,13 +395,16 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [file, targetName]
+              required: [file, targetName, projectId]
               properties:
                 file:
                   type: string
                   format: binary
                 targetName:
                   type: string
+                projectId:
+                  type: string
+                  description: Home project of the imported Agent (required)
                 mode:
                   type: string
                   enum: [create, overwrite]
@@ -437,7 +412,7 @@ paths:
         '200':
           description: Imported agent
         '400':
-          description: Invalid ZIP or name
+          description: Invalid ZIP, name, missing / unknown projectId, or agent.json without a valid acpBackend
         '401':
           description: Unauthenticated
 
@@ -448,7 +423,7 @@ components:
       in: query
       required: false
       description: |
-        1-based page index. Defaults to `1` when pagination is active.
+        1-based page index. Defaults to `1`.
         Must be a positive integer (≥ 1).
       schema:
         type: integer
@@ -459,7 +434,7 @@ components:
       in: query
       required: false
       description: |
-        Page size when pagination is active. Defaults to `20`.
+        Page size. Defaults to `20`.
         Maximum `100`; values above 100 return HTTP 400.
       schema:
         type: integer
@@ -483,7 +458,6 @@ components:
       description: |
         Case-insensitive substring search against artifact `name`, `nodeId`,
         and associated run `title` (SQL `LOWER LIKE` with `%` wildcards).
-        Only applied in paginated requests (when `page` or `pageSize` is set).
         With `groupBy=run`, `q` selects which Runs qualify; expansion returns
         the full Run (see operation description).
       schema:
@@ -494,7 +468,7 @@ components:
       in: query
       required: false
       description: |
-        Pagination grouping mode for paginated requests only.
+        Pagination grouping mode.
         Omit or use any value other than `run` to page by artifact row
         (`total` / `pageSize` = artifact count).
         Set to `run` to page by Run (`total` / `pageSize` = Run count;
@@ -587,7 +561,7 @@ components:
       type: object
       description: |
         Shared pagination envelope used by GET /api/artifacts, GET /api/runs,
-        and GET /api/gates (see pagination.go).
+        GET /api/gates and GET /api/projects/{id}/audit (see pagination.go).
       properties:
         total:
           type: integer

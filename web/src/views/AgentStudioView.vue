@@ -2,7 +2,8 @@
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
-import AgentOrgSidebar from '@/components/agent/AgentOrgSidebar.vue'
+import AgentProjectSidebar from '@/components/agent/AgentProjectSidebar.vue'
+import ProjectTree from '@/components/ui/ProjectTree.vue'
 import AgentDataPanel, { type DataSubTab } from '@/components/agent/AgentDataPanel.vue'
 import AgentFilesPanel from '@/components/agent/AgentFilesPanel.vue'
 import AgentMcpPanel from '@/components/agent/AgentMcpPanel.vue'
@@ -13,7 +14,6 @@ import AgentChatTester from '@/components/agent/AgentChatTester.vue'
 import AgentCreateWizard from '@/components/agent/AgentCreateWizard.vue'
 import CreateAgentTeamWizard from '@/components/agent/CreateAgentTeamWizard.vue'
 import TeamBootstrapPanel from '@/components/agent/TeamBootstrapPanel.vue'
-import { computed } from 'vue'
 import { api, type CreateAgentTestPayload, type SandboxView } from '@/lib/api/api'
 import { useAgentStudio } from '@/lib/agent/useAgentStudio'
 
@@ -22,20 +22,9 @@ const props = defineProps<{ projectId?: string; embedded?: boolean }>()
 const {
   t,
   isMobile,
-  route,
-  router,
-  AGENT_LIST_COLLAPSED_KEY,
-  ORG_SIDEBAR_EXPANDED_W,
-  SIDEBAR_COLLAPSED_W,
-  readCollapsedState,
-  writeCollapsedState,
-  agentListCollapsed,
-  toggleAgentListCollapsed,
   cardGridStyle,
-  filesStep,
   justSaved,
   filesPanelRef,
-  TAB_FADE_THRESHOLD,
   agentNameEl,
   tabStripEl,
   agentNameTruncated,
@@ -44,32 +33,29 @@ const {
   tabFadeLeft,
   tabFadeRight,
   closeFullNameTip,
-  closeMobileChromeOverlays,
-  showOrgSheet,
-  orgSheetCollapsed,
+  showProjectSheet,
+  openProjectSheet,
+  closeProjectSheet,
   leaveConfirmCfg,
   agents,
   projects,
-  org,
-  displayOrg,
-  orgBaseline,
+  treeProjects,
+  treeNodes,
+  activeTreeKey,
+  onTreeSelect,
+  onSheetTreeSelect,
+  agentListCollapsed,
+  toggleAgentListCollapsed,
   activeName,
   draft,
-  originalJson,
   tab,
   dataSubTab,
-  orgSaving,
-  applyingStudioQuery,
-  syncStudioQuery,
   savedProjectId,
-  isProjectBound,
   draftBindingDirty,
   projectNameById,
   loading,
-  hasInitialLoaded,
   loadFailed,
   loadDenied,
-  studioSeq,
   error,
   saving,
   initialLoading,
@@ -84,26 +70,9 @@ const {
   confirmCfg,
   showAgentManage,
   manageFocusAgent,
-  showRenameBlocked,
-  renameBlockedTarget,
   showUnsavedExport,
   exporting,
-  showFolderSecrets,
-  pendingFolderExportGroupId,
-  onClearSensitiveConfig,
-  showClearSensitive,
-  clearSensitiveBusy,
-  clearSensitiveGroupName,
-  clearSensitiveAgentCount,
-  clearSensitiveHits,
-  clearSensitiveSelectedCount,
-  isClearSensitiveKeySelected,
-  toggleClearSensitiveKey,
-  selectAllClearSensitiveKeys,
-  clearAllClearSensitiveKeys,
-  cancelClearSensitive,
-  confirmClearSensitive,
-  agentImport,
+  showBundleSecrets,
   importFileInput,
   showImportDiscardConfirm,
   showImportConflict,
@@ -116,7 +85,10 @@ const {
   showBatchConflict,
   batchConflictNames,
   triggerImport,
-  triggerGroupImport,
+  showImportProjectPick,
+  importProjectId,
+  cancelImportProjectPick,
+  confirmImportProjectPick,
   onImportDiscardCancel,
   onImportDiscardConfirm,
   onImportFileChange,
@@ -126,52 +98,13 @@ const {
   closeBatchConflict,
   confirmBatchRename,
   confirmBatchOverwrite,
-  orgSnapshot,
-  agentDirty,
-  orgDirty,
   dirty,
   agentNames,
   manageSearch,
-  manageSearchQuery,
   filteredManageNames,
   manageSearchActive,
   manageNameHighlight,
   clearManageSearch,
-  orgSheetRows,
-  showAssignPick,
-  showAssignCover,
-  showAssignDraft,
-  assignApplying,
-  assignGroupName,
-  assignMembers,
-  assignTargetId,
-  assignDiffBound,
-  assignFail,
-  assignOkCount,
-  assignTargetLabel,
-  assignMemberList,
-  assignAffectedList,
-  closeAssignModals,
-  onAssignProject,
-  onAssignPickNext,
-  cancelAssignCover,
-  maybeAssignDraftThenApply,
-  keepAssignDraft,
-  syncDraftProjectId,
-  applyAssign,
-  openOrgSheet,
-  closeOrgSheet,
-  toggleOrgSheetNode,
-  orgSheetPadStyle,
-  persistOrg,
-  reloadOrg,
-  openCreateRootGroup,
-  openCreateChildGroup,
-  openRenameGroup,
-  confirmDeleteGroup,
-  onMoveGroup,
-  onMoveAgent,
-  onRemoveFromGroup,
   studioTabs,
   studioTabLabel,
   showToast,
@@ -183,74 +116,53 @@ const {
   leaveConfirmDiscard,
   leaveConfirmCancel,
   load,
-  select,
-  resetOrgFromBaseline,
-  chooseAgent,
   chooseAgentFromSheet,
   openManageFromSheet,
   save,
-  promptSave,
   confirmSaveWithReason,
   showSaveReasonModal,
   saveReason,
   historyRefreshKey,
   reloadAgentFromServer,
-  doExport,
   triggerExport,
   cancelUnsavedExport,
   discardAndExport,
   saveThenExport,
-  onExportGroup,
-  cancelFolderSecrets,
-  confirmFolderSecrets,
-  onImportGroup,
+  onExportProject,
+  cancelBundleSecrets,
+  confirmBundleSecrets,
+  onImportProject,
   showCreateWizard,
   showTeamWizard,
   teamBootstrapSessionId,
+  createAgentProjectId,
   openCreateAgent,
   openCreateTeam,
   showCreateTeam,
   hideTeamCreate,
   embedded,
-  scopedProjectId,
+  chooseAgent,
   onWizardCreated,
   onTeamBootstrapStarted,
-  refreshAgentsList,
   onTeamBootstrapRefresh,
   onTeamBootstrapSelectPm,
   onTeamBootstrapOpenPm,
   onTeamBootstrapDone,
   openAgentManage,
   closeAgentManage,
-  onSidebarRenameBlocked,
-  closeRenameBlocked,
-  gotoManageFromBlocked,
   openRenameAgent,
   confirmDeleteAgent,
   promptOk,
   confirmOk,
-  measureAgentNameTruncation,
-  placeFullNameTip,
   onAgentNameClick,
   syncTabFade,
-  bindTabStripObserver,
-  onChromeReposition,
-  onChromeKeydown,
-  UNGROUPED_ID,
 } = useAgentStudio({ projectId: () => props.projectId, embedded: () => !!props.embedded })
-
-/** Embedded: host project id; standalone: Agent's saved home project. */
-const chatHomeProjectId = computed(() => {
-  if (embedded.value && props.projectId?.trim()) return props.projectId.trim()
-  return savedProjectId.value
-})
 
 async function createStudioChatTest(
   profile: string,
   payload: CreateAgentTestPayload,
 ): Promise<SandboxView> {
-  const pid = chatHomeProjectId.value.trim()
-  return api.createProjectSharedAgentTest(pid, {
+  return api.createProjectSharedAgentTest(savedProjectId.value, {
     agentName: profile,
     ...(payload.repos ? { repos: payload.repos } : {}),
     ...(payload.repoUrl ? { repoUrl: payload.repoUrl } : {}),
@@ -267,20 +179,6 @@ async function createStudioChatTest(
       v-if="error && !loadFailed && !loadDenied && agents.length"
       class="card mb-3 shrink-0 border-err/40 p-3 text-[13px] text-err"
     >{{ t('pages.agentStudio.errorPrefix') }}{{ error }}</div>
-    <div
-      v-if="assignFail.length"
-      data-test="org-assign-fail"
-      class="card mb-3 shrink-0 border-err/40 bg-err/10 p-3 text-[13px] text-txt2"
-    >
-      <div class="font-medium text-err">{{ t('pages.agentStudio.project.assignFailTitle') }}</div>
-      <div class="mt-1 text-[12px]">
-        {{ t('pages.agentStudio.project.assignFailSummary', { ok: assignOkCount, fail: assignFail.length }) }}
-      </div>
-      <ul class="mt-2 list-disc space-y-1 pl-5 text-[12px]">
-        <li v-for="item in assignFail" :key="item.name">{{ item.name }}：{{ item.reason }}</li>
-      </ul>
-      <div class="mt-2 text-[11px] text-txt3">{{ t('pages.agentStudio.project.assignFailHint') }}</div>
-    </div>
 
     <div class="flex min-h-0 flex-1 flex-col">
       <div
@@ -301,7 +199,7 @@ async function createStudioChatTest(
       >
         <div v-if="!isMobile" class="border-r border-line bg-base p-3">
           <div class="mb-3 h-3 w-16 bg-elevated animate-pulse" />
-          <div v-for="n in 6" :key="'org-skel-' + n" class="mb-1.5 h-8 bg-elevated animate-pulse" />
+          <div v-for="n in 6" :key="'tree-skel-' + n" class="mb-1.5 h-8 bg-elevated animate-pulse" />
         </div>
         <div class="space-y-3 p-4">
           <div class="h-8 w-48 bg-elevated animate-pulse" />
@@ -345,7 +243,7 @@ async function createStudioChatTest(
         <template v-if="embedded">
           <h2 class="m-0 text-[18px] font-semibold text-txt">{{ t('pages.agentStudio.emptyProjectTitle') }}</h2>
           <p class="m-0 max-w-md text-[13px] leading-6 text-txt3">{{ t('pages.agentStudio.emptyProjectDesc') }}</p>
-          <AppButton variant="primary" icon="plus" data-testid="agent-studio-empty-create" @click="openCreateAgent">
+          <AppButton variant="primary" icon="plus" data-testid="agent-studio-empty-create" @click="openCreateAgent()">
             {{ t('common.buttons.newAgent') }}
           </AppButton>
           <button
@@ -363,7 +261,7 @@ async function createStudioChatTest(
           <AppButton variant="primary" icon="skills" data-testid="agent-studio-empty-create-team" @click="openCreateTeam">
             {{ t('pages.agentStudio.emptyTeamCta') }}
           </AppButton>
-          <button type="button" class="text-[12px] text-accent-2 hover:underline" @click="openCreateAgent">
+          <button type="button" class="text-[12px] text-accent-2 hover:underline" @click="openCreateAgent()">
             {{ t('pages.agentStudio.emptyTeamOrSingle') }}
           </button>
           <button
@@ -383,34 +281,20 @@ async function createStudioChatTest(
         :class="showRefreshProgress ? 'opacity-[0.55]' : ''"
         :style="cardGridStyle"
       >
-      <!-- agent org tree (hidden on narrow screens; agent name bar remains) -->
-      <AgentOrgSidebar
+      <!-- project → Agent tree (hidden on narrow screens; agent name bar remains) -->
+      <AgentProjectSidebar
         v-if="!isMobile"
-        :org="displayOrg"
-        :agent-names="agentNames"
-        :active-name="activeName"
+        :nodes="treeNodes"
+        :active-key="activeTreeKey"
         :collapsed="agentListCollapsed"
-        :agents="agents"
-        :projects="projects"
         :hide-create-team="hideTeamCreate"
-        :hide-assign-project="embedded"
-        @select-agent="chooseAgent"
-        @rename-agent="onSidebarRenameBlocked"
-        @remove-from-group="onRemoveFromGroup"
+        @select="onTreeSelect"
         @open-manage="openAgentManage"
         @import="triggerImport"
         @create-agent="openCreateAgent"
-        @create-root-group="openCreateRootGroup"
         @create-team="openCreateTeam"
-        @create-child-group="openCreateChildGroup"
-        @rename-group="openRenameGroup"
-        @delete-group="confirmDeleteGroup"
-        @assign-project="onAssignProject"
-        @export-group="onExportGroup"
-        @import-group="onImportGroup"
-        @clear-sensitive-config="onClearSensitiveConfig"
-        @move-group="onMoveGroup"
-        @move-agent="onMoveAgent"
+        @export-project="onExportProject"
+        @import-project="onImportProject"
         @toggle-collapsed="toggleAgentListCollapsed"
       />
 
@@ -421,7 +305,7 @@ async function createStudioChatTest(
         @open-pm="onTeamBootstrapOpenPm"
         @select-pm="onTeamBootstrapSelectPm"
         @done="onTeamBootstrapDone"
-        @refresh-org="onTeamBootstrapRefresh"
+        @refresh="onTeamBootstrapRefresh"
       />
 
       <!-- editor -->
@@ -445,11 +329,11 @@ async function createStudioChatTest(
             >{{ activeName }}</button>
             <button
               type="button"
-              data-test="org-switch"
+              data-test="project-switch"
               class="inline-flex min-h-11 shrink-0 items-center gap-1 rounded border border-line bg-elevated px-2.5 text-[12px] text-txt2 transition hover:border-line-strong hover:text-txt"
               :title="t('pages.agentStudio.mobile.switchTitle')"
               :aria-label="t('pages.agentStudio.mobile.switchAria')"
-              @click="openOrgSheet"
+              @click="openProjectSheet"
             >
               <Icon name="menu" :size="14" />
               <span>{{ t('pages.agentStudio.mobile.switch') }}</span>
@@ -599,7 +483,6 @@ async function createStudioChatTest(
             v-else-if="tab === 'mcp' && draft && !isMobile"
             key="mcp"
             :draft="draft"
-            :is-project-bound="isProjectBound"
             @toast="showToast"
           />
 
@@ -624,39 +507,19 @@ async function createStudioChatTest(
             {{ t('pages.agentStudio.data.unsavedBinding') }}
           </div>
           <AgentDataPanel
-            v-if="isProjectBound"
             :agent-name="activeName"
             :project-name="projectNameById(savedProjectId)"
             :sub-tab="dataSubTab"
             @update:sub-tab="onDataSubTab"
           />
-          <div v-else class="scroll-area min-h-0 flex-1 overflow-auto p-4">
-            <div class="max-w-lg rounded border border-dashed border-line bg-base p-6 text-center">
-              <p class="text-[13px] font-medium text-txt">{{ t('pages.agentStudio.data.emptyTitle') }}</p>
-              <p class="mt-1.5 text-[12px] leading-6 text-txt3">{{ t('pages.agentStudio.data.emptyDesc') }}</p>
-              <button
-                v-if="!isMobile"
-                class="mt-3 rounded border border-accent/40 px-3 py-1.5 text-[12px] text-accent-2 hover:bg-accent-dim"
-                type="button"
-                @click="tab = 'meta'"
-              >
-                {{ t('pages.agentStudio.data.goBind') }}
-              </button>
-            </div>
-          </div>
           </div>
 
           <AgentMetaPanel
             v-else-if="tab === 'meta' && draft && !isMobile"
             key="meta"
             :draft="draft"
-            :org="org"
             :agent-name="activeName"
-            :agent-names="agentNames"
             :projects="projects"
-            :is-project-bound="isProjectBound"
-            @update:org="org = $event"
-            @error="(msg) => (error = msg)"
           />
 
           <div
@@ -668,7 +531,7 @@ async function createStudioChatTest(
             <AgentChatTester
               :key="activeName"
               :profile="activeName"
-              :home-project-id="chatHomeProjectId"
+              :home-project-id="savedProjectId"
               :create-test="createStudioChatTest"
             />
           </div>
@@ -680,7 +543,7 @@ async function createStudioChatTest(
         class="flex min-h-0 min-w-0 flex-col items-center justify-center gap-2 text-[13px] text-txt3"
       >
         <Icon name="robot" :size="24" class="opacity-50" />
-        <span>{{ t('pages.agentStudio.org.noSelection') }}</span>
+        <span>{{ t('pages.agentStudio.tree.noSelection') }}</span>
       </div>
     </div>
     </div>
@@ -688,12 +551,12 @@ async function createStudioChatTest(
     <!-- Agent management (rename + hard delete) -->
     <AppModal
       :open="showAgentManage"
-      :title="t('pages.agentStudio.org.manageTitle')"
+      :title="t('pages.agentStudio.tree.manageTitle')"
       :width="520"
       @close="closeAgentManage"
     >
-      <p class="mb-3 text-[12.5px] leading-relaxed text-txt2">{{ t('pages.agentStudio.org.manageIntro') }}</p>
-      <div v-if="!agentNames.length" class="text-[13px] text-txt3">{{ t('pages.agentStudio.org.manageEmpty') }}</div>
+      <p class="mb-3 text-[12.5px] leading-relaxed text-txt2">{{ t('pages.agentStudio.tree.manageIntro') }}</p>
+      <div v-if="!agentNames.length" class="text-[13px] text-txt3">{{ t('pages.agentStudio.tree.manageEmpty') }}</div>
       <template v-else>
         <div class="relative mb-2">
           <Icon name="search" :size="15" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-txt3" />
@@ -701,7 +564,7 @@ async function createStudioChatTest(
             v-model="manageSearch"
             type="text"
             autocomplete="off"
-            :placeholder="t('pages.agentStudio.org.manageSearchPlaceholder')"
+            :placeholder="t('pages.agentStudio.tree.manageSearchPlaceholder')"
             class="rounded-md w-full border border-line bg-base py-2 pl-8 pr-8 text-[13px] text-txt outline-none transition focus:border-accent"
             data-test="manage-search"
           />
@@ -709,7 +572,7 @@ async function createStudioChatTest(
             v-if="manageSearch"
             type="button"
             class="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center text-txt3 hover:bg-elevated hover:text-txt"
-            :aria-label="t('pages.agentStudio.org.manageClearSearch')"
+            :aria-label="t('pages.agentStudio.tree.manageClearSearch')"
             data-test="manage-search-clear"
             @click="clearManageSearch"
           >
@@ -719,16 +582,16 @@ async function createStudioChatTest(
         <p class="mb-2 text-[12px] tabular-nums text-txt3" data-test="manage-search-count">
           {{
             manageSearchActive
-              ? t('pages.agentStudio.org.manageSearchCount', { matched: filteredManageNames.length, total: agentNames.length })
-              : t('pages.agentStudio.org.manageTotalCount', { total: agentNames.length })
+              ? t('pages.agentStudio.tree.manageSearchCount', { matched: filteredManageNames.length, total: agentNames.length })
+              : t('pages.agentStudio.tree.manageTotalCount', { total: agentNames.length })
           }}
         </p>
         <div v-if="manageSearchActive && !filteredManageNames.length" class="rounded-lg border border-dashed border-line px-4 py-8 text-center">
           <Icon name="search" :size="20" class="mx-auto mb-2 text-txt3" />
-          <p class="text-[13px] font-medium text-txt">{{ t('pages.agentStudio.org.manageNoMatchTitle') }}</p>
-          <p class="mt-1 text-[12px] text-txt3">{{ t('pages.agentStudio.org.manageNoMatchDesc') }}</p>
+          <p class="text-[13px] font-medium text-txt">{{ t('pages.agentStudio.tree.manageNoMatchTitle') }}</p>
+          <p class="mt-1 text-[12px] text-txt3">{{ t('pages.agentStudio.tree.manageNoMatchDesc') }}</p>
           <AppButton class="mt-3" size="sm" variant="outline" @click="clearManageSearch">
-            {{ t('pages.agentStudio.org.manageClearSearch') }}
+            {{ t('pages.agentStudio.tree.manageClearSearch') }}
           </AppButton>
         </div>
         <div v-else class="flex flex-col gap-0.5">
@@ -752,7 +615,7 @@ async function createStudioChatTest(
           </span>
           <div class="flex shrink-0 gap-1.5">
             <AppButton size="sm" variant="outline" icon="edit" @click="openRenameAgent(name)">
-              {{ t('pages.agentStudio.org.manageRename') }}
+              {{ t('pages.agentStudio.tree.manageRename') }}
             </AppButton>
             <AppButton size="sm" variant="danger" icon="trash" @click="confirmDeleteAgent(name)">
               {{ t('pages.agentStudio.dialogs.delete') }}
@@ -763,26 +626,6 @@ async function createStudioChatTest(
       </template>
       <template #footer>
         <AppButton size="sm" variant="ghost" @click="closeAgentManage">{{ t('common.buttons.close') }}</AppButton>
-      </template>
-    </AppModal>
-
-    <!-- sidebar pencil: rename blocked → guide to Agent management -->
-    <AppModal
-      :open="showRenameBlocked"
-      :title="t('pages.agentStudio.org.renameBlockedTitle')"
-      :width="420"
-      @close="closeRenameBlocked"
-    >
-      <div class="rounded-lg border border-warn/40 bg-warn/10 px-3.5 py-3 text-[13px] leading-6 text-warn">
-        <div class="mb-1.5 text-[14px] font-semibold text-txt">{{ t('pages.agentStudio.org.renameBlockedMessage') }}</div>
-        <p>{{ t('pages.agentStudio.org.renameBlockedBody') }}</p>
-        <p class="mt-2 text-[12px] text-txt2">{{ t('pages.agentStudio.org.renameBlockedHint') }}</p>
-      </div>
-      <template #footer>
-        <AppButton size="sm" variant="ghost" @click="closeRenameBlocked">{{ t('common.buttons.close') }}</AppButton>
-        <AppButton size="sm" variant="primary" @click="gotoManageFromBlocked">
-          {{ t('pages.agentStudio.org.gotoManage') }}
-        </AppButton>
       </template>
     </AppModal>
 
@@ -818,20 +661,20 @@ async function createStudioChatTest(
       </template>
     </AppModal>
 
-    <!-- narrow-screen agent org tree sheet -->
+    <!-- narrow-screen project tree sheet -->
     <Teleport to="body">
       <div
-        v-if="showOrgSheet"
-        data-test="org-sheet"
+        v-if="showProjectSheet"
+        data-test="project-sheet"
         class="fixed inset-0 z-40"
         role="dialog"
         aria-modal="true"
-        :aria-label="t('pages.agentStudio.mobile.orgSheetTitle')"
+        :aria-label="t('pages.agentStudio.mobile.sheetTitle')"
       >
         <div
-          data-test="org-sheet-backdrop"
+          data-test="project-sheet-backdrop"
           class="absolute inset-0 bg-black/50"
-          @click="closeOrgSheet"
+          @click="closeProjectSheet"
         />
         <div
           class="absolute inset-x-0 bottom-0 flex h-[70vh] max-h-[70vh] flex-col overflow-hidden rounded-t-xl border-t border-line bg-elevated shadow-card"
@@ -839,11 +682,11 @@ async function createStudioChatTest(
           <div class="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-line-strong/70" aria-hidden="true" />
           <div class="flex shrink-0 items-center gap-1.5 border-b border-line px-3 py-2.5">
             <h3 class="min-w-0 flex-1 truncate text-[14px] font-semibold text-txt">
-              {{ t('pages.agentStudio.mobile.orgSheetTitle') }}
+              {{ t('pages.agentStudio.mobile.sheetTitle') }}
             </h3>
             <button
               type="button"
-              data-test="org-sheet-import"
+              data-test="project-sheet-import"
               class="flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
               :title="t('pages.agentStudio.exportImport.import')"
               :aria-label="t('pages.agentStudio.exportImport.import')"
@@ -853,21 +696,21 @@ async function createStudioChatTest(
             </button>
             <button
               type="button"
-              data-test="org-sheet-create-agent"
+              data-test="project-sheet-create-agent"
               class="flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
               :title="t('common.buttons.newAgent')"
               :aria-label="t('common.buttons.newAgent')"
-              @click="openCreateAgent"
+              @click="openCreateAgent()"
             >
               <Icon name="plus" :size="14" />
             </button>
             <button
               v-if="showCreateTeam"
               type="button"
-              data-test="org-sheet-create-team"
+              data-test="project-sheet-create-team"
               class="flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
-              :title="t('pages.agentStudio.org.newTeam')"
-              :aria-label="t('pages.agentStudio.org.newTeam')"
+              :title="t('pages.agentStudio.tree.newTeam')"
+              :aria-label="t('pages.agentStudio.tree.newTeam')"
               @click="openCreateTeam"
             >
               <Icon name="skills" :size="14" />
@@ -875,92 +718,31 @@ async function createStudioChatTest(
             <AppButton
               size="sm"
               variant="outline"
-              data-test="org-sheet-manage"
+              data-test="project-sheet-manage"
               class="min-h-9 shrink-0"
               @click="openManageFromSheet"
-            >{{ t('pages.agentStudio.org.manage') }}</AppButton>
+            >{{ t('pages.agentStudio.tree.manage') }}</AppButton>
             <button
               type="button"
-              data-test="org-sheet-close"
+              data-test="project-sheet-close"
               class="flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
               :aria-label="t('common.buttons.close')"
-              @click="closeOrgSheet"
+              @click="closeProjectSheet"
             >
               <Icon name="close" :size="14" />
             </button>
           </div>
-          <div class="scroll-area min-h-0 flex-1 overflow-y-auto p-1.5 [-webkit-overflow-scrolling:touch]">
-            <div
-              v-for="row in orgSheetRows"
-              :key="row.key"
-              class="relative flex w-full items-center gap-0.5 py-0.5 pr-1 text-left text-[12px] transition"
-              :class="
-                row.kind === 'agent'
-                  ? activeName === row.name
-                    ? 'bg-accent-dim'
-                    : ''
-                  : 'text-txt3'
-              "
-              :data-org-kind="row.kind"
-              :data-org-name="row.kind === 'agent' ? row.name : row.kind === 'group' ? row.name : 'ungrouped'"
-            >
-              <template v-if="row.kind === 'group'">
-                <button
-                  type="button"
-                  class="flex min-h-11 min-w-0 flex-1 items-center gap-0.5 py-1 text-left"
-                  :style="orgSheetPadStyle(row.depth)"
-                  @click="toggleOrgSheetNode(row.id)"
-                >
-                  <Icon name="chevron-right" :size="12" class="ui-fold-chevron shrink-0 text-txt3" :class="row.collapsed ? '' : 'rotate-90'" />
-                  <Icon name="folder" :size="14" class="shrink-0 text-warn" />
-                  <span class="flex min-w-0 flex-1 items-baseline overflow-hidden" data-org-gname>
-                    <span class="min-w-0 truncate font-medium text-txt2">{{ row.name }}</span><span
-                      v-if="row.projectLabel"
-                      class="shrink-0 font-normal text-txt3"
-                      data-org-project
-                    >({{ row.projectLabel }})</span>
-                  </span>
-                  <span class="rounded-md ml-auto inline-flex h-4 min-w-[18px] shrink-0 items-center justify-end border border-line bg-base px-1 text-[10px] font-semibold tabular-nums text-txt3">{{ row.count }}</span>
-                </button>
-              </template>
-              <template v-else-if="row.kind === 'ungrouped-header'">
-                <button
-                  type="button"
-                  class="flex min-h-11 min-w-0 flex-1 items-center gap-0.5 py-1 text-left"
-                  :style="orgSheetPadStyle(row.depth)"
-                  @click="toggleOrgSheetNode(UNGROUPED_ID)"
-                >
-                  <Icon name="chevron-right" :size="12" class="ui-fold-chevron shrink-0 text-txt3" :class="row.collapsed ? '' : 'rotate-90'" />
-                  <Icon name="folder" :size="14" class="shrink-0 text-txt3" />
-                  <span class="truncate font-medium text-txt2">{{ t('pages.agentStudio.org.ungrouped') }}</span>
-                  <span class="rounded-md ml-auto inline-flex h-4 min-w-[18px] shrink-0 items-center justify-end border border-line bg-base px-1 text-[10px] font-semibold tabular-nums text-txt3">{{ row.count }}</span>
-                </button>
-              </template>
-              <template v-else>
-                <button
-                  type="button"
-                  data-test="org-sheet-agent"
-                  class="flex min-h-11 min-w-0 flex-1 items-center gap-1.5 rounded-md py-1 text-left transition-[background-color] duration-[var(--dur-ui)] ease-out hover:bg-elevated"
-                  :style="orgSheetPadStyle(row.depth)"
-                  @click="chooseAgentFromSheet(row.name)"
-                >
-                  <span class="inline-block h-4 w-4 shrink-0" />
-                  <Icon name="robot" :size="14" class="shrink-0 text-accent-2" />
-                  <span class="min-w-0 flex-1">
-                    <span class="flex items-center gap-1">
-                      <span class="truncate text-txt">{{ row.name }}</span>
-                      <span
-                        v-if="row.multi"
-                        class="rounded-md shrink-0 border border-accent-2/35 bg-accent/15 px-1 text-[9px] font-bold uppercase tracking-wide text-accent-2"
-                      >{{ t('pages.agentStudio.org.multiGroup') }}</span>
-                    </span>
-                  </span>
-                </button>
-              </template>
-            </div>
-            <p class="rounded-md mx-1 mt-2 border border-dashed border-line-strong/60 bg-white/[0.015] px-2.5 py-2 text-[11px] leading-relaxed text-txt3">
-              {{ t('pages.agentStudio.mobile.orgSheetHint') }}
-            </p>
+          <div class="min-h-0 flex-1 overflow-hidden">
+            <ProjectTree
+              :nodes="treeNodes"
+              :active-key="activeTreeKey"
+              :title="t('pages.agentStudio.tree.title')"
+              :total="agents.length"
+              :search-placeholder="t('pages.agentStudio.tree.searchPlaceholder')"
+              :empty-text="t('pages.agentStudio.tree.empty')"
+              storage-key="agent-studio-sheet-tree"
+              @select="onSheetTreeSelect"
+            />
           </div>
         </div>
       </div>
@@ -999,80 +781,53 @@ async function createStudioChatTest(
       </template>
     </AppModal>
 
-    <!-- folder export secrets warning (Demo) -->
+    <!-- project bundle export secrets warning -->
     <AppModal
-      :open="showFolderSecrets"
-      :title="t('pages.agentStudio.exportImport.folderSecrets.title')"
+      :open="showBundleSecrets"
+      :title="t('pages.agentStudio.exportImport.bundleSecrets.title')"
       :width="460"
       close-on-esc
-      @close="cancelFolderSecrets"
+      @close="cancelBundleSecrets"
     >
-      <p class="text-[13px] leading-6 text-txt2">{{ t('pages.agentStudio.exportImport.folderSecrets.body') }}</p>
+      <p class="text-[13px] leading-6 text-txt2">{{ t('pages.agentStudio.exportImport.bundleSecrets.body') }}</p>
       <template #footer>
-        <AppButton size="sm" variant="ghost" @click="cancelFolderSecrets">{{ t('common.buttons.cancel') }}</AppButton>
-        <AppButton size="sm" variant="primary" :disabled="exporting" @click="confirmFolderSecrets">
-          {{ t('pages.agentStudio.exportImport.folderSecrets.confirm') }}
+        <AppButton size="sm" variant="ghost" @click="cancelBundleSecrets">{{ t('common.buttons.cancel') }}</AppButton>
+        <AppButton size="sm" variant="primary" :disabled="exporting" @click="confirmBundleSecrets">
+          {{ t('pages.agentStudio.exportImport.bundleSecrets.confirm') }}
         </AppButton>
       </template>
     </AppModal>
 
+    <!-- header import: pick the target project -->
     <AppModal
-      :open="showClearSensitive"
-      :title="t('pages.agentStudio.org.clearSensitive.title')"
-      :width="460"
+      :open="showImportProjectPick"
+      :title="t('pages.agentStudio.exportImport.pickProject.title')"
+      :width="420"
+      data-test="import-project-pick"
       close-on-esc
-      @close="cancelClearSensitive"
+      @close="cancelImportProjectPick"
     >
-      <p class="mb-3 text-[13px] leading-6 text-txt2">
-        {{
-          t('pages.agentStudio.org.clearSensitive.lead', {
-            name: clearSensitiveGroupName,
-            count: clearSensitiveAgentCount,
-          })
-        }}
-      </p>
-      <div class="mb-2 flex gap-2">
-        <AppButton size="sm" variant="outline" @click="selectAllClearSensitiveKeys">
-          {{ t('pages.agentStudio.org.clearSensitive.selectAll') }}
-        </AppButton>
-        <AppButton size="sm" variant="outline" @click="clearAllClearSensitiveKeys">
-          {{ t('pages.agentStudio.org.clearSensitive.selectNone') }}
-        </AppButton>
-      </div>
-      <div class="rounded-lg max-h-60 overflow-auto border border-line" data-test="clear-sensitive-modal">
-        <label
-          v-for="hit in clearSensitiveHits"
-          :key="hit.key"
-          class="flex cursor-pointer items-center gap-2 border-b border-line px-3 py-2 last:border-b-0 hover:bg-overlay"
-        >
-          <input
-            type="checkbox"
-            :checked="isClearSensitiveKeySelected(hit.key)"
-            @change="toggleClearSensitiveKey(hit.key, ($event.target as HTMLInputElement).checked)"
-          />
-          <code class="font-mono text-[12px] text-accent-2">{{ hit.key }}</code>
-          <span class="ml-auto text-[11px] text-txt3">
-            {{ t('pages.agentStudio.org.clearSensitive.agentCount', { n: hit.agentCount }) }}
-          </span>
-        </label>
-      </div>
+      <p class="mb-3 text-[13px] leading-6 text-txt2">{{ t('pages.agentStudio.exportImport.pickProject.intro') }}</p>
+      <select
+        v-model="importProjectId"
+        data-test="import-project-select"
+        class="w-full rounded border border-line bg-surface px-2 py-1.5 text-[13px] text-txt outline-none focus:border-accent"
+      >
+        <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+      </select>
       <template #footer>
-        <AppButton size="sm" variant="ghost" @click="cancelClearSensitive">
-          {{ t('pages.agentStudio.org.clearSensitive.cancel') }}
-        </AppButton>
+        <AppButton size="sm" variant="ghost" @click="cancelImportProjectPick">{{ t('common.buttons.cancel') }}</AppButton>
         <AppButton
           size="sm"
-          variant="danger"
-          :disabled="clearSensitiveBusy || clearSensitiveSelectedCount === 0"
-          data-test="clear-sensitive-confirm"
-          @click="confirmClearSensitive"
-        >
-          {{ t('pages.agentStudio.org.clearSensitive.confirm') }}
-        </AppButton>
+          variant="primary"
+          data-test="import-project-confirm"
+          :disabled="!importProjectId"
+          @click="confirmImportProjectPick"
+        >{{ t('pages.agentStudio.exportImport.pickProject.confirm') }}</AppButton>
       </template>
     </AppModal>
 
-    <!-- folder batch name conflict (Demo) -->
+    <!-- project bundle name conflict -->
     <AppModal
       :open="showBatchConflict"
       :title="t('pages.agentStudio.exportImport.batchConflict.title')"
@@ -1210,7 +965,8 @@ async function createStudioChatTest(
     <AgentCreateWizard
       :open="showCreateWizard"
       :existing-names="agents.map((a) => a.name)"
-      :project-id="scopedProjectId || undefined"
+      :projects="treeProjects"
+      :project-id="createAgentProjectId"
       @close="showCreateWizard = false"
       @created="onWizardCreated"
     />
@@ -1222,113 +978,6 @@ async function createStudioChatTest(
       @close="showTeamWizard = false"
       @started="onTeamBootstrapStarted"
     />
-
-    <AppModal
-      :open="showAssignPick"
-      :title="t('pages.agentStudio.org.assignTitle', { name: assignGroupName })"
-      :width="460"
-      data-test="org-assign-pick"
-      :close-on-backdrop="!assignApplying"
-      @close="closeAssignModals"
-    >
-      <div class="space-y-3 text-[13px] text-txt2">
-        <p>{{ t('pages.agentStudio.org.assignIntro', { n: assignMembers.length }) }}</p>
-        <div class="flex max-h-48 flex-col gap-1.5 overflow-y-auto">
-          <label
-            v-for="p in projects"
-            :key="p.id"
-            class="rounded-lg flex cursor-pointer items-center gap-2.5 border border-line bg-base px-2.5 py-2"
-            :class="assignTargetId === p.id ? 'border-accent bg-accent-dim' : ''"
-          >
-            <input v-model="assignTargetId" type="radio" class="accent-accent" :value="p.id" />
-            <span class="min-w-0 flex-1 text-txt">{{ p.name }}</span>
-            <span class="font-mono text-[11px] text-txt3">{{ p.id }}</span>
-          </label>
-        </div>
-        <p v-if="!projects.length" class="text-[12px] text-warn">{{ t('pages.agentStudio.org.assignNoProjects') }}</p>
-        <div class="max-h-28 overflow-y-auto text-[11px] leading-relaxed text-txt3">
-          {{ t('pages.agentStudio.org.assignMembers', { list: assignMemberList }) }}
-        </div>
-      </div>
-      <template #footer>
-        <AppButton size="sm" variant="ghost" :disabled="assignApplying" @click="closeAssignModals">{{ t('common.buttons.cancel') }}</AppButton>
-        <AppButton
-          size="sm"
-          variant="primary"
-          data-test="org-assign-submit"
-          :disabled="assignApplying || !projects.length || !assignTargetId"
-          @click="onAssignPickNext"
-        >{{ assignApplying ? t('pages.agentStudio.org.assignApplying') : t('pages.agentStudio.org.assignSubmit') }}</AppButton>
-      </template>
-    </AppModal>
-
-    <AppModal
-      :open="showAssignCover"
-      :title="t('pages.agentStudio.project.assignCoverTitle')"
-      :width="460"
-      data-test="org-assign-cover"
-      :close-on-backdrop="!assignApplying"
-      @close="cancelAssignCover"
-    >
-      <div class="space-y-2 text-[13px] leading-6 text-txt2">
-        <p>{{ t('pages.agentStudio.project.assignCoverLead', { n: assignDiffBound.length }) }}</p>
-        <div class="rounded-lg border border-warn/35 bg-warn/10 px-3 py-2.5 text-[12px]">
-          <b class="text-warn">{{ t('pages.agentStudio.project.assignCoverWarn') }}</b>
-          <ul class="mt-1.5 list-disc space-y-1 pl-5">
-            <li>{{ t('pages.agentStudio.project.switchItemMemory') }}</li>
-            <li>{{ t('pages.agentStudio.project.switchItemContext') }}</li>
-            <li>{{ t('pages.agentStudio.project.switchItemJobs') }}</li>
-            <li>{{ t('pages.agentStudio.project.switchItemPm') }}</li>
-          </ul>
-        </div>
-        <p class="text-[12px]">
-          {{ t('pages.agentStudio.project.assignCoverCross') }}
-          {{ t('pages.agentStudio.project.assignCoverAffected', { list: assignAffectedList }) }}
-        </p>
-        <p class="text-[11.5px] text-txt3">{{ t('pages.agentStudio.project.assignImmediateHint') }}</p>
-      </div>
-      <template #footer>
-        <AppButton size="sm" variant="ghost" :disabled="assignApplying" @click="cancelAssignCover">{{ t('common.buttons.cancel') }}</AppButton>
-        <AppButton
-          size="sm"
-          variant="primary"
-          data-test="org-assign-cover-ok"
-          :disabled="assignApplying"
-          @click="maybeAssignDraftThenApply"
-        >{{ t('pages.agentStudio.project.switchConfirm', { name: assignTargetLabel }) }}</AppButton>
-      </template>
-    </AppModal>
-
-    <AppModal
-      :open="showAssignDraft"
-      :title="t('pages.agentStudio.project.assignDraftTitle')"
-      :width="460"
-      data-test="org-assign-draft"
-      :close-on-backdrop="!assignApplying"
-      @close="keepAssignDraft"
-    >
-      <p class="text-[13px] leading-6 text-txt2">
-        {{
-          t('pages.agentStudio.project.assignDraftBody', {
-            name: activeName,
-            draft: projectNameById(draft?.projectId || '') || t('pages.agentStudio.project.unbound'),
-            target: assignTargetLabel,
-          })
-        }}
-      </p>
-      <template #footer>
-        <AppButton size="sm" variant="ghost" data-test="org-assign-draft-keep" :disabled="assignApplying" @click="keepAssignDraft">
-          {{ t('pages.agentStudio.project.assignDraftKeep') }}
-        </AppButton>
-        <AppButton
-          size="sm"
-          variant="primary"
-          data-test="org-assign-draft-ok"
-          :disabled="assignApplying"
-          @click="applyAssign(true)"
-        >{{ t('pages.agentStudio.project.assignDraftOverwrite') }}</AppButton>
-      </template>
-    </AppModal>
 
     <AppModal
       :open="showSaveReasonModal"

@@ -32,14 +32,14 @@ func TestShowOnHomeDefaultsFalseOnCreate(t *testing.T) {
 
 	// Seed a legacy row without the field (zero value) — reads as hidden.
 	legacy := models.WorkflowDef{
-		ID:        "wf-home-legacy",
-		ProjectID: models.DefaultProjectID,
-		Name:      "Legacy",
-		Status:    "published",
-		Version:   1,
-		Graph:     validGraph(),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:               "wf-home-legacy",
+		ProjectID:        models.DefaultProjectID,
+		Name:             "Legacy",
+		Version:          1,
+		PublishedVersion: 1,
+		Graph:            validGraph(),
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
 	}
 	if err := db.Create(&legacy).Error; err != nil {
 		t.Fatalf("seed legacy: %v", err)
@@ -59,11 +59,11 @@ func TestUpdateShowOnHomeDoesNotDemotePublished(t *testing.T) {
 	svc := NewWorkflowService(db)
 
 	wf := models.WorkflowDef{
-		ID:        "wf-home-only",
-		ProjectID: models.DefaultProjectID,
-		Name:      "HomeOnly",
-		Status:    "published",
-		Version:   3,
+		ID:               "wf-home-only",
+		ProjectID:        models.DefaultProjectID,
+		Name:             "HomeOnly",
+		Version:          3,
+		PublishedVersion: 3,
 		Graph: models.Graph{
 			Nodes: []models.Node{
 				{ID: "in", Type: "input", Label: "Fresh Start"},
@@ -89,8 +89,8 @@ func TestUpdateShowOnHomeDoesNotDemotePublished(t *testing.T) {
 	if !got.ShowOnHome {
 		t.Fatal("ShowOnHome not persisted")
 	}
-	if got.Status != "published" {
-		t.Fatalf("status demoted to %q", got.Status)
+	if got.Status() != "published" {
+		t.Fatalf("status demoted to %q", got.Status())
 	}
 	if got.Version != 3 {
 		t.Fatalf("version mutated to %d", got.Version)
@@ -103,8 +103,8 @@ func TestUpdateShowOnHomeDoesNotDemotePublished(t *testing.T) {
 	if !ok {
 		t.Fatal("missing after update")
 	}
-	if !reloaded.ShowOnHome || reloaded.Status != "published" || reloaded.Graph.Nodes[0].Label != "Fresh Start" {
-		t.Fatalf("persisted row corrupted: show=%v status=%s label=%s", reloaded.ShowOnHome, reloaded.Status, reloaded.Graph.Nodes[0].Label)
+	if !reloaded.ShowOnHome || reloaded.Status() != "published" || reloaded.Graph.Nodes[0].Label != "Fresh Start" {
+		t.Fatalf("persisted row corrupted: show=%v status=%s label=%s", reloaded.ShowOnHome, reloaded.Status(), reloaded.Graph.Nodes[0].Label)
 	}
 
 	if _, err := svc.UpdateShowOnHome("wf-missing", true); err != ErrWorkflowNotFound {
@@ -165,7 +165,8 @@ func TestSavePreservesShowOnHomeWhenSet(t *testing.T) {
 	}
 
 	upd := &models.WorkflowDef{
-		ID: "wf-home-save", Name: "Keep", Graph: validGraph(), ShowOnHome: true,
+		ProjectID: models.DefaultProjectID,
+		ID:        "wf-home-save", Name: "Keep", Graph: validGraph(), ShowOnHome: true,
 	}
 	if err := svc.Save(upd); err != nil {
 		t.Fatal(err)
@@ -174,7 +175,7 @@ func TestSavePreservesShowOnHomeWhenSet(t *testing.T) {
 	if !got.ShowOnHome {
 		t.Fatal("Save dropped showOnHome")
 	}
-	if got.Status != "published" {
-		t.Fatalf("status=%s", got.Status)
+	if got.Status() != "published" {
+		t.Fatalf("status=%s", got.Status())
 	}
 }

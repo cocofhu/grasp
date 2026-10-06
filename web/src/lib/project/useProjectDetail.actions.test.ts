@@ -100,7 +100,6 @@ const sampleProject = (over: Partial<Project> = {}): Project =>
     id: 'proj-a',
     name: 'Project A',
     description: 'desc',
-    sandboxEnv: [],
     variables: [{ name: 'TOKEN', type: 'string', value: '****', secret: true }],
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
@@ -285,45 +284,6 @@ describe('useProjectDetail actions', () => {
     app.unmount()
   })
 
-  it('rewrites every legacy tab deep link', async () => {
-    const settings = await withProjectDetail('/projects/proj-a?tab=pmSettings')
-    expect(settings.detail.tab.value).toBe('pmLeader')
-    expect(settings.detail.pmView.value).toBe('settings')
-    await flushPromises()
-    expect(settings.router.currentRoute.value.query.tab).toBe('pmLeader')
-    settings.app.unmount()
-
-    const memory = await withProjectDetail('/projects/proj-a?tab=pmMemory')
-    expect(memory.detail.tab.value).toBe('board')
-    expect(memory.detail.showPmMemoryMigration.value).toBe(true)
-    await flushPromises()
-    expect(memory.router.currentRoute.value.query.tab).toBe('board')
-    memory.app.unmount()
-
-    const sandbox = await withProjectDetail('/projects/proj-a?tab=sandboxEnv')
-    expect(sandbox.detail.tab.value).toBe('sharedAgent')
-    await flushPromises()
-    expect(sandbox.router.currentRoute.value.query.tab).toBe('sharedAgent')
-
-    // Legacy values arriving later go through the same rewrite.
-    await sandbox.router.replace({ query: { tab: 'pmSettings' } })
-    await flushPromises()
-    expect(sandbox.detail.pmView.value).toBe('settings')
-    await sandbox.router.replace({ query: { tab: 'pmMemory' } })
-    await flushPromises()
-    expect(sandbox.detail.tab.value).toBe('board')
-    await sandbox.router.replace({ query: { tab: 'sandboxEnv' } })
-    await flushPromises()
-    expect(sandbox.detail.tab.value).toBe('sharedAgent')
-
-    // Already-canonical queries are left alone.
-    sandbox.detail.rewriteLegacyPmSettingsQuery()
-    sandbox.detail.rewriteLegacyPmMemoryQuery()
-    sandbox.detail.ensureTabQuery()
-    sandbox.detail.syncTabFromRoute()
-    sandbox.app.unmount()
-  })
-
   it('writes a default tab into the query when it is missing or unknown', async () => {
     const { detail, app, router } = await withProjectDetail('/projects/proj-a?tab=nonsense')
     expect(detail.tab.value).toBe('board')
@@ -352,33 +312,6 @@ describe('useProjectDetail actions', () => {
     detail.openNotifyChannelSettings()
     await flushPromises()
     expect(detail.tab.value).toBe('pmLeader')
-
-    detail.dismissPmMemoryMigration()
-    expect(detail.showPmMemoryMigration.value).toBe(false)
-
-    app.unmount()
-  })
-
-  it('navigates to the project agents tab memory view for the bound PM agent', async () => {
-    const { detail, app, router } = await withProjectDetail()
-    detail.goStudioMemory()
-    await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/projects/proj-a')
-    expect(router.currentRoute.value.query).toMatchObject({
-      tab: 'agents',
-      agent: 'pm-agent',
-      studioTab: 'data',
-      sub: 'memory',
-    })
-
-    detail.goStudioMemory('other-agent')
-    await flushPromises()
-    expect(router.currentRoute.value.query.agent).toBe('other-agent')
-
-    detail.pmBinding.value = null
-    detail.goStudioMemory('   ')
-    await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/projects/proj-a?tab=agents')
 
     app.unmount()
   })

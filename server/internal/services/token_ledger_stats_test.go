@@ -28,7 +28,7 @@ func TestGlobalTokenStatsLedgerDimensionsAndCost(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewProjectService(db)
-	live, err := s.Create("Live", "", nil, nil)
+	live, err := s.Create("Live", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,11 +248,11 @@ func TestProjectBoardUsesSameAggregation(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewProjectService(db)
-	p1, err := s.Create("Board", "", nil, nil)
+	p1, err := s.Create("Board", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p2, err := s.Create("Other", "", nil, nil)
+	p2, err := s.Create("Other", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

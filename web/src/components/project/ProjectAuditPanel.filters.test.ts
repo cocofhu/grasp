@@ -311,20 +311,6 @@ describe('ProjectAuditPanel filters and grouping', () => {
     w.unmount()
   })
 
-  it('accepts a bare array response instead of a paginated envelope', async () => {
-    apiMocks.listProjectAudit.mockResolvedValue([ev({ id: 'bare' })])
-    const w = mountPanel()
-    await flushPromises()
-    const vm = w.vm as any
-    expect(vm.events.map((e: any) => e.id)).toEqual(['bare'])
-
-    await vm.setMode('all')
-    await flushPromises()
-    expect(vm.events.map((e: any) => e.id)).toEqual(['bare'])
-    expect(vm.total).toBe(1)
-    w.unmount()
-  })
-
   it('clears the list when run mode has no selected run', async () => {
     apiMocks.listProjectAuditFacets.mockResolvedValue({ runs: [], nodes: [], resources: [] })
     const w = mountPanel()

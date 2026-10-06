@@ -22,7 +22,6 @@ const TEMPLATES = [
         { schema: 'clarified_requirement', required: true },
         { schema: 'plan', required: true },
         { schema: 'research' },
-        { schema: 'proposals' },
       ],
     },
   },
@@ -53,6 +52,17 @@ const TEMPLATES = [
         { schema: 'test_result', required: true },
         { schema: 'review', required: true },
       ],
+    },
+  },
+  {
+    id: 'deliver',
+    embedName: 'DeliverAgent',
+    roleLabelZh: '交付',
+    summary: '测试评审通过后合入目标分支并创建或复用 MR/PR',
+    capabilities: {
+      interaction: 'auto',
+      reads: ['*'],
+      writes: [{ schema: 'merge_request', required: true }],
     },
   },
 ]
@@ -118,7 +128,6 @@ async function mockOnboardingApi(page: Page): Promise<MockState> {
         ),
         workflowId: 'wf-onboard-1',
         published: true,
-        groupName: prefix ? `${prefix}项目组` : '默认项目组',
       })
       return
     }
@@ -243,7 +252,7 @@ test('首次安装分步引导：偏好 → 模型 → 密钥 → Git → 团队
 
   await expect(page.getByTestId('onboarding-rail-workflow')).toHaveAttribute('data-active', '1')
   const preview = page.getByTestId('onboarding-workflow-preview')
-  for (const id of ['input', 'clarify', 'implement', 'test_review', 'output']) {
+  for (const id of ['input', 'clarify', 'implement', 'test_review', 'deliver', 'output']) {
     await expect(preview.getByTestId(`onboarding-preview-node-${id}`)).toBeVisible()
   }
   await expect(preview.getByText('未通过')).toBeVisible()
@@ -267,6 +276,7 @@ test('首次安装分步引导：偏好 → 模型 → 密钥 → Git → 团队
     { templateId: 'clarify', name: '需求澄清' },
     { templateId: 'implement', name: '实现', model: 'deepseek/deepseek-v4-pro' },
     { templateId: 'test_review', name: '测试评审' },
+    { templateId: 'deliver', name: '交付' },
   ])
 
   await page.getByTestId('onboarding-edit-workflow').click()
@@ -283,12 +293,12 @@ test('unchecking 测试评审 trims the preview and the bootstrap request', asyn
   await page.screenshot({ path: path.join(OUT, 'trim-team.png') })
   await page.getByTestId('onboarding-next').click()
   await expect(page.getByTestId('onboarding-preview-node-test_review')).toHaveCount(0)
-  await expect(page.getByTestId('onboarding-workflow-note')).toContainText('实现完成后直接结束')
+  await expect(page.getByTestId('onboarding-workflow-note')).toContainText('实现完成后直接进入下一步')
   await page.screenshot({ path: path.join(OUT, 'trim-workflow.png') })
   await page.getByTestId('onboarding-next').click()
 
   await expect(page.getByTestId('onboarding-success')).toBeVisible()
-  expect(state.bootstrapBody?.agents?.map((a) => a.templateId)).toEqual(['clarify', 'implement'])
+  expect(state.bootstrapBody?.agents?.map((a) => a.templateId)).toEqual(['clarify', 'implement', 'deliver'])
   expect(state.bootstrapBody?.repoUrl).toBeUndefined()
 })
 
@@ -327,7 +337,7 @@ test('English walkthrough: every step is English, fits without scrolling, and sa
 
   await expectStep(page, 'team')
   await expect(page.getByTestId('onboarding-team-card-test_review')).toContainText('Test & review')
-  await expect(page.getByTestId('onboarding-team-preview-clarify')).toHaveText('Can start an app preview')
+  await expect(page.getByTestId('onboarding-team-preview-clarify')).toHaveText('App preview')
   await expect(page.getByTestId('onboarding-team-name-clarify')).toHaveValue('Clarify')
   await expect(page.getByTestId('onboarding-team-name-test_review')).toHaveValue('TestReview')
   await check('05-team')
@@ -350,6 +360,7 @@ test('English walkthrough: every step is English, fits without scrolling, and sa
     { templateId: 'clarify', name: 'Clarify' },
     { templateId: 'implement', name: 'Implement' },
     { templateId: 'test_review', name: 'TestReview' },
+    { templateId: 'deliver', name: 'Deliver' },
   ])
   expect(state.bootstrapBody?.featureHint).toBeUndefined()
   expect(state.bootstrapBody?.repos).toBeUndefined()

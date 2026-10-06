@@ -15,9 +15,9 @@ describe('productNodeArtifacts', () => {
     const arts = productArtifactsForNode(clarify)
     expect(arts.filter((a) => a.required).map((a) => a.name)).toEqual(['clarified_requirement.json', 'plan.json'])
     expect(arts.filter((a) => !a.required).map((a) => a.name)).toEqual(
-      expect.arrayContaining(['research.json', 'root_cause.json', 'proposals.json', 'page.html']),
+      expect.arrayContaining(['research.json', 'root_cause.json', 'page.html']),
     )
-    expect(arts.map((a) => a.outputKey)).toEqual(['clarified_requirement', 'plan', 'research', 'proposals', 'root_cause', 'page'])
+    expect(arts.map((a) => a.outputKey)).toEqual(['clarified_requirement', 'plan', 'research', 'root_cause', 'page'])
     expect(productArtifactName({ type: 'agent', caps: IMPLEMENT_CAPS })).toBe('implementation_result.json')
     expect(productArtifactsForNode({ type: 'agent', caps: TEST_REVIEW_CAPS }).map((a) => a.name)).toEqual([
       'test_result.json',
@@ -25,8 +25,7 @@ describe('productNodeArtifacts', () => {
     ])
   })
 
-  it('covers proposal_select and skips nodes without products', () => {
-    expect(productArtifactName({ type: 'proposal_select' })).toBe('proposal.json')
+  it('skips nodes without products', () => {
     expect(isProductNode({ type: 'agent', caps: AUTO_CAPS })).toBe(false)
     expect(isProductNode({ type: 'agent' })).toBe(false)
     expect(isProductNode({ type: 'human_gate' })).toBe(false)

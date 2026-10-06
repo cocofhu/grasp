@@ -7,7 +7,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/models"
 
 	"github.com/google/uuid"
@@ -37,7 +36,7 @@ var (
 const UnknownModelDisplayNameMaxLen = 64
 
 // NormalizeUnknownModelDisplayName trims input; empty / whitespace-only / equal to
-// the legacy or new default label become "" (unset). Over-length rejects.
+// the unknown bucket key or its default label become "" (unset). Over-length rejects.
 func NormalizeUnknownModelDisplayName(raw string) (string, error) {
 	v := strings.TrimSpace(raw)
 	if v == "" || v == models.TokenUsageModelUnknown || v == models.TokenUsageModelUnknownDisplay {
@@ -123,8 +122,8 @@ func (s *ProjectService) TokenBreakdown(projectID string) ProjectTokenBreakdown 
 }
 
 // TokenBreakdownByProjectIDs batch-aggregates Project→WorkflowDef→Run→StateRun
-// Usage plus PM ChatMessage.Usage (assistant, non-nil). Historical PM messages
-// without Usage are skipped (no backfill). Stdio is outside this chain.
+// Usage plus PM ChatMessage.Usage (assistant, non-nil); messages without Usage
+// are skipped. Stdio is outside this chain.
 func (s *ProjectService) TokenBreakdownByProjectIDs(projectIDs []string) map[string]ProjectTokenBreakdown {
 	out := make(map[string]ProjectTokenBreakdown, len(projectIDs))
 	if len(projectIDs) == 0 {
@@ -248,7 +247,7 @@ func (s *ProjectService) sumLedgerTokensByProjectIDs(projectIDs []string, source
 }
 
 // Create inserts a new project.
-func (s *ProjectService) Create(name, description string, env []models.EnvEntry, vars []models.ProjectVariable) (models.Project, error) {
+func (s *ProjectService) Create(name, description string, vars []models.ProjectVariable) (models.Project, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return models.Project{}, ErrEmptyProjectName
@@ -256,15 +255,8 @@ func (s *ProjectService) Create(name, description string, env []models.EnvEntry,
 	if s.NameExists(name, "") {
 		return models.Project{}, ErrProjectNameExists
 	}
-	if env == nil {
-		env = []models.EnvEntry{}
-	}
 	if vars == nil {
 		vars = []models.ProjectVariable{}
-	}
-	sanitizedEnv, err := sanitizeEnvEntries(env)
-	if err != nil {
-		return models.Project{}, err
 	}
 	sanitizedVars, err := sanitizeProjectVars(vars)
 	if err != nil {
@@ -275,7 +267,6 @@ func (s *ProjectService) Create(name, description string, env []models.EnvEntry,
 		ID:           "proj-" + uuid.NewString()[:8],
 		Name:         name,
 		Description:  description,
-		SandboxEnv:   sanitizedEnv,
 		Variables:    sanitizedVars,
 		NotifyPolicy: models.DefaultProjectNotifyPolicy(),
 		CreatedAt:    now,
@@ -287,12 +278,12 @@ func (s *ProjectService) Create(name, description string, env []models.EnvEntry,
 	return p, nil
 }
 
-// Update patches name/description/sandboxEnv/variables/notifyPolicy/
+// Update patches name/description/variables/notifyPolicy/
 // unknownModelDisplayName. Nil pointers mean "leave unchanged"; non-nil
 // slices replace the whole list with secret-preserving merge. Non-nil
 // notifyPolicy replaces the whole policy. Non-nil unknownModelDisplayName is
 // normalized (trim; empty/default label → unset; >64 runes → error).
-func (s *ProjectService) Update(id string, name *string, description *string, env *[]models.EnvEntry, vars *[]models.ProjectVariable, notify *models.ProjectNotifyPolicy, unknownModelDisplayName *string) (models.Project, error) {
+func (s *ProjectService) Update(id string, name *string, description *string, vars *[]models.ProjectVariable, notify *models.ProjectNotifyPolicy, unknownModelDisplayName *string) (models.Project, error) {
 	var p models.Project
 	if err := s.db.First(&p, "id = ?", id).Error; err != nil {
 		return models.Project{}, ErrProjectNotFound
@@ -309,13 +300,6 @@ func (s *ProjectService) Update(id string, name *string, description *string, en
 	}
 	if description != nil {
 		p.Description = *description
-	}
-	if env != nil {
-		merged, err := mergeEnvEntries(p.SandboxEnv, *env)
-		if err != nil {
-			return models.Project{}, err
-		}
-		p.SandboxEnv = merged
 	}
 	if vars != nil {
 		merged, err := mergeProjectVars(p.Variables, *vars)
@@ -362,20 +346,6 @@ func (s *ProjectService) Delete(id string) error {
 	})
 }
 
-// SandboxEnvForWorkflow returns the owning project's sandbox env (plaintext).
-// Missing workflow/project yields nil (caller treats as empty).
-func (s *ProjectService) SandboxEnvForWorkflow(workflowID string) []models.EnvEntry {
-	var wf models.WorkflowDef
-	if err := s.db.Select("project_id").First(&wf, "id = ?", workflowID).Error; err != nil || wf.ProjectID == "" {
-		return nil
-	}
-	p, ok := s.Get(wf.ProjectID)
-	if !ok {
-		return nil
-	}
-	return p.SandboxEnv
-}
-
 // VariablesForWorkflow returns the owning project's workflow variables (plaintext).
 func (s *ProjectService) VariablesForWorkflow(workflowID string) []models.ProjectVariable {
 	var wf models.WorkflowDef
@@ -401,28 +371,6 @@ func (s *ProjectService) DefaultProjectID() string {
 	return ""
 }
 
-func sanitizeEnvEntries(in []models.EnvEntry) ([]models.EnvEntry, error) {
-	out := make([]models.EnvEntry, 0, len(in))
-	seen := map[string]struct{}{}
-	for _, e := range in {
-		k := strings.TrimSpace(e.Key)
-		if k == "" {
-			continue
-		}
-		if _, ok := seen[k]; ok {
-			continue
-		}
-		seen[k] = struct{}{}
-		if e.Value == SecretMask {
-			return nil, ErrSecretPlaceholderOnNewKey
-		}
-		// Official ACP auth keys may be stored as project baseline; always force Secret.
-		secret := e.Secret || envauth.IsPlatformAuthEnvKey(k)
-		out = append(out, models.EnvEntry{Key: k, Value: e.Value, Secret: secret, Enabled: e.Enabled})
-	}
-	return out, nil
-}
-
 func sanitizeProjectVars(in []models.ProjectVariable) ([]models.ProjectVariable, error) {
 	out := make([]models.ProjectVariable, 0, len(in))
 	seen := map[string]struct{}{}
@@ -443,39 +391,6 @@ func sanitizeProjectVars(in []models.ProjectVariable) ([]models.ProjectVariable,
 			return nil, ErrSecretPlaceholderOnNewKey
 		}
 		out = append(out, v)
-	}
-	return out, nil
-}
-
-// mergeEnvEntries applies an incoming full-list replacement while preserving
-// plaintext when the client sends empty or the mask placeholder, regardless of
-// the target secret flag (so un-secreting a key cannot persist ****).
-func mergeEnvEntries(existing, incoming []models.EnvEntry) ([]models.EnvEntry, error) {
-	byKey := make(map[string]models.EnvEntry, len(existing))
-	for _, e := range existing {
-		byKey[e.Key] = e
-	}
-	out := make([]models.EnvEntry, 0, len(incoming))
-	seen := map[string]struct{}{}
-	for _, e := range incoming {
-		k := strings.TrimSpace(e.Key)
-		if k == "" {
-			continue
-		}
-		if _, ok := seen[k]; ok {
-			continue
-		}
-		seen[k] = struct{}{}
-		if isSecretPlaceholder(e.Value) {
-			if old, ok := byKey[k]; ok {
-				e.Value = old.Value
-			} else if e.Value == SecretMask {
-				return nil, ErrSecretPlaceholderOnNewKey
-			}
-		}
-		// Official ACP auth keys may be stored as project baseline; always force Secret.
-		secret := e.Secret || envauth.IsPlatformAuthEnvKey(k)
-		out = append(out, models.EnvEntry{Key: k, Value: e.Value, Secret: secret, Enabled: e.Enabled})
 	}
 	return out, nil
 }
@@ -547,19 +462,6 @@ func MaskedProjectVars(vars []models.ProjectVariable) []models.ProjectVariable {
 		if v.Secret {
 			out[i].Value = SecretMask
 		}
-	}
-	return out
-}
-
-// ProjectEnvMap converts sandbox env entries to a key→value map for Spec.Env merge.
-// Disabled entries (Enabled=false) are skipped; nil/missing Enabled counts as enabled.
-func ProjectEnvMap(env []models.EnvEntry) map[string]string {
-	out := make(map[string]string, len(env))
-	for _, e := range env {
-		if e.Key == "" || !e.IsEnabled() {
-			continue
-		}
-		out[e.Key] = e.Value
 	}
 	return out
 }

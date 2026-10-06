@@ -33,9 +33,7 @@ function normalizeSection(raw: unknown): EnvCredentialHelpSection {
 }
 
 const authHint = computed(() => BACKEND_AUTH_HINTS[props.backend || 'cursor'])
-const authKeysLabel = computed(() =>
-  authHint.value.alt ? `${authHint.value.key} / ${authHint.value.alt}` : authHint.value.key,
-)
+const authKeysLabel = computed(() => authHint.value.key)
 
 function bumpElevatedZ() {
   if (!props.elevated) return

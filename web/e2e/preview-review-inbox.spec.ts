@@ -18,7 +18,7 @@ function gateItem() {
   return {
     type: 'gate',
     runId: 'run-gate',
-    nodeId: 'gate-proposal',
+    nodeId: 'gate-approve',
     iteration: 1,
     workflowId: 'wf-gate',
     workflowName: '门禁工作流',
@@ -119,12 +119,12 @@ async function mockInboxApis(
         await route.fulfill({
           json: {
             type: 'gate',
-            nodes: [{ id: 'gate-proposal', type: 'human_gate', label: '方案评审门禁', position: { x: 0, y: 0 }, config: {} }],
+            nodes: [{ id: 'gate-approve', type: 'human_gate', label: '方案评审门禁', position: { x: 0, y: 0 }, config: {} }],
             artifacts: [],
             nodeExecutions: {},
             gate: {
               runId: 'run-gate',
-              nodeId: 'gate-proposal',
+              nodeId: 'gate-approve',
               title: '方案评审门禁',
               bodyMd: '请审批方案',
               actions: [{ id: 'approve', label: '通过' }],

@@ -5,7 +5,10 @@ describe('runSandboxEnv', () => {
   it('denies reserved and auth keys', () => {
     expect(isDeniedRunSandboxEnvKey('OPENCODE_API_KEY')).toBe(true)
     expect(isDeniedRunSandboxEnvKey('GRASP_OPENCODE_API_KEY')).toBe(true)
-    expect(isDeniedRunSandboxEnvKey('PASSWORD')).toBe(true)
+    expect(isDeniedRunSandboxEnvKey('GITHUB_TOKEN')).toBe(true)
+    expect(isDeniedRunSandboxEnvKey('GIT_SSH_PRIVATE_KEY')).toBe(true)
+    expect(isDeniedRunSandboxEnvKey('ROOT_PASSWORD')).toBe(true)
+    expect(isDeniedRunSandboxEnvKey('ACP_BRIDGE_PASSWORD')).toBe(true)
     expect(isDeniedRunSandboxEnvKey('GRASP_ARTIFACT_X')).toBe(true)
     expect(isDeniedRunSandboxEnvKey('LOG_LEVEL')).toBe(false)
   })

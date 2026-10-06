@@ -31,10 +31,10 @@ const (
 	SchemaPlan                 = "plan"
 	SchemaResearch             = "research"
 	SchemaRootCause            = "root_cause"
-	SchemaProposals            = "proposals"
 	SchemaImplementationResult = "implementation_result"
 	SchemaTestResult           = "test_result"
 	SchemaReview               = "review"
+	SchemaMergeRequest         = "merge_request"
 	SchemaPreflight            = "preflight"
 	SchemaPage                 = "page"
 )

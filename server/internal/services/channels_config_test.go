@@ -21,7 +21,7 @@ func setChannelKey(t *testing.T) {
 func newChannelSvc(t *testing.T) (*ChannelConfigService, string) {
 	t.Helper()
 	db := newTestDB(t)
-	p, err := NewProjectService(db).Create("ChanProj", "", nil, nil)
+	p, err := NewProjectService(db).Create("ChanProj", "", nil)
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -69,14 +69,6 @@ func TestChannelCreateAndList(t *testing.T) {
 	dec, err := crypto.Decrypt(raw[0].AppSecretEnc)
 	if err != nil || dec != "the-secret" {
 		t.Fatalf("decrypt stored secret: %q err=%v", dec, err)
-	}
-
-	got, err := svc.GetByProject(pid)
-	if err != nil || got == nil {
-		t.Fatalf("GetByProject: %v (nil=%v)", err, got == nil)
-	}
-	if !got.AppSecretSet || got.AppID != "app-123" {
-		t.Errorf("unexpected GetByProject dto: %+v", got)
 	}
 }
 
@@ -226,50 +218,6 @@ func TestChannelUpdateKeepsSecretWhenBlank(t *testing.T) {
 	}
 }
 
-func TestChannelDeleteByProject(t *testing.T) {
-	setChannelKey(t)
-	svc, pid := newChannelSvc(t)
-	if _, err := svc.Create(validInput(pid)); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	if err := svc.DeleteByProject(pid); err != nil {
-		t.Fatalf("DeleteByProject: %v", err)
-	}
-	got, err := svc.GetByProject(pid)
-	if err != nil || got != nil {
-		t.Fatalf("channel should be gone: got=%+v err=%v", got, err)
-	}
-	// Idempotent: deleting an absent channel is a successful no-op.
-	if err := svc.DeleteByProject(pid); err != nil {
-		t.Fatalf("second DeleteByProject should be a no-op: got %v", err)
-	}
-}
-
-func TestChannelDeleteByProjectRejectsMulti(t *testing.T) {
-	// plan g4.1 / review v2: legacy DELETE /channel must not silent ConfirmNoPrimary
-	// when secondaries exist.
-	setChannelKey(t)
-	svc, pid := newChannelSvc(t)
-	primaryIn := validInput(pid)
-	primaryIn.AgentName = "agent-a"
-	if _, err := svc.Create(primaryIn); err != nil {
-		t.Fatalf("primary: %v", err)
-	}
-	secIn := validInput(pid)
-	secIn.AppID = "app-sec"
-	secIn.AgentName = "agent-b"
-	if _, err := svc.Create(secIn); err != nil {
-		t.Fatalf("secondary: %v", err)
-	}
-	if err := svc.DeleteByProject(pid); err != ErrChannelLegacyDeleteMulti {
-		t.Fatalf("got %v want ErrChannelLegacyDeleteMulti", err)
-	}
-	list, err := svc.ListByProject(pid)
-	if err != nil || len(list) != 2 {
-		t.Fatalf("channels should remain: n=%d err=%v", len(list), err)
-	}
-}
-
 func TestChannelCreateWithoutKeyFails(t *testing.T) {
 	t.Setenv(crypto.SecretsKeyEnv, "")
 	svc, pid := newChannelSvc(t)
@@ -342,7 +290,6 @@ func TestChannelCreateFeishuTypeAndRegion(t *testing.T) {
 	in.Type = "feishu"
 	in.Name = "飞书 Channel"
 	in.IsPrimary = false
-	in.IsPrimarySet = true
 	in.Config = map[string]any{"region": "lark", "token": "should-drop"}
 	dto, err := svc.Create(in)
 	if err != nil {
@@ -385,7 +332,6 @@ func TestChannelCreateDingTalkStripsWebhookAndRobotCode(t *testing.T) {
 	in.Name = "钉钉 Channel"
 	in.AppID = "ding-app-1"
 	in.IsPrimary = false
-	in.IsPrimarySet = true
 	in.Config = map[string]any{
 		"token":            "should-drop",
 		"robotCode":        "should-drop",
@@ -415,12 +361,13 @@ func TestChannelMultiPrimarySecondary(t *testing.T) {
 
 	primaryIn := validInput(pid)
 	primaryIn.AgentName = "agent-primary"
+	primaryIn.IsPrimary = true
 	primary, err := svc.Create(primaryIn)
 	if err != nil {
 		t.Fatalf("create primary: %v", err)
 	}
 	if !primary.IsPrimary {
-		t.Fatalf("first channel should be primary")
+		t.Fatalf("channel created with isPrimary should be primary")
 	}
 
 	secIn := validInput(pid)

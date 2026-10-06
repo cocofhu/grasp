@@ -22,16 +22,10 @@ test.describe('SandboxConsole Tab / noVNC', () => {
     await expect(page.getByRole('button', { name: /ACP 原生|ACP Native/ })).toHaveCount(0)
   })
 
-  test('?tab=acp-native 进入 ACP bridge', async ({ page }) => {
-    await page.goto('/console.html?tab=acp-native')
+  test('?tab=acp 进入 ACP bridge', async ({ page }) => {
+    await page.goto('/console.html?tab=acp')
     await expect(page.getByRole('button', { name: /^ACP$/ })).toHaveClass(/bg-accent-dim/)
     await expect(page.locator('iframe[title="ACP bridge"]')).toBeVisible()
-  })
-
-  test('旧 ?tab=acp 回落为终端', async ({ page }) => {
-    await page.goto('/console.html?tab=acp')
-    await expect(page.getByRole('button', { name: '终端' })).toHaveClass(/bg-accent-dim/)
-    await expect(page.locator('iframe[title="ACP bridge"]')).toBeHidden()
   })
 
   test('sandboxId 精简工具栏无 Pick', async ({ page }) => {

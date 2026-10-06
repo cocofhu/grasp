@@ -7,23 +7,16 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-func TestParseAndNormalizePermissionPreset(t *testing.T) {
-	p, ok := ParsePermissionPreset("")
-	if !ok || p != models.SharePermissionFull {
-		t.Fatalf("empty: %q ok=%v", p, ok)
+func TestParsePermissionPreset(t *testing.T) {
+	if _, ok := ParsePermissionPreset(""); ok {
+		t.Fatal("empty preset must be rejected")
 	}
-	p, ok = ParsePermissionPreset("react_only")
+	p, ok := ParsePermissionPreset("react_only")
 	if !ok || p != models.SharePermissionReactOnly {
 		t.Fatalf("react_only: %q ok=%v", p, ok)
 	}
 	if _, ok := ParsePermissionPreset("comment_only"); ok {
 		t.Fatal("unknown create preset should fail")
-	}
-	if NormalizePermissionPreset("") != models.SharePermissionFull {
-		t.Fatal("empty normalize")
-	}
-	if NormalizePermissionPreset("bogus") != models.SharePermissionFull {
-		t.Fatal("legacy unknown normalize → full")
 	}
 }
 
@@ -57,9 +50,9 @@ func TestAllowAndFilterActions(t *testing.T) {
 	if filtered["reply"] != "reply" || filtered["cancel"] != "cancel" {
 		t.Fatalf("react keys missing: %+v", filtered)
 	}
-	full := FilterActionsByPreset(actions, "")
+	full := FilterActionsByPreset(actions, models.SharePermissionFull)
 	if full["confirm"] != "approve" {
-		t.Fatalf("empty preset should keep decide: %+v", full)
+		t.Fatalf("full preset should keep decide: %+v", full)
 	}
 }
 
@@ -95,14 +88,6 @@ func TestBuildPreviewDTOFiltersReactOnly(t *testing.T) {
 		t.Fatalf("cold react_only must have no actions: %+v", cold.Actions)
 	}
 
-	lookup.Link.PermissionPreset = ""
-	legacy := BuildPreviewDTO(models.ShareLinkStateActive, lookup, "", "", "", "n3", PreviewExtras{})
-	if legacy.PermissionPreset != models.SharePermissionFull {
-		t.Fatalf("legacy preset=%q", legacy.PermissionPreset)
-	}
-	if legacy.Actions["confirm"] == "" || legacy.Actions["reject"] == "" {
-		t.Fatalf("legacy full decide missing: %+v", legacy.Actions)
-	}
 }
 
 func TestBuildReviewPreviewDTOFiltersReactOnly(t *testing.T) {
@@ -127,7 +112,7 @@ func TestBuildReviewPreviewDTOFiltersReactOnly(t *testing.T) {
 
 func TestBuildReviewPreviewDTOKeepsGraspPreviewPorts(t *testing.T) {
 	lookup := &LookupResult{
-		Link: models.GateShareLink{ID: "gsl-g1", ExpiresAt: time.Now().Add(time.Hour), Kind: models.ShareLinkKindReview},
+		Link: models.GateShareLink{ID: "gsl-g1", PermissionPreset: models.SharePermissionFull, ExpiresAt: time.Now().Add(time.Hour), Kind: models.ShareLinkKindReview},
 		Kind: models.ShareLinkKindReview,
 		Node: &models.Node{ID: "grasp1", Type: "agent", Caps: &models.AgentCapabilities{Interaction: models.InteractionClarify, Tools: []string{models.ToolAskQuestion}}},
 	}

@@ -99,7 +99,7 @@ async function gotoSharedAgentEnv(page: import('@playwright/test').Page) {
   await page.getByTestId('shared-agent-subtab-env').click()
 }
 
-test.describe('项目共享 Agent env（原 sandboxEnv 鉴权键场景）', () => {
+test.describe('项目共享 Agent env', () => {
   test('共享 env 可见 CURSOR_API_KEY 与 API_URL；无旧沙箱页签', async ({ page }) => {
     await gotoSharedAgentEnv(page)
 

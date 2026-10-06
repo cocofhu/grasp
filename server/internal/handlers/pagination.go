@@ -19,7 +19,6 @@ const (
 
 // pageParams holds validated page/pageSize pagination inputs.
 type pageParams struct {
-	Active   bool
 	Page     int
 	PageSize int
 }
@@ -31,14 +30,11 @@ type cursorParams struct {
 	Limit  int
 }
 
-// parsePagination reads optional page/pageSize query params. Active when either
-// is present. Returns false and writes a 400 when pageSize exceeds maxPageSize.
+// parsePagination reads page/pageSize query params, defaulting to page 1 and
+// defaultPageSize. Returns false and writes a 400 when pageSize exceeds maxPageSize.
 func parsePagination(c *gin.Context) (pageParams, bool) {
 	pageQ := c.Query("page")
 	sizeQ := c.Query("pageSize")
-	if pageQ == "" && sizeQ == "" {
-		return pageParams{}, true
-	}
 
 	page := 1
 	if pageQ != "" {
@@ -64,7 +60,7 @@ func parsePagination(c *gin.Context) (pageParams, bool) {
 		pageSize = v
 	}
 
-	return pageParams{Active: true, Page: page, PageSize: pageSize}, true
+	return pageParams{Page: page, PageSize: pageSize}, true
 }
 
 // parseCursorPagination reads optional cursor/limit query params. Active when

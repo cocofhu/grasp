@@ -19,8 +19,8 @@ func TestSafeProfileNameAndDir(t *testing.T) {
 	if safeProfileName("has spaces") != "" {
 		t.Fatal("spaces must be rejected")
 	}
-	if safeProfileName("clarify.v1") != "clarify.v1" {
-		t.Fatalf("legacy dotted profile: got %q", safeProfileName("clarify.v1"))
+	if safeProfileName("clarify.v1") != "" {
+		t.Fatalf("dotted profile must be rejected: got %q", safeProfileName("clarify.v1"))
 	}
 	if safeProfileName("Approve需求澄清视觉研发") != "Approve需求澄清视觉研发" {
 		t.Fatalf("chinese profile: got %q", safeProfileName("Approve需求澄清视觉研发"))
@@ -35,13 +35,8 @@ func TestSafeProfileNameAndDir(t *testing.T) {
 	if dir != want {
 		t.Fatalf("got %q want %q", dir, want)
 	}
-	legacy, err := profileDir(root, "clarify.v1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantLegacy, _ := filepath.Abs(filepath.Join(root, "clarify.v1"))
-	if legacy != wantLegacy {
-		t.Fatalf("legacy dir got %q want %q", legacy, wantLegacy)
+	if _, err := profileDir(root, "clarify.v1"); err == nil {
+		t.Fatal("expected error for dotted profile")
 	}
 	if _, err := profileDir(root, ".."); err == nil {
 		t.Fatal("expected error for ..")

@@ -101,19 +101,6 @@ describe('formatTrigger', () => {
     expect(formatTrigger('pm_mcp')).toBe('Project Management MCP')
   })
 
-  it('maps historical aliases to the same standard labels', () => {
-    i18n.global.locale.value = 'zh-CN'
-    expect(formatTrigger('手动触发')).toBe('手动')
-    expect(formatTrigger('API 触发')).toBe('API')
-    // Historical storage alias "PM MCP" still maps; display uses product naming
-    expect(formatTrigger('PM MCP')).toBe('项目管理 MCP')
-
-    i18n.global.locale.value = 'en'
-    expect(formatTrigger('手动触发')).toBe('Manual')
-    expect(formatTrigger('API 触发')).toBe('API')
-    expect(formatTrigger('PM MCP')).toBe('Project Management MCP')
-  })
-
   it('returns unmapped free-form values unchanged', () => {
     i18n.global.locale.value = 'en'
     expect(formatTrigger('channel')).toBe('channel')

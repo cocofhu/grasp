@@ -45,7 +45,7 @@ export function shortRunId(runId: string): string {
   return runId.replace(/^run-/i, '')
 }
 
-/** True when summary looks like a legacy bare extract key (type:raw). */
+/** True when the model-supplied summary is just the bare extract key (type:raw). */
 export function isBareExtractSnippet(type: string, snippet: string | undefined, targetId: string): boolean {
   if (!snippet) return false
   const s = snippet.trim().toLowerCase()

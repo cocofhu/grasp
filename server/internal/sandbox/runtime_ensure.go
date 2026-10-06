@@ -21,8 +21,6 @@ const (
 	runtimeExitImageTooOld = 4
 	// services.sh restart backend --if-idle exit code: backend busy.
 	runtimeExitBusy = 3
-	// Shell exit code for "command not found": image predates the bootstrap.
-	runtimeExitNotFound = 127
 
 	ensureRuntimeTimeout = 3 * time.Minute
 )
@@ -58,7 +56,7 @@ func (m *Manager) ensureRuntimeAsync(sb *Sandbox) {
 // EnsureRuntime brings a running sandbox to the server's runtime bundle: push
 // the bundle over SSH when the installed version differs, restart
 // preview-inject, and restart backend once it is idle. Sandboxes from images
-// without the bootstrap, or images too old for the bundle, are skipped for good.
+// too old for the bundle are skipped for good.
 func (m *Manager) EnsureRuntime(ctx context.Context, sb *Sandbox) error {
 	if m == nil || m.runtime == nil || sb == nil || sb.ID == "" {
 		return nil
@@ -83,10 +81,8 @@ func (m *Manager) ensureRuntime(ctx context.Context, sb *Sandbox, data []byte, m
 	creds := sb.creds()
 	if st.version != man.Version {
 		installed, err := m.installedRuntime(ctx, creds)
-		if code, ok := exitStatus(err); ok && code == runtimeExitNotFound {
-			st.skip = "legacy-image"
-			log.Info().Str("sandbox", sb.ID).Msg("sandbox image has no runtime bootstrap; runtime updates skipped until it is recreated")
-			return nil
+		if err != nil {
+			return fmt.Errorf("runtime version: %w", err)
 		}
 		if installed != man.Version {
 			if err := m.pushRuntime(ctx, creds, sb.ID, data, man, st); err != nil || st.skip != "" {

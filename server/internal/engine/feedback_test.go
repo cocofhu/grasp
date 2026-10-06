@@ -75,7 +75,7 @@ func TestReviseRoundsProduceOneCumulativeArtifact(t *testing.T) {
 	waitRunStatus(t, db, run.ID, "waiting_human")
 
 	opinions := []string{"第一条要补证据", "第二条图表改柱状图", "第三条补上原始链接"}
-	anns := []models.ReactAnnotation{{JSONPath: "proposals[p2]", Note: "更具体"}}
+	anns := []models.ReactAnnotation{{JSONPath: "findings[r1]", Note: "更具体"}}
 	for _, text := range opinions {
 		if err := eng.ReactReply(run.ID, "prop", text, nil, anns, false); err != nil {
 			t.Fatalf("revise %q: %v", text, err)
@@ -121,8 +121,8 @@ func TestReviseRoundsProduceOneCumulativeArtifact(t *testing.T) {
 	}
 	// The producer's own deliverable survived: feedback products must not be
 	// mistaken for "this node already produced something".
-	if _, ok := arts(db, run.ID, mcp.ProposalsArtifactName); !ok {
-		t.Fatal("proposals.json missing — feedback products suppressed the deliverable")
+	if _, ok := arts(db, run.ID, mcp.ResearchArtifactName); !ok {
+		t.Fatal("research.json missing — feedback products suppressed the deliverable")
 	}
 }
 

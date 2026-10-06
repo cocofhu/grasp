@@ -30,7 +30,8 @@ func setupEngine(t *testing.T) (*Engine, *gorm.DB) {
 	// Self-contained: insert the test workflow directly (no seed dependency)
 	// and drive it with a deterministic test-double provider (no Docker).
 	wf := models.WorkflowDef{
-		ID: "clarify-to-design", Name: "clarify-to-design", Status: "published", Version: 1,
+		ProjectID: models.DefaultProjectID,
+		ID:        "clarify-to-design", Name: "clarify-to-design", Version: 1, PublishedVersion: 1,
 		Graph: testClarifyGraph(),
 	}
 	if err := db.Create(&wf).Error; err != nil {
@@ -205,7 +206,7 @@ func setupEngineGraph(t *testing.T, g models.Graph) (*Engine, *gorm.DB) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	wf := models.WorkflowDef{ID: "wf", Name: "wf", Status: "published", Version: 1, Graph: g}
+	wf := models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf", Name: "wf", Version: 1, PublishedVersion: 1, Graph: g}
 	if err := db.Create(&wf).Error; err != nil {
 		t.Fatalf("create workflow: %v", err)
 	}
@@ -218,107 +219,6 @@ func setupEngineGraph(t *testing.T, g models.Graph) (*Engine, *gorm.DB) {
 	eng.SetBlobStore(blob.NewMemory())
 	cleanupEngineDB(t, eng, db)
 	return eng, db
-}
-
-func proposalGraph() models.Graph {
-	return models.Graph{
-		Variables: []models.Variable{{Name: "auto_confirm", Type: "bool", Value: true}},
-		Nodes: []models.Node{
-			{ID: "input", Type: "input"},
-			{ID: "propose", Type: "agent", Caps: capsProposalAuto, Config: map[string]any{"agent_profile": "arch", "prompt": "方案"}},
-			{ID: "select", Type: "proposal_select", Config: map[string]any{"auto_var": "auto_confirm", "output_var": "selected_proposal"}},
-			{ID: "output", Type: "output"},
-		},
-		Edges: []models.Edge{
-			{ID: "e1", Source: "input", Target: "propose"},
-			{ID: "e2", Source: "propose", Target: "select"},
-			{ID: "e3", Source: "select", Target: "output"},
-		},
-	}
-}
-
-// TestProposalSelectAuto: auto_confirm=true selects the recommended proposal
-// (p2) without pausing, writes proposal.json, sets the output variable, and
-// retires the upstream ProposalAgent park session (same as ResumeGate).
-func TestProposalSelectAuto(t *testing.T) {
-	eng, db, provider := setupEngineGraphP(t, proposalGraph())
-	run, err := eng.StartRun("wf", nil, "test")
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	waitRunStatus(t, db, run.ID, "completed")
-
-	var arts []models.Artifact
-	db.Where("run_id = ? AND name = ?", run.ID, "proposal.json").Find(&arts)
-	if len(arts) == 0 {
-		t.Fatalf("proposal.json not written")
-	}
-	var v models.RunVariable
-	if err := db.Where("run_id = ? AND name = ?", run.ID, "selected_proposal").First(&v).Error; err != nil {
-		t.Fatalf("selected_proposal var missing: %v", err)
-	}
-	if v.Value != "p2" {
-		t.Fatalf("expected recommended p2 selected, got %v", v.Value)
-	}
-	if !provider.retired[provider.parkKey(run.ID, "propose")] {
-		t.Fatalf("expected upstream propose session retired after auto_confirm")
-	}
-}
-
-// TestProposalSelectManual: auto_confirm=false pauses on a gate; resuming with
-// a chosen proposal id finalizes it.
-func TestProposalSelectManual(t *testing.T) {
-	g := proposalGraph()
-	g.Variables[0].Value = false // auto_confirm=false → manual selection
-	eng, db := setupEngineGraph(t, g)
-	run, err := eng.StartRun("wf", nil, "test")
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	waitGatePending(t, db, run.ID, "select")
-	if err := eng.ResumeGate(run.ID, "select", "p1", nil); err != nil {
-		t.Fatalf("resume: %v", err)
-	}
-	waitRunStatus(t, db, run.ID, "completed")
-	var v models.RunVariable
-	db.Where("run_id = ? AND name = ?", run.ID, "selected_proposal").First(&v)
-	if v.Value != "p1" {
-		t.Fatalf("expected manual choice p1, got %v", v.Value)
-	}
-}
-
-// TestProposalSelectManualSingleCandidate: auto_confirm=false but only one
-// valid candidate — finalize without pausing (no pseudo-choice wait).
-func TestProposalSelectManualSingleCandidate(t *testing.T) {
-	g := proposalGraph()
-	g.Variables[0].Value = false
-	eng, db, provider := setupEngineGraphP(t, g)
-	provider.structuredBodies = map[string]string{
-		"propose": `{"context":"方向已明确","proposals":[{"id":"p1","title":"唯一方案","recommended":true}]}`,
-	}
-	run, err := eng.StartRun("wf", nil, "test")
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	waitRunStatus(t, db, run.ID, "completed")
-
-	var gates []models.Gate
-	db.Where("run_id = ? AND node_id = ?", run.ID, "select").Find(&gates)
-	if len(gates) != 0 {
-		t.Fatalf("single-candidate manual mode must not create a pending gate, got %d", len(gates))
-	}
-	var arts []models.Artifact
-	db.Where("run_id = ? AND name = ?", run.ID, "proposal.json").Find(&arts)
-	if len(arts) == 0 {
-		t.Fatalf("proposal.json not written")
-	}
-	var v models.RunVariable
-	if err := db.Where("run_id = ? AND name = ?", run.ID, "selected_proposal").First(&v).Error; err != nil {
-		t.Fatalf("selected_proposal var missing: %v", err)
-	}
-	if v.Value != "p1" {
-		t.Fatalf("expected sole candidate p1, got %v", v.Value)
-	}
 }
 
 // TestGateActionHandles: a human_gate leaves through the outlet named by the

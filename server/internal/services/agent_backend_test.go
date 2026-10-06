@@ -14,10 +14,10 @@ func TestNormalizeAcpBackend(t *testing.T) {
 		"codebuddy":   AcpBackendCodeBuddy,
 		"trae":        AcpBackendTrae,
 		"opencode":    AcpBackendOpenCode,
-		"":            AcpBackendCursor,
+		"":            "",
 		"  trae  ":    AcpBackendTrae,
-		"CURSOR":      AcpBackendCursor, // case-sensitive; unknown → cursor
-		"bogus":       AcpBackendCursor,
+		"CURSOR":      "", // case-sensitive
+		"bogus":       "",
 	}
 	for in, want := range cases {
 		if got := NormalizeAcpBackend(in); got != want {
@@ -60,8 +60,6 @@ func TestSaveGetBackendConfigRoot(t *testing.T) {
 		{"buddy-agent", AcpBackendCodeBuddy, "/root/.codebuddy", AcpBackendCodeBuddy},
 		{"trae-agent", AcpBackendTrae, "/root/.trae", AcpBackendTrae},
 		{"opencode-agent", AcpBackendOpenCode, "/root/.config/opencode", AcpBackendOpenCode},
-		{"legacy-empty", "", "/root/.cursor", AcpBackendCursor},
-		{"bogus-backend", "made-up", "/root/.cursor", AcpBackendCursor},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -127,27 +125,5 @@ func TestSaveExplicitConfigRootWins(t *testing.T) {
 	}
 	if got.AcpBackend != AcpBackendClaudeCode {
 		t.Fatalf("AcpBackend = %q, want claude_code", got.AcpBackend)
-	}
-}
-
-// TestGetBackendDefaultRootForLegacyPinnedCursorRoot verifies that a non-cursor
-// agent.json whose ConfigRoot equals the cursor default is upgraded to the
-// backend's default root on read (migration-free legacy handling).
-func TestGetBackendDefaultRootForLegacyPinnedCursorRoot(t *testing.T) {
-	root := t.TempDir()
-	dir := filepath.Join(root, "legacy-claude")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	agentJSON := `{"acpBackend":"claude_code","layout":{"configRoot":"/root/.cursor"}}`
-	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(agentJSON), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got, ok := NewAgentService(root).Get("legacy-claude")
-	if !ok {
-		t.Fatal("agent not found")
-	}
-	if got.Layout.ConfigRoot != "/root/.claude" {
-		t.Fatalf("ConfigRoot = %q, want /root/.claude", got.Layout.ConfigRoot)
 	}
 }

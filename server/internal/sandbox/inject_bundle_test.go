@@ -110,8 +110,9 @@ func TestManagerCreateUsesSANDBOXInject(t *testing.T) {
 		ConfigHome: home,
 		ConfigRoot: "/root/.cursor",
 		Env: map[string]string{
-			"GITHUB_TOKEN": "gh-tok",
-			"GITLAB_TOKEN": "gl-tok",
+			"GITHUB_TOKEN":    "gh-tok",
+			"GITLAB_TOKEN":    "gl-tok",
+			BridgePasswordEnv: testBridgePassword,
 		},
 	})
 	if err != nil {
@@ -177,6 +178,7 @@ func TestManagerCreateSSHAndConfigMultiInject(t *testing.T) {
 			"GITLAB_TOKEN":        "gl",
 			"GIT_SSH_PRIVATE_KEY": "should-strip",
 			"GIT_SSH_KNOWN_HOSTS": "should-strip",
+			BridgePasswordEnv:     testBridgePassword,
 		},
 	}
 	ApplySSHCredentials(&spec, "-----BEGIN KEY-----\nk\n-----END KEY-----", "host ssh-ed25519 AAAA")

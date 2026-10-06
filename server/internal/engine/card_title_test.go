@@ -12,7 +12,7 @@ func TestCardTitleForNodeRef(t *testing.T) {
 		{ID: "n2", Label: "  "},
 	}}}
 	keys := []string{
-		"plan", "clarified_requirement", "research", "proposals", "proposal",
+		"plan", "clarified_requirement", "research",
 		"test_result", "review", "implementation_result", "page", "content", "other",
 	}
 	for _, k := range keys {

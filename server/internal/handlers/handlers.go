@@ -33,7 +33,6 @@ type Handlers struct {
 	APIKeys            *services.APIKeyService
 	Agents             *services.AgentService
 	SharedAgent        *services.SharedAgentService
-	Org                *services.OrgService
 	Dash               *services.DashboardService
 	Sbx                *services.SandboxService
 	SbxChats           *services.SandboxChats

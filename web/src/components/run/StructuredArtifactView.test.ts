@@ -1,5 +1,9 @@
+// @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest'
-import { isFeedbackArtifactName, isStructuredArtifactName } from './StructuredArtifactView.vue'
+import { mount } from '@vue/test-utils'
+import { createI18n } from 'vue-i18n'
+import zhPages from '@/locales/zh-CN/pages.json'
+import StructuredArtifactView, { isFeedbackArtifactName, isStructuredArtifactName } from './StructuredArtifactView.vue'
 
 describe('isStructuredArtifactName', () => {
   it('matches the reserved structured JSON artifact names', () => {
@@ -7,12 +11,11 @@ describe('isStructuredArtifactName', () => {
       'clarified_requirement.json',
       'research.json',
       'root_cause.json',
-      'proposals.json',
-      'proposal.json',
       'plan.json',
       'implementation_result.json',
       'test_result.json',
       'review.json',
+      'merge_request.json',
       'preflight.json',
     ]
     for (const name of names) {
@@ -42,5 +45,52 @@ describe('isStructuredArtifactName', () => {
     }
     expect(isFeedbackArtifactName('feedbackish.json')).toBe(false)
     expect(isFeedbackArtifactName('research.json')).toBe(false)
+  })
+})
+
+describe('merge_request.json card', () => {
+  const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': zhPages } })
+
+  it('renders one row per repo with branches, state badge and MR link', () => {
+    const wrapper = mount(StructuredArtifactView, {
+      global: { plugins: [i18n], stubs: { Icon: true } },
+      props: {
+        name: 'merge_request.json',
+        doc: {
+          summary: '两个仓库已交付',
+          items: [
+            {
+              repo: 'web',
+              sourceBranch: 'feature/login',
+              targetBranch: 'main',
+              url: 'https://github.com/acme/web/pull/12',
+              provider: 'github',
+              state: 'created',
+            },
+            {
+              repo: 'server',
+              sourceBranch: 'feature/login',
+              targetBranch: 'develop',
+              provider: 'other',
+              state: 'unsupported',
+              note: '自建 Git 服务,请手动创建',
+            },
+          ],
+        },
+      },
+    })
+    expect(wrapper.text()).toContain('两个仓库已交付')
+    const rows = wrapper.findAll('[data-testid="merge-request-item"]')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.text()).toContain('web')
+    expect(rows[0]!.find('[data-testid="merge-request-branches"]').text()).toBe('feature/login→main')
+    expect(rows[0]!.find('[data-testid="merge-request-state"]').text()).toBe('已创建')
+    const link = rows[0]!.find('[data-testid="merge-request-link"]')
+    expect(link.attributes('href')).toBe('https://github.com/acme/web/pull/12')
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.text()).toContain('打开 PR')
+    expect(rows[1]!.find('[data-testid="merge-request-state"]').text()).toBe('不支持')
+    expect(rows[1]!.find('[data-testid="merge-request-link"]').exists()).toBe(false)
+    expect(rows[1]!.text()).toContain('自建 Git 服务')
   })
 })

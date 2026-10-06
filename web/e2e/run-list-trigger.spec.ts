@@ -26,11 +26,8 @@ const MIXED_RUNS = [
   stubRun({ id: 'run-manual-code', trigger: 'manual', title: '标准 manual' }),
   stubRun({ id: 'run-api-code', trigger: 'api', title: '标准 api' }),
   stubRun({ id: 'run-pm-code', trigger: 'pm_mcp', title: '标准 pm_mcp' }),
-  stubRun({ id: 'run-legacy-manual', trigger: '手动触发', title: '历史中文别名-手动' }),
-  stubRun({ id: 'run-legacy-api', trigger: 'API 触发', title: '历史中文别名-API' }),
-  stubRun({ id: 'run-legacy-pm', trigger: 'PM MCP', title: '历史展示别名-PM' }),
-  stubRun({ id: 'run-channel', trigger: 'channel', title: '历史脏数据-channel' }),
-  stubRun({ id: 'run-free', trigger: 'qq:cron-timezone-bug', title: '历史脏数据-自由串' }),
+  stubRun({ id: 'run-channel', trigger: 'channel', title: '未映射-channel' }),
+  stubRun({ id: 'run-free', trigger: 'qq:cron-timezone-bug', title: '未映射-自由串' }),
 ]
 
 async function mockApis(page: import('@playwright/test').Page) {
@@ -91,33 +88,24 @@ function triggerCell(page: import('@playwright/test').Page, title: string) {
 }
 
 test.describe('RunListView 触发列统一展示', () => {
-  test('中文：三码与历史别名映射，自由串原样', async ({ page }) => {
+  test('中文：三码映射，自由串原样', async ({ page }) => {
     await gotoRunList(page, 'zh')
     await expect(triggerCell(page, '标准 manual')).toHaveText('手动')
     await expect(triggerCell(page, '标准 api')).toHaveText('API')
     await expect(triggerCell(page, '标准 pm_mcp')).toHaveText('项目管理 MCP')
-    await expect(triggerCell(page, '历史中文别名-手动')).toHaveText('手动')
-    await expect(triggerCell(page, '历史中文别名-API')).toHaveText('API')
-    await expect(triggerCell(page, '历史展示别名-PM')).toHaveText('项目管理 MCP')
-    await expect(triggerCell(page, '历史脏数据-channel')).toHaveText('channel')
-    await expect(triggerCell(page, '历史脏数据-自由串')).toHaveText('qq:cron-timezone-bug')
-    // Trigger column must not leak raw storage alias for mapped rows
+    await expect(triggerCell(page, '未映射-channel')).toHaveText('channel')
+    await expect(triggerCell(page, '未映射-自由串')).toHaveText('qq:cron-timezone-bug')
     const triggerTexts = await page.locator('table tbody tr td:nth-child(3)').allTextContents()
-    expect(triggerTexts).not.toContain('手动触发')
-    expect(triggerTexts).not.toContain('API 触发')
-    expect(triggerTexts).not.toContain('PM MCP')
     expect(triggerTexts).toEqual(
       expect.arrayContaining(['手动', 'API', '项目管理 MCP', 'channel', 'qq:cron-timezone-bug']),
     )
   })
 
-  test('英文：manual→Manual，别名同码文案', async ({ page }) => {
+  test('英文：manual→Manual', async ({ page }) => {
     await gotoRunList(page, 'en')
     await expect(triggerCell(page, '标准 manual')).toHaveText('Manual')
     await expect(triggerCell(page, '标准 api')).toHaveText('API')
     await expect(triggerCell(page, '标准 pm_mcp')).toHaveText('Project Management MCP')
-    await expect(triggerCell(page, '历史中文别名-手动')).toHaveText('Manual')
-    await expect(triggerCell(page, '历史展示别名-PM')).toHaveText('Project Management MCP')
-    await expect(triggerCell(page, '历史脏数据-channel')).toHaveText('channel')
+    await expect(triggerCell(page, '未映射-channel')).toHaveText('channel')
   })
 })

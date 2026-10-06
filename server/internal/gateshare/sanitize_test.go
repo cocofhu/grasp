@@ -298,7 +298,7 @@ func TestBuildReviewPreviewDTOIncludesWorkbenchFields(t *testing.T) {
 	alive := true
 	lookup := &LookupResult{
 		Kind: models.ShareLinkKindReview,
-		Link: models.GateShareLink{ExpiresAt: mustFuture()},
+		Link: models.GateShareLink{ExpiresAt: mustFuture(), PermissionPreset: models.SharePermissionFull},
 		Node: &models.Node{ID: "research1", Type: "agent", Label: "调研", Caps: &models.AgentCapabilities{Interaction: models.InteractionAuto, Review: true}},
 	}
 	dto := BuildReviewPreviewDTO(models.ShareLinkStateActive, lookup, "", "research.json", `{"title":"调研摘要","goals":["g1"],"runId":"hide-me"}`, "nonce-1", PreviewExtras{
@@ -351,7 +351,7 @@ func TestBuildReviewPreviewDTOIncludesWorkbenchFields(t *testing.T) {
 func TestBuildReviewPreviewDTOIncludesQueueState(t *testing.T) {
 	lookup := &LookupResult{
 		Kind: models.ShareLinkKindReview,
-		Link: models.GateShareLink{ExpiresAt: mustFuture()},
+		Link: models.GateShareLink{ExpiresAt: mustFuture(), PermissionPreset: models.SharePermissionFull},
 		Node: &models.Node{ID: "research1", Type: "agent", Label: "调研", Caps: &models.AgentCapabilities{Interaction: models.InteractionAuto, Review: true}},
 	}
 	dto := BuildReviewPreviewDTO(models.ShareLinkStateActive, lookup, "", "research.json", `{"title":"调研摘要"}`, "nonce-q", PreviewExtras{
@@ -408,7 +408,7 @@ func TestBuildReviewPreviewDTOIncludesQueueState(t *testing.T) {
 func TestBuildReviewPreviewDTOClarifyCopyAndEmptyProduct(t *testing.T) {
 	lookup := &LookupResult{
 		Kind: models.ShareLinkKindReview,
-		Link: models.GateShareLink{ExpiresAt: mustFuture()},
+		Link: models.GateShareLink{ExpiresAt: mustFuture(), PermissionPreset: models.SharePermissionFull},
 		Node: &models.Node{ID: "clarify", Type: "agent", Label: "需求澄清", Caps: &models.AgentCapabilities{Interaction: models.InteractionClarify, Tools: []string{models.ToolAskQuestion}}},
 	}
 	dto := BuildReviewPreviewDTO(models.ShareLinkStateActive, lookup, "", "", "", "nonce-c", PreviewExtras{
@@ -442,7 +442,7 @@ func TestBuildReviewPreviewDTOClarifyCopyAndEmptyProduct(t *testing.T) {
 
 	reviewLookup := &LookupResult{
 		Kind: models.ShareLinkKindReview,
-		Link: models.GateShareLink{ExpiresAt: mustFuture()},
+		Link: models.GateShareLink{ExpiresAt: mustFuture(), PermissionPreset: models.SharePermissionFull},
 		Node: &models.Node{ID: "research1", Type: "agent", Label: "调研", Caps: &models.AgentCapabilities{Interaction: models.InteractionAuto, Review: true}},
 	}
 	rev := BuildReviewPreviewDTO(models.ShareLinkStateActive, reviewLookup, "", "research.json", `{"title":"调研"}`, "n2", PreviewExtras{})

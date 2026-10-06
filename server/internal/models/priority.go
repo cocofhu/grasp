@@ -37,7 +37,7 @@ func ParsePriorityLabel(s string) (int, error) {
 }
 
 // PriorityLabel maps a stored integer to the API string label.
-// Unknown / zero values are treated as normal for backward compatibility.
+// Unknown values map to normal.
 func PriorityLabel(p int) string {
 	switch p {
 	case PriorityHigh:

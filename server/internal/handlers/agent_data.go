@@ -9,8 +9,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// resolveAgentProject loads the Agent and returns its home project id.
-// 404 if missing; 400 if unbound.
+// resolveAgentProject loads the Agent and returns its home project id (404 if missing).
 func (h *Handlers) resolveAgentProject(c *gin.Context) (name, projectID string, ok bool) {
 	name = c.Param("name")
 	agent, exists := h.Agents.Get(name)
@@ -18,16 +17,11 @@ func (h *Handlers) resolveAgentProject(c *gin.Context) (name, projectID string, 
 		c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
 		return "", "", false
 	}
-	projectID = strings.TrimSpace(agent.ProjectID)
-	if projectID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该 Agent 未绑定主项目，暂无可管理的数据"})
-		return "", "", false
-	}
-	return name, projectID, true
+	return name, strings.TrimSpace(agent.ProjectID), true
 }
 
 // requireAgentMemoryAccess allows any authenticated user to manage Studio Agent data
-// (memories, threads, cron job writes) for an Agent bound to a home project.
+// (memories, threads, cron job writes) of its home project.
 func (h *Handlers) requireAgentMemoryAccess(c *gin.Context) bool {
 	_, ok := h.sessionUser(c)
 	return ok

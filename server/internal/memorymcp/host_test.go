@@ -23,7 +23,7 @@ func setupMemoryDB(t *testing.T) (*gorm.DB, *services.PmService, models.Project)
 		t.Fatal(err)
 	}
 	ps := services.NewProjectService(db)
-	p, err := ps.Create("MemMCP", "", nil, nil)
+	p, err := ps.Create("MemMCP", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

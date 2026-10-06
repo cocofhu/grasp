@@ -133,7 +133,7 @@ function pick(action: NodeMenuAction) {
       <span v-if="isRun && (data.iteration || 0) > 1" class="cnode-iter" data-testid="canvas-node-iteration">
         {{ t('canvas.node.iteration', { n: data.iteration }) }}
       </span>
-      <div v-if="!isRun && ctx" ref="menuRoot" class="relative">
+      <div v-if="data.mode === 'edit' && ctx" ref="menuRoot" class="relative">
         <button
           type="button"
           class="cnode-menu-btn nodrag"

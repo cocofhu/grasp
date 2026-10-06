@@ -25,9 +25,6 @@ export const OUTER_CHAT_FLOOR = 160
 /** rightMin ≈ stage 160 + inner sash 4 + depressed chat 160. */
 export const OUTER_RIGHT_MIN = OUTER_STAGE_MIN + OUTER_SASH_WIDTH + OUTER_CHAT_FLOOR
 
-export const OUTER_SASH_TABS = ['clarify', 'review'] as const
-export type OuterSashTab = (typeof OUTER_SASH_TABS)[number]
-
 /** localStorage keys for ReviewShell desktop sidebar width (scene-isolated). */
 export const REVIEW_SHELL_WIDTH_KEY_REVIEW = 'review-shell-sidebar-width:review'
 export const REVIEW_SHELL_WIDTH_KEY_APPROVAL = 'review-shell-sidebar-width:approval'
@@ -36,30 +33,14 @@ export const REVIEW_SHELL_WIDTH_KEY_CLARIFY = 'review-shell-sidebar-width:clarif
 /**
  * Outer sash persistence — isolated from review-shell-sidebar-width:*.
  * Stores pixel width + fullOpen so a resized window does not leave a fake gap.
+ * Shared across all desktop node tabs so tab switches do not jump width.
  */
-export const OUTER_SASH_WIDTH_KEY_CLARIFY = 'run-detail-outer-sash:clarify'
-export const OUTER_SASH_WIDTH_KEY_REVIEW = 'run-detail-outer-sash:review'
-/** Shared across all desktop node tabs so tab switches do not jump width. */
 export const OUTER_SASH_WIDTH_KEY_SHARED = 'run-detail-outer-sash:shared'
 
-/** @deprecated clarify|review-only; desktop layout no longer gates on this. */
-export function isOuterSashTab(tab: string): tab is OuterSashTab {
-  return tab === 'clarify' || tab === 'review'
-}
-
-export function outerSashStorageKey(tab: OuterSashTab): string {
-  return tab === 'review' ? OUTER_SASH_WIDTH_KEY_REVIEW : OUTER_SASH_WIDTH_KEY_CLARIFY
-}
-
-/** Read shared outer sash memory, migrating from legacy per-scene keys when needed. */
 export function readSharedOuterSashMem(): OuterSashMem | null {
   try {
     if (typeof localStorage === 'undefined') return null
-    const shared = parseOuterSashMem(localStorage.getItem(OUTER_SASH_WIDTH_KEY_SHARED))
-    if (shared) return shared
-    const clarify = parseOuterSashMem(localStorage.getItem(OUTER_SASH_WIDTH_KEY_CLARIFY))
-    if (clarify) return clarify
-    return parseOuterSashMem(localStorage.getItem(OUTER_SASH_WIDTH_KEY_REVIEW))
+    return parseOuterSashMem(localStorage.getItem(OUTER_SASH_WIDTH_KEY_SHARED))
   } catch {
     return null
   }

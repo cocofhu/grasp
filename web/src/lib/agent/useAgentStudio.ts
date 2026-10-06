@@ -1,22 +1,16 @@
 /**
- * Agent Studio view: org/draft/selection/panel orchestration.
+ * Agent Studio view: project tree / draft / selection / panel orchestration.
  */
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, toValue, type MaybeRefOrGetter } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type AgentFilesPanel from '@/components/agent/AgentFilesPanel.vue'
 import type { DataSubTab } from '@/components/agent/AgentDataPanel.vue'
-import { api, type Agent, type AgentOrg, type TeamBootstrapSession } from '@/lib/api/api'
+import { api, type Agent, type ProjectAgentsImportResult, type TeamBootstrapSession } from '@/lib/api/api'
 import { createListRequestSeq, httpStatusOf } from '@/lib/shared/listRequestSeq'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
-import {
-  emptyOrg, groupPath, newGroupId, applyDeleteGroup, applyMoveAgent,
-  applyRemoveAgentFromGroup, wouldCreateGroupCycle, buildOrgTreeRows, pruneOrgToAgentGroups,
-  recursiveMemberNames, classifyAssignTargets, assignNeedsDraftConfirm,
-  shouldSyncDraftAfterAssign, isAgentInGroupSubtree, UNGROUPED_ID,
-  allGroupCollapseIds, ancestorGroupIdsForAgent, buildDefaultCollapsedSet,
-  mergeCollapsedWithOrgChange,
-} from '@/lib/agent/agentOrg'
+import { toProjectTreeNodes } from '@/lib/agent/agentProjectTree'
+import { childKey, parseTreeKey } from '@/components/ui/projectTree'
 import { downloadZip, validateAgentName, normalizeAgentName } from '@/lib/agent/agentIO'
 import { agentConfigRelPath } from '@/lib/agent/backendAuthGuide'
 import { useAgentImport } from '@/lib/agent/useAgentImport'
@@ -68,7 +62,7 @@ function filterAgentsByScope(list: Agent[] | null | undefined): Agent[] {
 }
 
 const AGENT_LIST_COLLAPSED_KEY = 'agent-studio-agent-list-collapsed'
-const ORG_SIDEBAR_EXPANDED_W = '280px'
+const SIDEBAR_EXPANDED_W = '280px'
 const SIDEBAR_COLLAPSED_W = '28px'
 
 function readCollapsedState(key: string): boolean {
@@ -98,7 +92,7 @@ function toggleAgentListCollapsed() {
 const cardGridStyle = computed(() => {
   if (isMobile.value) return { gridTemplateColumns: '1fr' }
   return {
-    gridTemplateColumns: `${agentListCollapsed.value ? SIDEBAR_COLLAPSED_W : ORG_SIDEBAR_EXPANDED_W} 1fr`,
+    gridTemplateColumns: `${agentListCollapsed.value ? SIDEBAR_COLLAPSED_W : SIDEBAR_EXPANDED_W} 1fr`,
   }
 })
 
@@ -129,33 +123,8 @@ function closeMobileChromeOverlays() {
   filesPanelRef.value?.closeExplorerMore()
 }
 
-/** Narrow-screen agent org tree bottom sheet (≈70vh). */
-const showOrgSheet = ref(false)
-const orgSheetCollapsed = ref<Set<string>>(new Set())
-const orgSheetKnownIds = ref<Set<string>>(new Set())
-
-function expandAgentsForOrgSheet(names: string[]): string[] {
-  const out = names.filter(Boolean)
-  if (manageFocusAgent.value && !out.includes(manageFocusAgent.value)) {
-    out.push(manageFocusAgent.value)
-  }
-  return out
-}
-
-function syncOrgSheetCollapsedFromOrg(expandNames?: string[]) {
-  const names = expandAgentsForOrgSheet(expandNames || [activeName.value])
-  if (orgSheetKnownIds.value.size === 0) {
-    orgSheetCollapsed.value = buildDefaultCollapsedSet(org.value, names)
-  } else {
-    orgSheetCollapsed.value = mergeCollapsedWithOrgChange(
-      org.value,
-      orgSheetCollapsed.value,
-      orgSheetKnownIds.value,
-      names,
-    )
-  }
-  orgSheetKnownIds.value = new Set([...allGroupCollapseIds(org.value)])
-}
+/** Narrow-screen project tree bottom sheet (≈70vh). */
+const showProjectSheet = ref(false)
 
 type LeaveConfirmCfg = {
   title: string
@@ -170,14 +139,11 @@ const leaveConfirmCfg = ref<LeaveConfirmCfg | null>(null)
 
 const agents = ref<Agent[]>([])
 const projects = ref<{ id: string; name: string }[]>([])
-const org = ref<AgentOrg>(emptyOrg())
-const orgBaseline = ref('')
 const activeName = ref('')
 const draft = ref<Draft | null>(null)
 const originalJson = ref('')
 const tab = ref<StudioTab>('files')
 const dataSubTab = ref<DataSubTab>('memory')
-const orgSaving = ref(false)
 /** Skip one URL write while applying deep-link query on load. */
 let applyingStudioQuery = false
 
@@ -188,28 +154,17 @@ function syncStudioQuery() {
   if (activeName.value) next.agent = activeName.value
   else if (useStudioTabKey) delete next.agent
 
-  if (useStudioTabKey) {
-    if (tab.value !== 'files') next.studioTab = tab.value
-    else delete next.studioTab
-    // Never overwrite project detail `tab=agents`.
-  } else if (tab.value !== 'files') {
-    next.tab = tab.value
-  }
+  // Never overwrite project detail `tab=agents`.
+  if (tab.value !== 'files') next.studioTab = tab.value
+  else delete next.studioTab
 
   if (tab.value === 'data') next.sub = dataSubTab.value
   else if (useStudioTabKey) delete next.sub
 
   const curAgent = typeof route.query.agent === 'string' ? route.query.agent : ''
-  const curTabKey = useStudioTabKey ? 'studioTab' : 'tab'
-  const curTab = typeof route.query[curTabKey] === 'string' ? (route.query[curTabKey] as string) : ''
+  const curTab = typeof route.query.studioTab === 'string' ? route.query.studioTab : ''
   const curSub = typeof route.query.sub === 'string' ? route.query.sub : ''
-  const nextTab = useStudioTabKey
-    ? typeof next.studioTab === 'string'
-      ? next.studioTab
-      : ''
-    : typeof next.tab === 'string'
-      ? next.tab
-      : ''
+  const nextTab = typeof next.studioTab === 'string' ? next.studioTab : ''
   if (
     curAgent === (typeof next.agent === 'string' ? next.agent : '') &&
     curTab === nextTab &&
@@ -220,17 +175,13 @@ function syncStudioQuery() {
   void router.replace({ query: next as typeof route.query })
 }
 
-// Data / chat tester follow the last-saved binding so unsaved draft edits
-// cannot hit APIs under the wrong (or unbound) project.
+// Data / chat tester follow the last-saved project so unsaved draft edits
+// cannot hit APIs under the wrong project.
 const savedProjectId = computed(() => {
   const a = agents.value.find((x) => x.name === activeName.value)
-  return a?.projectId?.trim() || ''
+  return a?.projectId || ''
 })
-const isProjectBound = computed(() => !!savedProjectId.value)
-const draftBindingDirty = computed(() => {
-  const draftPid = draft.value?.projectId?.trim() || ''
-  return draftPid !== savedProjectId.value
-})
+const draftBindingDirty = computed(() => !!draft.value && draft.value.projectId !== savedProjectId.value)
 function projectNameById(id: string): string {
   return projects.value.find((p) => p.id === id)?.name || id
 }
@@ -299,60 +250,47 @@ const confirmCfg = ref<ConfirmCfg | null>(null)
 const showAgentManage = ref(false)
 /** Agent management 打开时高亮/滚动到的目标行；关闭时清除 */
 const manageFocusAgent = ref('')
-/** 侧栏铅笔阻断弹窗 */
-const showRenameBlocked = ref(false)
-const renameBlockedTarget = ref('')
 
 const showUnsavedExport = ref(false)
 const exporting = ref(false)
-const showFolderSecrets = ref(false)
-const pendingFolderExportGroupId = ref('')
+const showBundleSecrets = ref(false)
+const pendingBundleExportProjectId = ref('')
 
-type SensitiveKeyHit = { key: string; agentCount: number }
-const showClearSensitive = ref(false)
-const clearSensitiveBusy = ref(false)
-const clearSensitiveGroupId = ref('')
-const clearSensitiveGroupName = ref('')
-const clearSensitiveAgentCount = ref(0)
-const clearSensitiveHits = ref<SensitiveKeyHit[]>([])
-const clearSensitiveSelected = ref<Set<string>>(new Set())
-const clearSensitiveSelectedCount = computed(() => clearSensitiveSelected.value.size)
+/** Header import: pick the target project first (standalone Studio only). */
+const showImportProjectPick = ref(false)
+const importProjectId = ref('')
+
+async function onBundleImported(_result: ProjectAgentsImportResult) {
+  try {
+    const list = await api.listAgents()
+    agents.value = filterAgentsByScope(list)
+    agents.value.sort((a, b) => a.name.localeCompare(b.name))
+    const a = agents.value.find((x) => x.name === activeName.value)
+    if (a) {
+      const loaded = hydrateStudioDraft(a)
+      originalJson.value = draftPayloadJson(loaded)
+      draft.value = loaded
+    } else {
+      selectFirstAgent()
+    }
+  } catch (e: any) {
+    error.value = String(e?.message || e)
+  }
+}
 
 const agentImport = useAgentImport({
-  dirty: () => agentDirty.value,
-  agentDirty: () => agentDirty.value,
-  orgDirty: () => orgDirty.value,
-  persistOrg: () => persistOrg(org.value),
+  dirty: () => dirty.value,
   agentNames: () => agents.value.map((a) => a.name),
-  onImported: async (agent) => {
+  onImported: (agent) => {
     const i = agents.value.findIndex((a) => a.name === agent.name)
     if (i >= 0) agents.value[i] = agent
     else {
       agents.value.push(agent)
       agents.value.sort((a, b) => a.name.localeCompare(b.name))
     }
-    // ZIP import carries no org → agent stays ungrouped.
-    await reloadOrg()
     select(agent.name)
   },
-  onFolderImported: async (importedOrg) => {
-    org.value = importedOrg
-    orgBaseline.value = orgSnapshot(importedOrg)
-    try {
-      const list = await api.listAgents()
-      agents.value = list || []
-      if (activeName.value && agents.value.some((a) => a.name === activeName.value)) {
-        const a = agents.value.find((x) => x.name === activeName.value)!
-        const loaded = hydrateStudioDraft(a)
-        originalJson.value = draftPayloadJson(loaded)
-        draft.value = loaded
-      } else if (agents.value.length) {
-        select(agents.value[0].name)
-      }
-    } catch (e: any) {
-      error.value = String(e?.message || e)
-    }
-  },
+  onBundleImported,
 })
 const {
   fileInput: importFileInput,
@@ -366,8 +304,7 @@ const {
   renameError: importRenameError,
   showBatchConflict,
   batchConflictNames,
-  triggerImport,
-  triggerGroupImport,
+  triggerImport: triggerProjectImport,
   onDiscardCancel: onImportDiscardCancel,
   onDiscardConfirm: onImportDiscardConfirm,
   handleFileChange: onImportFileChange,
@@ -379,19 +316,9 @@ const {
   confirmBatchOverwrite,
 } = agentImport
 
-function orgSnapshot(o: AgentOrg): string {
-  return JSON.stringify({
-    revision: o.revision,
-    groups: o.groups || [],
-    agents: o.agents || {},
-  })
-}
-
-const agentDirty = computed(
+const dirty = computed(
   () => !!draft.value && draftPayloadJson(draft.value) !== originalJson.value,
 )
-const orgDirty = computed(() => orgSnapshot(org.value) !== orgBaseline.value)
-const dirty = computed(() => agentDirty.value || orgDirty.value)
 
 watch(dirty, (d) => {
   if (d) justSaved.value = false
@@ -399,7 +326,7 @@ watch(dirty, (d) => {
 
 watch(isMobile, (mobile) => {
   if (!mobile) {
-    showOrgSheet.value = false
+    showProjectSheet.value = false
     closeMobileChromeOverlays()
   }
   nextTick(() => {
@@ -433,328 +360,40 @@ function clearManageSearch() {
   manageSearch.value = ''
 }
 
-const displayOrg = computed(() =>
-  embedded.value ? pruneOrgToAgentGroups(org.value, agentNames.value) : org.value,
+/** Projects shown in the tree: embedded Studio only lists its host project. */
+const treeProjects = computed(() => {
+  const pid = scopedProjectId.value
+  return pid ? projects.value.filter((p) => p.id === pid) : projects.value
+})
+const treeNodes = computed(() => toProjectTreeNodes(agents.value, treeProjects.value))
+const activeTreeKey = computed(() =>
+  activeName.value && savedProjectId.value ? childKey(savedProjectId.value, activeName.value) : '',
 )
 
-const orgSheetRows = computed(() =>
-  buildOrgTreeRows(displayOrg.value, agentNames.value, orgSheetCollapsed.value, agents.value, projects.value),
-)
-
-type AssignFailItem = { name: string; reason: string }
-const showAssignPick = ref(false)
-const showAssignCover = ref(false)
-const showAssignDraft = ref(false)
-const assignApplying = ref(false)
-const assignGroupName = ref('')
-const assignMembers = ref<string[]>([])
-const assignTargetId = ref('')
-const assignDiffBound = ref<{ name: string; oldProjectId: string }[]>([])
-const assignFail = ref<AssignFailItem[]>([])
-const assignOkCount = ref(0)
-
-const assignTargetLabel = computed(() =>
-  assignTargetId.value ? projectNameById(assignTargetId.value) : '',
-)
-const assignMemberList = computed(() => assignMembers.value.join('、'))
-const assignAffectedList = computed(() =>
-  assignDiffBound.value
-    .map((item) => `${item.name}（${projectNameById(item.oldProjectId)}）`)
-    .join('、'),
-)
-
-function closeAssignModals() {
-  showAssignPick.value = false
-  showAssignCover.value = false
-  showAssignDraft.value = false
-  assignApplying.value = false
+function onTreeSelect(key: string) {
+  const parsed = parseTreeKey(key)
+  if (parsed?.childId) chooseAgent(parsed.childId)
 }
 
-function onAssignProject(groupId: string) {
-  if (embedded.value) return
-  const group = (org.value.groups || []).find((g) => g.id === groupId)
-  if (!group) return
-  assignFail.value = []
-  assignOkCount.value = 0
-  const members = recursiveMemberNames(org.value, groupId, agentNames.value)
-  if (!members.length) {
-    showToast(t('pages.agentStudio.org.assignEmpty'))
-    return
-  }
-  if (!projects.value.length) {
-    showToast(t('pages.agentStudio.org.assignNoProjects'))
-    return
-  }
-  assignGroupName.value = group.name
-  assignMembers.value = members
-  assignTargetId.value = projects.value[0]?.id || ''
-  assignDiffBound.value = []
-  showAssignCover.value = false
-  showAssignDraft.value = false
-  showAssignPick.value = true
+function onSheetTreeSelect(key: string) {
+  const parsed = parseTreeKey(key)
+  if (parsed?.childId) chooseAgentFromSheet(parsed.childId)
 }
 
-function onAssignPickNext() {
-  const target = assignTargetId.value.trim()
-  if (!target) {
-    showToast(t('pages.agentStudio.org.assignNoProjects'))
-    return
-  }
-  const classified = classifyAssignTargets(assignMembers.value, agents.value, target)
-  if (classified.already.length === assignMembers.value.length) {
-    closeAssignModals()
-    showToast(t('pages.agentStudio.org.assignAlready'))
-    return
-  }
-  assignDiffBound.value = classified.diffBound
-  if (classified.diffBound.length) {
-    showAssignPick.value = false
-    showAssignCover.value = true
-    return
-  }
-  maybeAssignDraftThenApply()
+function selectFirstAgent(opts?: { skipQuerySync?: boolean }) {
+  const first = treeNodes.value.find((n) => n.children?.length)?.children?.[0]
+  if (first) select(first.id, opts)
 }
 
-function cancelAssignCover() {
-  closeAssignModals()
-  showToast(t('pages.agentStudio.org.assignCancelled'))
-}
-
-function maybeAssignDraftThenApply() {
-  const needsDraft = assignNeedsDraftConfirm({
-    activeName: activeName.value,
-    memberNames: assignMembers.value,
-    draftBindingDirty: draftBindingDirty.value,
-  })
-  if (needsDraft) {
-    showAssignPick.value = false
-    showAssignCover.value = false
-    showAssignDraft.value = true
-    return
-  }
-  void applyAssign(assignMembers.value.includes(activeName.value))
-}
-
-function keepAssignDraft() {
-  closeAssignModals()
-  showToast(t('pages.agentStudio.org.assignDraftKept'))
-}
-
-function syncDraftProjectId(target: string) {
-  if (!draft.value) return
-  draft.value.projectId = target
-  try {
-    const snap = JSON.parse(originalJson.value || '{}') as Agent
-    snap.projectId = target
-    originalJson.value = JSON.stringify(snap)
-  } catch {
-    /* ignore malformed snapshot */
-  }
-}
-
-async function applyAssign(syncDraftRequested: boolean) {
-  const target = assignTargetId.value.trim()
-  if (!target || assignApplying.value) return
-  assignApplying.value = true
-  assignFail.value = []
-  assignOkCount.value = 0
-  const ok: string[] = []
-  const fail: AssignFailItem[] = []
-  for (const name of assignMembers.value) {
-    try {
-      await api.patchAgentProject(name, target)
-      ok.push(name)
-    } catch (e: any) {
-      fail.push({ name, reason: String(e?.message || e) })
-    }
-  }
-  assignOkCount.value = ok.length
-  assignFail.value = fail
-  try {
-    const list = await api.listAgents()
-    agents.value = list || []
-  } catch {
-    /* keep local list; brackets refresh on next load */
-  }
-  if (
-    shouldSyncDraftAfterAssign({
-      activeName: activeName.value,
-      memberNames: assignMembers.value,
-      failNames: fail.map((f) => f.name),
-      syncDraftRequested,
-    })
-  ) {
-    syncDraftProjectId(target)
-  }
-  closeAssignModals()
-  if (fail.length) {
-    showToast(t('pages.agentStudio.org.assignPartialToast', { ok: ok.length, fail: fail.length }))
-  } else {
-    showToast(
-      t('pages.agentStudio.org.assignOkToast', { n: ok.length, project: projectNameById(target) }),
-    )
-  }
-}
-
-function openOrgSheet() {
+function openProjectSheet() {
   closeMobileChromeOverlays()
-  showOrgSheet.value = true
+  showProjectSheet.value = true
 }
 
-function closeOrgSheet() {
-  showOrgSheet.value = false
+function closeProjectSheet() {
+  showProjectSheet.value = false
 }
 
-function toggleOrgSheetNode(id: string) {
-  const next = new Set(orgSheetCollapsed.value)
-  if (next.has(id)) next.delete(id)
-  else next.add(id)
-  orgSheetCollapsed.value = next
-}
-
-function orgSheetPadStyle(depth: number) {
-  return { paddingLeft: `${6 + depth * 14}px` }
-}
-
-async function persistOrg(next: AgentOrg): Promise<boolean> {
-  orgSaving.value = true
-  error.value = ''
-  try {
-    const saved = await api.saveAgentsOrg({
-      revision: org.value.revision,
-      groups: next.groups || [],
-      agents: next.agents || {},
-    })
-    org.value = saved
-    orgBaseline.value = orgSnapshot(saved)
-    return true
-  } catch (e: any) {
-    error.value = String(e?.message || e)
-    // Reload authoritative org on conflict / validation failure.
-    try {
-      const fresh = await api.getAgentsOrg()
-      org.value = fresh
-      orgBaseline.value = orgSnapshot(fresh)
-    } catch {
-      /* ignore */
-    }
-    return false
-  } finally {
-    orgSaving.value = false
-  }
-}
-
-async function reloadOrg() {
-  try {
-    const o = (await api.getAgentsOrg()) || emptyOrg()
-    if (!o.agents) o.agents = {}
-    if (!o.groups) o.groups = []
-    org.value = o
-    orgBaseline.value = orgSnapshot(o)
-    syncOrgSheetCollapsedFromOrg()
-  } catch (e: any) {
-    error.value = String(e?.message || e)
-  }
-}
-
-function openCreateRootGroup() {
-  promptValue.value = ''
-  promptError.value = ''
-  promptOkMsg.value = ''
-  promptCfg.value = {
-    title: t('pages.agentStudio.org.newRootGroup'),
-    label: t('pages.agentStudio.org.groupNameLabel'),
-    placeholder: t('pages.agentStudio.org.groupNamePlaceholder'),
-    validate: (v) => (!v ? t('pages.agentStudio.dialogs.nameRequired') : ''),
-    submit: async (v) => {
-      const next = {
-        ...org.value,
-        groups: [...(org.value.groups || []), { id: newGroupId(), name: v }],
-      }
-      if (!(await persistOrg(next))) throw new Error(error.value || 'org save failed')
-    },
-  }
-}
-
-function openCreateChildGroup(parentId: string) {
-  promptValue.value = ''
-  promptError.value = ''
-  promptOkMsg.value = ''
-  promptCfg.value = {
-    title: t('pages.agentStudio.org.newChildGroup'),
-    label: t('pages.agentStudio.org.groupNameLabel'),
-    placeholder: t('pages.agentStudio.org.groupNamePlaceholder'),
-    validate: (v) => (!v ? t('pages.agentStudio.dialogs.nameRequired') : ''),
-    submit: async (v) => {
-      const next = {
-        ...org.value,
-        groups: [...(org.value.groups || []), { id: newGroupId(), name: v, parentGroupId: parentId }],
-      }
-      if (!(await persistOrg(next))) throw new Error(error.value || 'org save failed')
-    },
-  }
-}
-
-function openRenameGroup(groupId: string) {
-  const g = (org.value.groups || []).find((x) => x.id === groupId)
-  if (!g) return
-  promptValue.value = g.name
-  promptError.value = ''
-  promptOkMsg.value = ''
-  promptCfg.value = {
-    title: t('pages.agentStudio.org.renameGroup'),
-    label: t('pages.agentStudio.org.groupNameLabel'),
-    validate: (v) => (!v ? t('pages.agentStudio.dialogs.nameRequired') : ''),
-    submit: async (v) => {
-      const next = {
-        ...org.value,
-        groups: (org.value.groups || []).map((x) => (x.id === groupId ? { ...x, name: v } : x)),
-      }
-      if (!(await persistOrg(next))) throw new Error(error.value || 'org save failed')
-    },
-  }
-}
-
-function confirmDeleteGroup(groupId: string) {
-  const g = (org.value.groups || []).find((x) => x.id === groupId)
-  if (!g) return
-  confirmCfg.value = {
-    title: t('pages.agentStudio.org.deleteGroupTitle'),
-    message: t('pages.agentStudio.org.deleteGroupMessage', { name: g.name }),
-    confirmText: t('pages.agentStudio.dialogs.delete'),
-    danger: true,
-    ok: async () => {
-      const next = applyDeleteGroup(org.value, groupId)
-      await persistOrg(next)
-    },
-  }
-}
-
-async function onMoveGroup(groupId: string, newParentId: string) {
-  if (wouldCreateGroupCycle(org.value, groupId, newParentId)) {
-    error.value = t('pages.agentStudio.org.groupCycle')
-    return
-  }
-  const next = {
-    ...org.value,
-    groups: (org.value.groups || []).map((g) =>
-      g.id === groupId ? { ...g, parentGroupId: newParentId || undefined } : g,
-    ),
-  }
-  await persistOrg(next)
-}
-
-async function onMoveAgent(agentName: string, sourceGroupId: string, targetGroupId: string) {
-  const next = applyMoveAgent(org.value, agentName, sourceGroupId, targetGroupId)
-  await persistOrg(next)
-}
-
-async function onRemoveFromGroup(agentName: string, groupId: string) {
-  const next = applyRemoveAgentFromGroup(org.value, agentName, groupId)
-  if (await persistOrg(next)) {
-    showToast(t('pages.agentStudio.org.removeFromGroupToast'))
-  }
-}
 const studioTabs = computed(() => {
   if (!draft.value) return []
   const d = draft.value
@@ -792,7 +431,6 @@ function openSettingsInFiles() {
 
 function discardUnsavedChanges() {
   const snap = filesPanelRef.value?.snapshot() || { path: '', openPaths: [] as string[] }
-  resetOrgFromBaseline()
   const a = agents.value.find((x) => x.name === activeName.value)
   if (!a) return
   const loaded = hydrateStudioDraft(a)
@@ -874,28 +512,19 @@ async function load() {
   loadFailed.value = false
   loadDenied.value = false
   try {
-    const [list, o, projList] = await Promise.all([api.listAgents(), api.getAgentsOrg(), api.listProjects()])
+    const [list, projList] = await Promise.all([api.listAgents(), api.listProjects()])
     if (!studioSeq.isCurrentSeq(localSeq)) return
     agents.value = filterAgentsByScope(list)
     projects.value = (projList || []).map((p) => ({ id: p.id, name: p.name }))
-    org.value = o?.groups ? o : { revision: o?.revision || 0, groups: o?.groups || [], agents: o?.agents || {} }
-    if (!org.value.agents) org.value.agents = {}
-    if (!org.value.groups) org.value.groups = []
-    orgBaseline.value = orgSnapshot(org.value)
-    syncOrgSheetCollapsedFromOrg()
     applyingStudioQuery = true
     try {
       const qAgent = typeof route.query.agent === 'string' ? route.query.agent.trim() : ''
-      // Embedded: studioTab only. Standalone: studioTab, else legacy tab (bookmarks).
-      const qTabRaw = embedded.value
-        ? route.query.studioTab
-        : route.query.studioTab ?? route.query.tab
-      const qTab = isStudioTab(qTabRaw) ? qTabRaw : null
+      const qTab = isStudioTab(route.query.studioTab) ? route.query.studioTab : null
       const qSub = parseDataSub(route.query.sub)
       if (qAgent && agents.value.some((a) => a.name === qAgent)) {
         select(qAgent, { tab: qTab || 'files', dataSub: qSub, skipQuerySync: true })
-      } else if (agents.value.length && !activeName.value) {
-        select(agents.value[0].name, { skipQuerySync: true })
+      } else if (!activeName.value) {
+        selectFirstAgent({ skipQuerySync: true })
       }
     } finally {
       applyingStudioQuery = false
@@ -936,14 +565,6 @@ function select(
   if (!opts?.skipQuerySync) syncStudioQuery()
 }
 
-function resetOrgFromBaseline() {
-  try {
-    org.value = JSON.parse(orgBaseline.value || orgSnapshot(emptyOrg()))
-  } catch {
-    /* keep current */
-  }
-}
-
 // guard agent switches when there are unsaved changes
 function chooseAgent(name: string) {
   if (name === activeName.value) return
@@ -953,10 +574,7 @@ function chooseAgent(name: string) {
       message: t('pages.agentStudio.dialogs.discardMessage', { name: activeName.value }),
       confirmText: t('pages.agentStudio.dialogs.discardConfirm'),
       danger: true,
-      ok: () => {
-        resetOrgFromBaseline()
-        select(name)
-      },
+      ok: () => select(name),
     }
     return
   }
@@ -966,12 +584,12 @@ function chooseAgent(name: string) {
 /** Narrow-screen sheet switch: leaveConfirm-style save / discard / cancel. */
 function chooseAgentFromSheet(name: string) {
   if (name === activeName.value) {
-    closeOrgSheet()
+    closeProjectSheet()
     return
   }
   if (!dirty.value) {
     select(name)
-    closeOrgSheet()
+    closeProjectSheet()
     return
   }
   leaveConfirmCfg.value = {
@@ -984,13 +602,12 @@ function chooseAgentFromSheet(name: string) {
       if (!ok) return false
       justSaved.value = true
       select(name)
-      closeOrgSheet()
+      closeProjectSheet()
       return true
     },
     onDiscard: () => {
-      resetOrgFromBaseline()
       select(name)
-      closeOrgSheet()
+      closeProjectSheet()
     },
   }
 }
@@ -1013,7 +630,13 @@ async function save(reason?: string) {
   saving.value = true
   error.value = ''
   try {
-    if (draft.value && draftPayloadJson(draft.value) !== originalJson.value) {
+    if (draft.value) {
+      if (!draft.value.projectId) {
+        error.value = t('pages.agentStudio.project.required')
+        tab.value = 'meta'
+        syncStudioQuery()
+        return false
+      }
       const payload = fromDraft(draft.value)
       if (typeof reason === 'string' && reason.trim()) {
         await api.saveAgent(payload, { reason: reason.trim() })
@@ -1024,10 +647,6 @@ async function save(reason?: string) {
       if (i >= 0) agents.value[i] = payload
       originalJson.value = JSON.stringify(payload)
       historyRefreshKey.value++
-    }
-    if (orgSnapshot(org.value) !== orgBaseline.value) {
-      const ok = await persistOrg(org.value)
-      if (!ok) return false
     }
     justSaved.value = true
     showSaveReasonModal.value = false
@@ -1083,7 +702,7 @@ async function doExport(name: string) {
 
 function triggerExport() {
   if (!activeName.value || exporting.value) return
-  pendingFolderExportGroupId.value = ''
+  pendingBundleExportProjectId.value = ''
   if (dirty.value) {
     showUnsavedExport.value = true
     return
@@ -1093,13 +712,13 @@ function triggerExport() {
 
 function cancelUnsavedExport() {
   showUnsavedExport.value = false
-  pendingFolderExportGroupId.value = ''
+  pendingBundleExportProjectId.value = ''
 }
 
 async function discardAndExport() {
   showUnsavedExport.value = false
-  if (pendingFolderExportGroupId.value) {
-    showFolderSecrets.value = true
+  if (pendingBundleExportProjectId.value) {
+    showBundleSecrets.value = true
     return
   }
   if (!activeName.value) return
@@ -1110,46 +729,40 @@ async function saveThenExport() {
   const ok = await save()
   if (!ok) return
   showUnsavedExport.value = false
-  if (pendingFolderExportGroupId.value) {
-    showFolderSecrets.value = true
+  if (pendingBundleExportProjectId.value) {
+    showBundleSecrets.value = true
     return
   }
   if (activeName.value) await doExport(activeName.value)
 }
 
-async function onExportGroup(groupId: string) {
+function onExportProject(projectId: string) {
   if (exporting.value) return
-  if (orgDirty.value) {
-    if (!(await persistOrg(org.value))) return
-  }
-  const inSubtree =
-    !!activeName.value && isAgentInGroupSubtree(org.value, activeName.value, groupId)
-  if (inSubtree && agentDirty.value) {
-    pendingFolderExportGroupId.value = groupId
+  pendingBundleExportProjectId.value = projectId
+  if (dirty.value && savedProjectId.value === projectId) {
     showUnsavedExport.value = true
     return
   }
-  pendingFolderExportGroupId.value = groupId
-  showFolderSecrets.value = true
+  showBundleSecrets.value = true
 }
 
-function cancelFolderSecrets() {
-  showFolderSecrets.value = false
-  pendingFolderExportGroupId.value = ''
+function cancelBundleSecrets() {
+  showBundleSecrets.value = false
+  pendingBundleExportProjectId.value = ''
 }
 
-async function confirmFolderSecrets() {
-  const groupId = pendingFolderExportGroupId.value
-  showFolderSecrets.value = false
-  pendingFolderExportGroupId.value = ''
-  if (!groupId || exporting.value) return
+async function confirmBundleSecrets() {
+  const projectId = pendingBundleExportProjectId.value
+  showBundleSecrets.value = false
+  pendingBundleExportProjectId.value = ''
+  if (!projectId || exporting.value) return
   exporting.value = true
   error.value = ''
   try {
-    const { blob, filename } = await api.exportOrgFolder(groupId)
+    const { blob, filename } = await api.exportProjectAgents(projectId)
     downloadZip(blob, filename)
     const base = filename.replace(/\.zip$/i, '')
-    showToast(t('pages.agentStudio.exportImport.folderExportSuccess', { name: base }))
+    showToast(t('pages.agentStudio.exportImport.bundleExportSuccess', { name: base }))
   } catch (e: any) {
     error.value = String(e?.message || e)
   } finally {
@@ -1157,109 +770,43 @@ async function confirmFolderSecrets() {
   }
 }
 
-function onImportGroup(groupId: string) {
-  triggerGroupImport(groupId)
+function onImportProject(projectId: string) {
+  triggerProjectImport(projectId)
 }
 
-function isClearSensitiveKeySelected(key: string): boolean {
-  return clearSensitiveSelected.value.has(key)
-}
-
-function toggleClearSensitiveKey(key: string, checked: boolean) {
-  const next = new Set(clearSensitiveSelected.value)
-  if (checked) next.add(key)
-  else next.delete(key)
-  clearSensitiveSelected.value = next
-}
-
-function selectAllClearSensitiveKeys() {
-  clearSensitiveSelected.value = new Set(clearSensitiveHits.value.map((h) => h.key))
-}
-
-function clearAllClearSensitiveKeys() {
-  clearSensitiveSelected.value = new Set()
-}
-
-function cancelClearSensitive() {
-  showClearSensitive.value = false
-  clearSensitiveBusy.value = false
-  clearSensitiveGroupId.value = ''
-  clearSensitiveGroupName.value = ''
-  clearSensitiveAgentCount.value = 0
-  clearSensitiveHits.value = []
-  clearSensitiveSelected.value = new Set()
-}
-
-async function onClearSensitiveConfig(groupId: string) {
-  if (clearSensitiveBusy.value) return
-  if (orgDirty.value) {
-    if (!(await persistOrg(org.value))) return
+/** Header import: embedded Studio imports into its project; standalone asks first. */
+function triggerImport() {
+  if (scopedProjectId.value) {
+    triggerProjectImport(scopedProjectId.value)
+    return
   }
-  clearSensitiveBusy.value = true
-  error.value = ''
-  try {
-    const group = (org.value.groups || []).find((g) => g.id === groupId)
-    const names = recursiveMemberNames(org.value, groupId, agentNames.value)
-    const { keys } = await api.scanOrgSensitiveKeys(groupId)
-    if (!keys.length) {
-      showToast(t('pages.agentStudio.org.clearSensitive.empty'))
-      return
-    }
-    clearSensitiveGroupId.value = groupId
-    clearSensitiveGroupName.value = group?.name || groupId
-    clearSensitiveAgentCount.value = names.length
-    clearSensitiveHits.value = keys
-    clearSensitiveSelected.value = new Set(keys.map((k) => k.key))
-    showClearSensitive.value = true
-  } catch (e: any) {
-    error.value = String(e?.message || e)
-  } finally {
-    clearSensitiveBusy.value = false
+  if (!projects.value.length) {
+    showToast(t('pages.agentStudio.project.noProjects'))
+    return
   }
+  importProjectId.value = savedProjectId.value || projects.value[0].id
+  showImportProjectPick.value = true
 }
 
-async function confirmClearSensitive() {
-  const groupId = clearSensitiveGroupId.value
-  const keys = [...clearSensitiveSelected.value]
-  if (!groupId || !keys.length || clearSensitiveBusy.value) return
-  clearSensitiveBusy.value = true
-  error.value = ''
-  try {
-    const result = await api.stripOrgSensitiveKeys(groupId, keys)
-    const failed = result.failed || []
-    if (failed.length) {
-      showToast(
-        t('pages.agentStudio.org.clearSensitive.partialFail', {
-          cleared: result.cleared,
-          failed: failed.join(', '),
-        }),
-      )
-    } else {
-      showToast(
-        t('pages.agentStudio.org.clearSensitive.success', {
-          agents: result.cleared,
-          keys: (result.strippedKeys || keys).length,
-        }),
-      )
-    }
-    const affected = new Set(result.agentNames || [])
-    if (activeName.value && affected.has(activeName.value)) {
-      await reloadAgentFromServer(activeName.value)
-    }
-    await refreshAgentsList()
-    cancelClearSensitive()
-  } catch (e: any) {
-    error.value = String(e?.message || e)
-  } finally {
-    clearSensitiveBusy.value = false
-  }
+function cancelImportProjectPick() {
+  showImportProjectPick.value = false
+}
+
+function confirmImportProjectPick() {
+  const pid = importProjectId.value
+  showImportProjectPick.value = false
+  if (pid) triggerProjectImport(pid)
 }
 
 const showCreateWizard = ref(false)
 const showTeamWizard = ref(false)
 const teamBootstrapSessionId = ref('')
+/** Project prefilled in the create wizard (project row menu, or the current context). */
+const createAgentProjectId = ref('')
 
-function openCreateAgent() {
+function openCreateAgent(projectId?: string) {
+  createAgentProjectId.value =
+    projectId || scopedProjectId.value || savedProjectId.value || treeProjects.value[0]?.id || ''
   showCreateWizard.value = true
 }
 
@@ -1271,15 +818,13 @@ function openCreateTeam() {
 function onWizardCreated(created: Agent) {
   agents.value.push(created)
   agents.value.sort((a, b) => a.name.localeCompare(b.name))
-  // New agents default to ungrouped / no parent (no org entry).
   select(created.name)
   showToast(t('pages.agentStudio.wizard.createdToast', { name: created.name }))
 }
 
 function onTeamBootstrapStarted(session: TeamBootstrapSession) {
   teamBootstrapSessionId.value = session.id
-  void reloadOrg()
-  void refreshAgentsList()
+  void onTeamBootstrapRefresh()
 }
 
 async function refreshAgentsList() {
@@ -1292,8 +837,17 @@ async function refreshAgentsList() {
   }
 }
 
+async function refreshProjects() {
+  try {
+    const list = await api.listProjects()
+    projects.value = (list || []).map((p) => ({ id: p.id, name: p.name }))
+  } catch {
+    /* ignore */
+  }
+}
+
 async function onTeamBootstrapRefresh() {
-  await Promise.all([reloadOrg(), refreshAgentsList()])
+  await Promise.all([refreshProjects(), refreshAgentsList()])
 }
 
 function onTeamBootstrapSelectPm(name: string) {
@@ -1333,23 +887,6 @@ function closeAgentManage() {
   manageFocusAgent.value = ''
 }
 
-/** 侧栏铅笔：阻断改名并引导至 Agent 管理（不调用 api.renameAgent） */
-function onSidebarRenameBlocked(name: string) {
-  renameBlockedTarget.value = name
-  showRenameBlocked.value = true
-}
-
-function closeRenameBlocked() {
-  showRenameBlocked.value = false
-  renameBlockedTarget.value = ''
-}
-
-function gotoManageFromBlocked() {
-  const target = renameBlockedTarget.value
-  closeRenameBlocked()
-  openAgentManage(target)
-}
-
 function openRenameAgent(name: string) {
   promptValue.value = name
   promptError.value = ''
@@ -1378,7 +915,6 @@ function openRenameAgent(name: string) {
       agents.value = agents.value.filter((a) => a.name !== name)
       agents.value.push(agent)
       agents.value.sort((a, b) => a.name.localeCompare(b.name))
-      await reloadOrg()
       // 管理弹窗内改名后同步 focus 到新名（若仍打开）
       if (manageFocusAgent.value === name) manageFocusAgent.value = agent.name
       select(agent.name)
@@ -1398,7 +934,6 @@ function confirmDeleteAgent(name: string) {
     ok: async () => {
       await api.deleteAgent(name)
       agents.value = agents.value.filter((a) => a.name !== name)
-      await reloadOrg()
       closeAgentManage()
       // FR-f8: clear selection; do not auto-select the next agent
       if (activeName.value === name) {
@@ -1505,19 +1040,6 @@ watch(activeName, () => {
   nextTick(measureAgentNameTruncation)
 })
 
-watch(
-  () => (org.value.groups || []).map((g) => g.id).join(','),
-  () => syncOrgSheetCollapsedFromOrg(),
-)
-
-watch([activeName, manageFocusAgent], () => {
-  const next = new Set(orgSheetCollapsed.value)
-  for (const name of expandAgentsForOrgSheet([activeName.value])) {
-    for (const id of ancestorGroupIdsForAgent(org.value, name)) next.delete(id)
-  }
-  orgSheetCollapsed.value = next
-})
-
 watch(tabStripEl, () => {
   bindTabStripObserver()
   nextTick(syncTabFade)
@@ -1551,7 +1073,7 @@ onBeforeUnmount(() => {
   route,
   router,
   AGENT_LIST_COLLAPSED_KEY,
-  ORG_SIDEBAR_EXPANDED_W,
+  SIDEBAR_EXPANDED_W,
   SIDEBAR_COLLAPSED_W,
   readCollapsedState,
   writeCollapsedState,
@@ -1577,24 +1099,24 @@ onBeforeUnmount(() => {
   tabFadeRight,
   closeFullNameTip,
   closeMobileChromeOverlays,
-  showOrgSheet,
-  orgSheetCollapsed,
+  showProjectSheet,
+  openProjectSheet,
+  closeProjectSheet,
   leaveConfirmCfg,
   agents,
   projects,
-  org,
-  displayOrg,
-  orgBaseline,
+  treeProjects,
+  treeNodes,
+  activeTreeKey,
+  onTreeSelect,
+  onSheetTreeSelect,
   activeName,
   draft,
   originalJson,
   tab,
   dataSubTab,
-  orgSaving,
-  applyingStudioQuery,
   syncStudioQuery,
   savedProjectId,
-  isProjectBound,
   draftBindingDirty,
   projectNameById,
   loading,
@@ -1616,12 +1138,10 @@ onBeforeUnmount(() => {
   confirmCfg,
   showAgentManage,
   manageFocusAgent,
-  showRenameBlocked,
-  renameBlockedTarget,
   showUnsavedExport,
   exporting,
-  showFolderSecrets,
-  pendingFolderExportGroupId,
+  showBundleSecrets,
+  pendingBundleExportProjectId,
   agentImport,
   importFileInput,
   showImportDiscardConfirm,
@@ -1635,7 +1155,10 @@ onBeforeUnmount(() => {
   showBatchConflict,
   batchConflictNames,
   triggerImport,
-  triggerGroupImport,
+  showImportProjectPick,
+  importProjectId,
+  cancelImportProjectPick,
+  confirmImportProjectPick,
   onImportDiscardCancel,
   onImportDiscardConfirm,
   onImportFileChange,
@@ -1645,9 +1168,6 @@ onBeforeUnmount(() => {
   closeBatchConflict,
   confirmBatchRename,
   confirmBatchOverwrite,
-  orgSnapshot,
-  agentDirty,
-  orgDirty,
   dirty,
   agentNames,
   manageSearch,
@@ -1656,41 +1176,6 @@ onBeforeUnmount(() => {
   manageSearchActive,
   manageNameHighlight,
   clearManageSearch,
-  orgSheetRows,
-  showAssignPick,
-  showAssignCover,
-  showAssignDraft,
-  assignApplying,
-  assignGroupName,
-  assignMembers,
-  assignTargetId,
-  assignDiffBound,
-  assignFail,
-  assignOkCount,
-  assignTargetLabel,
-  assignMemberList,
-  assignAffectedList,
-  closeAssignModals,
-  onAssignProject,
-  onAssignPickNext,
-  cancelAssignCover,
-  maybeAssignDraftThenApply,
-  keepAssignDraft,
-  syncDraftProjectId,
-  applyAssign,
-  openOrgSheet,
-  closeOrgSheet,
-  toggleOrgSheetNode,
-  orgSheetPadStyle,
-  persistOrg,
-  reloadOrg,
-  openCreateRootGroup,
-  openCreateChildGroup,
-  openRenameGroup,
-  confirmDeleteGroup,
-  onMoveGroup,
-  onMoveAgent,
-  onRemoveFromGroup,
   studioTabs,
   studioTabLabel,
   showToast,
@@ -1703,7 +1188,6 @@ onBeforeUnmount(() => {
   leaveConfirmCancel,
   load,
   select,
-  resetOrgFromBaseline,
   chooseAgent,
   chooseAgentFromSheet,
   openManageFromSheet,
@@ -1713,26 +1197,14 @@ onBeforeUnmount(() => {
   cancelUnsavedExport,
   discardAndExport,
   saveThenExport,
-  onExportGroup,
-  cancelFolderSecrets,
-  confirmFolderSecrets,
-  onImportGroup,
-  onClearSensitiveConfig,
-  showClearSensitive,
-  clearSensitiveBusy,
-  clearSensitiveGroupName,
-  clearSensitiveAgentCount,
-  clearSensitiveHits,
-  clearSensitiveSelectedCount,
-  isClearSensitiveKeySelected,
-  toggleClearSensitiveKey,
-  selectAllClearSensitiveKeys,
-  clearAllClearSensitiveKeys,
-  cancelClearSensitive,
-  confirmClearSensitive,
+  onExportProject,
+  cancelBundleSecrets,
+  confirmBundleSecrets,
+  onImportProject,
   showCreateWizard,
   showTeamWizard,
   teamBootstrapSessionId,
+  createAgentProjectId,
   openCreateAgent,
   openCreateTeam,
   showCreateTeam,
@@ -1748,9 +1220,6 @@ onBeforeUnmount(() => {
   onTeamBootstrapDone,
   openAgentManage,
   closeAgentManage,
-  onSidebarRenameBlocked,
-  closeRenameBlocked,
-  gotoManageFromBlocked,
   openRenameAgent,
   confirmDeleteAgent,
   promptOk,
@@ -1762,6 +1231,5 @@ onBeforeUnmount(() => {
   bindTabStripObserver,
   onChromeReposition,
   onChromeKeydown,
-  UNGROUPED_ID,
   }
 }

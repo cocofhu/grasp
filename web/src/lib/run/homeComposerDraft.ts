@@ -1,10 +1,5 @@
 import type { ClarifyImage } from '../shared/types'
 import {
-  GRASP_STORAGE_KEYS,
-  LEGACY_STORAGE_KEYS,
-  migrateLocalStorageKey,
-} from '../shared/migrateBrandStorage'
-import {
   HOME_DRAFT_ID,
   blobToBase64,
   getDraftIdb,
@@ -14,10 +9,8 @@ import {
   type HomeDraftRecord,
 } from './draftIdb'
 
-/** Legacy localStorage key — migrate once then delete (plan g2.1 / brand clear). */
-export const HOME_COMPOSER_DRAFT_KEY = GRASP_STORAGE_KEYS.homeComposerDraft
-
-migrateLocalStorageKey(LEGACY_STORAGE_KEYS.homeComposerDraft, HOME_COMPOSER_DRAFT_KEY)
+/** localStorage text fallback used when IndexedDB writes fail. */
+export const HOME_COMPOSER_DRAFT_KEY = 'grasp.home.composerDraft'
 
 export const HOME_COMPOSER_DRAFT_SCHEMA = '1'
 
@@ -38,13 +31,6 @@ export interface HomeComposerDraft {
 
 /** ok = full save; partial = text persisted, attachments only in memory; quota_exceeded / error. */
 export type SaveHomeComposerDraftResult = 'ok' | 'partial' | 'quota_exceeded' | 'error'
-
-let homeMigrationDone = false
-
-/** Test-only: re-run legacy localStorage migration. */
-export function __resetHomeComposerDraftMigrationForTests(): void {
-  homeMigrationDone = false
-}
 
 function isAttachment(v: unknown): v is HomeDraftAttachment {
   if (!v || typeof v !== 'object') return false
@@ -136,7 +122,7 @@ async function fromIdbAttachments(rows: DraftAttachmentRecord[]): Promise<HomeDr
   return out
 }
 
-function readLegacyLocalStorage(): HomeComposerDraft | null {
+function readTextFallback(): HomeComposerDraft | null {
   try {
     const raw = localStorage.getItem(HOME_COMPOSER_DRAFT_KEY)
     if (!raw) return null
@@ -146,7 +132,7 @@ function readLegacyLocalStorage(): HomeComposerDraft | null {
   }
 }
 
-function writeLegacyTextFallback(draft: HomeComposerDraft): SaveHomeComposerDraftResult {
+function writeTextFallback(draft: HomeComposerDraft): SaveHomeComposerDraftResult {
   try {
     localStorage.setItem(HOME_COMPOSER_DRAFT_KEY, JSON.stringify(draft))
     return draft.attachments.length > 0 ? 'partial' : 'ok'
@@ -168,40 +154,11 @@ function writeLegacyTextFallback(draft: HomeComposerDraft): SaveHomeComposerDraf
   }
 }
 
-function clearLegacyLocalStorage(): void {
+function clearTextFallback(): void {
   try {
     localStorage.removeItem(HOME_COMPOSER_DRAFT_KEY)
   } catch {
     /* ignore private mode */
-  }
-}
-
-async function migrateLegacyHomeIfNeeded(): Promise<void> {
-  if (homeMigrationDone) return
-  homeMigrationDone = true
-  const legacy = readLegacyLocalStorage()
-  if (!legacy) return
-  try {
-    const idb = getDraftIdb()
-    const existing = await idb.getHome()
-    if (existing) {
-      // Keep newer LS text-fallback for load to prefer (review v2); only drop stale LS.
-      if (legacy.savedAt <= existing.record.savedAt) {
-        clearLegacyLocalStorage()
-      }
-      return
-    }
-    const record: HomeDraftRecord = {
-      id: HOME_DRAFT_ID,
-      schemaVersion: legacy.schemaVersion || HOME_COMPOSER_DRAFT_SCHEMA,
-      savedAt: legacy.savedAt,
-      pipelineId: legacy.pipelineId,
-      text: legacy.text,
-    }
-    await idb.putHome(record, toIdbAttachments(legacy.attachments))
-    clearLegacyLocalStorage()
-  } catch {
-    /* migration failure must not block editing — leave legacy key */
   }
 }
 
@@ -219,25 +176,24 @@ async function draftFromIdb(packed: {
 }
 
 export async function loadHomeComposerDraft(): Promise<HomeComposerDraft | null> {
-  await migrateLegacyHomeIfNeeded()
-  const legacy = readLegacyLocalStorage()
+  const fallback = readTextFallback()
   try {
     const packed = await getDraftIdb().getHome()
-    if (packed && legacy) {
+    if (packed && fallback) {
       // Prefer newer savedAt so quota-fallback LS text wins over stale IDB (review v2 / F4).
-      if (legacy.savedAt > packed.record.savedAt) {
-        return legacy
+      if (fallback.savedAt > packed.record.savedAt) {
+        return fallback
       }
-      clearLegacyLocalStorage()
+      clearTextFallback()
       return draftFromIdb(packed)
     }
     if (packed) {
       return draftFromIdb(packed)
     }
   } catch {
-    /* fall through to legacy */
+    /* fall through to text fallback */
   }
-  return legacy
+  return fallback
 }
 
 export async function clearHomeComposerDraft(): Promise<void> {
@@ -246,7 +202,7 @@ export async function clearHomeComposerDraft(): Promise<void> {
   } catch {
     /* ignore */
   }
-  clearLegacyLocalStorage()
+  clearTextFallback()
 }
 
 /**
@@ -259,7 +215,6 @@ export async function saveHomeComposerDraft(
   attachments: ClarifyImage[],
   pipelineId: string,
 ): Promise<SaveHomeComposerDraftResult> {
-  await migrateLegacyHomeIfNeeded()
   const persistable = toPersistableAttachments(attachments)
   if (isHomeComposerDraftEmpty(text, persistable as ClarifyImage[])) {
     await clearHomeComposerDraft()
@@ -281,11 +236,11 @@ export async function saveHomeComposerDraft(
   }
   try {
     await getDraftIdb().putHome(record, toIdbAttachments(persistable))
-    clearLegacyLocalStorage()
+    clearTextFallback()
     return 'ok'
   } catch (e: unknown) {
     const fallback: HomeComposerDraft = { ...payload, attachments: [] }
-    const fb = writeLegacyTextFallback(fallback)
+    const fb = writeTextFallback(fallback)
     if (isQuotaError(e)) {
       return fb === 'ok' || fb === 'partial' ? 'quota_exceeded' : fb
     }

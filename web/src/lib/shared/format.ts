@@ -1,13 +1,10 @@
 import { i18n } from './i18n'
 
-/** Run-state trigger codes + historical display aliases → i18n keys (not Triggers product page). */
+/** Run-state trigger codes → i18n keys (not Triggers product page). */
 const TRIGGER_LABEL_KEYS: Record<string, string> = {
   manual: 'common.runTrigger.manual',
   api: 'common.runTrigger.api',
   pm_mcp: 'common.runTrigger.pmMcp',
-  手动触发: 'common.runTrigger.manual',
-  'API 触发': 'common.runTrigger.api',
-  'PM MCP': 'common.runTrigger.pmMcp',
 }
 
 export function formatTrigger(raw: string): string {

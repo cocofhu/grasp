@@ -49,34 +49,20 @@ func TestSaveWorkflowStatusGuard(t *testing.T) {
 		t.Fatalf("publish: %d %s", w.Code, w.Body)
 	}
 
-	// Same graph (variables still in input.config as DTO shape) + rename.
-	body["name"] = "Guard Renamed"
+	// Identical PUT (variables still in input.config as DTO shape) is a
+	// version no-op and stays published.
 	body["id"] = id
 	w = h.do("PUT", "/api/workflows/"+id, body)
 	if w.Code != 200 {
-		t.Fatalf("meta put: %d %s", w.Code, w.Body)
-	}
-	var afterMeta map[string]any
-	json.Unmarshal(w.Body.Bytes(), &afterMeta)
-	if afterMeta["status"] != "published" {
-		t.Fatalf("meta-only PUT should stay published, got %v", afterMeta["status"])
-	}
-	if afterMeta["name"] != "Guard Renamed" {
-		t.Fatalf("name not updated: %v", afterMeta["name"])
-	}
-
-	// Identical PUT (no meta/graph change) stays published.
-	w = h.do("PUT", "/api/workflows/"+id, body)
-	if w.Code != 200 {
-		t.Fatalf("noop put: %d", w.Code)
+		t.Fatalf("noop put: %d %s", w.Code, w.Body)
 	}
 	var afterNoop map[string]any
 	json.Unmarshal(w.Body.Bytes(), &afterNoop)
-	if afterNoop["status"] != "published" {
-		t.Fatalf("noop PUT should stay published, got %v", afterNoop["status"])
+	if afterNoop["status"] != "published" || afterNoop["version"] != float64(1) || afterNoop["publishedVersion"] != float64(1) {
+		t.Fatalf("noop PUT: status=%v version=%v published=%v", afterNoop["status"], afterNoop["version"], afterNoop["publishedVersion"])
 	}
 
-	// Graph change → draft.
+	// Graph change → v2 draft; v1 stays the published version.
 	nodes := body["nodes"].([]map[string]any)
 	nodes[0]["label"] = "Start Edited"
 	w = h.do("PUT", "/api/workflows/"+id, body)
@@ -85,7 +71,46 @@ func TestSaveWorkflowStatusGuard(t *testing.T) {
 	}
 	var afterGraph map[string]any
 	json.Unmarshal(w.Body.Bytes(), &afterGraph)
-	if afterGraph["status"] != "draft" {
-		t.Fatalf("graph change should draft, got %v", afterGraph["status"])
+	if afterGraph["status"] != "draft" || afterGraph["version"] != float64(2) || afterGraph["publishedVersion"] != float64(1) {
+		t.Fatalf("graph change: status=%v version=%v published=%v", afterGraph["status"], afterGraph["version"], afterGraph["publishedVersion"])
+	}
+
+	// Versions list carries metadata only.
+	w = h.do("GET", "/api/workflows/"+id+"/versions", nil)
+	if w.Code != 200 {
+		t.Fatalf("versions: %d %s", w.Code, w.Body)
+	}
+	var versions []map[string]any
+	json.Unmarshal(w.Body.Bytes(), &versions)
+	if len(versions) != 2 || versions[0]["version"] != float64(2) || versions[0]["source"] != "save" || versions[0]["nodeCount"] != float64(2) {
+		t.Fatalf("versions list: %+v", versions)
+	}
+	if _, ok := versions[0]["publishedAt"]; ok {
+		t.Fatalf("v2 must not be published: %+v", versions[0])
+	}
+	if versions[1]["publishedAt"] == nil {
+		t.Fatalf("v1 should carry publishedAt: %+v", versions[1])
+	}
+	if _, ok := versions[0]["nodes"]; ok {
+		t.Fatal("versions list must not include graphs")
+	}
+
+	// Any version's graph is readable.
+	if w := h.do("GET", "/api/workflows/"+id+"/versions/2/graph", nil); w.Code != 200 {
+		t.Fatalf("unpublished version graph: %d %s", w.Code, w.Body)
+	}
+
+	// Restore v1 → v3 (restore source); the 404 path for a missing version.
+	w = h.do("POST", "/api/workflows/"+id+"/versions/1/restore", nil)
+	if w.Code != 200 {
+		t.Fatalf("restore: %d %s", w.Code, w.Body)
+	}
+	var restored map[string]any
+	json.Unmarshal(w.Body.Bytes(), &restored)
+	if restored["version"] != float64(3) || restored["status"] != "draft" {
+		t.Fatalf("restore: %+v", restored)
+	}
+	if w := h.do("POST", "/api/workflows/"+id+"/versions/42/restore", nil); w.Code != 404 {
+		t.Fatalf("restore missing version: %d", w.Code)
 	}
 }

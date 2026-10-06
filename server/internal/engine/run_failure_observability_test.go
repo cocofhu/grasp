@@ -103,7 +103,7 @@ func TestResearchEarlyFailureThreeChannelsNonEmpty(t *testing.T) {
 
 	// (c) ArtifactSummary + pm_list_runs
 	ps := services.NewProjectService(db)
-	proj, err := ps.Create("ObsFail", "", nil, nil)
+	proj, err := ps.Create("ObsFail", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

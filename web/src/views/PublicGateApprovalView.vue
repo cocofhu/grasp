@@ -37,7 +37,6 @@ import {
   parseShareTokenFromHash,
   publicGateApi,
   publicGateContentKey,
-  normalizePermissionPreset,
   remainingSecFromExpiresAt,
   type PublicGateActiveItem,
   type PublicGateDecideResult,
@@ -224,8 +223,7 @@ const showConfirm = computed(() => {
   if (isReview.value) return !!preview.value?.actions?.confirm
   return !!preview.value?.actions?.approve || !!preview.value?.actions?.confirm
 })
-const permissionPreset = computed(() => normalizePermissionPreset(preview.value?.permissionPreset))
-const isReactOnly = computed(() => permissionPreset.value === 'react_only')
+const isReactOnly = computed(() => preview.value?.permissionPreset === 'react_only')
 const canWriteLive = computed(() => !isReactOnly.value)
 const showPageCandidateMode = computed(() => chatOnly.value && live.store.enabled && canWriteLive.value && canReply.value)
 const pageCollaborationActiveLabels = computed(() => [

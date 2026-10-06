@@ -10,7 +10,6 @@ describe('matchAuditNodeType', () => {
   it('matches instance ids of the current node types and template roles', () => {
     expect(matchAuditNodeType('agent_2wn4')).toBe('agent')
     expect(matchAuditNodeType('human_gate_vis01')).toBe('human_gate')
-    expect(matchAuditNodeType('proposal_select_ab12')).toBe('proposal_select')
     expect(matchAuditNodeType('set_var_x1')).toBe('set_var')
     expect(matchAuditNodeType('clarify')).toBe('clarify')
     expect(matchAuditNodeType('test_review')).toBe('test_review')
@@ -27,7 +26,6 @@ describe('formatAuditNodeName', () => {
   it('formats 阶段名 · 后缀', () => {
     expect(formatAuditNodeTitle('agent_2wn4')).toBe('Agent · 2wn4')
     expect(formatAuditNodeTitle('human_gate_abcd')).toBe('门禁 · abcd')
-    expect(formatAuditNodeTitle('proposal_select_pgna')).toBe('方案确认 · pgna')
     expect(formatAuditNodeTitle('branch_ab')).toBe('分支 · ab')
   })
 
@@ -35,6 +33,7 @@ describe('formatAuditNodeName', () => {
     expect(formatAuditNodeTitle('clarify')).toBe('需求澄清')
     expect(formatAuditNodeTitle('implement')).toBe('实现')
     expect(formatAuditNodeTitle('test_review')).toBe('测试评审')
+    expect(formatAuditNodeTitle('deliver')).toBe('交付')
   })
 
   it('keeps a typical suffix intact and clips only runaway ids', () => {

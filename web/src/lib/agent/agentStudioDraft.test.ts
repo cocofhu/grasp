@@ -35,13 +35,11 @@ describe('capabilities draft round-trip', () => {
   it('draftPayloadJson matches the canonical payload', () => {
     const d = hydrateStudioDraft({
       ...baseAgent,
-      env: { GIT_SSH_PRIVATE_KEY: 'secret', FOO: '1' },
+      env: { FOO: '1' },
       capabilities: { interaction: 'auto', reads: ['*'] },
     })
-    const raw = fromDraftRaw(d)
     const canonical = fromDraft(d)
-    expect(canonical.env?.GIT_SSH_PRIVATE_KEY).toBeUndefined()
-    expect(raw.env?.GIT_SSH_PRIVATE_KEY).toBe('secret')
+    expect(canonical.env).toEqual({ FOO: '1' })
     expect(JSON.parse(draftPayloadJson(d))).toEqual(canonical)
   })
 })

@@ -29,7 +29,7 @@ func TestPmBindingEnableRequiresAgent(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
 	pm := NewPmService(db, skills)
-	p, err := NewProjectService(db).Create("P1", "", nil, nil)
+	p, err := NewProjectService(db).Create("P1", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestPmMemoryAndThreadIsolation(t *testing.T) {
 	pm := NewPmService(db, nil)
 	pm.SetBlobStore(blob.NewMemory())
 	ps := NewProjectService(db)
-	p, err := ps.Create("MemProj", "", nil, nil)
+	p, err := ps.Create("MemProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestPmMemoryAndThreadIsolation(t *testing.T) {
 	if len(bobThreads) != 1 || bobThreads[0].ID != tb.ID {
 		t.Fatalf("bob threads=%v", bobThreads)
 	}
-	n, err := pm.ClearMemories(p.ID)
+	n, err := pm.ClearMemoriesForAgent(p.ID, "agent")
 	if err != nil || n != 1 {
 		t.Fatalf("clear n=%d err=%v", n, err)
 	}
@@ -112,7 +112,7 @@ func TestPmRequireEnabled(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("EnProj", "", nil, nil)
+	p, err := ps.Create("EnProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestPmMessageFailureAndRecentFilter(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("FailProj", "", nil, nil)
+	p, err := ps.Create("FailProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestPmDraftCheckpoint(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("DraftProj", "", nil, nil)
+	p, err := ps.Create("DraftProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func TestPmMemoryAgentIsolation(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("IsoMem", "", nil, nil)
+	p, err := ps.Create("IsoMem", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,37 +300,12 @@ func TestPmMemoryAgentIsolation(t *testing.T) {
 		t.Fatalf("after scoped delete left=%v", left)
 	}
 
-	// Legacy empty agent_name rows are claimed only by bound PM Leader.
-	legacy := models.ProjectMemoryItem{
-		ID: "legacy-1", ProjectID: p.ID, AgentName: "", Title: "旧", Content: "x",
-		Source: "admin", UpdatedBy: "sys",
-	}
-	if err := db.Create(&legacy).Error; err != nil {
-		t.Fatal(err)
-	}
-	// Non-PM agents must not claim legacy rows; only UpdateBinding to the PM
-	// Leader agent triggers BackfillLegacyMemoriesToPMAgent.
-	if err := pm.BackfillLegacyMemoriesToPMAgent(p.ID); err != nil {
-		t.Fatal(err)
-	}
-	var still models.ProjectMemoryItem
-	if err := db.First(&still, "id = ?", "legacy-1").Error; err != nil || still.AgentName != "" {
-		t.Fatalf("unbound project must not claim legacy: %+v err=%v", still, err)
-	}
-	en := true
-	pmAgent := "agent-a"
-	if _, err := pm.UpdateBinding(p.ID, &en, &pmAgent, nil, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.First(&still, "id = ?", "legacy-1").Error; err != nil || still.AgentName != "agent-a" {
-		t.Fatalf("PM bind/get should claim legacy: %+v err=%v", still, err)
-	}
 	n, err := pm.ClearMemoriesForAgent(p.ID, "agent-b")
 	if err != nil || n != 1 {
 		t.Fatalf("clear agent-b n=%d err=%v", n, err)
 	}
 	all, _ := pm.ListMemories(p.ID, "")
-	if len(all) != 1 || all[0].ID != "legacy-1" {
+	if len(all) != 0 {
 		t.Fatalf("pm memories left=%v", all)
 	}
 }
@@ -357,7 +332,7 @@ func TestUpdateBindingEmptyEnabledMcpsPersists(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("EmptyMcps", "", nil, nil)
+	p, err := ps.Create("EmptyMcps", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +358,7 @@ func TestPmMemorySearchAndBackfillLegacy(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("SearchMem", "", nil, nil)
+	p, err := ps.Create("SearchMem", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,39 +375,13 @@ func TestPmMemorySearchAndBackfillLegacy(t *testing.T) {
 	if hits[0]["title"] != "A记" {
 		t.Fatalf("hit=%v", hits[0])
 	}
-
-	legacy := models.ProjectMemoryItem{
-		ID: "legacy-bf", ProjectID: p.ID, AgentName: "", Title: "遗留", Content: "old",
-		Source: "admin", UpdatedBy: "sys",
-	}
-	if err := db.Create(&legacy).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := pm.BackfillLegacyMemoriesToPMAgent(p.ID); err != nil {
-		t.Fatal(err)
-	}
-	var still models.ProjectMemoryItem
-	if err := db.First(&still, "id = ?", "legacy-bf").Error; err != nil || still.AgentName != "" {
-		t.Fatalf("no PM bind must leave legacy empty: %+v err=%v", still, err)
-	}
-	en := true
-	agent := "agent-a"
-	if _, err := pm.UpdateBinding(p.ID, &en, &agent, nil, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := pm.BackfillLegacyMemoriesToPMAgent(p.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.First(&still, "id = ?", "legacy-bf").Error; err != nil || still.AgentName != "agent-a" {
-		t.Fatalf("backfill to PM: %+v err=%v", still, err)
-	}
 }
 
 func TestPmChannelThreadListMergeAndACL(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("ChProj", "", nil, nil)
+	p, err := ps.Create("ChProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -549,26 +498,26 @@ func TestPmChannelThreadListMergeAndACL(t *testing.T) {
 	}
 }
 
-func TestIsQQChannelUserID(t *testing.T) {
-	if !IsQQChannelUserID("qq:guild:x") || !IsQQChannelUserID("qq:group:y") || !IsQQChannelUserID("qq:c2c:z") {
+func TestIsChannelUserIDPrefixes(t *testing.T) {
+	if !IsChannelUserID("qq:guild:x") || !IsChannelUserID("qq:group:y") || !IsChannelUserID("qq:c2c:z") {
 		t.Fatal("expected qq: prefixes")
 	}
 	if !IsChannelUserID("wecom:c2c:zhangsan") || !IsChannelUserID("wecom:group:wr") {
 		t.Fatal("expected wecom: prefixes")
 	}
-	if !IsQQChannelUserID("feishu:c2c:oc_x") || !IsQQChannelUserID("feishu:group:oc_g") {
+	if !IsChannelUserID("feishu:c2c:oc_x") || !IsChannelUserID("feishu:group:oc_g") {
 		t.Fatal("expected feishu: prefixes to match")
 	}
-	if !IsChannelSyntheticUserID("feishu:c2c:oc_x") {
-		t.Fatal("IsChannelSyntheticUserID should cover feishu")
+	if !IsChannelUserID("feishu:c2c:oc_x") {
+		t.Fatal("IsChannelUserID should cover feishu")
 	}
-	if !IsQQChannelUserID("dingtalk:c2c:staff1") || !IsQQChannelUserID("dingtalk:group:cid") {
+	if !IsChannelUserID("dingtalk:c2c:staff1") || !IsChannelUserID("dingtalk:group:cid") {
 		t.Fatal("expected dingtalk: prefixes to match")
 	}
-	if !IsChannelSyntheticUserID("dingtalk:group:cid") {
-		t.Fatal("IsChannelSyntheticUserID should cover dingtalk")
+	if !IsChannelUserID("dingtalk:group:cid") {
+		t.Fatal("IsChannelUserID should cover dingtalk")
 	}
-	if IsQQChannelUserID("cron:agent") || IsQQChannelUserID("alice") || IsQQChannelUserID("") {
+	if IsChannelUserID("cron:agent") || IsChannelUserID("alice") || IsChannelUserID("") {
 		t.Fatal("unexpected channel match")
 	}
 	if ChannelPeerID("wecom:c2c:zhangsan") != "zhangsan" {

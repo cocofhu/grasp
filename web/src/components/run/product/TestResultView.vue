@@ -40,7 +40,7 @@ const runStatusRef = computed(() => props.runStatus)
 const { states: shotStates, successIndices } = useTestScreenshotLoad(shots, artifactsRef, runStatusRef)
 
 function shotKey(s: TestScreenshot, i: number): string {
-  return s.artifact?.trim() || (s.data ? `legacy-${i}` : `shot-${i}`)
+  return s.artifact?.trim() || `shot-${i}`
 }
 
 function shotCaption(s: TestScreenshot, i: number): string {
@@ -62,7 +62,7 @@ const lightboxState = computed(() => {
 
 function openLightbox(i: number) {
   const st = shotStates.value[i]
-  if (st?.status !== 'success' && st?.status !== 'legacy') return
+  if (st?.status !== 'success') return
   const pos = galleryIndices.value.indexOf(i)
   if (pos >= 0) lightboxGalleryPos.value = pos
 }
@@ -79,7 +79,7 @@ function step(delta: number) {
 
 function lightboxSrc(): string {
   const st = lightboxState.value
-  if (!st || (st.status !== 'success' && st.status !== 'legacy')) return ''
+  if (st?.status !== 'success') return ''
   return st.src
 }
 
@@ -295,9 +295,9 @@ const SEV: Record<string, string> = {
             <span class="absolute left-1.5 top-1.5 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white backdrop-blur-sm">{{ i + 1 }}</span>
           </div>
 
-          <!-- success / legacy -->
+          <!-- success -->
           <button
-            v-else-if="shotStates[i]?.status === 'success' || shotStates[i]?.status === 'legacy'"
+            v-else-if="shotStates[i]?.status === 'success'"
             type="button"
             class="group relative aspect-[4/3] w-full overflow-hidden rounded-lg border border-line bg-base shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md"
             :style="{ borderColor: lightboxShotIndex === i ? accent : undefined }"
@@ -382,7 +382,7 @@ const SEV: Record<string, string> = {
             @click="lightboxGalleryPos = gi"
           >
             <img
-              v-if="shotStates[idx]?.status === 'success' || shotStates[idx]?.status === 'legacy'"
+              v-if="shotStates[idx]?.status === 'success'"
               :src="shotStates[idx].src"
               :alt="shotCaption(shots[idx], idx)"
               class="h-full w-full object-cover"

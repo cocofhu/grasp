@@ -25,6 +25,7 @@ ALL_AGENTS=(
   ClarifyAgent
   ImplementAgent
   TestReviewAgent
+  DeliverAgent
 )
 
 die() { echo "error: $*" >&2; exit 1; }

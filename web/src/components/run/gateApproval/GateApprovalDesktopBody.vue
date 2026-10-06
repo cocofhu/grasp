@@ -10,7 +10,6 @@ import PreviewFeedbackChat from '../PreviewFeedbackChat.vue'
 import GateProductEditor from '../GateProductEditor.vue'
 import ArtifactLoadingPane from '../ArtifactLoadingPane.vue'
 import PlanView from '../PlanView.vue'
-import ProposalSelectView from '../ProposalSelectView.vue'
 import StructuredArtifactView from '../StructuredArtifactView.vue'
 import GateApprovalComposer from './GateApprovalComposer.vue'
 import GateApprovalColdActions from './GateApprovalColdActions.vue'
@@ -37,7 +36,6 @@ const {
   productName,
   canEditProducts,
   isVisualBody,
-  isProposalSelect,
   bodyTemplate,
   usesPreviewIssues,
   openPreviewIssueCount,
@@ -52,8 +50,6 @@ const {
   commentArtifactWriting,
   commentArtifactWriteError,
   annotateDraft,
-  proposalsDoc,
-  proposalsLoading,
   planDoc,
   planLoading,
   productDoc,
@@ -114,7 +110,6 @@ const {
   onCommentPinDelete,
   onWriteCommentArtifact,
   loadPreviewIssues,
-  choose,
   recordFeedbackIssue,
   sendHotReject,
   onComposerPass,
@@ -137,46 +132,8 @@ const {
               : 'scroll-area overflow-y-auto p-4'
         "
       >
-        <ArtifactLoadingPane
-          v-if="proposalsLoading"
-          message-key="pages.gateApproval.loadingArtifact"
-          :class="useFillLayout ? 'min-h-0 flex-1' : ''"
-        />
         <div
-          v-else-if="isProposalSelect && proposalsDoc"
-          :class="useFillLayout ? 'scroll-area min-h-0 flex-1 overflow-y-auto p-4' : ''"
-        >
-          <GateProductEditor
-            v-if="canEditProducts && run"
-            ref="productEditorRef"
-            class="mb-4"
-            :run-id="run.id"
-            :gate-node-id="gate.nodeId"
-            :products="primaryProducts"
-            :saved-content="savedProductContent"
-            :saved-meta="savedProductMeta"
-            :artifacts="run.artifacts"
-            :run-status="run.status"
-            :can-edit="canEditProducts"
-            :load-error="productLoadError"
-            :excluded-names="excludedProduces"
-            :enlargeable="!isMobile"
-            @saved="onProductSaved"
-            @dirty-change="productDirty = $event"
-            @refresh-request="onProductRefresh"
-            @retry-load="retryLoadProduct"
-          />
-          <ProposalSelectView
-            :doc="proposalsDoc"
-            :resolved-id="resolved"
-            @select="choose"
-          />
-          <div v-if="canReactRevise" class="mt-4">
-            <GateApprovalComposer />
-          </div>
-        </div>
-        <div
-          v-else-if="canEditProducts && run"
+          v-if="canEditProducts && run"
           ref="gateStageEl"
           data-review-annotate-stage
           :class="useFillLayout ? 'scroll-area min-h-0 flex-1 overflow-y-auto' : ''"
@@ -369,7 +326,6 @@ const {
       />
 
       <div
-        v-if="!(isProposalSelect && proposalsDoc)"
         class="shrink-0 border-t border-line p-4 safe-area-bottom"
         :class="isMobile ? 'sticky bottom-0 z-10 bg-surface/95 backdrop-blur' : ''"
       >

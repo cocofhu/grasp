@@ -32,10 +32,6 @@ type ConsoleTab = (typeof CONSOLE_TABS)[number]
 function initialConsoleTab(): ConsoleTab {
   const q = route.query.tab
   if (typeof q !== 'string') return 'terminal'
-  // Legacy ACP native bridge deep link → new unified ACP tab.
-  if (q === 'acp-native') return 'acp'
-  // Legacy embedded AgentChatTester ACP deep link → terminal (do not restore chat).
-  if (q === 'acp') return 'terminal'
   if ((CONSOLE_TABS as readonly string[]).includes(q)) {
     return q as ConsoleTab
   }
@@ -435,7 +431,7 @@ onBeforeUnmount(() => {
         />
       </div>
 
-      <!-- ACP: in-container acp-bridge web UI (8765); was acp-native -->
+      <!-- ACP: in-container acp-bridge web UI (8765) -->
       <div
         v-show="tab === 'acp'"
         class="relative h-full"

@@ -73,7 +73,7 @@ func newPmTurnFixture(t *testing.T) *pmTurnFixture {
 	t.Helper()
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	p, err := NewProjectService(db).Create("TurnProj-"+uuid.NewString()[:8], "", nil, nil)
+	p, err := NewProjectService(db).Create("TurnProj-"+uuid.NewString()[:8], "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

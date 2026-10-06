@@ -21,7 +21,7 @@ func TestPmMCPToolsAndAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 	ps := services.NewProjectService(db)
-	p, err := ps.Create("MCPProj", "", nil, nil)
+	p, err := ps.Create("MCPProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestPmWorkflowWriteWhenEnabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	ps := services.NewProjectService(db)
-	p, err := ps.Create("WriteWF", "", nil, nil)
+	p, err := ps.Create("WriteWF", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestPmWorkflowWriteRejectedWhenDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	ps := services.NewProjectService(db)
-	p, err := ps.Create("NoWrite", "", nil, nil)
+	p, err := ps.Create("NoWrite", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestFilterSafeToolUnknown(t *testing.T) {
 	}
 	_ = db.AutoMigrate(models.AllModels()...)
 	ps := services.NewProjectService(db)
-	p, _ := ps.Create("X", "", nil, nil)
+	p, _ := ps.Create("X", "", nil)
 	pm := services.NewPmService(db, nil)
 	h := NewHost(pm, services.NewPmProgress(pm, nil, nil), nil, nil, services.NewArtifactService(db), nil)
 	tok := platformmcp.NewToken()

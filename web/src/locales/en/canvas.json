@@ -62,8 +62,7 @@
         "noSources": "No output sources",
         "assignments": "{n} assignments",
         "cases": "{n} cases",
-        "actions": "{n} actions",
-        "proposals": "Pick a proposal from {from}"
+        "actions": "{n} actions"
       }
     },
     "edge": {
@@ -82,11 +81,9 @@
       "control": "Control",
       "collab": "Collaboration",
       "fromTemplate": "New from template",
-      "blankAgent": "Blank Agent node",
-      "blankAgentDesc": "Pick the Agent later in the inspector",
       "noAgents": "No Agents in this project yet",
       "noMatch": "No matching nodes",
-      "dragHint": "Drag onto the canvas, or click to add",
+      "dragHint": "Drag onto the canvas, or click and then click the canvas to place",
       "collapse": "Collapse panel",
       "expand": "Expand panel"
     },
@@ -121,7 +118,7 @@
         "duplicate": "Duplicate",
         "delete": "Delete selection",
         "selectAll": "Select all",
-        "save": "Save now",
+        "save": "Save",
         "fitView": "Fit view",
         "autoLayout": "Auto layout",
         "quickAdd": "Quick add",
@@ -132,9 +129,9 @@
       },
       "mouse": {
         "title": "Mouse and trackpad",
-        "pan": "Drag on blank space, or hold Space and drag: pan",
-        "zoom": "Mouse wheel, or pinch: zoom",
-        "select": "Shift + drag: box select; Shift + click: multi-select",
+        "pan": "Hold Space and drag, drag with the middle button, or two-finger scroll: pan",
+        "zoom": "Pinch, or hold Ctrl/⌘ and scroll: zoom",
+        "select": "Drag on blank space: box select; Shift + click: multi-select",
         "dblclick": "Double-click blank space: quick add; double-click a node: edit goal"
       }
     },
@@ -228,14 +225,7 @@
     "topbar": {
       "projects": "Projects",
       "rename": "Click to rename",
-      "status": {
-        "saved": "Saved",
-        "saving": "Saving…",
-        "unsaved": "Unsaved",
-        "error": "Save failed"
-      },
-      "saveError": "Autosave failed: {error}",
-      "retrySave": "Retry",
+      "saveError": "Save failed: {error}",
       "issuesNone": "No issues",
       "run": "Run",
       "publish": "Publish",
@@ -245,7 +235,6 @@
         "export": "Export",
         "duplicate": "Duplicate workflow",
         "delete": "Delete workflow",
-        "versions": "Versions",
         "details": "Details",
         "favorite": "Favorite",
         "unfavorite": "Unfavorite"
@@ -257,11 +246,80 @@
       },
       "deleteTitle": "Delete workflow \"{name}\"?",
       "deleteBody": "This cannot be undone. Existing runs are not affected.",
-      "deleteFailed": "Delete failed: {error}"
+      "deleteFailed": "Delete failed: {error}",
+      "versions": "Versions"
     },
     "toast": {
       "edgeReplaced": "Replaced the previous connection to \"{label}\"",
-      "undo": "Undo"
+      "undo": "Undo",
+      "deleted": "Deleted {n} node(s)"
+    },
+    "placement": {
+      "hint": "Click the canvas to place \"{label}\", Esc to cancel"
+    },
+    "selection": {
+      "count": "{n} selected",
+      "delete": "Delete"
+    },
+    "save": {
+      "button": "Save",
+      "title": "Save ({key})",
+      "saved": "Saved v{n}",
+      "notCreated": "Not saved yet",
+      "dirty": "Unsaved changes",
+      "saving": "Saving…",
+      "error": "Save failed",
+      "saveFirstFailed": "Save your changes first"
+    },
+    "leave": {
+      "title": "Unsaved changes",
+      "body": "Save your changes to \"{name}\" before leaving?",
+      "save": "Save and leave",
+      "discard": "Leave without saving",
+      "cancel": "Cancel"
+    },
+    "backup": {
+      "banner": "Found unsaved changes from {time}.",
+      "restore": "Restore unsaved changes",
+      "discard": "Discard"
+    },
+    "versions": {
+      "title": "Version history",
+      "intro": "Every save creates a version. Click a version to preview it read-only; restoring creates a new version from it and never rewrites history.",
+      "empty": "No versions yet",
+      "loadFailed": "Could not load versions",
+      "current": "Current",
+      "published": "Published",
+      "nodes": "{n} nodes",
+      "restore": "Restore",
+      "restoring": "Restoring…",
+      "source": {
+        "save": "Save",
+        "restore": "Restore",
+        "restoredFrom": "Restored from v{n}",
+        "import": "Import",
+        "pm": "PM edit"
+      },
+      "previewing": "Previewing v{n} (read-only)",
+      "restoreThis": "Restore this version",
+      "exitPreview": "Exit preview",
+      "previewFailed": "Could not load this version",
+      "restoreTitle": "Restore v{n}?",
+      "restoreBody": "This creates v{next} with the content of v{n}. Earlier versions are kept.",
+      "restoreDirty": "You have unsaved changes; they will be lost.",
+      "restoreConfirm": "Restore",
+      "restored": "Restored v{from}; now at v{to}",
+      "restoreFailed": "Restore failed: {error}"
+    },
+    "publish": {
+      "body": "Publishing makes the latest version the one API runs use. Existing runs stay on their own versions.",
+      "target": "Publish v{n}",
+      "currentPublished": "Published: v{n}",
+      "neverPublished": "Not published yet",
+      "dirtyNote": "You have unsaved changes; they will be saved as a new version first.",
+      "alreadyPublished": "The latest version is already published",
+      "done": "Published v{n}",
+      "doneNote": "API runs will use this version."
     }
   }
 }

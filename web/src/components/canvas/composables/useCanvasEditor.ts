@@ -113,6 +113,7 @@ export function useCanvasEditor(opts: CanvasEditorOptions) {
   }
 
   function addNode(spec: NodeSpec, at?: Point, link?: AddLink): WFNode | null {
+    if (spec.type === 'agent' && !spec.agentProfile) return null
     const allowed = checkAddNode(graph, spec.type)
     if (!allowed.ok) {
       notify(allowed.reason)
@@ -176,9 +177,23 @@ export function useCanvasEditor(opts: CanvasEditorOptions) {
     return true
   }
 
+  function offerUndoDelete(nodeCount: number) {
+    if (!nodeCount) return
+    const at = history.size.value
+    opts.notify?.(t('canvas.toast.deleted', { n: nodeCount }), {
+      label: t('canvas.toast.undo'),
+      run: () => {
+        if (history.size.value === at && !history.canRedo.value) undo()
+      },
+    })
+  }
+
   function removeNodes(ids: string[]) {
-    if (removeElements(graph, ids)) history.commit()
+    const count = graph.nodes.filter((n) => ids.includes(n.id)).length
+    const changed = removeElements(graph, ids)
+    if (changed) history.commit()
     setSelection(selectedNodeIds.value.filter((id) => !ids.includes(id)), selectedEdgeIds.value)
+    if (changed) offerUndoDelete(count)
   }
 
   function removeEdge(id: string) {
@@ -188,10 +203,30 @@ export function useCanvasEditor(opts: CanvasEditorOptions) {
 
   function removeSelection(): boolean {
     if (!selectedNodeIds.value.length && !selectedEdgeIds.value.length) return false
+    const ids = new Set(selectedNodeIds.value)
+    const count = graph.nodes.filter((n) => ids.has(n.id)).length
     const changed = removeElements(graph, selectedNodeIds.value, selectedEdgeIds.value)
     clearSelection()
-    if (changed) history.commit()
+    if (changed) {
+      history.commit()
+      offerUndoDelete(count)
+    }
     return changed
+  }
+
+  /** Palette item waiting to be placed with a click on the canvas; null when not placing. */
+  const placing = ref<NodeSpec | null>(null)
+
+  /** Enters placement mode for `spec`; the same spec again cancels it. */
+  function togglePlacing(spec: NodeSpec) {
+    const cur = placing.value
+    placing.value = cur && cur.type === spec.type && (cur.agentProfile ?? '') === (spec.agentProfile ?? '') ? null : { ...spec }
+  }
+
+  function cancelPlacing(): boolean {
+    if (!placing.value) return false
+    placing.value = null
+    return true
   }
 
   function updateEdge(id: string, patch: Partial<Pick<WFEdge, 'when' | 'kind' | 'label'>>) {
@@ -351,6 +386,9 @@ export function useCanvasEditor(opts: CanvasEditorOptions) {
     removeNodes,
     removeEdge,
     removeSelection,
+    placing,
+    togglePlacing,
+    cancelPlacing,
     updateEdge,
     moveNodes,
     renameNode,

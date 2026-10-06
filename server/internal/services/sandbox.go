@@ -119,8 +119,8 @@ type SandboxView struct {
 	Connected       bool   `json:"connected"`
 	HasCodeServer   bool   `json:"hasCodeServer"`
 	HasACP          bool   `json:"hasAcp"`
-	// Password is the sandbox Token also injected as PASSWORD /
-	// ROOT_PASSWORD / CURSOR_ACP_PASSWORD. Exposed so operators can log into
+	// Password is the sandbox Token also injected as ROOT_PASSWORD /
+	// ACP_BRIDGE_PASSWORD. Exposed so operators can log into
 	// code-server / ACP when opening the published host:port directly
 	// (remote-dev Environment.password parity). Empty when unset.
 	Password string `json:"password,omitempty"`

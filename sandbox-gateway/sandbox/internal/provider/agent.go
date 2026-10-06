@@ -27,10 +27,6 @@ const (
 	Antigravity Name = "antigravity"
 	Pi          Name = "pi"
 
-	// ClaudeStream is a synonym for the native stream-json claude transport
-	// (kept for backward compatibility; ClaudeCode now defaults to stream-json).
-	ClaudeStream Name = "claude_stream_json"
-
 	// *_acp are opt-in fallbacks that force the long-lived JSON-RPC-over-stdio
 	// transport for CLIs whose default here is one-shot stream-json. They are
 	// not built as dedicated images by default; select via AGENT_PROVIDER when a

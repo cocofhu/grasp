@@ -18,10 +18,6 @@ const (
 	OnboardingWorkflowName = "默认工作流"
 	// OnboardingWorkflowNameEN is the first-install published workflow in English.
 	OnboardingWorkflowNameEN = "Default Workflow"
-	// FirstInstallGroupName is the org folder created on first install.
-	FirstInstallGroupName = "默认项目组"
-	// FirstInstallGroupID is a stable group id so re-bootstrap is idempotent.
-	FirstInstallGroupID = "g_first_install_zonghe"
 )
 
 var (
@@ -31,9 +27,6 @@ var (
 	ErrOnboardingProjectNotFound = errors.New("project not found")
 	// ErrOnboardingAgentConflict is returned when a fixed-name agent already belongs to another project.
 	ErrOnboardingAgentConflict = errors.New("onboarding agent already bound to another project")
-	// ErrOnboardingNotDefaultProject was used when bootstrap was default-only.
-	// Kept for error-string compatibility with older clients; Bootstrap no longer returns it.
-	ErrOnboardingNotDefaultProject = errors.New("first-install onboarding is only allowed on the default project")
 	// ErrBaselineReposRequired is returned when no non-empty repository URL is submitted.
 	ErrBaselineReposRequired = errors.New("at least one repository URL is required")
 	// ErrOnboardingInvalidTeam is returned when the chosen templates are unknown,
@@ -43,10 +36,10 @@ var (
 
 // OnboardingBootstrapRequest is the body for POST .../bootstrap-onboarding.
 type OnboardingBootstrapRequest struct {
-	AcpBackend          string `json:"acpBackend"`
-	APIKey              string `json:"apiKey"`
+	AcpBackend string `json:"acpBackend"`
+	APIKey     string `json:"apiKey"`
 	// Language is the wizard's UI language (zh-CN | en); it names the default
-	// workflow, its start/end nodes and the org group. Empty means Chinese.
+	// workflow and its start/end nodes. Empty means Chinese.
 	Language            string `json:"language,omitempty"`
 	Region              string `json:"region,omitempty"`
 	OpenCodeProvider    string `json:"openCodeProvider,omitempty"`
@@ -57,8 +50,8 @@ type OnboardingBootstrapRequest struct {
 	GitHubToken         string `json:"githubToken,omitempty"`
 	GitLabToken         string `json:"gitlabToken,omitempty"`
 	GitLabURL           string `json:"gitlabUrl,omitempty"`
-	GitSshPrivateKey    string `json:"gitSshPrivateKey,omitempty"`
-	GitSshKnownHosts    string `json:"gitSshKnownHosts,omitempty"`
+	SSHPrivateKey       string `json:"sshPrivateKey,omitempty"`
+	SSHKnownHosts       string `json:"sshKnownHosts,omitempty"`
 	RepoURL             string `json:"repoUrl,omitempty"`
 	RepoBranch          string `json:"repoBranch,omitempty"`
 	GitUserName         string `json:"gitUserName,omitempty"`
@@ -67,7 +60,7 @@ type OnboardingBootstrapRequest struct {
 	VncPreview *bool `json:"vncPreview"`
 	BrowserMcp *bool `json:"browserMcp"`
 	// Agents picks the built-in templates to create. Empty = all templates with
-	// derived names. clarify and implement are required; test_review is optional.
+	// derived names. clarify and implement are required; test_review and deliver are optional.
 	Agents []OnboardingAgentChoice `json:"agents,omitempty"`
 }
 
@@ -88,7 +81,6 @@ type OnboardingBootstrapResult struct {
 	AgentIDs   []string `json:"agentIds"`
 	WorkflowID string   `json:"workflowId"`
 	Published  bool     `json:"published"`
-	GroupName  string   `json:"groupName,omitempty"`
 }
 
 // BaselineRepo is one repository injected into the embedded default workflow.
@@ -111,17 +103,13 @@ type OnboardingService struct {
 	Skills      *AgentService
 	SharedAgent *SharedAgentService
 	WF          *WorkflowService
-	Org         *OrgService
 	Credentials *ProjectCredentialService
 }
 
-// NewOnboardingService wires dependencies. org may be nil (agents still saved).
-func NewOnboardingService(projects *ProjectService, skills *AgentService, shared *SharedAgentService, wf *WorkflowService, org *OrgService, credentials ...*ProjectCredentialService) *OnboardingService {
-	var creds *ProjectCredentialService
-	if len(credentials) > 0 {
-		creds = credentials[0]
-	}
-	return &OnboardingService{Projects: projects, Skills: skills, SharedAgent: shared, WF: wf, Org: org, Credentials: creds}
+// NewOnboardingService wires dependencies. credentials receives every secret the
+// wizard submits (AI key, Git tokens, SSH).
+func NewOnboardingService(projects *ProjectService, skills *AgentService, shared *SharedAgentService, wf *WorkflowService, credentials *ProjectCredentialService) *OnboardingService {
+	return &OnboardingService{Projects: projects, Skills: skills, SharedAgent: shared, WF: wf, Credentials: credentials}
 }
 
 // CreateFromBaseline clones the embedded first-install workflow into a new
@@ -147,8 +135,6 @@ func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest
 		return models.WorkflowDef{}, err
 	}
 	applyBaselineRepos(&envelope.Graph, repos)
-	LiftInputVariables(&envelope.Graph)
-	MigrateOutputNodes(&envelope.Graph)
 	if err := envelope.Graph.Validate(); err != nil {
 		return models.WorkflowDef{}, fmt.Errorf("default workflow graph invalid: %w", err)
 	}
@@ -158,8 +144,6 @@ func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest
 		ProjectID:   projectID,
 		Name:        name,
 		Description: "从默认基线创建。仓库可在启动运行时调整。",
-		Status:      "draft",
-		Version:     1,
 		NeedsRepo:   true,
 		Graph:       envelope.Graph,
 	}
@@ -250,12 +234,15 @@ func (s *OnboardingService) Bootstrap(projectID string, req OnboardingBootstrapR
 	}
 
 	loc := onboardingLocaleFor(req.Language)
-	plan, err := BuildOnboardingNamePlan(projectID, proj.Name, defID, req.Language)
+	plan, err := BuildOnboardingNamePlan(projectID, proj.Name, defID)
 	if err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
 
-	backend := NormalizeAcpBackend(req.AcpBackend)
+	backend, err := ParseAcpBackend(req.AcpBackend)
+	if err != nil {
+		return OnboardingBootstrapResult{}, err
+	}
 	region := strings.TrimSpace(req.Region)
 
 	team, err := resolveOnboardingTeam(req.Agents, plan.NameMap)
@@ -322,10 +309,6 @@ func (s *OnboardingService) Bootstrap(projectID string, req OnboardingBootstrapR
 		agentIDs = append(agentIDs, tmpl.Name)
 	}
 
-	if err := s.ensureOnboardingOrg(plan.GroupID, plan.GroupName, agentIDs); err != nil {
-		return OnboardingBootstrapResult{}, err
-	}
-
 	applyOnboardingRepo(&envelope.Graph, req.RepoURL, req.RepoBranch)
 
 	wf, err := s.upsertDefaultWorkflow(projectID, envelope)
@@ -344,8 +327,7 @@ func (s *OnboardingService) Bootstrap(projectID string, req OnboardingBootstrapR
 	return OnboardingBootstrapResult{
 		AgentIDs:   agentIDs,
 		WorkflowID: published.ID,
-		Published:  published.Status == "published",
-		GroupName:  plan.GroupName,
+		Published:  published.Status() == models.WorkflowStatusPublished,
 	}, nil
 }
 
@@ -505,7 +487,7 @@ func (s *OnboardingService) checkOnboardingAgentConflicts(projectID string, agen
 			continue
 		}
 		owner := strings.TrimSpace(existing.ProjectID)
-		if owner != "" && owner != projectID {
+		if owner != projectID {
 			return fmt.Errorf("%w: %s owned by project %s", ErrOnboardingAgentConflict, name, owner)
 		}
 	}
@@ -516,6 +498,9 @@ func (s *OnboardingService) writeProjectAuth(projectID, backend, apiKey, region 
 	if s.SharedAgent == nil {
 		return fmt.Errorf("shared agent service unavailable")
 	}
+	if s.Credentials == nil {
+		return fmt.Errorf("project credential service unavailable")
+	}
 	cfg := s.SharedAgent.Get(projectID)
 	if cfg.Env == nil {
 		cfg.Env = map[string]string{}
@@ -523,13 +508,23 @@ func (s *OnboardingService) writeProjectAuth(projectID, backend, apiKey, region 
 	cfg.ProjectID = projectID
 	cfg.AcpBackend = backend
 	primaryKey := primaryAuthEnvKey(backend)
-	if s.Credentials != nil && strings.TrimSpace(apiKey) != "" {
-		if _, err := s.Credentials.SetByEnvKey(projectID, ProjectCredentialInput{Type: "ai", Provider: backend, Name: backend + " API Key", EnvKey: primaryKey, Value: apiKey}); err != nil {
+	creds := []ProjectCredentialInput{
+		{Type: "ai", Provider: backend, Name: backend + " API Key", EnvKey: primaryKey, Value: apiKey},
+		{Type: "git", Provider: "github", Name: "GitHub HTTPS Token", EnvKey: "GITHUB_TOKEN", Value: req.GitHubToken},
+		{Type: "git", Provider: "gitlab", Name: "GitLab HTTPS Token", EnvKey: "GITLAB_TOKEN", Value: req.GitLabToken},
+		{Type: "git", Provider: "gitlab", Name: "GitLab URL", EnvKey: "GITLAB_URL", Value: req.GitLabURL},
+		{Type: "ssh", Provider: "ssh", Name: "Git SSH Private Key", EnvKey: EnvGitSSHPrivateKey, Value: req.SSHPrivateKey},
+		{Type: "ssh", Provider: "ssh", Name: "Git SSH Known Hosts", EnvKey: EnvGitSSHKnownHosts, Value: req.SSHKnownHosts},
+	}
+	for _, in := range creds {
+		in.Value = strings.TrimSpace(in.Value)
+		if in.Value == "" {
+			continue
+		}
+		if _, err := s.Credentials.SetByEnvKey(projectID, in); err != nil {
 			return err
 		}
-		delete(cfg.Env, primaryKey)
-	} else {
-		cfg.Env[primaryKey] = apiKey
+		delete(cfg.Env, in.EnvKey)
 	}
 	switch backend {
 	case AcpBackendCodeBuddy:
@@ -548,57 +543,6 @@ func (s *OnboardingService) writeProjectAuth(projectID, backend, apiKey, region 
 	cred := strings.TrimSpace(req.GitCredentialType)
 	if cred != "" {
 		cfg.GitCredentialType = cred
-	}
-	if v := strings.TrimSpace(req.GitHubToken); v != "" {
-		if s.Credentials != nil {
-			if _, err := s.Credentials.SetByEnvKey(projectID, ProjectCredentialInput{Type: "git", Provider: "github", Name: "GitHub HTTPS Token", EnvKey: "GITHUB_TOKEN", Value: v}); err != nil {
-				return err
-			}
-			delete(cfg.Env, "GITHUB_TOKEN")
-		} else {
-			cfg.Env["GITHUB_TOKEN"] = v
-		}
-	}
-	if v := strings.TrimSpace(req.GitLabToken); v != "" {
-		if s.Credentials != nil {
-			if _, err := s.Credentials.SetByEnvKey(projectID, ProjectCredentialInput{Type: "git", Provider: "gitlab", Name: "GitLab HTTPS Token", EnvKey: "GITLAB_TOKEN", Value: v}); err != nil {
-				return err
-			}
-			delete(cfg.Env, "GITLAB_TOKEN")
-		} else {
-			cfg.Env["GITLAB_TOKEN"] = v
-		}
-	}
-	if v := strings.TrimSpace(req.GitLabURL); v != "" {
-		if s.Credentials != nil {
-			if _, err := s.Credentials.SetByEnvKey(projectID, ProjectCredentialInput{Type: "git", Provider: "gitlab", Name: "GitLab URL", EnvKey: "GITLAB_URL", Value: v}); err != nil {
-				return err
-			}
-			delete(cfg.Env, "GITLAB_URL")
-		} else {
-			cfg.Env["GITLAB_URL"] = v
-		}
-	}
-	if err := ValidateAgentSSHMeta(req.GitSshKnownHosts, req.GitSshPrivateKey); err != nil {
-		return err
-	}
-	if v := strings.TrimSpace(req.GitSshPrivateKey); v != "" {
-		if s.Credentials != nil {
-			if _, err := s.Credentials.SetByEnvKey(projectID, ProjectCredentialInput{Type: "ssh", Provider: "ssh", Name: "Git SSH Private Key", EnvKey: "GIT_SSH_PRIVATE_KEY", Value: v}); err != nil {
-				return err
-			}
-		} else {
-			cfg.GitSshPrivateKey = v
-		}
-	}
-	if v := strings.TrimSpace(req.GitSshKnownHosts); v != "" {
-		if s.Credentials != nil {
-			if _, err := s.Credentials.SetByEnvKey(projectID, ProjectCredentialInput{Type: "ssh", Provider: "ssh", Name: "Git SSH Known Hosts", EnvKey: "GIT_SSH_KNOWN_HOSTS", Value: v}); err != nil {
-				return err
-			}
-		} else {
-			cfg.GitSshKnownHosts = v
-		}
 	}
 	if v := strings.TrimSpace(req.GitUserName); v != "" {
 		cfg.Env["GIT_USER_NAME"] = v
@@ -648,59 +592,8 @@ func agentAuthConfigFileName(backend string) string {
 	return "settings.json"
 }
 
-func (s *OnboardingService) ensureOnboardingOrg(groupID, groupName string, agentNames []string) error {
-	if s.Org == nil {
-		return nil
-	}
-	groupID = strings.TrimSpace(groupID)
-	groupName = strings.TrimSpace(groupName)
-	if groupID == "" {
-		groupID = FirstInstallGroupID
-	}
-	if groupName == "" {
-		groupName = FirstInstallGroupName
-	}
-	org, err := s.Org.Get()
-	if err != nil {
-		return err
-	}
-	// Match by stable group id only. Name-based reuse would merge two same-named
-	// projects into one org folder (both derive "{projectName}项目组").
-	gid := groupID
-	found := false
-	for _, g := range org.Groups {
-		if g.ID == groupID {
-			gid = g.ID
-			found = true
-			break
-		}
-	}
-	if !found {
-		org.Groups = append(org.Groups, OrgGroup{ID: groupID, Name: groupName})
-		gid = groupID
-	} else {
-		// Keep display name current for derived groups on re-bootstrap.
-		for i := range org.Groups {
-			if org.Groups[i].ID == gid {
-				org.Groups[i].Name = groupName
-				break
-			}
-		}
-	}
-	if org.Agents == nil {
-		org.Agents = map[string]OrgAgentMembership{}
-	}
-	for _, name := range agentNames {
-		org.Agents[name] = OrgAgentMembership{GroupIDs: []string{gid}}
-	}
-	_, err = s.Org.Put(org, org.Revision)
-	return err
-}
-
 func (s *OnboardingService) upsertDefaultWorkflow(projectID string, envelope models.ExportEnvelope) (models.WorkflowDef, error) {
 	graph := envelope.Graph
-	LiftInputVariables(&graph)
-	MigrateOutputNodes(&graph)
 	if err := graph.Validate(); err != nil {
 		return models.WorkflowDef{}, fmt.Errorf("default workflow graph invalid: %w", err)
 	}
@@ -732,8 +625,6 @@ func (s *OnboardingService) upsertDefaultWorkflow(projectID string, envelope mod
 		ProjectID:   projectID,
 		Name:        envelope.Name,
 		Description: desc,
-		Status:      "draft",
-		Version:     1,
 		NeedsRepo:   true,
 		Graph:       graph,
 	}

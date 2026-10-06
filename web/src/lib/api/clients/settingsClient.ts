@@ -39,10 +39,7 @@ export const settingsClient = {
     const q = qs.toString()
     const path = q ? `/gates?${q}` : '/gates'
     const init = params?.signal ? { signal: params.signal } : undefined
-    if (params?.page != null || params?.pageSize != null) {
-      return req<PaginatedResponse<InboxItem>>(path, init)
-    }
-    return req<InboxItem[]>(path, init)
+    return req<PaginatedResponse<InboxItem>>(path, init)
   },
   dashboard: () => req<DashboardStats>('/stats/dashboard'),
   platformStatus: (params?: { timezone?: string; utcOffsetMinutes?: number }) => {
@@ -88,16 +85,4 @@ export const settingsClient = {
         body: body ? JSON.stringify(body) : undefined,
       },
     ),
-  // legacy singular aliases → primary channel
-  getProjectChannel: (projectId: string) =>
-    req<{ channel: ChannelConfig | null; secretsKeyConfigured?: boolean }>(
-      `/projects/${encodeURIComponent(projectId)}/channel`,
-    ),
-  putProjectChannel: (projectId: string, body: ChannelConfigInput) =>
-    req<ChannelConfig>(`/projects/${encodeURIComponent(projectId)}/channel`, {
-      method: 'PUT',
-      body: JSON.stringify(body),
-    }),
-  deleteProjectChannel: (projectId: string) =>
-    req<{ status: string }>(`/projects/${encodeURIComponent(projectId)}/channel`, { method: 'DELETE' }),
 }

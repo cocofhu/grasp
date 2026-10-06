@@ -20,20 +20,11 @@ import type { ClarifyImage, Project, Workflow } from '@/lib/shared/types'
 import type { Agent } from '@/lib/api/apiTypes'
 import type { RunPriority } from '@/components/ui/PrioritySegmented.vue'
 
-import {
-  GRASP_STORAGE_KEYS,
-  LEGACY_STORAGE_KEYS,
-  migrateLocalStorageKey,
-} from '@/lib/shared/migrateBrandStorage'
-
 /** Remember last selected home workflow across visits (plan g2.4). */
-export const HOME_WORKFLOW_MEMORY_KEY = GRASP_STORAGE_KEYS.homeLastWorkflowId
+export const HOME_WORKFLOW_MEMORY_KEY = 'grasp.home.lastPipelineId'
 
 /** Remember last home Composer priority (plan g1.4). Not stored in IndexedDB draft. */
-export const HOME_PRIORITY_MEMORY_KEY = GRASP_STORAGE_KEYS.homeLastPriority
-
-migrateLocalStorageKey(LEGACY_STORAGE_KEYS.homeLastWorkflowId, HOME_WORKFLOW_MEMORY_KEY)
-migrateLocalStorageKey(LEGACY_STORAGE_KEYS.homeLastPriority, HOME_PRIORITY_MEMORY_KEY)
+export const HOME_PRIORITY_MEMORY_KEY = 'grasp.home.lastPriority'
 
 /** Debounce for auto-save (plan g2.2; NFR ~300–800ms). */
 export const HOME_COMPOSER_DRAFT_DEBOUNCE_MS = 400
@@ -210,7 +201,7 @@ export function useHomeApproveChat() {
   }
 
   /**
-   * Restore from IndexedDB (with legacy localStorage migration) (plan g2.1).
+   * Restore from IndexedDB (or the localStorage text fallback) (plan g2.1).
    * Workflow selection: draft workflow > lastWorkflow memory > list default (g2.4).
    */
   async function hydrateComposerDraft() {

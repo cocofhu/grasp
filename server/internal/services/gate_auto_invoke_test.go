@@ -89,11 +89,11 @@ func TestUpdateBindingGateAutoFields(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
 	ps := NewProjectService(db)
-	p, err := ps.Create("GateAutoCfg", "", nil, nil)
+	p, err := ps.Create("GateAutoCfg", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := skills.Save(Agent{Name: "pm-agent", ProjectID: p.ID}); err != nil {
+	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent", ProjectID: p.ID}); err != nil {
 		t.Fatal(err)
 	}
 	pm := NewPmService(db, skills)
@@ -133,11 +133,11 @@ func TestGateAutoEnqueuePreconditions(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
 	ps := NewProjectService(db)
-	p, err := ps.Create("GateAutoPre", "", nil, nil)
+	p, err := ps.Create("GateAutoPre", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := skills.Save(Agent{Name: "pm-agent", ProjectID: p.ID}); err != nil {
+	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent", ProjectID: p.ID}); err != nil {
 		t.Fatal(err)
 	}
 	pm := NewPmService(db, skills)
@@ -202,11 +202,11 @@ func TestGateAutoSkipResolvedBeforeSend(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
 	ps := NewProjectService(db)
-	p, err := ps.Create("GateAutoSkip", "", nil, nil)
+	p, err := ps.Create("GateAutoSkip", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := skills.Save(Agent{Name: "pm-agent", ProjectID: p.ID}); err != nil {
+	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent", ProjectID: p.ID}); err != nil {
 		t.Fatal(err)
 	}
 	pm := NewPmService(db, skills)
@@ -256,11 +256,11 @@ func TestResolveMainThreadPrefersWritableUser(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
 	ps := NewProjectService(db)
-	p, err := ps.Create("GateAutoThread", "", nil, nil)
+	p, err := ps.Create("GateAutoThread", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := skills.Save(Agent{Name: "pm-agent", ProjectID: p.ID}); err != nil {
+	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent", ProjectID: p.ID}); err != nil {
 		t.Fatal(err)
 	}
 	pm := NewPmService(db, skills)
@@ -295,11 +295,11 @@ func TestGateAutoEnqueueFollowsVarFlip(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
 	ps := NewProjectService(db)
-	p, err := ps.Create("GateAutoFlip", "", nil, nil)
+	p, err := ps.Create("GateAutoFlip", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := skills.Save(Agent{Name: "pm-agent", ProjectID: p.ID}); err != nil {
+	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent", ProjectID: p.ID}); err != nil {
 		t.Fatal(err)
 	}
 	pm := NewPmService(db, skills)
@@ -331,11 +331,11 @@ func TestResolveMainThreadCreatesWhenAbsent(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
 	ps := NewProjectService(db)
-	p, err := ps.Create("GateAutoCreateThr", "", nil, nil)
+	p, err := ps.Create("GateAutoCreateThr", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := skills.Save(Agent{Name: "pm-agent", ProjectID: p.ID}); err != nil {
+	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent", ProjectID: p.ID}); err != nil {
 		t.Fatal(err)
 	}
 	pm := NewPmService(db, skills)

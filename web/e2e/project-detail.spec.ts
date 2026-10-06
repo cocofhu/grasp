@@ -816,23 +816,12 @@ test.describe('ProjectDetailView 看板首 Tab 与深链', () => {
 })
 
 test.describe('ProjectDetailView PM Leader 设置内收', () => {
-  test('顶栏无独立设置/记忆 Tab；旧深链落到设置子视图', async ({ page }) => {
-    await gotoProjectDetail(page, { width: 1280, height: 800, tab: 'pmSettings', keepDefaultTab: true })
+  test('顶栏无独立设置/记忆 Tab', async ({ page }) => {
+    await gotoProjectDetail(page, { width: 1280, height: 800, tab: 'pmLeader', keepDefaultTab: true })
     await expect(page.getByTestId('project-tab-pmSettings')).toHaveCount(0)
     await expect(page.getByTestId('project-tab-pmMemory')).toHaveCount(0)
     await expect(page.getByTestId('project-tab-cronJobs')).toBeVisible()
-    await expect(page.getByTestId('project-pm-settings-view')).toBeVisible()
-    await expect(page.getByRole('button', { name: '返回咨询' })).toBeVisible()
     await expect(page).toHaveURL(/tab=pmLeader/)
-  })
-
-  test('旧 ?tab=pmMemory 落到看板并展示迁移提示', async ({ page }) => {
-    await gotoProjectDetail(page, { width: 1280, height: 800, tab: 'pmMemory', keepDefaultTab: true })
-    await expect(page.getByTestId('project-tab-pmMemory')).toHaveCount(0)
-    await expect(page.getByTestId('project-board-panel')).toBeVisible()
-    await expect(page.getByTestId('pm-memory-migration-banner')).toBeVisible()
-    await expect(page.getByTestId('pm-memory-go-studio')).toBeVisible()
-    await expect(page).toHaveURL(/tab=board/)
   })
 
   test('定时任务 Tab 展示空态列表', async ({ page }) => {

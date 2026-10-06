@@ -123,8 +123,7 @@ describe('user-facing copy remediation keys', () => {
     expect(zh.global.t('pages.agentStudio.title')).toBe('智能体')
     expect(enNav.nav.agents).toBe('Agent studio')
     expect(enRoute.route.agents).toBe('Agent studio')
-    expect(zh.global.t('pages.agentStudio.org.manageTitle')).toBe('Agent 管理')
-    expect(zh.global.t('pages.agentStudio.org.gotoManage')).toBe('前往 Agent 管理')
+    expect(zh.global.t('pages.agentStudio.tree.manageTitle')).toBe('Agent 管理')
   })
 
   it('human gate canvas subtitle avoids unconditional ReAct promise', () => {

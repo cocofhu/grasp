@@ -259,8 +259,8 @@ const {
       </div>
 
       <div class="rounded-lg mt-3 border border-info/35 bg-info/10 px-3 py-2.5 text-xs leading-snug text-txt2">
-        <strong class="text-info">{{ t('pages.projectDetail.pm.channel.compatTitle') }}</strong>
-        {{ t('pages.projectDetail.pm.channel.compatHint') }}
+        <strong class="text-info">{{ t('pages.projectDetail.pm.channel.noteTitle') }}</strong>
+        {{ t('pages.projectDetail.pm.channel.noteHint') }}
       </div>
     </div>
 

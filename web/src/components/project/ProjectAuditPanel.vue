@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import AuditFilterDropdown, { type AuditDdOption } from '@/components/project/AuditFilterDropdown.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import Pagination from '@/components/ui/Pagination.vue'
-import { api, isPaginated, type PaginatedResponse } from '@/lib/api/api'
+import { api } from '@/lib/api/api'
 import { prettyAuditPayload } from '@/lib/shared/auditPayload'
 import { AUDIT_SYSTEM_LABEL, formatAuditNodeName, formatAuditNodeTitle } from '@/lib/shared/auditNodeLabel'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
@@ -396,20 +396,11 @@ async function loadRunAligned() {
       props.projectId,
       buildParams({ page: nextPage, pageSize: RUN_FETCH_PAGE_SIZE }),
     )
-    const pageData: PaginatedResponse<ProjectAuditEvent> & { stats?: ProjectAuditStats } = isPaginated(res)
-      ? res
-      : {
-          items: res as ProjectAuditEvent[],
-          total: (res as ProjectAuditEvent[]).length,
-          page: nextPage,
-          pageSize: RUN_FETCH_PAGE_SIZE,
-          hasMore: false,
-        }
-    const items = pageData.items || []
+    const items = res.items
     collected.push(...items)
-    fullTotal = pageData.total
-    if (!pageStats && pageData.stats) pageStats = pageData.stats
-    hasMore = Boolean(pageData.hasMore) && items.length > 0
+    fullTotal = res.total
+    if (!pageStats && res.stats) pageStats = res.stats
+    hasMore = res.hasMore && items.length > 0
     nextPage += 1
     if (collected.length >= RUN_FETCH_HARD_CAP) break
   }
@@ -454,16 +445,8 @@ async function load(resetPage = false) {
       runCapped.value = false
       runFetched.value = 0
       const res = await api.listProjectAudit(props.projectId, buildParams())
-      const pageData: PaginatedResponse<ProjectAuditEvent> & { stats?: ProjectAuditStats } = isPaginated(res)
-        ? res
-        : {
-            items: res as ProjectAuditEvent[],
-            total: (res as ProjectAuditEvent[]).length,
-            page: 1,
-            pageSize: pageSize.value,
-            hasMore: false,
-          }
-      events.value = pageData.items || []
+      const pageData = res
+      events.value = pageData.items
       total.value = pageData.total
       page.value = pageData.page
       stats.value = pageData.stats || {
@@ -1460,8 +1443,7 @@ onUnmounted(() => {
 .node-dot.agent {
   background: rgb(var(--c-accent));
 }
-.node-dot.human_gate,
-.node-dot.proposal_select {
+.node-dot.human_gate {
   background: rgb(var(--c-warn));
 }
 .node-dot.branch,

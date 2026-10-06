@@ -5,7 +5,6 @@ import { i18n } from '../src/lib/shared/i18n'
 import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { installIdleScrollbar } from '../src/lib/shared/idleScrollbar'
 import { PROJECT_CONTEXT_STORAGE_KEY } from '../src/lib/composables/useProjectContext'
-import BoardRedirectView from '../src/views/BoardRedirectView.vue'
 import BoardView from '../src/views/BoardView.vue'
 import DashboardView from '../src/views/DashboardView.vue'
 
@@ -29,7 +28,6 @@ async function bootstrap() {
     history: createMemoryHistory(),
     routes: [
       { path: '/dashboard', component: DashboardView },
-      { path: '/board', component: BoardRedirectView },
       { path: '/projects', component: { render: () => h('div', { 'data-testid': 'projects-page' }, 'projects') } },
       {
         path: '/projects/:id',
@@ -78,8 +76,7 @@ async function bootstrap() {
   })
 
   let start = '/dashboard'
-  if (startParam === 'board') start = '/board'
-  else if (startParam === 'project-board') start = `/projects/${projectId}`
+  if (startParam === 'project-board') start = `/projects/${projectId}`
 
   await router.push(start)
 

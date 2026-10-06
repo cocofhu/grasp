@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { LEGACY_DRAFT_IDB_NAME } from '@/lib/shared/migrateBrandStorage'
 import {
   ATTACHMENTS_STORE,
   DRAFT_IDB_NAME,
@@ -144,19 +143,8 @@ class FakeDb {
 }
 
 function installOpen(db: FakeDb, mode: 'success' | 'error' | 'throw' = 'success') {
-  const open = vi.fn((name: string, _version?: number) => {
+  const open = vi.fn((_name: string, _version?: number) => {
     if (mode === 'throw') throw new Error('blocked')
-    // Fresh grasp-drafts open triggers a one-shot probe of the legacy draft IDB; return an empty
-    // legacy DB so migration no-ops without reusing the primary FakeDb.
-    if (name === LEGACY_DRAFT_IDB_NAME) {
-      const empty = new FakeDb()
-      const req: any = { result: empty, error: null }
-      queueMicrotask(() => {
-        req.onupgradeneeded?.()
-        req.onsuccess?.()
-      })
-      return req
-    }
     const req: any = { result: db, error: mode === 'error' ? new Error('open failed') : null }
     queueMicrotask(() => {
       if (mode === 'error') {
@@ -237,9 +225,7 @@ describe('draftIdb native coverage', () => {
     const backend = getDraftIdb()
     expect(await backend.getHome()).toBeNull()
     expect(await backend.getRun('none')).toBeNull()
-    // One primary open (reused) plus a legacy draft-IDB migration probe.
     expect(primaryOpenCount(open)).toBe(1)
-    expect(open).toHaveBeenCalledWith(LEGACY_DRAFT_IDB_NAME)
     db.onversionchange?.()
     expect(db.close).toHaveBeenCalled()
     expect(await backend.getHome()).toBeNull()

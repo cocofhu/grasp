@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "name": "默认工作流",
-  "description": "需求澄清 → 实现 → 测试评审;测试评审未通过时回到实现。仓库在运行时填写。",
+  "description": "需求澄清 → 实现 → 测试评审 → 提交 MR/PR;测试评审未通过时回到实现。仓库在运行时填写。",
   "needsRepo": true,
   "graph": {
     "variables": [
@@ -71,11 +71,24 @@
         }
       },
       {
+        "id": "deliver",
+        "type": "agent",
+        "label": "交付",
+        "position": {
+          "x": 1120,
+          "y": 0
+        },
+        "config": {
+          "agent_profile": "交付",
+          "prompt": "测试评审已通过:把各仓工作分支合入目标分支,创建或复用 MR/PR,如实写入合并请求结果。"
+        }
+      },
+      {
         "id": "output",
         "type": "output",
         "label": "结束",
         "position": {
-          "x": 1120,
+          "x": 1400,
           "y": 0
         },
         "config": {
@@ -83,7 +96,8 @@
             "{{nodes.clarify.outputs.clarified_requirement}}",
             "{{nodes.implement.outputs.implementation_result}}",
             "{{nodes.test_review.outputs.test_result}}",
-            "{{nodes.test_review.outputs.review}}"
+            "{{nodes.test_review.outputs.review}}",
+            "{{nodes.deliver.outputs.merge_request}}"
           ]
         }
       }
@@ -110,9 +124,15 @@
       {
         "id": "e_test_pass",
         "source": "test_review",
-        "target": "output",
+        "target": "deliver",
         "kind": "success",
         "sourceHandle": "pass"
+      },
+      {
+        "id": "e_deliver_output",
+        "source": "deliver",
+        "target": "output",
+        "kind": "success"
       },
       {
         "id": "e_test_fail",

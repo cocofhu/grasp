@@ -240,7 +240,7 @@ func (s *Service) statusFrom(link *models.GateShareLink, gate models.Gate, run m
 		st.UsedAt = link.UsedAt
 		st.RevokedAt = link.RevokedAt
 		if st.State == models.ShareLinkStateActive {
-			st.PermissionPreset = NormalizePermissionPreset(link.PermissionPreset)
+			st.PermissionPreset = link.PermissionPreset
 			rem := int64(time.Until(link.ExpiresAt).Seconds())
 			if rem < 0 {
 				rem = 0
@@ -349,7 +349,7 @@ func (s *Service) Regenerate(runID, nodeID, createdBy, publicOrigin string) (*Cr
 		return nil, ErrNotActive
 	}
 	tier := latest.TTLTier
-	preset := NormalizePermissionPreset(latest.PermissionPreset)
+	preset := latest.PermissionPreset
 	token, err := GenerateToken()
 	if err != nil {
 		return nil, err
@@ -436,7 +436,7 @@ func (s *Service) Revoke(runID, nodeID, actor string) error {
 		"createdAt":        latest.CreatedAt,
 		"linkId":           latest.ID,
 		"ttlTier":          latest.TTLTier,
-		"permissionPreset": NormalizePermissionPreset(latest.PermissionPreset),
+		"permissionPreset": latest.PermissionPreset,
 	})
 	return nil
 }

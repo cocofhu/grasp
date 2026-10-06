@@ -54,7 +54,7 @@ func gateFeedback(s models.StateRun) (action, comment string) {
 // isGateType reports whether a node type is a human decision point (delimits a
 // gate segment and is rendered as feedback in history).
 func isGateType(t string) bool {
-	return t == "human_gate" || t == "proposal_select"
+	return t == "human_gate"
 }
 
 // gateReviewScope returns the stages a gate reviews: a BFS *backward* over the

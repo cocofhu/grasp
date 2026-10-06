@@ -119,7 +119,7 @@ func (h *Handlers) SaveWorkflow(c *gin.Context) {
 		Summary:      summary,
 		Payload: map[string]any{
 			"name":    wf.Name,
-			"status":  wf.Status,
+			"status":  wf.Status(),
 			"version": wf.Version,
 			"nodes":   len(wf.Graph.Nodes),
 		},
@@ -161,7 +161,7 @@ func (h *Handlers) PatchWorkflowNotifyPolicy(c *gin.Context) {
 		Summary:      "update workflow notify policy",
 		Payload: map[string]any{
 			"notifyPolicy": wf.NotifyPolicy,
-			"status":       wf.Status,
+			"status":       wf.Status(),
 			"version":      wf.Version,
 		},
 	})
@@ -206,7 +206,7 @@ func (h *Handlers) PatchWorkflowHomeVisibility(c *gin.Context) {
 		Summary:      "update workflow home visibility",
 		Payload: map[string]any{
 			"showOnHome": wf.ShowOnHome,
-			"status":     wf.Status,
+			"status":     wf.Status(),
 			"version":    wf.Version,
 		},
 	})
@@ -216,7 +216,11 @@ func (h *Handlers) PatchWorkflowHomeVisibility(c *gin.Context) {
 func (h *Handlers) PublishWorkflow(c *gin.Context) {
 	wf, err := h.WF.Publish(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code := http.StatusBadRequest
+		if errors.Is(err, services.ErrWorkflowNotFound) {
+			code = http.StatusNotFound
+		}
+		c.JSON(code, gin.H{"error": err.Error()})
 		return
 	}
 	h.recordAudit(services.AuditRecord{
@@ -233,7 +237,12 @@ func (h *Handlers) PublishWorkflow(c *gin.Context) {
 }
 
 func (h *Handlers) WorkflowVersions(c *gin.Context) {
-	c.JSON(http.StatusOK, h.WF.Versions(c.Param("id")))
+	id := c.Param("id")
+	if _, ok := h.WF.Get(id); !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	c.JSON(http.StatusOK, h.WF.Versions(id))
 }
 
 func (h *Handlers) WorkflowVersionGraph(c *gin.Context) {
@@ -272,9 +281,26 @@ func (h *Handlers) RestoreWorkflowVersion(c *gin.Context) {
 	}
 	wf, err := h.WF.Restore(c.Param("id"), version)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		switch {
+		case errors.Is(err, services.ErrWorkflowNotFound), errors.Is(err, services.ErrWorkflowVersionNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		case errors.Is(err, services.ErrWorkflowNameExists):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		}
 		return
 	}
+	h.recordAudit(services.AuditRecord{
+		ProjectID:    wf.ProjectID,
+		Actor:        h.auditActorFromContext(c),
+		Action:       models.AuditActionWorkflowUpdate,
+		ResourceType: "workflow",
+		ResourceID:   wf.ID,
+		Outcome:      models.AuditOutcomeOK,
+		Summary:      fmt.Sprintf("restore workflow v%d as v%d", version, wf.Version),
+		Payload:      map[string]any{"restoredFrom": version, "version": wf.Version},
+	})
 	c.JSON(http.StatusOK, workflowDTO(wf))
 }
 

@@ -172,12 +172,6 @@ func (s *PmService) GetThreadByID(threadID string) (models.ChatThread, error) {
 	return t, nil
 }
 
-// SetThreadAgentName backfills agent_name on a legacy thread.
-func (s *PmService) SetThreadAgentName(threadID, agentName string) error {
-	return s.db.Model(&models.ChatThread{}).Where("id = ?", threadID).
-		Updates(map[string]any{"agent_name": agentName, "updated_at": time.Now()}).Error
-}
-
 // BindSandbox stores the sandbox id on the thread.
 func (s *PmService) BindSandbox(threadID string, sandboxID uint) error {
 	ref := fmt.Sprintf("%d", sandboxID)

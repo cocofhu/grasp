@@ -91,7 +91,7 @@ func TestLiveStartWithPasswordsAndInject(t *testing.T) {
 	}
 	envOut := strings.ReplaceAll(string(out), "\x00", "\n")
 	t.Log(envOut)
-	for _, k := range []string{"PASSWORD=probe-token-xyz", "ROOT_PASSWORD=probe-token-xyz", "ACP_BRIDGE_PASSWORD=probe-token-xyz", "CURSOR_ACP_PASSWORD=probe-token-xyz"} {
+	for _, k := range []string{"ROOT_PASSWORD=probe-token-xyz", "ACP_BRIDGE_PASSWORD=probe-token-xyz"} {
 		if !strings.Contains(envOut, k) {
 			t.Fatalf("missing %s in:\n%s", k, envOut)
 		}

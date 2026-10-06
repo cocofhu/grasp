@@ -25,7 +25,7 @@ Grasp 的逻辑——`startup.sh` 等脚本、`backend`、`preview-inject` 和 `
   再 `services.sh restart preview-inject` 和 `services.sh restart backend --if-idle`。backend 有进行中的轮次、排队的 prompt 或已连接的 WebSocket 时返回 busy（退出码 3），下次使用时再重启。
   热更新**不会**重跑 `startup.sh` 里只执行一次的步骤（凭据、克隆、dockerd、code-server 配置），这类改动只对新沙箱生效。
 - 兼容性：镜像写入 `/etc/grasp-image-level`（来自 `IMAGE_LEVEL`），运行时包 MANIFEST 带 `min_image`。镜像版本不够时 bootstrap 退出码 4，
-  日志提示“请重建沙箱镜像”；Grasp 对这类沙箱和不带 bootstrap 的旧镜像沙箱不再推送。
+  日志提示“请重建沙箱镜像”；Grasp 对这类沙箱不再推送。服务端与镜像一起发布，不支持不带 bootstrap 的镜像。
 
 `grasp-bootstrap.sh` 子命令（`fetch` / `install-stdin` / `version`）与退出码（0 成功 · 1 失败 · 2 用法错误 · 4 镜像版本不够）是与 Grasp 服务端的契约，
 改动它们必须同时给 `IMAGE_LEVEL` 加 1。什么时候需要重建镜像：只有系统软件、Agent CLI、工具链、code-server、sshd 或 `grasp-bootstrap.sh` 变了才需要；
@@ -92,8 +92,7 @@ docker run --privileged -d --add-host host.docker.internal:host-gateway \
 
 ## 多仓库 PULL
 
-- 单仓（兼容旧行为，clone 到 `WORKSPACE_DIR` 根）：`-e GIT_CLONE_URL=https://.../repo.git`
-- 多仓（平级布局，每个 clone 到 `WORKSPACE_DIR/<name>/`）：
+- 平级布局，每个仓库 clone 到 `WORKSPACE_DIR/<name>/`：
 
 ```bash
 -e GIT_REPOS="api|https://github.com/owner/api.git|main,web|https://github.com/owner/web.git"
@@ -125,12 +124,11 @@ docker run --privileged -d --add-host host.docker.internal:host-gateway \
 
 > 启用 DinD 需以 `--privileged` 运行容器。
 
-### 3. 代码拉取（择一；均在 clone 前自动配置凭据）
+### 3. 代码拉取（clone 前自动配置凭据）
 
 | 变量 | 默认值 | 作用 |
 | --- | --- | --- |
 | `GIT_REPOS` | 空 | 多仓，逗号分隔，每项 `name\|url\|branch`（`branch`/`name` 可省）；各 clone 到 `WORKSPACE_DIR/<name>/` |
-| `GIT_CLONE_URL` | 空 | 单仓（兼容旧行为），clone 到 `WORKSPACE_DIR` 根 |
 
 ### 4. Git 凭据与用户信息
 
@@ -142,8 +140,8 @@ docker run --privileged -d --add-host host.docker.internal:host-gateway \
 | `GITHUB_URL` | 空 | 自建 GitHub 的 `scheme+host`，用于匹配 repo host |
 | `GITLAB_TOKEN` | 空 | GitLab token；已配置则自动 `glab auth login` |
 | `GITLAB_URL` | 空 | GitLab 实例地址（自建建议显式配置；空则默认 `gitlab.com`。不会把 GitHub / `GITHUB_URL` host 当成 GitLab） |
-| `GIT_SSH_PRIVATE_KEY` | 空 | SSH 私钥内容，写入 `~/.ssh/id_rsa`（SSH clone 用） |
-| `GIT_SSH_KNOWN_HOSTS` | 空 | SSH known_hosts 内容（SSH clone 时必填，禁用 accept-new 兜底） |
+| `GIT_SSH_PRIVATE_KEY` | 空 | SSH 私钥内容，写入 `~/.ssh/id_rsa`（SSH clone 用）。经平台运行时 SSH 只来自项目凭据，由平台直接写入 `~/.ssh`，不走 env |
+| `GIT_SSH_KNOWN_HOSTS` | 空 | SSH known_hosts 内容（SSH clone 时必填，禁用 accept-new 兜底）。经平台运行时同样只来自项目凭据 |
 | `GIT_USER_NAME` | `sandbox` | 全局 `git config user.name` |
 | `GIT_USER_EMAIL` | `sandbox@localhost` | 全局 `git config user.email` |
 
@@ -153,12 +151,10 @@ docker run --privileged -d --add-host host.docker.internal:host-gateway \
 | --- | --- | --- |
 | `AGENT_PROVIDER` | `cursor` | agent 后端，单活：`cursor` / `claude_code` / `codebuddy` / `trae` / `opencode` |
 | `ACP_BRIDGE_PORT` | `8765` | backend 监听端口 |
-| `ACP_BRIDGE_PASSWORD` | 空 | 设置后 backend 启用登录页鉴权 |
+| `ACP_BRIDGE_PASSWORD` | 空 | backend 登录口令（`POST /api/login` 下发 `agentchat_session` cookie）。Grasp 创建的沙箱总会设置；留空仅用于本地脚本调试 |
 | `ACP_BRIDGE_MODEL` | 空 | 默认 agent 模型（不设则用后端默认）；AgentChat 各 Tab 可另选 |
 | `SANDBOX_MAX_CHATS` | `8` | AgentChat 同时存在的会话（Tab）上限，含 `default` |
 | `CONFIG_ROOT` | 随后端 | 能力发现的配置树根，默认按后端取 `/root/.cursor` `/.claude` `/.codebuddy` `/.trae` `/.config/opencode` |
-
-> `CURSOR_ACP_PORT` / `CURSOR_ACP_PASSWORD` / `CURSOR_ACP_MODEL` 为上述三项的 deprecated 兼容别名。
 
 ### 6. 后端鉴权（通用别名，归一化到各 CLI 原生变量）
 
@@ -189,7 +185,7 @@ docker run --privileged -d --add-host host.docker.internal:host-gateway \
 
 | 变量 | 默认值 | 作用 |
 | --- | --- | --- |
-| `VNC_PREVIEW` | 空 | `1` / `true` 启动 headed Chromium on Xvfb + x11vnc + websockify（CDP `9222` / noVNC `6080`）；`ENABLE_VNC_PREVIEW` 同义 |
+| `VNC_PREVIEW` | 空 | `1` / `true` 启动 headed Chromium on Xvfb + x11vnc + websockify（CDP `9222` / noVNC `6080`） |
 | `PREVIEW_DIRECT` | 空 | `1` / `true` 启动直连预览 HTML 注入（`preview-inject` 听 `17980` + iptables REDIRECT `$PREVIEW_PORT`）。须同时有 `PREVIEW_PORT` |
 | `PREVIEW_AUTO_INJECT` | `1`（直连时） | `0` / `false` 时不启动注入（节点开关「自动注入」关闭） |
 | `PREVIEW_PORT` | 空 | 应用监听口（与 Docker/K8s 发布同号）。注入进程**不得**占用此口 |

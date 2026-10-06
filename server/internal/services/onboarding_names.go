@@ -32,27 +32,20 @@ type onboardingLocale struct {
 	WorkflowDesc string
 	InputLabel   string
 	OutputLabel  string
-	GroupName    string
-	// GroupSuffix follows the project name in a non-default project's group.
-	GroupSuffix string
 }
 
 var (
 	onboardingLocaleZH = onboardingLocale{
 		WorkflowName: OnboardingWorkflowName,
-		WorkflowDesc: "需求澄清 → 实现 → 测试评审;测试评审未通过时回到实现。仓库在运行时填写。",
+		WorkflowDesc: "需求澄清 → 实现 → 测试评审 → 提交 MR/PR;测试评审未通过时回到实现。仓库在运行时填写。",
 		InputLabel:   "开始",
 		OutputLabel:  "结束",
-		GroupName:    FirstInstallGroupName,
-		GroupSuffix:  "项目组",
 	}
 	onboardingLocaleEN = onboardingLocale{
 		WorkflowName: OnboardingWorkflowNameEN,
-		WorkflowDesc: "Clarify → Implement → Test & review; a failed review goes back to Implement. Pick the repository when you start a run.",
+		WorkflowDesc: "Clarify → Implement → Test & review → Submit MR/PR; a failed review goes back to Implement. Pick the repository when you start a run.",
 		InputLabel:   "Start",
 		OutputLabel:  "End",
-		GroupName:    "Default Team",
-		GroupSuffix:  " Team",
 	}
 	// onboardingLocales lists every language so re-running onboarding in another
 	// language still finds the workflow it published before.
@@ -91,11 +84,9 @@ func localizeOnboardingWorkflow(env *models.ExportEnvelope, loc onboardingLocale
 	}
 }
 
-// OnboardingNamePlan holds per-project agent / org naming for bootstrap.
+// OnboardingNamePlan holds per-project agent naming for bootstrap.
 type OnboardingNamePlan struct {
 	Prefix     string
-	GroupID    string
-	GroupName  string
 	AgentNames []string
 	// NameMap maps canonical template names → actual save names.
 	NameMap map[string]string
@@ -143,11 +134,10 @@ func SanitizeOnboardingPrefix(projectName string) (string, error) {
 	return out, nil
 }
 
-// BuildOnboardingNamePlan derives Agent / group names for a project.
-// The default project keeps the bare template names and FirstInstallGroupID;
-// other projects prefix them with the project name. lang names the org group.
-func BuildOnboardingNamePlan(projectID, projectName, defaultProjectID, lang string) (OnboardingNamePlan, error) {
-	loc := onboardingLocaleFor(lang)
+// BuildOnboardingNamePlan derives Agent names for a project.
+// The default project keeps the bare template names; other projects prefix
+// them with the project name.
+func BuildOnboardingNamePlan(projectID, projectName, defaultProjectID string) (OnboardingNamePlan, error) {
 	projectID = strings.TrimSpace(projectID)
 	defaultProjectID = strings.TrimSpace(defaultProjectID)
 	if defaultProjectID == "" {
@@ -162,8 +152,6 @@ func BuildOnboardingNamePlan(projectID, projectName, defaultProjectID, lang stri
 		}
 		return OnboardingNamePlan{
 			Prefix:     "",
-			GroupID:    FirstInstallGroupID,
-			GroupName:  loc.GroupName,
 			AgentNames: names,
 			NameMap:    m,
 		}, nil
@@ -171,10 +159,6 @@ func BuildOnboardingNamePlan(projectID, projectName, defaultProjectID, lang stri
 	prefix, err := SanitizeOnboardingPrefix(projectName)
 	if err != nil {
 		return OnboardingNamePlan{}, err
-	}
-	displayName := strings.TrimSpace(projectName)
-	if displayName == "" {
-		displayName = prefix
 	}
 	m := make(map[string]string, len(OnboardingAgentNames))
 	names := make([]string, 0, len(OnboardingAgentNames))
@@ -189,8 +173,6 @@ func BuildOnboardingNamePlan(projectID, projectName, defaultProjectID, lang stri
 	}
 	return OnboardingNamePlan{
 		Prefix:     prefix,
-		GroupID:    "g_onb_" + projectID,
-		GroupName:  displayName + loc.GroupSuffix,
 		AgentNames: names,
 		NameMap:    m,
 	}, nil

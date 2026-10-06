@@ -115,11 +115,6 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-/** File-name trigger for proposals.json form-mode stopgap (exact match only). */
-function isProposalsArtifact(name?: string | null): boolean {
-  return name === 'proposals.json'
-}
-
 const activeName = ref('')
 const mode = ref<'edit' | 'preview'>('preview')
 const structMode = ref<'form' | 'json'>('form')
@@ -137,8 +132,6 @@ let imageLoadGen = 0
 const activeProduct = computed(
   () => props.products.find((p) => p.name === activeName.value) || props.products[0] || null,
 )
-
-const isProposalsProduct = computed(() => isProposalsArtifact(activeProduct.value?.name))
 
 const isReadonlyProduct = computed(() => {
   const p = activeProduct.value
@@ -271,9 +264,7 @@ watch(
     // Default to preview on product switch so approval landing matches read-only
     // structured/HTML views; user switches to Edit explicitly.
     mode.value = 'preview'
-    // Reset struct mode by artifact name so proposals.json defaults to raw JSON
-    // and other structured products keep the existing form default (no cross-product residue).
-    structMode.value = isProposalsArtifact(activeProduct.value?.name) ? 'json' : 'form'
+    structMode.value = 'form'
     if (isReadonlyImage.value && activeProduct.value) {
       void loadReadonlyImage(activeProduct.value.name)
     } else {
@@ -324,12 +315,6 @@ watch(
   () => {
     const name = activeProduct.value?.name
     if (!name || !isStructuredArtifactName(name) || structMode.value !== 'form') return
-    // proposals.json has no top-level title/summary — keep controls empty & unused.
-    if (isProposalsArtifact(name)) {
-      formTitle.value = ''
-      formSummary.value = ''
-      return
-    }
     try {
       const doc = JSON.parse(draft.value || '{}') as { title?: string; summary?: string }
       formTitle.value = typeof doc.title === 'string' ? doc.title : ''
@@ -344,8 +329,6 @@ watch(
 function applyFormToDraft() {
   const name = activeProduct.value?.name
   if (!name || !isStructuredArtifactName(name)) return
-  // Never merge form title/summary into proposals.json draft (schema is context + proposals[]).
-  if (isProposalsArtifact(name)) return
   try {
     const doc = JSON.parse(draft.value || '{}') as Record<string, unknown>
     if ('title' in doc || formTitle.value) doc.title = formTitle.value
@@ -357,7 +340,6 @@ function applyFormToDraft() {
 }
 
 function switchToStructJson() {
-  // Skip form→draft merge for proposals.json; other products keep existing merge.
   applyFormToDraft()
   structMode.value = 'json'
 }
@@ -375,11 +357,6 @@ async function save() {
   if (!canEditActive.value || !activeProduct.value || saving.value) return
   saveError.value = null
   saveOk.value = false
-  // Hard-block form-mode save for proposals.json before any API / draft merge.
-  if (isProposalsArtifact(activeProduct.value.name) && structMode.value === 'form') {
-    saveError.value = t('pages.gateApproval.proposalsFormSaveBlocked')
-    return
-  }
   if (structMode.value === 'form' && isStructuredArtifactName(activeProduct.value.name)) {
     applyFormToDraft()
   }
@@ -667,27 +644,6 @@ defineExpose({
           class="space-y-3 p-4"
           data-testid="gate-struct-form-pane"
         >
-          <div
-            v-if="isProposalsProduct"
-            class="rounded-lg border border-warn/35 bg-warn/10 px-3.5 py-3"
-            data-testid="gate-proposals-form-unsupported"
-            role="status"
-          >
-            <div class="text-xs font-medium text-warn">
-              {{ t('pages.gateApproval.proposalsFormUnsupportedTitle') }}
-            </div>
-            <p class="mt-1 text-xs text-txt2">
-              {{ t('pages.gateApproval.proposalsFormUnsupportedBody') }}
-              <button
-                type="button"
-                class="text-accent-2 underline"
-                data-testid="gate-proposals-switch-json"
-                @click="switchToStructJson"
-              >
-                {{ t('pages.gateApproval.structJson') }}
-              </button>
-            </p>
-          </div>
           <div>
             <label class="label">title</label>
             <input
@@ -695,7 +651,6 @@ defineExpose({
               type="text"
               class="rounded-md w-full border border-line bg-base px-2.5 py-2 text-sm outline-none focus:border-accent-2 disabled:cursor-not-allowed disabled:opacity-55"
               data-testid="gate-form-title"
-              :disabled="isProposalsProduct"
               @input="applyFormToDraft"
             />
           </div>
@@ -706,11 +661,10 @@ defineExpose({
               rows="4"
               class="rounded-md w-full border border-line bg-base px-2.5 py-2 text-sm outline-none focus:border-accent-2 disabled:cursor-not-allowed disabled:opacity-55"
               data-testid="gate-form-summary"
-              :disabled="isProposalsProduct"
               @input="applyFormToDraft"
             />
           </div>
-          <p v-if="!isProposalsProduct" class="text-[11px] text-txt3">
+          <p class="text-[11px] text-txt3">
             {{ t('pages.gateApproval.formSubsetHint') }}
           </p>
         </div>

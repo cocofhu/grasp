@@ -128,14 +128,6 @@ const detailLong = computed(() => detail.value.length > DETAIL_PREVIEW || detail
   </div>
 
   <div
-    v-else-if="item.type === 'legacy'"
-    class="flex w-full min-w-0 items-center gap-1.5 rounded-md border border-dashed border-line px-3 py-1.5 text-[11px] text-txt3"
-    data-testid="llm-legacy"
-  >
-    <Icon name="history" :size="12" />{{ t('pages.llmTranscript.legacy') }}
-  </div>
-
-  <div
     v-else-if="item.type === 'error'"
     class="rounded-lg flex w-full min-w-0 max-w-full items-start gap-1.5 overflow-hidden border border-err/40 bg-err/[0.06] px-3 py-2 text-[12px] text-err"
     data-testid="llm-exec-error"

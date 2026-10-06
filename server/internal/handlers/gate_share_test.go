@@ -26,7 +26,7 @@ func seedHumanGate(t *testing.T, h *harness, runID, nodeID string, actions []mod
 	}
 	h.db.Create(&models.WorkflowDef{
 		ID: "wf-" + runID, ProjectID: models.DefaultProjectID, Name: "share-" + runID,
-		Status: "published", Version: 1,
+		Version: 1, PublishedVersion: 1,
 	})
 	h.db.Create(&models.Run{
 		ID: runID, WorkflowID: "wf-" + runID, WorkflowName: "share-" + runID, Status: "waiting_human",
@@ -65,7 +65,7 @@ func TestGateShareCreateRegenRevokeAndInboxStatus(t *testing.T) {
 	h := newHarness(t)
 	seedHumanGate(t, h, "run-share-1", "hg1", nil)
 
-	w := h.do(http.MethodPost, "/api/runs/run-share-1/gates/hg1/share-link", map[string]any{"ttlTier": "24h"})
+	w := h.do(http.MethodPost, "/api/runs/run-share-1/gates/hg1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
@@ -144,7 +144,7 @@ func TestGateShareCreateRegenRevokeAndInboxStatus(t *testing.T) {
 	}
 
 	// Recreate after revoke while still pending.
-	w = h.do(http.MethodPost, "/api/runs/run-share-1/gates/hg1/share-link", map[string]any{"ttlTier": "1h"})
+	w = h.do(http.MethodPost, "/api/runs/run-share-1/gates/hg1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "1h"})
 	if w.Code != 200 {
 		t.Fatalf("recreate: %d %s", w.Code, w.Body.String())
 	}
@@ -153,14 +153,14 @@ func TestGateShareCreateRegenRevokeAndInboxStatus(t *testing.T) {
 func TestGateShareNoStandardActionAndUsedCannotRecreate(t *testing.T) {
 	h := newHarness(t)
 	seedHumanGate(t, h, "run-share-2", "hg2", []models.GateAction{{ID: "custom", Label: "自定义"}})
-	w := h.do(http.MethodPost, "/api/runs/run-share-2/gates/hg2/share-link", map[string]any{"ttlTier": "24h"})
+	w := h.do(http.MethodPost, "/api/runs/run-share-2/gates/hg2/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "no_standard_action") {
 		t.Fatalf("no standard action: %d %s", w.Code, w.Body.String())
 	}
 
 	h2 := newHarness(t)
 	seedHumanGate(t, h2, "run-share-3", "hg3", nil)
-	created := parseJSON(t, h2.do(http.MethodPost, "/api/runs/run-share-3/gates/hg3/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h2.do(http.MethodPost, "/api/runs/run-share-3/gates/hg3/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 	nonce := publicPreviewNonce(t, h2, token)
@@ -179,7 +179,7 @@ func TestGateShareNoStandardActionAndUsedCannotRecreate(t *testing.T) {
 		t.Fatalf("decide status: %+v", body)
 	}
 
-	w = h2.do(http.MethodPost, "/api/runs/run-share-3/gates/hg3/share-link", map[string]any{"ttlTier": "24h"})
+	w = h2.do(http.MethodPost, "/api/runs/run-share-3/gates/hg3/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if w.Code != http.StatusConflict {
 		t.Fatalf("used recreate: %d %s", w.Code, w.Body.String())
 	}
@@ -230,7 +230,7 @@ func TestGateShareNoStandardActionAndUsedCannotRecreate(t *testing.T) {
 func TestGateSharePublicSecurityHeadersCSRFAndRateLimit(t *testing.T) {
 	h := newHarness(t)
 	seedHumanGate(t, h, "run-share-4", "hg4", nil)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-4/gates/hg4/share-link", map[string]any{"ttlTier": "8h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-4/gates/hg4/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "8h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
@@ -345,7 +345,7 @@ func TestGateSharePublicSecurityHeadersCSRFAndRateLimit(t *testing.T) {
 func TestGateSharePreviewPollDoesNotStarveDecide(t *testing.T) {
 	h := newHarness(t)
 	seedHumanGate(t, h, "run-share-rl-split", "hg-rl-split", nil)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-rl-split/gates/hg-rl-split/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-rl-split/gates/hg-rl-split/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 	nonce := publicPreviewNonce(t, h, token)
@@ -377,7 +377,7 @@ func TestGateSharePreviewPollDoesNotStarveDecide(t *testing.T) {
 func TestGateShareDecideRateLimited(t *testing.T) {
 	h := newHarness(t)
 	seedHumanGate(t, h, "run-share-rl-dec", "hg-rl-dec", nil)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-rl-dec/gates/hg-rl-dec/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-rl-dec/gates/hg-rl-dec/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
@@ -406,7 +406,7 @@ func TestGateShareDecideRateLimited(t *testing.T) {
 func TestGateShareCSRFSecFetchSiteSameOrigin(t *testing.T) {
 	h := newHarness(t)
 	seedHumanGate(t, h, "run-share-sfs", "hg-sfs", nil)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-sfs/gates/hg-sfs/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-sfs/gates/hg-sfs/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
@@ -435,7 +435,7 @@ func TestGateShareCSRFSecFetchSiteSameOrigin(t *testing.T) {
 func TestGateShareConcurrentDecideIdempotent(t *testing.T) {
 	h := newHarness(t)
 	seedHumanGate(t, h, "run-share-5", "hg5", nil)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-5/gates/hg5/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-5/gates/hg5/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
@@ -474,7 +474,7 @@ func TestGateShareConcurrentDecideIdempotent(t *testing.T) {
 func TestGateShareUnauthorizedCannotCreate(t *testing.T) {
 	h := newHarness(t)
 	seedHumanGate(t, h, "run-share-6", "hg6", nil)
-	w := h.doWithCookie(http.MethodPost, "/api/runs/run-share-6/gates/hg6/share-link", map[string]any{"ttlTier": "24h"}, "")
+	w := h.doWithCookie(http.MethodPost, "/api/runs/run-share-6/gates/hg6/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}, "")
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("unauth create: %d %s", w.Code, w.Body.String())
 	}
@@ -483,7 +483,7 @@ func TestGateShareUnauthorizedCannotCreate(t *testing.T) {
 func TestGateShareIgnoresForwardedHostOnCreate(t *testing.T) {
 	h := newHarness(t)
 	seedHumanGate(t, h, "run-share-xfh", "hg-xfh", nil)
-	b, _ := json.Marshal(map[string]any{"ttlTier": "24h"})
+	b, _ := json.Marshal(map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	req := httptest.NewRequest(http.MethodPost, "/api/runs/run-share-xfh/gates/hg-xfh/share-link", bytes.NewReader(b))
 	req.Host = "approving.example.com"
 	req.Header.Set("Content-Type", "application/json")
@@ -525,7 +525,7 @@ func TestGateShareMintsFromRequestHostPublicAndLoopback(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			seedHumanGate(t, h, tc.runID, tc.nodeID, nil)
-			b, _ := json.Marshal(map[string]any{"ttlTier": "24h"})
+			b, _ := json.Marshal(map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 			req := httptest.NewRequest(http.MethodPost, "/api/runs/"+tc.runID+"/gates/"+tc.nodeID+"/share-link", bytes.NewReader(b))
 			req.Host = tc.host
 			req.Header.Set("Content-Type", "application/json")
@@ -550,7 +550,7 @@ func TestGateShareRegenFollowsCurrentHostWithoutRewritingStatus(t *testing.T) {
 	h := newHarness(t)
 	seedHumanGate(t, h, "run-share-host-switch", "hg-host-sw", nil)
 
-	createBody, _ := json.Marshal(map[string]any{"ttlTier": "24h"})
+	createBody, _ := json.Marshal(map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	createReq := httptest.NewRequest(http.MethodPost, "/api/runs/run-share-host-switch/gates/hg-host-sw/share-link", bytes.NewReader(createBody))
 	createReq.Host = "localhost:8080"
 	createReq.Header.Set("Content-Type", "application/json")
@@ -592,7 +592,7 @@ func TestGateShareRegenFollowsCurrentHostWithoutRewritingStatus(t *testing.T) {
 func TestGateShareExpiredPreviewDecideAndRecreate(t *testing.T) {
 	h := newHarness(t)
 	seedHumanGate(t, h, "run-share-exp", "hg-exp", nil)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-exp/gates/hg-exp/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-exp/gates/hg-exp/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
@@ -617,7 +617,7 @@ func TestGateShareExpiredPreviewDecideAndRecreate(t *testing.T) {
 		t.Fatalf("expired decide status: %+v", st)
 	}
 
-	w := h.do(http.MethodPost, "/api/runs/run-share-exp/gates/hg-exp/share-link", map[string]any{"ttlTier": "1h"})
+	w := h.do(http.MethodPost, "/api/runs/run-share-exp/gates/hg-exp/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "1h"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("recreate after expire: %d %s", w.Code, w.Body.String())
 	}
@@ -630,7 +630,7 @@ func TestGateShareExpiredPreviewDecideAndRecreate(t *testing.T) {
 func TestGateShareLoginResumeInvalidatesUnusedLink(t *testing.T) {
 	h := newHarness(t)
 	seedHumanGate(t, h, "run-share-login", "hg-login", nil)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-login/gates/hg-login/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-login/gates/hg-login/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
@@ -645,7 +645,7 @@ func TestGateShareLoginResumeInvalidatesUnusedLink(t *testing.T) {
 	if st != models.ShareLinkStateRevoked && st != models.ShareLinkStateUsed {
 		t.Fatalf("after login resume preview=%v body=%s", st, prev.Body.String())
 	}
-	re := h.do(http.MethodPost, "/api/runs/run-share-login/gates/hg-login/share-link", map[string]any{"ttlTier": "24h"})
+	re := h.do(http.MethodPost, "/api/runs/run-share-login/gates/hg-login/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if re.Code != http.StatusConflict {
 		t.Fatalf("recreate after login resume: %d %s", re.Code, re.Body.String())
 	}
@@ -654,7 +654,7 @@ func TestGateShareLoginResumeInvalidatesUnusedLink(t *testing.T) {
 func TestGateShareCancelRunInvalidatesAndBlocksRecreate(t *testing.T) {
 	h := newHarness(t)
 	seedHumanGate(t, h, "run-share-cancel", "hg-cancel", nil)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-cancel/gates/hg-cancel/share-link", map[string]any{"ttlTier": "8h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-cancel/gates/hg-cancel/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "8h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
@@ -666,7 +666,7 @@ func TestGateShareCancelRunInvalidatesAndBlocksRecreate(t *testing.T) {
 	if st != models.ShareLinkStateRevoked && st != models.ShareLinkStateUsed {
 		t.Fatalf("after cancel preview=%v body=%s", st, prev.Body.String())
 	}
-	re := h.do(http.MethodPost, "/api/runs/run-share-cancel/gates/hg-cancel/share-link", map[string]any{"ttlTier": "24h"})
+	re := h.do(http.MethodPost, "/api/runs/run-share-cancel/gates/hg-cancel/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if re.Code != http.StatusConflict || (!strings.Contains(re.Body.String(), "run_ended") && !strings.Contains(re.Body.String(), "used_readonly")) {
 		t.Fatalf("recreate after cancel: %d %s", re.Code, re.Body.String())
 	}
@@ -678,7 +678,7 @@ func TestGateSharePreviewDoesNotLeakOtherNodeArtifacts(t *testing.T) {
 	runID, nodeID := "run-share-leak", "hg-leak"
 	h.db.Create(&models.WorkflowDef{
 		ID: "wf-" + runID, ProjectID: models.DefaultProjectID, Name: "share-" + runID,
-		Status: "published", Version: 1,
+		Version: 1, PublishedVersion: 1,
 	})
 	h.db.Create(&models.Run{
 		ID: runID, WorkflowID: "wf-" + runID, WorkflowName: "share-" + runID, Status: "waiting_human",
@@ -702,7 +702,7 @@ func TestGateSharePreviewDoesNotLeakOtherNodeArtifacts(t *testing.T) {
 	h.h.Arts.Save(runID, "research", "research.json", "json", `{"title":"LEAK-RESEARCH-TITLE","goals":["secret-goal-xyz"]}`)
 	h.h.Arts.Save(runID, "research", "page.html", "html", `<html><body>LEAK-OTHER-NODE-HTML</body></html>`)
 
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/"+runID+"/gates/"+nodeID+"/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/"+runID+"/gates/"+nodeID+"/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 	prev := h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token})
@@ -728,7 +728,7 @@ func TestGateSharePreviewDoesNotLeakOtherNodeArtifacts(t *testing.T) {
 func TestGateShareResumeFailureDoesNotBurnLink(t *testing.T) {
 	h := newHarness(t)
 	seedHumanGate(t, h, "run-share-rollback", "hg-rb", nil)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-rollback/gates/hg-rb/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-rollback/gates/hg-rb/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
@@ -768,7 +768,7 @@ func TestGateShareResumeFailureDoesNotBurnLink(t *testing.T) {
 func TestGateShareDecideRequiresNameAndComment(t *testing.T) {
 	h := newHarness(t)
 	seedHumanGate(t, h, "run-share-audit", "hg-audit", nil)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-audit/gates/hg-audit/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-audit/gates/hg-audit/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
@@ -819,7 +819,7 @@ func TestGateShareDecideRequiresNameAndComment(t *testing.T) {
 func TestGateShareReplyDoesNotConsume(t *testing.T) {
 	h := newHarness(t)
 	seedHumanGate(t, h, "run-share-reply", "hg-reply", nil)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-reply/gates/hg-reply/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-reply/gates/hg-reply/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
@@ -899,7 +899,7 @@ func fmtPayload(p map[string]any) string {
 func TestPublicGatePreviewOmitsUpstreamDocAndSupportsOnDemandUpstream(t *testing.T) {
 	h := newHarness(t)
 	seedHumanGate(t, h, "run-share-slim", "hg-slim", nil)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-slim/gates/hg-slim/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-slim/gates/hg-slim/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
@@ -967,7 +967,7 @@ func countShareNonces(t *testing.T, h *harness) int64 {
 func TestPublicGatePreviewSilentSkipsNonceUnlessRequested(t *testing.T) {
 	h := newHarness(t)
 	seedHumanGate(t, h, "run-share-nonce-idle", "hg-nonce-idle", nil)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-nonce-idle/gates/hg-nonce-idle/share-link", map[string]any{"ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-nonce-idle/gates/hg-nonce-idle/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
@@ -1073,32 +1073,11 @@ func TestGateSharePermissionPresetReactOnlyDecideDenied(t *testing.T) {
 	}
 }
 
-func TestGateSharePermissionPresetLegacyEmptyIsFull(t *testing.T) {
+func TestGateShareCreateRequiresPermissionPreset(t *testing.T) {
 	h := newHarness(t)
-	seedHumanGate(t, h, "run-share-legacy", "hg-legacy", nil)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-share-legacy/gates/hg-legacy/share-link", map[string]any{"ttlTier": "24h"}))
-	if created["permissionPreset"] != models.SharePermissionFull {
-		t.Fatalf("default create preset: %+v", created)
-	}
-	url, _ := created["url"].(string)
-	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
-
-	// Simulate a legacy row with empty permission_preset.
-	if err := h.db.Model(&models.GateShareLink{}).
-		Where("run_id = ? AND node_id = ?", "run-share-legacy", "hg-legacy").
-		Update("permission_preset", "").Error; err != nil {
-		t.Fatalf("clear preset: %v", err)
-	}
-	prev := parseJSON(t, h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token}))
-	if prev["permissionPreset"] != models.SharePermissionFull {
-		t.Fatalf("legacy preview preset: %+v", prev)
-	}
-	actions, _ := prev["actions"].(map[string]any)
-	if actions["confirm"] == nil && actions["approve"] == nil {
-		t.Fatalf("legacy full missing decide: %+v", actions)
-	}
-	st := parseJSON(t, h.do(http.MethodGet, "/api/runs/run-share-legacy/gates/hg-legacy/share-link", nil))
-	if st["permissionPreset"] != models.SharePermissionFull {
-		t.Fatalf("legacy status preset: %+v", st)
+	seedHumanGate(t, h, "run-share-nopreset", "hg-nopreset", nil)
+	w := h.do(http.MethodPost, "/api/runs/run-share-nopreset/gates/hg-nopreset/share-link", map[string]any{"ttlTier": "24h"})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("missing preset: want 400 got %d %s", w.Code, w.Body.String())
 	}
 }

@@ -9,7 +9,6 @@ import (
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/database"
 	"github.com/cocofhu/grasp/internal/handlers"
-	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -76,15 +75,6 @@ func TestPmHandlersRequireAuthWhenEnabled(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/projects/p1/pm/threads/t1/messages", nil))
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("unauth list messages: %d", w.Code)
-	}
-}
-
-func TestClearPmMemoriesNilPm(t *testing.T) {
-	hn := newHarness(t)
-	hn.h.Pm = nil
-	w := hn.do(http.MethodDelete, "/api/projects/"+models.DefaultProjectID+"/pm/memories", nil)
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("clear nil pm: %d", w.Code)
 	}
 }
 

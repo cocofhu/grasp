@@ -46,48 +46,6 @@
       "reason": "IO-internal helper"
     },
     {
-      "symbol": "agentNamesInSubtree",
-      "file": "agent/agentOrg.ts",
-      "decision": "converge",
-      "reason": "org-internal helper"
-    },
-    {
-      "symbol": "descendantGroupIds",
-      "file": "agent/agentOrg.ts",
-      "decision": "converge",
-      "reason": "org-internal helper"
-    },
-    {
-      "symbol": "directMemberCount",
-      "file": "agent/agentOrg.ts",
-      "decision": "converge",
-      "reason": "org-internal helper"
-    },
-    {
-      "symbol": "groupById",
-      "file": "agent/agentOrg.ts",
-      "decision": "converge",
-      "reason": "org-internal helper"
-    },
-    {
-      "symbol": "groupSubtreeIds",
-      "file": "agent/agentOrg.ts",
-      "decision": "converge",
-      "reason": "org-internal helper"
-    },
-    {
-      "symbol": "membershipOf",
-      "file": "agent/agentOrg.ts",
-      "decision": "converge",
-      "reason": "org-internal helper"
-    },
-    {
-      "symbol": "ungroupedAgents",
-      "file": "agent/agentOrg.ts",
-      "decision": "converge",
-      "reason": "org-internal helper"
-    },
-    {
       "symbol": "teamDraftAsWizardDraft",
       "file": "agent/agentTeamWizard.ts",
       "decision": "converge",
@@ -206,12 +164,6 @@
       "file": "inbox/gateShareLink.ts",
       "decision": "converge",
       "reason": "share-internal key helper"
-    },
-    {
-      "symbol": "parseGitRepos",
-      "file": "agent/gitCredentialAnalysis.ts",
-      "decision": "converge",
-      "reason": "analysis-internal helper"
     },
     {
       "symbol": "injectIntoHtml",

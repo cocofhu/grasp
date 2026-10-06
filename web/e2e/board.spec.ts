@@ -167,7 +167,7 @@ async function gotoBoardHarness(
   opts: {
     width: number
     height?: number
-    start?: 'dashboard' | 'board' | 'project-board'
+    start?: 'dashboard' | 'project-board'
     memory?: '0' | '1'
     projectId?: string
   } = { width: 1280 },
@@ -200,19 +200,6 @@ test.describe('需求进度看板（项目级）', () => {
     await expect(page.getByTestId('home-composer')).toBeVisible()
     await expect(page.getByTestId('home-workflow-card-wf-approve')).toContainText('自我迭代PRO')
     await expect(page.getByTestId('run-board-column')).toHaveCount(0)
-  })
-
-  test('/board 有记忆重定向到项目看板', async ({ page }) => {
-    await gotoBoardHarness(page, { width: 1280, start: 'board', memory: '1', projectId: 'proj-1' })
-    await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('projects-page')).toHaveCount(0)
-    await expect(page.getByTestId('run-board-column')).toHaveCount(3)
-  })
-
-  test('/board 无记忆重定向到项目列表', async ({ page }) => {
-    await gotoBoardHarness(page, { width: 1280, start: 'board', memory: '0' })
-    await expect(page.getByTestId('projects-page')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('board-view')).toHaveCount(0)
   })
 
   test('项目看板三主列、侧滑预览关闭后不离页', async ({ page }) => {

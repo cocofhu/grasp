@@ -6,6 +6,7 @@ import type {
   TokenUsage,
   TokenUsageByModel,
 } from '../shared/types'
+import type { BackendId } from '../shared/regionPolicy'
 
 export type AgentTestRepo = { name: string; url: string; branch?: string }
 
@@ -26,8 +27,7 @@ export interface PaginatedResponse<T> {
 export interface PreviewPort {
   runId: string
   nodeId: string
-  /** port | url; legacy rows may omit kind when only port is set. */
-  kind?: 'port' | 'url' | string
+  kind: 'port' | 'url' | string
   port: number
   /** External absolute URL when kind=url. */
   url?: string
@@ -168,16 +168,12 @@ export interface AgentTemplate {
 
 export interface Agent {
   name: string
-  /** Single home project; empty/undefined = unbound (artifact-store only). */
-  projectId?: string
+  /** Home project (required). */
+  projectId: string
   /** Optional embedded role pack id (e.g. test / preflight); omit for blank. */
   templateId?: string
-  acpBackend?: 'cursor' | 'claude_code' | 'codebuddy' | 'trae' | 'opencode'
+  acpBackend: BackendId
   gitCredentialType?: 'github_https' | 'gitlab_https' | 'ssh'
-  /** known_hosts literal (may contain newlines); no ${vars.*}. */
-  gitSshKnownHosts?: string
-  /** SSH private key literal; masked in UI; no ${vars.*}. */
-  gitSshPrivateKey?: string
   files?: AgentFile[]
   mcp?: MCPServer[]
   env?: Record<string, string>
@@ -189,11 +185,8 @@ export interface Agent {
 /** Project-level shared Agent baseline (extend layer; Agent overlays on top). */
 export interface ProjectSharedAgentConfig {
   projectId: string
-  acpBackend?: string
-  defaultProjectId?: string
+  acpBackend: BackendId
   gitCredentialType?: string
-  gitSshKnownHosts?: string
-  gitSshPrivateKey?: string
   files: AgentFile[]
   mcp: MCPServer[]
   env: Record<string, string>
@@ -204,17 +197,14 @@ export interface ProjectSharedAgentConfig {
 export interface ProjectCredentialItem {
   id: string
   projectId?: string
-  /** Credential kind (ai, git, ssh, mcp, custom, …). */
-  type?: string
-  /** @deprecated Alias accepted by older API clients. */
-  kind?: string
+  /** Credential type (ai, git, ssh, mcp, custom, …). */
+  type: string
   name: string
   target?: string
   targetType?: string
   targetId?: string
   provider?: string
   envKey?: string
-  fallbackEnvKey?: string
   configured: boolean
   /** Masked display value (for example, a key prefix); never the plaintext secret. */
   masked?: string
@@ -232,14 +222,12 @@ export interface ProjectCredentialsResponse {
 
 export interface ProjectCredentialPutBody {
   type?: string
-  kind?: string
   name?: string
   target?: string
   targetType?: string
   targetId?: string
   provider?: string
   envKey?: string
-  fallbackEnvKey?: string
   /** Empty values keep an existing secret; clear/delete removes it. */
   value?: string
   metadata?: Record<string, unknown>
@@ -253,28 +241,8 @@ export type CreateProjectSharedAgentTestPayload = {
   repoUrl?: string
 }
 
-/** Virtual group in the Agent Studio organization tree (not a disk directory). */
-export interface OrgGroup {
-  id: string
-  name: string
-  parentGroupId?: string
-}
-
-/** Per-agent organization membership (orthogonal to agent_profile identity). */
-export interface OrgAgentMembership {
-  groupIds?: string[]
-}
-
-/** Central organization index (GET/PUT /agents/org). */
-export interface AgentOrg {
-  revision: number
-  groups: OrgGroup[]
-  agents: Record<string, OrgAgentMembership>
-}
-
-/** Result of POST /agents/org/import. */
-export interface OrgFolderImportResult {
-  org: AgentOrg
+/** Result of POST /projects/:id/agents/import. */
+export interface ProjectAgentsImportResult {
   created?: string[]
   overwritten?: string[]
   renamed?: Record<string, string>
@@ -298,15 +266,12 @@ export interface TeamBootstrapSession {
   status: 'starting' | 'running' | 'pulling' | 'ready' | 'failed' | string
   error?: string
   projectId?: string
-  rootGroupId?: string
-  workflowGroupId?: string
   pmAgent?: string
   sandboxId?: string
   /** Gateway/local sandbox lifecycle while bootstrap waits (pulling|creating|running|…). */
   sandboxStatus?: string
   prefix?: string
   background?: string
-  allowedGroupIds?: string[]
   agentNames?: string[]
   events: TeamBootstrapEvent[]
   resources: TeamBootstrapResource[]
@@ -317,11 +282,9 @@ export interface TeamBootstrapSession {
 export interface TeamBootstrapRequest {
   projectName: string
   prefix: string
-  rootGroupName: string
-  workflowGroupName: string
   pmName: string
   background: string
-  acpBackend: string
+  acpBackend: BackendId
   apiKey?: string
   customConfig?: string
   region?: string
@@ -351,7 +314,7 @@ export interface SandboxView {
   connected: boolean
   hasCodeServer: boolean
   hasAcp: boolean
-  /** Same secret as container PASSWORD / CURSOR_ACP_PASSWORD for direct host:port login. */
+  /** Same secret as container ACP_BRIDGE_PASSWORD for direct host:port login. */
   password?: string
   /** Gateway host:port map; only present on getSandbox (GetView), not list. */
   endpoints?: Record<string, string>
@@ -423,13 +386,12 @@ export interface ChannelConfig {
 }
 
 // Channel create/update payload. projectId is implied by the request path.
-// Empty type still defaults to "qq" server-side.
 export interface ChannelConfigInput {
-  type?: string
+  type: 'qq' | 'wecom' | 'feishu' | 'dingtalk'
   name: string
   enabled: boolean
   agentName: string
-  isPrimary?: boolean
+  isPrimary: boolean
   enabledMcps?: string[]
   appId: string
   appSecret?: string

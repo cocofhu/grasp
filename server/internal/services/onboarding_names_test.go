@@ -27,31 +27,22 @@ func TestSanitizeOnboardingPrefix(t *testing.T) {
 }
 
 func TestBuildOnboardingNamePlan_defaultAndDerived(t *testing.T) {
-	def, err := services.BuildOnboardingNamePlan(models.DefaultProjectID, "默认项目", models.DefaultProjectID, "")
+	def, err := services.BuildOnboardingNamePlan(models.DefaultProjectID, "默认项目", models.DefaultProjectID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if def.GroupID != services.FirstInstallGroupID || def.GroupName != services.FirstInstallGroupName {
-		t.Fatalf("default group = %s/%s", def.GroupID, def.GroupName)
-	}
-	if strings.Join(def.AgentNames, ",") != "需求澄清,实现,测试评审" {
+	if strings.Join(def.AgentNames, ",") != "需求澄清,实现,测试评审,交付" {
 		t.Fatalf("default agents = %v", def.AgentNames)
 	}
 
-	plan, err := services.BuildOnboardingNamePlan("proj-abc", "Acme Corp", models.DefaultProjectID, "")
+	plan, err := services.BuildOnboardingNamePlan("proj-abc", "Acme Corp", models.DefaultProjectID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if plan.Prefix != "AcmeCorp" {
 		t.Fatalf("prefix = %q", plan.Prefix)
 	}
-	if plan.GroupID != "g_onb_proj-abc" {
-		t.Fatalf("groupID = %q", plan.GroupID)
-	}
-	if plan.GroupName != "Acme Corp项目组" {
-		t.Fatalf("groupName = %q", plan.GroupName)
-	}
-	if plan.NameMap["实现"] != "AcmeCorp实现" {
+	if plan.NameMap["实现"] != "AcmeCorp实现" || plan.NameMap["交付"] != "AcmeCorp交付" {
 		t.Fatalf("map = %#v", plan.NameMap)
 	}
 }

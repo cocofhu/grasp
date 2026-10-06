@@ -95,12 +95,3 @@ export function sanitizeImageURL(url) {
         return '';
     }
 }
-
-/**
- * @deprecated Prefer sanitizeImageURL; kept for any residual boolean checks.
- * @param {unknown} url
- * @returns {boolean}
- */
-export function isSafeImageURL(url) {
-    return sanitizeImageURL(url) !== '';
-}

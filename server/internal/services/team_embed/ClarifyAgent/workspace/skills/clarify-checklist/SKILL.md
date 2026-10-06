@@ -12,7 +12,7 @@ description: 需求澄清 Agent 专业质量检查清单（简体中文）
 3. 每条 functional_requirement 含 `detail` 与可验证的 `acceptance_criteria`（≥1）；`priority` 为 must|should|could
 4. assumptions / dependencies / constraints 与用户确认一致；无实质内容时写明「无额外…（已与用户确认）」，不得省略键
 5. 未写入排期/里程碑，未写入技术选型或架构方案
-6. 结论可被后续 Research/Proposal/Plan 直接消费，无含糊代词与未定义缩写
+6. 结论可被后续 Research/Plan 直接消费，无含糊代词与未定义缩写
 
 ## 交付核对
 

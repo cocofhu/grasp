@@ -57,9 +57,8 @@ func newIdleWatch(idle time.Duration) (<-chan time.Time, func(), func()) {
 }
 
 // chatMessage builds the {op:"chat"} frame, attaching images only when present
-// so the bridge's text-only path stays byte-identical (backward compatible).
-// When Name is set it is forwarded so MaterializeAttachments can keep the
-// original filename; omitting name preserves old-client compatibility.
+// so the bridge's text-only path stays unchanged. When Name is set it is
+// forwarded so MaterializeAttachments can keep the original filename.
 func chatMessage(text string, images []models.PromptImage, opID string) map[string]any {
 	msg := map[string]any{"op": "chat", "content": text}
 	if opID != "" {
@@ -84,7 +83,7 @@ func chatMessage(text string, images []models.PromptImage, opID string) map[stri
 	return msg
 }
 
-// ACPClient is a Go binding for the cursor-acp WebSocket protocol that
+// ACPClient is a Go binding for the acp-bridge WebSocket protocol that
 // runs inside a sandbox container (port 8765). It mirrors the auto-coder
 // client but adds mcpServers/cwd injection on connect so approving can wire
 // the per-run artifact-store MCP into the in-container cursor-agent.
@@ -100,10 +99,10 @@ type ACPClient struct {
 	// blobs resolves blob:{id} attachments to base64 for the wire format.
 	blobs blob.Store
 
-	// password, when set, is the sandbox token the acp-bridge expects
-	// (CURSOR_ACP_PASSWORD). Connect logs in first (POST /api/login) and
-	// carries the returned cursor_acp_session cookie on the /ws handshake.
-	// Empty means the bridge is unauthenticated (legacy / local dev).
+	// password is the sandbox token the acp-bridge expects
+	// (ACP_BRIDGE_PASSWORD). Connect logs in first (POST /api/login) and
+	// carries the returned agentchat_session cookie on the /ws handshake.
+	// Required: an empty password fails Connect.
 	password string
 
 	// idleTimeout aborts a chat turn when no event frame arrives within the
@@ -134,9 +133,6 @@ type ACPClient struct {
 	dropped     atomic.Int64
 	lastDropLog atomic.Int64
 
-	// opIDTagged latches once any frame arrives with an opId: the bridge
-	// attributes frames to turns, so untagged event frames are not ours.
-	opIDTagged atomic.Bool
 	// turnOpID is the opId of the chat currently in flight on this client
 	// ("" when none); lastDoneOpID the last one that ended with prompt_done.
 	turnOpID     atomic.Value
@@ -197,9 +193,8 @@ func (c *ACPClient) BridgeModel() string {
 	return c.bridgeModel
 }
 
-// WithPassword sets the acp-bridge login secret (CURSOR_ACP_PASSWORD). When
-// non-empty, Connect authenticates before dialing /ws. Empty is a no-op
-// (bridge assumed unauthenticated), preserving the legacy behavior.
+// WithPassword sets the acp-bridge login secret (ACP_BRIDGE_PASSWORD). Connect
+// authenticates with it before dialing /ws.
 func (c *ACPClient) WithPassword(password string) *ACPClient {
 	c.password = strings.TrimSpace(password)
 	return c
@@ -237,21 +232,21 @@ func (c *ACPClient) wsURL() string {
 	return fmt.Sprintf("ws://%s:%d/ws", c.host, c.port)
 }
 
-// acpSessionCookieNames are Set-Cookie names accepted from POST /api/login.
-// Deployed universal-sandbox images use agentchat_session; older images and
-// local fakes still use cursor_acp_session.
-var acpSessionCookieNames = []string{"agentchat_session", "cursor_acp_session"}
+// acpSessionCookieName is the Set-Cookie name returned by POST /api/login.
+const acpSessionCookieName = "agentchat_session"
+
+// errBridgePasswordRequired: every acp-bridge requires ACP_BRIDGE_PASSWORD.
+var errBridgePasswordRequired = errors.New("acp login: bridge password is required")
 
 // bridgeLogin authenticates against the acp-bridge and returns the session
 // cookie ("name=value") to attach on the /ws handshake. The bridge exposes
 // POST /api/login accepting a JSON {"password":...} body and replies with a
-// Set-Cookie header. Returns ("", nil) when password is empty (bridge
-// unauthenticated). Any transport/HTTP error is returned so the caller can
-// treat it as a warmup/retry condition.
+// Set-Cookie header. An empty password is an error. Any transport/HTTP error
+// is returned so the caller can treat it as a warmup/retry condition.
 func bridgeLogin(ctx context.Context, host string, port int, password string) (string, error) {
 	password = strings.TrimSpace(password)
 	if password == "" {
-		return "", nil
+		return "", errBridgePasswordRequired
 	}
 	if host == "" {
 		host = "127.0.0.1"
@@ -271,21 +266,12 @@ func bridgeLogin(ctx context.Context, host string, port int, password string) (s
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("acp login: status %d", resp.StatusCode)
 	}
-	cookies := resp.Cookies()
-	for _, name := range acpSessionCookieNames {
-		for _, ck := range cookies {
-			if ck.Name == name && ck.Value != "" {
-				return ck.Name + "=" + ck.Value, nil
-			}
-		}
-	}
-	// Last resort: any non-empty cookie from a successful login (future renames).
-	for _, ck := range cookies {
-		if ck.Value != "" && strings.Contains(strings.ToLower(ck.Name), "session") {
+	for _, ck := range resp.Cookies() {
+		if ck.Name == acpSessionCookieName && ck.Value != "" {
 			return ck.Name + "=" + ck.Value, nil
 		}
 	}
-	return "", fmt.Errorf("acp login: no session cookie in response")
+	return "", fmt.Errorf("acp login: no %s cookie in response", acpSessionCookieName)
 }
 
 // authWarmupBudget bounds how long Connect keeps re-dialing while the
@@ -335,19 +321,17 @@ func (c *ACPClient) connectOnce(ctx context.Context) error {
 	url := c.wsURL()
 	c.lg.Info().Str("url", url).Msg("acp connecting")
 
-	// Unified auth: log in first (if the bridge requires a password) and carry
-	// the session cookie on the WS handshake. A login failure while the bridge
-	// is still warming up is surfaced as an auth-warmup error so Connect retries.
-	var reqHeader http.Header
-	if c.password != "" {
-		cookie, err := bridgeLogin(ctx, c.host, c.port, c.password)
-		if err != nil {
-			return fmt.Errorf("Authentication required: %w", err)
-		}
-		if cookie != "" {
-			reqHeader = http.Header{"Cookie": []string{cookie}}
-		}
+	// Unified auth: log in first and carry the session cookie on the WS
+	// handshake. A login failure while the bridge is still warming up is
+	// surfaced as an auth-warmup error so Connect retries.
+	if c.password == "" {
+		return errBridgePasswordRequired
 	}
+	cookie, err := bridgeLogin(ctx, c.host, c.port, c.password)
+	if err != nil {
+		return fmt.Errorf("Authentication required: %w", err)
+	}
+	reqHeader := http.Header{"Cookie": []string{cookie}}
 
 	dialer := websocket.Dialer{HandshakeTimeout: 30 * time.Second}
 	conn, _, err := dialer.DialContext(ctx, url, reqHeader)
@@ -562,7 +546,7 @@ func (c *ACPClient) Close() {
 }
 
 // drainEvents discards any buffered frames left over from a previous turn so a
-// new prompt starts from a clean slate. The cursor-acp bridge multiplexes every
+// new prompt starts from a clean slate. The acp-bridge multiplexes every
 // turn of a reused session over one connection and one buffered channel;
 // trailing/meta frames (or a stale prompt_done) from a prior turn would
 // otherwise bleed into and scramble the next turn's aggregated narration.
@@ -682,15 +666,16 @@ func parseQueueBusy(raw json.RawMessage) (busy, ok bool) {
 }
 
 // WaitForACPReady polls the bridge WebSocket until it accepts a connection.
-// When password is non-empty the bridge requires auth, so each probe logs in
-// (POST /api/login) and dials /ws with the returned session cookie — matching
-// the ACP client's handshake so a password-protected bridge is still detected
-// as ready. Empty password preserves the legacy unauthenticated probe.
+// Each probe logs in (POST /api/login) and dials /ws with the returned session
+// cookie, matching the ACP client's handshake. An empty password is an error.
 func WaitForACPReady(ctx context.Context, host string, port int, password string, maxWait time.Duration) error {
 	if host == "" {
 		host = "127.0.0.1"
 	}
 	password = strings.TrimSpace(password)
+	if password == "" {
+		return errBridgePasswordRequired
+	}
 	deadline := time.Now().Add(maxWait)
 	url := fmt.Sprintf("ws://%s:%d/ws", host, port)
 	for time.Now().Before(deadline) {
@@ -699,18 +684,9 @@ func WaitForACPReady(ctx context.Context, host string, port int, password string
 			return ctx.Err()
 		default:
 		}
-		var reqHeader http.Header
-		ok := true
-		if password != "" {
-			if cookie, err := bridgeLogin(ctx, host, port, password); err != nil {
-				ok = false
-			} else if cookie != "" {
-				reqHeader = http.Header{"Cookie": []string{cookie}}
-			}
-		}
-		if ok {
+		if cookie, err := bridgeLogin(ctx, host, port, password); err == nil {
 			dialer := websocket.Dialer{HandshakeTimeout: 3 * time.Second}
-			conn, _, err := dialer.DialContext(ctx, url, reqHeader)
+			conn, _, err := dialer.DialContext(ctx, url, http.Header{"Cookie": []string{cookie}})
 			if err == nil {
 				_ = conn.Close()
 				return nil

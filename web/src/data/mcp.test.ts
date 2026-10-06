@@ -56,7 +56,7 @@ const CATALOG = [
   {
     id: 'pm-agent-fs',
     scope: 'project' as const,
-    toolCount: 14,
+    toolCount: 12,
     writeTools: [
       'pm_fs_write',
       'pm_fs_delete',
@@ -64,8 +64,6 @@ const CATALOG = [
       'pm_fs_rename',
       'pm_fs_restore',
       'pm_create_agent_from_template',
-      'pm_set_org_membership',
-      'pm_ensure_child_group',
     ],
   },
   {
@@ -139,10 +137,6 @@ describe('BUILTIN_MCPS artifact-store catalog', () => {
 })
 
 describe('BUILTIN_MCPS platform catalog', () => {
-  it('does not expose legacy pm-leader', () => {
-    expect(BUILTIN_MCPS.find((m) => m.id === 'pm-leader')).toBeUndefined()
-  })
-
   it.each(CATALOG)('$id has expected scope, tools, and write set', (entry) => {
     const mcp = BUILTIN_MCPS.find((m) => m.id === entry.id)
     expect(mcp).toBeDefined()

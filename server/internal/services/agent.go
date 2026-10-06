@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -111,14 +112,28 @@ const (
 	AcpBackendOpenCode   = "opencode"
 )
 
-// NormalizeAcpBackend coerces unknown/empty values to cursor.
+// ErrInvalidAcpBackend is returned when a required acpBackend is empty or unknown.
+var ErrInvalidAcpBackend = errors.New("invalid acpBackend")
+
+// NormalizeAcpBackend returns the trimmed backend when it is known, else "".
 func NormalizeAcpBackend(raw string) string {
 	switch strings.TrimSpace(raw) {
 	case AcpBackendCursor, AcpBackendClaudeCode, AcpBackendCodeBuddy, AcpBackendTrae, AcpBackendOpenCode:
 		return strings.TrimSpace(raw)
 	default:
-		return AcpBackendCursor
+		return ""
 	}
+}
+
+// ParseAcpBackend validates a required acpBackend.
+func ParseAcpBackend(raw string) (string, error) {
+	if b := NormalizeAcpBackend(raw); b != "" {
+		return b, nil
+	}
+	if strings.TrimSpace(raw) == "" {
+		return "", fmt.Errorf("%w: acpBackend is required", ErrInvalidAcpBackend)
+	}
+	return "", fmt.Errorf("%w: unknown acpBackend %q", ErrInvalidAcpBackend, strings.TrimSpace(raw))
 }
 
 // Allowed Agent-level git credential contracts (Studio UI metadata).
@@ -161,25 +176,16 @@ func DefaultConfigRootForBackend(backend string) string {
 // tree) plus the MCP servers and environment variables it runs with.
 type Agent struct {
 	Name string `json:"name"`
-	// ProjectID is the Agent's single home project. Empty means unbound. When
-	// unbound the Agent may only use the run-scoped artifact-store; the
-	// project-scoped platform MCPs (memory-store / context-store /
-	// task-scheduler) are rejected at save time and never injected at runtime.
-	// Switching or clearing this field purges the Agent's data under the old
-	// project (see PmService.PurgeAgentProjectData).
+	// ProjectID is the Agent's single home project (required). Switching it
+	// purges the Agent's data under the old project (see
+	// PmService.PurgeAgentProjectData).
 	ProjectID string `json:"projectId,omitempty"`
 	// AcpBackend selects the ACP bridge (cursor | claude_code | codebuddy | trae | opencode).
-	// Empty defaults to cursor for backward compatibility.
-	AcpBackend string `json:"acpBackend,omitempty"`
+	// Required on save.
+	AcpBackend string `json:"acpBackend"`
 	// GitCredentialType is the Agent-level credential contract selected in Studio.
 	// Runtime writes GitHub/GitLab/SSH by "configured → write"; this field is UI hint only.
 	GitCredentialType string `json:"gitCredentialType,omitempty"`
-	// GitSshKnownHosts is known_hosts literal text (may contain newlines). Stored as
-	// meta, never ${vars.*}; injected as a file before git clone.
-	GitSshKnownHosts string `json:"gitSshKnownHosts,omitempty"`
-	// GitSshPrivateKey is the SSH private key literal. Stored as meta, never
-	// ${vars.*}; injected as ~/.ssh/id_rsa (600) before git clone.
-	GitSshPrivateKey string `json:"gitSshPrivateKey,omitempty"`
 	// Files is the agent's working directory, copied into ConfigRoot at run.
 	Files []AgentFile `json:"files"`
 	// MCP lists the MCP servers wired into the sandbox for this agent.
@@ -200,8 +206,6 @@ type agentConfig struct {
 	ProjectID         string                    `json:"projectId,omitempty"`
 	AcpBackend        string                    `json:"acpBackend,omitempty"`
 	GitCredentialType string                    `json:"gitCredentialType,omitempty"`
-	GitSshKnownHosts  string                    `json:"gitSshKnownHosts,omitempty"`
-	GitSshPrivateKey  string                    `json:"gitSshPrivateKey,omitempty"`
 	MCP               []MCPServer               `json:"mcp,omitempty"`
 	Env               map[string]string         `json:"env,omitempty"`
 	Layout            *AgentLayout              `json:"layout,omitempty"`
@@ -251,10 +255,10 @@ func (s *AgentService) Get(name string) (Agent, bool) {
 		layout = *cfg.Layout
 	}
 	backend := NormalizeAcpBackend(cfg.AcpBackend)
-	layout = layout.withDefaults()
-	if strings.TrimSpace(layout.ConfigRoot) == DefaultConfigRoot && backend != AcpBackendCursor {
+	if strings.TrimSpace(layout.ConfigRoot) == "" {
 		layout.ConfigRoot = DefaultConfigRootForBackend(backend)
 	}
+	layout = layout.withDefaults()
 	env := cfg.Env
 	if env == nil {
 		env = map[string]string{}
@@ -264,8 +268,6 @@ func (s *AgentService) Get(name string) (Agent, bool) {
 		ProjectID:         strings.TrimSpace(cfg.ProjectID),
 		AcpBackend:        backend,
 		GitCredentialType: normalizeGitCredentialType(cfg.GitCredentialType),
-		GitSshKnownHosts:  cfg.GitSshKnownHosts,
-		GitSshPrivateKey:  cfg.GitSshPrivateKey,
 		Files:             s.readFiles(name),
 		MCP:               cfg.MCP,
 		Env:               env,
@@ -365,27 +367,6 @@ func (s *AgentService) readConfig(name string) agentConfig {
 	return cfg
 }
 
-// UpdateProjectID writes only agent.json.projectId. Unlike Save it does not
-// RemoveAll(workspace), rewrite files, or touch MCP / env / layout / prompts.
-// Used by group-level assign so unrelated drafts and workspace stay intact.
-func (s *AgentService) UpdateProjectID(name, projectID string) error {
-	n := sanitize(name)
-	if n == "" {
-		return fmt.Errorf("invalid agent name")
-	}
-	if !s.Exists(n) {
-		return fmt.Errorf("agent %q not found", name)
-	}
-	dir := filepath.Join(s.root, n)
-	cfg := s.readConfig(n)
-	cfg.ProjectID = strings.TrimSpace(projectID)
-	b, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dir, "agent.json"), b, 0o644)
-}
-
 // Save writes an agent's working-dir tree + config, creating it if needed. The
 // workspace/ tree is fully rewritten so removed files disappear from disk.
 func (s *AgentService) Save(a Agent) error {
@@ -404,16 +385,18 @@ func (s *AgentService) saveUnlocked(a Agent) error {
 			return err
 		}
 	}
-	if err := ValidateAgentSSHMeta(a.GitSshKnownHosts, a.GitSshPrivateKey); err != nil {
+	if err := RejectSecretEnvKeys(a.Env); err != nil {
 		return err
 	}
-	StripSSHEnvKeys(a.Env)
 	dir := filepath.Join(s.root, name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
+	backend, err := ParseAcpBackend(a.AcpBackend)
+	if err != nil {
+		return err
+	}
 	layout := a.Layout.withDefaults()
-	backend := NormalizeAcpBackend(a.AcpBackend)
 	if strings.TrimSpace(a.Layout.ConfigRoot) == "" {
 		layout.ConfigRoot = DefaultConfigRootForBackend(backend)
 	}
@@ -421,8 +404,6 @@ func (s *AgentService) saveUnlocked(a Agent) error {
 		ProjectID:         strings.TrimSpace(a.ProjectID),
 		AcpBackend:        backend,
 		GitCredentialType: normalizeGitCredentialType(a.GitCredentialType),
-		GitSshKnownHosts:  a.GitSshKnownHosts,
-		GitSshPrivateKey:  a.GitSshPrivateKey,
 		MCP:               a.MCP,
 		Env:               a.Env,
 		Layout:            &layout,
@@ -529,7 +510,6 @@ func (s *AgentService) WorkDir(name string) string {
 }
 
 // sanitize prevents path traversal in agent names (no ReplaceAll("..","") incomplete sanitization).
-// Path layer accepts Unicode L/N + `._-` so legacy dotted names (e.g. clarify.v1) still resolve.
 // Write-identity rules (Create/Rename targets) live in NormalizeAndValidateAgentName.
 func sanitize(name string) string {
 	return sanitizeAgentPath(name)

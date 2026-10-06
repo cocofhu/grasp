@@ -52,12 +52,6 @@ func TestPmLeaderBindingMemoryAndThreadGate(t *testing.T) {
 		t.Fatalf("get binding: %d", w.Code)
 	}
 
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/memories", map[string]any{
-		"title": "背景", "content": "Go 项目",
-	})
-	if w.Code != 200 {
-		t.Fatalf("upsert memory: %d %s", w.Code, w.Body.String())
-	}
 	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/memories", nil)
 	if w.Code != 200 {
 		t.Fatalf("list memories: %d", w.Code)
@@ -68,7 +62,7 @@ func TestPmLeaderBindingMemoryAndThreadGate(t *testing.T) {
 		t.Fatalf("create thread while disabled want 409 got %d %s", w.Code, w.Body.String())
 	}
 
-	if err := hn.h.Agents.Save(services.Agent{Name: "pm-demo", ProjectID: pid}); err != nil {
+	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-demo", ProjectID: pid}); err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
 	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/pm-leader", map[string]any{
@@ -134,11 +128,6 @@ func TestPmLeaderBindingMemoryAndThreadGate(t *testing.T) {
 	if patched["status"] != "ok" {
 		t.Fatalf("cleared status=%v", patched["status"])
 	}
-
-	w = hn.do(http.MethodDelete, "/api/projects/"+pid+"/pm/memories", nil)
-	if w.Code != 200 {
-		t.Fatalf("clear memories: %d %s", w.Code, w.Body.String())
-	}
 }
 
 func setupPmTurnThread(t *testing.T, hn *harness, name string) (pm *services.PmService, pid, tid string) {
@@ -156,7 +145,7 @@ func setupPmTurnThread(t *testing.T, hn *harness, name string) (pm *services.PmS
 	var proj map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &proj)
 	pid = proj["id"].(string)
-	if err := hn.h.Agents.Save(services.Agent{Name: "pm-" + name, ProjectID: pid}); err != nil {
+	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-" + name, ProjectID: pid}); err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
 	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/pm-leader", map[string]any{
@@ -222,6 +211,7 @@ func (stubPmChat) Cancel(uint) {}
 func TestStartPmTurnQueuesAndRetry(t *testing.T) {
 	hn := newHarness(t)
 	pm, pid, tid := setupPmTurnThread(t, hn, "TurnQueue")
+	hn.fg.FailCreate = true
 	runner := services.NewPmTurnRunner(pm, nil)
 	runner.SetChatterForTest(stubPmChat{})
 	hn.h.PmTurns = runner
@@ -304,14 +294,6 @@ func TestPmLeaderNonAdminForbidden(t *testing.T) {
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("non-admin pm-leader update want 200 got %d %s", w.Code, w.Body.String())
-	}
-
-	// Memory human writes remain admin-only.
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/memories", map[string]any{
-		"title": "x", "content": "y",
-	})
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("non-admin memory want 403 got %d", w.Code)
 	}
 }
 
@@ -821,7 +803,7 @@ func setupPmEnabledHarness(t *testing.T) (*harness, string, string) {
 	_ = json.Unmarshal(w.Body.Bytes(), &proj)
 	pid := proj["id"].(string)
 	// A PM Leader must have this project as its home project (Agent↔project binding).
-	if err := hn.h.Agents.Save(services.Agent{Name: "pm-agent", ProjectID: pid, Env: map[string]string{"GRASP_CURSOR_API_KEY": "test-key"}}); err != nil {
+	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-agent", ProjectID: pid}); err != nil {
 		t.Fatal(err)
 	}
 	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/pm-leader", map[string]any{
@@ -831,48 +813,6 @@ func setupPmEnabledHarness(t *testing.T) (*harness, string, string) {
 		t.Fatalf("enable pm: %d %s", w.Code, w.Body.String())
 	}
 	return hn, pid, ""
-}
-
-func TestPmMemoryUpdateDeleteAndWritePmErr(t *testing.T) {
-	hn, pid, _ := setupPmEnabledHarness(t)
-
-	w := hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/memories", map[string]any{
-		"title": "背景", "content": "Go 项目",
-	})
-	if w.Code != 200 {
-		t.Fatalf("upsert: %d %s", w.Code, w.Body.String())
-	}
-	var mem map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &mem)
-	mid := mem["id"].(string)
-
-	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/pm/memories/"+mid, map[string]any{
-		"title": "更新", "content": "新内容",
-	})
-	if w.Code != 200 {
-		t.Fatalf("update: %d %s", w.Code, w.Body.String())
-	}
-	var updated map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &updated)
-	if updated["content"] != "新内容" {
-		t.Fatalf("updated=%v", updated)
-	}
-
-	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/pm/memories/missing-id", map[string]any{
-		"title": "x", "content": "y",
-	})
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("update missing want 404 got %d", w.Code)
-	}
-
-	w = hn.do(http.MethodDelete, "/api/projects/"+pid+"/pm/memories/"+mid, nil)
-	if w.Code != 200 {
-		t.Fatalf("delete: %d %s", w.Code, w.Body.String())
-	}
-	w = hn.do(http.MethodDelete, "/api/projects/"+pid+"/pm/memories/"+mid, nil)
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("delete twice want 404 got %d", w.Code)
-	}
 }
 
 func TestPmThreadCRUDAndMessages(t *testing.T) {
@@ -955,16 +895,6 @@ func TestPatchPmMessageFailureMetadata(t *testing.T) {
 	})
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("patch missing want 404 got %d", w.Code)
-	}
-}
-
-func TestPmUpsertMemoryBadRequest(t *testing.T) {
-	hn, pid, _ := setupPmEnabledHarness(t)
-	w := hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/memories", map[string]any{
-		"title": "", "content": "",
-	})
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("empty memory want 400 got %d %s", w.Code, w.Body.String())
 	}
 }
 

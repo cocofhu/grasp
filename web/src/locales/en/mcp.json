@@ -97,14 +97,6 @@
           "signature": "get_root_cause() -> root_cause.json",
           "desc": "Read root cause JSON"
         },
-        "set_proposals": {
-          "signature": "set_proposals(context, proposals)",
-          "desc": "Mandatory on proposal nodes; on Grasp only when ≥2 real alternatives (no single-candidate pseudo-choice)"
-        },
-        "get_proposals": {
-          "signature": "get_proposals() -> proposals.json",
-          "desc": "Read the candidate proposal set"
-        },
         "set_test_result": {
           "signature": "set_test_result(summary, cases?, defects?, …)",
           "desc": "Test node only: write test summary to test_result.json"
@@ -128,6 +120,14 @@
         "get_implementation_result": {
           "signature": "get_implementation_result() -> implementation_result.json",
           "desc": "Read the implementation result summary"
+        },
+        "set_merge_request": {
+          "signature": "set_merge_request(summary, items)",
+          "desc": "Deliver node only: write merge requests to merge_request.json (one MR/PR per repo)"
+        },
+        "get_merge_request": {
+          "signature": "get_merge_request() -> merge_request.json",
+          "desc": "Read the merge request result"
         },
         "set_preview": {
           "signature": "set_preview(port?, url?, label?)",
@@ -377,13 +377,13 @@
     },
     "pmAgentFs": {
       "name": "pm-agent-fs",
-      "desc": "Project Management only · read org and edit report Agent workspaces",
-      "overview": "Read virtual groups and flat same-project member view (self/direct/other); list/read/write/delete/mkdir/rename host-side workspace/ for any same-project agent. Does not touch Run sandboxes or agent.json metadata.",
+      "desc": "Project Management only · list project agents and edit same-project agent workspaces",
+      "overview": "Lists every agent in the current project (self = this PM, other = other members) and runs list/read/write/delete/mkdir/rename on the host-side workspace/ of any same-project agent. Does not touch Run sandboxes or agent.json metadata.",
       "convention": "Enable under Project → Project Management settings (on by default for new projects; older projects with an explicit EnabledMcps list must opt in). Changes appear in Agent Studio「Agent workspace」after refresh/reopen (not live hot-reload). Warning: if Studio has an unsaved dirty draft for the same Agent, a later Save may overwrite MCP writes — refresh and avoid concurrent dirty edits.",
       "tools": {
-        "pm_get_org": {
-          "signature": "pm_get_org()",
-          "desc": "Read org and same-project members"
+        "pm_list_project_agents": {
+          "signature": "pm_list_project_agents()",
+          "desc": "List same-project agents"
         },
         "pm_list_agent_templates": {
           "signature": "pm_list_agent_templates()",
@@ -392,14 +392,6 @@
         "pm_create_agent_from_template": {
           "signature": "pm_create_agent_from_template(templateId, name)",
           "desc": "Create an engineer Agent from a template (same project; no overwrite)"
-        },
-        "pm_set_org_membership": {
-          "signature": "pm_set_org_membership(agentName, groupIds)",
-          "desc": "Set virtual group membership (groupIds must be in allow-list)"
-        },
-        "pm_ensure_child_group": {
-          "signature": "pm_ensure_child_group(name, parentGroupId?)",
-          "desc": "Idempotently ensure a child group under the authorized root"
         },
         "pm_fs_list": {
           "signature": "pm_fs_list(agentName, path?)",
@@ -463,7 +455,7 @@
       "name": "external-project-mcp",
       "desc": "Project external MCP · Bearer project API key · separate from internal PM Leader",
       "overview": "After enabling external MCP, selecting packs, and creating a project API key under Project detail → External MCP, external AI tools (Cursor/Claude, etc.) can call the same five PM pack tool surfaces over HTTP MCP. Off by default; unauthorized or disabled packs are rejected for list/call.",
-      "convention": "Configure at Project detail → External MCP. Write scope: pm-workflow-write (workflows/runs/gates), pm-agent-fs (org + agent workspace FS), pm-prd-manager (create draft only); pm-progress and pm-workflow-read are read-only. Does not cover PM Leader binding, human collaborators, or Run sandbox files.",
+      "convention": "Configure at Project detail → External MCP. Write scope: pm-workflow-write (workflows/runs/gates), pm-agent-fs (project agents + agent workspace FS), pm-prd-manager (create draft only); pm-progress and pm-workflow-read are read-only. Does not cover PM Leader binding, human collaborators, or Run sandbox files.",
       "entryPath": "Project detail → External MCP"
     }
   }

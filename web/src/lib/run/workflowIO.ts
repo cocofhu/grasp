@@ -106,17 +106,14 @@ export function collectAgentProfiles(nodes: WFNode[]): string[] {
 
 export type AgentProfileIssue = {
   name: string
-  /** missing = not found / deleted; foreign = unbound or other project */
+  /** missing = not found / deleted; foreign = belongs to another project */
   reason: 'missing' | 'foreign'
 }
 
-/**
- * Return agent_profile refs that are missing or not bound to the workflow project.
- * Unbound Agents (empty projectId) count as foreign.
- */
+/** Return agent_profile refs that are missing or belong to another project. */
 export function agentProfileIssues(
   nodes: WFNode[],
-  agents: { name: string; projectId?: string }[],
+  agents: { name: string; projectId: string }[],
   projectId?: string,
 ): AgentProfileIssue[] {
   const byName = new Map(agents.map((a) => [a.name, a]))
@@ -128,8 +125,7 @@ export function agentProfileIssues(
       out.push({ name, reason: 'missing' })
       continue
     }
-    const home = String(a.projectId || '').trim()
-    if (!home || !pid || home !== pid) {
+    if (a.projectId !== pid) {
       out.push({ name, reason: 'foreign' })
     }
   }

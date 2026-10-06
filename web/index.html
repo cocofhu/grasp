@@ -74,15 +74,6 @@
       ;(function () {
         try {
           var saved = localStorage.getItem('grasp-locale')
-          if (!saved) {
-            saved = localStorage.getItem('approving-locale')
-            if (saved) {
-              try {
-                localStorage.setItem('grasp-locale', saved)
-                localStorage.removeItem('approving-locale')
-              } catch (_) {}
-            }
-          }
           var lang = (saved || navigator.language || 'zh-CN').toLowerCase()
           var en = lang === 'en' || (lang.startsWith('en') && !lang.startsWith('zh'))
           if (en) {

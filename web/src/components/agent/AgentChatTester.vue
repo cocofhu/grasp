@@ -37,7 +37,7 @@ const props = defineProps<{
   profile: string
   attachId?: number
   embedded?: boolean
-  /** Agent home project id from Studio; empty = unbound (no task-scheduler). */
+  /** Agent home project id from Studio; omitted when attaching via attachId. */
   homeProjectId?: string
   /**
    * Required override for starting a test sandbox (project shared-config dialogue test).
@@ -117,7 +117,6 @@ const acpBusy = computed(() => status.value === 'thinking')
 const acpConnected = computed(() => status.value === 'ready' || status.value === 'thinking')
 
 const validRepos = computed(() => repos.value.filter((r) => r.name.trim() && r.url.trim()))
-const isHomeProjectBound = computed(() => !!props.homeProjectId?.trim())
 const canStart = computed(
   () => launchMode.value === 'empty' || validRepos.value.length > 0,
 )
@@ -612,7 +611,7 @@ async function loadEarlierHistory() {
   }
 }
 
-// applyAcp tolerantly parses a cursor-acp event frame ({op:"event",data:{type,update}}).
+// applyAcp tolerantly parses an acp-bridge event frame ({op:"event",data:{type,update}}).
 function applyAcp(envelope: any, turn: Turn) {
   const ev = envelope?.data ?? envelope
   if (!ev || ev.type !== 'session_update' || !ev.update) return
@@ -811,18 +810,6 @@ onBeforeUnmount(() => {
 
     <!-- idle: mode cards + repos editor -->
     <div v-if="status === 'idle'" class="flex flex-1 flex-col items-center justify-center gap-5 p-6">
-      <div
-        v-if="!isHomeProjectBound"
-        class="flex w-full max-w-lg items-start gap-2.5 rounded-md border border-warn/40 bg-warn/10 px-3 py-2.5 text-left"
-        role="alert"
-      >
-        <Icon name="alert" :size="16" class="mt-0.5 shrink-0 text-warn" />
-        <div>
-          <p class="text-[12.5px] font-semibold text-warn">{{ t('pages.agentChatTester.projectRequired.title') }}</p>
-          <p class="mt-0.5 text-[12px] leading-relaxed text-txt2">{{ t('pages.agentChatTester.projectRequired.desc') }}</p>
-        </div>
-      </div>
-
       <div class="max-w-lg text-center">
         <Icon name="robot" :size="32" class="mx-auto text-txt3" />
         <p class="mt-3 text-[13px] text-txt3">

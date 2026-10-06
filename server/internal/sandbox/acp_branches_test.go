@@ -27,7 +27,7 @@ func silentConnectServer(t *testing.T, onChat func(conn *websocket.Conn)) (strin
 func TestChatStreamIdleAndConnClosed(t *testing.T) {
 	// Idle: server sends nothing on chat.
 	h, p := silentConnectServer(t, nil)
-	c := NewACPClient(h, p).WithIdleTimeout(50 * time.Millisecond)
+	c := NewACPClient(h, p).WithPassword(testBridgePassword).WithIdleTimeout(50 * time.Millisecond)
 	if err := c.Connect(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestChatStreamIdleAndConnClosed(t *testing.T) {
 
 func TestChatStreamResultIdleAndCtx(t *testing.T) {
 	h, p := silentConnectServer(t, nil)
-	c := NewACPClient(h, p).WithIdleTimeout(50 * time.Millisecond)
+	c := NewACPClient(h, p).WithPassword(testBridgePassword).WithIdleTimeout(50 * time.Millisecond)
 	if err := c.Connect(context.Background()); err != nil {
 		t.Fatal(err)
 	}

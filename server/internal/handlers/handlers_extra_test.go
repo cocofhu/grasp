@@ -119,7 +119,7 @@ func TestWorkflowImportCopyAndVersionGraph(t *testing.T) {
 	if w := h.do("POST", "/api/workflows/"+id+"/publish", nil); w.Code != 200 {
 		t.Fatalf("publish: %d", w.Code)
 	}
-	if w := h.do("GET", "/api/workflows/"+id+"/versions/2/graph", nil); w.Code != 200 {
+	if w := h.do("GET", "/api/workflows/"+id+"/versions/1/graph", nil); w.Code != 200 {
 		t.Fatalf("version graph: %d %s", w.Code, w.Body)
 	}
 	if w := h.do("GET", "/api/workflows/"+id+"/versions/bad/graph", nil); w.Code != 400 {

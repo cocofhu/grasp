@@ -59,41 +59,23 @@ func TestRunTurnIgnoresOtherOpFrames(t *testing.T) {
 	}
 }
 
-// Once the bridge is known to tag frames, untagged events are not ours.
-func TestRunTurnStrictAfterTaggedFrame(t *testing.T) {
+// Untagged event frames are never part of a turn.
+func TestRunTurnIgnoresUntaggedEvents(t *testing.T) {
 	h, p := wsServer(t, func(conn *websocket.Conn, op string, msg map[string]any) {
 		switch op {
 		case "connect":
 			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "s"})
 		case "chat":
-			mine, _ := msg["opId"].(string)
-			_ = conn.WriteJSON(tagged(chunkFrame("a"), mine))
-			_ = conn.WriteJSON(doneFrame()) // untagged: ignored
-			_ = conn.WriteJSON(tagged(chunkFrame("b"), mine))
-			_ = conn.WriteJSON(tagged(doneFrame(), mine))
-		}
-	})
-	c := connectAndClient(t, h, p)
-	res, err := c.ChatStructured(context.Background(), "hi", nil)
-	if err != nil || res.Narration != "ab" {
-		t.Fatalf("res=%+v err=%v", res, err)
-	}
-}
-
-// Legacy bridge (no opId anywhere) keeps working.
-func TestRunTurnLegacyBridge(t *testing.T) {
-	h, p := wsServer(t, func(conn *websocket.Conn, op string, _ map[string]any) {
-		switch op {
-		case "connect":
-			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "s"})
-		case "chat":
-			_ = conn.WriteJSON(chunkFrame("legacy"))
+			_ = conn.WriteJSON(chunkFrame("a"))
+			_ = conn.WriteJSON(untagged(chunkFrame("x")))
+			_ = conn.WriteJSON(untagged(doneFrame()))
+			_ = conn.WriteJSON(chunkFrame("b"))
 			_ = conn.WriteJSON(doneFrame())
 		}
 	})
 	c := connectAndClient(t, h, p)
 	res, err := c.ChatStructured(context.Background(), "hi", nil)
-	if err != nil || res.Narration != "legacy" {
+	if err != nil || res.Narration != "ab" {
 		t.Fatalf("res=%+v err=%v", res, err)
 	}
 }

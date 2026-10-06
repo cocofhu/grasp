@@ -4,7 +4,6 @@ import {
   isVisualHtmlCard,
   looksLikeFullHtmlDocument,
   parseOutputCardDoc,
-  visualHtmlArtifactName,
 } from './isVisualHtmlCard'
 
 const PAGE_HTML = `<!doctype html>
@@ -45,41 +44,21 @@ describe('looksLikeFullHtmlDocument', () => {
   })
 })
 
-describe('visualHtmlArtifactName', () => {
-  it('prefers artifactName then structuredArtifactName', () => {
-    expect(visualHtmlArtifactName({ artifactName: 'a.html', structuredArtifactName: 'page.html' })).toBe(
-      'a.html',
-    )
-    expect(visualHtmlArtifactName({ structuredArtifactName: 'page.html' })).toBe('page.html')
-    expect(visualHtmlArtifactName({})).toBeUndefined()
-  })
-})
-
 describe('isVisualHtmlCard (g1.1 three rules + structured JSON exclusion)', () => {
   it('hits outputKey=page', () => {
     expect(isVisualHtmlCard({ outputKey: 'page', markdown: 'not html' })).toBe(true)
   })
 
-  it('hits artifactName / structuredArtifactName .html and .htm', () => {
+  it('hits artifactName .html and .htm', () => {
     expect(isVisualHtmlCard({ artifactName: 'page.html' })).toBe(true)
-    expect(isVisualHtmlCard({ structuredArtifactName: 'page.html' })).toBe(true)
-    expect(isVisualHtmlCard({ artifactName: 'legacy.htm' })).toBe(true)
+    expect(isVisualHtmlCard({ artifactName: 'report.htm' })).toBe(true)
+    expect(isVisualHtmlCard({ structuredArtifactName: 'page.html' })).toBe(false)
   })
 
   it('sniffs available body (markdown or fetched artifact)', () => {
     expect(isVisualHtmlCard({ markdown: PAGE_HTML })).toBe(true)
     expect(isVisualHtmlCard({ markdown: 'hello' }, { artifactHtml: PAGE_HTML })).toBe(true)
     expect(isVisualHtmlCard({ markdown: '<div>only fragment</div>' })).toBe(false)
-  })
-
-  it('legacy typeTag=结构化产物 + structuredArtifactName=page.html + HTML markdown', () => {
-    expect(
-      isVisualHtmlCard({
-        outputKey: 'page',
-        structuredArtifactName: 'page.html',
-        markdown: PAGE_HTML,
-      }),
-    ).toBe(true)
   })
 
   it('does not misclassify parseable structured JSON (non-html name)', () => {
@@ -91,15 +70,5 @@ describe('isVisualHtmlCard (g1.1 three rules + structured JSON exclusion)', () =
     expect(parseOutputCardDoc(card)).toEqual({ summary: 'ok', findings: [] })
     expect(isVisualHtmlCard(card)).toBe(false)
     expect(isVisualHtmlCard(card, { parsedDoc: { summary: 'ok' } })).toBe(false)
-  })
-
-  it('still treats structuredArtifactName=page.html as visual even if json parses', () => {
-    expect(
-      isVisualHtmlCard({
-        structuredArtifactName: 'page.html',
-        jsonSnapshot: '{"oops":true}',
-        markdown: PAGE_HTML,
-      }),
-    ).toBe(true)
   })
 })

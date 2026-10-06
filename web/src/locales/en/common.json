@@ -68,7 +68,6 @@
       "export": "Export",
       "import": "Import",
       "delete": "Delete",
-      "rollback": "Rollback",
       "details": "Details",
       "close": "Close",
       "viewAll": "View all →",
@@ -105,7 +104,6 @@
       "saving": "Saving…",
       "publishing": "Publishing…",
       "starting": "Starting…",
-      "rollingBack": "Rolling back…",
       "resuming": "Resuming…",
       "destroying": "Destroying…",
       "cleaning": "Cleaning…"
@@ -172,9 +170,7 @@
       "noMatchingWorkflows": "No matching workflows",
       "noMatchingAgents": "No matching Agents",
       "noArtifacts": "No artifacts",
-      "noArtifactsInGroup": "No artifacts in this group",
       "selectWorkflowGroup": "Select a workflow group on the left",
-      "noMatchingGroups": "No matching groups",
       "noMatchingOptions": "No matching options",
       "noSandboxes": "No sandboxes yet. Node sandboxes are created when workflows run, or start a test sandbox under Agent Studio → Chat test.",
       "noAgents": "No agents yet. Click New agent, or the backend seeds a default on first start.",
@@ -227,11 +223,10 @@
       "clarifiedRequirement": "Clarified requirement",
       "research": "Research",
       "rootCause": "Root Cause",
-      "proposals": "Candidate proposals",
-      "proposal": "Selected proposal",
       "testResult": "Test result",
       "review": "Review",
       "implementationResult": "Implementation result",
+      "mergeRequest": "Merge request",
       "preflight": "Preflight",
       "pagePreview": "Web preview",
       "artifact": "Artifact",
@@ -271,6 +266,14 @@
       "searchPlaceholder": "Search projects…",
       "empty": "No projects yet",
       "loadFailed": "Failed to load projects"
+    },
+    "projectTree": {
+      "searchPlaceholder": "Search projects…",
+      "clearSearch": "Clear search",
+      "empty": "No projects yet",
+      "noMatch": "No projects match “{q}”",
+      "expand": "Expand",
+      "collapse": "Collapse"
     },
     "tagFilter": {
       "label": "Tags",

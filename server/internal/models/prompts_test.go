@@ -6,7 +6,7 @@ import (
 )
 
 func TestSchemaContracts(t *testing.T) {
-	for _, s := range []string{SchemaClarifiedRequirement, SchemaPlan, SchemaResearch, SchemaRootCause, SchemaProposals,
+	for _, s := range []string{SchemaClarifiedRequirement, SchemaPlan, SchemaResearch, SchemaRootCause,
 		SchemaImplementationResult, SchemaTestResult, SchemaReview, SchemaPreflight, SchemaPage} {
 		if strings.TrimSpace(SchemaContract(s)) == "" {
 			t.Errorf("schema %s has no contract", s)

@@ -195,7 +195,7 @@ func newTestManager(fa *fakeAdapter) *Manager {
 
 func TestManagerDeliverNoChannel(t *testing.T) {
 	m := newTestManager(&fakeAdapter{})
-	if err := m.Deliver("nope", "hello"); err != ErrNoDeliveryChannel {
+	if err := m.DeliverCron(services.CronDelivery{ProjectID: "nope", Category: "cron", Kind: string(CronResultChanged), Text: "hello"}); err != ErrNoDeliveryChannel {
 		t.Fatalf("Deliver with no channel: got %v want ErrNoDeliveryChannel", err)
 	}
 }
@@ -238,7 +238,7 @@ func TestManagerDeliverSkipsDisabledDelivery(t *testing.T) {
 		CronDeliver: false, CronDeliverTarget: "guild:123",
 	}})
 	defer m.StopAll()
-	if err := m.Deliver("proj", "x"); err != ErrNoDeliveryChannel {
+	if err := m.DeliverCron(services.CronDelivery{ProjectID: "proj", Category: "cron", Kind: string(CronResultChanged), Text: "x"}); err != ErrNoDeliveryChannel {
 		t.Fatalf("got %v want ErrNoDeliveryChannel", err)
 	}
 }
@@ -270,7 +270,7 @@ func TestManagerDeliverRunNotifyWithoutCronDeliver(t *testing.T) {
 		t.Errorf("text=%q", fa.sent[0].Text)
 	}
 	// Cron path still blocked.
-	if err := m.Deliver("proj", "cron"); err != ErrNoDeliveryChannel {
+	if err := m.DeliverCron(services.CronDelivery{ProjectID: "proj", Category: "cron", Kind: string(CronResultChanged), Text: "cron"}); err != ErrNoDeliveryChannel {
 		t.Fatalf("Deliver cron still requires CronDeliver: %v", err)
 	}
 }

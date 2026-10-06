@@ -1,6 +1,8 @@
 package handlers_test
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -12,7 +14,17 @@ import (
 	"github.com/cocofhu/grasp/internal/services"
 )
 
+func setSecretsKey(t *testing.T) {
+	t.Helper()
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(crypto.SecretsKeyEnv, base64.StdEncoding.EncodeToString(b))
+}
+
 func TestBootstrapOnboardingAPI(t *testing.T) {
+	setSecretsKey(t)
 	hn := newHarness(t)
 	pid := models.DefaultProjectID
 
@@ -96,6 +108,7 @@ func TestBootstrapOnboardingAPI(t *testing.T) {
 }
 
 func TestCreateWorkflowFromBaselineAPI(t *testing.T) {
+	setSecretsKey(t)
 	hn := newHarness(t)
 	pid := models.DefaultProjectID
 
@@ -225,6 +238,36 @@ func TestBootstrapOnboardingWithoutSecretsKeyReturnsCode(t *testing.T) {
 		}
 		if code := jsonField(w.Body.String(), "code"); code != handlers.SecretsKeyMissingCode {
 			t.Fatalf("%s: code = %q, want %q", path, code, handlers.SecretsKeyMissingCode)
+		}
+	}
+}
+
+func TestBootstrapOnboardingWritesSSHToProjectCredentials(t *testing.T) {
+	setSecretsKey(t)
+	hn := newHarness(t)
+	pid := models.DefaultProjectID
+	w := hn.do("POST", "/api/projects/"+pid+"/bootstrap-onboarding", map[string]any{
+		"acpBackend":    "cursor",
+		"apiKey":        "crsr_test",
+		"sshPrivateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\nk\n-----END OPENSSH PRIVATE KEY-----",
+		"sshKnownHosts": "git.example.com ssh-ed25519 AAAA",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("bootstrap: %d %s", w.Code, w.Body.String())
+	}
+	env := hn.h.Onboarding.Credentials.ResolveEnv(pid)
+	if !strings.Contains(env[services.EnvGitSSHPrivateKey], "OPENSSH") || env[services.EnvGitSSHKnownHosts] != "git.example.com ssh-ed25519 AAAA" {
+		t.Fatalf("project credentials = %v", env)
+	}
+	var res services.OnboardingBootstrapResult
+	_ = json.Unmarshal(w.Body.Bytes(), &res)
+	for _, name := range res.AgentIDs {
+		ag, ok := hn.h.Agents.Get(name)
+		if !ok {
+			t.Fatalf("missing agent %s", name)
+		}
+		if _, ok := ag.Env[services.EnvGitSSHPrivateKey]; ok {
+			t.Fatalf("agent %s env carries SSH key", name)
 		}
 	}
 }

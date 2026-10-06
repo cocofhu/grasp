@@ -52,16 +52,17 @@ func TestNewProviderRegistryBuildsAllBackends(t *testing.T) {
 }
 
 // TestProviderRegistryRouting covers backendFor / providerFor resolution from a
-// agent_profile's agent.json acpBackend field, plus every fallback-to-cursor path.
+// agent_profile's agent.json acpBackend field; a missing or unknown backend is
+// an error, never a default.
 func TestProviderRegistryRouting(t *testing.T) {
 	root := t.TempDir()
 	writeProfileInto(t, root, "cur", `{"acpBackend":"cursor"}`)
 	writeProfileInto(t, root, "cc", `{"acpBackend":"claude_code"}`)
 	writeProfileInto(t, root, "cb", `{"acpBackend":"codebuddy"}`)
 	writeProfileInto(t, root, "tr", `{"acpBackend":"trae"}`)
-	writeProfileInto(t, root, "weird", `{"acpBackend":"nope"}`) // unknown → cursor
-	writeProfileInto(t, root, "nobackend", `{"env":{"X":"y"}}`) // absent field → cursor
-	writeProfileInto(t, root, "broken", `{not-json`)            // unparsable → cursor
+	writeProfileInto(t, root, "weird", `{"acpBackend":"nope"}`)
+	writeProfileInto(t, root, "nobackend", `{"env":{"X":"y"}}`)
+	writeProfileInto(t, root, "broken", `{not-json`)
 
 	host := mcp.NewHost(newMemStore())
 	reg := NewProviderRegistry(host, Options{ProfilesRoot: root})
@@ -74,50 +75,50 @@ func TestProviderRegistryRouting(t *testing.T) {
 		{"cc", BackendClaudeCode},
 		{"cb", BackendCodeBuddy},
 		{"tr", BackendTrae},
-		{"weird", BackendCursor},
-		{"nobackend", BackendCursor},
-		{"broken", BackendCursor},
-		{"does-not-exist", BackendCursor}, // missing dir → cursor
-		{"", BackendCursor},               // empty profile → cursor
-		{"sub/cc", BackendClaudeCode},     // filepath.Base strips traversal → cc
+		{"sub/cc", BackendClaudeCode}, // filepath.Base strips traversal → cc
 	}
 	for _, tc := range cases {
 		req := reqFor(tc.profile)
-		if got := reg.backendFor(req); got != tc.want {
-			t.Errorf("backendFor(%q) = %q, want %q", tc.profile, got, tc.want)
+		got, err := reg.backendFor(req)
+		if err != nil || got != tc.want {
+			t.Errorf("backendFor(%q) = %q, %v; want %q", tc.profile, got, err, tc.want)
 		}
-		p, ok := reg.providerFor(req).(*acpProvider)
-		if !ok {
-			t.Fatalf("providerFor(%q) not *acpProvider", tc.profile)
+		p, err := reg.providerFor(req)
+		if err != nil {
+			t.Fatalf("providerFor(%q): %v", tc.profile, err)
 		}
-		if p.backend != tc.want {
-			t.Errorf("providerFor(%q).backend = %q, want %q", tc.profile, p.backend, tc.want)
+		if cp := p.(*acpProvider); cp.backend != tc.want {
+			t.Errorf("providerFor(%q).backend = %q, want %q", tc.profile, cp.backend, tc.want)
+		}
+	}
+	for _, profile := range []string{"weird", "nobackend", "broken", "does-not-exist", ""} {
+		if b, err := reg.backendFor(reqFor(profile)); err == nil {
+			t.Errorf("backendFor(%q) = %q, want error", profile, b)
 		}
 	}
 }
 
 // TestProviderRegistryNoProfilesRoot: without a ProfilesRoot the registry can't
-// read agent.json, so every request routes to the cursor default.
+// read agent.json, so routing fails instead of guessing a backend.
 func TestProviderRegistryNoProfilesRoot(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	reg := NewProviderRegistry(host, Options{}) // no ProfilesRoot
-	if got := reg.backendFor(reqFor("anything")); got != BackendCursor {
-		t.Fatalf("no ProfilesRoot must route to cursor, got %q", got)
+	if _, err := reg.backendFor(reqFor("anything")); err == nil {
+		t.Fatal("no ProfilesRoot must fail routing")
 	}
 }
 
-// TestProviderRegistryProviderForMissingBackend guards providerFor's nil-map
-// fallback: an unregistered backend still yields the cursor provider.
+// TestProviderRegistryProviderForMissingBackend: an unregistered backend is an
+// error rather than a silent reroute.
 func TestProviderRegistryProviderForMissingBackend(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	reg := NewProviderRegistry(host, Options{})
-	delete(reg.providers, BackendTrae) // simulate a backend with no provider wired
+	delete(reg.providers, BackendTrae)
 	root := t.TempDir()
 	writeProfileInto(t, root, "tr", `{"acpBackend":"trae"}`)
 	reg.profilesRoot = root
-	p := reg.providerFor(reqFor("tr")).(*acpProvider)
-	if p.backend != BackendCursor {
-		t.Fatalf("missing-backend fallback = %q, want cursor", p.backend)
+	if _, err := reg.providerFor(reqFor("tr")); err == nil {
+		t.Fatal("missing backend provider must error")
 	}
 }
 

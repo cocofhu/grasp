@@ -9,7 +9,6 @@ export const CLARIFY_CAPS: AgentCapabilities = {
     { schema: 'clarified_requirement', required: true },
     { schema: 'plan', required: true },
     { schema: 'research' },
-    { schema: 'proposals' },
     { schema: 'root_cause' },
     { schema: 'page' },
   ],

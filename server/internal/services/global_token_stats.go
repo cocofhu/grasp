@@ -924,11 +924,7 @@ func aggregateGlobalRows(rows []globalTokenUsageRow, loc *time.Location, bucketW
 			}
 		}
 
-		by := row.byModel
-		if by == nil {
-			by = models.EffectiveUsageByModel(&row.usage, nil)
-		}
-		for mk, bu := range by {
+		for mk, bu := range row.byModel {
 			tot := bu.Total()
 			if tot <= 0 {
 				continue

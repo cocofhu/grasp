@@ -15,7 +15,13 @@ async function mockApi(
       await route.fulfill({ json: { issues } })
       return
     }
-    if (url.pathname.includes('/primary-artifacts') || url.pathname.includes('/gate/')) {
+    if (url.pathname.includes('/primary-artifacts')) {
+      await route.fulfill({
+        json: { items: [{ name: 'page.html', kind: 'html', readonly: false, nodeId: 'visual', outputKey: 'page' }] },
+      })
+      return
+    }
+    if (url.pathname.includes('/gate/')) {
       await route.fulfill({
         status: 400,
         json: { error: 'offline' },

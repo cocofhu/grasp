@@ -10,26 +10,45 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ListArtifacts pages one project's artifacts. projectId is required;
+// workflowId narrows to one workflow, session=1 to workflow-less artifacts.
 func (h *Handlers) ListArtifacts(c *gin.Context) {
-	wf := c.Query("wf")
-	projectID := c.Query("projectId")
+	f := services.ArtifactFilter{
+		ProjectID:  c.Query("projectId"),
+		WorkflowID: c.Query("workflowId"),
+		Session:    c.Query("session") == "1",
+		Q:          c.Query("q"),
+	}
+	if f.ProjectID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "projectId is required"})
+		return
+	}
+	if f.Session && f.WorkflowID != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "workflowId and session are mutually exclusive"})
+		return
+	}
 	pg, ok := parsePagination(c)
 	if !ok {
 		return
 	}
-	if !pg.Active {
-		c.JSON(http.StatusOK, h.Arts.All())
-		return
-	}
-	q := c.Query("q")
-
 	if c.Query("groupBy") == "run" {
-		arts, total := h.Arts.AllPageByRun(wf, projectID, pg.Page, pg.PageSize, q)
+		arts, total := h.Arts.AllPageByRun(f, pg.Page, pg.PageSize)
 		c.JSON(http.StatusOK, paginatedResponse(arts, int(total), pg.Page, pg.PageSize))
 		return
 	}
-	arts, total := h.Arts.AllPage(wf, projectID, pg.Page, pg.PageSize, q)
+	arts, total := h.Arts.AllPage(f, pg.Page, pg.PageSize)
 	c.JSON(http.StatusOK, paginatedResponse(arts, int(total), pg.Page, pg.PageSize))
+}
+
+// ArtifactTree returns per-project / per-workflow artifact counts for the
+// Artifacts page sidebar.
+func (h *Handlers) ArtifactTree(c *gin.Context) {
+	tree, err := h.Arts.Tree()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, tree)
 }
 
 // ArtifactContent returns a single artifact's full record including its
@@ -44,7 +63,7 @@ func (h *Handlers) ArtifactContent(c *gin.Context) {
 	content := a.Content
 	etag := engine.ArtifactETag(content, a.SizeBytes, a.UpdatedAt)
 	out := gin.H{
-		"id": a.ID, "runId": a.RunID, "nodeId": a.NodeID, "workflowId": a.WorkflowID, "workflowName": a.WorkflowName,
+		"id": a.ID, "runId": a.RunID, "nodeId": a.NodeID, "projectId": a.ProjectID, "workflowId": a.WorkflowID, "workflowName": a.WorkflowName,
 		"name": a.Name, "kind": a.Kind, "sizeBytes": a.SizeBytes,
 		"createdAt": a.CreatedAt, "content": content, "etag": etag,
 	}

@@ -52,7 +52,7 @@ describe('OnboardingTeamCard', () => {
 
     const en = mountCard('test_review', 'en')
     expect(en.text()).toContain('Test & review')
-    expect(en.text()).toContain('Human review after run')
+    expect(en.text()).toContain('Human review')
     expect(en.text()).toContain('No preview')
     expect(en.text()).toContain('Stage 3')
   })
@@ -79,7 +79,8 @@ describe('OnboardingWorkflowPreview', () => {
     })
     expect(w.find('[data-testid="onboarding-preview-node-input"]').text()).toContain('开始')
     expect(w.find('[data-testid="onboarding-preview-node-output"]').text()).toContain('结束')
-    expect(w.find('[data-testid="onboarding-preview-edge-test_review-output"]').text()).toBe('通过')
+    expect(w.find('[data-testid="onboarding-preview-edge-test_review-deliver"]').text()).toBe('通过')
+    expect(w.find('[data-testid="onboarding-preview-node-deliver"]').text()).toContain('交付')
     expect(w.find('[data-testid="onboarding-preview-edge-test_review-implement-fail"]').text()).toBe('未通过')
     expect(w.findAll('path[stroke-dasharray]')).toHaveLength(1)
   })

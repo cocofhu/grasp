@@ -68,7 +68,6 @@ import {
 } from './useHomeApproveChat'
 import {
   HOME_COMPOSER_DRAFT_KEY,
-  __resetHomeComposerDraftMigrationForTests,
   saveHomeComposerDraft,
   loadHomeComposerDraft,
 } from './homeComposerDraft'
@@ -164,7 +163,6 @@ describe('useHomeApproveChat', () => {
     })
     mocks.reactReply.mockResolvedValue({ status: 'ok' })
     __setDraftIdbBackendForTests(createMemoryDraftIdb())
-    __resetHomeComposerDraftMigrationForTests()
     localStorage.removeItem(HOME_WORKFLOW_MEMORY_KEY)
     localStorage.removeItem(HOME_PRIORITY_MEMORY_KEY)
     localStorage.removeItem(HOME_COMPOSER_DRAFT_KEY)
@@ -173,7 +171,6 @@ describe('useHomeApproveChat', () => {
   afterEach(() => {
     vi.useRealTimers()
     __resetDraftIdbForTests()
-    __resetHomeComposerDraftMigrationForTests()
     localStorage.removeItem(HOME_WORKFLOW_MEMORY_KEY)
     localStorage.removeItem(HOME_PRIORITY_MEMORY_KEY)
     localStorage.removeItem(HOME_COMPOSER_DRAFT_KEY)
@@ -181,6 +178,7 @@ describe('useHomeApproveChat', () => {
 
   it('filters to published clarify-first workflows', async () => {
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     expect(chat.homeWorkflows.value.map((w) => w.id)).toEqual(['wf-ap'])
     expect(chat.selected.value?.id).toBe('wf-ap')
@@ -189,6 +187,7 @@ describe('useHomeApproveChat', () => {
   // plan g2.2 — load listProjects in parallel and attach projectName
   it('resolves projectName from listProjects in parallel with listWorkflows', async () => {
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     expect(mocks.listProjects).toHaveBeenCalledWith(expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(chat.homeWorkflows.value[0]?.projectName).toBe('综合项目组')
@@ -197,6 +196,7 @@ describe('useHomeApproveChat', () => {
   it('falls back to projectId when the project list has no matching name', async () => {
     mocks.listProjects.mockResolvedValue([])
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     expect(chat.homeWorkflows.value[0]?.projectName).toBe('proj-1')
   })
@@ -204,6 +204,7 @@ describe('useHomeApproveChat', () => {
   it('leaves projectName empty when the workflow has no projectId', async () => {
     mocks.listWorkflows.mockResolvedValue([{ ...approveWf, projectId: undefined }, reactWf])
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     expect(chat.homeWorkflows.value[0]?.projectName).toBe('')
   })
@@ -211,6 +212,7 @@ describe('useHomeApproveChat', () => {
   it('still loads workflows when listProjects fails', async () => {
     mocks.listProjects.mockRejectedValue(new Error('projects down'))
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     expect(chat.loadError.value).toBeNull()
     expect(chat.homeWorkflows.value[0]?.id).toBe('wf-ap')
@@ -230,6 +232,7 @@ describe('useHomeApproveChat', () => {
     mocks.readStoredProjectId.mockReturnValue('')
     mocks.listWorkflows.mockResolvedValue([approveWf, approveWfB, reactWf])
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     expect(mocks.listWorkflows).toHaveBeenCalledWith(expect.objectContaining({ signal: expect.any(AbortSignal) }))
     const arg = mocks.listWorkflows.mock.calls[0]?.[0] || {}
@@ -243,6 +246,7 @@ describe('useHomeApproveChat', () => {
     localStorage.setItem(HOME_WORKFLOW_MEMORY_KEY, 'wf-lite')
     mocks.listWorkflows.mockResolvedValue([approveWf, approveWfB])
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     expect(chat.selectedId.value).toBe('wf-lite')
     expect(chat.projectId.value).toBe('proj-2')
@@ -256,6 +260,7 @@ describe('useHomeApproveChat', () => {
   it('selectWorkflow updates selection memory and project context', async () => {
     mocks.listWorkflows.mockResolvedValue([approveWf, approveWfB])
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     chat.selectWorkflow('wf-lite')
     expect(chat.selectedId.value).toBe('wf-lite')
@@ -266,6 +271,7 @@ describe('useHomeApproveChat', () => {
   it('hides a workflow optimistically and falls back to the next visible workflow', async () => {
     mocks.listWorkflows.mockResolvedValue([approveWf, approveWfB])
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
 
     await chat.hideWorkflowFromHome(approveWf)
@@ -281,6 +287,7 @@ describe('useHomeApproveChat', () => {
     mocks.listWorkflows.mockResolvedValue([approveWf, approveWfB])
     mocks.patchWorkflowHomeVisibility.mockRejectedValue(new Error('patch failed'))
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
 
     await chat.hideWorkflowFromHome(approveWf)
@@ -319,6 +326,7 @@ describe('useHomeApproveChat', () => {
 
   it('passes the selected priority as startRun fourth argument (plan g2.1 / g3.3)', async () => {
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     chat.draft.value = '紧急需求'
     chat.selectPriority('high')
@@ -331,6 +339,7 @@ describe('useHomeApproveChat', () => {
 
   it('starts a run carrying the first message, then opens inbox', async () => {
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     chat.draft.value = '  把登录做清楚  '
     await chat.send()
@@ -349,6 +358,7 @@ describe('useHomeApproveChat', () => {
 
   it('carries attachments on the first message and navigates to inbox', async () => {
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     chat.attachments.value = [{ data: 'abc', mimeType: 'image/png', name: 'shot.png' }]
     await chat.send()
@@ -370,6 +380,7 @@ describe('useHomeApproveChat', () => {
   it('opens inbox immediately without polling for the Approve park', async () => {
     mocks.getRun.mockImplementation(() => new Promise(() => {}))
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     chat.attachments.value = [{ data: 'abc', mimeType: 'image/png', name: 'shot.png' }]
     chat.draft.value = '附图说明'
@@ -386,6 +397,7 @@ describe('useHomeApproveChat', () => {
   it('goGates writes the current workflow projectId dynamically (plan g1.1)', async () => {
     mocks.listWorkflows.mockResolvedValue([approveWf, approveWfB])
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     chat.selectWorkflow('wf-lite')
     chat.draft.value = '跨项目提交'
@@ -400,6 +412,7 @@ describe('useHomeApproveChat', () => {
   it('goGates omits projectId when the workflow has none (plan g1.1 / g2.3)', async () => {
     mocks.listWorkflows.mockResolvedValue([{ ...approveWf, projectId: undefined }, reactWf])
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     chat.draft.value = '无项目工作流'
     await chat.send()
@@ -427,6 +440,7 @@ describe('useHomeApproveChat', () => {
     const app = createApp(Comp)
     app.use(i18n)
     app.mount(document.createElement('div'))
+    await flushPromises()
     await result.load()
     result.draft.value = '卸载后仍要跳转'
     const sendPromise = result.send()
@@ -461,6 +475,7 @@ describe('useHomeApproveChat', () => {
     }
     mocks.listWorkflows.mockResolvedValue([missing])
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     chat.draft.value = '先澄清目标'
     await chat.send()
@@ -674,6 +689,7 @@ describe('useHomeApproveChat', () => {
       approveWf,
     ])
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     expect(chat.homeWorkflows.value.map((w) => w.id)).toEqual(['wf-ap'])
   })
@@ -686,6 +702,7 @@ describe('useHomeApproveChat', () => {
       approveWf,
     ])
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     expect(chat.homeWorkflows.value.map((w) => w.id)).toEqual(['wf-ap'])
   })
@@ -698,6 +715,7 @@ describe('useHomeApproveChat', () => {
       { ...approveWfB, showOnHome: false },
     ])
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     expect(chat.selectedId.value).toBe('wf-ap')
     expect(chat.selected.value?.id).toBe('wf-ap')
@@ -711,6 +729,7 @@ describe('useHomeApproveChat', () => {
       { ...approveWfB, showOnHome: false },
     ])
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     expect(chat.homeWorkflows.value).toHaveLength(0)
     expect(chat.selected.value).toBeNull()
@@ -720,6 +739,7 @@ describe('useHomeApproveChat', () => {
   it('reloadAfterCreate loads the new workflow and selects it', async () => {
     const created = { ...approveWf, id: 'wf-new', name: '首页新建', showOnHome: true }
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     expect(chat.homeWorkflows.value.map((w) => w.id)).toEqual(['wf-ap'])
     mocks.listWorkflows.mockResolvedValue([approveWf, created])
@@ -732,6 +752,7 @@ describe('useHomeApproveChat', () => {
   // plan g2.2 — reload failure must not wipe existing home cards
   it('reloadAfterCreate keeps the previous list when reload fails', async () => {
     const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
     await chat.load()
     mocks.listWorkflows.mockRejectedValue(new Error('reload failed'))
     await chat.reloadAfterCreate('wf-new')

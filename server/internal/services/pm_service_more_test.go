@@ -10,7 +10,7 @@ func TestPmThreadDeleteAndLookupHelpers(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("DelThread", "", nil, nil)
+	p, err := ps.Create("DelThread", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,9 +21,6 @@ func TestPmThreadDeleteAndLookupHelpers(t *testing.T) {
 	got, err := pm.GetThreadByID(th.ID)
 	if err != nil || got.ID != th.ID {
 		t.Fatalf("GetThreadByID=%+v err=%v", got, err)
-	}
-	if err := pm.SetThreadAgentName(th.ID, "agent-b"); err != nil {
-		t.Fatal(err)
 	}
 	if err := pm.BindSandbox(th.ID, 42); err != nil {
 		t.Fatal(err)
@@ -50,7 +47,7 @@ func TestPmDeleteThreadByID(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("DelByID", "", nil, nil)
+	p, err := ps.Create("DelByID", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +93,7 @@ func TestPmUpsertDraftBranches(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("DraftBranch", "", nil, nil)
+	p, err := ps.Create("DraftBranch", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
