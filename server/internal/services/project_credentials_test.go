@@ -106,7 +106,10 @@ func TestProjectCredentialOpenCodeMetadataResolvesRuntimeSettings(t *testing.T) 
 	if created.Metadata["vision"] != true {
 		t.Fatalf("vision metadata was not retained: %#v", created.Metadata)
 	}
-	env := s.ResolveEnv(p.ID)
+	if _, ok := s.ResolveEnv(p.ID)[runtime.EnvGraspOpenCodeAPIKey]; ok {
+		t.Fatal("model-vendor key must not be merged into the shared env")
+	}
+	env := s.ResolveOpenCodeCredential(p.ID, created.ID)
 	want := map[string]string{
 		runtime.EnvGraspOpenCodeAPIKey: "sk-model",
 		runtime.EnvOpenCodeProvider:    "openrouter",
@@ -118,6 +121,12 @@ func TestProjectCredentialOpenCodeMetadataResolvesRuntimeSettings(t *testing.T) 
 		if env[key] != value {
 			t.Fatalf("resolved %s=%q, want %q (env=%v)", key, env[key], value, env)
 		}
+	}
+	if s.ResolveOpenCodeCredential(p.ID, "") != nil {
+		t.Fatal("empty selection must not fall back")
+	}
+	if s.ResolveOpenCodeCredential(p.ID, "cred-missing") != nil {
+		t.Fatal("missing selection must not fall back")
 	}
 	if _, legacy := env["GRASP_OPENCODE_MODEL"]; legacy {
 		t.Fatalf("legacy model env key must not be emitted: %v", env)
@@ -210,6 +219,97 @@ func TestOverlayProjectCredentialEnvKeepsPlatformKeys(t *testing.T) {
 	overlayProjectCredentialEnv(env, map[string]string{"GRASP_PM_TOKEN": "user", "GITHUB_TOKEN": "ui"})
 	if env["GRASP_PM_TOKEN"] != "platform" || env["GITHUB_TOKEN"] != "ui" {
 		t.Fatalf("env=%v", env)
+	}
+}
+
+func TestOpenCodeSelectionInjectsOnlyTheChosenKey(t *testing.T) {
+	setCredentialKey(t)
+	db := newTestDB(t)
+	p, err := NewProjectService(db).Create("Two model keys", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewProjectCredentialService(db)
+	meta := func(model string) map[string]any {
+		return map[string]any{"provider": "openai", "model": model, "baseUrl": "", "vision": false}
+	}
+	first, err := s.Create(p.ID, ProjectCredentialInput{
+		Type: "ai", Provider: "opencode", Name: "Primary", Value: "sk-first", Metadata: meta("openai/gpt-a"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.Create(p.ID, ProjectCredentialInput{
+		Type: "ai", Provider: "opencode", Name: "Secondary", Value: "sk-second", Metadata: meta("openai/gpt-b"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create(p.ID, ProjectCredentialInput{Type: "ai", Provider: "opencode", Name: "No model", Value: "sk"}); !errors.Is(err, ErrCredentialModel) {
+		t.Fatalf("missing model: %v", err)
+	}
+	if _, err := s.Create(p.ID, ProjectCredentialInput{
+		Type: "ai", Provider: "opencode", Name: "Custom", Value: "sk",
+		Metadata: map[string]any{"provider": "custom", "model": "custom/m"},
+	}); !errors.Is(err, ErrCredentialBaseURL) {
+		t.Fatalf("missing base url: %v", err)
+	}
+	if got := s.ResolveOpenCodeCredential(p.ID, first.ID)[runtime.EnvGraspOpenCodeAPIKey]; got != "sk-first" {
+		t.Fatalf("first=%q", got)
+	}
+	if got := s.ResolveOpenCodeCredential(p.ID, second.ID)[runtime.EnvGraspOpenCodeAPIKey]; got != "sk-second" {
+		t.Fatalf("second=%q", got)
+	}
+	env := map[string]string{runtime.EnvGraspOpenCodeAPIKey: "stale", runtime.EnvACPBridgeModel: "old/model"}
+	runtime.ApplyOpenCodeSelection(env, s.ResolveOpenCodeCredential(p.ID, second.ID))
+	if env[runtime.EnvGraspOpenCodeAPIKey] != "sk-second" || env[runtime.EnvACPBridgeModel] != "openai/gpt-b" {
+		t.Fatalf("applied=%v", env)
+	}
+	if env[runtime.EnvOpenCodeModelVision] != "" {
+		t.Fatalf("vision should be cleared, env=%v", env)
+	}
+	stale := map[string]string{runtime.EnvGraspOpenCodeAPIKey: "keep"}
+	runtime.ApplyOpenCodeSelection(stale, nil)
+	if stale[runtime.EnvGraspOpenCodeAPIKey] != "keep" {
+		t.Fatal("nil selection changed env")
+	}
+	if err := s.Clear(p.ID, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if s.ResolveOpenCodeCredential(p.ID, first.ID) != nil {
+		t.Fatal("cleared credential still resolved")
+	}
+	if got := s.ResolveOpenCodeCredential(p.ID, second.ID)[runtime.EnvGraspOpenCodeAPIKey]; got != "sk-second" {
+		t.Fatalf("other key changed: %q", got)
+	}
+	rows, err := s.List(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		if row.ID == first.ID {
+			t.Fatal("extra model-vendor row still listed after clear")
+		}
+	}
+
+	agents := NewAgentService(t.TempDir())
+	if err := agents.Save(Agent{Name: "one", ProjectID: p.ID, AcpBackend: AcpBackendOpenCode, OpenCodeCredentialID: second.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := agents.Save(Agent{Name: "two", ProjectID: p.ID, AcpBackend: AcpBackendOpenCode, OpenCodeCredentialID: "cred-other"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Clear(p.ID, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	agents.ClearOpenCodeCredentialSelection(p.ID, second.ID)
+	one, _ := agents.Get("one")
+	two, _ := agents.Get("two")
+	if one.OpenCodeCredentialID != "" {
+		t.Fatalf("selected agent still points at cleared credential: %q", one.OpenCodeCredentialID)
+	}
+	if two.OpenCodeCredentialID != "cred-other" {
+		t.Fatalf("other selection changed: %q", two.OpenCodeCredentialID)
 	}
 }
 

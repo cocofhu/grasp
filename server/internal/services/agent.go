@@ -186,6 +186,9 @@ type Agent struct {
 	// GitCredentialType is the Agent-level credential contract selected in Studio.
 	// Runtime writes GitHub/GitLab/SSH by "configured → write"; this field is UI hint only.
 	GitCredentialType string `json:"gitCredentialType,omitempty"`
+	// OpenCodeCredentialID is the project credential this Agent uses for OpenCode.
+	// The secret stays in the project credential store; this is only the selection.
+	OpenCodeCredentialID string `json:"openCodeCredentialId,omitempty"`
 	// Files is the agent's working directory, copied into ConfigRoot at run.
 	Files []AgentFile `json:"files"`
 	// MCP lists the MCP servers wired into the sandbox for this agent.
@@ -203,13 +206,14 @@ type Agent struct {
 // agentConfig is the on-disk shape of agent.json (working-dir files live under
 // the workspace/ subfolder).
 type agentConfig struct {
-	ProjectID         string                    `json:"projectId,omitempty"`
-	AcpBackend        string                    `json:"acpBackend,omitempty"`
-	GitCredentialType string                    `json:"gitCredentialType,omitempty"`
-	MCP               []MCPServer               `json:"mcp,omitempty"`
-	Env               map[string]string         `json:"env,omitempty"`
-	Layout            *AgentLayout              `json:"layout,omitempty"`
-	Capabilities      *models.AgentCapabilities `json:"capabilities,omitempty"`
+	ProjectID            string                    `json:"projectId,omitempty"`
+	AcpBackend           string                    `json:"acpBackend,omitempty"`
+	GitCredentialType    string                    `json:"gitCredentialType,omitempty"`
+	OpenCodeCredentialID string                    `json:"openCodeCredentialId,omitempty"`
+	MCP                  []MCPServer               `json:"mcp,omitempty"`
+	Env                  map[string]string         `json:"env,omitempty"`
+	Layout               *AgentLayout              `json:"layout,omitempty"`
+	Capabilities         *models.AgentCapabilities `json:"capabilities,omitempty"`
 }
 
 // DefaultPlatformMCP returns the platform's built-in MCP server (the run-scoped
@@ -264,15 +268,16 @@ func (s *AgentService) Get(name string) (Agent, bool) {
 		env = map[string]string{}
 	}
 	return Agent{
-		Name:              name,
-		ProjectID:         strings.TrimSpace(cfg.ProjectID),
-		AcpBackend:        backend,
-		GitCredentialType: normalizeGitCredentialType(cfg.GitCredentialType),
-		Files:             s.readFiles(name),
-		MCP:               cfg.MCP,
-		Env:               env,
-		Layout:            layout,
-		Capabilities:      cfg.Capabilities,
+		Name:                 name,
+		ProjectID:            strings.TrimSpace(cfg.ProjectID),
+		AcpBackend:           backend,
+		GitCredentialType:    normalizeGitCredentialType(cfg.GitCredentialType),
+		OpenCodeCredentialID: strings.TrimSpace(cfg.OpenCodeCredentialID),
+		Files:                s.readFiles(name),
+		MCP:                  cfg.MCP,
+		Env:                  env,
+		Layout:               layout,
+		Capabilities:         cfg.Capabilities,
 	}, true
 }
 
@@ -401,13 +406,14 @@ func (s *AgentService) saveUnlocked(a Agent) error {
 		layout.ConfigRoot = DefaultConfigRootForBackend(backend)
 	}
 	cfg := agentConfig{
-		ProjectID:         strings.TrimSpace(a.ProjectID),
-		AcpBackend:        backend,
-		GitCredentialType: normalizeGitCredentialType(a.GitCredentialType),
-		MCP:               a.MCP,
-		Env:               a.Env,
-		Layout:            &layout,
-		Capabilities:      a.Capabilities,
+		ProjectID:            strings.TrimSpace(a.ProjectID),
+		AcpBackend:           backend,
+		GitCredentialType:    normalizeGitCredentialType(a.GitCredentialType),
+		OpenCodeCredentialID: strings.TrimSpace(a.OpenCodeCredentialID),
+		MCP:                  a.MCP,
+		Env:                  a.Env,
+		Layout:               &layout,
+		Capabilities:         a.Capabilities,
 	}
 	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -488,6 +494,26 @@ func (s *AgentService) Rename(old, newName string) error {
 		}
 	}
 	return nil
+}
+
+// ClearOpenCodeCredentialSelection forgets the choice on every Agent in the
+// project that pointed at credentialID. A cleared credential must not keep
+// running as if it were still selected.
+func (s *AgentService) ClearOpenCodeCredentialSelection(projectID, credentialID string) {
+	projectID = strings.TrimSpace(projectID)
+	credentialID = strings.TrimSpace(credentialID)
+	if projectID == "" || credentialID == "" {
+		return
+	}
+	for _, a := range s.List() {
+		if strings.TrimSpace(a.ProjectID) != projectID || strings.TrimSpace(a.OpenCodeCredentialID) != credentialID {
+			continue
+		}
+		a.OpenCodeCredentialID = ""
+		if err := s.Save(a); err != nil {
+			log.Warn().Err(err).Str("agent", a.Name).Str("credential", credentialID).Msg("clear opencode credential selection")
+		}
+	}
 }
 
 // Exists reports whether an agent directory is present.

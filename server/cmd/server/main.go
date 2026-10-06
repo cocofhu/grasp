@@ -229,6 +229,7 @@ func main() {
 		ProjectCredentialsForProject:    projectCredentialSvc.ResolveEnv,
 		ProjectCredentialKeysForProject: projectCredentialSvc.CredentialEnvKeys,
 		ProjectCredentialReferences:     projectCredentialSvc.ResolveReferences,
+		OpenCodeCredentialForProject:    projectCredentialSvc.ResolveOpenCodeCredential,
 		RunSandboxEnvForRun: func(runID string) []models.EnvEntry {
 			var run models.Run
 			if err := db.Select("sandbox_env").First(&run, "id = ?", runID).Error; err != nil {
@@ -345,6 +346,7 @@ func main() {
 		SharedAgent:                 sharedAgentSvc,
 		ProjectCredentials:          projectCredentialSvc.ResolveEnv,
 		ProjectCredentialReferences: projectCredentialSvc.ResolveReferences,
+		OpenCodeCredential:          projectCredentialSvc.ResolveOpenCodeCredential,
 		OpenCodeCatalog:             openCodeCatalog,
 	})
 	// Let the exec provider record per-run node sandboxes in the same store so

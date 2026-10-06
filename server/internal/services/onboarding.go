@@ -294,6 +294,9 @@ func (s *OnboardingService) Bootstrap(projectID string, req OnboardingBootstrapR
 		if m.Model != "" {
 			tmpl.Env[runtime.EnvACPBridgeModel] = m.Model
 		}
+		if backend == AcpBackendOpenCode {
+			tmpl.OpenCodeCredentialID = defaultOpenCodeCredentialID(projectID)
+		}
 		templates = append(templates, tmpl)
 	}
 

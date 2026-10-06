@@ -20,14 +20,13 @@ import {
   type AgentStudioDraft,
 } from '@/lib/agent/agentStudioDraft'
 import {
-  applyOpenCodeFields,
-  openCodeCustomBaseRequired,
-  openCodeFieldsFromEnv,
-  openCodeModelRequired,
+  OPENCODE_BASE_URL_ENV,
+  OPENCODE_MODEL_ENV,
+  OPENCODE_MODEL_VISION_ENV,
+  OPENCODE_PROVIDER_ENV,
   switchOpenCodeEnv,
-  type OpenCodeProviderId,
 } from '@/lib/agent/openCodeProvider'
-import OpenCodeProviderFields from '@/components/agent/OpenCodeProviderFields.vue'
+import OpenCodeCredentialPicker from '@/components/agent/OpenCodeCredentialPicker.vue'
 
 const props = defineProps<{
   draft: AgentStudioDraft
@@ -91,10 +90,27 @@ function selectAcpBackend(id: BackendId) {
     props.draft.layout.configRoot = defaultConfigRootFor(id)
   }
   if (prev !== id) {
-    props.draft.env = recToKV(
-      switchOpenCodeEnv(switchBackendRegions(kvToRec(props.draft.env), id), id),
-    )
+    const env = switchOpenCodeEnv(switchBackendRegions(kvToRec(props.draft.env), id), id)
+    if (id === 'opencode') {
+      delete env[OPENCODE_PROVIDER_ENV]
+      delete env[OPENCODE_BASE_URL_ENV]
+      delete env[OPENCODE_MODEL_VISION_ENV]
+    }
+    props.draft.env = recToKV(env)
   }
+}
+
+function onSelectCredential(id: string) {
+  if (props.draft.openCodeCredentialId === id) return
+  props.draft.openCodeCredentialId = id
+  const env = kvToRec(props.draft.env)
+  delete env[OPENCODE_PROVIDER_ENV]
+  delete env[OPENCODE_BASE_URL_ENV]
+  delete env[OPENCODE_MODEL_VISION_ENV]
+  delete env[OPENCODE_MODEL_ENV]
+  delete env.GRASP_OPENCODE_API_KEY
+  delete env.OPENCODE_API_KEY
+  props.draft.env = recToKV(env)
 }
 
 const currentRegionPolicy = computed(() => getRegionPolicy(props.draft.acpBackend))
@@ -115,16 +131,7 @@ function selectRegion(id: string) {
   props.draft.env = recToKV(setRegion(kvToRec(props.draft.env), props.draft.acpBackend, id))
 }
 
-const openCodeFields = computed(() => openCodeFieldsFromEnv(kvToRec(props.draft.env)))
 const showOpenCode = computed(() => props.draft.acpBackend === 'opencode')
-
-function patchOpenCode(fields: Parameters<typeof applyOpenCodeFields>[1]) {
-  props.draft.env = recToKV(applyOpenCodeFields(kvToRec(props.draft.env), fields))
-}
-
-function onOpenCodeProvider(id: OpenCodeProviderId) {
-  patchOpenCode({ provider: id })
-}
 
 function joinConfigPath(root: string, sub: string): string {
   return (root || DEFAULT_CONFIG_ROOT).replace(/\/+$/, '') + '/' + sub
@@ -217,19 +224,11 @@ const derivedPaths = computed(() => {
         </div>
       </div>
       <div v-if="showOpenCode" class="border-t border-dashed border-line pt-4">
-        <div class="mb-2 text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.openCode.title') }}</div>
-        <p class="mb-3 text-[11px] text-txt3">{{ t('pages.agentStudio.openCode.desc') }}</p>
-        <OpenCodeProviderFields
-          :provider="openCodeFields.provider"
-          :base-url="openCodeFields.baseURL"
-          :model="openCodeFields.model"
-          :vision="openCodeFields.vision"
-          :require-base="openCodeCustomBaseRequired(openCodeFields.provider, openCodeFields.baseURL)"
-          :require-model="openCodeModelRequired(openCodeFields.model)"
-          @update:provider="onOpenCodeProvider"
-          @update:base-url="patchOpenCode({ baseURL: $event })"
-          @update:model="patchOpenCode({ model: $event })"
-          @update:vision="patchOpenCode({ vision: $event })"
+        <OpenCodeCredentialPicker
+          mode="select"
+          :project-id="draft.projectId"
+          :selected-id="draft.openCodeCredentialId"
+          @update:selected-id="onSelectCredential"
         />
       </div>
       <label class="block">

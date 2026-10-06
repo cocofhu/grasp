@@ -19,15 +19,16 @@ const AgentExportSchemaVersion = 1
 
 // agentExportJSON is the root agent.json inside an export ZIP.
 type agentExportJSON struct {
-	Name              string                    `json:"name"`
-	GitCredentialType string                    `json:"gitCredentialType,omitempty"`
-	AcpBackend        string                    `json:"acpBackend,omitempty"`
-	MCP               []MCPServer               `json:"mcp,omitempty"`
-	Env               map[string]string         `json:"env,omitempty"`
-	Layout            *AgentLayout              `json:"layout,omitempty"`
-	Capabilities      *models.AgentCapabilities `json:"capabilities,omitempty"`
-	SchemaVersion     int                       `json:"schemaVersion"`
-	ExportedAt        string                    `json:"exportedAt"`
+	Name                 string                    `json:"name"`
+	GitCredentialType    string                    `json:"gitCredentialType,omitempty"`
+	OpenCodeCredentialID string                    `json:"openCodeCredentialId,omitempty"`
+	AcpBackend           string                    `json:"acpBackend,omitempty"`
+	MCP                  []MCPServer               `json:"mcp,omitempty"`
+	Env                  map[string]string         `json:"env,omitempty"`
+	Layout               *AgentLayout              `json:"layout,omitempty"`
+	Capabilities         *models.AgentCapabilities `json:"capabilities,omitempty"`
+	SchemaVersion        int                       `json:"schemaVersion"`
+	ExportedAt           string                    `json:"exportedAt"`
 }
 
 // ExportZIP builds a portable ZIP for one agent from on-disk state.
@@ -56,15 +57,16 @@ func (s *AgentService) writeAgentToZip(zw *zip.Writer, name, prefix string) erro
 	}
 	layout := a.Layout.withDefaults()
 	export := agentExportJSON{
-		Name:              name,
-		GitCredentialType: a.GitCredentialType,
-		AcpBackend:        a.AcpBackend,
-		MCP:               a.MCP,
-		Env:               a.Env,
-		Layout:            &layout,
-		Capabilities:      a.Capabilities,
-		SchemaVersion:     AgentExportSchemaVersion,
-		ExportedAt:        time.Now().UTC().Format(time.RFC3339),
+		Name:                 name,
+		GitCredentialType:    a.GitCredentialType,
+		OpenCodeCredentialID: a.OpenCodeCredentialID,
+		AcpBackend:           a.AcpBackend,
+		MCP:                  a.MCP,
+		Env:                  a.Env,
+		Layout:               &layout,
+		Capabilities:         a.Capabilities,
+		SchemaVersion:        AgentExportSchemaVersion,
+		ExportedAt:           time.Now().UTC().Format(time.RFC3339),
 	}
 	meta, err := json.MarshalIndent(export, "", "  ")
 	if err != nil {
@@ -255,15 +257,16 @@ func (s *AgentService) applyAgentExport(export agentExportJSON, files []AgentFil
 	// Home project is environment-specific and never travels in the ZIP; the
 	// caller picks the target project.
 	agent := Agent{
-		Name:              targetName,
-		ProjectID:         strings.TrimSpace(projectID),
-		AcpBackend:        export.AcpBackend,
-		GitCredentialType: export.GitCredentialType,
-		Files:             files,
-		MCP:               export.MCP,
-		Env:               export.Env,
-		Layout:            layout,
-		Capabilities:      export.Capabilities,
+		Name:                 targetName,
+		ProjectID:            strings.TrimSpace(projectID),
+		AcpBackend:           export.AcpBackend,
+		GitCredentialType:    export.GitCredentialType,
+		OpenCodeCredentialID: export.OpenCodeCredentialID,
+		Files:                files,
+		MCP:                  export.MCP,
+		Env:                  export.Env,
+		Layout:               layout,
+		Capabilities:         export.Capabilities,
 	}
 	if mode == ImportZIPCreate && len(agent.MCP) == 0 {
 		agent.MCP = DefaultPlatformMCP()

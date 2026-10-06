@@ -334,8 +334,18 @@ func TestOnboardingBootstrapWritesOpenCodeEnvToShared(t *testing.T) {
 		}
 	}
 	shared := svc.SharedAgent.Get(projectID)
-	if got := svc.Credentials.ResolveEnv(projectID)["GRASP_OPENCODE_API_KEY"]; got != "sk-oc" {
+	selected := svc.Credentials.ResolveOpenCodeCredential(projectID, "cred-"+projectID+"-opencode")
+	if got := selected["GRASP_OPENCODE_API_KEY"]; got != "sk-oc" {
 		t.Fatalf("project credential key = %q", got)
+	}
+	for _, name := range res.AgentIDs {
+		a, ok := svc.Skills.Get(name)
+		if !ok {
+			t.Fatalf("agent %s missing", name)
+		}
+		if a.OpenCodeCredentialID != "cred-"+projectID+"-opencode" {
+			t.Fatalf("agent %s credential id = %q", name, a.OpenCodeCredentialID)
+		}
 	}
 	if shared.Env["GRASP_OPENCODE_PROVIDER"] != "anthropic" {
 		t.Fatalf("shared provider: %+v", shared.Env)

@@ -211,6 +211,9 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 		fail(err)
 		return
 	}
+	if backend == runtime.BackendOpenCode && s.openCodeCredential != nil {
+		runtime.ApplyOpenCodeSelection(env, s.openCodeCredential(projectID, agent.OpenCodeCredentialID))
+	}
 	workDir := s.skills.WorkDir(profile)
 	// Align auth gate with BuildConfigHome: shared extend then Agent overlay.
 	merged, err := runtime.PrepareAuthEnv(backend, env, workDir, sharedWorkDir)

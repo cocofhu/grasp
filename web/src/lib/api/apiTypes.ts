@@ -173,6 +173,8 @@ export interface Agent {
   /** Optional embedded role pack id (e.g. test / preflight); omit for blank. */
   templateId?: string
   acpBackend: BackendId
+  /** Project credential selected for OpenCode. The secret is not stored here. */
+  openCodeCredentialId?: string
   gitCredentialType?: 'github_https' | 'gitlab_https' | 'ssh'
   files?: AgentFile[]
   mcp?: MCPServer[]

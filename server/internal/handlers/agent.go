@@ -25,24 +25,25 @@ func (h *Handlers) GetAgent(c *gin.Context) {
 }
 
 type agentBody struct {
-	Name              string                    `json:"name"`
-	ProjectID         string                    `json:"projectId"`
-	TemplateID        string                    `json:"templateId"`
-	AcpBackend        string                    `json:"acpBackend"`
-	GitCredentialType string                    `json:"gitCredentialType"`
-	Files             []services.AgentFile      `json:"files"`
-	MCP               []services.MCPServer      `json:"mcp"`
-	Env               map[string]string         `json:"env"`
-	Layout            services.AgentLayout      `json:"layout"`
-	Capabilities      *models.AgentCapabilities `json:"capabilities"`
-	Reason            string                    `json:"reason,omitempty"`
+	Name                 string                    `json:"name"`
+	ProjectID            string                    `json:"projectId"`
+	TemplateID           string                    `json:"templateId"`
+	AcpBackend           string                    `json:"acpBackend"`
+	GitCredentialType    string                    `json:"gitCredentialType"`
+	OpenCodeCredentialID string                    `json:"openCodeCredentialId"`
+	Files                []services.AgentFile      `json:"files"`
+	MCP                  []services.MCPServer      `json:"mcp"`
+	Env                  map[string]string         `json:"env"`
+	Layout               services.AgentLayout      `json:"layout"`
+	Capabilities         *models.AgentCapabilities `json:"capabilities"`
+	Reason               string                    `json:"reason,omitempty"`
 }
 
 func (b agentBody) toAgent(name string) services.Agent {
 	return services.Agent{
 		Name: name, ProjectID: strings.TrimSpace(b.ProjectID), AcpBackend: b.AcpBackend,
-		GitCredentialType: b.GitCredentialType,
-		Files:             b.Files, MCP: b.MCP, Env: b.Env, Layout: b.Layout, Capabilities: b.Capabilities,
+		GitCredentialType: b.GitCredentialType, OpenCodeCredentialID: strings.TrimSpace(b.OpenCodeCredentialID),
+		Files: b.Files, MCP: b.MCP, Env: b.Env, Layout: b.Layout, Capabilities: b.Capabilities,
 	}
 }
 

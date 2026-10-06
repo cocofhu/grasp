@@ -304,11 +304,21 @@ func (h *Handlers) ClearProjectCredential(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "credentials unavailable"})
 		return
 	}
-	if err := h.ProjectCredentials.Clear(c.Param("id"), c.Param("credentialId")); err != nil {
+	projectID := c.Param("id")
+	credentialID := c.Param("credentialId")
+	view, err := h.ProjectCredentials.Get(projectID, credentialID)
+	if err != nil {
 		writeCredentialErr(c, err)
 		return
 	}
-	h.recordAudit(services.AuditRecord{ProjectID: c.Param("id"), Actor: h.auditActorFromContext(c), Action: models.AuditActionProjectConfig, ResourceType: "project_credential", ResourceID: c.Param("credentialId"), Outcome: models.AuditOutcomeOK, Summary: "clear project credential"})
+	if err := h.ProjectCredentials.Clear(projectID, credentialID); err != nil {
+		writeCredentialErr(c, err)
+		return
+	}
+	if h.Agents != nil && strings.EqualFold(view.Type, "ai") && strings.EqualFold(view.Provider, "opencode") {
+		h.Agents.ClearOpenCodeCredentialSelection(projectID, credentialID)
+	}
+	h.recordAudit(services.AuditRecord{ProjectID: projectID, Actor: h.auditActorFromContext(c), Action: models.AuditActionProjectConfig, ResourceType: "project_credential", ResourceID: credentialID, Outcome: models.AuditOutcomeOK, Summary: "clear project credential"})
 	c.JSON(http.StatusOK, gin.H{"status": "cleared"})
 }
 
@@ -326,7 +336,7 @@ func writeSecretsKeyErr(c *gin.Context, err error) {
 
 func writeCredentialErr(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, services.ErrCredentialProject), errors.Is(err, services.ErrCredentialType), errors.Is(err, services.ErrCredentialName), errors.Is(err, services.ErrCredentialTarget), errors.Is(err, services.ErrCredentialEnvKey):
+	case errors.Is(err, services.ErrCredentialProject), errors.Is(err, services.ErrCredentialType), errors.Is(err, services.ErrCredentialName), errors.Is(err, services.ErrCredentialTarget), errors.Is(err, services.ErrCredentialEnvKey), errors.Is(err, services.ErrCredentialModel), errors.Is(err, services.ErrCredentialBaseURL):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, services.ErrProjectNotFound), errors.Is(err, services.ErrCredentialNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})

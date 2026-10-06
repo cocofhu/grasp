@@ -360,6 +360,11 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 			env[k] = e.Value
 		}
 	}
+	// The selected model-vendor credential wins over a merged project env and
+	// over the run snapshot. An empty selection injects nothing.
+	if c.backend == BackendOpenCode && c.opts.OpenCodeCredentialForProject != nil {
+		ApplyOpenCodeSelection(env, c.opts.OpenCodeCredentialForProject(c.projectIDForReq(req), agentCfg.OpenCodeCredentialID))
+	}
 	// Align auth gate with buildConfigHome BaseWorkDirSrc (project-shared workspace).
 	merged, err := PrepareAuthEnv(c.backend, env, c.workDir(profile), c.sharedWorkDir(req))
 	if err != nil {
