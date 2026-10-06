@@ -36,7 +36,7 @@ func TestNewProviderRegistryBuildsAllBackends(t *testing.T) {
 	if reg.Name() != "registry" {
 		t.Fatalf("Name = %q, want registry", reg.Name())
 	}
-	for _, b := range []AcpBackend{BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode} {
+	for _, b := range []AcpBackend{BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode, BackendCodex} {
 		p, ok := reg.providers[b]
 		if !ok || p == nil {
 			t.Fatalf("missing provider for backend %q", b)
@@ -60,6 +60,7 @@ func TestProviderRegistryRouting(t *testing.T) {
 	writeProfileInto(t, root, "cc", `{"acpBackend":"claude_code"}`)
 	writeProfileInto(t, root, "cb", `{"acpBackend":"codebuddy"}`)
 	writeProfileInto(t, root, "tr", `{"acpBackend":"trae"}`)
+	writeProfileInto(t, root, "cx", `{"acpBackend":"codex"}`)
 	writeProfileInto(t, root, "weird", `{"acpBackend":"nope"}`)
 	writeProfileInto(t, root, "nobackend", `{"env":{"X":"y"}}`)
 	writeProfileInto(t, root, "broken", `{not-json`)
@@ -75,6 +76,7 @@ func TestProviderRegistryRouting(t *testing.T) {
 		{"cc", BackendClaudeCode},
 		{"cb", BackendCodeBuddy},
 		{"tr", BackendTrae},
+		{"cx", BackendCodex},
 		{"sub/cc", BackendClaudeCode}, // filepath.Base strips traversal → cc
 	}
 	for _, tc := range cases {

@@ -38,7 +38,7 @@ engine:
   profiles_root: "data/profiles"
 
 sandbox:
-  # 推荐设为发布的 universal-sandbox（一张图预装五个 CLI）。
+  # 推荐设为发布的 universal-sandbox（一张图预装六个 CLI，含 Codex；Codex 使用登录文件而不是 API Key）。
   # 留空则走 images[backend] / 内置默认 universal-sandbox:local。
   image: ""
   # 可选：只覆盖某一个 acpBackend 的镜像。

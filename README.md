@@ -131,7 +131,7 @@ Override image tags or digests in `.env`; see [`.env.example`](.env.example).
 ## Build your first workflow
 
 1. Sign in with the local demo account. A fresh installation starts with an empty project and does not create a sample workflow.
-2. Open the project credential settings, select `cursor`, `claude_code`, `codebuddy`, `trae`, or `opencode`, and save the matching API key there. Agent env values remain available as a fallback.
+2. Open the project credential settings, select `cursor`, `claude_code`, `codebuddy`, `trae`, `opencode`, or `codex`, and save the matching API key there. Codex uses a ChatGPT login file (`~/.codex/auth.json`), not an API key. Agent env values remain available as a fallback.
 3. Open the canvas: start from the default template (Clarify → Implement → Test & review), or drag Agents and gates from the palette. Draw success, fail, and rollback — mark checkpoints where a retry should re-enter.
 4. Publish and start a run (or launch from **Home** in one sentence). Watch the state trace, `page.html` preview, and inbox items waiting at gates.
 

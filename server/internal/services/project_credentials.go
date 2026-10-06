@@ -136,6 +136,8 @@ func defaultCredentialEnvKey(in ProjectCredentialInput) string {
 			return envauth.EnvTraeAPIKey
 		case "opencode":
 			return envauth.EnvOpenCodeAPIKey
+		case "codex":
+			return envauth.EnvCodexAuthFile
 		}
 	case "git":
 		switch p {
@@ -200,6 +202,7 @@ func (s *ProjectCredentialService) ensureDefaultRows(projectID string) error {
 		{ID: "cred-" + projectID + "-codebuddy", Type: "ai", Provider: "codebuddy", Name: "CodeBuddy API Key", EnvKey: envauth.EnvCodeBuddyAPIKey},
 		{ID: "cred-" + projectID + "-trae", Type: "ai", Provider: "trae", Name: "Trae API Token", EnvKey: envauth.EnvTraeAPIKey},
 		{ID: "cred-" + projectID + "-opencode", Type: "ai", Provider: "opencode", Name: "OpenCode API Key", EnvKey: envauth.EnvOpenCodeAPIKey},
+		{ID: "cred-" + projectID + "-codex", Type: "ai", Provider: "codex", Name: "Codex Login File", EnvKey: envauth.EnvCodexAuthFile},
 		{ID: "cred-" + projectID + "-github", Type: "git", Provider: "github", Name: "GitHub HTTPS Token", EnvKey: envauth.EnvGitHubToken},
 		{ID: "cred-" + projectID + "-gitlab", Type: "git", Provider: "gitlab", Name: "GitLab HTTPS Token", EnvKey: envauth.EnvGitLabToken},
 		{ID: "cred-" + projectID + "-gitlab-url", Type: "git", Provider: "gitlab", Name: "GitLab URL", EnvKey: "GITLAB_URL"},
@@ -271,6 +274,9 @@ func (s *ProjectCredentialService) Create(projectID string, in ProjectCredential
 	if strings.TrimSpace(in.Value) == "" {
 		return ProjectCredentialView{}, errors.New("credential value is required")
 	}
+	if err := rejectCodexLoginValue(in.Provider, in.EnvKey, in.Value); err != nil {
+		return ProjectCredentialView{}, err
+	}
 	enc, err := crypto.Encrypt(in.Value)
 	if err != nil {
 		return ProjectCredentialView{}, fmt.Errorf("encrypt credential: %w", err)
@@ -339,6 +345,11 @@ func (s *ProjectCredentialService) Update(projectID, id string, in ProjectCreden
 	if row.RevokedAt != nil && in.Enabled == nil && strings.TrimSpace(in.Value) != "" {
 		row.RevokedAt = nil
 		row.Enabled = true
+	}
+	if !in.Clear && in.Value != "" {
+		if err := rejectCodexLoginValue(row.Provider, row.EnvKey, in.Value); err != nil {
+			return ProjectCredentialView{}, err
+		}
 	}
 	if in.Clear {
 		row.ValueEnc = ""
@@ -463,6 +474,65 @@ func (s *ProjectCredentialService) ResolveEnv(projectID string) map[string]strin
 		}
 	}
 	return out
+}
+
+func isCodexCredential(provider, envKey string) bool {
+	if strings.EqualFold(strings.TrimSpace(provider), "codex") {
+		return true
+	}
+	return strings.TrimSpace(envKey) == envauth.EnvCodexAuthFile
+}
+
+func rejectCodexLoginValue(provider, envKey, value string) error {
+	if !isCodexCredential(provider, envKey) {
+		return nil
+	}
+	return runtime.ValidateCodexLoginFile(value)
+}
+
+func aiCredentialName(backend string) string {
+	if NormalizeAcpBackend(backend) == AcpBackendCodex {
+		return "Codex Login File"
+	}
+	return backend + " API Key"
+}
+
+// WriteBackCodexLoginFile replaces the project's Codex login file when a run
+// produced a different auth.json. Identical content does not touch UpdatedAt.
+// The plaintext is never logged or returned.
+func (s *ProjectCredentialService) WriteBackCodexLoginFile(projectID, content string) error {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return ErrCredentialProject
+	}
+	if err := runtime.ValidateCodexLoginFile(content); err != nil {
+		return err
+	}
+	if err := s.ensureProject(projectID); err != nil {
+		return err
+	}
+	if err := s.ensureDefaultRows(projectID); err != nil {
+		return err
+	}
+	var row models.ProjectCredential
+	err := s.db.Where("project_id = ? AND env_key = ?", projectID, envauth.EnvCodexAuthFile).
+		Order("created_at asc").First(&row).Error
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(row.ValueEnc) != "" {
+		cur, decErr := crypto.Decrypt(row.ValueEnc)
+		if decErr == nil && cur == content {
+			return nil
+		}
+	}
+	enc, err := crypto.Encrypt(content)
+	if err != nil {
+		return fmt.Errorf("encrypt credential: %w", err)
+	}
+	now := time.Now()
+	return s.db.Model(&models.ProjectCredential{}).Where("id = ? AND project_id = ?", row.ID, projectID).
+		Updates(map[string]any{"value_enc": enc, "updated_at": now, "enabled": true, "revoked_at": nil}).Error
 }
 
 func addOpenCodeMetadata(out map[string]string, metadata map[string]any) {

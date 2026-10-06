@@ -19,6 +19,7 @@ func TestNormalizeBackend(t *testing.T) {
 		{"codebuddy", BackendCodeBuddy},
 		{"trae", BackendTrae},
 		{"opencode", BackendOpenCode},
+		{"codex", BackendCodex},
 		{" opencode ", BackendOpenCode},
 		{"", ""},
 		{" unknown ", ""},
@@ -48,6 +49,9 @@ func TestDefaultConfigRootAndResolve(t *testing.T) {
 	if got := DefaultConfigRoot(BackendOpenCode); got != "/root/.config/opencode" {
 		t.Fatalf("opencode root=%q", got)
 	}
+	if got := DefaultConfigRoot(BackendCodex); got != "/root/.codex" {
+		t.Fatalf("codex root=%q", got)
+	}
 	if got := ResolveConfigRoot(BackendTrae, "  /custom  "); got != "/custom" {
 		t.Fatalf("explicit root=%q", got)
 	}
@@ -63,6 +67,7 @@ func TestAgentRuntimeLabel(t *testing.T) {
 		BackendCodeBuddy:  "codebuddy-acp",
 		BackendTrae:       "trae-acp",
 		BackendOpenCode:   "opencode-json",
+		BackendCodex:      "codex-cli",
 	}
 	for b, want := range cases {
 		if got := AgentRuntimeLabel(b); got != want {

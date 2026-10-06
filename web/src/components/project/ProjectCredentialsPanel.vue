@@ -149,9 +149,15 @@ function openCodeBaseRequired(fields: OpenCodeDraft | undefined): boolean {
   return fields ? openCodeCustomBaseRequired(fields.provider, fields.baseUrl) : false
 }
 
+function isCodexLogin(item: ProjectCredentialItem): boolean {
+  const provider = (item.provider || '').toLowerCase()
+  const key = (item.envKey || '').toUpperCase()
+  return provider === 'codex' || key === 'GRASP_CODEX_AUTH_JSON'
+}
+
 function isMultiline(item: ProjectCredentialItem): boolean {
   const key = `${item.type || ''} ${item.provider || ''} ${item.envKey || ''}`.toLowerCase()
-  return key.includes('ssh') || key.includes('private') || key.includes('known_hosts')
+  return isCodexLogin(item) || key.includes('ssh') || key.includes('private') || key.includes('known_hosts')
 }
 
 function configuredText(item: ProjectCredentialItem): string {
@@ -520,7 +526,7 @@ onMounted(() => {
                     <textarea
                       v-if="isMultiline(item)"
                       v-model="drafts[item.id]"
-                      rows="2"
+                      :rows="isCodexLogin(item) ? 8 : 2"
                       class="min-h-[68px] min-w-0 flex-1 resize-y rounded-lg border border-line bg-surface px-3 py-2 font-mono text-[12px] text-txt outline-none transition placeholder:text-txt3 focus:border-accent focus:ring-2 focus:ring-accent/15"
                       :placeholder="item.configured ? t('pages.projectDetail.projectCredentials.replacePlaceholder') : t('pages.projectDetail.projectCredentials.valuePlaceholder')"
                       :data-testid="`project-credential-input-${item.id}`"

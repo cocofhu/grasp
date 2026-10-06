@@ -28,6 +28,7 @@ describe('freshDraft defaults (g1.2)', () => {
       'claude_code',
       'codebuddy',
       'trae',
+      'codex',
     ])
   })
 

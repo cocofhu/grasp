@@ -21,6 +21,7 @@ const (
 	BackendCodeBuddy  AcpBackend = "codebuddy"
 	BackendTrae       AcpBackend = "trae"
 	BackendOpenCode   AcpBackend = "opencode"
+	BackendCodex      AcpBackend = "codex"
 )
 
 // Region / site env keys written by Agent Studio or set manually.
@@ -73,6 +74,8 @@ func DefaultConfigRoot(b AcpBackend) string {
 		return "/root/.trae"
 	case BackendOpenCode:
 		return "/root/.config/opencode"
+	case BackendCodex:
+		return "/root/.codex"
 	default:
 		return "/root/.cursor"
 	}
@@ -83,7 +86,7 @@ func DefaultConfigRoot(b AcpBackend) string {
 // backend must be reported.
 func NormalizeBackend(raw string) AcpBackend {
 	switch b := AcpBackend(strings.TrimSpace(raw)); b {
-	case BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode:
+	case BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode, BackendCodex:
 		return b
 	default:
 		return ""
@@ -127,6 +130,9 @@ func authSpecFor(b AcpBackend) authSpec {
 		return authSpec{credKey: envauth.EnvTraeAPIKey, cliKey: EnvTraeCLIToken}
 	case BackendOpenCode:
 		return authSpec{credKey: EnvGraspOpenCodeAPIKey, cliKey: EnvOpenCodeAPIKey}
+	case BackendCodex:
+		// Slot identity only. The login file is not copied onto a CLI env var.
+		return authSpec{credKey: envauth.EnvCodexAuthFile, cliKey: ""}
 	default:
 		return authSpec{credKey: envauth.EnvCursorAPIKey, cliKey: "CURSOR_API_KEY"}
 	}
@@ -205,6 +211,11 @@ func PrepareAuthEnv(backend AcpBackend, env map[string]string, workDirSrc string
 	settingsAuth := ReadSettingsAuthEnv(settingsDir, backend)
 	merged := mergeSettingsAuthIntoEnv(env, settingsAuth)
 	requireAuth := !AuthConfigFileExists(settingsDir, backend)
+	// Codex auth is the login file, not settings.json. A config file must not
+	// skip the missing-file failure that happens before the CLI starts.
+	if NormalizeBackend(string(backend)) == BackendCodex {
+		requireAuth = true
+	}
 	out, err := mergeAuthEnv(backend, merged, requireAuth)
 	if err != nil {
 		return out, err
@@ -300,6 +311,9 @@ func mergeAuthEnv(backend AcpBackend, env map[string]string, requireAuth bool) (
 	out := map[string]string{}
 	for k, v := range env {
 		out[k] = v
+	}
+	if NormalizeBackend(string(backend)) == BackendCodex {
+		return mergeCodexAuthEnv(out, requireAuth)
 	}
 	val := strings.TrimSpace(out[spec.credKey])
 	if val == "" {
@@ -411,6 +425,8 @@ func AgentRuntimeLabel(b AcpBackend) string {
 		return "trae-acp"
 	case BackendOpenCode:
 		return "opencode-json"
+	case BackendCodex:
+		return "codex-cli"
 	default:
 		return "cursor-agent"
 	}

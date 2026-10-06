@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # install-agent.sh — 构建期安装一个或多个 Agent CLI。
 #
-# 由 Dockerfile 调用。默认装齐五个对外后端（cursor / claude_code / codebuddy /
-# trae / opencode）；运行时仍由 AGENT_PROVIDER 单活选后端。
+# 由 Dockerfile 调用。默认装齐六个对外后端（cursor / claude_code / codebuddy /
+# trae / opencode / codex）；运行时仍由 AGENT_PROVIDER 单活选后端。
 # 本地打薄镜像：--build-arg AGENT_PROVIDERS=cursor
 #
 # 约定：
@@ -11,7 +11,7 @@
 #   $AGENT_INSTALL_CMD             可选：完全接管安装（用于未内置方式或私有源）。
 set -euo pipefail
 
-DEFAULT_PROVIDERS="cursor,claude_code,codebuddy,trae,opencode"
+DEFAULT_PROVIDERS="cursor,claude_code,codebuddy,trae,opencode,codex"
 raw="${1:-${AGENT_PROVIDERS:-all}}"
 custom_cmd="${AGENT_INSTALL_CMD:-}"
 optional_raw="${AGENT_OPTIONAL_PROVIDERS:-}"

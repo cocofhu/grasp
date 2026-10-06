@@ -46,6 +46,8 @@ const configRelPath = computed(() => agentConfigRelPath(props.acpBackend))
 const configNoteKey = computed(() => customConfigNoteKey(props.acpBackend))
 const openCode = computed(() => openCodeFieldsFromEnv(props.env || {}))
 const showOpenCode = computed(() => props.acpBackend === 'opencode' && props.authMode === 'apiKey')
+const codexLogin = computed(() => props.acpBackend === 'codex')
+const showLoginPane = computed(() => codexLogin.value || props.authMode === 'apiKey')
 const requireOpenCodeBase = computed(
   () =>
     !!props.openCodeBaseError ||
@@ -72,6 +74,7 @@ function setMode(mode: WizardAuthMode) {
     </div>
 
     <div
+      v-if="!codexLogin"
       class="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2"
       role="group"
       :aria-label="t('pages.agentStudio.wizard.apiKey.modeGroup')"
@@ -112,7 +115,7 @@ function setMode(mode: WizardAuthMode) {
       </button>
     </div>
 
-    <div v-if="authMode === 'apiKey'">
+    <div v-if="showLoginPane">
       <OpenCodeProviderFields
         v-if="showOpenCode"
         class="mb-4"
@@ -152,9 +155,20 @@ function setMode(mode: WizardAuthMode) {
       </div>
       <label class="block">
         <span class="mb-1.5 block text-[12px] font-medium text-txt2">
-          {{ t('pages.agentStudio.wizard.apiKey.inputLabel') }}
+          {{ t(codexLogin ? 'pages.agentStudio.wizard.apiKey.codexInputLabel' : 'pages.agentStudio.wizard.apiKey.inputLabel') }}
         </span>
+        <textarea
+          v-if="codexLogin"
+          :value="apiKeyInput"
+          rows="8"
+          autocomplete="off"
+          class="min-h-[160px] w-full resize-y rounded-md border border-line bg-base px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
+          :placeholder="t('pages.agentStudio.wizard.apiKey.codexInputPlaceholder')"
+          data-test="api-key-input"
+          @input="emit('update:apiKeyInput', ($event.target as HTMLTextAreaElement).value)"
+        />
         <input
+          v-else
           :value="apiKeyInput"
           type="password"
           autocomplete="off"
@@ -164,7 +178,7 @@ function setMode(mode: WizardAuthMode) {
           @input="emit('update:apiKeyInput', ($event.target as HTMLInputElement).value)"
         />
         <p class="mt-1.5 text-[11px] text-txt3">
-          {{ t('pages.agentStudio.wizard.apiKey.skipHint') }}
+          {{ t(codexLogin ? 'pages.agentStudio.wizard.apiKey.codexSkipHint' : 'pages.agentStudio.wizard.apiKey.skipHint') }}
         </p>
       </label>
     </div>

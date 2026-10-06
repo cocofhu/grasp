@@ -18,7 +18,7 @@ in the Grasp repo root.
 # Gateway control plane
 docker build -t sandbox-gateway:local -f Dockerfile .
 
-# Default sandbox image used by local compose (five CLIs; runtime AGENT_PROVIDER)
+# Default sandbox image used by local compose (six CLIs, including Codex which uses a login file rather than an API key; runtime AGENT_PROVIDER)
 docker build -t universal-sandbox:local \
   -f sandbox/Dockerfile sandbox
 ```

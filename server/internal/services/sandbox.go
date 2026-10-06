@@ -64,6 +64,9 @@ type SandboxService struct {
 	testScheduler TestSchedulerHooks
 	// openCodeCatalog resolves whether OpenCode knows a provider id natively.
 	openCodeCatalog runtime.OpenCodeCatalog
+	// codexLoginWriteBack stores a refreshed Codex auth.json into the project
+	// credential. Nil skips write-back. The callback must not log the file body.
+	codexLoginWriteBack func(projectID, content string) error
 }
 
 // TestSchedulerHooks wires purpose=test scheduler session lifecycle.
@@ -74,10 +77,15 @@ type TestSchedulerHooks struct {
 
 // liveSandbox is the in-memory connection state for a running sandbox.
 type liveSandbox struct {
-	sb   *sandbox.Sandbox
-	acp  *sandbox.ACPClient
-	home string
-	busy bool
+	sb                *sandbox.Sandbox
+	acp               *sandbox.ACPClient
+	home              string
+	busy              bool
+	codexAuthInjected string
+	codexAuthPath     string
+	// codexAuthRejected is set from the latest turn's CLI error, not from
+	// narration. A login refusal keeps the previously saved file.
+	codexAuthRejected bool
 }
 
 // resolveSandboxImage picks the per-acpBackend image from live config (nil-safe).

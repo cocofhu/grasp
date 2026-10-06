@@ -424,7 +424,7 @@
           },
           "cli": {
             "title": "Use a coding tool account",
-            "desc": "Use your Cursor, Claude Code, CodeBuddy or Trae account key; that tool decides the model."
+            "desc": "Use a Cursor, Claude Code, CodeBuddy, Trae, or Codex account. Codex takes a ChatGPT login file; the others use their account keys. The tool decides the model."
           }
         },
         "cliLabel": "Choose a coding tool",
@@ -437,6 +437,10 @@
         "hint": "Stored only in this project, never shown in logs or artifacts.",
         "howTo": "How to get it",
         "placeholder": "Paste your API key",
+        "codexMeta": "Paste the ChatGPT login file produced by codex login on your computer. This is required.",
+        "codexLabel": "ChatGPT login file",
+        "codexPlaceholder": "Paste the full contents of ~/.codex/auth.json",
+        "codexRequired": "Paste the Codex login file first.",
         "change": "Change backend",
         "vendorTitle": "Model vendor API key"
       },
@@ -2317,7 +2321,7 @@
         "layoutTitle": "Sandbox layout (WSP/1)",
         "layoutIntro": "Persisted per agent; applied when creating sandboxes. Switching ACP backend fills recommended configRoot; manual overrides are respected.",
         "acpBackend": "ACP backend (acpBackend)",
-        "acpBackendDesc": "Each Agent profile binds one backend; Run routes by this field (no node-level override). Defaults to cursor. OpenCode uses an API key with mainstream model vendors.",
+        "acpBackendDesc": "Each Agent profile binds one backend; Run routes by this field (no node-level override). Defaults to cursor. OpenCode uses an API key with mainstream model vendors. Codex uses a ChatGPT login file, not an API key.",
         "configRoot": "configRoot",
         "configRootDesc": "Agent workspace (rules/skills/mcp.json) RW mount path in container.",
         "workspaceDir": "workspaceDir",
@@ -2630,10 +2634,14 @@
           "inputLabel": "Paste API key (optional; not written into a single Agent)",
           "inputPlaceholder": "Prefer skipping; configure in Project shared Agent config",
           "skipHint": "Prefer Skip / Next; set Tokens under Project → shared Agent config.",
+          "codexInputLabel": "Paste the ChatGPT login file (optional; not written into a single Agent)",
+          "codexInputPlaceholder": "Paste the full contents of ~/.codex/auth.json",
+          "codexSkipHint": "Prefer Skip / Next; paste the login file under Project → shared Agent config.",
           "notes": {
             "codebuddySite": "Keys are bound to a site; apply in the console that matches the site chosen in the Agent step.",
             "traeToken": "Official CLI login tokens must start with trae-lt- (Enterprise plan).",
-            "opencode": "Starts with a model vendor API key; you can set the model and the service address."
+            "opencode": "Starts with a model vendor API key; you can set the model and the service address.",
+            "codex": "Codex uses a ChatGPT login file, not an API key. To call OpenAI with an API key, use OpenCode. A run may update this file; do not share it with a Codex login that is still in use on your computer."
           },
           "paths": {
             "cursor": {
@@ -2660,6 +2668,12 @@
               "step1": "Pick a vendor (OpenAI, Anthropic, OpenRouter and more, or your own service)",
               "step2": "Create an API key in the vendor console; your own service also needs its address",
               "step3": "Paste the key and pick a model"
+            },
+            "codex": {
+              "step1": "On a computer that can open a browser, run codex login and finish the ChatGPT login",
+              "step2": "Copy the entire contents of ~/.codex/auth.json",
+              "step3": "If the login lives only in the system keychain, switch to file storage, log in again, then copy that file",
+              "step4": "Paste the file contents below"
             }
           },
           "links": {
@@ -2673,7 +2687,8 @@
             "codebuddyIoa": "Apply key (iOA)",
             "codebuddyStaging": "Apply key (Staging)",
             "traeTokenDocs": "Trae CLI login-token docs",
-            "opencodeProviders": "Supported vendors"
+            "opencodeProviders": "Supported vendors",
+            "codexAuth": "Codex login docs"
           },
           "customConfig": {
             "cardTitle": "Backend config file",

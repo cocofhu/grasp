@@ -15,7 +15,7 @@
 
 ## 启动沙箱：Provider / 密钥 / 模型（上游必读）
 
-一张沙箱镜像预装五个对外 Agent CLI，运行期靠环境变量决定「用哪个 agent、拿哪个密钥、锁哪个模型」。
+一张沙箱镜像预装六个对外 Agent CLI，运行期靠环境变量决定「用哪个 agent、拿哪个密钥、锁哪个模型」。Codex 例外：鉴权是 `CODEX_HOME/auth.json`，不是 API Key。
 下面是拉起沙箱时上游需要设置的全部约定。**对外 WSP/1 协议不受影响**——这些都只作用于容器内部。
 
 > 两条投喂路径等价：
@@ -26,7 +26,7 @@
 ### 1) 选 Agent —— `AGENT_PROVIDER`
 
 - 选型：**`AGENT_PROVIDER`**，未设置时默认 `cursor`。
-- 发布镜像预装五个对外 CLI（`cursor` / `claude_code` / `codebuddy` / `trae` / `opencode`）。设成镜像里没有的 provider（或本地薄镜像没装的那个）会因找不到可执行文件而失败。
+- 发布镜像预装六个对外 CLI（`cursor` / `claude_code` / `codebuddy` / `trae` / `opencode` / `codex`）。设成镜像里没有的 provider（或本地薄镜像没装的那个）会因找不到可执行文件而失败。
 - 经网关时只传 `provider`，网关注入 `AGENT_PROVIDER`（默认用同一张 `universal-sandbox`）。
 - 全部取值见文末「默认 transport」表（`cursor` / `claude_code` / `codebuddy` / `gemini` / `codex` /
   `opencode` / `deveco` / `copilot` / `pi` / `openclaw` / `antigravity` / `kimi` / `hermes` / `kiro` /
@@ -43,7 +43,7 @@
 | `claude_code` / `claude_code_acp` | `ANTHROPIC_API_KEY` | `ACP_CLAUDE_API_KEY` |
 | `codebuddy` / `codebuddy_acp` | `CODEBUDDY_API_KEY` | `ACP_CODEBUDDY_API_KEY` |
 | `gemini` | `GEMINI_API_KEY` | `ACP_GEMINI_API_KEY` / `GOOGLE_API_KEY` |
-| `codex` | `OPENAI_API_KEY` | `ACP_CODEX_API_KEY` / `CODEX_API_KEY` |
+| `codex` | `CODEX_HOME/auth.json`（默认 `/root/.codex/auth.json`） | 不接受 API Key；`OPENAI_API_KEY` / `ACP_CODEX_API_KEY` / `CODEX_API_KEY` 会被丢弃 |
 | `opencode` | `OPENCODE_API_KEY` | `ACP_OPENCODE_API_KEY` |
 | `deveco` | `DEVECO_API_KEY` | `ACP_DEVECO_API_KEY` |
 | `copilot` | `GITHUB_TOKEN` | `ACP_COPILOT_API_KEY` / `COPILOT_API_KEY` |
@@ -236,7 +236,7 @@ internal/
     pi/               # codec：assistantMessageEvent.delta 事件流；会话为 --session 日志文件
     openclaw/         # codec：单个整块 JSON 结果文档（payloads + meta.agentMeta），NDJSON 兜底
     antigravity/      # codec：纯文本 stdout + 从 --log-file 回收 conversation id
-    codex/            # codec：codex exec --json（msg 包裹式 JSONL）
+    codex/            # codec：codex exec --json（thread/item JSONL，兼容 msg 包裹）
   agents/             # provider 注册表：AGENT_PROVIDER 选型 + FromEnv/Current/ConfigRoot（唯一选型入口）
   backend/            # 长驻 ACP 的 argv/configRoot/authEnv（仅供 acpx.FromBackend，不是选型入口）
     common/           # Backend 接口、Base、env 助手
@@ -292,8 +292,8 @@ web/                  # 前端（ESM + 静态资源）
 
 - **验证状态**（务必据实使用，勿把"已接线"当成"已验证"）：
   - ✅ **已验真**：`cursor`（端到端跑通）、`gemini`/qwen 系（对真实 stream-json 抓样解析全绿）。stream-json codec 已同时兼容两种方言：顶层 thinking + camelCase 用量（cursor），以及 content-block thinking（`thinking` 字段）+ `tool_use_id` 关联 + snake_case 用量（claude/codebuddy/qwen）。
-  - 🟢 **专用 codec 已落地（按各 CLI 的真实无头契约实现，附单测）**：`copilot`（dotted 事件 + `data.deltaContent`/`content`，delta 与最终 message 去重、toolRequests/tool.execution_complete、合成 result 取 session/exit）、`pi`（`assistantMessageEvent.delta` 文本/thinking、tool 起止、turn_end 用量、控制标记清洗；会话为 `--session` 日志文件）、`openclaw`（整块 JSON 结果文档：payloads[].text + meta.agentMeta 的 session/model/usage，NDJSON 事件兜底）、`antigravity`（纯文本 stdout 逐行透出 + 从 `--log-file` 回收 conversation id，并把仅写日志的 print-timeout/provider error 提升为失败）。这些 codec 结构已对齐真实字段，仍建议真机各跑一轮抓样复核。
-  - 🟡 **结构对、待真机确认**：`claude_code` / `codebuddy`（与 qwen 同族方言，已按其字段解析）、`opencode` / `deveco`（`run --format json` 的 `type`+嵌套 `part`；tool_use 事件含 `state` 时同时透出 tool_result）、`codex`（`exec --json` 的 msg 包裹事件，tool 结果取 `output`，含 patch_apply 起止）。
+  - 🟢 **专用 codec 已落地（按各 CLI 的真实无头契约实现，附单测）**：`copilot`（dotted 事件 + `data.deltaContent`/`content`，delta 与最终 message 去重、toolRequests/tool.execution_complete、合成 result 取 session/exit）、`pi`（`assistantMessageEvent.delta` 文本/thinking、tool 起止、turn_end 用量、控制标记清洗；会话为 `--session` 日志文件）、`openclaw`（整块 JSON 结果文档：payloads[].text + meta.agentMeta 的 session/model/usage，NDJSON 事件兜底）、`antigravity`（纯文本 stdout 逐行透出 + 从 `--log-file` 回收 conversation id，并把仅写日志的 print-timeout/provider error 提升为失败）、`codex`（`exec --json` 的 `thread.*` / `item.*` JSONL，对照官方 exec 事件字段：`thread_id` 续接、`command_execution` / `file_change` / `mcp_tool_call`、`turn.completed` 用量、`turn.failed` 改写成重新粘贴登录文件；旧的 `msg` 包裹事件仍解析）。这些 codec 结构已对齐公开字段，仍建议真机各跑一轮抓样复核。
+  - 🟡 **结构对、待真机确认**：`claude_code` / `codebuddy`（与 qwen 同族方言，已按其字段解析）、`opencode` / `deveco`（`run --format json` 的 `type`+嵌套 `part`；tool_use 事件含 `state` 时同时透出 tool_result）。
   - ⚙️ **ACP 家族**（`kimi`/`hermes`/`kiro`/`qoder`/`grok`/`trae`）：走已验证的长驻 ACP 通道；其中非 `trae` 的 argv/config 为按公开事实拼装，需真机校准。
 
 - **选型**：`AGENT_PROVIDER` 指定 provider（未设置时默认 `cursor`）。

@@ -799,7 +799,7 @@ function editWorkflow() {
                         {{ t('pages.onboarding.acp.cliLabel') }}
                       </div>
                       <div
-                        class="grid grid-cols-2 gap-2.5 sm:grid-cols-4"
+                        class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5"
                         role="radiogroup"
                         :aria-label="t('pages.onboarding.acp.cliLabel')"
                       >
@@ -841,7 +841,7 @@ function editWorkflow() {
 
                 <template v-else-if="currentStep.id === 'key'">
                   <p class="onb-lede">
-                    {{ t('pages.onboarding.apiKey.meta') }}
+                    {{ t(draft.acpBackend === 'codex' ? 'pages.onboarding.apiKey.codexMeta' : 'pages.onboarding.apiKey.meta') }}
                   </p>
                   <section class="onb-cred mt-6" data-testid="onboarding-section-key">
                     <header class="onb-cred-head">
@@ -881,8 +881,21 @@ function editWorkflow() {
                         @update:vision="draft.openCodeModelVision = $event"
                       />
                       <label class="block">
-                        <span class="onb-label">API Key <span class="text-err">*</span></span>
+                        <span class="onb-label">{{ draft.acpBackend === 'codex' ? t('pages.onboarding.apiKey.codexLabel') : 'API Key' }} <span class="text-err">*</span></span>
+                        <textarea
+                          v-if="draft.acpBackend === 'codex'"
+                          id="onb-api-key"
+                          v-model="draft.apiKey"
+                          rows="8"
+                          autocomplete="off"
+                          class="onb-input is-lg min-h-[160px] resize-y font-mono"
+                          :class="{ 'is-invalid': keyError }"
+                          :placeholder="t('pages.onboarding.apiKey.codexPlaceholder')"
+                          data-testid="onboarding-api-key"
+                          @input="keyError = false"
+                        />
                         <input
+                          v-else
                           id="onb-api-key"
                           v-model="draft.apiKey"
                           type="password"
@@ -893,7 +906,7 @@ function editWorkflow() {
                           data-testid="onboarding-api-key"
                           @input="keyError = false"
                         />
-                        <p v-if="keyError" class="onb-error">{{ t('pages.onboarding.apiKey.required') }}</p>
+                        <p v-if="keyError" class="onb-error">{{ t(draft.acpBackend === 'codex' ? 'pages.onboarding.apiKey.codexRequired' : 'pages.onboarding.apiKey.required') }}</p>
                       </label>
                     </div>
                   </section>
