@@ -81,6 +81,19 @@ describe('runsClient request coverage', () => {
     })
     await runsClient.startRun('wf3', {}, 'manual', 'normal', [], { firstMessage: { text: ' ' } })
     expect(JSON.parse(fetchMock.mock.calls.at(-1)![1].body)).not.toHaveProperty('firstMessage')
+    expect(JSON.parse(fetchMock.mock.calls.at(-1)![1].body)).not.toHaveProperty('publishedSnapshot')
+
+    await runsClient.startRun('wf-home', {}, 'manual', 'high', [], {
+      publishedSnapshot: true,
+      title: '已发布',
+      firstMessage: { text: '开工' },
+    })
+    expect(JSON.parse(fetchMock.mock.calls.at(-1)![1].body)).toMatchObject({
+      publishedSnapshot: true,
+      priority: 'high',
+      title: '已发布',
+      firstMessage: { text: '开工', images: [] },
+    })
 
     await runsClient.updateRunPriority('r1', 'high')
     await runsClient.cancelRun('r1')

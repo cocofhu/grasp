@@ -410,6 +410,52 @@ func (s *WorkflowService) VersionGraph(id string, version int) (models.Graph, er
 	return snap.Graph, nil
 }
 
+// PublishedSnapshot returns the version row PublishedVersion points at.
+// ok is false when the workflow was never published or that row is missing.
+func (s *WorkflowService) PublishedSnapshot(wf models.WorkflowDef) (models.WorkflowVersion, bool) {
+	if s == nil || wf.ID == "" || wf.PublishedVersion <= 0 {
+		return models.WorkflowVersion{}, false
+	}
+	var snap models.WorkflowVersion
+	if err := s.db.Where("workflow_id = ? AND version = ?", wf.ID, wf.PublishedVersion).First(&snap).Error; err != nil {
+		return models.WorkflowVersion{}, false
+	}
+	return snap, true
+}
+
+// PublishedSnapshots loads the published version row for each workflow whose
+// PublishedVersion is greater than 0. Workflows with a missing row are omitted.
+func (s *WorkflowService) PublishedSnapshots(wfs []models.WorkflowDef) map[string]models.WorkflowVersion {
+	out := map[string]models.WorkflowVersion{}
+	if s == nil || len(wfs) == 0 {
+		return out
+	}
+	var q *gorm.DB
+	n := 0
+	for _, wf := range wfs {
+		if wf.ID == "" || wf.PublishedVersion <= 0 {
+			continue
+		}
+		if n == 0 {
+			q = s.db.Where("workflow_id = ? AND version = ?", wf.ID, wf.PublishedVersion)
+		} else {
+			q = q.Or("workflow_id = ? AND version = ?", wf.ID, wf.PublishedVersion)
+		}
+		n++
+	}
+	if n == 0 {
+		return out
+	}
+	var snaps []models.WorkflowVersion
+	if err := q.Find(&snaps).Error; err != nil {
+		return out
+	}
+	for _, snap := range snaps {
+		out[snap.WorkflowID] = snap
+	}
+	return out
+}
+
 // Restore appends a new head version (Source=restore, RestoredFrom=version)
 // carrying vN's graph, name and description. History is never rewritten.
 // Restoring content identical to the head is a no-op.

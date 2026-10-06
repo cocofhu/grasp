@@ -16,8 +16,14 @@ import (
 
 func (h *Handlers) ListWorkflows(c *gin.Context) {
 	wfs := h.WF.List(c.Query("projectId"))
+	snaps := h.WF.PublishedSnapshots(wfs)
 	out := make([]gin.H, 0, len(wfs))
 	for _, wf := range wfs {
+		if snap, ok := snaps[wf.ID]; ok {
+			cp := snap
+			out = append(out, workflowDTO(wf, &cp))
+			continue
+		}
 		out = append(out, workflowDTO(wf))
 	}
 	c.JSON(http.StatusOK, out)
@@ -27,6 +33,10 @@ func (h *Handlers) GetWorkflow(c *gin.Context) {
 	wf, ok := h.WF.Get(c.Param("id"))
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	if snap, found := h.WF.PublishedSnapshot(wf); found {
+		c.JSON(http.StatusOK, workflowDTO(wf, &snap))
 		return
 	}
 	c.JSON(http.StatusOK, workflowDTO(wf))

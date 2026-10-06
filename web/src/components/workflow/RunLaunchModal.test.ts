@@ -143,6 +143,7 @@ describe('RunLaunchModal', () => {
       [],
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
+    expect(apiMocks.startRun.mock.calls[0]?.[5]).not.toHaveProperty('publishedSnapshot')
     expect(wrapper.emitted('started')?.[0]?.[0]).toBe('run-99')
     // plan g2.1: success phase first — no auto view-run/close
     expect(wrapper.emitted('view-run')).toBeFalsy()
@@ -150,6 +151,25 @@ describe('RunLaunchModal', () => {
     expect(wrapper.text()).toMatch(/工作流已启动|Workflow started/)
     expect(wrapper.text()).toMatch(/查看运行|View run/)
     expect(wrapper.text()).toMatch(/留在当前页|Stay on this page/)
+    wrapper.unmount()
+  })
+
+  it('sends publishedSnapshot when opened from the home page', async () => {
+    apiMocks.startRun.mockResolvedValue({ id: 'run-pub' })
+    const wrapper = mountModal(true, { publishedSnapshot: true })
+    await flushPromises()
+    const startBtn = findStartButton(wrapper)
+    await startBtn!.trigger('click')
+    await flushPromises()
+    expect(apiMocks.startRun).toHaveBeenCalledWith(
+      'wf-1',
+      expect.anything(),
+      'manual',
+      'normal',
+      [],
+      expect.objectContaining({ publishedSnapshot: true }),
+    )
+    expect(wrapper.emitted('started')?.[0]?.[0]).toBe('run-pub')
     wrapper.unmount()
   })
 

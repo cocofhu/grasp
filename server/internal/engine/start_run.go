@@ -61,6 +61,25 @@ func (e *Engine) StartRunWithFirstMessage(workflowID string, inputs map[string]a
 	return e.startRun(def, def.Graph, inputs, trigger, pri, tags, env, title, firstMessage)
 }
 
+// publishedSnapshot loads the head and the WorkflowVersion row numbered
+// PublishedVersion. The returned def.Version is that published number so the
+// run pins to the snapshot. The head name is left unchanged.
+func (e *Engine) publishedSnapshot(workflowID string) (models.WorkflowDef, models.WorkflowVersion, error) {
+	var def models.WorkflowDef
+	if err := e.db.First(&def, "id = ?", workflowID).Error; err != nil {
+		return def, models.WorkflowVersion{}, fmt.Errorf("workflow not found: %w", err)
+	}
+	if def.PublishedVersion == 0 {
+		return def, models.WorkflowVersion{}, fmt.Errorf("workflow not published")
+	}
+	var snap models.WorkflowVersion
+	if err := e.db.Where("workflow_id = ? AND version = ?", def.ID, def.PublishedVersion).First(&snap).Error; err != nil {
+		return def, models.WorkflowVersion{}, fmt.Errorf("published version not found: %w", err)
+	}
+	def.Version = def.PublishedVersion
+	return def, snap, nil
+}
+
 // StartRunFromPublished creates a run from the WorkflowVersion numbered
 // def.PublishedVersion. Empty trigger defaults to api; explicit values must be
 // whitelist codes (manual|api|pm_mcp). Used exclusively by /v1 external API.
@@ -73,19 +92,34 @@ func (e *Engine) StartRunFromPublished(workflowID string, inputs map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	var def models.WorkflowDef
-	if err := e.db.First(&def, "id = ?", workflowID).Error; err != nil {
-		return nil, fmt.Errorf("workflow not found: %w", err)
+	def, snap, err := e.publishedSnapshot(workflowID)
+	if err != nil {
+		return nil, err
 	}
-	if def.PublishedVersion == 0 {
-		return nil, fmt.Errorf("workflow not published")
-	}
-	var snap models.WorkflowVersion
-	if err := e.db.Where("workflow_id = ? AND version = ?", def.ID, def.PublishedVersion).First(&snap).Error; err != nil {
-		return nil, fmt.Errorf("published version not found: %w", err)
-	}
-	def.Version = def.PublishedVersion
 	return e.startRun(def, snap.Graph, inputs, resolved, models.PriorityNormal, tags, env, "", nil)
+}
+
+// StartRunFromPublishedWithFirstMessage runs the same published snapshot as
+// StartRunFromPublished, and also accepts the home page's priority, title, and
+// opening message. trigger is the caller's already-resolved value.
+// A non-blank snapshot name is copied onto the run so it is not labeled with
+// a newer draft head.
+func (e *Engine) StartRunFromPublishedWithFirstMessage(workflowID string, inputs map[string]any, trigger, priorityLabel string, tags []string, env []models.EnvEntry, title string, firstMessage *models.CompositeText) (*models.Run, error) {
+	if e.IsHalted() {
+		return nil, fmt.Errorf("server is shutting down")
+	}
+	pri, err := models.ParsePriorityLabel(priorityLabel)
+	if err != nil {
+		return nil, err
+	}
+	def, snap, err := e.publishedSnapshot(workflowID)
+	if err != nil {
+		return nil, err
+	}
+	if name := strings.TrimSpace(snap.Name); name != "" {
+		def.Name = name
+	}
+	return e.startRun(def, snap.Graph, inputs, trigger, pri, tags, env, title, firstMessage)
 }
 
 func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map[string]any, trigger string, priority int, tags []string, env []models.EnvEntry, titleOverride string, firstMessage *models.CompositeText) (*models.Run, error) {

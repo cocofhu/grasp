@@ -989,6 +989,7 @@ onBeforeUnmount(() => {
       :run-title="launchTitle"
       :first-message="launchFirstMessage"
       :initial-priority="launchPriority"
+      published-snapshot
       @close="closeLaunch()"
       @stayed="closeLaunch()"
       @started="onLaunchStarted($event)"

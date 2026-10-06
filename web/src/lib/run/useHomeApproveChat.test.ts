@@ -334,6 +334,7 @@ describe('useHomeApproveChat', () => {
     expect(mocks.startRun).toHaveBeenCalledWith('wf-ap', {}, 'manual', 'high', [], {
       title: '紧急需求',
       firstMessage: { text: '紧急需求', images: [] },
+      publishedSnapshot: true,
     })
   })
 
@@ -347,6 +348,7 @@ describe('useHomeApproveChat', () => {
     expect(mocks.startRun).toHaveBeenCalledWith('wf-ap', {}, 'manual', 'normal', [], {
       title: '把登录做清楚',
       firstMessage: { text: '把登录做清楚', images: [] },
+      publishedSnapshot: true,
     })
     // The engine delivers the message once the approve node parks.
     expect(mocks.reactReply).not.toHaveBeenCalled()
@@ -369,6 +371,7 @@ describe('useHomeApproveChat', () => {
         text: '',
         images: [{ data: 'abc', mimeType: 'image/png', name: 'shot.png' }],
       },
+      publishedSnapshot: true,
     })
     expect(mocks.reactReply).not.toHaveBeenCalled()
     expect(mocks.push).toHaveBeenCalledWith({
@@ -449,6 +452,7 @@ describe('useHomeApproveChat', () => {
     expect(mocks.startRun).toHaveBeenCalledWith('wf-ap', {}, 'manual', 'normal', [], {
       title: '卸载后仍要跳转',
       firstMessage: { text: '卸载后仍要跳转', images: [] },
+      publishedSnapshot: true,
     })
     expect(mocks.push).toHaveBeenCalledWith({
       path: '/gates',
@@ -694,8 +698,8 @@ describe('useHomeApproveChat', () => {
     expect(chat.homeWorkflows.value.map((w) => w.id)).toEqual(['wf-ap'])
   })
 
-  // plan g3.3 — draft / non-clarify-first stay hidden even when showOnHome is true
-  it('still hides draft and non-clarify-first workflows when showOnHome is true', async () => {
+  // Never-published drafts and non-clarify-first heads stay off the start list.
+  it('still hides never-published drafts and non-clarify-first workflows when showOnHome is true', async () => {
     mocks.listWorkflows.mockResolvedValue([
       { ...approveWf, id: 'wf-draft', status: 'draft' as const, showOnHome: true },
       { ...reactWf, showOnHome: true },
@@ -758,5 +762,171 @@ describe('useHomeApproveChat', () => {
     await chat.reloadAfterCreate('wf-new')
     expect(chat.homeWorkflows.value.map((w) => w.id)).toEqual(['wf-ap'])
     expect(chat.selectedId.value).toBe('wf-ap')
+  })
+
+  it('keeps a card from the published snapshot after the head becomes a draft', async () => {
+    const draftHead = {
+      ...approveWf,
+      name: '草稿名',
+      description: '草稿说明',
+      status: 'draft' as const,
+      version: 2,
+      publishedVersion: 1,
+      showOnHome: true,
+      nodes: reactWf.nodes,
+      edges: reactWf.edges,
+      publishedSnapshot: {
+        version: 1,
+        name: '已发布名',
+        description: '已发布说明',
+        nodes: approveWf.nodes,
+        edges: approveWf.edges,
+      },
+    }
+    const never = {
+      ...approveWf,
+      id: 'wf-never',
+      name: '从未发布',
+      status: 'draft' as const,
+      version: 1,
+      publishedVersion: 0,
+      showOnHome: true,
+    }
+    mocks.listWorkflows.mockResolvedValue([draftHead, never, { ...approveWf, id: 'wf-off', showOnHome: false, publishedVersion: 1, publishedSnapshot: draftHead.publishedSnapshot }])
+    const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
+    await chat.load()
+    expect(chat.homeWorkflows.value.map((w) => w.id)).toEqual(['wf-ap'])
+    expect(chat.homeWorkflows.value[0]?.name).toBe('已发布名')
+    expect(chat.homeWorkflows.value[0]?.description).toBe('已发布说明')
+    expect(chat.unpublishedHomeWorkflows.value.map((w) => w.id)).toEqual(['wf-never'])
+    chat.draft.value = '仍用已发布版本'
+    await chat.send()
+    expect(mocks.startRun).toHaveBeenCalledWith('wf-ap', {}, 'manual', 'normal', [], {
+      title: '仍用已发布版本',
+      firstMessage: { text: '仍用已发布版本', images: [] },
+      publishedSnapshot: true,
+    })
+    expect(mocks.push).toHaveBeenCalledWith({
+      path: '/gates',
+      query: { run: 'run-1', node: 'ap', projectId: 'proj-1' },
+    })
+  })
+
+  it('drops a home-visible draft when the published snapshot is not clarify-first', async () => {
+    mocks.listWorkflows.mockResolvedValue([
+      {
+        ...approveWf,
+        status: 'draft' as const,
+        version: 2,
+        publishedVersion: 1,
+        showOnHome: true,
+        publishedSnapshot: {
+          version: 1,
+          name: '已发布实现',
+          description: '',
+          nodes: reactWf.nodes,
+          edges: reactWf.edges,
+        },
+      },
+    ])
+    const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
+    await chat.load()
+    expect(chat.homeWorkflows.value).toHaveLength(0)
+    expect(chat.unpublishedHomeWorkflows.value.map((w) => w.id)).toEqual(['wf-ap'])
+  })
+
+  it('asks for launch fields from the published snapshot, not the draft head', async () => {
+    const snapNodes = [
+      {
+        id: 'in',
+        type: 'input' as const,
+        label: '开始',
+        position: { x: 0, y: 0 },
+        config: {
+          variables: [{ name: 'topic', ask: true, required: true, type: 'text', value: '' }],
+        },
+      },
+      approveWf.nodes[1],
+      approveWf.nodes[2],
+    ]
+    mocks.listWorkflows.mockResolvedValue([
+      {
+        ...approveWf,
+        name: '草稿名',
+        status: 'draft' as const,
+        version: 2,
+        publishedVersion: 1,
+        nodes: [
+          {
+            id: 'in',
+            type: 'input' as const,
+            label: '开始',
+            position: { x: 0, y: 0 },
+            config: {
+              variables: [{ name: 'repos', ask: true, required: true, type: 'repos', value: [] }],
+            },
+          },
+          approveWf.nodes[1],
+          approveWf.nodes[2],
+        ],
+        publishedSnapshot: {
+          version: 1,
+          name: '已发布名',
+          description: '已发布说明',
+          nodes: snapNodes,
+          edges: approveWf.edges,
+        },
+      },
+    ])
+    const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
+    await chat.load()
+    chat.draft.value = '需要主题'
+    await chat.send()
+    expect(mocks.startRun).not.toHaveBeenCalled()
+    expect(chat.launchOpen.value).toBe(true)
+    expect(chat.launchTarget.value?.name).toBe('已发布名')
+    expect(chat.runFields.value.map((f) => f.key)).toEqual(['topic'])
+  })
+
+  it('switches the card to the newly published snapshot', async () => {
+    const snap = {
+      version: 1,
+      name: '已发布名',
+      description: '已发布说明',
+      nodes: approveWf.nodes,
+      edges: approveWf.edges,
+    }
+    mocks.listWorkflows.mockResolvedValue([
+      {
+        ...approveWf,
+        name: '草稿名',
+        description: '草稿说明',
+        status: 'draft' as const,
+        version: 2,
+        publishedVersion: 1,
+        publishedSnapshot: snap,
+      },
+    ])
+    const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
+    await chat.load()
+    expect(chat.homeWorkflows.value[0]?.name).toBe('已发布名')
+    mocks.listWorkflows.mockResolvedValue([
+      {
+        ...approveWf,
+        name: '新版本',
+        description: '新说明',
+        status: 'published' as const,
+        version: 2,
+        publishedVersion: 2,
+        publishedSnapshot: { ...snap, version: 2, name: '新版本', description: '新说明' },
+      },
+    ])
+    await chat.load()
+    expect(chat.homeWorkflows.value[0]?.name).toBe('新版本')
+    expect(chat.homeWorkflows.value[0]?.description).toBe('新说明')
   })
 })

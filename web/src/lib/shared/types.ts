@@ -48,6 +48,15 @@ export interface WFEdge {
   maxAttempts?: number
 }
 
+/** Name, description, and graph of the published version (not the draft head). */
+export interface PublishedWorkflowSnapshot {
+  version: number
+  name: string
+  description: string
+  nodes: WFNode[]
+  edges: WFEdge[]
+}
+
 export interface Workflow {
   id: string
   projectId?: string
@@ -61,6 +70,11 @@ export interface Workflow {
   version: number
   /** Version that API runs execute; 0 = never published. */
   publishedVersion?: number
+  /**
+   * Immutable snapshot at publishedVersion. Present only when that version
+   * exists. Home reads this; nodes/edges above stay the latest saved head.
+   */
+  publishedSnapshot?: PublishedWorkflowSnapshot | null
   updatedAt: string
   lastRunAt?: string
   needsRepo: boolean
