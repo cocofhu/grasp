@@ -41,6 +41,7 @@ func OptionDescriptors() []OptionDescriptor {
 		{Env: "GRASP_SANDBOX_MAX_ATTEMPTS", YAML: "sandbox.sandbox_max_attempts", Type: "integer", Default: "3", ZH: "可重试沙箱故障的最大尝试次数", EN: "Maximum attempts for retryable sandbox faults"},
 		{Env: "GRASP_SANDBOX_RETRY_BACKOFF_SEC", YAML: "sandbox.sandbox_retry_backoff_seconds", Type: "integer", Default: "2", ZH: "沙箱重试基础退避秒数", EN: "Base sandbox retry backoff in seconds"},
 		{Env: "GRASP_SANDBOX_CREATE_TIMEOUT_SEC", YAML: "sandbox.sandbox_create_timeout_seconds", Type: "integer", Default: "1200", ZH: "等待沙箱就绪的超时秒数", EN: "Timeout waiting for sandbox readiness in seconds"},
+		{Env: "GRASP_SANDBOX_MEMORY_MB", YAML: "sandbox.sandbox_memory_mb", Type: "integer", Default: "8192", ZH: "每个沙箱的内存上限（MiB）；设置页可改，设置后页面只读", EN: "Memory limit per sandbox in MiB; editable on the settings page unless this is set"},
 		{Env: "GRASP_SANDBOX_WORK_DIR", YAML: "sandbox.work_dir", Type: "path", ZH: "ConfigHome 宿主工作目录", EN: "Host work directory for ConfigHome"},
 		{Env: "GRASP_SANDBOX_RUNTIME_BUNDLE", YAML: "sandbox.runtime_bundle", Type: "path", Default: "/app/sandbox-runtime/sandbox-runtime.tgz", ZH: "下发给沙箱的运行时包（scripts/build-sandbox-runtime.sh 构建）", EN: "Runtime bundle served to sandboxes (built by scripts/build-sandbox-runtime.sh)"},
 		{Env: "GRASP_AUTH_SESSION_TTL", YAML: "auth.session_ttl", Type: "duration", Default: "168h", ZH: "会话有效期", EN: "Session lifetime"},

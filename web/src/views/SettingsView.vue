@@ -39,9 +39,20 @@ const groups = computed(() => [
     icon: 'flask',
     keys: ['max_test_sandboxes'],
   },
+  {
+    id: 'resources',
+    title: t('pages.settings.groups.resources.title'),
+    desc: t('pages.settings.groups.resources.desc'),
+    icon: 'settings',
+    keys: ['sandbox_memory_mb'],
+  },
 ])
 
-const SETTING_KEYS_WITH_UNIT = new Set(['run_sandbox_ttl_minutes', 'test_sandbox_ttl_minutes'])
+const SETTING_UNITS: Record<string, string> = {
+  run_sandbox_ttl_minutes: 'common.minutes',
+  test_sandbox_ttl_minutes: 'common.minutes',
+  sandbox_memory_mb: 'pages.settings.units.mib',
+}
 
 function settingDescription(key: string): string {
   return t(`pages.settings.settings.${key}`)
@@ -51,8 +62,9 @@ function settingLabel(key: string): string {
   return t(`pages.settings.labels.${key}`)
 }
 
-function settingHasUnit(key: string): boolean {
-  return SETTING_KEYS_WITH_UNIT.has(key)
+function settingUnit(key: string): string {
+  const unitKey = SETTING_UNITS[key]
+  return unitKey ? t(unitKey) : ''
 }
 
 function sourceLabelOf(source: string): string {
@@ -478,7 +490,7 @@ onBeforeUnmount(() => {
                   :disabled="itemOf(key)!.locked || saving"
                   class="input settings-number-input w-[88px] text-right disabled:cursor-not-allowed disabled:opacity-55"
                 />
-                <span v-if="settingHasUnit(key)" class="chip">{{ t('common.minutes') }}</span>
+                <span v-if="settingUnit(key)" class="chip">{{ settingUnit(key) }}</span>
               </div>
             </div>
           </template>

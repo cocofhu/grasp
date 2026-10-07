@@ -48,6 +48,7 @@ const SETTINGS = {
     { key: 'run_sandbox_ttl_minutes', value: 30, min: 1, source: 'ui', locked: false },
     { key: 'test_sandbox_ttl_minutes', value: 15, min: 1, source: 'ui', locked: false },
     { key: 'max_test_sandboxes', value: 3, min: 1, source: 'ui', locked: false },
+    { key: 'sandbox_memory_mb', value: 8192, min: 1024, source: 'config', locked: false },
   ],
 }
 
@@ -125,7 +126,8 @@ describe('SettingsView number input polish (Demo 优化后)', () => {
     // g1.1 — no empty unit placeholder
     expect(src).not.toMatch(/<span v-else class="w-9"\s*\/>/)
     // g1.2 — TTL unit via .chip + common.minutes (NodeInspector-aligned)
-    expect(src).toMatch(/class="chip">\{\{\s*t\('common\.minutes'\)\s*\}\}<\/span>/)
+    expect(src).toMatch(/class="chip">\{\{\s*settingUnit\(key\)\s*\}\}<\/span>/)
+    expect(src).toMatch(/run_sandbox_ttl_minutes: 'common\.minutes'/)
     expect(src).not.toMatch(/common\.format\.minutes/)
     // g1.3 / f7 — width + right align preserved
     expect(src).toMatch(/settings-number-input w-\[88px\] text-right/)
@@ -164,6 +166,38 @@ describe('SettingsView number input polish (Demo 优化后)', () => {
     expect(label.exists()).toBe(true)
     expect(label.text()).toContain('最大并发运行数')
 
+    w.unmount()
+  })
+})
+
+describe('SettingsView sandbox memory', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    apiMocks.listSandboxes.mockResolvedValue([])
+    apiMocks.dashboard.mockResolvedValue({ running: 0 })
+  })
+
+  it('renders the memory limit with a MiB chip and saves the edited value', async () => {
+    apiMocks.getSettings.mockResolvedValue(SETTINGS)
+    apiMocks.updateSettings.mockResolvedValue(SETTINGS)
+    const w = mountSettings()
+    await flushPromises()
+
+    expect(w.text()).toContain('沙箱资源')
+    const input = w.find('#setting-sandbox_memory_mb')
+    expect(input.exists()).toBe(true)
+    expect(input.element).toHaveProperty('value', '8192')
+    expect(input.attributes('min')).toBe('1024')
+    expect(input.element.parentElement!.querySelector('.chip')?.textContent).toContain('MiB')
+    expect(w.find('label[for="setting-sandbox_memory_mb"]').text()).toContain('沙箱内存上限')
+
+    await input.setValue('12288')
+    const saveButton = w.findAll('button').find((button) => button.text().includes('保存'))
+    await saveButton!.trigger('click')
+    await flushPromises()
+    expect(apiMocks.updateSettings).toHaveBeenCalledWith(expect.objectContaining({
+      sandbox_memory_mb: 12288,
+    }))
     w.unmount()
   })
 })

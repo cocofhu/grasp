@@ -397,7 +397,7 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 		Labels:       labels,
 		WorkspaceDir: workspaceDir,
 		Mounts:       spec.Mounts,
-		Resources:    spec.Resources,
+		Resources:    withDefaultMemory(spec.Resources),
 	}
 	var runtimeData []byte
 	var runtimeMan RuntimeManifest
