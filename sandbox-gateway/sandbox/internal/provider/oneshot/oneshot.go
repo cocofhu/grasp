@@ -161,7 +161,8 @@ func (p *Provider) Open(procCtx, _ context.Context, opts provider.OpenOptions,
 	bin := p.c.Bin()
 	path, err := exec.LookPath(bin)
 	if err != nil {
-		return nil, fmt.Errorf("one-shot agent %q not found on PATH: %w", bin, err)
+		return nil, fmt.Errorf("one-shot agent %q not found on PATH (sandbox image lacks this CLI; rebuild it with AGENT_PROVIDERS including %q): %w",
+			bin, p.c.AgentName(), err)
 	}
 	fsRoot := opts.FSRoot
 	if fsRoot == "" {
