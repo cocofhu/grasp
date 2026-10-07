@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/pagebridge"
 	"github.com/cocofhu/grasp/internal/runtime"
 )
 
@@ -261,15 +262,26 @@ func TestQueueSnapshotIncludesAnnotationsAndImages(t *testing.T) {
 	_ = eng.waitReviewReadyForTest(run.ID, "prop", 5*time.Second)
 }
 
-// TestPageSessionRoutesToSender: a turn someone sent carries a page session
-// id in its prompt only; page tools resolve it to that sender until the turn
-// is cancelled.
+// openPreview attaches a direct-preview drawer for owner and sets the page
+// control toggle and tab visibility.
+func openPreview(hub *pagebridge.Hub, runID, nodeID, owner string, on, visible bool) *pagebridge.Conn {
+	c := hub.Attach(pagebridge.Key{RunID: runID, NodeID: nodeID, Owner: owner}, func([]byte) error { return nil })
+	c.SetControl(on, visible)
+	return c
+}
+
+// TestPageSessionRoutesToSender: a turn sent while that person is on the
+// direct preview with page control open carries a page session id in its
+// prompt only; page tools resolve it to that sender until the turn is
+// cancelled.
 func TestPageSessionRoutesToSender(t *testing.T) {
 	eng, db, provider := setupReviewEngine(t)
 	hold := make(chan struct{})
 	provider.reviseHold = hold
 	prompts := make(chan string, 4)
 	provider.reviseHook = func(_ runtime.NodeReq, human string) { prompts <- human }
+	hub := pagebridge.NewHub()
+	eng.SetPageHub(hub)
 
 	run, err := eng.StartRun("review-wf", map[string]any{"idea": "登录"}, "test")
 	if err != nil {
@@ -278,6 +290,7 @@ func TestPageSessionRoutesToSender(t *testing.T) {
 	waitReactPause(t, db, run.ID, "prop")
 	waitRunStatus(t, db, run.ID, "waiting_human")
 
+	openPreview(hub, run.ID, "prop", "user:alice", true, true)
 	if _, err := eng.EnqueueReviewTurnAs("user:alice", run.ID, "prop", "帮我登录", nil, nil, "node", ""); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
@@ -324,4 +337,105 @@ func TestPageSessionRoutesToSender(t *testing.T) {
 			t.Fatalf("session id persisted: %s", b)
 		}
 	}
+}
+
+// TestPageSessionSkippedUnlessOnline: a sender is not enough. The prompt
+// stays the user's text, and page_* cannot resolve a session, unless that
+// sender's preview is online.
+func TestPageSessionSkippedUnlessOnline(t *testing.T) {
+	eng, db, provider := setupReviewEngine(t)
+	prompts := make(chan string, 4)
+	provider.reviseHook = func(_ runtime.NodeReq, human string) { prompts <- human }
+	hub := pagebridge.NewHub()
+	eng.SetPageHub(hub)
+
+	run, err := eng.StartRun("review-wf", map[string]any{"idea": "登录"}, "test")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitReactPause(t, db, run.ID, "prop")
+	waitRunStatus(t, db, run.ID, "waiting_human")
+
+	await := func(text string) string {
+		t.Helper()
+		select {
+		case p := <-prompts:
+			if !strings.Contains(p, text) {
+				t.Fatalf("prompt %q missing %q", p, text)
+			}
+			return p
+		case <-time.After(3 * time.Second):
+			t.Fatalf("turn %q never reached the provider", text)
+			return ""
+		}
+	}
+	assertPlain := func(prompt string) {
+		t.Helper()
+		if strings.Contains(prompt, "本轮页面操作 session_id:") || pageSessionPattern.FindString(prompt) != "" {
+			t.Fatalf("prompt must stay the user's text: %q", prompt)
+		}
+	}
+	send := func(text string) string {
+		t.Helper()
+		if _, err := eng.EnqueueReviewTurnAs("user:alice", run.ID, "prop", text, nil, nil, "node", ""); err != nil {
+			t.Fatalf("enqueue %q: %v", text, err)
+		}
+		p := await(text)
+		assertPlain(p)
+		if err := eng.waitReviewReadyForTest(run.ID, "prop", 5*time.Second); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	send("没有预览")
+
+	conn := openPreview(hub, run.ID, "prop", "user:alice", false, true)
+	send("开关关闭")
+
+	conn.SetControl(true, false)
+	send("人已离开")
+
+	bob := openPreview(hub, run.ID, "prop", "user:bob", true, true)
+	defer bob.Detach()
+	send("别人开着")
+
+	conn.SetControl(true, true)
+	if _, err := eng.EnqueueReviewTurnAs("user:alice", run.ID, "prop", "在预览页", nil, nil, "node", ""); err != nil {
+		t.Fatalf("enqueue online: %v", err)
+	}
+	online := await("在预览页")
+	sid := pageSessionPattern.FindString(online)
+	if sid == "" || !strings.HasPrefix(online, "本轮页面操作 session_id:") {
+		t.Fatalf("online prompt should carry this turn's session id: %q", online)
+	}
+	if err := eng.waitReviewReadyForTest(run.ID, "prop", 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := eng.PageTurn(run.ID, "prop", sid); ok {
+		t.Fatal("previous turn's session id still valid")
+	}
+
+	conn.SetControl(true, false)
+	hold := make(chan struct{})
+	provider.reviseHold = hold
+	if _, err := eng.EnqueueReviewTurnAs("user:alice", run.ID, "prop", "这一轮不能操作", nil, nil, "node", ""); err != nil {
+		t.Fatalf("enqueue paused: %v", err)
+	}
+	paused := await("这一轮不能操作")
+	assertPlain(paused)
+	eng.pageMu.Lock()
+	n := len(eng.pageSessions)
+	eng.pageMu.Unlock()
+	if n != 0 {
+		t.Fatalf("unminted turn stored %d page sessions", n)
+	}
+	if _, _, ok := eng.PageTurn(run.ID, "prop", sid); ok {
+		t.Fatal("previous turn's id accepted on a turn that did not mint")
+	}
+	if _, _, ok := eng.PageTurn(run.ID, "prop", "ps_"+strings.Repeat("a", 43)); ok {
+		t.Fatal("forged session id accepted")
+	}
+	close(hold)
+	_ = eng.waitReviewReadyForTest(run.ID, "prop", 5*time.Second)
 }

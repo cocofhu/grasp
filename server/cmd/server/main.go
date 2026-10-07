@@ -250,6 +250,7 @@ func main() {
 		auditSvc.Record(rec)
 	})
 	pageHub := pagebridge.NewHub()
+	eng.SetPageHub(pageHub)
 	host.SetPageBridge(&pagebridge.Router{Hub: pageHub, Turns: eng})
 	host.SetLiveUpdater(eng)
 	gateShareSvc := gateshare.NewService(db, auditSvc)

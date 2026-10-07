@@ -13,6 +13,7 @@ import (
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/pagebridge"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/services"
 
@@ -112,9 +113,14 @@ type Engine struct {
 	visitorSweep sync.Once
 
 	// pageMu guards pageSessions: the page_* session id of each running turn
-	// that has a sender.
+	// whose sender is on a direct preview with page control open.
 	pageMu       sync.Mutex
 	pageSessions map[string]*pageSession
+
+	// pageHub is the direct-preview connection table. A turn mints a page
+	// session only when this sender's status is online. Nil in tests that
+	// never drive a page.
+	pageHub *pagebridge.Hub
 
 	// skills looks up Agents for same-project agent_profile runtime gate.
 	skills SkillLookup
@@ -125,6 +131,11 @@ type Engine struct {
 
 // SetBlobStore wires attachment externalization for StartRun / react turns.
 func (e *Engine) SetBlobStore(store blob.Store) { e.blobs = store }
+
+// SetPageHub wires the direct-preview hub consulted before a turn mints a
+// page session. Online means the sender is on that preview and has opened
+// page control.
+func (e *Engine) SetPageHub(h *pagebridge.Hub) { e.pageHub = h }
 
 // New builds an engine.
 func New(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.Store, maxRuns int) *Engine {
