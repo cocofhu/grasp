@@ -5,6 +5,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import Icon from '@/components/ui/Icon.vue'
 import OpenCodeCredentialPicker from '@/components/agent/OpenCodeCredentialPicker.vue'
+import CredentialProviderLogo from '@/components/project/CredentialProviderLogo.vue'
 import { api, type ProjectCredentialItem } from '@/lib/api/api'
 import { fmtTime } from '@/lib/shared/format'
 import { useToast } from '@/lib/composables/useToast'
@@ -280,7 +281,7 @@ onMounted(() => {
         {{ t('pages.projectDetail.projectCredentials.empty') }}
       </div>
       <div v-else class="scroll-area min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 lg:px-8">
-        <div class="mx-auto w-full max-w-[1600px] space-y-6">
+        <div class="w-full space-y-6">
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-3" data-testid="project-credentials-summary">
             <div class="rounded-lg border border-line bg-base/45 px-4 py-3">
               <p class="m-0 text-[11px] font-medium uppercase tracking-[0.12em] text-txt3">{{ t('pages.projectDetail.projectCredentials.summary.total') }}</p>
@@ -329,13 +330,13 @@ onMounted(() => {
                   data-testid="project-credential-row"
                 >
                   <div class="flex min-w-0 items-start gap-3">
-                    <div
-                      class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-[10px] font-bold uppercase tracking-tight"
-                      :class="item.configured ? 'border-ok/35 bg-ok/10 text-ok' : 'border-line bg-surface text-txt3'"
-                      aria-hidden="true"
-                    >
-                      {{ group.id === 'ai' ? 'AI' : group.id === 'git' ? 'GIT' : group.id === 'ssh' ? 'SSH' : 'KEY' }}
-                    </div>
+                    <CredentialProviderLogo
+                      :provider="item.provider"
+                      :name="item.name"
+                      :type="item.type"
+                      :env-key="item.envKey"
+                      :configured="item.configured"
+                    />
                     <div class="min-w-0 flex-1">
                       <div class="flex flex-wrap items-start justify-between gap-2">
                         <div class="min-w-0">

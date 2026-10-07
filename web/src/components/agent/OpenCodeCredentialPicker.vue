@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import OpenCodeProviderFields from '@/components/agent/OpenCodeProviderFields.vue'
+import CredentialProviderLogo from '@/components/project/CredentialProviderLogo.vue'
 import { api, type ProjectCredentialItem } from '@/lib/api/api'
 import { loadOpenCodeProviders } from '@/lib/agent/openCodeCatalog'
 import {
@@ -80,11 +81,6 @@ function vendorOf(item: ProjectCredentialItem): string {
 
 function modelOf(item: ProjectCredentialItem): string {
   return metaString(item, 'model')
-}
-
-function abbrev(item: ProjectCredentialItem): string {
-  const raw = vendorOf(item).replace(/[^a-z0-9]/gi, '').toUpperCase()
-  return (raw || 'AI').slice(0, 2)
 }
 
 function resetForm() {
@@ -330,13 +326,13 @@ watch(
           @click="choose(item.id)"
         >
           <div class="flex items-start gap-3">
-            <span
-              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-[10px] font-bold uppercase"
-              :class="mode === 'select' && selectedId === item.id ? 'border-accent/40 bg-surface text-accent-2' : 'border-line bg-surface text-txt3'"
-              aria-hidden="true"
-            >
-              {{ abbrev(item) }}
-            </span>
+            <CredentialProviderLogo
+              :provider="vendorOf(item) || item.provider"
+              :name="item.name"
+              :type="item.type"
+              :selected="mode === 'select' && selectedId === item.id"
+              :configured="true"
+            />
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <span class="truncate text-[12px] font-semibold text-txt">{{ item.name }}</span>
