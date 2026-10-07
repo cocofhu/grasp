@@ -18,7 +18,7 @@ Legend: **内化** = unexport / keep as test helper; **删除** = remove thin wr
 | # | Symbol | Disposition | Rationale |
 |---|--------|-------------|-----------|
 | 1 | auth.Service.CreateSession | 删除 | Thin wrapper over createSession; tests call createSession |
-| 2 | auth.Service.RateLimiter | 内化→rateLimiter | Test-only getter |
+| 2 | auth.Service.RateLimiter | 删除 | Login rate limiting removed entirely |
 | 3 | blob.IngestBytes | 内化→ingestBytes | No production callers |
 | 4–7 | blob.NewMemory / Memory.* | 保留 | In-memory Store for tests |
 | 8 | channels.ClassifyProgressFromACP | 内化→classifyProgressFromACP | Test helper; live path uses accumulator |

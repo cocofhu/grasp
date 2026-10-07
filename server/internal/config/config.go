@@ -127,10 +127,8 @@ type AuthUser struct {
 // AuthConfig holds static-account login settings. password_hash values are
 // secrets — inject via K8s Secret env in production, not git.
 type AuthConfig struct {
-	Users        []AuthUser `yaml:"users"`
-	SessionTTL   string     `yaml:"session_ttl"`   // e.g. "168h" or "7d"
-	MaxFailures  int        `yaml:"max_failures"`  // login failures before IP lock
-	LockDuration string     `yaml:"lock_duration"` // e.g. "5m"
+	Users      []AuthUser `yaml:"users"`
+	SessionTTL string     `yaml:"session_ttl"` // e.g. "168h" or "7d"
 }
 
 // SessionTTLDuration returns the fixed session lifetime (default 7 days).
@@ -139,14 +137,6 @@ func (a AuthConfig) SessionTTLDuration() time.Duration {
 		return d
 	}
 	return 7 * 24 * time.Hour
-}
-
-// LockDurationDuration returns the IP lock duration after too many failures.
-func (a AuthConfig) LockDurationDuration() time.Duration {
-	if d := parseDuration(a.LockDuration, 0); d > 0 {
-		return d
-	}
-	return 5 * time.Minute
 }
 
 type ServerConfig struct {
@@ -438,12 +428,6 @@ func applyEnvOverrides(c *Config) {
 	if v := env("GRASP_SANDBOX_RUNTIME_BUNDLE"); v != "" {
 		c.Sandbox.RuntimeBundle = v
 	}
-	if v := envInt("GRASP_AUTH_MAX_FAILURES"); v != 0 {
-		c.Auth.MaxFailures = v
-	}
-	if v := env("GRASP_AUTH_LOCK_DURATION"); v != "" {
-		c.Auth.LockDuration = v
-	}
 	if v := env("GRASP_AUTH_SESSION_TTL"); v != "" {
 		c.Auth.SessionTTL = v
 	}
@@ -557,9 +541,6 @@ func setDefaults(c *Config) {
 	}
 	if c.Server.PublicAdvertise == "" {
 		c.Server.PublicAdvertise = fmt.Sprintf("http://localhost:%d", c.Server.Port)
-	}
-	if c.Auth.MaxFailures == 0 {
-		c.Auth.MaxFailures = 5
 	}
 	warnUnsafeAuth(c)
 }

@@ -4007,8 +4007,6 @@
       "title": "Sign in",
       "subtitle": "Sign in with your account to manage the console",
       "redirectHint": "After sign-in you will return to",
-      "rateLimited": "Too many sign-in attempts. Please wait and try again.",
-      "loginFailed": "Sign-in failed",
       "badCredentials": "Incorrect username or password",
       "username": "Username",
       "password": "Password",

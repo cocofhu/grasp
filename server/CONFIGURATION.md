@@ -38,8 +38,6 @@ configured as project credentials, not in this platform config table.
 | `GRASP_SANDBOX_CREATE_TIMEOUT_SEC` | `sandbox.sandbox_create_timeout_seconds` | integer | `1200` | Public | Timeout waiting for sandbox readiness in seconds |
 | `GRASP_SANDBOX_WORK_DIR` | `sandbox.work_dir` | path | `Not set` | Public | Host work directory for ConfigHome |
 | `GRASP_SANDBOX_RUNTIME_BUNDLE` | `sandbox.runtime_bundle` | path | `/app/sandbox-runtime/sandbox-runtime.tgz` | Public | Runtime bundle served to sandboxes (built by scripts/build-sandbox-runtime.sh) |
-| `GRASP_AUTH_MAX_FAILURES` | `auth.max_failures` | integer | `5` | Public | Login failures before IP lock |
-| `GRASP_AUTH_LOCK_DURATION` | `auth.lock_duration` | duration | `5m` | Public | Login failure lock duration |
 | `GRASP_AUTH_SESSION_TTL` | `auth.session_ttl` | duration | `168h` | Public | Session lifetime |
 | `GRASP_AUTH_USERS` | `auth.users` | YAML/JSON | `Not set` | Sensitive | Static user array; required explicitly outside local mode |
 | `GRASP_SECRETS_KEY` | `security.secrets_key` | string | `Not set` | Sensitive | Master AES key for encrypting credentials at rest (base64 32 bytes); treat as a fixed salt, do not rotate. When unset, non-production modes generate secrets.key next to the SQLite database |

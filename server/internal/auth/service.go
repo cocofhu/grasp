@@ -22,16 +22,13 @@ const (
 
 // Service handles bcrypt login, session CRUD, and cookie helpers.
 type Service struct {
-	db    *gorm.DB
-	cfg   func() *config.Config
-	limit *RateLimiter
+	db  *gorm.DB
+	cfg func() *config.Config
 }
 
 // NewService constructs an auth service. cfg must return the live config snapshot.
 func NewService(db *gorm.DB, cfg func() *config.Config) *Service {
-	s := &Service{db: db, cfg: cfg}
-	s.limit = NewRateLimiter(cfg)
-	return s
+	return &Service{db: db, cfg: cfg}
 }
 
 // Login validates credentials and creates a session. Returns unified error on failure.

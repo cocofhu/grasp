@@ -18,7 +18,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func setupAuthHTTP(t *testing.T, maxFailures int) (*auth.Service, *gin.Engine) {
+func setupAuthHTTP(t *testing.T) (*auth.Service, *gin.Engine) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	hash, err := bcrypt.GenerateFromPassword([]byte("secret"), bcrypt.DefaultCost)
@@ -31,10 +31,8 @@ func setupAuthHTTP(t *testing.T, maxFailures int) (*auth.Service, *gin.Engine) {
 	}
 	cfg := &config.Config{
 		Auth: config.AuthConfig{
-			Users:        []config.AuthUser{{Username: "admin", PasswordHash: string(hash)}},
-			MaxFailures:  maxFailures,
-			LockDuration: "1m",
-			SessionTTL:   "168h",
+			Users:      []config.AuthUser{{Username: "admin", PasswordHash: string(hash)}},
+			SessionTTL: "168h",
 		},
 	}
 	config.StoreConfig(cfg)
@@ -59,7 +57,7 @@ func setupAuthHTTP(t *testing.T, maxFailures int) (*auth.Service, *gin.Engine) {
 }
 
 func TestLoginHandlerSuccess(t *testing.T) {
-	_, r := setupAuthHTTP(t, 5)
+	_, r := setupAuthHTTP(t)
 	body, _ := json.Marshal(map[string]string{
 		"username": "admin",
 		"password": "secret",
@@ -92,7 +90,7 @@ func TestLoginHandlerSuccess(t *testing.T) {
 }
 
 func TestLoginHandlerInvalidJSON(t *testing.T) {
-	_, r := setupAuthHTTP(t, 5)
+	_, r := setupAuthHTTP(t)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewReader([]byte("not-json")))
 	req.Header.Set("Content-Type", "application/json")
@@ -103,7 +101,7 @@ func TestLoginHandlerInvalidJSON(t *testing.T) {
 }
 
 func TestLoginHandlerWrongPassword(t *testing.T) {
-	_, r := setupAuthHTTP(t, 5)
+	_, r := setupAuthHTTP(t)
 	body, _ := json.Marshal(map[string]string{"username": "admin", "password": "wrong"})
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewReader(body))
@@ -114,41 +112,23 @@ func TestLoginHandlerWrongPassword(t *testing.T) {
 	}
 }
 
-func TestLoginHandlerAlreadyLocked(t *testing.T) {
-	svc, r := setupAuthHTTP(t, 1)
-	svc.RateLimiter().RecordFailure("10.0.0.88")
-	body, _ := json.Marshal(map[string]string{"username": "admin", "password": "secret"})
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Forwarded-For", "10.0.0.88")
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusTooManyRequests {
-		t.Fatalf("already locked: %d", w.Code)
-	}
-}
-
-func TestLoginHandlerRateLimit(t *testing.T) {
-	_, r := setupAuthHTTP(t, 2)
+func TestLoginHandlerRepeatedFailuresStayUnauthorized(t *testing.T) {
+	_, r := setupAuthHTTP(t)
 	body, _ := json.Marshal(map[string]string{"username": "admin", "password": "wrong"})
-	doLogin := func() int {
+	for i := 0; i < 10; i++ {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Forwarded-For", "10.0.0.99")
 		r.ServeHTTP(w, req)
-		return w.Code
-	}
-	if code := doLogin(); code != http.StatusUnauthorized {
-		t.Fatalf("attempt 1: %d", code)
-	}
-	if code := doLogin(); code != http.StatusTooManyRequests {
-		t.Fatalf("rate limited: %d", code)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: %d", i+1, w.Code)
+		}
 	}
 }
 
 func TestLogoutAndMeHandler(t *testing.T) {
-	svc, r := setupAuthHTTP(t, 5)
+	svc, r := setupAuthHTTP(t)
 	sess, err := svc.CreateSession("admin")
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +161,7 @@ func TestLogoutAndMeHandler(t *testing.T) {
 }
 
 func TestAPIMiddleware(t *testing.T) {
-	svc, r := setupAuthHTTP(t, 5)
+	svc, r := setupAuthHTTP(t)
 	sess, err := svc.CreateSession("admin")
 	if err != nil {
 		t.Fatal(err)
@@ -204,7 +184,7 @@ func TestAPIMiddleware(t *testing.T) {
 }
 
 func TestSandboxRedirectMiddleware(t *testing.T) {
-	svc, r := setupAuthHTTP(t, 5)
+	svc, r := setupAuthHTTP(t)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/sandbox/1/", nil)
 	r.ServeHTTP(w, req)
@@ -226,7 +206,7 @@ func TestSandboxRedirectMiddleware(t *testing.T) {
 }
 
 func TestRequireSession(t *testing.T) {
-	svc, r := setupAuthHTTP(t, 5)
+	svc, r := setupAuthHTTP(t)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	r.ServeHTTP(w, req)
@@ -324,8 +304,5 @@ func TestValidateSessionExpired(t *testing.T) {
 	}
 	if _, err := svc.ValidateSession("expired"); err == nil {
 		t.Fatal("expected expired session error")
-	}
-	if rl := svc.RateLimiter(); rl == nil {
-		t.Fatal("expected rate limiter")
 	}
 }

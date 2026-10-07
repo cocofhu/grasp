@@ -18,7 +18,6 @@ const { setUser, user, ready } = useAuth()
 const username = ref('')
 const password = ref('')
 const error = ref('')
-const rateLimited = ref(false)
 const loading = ref(false)
 const fieldError = ref(false)
 
@@ -32,21 +31,15 @@ if (user.value) {
 
 async function onSubmit() {
   error.value = ''
-  rateLimited.value = false
   fieldError.value = false
   loading.value = true
   try {
     const res = await authApi.login(username.value.trim(), password.value, redirectTarget.value)
     setUser({ username: res.username, expiresAt: res.expires_at })
     await router.replace(authRedirectPath(res.redirect || redirectTarget.value))
-  } catch (e: any) {
-    const msg = e?.message || t('pages.login.loginFailed')
-    if (msg.includes('429') || msg.includes('过于频繁') || msg.includes('Too many')) {
-      rateLimited.value = true
-    } else {
-      error.value = t('pages.login.badCredentials')
-      fieldError.value = true
-    }
+  } catch {
+    error.value = t('pages.login.badCredentials')
+    fieldError.value = true
   } finally {
     loading.value = false
   }
@@ -79,10 +72,6 @@ async function onSubmit() {
         </div>
 
         <div v-if="error" class="mb-4 rounded-lg border border-err/30 bg-err/10 px-3 py-2.5 text-[13px] text-err">{{ error }}</div>
-        <div v-if="rateLimited" class="mb-4 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2.5 text-[13px] text-warn">
-          {{ t('pages.login.rateLimited') }}
-        </div>
-
         <form @submit.prevent="onSubmit">
           <div class="mb-4">
             <label class="mb-1.5 block text-xs font-medium text-txt2" for="username">{{ t('pages.login.username') }}</label>
