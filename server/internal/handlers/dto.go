@@ -39,6 +39,11 @@ func effectiveRunDuration(r models.Run) int {
 // variables are injected into the input node config so the inspector / output
 // panels render them. Shared by the workflow editor and the run detail view so
 // a run renders against the exact graph snapshot it executed.
+//
+// caps is the capability snapshot frozen onto a run-graph agent node at start.
+// Workflow definitions never store it, so the field is omitted unless the node
+// actually carries one — the editor must not grow a caps key, and this DTO
+// never writes a snapshot back onto a workflow.
 func graphNodesDTO(g models.Graph) []gin.H {
 	nodes := make([]gin.H, 0, len(g.Nodes))
 	for _, n := range g.Nodes {
@@ -49,10 +54,14 @@ func graphNodesDTO(g models.Graph) []gin.H {
 		if n.Type == "input" && len(g.Variables) > 0 {
 			cfg["variables"] = g.Variables
 		}
-		nodes = append(nodes, gin.H{
+		node := gin.H{
 			"id": n.ID, "type": n.Type, "label": n.Label,
 			"position": n.Position, "config": cfg, "checkpoint": n.Checkpoint,
-		})
+		}
+		if n.Caps != nil {
+			node["caps"] = n.Caps
+		}
+		nodes = append(nodes, node)
 	}
 	return nodes
 }
