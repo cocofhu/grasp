@@ -19,6 +19,8 @@ describe('CredentialProviderLogo', () => {
     expect(logo.attributes('data-provider-logo')).toBe(key)
     expect(logo.attributes('role')).toBe('img')
     expect(logo.attributes('aria-label')).toContain('logo')
+    expect(logo.get('img').attributes('data-logo-source')).toBe('bundled-brand-asset')
+    expect(logo.get('img').attributes('src')).toMatch(/^data:image\/svg\+xml|\.svg(?:$|\?)/)
   })
 
   it('uses a neutral accessible logo for unknown providers', () => {
@@ -28,5 +30,14 @@ describe('CredentialProviderLogo', () => {
     const logo = wrapper.get('[data-provider-logo="neutral"]')
     expect(logo.attributes('aria-label')).toBe('Credential provider logo')
     expect(logo.find('svg').exists()).toBe(true)
+    expect(logo.find('[data-logo-source]').exists()).toBe(false)
+  })
+
+  it('uses the official OpenAI mark for Codex and model vendors', () => {
+    const codex = mount(CredentialProviderLogo, { props: { provider: 'codex' } })
+    const openai = mount(CredentialProviderLogo, { props: { provider: 'openai' } })
+
+    expect(codex.get('img').attributes('data-logo-asset')).toBe('codex')
+    expect(openai.get('img').attributes('data-logo-asset')).toBe('openai')
   })
 })
