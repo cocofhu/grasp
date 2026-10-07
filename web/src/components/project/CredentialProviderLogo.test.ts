@@ -1,7 +1,13 @@
 // @vitest-environment happy-dom
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
+import { afterEach, describe, expect, it } from 'vitest'
 import CredentialProviderLogo from './CredentialProviderLogo.vue'
+import { setTheme } from '@/lib/shared/theme'
+
+afterEach(() => {
+  setTheme('dark')
+})
 
 describe('CredentialProviderLogo', () => {
   it.each([
@@ -39,5 +45,34 @@ describe('CredentialProviderLogo', () => {
 
     expect(codex.get('img').attributes('data-logo-asset')).toBe('codex')
     expect(openai.get('img').attributes('data-logo-asset')).toBe('openai')
+  })
+
+  it('inverts every bundled monochrome mark only in the dark theme', async () => {
+    setTheme('dark')
+    const wrappers = [
+      'claude',
+      'codebuddy',
+      'codex',
+      'cursor',
+      'trae',
+      'opencode',
+      'github',
+      'gitlab',
+      'openai',
+      'deepseek',
+      'openrouter',
+      'xai',
+    ].map((provider) => mount(CredentialProviderLogo, { props: { provider } }))
+
+    expect(wrappers.every((wrapper) => wrapper.get('img').classes().includes('provider-logo-image--invert'))).toBe(true)
+
+    setTheme('light')
+    await nextTick()
+    expect(wrappers.every((wrapper) => !wrapper.get('img').classes().includes('provider-logo-image--invert'))).toBe(true)
+
+    setTheme('dark')
+    await nextTick()
+    expect(wrappers.every((wrapper) => wrapper.get('img').classes().includes('provider-logo-image--invert'))).toBe(true)
+    wrappers.forEach((wrapper) => wrapper.unmount())
   })
 })

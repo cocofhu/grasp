@@ -13,6 +13,7 @@ import openaiLogo from '@/assets/provider-logos/openai.svg'
 import deepseekLogo from '@/assets/provider-logos/deepseek.svg'
 import openrouterLogo from '@/assets/provider-logos/openrouter.svg'
 import xaiLogo from '@/assets/provider-logos/xai.svg'
+import { theme } from '@/lib/shared/theme'
 
 const props = withDefaults(
   defineProps<{
@@ -72,9 +73,23 @@ const logoAssets: Partial<Record<LogoKey, string>> = {
   xai: xaiLogo,
 }
 
-// These marks are supplied as black monochrome SVGs. In the dark theme they
-// are inverted for contrast while retaining the exact brand geometry.
-const monochromeLogos = new Set<LogoKey>(['codex', 'cursor', 'github', 'opencode', 'openai', 'xai'])
+// The bundled provider assets are monochrome black marks (the Simple Icons
+// paths and the official Codex/OpenAI marks). In the dark theme they are
+// inverted for contrast while retaining the exact brand geometry.
+const monochromeLogos = new Set<LogoKey>([
+  'claude',
+  'codebuddy',
+  'codex',
+  'cursor',
+  'trae',
+  'opencode',
+  'github',
+  'gitlab',
+  'openai',
+  'deepseek',
+  'openrouter',
+  'xai',
+])
 
 function normalize(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
@@ -99,6 +114,9 @@ const logoKey = computed<LogoKey>(() => {
 
 const label = computed(() => logoLabels[logoKey.value])
 const asset = computed(() => logoAssets[logoKey.value] ?? '')
+const imageClasses = computed(() => ({
+  'provider-logo-image--invert': monochromeLogos.has(logoKey.value) && theme.value === 'dark',
+}))
 </script>
 
 <template>
@@ -114,7 +132,7 @@ const asset = computed(() => logoAssets[logoKey.value] ?? '')
       v-if="asset"
       :src="asset"
       class="h-5 w-5 object-contain"
-      :class="{ 'provider-logo-image--invert': monochromeLogos.has(logoKey) }"
+      :class="imageClasses"
       :alt="`${label} logo`"
       aria-hidden="true"
       :data-logo-asset="logoKey"
@@ -127,9 +145,5 @@ const asset = computed(() => logoAssets[logoKey.value] ?? '')
 <style scoped>
 .provider-logo-image--invert {
   filter: invert(1);
-}
-
-:global(html.light) .provider-logo-image--invert {
-  filter: none;
 }
 </style>
