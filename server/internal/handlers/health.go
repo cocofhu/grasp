@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/services"
@@ -60,7 +62,8 @@ func bearer(h string) string {
 	return strings.TrimSpace(h)
 }
 
-// Health is the readiness probe. During shutdown it returns 503 with grace info.
+// Health is the readiness probe. During shutdown it returns 503 with grace info;
+// an unreadable database also returns 503 so the pod is taken out of service.
 func (h *Handlers) Health(c *gin.Context) {
 	if h.Shutdown != nil && h.Shutdown.IsDraining() {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
@@ -70,6 +73,20 @@ func (h *Handlers) Health(c *gin.Context) {
 			"grace_remaining_seconds": h.Shutdown.GraceRemainingSeconds(),
 		})
 		return
+	}
+	if h.Runs != nil {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+		err := h.Runs.Ping(ctx)
+		cancel()
+		if err != nil {
+			_ = c.Error(err)
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"status":  "db_error",
+				"ready":   false,
+				"message": "数据库不可用: " + err.Error(),
+			})
+			return
+		}
 	}
 	body := gin.H{"status": "ok", "ready": true, "vnc_preview": h.Browser != nil}
 	if sha := version.ShortSHA(); sha != "" {

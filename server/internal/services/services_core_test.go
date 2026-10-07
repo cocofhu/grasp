@@ -602,9 +602,9 @@ func TestRunServiceListPageSortGlobalOrder(t *testing.T) {
 		})
 	}
 
-	page1, total := s.ListPage(nil, "", "", 1, 2, "priority", "desc")
-	page2, _ := s.ListPage(nil, "", "", 2, 2, "priority", "desc")
-	page3, _ := s.ListPage(nil, "", "", 3, 2, "priority", "desc")
+	page1, total, _ := s.ListPage(nil, "", "", 1, 2, "priority", "desc")
+	page2, _, _ := s.ListPage(nil, "", "", 2, 2, "priority", "desc")
+	page3, _, _ := s.ListPage(nil, "", "", 3, 2, "priority", "desc")
 	if total != 6 {
 		t.Fatalf("total=%d, want 6", total)
 	}

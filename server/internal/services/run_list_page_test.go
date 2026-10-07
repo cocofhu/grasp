@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,13 +25,39 @@ func TestRunListPage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	page, total := s.ListPage(nil, "wf", "", 1, 2)
-	if total != 3 || len(page) != 2 {
-		t.Fatalf("page=%d total=%d", len(page), total)
+	page, total, err := s.ListPage(nil, "wf", "", 1, 2)
+	if err != nil || total != 3 || len(page) != 2 {
+		t.Fatalf("page=%d total=%d err=%v", len(page), total, err)
 	}
-	page2, total2 := s.ListPage(nil, "wf", "", 2, 2)
-	if total2 != 3 || len(page2) != 1 {
-		t.Fatalf("page2=%d total2=%d", len(page2), total2)
+	page2, total2, err := s.ListPage(nil, "wf", "", 2, 2)
+	if err != nil || total2 != 3 || len(page2) != 1 {
+		t.Fatalf("page2=%d total2=%d err=%v", len(page2), total2, err)
+	}
+	if err := s.Ping(context.Background()); err != nil {
+		t.Fatalf("ping: %v", err)
+	}
+}
+
+// TestRunListPageReportsDBError: an unreadable database surfaces as an error
+// (and a failing Ping) instead of an empty page.
+func TestRunListPageReportsDBError(t *testing.T) {
+	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "runs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewRunService(db)
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.ListPage(nil, "", "", 1, 20); err == nil {
+		t.Fatal("expected error from closed database")
+	}
+	if err := s.Ping(context.Background()); err == nil {
+		t.Fatal("expected ping error from closed database")
 	}
 }
 
