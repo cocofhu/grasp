@@ -139,7 +139,12 @@ func (h *Handlers) ListRuns(c *gin.Context) {
 	if !ok {
 		return
 	}
-	runs, total := h.Runs.ListPageByTags(statuses, wf, projectID, tags, pg.Page, pg.PageSize, sort, order)
+	runs, total, err := h.Runs.ListPageByTags(statuses, wf, projectID, tags, pg.Page, pg.PageSize, sort, order)
+	if err != nil {
+		_ = c.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取运行记录失败: " + err.Error()})
+		return
+	}
 	labels := h.Runs.CurrentNodeLabels(runs)
 	items := make([]gin.H, 0, len(runs))
 	for _, r := range runs {

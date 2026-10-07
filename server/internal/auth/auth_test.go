@@ -15,10 +15,8 @@ import (
 func testConfig(users []config.AuthUser) func() *config.Config {
 	cfg := &config.Config{
 		Auth: config.AuthConfig{
-			Users:        users,
-			MaxFailures:  5,
-			LockDuration: "5m",
-			SessionTTL:   "168h",
+			Users:      users,
+			SessionTTL: "168h",
 		},
 	}
 	config.StoreConfig(cfg)
@@ -81,26 +79,5 @@ func TestLoginLogoutSession(t *testing.T) {
 	}
 	if _, err := svc.ValidateSession(sess.ID); err == nil {
 		t.Fatal("expected expired session")
-	}
-}
-
-func TestRateLimiter(t *testing.T) {
-	cfgFn := testConfig(nil)
-	rl := auth.NewRateLimiter(cfgFn)
-	ip := "1.2.3.4"
-	for i := 0; i < 4; i++ {
-		if rl.RecordFailure(ip) {
-			t.Fatalf("locked early at %d", i)
-		}
-	}
-	if !rl.RecordFailure(ip) {
-		t.Fatal("expected lock on 5th failure")
-	}
-	if _, locked := rl.Check(ip); !locked {
-		t.Fatal("expected locked")
-	}
-	rl.Reset(ip)
-	if _, locked := rl.Check(ip); locked {
-		t.Fatal("expected unlocked after reset")
 	}
 }

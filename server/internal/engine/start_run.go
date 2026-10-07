@@ -491,3 +491,27 @@ func (e *Engine) snapshotCaps(g *models.Graph) error {
 	}
 	return nil
 }
+
+// refreshReviewFlag re-reads the post-run review switch from the node's Agent
+// on every fresh visit, so continued / resumed / looped-back runs follow the
+// Agent's current setting. Only Review is refreshed: tools, reads and writes
+// stay frozen to the run-start snapshot. The change is persisted on run.Graph
+// because reply routing, the inbox and live sync reload the graph from the DB.
+func (e *Engine) refreshReviewFlag(c *execCtx, node *models.Node) {
+	if e.skills == nil || node == nil || node.Type != "agent" || node.Caps == nil {
+		return
+	}
+	agent, ok := e.skills.Get(models.AgentProfile(node.Config))
+	if !ok || agent.Capabilities == nil {
+		return
+	}
+	want := agent.Capabilities.Review && !node.Caps.Clarify()
+	if node.Caps.Review == want {
+		return
+	}
+	log.Info().Str("run_id", c.run.ID).Str("node_id", node.ID).
+		Bool("old", node.Caps.Review).Bool("new", want).Msg("review flag refreshed from agent")
+	node.Caps.Review = want
+	logDB(e.db.Model(&models.Run{}).Where("id = ?", c.run.ID).Select("graph").
+		Updates(&models.Run{Graph: c.graph}), c.run.ID, "refresh review flag")
+}

@@ -93,8 +93,6 @@ browser:
 # 账号变更后需重启 Pod 生效（config 热加载不刷新内存账号表）。
 auth:
   session_ttl: 168h
-  max_failures: 5
-  lock_duration: 5m
   # 用 scripts/gen-auth-hash.sh 生成自有 bcrypt 哈希；公开示例不携带可登录账号。
   users: []
 

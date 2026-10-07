@@ -161,25 +161,16 @@ func TestLogReloadDiff(t *testing.T) {
 }
 
 func TestAuthConfigDurations(t *testing.T) {
-	a := AuthConfig{SessionTTL: "7d", LockDuration: "10m"}
+	a := AuthConfig{SessionTTL: "7d"}
 	if a.SessionTTLDuration() != 7*24*time.Hour {
 		t.Fatal("session 7d")
-	}
-	if a.LockDurationDuration() != 10*time.Minute {
-		t.Fatal("lock 10m")
 	}
 	def := AuthConfig{}
 	if def.SessionTTLDuration() != 7*24*time.Hour {
 		t.Fatal("default session")
 	}
-	if def.LockDurationDuration() != 5*time.Minute {
-		t.Fatal("default lock")
-	}
-	bad := AuthConfig{SessionTTL: "invalid", LockDuration: "bogus"}
+	bad := AuthConfig{SessionTTL: "invalid"}
 	if bad.SessionTTLDuration() != 7*24*time.Hour {
 		t.Fatal("bad session fallback")
-	}
-	if bad.LockDurationDuration() != 5*time.Minute {
-		t.Fatal("bad lock fallback")
 	}
 }

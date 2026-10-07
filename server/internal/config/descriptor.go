@@ -43,8 +43,6 @@ func OptionDescriptors() []OptionDescriptor {
 		{Env: "GRASP_SANDBOX_CREATE_TIMEOUT_SEC", YAML: "sandbox.sandbox_create_timeout_seconds", Type: "integer", Default: "1200", ZH: "等待沙箱就绪的超时秒数", EN: "Timeout waiting for sandbox readiness in seconds"},
 		{Env: "GRASP_SANDBOX_WORK_DIR", YAML: "sandbox.work_dir", Type: "path", ZH: "ConfigHome 宿主工作目录", EN: "Host work directory for ConfigHome"},
 		{Env: "GRASP_SANDBOX_RUNTIME_BUNDLE", YAML: "sandbox.runtime_bundle", Type: "path", Default: "/app/sandbox-runtime/sandbox-runtime.tgz", ZH: "下发给沙箱的运行时包（scripts/build-sandbox-runtime.sh 构建）", EN: "Runtime bundle served to sandboxes (built by scripts/build-sandbox-runtime.sh)"},
-		{Env: "GRASP_AUTH_MAX_FAILURES", YAML: "auth.max_failures", Type: "integer", Default: "5", ZH: "IP 锁定前的登录失败次数", EN: "Login failures before IP lock"},
-		{Env: "GRASP_AUTH_LOCK_DURATION", YAML: "auth.lock_duration", Type: "duration", Default: "5m", ZH: "登录失败锁定时长", EN: "Login failure lock duration"},
 		{Env: "GRASP_AUTH_SESSION_TTL", YAML: "auth.session_ttl", Type: "duration", Default: "168h", ZH: "会话有效期", EN: "Session lifetime"},
 		{Env: "GRASP_AUTH_USERS", YAML: "auth.users", Type: "YAML/JSON", Sensitive: true, ZH: "静态账号数组；非本地部署必须显式配置", EN: "Static user array; required explicitly outside local mode"},
 		{Env: "GRASP_SECRETS_KEY", YAML: "security.secrets_key", Type: "string", Sensitive: true, ZH: "凭据加密主密钥（base64 32 字节）；视作固定盐、请勿轮换。未设置时非 production 模式在 SQLite 库旁自动生成 secrets.key", EN: "Master AES key for encrypting credentials at rest (base64 32 bytes); treat as a fixed salt, do not rotate. When unset, non-production modes generate secrets.key next to the SQLite database"},

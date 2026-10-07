@@ -328,6 +328,7 @@ func (e *Engine) execute(runID, fromNodeID string) {
 		}
 
 		c.iter[node.ID]++
+		e.refreshReviewFlag(c, node)
 		e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "enter", Iteration: c.iter[node.ID]})
 		e.startNodeRun(c, node)
 

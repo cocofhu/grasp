@@ -116,9 +116,7 @@ func newHarness(t *testing.T) *harness {
 			Users: []config.AuthUser{
 				{Username: "admin", PasswordHash: "$2a$10$EY.SdHq0p6drMz6U9JVrz.Kq0jNkg7TWmsVUFLtB1dL1yIelDkITi"},
 			},
-			MaxFailures:  100,
-			LockDuration: "1m",
-			SessionTTL:   "168h",
+			SessionTTL: "168h",
 		},
 	}
 	config.StoreConfig(cfg)

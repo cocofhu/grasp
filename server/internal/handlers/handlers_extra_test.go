@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,6 +66,23 @@ func TestSettingsAndLiveEndpoints(t *testing.T) {
 	h.h.Shutdown.BeginDraining()
 	if w := h.do("GET", "/api/health", nil); w.Code != 503 {
 		t.Fatalf("health draining: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestHealthReportsDBError(t *testing.T) {
+	h := newHarness(t)
+	if w := h.do("GET", "/api/health", nil); w.Code != 200 {
+		t.Fatalf("health ok: %d %s", w.Code, w.Body)
+	}
+	sqlDB, err := h.db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if w := h.do("GET", "/api/health", nil); w.Code != 503 || !strings.Contains(w.Body.String(), "db_error") {
+		t.Fatalf("health db down: %d %s", w.Code, w.Body)
 	}
 }
 

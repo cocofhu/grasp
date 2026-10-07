@@ -56,7 +56,8 @@ const total = ref(0)
 const page = ref(1)
 const loading = ref(false)
 const initialLoading = ref(false)
-const initialLoadFailed = ref(false)
+const loadFailed = ref(false)
+const loadErrorMessage = ref('')
 const showTableLoading = computed(() => loading.value && hasInitialLoaded)
 let requestSeq = 0
 let activeLoadingSeq = 0
@@ -328,7 +329,6 @@ async function load({ showLoading = false }: { showLoading?: boolean } = {}) {
 
   if (isFirstLoad) {
     initialLoading.value = true
-    initialLoadFailed.value = false
   } else if (showLoading) {
     activeLoadingSeq = localSeq
     loading.value = true
@@ -341,13 +341,16 @@ async function load({ showLoading = false }: { showLoading?: boolean } = {}) {
         runs.value = data.items
         total.value = data.total
       }
-      if (initialLoadFailed.value) initialLoadFailed.value = false
+      loadFailed.value = false
+      loadErrorMessage.value = ''
     }
-  } catch {
-    if (isFirstLoad) {
-      initialLoadFailed.value = true
+  } catch (e) {
+    // First load and user-driven reloads (filter / page / sort) must not leave a
+    // stale or empty list looking like a real result; background polls stay silent.
+    if (localSeq === requestSeq && (isFirstLoad || showLoading)) {
+      loadFailed.value = true
+      loadErrorMessage.value = e instanceof Error ? e.message : String(e || '')
     }
-    /* non-first failure: keep previous list silently */
   } finally {
     if (isFirstLoad) {
       hasInitialLoaded = true
@@ -516,11 +519,13 @@ onUnmounted(() => {
         </div>
       </template>
       <div
-        v-else-if="initialLoadFailed"
+        v-else-if="loadFailed"
         class="card flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto px-5 py-10 text-center"
+        data-testid="run-list-load-failed"
       >
         <div class="text-[13px] font-medium text-txt">{{ t('pages.runList.loadFailedTitle') }}</div>
         <p class="mx-auto mt-1 max-w-[360px] text-xs text-txt3">{{ t('pages.runList.loadFailedDesc') }}</p>
+        <p v-if="loadErrorMessage" class="mx-auto mt-2 max-w-[480px] break-all font-mono text-[11px] text-err">{{ loadErrorMessage }}</p>
       </div>
       <div
         v-else-if="!runs.length"
@@ -627,12 +632,14 @@ onUnmounted(() => {
 
     <!-- Desktop table -->
     <div
-      v-else-if="initialLoadFailed"
+      v-else-if="loadFailed"
       class="card flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto px-5 py-10 text-center"
       :class="{ 'table-loading': showTableLoading }"
+      data-testid="run-list-load-failed"
     >
       <div class="text-[13px] font-medium text-txt">{{ t('pages.runList.loadFailedTitle') }}</div>
       <p class="mx-auto mt-1 max-w-[360px] text-xs text-txt3">{{ t('pages.runList.loadFailedDesc') }}</p>
+      <p v-if="loadErrorMessage" class="mx-auto mt-2 max-w-[480px] break-all font-mono text-[11px] text-err">{{ loadErrorMessage }}</p>
     </div>
 
     <!-- Desktop: empty / no matching -->

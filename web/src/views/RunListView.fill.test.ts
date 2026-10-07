@@ -68,17 +68,24 @@ describe('RunListView empty / fail split out of table (g2)', () => {
       src.indexOf('<!-- Desktop table -->'),
       src.indexOf('<!-- Desktop table (loading skeleton or rows) -->'),
     )
-    expect(desktopFail).toMatch(/initialLoadFailed/)
+    expect(desktopFail).toMatch(/loadFailed/)
     expect(desktopFail).toMatch(new RegExp(EMPTY_CARD_CLASS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
     expect(desktopFail).not.toMatch(/<table/)
     expect(desktopFail).not.toMatch(/Icon name="alert"/)
+  })
+
+  it('user-driven reload failures show the error instead of a stale/empty list', () => {
+    const loadFn = src.slice(src.indexOf('async function load('), src.indexOf('async function validateQueryParams('))
+    expect(loadFn).toMatch(/isFirstLoad \|\| showLoading/)
+    expect(loadFn).toMatch(/loadErrorMessage\.value = e instanceof Error \? e\.message/)
+    expect(src.match(/\{\{ loadErrorMessage \}\}/g)?.length).toBe(2)
   })
 
   it('mobile empty/fail use the same flex-1 centered fill card (g2.3)', () => {
     const mobile = src.slice(src.indexOf('<!-- Mobile card list -->'), src.indexOf('<!-- Desktop table -->'))
     const emptyCards = mobile.match(new RegExp(`class="${EMPTY_CARD_CLASS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^"]*"`, 'g')) || []
     expect(emptyCards.length).toBe(2)
-    expect(mobile).toMatch(/initialLoadFailed/)
+    expect(mobile).toMatch(/loadFailed/)
     expect(mobile).toMatch(/emptyMessage/)
     expect(mobile).not.toMatch(/inline-flex h-10 w-10/)
     expect(mobile).not.toMatch(/Icon name="alert"/)

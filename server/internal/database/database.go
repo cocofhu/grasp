@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +38,7 @@ func Open(cfg config.DatabaseConfig) (*gorm.DB, error) {
 // and API readers from tripping over SQLite write locks. Exported so tests can
 // spin up a file/memory DB without constructing a full DatabaseConfig.
 func OpenSQLite(path string) (*gorm.DB, error) {
+	existing := false
 	if path != "" && path != ":memory:" && !strings.HasPrefix(path, "file:") {
 		display := path
 		if abs, absErr := filepath.Abs(path); absErr == nil {
@@ -46,6 +48,7 @@ func OpenSQLite(path string) (*gorm.DB, error) {
 		status := "new"
 		if err == nil {
 			status = "existing"
+			existing = true
 		}
 		log.Info().Str("path", display).Str("database", status).Msg("opening sqlite database")
 	}
@@ -53,7 +56,45 @@ func OpenSQLite(path string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	if existing {
+		backupSQLite(db, path, time.Now())
+	}
 	return finalize(db)
+}
+
+const sqliteBackupKeep = 3
+
+// backupSQLite snapshots an existing database into <dir>/backup before
+// migrations touch it, keeping the newest sqliteBackupKeep copies. Failures
+// only warn: a broken backup must not block startup.
+func backupSQLite(db *gorm.DB, path string, now time.Time) {
+	dir := filepath.Join(filepath.Dir(path), "backup")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		log.Warn().Err(err).Str("dir", dir).Msg("sqlite backup skipped")
+		return
+	}
+	dest := filepath.Join(dir, "grasp-"+now.Format("20060102-150405")+".db")
+	_ = os.Remove(dest)
+	if err := db.Exec("VACUUM INTO ?", dest).Error; err != nil {
+		_ = os.Remove(dest)
+		log.Warn().Err(err).Str("dest", dest).Msg("sqlite backup failed")
+		return
+	}
+	log.Info().Str("dest", dest).Msg("sqlite backup written")
+	pruneSQLiteBackups(dir, sqliteBackupKeep)
+}
+
+func pruneSQLiteBackups(dir string, keep int) {
+	matches, err := filepath.Glob(filepath.Join(dir, "grasp-*.db"))
+	if err != nil || len(matches) <= keep {
+		return
+	}
+	sort.Strings(matches)
+	for _, old := range matches[:len(matches)-keep] {
+		if err := os.Remove(old); err != nil {
+			log.Warn().Err(err).Str("path", old).Msg("sqlite backup prune failed")
+		}
+	}
 }
 
 var (

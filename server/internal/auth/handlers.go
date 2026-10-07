@@ -25,14 +25,6 @@ type MeResponse struct {
 
 // Login handles POST /api/auth/login.
 func (s *Service) LoginHandler(c *gin.Context) {
-	ip := c.ClientIP()
-	if msg, locked := s.limit.Check(ip); locked {
-		// Security-relevant: a locked-out IP is still hammering login.
-		log.Warn().Str("client_ip", ip).Msg("login rejected: rate-limit lockout")
-		c.JSON(http.StatusTooManyRequests, gin.H{"error": msg})
-		return
-	}
-
 	var body LoginRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
@@ -43,19 +35,11 @@ func (s *Service) LoginHandler(c *gin.Context) {
 	if err != nil {
 		// Audit failed credentials (username only, never the password) so
 		// brute-force attempts are visible server-side.
-		log.Warn().Str("client_ip", ip).Str("username", body.Username).Msg("login failed: invalid credentials")
-		if s.limit.RecordFailure(ip) {
-			if msg, locked := s.limit.Check(ip); locked {
-				log.Warn().Str("client_ip", ip).Msg("login rate-limit lockout triggered")
-				c.JSON(http.StatusTooManyRequests, gin.H{"error": msg})
-				return
-			}
-		}
+		log.Warn().Str("client_ip", c.ClientIP()).Str("username", body.Username).Msg("login failed: invalid credentials")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrInvalidCred})
 		return
 	}
 
-	s.limit.Reset(ip)
 	SetSessionCookie(c, sess.ID)
 	c.JSON(http.StatusOK, gin.H{
 		"username":   sess.Username,

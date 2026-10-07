@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/models"
 
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
@@ -103,28 +105,49 @@ func (s *RunService) List(statuses []string, wf, projectID string, sortOrder ...
 func (s *RunService) ListByTags(statuses []string, wf, projectID string, tags []string, sortOrder ...string) []models.Run {
 	sort, order := parseSortOrderArgs(sortOrder)
 	var runs []models.Run
-	s.listQuery(statuses, wf, projectID, tags).
+	if err := s.listQuery(statuses, wf, projectID, tags).
 		Order(runListOrderBy(sort, order)).
-		Find(&runs)
+		Find(&runs).Error; err != nil {
+		log.Error().Err(err).Str("workflow_id", wf).Str("project_id", projectID).Msg("list runs failed")
+	}
 	return runs
 }
 
 // ListPage returns a page of runs plus the total matching count.
 // Optional trailing sortOrder is [sort, order]; see List for whitelist rules.
-func (s *RunService) ListPage(statuses []string, wf, projectID string, page, pageSize int, sortOrder ...string) ([]models.Run, int64) {
+func (s *RunService) ListPage(statuses []string, wf, projectID string, page, pageSize int, sortOrder ...string) ([]models.Run, int64, error) {
 	return s.ListPageByTags(statuses, wf, projectID, nil, page, pageSize, sortOrder...)
 }
 
-func (s *RunService) ListPageByTags(statuses []string, wf, projectID string, tags []string, page, pageSize int, sortOrder ...string) ([]models.Run, int64) {
+// ListPageByTags is ListPage with a tag filter. A database error is returned
+// rather than an empty page, so an unreadable store is not shown as "no runs".
+func (s *RunService) ListPageByTags(statuses []string, wf, projectID string, tags []string, page, pageSize int, sortOrder ...string) ([]models.Run, int64, error) {
 	sort, order := parseSortOrderArgs(sortOrder)
 	q := s.listQuery(statuses, wf, projectID, tags)
 	var total int64
-	q.Count(&total)
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count runs: %w", err)
+	}
 	var runs []models.Run
 	offset := (page - 1) * pageSize
-	q.Order(runListOrderBy(sort, order)).
-		Limit(pageSize).Offset(offset).Find(&runs)
-	return runs, total
+	if err := q.Order(runListOrderBy(sort, order)).
+		Limit(pageSize).Offset(offset).Find(&runs).Error; err != nil {
+		return nil, 0, fmt.Errorf("list runs: %w", err)
+	}
+	return runs, total, nil
+}
+
+// Ping checks the database is reachable and the runs table is readable.
+func (s *RunService) Ping(ctx context.Context) error {
+	sqlDB, err := s.db.DB()
+	if err != nil {
+		return err
+	}
+	if err := sqlDB.PingContext(ctx); err != nil {
+		return err
+	}
+	var n int64
+	return s.db.WithContext(ctx).Raw("SELECT 1 FROM runs LIMIT 1").Scan(&n).Error
 }
 
 func parseSortOrderArgs(sortOrder []string) (sort, order string) {

@@ -85,15 +85,15 @@ describe('LoginView copy', () => {
     wrapper.unmount()
   })
 
-  it('shows rate-limit tip without raw HTTP 429 status phrase', async () => {
-    authApiMocks.login.mockRejectedValue(new Error('429 Too Many Requests'))
+  it('shows bad-credentials error without raw HTTP status phrase', async () => {
+    authApiMocks.login.mockRejectedValue(new Error('401 Unauthorized'))
     const wrapper = await mountLogin('zh-CN')
     await flushPromises()
     await wrapper.find('form').trigger('submit')
     await flushPromises()
-    expect(wrapper.text()).toContain('登录尝试过于频繁')
-    expect(wrapper.text()).not.toContain('Too Many Requests')
-    expect(wrapper.text()).not.toMatch(/429/)
+    expect(wrapper.text()).toContain('用户名或密码错误')
+    expect(wrapper.text()).not.toContain('Unauthorized')
+    expect(wrapper.text()).not.toMatch(/401/)
     wrapper.unmount()
   })
 

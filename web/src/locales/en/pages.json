@@ -2830,7 +2830,7 @@
           "auto": "Runs once on its own without asking the human",
           "clarify": "Multi-turn dialogue with the human; ends when the human confirms"
         },
-        "reviewDesc": "After the run, park for human review; the session stays online to revise from annotations",
+        "reviewDesc": "After the run, park for human review; the session stays online to revise from annotations. Applies the next time a node starts (including continued runs); a review already open is not affected",
         "reviewDisabledClarify": "Clarify ends when the human confirms; review cannot be enabled",
         "toolsTitle": "Tools",
         "toolsDesc": "set_* product tools come from Writes; only the extra grantable platform tools are listed here.",
@@ -4007,8 +4007,6 @@
       "title": "Sign in",
       "subtitle": "Sign in with your account to manage the console",
       "redirectHint": "After sign-in you will return to",
-      "rateLimited": "Too many sign-in attempts. Please wait and try again.",
-      "loginFailed": "Sign-in failed",
       "badCredentials": "Incorrect username or password",
       "username": "Username",
       "password": "Password",
