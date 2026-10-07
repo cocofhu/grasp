@@ -153,6 +153,7 @@ docker run --privileged -d --add-host host.docker.internal:host-gateway \
 | `ACP_BRIDGE_PORT` | `8765` | backend 监听端口 |
 | `ACP_BRIDGE_PASSWORD` | 空 | backend 登录口令（`POST /api/login` 下发 `agentchat_session` cookie）。Grasp 创建的沙箱总会设置；留空仅用于本地脚本调试 |
 | `ACP_BRIDGE_MODEL` | 空 | 默认 agent 模型（不设则用后端默认）；AgentChat 各 Tab 可另选 |
+| `ACP_BRIDGE_REASONING_EFFORT` | 空 | 仅 `codex`：思考强度，透传为 `-c model_reasoning_effort=<值>`（`minimal` / `low` / `medium` / `high`，视模型而定）；空或 `auto` 用 codex 默认 |
 | `SANDBOX_MAX_CHATS` | `8` | AgentChat 同时存在的会话（Tab）上限，含 `default` |
 | `CONFIG_ROOT` | 随后端 | 能力发现的配置树根，默认按后端取 `/root/.cursor` `/.claude` `/.codebuddy` `/.trae` `/.config/opencode` `/.codex` |
 

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"os"
 	"strings"
 
 	"backend/internal/provider"
@@ -18,6 +19,9 @@ const (
 	bin        = "codex"
 	runtime    = "codex-cli"
 	configRoot = "/root/.codex"
+	// envReasoningEffort maps to Codex's model_reasoning_effort config key
+	// (minimal / low / medium / high, depending on the model).
+	envReasoningEffort = "ACP_BRIDGE_REASONING_EFFORT"
 )
 
 // New returns the Codex one-shot provider.
@@ -60,6 +64,9 @@ func (codec) Args(opts provider.OpenOptions, prompt, resumeID string) []string {
 	args = append(args, "--json", "--skip-git-repo-check")
 	if opts.Model != "" && opts.Model != "auto" {
 		args = append(args, "--model", opts.Model)
+	}
+	if effort := strings.TrimSpace(os.Getenv(envReasoningEffort)); effort != "" && effort != "auto" {
+		args = append(args, "-c", "model_reasoning_effort="+effort)
 	}
 	if opts.AutoPermission {
 		args = append(args, "--dangerously-bypass-approvals-and-sandbox")

@@ -38,6 +38,28 @@ func TestAuthEnvDropsAPIKey(t *testing.T) {
 	}
 }
 
+func TestArgsReasoningEffort(t *testing.T) {
+	var c codec
+	opts := provider.OpenOptions{Model: "gpt-5"}
+
+	t.Setenv(envReasoningEffort, "")
+	if got := strings.Join(c.Args(opts, "hi", ""), " "); strings.Contains(got, "model_reasoning_effort") {
+		t.Fatalf("unset effort leaked into argv: %s", got)
+	}
+
+	t.Setenv(envReasoningEffort, " high ")
+	got := strings.Join(c.Args(opts, "hi", "S1"), " ")
+	want := "codex exec resume S1 --json --skip-git-repo-check --model gpt-5 -c model_reasoning_effort=high hi"
+	if got != want {
+		t.Fatalf("argv=%q\nwant %q", got, want)
+	}
+
+	t.Setenv(envReasoningEffort, "auto")
+	if got := strings.Join(c.Args(opts, "hi", ""), " "); strings.Contains(got, "model_reasoning_effort") {
+		t.Fatalf("auto effort leaked into argv: %s", got)
+	}
+}
+
 func TestParseThreadEvents(t *testing.T) {
 	var c codec
 	sid := c.ParseLine([]byte(`{"type":"thread.started","thread_id":"0199a213-81c0-7800-8aa1-bbab2a035a53"}`))
