@@ -133,14 +133,7 @@ function groupHint(group: string): string {
 }
 
 function itemLabel(item: ProjectCredentialItem): string {
-  return item.name || item.provider || item.envKey || item.id
-}
-
-function itemTarget(item: ProjectCredentialItem): string {
-  if (item.target) return item.target
-  if (item.envKey) return item.envKey
-  if (item.provider) return item.provider
-  return item.type || ''
+  return item.name || item.provider || item.id
 }
 
 function isOpenCodeModelCredential(item: ProjectCredentialItem): boolean {
@@ -474,6 +467,7 @@ onUnmounted(() => {
                 mode="manage"
                 :project-id="projectId"
                 :items="items"
+                @add="openCreate"
                 @changed="load"
               />
             </div>
@@ -507,7 +501,6 @@ onUnmounted(() => {
                           {{ configuredText(item) }}
                         </span>
                       </div>
-                      <p v-if="itemTarget(item)" class="m-0 mt-2 break-all font-mono text-[11px] text-txt3">{{ itemTarget(item) }}</p>
                     </div>
                   </div>
 

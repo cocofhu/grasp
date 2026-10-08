@@ -328,7 +328,11 @@ func (s *ProjectCredentialService) Create(projectID string, in ProjectCredential
 	if strings.TrimSpace(in.Value) == "" {
 		return ProjectCredentialView{}, errors.New("credential value is required")
 	}
-	if taken, ok := s.credentialAliasTaken(projectID, in.EnvKey, in.Name, ""); ok {
+	taken, ok, err := s.credentialAliasTaken(projectID, in.EnvKey, in.Name, "")
+	if err != nil {
+		return ProjectCredentialView{}, err
+	}
+	if ok {
 		return ProjectCredentialView{}, &CredentialAliasTakenError{Alias: taken}
 	}
 	if err := validateOpenCodeMetadata(in.Provider, in.Metadata, true); err != nil {
@@ -395,7 +399,11 @@ func (s *ProjectCredentialService) Update(projectID, id string, in ProjectCreden
 		return ProjectCredentialView{}, ErrCredentialEnvKey
 	}
 	if nameChanged {
-		if taken, ok := s.credentialAliasTaken(projectID, row.EnvKey, row.Name, row.ID); ok {
+		taken, ok, err := s.credentialAliasTaken(projectID, row.EnvKey, row.Name, row.ID)
+		if err != nil {
+			return ProjectCredentialView{}, err
+		}
+		if ok {
 			return ProjectCredentialView{}, &CredentialAliasTakenError{Alias: taken}
 		}
 	}
@@ -540,8 +548,36 @@ func (s *ProjectCredentialService) ResolveEnv(projectID string) map[string]strin
 		return nil
 	}
 	out := map[string]string{}
-	// Two configured rows of the same kind share one env key. Injecting either
-	// of them here would pick a secret the Agent did not choose.
+	// A kind injects automatically only while a single row still holds a
+	// secret. Empty built-in slots do not count: they exist before anyone adds
+	// a second credential. An extra row whose secret was cleared does count,
+	// so the remaining built-in secret is not restored until the Agent picks
+	// one again. Two rows that both still have secrets are also withheld.
+	type envKind struct {
+		valuedID     string
+		valued       int
+		clearedExtra bool
+	}
+	kinds := map[string]*envKind{}
+	for _, row := range rows {
+		if !credentialEnvRow(row) {
+			continue
+		}
+		key := strings.TrimSpace(row.EnvKey)
+		kind := kinds[key]
+		if kind == nil {
+			kind = &envKind{}
+			kinds[key] = kind
+		}
+		if strings.TrimSpace(row.ValueEnc) == "" {
+			if !isDefaultCredentialID(projectID, row.ID) {
+				kind.clearedExtra = true
+			}
+			continue
+		}
+		kind.valued++
+		kind.valuedID = row.ID
+	}
 	suppressed := map[string]struct{}{}
 	for _, row := range rows {
 		switch strings.ToLower(strings.TrimSpace(row.Type)) {
@@ -557,6 +593,10 @@ func (s *ProjectCredentialService) ResolveEnv(projectID string) map[string]strin
 		}
 		key := strings.TrimSpace(row.EnvKey)
 		if key == "" || envauth.IsPlatformReservedEnvKey(key) {
+			continue
+		}
+		kind := kinds[key]
+		if kind == nil || kind.valued != 1 || kind.clearedExtra || kind.valuedID != row.ID {
 			continue
 		}
 		if _, skip := suppressed[key]; skip {
@@ -595,26 +635,57 @@ func credentialAliasKey(name string) string {
 
 // credentialAliasTaken reports the existing display alias when another row of
 // the same env key (the kind) already uses this name. Comparison trims and
-// ignores case. exceptID is the row being renamed.
-func (s *ProjectCredentialService) credentialAliasTaken(projectID, envKey, name, exceptID string) (string, bool) {
+// ignores case. exceptID is the row being renamed. A query error is returned
+// to the caller; it is not treated as "alias available".
+func (s *ProjectCredentialService) credentialAliasTaken(projectID, envKey, name, exceptID string) (string, bool, error) {
 	envKey = strings.TrimSpace(envKey)
 	want := credentialAliasKey(name)
 	if envKey == "" || want == "" {
-		return "", false
+		return "", false, nil
 	}
 	var rows []models.ProjectCredential
-	if s.db.Where("project_id = ? AND env_key = ?", projectID, envKey).Find(&rows).Error != nil {
-		return "", false
+	if err := s.db.Where("project_id = ? AND env_key = ?", projectID, envKey).Find(&rows).Error; err != nil {
+		return "", false, err
 	}
 	for _, row := range rows {
 		if row.ID == exceptID {
 			continue
 		}
 		if credentialAliasKey(row.Name) == want {
-			return strings.TrimSpace(row.Name), true
+			return strings.TrimSpace(row.Name), true, nil
 		}
 	}
-	return "", false
+	return "", false, nil
+}
+
+func credentialEnvRow(row models.ProjectCredential) bool {
+	switch strings.ToLower(strings.TrimSpace(row.Type)) {
+	case "ai", "git", "ssh", "mcp", "custom":
+	default:
+		return false
+	}
+	if isOpenCodeModelCredentialRow(row) {
+		return false
+	}
+	key := strings.TrimSpace(row.EnvKey)
+	return key != "" && !envauth.IsPlatformReservedEnvKey(key)
+}
+
+func isDefaultCredentialID(projectID, id string) bool {
+	projectID = strings.TrimSpace(projectID)
+	id = strings.TrimSpace(id)
+	if projectID == "" || id == "" {
+		return false
+	}
+	for _, suffix := range []string{
+		"cursor", "claude", "codebuddy", "trae", "opencode", "codex",
+		"github", "gitlab", "gitlab-url", "ssh-key", "ssh-hosts",
+	} {
+		if id == "cred-"+projectID+"-"+suffix {
+			return true
+		}
+	}
+	return false
 }
 
 // ResolveSelectedValue returns one credential's env key and plaintext.

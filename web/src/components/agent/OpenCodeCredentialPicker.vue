@@ -26,6 +26,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:selectedId': [id: string]
   changed: []
+  add: []
 }>()
 
 const { t } = useI18n()
@@ -98,6 +99,10 @@ function resetForm() {
 
 function openAdd() {
   if (!props.projectId) return
+  if (props.mode === 'manage') {
+    emit('add')
+    return
+  }
   resetForm()
   showAdd.value = true
   replacingId.value = ''
@@ -280,6 +285,7 @@ watch(
           :class="attempted && !form.name.trim() ? 'border-err' : 'border-line'"
           data-testid="opencode-credential-name"
           autocomplete="off"
+          :placeholder="t('pages.agentStudio.openCode.credentialNamePlaceholder')"
         />
         <p v-if="aliasError" class="mb-0 mt-1 text-[11px] text-err" data-testid="opencode-credential-alias-error">
           {{ aliasError }}

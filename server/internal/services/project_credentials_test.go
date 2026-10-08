@@ -579,6 +579,36 @@ func TestCredentialAliasIsUniqueWithinKind(t *testing.T) {
 	if _, ok := env[envauth.EnvCursorAPIKey]; ok {
 		t.Fatal("cleared selection fell back to the other cursor key")
 	}
+
+	if err := s.Clear(p.ID, work.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.ResolveEnv(p.ID)[envauth.EnvCursorAPIKey]; ok {
+		t.Fatal("clearing the extra cursor restored the builtin secret")
+	}
+	stale := map[string]string{envauth.EnvCursorAPIKey: "builtin-key"}
+	runtime.ApplyAgentCredentialChoice(stale, s.ResolveEnv(p.ID), p.ID, runtime.AgentCredentialChoice{
+		Backend: "cursor",
+	}, s.ResolveSelectedValue)
+	if _, ok := stale[envauth.EnvCursorAPIKey]; ok {
+		t.Fatal("empty selection kept the builtin key after the extra row was cleared")
+	}
+}
+
+func TestCredentialAliasLookupFailureIsNotAvailable(t *testing.T) {
+	db := newTestDB(t)
+	s := NewProjectCredentialService(db)
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	alias, taken, err := s.credentialAliasTaken("p", envauth.EnvCursorAPIKey, "Cursor", "")
+	if err == nil || taken || alias != "" {
+		t.Fatalf("alias=%q taken=%v err=%v", alias, taken, err)
+	}
 }
 
 func TestProjectCredentialRequiresMasterKey(t *testing.T) {

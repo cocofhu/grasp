@@ -7,9 +7,11 @@ import (
 )
 
 // AgentCredentialChoice is the one credential an Agent picked for its coding
-// backend and, separately, for its Git method. Empty ids keep the legacy
-// single-slot injection. A non-empty id replaces that kind and never falls
-// back to another row when the id is missing or the wrong kind.
+// backend and, separately, for its Git method. An empty id keeps the legacy
+// single-slot injection when projectCreds still carries that key. When the
+// key is absent — a second row of that kind exists, or the chosen row was
+// cleared — the empty id removes the key instead of falling back. A non-empty
+// id replaces that kind and never falls back to another row.
 type AgentCredentialChoice struct {
 	Backend              string
 	GitCredentialType    string
@@ -58,7 +60,9 @@ func CredentialEnvKeyForGit(gitType string) string {
 // ApplyAgentCredentialChoice writes the Agent's chosen credentials into env
 // and the project credential map used for SSH files. A set id removes that
 // kind's key first, so a stale or cleared row cannot leave another secret in
-// place. An empty id does not touch the key.
+// place. An empty id leaves a key that projectCreds still provides (the only
+// slot of that kind). If projectCreds omits the key, the empty id deletes it
+// so a cleared selection cannot keep or restore another row's secret.
 func ApplyAgentCredentialChoice(env, projectCreds map[string]string, projectID string, choice AgentCredentialChoice, resolve SelectedCredentialFunc) {
 	if resolve == nil {
 		return
@@ -66,7 +70,15 @@ func ApplyAgentCredentialChoice(env, projectCreds map[string]string, projectID s
 	apply := func(id, expected string) {
 		id = strings.TrimSpace(id)
 		expected = strings.TrimSpace(expected)
-		if id == "" || expected == "" {
+		if expected == "" {
+			return
+		}
+		if id == "" {
+			if projectCreds != nil {
+				if _, ok := projectCreds[expected]; !ok {
+					delete(env, expected)
+				}
+			}
 			return
 		}
 		key, value, ok := resolve(projectID, id)
