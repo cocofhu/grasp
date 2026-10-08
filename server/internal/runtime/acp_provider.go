@@ -113,7 +113,7 @@ type acpProvider struct {
 	live     map[string]*sandbox.Sandbox // runID|nodeID -> in-flight sandbox (for live event-log reads)
 	// inflightACP tracks the ACP client for in-flight agent turns (not parked
 	// in sessions). AbortRun closes these so Cancel-during-agent unblocks
-	// streamChat instead of waiting out ChatTimeout.
+	// streamChat instead of waiting out the node budget.
 	inflightACP map[string]*sandbox.ACPClient
 	// timeline holds platform-side ACP event snapshots while a node sandbox is
 	// live. nodeEvents reads this first; cold FetchEventLog is fallback only.
@@ -125,16 +125,28 @@ type acpProvider struct {
 	inflightMu  sync.Mutex
 	inflight    map[string]InflightPrompt
 	recentTurns map[string][][]models.AcpEvent
+	// budgets is the Agent turn time each node execution has used.
+	budgets nodeBudgets
+	// stuckNotes holds, per node execution being retried after the bridge
+	// stopped a stuck Agent, why it was stopped (string).
+	stuckNotes sync.Map
 }
 
 // streamChat runs one turn (prompt + optional image attachments), streaming
 // incremental events to the sink when one is configured; otherwise it falls
 // back to a single blocking aggregation.
 func (c *acpProvider) streamChat(ctx context.Context, acp *sandbox.ACPClient, req NodeReq, prompt string, images []models.PromptImage) (*sandbox.ChatResult, error) {
+	if err := budgetErr(ctx); err != nil && ctx.Err() != nil {
+		return nil, err
+	}
 	started := time.Now()
 	c.setInflightPrompt(req, prompt, len(images), started)
 	defer c.clearInflightPrompt(req)
 	res, err := c.runChat(ctx, acp, req, prompt, images)
+	c.budgets.add(reactKey(req), time.Since(started))
+	if berr := budgetErr(ctx); berr != nil && err != nil && errors.Is(err, context.DeadlineExceeded) {
+		err = berr
+	}
 	if res != nil {
 		res.Prompt = prompt
 		res.ImageCount = len(images)
@@ -156,6 +168,12 @@ func (c *acpProvider) runChat(ctx context.Context, acp *sandbox.ACPClient, req N
 			busy = r.Busy
 		}
 		events := chatResultToEvents(r)
+		if lv := r.Liveness; lv != nil {
+			events = append(events, models.AcpEvent{T: len(events), Kind: models.AcpKindLiveness, Liveness: &models.AcpLiveness{
+				Active: lv.Active, CPUMs: lv.CPUMs, IOBytes: lv.IOBytes,
+				IdleSec: lv.IdleSec, LimitSec: lv.LimitSec, LastTool: lv.LastTool,
+			}})
+		}
 		if c.timeline != nil {
 			// Absolute current-turn snapshot from streamChat — always replace so
 			// a fresh turn cannot be blocked by a longer prior-turn photo.
@@ -267,26 +285,6 @@ func (c *acpProvider) Name() string {
 	return string(c.backend)
 }
 
-func (c *acpProvider) chatTimeout() time.Duration {
-	if c.opts.ChatTimeout > 0 {
-		return c.opts.ChatTimeout
-	}
-	return 10 * time.Minute
-}
-
-// nodeChatTimeout is the hard per-turn deadline for a node: the node's
-// `timeout` (minutes) when set, else 30 minutes for a clarify dialogue turn and
-// the global budget otherwise.
-func (c *acpProvider) nodeChatTimeout(req NodeReq) time.Duration {
-	if v, ok := toInt(req.Config["timeout"]); ok && v > 0 {
-		return time.Duration(v) * time.Minute
-	}
-	if req.Caps.Clarify() {
-		return 30 * time.Minute
-	}
-	return c.chatTimeout()
-}
-
 // sandboxAttempts is the total number of node attempts (>=1) before a retryable
 // sandbox fault gives up and the node fails for real.
 func (c *acpProvider) sandboxAttempts() int {
@@ -315,6 +313,20 @@ func (c *acpProvider) backoff(ctx context.Context, attempt int) bool {
 		return true
 	case <-ctx.Done():
 		return false
+	}
+}
+
+// emitStuckRetryNotice reports that the Agent was stopped as stuck and the node
+// starts over once in a fresh sandbox.
+func (c *acpProvider) emitStuckRetryNotice(req NodeReq, err error) {
+	log.Warn().Str("run", req.RunID).Str("node", req.NodeID).Err(err).
+		Msg("agent stuck; retrying once in a fresh sandbox")
+	if c.emit != nil {
+		c.emit(req.RunID, req.NodeID, []models.AcpEvent{{
+			Kind:  "message",
+			Title: "Agent 卡住,自动重试",
+			Text:  fmt.Sprintf("Agent 长时间没有任何活动已被终止(%s),正在换新沙箱重新执行一次…", err.Error()),
+		}}, true)
 	}
 }
 

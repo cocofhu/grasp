@@ -333,3 +333,195 @@ func TestAcquireReaderReleaseIsIdempotent(t *testing.T) {
 		t.Fatalf("readers=%d want 0", n)
 	}
 }
+
+func TestRunTurnSendsTurnLimits(t *testing.T) {
+	var mu sync.Mutex
+	var got map[string]any
+	h, p := wsServer(t, func(conn *websocket.Conn, op string, msg map[string]any) {
+		switch op {
+		case "connect":
+			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "s"})
+		case "chat":
+			mu.Lock()
+			got = msg
+			mu.Unlock()
+			mine, _ := msg["opId"].(string)
+			_ = conn.WriteJSON(tagged(chunkFrame("ok"), mine))
+			_ = conn.WriteJSON(tagged(doneFrame(), mine))
+		}
+	})
+	c := connectAndClient(t, h, p).WithIdleTimeoutFunc(func() time.Duration { return 20 * time.Minute })
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	if _, err := c.ChatStructured(ctx, "hi", nil); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if got["idleSec"] != float64(1200) {
+		t.Fatalf("idleSec = %v", got["idleSec"])
+	}
+	if dl, _ := got["deadlineSec"].(float64); dl < 655 || dl > 660 {
+		t.Fatalf("deadlineSec = %v, want ctx remaining + 60", got["deadlineSec"])
+	}
+}
+
+func TestRunTurnWithoutDeadlineOmitsDeadlineSec(t *testing.T) {
+	msg := map[string]any{}
+	turnLimitFields(msg, context.Background(), 0)
+	if len(msg) != 0 {
+		t.Fatalf("msg = %v", msg)
+	}
+}
+
+// Heartbeats keep a turn alive well past the legacy no-frame window: a quiet
+// but busy Agent (long build, long reasoning) is not abandoned.
+func TestRunTurnHeartbeatsKeepTurnAlive(t *testing.T) {
+	h, p := wsServer(t, func(conn *websocket.Conn, op string, msg map[string]any) {
+		switch op {
+		case "connect":
+			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "s"})
+		case "chat":
+			mine, _ := msg["opId"].(string)
+			for i := 0; i < 12; i++ {
+				_ = conn.WriteJSON(map[string]any{"op": "liveness", "opId": mine, "data": map[string]any{
+					"active": true, "cpuMs": 900, "ioBytes": 4096, "idleSec": 0, "limitSec": 1, "lastTool": "go test ./...",
+				}})
+				time.Sleep(50 * time.Millisecond)
+			}
+			_ = conn.WriteJSON(tagged(chunkFrame("done"), mine))
+			_ = conn.WriteJSON(tagged(doneFrame(), mine))
+		}
+	})
+	old := bridgeLostAfter
+	bridgeLostAfter = 300 * time.Millisecond
+	defer func() { bridgeLostAfter = old }()
+	c := connectAndClient(t, h, p).WithIdleTimeout(100 * time.Millisecond)
+	var progressed bool
+	res, err := c.ChatStreamResult(context.Background(), "hi", nil, func(r *ChatResult) {
+		if r.Liveness != nil {
+			progressed = true
+		}
+	})
+	if err != nil || res.Interrupted || res.Narration != "done" {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if res.Liveness == nil || !res.Liveness.Active || res.Liveness.CPUMs != 900 || res.Liveness.LastTool != "go test ./..." {
+		t.Fatalf("liveness = %+v", res.Liveness)
+	}
+	if !progressed {
+		t.Fatal("heartbeats should be reported through onProgress")
+	}
+}
+
+// Once the bridge has sent heartbeats, silence past bridgeLostAfter means the
+// bridge is gone, however long the Agent no-activity limit is.
+func TestRunTurnBridgeLostAfterHeartbeats(t *testing.T) {
+	h, p := wsServer(t, func(conn *websocket.Conn, op string, msg map[string]any) {
+		switch op {
+		case "connect":
+			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "s"})
+		case "chat":
+			mine, _ := msg["opId"].(string)
+			_ = conn.WriteJSON(map[string]any{"op": "liveness", "opId": mine, "data": map[string]any{"active": false}})
+		}
+	})
+	old := bridgeLostAfter
+	bridgeLostAfter = 150 * time.Millisecond
+	defer func() { bridgeLostAfter = old }()
+	c := connectAndClient(t, h, p).WithIdleTimeout(time.Hour)
+	start := time.Now()
+	_, err := c.ChatStructured(context.Background(), "hi", nil)
+	if !errors.Is(err, ErrChatIdle) || !strings.Contains(err.Error(), "no frame from the sandbox") {
+		t.Fatalf("err = %v", err)
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatalf("took %s; the heartbeat window should apply", time.Since(start))
+	}
+}
+
+func TestLegacyWatch(t *testing.T) {
+	if got := legacyWatch(20 * time.Minute); got != 42*time.Minute {
+		t.Fatalf("legacyWatch(20m) = %s", got)
+	}
+	if got := legacyWatch(time.Minute); got != 3*time.Minute {
+		t.Fatalf("legacyWatch(1m) = %s", got)
+	}
+	if got := legacyWatch(0); got != 0 {
+		t.Fatalf("legacyWatch(0) = %s", got)
+	}
+}
+
+// A turn the bridge stopped as stuck is an error even with partial output; the
+// result still comes back so its usage is counted.
+func TestRunTurnStuck(t *testing.T) {
+	h, p := wsServer(t, func(conn *websocket.Conn, op string, msg map[string]any) {
+		switch op {
+		case "connect":
+			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "s"})
+		case "chat":
+			mine, _ := msg["opId"].(string)
+			_ = conn.WriteJSON(tagged(chunkFrame("working"), mine))
+			_ = conn.WriteJSON(map[string]any{"op": "event", "opId": mine,
+				"data": map[string]any{"type": "error_text", "text": "Agent 连续 20 分钟没有任何活动"}})
+			done := doneFrame()
+			done["data"].(map[string]any)["stopReason"] = "stuck"
+			_ = conn.WriteJSON(tagged(done, mine))
+		}
+	})
+	c := connectAndClient(t, h, p)
+	res, err := c.ChatStructured(context.Background(), "hi", nil)
+	if !errors.Is(err, ErrAgentStuck) || errors.Is(err, ErrChatIdle) {
+		t.Fatalf("err = %v", err)
+	}
+	if res == nil || res.Narration != "working" || !strings.Contains(err.Error(), "没有任何活动") {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+}
+
+func TestRunTurnStuckDefaultReason(t *testing.T) {
+	c := &ACPClient{}
+	_, err := c.finishTurn(&ChatResult{OpID: "g-1", StopReason: stopReasonStuck})
+	if !errors.Is(err, ErrAgentStuck) || !strings.Contains(err.Error(), "已被终止") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+type budgetCause struct{}
+
+func (budgetCause) Error() string { return "节点运行超过总时限 1 分钟" }
+
+// A ctx deadline carrying a cause reports that cause, not a generic message.
+func TestRunTurnDeadlineCauseReason(t *testing.T) {
+	h, p := wsServer(t, func(conn *websocket.Conn, op string, msg map[string]any) {
+		switch op {
+		case "connect":
+			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "s"})
+		case "chat":
+			mine, _ := msg["opId"].(string)
+			_ = conn.WriteJSON(tagged(chunkFrame("partial"), mine))
+		case "cancel":
+			id, _ := msg["opId"].(string)
+			_ = conn.WriteJSON(tagged(doneFrame(), id))
+		}
+	})
+	c := connectAndClient(t, h, p)
+	ctx, cancel := context.WithDeadlineCause(context.Background(), time.Now().Add(150*time.Millisecond), budgetCause{})
+	defer cancel()
+	res, err := c.ChatStructured(ctx, "hi", nil)
+	if err != nil || !res.Interrupted || !strings.Contains(res.ErrorText, "节点运行超过总时限") {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+
+	h2, p2 := wsServer(t, func(conn *websocket.Conn, op string, _ map[string]any) {
+		if op == "connect" {
+			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "s"})
+		}
+	})
+	c2 := connectAndClient(t, h2, p2)
+	ctx2, cancel2 := context.WithDeadlineCause(context.Background(), time.Now().Add(100*time.Millisecond), budgetCause{})
+	defer cancel2()
+	if _, err := c2.ChatStructured(ctx2, "hi", nil); !errors.As(err, new(budgetCause)) {
+		t.Fatalf("err = %v, want the deadline cause", err)
+	}
+}

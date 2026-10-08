@@ -87,7 +87,7 @@ func TestCursorLiveMCP(t *testing.T) {
 	provider := newACPProvider(host, Options{
 		SandboxImage: image,
 		GatewayURL:   gatewayURL,
-		ChatTimeout:  10 * time.Minute,
+		NodeHardCap:  10 * time.Minute,
 		MCPEndpoint:  fmt.Sprintf("http://host.docker.internal:%d", port),
 		ProfilesRoot: profilesRoot,
 	})

@@ -291,7 +291,7 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 	}
 	acp := sb.ACP().
 		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
-		WithIdleTimeout(c.opts.ChatIdleTimeout).
+		WithIdleTimeoutFunc(c.agentIdle).
 		WithBridgeModel(spec.Env["ACP_BRIDGE_MODEL"])
 	if err := acp.Connect(ctx); err != nil {
 		c.forgetCodexLogin(codexLoginKey(req))

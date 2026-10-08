@@ -51,7 +51,8 @@ func TestSettingsAndLiveEndpoints(t *testing.T) {
 	}
 	if w := h.do("PUT", "/api/settings", map[string]int{
 		services.KeyMaxConcurrentRuns: 3,
-	}); w.Code != 200 {
+		services.KeyAgentIdleMin:      25,
+	}); w.Code != 200 || !strings.Contains(w.Body.String(), `"agent_idle_timeout_minutes"`) {
 		t.Fatalf("update settings: %d %s", w.Code, w.Body)
 	}
 	if w := h.do("PUT", "/api/settings", "bad"); w.Code != 400 {

@@ -68,7 +68,36 @@ function toggleCall(i: number) {
 }
 
 // prompt / turn_end belong to the LLM transcript view, not the agent event log.
-const events = computed(() => props.events.filter((e) => e.kind !== 'prompt' && e.kind !== 'turn_end' && e.kind !== 'timeline'))
+const events = computed(() =>
+  props.events.filter((e) => e.kind !== 'prompt' && e.kind !== 'turn_end' && e.kind !== 'timeline' && e.kind !== 'liveness'),
+)
+
+const liveness = computed(() => {
+  if (!props.live) return null
+  for (let i = props.events.length - 1; i >= 0; i--) {
+    const lv = props.events[i].liveness
+    if (props.events[i].kind === 'liveness' && lv) return lv
+  }
+  return null
+})
+
+function fmtBytes(n: number): string {
+  if (n >= 1 << 20) return `${(n / (1 << 20)).toFixed(1)} MiB`
+  if (n >= 1 << 10) return `${Math.round(n / (1 << 10))} KiB`
+  return `${n} B`
+}
+
+const livenessText = computed(() => {
+  const lv = liveness.value
+  if (!lv) return ''
+  const params = {
+    cpu: (lv.cpuMs / 1000).toFixed(1),
+    io: fmtBytes(lv.ioBytes),
+    idle: Math.floor(lv.idleSec / 60),
+    limit: Math.max(1, Math.round(lv.limitSec / 60)),
+  }
+  return lv.active ? t('pages.liveLog.liveness.active', params) : t('pages.liveLog.liveness.quiet', params)
+})
 
 const hasTimelineContent = computed(
   () => events.value.length > 0 || !!(props.mcpCalls && props.mcpCalls.length),
@@ -563,6 +592,15 @@ watch(
     >
       <span class="h-2 w-2 animate-pulseglow rounded-full" :class="busy ? 'bg-info' : 'bg-ok'" />
       {{ busy ? t('pages.liveLog.receiving') : t('pages.liveLog.idleWaiting') }}
+      <span
+        v-if="busy && livenessText"
+        data-testid="live-log-liveness"
+        class="ml-auto truncate"
+        :class="liveness!.active ? 'text-txt3' : 'text-warn'"
+        :title="liveness!.lastTool || undefined"
+      >
+        {{ livenessText }}
+      </span>
     </div>
   </div>
 </template>

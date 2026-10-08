@@ -1880,7 +1880,7 @@
         },
         "resources": {
           "title": "Sandbox resources",
-          "desc": "Resource limits for every sandbox the platform creates (workflow nodes, test and agent sandboxes)."
+          "desc": "Resource limits for every sandbox the platform creates (workflow nodes, test and agent sandboxes), and the no-activity limit that decides an agent is stuck."
         }
       },
       "labels": {
@@ -1888,14 +1888,16 @@
         "run_sandbox_ttl_minutes": "Run sandbox TTL",
         "test_sandbox_ttl_minutes": "Test sandbox idle TTL",
         "max_test_sandboxes": "Max test sandboxes",
-        "sandbox_memory_mb": "Sandbox memory limit"
+        "sandbox_memory_mb": "Sandbox memory limit",
+        "agent_idle_timeout_minutes": "Agent no-activity limit"
       },
       "settings": {
         "max_concurrent_runs": "Max workflows in running state. Read-only when locked by GRASP_MAX_RUNS.",
         "run_sandbox_ttl_minutes": "Minutes to keep run sandbox alive after a turn for follow-up artifacts.",
         "test_sandbox_ttl_minutes": "Idle TTL for test sandboxes.",
         "max_test_sandboxes": "Reject new test sandboxes when active count reaches this (min 1).",
-        "sandbox_memory_mb": "Memory per sandbox, shared by dockerd, the browser and the agent's builds/tests; exceeding it OOM-kills the whole sandbox. The agent prompt states this limit. Applies to newly created sandboxes (min 1024, must not exceed the gateway maxMemoryMB). Read-only when locked by GRASP_SANDBOX_MEMORY_MB."
+        "sandbox_memory_mb": "Memory per sandbox, shared by dockerd, the browser and the agent's builds/tests; exceeding it OOM-kills the whole sandbox. The agent prompt states this limit. Applies to newly created sandboxes (min 1024, must not exceed the gateway maxMemoryMB). Read-only when locked by GRASP_SANDBOX_MEMORY_MB.",
+        "agent_idle_timeout_minutes": "When the agent shows no output, CPU or disk activity for this long, the sandbox tries to resume it once and, if it stays silent, stops the turn as stuck (the node retries once in a fresh sandbox). Agents running builds, tests or long reasoning keep CPU/IO busy and are not stopped. Applies from the next turn (2–120 minutes, default 20). Read-only when locked by GRASP_CHAT_IDLE_SEC."
       },
       "units": {
         "mib": "MiB"
@@ -3493,6 +3495,10 @@
       "builtinMcp": "Built-in MCP calls · {n}",
       "args": "Args:",
       "result": "Result:",
+      "liveness": {
+        "active": "Agent active · CPU {cpu}s · IO {io}",
+        "quiet": "Agent quiet for {idle} min (stopped as stuck at {limit} min)"
+      },
       "receiving": "Receiving event stream…",
       "idleWaiting": "Idle, waiting for next step…",
       "rehydrate": {

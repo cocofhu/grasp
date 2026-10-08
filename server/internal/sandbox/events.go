@@ -10,6 +10,23 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
+// Liveness is one {op:"liveness"} heartbeat: what the bridge's no-activity
+// watchdog sees while the turn runs.
+type Liveness struct {
+	// Active reports whether the last sample counted as activity.
+	Active bool `json:"active"`
+	// CPUMs / IOBytes are the Agent process tree's CPU time and IO since the
+	// previous heartbeat.
+	CPUMs   int64 `json:"cpuMs"`
+	IOBytes int64 `json:"ioBytes"`
+	// IdleSec is how long the turn has gone without activity; LimitSec the
+	// no-activity limit it is measured against.
+	IdleSec  int `json:"idleSec"`
+	LimitSec int `json:"limitSec"`
+	// LastTool is the title of the most recent tool call.
+	LastTool string `json:"lastTool,omitempty"`
+}
+
 // ChatResult is the structured aggregation of one prompt turn's
 // session_update events from cursor-agent (via the acp-bridge).
 //
@@ -59,6 +76,9 @@ type ChatResult struct {
 	// watchdog timed it out, it was cancelled, or this client gave up after its
 	// idle window. Narration is partial; ErrorText carries the reason.
 	Interrupted bool `json:"-"`
+	// Liveness is the latest bridge heartbeat of the turn (nil until one
+	// arrives or with a bridge that does not send them).
+	Liveness *Liveness `json:"-"`
 
 	// Segments are thought/narration sealed at a turn_segment boundary. The
 	// fields above stay the segment still being written.

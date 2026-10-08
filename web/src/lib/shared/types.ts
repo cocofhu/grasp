@@ -690,7 +690,8 @@ export interface AcpEvent {
   t: number // seconds offset
   // prompt / turn_end bracket each persisted chat turn (LLM 过程 transcript only).
   // timeline: the open agent row's thought / tool / message steps in order (parts).
-  kind: 'message' | 'thought' | 'plan' | 'tool_call' | 'commands' | 'segment' | 'prompt' | 'turn_end' | 'timeline'
+  // liveness: the sandbox's latest heartbeat for the running turn (live only).
+  kind: 'message' | 'thought' | 'plan' | 'tool_call' | 'commands' | 'segment' | 'prompt' | 'turn_end' | 'timeline' | 'liveness'
   title?: string
   text?: string
   status?: 'running' | 'completed' | 'failed'
@@ -704,6 +705,19 @@ export interface AcpEvent {
   truncated?: boolean
   /** kind=timeline only. */
   parts?: AgentPart[]
+  /** kind=liveness only. */
+  liveness?: AcpLiveness
+}
+
+/** What the sandbox watchdog sees while a turn runs (sent about once a minute). */
+export interface AcpLiveness {
+  active: boolean
+  cpuMs: number
+  ioBytes: number
+  /** Seconds without any output, CPU or IO; the turn is stopped at limitSec. */
+  idleSec: number
+  limitSec: number
+  lastTool?: string
 }
 
 /**

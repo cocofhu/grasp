@@ -111,6 +111,14 @@ func FeedbackHeaderFor(n int) string {
 	return strings.ReplaceAll(FeedbackHeader, "{n}", strconv.Itoa(n))
 }
 
+// StuckRetryNoteFor tells a node restarted after the platform stopped it as
+// stuck why the last attempt ended and how to avoid it again.
+func StuckRetryNoteFor(reason string) string {
+	return "\n\n## 上一次执行被判定为卡住\n" +
+		"上一次执行长时间没有任何输出、CPU 或磁盘活动(或在反复执行同一条命令),已被平台终止,现在换新沙箱从头执行。原因:" + reason + "\n" +
+		"本次请避免:不带超时的阻塞式前台命令(watch / serve / 等待输入的交互命令)、反复重试同一个失败操作。耗时命令请加超时,或放到后台并定期查看输出。\n"
+}
+
 func bulletList(items []string) string {
 	var b strings.Builder
 	for _, it := range items {

@@ -115,7 +115,7 @@ func (r *PmTurnRunner) SetChatterForTest(c pmChatter) {
 }
 
 // SetTurnDeadline configures the default per-turn ctx deadline (values <= 0 are
-// ignored). Typically set to AgentChatTimeout()+buffer at boot.
+// ignored). Set from main at boot.
 func (r *PmTurnRunner) SetTurnDeadline(d time.Duration) {
 	if d <= 0 {
 		return

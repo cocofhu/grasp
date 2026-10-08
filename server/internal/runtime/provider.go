@@ -30,12 +30,14 @@ type Options struct {
 	GatewayAPIKey string
 	// Env is the vendor-neutral set of environment variables injected into
 	// every sandbox (protocol config.env channel).
-	Env         map[string]string
-	ChatTimeout time.Duration
-	// ChatIdleTimeout aborts a chat turn when no ACP event arrives within the
-	// window (0 disables). Detects a stuck agent/sandbox without killing a
-	// slow-but-productive turn that keeps streaming events.
+	Env map[string]string
+	// ChatIdleTimeout is the boot value of the Agent no-activity limit N sent
+	// to the sandbox bridge each turn (0 disables); SetIdleTimeout overrides it
+	// at runtime from the settings page.
 	ChatIdleTimeout time.Duration
+	// NodeHardCap is the total time limit of a node with no config.timeout
+	// (0 → DefaultNodeHardCap).
+	NodeHardCap time.Duration
 	// SandboxMaxAttempts caps how many times a node is (re)attempted when a
 	// retryable sandbox/ACP fault occurs (create/ready/connect/mid-turn crash).
 	// <=1 disables retry (single attempt).

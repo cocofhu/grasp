@@ -15,8 +15,7 @@ type Coordinator struct {
 	grace     time.Duration
 }
 
-// New builds a coordinator with the given grace upper bound (typically
-// cfg.AgentChatTimeout()).
+// New builds a coordinator with the given grace upper bound.
 func New(grace time.Duration) *Coordinator {
 	if grace <= 0 {
 		grace = 600 * time.Second

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -27,6 +28,9 @@ func (c *acpProvider) buildAgentPrompt(req NodeReq, seeded []string) string {
 			fmt.Fprintf(&b, "- %s\n", cite)
 		}
 	}
+	if note, ok := c.stuckNotes.Load(reactKey(req)); ok {
+		b.WriteString(models.StuckRetryNoteFor(note.(string)))
+	}
 	b.WriteString(capabilityContracts(req.Caps))
 	// A clarify Agent must not see the outcome contract before the human
 	// confirms; the confirm turn introduces node_complete.
@@ -37,6 +41,7 @@ func (c *acpProvider) buildAgentPrompt(req NodeReq, seeded []string) string {
 		b.WriteString(layout)
 	}
 	b.WriteString(sandboxResourcesText(sandbox.DefaultMemoryMB()))
+	b.WriteString(timeLimitsText(req, c.agentIdle()))
 	return strings.TrimSpace(b.String())
 }
 
@@ -55,6 +60,22 @@ func sandboxResourcesText(memoryMB int) string {
 	b.WriteString("- 依赖安装、build、test、类型检查、lint 等重型命令必须逐个串行执行,不要用并行工具调用同时启动多个。\n")
 	fmt.Fprintf(&b, "- 单个 Node 进程的 `NODE_OPTIONS=--max-old-space-size` 不超过 %d;vitest/jest 用 `--maxWorkers=2`。\n", heap)
 	return b.String()
+}
+
+// timeLimitsText tells the Agent when the platform will stop it: after idle
+// with no output, CPU or IO, and when the node's own time limit is used up.
+func timeLimitsText(req NodeReq, idle time.Duration) string {
+	var b strings.Builder
+	if idle > 0 {
+		fmt.Fprintf(&b, "- 连续 %d 分钟没有任何输出、CPU 或磁盘活动会被判定为卡住并终止;不要运行会无限等待的前台命令(watch / serve / 等待输入),耗时命令加超时或放到后台。\n", max(1, int(idle/time.Minute)))
+	}
+	if v, ok := toInt(req.Config["timeout"]); ok && v > 0 {
+		fmt.Fprintf(&b, "- 本节点总时限 %d 分钟,用完即终止,请优先完成必须的产物。\n", v)
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return "\n\n## 时限\n" + b.String()
 }
 
 // capabilityContracts renders the platform protocol an Agent's capabilities

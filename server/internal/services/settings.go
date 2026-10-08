@@ -22,6 +22,7 @@ const (
 	KeyMaxTestSandboxes  = "max_test_sandboxes"
 	KeyNodeAutoRetryMax  = "node_auto_retry_max"
 	KeySandboxMemoryMB   = "sandbox_memory_mb"
+	KeyAgentIdleMin      = "agent_idle_timeout_minutes"
 	KeyBrandProductName  = "brand_product_name"
 	KeyBrandHomeSubtitle = "brand_home_subtitle"
 
@@ -81,24 +82,27 @@ type knob struct {
 	label   string
 	unit    string
 	min     int
+	max     int    // 0 = no ceiling
 	envVar  string // "" when there is no env override for this knob
 	fromCfg func(*config.Config) int
 }
 
 func knobs() []knob {
 	return []knob{
-		{KeyMaxConcurrentRuns, "最大并发运行数", "", 1, "GRASP_MAX_RUNS",
+		{KeyMaxConcurrentRuns, "最大并发运行数", "", 1, 0, "GRASP_MAX_RUNS",
 			func(c *config.Config) int { return c.Engine.MaxConcurrentRuns }},
-		{KeyRunSandboxTTLMin, "运行沙箱保留时长", "分钟", 1, "",
+		{KeyRunSandboxTTLMin, "运行沙箱保留时长", "分钟", 1, 0, "",
 			func(c *config.Config) int { return c.Sandbox.RunSandboxTTLMinutes }},
-		{KeyTestSandboxTTLMin, "测试沙箱空闲 TTL", "分钟", 1, "",
+		{KeyTestSandboxTTLMin, "测试沙箱空闲 TTL", "分钟", 1, 0, "",
 			func(c *config.Config) int { return c.Sandbox.TestSandboxTTLMinutes }},
-		{KeyMaxTestSandboxes, "最大测试沙箱数", "", 1, "",
+		{KeyMaxTestSandboxes, "最大测试沙箱数", "", 1, 0, "",
 			func(c *config.Config) int { return c.Sandbox.MaxTestSandboxes }},
-		{KeyNodeAutoRetryMax, "节点自动重试次数", "次", 0, "GRASP_NODE_AUTO_RETRY",
+		{KeyNodeAutoRetryMax, "节点自动重试次数", "次", 0, 0, "GRASP_NODE_AUTO_RETRY",
 			func(c *config.Config) int { return c.Engine.NodeAutoRetryMax }},
-		{KeySandboxMemoryMB, "沙箱内存上限", "MiB", 1024, "GRASP_SANDBOX_MEMORY_MB",
+		{KeySandboxMemoryMB, "沙箱内存上限", "MiB", 1024, 0, "GRASP_SANDBOX_MEMORY_MB",
 			func(c *config.Config) int { return c.Sandbox.MemoryMB }},
+		{KeyAgentIdleMin, "Agent 无动作时限", "分钟", 2, 120, "GRASP_CHAT_IDLE_SEC",
+			func(c *config.Config) int { return (c.Sandbox.ChatIdleTimeoutSeconds + 59) / 60 }},
 	}
 }
 
@@ -109,6 +113,7 @@ type SettingItem struct {
 	Unit   string `json:"unit,omitempty"`
 	Value  int    `json:"value"`
 	Min    int    `json:"min"`
+	Max    int    `json:"max,omitempty"`
 	Source string `json:"source"` // env | db | config
 	Locked bool   `json:"locked"` // true when pinned by an env var (UI read-only)
 }
@@ -116,12 +121,12 @@ type SettingItem struct {
 // Effective returns every knob's current effective value with provenance.
 func (s *SettingsService) Effective() []SettingItem {
 	cfg := config.GetConfig()
-	out := make([]SettingItem, 0, 4)
+	out := make([]SettingItem, 0, len(knobs()))
 	for _, k := range knobs() {
 		val, src, locked := s.resolve(k, cfg)
 		out = append(out, SettingItem{
 			Key: k.key, Label: k.label, Unit: k.unit, Value: val,
-			Min: k.min, Source: src, Locked: locked,
+			Min: k.min, Max: k.max, Source: src, Locked: locked,
 		})
 	}
 	return out
@@ -168,6 +173,9 @@ func (s *SettingsService) UpdateWithBrand(patch map[string]int, brand BrandPatch
 		}
 		if v < k.min {
 			return nil, fmt.Errorf("%s 不能小于 %d", k.label, k.min)
+		}
+		if k.max > 0 && v > k.max {
+			return nil, fmt.Errorf("%s 不能大于 %d", k.label, k.max)
 		}
 	}
 	if err := validateBrandPatch(brand); err != nil {
@@ -218,8 +226,12 @@ func (s *SettingsService) ApplyOnBoot() { s.apply() }
 // apply computes the effective values and drives the runtime components.
 func (s *SettingsService) apply() {
 	m := map[string]int{}
+	idleFromCfg := true
 	for _, it := range s.Effective() {
 		m[it.Key] = it.Value
+		if it.Key == KeyAgentIdleMin {
+			idleFromCfg = it.Source != "db"
+		}
 	}
 	if s.conc != nil {
 		s.conc.SetMaxConcurrent(m[KeyMaxConcurrentRuns])
@@ -236,6 +248,12 @@ func (s *SettingsService) apply() {
 		s.sbx.SetMaxTestSandboxes(m[KeyMaxTestSandboxes])
 	}
 	sandbox.SetDefaultMemoryMB(m[KeySandboxMemoryMB])
+	if idleFromCfg {
+		// The config value is in seconds; keep it exact.
+		sandbox.SetAgentIdleTimeout(config.GetConfig().ChatIdleTimeout())
+	} else {
+		sandbox.SetAgentIdleTimeout(time.Duration(m[KeyAgentIdleMin]) * time.Minute)
+	}
 }
 
 func (s *SettingsService) dbInt(key string) (int, bool) {

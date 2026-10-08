@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestSetDefaults(t *testing.T) {
@@ -29,11 +30,14 @@ func TestSetDefaults(t *testing.T) {
 	if c.Storage.BlobsRoot != "data/blobs" {
 		t.Errorf("default storage.blobs_root = %q", c.Storage.BlobsRoot)
 	}
-	if c.Sandbox.AgentChatTimeoutSeconds != 600 {
-		t.Errorf("default timeout = %d, want 600", c.Sandbox.AgentChatTimeoutSeconds)
+	if c.Sandbox.AgentChatTimeoutSeconds != 0 {
+		t.Errorf("deprecated turn timeout must not get a default, got %d", c.Sandbox.AgentChatTimeoutSeconds)
 	}
-	if c.Sandbox.ChatIdleTimeoutSeconds != 720 {
-		t.Errorf("default idle timeout = %d, want 720", c.Sandbox.ChatIdleTimeoutSeconds)
+	if c.Sandbox.ChatIdleTimeoutSeconds != 1200 {
+		t.Errorf("default idle timeout = %d, want 1200", c.Sandbox.ChatIdleTimeoutSeconds)
+	}
+	if c.AgentNodeHardCap() != 24*time.Hour {
+		t.Errorf("default node hard cap = %s, want 24h", c.AgentNodeHardCap())
 	}
 	want := fmt.Sprintf("http://host.docker.internal:%d", c.Server.Port)
 	if c.Server.MCPAdvertise != want {
@@ -135,6 +139,7 @@ sandbox:
   image: "file/img:1"
   gateway_api_key: "file_key"
   agent_chat_timeout_seconds: 120
+  agent_node_hard_cap_hours: 6
 `
 	if err := os.WriteFile(path, []byte(yamlBody), 0o644); err != nil {
 		t.Fatal(err)
@@ -159,8 +164,11 @@ sandbox:
 	if c.Engine.MaxConcurrentRuns != 9 {
 		t.Errorf("file max runs lost: %d", c.Engine.MaxConcurrentRuns)
 	}
-	if got := c.AgentChatTimeout().Seconds(); got != 120 {
-		t.Errorf("AgentChatTimeout() = %vs, want 120", got)
+	if got := c.AgentNodeHardCap(); got != 6*time.Hour {
+		t.Errorf("AgentNodeHardCap() = %v, want 6h", got)
+	}
+	if got := c.ChatIdleTimeout(); got != 20*time.Minute {
+		t.Errorf("ChatIdleTimeout() default = %v, want 20m", got)
 	}
 }
 

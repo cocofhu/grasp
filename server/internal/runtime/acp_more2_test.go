@@ -24,24 +24,17 @@ import (
 func TestProviderBudgetHelpers(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 
-	// Configured chat timeout wins over the default.
-	p := newACPProvider(host, Options{ChatTimeout: 42 * time.Second}).(*acpProvider)
-	if p.chatTimeout() != 42*time.Second {
-		t.Errorf("chatTimeout = %v", p.chatTimeout())
+	// Node timeout (minutes) wins; otherwise the configured hard cap, else 24h.
+	p := newACPProvider(host, Options{NodeHardCap: 42 * time.Minute}).(*acpProvider)
+	if d, hard := p.nodeLimit(NodeReq{Config: map[string]any{"timeout": 7}}); d != 7*time.Minute || hard {
+		t.Errorf("node timeout = %v hard=%v", d, hard)
 	}
-	// Per-node override.
-	req := NodeReq{Config: map[string]any{"timeout": 7}}
-	if p.nodeChatTimeout(req) != 7*time.Minute {
-		t.Errorf("nodeChatTimeout override = %v", p.nodeChatTimeout(req))
+	if d, hard := p.nodeLimit(NodeReq{Config: map[string]any{}}); d != 42*time.Minute || !hard {
+		t.Errorf("hard cap fallback = %v hard=%v", d, hard)
 	}
-	if p.nodeChatTimeout(NodeReq{Config: map[string]any{}}) != 42*time.Second {
-		t.Error("nodeChatTimeout fallback")
-	}
-
-	// Default budget when unset.
 	pd := newACPProvider(host, Options{}).(*acpProvider)
-	if pd.chatTimeout() != 10*time.Minute {
-		t.Errorf("default chatTimeout = %v", pd.chatTimeout())
+	if d, _ := pd.nodeLimit(NodeReq{}); d != DefaultNodeHardCap {
+		t.Errorf("default hard cap = %v", d)
 	}
 	if pd.sandboxAttempts() != 1 {
 		t.Errorf("default attempts = %d", pd.sandboxAttempts())

@@ -61,7 +61,7 @@ func (c *acpProvider) ensureOutcome(ctx context.Context, req NodeReq, acp *sandb
 			return clarifyPending{}, nil
 		}
 		prompt := models.OutcomeRetry
-		chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
+		chatCtx, cancel := c.turnCtx(ctx, req)
 		res, err := c.streamChat(chatCtx, acp, req, prompt, nil)
 		cancel()
 		if err != nil {
@@ -108,7 +108,7 @@ func (c *acpProvider) ensureStructured(ctx context.Context, req NodeReq, acp *sa
 			return clarifyPending{}, nil
 		}
 		prompt := models.StructuredRetryFor(name, tool)
-		chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
+		chatCtx, cancel := c.turnCtx(ctx, req)
 		res, err := c.streamChat(chatCtx, acp, req, prompt, nil)
 		cancel()
 		if err != nil {
@@ -209,7 +209,7 @@ func (c *acpProvider) ensureRootCauseConsistency(ctx context.Context, req NodeRe
 				Msg("root_cause consistency still failing after re-prompt")
 			return clarifyPending{}, fmt.Errorf("%s", msg)
 		}
-		chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
+		chatCtx, cancel := c.turnCtx(ctx, req)
 		res, err := c.streamChat(chatCtx, acp, req, "【必须完成】"+msg, nil)
 		cancel()
 		if err != nil {
@@ -267,7 +267,7 @@ func (c *acpProvider) ensurePlanComplete(ctx context.Context, req NodeReq, acp *
 			return nil
 		}
 		prompt := models.PlanIncompleteRetryFor(inc)
-		chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
+		chatCtx, cancel := c.turnCtx(ctx, req)
 		res, err := c.streamChat(chatCtx, acp, req, prompt, nil)
 		cancel()
 		if err != nil {

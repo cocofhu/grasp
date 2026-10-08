@@ -28,7 +28,7 @@ func testOpts() Options {
 		SandboxMaxAttempts:  3,
 		SandboxRetryBackoff: time.Millisecond,
 		ChatIdleTimeout:     80 * time.Millisecond,
-		ChatTimeout:         5 * time.Second,
+		NodeHardCap:         time.Minute,
 	}
 }
 

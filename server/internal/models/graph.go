@@ -85,7 +85,7 @@ type Variable struct {
 // AcpEvent is one streamed agent event (mirrors the frontend AcpEvent).
 type AcpEvent struct {
 	T        int           `json:"t"`
-	Kind     string        `json:"kind"` // message|thought|plan|tool_call|commands|segment|prompt|turn_end
+	Kind     string        `json:"kind"` // message|thought|plan|tool_call|commands|segment|prompt|turn_end|timeline|liveness
 	Title    string        `json:"title,omitempty"`
 	Text     string        `json:"text,omitempty"`
 	Status   string        `json:"status,omitempty"`
@@ -99,6 +99,23 @@ type AcpEvent struct {
 	// Parts is set on kind=timeline only: the open agent row as it happened
 	// (thought, tool and message steps interleaved).
 	Parts []AcpPart `json:"parts,omitempty"`
+	// Liveness is set on kind=liveness only (live stream, never persisted).
+	Liveness *AcpLiveness `json:"liveness,omitempty"`
+}
+
+// AcpKindLiveness carries the sandbox's latest view of whether the Agent is
+// active, so a quiet but busy turn is visibly alive.
+const AcpKindLiveness = "liveness"
+
+// AcpLiveness is one sandbox heartbeat: activity since the previous one and
+// how long the Agent has gone without any.
+type AcpLiveness struct {
+	Active   bool   `json:"active"`
+	CPUMs    int64  `json:"cpuMs"`
+	IOBytes  int64  `json:"ioBytes"`
+	IdleSec  int    `json:"idleSec"`
+	LimitSec int    `json:"limitSec"`
+	LastTool string `json:"lastTool,omitempty"`
 }
 
 // AcpKindTimeline carries the ordered steps of the open agent row. It follows

@@ -39,7 +39,7 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	}
 	cfg := &config.Config{
 		Engine:  config.EngineConfig{MaxConcurrentRuns: 5, NodeAutoRetryMax: 2},
-		Sandbox: config.SandboxConfig{RunSandboxTTLMinutes: 30, TestSandboxTTLMinutes: 10, MaxTestSandboxes: 2, MemoryMB: 8192},
+		Sandbox: config.SandboxConfig{RunSandboxTTLMinutes: 30, TestSandboxTTLMinutes: 10, MaxTestSandboxes: 2, MemoryMB: 8192, ChatIdleTimeoutSeconds: 1200},
 	}
 	config.StoreConfig(cfg)
 	conc := &fakeConc{}
@@ -47,7 +47,7 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	svc := NewSettingsService(db, conc, sbx)
 
 	items := svc.Effective()
-	if len(items) != 6 {
+	if len(items) != 7 {
 		t.Fatalf("items: %d", len(items))
 	}
 	updated, err := svc.Update(map[string]int{
@@ -57,11 +57,12 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 		KeyMaxTestSandboxes:  4,
 		KeyNodeAutoRetryMax:  3,
 		KeySandboxMemoryMB:   12288,
+		KeyAgentIdleMin:      30,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(updated) != 6 {
+	if len(updated) != 7 {
 		t.Fatalf("updated: %d", len(updated))
 	}
 	if conc.max != 7 || conc.ar != 3 || sbx.maxTest != 4 {
@@ -70,7 +71,16 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	if got := sandbox.DefaultMemoryMB(); got != 12288 {
 		t.Fatalf("sandbox memory default: got %d, want 12288", got)
 	}
+	if got := sandbox.AgentIdleTimeout(); got != 30*time.Minute {
+		t.Fatalf("agent idle: got %s, want 30m", got)
+	}
 	svc.ApplyOnBoot()
+	if _, err := svc.Update(map[string]int{KeyAgentIdleMin: 121}); err == nil || !strings.Contains(err.Error(), "不能大于 120") {
+		t.Fatalf("expected agent idle max validation error, got %v", err)
+	}
+	if _, err := svc.Update(map[string]int{KeyAgentIdleMin: 1}); err == nil {
+		t.Fatal("expected agent idle min validation error")
+	}
 	if _, err := svc.Update(map[string]int{KeyMaxConcurrentRuns: 0}); err == nil {
 		t.Fatal("expected min validation error")
 	}
@@ -108,6 +118,25 @@ func TestSettingsServiceEnvLocked(t *testing.T) {
 		// apply uses effective env value
 	}
 	os.Unsetenv("GRASP_MAX_RUNS")
+}
+
+func TestSettingsServiceAgentIdleFromConfigKeepsSeconds(t *testing.T) {
+	db, err := database.OpenSQLite(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.StoreConfig(&config.Config{Sandbox: config.SandboxConfig{ChatIdleTimeoutSeconds: 90}})
+	t.Setenv("GRASP_CHAT_IDLE_SEC", "90")
+	svc := NewSettingsService(db, nil, nil)
+	for _, it := range svc.Effective() {
+		if it.Key == KeyAgentIdleMin && (it.Value != 2 || !it.Locked || it.Max != 120) {
+			t.Fatalf("idle item: %+v", it)
+		}
+	}
+	svc.ApplyOnBoot()
+	if got := sandbox.AgentIdleTimeout(); got != 90*time.Second {
+		t.Fatalf("agent idle: got %s, want 90s", got)
+	}
 }
 
 func TestSettingsServiceDBOverride(t *testing.T) {
