@@ -2027,8 +2027,8 @@
       "tabs": {
         "terminal": "Terminal",
         "ide": "IDE",
-        "acp": "ACP",
-        "novnc": "noVNC Browser",
+        "acp": "Agent",
+        "novnc": "Browser",
         "log": "Log"
       },
       "terminalStatus": {
@@ -3128,6 +3128,13 @@
       "novncTab": "noVNC",
       "novncCardTitle": "Remote desktop",
       "novncCardMeta": "Sandbox browser · pick to annotate",
+      "fixedIdeTitle": "IDE",
+      "fixedIdeMeta": "Sandbox IDE",
+      "fixedTerminalTitle": "Terminal",
+      "fixedTerminalMeta": "Sandbox terminal",
+      "fixedBrowserTitle": "Browser",
+      "fixedLogTitle": "Log",
+      "fixedLogMeta": "Container log · stdout/stderr",
       "appTab": "App preview",
       "appCardTitle": "App preview",
       "appCardMeta": "App preview · pick to annotate",
@@ -3135,6 +3142,8 @@
       "iterationBadge": "Iteration {n}",
       "iterationName": "{name} · iteration {n}",
       "novncMissing": "This node has no sandbox, so noVNC cannot open.",
+      "ideMissing": "This node has no sandbox, so the IDE cannot open.",
+      "terminalMissing": "This node has no sandbox, so the terminal cannot open.",
       "tabBadgeNew": "New",
       "tabBadgeUpdated": "Updated",
       "gridEmpty": "This run has no artifacts yet",

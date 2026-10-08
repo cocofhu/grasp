@@ -307,6 +307,9 @@ describe('SandboxConsoleView IDE/ACP lazy mount', () => {
     const acp = await mountConsole('acp')
     await flushPromises()
     expect(acp.find('iframe[title="ACP bridge"]').exists()).toBe(true)
+    const agentBtn = acp.findAll('button').find((b) => b.text().includes('Agent'))
+    expect(agentBtn).toBeTruthy()
+    expect(agentBtn!.classes().join(' ')).toContain('bg-accent-dim')
     acp.unmount()
 
     const unknown = await mountConsole('acp-native')
@@ -319,8 +322,12 @@ describe('SandboxConsoleView IDE/ACP lazy mount', () => {
   it('syncs IDE/ACP loading copy in zh-CN and en (g1.5)', () => {
     expect(pages.pages.sandboxConsole.ideLoading).toBe('正在启动 IDE')
     expect(pages.pages.sandboxConsole.acpLoading).toBe('正在连接 ACP')
+    expect(pages.pages.sandboxConsole.tabs.acp).toBe('Agent')
+    expect(pages.pages.sandboxConsole.tabs.novnc).toBe('浏览器')
     expect(enPages.pages.sandboxConsole.ideLoading).toBe('Starting IDE')
     expect(enPages.pages.sandboxConsole.acpLoading).toBe('Connecting to ACP')
+    expect(enPages.pages.sandboxConsole.tabs.acp).toBe('Agent')
+    expect(enPages.pages.sandboxConsole.tabs.novnc).toBe('Browser')
   })
 
   it('shows HardLoadLayer on IDE before iframe load and keeps the top bar usable (g1.1 g3.1)', async () => {
@@ -414,7 +421,7 @@ describe('SandboxConsoleView IDE/ACP lazy mount', () => {
     await nextTick()
     expect(ideLayer(wrapper).exists()).toBe(false)
 
-    await clickTab(wrapper, 'ACP')
+    await clickTab(wrapper, 'Agent')
     await flushPromises()
     await nextTick()
     expect(wrapper.find('iframe[title="ACP bridge"]').exists()).toBe(true)
@@ -428,7 +435,7 @@ describe('SandboxConsoleView IDE/ACP lazy mount', () => {
     expect(ideLayer(wrapper).exists()).toBe(false)
     expect(acpLayer(wrapper).exists()).toBe(false)
 
-    await clickTab(wrapper, 'ACP')
+    await clickTab(wrapper, 'Agent')
     await nextTick()
     expect(acpLayer(wrapper).exists()).toBe(true)
 
@@ -448,7 +455,7 @@ describe('SandboxConsoleView IDE/ACP lazy mount', () => {
 
     await clickTab(wrapper, 'IDE')
     await nextTick()
-    await clickTab(wrapper, 'ACP')
+    await clickTab(wrapper, 'Agent')
     await nextTick()
     expect(acpLayer(wrapper).exists()).toBe(false)
     wrapper.unmount()

@@ -43,6 +43,9 @@ vi.mock('@/lib/api/api', () => ({
     })),
     getRunNodeSandbox: vi.fn(async () => ({ id: 42 })),
     nodePreviews: vi.fn(async () => ({ ports: [] })),
+    nodeSandboxLog: vi.fn(async () => ({ content: 'stdout line', live: true, found: true })),
+    sandboxIdeUrl: (id: number) => `about:blank#ide-${id}`,
+    sandboxTerminalWsUrl: (id: number) => `ws://test.local/sandboxes/${id}/terminal`,
     artifactVersions: vi.fn(async () => []),
     artifactVersionContent: vi.fn(async () => ({
       artifactId: 'live',
@@ -58,6 +61,30 @@ vi.mock('@/lib/api/api', () => ({
 vi.mock('@/lib/inbox/useClarifyDraft', () => ({
   addClarifyAnnotation: mockAddClarifyAnnotation,
 }))
+
+vi.mock('@xterm/xterm', () => {
+  class Terminal {
+    cols = 80
+    rows = 24
+    loadAddon() {}
+    open() {}
+    write() {}
+    dispose() {}
+    onData() {
+      return { dispose() {} }
+    }
+  }
+  return { Terminal }
+})
+
+vi.mock('@xterm/addon-fit', () => {
+  class FitAddon {
+    fit() {}
+  }
+  return { FitAddon }
+})
+
+vi.mock('@xterm/xterm/css/xterm.css', () => ({}))
 
 function i18n() {
   return createI18n({
@@ -121,6 +148,8 @@ describe('ReactArtifactStage', () => {
       content: '<p>old</p>',
     })
     vi.mocked(api.nodePreviews).mockResolvedValue({ ports: [] })
+    vi.mocked(api.getRunNodeSandbox).mockResolvedValue({ id: 42 } as never)
+    vi.mocked(api.nodeSandboxLog).mockResolvedValue({ content: 'stdout line', live: true, found: true })
   })
   afterEach(() => {
     resetStageOpenStateForTests(':run-')
@@ -215,7 +244,7 @@ describe('ReactArtifactStage', () => {
     expect(layoutClass).toContain('gap-3')
     expect(layoutClass).toContain('minmax(176px,1fr)')
 
-    for (const id of ['react-artifact-card-novnc', 'react-artifact-card-research.json']) {
+    for (const id of ['react-artifact-card-browser', 'react-artifact-card-research.json']) {
       const card = wrapper.get(`[data-testid="${id}"]`)
       const cardClass = card.attributes('class') || ''
       expect(cardClass).toContain('rounded-lg')
@@ -411,7 +440,7 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('opens a noVNC tab from the workflow card without replacing artifact tabs', async () => {
+  it('opens a browser tab from the workflow card without replacing artifact tabs', async () => {
     const wrapper = mount(ReactArtifactStage, {
       props: {
         artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json' })],
@@ -422,17 +451,162 @@ describe('ReactArtifactStage', () => {
       global: { plugins: [i18n()], stubs },
     })
     await flushPromises()
-    expect(wrapper.find('[data-testid="react-artifact-card-novnc"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="react-artifact-card-browser"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('远程桌面')
     await wrapper.get('[data-testid="react-artifact-card-research.json"]').trigger('click')
     await wrapper.get('[data-testid="react-artifact-tab-grid"]').trigger('click')
-    await wrapper.get('[data-testid="react-artifact-card-novnc"]').trigger('click')
+    await wrapper.get('[data-testid="react-artifact-card-browser"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="react-artifact-tab-research.json"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="react-artifact-tab-novnc"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('[data-testid="react-artifact-tab-browser"]').attributes('aria-selected')).toBe('true')
     expect(wrapper.get('[data-testid="novnc-stub"]').attributes('data-inspectable')).toBe('1')
-    await wrapper.get('[data-testid="react-artifact-tab-close-novnc"]').trigger('click')
-    expect(wrapper.find('[data-testid="react-artifact-tab-novnc"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="react-artifact-tab-close-browser"]').trigger('click')
+    expect(wrapper.find('[data-testid="react-artifact-tab-browser"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="react-artifact-tab-research.json"]').attributes('aria-selected')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('keeps four fixed cards on an empty grid and opens the container log once', async () => {
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [],
+        runId: 'run-fixed-empty',
+        nodeId: 'clarify',
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="react-artifact-grid-empty"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('本次运行还没有产物')
+    expect(wrapper.text()).not.toContain('远程桌面')
+    expect(wrapper.find('[data-testid="react-artifact-card-app"]').exists()).toBe(false)
+    const titles = ['ide', 'terminal', 'browser', 'log'].map((id) =>
+      wrapper.get(`[data-testid="react-artifact-card-${id}"]`).text(),
+    )
+    expect(titles[0]).toContain('IDE')
+    expect(titles[0]).toContain('沙箱 IDE')
+    expect(titles[1]).toContain('Terminal')
+    expect(titles[1]).toContain('沙箱终端')
+    expect(titles[2]).toContain('浏览器')
+    expect(titles[2]).toContain('沙箱浏览器 · 可取点标注')
+    expect(titles[3]).toContain('日志')
+    expect(titles[3]).toContain('容器日志 · stdout/stderr')
+
+    await wrapper.get('[data-testid="react-artifact-card-log"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="react-artifact-tab-log"]').attributes('aria-selected')).toBe('true')
+    const logPane = wrapper.get('[data-testid="react-artifact-preview-log"]')
+    expect(logPane.text()).toContain('沙箱容器日志')
+    expect(logPane.text()).toContain('stdout line')
+    expect(logPane.text()).not.toContain('执行日志')
+
+    await wrapper.get('[data-testid="react-artifact-tab-grid"]').trigger('click')
+    await wrapper.get('[data-testid="react-artifact-card-log"]').trigger('click')
+    expect(wrapper.findAll('[data-testid="react-artifact-tab-log"]').length).toBe(1)
+    await wrapper.get('[data-testid="react-artifact-tab-close-log"]').trigger('click')
+    expect(wrapper.find('[data-testid="react-artifact-tab-log"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="react-artifact-tab-grid"]').attributes('aria-selected')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('uses a no-sandbox message until a sandbox exists, and code-server copy only when the image lacks it', async () => {
+    vi.mocked(api.getRunNodeSandbox).mockResolvedValue(null)
+    const missing = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [],
+        runId: 'run-fixed-no-sandbox',
+        nodeId: 'clarify',
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    await missing.get('[data-testid="react-artifact-card-ide"]').trigger('click')
+    await flushPromises()
+    const ide = missing.get('[data-testid="react-artifact-preview-ide"]')
+    expect(ide.text()).toContain('当前节点没有可用沙箱，无法打开 IDE。')
+    expect(ide.text()).not.toContain('code-server')
+    await missing.get('[data-testid="react-artifact-card-terminal"]').trigger('click')
+    await flushPromises()
+    const term = missing.get('[data-testid="react-artifact-preview-terminal"]')
+    expect(term.text()).toContain('当前节点没有可用沙箱，无法打开终端。')
+    expect(term.text()).not.toContain('连接已断开')
+    missing.unmount()
+
+    vi.mocked(api.getRunNodeSandbox).mockResolvedValue({ id: 7, hasCodeServer: false } as never)
+    const image = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [],
+        runId: 'run-fixed-no-codeserver',
+        nodeId: 'clarify',
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    await image.get('[data-testid="react-artifact-card-ide"]').trigger('click')
+    await flushPromises()
+    expect(image.get('[data-testid="react-artifact-ide-unavailable"]').text()).toContain('code-server')
+    expect(image.find('iframe[title="code-server"]').exists()).toBe(false)
+    image.unmount()
+
+    vi.mocked(api.getRunNodeSandbox).mockResolvedValue({ id: 8, hasCodeServer: true } as never)
+    const ready = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [],
+        runId: 'run-fixed-ide-ready',
+        nodeId: 'clarify',
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    await ready.get('[data-testid="react-artifact-card-ide"]').trigger('click')
+    await flushPromises()
+    expect(ready.find('iframe[title="code-server"]').exists()).toBe(true)
+    expect(ready.find('[data-testid="react-artifact-ide-unavailable"]').exists()).toBe(false)
+    ready.unmount()
+  })
+
+  it('inserts app preview between browser and log and keeps their panels distinct', async () => {
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [],
+        runId: 'run-fixed-app',
+        nodeId: 'preview',
+        remoteKind: 'app',
+        annotatable: true,
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    expect(
+      wrapper.findAll('[data-testid^="react-artifact-card-"]').map((c) => c.attributes('data-testid')),
+    ).toEqual([
+      'react-artifact-card-ide',
+      'react-artifact-card-terminal',
+      'react-artifact-card-browser',
+      'react-artifact-card-app',
+      'react-artifact-card-log',
+    ])
+    expect(wrapper.get('[data-testid="react-artifact-tab-novnc"]').text()).toContain('应用预览')
+    await wrapper.get('[data-testid="react-artifact-card-browser"]').trigger('click')
+    await flushPromises()
+    expect(
+      wrapper.get('[data-testid="react-artifact-preview-browser"]').find('[data-testid="novnc-stub"]').exists(),
+    ).toBe(true)
+    expect(
+      wrapper.get('[data-testid="react-artifact-preview-browser"]').find('[data-testid="app-preview-stub"]').exists(),
+    ).toBe(false)
+    expect(
+      wrapper.get('[data-testid="react-artifact-preview-novnc"]').find('[data-testid="app-preview-stub"]').exists(),
+    ).toBe(true)
+    expect(
+      wrapper.get('[data-testid="react-artifact-preview-novnc"]').find('[data-testid="novnc-stub"]').exists(),
+    ).toBe(false)
+    await wrapper.get('[data-testid="react-artifact-card-browser"]').trigger('click')
+    expect(wrapper.findAll('[data-testid="react-artifact-tab-browser"]').length).toBe(1)
     wrapper.unmount()
   })
 
@@ -527,6 +701,7 @@ describe('ReactArtifactStage', () => {
     await flushPromises()
     expect(api.nodePreviews).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="react-artifact-card-novnc"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-artifact-card-ide"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="react-artifact-tab-novnc"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="app-preview-stub"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="react-artifact-card-research.json"]').exists()).toBe(true)
@@ -904,7 +1079,10 @@ describe('ReactArtifactStage', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="react-artifact-card-page.html"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="react-artifact-card-visual_1.page.html"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="react-artifact-grid-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="react-artifact-grid-empty"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-artifact-card-ide"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="react-artifact-card-log"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('本次运行还没有产物')
     wrapper.unmount()
   })
 

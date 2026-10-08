@@ -735,10 +735,26 @@ export function buildStageCardThumb(
   return null
 }
 
+const FIXED_STAGE_PANEL_IDS = new Set(['ide', 'terminal', 'browser', 'log'])
+
+/** Keep only IDE / terminal / browser / log ids, in first-seen order. */
+export function normalizeFixedOpen(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  for (const item of raw) {
+    const id = String(item || '').trim()
+    if (!FIXED_STAGE_PANEL_IDS.has(id) || out.includes(id)) continue
+    out.push(id)
+  }
+  return out
+}
+
 export type StageOpenState = {
   openNames: string[]
   activeTab: string
   novncOpen: boolean
+  /** Open IDE / terminal / browser / log tabs. App preview stays on novncOpen. */
+  fixedOpen?: string[]
 }
 
 const STAGE_OPEN_PREFIX = 'appr.reactStageOpen:'
@@ -748,19 +764,31 @@ export function stageOpenStateStorageKey(runId?: string | null, nodeId?: string 
   return `${STAGE_OPEN_PREFIX}${String(runId || '').trim()}:${String(nodeId || '').trim()}`
 }
 
+function copyStageOpenState(state: StageOpenState): StageOpenState {
+  const fixedOpen = normalizeFixedOpen(state.fixedOpen)
+  const next: StageOpenState = {
+    openNames: [...state.openNames],
+    activeTab: state.activeTab,
+    novncOpen: !!state.novncOpen,
+  }
+  if (fixedOpen.length) next.fixedOpen = fixedOpen
+  return next
+}
+
+function fallbackStageTab(openNames: string[], novncOpen: boolean, fixedOpen: string[]): string {
+  if (openNames.length) return previewTabId(openNames[openNames.length - 1])
+  if (novncOpen) return REACT_STAGE_TAB_NOVNC
+  if (fixedOpen.length) return fixedOpen[fixedOpen.length - 1]
+  return REACT_STAGE_TAB_GRID
+}
+
 export function loadStageOpenState(runId?: string | null, nodeId?: string | null): StageOpenState | null {
   const rid = String(runId || '').trim()
   const nid = String(nodeId || '').trim()
   if (!rid || !nid) return null
   const key = stageOpenStateStorageKey(rid, nid)
   const mem = stageOpenMemory.get(key)
-  if (mem) {
-    return {
-      openNames: [...mem.openNames],
-      activeTab: mem.activeTab,
-      novncOpen: mem.novncOpen,
-    }
-  }
+  if (mem) return copyStageOpenState(mem)
   if (typeof sessionStorage === 'undefined') return null
   try {
     const raw = sessionStorage.getItem(key)
@@ -769,17 +797,14 @@ export function loadStageOpenState(runId?: string | null, nodeId?: string | null
     if (!parsed || !Array.isArray(parsed.openNames)) return null
     const openNames = parsed.openNames.map((n) => String(n || '').trim()).filter(Boolean)
     const activeTab = String(parsed.activeTab || REACT_STAGE_TAB_GRID).trim() || REACT_STAGE_TAB_GRID
-    const state: StageOpenState = {
+    const state = copyStageOpenState({
       openNames,
       activeTab,
       novncOpen: !!parsed.novncOpen,
-    }
+      fixedOpen: parsed.fixedOpen,
+    })
     stageOpenMemory.set(key, state)
-    return {
-      openNames: [...state.openNames],
-      activeTab: state.activeTab,
-      novncOpen: state.novncOpen,
-    }
+    return copyStageOpenState(state)
   } catch {
     return null
   }
@@ -794,11 +819,7 @@ export function saveStageOpenState(
   const nid = String(nodeId || '').trim()
   if (!rid || !nid) return
   const key = stageOpenStateStorageKey(rid, nid)
-  const next: StageOpenState = {
-    openNames: [...state.openNames],
-    activeTab: state.activeTab,
-    novncOpen: !!state.novncOpen,
-  }
+  const next = copyStageOpenState(state)
   stageOpenMemory.set(key, next)
   if (typeof sessionStorage === 'undefined') return
   try {
@@ -814,38 +835,40 @@ export function restoreStageOpenState(
   availableNames: string[],
 ): StageOpenState | null {
   if (!saved) return null
-  const hasAny = saved.openNames.length > 0 || !!saved.novncOpen
+  const fixedOpen = normalizeFixedOpen(saved.fixedOpen)
+  const hasAny = saved.openNames.length > 0 || !!saved.novncOpen || fixedOpen.length > 0
   const savedTab = String(saved.activeTab || '').trim() || REACT_STAGE_TAB_GRID
   if (!hasAny && savedTab === REACT_STAGE_TAB_GRID) return null
 
   // Artifacts may not be loaded on first paint — keep names; gone-filter watch prunes later.
   if (!availableNames.length) {
-    return {
+    return copyStageOpenState({
       openNames: [...saved.openNames],
       activeTab: savedTab,
       novncOpen: !!saved.novncOpen,
-    }
+      fixedOpen,
+    })
   }
 
   const nameSet = new Set(availableNames)
   const openNames = saved.openNames.filter((n) => nameSet.has(n))
   let activeTab = savedTab
   const activeName = previewTabName(activeTab)
+  const fixedActive = fixedOpen.includes(activeTab)
   if (activeName && !openNames.includes(activeName)) {
-    activeTab = openNames.length
-      ? previewTabId(openNames[openNames.length - 1])
-      : saved.novncOpen
-        ? REACT_STAGE_TAB_NOVNC
-        : REACT_STAGE_TAB_GRID
+    activeTab = fallbackStageTab(openNames, !!saved.novncOpen, fixedOpen)
   } else if (activeTab === REACT_STAGE_TAB_NOVNC && !saved.novncOpen) {
-    activeTab = openNames.length ? previewTabId(openNames[openNames.length - 1]) : REACT_STAGE_TAB_GRID
+    activeTab = fallbackStageTab(openNames, false, fixedOpen)
+  } else if (fixedActive === false && FIXED_STAGE_PANEL_IDS.has(activeTab)) {
+    activeTab = fallbackStageTab(openNames, !!saved.novncOpen, fixedOpen)
   }
-  if (!openNames.length && !saved.novncOpen && activeTab === REACT_STAGE_TAB_GRID) return null
-  return {
+  if (!openNames.length && !saved.novncOpen && !fixedOpen.length && activeTab === REACT_STAGE_TAB_GRID) return null
+  return copyStageOpenState({
     openNames,
     activeTab,
     novncOpen: !!saved.novncOpen,
-  }
+    fixedOpen,
+  })
 }
 
 /** Test-only: clear stage open session keys. Optional needle limits which keys are removed. */

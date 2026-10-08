@@ -2027,8 +2027,8 @@
       "tabs": {
         "terminal": "终端",
         "ide": "IDE",
-        "acp": "ACP",
-        "novnc": "noVNC 浏览器",
+        "acp": "Agent",
+        "novnc": "浏览器",
         "log": "日志"
       },
       "terminalStatus": {
@@ -3128,6 +3128,13 @@
       "novncTab": "noVNC",
       "novncCardTitle": "远程桌面",
       "novncCardMeta": "沙箱浏览器 · 可取点标注",
+      "fixedIdeTitle": "IDE",
+      "fixedIdeMeta": "沙箱 IDE",
+      "fixedTerminalTitle": "Terminal",
+      "fixedTerminalMeta": "沙箱终端",
+      "fixedBrowserTitle": "浏览器",
+      "fixedLogTitle": "日志",
+      "fixedLogMeta": "容器日志 · stdout/stderr",
       "appTab": "应用预览",
       "appCardTitle": "应用预览",
       "appCardMeta": "应用预览 · 可取点标注",
@@ -3135,6 +3142,8 @@
       "iterationBadge": "第 {n} 次",
       "iterationName": "{name} · 第 {n} 次",
       "novncMissing": "当前节点没有可用沙箱，无法打开 noVNC。",
+      "ideMissing": "当前节点没有可用沙箱，无法打开 IDE。",
+      "terminalMissing": "当前节点没有可用沙箱，无法打开终端。",
       "tabBadgeNew": "新",
       "tabBadgeUpdated": "已更新",
       "gridEmpty": "本次运行还没有产物",
