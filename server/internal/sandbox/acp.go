@@ -40,11 +40,6 @@ var ErrChatIdle = errors.New("acp chat idle timeout")
 // resume, or kept repeating the same failing command.
 var ErrAgentStuck = errors.New("agent stuck")
 
-// ErrTurnDone is the ctx cause a caller uses to end a turn early because what
-// it asked for is already in place. The turn is cancelled like any other
-// abort, but is not reported as interrupted.
-var ErrTurnDone = errors.New("turn ended early: requested work is done")
-
 // stopReasonStuck is the prompt_done stopReason of a turn the bridge stopped
 // as stuck.
 const stopReasonStuck = "stuck"

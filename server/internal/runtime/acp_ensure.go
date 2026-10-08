@@ -3,10 +3,8 @@ package runtime
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/mcp/structured"
@@ -62,7 +60,10 @@ func (c *acpProvider) ensureOutcome(ctx context.Context, req NodeReq, acp *sandb
 				Msg("node_complete still missing after re-prompt; engine will fail closed")
 			return clarifyPending{}, nil
 		}
-		res, err := c.nudgeChat(ctx, acp, req, models.OutcomeRetry, outcomeReady)
+		prompt := models.OutcomeRetry
+		chatCtx, cancel := c.turnCtx(ctx, req)
+		res, err := c.streamChat(chatCtx, acp, req, prompt, nil)
+		cancel()
 		if err != nil {
 			// Propagate transport/API faults so the engine can auto-retry the
 			// node; only a successful but empty re-prompt round falls through
@@ -78,53 +79,6 @@ func (c *acpProvider) ensureOutcome(ctx context.Context, req NodeReq, acp *sandb
 		}
 	}
 	return clarifyPending{}, nil
-}
-
-// Once a nudge turn has written what it was asked for, it may run nudgeGrace
-// longer (so a write that follows right away is not cut off) and is then
-// ended. Vars so tests can shrink them.
-var (
-	nudgeGrace = 5 * time.Second
-	nudgePoll  = time.Second
-)
-
-// nudgeChat runs one re-prompt turn and ends it early once done reports that
-// what the prompt asked for is in place: a slow-thinking model does not keep
-// the node waiting after the call it was asked to make.
-func (c *acpProvider) nudgeChat(ctx context.Context, acp *sandbox.ACPClient, req NodeReq, prompt string, done func() bool) (*sandbox.ChatResult, error) {
-	chatCtx, cancel := c.turnCtx(ctx, req)
-	defer cancel()
-	turnCtx, stop := context.WithCancelCause(chatCtx)
-	defer stop(nil)
-	finished := make(chan struct{})
-	defer close(finished)
-	go func() {
-		t := time.NewTicker(nudgePoll)
-		defer t.Stop()
-		for {
-			select {
-			case <-finished:
-				return
-			case <-t.C:
-				if !done() {
-					continue
-				}
-				select {
-				case <-finished:
-				case <-time.After(nudgeGrace):
-					log.Info().Str("run", req.RunID).Str("node", req.NodeID).
-						Msg("nudge satisfied; ending the turn early")
-					stop(sandbox.ErrTurnDone)
-				}
-				return
-			}
-		}
-	}()
-	res, err := c.streamChat(turnCtx, acp, req, prompt, nil)
-	if errors.Is(err, sandbox.ErrTurnDone) {
-		err = nil
-	}
-	return res, err
 }
 
 // ensureStructured makes an Agent's required product exist
@@ -153,7 +107,10 @@ func (c *acpProvider) ensureStructured(ctx context.Context, req NodeReq, acp *sa
 				Msg("structured product still missing after re-prompt; engine will fail closed")
 			return clarifyPending{}, nil
 		}
-		res, err := c.nudgeChat(ctx, acp, req, models.StructuredRetryFor(name, tool), satisfied)
+		prompt := models.StructuredRetryFor(name, tool)
+		chatCtx, cancel := c.turnCtx(ctx, req)
+		res, err := c.streamChat(chatCtx, acp, req, prompt, nil)
+		cancel()
 		if err != nil {
 			log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).
 				Str("artifact", name).Msg("structured product re-prompt failed")

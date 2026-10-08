@@ -525,36 +525,3 @@ func TestRunTurnDeadlineCauseReason(t *testing.T) {
 		t.Fatalf("err = %v, want the deadline cause", err)
 	}
 }
-
-// A caller ending a turn early with ErrTurnDone gets the partial reply back as
-// a normal result, not an interrupted one.
-func TestRunTurnEndedEarly(t *testing.T) {
-	serve := func(withChunk bool) *ACPClient {
-		h, p := wsServer(t, func(conn *websocket.Conn, op string, msg map[string]any) {
-			switch op {
-			case "connect":
-				_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "s"})
-			case "chat":
-				if withChunk {
-					_ = conn.WriteJSON(tagged(chunkFrame("written"), fmt.Sprint(msg["opId"])))
-				}
-			case "cancel":
-				_ = conn.WriteJSON(map[string]any{"op": "cancel_ack", "opId": msg["opId"], "status": "unknown"})
-			}
-		})
-		return connectAndClient(t, h, p)
-	}
-
-	ctx, cancel := context.WithCancelCause(context.Background())
-	time.AfterFunc(100*time.Millisecond, func() { cancel(ErrTurnDone) })
-	res, err := serve(true).ChatStructured(ctx, "hi", nil)
-	if err != nil || res.Interrupted || res.ErrorText != "" || res.Narration != "written" {
-		t.Fatalf("res=%+v err=%v", res, err)
-	}
-
-	ctx2, cancel2 := context.WithCancelCause(context.Background())
-	time.AfterFunc(50*time.Millisecond, func() { cancel2(ErrTurnDone) })
-	if _, err := serve(false).ChatStructured(ctx2, "hi", nil); !errors.Is(err, ErrTurnDone) {
-		t.Fatalf("err = %v, want ErrTurnDone", err)
-	}
-}
