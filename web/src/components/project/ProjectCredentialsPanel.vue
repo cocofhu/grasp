@@ -112,7 +112,7 @@ const credentialGroups = computed(() => {
     }
     buckets.set(kind.id, [...(buckets.get(kind.id) || []), item])
   }
-  const groups = CREDENTIAL_KINDS
+  const groups: { id: CredentialKindId | 'other'; items: ProjectCredentialItem[] }[] = CREDENTIAL_KINDS
     .filter((kind) => (buckets.get(kind.id) || []).length > 0)
     .map((kind) => ({ id: kind.id, items: buckets.get(kind.id) || [] }))
   if (other.length) groups.push({ id: 'other', items: other })
@@ -644,7 +644,7 @@ onUnmounted(() => {
                 data-testid="project-credential-create-value"
                 autocomplete="off"
                 :placeholder="t('pages.projectDetail.projectCredentials.valuePlaceholder')"
-                :style="revealSecret ? undefined : { '-webkit-text-security': 'disc' }"
+                :class="revealSecret ? undefined : 'credential-secret-mask'"
               />
               <input
                 v-else
@@ -695,6 +695,9 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.credential-secret-mask {
+  -webkit-text-security: disc;
+}
 .credential-step-shell {
   position: relative;
   overflow: hidden;
