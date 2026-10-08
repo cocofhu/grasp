@@ -225,10 +225,18 @@ type agentPIDReporter interface {
 	AgentPIDs() []int
 }
 
+// backgroundWaitReporter is implemented by sessions that can tell when their
+// CLI only waits on background tasks. Its CPU / IO then is bookkeeping (cursor-
+// agent rewrites its terminal files), not work.
+type backgroundWaitReporter interface {
+	WaitingOnBackground() bool
+}
+
 // livenessMonitor samples one turn's Agent and reports heartbeats.
 type livenessMonitor struct {
 	sampler   processSampler
 	roots     func() []int
+	paused    func() bool
 	cpuMin    time.Duration
 	ioMin     int64
 	disabled  bool
@@ -265,6 +273,9 @@ func (m *livenessMonitor) check() bool {
 	}
 	cpu, io := usageDelta(m.prev, cur, m.prevStart)
 	m.prev, m.prevStart = cur, max(m.prevStart, maxStart(cur))
+	if m.paused != nil && m.paused() {
+		return false
+	}
 	m.beatCPU += cpu
 	m.beatIO += io
 	active := cpu >= m.cpuMin || io >= m.ioMin

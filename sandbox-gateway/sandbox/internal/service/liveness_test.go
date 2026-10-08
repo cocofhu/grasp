@@ -165,6 +165,42 @@ func TestLivenessMonitorCheck(t *testing.T) {
 	}
 }
 
+type bgWaitSess struct {
+	recordingSess
+	waiting atomic.Bool
+}
+
+func (s *bgWaitSess) WaitingOnBackground() bool { return s.waiting.Load() }
+
+// While the CLI only waits on background tasks its CPU / IO is not work.
+func TestLivenessPausedWhileWaitingOnBackground(t *testing.T) {
+	sess := &bgWaitSess{recordingSess: recordingSess{pids: []int{1}}}
+	b := newTestBridge(sess)
+	fs := &fakeSampler{step: time.Second, io: 0}
+	b.sampler = fs
+	m := b.newLivenessMonitor(sess)
+	m.check()
+	if !m.check() {
+		t.Fatal("CPU while working is activity")
+	}
+	sess.waiting.Store(true)
+	fs.io = 1 << 20
+	if m.check() {
+		t.Fatal("CPU / IO while waiting on background tasks must not count")
+	}
+	_, cpu, io := m.takeBeat()
+	if cpu != time.Second || io != 0 {
+		t.Fatalf("paused sample leaked into the beat: cpu=%s io=%d", cpu, io)
+	}
+	sess.waiting.Store(false)
+	if !m.check() {
+		t.Fatal("activity counts again once the wait is over")
+	}
+	if _, cpu, io := m.takeBeat(); cpu != time.Second || io != 0 {
+		t.Fatalf("baseline not advanced while paused: cpu=%s io=%d", cpu, io)
+	}
+}
+
 func TestLivenessThresholdsFromEnv(t *testing.T) {
 	t.Setenv(envLivenessCPU, "")
 	t.Setenv(envLivenessIO, "")
