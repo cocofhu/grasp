@@ -49,15 +49,36 @@ test.describe('theme icon view transition (plan g1.2 review v1)', () => {
           const anims = document.getAnimations().map((anim) => {
             const effect = anim.effect as KeyframeEffect | null
             const timing = effect?.getComputedTiming()
+            const frames = effect?.getKeyframes?.() ?? []
             return {
               pseudo: effect?.pseudoElement ?? '',
               name: anim.animationName,
               duration: timing?.duration ?? null,
               currentTime: anim.currentTime,
+              frames: frames.map((frame) => `${frame.transform ?? ''} ${frame.opacity ?? ''}`),
             }
           })
-          const slot = window as unknown as { __vtAnims: unknown; __vtReady: boolean }
+          const iconKeyframes: { name: string; css: string }[] = []
+          for (const sheet of document.styleSheets) {
+            let rules: CSSRuleList
+            try {
+              rules = sheet.cssRules
+            } catch {
+              continue
+            }
+            for (const rule of rules) {
+              if (rule instanceof CSSKeyframesRule && rule.name.includes('theme-icon')) {
+                iconKeyframes.push({ name: rule.name, css: rule.cssText })
+              }
+            }
+          }
+          const slot = window as unknown as {
+            __vtAnims: unknown
+            __vtIconKeyframes: unknown
+            __vtReady: boolean
+          }
           slot.__vtAnims = anims
+          slot.__vtIconKeyframes = iconKeyframes
           slot.__vtReady = true
         })
         return vt
@@ -73,9 +94,21 @@ test.describe('theme icon view transition (plan g1.2 review v1)', () => {
       const w = window as unknown as {
         __vtAtStart: { light: boolean; sun: boolean; moon: boolean; capture: boolean }
         __vtAtEnd: { light: boolean; sun: boolean; moon: boolean; capture: boolean }
-        __vtAnims: { pseudo: string; name: string; duration: number | null; currentTime: number | null }[]
+        __vtAnims: {
+          pseudo: string
+          name: string
+          duration: number | null
+          currentTime: number | null
+          frames: string[]
+        }[]
+        __vtIconKeyframes: { name: string; css: string }[]
       }
-      return { atStart: w.__vtAtStart, atEnd: w.__vtAtEnd, anims: w.__vtAnims }
+      return {
+        atStart: w.__vtAtStart,
+        atEnd: w.__vtAtEnd,
+        anims: w.__vtAnims,
+        iconKeyframes: w.__vtIconKeyframes,
+      }
     })
 
     // Old snapshot already taken: previous sun, page still dark, capture class on.
@@ -86,9 +119,28 @@ test.describe('theme icon view transition (plan g1.2 review v1)', () => {
     const oldShots = recorded.anims.filter((a) => a.pseudo.includes('view-transition-old'))
     expect(oldShots.length).toBeGreaterThan(0)
     expect(oldShots.every((a) => a.currentTime === 0)).toBe(true)
-    const iconPops = recorded.anims.filter((a) => `${a.name ?? ''} ${a.pseudo}`.includes('theme-icon'))
-    expect(iconPops, JSON.stringify(recorded.anims)).not.toEqual([])
-    expect(iconPops.every((a) => a.duration === 200), JSON.stringify(iconPops)).toBe(true)
+    const iconSpins = recorded.anims.filter((a) => `${a.name ?? ''} ${a.pseudo}`.includes('theme-icon'))
+    expect(iconSpins, JSON.stringify(recorded.anims)).not.toEqual([])
+    expect(iconSpins.every((a) => a.duration === 280), JSON.stringify(iconSpins)).toBe(true)
+    expect(recorded.iconKeyframes.map((k) => k.name).sort()).toEqual([
+      'theme-icon-moon-in',
+      'theme-icon-moon-out',
+      'theme-icon-sun-in',
+      'theme-icon-sun-out',
+    ])
+    expect(
+      recorded.iconKeyframes.every((k) => /rotate\((?:-)?90deg\)/.test(k.css) && /scale\(0\.55\)/.test(k.css)),
+      JSON.stringify(recorded.iconKeyframes),
+    ).toBe(true)
+    expect(recorded.iconKeyframes.every((k) => !/translate|scale\(0\.98\)/.test(k.css))).toBe(true)
+
+    const rootShots = recorded.anims.filter((a) => a.pseudo.includes('(root)'))
+    expect(rootShots.length, JSON.stringify(recorded.anims)).toBeGreaterThan(0)
+    expect(rootShots.every((a) => a.duration === 200), JSON.stringify(rootShots)).toBe(true)
+    expect(
+      rootShots.every((a) => a.frames.every((frame) => !/translate|scale\(/.test(frame))),
+      JSON.stringify(rootShots),
+    ).toBe(true)
 
     await expect(page.getByTestId('shell-theme-icon-moon')).toHaveClass(/is-active/)
     await expect(page.getByTestId('shell-theme-icon-sun')).not.toHaveClass(/is-active/)

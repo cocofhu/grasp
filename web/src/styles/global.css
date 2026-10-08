@@ -577,11 +577,12 @@ html.light .app-sidebar-card {
     transform: none !important;
   }
 
-  /* plan g1.3 — theme cross-fade and icon pop do not play */
+  /* Theme cross-fade, icon spin, and unread badge pop do not play. */
   ::view-transition-group(*),
   ::view-transition-old(*),
   ::view-transition-new(*),
-  .shell-theme-icon {
+  .shell-theme-icon,
+  .shell-unread-badge {
     animation: none !important;
     transition: none !important;
   }
@@ -672,11 +673,13 @@ html.light .app-sidebar-card {
 }
 
 /*
- * plan g1.2 — shell theme toggle.
- * Root snapshots only cross-fade (same --dur-overlay / --ease-out-expo as .overlay-pop).
- * No page translate or scale (risk: large surfaces should not shift).
- * The theme icon is captured on its own and uses the overlay-pop rise + scale.
- * plan g1.3 — reduced motion below zeroes these animations.
+ * Shell theme toggle.
+ * Root snapshots only cross-fade for --dur-overlay / --ease-out-expo.
+ * No page translate or scale.
+ * Each sun/moon is its own snapshot. The visible layer spins 280ms ease:
+ * sun toward/from +90° and 0.55, moon toward/from -90° and 0.55.
+ * theme-vt-capture only freezes the live CSS transition so those snapshots
+ * are the resting icons; it must not replace this spin.
  */
 ::view-transition-group(root),
 ::view-transition-old(root),
@@ -685,31 +688,55 @@ html.light .app-sidebar-card {
   animation-timing-function: var(--ease-out-expo);
 }
 
-::view-transition-old(.theme-icon) {
+::view-transition-old(.theme-icon-sun) {
   mix-blend-mode: normal;
-  animation: var(--dur-overlay) var(--ease-out-expo) both theme-icon-pop-out;
+  animation: 280ms ease both theme-icon-sun-out;
 }
 
-::view-transition-new(.theme-icon) {
+::view-transition-new(.theme-icon-sun) {
   mix-blend-mode: normal;
-  animation: var(--dur-overlay) var(--ease-out-expo) both theme-icon-pop-in;
+  animation: 280ms ease both theme-icon-sun-in;
 }
 
-@keyframes theme-icon-pop-out {
+::view-transition-old(.theme-icon-moon) {
+  mix-blend-mode: normal;
+  animation: 280ms ease both theme-icon-moon-out;
+}
+
+::view-transition-new(.theme-icon-moon) {
+  mix-blend-mode: normal;
+  animation: 280ms ease both theme-icon-moon-in;
+}
+
+@keyframes theme-icon-sun-out {
   to {
     opacity: 0;
-    transform: translateY(-4px) scale(0.98);
+    transform: rotate(90deg) scale(0.55);
   }
 }
 
-@keyframes theme-icon-pop-in {
+@keyframes theme-icon-sun-in {
   from {
     opacity: 0;
-    transform: translateY(-4px) scale(0.98);
+    transform: rotate(90deg) scale(0.55);
   }
 }
 
-/* Snapshot must see the finished icon, not the first frame of the CSS transition. */
+@keyframes theme-icon-moon-out {
+  to {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.55);
+  }
+}
+
+@keyframes theme-icon-moon-in {
+  from {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.55);
+  }
+}
+
+/* Resting snapshots only. The spin above stays on the view-transition layer. */
 html.theme-vt-capture .shell-theme-icon {
   transition: none !important;
 }

@@ -359,7 +359,7 @@ describe('ShellChromeControls theme icon (g2.1)', () => {
     wrapper.unmount()
   })
 
-  it('sidebar and bar share overlay-pop icon motion (plan g1.1 g1.2 g1.3)', async () => {
+  it('sidebar and bar share 280ms rotate and scale icon motion', async () => {
     const { readFileSync } = await import('node:fs')
     const { dirname, join } = await import('node:path')
     const { fileURLToPath } = await import('node:url')
@@ -367,18 +367,19 @@ describe('ShellChromeControls theme icon (g2.1)', () => {
     const sidebar = mountChrome('sidebar')
     const bar = mountChrome('bar')
     await flushPromises()
-    expect(sidebar.find('[data-testid="shell-theme-toggle"]').attributes('data-motion')).toBe('overlay-pop')
-    expect(bar.find('[data-testid="shell-theme-toggle"]').attributes('data-motion')).toBe('overlay-pop')
-    // plan g1.1 — one control, one motion block; not a longer rotate cross-fade
-    expect(src).toMatch(/plan g1\.1/)
-    expect(src).toMatch(/data-motion="overlay-pop"/)
-    expect(src).toMatch(/var\(--dur-overlay\)/)
-    expect(src).toMatch(/var\(--ease-out-expo\)/)
-    expect(src).toMatch(/translateY\(-4px\) scale\(0\.98\)/)
-    expect(src).not.toMatch(/280ms/)
-    expect(src).not.toMatch(/rotate\(/)
-    // plan g1.3
+    expect(sidebar.find('[data-testid="shell-theme-toggle"]').attributes('data-motion')).toBeUndefined()
+    expect(bar.find('[data-testid="shell-theme-toggle"]').attributes('data-motion')).toBeUndefined()
+    expect(src).not.toMatch(/data-motion="overlay-pop"/)
+    expect(src).not.toMatch(/translateY\(-4px\)/)
+    expect(src).not.toMatch(/scale\(0\.98\)/)
+    expect(src).toMatch(/280ms ease/)
+    expect(src).toMatch(/rotate\(-90deg\) scale\(0\.55\)/)
+    expect(src).toMatch(/rotate\(90deg\) scale\(0\.55\)/)
+    expect(src).toMatch(/rotate\(0deg\) scale\(1\)/)
+    expect(src).toMatch(/view-transition-class:\s*theme-icon-moon/)
+    expect(src).toMatch(/view-transition-class:\s*theme-icon-sun/)
     expect(src).toMatch(/prefers-reduced-motion:\s*reduce/)
+    expect(src).toMatch(/prefers-reduced-motion:\s*reduce[\s\S]*\.shell-theme-icon\s*\{[^}]*transition:\s*none/)
     sidebar.unmount()
     bar.unmount()
   })
@@ -430,5 +431,131 @@ describe('ShellChromeControls theme icon (g2.1)', () => {
     expect(wrapper.find('[data-testid="shell-theme-icon-moon"]').classes()).toContain('is-active')
     expect(wrapper.find('[data-testid="shell-theme-icon-sun"]').classes()).not.toContain('is-active')
     wrapper.unmount()
+  })
+})
+
+describe('ShellChromeControls unread badge pop', () => {
+  function mockUnread(
+    unreadCount: number,
+    items: RunTerminalNotificationItem[],
+  ) {
+    vi.mocked(api.listNotifications).mockResolvedValue({
+      items,
+      page: 1,
+      pageSize: 20,
+      total: items.length,
+      allCount: Math.max(items.length, unreadCount),
+      unreadCount,
+      readCount: 0,
+    })
+  }
+
+  async function refreshFromFocus() {
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+    await nextTick()
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    setTheme('dark')
+    __resetRunTerminalNotificationsForTests()
+    __resetNotificationsPageEntryForTests()
+    vi.mocked(api.listNotifications).mockReset()
+    vi.mocked(api.listNotifications).mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 20,
+      total: 0,
+      allCount: 0,
+      unreadCount: 0,
+      readCount: 0,
+    })
+  })
+
+  afterEach(() => {
+    __resetRunTerminalNotificationsForTests()
+    __resetNotificationsPageEntryForTests()
+  })
+
+  it('pops on appear and on a changed label, not when 99+ or color stays', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'ShellChromeControls.vue'), 'utf8')
+    expect(src).toMatch(/\.shell-unread-badge\s*\{[^}]*animation:\s*shell-badge-pop 280ms ease/)
+    expect(src).toMatch(/@keyframes shell-badge-pop[\s\S]*opacity:\s*0[\s\S]*scale\(0\.55\)[\s\S]*opacity:\s*1[\s\S]*scale\(1\)/)
+    expect(src).not.toMatch(/shell-badge-pop-leave/)
+    expect(src).toMatch(/prefers-reduced-motion:\s*reduce[\s\S]*\.shell-unread-badge\s*\{[^}]*animation:\s*none/)
+
+    const sidebar = mountChrome('sidebar')
+    await flushPromises()
+    expect(sidebar.find('[data-testid="run-notifications-badge"]').exists()).toBe(false)
+
+    mockUnread(2, [asItem(run({ id: 'a', status: 'failed' })), asItem(run({ id: 'b', status: 'completed' }))])
+    await refreshFromFocus()
+    const badge2 = sidebar.find('[data-testid="run-notifications-badge"]')
+    expect(badge2.text()).toBe('2')
+    expect(badge2.classes()).toContain('shell-unread-badge')
+    expect(badge2.classes().join(' ')).toMatch(/bg-err/)
+    const node2 = badge2.element
+
+    mockUnread(3, [
+      asItem(run({ id: 'a', status: 'failed' })),
+      asItem(run({ id: 'b', status: 'completed' })),
+      asItem(run({ id: 'c', status: 'completed' })),
+    ])
+    await refreshFromFocus()
+    const badge3 = sidebar.find('[data-testid="run-notifications-badge"]')
+    expect(badge3.text()).toBe('3')
+    expect(badge3.element).not.toBe(node2)
+
+    mockUnread(2, [asItem(run({ id: 'a', status: 'completed' })), asItem(run({ id: 'b', status: 'completed' }))])
+    await refreshFromFocus()
+    const badgeBack = sidebar.find('[data-testid="run-notifications-badge"]')
+    expect(badgeBack.text()).toBe('2')
+    expect(badgeBack.element).not.toBe(badge3.element)
+    expect(badgeBack.classes().join(' ')).toMatch(/bg-accent/)
+    const accentNode = badgeBack.element
+
+    mockUnread(2, [asItem(run({ id: 'a', status: 'failed' })), asItem(run({ id: 'b', status: 'completed' }))])
+    await refreshFromFocus()
+    const recolored = sidebar.find('[data-testid="run-notifications-badge"]')
+    expect(recolored.text()).toBe('2')
+    expect(recolored.element).toBe(accentNode)
+    expect(recolored.classes().join(' ')).toMatch(/bg-err/)
+
+    mockUnread(99, [asItem(run({ id: 'a', status: 'completed' }))])
+    await refreshFromFocus()
+    const capped = sidebar.find('[data-testid="run-notifications-badge"]')
+    expect(capped.text()).toBe('99+')
+    const cappedNode = capped.element
+
+    mockUnread(100, [asItem(run({ id: 'a', status: 'completed' }))])
+    await refreshFromFocus()
+    const stillCapped = sidebar.find('[data-testid="run-notifications-badge"]')
+    expect(stillCapped.text()).toBe('99+')
+    expect(stillCapped.element).toBe(cappedNode)
+
+    mockUnread(0, [])
+    await refreshFromFocus()
+    expect(sidebar.find('[data-testid="run-notifications-badge"]').exists()).toBe(false)
+    expect(sidebar.find('[data-testid="run-notifications-bell"]').classes().join(' ')).not.toMatch(/shell-badge-pop|rotate/)
+
+    const bar = mountChrome('bar')
+    await flushPromises()
+    mockUnread(1, [asItem(run({ id: 'bar-1', status: 'completed' }))])
+    await refreshFromFocus()
+    const barBadge = bar.find('[data-testid="run-notifications-badge"]')
+    expect(barBadge.text()).toBe('1')
+    expect(barBadge.classes()).toContain('shell-unread-badge')
+    expect(barBadge.classes()).toContain('h-4')
+    const sidebarAgain = sidebar.find('[data-testid="run-notifications-badge"]')
+    expect(sidebarAgain.text()).toBe('1')
+    expect(sidebarAgain.classes()).toContain('shell-unread-badge')
+    expect(sidebarAgain.classes()).toContain('h-3.5')
+
+    sidebar.unmount()
+    bar.unmount()
   })
 })
