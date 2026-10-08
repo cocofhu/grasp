@@ -147,4 +147,48 @@ test.describe('theme icon view transition (plan g1.2 review v1)', () => {
     await expect(page.locator('html')).toHaveClass(/light/)
     expect(await page.evaluate(() => localStorage.getItem('grasp-theme'))).toBe('light')
   })
+
+  test('two clicks within 100ms return to the starting theme', async ({ page }) => {
+    test.setTimeout(90_000)
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.addInitScript(() => {
+      localStorage.setItem('grasp-theme', 'dark')
+    })
+    await page.goto('/shell-loading.html')
+    const toggle = page.getByTestId('shell-theme-toggle')
+    await expect(toggle).toBeVisible({ timeout: 30_000 })
+    await expect(page.locator('html')).not.toHaveClass(/light/)
+
+    const box = await toggle.boundingBox()
+    expect(box).toBeTruthy()
+    const x = box!.x + box!.width / 2
+    const y = box!.y + box!.height / 2
+
+    await page.evaluate(() => {
+      const times: number[] = []
+      document.addEventListener(
+        'pointerdown',
+        () => {
+          times.push(performance.now())
+        },
+        true,
+      )
+      ;(window as unknown as { __themePointerDowns: number[] }).__themePointerDowns = times
+    })
+
+    await page.mouse.click(x, y)
+    await page.waitForTimeout(50)
+    await page.mouse.click(x, y)
+    const gap = await page.evaluate(() => {
+      const times = (window as unknown as { __themePointerDowns: number[] }).__themePointerDowns
+      return times.length >= 2 ? times[1] - times[0] : Number.POSITIVE_INFINITY
+    })
+    expect(gap, `pointerdown gap ${gap}ms`).toBeLessThan(100)
+    await page.waitForTimeout(400)
+
+    await expect(page.locator('html')).not.toHaveClass(/light/)
+    await expect(page.getByTestId('shell-theme-icon-sun')).toHaveClass(/is-active/)
+    await expect(page.getByTestId('shell-theme-icon-moon')).not.toHaveClass(/is-active/)
+    expect(await page.evaluate(() => localStorage.getItem('grasp-theme'))).toBe('dark')
+  })
 })

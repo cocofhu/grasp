@@ -150,6 +150,88 @@ describe('toggleTheme shell motion (plan g1.2 g1.3 g2.1 g2.2)', () => {
     expect(localStorage.getItem('grasp-theme')).toBe('light')
   })
 
+  it('pointerdown during playback hits the button box and the following click does not toggle again', async () => {
+    const button = document.createElement('button')
+    button.className = 'shell-theme-toggle'
+    button.getBoundingClientRect = () =>
+      ({
+        x: 10,
+        y: 20,
+        left: 10,
+        top: 20,
+        right: 42,
+        bottom: 52,
+        width: 32,
+        height: 32,
+        toJSON() {
+          return {}
+        },
+      }) as DOMRect
+    document.body.appendChild(button)
+
+    let calls = 0
+    let update: (() => Promise<unknown>) | null = null
+    document.startViewTransition = (cb) => {
+      calls += 1
+      update = () => Promise.resolve(cb())
+      const pending = new Promise<void>(() => {})
+      return {
+        ready: pending,
+        finished: pending,
+        updateCallbackDone: pending,
+        skipTransition() {},
+        types: new Set<string>(),
+      }
+    }
+
+    toggleTheme()
+    expect(calls).toBe(1)
+    await update!()
+    expect(theme.value).toBe('light')
+    expect(localStorage.getItem('grasp-theme')).toBe('light')
+
+    document.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 0,
+        clientY: 0,
+        button: 0,
+      }),
+    )
+    expect(calls).toBe(1)
+    expect(localStorage.getItem('grasp-theme')).toBe('light')
+
+    document.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 20,
+        clientY: 30,
+        button: 0,
+      }),
+    )
+    expect(calls).toBe(2)
+    expect(localStorage.getItem('grasp-theme')).toBe('dark')
+    await update!()
+    expect(theme.value).toBe('dark')
+    expect(document.documentElement.classList.contains('light')).toBe(false)
+
+    document.documentElement.dispatchEvent(
+      new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 20,
+        clientY: 30,
+      }),
+    )
+    expect(calls).toBe(2)
+    expect(localStorage.getItem('grasp-theme')).toBe('dark')
+    expect(theme.value).toBe('dark')
+
+    button.remove()
+  })
+
   it('does not animate setTheme, embed override, public chrome, or reduced motion', () => {
     const start = vi.fn()
     document.startViewTransition = start as unknown as typeof document.startViewTransition
