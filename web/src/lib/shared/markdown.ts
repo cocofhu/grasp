@@ -1,4 +1,4 @@
-import { marked } from 'marked'
+import { Marked, marked } from 'marked'
 import DOMPurify from 'dompurify'
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -7,6 +7,7 @@ marked.setOptions({ breaks: true, gfm: true })
 const CACHE_MAX = 64
 
 const htmlCache = new Map<string, string>()
+const chatHtmlCache = new Map<string, string>()
 
 /** Test/observability: how many times marked+DOMPurify actually ran. */
 let parseCount = 0
@@ -21,6 +22,7 @@ export function resetMarkdownParseCount(): void {
 
 export function clearMarkdownCache(): void {
   htmlCache.clear()
+  chatHtmlCache.clear()
 }
 
 export function markdownCacheSize(): number {
@@ -75,6 +77,76 @@ export function renderMarkdownBlocks(src: string, cache: MarkdownBlockCache): st
       parseCount += 1
       const list = Object.assign([tok], { links: tokens.links }) as unknown as Parameters<typeof marked.parser>[0]
       html = DOMPurify.sanitize(marked.parser(list) as string)
+      cache.set(key, html)
+    }
+    used.add(key)
+    if (html) out.push(html)
+  }
+  if (cache.size > used.size + BLOCK_SLACK) {
+    for (const k of cache.keys()) if (!used.has(k)) cache.delete(k)
+  }
+  return out
+}
+
+/** Visible text for a raw HTML token. Quotes included so attributes cannot reopen a tag. */
+function escapeHtmlText(src: string): string {
+  return src
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/**
+ * Same breaks/gfm options as the shared marked instance, but raw HTML tokens
+ * become text before DOMPurify. Fenced code, emphasis, lists and links stay
+ * markdown. Artifact preview and node output keep using renderMarkdown.
+ */
+const chatMarked = new Marked({ breaks: true, gfm: true })
+chatMarked.use({
+  renderer: {
+    html({ text }) {
+      return escapeHtmlText(text)
+    },
+  },
+})
+
+/**
+ * ReAct assistant markdown. Script, style, iframe, noscript and xmp keep
+ * their inner text instead of being deleted with the tag.
+ */
+export function renderChatMarkdown(src: string): string {
+  const key = src ?? ''
+  const hit = chatHtmlCache.get(key)
+  if (hit !== undefined) {
+    chatHtmlCache.delete(key)
+    chatHtmlCache.set(key, hit)
+    return hit
+  }
+  parseCount += 1
+  const raw = chatMarked.parse(key, { async: false }) as string
+  const html = DOMPurify.sanitize(raw)
+  chatHtmlCache.set(key, html)
+  if (chatHtmlCache.size > CACHE_MAX) {
+    const oldest = chatHtmlCache.keys().next().value
+    if (oldest !== undefined) chatHtmlCache.delete(oldest)
+  }
+  return html
+}
+
+/** Block renderer for ReAct assistant streams. Same escaping as renderChatMarkdown. */
+export function renderChatMarkdownBlocks(src: string, cache: MarkdownBlockCache): string[] {
+  const tokens = chatMarked.lexer(src ?? '')
+  const out: string[] = []
+  const used = new Set<string>()
+  for (const tok of tokens) {
+    if (tok.type === 'space') continue
+    const key = `${tok.type}\u0000${tok.raw}`
+    let html = cache.get(key)
+    if (html === undefined) {
+      parseCount += 1
+      const list = Object.assign([tok], { links: tokens.links }) as unknown as Parameters<typeof chatMarked.parser>[0]
+      html = DOMPurify.sanitize(chatMarked.parser(list) as string)
       cache.set(key, html)
     }
     used.add(key)

@@ -1,6 +1,6 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { renderMarkdown, renderMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
+import { renderChatMarkdownBlocks, renderMarkdown, type MarkdownBlockCache } from '@/lib/shared/markdown'
 import { createStreamMarkdownPreview } from '@/lib/shared/streamMarkdownPreview'
 import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
 import { partsFromAcp, sameParts, sameTools, toolsFromAcp } from '@/lib/run/acpTools'
@@ -202,7 +202,7 @@ const liveStreamBlocks = ref<string[]>([])
 const liveStreamHtml = computed(() => liveStreamBlocks.value.join(''))
 const streamBlockCache: MarkdownBlockCache = new Map()
 const streamPreview = createStreamMarkdownPreview<string[]>({
-  render: (src) => renderMarkdownBlocks(src, streamBlockCache),
+  render: (src) => renderChatMarkdownBlocks(src, streamBlockCache),
   empty: [],
 })
 const unsubStream = streamPreview.subscribe((blocks) => {

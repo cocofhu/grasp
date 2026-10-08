@@ -10,7 +10,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { AgentPart } from '@/lib/shared/types'
 import { timelineBlocks } from '@/lib/run/acpTools'
 import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
-import { renderMarkdown, renderMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
+import { renderChatMarkdown, renderChatMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
 import { createStreamMarkdownPreview } from '@/lib/shared/streamMarkdownPreview'
 import AgentToolGroup from './AgentToolGroup.vue'
 import StreamMarkdown from './StreamMarkdown.vue'
@@ -55,7 +55,7 @@ const blocks = computed(() => timelineBlocks(props.parts).filter((b) => !(props.
 const liveBlocks = ref<string[]>([])
 const liveThought = ref('')
 const preview = createStreamMarkdownPreview<string[]>({
-  render: (src) => renderMarkdownBlocks(src, cache),
+  render: (src) => renderChatMarkdownBlocks(src, cache),
   empty: [],
 })
 const unsubPreview = preview.subscribe((html) => {
@@ -147,7 +147,7 @@ function onToggle(index: number, last: boolean, e: Event) {
       >
         <StreamMarkdown v-if="streaming && b.last" :blocks="liveBlocks" /><span
           v-else
-          v-html="renderMarkdown(b.text)"
+          v-html="renderChatMarkdown(b.text)"
         /><slot v-if="streaming && b.last" name="caret" />
       </div>
     </template>

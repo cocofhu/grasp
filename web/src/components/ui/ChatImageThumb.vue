@@ -19,12 +19,17 @@ const props = withDefaults(
     /** previewable: click opens preview; locked: ReAct agent/draft guard */
     mode?: 'previewable' | 'locked'
     size?: 'md' | 'sm' | 'xs'
+    /**
+     * cover: fixed square crop (composer, locked, other chats).
+     * contain: full aspect ratio, width limited by the parent column.
+     */
+    fit?: 'cover' | 'contain'
     /** Extra classes (e.g. rounded-md) so each surface keeps its corner rules. */
     thumbClass?: string
     testId?: string
     alt?: string
   }>(),
-  { mode: 'previewable', size: 'md', thumbClass: '', alt: '' },
+  { mode: 'previewable', size: 'md', fit: 'cover', thumbClass: '', alt: '' },
 )
 
 const emit = defineEmits<{ preview: [] }>()
@@ -39,10 +44,17 @@ const cacheTick = ref(0)
 const blobId = computed(() => parseBlobId(props.src))
 
 const sizeClass = computed(() => {
+  if (props.fit === 'contain') return 'inline-block w-fit max-w-full'
   if (props.size === 'sm') return 'h-14 w-14'
   if (props.size === 'xs') return 'h-8 w-8'
   return 'h-20 w-20'
 })
+
+const imgClass = computed(() =>
+  props.fit === 'contain'
+    ? 'block h-auto max-h-48 w-auto max-w-full object-contain'
+    : 'h-full w-full object-cover',
+)
 
 const failCardClass = computed(() => {
   if (props.size === 'xs') return 'w-28'
@@ -200,7 +212,7 @@ function onPreviewClick() {
     <img
       v-if="allowImg"
       :src="displaySrc"
-      class="h-full w-full object-cover"
+      :class="imgClass"
       :alt="alt"
       @error="onImgError"
       @load="onImgLoad"
@@ -219,7 +231,7 @@ function onPreviewClick() {
     <img
       v-if="allowImg"
       :src="displaySrc"
-      class="h-full w-full object-cover"
+      :class="imgClass"
       :alt="alt"
       @error="onImgError"
       @load="onImgLoad"

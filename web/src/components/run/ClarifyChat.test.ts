@@ -1737,9 +1737,101 @@ describe('ClarifyChat', () => {
     })
   })
 
+  describe('human bubble keeps tag text', () => {
+    const tags = ['script', 'style', 'iframe', 'noscript', 'xmp'] as const
+
+    it('shows the prefix and the text inside each tag without a live element', () => {
+      for (const tag of tags) {
+        const text = `28Error: <${tag}>\n正文不应消失\n</${tag}>`
+        const wrapper = mountChat({
+          turns: [{ role: 'human', text, at: '2026-07-28T00:00:00Z' }],
+        })
+        const bubble = wrapper.get('[data-testid="clarify-human-message"]')
+        expect(bubble.text()).toContain('28Error:')
+        expect(bubble.text()).toContain('正文不应消失')
+        expect(bubble.text()).toContain(`<${tag}>`)
+        expect(bubble.text()).toContain(`</${tag}>`)
+        expect(bubble.element.querySelector(tag)).toBeNull()
+        expect(wrapper.element.querySelector('script')).toBeNull()
+        wrapper.unmount()
+      }
+    })
+  })
+
+  describe('assistant markdown keeps tag text', () => {
+    const reply = '说明如下：<script>关键步骤</script>\n\n**加粗**\n\n```js\nconst x = 1\n```'
+
+    function expectReply(bubble: { text: () => string; find: (q: string) => { text: () => string }; element: Element }) {
+      expect(bubble.text()).toContain('关键步骤')
+      expect(bubble.text()).toContain('<script>')
+      expect(bubble.find('strong').text()).toBe('加粗')
+      expect(bubble.find('code').text()).toContain('const x = 1')
+      expect(bubble.element.querySelector('script')).toBeNull()
+    }
+
+    it('renders a finished reply with bold and code still intact', () => {
+      const wrapper = mountChat({
+        turns: [{ role: 'agent', text: reply, at: '2026-07-18T00:00:00Z' }],
+      })
+      expectReply(wrapper.get('[data-testid="clarify-agent-message"]'))
+      wrapper.unmount()
+    })
+
+    it('keeps the same text while the reply is streaming and after it ends', async () => {
+      const wrapper = mountChat({ draft: '请看日志' })
+      await clickSend(wrapper)
+      const vm = wrapper.vm as unknown as {
+        applyReviewFrame: (f: Record<string, unknown>) => void
+        applyAcpEvents: (e: { kind: string; text: string }[], nodeId?: string) => void
+      }
+      vm.applyReviewFrame({
+        event: 'turn_begin',
+        nodeId: 'react-1',
+        item: { text: '请看日志' },
+      })
+      vm.applyAcpEvents([{ kind: 'message', text: reply }], 'react-1')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="agent-timeline"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="clarify-busy-status"]').text()).toContain('输出中')
+      expectReply(wrapper.get('[data-testid="clarify-agent-message"]'))
+
+      vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
+      await flushPromises()
+      expect(wrapper.find('[data-testid="clarify-busy-status"]').exists()).toBe(false)
+      expectReply(wrapper.get('[data-testid="clarify-agent-message"]'))
+      wrapper.unmount()
+    })
+  })
+
   describe('human history image AppModal preview (g4)', () => {
     const PNG_A = 'AAAApreviewA'
     const PNG_B = 'BBBBpreviewB'
+
+    it('shows a wide history image in full proportion and still opens the preview', async () => {
+      const wrapper = mountChat({
+        turns: [
+          {
+            role: 'human',
+            text: '页面截图',
+            at: '2026-07-28T00:00:00Z',
+            images: [{ data: PNG_A, mimeType: 'image/png', name: 'wide.png' }],
+          },
+        ],
+      })
+      const thumb = wrapper.get('[data-testid="clarify-history-image-thumb"]')
+      expect(thumb.classes().join(' ')).not.toMatch(/\bh-20\b/)
+      expect(thumb.classes().join(' ')).not.toMatch(/\bw-20\b/)
+      const img = thumb.get('img')
+      expect(img.classes()).toContain('object-contain')
+      expect(img.classes()).not.toContain('object-cover')
+      await thumb.trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="clarify-image-preview-modal"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="clarify-image-preview-img"]').attributes('src')).toBe(
+        `data:image/png;base64,${PNG_A}`,
+      )
+      wrapper.unmount()
+    })
 
     it('opens AppModal with title fallback「图片」and closes via × / backdrop (g4.1)', async () => {
       const wrapper = mountChat({
@@ -1888,17 +1980,15 @@ describe('ClarifyChat', () => {
     const LONG_URL =
       'http://blobs.example.com/api/blobs/333932fedb2e4ce9a1b7c8d0e2f4567890abcdef1234567890abcdef1234'
 
-    it('human bubble uses .md; rendered link keeps full href (g3.1/f1)', () => {
+    it('human bubble shows the full URL as text and can wrap (g3.1/f1)', () => {
       const wrapper = mountChat({
         turns: [{ role: 'human', text: LONG_URL, at: '2026-07-18T00:00:00Z' }],
       })
-      const humanMd = wrapper.findAll('.md').find((n) => n.html().includes('/api/blobs/'))
-      expect(humanMd).toBeTruthy()
-      expect(humanMd!.classes()).toContain('md')
-      const anchor = humanMd!.find('a')
-      expect(anchor.exists()).toBe(true)
-      expect(anchor.attributes('href')).toBe(LONG_URL)
-      expect(anchor.text()).toBe(LONG_URL)
+      const bubble = wrapper.get('[data-testid="clarify-human-message"]')
+      expect(bubble.text()).toBe(LONG_URL)
+      expect(bubble.find('a').exists()).toBe(false)
+      expect(bubble.classes()).toContain('whitespace-pre-wrap')
+      expect(bubble.classes().join(' ')).toContain('overflow-wrap:anywhere')
       wrapper.unmount()
     })
 
