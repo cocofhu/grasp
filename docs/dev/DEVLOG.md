@@ -20,6 +20,19 @@
 
 ## 记录
 
+### 2026-10-09
+
+- 日期：2026-10-09
+- 范围：`server/internal/{browser,handlers,router,gateshare,mcp,services,runtime,models,config}`、`web/src/{components/run/{NovncPreviewPanel,AppPreviewPanel,PublicAppPreviewPanel,ReactArtifactStage}.vue,views/SandboxConsoleView.vue,lib/api/clients/settingsClient.ts,lib/inbox/gateShareLink.ts,locales}`、`web/{vite.config.ts,vite.e2e.config.ts,e2e}`、`agents/TestReviewAgent` 与 `team_embed` 同步副本、VNC 相关文档
+- 做了什么：
+  - 每个沙箱只剩一个 VNC 地址 `/sandbox-vnc/:id/ws`，删除按端口的 `/preview-vnc/:runId/:nodeId/:port/ws`。两条入口共用 `serveDesktopVNC`；外部分享的 VNC ticket 不再带端口，按 run/node 找到沙箱。
+  - 桌面就是 Agent 的屏幕：`OpenDesktop` 接管浏览器里已有的页面（chrome-devtools MCP 操作的那页），不另开 tab，平台释放时只解绑不关闭。连上桌面不导航；`set_preview` 登记端口后 `ShowURL` 把桌面切到 `127.0.0.1:port`，直连模式也一样。
+  - 能 `set_preview` 的 Agent 默认打开 `VNC_PREVIEW`/`BROWSER_MCP`（显式值优先）；提示词与 TestReviewAgent 改为用 chrome-devtools MCP 在桌面浏览器上验证，无头 Playwright 只做批量回归。
+  - 前端：运行页按节点查沙箱 id，只挂一个 noVNC，端口标签改 `targetPort` 在同一桌面跳转；没登记端口也能看桌面。分享页一份分享一个 ticket。控台与产物舞台显式传 `console`。
+  - 保留：IP 直连新标签页、抽屉、page_* 工具、Live、`/preview/` HTTP 反代、`preview-api`（用户澄清：直连页操作的是用户自己的浏览器，与 VNC 无关）。
+- 为什么：之前每个端口一个 VNC 地址，平台自己开 tab，用户看到的不是 Agent 正在操作的画面；参考云电脑做法收成一个桌面。
+- 如何验证：server `go test ./...`、golangci-lint、gen-configdoc -check、覆盖率门禁；web lint、vue-tsc、vitest coverage、build、`test:e2e:ci` 与预览相关 e2e（app-preview、preview-review-inbox、sandbox-list-isolation、clarify-empty-preview、preview-artifact-modal）。
+
 ### 2026-10-08
 
 - 日期：2026-10-08

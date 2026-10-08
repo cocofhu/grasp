@@ -156,6 +156,12 @@ export default defineConfig({
             return
           }
 
+          if (req.url?.match(/^\/api\/runs\/[^/]+\/nodes\/[^/]+\/sandbox\/?(\?.*)?$/) && req.method === 'GET') {
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify(mockSandbox))
+            return
+          }
+
           const sandboxMatch = req.url?.match(/^\/api\/sandboxes\/(\d+)(?:\/(log))?\/?(\?.*)?$/)
           if (sandboxMatch && req.method === 'GET') {
             res.setHeader('Content-Type', 'application/json')
@@ -231,7 +237,7 @@ export default defineConfig({
         })
         server.httpServer?.on('upgrade', (req, socket, head) => {
           if (handleLiveEntryUpgrade(req, socket, head, wss)) return
-          if (req.url?.startsWith('/preview-vnc/') || req.url?.match(/^\/sandbox-vnc\/\d+\/ws/)) {
+          if (req.url?.match(/^\/sandbox-vnc\/\d+\/ws/)) {
             handleMockVncUpgrade(req, socket, head, wss)
             return
           }

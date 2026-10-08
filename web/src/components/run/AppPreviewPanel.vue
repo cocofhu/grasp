@@ -54,23 +54,34 @@ const activeVnc = computed(() => vncPorts.value.find((p) => previewTabKey(p) ===
 const activeDirectUrl = computed(() =>
   activeVnc.value && isDirectPort(activeVnc.value) ? (activeVnc.value.directUrl || '').trim() : '',
 )
-/** Port the single noVNC socket is bound to; changing it reconnects. */
-const vncConnPort = ref<number | null>(null)
-/** Last VNC port shown; kept while a direct/url tab is active so we do not navigate away. */
+/** The node's sandbox: its desktop is the one VNC screen, ports are pages on it. */
+const sandboxId = ref<number | null>(null)
+/** Port the desktop should show; only a chip change navigates. */
 const vncTargetPort = ref<number | null>(null)
+/** Something to show: the Agent's desktop, or registered previews. */
+const hasScreen = computed(() => sandboxId.value != null || ports.value.length > 0)
+/** An external-URL tab is open over the desktop. */
+const urlTabActive = computed(() => {
+  const current = ports.value.find((p) => previewTabKey(p) === activeKey.value)
+  return !!current && isUrlPreview(current)
+})
 
 function syncActivePort() {
   const current = ports.value.find((p) => previewTabKey(p) === activeKey.value)
   activePort.value = current && !isUrlPreview(current) ? current.port : null
-  const vnc = vncPorts.value
-  if (!vnc.length) {
-    vncConnPort.value = null
-    vncTargetPort.value = null
-    return
-  }
   if (activeVnc.value) vncTargetPort.value = activeVnc.value.port
-  else if (!vnc.some((p) => p.port === vncTargetPort.value)) vncTargetPort.value = vnc[0].port
-  if (!vnc.some((p) => p.port === vncConnPort.value)) vncConnPort.value = vncTargetPort.value
+  else if (!vncPorts.value.some((p) => p.port === vncTargetPort.value)) vncTargetPort.value = null
+}
+
+async function loadSandbox() {
+  if (sandboxId.value != null) return
+  try {
+    const sbx = await api.getRunNodeSandbox(props.runId, props.nodeId)
+    const id = typeof sbx?.id === 'number' ? sbx.id : Number(sbx?.id) || null
+    sandboxId.value = id && id > 0 ? id : null
+  } catch {
+    // Keep polling while the node's sandbox is not up yet.
+  }
 }
 
 function onPick(payload: AppPreviewPickPayload) {
@@ -94,7 +105,10 @@ async function loadPorts(opts?: { silent?: boolean }) {
     loadError.value = null
   }
   try {
-    const r = await api.nodePreviews(props.runId, props.nodeId, { signal: portsAbort.signal })
+    const [r] = await Promise.all([
+      api.nodePreviews(props.runId, props.nodeId, { signal: portsAbort.signal }),
+      loadSandbox(),
+    ])
     if (gen !== portsGen) return
     ports.value = r.ports || []
     if (ports.value.length && activeKey.value == null) {
@@ -122,7 +136,14 @@ function retryLoadPorts() {
   return loadPorts()
 }
 
-watch(() => [props.runId, props.nodeId], () => loadPorts(), { immediate: true })
+watch(
+  () => [props.runId, props.nodeId],
+  () => {
+    sandboxId.value = null
+    void loadPorts()
+  },
+  { immediate: true },
+)
 
 const EMPTY_POLL_MS = 2500
 let emptyPoll: ReturnType<typeof setInterval> | null = null
@@ -134,7 +155,11 @@ function stopEmptyPoll() {
 }
 
 watch(
-  () => ({ empty: !ports.value.length, loading: loading.value, err: loadError.value }),
+  () => ({
+    empty: !ports.value.length || sandboxId.value == null,
+    loading: loading.value,
+    err: loadError.value,
+  }),
   ({ empty, loading: busy, err }) => {
     if (empty && !busy && !err) {
       if (!emptyPoll) emptyPoll = setInterval(() => loadPorts({ silent: true }), EMPTY_POLL_MS)
@@ -164,9 +189,9 @@ function selectPreview(key: string) {
     :class="fill ? 'h-full flex-1' : ''"
     :aria-busy="loading ? 'true' : 'false'"
   >
-    <RefreshStrip v-if="loading && ports.length" />
+    <RefreshStrip v-if="loading && hasScreen" />
     <HardLoadLayer
-      v-else-if="loading && !ports.length && !loadError"
+      v-else-if="loading && !hasScreen && !loadError"
       :overlay="false"
       :stuck-after-ms="10_000"
       :stage="t('pages.appPreview.loading')"
@@ -188,13 +213,13 @@ function selectPreview(key: string) {
       </button>
     </div>
     <div
-      v-else-if="!loading && !ports.length"
+      v-else-if="!loading && !hasScreen"
       class="rounded-md border border-line bg-elevated p-4 text-xs text-txt3"
       data-testid="app-preview-empty"
     >
       {{ t('pages.appPreview.noPorts') }}
     </div>
-    <template v-if="ports.length">
+    <template v-if="hasScreen">
       <div v-if="ports.length > 1" class="mb-2 flex flex-wrap gap-1">
         <button
           v-for="p in ports"
@@ -223,11 +248,9 @@ function selectPreview(key: string) {
           :title="previewTabLabel(p)"
         />
         <NovncPreviewPanel
-          v-if="vncConnPort != null"
-          v-show="!!activeVnc"
-          :run-id="runId"
-          :node-id="nodeId"
-          :port="vncConnPort"
+          v-if="sandboxId != null"
+          v-show="!urlTabActive"
+          :sandbox-id="sandboxId"
           :target-port="vncTargetPort ?? undefined"
           fill
           :compact="compact"
@@ -243,9 +266,16 @@ function selectPreview(key: string) {
             />
           </template>
         </NovncPreviewPanel>
+        <div
+          v-else-if="!urlTabActive"
+          class="flex h-full items-center justify-center p-4 text-center text-xs text-txt3"
+          data-testid="app-preview-no-sandbox"
+        >
+          {{ t('pages.appPreview.sandboxRecycled') }}
+        </div>
       </div>
       <PreviewFeedbackChat
-        v-if="!compact && showFeedback"
+        v-if="!compact && showFeedback && ports.length"
         :run-id="runId"
         :node-id="nodeId"
         :port="activePort ?? 0"

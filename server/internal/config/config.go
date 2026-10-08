@@ -95,9 +95,10 @@ type BrowserConfig struct {
 	// ContainerIdleTTLSeconds drops a cached CDP attachment after the sandbox
 	// has held zero tabs for this long (does not destroy the sandbox). 0 = 600.
 	ContainerIdleTTLSeconds int `yaml:"container_idle_ttl_seconds"`
-	// DesktopIdleTTLSeconds closes a sandbox's preview page after no viewer has
-	// been attached for this long. 0 keeps the page (and its screen state) until
-	// the sandbox goes away.
+	// DesktopIdleTTLSeconds releases a sandbox's preview page after no viewer has
+	// been attached for this long. A page the platform opened is closed; the
+	// Agent's own page is only detached. 0 keeps the page (and its screen state)
+	// until the sandbox goes away.
 	DesktopIdleTTLSeconds int `yaml:"desktop_idle_ttl_seconds"`
 }
 

@@ -85,7 +85,7 @@ func TestPlan_g2_liveContentCoversXvfb(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = engine.Close() })
 
-	page, err := engine.NewTab(t.Context(), "data:text/html,"+coverPageQuery())
+	page, err := engine.OpenDesktop(t.Context(), "data:text/html,"+coverPageQuery())
 	if err != nil {
 		t.Fatalf("NewTab: %v", err)
 	}

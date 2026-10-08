@@ -61,7 +61,7 @@ test.describe('Sandbox detail CDP/noVNC isolation', () => {
     await expect(notice).toBeVisible({ timeout: 10_000 })
     await expect(notice).toContainText(/CDP \/ noVNC are not directly reachable/i)
     await expect(notice).toContainText('/sandbox-vnc/:sandboxId/ws')
-    await expect(notice).toContainText('/preview-vnc/:runId/:nodeId/:port/ws')
+    await expect(notice).not.toContainText('/preview-vnc/')
     await expect(notice).toContainText(/Session required/i)
     await page.screenshot({ path: `${SHOT_DIR}/04-sandbox-detail-en.png`, fullPage: true })
   })

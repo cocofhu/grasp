@@ -44,6 +44,7 @@ func NewTicketStore(db *gorm.DB) *TicketStore {
 }
 
 // Issue creates a short-lived ticket bound to tokenHash + run/node/port/purpose.
+// port is 0 for a VNC ticket.
 func (s *TicketStore) Issue(tokenHash, runID, nodeID string, port int, purpose string) (string, time.Time, error) {
 	if s == nil || s.db == nil {
 		return "", time.Time{}, errors.New("ticket store unavailable")
@@ -52,7 +53,11 @@ func (s *TicketStore) Issue(tokenHash, runID, nodeID string, port int, purpose s
 	runID = strings.TrimSpace(runID)
 	nodeID = strings.TrimSpace(nodeID)
 	purpose = normalizePreviewPurpose(purpose)
-	if tokenHash == "" || runID == "" || nodeID == "" || port <= 0 || purpose == "" {
+	if tokenHash == "" || runID == "" || nodeID == "" || purpose == "" || port < 0 {
+		return "", time.Time{}, errors.New("invalid ticket claims")
+	}
+	// A VNC ticket watches the node's sandbox desktop; only API tickets name a port.
+	if port == 0 && purpose != PreviewPurposeVNC {
 		return "", time.Time{}, errors.New("invalid ticket claims")
 	}
 	buf := make([]byte, previewTicketHexBytes)

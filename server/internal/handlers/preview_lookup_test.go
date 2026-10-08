@@ -18,20 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestPreviewHostIP(t *testing.T) {
-	host, err := previewHostIP("http://172.17.0.2:3000/")
-	if err != nil || host != "172.17.0.2" {
-		t.Fatalf("got %q err=%v", host, err)
-	}
-	if _, err := previewHostIP("://bad"); err == nil {
-		t.Fatal("expected parse error")
-	}
-	if _, err := previewHostIP("http:///"); err == nil {
-		t.Fatal("expected empty host")
-	}
-}
-
-func TestLookupAndResolvePreview(t *testing.T) {
+func TestLookupPreviewAndResolveDesktop(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := database.OpenSQLiteTest(t.TempDir() + "/p.db")
 	if err != nil {
@@ -65,15 +52,17 @@ func TestLookupAndResolvePreview(t *testing.T) {
 		t.Fatalf("lookup = %q %q", gotHost, gotName)
 	}
 
-	up, name, ok := h.resolvePreviewTarget(context.Background(), "r1", "n1", 3000)
-	if !ok || name != "sb1" || up == "" {
-		t.Fatalf("resolve = %q %q ok=%v", up, name, ok)
+	ip, code, msg := h.resolveDesktopSandbox(context.Background(), "sb1")
+	if code != 0 || ip == "" {
+		t.Fatalf("resolve = %q %d %s", ip, code, msg)
 	}
 
 	fg.SetStatus("sb1", "stopped")
-	_, name, ok = h.resolvePreviewTarget(context.Background(), "r1", "n1", 3000)
-	if ok || name != "sb1" {
-		t.Fatalf("stopped resolve = ok=%v name=%q", ok, name)
+	if _, code, _ = h.resolveDesktopSandbox(context.Background(), "sb1"); code != http.StatusGone {
+		t.Fatalf("stopped resolve = %d", code)
+	}
+	if _, code, _ = (&Handlers{}).resolveDesktopSandbox(context.Background(), "sb1"); code != http.StatusServiceUnavailable {
+		t.Fatalf("nil sbx resolve = %d", code)
 	}
 }
 
@@ -119,18 +108,6 @@ func TestSandboxVNCDisabledPaths(t *testing.T) {
 	r2.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/ws/sandboxes/1/vnc", nil))
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("nil sbx: %d", w.Code)
-	}
-}
-
-func TestPreviewVNCDisabled(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	h := &Handlers{}
-	r := gin.New()
-	r.GET("/ws/preview/:runId/:nodeId/:port/vnc", h.PreviewVNC)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/ws/preview/r/n/3000/vnc", nil))
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("nil browser: %d", w.Code)
 	}
 }
 

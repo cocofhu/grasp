@@ -4,10 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
-	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -52,52 +49,46 @@ type vncClientMsg struct {
 	URL    string `json:"url"`    // navigate goto target (about:blank / http…)
 }
 
-// PreviewVNC proxies noVNC (RFB over WebSocket) to the preview sandbox's
-// in-container websockify while handling JSON control messages (Pick/navigate)
-// over CDP on the same Chromium instance inside that sandbox.
-func (h *Handlers) PreviewVNC(c *gin.Context) {
-	if h.Auth != nil {
-		if _, ok := h.Auth.RequireSession(c); !ok {
-			return
-		}
-	}
-	if h.Browser == nil {
-		c.String(http.StatusServiceUnavailable, "vnc preview disabled")
-		return
-	}
-	runID := c.Param("runId")
-	nodeID := c.Param("nodeId")
-	port, err := strconv.Atoi(c.Param("port"))
-	if err != nil || port <= 0 {
-		c.String(http.StatusBadRequest, "bad port")
-		return
-	}
+// desktopVNCOptions adapts the one sandbox desktop proxy to a caller.
+type desktopVNCOptions struct {
+	// onConnected runs right after the WebSocket upgrade, before the desktop
+	// opens; the returned func runs when the connection ends.
+	onConnected func(conn *websocket.Conn, writeJSON func(any) error) func()
+	// allowMsg drops control messages the viewer may not send.
+	allowMsg func(vncClientMsg) bool
+}
 
-	rctx, rcancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
-	bridgeURL, sandboxName, ok := h.resolvePreviewTarget(rctx, runID, nodeID, port)
-	rcancel()
-	if !ok {
-		if sandboxName != "" {
-			c.String(http.StatusGone, "sandbox recycled")
-			return
-		}
-		c.String(http.StatusNotFound, "preview not registered")
-		return
+// resolveDesktopSandbox returns the container IP of a running sandbox, or an
+// HTTP status and message for a recycled or unreachable one.
+func (h *Handlers) resolveDesktopSandbox(ctx context.Context, sandboxName string) (string, int, string) {
+	if h.Sbx == nil {
+		return "", http.StatusServiceUnavailable, "sandbox service unavailable"
 	}
-
-	sandboxIP, err := previewHostIP(bridgeURL)
-	if err != nil {
-		c.String(http.StatusBadGateway, "preview host invalid")
-		return
+	mgr := h.Sbx.Manager()
+	if mgr == nil {
+		return "", http.StatusServiceUnavailable, "sandbox manager unavailable"
 	}
-	// Sandbox loopback: the in-sandbox Chromium reaches the app directly. The
-	// preview-inject REDIRECT only matches inbound (PREROUTING) traffic, so no
-	// pick bar is injected here; Pick runs over CDP instead.
-	navigateURL := fmt.Sprintf("http://127.0.0.1:%d/", port)
+	rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if status := mgr.Status(rctx, sandboxName); status != "running" {
+		return "", http.StatusGone, "sandbox recycled"
+	}
+	ip, err := mgr.ContainerIP(rctx, sandboxName)
+	if err != nil || ip == "" {
+		return "", http.StatusBadGateway, "sandbox host unavailable"
+	}
+	return ip, 0, ""
+}
 
+// serveDesktopVNC upgrades c and proxies noVNC (RFB over WebSocket) to the
+// sandbox's in-container websockify, handling JSON control messages
+// (Pick/navigate) over CDP on the same Chromium. Every viewer of a sandbox,
+// signed-in or share-ticket, watches this one desktop: the Agent's screen.
+// Attaching never navigates it.
+func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string, opts desktopVNCOptions) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Debug().Str("run_id", runID).Str("node_id", nodeID).Err(err).Msg("preview-vnc websocket upgrade failed")
+		log.Debug().Str("sandbox", sandboxName).Err(err).Msg("desktop vnc websocket upgrade failed")
 		return
 	}
 	defer func() { _ = conn.Close() }()
@@ -118,12 +109,22 @@ func (h *Handlers) PreviewVNC(c *gin.Context) {
 	pushJSON := func(v any) {
 		_ = writeJSON(v)
 	}
+	if opts.onConnected != nil {
+		if done := opts.onConnected(conn, writeJSON); done != nil {
+			defer done()
+		}
+	}
 
+	const navigateURL = "about:blank"
 	openCtx, cancel := context.WithTimeout(c.Request.Context(), 90*time.Second)
 	defer cancel()
 	sess, err := h.Browser.OpenInSandbox(openCtx, sandboxName, sandboxIP, navigateURL)
 	if err != nil {
-		_ = writeJSON(gin.H{"type": "error", "message": err.Error()})
+		msg := err.Error()
+		if msg == "" {
+			msg = "未启动浏览器组件"
+		}
+		_ = writeJSON(gin.H{"type": "error", "message": msg})
 		return
 	}
 	defer sess.Close()
@@ -133,7 +134,6 @@ func (h *Handlers) PreviewVNC(c *gin.Context) {
 		_ = writeJSON(gin.H{"type": "error", "message": err.Error()})
 		return
 	}
-
 	upstream, _, err := websocket.DefaultDialer.Dial(vncURL, nil)
 	if err != nil {
 		_ = writeJSON(gin.H{"type": "error", "message": "vnc upstream failed"})
@@ -181,7 +181,9 @@ func (h *Handlers) PreviewVNC(c *gin.Context) {
 			if msgType == websocket.TextMessage {
 				var m vncClientMsg
 				if json.Unmarshal(data, &m) == nil {
-					h.applyVncMsg(sess.Page(), m, pushJSON)
+					if opts.allowMsg == nil || opts.allowMsg(m) {
+						h.applyVncMsg(sess.Page(), m, pushJSON)
+					}
 					continue
 				}
 			}
@@ -207,7 +209,7 @@ func (h *Handlers) applyVncMsg(page browser.Page, m vncClientMsg, pushJSON func(
 	switch m.Type {
 	case "inspect":
 		if err := page.SetInspect(m.On); err != nil {
-			log.Warn().Err(err).Bool("on", m.On).Msg("preview-vnc SetInspect failed")
+			log.Warn().Err(err).Bool("on", m.On).Msg("desktop vnc SetInspect failed")
 			if pushJSON != nil {
 				switch {
 				case m.On && errors.Is(err, browser.ErrDesktopNotReady):
@@ -240,17 +242,4 @@ func vncReadyURL(ctx context.Context, page browser.Page, navigateURL string) str
 		return u
 	}
 	return navigateURL
-}
-
-// previewHostIP extracts the host/IP from a bridge URL like http://172.17.0.2:3000/.
-func previewHostIP(bridgeURL string) (string, error) {
-	u, err := url.Parse(bridgeURL)
-	if err != nil {
-		return "", err
-	}
-	host := u.Hostname()
-	if host == "" {
-		return "", fmt.Errorf("empty host in %q", bridgeURL)
-	}
-	return host, nil
 }

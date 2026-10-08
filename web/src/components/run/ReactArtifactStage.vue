@@ -998,6 +998,7 @@ onBeforeUnmount(() => {
       <NovncPreviewPanel
         v-else-if="sandboxId"
         :sandbox-id="sandboxId"
+        console
         fill
         :inspectable="annotatable"
         @pick="onRemotePick"

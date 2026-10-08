@@ -63,11 +63,8 @@ func TestPreviewServiceNilManagerPaths(t *testing.T) {
 	svc := NewPreviewService(db, nil)
 	svc.SetBrowser(nil)
 
-	if err := svc.EnsurePreviewVNC(context.Background(), "sb"); err != nil {
-		t.Fatalf("nil browser EnsurePreviewVNC: %v", err)
-	}
-	svc.WarmPreviewVNC("")
-	svc.WarmPreviewVNC("sb") // no-op without browser
+	svc.ShowPreviewOnDesktop("", 3000)
+	svc.ShowPreviewOnDesktop("sb", 3000) // no-op without browser
 
 	if _, err := svc.ContainerIP(context.Background(), "x"); err == nil {
 		t.Fatal("nil mgr should error")
@@ -140,10 +137,8 @@ func TestPreviewServiceWithFakeGateway(t *testing.T) {
 	bsvc := browser.New(&previewSbxExec{}, browser.Config{})
 	bsvc.SetReadyProbe(func(context.Context, string) bool { return true })
 	svc.SetBrowser(bsvc)
-	if err := svc.EnsurePreviewVNC(context.Background(), "sb-prev"); err != nil {
-		t.Fatalf("EnsurePreviewVNC: %v", err)
-	}
-	svc.WarmPreviewVNC("sb-prev")
+	svc.ShowPreviewOnDesktop("sb-prev", 0) // no port: no-op
+	svc.ShowPreviewOnDesktop("sb-prev", 3000)
 	time.Sleep(50 * time.Millisecond)
 }
 

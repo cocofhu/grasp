@@ -251,30 +251,3 @@ func (h *Handlers) lookupPreviewRegistration(runID, nodeID string, port int) (ho
 	}
 	return host, sandboxName
 }
-
-// resolvePreviewTarget returns the bridge-IP upstream URL (with trailing slash)
-// and sandbox container name for a registered preview port. Used by PreviewVNC.
-// When the co-located manager reports the sandbox is not running, ok is false
-// and sandboxName is still set so callers can distinguish "recycled" from
-// "not registered".
-func (h *Handlers) resolvePreviewTarget(ctx context.Context, runID, nodeID string, port int) (host, sandboxName string, ok bool) {
-	host, sandboxName = h.lookupPreviewRegistration(runID, nodeID, port)
-	if h.Sbx != nil && sandboxName != "" && h.Preview != nil {
-		if mgr := h.Sbx.Manager(); mgr != nil {
-			if mgr.Status(ctx, sandboxName) != "running" {
-				return "", sandboxName, false
-			}
-			if fresh, okUp := h.Preview.PreviewUpstream(ctx, sandboxName, port); okUp && fresh != "" {
-				host = fresh
-				if err := h.Preview.UpdatePreviewHost(runID, nodeID, port, host); err != nil {
-					log.Warn().Err(err).Str("runId", runID).Str("nodeId", nodeID).Int("port", port).
-						Msg("persist preview host failed")
-				}
-			}
-		}
-	}
-	if host == "" {
-		return "", sandboxName, false
-	}
-	return host + "/", sandboxName, true
-}

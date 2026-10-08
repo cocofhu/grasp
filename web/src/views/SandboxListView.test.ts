@@ -173,7 +173,7 @@ describe('SandboxListView detail endpoints (g3)', () => {
     const notice = wrapper.get('[data-testid="sandbox-endpoints-notice"]').text()
     expect(notice).toMatch(/CDP \/ noVNC are not directly reachable/i)
     expect(notice).toContain('/sandbox-vnc/:sandboxId/ws')
-    expect(notice).toContain('/preview-vnc/:runId/:nodeId/:port/ws')
+    expect(notice).not.toContain('/preview-vnc/')
     expect(notice).toMatch(/Session required/i)
     expect(notice).toMatch(/session\/ide/i)
     wrapper.unmount()

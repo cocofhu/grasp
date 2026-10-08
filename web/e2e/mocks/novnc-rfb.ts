@@ -1,4 +1,4 @@
-/** Test double for @novnc/novnc — avoids RFB handshake against the mock preview-vnc socket. */
+/** Test double for @novnc/novnc — avoids RFB handshake against the mock sandbox-vnc socket. */
 type Listener = (ev?: { detail?: { status?: number; reason?: string } }) => void
 
 export default class MockRFB {

@@ -15,6 +15,7 @@ vi.mock('@novnc/novnc/lib/rfb.js', () => ({
 const apiMocks = vi.hoisted(() => ({
   nodePreviews: vi.fn(),
   embedTicket: vi.fn(),
+  getRunNodeSandbox: vi.fn(),
 }))
 
 vi.mock('@/lib/api/api', async () => {
@@ -25,16 +26,17 @@ vi.mock('@/lib/api/api', async () => {
       ...actual.api,
       nodePreviews: apiMocks.nodePreviews,
       embedTicket: apiMocks.embedTicket,
+      getRunNodeSandbox: apiMocks.getRunNodeSandbox,
     },
   }
 })
 
 const NovncStub = defineComponent({
   name: 'NovncPreviewPanel',
-  props: { runId: String, nodeId: String, port: Number, targetPort: Number, fill: Boolean, compact: Boolean },
+  props: { sandboxId: Number, targetPort: Number, fill: Boolean, compact: Boolean },
   emits: ['pick'],
   template:
-    '<div data-testid="novnc-stub" :data-port="port" :data-target-port="targetPort"><slot name="toolbar-extra" /></div>',
+    '<div data-testid="novnc-stub" :data-sandbox-id="sandboxId" :data-target-port="targetPort"><slot name="toolbar-extra" /></div>',
 })
 
 const FeedbackStub = defineComponent({
@@ -72,6 +74,7 @@ describe('AppPreviewPanel', () => {
         { port: 8080, label: 'API' },
       ],
     })
+    apiMocks.getRunNodeSandbox.mockResolvedValue({ id: 7 })
   })
 
   it('loads ports and renders preview tabs', async () => {
@@ -110,18 +113,41 @@ describe('AppPreviewPanel', () => {
     await flushPromises()
     const stubs = () => wrapper.findAll('[data-testid="novnc-stub"]')
     expect(stubs()).toHaveLength(1)
-    expect(stubs()[0].attributes('data-port')).toBe('5173')
+    expect(apiMocks.getRunNodeSandbox).toHaveBeenCalledWith('run-1', 'preview-1')
+    expect(stubs()[0].attributes('data-sandbox-id')).toBe('7')
     expect(stubs()[0].attributes('data-target-port')).toBe('5173')
     await wrapper.findAll('button').find((b) => b.text() === 'API')!.trigger('click')
     await flushPromises()
     expect(stubs()).toHaveLength(1)
-    expect(stubs()[0].attributes('data-port')).toBe('5173')
+    expect(stubs()[0].attributes('data-sandbox-id')).toBe('7')
     expect(stubs()[0].attributes('data-target-port')).toBe('8080')
     wrapper.unmount()
   })
 
-  it('shows no ports message when list empty', async () => {
+  it('shows the Agent desktop before any port is registered', async () => {
     apiMocks.nodePreviews.mockResolvedValue({ ports: [] })
+    const wrapper = mountPanel()
+    await flushPromises()
+    const novnc = wrapper.get('[data-testid="novnc-stub"]')
+    expect(novnc.attributes('data-sandbox-id')).toBe('7')
+    expect(novnc.attributes('data-target-port')).toBeUndefined()
+    expect(wrapper.find('[data-testid="app-preview-empty"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="feedback-stub"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('says the sandbox is gone when ports exist but the node has none', async () => {
+    apiMocks.getRunNodeSandbox.mockResolvedValue(null)
+    const wrapper = mountPanel()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="novnc-stub"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="app-preview-no-sandbox"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('shows the empty message with no sandbox and no ports', async () => {
+    apiMocks.nodePreviews.mockResolvedValue({ ports: [] })
+    apiMocks.getRunNodeSandbox.mockResolvedValue(null)
     const wrapper = mountPanel()
     await flushPromises()
     expect(wrapper.text()).toMatch(/暂无|没有|未/)
@@ -179,7 +205,7 @@ describe('AppPreviewPanel', () => {
     const wrapper = mountPanel()
     await flushPromises()
     const novnc = wrapper.get('[data-testid="novnc-stub"]')
-    expect(novnc.attributes('data-port')).toBe('18081')
+    expect(novnc.attributes('data-target-port')).toBe('18081')
     expect(wrapper.find('iframe').exists()).toBe(false)
     expect(novnc.find('[data-testid="app-preview-direct-open"]').attributes('title')).toBe('http://127.0.0.1:18081/')
 
@@ -227,7 +253,7 @@ describe('AppPreviewPanel', () => {
     })
     const wrapper = mountPanel()
     await flushPromises()
-    expect(wrapper.find('[data-testid="novnc-stub"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="novnc-stub"]').attributes('style')).toContain('display: none')
     const frame = wrapper.get('[data-testid="app-preview-external-url-frame"]')
     expect(frame.find('iframe').attributes('src')).toBe('https://staging.example.com:8443/app')
     expect(wrapper.text()).toContain('外部 URL 直连预览')
@@ -239,6 +265,7 @@ describe('AppPreviewPanel', () => {
     vi.useFakeTimers()
     const spy = vi.spyOn(global, 'setInterval')
     apiMocks.nodePreviews.mockResolvedValue({ ports: [] })
+    apiMocks.getRunNodeSandbox.mockResolvedValue(null)
     const wrapper = mountPanel()
     await flushPromises()
     expect(wrapper.find('[data-testid="app-preview-empty"]').exists()).toBe(true)
@@ -250,6 +277,7 @@ describe('AppPreviewPanel', () => {
     await vi.advanceTimersByTimeAsync(2500)
     await flushPromises()
     expect(apiMocks.nodePreviews.mock.calls.length).toBeGreaterThan(callsBeforePoll)
+    expect(apiMocks.getRunNodeSandbox.mock.calls.length).toBeGreaterThan(1)
     expect(wrapper.attributes('aria-busy')).toBe('false')
     expect(wrapper.find('[data-testid="app-preview-empty"]').exists()).toBe(true)
     wrapper.unmount()

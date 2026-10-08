@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -54,7 +55,7 @@ type fakePreviewOps struct {
 	ok      bool
 	healthy bool
 	up      string
-	warmed  []string
+	shown   []string
 	direct  bool
 	// probeSeq, when set, answers successive probes before falling back to healthy.
 	probeSeq     []bool
@@ -203,8 +204,8 @@ func (f *fakePreviewOps) PreviewUpstream(context.Context, string, int) (string, 
 	}
 	return f.up, true
 }
-func (f *fakePreviewOps) WarmPreviewVNC(sandboxName string) {
-	f.warmed = append(f.warmed, sandboxName)
+func (f *fakePreviewOps) ShowPreviewOnDesktop(sandboxName string, port int) {
+	f.shown = append(f.shown, fmt.Sprintf("%s:%d", sandboxName, port))
 }
 func (f *fakePreviewOps) DirectPreview(string, string) bool { return f.direct }
 
@@ -258,8 +259,8 @@ func TestListPreviewPortsMergeStore(t *testing.T) {
 		t.Fatalf("setPreviewPort: %v %q", err, url)
 	}
 	ops := h.previewOps.(*fakePreviewOps)
-	if len(ops.warmed) != 1 || ops.warmed[0] != "sb" {
-		t.Fatalf("warmed=%v", ops.warmed)
+	if len(ops.shown) != 1 || ops.shown[0] != "sb:3000" {
+		t.Fatalf("shown=%v", ops.shown)
 	}
 	if _, err := h.setPreviewPort("r", "n", 0, ""); err == nil {
 		t.Fatal("port 0")
@@ -299,15 +300,15 @@ func TestPreviewReadySignalAndKeepalivePID(t *testing.T) {
 	}
 }
 
-func TestSetPreviewDirectSkipsVNCWarmAndSetsDirectURL(t *testing.T) {
+func TestSetPreviewDirectStillShowsDesktopAndSetsDirectURL(t *testing.T) {
 	h := NewHost(&memStore{})
 	h.SetPreviewSandboxOps(&fakePreviewOps{name: "sb", ok: true, healthy: true, up: "http://10.0.0.8:18081", direct: true})
 	if _, err := h.setPreviewPort("r", "n", 18081, "web"); err != nil {
 		t.Fatal(err)
 	}
 	ops := h.previewOps.(*fakePreviewOps)
-	if len(ops.warmed) != 0 {
-		t.Fatalf("direct mode must not warm VNC: %v", ops.warmed)
+	if len(ops.shown) != 1 || ops.shown[0] != "sb:18081" {
+		t.Fatalf("direct mode must still show the app on the desktop: %v", ops.shown)
 	}
 	ports := h.ListPreviewPorts("r", "n")
 	if len(ports) != 1 || ports[0].Mode != "direct" || ports[0].DirectURL != "http://10.0.0.8:18081/" {

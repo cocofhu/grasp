@@ -325,10 +325,8 @@ func New(h *handlers.Handlers) *gin.Engine {
 	r.GET("/page-control.js", h.PageControlScript)
 	r.GET("/live-overlay.js", h.LiveOverlayScript)
 
-	// VNC preview (WebSocket): noVNC RFB proxy + CDP Pick/navigate control.
-	r.GET("/preview-vnc/:runId/:nodeId/:port/ws", h.PreviewVNC)
-
-	// Console VNC (WebSocket): sandbox-scoped noVNC proxy (no preview port triple).
+	// The one VNC address of a sandbox desktop (WebSocket): noVNC RFB proxy +
+	// CDP Pick/navigate control. App ports are pages on this desktop.
 	r.GET("/sandbox-vnc/:sandboxId/ws", h.SandboxVNC)
 
 	// Public gate-approval page + API (no session). Security headers + no ACAO.

@@ -57,7 +57,7 @@ type fakeEngine struct {
 	pages    []*fakePage
 }
 
-func (e *fakeEngine) NewTab(_ context.Context, url string) (Page, error) {
+func (e *fakeEngine) OpenDesktop(_ context.Context, url string) (Page, error) {
 	if e.failOnce {
 		e.failOnce = false
 		return nil, errors.New("tab failed")
@@ -537,5 +537,68 @@ func TestStatsSnapshot(t *testing.T) {
 	st := s.Stats()
 	if st.TabCount != 1 || st.MaxTabs != 8 || st.ContainerCount != 1 {
 		t.Fatalf("Stats = %+v", st)
+	}
+}
+
+func TestShowURLPutsAppOnDesktopViewersThenWatch(t *testing.T) {
+	s, _, _ := newFakeService(Config{MaxTabs: 4, MaxTabsPerContainer: 1})
+	eng := &fakeEngine{name: "sandbox"}
+	s.dial = func(context.Context, string) (Engine, error) { return eng, nil }
+	ctx := context.Background()
+
+	if err := s.ShowURL(ctx, "sb", "10.0.0.9", "http://127.0.0.1:3000/"); err != nil {
+		t.Fatalf("ShowURL: %v", err)
+	}
+	if len(eng.pages) != 1 || eng.pages[0].url != "http://127.0.0.1:3000/" {
+		t.Fatalf("pages = %+v", eng.pages)
+	}
+
+	// set_preview again reloads the app even on the same origin.
+	if err := s.ShowURL(ctx, "sb", "10.0.0.9", "http://127.0.0.1:3000/"); err != nil {
+		t.Fatalf("ShowURL again: %v", err)
+	}
+	if got := eng.pages[0].gotos; len(got) != 1 || got[0] != "http://127.0.0.1:3000/" {
+		t.Fatalf("gotos = %v", got)
+	}
+
+	// A viewer attaches to the same screen and does not navigate it.
+	sess, err := s.OpenInSandbox(ctx, "sb", "10.0.0.9", "about:blank")
+	if err != nil {
+		t.Fatalf("OpenInSandbox: %v", err)
+	}
+	defer sess.Close()
+	if len(eng.pages) != 1 || sess.page != Page(eng.pages[0]) {
+		t.Fatal("viewer must watch the existing desktop page")
+	}
+	if len(eng.pages[0].gotos) != 1 {
+		t.Fatalf("attach navigated: %v", eng.pages[0].gotos)
+	}
+}
+
+func TestShowURLErrors(t *testing.T) {
+	s, _, _ := newFakeService(Config{MaxTabs: 4, MaxTabsPerContainer: 1})
+	if err := s.ShowURL(context.Background(), "", "10.0.0.9", "http://127.0.0.1:3000/"); err == nil {
+		t.Fatal("empty sandbox name")
+	}
+	s.dial = func(context.Context, string) (Engine, error) {
+		return &fakeEngine{name: "sandbox", failTab: true}, nil
+	}
+	if err := s.ShowURL(context.Background(), "sb", "10.0.0.9", "http://127.0.0.1:3000/"); err == nil {
+		t.Fatal("open failure must surface")
+	}
+}
+
+func TestAdoptablePageURL(t *testing.T) {
+	for u, want := range map[string]bool{
+		"about:blank":                   true,
+		"http://127.0.0.1:3000/":        true,
+		"chrome://newtab/":              true,
+		"devtools://devtools/bundled/x": false,
+		"chrome-extension://abc/x.html": false,
+		"chrome-untrusted://print/":     false,
+	} {
+		if got := adoptablePageURL(u); got != want {
+			t.Errorf("adoptablePageURL(%q) = %v, want %v", u, got, want)
+		}
 	}
 }

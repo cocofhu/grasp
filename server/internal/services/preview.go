@@ -28,21 +28,9 @@ func NewPreviewService(db *gorm.DB, mgr *sandbox.Manager) *PreviewService {
 	return &PreviewService{db: db, mgr: mgr}
 }
 
-// SetBrowser wires the in-sandbox VNC helper used to warm CDP/websockify when
-// set_preview registers a port (before a reviewer opens the noVNC tab).
+// SetBrowser wires the in-sandbox VNC helper set_preview uses to put the app
+// on the sandbox desktop (before a reviewer opens the noVNC tab).
 func (s *PreviewService) SetBrowser(b *browser.Service) { s.browser = b }
-
-// EnsurePreviewVNC idempotently starts the sandbox VNC stack (best-effort).
-func (s *PreviewService) EnsurePreviewVNC(ctx context.Context, sandboxName string) error {
-	if s.browser == nil || sandboxName == "" {
-		return nil
-	}
-	ip, err := s.ContainerIP(ctx, sandboxName)
-	if err != nil || ip == "" {
-		return err
-	}
-	return s.browser.EnsureSandboxVNC(ctx, sandboxName, ip)
-}
 
 func (s *PreviewService) UpsertPreviewPort(rec mcp.PreviewPort) error {
 	itemKey := strings.TrimSpace(rec.ItemKey)
@@ -231,17 +219,22 @@ func (s *PreviewService) ProbeHTTPPort(ctx context.Context, sandboxName string, 
 	return true
 }
 
-// WarmPreviewVNC starts in-sandbox VNC asynchronously after set_preview so the
-// reviewer tab can attach without waiting on cold Chromium startup.
-func (s *PreviewService) WarmPreviewVNC(sandboxName string) {
-	if s.browser == nil || sandboxName == "" {
+// ShowPreviewOnDesktop puts the app at http://127.0.0.1:<port>/ on the
+// sandbox desktop in the background, so whoever opens the VNC preview sees it
+// on the same screen the Agent's browser drives.
+func (s *PreviewService) ShowPreviewOnDesktop(sandboxName string, port int) {
+	if s.browser == nil || sandboxName == "" || port <= 0 {
 		return
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
-		if err := s.EnsurePreviewVNC(ctx, sandboxName); err != nil {
-			log.Debug().Str("sandbox", sandboxName).Err(err).Msg("warm preview VNC failed")
+		ip, err := s.ContainerIP(ctx, sandboxName)
+		if err == nil && ip != "" {
+			err = s.browser.ShowURL(ctx, sandboxName, ip, fmt.Sprintf("http://127.0.0.1:%d/", port))
+		}
+		if err != nil {
+			log.Debug().Str("sandbox", sandboxName).Int("port", port).Err(err).Msg("show preview on desktop failed")
 		}
 	}()
 }

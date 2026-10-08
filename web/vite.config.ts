@@ -82,7 +82,6 @@ export default defineConfig(({ command }) => {
         // App preview reverse-proxy lives at /preview/:runId/:nodeId/:port/* (outside
         // /api). Without this, Vite dev swallows iframe requests and returns SPA HTML.
         '/preview/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },
-        '/preview-vnc/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },
         '/preview-pick.js': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true },
         '/page-control.js': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true },
         '/live-overlay.js': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true },

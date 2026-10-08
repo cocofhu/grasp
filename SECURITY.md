@@ -69,10 +69,11 @@ Inbox operators can mint a one-shot external approval URL for a single pending
   `POST /public/gate-approvals/preview-ticket` with `X-Gate-Share-Token`, then
   connect `GET /public/gate-approvals/preview-vnc/ws?ticket=…` or load a
   same-origin `/public/gate-approvals/preview-api/:ticket/…` iframe. Tickets are
-  ~2 minutes, keyed by token hash + run/node/port; share-token lifetime rules
-  still apply and revocation/decide kicks live sessions. Preview DTO ports are
-  desensitized (no `runId`/`nodeId`/internal paths). Logged-in
-  `/preview-vnc/:runId/:nodeId/:port/ws` remains Session-gated and unchanged.
+  ~2 minutes, keyed by token hash + run/node (+ port for `preview-api`; a VNC
+  ticket has no port and watches the node's sandbox desktop); share-token
+  lifetime rules still apply and revocation/decide kicks live sessions. Preview
+  DTO ports are desensitized (no `runId`/`nodeId`/internal paths). Logged-in
+  `/sandbox-vnc/:sandboxId/ws` remains Session-gated and unchanged.
 - Audit records create / regen / revoke / use with `callerKind=external` on
   use, optional self-reported name, masked IP (last octet/group), and
   browser/OS UA only — still without the plaintext token.
@@ -94,7 +95,8 @@ Unauthenticated Chromium CDP (`:9222`, socat) and noVNC/websockify (`:6080`,
 `x11vnc -nopw`) must not be reachable from users or untrusted networks.
 
 - **Users** reach the desktop only through Grasp WebSocket proxies:
-  `/sandbox-vnc/:sandboxId/ws` and `/preview-vnc/:runId/:nodeId/:port/ws`.
+  `/sandbox-vnc/:sandboxId/ws` (one desktop per sandbox; app ports are pages
+  on it).
   When platform Auth is injected (always on outside local-demo), these require
   a valid session cookie. Auth checks **Session validity only** — it does **not**
   check sandbox or run ownership; any logged-in user who knows the URL can

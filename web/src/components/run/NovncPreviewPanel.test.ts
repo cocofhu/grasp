@@ -107,7 +107,6 @@ const resizeObserverMocks = vi.hoisted(() => {
 })
 
 const apiMocks = vi.hoisted(() => ({
-  previewVncWsUrl: vi.fn(() => 'ws://localhost/preview-vnc/run-1/node-1/5173/ws'),
   sandboxVncWsUrl: vi.fn(() => 'ws://localhost/sandbox-vnc/1/ws'),
 }))
 
@@ -117,7 +116,6 @@ vi.mock('@/lib/api/api', async () => {
     ...actual,
     api: {
       ...actual.api,
-      previewVncWsUrl: apiMocks.previewVncWsUrl,
       sandboxVncWsUrl: apiMocks.sandboxVncWsUrl,
     },
   }
@@ -131,9 +129,7 @@ function mountNovnc(props: Record<string, unknown> = {}) {
   })
   return mount(NovncPreviewPanel, {
     props: {
-      runId: 'run-1',
-      nodeId: 'node-1',
-      port: 5173,
+      sandboxId: 1,
       fill: false,
       compact: false,
       ...props,
@@ -166,7 +162,6 @@ describe('NovncPreviewPanel', () => {
     MockWebSocket.reset()
     rfbMocks.reset()
     resizeObserverMocks.reset()
-    apiMocks.previewVncWsUrl.mockClear()
     apiMocks.sandboxVncWsUrl.mockClear()
     vi.stubGlobal('WebSocket', MockWebSocket)
     vi.stubGlobal('ResizeObserver', resizeObserverMocks.MockResizeObserver)
@@ -197,7 +192,7 @@ describe('NovncPreviewPanel', () => {
   it('connects preview mode and shows live toolbar without share-approval entry', async () => {
     const wrapper = mountNovnc()
     await flushPromises()
-    expect(apiMocks.previewVncWsUrl).toHaveBeenCalledWith('run-1', 'node-1', 5173)
+    expect(apiMocks.sandboxVncWsUrl).toHaveBeenCalledWith(1)
     expect(wrapper.text()).toMatch(/已连接|连接中/)
     expect(inspectButton(wrapper).exists()).toBe(true)
     expect(inspectButton(wrapper).text()).toContain('取点标注')
@@ -205,7 +200,7 @@ describe('NovncPreviewPanel', () => {
     wrapper.unmount()
   })
 
-  it('targetPort navigates the shared session instead of reconnecting', async () => {
+  it('attaching shows the Agent screen as is; only a port change navigates it', async () => {
     const gotos = () =>
       MockWebSocket.instances.flatMap((ws) =>
         ws.sent
@@ -215,17 +210,19 @@ describe('NovncPreviewPanel', () => {
       )
     const wrapper = mountNovnc({ targetPort: 8080 })
     await flushPromises()
-    expect(gotos()).toEqual(['http://127.0.0.1:8080/'])
-    await wrapper.setProps({ targetPort: 5173 })
+    expect(gotos()).toEqual([])
+    await wrapper.setProps({ targetPort: 3000 })
     await flushPromises()
-    expect(gotos()).toEqual(['http://127.0.0.1:8080/', 'http://127.0.0.1:5173/'])
+    expect(gotos()).toEqual(['http://127.0.0.1:3000/'])
     expect(MockWebSocket.instances).toHaveLength(1)
     wrapper.unmount()
   })
 
-  it('re-attaching to a desktop already on the target port does not navigate', async () => {
+  it('switching to the port the desktop already shows does not navigate', async () => {
     MockWebSocket.readyUrl = 'http://127.0.0.1:8080/orders/7'
-    const wrapper = mountNovnc({ targetPort: 8080 })
+    const wrapper = mountNovnc({ targetPort: 5173 })
+    await flushPromises()
+    await wrapper.setProps({ targetPort: 8080 })
     await flushPromises()
     const gotos = MockWebSocket.instances[0].sent
       .map((s) => JSON.parse(s) as { type?: string; action?: string })
@@ -272,7 +269,7 @@ describe('NovncPreviewPanel', () => {
     const wrapper = mountNovnc()
     await flushPromises()
     await wrapper.get('[data-testid="novnc-control-toggle"]').trigger('click')
-    await wrapper.setProps({ port: 8080 })
+    await wrapper.setProps({ sandboxId: 2 })
     await flushPromises()
     const rfb = rfbMocks.last() as unknown as { viewOnly: boolean }
     expect(rfb.viewOnly).toBe(true)
@@ -281,7 +278,7 @@ describe('NovncPreviewPanel', () => {
   })
 
   it('console mode also offers take over', async () => {
-    const wrapper = mountNovnc({ sandboxId: 42, runId: undefined, nodeId: undefined, port: undefined })
+    const wrapper = mountNovnc({ sandboxId: 42, console: true })
     await flushPromises()
     const rfb = rfbMocks.last() as unknown as { viewOnly: boolean }
     expect(rfb.viewOnly).toBe(true)
@@ -291,7 +288,7 @@ describe('NovncPreviewPanel', () => {
   })
 
   it('renders console mode address bar', async () => {
-    const wrapper = mountNovnc({ sandboxId: 42, runId: undefined, nodeId: undefined, port: undefined })
+    const wrapper = mountNovnc({ sandboxId: 42, console: true })
     await flushPromises()
     expect(apiMocks.sandboxVncWsUrl).toHaveBeenCalledWith(42)
     expect(wrapper.find('form').exists()).toBe(true)
@@ -302,9 +299,7 @@ describe('NovncPreviewPanel', () => {
   it('shows inspect on console noVNC when inspectable', async () => {
     const wrapper = mountNovnc({
       sandboxId: 42,
-      runId: undefined,
-      nodeId: undefined,
-      port: undefined,
+      console: true,
       inspectable: true,
     })
     await flushPromises()
@@ -316,11 +311,11 @@ describe('NovncPreviewPanel', () => {
   it('uses platform WS only and never mentions websockify/6080 (g4.2)', async () => {
     const preview = mountNovnc()
     await flushPromises()
-    expect(apiMocks.previewVncWsUrl).toHaveBeenCalledWith('run-1', 'node-1', 5173)
+    expect(apiMocks.sandboxVncWsUrl).toHaveBeenCalledWith(1)
     expect(preview.html()).not.toMatch(/6080|websockify/i)
     preview.unmount()
 
-    const consoleWrap = mountNovnc({ sandboxId: 42, runId: undefined, nodeId: undefined, port: undefined })
+    const consoleWrap = mountNovnc({ sandboxId: 42, console: true })
     await flushPromises()
     expect(apiMocks.sandboxVncWsUrl).toHaveBeenCalledWith(42)
     expect(consoleWrap.html()).not.toMatch(/6080|websockify/i)
@@ -447,12 +442,10 @@ describe('NovncPreviewPanel', () => {
     const before = MockWebSocket.instances.length
     const wrapper = mountNovnc({
       wsUrl: 'wss://example.test/public/gate-approvals/preview-vnc/ws?ticket=old',
-      runId: undefined,
-      nodeId: undefined,
-      port: 5173,
+      sandboxId: undefined,
     })
     await flushPromises()
-    expect(apiMocks.previewVncWsUrl).not.toHaveBeenCalled()
+    expect(apiMocks.sandboxVncWsUrl).not.toHaveBeenCalled()
     expect(MockWebSocket.instances.length).toBeGreaterThan(before)
 
     // Force error banner with reconnect button.

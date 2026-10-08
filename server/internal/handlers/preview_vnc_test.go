@@ -223,19 +223,3 @@ func TestApplyVncMsgInspectOffFailurePushes(t *testing.T) {
 		t.Fatalf("want inspect-off-failed push, got %v", pushed)
 	}
 }
-
-func TestPreviewVNCOpenCtxBindsRequestContext(t *testing.T) {
-	parent, cancel := context.WithCancel(context.Background())
-	openCtx, openCancel := context.WithTimeout(parent, 90*time.Second)
-	defer openCancel()
-
-	cancel()
-	select {
-	case <-openCtx.Done():
-		if !errors.Is(openCtx.Err(), context.Canceled) {
-			t.Fatalf("openCtx.Err() = %v, want context.Canceled", openCtx.Err())
-		}
-	default:
-		t.Fatal("openCtx should be canceled when request context is canceled")
-	}
-}

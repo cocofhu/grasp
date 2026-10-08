@@ -94,7 +94,7 @@ orphanGC:
 
 # Control-plane auth. Requests need `Authorization: Bearer <key>`.
 # Empty list disables auth (local testing only). This is the gateway API key,
-# not Approving UI Session. Approving VNC WS (/sandbox-vnc, /preview-vnc)
+# not Approving UI Session. Approving VNC WS (/sandbox-vnc)
 # requires a valid Session cookie whenever Approving Auth is injected
 # (always on outside local-demo; see server/config.example.yaml auth).
 auth:

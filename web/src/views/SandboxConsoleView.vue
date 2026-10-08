@@ -468,6 +468,7 @@ onBeforeUnmount(() => {
         <NovncPreviewPanel
           v-if="novncMounted"
           :sandbox-id="id"
+          console
           fill
         />
       </div>

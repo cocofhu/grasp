@@ -4,6 +4,19 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **One VNC desktop per sandbox — breaking route change:** the per-port
+  `/preview-vnc/:runId/:nodeId/:port/ws` WebSocket is removed; every viewer
+  uses `/sandbox-vnc/:sandboxId/ws`, and the external share page uses one
+  desktop ticket per share (`preview-ticket` for `vnc` no longer needs a port).
+  The desktop is the Agent's own screen: the platform takes over the browser
+  page chrome-devtools MCP drives instead of opening its own tab, and
+  connecting never navigates it. `set_preview` switches the desktop to the
+  registered port, and port tabs navigate the same desktop. The run page shows
+  the desktop as soon as the node has a sandbox, before any port is
+  registered. Agents that can `set_preview` now default to `VNC_PREVIEW=1` and
+  `BROWSER_MCP=1` (an explicit value wins). Direct-IP preview, the `/preview/`
+  HTTP proxy and `preview-api` are unchanged.
+
 - **Agent time limits — breaking config change:** an Agent turn no longer has
   a wall-clock limit. Two limits remain: the node's total time (the canvas
   node **Timeout** field; empty means the platform cap,

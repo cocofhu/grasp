@@ -29,31 +29,29 @@ const emit = defineEmits<{
 
 const props = withDefaults(
   defineProps<{
-    /** Preview mode: run/node/port triple (app preview). */
-    runId?: string
-    nodeId?: string
-    port?: number
+    /** The sandbox whose desktop (the Agent's screen) this panel watches. */
+    sandboxId?: number
+    /** Absolute ws(s) URL of a public share ticket; overrides sandboxId. */
+    wsUrl?: string
     /**
-     * Port to show on the sandbox desktop when it differs from `port`. The sandbox
-     * keeps one preview tab, so sibling ports share this connection and navigate.
+     * App port to show on the desktop. Changing it navigates the same page;
+     * attaching never navigates, so a viewer first sees what the Agent shows.
      */
     targetPort?: number
-    /** Optional absolute ws(s) URL (public ticket channel); overrides run/node/port. */
-    wsUrl?: string
-    /** Console mode: sandbox-scoped WS (mutually exclusive with preview triple). */
-    sandboxId?: number
+    /** Console toolbar (address bar) instead of the preview toolbar (Pick, FPS). */
+    console?: boolean
     fill?: boolean
     compact?: boolean
     /** Console mode: show 取点标注 (sandbox-vnc already proxies inspect/pick). */
     inspectable?: boolean
   }>(),
-  { fill: false, compact: false, inspectable: false },
+  { console: false, fill: false, compact: false, inspectable: false },
 )
 
 const { t } = useI18n()
 const fpsCounter = createPreviewFpsCounter()
 
-const consoleMode = computed(() => props.sandboxId != null && props.sandboxId > 0)
+const consoleMode = computed(() => props.console)
 const showInspect = computed(() => !consoleMode.value || props.inspectable)
 
 const canvasHost = ref<HTMLDivElement | null>(null)
@@ -334,10 +332,6 @@ function handleCtrlText(data: string) {
       reconnectAttempt.value = 0
       reconnecting.value = false
       if (typeof msg.url === 'string' && msg.url) address.value = msg.url
-      // A re-attached desktop may already show the target port; do not reload it.
-      if (props.targetPort && props.targetPort !== props.port && urlPort(address.value) !== props.targetPort) {
-        gotoTargetPort()
-      }
       break
     case 'picked':
       inlineTip.value = null
@@ -421,11 +415,8 @@ function setInspect(on: boolean) {
 function resolveWsUrl(): string | null {
   const custom = (props.wsUrl || '').trim()
   if (custom) return custom
-  if (consoleMode.value) {
-    return api.sandboxVncWsUrl(props.sandboxId!)
-  }
-  if (!props.runId || !props.nodeId || !props.port) return null
-  return api.previewVncWsUrl(props.runId, props.nodeId, props.port)
+  if (props.sandboxId != null && props.sandboxId > 0) return api.sandboxVncWsUrl(props.sandboxId)
+  return null
 }
 
 function connect() {
@@ -615,8 +606,8 @@ watch(inputEnabled, (on) => {
 })
 
 function gotoTargetPort() {
-  const port = props.targetPort || props.port
-  if (!port) return
+  const port = props.targetPort
+  if (!port || urlPort(address.value) === port) return
   address.value = `http://127.0.0.1:${port}/`
   sendCtrl({ type: 'navigate', action: 'goto', url: address.value })
 }
@@ -654,7 +645,7 @@ async function toggleFullscreen() {
 }
 
 watch(
-  () => [props.runId, props.nodeId, props.port, props.sandboxId, props.wsUrl],
+  () => [props.sandboxId, props.wsUrl],
   () => reconnect(),
 )
 
