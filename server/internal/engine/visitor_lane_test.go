@@ -16,6 +16,7 @@ import (
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/pagebridge"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/services"
 
@@ -194,9 +195,12 @@ func TestVisitorPageSessionsPerLane(t *testing.T) {
 	eng, _, p := setupVisitorEngine(t)
 	hold := make(chan struct{})
 	p.hold = hold
+	hub := pagebridge.NewHub()
+	eng.SetPageHub(hub)
 	laneA := gateshare.VisitorLane("link1", strings.Repeat("a", 32))
 	laneB := gateshare.VisitorLane("link1", strings.Repeat("b", 32))
 	for lane, owner := range map[string]string{laneA: "embed:aaaa", laneB: "embed:bbbb"} {
+		openPreview(hub, "r1", "p1", owner, true, true)
 		target := visitorTarget(lane)
 		target.Owner = owner
 		if _, err := eng.EnqueueVisitorTurn(target, "帮我登录", nil, nil); err != nil {

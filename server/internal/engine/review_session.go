@@ -49,8 +49,9 @@ type reviewQueueItem struct {
 	// Owner is who sent the turn (pagebridge owner id). Page tools act only on
 	// this person's page. Never exposed in frames.
 	Owner string
-	// PageSession is the page_* session id minted while this turn runs. Sent
-	// only in the agent prompt; never persisted or exposed in frames.
+	// PageSession is the page_* session id minted while this turn runs, and
+	// only when the sender is on the direct preview with page control open.
+	// Sent only in the agent prompt; never persisted or exposed in frames.
 	PageSession string
 	// Live marks a Live variant request; persisted on the human message.
 	Live *models.LiveRef
@@ -118,7 +119,9 @@ func (e *Engine) newReviewSession(runID, producerID, lane, linkID string, kind s
 			return map[string]any{"gateNodeId": it.GateNodeID, "source": it.Source}
 		},
 		BeforeTurn: func(it *reviewQueueItem, done <-chan struct{}) {
-			it.PageSession = e.mintPageSession(s, it.Owner, done)
+			if e.pageControlOnline(s.runID, s.producerID, it.Owner) {
+				it.PageSession = e.mintPageSession(s, it.Owner, done)
+			}
 		},
 		AfterTurn: func(it *reviewQueueItem) { e.revokePageSession(it.PageSession) },
 		Execute: func(ctx context.Context, it *reviewQueueItem) (bool, error) {
