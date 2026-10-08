@@ -249,10 +249,14 @@ const {
   useSideBySide,
   queueNotice,
   queueToast,
+  hasComposerDraft,
   cancelQueuedItem,
   reorderQueuedItems,
   editQueuedItem,
 } = chat
+
+/** Clarify passes its own reply copy; review uses the shared send copy. */
+const clarifySendAria = computed(() => props.sendLabel || translate('pages.reviewComposer.send'))
 
 /**
  * Where each session's interactive card goes: under the first agent reply
@@ -1034,29 +1038,22 @@ function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
           <button
             v-if="sessionBusy"
             type="button"
-            class="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md border border-line bg-elevated px-2.5 text-xs font-semibold text-txt2 hover:border-line-strong"
+            class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md border border-line bg-elevated text-txt2 hover:border-line-strong"
             data-testid="clarify-review-cancel"
             title="Cancel"
+            aria-label="Cancel"
             @click="cancelReview"
           >
-            Cancel
+            <Icon name="stop" :size="12" />
           </button>
           <button
-            v-if="sendLabel"
-            type="button"
-            class="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md bg-accent px-2.5 text-xs font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
-            data-testid="clarify-send-label"
-            :disabled="composerSending || (!draft.trim() && !attachments.length && !annotations.length)"
-            @click="send"
-          >
-            <Icon name="send" :size="14" /> {{ sendLabel }}
-          </button>
-          <button
-            v-else
+            v-if="!sessionBusy || hasComposerDraft()"
             type="button"
             class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
-            data-testid="clarify-send-icon"
-            :disabled="composerSending || (!draft.trim() && !attachments.length && !annotations.length)"
+            :data-testid="sendLabel ? 'clarify-send-label' : 'clarify-send-icon'"
+            :title="clarifySendAria"
+            :aria-label="clarifySendAria"
+            :disabled="composerSending || !hasComposerDraft()"
             @click="send"
           >
             <Icon name="send" :size="14" />

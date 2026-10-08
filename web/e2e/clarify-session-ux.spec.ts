@@ -23,7 +23,8 @@ test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
     await expect(queue).toContainText('待发送队列')
     await expect(queue).toContainText('澄清意见甲')
     await expect(queue).toContainText('澄清意见乙')
-    await expect(page.getByTestId('clarify-send-label')).toBeVisible()
+    await expect(page.getByTestId('clarify-review-cancel')).toBeVisible()
+    await expect(page.getByTestId('clarify-send-label')).toHaveCount(0)
     await expect(page.getByTestId('clarify-review-queue')).toBeVisible()
     await page.screenshot({ path: path.join(shotDir, '01-clarify-queue.png'), fullPage: true })
 

@@ -2072,7 +2072,7 @@ describe('embedded Chat page candidate mode', () => {
 
     expect(wrapper.find('[data-testid="public-gate-lang-select"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="clarify-input"]').attributes('placeholder')).toContain('Describe the goal first')
-    expect(wrapper.get('[data-testid="clarify-send-label"]').text()).toContain('Send reply')
+    expect(wrapper.get('[data-testid="clarify-send-label"]').attributes('aria-label')).toBe('Send reply')
 
     await wrapper.get('[data-testid="page-collaboration-toggle"]').trigger('click')
     await flushPromises()
@@ -2093,7 +2093,7 @@ describe('embedded Chat page candidate mode', () => {
     await flushPromises()
     expect(localStorage.getItem('grasp-locale')).toBe('zh-CN')
     expect(wrapper.get('[data-testid="clarify-input"]').attributes('placeholder')).toContain('请先描述目标')
-    expect(wrapper.get('[data-testid="clarify-send-label"]').text()).toContain('发送回复')
+    expect(wrapper.get('[data-testid="clarify-send-label"]').attributes('aria-label')).toBe('发送回复')
     expect(wrapper.get('[data-testid="page-collaboration-controls"]').text()).toContain('页面协作')
     expect(wrapper.get('[data-testid="preview-chat-locale-zh"]').attributes('aria-selected')).toBe('true')
     expect((wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement).value).toBe('keep this draft')
@@ -2105,7 +2105,7 @@ describe('embedded Chat page candidate mode', () => {
     await flushPromises()
     expect(localStorage.getItem('grasp-locale')).toBe('en')
     expect(wrapper.get('[data-testid="clarify-input"]').attributes('placeholder')).toContain('Describe the goal first')
-    expect(wrapper.get('[data-testid="clarify-send-label"]').text()).toContain('Send reply')
+    expect(wrapper.get('[data-testid="clarify-send-label"]').attributes('aria-label')).toBe('Send reply')
     expect(wrapper.get('[data-testid="page-collaboration-controls"]').text()).toContain('Page collaboration')
     expect((wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement).value).toBe('keep this draft')
     expect(wrapper.find('[data-testid="clarify-draft-image-thumb"]').exists()).toBe(true)

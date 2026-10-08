@@ -188,6 +188,22 @@ const showGateCancel = computed(
   () => props.thinking || (props.queued?.length ?? 0) > 0,
 )
 
+/** Content that can be sent, including the existing empty-send allowance. */
+const gateHasSendable = computed(
+  () =>
+    props.rejectAllowEmpty ||
+    draft.value.trim().length > 0 ||
+    attachments.value.length > 0 ||
+    annotations.value.length > 0,
+)
+
+/** While busy with nothing to send, the stop icon occupies the send slot. */
+const showGateSend = computed(() => {
+  if (!props.canReject) return false
+  if (showGateCancel.value && !gateHasSendable.value) return false
+  return true
+})
+
 const gateQueued = computed<PendingQueueRow[]>(() =>
   (props.queued ?? []).map((q) => ({
     id: q.id,
@@ -332,23 +348,25 @@ function onConfirm() {
           <button
             v-if="showGateCancel"
             type="button"
-            class="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md border border-line bg-elevated px-2.5 text-xs font-semibold text-txt2"
+            class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md border border-line bg-elevated text-txt2 hover:border-line-strong"
             data-testid="gate-react-cancel"
             title="Cancel"
+            aria-label="Cancel"
             @click="emit('cancel')"
           >
-            Cancel
+            <Icon name="stop" :size="12" />
           </button>
           <button
-            v-if="canReject"
+            v-if="showGateSend"
             type="button"
-            class="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md bg-accent px-2.5 text-xs font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+            class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md bg-accent text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
             data-testid="review-composer-send"
+            :title="sendButtonLabel"
+            :aria-label="sendButtonLabel"
             :disabled="!canSubmitGate"
             @click="onSend"
           >
-            <Icon name="arrow-left" :size="14" />
-            {{ rejecting ? t('pages.gateApproval.reactRevise.sending') : sendButtonLabel }}
+            <Icon name="send" :size="14" />
           </button>
         </template>
         <template v-if="!coldSession" #hint>
