@@ -368,10 +368,15 @@ describe('flow edge lanes', () => {
       typeText: (type) => ({ label: type, desc: '' }),
       t: (k) => k,
     }
-    const byId = new Map(useFlowElements(inp).flowEdges.value.map((e) => [e.id, e.data.backLane]))
+    const edgesOut = useFlowElements(inp).flowEdges.value
+    const byId = new Map(edgesOut.map((e) => [e.id, e.data.backLane]))
     expect(byId.get('fwd')).toBeUndefined()
     expect(byId.get('back-a')).toBe(0)
     expect(byId.get('back-b')).toBe(1)
+    const order = edgesOut.map((e) => e.id)
+    expect(order.indexOf('fwd')).toBeGreaterThan(order.indexOf('back-a'))
+    expect(order.indexOf('fwd')).toBeGreaterThan(order.indexOf('back-b'))
+    expect(edgesOut.find((e) => e.id === 'fwd')!.zIndex).toBeGreaterThan(edgesOut.find((e) => e.id === 'back-a')!.zIndex)
   })
 
   it('stores distinct lanes for chained back edges on equal-height cards', () => {

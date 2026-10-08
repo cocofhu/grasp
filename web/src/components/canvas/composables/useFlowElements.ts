@@ -34,6 +34,8 @@ export interface FlowEdgeObj {
   selectable: boolean
   focusable: boolean
   ariaLabel: string
+  /** Back edges sit under forward edges so a crossing keeps the main-path hit target. */
+  zIndex: number
   markerEnd: { type: MarkerType; color: string; width: number; height: number }
   data: CanvasEdgeData
 }
@@ -253,11 +255,16 @@ export function useFlowElements(inp: FlowInputs) {
           selectable: !readonly,
           focusable: !readonly,
           ariaLabel: inp.t('canvas.aria.edge', { source: data.sourceLabel, target: data.targetLabel }),
+          // The entry rise crosses the forward stroke in the gap before the shared port.
+          // Keep that rise under the forward edge (nodes stay at 0, so forward stays at 0 too).
+          zIndex: backLane !== undefined ? -1 : 0,
           markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
           data,
         })),
       )
     }
+    // Each edge is its own positioned SVG; lower z-index stays underneath.
+    out.sort((a, b) => a.zIndex - b.zIndex)
     pruneFlowCache(edgeCache, inp.edges().map((e) => e.id))
     return out
   })
