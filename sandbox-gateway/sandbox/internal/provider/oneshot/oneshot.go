@@ -185,7 +185,7 @@ func (p *Provider) Open(procCtx, _ context.Context, opts provider.OpenOptions,
 		onEvent:  onEvent,
 		done:     make(chan struct{}),
 		cumUsage: map[string]provider.TokenUsage{},
-		bgGrace:  backgroundGraceFromEnv(),
+		bgGrace:  BackgroundGrace(),
 	}
 	s.sessionID = opts.ResumeSessionID
 	if s.sessionID == "" {

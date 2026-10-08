@@ -29,6 +29,7 @@
   - oneshot 引擎按回合跟踪工具调用和后台 shell，只接管能确认属于本轮 CLI 的进程：CLI 的后代、自成进程组且与 CLI 不同组、启动时间未变（防 pid 复用）。没有前台工具在跑、只剩后台 shell、输出安静满 `SANDBOX_BG_TASK_GRACE`（默认 2m，`0` 关闭）后，对这些进程组 SIGTERM，1s 后仍在则 SIGKILL；CLI 收到任务通知后自行收尾、给出结果、退出。
   - CLI 给出结果后 5s 仍不退出，杀掉它的进程组，`end_turn` 仍按成功结束。
   - 活性：会话报告「只在等后台任务」时，这段 CPU/IO 不算活动（cursor-agent 每 30s 改写终端文件约 47KB，原来让看门狗永远判为有活动）。
+  - Claude Code `-p` 自己会等后台 shell，默认最多 10 分钟（2.1.292 代码中的 `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`，到点杀掉再退出）；`ClaudeAuthEnv` 用同一个宽限设置它，已显式设置时不覆盖。CodeBuddy（退出时杀掉后台 shell，只等后台子 Agent）、OpenCode（Bash 无后台模式，超时杀进程组）、Codex（不等后台终端，退出时清理）读代码确认不会因后台任务卡住回合。
   - 基础规则新增「常驻服务」：用 `setsid nohup … &` 拉起，不用前台或后台任务，不占 8765。
 - 为什么：沙箱 52 的 clarify Agent 用后台任务起了 `python3 -m http.server 8766` 看页面，回复写完后 cursor-agent `-p` 一直等这个后台任务，进程不退出，回合一直忙，用户后续消息没有回应，看门狗也因终端文件 IO 不触发。参考 multica（`server/pkg/agent/cursor_background*.go`）：后台 shell 计入在途、安静一段时间后只结束确认归属的后台进程组、以结果为回合边界。
 - 如何验证：在沙箱里复现（后台任务存活时 CLI 不出 `result`，SIGTERM 后台进程组后 CLI 收尾退出）；sandbox `go vet`、golangci-lint、`go test -race ./...`、`cover-check-sandbox.sh 90`；新增引擎测试（假 CLI 用 setsid 起后台 shell 并等它结束，宽限后回合正常结束；宽限为 0 时不动；结果后不退出被杀仍算成功）、归属校验、`/proc/<pid>/stat` 解析、编解码与活性暂停测试；server `go test ./...`。

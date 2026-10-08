@@ -12,7 +12,9 @@ All notable public-release changes are documented here.
   ones it can prove belong to the turn's CLI) and the CLI wraps up. A CLI that
   reported its result but has not exited 5s later is killed and the turn still
   succeeds. The liveness watchdog ignores the CLI's CPU/IO while it only waits
-  on background tasks. The base Agent rule now says to start long-running
+  on background tasks. Claude Code, which waits up to 10 minutes on its own,
+  gets the same limit through `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` (an
+  explicit value wins). The base Agent rule now says to start long-running
   services with `setsid nohup … &`.
 - **One VNC desktop per sandbox — breaking route change:** the per-port
   `/preview-vnc/:runId/:nodeId/:port/ws` WebSocket is removed; every viewer

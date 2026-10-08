@@ -331,3 +331,25 @@ func indexOf(s, sub string) int {
 	}
 	return -1
 }
+
+func TestClaudeAuthEnvCapsBackgroundWait(t *testing.T) {
+	get := func(env []string, k string) string {
+		for _, kv := range env {
+			if len(kv) > len(k) && kv[:len(k)+1] == k+"=" {
+				return kv[len(k)+1:]
+			}
+		}
+		return ""
+	}
+	t.Setenv("SANDBOX_BG_TASK_GRACE", "")
+	if v := get(ClaudeAuthEnv(nil), "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"); v != "120000" {
+		t.Fatalf("default ceiling = %q", v)
+	}
+	t.Setenv("SANDBOX_BG_TASK_GRACE", "30s")
+	if v := get(ClaudeAuthEnv(nil), "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"); v != "30000" {
+		t.Fatalf("ceiling follows the grace: %q", v)
+	}
+	if v := get(ClaudeAuthEnv([]string{"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=5"}), "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"); v != "5" {
+		t.Fatalf("explicit ceiling overridden: %q", v)
+	}
+}

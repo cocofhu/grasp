@@ -162,7 +162,8 @@ WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST
   Agent 用后台任务起的常驻服务会让这一轮一直不结束。没有前台工具在跑、只剩后台 shell、输出也安静了这么久,
   沙箱就结束这些后台 shell 的进程组(先 SIGTERM,1s 后 SIGKILL),CLI 随后自行收尾。只处理能确认属于本轮
   CLI 的进程(CLI 的后代、自成进程组、启动时间未变)。另外,CLI 给出结果后 5s 仍不退出,按本轮正常结束并杀掉
-  它的进程组。
+  它的进程组。claude `-p` 自己也会等后台 shell(默认最多 10 分钟,到点杀掉再退出),沙箱用同一个值设置
+  `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`(已显式设置时不覆盖)。
 
 时长取值为 Go duration(如 `90s`)或纯秒数,`0` 关闭。
 

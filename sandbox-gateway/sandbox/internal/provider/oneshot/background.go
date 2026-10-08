@@ -31,9 +31,9 @@ var (
 	bgCheckEveryCeiling = 5 * time.Second
 )
 
-// backgroundGraceFromEnv accepts a Go duration ("90s") or plain seconds; "0"
-// turns the cleanup off.
-func backgroundGraceFromEnv() time.Duration {
+// BackgroundGrace is SANDBOX_BG_TASK_GRACE: a Go duration ("90s") or plain
+// seconds; "0" turns the cleanup off.
+func BackgroundGrace() time.Duration {
 	v := strings.TrimSpace(os.Getenv(envBackgroundGrace))
 	if v == "" {
 		return defaultBackgroundGrace

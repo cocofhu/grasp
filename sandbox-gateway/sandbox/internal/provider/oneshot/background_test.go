@@ -249,7 +249,7 @@ func TestReadProcStat(t *testing.T) {
 	}
 }
 
-func TestBackgroundGraceFromEnv(t *testing.T) {
+func TestBackgroundGrace(t *testing.T) {
 	for v, want := range map[string]time.Duration{
 		"":     defaultBackgroundGrace,
 		"0":    0,
@@ -260,7 +260,7 @@ func TestBackgroundGraceFromEnv(t *testing.T) {
 		"-1m":  defaultBackgroundGrace,
 	} {
 		t.Setenv(envBackgroundGrace, v)
-		if got := backgroundGraceFromEnv(); got != want {
+		if got := BackgroundGrace(); got != want {
 			t.Errorf("%q: got %s, want %s", v, got, want)
 		}
 	}
