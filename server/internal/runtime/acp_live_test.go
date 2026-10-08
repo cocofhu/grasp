@@ -21,6 +21,7 @@ type memStore struct {
 	mu   sync.Mutex
 	data map[string]map[string]string // runID -> name -> content
 	node map[string]map[string]string // runID -> name -> nodeID
+	rev  map[string]map[string]int    // runID -> name -> revision
 }
 
 func newMemStore() *memStore {
@@ -39,9 +40,33 @@ func (s *memStore) Save(runID, nodeID, name, kind, content string) (string, erro
 	if s.node[runID] == nil {
 		s.node[runID] = map[string]string{}
 	}
+	if s.rev == nil {
+		s.rev = map[string]map[string]int{}
+	}
+	if s.rev[runID] == nil {
+		s.rev[runID] = map[string]int{}
+	}
+	if prev, ok := s.data[runID][name]; !ok {
+		s.rev[runID][name] = 1
+	} else if prev != content {
+		if s.rev[runID][name] < 1 {
+			s.rev[runID][name] = 1
+		}
+		s.rev[runID][name]++
+	}
 	s.data[runID][name] = content
 	s.node[runID][name] = nodeID
 	return runID + "/" + name, nil
+}
+
+func (s *memStore) Stamps(runID string) []mcp.ArtifactStamp {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []mcp.ArtifactStamp
+	for name := range s.data[runID] {
+		out = append(out, mcp.ArtifactStamp{Name: name, Node: s.node[runID][name], Revision: s.rev[runID][name]})
+	}
+	return out
 }
 
 func (s *memStore) Get(runID, name string) (string, bool) {
@@ -59,6 +84,9 @@ func (s *memStore) Delete(runID, name string) error {
 	}
 	if s.node[runID] != nil {
 		delete(s.node[runID], name)
+	}
+	if s.rev[runID] != nil {
+		delete(s.rev[runID], name)
 	}
 	return nil
 }

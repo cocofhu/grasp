@@ -63,7 +63,20 @@ function onQuoteAdd(ann: ReactAnnotation) {
 
 const { NODE_DEFS } = useNodeDefs()
 
-const productTabs = computed(() => {
+function jsonSnapshot(name: string): string {
+  const jsonKey = ARTIFACT_TO_OUTPUT_JSON[name]
+  if (!jsonKey) return ''
+  const snap = props.nodeRun.outputs?.[jsonKey]
+  return typeof snap === 'string' ? snap.trim() : ''
+}
+
+// More than one execution of this node: a missing snapshot must not be filled
+// from the live store, which keeps only the latest same-named file.
+const multiExecution = computed(
+  () => (props.run.nodeExecutions?.[props.node.id]?.length ?? 0) > 1,
+)
+
+function legacyProductTabs() {
   const listed = productArtifactsForNode(props.node)
   if (listed.length <= 1) return listed
   // Only this node's writes count — same-named upstream leftovers must not
@@ -81,6 +94,18 @@ const productTabs = computed(() => {
     }
     return false
   })
+}
+
+const productTabs = computed(() => {
+  const listed = productArtifactsForNode(props.node)
+  const legacy = legacyProductTabs()
+  if (!multiExecution.value) return legacy
+  const legacyNames = new Set(legacy.map((a) => a.name))
+  return listed.filter((a) => {
+    // page.html keeps its own per-iteration HTML snapshot path.
+    if (a.name === 'page.html') return legacyNames.has(a.name)
+    return jsonSnapshot(a.name).length > 0
+  })
 })
 const selectedArtifactName = ref('')
 watch(
@@ -94,7 +119,13 @@ watch(
 )
 
 const spec = computed(() => {
-  const name = selectedArtifactName.value || productArtifactName(props.node)
+  const tabs = productTabs.value
+  const selected = tabs.some((a) => a.name === selectedArtifactName.value)
+    ? selectedArtifactName.value
+    : tabs[0]?.name || ''
+  if (selected) return { name: selected }
+  if (multiExecution.value) return undefined
+  const name = productArtifactName(props.node)
   return name ? { name } : undefined
 })
 const hex = computed(() => nodeColor(props.node.type))
@@ -257,11 +288,17 @@ async function load() {
     return
   }
   // Each execution persists its own JSON in nodeRun.outputs; the run artifact
-  // store replaces same-named files, so historical tabs must not read it.
+  // store replaces same-named files, so a visit with no snapshot must not
+  // read it once this node has executed more than once. A single execution
+  // that predates snapshots may still fall back to the live file.
   const jsonKey = ARTIFACT_TO_OUTPUT_JSON[name]
   const snap = jsonKey ? props.nodeRun.outputs?.[jsonKey] : undefined
   if (typeof snap === 'string' && snap.trim()) {
     parseDoc(snap)
+    return
+  }
+  if (multiExecution.value) {
+    doc.value = null
     return
   }
   const a = artifact.value

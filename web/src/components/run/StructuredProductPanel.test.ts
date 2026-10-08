@@ -8,7 +8,7 @@ import pages from '@/locales/zh-CN/pages.json'
 import type { Artifact, NodeRun, Run, WFNode } from '@/lib/shared/types'
 import { useReviewAnnotate } from '@/lib/inbox/reviewAnnotate'
 import StructuredProductPanel from './StructuredProductPanel.vue'
-import { ASK_CAPS, CLARIFY_CAPS, writesCaps } from '@/test/capsFixtures'
+import { ASK_CAPS, CLARIFY_CAPS, TEST_REVIEW_CAPS, writesCaps } from '@/test/capsFixtures'
 
 const apiMocks = vi.hoisted(() => ({
   artifactContent: vi.fn(),
@@ -803,6 +803,94 @@ describe('StructuredProductPanel', () => {
     expect(apiMocks.artifactContent).toHaveBeenCalledWith('a-plan')
     expect(wrapper.find('[data-testid="structured-view"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="structured-product-name"]').text()).toBe('plan.json')
+    wrapper.unmount()
+  })
+
+  it('does not paint an earlier test result on a later execution without a snapshot', async () => {
+    const node: WFNode = {
+      id: 'test',
+      type: 'agent',
+      caps: TEST_REVIEW_CAPS,
+      label: '测试',
+      position: { x: 0, y: 0 },
+      config: {},
+    }
+    const first: NodeRun = {
+      nodeId: 'test',
+      iteration: 1,
+      status: 'failed',
+      outputs: { test_result_json: JSON.stringify({ title: '第1次结论', summary: 'old' }) },
+    }
+    const second: NodeRun = {
+      nodeId: 'test',
+      iteration: 2,
+      status: 'running',
+      outputs: {},
+    }
+    apiMocks.artifactContent.mockResolvedValue({
+      content: JSON.stringify({ title: '产物库旧结论', summary: 'store' }),
+    })
+    const run = runWithArtifacts(
+      [artifact({ id: 'a-tr', name: 'test_result.json', kind: 'json', nodeId: 'test' })],
+      { nodeExecutions: { test: [first, second] } },
+    )
+    const wrapper = mountPanel(node, second, run)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="structured-view"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="structured-product-tab-test_result.json"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="structured-product-tab-review.json"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('该节点尚未写入结构化产物')
+    expect(apiMocks.artifactContent).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ nodeRun: first })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="structured-view"]').text()).toContain('第1次结论')
+    expect(wrapper.text()).not.toContain('产物库旧结论')
+    expect(apiMocks.artifactContent).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('shows only the conclusion this execution wrote', async () => {
+    const node: WFNode = {
+      id: 'test',
+      type: 'agent',
+      caps: TEST_REVIEW_CAPS,
+      label: '测试',
+      position: { x: 0, y: 0 },
+      config: {},
+    }
+    const first: NodeRun = {
+      nodeId: 'test',
+      iteration: 1,
+      status: 'completed',
+      outputs: {
+        test_result_json: JSON.stringify({ title: '第1次测试' }),
+        review_json: JSON.stringify({ title: '第1次评审', verdict: 'approve' }),
+      },
+    }
+    const second: NodeRun = {
+      nodeId: 'test',
+      iteration: 2,
+      status: 'completed',
+      outputs: { test_result_json: JSON.stringify({ title: '第2次测试' }) },
+    }
+    apiMocks.artifactContent.mockResolvedValue({
+      content: JSON.stringify({ title: '产物库旧评审', verdict: 'reject' }),
+    })
+    const run = runWithArtifacts(
+      [
+        artifact({ id: 'a-tr', name: 'test_result.json', kind: 'json', nodeId: 'test' }),
+        artifact({ id: 'a-rv', name: 'review.json', kind: 'json', nodeId: 'test' }),
+      ],
+      { nodeExecutions: { test: [first, second] } },
+    )
+    const wrapper = mountPanel(node, second, run)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="structured-view"]').text()).toContain('第2次测试')
+    expect(wrapper.find('[data-testid="structured-product-tab-review.json"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('产物库旧评审')
+    expect(wrapper.text()).not.toContain('第1次评审')
+    expect(apiMocks.artifactContent).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })

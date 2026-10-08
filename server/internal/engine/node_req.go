@@ -50,6 +50,9 @@ func (e *Engine) nodeReq(c *execCtx, node *models.Node) runtime.NodeReq {
 	}
 
 	e.host.SetActiveNode(c.run.ID, node.ID, node.Caps)
+	// A restarted process lost the in-memory revision baseline. Reload it
+	// before the provider decides whether this visit already wrote its products.
+	e.ensureArtifactVisit(c, node)
 
 	// ClearOutcome is intentionally NOT called here: same-visit react multi-round
 	// replies rebuild NodeReq via this helper and must keep a legal Host mark.

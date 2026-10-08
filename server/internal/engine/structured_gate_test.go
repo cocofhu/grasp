@@ -224,6 +224,55 @@ func TestStructuredGateRetrySnapshotsScreenshots(t *testing.T) {
 	}
 }
 
+// TestStructuredGateRetryOmitsUnwrittenSnapshot: a second execution that does
+// not rewrite test_result.json must not carry the first execution's body.
+// The first execution's own snapshot stays put.
+func TestStructuredGateRetryOmitsUnwrittenSnapshot(t *testing.T) {
+	g := models.Graph{
+		Nodes: []models.Node{
+			{ID: "input", Type: "input"},
+			{ID: "test", Type: "agent", Caps: capsTest, Checkpoint: true, Config: map[string]any{
+				"agent_profile": "t", "prompt": "测试",
+			}},
+			{ID: "output", Type: "output"},
+		},
+		Edges: []models.Edge{
+			{ID: "e1", Source: "input", Target: "test"},
+			{ID: "e2", Source: "test", Target: "output", SourceHandle: handlePass, Kind: models.EdgeSuccess},
+			{ID: "erb", Source: "test", Target: "test", SourceHandle: handleFail, Kind: models.EdgeRollback, MaxAttempts: 3},
+		},
+	}
+	eng, db, p := setupEngineGraphP(t, g)
+	p.skipStructuredAfter = 1
+	p.structuredBodySeq = map[string][]string{
+		"test": {
+			`{"summary":"a1","failed":1,"cases":[{"name":"x","status":"failed"}]}`,
+		},
+	}
+	run, _ := eng.StartRun("wf", nil, "test")
+	waitRunStatus(t, db, run.ID, "failed")
+
+	var rows []models.StateRun
+	if err := db.Where("run_id = ? AND node_id = ?", run.ID, "test").
+		Order("iteration asc").Find(&rows).Error; err != nil {
+		t.Fatalf("load test state runs: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("test execution rows = %d, want 2 (failed attempt + unwritten retry)", len(rows))
+	}
+	snap := func(sr models.StateRun) string {
+		s, _ := sr.Outputs["test_result_json"].(string)
+		return s
+	}
+	first, second := snap(rows[0]), snap(rows[1])
+	if !strings.Contains(first, `"summary":"a1"`) {
+		t.Errorf("first attempt snapshot missing its own body: %q", first)
+	}
+	if second != "" {
+		t.Errorf("second attempt must not keep the first test_result snapshot: %q", second)
+	}
+}
+
 func TestStructuredGateArtifactNames(t *testing.T) {
 	if mcp.TestResultArtifactName == "" || mcp.ReviewArtifactName == "" {
 		t.Fatal("artifact names should be set")

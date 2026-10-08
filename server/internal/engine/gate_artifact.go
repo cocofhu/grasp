@@ -303,6 +303,10 @@ func IsArtifactConflict(err error) bool {
 // The opening Publish is the only artifact_edit for this write (do not emit a
 // second nameless frame — busy UIs would refetch the artifact list twice).
 func (e *Engine) syncAfterPrimaryArtifactWrite(runID, nodeID, name, content, kind string) {
+	// Record every WriteArtifact, including in-flight runs that skip the
+	// output sync below. An identical body does not bump revision, so the
+	// name has to live on the execution row to survive a process restart.
+	e.noteArtifactVisitWrite(runID, nodeID, name)
 	if nodeID != "" {
 		e.broker.Publish(runID, artifactEditMsg(runID, nodeID, name, ""))
 	}
@@ -353,6 +357,32 @@ func (e *Engine) syncAfterPrimaryArtifactWrite(runID, nodeID, name, content, kin
 	c.nodeOutputs[nodeID] = outs
 	e.refreshPendingGatesForProducer(c, nodeID)
 	_ = kind // kind reserved for future etag/content-type signals
+}
+
+// noteArtifactVisitWrite appends name onto the latest execution of nodeID.
+// The column is written as JSON text so a later read through the serializer
+// restores the list without a full-row Save racing other execution fields.
+func (e *Engine) noteArtifactVisitWrite(runID, nodeID, name string) {
+	name = strings.TrimSpace(name)
+	if e == nil || e.db == nil || runID == "" || nodeID == "" || name == "" {
+		return
+	}
+	var sr models.StateRun
+	if err := e.db.Where("run_id = ? AND node_id = ?", runID, nodeID).
+		Order("iteration desc, id desc").First(&sr).Error; err != nil {
+		return
+	}
+	for _, w := range sr.ArtifactVisitWrites {
+		if w == name {
+			return
+		}
+	}
+	writes := append(append([]string{}, sr.ArtifactVisitWrites...), name)
+	raw, err := json.Marshal(writes)
+	if err != nil {
+		return
+	}
+	logDB(e.db.Model(&models.StateRun{}).Where("id = ?", sr.ID).Update("artifact_visit_writes", string(raw)), runID, "note artifact visit write")
 }
 
 // structuredRenderForArtifact returns a markdown renderer for known structured

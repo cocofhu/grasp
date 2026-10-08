@@ -35,6 +35,23 @@ type ArtifactInfo struct {
 	Note string `json:"note,omitempty"`
 }
 
+// ArtifactStamp is the live revision of one run artifact. The product store
+// keeps a single row per name, so a later execution tells its own write from
+// an earlier visit by comparing this revision with the baseline it recorded
+// on entry.
+type ArtifactStamp struct {
+	Name     string
+	Node     string
+	Revision int
+}
+
+// StampStore is an optional Store capability. When present, a node visit can
+// require a conclusion to be rewritten instead of reusing the previous
+// execution's same-named file.
+type StampStore interface {
+	Stamps(runID string) []ArtifactStamp
+}
+
 // Feedback ledger product names. Per-round products are written by the
 // platform, never by an agent, and are folded behind the index in listings.
 const (
@@ -138,6 +155,15 @@ type Host struct {
 	pageBridge PageBridge
 	// liveUpdater records live_update reports (Live variants on preview-capable Agents).
 	liveUpdater LiveUpdater
+	// visits snapshots artifact revisions when a node execution starts, keyed
+	// runID → nodeID. Writes recorded after that snapshot belong to this visit.
+	visits map[string]map[string]*artifactVisit
+}
+
+// artifactVisit is one node execution's view of the product store.
+type artifactVisit struct {
+	revs   map[string]int
+	writes map[string]struct{}
 }
 
 // AfterWriteFunc is called after WriteArtifact successfully persists content.
@@ -494,6 +520,7 @@ func (h *Host) WriteArtifact(runID, token, nodeID, name, content, kind string) (
 	if err != nil {
 		return "", err
 	}
+	h.markVisitWrite(runID, nodeID, name)
 	h.mu.RLock()
 	hook := h.afterWrite
 	h.mu.RUnlock()
@@ -584,6 +611,116 @@ func (h *Host) DeleteArtifact(runID, name string) {
 		return
 	}
 	_ = d.Delete(runID, name)
+}
+
+// BeginArtifactVisit records the live revision of every artifact so a later
+// check can tell this execution's writes from an earlier visit's leftovers.
+// The returned map is the baseline to persist on the execution row.
+func (h *Host) BeginArtifactVisit(runID, nodeID string) map[string]int {
+	revs := map[string]int{}
+	if stamps, ok := h.store.(StampStore); ok {
+		for _, st := range stamps.Stamps(runID) {
+			if st.Name == "" {
+				continue
+			}
+			revs[st.Name] = st.Revision
+		}
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.putVisitLocked(runID, nodeID, &artifactVisit{revs: revs, writes: map[string]struct{}{}})
+	out := make(map[string]int, len(revs))
+	for k, v := range revs {
+		out[k] = v
+	}
+	return out
+}
+
+// RestoreArtifactVisit reloads a baseline persisted on the execution row
+// (the in-memory visit does not survive a process restart). writes are the
+// artifact names this execution already saved; identical-content rewrites do
+// not move Revision, so the name list is what makes them visible again.
+func (h *Host) RestoreArtifactVisit(runID, nodeID string, revs map[string]int, writes []string) {
+	cp := make(map[string]int, len(revs))
+	for k, v := range revs {
+		cp[k] = v
+	}
+	noted := make(map[string]struct{}, len(writes))
+	for _, name := range writes {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		noted[name] = struct{}{}
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.putVisitLocked(runID, nodeID, &artifactVisit{revs: cp, writes: noted})
+}
+
+// VisitNoted reports whether this node execution has a revision baseline.
+func (h *Host) VisitNoted(runID, nodeID string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.visitLocked(runID, nodeID) != nil
+}
+
+// FreshThisVisit reports whether name was written during the noted visit.
+// With no baseline, or a store that cannot report revisions, it returns true
+// so callers keep the last-writer check alone.
+func (h *Host) FreshThisVisit(runID, nodeID, name string) bool {
+	h.mu.RLock()
+	v := h.visitLocked(runID, nodeID)
+	if v == nil {
+		h.mu.RUnlock()
+		return true
+	}
+	if _, wrote := v.writes[name]; wrote {
+		h.mu.RUnlock()
+		return true
+	}
+	prev := v.revs[name]
+	_, canStamp := h.store.(StampStore)
+	h.mu.RUnlock()
+	if !canStamp {
+		return true
+	}
+	for _, st := range h.store.(StampStore).Stamps(runID) {
+		if st.Name == name {
+			return st.Revision > prev
+		}
+	}
+	return false
+}
+
+func (h *Host) markVisitWrite(runID, nodeID, name string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	v := h.visitLocked(runID, nodeID)
+	if v == nil || name == "" {
+		return
+	}
+	if v.writes == nil {
+		v.writes = map[string]struct{}{}
+	}
+	v.writes[name] = struct{}{}
+}
+
+func (h *Host) putVisitLocked(runID, nodeID string, v *artifactVisit) {
+	if h.visits == nil {
+		h.visits = map[string]map[string]*artifactVisit{}
+	}
+	if h.visits[runID] == nil {
+		h.visits[runID] = map[string]*artifactVisit{}
+	}
+	h.visits[runID][nodeID] = v
+}
+
+func (h *Host) visitLocked(runID, nodeID string) *artifactVisit {
+	if h.visits == nil || h.visits[runID] == nil {
+		return nil
+	}
+	return h.visits[runID][nodeID]
 }
 
 // ListArtifacts lists products of the current run only, with the per-round

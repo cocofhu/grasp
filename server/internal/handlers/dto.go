@@ -146,6 +146,19 @@ func artifactMetaDTO(a models.Artifact) gin.H {
 	return out
 }
 
+// cloneOutputs copies a node execution's output map, including conclusion
+// JSON snapshots. Nil stays nil so clients can tell "no outputs" from {}.
+func cloneOutputs(outputs map[string]any) map[string]any {
+	if outputs == nil {
+		return nil
+	}
+	out := make(map[string]any, len(outputs))
+	for k, v := range outputs {
+		out[k] = v
+	}
+	return out
+}
+
 func reactConversationDTO(conv models.ReactConversation) gin.H {
 	out := gin.H{
 		"nodeId": conv.NodeID, "iteration": conv.Iteration, "turns": conv.Turns(), "done": conv.Done,
@@ -187,7 +200,11 @@ func (h *Handlers) runDetailDTO(r models.Run) gin.H {
 	for _, s := range states {
 		nr := gin.H{
 			"nodeId": s.NodeID, "iteration": s.Iteration, "status": s.Status, "outputMd": s.OutputMd,
-			"outputs": services.OmitLargeJSONSnapshots(s.Outputs), "varsSnapshot": s.VarsSnapshot, "events": previewPromptEvents(s.Events), "mcpCalls": s.McpCalls, "durationSec": s.DurationSec,
+			// Keep each execution's *_json conclusion snapshots. The product
+			// store has one live row per name and no iteration, so the panel
+			// can only show the right visit when this payload still carries
+			// that visit's JSON. Log events stay free of those bodies.
+			"outputs": cloneOutputs(s.Outputs), "varsSnapshot": s.VarsSnapshot, "events": previewPromptEvents(s.Events), "mcpCalls": s.McpCalls, "durationSec": s.DurationSec,
 		}
 		// Nullable usage: omit when nil so clients treat missing as "—" (not 0).
 		if s.Usage != nil {

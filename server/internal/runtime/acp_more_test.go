@@ -109,6 +109,41 @@ func TestEnsureStructuredIgnoresUpstreamOwner(t *testing.T) {
 	}
 }
 
+// TestEnsureStructuredRepromptsStaleSameNodeWrite: a conclusion this node
+// wrote on an earlier visit does not satisfy the new visit. The agent is
+// re-prompted until it writes again.
+func TestEnsureStructuredRepromptsStaleSameNodeWrite(t *testing.T) {
+	store := newMemStore()
+	host := mcp.NewHost(store)
+	tok := host.RegisterRun("r")
+	t.Cleanup(func() { host.UnregisterRun("r") })
+	if _, err := host.WriteArtifact("r", tok, "n", mcp.ResearchArtifactName,
+		`{"summary":"old","findings":[]}`, "json"); err != nil {
+		t.Fatal(err)
+	}
+	host.BeginArtifactVisit("r", "n")
+	mgr := newFakeManager(t, host, "r", "n", tok, func(int) chatFunc {
+		return func(turn int) turnAction {
+			if turn == 0 {
+				return turnAction{narration: "see previous visit"}
+			}
+			return turnAction{narration: "rewrote", produces: map[string]string{
+				mcp.ResearchArtifactName: `{"summary":"new","findings":[{"id":"r1","title":"t"}]}`,
+			}}
+		}
+	})
+	p, _ := newTestProvider(t, host, testOpts(), mgr)
+	req := reqWithProfile(NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testCapsWriting(models.SchemaResearch), Token: tok,
+		Config: map[string]any{"prompt": "research"}, Vars: map[string]any{}})
+	if _, err := p.RunAgent(context.Background(), req); err != nil {
+		t.Fatalf("RunAgent: %v", err)
+	}
+	got, ok := store.Get("r", mcp.ResearchArtifactName)
+	if !ok || !strings.Contains(got, `"summary":"new"`) {
+		t.Fatalf("stale same-node product must be rewritten, got %q", got)
+	}
+}
+
 func implementProvider(t *testing.T, planJSON string, chat chatFunc) (*acpProvider, *memStore, string, NodeReq) {
 	restore := sandbox.SetExecHook(func(context.Context, string, int, string, io.Reader) ([]byte, error) {
 		return []byte(""), nil

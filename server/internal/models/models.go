@@ -321,6 +321,16 @@ type StateRun struct {
 	Attempt      int               `json:"attempt"`
 	StartedAt    *time.Time        `json:"startedAt,omitempty"`
 	DurationSec  int               `json:"durationSec"`
+	// ArtifactBaseRev is each live artifact's revision when this execution
+	// started. A conclusion counts as written on this visit only when the
+	// live revision moves past that baseline. ArtifactBaseSet distinguishes
+	// a snapshotted empty store from rows that predate the column.
+	ArtifactBaseRev map[string]int `gorm:"serializer:json" json:"-"`
+	ArtifactBaseSet bool           `json:"-"`
+	// ArtifactVisitWrites names this execution saved via WriteArtifact.
+	// An identical-content rewrite does not move Artifact.Revision, so after
+	// a process restart the name list is what still marks the visit as fresh.
+	ArtifactVisitWrites []string `gorm:"serializer:json" json:"-"`
 }
 
 // McpCall is one built-in MCP tool invocation captured during a node execution.

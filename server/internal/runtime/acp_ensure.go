@@ -127,18 +127,32 @@ func (c *acpProvider) ensureStructured(ctx context.Context, req NodeReq, acp *sa
 }
 
 // artifactOwnedByNode reports whether name exists and its last writer is nodeID.
-// Aligns with engine.finalizeProducts so upstream leftovers do not skip re-prompt.
+// Aligns with engine.finalizeAgent so upstream leftovers do not skip re-prompt.
+// When the engine has noted this visit's revision baseline, a JSON conclusion
+// left by an earlier execution of the same node does not count — the agent
+// must write it again. page.html stays on the last-writer rule.
 func artifactOwnedByNode(host *mcp.Host, runID, token, nodeID, name string) bool {
+	if host == nil {
+		return false
+	}
 	infos, err := host.ListArtifacts(runID, token)
 	if err != nil {
 		return false
 	}
+	owned := false
 	for _, info := range infos {
 		if info.Name == name {
-			return info.Node == nodeID
+			owned = info.Node == nodeID
+			break
 		}
 	}
-	return false
+	if !owned {
+		return false
+	}
+	if name == mcp.PageArtifactName || !host.VisitNoted(runID, nodeID) {
+		return true
+	}
+	return host.FreshThisVisit(runID, nodeID, name)
 }
 
 // ensureRequiredProducts re-prompts until every required product is owned by
