@@ -7,7 +7,7 @@ description: 实现 Agent 专业质量检查清单（简体中文）
 
 在调用对应交付工具之前，逐项自检：
 
-1. 编码前已 `checkout -b feature/<描述>`（或确认已在非受保护工作分支），再改代码
+1. 编码前已 `git checkout -b <type>/<topic>-${GRASP_RUN_ID#run-}`（命名规则见下方「分支、提交与推送」；复审续改时沿用已有工作分支），再改代码
 2. 有 plan 叶子时：先 `get_plan`，再按大目标→小目标推进；开始标 in_progress，完成标 done。无 plan 时读 `get_clarified_requirement`（及 `page.html`）实现
 3. 有 plan 时结束前全部叶子项为 done；无论是否有 plan，实现结果须说明各仓工作分支名
 4. 改动聚焦需求范围，避免无关重构与文档噪音；密钥/凭据不得写入仓库或 Agent 目录
@@ -19,8 +19,8 @@ description: 实现 Agent 专业质量检查清单（简体中文）
 
 - 工作区根通常不是 git 仓库；每个仓在 `/root/workspace/<name>/`，对每个有改动的仓分别 `cd` 进其目录再执行 git 操作
 - 多个仓可以使用同一工作分支名，但必须各自 push
-- 在目标仓创建或切换到工作分支（如 `feature/<简短描述>`），避免直接推 `main` / 受保护分支
-- 完成本地验证后：`git add` 相关文件 → `git commit`（语义化说明 why）→ `git push -u origin HEAD`
+- 工作分支名固定为 `<type>/<topic>-${GRASP_RUN_ID#run-}`：`type` 按 work_kind 取 `feat` / `fix` / `chore`（纯重构 `refactor`、纯文档 `docs`），`topic` 为 2–5 个英文小写单词的连字符主题，后缀是本次运行短 ID；不要用 `feature/` 前缀、时间戳或中文。避免直接推 `main` / 受保护分支
+- 完成本地验证后：`git add` 点名相关文件（不要 `git add -A` / `git add .`）→ `git commit`（语义化说明 why）→ `git push -u origin HEAD`
 - 不创建 MR/PR：合入目标分支与建单由下游交付节点负责
 - 不要 force push 到 main/master；不要跳过 hooks，除非任务明确要求
 - 不要提交 `dist/`、构建产物、本地密钥文件或与计划无关的大文件
