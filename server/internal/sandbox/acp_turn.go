@@ -291,6 +291,9 @@ func (c *ACPClient) runTurn(ctx context.Context, text string, images []models.Pr
 		case <-ctx.Done():
 			c.lg.Warn().Err(ctx.Err()).Int("narration_bytes", len(result.Narration)).Str("op_id", opID).Msg("acp chat ctx done")
 			cause := context.Cause(ctx)
+			if errors.Is(cause, ErrTurnDone) {
+				return c.endTurnEarly(result)
+			}
 			reason := "本轮已中断"
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				reason = "本轮超过时限，已中断"
@@ -349,6 +352,19 @@ func (c *ACPClient) abortTurn(result *ChatResult, reason string, cause error) (*
 		return result, nil
 	}
 	return nil, cause
+}
+
+// endTurnEarly cancels a turn whose caller already has what it needed. The
+// partial result is returned as is; with nothing to return, ErrTurnDone.
+func (c *ACPClient) endTurnEarly(result *ChatResult) (*ChatResult, error) {
+	if !c.CancelTurnAndWait(result.OpID, cancelAckWait) {
+		c.lg.Warn().Str("op_id", result.OpID).Msg("acp cancel not acknowledged; sandbox marked desynced")
+		c.setDesynced()
+	}
+	if hasContent(result) {
+		return result, nil
+	}
+	return nil, ErrTurnDone
 }
 
 // CancelTurnAndWait asks the bridge to cancel turn opID (empty = whatever is

@@ -38,6 +38,9 @@ type turnAction struct {
 	stopReason string
 	// heartbeat sends one {op:liveness} frame before the reply.
 	heartbeat bool
+	// hang writes everything else but never sends prompt_done; a later cancel
+	// of that turn is acknowledged with prompt_done{stopReason:cancelled}.
+	hang bool
 }
 
 // chatFunc returns the action for the turn-th chat on a given sandbox (0-based).
@@ -56,6 +59,8 @@ type fakeBridge struct {
 	chat   chatFunc
 
 	mu      sync.Mutex
+	hungOp  string
+	cancels int
 	turns   int
 	prompts []string // every chat prompt received (for rehydrate-prime assertions)
 	images  []int    // image attachment count per chat turn
@@ -120,7 +125,17 @@ func (b *fakeBridge) serveWS(w http.ResponseWriter, r *http.Request) {
 		case "connect":
 			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "fake-session"})
 		case "cancel":
-			// fire-and-forget, no ack
+			// Only a hung turn is acknowledged; otherwise fire-and-forget.
+			b.mu.Lock()
+			hung := b.hungOp
+			b.hungOp = ""
+			b.cancels++
+			b.mu.Unlock()
+			if hung != "" {
+				_ = conn.WriteJSON(withOpID(map[string]any{"op": "event", "data": map[string]any{
+					"type": "prompt_done", "stopReason": "cancelled",
+				}}, hung))
+			}
 		case "chat":
 			b.mu.Lock()
 			turn := b.turns
@@ -181,6 +196,12 @@ func (b *fakeBridge) applyTurn(conn *websocket.Conn, act turnAction, opID string
 		write(map[string]any{"op": "event", "data": map[string]any{
 			"type": "error_text", "text": act.errorText,
 		}})
+	}
+	if act.hang {
+		b.mu.Lock()
+		b.hungOp = opID
+		b.mu.Unlock()
+		return true
 	}
 	if act.failed {
 		write(map[string]any{"op": "event", "data": map[string]any{
