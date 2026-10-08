@@ -1219,32 +1219,32 @@
         "namePlaceholder": "e.g. OpenAI API Key",
         "providerPlaceholder": "e.g. openai, github",
         "targetPlaceholder": "e.g. model-provider / repo",
-        "writeOnly": "WRITE ONLY",
+        "writeOnly": "Hidden",
         "summary": {
           "total": "Credential slots",
           "configured": "Configured",
-          "apiKeys": "API key slots"
+          "apiKeys": "Model slots"
         },
         "groups": {
           "ai": {
-            "title": "Model API keys",
-            "hint": "Model-vendor credentials used by ACP backends and OpenCode."
+            "title": "Models",
+            "hint": "Keys used by coding assistants and model calls."
           },
           "git": {
-            "title": "Code hosting",
-            "hint": "Tokens and endpoints used to clone, push, and open merge requests."
+            "title": "Repositories",
+            "hint": "Credentials used to pull, push, and open merge requests."
           },
           "ssh": {
-            "title": "Git SSH",
-            "hint": "Private key and known_hosts for SSH repositories."
+            "title": "SSH",
+            "hint": "Used when accessing repositories over SSH."
           },
           "other": {
-            "title": "Other credentials",
-            "hint": "Custom service or MCP credentials scoped to this project."
+            "title": "Other",
+            "hint": "Keys used by custom services."
           }
         },
-        "typeAi": "AI / API key",
-        "typeGit": "Git",
+        "typeAi": "Model",
+        "typeGit": "Repository",
         "typeSsh": "SSH",
         "typeMcp": "MCP",
         "typeCustom": "Custom",
@@ -1256,8 +1256,8 @@
         "value": "Credential value",
         "configured": "Configured",
         "notConfigured": "Not configured",
-        "valuePlaceholder": "Enter a new credential (submitted only on save)",
-        "replacePlaceholder": "Configured — enter a new value to replace it",
+        "valuePlaceholder": "Enter a credential. It is sent only when you save.",
+        "replacePlaceholder": "Enter a new value to replace it",
         "save": "Save",
         "clear": "Clear",
         "saved": "Credential saved",

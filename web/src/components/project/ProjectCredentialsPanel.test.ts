@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
+import enPages from '@/locales/en/pages.json'
 import ProjectCredentialsPanel from './ProjectCredentialsPanel.vue'
 
 const mocks = vi.hoisted(() => ({
@@ -68,6 +69,20 @@ describe('ProjectCredentialsPanel', () => {
     mocks.models.mockResolvedValue({ models: [{ id: 'gpt-4o', name: 'GPT-4o' }] })
   })
 
+  it('uses the short English credential list copy', () => {
+    const copy = enPages.pages.projectDetail.projectCredentials
+    expect(copy.groups.ai.title).toBe('Models')
+    expect(copy.groups.git.title).toBe('Repositories')
+    expect(copy.groups.ssh.title).toBe('SSH')
+    expect(copy.groups.other.title).toBe('Other')
+    expect(copy.typeAi).toBe('Model')
+    expect(copy.typeGit).toBe('Repository')
+    expect(copy.writeOnly).toBe('Hidden')
+    expect(copy.summary.apiKeys).toBe('Model slots')
+    expect(copy.replacePlaceholder).toBe('Enter a new value to replace it')
+    expect(copy.valuePlaceholder).toBe('Enter a credential. It is sent only when you save.')
+  })
+
   it('loads project credentials and masks values in the form', async () => {
     const wrapper = mountPanel()
     await flushPromises()
@@ -75,7 +90,11 @@ describe('ProjectCredentialsPanel', () => {
     expect(wrapper.find('[data-testid="project-credentials-panel"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="project-credentials-summary"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="project-credential-group-ai"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('AI / API Key')
+    expect(wrapper.text()).toContain('模型')
+    expect(wrapper.text()).toContain('代码仓库')
+    expect(wrapper.text()).not.toContain('AI / API Key')
+    expect(wrapper.text()).toContain('不回显')
+    expect(wrapper.text()).not.toContain('仅写入')
     expect(wrapper.find('[data-testid="project-credential-masked"]').text()).toContain('sk-…1234')
     expect(wrapper.find('[data-testid="project-credential-input-cursor-api"]').attributes('type')).toBe('password')
     expect(wrapper.text()).not.toContain('secret-value')

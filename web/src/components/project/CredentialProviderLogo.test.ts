@@ -47,6 +47,38 @@ describe('CredentialProviderLogo', () => {
     expect(openai.get('img').attributes('data-logo-asset')).toBe('openai')
   })
 
+  it('uses an opaque surface for configured Cursor and GitHub logos', () => {
+    for (const provider of ['cursor', 'github']) {
+      const wrapper = mount(CredentialProviderLogo, { props: { provider, configured: true } })
+      const logo = wrapper.get('[data-provider-logo]')
+      const classes = logo.classes().join(' ')
+      expect(logo.classes()).toEqual(expect.arrayContaining(['bg-surface', 'border-line']))
+      expect(classes).not.toMatch(/bg-ok|border-ok/)
+      wrapper.unmount()
+    }
+  })
+
+  it('keeps the surface fill and only emphasizes the border when selected', () => {
+    const wrapper = mount(CredentialProviderLogo, {
+      props: { provider: 'cursor', configured: true, selected: true },
+    })
+    const logo = wrapper.get('[data-provider-logo]')
+    const classes = logo.classes().join(' ')
+    expect(logo.classes()).toEqual(expect.arrayContaining(['bg-surface', 'border-accent']))
+    expect(classes).not.toMatch(/bg-ok|border-ok/)
+    wrapper.unmount()
+  })
+
+  it('still inverts a configured monochrome mark only in the dark theme', async () => {
+    setTheme('dark')
+    const wrapper = mount(CredentialProviderLogo, { props: { provider: 'github', configured: true } })
+    expect(wrapper.get('img').classes()).toContain('provider-logo-image--invert')
+    setTheme('light')
+    await nextTick()
+    expect(wrapper.get('img').classes()).not.toContain('provider-logo-image--invert')
+    wrapper.unmount()
+  })
+
   it('inverts every bundled monochrome mark only in the dark theme', async () => {
     setTheme('dark')
     const wrappers = [
