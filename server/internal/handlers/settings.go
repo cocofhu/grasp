@@ -14,6 +14,7 @@ type updateSettingsBody struct {
 	TestSandboxTTLMin *int    `json:"test_sandbox_ttl_minutes"`
 	MaxTestSandboxes  *int    `json:"max_test_sandboxes"`
 	NodeAutoRetryMax  *int    `json:"node_auto_retry_max"`
+	SandboxMemoryMB   *int    `json:"sandbox_memory_mb"`
 	BrandProductName  *string `json:"brand_product_name"`
 	BrandHomeSubtitle *string `json:"brand_home_subtitle"`
 }
@@ -42,6 +43,7 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 		services.KeyTestSandboxTTLMin: body.TestSandboxTTLMin,
 		services.KeyMaxTestSandboxes:  body.MaxTestSandboxes,
 		services.KeyNodeAutoRetryMax:  body.NodeAutoRetryMax,
+		services.KeySandboxMemoryMB:   body.SandboxMemoryMB,
 	} {
 		if value != nil {
 			patch[key] = *value

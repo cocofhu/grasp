@@ -8,6 +8,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/database"
+	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
 type fakeConc struct {
@@ -38,7 +39,7 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	}
 	cfg := &config.Config{
 		Engine:  config.EngineConfig{MaxConcurrentRuns: 5, NodeAutoRetryMax: 2},
-		Sandbox: config.SandboxConfig{RunSandboxTTLMinutes: 30, TestSandboxTTLMinutes: 10, MaxTestSandboxes: 2},
+		Sandbox: config.SandboxConfig{RunSandboxTTLMinutes: 30, TestSandboxTTLMinutes: 10, MaxTestSandboxes: 2, MemoryMB: 8192},
 	}
 	config.StoreConfig(cfg)
 	conc := &fakeConc{}
@@ -46,7 +47,7 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	svc := NewSettingsService(db, conc, sbx)
 
 	items := svc.Effective()
-	if len(items) != 5 {
+	if len(items) != 6 {
 		t.Fatalf("items: %d", len(items))
 	}
 	updated, err := svc.Update(map[string]int{
@@ -55,19 +56,26 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 		KeyTestSandboxTTLMin: 15,
 		KeyMaxTestSandboxes:  4,
 		KeyNodeAutoRetryMax:  3,
+		KeySandboxMemoryMB:   12288,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(updated) != 5 {
+	if len(updated) != 6 {
 		t.Fatalf("updated: %d", len(updated))
 	}
 	if conc.max != 7 || conc.ar != 3 || sbx.maxTest != 4 {
 		t.Fatalf("apply: conc=%+v sbx=%+v", conc, sbx)
 	}
+	if got := sandbox.DefaultMemoryMB(); got != 12288 {
+		t.Fatalf("sandbox memory default: got %d, want 12288", got)
+	}
 	svc.ApplyOnBoot()
 	if _, err := svc.Update(map[string]int{KeyMaxConcurrentRuns: 0}); err == nil {
 		t.Fatal("expected min validation error")
+	}
+	if _, err := svc.Update(map[string]int{KeySandboxMemoryMB: 512}); err == nil {
+		t.Fatal("expected sandbox memory min validation error")
 	}
 }
 

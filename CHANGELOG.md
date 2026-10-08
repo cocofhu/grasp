@@ -4,6 +4,15 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Sandbox memory limit setting:** every sandbox the platform creates now
+  requests a memory limit from the gateway, 8192 MiB by default (previously
+  the gateway default, usually 4096 MiB). Change it under **Settings →
+  Sandbox resources** or pin it with `GRASP_SANDBOX_MEMORY_MB` /
+  `sandbox.sandbox_memory_mb`; it applies to newly created sandboxes and must
+  not exceed the gateway `maxMemoryMB`. Agent node prompts now state the limit
+  and ask the agent to run heavy build/test/lint commands one at a time, since
+  running them in parallel used to OOM-kill the sandbox and restart the node
+  from scratch (seen as `acp connection closed: not connected`).
 - **Breaking — one Agent node:** workflows now have seven node types:
   input, output, set variable, branch, Agent, human gate and proposal select.
   The old Agent-like types (Grasp, approve, react, plan, preflight, research,
