@@ -20,8 +20,6 @@ All notable public-release changes are documented here.
   Re-prompts ("nudges") ask the Agent to record what it did not run instead
   of writing placeholder results. The number of nudges is configurable per
   node (**Nudge retries**, default 3).
-- **Faster nudge turns:** a nudge turn ends a few seconds after the requested
-  result is written instead of waiting for the model to finish on its own.
 - **Sandbox exit reason:** when a sandbox dies mid-turn, the node error and
   the retry notice say why, e.g. `沙箱 OOM 被杀(8192MiB)`, instead of only
   `acp connection closed`. Needs the updated sandbox gateway

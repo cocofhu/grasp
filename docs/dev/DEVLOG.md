@@ -28,11 +28,10 @@
   - 测试门禁：`plan_coverage` 必须引用 passed 用例，skipped 用例必须写原因，引用 skipped/failed/不存在的用例判不通过；催写提示改为「没跑就写 skipped + 原因」，不再诱导占位结论。催写次数改为节点配置 `nudgeRetries`（默认 3，上限 10，NodeInspector 可改）。
   - 时限模型：取消单轮时长；只保留节点总时限（画布「超时」，留空走 24h 平台兜底）和每轮无动作时限（默认 20 分钟，设置页可改，`GRASP_CHAT_IDLE_SEC` 锁定）。只计 Agent 回合时间。
   - 沙箱活性：bridge 每 30 秒采样 Agent 进程树 `/proc` 的 CPU 与 IO（含前台 docker 命令对应的 dockerd/containerd-shim 子树），有 CPU/IO 或事件即算活动；连续 8 次相同工具调用判为原地打转。首次无动作或打转先带提示续跑一次，再犯以 `stuck` 结束本轮；每 60 秒发 `liveness` 心跳，平台据此把失联判定改为 3 分钟无帧。`ErrAgentStuck` 换新沙箱重试一次并在提示词里说明原因，不占沙箱故障重试次数。时间线底部显示活性。
-  - 催写回合：所要产物写入后再等 5 秒即取消本轮，不再等 ultra 推理自己收尾。
   - OOM 可观测：网关新增 `GET /sandboxes/:id/exit`（k8s 读容器 terminated/lastState 与驱逐，docker 读 inspect）；平台丢弃失联沙箱前查询，节点错误与重试提示带「沙箱 OOM 被杀(8192MiB)」。
   - `/ws` 噪音：本客户端正在流式接收的回合不再每 2 秒拨 `/ws` 拉事件日志。
   - 分支命名：Implement 提示词、实现清单、git skill 与基础规则统一为 `<type>/<topic>-${GRASP_RUN_ID#run-}`，提交时点名文件。
-- 为什么：run-224eb8c7 在 OOM 修复后，test_review 主回合撞上 10 分钟单轮时限，催写让 Agent 写入未验证的占位测试结论，门禁照样放行，deliver 据此开了 PR #763；deliver 节点因 ultra 推理在产物写入后仍长时间不结束；codex 建的分支 `feature/implement-requirements` 不符合规范。
+- 为什么：run-224eb8c7 在 OOM 修复后，test_review 主回合撞上 10 分钟单轮时限，催写让 Agent 写入未验证的占位测试结论，门禁照样放行，deliver 据此开了 PR #763；codex 建的分支 `feature/implement-requirements` 不符合规范。
 - 如何验证：server `go test ./...`、`go vet ./...`、golangci-lint、`gen-configdoc -check`、`cover-check-server.sh 90`、`go test ./internal/runtime/ -run 'TestRunAgent|TestReact'`；sandbox `cover-check-sandbox.sh 90`、golangci-lint、`go vet`；gateway `go test ./...`、golangci-lint；Web `npm run lint`、`npx vue-tsc --noEmit`、`npm test -- --coverage`、`npm run build`。回放 run-224eb8c7 的 test_result，门禁判不通过。
 
 ### 2026-10-08
