@@ -27,6 +27,8 @@ import {
   switchOpenCodeEnv,
 } from '@/lib/agent/openCodeProvider'
 import OpenCodeCredentialPicker from '@/components/agent/OpenCodeCredentialPicker.vue'
+import CredentialAliasPicker from '@/components/agent/CredentialAliasPicker.vue'
+import { backendKind, gitKind } from '@/lib/project/credentialKinds'
 
 const props = defineProps<{
   draft: AgentStudioDraft
@@ -90,6 +92,7 @@ function selectAcpBackend(id: BackendId) {
     props.draft.layout.configRoot = defaultConfigRootFor(id)
   }
   if (prev !== id) {
+    props.draft.aiCredentialId = ''
     const env = switchOpenCodeEnv(switchBackendRegions(kvToRec(props.draft.env), id), id)
     if (id === 'opencode') {
       delete env[OPENCODE_PROVIDER_ENV]
@@ -132,6 +135,22 @@ function selectRegion(id: string) {
 }
 
 const showOpenCode = computed(() => props.draft.acpBackend === 'opencode')
+const aiKind = computed(() => {
+  const kind = backendKind(props.draft.acpBackend)
+  return kind && kind.id !== 'opencode' ? kind : undefined
+})
+const gitAliasKind = computed(() => (props.draft.gitCredentialType ? gitKind(props.draft.gitCredentialType) : undefined))
+const showSshHosts = computed(() => props.draft.gitCredentialType === 'ssh')
+
+watch(
+  () => props.draft.gitCredentialType,
+  (next, prev) => {
+    if (prev && next !== prev) {
+      props.draft.gitCredentialId = ''
+      props.draft.sshHostsCredentialId = ''
+    }
+  },
+)
 
 function joinConfigPath(root: string, sub: string): string {
   return (root || DEFAULT_CONFIG_ROOT).replace(/\/+$/, '') + '/' + sub
@@ -223,12 +242,36 @@ const derivedPaths = computed(() => {
           </button>
         </div>
       </div>
+      <div v-if="aiKind" class="border-t border-dashed border-line pt-4">
+        <CredentialAliasPicker
+          :project-id="draft.projectId"
+          :kind="aiKind.id"
+          :selected-id="draft.aiCredentialId"
+          @update:selected-id="draft.aiCredentialId = $event"
+        />
+      </div>
       <div v-if="showOpenCode" class="border-t border-dashed border-line pt-4">
         <OpenCodeCredentialPicker
           mode="select"
           :project-id="draft.projectId"
           :selected-id="draft.openCodeCredentialId"
           @update:selected-id="onSelectCredential"
+        />
+      </div>
+      <div v-if="gitAliasKind" class="border-t border-dashed border-line pt-4">
+        <CredentialAliasPicker
+          :project-id="draft.projectId"
+          :kind="gitAliasKind.id"
+          :selected-id="draft.gitCredentialId"
+          @update:selected-id="draft.gitCredentialId = $event"
+        />
+      </div>
+      <div v-if="showSshHosts" class="border-t border-dashed border-line pt-4">
+        <CredentialAliasPicker
+          :project-id="draft.projectId"
+          kind="ssh_hosts"
+          :selected-id="draft.sshHostsCredentialId"
+          @update:selected-id="draft.sshHostsCredentialId = $event"
         />
       </div>
       <label class="block">

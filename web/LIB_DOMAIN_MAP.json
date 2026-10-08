@@ -89,6 +89,7 @@
       "usePmLeaderChat.ts"
     ],
     "project": [
+      "credentialKinds.ts",
       "requirementDraftMarkdown.ts",
       "requirementDraftSchedule.ts",
       "useProjectDetail.ts",
@@ -209,7 +210,7 @@
     "composables": 17,
     "inbox": 27,
     "pm": 7,
-    "project": 4,
+    "project": 5,
     "run": 58,
     "shared": 39,
     "workflow": 3

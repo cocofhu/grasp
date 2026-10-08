@@ -29,6 +29,23 @@ describe('CredentialProviderLogo', () => {
     expect(logo.get('img').attributes('src')).toMatch(/^data:image\/svg\+xml|\.svg(?:$|\?)/)
   })
 
+  it('uses the vendor mark for a saved model key even when the alias mentions another brand', () => {
+    const wrapper = mount(CredentialProviderLogo, {
+      props: { provider: 'openai', name: 'cursor-work', match: 'provider' },
+    })
+    expect(wrapper.get('[data-provider-logo]').attributes('data-provider-logo')).toBe('openai')
+    wrapper.unmount()
+  })
+
+  it('uses key and host icons for SSH credentials', () => {
+    const key = mount(CredentialProviderLogo, { props: { icon: 'key' } })
+    const host = mount(CredentialProviderLogo, { props: { icon: 'host' } })
+    expect(key.get('[data-provider-logo="ssh-key"]').find('img').exists()).toBe(false)
+    expect(host.get('[data-provider-logo="ssh-host"]').attributes('aria-label')).toContain('known hosts')
+    key.unmount()
+    host.unmount()
+  })
+
   it('uses a neutral accessible logo for unknown providers', () => {
     const wrapper = mount(CredentialProviderLogo, {
       props: { provider: 'my-private-service', name: 'Staging key', type: 'custom' },

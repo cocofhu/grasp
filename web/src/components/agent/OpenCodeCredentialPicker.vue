@@ -13,6 +13,7 @@ import {
   type OpenCodeProviderId,
 } from '@/lib/agent/openCodeProvider'
 import { useToast } from '@/lib/composables/useToast'
+import { conflictingAlias, kindById } from '@/lib/project/credentialKinds'
 
 const props = defineProps<{
   mode: 'select' | 'manage'
@@ -25,6 +26,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:selectedId': [id: string]
   changed: []
+  add: []
 }>()
 
 const { t } = useI18n()
@@ -34,6 +36,7 @@ const remoteItems = ref<ProjectCredentialItem[]>([])
 const showAdd = ref(false)
 const saving = ref(false)
 const attempted = ref(false)
+const aliasError = ref('')
 const replacingId = ref('')
 const replaceValue = ref('')
 const replaceAttempted = ref(false)
@@ -91,10 +94,15 @@ function resetForm() {
   form.vision = false
   form.apiKey = ''
   attempted.value = false
+  aliasError.value = ''
 }
 
 function openAdd() {
   if (!props.projectId) return
+  if (props.mode === 'manage') {
+    emit('add')
+    return
+  }
   resetForm()
   showAdd.value = true
   replacingId.value = ''
@@ -126,6 +134,13 @@ function choose(id: string) {
 
 async function saveAdd() {
   attempted.value = true
+  aliasError.value = ''
+  const opencodeKind = kindById('opencode')
+  const taken = opencodeKind ? conflictingAlias(source.value, opencodeKind, form.name) : ''
+  if (taken) {
+    aliasError.value = t('pages.projectDetail.projectCredentials.aliasTaken', { alias: taken })
+    return
+  }
   if (
     !props.projectId ||
     saving.value ||
@@ -158,7 +173,12 @@ async function saveAdd() {
     emit('changed')
     toast.success(t('pages.projectDetail.projectCredentials.saved'))
   } catch (e: unknown) {
-    toast.error(String((e as { message?: string })?.message || e))
+    const err = e as { code?: string; alias?: string; message?: string }
+    if (err.code === 'alias_taken') {
+      aliasError.value = t('pages.projectDetail.projectCredentials.aliasTaken', { alias: err.alias || form.name.trim() })
+      return
+    }
+    toast.error(String(err.message || e))
   } finally {
     saving.value = false
   }
@@ -265,8 +285,12 @@ watch(
           :class="attempted && !form.name.trim() ? 'border-err' : 'border-line'"
           data-testid="opencode-credential-name"
           autocomplete="off"
+          :placeholder="t('pages.agentStudio.openCode.credentialNamePlaceholder')"
         />
-        <p v-if="attempted && !form.name.trim()" class="mb-0 mt-1 text-[11px] text-err">
+        <p v-if="aliasError" class="mb-0 mt-1 text-[11px] text-err" data-testid="opencode-credential-alias-error">
+          {{ aliasError }}
+        </p>
+        <p v-else-if="attempted && !form.name.trim()" class="mb-0 mt-1 text-[11px] text-err">
           {{ t('pages.agentStudio.openCode.credentialNameRequired') }}
         </p>
       </label>
@@ -327,9 +351,8 @@ watch(
         >
           <div class="flex items-start gap-3">
             <CredentialProviderLogo
-              :provider="vendorOf(item) || item.provider"
-              :name="item.name"
-              :type="item.type"
+              :provider="vendorOf(item) || 'opencode'"
+              match="provider"
               :selected="mode === 'select' && selectedId === item.id"
               :configured="true"
             />

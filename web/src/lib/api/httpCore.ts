@@ -75,12 +75,13 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
     }
     if (!isDraining()) apiState.online = false
     let msg = `${res.status} ${path}`
-    const extra: { code?: string; runningOpId?: string } = {}
+    const extra: { code?: string; runningOpId?: string; alias?: string } = {}
     try {
       const body = await res.json()
       if (body?.error) msg = body.error
       if (typeof body?.code === 'string') extra.code = body.code
       if (typeof body?.runningOpId === 'string') extra.runningOpId = body.runningOpId
+      if (typeof body?.alias === 'string') extra.alias = body.alias
     } catch {
       // non-JSON error body; keep the status line
     }

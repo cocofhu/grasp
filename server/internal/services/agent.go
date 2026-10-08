@@ -192,6 +192,15 @@ type Agent struct {
 	// OpenCodeCredentialID is the project credential this Agent uses for OpenCode.
 	// The secret stays in the project credential store; this is only the selection.
 	OpenCodeCredentialID string `json:"openCodeCredentialId,omitempty"`
+	// AiCredentialID is the project credential this Agent uses for a non-OpenCode
+	// coding backend. Empty keeps the legacy single slot. A set id injects only
+	// that row and does not fall back when it is missing.
+	AiCredentialID string `json:"aiCredentialId,omitempty"`
+	// GitCredentialID is the GitHub, GitLab, or SSH private-key credential
+	// selected for GitCredentialType.
+	GitCredentialID string `json:"gitCredentialId,omitempty"`
+	// SshHostsCredentialID is the known-hosts credential used when Git is SSH.
+	SshHostsCredentialID string `json:"sshHostsCredentialId,omitempty"`
 	// Files is the agent's working directory, copied into ConfigRoot at run.
 	Files []AgentFile `json:"files"`
 	// MCP lists the MCP servers wired into the sandbox for this agent.
@@ -213,6 +222,9 @@ type agentConfig struct {
 	AcpBackend           string                    `json:"acpBackend,omitempty"`
 	GitCredentialType    string                    `json:"gitCredentialType,omitempty"`
 	OpenCodeCredentialID string                    `json:"openCodeCredentialId,omitempty"`
+	AiCredentialID       string                    `json:"aiCredentialId,omitempty"`
+	GitCredentialID      string                    `json:"gitCredentialId,omitempty"`
+	SshHostsCredentialID string                    `json:"sshHostsCredentialId,omitempty"`
 	MCP                  []MCPServer               `json:"mcp,omitempty"`
 	Env                  map[string]string         `json:"env,omitempty"`
 	Layout               *AgentLayout              `json:"layout,omitempty"`
@@ -276,6 +288,9 @@ func (s *AgentService) Get(name string) (Agent, bool) {
 		AcpBackend:           backend,
 		GitCredentialType:    normalizeGitCredentialType(cfg.GitCredentialType),
 		OpenCodeCredentialID: strings.TrimSpace(cfg.OpenCodeCredentialID),
+		AiCredentialID:       strings.TrimSpace(cfg.AiCredentialID),
+		GitCredentialID:      strings.TrimSpace(cfg.GitCredentialID),
+		SshHostsCredentialID: strings.TrimSpace(cfg.SshHostsCredentialID),
 		Files:                s.readFiles(name),
 		MCP:                  cfg.MCP,
 		Env:                  env,
@@ -413,6 +428,9 @@ func (s *AgentService) saveUnlocked(a Agent) error {
 		AcpBackend:           backend,
 		GitCredentialType:    normalizeGitCredentialType(a.GitCredentialType),
 		OpenCodeCredentialID: strings.TrimSpace(a.OpenCodeCredentialID),
+		AiCredentialID:       strings.TrimSpace(a.AiCredentialID),
+		GitCredentialID:      strings.TrimSpace(a.GitCredentialID),
+		SshHostsCredentialID: strings.TrimSpace(a.SshHostsCredentialID),
 		MCP:                  a.MCP,
 		Env:                  a.Env,
 		Layout:               &layout,
@@ -509,12 +527,31 @@ func (s *AgentService) ClearOpenCodeCredentialSelection(projectID, credentialID 
 		return
 	}
 	for _, a := range s.List() {
-		if strings.TrimSpace(a.ProjectID) != projectID || strings.TrimSpace(a.OpenCodeCredentialID) != credentialID {
+		if strings.TrimSpace(a.ProjectID) != projectID {
 			continue
 		}
-		a.OpenCodeCredentialID = ""
+		cleared := false
+		if strings.TrimSpace(a.OpenCodeCredentialID) == credentialID {
+			a.OpenCodeCredentialID = ""
+			cleared = true
+		}
+		if strings.TrimSpace(a.AiCredentialID) == credentialID {
+			a.AiCredentialID = ""
+			cleared = true
+		}
+		if strings.TrimSpace(a.GitCredentialID) == credentialID {
+			a.GitCredentialID = ""
+			cleared = true
+		}
+		if strings.TrimSpace(a.SshHostsCredentialID) == credentialID {
+			a.SshHostsCredentialID = ""
+			cleared = true
+		}
+		if !cleared {
+			continue
+		}
 		if err := s.Save(a); err != nil {
-			log.Warn().Err(err).Str("agent", a.Name).Str("credential", credentialID).Msg("clear opencode credential selection")
+			log.Warn().Err(err).Str("agent", a.Name).Str("credential", credentialID).Msg("clear credential selection")
 		}
 	}
 }

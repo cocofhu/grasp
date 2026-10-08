@@ -369,6 +369,13 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	if c.backend == BackendOpenCode && c.opts.OpenCodeCredentialForProject != nil {
 		ApplyOpenCodeSelection(env, c.opts.OpenCodeCredentialForProject(c.projectIDForReq(req), agentCfg.OpenCodeCredentialID))
 	}
+	ApplyAgentCredentialChoice(env, projectCreds, c.projectIDForReq(req), AgentCredentialChoice{
+		Backend:              string(c.backend),
+		GitCredentialType:    agentCfg.GitCredentialType,
+		AiCredentialID:       agentCfg.AiCredentialID,
+		GitCredentialID:      agentCfg.GitCredentialID,
+		SshHostsCredentialID: agentCfg.SshHostsCredentialID,
+	}, c.opts.SelectedCredentialForProject)
 	// Capture the login file before PrepareAuthEnv strips it from the sandbox env.
 	codexLogin := CodexLoginFileFromEnv(c.backend, env)
 	// Align auth gate with buildConfigHome BaseWorkDirSrc (project-shared workspace).

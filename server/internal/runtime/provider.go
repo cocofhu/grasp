@@ -78,6 +78,9 @@ type Options struct {
 	// OpenCodeCredentialForProject resolves the single model-vendor credential
 	// selected by an Agent. A missing id returns nil and must not fall back.
 	OpenCodeCredentialForProject func(projectID, credentialID string) map[string]string
+	// SelectedCredentialForProject resolves one coding-backend or Git credential
+	// the Agent picked. A missing id returns ok=false and must not fall back.
+	SelectedCredentialForProject func(projectID, credentialID string) (envKey, value string, ok bool)
 	// ProjectIDForWorkflow resolves workflow → owning project for extend.
 	ProjectIDForWorkflow func(workflowID string) string
 	// RunSandboxEnvForRun, when set, returns the immutable StartRun sandbox env

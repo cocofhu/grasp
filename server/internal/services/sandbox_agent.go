@@ -297,6 +297,13 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 	if backend == runtime.BackendOpenCode && s.openCodeCredential != nil {
 		runtime.ApplyOpenCodeSelection(env, s.openCodeCredential(projectID, agent.OpenCodeCredentialID))
 	}
+	runtime.ApplyAgentCredentialChoice(env, projectCreds, projectID, runtime.AgentCredentialChoice{
+		Backend:              string(backend),
+		GitCredentialType:    agent.GitCredentialType,
+		AiCredentialID:       agent.AiCredentialID,
+		GitCredentialID:      agent.GitCredentialID,
+		SshHostsCredentialID: agent.SshHostsCredentialID,
+	}, s.selectedCredential)
 	workDir := s.skills.WorkDir(profile)
 	sharedWorkDir := ""
 	if s.shared != nil && strings.TrimSpace(projectID) != "" {

@@ -175,6 +175,12 @@ export interface Agent {
   acpBackend: BackendId
   /** Project credential selected for OpenCode. The secret is not stored here. */
   openCodeCredentialId?: string
+  /** Project credential selected for a non-OpenCode coding backend. */
+  aiCredentialId?: string
+  /** GitHub, GitLab, or SSH private-key credential selected for the Git method. */
+  gitCredentialId?: string
+  /** Known-hosts credential selected when Git uses SSH. */
+  sshHostsCredentialId?: string
   gitCredentialType?: 'github_https' | 'gitlab_https' | 'ssh'
   files?: AgentFile[]
   mcp?: MCPServer[]

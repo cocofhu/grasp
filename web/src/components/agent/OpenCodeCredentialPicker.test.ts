@@ -86,7 +86,8 @@ describe('OpenCodeCredentialPicker', () => {
     await wrapper.get('[data-testid="opencode-credential-add"]').trigger('click')
     await wrapper.get('[data-testid="opencode-credential-form"]').trigger('submit')
     expect(mocks.create).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('请填写名称')
+    expect(wrapper.text()).toContain('请填写别名')
+    expect(wrapper.get('[data-testid="opencode-credential-name"]').attributes('placeholder')).toBe('工作号')
 
     await wrapper.get('[data-testid="opencode-credential-name"]').setValue('新密钥')
     await wrapper.get('[data-testid="opencode-credential-key"]').setValue('sk-secret-value')

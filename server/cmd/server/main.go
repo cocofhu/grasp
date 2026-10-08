@@ -237,6 +237,7 @@ func main() {
 		ProjectCredentialKeysForProject: projectCredentialSvc.CredentialEnvKeys,
 		ProjectCredentialReferences:     projectCredentialSvc.ResolveReferences,
 		OpenCodeCredentialForProject:    projectCredentialSvc.ResolveOpenCodeCredential,
+		SelectedCredentialForProject:    projectCredentialSvc.ResolveSelectedValue,
 		RunSandboxEnvForRun: func(runID string) []models.EnvEntry {
 			var run models.Run
 			if err := db.Select("sandbox_env").First(&run, "id = ?", runID).Error; err != nil {
@@ -355,6 +356,7 @@ func main() {
 		ProjectCredentials:          projectCredentialSvc.ResolveEnv,
 		ProjectCredentialReferences: projectCredentialSvc.ResolveReferences,
 		OpenCodeCredential:          projectCredentialSvc.ResolveOpenCodeCredential,
+		SelectedCredential:          projectCredentialSvc.ResolveSelectedValue,
 		OpenCodeCatalog:             openCodeCatalog,
 	})
 	sbxSvc.SetCodexLoginWriteBack(projectCredentialSvc.WriteBackCodexLoginFile)

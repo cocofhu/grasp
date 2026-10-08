@@ -31,6 +31,9 @@ type agentBody struct {
 	AcpBackend           string                    `json:"acpBackend"`
 	GitCredentialType    string                    `json:"gitCredentialType"`
 	OpenCodeCredentialID string                    `json:"openCodeCredentialId"`
+	AiCredentialID       string                    `json:"aiCredentialId"`
+	GitCredentialID      string                    `json:"gitCredentialId"`
+	SshHostsCredentialID string                    `json:"sshHostsCredentialId"`
 	Files                []services.AgentFile      `json:"files"`
 	MCP                  []services.MCPServer      `json:"mcp"`
 	Env                  map[string]string         `json:"env"`
@@ -43,7 +46,9 @@ func (b agentBody) toAgent(name string) services.Agent {
 	return services.Agent{
 		Name: name, ProjectID: strings.TrimSpace(b.ProjectID), AcpBackend: b.AcpBackend,
 		GitCredentialType: b.GitCredentialType, OpenCodeCredentialID: strings.TrimSpace(b.OpenCodeCredentialID),
-		Files: b.Files, MCP: b.MCP, Env: b.Env, Layout: b.Layout, Capabilities: b.Capabilities,
+		AiCredentialID: strings.TrimSpace(b.AiCredentialID), GitCredentialID: strings.TrimSpace(b.GitCredentialID),
+		SshHostsCredentialID: strings.TrimSpace(b.SshHostsCredentialID),
+		Files:                b.Files, MCP: b.MCP, Env: b.Env, Layout: b.Layout, Capabilities: b.Capabilities,
 	}
 }
 
