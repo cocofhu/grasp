@@ -637,15 +637,25 @@ func (h *Host) BeginArtifactVisit(runID, nodeID string) map[string]int {
 }
 
 // RestoreArtifactVisit reloads a baseline persisted on the execution row
-// (the in-memory visit does not survive a process restart).
-func (h *Host) RestoreArtifactVisit(runID, nodeID string, revs map[string]int) {
+// (the in-memory visit does not survive a process restart). writes are the
+// artifact names this execution already saved; identical-content rewrites do
+// not move Revision, so the name list is what makes them visible again.
+func (h *Host) RestoreArtifactVisit(runID, nodeID string, revs map[string]int, writes []string) {
 	cp := make(map[string]int, len(revs))
 	for k, v := range revs {
 		cp[k] = v
 	}
+	noted := make(map[string]struct{}, len(writes))
+	for _, name := range writes {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		noted[name] = struct{}{}
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.putVisitLocked(runID, nodeID, &artifactVisit{revs: cp, writes: map[string]struct{}{}})
+	h.putVisitLocked(runID, nodeID, &artifactVisit{revs: cp, writes: noted})
 }
 
 // VisitNoted reports whether this node execution has a revision baseline.

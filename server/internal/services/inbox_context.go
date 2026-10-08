@@ -190,9 +190,10 @@ func ClarifySlimNodeIDs(node *models.Node, currentNodeID string, artifacts []mod
 
 // SlimNodeExecutions returns upstream node execution history with only
 // iteration + status + outputs (no events/mcpCalls/varsSnapshot).
-// Large *_json snapshot fields are omitted — inbox context is not the
-// per-iteration product panel. Run detail keeps those snapshots so each
-// execution can render its own conclusion.
+// Conclusion *_json snapshots stay on each execution. The inbox product
+// panel binds the selected visit the same way run detail does; the live
+// artifact row is one name per run and must not fill a later visit that
+// never wrote its own snapshot.
 func (s *RunService) SlimNodeExecutions(runID string, nodeIDs []string) map[string][]map[string]any {
 	out := make(map[string][]map[string]any, len(nodeIDs))
 	for _, nodeID := range nodeIDs {
@@ -204,10 +205,23 @@ func (s *RunService) SlimNodeExecutions(runID string, nodeIDs []string) map[stri
 			execs = append(execs, map[string]any{
 				"iteration": st.Iteration,
 				"status":    st.Status,
-				"outputs":   OmitLargeJSONSnapshots(st.Outputs),
+				"outputs":   copyOutputs(st.Outputs),
 			})
 		}
 		out[nodeID] = execs
+	}
+	return out
+}
+
+// copyOutputs shallow-copies an execution's output map, including conclusion
+// JSON snapshots. Nil stays nil so clients can tell "no outputs" from {}.
+func copyOutputs(outputs map[string]any) map[string]any {
+	if outputs == nil {
+		return nil
+	}
+	out := make(map[string]any, len(outputs))
+	for k, v := range outputs {
+		out[k] = v
 	}
 	return out
 }

@@ -141,7 +141,7 @@ func (e *Engine) ensureArtifactVisit(c *execCtx, node *models.Node) {
 		First(&sr).Error; err != nil || !sr.ArtifactBaseSet {
 		return
 	}
-	e.host.RestoreArtifactVisit(c.run.ID, node.ID, sr.ArtifactBaseRev)
+	e.host.RestoreArtifactVisit(c.run.ID, node.ID, sr.ArtifactBaseRev, sr.ArtifactVisitWrites)
 }
 
 // artifactOwnedByNode returns content only when the named artifact exists and

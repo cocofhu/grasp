@@ -134,31 +134,46 @@ func TestSlimNodeExecutions(t *testing.T) {
 	}
 }
 
-func TestSlimNodeExecutionsOmitsLargeJSONSnapshots(t *testing.T) {
+func TestSlimNodeExecutionsKeepsPerExecutionJSON(t *testing.T) {
 	db := newTestDB(t)
 	s := NewRunService(db)
 	db.Create(&models.StateRun{
-		RunID: "r-slim-json", NodeID: "up", Iteration: 1, Status: "completed",
+		RunID: "r-slim-json", NodeID: "up", Iteration: 1, Status: "failed",
 		Outputs: map[string]any{
 			"page":                       "<html/>",
-			"clarified_requirement":      "md",
-			"clarified_requirement_json": `{"title":"big"}`,
-			"research_json":              `{"summary":"x"}`,
+			"clarified_requirement":      "md-1",
+			"clarified_requirement_json": `{"title":"iter1"}`,
+			"research_json":              `{"summary":"first"}`,
+		},
+		Events: []models.AcpEvent{{Kind: "message", Text: "should-not-appear"}},
+	})
+	db.Create(&models.StateRun{
+		RunID: "r-slim-json", NodeID: "up", Iteration: 2, Status: "waiting_human",
+		Outputs: map[string]any{
+			"clarified_requirement_json": `{"title":"iter2"}`,
 		},
 	})
 	execs := s.SlimNodeExecutions("r-slim-json", []string{"up"})
-	outs := execs["up"][0]["outputs"].(map[string]any)
-	if _, ok := outs["clarified_requirement_json"]; ok {
-		t.Fatal("*_json snapshots must be omitted from SlimNodeExecutions")
+	list := execs["up"]
+	if len(list) != 2 {
+		t.Fatalf("want 2 executions, got %d", len(list))
 	}
-	if _, ok := outs["research_json"]; ok {
-		t.Fatal("research_json must be omitted")
+	if _, hasEvents := list[0]["events"]; hasEvents {
+		t.Fatal("slim execution must not include events")
 	}
-	if outs["page"] != "<html/>" {
-		t.Fatalf("page snapshot should remain: %+v", outs)
+	first := list[0]["outputs"].(map[string]any)
+	if first["clarified_requirement_json"] != `{"title":"iter1"}` || first["research_json"] != `{"summary":"first"}` {
+		t.Fatalf("iteration 1 must keep its own conclusion snapshots: %+v", first)
 	}
-	if outs["clarified_requirement"] != "md" {
-		t.Fatalf("rendered markdown key should remain: %+v", outs)
+	if first["page"] != "<html/>" || first["clarified_requirement"] != "md-1" {
+		t.Fatalf("page and markdown should remain: %+v", first)
+	}
+	second := list[1]["outputs"].(map[string]any)
+	if second["clarified_requirement_json"] != `{"title":"iter2"}` {
+		t.Fatalf("iteration 2 snapshot: %+v", second)
+	}
+	if _, ok := second["research_json"]; ok {
+		t.Fatal("iteration 2 must not inherit iteration 1 research_json")
 	}
 }
 

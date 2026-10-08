@@ -1,6 +1,7 @@
 package handlers_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -145,6 +146,80 @@ func TestRunInboxContextClarifyResearchReview(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("research clarify response missing %q in %s", want, body)
 		}
+	}
+}
+
+// The inbox product panel reads each execution's *_json. Stripping those
+// fields made a later visit look empty even when that visit had written.
+func TestRunInboxContextKeepsPerExecutionJSON(t *testing.T) {
+	h := newHarness(t)
+	now := time.Now()
+	h.db.Create(&models.Run{
+		ID: "ic-iter-json", Status: "waiting_human", StartedAt: now,
+		Graph: models.Graph{Nodes: []models.Node{
+			{ID: "test", Type: "agent", Caps: testReviewCaps, Label: "测试"},
+		}},
+	})
+	h.db.Create(&models.ReactConversation{
+		RunID: "ic-iter-json", NodeID: "test", Iteration: 2, Done: false,
+		Messages: []models.ReactMessage{{Role: "agent", Text: "请看这次", At: now.Format(time.RFC3339)}},
+	})
+	h.db.Create(&models.StateRun{
+		RunID: "ic-iter-json", NodeID: "test", Iteration: 1, Status: "failed",
+		Outputs: map[string]any{
+			"test_result":      "md-1",
+			"test_result_json": `{"summary":"ITER1"}`,
+			"review_json":      `{"verdict":"reject"}`,
+		},
+		Events: []models.AcpEvent{{Kind: "message", Text: "should-not-appear"}},
+	})
+	h.db.Create(&models.StateRun{
+		RunID: "ic-iter-json", NodeID: "test", Iteration: 2, Status: "waiting_human",
+		Outputs: map[string]any{
+			"test_result_json": `{"summary":"ITER2"}`,
+		},
+	})
+	h.db.Create(&models.Artifact{
+		ID: "ic-tr", RunID: "ic-iter-json", NodeID: "test", Name: "test_result.json", Kind: "json",
+		Content: `{"summary":"LIVE"}`, SizeBytes: 18,
+	})
+
+	w := h.do("GET", "/api/runs/ic-iter-json/inbox-context?nodeId=test&iteration=2", nil)
+	if w.Code != 200 {
+		t.Fatalf("inbox-context: %d %s", w.Code, w.Body)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "should-not-appear") {
+		t.Fatal("nodeExecutions must stay slim (no events)")
+	}
+	if strings.Contains(body, "LIVE") {
+		t.Fatal("inbox-context must not inline the live artifact body")
+	}
+	var payload struct {
+		Type           string `json:"type"`
+		NodeExecutions map[string][]struct {
+			Iteration int            `json:"iteration"`
+			Outputs   map[string]any `json:"outputs"`
+		} `json:"nodeExecutions"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Type != "clarify" {
+		t.Fatalf("type=%s", payload.Type)
+	}
+	execs := payload.NodeExecutions["test"]
+	if len(execs) != 2 {
+		t.Fatalf("executions=%d", len(execs))
+	}
+	if execs[0].Outputs["test_result_json"] != `{"summary":"ITER1"}` || execs[0].Outputs["review_json"] != `{"verdict":"reject"}` {
+		t.Fatalf("iteration 1 snapshots: %+v", execs[0].Outputs)
+	}
+	if execs[1].Outputs["test_result_json"] != `{"summary":"ITER2"}` {
+		t.Fatalf("iteration 2 snapshot: %+v", execs[1].Outputs)
+	}
+	if _, ok := execs[1].Outputs["review_json"]; ok {
+		t.Fatal("iteration 2 must not carry iteration 1 review_json")
 	}
 }
 
