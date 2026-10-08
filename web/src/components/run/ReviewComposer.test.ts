@@ -6,6 +6,18 @@ import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import ReviewComposer from './ReviewComposer.vue'
 
+function gateGlobals() {
+  const i18n = createI18n({
+    legacy: false,
+    locale: 'zh-CN',
+    messages: { 'zh-CN': { ...common, ...pages } },
+  })
+  return {
+    plugins: [i18n],
+    stubs: { Icon: true, ParagraphInput: true, AnnotationChip: true, ClarifyChat: true },
+  }
+}
+
 function mountGate(opts: {
   thinking?: boolean
   streamText?: string
@@ -13,11 +25,6 @@ function mountGate(opts: {
   interrupted?: boolean
   streamCompletedAt?: string | null
 } = {}) {
-  const i18n = createI18n({
-    legacy: false,
-    locale: 'zh-CN',
-    messages: { 'zh-CN': { ...common, ...pages } },
-  })
   return mount(ReviewComposer, {
     props: {
       mode: 'gate',
@@ -29,10 +36,7 @@ function mountGate(opts: {
       canReject: true,
       canPass: true,
     },
-    global: {
-      plugins: [i18n],
-      stubs: { Icon: true, ParagraphInput: true, AnnotationChip: true, ClarifyChat: true },
-    },
+    global: gateGlobals(),
   })
 }
 
@@ -252,11 +256,74 @@ describe('ReviewComposer gate review semantics (send + confirm)', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="review-composer-send"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="review-composer-pass"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="review-composer-send"]').text()).toContain('发送')
+    expect(wrapper.find('[data-testid="review-composer-send"]').attributes('aria-label')).toBe('发送')
+    expect(wrapper.find('[data-testid="review-composer-send"]').text()).not.toContain('发送')
     expect(wrapper.find('[data-testid="review-composer-pass"]').text()).toContain('确认并流转')
     expect(wrapper.text()).not.toContain('打回修改')
     expect(wrapper.text()).not.toContain('通过并流转')
     wrapper.unmount()
+  })
+
+  it('gate toolbar swaps a faded send icon for a stop icon while busy', async () => {
+    const idle = mountGate()
+    await flushPromises()
+    const send = idle.get('[data-testid="review-composer-send"]')
+    expect((send.element as HTMLButtonElement).disabled).toBe(true)
+    expect(send.findComponent({ name: 'Icon' }).props('name')).toBe('send')
+    expect(idle.find('[data-testid="gate-react-cancel"]').exists()).toBe(false)
+    expect(idle.find('[data-testid="paragraph-input-attach"]').exists()).toBe(true)
+    expect(idle.get('[data-testid="composer-shell-footer"]').find('[data-testid="review-composer-pass"]').exists()).toBe(
+      true,
+    )
+    idle.unmount()
+
+    const busy = mountGate({ thinking: true })
+    await flushPromises()
+    expect(busy.find('[data-testid="review-composer-send"]').exists()).toBe(false)
+    const stop = busy.get('[data-testid="gate-react-cancel"]')
+    expect(stop.attributes('aria-label')).toBe('Cancel')
+    expect(stop.attributes('title')).toBe('Cancel')
+    expect(stop.text()).not.toContain('Cancel')
+    expect(stop.findComponent({ name: 'Icon' }).props('name')).toBe('stop')
+    await stop.trigger('click')
+    expect(busy.emitted('cancel')).toBeTruthy()
+    busy.unmount()
+
+    const withDraft = mount(ReviewComposer, {
+      props: { mode: 'gate', thinking: true, canReject: true, canPass: true, draft: '改一下' },
+      global: gateGlobals(),
+    })
+    await flushPromises()
+    expect(withDraft.find('[data-testid="gate-react-cancel"]').exists()).toBe(true)
+    const draftSend = withDraft.get('[data-testid="review-composer-send"]')
+    expect(draftSend.attributes('aria-label')).toBe('发送')
+    expect((draftSend.element as HTMLButtonElement).disabled).toBe(false)
+    withDraft.unmount()
+
+    const allowEmpty = mount(ReviewComposer, {
+      props: {
+        mode: 'gate',
+        thinking: true,
+        canReject: true,
+        canPass: true,
+        rejectAllowEmpty: true,
+        draft: '',
+      },
+      global: gateGlobals(),
+    })
+    await flushPromises()
+    expect(allowEmpty.find('[data-testid="gate-react-cancel"]').exists()).toBe(true)
+    expect((allowEmpty.get('[data-testid="review-composer-send"]').element as HTMLButtonElement).disabled).toBe(false)
+    allowEmpty.unmount()
+
+    const textOnly = mount(ReviewComposer, {
+      props: { mode: 'gate', canReject: true, canPass: true, textOnly: true },
+      global: gateGlobals(),
+    })
+    await flushPromises()
+    expect(textOnly.find('[data-testid="paragraph-input-attach"]').exists()).toBe(false)
+    expect(textOnly.find('[data-testid="review-composer-send"]').exists()).toBe(true)
+    textOnly.unmount()
   })
 
   it('cold session unmounts input/send and omits cold note/hint; confirm remains', async () => {

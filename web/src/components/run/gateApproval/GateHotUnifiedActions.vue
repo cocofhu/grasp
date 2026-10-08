@@ -28,6 +28,23 @@ const showCancel = computed(
 const sendDisabled = computed(
   () => s.reactSending || (!s.hotRejectAllowEmpty && !s.canSubmitReact),
 )
+
+/** Draft, attachment, annotation, element shot, or the existing empty-send allowance. */
+const hotHasSendable = computed(
+  () =>
+    s.hotRejectAllowEmpty ||
+    s.reactText.trim().length > 0 ||
+    s.reactImages.length > 0 ||
+    s.reactAnnotations.length > 0 ||
+    !!s.pickedElementImage?.data,
+)
+
+/** While busy with nothing to send, the stop icon occupies the send slot. */
+const showSend = computed(() => {
+  if (!s.showHotReject) return false
+  if (showCancel.value && !hotHasSendable.value) return false
+  return true
+})
 </script>
 
 <template>
@@ -61,23 +78,25 @@ const sendDisabled = computed(
       <button
         v-if="showCancel"
         type="button"
-        class="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md border border-line bg-elevated px-2.5 text-xs font-semibold text-txt2"
+        class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md border border-line bg-elevated text-txt2 hover:border-line-strong"
         data-testid="gate-react-cancel"
         title="Cancel"
+        aria-label="Cancel"
         @click="s.cancelReactRevise"
       >
-        Cancel
+        <Icon name="stop" :size="12" />
       </button>
       <button
-        v-if="s.showHotReject"
+        v-if="showSend"
         type="button"
-        class="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md bg-accent px-2.5 text-xs font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+        class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md bg-accent text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
         data-testid="review-composer-send"
+        :title="s.composerRejectLabel"
+        :aria-label="s.composerRejectLabel"
         :disabled="sendDisabled"
         @click="s.sendHotReject"
       >
-        <Icon name="arrow-left" :size="14" />
-        {{ s.reactSending ? t('pages.gateApproval.reactRevise.sending') : s.composerRejectLabel }}
+        <Icon name="send" :size="14" />
       </button>
     </template>
     <template #footer>

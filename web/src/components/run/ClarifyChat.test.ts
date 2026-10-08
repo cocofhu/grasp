@@ -4,6 +4,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
+import commonEn from '@/locales/en/common.json'
+import pagesEn from '@/locales/en/pages.json'
 import { i18n } from '@/lib/shared/i18n'
 import { loadLocaleMessages } from '@/lib/shared/loadLocaleMessages'
 import type { ClarifyTurn, ReactAnnotation } from '@/lib/shared/types'
@@ -763,7 +765,11 @@ describe('ClarifyChat', () => {
     expect(inputRow.find('[data-testid="clarify-attach-btn"]').exists()).toBe(true)
     expect(inputRow.find('[data-testid="clarify-send-label"]').exists()).toBe(true)
     expect(actionRow.find('[data-testid="clarify-send-label"]').exists()).toBe(true)
-    expect(actionRow.find('[data-testid="clarify-send-label"]').text()).toContain('发送澄清回复')
+    const send = actionRow.get('[data-testid="clarify-send-label"]')
+    expect(send.attributes('aria-label')).toBe('发送澄清回复')
+    expect(send.attributes('title')).toBe('发送澄清回复')
+    expect(send.text()).not.toContain('发送澄清回复')
+    expect(send.findComponent({ name: 'Icon' }).props('name')).toBe('send')
     expect(wrapper.find('[data-testid="clarify-input"]').classes()).toContain('composer-hint-wrap')
     wrapper.unmount()
   })
@@ -778,6 +784,90 @@ describe('ClarifyChat', () => {
     expect(wrapper.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="clarify-confirm-flow"]').classes().join(' ')).toContain('h-9')
     wrapper.unmount()
+  })
+
+  it('idle empty draft keeps a faded send icon and the confirm button outside the box', () => {
+    const wrapper = mountChat({ sendLabel: '发送回复' })
+    const send = wrapper.get('[data-testid="clarify-send-label"]')
+    expect((send.element as HTMLButtonElement).disabled).toBe(true)
+    expect(send.attributes('aria-label')).toBe('发送回复')
+    expect(send.text()).not.toMatch(/发送/)
+    expect(wrapper.find('[data-testid="clarify-review-cancel"]').exists()).toBe(false)
+    const footer = wrapper.get('[data-testid="composer-shell-footer"]')
+    expect(footer.get('[data-testid="clarify-confirm-flow"]').text()).toContain('确认并流转')
+    expect(wrapper.get('[data-testid="clarify-input-row"]').find('[data-testid="clarify-confirm-flow"]').exists()).toBe(
+      false,
+    )
+    wrapper.unmount()
+  })
+
+  it('enables the send icon when a draft, attachment, or annotation is present', async () => {
+    const wrapper = mountChat({ sendLabel: '发送回复', draft: '你好' })
+    expect((wrapper.get('[data-testid="clarify-send-label"]').element as HTMLButtonElement).disabled).toBe(false)
+    await wrapper.setProps({ draft: '', attachments: [{ data: 'abc', mimeType: 'image/png' }] })
+    expect((wrapper.get('[data-testid="clarify-send-label"]').element as HTMLButtonElement).disabled).toBe(false)
+    await wrapper.setProps({
+      attachments: [],
+      annotateEnabled: true,
+      annotations: [{ label: '标题', jsonPath: 'title' }],
+    })
+    expect((wrapper.get('[data-testid="clarify-send-label"]').element as HTMLButtonElement).disabled).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('busy empty composer shows only the stop icon titled Cancel', async () => {
+    const wrapper = mountChat({ sendLabel: '发送回复', draft: '排队' })
+    await clickSend(wrapper)
+    expect(wrapper.find('[data-testid="clarify-send-label"]').exists()).toBe(false)
+    const cancel = wrapper.get('[data-testid="clarify-review-cancel"]')
+    expect(cancel.attributes('aria-label')).toBe('Cancel')
+    expect(cancel.attributes('title')).toBe('Cancel')
+    expect(cancel.text()).not.toContain('Cancel')
+    expect(cancel.findComponent({ name: 'Icon' }).props('name')).toBe('stop')
+    await cancel.trigger('click')
+    expect(wrapper.emitted('cancel')).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  it('busy composer with a new draft shows stop and send side by side', async () => {
+    const wrapper = mountChat({ sendLabel: '发送回复', draft: '排队' })
+    await clickSend(wrapper)
+    await wrapper.find('[data-testid="clarify-input"]').setValue('再写一句')
+    await flushPromises()
+    const toolbar = wrapper.get('[data-testid="clarify-action-row"]')
+    const cancel = toolbar.get('[data-testid="clarify-review-cancel"]')
+    const send = toolbar.get('[data-testid="clarify-send-label"]')
+    expect((send.element as HTMLButtonElement).disabled).toBe(false)
+    expect(cancel.element.compareDocumentPosition(send.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  it('review mode send icon uses the shared send copy in zh and en', () => {
+    const zh = mountChat({ reviewMode: true })
+    expect(zh.get('[data-testid="clarify-send-icon"]').attributes('aria-label')).toBe('发送')
+    expect(zh.find('[data-testid="clarify-send-label"]').exists()).toBe(false)
+    zh.unmount()
+
+    const i18n = createI18n({
+      legacy: false,
+      locale: 'en',
+      messages: { en: { ...commonEn, ...pagesEn } },
+    })
+    const en = mount(ClarifyChat, {
+      props: {
+        runId: 'run-1',
+        nodeId: 'react-1',
+        iteration: 1,
+        turns: [],
+        done: false,
+        active: true,
+        reviewMode: true,
+      },
+      global: { plugins: [i18n], stubs: { Icon: true, ClarifyDemoFrame: true } },
+    })
+    expect(en.get('[data-testid="clarify-send-icon"]').attributes('aria-label')).toBe('Send')
+    expect(en.get('[data-testid="clarify-send-icon"]').attributes('title')).toBe('Send')
+    en.unmount()
   })
 
   it('shows Cancel inside the input chrome while session is busy', async () => {
