@@ -276,6 +276,69 @@ describe('edge paths', () => {
     expect(lanes.get('back-far')).toBe(0)
     expect(backLaneIndexes(nodes, [...edges].reverse()).get('back-b')).toBe(1)
   })
+
+  it('splits chained back edges when equal-height cards only meet at a corner', () => {
+    const y = 40
+    const height = 170
+    const width = 240
+    const cards = [
+      { id: 'b', x: 80, y, width },
+      { id: 'c', x: 400, y, width },
+      { id: 'd', x: 720, y, width },
+    ]
+    const edges = [
+      { id: 'd-c', source: 'd', target: 'c' },
+      { id: 'c-b', source: 'c', target: 'b' },
+    ]
+    const lanes = backLaneIndexes(cards, edges)
+    expect(lanes.get('c-b')).not.toBe(lanes.get('d-c'))
+    expect(backLaneIndexes(cards, [...edges].reverse()).get('d-c')).toBe(lanes.get('d-c'))
+
+    const box: NodeBox = { y, height }
+    const byId = new Map(cards.map((card) => [card.id, card]))
+    const routeOf = (id: string, source: string, target: string) => {
+      const s = byId.get(source)!
+      const t = byId.get(target)!
+      return backEdgeRoute(
+        { sourceX: s.x + width, sourceY: y + height - 16, targetX: t.x, targetY: y + 48 },
+        box,
+        box,
+        lanes.get(id),
+      )
+    }
+    const left = routeOf('c-b', 'c', 'b')
+    const right = routeOf('d-c', 'd', 'c')
+    const horiz = (points: [number, number][], lane: number) => {
+      const seg = points.find((p, i) => i > 0 && p[1] === lane && points[i - 1]![1] === lane && p[0] !== points[i - 1]![0])
+      const i = seg ? points.indexOf(seg) : -1
+      const a = points[i - 1]!
+      const b = points[i]!
+      return [Math.min(a[0], b[0]), Math.max(a[0], b[0])] as const
+    }
+    const [l0, l1] = horiz(left.points, left.lane)
+    const [r0, r1] = horiz(right.points, right.lane)
+    const overlapLo = Math.max(l0, r0)
+    const overlapHi = Math.min(l1, r1)
+    expect(overlapHi - overlapLo).toBeGreaterThan(100)
+    expect(left.lane).not.toBe(right.lane)
+    expect(left.lane).toBeGreaterThan(y + height)
+    expect(right.lane).toBeGreaterThan(y + height)
+    const gLeft = edgeGeometry(
+      { sourceX: 400 + width, sourceY: y + height - 16, targetX: 80, targetY: y + 48 },
+      box,
+      box,
+      lanes.get('c-b'),
+    )
+    const gRight = edgeGeometry(
+      { sourceX: 720 + width, sourceY: y + height - 16, targetX: 400, targetY: y + 48 },
+      box,
+      box,
+      lanes.get('d-c'),
+    )
+    expect(gLeft.labelY).toBe(left.lane)
+    expect(gRight.labelY).toBe(right.lane)
+    expect(gLeft.labelY).not.toBe(gRight.labelY)
+  })
 })
 
 describe('flow edge lanes', () => {
@@ -309,6 +372,35 @@ describe('flow edge lanes', () => {
     expect(byId.get('fwd')).toBeUndefined()
     expect(byId.get('back-a')).toBe(0)
     expect(byId.get('back-b')).toBe(1)
+  })
+
+  it('stores distinct lanes for chained back edges on equal-height cards', () => {
+    const node = (id: string, x: number): WFNode => ({ id, type: 'agent', label: id, position: { x, y: 40 }, config: {} })
+    const nodes = [node('b', 80), node('c', 400), node('d', 720)]
+    const edges: WFEdge[] = [
+      { id: 'c-b', source: 'c', target: 'b' },
+      { id: 'd-c', source: 'd', target: 'c' },
+    ]
+    const inp: FlowInputs = {
+      nodes: () => nodes,
+      edges: () => edges,
+      mode: () => 'edit',
+      agents: () => [],
+      lookup: () => ({}),
+      statusMap: () => undefined,
+      iterations: () => undefined,
+      failReasons: () => undefined,
+      activePath: () => undefined,
+      issues: () => undefined,
+      selectedNodes: () => [],
+      selectedEdges: () => [],
+      renamingId: () => null,
+      connecting: ref(null),
+      typeText: (type) => ({ label: type, desc: '' }),
+      t: (k) => k,
+    }
+    const byId = new Map(useFlowElements(inp).flowEdges.value.map((e) => [e.id, e.data.backLane]))
+    expect(byId.get('c-b')).not.toBe(byId.get('d-c'))
   })
 })
 

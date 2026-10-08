@@ -26,6 +26,8 @@ export interface LaneNode {
   id: string
   x: number
   y: number
+  /** Card width. When omitted, the widest standard card is assumed. */
+  width?: number
 }
 
 export interface LaneEdge {
@@ -44,8 +46,10 @@ const LANE_GAP = 40
 const LANE_PITCH = 36
 const RISE_STAGGER = 16
 const RADIUS = 10
-/** Nodes this close in y can share a horizontal channel only when their spans miss. */
+/** Nodes this close in y can share a horizontal channel only when their strokes miss. */
 const LANE_Y_BAND = 160
+/** Widest standard card. A back stroke runs under the source card, past its top-left corner. */
+const CARD_WIDTH = 240
 
 /** A connection whose target port sits to the left of its source. */
 export function isBackward(e: EdgeEnds): boolean {
@@ -170,12 +174,28 @@ export function edgeGeometry(e: EdgeEnds, source?: NodeBox, target?: NodeBox, la
 function rangesOverlap(a0: number, a1: number, b0: number, b1: number): boolean {
   const lo = Math.max(Math.min(a0, a1), Math.min(b0, b1))
   const hi = Math.min(Math.max(a0, a1), Math.max(b0, b1))
-  return hi - lo > 0.5
+  // Touching counts: a shared endpoint still stacks the two strokes on one line.
+  return hi - lo >= -0.5
+}
+
+function cardWidth(n: LaneNode): number {
+  return n.width && n.width > 0 ? n.width : CARD_WIDTH
+}
+
+/**
+ * X range of the horizontal stroke, not the two top-left corners.
+ * The stroke drops just past the source port (right edge of the source card)
+ * and rises in the entry gap left of the target port.
+ */
+function backStrokeX(source: LaneNode, target: LaneNode): { x0: number; x1: number } {
+  const left = target.x - ENTRY
+  const right = source.x + cardWidth(source) + EXIT
+  return left <= right ? { x0: left, x1: right } : { x0: right, x1: left }
 }
 
 /**
  * Lane index for each edge whose target node sits left of its source.
- * Overlapping spans on the same row get distinct indexes; separated spans reuse 0.
+ * Strokes that overlap or meet on the same row get distinct indexes; separated strokes reuse 0.
  */
 export function backLaneIndexes(nodes: LaneNode[], edges: LaneEdge[]): Map<string, number> {
   const pos = new Map(nodes.map((n) => [n.id, n]))
@@ -200,8 +220,7 @@ export function backLaneIndexes(nodes: LaneNode[], edges: LaneEdge[]): Map<strin
   for (const e of back) {
     const s = pos.get(e.source)!
     const t = pos.get(e.target)!
-    const x0 = Math.min(s.x, t.x)
-    const x1 = Math.max(s.x, t.x)
+    const { x0, x1 } = backStrokeX(s, t)
     const y0 = Math.min(s.y, t.y)
     const y1 = Math.max(s.y, t.y)
     const taken = new Set<number>()

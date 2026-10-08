@@ -6,6 +6,7 @@ import { isKnownNodeType } from '@/lib/workflow/graphValidation'
 import { nodeCapabilities, type AgentCapsLookup } from '@/lib/workflow/nodeOutlets'
 import type { CanvasEdgeData, CanvasMode, CanvasNodeData, EdgeRunState } from './canvasContext'
 import { backLaneIndexes } from './edgePath'
+import { AGENT_NODE_WIDTH, NODE_WIDTH } from './useAutoLayout'
 import { capabilityFlags, findAgent, nodeOutlets, normHandle, type CanvasAgent, type Outlet, type Translate } from './outlets'
 import { checkConnection } from './useConnectionRules'
 import { NODE_ICONS } from './paletteItems'
@@ -206,7 +207,12 @@ export function useFlowElements(inp: FlowInputs) {
     const laneOf = backLaneIndexes(
       inp.nodes().map((n) => {
         const p = placed?.get(n.id) ?? n.position
-        return { id: n.id, x: p?.x ?? 0, y: p?.y ?? 0 }
+        return {
+          id: n.id,
+          x: p?.x ?? 0,
+          y: p?.y ?? 0,
+          width: n.type === 'agent' ? AGENT_NODE_WIDTH : NODE_WIDTH,
+        }
       }),
       inp.edges(),
     )
