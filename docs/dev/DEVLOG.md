@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-08
+
+- 日期：2026-10-08
+- 范围：`server/internal/{config/{config,descriptor}.go,sandbox/{resources,manager}.go,services/settings.go,handlers/settings.go,runtime/acp_prompt.go}` 及对应测试、`server/{CONFIGURATION.md,config.example.yaml}`、`web/src/views/SettingsView.{vue,test.ts}`、`web/src/locales/{zh-CN,en}/pages.json`
+- 做了什么：新增设置项 `sandbox_memory_mb`（默认 8192，最小 1024，`GRASP_SANDBOX_MEMORY_MB` 锁定）。设置页新增「沙箱资源」分组；值经 `sandbox.SetDefaultMemoryMB` 写入进程级默认值，`Manager.Create` 在 Spec 未指定内存时自动填入，所以工作流节点、测试与 Agent 沙箱统一生效。Agent 节点开场提示词追加「沙箱资源」段，告知内存上限、要求重型命令串行、限制单进程 Node 堆（上限的 3/8）与 vitest worker 数。
+- 为什么：run-224eb8c7 的 test_review 节点中，codex 并行启动 lint、vue-tsc、vitest --coverage、vite build，超出网关默认 4096 MiB 被 OOM 杀掉；控制面只看到 `acp connection closed`，按可重试错误换新沙箱从头 `codex exec`，循环直至 4 次节点重试耗尽。
+- 如何验证：`go test ./...`、`go vet ./...`、`golangci-lint run`（v2.12，0 issues）、`go run ./cmd/gen-configdoc -out CONFIGURATION.md -check`、`./scripts/cover-check-server.sh 90`（91.0%）、`go test ./internal/runtime/ -run 'TestRunAgent|TestReact'`；Web `npm run lint`（0 errors）、`npx vue-tsc --noEmit`、`npm test -- --coverage`（3976 passed，Lines 90.58%）、`npm run build` 通过。未做 OOM 终止原因上报与 OOM 不重试，留待后续。
+
 ### 2026-10-05
 
 - 日期：2026-10-05

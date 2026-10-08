@@ -1877,19 +1877,28 @@
         "capacity": {
           "title": "沙箱容量",
           "desc": "展示容量相关占用（测试沙箱 + running workflow）的实时合计与分项用量；测试沙箱上限可单独配置。"
+        },
+        "resources": {
+          "title": "沙箱资源",
+          "desc": "平台创建的所有沙箱（工作流节点、测试与 Agent 沙箱）统一使用的资源上限。"
         }
       },
       "labels": {
         "max_concurrent_runs": "最大并发运行数",
         "run_sandbox_ttl_minutes": "运行沙箱保留时长",
         "test_sandbox_ttl_minutes": "测试沙箱空闲 TTL",
-        "max_test_sandboxes": "最大测试沙箱数"
+        "max_test_sandboxes": "最大测试沙箱数",
+        "sandbox_memory_mb": "沙箱内存上限"
       },
       "settings": {
         "max_concurrent_runs": "同时处于 running 状态的 workflow 运行数上限。由 GRASP_MAX_RUNS 环境变量锁定时页面只读。",
         "run_sandbox_ttl_minutes": "workflow 回合结束后，运行沙箱继续保活的分钟数，便于 agent 继续写产物。",
         "test_sandbox_ttl_minutes": "测试沙箱在无活动后的空闲销毁时间，避免长期占用资源。",
-        "max_test_sandboxes": "活跃测试沙箱数达到此上限时，新建测试沙箱请求将被后端拒绝（最小值 ≥ 1，不设最大值上限）。"
+        "max_test_sandboxes": "活跃测试沙箱数达到此上限时，新建测试沙箱请求将被后端拒绝（最小值 ≥ 1，不设最大值上限）。",
+        "sandbox_memory_mb": "每个沙箱的内存上限，dockerd、浏览器与 Agent 的构建/测试共用；超出时整个沙箱会被 OOM 杀掉。Agent 提示词会告知该上限。对新建沙箱生效（最小 1024，不得超过网关 maxMemoryMB）。由 GRASP_SANDBOX_MEMORY_MB 环境变量锁定时页面只读。"
+      },
+      "units": {
+        "mib": "MiB"
       },
       "sourceLabels": {
         "env": "环境变量",

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
 func (c *acpProvider) buildAgentPrompt(req NodeReq, seeded []string) string {
@@ -35,7 +36,25 @@ func (c *acpProvider) buildAgentPrompt(req NodeReq, seeded []string) string {
 	if layout := multiRepoLayoutText(req); layout != "" {
 		b.WriteString(layout)
 	}
+	b.WriteString(sandboxResourcesText(sandbox.DefaultMemoryMB()))
 	return strings.TrimSpace(b.String())
+}
+
+// sandboxResourcesText tells the agent its sandbox memory budget. Exceeding it
+// OOM-kills the whole sandbox and the node restarts from scratch, and agents
+// that fan out parallel tool calls (several builds/tests at once) hit it first.
+// Returns "" when no platform limit is configured.
+func sandboxResourcesText(memoryMB int) string {
+	if memoryMB <= 0 {
+		return ""
+	}
+	heap := memoryMB * 3 / 8
+	var b strings.Builder
+	b.WriteString("\n\n## 沙箱资源\n")
+	fmt.Fprintf(&b, "- 本沙箱内存上限 %d MiB(含 dockerd、浏览器与 Agent 自身);超出时整个沙箱会被杀掉,本节点从头重来。\n", memoryMB)
+	b.WriteString("- 依赖安装、build、test、类型检查、lint 等重型命令必须逐个串行执行,不要用并行工具调用同时启动多个。\n")
+	fmt.Fprintf(&b, "- 单个 Node 进程的 `NODE_OPTIONS=--max-old-space-size` 不超过 %d;vitest/jest 用 `--maxWorkers=2`。\n", heap)
+	return b.String()
 }
 
 // capabilityContracts renders the platform protocol an Agent's capabilities

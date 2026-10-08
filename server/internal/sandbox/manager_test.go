@@ -184,6 +184,22 @@ func TestManagerCreateInjectsEnvAndLabels(t *testing.T) {
 	}
 }
 
+func TestManagerCreateAppliesDefaultMemory(t *testing.T) {
+	prev := defaultMemoryMB.Load()
+	t.Cleanup(func() { defaultMemoryMB.Store(prev) })
+	SetDefaultMemoryMB(8192)
+
+	gw, fg := newInlineGW(t)
+	m := NewManager(gw, ManagerOptions{Image: "img:test"})
+	if _, err := m.Create(context.Background(), Spec{Env: map[string]string{BridgePasswordEnv: testBridgePassword}}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	res, _ := fg.lastCreate["resources"].(map[string]any)
+	if res["memoryMB"] != float64(8192) {
+		t.Fatalf("resources = %v, want memoryMB 8192", fg.lastCreate["resources"])
+	}
+}
+
 func TestManagerCreateFailure(t *testing.T) {
 	gw, fg := newInlineGW(t)
 	fg.failCreate = true

@@ -233,6 +233,10 @@ type SandboxConfig struct {
 	RunSandboxTTLMinutes int `yaml:"run_sandbox_ttl_minutes"`
 	// MaxTestSandboxes caps concurrently live interactive sandboxes. 0 = 5.
 	MaxTestSandboxes int `yaml:"max_test_sandboxes"`
+	// MemoryMB is the memory limit (MiB) requested for every sandbox the
+	// platform creates. It covers dockerd, browsers and the agent's own builds,
+	// so a value too low gets the whole sandbox OOM-killed. 0 = default 8192.
+	MemoryMB int `yaml:"sandbox_memory_mb"`
 	// WorkDir is the host base directory under which per-sandbox ConfigHome
 	// trees (rules/skills/mcp.json) are staged before gateway bundleUrl / SSH
 	// inject into the sandbox. Empty = OS temp dir.
@@ -422,6 +426,9 @@ func applyEnvOverrides(c *Config) {
 	if v := envInt("GRASP_SANDBOX_CREATE_TIMEOUT_SEC"); v != 0 {
 		c.Sandbox.CreateTimeoutSeconds = v
 	}
+	if v := envInt("GRASP_SANDBOX_MEMORY_MB"); v != 0 {
+		c.Sandbox.MemoryMB = v
+	}
 	if v := env("GRASP_SANDBOX_WORK_DIR"); v != "" {
 		c.Sandbox.WorkDir = v
 	}
@@ -520,6 +527,9 @@ func setDefaults(c *Config) {
 	}
 	if c.Sandbox.MaxTestSandboxes == 0 {
 		c.Sandbox.MaxTestSandboxes = 5
+	}
+	if c.Sandbox.MemoryMB == 0 {
+		c.Sandbox.MemoryMB = 8192
 	}
 	if c.Browser.MaxTabs == 0 {
 		c.Browser.MaxTabs = 16

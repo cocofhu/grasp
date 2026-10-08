@@ -36,6 +36,7 @@ configured as project credentials, not in this platform config table.
 | `GRASP_SANDBOX_MAX_ATTEMPTS` | `sandbox.sandbox_max_attempts` | integer | `3` | Public | Maximum attempts for retryable sandbox faults |
 | `GRASP_SANDBOX_RETRY_BACKOFF_SEC` | `sandbox.sandbox_retry_backoff_seconds` | integer | `2` | Public | Base sandbox retry backoff in seconds |
 | `GRASP_SANDBOX_CREATE_TIMEOUT_SEC` | `sandbox.sandbox_create_timeout_seconds` | integer | `1200` | Public | Timeout waiting for sandbox readiness in seconds |
+| `GRASP_SANDBOX_MEMORY_MB` | `sandbox.sandbox_memory_mb` | integer | `8192` | Public | Memory limit per sandbox in MiB; editable on the settings page unless this is set |
 | `GRASP_SANDBOX_WORK_DIR` | `sandbox.work_dir` | path | `Not set` | Public | Host work directory for ConfigHome |
 | `GRASP_SANDBOX_RUNTIME_BUNDLE` | `sandbox.runtime_bundle` | path | `/app/sandbox-runtime/sandbox-runtime.tgz` | Public | Runtime bundle served to sandboxes (built by scripts/build-sandbox-runtime.sh) |
 | `GRASP_AUTH_SESSION_TTL` | `auth.session_ttl` | duration | `168h` | Public | Session lifetime |

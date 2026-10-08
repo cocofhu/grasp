@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+
+	"github.com/cocofhu/grasp/internal/pagebridge"
 )
 
 // pageSession binds one running turn to the page of whoever sent it. The id
@@ -21,8 +23,18 @@ func newPageSessionID() string {
 	return "ps_" + base64.RawURLEncoding.EncodeToString(b)
 }
 
+// pageControlOnline reports whether owner is on this node's direct preview
+// with page control open. Paused, offline, and a missing hub are not online.
+func (e *Engine) pageControlOnline(runID, nodeID, owner string) bool {
+	if e == nil || e.pageHub == nil || owner == "" {
+		return false
+	}
+	return e.pageHub.Status(pagebridge.Key{RunID: runID, NodeID: nodeID, Owner: owner}) == pagebridge.StatusOnline
+}
+
 // mintPageSession issues the page session for a turn that has a sender.
-// Returns "" for turns nobody sent (they may not drive any page).
+// Callers mint only when that sender's preview is online. Returns "" when
+// nobody sent the turn.
 func (e *Engine) mintPageSession(s *reviewSession, owner string, done <-chan struct{}) string {
 	if owner == "" {
 		return ""

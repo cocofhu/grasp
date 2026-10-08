@@ -9,6 +9,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"gorm.io/gorm"
 )
@@ -20,6 +21,7 @@ const (
 	KeyTestSandboxTTLMin = "test_sandbox_ttl_minutes"
 	KeyMaxTestSandboxes  = "max_test_sandboxes"
 	KeyNodeAutoRetryMax  = "node_auto_retry_max"
+	KeySandboxMemoryMB   = "sandbox_memory_mb"
 	KeyBrandProductName  = "brand_product_name"
 	KeyBrandHomeSubtitle = "brand_home_subtitle"
 
@@ -95,6 +97,8 @@ func knobs() []knob {
 			func(c *config.Config) int { return c.Sandbox.MaxTestSandboxes }},
 		{KeyNodeAutoRetryMax, "节点自动重试次数", "次", 0, "GRASP_NODE_AUTO_RETRY",
 			func(c *config.Config) int { return c.Engine.NodeAutoRetryMax }},
+		{KeySandboxMemoryMB, "沙箱内存上限", "MiB", 1024, "GRASP_SANDBOX_MEMORY_MB",
+			func(c *config.Config) int { return c.Sandbox.MemoryMB }},
 	}
 }
 
@@ -231,6 +235,7 @@ func (s *SettingsService) apply() {
 		)
 		s.sbx.SetMaxTestSandboxes(m[KeyMaxTestSandboxes])
 	}
+	sandbox.SetDefaultMemoryMB(m[KeySandboxMemoryMB])
 }
 
 func (s *SettingsService) dbInt(key string) (int, bool) {

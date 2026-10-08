@@ -12,7 +12,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import matter from "gray-matter";
+import yaml from "js-yaml";
 import MarkdownIt from "markdown-it";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -225,6 +225,44 @@ function escapeHtml(s) {
     .replaceAll('"', "&quot;");
 }
 
+/**
+ * Split an optional leading YAML block wrapped in ---.
+ * Later --- lines stay in the body. A leading UTF-8 BOM is removed.
+ * Invalid YAML throws so the build exits non-zero.
+ * @returns {{ data: Record<string, unknown>, content: string }}
+ */
+function parseFrontMatter(raw) {
+  let text = raw;
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+
+  const open = "---";
+  if (!text.startsWith(open) || text.charAt(open.length) === "-") {
+    return { data: {}, content: text };
+  }
+
+  const rest = text.slice(open.length);
+  const close = "\n---";
+  const closeIndex = rest.indexOf(close);
+  if (closeIndex === -1) {
+    return { data: {}, content: text };
+  }
+
+  const matter = rest.slice(0, closeIndex);
+  let content = rest.slice(closeIndex + close.length);
+  if (content.startsWith("\r")) content = content.slice(1);
+  if (content.startsWith("\n")) content = content.slice(1);
+
+  const block = matter.replace(/^\s*#[^\n]+/gm, "").trim();
+  if (block === "") return { data: {}, content };
+
+  const parsed = yaml.load(matter);
+  const data =
+    parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : {};
+  return { data, content };
+}
+
 async function walkMarkdown(dir) {
   const out = [];
   async function walk(current) {
@@ -243,8 +281,14 @@ async function buildMarkdown() {
   const files = await walkMarkdown(contentDir);
   for (const file of files) {
     const raw = await fs.readFile(file, "utf8");
-    const { data, content } = matter(raw);
     const rel = path.relative(contentDir, file).replace(/\\/g, "/");
+    let data;
+    let content;
+    try {
+      ({ data, content } = parseFrontMatter(raw));
+    } catch (err) {
+      throw new Error(`failed to parse front matter in ${rel}: ${err.message}`);
+    }
     const slug = rel.replace(/\.md$/i, "");
     const outFile = path.join(outDir, slug, "index.html");
     const bodyHtml = md.render(content);
