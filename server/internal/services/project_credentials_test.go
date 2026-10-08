@@ -530,6 +530,57 @@ func TestBuiltinCredentialShortNamesAndLegacyRename(t *testing.T) {
 	}
 }
 
+func TestCredentialAliasIsUniqueWithinKind(t *testing.T) {
+	setCredentialKey(t)
+	db := newTestDB(t)
+	p, err := NewProjectService(db).Create("Alias project", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewProjectCredentialService(db)
+	if _, err := s.List(p.ID); err != nil {
+		t.Fatal(err)
+	}
+	cursorID := "cred-" + p.ID + "-cursor"
+	if _, err := s.Update(p.ID, cursorID, ProjectCredentialInput{Value: "builtin-key"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Create(p.ID, ProjectCredentialInput{Type: "ai", Provider: "cursor", Name: "cursor", EnvKey: envauth.EnvCursorAPIKey, Value: "dup"})
+	var taken *CredentialAliasTakenError
+	if !errors.As(err, &taken) || taken.Alias != "Cursor" {
+		t.Fatalf("duplicate alias: %v", err)
+	}
+	work, err := s.Create(p.ID, ProjectCredentialInput{Type: "ai", Provider: "cursor", Name: "工作号", EnvKey: envauth.EnvCursorAPIKey, Value: "work-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create(p.ID, ProjectCredentialInput{Type: "git", Provider: "github", Name: "工作号", EnvKey: envauth.EnvGitHubToken, Value: "gh"}); err != nil {
+		t.Fatalf("same alias on another kind: %v", err)
+	}
+	if _, ok := s.ResolveEnv(p.ID)[envauth.EnvCursorAPIKey]; ok {
+		t.Fatal("two cursor secrets were merged")
+	}
+	key, value, ok := s.ResolveSelectedValue(p.ID, work.ID)
+	if !ok || key != envauth.EnvCursorAPIKey || value != "work-key" {
+		t.Fatalf("selected=%s %s %v", key, value, ok)
+	}
+	env := map[string]string{envauth.EnvCursorAPIKey: "builtin-key"}
+	runtime.ApplyAgentCredentialChoice(env, nil, p.ID, runtime.AgentCredentialChoice{
+		Backend:        "cursor",
+		AiCredentialID: work.ID,
+	}, s.ResolveSelectedValue)
+	if env[envauth.EnvCursorAPIKey] != "work-key" {
+		t.Fatalf("env=%v", env)
+	}
+	runtime.ApplyAgentCredentialChoice(env, nil, p.ID, runtime.AgentCredentialChoice{
+		Backend:        "cursor",
+		AiCredentialID: "gone",
+	}, s.ResolveSelectedValue)
+	if _, ok := env[envauth.EnvCursorAPIKey]; ok {
+		t.Fatal("cleared selection fell back to the other cursor key")
+	}
+}
+
 func TestProjectCredentialRequiresMasterKey(t *testing.T) {
 	db := newTestDB(t)
 	p, err := NewProjectService(db).Create("No key", "", nil)

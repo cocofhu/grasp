@@ -23,8 +23,12 @@ const props = withDefaults(
     envKey?: string
     configured?: boolean
     selected?: boolean
+    /** provider: ignore alias/name so a model-vendor row is not mistaken for a brand in the alias. */
+    match?: 'any' | 'provider'
+    /** SSH kinds have no brand mark. key is a private key, host is known hosts. */
+    icon?: '' | 'key' | 'host'
   }>(),
-  { provider: '', name: '', type: '', envKey: '', configured: false, selected: false },
+  { provider: '', name: '', type: '', envKey: '', configured: false, selected: false, match: 'any', icon: '' },
 )
 
 type LogoKey =
@@ -96,7 +100,7 @@ function normalize(value: string): string {
 }
 
 const logoKey = computed<LogoKey>(() => {
-  const values = [props.provider, props.name, props.envKey, props.type].map(normalize).filter(Boolean)
+  const values = (props.match === 'provider' ? [props.provider] : [props.provider, props.name, props.envKey, props.type]).map(normalize).filter(Boolean)
   if (values.some((value) => value === 'claudecode' || value === 'claude' || value === 'anthropic' || value.includes('claude'))) return 'claude'
   if (values.some((value) => value === 'codebuddy' || value.includes('codebuddy'))) return 'codebuddy'
   if (values.some((value) => value === 'codex' || value.includes('codex'))) return 'codex'
@@ -123,13 +127,15 @@ const imageClasses = computed(() => ({
   <span
     class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border"
     :class="selected ? 'border-accent bg-surface' : 'border-line bg-surface'"
-    :data-provider-logo="logoKey"
+    :data-provider-logo="icon === 'key' ? 'ssh-key' : icon === 'host' ? 'ssh-host' : logoKey"
     role="img"
-    :aria-label="`${label} logo`"
-    :title="`${label} logo`"
+    :aria-label="icon === 'key' ? 'SSH private key' : icon === 'host' ? 'SSH known hosts' : `${label} logo`"
+    :title="icon === 'key' ? 'SSH private key' : icon === 'host' ? 'SSH known hosts' : `${label} logo`"
   >
+    <Icon v-if="icon === 'key'" name="key" :size="17" class="text-txt2" aria-hidden="true" />
+    <Icon v-else-if="icon === 'host'" name="server" :size="17" class="text-txt2" aria-hidden="true" />
     <img
-      v-if="asset"
+      v-else-if="asset"
       :src="asset"
       class="h-5 w-5 object-contain"
       :class="imageClasses"

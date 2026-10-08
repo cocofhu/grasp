@@ -307,8 +307,7 @@ func (h *Handlers) ClearProjectCredential(c *gin.Context) {
 	}
 	projectID := c.Param("id")
 	credentialID := c.Param("credentialId")
-	view, err := h.ProjectCredentials.Get(projectID, credentialID)
-	if err != nil {
+	if _, err := h.ProjectCredentials.Get(projectID, credentialID); err != nil {
 		writeCredentialErr(c, err)
 		return
 	}
@@ -316,7 +315,7 @@ func (h *Handlers) ClearProjectCredential(c *gin.Context) {
 		writeCredentialErr(c, err)
 		return
 	}
-	if h.Agents != nil && strings.EqualFold(view.Type, "ai") && strings.EqualFold(view.Provider, "opencode") {
+	if h.Agents != nil {
 		h.Agents.ClearOpenCodeCredentialSelection(projectID, credentialID)
 	}
 	h.recordAudit(services.AuditRecord{ProjectID: projectID, Actor: h.auditActorFromContext(c), Action: models.AuditActionProjectConfig, ResourceType: "project_credential", ResourceID: credentialID, Outcome: models.AuditOutcomeOK, Summary: "clear project credential"})
@@ -337,6 +336,13 @@ func writeSecretsKeyErr(c *gin.Context, err error) {
 
 func writeCredentialErr(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, services.ErrCredentialAliasTaken):
+		alias := ""
+		var taken *services.CredentialAliasTakenError
+		if errors.As(err, &taken) {
+			alias = taken.Alias
+		}
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "code": "alias_taken", "alias": alias})
 	case errors.Is(err, services.ErrCredentialProject), errors.Is(err, services.ErrCredentialType), errors.Is(err, services.ErrCredentialName), errors.Is(err, services.ErrCredentialTarget), errors.Is(err, services.ErrCredentialEnvKey), errors.Is(err, services.ErrCredentialModel), errors.Is(err, services.ErrCredentialBaseURL), errors.Is(err, runtime.ErrCodexLoginFileEmpty), errors.Is(err, runtime.ErrCodexLoginFileAPIKey):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, services.ErrProjectNotFound), errors.Is(err, services.ErrCredentialNotFound):

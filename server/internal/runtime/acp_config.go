@@ -104,6 +104,10 @@ type agentLayout struct {
 type agentFile struct {
 	AcpBackend           string            `json:"acpBackend"`
 	OpenCodeCredentialID string            `json:"openCodeCredentialId,omitempty"`
+	AiCredentialID       string            `json:"aiCredentialId,omitempty"`
+	GitCredentialID      string            `json:"gitCredentialId,omitempty"`
+	SshHostsCredentialID string            `json:"sshHostsCredentialId,omitempty"`
+	GitCredentialType    string            `json:"gitCredentialType,omitempty"`
 	MCP                  []agentMCP        `json:"mcp"`
 	Env                  map[string]string `json:"env"`
 	Layout               agentLayout       `json:"layout"`

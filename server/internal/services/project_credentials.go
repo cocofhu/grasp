@@ -80,15 +80,23 @@ type ProjectCredentialView struct {
 }
 
 var (
-	ErrCredentialNotFound = errors.New("project credential not found")
-	ErrCredentialProject  = errors.New("project id required")
-	ErrCredentialType     = errors.New("credential type is required")
-	ErrCredentialName     = errors.New("credential name is required")
-	ErrCredentialTarget   = errors.New("custom credential target is required")
-	ErrCredentialEnvKey   = errors.New("credential env key must be a valid identifier and not a platform-reserved key")
-	ErrCredentialModel    = errors.New("model is required")
-	ErrCredentialBaseURL  = errors.New("base url is required for a custom provider")
+	ErrCredentialNotFound   = errors.New("project credential not found")
+	ErrCredentialProject    = errors.New("project id required")
+	ErrCredentialType       = errors.New("credential type is required")
+	ErrCredentialName       = errors.New("credential name is required")
+	ErrCredentialTarget     = errors.New("custom credential target is required")
+	ErrCredentialEnvKey     = errors.New("credential env key must be a valid identifier and not a platform-reserved key")
+	ErrCredentialModel      = errors.New("model is required")
+	ErrCredentialBaseURL    = errors.New("base url is required for a custom provider")
+	ErrCredentialAliasTaken = errors.New("credential alias already exists for this kind")
 )
+
+// CredentialAliasTakenError is returned when a new alias matches another
+// credential of the same kind. Alias is the existing display name.
+type CredentialAliasTakenError struct{ Alias string }
+
+func (e *CredentialAliasTakenError) Error() string { return ErrCredentialAliasTaken.Error() }
+func (e *CredentialAliasTakenError) Unwrap() error { return ErrCredentialAliasTaken }
 
 // ProjectCredentialService persists encrypted project credentials and resolves
 // UI values for runtime injection.
@@ -320,6 +328,9 @@ func (s *ProjectCredentialService) Create(projectID string, in ProjectCredential
 	if strings.TrimSpace(in.Value) == "" {
 		return ProjectCredentialView{}, errors.New("credential value is required")
 	}
+	if taken, ok := s.credentialAliasTaken(projectID, in.EnvKey, in.Name, ""); ok {
+		return ProjectCredentialView{}, &CredentialAliasTakenError{Alias: taken}
+	}
 	if err := validateOpenCodeMetadata(in.Provider, in.Metadata, true); err != nil {
 		return ProjectCredentialView{}, err
 	}
@@ -367,7 +378,8 @@ func (s *ProjectCredentialService) Update(projectID, id string, in ProjectCreden
 	if strings.TrimSpace(in.Provider) != "" {
 		row.Provider = strings.TrimSpace(in.Provider)
 	}
-	if strings.TrimSpace(in.Name) != "" {
+	nameChanged := strings.TrimSpace(in.Name) != ""
+	if nameChanged {
 		row.Name = strings.TrimSpace(in.Name)
 	}
 	if strings.TrimSpace(in.Target) != "" {
@@ -381,6 +393,11 @@ func (s *ProjectCredentialService) Update(projectID, id string, in ProjectCreden
 	}
 	if !validCredentialEnvKey(row.EnvKey) {
 		return ProjectCredentialView{}, ErrCredentialEnvKey
+	}
+	if nameChanged {
+		if taken, ok := s.credentialAliasTaken(projectID, row.EnvKey, row.Name, row.ID); ok {
+			return ProjectCredentialView{}, &CredentialAliasTakenError{Alias: taken}
+		}
 	}
 	if in.Metadata != nil {
 		provider := row.Provider
@@ -523,6 +540,9 @@ func (s *ProjectCredentialService) ResolveEnv(projectID string) map[string]strin
 		return nil
 	}
 	out := map[string]string{}
+	// Two configured rows of the same kind share one env key. Injecting either
+	// of them here would pick a secret the Agent did not choose.
+	suppressed := map[string]struct{}{}
 	for _, row := range rows {
 		switch strings.ToLower(strings.TrimSpace(row.Type)) {
 		case "ai", "git", "ssh", "mcp", "custom":
@@ -537,6 +557,9 @@ func (s *ProjectCredentialService) ResolveEnv(projectID string) map[string]strin
 		}
 		key := strings.TrimSpace(row.EnvKey)
 		if key == "" || envauth.IsPlatformReservedEnvKey(key) {
+			continue
+		}
+		if _, skip := suppressed[key]; skip {
 			continue
 		}
 		v := ""
@@ -554,6 +577,8 @@ func (s *ProjectCredentialService) ResolveEnv(projectID string) map[string]strin
 			continue
 		}
 		if _, exists := out[key]; exists {
+			delete(out, key)
+			suppressed[key] = struct{}{}
 			continue
 		}
 		out[key] = v
@@ -562,6 +587,56 @@ func (s *ProjectCredentialService) ResolveEnv(projectID string) map[string]strin
 		}
 	}
 	return out
+}
+
+func credentialAliasKey(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+// credentialAliasTaken reports the existing display alias when another row of
+// the same env key (the kind) already uses this name. Comparison trims and
+// ignores case. exceptID is the row being renamed.
+func (s *ProjectCredentialService) credentialAliasTaken(projectID, envKey, name, exceptID string) (string, bool) {
+	envKey = strings.TrimSpace(envKey)
+	want := credentialAliasKey(name)
+	if envKey == "" || want == "" {
+		return "", false
+	}
+	var rows []models.ProjectCredential
+	if s.db.Where("project_id = ? AND env_key = ?", projectID, envKey).Find(&rows).Error != nil {
+		return "", false
+	}
+	for _, row := range rows {
+		if row.ID == exceptID {
+			continue
+		}
+		if credentialAliasKey(row.Name) == want {
+			return strings.TrimSpace(row.Name), true
+		}
+	}
+	return "", false
+}
+
+// ResolveSelectedValue returns one credential's env key and plaintext.
+// An unknown, cleared, or empty secret returns ok=false and never substitutes
+// another row of the same kind.
+func (s *ProjectCredentialService) ResolveSelectedValue(projectID, credentialID string) (string, string, bool) {
+	projectID = strings.TrimSpace(projectID)
+	credentialID = strings.TrimSpace(credentialID)
+	if s == nil || s.db == nil || projectID == "" || credentialID == "" {
+		return "", "", false
+	}
+	var row models.ProjectCredential
+	err := s.db.Where("id = ? AND project_id = ? AND enabled = ? AND revoked_at IS NULL", credentialID, projectID, true).First(&row).Error
+	if err != nil || strings.TrimSpace(row.ValueEnc) == "" {
+		return "", "", false
+	}
+	dec, err := crypto.Decrypt(row.ValueEnc)
+	if err != nil || strings.TrimSpace(dec) == "" {
+		log.Warn().Err(err).Str("project", projectID).Str("credential", row.ID).Msg("skip undecryptable project credential")
+		return "", "", false
+	}
+	return strings.TrimSpace(row.EnvKey), dec, true
 }
 
 func isCodexCredential(provider, envKey string) bool {

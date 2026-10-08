@@ -1,14 +1,29 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import Icon from '@/components/ui/Icon.vue'
 import OpenCodeCredentialPicker from '@/components/agent/OpenCodeCredentialPicker.vue'
+import OpenCodeProviderFields from '@/components/agent/OpenCodeProviderFields.vue'
 import CredentialProviderLogo from '@/components/project/CredentialProviderLogo.vue'
 import { api, type ProjectCredentialItem } from '@/lib/api/api'
 import { fmtTime } from '@/lib/shared/format'
 import { useToast } from '@/lib/composables/useToast'
+import {
+  CREDENTIAL_KINDS,
+  aliasKey,
+  conflictingAlias,
+  kindById,
+  kindOfItem,
+  type CredentialKindId,
+} from '@/lib/project/credentialKinds'
+import {
+  DEFAULT_OPENCODE_PROVIDER,
+  openCodeCustomBaseRequired,
+  openCodeModelWithProvider,
+  type OpenCodeProviderId,
+} from '@/lib/agent/openCodeProvider'
 
 const props = defineProps<{ projectId: string }>()
 
@@ -23,14 +38,26 @@ const saving = reactive<Record<string, boolean>>({})
 const clearing = reactive<Record<string, boolean>>({})
 const showCreate = ref(false)
 const creating = ref(false)
-const createType = ref('custom')
-const createProvider = ref('')
-const createName = ref('')
-const createTarget = ref('')
-const createEnvKey = ref('')
-const createValue = ref('')
+const createStep = ref<1 | 2>(1)
+const createKind = ref<CredentialKindId | ''>('')
+const createAlias = ref('')
+const createSecret = ref('')
+const revealSecret = ref(false)
+const aliasError = ref('')
+const createAttempted = ref(false)
+const stepMotion = ref<'forward' | 'back'>('forward')
+const stepLock = ref(false)
+const stepPane = ref<HTMLElement | null>(null)
+const paneHeight = ref(0)
+const STEP_LOCK_MS = 200
+let stepTimer = 0
+const modelForm = reactive({
+  provider: DEFAULT_OPENCODE_PROVIDER as OpenCodeProviderId,
+  baseUrl: '',
+  model: '',
+  vision: false,
+})
 
-const credentialTypes = ['ai', 'git', 'ssh', 'mcp', 'custom'] as const
 const credentialTypeKeys = {
   ai: 'pages.projectDetail.projectCredentials.typeAi',
   git: 'pages.projectDetail.projectCredentials.typeGit',
@@ -38,12 +65,18 @@ const credentialTypeKeys = {
   mcp: 'pages.projectDetail.projectCredentials.typeMcp',
   custom: 'pages.projectDetail.projectCredentials.typeCustom',
 } as const
-const createTargetMissing = computed(() =>
-  createType.value === 'custom' && !createTarget.value.trim() && !createEnvKey.value.trim(),
-)
+const selectedKind = computed(() => (createKind.value ? kindById(createKind.value) : undefined))
+const modelBaseRequired = computed(() => openCodeCustomBaseRequired(modelForm.provider, modelForm.baseUrl))
+const secretReady = computed(() => {
+  const kind = selectedKind.value
+  if (!kind) return false
+  if (kind.secret === 'model') {
+    return Boolean(createSecret.value.trim() && modelForm.model.trim() && !modelBaseRequired.value)
+  }
+  return Boolean(createSecret.value.trim())
+})
 
 type CredentialGroup = 'ai' | 'git' | 'ssh' | 'other'
-const groupOrder: CredentialGroup[] = ['ai', 'git', 'ssh', 'other']
 
 function groupFor(item: ProjectCredentialItem): CredentialGroup {
   const kind = (item.type || '').toLowerCase()
@@ -68,19 +101,35 @@ const orderedItems = computed(() =>
 
 const configuredCount = computed(() => orderedItems.value.filter((item) => item.configured).length)
 const apiKeyCount = computed(() => orderedItems.value.filter((item) => groupFor(item) === 'ai').length)
-const credentialGroups = computed(() => groupOrder
-  .map((id) => ({
-    id,
-    items: orderedItems.value.filter((item) => groupFor(item) === id),
-  }))
-  .filter((group) => group.items.length > 0))
+const credentialGroups = computed(() => {
+  const buckets = new Map<string, ProjectCredentialItem[]>()
+  const other: ProjectCredentialItem[] = []
+  for (const item of orderedItems.value) {
+    const kind = kindOfItem(item)
+    if (!kind) {
+      other.push(item)
+      continue
+    }
+    buckets.set(kind.id, [...(buckets.get(kind.id) || []), item])
+  }
+  const groups = CREDENTIAL_KINDS
+    .filter((kind) => (buckets.get(kind.id) || []).length > 0)
+    .map((kind) => ({ id: kind.id, items: buckets.get(kind.id) || [] }))
+  if (other.length) groups.push({ id: 'other', items: other })
+  return groups
+})
 
-function groupTitle(group: CredentialGroup): string {
-  return t(`pages.projectDetail.projectCredentials.groups.${group}.title`)
+function groupTitle(group: string): string {
+  if (group === 'other') return t('pages.projectDetail.projectCredentials.groups.other.title')
+  return t(`pages.projectDetail.projectCredentials.kinds.${group}`)
 }
 
-function groupHint(group: CredentialGroup): string {
-  return t(`pages.projectDetail.projectCredentials.groups.${group}.hint`)
+function groupHint(group: string): string {
+  const kind = kindById(group)
+  if (!kind) return t('pages.projectDetail.projectCredentials.groups.other.hint')
+  if (kind.type === 'git') return t('pages.projectDetail.projectCredentials.groups.git.hint')
+  if (kind.type === 'ssh') return t('pages.projectDetail.projectCredentials.groups.ssh.hint')
+  return t('pages.projectDetail.projectCredentials.groups.ai.hint')
 }
 
 function itemLabel(item: ProjectCredentialItem): string {
@@ -118,8 +167,15 @@ function configuredText(item: ProjectCredentialItem): string {
 }
 
 function typeLabel(item: ProjectCredentialItem): string {
+  const kind = kindOfItem(item)
+  if (kind) return t(`pages.projectDetail.projectCredentials.kinds.${kind.id}`)
   const key = (item.type || 'custom') as keyof typeof credentialTypeKeys
   return t(credentialTypeKeys[key] || credentialTypeKeys.custom)
+}
+
+function vendorOf(item: ProjectCredentialItem): string {
+  const value = item.metadata?.provider
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 function updateItems(next: ProjectCredentialItem) {
@@ -135,33 +191,129 @@ function setItems(next: ProjectCredentialItem[]) {
   for (const item of next) drafts[item.id] = ''
 }
 
+function resetModelForm() {
+  modelForm.provider = DEFAULT_OPENCODE_PROVIDER
+  modelForm.baseUrl = ''
+  modelForm.model = ''
+  modelForm.vision = false
+}
+
+function clearSecrets() {
+  createSecret.value = ''
+  revealSecret.value = false
+  resetModelForm()
+}
+
+function releaseStepLock() {
+  window.clearTimeout(stepTimer)
+  stepLock.value = false
+}
+
+function lockStep() {
+  stepLock.value = true
+  window.clearTimeout(stepTimer)
+  stepTimer = window.setTimeout(() => {
+    stepLock.value = false
+  }, STEP_LOCK_MS)
+}
+
+async function measurePane() {
+  await nextTick()
+  if (stepPane.value) paneHeight.value = stepPane.value.offsetHeight
+}
+
 function openCreate() {
-  createType.value = 'custom'
-  createProvider.value = ''
-  createName.value = ''
-  createTarget.value = ''
-  createEnvKey.value = ''
-  createValue.value = ''
+  releaseStepLock()
+  createStep.value = 1
+  createKind.value = ''
+  createAlias.value = ''
+  aliasError.value = ''
+  createAttempted.value = false
+  stepMotion.value = 'forward'
+  paneHeight.value = 0
+  clearSecrets()
   showCreate.value = true
+  void measurePane()
+}
+
+function selectKind(id: CredentialKindId) {
+  if (stepLock.value || creating.value || createStep.value !== 1) return
+  if (createKind.value !== id) clearSecrets()
+  createKind.value = id
+}
+
+function goNext() {
+  if (stepLock.value || creating.value || createStep.value !== 1 || !createKind.value) return
+  stepMotion.value = 'forward'
+  createAttempted.value = false
+  createStep.value = 2
+  lockStep()
+  void measurePane()
+}
+
+function goBack() {
+  if (stepLock.value || creating.value || createStep.value !== 2) return
+  stepMotion.value = 'back'
+  aliasError.value = ''
+  createStep.value = 1
+  lockStep()
+  void measurePane()
+}
+
+function secretLabel(kindId: CredentialKindId): string {
+  const kind = kindById(kindId)
+  if (!kind) return t('pages.projectDetail.projectCredentials.value')
+  if (kind.secret === 'loginFile') return t('pages.projectDetail.projectCredentials.secretLoginFile')
+  if (kind.id === 'ssh_key') return t('pages.projectDetail.projectCredentials.secretPrivateKey')
+  if (kind.id === 'ssh_hosts') return t('pages.projectDetail.projectCredentials.secretKnownHosts')
+  return t('pages.projectDetail.projectCredentials.secretApiKey')
 }
 
 async function create() {
-  if (!createName.value.trim() || !createValue.value.trim() || creating.value) return
+  if (stepLock.value || creating.value || createStep.value !== 2) return
+  const kind = selectedKind.value
+  const alias = createAlias.value.trim()
+  if (!kind || !aliasKey(alias)) {
+    aliasError.value = t('pages.projectDetail.projectCredentials.aliasRequired')
+    return
+  }
+  const taken = conflictingAlias(items.value, kind, alias)
+  if (taken) {
+    aliasError.value = t('pages.projectDetail.projectCredentials.aliasTaken', { alias: taken })
+    return
+  }
+  createAttempted.value = true
+  if (!secretReady.value) return
+  aliasError.value = ''
   creating.value = true
   try {
     const created = await api.createProjectCredential(props.projectId, {
-      type: createType.value,
-      provider: createProvider.value.trim(),
-      name: createName.value.trim(),
-      target: createTarget.value.trim(),
-      envKey: createEnvKey.value.trim(),
-      value: createValue.value,
+      type: kind.type,
+      provider: kind.provider,
+      name: alias,
+      envKey: kind.envKey,
+      value: createSecret.value,
+      ...(kind.secret === 'model'
+        ? {
+            metadata: {
+              provider: modelForm.provider,
+              baseUrl: modelForm.baseUrl.trim(),
+              model: openCodeModelWithProvider(modelForm.model, modelForm.provider),
+              vision: modelForm.vision,
+            },
+          }
+        : {}),
     })
     updateItems(created)
     showCreate.value = false
     toast.success(t('pages.projectDetail.projectCredentials.saved'))
   } catch (e: unknown) {
-    toast.error(String((e as { message?: string })?.message || e))
+    const err = e as { code?: string; alias?: string; message?: string }
+    if (err.code === 'alias_taken') {
+      aliasError.value = t('pages.projectDetail.projectCredentials.aliasTaken', { alias: err.alias || alias })
+      return
+    }
+    toast.error(String(err.message || e))
   } finally {
     creating.value = false
   }
@@ -234,6 +386,10 @@ watch(
 
 onMounted(() => {
   void load()
+})
+
+onUnmounted(() => {
+  window.clearTimeout(stepTimer)
 })
 </script>
 
@@ -311,7 +467,7 @@ onMounted(() => {
             </div>
 
             <div
-              v-if="group.id === 'ai' && group.items.some(isOpenCodeModelCredential)"
+              v-if="group.id === 'opencode'"
               class="mb-3 rounded-xl border border-line bg-base/35 p-4 sm:p-5 lg:col-span-2 2xl:col-span-3"
             >
               <OpenCodeCredentialPicker
@@ -326,22 +482,22 @@ onMounted(() => {
               <template v-for="item in group.items" :key="item.id">
                 <article
                   v-if="!isOpenCodeModelCredential(item)"
-                  class="min-w-0 rounded-xl border border-line bg-base/35 p-4 transition hover:border-line-strong hover:bg-base/60"
+                  class="min-w-0 rounded-xl border border-line bg-base/35 p-4 transition-[border-color,background-color] duration-[160ms] ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-line-strong hover:bg-base/60"
                   data-testid="project-credential-row"
+                  :data-credential-kind="kindOfItem(item)?.id || 'other'"
                 >
                   <div class="flex min-w-0 items-start gap-3">
                     <CredentialProviderLogo
-                      :provider="item.provider"
-                      :name="item.name"
-                      :type="item.type"
-                      :env-key="item.envKey"
+                      :provider="isOpenCodeModelCredential(item) ? (vendorOf(item) || 'opencode') : (kindOfItem(item)?.logoProvider || item.provider)"
+                      :icon="kindOfItem(item)?.icon"
+                      match="provider"
                       :configured="item.configured"
                     />
                     <div class="min-w-0 flex-1">
                       <div class="flex flex-wrap items-start justify-between gap-2">
                         <div class="min-w-0">
-                          <h4 class="m-0 truncate text-sm font-semibold text-txt" :title="itemLabel(item)">{{ itemLabel(item) }}</h4>
-                          <p class="m-0 mt-1 text-[10px] font-medium uppercase tracking-[0.1em] text-txt3">{{ typeLabel(item) }}</p>
+                          <h4 class="m-0 truncate text-sm font-semibold text-txt" :title="itemLabel(item)" data-testid="project-credential-alias">{{ itemLabel(item) }}</h4>
+                          <p class="m-0 mt-1 text-[10px] font-medium uppercase tracking-[0.1em] text-txt3" data-testid="project-credential-kind">{{ typeLabel(item) }}</p>
                         </div>
                         <span
                           class="shrink-0 rounded-full border px-2 py-0.5 text-[11px]"
@@ -427,68 +583,113 @@ onMounted(() => {
       :close-on-esc="!creating"
       @close="!creating && (showCreate = false)"
     >
-      <div class="space-y-5" data-testid="project-credential-create-form">
-        <div class="rounded-lg border border-accent/25 bg-accent-dim/30 px-3.5 py-3 text-[11px] leading-5 text-txt2">
-          <p class="m-0 font-medium text-txt">{{ t('pages.projectDetail.projectCredentials.createIntroTitle') }}</p>
-          <p class="m-0 mt-1">{{ t('pages.projectDetail.projectCredentials.createIntro') }}</p>
-        </div>
-
-        <section>
-          <div class="mb-2.5 flex items-baseline justify-between gap-3">
-            <h3 class="m-0 text-[12px] font-semibold text-txt">{{ t('pages.projectDetail.projectCredentials.basicSection') }}</h3>
-            <span class="text-[10px] uppercase tracking-[0.1em] text-txt3">{{ t('pages.projectDetail.projectCredentials.requiredHint') }}</span>
+      <div
+        class="credential-step-shell"
+        data-testid="project-credential-create-form"
+        :data-credential-step="createStep"
+        :data-step-motion="stepMotion"
+        :data-step-locked="stepLock ? 'true' : 'false'"
+        :style="paneHeight ? { height: `${paneHeight}px` } : undefined"
+      >
+        <Transition :name="stepMotion === 'forward' ? 'step-forward' : 'step-back'" @enter="measurePane">
+          <div v-if="createStep === 1" key="kind" ref="stepPane" class="credential-step-pane">
+            <p class="m-0 text-[12px] leading-5 text-txt3">{{ t('pages.projectDetail.projectCredentials.stepKindHint') }}</p>
+            <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                v-for="kind in CREDENTIAL_KINDS"
+                :key="kind.id"
+                type="button"
+                class="flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-[border-color,background-color] duration-[160ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
+                :class="createKind === kind.id ? 'border-accent bg-accent-dim' : 'border-line bg-base hover:border-line-strong hover:bg-base/80'"
+                :data-testid="`credential-kind-${kind.id}`"
+                :aria-pressed="createKind === kind.id"
+                @click="selectKind(kind.id)"
+              >
+                <CredentialProviderLogo :provider="kind.logoProvider" :icon="kind.icon" match="provider" :selected="createKind === kind.id" />
+                <span class="min-w-0 truncate text-[13px] font-semibold text-txt">{{ t(`pages.projectDetail.projectCredentials.kinds.${kind.id}`) }}</span>
+              </button>
+            </div>
           </div>
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label class="block sm:col-span-2">
-              <span class="label">{{ t('pages.projectDetail.projectCredentials.name') }}</span>
-              <input v-model="createName" class="input w-full" data-testid="project-credential-create-name" autocomplete="off" :placeholder="t('pages.projectDetail.projectCredentials.namePlaceholder')" />
-            </label>
+          <div v-else key="secret" ref="stepPane" class="credential-step-pane space-y-4">
             <label class="block">
-              <span class="label">{{ t('pages.projectDetail.projectCredentials.type') }}</span>
-              <select v-model="createType" class="input w-full" data-testid="project-credential-create-type">
-                <option v-for="kind in credentialTypes" :key="kind" :value="kind">{{ t(credentialTypeKeys[kind]) }}</option>
-              </select>
+              <span class="label">{{ t('pages.projectDetail.projectCredentials.alias') }}</span>
+              <input
+                v-model="createAlias"
+                class="input w-full"
+                data-testid="project-credential-create-alias"
+                autocomplete="off"
+                :placeholder="t('pages.projectDetail.projectCredentials.aliasPlaceholder')"
+                @input="aliasError = ''"
+              />
+              <p v-if="aliasError" class="mb-0 mt-1 text-[12px] text-err" data-testid="project-credential-alias-error">{{ aliasError }}</p>
             </label>
+            <OpenCodeProviderFields
+              v-if="selectedKind?.secret === 'model'"
+              :provider="modelForm.provider"
+              :base-url="modelForm.baseUrl"
+              :model="modelForm.model"
+              :vision="modelForm.vision"
+              :require-base="createAttempted && modelBaseRequired"
+              :require-model="createAttempted && !modelForm.model.trim()"
+              @update:provider="modelForm.provider = $event"
+              @update:base-url="modelForm.baseUrl = $event"
+              @update:model="modelForm.model = $event"
+              @update:vision="modelForm.vision = $event"
+            />
             <label class="block">
-              <span class="label">{{ t('pages.projectDetail.projectCredentials.provider') }}</span>
-              <input v-model="createProvider" class="input w-full" data-testid="project-credential-create-provider" autocomplete="off" :placeholder="t('pages.projectDetail.projectCredentials.providerPlaceholder')" />
+              <span class="label flex items-center justify-between gap-2">
+                <span>{{ selectedKind ? secretLabel(selectedKind.id) : t('pages.projectDetail.projectCredentials.value') }}</span>
+                <button type="button" class="text-[11px] font-medium text-accent-2" data-testid="project-credential-secret-toggle" @click="revealSecret = !revealSecret">
+                  {{ revealSecret ? t('pages.projectDetail.projectCredentials.hideSecret') : t('pages.projectDetail.projectCredentials.showSecret') }}
+                </button>
+              </span>
+              <textarea
+                v-if="selectedKind && (selectedKind.secret === 'multiline' || selectedKind.secret === 'loginFile')"
+                v-model="createSecret"
+                rows="6"
+                class="input min-h-[120px] w-full resize-y font-mono"
+                data-testid="project-credential-create-value"
+                autocomplete="off"
+                :placeholder="t('pages.projectDetail.projectCredentials.valuePlaceholder')"
+                :style="revealSecret ? undefined : { '-webkit-text-security': 'disc' }"
+              />
+              <input
+                v-else
+                v-model="createSecret"
+                :type="revealSecret ? 'text' : 'password'"
+                class="input w-full font-mono"
+                data-testid="project-credential-create-value"
+                autocomplete="new-password"
+                :placeholder="t('pages.projectDetail.projectCredentials.valuePlaceholder')"
+              />
             </label>
           </div>
-        </section>
-
-        <section class="border-t border-dashed border-line pt-4">
-          <div class="mb-2.5">
-            <h3 class="m-0 text-[12px] font-semibold text-txt">{{ t('pages.projectDetail.projectCredentials.bindingSection') }}</h3>
-            <p class="m-0 mt-1 text-[11px] leading-5 text-txt3">{{ t('pages.projectDetail.projectCredentials.bindingHint') }}</p>
-          </div>
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label class="block">
-              <span class="label">{{ t('pages.projectDetail.projectCredentials.target') }}</span>
-              <input v-model="createTarget" class="input w-full" data-testid="project-credential-create-target" autocomplete="off" :placeholder="t('pages.projectDetail.projectCredentials.targetPlaceholder')" />
-            </label>
-            <label class="block">
-              <span class="label">{{ t('pages.projectDetail.projectCredentials.envKey') }}</span>
-              <input v-model="createEnvKey" class="input w-full font-mono" data-testid="project-credential-create-env" autocomplete="off" placeholder="MY_API_KEY" />
-            </label>
-          </div>
-        </section>
-
-        <section class="border-t border-dashed border-line pt-4">
-          <div class="mb-2.5 flex items-baseline justify-between gap-3">
-            <h3 class="m-0 text-[12px] font-semibold text-txt">{{ t('pages.projectDetail.projectCredentials.secretSection') }}</h3>
-            <span class="rounded-full border border-warn/30 bg-warn/10 px-2 py-0.5 text-[10px] text-warn">{{ t('pages.projectDetail.projectCredentials.writeOnly') }}</span>
-          </div>
-          <label class="block">
-            <span class="label">{{ t('pages.projectDetail.projectCredentials.value') }}</span>
-            <textarea v-model="createValue" rows="4" class="input min-h-[96px] w-full resize-y font-mono" data-testid="project-credential-create-value" autocomplete="new-password" :placeholder="t('pages.projectDetail.projectCredentials.valuePlaceholder')" style="-webkit-text-security: disc;" />
-          </label>
-        </section>
+        </Transition>
       </div>
       <template #footer>
-        <AppButton variant="ghost" :disabled="creating" @click="showCreate = false">{{ t('common.buttons.cancel') }}</AppButton>
+        <AppButton v-if="createStep === 1" variant="ghost" :disabled="creating" @click="showCreate = false">{{ t('common.buttons.cancel') }}</AppButton>
         <AppButton
+          v-if="createStep === 1"
           variant="primary"
-          :disabled="creating || !createName.trim() || !createValue.trim() || createTargetMissing"
+          :disabled="stepLock || !createKind"
+          data-testid="project-credential-create-next"
+          @click="goNext"
+        >
+          {{ t('pages.projectDetail.projectCredentials.next') }}
+        </AppButton>
+        <AppButton
+          v-if="createStep === 2"
+          variant="ghost"
+          :disabled="creating || stepLock"
+          data-testid="project-credential-create-back"
+          @click="goBack"
+        >
+          {{ t('pages.projectDetail.projectCredentials.back') }}
+        </AppButton>
+        <AppButton
+          v-if="createStep === 2"
+          variant="primary"
+          :disabled="creating || stepLock || !createAlias.trim() || !secretReady"
           :loading="creating"
           data-testid="project-credential-create-submit"
           @click="create"
@@ -499,3 +700,40 @@ onMounted(() => {
     </AppModal>
   </div>
 </template>
+
+<style scoped>
+.credential-step-shell {
+  position: relative;
+  overflow: hidden;
+  transition: height 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.credential-step-pane {
+  width: 100%;
+}
+.step-forward-enter-active,
+.step-back-enter-active {
+  transition:
+    transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.step-forward-leave-active,
+.step-back-leave-active {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  transition:
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.step-forward-enter-from,
+.step-back-leave-to {
+  opacity: 0;
+  transform: translateX(28px);
+}
+.step-forward-leave-to,
+.step-back-enter-from {
+  opacity: 0;
+  transform: translateX(-28px);
+}
+</style>

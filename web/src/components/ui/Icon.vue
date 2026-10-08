@@ -9,6 +9,8 @@ const paths: Record<string, string> = {
   runs: '<circle cx="12" cy="12" r="9"/><path d="M10 9l5 3-5 3z"/>',
   gate: '<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/>',
   lock: '<rect x="5" y="11" width="14" height="10"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="M11.5 12.5 21 3M16 8l3 3M18 5l3 3"/>',
+  server: '<rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/>',
   artifact: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
   skills: '<path d="M4 7h12v5H4z"/><path d="M16 9h2a2 2 0 0 1 0 4h-2"/><path d="M9 4a2 2 0 1 1 4 0v3H9z"/><path d="M4 12v5a2 2 0 0 0 2 2h8"/>',
   connector: '<path d="M9 7V3M15 7V3M8 7h8v4a4 4 0 0 1-8 0z"/><path d="M12 15v6"/>',

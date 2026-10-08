@@ -214,6 +214,13 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 	if backend == runtime.BackendOpenCode && s.openCodeCredential != nil {
 		runtime.ApplyOpenCodeSelection(env, s.openCodeCredential(projectID, agent.OpenCodeCredentialID))
 	}
+	runtime.ApplyAgentCredentialChoice(env, projectCreds, projectID, runtime.AgentCredentialChoice{
+		Backend:              string(backend),
+		GitCredentialType:    agent.GitCredentialType,
+		AiCredentialID:       agent.AiCredentialID,
+		GitCredentialID:      agent.GitCredentialID,
+		SshHostsCredentialID: agent.SshHostsCredentialID,
+	}, s.selectedCredential)
 	workDir := s.skills.WorkDir(profile)
 	codexLogin := runtime.CodexLoginFileFromEnv(backend, env)
 	// Align auth gate with BuildConfigHome: shared extend then Agent overlay.

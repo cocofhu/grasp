@@ -23,6 +23,9 @@ export type AgentStudioDraft = {
   projectId: string
   acpBackend: BackendId
   openCodeCredentialId?: string
+  aiCredentialId?: string
+  gitCredentialId?: string
+  sshHostsCredentialId?: string
   gitCredentialType?: GitCredentialType
   files: DraftFile[]
   mcp: DraftMCP[]
@@ -118,6 +121,9 @@ export function toDraft(a: Agent): AgentStudioDraft {
     projectId: a.projectId,
     acpBackend: (a.acpBackend as BackendId) || 'cursor',
     openCodeCredentialId: a.openCodeCredentialId || '',
+    aiCredentialId: a.aiCredentialId || '',
+    gitCredentialId: a.gitCredentialId || '',
+    sshHostsCredentialId: a.sshHostsCredentialId || '',
     gitCredentialType: a.gitCredentialType,
     files: (a.files || []).map((f) => ({ path: f.path, content: f.content })),
     mcp: (a.mcp || []).map(apiMcpToDraft),
@@ -136,6 +142,9 @@ export function fromDraftRaw(d: AgentStudioDraft): Agent {
     projectId: d.projectId.trim(),
     acpBackend: d.acpBackend || 'cursor',
     ...(d.openCodeCredentialId?.trim() ? { openCodeCredentialId: d.openCodeCredentialId.trim() } : {}),
+    ...(d.aiCredentialId?.trim() ? { aiCredentialId: d.aiCredentialId.trim() } : {}),
+    ...(d.gitCredentialId?.trim() ? { gitCredentialId: d.gitCredentialId.trim() } : {}),
+    ...(d.sshHostsCredentialId?.trim() ? { sshHostsCredentialId: d.sshHostsCredentialId.trim() } : {}),
     ...(d.gitCredentialType ? { gitCredentialType: d.gitCredentialType } : {}),
     files: d.files.filter((f) => f.path.trim()).map((f) => ({ path: f.path.trim(), content: f.content })),
     mcp: d.mcp.filter((m) => m.name.trim()).map(draftMcpToApi),
