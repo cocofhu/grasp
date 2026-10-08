@@ -36,6 +36,16 @@ let committed: ThemeName = theme.value
  */
 let vtUpdatePending = false
 
+/**
+ * True for the whole view-transition playback (~280ms), not just the update
+ * callback. The snapshot overlay hit-tests as the html element, so the theme
+ * button never sees those clicks. A document pointerdown uses the button's
+ * box instead, and the click from that same press is swallowed so the
+ * transition ending does not toggle a second time.
+ */
+let themeVtActive = false
+let swallowThemeClick = false
+
 let override: ThemeName | null = null
 
 function apply(t: ThemeName) {
@@ -81,21 +91,91 @@ async function paintCommittedTheme() {
 }
 
 /**
- * Shell theme button only (plan g1 / g2).
- * Page colors cross-fade for --dur-overlay (same 200ms as the language menu).
- * The icon's own rise/scale stays on the button styles. Reduced motion paints immediately.
+ * Shell theme button only.
+ * Page colors cross-fade for --dur-overlay (200ms, ease-out-expo).
+ * The visible sun/moon spin is 280ms ease (±90°, scale 0.55 → 1) on the
+ * view-transition layer. Reduced motion paints immediately.
  * setTheme / embed override / public chrome stay instant.
  *
  * View Transitions: do not touch theme.value before the update callback.
  * The old snapshot must still be the previous sun/moon and the previous
  * html light class; the callback then writes the next theme and returns
- * nextTick() so the new snapshot is the destination icon (review v1).
+ * nextTick() so the new snapshot is the destination icon.
  * theme-vt-capture stays until ready, which is after both snapshots.
+ * It freezes the live icon transition so the snapshots are resting icons;
+ * the spin plays on the pseudo-elements, not as a 4px pop.
  */
+function endThemeVt(gen: number) {
+  if (gen !== themeMotionGen) return
+  themeVtActive = false
+}
+
+/**
+ * Sidebar and the mobile drawer share `.shell-theme-toggle`. A closed
+ * drawer is not mounted; a `display:none` sidebar has an empty box.
+ * elementFromPoint is html for the whole transition, so the box is the hit.
+ */
+function themeToggleAtPoint(x: number, y: number): boolean {
+  const nodes = document.querySelectorAll<HTMLElement>('.shell-theme-toggle')
+  for (const el of nodes) {
+    const style = getComputedStyle(el)
+    if (style.display === 'none' || style.visibility === 'hidden') continue
+    const rect = el.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) continue
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return true
+  }
+  return false
+}
+
+function onThemePointerDown(event: PointerEvent) {
+  if (!themeVtActive || event.button !== 0) {
+    swallowThemeClick = false
+    return
+  }
+  if (!themeToggleAtPoint(event.clientX, event.clientY)) {
+    swallowThemeClick = false
+    return
+  }
+  event.preventDefault()
+  event.stopPropagation()
+  swallowThemeClick = true
+  toggleTheme()
+}
+
+function onThemePointerEnd() {
+  if (!swallowThemeClick) return
+  // click follows pointerup in the same turn; drop the flag if it never comes.
+  window.setTimeout(() => {
+    swallowThemeClick = false
+  }, 0)
+}
+
+function onThemeClickSuppress(event: MouseEvent) {
+  if (!swallowThemeClick) return
+  const retargeted = event.target === document.documentElement || event.target === document.body
+  if (!themeToggleAtPoint(event.clientX, event.clientY) && !retargeted) return
+  swallowThemeClick = false
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+let themePointerBridgeReady = false
+
+function ensureThemePointerBridge() {
+  if (themePointerBridgeReady || typeof document === 'undefined') return
+  themePointerBridgeReady = true
+  document.addEventListener('pointerdown', onThemePointerDown, true)
+  document.addEventListener('pointerup', onThemePointerEnd, true)
+  document.addEventListener('pointercancel', onThemePointerEnd, true)
+  document.addEventListener('click', onThemeClickSuppress, true)
+}
+
 function applyAnimated(t: ThemeName) {
   const root = document.documentElement
   if (prefersReducedMotion()) {
     vtUpdatePending = false
+    themeVtActive = false
+    swallowThemeClick = false
     root.classList.remove('theme-vt-capture', 'theme-color-motion')
     theme.value = t
     apply(t)
@@ -107,9 +187,12 @@ function applyAnimated(t: ThemeName) {
     // Callback has not run yet: it will read the latest `committed`.
     if (vtUpdatePending) return
     const gen = ++themeMotionGen
-    // Freeze icon CSS transitions so both snapshots see a finished icon.
+    // Freeze the live icon transition so both snapshots are resting icons.
+    // The 280ms spin plays on the view-transition pseudos, not this class.
     root.classList.add('theme-vt-capture')
     vtUpdatePending = true
+    themeVtActive = true
+    ensureThemePointerBridge()
     try {
       const vt = document.startViewTransition(() => {
         const pending = paintCommittedTheme()
@@ -120,10 +203,20 @@ function applyAnimated(t: ThemeName) {
       })
       const done = () => clearThemeMotionClass(gen, 'theme-vt-capture')
       void vt.ready.then(done, done)
-      void vt.finished.then(done, done)
+      void vt.finished.then(
+        () => {
+          done()
+          endThemeVt(gen)
+        },
+        () => {
+          done()
+          endThemeVt(gen)
+        },
+      )
       return
     } catch {
       vtUpdatePending = false
+      themeVtActive = false
       clearThemeMotionClass(gen, 'theme-vt-capture')
       theme.value = t
       apply(t)
@@ -147,6 +240,8 @@ export function setTheme(t: ThemeName) {
   localStorage.setItem(STORAGE_KEY, t)
   themeMotionGen++
   vtUpdatePending = false
+  themeVtActive = false
+  swallowThemeClick = false
   const root = document.documentElement
   root.classList.remove('theme-vt-capture', 'theme-color-motion')
   apply(t)

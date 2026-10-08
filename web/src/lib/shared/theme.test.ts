@@ -3,7 +3,14 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { applyPublicLightChrome, reapplyThemeChrome, setTheme, theme, toggleTheme } from './theme'
+import {
+  applyPublicLightChrome,
+  reapplyThemeChrome,
+  setTheme,
+  setThemeOverride,
+  theme,
+  toggleTheme,
+} from './theme'
 describe('theme', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -143,12 +150,110 @@ describe('toggleTheme shell motion (plan g1.2 g1.3 g2.1 g2.2)', () => {
     expect(localStorage.getItem('grasp-theme')).toBe('light')
   })
 
-  it('does not animate setTheme, embed override, or reduced motion (plan g1.3)', () => {
+  it('pointerdown during playback hits the button box and the following click does not toggle again', async () => {
+    const button = document.createElement('button')
+    button.className = 'shell-theme-toggle'
+    button.getBoundingClientRect = () =>
+      ({
+        x: 10,
+        y: 20,
+        left: 10,
+        top: 20,
+        right: 42,
+        bottom: 52,
+        width: 32,
+        height: 32,
+        toJSON() {
+          return {}
+        },
+      }) as DOMRect
+    document.body.appendChild(button)
+
+    let calls = 0
+    let update: (() => Promise<unknown>) | null = null
+    document.startViewTransition = (cb) => {
+      calls += 1
+      update = () => Promise.resolve(cb())
+      const pending = new Promise<void>(() => {})
+      return {
+        ready: pending,
+        finished: pending,
+        updateCallbackDone: pending,
+        skipTransition() {},
+        types: new Set<string>(),
+      }
+    }
+
+    toggleTheme()
+    expect(calls).toBe(1)
+    await update!()
+    expect(theme.value).toBe('light')
+    expect(localStorage.getItem('grasp-theme')).toBe('light')
+
+    document.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 0,
+        clientY: 0,
+        button: 0,
+      }),
+    )
+    expect(calls).toBe(1)
+    expect(localStorage.getItem('grasp-theme')).toBe('light')
+
+    document.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 20,
+        clientY: 30,
+        button: 0,
+      }),
+    )
+    expect(calls).toBe(2)
+    expect(localStorage.getItem('grasp-theme')).toBe('dark')
+    await update!()
+    expect(theme.value).toBe('dark')
+    expect(document.documentElement.classList.contains('light')).toBe(false)
+
+    document.documentElement.dispatchEvent(
+      new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 20,
+        clientY: 30,
+      }),
+    )
+    expect(calls).toBe(2)
+    expect(localStorage.getItem('grasp-theme')).toBe('dark')
+    expect(theme.value).toBe('dark')
+
+    button.remove()
+  })
+
+  it('does not animate setTheme, embed override, public chrome, or reduced motion', () => {
     const start = vi.fn()
     document.startViewTransition = start as unknown as typeof document.startViewTransition
     setTheme('light')
     expect(start).not.toHaveBeenCalled()
     expect(localStorage.getItem('grasp-theme')).toBe('light')
+    expect(document.documentElement.classList.contains('theme-vt-capture')).toBe(false)
+    expect(document.documentElement.classList.contains('theme-color-motion')).toBe(false)
+
+    setThemeOverride('dark')
+    expect(start).not.toHaveBeenCalled()
+    expect(document.documentElement.classList.contains('light')).toBe(false)
+    expect(document.documentElement.classList.contains('theme-vt-capture')).toBe(false)
+    expect(localStorage.getItem('grasp-theme')).toBe('light')
+    setThemeOverride(null)
+    expect(document.documentElement.classList.contains('light')).toBe(true)
+
+    applyPublicLightChrome()
+    expect(start).not.toHaveBeenCalled()
+    expect(document.documentElement.classList.contains('theme-vt-capture')).toBe(false)
+    expect(document.documentElement.classList.contains('theme-color-motion')).toBe(false)
+    reapplyThemeChrome()
 
     matchMediaReduced(true)
     toggleTheme()
@@ -160,18 +265,30 @@ describe('toggleTheme shell motion (plan g1.2 g1.3 g2.1 g2.2)', () => {
     expect(document.documentElement.classList.contains('theme-color-motion')).toBe(false)
   })
 
-  it('page cross-fade matches overlay tokens and does not translate the page (plan g1.2 g1.3)', () => {
+  it('page cross-fade stays 200ms and the icon spin is 280ms rotate scale', () => {
     const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../styles/global.css'), 'utf8')
     const rootBlock = css.match(/::view-transition-group\(root\)[\s\S]*?\}/)?.[0] ?? ''
     expect(rootBlock).toMatch(/animation-duration:\s*var\(--dur-overlay\)/)
     expect(rootBlock).toMatch(/var\(--ease-out-expo\)/)
     expect(rootBlock).not.toMatch(/translate|scale\(/)
-    expect(css).toMatch(/@keyframes theme-icon-pop-in[\s\S]*translateY\(-4px\) scale\(0\.98\)/)
-    expect(css).toMatch(/html\.theme-vt-capture \.shell-theme-icon/)
+    expect(css).toMatch(/::view-transition-old\(\.theme-icon-sun\)[\s\S]*280ms ease both theme-icon-sun-out/)
+    expect(css).toMatch(/::view-transition-new\(\.theme-icon-sun\)[\s\S]*280ms ease both theme-icon-sun-in/)
+    expect(css).toMatch(/::view-transition-old\(\.theme-icon-moon\)[\s\S]*280ms ease both theme-icon-moon-out/)
+    expect(css).toMatch(/::view-transition-new\(\.theme-icon-moon\)[\s\S]*280ms ease both theme-icon-moon-in/)
+    expect(css).toMatch(/@keyframes theme-icon-sun-out[\s\S]*rotate\(90deg\) scale\(0\.55\)/)
+    expect(css).toMatch(/@keyframes theme-icon-sun-in[\s\S]*rotate\(90deg\) scale\(0\.55\)/)
+    expect(css).toMatch(/@keyframes theme-icon-moon-out[\s\S]*rotate\(-90deg\) scale\(0\.55\)/)
+    expect(css).toMatch(/@keyframes theme-icon-moon-in[\s\S]*rotate\(-90deg\) scale\(0\.55\)/)
+    expect(css).not.toMatch(/theme-icon-pop/)
+    const iconSpin = css.slice(css.indexOf('@keyframes theme-icon-sun-out'))
+    expect(iconSpin).not.toMatch(/translateY\(-4px\)|scale\(0\.98\)/)
+    expect(css).toMatch(/html\.theme-vt-capture \.shell-theme-icon\s*\{[^}]*transition:\s*none/)
+    expect(css).not.toMatch(/html\.theme-vt-capture[^{]*\{[^}]*animation:\s*none/)
     expect(css).toMatch(/html\.theme-color-motion body/)
     expect(css).toMatch(/html\.theme-color-motion \.app-shell-dotgrid/)
     expect(css).not.toMatch(/html\.theme-color-motion :where\(:not\(\.shell-theme-icon\)/)
     expect(css).toMatch(/::view-transition-old\(\*\)/)
     expect(css).toMatch(/--dur-overlay:\s*200ms/)
+    expect(css).toMatch(/\.shell-theme-icon,\s*\n\s*\.shell-unread-badge\s*\{[^}]*animation:\s*none/)
   })
 })

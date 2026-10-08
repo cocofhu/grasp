@@ -222,7 +222,6 @@ defineExpose({
         :class="layout === 'sidebar' ? 'h-8 w-8' : 'h-9 w-9'"
         :title="themeTitle"
         data-testid="shell-theme-toggle"
-        data-motion="overlay-pop"
         @click="toggleTheme"
       >
         <span class="shell-theme-icon-stack" aria-hidden="true">
@@ -259,7 +258,8 @@ defineExpose({
           <Icon name="bell" :size="layout === 'sidebar' ? 16 : 18" />
           <span
             v-if="badgeLabel"
-            class="absolute inline-flex items-center justify-center font-bold leading-none text-white"
+            :key="badgeLabel"
+            class="shell-unread-badge absolute inline-flex items-center justify-center font-bold leading-none text-white"
             :class="[
               layout === 'sidebar'
                 ? 'force-radius-full right-[3px] top-[3px] h-3.5 min-w-3.5 rounded-full px-[3px] text-[9px] shadow-[0_0_0_1.5px_rgb(var(--c-surface))]'
@@ -382,11 +382,15 @@ defineExpose({
 
 <style scoped>
 /*
- * plan g1.1 — bar and sidebar share this stack; no layout-specific motion.
- * plan g1.2 — same duration, easing, and amplitude as .overlay-pop
- *   (opacity + translateY(-4px) + scale(0.98), var(--dur-overlay) / var(--ease-out-expo)).
- *   Replaces the longer rotate cross-fade.
- * plan g1.3 — prefers-reduced-motion paints the active icon immediately.
+ * Sidebar and bar share one stack.
+ * Inactive moon sits at rotate(-90deg) scale(0.55); inactive sun at
+ * rotate(90deg) scale(0.55); the active icon is upright at scale(1).
+ * Opacity and transform run 280ms ease. Without a view transition this
+ * transition is what the user sees. With one, each icon is snapshotted
+ * on its own and global.css plays the same spin on the visible layer.
+ * Reduced motion paints the active icon immediately.
+ * Unread badge pops only when its visible text mounts or changes (the
+ * label is the Vue key). Removing it does not play a leave animation.
  */
 .shell-theme-icon-stack {
   position: relative;
@@ -395,8 +399,6 @@ defineExpose({
   height: 1.125rem;
   align-items: center;
   justify-content: center;
-  view-transition-name: match-element;
-  view-transition-class: theme-icon;
 }
 
 .shell-theme-icon {
@@ -406,26 +408,58 @@ defineExpose({
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transform: translateY(-4px) scale(0.98);
+  transform: rotate(-90deg) scale(0.55);
   transition:
-    opacity var(--dur-overlay) var(--ease-out-expo),
-    transform var(--dur-overlay) var(--ease-out-expo);
+    opacity 280ms ease,
+    transform 280ms ease;
   pointer-events: none;
+  view-transition-name: match-element;
+}
+
+.shell-theme-icon-moon {
+  view-transition-class: theme-icon-moon;
+}
+
+.shell-theme-icon-sun {
+  transform: rotate(90deg) scale(0.55);
+  view-transition-class: theme-icon-sun;
 }
 
 .shell-theme-icon.is-active {
   opacity: 1;
-  transform: translateY(0) scale(1);
+  transform: rotate(0deg) scale(1);
+}
+
+.shell-unread-badge {
+  animation: shell-badge-pop 280ms ease;
+}
+
+@keyframes shell-badge-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.55);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .shell-theme-icon {
     transition: none;
-    transform: translateY(0) scale(1);
+    transform: rotate(0deg) scale(1);
   }
 
   .shell-theme-icon:not(.is-active) {
     opacity: 0;
+  }
+
+  .shell-unread-badge {
+    animation: none;
+    transition: none;
+    opacity: 1;
+    transform: scale(1);
   }
 }
 </style>
