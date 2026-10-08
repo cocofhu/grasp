@@ -1998,8 +1998,8 @@
       "tabs": {
         "terminal": "Terminal",
         "ide": "IDE",
-        "acp": "ACP",
-        "novnc": "noVNC Browser",
+        "acp": "Agent",
+        "novnc": "Browser",
         "log": "Log"
       },
       "terminalStatus": {
@@ -3098,6 +3098,13 @@
       "novncTab": "noVNC",
       "novncCardTitle": "Remote desktop",
       "novncCardMeta": "Sandbox browser · pick to annotate",
+      "fixedIdeTitle": "IDE",
+      "fixedIdeMeta": "Sandbox IDE",
+      "fixedTerminalTitle": "Terminal",
+      "fixedTerminalMeta": "Sandbox terminal",
+      "fixedBrowserTitle": "Browser",
+      "fixedLogTitle": "Log",
+      "fixedLogMeta": "Container log · stdout/stderr",
       "appTab": "App preview",
       "appCardTitle": "App preview",
       "appCardMeta": "App preview · pick to annotate",

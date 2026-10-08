@@ -714,5 +714,31 @@ describe('reactArtifactPreview helpers', () => {
         novncOpen: false,
       })
     })
+
+    it('restores fixed sandbox tabs without treating them as artifacts', () => {
+      saveStageOpenState('ss-unit-run', 'node-b', {
+        openNames: [],
+        activeTab: 'browser',
+        novncOpen: false,
+        fixedOpen: ['browser', 'log', 'browser', 'nope'],
+      })
+      expect(loadStageOpenState('ss-unit-run', 'node-b')).toEqual({
+        openNames: [],
+        activeTab: 'browser',
+        novncOpen: false,
+        fixedOpen: ['browser', 'log'],
+      })
+      expect(
+        restoreStageOpenState(
+          { openNames: ['gone.json'], activeTab: 'log', novncOpen: false, fixedOpen: ['log'] },
+          ['page.html'],
+        ),
+      ).toEqual({
+        openNames: [],
+        activeTab: 'log',
+        novncOpen: false,
+        fixedOpen: ['log'],
+      })
+    })
   })
 })

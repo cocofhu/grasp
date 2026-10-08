@@ -9,7 +9,8 @@ import ArtifactVersionSelect from '@/components/ui/ArtifactVersionSelect.vue'
 import NovncPreviewPanel from '@/components/run/NovncPreviewPanel.vue'
 import AppPreviewPanel from '@/components/run/AppPreviewPanel.vue'
 import PublicAppPreviewPanel from '@/components/run/PublicAppPreviewPanel.vue'
-import { api } from '@/lib/api/api'
+import SandboxStageSurface from '@/components/run/SandboxStageSurface.vue'
+import { api, type SandboxView } from '@/lib/api/api'
 import { publicGateApi } from '@/lib/inbox/gateShareLink'
 import type { PublicPreviewPort } from '@/lib/inbox/gateShareLink'
 import { relTime } from '@/lib/shared/format'
@@ -35,7 +36,6 @@ import {
   isAutoPinStageNode,
   isVisibleAutoPinArtifact,
   markStageTabUnread,
-  nextTabAfterClose,
   openStagePreviewTab,
   previewTabId,
   previewTabName,
@@ -149,8 +149,17 @@ const tabUnread = ref<Record<string, StageTabUnreadKind>>({})
 const autoPinFingerprints = ref<ArtifactFingerprintMap | null>(null)
 const summaryThumbs = ref<Record<string, StageCardThumb>>({})
 const novncOpen = ref(!!initialOpen?.novncOpen)
-const sandboxId = ref<number | null>(null)
+const fixedOpen = ref<string[]>([...(initialOpen?.fixedOpen || [])])
+const fixedMounted = ref<Record<string, boolean>>({})
+for (const id of fixedOpen.value) fixedMounted.value[id] = true
+const sandboxView = ref<SandboxView | null>(null)
 const sandboxLoading = ref(false)
+const sandboxId = computed(() => {
+  const id = sandboxView.value?.id
+  if (typeof id === 'number' && Number.isFinite(id) && id > 0) return id
+  const n = Number(id)
+  return Number.isFinite(n) && n > 0 ? n : null
+})
 let summaryThumbGen = 0
 let summaryThumbAbort: AbortController | null = null
 const summaryThumbFp: Record<string, string> = {}
@@ -249,24 +258,72 @@ const gridArtifacts = computed(() =>
     resolvedNode.value,
   ),
 )
-const canOpenNovnc = computed(() => effectiveRemoteKind.value !== 'off')
 const showingNovnc = computed(() => activeTab.value === REACT_STAGE_TAB_NOVNC)
-const showGridCards = computed(() => gridArtifacts.value.length > 0 || canOpenNovnc.value)
-const remoteCardTitle = computed(() =>
-  effectiveRemoteKind.value === 'sandbox'
-    ? t('pages.reactArtifactStage.novncCardTitle')
-    : t('pages.reactArtifactStage.appCardTitle'),
+/** Artifact-only embed keeps the grid free of sandbox and app cards. */
+const showFixedCards = computed(() => !props.hideAppPreview)
+const showAppCard = computed(
+  () =>
+    showFixedCards.value &&
+    (effectiveRemoteKind.value === 'app' || effectiveRemoteKind.value === 'public'),
 )
-const remoteCardMeta = computed(() =>
-  effectiveRemoteKind.value === 'sandbox'
-    ? t('pages.reactArtifactStage.novncCardMeta')
-    : t('pages.reactArtifactStage.appCardMeta'),
+const showGridCards = computed(() => showFixedCards.value || gridArtifacts.value.length > 0)
+const fixedCards = computed(() => {
+  if (!showFixedCards.value) return []
+  const cards: { id: string; icon: string; title: string; meta: string }[] = [
+    {
+      id: 'ide',
+      icon: 'doc',
+      title: t('pages.reactArtifactStage.fixedIdeTitle'),
+      meta: t('pages.reactArtifactStage.fixedIdeMeta'),
+    },
+    {
+      id: 'terminal',
+      icon: 'terminal',
+      title: t('pages.reactArtifactStage.fixedTerminalTitle'),
+      meta: t('pages.reactArtifactStage.fixedTerminalMeta'),
+    },
+    {
+      id: 'browser',
+      icon: 'globe',
+      title: t('pages.reactArtifactStage.fixedBrowserTitle'),
+      meta: t('pages.reactArtifactStage.novncCardMeta'),
+    },
+  ]
+  if (showAppCard.value) {
+    cards.push({
+      id: 'app',
+      icon: 'globe',
+      title: t('pages.reactArtifactStage.appCardTitle'),
+      meta: t('pages.reactArtifactStage.appCardMeta'),
+    })
+  }
+  cards.push({
+    id: 'log',
+    icon: 'doc',
+    title: t('pages.reactArtifactStage.fixedLogTitle'),
+    meta: t('pages.reactArtifactStage.fixedLogMeta'),
+  })
+  return cards
+})
+const fixedTabsBeforeApp = computed(() =>
+  (['ide', 'terminal', 'browser'] as const).filter((id) => fixedOpen.value.includes(id)),
 )
-const remoteTabLabel = computed(() =>
-  effectiveRemoteKind.value === 'sandbox'
-    ? t('pages.reactArtifactStage.novncTab')
-    : t('pages.reactArtifactStage.appTab'),
+const fixedTabsAfterApp = computed(() =>
+  (['log'] as const).filter((id) => fixedOpen.value.includes(id)),
 )
+
+function fixedTabLabel(id: string): string {
+  if (id === 'ide') return t('pages.reactArtifactStage.fixedIdeTitle')
+  if (id === 'terminal') return t('pages.reactArtifactStage.fixedTerminalTitle')
+  if (id === 'browser') return t('pages.reactArtifactStage.fixedBrowserTitle')
+  if (id === 'log') return t('pages.reactArtifactStage.fixedLogTitle')
+  return id
+}
+function fixedTabIcon(id: string): string {
+  if (id === 'terminal') return 'terminal'
+  if (id === 'browser') return 'globe'
+  return 'doc'
+}
 
 function artifactAnnotatable(a: Artifact | null): boolean {
   if (!a) return false
@@ -365,6 +422,7 @@ function persistOpenState() {
     openNames: openNames.value,
     activeTab: activeTab.value,
     novncOpen: novncOpen.value,
+    fixedOpen: fixedOpen.value,
   })
 }
 
@@ -374,6 +432,10 @@ function applyRestoredOpenState(runId: string, nodeId: string, names: string[]) 
   openNames.value = restored.openNames
   activeTab.value = restored.activeTab
   novncOpen.value = restored.novncOpen
+  fixedOpen.value = [...(restored.fixedOpen || [])]
+  const mounted = { ...fixedMounted.value }
+  for (const id of fixedOpen.value) mounted[id] = true
+  fixedMounted.value = mounted
   userMoved.value = true
   return true
 }
@@ -423,18 +485,66 @@ function tabUnreadKind(name: string): StageTabUnreadKind | null {
   return tabUnread.value[name] || null
 }
 
-function closePreview(name: string) {
-  markUserMoved()
-  const next = nextTabAfterClose(openNames.value, name, activeTab.value, novncOpen.value)
-  openNames.value = closeStagePreviewTab(openNames.value, name)
-  activeTab.value = next
+const FIXED_PANEL_IDS = ['ide', 'terminal', 'browser', 'log'] as const
+type FixedPanelId = (typeof FIXED_PANEL_IDS)[number]
+
+function isFixedPanel(id: string): id is FixedPanelId {
+  return (FIXED_PANEL_IDS as readonly string[]).includes(id)
 }
 
-function openNovnc() {
-  if (!canOpenNovnc.value) return
+function closableTabIds(opts?: { includeApp?: boolean; names?: string[] }): string[] {
+  const names = opts?.names || openNames.value
+  const ids = names.map((n) => previewTabId(n))
+  for (const id of ['ide', 'terminal', 'browser'] as const) {
+    if (fixedOpen.value.includes(id)) ids.push(id)
+  }
+  if (opts?.includeApp || (novncOpen.value && showAppCard.value)) ids.push(REACT_STAGE_TAB_NOVNC)
+  if (fixedOpen.value.includes('log')) ids.push('log')
+  return ids
+}
+
+function neighborTab(closedId: string, ids: string[]): string {
+  const remaining = ids.filter((id) => id !== closedId)
+  if (!remaining.length) return REACT_STAGE_TAB_GRID
+  const i = ids.indexOf(closedId)
+  if (i < 0) return remaining[remaining.length - 1]
+  return remaining[Math.min(Math.max(i, 0), remaining.length - 1)] ?? REACT_STAGE_TAB_GRID
+}
+
+function closePreview(name: string) {
+  markUserMoved()
+  const closedId = previewTabId(name)
+  const before = closableTabIds()
+  const wasActive = previewTabName(activeTab.value) === name
+  openNames.value = closeStagePreviewTab(openNames.value, name)
+  if (wasActive) activeTab.value = neighborTab(closedId, before)
+}
+
+function openFixed(id: FixedPanelId) {
+  markUserMoved()
+  fixedMounted.value = { ...fixedMounted.value, [id]: true }
+  if (!fixedOpen.value.includes(id)) fixedOpen.value = [...fixedOpen.value, id]
+  activeTab.value = id
+}
+
+function openAppTab() {
+  if (!showAppCard.value) return
   markUserMoved()
   novncOpen.value = true
   activeTab.value = REACT_STAGE_TAB_NOVNC
+}
+
+function onFixedCard(id: string) {
+  if (id === 'app') {
+    openAppTab()
+    return
+  }
+  if (isFixedPanel(id)) openFixed(id)
+}
+
+function selectFixedTab(id: string) {
+  markUserMoved()
+  activeTab.value = id
 }
 
 function selectNovncTab() {
@@ -442,14 +552,21 @@ function selectNovncTab() {
   activeTab.value = REACT_STAGE_TAB_NOVNC
 }
 
+function closeFixed(id: string) {
+  if (!isFixedPanel(id)) return
+  markUserMoved()
+  const before = closableTabIds()
+  const wasActive = activeTab.value === id
+  fixedOpen.value = fixedOpen.value.filter((x) => x !== id)
+  if (wasActive) activeTab.value = neighborTab(id, before)
+}
+
 function closeNovnc() {
   markUserMoved()
+  const before = closableTabIds({ includeApp: true })
+  const wasActive = activeTab.value === REACT_STAGE_TAB_NOVNC
   novncOpen.value = false
-  if (openNames.value.length) {
-    activeTab.value = previewTabId(openNames.value[openNames.value.length - 1])
-    return
-  }
-  activeTab.value = REACT_STAGE_TAB_GRID
+  if (wasActive) activeTab.value = neighborTab(REACT_STAGE_TAB_NOVNC, before)
 }
 
 function onRemotePick(payload: AppPreviewPickPayload) {
@@ -470,7 +587,8 @@ watch(
     if (kept.length !== openNames.value.length) {
       const gone = openNames.value.find((n) => !nameSet.has(n))
       if (gone && previewTabName(activeTab.value) === gone) {
-        activeTab.value = nextTabAfterClose(openNames.value, gone, activeTab.value, novncOpen.value)
+        const before = closableTabIds({ names: openNames.value })
+        activeTab.value = neighborTab(previewTabId(gone), before)
       }
       openNames.value = kept
       const nextUnread = { ...tabUnread.value }
@@ -620,7 +738,7 @@ watch(
 )
 
 watch(
-  [openNames, activeTab, novncOpen, () => props.runId, () => props.nodeId],
+  [openNames, activeTab, novncOpen, fixedOpen, () => props.runId, () => props.nodeId],
   () => {
     persistOpenState()
   },
@@ -637,6 +755,8 @@ watch(
       openNames.value = []
       activeTab.value = REACT_STAGE_TAB_GRID
       novncOpen.value = false
+      fixedOpen.value = []
+      fixedMounted.value = {}
       userMoved.value = false
       tabUnread.value = {}
       autoPinFingerprints.value = null
@@ -652,6 +772,8 @@ watch(
       openNames.value = []
       activeTab.value = REACT_STAGE_TAB_GRID
       novncOpen.value = false
+      fixedOpen.value = []
+      fixedMounted.value = {}
       userMoved.value = false
       tabUnread.value = {}
     }
@@ -663,16 +785,14 @@ watch(
   () => effectiveRemoteKind.value,
   (kind) => {
     if (kind !== 'app' && kind !== 'public') {
-      // Drop an empty app tab if the set_preview registration disappears.
-      if (kind === 'off' && probesRegisteredPreview.value && novncOpen.value && activeTab.value === REACT_STAGE_TAB_NOVNC) {
-        novncOpen.value = false
-        activeTab.value = openNames.value.length
-          ? previewTabId(openNames.value[openNames.value.length - 1])
-          : REACT_STAGE_TAB_GRID
-      }
+      if (!novncOpen.value) return
+      const before = closableTabIds({ includeApp: true })
+      const wasActive = activeTab.value === REACT_STAGE_TAB_NOVNC
+      novncOpen.value = false
+      if (wasActive) activeTab.value = neighborTab(REACT_STAGE_TAB_NOVNC, before)
       return
     }
-    // Show the remote tab once kind is live; never steal focus after the user moved.
+    // Show the app tab once a preview is registered; never steal focus after the user moved.
     novncOpen.value = true
     if (userMoved.value) return
     if (activeTab.value === REACT_STAGE_TAB_GRID) {
@@ -682,20 +802,26 @@ watch(
   { immediate: true },
 )
 
+let sandboxGen = 0
 watch(
-  () => `${props.runId}|${props.nodeId}|${effectiveRemoteKind.value}`,
+  () => `${props.runId}|${props.nodeId}|${props.hideAppPreview ? 1 : 0}`,
   async () => {
-    sandboxId.value = null
-    if (effectiveRemoteKind.value !== 'sandbox') return
+    const gen = ++sandboxGen
+    sandboxView.value = null
+    if (props.hideAppPreview) return
+    const rid = String(props.runId || '').trim()
+    const nid = String(props.nodeId || '').trim()
+    if (!rid || !nid) return
     sandboxLoading.value = true
     try {
-      const sbx = await api.getRunNodeSandbox(props.runId, props.nodeId)
-      sandboxId.value = typeof sbx?.id === 'number' ? sbx.id : Number(sbx?.id) || null
+      const sbx = await api.getRunNodeSandbox(rid, nid)
+      if (gen !== sandboxGen) return
+      sandboxView.value = sbx
     } catch (e) {
-      if (isAbortError(e)) return
-      sandboxId.value = null
+      if (gen !== sandboxGen || isAbortError(e)) return
+      sandboxView.value = null
     } finally {
-      sandboxLoading.value = false
+      if (gen === sandboxGen) sandboxLoading.value = false
     }
   },
   { immediate: true },
@@ -743,8 +869,14 @@ watch(
           markUserMoved()
           activatePreview(name)
         },
-        canOpenPreview: () => canOpenNovnc.value,
-        openPreview: openNovnc,
+        canOpenPreview: () => showAppCard.value || effectiveRemoteKind.value === 'sandbox',
+        openPreview: () => {
+          if (showAppCard.value) {
+            openAppTab()
+            return
+          }
+          if (effectiveRemoteKind.value === 'sandbox') openFixed('browser')
+        },
       }),
     )
   },
@@ -824,7 +956,39 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <div
-        v-if="novncOpen"
+        v-for="id in fixedTabsBeforeApp"
+        :key="id"
+        class="group inline-flex max-w-[220px] items-center gap-1 rounded-md text-[12px] transition max-md:text-[11px]"
+        :class="
+          activeTab === id
+            ? 'bg-elevated text-txt'
+            : 'text-txt3 hover:bg-elevated/60 hover:text-txt2'
+        "
+      >
+        <button
+          type="button"
+          role="tab"
+          class="inline-flex min-w-0 items-center gap-1.5 py-1 pl-2.5 pr-1"
+          :aria-selected="activeTab === id ? 'true' : 'false'"
+          :data-testid="'react-artifact-tab-' + id"
+          @click="selectFixedTab(id)"
+        >
+          <Icon :name="fixedTabIcon(id)" :size="13" />
+          <span class="truncate">{{ fixedTabLabel(id) }}</span>
+        </button>
+        <button
+          type="button"
+          class="mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
+          :aria-label="t('pages.reactArtifactStage.closeTab')"
+          :title="t('pages.reactArtifactStage.closeTab')"
+          :data-testid="'react-artifact-tab-close-' + id"
+          @click.stop="closeFixed(id)"
+        >
+          <Icon name="close" :size="12" />
+        </button>
+      </div>
+      <div
+        v-if="novncOpen && showAppCard"
         class="group inline-flex max-w-[220px] items-center gap-1 rounded-md text-[12px] transition max-md:text-[11px]"
         :class="
           showingNovnc
@@ -841,7 +1005,7 @@ onBeforeUnmount(() => {
           @click="selectNovncTab"
         >
           <Icon name="globe" :size="13" />
-          <span class="truncate">{{ remoteTabLabel }}</span>
+          <span class="truncate">{{ t('pages.reactArtifactStage.appTab') }}</span>
         </button>
         <button
           type="button"
@@ -850,6 +1014,38 @@ onBeforeUnmount(() => {
           :title="t('pages.reactArtifactStage.closeTab')"
           data-testid="react-artifact-tab-close-novnc"
           @click.stop="closeNovnc"
+        >
+          <Icon name="close" :size="12" />
+        </button>
+      </div>
+      <div
+        v-for="id in fixedTabsAfterApp"
+        :key="id"
+        class="group inline-flex max-w-[220px] items-center gap-1 rounded-md text-[12px] transition max-md:text-[11px]"
+        :class="
+          activeTab === id
+            ? 'bg-elevated text-txt'
+            : 'text-txt3 hover:bg-elevated/60 hover:text-txt2'
+        "
+      >
+        <button
+          type="button"
+          role="tab"
+          class="inline-flex min-w-0 items-center gap-1.5 py-1 pl-2.5 pr-1"
+          :aria-selected="activeTab === id ? 'true' : 'false'"
+          :data-testid="'react-artifact-tab-' + id"
+          @click="selectFixedTab(id)"
+        >
+          <Icon :name="fixedTabIcon(id)" :size="13" />
+          <span class="truncate">{{ fixedTabLabel(id) }}</span>
+        </button>
+        <button
+          type="button"
+          class="mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
+          :aria-label="t('pages.reactArtifactStage.closeTab')"
+          :title="t('pages.reactArtifactStage.closeTab')"
+          :data-testid="'react-artifact-tab-close-' + id"
+          @click.stop="closeFixed(id)"
         >
           <Icon name="close" :size="12" />
         </button>
@@ -870,18 +1066,19 @@ onBeforeUnmount(() => {
         class="grid grid-cols-[repeat(auto-fill,minmax(176px,1fr))] gap-3"
       >
         <button
-          v-if="canOpenNovnc"
+          v-for="card in fixedCards"
+          :key="card.id"
           type="button"
           class="overflow-hidden rounded-lg border border-line bg-surface text-left transition hover:border-line-strong"
-          data-testid="react-artifact-card-novnc"
-          @click="openNovnc"
+          :data-testid="'react-artifact-card-' + card.id"
+          @click="onFixedCard(card.id)"
         >
           <div class="relative flex h-[110px] items-center justify-center overflow-hidden bg-elevated text-txt3">
-            <Icon name="globe" :size="28" class="opacity-50" />
+            <Icon :name="card.icon" :size="28" class="opacity-50" />
           </div>
           <div class="px-2.5 py-2">
-            <div class="truncate text-[12px] font-medium text-txt">{{ remoteCardTitle }}</div>
-            <div class="mt-0.5 truncate text-[11px] text-txt3">{{ remoteCardMeta }}</div>
+            <div class="truncate text-[12px] font-medium text-txt">{{ card.title }}</div>
+            <div class="mt-0.5 truncate text-[11px] text-txt3">{{ card.meta }}</div>
           </div>
         </button>
         <div
@@ -971,7 +1168,58 @@ onBeforeUnmount(() => {
     </div>
 
     <div
-      v-if="novncOpen"
+      v-if="fixedMounted.ide"
+      v-show="activeTab === 'ide'"
+      class="flex min-h-0 flex-1 flex-col"
+      data-testid="react-artifact-preview-ide"
+    >
+      <SandboxStageSurface
+        kind="ide"
+        :sandbox="sandboxView"
+        :loading="sandboxLoading"
+        :active="activeTab === 'ide'"
+        class="min-h-0 flex-1"
+      />
+    </div>
+    <div
+      v-if="fixedMounted.terminal"
+      v-show="activeTab === 'terminal'"
+      class="flex min-h-0 flex-1 flex-col"
+      data-testid="react-artifact-preview-terminal"
+    >
+      <SandboxStageSurface
+        kind="terminal"
+        :sandbox="sandboxView"
+        :loading="sandboxLoading"
+        :active="activeTab === 'terminal'"
+        class="min-h-0 flex-1"
+      />
+    </div>
+    <div
+      v-if="fixedMounted.browser"
+      v-show="activeTab === 'browser'"
+      class="flex min-h-0 flex-1 flex-col"
+      data-testid="react-artifact-preview-browser"
+    >
+      <NovncPreviewPanel
+        v-if="sandboxId"
+        :sandbox-id="sandboxId"
+        console
+        fill
+        :inspectable="annotatable"
+        @pick="onRemotePick"
+      />
+      <div
+        v-else
+        class="flex h-full flex-col items-center justify-center p-6 text-center text-[12px] text-txt3"
+        data-testid="react-artifact-browser-missing"
+      >
+        <Icon name="globe" :size="26" class="mb-2 opacity-40" />
+        {{ sandboxLoading ? t('pages.appPreview.loading') : t('pages.reactArtifactStage.novncMissing') }}
+      </div>
+    </div>
+    <div
+      v-if="novncOpen && showAppCard"
       v-show="showingNovnc"
       class="flex min-h-0 flex-1 flex-col"
       data-testid="react-artifact-preview-novnc"
@@ -995,22 +1243,21 @@ onBeforeUnmount(() => {
         @pick="onRemotePick"
         @staged-pick="emit('stagedPick', $event)"
       />
-      <NovncPreviewPanel
-        v-else-if="sandboxId"
-        :sandbox-id="sandboxId"
-        console
-        fill
-        :inspectable="annotatable"
-        @pick="onRemotePick"
+    </div>
+    <div
+      v-if="fixedMounted.log"
+      v-show="activeTab === 'log'"
+      class="flex min-h-0 flex-1 flex-col"
+      data-testid="react-artifact-preview-log"
+    >
+      <SandboxStageSurface
+        kind="log"
+        :run-id="runId"
+        :node-id="nodeId"
+        :loading="sandboxLoading"
+        :active="activeTab === 'log'"
+        class="min-h-0 flex-1"
       />
-      <div
-        v-else-if="effectiveRemoteKind === 'sandbox'"
-        class="flex h-full flex-col items-center justify-center p-6 text-center text-[12px] text-txt3"
-        data-testid="react-artifact-novnc-missing"
-      >
-        <Icon name="globe" :size="26" class="mb-2 opacity-40" />
-        {{ sandboxLoading ? t('pages.appPreview.loading') : t('pages.reactArtifactStage.novncMissing') }}
-      </div>
     </div>
   </div>
 </template>

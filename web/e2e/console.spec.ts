@@ -8,23 +8,23 @@ async function vncConnectCount(page: import('@playwright/test').Page): Promise<n
   })
 }
 
-const TAB_ORDER = ['终端', 'IDE', 'ACP', 'noVNC 浏览器', '日志'] as const
+const TAB_ORDER = ['终端', 'IDE', 'Agent', '浏览器', '日志'] as const
 
 test.describe('SandboxConsole Tab / noVNC', () => {
-  test('顶栏顺序 terminal|ide|acp|novnc|log 且仅一个 ACP', async ({ page }) => {
+  test('顶栏顺序 terminal|ide|acp|novnc|log 且仅一个 Agent', async ({ page }) => {
     await page.goto('/console.html')
     const tabs = page.locator('.ml-4.flex.gap-1 button')
     await expect(tabs).toHaveCount(5)
     for (let i = 0; i < TAB_ORDER.length; i++) {
       await expect(tabs.nth(i)).toContainText(TAB_ORDER[i])
     }
-    await expect(page.getByRole('button', { name: /^ACP$/ })).toHaveCount(1)
+    await expect(page.getByRole('button', { name: /^Agent$/ })).toHaveCount(1)
     await expect(page.getByRole('button', { name: /ACP 原生|ACP Native/ })).toHaveCount(0)
   })
 
   test('?tab=acp 进入 ACP bridge', async ({ page }) => {
     await page.goto('/console.html?tab=acp')
-    await expect(page.getByRole('button', { name: /^ACP$/ })).toHaveClass(/bg-accent-dim/)
+    await expect(page.getByRole('button', { name: /^Agent$/ })).toHaveClass(/bg-accent-dim/)
     await expect(page.locator('iframe[title="ACP bridge"]')).toBeVisible()
   })
 
@@ -45,7 +45,7 @@ test.describe('SandboxConsole Tab / noVNC', () => {
     expect(before).toBeGreaterThan(0)
 
     await page.getByRole('button', { name: '终端' }).click()
-    await page.getByRole('button', { name: 'noVNC 浏览器' }).click()
+    await page.getByRole('button', { name: /^浏览器$/ }).click()
     await expect(page.getByPlaceholder('about:blank')).toBeVisible()
     const after = await vncConnectCount(page)
     expect(after).toBe(before)
