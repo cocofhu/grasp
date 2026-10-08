@@ -17,10 +17,19 @@ const flow = vi.hoisted(() => ({
   setCenter: vi.fn(async () => true),
   screenToFlowCoordinate: vi.fn((p: { x: number; y: number }) => ({ x: p.x, y: p.y })),
   findNode: vi.fn((id: string) => ({ id, dimensions: { width: 240, height: 100 }, computedPosition: { x: 10, y: 20 } })),
+  viewport: null as { value: { x: number; y: number; zoom: number } } | null,
+  dimensions: null as { value: { width: number; height: number } } | null,
+  getNodes: null as { value: Array<Record<string, any>> } | null,
 }))
 
 vi.mock('@vue-flow/core', async () => {
   const { ref: vref, defineComponent: dc } = await import('vue')
+  const viewport = vref({ x: 0, y: 0, zoom: 1 })
+  const dimensions = vref({ width: 800, height: 600 })
+  const getNodes = vref<Array<Record<string, any>>>([])
+  flow.viewport = viewport
+  flow.dimensions = dimensions
+  flow.getNodes = getNodes
   return {
     VueFlow: dc({
       name: 'VueFlow',
@@ -53,8 +62,9 @@ vi.mock('@vue-flow/core', async () => {
     }),
     useVueFlow: () => ({
       ...flow,
-      viewport: vref({ x: 0, y: 0, zoom: 1 }),
-      dimensions: vref({ width: 800, height: 600 }),
+      viewport,
+      dimensions,
+      getNodes,
     }),
     MarkerType: { ArrowClosed: 'arrowclosed' },
     ConnectionLineType: { SmoothStep: 'smoothstep' },
@@ -63,7 +73,6 @@ vi.mock('@vue-flow/core', async () => {
     getSmoothStepPath: () => ['M0 0', 0, 0],
   }
 })
-vi.mock('@vue-flow/background', () => ({ Background: defineComponent({ template: '<div data-testid="flow-bg" />' }) }))
 vi.mock('@vue-flow/minimap', () => ({ MiniMap: defineComponent({ template: '<div data-testid="canvas-minimap" />' }) }))
 
 import { useCanvasEditor } from './composables/useCanvasEditor'
@@ -120,7 +129,23 @@ const mounted: { unmount: () => void }[] = []
 afterEach(() => {
   while (mounted.length) mounted.pop()!.unmount()
   vi.clearAllMocks()
+  flow.viewport!.value = { x: 0, y: 0, zoom: 1 }
+  flow.dimensions!.value = { width: 800, height: 600 }
+  flow.getNodes!.value = []
+  flow.findNode.mockImplementation((id: string) => ({
+    id,
+    dimensions: { width: 240, height: 100 },
+    computedPosition: { x: 10, y: 20 },
+  }))
 })
+
+function lengthAttr(el: { attributes: (name: string) => string | undefined }, name: string) {
+  const raw = el.attributes(name)
+  expect(raw, name).toBeTruthy()
+  const value = Number(raw)
+  expect(Number.isFinite(value), `${name}=${raw}`).toBe(true)
+  return value
+}
 
 function mountCanvas(props: Record<string, unknown>) {
   const w = mount(WorkflowCanvas, {
@@ -569,6 +594,78 @@ describe('WorkflowCanvas · run mode', () => {
 
   it('hides the follow toggle when follow is not bound', () => {
     expect(mountCanvas(runProps()).find('[data-testid="canvas-follow"]').exists()).toBe(false)
+  })
+})
+
+describe('WorkflowCanvas · finite viewport', () => {
+  function finiteNode(position: { x: number; y: number } = { x: 0, y: 0 }) {
+    return {
+      id: 'in',
+      hidden: false,
+      dimensions: { width: 240, height: 100 },
+      computedPosition: position,
+    }
+  }
+
+  it('draws dot lengths from a finite viewport and keeps them finite when the viewport is not', async () => {
+    flow.viewport!.value = { x: 40, y: -3, zoom: 1 }
+    const editor = makeEditor()
+    const w = mountCanvas({ nodes: editor.graph.nodes, edges: editor.graph.edges, editor })
+    await flushPromises()
+    const circle = w.get('circle')
+    const pattern = w.get('pattern')
+    expect(lengthAttr(circle, 'cx')).toBeCloseTo(0.6)
+    expect(lengthAttr(circle, 'cy')).toBeCloseTo(0.6)
+    expect(lengthAttr(circle, 'r')).toBeCloseTo(0.6)
+    expect(lengthAttr(pattern, 'x')).toBeCloseTo(40 % 16)
+    expect(lengthAttr(pattern, 'y')).toBeCloseTo(-3)
+    expect(lengthAttr(pattern, 'width')).toBeCloseTo(16)
+    expect(lengthAttr(pattern, 'height')).toBeCloseTo(16)
+    expect(circle.attributes('fill')).toBe('#1f1f26')
+
+    flow.viewport!.value = { x: Number.NaN, y: Number.POSITIVE_INFINITY, zoom: Number.NaN }
+    await flushPromises()
+    expect(lengthAttr(w.get('circle'), 'cx')).toBeCloseTo(0.6)
+    expect(lengthAttr(w.get('circle'), 'r')).toBeCloseTo(0.6)
+    expect(lengthAttr(w.get('pattern'), 'x')).toBeCloseTo(40 % 16)
+    expect(lengthAttr(w.get('pattern'), 'y')).toBeCloseTo(-3)
+    expect(lengthAttr(w.get('pattern'), 'width')).toBeCloseTo(16)
+    expect(lengthAttr(w.get('pattern'), 'height')).toBeCloseTo(16)
+  })
+
+  it('does not fit a non-finite node box, and still fits a finite one', async () => {
+    const editor = makeEditor()
+    flow.getNodes!.value = [finiteNode({ x: Number.NaN, y: 0 })]
+    const rejected = mountCanvas({ nodes: editor.graph.nodes, edges: editor.graph.edges, editor })
+    vueFlow(rejected).vm.$emit('nodes-initialized')
+    await flushPromises()
+    expect(flow.fitView).not.toHaveBeenCalled()
+
+    flow.fitView.mockClear()
+    flow.getNodes!.value = [finiteNode({ x: 0, y: 0 })]
+    const accepted = mountCanvas({ nodes: editor.graph.nodes, edges: editor.graph.edges, editor })
+    vueFlow(accepted).vm.$emit('nodes-initialized')
+    await flushPromises()
+    expect(flow.fitView).toHaveBeenCalledWith({ padding: 0.2, maxZoom: 1, minZoom: 0.7, duration: 0 })
+  })
+
+  it('does not center when the node position is not finite', async () => {
+    flow.findNode.mockReturnValue({
+      id: 'test',
+      dimensions: { width: 240, height: 100 },
+      computedPosition: { x: Number.NaN, y: 20 },
+    })
+    const g = sampleGraph()
+    mountCanvas({
+      nodes: g.nodes,
+      edges: g.edges,
+      mode: 'run',
+      agents: AGENTS,
+      follow: true,
+      followNodeId: 'test',
+    })
+    await flushPromises()
+    expect(flow.setCenter).not.toHaveBeenCalled()
   })
 })
 

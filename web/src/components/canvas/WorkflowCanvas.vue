@@ -2,7 +2,6 @@
 import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ConnectionLineType, VueFlow, useVueFlow, type Connection, type Edge, type EdgeChange, type NodeChange } from '@vue-flow/core'
-import { Background } from '@vue-flow/background'
 import { MiniMap } from '@vue-flow/minimap'
 import './canvas.css'
 import AgentNode from './nodes/AgentNode.vue'
@@ -37,6 +36,8 @@ import { buildDefaultWorkflow } from './composables/defaultTemplate'
 import { createNode, type NodeSpec } from './composables/graphOps'
 import { findFreeSpot } from './composables/placement'
 import { alignmentGuides, type AlignmentGuides } from './composables/alignmentGuides'
+import CanvasDots from './CanvasDots.vue'
+import { finiteViewport, fitTransform, unionBounds, type FlowViewport, type NodeBounds } from './composables/finiteViewport'
 
 const props = withDefaults(
   defineProps<{
@@ -102,7 +103,20 @@ const {
   viewport,
   findNode,
   dimensions,
+  getNodes,
 } = useVueFlow(flowId)
+
+/** Last viewport whose x, y and zoom were all finite. Dots and rejected fits keep this. */
+const rememberedViewport = ref<FlowViewport | null>(null)
+watch(
+  viewport,
+  (vp) => {
+    const next = finiteViewport(vp, rememberedViewport.value)
+    if (next.x === vp.x && next.y === vp.y && next.zoom === vp.zoom) rememberedViewport.value = next
+  },
+  { immediate: true, deep: true },
+)
+const dotsViewport = computed(() => finiteViewport(viewport.value, rememberedViewport.value))
 
 const editing = computed(() => props.mode === 'edit' && !!props.editor)
 const host = ref<HTMLElement | null>(null)
@@ -591,10 +605,41 @@ const reduced = prefersReducedMotion()
 
 /** Lowest zoom the opening view may use; wider graphs overflow instead of shrinking past legibility. */
 const INITIAL_MIN_ZOOM = 0.7
+/** Matches VueFlow min-zoom. fitView uses this when the caller does not pass one. */
+const CANVAS_MIN_ZOOM = 0.25
+const FIT_PADDING = 0.2
+const FIT_MAX_ZOOM = 1
+
+function boxesForFit(): NodeBounds[] | null {
+  const boxes: NodeBounds[] = []
+  for (const node of getNodes.value) {
+    const width = node.dimensions?.width
+    const height = node.dimensions?.height
+    if (!width || !height || node.hidden) continue
+    const x = node.computedPosition?.x
+    const y = node.computedPosition?.y
+    if (typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(width) || !Number.isFinite(height)) {
+      return null
+    }
+    boxes.push({ x, y, width, height })
+  }
+  return boxes
+}
+
+/** False when the fit that fitView would write is not a finite viewport. No measured nodes is a no-op, not a bad write. */
+function fitTargetIsFinite(minZoom: number): boolean {
+  const boxes = boxesForFit()
+  if (!boxes) return false
+  if (!boxes.length) return true
+  const bounds = unionBounds(boxes)
+  if (!bounds) return false
+  return fitTransform(bounds, dimensions.value.width, dimensions.value.height, minZoom, FIT_MAX_ZOOM, FIT_PADDING) !== null
+}
 
 async function fit(duration = reduced ? 0 : 240, minZoom?: number) {
   await nextTick()
-  await fitView({ padding: 0.2, maxZoom: 1, minZoom, duration })
+  if (!fitTargetIsFinite(minZoom ?? CANVAS_MIN_ZOOM)) return
+  await fitView({ padding: FIT_PADDING, maxZoom: FIT_MAX_ZOOM, minZoom, duration })
 }
 
 async function layout(animate = true) {
@@ -662,12 +707,20 @@ function onMoveStart() {
 function centerOn(id: string, duration = reduced ? 0 : 400) {
   const n = findNode(id)
   if (!n) return
-  const w = n.dimensions?.width || 220
-  const h = n.dimensions?.height || 80
-  void setCenter(n.computedPosition.x + w / 2, n.computedPosition.y + h / 2, {
-    zoom: Math.max(viewport.value.zoom, 0.8),
-    duration,
-  })
+  const dw = n.dimensions?.width
+  const dh = n.dimensions?.height
+  if ((typeof dw === 'number' && !Number.isFinite(dw)) || (typeof dh === 'number' && !Number.isFinite(dh))) return
+  const w = dw || 220
+  const h = dh || 80
+  const px = n.computedPosition?.x
+  const py = n.computedPosition?.y
+  const zoom = Math.max(viewport.value.zoom, 0.8)
+  if (typeof px !== 'number' || typeof py !== 'number') return
+  const x = px + w / 2
+  const y = py + h / 2
+  if (!Number.isFinite(px) || !Number.isFinite(py) || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(zoom) || zoom <= 0) return
+  if (!Number.isFinite(dimensions.value.width) || !Number.isFinite(dimensions.value.height)) return
+  void setCenter(x, y, { zoom, duration })
 }
 
 watch(
@@ -875,7 +928,7 @@ defineExpose({ fit, layout, centerOn, openCommandPalette })
       @move-start="onMoveStart"
       @nodes-initialized="onNodesInitialized"
     >
-      <Background variant="dots" :gap="16" :size="1.2" :pattern-color="colors.dot" />
+      <CanvasDots :viewport="dotsViewport" :color="colors.dot" />
       <MiniMap
         v-if="showMinimap"
         pannable
