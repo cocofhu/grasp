@@ -181,6 +181,17 @@ const timeout = computed({
   },
 })
 
+const MAX_NUDGE_RETRIES = 10
+const nudgeRetries = computed({
+  get: () => (cfg.value.nudgeRetries === undefined || cfg.value.nudgeRetries === null ? '' : String(cfg.value.nudgeRetries)),
+  set: (v: string | number) => {
+    const s = String(v ?? '').trim()
+    const n = Number(s)
+    if (!s || !Number.isFinite(n) || n < 0) delete cfg.value.nudgeRetries
+    else cfg.value.nudgeRetries = Math.min(MAX_NUDGE_RETRIES, Math.round(n))
+  },
+})
+
 const hue = computed(() => {
   const v = agentHueVar(agentName.value || props.node.id)
   return { background: `rgb(var(${v}) / 0.16)`, color: `rgb(var(${v}))` }
@@ -255,6 +266,21 @@ const hue = computed(() => {
             <input v-model="timeout" type="number" min="1" class="input flex-1" :placeholder="t('canvas.inspector.timeoutPlaceholder')" data-testid="inspector-timeout" />
             <span class="chip">{{ t('common.minutes') }}</span>
           </div>
+          <p class="mt-1.5 text-[11px] text-txt3">{{ t('canvas.inspector.timeoutHint') }}</p>
+        </section>
+
+        <section class="insp-card">
+          <h3 class="insp-title">{{ t('canvas.inspector.sections.nudge') }}</h3>
+          <input
+            v-model="nudgeRetries"
+            type="number"
+            min="0"
+            :max="MAX_NUDGE_RETRIES"
+            class="input w-full"
+            :placeholder="t('canvas.inspector.nudgePlaceholder')"
+            data-testid="inspector-nudge-retries"
+          />
+          <p class="mt-1.5 text-[11px] text-txt3">{{ t('canvas.inspector.nudgeHint') }}</p>
         </section>
 
         <section class="insp-card" data-testid="inspector-capabilities">

@@ -16,13 +16,15 @@ description: 沙箱内 git clone/push 与合并请求（GitLab glab / GitHub gh�
 
 Gitea/Bitbucket 等 HTTPS 不支持 Token 注入,请改用 SSH。
 
-## 新功能分支 + push
+## 工作分支 + push
+
+分支名固定为 `<type>/<topic>-<运行短ID>`:`type` 按需求 work_kind 取 `feat`(feature)/ `fix`(bug)/ `chore`(other;纯重构 `refactor`、纯文档 `docs`);`topic` 为 2–5 个英文小写单词的连字符主题;运行短 ID 取 `${GRASP_RUN_ID#run-}`。
 
 ```bash
-cd /root/workspace
-git checkout -b feature/<简短描述>-$(date +%s)
+cd /root/workspace/<name>
+git checkout -b feat/<topic>-${GRASP_RUN_ID#run-}
 # ... 实现改动,跑通测试 ...
-git add -A
+git add <改动的文件>   # 点名文件,不要 git add -A / git add .
 git commit -m "<语义化提交信息>"
 git push -u origin HEAD
 ```
@@ -69,6 +71,6 @@ gh pr list --base <target> --head "$(git rev-parse --abbrev-ref HEAD)" --state m
 
 ## 注意
 
-- 只 push 到 `feature/*`,不要碰 `main` / 受保护分支。
+- 只 push 到上面命名规则的工作分支,不要碰 `main` / 受保护分支。
 - 不要修改 `.github/workflows` / `.gitlab-ci.yml` / `Dockerfile`,除非任务明确要求。
 - 命令失败先 surface 错误原因,不要静默重试;但对 create 的幂等错误须按上方闭环转入查询后再申报。

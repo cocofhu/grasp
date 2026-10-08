@@ -102,6 +102,30 @@ describe('LiveLogPanel', () => {
     wrapper.unmount()
   })
 
+  it('shows the latest sandbox heartbeat in the footer, not as a log row', () => {
+    const msg: AcpEvent = { t: 0, kind: 'message', text: 'building' }
+    const beat = (idleSec: number, active: boolean): AcpEvent => ({
+      t: 1, kind: 'liveness',
+      liveness: { active, cpuMs: 2500, ioBytes: 8192, idleSec, limitSec: 1200, lastTool: 'npm test' },
+    })
+    const wrapper = mountPanel({ live: true, busy: true, status: 'running', events: [msg, beat(0, true)] })
+    const footer = wrapper.find('[data-testid="live-log-liveness"]')
+    expect(footer.text()).toBe('Agent 活动中 · CPU 2.5s · IO 8 KiB')
+    expect(footer.attributes('title')).toBe('npm test')
+    expect(wrapper.text()).not.toContain('liveness')
+    wrapper.unmount()
+
+    const quiet = mountPanel({ live: true, busy: true, status: 'running', events: [msg, beat(0, true), beat(600, false)] })
+    const q = quiet.find('[data-testid="live-log-liveness"]')
+    expect(q.text()).toBe('Agent 已 10 分钟无活动（20 分钟后判定卡住）')
+    expect(q.classes()).toContain('text-warn')
+    quiet.unmount()
+
+    const done = mountPanel({ live: false, status: 'success', events: [msg, beat(0, true)] })
+    expect(done.find('[data-testid="live-log-liveness"]').exists()).toBe(false)
+    done.unmount()
+  })
+
   it('shows three boot stages while running with empty timeline', () => {
     const wrapper = mountPanel({
       status: 'running',

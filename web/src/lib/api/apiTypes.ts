@@ -355,6 +355,8 @@ export interface SettingItem {
   unit?: string
   value: number
   min: number
+  // max is the ceiling, absent when the knob has none.
+  max?: number
   source: 'env' | 'db' | 'config'
   locked: boolean
 }

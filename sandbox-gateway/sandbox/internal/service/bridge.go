@@ -87,9 +87,13 @@ type Bridge struct {
 	// 本会话选择的模型；空表示跟随 ChatManager 的默认模型（-model / ACP_BRIDGE_MODEL）。
 	model string
 
-	// 回合看门狗：连续无事件 turnIdle 或总时长超过 turnMax 即终止回合；0 表示不限。
+	// 回合看门狗：连续 turnIdle 没有任何活动（输出事件、CPU、IO）或总时长超过 turnMax 即终止回合；0 表示不限。
 	turnIdle time.Duration
 	turnMax  time.Duration
+	// 活性判定：Agent 进程树每个采样周期的 CPU / IO 达到阈值即算有活动。sampler 为 nil 时只看输出事件。
+	sampler     processSampler
+	livenessCPU time.Duration
+	livenessIO  int64
 }
 
 // queuedPrompt：入队前 InMessage 核心字段（单会话 FIFO）。
@@ -100,6 +104,8 @@ type queuedPrompt struct {
 	Images []acp.PromptImage // 图片 / 文件附件（base64）
 	// MaxDuration 覆盖本回合的总时长上限（chat 帧 deadlineSec）；0 用 Bridge.turnMax。
 	MaxDuration time.Duration
+	// IdleTimeout 覆盖本回合的无动作时限（chat 帧 idleSec）；0 用 Bridge.turnIdle。
+	IdleTimeout time.Duration
 }
 
 // PromptImage 前端上传的图片附件（base64 编码），类型别名方便 handler 层引用。
@@ -113,6 +119,10 @@ type promptTurn struct {
 	recover      atomic.Bool             // true 表示这次空闲只杀进程、同会话再续跑一次
 	continued    atomic.Bool             // true 表示已经续跑过，下一次空闲才是真正超时
 	lastCause    string                  // 最近一次看门狗取消原因，写在 cancel 之前
+	lastErr      error                   // 同 lastCause 的 error 形式（区分 stuck / timeout）
+	loopRecover  atomic.Bool             // true 表示这次续跑是因为原地打转（同一工具调用反复执行）
+	loop         toolLoop                // 连续相同工具调用计数
+	loopC        chan struct{}           // 检测到原地打转时通知看门狗
 	lastActivity atomic.Int64            // 最近一次 provider 事件（UnixNano），看门狗 idle 计时用
 	started      time.Time               // 本轮用户消息开始时间；续跑不重置总时长
 	opID         string                  // 与 ws oid= / queue_entries 对齐，供 queue_state.running 展示
@@ -122,7 +132,11 @@ type promptTurn struct {
 
 func NewBridge() *Bridge {
 	idle, max := turnLimitsFromEnv()
+	liveCPU, liveIO := livenessThresholdsFromEnv()
 	return &Bridge{
+		sampler:        procSampler{root: "/proc"},
+		livenessCPU:    liveCPU,
+		livenessIO:     liveIO,
 		id:             DefaultChatID,
 		createdAt:      time.Now(),
 		permWait:       make(map[string]chan string),

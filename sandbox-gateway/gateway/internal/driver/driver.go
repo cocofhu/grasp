@@ -71,6 +71,23 @@ type Handle struct {
 	CreatedAt time.Time
 }
 
+// ExitInfo is the most recent termination of a sandbox's main container.
+type ExitInfo struct {
+	Reason    string    `json:"reason"` // OOMKilled | Error | Evicted | Completed | Exited
+	ExitCode  int       `json:"exitCode"`
+	OOMKilled bool      `json:"oomKilled"`
+	Message   string    `json:"message,omitempty"`
+	Restarts  int       `json:"restarts"`
+	MemoryMB  int64     `json:"memoryMB,omitempty"` // memory limit in force, 0 if unknown
+	At        time.Time `json:"at,omitempty"`
+}
+
+// ExitReporter is implemented by drivers that can say why a sandbox's main
+// container last exited. LastExit returns (nil, nil) when it never has.
+type ExitReporter interface {
+	LastExit(ctx context.Context, id string) (*ExitInfo, error)
+}
+
 // Driver provisions and exposes sandboxes. It is intentionally thin: lifecycle
 // plus endpoint exposure only. Data-plane operations (exec, files, terminal,
 // sessions, IDE, preview) are direct client-to-sandbox connections and are NOT

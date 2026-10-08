@@ -251,6 +251,29 @@ for the agent execution event log.
   replace a full production Role). Missing permission surfaces as a non-2xx
   error (not empty success).
 
+## Last container exit (read-only)
+
+```
+GET /api/v1/sandboxes/:id/exit
+```
+
+Why the sandbox's main container last stopped, so callers can tell an OOM kill
+from a network drop. `exit` is `null` when it has never exited (or the driver
+cannot tell).
+
+```json
+{"exit": {"reason": "OOMKilled", "exitCode": 137, "oomKilled": true,
+          "restarts": 1, "memoryMB": 8192, "at": "2026-10-07T22:31:04Z"}}
+```
+
+- `reason`: `OOMKilled` | `Error` | `Evicted` | `Completed` | `Exited` (kubelet's
+  reason verbatim on Kubernetes).
+- **Docker driver**: `docker inspect` `State.OOMKilled` / `ExitCode` /
+  `FinishedAt`, `RestartCount`, `HostConfig.Memory`.
+- **Kubernetes driver**: latest of the `sandbox` container's `state.terminated`
+  / `lastState.terminated` across the sandbox's pods, or an evicted pod. Needs
+  `list` on `pods` (already required by logs).
+
 ## What the gateway does NOT do
 
 - No `exec` / file / terminal endpoints. Run commands and move files by

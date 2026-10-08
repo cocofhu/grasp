@@ -48,13 +48,16 @@ sandbox:
   env: {}
   # ACP 后端非密钥选项(厂商中立):合并进沙箱 Env。密钥请在项目凭据中配置。
   acp_env: {}
-  # 单轮 agent/react 回合的硬超时(秒),即回合最多跑多久。单个节点可在其
-  # Agent 卡片上填「超时(分钟)」单独放宽(耗时任务用),不填则用此全局值。
-  agent_chat_timeout_seconds: 600
-  # 回合内多久没有任何事件就判定卡死并中断(秒)。长任务里 agent 可能长时间
-  # 闷头执行,故默认放宽到 720;需大于沙箱侧 SANDBOX_TURN_IDLE_TIMEOUT(默认 10m),
-  # 让能真正杀掉回合的沙箱看门狗先触发,这里只做兜底。
-  chat_idle_timeout_seconds: 720
+  # Agent 回合没有单轮总时限。节点总时限在画布节点上配置「节点总时限(分钟)」,
+  # 累计本节点所有 Agent 回合;不填时按下面的兜底上限。
+  # agent_chat_timeout_seconds 已废弃并忽略。
+  #
+  # Agent 无动作时限(秒):沙箱判定 Agent 既无输出、也无 CPU/IO 活动这么久,
+  # 先续跑一次,仍无活动则中断本轮。正在编译、测试、下载的命令算作有活动。
+  # 设置页可在运行时修改;用 GRASP_CHAT_IDLE_SEC 设置后页面只读。
+  chat_idle_timeout_seconds: 1200
+  # 未配置节点总时限的 Agent 节点的兜底上限(小时)。
+  agent_node_hard_cap_hours: 24
   # 工作流节点沙箱在回合结束后再保活多少分钟(供终端/IDE/日志事后调试),之后
   # 被清扫回收。注:回合执行期间沙箱不受此限;MCP token 的有效期跟随沙箱生命
   # 周期(沙箱在即有效,无需单独配置 token 时长)。

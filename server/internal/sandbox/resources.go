@@ -1,6 +1,23 @@
 package sandbox
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+	"time"
+)
+
+// agentIdleTimeout is the platform-wide Agent no-activity limit (settings page
+// agent_idle_timeout_minutes); 0 until the settings service applies it.
+var agentIdleTimeout atomic.Int64
+
+// SetAgentIdleTimeout updates the no-activity limit sent with every later
+// turn. A non-positive value clears it, so the boot value applies again.
+func SetAgentIdleTimeout(d time.Duration) {
+	agentIdleTimeout.Store(int64(max(d, 0)))
+}
+
+// AgentIdleTimeout returns the configured no-activity limit, or 0 when the
+// settings service has not set one.
+func AgentIdleTimeout() time.Duration { return time.Duration(agentIdleTimeout.Load()) }
 
 // defaultMemoryMB is the platform-wide sandbox memory limit (settings page
 // sandbox_memory_mb). It is process-global because both the runtime provider

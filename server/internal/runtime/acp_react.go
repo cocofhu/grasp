@@ -19,6 +19,7 @@ import (
 // ReactReply together with the opening contract.
 func (c *acpProvider) ReactOpen(ctx context.Context, req NodeReq) (out ReactTurn) {
 	defer c.drainCarriedUsage(reactKey(req), &out)
+	c.resetNodeBudget(req)
 	n := c.sandboxAttempts()
 	for attempt := 1; ; attempt++ {
 		c.host.ClearOutcome(req.RunID, req.NodeID)
@@ -59,7 +60,7 @@ func (c *acpProvider) rehydrateReact(ctx context.Context, req NodeReq, history [
 					Msg("clarify session rehydrated without priming chat")
 				return sess
 			}
-			chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
+			chatCtx, cancel := c.turnCtx(ctx, req)
 			var primed *sandbox.ChatResult
 			primed, err = c.streamChat(chatCtx, acp, req, c.buildReactRehydratePrompt(req, seeded, history), req.PromptImages)
 			cancel()
@@ -126,7 +127,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 		}
 	}
 
-	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
+	chatCtx, cancel := c.turnCtx(ctx, req)
 	defer cancel()
 	// Confirm (force) exposes node_complete before the confirm turn so
 	// tools/list includes it and tools/call can succeed; the dialogue hides it.
@@ -280,7 +281,7 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 		}
 		rehydrated = true
 	}
-	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
+	chatCtx, cancel := c.turnCtx(ctx, req)
 	res, err := c.streamChat(chatCtx, sess.acp, req, reviewTurnPrompt(req, history, human, rehydrated), images)
 	cancel()
 	if res != nil && res.OpID != "" {
@@ -445,7 +446,7 @@ func (c *acpProvider) ReconcileOnConfirm(ctx context.Context, req NodeReq) React
 	var events []models.AcpEvent
 
 	prompt := models.ReviewConfirmReconcile
-	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
+	chatCtx, cancel := c.turnCtx(ctx, req)
 	res, err := c.streamChat(chatCtx, sess.acp, req, prompt, nil)
 	cancel()
 	if err != nil {
@@ -475,7 +476,7 @@ func (c *acpProvider) confirmSummaryTurn(ctx context.Context, req NodeReq, sess 
 		return ""
 	}
 	prompt := models.ConfirmSummaryContract
-	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
+	chatCtx, cancel := c.turnCtx(ctx, req)
 	res, err := c.streamChat(chatCtx, sess.acp, req, prompt, nil)
 	cancel()
 	if err != nil {
@@ -583,7 +584,7 @@ func (c *acpProvider) enforceOpenQuestionsGate(ctx context.Context, req NodeReq,
 		return nil, "", nil, nil, nil, false
 	}
 	prompt := models.ClarifiedOpenQuestionsRetryFor(open)
-	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
+	chatCtx, cancel := c.turnCtx(ctx, req)
 	res, err := c.streamChat(chatCtx, sess.acp, req, prompt, nil)
 	cancel()
 	if err != nil {
@@ -620,7 +621,7 @@ func (c *acpProvider) enforcePreflightGate(ctx context.Context, req NodeReq, ses
 		return clarifyPending{}, "", nil, nil, nil, false
 	}
 	prompt := models.PreflightRetryFor(reason)
-	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
+	chatCtx, cancel := c.turnCtx(ctx, req)
 	res, err := c.streamChat(chatCtx, sess.acp, req, prompt, nil)
 	cancel()
 	if err != nil {
@@ -737,7 +738,7 @@ func (c *acpProvider) parkReactSession(req NodeReq, sb *sandbox.Sandbox, acp *sa
 	}
 	c.mu.Unlock()
 	if c.timeline != nil && sb != nil {
-		c.timeline.startIngest(req.RunID, req.NodeID, host, port, sb.Password, acpTurnBusy(acp))
+		c.timeline.startIngest(req.RunID, req.NodeID, host, port, sb.Password, acpTurnBusy(acp, c.emit != nil))
 	}
 	return sess
 }

@@ -32,6 +32,7 @@ type entry struct {
 	eps       map[int]string
 	createdAt time.Time
 	logs      string
+	exit      *driver.ExitInfo
 }
 
 // New returns an empty fake Driver.
@@ -226,6 +227,26 @@ func (d *Driver) Logs(_ context.Context, id string, _ int) (string, error) {
 		return "", fmt.Errorf("not found")
 	}
 	return e.logs, nil
+}
+
+// SetExit sets the canned last exit for a sandbox (unit tests).
+func (d *Driver) SetExit(id string, e *driver.ExitInfo) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if s, ok := d.sandboxes[id]; ok {
+		s.exit = e
+	}
+}
+
+// LastExit returns the canned last exit (nil when unset).
+func (d *Driver) LastExit(_ context.Context, id string) (*driver.ExitInfo, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	e, ok := d.sandboxes[id]
+	if !ok {
+		return nil, fmt.Errorf("not found")
+	}
+	return e.exit, nil
 }
 
 // SpecOf returns the last stored Spec for id (for assertions).

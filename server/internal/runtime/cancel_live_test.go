@@ -42,7 +42,7 @@ func TestCancelAbortsLiveAgent(t *testing.T) {
 		SandboxImage: image,
 		GatewayURL:   gatewayURL,
 		ProfilesRoot: profiles,
-		ChatTimeout:  8 * time.Minute,
+		NodeHardCap:  8 * time.Minute,
 	})
 	aborter, ok := provider.(RunAborter)
 	if !ok {

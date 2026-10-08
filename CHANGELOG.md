@@ -4,6 +4,29 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Agent time limits — breaking config change:** an Agent turn no longer has
+  a wall-clock limit. Two limits remain: the node's total time (the canvas
+  node **Timeout** field; empty means the platform cap,
+  `sandbox.agent_node_hard_cap_hours` / `GRASP_AGENT_NODE_HARD_CAP_HOURS`,
+  24 h by default) and the no-activity limit per turn (20 minutes by default,
+  **Settings → Sandbox resources**, pinned by `GRASP_CHAT_IDLE_SEC`).
+  `sandbox.agent_chat_timeout_seconds` / `GRASP_AGENT_TIMEOUT_SEC` is ignored
+  with a startup warning. A running command counts as activity while its
+  processes use CPU or do IO, so long builds and test runs are not cut off. An
+  Agent that goes quiet or repeats the same tool call 8 times is resumed once
+  with a hint, then stopped and retried once in a fresh sandbox.
+- **Test review gate:** a test result passes only when every plan coverage
+  item cites a case that actually passed; skipped cases need a reason.
+  Re-prompts ("nudges") ask the Agent to record what it did not run instead
+  of writing placeholder results. The number of nudges is configurable per
+  node (**Nudge retries**, default 3).
+- **Sandbox exit reason:** when a sandbox dies mid-turn, the node error and
+  the retry notice say why, e.g. `沙箱 OOM 被杀(8192MiB)`, instead of only
+  `acp connection closed`. Needs the updated sandbox gateway
+  (`GET /api/v1/sandboxes/:id/exit`).
+- **Work branch names:** implement Agents name branches
+  `<type>/<topic>-<run short ID>`, e.g. `fix/agent-liveness-224eb8c7`.
+
 - **Sandbox memory limit setting:** every sandbox the platform creates now
   requests a memory limit from the gateway, 8192 MiB by default (previously
   the gateway default, usually 4096 MiB). Change it under **Settings →

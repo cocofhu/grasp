@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -168,15 +169,14 @@ func TestEnsurePlanCompleteNudgeTimeout(t *testing.T) {
 		}
 		return turnAction{stall: true}
 	})
-	p.opts.ChatTimeout = time.Second
+	p.opts.NodeHardCap = time.Second
 	p.opts.ChatIdleTimeout = 5 * time.Second
-	p.opts.ChatTimeout = time.Second
 	_, err := p.RunAgent(context.Background(), req)
 	if err == nil {
 		t.Fatal("expected nudge timeout failure")
 	}
-	if !strings.Contains(err.Error(), "deadline exceeded") {
-		t.Fatalf("expected timeout semantics, got %v", err)
+	if !errors.Is(err, ErrNodeBudget) || !strings.Contains(err.Error(), "节点运行超过") {
+		t.Fatalf("expected node budget semantics, got %v", err)
 	}
 	if strings.Contains(err.Error(), "计划未全部完成") {
 		t.Fatalf("nudge timeout must not be reported as contract failure: %v", err)
@@ -204,13 +204,13 @@ func TestEnsureStructuredNudgeTimeout(t *testing.T) {
 	req := reqWithProfile(NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testCapsWriting(models.SchemaResearch), Token: tok,
 		Config: map[string]any{"prompt": "research"}, Vars: map[string]any{}})
 	p.opts.ChatIdleTimeout = 5 * time.Second
-	p.opts.ChatTimeout = time.Second
+	p.opts.NodeHardCap = time.Second
 	_, err := p.RunAgent(context.Background(), req)
 	if err == nil {
 		t.Fatal("expected structured nudge timeout failure")
 	}
-	if !strings.Contains(err.Error(), "deadline exceeded") {
-		t.Fatalf("expected timeout semantics, got %v", err)
+	if !errors.Is(err, ErrNodeBudget) || !strings.Contains(err.Error(), "节点运行超过") {
+		t.Fatalf("expected node budget semantics, got %v", err)
 	}
 	if strings.Contains(err.Error(), "结构化") || strings.Contains(err.Error(), "research.json") {
 		t.Fatalf("nudge timeout must not be reported as contract failure: %v", err)
@@ -239,13 +239,13 @@ func TestEnsureOutcomeNudgeTimeout(t *testing.T) {
 		Config: map[string]any{"prompt": "go", "produces": "report.md"},
 		Vars:   map[string]any{}})
 	p.opts.ChatIdleTimeout = 5 * time.Second
-	p.opts.ChatTimeout = time.Second
+	p.opts.NodeHardCap = time.Second
 	_, err := p.RunAgent(context.Background(), req)
 	if err == nil {
 		t.Fatal("expected node_complete nudge timeout failure")
 	}
-	if !strings.Contains(err.Error(), "deadline exceeded") {
-		t.Fatalf("expected timeout semantics, got %v", err)
+	if !errors.Is(err, ErrNodeBudget) || !strings.Contains(err.Error(), "节点运行超过") {
+		t.Fatalf("expected node budget semantics, got %v", err)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,33 +56,54 @@ func TestSandboxAttempts(t *testing.T) {
 	}
 }
 
-// TestNodeChatTimeout: the node's timeout (minutes) wins, clarify Agents
-// default to 30m, everything else uses the global chat timeout.
-func TestNodeChatTimeout(t *testing.T) {
-	c := &acpProvider{opts: Options{ChatTimeout: 90 * time.Second}}
+// TestNodeBudget: turns draw on one budget per node execution; an exhausted
+// budget cancels the next turn with a non-retryable *nodeBudgetError.
+func TestNodeBudget(t *testing.T) {
+	c := &acpProvider{opts: Options{NodeHardCap: time.Hour}}
+	req := NodeReq{RunID: "r", NodeID: "n", Config: map[string]any{"timeout": 30}}
 
-	if d := c.nodeChatTimeout(NodeReq{}); d != 90*time.Second {
-		t.Errorf("default timeout = %v, want 90s", d)
+	ctx, cancel := c.turnCtx(context.Background(), req)
+	dl, ok := ctx.Deadline()
+	cancel()
+	if !ok || time.Until(dl) > 30*time.Minute || time.Until(dl) < 29*time.Minute {
+		t.Fatalf("fresh budget deadline = %v", time.Until(dl))
 	}
-	if d := c.nodeChatTimeout(NodeReq{Config: map[string]any{"timeout": 20}}); d != 20*time.Minute {
-		t.Errorf("timeout(min) = %v, want 20m", d)
-	}
-	if d := c.nodeChatTimeout(NodeReq{Caps: testClarifyCaps, Config: map[string]any{"timeout": 20}}); d != 20*time.Minute {
-		t.Errorf("clarify timeout(min) = %v, want 20m", d)
-	}
-	if d := c.nodeChatTimeout(NodeReq{Caps: testClarifyCaps}); d != 30*time.Minute {
-		t.Errorf("clarify default = %v, want 30m", d)
-	}
-}
 
-// TestNodeChatTimeoutNudgeInheritance documents that re-prompt (nudge) paths
-// use nodeChatTimeout(req) — the same helper as the main turn — so a configured
-// node timeout applies to each nudge round independently.
-func TestNodeChatTimeoutNudgeInheritance(t *testing.T) {
-	c := &acpProvider{opts: Options{ChatTimeout: 90 * time.Second}}
-	req := NodeReq{Config: map[string]any{"timeout": 120}}
-	if d := c.nodeChatTimeout(req); d != 120*time.Minute {
-		t.Errorf("nudge rounds should inherit node timeout = %v, want 120m", d)
+	c.budgets.add(reactKey(req), 20*time.Minute)
+	ctx, cancel = c.turnCtx(context.Background(), req)
+	dl, _ = ctx.Deadline()
+	cancel()
+	if left := time.Until(dl); left > 10*time.Minute || left < 9*time.Minute {
+		t.Fatalf("remaining budget deadline = %v, want ~10m", left)
+	}
+
+	c.budgets.add(reactKey(req), 10*time.Minute)
+	ctx, cancel = c.turnCtx(context.Background(), req)
+	defer cancel()
+	err := budgetErr(ctx)
+	if ctx.Err() == nil || !errors.Is(err, ErrNodeBudget) || isRetryableSandboxErr(err) {
+		t.Fatalf("exhausted budget: ctxErr=%v cause=%v", ctx.Err(), err)
+	}
+	if !strings.Contains(err.Error(), "节点运行超过总时限 30 分钟") {
+		t.Fatalf("message = %q", err.Error())
+	}
+	if _, serr := c.streamChat(ctx, nil, req, "never sent", nil); !errors.Is(serr, ErrNodeBudget) {
+		t.Fatalf("streamChat on exhausted budget = %v", serr)
+	}
+
+	c.resetNodeBudget(req)
+	if c.budgets.get(reactKey(req)) != 0 {
+		t.Fatal("reset must clear the used time")
+	}
+	other := NodeReq{RunID: "r", NodeID: "other"}
+	if d, hard := c.nodeLimit(other); d != time.Hour || !hard {
+		t.Fatalf("no timeout falls back to the hard cap, got %v hard=%v", d, hard)
+	}
+	c.budgets.add(reactKey(other), 2*time.Hour)
+	octx, ocancel := c.turnCtx(context.Background(), other)
+	defer ocancel()
+	if e := budgetErr(octx); e == nil || !strings.Contains(e.Error(), "平台兜底上限 1 小时") {
+		t.Fatalf("hard cap message = %v", e)
 	}
 }
 

@@ -7,7 +7,7 @@ description: 测试产物质量检查清单（简体中文）
 
 在调用对应交付工具之前，逐项自检：
 
-1. cases 覆盖计划关键验收点，status 使用 passed/failed/skipped
+1. cases 覆盖计划关键验收点，status 使用 passed/failed/skipped；只有实际执行并通过才写 passed，skipped 必须在 detail 写明原因
 2. 失败必须进入 defects，并给出可复现细节；failed 会阻塞下游
 3. UI/浏览器测试截图须先 artifact-upload 再引用产物名
 4. assessment 明确是否可发布/可进入评审
@@ -24,5 +24,6 @@ description: 测试产物质量检查清单（简体中文）
 ## 质量棘轮
 
 - 凡 status=failed 的 case 都必须有对应 defects 条目与可复现细节
+- 有计划叶子时，每个 plan_coverage 都用 `cases` 引用已通过的用例；关联用例未执行就如实写 passed=false
 - UI/浏览器截图均经 `artifact-upload` 后以产物名引用，无内联 base64
 - assessment 明确可发布/可进评审与否；不擅自改产品代码掩盖失败

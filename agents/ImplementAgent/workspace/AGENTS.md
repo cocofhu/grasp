@@ -13,7 +13,7 @@
 
 ## 工作方式
 
-- 动手前先 `git checkout -b feature/<简短描述>`，不要在 main/master/develop/release-* 上提交。
+- 动手前先建工作分支，名称固定为 `<type>/<topic>-${GRASP_RUN_ID#run-}`：`type` 按需求的 work_kind 取 `feat`（feature）/ `fix`（bug）/ `chore`（other；纯重构用 `refactor`，纯文档用 `docs`）；`topic` 是 2–5 个英文小写单词、用连字符连接的主题；后缀是本次运行短 ID（例：`git checkout -b feat/agent-liveness-${GRASP_RUN_ID#run-}`）。不要在 main/master/develop/release-* 上提交。
 - 先 `get_plan` 读计划（只读）。没有计划时读 `get_clarified_requirement`（及 `page.html`）实现。
 - 小步改动、聚焦需求范围；实现后在本地运行对应测试直至通过。
 - 下游在全新克隆里工作：不推送就拿不到你的代码。

@@ -31,8 +31,9 @@ configured as project credentials, not in this platform config table.
 | `GRASP_SANDBOX_GATEWAY_API_KEY` | `sandbox.gateway_api_key` | string | `Not set` | Sensitive | Gateway bearer token |
 | `GRASP_OPENCODE_CATALOG_URL` | `sandbox.opencode_catalog_url` | URL | `https://models.dev/api.json` | Public | OpenCode model catalog URL; point at a mirror when egress is restricted |
 | `GRASP_SANDBOX_ENV` | `sandbox.env` | key-value list | `Not set` | Sensitive | Generic environment injected into every sandbox |
-| `GRASP_AGENT_TIMEOUT_SEC` | `sandbox.agent_chat_timeout_seconds` | integer | `600` | Public | Overall timeout for one agent turn in seconds |
-| `GRASP_CHAT_IDLE_SEC` | `sandbox.chat_idle_timeout_seconds` | integer | `720` | Public | Idle timeout without ACP events in seconds |
+| `GRASP_AGENT_TIMEOUT_SEC` | `sandbox.agent_chat_timeout_seconds` | integer | `Not set` | Public | Deprecated and ignored: Agent turns no longer have a per-turn limit; set the node time limit on the canvas |
+| `GRASP_CHAT_IDLE_SEC` | `sandbox.chat_idle_timeout_seconds` | integer | `1200` | Public | Agent no-activity limit in seconds: after this long with no output, CPU or IO the turn is resumed once, then stopped; locks the settings page value |
+| `GRASP_AGENT_NODE_HARD_CAP_HOURS` | `sandbox.agent_node_hard_cap_hours` | integer | `24` | Public | Total limit in hours for an Agent node whose canvas time limit is empty |
 | `GRASP_SANDBOX_MAX_ATTEMPTS` | `sandbox.sandbox_max_attempts` | integer | `3` | Public | Maximum attempts for retryable sandbox faults |
 | `GRASP_SANDBOX_RETRY_BACKOFF_SEC` | `sandbox.sandbox_retry_backoff_seconds` | integer | `2` | Public | Base sandbox retry backoff in seconds |
 | `GRASP_SANDBOX_CREATE_TIMEOUT_SEC` | `sandbox.sandbox_create_timeout_seconds` | integer | `1200` | Public | Timeout waiting for sandbox readiness in seconds |

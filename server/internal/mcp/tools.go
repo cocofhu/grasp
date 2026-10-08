@@ -1103,8 +1103,8 @@ func artifactTools() []map[string]any {
 					"summary": strProp("测试总体结论"),
 					"cases": objList("测试用例结果", map[string]any{
 						"name":   strProp("用例名称"),
-						"status": strProp("passed|failed|skipped"),
-						"detail": strProp("可选:说明"),
+						"status": strProp("passed|failed|skipped;只有实际执行且通过才写 passed,未执行写 skipped"),
+						"detail": strProp("说明;status=skipped 时必填,写明未执行的原因"),
 					}, "name", "status"),
 					"defects": objList("发现的缺陷", map[string]any{
 						"title":    strProp("缺陷标题"),
@@ -1113,13 +1113,14 @@ func artifactTools() []map[string]any {
 					}, "title"),
 					"variances":  strProp("可选:与计划的偏差"),
 					"assessment": strProp("可选:综合评估/是否可发布"),
-					"plan_coverage": objList("有 plan 叶子时必填:逐叶子声明是否通过及非空自证 evidence;"+
-						"须覆盖全部叶子且全部 passed=true,否则测试门禁失败并回修。无 plan 叶子时可省略", map[string]any{
+					"plan_coverage": objList("有 plan 叶子时必填:逐叶子声明是否通过、非空 evidence,并用 cases 引用验证它的用例;"+
+						"须覆盖全部叶子,全部 passed=true 且引用的用例全部 passed,否则测试门禁失败并回修。无 plan 叶子时可省略", map[string]any{
 						"plan_id":  strProp("计划叶子 id(如 g1 或 g1.2)"),
 						"title":    strProp("可选:叶子标题,便于阅读"),
-						"passed":   map[string]any{"type": "boolean", "description": "该叶子是否通过"},
-						"evidence": strProp("非空自证证据(平台只做非空校验,不核验代码语义)"),
-					}, "plan_id", "passed", "evidence"),
+						"passed":   map[string]any{"type": "boolean", "description": "该叶子是否通过;引用的用例有 skipped/failed 时必须为 false"},
+						"evidence": strProp("非空证据:执行了什么、看到了什么结果"),
+						"cases":    strList("验证该叶子的用例名,须与 cases[].name 完全一致,至少一个"),
+					}, "plan_id", "passed", "evidence", "cases"),
 					"screenshots": objList("可选:0-10 张浏览器/UI 测试截图,仅在做了浏览器/UI 测试时提供;超过 10 张会被截断。"+
 						"必须先用沙箱内的 `artifact-upload <文件>` CLI 上传截图文件,再用它打印出的产物名填 artifact 字段;不支持内联 base64", map[string]any{
 						"artifact": strProp("引用由 `artifact-upload <文件>` 上传得到的截图产物名"),

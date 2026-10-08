@@ -30,10 +30,34 @@ import (
 // infrastructure fault.
 var ErrConnClosed = errors.New("acp connection closed")
 
-// ErrChatIdle marks a turn aborted because no ACP event frame arrived within
-// the idle window: the agent/sandbox is presumed stuck (distinct from a slow
-// but productive turn, which keeps emitting events). Also retryable.
+// ErrChatIdle marks a turn this client gave up on because the bridge went
+// silent: no frame at all (event or liveness heartbeat) within the watch
+// window. The sandbox is presumed lost, so it is retryable.
 var ErrChatIdle = errors.New("acp chat idle timeout")
+
+// ErrAgentStuck marks a turn the bridge stopped because the Agent showed no
+// activity (no output, CPU or IO) for the no-activity limit even after one
+// resume, or kept repeating the same failing command.
+var ErrAgentStuck = errors.New("agent stuck")
+
+// stopReasonStuck is the prompt_done stopReason of a turn the bridge stopped
+// as stuck.
+const stopReasonStuck = "stuck"
+
+// bridgeLostAfter is how long a client that has seen liveness heartbeats
+// (sent every minute while a turn runs) waits for any frame before it treats
+// the bridge as lost. A var so tests can shrink it.
+var bridgeLostAfter = 3 * time.Minute
+
+// legacyWatch is the client-side window for a bridge that does not send
+// heartbeats: the bridge resumes once after N and stops after another N, so
+// wait for both plus a margin.
+func legacyWatch(idle time.Duration) time.Duration {
+	if idle <= 0 {
+		return 0
+	}
+	return 2*idle + min(idle, 2*time.Minute)
+}
 
 // newIdleWatch returns a timer channel that fires after the idle window with no
 // activity, a reset func to call on each received event, and a stop func for
@@ -64,6 +88,23 @@ func chatMessage(text string, images []models.PromptImage, opID string) map[stri
 	if opID != "" {
 		msg["opId"] = opID
 	}
+	attachImages(msg, images)
+	return msg
+}
+
+// turnLimitFields adds the per-turn limits the bridge enforces: idleSec (the
+// no-activity limit N) and deadlineSec (the turn's hard stop, a minute past
+// ctx's deadline so the platform reports the node budget first).
+func turnLimitFields(msg map[string]any, ctx context.Context, idle time.Duration) {
+	if idle > 0 {
+		msg["idleSec"] = max(1, int(idle/time.Second))
+	}
+	if dl, ok := ctx.Deadline(); ok {
+		msg["deadlineSec"] = max(1, int(time.Until(dl)/time.Second)) + 60
+	}
+}
+
+func attachImages(msg map[string]any, images []models.PromptImage) {
 	if len(images) > 0 {
 		imgs := make([]map[string]string, 0, len(images))
 		for _, im := range images {
@@ -80,7 +121,6 @@ func chatMessage(text string, images []models.PromptImage, opID string) map[stri
 			msg["images"] = imgs
 		}
 	}
-	return msg
 }
 
 // ACPClient is a Go binding for the acp-bridge WebSocket protocol that
@@ -105,10 +145,11 @@ type ACPClient struct {
 	// Required: an empty password fails Connect.
 	password string
 
-	// idleTimeout aborts a chat turn when no event frame arrives within the
-	// window (0 disables). Lets a stuck agent be detected quickly while a
-	// slow-but-working turn (still emitting events) runs to the hard deadline.
+	// idleTimeout is the Agent no-activity limit N sent to the bridge with each
+	// turn (0 disables); idleFn, when set, supplies it per turn instead so a
+	// settings change applies from the next turn on.
 	idleTimeout time.Duration
+	idleFn      func() time.Duration
 
 	// bridgeModel is the session ACP_BRIDGE_MODEL string used at ingest to
 	// backfill weak usage keys (default/unknown/empty). Empty disables backfill.
@@ -169,6 +210,19 @@ func (c *ACPClient) WithSession(cwd string, mcpServers json.RawMessage) *ACPClie
 func (c *ACPClient) WithIdleTimeout(d time.Duration) *ACPClient {
 	c.idleTimeout = d
 	return c
+}
+
+// WithIdleTimeoutFunc reads the no-activity limit at the start of every turn.
+func (c *ACPClient) WithIdleTimeoutFunc(f func() time.Duration) *ACPClient {
+	c.idleFn = f
+	return c
+}
+
+func (c *ACPClient) agentIdle() time.Duration {
+	if c.idleFn != nil {
+		return c.idleFn()
+	}
+	return c.idleTimeout
 }
 
 // WithBridgeModel sets the ACP_BRIDGE_MODEL string used when parsing

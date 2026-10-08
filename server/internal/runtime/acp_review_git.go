@@ -51,7 +51,7 @@ func (c *acpProvider) OfferCommitOnConfirm(ctx context.Context, req NodeReq) Rea
 		} else {
 			files := formatDirtyFiles(ch)
 			prompt := models.ReviewCommitWrapUpFor(files)
-			chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
+			chatCtx, cancel := c.turnCtx(ctx, req)
 			res, err := c.streamChat(chatCtx, sess.acp, req, prompt, nil)
 			cancel()
 			if err != nil {

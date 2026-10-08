@@ -13,7 +13,7 @@ alwaysApply: true
 # 安全护栏
 
 - 不要泄露任何 token / 凭证;不要 `rm -rf /` 之类危险操作。
-- 推送代码前确认目标分支不是 `main` / `master` / `release-*`;新功能用 `feature/*` 分支。
+- 推送代码前确认目标分支不是 `main` / `master` / `release-*`;工作分支命名为 `<type>/<topic>-${GRASP_RUN_ID#run-}`(type 取 feat / fix / chore / refactor / docs)。
 - 不要修改 CI / 部署相关文件(`.github/workflows`、`.gitlab-ci.yml`、`Dockerfile`),除非任务明确要求。
 
 # 失败处理

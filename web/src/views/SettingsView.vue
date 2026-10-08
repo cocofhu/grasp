@@ -44,7 +44,7 @@ const groups = computed(() => [
     title: t('pages.settings.groups.resources.title'),
     desc: t('pages.settings.groups.resources.desc'),
     icon: 'settings',
-    keys: ['sandbox_memory_mb'],
+    keys: ['sandbox_memory_mb', 'agent_idle_timeout_minutes'],
   },
 ])
 
@@ -52,6 +52,7 @@ const SETTING_UNITS: Record<string, string> = {
   run_sandbox_ttl_minutes: 'common.minutes',
   test_sandbox_ttl_minutes: 'common.minutes',
   sandbox_memory_mb: 'pages.settings.units.mib',
+  agent_idle_timeout_minutes: 'common.minutes',
 }
 
 function settingDescription(key: string): string {
@@ -487,6 +488,7 @@ onBeforeUnmount(() => {
                   v-model.number="form[key]"
                   type="number"
                   :min="itemOf(key)!.min"
+                  :max="itemOf(key)!.max"
                   :disabled="itemOf(key)!.locked || saving"
                   class="input settings-number-input w-[88px] text-right disabled:cursor-not-allowed disabled:opacity-55"
                 />

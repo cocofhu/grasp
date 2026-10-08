@@ -11,6 +11,7 @@ import (
 
 	"sandbox-gateway/internal/config"
 	"sandbox-gateway/internal/database"
+	"sandbox-gateway/internal/driver"
 	"sandbox-gateway/internal/driver/fake"
 	"sandbox-gateway/internal/service"
 	"sandbox-gateway/internal/store"
@@ -363,6 +364,7 @@ func TestLifecycleNotFound(t *testing.T) {
 		{http.MethodDelete, "/api/v1/sandboxes/nope"},
 		{http.MethodGet, "/api/v1/sandboxes/nope/status"},
 		{http.MethodGet, "/api/v1/sandboxes/nope/logs"},
+		{http.MethodGet, "/api/v1/sandboxes/nope/exit"},
 	} {
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
@@ -409,6 +411,33 @@ func TestSandboxLogsEndpoint(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes/"+id+"/logs?tail=abc", nil))
 	if w.Code != 400 {
 		t.Fatalf("bad tail want 400 got %d", w.Code)
+	}
+}
+
+func TestSandboxExitEndpoint(t *testing.T) {
+	r, drv, svc := testRouter(t, nil)
+	id := createSandbox(t, r)
+	waitRunning(t, svc, id)
+
+	get := func() map[string]any {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes/"+id+"/exit", nil))
+		if w.Code != 200 {
+			t.Fatalf("exit=%d %s", w.Code, w.Body.String())
+		}
+		var body map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		return body
+	}
+	if body := get(); body["exit"] != nil {
+		t.Fatalf("never exited: %v", body)
+	}
+	drv.SetExit(id, &driver.ExitInfo{Reason: "OOMKilled", ExitCode: 137, OOMKilled: true, MemoryMB: 8192})
+	e, _ := get()["exit"].(map[string]any)
+	if e["reason"] != "OOMKilled" || e["oomKilled"] != true || e["memoryMB"] != float64(8192) {
+		t.Fatalf("exit=%v", e)
 	}
 }
 

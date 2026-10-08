@@ -48,6 +48,13 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const (
+	// shutdownDrainTimeout bounds how long shutdown waits for in-flight work.
+	shutdownDrainTimeout = 600 * time.Second
+	// pmTurnDeadline caps one PM / channel / cron turn.
+	pmTurnDeadline = 630 * time.Second
+)
+
 func main() {
 	logging.Setup()
 
@@ -190,8 +197,8 @@ func main() {
 		GatewayURL:           cfg.Sandbox.GatewayURL,
 		GatewayAPIKey:        cfg.Sandbox.GatewayAPIKey,
 		Env:                  cfg.Sandbox.Env,
-		ChatTimeout:          cfg.AgentChatTimeout(),
 		ChatIdleTimeout:      cfg.ChatIdleTimeout(),
+		NodeHardCap:          cfg.AgentNodeHardCap(),
 		SandboxMaxAttempts:   cfg.Sandbox.MaxAttempts,
 		SandboxRetryBackoff:  cfg.SandboxRetryBackoff(),
 		SandboxCreateTimeout: cfg.SandboxCreateTimeout(),
@@ -341,7 +348,6 @@ func main() {
 		ProfilesRoot:                cfg.Engine.ProfilesRoot,
 		MCPEndpoint:                 cfg.Server.MCPAdvertise,
 		Env:                         cfg.Sandbox.Env,
-		ChatTimeout:                 cfg.AgentChatTimeout(),
 		TTL:                         cfg.TestSandboxTTL(),
 		RunTTL:                      cfg.RunSandboxTTL(),
 		Max:                         cfg.Sandbox.MaxTestSandboxes,
@@ -396,7 +402,7 @@ func main() {
 	requirementDraftSvc := services.NewRequirementDraftService(db)
 	notificationSvc := services.NewNotificationService(db, runSvc)
 
-	coord := shutdown.New(cfg.AgentChatTimeout())
+	coord := shutdown.New(shutdownDrainTimeout)
 	authSvc := auth.NewService(db, config.GetConfig)
 
 	pmSvc := services.NewPmService(db, agentSvc)
@@ -423,7 +429,7 @@ func main() {
 	pmTurns.SetCitationDeps(runSvc, artifactSvc, wfSvc)
 	// Raise the per-turn deadline well above the legacy 90s so channel/cron and
 	// interactive PM turns are not truncated (aligns with the sandbox chat cap).
-	pmTurns.SetTurnDeadline(cfg.AgentChatTimeout() + 30*time.Second)
+	pmTurns.SetTurnDeadline(pmTurnDeadline)
 	sbxSvc.SetAgentSandboxDestroyHook(func(projectID, threadID, token string) {
 		mcpWire.unregister(token)
 		mcpWire.clearSandboxRef(threadID)

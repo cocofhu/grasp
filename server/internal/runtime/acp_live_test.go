@@ -148,7 +148,7 @@ func TestCursorLiveRunAgent(t *testing.T) {
 		SandboxImage: image, // empty → universal-sandbox:local
 		GatewayURL:   gatewayURL,
 		ProfilesRoot: profiles,
-		ChatTimeout:  8 * time.Minute,
+		NodeHardCap:  8 * time.Minute,
 		MCPEndpoint:  "http://host.docker.internal:" + strconv.Itoa(mcpPort),
 	})
 

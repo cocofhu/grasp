@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -19,19 +20,34 @@ import (
 // the engine's FSM handles them. Retries are logged/emitted but do not create a
 // separate execution record.
 func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, error) {
+	c.resetNodeBudget(req)
+	key := reactKey(req)
+	c.stuckNotes.Delete(key)
+	defer c.stuckNotes.Delete(key)
 	n := c.sandboxAttempts()
+	// A stuck Agent gets one fresh start of its own, told why the last one
+	// was stopped; it does not use up the sandbox-fault attempts.
+	stuckRetries := 1
 	// Tokens burned by attempts that are retried away still count.
 	var spent *models.TokenUsage
 	var spentByModel models.TokenUsageByModel
 	for attempt := 1; ; attempt++ {
 		res, err := c.runAgentOnce(ctx, req)
-		if err == nil || !isRetryableSandboxErr(err) || attempt >= n || ctx.Err() != nil {
+		stuck := errors.Is(err, sandbox.ErrAgentStuck) && stuckRetries > 0 && ctx.Err() == nil
+		if !stuck && (err == nil || !isRetryableSandboxErr(err) || attempt >= n || ctx.Err() != nil) {
 			res.Usage = models.AddTokenUsage(spent, res.Usage)
 			res.UsageByModel = models.AddTokenUsageByModel(spentByModel, res.UsageByModel)
 			return res, err
 		}
 		spent = models.AddTokenUsage(spent, res.Usage)
 		spentByModel = models.AddTokenUsageByModel(spentByModel, res.UsageByModel)
+		if stuck {
+			stuckRetries--
+			attempt--
+			c.stuckNotes.Store(key, err.Error())
+			c.emitStuckRetryNotice(req, err)
+			continue
+		}
 		c.emitRetryNotice(req, attempt, n, err)
 		if !c.backoff(ctx, attempt) {
 			res.Usage, res.UsageByModel = spent, spentByModel
@@ -72,6 +88,8 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 			}
 		}
 	}()
+	// Runs before the discard above, while the gateway still has the record.
+	defer func() { err = sb.ExplainLoss(ctx, err) }()
 	c.registerLive(req, sb, acp)
 	defer func() {
 		if !parked {
@@ -80,7 +98,7 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 	}()
 
 	seeded := c.upstreamArtifacts(req)
-	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
+	chatCtx, cancel := c.turnCtx(ctx, req)
 	defer cancel()
 	var chatRes *sandbox.ChatResult
 	var usage *models.TokenUsage
@@ -88,7 +106,7 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 
 	chatRes, err = c.streamChat(chatCtx, acp, req, c.buildAgentPrompt(req, seeded), req.PromptImages)
 	if err != nil {
-		if isRetryableSandboxErr(err) {
+		if isRetryableSandboxErr(err) || errors.Is(err, sandbox.ErrAgentStuck) {
 			keepForDebug = false
 		}
 		absorbChat(&usage, &usageByModel, nil, chatRes)
@@ -538,7 +556,20 @@ func (c *acpProvider) closeSession(key string) {
 	}
 }
 
-// producesRetry caps how many times finishReact re-prompts the agent to write
-// a missing declared produces artifact before falling back to the engine's
-// contract-miss handling (which routes failure/rollback per the FSM).
-const producesRetry = 3
+// defaultNudgeRetries caps each kind of re-prompt (missing product,
+// node_complete, root-cause consistency, plan completion) when the node leaves
+// config.nudgeRetries unset.
+const defaultNudgeRetries = 3
+
+// nudgeRetries is how many re-prompts of each kind the node allows: node
+// config.nudgeRetries (0 = never nudge), else the Agent's legacy maxRounds for
+// plan completion, else defaultNudgeRetries.
+func nudgeRetries(req NodeReq, planRounds bool) int {
+	if v, ok := toInt(req.Config["nudgeRetries"]); ok && v >= 0 {
+		return min(v, models.MaxNudgeRetries)
+	}
+	if planRounds && req.Caps != nil && req.Caps.MaxRounds > 0 {
+		return req.Caps.MaxRounds
+	}
+	return defaultNudgeRetries
+}

@@ -15,7 +15,7 @@ func TestTTLAndDurationGetters(t *testing.T) {
 	c := &Config{}
 	c.Sandbox.TestSandboxTTLMinutes = 10
 	c.Sandbox.RunSandboxTTLMinutes = 20
-	c.Sandbox.AgentChatTimeoutSeconds = 30
+	c.Sandbox.AgentNodeHardCapHours = 3
 	c.Sandbox.ChatIdleTimeoutSeconds = 40
 	c.Sandbox.RetryBackoffSeconds = 5
 
@@ -25,8 +25,8 @@ func TestTTLAndDurationGetters(t *testing.T) {
 	if c.RunSandboxTTL() != 20*time.Minute {
 		t.Error("RunSandboxTTL")
 	}
-	if c.AgentChatTimeout() != 30*time.Second {
-		t.Error("AgentChatTimeout")
+	if c.AgentNodeHardCap() != 3*time.Hour {
+		t.Error("AgentNodeHardCap")
 	}
 	if c.ChatIdleTimeout() != 40*time.Second {
 		t.Error("ChatIdleTimeout")

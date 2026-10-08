@@ -747,12 +747,13 @@ const maxTestScreenshots = 10
 
 // planCoverageItem is one plan-leaf fit check recorded in test_result.json.
 // When the run has plan leaves, the test gate requires full coverage with
-// passed=true and non-empty evidence (Agent self-attestation; no code semantics).
+// passed=true, non-empty evidence and Cases naming passed entries of cases[].
 type planCoverageItem struct {
-	PlanID   string `json:"plan_id"`
-	Title    string `json:"title,omitempty"`
-	Passed   bool   `json:"passed"`
-	Evidence string `json:"evidence,omitempty"`
+	PlanID   string   `json:"plan_id"`
+	Title    string   `json:"title,omitempty"`
+	Passed   bool     `json:"passed"`
+	Evidence string   `json:"evidence,omitempty"`
+	Cases    []string `json:"cases,omitempty"`
 }
 
 type testResultDoc struct {
@@ -767,6 +768,9 @@ type testResultDoc struct {
 	Failed       int                `json:"failed"`
 	Skipped      int                `json:"skipped"`
 }
+
+// NormTestStatus maps a free-form case status to passed / skipped / failed.
+func NormTestStatus(s string) string { return normTestStatus(s) }
 
 func normTestStatus(s string) string {
 	switch strings.ToLower(strings.TrimSpace(s)) {
@@ -804,6 +808,9 @@ func ParseTestResult(args map[string]any) (testResultDoc, error) {
 		case "passed":
 			doc.Passed++
 		case "skipped":
+			if c.Detail == "" {
+				return doc, fmt.Errorf("用例「%s」为 skipped,detail 必须写明未执行的原因", c.Name)
+			}
 			doc.Skipped++
 		default:
 			doc.Failed++
@@ -824,7 +831,33 @@ func ParseTestResult(args map[string]any) (testResultDoc, error) {
 	doc.Defects = ds
 	doc.Screenshots = normTestScreenshots(doc.Screenshots)
 	doc.PlanCoverage = normPlanCoverage(doc.PlanCoverage)
+	if err := checkPlanCoverageCases(doc.PlanCoverage, doc.Cases); err != nil {
+		return doc, err
+	}
 	return doc, nil
+}
+
+// checkPlanCoverageCases rejects at write time a coverage item that names an
+// unknown case, or claims passed=true while a referenced case did not pass.
+// Missing references are left to the gate, which knows whether the run has a
+// plan at all.
+func checkPlanCoverageCases(items []planCoverageItem, cases []testCase) error {
+	status := make(map[string]string, len(cases))
+	for _, c := range cases {
+		status[c.Name] = c.Status
+	}
+	for _, item := range items {
+		for _, ref := range item.Cases {
+			st, ok := status[ref]
+			if !ok {
+				return fmt.Errorf("plan_coverage %s 关联的用例「%s」不在 cases 中(须与 cases[].name 完全一致)", item.PlanID, ref)
+			}
+			if item.Passed && st != "passed" {
+				return fmt.Errorf("plan_coverage %s 声明 passed=true,但关联用例「%s」状态为 %s;未实际通过的叶子请如实填 passed=false", item.PlanID, ref, st)
+			}
+		}
+	}
+	return nil
 }
 
 // normPlanCoverage trims plan_coverage fields. Entries with empty plan_id are
@@ -845,10 +878,26 @@ func normPlanCoverage(in []planCoverageItem) []planCoverageItem {
 			Title:    strings.TrimSpace(item.Title),
 			Passed:   item.Passed,
 			Evidence: strings.TrimSpace(item.Evidence),
+			Cases:    normCaseRefs(item.Cases),
 		})
 	}
 	if len(out) == 0 {
 		return nil
+	}
+	return out
+}
+
+// normCaseRefs trims, drops empty and de-duplicates case-name references.
+func normCaseRefs(in []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, r := range in {
+		r = strings.TrimSpace(r)
+		if r == "" || seen[r] {
+			continue
+		}
+		seen[r] = true
+		out = append(out, r)
 	}
 	return out
 }
@@ -1010,6 +1059,9 @@ func RenderTestResultMarkdown(content string) string {
 			b.WriteString(fmt.Sprintf("- %s %s", icon, label))
 			if item.Evidence != "" {
 				b.WriteString(" — " + item.Evidence)
+			}
+			if len(item.Cases) > 0 {
+				b.WriteString("(用例:" + strings.Join(item.Cases, "、") + ")")
 			}
 			b.WriteString("\n")
 		}

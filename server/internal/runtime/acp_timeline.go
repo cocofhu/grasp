@@ -45,13 +45,21 @@ func newAcpTimelineStore() *acpTimelineStore {
 	return s
 }
 
-// acpTurnBusy reports whether acp has a turn running, by this client or any
-// other bridge client. nil means unknown, so the ingest keeps polling.
-func acpTurnBusy(acp *sandbox.ACPClient) func() bool {
+// acpTurnBusy reports whether the event log needs polling: a turn is running
+// that this client is not already streaming into the timeline. When streamed,
+// this client's own turn is skipped; the bridge runs one turn at a time, so
+// nothing else can be running meanwhile. nil means unknown, so the ingest
+// keeps polling.
+func acpTurnBusy(acp *sandbox.ACPClient, streamed bool) func() bool {
 	if acp == nil {
 		return nil
 	}
-	return func() bool { return acp.TurnInFlight() || acp.BridgeState().Busy }
+	return func() bool {
+		if acp.TurnInFlight() {
+			return !streamed
+		}
+		return acp.BridgeState().Busy
+	}
 }
 
 func timelineKey(runID, nodeID string) string { return runID + "|" + nodeID }

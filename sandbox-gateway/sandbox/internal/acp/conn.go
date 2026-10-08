@@ -405,3 +405,11 @@ func (c *Conn) writeLine(b []byte) error {
 	}
 	return nil
 }
+
+// PID is the agent subprocess's pid (0 when it never started).
+func (c *Conn) PID() int {
+	if c == nil || c.cmd == nil || c.cmd.Process == nil {
+		return 0
+	}
+	return c.cmd.Process.Pid
+}

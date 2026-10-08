@@ -34,6 +34,10 @@ type turnAction struct {
 	// fake path exercises (and which ChatStructured already turns into a Go error).
 	errorText string
 	failed    bool
+	// stopReason overrides the prompt_done stopReason (e.g. "stuck").
+	stopReason string
+	// heartbeat sends one {op:liveness} frame before the reply.
+	heartbeat bool
 }
 
 // chatFunc returns the action for the turn-th chat on a given sandbox (0-based).
@@ -165,6 +169,11 @@ func (b *fakeBridge) applyTurn(conn *websocket.Conn, act turnAction, opID string
 	if len(act.questions) > 0 {
 		b.host.SetPendingQuestions(b.runID, b.nodeID, act.questions)
 	}
+	if act.heartbeat {
+		write(map[string]any{"op": "liveness", "data": map[string]any{
+			"active": true, "cpuMs": 1200, "ioBytes": 4096, "idleSec": 0, "limitSec": 1200, "lastTool": "go test",
+		}})
+	}
 	if act.narration != "" {
 		write(agentMessageFrame(act.narration))
 	}
@@ -176,6 +185,12 @@ func (b *fakeBridge) applyTurn(conn *websocket.Conn, act turnAction, opID string
 	if act.failed {
 		write(map[string]any{"op": "event", "data": map[string]any{
 			"type": "prompt_done", "stopReason": "failed",
+		}})
+		return true
+	}
+	if act.stopReason != "" {
+		write(map[string]any{"op": "event", "data": map[string]any{
+			"type": "prompt_done", "stopReason": act.stopReason,
 		}})
 		return true
 	}

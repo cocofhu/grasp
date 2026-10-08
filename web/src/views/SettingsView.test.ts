@@ -49,6 +49,7 @@ const SETTINGS = {
     { key: 'test_sandbox_ttl_minutes', value: 15, min: 1, source: 'ui', locked: false },
     { key: 'max_test_sandboxes', value: 3, min: 1, source: 'ui', locked: false },
     { key: 'sandbox_memory_mb', value: 8192, min: 1024, source: 'config', locked: false },
+    { key: 'agent_idle_timeout_minutes', value: 20, min: 2, max: 120, source: 'config', locked: false },
   ],
 }
 
@@ -197,6 +198,28 @@ describe('SettingsView sandbox memory', () => {
     await flushPromises()
     expect(apiMocks.updateSettings).toHaveBeenCalledWith(expect.objectContaining({
       sandbox_memory_mb: 12288,
+    }))
+    w.unmount()
+  })
+
+  it('renders the agent no-activity limit with its range and saves it', async () => {
+    apiMocks.getSettings.mockResolvedValue(SETTINGS)
+    apiMocks.updateSettings.mockResolvedValue(SETTINGS)
+    const w = mountSettings()
+    await flushPromises()
+
+    const input = w.find('#setting-agent_idle_timeout_minutes')
+    expect(input.element).toHaveProperty('value', '20')
+    expect(input.attributes('min')).toBe('2')
+    expect(input.attributes('max')).toBe('120')
+    expect(w.find('label[for="setting-agent_idle_timeout_minutes"]').text()).toContain('Agent 无动作时限')
+
+    await input.setValue('45')
+    const saveButton = w.findAll('button').find((button) => button.text().includes('保存'))
+    await saveButton!.trigger('click')
+    await flushPromises()
+    expect(apiMocks.updateSettings).toHaveBeenCalledWith(expect.objectContaining({
+      agent_idle_timeout_minutes: 45,
     }))
     w.unmount()
   })

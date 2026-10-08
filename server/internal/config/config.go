@@ -203,15 +203,17 @@ type SandboxConfig struct {
 	// AcpEnv is the vendor-neutral map of ACP backend options merged into
 	// every sandbox container's environment (after Env).
 	AcpEnv map[string]string `yaml:"acp_env"`
-	// AgentChatTimeoutSeconds bounds a single agent/react turn (hard wall-clock
-	// cap). A slow-but-productive turn is bounded by this; a stuck one is caught
-	// sooner by ChatIdleTimeoutSeconds below.
+	// Deprecated: Agent turns no longer have a per-turn wall-clock limit; a
+	// node's total limit is its canvas `timeout` and a stuck Agent is caught by
+	// ChatIdleTimeoutSeconds. Ignored with a startup warning when set.
 	AgentChatTimeoutSeconds int `yaml:"agent_chat_timeout_seconds"`
-	// ChatIdleTimeoutSeconds aborts a turn when no ACP event arrives within the
-	// window (agent/sandbox presumed stuck). 0 = default 720 — above the
-	// sandbox bridge watchdog (SANDBOX_TURN_IDLE_TIMEOUT, 10m) so the bridge,
-	// which can actually kill the turn, fires first.
+	// ChatIdleTimeoutSeconds is the Agent no-activity limit: the sandbox bridge
+	// ends a turn that has shown no output, CPU or IO for this long (after one
+	// resume). 0 = default 1200. The settings page can override it at runtime.
 	ChatIdleTimeoutSeconds int `yaml:"chat_idle_timeout_seconds"`
+	// AgentNodeHardCapHours is the total time limit of an Agent node whose
+	// canvas timeout is empty. 0 = default 24.
+	AgentNodeHardCapHours int `yaml:"agent_node_hard_cap_hours"`
 	// MaxAttempts caps how many times a node is (re)attempted on a retryable
 	// sandbox/ACP fault (create/ACP-ready/connect/mid-turn crash/idle). 0 = 3.
 	MaxAttempts int `yaml:"sandbox_max_attempts"`
@@ -269,14 +271,14 @@ func (c *Config) RunSandboxTTL() time.Duration {
 	return time.Duration(c.Sandbox.RunSandboxTTLMinutes) * time.Minute
 }
 
-// AgentChatTimeout returns the per-turn budget as a duration.
-func (c *Config) AgentChatTimeout() time.Duration {
-	return time.Duration(c.Sandbox.AgentChatTimeoutSeconds) * time.Second
-}
-
 // ChatIdleTimeout returns the per-turn idle (no-activity) window as a duration.
 func (c *Config) ChatIdleTimeout() time.Duration {
 	return time.Duration(c.Sandbox.ChatIdleTimeoutSeconds) * time.Second
+}
+
+// AgentNodeHardCap returns the limit for an Agent node with no canvas timeout.
+func (c *Config) AgentNodeHardCap() time.Duration {
+	return time.Duration(c.Sandbox.AgentNodeHardCapHours) * time.Hour
 }
 
 // SandboxRetryBackoff returns the base backoff between sandbox retries.
@@ -417,6 +419,9 @@ func applyEnvOverrides(c *Config) {
 	if v := envInt("GRASP_CHAT_IDLE_SEC"); v != 0 {
 		c.Sandbox.ChatIdleTimeoutSeconds = v
 	}
+	if v := envInt("GRASP_AGENT_NODE_HARD_CAP_HOURS"); v != 0 {
+		c.Sandbox.AgentNodeHardCapHours = v
+	}
 	if v := envInt("GRASP_SANDBOX_MAX_ATTEMPTS"); v != 0 {
 		c.Sandbox.MaxAttempts = v
 	}
@@ -504,11 +509,11 @@ func setDefaults(c *Config) {
 		c.Sandbox.GatewayURL = "http://127.0.0.1:8899"
 	}
 	mergeAcpEnv(c)
-	if c.Sandbox.AgentChatTimeoutSeconds == 0 {
-		c.Sandbox.AgentChatTimeoutSeconds = 600
-	}
 	if c.Sandbox.ChatIdleTimeoutSeconds == 0 {
-		c.Sandbox.ChatIdleTimeoutSeconds = 720
+		c.Sandbox.ChatIdleTimeoutSeconds = 1200
+	}
+	if c.Sandbox.AgentNodeHardCapHours == 0 {
+		c.Sandbox.AgentNodeHardCapHours = 24
 	}
 	if c.Sandbox.MaxAttempts == 0 {
 		c.Sandbox.MaxAttempts = 3
@@ -553,6 +558,14 @@ func setDefaults(c *Config) {
 		c.Server.PublicAdvertise = fmt.Sprintf("http://localhost:%d", c.Server.Port)
 	}
 	warnUnsafeAuth(c)
+	warnDeprecated(c)
+}
+
+func warnDeprecated(c *Config) {
+	if c.Sandbox.AgentChatTimeoutSeconds != 0 {
+		log.Warn().Int("agent_chat_timeout_seconds", c.Sandbox.AgentChatTimeoutSeconds).
+			Msg("GRASP_AGENT_TIMEOUT_SEC / sandbox.agent_chat_timeout_seconds is deprecated and ignored: Agent turns have no per-turn limit; set the node time limit on the canvas and the no-activity limit on the settings page")
+	}
 }
 
 func warnUnsafeAuth(c *Config) {

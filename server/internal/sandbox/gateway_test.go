@@ -116,6 +116,17 @@ func (fg *gatewayFake) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		content, _ := rec["logs"].(string)
 		enc(map[string]any{"content": content})
+	case len(parts) == 2 && parts[1] == "exit" && r.Method == http.MethodGet:
+		rec := fg.recs[parts[0]]
+		if rec == nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		if fn, ok := rec["exitFn"].(func() any); ok {
+			enc(map[string]any{"exit": fn()})
+			return
+		}
+		enc(map[string]any{"exit": rec["exit"]})
 	default:
 		http.NotFound(w, r)
 	}

@@ -210,13 +210,20 @@ func (c *ACPClient) runTurn(ctx context.Context, text string, images []models.Pr
 	opID := newTurnOpID()
 	c.turnOpID.Store(opID)
 	defer c.turnOpID.Store("")
-	if err := c.send(chatMessage(text, images, opID)); err != nil {
+	idle := c.agentIdle()
+	msg := chatMessage(text, images, opID)
+	turnLimitFields(msg, ctx, idle)
+	if err := c.send(msg); err != nil {
 		return nil, fmt.Errorf("%w: send chat: %v", ErrConnClosed, err)
 	}
 
 	result := &ChatResult{OpID: opID}
-	idleC, idleReset, idleStop := newIdleWatch(c.idleTimeout)
-	defer idleStop()
+	// Until the bridge proves it sends heartbeats, give it the full window it
+	// needs to resume and then stop a silent Agent itself; afterwards any
+	// frame gap past bridgeLostAfter means the bridge is gone.
+	watch := legacyWatch(idle)
+	idleC, idleReset, idleStop := newIdleWatch(watch)
+	defer func() { idleStop() }()
 	for {
 		select {
 		case raw := <-c.eventCh:
@@ -236,6 +243,21 @@ func (c *ACPClient) runTurn(ctx context.Context, text string, images []models.Pr
 				}
 				if done {
 					return c.finishTurn(result)
+				}
+			case "liveness":
+				if result.Liveness == nil && idle > 0 {
+					idleStop()
+					watch = bridgeLostAfter
+					idleC, idleReset, idleStop = newIdleWatch(watch)
+				} else {
+					idleReset()
+				}
+				var lv Liveness
+				if json.Unmarshal(f.Data, &lv) == nil {
+					result.Liveness = &lv
+				}
+				if onProgress != nil {
+					onProgress(result)
 				}
 			case "queue_state":
 				if f.Busy != nil {
@@ -261,17 +283,22 @@ func (c *ACPClient) runTurn(ctx context.Context, text string, images []models.Pr
 				return nil, fmt.Errorf("acp error: %s", errMsg)
 			}
 		case <-idleC:
-			c.lg.Warn().Dur("idle", c.idleTimeout).Str("op_id", opID).Msg("acp chat idle timeout")
+			c.lg.Warn().Dur("watch", watch).Bool("heartbeats", result.Liveness != nil).
+				Str("op_id", opID).Msg("acp bridge silent; turn abandoned")
 			return c.abortTurn(result,
-				fmt.Sprintf("Agent 连续 %s 没有任何输出，本轮已中断", c.idleTimeout),
-				fmt.Errorf("%w after %s", ErrChatIdle, c.idleTimeout))
+				fmt.Sprintf("沙箱连续 %s 没有任何响应，本轮已中断", watch),
+				fmt.Errorf("%w: no frame from the sandbox for %s", ErrChatIdle, watch))
 		case <-ctx.Done():
 			c.lg.Warn().Err(ctx.Err()).Int("narration_bytes", len(result.Narration)).Str("op_id", opID).Msg("acp chat ctx done")
+			cause := context.Cause(ctx)
 			reason := "本轮已中断"
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				reason = "本轮超过单轮时限，已中断"
+				reason = "本轮超过时限，已中断"
+				if cause != ctx.Err() {
+					reason = cause.Error() + "，本轮已中断"
+				}
 			}
-			return c.abortTurn(result, reason, ctx.Err())
+			return c.abortTurn(result, reason, cause)
 		case <-c.done:
 			if hasContent(result) {
 				result.Interrupted = true
@@ -291,6 +318,12 @@ func (c *ACPClient) finishTurn(result *ChatResult) (*ChatResult, error) {
 		Str("op_id", result.OpID).
 		Str("stop", result.StopReason).
 		Msg("acp chat complete")
+	if result.StopReason == stopReasonStuck {
+		if result.ErrorText == "" {
+			result.appendErrorText("Agent 长时间没有任何活动，已被终止")
+		}
+		return result, fmt.Errorf("%w: %s", ErrAgentStuck, result.ErrorText)
+	}
 	if result.StopReason == stopReasonTimeout {
 		if result.ErrorText == "" {
 			result.appendErrorText("沙箱回合超时，已被终止")

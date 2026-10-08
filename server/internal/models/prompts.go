@@ -44,12 +44,12 @@ const (
 	// the chosen variant goes into products and the source is restored.
 	DesignLiveContract = "\n\n### 不提交代码的 Agent 的 Live 例外\n本 Agent 不提交代码,Live 只用来在真实页面上比较效果。采用(accept)时:把选中变体的设计结论(布局、样式取值、交互、文案)写进产物——有计划时用 `set_plan` 的设计区(完整重写),有页面稿时写 `page.html`;然后按技能完成标记清理,并把本次 Live 改动的源文件恢复原样(`git checkout -- <文件>`),再 `live_update(state=\"accepted\")`。放弃(discard)照技能恢复原样。任何情况下都不要 `git commit` / `git push`。\n"
 
-	StructuredRetry             = "【必须完成】本节点尚未写入结构化产物 `{name}`,这是本节点尚未写入的强制交付,缺它即判失败。现在立即调用 `{tool}` 工具写入它(内容为本节点应产出的结论),不要再提问、不要输出其它内容——只需完成这次调用。"
+	StructuredRetry             = "【必须完成】本节点尚未写入结构化产物 `{name}`,这是本节点尚未写入的强制交付,缺它即判失败。现在立即调用 `{tool}` 工具写入它,不要再提问、不要输出其它内容——只需完成这次调用。内容必须基于你已实际完成的工作和真实结果:没执行的检查如实写为未执行(测试用例写 skipped 并在 detail 写明原因),不得标记为 passed,也不得写占位或推测的结论。"
 	ClarifiedOpenQuestionsRetry = "【必须澄清】你写入的需求里仍有以下待确认问题没有和用户敲定:\n{items}\n澄清是门禁,不能带着未确认的问题结束。请现在用 `ask_question` 工具把这些问题逐一抛给用户做选择(每个问题给出候选选项),等用户确认后再重新调用 `set_clarified_requirement` 更新结论并清空 open_questions。不要直接结束澄清,也不要替用户擅自拍板。"
 	PreflightRetry              = "【必须完成】环境确认尚未就绪:{reason}。请继续用 `ask_question`/`ask_form` 采集缺口,在沙箱核验后调用 `set_preflight`(confirmed=true, unresolved 为空)。不要用 write_artifact 伪造 preflight.json;表单提交不能代替 set_preflight。\n"
 
 	OutcomeContract = "\n\n## 完成标记契约(强制)\n结束本节点前**必须**调用 `node_complete` 标记结果:`status` 取 `success` 或 `failed`;可选 `summary` / `error` / `outputs` / `checks`。`failed` 只表示本节点无法完成工作(环境、工具或依赖故障);测试不通过、评审打回等是判定结论,写入判定产物后仍以 `success` 标记,平台据此走 fail 出口。写完产物(`set_*` / `write_artifact`)后再调用。未标记将被判定为节点失败。平台先做默认校验(产物/门禁等),通过后才可能做业务 RPC 校验。若需启动长期服务(web / 被测应用等),必须用 `setsid`/`nohup` 放入独立会话并重定向日志,禁止前台或未脱钩的命令占住 Agent 回合;不要为收尾杀掉这些进程。\n"
-	OutcomeRetry    = "【必须完成】你尚未调用 `node_complete` 标记本节点完成结果,这是强制要求。现在立即调用 `node_complete(status=\"success\"|\"failed\", summary?, error?, outputs?)`,不要再提问或输出其它内容——只需完成这次调用。\n"
+	OutcomeRetry    = "【必须完成】你尚未调用 `node_complete` 标记本节点完成结果,这是强制要求。现在立即调用 `node_complete(status=\"success\"|\"failed\", summary?, error?, outputs?)`,不要再提问或输出其它内容——只需完成这次调用。summary 只写已实际完成的事,未完成的如实说明,不得写占位结论。\n"
 
 	// ReviewConfirmReconcile is the review-side confirm turn: node_complete
 	// already happened in the production phase, so it only reconciles products.
@@ -81,7 +81,7 @@ const (
 	ResearchContract             = "\n\n## 产物:调研 research\n调用 `set_research` 写入结构化调研结论(概述 + 调研问题及结论/关键发现,可含建议与参考)。\n"
 	RootCauseContract            = "\n\n## 产物:问题根因 root_cause\n需求的 `work_kind` 必填。当 `work_kind=bug` 时必须调用 `set_root_cause` 写入 `root_cause.json`:`title`/`summary`/`symptom`/`expected`/`actual`/`reproduction[]`/`impact`/`root_cause`/`evidence[]`/`diagrams[]` 必填;根因须解释原因(不能只有符号名);至少一条证据、至少一张图(图种 flowchart|sequence|activity|chart|other,源文本按计划图 Mermaid 规则校验)。不接受修复步骤、补丁或日期字段。非 bug 不得写入该产物。\n"
 	ImplementationResultContract = "\n\n## 产物:实现结果 implementation_result\n完成后:\n1. **提交并推送**:工作区根 `/root/workspace` 不是 git 仓库,每个仓库位于 `/root/workspace/<name>/`。对每个有改动的仓分别 `cd` 进其目录,各自 `git add` + `git commit`,再 `git push` 该仓的工作分支到远端(origin)。下游节点在全新克隆里工作,不推送就拿不到你的代码。\n2. 然后调用 `set_implementation_result` 写入结构化的实现结果(概述 + 主要改动 + 测试情况 + 破坏性变更/后续),并说明各仓的工作分支名;需要导出分支给下游时在 `node_complete` 的 `outputs.branches` 填 JSON(仓名→分支)。\n"
-	TestResultContract           = "\n\n## 产物:测试结果 test_result(判定产物)\n调用 `set_test_result` 写入结构化测试总结(总体结论 + 用例结果 + 缺陷/偏差/评估)。如实记录通过与失败,不要粉饰。\n**判定**:只要有用例 status=failed,平台判定本节点未通过,流程走 fail 出口。\n**计划覆盖(plan_coverage)**:本次运行存在计划且叶子非空时,必须提交 `plan_coverage[]`,逐叶子填写 `plan_id`、`passed`(须为 true)、非空 `evidence`;须覆盖全部叶子,否则判定未通过。先 `get_plan` 再逐项填写。\n**仓库测试布局**:在各仓子目录分别执行测试,汇总到**单一** `set_test_result.cases[]`;用例 `name` 建议加仓名前缀,如「[backend] API 测试」。\n**浏览器 E2E**:沙箱已预装无头 Chromium 与 Playwright 依赖(`PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`)。需要验证前端行为时自行启动被测应用(绑定 `127.0.0.1:<port>`)后执行,不得以「无法做浏览器验收」为由跳过。截图(最多 10 张)先存 PNG,再用 `artifact-upload <文件> --caption \"说明\"` 上传,在 `screenshots` 里用 `{artifact, caption}` 引用;不支持内联 base64。\n"
+	TestResultContract           = "\n\n## 产物:测试结果 test_result(判定产物)\n调用 `set_test_result` 写入结构化测试总结(总体结论 + 用例结果 + 缺陷/偏差/评估)。如实记录通过与失败,不要粉饰。\n**判定**:只要有用例 status=failed,平台判定本节点未通过,流程走 fail 出口。只有实际执行并通过的用例才写 passed;没执行的写 skipped,并在 `detail` 写明原因(必填)。\n**计划覆盖(plan_coverage)**:本次运行存在计划且叶子非空时,必须提交 `plan_coverage[]`,逐叶子填写 `plan_id`、`passed`、非空 `evidence`,以及 `cases`(验证该叶子的用例名,须与 `cases[].name` 一致);须覆盖全部叶子、全部 passed=true,且引用的用例全部 passed,否则判定未通过。叶子关联的用例被 skipped 即视为该叶子未验证。先 `get_plan` 再逐项填写。\n**仓库测试布局**:在各仓子目录分别执行测试,汇总到**单一** `set_test_result.cases[]`;用例 `name` 建议加仓名前缀,如「[backend] API 测试」。\n**浏览器 E2E**:沙箱已预装无头 Chromium 与 Playwright 依赖(`PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`)。需要验证前端行为时自行启动被测应用(绑定 `127.0.0.1:<port>`)后执行,不得以「无法做浏览器验收」为由跳过。截图(最多 10 张)先存 PNG,再用 `artifact-upload <文件> --caption \"说明\"` 上传,在 `screenshots` 里用 `{artifact, caption}` 引用;不支持内联 base64。\n"
 	ReviewContract               = "\n\n## 产物:评审 review(判定产物)\n调用 `set_review` 写入结构化评审结论(verdict + 概述 + 按严重度排列的意见与建议)。verdict 取 approve|approve_with_comments|request_changes|reject。\n**判定**:request_changes 或 reject 时本节点未通过,流程走 fail 出口;approve 或 approve_with_comments 才放行。请按实际质量如实给出。\n"
 	MergeRequestContract         = "\n\n## 产物:合并请求 merge_request\n对每个有改动的仓库(位于 `/root/workspace/<name>/`)先把目标分支合入工作分支并推送,再创建或复用 MR/PR,最后调用 `set_merge_request` 写入 `merge_request.json`:`summary` 必填;`items[]` 每仓一条,含 `repo`、`sourceBranch`、`targetBranch`、`provider`(github|gitlab|other)、`state`(created|reused|merged|unsupported)、`url`、`note`。`state` 不是 `unsupported` 时 `url` 必填;平台无法调用 API 时写 `unsupported` 并在 `note` 说明原因与手动操作方式。如实记录,不得编造链接。\n"
 	PreflightContract            = "\n\n## 产物:环境确认 preflight\n调用 `set_preflight` 写入 `preflight.json`:对照计划/仓库/已有变量推断运行所需环境项(地址、账号、密码、密钥、端口等)。\n**必填**:`summary`(非空)、`confirmed=true`;`fields[]` 每项 `name`+`value` 明文;`unresolved` 必须为空。`fields` 可为空数组。可选 `label`、`verified`、`verification`(sandbox_probe|user_attested|mixed)、`source`(form|choice|chat)、`notes`。\n缺口用 `ask_question`(有限选项)或 `ask_form`(需键入,type 仅 text|url)采集,尽量在沙箱核验。表单提交不能代替 set_preflight;禁止用 `write_artifact` 写 `preflight.json`。完成后平台把 fields 写入运行变量。\n"
@@ -109,6 +109,14 @@ func SchemaContract(schema string) string {
 // FeedbackHeaderFor renders the history-feedback clause for n rounds.
 func FeedbackHeaderFor(n int) string {
 	return strings.ReplaceAll(FeedbackHeader, "{n}", strconv.Itoa(n))
+}
+
+// StuckRetryNoteFor tells a node restarted after the platform stopped it as
+// stuck why the last attempt ended and how to avoid it again.
+func StuckRetryNoteFor(reason string) string {
+	return "\n\n## 上一次执行被判定为卡住\n" +
+		"上一次执行长时间没有任何输出、CPU 或磁盘活动(或在反复执行同一条命令),已被平台终止,现在换新沙箱从头执行。原因:" + reason + "\n" +
+		"本次请避免:不带超时的阻塞式前台命令(watch / serve / 等待输入的交互命令)、反复重试同一个失败操作。耗时命令请加超时,或放到后台并定期查看输出。\n"
 }
 
 func bulletList(items []string) string {

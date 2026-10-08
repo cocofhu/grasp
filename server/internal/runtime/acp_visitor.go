@@ -46,7 +46,9 @@ func (c *acpProvider) VisitorTurn(ctx context.Context, req NodeReq, lane, prelud
 	if !vl.primed && prelude != "" {
 		prompt = prelude + "\n\n## 用户消息\n" + strings.TrimRight(human, "\n")
 	}
-	chatCtx, cancel := context.WithTimeout(ctx, c.nodeChatTimeout(req))
+	// Share-link visitors chat outside the node's execution, so their turns are
+	// bounded by the bridge's no-activity limit only, not the node budget.
+	chatCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	res, err := vl.acp.ChatStreamResult(chatCtx, prompt, images, func(r *sandbox.ChatResult) {
 		if onProgress == nil {
@@ -112,7 +114,7 @@ func (c *acpProvider) openVisitorLane(ctx context.Context, req NodeReq, lane str
 	}
 	acp := sb.ACP().WithChat(chatID).
 		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
-		WithIdleTimeout(c.opts.ChatIdleTimeout).
+		WithIdleTimeoutFunc(c.agentIdle).
 		WithBridgeModel(parked.acp.BridgeModel())
 	if err := acp.Connect(ctx); err != nil {
 		acp.Close()

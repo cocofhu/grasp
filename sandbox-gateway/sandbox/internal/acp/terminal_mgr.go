@@ -224,3 +224,24 @@ func (m *TerminalManager) get(id string) (*termSession, error) {
 	}
 	return ts, nil
 }
+
+// PIDs lists the processes of terminals that have not exited yet.
+func (m *TerminalManager) PIDs() []int {
+	if m == nil {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []int
+	for _, ts := range m.terms {
+		select {
+		case <-ts.done:
+			continue
+		default:
+		}
+		if ts.cmd != nil && ts.cmd.Process != nil {
+			out = append(out, ts.cmd.Process.Pid)
+		}
+	}
+	return out
+}

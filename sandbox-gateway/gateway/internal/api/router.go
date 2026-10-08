@@ -36,6 +36,7 @@ func NewRouter(h *Handler, cfg *config.Config) *gin.Engine {
 		v1.GET("/sandboxes/:id/hosts/:port", h.Host)
 		v1.POST("/sandboxes/:id/ports", h.PublishPort)
 		v1.GET("/sandboxes/:id/logs", h.Logs)
+		v1.GET("/sandboxes/:id/exit", h.LastExit)
 	}
 	return r
 }

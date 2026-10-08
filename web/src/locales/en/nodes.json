@@ -60,7 +60,7 @@
           "placeholder": "What this step should achieve; reference variables with {'{{vars.feature}}'}"
         },
         "timeout": {
-          "label": "Timeout (minutes)"
+          "label": "Node time limit (minutes)"
         }
       },
       "outputs": {

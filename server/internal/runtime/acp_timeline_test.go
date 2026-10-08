@@ -172,11 +172,11 @@ func TestAcpTimelineIngestPollsOnlyWhileBusy(t *testing.T) {
 }
 
 func TestAcpTurnBusyNilClient(t *testing.T) {
-	if acpTurnBusy(nil) != nil {
+	if acpTurnBusy(nil, true) != nil {
 		t.Fatal("nil client should poll unconditionally")
 	}
 	c := sandbox.NewACPClient("127.0.0.1", 1)
-	busy := acpTurnBusy(c)
+	busy := acpTurnBusy(c, false)
 	if busy() {
 		t.Fatal("fresh client is idle")
 	}
@@ -187,5 +187,18 @@ func TestAcpTurnBusyNilClient(t *testing.T) {
 	c.SeedBridgeForTest(sandbox.BridgeState{Known: true}, "", "op-mine")
 	if !busy() {
 		t.Fatal("own in-flight turn should count")
+	}
+}
+
+func TestAcpTurnBusyStreamedSkipsOwnTurn(t *testing.T) {
+	c := sandbox.NewACPClient("127.0.0.1", 1)
+	busy := acpTurnBusy(c, true)
+	c.SeedBridgeForTest(sandbox.BridgeState{Known: true, Busy: true, RunningOpID: "op-mine"}, "", "op-mine")
+	if busy() {
+		t.Fatal("a turn this client streams must not be polled")
+	}
+	c.SeedBridgeForTest(sandbox.BridgeState{Known: true, Busy: true, RunningOpID: "op-console"}, "", "")
+	if !busy() {
+		t.Fatal("another client's turn must still be polled")
 	}
 }

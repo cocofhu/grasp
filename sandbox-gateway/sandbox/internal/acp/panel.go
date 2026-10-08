@@ -603,3 +603,13 @@ func (p *Panel) Close() error {
 
 // Conn exposes the underlying connection for advanced use.
 func (p *Panel) Conn() *Conn { return p.conn }
+
+// ProcessPIDs lists the agent subprocess and the terminals it started through
+// ACP terminal/create (those run as children of the bridge, not the agent).
+func (p *Panel) ProcessPIDs() []int {
+	var out []int
+	if pid := p.conn.PID(); pid > 0 {
+		out = append(out, pid)
+	}
+	return append(out, p.term.PIDs()...)
+}
