@@ -7,6 +7,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
 )
 
 // ErrTurnTimeout is the cancel cause the bridge watchdog attaches to a turn ctx
@@ -19,8 +20,27 @@ var ErrTurnTimeout = errors.New("turn timeout")
 // must not emit error_text or prompt_done for this cause.
 var ErrTurnRecover = errors.New("turn recover")
 
-// StopReasonTimeout is the prompt_done stopReason for a watchdog-aborted turn.
-const StopReasonTimeout = "timeout"
+// ErrTurnStuck is the watchdog's final abort of an Agent that showed no
+// activity (output, CPU or IO) even after one resume, or kept repeating the
+// same tool call. It wraps ErrTurnTimeout so transports treat it the same way
+// apart from the stop reason.
+var ErrTurnStuck = fmt.Errorf("%w: agent stuck", ErrTurnTimeout)
+
+// StopReasonTimeout is the prompt_done stopReason for a turn that ran past
+// its deadline; StopReasonStuck for one stopped as stuck.
+const (
+	StopReasonTimeout = "timeout"
+	StopReasonStuck   = "stuck"
+)
+
+// TimeoutStopReason is the prompt_done stopReason for a turn the watchdog
+// aborted with cause.
+func TimeoutStopReason(cause error) string {
+	if errors.Is(cause, ErrTurnStuck) {
+		return StopReasonStuck
+	}
+	return StopReasonTimeout
+}
 
 // PromptImage is a base64 image/file attachment sent with a user turn.
 type PromptImage struct {

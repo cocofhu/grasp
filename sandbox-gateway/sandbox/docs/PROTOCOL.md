@@ -101,7 +101,7 @@ WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST
   `opId` 由客户端生成;沙箱在该轮的**每一帧** `event`(含 `prompt_begin`/`prompt_done`)
   以及该轮的 `error` 上原样带回,客户端据此只认本轮的帧、忽略其它轮次的残留帧。
   Grasp 每轮都带 `opId`,并丢弃没有 `opId` 的 `event` 帧。
-  `deadlineSec` 可选,覆盖本轮的总时长上限(见 3.3)。
+  `deadlineSec` 可选,覆盖本轮的总时长上限;`idleSec` 可选,覆盖本轮的无动作时限(见 3.3)。
 - `← {op:"queue_state", busy, queue_length, queue_capacity, queue_entries, running?}` ——
   每次入队/出队以及**轮次开始/结束时**广播;`busy` 是**权威的会话忙/闲信号**
   (`true` 表示一次 `session/prompt` 正在处理中,`false` 表示当前空闲)。
@@ -110,6 +110,10 @@ WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST
   `← {op:"cancel_ack", opId, status}`,`status` 为 `cancelling`(运行中,随后以该轮
   `prompt_done{stopReason:"cancelled"}` 收尾)、`removed`(已从队列移除)或
   `unknown`(该轮已不存在),之后广播一次 `queue_state`。
+- `← {op:"liveness", opId, data:{active, cpuMs, ioBytes, idleSec, limitSec, lastTool?}}` ——
+  一轮运行期间约每 60s 一次的心跳:`active` 表示上次心跳以来 Agent 有没有活动(输出事件、
+  进程树 CPU 或 IO),`cpuMs`/`ioBytes` 是这段时间的用量,`idleSec` 是已连续无活动的秒数,
+  `limitSec` 是本轮无动作时限。客户端收到过心跳后,可以把「长时间收不到任何帧」直接判定为沙箱失联。
 - `← {op:"error", message, agentExited?}`。
 - 历史回放:`GET /api/events?before=<turn>&limit=<n>` → `{events, hasMore}`。
 - 可选 `usage`:能力声明 `session.tokenUsage=true` 时,事件/连接负载携带用量字段。
@@ -122,7 +126,7 @@ WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST
 
 - `← {op:"event", data:{type:"prompt_begin"}}` —— 本轮开始(可选;`busy` 随之翻为 `true`)。
 - `← {op:"event", data:{type:"prompt_done", stopReason}}` —— 本轮结束;`stopReason`
-  取值如 `end_turn` / `cancelled` / `timeout`(沙箱看门狗终止)/ `max_tokens` 等。
+  取值如 `end_turn` / `cancelled` / `timeout`(超过本轮总时长)/ `stuck`(Agent 被判定卡住)/ `max_tokens` 等。
 
 客户端可由 `queue_state.busy`(权威),或等价地由 `prompt_begin`/`prompt_done`
 这对边界,推导「运行中 / 空闲中」用于展示。注意:一轮长时间的工具调用期间**没有事件帧**
@@ -138,25 +142,34 @@ WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST
 
 ### 3.3 超时语义(客户端策略,reference-only 默认值)
 
-**沙箱侧看门狗(权威)**:沙箱对每一轮设两道上限。空闲第一次不结束用户这条消息:
-杀掉当前进程组,发 `turn_segment`,再用同一会话 `--resume` 续跑一次(续跑说明只给 Agent,不出现在用户气泡里)。
-再空闲一次,或总时长到点,才以 `error_text` 说明原因、再发 `prompt_done{stopReason:"timeout"}` 收尾。
-给用户看的超时说明不包含后台拉起命令。
+**沙箱侧看门狗(权威)**:沙箱对每一轮设两道上限。
 
-- `SANDBOX_TURN_IDLE_TIMEOUT`(默认 `10m`):连续这么久没有任何事件帧;第一次续跑,第二次才超时;
-- `SANDBOX_TURN_MAX_DURATION`(默认 `60m`,可被 `chat.deadlineSec` 按轮覆盖):整轮总时长,到点直接超时。
+- **无动作**:每 30s 采样一次 Agent 进程树(CLI 进程及其子进程;前台有 `docker` 客户端时连同
+  dockerd 和容器进程)的 CPU 与 IO。一个采样周期内 CPU ≥ 0.3s 或 IO ≥ 4KiB,或收到任何事件帧,
+  都算有活动。所以跑构建、跑测试、等模型长时间思考的 Agent 不会被误判。读不到 `/proc` 时只看事件帧。
+- **原地打转**:连续 8 次参数完全相同的工具调用。
 
-取值为 Go duration(如 `90s`)或纯秒数,`0` 关闭。
+无动作或打转第一次不结束用户这条消息:杀掉当前进程组,发 `turn_segment`,再用同一会话
+`--resume` 续跑一次(续跑说明只给 Agent,不出现在用户气泡里)。再发生一次,才以 `error_text`
+说明原因、再发 `prompt_done{stopReason:"stuck"}` 收尾。总时长到点则直接以
+`prompt_done{stopReason:"timeout"}` 收尾。给用户看的说明不包含后台拉起命令。
+
+- `SANDBOX_TURN_IDLE_TIMEOUT`(默认 `20m`,可被 `chat.idleSec` 按轮覆盖):连续这么久没有任何活动;
+- `SANDBOX_TURN_MAX_DURATION`(默认 `60m`,可被 `chat.deadlineSec` 按轮覆盖):整轮总时长,到点直接超时;
+- `SANDBOX_LIVENESS_CPU_MS`(默认 `300`)/ `SANDBOX_LIVENESS_IO_BYTES`(默认 `4096`):一个采样周期内算作有活动的 CPU / IO 阈值。
+
+时长取值为 Go duration(如 `90s`)或纯秒数,`0` 关闭。
 
 以下超时是**客户端策略**,作为沙箱看门狗之外的兜底:
 
-- **空闲超时**:对一轮设「无事件帧」看门狗——每收到一帧就重置计时器,窗口内无任何帧则
-  判定 agent/沙箱卡死并中止本轮。参考实现默认 720s(`chat_idle_timeout_seconds`,需大于
-  沙箱空闲上限,让沙箱先动手)。客户端放弃时须发 `cancel{opId}` 并等待确认
-  (`cancel_ack` 或该轮 `prompt_done`),未确认则视为与沙箱失步、不得假定沙箱空闲。
-  该错误视为**可重试**(换新沙箱重试,默认最多 3 次)。
-- **硬超时**:整轮 wall-clock 上限,即使持续产生事件也会到点切断。参考实现默认 600s
-  (`agent_chat_timeout_seconds`),可按节点用 `chat_timeout` 覆盖;硬超时**不可重试**。
+- **沙箱失联**:参考实现每轮下发 `idleSec`(设置页「Agent 无动作时限」,默认 20 分钟)。
+  收到过 `liveness` 心跳后,3 分钟收不到任何帧即判定沙箱失联;对不发心跳的旧沙箱,
+  窗口为 `2×idleSec` 再加最多 2 分钟,让沙箱先续跑、再自己停下。客户端放弃时须发
+  `cancel{opId}` 并等待确认(`cancel_ack` 或该轮 `prompt_done`),未确认则视为与沙箱失步、
+  不得假定沙箱空闲。该错误视为**可重试**(换新沙箱重试,默认最多 3 次)。
+- **Agent 卡住**:`prompt_done{stopReason:"stuck"}` 视为错误,节点换新沙箱、带上原因重跑一次。
+- **节点总时限**:参考实现不限单轮时长,只限一个节点所有 Agent 回合的总时间(画布节点的「超时」,
+  空为平台兜底 24 小时),并据剩余时间下发 `deadlineSec`(多给 60s,让平台先报节点超时)。到点**不可重试**。
 - **连接握手超时**:`connect` 握手参考实现为 3 分钟,内含约 90s 的鉴权预热重连窗口
   (cursor-agent 冷启动登录期间的瞬时 `Authentication required` 会自动重连)。
 

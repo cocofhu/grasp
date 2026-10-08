@@ -68,7 +68,7 @@ func TestWatchdogIdleEndsTurnAndPumpsNext(t *testing.T) {
 		t.Fatalf("user-facing timeout must not include the restart hint: %q", errorText(et))
 	}
 	done := readUntil(t, c, func(f wsFrame) bool { return f.Op == "event" && dataType(f) == "prompt_done" })
-	if done.OpID != "op-A" || stopReasonOf(done) != "timeout" {
+	if done.OpID != "op-A" || stopReasonOf(done) != "stuck" {
 		t.Fatalf("prompt_done=%+v stop=%q", done, stopReasonOf(done))
 	}
 	readUntil(t, c, func(f wsFrame) bool { return f.Op == "event" && dataType(f) == "prompt_begin" && f.OpID == "op-B" })
@@ -89,7 +89,7 @@ func TestWatchdogContinueDoesNotResetMaxDuration(t *testing.T) {
 	go func() {
 		for time.Since(start) < time.Second {
 			if sess.prompts.Load() >= 2 {
-				b.touchActiveTurn()
+				b.touchActiveTurn(nil)
 			}
 			time.Sleep(5 * time.Millisecond)
 		}
@@ -120,7 +120,7 @@ loop:
 		case <-stop:
 			break loop
 		case <-tick.C:
-			b.touchActiveTurn()
+			b.touchActiveTurn(nil)
 		}
 	}
 	if b.activeOpID() != "op-A" {
@@ -168,7 +168,7 @@ func TestWatchdogPerChatMaxDuration(t *testing.T) {
 	go func() {
 		// Steady activity: only the total-duration limit can end this turn.
 		for b.activeOpID() != "" || sess.prompts.Load() == 0 {
-			b.touchActiveTurn()
+			b.touchActiveTurn(nil)
 			time.Sleep(10 * time.Millisecond)
 		}
 	}()

@@ -180,6 +180,8 @@ func handleChat(bridge *service.Bridge, payload []byte) (opID string, err error)
 		Images  []service.PromptImage `json:"images"`
 		// DeadlineSec overrides the bridge's total-duration limit for this turn.
 		DeadlineSec int `json:"deadlineSec"`
+		// IdleSec overrides the bridge's no-activity limit for this turn.
+		IdleSec int `json:"idleSec"`
 	}
 	if err := json.Unmarshal(payload, &body); err != nil {
 		return "", err
@@ -202,11 +204,14 @@ func handleChat(bridge *service.Bridge, payload []byte) (opID string, err error)
 	if opID == "" {
 		opID = correl.ID()
 	}
-	var maxDuration time.Duration
+	var maxDuration, idle time.Duration
 	if body.DeadlineSec > 0 {
 		maxDuration = time.Duration(body.DeadlineSec) * time.Second
 	}
-	err = bridge.ChatWithDeadline(text, opID, act, body.Images, maxDuration)
+	if body.IdleSec > 0 {
+		idle = time.Duration(body.IdleSec) * time.Second
+	}
+	err = bridge.ChatWithLimits(text, opID, act, body.Images, maxDuration, idle)
 	return opID, err
 }
 

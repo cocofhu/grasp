@@ -87,7 +87,7 @@ func (b *Bridge) pumpPromptQueue() {
 	}
 	turnCtx, cancelCause := context.WithCancelCause(ctx)
 	cancelTurn := func() { cancelCause(context.Canceled) }
-	th := &promptTurn{cancel: cancelTurn, cancelCause: cancelCause, opID: oid, userText: item.Text, imageCount: len(item.Images), started: time.Now()}
+	th := &promptTurn{cancel: cancelTurn, cancelCause: cancelCause, opID: oid, userText: item.Text, imageCount: len(item.Images), started: time.Now(), loopC: make(chan struct{}, 1)}
 	th.lastActivity.Store(time.Now().UnixNano())
 	b.activeTurn = th
 	b.turnMu.Unlock()
@@ -137,13 +137,26 @@ func (b *Bridge) pumpPromptQueue() {
 	go b.executePrompt(p, turnCtx, item, th, cancelTurn)
 }
 
-// stallContinuePrompt is shown only to the agent. The user does not see it.
-const stallContinuePrompt = "上一段因为连续没有任何输出已被终止，前台进程已经退出。工作区里已经写好的文件都还在。如果需要常驻服务，请用 setsid nohup <命令> </dev/null >日志 2>&1 & 放到后台，再从中断的地方接着做完，不要从头开始。"
+// stallContinuePrompt / loopContinuePrompt are shown only to the agent. The
+// user does not see them.
+const (
+	stallContinuePrompt = "上一段因为连续没有任何输出、CPU 或磁盘活动已被终止，前台进程已经退出。工作区里已经写好的文件都还在。如果需要常驻服务，请用 setsid nohup <命令> </dev/null >日志 2>&1 & 放到后台，再从中断的地方接着做完，不要从头开始。"
+	loopContinuePrompt  = "上一段在反复执行同一个工具调用（参数完全相同），已被终止。工作区里已经写好的文件都还在。不要再重复这个调用：先看清它为什么没有达到预期，换一种做法，再从中断的地方接着做完。"
+)
 
 func (b *Bridge) continueAfterStall(p provider.Session, item queuedPrompt, th *promptTurn) (provider.TurnResult, error) {
 	th.continued.Store(true)
 	th.recover.Store(false)
 	th.timedOut.Store(false)
+	th.loop.reset()
+	select {
+	case <-th.loopC:
+	default:
+	}
+	prompt := stallContinuePrompt
+	if th.loopRecover.Load() {
+		prompt = loopContinuePrompt
+	}
 	b.Broadcast(eventEnvelope(map[string]any{
 		"type":      "turn_segment",
 		"sessionId": p.SessionID(),
@@ -166,7 +179,7 @@ func (b *Bridge) continueAfterStall(p provider.Session, item queuedPrompt, th *p
 
 	idle, max := b.turnLimits(item)
 	stopWatch := b.watchTurn(p, th, idle, max)
-	res, err := p.Prompt(turnCtx, stallContinuePrompt, nil)
+	res, err := p.Prompt(turnCtx, prompt, nil)
 	stopWatch()
 	return res, err
 }
@@ -243,7 +256,7 @@ func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item
 			b.Broadcast(eventEnvelope(map[string]any{
 				"type":       "prompt_done",
 				"sessionId":  p.SessionID(),
-				"stopReason": provider.StopReasonTimeout,
+				"stopReason": provider.TimeoutStopReason(th.lastErr),
 				"opId":       oid,
 			}, oid))
 		}
@@ -373,11 +386,16 @@ func (b *Bridge) removeQueuedPrompt(opID string) bool {
 // ChatWithOpID 与 WebSocket 单次 chat 帧共用 oid（与 InMessage.ID 一致）；action 默认 chat。
 // 无 oid 时自动生成（非 WS 入口时仍可有可搜日志键）。
 func (b *Bridge) ChatWithOpID(text, opID, action string, images []PromptImage) error {
-	return b.ChatWithDeadline(text, opID, action, images, 0)
+	return b.ChatWithLimits(text, opID, action, images, 0, 0)
 }
 
 // ChatWithDeadline 同 ChatWithOpID；maxDuration>0 时覆盖本回合的总时长上限。
 func (b *Bridge) ChatWithDeadline(text, opID, action string, images []PromptImage, maxDuration time.Duration) error {
+	return b.ChatWithLimits(text, opID, action, images, maxDuration, 0)
+}
+
+// ChatWithLimits 同 ChatWithDeadline；idleTimeout>0 时覆盖本回合的无动作时限。
+func (b *Bridge) ChatWithLimits(text, opID, action string, images []PromptImage, maxDuration, idleTimeout time.Duration) error {
 	t := strings.TrimSpace(text)
 	if t == "" && len(images) == 0 {
 		return errors.New("empty message")
@@ -404,7 +422,7 @@ func (b *Bridge) ChatWithDeadline(text, opID, action string, images []PromptImag
 		b.queueMu.Unlock()
 		return fmt.Errorf("消息队列已满（最多 %d 条），请等待当前回复结束后再发", MaxPromptQueueItems)
 	}
-	b.promptQueue = append(b.promptQueue, queuedPrompt{Text: t, OpID: opID, Action: action, Images: images, MaxDuration: maxDuration})
+	b.promptQueue = append(b.promptQueue, queuedPrompt{Text: t, OpID: opID, Action: action, Images: images, MaxDuration: maxDuration, IdleTimeout: idleTimeout})
 	b.queueMu.Unlock()
 	b.BroadcastQueueState()
 	b.pumpPromptQueue()

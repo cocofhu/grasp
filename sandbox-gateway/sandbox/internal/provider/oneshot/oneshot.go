@@ -212,6 +212,9 @@ type engine struct {
 	sessionID string
 	cumUsage  map[string]provider.TokenUsage
 	curCancel context.CancelFunc
+	// agentPID is the running CLI's pid (0 between turns), for the bridge's
+	// CPU / IO liveness sampling.
+	agentPID atomic.Int64
 
 	done      chan struct{}
 	closeOnce sync.Once
@@ -299,7 +302,7 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 			// The CLI already reported its final result and only failed to exit.
 			err = nil
 		} else {
-			res.stopReason = provider.StopReasonTimeout
+			res.stopReason = provider.TimeoutStopReason(cause)
 			err = cause
 		}
 	}
@@ -318,7 +321,8 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 	}
 	if err != nil {
 		err = e.safeError(err)
-		if !errors.Is(err, context.Canceled) && (!errorReported || res.stopReason == provider.StopReasonTimeout) {
+		timedOut := res.stopReason == provider.StopReasonTimeout || res.stopReason == provider.StopReasonStuck
+		if !errors.Is(err, context.Canceled) && (!errorReported || timedOut) {
 			// Clients stop reading at prompt_done. Surface the final attempt's error
 			// (including stderr) first, after resume fallback and watchdog handling.
 			e.emitError(err)
@@ -404,6 +408,8 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 		closeFiles(stdoutR, stdoutW, stderrR, stderrW)
 		return turnOutcome{stopReason: "failed"}, err
 	}
+	e.agentPID.Store(int64(cmd.Process.Pid))
+	defer e.agentPID.Store(0)
 	// The child holds its own copies now; drop the parent's write ends or even a
 	// well-behaved CLI's pipes would never reach EOF.
 	closeFiles(stdoutW, stderrW)
@@ -611,6 +617,14 @@ func (e *engine) Close() error {
 }
 
 func (e *engine) Done() <-chan struct{} { return e.done }
+
+// AgentPIDs is the CLI running the current turn (empty between turns).
+func (e *engine) AgentPIDs() []int {
+	if pid := int(e.agentPID.Load()); pid > 0 {
+		return []int{pid}
+	}
+	return nil
+}
 
 func (e *engine) ExitInfo() (string, error) {
 	return "Agent 会话已结束（one-shot：每轮独立进程）。", nil
