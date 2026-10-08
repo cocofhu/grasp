@@ -103,7 +103,11 @@ func livenessRoots(p provider.Session) func() []int {
 }
 
 func (b *Bridge) newLivenessMonitor(p provider.Session) *livenessMonitor {
-	return &livenessMonitor{sampler: b.sampler, roots: livenessRoots(p), cpuMin: b.livenessCPU, ioMin: b.livenessIO}
+	m := &livenessMonitor{sampler: b.sampler, roots: livenessRoots(p), cpuMin: b.livenessCPU, ioMin: b.livenessIO}
+	if r, ok := p.(backgroundWaitReporter); ok {
+		m.paused = r.WaitingOnBackground
+	}
+	return m
 }
 
 // watchTurn stops th once it has gone idle (no provider event, and no CPU or

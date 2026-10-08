@@ -64,6 +64,9 @@ func parseCursorTool(line []byte) []oneshot.Msg {
 		if failed {
 			m.ToolStatus = "failed"
 		}
+		if key == "shellToolCall" {
+			m.BackgroundPID = cursorBackgroundPID(body.Result)
+		}
 		return []oneshot.Msg{m}
 	}
 	return nil
@@ -265,6 +268,21 @@ func clipText(s string) string {
 }
 
 func utf8Start(b byte) bool { return b&0xC0 != 0x80 }
+
+// cursorBackgroundPID reads the shell pid from a shell result that only
+// launched a background task: {"isBackground":true,"success":{"pid":42}}.
+func cursorBackgroundPID(raw json.RawMessage) int {
+	var r struct {
+		IsBackground bool `json:"isBackground"`
+		Success      struct {
+			PID int `json:"pid"`
+		} `json:"success"`
+	}
+	if json.Unmarshal(raw, &r) != nil || !r.IsBackground || r.Success.PID <= 0 {
+		return 0
+	}
+	return r.Success.PID
+}
 
 // cursorToolDuration reads startedAtMs / completedAtMs (sent as strings).
 func cursorToolDuration(call map[string]json.RawMessage) int64 {

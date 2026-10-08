@@ -4,6 +4,16 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Cursor turns no longer hang on background tasks:** `cursor-agent -p`
+  waits for every background shell it started, so a preview server launched
+  as a background task kept the turn busy forever. Once the Agent has been
+  quiet for `SANDBOX_BG_TASK_GRACE` (default `2m`, `0` disables) with only
+  background shells left, the sandbox ends those shells' process groups (only
+  ones it can prove belong to the turn's CLI) and the CLI wraps up. A CLI that
+  reported its result but has not exited 5s later is killed and the turn still
+  succeeds. The liveness watchdog ignores the CLI's CPU/IO while it only waits
+  on background tasks. The base Agent rule now says to start long-running
+  services with `setsid nohup … &`.
 - **One VNC desktop per sandbox — breaking route change:** the per-port
   `/preview-vnc/:runId/:nodeId/:port/ws` WebSocket is removed; every viewer
   uses `/sandbox-vnc/:sandboxId/ws`, and the external share page uses one

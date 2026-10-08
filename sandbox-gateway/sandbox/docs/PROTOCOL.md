@@ -147,6 +147,7 @@ WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST
 - **无动作**:每 30s 采样一次 Agent 进程树(CLI 进程及其子进程;前台有 `docker` 客户端时连同
   dockerd 和容器进程)的 CPU 与 IO。一个采样周期内 CPU ≥ 0.3s 或 IO ≥ 4KiB,或收到任何事件帧,
   都算有活动。所以跑构建、跑测试、等模型长时间思考的 Agent 不会被误判。读不到 `/proc` 时只看事件帧。
+  CLI 只在等自己起的后台任务时(见下方 `SANDBOX_BG_TASK_GRACE`),它的 CPU / IO 不算活动。
 - **原地打转**:连续 8 次参数完全相同的工具调用。
 
 无动作或打转第一次不结束用户这条消息:杀掉当前进程组,发 `turn_segment`,再用同一会话
@@ -157,6 +158,11 @@ WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST
 - `SANDBOX_TURN_IDLE_TIMEOUT`(默认 `20m`,可被 `chat.idleSec` 按轮覆盖):连续这么久没有任何活动;
 - `SANDBOX_TURN_MAX_DURATION`(默认 `60m`,可被 `chat.deadlineSec` 按轮覆盖):整轮总时长,到点直接超时;
 - `SANDBOX_LIVENESS_CPU_MS`(默认 `300`)/ `SANDBOX_LIVENESS_IO_BYTES`(默认 `4096`):一个采样周期内算作有活动的 CPU / IO 阈值。
+- `SANDBOX_BG_TASK_GRACE`(默认 `2m`):cursor-agent `-p` 要等它起的所有后台 shell 结束才给出结果、退出,
+  Agent 用后台任务起的常驻服务会让这一轮一直不结束。没有前台工具在跑、只剩后台 shell、输出也安静了这么久,
+  沙箱就结束这些后台 shell 的进程组(先 SIGTERM,1s 后 SIGKILL),CLI 随后自行收尾。只处理能确认属于本轮
+  CLI 的进程(CLI 的后代、自成进程组、启动时间未变)。另外,CLI 给出结果后 5s 仍不退出,按本轮正常结束并杀掉
+  它的进程组。
 
 时长取值为 Go duration(如 `90s`)或纯秒数,`0` 关闭。
 
