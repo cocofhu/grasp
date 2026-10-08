@@ -11,7 +11,7 @@ each service has its own auth (session/IDE password, `ROOT_PASSWORD` / `SSH_KEY`
 external LB): Chromium CDP (`9222`) and noVNC/websockify (`6080`). These have
 **no application-layer auth**. Grasp dials them in-cluster for Pick/navigate
 and VNC WS proxy. Users must **not** reach them directly — use Grasp
-`/sandbox-vnc/:sandboxId/ws` and `/preview-vnc/:runId/:nodeId/:port/ws`
+`/sandbox-vnc/:sandboxId/ws`, one desktop per sandbox
 (Session required when platform Auth is injected). Grasp running outside
 the cluster or Docker network is not supported for CDP/VNC.
 

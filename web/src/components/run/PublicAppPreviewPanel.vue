@@ -105,18 +105,11 @@ async function exchangeTicket() {
     return
   }
   if (props.mobile) return
-  const meta = activeMeta.value
-  if (!meta) return
-  if (isUrlPreview(meta)) {
-    ticketBusy.value = false
-    return
-  }
-  const port = meta.port
-  if (port <= 0) return
 
+  // One ticket watches the node's sandbox desktop; port tabs only navigate it.
   ticketBusy.value = true
   try {
-    const res = await publicGateApi.previewTicket(props.token, port, 'vnc', ticketAbort.signal)
+    const res = await publicGateApi.previewTicket(props.token, 0, 'vnc', ticketAbort.signal)
     if (gen !== ticketGen) return
     if (res.status && res.status !== 'active') {
       linkInactive.value = true
@@ -163,7 +156,7 @@ watch(
 )
 
 watch(
-  () => [props.token, props.active, props.mobile, activeKey.value],
+  () => [props.token, props.active, props.mobile],
   () => {
     void exchangeTicket()
   },
@@ -202,23 +195,6 @@ function retry() {
     >
       <p>{{ t('pages.publicGate.appPreviewMobileHint') }}</p>
     </div>
-
-    <template v-else-if="!sortedPorts.length">
-      <div
-        class="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-sm text-txt3"
-        data-testid="public-gate-app-preview-empty"
-      >
-        <p>{{ t('pages.publicGate.appPreviewNoPorts') }}</p>
-        <button
-          type="button"
-          class="rounded-lg mt-1 inline-flex min-h-11 items-center border border-line px-3 text-[12px] text-txt"
-          data-testid="public-gate-app-preview-retry"
-          @click="retry"
-        >
-          {{ t('pages.appPreview.novnc.reconnect') }}
-        </button>
-      </div>
-    </template>
 
     <template v-else>
       <div v-if="sortedPorts.length > 1" class="mb-2 flex shrink-0 flex-wrap gap-1 px-2 pt-2">
@@ -273,10 +249,11 @@ function retry() {
           :title="activeMeta ? tabLabel(activeMeta) : 'preview'"
         />
         <NovncPreviewPanel
-          v-else-if="vncWsUrl"
-          :key="`public-vnc-${activePort}-${vncWsUrl}`"
+          v-if="vncWsUrl"
+          v-show="!activeIsUrl"
+          :key="`public-vnc-${vncWsUrl}`"
           :ws-url="vncWsUrl"
-          :port="activePort ?? undefined"
+          :target-port="activePort ?? undefined"
           fill
           @pick="onPick"
           @staged-pick="onStagedPick"
@@ -293,7 +270,7 @@ function retry() {
           </template>
         </NovncPreviewPanel>
         <div
-          v-else-if="ticketBusy"
+          v-else-if="ticketBusy && !activeIsUrl"
           class="flex h-full items-center justify-center text-sm text-txt3"
           data-testid="public-gate-app-preview-connecting"
         >

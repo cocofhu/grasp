@@ -297,7 +297,6 @@ describe('api req helpers', () => {
     })
     await expect(api.deletePreviewIssue('r1', 'n1', 'i1')).resolves.toEqual({ status: 'ok' })
     await expect(api.health()).resolves.toMatchObject({ ready: true })
-    expect(api.previewVncWsUrl('r', 'n', 1)).toMatch(/\/preview-vnc\/r\/n\/1\/ws$/)
     expect(api.sandboxVncWsUrl(3)).toMatch(/\/sandbox-vnc\/3\/ws$/)
 
     await expect(api.listGates()).resolves.toMatchObject({ items: [] })

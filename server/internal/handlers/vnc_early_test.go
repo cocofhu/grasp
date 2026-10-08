@@ -17,53 +17,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestPreviewVNCEarlyFailures(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	db, err := database.OpenSQLiteTest(t.TempDir() + "/vnc2.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	fg := sandboxtest.New(t)
-	mgr := sandbox.NewManager(fg.Client(), sandbox.ManagerOptions{WorkspaceDir: "/root/workspace"})
-	skills := services.NewAgentService(t.TempDir())
-	hostMCP := mcp.NewHost(services.NewArtifactService(db))
-	sbx := services.NewSandboxService(db, mgr, skills, hostMCP, services.SandboxOptions{Max: 2, TTL: time.Minute})
-	preview := services.NewPreviewService(db, mgr)
-	hostMCP.SetPreviewStore(preview)
-	bsvc := browser.New(&nopSandboxExec{}, browser.Config{})
-	h := &Handlers{Browser: bsvc, Preview: preview, MCP: hostMCP, Sbx: sbx}
-
-	r := gin.New()
-	r.GET("/ws/preview/:runId/:nodeId/:port/vnc", h.PreviewVNC)
-
-	// bad port
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/ws/preview/r/n/bad/vnc", nil))
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("bad port: %d", w.Code)
-	}
-
-	// not registered
-	w = httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/ws/preview/r/n/3000/vnc", nil))
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("not registered: %d %s", w.Code, w.Body.String())
-	}
-
-	// recycled
-	fg.Seed("sb-rec")
-	fg.SetStatus("sb-rec", "stopped")
-	_ = preview.UpsertPreviewPort(mcp.PreviewPort{
-		RunID: "r", NodeID: "n", Port: 3000, SandboxName: "sb-rec",
-		Host: "http://10.0.0.1:3000", RegisteredAt: time.Now(),
-	})
-	w = httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/ws/preview/r/n/3000/vnc", nil))
-	if w.Code != http.StatusGone {
-		t.Fatalf("recycled: %d %s", w.Code, w.Body.String())
-	}
-}
-
 func TestSandboxVNCRecycledAndBadHost(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := database.OpenSQLiteTest(t.TempDir() + "/vnc3.db")

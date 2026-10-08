@@ -239,10 +239,9 @@ Xvfb+Chromium+x11vnc+websockify）。VNC 栈由 sandbox-gateway 的 `universal-s
 CDP `:9222` / noVNC `:6080` **不是**对外 data-plane（无应用层鉴权，不 publish
 到宿主/LB）。用户只经本服务 WebSocket：
 
-- `GET /sandbox-vnc/:sandboxId/ws`
-- `GET /preview-vnc/:runId/:nodeId/:port/ws`
+- `GET /sandbox-vnc/:sandboxId/ws`：每个沙箱只有这一个桌面地址，桌面上就是 Agent 用 chrome-devtools MCP 操作的那个浏览器；应用端口是这个桌面里的页面，不再有按端口的 VNC 地址。
 
-鉴权始终启用时（`auth` 无开关）上述路径 `RequireSession`（仅校验 Session 有效，
+鉴权始终启用时（`auth` 无开关）该路径 `RequireSession`（仅校验 Session 有效，
 **不**校验沙箱/跑步归属）；`Auth == nil` 的测试形态不 401。
 `/preview/:runId/:nodeId/:port` HTTP 反代**不加** Session（iframe 无法带 cookie）。
 Pick/导航与 RFB 共套，不回退直连 websockify，也不回退 `sandboxIP:9222/6080`

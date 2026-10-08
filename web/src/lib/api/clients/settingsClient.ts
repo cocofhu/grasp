@@ -17,9 +17,7 @@ export type SettingsResponse = { items: SettingItem[]; brand: BrandSettings }
 
 export const settingsClient = {
   health: () => req<HealthResponse>(`/health`),
-  previewVncWsUrl: (runId: string, nodeId: string, port: number) =>
-    rootWsUrl(`/preview-vnc/${runId}/${nodeId}/${port}/ws`),
-  /** Console noVNC: sandbox-scoped WS (not preview runId/nodeId/port). */
+  /** The one noVNC address of a sandbox desktop; app ports are pages on it. */
   sandboxVncWsUrl: (sandboxId: number) =>
     rootWsUrl(`/sandbox-vnc/${sandboxId}/ws`),
   listGates: (params?: {

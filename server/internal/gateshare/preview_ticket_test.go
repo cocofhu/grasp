@@ -50,3 +50,29 @@ func TestInferPreviewMode(t *testing.T) {
 		t.Fatal("vnc")
 	}
 }
+
+func TestTicketStoreVNCTicketNeedsNoPort(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:ticket_store_vnc?mode=memory&cache=shared"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.GateSharePreviewTicket{}); err != nil {
+		t.Fatal(err)
+	}
+	s := NewTicketStore(db)
+	ticket, _, err := s.Issue("hash1", "run1", "node1", 0, PreviewPurposeVNC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims, ok := s.Lookup(ticket); !ok || claims.Port != 0 || claims.RunID != "run1" {
+		t.Fatalf("lookup: ok=%v %+v", ok, claims)
+	}
+	if _, _, err := s.Issue("hash1", "run1", "node1", 0, PreviewPurposeAPI); err == nil {
+		t.Fatal("api ticket needs a port")
+	}
+	if _, _, err := s.Issue("hash1", "run1", "node1", -1, PreviewPurposeVNC); err == nil {
+		t.Fatal("negative port")
+	}
+}

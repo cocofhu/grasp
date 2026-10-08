@@ -50,8 +50,11 @@ type Pick struct {
 
 // Engine is one Chromium instance (one container) we can open tabs in.
 type Engine interface {
-	// NewTab opens a tab in the default browser context navigated to url.
-	NewTab(ctx context.Context, url string) (Page, error)
+	// OpenDesktop returns the page the sandbox desktop shows. It takes over the
+	// browser's existing page, which the Agent's browser MCP also drives, and
+	// navigates it to url when it shows another origin. It opens a page in the
+	// default browser context only when none exists.
+	OpenDesktop(ctx context.Context, url string) (Page, error)
 	// Close disconnects from the browser. It must not stop Chromium.
 	Close() error
 }
@@ -117,7 +120,8 @@ type Config struct {
 	MaxTabsPerContainer int
 	TabIdleTTL          time.Duration
 	ContainerIdleTTL    time.Duration
-	// DesktopIdleTTL closes a sandbox's desktop page after no viewer has been
-	// attached for this long. 0 keeps it until the sandbox goes away.
+	// DesktopIdleTTL releases a sandbox's desktop page after no viewer has been
+	// attached for this long (Page.Close; the Agent's page is only detached).
+	// 0 keeps it until the sandbox goes away.
 	DesktopIdleTTL time.Duration
 }

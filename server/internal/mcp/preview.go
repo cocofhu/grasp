@@ -143,9 +143,10 @@ type previewPortPublisher interface {
 	EnsurePublishedPort(ctx context.Context, sandboxName string, port int) (string, bool)
 }
 
-// PreviewVNCWarmer optionally warms the in-sandbox VNC stack after set_preview.
-type PreviewVNCWarmer interface {
-	WarmPreviewVNC(sandboxName string)
+// PreviewDesktop optionally puts a registered app port on the sandbox desktop
+// (the VNC screen the Agent's browser also drives) after set_preview.
+type PreviewDesktop interface {
+	ShowPreviewOnDesktop(sandboxName string, port int)
 }
 
 func previewKey(runID, nodeID string) string { return runID + "|" + nodeID }
@@ -449,10 +450,9 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (str
 			return "", err
 		}
 	}
-	if !direct {
-		if warmer, ok := ops.(PreviewVNCWarmer); ok && sandboxName != "" {
-			warmer.WarmPreviewVNC(sandboxName)
-		}
+	// IP-direct only adds a new-tab link; the VNC desktop shows the app either way.
+	if desk, ok := ops.(PreviewDesktop); ok {
+		desk.ShowPreviewOnDesktop(sandboxName, port)
 	}
 	h.SignalPreviewReady(runID, nodeID)
 	return proxyURL, nil

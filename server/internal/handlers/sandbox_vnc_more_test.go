@@ -73,15 +73,3 @@ func TestSandboxVNCEarlyNilAndNotFound(t *testing.T) {
 		t.Fatalf("empty name: %d %s", w.Code, w.Body.String())
 	}
 }
-
-func TestPreviewVNCNilDeps(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	h := &Handlers{}
-	r.GET("/ws/preview/:runId/:nodeId/:port/vnc", h.PreviewVNC)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/ws/preview/r/n/3000/vnc", nil))
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("nil browser: %d %s", w.Code, w.Body.String())
-	}
-}

@@ -10,8 +10,8 @@ import (
 	"github.com/cocofhu/grasp/internal/router"
 )
 
-// g4.1: production paths registered by router.New(), not the legacy
-// /ws/sandboxes/:id/vnc and /ws/preview/:runId/:nodeId/:port/vnc routes.
+// g4.1: production paths registered by router.New(). /sandbox-vnc/:id/ws is
+// the only signed-in VNC address; per-port preview-vnc addresses are gone.
 
 func wsUpgradeRequest(path string) *http.Request {
 	req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -42,16 +42,6 @@ func TestProductionSandboxVNCRequiresSessionNoCookie(t *testing.T) {
 	assertNoWSUpgrade(t, w)
 }
 
-func TestProductionPreviewVNCRequiresSessionNoCookie(t *testing.T) {
-	hn := newHarness(t)
-	w := httptest.NewRecorder()
-	hn.r.ServeHTTP(w, wsUpgradeRequest("/preview-vnc/r/n/5173/ws"))
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("want 401 got %d %s", w.Code, w.Body.String())
-	}
-	assertNoWSUpgrade(t, w)
-}
-
 func TestProductionSandboxVNCValidSessionEntersHandler(t *testing.T) {
 	hn := newHarness(t)
 	w := httptest.NewRecorder()
@@ -68,17 +58,14 @@ func TestProductionSandboxVNCValidSessionEntersHandler(t *testing.T) {
 	assertNoWSUpgrade(t, w)
 }
 
-func TestProductionPreviewVNCValidSessionEntersHandler(t *testing.T) {
+func TestProductionPerPortPreviewVNCRouteRemoved(t *testing.T) {
 	hn := newHarness(t)
 	w := httptest.NewRecorder()
 	req := wsUpgradeRequest("/preview-vnc/r/n/5173/ws")
 	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: hn.cookie})
 	hn.r.ServeHTTP(w, req)
-	if w.Code == http.StatusUnauthorized {
-		t.Fatalf("valid session must not 401: %s", w.Body.String())
-	}
-	if w.Code != http.StatusNotFound && w.Code != http.StatusServiceUnavailable && w.Code != http.StatusBadRequest {
-		t.Fatalf("want business 4xx/503, got %d %s", w.Code, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("want 404 for removed per-port VNC route, got %d %s", w.Code, w.Body.String())
 	}
 	assertNoWSUpgrade(t, w)
 }
@@ -87,7 +74,7 @@ func TestProductionVNCAuthNilDoesNotRequireSession(t *testing.T) {
 	hn := newHarness(t)
 	hn.h.Auth = nil
 	r := router.New(hn.h)
-	for _, path := range []string{"/sandbox-vnc/1/ws", "/preview-vnc/r/n/5173/ws"} {
+	for _, path := range []string{"/sandbox-vnc/1/ws"} {
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, wsUpgradeRequest(path))
 		if w.Code == http.StatusUnauthorized {

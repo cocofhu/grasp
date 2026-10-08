@@ -253,14 +253,14 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     )
   }
   if (url.includes('/public/gate-approvals/preview-ticket')) {
-    let port = 5173
+    let port = 0
     try {
       const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {}
       if (typeof body.port === 'number') port = body.port
     } catch {
       /* ignore */
     }
-    const ticket = `e2e-ticket-${port}`
+    const ticket = port > 0 ? `e2e-ticket-${port}` : 'e2e-ticket-desktop'
     return new Response(
       JSON.stringify({
         status: 'active',

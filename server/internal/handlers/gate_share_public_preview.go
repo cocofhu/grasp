@@ -2,16 +2,13 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/cocofhu/grasp/internal/browser"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/models"
 
@@ -46,13 +43,19 @@ func (h *Handlers) PublicPreviewTicket(c *gin.Context) {
 		return
 	}
 	var body publicPreviewTicketBody
-	if err := c.ShouldBindJSON(&body); err != nil || body.Port <= 0 {
+	if err := c.ShouldBindJSON(&body); err != nil || body.Port < 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
 		return
 	}
 	purpose := strings.TrimSpace(body.Purpose)
 	if purpose == "" {
 		purpose = gateshare.PreviewPurposeVNC
+	}
+	// The remote desktop is the node's sandbox screen and needs no port; the
+	// API proxy serves one registered port.
+	if body.Port == 0 && purpose != gateshare.PreviewPurposeVNC {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
+		return
 	}
 	lookup, st, err := h.GateShare.LookupByToken(token)
 	if err != nil || lookup == nil || st == models.ShareLinkStateNone {
@@ -67,19 +70,21 @@ func (h *Handlers) PublicPreviewTicket(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "unsupported", "message": "当前分享链不支持远程预览"})
 		return
 	}
-	ports := h.publicAppPreviewPorts(lookup.Link.RunID, lookup.Link.NodeID)
-	var matched *gateshare.PublicPreviewPort
-	for i := range ports {
-		if ports[i].Port == body.Port {
-			matched = &ports[i]
-			break
+	if body.Port > 0 {
+		ports := h.publicAppPreviewPorts(lookup.Link.RunID, lookup.Link.NodeID)
+		var matched *gateshare.PublicPreviewPort
+		for i := range ports {
+			if ports[i].Port == body.Port {
+				matched = &ports[i]
+				break
+			}
 		}
+		if matched == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "port_not_registered", "message": "预览端口未注册"})
+			return
+		}
+		purpose = publicTicketPurpose(*matched, purpose)
 	}
-	if matched == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "port_not_registered", "message": "预览端口未注册"})
-		return
-	}
-	purpose = publicTicketPurpose(*matched, purpose)
 	ticket, exp, err := h.GateShareTickets.Issue(
 		lookup.Link.TokenHash, lookup.Link.RunID, lookup.Link.NodeID, body.Port, purpose,
 	)
@@ -118,10 +123,11 @@ func publicTicketPurpose(p gateshare.PublicPreviewPort, requested string) string
 	return gateshare.PreviewPurposeVNC
 }
 
-// PublicPreviewVNC proxies noVNC over a share-scoped ticket (no Session).
+// PublicPreviewVNC lets a share-ticket holder watch the node's sandbox
+// desktop, the same screen signed-in viewers see (no Session).
 func (h *Handlers) PublicPreviewVNC(c *gin.Context) {
 	applyPublicSecurityHeaders(c)
-	if h.GateShare == nil || h.GateShareTickets == nil || h.Browser == nil {
+	if h.GateShare == nil || h.GateShareTickets == nil || h.Browser == nil || h.Preview == nil {
 		c.String(http.StatusServiceUnavailable, "vnc preview disabled")
 		return
 	}
@@ -135,137 +141,31 @@ func (h *Handlers) PublicPreviewVNC(c *gin.Context) {
 		c.String(http.StatusForbidden, "share link inactive")
 		return
 	}
-
-	rctx, rcancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
-	bridgeURL, sandboxName, ok := h.resolvePreviewTarget(rctx, claims.RunID, claims.NodeID, claims.Port)
-	rcancel()
+	sandboxName, ok := h.Preview.SandboxForRunNode(claims.RunID, claims.NodeID)
 	if !ok {
-		if sandboxName != "" {
-			c.String(http.StatusGone, "sandbox recycled")
-			return
-		}
-		c.String(http.StatusNotFound, "preview not registered")
+		c.String(http.StatusNotFound, "sandbox not found")
 		return
 	}
-	sandboxIP, err := previewHostIP(bridgeURL)
-	if err != nil {
-		c.String(http.StatusBadGateway, "preview host invalid")
+	sandboxIP, code, msg := h.resolveDesktopSandbox(c.Request.Context(), sandboxName)
+	if code != 0 {
+		c.String(code, msg)
 		return
 	}
-	navigateURL := fmt.Sprintf("http://127.0.0.1:%d/", claims.Port)
-
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		log.Debug().Err(err).Msg("public preview-vnc websocket upgrade failed")
-		return
-	}
-	defer func() { _ = conn.Close() }()
-
-	unregister := func() {}
-	if h.GateShareSessions != nil {
-		unregister = h.GateShareSessions.Register(claims.TokenHash, conn)
-	}
-	defer unregister()
-
-	var wmu sync.Mutex
-	writeJSON := func(v any) error {
-		wmu.Lock()
-		defer wmu.Unlock()
-		return conn.WriteJSON(v)
-	}
-	writeMsg := func(msgType int, data []byte) error {
-		wmu.Lock()
-		defer wmu.Unlock()
-		return conn.WriteMessage(msgType, data)
-	}
-	pushJSON := func(v any) {
-		_ = writeJSON(v)
-	}
-
-	linkWatchDone := make(chan struct{})
-	defer close(linkWatchDone)
-	// Share write lock with RFB path — gorilla/websocket forbids concurrent writers.
-	go h.watchPublicPreviewLink(claims.TokenHash, writeJSON, conn.Close, linkWatchDone)
-
-	openCtx, cancel := context.WithTimeout(c.Request.Context(), 90*time.Second)
-	defer cancel()
-	sess, err := h.Browser.OpenInSandbox(openCtx, sandboxName, sandboxIP, navigateURL)
-	if err != nil {
-		_ = writeJSON(gin.H{"type": "error", "message": err.Error()})
-		return
-	}
-	defer sess.Close()
-
-	vncURL, err := sess.VNCWebSocketURL()
-	if err != nil {
-		_ = writeJSON(gin.H{"type": "error", "message": err.Error()})
-		return
-	}
-	upstream, _, err := websocket.DefaultDialer.Dial(vncURL, nil)
-	if err != nil {
-		_ = writeJSON(gin.H{"type": "error", "message": "vnc upstream failed"})
-		return
-	}
-	defer func() { _ = upstream.Close() }()
-
-	done := make(chan struct{})
-	defer close(done)
-
-	sess.Page().OnPick(func(p browser.Pick) {
-		pushJSON(gin.H{"type": "picked", "pick": p})
-	})
-	sess.Page().OnInspectCanceled(func() {
-		pushJSON(gin.H{"type": "inspect-canceled"})
-	})
-	sess.Page().OnDescribeFailed(func() {
-		pushJSON(gin.H{"type": "describe-failed"})
-	})
-	pushJSON(gin.H{"type": "ready", "url": vncReadyURL(c.Request.Context(), sess.Page(), navigateURL)})
-
-	go func() {
-		select {
-		case <-sess.Done():
-			pushJSON(gin.H{"type": "closed", "reason": sess.Reason()})
-			time.Sleep(50 * time.Millisecond)
-			_ = conn.Close()
-		case <-done:
-		}
-	}()
-
-	go func() {
-		activity := newVncToucher(sess.Touch)
-		for {
-			msgType, data, err := conn.ReadMessage()
-			if err != nil {
-				_ = upstream.Close()
-				return
+	h.serveDesktopVNC(c, sandboxName, sandboxIP, desktopVNCOptions{
+		onConnected: func(conn *websocket.Conn, writeJSON func(any) error) func() {
+			unregister := func() {}
+			if h.GateShareSessions != nil {
+				unregister = h.GateShareSessions.Register(claims.TokenHash, conn)
 			}
-			activity.mark()
-			if msgType == websocket.TextMessage {
-				var m vncClientMsg
-				if json.Unmarshal(data, &m) == nil {
-					if !publicVncMsgAllowed(m) {
-						continue
-					}
-					h.applyVncMsg(sess.Page(), m, pushJSON)
-					continue
-				}
+			linkWatchDone := make(chan struct{})
+			go h.watchPublicPreviewLink(claims.TokenHash, writeJSON, conn.Close, linkWatchDone)
+			return func() {
+				close(linkWatchDone)
+				unregister()
 			}
-			if err := upstream.WriteMessage(msgType, data); err != nil {
-				return
-			}
-		}
-	}()
-
-	for {
-		msgType, data, err := upstream.ReadMessage()
-		if err != nil {
-			return
-		}
-		if err := writeMsg(msgType, data); err != nil {
-			return
-		}
-	}
+		},
+		allowMsg: publicVncMsgAllowed,
+	})
 }
 
 // publicVncMsgAllowed keeps anonymous viewers on in-sandbox loopback pages:

@@ -802,6 +802,7 @@ export const publicGateApi = {
    * Exchange share token for a short-lived preview ticket (VNC or API iframe).
    * Share token stays in header; ticket may appear in WS query / iframe path.
    */
+  /** port 0 with purpose vnc watches the node's sandbox desktop; api names a port. */
   previewTicket(
     token: string,
     port: number,
@@ -813,7 +814,7 @@ export const publicGateApi = {
       credentials: 'omit',
       signal,
       headers: publicShareHeaders(token, true),
-      body: JSON.stringify({ port, purpose: purpose || 'vnc' }),
+      body: JSON.stringify(port > 0 ? { port, purpose: purpose || 'vnc' } : { purpose: purpose || 'vnc' }),
     }).then(async (res) => {
       const body = await readJson<PublicPreviewTicketResult>(res)
       if (!res.ok) {

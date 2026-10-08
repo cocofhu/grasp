@@ -1,12 +1,14 @@
 package handlers_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/browser"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
@@ -82,5 +84,62 @@ func TestPublicPreviewAPIProxyAllowsSameOriginFraming(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "api-ok") {
 		t.Fatalf("expected upstream body: %s", w.Body.String())
+	}
+}
+
+type nopVNCExec struct{}
+
+func (nopVNCExec) Exec(context.Context, string, time.Duration, ...string) (string, error) {
+	return "", nil
+}
+
+// A share viewer watches the node's sandbox desktop, so the VNC ticket needs
+// no registered port, and the socket resolves the sandbox from the run/node.
+func TestPublicPreviewVNCTicketWatchesNodeSandbox(t *testing.T) {
+	hn := newHarness(t)
+	seedAppPreviewReview(t, hn, "run-ap-vnc", "preview_vnc")
+	hn.h.Preview = services.NewPreviewService(hn.db, nil)
+	hn.h.Browser = browser.New(nopVNCExec{}, browser.Config{})
+
+	created := parseJSON(t, hn.do(http.MethodPost, "/api/runs/run-ap-vnc/reviews/preview_vnc/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
+	url, _ := created["url"].(string)
+	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
+	headers := map[string]string{
+		headerShareToken:   token,
+		headerShareRequest: "1",
+		"Origin":           "http://" + publicHost,
+	}
+
+	apiRes := hn.doPublic(http.MethodPost, "/public/gate-approvals/preview-ticket", map[string]any{"purpose": "api"}, headers)
+	if apiRes.Code != http.StatusBadRequest {
+		t.Fatalf("api ticket without port: %d %s", apiRes.Code, apiRes.Body.String())
+	}
+
+	ticketRes := parseJSON(t, hn.doPublic(http.MethodPost, "/public/gate-approvals/preview-ticket", map[string]any{"purpose": "vnc"}, headers))
+	if ticketRes["status"] != models.ShareLinkStateActive || ticketRes["wsPath"] != "/public/gate-approvals/preview-vnc/ws" {
+		t.Fatalf("vnc ticket: %+v", ticketRes)
+	}
+	ticket, _ := ticketRes["ticket"].(string)
+
+	open := func() *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/public/gate-approvals/preview-vnc/ws?ticket="+ticket, nil)
+		req.Host = publicHost
+		hn.r.ServeHTTP(w, req)
+		return w
+	}
+	if w := open(); w.Code != http.StatusNotFound {
+		t.Fatalf("no sandbox yet: %d %s", w.Code, w.Body.String())
+	}
+
+	if err := hn.db.Create(&models.Sandbox{
+		Name: "sb-ap-vnc", RunID: "run-ap-vnc", NodeID: "preview_vnc", Purpose: "run", Status: "running",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	hn.fg.Seed("sb-ap-vnc")
+	hn.fg.SetStatus("sb-ap-vnc", "stopped")
+	if w := open(); w.Code != http.StatusGone {
+		t.Fatalf("stopped sandbox: %d %s", w.Code, w.Body.String())
 	}
 }

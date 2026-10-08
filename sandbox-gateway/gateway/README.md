@@ -13,8 +13,8 @@ client-to-sandbox connections; CDP/noVNC stay internal:
 - Chromium CDP: `9222` — **internal only** (container / ClusterIP)
 - noVNC preview: `6080` — **internal only** (container / ClusterIP)
 
-Users reach noVNC via Grasp `/sandbox-vnc/:id/ws` and
-`/preview-vnc/:runId/:nodeId/:port/ws` (Session when Auth is on). Grasp
+Users reach noVNC via Grasp `/sandbox-vnc/:id/ws`, one desktop per sandbox
+(Session when Auth is on). Grasp
 outside the cluster or Docker network cannot dial CDP/noVNC.
 
 There is no gateway `exec`/`files`/`terminal` API: run commands and move files

@@ -75,10 +75,10 @@ sandbox:
 
 # VNC preview (sandbox-side Chromium + noVNC; Grasp only proxies WS).
 # Always enabled; Settings max_preview_tabs overrides max_tabs at runtime.
-# Users connect via /sandbox-vnc/:sandboxId/ws and
-# /preview-vnc/:runId/:nodeId/:port/ws — never host:6080 / host:9222.
-# When auth users are configured (always on outside local-demo), those WS
-# paths require a valid Session cookie. Preview HTTP /preview/:runId/...
+# Users connect via /sandbox-vnc/:sandboxId/ws (one desktop per sandbox; app
+# ports are pages on it) — never host:6080 / host:9222.
+# When auth users are configured (always on outside local-demo), that WS
+# path requires a valid Session cookie. Preview HTTP /preview/:runId/...
 # stays session-free (iframe credential is runId+nodeId+port).
 browser:
   # Global LRU cap on concurrent preview tabs (one per viewer session).

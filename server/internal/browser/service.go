@@ -370,12 +370,39 @@ func (s *Service) Stop() {
 	s.desktops = map[string]*desktop{}
 }
 
+// ShowURL points a sandbox's desktop page at targetURL without attaching a
+// viewer, so the next viewer finds the app already on screen. set_preview
+// uses it with the in-sandbox loopback address of the app.
+func (s *Service) ShowURL(ctx context.Context, sandboxName, sandboxIP, targetURL string) error {
+	if sandboxName == "" || sandboxIP == "" {
+		return fmt.Errorf("sandbox name/ip required")
+	}
+	cdpAddr, novncAddr, err := s.resolvePreviewEndpoints(ctx, sandboxName, sandboxIP)
+	if err != nil {
+		return err
+	}
+	if err := s.EnsureSandboxVNC(ctx, sandboxName, sandboxIP); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if d := s.reuseDesktopLocked(ctx, sandboxName, "about:blank"); d != nil {
+		return d.page.Goto(targetURL)
+	}
+	page, err := s.openTabInSandboxLocked(ctx, sandboxName, sandboxIP, cdpAddr, novncAddr, targetURL)
+	if err != nil {
+		return err
+	}
+	s.newDesktopLocked(sandboxName, page)
+	return nil
+}
+
 // OpenInSandbox attaches a viewer to the desktop page of a preview-capable
-// sandbox's VNC/CDP stack. The first viewer opens the page at targetURL
-// (typically http://127.0.0.1:<port>/ so Chromium stays inside the sandbox
-// network namespace). Later viewers reuse that page as it is, and only
-// navigate when targetURL points at another origin; about:blank never
-// navigates an existing page.
+// sandbox's VNC/CDP stack. The desktop page is the browser's existing page,
+// the one the Agent drives, so viewers watch the Agent's screen. It is
+// navigated to targetURL only when it shows another origin; about:blank never
+// navigates it.
 // sandboxIP is only used when no SandboxEndpointResolver is present (legacy /
 // unit tests). With a gateway resolver, named internal cdp/novnc are required.
 func (s *Service) OpenInSandbox(ctx context.Context, sandboxName, sandboxIP, targetURL string) (*Session, error) {
@@ -570,7 +597,7 @@ func (s *Service) openTabInSandboxLocked(ctx context.Context, sandboxName, sandb
 	if err != nil {
 		return nil, err
 	}
-	page, err := cs.engine.NewTab(ctx, targetURL)
+	page, err := cs.engine.OpenDesktop(ctx, targetURL)
 	if err != nil {
 		log.Warn().Str("sandbox", sandboxName).Err(err).Msg("cdp engine evicted, redialing")
 		_ = cs.engine.Close()
@@ -579,7 +606,7 @@ func (s *Service) openTabInSandboxLocked(ctx context.Context, sandboxName, sandb
 		if err != nil {
 			return nil, err
 		}
-		page, err = cs.engine.NewTab(ctx, targetURL)
+		page, err = cs.engine.OpenDesktop(ctx, targetURL)
 		if err != nil {
 			return nil, fmt.Errorf("open tab: %w", err)
 		}

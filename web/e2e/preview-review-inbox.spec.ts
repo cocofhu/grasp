@@ -176,6 +176,11 @@ async function mockInboxApis(
       return
     }
 
+    if (method === 'GET' && path.match(/\/api\/runs\/[^/]+\/nodes\/[^/]+\/sandbox$/)) {
+      await route.fulfill({ json: { id: 42, name: 'e2e-sandbox', status: 'running' } })
+      return
+    }
+
     if (method === 'GET' && (path === '/api/workflows' || path.endsWith('/api/workflows'))) {
       await route.fulfill({
         json: [{ id: 'wf-ap', name: '预览工作流', status: 'published', version: 1, nodes: [], edges: [] }],

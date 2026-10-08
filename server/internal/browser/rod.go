@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -84,14 +85,18 @@ type rodEngine struct {
 	ws      *cdp.WebSocket
 }
 
-func (e *rodEngine) NewTab(_ context.Context, url string) (Page, error) {
-	// Default browser context: cookies and storage live in the Chromium profile
-	// and survive viewer reconnects and Chromium restarts.
-	page, err := e.browser.Page(proto.TargetCreateTarget{URL: url})
-	if err != nil {
-		return nil, fmt.Errorf("create page: %w", err)
+func (e *rodEngine) OpenDesktop(_ context.Context, url string) (Page, error) {
+	page, adopted := e.agentPage(url)
+	if page == nil {
+		// Default browser context: cookies and storage live in the Chromium
+		// profile and survive viewer reconnects and Chromium restarts.
+		created, err := e.browser.Page(proto.TargetCreateTarget{URL: url})
+		if err != nil {
+			return nil, fmt.Errorf("create page: %w", err)
+		}
+		page = created
 	}
-	rp := &rodPage{engine: e, page: page}
+	rp := &rodPage{engine: e, page: page, adopted: adopted}
 	// Headed Chromium on Xvfb (no window manager) opens NewTab as another
 	// window. presentDesktop covers the framebuffer with that window and pins
 	// the CSS viewport to its content area (DSF 1). Tab open stays best-effort;
@@ -101,6 +106,41 @@ func (e *rodEngine) NewTab(_ context.Context, url string) (Page, error) {
 	}
 	rp.installPickListener()
 	return rp, nil
+}
+
+// agentPage returns the browser's first ordinary page, navigated to url when
+// it shows another origin. chrome-devtools-mcp drives that same page, so the
+// VNC viewer watches the Agent's screen instead of a page of its own.
+func (e *rodEngine) agentPage(url string) (*rod.Page, bool) {
+	pages, err := e.browser.Pages()
+	if err != nil {
+		log.Debug().Err(err).Msg("preview list pages")
+		return nil, false
+	}
+	for _, p := range pages {
+		info, err := p.Info()
+		if err != nil || !adoptablePageURL(info.URL) {
+			continue
+		}
+		if needsNavigate(info.URL, url) {
+			if err := p.Navigate(url); err != nil {
+				log.Warn().Err(err).Str("url", url).Msg("preview adopted page goto failed")
+			}
+		}
+		return p, true
+	}
+	return nil, false
+}
+
+// adoptablePageURL skips DevTools and extension pages, which are not the
+// Agent's screen.
+func adoptablePageURL(u string) bool {
+	for _, prefix := range []string{"devtools://", "chrome-extension://", "chrome-untrusted://"} {
+		if strings.HasPrefix(u, prefix) {
+			return false
+		}
+	}
+	return true
 }
 
 // desktopGeom is one read-back of the headed window: outer frame versus the
@@ -536,6 +576,8 @@ func (e *rodEngine) Close() error { return e.ws.Close() }
 type rodPage struct {
 	engine *rodEngine
 	page   *rod.Page
+	// adopted pages belong to the browser the Agent drives; Close only detaches.
+	adopted bool
 
 	mu                sync.Mutex
 	onPick            func(Pick)
@@ -780,6 +822,9 @@ func (rp *rodPage) Close() error {
 	}
 	rp.desktopMu.Unlock()
 	rp.inspectCancel.stop()
+	if rp.adopted {
+		return nil
+	}
 	return rp.page.Close()
 }
 
