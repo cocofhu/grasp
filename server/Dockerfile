@@ -24,7 +24,7 @@ RUN npm run build
 # --- 沙箱运行时包 ---
 # backend / preview-inject 与 startup.sh 等脚本打成 sandbox-runtime.tgz，随服务端下发给
 # 沙箱（沙箱镜像只含环境 + grasp-bootstrap.sh）。见 scripts/build-sandbox-runtime.sh。
-FROM golang:1.25-bookworm AS sandbox-runtime
+FROM golang:1.26-bookworm AS sandbox-runtime
 WORKDIR /src
 ENV GOPROXY=https://goproxy.cn,direct \
     GOSUMDB=sum.golang.google.cn
@@ -39,7 +39,7 @@ FROM scratch AS sandbox-runtime-export
 COPY --from=sandbox-runtime /out/sandbox-runtime.tgz /
 
 # --- Go 构建 ---
-FROM golang:1.25-bookworm AS build
+FROM golang:1.26-bookworm AS build
 WORKDIR /src
 # 国内直连 proxy.golang.org / sum.golang.org 易超时(与 Dockerfile.dev 一致),
 # 走七牛 goproxy.cn + Google 中国区校验和镜像。
