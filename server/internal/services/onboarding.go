@@ -514,11 +514,11 @@ func (s *OnboardingService) writeProjectAuth(projectID, backend, apiKey, region 
 	primaryKey := primaryAuthEnvKey(backend)
 	creds := []ProjectCredentialInput{
 		{Type: "ai", Provider: backend, Name: aiCredentialName(backend), EnvKey: primaryKey, Value: apiKey},
-		{Type: "git", Provider: "github", Name: "GitHub HTTPS Token", EnvKey: "GITHUB_TOKEN", Value: req.GitHubToken},
-		{Type: "git", Provider: "gitlab", Name: "GitLab HTTPS Token", EnvKey: "GITLAB_TOKEN", Value: req.GitLabToken},
-		{Type: "git", Provider: "gitlab", Name: "GitLab URL", EnvKey: "GITLAB_URL", Value: req.GitLabURL},
-		{Type: "ssh", Provider: "ssh", Name: "Git SSH Private Key", EnvKey: EnvGitSSHPrivateKey, Value: req.SSHPrivateKey},
-		{Type: "ssh", Provider: "ssh", Name: "Git SSH Known Hosts", EnvKey: EnvGitSSHKnownHosts, Value: req.SSHKnownHosts},
+		{Type: "git", Provider: "github", Name: builtinNameGitHub, EnvKey: "GITHUB_TOKEN", Value: req.GitHubToken},
+		{Type: "git", Provider: "gitlab", Name: builtinNameGitLab, EnvKey: "GITLAB_TOKEN", Value: req.GitLabToken},
+		{Type: "git", Provider: "gitlab", Name: builtinNameGitLabURL, EnvKey: "GITLAB_URL", Value: req.GitLabURL},
+		{Type: "ssh", Provider: "ssh", Name: builtinNameSSHKey, EnvKey: EnvGitSSHPrivateKey, Value: req.SSHPrivateKey},
+		{Type: "ssh", Provider: "ssh", Name: builtinNameSSHHosts, EnvKey: EnvGitSSHKnownHosts, Value: req.SSHKnownHosts},
 	}
 	for _, in := range creds {
 		in.Value = strings.TrimSpace(in.Value)

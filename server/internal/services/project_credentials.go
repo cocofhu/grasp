@@ -194,27 +194,71 @@ func safeCredentialMetadata(metadata map[string]any) map[string]any {
 	return out
 }
 
+// Short product names for the built-in credential slots. GitLab URL stays
+// qualified so it does not collide with the GitLab token slot.
+const (
+	builtinNameCursor     = "Cursor"
+	builtinNameClaudeCode = "Claude Code"
+	builtinNameCodeBuddy  = "CodeBuddy"
+	builtinNameTrae       = "Trae"
+	builtinNameOpenCode   = "OpenCode"
+	builtinNameCodex      = "Codex"
+	builtinNameGitHub     = "GitHub"
+	builtinNameGitLab     = "GitLab"
+	builtinNameGitLabURL  = "GitLab URL"
+	builtinNameSSHKey     = "SSH Key"
+	builtinNameSSHHosts   = "SSH Hosts"
+)
+
+// builtinCredentialSlot is one fixed project credential row plus the display
+// names previously written for that same slot.
+type builtinCredentialSlot struct {
+	row    models.ProjectCredential
+	legacy []string
+}
+
+func builtinCredentialSlots(projectID string) []builtinCredentialSlot {
+	return []builtinCredentialSlot{
+		{row: models.ProjectCredential{ID: "cred-" + projectID + "-cursor", Type: "ai", Provider: "cursor", Name: builtinNameCursor, EnvKey: envauth.EnvCursorAPIKey}, legacy: []string{"Cursor API Key", "cursor API Key"}},
+		{row: models.ProjectCredential{ID: "cred-" + projectID + "-claude", Type: "ai", Provider: "claude_code", Name: builtinNameClaudeCode, EnvKey: envauth.EnvClaudeAPIKey}, legacy: []string{"Claude Code API Key", "claude_code API Key"}},
+		{row: models.ProjectCredential{ID: "cred-" + projectID + "-codebuddy", Type: "ai", Provider: "codebuddy", Name: builtinNameCodeBuddy, EnvKey: envauth.EnvCodeBuddyAPIKey}, legacy: []string{"CodeBuddy API Key", "codebuddy API Key"}},
+		{row: models.ProjectCredential{ID: "cred-" + projectID + "-trae", Type: "ai", Provider: "trae", Name: builtinNameTrae, EnvKey: envauth.EnvTraeAPIKey}, legacy: []string{"Trae API Token", "trae API Key"}},
+		{row: models.ProjectCredential{ID: "cred-" + projectID + "-opencode", Type: "ai", Provider: "opencode", Name: builtinNameOpenCode, EnvKey: envauth.EnvOpenCodeAPIKey}, legacy: []string{"OpenCode API Key", "opencode API Key"}},
+		{row: models.ProjectCredential{ID: "cred-" + projectID + "-codex", Type: "ai", Provider: "codex", Name: builtinNameCodex, EnvKey: envauth.EnvCodexAuthFile}, legacy: []string{"Codex Login File"}},
+		{row: models.ProjectCredential{ID: "cred-" + projectID + "-github", Type: "git", Provider: "github", Name: builtinNameGitHub, EnvKey: envauth.EnvGitHubToken}, legacy: []string{"GitHub HTTPS Token"}},
+		{row: models.ProjectCredential{ID: "cred-" + projectID + "-gitlab", Type: "git", Provider: "gitlab", Name: builtinNameGitLab, EnvKey: envauth.EnvGitLabToken}, legacy: []string{"GitLab HTTPS Token"}},
+		{row: models.ProjectCredential{ID: "cred-" + projectID + "-gitlab-url", Type: "git", Provider: "gitlab", Name: builtinNameGitLabURL, EnvKey: "GITLAB_URL"}},
+		{row: models.ProjectCredential{ID: "cred-" + projectID + "-ssh-key", Type: "ssh", Provider: "ssh", Name: builtinNameSSHKey, EnvKey: envauth.EnvGitSSHPrivateKey}, legacy: []string{"Git SSH Private Key"}},
+		{row: models.ProjectCredential{ID: "cred-" + projectID + "-ssh-hosts", Type: "ssh", Provider: "ssh", Name: builtinNameSSHHosts, EnvKey: envauth.EnvGitSSHKnownHosts}, legacy: []string{"Git SSH Known Hosts"}},
+	}
+}
+
+func legacyBuiltinName(name string, legacy []string) bool {
+	name = strings.TrimSpace(name)
+	for _, old := range legacy {
+		if name == old {
+			return true
+		}
+	}
+	return false
+}
+
 // ensureDefaultRows creates empty, stable slots for the built-in credentials
 // shown by the project UI. Empty rows do not affect runtime resolution and are
-// not a migration of legacy environment values.
+// not a migration of legacy environment values. A built-in slot whose name is
+// still a previous default is renamed to the short product name; any other
+// name is left as the user wrote it.
 func (s *ProjectCredentialService) ensureDefaultRows(projectID string) error {
-	defaults := []models.ProjectCredential{
-		{ID: "cred-" + projectID + "-cursor", Type: "ai", Provider: "cursor", Name: "Cursor API Key", EnvKey: envauth.EnvCursorAPIKey},
-		{ID: "cred-" + projectID + "-claude", Type: "ai", Provider: "claude_code", Name: "Claude Code API Key", EnvKey: envauth.EnvClaudeAPIKey},
-		{ID: "cred-" + projectID + "-codebuddy", Type: "ai", Provider: "codebuddy", Name: "CodeBuddy API Key", EnvKey: envauth.EnvCodeBuddyAPIKey},
-		{ID: "cred-" + projectID + "-trae", Type: "ai", Provider: "trae", Name: "Trae API Token", EnvKey: envauth.EnvTraeAPIKey},
-		{ID: "cred-" + projectID + "-opencode", Type: "ai", Provider: "opencode", Name: "OpenCode API Key", EnvKey: envauth.EnvOpenCodeAPIKey},
-		{ID: "cred-" + projectID + "-codex", Type: "ai", Provider: "codex", Name: "Codex Login File", EnvKey: envauth.EnvCodexAuthFile},
-		{ID: "cred-" + projectID + "-github", Type: "git", Provider: "github", Name: "GitHub HTTPS Token", EnvKey: envauth.EnvGitHubToken},
-		{ID: "cred-" + projectID + "-gitlab", Type: "git", Provider: "gitlab", Name: "GitLab HTTPS Token", EnvKey: envauth.EnvGitLabToken},
-		{ID: "cred-" + projectID + "-gitlab-url", Type: "git", Provider: "gitlab", Name: "GitLab URL", EnvKey: "GITLAB_URL"},
-		{ID: "cred-" + projectID + "-ssh-key", Type: "ssh", Provider: "ssh", Name: "Git SSH Private Key", EnvKey: envauth.EnvGitSSHPrivateKey},
-		{ID: "cred-" + projectID + "-ssh-hosts", Type: "ssh", Provider: "ssh", Name: "Git SSH Known Hosts", EnvKey: envauth.EnvGitSSHKnownHosts},
-	}
-	for _, row := range defaults {
+	for _, slot := range builtinCredentialSlots(projectID) {
+		row := slot.row
 		var existing models.ProjectCredential
 		err := s.db.Where("id = ?", row.ID).First(&existing).Error
 		if err == nil {
+			if legacyBuiltinName(existing.Name, slot.legacy) {
+				if err := s.db.Model(&models.ProjectCredential{}).Where("id = ?", existing.ID).UpdateColumn("name", row.Name).Error; err != nil {
+					return err
+				}
+			}
 			continue
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -535,10 +579,26 @@ func rejectCodexLoginValue(provider, envKey, value string) error {
 }
 
 func aiCredentialName(backend string) string {
-	if NormalizeAcpBackend(backend) == AcpBackendCodex {
-		return "Codex Login File"
+	switch NormalizeAcpBackend(backend) {
+	case AcpBackendCursor:
+		return builtinNameCursor
+	case AcpBackendClaudeCode:
+		return builtinNameClaudeCode
+	case AcpBackendCodeBuddy:
+		return builtinNameCodeBuddy
+	case AcpBackendTrae:
+		return builtinNameTrae
+	case AcpBackendOpenCode:
+		return builtinNameOpenCode
+	case AcpBackendCodex:
+		return builtinNameCodex
+	default:
+		backend = strings.TrimSpace(backend)
+		if backend == "" {
+			return "API Key"
+		}
+		return backend + " API Key"
 	}
-	return backend + " API Key"
 }
 
 // WriteBackCodexLoginFile replaces the project's Codex login file when a run

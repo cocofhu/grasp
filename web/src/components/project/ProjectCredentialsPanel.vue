@@ -357,7 +357,7 @@ onMounted(() => {
 
                   <div v-if="item.masked" class="mt-3 flex min-w-0 items-center justify-between gap-2 rounded-lg border border-line bg-surface px-3 py-2" data-testid="project-credential-masked">
                     <code class="min-w-0 truncate font-mono text-[12px] text-txt2">{{ item.masked }}</code>
-                    <span class="shrink-0 text-[10px] uppercase tracking-[0.08em] text-txt3">{{ t('pages.projectDetail.projectCredentials.writeOnly') }}</span>
+                    <span class="shrink-0 text-[10px] tracking-[0.08em] text-txt3">{{ t('pages.projectDetail.projectCredentials.writeOnly') }}</span>
                   </div>
 
                   <p v-if="item.source && item.source !== 'project'" class="mt-3 rounded-lg border border-line bg-surface px-3 py-2 text-[11px] leading-5 text-txt3">

@@ -356,7 +356,7 @@ func TestCodexLoginFileSlotMaskRejectAndWriteBack(t *testing.T) {
 			found = true
 		}
 	}
-	if !found || slot.Configured || slot.Provider != "codex" || slot.Name != "Codex Login File" {
+	if !found || slot.Configured || slot.Provider != "codex" || slot.Name != "Codex" {
 		t.Fatalf("codex slot=%+v found=%v", slot, found)
 	}
 	login := `{"auth_mode":"chatgpt","tokens":{"access_token":"at","refresh_token":"rt"}}`
@@ -427,6 +427,106 @@ func TestCodexLoginFileSlotMaskRejectAndWriteBack(t *testing.T) {
 	blob, _ := json.Marshal(listed)
 	if strings.Contains(string(blob), "later") || strings.Contains(string(blob), "refresh_token") {
 		t.Fatalf("list leaked login file: %s", blob)
+	}
+}
+
+func TestBuiltinCredentialShortNamesAndLegacyRename(t *testing.T) {
+	setCredentialKey(t)
+	db := newTestDB(t)
+	p, err := NewProjectService(db).Create("Short names", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewProjectCredentialService(db)
+	if aiCredentialName(AcpBackendCursor) != builtinNameCursor ||
+		aiCredentialName(AcpBackendClaudeCode) != builtinNameClaudeCode ||
+		aiCredentialName(AcpBackendCodex) != builtinNameCodex ||
+		aiCredentialName("cursor") != "Cursor" {
+		t.Fatalf("generated names cursor=%q claude=%q codex=%q", aiCredentialName("cursor"), aiCredentialName(AcpBackendClaudeCode), aiCredentialName(AcpBackendCodex))
+	}
+
+	rows, err := s.List(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]struct {
+		name   string
+		envKey string
+	}{
+		"cred-" + p.ID + "-cursor":     {builtinNameCursor, envauth.EnvCursorAPIKey},
+		"cred-" + p.ID + "-claude":     {builtinNameClaudeCode, envauth.EnvClaudeAPIKey},
+		"cred-" + p.ID + "-codebuddy":  {builtinNameCodeBuddy, envauth.EnvCodeBuddyAPIKey},
+		"cred-" + p.ID + "-trae":       {builtinNameTrae, envauth.EnvTraeAPIKey},
+		"cred-" + p.ID + "-opencode":   {builtinNameOpenCode, envauth.EnvOpenCodeAPIKey},
+		"cred-" + p.ID + "-codex":      {builtinNameCodex, envauth.EnvCodexAuthFile},
+		"cred-" + p.ID + "-github":     {builtinNameGitHub, envauth.EnvGitHubToken},
+		"cred-" + p.ID + "-gitlab":     {builtinNameGitLab, envauth.EnvGitLabToken},
+		"cred-" + p.ID + "-gitlab-url": {builtinNameGitLabURL, "GITLAB_URL"},
+		"cred-" + p.ID + "-ssh-key":    {builtinNameSSHKey, envauth.EnvGitSSHPrivateKey},
+		"cred-" + p.ID + "-ssh-hosts":  {builtinNameSSHHosts, envauth.EnvGitSSHKnownHosts},
+	}
+	got := map[string]ProjectCredentialView{}
+	for _, row := range rows {
+		if _, ok := want[row.ID]; ok {
+			got[row.ID] = row
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("builtin slots=%d want=%d", len(got), len(want))
+	}
+	for id, spec := range want {
+		row := got[id]
+		if row.Name != spec.name || row.EnvKey != spec.envKey {
+			t.Fatalf("%s name=%q env=%q want name=%q env=%q", id, row.Name, row.EnvKey, spec.name, spec.envKey)
+		}
+	}
+
+	cursorID := "cred-" + p.ID + "-cursor"
+	githubID := "cred-" + p.ID + "-github"
+	gitlabURL := "cred-" + p.ID + "-gitlab-url"
+	if err := db.Model(&models.ProjectCredential{}).Where("id = ?", cursorID).UpdateColumn("name", "Cursor API Key").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.ProjectCredential{}).Where("id = ?", githubID).UpdateColumn("name", "GitHub HTTPS Token").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.ProjectCredential{}).Where("id = ?", gitlabURL).UpdateColumn("name", "Company Git").Error; err != nil {
+		t.Fatal(err)
+	}
+	custom, err := s.Create(p.ID, ProjectCredentialInput{Type: "custom", Name: "Cursor API Key", EnvKey: "MY_PRIVATE_VAULT", Value: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	listed, err := s.List(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]string{}
+	for _, row := range listed {
+		byID[row.ID] = row.Name
+	}
+	if byID[cursorID] != "Cursor" || byID[githubID] != "GitHub" {
+		t.Fatalf("legacy rename cursor=%q github=%q", byID[cursorID], byID[githubID])
+	}
+	if byID[custom.ID] != "Cursor API Key" {
+		t.Fatalf("custom name changed: %q", byID[custom.ID])
+	}
+	if byID[gitlabURL] != "Company Git" || byID["cred-"+p.ID+"-gitlab"] != "GitLab" {
+		t.Fatalf("untouched names url=%q gitlab=%q", byID[gitlabURL], byID["cred-"+p.ID+"-gitlab"])
+	}
+
+	if err := db.Model(&models.ProjectCredential{}).Where("id = ?", cursorID).UpdateColumn("name", "cursor API Key").Error; err != nil {
+		t.Fatal(err)
+	}
+	again, err := s.List(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range again {
+		if row.ID == cursorID && row.Name != "Cursor" {
+			t.Fatalf("lowercase legacy name=%q", row.Name)
+		}
 	}
 }
 

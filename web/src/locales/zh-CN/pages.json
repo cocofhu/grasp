@@ -1219,32 +1219,32 @@
         "namePlaceholder": "例如 OpenAI API Key",
         "providerPlaceholder": "例如 openai、github",
         "targetPlaceholder": "例如 model-provider / repo",
-        "writeOnly": "仅写入",
+        "writeOnly": "不回显",
         "summary": {
           "total": "凭据槽位",
           "configured": "已配置",
-          "apiKeys": "API Key 槽位"
+          "apiKeys": "模型槽位"
         },
         "groups": {
           "ai": {
-            "title": "模型 API Key",
-            "hint": "ACP 后端和 OpenCode 使用的模型厂商密钥。"
+            "title": "模型",
+            "hint": "编码助手和模型调用使用的密钥。"
           },
           "git": {
-            "title": "代码托管",
-            "hint": "用于仓库拉取、推送和合并请求的 Token 与地址。"
+            "title": "代码仓库",
+            "hint": "拉取、推送和合并请求使用的凭据。"
           },
           "ssh": {
-            "title": "Git SSH",
-            "hint": "私钥与 known_hosts 仅在需要 SSH 仓库时配置。"
+            "title": "SSH",
+            "hint": "通过 SSH 访问仓库时使用。"
           },
           "other": {
-            "title": "其他凭据",
-            "hint": "项目内自定义服务或 MCP 使用的密钥。"
+            "title": "其他",
+            "hint": "自定义服务使用的密钥。"
           }
         },
-        "typeAi": "AI / API Key",
-        "typeGit": "Git",
+        "typeAi": "模型",
+        "typeGit": "仓库",
         "typeSsh": "SSH",
         "typeMcp": "MCP",
         "typeCustom": "自定义",
@@ -1256,8 +1256,8 @@
         "value": "凭据值",
         "configured": "已配置",
         "notConfigured": "未配置",
-        "valuePlaceholder": "输入新凭据（仅在保存时提交）",
-        "replacePlaceholder": "已配置，输入新值以替换",
+        "valuePlaceholder": "输入凭据，保存后才会提交",
+        "replacePlaceholder": "输入新值以替换",
         "save": "保存",
         "clear": "清除",
         "saved": "凭据已保存",

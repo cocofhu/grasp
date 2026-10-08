@@ -122,7 +122,7 @@ const imageClasses = computed(() => ({
 <template>
   <span
     class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border"
-    :class="selected ? 'border-accent bg-surface' : configured ? 'border-ok/35 bg-ok/10' : 'border-line bg-surface'"
+    :class="selected ? 'border-accent bg-surface' : 'border-line bg-surface'"
     :data-provider-logo="logoKey"
     role="img"
     :aria-label="`${label} logo`"
