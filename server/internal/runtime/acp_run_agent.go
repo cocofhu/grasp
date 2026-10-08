@@ -88,6 +88,8 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 			}
 		}
 	}()
+	// Runs before the discard above, while the gateway still has the record.
+	defer func() { err = sb.ExplainLoss(ctx, err) }()
 	c.registerLive(req, sb, acp)
 	defer func() {
 		if !parked {

@@ -351,6 +351,16 @@ func (h *Handler) Logs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"content": content})
 }
 
+// LastExit handles GET /sandboxes/:id/exit: {"exit": ExitInfo|null}.
+func (h *Handler) LastExit(c *gin.Context) {
+	e, err := h.svc.LastExit(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		h.notFoundOr500(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"exit": e})
+}
+
 func (h *Handler) notFoundOr500(c *gin.Context, err error) {
 	if errors.Is(err, store.ErrNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "sandbox not found"})

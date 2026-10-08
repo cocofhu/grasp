@@ -510,6 +510,20 @@ func (s *SandboxService) Logs(ctx context.Context, id string, tail int) (string,
 	return out, nil
 }
 
+// LastExit reports why the sandbox's main container last exited; nil when it
+// never has or the driver cannot tell.
+func (s *SandboxService) LastExit(ctx context.Context, id string) (*driver.ExitInfo, error) {
+	sb, err := s.lookup(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	r, ok := s.drv.(driver.ExitReporter)
+	if !ok {
+		return nil, nil
+	}
+	return r.LastExit(ctx, sb.ID)
+}
+
 // Host returns the client-reachable address for a single port.
 func (s *SandboxService) Host(ctx context.Context, id string, port int) (string, error) {
 	sb, err := s.store.Get(context.Background(), id)
