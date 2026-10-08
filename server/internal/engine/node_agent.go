@@ -69,14 +69,14 @@ func (e *Engine) finalizeAgent(c *execCtx, node *models.Node, res runtime.NodeRe
 		outputs = map[string]any{}
 	}
 	for _, sc := range nodereg.RequiredSchemas(caps, e.runWorkKind(c.run.ID)) {
-		if _, ok := e.artifactOwnedByNode(c.run.ID, node.ID, sc.ArtifactName); !ok {
-			msg := "产物契约未满足:未由本节点写入 " + sc.ArtifactName
+		if _, ok := e.artifactDeliveredThisVisit(c, node, sc.ArtifactName); !ok {
+			msg := "产物契约未满足:本次执行未写入 " + sc.ArtifactName
 			return nodeOutcome{status: "failed", err: msg, outputMd: msg, events: res.Events}
 		}
 	}
 	declared := nodereg.DeclaredSchemas(caps)
 	for _, sc := range declared {
-		if content, ok := e.artifactOwnedByNode(c.run.ID, node.ID, sc.ArtifactName); ok {
+		if content, ok := e.artifactDeliveredThisVisit(c, node, sc.ArtifactName); ok {
 			e.liftSchema(c, node, outputs, sc, content)
 		}
 	}
@@ -102,6 +102,46 @@ func (e *Engine) runWorkKind(runID string) string {
 		return ""
 	}
 	return structured.ClarifiedWorkKind(content)
+}
+
+// artifactDeliveredThisVisit returns content when this execution itself wrote
+// name. page.html keeps the last-writer rule: its per-iteration snapshot is
+// outputs.page and is outside the conclusion-isolation fix. JSON conclusions
+// count only when the visit's revision moved or WriteArtifact ran after entry.
+func (e *Engine) artifactDeliveredThisVisit(c *execCtx, node *models.Node, name string) (string, bool) {
+	content, owned := e.artifactOwnedByNode(c.run.ID, node.ID, name)
+	if !owned {
+		return "", false
+	}
+	if name == mcp.PageArtifactName {
+		return content, true
+	}
+	e.ensureArtifactVisit(c, node)
+	if e.host.VisitNoted(c.run.ID, node.ID) && !e.host.FreshThisVisit(c.run.ID, node.ID, name) {
+		return "", false
+	}
+	return content, true
+}
+
+// ensureArtifactVisit reloads the revision baseline persisted at startNodeRun
+// when this process did not record the visit itself.
+func (e *Engine) ensureArtifactVisit(c *execCtx, node *models.Node) {
+	if e == nil || e.host == nil || c == nil || node == nil {
+		return
+	}
+	if e.host.VisitNoted(c.run.ID, node.ID) {
+		return
+	}
+	iter := c.iter[node.ID]
+	if iter < 1 {
+		return
+	}
+	var sr models.StateRun
+	if err := e.db.Where("run_id = ? AND node_id = ? AND iteration = ?", c.run.ID, node.ID, iter).
+		First(&sr).Error; err != nil || !sr.ArtifactBaseSet {
+		return
+	}
+	e.host.RestoreArtifactVisit(c.run.ID, node.ID, sr.ArtifactBaseRev)
 }
 
 // artifactOwnedByNode returns content only when the named artifact exists and

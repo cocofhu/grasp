@@ -85,6 +85,11 @@ type fakeProvider struct {
 	// contract-miss path (retryable=false) can be exercised.
 	structuredSkipProduces bool
 
+	// skipStructuredAfter (test-only): when > 0, that many RunAgent visits may
+	// write structured products and later visits skip them. 0 is unrestricted.
+	skipStructuredAfter int
+	structuredVisits    int
+
 	// recordCalls (test-only): when true the fake issues a real built-in MCP
 	// tool call through the run-scoped JSON-RPC endpoint (ServeRPC) on each turn,
 	// so the recorded per-node MCP call trace (StateRun.McpCalls) can be asserted
@@ -341,6 +346,10 @@ func (f *fakeProvider) writeDeclaredProducts(req runtime.NodeReq) error {
 	}
 	f.mu.Lock()
 	skipStructured, skipPage := f.structuredSkipProduces, f.visualSkipProduces
+	f.structuredVisits++
+	if f.skipStructuredAfter > 0 && f.structuredVisits > f.skipStructuredAfter {
+		skipStructured = true
+	}
 	f.mu.Unlock()
 	for _, w := range req.Caps.Writes {
 		if w.Schema == models.SchemaPage {

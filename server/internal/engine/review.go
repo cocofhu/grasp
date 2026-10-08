@@ -92,7 +92,7 @@ func (e *Engine) enterReview(c *execCtx, node *models.Node, completed nodeOutcom
 func (e *Engine) reviewSummaryMarkdown(c *execCtx, node *models.Node) string {
 	var parts []string
 	for _, sc := range nodereg.DeclaredSchemas(node.Caps) {
-		content, ok := e.artifactOwnedByNode(c.run.ID, node.ID, sc.ArtifactName)
+		content, ok := e.artifactDeliveredThisVisit(c, node, sc.ArtifactName)
 		if !ok {
 			continue
 		}

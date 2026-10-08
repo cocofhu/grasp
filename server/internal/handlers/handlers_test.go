@@ -1375,6 +1375,31 @@ func TestRunDetailRichBranches(t *testing.T) {
 	}
 }
 
+// TestRunDetailKeepsPerExecutionJSON: each execution's conclusion snapshot
+// stays on nodeRuns and nodeExecutions. The product panel binds that body;
+// dropping it forces every visit to read the single live artifact.
+func TestRunDetailKeepsPerExecutionJSON(t *testing.T) {
+	h := newHarness(t)
+	h.db.Create(&models.Run{ID: "rd-json", Status: "running", StartedAt: time.Now().Add(-time.Minute), Graph: models.Graph{
+		Nodes: []models.Node{{ID: "test", Type: "agent", Caps: testAutoCaps}},
+	}})
+	body := `{"summary":"ITER1_TEST_RESULT_BODY","failed":1}`
+	h.db.Create(&models.StateRun{RunID: "rd-json", NodeID: "test", Iteration: 1, Status: "failed",
+		Outputs: map[string]any{"test_result_json": body, "test_result": "md-iter1"}})
+	h.db.Create(&models.StateRun{RunID: "rd-json", NodeID: "test", Iteration: 2, Status: "running"})
+
+	w := h.do("GET", "/api/runs/rd-json", nil)
+	if w.Code != 200 {
+		t.Fatalf("get run: %d %s", w.Code, w.Body)
+	}
+	raw := w.Body.String()
+	// nodeRuns is the latest execution (iteration 2, no snapshot). The body
+	// lives only on iteration 1 inside nodeExecutions.
+	if strings.Count(raw, "ITER1_TEST_RESULT_BODY") != 1 {
+		t.Fatalf("iteration-1 snapshot count = %d, want 1 (kept on that execution only)", strings.Count(raw, "ITER1_TEST_RESULT_BODY"))
+	}
+}
+
 // TestRunDetailFailedExposesRunLevelError ensures failed runs lift a human
 // reason to the detail DTO (banner / API) without requiring a node click.
 func TestRunDetailFailedExposesRunLevelError(t *testing.T) {

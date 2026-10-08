@@ -190,8 +190,9 @@ func ClarifySlimNodeIDs(node *models.Node, currentNodeID string, artifacts []mod
 
 // SlimNodeExecutions returns upstream node execution history with only
 // iteration + status + outputs (no events/mcpCalls/varsSnapshot).
-// Large *_json snapshot fields are omitted — clients load full structured
-// products via /api/artifacts/:id/content when needed.
+// Large *_json snapshot fields are omitted — inbox context is not the
+// per-iteration product panel. Run detail keeps those snapshots so each
+// execution can render its own conclusion.
 func (s *RunService) SlimNodeExecutions(runID string, nodeIDs []string) map[string][]map[string]any {
 	out := make(map[string][]map[string]any, len(nodeIDs))
 	for _, nodeID := range nodeIDs {

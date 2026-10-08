@@ -91,10 +91,13 @@ func (e *Engine) startNodeRun(c *execCtx, node *models.Node) {
 	// New visit / new iteration: drop stale Host outcome + audit artifact so a
 	// prior attempt's mark cannot satisfy this visit (CAPA A7 / FR4).
 	e.host.ClearOutcome(c.run.ID, node.ID)
+	// Snapshot product revisions before the agent writes. A conclusion left by
+	// the previous execution of this node does not count as delivered here.
+	base := e.host.BeginArtifactVisit(c.run.ID, node.ID)
 	logDB(e.db.Create(&models.StateRun{
 		RunID: c.run.ID, NodeID: node.ID, NodeType: node.Type,
 		Iteration: c.iter[node.ID], Status: "running", StartedAt: &now, Attempt: c.run.Attempt,
-		VarsBefore: before,
+		VarsBefore: before, ArtifactBaseRev: base, ArtifactBaseSet: true,
 	}), c.run.ID, "startNodeRun")
 }
 

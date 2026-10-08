@@ -39,7 +39,10 @@ type ArtifactService struct{ db *gorm.DB }
 // NewArtifactService builds the service.
 func NewArtifactService(db *gorm.DB) *ArtifactService { return &ArtifactService{db: db} }
 
-var _ mcp.Store = (*ArtifactService)(nil)
+var (
+	_ mcp.Store      = (*ArtifactService)(nil)
+	_ mcp.StampStore = (*ArtifactService)(nil)
+)
 
 // Save persists (or replaces) an artifact within a run namespace.
 func (s *ArtifactService) Save(runID, nodeID, name, kind, content string) (string, error) {
@@ -130,6 +133,18 @@ func (s *ArtifactService) Get(runID, name string) (string, bool) {
 		return "", false
 	}
 	return a.Content, true
+}
+
+// Stamps returns live revisions for the run. Same-name overwrites bump
+// Revision, which is how a later execution detects its own write.
+func (s *ArtifactService) Stamps(runID string) []mcp.ArtifactStamp {
+	var arts []models.Artifact
+	s.db.Select("name", "node_id", "revision").Where("run_id = ?", runID).Find(&arts)
+	out := make([]mcp.ArtifactStamp, 0, len(arts))
+	for _, a := range arts {
+		out = append(out, mcp.ArtifactStamp{Name: a.Name, Node: a.NodeID, Revision: a.Revision})
+	}
+	return out
 }
 
 // List returns the run's artifact metadata (scoped to the run only).
