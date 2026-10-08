@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"log"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"backend/internal/backend/common"
@@ -404,10 +405,15 @@ func extractText(raw json.RawMessage) string {
 	return ""
 }
 
-// ClaudeAuthEnv normalizes the Anthropic key aliases.
+// ClaudeAuthEnv normalizes the Anthropic key aliases. It also caps how long
+// claude -p waits on background shells after its last turn (10m by default,
+// then it kills them) at SANDBOX_BG_TASK_GRACE, the limit cursor-agent gets;
+// an explicit CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS wins.
 func ClaudeAuthEnv(env []string) []string {
-	return common.SetIfEmpty(env, "ANTHROPIC_API_KEY",
+	env = common.SetIfEmpty(env, "ANTHROPIC_API_KEY",
 		common.FirstNonEmptyEnv("ACP_CLAUDE_API_KEY", "ANTHROPIC_API_KEY"))
+	return common.SetIfEmpty(env, "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS",
+		strconv.FormatInt(oneshot.BackgroundGrace().Milliseconds(), 10))
 }
 
 func truncateForLog(b []byte, n int) string {

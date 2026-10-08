@@ -162,6 +162,21 @@ func TestParseCursorToolCases(t *testing.T) {
 			t.Fatalf("clip len=%d", len(m[0].Text))
 		}
 	})
+	t.Run("background shell pid", func(t *testing.T) {
+		m := parse(`{"type":"tool_call","subtype":"completed","call_id":"b","tool_call":{"shellToolCall":{"args":{"command":"python3 -m http.server"},"result":{"isBackground":true,"success":{"pid":4242,"shellId":"s1"}}}}}`)
+		if len(m) != 1 || m[0].BackgroundPID != 4242 {
+			t.Fatalf("got %+v", m)
+		}
+		for _, line := range []string{
+			`{"type":"tool_call","subtype":"completed","call_id":"b","tool_call":{"shellToolCall":{"args":{},"result":{"success":{"pid":4242,"stdout":"x"}}}}}`,
+			`{"type":"tool_call","subtype":"completed","call_id":"b","tool_call":{"shellToolCall":{"args":{},"result":{"isBackground":true,"success":{}}}}}`,
+			`{"type":"tool_call","subtype":"completed","call_id":"b","tool_call":{"webSearchToolCall":{"args":{},"result":{"isBackground":true,"success":{"pid":4242}}}}}`,
+		} {
+			if m := parse(line); len(m) != 1 || m[0].BackgroundPID != 0 {
+				t.Fatalf("%s: got %+v", line, m)
+			}
+		}
+	})
 	t.Run("duration as numbers or bad values", func(t *testing.T) {
 		m := parse(`{"type":"tool_call","subtype":"completed","call_id":"d","tool_call":{"shellToolCall":{"args":{}},"startedAtMs":1000,"completedAtMs":3500}}`)
 		if len(m) != 1 || m[0].DurationMs != 2500 {

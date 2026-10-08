@@ -46,6 +46,10 @@ type Msg struct {
 	RawInput   json.RawMessage
 	// DurationMs is how long a finished tool ran, when the CLI reports it.
 	DurationMs int64
+	// BackgroundPID is set on a KindToolResult when the call only launched a
+	// background shell, which keeps running after the result: the pid of that
+	// shell, its own process group leader.
+	BackgroundPID int
 }
 
 // ParseResult is what a codec extracts from a single stdout line.
@@ -181,6 +185,7 @@ func (p *Provider) Open(procCtx, _ context.Context, opts provider.OpenOptions,
 		onEvent:  onEvent,
 		done:     make(chan struct{}),
 		cumUsage: map[string]provider.TokenUsage{},
+		bgGrace:  BackgroundGrace(),
 	}
 	s.sessionID = opts.ResumeSessionID
 	if s.sessionID == "" {
@@ -215,6 +220,10 @@ type engine struct {
 	// agentPID is the running CLI's pid (0 between turns), for the bridge's
 	// CPU / IO liveness sampling.
 	agentPID atomic.Int64
+	// bgGrace is how long a quiet CLI may wait on its background shells before
+	// they are ended (0 = never). bg is the running turn's tracker.
+	bgGrace time.Duration
+	bg      atomic.Pointer[backgroundShells]
 
 	done      chan struct{}
 	closeOnce sync.Once
@@ -410,6 +419,9 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 	}
 	e.agentPID.Store(int64(cmd.Process.Pid))
 	defer e.agentPID.Store(0)
+	bg := newBackgroundShells(cmd.Process.Pid, e.bgGrace)
+	e.bg.Store(bg)
+	defer e.bg.Store(nil)
 	// The child holds its own copies now; drop the parent's write ends or even a
 	// well-behaved CLI's pipes would never reach EOF.
 	closeFiles(stdoutW, stderrW)
@@ -471,7 +483,11 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 	turnUsage := map[string]provider.TokenUsage{}
 	var newSID, stop string
 	var diagnostics []Msg
+	resultSeen := make(chan struct{})
+	var resultOnce sync.Once
+	var resultStop string
 	apply := func(pr ParseResult) {
+		bg.event()
 		if pr.SessionID != "" && newSID == "" {
 			newSID = pr.SessionID
 			e.mu.Lock()
@@ -482,14 +498,23 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 			turnUsage[model] = addUsage(turnUsage[model], u)
 		}
 		for _, m := range pr.Msgs {
-			if m.Kind == KindError {
+			switch m.Kind {
+			case KindError:
 				diagnostics = append(diagnostics, m)
 				continue
+			case KindToolUse:
+				bg.toolStarted(m.ToolCallID)
+			case KindToolResult:
+				bg.toolFinished(m.ToolCallID, m.BackgroundPID)
 			}
 			e.emitUpdate(m)
 		}
 		if pr.StopReason != "" {
 			stop = pr.StopReason
+			resultOnce.Do(func() {
+				resultStop = pr.StopReason
+				close(resultSeen)
+			})
 		}
 	}
 
@@ -531,8 +556,22 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 	// The turn ends when the CLI process exits, never when its pipes reach EOF:
 	// a service the agent started during the turn inherits the write ends, so
 	// EOF can be arbitrarily far away (or never come at all).
+	exited := make(chan struct{})
+	var killedAfterResult atomic.Bool
+	supervised := make(chan struct{})
+	go func() {
+		defer close(supervised)
+		e.superviseTurn(cmd.Process.Pid, bg, resultExitGrace, resultSeen, exited, &killedAfterResult)
+	}()
 	waitErr := cmd.Wait()
+	close(exited)
+	<-supervised
 	disarmKiller()
+	// resultStop is safe to read here: it was written before resultSeen closed,
+	// which the supervisor observed before setting killedAfterResult.
+	if killedAfterResult.Load() && resultStop == "end_turn" {
+		waitErr = nil
+	}
 	stdoutPipe.startDraining()
 	stderrPipe.startDraining()
 	leakedOut, leakedErr := stdoutPipe.join(), stderrPipe.join()
@@ -585,6 +624,47 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 		return out, fmt.Errorf("%w; stderr: %s", streamErr, tail.String())
 	}
 	return out, nil
+}
+
+// superviseTurn runs beside a turn's CLI until it exits. It ends background
+// shells the CLI is only waiting on, and kills a CLI that reported its result
+// but has not exited within exitGrace (some versions keep a worker alive);
+// that turn still counts as finished.
+func (e *engine) superviseTurn(pid int, bg *backgroundShells, exitGrace time.Duration, resultSeen, exited <-chan struct{}, killedAfterResult *atomic.Bool) {
+	tick := time.NewTicker(backgroundCheckEvery(bg.grace))
+	defer tick.Stop()
+	var lingering <-chan time.Time
+	for {
+		select {
+		case <-exited:
+			return
+		case <-resultSeen:
+			resultSeen = nil
+			t := time.NewTimer(exitGrace)
+			defer t.Stop()
+			lingering = t.C
+		case <-lingering:
+			log.Printf("oneshot: agent=%s 已给出结果但 %s 后仍未退出，结束其进程组", e.c.AgentName(), exitGrace)
+			killedAfterResult.Store(true)
+			_ = syscall.Kill(-pid, syscall.SIGKILL)
+			return
+		case now := <-tick.C:
+			if shells := bg.due(now); len(shells) > 0 {
+				log.Printf("oneshot: agent=%s 已安静 %s，只在等 %d 个后台任务，结束这些后台任务让它收尾（常驻服务请用 setsid nohup cmd </dev/null >log 2>&1 & 启动）",
+					e.c.AgentName(), bg.grace, len(shells))
+				terminateShells(shells)
+			}
+		}
+	}
+}
+
+// WaitingOnBackground reports whether the running turn's CLI is only waiting
+// on background shells, so its own bookkeeping IO is not mistaken for work.
+func (e *engine) WaitingOnBackground() bool {
+	if bg := e.bg.Load(); bg != nil {
+		return bg.waiting()
+	}
+	return false
 }
 
 func (e *engine) mergeCumulative(turn map[string]provider.TokenUsage) {
