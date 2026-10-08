@@ -3112,6 +3112,8 @@
       "iterationBadge": "第 {n} 次",
       "iterationName": "{name} · 第 {n} 次",
       "novncMissing": "当前节点没有可用沙箱，无法打开 noVNC。",
+      "ideMissing": "当前节点没有可用沙箱，无法打开 IDE。",
+      "terminalMissing": "当前节点没有可用沙箱，无法打开终端。",
       "tabBadgeNew": "新",
       "tabBadgeUpdated": "已更新",
       "gridEmpty": "本次运行还没有产物",

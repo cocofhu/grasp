@@ -3112,6 +3112,8 @@
       "iterationBadge": "Iteration {n}",
       "iterationName": "{name} · iteration {n}",
       "novncMissing": "This node has no sandbox, so noVNC cannot open.",
+      "ideMissing": "This node has no sandbox, so the IDE cannot open.",
+      "terminalMissing": "This node has no sandbox, so the terminal cannot open.",
       "tabBadgeNew": "New",
       "tabBadgeUpdated": "Updated",
       "gridEmpty": "This run has no artifacts yet",

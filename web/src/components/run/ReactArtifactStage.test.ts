@@ -510,6 +510,65 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
+  it('uses a no-sandbox message until a sandbox exists, and code-server copy only when the image lacks it', async () => {
+    vi.mocked(api.getRunNodeSandbox).mockResolvedValue(null)
+    const missing = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [],
+        runId: 'run-fixed-no-sandbox',
+        nodeId: 'clarify',
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    await missing.get('[data-testid="react-artifact-card-ide"]').trigger('click')
+    await flushPromises()
+    const ide = missing.get('[data-testid="react-artifact-preview-ide"]')
+    expect(ide.text()).toContain('当前节点没有可用沙箱，无法打开 IDE。')
+    expect(ide.text()).not.toContain('code-server')
+    await missing.get('[data-testid="react-artifact-card-terminal"]').trigger('click')
+    await flushPromises()
+    const term = missing.get('[data-testid="react-artifact-preview-terminal"]')
+    expect(term.text()).toContain('当前节点没有可用沙箱，无法打开终端。')
+    expect(term.text()).not.toContain('连接已断开')
+    missing.unmount()
+
+    vi.mocked(api.getRunNodeSandbox).mockResolvedValue({ id: 7, hasCodeServer: false } as never)
+    const image = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [],
+        runId: 'run-fixed-no-codeserver',
+        nodeId: 'clarify',
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    await image.get('[data-testid="react-artifact-card-ide"]').trigger('click')
+    await flushPromises()
+    expect(image.get('[data-testid="react-artifact-ide-unavailable"]').text()).toContain('code-server')
+    expect(image.find('iframe[title="code-server"]').exists()).toBe(false)
+    image.unmount()
+
+    vi.mocked(api.getRunNodeSandbox).mockResolvedValue({ id: 8, hasCodeServer: true } as never)
+    const ready = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [],
+        runId: 'run-fixed-ide-ready',
+        nodeId: 'clarify',
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    await ready.get('[data-testid="react-artifact-card-ide"]').trigger('click')
+    await flushPromises()
+    expect(ready.find('iframe[title="code-server"]').exists()).toBe(true)
+    expect(ready.find('[data-testid="react-artifact-ide-unavailable"]').exists()).toBe(false)
+    ready.unmount()
+  })
+
   it('inserts app preview between browser and log and keeps their panels distinct', async () => {
     const wrapper = mount(ReactArtifactStage, {
       props: {

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * Artifact-stage pane for one sandbox console surface: code-server, terminal, or container log.
- * Same endpoints and empty/unavailable copy as SandboxConsoleView; no navigation to the console page.
+ * Same endpoints as SandboxConsoleView. No sandbox uses the stage missing copy;
+ * a sandbox without code-server still uses the console unavailable copy.
  */
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -36,10 +37,19 @@ const IFRAME_BOOT_STUCK_MS = 60_000
 const ideLoaded = ref(false)
 const ideFrameKey = ref(0)
 
-const ideReady = computed(() => !!props.sandbox?.id && props.sandbox.hasCodeServer === true)
-const ideUnavailable = computed(() => props.kind === 'ide' && !props.loading && !ideReady.value)
+const hasSandbox = computed(() => !!props.sandbox?.id)
+const ideReady = computed(() => hasSandbox.value && props.sandbox?.hasCodeServer === true)
+/** Sandbox exists but the image has no code-server. Not the same as "no sandbox". */
+const ideImageMissing = computed(
+  () => props.kind === 'ide' && !props.loading && hasSandbox.value && props.sandbox?.hasCodeServer === false,
+)
 const showIdeLoading = computed(
-  () => props.kind === 'ide' && !!props.active && !ideUnavailable.value && !ideLoaded.value,
+  () =>
+    props.kind === 'ide' &&
+    !!props.active &&
+    !ideLoaded.value &&
+    !ideImageMissing.value &&
+    (props.loading || ideReady.value),
 )
 
 function onIdeLoad() {
@@ -212,11 +222,18 @@ onBeforeUnmount(() => {
         @load="onIdeLoad"
       />
       <div
-        v-else-if="ideUnavailable"
+        v-else-if="ideImageMissing"
         class="flex h-full items-center justify-center px-6 text-center text-sm text-txt3"
         data-testid="react-artifact-ide-unavailable"
       >
         {{ t('pages.sandboxConsole.ideUnavailable') }}
+      </div>
+      <div
+        v-else-if="!loading && !hasSandbox"
+        class="flex h-full items-center justify-center px-6 text-center text-sm text-txt3"
+        data-testid="react-artifact-ide-missing"
+      >
+        {{ t('pages.reactArtifactStage.ideMissing') }}
       </div>
       <HardLoadLayer
         v-if="showIdeLoading"
@@ -234,7 +251,7 @@ onBeforeUnmount(() => {
         class="flex h-full items-center justify-center text-center text-[12px] text-[#cdd6f4]"
         data-testid="react-artifact-terminal-missing"
       >
-        {{ loading ? t('pages.appPreview.loading') : t('pages.sandboxConsole.disconnected') }}
+        {{ loading ? t('pages.appPreview.loading') : t('pages.reactArtifactStage.terminalMissing') }}
       </div>
     </div>
 
