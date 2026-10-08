@@ -294,8 +294,8 @@ func TestStructuredGatePlanCoveragePassGoto(t *testing.T) {
 	p.structuredBodies = map[string]string{
 		"plan": `{"goals":[{"id":"g1","title":"A","subgoals":[{"id":"g1.1","title":"x"},{"id":"g1.2","title":"y"}]}]}`,
 		"test": `{"summary":"covered","cases":[{"name":"a","status":"passed"}],"plan_coverage":[
-			{"plan_id":"g1.1","passed":true,"evidence":"implemented x"},
-			{"plan_id":"g1.2","passed":true,"evidence":"implemented y"}
+			{"plan_id":"g1.1","passed":true,"evidence":"implemented x","cases":["a"]},
+			{"plan_id":"g1.2","passed":true,"evidence":"implemented y","cases":["a"]}
 		]}`,
 	}
 	run, _ := eng.StartRun("wf", nil, "test")

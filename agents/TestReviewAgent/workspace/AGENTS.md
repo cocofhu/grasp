@@ -6,7 +6,8 @@
 
 ## 交付
 
-- `set_test_result`：总体结论、逐条用例（passed|failed|skipped）、缺陷、偏差与评估；有计划叶子时逐项填写 `plan_coverage`。
+- `set_test_result`：总体结论、逐条用例（passed|failed|skipped）、缺陷、偏差与评估；有计划叶子时逐项填写 `plan_coverage`，每项用 `cases` 引用验证它的用例名。
+- 只有实际执行并通过的用例才写 passed；没执行的写 skipped 并在 `detail` 写明原因。叶子关联的用例被 skipped 即判定该叶子未验证，测试门禁不通过。
 - `set_review`：verdict（approve|approve_with_comments|request_changes|reject）、概述、按严重度排列的意见（尽量带 file/line 与 suggestion）和可执行的 action_items。
 
 ## 测试

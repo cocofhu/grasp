@@ -187,9 +187,9 @@ func TestPlanCoverageDenominatorIgnoresDesign(t *testing.T) {
 	if len(leaves) != 2 {
 		t.Fatalf("coverage denominator want 2 got %d (%v)", len(leaves), leaves)
 	}
-	ok, reason := PlanCoverageOK(`{"plan_coverage":[
-		{"plan_id":"g1.1","passed":true,"evidence":"ok"},
-		{"plan_id":"g1.2","passed":true,"evidence":"ok"}
+	ok, reason := PlanCoverageOK(`{"cases":[{"name":"a","status":"passed"}],"plan_coverage":[
+		{"plan_id":"g1.1","passed":true,"evidence":"ok","cases":["a"]},
+		{"plan_id":"g1.2","passed":true,"evidence":"ok","cases":["a"]}
 	]}`, planJSON)
 	if !ok {
 		t.Fatalf("coverage should pass: %s", reason)

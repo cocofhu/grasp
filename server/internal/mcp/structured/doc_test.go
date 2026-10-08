@@ -116,9 +116,37 @@ func TestParseTestResultPlanCoverage(t *testing.T) {
 	if doc.PlanCoverage[1].PlanID != "g1.2" || doc.PlanCoverage[1].Passed || doc.PlanCoverage[1].Evidence != "" {
 		t.Fatalf("second item not normalized: %+v", doc.PlanCoverage[1])
 	}
-	md := RenderTestResultMarkdown(`{"summary":"s","plan_coverage":[{"plan_id":"g1.1","title":"x","passed":true,"evidence":"ok"}]}`)
-	if !strings.Contains(md, "计划贴合度") || !strings.Contains(md, "g1.1") {
+	md := RenderTestResultMarkdown(`{"summary":"s","plan_coverage":[{"plan_id":"g1.1","title":"x","passed":true,"evidence":"ok","cases":["a","b"]}]}`)
+	if !strings.Contains(md, "计划贴合度") || !strings.Contains(md, "g1.1") || !strings.Contains(md, "(用例:a、b)") {
 		t.Fatalf("md missing plan coverage: %s", md)
+	}
+}
+
+func TestParseTestResultCaseRefs(t *testing.T) {
+	base := func(cov map[string]any, cases ...map[string]any) map[string]any {
+		return map[string]any{"summary": "s", "cases": cases, "plan_coverage": []map[string]any{cov}}
+	}
+	ok := map[string]any{"name": "a", "status": "passed"}
+	skip := map[string]any{"name": "e2e", "status": "skipped", "detail": "无浏览器"}
+
+	doc, err := ParseTestResult(base(map[string]any{"plan_id": "g1", "passed": true, "evidence": "x", "cases": []string{" a ", "a", ""}}, ok))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got := doc.PlanCoverage[0].Cases; len(got) != 1 || got[0] != "a" {
+		t.Fatalf("case refs not normalized: %v", got)
+	}
+	if _, err := ParseTestResult(base(map[string]any{"plan_id": "g1", "passed": true, "evidence": "x", "cases": []string{"ghost"}}, ok)); err == nil || !strings.Contains(err.Error(), "「ghost」不在 cases 中") {
+		t.Fatalf("unknown ref: %v", err)
+	}
+	if _, err := ParseTestResult(base(map[string]any{"plan_id": "g1", "passed": true, "evidence": "x", "cases": []string{"e2e"}}, ok, skip)); err == nil || !strings.Contains(err.Error(), "passed=false") {
+		t.Fatalf("passed leaf on skipped case: %v", err)
+	}
+	if _, err := ParseTestResult(base(map[string]any{"plan_id": "g1", "passed": false, "evidence": "未验证", "cases": []string{"e2e"}}, ok, skip)); err != nil {
+		t.Fatalf("honest passed=false must be accepted: %v", err)
+	}
+	if _, err := ParseTestResult(map[string]any{"summary": "s", "cases": []map[string]any{{"name": "e2e", "status": "skipped"}}}); err == nil || !strings.Contains(err.Error(), "detail 必须写明") {
+		t.Fatalf("skipped without reason: %v", err)
 	}
 }
 
