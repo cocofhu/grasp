@@ -66,6 +66,8 @@ describe('OpenCodeCredentialPicker', () => {
     expect(wrapper.find('[data-testid="opencode-credential-replace-a"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="opencode-credential-clear-a"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="opencode-credential-current"]').text()).toContain('当前使用')
+    expect(wrapper.find('[data-provider-logo="openai"]').exists()).toBe(true)
+    expect(wrapper.find('[data-provider-logo="deepseek"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('请选择或填写模型')
 
     await wrapper.get('[data-testid="opencode-credential-row-a"] button').trigger('click')
