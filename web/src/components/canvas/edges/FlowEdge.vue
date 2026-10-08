@@ -43,6 +43,7 @@ const geo = computed(() =>
     },
     box(props.sourceNode),
     box(props.targetNode),
+    props.data.backLane ?? 0,
   ),
 )
 

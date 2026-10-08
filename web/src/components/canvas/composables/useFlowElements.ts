@@ -5,6 +5,7 @@ import { flowFingerprint, pruneFlowCache, reuseFlowElement, type FlowNodeCacheEn
 import { isKnownNodeType } from '@/lib/workflow/graphValidation'
 import { nodeCapabilities, type AgentCapsLookup } from '@/lib/workflow/nodeOutlets'
 import type { CanvasEdgeData, CanvasMode, CanvasNodeData, EdgeRunState } from './canvasContext'
+import { backLaneIndexes } from './edgePath'
 import { capabilityFlags, findAgent, nodeOutlets, normHandle, type CanvasAgent, type Outlet, type Translate } from './outlets'
 import { checkConnection } from './useConnectionRules'
 import { NODE_ICONS } from './paletteItems'
@@ -201,6 +202,14 @@ export function useFlowElements(inp: FlowInputs) {
     const runOf = edgeRun.value
     const conn = readonly ? null : inp.connecting.value
     const ids = new Set(inp.nodes().map((n) => n.id))
+    const placed = inp.positions?.()
+    const laneOf = backLaneIndexes(
+      inp.nodes().map((n) => {
+        const p = placed?.get(n.id) ?? n.position
+        return { id: n.id, x: p?.x ?? 0, y: p?.y ?? 0 }
+      }),
+      inp.edges(),
+    )
     const out: FlowEdgeObj[] = []
     for (const e of inp.edges()) {
       if (!ids.has(e.source) || !ids.has(e.target)) continue
@@ -211,6 +220,7 @@ export function useFlowElements(inp: FlowInputs) {
       const when = String(e.when ?? '').trim()
       const note = String(e.label ?? '').trim()
       const kindLabel = kind !== 'success' ? inp.t(`common.edgeKinds.${kind}.label`) : ''
+      const backLane = laneOf.get(e.id)
       const data: CanvasEdgeData = {
         tone,
         dashed: handle === 'fail' || kind !== 'success',
@@ -221,6 +231,7 @@ export function useFlowElements(inp: FlowInputs) {
         sourceLabel: label.get(e.source) || e.source,
         targetLabel: label.get(e.target) || e.target,
         replacing: !!conn && conn.source === e.source && conn.sourceHandle === handle && !when && kind === 'success',
+        ...(backLane !== undefined ? { backLane } : {}),
       }
       const color = data.run === 'traversed' || data.run === 'active' ? 'var(--flow-edge-active)' : TONE_VAR[tone]
       const fp = flowFingerprint({ s: e.source, t: e.target, h: handle, data, color })

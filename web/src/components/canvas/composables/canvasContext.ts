@@ -46,6 +46,8 @@ export interface CanvasEdgeData {
   targetLabel: string
   /** A connection being dragged from this edge's outlet would replace it. */
   replacing?: boolean
+  /** Under-card channel for a backward edge. Forward edges omit it. */
+  backLane?: number
 }
 
 export interface CanvasContext {
