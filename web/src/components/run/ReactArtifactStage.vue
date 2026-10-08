@@ -272,19 +272,19 @@ const fixedCards = computed(() => {
   const cards: { id: string; icon: string; title: string; meta: string }[] = [
     {
       id: 'ide',
-      icon: 'doc',
+      icon: 'stage-ide',
       title: t('pages.reactArtifactStage.fixedIdeTitle'),
       meta: t('pages.reactArtifactStage.fixedIdeMeta'),
     },
     {
       id: 'terminal',
-      icon: 'terminal',
+      icon: 'stage-terminal',
       title: t('pages.reactArtifactStage.fixedTerminalTitle'),
       meta: t('pages.reactArtifactStage.fixedTerminalMeta'),
     },
     {
       id: 'browser',
-      icon: 'globe',
+      icon: 'stage-browser',
       title: t('pages.reactArtifactStage.fixedBrowserTitle'),
       meta: t('pages.reactArtifactStage.novncCardMeta'),
     },
@@ -299,7 +299,7 @@ const fixedCards = computed(() => {
   }
   cards.push({
     id: 'log',
-    icon: 'doc',
+    icon: 'stage-log',
     title: t('pages.reactArtifactStage.fixedLogTitle'),
     meta: t('pages.reactArtifactStage.fixedLogMeta'),
   })
@@ -320,8 +320,10 @@ function fixedTabLabel(id: string): string {
   return id
 }
 function fixedTabIcon(id: string): string {
-  if (id === 'terminal') return 'terminal'
-  if (id === 'browser') return 'globe'
+  if (id === 'ide') return 'stage-ide'
+  if (id === 'terminal') return 'stage-terminal'
+  if (id === 'browser') return 'stage-browser'
+  if (id === 'log') return 'stage-log'
   return 'doc'
 }
 
@@ -1073,8 +1075,15 @@ onBeforeUnmount(() => {
           :data-testid="'react-artifact-card-' + card.id"
           @click="onFixedCard(card.id)"
         >
-          <div class="relative flex h-[110px] items-center justify-center overflow-hidden bg-elevated text-txt3">
-            <Icon :name="card.icon" :size="28" class="opacity-50" />
+          <div
+            class="relative flex h-[110px] items-center justify-center overflow-hidden bg-elevated"
+            :class="card.id === 'app' ? 'text-txt3' : undefined"
+          >
+            <Icon
+              :name="card.icon"
+              :size="card.id === 'app' ? 28 : 30"
+              :class="card.id === 'app' ? 'opacity-50' : 'text-txt2'"
+            />
           </div>
           <div class="px-2.5 py-2">
             <div class="truncate text-[12px] font-medium text-txt">{{ card.title }}</div>
