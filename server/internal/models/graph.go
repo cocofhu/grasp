@@ -269,7 +269,44 @@ func (g Graph) Validate() error {
 			return fmt.Errorf("连线 %s 指向不存在的节点", e.ID)
 		}
 	}
+	for _, n := range g.Nodes {
+		if err := validateNodeLimits(n); err != nil {
+			return err
+		}
+	}
 	return g.validateSuccessFanout()
+}
+
+// MaxNudgeRetries bounds a node's config.nudgeRetries.
+const MaxNudgeRetries = 10
+
+// validateNodeLimits checks the run-limit knobs a node may carry: timeout
+// (node total minutes; 0 or absent = unlimited) and nudgeRetries (re-prompts
+// per kind, 0..MaxNudgeRetries; absent = default).
+func validateNodeLimits(n Node) error {
+	name := n.Label
+	if name == "" {
+		name = n.ID
+	}
+	if v, ok := n.Config["timeout"]; ok && v != nil {
+		f, isNum := v.(float64)
+		if iv, isInt := v.(int); isInt {
+			f, isNum = float64(iv), true
+		}
+		if !isNum || f < 0 {
+			return fmt.Errorf("节点 %s 的总时限需为不小于 0 的分钟数", name)
+		}
+	}
+	if v, ok := n.Config["nudgeRetries"]; ok && v != nil {
+		f, isNum := v.(float64)
+		if iv, isInt := v.(int); isInt {
+			f, isNum = float64(iv), true
+		}
+		if !isNum || f != float64(int(f)) || f < 0 || f > MaxNudgeRetries {
+			return fmt.Errorf("节点 %s 的催写次数需为 0-%d 之间的整数", name, MaxNudgeRetries)
+		}
+	}
+	return nil
 }
 
 // validateSuccessFanout rejects an ambiguous success fan-out: more than one

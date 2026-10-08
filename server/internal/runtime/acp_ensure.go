@@ -49,13 +49,14 @@ func (c *acpProvider) ensureOutcome(ctx context.Context, req NodeReq, acp *sandb
 	if outcomeReady() {
 		return clarifyPending{}, nil
 	}
-	for i := 0; i <= producesRetry; i++ {
+	retries := nudgeRetries(req, false)
+	for i := 0; i <= retries; i++ {
 		if outcomeReady() {
 			return clarifyPending{}, nil
 		}
-		if i == producesRetry {
+		if i == retries {
 			log.Warn().Str("run", req.RunID).Str("node", req.NodeID).
-				Int("retries", producesRetry).
+				Int("retries", retries).
 				Msg("node_complete still missing after re-prompt; engine will fail closed")
 			return clarifyPending{}, nil
 		}
@@ -83,7 +84,7 @@ func (c *acpProvider) ensureOutcome(ctx context.Context, req NodeReq, acp *sandb
 // ensureStructured makes an Agent's required product exist
 // before the node completes: it checks the run store and, while absent (or
 // only present as an upstream same-name write), re-prompts the agent (same
-// session) to call the naming set_* tool, looping up to producesRetry times.
+// session) to call the naming set_* tool, looping up to nudgeRetries times.
 // Intermediate turns are folded into events. Unlike the old produces path
 // there is no workspace harvest — structured products are written only
 // through MCP.
@@ -94,14 +95,15 @@ func (c *acpProvider) ensureStructured(ctx context.Context, req NodeReq, acp *sa
 	satisfied := func() bool {
 		return artifactOwnedByNode(c.host, req.RunID, req.Token, req.NodeID, name)
 	}
-	for i := 0; i <= producesRetry; i++ {
+	retries := nudgeRetries(req, false)
+	for i := 0; i <= retries; i++ {
 		if satisfied() {
 			return clarifyPending{}, nil
 		}
-		if i == producesRetry {
+		if i == retries {
 			log.Warn().Str("run", req.RunID).Str("node", req.NodeID).
 				Str("artifact", name).Str("tool", tool).
-				Int("retries", producesRetry).
+				Int("retries", retries).
 				Msg("structured product still missing after re-prompt; engine will fail closed")
 			return clarifyPending{}, nil
 		}
@@ -195,12 +197,13 @@ func (c *acpProvider) ensureRootCauseConsistency(ctx context.Context, req NodeRe
 		return ""
 	}
 
-	for i := 0; i <= producesRetry; i++ {
+	retries := nudgeRetries(req, false)
+	for i := 0; i <= retries; i++ {
 		msg := reason()
 		if msg == "" {
 			return clarifyPending{}, nil
 		}
-		if i == producesRetry {
+		if i == retries {
 			log.Warn().Str("run", req.RunID).Str("node", req.NodeID).
 				Str("reason", msg).
 				Msg("root_cause consistency still failing after re-prompt")
@@ -245,14 +248,11 @@ func parseRootCauseJSON(raw string) error {
 
 // ensurePlanComplete drives the run plan to completion for an Agent that tracks plan progress. It
 // reads the plan's outstanding items (host.PlanIncomplete); while any remain it
-// re-prompts the agent (same session) to finish them, up to max_rounds times.
+// re-prompts the agent (same session) to finish them, up to nudgeRetries times.
 // A missing/unparseable plan is treated as "nothing to enforce" (nil). If items
 // still remain after the loop it returns an error so the engine fails the node.
 func (c *acpProvider) ensurePlanComplete(ctx context.Context, req NodeReq, acp *sandbox.ACPClient, events *[]models.AcpEvent, usage **models.TokenUsage, byModel *models.TokenUsageByModel) error {
-	maxRounds := 3
-	if req.Caps != nil && req.Caps.MaxRounds > 0 {
-		maxRounds = req.Caps.MaxRounds
-	}
+	maxRounds := nudgeRetries(req, true)
 	for i := 0; i < maxRounds; i++ {
 		inc, err := c.host.PlanIncomplete(req.RunID, req.Token)
 		if err != nil {

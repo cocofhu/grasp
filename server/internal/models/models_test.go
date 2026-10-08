@@ -78,6 +78,38 @@ func TestGraphValidate(t *testing.T) {
 	}
 }
 
+func TestGraphValidateNodeLimits(t *testing.T) {
+	withCfg := func(cfg map[string]any) Graph {
+		g := sampleGraph()
+		g.Nodes = append(g.Nodes, Node{ID: "a", Type: "agent", Label: "测试", Config: cfg})
+		return g
+	}
+	for _, cfg := range []map[string]any{
+		nil,
+		{"timeout": float64(30)},
+		{"timeout": 0},
+		{"nudgeRetries": float64(0)},
+		{"nudgeRetries": 10},
+	} {
+		if err := withCfg(cfg).Validate(); err != nil {
+			t.Errorf("%v should be valid: %v", cfg, err)
+		}
+	}
+	for _, cfg := range []map[string]any{
+		{"timeout": float64(-1)},
+		{"timeout": "30"},
+		{"nudgeRetries": float64(11)},
+		{"nudgeRetries": float64(-1)},
+		{"nudgeRetries": 1.5},
+		{"nudgeRetries": "3"},
+	} {
+		err := withCfg(cfg).Validate()
+		if err == nil || !strings.Contains(err.Error(), "节点 测试") {
+			t.Errorf("%v should be rejected naming the node, got %v", cfg, err)
+		}
+	}
+}
+
 func TestValidateSuccessFanout(t *testing.T) {
 	base := func(edges []Edge) Graph {
 		return Graph{

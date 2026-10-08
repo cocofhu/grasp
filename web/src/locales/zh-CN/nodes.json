@@ -60,7 +60,7 @@
           "placeholder": "这一步要完成什么,可用 {'{{vars.feature}}'} 引用变量"
         },
         "timeout": {
-          "label": "超时(分钟)"
+          "label": "节点总时限(分钟)"
         }
       },
       "outputs": {

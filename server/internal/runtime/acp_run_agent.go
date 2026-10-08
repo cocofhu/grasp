@@ -538,7 +538,20 @@ func (c *acpProvider) closeSession(key string) {
 	}
 }
 
-// producesRetry caps how many times finishReact re-prompts the agent to write
-// a missing declared produces artifact before falling back to the engine's
-// contract-miss handling (which routes failure/rollback per the FSM).
-const producesRetry = 3
+// defaultNudgeRetries caps each kind of re-prompt (missing product,
+// node_complete, root-cause consistency, plan completion) when the node leaves
+// config.nudgeRetries unset.
+const defaultNudgeRetries = 3
+
+// nudgeRetries is how many re-prompts of each kind the node allows: node
+// config.nudgeRetries (0 = never nudge), else the Agent's legacy maxRounds for
+// plan completion, else defaultNudgeRetries.
+func nudgeRetries(req NodeReq, planRounds bool) int {
+	if v, ok := toInt(req.Config["nudgeRetries"]); ok && v >= 0 {
+		return min(v, models.MaxNudgeRetries)
+	}
+	if planRounds && req.Caps != nil && req.Caps.MaxRounds > 0 {
+		return req.Caps.MaxRounds
+	}
+	return defaultNudgeRetries
+}

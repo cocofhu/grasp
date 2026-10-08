@@ -125,6 +125,24 @@ describe('NodeInspector · agent node', () => {
     expect(target.config).not.toHaveProperty('timeout')
   })
 
+  it('stores nudge retries as 0..10 and clears empty input back to the default', async () => {
+    const target = node('agent', { agent_profile: '测试评审', prompt: '', nudgeRetries: 2 })
+    const w = mountInspector(target)
+    const input = w.find('[data-testid="inspector-nudge-retries"]')
+    expect((input.element as HTMLInputElement).value).toBe('2')
+    expect(input.attributes('placeholder')).toBe(t('canvas.inspector.nudgePlaceholder'))
+    await input.setValue('0')
+    expect(target.config.nudgeRetries).toBe(0)
+    await input.setValue('4.4')
+    expect(target.config.nudgeRetries).toBe(4)
+    await input.setValue('99')
+    expect(target.config.nudgeRetries).toBe(10)
+    await input.setValue('-1')
+    expect(target.config).not.toHaveProperty('nudgeRetries')
+    await input.setValue('')
+    expect(target.config).not.toHaveProperty('nudgeRetries')
+  })
+
   it('suggests variables and upstream outputs after typing {{ and inserts the token', async () => {
     const input = node('input', { variables: [{ name: 'feature', type: 'paragraph' }] }, 'in', '输入')
     const up = node('agent', { agent_profile: '需求澄清', prompt: '' }, 'clarify', '澄清')
