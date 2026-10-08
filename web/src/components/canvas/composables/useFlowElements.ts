@@ -5,6 +5,8 @@ import { flowFingerprint, pruneFlowCache, reuseFlowElement, type FlowNodeCacheEn
 import { isKnownNodeType } from '@/lib/workflow/graphValidation'
 import { nodeCapabilities, type AgentCapsLookup } from '@/lib/workflow/nodeOutlets'
 import type { CanvasEdgeData, CanvasMode, CanvasNodeData, EdgeRunState } from './canvasContext'
+import { backLaneIndexes } from './edgePath'
+import { AGENT_NODE_WIDTH, NODE_WIDTH } from './useAutoLayout'
 import { capabilityFlags, findAgent, nodeOutlets, normHandle, type CanvasAgent, type Outlet, type Translate } from './outlets'
 import { checkConnection } from './useConnectionRules'
 import { NODE_ICONS } from './paletteItems'
@@ -32,6 +34,8 @@ export interface FlowEdgeObj {
   selectable: boolean
   focusable: boolean
   ariaLabel: string
+  /** Back edges sit under forward edges so a crossing keeps the main-path hit target. */
+  zIndex: number
   markerEnd: { type: MarkerType; color: string; width: number; height: number }
   data: CanvasEdgeData
 }
@@ -201,6 +205,19 @@ export function useFlowElements(inp: FlowInputs) {
     const runOf = edgeRun.value
     const conn = readonly ? null : inp.connecting.value
     const ids = new Set(inp.nodes().map((n) => n.id))
+    const placed = inp.positions?.()
+    const laneOf = backLaneIndexes(
+      inp.nodes().map((n) => {
+        const p = placed?.get(n.id) ?? n.position
+        return {
+          id: n.id,
+          x: p?.x ?? 0,
+          y: p?.y ?? 0,
+          width: n.type === 'agent' ? AGENT_NODE_WIDTH : NODE_WIDTH,
+        }
+      }),
+      inp.edges(),
+    )
     const out: FlowEdgeObj[] = []
     for (const e of inp.edges()) {
       if (!ids.has(e.source) || !ids.has(e.target)) continue
@@ -211,6 +228,7 @@ export function useFlowElements(inp: FlowInputs) {
       const when = String(e.when ?? '').trim()
       const note = String(e.label ?? '').trim()
       const kindLabel = kind !== 'success' ? inp.t(`common.edgeKinds.${kind}.label`) : ''
+      const backLane = laneOf.get(e.id)
       const data: CanvasEdgeData = {
         tone,
         dashed: handle === 'fail' || kind !== 'success',
@@ -221,6 +239,7 @@ export function useFlowElements(inp: FlowInputs) {
         sourceLabel: label.get(e.source) || e.source,
         targetLabel: label.get(e.target) || e.target,
         replacing: !!conn && conn.source === e.source && conn.sourceHandle === handle && !when && kind === 'success',
+        ...(backLane !== undefined ? { backLane } : {}),
       }
       const color = data.run === 'traversed' || data.run === 'active' ? 'var(--flow-edge-active)' : TONE_VAR[tone]
       const fp = flowFingerprint({ s: e.source, t: e.target, h: handle, data, color })
@@ -236,11 +255,16 @@ export function useFlowElements(inp: FlowInputs) {
           selectable: !readonly,
           focusable: !readonly,
           ariaLabel: inp.t('canvas.aria.edge', { source: data.sourceLabel, target: data.targetLabel }),
+          // The entry rise crosses the forward stroke in the gap before the shared port.
+          // Keep that rise under the forward edge (nodes stay at 0, so forward stays at 0 too).
+          zIndex: backLane !== undefined ? -1 : 0,
           markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
           data,
         })),
       )
     }
+    // Each edge is its own positioned SVG; lower z-index stays underneath.
+    out.sort((a, b) => a.zIndex - b.zIndex)
     pruneFlowCache(edgeCache, inp.edges().map((e) => e.id))
     return out
   })

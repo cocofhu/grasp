@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
+import { getSmoothStepPath, Position } from '@vue-flow/core'
 import type { WFEdge, WFNode } from '@/lib/shared/types'
 import { CLARIFY_CAPS, IMPLEMENT_CAPS, TEST_REVIEW_CAPS } from '@/test/capsFixtures'
 import { agentHueIndex, agentHueVar, agentInitial, HUE_COUNT } from './agentAvatar'
 import { buildDefaultWorkflow, pickTemplateAgents } from './defaultTemplate'
-import { edgeGeometry, isBackward } from './edgePath'
+import { backEdgeRoute, backLaneIndexes, edgeGeometry, isBackward, type EdgeEnds, type NodeBox } from './edgePath'
+import { useFlowElements, type FlowInputs } from './useFlowElements'
 import { collectGraphIssues, issuesByNode } from './useGraphIssues'
 import { formatKey, resolveShortcut, useCanvasShortcuts } from './useCanvasShortcuts'
 import { buildPaletteItems, decodePaletteDrag, encodePaletteDrag, filterPaletteItems, paletteKey } from './paletteItems'
@@ -73,24 +76,336 @@ describe('canvas shortcuts', () => {
   })
 })
 
+type Pt = [number, number]
+
+function anchors(d: string): Pt[] {
+  const tokens = d.match(/[a-zA-Z]|[-+]?(?:\d*\.\d+|\d+)/g) ?? []
+  const pts: Pt[] = []
+  let i = 0
+  let cmd = ''
+  while (i < tokens.length) {
+    const tok = tokens[i]!
+    if (/[a-zA-Z]/.test(tok)) {
+      cmd = tok
+      i += 1
+      continue
+    }
+    if (cmd === 'M' || cmd === 'L') {
+      pts.push([Number(tok), Number(tokens[i + 1])])
+      i += 2
+    } else if (cmd === 'Q') {
+      pts.push([Number(tokens[i + 2]), Number(tokens[i + 3])])
+      i += 4
+    } else {
+      i += 1
+    }
+  }
+  return pts
+}
+
+function verticals(d: string): { x: number }[] {
+  const pts = anchors(d)
+  const out: { x: number }[] = []
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1]!
+    const b = pts[i]!
+    if (Math.abs(a[0] - b[0]) < 0.5 && Math.abs(a[1] - b[1]) > 1) out.push({ x: a[0] })
+  }
+  return out
+}
+
+function selfIntersects(pts: Pt[]): boolean {
+  const seg = (i: number) => [pts[i]!, pts[i + 1]!] as const
+  const between = (v: number, a: number, b: number) => v >= Math.min(a, b) - 1e-6 && v <= Math.max(a, b) + 1e-6
+  for (let i = 0; i < pts.length - 1; i++) {
+    for (let j = i + 1; j < pts.length - 1; j++) {
+      const [a1, a2] = seg(i)
+      const [b1, b2] = seg(j)
+      const adjacent = j === i + 1
+      const ah = a1[1] === a2[1]
+      const av = a1[0] === a2[0]
+      const bh = b1[1] === b2[1]
+      const bv = b1[0] === b2[0]
+      if (!ah && !av) return true
+      if (!bh && !bv) return true
+      if (ah && bh && a1[1] === b1[1]) {
+        const lo = Math.max(Math.min(a1[0], a2[0]), Math.min(b1[0], b2[0]))
+        const hi = Math.min(Math.max(a1[0], a2[0]), Math.max(b1[0], b2[0]))
+        if (hi - lo > (adjacent ? 1e-6 : 0.5)) return true
+      } else if (av && bv && a1[0] === b1[0]) {
+        const lo = Math.max(Math.min(a1[1], a2[1]), Math.min(b1[1], b2[1]))
+        const hi = Math.min(Math.max(a1[1], a2[1]), Math.max(b1[1], b2[1]))
+        if (hi - lo > (adjacent ? 1e-6 : 0.5)) return true
+      } else if (ah !== bh && av !== bv) {
+        const h1 = ah ? a1 : b1
+        const h2 = ah ? a2 : b2
+        const v1 = av ? a1 : b1
+        const v2 = av ? a2 : b2
+        const x = v1[0]
+        const y = h1[1]
+        if (!between(x, h1[0], h2[0]) || !between(y, v1[1], v2[1])) continue
+        const atJoint = (p: Pt) => p[0] === x && p[1] === y
+        if (adjacent && (atJoint(a2) || atJoint(b1))) continue
+        if ((atJoint(a1) || atJoint(a2)) && (atJoint(b1) || atJoint(b2))) continue
+        return true
+      }
+    }
+  }
+  return false
+}
+
 describe('edge paths', () => {
-  it('routes forward edges as a smooth step', () => {
-    const g = edgeGeometry({ sourceX: 0, sourceY: 0, targetX: 200, targetY: 80 })
+  const testCard: NodeBox = { y: 58, height: 196 }
+  const implementCard: NodeBox = { y: 78, height: 156 }
+  const failToImplement: EdgeEnds = { sourceX: 932, sourceY: 238, targetX: 468, targetY: 156 }
+
+  it('keeps a smooth step when the target is to the right', () => {
+    const e = { sourceX: 0, sourceY: 0, targetX: 200, targetY: 80 }
+    expect(isBackward(e)).toBe(false)
+    const g = edgeGeometry(e)
+    const [path, labelX, labelY] = getSmoothStepPath({
+      sourceX: 0,
+      sourceY: 0,
+      targetX: 200,
+      targetY: 80,
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      borderRadius: 10,
+      offset: 24,
+    })
     expect(g.back).toBe(false)
-    expect(g.path).toMatch(/^M/)
+    expect(g.path).toBe(path)
+    expect(g.labelX).toBe(labelX)
+    expect(g.labelY).toBe(labelY)
   })
 
-  it('routes back edges below both nodes', () => {
-    const e = { sourceX: 600, sourceY: 50, targetX: 200, targetY: 50 }
-    expect(isBackward(e)).toBe(true)
-    const g = edgeGeometry(e, { y: 0, height: 100 }, { y: 20, height: 140 })
+  it('draws a backward edge as one lane under both cards', () => {
+    expect(isBackward(failToImplement)).toBe(true)
+    const route = backEdgeRoute(failToImplement, testCard, implementCard)
+    const bottom = Math.max(58 + 196, 78 + 156)
+    expect(route.points).toEqual([
+      [932, 238],
+      [944, 238],
+      [944, bottom + 40],
+      [436, bottom + 40],
+      [436, 156],
+      [468, 156],
+    ])
+    expect(selfIntersects(route.points)).toBe(false)
+    expect(Math.max(...route.points.map((p) => p[0]))).toBe(944)
+    const g = edgeGeometry(failToImplement, testCard, implementCard)
     expect(g.back).toBe(true)
-    expect(g.labelY).toBe(200)
-    expect(g.labelX).toBe(400)
+    expect(g.labelY).toBe(route.lane)
+    expect(g.labelY).toBeGreaterThan(bottom)
+    expect(g.labelX).toBe(690)
+    expect(g.path.startsWith('M 932,238')).toBe(true)
+    expect(g.path.endsWith('L 468,156')).toBe(true)
+  })
+
+  it('keeps the rise off the forward edge verticals', () => {
+    const back = backEdgeRoute(
+      { sourceX: 700, sourceY: 200, targetX: 400, targetY: 120 },
+      { y: 40, height: 180 },
+      { y: 40, height: 140 },
+    )
+    const intoTarget = edgeGeometry({ sourceX: 200, sourceY: 40, targetX: 400, targetY: 120 })
+    const onward = edgeGeometry({ sourceX: 700, sourceY: 160, targetX: 820, targetY: 80 })
+    expect(intoTarget.back).toBe(false)
+    expect(onward.back).toBe(false)
+    const riseX = back.points[4]![0]
+    const dropX = back.points[2]![0]
+    const forwardVerts = [...verticals(intoTarget.path), ...verticals(onward.path)]
+    expect(forwardVerts.length).toBeGreaterThan(0)
+    for (const vert of forwardVerts) {
+      expect(riseX).not.toBeCloseTo(vert.x, 0)
+      expect(dropX).not.toBeCloseTo(vert.x, 0)
+    }
+    expect(riseX).toBeLessThan(400)
+    expect(400 - riseX).toBeGreaterThan(12)
+    expect(selfIntersects(back.points)).toBe(false)
+    expect(back.lane).toBeGreaterThan(40 + 180)
+    expect(back.lane).toBeGreaterThan(40 + 140)
+  })
+
+  it('stacks backward lanes and staggers their rises', () => {
+    const upper = backEdgeRoute(failToImplement, testCard, implementCard, 0)
+    const lower = backEdgeRoute(failToImplement, testCard, implementCard, 1)
+    expect(lower.lane).toBeGreaterThan(upper.lane)
+    expect(lower.points[3]![0]).not.toBe(upper.points[3]![0])
+    expect(lower.points[3]![1]).not.toBe(upper.points[3]![1])
+    expect(selfIntersects(lower.points)).toBe(false)
+    const g0 = edgeGeometry(failToImplement, testCard, implementCard, 0)
+    const g1 = edgeGeometry(failToImplement, testCard, implementCard, 1)
+    expect(g1.labelY).toBeGreaterThan(g0.labelY)
+    expect(g1.labelY).toBeGreaterThan(58 + 196)
+  })
+
+  it('still drops when the fail port is already near the card bottom', () => {
+    const e = { sourceX: 932, sourceY: 250, targetX: 468, targetY: 156 }
+    const route = backEdgeRoute(e, testCard, implementCard)
+    expect(route.points[1]![1]).toBe(250)
+    expect(route.points[2]![1]).toBeGreaterThan(250)
+    expect(route.lane).toBeGreaterThan(58 + 196)
   })
 
   it('falls back to a straight line for invalid coordinates', () => {
-    expect(edgeGeometry({ sourceX: NaN, sourceY: 0, targetX: 10, targetY: 0 }).back).toBe(false)
+    const g = edgeGeometry({ sourceX: NaN, sourceY: 0, targetX: 10, targetY: 0 })
+    expect(g.back).toBe(false)
+    expect(g.path).toBe('M 0,0 L 10,0')
+    expect(isBackward({ sourceX: 100, sourceY: 0, targetX: 120, targetY: 0 })).toBe(false)
+  })
+
+  it('gives overlapping backward edges distinct lanes and leaves forward edges out', () => {
+    const nodes = [
+      { id: 'impl', x: 468, y: 78 },
+      { id: 'test', x: 728, y: 58 },
+      { id: 'ship', x: 988, y: 78 },
+      { id: 'other', x: 2000, y: 800 },
+      { id: 'far', x: 2300, y: 800 },
+    ]
+    const edges = [
+      { id: 'fwd', source: 'impl', target: 'test' },
+      { id: 'back-far', source: 'far', target: 'other' },
+      { id: 'back-b', source: 'ship', target: 'impl' },
+      { id: 'back-a', source: 'test', target: 'impl' },
+    ]
+    const lanes = backLaneIndexes(nodes, edges)
+    expect(lanes.has('fwd')).toBe(false)
+    expect(lanes.get('back-a')).toBe(0)
+    expect(lanes.get('back-b')).toBe(1)
+    expect(lanes.get('back-far')).toBe(0)
+    expect(backLaneIndexes(nodes, [...edges].reverse()).get('back-b')).toBe(1)
+  })
+
+  it('splits chained back edges when equal-height cards only meet at a corner', () => {
+    const y = 40
+    const height = 170
+    const width = 240
+    const cards = [
+      { id: 'b', x: 80, y, width },
+      { id: 'c', x: 400, y, width },
+      { id: 'd', x: 720, y, width },
+    ]
+    const edges = [
+      { id: 'd-c', source: 'd', target: 'c' },
+      { id: 'c-b', source: 'c', target: 'b' },
+    ]
+    const lanes = backLaneIndexes(cards, edges)
+    expect(lanes.get('c-b')).not.toBe(lanes.get('d-c'))
+    expect(backLaneIndexes(cards, [...edges].reverse()).get('d-c')).toBe(lanes.get('d-c'))
+
+    const box: NodeBox = { y, height }
+    const byId = new Map(cards.map((card) => [card.id, card]))
+    const routeOf = (id: string, source: string, target: string) => {
+      const s = byId.get(source)!
+      const t = byId.get(target)!
+      return backEdgeRoute(
+        { sourceX: s.x + width, sourceY: y + height - 16, targetX: t.x, targetY: y + 48 },
+        box,
+        box,
+        lanes.get(id),
+      )
+    }
+    const left = routeOf('c-b', 'c', 'b')
+    const right = routeOf('d-c', 'd', 'c')
+    const horiz = (points: [number, number][], lane: number) => {
+      const seg = points.find((p, i) => i > 0 && p[1] === lane && points[i - 1]![1] === lane && p[0] !== points[i - 1]![0])
+      const i = seg ? points.indexOf(seg) : -1
+      const a = points[i - 1]!
+      const b = points[i]!
+      return [Math.min(a[0], b[0]), Math.max(a[0], b[0])] as const
+    }
+    const [l0, l1] = horiz(left.points, left.lane)
+    const [r0, r1] = horiz(right.points, right.lane)
+    const overlapLo = Math.max(l0, r0)
+    const overlapHi = Math.min(l1, r1)
+    expect(overlapHi - overlapLo).toBeGreaterThan(100)
+    expect(left.lane).not.toBe(right.lane)
+    expect(left.lane).toBeGreaterThan(y + height)
+    expect(right.lane).toBeGreaterThan(y + height)
+    const gLeft = edgeGeometry(
+      { sourceX: 400 + width, sourceY: y + height - 16, targetX: 80, targetY: y + 48 },
+      box,
+      box,
+      lanes.get('c-b'),
+    )
+    const gRight = edgeGeometry(
+      { sourceX: 720 + width, sourceY: y + height - 16, targetX: 400, targetY: y + 48 },
+      box,
+      box,
+      lanes.get('d-c'),
+    )
+    expect(gLeft.labelY).toBe(left.lane)
+    expect(gRight.labelY).toBe(right.lane)
+    expect(gLeft.labelY).not.toBe(gRight.labelY)
+  })
+})
+
+describe('flow edge lanes', () => {
+  it('stores a lane index on backward edges when the canvas assembles them', () => {
+    const node = (id: string, x: number, y: number): WFNode => ({ id, type: 'agent', label: id, position: { x, y }, config: {} })
+    const nodes = [node('impl', 468, 78), node('test', 728, 58), node('ship', 988, 78)]
+    const edges: WFEdge[] = [
+      { id: 'fwd', source: 'impl', target: 'test' },
+      { id: 'back-a', source: 'test', target: 'impl' },
+      { id: 'back-b', source: 'ship', target: 'impl' },
+    ]
+    const inp: FlowInputs = {
+      nodes: () => nodes,
+      edges: () => edges,
+      mode: () => 'edit',
+      agents: () => [],
+      lookup: () => ({}),
+      statusMap: () => undefined,
+      iterations: () => undefined,
+      failReasons: () => undefined,
+      activePath: () => undefined,
+      issues: () => undefined,
+      selectedNodes: () => [],
+      selectedEdges: () => [],
+      renamingId: () => null,
+      connecting: ref(null),
+      typeText: (type) => ({ label: type, desc: '' }),
+      t: (k) => k,
+    }
+    const edgesOut = useFlowElements(inp).flowEdges.value
+    const byId = new Map(edgesOut.map((e) => [e.id, e.data.backLane]))
+    expect(byId.get('fwd')).toBeUndefined()
+    expect(byId.get('back-a')).toBe(0)
+    expect(byId.get('back-b')).toBe(1)
+    const order = edgesOut.map((e) => e.id)
+    expect(order.indexOf('fwd')).toBeGreaterThan(order.indexOf('back-a'))
+    expect(order.indexOf('fwd')).toBeGreaterThan(order.indexOf('back-b'))
+    expect(edgesOut.find((e) => e.id === 'fwd')!.zIndex).toBeGreaterThan(edgesOut.find((e) => e.id === 'back-a')!.zIndex)
+  })
+
+  it('stores distinct lanes for chained back edges on equal-height cards', () => {
+    const node = (id: string, x: number): WFNode => ({ id, type: 'agent', label: id, position: { x, y: 40 }, config: {} })
+    const nodes = [node('b', 80), node('c', 400), node('d', 720)]
+    const edges: WFEdge[] = [
+      { id: 'c-b', source: 'c', target: 'b' },
+      { id: 'd-c', source: 'd', target: 'c' },
+    ]
+    const inp: FlowInputs = {
+      nodes: () => nodes,
+      edges: () => edges,
+      mode: () => 'edit',
+      agents: () => [],
+      lookup: () => ({}),
+      statusMap: () => undefined,
+      iterations: () => undefined,
+      failReasons: () => undefined,
+      activePath: () => undefined,
+      issues: () => undefined,
+      selectedNodes: () => [],
+      selectedEdges: () => [],
+      renamingId: () => null,
+      connecting: ref(null),
+      typeText: (type) => ({ label: type, desc: '' }),
+      t: (k) => k,
+    }
+    const byId = new Map(useFlowElements(inp).flowEdges.value.map((e) => [e.id, e.data.backLane]))
+    expect(byId.get('c-b')).not.toBe(byId.get('d-c'))
   })
 })
 
