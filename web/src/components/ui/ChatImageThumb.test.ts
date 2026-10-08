@@ -38,6 +38,7 @@ describe('ChatImageThumb', () => {
     expect(btn.element.tagName).toBe('BUTTON')
     expect(btn.classes().join(' ')).toMatch(/h-20/)
     expect(btn.classes().join(' ')).toMatch(/w-20/)
+    expect(wrapper.get('img').classes()).toContain('object-cover')
     expect(btn.classes().join(' ')).toMatch(/hover:border-accent/)
     expect(btn.classes().join(' ')).toMatch(/cursor-pointer/)
     expect(btn.text()).toContain('点击放大')
@@ -63,6 +64,17 @@ describe('ChatImageThumb', () => {
     expect(xs.find('[data-testid="thumb-xs"]').classes().join(' ')).toMatch(/h-8/)
     expect(xs.find('[data-testid="thumb-xs"]').classes().join(' ')).toMatch(/w-8/)
     xs.unmount()
+  })
+
+  it('contain fit keeps the whole frame instead of a square crop', () => {
+    const wrapper = mountThumb({ fit: 'contain', testId: 'thumb-fit' })
+    const btn = wrapper.get('[data-testid="thumb-fit"]')
+    expect(btn.classes().join(' ')).not.toMatch(/\bh-20\b/)
+    expect(btn.classes().join(' ')).not.toMatch(/\bw-20\b/)
+    const img = wrapper.get('img')
+    expect(img.classes()).toContain('object-contain')
+    expect(img.classes()).not.toContain('object-cover')
+    wrapper.unmount()
   })
 
   it('forwards thumbClass for surface corner rules', () => {

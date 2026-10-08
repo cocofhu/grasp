@@ -20,6 +20,7 @@ import type {
 } from '@/lib/shared/types'
 import { isImageAttachment, attachmentDisplayName } from '@/lib/shared/attachments'
 import { imgSrc } from '@/lib/shared/compositeText'
+import { renderChatMarkdown } from '@/lib/shared/markdown'
 import { useClarifyChat } from '@/lib/inbox/useClarifyChat'
 
 const props = withDefaults(
@@ -241,7 +242,6 @@ const {
   imagePreview,
   openChatImagePreview,
   closeImagePreview,
-  renderMarkdown,
   relTime,
   demoGridColsClass,
   demoOptionsOf,
@@ -352,6 +352,7 @@ function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
                   v-if="isImageAttachment(im)"
                   mode="previewable"
                   size="md"
+                  fit="contain"
                   thumb-class="rounded-md"
                   :src="imgSrc(im)"
                   :label="imagePreviewLabel(t.images, ii)"
@@ -530,7 +531,7 @@ function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
               >
                 <StreamMarkdown v-if="t.streaming" :blocks="liveStreamBlocks" /><span
                   v-else
-                  v-html="renderMarkdown(t.text)"
+                  v-html="renderChatMarkdown(t.text)"
                 /><span
                   v-if="t.streaming"
                   class="clarify-stream-caret"
@@ -592,12 +593,12 @@ function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
               <span>{{ relTime(t.at) }}</span>
             </div>
           </template>
-          <!-- Human free-text bubble (agent branch handled above; role narrowed to human) -->
+          <!-- Human free-text bubble: plain text so tags stay visible and never execute. -->
           <div
             v-else-if="humanBubbleText(t)"
-            class="md rounded-lg border border-accent/30 bg-accent-dim/60 px-3 py-2 text-[13px] leading-relaxed text-txt"
-            v-html="renderMarkdown(humanBubbleText(t))"
-          />
+            class="whitespace-pre-wrap break-words rounded-lg border border-accent/30 bg-accent-dim/60 px-3 py-2 text-[13px] leading-relaxed text-txt [overflow-wrap:anywhere]"
+            data-testid="clarify-human-message"
+          >{{ humanBubbleText(t) }}</div>
 
           <!-- Structured choice questions (ask_question). The latest agent turn
                shows an interactive card deck (one question per card); earlier

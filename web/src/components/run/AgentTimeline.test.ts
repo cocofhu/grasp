@@ -106,6 +106,33 @@ describe('AgentTimeline', () => {
     expect(message.text()).not.toContain('...(truncated)')
   })
 
+  it('keeps script text in assistant markdown and still renders bold and code', () => {
+    const text = '说明如下：<script>关键步骤</script>\n\n**加粗**\n\n```js\nconst x = 1\n```'
+    const w = mountTimeline({
+      completed: true,
+      parts: [{ kind: 'message', text }],
+    })
+    const message = w.get('[data-testid="agent-timeline-message"]')
+    expect(message.text()).toContain('说明如下：')
+    expect(message.text()).toContain('关键步骤')
+    expect(message.text()).toContain('<script>')
+    expect(message.find('strong').text()).toBe('加粗')
+    expect(message.find('code').text()).toContain('const x = 1')
+    expect(message.element.querySelector('script')).toBeNull()
+  })
+
+  it('shows script text while the assistant message is still streaming', () => {
+    const w = mountTimeline({
+      streaming: true,
+      parts: [{ kind: 'message', text: '说明如下：<script>关键步骤</script>\n\n**加粗**' }],
+    })
+    const message = w.get('[data-testid="agent-timeline-message"]')
+    expect(message.find('[data-testid="stream-md"]').exists()).toBe(true)
+    expect(message.text()).toContain('关键步骤')
+    expect(message.text()).toContain('加粗')
+    expect(message.element.querySelector('script')).toBeNull()
+  })
+
   it('follows expand-all, hides thoughts on request, and draws bare messages', () => {
     const w = mountTimeline({ expanded: true, bare: true })
     expect((w.find('[data-testid="agent-timeline-thought"]').element as HTMLDetailsElement).open).toBe(true)

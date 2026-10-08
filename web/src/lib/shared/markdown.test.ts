@@ -10,6 +10,8 @@ import {
   clearMarkdownCache,
   getMarkdownParseCount,
   markdownCacheSize,
+  renderChatMarkdown,
+  renderChatMarkdownBlocks,
   renderMarkdown,
   renderMarkdownBlocks,
   resetMarkdownParseCount,
@@ -85,5 +87,43 @@ describe('renderMarkdownBlocks', () => {
     for (let i = 0; i < 80; i++) renderMarkdownBlocks(`p${i}`, cache)
     expect(cache.size).toBeLessThanOrEqual(65)
     expect(renderMarkdownBlocks('', cache)).toEqual([])
+  })
+})
+
+describe('renderChatMarkdown', () => {
+  const src = '说明如下：<script>关键步骤</script>\n\n**加粗**\n\n```js\nconst x = 1\n```'
+
+  it('escapes raw HTML but still renders emphasis and code', () => {
+    const html = renderChatMarkdown(src)
+    expect(html).toContain('关键步骤')
+    expect(html).toContain('&lt;script&gt;')
+    expect(html).not.toContain('<script')
+    expect(html).toContain('<strong>加粗</strong>')
+    expect(html).toContain('const x = 1')
+    expect(html).toContain('language-js')
+  })
+
+  it('does not change artifact markdown, which still receives raw HTML', () => {
+    const plain = renderMarkdown('hi <script>x</script>')
+    expect(plain).toContain('<script>')
+    const chat = renderChatMarkdown('hi <script>x</script>')
+    expect(chat).not.toContain('<script')
+    expect(chat).toContain('x')
+  })
+
+  it('keeps fenced code characters that look like tags', () => {
+    const html = renderChatMarkdown('```html\n<script>alert(1)</script>\n```')
+    expect(html).toContain('language-html')
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
+    expect(html).not.toContain('<script')
+  })
+
+  it('renders the same blocks while a reply streams', () => {
+    const cache = new Map<string, string>()
+    const blocks = renderChatMarkdownBlocks(src, cache)
+    expect(blocks.join('')).toContain('关键步骤')
+    expect(blocks.join('')).toContain('<strong>加粗</strong>')
+    expect(blocks.join('')).toContain('const x = 1')
+    expect(blocks.join('')).not.toContain('<script')
   })
 })
