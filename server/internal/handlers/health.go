@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"errors"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -29,30 +28,16 @@ func (h *Handlers) SandboxInject(c *gin.Context) {
 // MCPRPC is the run-scoped artifact-store MCP endpoint. The in-container
 // cursor-agent connects here (URL + Bearer token injected at ACP
 // session/new) and calls write_artifact / read_artifact / list_artifacts.
-// Streamable-HTTP: POST carries a JSON-RPC message; GET/DELETE are no-ops.
+// Streamable-HTTP: POST carries JSON-RPC, GET streams server notifications,
+// and DELETE terminates only the identified MCP session.
 func (h *Handlers) MCPRPC(c *gin.Context) {
 	runID := c.Param("runId")
 	token := bearer(c.GetHeader("Authorization"))
-	if h.MCP == nil || !h.MCP.AuthorizeRun(runID, token) {
+	if h.MCP == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
-	if c.Request.Method != http.MethodPost {
-
-		c.Status(http.StatusOK)
-		return
-	}
-	body, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "read body"})
-		return
-	}
-	status, resp := h.MCP.ServeRPC(runID, token, body)
-	if resp == nil {
-		c.Status(status)
-		return
-	}
-	c.Data(status, "application/json", resp)
+	h.MCP.ServeRunHTTP(c.Writer, c.Request, runID, token)
 }
 
 func bearer(h string) string {

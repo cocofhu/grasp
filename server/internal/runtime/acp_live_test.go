@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -143,23 +142,7 @@ func TestCursorLiveRunAgent(t *testing.T) {
 	mux.HandleFunc("/mcp/runs/", func(w http.ResponseWriter, r *http.Request) {
 		rid := strings.TrimPrefix(r.URL.Path, "/mcp/runs/")
 		token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-		if !host.AuthorizeRun(rid, token) {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		body, _ := io.ReadAll(r.Body)
-		status, resp := host.ServeRPC(rid, token, body)
-		if resp == nil {
-			w.WriteHeader(status)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		_, _ = w.Write(resp)
+		host.ServeRunHTTP(w, r, rid, token)
 	})
 	srv := &http.Server{Handler: mux}
 	go srv.Serve(ln)

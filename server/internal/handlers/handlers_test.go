@@ -1167,13 +1167,13 @@ func TestMCPRPCEndpoint(t *testing.T) {
 		t.Fatalf("mcp unauthorized: %d", w.Code)
 	}
 	tok := h.host.RegisterRun("run1")
-	// GET ack after authorize.
+	// GET requires a session created by initialize.
 	req := httptest.NewRequest("GET", "/mcp/runs/run1", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	w := httptest.NewRecorder()
 	h.r.ServeHTTP(w, req)
-	if w.Code != 200 {
-		t.Fatalf("mcp GET ack: %d", w.Code)
+	if w.Code != 400 {
+		t.Fatalf("mcp GET without session: %d", w.Code)
 	}
 	// POST JSON-RPC ping.
 	req = httptest.NewRequest("POST", "/mcp/runs/run1", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))

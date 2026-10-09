@@ -756,7 +756,7 @@ func TestReactApproveForceCompletesWithOutcome(t *testing.T) {
 		t.Fatal("force path must keep node_complete mark")
 	}
 	if host.ToolsListGeneration(req.RunID) < 1 {
-		t.Fatal("force path must bump tools list generation (list_changed signal)")
+		t.Fatal("force path must bump tools list generation (HTTP invalidation state)")
 	}
 	if !host.OutcomeAllowed(req.RunID) {
 		t.Fatal("force path must leave outcome tool allowed")

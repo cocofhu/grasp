@@ -134,10 +134,11 @@ type Host struct {
 	// outcomeAllowed gates clarify-dialogue visibility of node_complete: while
 	// the active Agent is a clarify Agent and this flag is false, tools/list
 	// omits the tool and tools/call treats it as unknown. Auto Agents ignore it.
-	// toolsListGen increments whenever the flag flips so tests (and future SSE
-	// clients) can observe a tools/list_changed refresh signal.
+	// toolsListGen increments whenever the flag flips; HTTP sessions receive
+	// notifications/tools/list_changed and use the generation to recover on reconnect.
 	outcomeAllowed map[string]bool
 	toolsListGen   map[string]int
+	toolSessions   map[string]map[string]*toolSession // runID -> MCP session ID -> subscription
 	// outcomeValidator is DefaultThenRPC (see ChainedOutcomeValidator). Nil
 	// means DefaultOutcomeValidator only.
 	outcomeValidator OutcomeValidator
@@ -199,6 +200,7 @@ func NewHost(store Store) *Host {
 		outcomes:       map[string]map[string]NodeOutcome{},
 		outcomeAllowed: map[string]bool{},
 		toolsListGen:   map[string]int{},
+		toolSessions:   map[string]map[string]*toolSession{},
 		store:          store,
 		outcomeValidator: ChainedOutcomeValidator{
 			Default: DefaultOutcomeValidator{},
@@ -462,6 +464,9 @@ func (h *Host) UnregisterRun(runID string) {
 	delete(h.pending, runID)
 	delete(h.calls, runID)
 	delete(h.outcomes, runID)
+	h.closeToolSessionsLocked(runID)
+	delete(h.outcomeAllowed, runID)
+	delete(h.toolsListGen, runID)
 	h.mu.Unlock()
 }
 
