@@ -36,6 +36,7 @@ describe('CredentialAliasPicker', () => {
     expect(titles).toEqual(['Cursor', '工作号'])
     expect(wrapper.findAll('[data-testid="credential-alias-subtitle"]').every((node) => node.text() === 'Cursor')).toBe(true)
     expect(wrapper.text()).not.toContain('GitHub')
+    expect(wrapper.text()).toContain('未选择时使用种类匹配的共享通用授权')
 
     await wrapper.get('[data-testid="credential-alias-option-work"]').trigger('click')
     expect(wrapper.emitted('update:selectedId')?.[0]).toEqual(['work'])

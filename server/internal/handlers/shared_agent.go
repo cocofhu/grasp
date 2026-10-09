@@ -5,18 +5,21 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
 )
 
 type sharedAgentBody struct {
-	AcpBackend        string               `json:"acpBackend"`
-	GitCredentialType string               `json:"gitCredentialType"`
-	Files             []services.AgentFile `json:"files"`
-	MCP               []services.MCPServer `json:"mcp"`
-	Env               map[string]string    `json:"env"`
-	Layout            services.AgentLayout `json:"layout"`
+	AcpBackend           string               `json:"acpBackend"`
+	GitCredentialType    string               `json:"gitCredentialType"`
+	AiCredentialID       string               `json:"aiCredentialId"`
+	OpenCodeCredentialID string               `json:"openCodeCredentialId"`
+	Files                []services.AgentFile `json:"files"`
+	MCP                  []services.MCPServer `json:"mcp"`
+	Env                  map[string]string    `json:"env"`
+	Layout               services.AgentLayout `json:"layout"`
 }
 
 func sharedAgentDTO(cfg services.SharedAgentConfig) gin.H {
@@ -33,13 +36,15 @@ func sharedAgentDTO(cfg services.SharedAgentConfig) gin.H {
 		mcp = []services.MCPServer{}
 	}
 	return gin.H{
-		"projectId":         cfg.ProjectID,
-		"acpBackend":        cfg.AcpBackend,
-		"gitCredentialType": cfg.GitCredentialType,
-		"files":             files,
-		"mcp":               mcp,
-		"env":               env,
-		"layout":            cfg.Layout,
+		"projectId":            cfg.ProjectID,
+		"acpBackend":           cfg.AcpBackend,
+		"gitCredentialType":    cfg.GitCredentialType,
+		"aiCredentialId":       cfg.AiCredentialID,
+		"openCodeCredentialId": cfg.OpenCodeCredentialID,
+		"files":                files,
+		"mcp":                  mcp,
+		"env":                  env,
+		"layout":               cfg.Layout,
 	}
 }
 
@@ -74,13 +79,15 @@ func (h *Handlers) PutProjectSharedAgent(c *gin.Context) {
 		return
 	}
 	cfg := services.SharedAgentConfig{
-		ProjectID:         pid,
-		AcpBackend:        b.AcpBackend,
-		GitCredentialType: b.GitCredentialType,
-		Files:             b.Files,
-		MCP:               b.MCP,
-		Env:               b.Env,
-		Layout:            b.Layout,
+		ProjectID:            pid,
+		AcpBackend:           b.AcpBackend,
+		GitCredentialType:    b.GitCredentialType,
+		AiCredentialID:       strings.TrimSpace(b.AiCredentialID),
+		OpenCodeCredentialID: strings.TrimSpace(b.OpenCodeCredentialID),
+		Files:                b.Files,
+		MCP:                  b.MCP,
+		Env:                  b.Env,
+		Layout:               b.Layout,
 	}
 	if cfg.Env == nil {
 		cfg.Env = map[string]string{}
@@ -129,7 +136,7 @@ func (h *Handlers) CreateProjectSharedAgentTest(c *gin.Context) {
 		return
 	}
 	shared := h.SharedAgent.Get(pid)
-	effective := services.ExtendOverlay(shared, agent)
+	effective := services.ExtendOverlayWithKind(shared, agent, h.sharedCredentialKind(pid))
 	repos := resolveTestRepos(b.Repos, b.RepoURL)
 	row, err := h.Sbx.OpenWithEffective(c.Request.Context(), agentName, pid, repos, effective, h.SharedAgent.WorkDir(pid))
 	if err != nil {
@@ -137,4 +144,14 @@ func (h *Handlers) CreateProjectSharedAgentTest(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, row)
+}
+
+func (h *Handlers) sharedCredentialKind(projectID string) runtime.CredentialKindFunc {
+	if h == nil || h.ProjectCredentials == nil || strings.TrimSpace(projectID) == "" {
+		return nil
+	}
+	return func(id string) (string, bool) {
+		key, _, ok := h.ProjectCredentials.ResolveSelectedValue(projectID, id)
+		return key, ok
+	}
 }
