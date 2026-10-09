@@ -105,7 +105,7 @@ func (a *Adapter) Start(ctx context.Context, onInbound channels.InboundHandler) 
 		case errCh <- err:
 		default:
 		}
-		if runCtx.Err() == nil && err != nil {
+		if runCtx.Err() == nil {
 			a.report(channels.ConnStateDisconnected,
 				"长连接已断开。请确认自建应用在线且同一 App ID 无第二条连接互踢。")
 		}
