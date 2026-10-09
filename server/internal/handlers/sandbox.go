@@ -495,28 +495,34 @@ func (h *Handlers) serveSandboxUpstream(c *gin.Context, sandboxID uint, channel,
 	}
 
 	target := &url.URL{Scheme: "http", Host: dialAddr}
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	proxy.FlushInterval = 100 * time.Millisecond
-	// Bound dial so a dead upstream fails into ErrorHandler quickly (K8s 502
-	// pages should not hang the iframe for the default ~30s dial timeout).
-	proxy.Transport = &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   3 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          32,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   3 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	}
-	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
-		log.Warn().Err(err).Uint("sandboxId", sandboxID).Str("channel", channel).
-			Str("upstream", dialAddr).Msg("sandbox upstream unreachable")
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusBadGateway)
-		_, _ = w.Write([]byte(sandboxProxyErrorHTML(channel, dialAddr, err)))
+	// Go 1.26 deprecates ReverseProxy.Director (staticcheck SA1019). Rewrite
+	// is the supported hook. Match NewSingleHostReverseProxy: rewrite the
+	// URL, keep the Host the caller already set to the upstream, and still
+	// append X-Forwarded-For. Do not set X-Forwarded-Host; code-server
+	// prefers that header over Host.
+	proxy := &httputil.ReverseProxy{
+		FlushInterval: 100 * time.Millisecond,
+		// Bound dial so a dead upstream fails into ErrorHandler quickly (K8s 502
+		// pages should not hang the iframe for the default ~30s dial timeout).
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   3 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          32,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   3 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
+			log.Warn().Err(err).Uint("sandboxId", sandboxID).Str("channel", channel).
+				Str("upstream", dialAddr).Msg("sandbox upstream unreachable")
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(sandboxProxyErrorHTML(channel, dialAddr, err)))
+		},
 	}
 
 	clientQ := url.Values{}
@@ -531,13 +537,20 @@ func (h *Handlers) serveSandboxUpstream(c *gin.Context, sandboxID uint, channel,
 		mountPrefix = acpMount
 	}
 
-	orig := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		orig(req)
+	proxy.Rewrite = func(pr *httputil.ProxyRequest) {
+		host := pr.Out.Host
+		pr.SetURL(target)
+		pr.Out.Host = host
 		if channel == "IDE" {
-			mergeUpstreamQuery(req, clientQ)
+			mergeUpstreamQuery(pr.Out, clientQ)
 		}
-		forwardCookiesToUpstream(req)
+		forwardCookiesToUpstream(pr.Out)
+		if ip, _, splitErr := net.SplitHostPort(pr.In.RemoteAddr); splitErr == nil {
+			if prior := pr.In.Header.Values("X-Forwarded-For"); len(prior) > 0 {
+				ip = strings.Join(prior, ", ") + ", " + ip
+			}
+			pr.Out.Header.Set("X-Forwarded-For", ip)
+		}
 	}
 	if mountPrefix != "" {
 		prefix := mountPrefix

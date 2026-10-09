@@ -219,7 +219,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* /root/.npm
 
 # Go (阿里云优先；golang.google.cn 会回源 dl.google.com，国内 CI 易超时)
-ENV GO_VERSION=1.25.0
+ENV GO_VERSION=1.26.9
 ENV GO_ARCH=amd64
 RUN set -eux; \
     file="go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"; \
@@ -243,9 +243,10 @@ RUN set -eux; \
 ENV PATH=$PATH:/usr/local/go/bin
 ENV GOPATH=/root/go
 ENV GOPROXY=https://goproxy.cn,direct
-# 预装 gopls：钉 v0.21.1（go 1.25）对齐镜像 GO_VERSION；GOTOOLCHAIN=local 禁止 @latest 自动拉新 toolchain
+# 预装 gopls：钉 v0.23.0（要求 Go 1.26，可在镜像 GO_VERSION 上以 GOTOOLCHAIN=local 安装）。
+# v0.24 预发布要求 Go 1.27，不要用。GOTOOLCHAIN=local 禁止自动拉新 toolchain。
 ENV GOTOOLCHAIN=local
-RUN mkdir -p /root/go/bin && go install golang.org/x/tools/gopls@v0.21.1
+RUN mkdir -p /root/go/bin && go install golang.org/x/tools/gopls@v0.23.0
 ENV PATH=$PATH:/root/go/bin
 
 # Java

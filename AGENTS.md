@@ -218,7 +218,7 @@ running sandboxes). Details: `sandbox-gateway/sandbox/README.md`.
 | go vet | `go vet ./...` in server, gateway, and `sandbox-gateway/sandbox` | ci-server / ci-gateway / ci-sandbox `sandbox-go` |
 | actionlint | v1.7.12 via `./.github/scripts/actionlint.sh` | always-on `ci` |
 | shellcheck | v0.11.0, `--severity=error`, via `./.github/scripts/shellcheck-error.sh` | always-on `ci` |
-| govulncheck | v1.1.4 via `./.github/scripts/govulncheck-check.sh` on Go 1.25.x (latest patch) | `security.yml` |
+| govulncheck | v1.1.4 via `./.github/scripts/govulncheck-check.sh` on Go 1.26.x (patch ≥ 1.26.9; CI pins 1.26.9) | `security.yml` |
 | docs npm audit | `npm run audit:check` in `docs/`, high/critical, official registry | `security.yml` |
 | ESLint | `npm run lint` — **errors** fail; warnings allowed | `ci-web` |
 | vue-tsc | `npx vue-tsc --noEmit` | `ci-web` |
