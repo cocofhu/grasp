@@ -81,7 +81,9 @@ function isModelVendor(item: ProjectCredentialItem): boolean {
     (item.type || '').toLowerCase() === 'ai' &&
     (item.provider || '').toLowerCase() === 'opencode' &&
     (!item.source || item.source === 'project') &&
-    !!item.configured
+    !!item.configured &&
+    item.enabled !== false &&
+    !item.revokedAt
   )
 }
 

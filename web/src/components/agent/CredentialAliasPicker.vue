@@ -27,7 +27,13 @@ const remoteItems = ref<ProjectCredentialItem[]>([])
 const kindDef = computed(() => kindById(props.kind))
 const source = computed(() => (props.items === undefined ? remoteItems.value : props.items))
 const rows = computed(() =>
-  source.value.filter((item) => item.configured && kindOfItem(item)?.id === props.kind),
+  source.value.filter(
+    (item) =>
+      item.configured &&
+      item.enabled !== false &&
+      !item.revokedAt &&
+      kindOfItem(item)?.id === props.kind,
+  ),
 )
 
 function vendorOf(item: ProjectCredentialItem): string {

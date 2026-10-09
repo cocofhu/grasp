@@ -1225,7 +1225,8 @@
         "secretPrivateKey": "Private key",
         "secretKnownHosts": "Known hosts",
         "pickTitle": "Credential to use",
-        "pickHint": "The title is the alias. When nothing is selected, a run uses the shared credential of the matching kind. When one is selected, the run injects only that one and does not switch to another in the same list.",
+        "pickHint": "The title is the alias. A run injects only the selected one, and clearing it does not switch to another.",
+        "codingPickHint": "The title is the alias. When nothing is selected, a run uses the shared credential of the matching kind. When one is selected, the run injects only that one and does not switch to another in the same list.",
         "pickEmpty": "This kind has no saved credential yet.",
         "pickClear": "Clear selection",
         "kinds": {

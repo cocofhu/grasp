@@ -166,10 +166,11 @@ describe('ProjectSharedAgentPanel interactions', () => {
 
     await w.get('[data-testid="credential-alias-clear"]').trigger('click')
     expect((w.vm as any).draft.aiCredentialId).toBe('')
+    ;(w.vm as any).draft.openCodeCredentialId = 'cred-oc'
     ;(w.vm as any).selectAcpBackend('claude_code')
     await flushPromises()
     expect((w.vm as any).draft.aiCredentialId).toBe('')
-    expect((w.vm as any).draft.openCodeCredentialId).toBe('')
+    expect((w.vm as any).draft.openCodeCredentialId).toBe('cred-oc')
     expect(w.find('[data-testid="credential-alias-option-cred-work"]').exists()).toBe(false)
     w.unmount()
   })
@@ -210,6 +211,50 @@ describe('ProjectSharedAgentPanel interactions', () => {
     expect((w.vm as any).draft.aiCredentialId).toBe('')
     expect(w.find('[data-testid="credential-alias-option-cred-work"]').exists()).toBe(false)
     expect(w.find('[data-testid="credential-alias-option-cred-claude"]').exists()).toBe(true)
+    w.unmount()
+  })
+
+  it('keeps the OpenCode credential after switching to Cursor and saving', async () => {
+    mocks.getConfig.mockResolvedValue({
+      ...cfg,
+      acpBackend: 'opencode',
+      openCodeCredentialId: 'cred-oc',
+    })
+    mocks.getCredentials.mockResolvedValue({
+      items: [
+        {
+          id: 'cred-oc',
+          name: '厂商',
+          type: 'ai',
+          provider: 'opencode',
+          configured: true,
+          metadata: { provider: 'openai', model: 'openai/gpt-4o' },
+        },
+        {
+          id: 'cred-work',
+          name: '工作号',
+          type: 'ai',
+          provider: 'cursor',
+          envKey: 'GRASP_CURSOR_API_KEY',
+          configured: true,
+        },
+      ],
+    })
+    const w = mountPanel()
+    await flushPromises()
+    await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
+    await flushPromises()
+    expect((w.vm as any).draft.openCodeCredentialId).toBe('cred-oc')
+    ;(w.vm as any).selectAcpBackend('cursor')
+    await flushPromises()
+    expect((w.vm as any).draft.openCodeCredentialId).toBe('cred-oc')
+    expect((w.vm as any).draft.aiCredentialId).toBe('')
+    await w.get('[data-testid="credential-alias-option-cred-work"]').trigger('click')
+    expect(await (w.vm as any).save()).toBe(true)
+    const body = mocks.putConfig.mock.calls.at(-1)?.[1]
+    expect(body.aiCredentialId).toBe('cred-work')
+    expect(body.openCodeCredentialId).toBe('cred-oc')
+    expect(JSON.stringify(body)).not.toContain('sk-')
     w.unmount()
   })
 

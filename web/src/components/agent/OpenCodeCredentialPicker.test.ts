@@ -107,6 +107,22 @@ describe('OpenCodeCredentialPicker', () => {
     wrapper.unmount()
   })
 
+  it('hides revoked and disabled vendor keys', async () => {
+    mocks.get.mockResolvedValue({
+      items: [
+        rowA,
+        { ...rowB, id: 'revoked', name: '已吊销', enabled: false, revokedAt: '2026-10-09T00:00:00Z' },
+        { ...rowB, id: 'disabled', name: '已停用', enabled: false },
+      ],
+    })
+    const wrapper = mountPicker({ mode: 'select', projectId: 'p1', selectedId: '' })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="opencode-credential-row-a"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="opencode-credential-row-revoked"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="opencode-credential-row-disabled"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('disables add until a project is chosen', async () => {
     const wrapper = mountPicker({ mode: 'select', projectId: '' })
     await flushPromises()

@@ -224,7 +224,6 @@ function selectAcpBackend(id: BackendId) {
   }
   if (prev !== id) {
     draft.value.aiCredentialId = ''
-    draft.value.openCodeCredentialId = ''
     draft.value.env = recToKV(
       switchOpenCodeEnv(switchBackendRegions(kvToRec(draft.value.env), id), id),
     )

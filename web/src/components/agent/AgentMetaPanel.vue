@@ -247,6 +247,7 @@ const derivedPaths = computed(() => {
           :project-id="draft.projectId"
           :kind="aiKind.id"
           :selected-id="draft.aiCredentialId"
+          :hint="t('pages.projectDetail.projectCredentials.codingPickHint')"
           @update:selected-id="draft.aiCredentialId = $event"
         />
       </div>

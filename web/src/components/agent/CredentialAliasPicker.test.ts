@@ -18,6 +18,15 @@ const items = [
     id: 'gh', type: 'git', name: '工作号', provider: 'github',
     envKey: 'GITHUB_TOKEN', configured: true,
   },
+  {
+    id: 'revoked', type: 'ai', name: '已吊销', provider: 'cursor',
+    envKey: 'GRASP_CURSOR_API_KEY', configured: true, enabled: false,
+    revokedAt: '2026-10-09T00:00:00Z',
+  },
+  {
+    id: 'disabled', type: 'ai', name: '已停用', provider: 'cursor',
+    envKey: 'GRASP_CURSOR_API_KEY', configured: true, enabled: false,
+  },
 ]
 
 function mountPicker(selectedId = '') {
@@ -36,7 +45,8 @@ describe('CredentialAliasPicker', () => {
     expect(titles).toEqual(['Cursor', '工作号'])
     expect(wrapper.findAll('[data-testid="credential-alias-subtitle"]').every((node) => node.text() === 'Cursor')).toBe(true)
     expect(wrapper.text()).not.toContain('GitHub')
-    expect(wrapper.text()).toContain('未选择时使用种类匹配的共享通用授权')
+    expect(wrapper.text()).toContain('清空后不会改用另一条')
+    expect(wrapper.text()).not.toContain('共享通用授权')
 
     await wrapper.get('[data-testid="credential-alias-option-work"]').trigger('click')
     expect(wrapper.emitted('update:selectedId')?.[0]).toEqual(['work'])
@@ -44,6 +54,25 @@ describe('CredentialAliasPicker', () => {
     await wrapper.setProps({ selectedId: 'work' })
     await wrapper.get('[data-testid="credential-alias-clear"]').trigger('click')
     expect(wrapper.emitted('update:selectedId')?.at(-1)).toEqual([''])
+    expect(wrapper.text()).not.toContain('已吊销')
+    expect(wrapper.text()).not.toContain('已停用')
+    wrapper.unmount()
+  })
+
+  it('shows a caller hint instead of the default copy', async () => {
+    const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': pages } })
+    const wrapper = mount(CredentialAliasPicker, {
+      props: {
+        projectId: 'p1',
+        kind: 'cursor',
+        items,
+        hint: '未选择时使用种类匹配的共享通用授权',
+      },
+      global: { plugins: [i18n], stubs: { Icon: true } },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('未选择时使用种类匹配的共享通用授权')
+    expect(wrapper.text()).not.toContain('清空后不会改用另一条')
     wrapper.unmount()
   })
 })
