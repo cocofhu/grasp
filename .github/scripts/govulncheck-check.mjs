@@ -4,8 +4,8 @@
  * Called symbols fail the process unless listed in govulncheck-allowlist.json
  * with a reason and an expires date. Expired entries fail even after the
  * finding is gone, so exceptions get revisited. A fixed_version is printed
- * next to the finding; allow it only with a reason (for example the patched
- * module needs a newer Go than this repo's 1.25.x toolchain).
+ * next to the finding; allow it only with a reason and an expiry. The
+ * current toolchain is Go 1.26.x with a patch of at least 1.26.9.
  *
  * Does not read Actions secrets. Invoke via govulncheck-check.sh, which pins
  * the scanner binary.
