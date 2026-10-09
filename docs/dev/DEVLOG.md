@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-09（Parallel Search MCP 配置示例）
+
+- 日期：2026-10-09
+- 范围：`docs/content/{en/help,help}/configuration.md`、`docs/dev/DEVLOG.md`
+- 做了什么：中英文配置帮助增加可选 Parallel Search MCP 示例，使用现有 Agent Studio HTTP MCP 配置与 OpenCode 后端；说明追加条目、保存后新建会话、搜索/抓取及移除方式。
+- 为什么：让 Agent 可以主动接入无需 Parallel API Key 的网页搜索与内容摘录，不改变默认后端或平台 MCP。
+- 如何验证：docs 干净安装、构建及 audit；actionlint、shellcheck、品牌检查、gen-configdoc -check；从文档 JSON 经 `resolveAgentMCP` / `BuildConfigHome` 生成 OpenCode 配置，在隔离凭据的 OpenCode 1.18.35 中用确定性模型夹具驱动 Agent 循环，真实调用匿名 `web_search` 和 `web_fetch`，返回 Go 发布说明来源及摘录；捕获请求确认 URL、User-Agent 和无 Authorization。
+
 ### 2026-10-09（cursor 后台任务卡住回合）
 
 - 日期：2026-10-09
