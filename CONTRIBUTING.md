@@ -263,17 +263,19 @@ cd docs && npm_config_registry=https://registry.npmjs.org npm run audit:check
 ```
 
 - `govulncheck` v1.1.4 scans `server`, `sandbox-gateway/gateway`, and
-  `sandbox-gateway/sandbox` for called-symbol vulnerabilities. Use the same Go
-  as CI: `actions/setup-go` with `go-version: "1.25.x"` (latest 1.25 patch).
-  An older 1.25.0 reports standard-library findings that the current patch
-  already fixes. Called findings fail unless listed in
-  `govulncheck-allowlist.json` with `id`, `module`, `reason`, and `expires`.
-  Expired entries fail the check. The current server exemptions are the two
-  `golang.org/x/crypto` ssh issues whose fix (`v0.56.0`) requires Go 1.26,
-  which this repo does not use yet.
+  `sandbox-gateway/sandbox` for called-symbol vulnerabilities. Use Go 1.26.x
+  with a patch of at least 1.26.9 and below 1.27 — the same line that compiles
+  the binaries. `actions/setup-go` `go-version: "1.26.x"` still resolves to
+  1.26.8 from the actions/go-versions manifest, so CI pins `1.26.9` (an exact
+  version missing from that manifest is downloaded from go.dev/dl). An older
+  1.26 patch still reports the 2026-10-08 standard-library findings. Called
+  findings fail unless listed in `govulncheck-allowlist.json` with `id`,
+  `module`, `reason`, and `expires`. Expired entries fail the check. The
+  allowlist is empty; do not exempt findings fixed by this toolchain or by
+  `golang.org/x/net` v0.60.0 and `golang.org/x/crypto` v0.57.0.
 
 ```bash
-# from repo root, with Go 1.25.x (latest patch) on PATH
+# from repo root, with Go 1.26.9 or a newer 1.26 patch on PATH
 ./.github/scripts/govulncheck-check.sh
 ```
 

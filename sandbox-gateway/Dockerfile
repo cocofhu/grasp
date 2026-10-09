@@ -2,7 +2,7 @@
 # Build: docker build -t sandbox-gateway:local .
 # The universal sandbox image is built separately from sandbox/Dockerfile.
 
-FROM golang:1.25-bookworm AS build
+FROM golang:1.26-bookworm AS build
 WORKDIR /src
 
 # 国内 Go 模块代理

@@ -217,7 +217,7 @@ build_dev_runtime() {
     docker run --rm --network=host \
       -e GOPROXY="${GOPROXY:-https://goproxy.cn,direct}" -e GOSUMDB="${GOSUMDB:-sum.golang.google.cn}" \
       -v "$HOST_REPO_DIR:/src" -v grasp-runtime-go-mod:/go/pkg/mod -w /src \
-      golang:1.25-bookworm scripts/build-sandbox-runtime.sh "$out" >/dev/null
+      golang:1.26-bookworm scripts/build-sandbox-runtime.sh "$out" >/dev/null
   fi
   echo "sandbox runtime bundle: ${out}/sandbox-runtime.tgz"
 }
