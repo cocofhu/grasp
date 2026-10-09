@@ -1,11 +1,13 @@
 /* Workflow canvas: node cards, ports, edges. Design tokens only. */
 
 .cnode {
+  --cnode-lift: 0 4px 14px -6px rgb(0 0 0 / 0.16);
+  --cnode-stripe: transparent;
   position: relative;
   border: 1px solid rgb(var(--c-line));
-  border-radius: 12px;
+  border-radius: 14px;
   background: rgb(var(--c-surface));
-  box-shadow: var(--shadow-card);
+  box-shadow: inset 3px 0 0 var(--cnode-stripe), var(--shadow-card), var(--cnode-lift);
   color: rgb(var(--c-txt));
   font-size: 12px;
   transition:
@@ -14,24 +16,25 @@
     opacity var(--dur-ui) ease;
 }
 .cnode:hover {
+  --cnode-lift: 0 10px 24px -10px rgb(0 0 0 / 0.28);
   border-color: rgb(var(--c-line-strong));
 }
 .cnode.is-selected {
   border-color: rgb(var(--c-accent));
-  box-shadow: 0 0 0 1px rgb(var(--c-accent)), var(--shadow-card);
+  box-shadow: inset 3px 0 0 var(--cnode-stripe), 0 0 0 3px rgb(var(--c-accent) / 0.18), var(--shadow-card), var(--cnode-lift);
 }
 .vue-flow__node:focus-visible {
   outline: none;
 }
 .vue-flow__node:focus-visible .cnode {
-  box-shadow: 0 0 0 2px rgb(var(--c-accent) / 0.55), var(--shadow-card);
+  box-shadow: inset 3px 0 0 var(--cnode-stripe), 0 0 0 2px rgb(var(--c-accent) / 0.55), var(--shadow-card);
 }
 
 .cnode-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px 8px;
+  gap: 10px;
+  padding: 12px 14px 10px;
 }
 .cnode-title {
   font-size: 13px;
@@ -45,29 +48,42 @@
   color: rgb(var(--c-txt3));
 }
 .cnode-icon {
+  --cnode-tint: var(--c-txt2);
   display: flex;
-  height: 28px;
-  width: 28px;
+  height: 30px;
+  width: 30px;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
-  background: rgb(var(--c-elevated));
-  color: rgb(var(--c-txt2));
+  border-radius: 9px;
+  background: rgb(var(--cnode-tint) / 0.12);
+  color: rgb(var(--cnode-tint));
+}
+.cnode[data-node-type='input'] .cnode-icon {
+  --cnode-tint: var(--c-accent);
+}
+.cnode[data-node-type='output'] .cnode-icon {
+  --cnode-tint: var(--c-ok);
+}
+.cnode[data-node-type='branch'] .cnode-icon {
+  --cnode-tint: var(--c-info);
+}
+.cnode[data-node-type='human_gate'] .cnode-icon {
+  --cnode-tint: var(--c-warn);
 }
 .cnode-avatar {
   display: flex;
-  height: 28px;
-  width: 28px;
+  height: 30px;
+  width: 30px;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  border-radius: 9999px;
+  border-radius: 9px;
   font-size: 12px;
   font-weight: 600;
 }
 .cnode-body {
-  padding: 0 12px 10px;
+  padding: 0 14px 12px;
 }
 .cnode-goal {
   display: -webkit-box;
@@ -85,15 +101,15 @@
 .cnode-foot {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   border-top: 1px solid rgb(var(--c-line));
-  padding: 6px 12px;
-  min-height: 30px;
+  padding: 7px 14px;
+  min-height: 34px;
 }
 .cnode-cap {
   display: inline-flex;
-  height: 20px;
-  width: 20px;
+  height: 22px;
+  width: 22px;
   align-items: center;
   justify-content: center;
   border-radius: 6px;
@@ -115,8 +131,9 @@
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-  padding: 0 14px 0 12px;
+  padding: 0 16px 0 14px;
   font-size: 11px;
+  font-weight: 500;
   color: rgb(var(--c-txt2));
 }
 .cnode-outlet-label {
@@ -151,11 +168,11 @@
 }
 .cnode .vue-flow__handle.cport::after {
   content: '';
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 9999px;
   background: rgb(var(--c-surface));
-  border: 1.5px solid rgb(var(--c-line-strong));
+  border: 2px solid rgb(var(--c-line-strong));
   transition:
     transform var(--dur-press) ease,
     border-color var(--dur-press) ease,
@@ -272,10 +289,11 @@
 .cnode-iter {
   flex-shrink: 0;
   border-radius: 9999px;
-  background: rgb(var(--c-elevated));
-  padding: 1px 6px;
+  background: rgb(var(--c-accent) / 0.12);
+  padding: 1px 7px;
   font-size: 10px;
-  color: rgb(var(--c-txt2));
+  font-weight: 500;
+  color: rgb(var(--c-accent-2));
 }
 .cnode-fail {
   border-top: 1px solid rgb(var(--c-err) / 0.3);
@@ -348,6 +366,7 @@
 
 /* Run states */
 .cnode.st-running {
+  --cnode-stripe: rgb(var(--c-accent));
   border-color: rgb(var(--c-accent));
 }
 .cnode.st-running::before {
@@ -372,15 +391,18 @@
   pointer-events: none;
 }
 .cnode.st-waiting_human {
+  --cnode-stripe: rgb(var(--c-warn));
   border-color: rgb(var(--c-warn));
   animation: cnode-breathe 2s ease-in-out infinite;
 }
 .cnode.st-completed {
-  border-color: rgb(var(--c-ok) / 0.55);
+  --cnode-stripe: rgb(var(--c-ok));
+  border-color: rgb(var(--c-ok) / 0.45);
 }
 .cnode.st-failed {
+  --cnode-stripe: rgb(var(--c-err));
   border-color: rgb(var(--c-err));
-  box-shadow: 0 0 0 1px rgb(var(--c-err) / 0.6), var(--shadow-card);
+  box-shadow: inset 3px 0 0 var(--cnode-stripe), 0 0 0 1px rgb(var(--c-err) / 0.6), var(--shadow-card);
 }
 .cnode.st-skipped,
 .cnode.st-cancelled {
@@ -401,10 +423,10 @@
 @keyframes cnode-breathe {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgb(var(--c-warn) / 0), var(--shadow-card);
+    box-shadow: inset 3px 0 0 var(--cnode-stripe), 0 0 0 0 rgb(var(--c-warn) / 0), var(--shadow-card);
   }
   50% {
-    box-shadow: 0 0 0 4px rgb(var(--c-warn) / 0.22), var(--shadow-card);
+    box-shadow: inset 3px 0 0 var(--cnode-stripe), 0 0 0 4px rgb(var(--c-warn) / 0.22), var(--shadow-card);
   }
 }
 
@@ -412,7 +434,9 @@
 .cedge-path {
   fill: none;
   stroke: var(--flow-edge);
-  stroke-width: 1.5;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   transition:
     stroke var(--dur-ui) ease,
     opacity var(--dur-ui) ease;
@@ -427,8 +451,11 @@
   stroke-dasharray: 6 4;
 }
 .cedge-path.run-traversed {
-  stroke: var(--flow-edge-active);
+  stroke-width: 1.85;
   stroke-dasharray: none;
+}
+.cedge-path.run-traversed.tone-default {
+  stroke: var(--flow-edge-active);
 }
 .cedge-path.run-active {
   stroke: var(--flow-edge-active);
@@ -471,9 +498,11 @@
   border: 1px solid rgb(var(--c-line));
   border-radius: 9999px;
   background: rgb(var(--c-surface));
-  padding: 1px 8px;
-  font-size: 10.5px;
-  line-height: 16px;
+  box-shadow: var(--shadow-card);
+  padding: 1px 9px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
   color: rgb(var(--c-txt2));
   cursor: pointer;
 }

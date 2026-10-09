@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { EdgeLabelRenderer, type GraphNode, type Position } from '@vue-flow/core'
+import { EdgeLabelRenderer, useVueFlow, type GraphNode, type Position } from '@vue-flow/core'
 import Icon from '../../ui/Icon.vue'
-import { edgeGeometry } from '../composables/edgePath'
+import { edgeGeometry, laneFloor, type EdgeEnds } from '../composables/edgePath'
 import { useCanvasContext, type CanvasEdgeData } from '../composables/canvasContext'
 
 defineOptions({ inheritAttrs: false })
@@ -26,25 +26,40 @@ const props = defineProps<{
 const { t } = useI18n()
 const ctx = useCanvasContext()
 
+const { getNodes } = useVueFlow()
+
 function box(n?: GraphNode) {
   if (!n) return undefined
   return { y: n.computedPosition?.y ?? n.position.y, height: n.dimensions?.height || 0 }
 }
 
+const ends = computed<EdgeEnds>(() => ({
+  sourceX: props.sourceX,
+  sourceY: props.sourceY,
+  targetX: props.targetX,
+  targetY: props.targetY,
+  sourcePosition: props.sourcePosition,
+  targetPosition: props.targetPosition,
+}))
+
+const back = computed(() => props.data.backLane !== undefined)
+
+const floor = computed(() => {
+  if (!back.value) return undefined
+  const cards = getNodes.value.map((n) => ({
+    x: n.computedPosition?.x ?? n.position.x,
+    y: n.computedPosition?.y ?? n.position.y,
+    width: n.dimensions?.width || 0,
+    height: n.dimensions?.height || 0,
+  }))
+  return laneFloor(ends.value, cards, props.data.backLane ?? 0)
+})
+
 const geo = computed(() =>
-  edgeGeometry(
-    {
-      sourceX: props.sourceX,
-      sourceY: props.sourceY,
-      targetX: props.targetX,
-      targetY: props.targetY,
-      sourcePosition: props.sourcePosition,
-      targetPosition: props.targetPosition,
-    },
-    box(props.sourceNode),
-    box(props.targetNode),
-    props.data.backLane ?? 0,
-  ),
+  edgeGeometry(ends.value, box(props.sourceNode), box(props.targetNode), props.data.backLane ?? 0, {
+    back: back.value,
+    floor: floor.value,
+  }),
 )
 
 const hovered = computed(() => ctx?.hoveredEdge.value === props.id)

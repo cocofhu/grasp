@@ -24,7 +24,7 @@ export function estimateNodeSize(n: WFNode): Size {
       : n.type === 'human_gate'
         ? Array.isArray(cfg.actions) ? cfg.actions.length : 0
         : 0
-  const base = n.type === 'agent' ? 108 : 64
+  const base = n.type === 'agent' ? 120 : 64
   return { width, height: base + Math.max(0, outlets) * 24 }
 }
 
@@ -98,6 +98,8 @@ export async function computeAutoLayout(
       'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
       'elk.layered.crossingMinimization.forceNodeModelOrder': 'true',
       'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+      'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
+      'elk.layered.nodePlacement.favorStraightEdges': 'true',
       'elk.separateConnectedComponents': 'false',
     },
     children: nodes.map((n) => ({ id: n.id, ...sizes(n) })),

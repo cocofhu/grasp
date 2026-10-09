@@ -6,7 +6,7 @@ import { isKnownNodeType } from '@/lib/workflow/graphValidation'
 import { nodeCapabilities, type AgentCapsLookup } from '@/lib/workflow/nodeOutlets'
 import type { CanvasEdgeData, CanvasMode, CanvasNodeData, EdgeRunState } from './canvasContext'
 import { backLaneIndexes } from './edgePath'
-import { AGENT_NODE_WIDTH, NODE_WIDTH } from './useAutoLayout'
+import { AGENT_NODE_WIDTH, NODE_WIDTH, findBackEdges } from './useAutoLayout'
 import { capabilityFlags, findAgent, nodeOutlets, normHandle, type CanvasAgent, type Outlet, type Translate } from './outlets'
 import { checkConnection } from './useConnectionRules'
 import { NODE_ICONS } from './paletteItems'
@@ -217,6 +217,7 @@ export function useFlowElements(inp: FlowInputs) {
         }
       }),
       inp.edges(),
+      findBackEdges(inp.nodes(), inp.edges()),
     )
     const out: FlowEdgeObj[] = []
     for (const e of inp.edges()) {
@@ -241,7 +242,8 @@ export function useFlowElements(inp: FlowInputs) {
         replacing: !!conn && conn.source === e.source && conn.sourceHandle === handle && !when && kind === 'success',
         ...(backLane !== undefined ? { backLane } : {}),
       }
-      const color = data.run === 'traversed' || data.run === 'active' ? 'var(--flow-edge-active)' : TONE_VAR[tone]
+      const color =
+        data.run === 'active' || (data.run === 'traversed' && tone === 'default') ? 'var(--flow-edge-active)' : TONE_VAR[tone]
       const fp = flowFingerprint({ s: e.source, t: e.target, h: handle, data, color })
       const isSel = selected.has(e.id)
       out.push(

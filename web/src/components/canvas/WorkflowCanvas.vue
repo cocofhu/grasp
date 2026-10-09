@@ -208,7 +208,7 @@ function measure(n: WFNode) {
 }
 
 /** Size used when the new node's type is unknown (the largest card). */
-const DEFAULT_PLACE_SIZE: Size = { width: AGENT_NODE_WIDTH, height: 108 }
+const DEFAULT_PLACE_SIZE: Size = { width: AGENT_NODE_WIDTH, height: 120 }
 
 function specSize(spec: NodeSpec): Size {
   return estimateNodeSize(createNode(spec, { x: 0, y: 0 }, []))
@@ -682,22 +682,34 @@ function startBlank() {
   void fit(0)
 }
 
+/** Read-only canvases ignore saved coordinates (often stale snapshots) and always show the layered layout. */
+const layoutForDisplay = computed(() => props.autoLayoutOnInit && !props.editor)
+
+async function relayoutDisplay() {
+  displayLayout.value = await computeAutoLayout(props.nodes, props.edges, measure)
+  await nextTick()
+}
+
 let initialized = false
 async function onNodesInitialized() {
   if (initialized) return
   initialized = true
-  if (props.autoLayoutOnInit && needsInitialLayout(props.nodes)) {
-    if (props.editor) {
-      await props.editor.autoLayout(false)
-      props.editor.history.reset()
-    } else {
-      displayLayout.value = await computeAutoLayout(props.nodes, props.edges, measure)
-      await nextTick()
-    }
+  if (layoutForDisplay.value) {
+    await relayoutDisplay()
+  } else if (props.autoLayoutOnInit && props.editor && needsInitialLayout(props.nodes)) {
+    await props.editor.autoLayout(false)
+    props.editor.history.reset()
   }
   await fit(0, INITIAL_MIN_ZOOM)
   if (props.follow && props.followNodeId) centerOn(props.followNodeId, 0)
 }
+
+watch(
+  () => [...props.nodes.map((n) => n.id), '|', ...props.edges.map((e) => `${e.source}>${e.target}`)].join(','),
+  () => {
+    if (initialized && layoutForDisplay.value) void relayoutDisplay()
+  },
+)
 
 // ── Follow (run mode) ──
 function onMoveStart() {

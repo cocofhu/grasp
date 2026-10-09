@@ -99,15 +99,28 @@ export interface BackRoute {
   lane: number
 }
 
+export interface EdgeRouteOptions {
+  /** Topological loop flag. When omitted, a target left of its source counts as a loop. */
+  back?: boolean
+  /** Lowest card bottom under the loop's horizontal run, so the lane clears every card it passes. */
+  floor?: number
+}
+
 /**
  * Orthogonal back route: a short exit stub, one drop to a lane under both cards,
  * a run to the gap beside the target, then a short entry. Higher `laneIndex`
  * values sit on a lower lane and rise on a different x so the strokes do not stack.
  */
-export function backEdgeRoute(e: EdgeEnds, source?: NodeBox, target?: NodeBox, laneIndex = 0): BackRoute {
+export function backEdgeRoute(e: EdgeEnds, source?: NodeBox, target?: NodeBox, laneIndex = 0, floor?: number): BackRoute {
   const { sourceX: sx, sourceY: sy, targetX: tx, targetY: ty } = e
   const index = laneIndexOf(laneIndex)
-  const bottom = Math.max(source ? source.y + source.height : sy, target ? target.y + target.height : ty, sy, ty)
+  const bottom = Math.max(
+    source ? source.y + source.height : sy,
+    target ? target.y + target.height : ty,
+    sy,
+    ty,
+    floor !== undefined && Number.isFinite(floor) ? floor : -Infinity,
+  )
   const lane = bottom + LANE_GAP + index * LANE_PITCH
   const srcPos = e.sourcePosition ?? Position.Right
   const tgtPos = e.targetPosition ?? Position.Left
@@ -138,14 +151,20 @@ function laneMidX(points: [number, number][], lane: number, sx: number, tx: numb
  * leave the source by a short stub, drop below both cards, and enter the target
  * from the gap on its near side.
  */
-export function edgeGeometry(e: EdgeEnds, source?: NodeBox, target?: NodeBox, laneIndex = 0): EdgeGeometry {
+export function edgeGeometry(
+  e: EdgeEnds,
+  source?: NodeBox,
+  target?: NodeBox,
+  laneIndex = 0,
+  opts: EdgeRouteOptions = {},
+): EdgeGeometry {
   const { sourceX: sx, sourceY: sy, targetX: tx, targetY: ty } = e
   if (!coordsFinite(sx, sy, tx, ty)) {
     const [path, labelX, labelY] = fallbackLinePath(sx, sy, tx, ty)
     return { path, labelX, labelY, back: false }
   }
-  if (isBackward(e)) {
-    const route = backEdgeRoute(e, source, target, laneIndex)
+  if (opts.back ?? isBackward(e)) {
+    const route = backEdgeRoute(e, source, target, laneIndex, opts.floor)
     const path = roundedPolyline(route.points, RADIUS)
     return {
       path: path || fallbackLinePath(sx, sy, tx, ty)[0],
@@ -194,15 +213,16 @@ function backStrokeX(source: LaneNode, target: LaneNode): { x0: number; x1: numb
 }
 
 /**
- * Lane index for each edge whose target node sits left of its source.
+ * Lane index for each edge whose target node sits left of its source, plus every edge in `loops`
+ * (cycle-closing edges), so a loop routes under the cards even when cramped positions put its target to the right.
  * Strokes that overlap or meet on the same row get distinct indexes; separated strokes reuse 0.
  */
-export function backLaneIndexes(nodes: LaneNode[], edges: LaneEdge[]): Map<string, number> {
+export function backLaneIndexes(nodes: LaneNode[], edges: LaneEdge[], loops?: Set<string>): Map<string, number> {
   const pos = new Map(nodes.map((n) => [n.id, n]))
   const back = edges.filter((e) => {
     const s = pos.get(e.source)
     const t = pos.get(e.target)
-    return !!s && !!t && t.x < s.x
+    return !!s && !!t && (t.x < s.x || !!loops?.has(e.id))
   })
   back.sort((a, b) => {
     const as = pos.get(a.source)!
@@ -234,4 +254,29 @@ export function backLaneIndexes(nodes: LaneNode[], edges: LaneEdge[]): Map<strin
     out.set(e.id, lane)
   }
   return out
+}
+
+export interface CardBox {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** Lowest bottom among cards that the loop's horizontal run passes under. */
+export function laneFloor(e: EdgeEnds, cards: CardBox[], laneIndex = 0): number | undefined {
+  const { sourceX: sx, targetX: tx } = e
+  if (!Number.isFinite(sx) || !Number.isFinite(tx)) return undefined
+  const a = sx + EXIT
+  const b = tx - ENTRY - laneIndexOf(laneIndex) * RISE_STAGGER
+  const x0 = Math.min(a, b)
+  const x1 = Math.max(a, b)
+  let floor: number | undefined
+  for (const c of cards) {
+    if (![c.x, c.y, c.width, c.height].every(Number.isFinite)) continue
+    if (c.x + c.width < x0 || c.x > x1) continue
+    const bottom = c.y + c.height
+    if (floor === undefined || bottom > floor) floor = bottom
+  }
+  return floor
 }

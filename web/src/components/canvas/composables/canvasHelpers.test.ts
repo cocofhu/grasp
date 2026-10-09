@@ -5,7 +5,7 @@ import type { WFEdge, WFNode } from '@/lib/shared/types'
 import { CLARIFY_CAPS, IMPLEMENT_CAPS, TEST_REVIEW_CAPS } from '@/test/capsFixtures'
 import { agentHueIndex, agentHueVar, agentInitial, HUE_COUNT } from './agentAvatar'
 import { buildDefaultWorkflow, pickTemplateAgents } from './defaultTemplate'
-import { backEdgeRoute, backLaneIndexes, edgeGeometry, isBackward, type EdgeEnds, type NodeBox } from './edgePath'
+import { backEdgeRoute, backLaneIndexes, edgeGeometry, isBackward, laneFloor, type EdgeEnds, type NodeBox } from './edgePath'
 import { useFlowElements, type FlowInputs } from './useFlowElements'
 import { collectGraphIssues, issuesByNode } from './useGraphIssues'
 import { formatKey, resolveShortcut, useCanvasShortcuts } from './useCanvasShortcuts'
@@ -406,6 +406,98 @@ describe('flow edge lanes', () => {
     }
     const byId = new Map(useFlowElements(inp).flowEdges.value.map((e) => [e.id, e.data.backLane]))
     expect(byId.get('c-b')).not.toBe(byId.get('d-c'))
+  })
+
+  const flowInputs = (nodes: WFNode[], edges: WFEdge[], over: Partial<FlowInputs> = {}): FlowInputs => ({
+    nodes: () => nodes,
+    edges: () => edges,
+    mode: () => 'edit',
+    agents: () => [],
+    lookup: () => ({}),
+    statusMap: () => undefined,
+    iterations: () => undefined,
+    failReasons: () => undefined,
+    activePath: () => undefined,
+    issues: () => undefined,
+    selectedNodes: () => [],
+    selectedEdges: () => [],
+    renamingId: () => null,
+    connecting: ref(null),
+    typeText: (type) => ({ label: type, desc: '' }),
+    t: (k) => k,
+    ...over,
+  })
+
+  it('keeps a forward edge between cramped cards off the loop lane, but routes a cycle there', () => {
+    const node = (id: string, x: number, y: number): WFNode => ({ id, type: 'agent', label: id, position: { x, y }, config: {} })
+    const nodes = [node('in', 0, 0), node('clarify', 100, 40), node('impl', 120, 0)]
+    const edges: WFEdge[] = [
+      { id: 'a', source: 'in', target: 'clarify' },
+      { id: 'b', source: 'clarify', target: 'impl' },
+      { id: 'loop', source: 'impl', target: 'clarify' },
+    ]
+    nodes[0]!.type = 'input'
+    const byId = new Map(useFlowElements(flowInputs(nodes, edges)).flowEdges.value.map((e) => [e.id, e.data.backLane]))
+    expect(byId.get('b')).toBeUndefined()
+    expect(byId.get('loop')).toBe(0)
+  })
+
+  it('routes a cycle-closing edge on a lane even when its target sits to the right', () => {
+    const node = (id: string, x: number): WFNode => ({ id, type: 'agent', label: id, position: { x, y: 0 }, config: {} })
+    const nodes = [{ ...node('in', 0), type: 'input' } as WFNode, node('a', 700), node('b', 350)]
+    const edges: WFEdge[] = [
+      { id: 'in-a', source: 'in', target: 'a' },
+      { id: 'a-b', source: 'a', target: 'b' },
+      { id: 'b-a', source: 'b', target: 'a' },
+    ]
+    const byId = new Map(useFlowElements(flowInputs(nodes, edges)).flowEdges.value.map((e) => [e.id, e.data.backLane]))
+    expect(byId.get('in-a')).toBeUndefined()
+    expect(byId.get('b-a')).toBeDefined()
+  })
+
+  it('keeps pass / fail colours on traversed run edges', () => {
+    const node = (id: string, x: number): WFNode => ({ id, type: 'agent', label: id, position: { x, y: 0 }, config: {} })
+    const nodes = [node('test', 0), node('ship', 320), node('plain', 640)]
+    const edges: WFEdge[] = [
+      { id: 'pass', source: 'test', sourceHandle: 'pass', target: 'ship' },
+      { id: 'plain', source: 'ship', target: 'plain' },
+    ]
+    const out = useFlowElements(
+      flowInputs(nodes, edges, {
+        mode: () => 'run',
+        statusMap: () => ({ test: 'completed', ship: 'completed', plain: 'running' }),
+      }),
+    ).flowEdges.value
+    const pass = out.find((e) => e.id === 'pass')!
+    const plain = out.find((e) => e.id === 'plain')!
+    expect(pass.data.run).toBe('traversed')
+    expect(pass.markerEnd.color).toBe('rgb(var(--c-ok))')
+    expect(plain.data.run).toBe('traversed')
+    expect(plain.markerEnd.color).toBe('var(--flow-edge-active)')
+  })
+})
+
+describe('loop routing options', () => {
+  it('honours an explicit back flag over port geometry', () => {
+    const cramped: EdgeEnds = { sourceX: 340, sourceY: 60, targetX: 330, targetY: 40 }
+    expect(isBackward(cramped)).toBe(true)
+    expect(edgeGeometry(cramped, undefined, undefined, 0, { back: false }).back).toBe(false)
+    const ahead: EdgeEnds = { sourceX: 100, sourceY: 60, targetX: 400, targetY: 60 }
+    expect(edgeGeometry(ahead, { y: 0, height: 100 }, { y: 0, height: 100 }, 0, { back: true }).back).toBe(true)
+  })
+
+  it('drops the lane below every card the loop passes under', () => {
+    const e: EdgeEnds = { sourceX: 900, sourceY: 50, targetX: 100, targetY: 50 }
+    const ends = { y: 0, height: 100 }
+    const plain = edgeGeometry(e, ends, ends, 0, { back: true })
+    const floor = laneFloor(e, [
+      { x: 100, y: 0, width: 240, height: 100 },
+      { x: 400, y: 20, width: 240, height: 260 },
+      { x: 2000, y: 0, width: 240, height: 900 },
+    ])
+    expect(floor).toBe(280)
+    const deep = edgeGeometry(e, ends, ends, 0, { back: true, floor })
+    expect(deep.labelY).toBe(plain.labelY + 180)
   })
 })
 
