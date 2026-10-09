@@ -15,13 +15,22 @@ import {
 import { useToast } from '@/lib/composables/useToast'
 import { conflictingAlias, kindById } from '@/lib/project/credentialKinds'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   mode: 'select' | 'manage'
   projectId: string
   /** When omitted, the picker loads project credentials itself. */
   items?: ProjectCredentialItem[]
   selectedId?: string
-}>()
+  title?: string
+  hint?: string
+  /** False hides creating a credential. Omitted keeps the add button. */
+  allowAdd?: boolean
+  /** True shows a control that clears the current selection. */
+  allowClear?: boolean
+}>(), {
+  allowAdd: true,
+  allowClear: false,
+})
 
 const emit = defineEmits<{
   'update:selectedId': [id: string]
@@ -58,18 +67,23 @@ const baseRequired = computed(() => {
   void catalogTick.value
   return openCodeCustomBaseRequired(form.provider, form.baseUrl)
 })
-const description = computed(() =>
-  props.mode === 'select'
+const description = computed(() => {
+  if (props.hint) return props.hint
+  return props.mode === 'select'
     ? t('pages.agentStudio.openCode.credentialDesc')
-    : t('pages.projectDetail.projectCredentials.modelApiKeySubtitle'),
-)
+    : t('pages.projectDetail.projectCredentials.modelApiKeySubtitle')
+})
+const heading = computed(() => props.title || t('pages.agentStudio.openCode.credentialTitle'))
+const canAdd = computed(() => props.allowAdd !== false)
 
 function isModelVendor(item: ProjectCredentialItem): boolean {
   return (
     (item.type || '').toLowerCase() === 'ai' &&
     (item.provider || '').toLowerCase() === 'opencode' &&
     (!item.source || item.source === 'project') &&
-    !!item.configured
+    !!item.configured &&
+    item.enabled !== false &&
+    !item.revokedAt
   )
 }
 
@@ -130,6 +144,11 @@ async function loadRemote() {
 function choose(id: string) {
   if (props.mode !== 'select' || id === props.selectedId) return
   emit('update:selectedId', id)
+}
+
+function clearSelection() {
+  if (!props.selectedId) return
+  emit('update:selectedId', '')
 }
 
 async function saveAdd() {
@@ -250,20 +269,32 @@ watch(
   <div data-testid="project-credential-opencode" :data-mode="mode">
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0">
-        <div class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.openCode.credentialTitle') }}</div>
+        <div class="text-[12px] font-medium text-txt2">{{ heading }}</div>
         <p class="mb-0 mt-1 text-[11px] leading-5 text-txt3">{{ description }}</p>
       </div>
-      <AppButton
-        size="sm"
-        variant="outline"
-        icon="plus"
-        class="shrink-0"
-        data-testid="opencode-credential-add"
-        :disabled="!projectId || showAdd"
-        @click="openAdd"
-      >
-        {{ t('pages.agentStudio.openCode.credentialAdd') }}
-      </AppButton>
+      <div class="flex shrink-0 gap-1.5">
+        <AppButton
+          v-if="allowClear && selectedId"
+          size="sm"
+          variant="ghost"
+          data-testid="opencode-credential-clear-selection"
+          @click="clearSelection"
+        >
+          {{ t('pages.projectDetail.projectCredentials.pickClear') }}
+        </AppButton>
+        <AppButton
+          v-if="canAdd"
+          size="sm"
+          variant="outline"
+          icon="plus"
+          class="shrink-0"
+          data-testid="opencode-credential-add"
+          :disabled="!projectId || showAdd"
+          @click="openAdd"
+        >
+          {{ t('pages.agentStudio.openCode.credentialAdd') }}
+        </AppButton>
+      </div>
     </div>
     <p v-if="!projectId" class="mb-0 mt-2 text-[11px] text-txt3" data-testid="opencode-credential-need-project">
       {{ t('pages.agentStudio.openCode.credentialNeedProject') }}

@@ -161,10 +161,20 @@ func (c *acpProvider) effectiveAgent(req NodeReq) agentFile {
 	if !ok {
 		return agent
 	}
-	return overlayAgentFile(shared, agent)
+	return overlayAgentFile(shared, agent, c.credentialKind(c.projectIDForReq(req)))
 }
 
-func overlayAgentFile(shared SharedAgentView, agent agentFile) agentFile {
+func (c *acpProvider) credentialKind(projectID string) CredentialKindFunc {
+	if c == nil || c.opts.SelectedCredentialForProject == nil || strings.TrimSpace(projectID) == "" {
+		return nil
+	}
+	return func(id string) (string, bool) {
+		key, _, ok := c.opts.SelectedCredentialForProject(projectID, id)
+		return key, ok
+	}
+}
+
+func overlayAgentFile(shared SharedAgentView, agent agentFile, kindOf CredentialKindFunc) agentFile {
 	out := agent
 	// Env: shared base, Agent overlay.
 	out.Env = envauth.OverlayEnv(shared.Env, agent.Env)
@@ -202,6 +212,12 @@ func overlayAgentFile(shared SharedAgentView, agent agentFile) agentFile {
 	if strings.TrimSpace(agent.Layout.WorkspaceDir) == "" && strings.TrimSpace(shared.Layout.WorkspaceDir) != "" {
 		out.Layout.WorkspaceDir = shared.Layout.WorkspaceDir
 	}
+	out.AiCredentialID, out.OpenCodeCredentialID = MergeCodingCredentialIDs(
+		out.AcpBackend,
+		agent.AiCredentialID, agent.OpenCodeCredentialID,
+		shared.AiCredentialID, shared.OpenCodeCredentialID,
+		kindOf,
+	)
 	return out
 }
 

@@ -7,6 +7,7 @@ import pages from '@/locales/zh-CN/pages.json'
 
 const mocks = vi.hoisted(() => ({
   getConfig: vi.fn(), listAgents: vi.fn(), putConfig: vi.fn(), createTest: vi.fn(),
+  getCredentials: vi.fn(),
   success: vi.fn(), error: vi.fn(),
 }))
 vi.mock('@/lib/api/api', async () => {
@@ -14,6 +15,7 @@ vi.mock('@/lib/api/api', async () => {
   return { ...actual, api: { ...actual.api,
     getProjectSharedAgentConfig: mocks.getConfig, listAgents: mocks.listAgents,
     putProjectSharedAgentConfig: mocks.putConfig, createProjectSharedAgentTest: mocks.createTest,
+    getProjectCredentials: mocks.getCredentials,
   } }
 })
 vi.mock('@/lib/composables/useToast', () => ({ useToast: () => mocks }))
@@ -40,6 +42,7 @@ describe('ProjectSharedAgentPanel interactions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.getConfig.mockResolvedValue(cfg)
+    mocks.getCredentials.mockResolvedValue({ items: [] })
     mocks.listAgents.mockResolvedValue([{ name: 'a1', projectId: 'p1' }, { name: 'other', projectId: 'p2' }])
     mocks.putConfig.mockImplementation(async (_: string, body: any) => ({ ...cfg, ...body }))
     mocks.createTest.mockResolvedValue({ id: 'sandbox' })
@@ -124,10 +127,147 @@ describe('ProjectSharedAgentPanel interactions', () => {
       await flushPromises()
     }
     vm.subTab = 'meta'; await w.vm.$nextTick()
+    await flushPromises()
     expect(w.find('[data-test="shared-ssh-private-key"]').exists()).toBe(false)
+    expect(w.get('[data-testid="credential-alias-empty"]').text()).toContain('这一类还没有已保存的授权')
     vm.draft.layout.configRoot = ''
     await w.vm.$nextTick()
     expect(vm.derivedPaths[0].path).toContain('mcp.json')
+    w.unmount()
+  })
+
+  it('selects, clears, and saves a generic credential id without a secret', async () => {
+    mocks.getCredentials.mockResolvedValue({
+      items: [
+        {
+          id: 'cred-work',
+          name: '工作号',
+          type: 'ai',
+          provider: 'cursor',
+          envKey: 'GRASP_CURSOR_API_KEY',
+          configured: true,
+          masked: 'sk-work',
+        },
+      ],
+    })
+    const w = mountPanel()
+    await flushPromises()
+    await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
+    await flushPromises()
+    expect(w.get('[data-testid="shared-generic-credential"]').text()).toContain('单个 Agent 已选择时以单个 Agent 为准')
+    expect(w.text()).not.toContain('这一类还没有已保存的授权')
+    await w.get('[data-testid="credential-alias-option-cred-work"]').trigger('click')
+    expect((w.vm as any).draft.aiCredentialId).toBe('cred-work')
+    expect(await (w.vm as any).save()).toBe(true)
+    const body = mocks.putConfig.mock.calls.at(-1)?.[1]
+    expect(body.aiCredentialId).toBe('cred-work')
+    expect(body.openCodeCredentialId).toBe('')
+    expect(JSON.stringify(body)).not.toContain('sk-work')
+
+    await w.get('[data-testid="credential-alias-clear"]').trigger('click')
+    expect((w.vm as any).draft.aiCredentialId).toBe('')
+    ;(w.vm as any).draft.openCodeCredentialId = 'cred-oc'
+    ;(w.vm as any).selectAcpBackend('claude_code')
+    await flushPromises()
+    expect((w.vm as any).draft.aiCredentialId).toBe('')
+    expect((w.vm as any).draft.openCodeCredentialId).toBe('cred-oc')
+    expect(w.find('[data-testid="credential-alias-option-cred-work"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('restores the saved credential and drops it when the backend changes', async () => {
+    mocks.getConfig.mockResolvedValue({ ...cfg, aiCredentialId: 'cred-work' })
+    mocks.getCredentials.mockResolvedValue({
+      items: [
+        {
+          id: 'cred-work',
+          name: '工作号',
+          type: 'ai',
+          provider: 'cursor',
+          envKey: 'GRASP_CURSOR_API_KEY',
+          configured: true,
+        },
+        {
+          id: 'cred-claude',
+          name: '克劳德',
+          type: 'ai',
+          provider: 'claude_code',
+          envKey: 'GRASP_CLAUDE_API_KEY',
+          configured: true,
+        },
+      ],
+    })
+    const w = mountPanel()
+    await flushPromises()
+    await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
+    await flushPromises()
+    expect(w.get('[data-testid="credential-alias-option-cred-work"]').attributes('aria-pressed')).toBe('true')
+    ;(w.vm as any).draft.aiCredentialId = ''
+    ;(w.vm as any).discard()
+    await flushPromises()
+    expect((w.vm as any).draft.aiCredentialId).toBe('cred-work')
+    ;(w.vm as any).selectAcpBackend('claude_code')
+    await flushPromises()
+    expect((w.vm as any).draft.aiCredentialId).toBe('')
+    expect(w.find('[data-testid="credential-alias-option-cred-work"]').exists()).toBe(false)
+    expect(w.find('[data-testid="credential-alias-option-cred-claude"]').exists()).toBe(true)
+    w.unmount()
+  })
+
+  it('keeps the OpenCode credential after switching to Cursor and saving', async () => {
+    mocks.getConfig.mockResolvedValue({
+      ...cfg,
+      acpBackend: 'opencode',
+      openCodeCredentialId: 'cred-oc',
+    })
+    mocks.getCredentials.mockResolvedValue({
+      items: [
+        {
+          id: 'cred-oc',
+          name: '厂商',
+          type: 'ai',
+          provider: 'opencode',
+          configured: true,
+          metadata: { provider: 'openai', model: 'openai/gpt-4o' },
+        },
+        {
+          id: 'cred-work',
+          name: '工作号',
+          type: 'ai',
+          provider: 'cursor',
+          envKey: 'GRASP_CURSOR_API_KEY',
+          configured: true,
+        },
+      ],
+    })
+    const w = mountPanel()
+    await flushPromises()
+    await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
+    await flushPromises()
+    expect((w.vm as any).draft.openCodeCredentialId).toBe('cred-oc')
+    ;(w.vm as any).selectAcpBackend('cursor')
+    await flushPromises()
+    expect((w.vm as any).draft.openCodeCredentialId).toBe('cred-oc')
+    expect((w.vm as any).draft.aiCredentialId).toBe('')
+    await w.get('[data-testid="credential-alias-option-cred-work"]').trigger('click')
+    expect(await (w.vm as any).save()).toBe(true)
+    const body = mocks.putConfig.mock.calls.at(-1)?.[1]
+    expect(body.aiCredentialId).toBe('cred-work')
+    expect(body.openCodeCredentialId).toBe('cred-oc')
+    expect(JSON.stringify(body)).not.toContain('sk-')
+    w.unmount()
+  })
+
+  it('uses the OpenCode picker without a create button and shows the empty state', async () => {
+    mocks.getConfig.mockResolvedValue({ ...cfg, acpBackend: 'opencode' })
+    mocks.getCredentials.mockResolvedValue({ items: [] })
+    const w = mountPanel()
+    await flushPromises()
+    await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="project-credential-opencode"]').exists()).toBe(true)
+    expect(w.find('[data-testid="opencode-credential-add"]').exists()).toBe(false)
+    expect(w.text()).toContain('还没有模型厂商 API Key')
     w.unmount()
   })
 })

@@ -292,11 +292,14 @@ func (h *Handlers) RevokeProjectCredential(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "credentials unavailable"})
 		return
 	}
-	if err := h.ProjectCredentials.Revoke(c.Param("id"), c.Param("credentialId")); err != nil {
+	projectID := c.Param("id")
+	credentialID := c.Param("credentialId")
+	if err := h.ProjectCredentials.Revoke(projectID, credentialID); err != nil {
 		writeCredentialErr(c, err)
 		return
 	}
-	h.recordAudit(services.AuditRecord{ProjectID: c.Param("id"), Actor: h.auditActorFromContext(c), Action: models.AuditActionProjectConfig, ResourceType: "project_credential", ResourceID: c.Param("credentialId"), Outcome: models.AuditOutcomeOK, Summary: "revoke project credential"})
+	h.forgetCredentialSelection(projectID, credentialID)
+	h.recordAudit(services.AuditRecord{ProjectID: projectID, Actor: h.auditActorFromContext(c), Action: models.AuditActionProjectConfig, ResourceType: "project_credential", ResourceID: credentialID, Outcome: models.AuditOutcomeOK, Summary: "revoke project credential"})
 	c.JSON(http.StatusOK, gin.H{"status": "revoked"})
 }
 
@@ -315,9 +318,7 @@ func (h *Handlers) ClearProjectCredential(c *gin.Context) {
 		writeCredentialErr(c, err)
 		return
 	}
-	if h.Agents != nil {
-		h.Agents.ClearOpenCodeCredentialSelection(projectID, credentialID)
-	}
+	h.forgetCredentialSelection(projectID, credentialID)
 	h.recordAudit(services.AuditRecord{ProjectID: projectID, Actor: h.auditActorFromContext(c), Action: models.AuditActionProjectConfig, ResourceType: "project_credential", ResourceID: credentialID, Outcome: models.AuditOutcomeOK, Summary: "clear project credential"})
 	c.JSON(http.StatusOK, gin.H{"status": "cleared"})
 }
@@ -332,6 +333,15 @@ func isSecretsKeyErr(err error) bool {
 
 func writeSecretsKeyErr(c *gin.Context, err error) {
 	c.JSON(http.StatusPreconditionFailed, gin.H{"error": err.Error(), "code": SecretsKeyMissingCode})
+}
+
+func (h *Handlers) forgetCredentialSelection(projectID, credentialID string) {
+	if h.Agents != nil {
+		h.Agents.ClearOpenCodeCredentialSelection(projectID, credentialID)
+	}
+	if h.SharedAgent != nil {
+		h.SharedAgent.ClearCredentialSelection(projectID, credentialID)
+	}
 }
 
 func writeCredentialErr(c *gin.Context, err error) {

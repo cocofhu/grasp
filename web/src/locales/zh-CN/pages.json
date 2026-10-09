@@ -1196,7 +1196,9 @@
         "pickAgentPlaceholder": "请选择要叠加测试的 Agent",
         "testHint": "仅列出绑定本项目的 Agent。将以共享配置为基底，再 overlay 所选 Agent 启动对话测试。",
         "noAgents": "暂无可用 Agent，请先到 Agent Studio 创建。",
-        "noProjectAgents": "本项目尚无绑定 Agent。请前往 Agent 管理，在 Agent 元信息中绑定本项目后再试。"
+        "noProjectAgents": "本项目尚无绑定 Agent。请前往 Agent 管理，在 Agent 元信息中绑定本项目后再试。",
+        "genericCredentialTitle": "通用授权",
+        "genericCredentialHint": "这是本项目的默认授权。单个 Agent 已选择时以单个 Agent 为准；单个 Agent 未选择且种类一致时使用这里的选择。"
       },
       "projectCredentials": {
         "eyebrow": "安全凭据中心",
@@ -1224,6 +1226,7 @@
         "secretKnownHosts": "已知主机",
         "pickTitle": "使用的授权",
         "pickHint": "主标题是别名。运行只注入选中的这一条，清空后不会改用另一条。",
+        "codingPickHint": "主标题是别名。未选择时使用种类匹配的共享通用授权；已选择时只注入这一条，不会改用同一列表里的另一条。",
         "pickEmpty": "这一类还没有已保存的授权。",
         "pickClear": "清空选择",
         "kinds": {
@@ -2403,7 +2406,7 @@
         "advancedSummary": "高级说明（点开查看技术细节）",
         "advancedHint": "模型 id 本身带斜杠的（例如 deepseek/deepseek-flash）照原样填写；只填写模型名时，系统会自动补上厂商前缀。",
         "credentialTitle": "模型厂商 API Key",
-        "credentialDesc": "点一条给这个 Agent。密钥只保存在项目凭据里，这里只显示掩码。",
+        "credentialDesc": "点一条给这个 Agent。未选择时使用种类匹配的共享通用授权；已选择时只注入这一条，不会改用同一列表里的另一条。密钥只保存在项目凭据里，这里只显示掩码。",
         "credentialAdd": "添加",
         "credentialSaveUse": "保存并选用",
         "credentialSave": "保存",

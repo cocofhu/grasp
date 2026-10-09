@@ -24,6 +24,41 @@ type AgentCredentialChoice struct {
 // ok is false when the id is unknown, cleared, or has no secret.
 type SelectedCredentialFunc func(projectID, credentialID string) (envKey, value string, ok bool)
 
+// CredentialKindFunc reports the env key stored on one project credential.
+// ok is false when the id is unknown, revoked, cleared, or has no secret.
+// Implementations must not log the secret; this callback does not receive it.
+type CredentialKindFunc func(credentialID string) (envKey string, ok bool)
+
+// MergeCodingCredentialIDs chooses the credential ids for a merged Agent.
+// A non-empty id on the individual Agent wins. Otherwise the shared id is
+// used only when its env key matches the effective backend. OpenCode consults
+// only the OpenCode slot; every other backend consults only the AI slot.
+// The unused slot keeps the individual Agent's id and is never filled from
+// shared. A nil kindOf, an unknown id, or a mismatched key leaves that slot
+// empty so callers stay on the existing empty-selection path.
+func MergeCodingCredentialIDs(backend, agentAI, agentOC, sharedAI, sharedOC string, kindOf CredentialKindFunc) (aiID, ocID string) {
+	if AcpBackend(strings.TrimSpace(backend)) == BackendOpenCode {
+		return strings.TrimSpace(agentAI), pickCredentialSlot(agentOC, sharedOC, envauth.EnvOpenCodeAPIKey, kindOf)
+	}
+	return pickCredentialSlot(agentAI, sharedAI, CredentialEnvKeyForBackend(backend), kindOf), strings.TrimSpace(agentOC)
+}
+
+func pickCredentialSlot(agentID, sharedID, expected string, kindOf CredentialKindFunc) string {
+	if id := strings.TrimSpace(agentID); id != "" {
+		return id
+	}
+	sharedID = strings.TrimSpace(sharedID)
+	expected = strings.TrimSpace(expected)
+	if sharedID == "" || expected == "" || kindOf == nil {
+		return ""
+	}
+	key, ok := kindOf(sharedID)
+	if !ok || strings.TrimSpace(key) != expected {
+		return ""
+	}
+	return sharedID
+}
+
 // CredentialEnvKeyForBackend is the project-credential env key for a coding
 // backend. OpenCode is selected through its own resolver and returns empty.
 func CredentialEnvKeyForBackend(backend string) string {

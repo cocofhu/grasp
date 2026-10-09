@@ -35,6 +35,9 @@ import {
   type OpenCodeProviderId,
 } from '@/lib/agent/openCodeProvider'
 import OpenCodeProviderFields from '@/components/agent/OpenCodeProviderFields.vue'
+import OpenCodeCredentialPicker from '@/components/agent/OpenCodeCredentialPicker.vue'
+import CredentialAliasPicker from '@/components/agent/CredentialAliasPicker.vue'
+import { backendKind } from '@/lib/project/credentialKinds'
 import { agentConfigRelPath } from '@/lib/agent/backendAuthGuide'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { useToast } from '@/lib/composables/useToast'
@@ -138,11 +141,19 @@ const derivedPaths = computed(() => {
   ]
 })
 
+const aiKind = computed(() => {
+  if (!draft.value) return undefined
+  const kind = backendKind(draft.value.acpBackend)
+  return kind && kind.id !== 'opencode' ? kind : undefined
+})
+
 function sharedToDraft(cfg: ProjectSharedAgentConfig): AgentStudioDraft {
   return hydrateStudioDraft({
     name: '__project_shared__',
     projectId: cfg.projectId,
     acpBackend: cfg.acpBackend,
+    aiCredentialId: cfg.aiCredentialId || '',
+    openCodeCredentialId: cfg.openCodeCredentialId || '',
     gitCredentialType: cfg.gitCredentialType as AgentStudioDraft['gitCredentialType'],
     files: cfg.files || [],
     mcp: cfg.mcp || [],
@@ -180,6 +191,8 @@ async function save(): Promise<boolean> {
     const saved = await api.putProjectSharedAgentConfig(props.projectId, {
       acpBackend: payload.acpBackend,
       gitCredentialType: payload.gitCredentialType || '',
+      aiCredentialId: draft.value.aiCredentialId || '',
+      openCodeCredentialId: draft.value.openCodeCredentialId || '',
       files: payload.files || [],
       mcp: payload.mcp || [],
       env: payload.env || {},
@@ -210,6 +223,7 @@ function selectAcpBackend(id: BackendId) {
     draft.value.layout.configRoot = defaultConfigRootFor(id)
   }
   if (prev !== id) {
+    draft.value.aiCredentialId = ''
     draft.value.env = recToKV(
       switchOpenCodeEnv(switchBackendRegions(kvToRec(draft.value.env), id), id),
     )
@@ -383,6 +397,37 @@ onMounted(() => {
                 <div class="mt-0.5 font-mono text-[10px] text-txt3">{{ b.id }}</div>
               </button>
             </div>
+          </div>
+
+          <div
+            v-if="aiKind"
+            class="border-t border-dashed border-line pt-4"
+            data-testid="shared-generic-credential"
+          >
+            <CredentialAliasPicker
+              :project-id="draft.projectId"
+              :kind="aiKind.id"
+              :selected-id="draft.aiCredentialId"
+              :title="t('pages.projectDetail.sharedAgent.genericCredentialTitle')"
+              :hint="t('pages.projectDetail.sharedAgent.genericCredentialHint')"
+              @update:selected-id="draft.aiCredentialId = $event"
+            />
+          </div>
+          <div
+            v-else-if="draft.acpBackend === 'opencode'"
+            class="border-t border-dashed border-line pt-4"
+            data-testid="shared-generic-credential"
+          >
+            <OpenCodeCredentialPicker
+              mode="select"
+              :allow-add="false"
+              allow-clear
+              :project-id="draft.projectId"
+              :selected-id="draft.openCodeCredentialId"
+              :title="t('pages.projectDetail.sharedAgent.genericCredentialTitle')"
+              :hint="t('pages.projectDetail.sharedAgent.genericCredentialHint')"
+              @update:selected-id="draft.openCodeCredentialId = $event"
+            />
           </div>
 
           <div v-if="showMetaRegionBlock" class="border-t border-dashed border-line pt-4">

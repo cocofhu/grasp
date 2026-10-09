@@ -12,6 +12,8 @@ const props = defineProps<{
   kind: CredentialKindId
   selectedId?: string
   items?: ProjectCredentialItem[]
+  title?: string
+  hint?: string
 }>()
 
 const emit = defineEmits<{
@@ -25,7 +27,13 @@ const remoteItems = ref<ProjectCredentialItem[]>([])
 const kindDef = computed(() => kindById(props.kind))
 const source = computed(() => (props.items === undefined ? remoteItems.value : props.items))
 const rows = computed(() =>
-  source.value.filter((item) => item.configured && kindOfItem(item)?.id === props.kind),
+  source.value.filter(
+    (item) =>
+      item.configured &&
+      item.enabled !== false &&
+      !item.revokedAt &&
+      kindOfItem(item)?.id === props.kind,
+  ),
 )
 
 function vendorOf(item: ProjectCredentialItem): string {
@@ -89,8 +97,8 @@ watch(
   <div class="mt-3" data-testid="credential-alias-picker" :data-kind="kind">
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0">
-        <div class="text-[12px] font-medium text-txt2">{{ t('pages.projectDetail.projectCredentials.pickTitle') }}</div>
-        <p class="mb-0 mt-1 text-[11px] leading-5 text-txt3">{{ t('pages.projectDetail.projectCredentials.pickHint') }}</p>
+        <div class="text-[12px] font-medium text-txt2">{{ title || t('pages.projectDetail.projectCredentials.pickTitle') }}</div>
+        <p class="mb-0 mt-1 text-[11px] leading-5 text-txt3">{{ hint || t('pages.projectDetail.projectCredentials.pickHint') }}</p>
       </div>
       <AppButton
         v-if="selectedId"

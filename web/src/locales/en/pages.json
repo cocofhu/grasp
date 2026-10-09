@@ -1196,7 +1196,9 @@
         "pickAgentPlaceholder": "Select an Agent to overlay",
         "testHint": "Only Agents bound to this project are listed. Starts with the shared baseline, then overlays the selected Agent.",
         "noAgents": "No Agents yet — create one in Agent Studio first.",
-        "noProjectAgents": "No Agents are bound to this project yet. Open Agent management and bind this project in the Agent’s meta tab, then try again."
+        "noProjectAgents": "No Agents are bound to this project yet. Open Agent management and bind this project in the Agent’s meta tab, then try again.",
+        "genericCredentialTitle": "Shared credential",
+        "genericCredentialHint": "This is the project default. An Agent that already chose a credential uses its own. An Agent that has not chosen one uses this credential when the kind matches."
       },
       "projectCredentials": {
         "eyebrow": "SECURITY CREDENTIALS",
@@ -1224,6 +1226,7 @@
         "secretKnownHosts": "Known hosts",
         "pickTitle": "Credential to use",
         "pickHint": "The title is the alias. A run injects only the selected one, and clearing it does not switch to another.",
+        "codingPickHint": "The title is the alias. When nothing is selected, a run uses the shared credential of the matching kind. When one is selected, the run injects only that one and does not switch to another in the same list.",
         "pickEmpty": "This kind has no saved credential yet.",
         "pickClear": "Clear selection",
         "kinds": {
@@ -2403,7 +2406,7 @@
         "advancedSummary": "Advanced (tap to see the technical details)",
         "advancedHint": "If the model id already contains a slash (e.g. deepseek/deepseek-flash), type it exactly as-is. If you type only the model name, the provider prefix is added automatically.",
         "credentialTitle": "Model provider API Key",
-        "credentialDesc": "Pick one for this Agent. The key stays in project credentials and only a mask is shown here.",
+        "credentialDesc": "Pick one for this Agent. When nothing is selected, a run uses the shared credential of the matching kind. When one is selected, the run injects only that one and does not switch to another in the same list. The key stays in project credentials and only a mask is shown here.",
         "credentialAdd": "Add",
         "credentialSaveUse": "Save and use",
         "credentialSave": "Save",

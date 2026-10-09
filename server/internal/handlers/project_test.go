@@ -66,15 +66,25 @@ func TestProjectCRUDAndErrors(t *testing.T) {
 		t.Fatalf("bad json create: %d", w.Code)
 	}
 
-	// Shared agent config stores project-level non-secret env.
+	// Shared agent config stores project-level non-secret env and credential ids.
 	w = hn.do("PUT", "/api/projects/"+id+"/shared-agent-config", map[string]any{
-		"env": map[string]string{"GITLAB_URL": "https://gl"},
+		"acpBackend":           "cursor",
+		"aiCredentialId":       "cred-cursor",
+		"openCodeCredentialId": "",
+		"env":                  map[string]string{"GITLAB_URL": "https://gl"},
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("shared agent put: %d %s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "GITLAB_URL") {
-		t.Fatalf("shared agent env missing: %s", w.Body.String())
+	if !strings.Contains(w.Body.String(), "GITLAB_URL") || !strings.Contains(w.Body.String(), `"aiCredentialId":"cred-cursor"`) {
+		t.Fatalf("shared agent env or credential id missing: %s", w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "sk-") {
+		t.Fatalf("shared agent response leaked a secret: %s", w.Body.String())
+	}
+	w = hn.do("GET", "/api/projects/"+id+"/shared-agent-config", nil)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"aiCredentialId":"cred-cursor"`) {
+		t.Fatalf("shared agent get: %d %s", w.Code, w.Body.String())
 	}
 
 	// Update

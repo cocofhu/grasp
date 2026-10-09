@@ -195,6 +195,10 @@ export interface ProjectSharedAgentConfig {
   projectId: string
   acpBackend: BackendId
   gitCredentialType?: string
+  /** Project credential id for a non-OpenCode generic authorization. Empty means unset. */
+  aiCredentialId?: string
+  /** Project credential id for the OpenCode generic authorization. Empty means unset. */
+  openCodeCredentialId?: string
   files: AgentFile[]
   mcp: MCPServer[]
   env: Record<string, string>

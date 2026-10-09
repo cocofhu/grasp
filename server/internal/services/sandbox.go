@@ -202,7 +202,17 @@ func (s *SandboxService) effectiveAgent(agent Agent, projectID string) Agent {
 	if pid == "" {
 		return agent
 	}
-	return ExtendOverlay(s.shared.Get(pid), agent)
+	return ExtendOverlayWithKind(s.shared.Get(pid), agent, s.credentialKind(pid))
+}
+
+func (s *SandboxService) credentialKind(projectID string) runtime.CredentialKindFunc {
+	if s == nil || s.selectedCredential == nil || strings.TrimSpace(projectID) == "" {
+		return nil
+	}
+	return func(id string) (string, bool) {
+		key, _, ok := s.selectedCredential(projectID, id)
+		return key, ok
+	}
 }
 
 // TTL / RunTTL / MaxTestSandboxes return the live tunable values.
