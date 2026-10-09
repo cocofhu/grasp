@@ -10,5 +10,179 @@
     "module": "server",
     "reason": "Same constraint as GO-2026-6355: the fix is golang.org/x/crypto v0.56.0, which requires Go 1.26.0, and this repo stays on Go 1.25.x.",
     "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6603",
+    "module": "server",
+    "reason": "HTTP/2 server memory exhaustion due to Trailer headers in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6603",
+    "module": "sandbox-gateway/gateway",
+    "reason": "HTTP/2 server memory exhaustion due to Trailer headers in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6603",
+    "module": "sandbox-gateway/sandbox",
+    "reason": "HTTP/2 server memory exhaustion due to Trailer headers in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6605",
+    "module": "server",
+    "reason": "HTTP/1 client connection desynchronization after CONNECT rejection in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6605",
+    "module": "sandbox-gateway/gateway",
+    "reason": "HTTP/1 client connection desynchronization after CONNECT rejection in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6605",
+    "module": "sandbox-gateway/sandbox",
+    "reason": "HTTP/1 client connection desynchronization after CONNECT rejection in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6607",
+    "module": "server",
+    "reason": "crypto/tls accepts malformed ECH outer extension references. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6607",
+    "module": "sandbox-gateway/gateway",
+    "reason": "crypto/tls accepts malformed ECH outer extension references. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6607",
+    "module": "sandbox-gateway/sandbox",
+    "reason": "crypto/tls accepts malformed ECH outer extension references. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6608",
+    "module": "server",
+    "reason": "Memory limit bypass when parsing MIME headers in net/textproto and mime/multipart. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6608",
+    "module": "sandbox-gateway/gateway",
+    "reason": "Memory limit bypass when parsing MIME headers in net/textproto and mime/multipart. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6608",
+    "module": "sandbox-gateway/sandbox",
+    "reason": "Memory limit bypass when parsing MIME headers in net/textproto and mime/multipart. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6609",
+    "module": "server",
+    "reason": "No limit on the size of parsed Range headers in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6609",
+    "module": "sandbox-gateway/sandbox",
+    "reason": "No limit on the size of parsed Range headers in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6610",
+    "module": "server",
+    "reason": "HTTP/2 transport accepts malformed framing-related headers in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6610",
+    "module": "sandbox-gateway/gateway",
+    "reason": "HTTP/2 transport accepts malformed framing-related headers in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6610",
+    "module": "sandbox-gateway/sandbox",
+    "reason": "HTTP/2 transport accepts malformed framing-related headers in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6611",
+    "module": "server",
+    "reason": "Excessive CPU consumption from repeated HTTP/2 initial window changes in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6611",
+    "module": "sandbox-gateway/gateway",
+    "reason": "Excessive CPU consumption from repeated HTTP/2 initial window changes in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6611",
+    "module": "sandbox-gateway/sandbox",
+    "reason": "Excessive CPU consumption from repeated HTTP/2 initial window changes in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6612",
+    "module": "server",
+    "reason": "Double flow control refund on HTTP/2 server streams in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6612",
+    "module": "sandbox-gateway/gateway",
+    "reason": "Double flow control refund on HTTP/2 server streams in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6612",
+    "module": "sandbox-gateway/sandbox",
+    "reason": "Double flow control refund on HTTP/2 server streams in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6613",
+    "module": "server",
+    "reason": "HTTP/1 server connection desynchronization after a 2xx CONNECT response in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6613",
+    "module": "sandbox-gateway/gateway",
+    "reason": "HTTP/1 server connection desynchronization after a 2xx CONNECT response in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6613",
+    "module": "sandbox-gateway/sandbox",
+    "reason": "HTTP/1 server connection desynchronization after a 2xx CONNECT response in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6617",
+    "module": "server",
+    "reason": "HTTP/2 server crash due to an HPACK encoder race in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6617",
+    "module": "sandbox-gateway/gateway",
+    "reason": "HTTP/2 server crash due to an HPACK encoder race in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
+  },
+  {
+    "id": "GO-2026-6617",
+    "module": "sandbox-gateway/sandbox",
+    "reason": "HTTP/2 server crash due to an HPACK encoder race in net/http. Fixed only in Go 1.26.9 and 1.27.2. CI, go.mod, and images stay on Go 1.25.x, so this stdlib patch cannot be taken yet. Revisit when the toolchain is 1.26.9 or a 1.25 backport exists.",
+    "expires": "2026-12-31"
   }
 ]
