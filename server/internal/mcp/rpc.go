@@ -68,7 +68,7 @@ func (h *Host) ServeRPC(runID, token string, body []byte) (status int, resp []by
 		}
 		return h.ok(req, map[string]any{
 			"protocolVersion": ver,
-			"capabilities":    map[string]any{"tools": map[string]any{}},
+			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
 			"serverInfo":      map[string]any{"name": "artifact-store", "version": "1.0.0"},
 		})
 	case "notifications/initialized", "notifications/cancelled":

@@ -195,8 +195,8 @@ func (h *Host) ClearOutcome(runID, nodeID string) {
 }
 
 // SetOutcomeAllowed controls whether a clarify Agent may see/call
-// node_complete for this run. Flipping the flag bumps ToolsListGeneration
-// (list_changed signal). Auto Agents ignore the flag and always expose it.
+// node_complete for this run. Flipping the flag bumps ToolsListGeneration and
+// notifies HTTP MCP sessions. Auto Agents ignore the flag and always expose it.
 func (h *Host) SetOutcomeAllowed(runID string, allowed bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -206,6 +206,7 @@ func (h *Host) SetOutcomeAllowed(runID string, allowed bool) {
 	}
 	h.outcomeAllowed[runID] = allowed
 	h.toolsListGen[runID]++
+	h.notifyToolSessionsLocked(runID)
 	log.Info().Str("run_id", runID).Bool("allowed", allowed).
 		Int("tools_list_gen", h.toolsListGen[runID]).
 		Msg("clarify outcome tool surface refreshed")
@@ -220,8 +221,8 @@ func (h *Host) OutcomeAllowed(runID string) bool {
 }
 
 // ToolsListGeneration is a monotonic counter bumped when the clarify outcome
-// tool surface changes. Tests (and future SSE clients) treat a bump as a
-// tools/list_changed refresh signal.
+// tool surface changes. HTTP SSE streams use it to recover missed invalidations;
+// the counter itself is not a client notification.
 func (h *Host) ToolsListGeneration(runID string) int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

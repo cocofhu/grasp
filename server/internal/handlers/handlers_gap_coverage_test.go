@@ -150,8 +150,19 @@ func TestMCPRPCNotificationAndReadError(t *testing.T) {
 		t.Fatalf("notification should have empty body, got %q", w.Body.String())
 	}
 
+	req = httptest.NewRequest(http.MethodPost, "/mcp/runs/run-mcp-gap",
+		bytes.NewReader([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w = httptest.NewRecorder()
+	h.r.ServeHTTP(w, req)
+	sid := w.Header().Get("Mcp-Session-Id")
+	if w.Code != http.StatusOK || sid == "" {
+		t.Fatalf("initialize session: %d %s", w.Code, w.Body)
+	}
+
 	req = httptest.NewRequest(http.MethodDelete, "/mcp/runs/run-mcp-gap", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Mcp-Session-Id", sid)
 	w = httptest.NewRecorder()
 	h.r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {

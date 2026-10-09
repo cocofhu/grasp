@@ -4,6 +4,11 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **MCP tool-list refresh on confirmation:** run-scoped HTTP MCP sessions now
+  receive `notifications/tools/list_changed` over SSE when clarification
+  confirmation exposes or hides `node_complete`. Reconnecting refreshes the
+  current tool list; deleting a session or unregistering a run closes its streams.
+
 - **Cursor turns no longer hang on background tasks:** `cursor-agent -p`
   waits for every background shell it started, so a preview server launched
   as a background task kept the turn busy forever. Once the Agent has been

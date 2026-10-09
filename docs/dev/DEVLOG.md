@@ -20,6 +20,22 @@
 
 ## 记录
 
+### 2026-10-09（恢复 #629 的持续回归测试）
+
+- 日期：2026-10-09
+- 范围：`server/internal/mcp/http_test.go`、`server/internal/handlers/mcp_stream_test.go`、`docs/dev/DEVLOG.md`
+- 做了什么：恢复此前移除的两个测试文件，保留通知合并、并发清理、HTTP 错误/Origin 检查、取消请求、工具列表缓存刷新、撤销放行、会话重连/删除与 run 隔离的回归覆盖。
+- 为什么：保留 HTTP MCP 工具变更推送的持续验证，避免后续修改退回仅递增内存计数的行为。
+- 如何验证：相关测试的 `go test -race` 通过；核心覆盖率 93.5%（门槛 90%）；golangci-lint 2.14.0 全量检查 0 issues，`go vet`、配置文档一致性、actionlint、shellcheck、品牌检查通过。`TMPDIR=/private/tmp go test ./...` 中 41 个包通过，runtime 仍有既存 macOS BSD `grep -Z` 引起的 Live 扫描失败。
+
+### 2026-10-09（HTTP MCP 工具列表变更推送，#629）
+
+- 日期：2026-10-09
+- 范围：`server/internal/mcp/{http,host,outcome,rpc}.go`、`server/internal/handlers/health.go` 与既有 handler 测试、`server/internal/runtime/{acp_mcp,acp_live,provider_e2e}_test.go`、`CHANGELOG.md`
+- 做了什么：初始化声明 `tools.listChanged` 并分配 run 绑定的 `Mcp-Session-Id`；GET 建立 SSE，`SetOutcomeAllowed` 翻转时发送真正的 `notifications/tools/list_changed`。每会话一条流，容量为 1 的通知队列合并连续变更；重连后重新失效当前列表，DELETE 只销毁指定会话，run 注销关闭所有流并清理工具面状态。保留既有无会话 POST；带 Origin 的请求校验来源，SSE 禁用代理缓冲并发送心跳。真实 Cursor 测试入口复用正式 HTTP transport。
+- 为什么：原先 `toolsListGen++` 只在内存中变化，缓存 Phase1 列表的客户端无法发现 Phase2 的 `node_complete`，提示词重试不能代替协议通知。
+- 如何验证：临时 HTTP 集成测试覆盖缓存 Phase1 → 收通知 → 重拉列表 → 调用 `node_complete`、撤销放行、会话替换/删除、断线重连、run 隔离和鉴权；并发清理与合并通知通过 `go test -race`。按用户要求，在验证后移除本次新增的两个测试文件，保留既有测试的适配。`go vet`、配置文档一致性、品牌检查、actionlint、shellcheck、docs build/audit 已通过。全套 server 测试使用 `TMPDIR=/private/tmp` 避开 macOS 临时目录符号链接；另有既存 Live 扫描测试因 BSD `grep -Z` 不是 NUL 分隔而失败。未执行真实 CLI 确认回合（未配置 Live MCP 开关与 Cursor 凭据）。最终状态核心覆盖率 92.3%（门槛 90%）；handler 全套与 `TestRunAgent|TestReact` 回归通过。使用本机已安装的 golangci-lint 2.14.0（CI 指定 v2.12）检查，本次涉及的 mcp/handlers/runtime 包为 0 issues；全量 lint 被既有 `channels/feishu/adapter.go:103,108` 的 SA4023 阻塞。
+
 ### 2026-10-09（cursor 后台任务卡住回合）
 
 - 日期：2026-10-09
