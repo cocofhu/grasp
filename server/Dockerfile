@@ -8,7 +8,9 @@
 # 运行时依赖,也提供 node 供 set_plan 做 Mermaid 11.x 语法校验。
 
 # --- Web (Vite) 构建 ---
-FROM node:20-bookworm-slim AS web-builder
+# Node 24 与 ci-web 对齐。commander 15 要求 >=22.12；js-beautify 2 带上的
+# nopt 10 要求 ^24.15，浮动标签 node:24 当前满足。运行阶段仍是 Node 20。
+FROM node:24-bookworm-slim AS web-builder
 # Keep repo-relative layout: web build runs ../scripts/assert-no-approving-brand.mjs
 # which walks its parent as the project root. WORKDIR /web would put that parent
 # at /, and the guard would scan the whole image (OOM).

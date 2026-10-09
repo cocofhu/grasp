@@ -1,6 +1,7 @@
 # 前端本地开发镜像 —— Vite dev server + 源码挂载,支持 HMR。
 # 生产构建走 server/Dockerfile 里的多阶段 web-builder,这个镜像仅用于开发。
-FROM node:20-alpine
+# Node 24 与 web-builder、CI 一致,同一份锁文件不再在 Node 20 上报 EBADENGINE。
+FROM node:24-alpine
 
 WORKDIR /web
 
