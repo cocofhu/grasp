@@ -51,6 +51,50 @@ describe('Icon', () => {
     wrapper.unmount()
   })
 
+  it('keeps shared doc, terminal, and globe paths while adding stage glyphs', () => {
+    const doc = mount(Icon, { props: { name: 'doc' } })
+    expect(doc.html()).toContain('M14 3H7')
+    expect(doc.html()).toContain('M14 3v5h5')
+    doc.unmount()
+
+    const terminal = mount(Icon, { props: { name: 'terminal' } })
+    expect(terminal.html()).toContain('M7 9l3 3-3 3M13 15h4')
+    terminal.unmount()
+
+    const globe = mount(Icon, { props: { name: 'globe' } })
+    expect(globe.html()).toContain('r="10"')
+    globe.unmount()
+
+    const ide = mount(Icon, { props: { name: 'stage-ide' } })
+    expect(ide.html()).toContain('M8.2 8v12.4')
+    expect(ide.html()).toContain('M11 12.2h6')
+    expect(ide.html()).toContain('M11 15.4h4')
+    expect(ide.find('svg').attributes('fill')).toBe('none')
+    ide.unmount()
+
+    const stageTerminal = mount(Icon, { props: { name: 'stage-terminal' } })
+    expect(stageTerminal.html()).toContain('M7.1 9.3 10.3 12 7.1 14.7')
+    expect(stageTerminal.html()).toContain('M12.2 14.8h4.6')
+    stageTerminal.unmount()
+
+    const browser = mount(Icon, { props: { name: 'stage-browser' } })
+    expect(browser.html()).toMatch(/<circle[^>]*\sr="8"/)
+    expect(browser.html()).toContain('M4 12h16')
+    browser.unmount()
+
+    const log = mount(Icon, { props: { name: 'stage-log' } })
+    const dots = log.findAll('circle')
+    expect(dots).toHaveLength(3)
+    for (const dot of dots) {
+      expect(dot.attributes('r')).toBe('1.15')
+      expect(dot.attributes('fill')).toBe('currentColor')
+      expect(dot.attributes('stroke')).toBe('none')
+    }
+    expect(log.find('svg').attributes('fill')).toBe('none')
+    expect(log.html()).toContain('M9.3 12h6.4')
+    log.unmount()
+  })
+
   it('spinner root SVG spins around center without inline wobble (plan g1.2)', () => {
     const wrapper = mount(Icon, { props: { name: 'spinner', size: 18 } })
     const svg = wrapper.find('svg')

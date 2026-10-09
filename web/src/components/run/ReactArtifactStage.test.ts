@@ -510,6 +510,65 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
+  it('draws distinct glyphs on the four fixed cards and reuses them on tabs', async () => {
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [],
+        runId: 'run-fixed-glyphs',
+        nodeId: 'clarify',
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n()], stubs: { ...stubs, Icon: false } },
+    })
+    await flushPromises()
+    const ids = ['ide', 'terminal', 'browser', 'log'] as const
+    const glyphOf = (id: string) =>
+      wrapper.get(`[data-testid="react-artifact-card-${id}"]`).find('svg').element.innerHTML
+    const glyphs = ids.map((id) => glyphOf(id))
+    expect(new Set(glyphs).size).toBe(4)
+
+    const ide = wrapper.get('[data-testid="react-artifact-card-ide"]').find('svg')
+    expect(ide.html()).toContain('M8.2 8v12.4')
+    expect(ide.html()).not.toContain('M14 3v5h5')
+    expect(ide.attributes('width')).toBe('30')
+    expect(ide.classes()).toContain('text-txt2')
+    expect(ide.classes()).not.toContain('opacity-50')
+
+    const log = wrapper.get('[data-testid="react-artifact-card-log"]').find('svg')
+    expect(log.findAll('circle')).toHaveLength(3)
+
+    for (const id of ids) {
+      await wrapper.get(`[data-testid="react-artifact-card-${id}"]`).trigger('click')
+      await flushPromises()
+      const tab = wrapper.get(`[data-testid="react-artifact-tab-${id}"]`).find('svg')
+      expect(tab.element.innerHTML).toBe(glyphOf(id))
+      expect(tab.attributes('width')).toBe('13')
+    }
+    wrapper.unmount()
+  })
+
+  it('keeps the app preview card on the shared globe', async () => {
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [],
+        runId: 'run-fixed-glyphs-app',
+        nodeId: 'preview',
+        remoteKind: 'app',
+      },
+      global: { plugins: [i18n()], stubs: { ...stubs, Icon: false } },
+    })
+    await flushPromises()
+    const app = wrapper.get('[data-testid="react-artifact-card-app"]').find('svg')
+    expect(app.html()).toContain('r="10"')
+    expect(app.attributes('width')).toBe('28')
+    expect(app.classes()).toContain('opacity-50')
+    const browser = wrapper.get('[data-testid="react-artifact-card-browser"]').find('svg')
+    expect(browser.html()).toContain('r="8"')
+    expect(browser.html()).not.toContain('r="10"')
+    expect(wrapper.get('[data-testid="react-artifact-tab-novnc"]').find('svg').html()).toContain('r="10"')
+    wrapper.unmount()
+  })
+
   it('uses a no-sandbox message until a sandbox exists, and code-server copy only when the image lacks it', async () => {
     vi.mocked(api.getRunNodeSandbox).mockResolvedValue(null)
     const missing = mount(ReactArtifactStage, {

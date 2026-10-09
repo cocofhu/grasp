@@ -75,6 +75,11 @@ const paths: Record<string, string> = {
   star: '<path d="m12 3.6 2.5 5.1 5.6.8-4 3.9.9 5.6L12 16.3 7 19l.9-5.6-4-3.9 5.6-.8z"/>',
   'star-filled': '<path d="m12 3.6 2.5 5.1 5.6.8-4 3.9.9 5.6L12 16.3 7 19l.9-5.6-4-3.9 5.6-.8z"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.2 2.4c-.8.3-1.2.8-1.2 1.6V14"/><circle cx="12" cy="17" r="1"/>',
+  // Dedicated glyphs for the four workflow-artifact sandbox cards. Shared doc/terminal/globe stay unchanged.
+  'stage-ide': '<rect x="3.2" y="3.6" width="17.6" height="16.8" rx="2"/><path d="M3.2 8h17.6"/><path d="M8.2 8v12.4"/><path d="M11 12.2h6"/><path d="M11 15.4h4"/>',
+  'stage-terminal': '<rect x="3.2" y="4.2" width="17.6" height="15.6" rx="2"/><path d="M7.1 9.3 10.3 12 7.1 14.7"/><path d="M12.2 14.8h4.6"/>',
+  'stage-browser': '<circle cx="12" cy="12" r="8"/><path d="M4 12h16"/><path d="M12 4c2.1 2.1 3.3 4.9 3.3 8s-1.2 5.9-3.3 8c-2.1-2.1-3.3-4.9-3.3-8s1.2-5.9 3.3-8z"/>',
+  'stage-log': '<circle cx="6.1" cy="6.6" r="1.15" fill="currentColor" stroke="none"/><circle cx="6.1" cy="12" r="1.15" fill="currentColor" stroke="none"/><circle cx="6.1" cy="17.4" r="1.15" fill="currentColor" stroke="none"/><path d="M9.3 6.6h8.6"/><path d="M9.3 12h6.4"/><path d="M9.3 17.4h8.6"/>',
 }
 
 /** Icons that render with solid fill (favorited star). */
