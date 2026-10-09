@@ -12,8 +12,9 @@ import { CANVAS_CTX, type CanvasContext, type CanvasEdgeData, type CanvasNodeDat
 import { buildPaletteItems } from './composables/paletteItems'
 
 vi.mock('@vue-flow/core', async () => {
-  const { defineComponent: dc } = await import('vue')
+  const { defineComponent: dc, ref: vref } = await import('vue')
   return {
+    useVueFlow: () => ({ getNodes: vref([]) }),
     Handle: dc({ props: ['id', 'type', 'position'], template: '<div class="handle" :data-handle-type="type" :data-handle-id="id"><slot /></div>' }),
     EdgeLabelRenderer: dc({ template: '<div class="label-renderer"><slot /></div>' }),
     Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
@@ -252,10 +253,15 @@ describe('FlowEdge', () => {
   })
 
   it('draws back edges dashed and run states as classes', () => {
-    const back = mountEdge({ ...base, sourceX: 600, targetX: 100, data: edgeData({ run: 'active' }) })
+    const back = mountEdge({ ...base, sourceX: 600, targetX: 100, data: edgeData({ run: 'active', backLane: 0 }) })
     const path = back.find('[data-testid="canvas-edge-e1"]')
     expect(path.attributes('data-back')).toBe('true')
     expect(path.classes()).toEqual(expect.arrayContaining(['is-dashed', 'run-active']))
+  })
+
+  it('keeps a forward edge without a lane on a smooth step even when its ports overlap', () => {
+    const fwd = mountEdge({ ...base, sourceX: 340, targetX: 330, data: edgeData() })
+    expect(fwd.find('[data-testid="canvas-edge-e1"]').attributes('data-back')).toBeUndefined()
   })
 
   it('never shows controls when not editable', async () => {

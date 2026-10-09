@@ -574,6 +574,19 @@ describe('WorkflowCanvas · run mode', () => {
     expect(p.nodes.every((n) => n.position!.x === 0 && n.position!.y === 0)).toBe(true)
   })
 
+  it('re-lays out a placed snapshot so stale, cramped positions are not shown', async () => {
+    const p = runProps()
+    p.nodes.forEach((n, i) => (n.position = { x: i * 20, y: i * 37 }))
+    p.edges.push({ id: 'e2', source: 'test', sourceHandle: 'pass', target: 'out' })
+    const w = mountCanvas({ ...p, autoLayoutOnInit: true })
+    vueFlow(w).vm.$emit('nodes-initialized')
+    await vi.waitFor(() => {
+      const pos = (vueFlow(w).props('nodes') as any[]).map((n) => n.position)
+      expect(pos.every((q, i) => i === 0 || q.x - pos[i - 1].x >= 200)).toBe(true)
+    })
+    expect(p.nodes.map((n) => n.position!.x)).toEqual([0, 20, 40])
+  })
+
   it('emits select-node on click', () => {
     const w = mountCanvas(runProps())
     vueFlow(w).vm.$emit('node-click', { node: { id: 'test' } })

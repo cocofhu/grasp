@@ -10,7 +10,7 @@ defineProps<{ id: string; data: CanvasNodeData; selected?: boolean }>()
 <template>
   <NodeShell v-memo="[data, selected]" :id="id" :data="data" :selected="selected" :width="NODE_WIDTH">
     <template #icon>
-      <span class="cnode-icon" style="color: rgb(var(--c-warn)); background: rgb(var(--c-warn) / 0.12)" aria-hidden="true"><Icon :name="data.icon" :size="15" /></span>
+      <span class="cnode-icon" aria-hidden="true"><Icon :name="data.icon" :size="15" /></span>
     </template>
     <template #sub>{{ data.subtitle || data.typeLabel }}</template>
   </NodeShell>
