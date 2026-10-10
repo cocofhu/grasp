@@ -3152,6 +3152,8 @@
       "tabBadgeNew": "New",
       "tabBadgeUpdated": "Updated",
       "gridEmpty": "This run has no artifacts yet",
+      "resourceBadge": "Resource",
+      "artifactBadge": "Artifact",
       "kindHtml": "HTML page",
       "kindJson": "JSON",
       "kindMarkdown": "Markdown",

@@ -3152,6 +3152,8 @@
       "tabBadgeNew": "新",
       "tabBadgeUpdated": "已更新",
       "gridEmpty": "本次运行还没有产物",
+      "resourceBadge": "资源",
+      "artifactBadge": "产物",
       "kindHtml": "HTML 页面",
       "kindJson": "JSON",
       "kindMarkdown": "Markdown",

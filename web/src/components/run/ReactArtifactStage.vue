@@ -267,6 +267,10 @@ const showAppCard = computed(
     (effectiveRemoteKind.value === 'app' || effectiveRemoteKind.value === 'public'),
 )
 const showGridCards = computed(() => showFixedCards.value || gridArtifacts.value.length > 0)
+/** Fixed resources are visible and this run has no workflow artifact cards yet. */
+const showNoArtifactHint = computed(
+  () => showFixedCards.value && gridArtifacts.value.length === 0,
+)
 const fixedCards = computed(() => {
   if (!showFixedCards.value) return []
   const cards: { id: string; icon: string; title: string; meta: string }[] = [
@@ -1063,22 +1067,26 @@ onBeforeUnmount(() => {
         <Icon name="artifact" :size="26" class="mb-2 opacity-40" />
         {{ t('pages.reactArtifactStage.gridEmpty') }}
       </div>
+      <template v-else>
       <div
-        v-else
         class="grid grid-cols-[repeat(auto-fill,minmax(176px,1fr))] gap-3"
       >
         <button
           v-for="card in fixedCards"
           :key="card.id"
           type="button"
-          class="overflow-hidden rounded-lg border border-line bg-surface text-left transition hover:border-line-strong"
+          class="overflow-hidden rounded-lg border border-line bg-accent-dim/40 text-left transition hover:border-line-strong"
           :data-testid="'react-artifact-card-' + card.id"
           @click="onFixedCard(card.id)"
         >
           <div
-            class="relative flex h-[110px] items-center justify-center overflow-hidden bg-elevated"
+            class="relative flex h-[110px] items-center justify-center overflow-hidden bg-accent-dim/70"
             :class="card.id === 'app' ? 'text-txt3' : undefined"
           >
+            <span
+              class="absolute left-2 top-2 z-[1] rounded-[4px] bg-accent-dim px-[5px] py-[3px] text-[10px] font-semibold leading-none text-accent"
+              data-testid="react-artifact-kind-badge"
+            >{{ t('pages.reactArtifactStage.resourceBadge') }}</span>
             <Icon
               :name="card.icon"
               :size="card.id === 'app' ? 28 : 30"
@@ -1101,9 +1109,13 @@ onBeforeUnmount(() => {
           @keydown.enter.prevent="openArtifact(a)"
         >
           <div class="relative h-[110px] overflow-hidden bg-elevated">
+            <span
+              class="absolute left-2 top-2 z-[1] rounded-[4px] bg-ok/15 px-[5px] py-[3px] text-[10px] font-semibold leading-none text-ok"
+              data-testid="react-artifact-kind-badge"
+            >{{ t('pages.reactArtifactStage.artifactBadge') }}</span>
             <div
               v-if="textThumb(a)"
-              class="pointer-events-none h-full overflow-hidden border-b border-line px-3 py-2.5"
+              class="pointer-events-none h-full overflow-hidden border-b border-line px-3 pb-2 pt-7"
               data-testid="react-artifact-card-summary"
             >
               <div
@@ -1154,6 +1166,15 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
+      <div
+        v-if="showNoArtifactHint"
+        class="mt-4 rounded-lg border border-dashed border-line px-3 py-[22px] text-center"
+        data-testid="react-artifact-grid-empty-hint"
+      >
+        <div class="text-[12px] font-semibold text-txt2">{{ t('pages.reactArtifactStage.workflowTab') }}</div>
+        <p class="mt-1.5 text-[12px] text-txt3">{{ t('pages.reactArtifactStage.gridEmpty') }}</p>
+      </div>
+      </template>
     </div>
 
     <div

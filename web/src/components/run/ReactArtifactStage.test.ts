@@ -5,6 +5,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
+import enCommon from '@/locales/en/common.json'
+import enPages from '@/locales/en/pages.json'
 import type { Artifact } from '@/lib/shared/types'
 import { resetStageOpenStateForTests } from '@/lib/run/reactArtifactPreview'
 import ReactArtifactStage from './ReactArtifactStage.vue'
@@ -86,11 +88,21 @@ vi.mock('@xterm/addon-fit', () => {
 
 vi.mock('@xterm/xterm/css/xterm.css', () => ({}))
 
-function i18n() {
+function cardTestIds(wrapper: { findAll: (selector: string) => { attributes: (name: string) => string | undefined }[] }) {
+  return wrapper
+    .findAll('[data-testid^="react-artifact-card-"]')
+    .map((c) => c.attributes('data-testid'))
+    .filter((id) => id && id !== 'react-artifact-card-readonly' && !id.includes('summary') && !id.includes('version'))
+}
+
+function i18n(locale: 'zh-CN' | 'en' = 'zh-CN') {
   return createI18n({
     legacy: false,
-    locale: 'zh-CN',
-    messages: { 'zh-CN': { ...common, ...pages } },
+    locale,
+    messages: {
+      'zh-CN': { ...common, ...pages },
+      en: { ...enCommon, ...enPages },
+    },
   })
 }
 
@@ -478,7 +490,9 @@ describe('ReactArtifactStage', () => {
     })
     await flushPromises()
     expect(wrapper.find('[data-testid="react-artifact-grid-empty"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('本次运行还没有产物')
+    const hint = wrapper.get('[data-testid="react-artifact-grid-empty-hint"]')
+    expect(hint.text()).toContain('工作流产物')
+    expect(hint.text()).toContain('本次运行还没有产物')
     expect(wrapper.text()).not.toContain('远程桌面')
     expect(wrapper.find('[data-testid="react-artifact-card-app"]').exists()).toBe(false)
     const titles = ['ide', 'terminal', 'browser', 'log'].map((id) =>
@@ -492,6 +506,11 @@ describe('ReactArtifactStage', () => {
     expect(titles[2]).toContain('沙箱浏览器 · 可取点标注')
     expect(titles[3]).toContain('日志')
     expect(titles[3]).toContain('容器日志 · stdout/stderr')
+    for (const id of ['ide', 'terminal', 'browser', 'log']) {
+      const card = wrapper.get(`[data-testid="react-artifact-card-${id}"]`)
+      expect(card.get('[data-testid="react-artifact-kind-badge"]').text()).toBe('资源')
+      expect(card.classes()).toContain('bg-accent-dim/40')
+    }
 
     await wrapper.get('[data-testid="react-artifact-card-log"]').trigger('click')
     await flushPromises()
@@ -508,6 +527,145 @@ describe('ReactArtifactStage', () => {
     expect(wrapper.find('[data-testid="react-artifact-tab-log"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="react-artifact-tab-grid"]').attributes('aria-selected')).toBe('true')
     wrapper.unmount()
+  })
+
+  it('keeps the centered empty state when neither fixed resources nor artifacts exist', async () => {
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [],
+        runId: 'run-nothing',
+        nodeId: 'clarify',
+        hideAppPreview: true,
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="react-artifact-grid-empty"]').text()).toContain('本次运行还没有产物')
+    expect(wrapper.find('[data-testid="react-artifact-grid-empty-hint"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-artifact-kind-badge"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('badges both card kinds in one grid and hides the empty hint once an artifact exists', async () => {
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json', nodeId: 'plan' })],
+        runId: 'run-mixed',
+        nodeId: 'clarify',
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    expect(cardTestIds(wrapper)).toEqual([
+      'react-artifact-card-ide',
+      'react-artifact-card-terminal',
+      'react-artifact-card-browser',
+      'react-artifact-card-log',
+      'react-artifact-card-research.json',
+    ])
+    for (const id of ['ide', 'terminal', 'browser', 'log']) {
+      const badge = wrapper.get(`[data-testid="react-artifact-card-${id}"] [data-testid="react-artifact-kind-badge"]`)
+      expect(badge.text()).toBe('资源')
+      expect(badge.classes()).toContain('bg-accent-dim')
+      expect(badge.classes()).toContain('text-accent')
+    }
+    const artifactCard = wrapper.get('[data-testid="react-artifact-card-research.json"]')
+    const artifactBadge = artifactCard.get('[data-testid="react-artifact-kind-badge"]')
+    expect(artifactBadge.text()).toBe('产物')
+    expect(artifactBadge.classes()).toContain('bg-ok/15')
+    expect(artifactBadge.classes()).toContain('text-ok')
+    expect(artifactCard.classes()).toContain('bg-surface')
+    expect(artifactCard.get('[data-testid="react-artifact-card-readonly"]').text()).toBe('只读')
+    expect(wrapper.find('[data-testid="react-artifact-grid-empty-hint"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('本次运行还没有产物')
+
+    await wrapper.get('[data-testid="react-artifact-card-ide"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="react-artifact-tab-ide"]').attributes('aria-selected')).toBe('true')
+    await wrapper.get('[data-testid="react-artifact-tab-grid"]').trigger('click')
+    await wrapper.get('[data-testid="react-artifact-card-browser"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="react-artifact-tab-browser"]').attributes('aria-selected')).toBe('true')
+    await wrapper.get('[data-testid="react-artifact-tab-grid"]').trigger('click')
+    await wrapper.get('[data-testid="react-artifact-card-research.json"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="react-artifact-tab-research.json"]').attributes('aria-selected')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('badges app preview as a resource between browser and log', async () => {
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [art({ id: 'a1', name: 'plan.json', kind: 'json' })],
+        runId: 'run-app-badge',
+        nodeId: 'preview',
+        remoteKind: 'app',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    expect(cardTestIds(wrapper)).toEqual([
+      'react-artifact-card-ide',
+      'react-artifact-card-terminal',
+      'react-artifact-card-browser',
+      'react-artifact-card-app',
+      'react-artifact-card-log',
+      'react-artifact-card-plan.json',
+    ])
+    expect(
+      wrapper.get('[data-testid="react-artifact-card-app"] [data-testid="react-artifact-kind-badge"]').text(),
+    ).toBe('资源')
+    expect(
+      wrapper.get('[data-testid="react-artifact-card-plan.json"] [data-testid="react-artifact-kind-badge"]').text(),
+    ).toBe('产物')
+    expect(wrapper.find('[data-testid="react-artifact-grid-empty-hint"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="react-artifact-tab-grid"]').trigger('click')
+    await wrapper.get('[data-testid="react-artifact-card-app"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="react-artifact-tab-novnc"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.find('[data-testid="app-preview-stub"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('uses Resource and Artifact badges in English', async () => {
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json' })],
+        runId: 'run-en-badges',
+        nodeId: 'clarify',
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n('en')], stubs },
+    })
+    await flushPromises()
+    expect(
+      wrapper.get('[data-testid="react-artifact-card-ide"] [data-testid="react-artifact-kind-badge"]').text(),
+    ).toBe('Resource')
+    expect(
+      wrapper.get('[data-testid="react-artifact-card-research.json"] [data-testid="react-artifact-kind-badge"]').text(),
+    ).toBe('Artifact')
+    expect(wrapper.get('[data-testid="react-artifact-tab-grid"]').text()).toContain('Workflow artifacts')
+    wrapper.unmount()
+
+    const empty = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [],
+        runId: 'run-en-empty',
+        nodeId: 'clarify',
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n('en')], stubs },
+    })
+    await flushPromises()
+    const hint = empty.get('[data-testid="react-artifact-grid-empty-hint"]')
+    expect(hint.text()).toContain('Workflow artifacts')
+    expect(hint.text()).toContain('This run has no artifacts yet')
+    expect(empty.get('[data-testid="react-artifact-card-log"] [data-testid="react-artifact-kind-badge"]').text()).toBe(
+      'Resource',
+    )
+    empty.unmount()
   })
 
   it('draws distinct glyphs on the four fixed cards and reuses them on tabs', async () => {
@@ -764,6 +922,12 @@ describe('ReactArtifactStage', () => {
     expect(wrapper.find('[data-testid="react-artifact-tab-novnc"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="app-preview-stub"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="react-artifact-card-research.json"]').exists()).toBe(true)
+    const badge = wrapper.get(
+      '[data-testid="react-artifact-card-research.json"] [data-testid="react-artifact-kind-badge"]',
+    )
+    expect(badge.text()).toBe('产物')
+    expect(wrapper.find('[data-testid="react-artifact-grid-empty-hint"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('本次运行还没有产物')
     wrapper.unmount()
   })
 
@@ -1141,7 +1305,9 @@ describe('ReactArtifactStage', () => {
     expect(wrapper.find('[data-testid="react-artifact-grid-empty"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="react-artifact-card-ide"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="react-artifact-card-log"]').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('本次运行还没有产物')
+    const hint = wrapper.get('[data-testid="react-artifact-grid-empty-hint"]')
+    expect(hint.text()).toContain('工作流产物')
+    expect(hint.text()).toContain('本次运行还没有产物')
     wrapper.unmount()
   })
 
