@@ -3,6 +3,7 @@ import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
+import enCommon from '@/locales/en/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import enPages from '@/locales/en/pages.json'
 import ProjectCredentialsPanel from './ProjectCredentialsPanel.vue'
@@ -47,13 +48,26 @@ const config = {
   ],
 }
 
-function mountPanel(response = config) {
-  const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
+function mountPanel(response = config, locale: 'zh-CN' | 'en' = 'zh-CN') {
+  const i18n = createI18n({
+    legacy: false,
+    locale,
+    messages: {
+      'zh-CN': { ...common, ...pages },
+      en: { ...enCommon, ...enPages },
+    },
+  })
   mocks.get.mockResolvedValue(response)
   return mount(ProjectCredentialsPanel, {
     props: { projectId: 'p1' },
     global: { plugins: [i18n], stubs: { Icon: true, Teleport: true } },
   })
+}
+
+function rowByAlias(wrapper: ReturnType<typeof mountPanel>, name: string) {
+  const row = wrapper.findAll('[data-testid="project-credential-row"]').find((node) => node.get('[data-testid="project-credential-alias"]').text() === name)
+  if (!row) throw new Error(`missing credential row ${name}`)
+  return row
 }
 
 describe('ProjectCredentialsPanel', () => {
@@ -78,6 +92,8 @@ describe('ProjectCredentialsPanel', () => {
     expect(copy.typeAi).toBe('Model')
     expect(copy.typeGit).toBe('Repository')
     expect(copy.writeOnly).toBe('Hidden')
+    expect(copy.edit).toBe('Edit')
+    expect(copy.fillIn).toBe('Fill in')
     expect(copy.summary.apiKeys).toBe('Model slots')
     expect(copy.replacePlaceholder).toBe('Enter a new value to replace it')
     expect(copy.valuePlaceholder).toBe('Enter a credential. It is sent only when you save.')
@@ -94,12 +110,33 @@ describe('ProjectCredentialsPanel', () => {
     expect(wrapper.text()).toContain('GitHub')
     expect(wrapper.text()).toContain('SSH 私钥')
     expect(wrapper.text()).not.toContain('AI / API Key')
-    expect(wrapper.text()).toContain('不回显')
-    expect(wrapper.text()).not.toContain('仅写入')
-    expect(wrapper.find('[data-testid="project-credential-masked"]').text()).toContain('sk-…1234')
-    expect(wrapper.find('[data-testid="project-credential-input-cursor-api"]').attributes('type')).toBe('password')
+    expect(wrapper.text()).not.toContain('不回显')
+    expect(wrapper.text()).not.toContain('凭据由项目统一管理')
+    expect(wrapper.text()).not.toContain('编码助手和模型调用使用的密钥')
+    expect(wrapper.text()).not.toContain('拉取、推送和合并请求使用的凭据')
+    expect(wrapper.text()).not.toContain('通过 SSH 访问仓库时使用')
+    expect(wrapper.text()).toContain('安全凭据中心')
+    expect(wrapper.text()).toContain('新增凭据')
+    expect(wrapper.text()).toContain('最近更新')
+    const mask = wrapper.get('[data-testid="project-credential-masked"]')
+    expect(mask.element.tagName).toBe('P')
+    expect(mask.classes()).not.toContain('border')
+    expect(mask.classes()).not.toContain('bg-surface')
+    expect(mask.text()).toContain('sk-…1234')
+    expect(mask.text()).not.toContain('不回显')
+    expect(wrapper.find('[data-testid="project-credential-input-cursor-api"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="project-credential-input-ssh"]').exists()).toBe(false)
+    expect(wrapper.find('input, textarea').exists()).toBe(false)
+    const cursor = rowByAlias(wrapper, 'Cursor API key')
+    expect(cursor.get('[data-testid="project-credential-headline"]').text()).toContain('编辑')
+    expect(cursor.get('[data-testid="project-credential-headline"]').text()).toContain('清除')
+    expect(cursor.get('[data-testid="project-credential-actions"]').text()).toContain('已配置')
+    const github = rowByAlias(wrapper, 'GitHub token')
+    expect(github.get('[data-testid="project-credential-headline"]').text()).toContain('填写')
+    expect(github.get('[data-testid="project-credential-headline"]').text()).toContain('未配置')
+    expect(github.find('[data-testid="project-credential-clear-github"]').exists()).toBe(false)
+    expect(github.find('[data-testid="project-credential-masked"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('secret-value')
-    expect(wrapper.find('[data-testid="project-credential-input-ssh"]').element.tagName).toBe('TEXTAREA')
     expect(wrapper.find('[data-provider-logo="cursor"]').exists()).toBe(true)
     expect(wrapper.find('[data-provider-logo="github"]').exists()).toBe(true)
     expect(wrapper.find('[data-provider-logo="ssh-key"]').exists()).toBe(true)
@@ -117,15 +154,120 @@ describe('ProjectCredentialsPanel', () => {
   it('writes only on an explicit save and clears through DELETE', async () => {
     const wrapper = mountPanel()
     await flushPromises()
-    const input = wrapper.find('[data-testid="project-credential-input-github"]')
+    expect(wrapper.find('[data-testid="project-credential-input-github"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="project-credential-fill-github"]').trigger('click')
+    const input = wrapper.get('[data-testid="project-credential-input-github"]')
+    expect((input.element as HTMLInputElement).value).toBe('')
+    expect(input.attributes('type')).toBe('password')
+    const editor = wrapper.get('[data-testid="project-credential-editor-github"]')
+    expect(editor.classes()).toContain('flex')
+    expect(editor.find('[data-testid="project-credential-save-github"]').exists()).toBe(true)
+    expect(editor.find('[data-testid="project-credential-cancel-github"]').exists()).toBe(true)
+    await input.setValue('   ')
+    expect(wrapper.get('[data-testid="project-credential-save-github"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="project-credential-save-github"]').trigger('click')
+    expect(mocks.put).not.toHaveBeenCalled()
     await input.setValue('ghp-new')
     await wrapper.find('[data-testid="project-credential-save-github"]').trigger('click')
     await flushPromises()
     expect(mocks.put).toHaveBeenCalledWith('p1', 'github', expect.objectContaining({ value: 'ghp-new', envKey: 'GITHUB_TOKEN' }))
+    expect(wrapper.find('[data-testid="project-credential-input-github"]').exists()).toBe(false)
+    expect(rowByAlias(wrapper, 'GitHub token').get('[data-testid="project-credential-masked"]').text()).toContain('••••')
 
     await wrapper.find('[data-testid="project-credential-clear-cursor-api"]').trigger('click')
     await flushPromises()
     expect(mocks.del).toHaveBeenCalledWith('p1', 'cursor-api')
+    const cleared = rowByAlias(wrapper, 'Cursor API key')
+    expect(cleared.find('[data-testid="project-credential-masked"]').exists()).toBe(false)
+    expect(cleared.find('[data-testid="project-credential-fill-cursor-api"]').exists()).toBe(true)
+    expect(cleared.find('[data-testid="project-credential-clear-cursor-api"]').exists()).toBe(false)
+    expect(cleared.text()).not.toContain('sk-…1234')
+    wrapper.unmount()
+  })
+
+  it('opens an empty editor for one row and cancels without saving', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="project-credential-edit-cursor-api"]').trigger('click')
+    const input = wrapper.get('[data-testid="project-credential-input-cursor-api"]')
+    expect(input.element.tagName).toBe('INPUT')
+    expect(input.attributes('type')).toBe('password')
+    expect((input.element as HTMLInputElement).value).toBe('')
+    expect(input.element.textContent).not.toContain('sk-…1234')
+    const editor = wrapper.get('[data-testid="project-credential-editor-cursor-api"]')
+    expect(editor.find('[data-testid="project-credential-save-cursor-api"]').exists()).toBe(true)
+    expect(editor.find('[data-testid="project-credential-cancel-cursor-api"]').exists()).toBe(true)
+    expect(rowByAlias(wrapper, 'Cursor API key').get('[data-testid="project-credential-masked"]').text()).toContain('sk-…1234')
+    expect(wrapper.find('[data-testid="project-credential-clear-cursor-api"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="project-credential-fill-ssh"]').trigger('click')
+    expect(wrapper.get('[data-testid="project-credential-input-ssh"]').element.tagName).toBe('TEXTAREA')
+    expect((wrapper.get('[data-testid="project-credential-input-ssh"]').element as HTMLTextAreaElement).value).toBe('')
+
+    await input.setValue('sk-draft')
+    await wrapper.get('[data-testid="project-credential-cancel-cursor-api"]').trigger('click')
+    expect(mocks.put).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="project-credential-input-cursor-api"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="project-credential-editor-ssh"]').exists()).toBe(true)
+    expect((wrapper.get('[data-testid="project-credential-input-ssh"]').element as HTMLTextAreaElement).value).toBe('')
+    expect(rowByAlias(wrapper, 'Cursor API key').text()).not.toContain('sk-draft')
+    wrapper.unmount()
+  })
+
+  it('keeps the draft open when save fails and the mask when clear fails', async () => {
+    mocks.put.mockRejectedValueOnce(new Error('save failed'))
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="project-credential-edit-cursor-api"]').trigger('click')
+    await wrapper.get('[data-testid="project-credential-input-cursor-api"]').setValue('sk-next')
+    await wrapper.get('[data-testid="project-credential-save-cursor-api"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="project-credential-editor-cursor-api"]').exists()).toBe(true)
+    expect((wrapper.get('[data-testid="project-credential-input-cursor-api"]').element as HTMLInputElement).value).toBe('sk-next')
+    expect(rowByAlias(wrapper, 'Cursor API key').get('[data-testid="project-credential-masked"]').text()).toContain('sk-…1234')
+    expect(mocks.error).toHaveBeenCalled()
+
+    mocks.del.mockRejectedValueOnce(new Error('clear failed'))
+    await wrapper.get('[data-testid="project-credential-clear-cursor-api"]').trigger('click')
+    await flushPromises()
+    expect(rowByAlias(wrapper, 'Cursor API key').get('[data-testid="project-credential-masked"]').text()).toContain('sk-…1234')
+    expect(rowByAlias(wrapper, 'Cursor API key').text()).toContain('已配置')
+    wrapper.unmount()
+  })
+
+  it('leaves adapter-managed credentials read only', async () => {
+    const wrapper = mountPanel({
+      items: [
+        ...config.items,
+        {
+          id: 'vault-key', type: 'custom', name: 'Vault token', provider: 'custom',
+          configured: true, masked: 'vk-…8888', source: 'vault',
+        },
+      ],
+    })
+    await flushPromises()
+    const row = rowByAlias(wrapper, 'Vault token')
+    expect(row.text()).toContain('由 vault 专用设置管理')
+    expect(row.find('[data-testid="project-credential-edit-vault-key"]').exists()).toBe(false)
+    expect(row.find('[data-testid="project-credential-fill-vault-key"]').exists()).toBe(false)
+    expect(row.find('[data-testid="project-credential-input-vault-key"]').exists()).toBe(false)
+    expect(row.find('[data-testid="project-credential-clear-vault-key"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('hides the removed explanations in English and uses Edit and Fill in', async () => {
+    const wrapper = mountPanel(config, 'en')
+    await flushPromises()
+    expect(wrapper.text()).toContain('SECURITY CREDENTIALS')
+    expect(wrapper.text()).toContain('Project credentials')
+    expect(wrapper.text()).toContain('Add credential')
+    expect(rowByAlias(wrapper, 'Cursor API key').get('[data-testid="project-credential-headline"]').text()).toContain('Edit')
+    expect(rowByAlias(wrapper, 'Cursor API key').get('[data-testid="project-credential-headline"]').text()).toContain('Clear')
+    expect(rowByAlias(wrapper, 'GitHub token').get('[data-testid="project-credential-headline"]').text()).toContain('Fill in')
+    expect(wrapper.text()).not.toContain('Hidden')
+    expect(wrapper.text()).not.toContain('Manage credentials once at project scope')
+    expect(wrapper.text()).not.toContain('Keys used by coding assistants and model calls.')
+    expect(wrapper.find('[data-testid="project-credential-input-cursor-api"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -213,7 +355,8 @@ describe('ProjectCredentialsPanel', () => {
     expect(wrapper.find('[data-testid="opencode-credential-current"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('DeepSeek')
     expect(wrapper.text()).toContain('sk-…9999')
-    expect(wrapper.find('[data-testid="project-credential-input-cursor-api"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="project-credential-input-cursor-api"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="project-credential-edit-cursor-api"]').exists()).toBe(true)
 
     await wrapper.get('[data-testid="opencode-credential-add"]').trigger('click')
     expect(wrapper.find('[data-testid="opencode-credential-form"]').exists()).toBe(false)

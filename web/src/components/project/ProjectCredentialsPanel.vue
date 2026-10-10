@@ -34,6 +34,7 @@ const loading = ref(true)
 const loadError = ref('')
 const items = ref<ProjectCredentialItem[]>([])
 const drafts = reactive<Record<string, string>>({})
+const editing = reactive<Record<string, boolean>>({})
 const saving = reactive<Record<string, boolean>>({})
 const clearing = reactive<Record<string, boolean>>({})
 const showCreate = ref(false)
@@ -124,14 +125,6 @@ function groupTitle(group: string): string {
   return t(`pages.projectDetail.projectCredentials.kinds.${group}`)
 }
 
-function groupHint(group: string): string {
-  const kind = kindById(group)
-  if (!kind) return t('pages.projectDetail.projectCredentials.groups.other.hint')
-  if (kind.type === 'git') return t('pages.projectDetail.projectCredentials.groups.git.hint')
-  if (kind.type === 'ssh') return t('pages.projectDetail.projectCredentials.groups.ssh.hint')
-  return t('pages.projectDetail.projectCredentials.groups.ai.hint')
-}
-
 function itemLabel(item: ProjectCredentialItem): string {
   return item.name || item.provider || item.id
 }
@@ -171,17 +164,34 @@ function vendorOf(item: ProjectCredentialItem): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function isProjectEditable(item: ProjectCredentialItem): boolean {
+  return !item.source || item.source === 'project'
+}
+
 function updateItems(next: ProjectCredentialItem) {
   const i = items.value.findIndex((item) => item.id === next.id)
   if (i < 0) items.value = [...items.value, next]
   else items.value = items.value.map((item, index) => (index === i ? next : item))
   drafts[next.id] = ''
+  editing[next.id] = false
 }
 
 function setItems(next: ProjectCredentialItem[]) {
   items.value = next
   for (const key of Object.keys(drafts)) delete drafts[key]
+  for (const key of Object.keys(editing)) delete editing[key]
   for (const item of next) drafts[item.id] = ''
+}
+
+function startEdit(item: ProjectCredentialItem) {
+  if (!isProjectEditable(item)) return
+  drafts[item.id] = ''
+  editing[item.id] = true
+}
+
+function cancelEdit(item: ProjectCredentialItem) {
+  drafts[item.id] = ''
+  editing[item.id] = false
 }
 
 function resetModelForm() {
@@ -412,7 +422,6 @@ onUnmounted(() => {
               <h2 class="m-0 mt-0.5 text-lg font-semibold text-txt">{{ t('pages.projectDetail.projectCredentials.title') }}</h2>
             </div>
           </div>
-          <p class="mt-3 max-w-2xl text-[13px] leading-6 text-txt2">{{ t('pages.projectDetail.projectCredentials.subtitle') }}</p>
         </div>
         <AppButton
           variant="primary"
@@ -452,10 +461,7 @@ onUnmounted(() => {
             :data-testid="`project-credential-group-${group.id}`"
           >
             <div class="mb-3 flex items-end justify-between gap-3 border-b border-line pb-2">
-              <div class="min-w-0">
-                <h3 class="m-0 text-sm font-semibold text-txt">{{ groupTitle(group.id) }}</h3>
-                <p class="m-0 mt-1 text-[11px] leading-5 text-txt3">{{ groupHint(group.id) }}</p>
-              </div>
+              <h3 class="m-0 min-w-0 text-sm font-semibold text-txt">{{ groupTitle(group.id) }}</h3>
               <span class="shrink-0 rounded-full border border-line bg-base px-2 py-0.5 text-[11px] tabular-nums text-txt3">{{ group.items.length }}</span>
             </div>
 
@@ -488,31 +494,79 @@ onUnmounted(() => {
                       :configured="item.configured"
                     />
                     <div class="min-w-0 flex-1">
-                      <div class="flex flex-wrap items-start justify-between gap-2">
+                      <div class="flex min-w-0 items-start justify-between gap-3" data-testid="project-credential-headline">
                         <div class="min-w-0">
                           <h4 class="m-0 truncate text-sm font-semibold text-txt" :title="itemLabel(item)" data-testid="project-credential-alias">{{ itemLabel(item) }}</h4>
                           <p class="m-0 mt-1 text-[10px] font-medium uppercase tracking-[0.1em] text-txt3" data-testid="project-credential-kind">{{ typeLabel(item) }}</p>
                         </div>
-                        <span
-                          class="shrink-0 rounded-full border px-2 py-0.5 text-[11px]"
-                          :class="item.configured ? 'border-ok/40 bg-ok/10 text-ok' : 'border-line text-txt3'"
-                          data-testid="project-credential-status"
-                        >
-                          {{ configuredText(item) }}
-                        </span>
+                        <div class="flex shrink-0 flex-wrap items-center justify-end gap-2" data-testid="project-credential-actions">
+                          <span
+                            class="shrink-0 rounded-full border px-2 py-0.5 text-[11px]"
+                            :class="item.configured ? 'border-ok/40 bg-ok/10 text-ok' : 'border-line text-txt3'"
+                            data-testid="project-credential-status"
+                          >
+                            {{ configuredText(item) }}
+                          </span>
+                          <template v-if="isProjectEditable(item) && !editing[item.id]">
+                            <AppButton
+                              v-if="item.configured"
+                              size="sm"
+                              variant="primary"
+                              :data-testid="`project-credential-edit-${item.id}`"
+                              @click="startEdit(item)"
+                            >
+                              {{ t('pages.projectDetail.projectCredentials.edit') }}
+                            </AppButton>
+                            <AppButton
+                              v-if="item.configured"
+                              size="sm"
+                              variant="danger"
+                              :disabled="!!clearing[item.id]"
+                              :loading="!!clearing[item.id]"
+                              :data-testid="`project-credential-clear-${item.id}`"
+                              @click="clear(item)"
+                            >
+                              {{ t('pages.projectDetail.projectCredentials.clear') }}
+                            </AppButton>
+                            <AppButton
+                              v-else
+                              size="sm"
+                              variant="primary"
+                              :data-testid="`project-credential-fill-${item.id}`"
+                              @click="startEdit(item)"
+                            >
+                              {{ t('pages.projectDetail.projectCredentials.fillIn') }}
+                            </AppButton>
+                          </template>
+                          <AppButton
+                            v-else-if="isProjectEditable(item) && item.configured"
+                            size="sm"
+                            variant="danger"
+                            :disabled="!!clearing[item.id]"
+                            :loading="!!clearing[item.id]"
+                            :data-testid="`project-credential-clear-${item.id}`"
+                            @click="clear(item)"
+                          >
+                            {{ t('pages.projectDetail.projectCredentials.clear') }}
+                          </AppButton>
+                        </div>
                       </div>
+                      <p
+                        v-if="item.configured && item.masked"
+                        class="m-0 mt-1.5 truncate font-mono text-[12px] leading-5 text-txt2"
+                        data-testid="project-credential-masked"
+                      >{{ item.masked }}</p>
                     </div>
                   </div>
 
-                  <div v-if="item.masked" class="mt-3 flex min-w-0 items-center justify-between gap-2 rounded-lg border border-line bg-surface px-3 py-2" data-testid="project-credential-masked">
-                    <code class="min-w-0 truncate font-mono text-[12px] text-txt2">{{ item.masked }}</code>
-                    <span class="shrink-0 text-[10px] tracking-[0.08em] text-txt3">{{ t('pages.projectDetail.projectCredentials.writeOnly') }}</span>
-                  </div>
-
-                  <p v-if="item.source && item.source !== 'project'" class="mt-3 rounded-lg border border-line bg-surface px-3 py-2 text-[11px] leading-5 text-txt3">
+                  <p v-if="!isProjectEditable(item)" class="mt-3 rounded-lg border border-line bg-surface px-3 py-2 text-[11px] leading-5 text-txt3">
                     {{ t('pages.projectDetail.projectCredentials.managedByAdapter', { source: item.source }) }}
                   </p>
-                  <div v-else class="mt-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start">
+                  <div
+                    v-else-if="editing[item.id]"
+                    class="mt-3 flex min-w-0 items-start gap-2"
+                    :data-testid="`project-credential-editor-${item.id}`"
+                  >
                     <textarea
                       v-if="isMultiline(item)"
                       v-model="drafts[item.id]"
@@ -532,11 +586,10 @@ onUnmounted(() => {
                       :data-testid="`project-credential-input-${item.id}`"
                       autocomplete="new-password"
                     />
-                    <div class="flex shrink-0 gap-2 sm:flex-col">
+                    <div class="flex shrink-0 gap-2">
                       <AppButton
                         size="sm"
                         variant="primary"
-                        class="flex-1 sm:flex-none"
                         :disabled="!drafts[item.id]?.trim() || !!saving[item.id]"
                         :loading="!!saving[item.id]"
                         :data-testid="`project-credential-save-${item.id}`"
@@ -545,16 +598,13 @@ onUnmounted(() => {
                         {{ t('pages.projectDetail.projectCredentials.save') }}
                       </AppButton>
                       <AppButton
-                        v-if="item.configured"
                         size="sm"
-                        variant="danger"
-                        class="flex-1 sm:flex-none"
-                        :disabled="!!clearing[item.id]"
-                        :loading="!!clearing[item.id]"
-                        :data-testid="`project-credential-clear-${item.id}`"
-                        @click="clear(item)"
+                        variant="ghost"
+                        :disabled="!!saving[item.id]"
+                        :data-testid="`project-credential-cancel-${item.id}`"
+                        @click="cancelEdit(item)"
                       >
-                        {{ t('pages.projectDetail.projectCredentials.clear') }}
+                        {{ t('common.buttons.cancel') }}
                       </AppButton>
                     </div>
                   </div>

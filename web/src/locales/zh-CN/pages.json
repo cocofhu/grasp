@@ -1290,6 +1290,8 @@
         "notConfigured": "未配置",
         "valuePlaceholder": "输入凭据，保存后才会提交",
         "replacePlaceholder": "输入新值以替换",
+        "edit": "编辑",
+        "fillIn": "填写",
         "save": "保存",
         "clear": "清除",
         "saved": "凭据已保存",

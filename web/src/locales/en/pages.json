@@ -1290,6 +1290,8 @@
         "notConfigured": "Not configured",
         "valuePlaceholder": "Enter a credential. It is sent only when you save.",
         "replacePlaceholder": "Enter a new value to replace it",
+        "edit": "Edit",
+        "fillIn": "Fill in",
         "save": "Save",
         "clear": "Clear",
         "saved": "Credential saved",
