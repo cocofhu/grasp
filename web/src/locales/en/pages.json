@@ -3197,7 +3197,7 @@
         "takeOver": "Take over",
         "returnControl": "Return control",
         "controlBanner": "You are controlling this page. Select Return control when done.",
-        "watchOnlyHint": "Watching only · Select Take over to use mouse and keyboard",
+        "watchOnlyHint": "Watching only · Click the screen to take over. This click will not affect the page.",
         "usePick": "Add to chat ⤴",
         "clearPick": "Clear",
         "pickedLabel": "Picked",

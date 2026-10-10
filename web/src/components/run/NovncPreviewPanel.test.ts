@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
+import { nextTick } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import enCommon from '@/locales/en/common.json'
+import enPages from '@/locales/en/pages.json'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import NovncPreviewPanel from './NovncPreviewPanel.vue'
@@ -64,10 +67,14 @@ vi.mock('@novnc/novnc/lib/rfb.js', () => ({
     resizeSession = false
     viewOnly = false
     focusOnClick = false
+    focusCount = 0
     showDotCursor = false
     background = ''
     constructor(_host: HTMLElement, _channel: unknown) {
       rfbMocks.instances.push(this)
+    }
+    focus() {
+      this.focusCount += 1
     }
     get scaleViewport() {
       return this._scaleViewport
@@ -121,11 +128,14 @@ vi.mock('@/lib/api/api', async () => {
   }
 })
 
-function mountNovnc(props: Record<string, unknown> = {}) {
+function mountNovnc(props: Record<string, unknown> = {}, locale: 'zh-CN' | 'en' = 'zh-CN') {
   const i18n = createI18n({
     legacy: false,
-    locale: 'zh-CN',
-    messages: { 'zh-CN': { ...common, ...pages } },
+    locale,
+    messages:
+      locale === 'en'
+        ? { en: { ...enCommon, ...enPages } }
+        : { 'zh-CN': { ...common, ...pages } },
   })
   return mount(NovncPreviewPanel, {
     props: {
@@ -141,6 +151,54 @@ function mountNovnc(props: Record<string, unknown> = {}) {
 
 function inspectButton(wrapper: ReturnType<typeof mountNovnc>) {
   return wrapper.find('[data-testid="novnc-inspect-toggle"]')
+}
+
+function controlButton(wrapper: ReturnType<typeof mountNovnc>) {
+  return wrapper.get('[data-testid="novnc-control-toggle"]')
+}
+
+const SCREEN_GESTURE = ['mousedown', 'mousemove', 'mouseup', 'click'] as const
+
+/** Child standing in for the noVNC canvas. Capture on the host must run first. */
+function screenStandIn(wrapper: ReturnType<typeof mountNovnc>) {
+  const host = wrapper.get('.novnc-canvas-host').element
+  const child = document.createElement('div')
+  child.dataset.testid = 'novnc-screen'
+  host.appendChild(child)
+  return child
+}
+
+function trackEvents(el: Element, types: readonly string[]) {
+  const seen: string[] = []
+  for (const type of types) el.addEventListener(type, () => seen.push(type))
+  return seen
+}
+
+function dispatchMouse(el: Element, type: string, button = 0) {
+  el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button, buttons: button === 0 ? 1 : 0 }))
+}
+
+/** One press-move-release, including the click or context menu that follows. */
+function clickScreen(el: Element, button = 0) {
+  dispatchMouse(el, 'mousedown', button)
+  dispatchMouse(el, 'mousemove', button)
+  dispatchMouse(el, 'mouseup', button)
+  if (button === 0) {
+    dispatchMouse(el, 'click', button)
+    return
+  }
+  dispatchMouse(el, 'auxclick', button)
+  el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button }))
+}
+
+function dispatchTouch(el: Element, type: string) {
+  let ev: Event
+  try {
+    ev = new TouchEvent(type, { bubbles: true, cancelable: true })
+  } catch {
+    ev = new Event(type, { bubbles: true, cancelable: true })
+  }
+  el.dispatchEvent(ev)
 }
 
 function lastInspectCtrl(): { type: string; on: boolean } | null {
@@ -284,6 +342,193 @@ describe('NovncPreviewPanel', () => {
     expect(rfb.viewOnly).toBe(true)
     await wrapper.get('[data-testid="novnc-control-toggle"]').trigger('click')
     expect(rfb.viewOnly).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('clicking the watch-only screen takes over and swallows that gesture', async () => {
+    const wrapper = mountNovnc()
+    await flushPromises()
+    const rfb = rfbMocks.last() as unknown as { viewOnly: boolean; focusCount: number }
+    const screen = screenStandIn(wrapper)
+    const seen = trackEvents(screen, SCREEN_GESTURE)
+    expect(wrapper.get('[data-testid="novnc-watch-hint"]').text()).toBe(
+      '仅观看 · 点击画面接管，本次点击不会操作页面',
+    )
+
+    clickScreen(screen)
+    await nextTick()
+
+    expect(seen).toEqual([])
+    expect(rfb.viewOnly).toBe(false)
+    expect(rfb.focusCount).toBe(1)
+    expect(controlButton(wrapper).text()).toBe('交还')
+    expect(controlButton(wrapper).attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="novnc-control-frame"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="novnc-watch-hint"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('你正在操作这个页面，完成后点「交还」')
+
+    seen.length = 0
+    clickScreen(screen)
+    expect(seen).toEqual(['mousedown', 'mousemove', 'mouseup', 'click'])
+    expect(rfb.focusCount).toBe(1)
+    wrapper.unmount()
+  })
+
+  it('right click and touch on a watch-only screen only take over', async () => {
+    const wrapper = mountNovnc()
+    await flushPromises()
+    const rfb = rfbMocks.last() as unknown as { viewOnly: boolean; focusCount: number }
+    const screen = screenStandIn(wrapper)
+    const seen = trackEvents(screen, [...SCREEN_GESTURE, 'auxclick', 'contextmenu', 'touchstart', 'touchend'])
+
+    clickScreen(screen, 2)
+    await nextTick()
+    expect(seen).toEqual([])
+    expect(rfb.viewOnly).toBe(false)
+    expect(controlButton(wrapper).text()).toBe('交还')
+
+    wrapper.unmount()
+
+    const again = mountNovnc()
+    await flushPromises()
+    const rfb2 = rfbMocks.last() as unknown as { viewOnly: boolean }
+    const screen2 = screenStandIn(again)
+    const touches = trackEvents(screen2, ['touchstart', 'touchmove', 'touchend', 'mousedown', 'click'])
+    dispatchTouch(screen2, 'touchstart')
+    dispatchTouch(screen2, 'touchmove')
+    dispatchTouch(screen2, 'touchend')
+    dispatchTouch(screen2, 'mousedown')
+    dispatchTouch(screen2, 'click')
+    await nextTick()
+    expect(touches).toEqual([])
+    expect(rfb2.viewOnly).toBe(false)
+    expect(controlButton(again).text()).toBe('交还')
+
+    touches.length = 0
+    dispatchTouch(screen2, 'touchstart')
+    dispatchTouch(screen2, 'touchend')
+    expect(touches).toEqual(['touchstart', 'touchend'])
+    again.unmount()
+  })
+
+  it('keydown and wheel while watch-only do not take over', async () => {
+    const wrapper = mountNovnc()
+    await flushPromises()
+    const rfb = rfbMocks.last() as unknown as { viewOnly: boolean; focusCount: number }
+    const screen = screenStandIn(wrapper)
+    screen.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 40 }))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true }))
+    await nextTick()
+    expect(rfb.viewOnly).toBe(true)
+    expect(rfb.focusCount).toBe(0)
+    expect(controlButton(wrapper).text()).toBe('接管')
+    expect(wrapper.find('[data-testid="novnc-watch-hint"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('inspect clicks are not captured and do not rewrite take over', async () => {
+    const wrapper = mountNovnc()
+    await flushPromises()
+    const rfb = rfbMocks.last() as unknown as { viewOnly: boolean }
+    await inspectButton(wrapper).trigger('click')
+    const screen = screenStandIn(wrapper)
+    const seen = trackEvents(screen, SCREEN_GESTURE)
+    clickScreen(screen)
+    await nextTick()
+    expect(seen).toEqual(['mousedown', 'mousemove', 'mouseup', 'click'])
+    expect(controlButton(wrapper).text()).toBe('接管')
+    expect(controlButton(wrapper).attributes('aria-pressed')).toBe('false')
+    expect(wrapper.find('[data-testid="novnc-control-frame"]').exists()).toBe(false)
+    expect(rfb.viewOnly).toBe(false)
+
+    await inspectButton(wrapper).trigger('click')
+    expect(rfb.viewOnly).toBe(true)
+    expect(controlButton(wrapper).text()).toBe('接管')
+    wrapper.unmount()
+  })
+
+  it('cancelling inspect keeps a take over that was already on', async () => {
+    const wrapper = mountNovnc()
+    await flushPromises()
+    const rfb = rfbMocks.last() as unknown as { viewOnly: boolean }
+    await controlButton(wrapper).trigger('click')
+    await inspectButton(wrapper).trigger('click')
+    const screen = screenStandIn(wrapper)
+    clickScreen(screen)
+    await inspectButton(wrapper).trigger('click')
+    expect(controlButton(wrapper).text()).toBe('交还')
+    expect(rfb.viewOnly).toBe(false)
+    expect(wrapper.find('[data-testid="novnc-control-frame"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('does not take over when the screen is clicked before the session is live', async () => {
+    MockWebSocket.failWith = 'down'
+    const wrapper = mountNovnc()
+    await flushPromises()
+    const toggle = controlButton(wrapper)
+    expect(toggle.text()).toBe('接管')
+    expect(toggle.attributes('disabled')).toBeDefined()
+    const screen = screenStandIn(wrapper)
+    const seen = trackEvents(screen, SCREEN_GESTURE)
+    clickScreen(screen)
+    await nextTick()
+    expect(seen).toEqual(['mousedown', 'mousemove', 'mouseup', 'click'])
+    expect(toggle.text()).toBe('接管')
+    expect(wrapper.find('[data-testid="novnc-control-frame"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('reconnect clears take over so the next screen click is swallowed again', async () => {
+    const wrapper = mountNovnc()
+    await flushPromises()
+    const screen = screenStandIn(wrapper)
+    clickScreen(screen)
+    await nextTick()
+    expect(controlButton(wrapper).text()).toBe('交还')
+
+    await wrapper.setProps({ sandboxId: 2 })
+    await flushPromises()
+    const rfb = rfbMocks.last() as unknown as { viewOnly: boolean; focusCount: number }
+    expect(rfb.viewOnly).toBe(true)
+    expect(controlButton(wrapper).text()).toBe('接管')
+    expect(wrapper.find('[data-testid="novnc-control-frame"]').exists()).toBe(false)
+
+    const screen2 = screenStandIn(wrapper)
+    const seen = trackEvents(screen2, SCREEN_GESTURE)
+    clickScreen(screen2)
+    await nextTick()
+    expect(seen).toEqual([])
+    expect(rfb.viewOnly).toBe(false)
+    expect(rfb.focusCount).toBe(1)
+    expect(controlButton(wrapper).text()).toBe('交还')
+    wrapper.unmount()
+  })
+
+  it('console mode screen click takes over without sending that gesture', async () => {
+    const wrapper = mountNovnc({ sandboxId: 42, console: true })
+    await flushPromises()
+    const rfb = rfbMocks.last() as unknown as { viewOnly: boolean; focusCount: number }
+    const screen = screenStandIn(wrapper)
+    const seen = trackEvents(screen, SCREEN_GESTURE)
+    clickScreen(screen)
+    await nextTick()
+    expect(seen).toEqual([])
+    expect(rfb.viewOnly).toBe(false)
+    expect(rfb.focusCount).toBe(1)
+    expect(controlButton(wrapper).text()).toBe('交还')
+    seen.length = 0
+    clickScreen(screen)
+    expect(seen).toEqual(['mousedown', 'mousemove', 'mouseup', 'click'])
+    wrapper.unmount()
+  })
+
+  it('shows the english watch-only hint', async () => {
+    const wrapper = mountNovnc({}, 'en')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="novnc-watch-hint"]').text()).toBe(
+      'Watching only · Click the screen to take over. This click will not affect the page.',
+    )
     wrapper.unmount()
   })
 

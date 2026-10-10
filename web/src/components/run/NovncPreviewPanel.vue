@@ -295,6 +295,7 @@ function fail(m: string) {
 
 function teardown() {
   disposed = true
+  endTakeoverGesture()
   clearConnectTimer()
   clearPreviewWarnTimer()
   fpsCounter.detach()
@@ -592,6 +593,166 @@ function urlPort(raw: string): number | null {
   }
 }
 
+/**
+ * Click-to-take-over drops the arming gesture before it reaches noVNC.
+ * noVNC 1.5 listens on its canvas for mousedown, mouseup, mousemove, click,
+ * and contextmenu, and for touchstart/move/end/cancel via GestureHandler.
+ * viewOnly turns off once control becomes true, so the rest of this press
+ * would otherwise go out without the matching down.
+ */
+type TakeoverGesture = { pointer: 'mouse' | 'touch'; sawUp: boolean }
+
+let takeoverGesture: TakeoverGesture | null = null
+let takeoverGestureTimer: ReturnType<typeof setTimeout> | null = null
+
+const TAKEOVER_WINDOW_EVENTS = [
+  'mousedown',
+  'mousemove',
+  'mouseup',
+  'click',
+  'auxclick',
+  'dblclick',
+  'contextmenu',
+  'dragstart',
+  'touchstart',
+  'touchmove',
+  'touchend',
+  'touchcancel',
+] as const
+
+function clearTakeoverGestureTimer() {
+  if (takeoverGestureTimer != null) {
+    clearTimeout(takeoverGestureTimer)
+    takeoverGestureTimer = null
+  }
+}
+
+function endTakeoverGesture() {
+  clearTakeoverGestureTimer()
+  if (!takeoverGesture) return
+  takeoverGesture = null
+  for (const type of TAKEOVER_WINDOW_EVENTS) {
+    window.removeEventListener(type, onTakeoverGestureTail, true)
+  }
+}
+
+function scheduleTakeoverGestureEnd(gesture: TakeoverGesture) {
+  clearTakeoverGestureTimer()
+  // click, contextmenu, and touch-synthesized mouse events follow pointerup
+  // in the same turn, before the next task.
+  takeoverGestureTimer = setTimeout(() => {
+    if (takeoverGesture === gesture) endTakeoverGesture()
+  }, 0)
+}
+
+function blockGestureEvent(ev: Event) {
+  ev.preventDefault()
+  ev.stopPropagation()
+}
+
+function focusRemoteScreen() {
+  const session = rfb as { focus?: (options?: FocusOptions) => void } | null
+  try {
+    session?.focus?.()
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Live, watch-only, and not picking — the only moment a press should arm control. */
+function canArmTakeoverFromScreen(): boolean {
+  return status.value === 'live' && !control.value && !inspect.value
+}
+
+function beginTakeoverGesture(pointer: 'mouse' | 'touch') {
+  endTakeoverGesture()
+  const gesture: TakeoverGesture = { pointer, sawUp: false }
+  takeoverGesture = gesture
+  for (const type of TAKEOVER_WINDOW_EVENTS) {
+    window.addEventListener(type, onTakeoverGestureTail, { capture: true, passive: false })
+  }
+  control.value = true
+  focusRemoteScreen()
+}
+
+function onScreenPointerDown(ev: Event) {
+  if (!canArmTakeoverFromScreen()) return
+  if (ev.type !== 'mousedown' && ev.type !== 'touchstart') return
+  blockGestureEvent(ev)
+  beginTakeoverGesture(ev.type === 'touchstart' ? 'touch' : 'mouse')
+}
+
+function isTrailingMouseEvent(type: string): boolean {
+  return (
+    type === 'mousemove' ||
+    type === 'mouseup' ||
+    type === 'click' ||
+    type === 'auxclick' ||
+    type === 'dblclick' ||
+    type === 'contextmenu' ||
+    type === 'dragstart'
+  )
+}
+
+function onTakeoverGestureTail(ev: Event) {
+  const gesture = takeoverGesture
+  if (!gesture) return
+
+  // The next real press is a new gesture and must reach the desktop.
+  // A mousedown synthesized from the arming tap is not that press.
+  const nextRealPress =
+    (gesture.pointer === 'mouse' && ev.type === 'mousedown') ||
+    (gesture.pointer === 'touch' && ev.type === 'touchstart')
+  if (nextRealPress) {
+    if (gesture.sawUp) {
+      endTakeoverGesture()
+      return
+    }
+    blockGestureEvent(ev)
+    return
+  }
+
+  if (gesture.pointer === 'touch' && (ev.type === 'mousedown' || isTrailingMouseEvent(ev.type))) {
+    blockGestureEvent(ev)
+    return
+  }
+
+  if (gesture.pointer === 'mouse' && isTrailingMouseEvent(ev.type)) {
+    blockGestureEvent(ev)
+    if (ev.type === 'mouseup') {
+      gesture.sawUp = true
+      scheduleTakeoverGestureEnd(gesture)
+    }
+    return
+  }
+
+  if (
+    gesture.pointer === 'touch' &&
+    (ev.type === 'touchmove' || ev.type === 'touchend' || ev.type === 'touchcancel')
+  ) {
+    blockGestureEvent(ev)
+    if (ev.type === 'touchend' || ev.type === 'touchcancel') {
+      gesture.sawUp = true
+      scheduleTakeoverGestureEnd(gesture)
+    }
+  }
+}
+
+function bindScreenTakeoverListeners() {
+  const host = canvasHost.value
+  if (!host) return
+  host.addEventListener('mousedown', onScreenPointerDown, { capture: true, passive: false })
+  host.addEventListener('touchstart', onScreenPointerDown, { capture: true, passive: false })
+}
+
+function unbindScreenTakeoverListeners() {
+  endTakeoverGesture()
+  const host = canvasHost.value
+  if (!host) return
+  host.removeEventListener('mousedown', onScreenPointerDown, true)
+  host.removeEventListener('touchstart', onScreenPointerDown, true)
+}
+
 function toggleControl() {
   control.value = !control.value
 }
@@ -665,6 +826,7 @@ onMounted(() => {
   window.addEventListener('keydown', onKeydown)
   heartbeatTimer = setInterval(heartbeat, VNC_HEARTBEAT_MS)
   connect()
+  bindScreenTakeoverListeners()
   // Observe the preview viewport (definite box), not the canvas content size.
   setupHostResizeObserver()
 })
@@ -673,6 +835,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', onFsChange)
   document.removeEventListener('visibilitychange', onDocumentVisibility)
   window.removeEventListener('keydown', onKeydown)
+  unbindScreenTakeoverListeners()
   teardownHostResizeObserver()
   if (heartbeatTimer != null) clearInterval(heartbeatTimer)
   heartbeatTimer = null

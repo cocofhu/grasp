@@ -54,7 +54,7 @@ Inbox **pending review** and **app preview** cards reuse the same management pan
 
 Each sandbox has one noVNC desktop address, and that desktop is the Agent's own screen: the headed Chromium the Agent drives with chrome-devtools MCP. As soon as the node has a sandbox you can watch it in the panel, before any `set_preview`; connecting does not change the page the Agent is on. After `set_preview` registers a port, the platform switches the desktop to `http://127.0.0.1:port/` inside the sandbox. Port tabs navigate that same desktop; they never open another VNC connection or preview address. The desktop page stays open: after you leave and come back, switch tabs, or reload the platform page, you see the same page with its login and form state; logins also survive a Chromium restart. The external share page likewise uses one desktop ticket bound to the node's sandbox.
 
-The preview is watch-only by default. Select Take over in the toolbar to use mouse and keyboard, and Return control when you are done; Pick annotation allows clicks while it is armed. This only prevents stray clicks; it is not access control.
+The preview is watch-only by default. Click the screen to take over; that first click does not affect the page. You can also select Take over in the toolbar, and Return control when you are done. Clicks during Pick annotation still select elements and do not take over. This only prevents stray clicks; it is not access control.
 
 When the Agent is granted `set_preview`, the noVNC toolbar adds an Open directly in new tab button for `http://IP:port/`, which carries the pick bar and the Chat drawer at the bottom right.
 

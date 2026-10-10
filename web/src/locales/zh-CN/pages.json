@@ -3197,7 +3197,7 @@
         "takeOver": "接管",
         "returnControl": "交还",
         "controlBanner": "你正在操作这个页面，完成后点「交还」",
-        "watchOnlyHint": "仅观看 · 点「接管」后可用鼠标键盘操作",
+        "watchOnlyHint": "仅观看 · 点击画面接管，本次点击不会操作页面",
         "usePick": "添加到聊天 ⤴",
         "clearPick": "清除",
         "pickedLabel": "已选出",
