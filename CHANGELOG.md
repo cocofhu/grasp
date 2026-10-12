@@ -4,10 +4,31 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+## 2.1.0 — 2026-10-12
+
 - **MCP tool-list refresh on confirmation:** run-scoped HTTP MCP sessions now
   receive `notifications/tools/list_changed` over SSE when clarification
   confirmation exposes or hides `node_complete`. Reconnecting refreshes the
-  current tool list; deleting a session or unregistering a run closes its streams.
+  current tool list; deleting a session or unregistering a run closes its streams
+  (#781).
+- **Run canvas:** the run page and version preview always auto-layout and ignore
+  saved coordinates. Crowded forward edges stay on a smooth step; only a
+  topological back edge whose target sits to the left uses the lower lane, and
+  that lane drops below every card it passes. Passed and failed edges keep
+  green and red (#782).
+- **Project credentials:** a saved row collapses to status, edit, and clear; an
+  empty row shows fill. Edit opens the input, save, and cancel on one line, and
+  an empty value cannot be saved (#783).
+- **App preview:** clicking the noVNC picture takes over. That first gesture,
+  including right click, middle click, and touch, is not sent to the remote
+  page (#784).
+- **Artifacts:** the workflow artifact grid badges fixed sandbox tools apart
+  from this run's artifacts, and explains the grid when there are no artifacts
+  yet (#785).
+- Default `./start.sh` / `.env.example` / `compose.release.yaml` pins GHCR
+  images to `*:2.1.0`.
+
+## 2.0.0 — 2026-10-09
 
 - **Cursor turns no longer hang on background tasks:** `cursor-agent -p`
   waits for every background shell it started, so a preview server launched
