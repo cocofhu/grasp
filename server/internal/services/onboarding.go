@@ -120,7 +120,8 @@ func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest
 	if projectID == "" {
 		return models.WorkflowDef{}, ErrWorkflowProjectRequired
 	}
-	if _, ok := s.Projects.Get(projectID); !ok {
+	proj, ok := s.Projects.Get(projectID)
+	if !ok {
 		return models.WorkflowDef{}, ErrWorkflowProjectNotFound
 	}
 	name := strings.TrimSpace(req.Name)
@@ -139,6 +140,27 @@ func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest
 	if err := envelope.Graph.Validate(); err != nil {
 		return models.WorkflowDef{}, fmt.Errorf("default workflow graph invalid: %w", err)
 	}
+	defID := strings.TrimSpace(s.Projects.DefaultProjectID())
+	if defID == "" {
+		defID = models.DefaultProjectID
+	}
+	plan, err := BuildOnboardingNamePlan(projectID, proj.Name, defID)
+	if err != nil {
+		return models.WorkflowDef{}, err
+	}
+	if err := s.checkOnboardingAgentConflicts(projectID, plan.AgentNames); err != nil {
+		return models.WorkflowDef{}, err
+	}
+	assignOnboardingAgentProfiles(&envelope.Graph, plan.NameMap)
+	created, err := s.ensureBaselineAgents(projectID, plan.NameMap)
+	if err != nil {
+		return models.WorkflowDef{}, err
+	}
+	rollback := func() {
+		for _, n := range created {
+			_ = s.Skills.Delete(n)
+		}
+	}
 
 	wf := models.WorkflowDef{
 		ID:          "wf-" + uuid.NewString()[:8],
@@ -149,20 +171,76 @@ func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest
 		Graph:       envelope.Graph,
 	}
 	if err := s.WF.Save(&wf); err != nil {
+		rollback()
 		return models.WorkflowDef{}, err
 	}
 	published, err := s.WF.Publish(wf.ID)
 	if err != nil {
 		_ = s.WF.Delete(wf.ID)
+		rollback()
 		return models.WorkflowDef{}, fmt.Errorf("publish baseline workflow: %w", err)
 	}
 	// Align with Bootstrap: Save still forces showOnHome=false; open Home after publish.
 	published, err = s.WF.UpdateShowOnHome(published.ID, true)
 	if err != nil {
 		_ = s.WF.Delete(published.ID)
+		rollback()
 		return models.WorkflowDef{}, fmt.Errorf("show workflow on home: %w", err)
 	}
 	return published, nil
+}
+
+// ensureBaselineAgents creates the project's fixed-name template Agents that do
+// not exist yet, using the project's shared Agent backend. Existing Agents are
+// left untouched. It returns the names it created.
+func (s *OnboardingService) ensureBaselineAgents(projectID string, nameMap map[string]string) ([]string, error) {
+	backend := ""
+	if s.SharedAgent != nil {
+		backend = NormalizeAcpBackend(s.SharedAgent.Get(projectID).AcpBackend)
+	}
+	var created []string
+	for _, role := range TeamEngineerTemplates {
+		name := nameMap[role.RoleLabelZH]
+		if name == "" {
+			continue
+		}
+		if _, ok := s.Skills.Get(name); ok {
+			continue
+		}
+		tmpl, err := onboardingTemplateAgent(role)
+		if err != nil {
+			return nil, s.dropAgents(created, err)
+		}
+		b := backend
+		if b == "" {
+			b = NormalizeAcpBackend(tmpl.AcpBackend)
+		}
+		if b == "" {
+			b = AcpBackendCursor
+		}
+		tmpl.Name = name
+		tmpl.ProjectID = projectID
+		tmpl.AcpBackend = b
+		tmpl.Layout.ConfigRoot = DefaultConfigRootForBackend(b)
+		if strings.TrimSpace(tmpl.Layout.WorkspaceDir) == "" {
+			tmpl.Layout.WorkspaceDir = DefaultWorkspaceDir
+		}
+		if b == AcpBackendOpenCode {
+			tmpl.OpenCodeCredentialID = defaultOpenCodeCredentialID(projectID)
+		}
+		if err := s.Skills.Save(tmpl); err != nil {
+			return nil, s.dropAgents(created, fmt.Errorf("save agent %s: %w", name, err))
+		}
+		created = append(created, name)
+	}
+	return created, nil
+}
+
+func (s *OnboardingService) dropAgents(names []string, cause error) error {
+	for _, n := range names {
+		_ = s.Skills.Delete(n)
+	}
+	return cause
 }
 
 func normalizeBaselineRepos(input []BaselineRepo) []BaselineRepo {

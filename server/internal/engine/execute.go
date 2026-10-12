@@ -383,6 +383,9 @@ func (e *Engine) execute(runID, fromNodeID string) {
 				}
 				e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "exit", Detail: "sandbox setup failed"})
 				e.refreshProgress(c)
+				if e.finish(runID, "failed") {
+					e.fireRunNotify(c, node, models.NotifyKindFailed)
+				}
 				return
 			}
 

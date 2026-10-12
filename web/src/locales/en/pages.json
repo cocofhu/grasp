@@ -2893,6 +2893,9 @@
     },
     "runLaunch": {
       "title": "Start run · {name}",
+      "messageLabel": "What to do this time",
+      "messageHint": "Optional. Becomes the run title and the first message to the first chat node; you go straight into the chat after start.",
+      "messagePlaceholder": "Kick off your iteration (paste images)",
       "tagsLabel": "Tags",
       "tagsHint": "Optional tags. They cannot be changed after start. Press Enter to add, up to 8 tags.",
       "tagsPlaceholder": "Enter a tag and press Enter",

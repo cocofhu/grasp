@@ -808,6 +808,104 @@ func TestCreateFromBaselineDefaultsShowOnHome(t *testing.T) {
 	}
 }
 
+func baselineAgentProfiles(t *testing.T, wf models.WorkflowDef) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, n := range wf.Graph.Nodes {
+		if n.Type == "agent" {
+			out[n.ID] = models.AgentProfile(n.Config)
+		}
+	}
+	return out
+}
+
+func TestCreateFromBaselineCreatesProjectAgentsWithSharedBackend(t *testing.T) {
+	svc, _ := newOnboardingHarness(t)
+	other, err := svc.Projects.Create("Codex项目组", "", nil)
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	shared := svc.SharedAgent.Get(other.ID)
+	shared.AcpBackend = services.AcpBackendCodex
+	if err := svc.SharedAgent.Save(shared); err != nil {
+		t.Fatalf("save shared: %v", err)
+	}
+	wf, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{
+		ProjectID: other.ID,
+		Name:      "db-workbench",
+		Repos:     []services.BaselineRepo{{URL: "https://github.com/acme/app.git"}},
+	})
+	if err != nil {
+		t.Fatalf("CreateFromBaseline: %v", err)
+	}
+	profiles := baselineAgentProfiles(t, wf)
+	for _, role := range services.TeamEngineerTemplates {
+		want := "Codex项目组" + role.RoleLabelZH
+		if profiles[role.ID] != want {
+			t.Fatalf("node %s bound to %q, want %q", role.ID, profiles[role.ID], want)
+		}
+		a, ok := svc.Skills.Get(want)
+		if !ok || a.ProjectID != other.ID || a.AcpBackend != services.AcpBackendCodex {
+			t.Fatalf("agent %s = %+v (ok=%v)", want, a, ok)
+		}
+		if a.Layout.ConfigRoot != "/root/.codex" {
+			t.Fatalf("agent %s configRoot = %q", want, a.Layout.ConfigRoot)
+		}
+	}
+}
+
+func TestCreateFromBaselineReusesExistingProjectAgents(t *testing.T) {
+	svc, defaultID := newOnboardingHarness(t)
+	if _, err := svc.Bootstrap(defaultID, services.OnboardingBootstrapRequest{AcpBackend: "cursor", APIKey: "k"}); err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	before, _ := svc.Skills.Get("实现")
+	before.Env["MARKER"] = "keep"
+	if err := svc.Skills.Save(before); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	wf, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{
+		ProjectID: defaultID,
+		Name:      "基线",
+		Repos:     []services.BaselineRepo{{URL: "https://github.com/acme/app.git"}},
+	})
+	if err != nil {
+		t.Fatalf("CreateFromBaseline: %v", err)
+	}
+	if got := baselineAgentProfiles(t, wf)["implement"]; got != "实现" {
+		t.Fatalf("implement bound to %q", got)
+	}
+	after, _ := svc.Skills.Get("实现")
+	if after.Env["MARKER"] != "keep" {
+		t.Fatalf("existing agent overwritten: %+v", after.Env)
+	}
+}
+
+func TestCreateFromBaselineRejectsForeignNameConflict(t *testing.T) {
+	svc, defaultID := newOnboardingHarness(t)
+	other, err := svc.Projects.Create("象棋", "", nil)
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if err := svc.Skills.Save(services.Agent{Name: "象棋实现", ProjectID: defaultID, AcpBackend: "cursor"}); err != nil {
+		t.Fatalf("seed foreign agent: %v", err)
+	}
+	_, err = svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{
+		ProjectID: other.ID,
+		Name:      "基线",
+		Repos:     []services.BaselineRepo{{URL: "https://github.com/acme/app.git"}},
+	})
+	if !errors.Is(err, services.ErrOnboardingAgentConflict) {
+		t.Fatalf("want ErrOnboardingAgentConflict, got %v", err)
+	}
+	if _, ok := svc.Skills.Get("象棋需求澄清"); ok {
+		t.Fatal("no agent should be created on conflict")
+	}
+	if n := len(svc.WF.List(other.ID)); n != 0 {
+		t.Fatalf("no workflow should be created on conflict, got %d", n)
+	}
+}
+
 func newOnboardingHarness(t *testing.T) (*services.OnboardingService, string) {
 	t.Helper()
 	key := make([]byte, 32)

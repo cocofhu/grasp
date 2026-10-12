@@ -636,13 +636,15 @@ type AgentGetter interface {
 }
 
 // ValidateAgentProfilesProject rejects non-empty agent_profile refs that are
-// missing. Cross-project Agents are allowed: at Run time they extend
-// the current workflow project's shared Agent config. Empty agent_profile is skipped.
+// missing or belong to another project: the run takes credentials from the
+// workflow's project but the backend from the Agent, so a foreign Agent can
+// pair a backend with credentials the project does not have. Empty
+// agent_profile is skipped; an empty projectID skips the ownership check.
 func ValidateAgentProfilesProject(skills AgentGetter, projectID string, g models.Graph) error {
 	if skills == nil {
 		return nil
 	}
-	_ = projectID
+	projectID = strings.TrimSpace(projectID)
 	var bad []string
 	for _, n := range g.Nodes {
 		if n.Config == nil {
@@ -652,14 +654,18 @@ func ValidateAgentProfilesProject(skills AgentGetter, projectID string, g models
 		if profile == "" {
 			continue
 		}
-		if _, ok := skills.Get(profile); ok {
-			continue
-		}
 		label := strings.TrimSpace(n.Label)
 		if label == "" {
 			label = n.ID
 		}
-		bad = append(bad, fmt.Sprintf("%s → %s（已删除）", label, profile))
+		agent, ok := skills.Get(profile)
+		if !ok {
+			bad = append(bad, fmt.Sprintf("%s → %s（已删除）", label, profile))
+			continue
+		}
+		if projectID != "" && strings.TrimSpace(agent.ProjectID) != projectID {
+			bad = append(bad, fmt.Sprintf("%s → %s（属于其他项目）", label, profile))
+		}
 	}
 	if len(bad) == 0 {
 		return nil

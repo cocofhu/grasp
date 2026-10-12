@@ -18,9 +18,8 @@ import {
   saveHomeComposerDraft,
 } from '@/lib/run/homeComposerDraft'
 import { setHomeApproveHandoff } from '@/lib/run/homeApproveHandoff'
-import { clipRunTitle } from '@/lib/run/runTitle'
+import { runTitleFromDraft } from '@/lib/run/runTitle'
 import { missingRequiredAskField, seedAskLaunchFields } from '@/lib/run/useWorkflowAskInputs'
-import { attachmentDisplayName } from '@/lib/shared/attachments'
 import type { ClarifyImage, Project, Workflow } from '@/lib/shared/types'
 import type { Agent } from '@/lib/api/apiTypes'
 import type { RunPriority } from '@/components/ui/PrioritySegmented.vue'
@@ -33,13 +32,6 @@ export const HOME_PRIORITY_MEMORY_KEY = 'grasp.home.lastPriority'
 
 /** Debounce for auto-save (plan g2.2; NFR ~300–800ms). */
 export const HOME_COMPOSER_DRAFT_DEBOUNCE_MS = 400
-
-function titleFromDraft(text: string, images: ClarifyImage[]): string {
-  const clipped = clipRunTitle(text)
-  if (clipped) return clipped
-  const name = images[0] ? attachmentDisplayName(images[0], 0) : ''
-  return clipRunTitle(name)
-}
 
 function readLastWorkflowId(): string {
   try {
@@ -168,7 +160,7 @@ export function useHomeApproveChat() {
   const projectId = computed(
     () => selected.value?.projectId || launchTarget.value?.projectId || readStoredProjectId() || '',
   )
-  const launchTitle = computed(() => titleFromDraft(pendingText.value, pendingImages.value))
+  const launchTitle = computed(() => runTitleFromDraft(pendingText.value, pendingImages.value))
   /** Opening message carried through the launch modal's own startRun call. */
   const launchFirstMessage = computed(() => ({
     text: pendingText.value,
@@ -430,7 +422,7 @@ export function useHomeApproveChat() {
         return
       }
       const res = await api.startRun(wf.id, {}, 'manual', launchPriority.value, [], {
-        title: titleFromDraft(text, images),
+        title: runTitleFromDraft(text, images),
         firstMessage: { text, images },
         publishedSnapshot: true,
       })

@@ -25,7 +25,7 @@ func reactSandboxGraph() models.Graph {
 	}
 }
 
-// TestReactSandboxSetupFailed keeps the run running, marks the react node failed,
+// TestReactSandboxSetupFailed fails the run, marks the react node failed,
 // leaves downstream pending, skips conversation creation, and allows ResumeFrom.
 func TestReactSandboxSetupFailed(t *testing.T) {
 	setupErr := fmt.Errorf("%w: create sandbox: docker pull registry.example/sandbox:latest: exit status 1",
@@ -41,7 +41,7 @@ func TestReactSandboxSetupFailed(t *testing.T) {
 	}
 
 	waitNodeStatus(t, db, run.ID, "clarify", "failed")
-	waitRunStatus(t, db, run.ID, "running")
+	waitRunStatus(t, db, run.ID, "failed")
 
 	var sr models.StateRun
 	if err := db.Where("run_id = ? AND node_id = ?", run.ID, "clarify").First(&sr).Error; err != nil {
@@ -74,7 +74,7 @@ func TestReactSandboxSetupFailed(t *testing.T) {
 
 	fp.reactSetupErr = nil
 	if err := eng.ResumeFrom(run.ID, "clarify"); err != nil {
-		t.Fatalf("resume from running+failed: %v", err)
+		t.Fatalf("resume from failed run: %v", err)
 	}
 	waitReactPause(t, db, run.ID, "clarify")
 }

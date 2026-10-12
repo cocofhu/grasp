@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
@@ -13,6 +14,8 @@ import PrioritySegmented, { type RunPriority } from '@/components/ui/PrioritySeg
 import { api } from '@/lib/api/api'
 import { isCompositeFilled, normalizeCompositeSubmit } from '@/lib/shared/compositeText'
 import { MAX_RUN_TAGS, MAX_TAG_RUNES, validateRunTag } from '@/lib/run/runTags'
+import { runTitleFromDraft } from '@/lib/run/runTitle'
+import { setHomeApproveHandoff } from '@/lib/run/homeApproveHandoff'
 import {
   type RunSandboxEnvEntry,
   validateRunSandboxEnvRows,
@@ -71,7 +74,12 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const router = useRouter()
 const phase = ref<Phase>('form')
+const messageText = ref('')
+const messageImages = ref<ClarifyImage[]>([])
+/** The home composer passes its own first message; other entry points type it here. */
+const showMessageBox = computed(() => props.firstMessage == null)
 const startError = ref('')
 const successRunId = ref('')
 const priority = ref<RunPriority>('normal')
@@ -132,6 +140,8 @@ watch(
       tagInput.value = ''
       tagSuggestions.value = []
       envRows.value = []
+      messageText.value = ''
+      messageImages.value = []
       emit('update:loading', false)
       resetScrollTop()
       if (props.projectId) {
@@ -361,18 +371,30 @@ async function startRun() {
     }
   }
 
+  const ownText = messageText.value.trim()
+  const ownImages = messageImages.value.map((im) => ({ ...im }))
+  const ownMessage = showMessageBox.value && (ownText || ownImages.length) ? { text: ownText, images: ownImages } : null
+
   try {
     if (props.beforeStart) await props.beforeStart()
     const res = await api.startRun(props.workflowId, inputs, 'manual', priority.value, tags.value, {
       signal: startAbort.signal,
       env: envEntries.length ? envEntries : undefined,
-      title: props.runTitle?.trim() || undefined,
-      firstMessage: props.firstMessage ?? undefined,
+      title: props.runTitle?.trim() || (ownMessage ? runTitleFromDraft(ownText, ownImages) : '') || undefined,
+      firstMessage: props.firstMessage ?? ownMessage ?? undefined,
       ...(props.publishedSnapshot ? { publishedSnapshot: true } : {}),
     })
     if (gen !== startGen) return
     successRunId.value = res.id
     emit('started', res.id)
+    if (ownMessage) {
+      setHomeApproveHandoff({ runId: res.id, nodeId: '', text: ownText, images: ownImages })
+      emit('close')
+      const query: Record<string, string> = { run: res.id }
+      if (props.projectId?.trim()) query.projectId = props.projectId.trim()
+      void router?.push({ path: '/gates', query })
+      return
+    }
     phase.value = 'success'
   } catch (e: any) {
     if (gen !== startGen || isAbortError(e) || startAbort.signal.aborted) return
@@ -423,6 +445,15 @@ async function startRun() {
         >
           <Icon name="clock" :size="14" class="shrink-0" />
           {{ t('pages.runLaunch.draftRestored') }}
+        </div>
+        <div v-if="showMessageBox" class="space-y-1.5" data-testid="run-launch-message">
+          <label class="block text-[12px] font-medium text-txt2">{{ t('pages.runLaunch.messageLabel') }}</label>
+          <ParagraphInput
+            v-model:text="messageText"
+            v-model:images="messageImages"
+            :placeholder="t('pages.runLaunch.messagePlaceholder')"
+          />
+          <p class="text-[11px] leading-relaxed text-txt3">{{ t('pages.runLaunch.messageHint') }}</p>
         </div>
         <p v-if="!fields.length" class="text-[12px] text-txt3">
           {{ hintExtra ? t('pages.runLaunch.noFieldsWithHint') : t('pages.runLaunch.noFields') }}

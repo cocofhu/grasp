@@ -268,7 +268,7 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 	spec, err := c.spec(req)
 	if err != nil {
 		c.forgetCodexLogin(codexLoginKey(req))
-		return nil, nil, "", fmt.Errorf("%w: %v", errSandboxSetup, err)
+		return nil, nil, "", fmt.Errorf("%w: %v", errSandboxConfig, err)
 	}
 	home := spec.ConfigHome
 

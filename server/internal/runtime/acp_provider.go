@@ -29,6 +29,11 @@ type sandboxManager interface {
 // infrastructure fault: a fresh attempt in a new container often succeeds.
 var errSandboxSetup = errors.New("sandbox setup failed")
 
+// errSandboxConfig wraps a sandbox spec failure (missing credential, invalid
+// Agent config). It reads like errSandboxSetup but is not retryable: a fresh
+// container gets the same config and fails the same way.
+var errSandboxConfig = errors.New("sandbox setup failed")
+
 // isRetryableSandboxErr reports whether err is a transient sandbox/ACP fault
 // worth retrying in a fresh container: setup failures, a connection that
 // dropped mid-turn, an idle (stuck) turn, or Cursor CLI transport/reachability

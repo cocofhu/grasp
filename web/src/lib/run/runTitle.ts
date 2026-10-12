@@ -1,3 +1,6 @@
+import { attachmentDisplayName } from '@/lib/shared/attachments'
+import type { ClarifyImage } from '@/lib/shared/types'
+
 /** Matches engine maxRunTitleRunes (Unicode code points). */
 const RUN_TITLE_MAX = 80
 
@@ -6,6 +9,14 @@ export function clipRunTitle(raw: string, max = RUN_TITLE_MAX): string {
   const s = String(raw ?? '').trim()
   const chars = Array.from(s)
   return chars.length > max ? chars.slice(0, max).join('') : s
+}
+
+/** Run title from an opening message: its text, else the first attachment's name. */
+export function runTitleFromDraft(text: string, images: ClarifyImage[]): string {
+  const clipped = clipRunTitle(text)
+  if (clipped) return clipped
+  const name = images[0] ? attachmentDisplayName(images[0], 0) : ''
+  return clipRunTitle(name)
 }
 
 /** Human-readable run title. Repo JSON dumps become repo names; other raw JSON is hidden. */

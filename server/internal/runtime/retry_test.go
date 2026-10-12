@@ -24,6 +24,7 @@ func TestIsRetryableSandboxErr(t *testing.T) {
 		{"nil", nil, false},
 		{"setup", errSandboxSetup, true},
 		{"setup-wrapped", fmt.Errorf("create sandbox: %w", errSandboxSetup), true},
+		{"config", fmt.Errorf("%w: 鉴权未配置", errSandboxConfig), false},
 		{"conn-closed", sandbox.ErrConnClosed, true},
 		{"conn-closed-wrapped", fmt.Errorf("agent chat: %w", sandbox.ErrConnClosed), true},
 		{"idle", sandbox.ErrChatIdle, true},

@@ -2893,6 +2893,9 @@
     },
     "runLaunch": {
       "title": "启动运行 · {name}",
+      "messageLabel": "这次要做什么",
+      "messageHint": "可选。填写后作为运行标题，并作为首条消息发给第一个对话节点；启动后直接进入对话。",
+      "messagePlaceholder": "快速开启你的迭代（可粘贴图片）",
       "tagsLabel": "标签",
       "tagsHint": "可选标签，启动后不可改。回车添加；最多 8 个。",
       "tagsPlaceholder": "输入标签后回车",

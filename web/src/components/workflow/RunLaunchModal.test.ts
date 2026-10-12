@@ -28,7 +28,11 @@ vi.mock('@/lib/api/api', async () => {
   }
 })
 
+const routerPush = vi.hoisted(() => vi.fn())
+vi.mock('vue-router', () => ({ useRouter: () => ({ push: routerPush }) }))
+
 import RunLaunchModal from './RunLaunchModal.vue'
+import { takeHomeApproveHandoff } from '@/lib/run/homeApproveHandoff'
 
 function mountModal(open = true, extraProps: Record<string, unknown> = {}) {
   const i18n = createI18n({
@@ -353,6 +357,43 @@ describe('RunLaunchModal', () => {
       [],
       expect.anything(),
     )
+    wrapper.unmount()
+  })
+
+  it('hides the message box when the caller already passes a first message', async () => {
+    const wrapper = mountModal(true, { firstMessage: { text: 'from home' } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="run-launch-message"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('starts without title or first message when the message box is empty', async () => {
+    apiMocks.startRun.mockResolvedValue({ id: 'run-empty' })
+    const wrapper = mountModal(true)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="run-launch-message"]').exists()).toBe(true)
+    await findStartButton(wrapper)!.trigger('click')
+    await flushPromises()
+    const opts = apiMocks.startRun.mock.calls[0][5]
+    expect(opts.title).toBeUndefined()
+    expect(opts.firstMessage).toBeUndefined()
+    expect(routerPush).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('sends the typed message as title + first message and opens the inbox chat', async () => {
+    apiMocks.startRun.mockResolvedValue({ id: 'run-msg' })
+    const wrapper = mountModal(true, { projectId: 'proj-1' })
+    await flushPromises()
+    await wrapper.find('[data-testid="run-launch-message"] [data-testid="paragraph"]').setValue('  修一下登录页  ')
+    await findStartButton(wrapper)!.trigger('click')
+    await flushPromises()
+    const opts = apiMocks.startRun.mock.calls[0][5]
+    expect(opts.title).toBe('修一下登录页')
+    expect(opts.firstMessage).toEqual({ text: '修一下登录页', images: [] })
+    expect(takeHomeApproveHandoff()).toMatchObject({ runId: 'run-msg', text: '修一下登录页' })
+    expect(routerPush).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-msg', projectId: 'proj-1' } })
+    expect(wrapper.emitted('close')).toBeTruthy()
     wrapper.unmount()
   })
 })

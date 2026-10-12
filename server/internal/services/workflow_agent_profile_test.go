@@ -40,17 +40,18 @@ func TestValidateAgentProfilesProject(t *testing.T) {
 		}
 	})
 
-	t.Run("allows cross project; rejects deleted", func(t *testing.T) {
+	t.Run("rejects cross project and deleted", func(t *testing.T) {
 		g := models.Graph{Nodes: []models.Node{
 			{ID: "a", Type: "agent", Label: "执行", Config: map[string]any{"agent_profile": "other-agent"}},
 		}}
-		if err := ValidateAgentProfilesProject(skills, "alpha", g); err != nil {
-			t.Fatalf("cross project should pass for shared extend: %v", err)
+		err := ValidateAgentProfilesProject(skills, "alpha", g)
+		if err == nil || !strings.Contains(err.Error(), "执行 → other-agent（属于其他项目）") {
+			t.Fatalf("cross project: got %v", err)
 		}
 		g2 := models.Graph{Nodes: []models.Node{
 			{ID: "c", Type: "agent", Label: "计划", Config: map[string]any{"agent_profile": "ghost"}},
 		}}
-		err := ValidateAgentProfilesProject(skills, "alpha", g2)
+		err = ValidateAgentProfilesProject(skills, "alpha", g2)
 		if err == nil || !strings.Contains(err.Error(), "已删除") || !strings.Contains(err.Error(), "计划 → ghost") {
 			t.Fatalf("got %v", err)
 		}
@@ -80,9 +81,8 @@ func TestWorkflowServiceSavePublishAgentProfileGate(t *testing.T) {
 			{ID: "e2", Source: "ag", Target: "out"},
 		}},
 	}
-	// Cross-project Agent is allowed (extend uses current workflow project).
-	if err := s.Save(wf); err != nil {
-		t.Fatalf("Save foreign should pass: %v", err)
+	if err := s.Save(wf); err == nil || !strings.Contains(err.Error(), "属于其他项目") {
+		t.Fatalf("Save want foreign reject, got %v", err)
 	}
 
 	wf.Graph.Nodes[1].Config["agent_profile"] = "ghost"

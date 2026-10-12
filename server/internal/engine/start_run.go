@@ -131,7 +131,7 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 		return nil, err
 	}
 	graph.Nodes = append([]models.Node(nil), graph.Nodes...)
-	if err := e.snapshotCaps(&graph); err != nil {
+	if err := e.snapshotCaps(&graph, def.ProjectID); err != nil {
 		return nil, err
 	}
 	if !models.ValidPriorityInt(priority) {
@@ -464,10 +464,12 @@ func coerceVar(v any, t string) any {
 // snapshotCaps copies each Agent node's capabilities from its Agent onto the
 // run graph, so a run keeps the permissions it started with even if the Agent
 // is edited later. Without an Agent catalog (tests) pre-set caps are kept.
-func (e *Engine) snapshotCaps(g *models.Graph) error {
+// Agents of another project are rejected (empty projectID skips the check).
+func (e *Engine) snapshotCaps(g *models.Graph, projectID string) error {
 	if e.skills == nil {
 		return nil
 	}
+	projectID = strings.TrimSpace(projectID)
 	for i := range g.Nodes {
 		n := &g.Nodes[i]
 		if n.Type != "agent" {
@@ -480,6 +482,9 @@ func (e *Engine) snapshotCaps(g *models.Graph) error {
 		agent, ok := e.skills.Get(profile)
 		if !ok {
 			return fmt.Errorf("节点 %s 的 Agent %s 不存在", n.ID, profile)
+		}
+		if projectID != "" && strings.TrimSpace(agent.ProjectID) != projectID {
+			return fmt.Errorf("节点 %s 的 Agent %s 不属于本项目，请在工作流中改选本项目的 Agent", n.ID, profile)
 		}
 		if agent.Capabilities == nil {
 			return fmt.Errorf("Agent %s 未声明能力", profile)
