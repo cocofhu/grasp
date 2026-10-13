@@ -1,3 +1,4 @@
+import type { CliCatalogModel } from '@/lib/api/apiTypes'
 import type { BackendId } from '@/lib/shared/regionPolicy'
 import { OPENCODE_MODEL_ENV } from './openCodeProvider'
 
@@ -6,8 +7,17 @@ export const CLI_MODEL_ENV = OPENCODE_MODEL_ENV
 /** Codex only: becomes `-c model_reasoning_effort=…`. */
 export const CLI_EFFORT_ENV = 'ACP_BRIDGE_REASONING_EFFORT'
 
-export const CLI_EFFORTS = ['low', 'medium', 'high'] as const
+/** Every level Codex knows; each model accepts a subset (catalog `efforts`). */
+export const CLI_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const
 export type CliEffort = (typeof CLI_EFFORTS)[number]
+/** Offered when the model is auto or typed by hand, so its own levels are unknown. */
+export const CLI_COMMON_EFFORTS: readonly CliEffort[] = ['low', 'medium', 'high']
+
+/** The levels to offer for a model: its catalog list, or the common set when unlisted. */
+export function cliEffortsFor(model: CliCatalogModel | undefined): string[] {
+  if (!model) return [...CLI_COMMON_EFFORTS]
+  return model.efforts ?? []
+}
 
 /** Keys the Runtime card owns for a coding CLI; the env editor shows them read-only. */
 export function managedCliEnvKeys(backend: BackendId | string): string[] {

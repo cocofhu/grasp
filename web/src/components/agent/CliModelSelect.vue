@@ -387,7 +387,7 @@ defineExpose({ focus: () => trigger.value?.focus() })
               />
               <kbd class="cms-kbd">Esc</kbd>
             </div>
-            <div v-if="view.vendors.length" class="scroll-area -mx-0.5 mt-2 flex gap-1.5 overflow-x-auto px-0.5 pb-0.5" data-testid="cli-model-vendors">
+            <div v-if="view.vendors.length" class="-mx-0.5 mt-2 flex flex-wrap gap-1.5 px-0.5 pb-0.5" data-testid="cli-model-vendors">
               <button
                 type="button"
                 class="cms-chip"
@@ -619,8 +619,8 @@ defineExpose({ focus: () => trigger.value?.focus() })
 
                   <div class="mt-4 border-t border-line/70 pt-3">
                     <p class="cms-dt">{{ t('pages.agentStudio.cliModel.flagLabel') }}</p>
-                    <div class="flex items-center gap-1.5 rounded-md border border-line bg-surface py-1 pl-2 pr-1">
-                      <code class="min-w-0 flex-1 truncate font-mono text-[11px] text-txt">--model {{ activeRow.model.id }}</code>
+                    <div class="flex items-start gap-1.5 rounded-md border border-line bg-surface py-1 pl-2 pr-1">
+                      <code class="min-w-0 flex-1 break-all pt-px font-mono text-[11px] leading-[18px] text-txt">--model {{ activeRow.model.id }}</code>
                       <button
                         type="button"
                         tabindex="-1"
@@ -644,7 +644,7 @@ defineExpose({ focus: () => trigger.value?.focus() })
                     </div>
                   </div>
                   <p class="mt-4 text-[11.5px] leading-5 text-txt2">{{ t('pages.agentStudio.cliModel.typedDetail', { cli: cliLabel }) }}</p>
-                  <code class="mt-3 block truncate rounded-md border border-line bg-surface px-2 py-1 font-mono text-[11px] text-txt">--model {{ query.trim() }}</code>
+                  <code class="mt-3 block break-all rounded-md border border-line bg-surface px-2 py-1 font-mono text-[11px] text-txt">--model {{ query.trim() }}</code>
                 </div>
 
                 <div v-else key="auto" class="flex flex-col">
@@ -656,7 +656,7 @@ defineExpose({ focus: () => trigger.value?.focus() })
                     </div>
                   </div>
                   <p class="mt-4 text-[11.5px] leading-5 text-txt2">{{ t('pages.agentStudio.cliModel.autoDetail', { cli: cliLabel }) }}</p>
-                  <code class="mt-3 block truncate rounded-md border border-line bg-surface px-2 py-1 font-mono text-[11px] text-txt">{{ launchCommand(backend, '') }}</code>
+                  <code class="mt-3 block break-all rounded-md border border-line bg-surface px-2 py-1 font-mono text-[11px] text-txt">{{ launchCommand(backend, '') }}</code>
                 </div>
               </Transition>
             </aside>

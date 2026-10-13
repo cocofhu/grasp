@@ -33,9 +33,9 @@ import CliModelSelect from '@/components/agent/CliModelSelect.vue'
 import { backendKind, gitKind } from '@/lib/project/credentialKinds'
 import type { CliCatalogModel } from '@/lib/api/apiTypes'
 import { loadCliModels } from '@/lib/agent/cliCatalog'
-import { hasTag } from '@/lib/agent/cliModelView'
 import {
-  CLI_EFFORTS,
+  CLI_COMMON_EFFORTS,
+  cliEffortsFor,
   readCliEffort,
   readCliModel,
   switchCliModelEnv,
@@ -146,8 +146,9 @@ const cliEffort = computed(() => readCliEffort(kvToRec(props.draft.env)) || 'aut
 
 function setCliModel(id: string) {
   let env = writeCliModel(kvToRec(props.draft.env), id)
+  const effort = readCliEffort(env)
   const listed = cliCatalog.value.find((m) => m.id === id)
-  if (listed && !hasTag(listed, 'reasoning')) env = writeCliEffort(env, '')
+  if (effort && !cliEffortsFor(listed).includes(effort)) env = writeCliEffort(env, '')
   props.draft.env = recToKV(env)
 }
 
@@ -166,12 +167,9 @@ watch(
   },
   { immediate: true },
 )
-/** Effort only applies to reasoning models; auto and unlisted ids are given the benefit of the doubt. */
-const effortSupported = computed(() => {
-  const m = cliCatalog.value.find((x) => x.id === cliModel.value)
-  return !m || hasTag(m, 'reasoning')
-})
-const effortOptions = computed(() => ['auto', ...CLI_EFFORTS])
+const modelEfforts = computed(() => cliEffortsFor(cliCatalog.value.find((x) => x.id === cliModel.value)))
+const effortSupported = computed(() => modelEfforts.value.length > 0)
+const effortOptions = computed(() => ['auto', ...(effortSupported.value ? modelEfforts.value : CLI_COMMON_EFFORTS)])
 
 const modelCard = ref<HTMLElement | null>(null)
 const modelPulse = ref(false)

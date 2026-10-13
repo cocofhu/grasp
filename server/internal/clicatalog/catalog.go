@@ -24,6 +24,9 @@ type Model struct {
 	// Context is the context window in thousands of tokens; 0 means unknown.
 	Context     int  `json:"context,omitempty"`
 	Recommended bool `json:"recommended,omitempty"`
+	// Efforts lists the reasoning levels the CLI accepts for this model
+	// (Codex's model_reasoning_effort); empty means the CLI exposes none.
+	Efforts []string `json:"efforts,omitempty"`
 }
 
 var (
@@ -31,17 +34,27 @@ var (
 	reasoningOnly   = []string{TagReasoning}
 	visionFast      = []string{TagVision, TagFast}
 	fastOnly        = []string{TagFast}
-	visionOnly      = []string{TagVision}
+	reasoningFast   = []string{TagReasoning, TagFast}
+
+	codexEfforts     = []string{"low", "medium", "high", "xhigh", "max", "ultra"}
+	codexLunaEfforts = []string{"low", "medium", "high", "xhigh", "max"}
 )
 
+// Cursor bakes the reasoning level into the id; each entry is the model's
+// default variant, as listed by `cursor-agent models`.
 var catalog = map[string][]Model{
 	"cursor": {
-		{ID: "claude-4.6-opus-max", Name: "Claude Opus 4.6 Max", Vendor: "anthropic", Tags: visionReasoning, Context: 200, Recommended: true},
-		{ID: "claude-4.5-sonnet", Name: "Claude Sonnet 4.5", Vendor: "anthropic", Tags: visionReasoning, Context: 200, Recommended: true},
-		{ID: "gpt-5", Name: "GPT-5", Vendor: "openai", Tags: visionReasoning, Context: 400, Recommended: true},
-		{ID: "gpt-5-codex", Name: "GPT-5 Codex", Vendor: "openai", Tags: reasoningOnly, Context: 400},
-		{ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro", Vendor: "google", Tags: visionReasoning, Context: 1000},
-		{ID: "grok-4.5-high-fast", Name: "Grok 4.5 Fast", Vendor: "xai", Tags: []string{TagReasoning, TagFast}, Context: 256},
+		{ID: "claude-opus-5-5-medium", Name: "Claude Opus 5.5", Vendor: "anthropic", Tags: visionReasoning, Context: 1000, Recommended: true},
+		{ID: "gpt-5.6-sol-medium", Name: "GPT-5.6 Sol", Vendor: "openai", Tags: visionReasoning, Context: 1000, Recommended: true},
+		{ID: "claude-sonnet-5-high", Name: "Claude Sonnet 5", Vendor: "anthropic", Tags: visionReasoning, Context: 1000, Recommended: true},
+		{ID: "claude-fable-5-1-high", Name: "Claude Fable 5.1", Vendor: "anthropic", Tags: visionReasoning, Context: 1000},
+		{ID: "gpt-5.6-terra-medium", Name: "GPT-5.6 Terra", Vendor: "openai", Tags: visionReasoning, Context: 1000},
+		{ID: "gpt-5.6-luna-medium", Name: "GPT-5.6 Luna", Vendor: "openai", Tags: visionReasoning, Context: 1000},
+		{ID: "gpt-5.3-codex", Name: "Codex 5.3", Vendor: "openai", Tags: reasoningOnly},
+		{ID: "gemini-4-argon-medium", Name: "Gemini 4 Argon", Vendor: "google", Tags: visionReasoning},
+		{ID: "grok-4.7-medium", Name: "Grok 4.7", Vendor: "xai", Tags: reasoningOnly},
+		{ID: "composer-2.5", Name: "Composer 2.5", Vendor: "cursor", Tags: reasoningFast},
+		{ID: "kimi-k3-max", Name: "Kimi K3", Vendor: "moonshot", Tags: reasoningOnly},
 	},
 	"claude_code": {
 		{ID: "sonnet", Name: "Claude Sonnet (latest)", Vendor: "anthropic", Tags: visionReasoning, Context: 200, Recommended: true},
@@ -50,12 +63,15 @@ var catalog = map[string][]Model{
 		{ID: "claude-sonnet-4-5", Name: "Claude Sonnet 4.5", Vendor: "anthropic", Tags: visionReasoning, Context: 200},
 		{ID: "claude-opus-4-1", Name: "Claude Opus 4.1", Vendor: "anthropic", Tags: visionReasoning, Context: 200},
 	},
+	// The models Codex lists in its picker (models_cache.json, visibility "list").
 	"codex": {
-		{ID: "gpt-5-codex", Name: "GPT-5 Codex", Vendor: "openai", Tags: reasoningOnly, Context: 400, Recommended: true},
-		{ID: "gpt-5", Name: "GPT-5", Vendor: "openai", Tags: visionReasoning, Context: 400, Recommended: true},
-		{ID: "gpt-5-mini", Name: "GPT-5 mini", Vendor: "openai", Tags: []string{TagVision, TagReasoning, TagFast}, Context: 400},
-		{ID: "o3", Name: "o3", Vendor: "openai", Tags: visionReasoning, Context: 200},
-		{ID: "gpt-4.1", Name: "GPT-4.1", Vendor: "openai", Tags: visionOnly, Context: 1000},
+		{ID: "gpt-6.1-sol", Name: "GPT-6.1 Sol", Vendor: "openai", Tags: visionReasoning, Context: 500, Recommended: true, Efforts: codexEfforts},
+		{ID: "gpt-6-astra", Name: "GPT-6 Astra", Vendor: "openai", Tags: visionReasoning, Context: 272, Recommended: true, Efforts: codexEfforts},
+		{ID: "gpt-6-sol", Name: "GPT-6 Sol", Vendor: "openai", Tags: visionReasoning, Context: 272, Efforts: codexEfforts},
+		{ID: "gpt-6-luna", Name: "GPT-6 Luna", Vendor: "openai", Tags: visionReasoning, Context: 272, Efforts: codexLunaEfforts},
+		{ID: "gpt-5.6-sol", Name: "GPT-5.6 Sol", Vendor: "openai", Tags: visionReasoning, Context: 272, Efforts: codexEfforts},
+		{ID: "gpt-5.6-terra", Name: "GPT-5.6 Terra", Vendor: "openai", Tags: visionReasoning, Context: 272, Efforts: codexEfforts},
+		{ID: "gpt-5.6-luna", Name: "GPT-5.6 Luna", Vendor: "openai", Tags: visionReasoning, Context: 272, Efforts: codexLunaEfforts},
 	},
 	"codebuddy": {
 		{ID: "claude-4.5-sonnet", Name: "Claude Sonnet 4.5", Vendor: "anthropic", Tags: visionReasoning, Context: 200, Recommended: true},

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   CLI_EFFORT_ENV,
   CLI_MODEL_ENV,
+  cliEffortsFor,
   isManagedCliEnvKey,
   managedCliEnvKeys,
   readCliEffort,
@@ -24,6 +25,14 @@ describe('cliModelEnv', () => {
     expect(readCliEffort({ [CLI_EFFORT_ENV]: 'turbo' })).toBe('')
     expect(writeCliEffort({ [CLI_EFFORT_ENV]: 'low' }, 'auto')).toEqual({})
     expect(writeCliEffort({}, 'medium')).toEqual({ [CLI_EFFORT_ENV]: 'medium' })
+    expect(readCliEffort({ [CLI_EFFORT_ENV]: 'ultra' })).toBe('ultra')
+  })
+
+  it('offers a listed model its own levels and anything else the common set', () => {
+    const sol = { id: 'gpt-6.1-sol', name: 'Sol', vendor: 'openai', efforts: ['low', 'ultra'] }
+    expect(cliEffortsFor(sol)).toEqual(['low', 'ultra'])
+    expect(cliEffortsFor({ id: 'plain', name: 'Plain', vendor: 'openai' })).toEqual([])
+    expect(cliEffortsFor(undefined)).toEqual(['low', 'medium', 'high'])
   })
 
   it('clears the pin on a backend switch and reports it', () => {

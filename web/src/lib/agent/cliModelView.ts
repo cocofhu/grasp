@@ -18,6 +18,7 @@ const VENDOR_LABELS: Record<string, string> = {
   moonshot: 'Moonshot',
   tencent: 'Tencent',
   bytedance: 'ByteDance',
+  cursor: 'Cursor',
 }
 
 /** Logo files under `assets/provider-logos` that stand for a vendor. */
@@ -29,6 +30,7 @@ const VENDOR_LOGOS: Record<string, string> = {
   deepseek: 'deepseek',
   moonshot: 'moonshot',
   bytedance: 'bytedance',
+  cursor: 'cursor',
 }
 
 export const TAG_ORDER: CliModelTag[] = ['vision', 'reasoning', 'fast']
