@@ -4,8 +4,9 @@ These SVGs are bundled locally so the credentials UI does not make runtime
 requests to an image host.
 
 - `claude.svg`, `codebuddy.svg`, `cursor.svg`, `trae.svg`, `opencode.svg`,
-  `github.svg`, `gitlab.svg`, `deepseek.svg`, and `openrouter.svg` come from
-  Simple Icons v16. Their source metadata and license are maintained in the
+  `github.svg`, `gitlab.svg`, `deepseek.svg`, `openrouter.svg`, `google.svg`
+  (slug `googlegemini`), `moonshot.svg` (slug `moonshotai`), and
+  `bytedance.svg` come from Simple Icons v16. Their source metadata and license are maintained in the
   [Simple Icons repository](https://github.com/simple-icons/simple-icons),
   and the pinned assets were downloaded from the corresponding
   `cdn.jsdelivr.net/npm/simple-icons@v16/icons/<slug>.svg` URLs.

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { nextTick, ref } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
@@ -157,6 +158,16 @@ const {
   onAgentNameClick,
   syncTabFade,
 } = useAgentStudio({ projectId: () => props.projectId, embedded: () => !!props.embedded })
+
+/** The env tab's "Edit" link for a managed model key lands on the Runtime card. */
+const focusModelTick = ref(0)
+async function focusCliModel() {
+  requestStudioTab('meta')
+  focusModelTick.value++
+  // Reset once the panel has seen it, so a later visit to the tab does not pulse again.
+  await nextTick()
+  focusModelTick.value = 0
+}
 
 async function createStudioChatTest(
   profile: string,
@@ -493,6 +504,7 @@ async function createStudioChatTest(
             context="agent"
             @toast="showToast"
             @open-settings-file="openSettingsInFiles"
+            @edit-model="focusCliModel"
           />
 
           <AgentCapabilitiesPanel
@@ -520,6 +532,7 @@ async function createStudioChatTest(
             :draft="draft"
             :agent-name="activeName"
             :projects="projects"
+            :focus-model-tick="focusModelTick"
           />
 
           <div

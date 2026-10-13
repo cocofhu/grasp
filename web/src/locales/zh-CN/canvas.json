@@ -194,7 +194,8 @@
         "capabilities": "能力",
         "basics": "基本信息",
         "settings": "配置",
-        "outputs": "输出"
+        "outputs": "输出",
+        "model": "模型"
       },
       "agentPlaceholder": "选择 Agent",
       "goalPlaceholder": "这一步要完成什么。输入 {'{{'} 插入变量或上游产物",
@@ -224,6 +225,36 @@
       "actions": {
         "add": "添加动作",
         "note": "每个动作是一个出口,把它连到下一步"
+      },
+      "model": {
+        "needAgent": "先选择 Agent，再决定这个节点用哪个模型。",
+        "follow": "跟随 Agent",
+        "followCurrent": "当前：{name} · {model}",
+        "followEmpty": "Agent 还没选模型 Key，运行会失败",
+        "nodeChip": "本节点",
+        "agentDefault": "Agent 默认",
+        "projectKeys": "项目模型 Key",
+        "empty": "项目里还没有模型 Key",
+        "manage": "在安全凭据中心新增或管理",
+        "staleTitle": "所选模型 Key 已失效",
+        "staleBody": "它已被删除或清除，请重新选择",
+        "ownAuthTitle": "{backend} 使用自带的模型授权",
+        "ownAuthBody": "节点模型只对 OpenCode Agent 生效，这个 Agent 的模型由编码助手自己决定。",
+        "ignored": "之前选的模型不会生效",
+        "clear": "清除",
+        "hint": "只影响本节点。凭据未选时用 Agent 的；模型未选时用凭据的默认模型。",
+        "credential": "凭据",
+        "modelLabel": "模型",
+        "credentialLine": "{vendor} · 默认 {model}",
+        "needCredential": "先选一个可用的凭据",
+        "useDefault": "用凭据默认模型",
+        "useTyped": "使用自定义 ID「{id}」",
+        "unlisted": "厂商目录里没有这个模型，请确认能用",
+        "searchPlaceholder": "搜索模型，或直接输入 ID",
+        "typePlaceholder": "输入模型 ID",
+        "catalogTitle": "{vendor} 模型目录",
+        "noCatalog": "这个厂商没有模型目录，直接输入模型 ID 即可。",
+        "moreHidden": "还有 {n} 个，继续输入以筛选"
       }
     },
     "topbar": {

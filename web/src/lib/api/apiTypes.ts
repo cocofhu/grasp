@@ -484,6 +484,23 @@ export interface OpenCodeCatalogModel {
   name?: string
 }
 
+export type CliModelTag = 'vision' | 'reasoning' | 'fast'
+
+/** One entry of a coding CLI's shipped model shortlist. `id` goes to `--model` verbatim. */
+export interface CliCatalogModel {
+  id: string
+  name: string
+  vendor: string
+  tags?: CliModelTag[]
+  /** Context window in thousands of tokens. */
+  context?: number
+  recommended?: boolean
+}
+
+export interface CliModelsResponse {
+  models: CliCatalogModel[]
+}
+
 export interface OpenCodeProvidersResponse {
   providers: OpenCodeCatalogProvider[]
   fetchedAt?: string

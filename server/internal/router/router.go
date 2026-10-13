@@ -68,6 +68,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 
 		api.GET("/opencode/providers", h.ListOpenCodeProviders)
 		api.GET("/opencode/providers/:provider/models", h.ListOpenCodeProviderModels)
+		api.GET("/acp-backends/:backend/models", h.ListCliBackendModels)
 
 		api.GET("/projects", h.ListProjects)
 		api.POST("/projects", h.CreateProject)

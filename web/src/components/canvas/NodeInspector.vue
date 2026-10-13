@@ -7,6 +7,8 @@ import AppButton from '../ui/AppButton.vue'
 import AppSwitch from '../ui/AppSwitch.vue'
 import OutputSourcesEditor from './OutputSourcesEditor.vue'
 import AgentPicker from './inspector/AgentPicker.vue'
+import ModelPicker from './inspector/ModelPicker.vue'
+import type { ProjectCredentialItem } from '@/lib/api/api'
 import GoalEditor, { type TemplateToken } from './inspector/GoalEditor.vue'
 import VariablesField from './inspector/VariablesField.vue'
 import { syncHumanGateFormDefaults } from '@/data/nodeRegistry'
@@ -26,6 +28,9 @@ const props = defineProps<{
   agents: CanvasAgent[]
   agentsLoaded?: boolean
   focusGoalTick?: number
+  projectId?: string
+  /** Project credentials for the model picker; null while loading. */
+  credentials?: ProjectCredentialItem[] | null
 }>()
 const emit = defineEmits<{ (e: 'close'): void; (e: 'delete'): void }>()
 
@@ -67,6 +72,21 @@ const studioLink = computed(() => ({
   path: '/agents',
   query: agentName.value ? { agent: agentName.value, studioTab: 'capabilities' } : {},
 }))
+
+const modelCredentialId = computed({
+  get: () => String(cfg.value.model_credential_id ?? '').trim(),
+  set: (id: string) => {
+    if (id) cfg.value.model_credential_id = id
+    else delete cfg.value.model_credential_id
+  },
+})
+const modelId = computed({
+  get: () => String(cfg.value.model_id ?? '').trim(),
+  set: (id: string) => {
+    if (id) cfg.value.model_id = id
+    else delete cfg.value.model_id
+  },
+})
 
 function setAgent(name: string) {
   cfg.value.agent_profile = name
@@ -247,6 +267,17 @@ const hue = computed(() => {
           />
           <p v-if="agentMissing" class="insp-warn" data-testid="inspector-agent-missing">{{ t('canvas.node.agentMissing') }}</p>
           <p v-else-if="!agentName" class="mt-1.5 text-[11px] text-txt3">{{ t('canvas.node.noAgent') }}</p>
+        </section>
+
+        <section class="insp-card" data-testid="inspector-model">
+          <h3 class="insp-title">{{ t('canvas.inspector.sections.model') }}</h3>
+          <ModelPicker
+            v-model:credential-id="modelCredentialId"
+            v-model:model-id="modelId"
+            :agent="agent"
+            :credentials="credentials ?? null"
+            :project-id="projectId"
+          />
         </section>
 
         <section class="insp-card">

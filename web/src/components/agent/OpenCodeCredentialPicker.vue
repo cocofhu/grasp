@@ -13,7 +13,7 @@ import {
   type OpenCodeProviderId,
 } from '@/lib/agent/openCodeProvider'
 import { useToast } from '@/lib/composables/useToast'
-import { conflictingAlias, kindById } from '@/lib/project/credentialKinds'
+import { conflictingAlias, isModelVendorCredential, kindById } from '@/lib/project/credentialKinds'
 
 const props = withDefaults(defineProps<{
   mode: 'select' | 'manage'
@@ -62,7 +62,7 @@ const form = reactive({
 })
 
 const source = computed(() => (props.items === undefined ? remoteItems.value : props.items))
-const rows = computed(() => source.value.filter(isModelVendor))
+const rows = computed(() => source.value.filter(isModelVendorCredential))
 const baseRequired = computed(() => {
   void catalogTick.value
   return openCodeCustomBaseRequired(form.provider, form.baseUrl)
@@ -75,17 +75,6 @@ const description = computed(() => {
 })
 const heading = computed(() => props.title || t('pages.agentStudio.openCode.credentialTitle'))
 const canAdd = computed(() => props.allowAdd !== false)
-
-function isModelVendor(item: ProjectCredentialItem): boolean {
-  return (
-    (item.type || '').toLowerCase() === 'ai' &&
-    (item.provider || '').toLowerCase() === 'opencode' &&
-    (!item.source || item.source === 'project') &&
-    !!item.configured &&
-    item.enabled !== false &&
-    !item.revokedAt
-  )
-}
 
 function metaString(item: ProjectCredentialItem, key: string): string {
   const value = item.metadata?.[key]

@@ -2889,6 +2889,69 @@
         "verdictHint": "Writing a verdict product gives the node Pass / Fail outlets",
         "maxRoundsTitle": "Max nudge rounds",
         "maxRoundsDesc": "How many extra rounds to nudge while plan items remain open; empty = default 3"
+      },
+      "cliModel": {
+        "label": "Model",
+        "runtimeTitle": "Runtime",
+        "runtimeDesc": "Which account this Agent signs in with and which model it runs.",
+        "auto": "Auto",
+        "autoSub": "{cli} picks the model",
+        "autoRow": "Auto (CLI default)",
+        "autoDetail": "No model is pinned; {cli} chooses by its own default. A good start when unsure — change it any time.",
+        "recommended": "Recommended",
+        "allVendors": "All",
+        "searchPlaceholder": "Search by name, ID or vendor",
+        "contextShort": "{n} context",
+        "commandAutoNote": "No --model; the CLI default applies",
+        "resetAuto": "Reset to auto",
+        "unlistedName": "Custom model",
+        "unlisted": "Not in the shortlist; passed to the CLI as is",
+        "useTyped": "Use custom ID \"{id}\"",
+        "enterHint": "Or just press Enter",
+        "noMatch": "Nothing matches \"{q}\"",
+        "typedDetail": "This ID is not in the shortlist. Grasp hands it to {cli} unchanged; if {cli} does not know it, the run fails.",
+        "catalogFailed": "The shortlist is unavailable right now; type a model ID instead.",
+        "noCatalog": "This CLI has no shortlist; type a model ID instead.",
+        "contextLabel": "Context",
+        "capsLabel": "Capabilities",
+        "suitsLabel": "Good for",
+        "flagLabel": "Launch flag",
+        "copy": "Copy",
+        "copied": "Copied",
+        "tags": {
+          "vision": "Vision",
+          "reasoning": "Reasoning",
+          "fast": "Fast"
+        },
+        "strengths": {
+          "refactor": "multi-step refactors",
+          "screenshots": "UI work from screenshots",
+          "quick": "quick small edits",
+          "largeRepo": "reading large codebases at once",
+          "general": "everyday coding"
+        },
+        "kbd": {
+          "move": "Move",
+          "vendor": "Vendor",
+          "pick": "Pick",
+          "close": "Close"
+        },
+        "effortLabel": "Reasoning effort",
+        "effortDesc": "Higher thinks deeper but runs slower.",
+        "effortUnsupported": "This model does not support reasoning effort",
+        "effort": {
+          "auto": "Auto",
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High"
+        },
+        "switched": "Switched to {cli}; model reset to auto",
+        "undo": "Undo",
+        "managedBy": "Managed in Runtime · Model",
+        "goEdit": "Edit",
+        "inspectorLabel": "Model",
+        "inspectorEdit": "Change in Agent settings",
+        "wizardHint": "Not sure? Start with auto; you can change it later in Agent settings."
       }
     },
     "runLaunch": {

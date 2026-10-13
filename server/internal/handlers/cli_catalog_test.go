@@ -1,0 +1,54 @@
+package handlers_test
+
+import (
+	"encoding/json"
+	"net/http"
+	"testing"
+)
+
+func TestListCliBackendModels(t *testing.T) {
+	hn := newHarness(t)
+	enableAdmin(t)
+	hn.cookie = hn.login(t)
+	w := hn.do(http.MethodGet, "/api/acp-backends/claude_code/models", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	var got struct {
+		Models []struct {
+			ID          string   `json:"id"`
+			Name        string   `json:"name"`
+			Vendor      string   `json:"vendor"`
+			Tags        []string `json:"tags"`
+			Context     int      `json:"context"`
+			Recommended bool     `json:"recommended"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Models) == 0 {
+		t.Fatal("empty list")
+	}
+	first := got.Models[0]
+	if first.ID == "" || first.Vendor != "anthropic" || first.Context == 0 || len(first.Tags) == 0 {
+		t.Fatalf("fields lost: %+v", first)
+	}
+}
+
+// OpenCode reads models.dev and unknown ids are typed by hand; both get an
+// empty list rather than an error.
+func TestListCliBackendModelsUnlisted(t *testing.T) {
+	hn := newHarness(t)
+	enableAdmin(t)
+	hn.cookie = hn.login(t)
+	for _, b := range []string{"opencode", "nope"} {
+		w := hn.do(http.MethodGet, "/api/acp-backends/"+b+"/models", nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: status %d", b, w.Code)
+		}
+		if body := w.Body.String(); body != `{"models":[]}` {
+			t.Fatalf("%s: body = %s", b, body)
+		}
+	}
+}

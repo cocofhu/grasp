@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
+import Icon from '@/components/ui/Icon.vue'
 import {
   ACP_BACKENDS,
   getRegionPolicy,
@@ -28,15 +29,31 @@ import {
 } from '@/lib/agent/openCodeProvider'
 import OpenCodeCredentialPicker from '@/components/agent/OpenCodeCredentialPicker.vue'
 import CredentialAliasPicker from '@/components/agent/CredentialAliasPicker.vue'
+import CliModelSelect from '@/components/agent/CliModelSelect.vue'
 import { backendKind, gitKind } from '@/lib/project/credentialKinds'
+import type { CliCatalogModel } from '@/lib/api/apiTypes'
+import { loadCliModels } from '@/lib/agent/cliCatalog'
+import { hasTag } from '@/lib/agent/cliModelView'
+import {
+  CLI_EFFORTS,
+  readCliEffort,
+  readCliModel,
+  switchCliModelEnv,
+  writeCliEffort,
+  writeCliModel,
+} from '@/lib/agent/cliModelEnv'
+import { useToast } from '@/lib/composables/useToast'
 
 const props = defineProps<{
   draft: AgentStudioDraft
   agentName: string
   projects: { id: string; name: string }[]
+  /** Bumped by the env tab's "Edit" link: scroll to the model card and pulse it. */
+  focusModelTick?: number
 }>()
 
 const { t } = useI18n()
+const toast = useToast()
 
 let configRootTouched = false
 
@@ -87,21 +104,90 @@ function cancelProjectChange() {
 
 function selectAcpBackend(id: BackendId) {
   const prev = props.draft.acpBackend
+  if (prev === id) return
+  const before = {
+    acpBackend: prev,
+    configRoot: props.draft.layout.configRoot,
+    aiCredentialId: props.draft.aiCredentialId,
+    env: props.draft.env.map((e) => ({ ...e })),
+  }
   props.draft.acpBackend = id
   if (!configRootTouched) {
     props.draft.layout.configRoot = defaultConfigRootFor(id)
   }
-  if (prev !== id) {
-    props.draft.aiCredentialId = ''
-    const env = switchOpenCodeEnv(switchBackendRegions(kvToRec(props.draft.env), id), id)
-    if (id === 'opencode') {
-      delete env[OPENCODE_PROVIDER_ENV]
-      delete env[OPENCODE_BASE_URL_ENV]
-      delete env[OPENCODE_MODEL_VISION_ENV]
-    }
-    props.draft.env = recToKV(env)
+  props.draft.aiCredentialId = ''
+  const switched = switchCliModelEnv(switchOpenCodeEnv(switchBackendRegions(kvToRec(props.draft.env), id), id), prev, id)
+  const env = switched.env
+  if (id === 'opencode') {
+    delete env[OPENCODE_PROVIDER_ENV]
+    delete env[OPENCODE_BASE_URL_ENV]
+    delete env[OPENCODE_MODEL_VISION_ENV]
+  }
+  props.draft.env = recToKV(env)
+  if (switched.cleared && prev !== 'opencode') {
+    const label = ACP_BACKENDS.find((b) => b.id === id)?.label || id
+    toast.show(t('pages.agentStudio.cliModel.switched', { cli: label }), 'default', {
+      action: {
+        label: t('pages.agentStudio.cliModel.undo'),
+        run: () => {
+          props.draft.acpBackend = before.acpBackend
+          props.draft.layout.configRoot = before.configRoot
+          props.draft.aiCredentialId = before.aiCredentialId
+          props.draft.env = before.env
+        },
+      },
+    })
   }
 }
+
+const showCliRuntime = computed(() => !!props.draft.acpBackend && props.draft.acpBackend !== 'opencode')
+const cliModel = computed(() => readCliModel(kvToRec(props.draft.env)))
+const cliEffort = computed(() => readCliEffort(kvToRec(props.draft.env)) || 'auto')
+
+function setCliModel(id: string) {
+  let env = writeCliModel(kvToRec(props.draft.env), id)
+  const listed = cliCatalog.value.find((m) => m.id === id)
+  if (listed && !hasTag(listed, 'reasoning')) env = writeCliEffort(env, '')
+  props.draft.env = recToKV(env)
+}
+
+function setCliEffort(v: string) {
+  props.draft.env = recToKV(writeCliEffort(kvToRec(props.draft.env), v))
+}
+
+const cliCatalog = ref<CliCatalogModel[]>([])
+watch(
+  () => props.draft.acpBackend,
+  async (backend) => {
+    cliCatalog.value = []
+    if (backend !== 'codex') return
+    const list = await loadCliModels(backend)
+    if (props.draft.acpBackend === backend) cliCatalog.value = list
+  },
+  { immediate: true },
+)
+/** Effort only applies to reasoning models; auto and unlisted ids are given the benefit of the doubt. */
+const effortSupported = computed(() => {
+  const m = cliCatalog.value.find((x) => x.id === cliModel.value)
+  return !m || hasTag(m, 'reasoning')
+})
+const effortOptions = computed(() => ['auto', ...CLI_EFFORTS])
+
+const modelCard = ref<HTMLElement | null>(null)
+const modelPulse = ref(false)
+watch(
+  () => props.focusModelTick,
+  async (tick) => {
+    if (!tick) return
+    await nextTick()
+    modelCard.value?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    modelPulse.value = false
+    await nextTick()
+    modelPulse.value = true
+    setTimeout(() => (modelPulse.value = false), 1400)
+  },
+  { immediate: true },
+)
 
 function onSelectCredential(id: string) {
   if (props.draft.openCodeCredentialId === id) return
@@ -242,15 +328,75 @@ const derivedPaths = computed(() => {
           </button>
         </div>
       </div>
-      <div v-if="aiKind" class="border-t border-dashed border-line pt-4">
-        <CredentialAliasPicker
-          :project-id="draft.projectId"
-          :kind="aiKind.id"
-          :selected-id="draft.aiCredentialId"
-          :hint="t('pages.projectDetail.projectCredentials.codingPickHint')"
-          @update:selected-id="draft.aiCredentialId = $event"
-        />
-      </div>
+      <section
+        v-if="showCliRuntime"
+        class="runtime-card overflow-hidden rounded-xl border border-line bg-surface"
+        data-test="agent-cli-runtime"
+      >
+        <header class="flex items-center gap-2.5 border-b border-line/70 px-4 py-3">
+          <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-dim text-accent-2">
+            <Icon name="terminal" :size="14" />
+          </span>
+          <div class="min-w-0">
+            <h4 class="m-0 text-[13px] font-semibold text-txt">{{ t('pages.agentStudio.cliModel.runtimeTitle') }}</h4>
+            <p class="m-0 text-[11px] text-txt3">{{ t('pages.agentStudio.cliModel.runtimeDesc') }}</p>
+          </div>
+        </header>
+        <div v-if="aiKind" class="px-4 py-3.5">
+          <CredentialAliasPicker
+            :project-id="draft.projectId"
+            :kind="aiKind.id"
+            :selected-id="draft.aiCredentialId"
+            :hint="t('pages.projectDetail.projectCredentials.codingPickHint')"
+            @update:selected-id="draft.aiCredentialId = $event"
+          />
+        </div>
+        <div
+          ref="modelCard"
+          class="model-block border-t border-line/70 px-4 py-3.5"
+          :class="{ 'is-pulse': modelPulse }"
+          data-test="agent-cli-model"
+        >
+          <div class="mb-2 text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.cliModel.label') }}</div>
+          <CliModelSelect
+            :key="draft.acpBackend"
+            :model-value="cliModel"
+            :backend="draft.acpBackend"
+            @update:model-value="setCliModel"
+          />
+        </div>
+        <div v-if="draft.acpBackend === 'codex'" class="border-t border-line/70 px-4 py-3.5" data-test="agent-cli-effort">
+          <div class="mb-0.5 flex items-center gap-2 text-[12px] font-medium text-txt2">
+            <Icon name="brain" :size="13" class="text-txt3" />
+            {{ t('pages.agentStudio.cliModel.effortLabel') }}
+          </div>
+          <p class="mb-2 text-[11px] text-txt3">
+            {{ effortSupported ? t('pages.agentStudio.cliModel.effortDesc') : t('pages.agentStudio.cliModel.effortUnsupported') }}
+          </p>
+          <div
+            class="segmented inline-flex rounded-lg border border-line bg-base p-0.5"
+            :class="{ 'pointer-events-none opacity-50': !effortSupported }"
+            role="radiogroup"
+            :aria-label="t('pages.agentStudio.cliModel.effortLabel')"
+            :aria-disabled="!effortSupported"
+          >
+            <button
+              v-for="opt in effortOptions"
+              :key="opt"
+              type="button"
+              role="radio"
+              :aria-checked="cliEffort === opt"
+              :disabled="!effortSupported"
+              class="segmented-item rounded-md px-3 py-1 text-[12px] transition"
+              :class="cliEffort === opt ? 'is-on bg-surface text-txt shadow-sm' : 'text-txt3 hover:text-txt2'"
+              :data-test="`agent-cli-effort-${opt}`"
+              @click="setCliEffort(opt)"
+            >
+              {{ t(`pages.agentStudio.cliModel.effort.${opt}`) }}
+            </button>
+          </div>
+        </div>
+      </section>
       <div v-if="showOpenCode" class="border-t border-dashed border-line pt-4">
         <OpenCodeCredentialPicker
           mode="select"
@@ -337,3 +483,29 @@ const derivedPaths = computed(() => {
     </AppModal>
   </div>
 </template>
+
+<style scoped>
+.model-block {
+  transition: background-color 600ms ease;
+}
+.model-block.is-pulse {
+  animation: model-pulse 1.4s var(--ease-out-expo);
+}
+@keyframes model-pulse {
+  0%,
+  30% {
+    background-color: rgb(var(--c-accent) / 0.12);
+    box-shadow: inset 3px 0 0 rgb(var(--c-accent));
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: inset 3px 0 0 transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .model-block.is-pulse {
+    animation: none;
+    background-color: rgb(var(--c-accent) / 0.08);
+  }
+}
+</style>

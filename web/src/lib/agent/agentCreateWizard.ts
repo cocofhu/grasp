@@ -26,6 +26,7 @@ import {
   syncStartPathFields,
   type StartPath,
 } from '@/lib/shared/startPath'
+import { switchCliModelEnv } from '@/lib/agent/cliModelEnv'
 
 export type WizardBackendId = BackendId
 export { ACP_BACKENDS, CLI_BACKENDS, START_PATH_OPTIONS, type StartPath }
@@ -160,10 +161,13 @@ export function configRootFor(backend: WizardBackendId): string {
 }
 
 export function applyAcpBackend(draft: WizardDraft, id: WizardBackendId): void {
+  const prev = draft.acpBackend
   syncStartPathFields(draft, id)
   draft.acpBackend = id
   draft.configRoot = configRootFor(id)
-  draft.env = recToKV(switchOpenCodeEnv(switchBackendRegions(kvToRec(draft.env), id), id))
+  draft.env = recToKV(
+    switchCliModelEnv(switchOpenCodeEnv(switchBackendRegions(kvToRec(draft.env), id), id), prev, id).env,
+  )
 }
 
 /** Switch start path; CLI restores the last CLI backend that was picked. */

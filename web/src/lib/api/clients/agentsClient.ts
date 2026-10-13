@@ -9,6 +9,7 @@ import { BASE, req } from '../httpCore'
 import type {
   Agent,
   AgentTemplate,
+  CliModelsResponse,
   OpenCodeModelsResponse,
   OpenCodeProvidersResponse,
   ProjectAgentsImportResult,
@@ -217,6 +218,9 @@ export const agentsClient = {
   /** One vendor's models; empty for a gateway the catalog does not know. */
   openCodeModels: (provider: string) =>
     req<OpenCodeModelsResponse>(`/opencode/providers/${encodeURIComponent(provider)}/models`),
+  /** Shipped model shortlist for a coding CLI backend; empty for OpenCode and unknown ids. */
+  cliModels: (backend: string) =>
+    req<CliModelsResponse>(`/acp-backends/${encodeURIComponent(backend)}/models`),
   importAgent: async (
     zipFile: File,
     opts: { projectId: string; targetName: string; mode: 'create' | 'overwrite' },

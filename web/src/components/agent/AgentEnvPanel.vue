@@ -21,13 +21,14 @@ import {
   recToKV,
   type AgentStudioDraft,
 } from '@/lib/agent/agentStudioDraft'
+import { isManagedCliEnvKey, managedCliEnvKeys } from '@/lib/agent/cliModelEnv'
 
 const props = defineProps<{
   draft: AgentStudioDraft
   /** agent = Studio 单 Agent；shared = 项目共享配置 */
   context?: 'agent' | 'shared'
 }>()
-const emit = defineEmits<{ toast: [msg: string]; 'open-settings-file': [] }>()
+const emit = defineEmits<{ toast: [msg: string]; 'open-settings-file': []; 'edit-model': [] }>()
 
 const { t } = useI18n()
 
@@ -44,6 +45,17 @@ const settingsPath = computed(() =>
   settingsFileAbsPath(props.draft.layout?.configRoot || '', props.draft.acpBackend || 'cursor'),
 )
 const currentRegionPolicy = computed(() => getRegionPolicy(props.draft.acpBackend))
+/** Model keys the Runtime card owns; shown locked here so there is one place to edit them. */
+const managedModelRows = computed(() => {
+  if (envContext.value !== 'agent') return []
+  const env = kvToRec(props.draft.env)
+  return managedCliEnvKeys(props.draft.acpBackend)
+    .filter((k) => k in env)
+    .map((k) => ({ k, v: env[k] || '' }))
+})
+function isLockedKey(key: string): boolean {
+  return isManagedRegionKey(key) || (envContext.value === 'agent' && isManagedCliEnvKey(props.draft.acpBackend, key))
+}
 
 function openEnvHelp(section: EnvCredentialHelpSection) {
   envHelpSection.value = section
@@ -78,6 +90,11 @@ function updateEnvKey(i: number, value: string) {
   if (isManagedRegionKey(value)) {
     props.draft.env[i].k = ''
     emit('toast', t('pages.agentStudio.region.managedConflict'))
+    return
+  }
+  if (envContext.value === 'agent' && isManagedCliEnvKey(props.draft.acpBackend, value)) {
+    props.draft.env[i].k = ''
+    emit('toast', t('pages.agentStudio.cliModel.managedBy'))
     return
   }
   props.draft.env[i].k = value
@@ -183,7 +200,7 @@ watch(
         <p class="font-mono text-accent-2">{{ currentAuthHint.key }}</p>
       </div>
       <template v-for="(e, i) in draft.env" :key="i">
-        <div v-if="!isManagedRegionKey(e.k)" class="flex items-center gap-1.5">
+        <div v-if="!isLockedKey(e.k)" class="flex items-center gap-1.5">
           <input :value="e.k" placeholder="KEY" class="w-1/3 rounded border border-line bg-surface px-2 py-1.5 font-mono text-[12px] text-txt outline-none focus:border-accent" @input="updateEnvKey(i, ($event.target as HTMLInputElement).value)" />
           <input v-model="e.v" placeholder="value" class="flex-1 rounded border border-line bg-surface px-2 py-1.5 font-mono text-[12px] text-txt2 outline-none focus:border-accent" />
           <button class="text-txt3 hover:text-err" @click="draft.env.splice(i, 1)"><Icon name="close" :size="14" /></button>
@@ -198,6 +215,25 @@ watch(
         <div class="flex items-center gap-1.5">
           <input :value="currentRegionPolicy.regionEnvKey" readonly :aria-label="t('pages.agentStudio.region.managedKey')" class="w-1/3 rounded border border-line bg-elevated px-2 py-1.5 font-mono text-[12px] text-txt3" />
           <input :value="storedRegion()" readonly :aria-label="t('pages.agentStudio.region.managedValue')" class="flex-1 rounded border border-line bg-elevated px-2 py-1.5 font-mono text-[12px] text-txt3" />
+        </div>
+      </div>
+      <div v-if="managedModelRows.length" class="rounded-lg border border-accent/30 bg-accent-dim/40 p-3" data-test="env-managed-model">
+        <div class="mb-2 flex items-center gap-1.5 text-[11px] text-txt3">
+          <Icon name="lock" :size="12" />
+          <span class="flex-1">{{ t('pages.agentStudio.cliModel.managedBy') }}</span>
+          <button
+            type="button"
+            class="inline-flex items-center gap-0.5 font-medium text-accent-2 hover:underline"
+            data-test="env-managed-model-edit"
+            @click="emit('edit-model')"
+          >
+            {{ t('pages.agentStudio.cliModel.goEdit') }}
+            <Icon name="chevron-right" :size="12" />
+          </button>
+        </div>
+        <div v-for="row in managedModelRows" :key="row.k" class="mt-1.5 flex items-center gap-1.5 first:mt-0">
+          <input :value="row.k" readonly class="w-1/3 rounded border border-line bg-elevated px-2 py-1.5 font-mono text-[12px] text-txt3" />
+          <input :value="row.v" readonly class="flex-1 rounded border border-line bg-elevated px-2 py-1.5 font-mono text-[12px] text-txt3" />
         </div>
       </div>
       <AppButton size="sm" variant="outline" icon="plus" @click="draft.env.push({ k: '', v: '' })">{{ t('pages.agentStudio.env.add') }}</AppButton>

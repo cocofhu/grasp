@@ -43,6 +43,25 @@ type KindItem = {
   type?: string
 }
 
+type ModelVendorItem = KindItem & {
+  source?: string
+  configured?: boolean
+  enabled?: boolean
+  revokedAt?: string
+}
+
+/** A saved, usable project model-vendor API key (the OpenCode kind). */
+export function isModelVendorCredential(item: ModelVendorItem): boolean {
+  return (
+    (item.type || '').toLowerCase() === 'ai' &&
+    (item.provider || '').toLowerCase() === 'opencode' &&
+    (!item.source || item.source === 'project') &&
+    !!item.configured &&
+    item.enabled !== false &&
+    !item.revokedAt
+  )
+}
+
 export function aliasKey(name: string): string {
   return name.trim().toLowerCase()
 }

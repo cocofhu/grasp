@@ -1,0 +1,143 @@
+// @vitest-environment happy-dom
+import { createI18n } from 'vue-i18n'
+import { flushPromises, mount } from '@vue/test-utils'
+import { reactive } from 'vue'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import common from '@/locales/zh-CN/common.json'
+import pages from '@/locales/zh-CN/pages.json'
+import { useToast } from '@/lib/composables/useToast'
+import AgentMetaPanel from './AgentMetaPanel.vue'
+
+const mocks = vi.hoisted(() => ({ getProjectCredentials: vi.fn() }))
+
+vi.mock('@/lib/api/api', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
+  return { ...actual, api: { ...actual.api, getProjectCredentials: mocks.getProjectCredentials } }
+})
+vi.mock('@/lib/agent/cliCatalog', () => ({
+  loadCliModels: (b: string) =>
+    Promise.resolve(
+      b === 'codex'
+        ? [
+            { id: 'gpt-5-codex', name: 'GPT-5 Codex', vendor: 'openai', tags: ['reasoning'] },
+            { id: 'gpt-4.1', name: 'GPT-4.1', vendor: 'openai', tags: ['vision'] },
+          ]
+        : [{ id: 'gpt-5', name: 'GPT-5', vendor: 'openai', tags: ['reasoning'] }],
+    ),
+  cliCatalogFailed: () => false,
+}))
+
+function draftFor(overrides: Record<string, unknown> = {}) {
+  return reactive({
+    name: 'a',
+    projectId: 'p1',
+    acpBackend: 'cursor',
+    aiCredentialId: '',
+    openCodeCredentialId: '',
+    gitCredentialId: '',
+    sshHostsCredentialId: '',
+    gitCredentialType: undefined,
+    files: [],
+    mcp: [],
+    env: [] as { k: string; v: string }[],
+    layout: { configRoot: '/root/.cursor', workspaceDir: '/workspace' },
+    capabilities: null,
+    ...overrides,
+  })
+}
+
+const mounted: { unmount: () => void }[] = []
+
+function mountPanel(draft: ReturnType<typeof draftFor>) {
+  const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
+  const w = mount(AgentMetaPanel, {
+    props: { draft, agentName: 'a', projects: [{ id: 'p1', name: 'P' }] },
+    global: {
+      plugins: [i18n],
+      stubs: { Icon: true, AppModal: true, AppButton: { template: '<button v-bind="$attrs"><slot/></button>' } },
+    },
+    attachTo: document.body,
+  })
+  mounted.push(w)
+  return w
+}
+
+function envOf(draft: ReturnType<typeof draftFor>) {
+  return Object.fromEntries(draft.env.map((e) => [e.k, e.v]))
+}
+
+beforeEach(() => {
+  mocks.getProjectCredentials.mockResolvedValue({ items: [] })
+})
+afterEach(() => {
+  mounted.splice(0).forEach((w) => w.unmount())
+  document.body.innerHTML = ''
+  const toast = useToast()
+  toast.toasts.value = []
+})
+
+describe('AgentMetaPanel runtime card', () => {
+  it('writes the picked model to ACP_BRIDGE_MODEL and removes it for auto', async () => {
+    const draft = draftFor()
+    const w = mountPanel(draft)
+    await flushPromises()
+    expect(w.find('[data-test="agent-cli-runtime"]').exists()).toBe(true)
+    expect(w.find('[data-test="agent-cli-effort"]').exists()).toBe(false)
+    await w.get('[data-testid="cli-model-trigger"]').trigger('click')
+    await flushPromises()
+    ;(document.body.querySelector('[data-testid="cli-model-option-gpt-5"]') as HTMLElement).click()
+    await flushPromises()
+    expect(envOf(draft).ACP_BRIDGE_MODEL).toBe('gpt-5')
+    await w.get('[data-testid="cli-model-reset"]').trigger('click')
+    expect('ACP_BRIDGE_MODEL' in envOf(draft)).toBe(false)
+  })
+
+  it('is not shown for OpenCode, which keeps its model on the credential', async () => {
+    const w = mountPanel(draftFor({ acpBackend: 'opencode' }))
+    await flushPromises()
+    expect(w.find('[data-test="agent-cli-runtime"]').exists()).toBe(false)
+  })
+
+  it('clears the pin on a backend switch and offers undo', async () => {
+    const draft = draftFor({ env: [{ k: 'ACP_BRIDGE_MODEL', v: 'gpt-5' }, { k: 'FOO', v: '1' }] })
+    const w = mountPanel(draft)
+    await flushPromises()
+    const claude = w.findAll('button').find((b) => b.text().includes('Claude Code'))!
+    await claude.trigger('click')
+    expect(draft.acpBackend).toBe('claude_code')
+    expect(envOf(draft)).toEqual({ FOO: '1' })
+    const toast = useToast()
+    const item = toast.toasts.value.at(-1)!
+    expect(item.message).toContain('Claude Code')
+    toast.runAction(item.id)
+    expect(draft.acpBackend).toBe('cursor')
+    expect(envOf(draft).ACP_BRIDGE_MODEL).toBe('gpt-5')
+  })
+
+  it('stays quiet on a switch when no model was pinned', async () => {
+    const draft = draftFor()
+    const w = mountPanel(draft)
+    await flushPromises()
+    await w.findAll('button').find((b) => b.text().includes('Claude Code'))!.trigger('click')
+    expect(useToast().toasts.value).toHaveLength(0)
+  })
+
+  it('offers reasoning effort for Codex and greys it out for a non-reasoning model', async () => {
+    const draft = draftFor({ acpBackend: 'codex', env: [{ k: 'ACP_BRIDGE_MODEL', v: 'gpt-5-codex' }] })
+    const w = mountPanel(draft)
+    await flushPromises()
+    await w.get('[data-test="agent-cli-effort-high"]').trigger('click')
+    expect(envOf(draft).ACP_BRIDGE_REASONING_EFFORT).toBe('high')
+    await w.get('[data-test="agent-cli-effort-auto"]').trigger('click')
+    expect('ACP_BRIDGE_REASONING_EFFORT' in envOf(draft)).toBe(false)
+
+    await w.get('[data-test="agent-cli-effort-high"]').trigger('click')
+    await w.get('[data-testid="cli-model-trigger"]').trigger('click')
+    await flushPromises()
+    ;(document.body.querySelector('[data-testid="cli-model-option-gpt-4.1"]') as HTMLElement).click()
+    await flushPromises()
+    expect(envOf(draft)).toEqual({ ACP_BRIDGE_MODEL: 'gpt-4.1' })
+    expect(w.get('[data-test="agent-cli-effort-high"]').attributes('disabled')).toBeDefined()
+    expect(w.get('[data-test="agent-cli-effort"]').text()).toContain('不支持')
+  })
+})

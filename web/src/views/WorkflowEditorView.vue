@@ -19,7 +19,7 @@ import WorkflowRunHistoryTab from '@/components/workflow/WorkflowRunHistoryTab.v
 import HardLoadLayer from '@/components/run/HardLoadLayer.vue'
 import { useWorkflowAskInputs } from '@/lib/run/useWorkflowAskInputs'
 import { api } from '@/lib/api/api'
-import type { Agent } from '@/lib/api/apiTypes'
+import type { Agent, ProjectCredentialItem } from '@/lib/api/apiTypes'
 import { useWorkflowImport } from '@/lib/run/useWorkflowImport'
 import { useNodeDefs } from '@/lib/run/useNodeDefs'
 import { fmtTime } from '@/lib/shared/format'
@@ -143,12 +143,23 @@ async function loadAgents() {
   }
 }
 
+const projectCredentials = ref<ProjectCredentialItem[] | null>(null)
+
 async function loadProjectName() {
   if (!wf.projectId) return
+  void loadProjectCredentials(wf.projectId)
   try {
     projectName.value = (await api.getProject(wf.projectId))?.name || ''
   } catch {
     projectName.value = ''
+  }
+}
+
+async function loadProjectCredentials(projectId: string) {
+  try {
+    projectCredentials.value = (await api.getProjectCredentials(projectId)).items || []
+  } catch {
+    projectCredentials.value = []
   }
 }
 
@@ -955,6 +966,8 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
               :agents="editor.agents.value"
               :agents-loaded="editor.agentsLoaded.value"
               :focus-goal-tick="editor.focusGoalTick.value"
+              :project-id="wf.projectId"
+              :credentials="projectCredentials"
               @close="editor.closeInspector()"
               @delete="deleteInspectorNode"
             />

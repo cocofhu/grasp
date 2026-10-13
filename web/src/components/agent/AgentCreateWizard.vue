@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AgentGitGuide from '@/components/agent/AgentGitGuide.vue'
@@ -7,8 +8,10 @@ import WizardApiKeyStepPanel from '@/components/agent/WizardApiKeyStepPanel.vue'
 import WizardAcpStartPathPanel from '@/components/agent/WizardAcpStartPathPanel.vue'
 import AgentTemplateSelect from '@/components/agent/AgentTemplateSelect.vue'
 import AgentCapabilitySummary from '@/components/agent/AgentCapabilitySummary.vue'
+import CliModelSelect from '@/components/agent/CliModelSelect.vue'
 
-import { kvToRec } from '@/lib/agent/agentCreateWizard'
+import { kvToRec, recToKV } from '@/lib/agent/agentCreateWizard'
+import { readCliModel, writeCliModel } from '@/lib/agent/cliModelEnv'
 import { useAgentCreateWizard } from '@/lib/agent/useAgentCreateWizard'
 import type { AgentCreateWizardProps, AgentCreateWizardEmit } from '@/lib/agent/useAgentCreateWizard'
 
@@ -68,6 +71,11 @@ const {
   chipClass,
   WIZARD_STEPS,
 } = useAgentCreateWizard(props, emit)
+
+const cliModel = computed(() => readCliModel(kvToRec(draft.value.env)))
+function setCliModel(id: string) {
+  draft.value.env = recToKV(writeCliModel(kvToRec(draft.value.env), id))
+}
 </script>
 
 <template>
@@ -223,6 +231,21 @@ const {
                     @select-backend="selectAcp"
                     @select-region="selectRegion"
                   />
+                  <div
+                    v-if="draft.acpBackend !== 'opencode'"
+                    class="mt-5 border-t border-dashed border-line pt-4"
+                    data-testid="agent-wizard-cli-model"
+                  >
+                    <div class="mb-1 text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.cliModel.label') }}</div>
+                    <p class="mb-2 text-[11px] text-txt3">{{ t('pages.agentStudio.cliModel.wizardHint') }}</p>
+                    <CliModelSelect
+                      :key="draft.acpBackend"
+                      :model-value="cliModel"
+                      :backend="draft.acpBackend"
+                      variant="compact"
+                      @update:model-value="setCliModel"
+                    />
+                  </div>
                 </template>
 
                 <template v-else-if="currentStep.id === 'apiKey'">

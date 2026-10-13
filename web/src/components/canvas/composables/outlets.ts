@@ -10,6 +10,9 @@ export interface CanvasAgent {
   name: string
   projectId?: string
   capabilities?: AgentCapabilities | null
+  acpBackend?: string
+  openCodeCredentialId?: string
+  env?: Record<string, string>
 }
 
 export type OutletTone = 'default' | 'ok' | 'err'

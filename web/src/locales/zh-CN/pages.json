@@ -2889,6 +2889,69 @@
         "verdictHint": "写入带判定的产物时,节点有「通过 / 不通过」两个出口",
         "maxRoundsTitle": "最大催促轮数",
         "maxRoundsDesc": "计划未全部完成时最多再催促几轮,留空为默认 3 轮"
+      },
+      "cliModel": {
+        "label": "模型",
+        "runtimeTitle": "运行配置",
+        "runtimeDesc": "这个 Agent 用哪个账号、跑哪个模型。",
+        "auto": "自动",
+        "autoSub": "由 {cli} 决定用哪个模型",
+        "autoRow": "自动（CLI 默认）",
+        "autoDetail": "不指定模型，由 {cli} 按自己的默认策略选择。不确定时先用这个，之后随时可以改。",
+        "recommended": "推荐",
+        "allVendors": "全部",
+        "searchPlaceholder": "搜索模型名称、ID 或厂商",
+        "contextShort": "{n} 上下文",
+        "commandAutoNote": "不指定 --model，使用 CLI 默认",
+        "resetAuto": "恢复自动",
+        "unlistedName": "自定义模型",
+        "unlisted": "不在内置清单中，会原样传给 CLI",
+        "useTyped": "使用自定义 ID「{id}」",
+        "enterHint": "也可以直接按 Enter",
+        "noMatch": "没有找到「{q}」",
+        "typedDetail": "这个 ID 不在内置清单里。Grasp 会原样把它交给 {cli}；如果 {cli} 不认识，运行时会报错。",
+        "catalogFailed": "内置清单暂时不可用，可以直接输入模型 ID。",
+        "noCatalog": "这个 CLI 没有内置清单，可以直接输入模型 ID。",
+        "contextLabel": "上下文",
+        "capsLabel": "能力",
+        "suitsLabel": "适合",
+        "flagLabel": "启动参数",
+        "copy": "复制",
+        "copied": "已复制",
+        "tags": {
+          "vision": "识图",
+          "reasoning": "深度推理",
+          "fast": "快速"
+        },
+        "strengths": {
+          "refactor": "复杂重构与多步任务",
+          "screenshots": "看截图改界面",
+          "quick": "小改动快速迭代",
+          "largeRepo": "一次读入大型代码库",
+          "general": "日常编码"
+        },
+        "kbd": {
+          "move": "选择",
+          "vendor": "切换厂商",
+          "pick": "确认",
+          "close": "关闭"
+        },
+        "effortLabel": "推理强度",
+        "effortDesc": "越高想得越深，也越慢。",
+        "effortUnsupported": "当前模型不支持调节推理强度",
+        "effort": {
+          "auto": "自动",
+          "low": "低",
+          "medium": "中",
+          "high": "高"
+        },
+        "switched": "已切换到 {cli}，模型恢复为自动",
+        "undo": "撤销",
+        "managedBy": "由「运行配置 · 模型」管理",
+        "goEdit": "去修改",
+        "inspectorLabel": "模型",
+        "inspectorEdit": "在 Agent 配置中修改",
+        "wizardHint": "不确定就先用自动，之后可以在 Agent 配置里改。"
       }
     },
     "runLaunch": {

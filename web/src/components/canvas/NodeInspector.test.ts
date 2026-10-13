@@ -57,7 +57,7 @@ describe('NodeInspector · agent node', () => {
     expect(caps.text()).toContain(t('canvas.caps.review'))
     expect(caps.text()).toContain(t('nodes.capabilities.gated'))
     expect(caps.text()).toContain(t('nodes.capabilities.readsAll'))
-    const link = w.findComponent(RouterLinkStub)
+    const link = w.findAllComponents(RouterLinkStub).find((l) => l.attributes('data-testid') === 'inspector-studio-link')!
     expect(link.props('to')).toEqual({ path: '/agents', query: { agent: '测试评审', studioTab: 'capabilities' } })
     w.unmount()
   })

@@ -194,7 +194,8 @@
         "capabilities": "Capabilities",
         "basics": "Basics",
         "settings": "Settings",
-        "outputs": "Outputs"
+        "outputs": "Outputs",
+        "model": "Model"
       },
       "agentPlaceholder": "Select an Agent",
       "goalPlaceholder": "What should this step achieve? Type {'{{'} to insert a variable or upstream product",
@@ -224,6 +225,36 @@
       "actions": {
         "add": "Add action",
         "note": "Each action is an outlet; connect it to the next step"
+      },
+      "model": {
+        "needAgent": "Pick an Agent first, then choose the model for this node.",
+        "follow": "Follow the Agent",
+        "followCurrent": "Now: {name} · {model}",
+        "followEmpty": "The Agent has no model key yet; the run will fail",
+        "nodeChip": "This node",
+        "agentDefault": "Agent default",
+        "projectKeys": "Project model keys",
+        "empty": "No model keys in this project yet",
+        "manage": "Add or manage in the credential center",
+        "staleTitle": "The selected model key is gone",
+        "staleBody": "It was deleted or cleared. Pick another one",
+        "ownAuthTitle": "{backend} uses its own model sign-in",
+        "ownAuthBody": "Node models apply to OpenCode Agents only. This coding assistant chooses its own model.",
+        "ignored": "The model picked earlier has no effect",
+        "clear": "Clear",
+        "hint": "Applies to this node only. No credential means the Agent's; no model means the credential's default.",
+        "credential": "Credential",
+        "modelLabel": "Model",
+        "credentialLine": "{vendor} · default {model}",
+        "needCredential": "Pick a usable credential first",
+        "useDefault": "Credential's default model",
+        "useTyped": "Use custom ID \"{id}\"",
+        "unlisted": "Not in the vendor catalog. Double-check it",
+        "searchPlaceholder": "Search models or type an ID",
+        "typePlaceholder": "Type a model ID",
+        "catalogTitle": "{vendor} models",
+        "noCatalog": "This vendor has no model catalog. Type the model ID directly.",
+        "moreHidden": "{n} more. Keep typing to narrow down"
       }
     },
     "topbar": {
