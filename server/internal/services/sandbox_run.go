@@ -29,6 +29,8 @@ func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) {
 		"name":          info.Name,
 		"profile":       info.Profile,
 		"purpose":       "run",
+		"scope":         "run",
+		"generation":    maxInt(info.Generation, 1),
 		"status":        "creating",
 		"repo_url":      info.RepoURL,
 		"run_id":        info.RunID,
@@ -47,6 +49,7 @@ func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) {
 		Assign(fields).FirstOrCreate(&models.Sandbox{}).Error; err != nil {
 		log.Warn().Err(err).Str("name", info.Name).Msg("begin run sandbox failed")
 	}
+	s.upsertRunBinding(info.RunID, info.Name, maxInt(info.Generation, 1), "creating", info.ReplacementReason)
 	s.mu.Lock()
 	s.runActive[info.Name] = true
 	s.mu.Unlock()
@@ -64,22 +67,25 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 		return
 	}
 	fields := map[string]any{
-		"name":             info.Name,
-		"profile":          info.Profile,
-		"purpose":          "run",
-		"status":           "running",
-		"host":             info.Host,
-		"acp_port":         info.ACPPort,
-		"code_server_port": info.CodeServerPort,
-		"repo_url":         info.RepoURL,
-		"run_id":           info.RunID,
-		"workflow_id":      info.WorkflowID,
-		"workflow_name":    info.WorkflowName,
-		"node_id":          info.NodeID,
-		"home_dir":         info.HomeDir,
-		"error":            "",
-		"destroy_at":       nil,
-		"updated_at":       time.Now(),
+		"name":               info.Name,
+		"profile":            info.Profile,
+		"purpose":            "run",
+		"scope":              "run",
+		"generation":         maxInt(info.Generation, 1),
+		"replacement_reason": info.ReplacementReason,
+		"status":             "running",
+		"host":               info.Host,
+		"acp_port":           info.ACPPort,
+		"code_server_port":   info.CodeServerPort,
+		"repo_url":           info.RepoURL,
+		"run_id":             info.RunID,
+		"workflow_id":        info.WorkflowID,
+		"workflow_name":      info.WorkflowName,
+		"node_id":            info.NodeID,
+		"home_dir":           info.HomeDir,
+		"error":              "",
+		"destroy_at":         nil,
+		"updated_at":         time.Now(),
 	}
 	if info.Token != "" {
 		fields["token"] = info.Token
@@ -103,6 +109,7 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 		}
 		s.runActive[info.Name] = true
 		s.mu.Unlock()
+		s.upsertRunBinding(info.RunID, info.Name, maxInt(info.Generation, 1), "running", info.ReplacementReason)
 		return
 	}
 	if err := s.db.Where(models.Sandbox{Name: info.Name}).
@@ -112,6 +119,86 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 	s.mu.Lock()
 	s.runActive[info.Name] = true
 	s.mu.Unlock()
+	s.upsertRunBinding(info.RunID, info.Name, maxInt(info.Generation, 1), "running", info.ReplacementReason)
+}
+
+func maxInt(v, fallback int) int {
+	if v > 0 {
+		return v
+	}
+	return fallback
+}
+
+// FindRunSandbox returns the current durable run-level sandbox binding for
+// restart recovery. The latest row is authoritative when a replacement was
+// recorded during the same run.
+func (s *SandboxService) FindRunSandbox(runID string) (runtime.RunSandboxInfo, bool) {
+	var row models.Sandbox
+	if strings.TrimSpace(runID) == "" || s.db.Where("run_id = ? AND purpose = ?", runID, "run").
+		Order("updated_at desc").First(&row).Error != nil || row.Name == "" {
+		return runtime.RunSandboxInfo{}, false
+	}
+	return runtime.RunSandboxInfo{
+		Name: row.Name, Profile: row.Profile, RunID: row.RunID, WorkflowID: row.WorkflowID,
+		WorkflowName: row.WorkflowName, NodeID: row.NodeID, Host: row.Host, ACPPort: row.ACPPort,
+		CodeServerPort: row.CodeServerPort, RepoURL: row.RepoURL, HomeDir: row.HomeDir,
+		Token: row.Token, Scope: row.Scope, Generation: maxInt(row.Generation, 1),
+		ReplacementReason: row.ReplacementReason,
+	}, true
+}
+
+// RunSandboxBindingForRun returns the durable lifecycle record used by run and
+// sandbox detail views. It is intentionally read-only; lifecycle transitions
+// remain owned by the coordinator and registry callbacks.
+func (s *SandboxService) RunSandboxBindingForRun(runID string) (*models.RunSandboxBinding, error) {
+	var binding models.RunSandboxBinding
+	if err := s.db.Where("run_id = ?", runID).First(&binding).Error; err != nil {
+		return nil, err
+	}
+	return &binding, nil
+}
+
+// MarkRunSandboxReplacement records the reason before the old container is
+// destroyed, so an operator can distinguish a deliberate generation change
+// from a second active sandbox.
+func (s *SandboxService) MarkRunSandboxReplacement(runID string, generation int, reason string) {
+	var binding models.RunSandboxBinding
+	if s.db.Where("run_id = ?", runID).First(&binding).Error != nil {
+		return
+	}
+	_ = s.db.Model(&binding).Updates(map[string]any{
+		"generation": generation, "status": "replacing", "replacement_reason": reason,
+		"updated_at": time.Now(),
+	}).Error
+}
+
+// FinalizeRunSandbox marks the durable binding terminal. The container row is
+// removed separately by UnregisterRunSandbox after logs are archived.
+func (s *SandboxService) FinalizeRunSandbox(runID, status string) {
+	if strings.TrimSpace(runID) == "" {
+		return
+	}
+	if status == "" {
+		status = "retired"
+	}
+	_ = s.db.Model(&models.RunSandboxBinding{}).Where("run_id = ?", runID).Updates(map[string]any{
+		"status": status, "retired_at": time.Now(), "updated_at": time.Now(),
+	}).Error
+}
+
+func (s *SandboxService) upsertRunBinding(runID, sandboxID string, generation int, status, reason string) {
+	if strings.TrimSpace(runID) == "" || strings.TrimSpace(sandboxID) == "" {
+		return
+	}
+	fields := map[string]any{
+		"sandbox_id": sandboxID, "generation": generation, "status": status,
+		"replacement_reason": reason, "updated_at": time.Now(),
+	}
+	if status == "retired" || status == "failed" {
+		fields["retired_at"] = time.Now()
+	}
+	_ = s.db.Where(models.RunSandboxBinding{RunID: runID}).Assign(fields).FirstOrCreate(&models.RunSandboxBinding{RunID: runID, SandboxID: sandboxID,
+		Generation: generation, Status: status, ReplacementReason: reason, CreatedAt: time.Now()}).Error
 }
 
 // RetireRunSandbox keeps a finished run's node sandbox alive for a debug TTL
@@ -132,10 +219,15 @@ func (s *SandboxService) RetireRunSandbox(name string) {
 	delete(s.runActive, name)
 	s.mu.Unlock()
 	at := time.Now().Add(s.RunTTL())
+	var row models.Sandbox
+	_ = s.db.Where("name = ?", name).First(&row).Error
 	if err := s.db.Model(&models.Sandbox{}).Where("name = ?", name).
 		Updates(map[string]any{"status": "running", "destroy_at": &at, "updated_at": time.Now()}).Error; err != nil {
 		log.Warn().Err(err).Str("name", name).Msg("retire run sandbox failed")
 		return
+	}
+	if row.RunID != "" {
+		s.upsertRunBinding(row.RunID, name, maxInt(row.Generation, 1), "retired", row.ReplacementReason)
 	}
 	log.Info().Str("name", name).Dur("ttl", s.RunTTL()).Msg("run sandbox retired for debugging (idle ttl)")
 }
@@ -190,11 +282,19 @@ func (s *SandboxService) UnregisterRunSandbox(name string) {
 	// so the startup/exec output (e.g. a failed git clone) survives for
 	// post-mortem troubleshooting even after the sandbox is gone.
 	s.archiveLog(context.Background(), name)
+	var row models.Sandbox
+	_ = s.db.Where("name = ?", name).First(&row).Error
 	s.mu.Lock()
 	delete(s.runActive, name)
 	s.mu.Unlock()
 	if err := s.db.Where("name = ?", name).Delete(&models.Sandbox{}).Error; err != nil {
 		log.Warn().Err(err).Str("name", name).Msg("unregister run sandbox failed")
+	}
+	if row.RunID != "" {
+		var binding models.RunSandboxBinding
+		if s.db.Where("run_id = ?", row.RunID).First(&binding).Error != nil || binding.Status != "replacing" {
+			s.upsertRunBinding(row.RunID, name, maxInt(row.Generation, 1), "retired", row.ReplacementReason)
+		}
 	}
 }
 
@@ -249,7 +349,10 @@ func (s *SandboxService) SandboxViewForRunNode(ctx context.Context, runID, nodeI
 	var row models.Sandbox
 	if err := s.db.Where("run_id = ? AND node_id = ? AND purpose = ?", runID, nodeID, "run").
 		Order("updated_at desc").First(&row).Error; err != nil {
-		return nil, fmt.Errorf("not found")
+		if err := s.db.Where("run_id = ? AND purpose = ?", runID, "run").
+			Order("updated_at desc").First(&row).Error; err != nil {
+			return nil, fmt.Errorf("not found")
+		}
 	}
 	// A sandbox still provisioning (pulling image / creating container) is
 	// surfaced as-is so the UI can render pull/create loading instead of 404.
@@ -272,7 +375,11 @@ func (s *SandboxService) NodeSandboxLog(ctx context.Context, runID, nodeID strin
 	if nodeID != "" {
 		q = q.Where("node_id = ?", nodeID)
 	}
-	if e := q.Order("updated_at desc").First(&row).Error; e == nil {
+	if e := q.Order("updated_at desc").First(&row).Error; e != nil && nodeID != "" {
+		q = s.db.Where("run_id = ? AND purpose = ?", runID, "run")
+		_ = q.Order("updated_at desc").First(&row).Error
+	}
+	if row.Name != "" {
 		if s.mgr.Status(ctx, row.Name) == "running" {
 			out, lerr := s.mgr.Logs(ctx, row.Name, 5000)
 			if lerr != nil {
@@ -286,7 +393,13 @@ func (s *SandboxService) NodeSandboxLog(ctx context.Context, runID, nodeID strin
 	if nodeID != "" {
 		rq = rq.Where("node_id = ?", nodeID)
 	}
-	if e := rq.Order("updated_at desc").First(&rec).Error; e != nil {
+	if e := rq.Order("updated_at desc").First(&rec).Error; e != nil && nodeID != "" {
+		// Archived shared-container logs may be attributed to whichever node
+		// released the lease last. Fall back to the run-level snapshot.
+		if e = s.db.Where("run_id = ?", runID).Order("updated_at desc").First(&rec).Error; e != nil {
+			return "", false, gorm.ErrRecordNotFound
+		}
+	} else if e != nil {
 		return "", false, gorm.ErrRecordNotFound
 	}
 	return rec.Content, false, nil

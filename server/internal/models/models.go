@@ -779,19 +779,25 @@ type PromptImage struct {
 
 // Sandbox is a tracked sandbox container. Purposes share this table:
 //   - "test":  long-lived interactive sandbox for Agent chat-testing.
-//   - "run":   per-run workflow node sandbox, recorded for its (short) lifetime
-//     so it shows in the sandbox UI; the runtime provider owns its lifecycle.
+//   - "run":   workflow run sandbox shared by all Agent nodes in that run;
+//     the runtime provider owns its lifecycle.
 //   - "agent": thread-bound agent session sandbox (consult / cron / future roles).
 type Sandbox struct {
-	ID             uint   `gorm:"primaryKey" json:"id"`
-	Name           string `gorm:"uniqueIndex" json:"name"` // docker container name
-	Profile        string `json:"profile"`                 // bound Agent name
-	Purpose        string `json:"purpose"`                 // "test" | "run" | "agent"
-	Status         string `json:"status"`                  // pulling|creating|running|stopped|error
-	Host           string `json:"-"`
-	ACPPort        int    `json:"-"`
-	CodeServerPort int    `json:"-"`
-	RepoURL        string `json:"repoUrl,omitempty"`
+	ID      uint   `gorm:"primaryKey" json:"id"`
+	Name    string `gorm:"uniqueIndex" json:"name"` // docker container name
+	Profile string `json:"profile"`                 // bound Agent name
+	Purpose string `json:"purpose"`                 // "test" | "run" | "agent"
+	// Scope identifies the lifecycle owner. Run sandboxes use scope=run and
+	// remain bound to the workflow run across node changes.
+	Scope string `json:"scope,omitempty"` // run | test | agent | pm
+	// Generation increments when an unrecoverable run sandbox is replaced.
+	Generation        int    `json:"generation,omitempty"`
+	ReplacementReason string `json:"replacementReason,omitempty"`
+	Status            string `json:"status"` // pulling|creating|running|stopped|error
+	Host              string `json:"-"`
+	ACPPort           int    `json:"-"`
+	CodeServerPort    int    `json:"-"`
+	RepoURL           string `json:"repoUrl,omitempty"`
 	// Origin attribution (populated for purpose="run"): which run/workflow/node
 	// produced this sandbox. RunID for test sandboxes is a synthetic id used by
 	// the artifact-store MCP. For purpose="agent", RunID is a synthetic
@@ -828,6 +834,20 @@ type SandboxLog struct {
 	Content   string    `json:"content"` // captured docker logs (tail-capped)
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// RunSandboxBinding is the durable run-level owner for a shared workflow
+// sandbox. A run has at most one current binding; replaced generations remain
+// represented by Sandbox rows and their archived logs.
+type RunSandboxBinding struct {
+	RunID             string     `gorm:"primaryKey;size:191" json:"runId"`
+	SandboxID         string     `gorm:"index;not null" json:"sandboxId"`
+	Generation        int        `json:"generation"`
+	Status            string     `json:"status"` // creating|running|replacing|retired|failed
+	ReplacementReason string     `json:"replacementReason,omitempty"`
+	CreatedAt         time.Time  `json:"createdAt"`
+	RetiredAt         *time.Time `json:"retiredAt,omitempty"`
+	UpdatedAt         time.Time  `json:"updatedAt"`
 }
 
 // Session is a server-side login session persisted in SQLite/MySQL.
@@ -912,7 +932,7 @@ func AllModels() []any {
 		&Project{},
 		&WorkflowDef{}, &WorkflowVersion{}, &Run{}, &StateRun{},
 		&RunVariable{}, &Artifact{}, &ArtifactVersion{}, &Gate{}, &ReactConversation{},
-		&Sandbox{}, &SandboxLog{}, &Setting{}, &Session{}, &WorkflowAPIKey{},
+		&Sandbox{}, &SandboxLog{}, &RunSandboxBinding{}, &Setting{}, &Session{}, &WorkflowAPIKey{},
 		&RunPreviewPort{}, &PreviewIssue{}, &FeedbackEvent{},
 		&ProjectMemoryItem{}, &ChatThread{}, &ChatMessage{}, &ChatTurnDraft{},
 		&AgentCronJob{}, &AgentCronRun{}, &ChannelConfig{},

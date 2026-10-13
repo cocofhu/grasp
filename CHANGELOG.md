@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Run-level shared workflow sandboxes:** Agent nodes in one workflow run now reuse one isolated workspace with serialized leases, independent bridge chats, durable generation/replacement records, restart recovery, and one terminal cleanup.
+
 ## 2.1.0 — 2026-10-12
 
 - **MCP tool-list refresh on confirmation:** run-scoped HTTP MCP sessions now

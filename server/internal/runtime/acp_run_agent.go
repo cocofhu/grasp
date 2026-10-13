@@ -20,6 +20,9 @@ import (
 // the engine's FSM handles them. Retries are logged/emitted but do not create a
 // separate execution record.
 func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, error) {
+	if c.coordinator != nil {
+		c.coordinator.reopen(req.RunID)
+	}
 	c.resetNodeBudget(req)
 	key := reactKey(req)
 	c.stuckNotes.Delete(key)
@@ -468,6 +471,16 @@ func (c *acpProvider) AbortRun(runID string) {
 	c.dropRunTranscript(runID)
 	prefix := runID + "|"
 	c.retireVisitorLanes(prefix)
+	// Detach the durable run-level binding before closing node sessions. This
+	// makes repeated finish/cancel callbacks idempotent and prevents one node's
+	// cleanup from destroying a container still referenced by another node.
+	var shared *sharedSandbox
+	if c.coordinator != nil {
+		shared, _ = c.coordinator.finalize(runID)
+	}
+	if lifecycle, ok := c.registry.(RunSandboxLifecycle); ok {
+		lifecycle.FinalizeRunSandbox(runID, "retired")
+	}
 	c.mu.Lock()
 	var sessionKeys []string
 	for k := range c.sessions {
@@ -526,13 +539,23 @@ func (c *acpProvider) AbortRun(runID string) {
 			continue
 		}
 		if acp != nil {
+			acp.CloseOwnedChat(context.Background())
 			acp.Close()
+		}
+		if c.coordinator != nil {
+			// The run coordinator owns the one terminal destroy below.
+			continue
 		}
 		if sb != nil {
 
 			c.deregisterRunSandbox(sb.Name)
 			sb.Destroy(context.Background())
 		}
+	}
+	if shared != nil && shared.sb != nil {
+		c.deregisterRunSandbox(shared.sb.Name)
+		shared.sb.Destroy(context.Background())
+		removeHome(shared.home)
 	}
 }
 

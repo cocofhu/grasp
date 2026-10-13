@@ -370,6 +370,10 @@ type RunSandboxInfo struct {
 	// Token is the run-scoped secret also injected as container PASSWORD for
 	// code-server; SandboxProxy uses it for IDE auto-login.
 	Token string
+	// Run-level lifecycle metadata. Legacy registries may ignore these fields.
+	Scope             string
+	Generation        int
+	ReplacementReason string
 }
 
 // SandboxRegistry records and clears live per-run node sandboxes. It is
@@ -379,6 +383,21 @@ type RunSandboxInfo struct {
 type SandboxRegistry interface {
 	RegisterRunSandbox(info RunSandboxInfo)
 	UnregisterRunSandbox(name string)
+}
+
+// RunSandboxLookup lets a provider rebuild its in-memory coordinator after a
+// server restart from the durable run binding. It is optional so lightweight
+// test registries remain source compatible.
+type RunSandboxLookup interface {
+	FindRunSandbox(runID string) (RunSandboxInfo, bool)
+}
+
+// RunSandboxLifecycle is an optional persistence hook for generation changes
+// and terminal cleanup. It keeps the database binding explainable without
+// coupling the runtime coordinator to GORM.
+type RunSandboxLifecycle interface {
+	MarkRunSandboxReplacement(runID string, generation int, reason string)
+	FinalizeRunSandbox(runID string, status string)
 }
 
 // RunSandboxBeginner is an optional registry capability: record a per-run node

@@ -655,11 +655,23 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context) {
 	protectedCorr := map[string]bool{}
 	for i := range rows {
 		row := &rows[i]
-		// Per-run node sandboxes are owned by the runtime provider; after a
-		// restart their driving goroutine is gone, so any surviving container
-		// is an orphan. Destroy it and drop the record.
+		// Run-level sandboxes belong to the workflow run and may still be active
+		// after a server restart. Keep a healthy container and let the runtime
+		// coordinator rehydrate its ACP session; only remove a missing container.
 		if row.Purpose == "run" {
-			s.destroyLocalSandbox(ctx, row)
+			var binding models.RunSandboxBinding
+			sharedBinding := row.Scope == "run" || s.db.Where("run_id = ?", row.RunID).First(&binding).Error == nil
+			if sharedBinding && s.mgr.Status(ctx, row.Name) == "running" {
+				tracked[row.Name] = true
+				if sb, err := s.mgr.Attach(ctx, row.Name); err == nil {
+					s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Updates(map[string]any{
+						"status": "running", "host": sb.Host, "acp_port": sb.Port,
+						"code_server_port": sb.CodeServerPort, "scope": "run", "updated_at": time.Now(),
+					})
+				}
+			} else {
+				s.destroyLocalSandbox(ctx, row)
+			}
 			continue
 		}
 		// Young creating rows still use a placeholder Name; the gateway id is
