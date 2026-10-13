@@ -8,6 +8,7 @@ import AgentMetaPanel from '../src/components/agent/AgentMetaPanel.vue'
 import AgentEnvPanel from '../src/components/agent/AgentEnvPanel.vue'
 import CliModelSelect from '../src/components/agent/CliModelSelect.vue'
 import ToastHost from '../src/components/ui/ToastHost.vue'
+import ProjectSharedAgentPanel from '../src/components/project/ProjectSharedAgentPanel.vue'
 import { api } from '../src/lib/api/api'
 import type { CliCatalogModel } from '../src/lib/api/apiTypes'
 
@@ -44,7 +45,21 @@ const catalog: Record<string, CliCatalogModel[]> = {
   ],
 }
 
+const harnessParams = new URLSearchParams(location.search)
 Object.assign(api, {
+  getProjectSharedAgentConfig: async () => {
+    const backend = harnessParams.get('backend') || 'cursor'
+    const shared = harnessParams.get('shared') || ''
+    return {
+      projectId: 'p1',
+      acpBackend: backend,
+      aiCredentialId: backend === 'codex' ? 'c2' : 'c1',
+      files: [],
+      mcp: [],
+      env: shared ? { ACP_BRIDGE_MODEL: shared } : {},
+      layout: { configRoot: '/root/.cursor', workspaceDir: '/root/workspace' },
+    }
+  },
   cliModels: async (backend: string) => {
     await new Promise((r) => setTimeout(r, new URLSearchParams(location.search).get('slow') ? 60000 : 150))
     return { models: catalog[backend] || [] }
@@ -98,6 +113,8 @@ async function boot() {
             ? h('div', { class: 'flex h-[900px] flex-col', 'data-testid': 'shot' }, [
                 h(AgentMetaPanel, { draft: draft as never, agentName: 'ImplementAgent', projects: [{ id: 'p1', name: 'Grasp' }] }),
               ])
+            : view === 'shared'
+              ? h('div', { class: 'flex h-[1100px] flex-col', 'data-testid': 'shot' }, [h(ProjectSharedAgentPanel, { projectId: 'p1' })])
             : view === 'env'
               ? h('div', { class: 'flex h-[560px] flex-col', 'data-testid': 'shot' }, [h(AgentEnvPanel, { draft: draft as never })])
               : h('div', { class: 'w-[440px] p-6', 'data-testid': 'shot' }, [

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AgentFilesPanel from '@/components/agent/AgentFilesPanel.vue'
@@ -36,7 +36,8 @@ import {
 } from '@/lib/agent/openCodeProvider'
 import OpenCodeProviderFields from '@/components/agent/OpenCodeProviderFields.vue'
 import OpenCodeCredentialPicker from '@/components/agent/OpenCodeCredentialPicker.vue'
-import CredentialAliasPicker from '@/components/agent/CredentialAliasPicker.vue'
+import CliRuntimeCard from '@/components/agent/CliRuntimeCard.vue'
+import { switchCliModelEnv } from '@/lib/agent/cliModelEnv'
 import { backendKind } from '@/lib/project/credentialKinds'
 import { agentConfigRelPath } from '@/lib/agent/backendAuthGuide'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
@@ -225,7 +226,7 @@ function selectAcpBackend(id: BackendId) {
   if (prev !== id) {
     draft.value.aiCredentialId = ''
     draft.value.env = recToKV(
-      switchOpenCodeEnv(switchBackendRegions(kvToRec(draft.value.env), id), id),
+      switchCliModelEnv(switchOpenCodeEnv(switchBackendRegions(kvToRec(draft.value.env), id), id), prev, id).env,
     )
   }
 }
@@ -242,6 +243,14 @@ const openCodeFields = computed(() =>
 function patchSharedOpenCode(fields: Parameters<typeof applyOpenCodeFields>[1]) {
   if (!draft.value) return
   draft.value.env = recToKV(applyOpenCodeFields(kvToRec(draft.value.env), fields))
+}
+
+const focusModelTick = ref(0)
+async function focusCliModel() {
+  subTab.value = 'meta'
+  focusModelTick.value++
+  await nextTick()
+  focusModelTick.value = 0
 }
 
 function openSettingsInFiles() {
@@ -364,6 +373,7 @@ onMounted(() => {
         context="shared"
         @toast="toast.success($event)"
         @open-settings-file="openSettingsInFiles"
+        @edit-model="focusCliModel"
       />
 
       <div
@@ -399,20 +409,16 @@ onMounted(() => {
             </div>
           </div>
 
-          <div
+          <CliRuntimeCard
             v-if="aiKind"
-            class="border-t border-dashed border-line pt-4"
+            :draft="draft"
+            :description="t('pages.projectDetail.sharedAgent.runtimeDesc')"
+            :credential-title="t('pages.projectDetail.sharedAgent.genericCredentialTitle')"
+            :credential-hint="t('pages.projectDetail.sharedAgent.genericCredentialHint')"
+            :model-hint="t('pages.projectDetail.sharedAgent.modelHint')"
+            :focus-tick="focusModelTick"
             data-testid="shared-generic-credential"
-          >
-            <CredentialAliasPicker
-              :project-id="draft.projectId"
-              :kind="aiKind.id"
-              :selected-id="draft.aiCredentialId"
-              :title="t('pages.projectDetail.sharedAgent.genericCredentialTitle')"
-              :hint="t('pages.projectDetail.sharedAgent.genericCredentialHint')"
-              @update:selected-id="draft.aiCredentialId = $event"
-            />
-          </div>
+          />
           <div
             v-else-if="draft.acpBackend === 'opencode'"
             class="border-t border-dashed border-line pt-4"

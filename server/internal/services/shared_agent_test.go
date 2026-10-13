@@ -89,6 +89,37 @@ func TestExtendOverlay_AgentEnvWins(t *testing.T) {
 	}
 }
 
+func TestExtendOverlay_SharedModelOnlyForSameCLI(t *testing.T) {
+	shared := SharedAgentConfig{
+		AcpBackend: "codex",
+		Env:        map[string]string{"ACP_BRIDGE_MODEL": "gpt-6.1-sol", "ACP_BRIDGE_REASONING_EFFORT": "high", "KEEP": "1"},
+	}
+
+	same := ExtendOverlay(shared, Agent{Name: "a"})
+	if same.AcpBackend != "codex" || same.Env["ACP_BRIDGE_MODEL"] != "gpt-6.1-sol" || same.Env["ACP_BRIDGE_REASONING_EFFORT"] != "high" {
+		t.Fatalf("same CLI should inherit the model: %#v", same)
+	}
+
+	other := ExtendOverlay(shared, Agent{Name: "b", AcpBackend: "cursor"})
+	if _, ok := other.Env["ACP_BRIDGE_MODEL"]; ok {
+		t.Fatalf("a Codex model must not reach Cursor: %#v", other.Env)
+	}
+	if _, ok := other.Env["ACP_BRIDGE_REASONING_EFFORT"]; ok {
+		t.Fatalf("effort must not reach Cursor: %#v", other.Env)
+	}
+	if other.Env["KEEP"] != "1" {
+		t.Fatalf("other shared env should still apply: %#v", other.Env)
+	}
+	if shared.Env["ACP_BRIDGE_MODEL"] != "gpt-6.1-sol" {
+		t.Fatal("the shared config must not be mutated")
+	}
+
+	own := ExtendOverlay(shared, Agent{Name: "c", AcpBackend: "cursor", Env: map[string]string{"ACP_BRIDGE_MODEL": "composer-2.5"}})
+	if own.Env["ACP_BRIDGE_MODEL"] != "composer-2.5" {
+		t.Fatalf("agent pick wins: %#v", own.Env)
+	}
+}
+
 func TestExtendOverlay_KeepsAgentProjectID(t *testing.T) {
 	got := ExtendOverlay(SharedAgentConfig{ProjectID: "proj-a"}, Agent{Name: "x", ProjectID: "proj-agent"})
 	if got.ProjectID != "proj-agent" {

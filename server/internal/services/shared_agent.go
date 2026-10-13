@@ -237,12 +237,12 @@ func ExtendOverlayWithKind(shared SharedAgentConfig, agent Agent, kindOf runtime
 		GitCredentialType: pickNonEmpty(agent.GitCredentialType, base.GitCredentialType),
 		Files:             mergeFiles(base.Files, agent.Files),
 		MCP:               mergeMCP(base.MCP, agent.MCP),
-		Env:               envauth.OverlayEnv(base.Env, agent.Env),
 		Layout:            mergeLayout(base.Layout, agent.Layout),
 	}
 	if out.AcpBackend != "" {
 		out.AcpBackend = NormalizeAcpBackend(out.AcpBackend)
 	}
+	out.Env = envauth.OverlayEnv(runtime.SharedEnvForBackend(base.Env, base.AcpBackend, out.AcpBackend), agent.Env)
 	out.Layout = out.Layout.withDefaults()
 	if out.Env == nil {
 		out.Env = map[string]string{}

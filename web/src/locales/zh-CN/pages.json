@@ -1198,7 +1198,9 @@
         "noAgents": "暂无可用 Agent，请先到 Agent Studio 创建。",
         "noProjectAgents": "本项目尚无绑定 Agent。请前往 Agent 管理，在 Agent 元信息中绑定本项目后再试。",
         "genericCredentialTitle": "通用授权",
-        "genericCredentialHint": "这是本项目的默认授权。单个 Agent 已选择时以单个 Agent 为准；单个 Agent 未选择且种类一致时使用这里的选择。"
+        "genericCredentialHint": "这是本项目的默认授权。单个 Agent 已选择时以单个 Agent 为准；单个 Agent 未选择且种类一致时使用这里的选择。",
+        "runtimeDesc": "本项目的 Agent 默认用哪个账号、跑哪个模型。",
+        "modelHint": "项目默认模型。使用同一 CLI、且未单独选模型的 Agent 会用这里的选择。"
       },
       "projectCredentials": {
         "eyebrow": "安全凭据中心",
@@ -2951,6 +2953,7 @@
         "switched": "已切换到 {cli}，模型恢复为自动",
         "undo": "撤销",
         "managedBy": "由「运行配置 · 模型」管理",
+        "inherited": "未单独选择，沿用项目共享配置：",
         "goEdit": "去修改",
         "inspectorLabel": "模型",
         "inspectorEdit": "在 Agent 配置中修改",

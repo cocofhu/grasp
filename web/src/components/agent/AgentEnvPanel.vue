@@ -47,14 +47,13 @@ const settingsPath = computed(() =>
 const currentRegionPolicy = computed(() => getRegionPolicy(props.draft.acpBackend))
 /** Model keys the Runtime card owns; shown locked here so there is one place to edit them. */
 const managedModelRows = computed(() => {
-  if (envContext.value !== 'agent') return []
   const env = kvToRec(props.draft.env)
   return managedCliEnvKeys(props.draft.acpBackend)
     .filter((k) => k in env)
     .map((k) => ({ k, v: env[k] || '' }))
 })
 function isLockedKey(key: string): boolean {
-  return isManagedRegionKey(key) || (envContext.value === 'agent' && isManagedCliEnvKey(props.draft.acpBackend, key))
+  return isManagedRegionKey(key) || isManagedCliEnvKey(props.draft.acpBackend, key)
 }
 
 function openEnvHelp(section: EnvCredentialHelpSection) {
@@ -92,7 +91,7 @@ function updateEnvKey(i: number, value: string) {
     emit('toast', t('pages.agentStudio.region.managedConflict'))
     return
   }
-  if (envContext.value === 'agent' && isManagedCliEnvKey(props.draft.acpBackend, value)) {
+  if (isManagedCliEnvKey(props.draft.acpBackend, value)) {
     props.draft.env[i].k = ''
     emit('toast', t('pages.agentStudio.cliModel.managedBy'))
     return
