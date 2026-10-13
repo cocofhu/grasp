@@ -8,11 +8,18 @@ import pages from '@/locales/zh-CN/pages.json'
 import { useToast } from '@/lib/composables/useToast'
 import AgentMetaPanel from './AgentMetaPanel.vue'
 
-const mocks = vi.hoisted(() => ({ getProjectCredentials: vi.fn() }))
+const mocks = vi.hoisted(() => ({ getProjectCredentials: vi.fn(), getProjectSharedAgentConfig: vi.fn() }))
 
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
-  return { ...actual, api: { ...actual.api, getProjectCredentials: mocks.getProjectCredentials } }
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      getProjectCredentials: mocks.getProjectCredentials,
+      getProjectSharedAgentConfig: mocks.getProjectSharedAgentConfig,
+    },
+  }
 })
 vi.mock('@/lib/agent/cliCatalog', () => ({
   loadCliModels: (b: string) =>
@@ -81,6 +88,7 @@ function envOf(draft: ReturnType<typeof draftFor>) {
 
 beforeEach(() => {
   mocks.getProjectCredentials.mockResolvedValue({ items: [] })
+  mocks.getProjectSharedAgentConfig.mockResolvedValue({ projectId: 'p1', acpBackend: '', env: {} })
 })
 afterEach(() => {
   mounted.splice(0).forEach((w) => w.unmount())
@@ -103,6 +111,26 @@ describe('AgentMetaPanel runtime card', () => {
     expect(envOf(draft).ACP_BRIDGE_MODEL).toBe('gpt-5')
     await w.get('[data-testid="cli-model-reset"]').trigger('click')
     expect('ACP_BRIDGE_MODEL' in envOf(draft)).toBe(false)
+  })
+
+  it('names the project model an Agent on auto inherits, only for the same CLI', async () => {
+    mocks.getProjectSharedAgentConfig.mockResolvedValue({
+      projectId: 'p1',
+      acpBackend: 'codex',
+      env: { ACP_BRIDGE_MODEL: 'gpt-6-luna' },
+    })
+    const draft = draftFor({ acpBackend: 'codex' })
+    const w = mountPanel(draft)
+    await flushPromises()
+    expect(w.get('[data-test="agent-cli-model-inherited"]').text()).toContain('GPT-6 Luna')
+
+    draft.env = [{ k: 'ACP_BRIDGE_MODEL', v: 'gpt-6.1-sol' }]
+    await flushPromises()
+    expect(w.find('[data-test="agent-cli-model-inherited"]').exists()).toBe(false)
+
+    const cursor = mountPanel(draftFor({ acpBackend: 'cursor' }))
+    await flushPromises()
+    expect(cursor.find('[data-test="agent-cli-model-inherited"]').exists()).toBe(false)
   })
 
   it('is not shown for OpenCode, which keeps its model on the credential', async () => {

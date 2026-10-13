@@ -60,10 +60,14 @@ describe('AgentEnvPanel managed model keys', () => {
     expect(w.emitted('toast')?.[0]?.[0]).toContain('运行配置')
   })
 
-  it('leaves the keys editable where no Runtime card exists', () => {
+  it('locks the keys in the project shared config too, which has its own Runtime card', async () => {
     const shared = mountPanel(draft({ env: pinned.map((e) => ({ ...e })) }), 'shared')
-    expect(shared.find('[data-test="env-managed-model"]').exists()).toBe(false)
-    expect(shared.findAll('input[placeholder="KEY"]')).toHaveLength(3)
+    expect(shared.find('[data-test="env-managed-model"]').exists()).toBe(true)
+    await shared.get('[data-test="env-managed-model-edit"]').trigger('click')
+    expect(shared.emitted('edit-model')).toHaveLength(1)
+  })
+
+  it('leaves the keys editable for OpenCode, which has no Runtime card', () => {
     const oc = mountPanel(draft({ acpBackend: 'opencode', env: pinned.map((e) => ({ ...e })) }))
     expect(oc.find('[data-test="env-managed-model"]').exists()).toBe(false)
   })

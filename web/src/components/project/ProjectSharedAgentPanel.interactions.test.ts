@@ -71,6 +71,28 @@ describe('ProjectSharedAgentPanel interactions', () => {
     w.unmount()
   })
 
+  it('sets the project default model, clears it on a backend switch and saves it', async () => {
+    mocks.getConfig.mockResolvedValue({ ...cfg, env: { ACP_BRIDGE_MODEL: 'composer-2.5' } })
+    const w = mountPanel()
+    await flushPromises()
+    const vm = w.vm as any
+    await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-test="agent-cli-runtime"]').exists()).toBe(true)
+    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('composer-2.5')
+
+    vm.selectAcpBackend('codex')
+    await flushPromises()
+    expect(vm.draft.env.some((e: { k: string }) => e.k === 'ACP_BRIDGE_MODEL')).toBe(false)
+    vm.draft.env.push({ k: 'ACP_BRIDGE_MODEL', v: 'gpt-6.1-sol' })
+    expect(await vm.save()).toBe(true)
+    expect(mocks.putConfig).toHaveBeenCalledWith('p1', expect.objectContaining({
+      acpBackend: 'codex',
+      env: expect.objectContaining({ ACP_BRIDGE_MODEL: 'gpt-6.1-sol' }),
+    }))
+    w.unmount()
+  })
+
   it('surfaces load/save failures and retries/discards', async () => {
     mocks.getConfig.mockRejectedValueOnce(new Error('load failed'))
     const w = mountPanel()

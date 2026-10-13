@@ -176,8 +176,11 @@ func (c *acpProvider) credentialKind(projectID string) CredentialKindFunc {
 
 func overlayAgentFile(shared SharedAgentView, agent agentFile, kindOf CredentialKindFunc) agentFile {
 	out := agent
+	if strings.TrimSpace(agent.AcpBackend) == "" && strings.TrimSpace(shared.AcpBackend) != "" {
+		out.AcpBackend = shared.AcpBackend
+	}
 	// Env: shared base, Agent overlay.
-	out.Env = envauth.OverlayEnv(shared.Env, agent.Env)
+	out.Env = envauth.OverlayEnv(SharedEnvForBackend(shared.Env, shared.AcpBackend, out.AcpBackend), agent.Env)
 	// MCP by name
 	byName := map[string]agentMCP{}
 	order := make([]string, 0, len(shared.MCP)+len(agent.MCP))
@@ -203,9 +206,6 @@ func overlayAgentFile(shared SharedAgentView, agent agentFile, kindOf Credential
 		out.MCP = append(out.MCP, byName[n])
 	}
 	// Meta / layout: non-empty agent wins
-	if strings.TrimSpace(agent.AcpBackend) == "" && strings.TrimSpace(shared.AcpBackend) != "" {
-		out.AcpBackend = shared.AcpBackend
-	}
 	if strings.TrimSpace(agent.Layout.ConfigRoot) == "" && strings.TrimSpace(shared.Layout.ConfigRoot) != "" {
 		out.Layout.ConfigRoot = shared.Layout.ConfigRoot
 	}

@@ -1198,7 +1198,9 @@
         "noAgents": "No Agents yet — create one in Agent Studio first.",
         "noProjectAgents": "No Agents are bound to this project yet. Open Agent management and bind this project in the Agent’s meta tab, then try again.",
         "genericCredentialTitle": "Shared credential",
-        "genericCredentialHint": "This is the project default. An Agent that already chose a credential uses its own. An Agent that has not chosen one uses this credential when the kind matches."
+        "genericCredentialHint": "This is the project default. An Agent that already chose a credential uses its own. An Agent that has not chosen one uses this credential when the kind matches.",
+        "runtimeDesc": "Which account and model this project's Agents use by default.",
+        "modelHint": "The project default model. Agents on the same CLI that have not picked a model use this one."
       },
       "projectCredentials": {
         "eyebrow": "SECURITY CREDENTIALS",
@@ -2951,6 +2953,7 @@
         "switched": "Switched to {cli}; model reset to auto",
         "undo": "Undo",
         "managedBy": "Managed in Runtime · Model",
+        "inherited": "Not set here; using the project shared config:",
         "goEdit": "Edit",
         "inspectorLabel": "Model",
         "inspectorEdit": "Change in Agent settings",
