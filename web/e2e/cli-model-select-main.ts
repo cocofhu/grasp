@@ -12,21 +12,29 @@ import { api } from '../src/lib/api/api'
 import type { CliCatalogModel } from '../src/lib/api/apiTypes'
 
 const vr = ['vision', 'reasoning'] as const
+const codexEfforts = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
 const catalog: Record<string, CliCatalogModel[]> = {
   cursor: [
-    { id: 'claude-4.6-opus-max', name: 'Claude Opus 4.6 Max', vendor: 'anthropic', tags: [...vr], context: 200, recommended: true },
-    { id: 'claude-4.5-sonnet', name: 'Claude Sonnet 4.5', vendor: 'anthropic', tags: [...vr], context: 200, recommended: true },
-    { id: 'gpt-5', name: 'GPT-5', vendor: 'openai', tags: [...vr], context: 400, recommended: true },
-    { id: 'gpt-5-codex', name: 'GPT-5 Codex', vendor: 'openai', tags: ['reasoning'], context: 400 },
-    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', vendor: 'google', tags: [...vr], context: 1000 },
-    { id: 'grok-4.5-high-fast', name: 'Grok 4.5 Fast', vendor: 'xai', tags: ['reasoning', 'fast'], context: 256 },
+    { id: 'claude-opus-5-5-medium', name: 'Claude Opus 5.5', vendor: 'anthropic', tags: [...vr], context: 1000, recommended: true },
+    { id: 'gpt-5.6-sol-medium', name: 'GPT-5.6 Sol', vendor: 'openai', tags: [...vr], context: 1000, recommended: true },
+    { id: 'claude-sonnet-5-high', name: 'Claude Sonnet 5', vendor: 'anthropic', tags: [...vr], context: 1000, recommended: true },
+    { id: 'claude-fable-5-1-high', name: 'Claude Fable 5.1', vendor: 'anthropic', tags: [...vr], context: 1000 },
+    { id: 'gpt-5.6-terra-medium', name: 'GPT-5.6 Terra', vendor: 'openai', tags: [...vr], context: 1000 },
+    { id: 'gpt-5.6-luna-medium', name: 'GPT-5.6 Luna', vendor: 'openai', tags: [...vr], context: 1000 },
+    { id: 'gpt-5.3-codex', name: 'Codex 5.3', vendor: 'openai', tags: ['reasoning'] },
+    { id: 'gemini-4-argon-medium', name: 'Gemini 4 Argon', vendor: 'google', tags: [...vr] },
+    { id: 'grok-4.7-medium', name: 'Grok 4.7', vendor: 'xai', tags: ['reasoning'] },
+    { id: 'composer-2.5', name: 'Composer 2.5', vendor: 'cursor', tags: ['reasoning', 'fast'] },
+    { id: 'kimi-k3-max', name: 'Kimi K3', vendor: 'moonshot', tags: ['reasoning'] },
   ],
   codex: [
-    { id: 'gpt-5-codex', name: 'GPT-5 Codex', vendor: 'openai', tags: ['reasoning'], context: 400, recommended: true },
-    { id: 'gpt-5', name: 'GPT-5', vendor: 'openai', tags: [...vr], context: 400, recommended: true },
-    { id: 'gpt-5-mini', name: 'GPT-5 mini', vendor: 'openai', tags: ['vision', 'reasoning', 'fast'], context: 400 },
-    { id: 'o3', name: 'o3', vendor: 'openai', tags: [...vr], context: 200 },
-    { id: 'gpt-4.1', name: 'GPT-4.1', vendor: 'openai', tags: ['vision'], context: 1000 },
+    { id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', vendor: 'openai', tags: [...vr], context: 500, recommended: true, efforts: [...codexEfforts] },
+    { id: 'gpt-6-astra', name: 'GPT-6 Astra', vendor: 'openai', tags: [...vr], context: 272, recommended: true, efforts: [...codexEfforts] },
+    { id: 'gpt-6-sol', name: 'GPT-6 Sol', vendor: 'openai', tags: [...vr], context: 272, efforts: [...codexEfforts] },
+    { id: 'gpt-6-luna', name: 'GPT-6 Luna', vendor: 'openai', tags: [...vr], context: 272, efforts: codexEfforts.slice(0, 5) },
+    { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', vendor: 'openai', tags: [...vr], context: 272, efforts: [...codexEfforts] },
+    { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', vendor: 'openai', tags: [...vr], context: 272, efforts: [...codexEfforts] },
+    { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna', vendor: 'openai', tags: [...vr], context: 272, efforts: codexEfforts.slice(0, 5) },
   ],
   trae: [
     { id: 'claude-sonnet-4', name: 'Claude Sonnet 4', vendor: 'anthropic', tags: [...vr], context: 200, recommended: true },

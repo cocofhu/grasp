@@ -19,8 +19,21 @@ vi.mock('@/lib/agent/cliCatalog', () => ({
     Promise.resolve(
       b === 'codex'
         ? [
-            { id: 'gpt-5-codex', name: 'GPT-5 Codex', vendor: 'openai', tags: ['reasoning'] },
-            { id: 'gpt-4.1', name: 'GPT-4.1', vendor: 'openai', tags: ['vision'] },
+            {
+              id: 'gpt-6.1-sol',
+              name: 'GPT-6.1 Sol',
+              vendor: 'openai',
+              tags: ['reasoning'],
+              efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+            },
+            {
+              id: 'gpt-6-luna',
+              name: 'GPT-6 Luna',
+              vendor: 'openai',
+              tags: ['reasoning'],
+              efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+            },
+            { id: 'plain', name: 'Plain', vendor: 'openai', tags: ['vision'] },
           ]
         : [{ id: 'gpt-5', name: 'GPT-5', vendor: 'openai', tags: ['reasoning'] }],
     ),
@@ -122,21 +135,55 @@ describe('AgentMetaPanel runtime card', () => {
     expect(useToast().toasts.value).toHaveLength(0)
   })
 
-  it('offers reasoning effort for Codex and greys it out for a non-reasoning model', async () => {
-    const draft = draftFor({ acpBackend: 'codex', env: [{ k: 'ACP_BRIDGE_MODEL', v: 'gpt-5-codex' }] })
+  async function pickModel(w: ReturnType<typeof mountPanel>, id: string) {
+    await w.get('[data-testid="cli-model-trigger"]').trigger('click')
+    await flushPromises()
+    ;(document.body.querySelector(`[data-testid="cli-model-option-${id}"]`) as HTMLElement).click()
+    await flushPromises()
+  }
+
+  function effortOptions(w: ReturnType<typeof mountPanel>) {
+    return w.findAll('[data-test^="agent-cli-effort-"]').map((b) => b.attributes('data-test')!.replace('agent-cli-effort-', ''))
+  }
+
+  it('offers the levels the picked Codex model accepts', async () => {
+    const draft = draftFor({ acpBackend: 'codex', env: [{ k: 'ACP_BRIDGE_MODEL', v: 'gpt-6.1-sol' }] })
+    const w = mountPanel(draft)
+    await flushPromises()
+    expect(effortOptions(w)).toEqual(['auto', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
+    await w.get('[data-test="agent-cli-effort-ultra"]').trigger('click')
+    expect(envOf(draft).ACP_BRIDGE_REASONING_EFFORT).toBe('ultra')
+    await w.get('[data-test="agent-cli-effort-auto"]').trigger('click')
+    expect('ACP_BRIDGE_REASONING_EFFORT' in envOf(draft)).toBe(false)
+  })
+
+  it('offers the common levels for auto', async () => {
+    const w = mountPanel(draftFor({ acpBackend: 'codex' }))
+    await flushPromises()
+    expect(effortOptions(w)).toEqual(['auto', 'low', 'medium', 'high'])
+  })
+
+  it('drops an effort the newly picked model does not accept and keeps one it does', async () => {
+    const draft = draftFor({ acpBackend: 'codex', env: [{ k: 'ACP_BRIDGE_MODEL', v: 'gpt-6.1-sol' }] })
+    const w = mountPanel(draft)
+    await flushPromises()
+    await w.get('[data-test="agent-cli-effort-ultra"]').trigger('click')
+    await pickModel(w, 'gpt-6-luna')
+    expect(envOf(draft)).toEqual({ ACP_BRIDGE_MODEL: 'gpt-6-luna' })
+    expect(effortOptions(w)).not.toContain('ultra')
+
+    await w.get('[data-test="agent-cli-effort-xhigh"]').trigger('click')
+    await pickModel(w, 'gpt-6.1-sol')
+    expect(envOf(draft).ACP_BRIDGE_REASONING_EFFORT).toBe('xhigh')
+  })
+
+  it('greys effort out for a model that has no reasoning levels', async () => {
+    const draft = draftFor({ acpBackend: 'codex', env: [{ k: 'ACP_BRIDGE_MODEL', v: 'gpt-6.1-sol' }] })
     const w = mountPanel(draft)
     await flushPromises()
     await w.get('[data-test="agent-cli-effort-high"]').trigger('click')
-    expect(envOf(draft).ACP_BRIDGE_REASONING_EFFORT).toBe('high')
-    await w.get('[data-test="agent-cli-effort-auto"]').trigger('click')
-    expect('ACP_BRIDGE_REASONING_EFFORT' in envOf(draft)).toBe(false)
-
-    await w.get('[data-test="agent-cli-effort-high"]').trigger('click')
-    await w.get('[data-testid="cli-model-trigger"]').trigger('click')
-    await flushPromises()
-    ;(document.body.querySelector('[data-testid="cli-model-option-gpt-4.1"]') as HTMLElement).click()
-    await flushPromises()
-    expect(envOf(draft)).toEqual({ ACP_BRIDGE_MODEL: 'gpt-4.1' })
+    await pickModel(w, 'plain')
+    expect(envOf(draft)).toEqual({ ACP_BRIDGE_MODEL: 'plain' })
     expect(w.get('[data-test="agent-cli-effort-high"]').attributes('disabled')).toBeDefined()
     expect(w.get('[data-test="agent-cli-effort"]').text()).toContain('不支持')
   })

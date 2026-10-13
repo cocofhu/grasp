@@ -495,6 +495,8 @@ export interface CliCatalogModel {
   /** Context window in thousands of tokens. */
   context?: number
   recommended?: boolean
+  /** Reasoning levels the CLI accepts for this model; absent means none. */
+  efforts?: string[]
 }
 
 export interface CliModelsResponse {

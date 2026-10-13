@@ -36,6 +36,27 @@ func TestEveryBackendHasAUsableList(t *testing.T) {
 	}
 }
 
+func TestEffortsAreCodexLevels(t *testing.T) {
+	known := map[string]bool{"low": true, "medium": true, "high": true, "xhigh": true, "max": true, "ultra": true}
+	for b, list := range catalog {
+		for _, m := range list {
+			if b != "codex" && len(m.Efforts) > 0 {
+				t.Fatalf("%s/%s: only codex takes a separate effort", b, m.ID)
+			}
+			for _, e := range m.Efforts {
+				if !known[e] {
+					t.Fatalf("%s/%s: unknown effort %q", b, m.ID, e)
+				}
+			}
+		}
+	}
+	for _, m := range Models("codex") {
+		if len(m.Efforts) == 0 {
+			t.Fatalf("codex/%s: every Codex model lists its efforts", m.ID)
+		}
+	}
+}
+
 func TestUnknownBackendsGetNothing(t *testing.T) {
 	for _, b := range []string{"opencode", "", "nope"} {
 		if got := Models(b); len(got) != 0 {

@@ -2943,7 +2943,10 @@
           "auto": "自动",
           "low": "低",
           "medium": "中",
-          "high": "高"
+          "high": "高",
+          "xhigh": "超高",
+          "max": "最高",
+          "ultra": "极致"
         },
         "switched": "已切换到 {cli}，模型恢复为自动",
         "undo": "撤销",

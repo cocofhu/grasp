@@ -2943,7 +2943,10 @@
           "auto": "Auto",
           "low": "Low",
           "medium": "Medium",
-          "high": "High"
+          "high": "High",
+          "xhigh": "Extra high",
+          "max": "Max",
+          "ultra": "Ultra"
         },
         "switched": "Switched to {cli}; model reset to auto",
         "undo": "Undo",
