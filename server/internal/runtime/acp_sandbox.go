@@ -2,8 +2,11 @@ package runtime
 
 import (
 	"context"
+	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -189,10 +192,14 @@ func (c *acpProvider) beginRunSandbox(req NodeReq, name, home string) {
 // registerRunSandbox records a freshly-created node sandbox in the platform
 // store. No-op when no registry is wired.
 func (c *acpProvider) registerRunSandbox(req NodeReq, sb *sandbox.Sandbox, home string) {
-	c.registerRunSandboxGeneration(req, sb, home, 1, "")
+	c.registerRunSandboxGenerationWithFingerprint(req, sb, home, 1, "", "")
 }
 
 func (c *acpProvider) registerRunSandboxGeneration(req NodeReq, sb *sandbox.Sandbox, home string, generation int, replacementReason string) {
+	c.registerRunSandboxGenerationWithFingerprint(req, sb, home, generation, replacementReason, "")
+}
+
+func (c *acpProvider) registerRunSandboxGenerationWithFingerprint(req NodeReq, sb *sandbox.Sandbox, home string, generation int, replacementReason, envFingerprint string) {
 	if c.registry == nil || sb == nil {
 		return
 	}
@@ -213,6 +220,7 @@ func (c *acpProvider) registerRunSandboxGeneration(req NodeReq, sb *sandbox.Sand
 		Scope:             "run",
 		Generation:        generation,
 		ReplacementReason: replacementReason,
+		EnvFingerprint:    envFingerprint,
 	})
 }
 
@@ -350,7 +358,21 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 	// The lease is released by retireRunSandbox/discardSandbox after the node's
 	// ACP client closes; a parked ReAct session keeps it until the dialogue ends.
 	if c.coordinator != nil && strings.TrimSpace(req.RunID) != "" {
-		entry, err := c.coordinator.acquire(ctx, req.RunID, func() (*sandbox.Sandbox, string, string, error) {
+		envFingerprint, fingerprintErr := c.nodeEnvFingerprint(req)
+		if fingerprintErr != nil {
+			return nil, nil, "", fmt.Errorf("%w: 节点环境不可安全计算: %v", errSandboxConfig, fingerprintErr)
+		}
+		if lookup, ok := c.registry.(RunSandboxLookup); ok {
+			if info, found := lookup.FindRunSandbox(req.RunID); found && info.Name != "" {
+				if info.EnvFingerprint == "" {
+					return nil, nil, "", errors.New("共享沙箱缺少节点环境摘要：为避免重启后泄露凭据，已拒绝复用旧容器")
+				}
+				if info.EnvFingerprint != envFingerprint {
+					return nil, nil, "", errors.New("共享沙箱不支持节点级环境切换：持久化沙箱环境与当前节点不一致，已拒绝复用")
+				}
+			}
+		}
+		entry, err := c.coordinator.acquireWithFingerprint(ctx, req.RunID, envFingerprint, func() (*sandbox.Sandbox, string, string, error) {
 			// Rehydrate a durable binding left by a process restart before
 			// provisioning a replacement container.
 			if lookup, ok := c.registry.(RunSandboxLookup); ok {
@@ -362,7 +384,11 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 						if sb, aerr := attacher.Attach(ctx, info.Name); aerr == nil {
 							if werr := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 120*time.Second); werr == nil {
 								model := ""
-								c.registerRunSandbox(req, sb, info.HomeDir)
+								generation := info.Generation
+								if generation < 1 {
+									generation = 1
+								}
+								c.registerRunSandboxGenerationWithFingerprint(req, sb, info.HomeDir, generation, info.ReplacementReason, info.EnvFingerprint)
 								return sb, info.HomeDir, model, nil
 							}
 						}
@@ -379,7 +405,9 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 			return nil, nil, "", err
 		}
 		if entry.generation > 1 {
-			c.registerRunSandboxGeneration(req, entry.sb, entry.home, entry.generation, "共享沙箱不可恢复，创建替代代次")
+			c.registerRunSandboxGenerationWithFingerprint(req, entry.sb, entry.home, entry.generation, "共享沙箱不可恢复，创建替代代次", envFingerprint)
+		} else {
+			c.registerRunSandboxGenerationWithFingerprint(req, entry.sb, entry.home, entry.generation, "", envFingerprint)
 		}
 		acp, err := c.connectSandbox(ctx, req, entry.sb, entry.bridgeModel, newNodeChatID(req.RunID, req.NodeID))
 		if err != nil {
@@ -408,6 +436,34 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 	}
 	c.registerRunSandbox(req, sb, home)
 	return sb, acp, home, nil
+}
+
+// nodeEnvFingerprint hashes the exact environment that would be installed in
+// an ACP subprocess. It intentionally returns only a digest, so credentials
+// never enter logs, persistence, or error messages. Computing it through spec
+// keeps the guard aligned with all credential and platform-reserved env rules.
+func (c *acpProvider) nodeEnvFingerprint(req NodeReq) (string, error) {
+	sp, err := c.spec(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		c.forgetCodexLogin(codexLoginKey(req))
+		removeHome(sp.ConfigHome)
+	}()
+	keys := make([]string, 0, len(sp.Env))
+	for k := range sp.Env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	h := sha256.New()
+	for _, k := range keys {
+		_, _ = h.Write([]byte(k))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(sp.Env[k]))
+		_, _ = h.Write([]byte{0})
+	}
+	return fmt.Sprintf("sha256:%x", h.Sum(nil)), nil
 }
 
 func removeHome(home string) {
@@ -496,7 +552,10 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	applyPreviewEnv(env, req.Caps)
 
 	for k, v := range vars {
-		if strings.HasPrefix(k, "vars.") || v == "" {
+		// Node identity is available to MCP template substitution through
+		// templateVars, but must not become a process-wide container variable:
+		// the bridge cannot safely replace it between node sessions.
+		if strings.HasPrefix(k, "vars.") || k == "GRASP_NODE_ID" || v == "" {
 			continue
 		}
 		env[k] = v

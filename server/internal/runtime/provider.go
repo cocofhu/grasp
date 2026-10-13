@@ -374,6 +374,13 @@ type RunSandboxInfo struct {
 	Scope             string
 	Generation        int
 	ReplacementReason string
+	// SandboxID is the durable Sandbox primary key. Name remains the gateway
+	// handle used for attach/destroy operations.
+	SandboxID uint
+	// EnvFingerprint is a digest of the ACP subprocess environment. It allows
+	// restart recovery to reject unsafe cross-node environment reuse without
+	// persisting any secret values.
+	EnvFingerprint string
 }
 
 // SandboxRegistry records and clears live per-run node sandboxes. It is

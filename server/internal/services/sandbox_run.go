@@ -26,30 +26,32 @@ func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) {
 		return
 	}
 	fields := map[string]any{
-		"name":          info.Name,
-		"profile":       info.Profile,
-		"purpose":       "run",
-		"scope":         "run",
-		"generation":    maxInt(info.Generation, 1),
-		"status":        "creating",
-		"repo_url":      info.RepoURL,
-		"run_id":        info.RunID,
-		"workflow_id":   info.WorkflowID,
-		"workflow_name": info.WorkflowName,
-		"node_id":       info.NodeID,
-		"home_dir":      info.HomeDir,
-		"error":         "",
-		"destroy_at":    nil,
-		"updated_at":    time.Now(),
+		"name":            info.Name,
+		"profile":         info.Profile,
+		"purpose":         "run",
+		"scope":           "run",
+		"generation":      maxInt(info.Generation, 1),
+		"env_fingerprint": info.EnvFingerprint,
+		"status":          "creating",
+		"repo_url":        info.RepoURL,
+		"run_id":          info.RunID,
+		"workflow_id":     info.WorkflowID,
+		"workflow_name":   info.WorkflowName,
+		"node_id":         info.NodeID,
+		"home_dir":        info.HomeDir,
+		"error":           "",
+		"destroy_at":      nil,
+		"updated_at":      time.Now(),
 	}
 	if info.Token != "" {
 		fields["token"] = info.Token
 	}
+	var row models.Sandbox
 	if err := s.db.Where(models.Sandbox{RunID: info.RunID, NodeID: info.NodeID, Purpose: "run"}).
-		Assign(fields).FirstOrCreate(&models.Sandbox{}).Error; err != nil {
+		Assign(fields).FirstOrCreate(&row).Error; err != nil {
 		log.Warn().Err(err).Str("name", info.Name).Msg("begin run sandbox failed")
 	}
-	s.upsertRunBinding(info.RunID, info.Name, maxInt(info.Generation, 1), "creating", info.ReplacementReason)
+	s.upsertRunBinding(info.RunID, row.ID, maxInt(info.Generation, 1), "creating", info.ReplacementReason)
 	s.mu.Lock()
 	s.runActive[info.Name] = true
 	s.mu.Unlock()
@@ -72,6 +74,7 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 		"purpose":            "run",
 		"scope":              "run",
 		"generation":         maxInt(info.Generation, 1),
+		"env_fingerprint":    info.EnvFingerprint,
 		"replacement_reason": info.ReplacementReason,
 		"status":             "running",
 		"host":               info.Host,
@@ -109,17 +112,18 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 		}
 		s.runActive[info.Name] = true
 		s.mu.Unlock()
-		s.upsertRunBinding(info.RunID, info.Name, maxInt(info.Generation, 1), "running", info.ReplacementReason)
+		s.upsertRunBinding(info.RunID, existing.ID, maxInt(info.Generation, 1), "running", info.ReplacementReason)
 		return
 	}
+	var row models.Sandbox
 	if err := s.db.Where(models.Sandbox{Name: info.Name}).
-		Assign(fields).FirstOrCreate(&models.Sandbox{}).Error; err != nil {
+		Assign(fields).FirstOrCreate(&row).Error; err != nil {
 		log.Warn().Err(err).Str("name", info.Name).Msg("register run sandbox failed")
 	}
 	s.mu.Lock()
 	s.runActive[info.Name] = true
 	s.mu.Unlock()
-	s.upsertRunBinding(info.RunID, info.Name, maxInt(info.Generation, 1), "running", info.ReplacementReason)
+	s.upsertRunBinding(info.RunID, row.ID, maxInt(info.Generation, 1), "running", info.ReplacementReason)
 }
 
 func maxInt(v, fallback int) int {
@@ -144,6 +148,7 @@ func (s *SandboxService) FindRunSandbox(runID string) (runtime.RunSandboxInfo, b
 		CodeServerPort: row.CodeServerPort, RepoURL: row.RepoURL, HomeDir: row.HomeDir,
 		Token: row.Token, Scope: row.Scope, Generation: maxInt(row.Generation, 1),
 		ReplacementReason: row.ReplacementReason,
+		SandboxID:         row.ID, EnvFingerprint: row.EnvFingerprint,
 	}, true
 }
 
@@ -170,6 +175,7 @@ func (s *SandboxService) MarkRunSandboxReplacement(runID string, generation int,
 		"generation": generation, "status": "replacing", "replacement_reason": reason,
 		"updated_at": time.Now(),
 	}).Error
+	s.recordRunSandboxGeneration(runID, binding.SandboxID, generation, "replacing", reason)
 }
 
 // FinalizeRunSandbox marks the durable binding terminal. The container row is
@@ -184,10 +190,14 @@ func (s *SandboxService) FinalizeRunSandbox(runID, status string) {
 	_ = s.db.Model(&models.RunSandboxBinding{}).Where("run_id = ?", runID).Updates(map[string]any{
 		"status": status, "retired_at": time.Now(), "updated_at": time.Now(),
 	}).Error
+	var binding models.RunSandboxBinding
+	if s.db.Where("run_id = ?", runID).First(&binding).Error == nil {
+		s.recordRunSandboxGeneration(runID, binding.SandboxID, binding.Generation, status, binding.ReplacementReason)
+	}
 }
 
-func (s *SandboxService) upsertRunBinding(runID, sandboxID string, generation int, status, reason string) {
-	if strings.TrimSpace(runID) == "" || strings.TrimSpace(sandboxID) == "" {
+func (s *SandboxService) upsertRunBinding(runID string, sandboxID uint, generation int, status, reason string) {
+	if strings.TrimSpace(runID) == "" || sandboxID == 0 {
 		return
 	}
 	fields := map[string]any{
@@ -199,6 +209,22 @@ func (s *SandboxService) upsertRunBinding(runID, sandboxID string, generation in
 	}
 	_ = s.db.Where(models.RunSandboxBinding{RunID: runID}).Assign(fields).FirstOrCreate(&models.RunSandboxBinding{RunID: runID, SandboxID: sandboxID,
 		Generation: generation, Status: status, ReplacementReason: reason, CreatedAt: time.Now()}).Error
+	s.recordRunSandboxGeneration(runID, sandboxID, generation, status, reason)
+}
+
+func (s *SandboxService) recordRunSandboxGeneration(runID string, sandboxID uint, generation int, status, reason string) {
+	if strings.TrimSpace(runID) == "" || sandboxID == 0 || generation < 1 {
+		return
+	}
+	fields := map[string]any{
+		"sandbox_id": sandboxID, "status": status, "replacement_reason": reason, "updated_at": time.Now(),
+	}
+	if status == "retired" || status == "failed" {
+		fields["retired_at"] = time.Now()
+	}
+	_ = s.db.Where("run_id = ? AND generation = ?", runID, generation).
+		Assign(fields).FirstOrCreate(&models.RunSandboxGeneration{RunID: runID, SandboxID: sandboxID, Generation: generation,
+		Status: status, ReplacementReason: reason, CreatedAt: time.Now()})
 }
 
 // RetireRunSandbox keeps a finished run's node sandbox alive for a debug TTL
@@ -227,7 +253,7 @@ func (s *SandboxService) RetireRunSandbox(name string) {
 		return
 	}
 	if row.RunID != "" {
-		s.upsertRunBinding(row.RunID, name, maxInt(row.Generation, 1), "retired", row.ReplacementReason)
+		s.upsertRunBinding(row.RunID, row.ID, maxInt(row.Generation, 1), "retired", row.ReplacementReason)
 	}
 	log.Info().Str("name", name).Dur("ttl", s.RunTTL()).Msg("run sandbox retired for debugging (idle ttl)")
 }
@@ -293,7 +319,7 @@ func (s *SandboxService) UnregisterRunSandbox(name string) {
 	if row.RunID != "" {
 		var binding models.RunSandboxBinding
 		if s.db.Where("run_id = ?", row.RunID).First(&binding).Error != nil || binding.Status != "replacing" {
-			s.upsertRunBinding(row.RunID, name, maxInt(row.Generation, 1), "retired", row.ReplacementReason)
+			s.upsertRunBinding(row.RunID, row.ID, maxInt(row.Generation, 1), "retired", row.ReplacementReason)
 		}
 	}
 }

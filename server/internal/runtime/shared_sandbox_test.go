@@ -142,3 +142,18 @@ func TestSharedSandboxCoordinatorConcurrentCreation(t *testing.T) {
 		t.Fatalf("created=%d", created)
 	}
 }
+
+func TestSharedSandboxCoordinatorRejectsNodeEnvironmentSwitch(t *testing.T) {
+	c := newSharedSandboxCoordinator()
+	create := func() (*sandbox.Sandbox, string, string, error) {
+		return &sandbox.Sandbox{Name: "shared-env"}, "", "", nil
+	}
+	entry, err := c.acquireWithFingerprint(context.Background(), "run-env", "sha256:a", create)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.release(entry.sb)
+	if _, err := c.acquireWithFingerprint(context.Background(), "run-env", "sha256:b", create); err == nil {
+		t.Fatal("expected node environment switch to fail closed")
+	}
+}
