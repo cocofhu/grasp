@@ -181,29 +181,38 @@ func (c *acpProvider) beginRunSandbox(req NodeReq, name, home string) {
 		RepoURL:      firstRepoURL(req),
 		HomeDir:      home,
 		Token:        req.Token,
+		Scope:        "run",
+		Generation:   1,
 	})
 }
 
 // registerRunSandbox records a freshly-created node sandbox in the platform
 // store. No-op when no registry is wired.
 func (c *acpProvider) registerRunSandbox(req NodeReq, sb *sandbox.Sandbox, home string) {
+	c.registerRunSandboxGeneration(req, sb, home, 1, "")
+}
+
+func (c *acpProvider) registerRunSandboxGeneration(req NodeReq, sb *sandbox.Sandbox, home string, generation int, replacementReason string) {
 	if c.registry == nil || sb == nil {
 		return
 	}
 	repo := firstRepoURL(req)
 	c.registry.RegisterRunSandbox(RunSandboxInfo{
-		Name:           sb.Name,
-		Profile:        models.AgentProfile(req.Config),
-		RunID:          req.RunID,
-		WorkflowID:     req.WorkflowID,
-		WorkflowName:   req.WorkflowName,
-		NodeID:         req.NodeID,
-		Host:           sb.Host,
-		ACPPort:        sb.Port,
-		CodeServerPort: sb.CodeServerPort,
-		RepoURL:        repo,
-		HomeDir:        home,
-		Token:          req.Token,
+		Name:              sb.Name,
+		Profile:           models.AgentProfile(req.Config),
+		RunID:             req.RunID,
+		WorkflowID:        req.WorkflowID,
+		WorkflowName:      req.WorkflowName,
+		NodeID:            req.NodeID,
+		Host:              sb.Host,
+		ACPPort:           sb.Port,
+		CodeServerPort:    sb.CodeServerPort,
+		RepoURL:           repo,
+		HomeDir:           home,
+		Token:             req.Token,
+		Scope:             "run",
+		Generation:        generation,
+		ReplacementReason: replacementReason,
 	})
 }
 
@@ -225,10 +234,17 @@ func (c *acpProvider) deregisterRunSandbox(name string) {
 // is leaked.
 func (c *acpProvider) retireRunSandbox(sb *sandbox.Sandbox, acp *sandbox.ACPClient, home string) {
 	if acp != nil {
+		acp.CloseOwnedChat(context.Background())
 		acp.Close()
 	}
 	if sb == nil {
 		removeHome(home)
+		return
+	}
+	// A run-level container survives node completion. Only its ACP lease is
+	// released here; AbortRun performs the single terminal teardown.
+	if c.coordinator != nil {
+		c.coordinator.release(sb)
 		return
 	}
 	if r, ok := c.registry.(RunSandboxRetirer); ok {
@@ -252,11 +268,23 @@ func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandb
 	events := c.snapshotEvents(ctx, sb, fallback)
 	c.deregisterLive(req)
 	if acp != nil {
+		acp.CloseOwnedChat(context.Background())
 		acp.Close()
 	}
 	if sb == nil {
 		removeHome(home)
 		return events
+	}
+	if c.coordinator != nil && strings.TrimSpace(req.RunID) != "" {
+		if lifecycle, ok := c.registry.(RunSandboxLifecycle); ok {
+			lifecycle.MarkRunSandboxReplacement(req.RunID, c.coordinator.nextGeneration(req.RunID), "共享沙箱不可恢复，创建替代代次")
+		}
+		if sharedHome, removed := c.coordinator.discard(req.RunID, sb); removed {
+			c.deregisterRunSandbox(sb.Name)
+			sb.Destroy(context.Background())
+			removeHome(sharedHome)
+			return events
+		}
 	}
 	c.deregisterRunSandbox(sb.Name)
 	sb.Destroy(context.Background())
@@ -264,11 +292,14 @@ func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandb
 	return events
 }
 
-func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, error) {
+// createSandbox provisions one container and leaves ACP session creation to the
+// caller. Keeping these phases separate lets a run-level coordinator reuse the
+// container while every node still receives a fresh ACP chat/tab.
+func (c *acpProvider) createSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, string, string, error) {
 	spec, err := c.spec(req)
 	if err != nil {
 		c.forgetCodexLogin(codexLoginKey(req))
-		return nil, nil, "", fmt.Errorf("%w: %v", errSandboxConfig, err)
+		return nil, "", "", fmt.Errorf("%w: %v", errSandboxConfig, err)
 	}
 	home := spec.ConfigHome
 
@@ -280,26 +311,100 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 		c.forgetCodexLogin(codexLoginKey(req))
 		c.deregisterRunSandbox(placeholder)
 		removeHome(home)
-		return nil, nil, "", fmt.Errorf("%w: create sandbox: %v", errSandboxSetup, err)
+		return nil, "", "", fmt.Errorf("%w: create sandbox: %v", errSandboxSetup, err)
 	}
 	if err := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 120*time.Second); err != nil {
 		c.forgetCodexLogin(codexLoginKey(req))
 		c.deregisterRunSandbox(placeholder)
 		sb.Destroy(context.Background())
 		removeHome(home)
-		return nil, nil, "", fmt.Errorf("%w: acp not ready: %v", errSandboxSetup, err)
+		return nil, "", "", fmt.Errorf("%w: acp not ready: %v", errSandboxSetup, err)
 	}
+	return sb, home, spec.Env["ACP_BRIDGE_MODEL"], nil
+}
+
+func (c *acpProvider) connectSandbox(ctx context.Context, req NodeReq, sb *sandbox.Sandbox, bridgeModel, chatID string) (*sandbox.ACPClient, error) {
 	acp := sb.ACP().
 		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
 		WithIdleTimeoutFunc(c.agentIdle).
-		WithBridgeModel(spec.Env["ACP_BRIDGE_MODEL"])
+		WithBridgeModel(bridgeModel)
+	if chatID != "" {
+		created, err := acp.CreateChat(ctx, "run/"+safeSessionPart(req.RunID)+"/"+safeSessionPart(req.NodeID), "")
+		if err != nil {
+			acp.CloseOwnedChat(context.Background())
+			acp.Close()
+			return nil, fmt.Errorf("%w: create node chat: %v", errSandboxSetup, err)
+		}
+		acp.WithChat(created)
+	}
 	if err := acp.Connect(ctx); err != nil {
-		c.forgetCodexLogin(codexLoginKey(req))
-		c.deregisterRunSandbox(placeholder)
+		acp.CloseOwnedChat(context.Background())
 		acp.Close()
+		return nil, fmt.Errorf("%w: acp connect: %v", errSandboxSetup, err)
+	}
+	return acp, nil
+}
+
+func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, error) {
+	// Run nodes share one container and acquire the exclusive workspace lease.
+	// The lease is released by retireRunSandbox/discardSandbox after the node's
+	// ACP client closes; a parked ReAct session keeps it until the dialogue ends.
+	if c.coordinator != nil && strings.TrimSpace(req.RunID) != "" {
+		entry, err := c.coordinator.acquire(ctx, req.RunID, func() (*sandbox.Sandbox, string, string, error) {
+			// Rehydrate a durable binding left by a process restart before
+			// provisioning a replacement container.
+			if lookup, ok := c.registry.(RunSandboxLookup); ok {
+				if info, found := lookup.FindRunSandbox(req.RunID); found && info.Name != "" {
+					attacher, canAttach := c.mgr.(interface {
+						Attach(context.Context, string) (*sandbox.Sandbox, error)
+					})
+					if canAttach {
+						if sb, aerr := attacher.Attach(ctx, info.Name); aerr == nil {
+							if werr := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 120*time.Second); werr == nil {
+								model := ""
+								c.registerRunSandbox(req, sb, info.HomeDir)
+								return sb, info.HomeDir, model, nil
+							}
+						}
+					}
+				}
+			}
+			sb, home, model, err := c.createSandbox(ctx, req)
+			if err == nil {
+				c.registerRunSandbox(req, sb, home)
+			}
+			return sb, home, model, err
+		})
+		if err != nil {
+			return nil, nil, "", err
+		}
+		if entry.generation > 1 {
+			c.registerRunSandboxGeneration(req, entry.sb, entry.home, entry.generation, "共享沙箱不可恢复，创建替代代次")
+		}
+		acp, err := c.connectSandbox(ctx, req, entry.sb, entry.bridgeModel, newNodeChatID(req.RunID, req.NodeID))
+		if err != nil {
+			home, removed := c.coordinator.discard(req.RunID, entry.sb)
+			if removed {
+				c.deregisterRunSandbox(entry.sb.Name)
+				entry.sb.Destroy(context.Background())
+				removeHome(home)
+			}
+			return nil, nil, "", err
+		}
+		return entry.sb, acp, entry.home, nil
+	}
+
+	sb, home, model, err := c.createSandbox(ctx, req)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	acp, err := c.connectSandbox(ctx, req, sb, model, "")
+	if err != nil {
+		c.forgetCodexLogin(codexLoginKey(req))
+		c.deregisterRunSandbox(sb.Name)
 		sb.Destroy(context.Background())
 		removeHome(home)
-		return nil, nil, "", fmt.Errorf("%w: acp connect: %v", errSandboxSetup, err)
+		return nil, nil, "", err
 	}
 	c.registerRunSandbox(req, sb, home)
 	return sb, acp, home, nil

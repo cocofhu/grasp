@@ -151,7 +151,12 @@ func (s *PreviewService) SandboxForRunNode(runID, nodeID string) (string, bool) 
 	var row models.Sandbox
 	if err := s.db.Where("run_id = ? AND node_id = ? AND purpose = ?", runID, nodeID, "run").
 		Order("updated_at desc").First(&row).Error; err != nil {
-		return "", false
+		// Shared run sandboxes are attributed to the currently active node. A
+		// completed node may therefore resolve the run-level binding instead.
+		if err := s.db.Where("run_id = ? AND purpose = ?", runID, "run").
+			Order("updated_at desc").First(&row).Error; err != nil {
+			return "", false
+		}
 	}
 	if strings.TrimSpace(row.Name) == "" {
 		return "", false

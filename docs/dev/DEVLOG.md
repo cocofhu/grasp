@@ -28,6 +28,14 @@
 - 为什么：run-64490c06 中 auth.json 失效后每个回合都 401，但失败回合 `err == nil`，平台继续催促 6 次、判成 `errMCPSurfaceEmpty`（retryable）并自动重试 3 次，用户看到的是错误原因"MCP 工具面为空"。
 - 如何验证：新增 fake bridge 用例（Codex 401 只跑 1 回合、1 个沙箱；非 Codex 后端行为不变）、`asCodexLoginErr`/`settleCodexLogin` 单测、引擎不重试用例与前端横幅用例；回退修复后 fail-fast 用例失败。`go test ./...`、golangci-lint、`go vet`、configdoc、core 覆盖率 90.1%、web eslint / vue-tsc / vitest 通过。
 
+### 2026-10-13
+
+- 日期：2026-10-13
+- 范围：`server/internal/{models,runtime,sandbox,services}`、`docs/dev/DEVLOG.md`、`CHANGELOG.md`
+- 做了什么：把工作流沙箱提升为 run 级共享绑定；同一运行的 Agent 节点复用一个工作区并通过独占租约串行执行。每个节点创建独立 bridge chat/ACP session，节点结束释放租约，运行完成、失败或取消时统一归档并销毁。新增代次、替换原因、持久绑定和服务器重启后的健康容器恢复，并保持测试/Agent/PM 沙箱作用域独立。
+- 为什么：让连续节点看到同一工作区，同时避免并行分支竞态、跨运行泄露和节点完整对话上下文串联。
+- 如何验证：`GOTOOLCHAIN=auto go test ./...`、`go vet ./...`、配置文档一致性检查通过；新增共享创建一次、租约互斥、等待取消、故障替换唤醒和终态幂等测试。
+
 ### 2026-10-09（恢复 #629 的持续回归测试）
 
 - 日期：2026-10-09
