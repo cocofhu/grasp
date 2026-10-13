@@ -109,6 +109,20 @@ func TestRunSandboxLifecycle(t *testing.T) {
 	if row.Purpose != "run" || row.Status != "running" {
 		t.Fatalf("row: %+v", row)
 	}
+	var binding models.RunSandboxBinding
+	if err := db.Where("run_id = ?", "run-"+name).First(&binding).Error; err != nil {
+		t.Fatalf("run binding: %v", err)
+	}
+	if binding.SandboxID != row.ID {
+		t.Fatalf("binding sandbox_id=%d, want row id %d", binding.SandboxID, row.ID)
+	}
+	var history models.RunSandboxGeneration
+	if err := db.Where("run_id = ? AND generation = ?", "run-"+name, 1).First(&history).Error; err != nil {
+		t.Fatalf("generation history: %v", err)
+	}
+	if history.SandboxID != row.ID || history.Status != "running" {
+		t.Fatalf("generation history: %+v", history)
+	}
 	v := s.view(ctx, &row)
 	if !v.Busy {
 		t.Fatal("run sandbox should be busy while active")
@@ -138,6 +152,23 @@ func runtimeInfo(name string) runtime.RunSandboxInfo {
 	return runtime.RunSandboxInfo{
 		Name: name, Profile: "agentA", RunID: "run-" + name, NodeID: "impl",
 		Host: "127.0.0.1", ACPPort: 8765,
+	}
+}
+
+func TestFindRunSandboxPreservesGenerationAndEnvironmentFingerprint(t *testing.T) {
+	db := newTestDB(t)
+	s := newSandboxService(t, db, &dockerState{})
+	info := runtimeInfo("grasp-sb-restart")
+	info.Generation = 2
+	info.ReplacementReason = "不可恢复"
+	info.EnvFingerprint = "sha256:restart"
+	s.RegisterRunSandbox(info)
+	got, ok := s.FindRunSandbox(info.RunID)
+	if !ok {
+		t.Fatal("expected run sandbox binding")
+	}
+	if got.Generation != 2 || got.ReplacementReason != info.ReplacementReason || got.EnvFingerprint != info.EnvFingerprint {
+		t.Fatalf("recovered info: %+v", got)
 	}
 }
 

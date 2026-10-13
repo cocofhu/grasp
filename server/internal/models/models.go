@@ -793,11 +793,14 @@ type Sandbox struct {
 	// Generation increments when an unrecoverable run sandbox is replaced.
 	Generation        int    `json:"generation,omitempty"`
 	ReplacementReason string `json:"replacementReason,omitempty"`
-	Status            string `json:"status"` // pulling|creating|running|stopped|error
-	Host              string `json:"-"`
-	ACPPort           int    `json:"-"`
-	CodeServerPort    int    `json:"-"`
-	RepoURL           string `json:"repoUrl,omitempty"`
+	// EnvFingerprint is a non-reversible digest used to fail closed when a
+	// restarted run would otherwise reuse a container with another node's env.
+	EnvFingerprint string `json:"-"`
+	Status         string `json:"status"` // pulling|creating|running|stopped|error
+	Host           string `json:"-"`
+	ACPPort        int    `json:"-"`
+	CodeServerPort int    `json:"-"`
+	RepoURL        string `json:"repoUrl,omitempty"`
 	// Origin attribution (populated for purpose="run"): which run/workflow/node
 	// produced this sandbox. RunID for test sandboxes is a synthetic id used by
 	// the artifact-store MCP. For purpose="agent", RunID is a synthetic
@@ -865,9 +868,23 @@ type SandboxLog struct {
 // represented by Sandbox rows and their archived logs.
 type RunSandboxBinding struct {
 	RunID             string     `gorm:"primaryKey;size:191" json:"runId"`
-	SandboxID         string     `gorm:"index;not null" json:"sandboxId"`
+	SandboxID         uint       `gorm:"index;not null" json:"sandboxId"`
 	Generation        int        `json:"generation"`
 	Status            string     `json:"status"` // creating|running|replacing|retired|failed
+	ReplacementReason string     `json:"replacementReason,omitempty"`
+	CreatedAt         time.Time  `json:"createdAt"`
+	RetiredAt         *time.Time `json:"retiredAt,omitempty"`
+	UpdatedAt         time.Time  `json:"updatedAt"`
+}
+
+// RunSandboxGeneration keeps the replacement chain queryable after the
+// current binding advances or the old Sandbox row is removed.
+type RunSandboxGeneration struct {
+	ID                uint       `gorm:"primaryKey" json:"id"`
+	RunID             string     `gorm:"uniqueIndex:idx_run_sandbox_generation;size:191" json:"runId"`
+	SandboxID         uint       `gorm:"index;not null" json:"sandboxId"`
+	Generation        int        `gorm:"uniqueIndex:idx_run_sandbox_generation" json:"generation"`
+	Status            string     `json:"status"`
 	ReplacementReason string     `json:"replacementReason,omitempty"`
 	CreatedAt         time.Time  `json:"createdAt"`
 	RetiredAt         *time.Time `json:"retiredAt,omitempty"`
@@ -956,7 +973,7 @@ func AllModels() []any {
 		&Project{},
 		&WorkflowDef{}, &WorkflowVersion{}, &Run{}, &StateRun{},
 		&RunVariable{}, &Artifact{}, &ArtifactVersion{}, &Gate{}, &ReactConversation{},
-		&Sandbox{}, &SandboxLog{}, &RunSandboxBinding{}, &Setting{}, &Session{}, &WorkflowAPIKey{},
+		&Sandbox{}, &SandboxLog{}, &RunSandboxBinding{}, &RunSandboxGeneration{}, &Setting{}, &Session{}, &WorkflowAPIKey{},
 		&RunPreviewPort{}, &PreviewIssue{}, &FeedbackEvent{},
 		&ProjectMemoryItem{}, &ChatThread{}, &ChatMessage{}, &ChatTurnDraft{},
 		&AgentCronJob{}, &AgentCronRun{}, &ChannelConfig{},
