@@ -184,12 +184,12 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .home-yume {
-  /* inherit --yume-size from .home-brand-block (LAYOUT-A); fallback 220px */
+  /* fill LOCKED: 240x200 crop; SVG 240x240 + margin-top -28px (feet near clip) */
   box-sizing: border-box;
   display: grid;
   place-items: center;
-  width: var(--yume-size, 220px);
-  height: var(--yume-size, 220px);
+  width: var(--yume-w, 240px);
+  height: var(--yume-h, 200px);
   margin: 0;
   flex-shrink: 0;
   padding: 0;
@@ -200,6 +200,8 @@ onBeforeUnmount(() => {
   user-select: none;
   -webkit-user-select: none;
   outline: none;
+  overflow: hidden;
+  filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.45));
   /* layout box fixed; float/squash/bounce use transform only */
 }
 
@@ -212,8 +214,9 @@ onBeforeUnmount(() => {
 
 .home-yume__svg {
   display: block;
-  width: 100%;
-  height: 100%;
+  width: var(--yume-w, 240px);
+  height: var(--yume-w, 240px);
+  margin-top: -28px;
   pointer-events: none;
 }
 

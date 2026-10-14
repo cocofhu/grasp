@@ -314,11 +314,15 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
-  // LAYOUT-A — centered yume only；无 Grasp 字标 / hint / 筛选说明句
-  it('renders centered yume without Grasp wordmark or hint', async () => {
+  // fill LOCKED — cropped yume + copy
+  it('renders fill hero with yume and locked copy', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
     expect(wrapper.find('[data-testid="home-yume"]').exists()).toBe(true)
+    const copy = wrapper.get('[data-testid="home-hero-copy"]')
+    expect(copy.text()).toContain('先说清')
+    expect(copy.text()).toContain('再动手')
+    expect(copy.find('.em').text()).toBe('先说清')
     expect(wrapper.find('[data-testid="home-brand"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-brand-text"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-brand-cursor"]').exists()).toBe(false)

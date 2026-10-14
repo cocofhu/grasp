@@ -54,10 +54,13 @@ describe('DashboardView home chat layout', () => {
     expect(particleBgSrc).toMatch(/pointer-events:\s*none/)
   })
 
-  // LAYOUT-A — centered yume only (no wordmark / logo-mark / hint)
-  it('uses centered yume without wordmark, logo mark, hint, or banned effects', () => {
+  // fill LOCKED — cropped yume + copy (no wordmark / logo-mark / old hint)
+  it('uses fill hero with yume crop, copy, and no banned effects', () => {
     expect(src).toMatch(/data-testid="home-brand-block"/)
     expect(src).toMatch(/HomeYumeCharacter/)
+    expect(src).toMatch(/data-testid="home-hero-copy"/)
+    expect(src).toMatch(/home-hero-copy/)
+    expect(src).toMatch(/class="em"/)
     expect(src).not.toMatch(/data-testid="home-brand"/)
     expect(src).not.toMatch(/data-testid="home-brand-row"/)
     expect(src).not.toMatch(/data-testid="home-brand-copy"/)
@@ -68,12 +71,12 @@ describe('DashboardView home chat layout', () => {
     expect(src).not.toMatch(/HomeLogoEasterEgg|homeLogoJumpGame|home-logo-easter-egg/)
     expect(src).not.toMatch(/home-brand__cursor/)
     expect(src).not.toMatch(/ui-monospace/)
-    expect(src).toMatch(/--yume-size:\s*220px/)
-    expect(src).toMatch(/--yume-size:\s*180px/)
-    expect(src).toMatch(/--yume-size:\s*140px/)
-    // yume → composer: Desktop 28px / small 24px
-    expect(src).toMatch(/\.home-composer-wrap\s*\{[^}]*margin-top:\s*28px/s)
-    expect(src).toMatch(/max-width:\s*899px[\s\S]*?\.home-composer-wrap\s*\{[^}]*margin-top:\s*24px/s)
+    expect(src).toMatch(/--yume-w:\s*240px/)
+    expect(src).toMatch(/--yume-h:\s*200px/)
+    expect(src).not.toMatch(/--yume-size/)
+    expect(src).toMatch(/margin-top:\s*6px/)
+    expect(src).toMatch(/\.home-composer-wrap\s*\{[^}]*margin-top:\s*22px/s)
+    expect(src).toMatch(/justify-start/)
     expect(src).not.toMatch(/var\(--grad-logo\)/)
     expect(src).not.toMatch(/background-clip:\s*text/)
     expect(src).not.toMatch(/shimmer/)
@@ -168,21 +171,18 @@ describe('DashboardView home chat layout', () => {
     expect(shellSrc).toMatch(/min-h-0 flex-1/)
   })
 
-  // plan g1.1 / g2.1 — mobile top spacing: ~4–4.5rem padding-top, keep flex-start
+  // fill LOCKED — top-down shell (justify-start); mobile keeps ~4.25rem padding-top
   it('uses moderate mobile top padding without vertical centering', () => {
+    expect(src).toMatch(/home-shell__content[^"]*justify-start/)
     expect(src).toMatch(
       /@media \(max-width: 520px\)[\s\S]*\.home-shell__content[\s\S]*padding-top:\s*4\.25rem/,
     )
     expect(src).not.toMatch(
       /@media \(max-width: 520px\)[\s\S]*\.home-shell__content[\s\S]*padding-top:\s*2rem/,
     )
-    expect(src).toMatch(
-      /@media \(max-width: 520px\)[\s\S]*\.home-shell__content[\s\S]*justify-content:\s*flex-start/,
-    )
     expect(src).not.toMatch(
       /@media \(max-width: 520px\)[\s\S]*\.home-shell__content[\s\S]*justify-content:\s*center/,
     )
-    expect(src).toMatch(/justify-center/)
   })
 
   // plan g1.2 — keep overflow-hidden on composer; priority panel teleports instead

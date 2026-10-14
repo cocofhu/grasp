@@ -556,10 +556,13 @@ onBeforeUnmount(() => {
   <div data-testid="dashboard-view" class="home-shell relative flex h-full min-h-0 flex-col">
     <HomeParticleMeshBackground />
     <div
-      class="home-shell__content relative z-[1] mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10"
+      class="home-shell__content relative z-[1] mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col items-center justify-start overflow-y-auto px-4 py-10"
     >
       <div class="home-brand-block" data-testid="home-brand-block">
         <HomeYumeCharacter />
+        <p class="home-hero-copy" data-testid="home-hero-copy">
+          <span class="em">先说清</span>，再动手
+        </p>
       </div>
 
       <div class="home-composer-wrap w-full">
@@ -951,14 +954,40 @@ onBeforeUnmount(() => {
   isolation: isolate;
 }
 
-/* brand: centered yume only (LAYOUT-A); no wordmark / logo-mark / hint */
+/* brand: fill LOCKED — cropped yume + copy; no wordmark / logo-mark */
 .home-brand-block {
-  --yume-size: 220px;
+  --yume-w: 240px;
+  --yume-h: 200px;
   display: flex;
   flex-direction: column;
   align-items: center;
   flex-shrink: 0;
   width: 100%;
+}
+
+.home-hero-copy {
+  margin-top: 6px; /* after crop; optical ~4-6px */
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: #9a9a9a;
+  text-align: center;
+  line-height: 1.45;
+  position: relative;
+  z-index: 1;
+}
+
+.home-hero-copy .em {
+  color: #f2f2f2;
+  font-weight: 600;
+}
+
+:global(html.light) .home-hero-copy {
+  color: #6b6b6b;
+}
+
+:global(html.light) .home-hero-copy .em {
+  color: #1a1a1a;
 }
 
 /* plan g1.1 — shell/hero composer 16px; overflow+bg+radius same layer */
@@ -1304,30 +1333,12 @@ onBeforeUnmount(() => {
   }
 }
 
-/* LAYOUT-A: yume → composer Desktop 28px / small 24px */
+/* fill LOCKED: copy to composer 22px; yume 240x200 */
 .home-composer-wrap {
-  margin-top: 28px;
-}
-
-@media (max-width: 899px) {
-  .home-brand-block {
-    --yume-size: 180px;
-  }
-
-  .home-composer-wrap {
-    margin-top: 24px;
-  }
+  margin-top: 22px;
 }
 
 @media (max-width: 640px) {
-  .home-brand-block {
-    --yume-size: 140px;
-  }
-
-  .home-composer-wrap {
-    margin-top: 24px;
-  }
-
   .home-workflow-nav--prev {
     left: 0;
   }
@@ -1341,7 +1352,6 @@ onBeforeUnmount(() => {
   .home-shell__content {
     padding-top: 4.25rem;
     padding-bottom: 2.5rem;
-    justify-content: flex-start;
   }
 }
 
