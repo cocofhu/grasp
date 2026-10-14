@@ -242,12 +242,55 @@ func (e *Engine) setRunBranch(c *execCtx, git *runtime.GitInfo) {
 // (JSON name→branch map), so downstream sandboxes check the implementation
 // out instead of cloning the default branch.
 func (e *Engine) exportBranchVar(c *execCtx, outputs map[string]any) {
-	br := strings.TrimSpace(str(outputs["branches"]))
+	br := encodeBranchesVar(outputs["branches"])
 	if br == "" {
 		return
 	}
 	c.setVar("branches", br)
 	e.persistVar(c.run.ID, "branches", br)
+}
+
+// encodeBranchesVar normalizes outputs.branches to the JSON name→branch map
+// downstream clones parse. Git capture stores a JSON string, but an agent's
+// node_complete outputs replace it with a decoded object; fmt.Sprint of that
+// map ("map[repo:branch]") is unparseable and silently clones the default
+// branch. Returns "" when nothing usable is present.
+func encodeBranchesVar(v any) string {
+	m := map[string]string{}
+	switch t := v.(type) {
+	case string:
+		s := strings.TrimSpace(t)
+		if s == "" || json.Unmarshal([]byte(s), &m) != nil {
+			return ""
+		}
+	case map[string]string:
+		for k, b := range t {
+			m[k] = b
+		}
+	case map[string]any:
+		for k, b := range t {
+			if s, ok := b.(string); ok {
+				m[k] = s
+			}
+		}
+	default:
+		return ""
+	}
+	for k, b := range m {
+		k2, b2 := strings.TrimSpace(k), strings.TrimSpace(b)
+		delete(m, k)
+		if k2 != "" && b2 != "" {
+			m[k2] = b2
+		}
+	}
+	if len(m) == 0 {
+		return ""
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return ""
+	}
+	return string(out)
 }
 
 // exportPreflightVars writes each preflight.json field name→value (plaintext,

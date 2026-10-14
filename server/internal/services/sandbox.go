@@ -50,9 +50,13 @@ type SandboxService struct {
 	ttl    atomic.Int64 // idle TTL for interactive test sandboxes (ns)
 	runTTL atomic.Int64 // retention TTL for finished run node sandboxes (ns)
 	max    atomic.Int64 // max concurrently live interactive test sandboxes
+	// maxRetention caps how far leases can push a run sandbox's deadline (ns).
+	maxRetention atomic.Int64
 
-	mu   sync.Mutex
-	live map[uint]*liveSandbox
+	mu sync.Mutex
+	// lastTouch throttles activity-lease writes per sandbox id.
+	lastTouch map[uint]time.Time
+	live      map[uint]*liveSandbox
 	// runActive marks per-run node sandboxes (by container name) that are
 	// currently executing. These are owned by the runtime provider, not by
 	// this service's ACP pool; the flag protects them from being stopped or
@@ -107,7 +111,9 @@ type SandboxOptions struct {
 	// RunTTL is how long a finished run's node sandbox is retained (kept alive)
 	// for debugging before the idle sweeper reclaims it.
 	RunTTL time.Duration
-	Max    int
+	// MaxRetention caps lease-extended run sandbox lifetime. 0 = 24h.
+	MaxRetention time.Duration
+	Max          int
 	// SharedAgent optional project baseline used by Open / OpenAgentSandbox.
 	SharedAgent *SharedAgentService
 	// ProjectCredentials resolves UI-managed project credential environment
@@ -173,9 +179,14 @@ func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, 
 		openCodeCatalog:             opts.OpenCodeCatalog,
 		live:                        map[uint]*liveSandbox{},
 		runActive:                   map[string]bool{},
+		lastTouch:                   map[uint]time.Time{},
+	}
+	if opts.MaxRetention <= 0 {
+		opts.MaxRetention = 24 * time.Hour
 	}
 	s.ttl.Store(int64(opts.TTL))
 	s.runTTL.Store(int64(opts.RunTTL))
+	s.maxRetention.Store(int64(opts.MaxRetention))
 	s.max.Store(int64(opts.Max))
 	return s
 }

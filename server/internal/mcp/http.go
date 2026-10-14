@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 )
 
 const mcpSessionHeader = "Mcp-Session-Id"
@@ -33,6 +34,7 @@ type toolStream struct {
 // for clients that listen for tools/list_changed notifications.
 func (h *Host) ServeRunHTTP(w http.ResponseWriter, r *http.Request, runID, token string) {
 	if !h.AuthorizeRun(runID, token) {
+		log.Warn().Str("run_id", runID).Str("method", r.Method).Msg("mcp http unauthorized")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -47,8 +49,19 @@ func (h *Host) ServeRunHTTP(w http.ResponseWriter, r *http.Request, runID, token
 	}
 	sid := r.Header.Get(mcpSessionHeader)
 	if sid != "" && !h.hasToolSession(runID, sid) {
-		http.Error(w, "MCP session not found", http.StatusNotFound)
-		return
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		// Session state is in-memory and lost on restart or run re-registration,
+		// while the agent keeps sending its old ID (cursor-agent does not
+		// re-initialize on 404). The ID is not a credential — the bearer token
+		// already authorized this run — so re-adopt it instead of failing.
+		if !h.adoptToolSession(runID, token, sid) {
+			http.Error(w, "MCP session not found", http.StatusNotFound)
+			return
+		}
+		log.Warn().Str("run_id", runID).Str("method", r.Method).Msg("mcp http re-adopted unknown session")
 	}
 	switch r.Method {
 	case http.MethodPost:
@@ -127,6 +140,47 @@ func (h *Host) newToolSession(runID, token string) string {
 	return id
 }
 
+const (
+	maxToolSessionIDLen = 128
+	// maxClosedToolSessions bounds the per-run tombstones of DELETEd sessions.
+	maxClosedToolSessions = 256
+)
+
+// adoptToolSession registers a client-supplied session ID for runID when the
+// token is still bound to the run. IDs must be short visible ASCII per the
+// Streamable HTTP spec. A session the client terminated (DELETE) or one live
+// under another run is never adopted.
+func (h *Host) adoptToolSession(runID, token, sid string) bool {
+	if len(sid) > maxToolSessionIDLen {
+		return false
+	}
+	for _, c := range sid {
+		if c < 0x21 || c > 0x7e {
+			return false
+		}
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if token == "" || h.tokens[runID] != token {
+		return false
+	}
+	if _, closed := h.closedSessions[runID][sid]; closed {
+		return false
+	}
+	for other, sessions := range h.toolSessions {
+		if other != runID && sessions[sid] != nil {
+			return false
+		}
+	}
+	if h.toolSessions[runID] == nil {
+		h.toolSessions[runID] = map[string]*toolSession{}
+	}
+	if h.toolSessions[runID][sid] == nil {
+		h.toolSessions[runID][sid] = &toolSession{}
+	}
+	return true
+}
+
 func (h *Host) hasToolSession(runID, sid string) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -144,6 +198,15 @@ func (h *Host) deleteToolSession(runID, sid string) {
 		if len(h.toolSessions[runID]) == 0 {
 			delete(h.toolSessions, runID)
 		}
+	}
+	if h.closedSessions == nil {
+		h.closedSessions = map[string]map[string]struct{}{}
+	}
+	if h.closedSessions[runID] == nil {
+		h.closedSessions[runID] = map[string]struct{}{}
+	}
+	if len(h.closedSessions[runID]) < maxClosedToolSessions {
+		h.closedSessions[runID][sid] = struct{}{}
 	}
 }
 

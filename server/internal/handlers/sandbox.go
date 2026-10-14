@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html"
 	"io"
 	"net"
@@ -15,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/auth"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/services"
@@ -203,6 +205,56 @@ func (h *Handlers) GetSandbox(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
+	// The console polls this while open (IDE / logs tabs included), so a
+	// watched retained sandbox keeps its activity lease.
+	h.Sbx.TouchActivity(id)
+	c.JSON(http.StatusOK, v)
+}
+
+type extendLeaseBody struct {
+	Minutes int    `json:"minutes"`
+	Until   string `json:"until"` // "run_end" holds it until the run finishes
+}
+
+// maxManualLeaseMinutes bounds one manual extension; max retention still caps
+// the total.
+const maxManualLeaseMinutes = 24 * 60
+
+// ExtendSandboxLease keeps a retained run sandbox alive longer: {minutes:N}
+// from now, or {until:"run_end"}. The run-sandbox max retention still caps it.
+func (h *Handlers) ExtendSandboxLease(c *gin.Context) {
+	id, ok := parseUintParam(c, "id")
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
+		return
+	}
+	var body extendLeaseBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+		return
+	}
+	untilRunEnd := strings.TrimSpace(body.Until) == "run_end"
+	if !untilRunEnd && (body.Minutes <= 0 || body.Minutes > maxManualLeaseMinutes) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("minutes must be 1-%d, or until=run_end", maxManualLeaseMinutes)})
+		return
+	}
+	by := ""
+	if sess, ok := auth.GetSession(c); ok {
+		by = sess.Username
+	}
+	if _, err := h.Sbx.ExtendLease(id, body.Minutes, untilRunEnd, by); err != nil {
+		if errors.Is(err, services.ErrSandboxNotRetained) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	v, err := h.Sbx.GetView(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, v)
 }
 
@@ -321,6 +373,7 @@ func (h *Handlers) SandboxChat(c *gin.Context) {
 			if m.Content == "" && len(m.Images) == 0 {
 				continue
 			}
+			h.Sbx.TouchActivity(id)
 			if _, err := h.SbxChats.Enqueue(id, services.SandboxChatItem{ID: strings.TrimSpace(m.ID), Content: m.Content, Images: m.Images}); err != nil {
 				_ = write(gin.H{"type": "session", "event": "error", "message": err.Error(), "interrupted": false})
 			}
@@ -356,6 +409,7 @@ func (h *Handlers) SandboxTerminal(c *gin.Context) {
 	defer func() {
 		_ = term.Close()
 	}()
+	h.Sbx.TouchActivity(id)
 
 	// PTY → browser (binary frames).
 	go func() {
@@ -389,6 +443,7 @@ func (h *Handlers) SandboxTerminal(c *gin.Context) {
 		if json.Unmarshal(data, &m) == nil && m.Type != "" {
 			switch m.Type {
 			case "input":
+				h.Sbx.TouchActivity(id)
 				_, _ = io.WriteString(term, m.Data)
 			case "resize":
 				_ = term.Resize(m.Rows, m.Cols)
@@ -461,6 +516,7 @@ func (h *Handlers) SandboxACPProxy(c *gin.Context) {
 // For IDE/ACP channels, password (sandbox Token) triggers upstream auto-login
 // before the reverse proxy runs (remote-dev SandboxProxy / VibeCodingProxy).
 func (h *Handlers) serveSandboxUpstream(c *gin.Context, sandboxID uint, channel, dialAddr, password string) {
+	h.Sbx.TouchActivity(sandboxID)
 	idStr := strconv.FormatUint(uint64(sandboxID), 10)
 	acpMount := "/sandbox-bridge/" + idStr
 	if strings.TrimSpace(password) != "" {

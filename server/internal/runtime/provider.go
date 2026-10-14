@@ -155,6 +155,11 @@ type NodeReq struct {
 	// cold restart. The parked session is keyed runID|nodeID (reactKey) and is
 	// retired only on review finish / gate approve / run abort.
 	KeepAliveForReview bool
+	// Downstream lists the nodes that consume this node's handoff (pass-through
+	// branch/set_var nodes resolved). Empty = no handoff required.
+	Downstream []models.HandoffTarget
+	// UpstreamHandoff is the handoff left by the node that routed here, if any.
+	UpstreamHandoff *models.UpstreamHandoff
 }
 
 // GitInfo is the VCS-agnostic push detection result.

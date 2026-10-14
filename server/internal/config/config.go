@@ -234,6 +234,10 @@ type SandboxConfig struct {
 	// / ACP / container logs) for debugging before the sweeper reclaims it.
 	// 0 = default 30. Set to a small value to reclaim sooner on tight hosts.
 	RunSandboxTTLMinutes int `yaml:"run_sandbox_ttl_minutes"`
+	// RunSandboxMaxRetentionHours is the hard ceiling on how long leases
+	// (debug / activity / preview / review / manual extensions) can keep a
+	// retired run sandbox alive, counted from its first lease. 0 = default 24.
+	RunSandboxMaxRetentionHours int `yaml:"run_sandbox_max_retention_hours"`
 	// MaxTestSandboxes caps concurrently live interactive sandboxes. 0 = 5.
 	MaxTestSandboxes int `yaml:"max_test_sandboxes"`
 	// MemoryMB is the memory limit (MiB) requested for every sandbox the
@@ -270,6 +274,11 @@ func (c *Config) TestSandboxTTL() time.Duration {
 // debugging before the sweeper reclaims it.
 func (c *Config) RunSandboxTTL() time.Duration {
 	return time.Duration(c.Sandbox.RunSandboxTTLMinutes) * time.Minute
+}
+
+// RunSandboxMaxRetention caps the total lease-extended lifetime of a run sandbox.
+func (c *Config) RunSandboxMaxRetention() time.Duration {
+	return time.Duration(c.Sandbox.RunSandboxMaxRetentionHours) * time.Hour
 }
 
 // ChatIdleTimeout returns the per-turn idle (no-activity) window as a duration.
@@ -530,6 +539,9 @@ func setDefaults(c *Config) {
 	}
 	if c.Sandbox.RunSandboxTTLMinutes == 0 {
 		c.Sandbox.RunSandboxTTLMinutes = 30
+	}
+	if c.Sandbox.RunSandboxMaxRetentionHours == 0 {
+		c.Sandbox.RunSandboxMaxRetentionHours = 24
 	}
 	if c.Sandbox.MaxTestSandboxes == 0 {
 		c.Sandbox.MaxTestSandboxes = 5

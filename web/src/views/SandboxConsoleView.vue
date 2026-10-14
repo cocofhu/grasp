@@ -6,6 +6,7 @@ import Icon from '@/components/ui/Icon.vue'
 import NovncPreviewPanel from '@/components/run/NovncPreviewPanel.vue'
 import RefreshStrip from '@/components/run/RefreshStrip.vue'
 import HardLoadLayer from '@/components/run/HardLoadLayer.vue'
+import SandboxRetention from '@/components/sandbox/SandboxRetention.vue'
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -141,6 +142,18 @@ async function loadMeta() {
     }
   } finally {
     metaLoading.value = false
+  }
+}
+
+// While the console is open the server counts each fetch as activity, keeping a
+// retained run sandbox alive and its countdown current.
+const META_REFRESH_MS = 60_000
+let metaPoll: number | undefined
+async function refreshMeta() {
+  try {
+    sandbox.value = await api.getSandbox(id)
+  } catch {
+    /* keep the last known metadata */
   }
 }
 
@@ -286,6 +299,7 @@ onMounted(async () => {
   if (tab.value === 'acp') acpMounted.value = true
   if (tab.value === 'novnc') novncMounted.value = true
   await loadMeta()
+  metaPoll = window.setInterval(refreshMeta, META_REFRESH_MS)
   nextTick(() => {
     initTerminal()
     ro = new ResizeObserver(() => {
@@ -297,6 +311,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  if (metaPoll) clearInterval(metaPoll)
   window.removeEventListener('message', onAcpMessage)
   logAbort?.abort()
   logAbort = null
@@ -387,6 +402,8 @@ onBeforeUnmount(() => {
           @click="tab = item.k as any"
         ><Icon :name="item.i" :size="13" />{{ item.l }}</button>
       </div>
+
+      <SandboxRetention v-if="sandbox" :sandbox="sandbox" compact class="ml-4" @updated="sandbox = $event" />
 
       <span
         v-if="tab === 'terminal'"

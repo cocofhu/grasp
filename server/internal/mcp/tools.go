@@ -370,6 +370,9 @@ func (h *Host) nodeComplete(runID, token string, args map[string]any) (string, b
 	if err != nil {
 		return "node_complete failed: " + err.Error(), true
 	}
+	if err := validateHandoff(o, h.ActiveDownstream(runID, nodeID)); err != nil {
+		return "node_complete failed: " + err.Error(), true
+	}
 	// Shape-only default check at mark time (not the full engine DefaultChecks).
 	out, verr := (DefaultOutcomeValidator{}).Validate(context.Background(), OutcomeValidateIn{
 		RunID: runID, NodeID: nodeID, Outcome: o,
@@ -1264,13 +1267,15 @@ func artifactTools() []map[string]any {
 				"status 取 success|failed;可选 summary/error/outputs/checks。" +
 				"failed 只表示本节点无法完成工作;测试不通过、评审打回是判定结论,写入判定产物后仍标 success,平台据此走 fail 出口。" +
 				"写完产物(set_* / write_artifact)后必须调用本工具;平台先跑默认校验(产物/门禁等),通过后才可能做业务 RPC 校验。" +
-				"submit_mr 节点用 outputs.mr_url 等申报结果,平台不再代验 git 推送/MR/冲突。",
+				"submit_mr 节点用 outputs.mr_url 等申报结果,平台不再代验 git 推送/MR/冲突。" +
+				"节点有下游时 handoff 必填(success 和 failed 都要),写给下游节点的交接说明,会显示在流程图上。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"status":  strProp("success|failed;判定不通过仍为 success"),
 					"summary": strProp("可选:给人看的一句话摘要"),
 					"error":   strProp("可选:status=failed 时的错误说明"),
+					"handoff": strProp("给下游节点的交接说明(有下游时必填,失败也要写;2000 字以内):做了什么、产物/分支在哪、下游需要注意或接着做什么"),
 					"outputs": map[string]any{
 						"type":        "object",
 						"description": "可选:并入节点 outputs(如 submit_mr 的 mr_url)",

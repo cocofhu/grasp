@@ -8,6 +8,7 @@ import PriorityBadge from '@/components/ui/PriorityBadge.vue'
 import PrioritySegmented, { type RunPriority } from '@/components/ui/PrioritySegmented.vue'
 import TruncatedTextTooltip from '@/components/ui/TruncatedTextTooltip.vue'
 import WorkflowCanvas from '@/components/canvas/WorkflowCanvas.vue'
+import type { EdgeHandoff } from '@/components/canvas/composables/canvasContext'
 import RunGatePanel from '@/components/run/RunGatePanel.vue'
 import RunClarifyPanel from '@/components/run/RunClarifyPanel.vue'
 import RunReviewPanel from '@/components/run/RunReviewPanel.vue'
@@ -235,6 +236,14 @@ const canvasIterations = computed(() => {
 const canvasFailReasons = computed(() => {
   const m: Record<string, string> = {}
   for (const [id, nr] of Object.entries(run.value.nodeRuns)) if (nr.status === 'failed' && nr.error) m[id] = nr.error
+  return m
+})
+const canvasHandoffs = computed(() => {
+  const m: Record<string, EdgeHandoff> = {}
+  for (const [id, nr] of Object.entries(run.value.nodeRuns)) {
+    const text = typeof nr.outputs?.handoff === 'string' ? nr.outputs.handoff.trim() : ''
+    if (text) m[id] = { text, source: nr.outputs?.handoff_source === 'platform' ? 'platform' : 'agent' }
+  }
   return m
 })
 const canvasFollowNodeId = computed(() => {
@@ -615,6 +624,7 @@ onMounted(() => {
           :status-map="statusMap"
           :iterations="canvasIterations"
           :fail-reasons="canvasFailReasons"
+          :handoffs="canvasHandoffs"
           :selected-node="selected"
           :active-path="activePath"
           :follow="followCanvas"

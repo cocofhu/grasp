@@ -61,6 +61,9 @@ func (c *acpProvider) ensureOutcome(ctx context.Context, req NodeReq, acp *sandb
 			return clarifyPending{}, nil
 		}
 		prompt := models.OutcomeRetry
+		if len(req.Downstream) > 0 {
+			prompt += fmt.Sprintf(models.OutcomeRetryHandoff, models.HandoffTargetsText(req.Downstream))
+		}
 		chatCtx, cancel := c.turnCtx(ctx, req)
 		res, err := c.streamChat(chatCtx, acp, req, prompt, nil)
 		cancel()

@@ -18,6 +18,7 @@ import (
 const (
 	KeyMaxConcurrentRuns = "max_concurrent_runs"
 	KeyRunSandboxTTLMin  = "run_sandbox_ttl_minutes"
+	KeyRunSandboxMaxRetH = "run_sandbox_max_retention_hours"
 	KeyTestSandboxTTLMin = "test_sandbox_ttl_minutes"
 	KeyMaxTestSandboxes  = "max_test_sandboxes"
 	KeyNodeAutoRetryMax  = "node_auto_retry_max"
@@ -62,6 +63,12 @@ type SandboxTuner interface {
 	SetMaxTestSandboxes(n int)
 }
 
+// RetentionTuner is the optional slice of the sandbox service that accepts the
+// live lease ceiling; fakes that don't implement it are skipped.
+type RetentionTuner interface {
+	SetMaxRetention(d time.Duration)
+}
+
 // SettingsService is the DB override layer for platform scheduling params. It
 // resolves effective values (env > DB > config-file > default), persists UI
 // edits, and applies them to the running engine / sandbox service.
@@ -93,6 +100,8 @@ func knobs() []knob {
 			func(c *config.Config) int { return c.Engine.MaxConcurrentRuns }},
 		{KeyRunSandboxTTLMin, "运行沙箱保留时长", "分钟", 1, 0, "",
 			func(c *config.Config) int { return c.Sandbox.RunSandboxTTLMinutes }},
+		{KeyRunSandboxMaxRetH, "运行沙箱最长保留", "小时", 1, 168, "",
+			func(c *config.Config) int { return c.Sandbox.RunSandboxMaxRetentionHours }},
 		{KeyTestSandboxTTLMin, "测试沙箱空闲 TTL", "分钟", 1, 0, "",
 			func(c *config.Config) int { return c.Sandbox.TestSandboxTTLMinutes }},
 		{KeyMaxTestSandboxes, "最大测试沙箱数", "", 1, 0, "",
@@ -246,6 +255,9 @@ func (s *SettingsService) apply() {
 			time.Duration(m[KeyTestSandboxTTLMin])*time.Minute,
 		)
 		s.sbx.SetMaxTestSandboxes(m[KeyMaxTestSandboxes])
+		if rt, ok := s.sbx.(RetentionTuner); ok {
+			rt.SetMaxRetention(time.Duration(m[KeyRunSandboxMaxRetH]) * time.Hour)
+		}
 	}
 	sandbox.SetDefaultMemoryMB(m[KeySandboxMemoryMB])
 	if idleFromCfg {

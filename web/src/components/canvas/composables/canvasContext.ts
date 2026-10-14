@@ -48,6 +48,14 @@ export interface CanvasEdgeData {
   replacing?: boolean
   /** Under-card channel for a backward edge. Forward edges omit it. */
   backLane?: number
+  /** Run mode: the source node's handoff, set only on the edge the run took. */
+  handoff?: EdgeHandoff
+}
+
+/** A node's handoff to its downstream (node_complete.handoff, or platform-written on failure). */
+export interface EdgeHandoff {
+  text: string
+  source: 'agent' | 'platform'
 }
 
 export interface CanvasContext {

@@ -399,6 +399,48 @@ func TestSandboxStopDestroyCleanup(t *testing.T) {
 	}
 }
 
+// Destroying a retired node sandbox (debug TTL sweep) must not revoke the MCP
+// token of a run whose next node is executing in another sandbox; only the last
+// sandbox of a finished run releases it.
+func TestDestroyRunSandboxKeepsMCPWhileRunInProgress(t *testing.T) {
+	db := newTestDB(t)
+	ds := &dockerState{}
+	s := newSandboxService(t, db, ds)
+	ctx := context.Background()
+
+	if err := db.Create(&models.Run{ID: "run-live", Status: "running"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	token := s.host.RegisterRun("run-live")
+	upstream := &models.Sandbox{Name: "grasp-sb-impl", Purpose: "run", Status: "running", RunID: "run-live"}
+	current := &models.Sandbox{Name: "grasp-sb-test", Purpose: "run", Status: "running", RunID: "run-live"}
+	db.Create(upstream)
+	db.Create(current)
+
+	if err := s.Destroy(ctx, upstream.ID); err != nil {
+		t.Fatalf("destroy upstream: %v", err)
+	}
+	if !s.host.AuthorizeRun("run-live", token) {
+		t.Fatal("token revoked while the run is still in progress")
+	}
+
+	db.Model(&models.Run{}).Where("id = ?", "run-live").Update("status", "completed")
+	other := &models.Sandbox{Name: "grasp-sb-debug", Purpose: "run", Status: "running", RunID: "run-live"}
+	db.Create(other)
+	if err := s.Destroy(ctx, current.ID); err != nil {
+		t.Fatalf("destroy current: %v", err)
+	}
+	if !s.host.AuthorizeRun("run-live", token) {
+		t.Fatal("token revoked while another sandbox of the finished run is alive")
+	}
+	if err := s.Destroy(ctx, other.ID); err != nil {
+		t.Fatalf("destroy last: %v", err)
+	}
+	if s.host.AuthorizeRun("run-live", token) {
+		t.Fatal("last sandbox of a finished run must revoke the token")
+	}
+}
+
 func TestSandboxBusyGuards(t *testing.T) {
 	db := newTestDB(t)
 	ds := &dockerState{}

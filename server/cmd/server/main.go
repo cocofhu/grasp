@@ -353,6 +353,7 @@ func main() {
 		Env:                         cfg.Sandbox.Env,
 		TTL:                         cfg.TestSandboxTTL(),
 		RunTTL:                      cfg.RunSandboxTTL(),
+		MaxRetention:                cfg.RunSandboxMaxRetention(),
 		Max:                         cfg.Sandbox.MaxTestSandboxes,
 		SharedAgent:                 sharedAgentSvc,
 		ProjectCredentials:          projectCredentialSvc.ResolveEnv,
@@ -392,6 +393,7 @@ func main() {
 
 	previewSvc := services.NewPreviewService(db, sbxMgr)
 	previewSvc.SetBrowser(browserSvc)
+	previewSvc.SetSandboxLeases(sbxSvc)
 	host.SetPreviewStore(previewSvc)
 	host.SetPreviewSandboxOps(previewSvc)
 	host.SetPreviewBaseURL(cfg.Server.PublicAdvertise)

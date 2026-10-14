@@ -131,13 +131,34 @@ func (s *SandboxService) RetireRunSandbox(name string) {
 	s.mu.Lock()
 	delete(s.runActive, name)
 	s.mu.Unlock()
-	at := time.Now().Add(s.RunTTL())
-	if err := s.db.Model(&models.Sandbox{}).Where("name = ?", name).
-		Updates(map[string]any{"status": "running", "destroy_at": &at, "updated_at": time.Now()}).Error; err != nil {
+	var row models.Sandbox
+	if err := s.db.Where("name = ?", name).First(&row).Error; err != nil {
 		log.Warn().Err(err).Str("name", name).Msg("retire run sandbox failed")
 		return
 	}
-	log.Info().Str("name", name).Dur("ttl", s.RunTTL()).Msg("run sandbox retired for debugging (idle ttl)")
+	// A fresh retirement starts a fresh retention window: timed leases from an
+	// earlier retirement of a reused sandbox are dropped; until-run-end leases
+	// (preview) registered while the node ran are kept.
+	kept := row.Leases[:0:0]
+	for _, l := range row.Leases {
+		if l.Until == nil {
+			kept = append(kept, l)
+		}
+	}
+	row.Leases = kept
+	now := time.Now()
+	until := now.Add(s.RunTTL())
+	if err := s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).
+		Updates(map[string]any{"status": "running", "updated_at": now}).Error; err != nil {
+		log.Warn().Err(err).Str("name", name).Msg("retire run sandbox failed")
+		return
+	}
+	if err := s.applyLease(&row, models.SandboxLease{Kind: models.LeaseDebug, Until: &until, Reason: "node finished", CreatedAt: now}); err != nil {
+		log.Warn().Err(err).Str("name", name).Msg("retire run sandbox failed")
+		return
+	}
+	log.Info().Str("name", name).Dur("ttl", s.RunTTL()).Int("leases", len(row.Leases)).
+		Msg("run sandbox retired for debugging (leased)")
 }
 
 // ArchiveRunSandboxLogs best-effort archives live logs for every per-run node

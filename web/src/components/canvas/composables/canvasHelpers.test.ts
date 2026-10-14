@@ -475,6 +475,28 @@ describe('flow edge lanes', () => {
     expect(plain.data.run).toBe('traversed')
     expect(plain.markerEnd.color).toBe('var(--flow-edge-active)')
   })
+
+  it('puts a handoff only on the edge the run took', () => {
+    const node = (id: string, x: number): WFNode => ({ id, type: 'agent', label: id, position: { x, y: 0 }, config: {} })
+    const nodes = [node('impl', 0), node('test', 320), node('fix', 320)]
+    const edges: WFEdge[] = [
+      { id: 'ok', source: 'impl', target: 'test' },
+      { id: 'ko', source: 'impl', target: 'fix', kind: 'failure' },
+    ]
+    const handoffs = { impl: { text: '分支 feat/x 已推送', source: 'agent' as const } }
+    const run = (status: Record<string, any>) =>
+      useFlowElements(flowInputs(nodes, edges, { mode: () => 'run', statusMap: () => status, handoffs: () => handoffs })).flowEdges.value
+    const done = run({ impl: 'completed', test: 'running' })
+    expect(done.find((e) => e.id === 'ok')!.data.handoff?.text).toBe('分支 feat/x 已推送')
+    expect(done.find((e) => e.id === 'ko')!.data.handoff).toBeUndefined()
+
+    const failed = run({ impl: 'failed', fix: 'running' })
+    expect(failed.find((e) => e.id === 'ko')!.data.handoff).toBeDefined()
+    expect(failed.find((e) => e.id === 'ok')!.data.handoff).toBeUndefined()
+
+    const edit = useFlowElements(flowInputs(nodes, edges, { handoffs: () => handoffs })).flowEdges.value
+    expect(edit.every((e) => !e.data.handoff)).toBe(true)
+  })
 })
 
 describe('loop routing options', () => {

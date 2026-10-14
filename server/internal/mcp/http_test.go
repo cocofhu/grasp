@@ -113,7 +113,9 @@ func TestRunHTTPTransportErrorsAndLegacyPOST(t *testing.T) {
 		{"parse error", "POST", "", "", `{`, 400},
 		{"missing GET session", "GET", "", "text/event-stream", "", 400},
 		{"missing DELETE session", "DELETE", "", "", "", 400},
-		{"unknown session", "POST", "missing", "", `{}`, 404},
+		{"unknown session is re-adopted", "POST", "missing", "", `{"jsonrpc":"2.0","id":1,"method":"ping"}`, 200},
+		{"unknown session DELETE is a no-op", "DELETE", "gone", "", "", 200},
+		{"invalid session id", "POST", "bad id", "", `{"jsonrpc":"2.0","id":1,"method":"ping"}`, 404},
 		{"wrong Accept", "GET", sid, "application/json", "", 406},
 		{"unsupported method", "PUT", "", "", "", 405},
 	} {
@@ -161,6 +163,35 @@ func TestRunHTTPTransportErrorsAndLegacyPOST(t *testing.T) {
 		if w.Code != want {
 			t.Errorf("Origin %q: status=%d want=%d", origin, w.Code, want)
 		}
+	}
+}
+
+// A session ID the server forgot (restart, run re-registration) is re-adopted
+// for a valid token, but never for a revoked or foreign one.
+func TestRunHTTPReadoptsUnknownSessionOnlyForBoundToken(t *testing.T) {
+	h := NewHost(&memOutcomeStore{})
+	token := h.RegisterRun("r")
+	sid := h.newToolSession("r", token)
+	h.closeToolSessionsLocked("r")
+	ping := func(tok string) int {
+		r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+		r.Header.Set(mcpSessionHeader, sid)
+		w := httptest.NewRecorder()
+		h.ServeRunHTTP(w, r, "r", tok)
+		return w.Code
+	}
+	if got := ping(token); got != http.StatusOK {
+		t.Fatalf("valid token with forgotten session: %d", got)
+	}
+	if !h.hasToolSession("r", sid) {
+		t.Fatal("forgotten session must be re-registered")
+	}
+	h.UnregisterRun("r")
+	if got := ping(token); got != http.StatusUnauthorized {
+		t.Fatalf("revoked run must stay closed: %d", got)
+	}
+	if h.adoptToolSession("r", token, sid) {
+		t.Fatal("adopt must recheck the token binding")
 	}
 }
 

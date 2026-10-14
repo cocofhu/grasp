@@ -80,6 +80,7 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 				c.String(http.StatusGone, "sandbox recycled")
 				return
 			}
+			h.Sbx.TouchActivityByName(sandboxName)
 			healthy := h.Preview.ProbeHTTPPort(ctx, sandboxName, port)
 			if err := h.Preview.UpdatePreviewHealth(runID, nodeID, port, healthy); err != nil {
 				log.Warn().Err(err).Str("runId", runID).Str("nodeId", nodeID).Int("port", port).

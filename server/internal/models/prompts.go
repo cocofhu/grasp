@@ -50,7 +50,9 @@ const (
 	PreflightRetry              = "【必须完成】环境确认尚未就绪:{reason}。请继续用 `ask_question`/`ask_form` 采集缺口,在沙箱核验后调用 `set_preflight`(confirmed=true, unresolved 为空)。不要用 write_artifact 伪造 preflight.json;表单提交不能代替 set_preflight。\n"
 
 	OutcomeContract = "\n\n## 完成标记契约(强制)\n结束本节点前**必须**调用 `node_complete` 标记结果:`status` 取 `success` 或 `failed`;可选 `summary` / `error` / `outputs` / `checks`。`failed` 只表示本节点无法完成工作(环境、工具或依赖故障);测试不通过、评审打回等是判定结论,写入判定产物后仍以 `success` 标记,平台据此走 fail 出口。写完产物(`set_*` / `write_artifact`)后再调用。未标记将被判定为节点失败。平台先做默认校验(产物/门禁等),通过后才可能做业务 RPC 校验。若需启动长期服务(web / 被测应用等),必须用 `setsid`/`nohup` 放入独立会话并重定向日志,禁止前台或未脱钩的命令占住 Agent 回合;不要为收尾杀掉这些进程。\n"
-	OutcomeRetry    = "【必须完成】你尚未调用 `node_complete` 标记本节点完成结果,这是强制要求。现在立即调用 `node_complete(status=\"success\"|\"failed\", summary?, error?, outputs?)`,不要再提问或输出其它内容——只需完成这次调用。summary 只写已实际完成的事,未完成的如实说明,不得写占位结论。\n"
+	// OutcomeRetryHandoff extends OutcomeRetry for nodes with a downstream (%s = targets).
+	OutcomeRetryHandoff = "本节点的下游是 %s,这次调用必须同时填写 `handoff`(给下游的交接说明,失败也要写)。\n"
+	OutcomeRetry        = "【必须完成】你尚未调用 `node_complete` 标记本节点完成结果,这是强制要求。现在立即调用 `node_complete(status=\"success\"|\"failed\", summary?, error?, outputs?)`,不要再提问或输出其它内容——只需完成这次调用。summary 只写已实际完成的事,未完成的如实说明,不得写占位结论。\n"
 
 	// ReviewConfirmReconcile is the review-side confirm turn: node_complete
 	// already happened in the production phase, so it only reconciles products.

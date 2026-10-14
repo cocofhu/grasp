@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/rs/zerolog/log"
 )
 
@@ -33,6 +34,9 @@ type NodeOutcome struct {
 	Error   string         `json:"error,omitempty"`
 	Outputs map[string]any `json:"outputs,omitempty"`
 	Checks  []OutcomeCheck `json:"checks,omitempty"`
+	// Handoff is the brief for the downstream node(s); required by
+	// node_complete when the active node has a downstream.
+	Handoff string `json:"handoff,omitempty"`
 }
 
 // OutcomeValidateIn is the input to OutcomeValidator.
@@ -366,6 +370,7 @@ func ParseNodeOutcome(args map[string]any) (NodeOutcome, error) {
 		Status:  st,
 		Summary: strings.TrimSpace(asString(args["summary"])),
 		Error:   strings.TrimSpace(asString(args["error"])),
+		Handoff: strings.TrimSpace(asString(args["handoff"])),
 	}
 	if raw, ok := args["outputs"].(map[string]any); ok && len(raw) > 0 {
 		o.Outputs = raw
@@ -414,7 +419,50 @@ func MergeOutcomeOutputs(dst map[string]any, o NodeOutcome) map[string]any {
 	if o.Status != "" {
 		dst["outcome_status"] = o.Status
 	}
+	if o.Handoff != "" {
+		dst[models.OutputHandoff] = o.Handoff
+		dst[models.OutputHandoffSource] = models.HandoffSourceAgent
+	}
 	return dst
+}
+
+// SetActiveDownstream records who consumes the active node's handoff, so
+// node_complete can require one. An empty list clears it (no requirement).
+func (h *Host) SetActiveDownstream(runID, nodeID string, targets []models.HandoffTarget) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.downstream == nil {
+		h.downstream = map[string][]models.HandoffTarget{}
+	}
+	key := runID + "|" + nodeID
+	if len(targets) == 0 {
+		delete(h.downstream, key)
+		return
+	}
+	h.downstream[key] = targets
+}
+
+// ActiveDownstream returns the handoff consumers of (runID, nodeID). Unknown
+// (e.g. after a restart before the engine re-entered the node) returns nil and
+// node_complete does not enforce a handoff.
+func (h *Host) ActiveDownstream(runID, nodeID string) []models.HandoffTarget {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.downstream[runID+"|"+nodeID]
+}
+
+// validateHandoff enforces the handoff contract for a node with downstream.
+func validateHandoff(o NodeOutcome, targets []models.HandoffTarget) error {
+	if len(targets) == 0 {
+		return nil
+	}
+	if o.Handoff == "" {
+		return fmt.Errorf("缺少 handoff:本节点的下游是 %s,无论 success 还是 failed 都必须在 handoff 里给下游写交接说明(做了什么、结果在哪、下游要注意什么;失败时写清卡在哪、下游如何接手)", models.HandoffTargetsText(targets))
+	}
+	if n := len([]rune(o.Handoff)); n > models.HandoffMaxRunes {
+		return fmt.Errorf("handoff 过长(%d 字),请精简到 %d 字以内,细节放进产物", n, models.HandoffMaxRunes)
+	}
+	return nil
 }
 
 // OutcomeJSON returns a stable JSON encoding for audit artifacts.

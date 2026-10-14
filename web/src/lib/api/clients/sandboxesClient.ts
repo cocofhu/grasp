@@ -1,11 +1,13 @@
 import { origin, req, wsUrl } from '../httpCore'
-import type { SandboxView } from '../apiTypes'
+import type { SandboxLeaseExtend, SandboxView } from '../apiTypes'
 
 export const sandboxesClient = {
   // sandboxes (interactive Agent chat-test containers)
   listSandboxes: () => req<SandboxView[]>('/sandboxes'),
   getSandbox: (id: number) => req<SandboxView>(`/sandboxes/${id}`),
   stopSandbox: (id: number) => req<{ status: string }>(`/sandboxes/${id}/stop`, { method: 'POST' }),
+  extendSandboxLease: (id: number, body: SandboxLeaseExtend) =>
+    req<SandboxView>(`/sandboxes/${id}/leases`, { method: 'POST', body: JSON.stringify(body) }),
   destroySandbox: (id: number) => req<{ status: string }>(`/sandboxes/${id}`, { method: 'DELETE' }),
   cleanupSandboxes: () => req<{ destroyed: number; skipped: number }>('/sandboxes/cleanup', { method: 'POST' }),
   sandboxChatWsUrl: (id: number) => wsUrl(`/sandboxes/${id}/chat`),

@@ -355,6 +355,12 @@
       "alreadyPublished": "The latest version is already published",
       "done": "Published v{n}",
       "doneNote": "API runs will use this version."
+    },
+    "handoff": {
+      "title": "Handoff from {source}",
+      "platformTitle": "Platform handoff (upstream left none)",
+      "aria": "Handoff from {source} to {target}",
+      "close": "Close handoff"
     }
   }
 }

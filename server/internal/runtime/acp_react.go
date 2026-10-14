@@ -506,7 +506,7 @@ func (c *acpProvider) reactConfirmPrefix(req NodeReq) string {
 	if c.clarifyProductsSettled(req) {
 		out += models.ClarifyConfirmProductsReadyNote
 	}
-	return out
+	return out + downstreamHandoffText(req.Downstream)
 }
 
 // requiredProductsLine names the tools that write the Agent's required

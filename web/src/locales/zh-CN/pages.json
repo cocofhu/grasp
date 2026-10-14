@@ -1922,6 +1922,7 @@
       "labels": {
         "max_concurrent_runs": "最大并发运行数",
         "run_sandbox_ttl_minutes": "运行沙箱保留时长",
+        "run_sandbox_max_retention_hours": "运行沙箱最长保留",
         "test_sandbox_ttl_minutes": "测试沙箱空闲 TTL",
         "max_test_sandboxes": "最大测试沙箱数",
         "sandbox_memory_mb": "沙箱内存上限",
@@ -1930,13 +1931,15 @@
       "settings": {
         "max_concurrent_runs": "同时处于 running 状态的 workflow 运行数上限。由 GRASP_MAX_RUNS 环境变量锁定时页面只读。",
         "run_sandbox_ttl_minutes": "workflow 回合结束后，运行沙箱继续保活的分钟数，便于 agent 继续写产物。",
+        "run_sandbox_max_retention_hours": "节点结束后的运行沙箱由多种保留原因(调试窗口、使用中、预览、手动延长)共同决定回收时间，此值是从节点结束起算的总上限，超过后无论还有什么原因都会回收。",
         "test_sandbox_ttl_minutes": "测试沙箱在无活动后的空闲销毁时间，避免长期占用资源。",
         "max_test_sandboxes": "活跃测试沙箱数达到此上限时，新建测试沙箱请求将被后端拒绝（最小值 ≥ 1，不设最大值上限）。",
         "sandbox_memory_mb": "每个沙箱的内存上限，dockerd、浏览器与 Agent 的构建/测试共用；超出时整个沙箱会被 OOM 杀掉。Agent 提示词会告知该上限。对新建沙箱生效（最小 1024，不得超过网关 maxMemoryMB）。由 GRASP_SANDBOX_MEMORY_MB 环境变量锁定时页面只读。",
         "agent_idle_timeout_minutes": "Agent 连续这么久没有任何输出、CPU 或磁盘活动时，沙箱先尝试恢复一次，仍无动静就判定卡住并终止本轮（节点会换新沙箱自动重试一次）。正在跑构建、测试、长时间思考的 Agent 有 CPU/IO 活动，不会被误杀。从下一轮对话起生效（2–120 分钟，默认 20）。由 GRASP_CHAT_IDLE_SEC 环境变量锁定时页面只读。"
       },
       "units": {
-        "mib": "MiB"
+        "mib": "MiB",
+        "hours": "小时"
       },
       "sourceLabels": {
         "env": "环境变量",
@@ -2026,6 +2029,23 @@
           "ide": "ide",
           "vnc": "VNC WS",
           "openPreview": "打开预览"
+        }
+      },
+      "retention": {
+        "title": "保留",
+        "remaining": "剩余",
+        "until": "{kind} 至 {time}",
+        "untilRunEnd": "{kind} 至运行结束",
+        "by": "操作人 {by}",
+        "extendMinutes": "+{n} 分钟",
+        "extendHours": "+{n} 小时",
+        "extendRunEnd": "保留到运行结束",
+        "extended": "已延长保留",
+        "kinds": {
+          "debug": "调试窗口",
+          "activity": "使用中",
+          "preview": "预览",
+          "manual": "手动延长"
         }
       }
     },

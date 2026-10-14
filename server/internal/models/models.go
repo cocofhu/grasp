@@ -809,10 +809,34 @@ type Sandbox struct {
 	// up when the sandbox is finally destroyed.
 	HomeDir string `json:"-"`
 	// Error carries the startup failure reason when Status == "error".
-	Error     string     `json:"error,omitempty"`
-	DestroyAt *time.Time `json:"destroyAt,omitempty"`
+	Error string `json:"error,omitempty"`
+	// Leases are the reasons a retired run sandbox is still alive. DestroyAt is
+	// derived from them (latest lease, capped by max retention) and cached so
+	// the sweeper query stays a plain index scan. Rows without leases keep the
+	// legacy DestroyAt-only behavior.
+	Leases    []SandboxLease `gorm:"serializer:json" json:"leases,omitempty"`
+	DestroyAt *time.Time     `json:"destroyAt,omitempty"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+}
+
+// Sandbox lease kinds. Each kind holds at most one lease per sandbox; a new
+// lease of the same kind replaces the old one when it lasts longer.
+const (
+	LeaseDebug    = "debug"    // node finished: run_sandbox_ttl debugging window
+	LeaseActivity = "activity" // a human used terminal / IDE / chat / preview (sliding)
+	LeasePreview  = "preview"  // set_preview registered an app on this sandbox
+	LeaseManual   = "manual"   // operator extension from the sandbox UI
+)
+
+// SandboxLease keeps a sandbox alive until Until. A nil Until means "until the
+// run ends", after which the run TTL still applies from the run's end.
+type SandboxLease struct {
+	Kind      string     `json:"kind"`
+	Until     *time.Time `json:"until,omitempty"`
+	Reason    string     `json:"reason,omitempty"`
+	By        string     `json:"by,omitempty"`
 	CreatedAt time.Time  `json:"createdAt"`
-	UpdatedAt time.Time  `json:"updatedAt"`
 }
 
 // SandboxLog is an archived snapshot of a sandbox container's stdout/stderr

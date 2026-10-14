@@ -355,6 +355,12 @@
       "alreadyPublished": "最新版本已发布",
       "done": "已发布 v{n}",
       "doneNote": "API 运行将使用这个版本。"
+    },
+    "handoff": {
+      "title": "「{source}」的交接",
+      "platformTitle": "平台交接(上游未能自行交接)",
+      "aria": "{source} 交给 {target} 的交接说明",
+      "close": "关闭交接说明"
     }
   }
 }

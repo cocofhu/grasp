@@ -28,6 +28,8 @@ type fakeProvider struct {
 	failLeft map[string]int
 	reason   string
 	seenVars map[string]map[string]any
+	// seenUpstream records the UpstreamHandoff each node received.
+	seenUpstream map[string]*models.UpstreamHandoff
 	// promptImages records PromptImages from each node for integration tests.
 	promptImages map[string][]models.PromptImage
 
@@ -222,6 +224,9 @@ func (f *fakeProvider) emitOutcome(req runtime.NodeReq, outputs map[string]any) 
 	if len(outputs) > 0 {
 		args["outputs"] = outputs
 	}
+	if len(req.Downstream) > 0 {
+		args["handoff"] = "fake handoff from " + req.NodeID
+	}
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "node_complete", "arguments": args},
@@ -240,6 +245,10 @@ func (f *fakeProvider) recordAndMaybeFail(req runtime.NodeReq) error {
 		snap[k] = v
 	}
 	f.seenVars[req.NodeID] = snap
+	if f.seenUpstream == nil {
+		f.seenUpstream = map[string]*models.UpstreamHandoff{}
+	}
+	f.seenUpstream[req.NodeID] = req.UpstreamHandoff
 	if f.promptImages == nil {
 		f.promptImages = map[string][]models.PromptImage{}
 	}

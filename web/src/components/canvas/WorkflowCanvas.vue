@@ -17,7 +17,7 @@ import Icon from '../ui/Icon.vue'
 import { useNodeDefs } from '@/lib/run/useNodeDefs'
 import { theme } from '@/lib/shared/theme'
 import type { NodeRunStatus, NodeType, WFEdge, WFNode } from '@/lib/shared/types'
-import { CANVAS_CTX, type CanvasContext, type CanvasMode, type NodeMenuAction } from './composables/canvasContext'
+import { CANVAS_CTX, type CanvasContext, type CanvasMode, type EdgeHandoff, type NodeMenuAction } from './composables/canvasContext'
 import type { AddLink, CanvasEditor } from './composables/useCanvasEditor'
 import { agentLookup, normHandle, type CanvasAgent } from './composables/outlets'
 import { useFlowElements } from './composables/useFlowElements'
@@ -51,6 +51,8 @@ const props = withDefaults(
     statusMap?: Record<string, NodeRunStatus>
     iterations?: Record<string, number>
     failReasons?: Record<string, string>
+    /** Run mode: each node's handoff to its downstream, shown on the edge the run took. */
+    handoffs?: Record<string, EdgeHandoff>
     activePath?: string[]
     selectedNode?: string | null
     /** Run mode follow toggle; undefined hides it. */
@@ -66,6 +68,7 @@ const props = withDefaults(
     statusMap: undefined,
     iterations: undefined,
     failReasons: undefined,
+    handoffs: undefined,
     activePath: undefined,
     selectedNode: null,
     follow: undefined,
@@ -143,6 +146,7 @@ const { flowNodes, flowEdges } = useFlowElements({
   statusMap: () => props.statusMap,
   iterations: () => props.iterations,
   failReasons: () => props.failReasons,
+  handoffs: () => props.handoffs,
   activePath: () => props.activePath,
   issues: () => props.editor?.nodeIssues.value,
   selectedNodes: () =>

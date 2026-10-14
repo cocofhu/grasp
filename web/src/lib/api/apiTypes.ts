@@ -306,6 +306,19 @@ export interface TeamBootstrapRequest {
   env?: Record<string, string>
 }
 
+export type SandboxLeaseKind = 'debug' | 'activity' | 'preview' | 'manual'
+
+/** One reason a run sandbox is kept; no `until` = until the run ends (then the run TTL). */
+export interface SandboxLease {
+  kind: SandboxLeaseKind | string
+  until?: string
+  reason?: string
+  by?: string
+  createdAt: string
+}
+
+export type SandboxLeaseExtend = { minutes: number } | { until: 'run_end' }
+
 export interface SandboxView {
   id: number
   name: string
@@ -318,6 +331,8 @@ export interface SandboxView {
   workflowId?: string
   workflowName?: string
   nodeId?: string
+  /** Why a retired run sandbox is still alive; destroyAt is derived from these. */
+  leases?: SandboxLease[]
   destroyAt?: string
   createdAt: string
   updatedAt: string

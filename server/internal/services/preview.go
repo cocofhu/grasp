@@ -21,6 +21,22 @@ type PreviewService struct {
 	db      *gorm.DB
 	mgr     *sandbox.Manager
 	browser *browser.Service
+	leases  *SandboxService
+}
+
+// SetSandboxLeases wires the sandbox service so set_preview can lease the
+// serving sandbox until the run ends.
+func (s *PreviewService) SetSandboxLeases(sbx *SandboxService) { s.leases = sbx }
+
+// LeasePreviewSandbox holds the sandbox serving a registered preview until
+// the run ends (then the run TTL applies). Best-effort.
+func (s *PreviewService) LeasePreviewSandbox(sandboxName string) {
+	if s.leases == nil || strings.TrimSpace(sandboxName) == "" {
+		return
+	}
+	if err := s.leases.AddLeaseByName(sandboxName, models.SandboxLease{Kind: models.LeasePreview, Reason: "set_preview"}); err != nil {
+		log.Debug().Err(err).Str("sandbox", sandboxName).Msg("preview lease skipped")
+	}
 }
 
 // NewPreviewService builds a preview store backed by the platform DB.

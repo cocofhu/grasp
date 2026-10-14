@@ -39,5 +39,6 @@ func (h *Handlers) SandboxVNC(c *gin.Context) {
 		c.String(code, msg)
 		return
 	}
+	h.Sbx.TouchActivity(id)
 	h.serveDesktopVNC(c, row.Name, sandboxIP, desktopVNCOptions{})
 }

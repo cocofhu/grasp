@@ -158,6 +158,15 @@ func writeStateRun(b *strings.Builder, s models.StateRun, sbxLogs []models.Sandb
 		b.WriteString(strings.TrimRight(s.OutputMd, "\n") + "\n")
 	}
 
+	if h, _ := s.Outputs[models.OutputHandoff].(string); strings.TrimSpace(h) != "" {
+		src, _ := s.Outputs[models.OutputHandoffSource].(string)
+		if src == "" {
+			src = models.HandoffSourceAgent
+		}
+		b.WriteString("-- Handoff (" + src + ") --\n")
+		b.WriteString(strings.TrimRight(h, "\n") + "\n")
+	}
+
 	// Sandbox logs are keyed per container (node), not per iteration; emit them
 	// once (on the first state_run row for the node) to avoid duplication.
 	for _, l := range sbxLogs {

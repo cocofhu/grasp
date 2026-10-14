@@ -137,8 +137,13 @@ type Host struct {
 	// toolsListGen increments whenever the flag flips; HTTP sessions receive
 	// notifications/tools/list_changed and use the generation to recover on reconnect.
 	outcomeAllowed map[string]bool
-	toolsListGen   map[string]int
-	toolSessions   map[string]map[string]*toolSession // runID -> MCP session ID -> subscription
+	// downstream lists each active node's handoff consumers (runID|nodeID).
+	downstream   map[string][]models.HandoffTarget
+	toolsListGen map[string]int
+	toolSessions map[string]map[string]*toolSession // runID -> MCP session ID -> subscription
+	// closedSessions are session IDs the client explicitly DELETEd (runID ->
+	// set); they stay terminated instead of being re-adopted.
+	closedSessions map[string]map[string]struct{}
 	// outcomeValidator is DefaultThenRPC (see ChainedOutcomeValidator). Nil
 	// means DefaultOutcomeValidator only.
 	outcomeValidator OutcomeValidator
@@ -454,7 +459,10 @@ func (h *Host) RestoreRun(runID, token string) {
 
 // UnregisterRun revokes the run token and closes the endpoint. This is the sole
 // mechanism that expires a token cached by authorize's fallback, so every path
-// that tears down a run's last live sandbox MUST call it (see authorize).
+// that tears down a finished run's last live sandbox MUST call it (see
+// authorize). It must NOT be called while the run is still in progress or
+// another of its sandboxes is alive: it closes every tool session of the run,
+// including the one the currently executing node's agent holds.
 func (h *Host) UnregisterRun(runID string) {
 	h.mu.Lock()
 	delete(h.tokens, runID)
@@ -467,6 +475,12 @@ func (h *Host) UnregisterRun(runID string) {
 	h.closeToolSessionsLocked(runID)
 	delete(h.outcomeAllowed, runID)
 	delete(h.toolsListGen, runID)
+	delete(h.closedSessions, runID)
+	for key := range h.downstream {
+		if strings.HasPrefix(key, runID+"|") {
+			delete(h.downstream, key)
+		}
+	}
 	h.mu.Unlock()
 }
 
@@ -480,9 +494,10 @@ func (h *Host) UnregisterRun(runID string) {
 //
 // INVARIANT: a successful fallback re-caches the token into h.tokens, after
 // which the fast path serves it WITHOUT re-checking sandboxAlive. Expiry is
-// therefore driven entirely by UnregisterRun, so every path that destroys a
-// run's last live sandbox must call it; otherwise the token would stay valid
-// until restart even after the sandbox is gone.
+// therefore driven entirely by UnregisterRun: the engine calls it when the run
+// reaches a terminal status, and sandbox teardown calls it once a finished
+// run's last sandbox is gone; otherwise the token would stay valid until
+// restart even after the sandbox is gone.
 func (h *Host) authorize(runID, token string) bool {
 	if token == "" {
 		return false

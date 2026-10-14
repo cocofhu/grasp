@@ -113,6 +113,25 @@ func TestParseBranchesVar(t *testing.T) {
 	if parseBranchesVar("") != nil || parseBranchesVar(nil) != nil {
 		t.Errorf("blank should be nil")
 	}
+	legacy := parseBranchesVar("map[grasp:feature/home-light-theme-character web:feat/x]")
+	if len(legacy) != 2 || legacy["grasp"] != "feature/home-light-theme-character" || legacy["web"] != "feat/x" {
+		t.Errorf("legacy fmt.Sprint map = %+v", legacy)
+	}
+	if parseBranchesVar("map[]") != nil || parseBranchesVar("not json") != nil {
+		t.Errorf("unparseable should be nil")
+	}
+}
+
+// A run that persisted the legacy map form must still clone the
+// implementation branch downstream, not the default branch.
+func TestResolveReposLegacyBranchesVar(t *testing.T) {
+	got := resolveRepos(NodeReq{Vars: map[string]any{
+		"repos":    `[{"name":"grasp","url":"https://github.com/cocofhu/grasp"}]`,
+		"branches": "map[grasp:feature/home-light-theme-character]",
+	}})
+	if len(got) != 1 || got[0].Branch != "feature/home-light-theme-character" {
+		t.Fatalf("repos = %+v", got)
+	}
 }
 
 func TestResolveRepos(t *testing.T) {

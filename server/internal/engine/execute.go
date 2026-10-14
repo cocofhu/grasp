@@ -357,6 +357,7 @@ func (e *Engine) execute(runID, fromNodeID string) {
 			return
 		}
 
+		ensureHandoff(c, node, &outcome)
 		switch outcome.status {
 		case "paused":
 

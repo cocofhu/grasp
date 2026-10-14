@@ -239,6 +239,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.POST("/sandboxes/cleanup", h.CleanupSandboxes)
 		api.GET("/sandboxes/:id", h.GetSandbox)
 		api.POST("/sandboxes/:id/stop", h.StopSandbox)
+		api.POST("/sandboxes/:id/leases", h.ExtendSandboxLease)
 		api.DELETE("/sandboxes/:id", h.DestroySandbox)
 		api.GET("/sandboxes/:id/chat", h.SandboxChat)
 		api.GET("/sandboxes/:id/terminal", h.SandboxTerminal)

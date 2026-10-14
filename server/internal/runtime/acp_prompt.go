@@ -16,6 +16,7 @@ func (c *acpProvider) buildAgentPrompt(req NodeReq, seeded []string) string {
 	if req.Caps.Clarify() {
 		b.WriteString(runInputSeed(req))
 	}
+	b.WriteString(upstreamHandoffText(req.UpstreamHandoff))
 	if len(seeded) > 0 {
 		b.WriteString(models.UpstreamArtifactsHeader)
 		for _, n := range seeded {
@@ -36,6 +37,7 @@ func (c *acpProvider) buildAgentPrompt(req NodeReq, seeded []string) string {
 	// confirms; the confirm turn introduces node_complete.
 	if !req.Caps.Clarify() {
 		b.WriteString(models.OutcomeContract)
+		b.WriteString(downstreamHandoffText(req.Downstream))
 	}
 	if layout := multiRepoLayoutText(req); layout != "" {
 		b.WriteString(layout)
@@ -43,6 +45,48 @@ func (c *acpProvider) buildAgentPrompt(req NodeReq, seeded []string) string {
 	b.WriteString(sandboxResourcesText(sandbox.DefaultMemoryMB()))
 	b.WriteString(timeLimitsText(req, c.agentIdle()))
 	return strings.TrimSpace(b.String())
+}
+
+// downstreamHandoffText tells the agent who runs after it and that
+// node_complete must carry a handoff for them, on success and on failure.
+func downstreamHandoffText(targets []models.HandoffTarget) string {
+	if len(targets) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\n## 下游与交接(强制)\n")
+	fmt.Fprintf(&b, "你的下游是 %s。调用 `node_complete` 时**必须**填写 `handoff`,无论 `success` 还是 `failed`:\n", models.HandoffTargetsText(targets))
+	b.WriteString("- 用几句话写给下游:你做了什么、结论是什么、产物/分支/预览在哪、下游需要注意或接着做什么。\n")
+	b.WriteString("- 失败时写清卡在哪一步、已尝试过什么、下游(或重试的你)该如何接手。\n")
+	fmt.Fprintf(&b, "- 只写下游用得上的信息,不超过 %d 字;细节放进产物,不要在 handoff 里重复全文。\n", models.HandoffMaxRunes)
+	b.WriteString("- 缺少 handoff 时 `node_complete` 会被拒绝。\n")
+	return b.String()
+}
+
+// upstreamHandoffText shows the handoff the routing upstream node left.
+func upstreamHandoffText(h *models.UpstreamHandoff) string {
+	if h == nil || strings.TrimSpace(h.Text) == "" {
+		return ""
+	}
+	name := strings.TrimSpace(h.Label)
+	if name == "" {
+		name = h.NodeID
+	}
+	var b strings.Builder
+	b.WriteString("\n\n## 上游交接\n")
+	fmt.Fprintf(&b, "上游节点「%s」", name)
+	if h.Status == "failed" {
+		b.WriteString("(执行失败)")
+	}
+	if h.Source == models.HandoffSourcePlatform {
+		b.WriteString("未能自行交接,以下由平台根据失败信息生成")
+	} else {
+		b.WriteString("留给你的交接说明")
+	}
+	b.WriteString(":\n\n")
+	b.WriteString(strings.TrimSpace(h.Text))
+	b.WriteString("\n")
+	return b.String()
 }
 
 // sandboxResourcesText tells the agent its sandbox memory budget. Exceeding it

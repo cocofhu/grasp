@@ -11,6 +11,7 @@ import (
 type updateSettingsBody struct {
 	MaxConcurrentRuns *int    `json:"max_concurrent_runs"`
 	RunSandboxTTLMin  *int    `json:"run_sandbox_ttl_minutes"`
+	RunSandboxMaxRetH *int    `json:"run_sandbox_max_retention_hours"`
 	TestSandboxTTLMin *int    `json:"test_sandbox_ttl_minutes"`
 	MaxTestSandboxes  *int    `json:"max_test_sandboxes"`
 	NodeAutoRetryMax  *int    `json:"node_auto_retry_max"`
@@ -41,6 +42,7 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 	for key, value := range map[string]*int{
 		services.KeyMaxConcurrentRuns: body.MaxConcurrentRuns,
 		services.KeyRunSandboxTTLMin:  body.RunSandboxTTLMin,
+		services.KeyRunSandboxMaxRetH: body.RunSandboxMaxRetH,
 		services.KeyTestSandboxTTLMin: body.TestSandboxTTLMin,
 		services.KeyMaxTestSandboxes:  body.MaxTestSandboxes,
 		services.KeyNodeAutoRetryMax:  body.NodeAutoRetryMax,

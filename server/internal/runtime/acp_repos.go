@@ -192,7 +192,7 @@ func parseBranchesVar(v any) map[string]string {
 		}
 		m := map[string]string{}
 		if json.Unmarshal([]byte(s), &m) != nil {
-			return nil
+			return parseGoMapBranches(s)
 		}
 		return m
 	case map[string]any:
@@ -208,6 +208,27 @@ func parseBranchesVar(v any) map[string]string {
 	default:
 		return nil
 	}
+}
+
+// parseGoMapBranches reads the "map[repo:branch other:branch]" form that older
+// engines persisted (fmt.Sprint of a decoded object) so runs already carrying
+// it still check out the implementation branch. Repo names cannot contain ':'
+// or spaces and git branch names cannot contain spaces.
+func parseGoMapBranches(s string) map[string]string {
+	if !strings.HasPrefix(s, "map[") || !strings.HasSuffix(s, "]") {
+		return nil
+	}
+	m := map[string]string{}
+	for _, pair := range strings.Fields(s[len("map[") : len(s)-1]) {
+		name, branch, ok := strings.Cut(pair, ":")
+		if ok && name != "" && branch != "" {
+			m[name] = branch
+		}
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	return m
 }
 
 // resolveRepos builds the (flat) clone list from vars.repos. Every repository —

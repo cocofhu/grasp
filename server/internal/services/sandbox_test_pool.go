@@ -539,10 +539,41 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 		if row.RunID != "" {
 			s.host.UnregisterRun(row.RunID)
 		}
-	} else if row.RunID != "" {
-		s.host.UnregisterRun(row.RunID)
+	} else {
+		s.releaseRunMCP(row.RunID, row.ID)
 	}
 	return s.db.Delete(&models.Sandbox{}, id).Error
+}
+
+// releaseRunMCP revokes a workflow run's MCP token and tool sessions when one
+// of its sandboxes is destroyed, but only once nothing can still use them: the
+// run must be finished (the engine revokes on terminal itself) and no other
+// sandbox row of the run may remain. Destroying a retired upstream node's
+// sandbox must not cut off the node that is executing right now.
+func (s *SandboxService) releaseRunMCP(runID string, exceptID uint) {
+	if strings.TrimSpace(runID) == "" || s.runStillActive(runID) {
+		return
+	}
+	var others int64
+	s.db.Model(&models.Sandbox{}).Where("run_id = ? AND id <> ?", runID, exceptID).Count(&others)
+	if others > 0 {
+		return
+	}
+	s.host.UnregisterRun(runID)
+}
+
+// runStillActive reports whether runID can still execute nodes (and so still
+// needs its MCP endpoint). A missing run row counts as finished.
+func (s *SandboxService) runStillActive(runID string) bool {
+	var run models.Run
+	if err := s.db.Select("status").Where("id = ?", runID).First(&run).Error; err != nil {
+		return false
+	}
+	switch run.Status {
+	case "queued", "running", "waiting_human":
+		return true
+	}
+	return false
 }
 
 // CleanupIdle destroys every non-busy sandbox; returns (destroyed, skipped).
@@ -622,12 +653,18 @@ func (s *SandboxService) sweepOnce(ctx context.Context) {
 	if err := s.db.Where("destroy_at IS NOT NULL AND destroy_at <= ?", time.Now()).Find(&rows).Error; err != nil {
 		return
 	}
+	now := time.Now()
 	for i := range rows {
 		if s.isBusyRow(&rows[i]) {
 			continue
 		}
+		if len(rows[i].Leases) > 0 && s.leaseHolds(&rows[i], now) {
+			continue
+		}
 		if err := s.Destroy(ctx, rows[i].ID); err == nil {
-			log.Info().Str("name", rows[i].Name).Msg("test sandbox swept (idle ttl)")
+			s.forgetTouch(rows[i].ID)
+			log.Info().Str("name", rows[i].Name).Str("purpose", rows[i].Purpose).
+				Int("leases", len(rows[i].Leases)).Msg("sandbox swept (lease expired)")
 		}
 	}
 }
@@ -718,8 +755,12 @@ func (s *SandboxService) destroyLocalSandbox(ctx context.Context, row *models.Sa
 	if row.HomeDir != "" {
 		_ = os.RemoveAll(row.HomeDir)
 	}
-	if row.RunID != "" {
-		s.host.UnregisterRun(row.RunID)
+	if row.Purpose == "test" {
+		if row.RunID != "" {
+			s.host.UnregisterRun(row.RunID)
+		}
+	} else {
+		s.releaseRunMCP(row.RunID, row.ID)
 	}
 	s.db.Delete(&models.Sandbox{}, row.ID)
 }

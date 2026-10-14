@@ -11,6 +11,8 @@ import { copyToClipboard } from '@/lib/shared/copyToClipboard'
 import { sandboxPurposeLabelKey, sandboxSourceTextKey } from '@/lib/agent/sandboxPurposeLabel'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { useToast } from '@/lib/composables/useToast'
+import SandboxRetention from '@/components/sandbox/SandboxRetention.vue'
+import { formatRemaining } from '@/components/sandbox/retention'
 
 const SKELETON_ROWS = 6
 const SKELETON_CARDS = 4
@@ -125,11 +127,19 @@ function statusOf(s: SandboxView): { label: string; cls: string } {
 function ttl(s: SandboxView): string {
   if (s.busy) return t('pages.sandboxes.ttl.busy')
   if (!s.destroyAt) return t('common.format.empty')
-  const ms = new Date(s.destroyAt).getTime() - now.value
-  if (ms <= 0) return t('pages.sandboxes.ttl.soon')
-  const m = Math.floor(ms / 60000)
-  const sec = Math.floor((ms % 60000) / 1000)
-  return m > 0 ? `${m}m ${sec}s` : `${sec}s`
+  return formatRemaining(new Date(s.destroyAt).getTime() - now.value, t('pages.sandboxes.ttl.soon'))
+}
+
+/** Lease kinds keeping a retained run sandbox alive, for the countdown tooltip. */
+function leaseHint(s: SandboxView): string | undefined {
+  if (!s.leases?.length) return undefined
+  return s.leases.map((l) => t(`pages.sandboxes.retention.kinds.${l.kind}`, l.kind)).join(' · ')
+}
+
+function onRetentionUpdated(fresh: SandboxView) {
+  detailView.value = fresh
+  const i = rows.value.findIndex((r) => r.id === fresh.id)
+  if (i >= 0) rows.value[i] = { ...rows.value[i]!, leases: fresh.leases, destroyAt: fresh.destroyAt }
 }
 
 function sourceText(s: SandboxView): string {
@@ -393,7 +403,7 @@ onBeforeUnmount(() => {
 
           <div class="mt-2.5 flex flex-wrap gap-1.5">
             <span class="chip" :class="purposeOf(s).cls">{{ purposeOf(s).label }}</span>
-            <span class="chip border-line text-txt3">TTL {{ ttl(s) }}</span>
+            <span class="chip border-line text-txt3" :title="leaseHint(s)">TTL {{ ttl(s) }}</span>
           </div>
 
           <div class="mt-2.5 flex flex-col gap-1 text-[12px]">
@@ -562,7 +572,7 @@ onBeforeUnmount(() => {
                   <span v-else class="text-[12px] text-txt3">{{ sourceText(s) }}</span>
                 </td>
                 <td class="px-4 py-2.5"><span class="chip" :class="statusOf(s).cls">{{ statusOf(s).label }}</span></td>
-                <td class="px-4 py-2.5 font-mono text-[12px] text-txt3">{{ ttl(s) }}</td>
+                <td class="px-4 py-2.5 font-mono text-[12px] text-txt3" :title="leaseHint(s)">{{ ttl(s) }}</td>
                 <td class="px-4 py-2.5 text-[12px] text-txt3">{{ new Date(s.createdAt).toLocaleString() }}</td>
                 <td class="px-4 py-2.5">
                   <div class="flex items-center justify-end gap-1.5">
@@ -631,6 +641,11 @@ onBeforeUnmount(() => {
               >{{ row.value }}</div>
             </div>
           </div>
+        </section>
+
+        <section v-if="detailView.purpose === 'run' && detailView.leases?.length">
+          <h3 class="mb-2.5 text-[12px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.sandboxes.retention.title') }}</h3>
+          <SandboxRetention :sandbox="detailView" @updated="onRetentionUpdated" />
         </section>
 
         <section>

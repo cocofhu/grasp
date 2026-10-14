@@ -4,7 +4,7 @@ import type { NodeRunStatus, NodeType, WFEdge, WFNode } from '@/lib/shared/types
 import { flowFingerprint, pruneFlowCache, reuseFlowElement, type FlowNodeCacheEntry } from '@/lib/run/workflowCanvasFlow'
 import { isKnownNodeType } from '@/lib/workflow/graphValidation'
 import { nodeCapabilities, type AgentCapsLookup } from '@/lib/workflow/nodeOutlets'
-import type { CanvasEdgeData, CanvasMode, CanvasNodeData, EdgeRunState } from './canvasContext'
+import type { CanvasEdgeData, CanvasMode, CanvasNodeData, EdgeHandoff, EdgeRunState } from './canvasContext'
 import { backLaneIndexes } from './edgePath'
 import { AGENT_NODE_WIDTH, NODE_WIDTH, findBackEdges } from './useAutoLayout'
 import { capabilityFlags, findAgent, nodeOutlets, normHandle, type CanvasAgent, type Outlet, type Translate } from './outlets'
@@ -49,6 +49,8 @@ export interface FlowInputs {
   statusMap: () => Record<string, NodeRunStatus> | undefined
   iterations: () => Record<string, number> | undefined
   failReasons: () => Record<string, string> | undefined
+  /** Run mode: handoff left by each node (keyed by node id). */
+  handoffs?: () => Record<string, EdgeHandoff> | undefined
   activePath: () => string[] | undefined
   issues: () => Map<string, string[]> | undefined
   selectedNodes: () => string[]
@@ -198,11 +200,29 @@ export function useFlowElements(inp: FlowInputs) {
     }
   })
 
+  /** The handoff on e when the run actually left its source through e (a failed source's taken failure edge included). */
+  const handoffOn = computed(() => {
+    if (inp.mode() !== 'run') return null
+    const handoffs = inp.handoffs?.() || {}
+    const status = inp.statusMap() || {}
+    return (e: WFEdge, run: EdgeRunState | undefined): EdgeHandoff | undefined => {
+      const h = handoffs[e.source]
+      if (!h?.text) return undefined
+      if (run === 'traversed' || run === 'active') return h
+      // A failed node leaves by its failure / rollback edges only.
+      const kind = e.kind || 'success'
+      const tgt = status[e.target]
+      if (status[e.source] === 'failed' && kind !== 'success' && tgt && tgt !== 'pending' && tgt !== 'skipped') return h
+      return undefined
+    }
+  })
+
   const flowEdges = computed<FlowEdgeObj[]>(() => {
     const readonly = inp.mode() !== 'edit'
     const selected = new Set(inp.selectedEdges())
     const label = new Map(inp.nodes().map((n) => [n.id, n.label || n.id]))
     const runOf = edgeRun.value
+    const handoffOf = handoffOn.value
     const conn = readonly ? null : inp.connecting.value
     const ids = new Set(inp.nodes().map((n) => n.id))
     const placed = inp.positions?.()
@@ -230,17 +250,20 @@ export function useFlowElements(inp: FlowInputs) {
       const note = String(e.label ?? '').trim()
       const kindLabel = kind !== 'success' ? inp.t(`common.edgeKinds.${kind}.label`) : ''
       const backLane = laneOf.get(e.id)
+      const run = runOf ? runOf(e) : undefined
+      const handoff = handoffOf ? handoffOf(e, run) : undefined
       const data: CanvasEdgeData = {
         tone,
         dashed: handle === 'fail' || kind !== 'success',
         label: note || when || kindLabel,
         hasCondition: !!when,
-        run: runOf ? runOf(e) : undefined,
+        run,
         editable: !readonly,
         sourceLabel: label.get(e.source) || e.source,
         targetLabel: label.get(e.target) || e.target,
         replacing: !!conn && conn.source === e.source && conn.sourceHandle === handle && !when && kind === 'success',
         ...(backLane !== undefined ? { backLane } : {}),
+        ...(handoff ? { handoff } : {}),
       }
       const color =
         data.run === 'active' || (data.run === 'traversed' && tone === 'default') ? 'var(--flow-edge-active)' : TONE_VAR[tone]

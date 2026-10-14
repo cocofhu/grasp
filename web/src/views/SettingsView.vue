@@ -30,7 +30,7 @@ const groups = computed(() => [
     title: t('pages.settings.groups.recycle.title'),
     desc: t('pages.settings.groups.recycle.desc'),
     icon: 'trash',
-    keys: ['run_sandbox_ttl_minutes', 'test_sandbox_ttl_minutes'],
+    keys: ['run_sandbox_ttl_minutes', 'run_sandbox_max_retention_hours', 'test_sandbox_ttl_minutes'],
   },
   {
     id: 'capacity',
@@ -50,6 +50,7 @@ const groups = computed(() => [
 
 const SETTING_UNITS: Record<string, string> = {
   run_sandbox_ttl_minutes: 'common.minutes',
+  run_sandbox_max_retention_hours: 'pages.settings.units.hours',
   test_sandbox_ttl_minutes: 'common.minutes',
   sandbox_memory_mb: 'pages.settings.units.mib',
   agent_idle_timeout_minutes: 'common.minutes',
