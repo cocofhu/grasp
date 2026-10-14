@@ -54,25 +54,26 @@ describe('DashboardView home chat layout', () => {
     expect(particleBgSrc).toMatch(/pointer-events:\s*none/)
   })
 
-  // plan g1.2 / g1.3 — left yume + right wordmark (no logo-mark); LAYOUT.md spacing
-  it('uses left-right yume and monospace wordmark without logo mark or banned effects', () => {
-    expect(src).toMatch(/data-testid="home-brand"/)
-    expect(src).toMatch(/data-testid="home-brand-row"/)
-    expect(src).toMatch(/data-testid="home-brand-copy"/)
+  // LAYOUT-A — centered yume only (no wordmark / logo-mark)
+  it('uses centered yume without wordmark, logo mark, or banned effects', () => {
+    expect(src).toMatch(/data-testid="home-brand-block"/)
     expect(src).toMatch(/HomeYumeCharacter/)
+    expect(src).not.toMatch(/data-testid="home-brand"/)
+    expect(src).not.toMatch(/data-testid="home-brand-row"/)
+    expect(src).not.toMatch(/data-testid="home-brand-copy"/)
     expect(src).not.toMatch(/data-testid="home-logo-mark"/)
     expect(src).not.toMatch(/logo-mark\.svg/)
     expect(src).not.toMatch(/HomeLogoEasterEgg|homeLogoJumpGame|home-logo-easter-egg/)
-    expect(src).toMatch(/--yume-size:\s*200px/)
-    expect(src).toMatch(/--yume-text-gap:\s*40px/)
-    expect(src).toMatch(/max-width:\s*560px/)
-    expect(src).toMatch(/ui-monospace/)
-    expect(src).toMatch(/home-brand__cursor/)
+    expect(src).not.toMatch(/home-brand__cursor/)
+    expect(src).not.toMatch(/ui-monospace/)
+    expect(src).toMatch(/--yume-size:\s*220px/)
+    expect(src).toMatch(/--yume-size:\s*180px/)
+    expect(src).toMatch(/--yume-size:\s*140px/)
+    expect(src).toMatch(/margin:\s*24px 0 0/)
     expect(src).not.toMatch(/var\(--grad-logo\)/)
     expect(src).not.toMatch(/background-clip:\s*text/)
     expect(src).not.toMatch(/shimmer/)
     expect(src).not.toMatch(/stagger/)
-    expect(src).not.toMatch(/serif/)
     expect(src).not.toMatch(/fonts\.googleapis|fonts\.gstatic|cdn\.jsdelivr/)
   })
 
@@ -113,11 +114,11 @@ describe('DashboardView home chat layout', () => {
 
   // plan g2 / g3 — no filter hint; caret opacity settle; placeholder typewriter
   // plan g1.1 / g2.2 — Ctrl/Meta+Enter send (no shiftKey-only Enter-to-send)
-  it('omits filter hint and keeps caret settle + placeholder typewriter', () => {
+  it('omits filter hint and keeps placeholder typewriter', () => {
     expect(src).not.toMatch(/data-testid="home-filter-hint"/)
     expect(src).not.toMatch(/filterHint/)
-    expect(src).toMatch(/home-brand__cursor--gone/)
-    expect(src).toMatch(/brandCursorGone/)
+    expect(src).not.toMatch(/home-brand__cursor/)
+    expect(src).not.toMatch(/brandCursorGone/)
     expect(src).toMatch(/data-testid="home-composer-placeholder"/)
     expect(src).toMatch(/ctrlKey\s*\|\|\s*e\.metaKey|e\.metaKey\s*\|\|\s*e\.ctrlKey/)
     expect(src).toMatch(/sendShortcut/)

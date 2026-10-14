@@ -313,11 +313,15 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
-  // plan g2 — Grasp mono brand + Chinese hint；无筛选说明句
-  it('renders monospace Grasp brand and Chinese hint', async () => {
+  // LAYOUT-A — centered yume only + Chinese hint；无 Grasp 字标 / 筛选说明句
+  it('renders centered yume without Grasp wordmark and shows Chinese hint', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
-    expect(wrapper.get('[data-testid="home-brand"]').classes()).toContain('home-brand')
+    expect(wrapper.find('[data-testid="home-yume"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="home-brand"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-brand-text"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-brand-cursor"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-logo-mark"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="home-title"]').text()).toBe('从一句话开始一次开发前澄清')
     expect(wrapper.find('[data-testid="home-subtitle"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-filter-hint"]').exists()).toBe(false)
@@ -414,42 +418,34 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
-  // plan g3 — one-shot typewriter then opacity-hide caret (keep layout box)
-  it('types Grasp once then settles without looping', async () => {
+  // LAYOUT-A — no hero wordmark / typewriter; product name is not rendered in brand block
+  it('does not render Grasp wordmark or brand caret in the hero', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
-    expect(wrapper.get('[data-testid="home-brand-text"]').text()).toBe('')
-    await vi.advanceTimersByTimeAsync(220 + 78 * 9 + 50)
-    expect(wrapper.get('[data-testid="home-brand-text"]').text()).toBe('Grasp')
-    const caret = wrapper.get('[data-testid="home-brand-cursor"]')
-    expect(caret.classes()).not.toContain('home-brand__cursor--gone')
-    await vi.advanceTimersByTimeAsync(850 * 3 + 50)
-    expect(wrapper.get('[data-testid="home-brand-text"]').text()).toBe('Grasp')
-    expect(wrapper.get('[data-testid="home-brand-cursor"]').classes()).toContain('home-brand__cursor--gone')
-    expect(wrapper.get('[data-testid="home-brand-cursor"]').classes()).not.toContain('home-brand__cursor--blink')
-    await vi.advanceTimersByTimeAsync(5000)
-    expect(wrapper.get('[data-testid="home-brand-text"]').text()).toBe('Grasp')
-    expect(wrapper.get('[data-testid="home-brand-cursor"]').classes()).toContain('home-brand__cursor--gone')
+    expect(wrapper.find('[data-testid="home-yume"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="home-brand"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-brand-text"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-brand-cursor"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  // plan g3 — reduced-motion shows static brand; caret stays in layout but gone
-  it('shows full Grasp immediately under reduced-motion', async () => {
+  it('keeps centered yume under reduced-motion without wordmark', async () => {
     stubReducedMotion(true)
     const wrapper = mountDashboard()
     await flushPromises()
-    expect(wrapper.get('[data-testid="home-brand-text"]').text()).toBe('Grasp')
-    expect(wrapper.get('[data-testid="home-brand-cursor"]').classes()).toContain('home-brand__cursor--gone')
+    expect(wrapper.find('[data-testid="home-yume"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="home-brand"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  it('uses the same configured product name for typewriter, static mode, and aria label', async () => {
+  it('does not surface configured product name in the hero brand block', async () => {
     setBrandSettings({ product_name: 'Acme Flow' })
     stubReducedMotion(true)
     const wrapper = mountDashboard()
     await flushPromises()
-    expect(wrapper.get('[data-testid="home-brand-text"]').text()).toBe('Acme Flow')
-    expect(wrapper.get('[data-testid="home-brand"]').attributes('aria-label')).toBe('Acme Flow')
+    expect(wrapper.find('[data-testid="home-brand"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Acme Flow')
+    expect(wrapper.find('[data-testid="home-yume"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

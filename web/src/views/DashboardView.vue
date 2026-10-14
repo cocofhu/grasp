@@ -22,7 +22,7 @@ const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = u
 
 const router = useRouter()
 const { t, tm } = useI18n()
-const { productName, homeSubtitle } = useBrandSettings()
+const { homeSubtitle } = useBrandSettings()
 const effectiveSubtitle = computed(() => homeSubtitle.value || String(t('pages.dashboard.title')))
 const {
   projectId,
@@ -61,11 +61,6 @@ const {
   onLaunchStarted,
 } = useHomeApproveChat()
 
-const brandVisible = ref('')
-/** Keep caret in layout; hide with opacity so settle does not shift the centered brand. */
-const brandCursorGone = ref(false)
-const brandCursorBlink = ref(false)
-const brandTimers: ReturnType<typeof setTimeout>[] = []
 const composerFocused = ref(false)
 const composing = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
@@ -113,45 +108,6 @@ const showPhTypewriter = computed(() => !draft.value.trim() && !composerFocused.
 function prefersReducedMotion(): boolean {
   if (typeof window === 'undefined' || !window.matchMedia) return false
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
-}
-
-function clearBrandTimers() {
-  while (brandTimers.length) {
-    const id = brandTimers.pop()
-    if (id != null) clearTimeout(id)
-  }
-}
-
-function scheduleBrand(fn: () => void, ms: number) {
-  brandTimers.push(setTimeout(fn, ms))
-}
-
-/** Monospace brand: type once, soft blink caret, then opacity-hide caret (keep box). */
-function runBrandTypewriter() {
-  clearBrandTimers()
-  brandCursorBlink.value = false
-  brandCursorGone.value = false
-  if (prefersReducedMotion()) {
-    brandVisible.value = productName.value
-    brandCursorGone.value = true
-    return
-  }
-  brandVisible.value = ''
-  let i = 0
-  const typeNext = () => {
-    if (i < productName.value.length) {
-      i += 1
-      brandVisible.value = productName.value.slice(0, i)
-      scheduleBrand(typeNext, 78)
-      return
-    }
-    brandCursorBlink.value = true
-    scheduleBrand(() => {
-      brandCursorBlink.value = false
-      brandCursorGone.value = true
-    }, 850 * 3)
-  }
-  scheduleBrand(typeNext, 220)
 }
 
 function clearPhTimers() {
@@ -549,7 +505,6 @@ function openFilePicker() {
 }
 
 watch(draft, () => nextTick(autoGrow))
-watch(productName, () => runBrandTypewriter(), { immediate: true })
 watch(showPhTypewriter, () => runPlaceholderTypewriter(), { immediate: true })
 watch(placeholderLines, () => {
   if (showPhTypewriter.value) runPlaceholderTypewriter()
@@ -588,7 +543,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  clearBrandTimers()
   clearPhTimers()
   clearLongPress()
   clearWorkflowNavHold()
@@ -608,23 +562,7 @@ onBeforeUnmount(() => {
       class="home-shell__content relative z-[1] mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10"
     >
       <div class="home-brand-block" data-testid="home-brand-block">
-        <div class="home-brand-row" data-testid="home-brand-row">
-          <HomeYumeCharacter />
-          <div class="home-brand-copy" data-testid="home-brand-copy">
-            <h1 class="home-brand" data-testid="home-brand" :aria-label="productName">
-              <span class="home-brand__text" data-testid="home-brand-text">{{ brandVisible }}</span>
-              <span
-                class="home-brand__cursor"
-                :class="{
-                  'home-brand__cursor--blink': brandCursorBlink,
-                  'home-brand__cursor--gone': brandCursorGone,
-                }"
-                data-testid="home-brand-cursor"
-                aria-hidden="true"
-              />
-            </h1>
-          </div>
-        </div>
+        <HomeYumeCharacter />
         <p class="home-hint" data-testid="home-title">
           {{ effectiveSubtitle }}
         </p>
@@ -1019,78 +957,18 @@ onBeforeUnmount(() => {
   isolation: isolate;
 }
 
-/* brand: left yume + right wordmark (no logo-mark); see LAYOUT.md */
+/* brand: centered yume only (LAYOUT-A); no wordmark / logo-mark */
 .home-brand-block {
-  --yume-size: 200px;
-  --yume-text-gap: 40px;
+  --yume-size: 220px;
   display: flex;
   flex-direction: column;
   align-items: center;
   flex-shrink: 0;
   width: 100%;
-}
-
-.home-brand-row {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  gap: var(--yume-text-gap);
-  width: 100%;
-  max-width: 560px;
-  flex-shrink: 0;
-}
-
-.home-brand-copy {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 0;
-  min-width: 0;
-  text-align: left;
-}
-
-/* g1.1 monospace brand */
-.home-brand {
-  display: inline-flex;
-  align-items: baseline;
-  margin: 0;
-  min-height: 1.1em;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  font-size: clamp(2.25rem, 4.5vw, 3.5rem);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  line-height: 1.05;
-  color: rgb(var(--c-txt));
-}
-
-.home-brand__text {
-  white-space: pre;
-}
-
-.home-brand__cursor {
-  display: inline-block;
-  width: 0.08em;
-  height: 0.92em;
-  margin-left: 0.06em;
-  vertical-align: -0.06em;
-  flex-shrink: 0;
-  background: rgb(var(--c-accent));
-  opacity: 1;
-  transition: opacity 0.2s ease;
-}
-
-.home-brand__cursor--blink {
-  animation: home-brand-caret 0.85s steps(1) 3;
-}
-
-.home-brand__cursor--gone {
-  opacity: 0;
 }
 
 .home-hint {
-  margin: 20px 0 0;
+  margin: 24px 0 0;
   max-width: 36rem;
   text-align: center;
   font-size: 14px;
@@ -1411,17 +1289,6 @@ onBeforeUnmount(() => {
   opacity: 1;
 }
 
-@keyframes home-brand-caret {
-  0%,
-  49% {
-    opacity: 1;
-  }
-  50%,
-  100% {
-    opacity: 0;
-  }
-}
-
 @keyframes home-ph-caret {
   0%,
   49% {
@@ -1438,11 +1305,6 @@ onBeforeUnmount(() => {
   .home-hint {
     animation: none !important;
     opacity: 1;
-  }
-
-  .home-brand__cursor {
-    opacity: 0 !important;
-    animation: none !important;
   }
 
   .home-composer__ph-cursor {
@@ -1477,12 +1339,11 @@ onBeforeUnmount(() => {
 
 @media (max-width: 899px) {
   .home-brand-block {
-    --yume-size: 160px;
-    --yume-text-gap: 28px;
+    --yume-size: 180px;
   }
 
   .home-hint {
-    margin-top: 18px;
+    margin-top: 20px;
   }
 
   .home-composer-wrap {
@@ -1492,23 +1353,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 640px) {
   .home-brand-block {
-    --yume-size: 120px;
-    --yume-text-gap: 16px;
-  }
-
-  .home-brand-row {
-    flex-direction: column;
-    align-items: center;
-    max-width: none;
-  }
-
-  .home-brand-copy {
-    align-items: center;
-    text-align: center;
-  }
-
-  .home-brand {
-    font-size: clamp(2rem, 8vw, 2.75rem);
+    --yume-size: 140px;
   }
 
   .home-hint {

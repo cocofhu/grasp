@@ -184,12 +184,12 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .home-yume {
-  /* inherit --yume-size from .home-brand-block (LAYOUT.md); fallback 200px */
+  /* inherit --yume-size from .home-brand-block (LAYOUT-A); fallback 220px */
   box-sizing: border-box;
   display: grid;
   place-items: center;
-  width: var(--yume-size, 200px);
-  height: var(--yume-size, 200px);
+  width: var(--yume-size, 220px);
+  height: var(--yume-size, 220px);
   margin: 0;
   flex-shrink: 0;
   padding: 0;
