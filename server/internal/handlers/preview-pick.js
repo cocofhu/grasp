@@ -294,6 +294,13 @@
   var ARTIFACT_DEFAULT_W = 920;
   var ARTIFACT_DEFAULT_H = 640;
   var ARTIFACT_MARGIN = 28;
+  // Later peer sits this far down-right so the earlier title bar still shows.
+  var PEER_NUDGE = 36;
+  // Close button inside .mhead: height 40, padding-right 8, button 28×28.
+  var IMAGE_HEAD_H = 40;
+  var IMAGE_CLOSE_W = 28;
+  var IMAGE_CLOSE_H = 28;
+  var IMAGE_CLOSE_RIGHT = 8;
   var artifactBox = null;
   var artifactDrag = null;
   var imageBox = null;
@@ -839,10 +846,59 @@
     var y = ARTIFACT_MARGIN;
     // Nudge off the artifact window so both title bars stay visible.
     if (artifactOpen) {
-      x += 36;
-      y += 36;
+      x += PEER_NUDGE;
+      y += PEER_NUDGE;
     }
     return clampArtifactBox({ x: x, y: y, w: w, h: ARTIFACT_DEFAULT_H });
+  }
+
+  function nudgePeer(b) {
+    return clampArtifactBox({ x: b.x + PEER_NUDGE, y: b.y + PEER_NUDGE, w: b.w, h: b.h });
+  }
+
+  function raisePeer(el) {
+    if (!ui || !ui.artifactModal || !ui.imageModal || !el) return;
+    // Stay inside the mask, under the chat card. The later window paints on top.
+    ui.artifactModal.style.zIndex = el === ui.artifactModal ? '2' : '1';
+    ui.imageModal.style.zIndex = el === ui.imageModal ? '2' : '1';
+  }
+
+  // Opening the second window at the same origin would hide the first title bar.
+  // Shift the new one down-right and put it above its peer.
+  function placeAbovePeer(box, other, openingEl, otherEl) {
+    if (box.x === other.x && box.y === other.y) {
+      raisePeer(openingEl);
+      return nudgePeer(box);
+    }
+    if (box.x > other.x || box.y > other.y) raisePeer(openingEl);
+    else raisePeer(otherEl);
+    return box;
+  }
+
+  function imageCloseRect(b) {
+    return {
+      x: b.x + b.w - IMAGE_CLOSE_RIGHT - IMAGE_CLOSE_W,
+      y: b.y + (IMAGE_HEAD_H - IMAGE_CLOSE_H) / 2,
+      w: IMAGE_CLOSE_W,
+      h: IMAGE_CLOSE_H,
+    };
+  }
+
+  function rectHits(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+
+  // The chat card paints above this window. Stop a drag once the close button
+  // would slide under that card; do not raise the window over the card.
+  function keepImageCloseReachable(b) {
+    if (!drawerOpen || !b) return b;
+    var btn = imageCloseRect(b);
+    if (!rectHits(btn, box)) return b;
+    var into = btn.x + btn.w - box.x;
+    if (into <= 0) return b;
+    var next = clampArtifactBox({ x: b.x - into, y: b.y, w: b.w, h: b.h });
+    if (!rectHits(imageCloseRect(next), box)) return next;
+    return b;
   }
 
   function applyImageBox() {
@@ -870,6 +926,7 @@
         w: imageDrag.w,
         h: imageDrag.h,
       });
+      imageBox = keepImageCloseReachable(imageBox);
     } else {
       imageBox = artifactResizeFrom(imageDrag, dx, dy);
     }
@@ -1317,6 +1374,14 @@
       ensureArtifactFrame();
       if (!artifactBox) artifactBox = artifactDefaultBox();
       else artifactBox = clampArtifactBox(artifactBox);
+      if (imageOpen && imageBox) {
+        artifactBox = placeAbovePeer(
+          artifactBox,
+          clampArtifactBox(imageBox),
+          ui.artifactModal,
+          ui.imageModal,
+        );
+      }
     }
     render();
   }
@@ -1327,6 +1392,14 @@
       ensureImageFrame();
       if (!imageBox) imageBox = imageDefaultBox();
       else imageBox = clampArtifactBox(imageBox);
+      if (artifactOpen && artifactBox) {
+        imageBox = placeAbovePeer(
+          imageBox,
+          clampArtifactBox(artifactBox),
+          ui.imageModal,
+          ui.artifactModal,
+        );
+      }
     }
     render();
     applyImageTitle();

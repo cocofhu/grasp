@@ -1522,6 +1522,27 @@ describe('preview-pick.js image preview window', () => {
     const de = p.win.document.documentElement
     Object.defineProperty(de, 'clientWidth', { configurable: true, get: () => w })
     Object.defineProperty(de, 'clientHeight', { configurable: true, get: () => h })
+    p.win.dispatchEvent(new p.win.Event('resize'))
+  }
+
+  function modalGeom(el: HTMLElement) {
+    return {
+      x: Number.parseInt(el.style.left, 10),
+      y: Number.parseInt(el.style.top, 10),
+      w: Number.parseInt(el.style.width, 10),
+      h: Number.parseInt(el.style.height, 10),
+    }
+  }
+
+  function imageCloseRect(g: { x: number; y: number; w: number; h: number }) {
+    return { x: g.x + g.w - 36, y: g.y + 6, w: 28, h: 28 }
+  }
+
+  function rectHits(
+    a: { x: number; y: number; w: number; h: number },
+    b: { x: number; y: number; w: number; h: number },
+  ) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
   }
 
   function imageModal(p: Page) {
@@ -1631,6 +1652,8 @@ describe('preview-pick.js image preview window', () => {
     const g = imageGeom(p)
     expect(g.x).toBe(64)
     expect(g.y).toBe(64)
+    expect(modalGeom(artifactModal)).toMatchObject({ x: 28, y: 28, w: 920, h: 640 })
+    expect(Number(imageModal(p).style.zIndex)).toBeGreaterThan(Number(artifactModal.style.zIndex))
     ;(p.shadow.querySelector('[data-role="image-close"]') as HTMLButtonElement).click()
     expect(imageShown(p)).toBe(false)
     expect(p.artifactOpen()).toBe(true)
@@ -1680,6 +1703,58 @@ describe('preview-pick.js image preview window', () => {
     expect(resized.h).toBe(moved.h + 22)
     expect(resized.x + resized.w).toBeLessThanOrEqual(1600)
     expect(resized.y + resized.h).toBeLessThanOrEqual(900)
+  })
+
+  it('offsets the artifact window when the picture is already open', async () => {
+    const p = await ready()
+    setView(p, 1440, 900)
+    openImage(p, 'image.png')
+    const imageBefore = imageGeom(p)
+    expect(imageBefore).toEqual({ x: 28, y: 28, w: 920, h: 640 })
+    p.artifactButton().click()
+    const image = imageModal(p)
+    const artifact = p.shadow.querySelector('[data-role="artifact-modal"]') as HTMLElement
+    const artifactBox = modalGeom(artifact)
+    expect(artifact.hidden).toBe(false)
+    expect(image.hidden).toBe(false)
+    expect(artifactBox).toEqual({ x: 64, y: 64, w: 920, h: 640 })
+    expect(imageGeom(p)).toEqual(imageBefore)
+    expect(Number(artifact.style.zIndex)).toBeGreaterThan(Number(image.style.zIndex))
+    expect(artifactBox.y).toBeGreaterThan(imageBefore.y)
+    expect(imageBefore.y + 40).toBeGreaterThan(artifactBox.y)
+    expect(p.artifactFrame()?.getAttribute('src')).toContain('/artifacts')
+    expect(p.shadow.querySelector('[data-role="artifact-title"]')?.textContent).toBe('产物')
+    const drawer = p.shadow.querySelector('[data-role="drawer"]') as HTMLElement
+    const cs = (el: Element) => p.win.getComputedStyle(el as unknown as Element)
+    expect(Number(cs(drawer).zIndex)).toBeGreaterThan(Number(cs(p.artifactMask()).zIndex))
+  })
+
+  it('stops a drag before the close button slides under the chat card', async () => {
+    const p = await ready()
+    setView(p, 1440, 900)
+    openImage(p, 'image.png')
+    const drawer = modalGeom(p.shadow.querySelector('[data-role="drawer"]') as HTMLElement)
+    expect(drawer.x).toBe(1440 - 420 - 28)
+    const before = imageGeom(p)
+    const head = p.shadow.querySelector('[data-role="image-head"]') as HTMLElement
+    const fire = (type: string, target: EventTarget, x: number, y: number) => {
+      const Ev = (p.win as unknown as { PointerEvent: typeof PointerEvent }).PointerEvent
+      target.dispatchEvent(new Ev(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, button: 0 }))
+    }
+    const drag = (target: EventTarget, from: { x: number; y: number }, to: { x: number; y: number }) => {
+      fire('pointerdown', target, from.x, from.y)
+      fire('pointermove', p.win, to.x, to.y)
+      fire('pointerup', p.win, to.x, to.y)
+    }
+    drag(head, { x: before.x + 40, y: before.y + 12 }, { x: before.x + 800, y: before.y + 40 })
+    const moved = imageGeom(p)
+    const btn = imageCloseRect(moved)
+    expect(rectHits(btn, drawer)).toBe(false)
+    expect(btn.x + btn.w).toBe(drawer.x)
+    expect(moved.w).toBe(before.w)
+    expect(moved.h).toBe(before.h)
+    expect(moved.y).toBe(before.y + 28)
+    expect(moved.x).toBeGreaterThan(before.x)
   })
 
   it('follows the chat card theme and language without closing', async () => {
