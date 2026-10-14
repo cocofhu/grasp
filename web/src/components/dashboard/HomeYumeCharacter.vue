@@ -184,13 +184,13 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .home-yume {
-  --yume-size: 148px;
+  /* inherit --yume-size from .home-brand-block (LAYOUT.md); fallback 200px */
   box-sizing: border-box;
   display: grid;
   place-items: center;
-  width: var(--yume-size);
-  height: var(--yume-size);
-  margin: 0 0 8px;
+  width: var(--yume-size, 200px);
+  height: var(--yume-size, 200px);
+  margin: 0;
   flex-shrink: 0;
   padding: 0;
   border: 0;
@@ -200,6 +200,7 @@ onBeforeUnmount(() => {
   user-select: none;
   -webkit-user-select: none;
   outline: none;
+  /* layout box fixed; float/squash/bounce use transform only */
 }
 
 .home-yume:focus-visible {

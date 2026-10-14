@@ -54,13 +54,18 @@ describe('DashboardView home chat layout', () => {
     expect(particleBgSrc).toMatch(/pointer-events:\s*none/)
   })
 
-  // plan g1.2 / g1.3 — yume character + logo mark + monospace wordmark; no game / banned effects
-  it('uses yume character with logo mark and monospace wordmark without banned brand effects', () => {
+  // plan g1.2 / g1.3 — left yume + right wordmark (no logo-mark); LAYOUT.md spacing
+  it('uses left-right yume and monospace wordmark without logo mark or banned effects', () => {
     expect(src).toMatch(/data-testid="home-brand"/)
+    expect(src).toMatch(/data-testid="home-brand-row"/)
+    expect(src).toMatch(/data-testid="home-brand-copy"/)
     expect(src).toMatch(/HomeYumeCharacter/)
-    expect(src).toMatch(/data-testid="home-logo-mark"/)
-    expect(src).toMatch(/logo-mark\.svg/)
+    expect(src).not.toMatch(/data-testid="home-logo-mark"/)
+    expect(src).not.toMatch(/logo-mark\.svg/)
     expect(src).not.toMatch(/HomeLogoEasterEgg|homeLogoJumpGame|home-logo-easter-egg/)
+    expect(src).toMatch(/--yume-size:\s*200px/)
+    expect(src).toMatch(/--yume-text-gap:\s*40px/)
+    expect(src).toMatch(/max-width:\s*560px/)
     expect(src).toMatch(/ui-monospace/)
     expect(src).toMatch(/home-brand__cursor/)
     expect(src).not.toMatch(/var\(--grad-logo\)/)

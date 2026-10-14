@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import HomeParticleMeshBackground from '@/components/dashboard/HomeParticleMeshBackground.vue'
 import HomeYumeCharacter from '@/components/dashboard/HomeYumeCharacter.vue'
-import markUrl from '@/assets/brand/logo-mark.svg'
 import HomeWorkflowSelect from '@/components/dashboard/HomeWorkflowSelect.vue'
 import HomePrioritySelect from '@/components/dashboard/HomePrioritySelect.vue'
 import Icon from '@/components/ui/Icon.vue'
@@ -609,34 +608,29 @@ onBeforeUnmount(() => {
       class="home-shell__content relative z-[1] mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10"
     >
       <div class="home-brand-block" data-testid="home-brand-block">
-        <HomeYumeCharacter />
-        <img
-          class="home-logo-mark"
-          data-testid="home-logo-mark"
-          :src="markUrl"
-          width="72"
-          height="72"
-          alt=""
-          draggable="false"
-        />
-        <h1 class="home-brand" data-testid="home-brand" :aria-label="productName">
-          <span class="home-brand__text" data-testid="home-brand-text">{{ brandVisible }}</span>
-          <span
-            class="home-brand__cursor"
-            :class="{
-              'home-brand__cursor--blink': brandCursorBlink,
-              'home-brand__cursor--gone': brandCursorGone,
-            }"
-            data-testid="home-brand-cursor"
-            aria-hidden="true"
-          />
-        </h1>
+        <div class="home-brand-row" data-testid="home-brand-row">
+          <HomeYumeCharacter />
+          <div class="home-brand-copy" data-testid="home-brand-copy">
+            <h1 class="home-brand" data-testid="home-brand" :aria-label="productName">
+              <span class="home-brand__text" data-testid="home-brand-text">{{ brandVisible }}</span>
+              <span
+                class="home-brand__cursor"
+                :class="{
+                  'home-brand__cursor--blink': brandCursorBlink,
+                  'home-brand__cursor--gone': brandCursorGone,
+                }"
+                data-testid="home-brand-cursor"
+                aria-hidden="true"
+              />
+            </h1>
+          </div>
+        </div>
+        <p class="home-hint" data-testid="home-title">
+          {{ effectiveSubtitle }}
+        </p>
       </div>
-      <p class="home-hint mt-[18px] text-center" data-testid="home-title">
-        {{ effectiveSubtitle }}
-      </p>
 
-      <div class="mt-[30px] w-full">
+      <div class="home-composer-wrap w-full">
         <p
           v-if="attachNotice"
           class="mb-2 rounded border border-err/40 bg-err/10 px-3 py-1.5 text-[12px] text-err"
@@ -1025,32 +1019,46 @@ onBeforeUnmount(() => {
   isolation: isolate;
 }
 
-/* brand: yume character (interactive) + static logo-mark + wordmark */
+/* brand: left yume + right wordmark (no logo-mark); see LAYOUT.md */
 .home-brand-block {
+  --yume-size: 200px;
+  --yume-text-gap: 40px;
   display: flex;
   flex-direction: column;
   align-items: center;
   flex-shrink: 0;
+  width: 100%;
 }
 
-.home-logo-mark {
-  display: block;
-  width: 72px;
-  height: 72px;
-  margin: 0 0 12px;
-  user-select: none;
-  -webkit-user-drag: none;
-  pointer-events: none;
+.home-brand-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: var(--yume-text-gap);
+  width: 100%;
+  max-width: 560px;
+  flex-shrink: 0;
 }
 
-/* g1.1 — monospace brand; solid color; letter-spacing matches design */
+.home-brand-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  min-width: 0;
+  text-align: left;
+}
+
+/* g1.1 monospace brand */
 .home-brand {
   display: inline-flex;
   align-items: baseline;
   margin: 0;
   min-height: 1.1em;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  font-size: clamp(2.5rem, 8.5vw, 4.25rem);
+  font-size: clamp(2.25rem, 4.5vw, 3.5rem);
   font-weight: 600;
   letter-spacing: 0.04em;
   line-height: 1.05;
@@ -1082,6 +1090,9 @@ onBeforeUnmount(() => {
 }
 
 .home-hint {
+  margin: 20px 0 0;
+  max-width: 36rem;
+  text-align: center;
   font-size: 14px;
   font-weight: 500;
   letter-spacing: 0.01em;
@@ -1460,7 +1471,54 @@ onBeforeUnmount(() => {
   }
 }
 
+.home-composer-wrap {
+  margin-top: 28px;
+}
+
+@media (max-width: 899px) {
+  .home-brand-block {
+    --yume-size: 160px;
+    --yume-text-gap: 28px;
+  }
+
+  .home-hint {
+    margin-top: 18px;
+  }
+
+  .home-composer-wrap {
+    margin-top: 24px;
+  }
+}
+
 @media (max-width: 640px) {
+  .home-brand-block {
+    --yume-size: 120px;
+    --yume-text-gap: 16px;
+  }
+
+  .home-brand-row {
+    flex-direction: column;
+    align-items: center;
+    max-width: none;
+  }
+
+  .home-brand-copy {
+    align-items: center;
+    text-align: center;
+  }
+
+  .home-brand {
+    font-size: clamp(2rem, 8vw, 2.75rem);
+  }
+
+  .home-hint {
+    margin-top: 16px;
+  }
+
+  .home-composer-wrap {
+    margin-top: 24px;
+  }
+
   .home-workflow-nav--prev {
     left: 0;
   }
@@ -1476,6 +1534,6 @@ onBeforeUnmount(() => {
     padding-bottom: 2.5rem;
     justify-content: flex-start;
   }
-
 }
+
 </style>
