@@ -135,6 +135,9 @@ type ACPClient struct {
 	// ConnectOpts injected into the {op:connect} message.
 	cwd        string
 	mcpServers json.RawMessage // JSON array, may be nil
+	// env is an optional per-session Agent subprocess overlay (shared sandbox
+	// node credentials). Reserved platform keys must already be stripped.
+	env map[string]string
 
 	// blobs resolves blob:{id} attachments to base64 for the wire format.
 	blobs blob.Store
@@ -204,6 +207,26 @@ func NewACPClient(host string, port int) *ACPClient {
 func (c *ACPClient) WithSession(cwd string, mcpServers json.RawMessage) *ACPClient {
 	c.cwd = cwd
 	c.mcpServers = mcpServers
+	return c
+}
+
+// WithEnv sets the optional per-session Agent environment overlay sent on
+// connect. Used by run-level shared sandboxes so node credentials are not
+// baked into the shared container environment.
+func (c *ACPClient) WithEnv(env map[string]string) *ACPClient {
+	if len(env) == 0 {
+		c.env = nil
+		return c
+	}
+	cp := make(map[string]string, len(env))
+	for k, v := range env {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		cp[k] = v
+	}
+	c.env = cp
 	return c
 }
 
@@ -486,6 +509,9 @@ func (c *ACPClient) connectOnce(ctx context.Context) error {
 	}
 	if len(c.mcpServers) > 0 {
 		connectMsg["mcpServers"] = c.mcpServers
+	}
+	if len(c.env) > 0 {
+		connectMsg["env"] = c.env
 	}
 	if err := c.send(connectMsg); err != nil {
 		return fmt.Errorf("send connect: %w", err)

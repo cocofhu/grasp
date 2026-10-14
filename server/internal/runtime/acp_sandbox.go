@@ -2,11 +2,8 @@ package runtime
 
 import (
 	"context"
-	"crypto/sha256"
-	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -304,10 +301,15 @@ func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandb
 // caller. Keeping these phases separate lets a run-level coordinator reuse the
 // container while every node still receives a fresh ACP chat/tab.
 func (c *acpProvider) createSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, string, string, error) {
-	spec, err := c.spec(req)
+	sb, home, model, _, err := c.createSandboxLayered(ctx, req, false)
+	return sb, home, model, err
+}
+
+func (c *acpProvider) createSandboxLayered(ctx context.Context, req NodeReq, shared bool) (*sandbox.Sandbox, string, string, map[string]string, error) {
+	spec, overlay, err := c.specLayered(req, shared)
 	if err != nil {
 		c.forgetCodexLogin(codexLoginKey(req))
-		return nil, "", "", fmt.Errorf("%w: %v", errSandboxConfig, err)
+		return nil, "", "", nil, fmt.Errorf("%w: %v", errSandboxConfig, err)
 	}
 	home := spec.ConfigHome
 
@@ -319,23 +321,24 @@ func (c *acpProvider) createSandbox(ctx context.Context, req NodeReq) (*sandbox.
 		c.forgetCodexLogin(codexLoginKey(req))
 		c.deregisterRunSandbox(placeholder)
 		removeHome(home)
-		return nil, "", "", fmt.Errorf("%w: create sandbox: %v", errSandboxSetup, err)
+		return nil, "", "", nil, fmt.Errorf("%w: create sandbox: %v", errSandboxSetup, err)
 	}
 	if err := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 120*time.Second); err != nil {
 		c.forgetCodexLogin(codexLoginKey(req))
 		c.deregisterRunSandbox(placeholder)
 		sb.Destroy(context.Background())
 		removeHome(home)
-		return nil, "", "", fmt.Errorf("%w: acp not ready: %v", errSandboxSetup, err)
+		return nil, "", "", nil, fmt.Errorf("%w: acp not ready: %v", errSandboxSetup, err)
 	}
-	return sb, home, spec.Env["ACP_BRIDGE_MODEL"], nil
+	return sb, home, spec.Env["ACP_BRIDGE_MODEL"], overlay, nil
 }
 
-func (c *acpProvider) connectSandbox(ctx context.Context, req NodeReq, sb *sandbox.Sandbox, bridgeModel, chatID string) (*sandbox.ACPClient, error) {
+func (c *acpProvider) connectSandbox(ctx context.Context, req NodeReq, sb *sandbox.Sandbox, bridgeModel, chatID string, overlay map[string]string) (*sandbox.ACPClient, error) {
 	acp := sb.ACP().
 		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
 		WithIdleTimeoutFunc(c.agentIdle).
-		WithBridgeModel(bridgeModel)
+		WithBridgeModel(bridgeModel).
+		WithEnv(sanitizeNodeEnvOverlay(overlay))
 	if chatID != "" {
 		created, err := acp.CreateChat(ctx, "run/"+safeSessionPart(req.RunID)+"/"+safeSessionPart(req.NodeID), "")
 		if err != nil {
@@ -353,26 +356,30 @@ func (c *acpProvider) connectSandbox(ctx context.Context, req NodeReq, sb *sandb
 	return acp, nil
 }
 
+// nodeSessionOverlay builds the per-node ACP env overlay. Spec construction
+// still materializes a temporary ConfigHome for auth/layout validation; that
+// home is removed here because the shared container already mounts the
+// run-level home from create/attach.
+func (c *acpProvider) nodeSessionOverlay(req NodeReq) (map[string]string, error) {
+	sp, overlay, err := c.specLayered(req, true)
+	if err != nil {
+		return nil, err
+	}
+	c.forgetCodexLogin(codexLoginKey(req))
+	removeHome(sp.ConfigHome)
+	return overlay, nil
+}
+
 func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, error) {
 	// Run nodes share one container and acquire the exclusive workspace lease.
 	// The lease is released by retireRunSandbox/discardSandbox after the node's
 	// ACP client closes; a parked ReAct session keeps it until the dialogue ends.
 	if c.coordinator != nil && strings.TrimSpace(req.RunID) != "" {
-		envFingerprint, fingerprintErr := c.nodeEnvFingerprint(req)
-		if fingerprintErr != nil {
-			return nil, nil, "", fmt.Errorf("%w: 节点环境不可安全计算: %v", errSandboxConfig, fingerprintErr)
+		overlay, overlayErr := c.nodeSessionOverlay(req)
+		if overlayErr != nil {
+			return nil, nil, "", fmt.Errorf("%w: %v", errSandboxConfig, overlayErr)
 		}
-		if lookup, ok := c.registry.(RunSandboxLookup); ok {
-			if info, found := lookup.FindRunSandbox(req.RunID); found && info.Name != "" {
-				if info.EnvFingerprint == "" {
-					return nil, nil, "", errors.New("共享沙箱缺少节点环境摘要：为避免重启后泄露凭据，已拒绝复用旧容器")
-				}
-				if info.EnvFingerprint != envFingerprint {
-					return nil, nil, "", errors.New("共享沙箱不支持节点级环境切换：持久化沙箱环境与当前节点不一致，已拒绝复用")
-				}
-			}
-		}
-		entry, err := c.coordinator.acquireWithFingerprint(ctx, req.RunID, envFingerprint, func() (*sandbox.Sandbox, string, string, error) {
+		entry, err := c.coordinator.acquire(ctx, req.RunID, func() (*sandbox.Sandbox, string, string, error) {
 			// Rehydrate a durable binding left by a process restart before
 			// provisioning a replacement container.
 			if lookup, ok := c.registry.(RunSandboxLookup); ok {
@@ -388,14 +395,14 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 								if generation < 1 {
 									generation = 1
 								}
-								c.registerRunSandboxGenerationWithFingerprint(req, sb, info.HomeDir, generation, info.ReplacementReason, info.EnvFingerprint)
+								c.registerRunSandboxGeneration(req, sb, info.HomeDir, generation, info.ReplacementReason)
 								return sb, info.HomeDir, model, nil
 							}
 						}
 					}
 				}
 			}
-			sb, home, model, err := c.createSandbox(ctx, req)
+			sb, home, model, _, err := c.createSandboxLayered(ctx, req, true)
 			if err == nil {
 				c.registerRunSandbox(req, sb, home)
 			}
@@ -405,11 +412,11 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 			return nil, nil, "", err
 		}
 		if entry.generation > 1 {
-			c.registerRunSandboxGenerationWithFingerprint(req, entry.sb, entry.home, entry.generation, "共享沙箱不可恢复，创建替代代次", envFingerprint)
+			c.registerRunSandboxGeneration(req, entry.sb, entry.home, entry.generation, "共享沙箱不可恢复，创建替代代次")
 		} else {
-			c.registerRunSandboxGenerationWithFingerprint(req, entry.sb, entry.home, entry.generation, "", envFingerprint)
+			c.registerRunSandboxGeneration(req, entry.sb, entry.home, entry.generation, "")
 		}
-		acp, err := c.connectSandbox(ctx, req, entry.sb, entry.bridgeModel, newNodeChatID(req.RunID, req.NodeID))
+		acp, err := c.connectSandbox(ctx, req, entry.sb, entry.bridgeModel, newNodeChatID(req.RunID, req.NodeID), overlay)
 		if err != nil {
 			home, removed := c.coordinator.discard(req.RunID, entry.sb)
 			if removed {
@@ -426,7 +433,7 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 	if err != nil {
 		return nil, nil, "", err
 	}
-	acp, err := c.connectSandbox(ctx, req, sb, model, "")
+	acp, err := c.connectSandbox(ctx, req, sb, model, "", nil)
 	if err != nil {
 		c.forgetCodexLogin(codexLoginKey(req))
 		c.deregisterRunSandbox(sb.Name)
@@ -438,34 +445,6 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 	return sb, acp, home, nil
 }
 
-// nodeEnvFingerprint hashes the exact environment that would be installed in
-// an ACP subprocess. It intentionally returns only a digest, so credentials
-// never enter logs, persistence, or error messages. Computing it through spec
-// keeps the guard aligned with all credential and platform-reserved env rules.
-func (c *acpProvider) nodeEnvFingerprint(req NodeReq) (string, error) {
-	sp, err := c.spec(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		c.forgetCodexLogin(codexLoginKey(req))
-		removeHome(sp.ConfigHome)
-	}()
-	keys := make([]string, 0, len(sp.Env))
-	for k := range sp.Env {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	h := sha256.New()
-	for _, k := range keys {
-		_, _ = h.Write([]byte(k))
-		_, _ = h.Write([]byte{0})
-		_, _ = h.Write([]byte(sp.Env[k]))
-		_, _ = h.Write([]byte{0})
-	}
-	return fmt.Sprintf("sha256:%x", h.Sum(nil)), nil
-}
-
 func removeHome(home string) {
 	if home != "" {
 		_ = os.RemoveAll(home)
@@ -473,9 +452,19 @@ func removeHome(home string) {
 }
 
 func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
+	sp, _, err := c.specLayered(req, false)
+	return sp, err
+}
+
+// specLayered builds the sandbox Spec. When shared is true, Spec.Env keeps only
+// run-level + platform-reserved keys; nodeOverlay carries node-scoped Agent
+// credentials for ACP connect injection. When shared is false the container is
+// node-scoped so Spec.Env is the full merge and overlay is nil.
+func (c *acpProvider) specLayered(req NodeReq, shared bool) (sandbox.Spec, map[string]string, error) {
 
 	repos := resolveRepos(req)
 	env := map[string]string{}
+	agentEnvKeys := map[string]struct{}{}
 
 	// Secrets come only from project credentials: platform sandbox.env and
 	// Agent/shared env never supply envauth.SecretEnvKeys.
@@ -490,7 +479,9 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	agentCfg := c.effectiveAgent(req)
 	vars := c.mcpVars(req)
 
-	for k, v := range envauth.StripSecretEnvKeys(agentCfg.Env) {
+	strippedAgentEnv := envauth.StripSecretEnvKeys(agentCfg.Env)
+	markKeys(agentEnvKeys, strippedAgentEnv)
+	for k, v := range strippedAgentEnv {
 		env[k] = substVars(v, vars)
 	}
 	// Project credentials are the only secret source. They are resolved only
@@ -528,8 +519,11 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	// The selected model-vendor credential wins over a merged project env and
 	// over the run snapshot. An empty selection injects nothing.
 	if c.backend == BackendOpenCode && c.opts.OpenCodeCredentialForProject != nil {
+		before := cloneStringMap(env)
 		ApplyOpenCodeSelection(env, c.opts.OpenCodeCredentialForProject(c.projectIDForReq(req), agentCfg.OpenCodeCredentialID))
+		markChangedKeys(agentEnvKeys, before, env)
 	}
+	beforeCred := cloneStringMap(env)
 	ApplyAgentCredentialChoice(env, projectCreds, c.projectIDForReq(req), AgentCredentialChoice{
 		Backend:              string(c.backend),
 		GitCredentialType:    agentCfg.GitCredentialType,
@@ -537,25 +531,32 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		GitCredentialID:      agentCfg.GitCredentialID,
 		SshHostsCredentialID: agentCfg.SshHostsCredentialID,
 	}, c.opts.SelectedCredentialForProject)
+	markChangedKeys(agentEnvKeys, beforeCred, env)
 	// Capture the login file before PrepareAuthEnv strips it from the sandbox env.
 	codexLogin := CodexLoginFileFromEnv(c.backend, env)
 	// Align auth gate with buildConfigHome BaseWorkDirSrc (project-shared workspace).
 	merged, err := PrepareAuthEnv(c.backend, env, c.workDir(profile), c.sharedWorkDir(req))
 	if err != nil {
-		return sandbox.Spec{}, err
+		return sandbox.Spec{}, nil, err
 	}
+	markChangedKeys(agentEnvKeys, env, merged)
 	env = merged
 	env["AGENT_PROVIDER"] = string(c.backend)
 	if err := RequireOpenCodePlaceholderKey(OpenCodeConfigForEnvWithCatalog(context.Background(), c.backend, env, c.opts.OpenCodeCatalog), env); err != nil {
-		return sandbox.Spec{}, err
+		return sandbox.Spec{}, nil, err
 	}
 	applyPreviewEnv(env, req.Caps)
 
 	for k, v := range vars {
 		// Node identity is available to MCP template substitution through
 		// templateVars, but must not become a process-wide container variable:
-		// the bridge cannot safely replace it between node sessions.
-		if strings.HasPrefix(k, "vars.") || k == "GRASP_NODE_ID" || v == "" {
+		// inject it per node via the ACP session overlay instead.
+		if strings.HasPrefix(k, "vars.") || v == "" {
+			continue
+		}
+		if k == "GRASP_NODE_ID" {
+			agentEnvKeys[k] = struct{}{}
+			env[k] = v
 			continue
 		}
 		env[k] = v
@@ -582,21 +583,61 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	sandbox.ApplyPasswords(env, req.Token)
 	home := c.buildConfigHome(req, env)
 	if err := InstallCodexLoginFile(c.backend, home, codexLogin); err != nil {
-		return sandbox.Spec{}, err
+		return sandbox.Spec{}, nil, err
 	}
 	if c.backend == BackendCodex && strings.TrimSpace(codexLogin) != "" {
 		c.rememberCodexLogin(codexLoginKey(req), codexLogin, CodexAuthPath(layout.ConfigRoot))
 	}
+
+	var overlay map[string]string
+	specEnv := env
+	if shared {
+		specEnv, overlay = partitionSharedSandboxEnv(env, agentEnvKeys)
+	}
+
 	spec := sandbox.Spec{
 		Image:        resolveProviderImage(c.opts, c.backend),
-		Env:          env,
+		Env:          specEnv,
 		ConfigHome:   home,
 		ConfigRoot:   layout.ConfigRoot,
 		WorkspaceDir: layout.WorkspaceDir,
 	}
 	// SSH comes only from project credentials.
 	sandbox.ApplySSHCredentials(&spec, projectCreds["GIT_SSH_PRIVATE_KEY"], projectCreds["GIT_SSH_KNOWN_HOSTS"])
-	return spec, nil
+	return spec, overlay, nil
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func markChangedKeys(dst map[string]struct{}, before, after map[string]string) {
+	if dst == nil {
+		return
+	}
+	for k, v := range after {
+		if before[k] != v {
+			k = strings.TrimSpace(k)
+			if k != "" {
+				dst[k] = struct{}{}
+			}
+		}
+	}
+	for k := range before {
+		if _, ok := after[k]; !ok {
+			k = strings.TrimSpace(k)
+			if k != "" {
+				dst[k] = struct{}{}
+			}
+		}
+	}
 }
 
 // applyPreviewEnv asks the gateway to 1:1-map a PREVIEW_PORT for Agents

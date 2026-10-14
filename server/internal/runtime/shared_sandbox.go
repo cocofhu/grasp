@@ -32,12 +32,8 @@ type sharedSandbox struct {
 	sb          *sandbox.Sandbox
 	home        string
 	bridgeModel string
-	generation  int
-	// envFingerprint identifies the node-level environment used to start the
-	// ACP subprocess. The value is a digest, never the environment itself.
-	// A run sandbox cannot silently hand one node's credentials to another.
-	envFingerprint string
-	ready          chan struct{}
+	generation int
+	ready      chan struct{}
 	lease          chan struct{}
 	wake           chan struct{}
 	finalized      bool
@@ -62,19 +58,11 @@ func newSharedSandboxCoordinator() *sharedSandboxCoordinator {
 // acquire obtains the run's one exclusive workspace lease. The create
 // callback is called exactly once for a run generation. Waiters block until the
 // first creator has connected or failed, then reuse the resulting container.
+// Node-scoped credentials ride the ACP connect overlay and no longer gate reuse.
 func (c *sharedSandboxCoordinator) acquire(ctx context.Context, runID string, create func() (*sandbox.Sandbox, string, string, error)) (*sharedSandbox, error) {
-	return c.acquireWithFingerprint(ctx, runID, "", create)
-}
-
-// acquireWithFingerprint is the run-scoped entry point used by workflow
-// providers. ACP bridge sessions inherit the container environment, so a
-// node whose environment differs from the one that created the container must
-// fail closed until the bridge supports safe per-session environment injection.
-func (c *sharedSandboxCoordinator) acquireWithFingerprint(ctx context.Context, runID, envFingerprint string, create func() (*sandbox.Sandbox, string, string, error)) (*sharedSandbox, error) {
 	if c == nil || strings.TrimSpace(runID) == "" {
 		return nil, errors.New("共享沙箱需要 run_id")
 	}
-	envFingerprint = strings.TrimSpace(envFingerprint)
 	c.mu.Lock()
 	if c.terminal[runID] {
 		c.mu.Unlock()
@@ -89,12 +77,8 @@ func (c *sharedSandboxCoordinator) acquireWithFingerprint(ctx context.Context, r
 		}
 		c.generations[runID] = generation
 		entry = &sharedSandbox{runID: runID, generation: generation, ready: make(chan struct{}), lease: make(chan struct{}, 1), wake: make(chan struct{})}
-		entry.envFingerprint = envFingerprint
 		c.runs[runID] = entry
 		creator = true
-	} else if entry.envFingerprint != "" && envFingerprint != "" && entry.envFingerprint != envFingerprint {
-		c.mu.Unlock()
-		return nil, errors.New("共享沙箱不支持节点级环境切换：为避免泄露前一节点凭据，已拒绝复用")
 	}
 	ready := entry.ready
 	c.mu.Unlock()
@@ -141,7 +125,7 @@ func (c *sharedSandboxCoordinator) acquireWithFingerprint(ctx context.Context, r
 		if terminal {
 			return nil, errors.New("运行已结束，共享沙箱不可用")
 		}
-		return c.acquireWithFingerprint(ctx, runID, envFingerprint, create)
+		return c.acquire(ctx, runID, create)
 	case <-entry.wake:
 		c.mu.Lock()
 		terminal := c.terminal[runID]
@@ -149,7 +133,7 @@ func (c *sharedSandboxCoordinator) acquireWithFingerprint(ctx context.Context, r
 		if terminal {
 			return nil, errors.New("运行已结束，共享沙箱不可用")
 		}
-		return c.acquireWithFingerprint(ctx, runID, envFingerprint, create)
+		return c.acquire(ctx, runID, create)
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

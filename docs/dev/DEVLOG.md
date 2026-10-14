@@ -28,6 +28,14 @@
 - 为什么：run-64490c06 中 auth.json 失效后每个回合都 401，但失败回合 `err == nil`，平台继续催促 6 次、判成 `errMCPSurfaceEmpty`（retryable）并自动重试 3 次，用户看到的是错误原因"MCP 工具面为空"。
 - 如何验证：新增 fake bridge 用例（Codex 401 只跑 1 回合、1 个沙箱；非 Codex 后端行为不变）、`asCodexLoginErr`/`settleCodexLogin` 单测、引擎不重试用例与前端横幅用例；回退修复后 fail-fast 用例失败。`go test ./...`、golangci-lint、`go vet`、configdoc、core 覆盖率 90.1%、web eslint / vue-tsc / vitest 通过。
 
+### 2026-10-14（共享沙箱节点级环境 overlay）
+
+- 日期：2026-10-14
+- 范围：`server/internal/{runtime,sandbox}`、`sandbox-gateway/sandbox/internal/{provider,service,handler}`、`sandbox-gateway/sandbox/docs/PROTOCOL.md`、`docs/dev/DEVLOG.md`、`CHANGELOG.md`
+- 做了什么：共享沙箱改为「运行级容器环境 + 节点级 ACP 会话 overlay」。创建容器时只注入运行级快照与平台保留变量；节点凭据/Agent env 经 `connect.env` 注入 Agent 子进程，会话删除时清理。去掉因 env fingerprint 拒绝复用的 fail-closed 逻辑；节点 overlay 不可覆盖平台保留键。
+- 为什么：顺序多节点若 Agent 凭据不同，旧实现会拒绝共用同一沙箱；需求要求节点级环境可切换且不泄漏到后续节点。
+- 如何验证：`go test`/`go vet` 覆盖 runtime、services、sandbox 与 sandbox-gateway 相关包；新增分区/overlay/复用单测。
+
 ### 2026-10-13
 
 - 日期：2026-10-13

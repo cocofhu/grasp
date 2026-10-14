@@ -9,6 +9,8 @@ All notable public-release changes are documented here.
   on the first failed turn with "Codex 登录已失效或无法刷新，请重新粘贴登录文件"
   instead of re-prompting, reporting "MCP 工具面为空", and auto-retrying. The
   run failure banner links to the project credentials tab.
+- **Shared sandbox node env overlay:** sequential Agent nodes with different credentials reuse one run-level sandbox; node secrets are injected per ACP session and cleared on chat teardown, and platform-reserved keys cannot be overridden.
+
 - **Run-level shared workflow sandboxes:** Agent nodes in one workflow run now reuse one isolated workspace with serialized leases, independent bridge chats, durable generation/replacement records, restart recovery, and one terminal cleanup.
 
 ## 2.1.0 — 2026-10-12

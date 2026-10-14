@@ -143,17 +143,27 @@ func TestSharedSandboxCoordinatorConcurrentCreation(t *testing.T) {
 	}
 }
 
-func TestSharedSandboxCoordinatorRejectsNodeEnvironmentSwitch(t *testing.T) {
+func TestSharedSandboxCoordinatorAllowsNodeEnvironmentSwitch(t *testing.T) {
 	c := newSharedSandboxCoordinator()
+	created := 0
 	create := func() (*sandbox.Sandbox, string, string, error) {
+		created++
 		return &sandbox.Sandbox{Name: "shared-env"}, "", "", nil
 	}
-	entry, err := c.acquireWithFingerprint(context.Background(), "run-env", "sha256:a", create)
+	entry, err := c.acquire(context.Background(), "run-env", create)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.release(entry.sb)
-	if _, err := c.acquireWithFingerprint(context.Background(), "run-env", "sha256:b", create); err == nil {
-		t.Fatal("expected node environment switch to fail closed")
+	c.release(entry.sb)
+	second, err := c.acquire(context.Background(), "run-env", create)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.release(second.sb)
+	if created != 1 {
+		t.Fatalf("created=%d, different node env must reuse one container", created)
+	}
+	if second.sb != entry.sb {
+		t.Fatal("expected same shared sandbox across node env switch")
 	}
 }

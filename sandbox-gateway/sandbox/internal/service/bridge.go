@@ -59,6 +59,11 @@ type Bridge struct {
 	// 最近一次 session/new 使用的 MCP 列表（JSON），重启 Agent 时复用
 	lastMCP json.RawMessage
 
+	// sessionEnv is the sanitized per-chat Agent subprocess overlay applied at
+	// Connect / RestartAgent. Cleared when the chat is deleted so the next node
+	// cannot inherit prior credentials.
+	sessionEnv map[string]string
+
 	// testConnect, when non-nil, replaces Connect inside EnsureAgent (unit tests only).
 	testConnect func(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (provider.Session, error)
 
