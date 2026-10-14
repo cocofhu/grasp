@@ -131,6 +131,8 @@ func (s *SandboxService) RetireRunSandbox(name string) {
 	s.mu.Lock()
 	delete(s.runActive, name)
 	s.mu.Unlock()
+	s.leaseMu.Lock()
+	defer s.leaseMu.Unlock()
 	var row models.Sandbox
 	if err := s.db.Where("name = ?", name).First(&row).Error; err != nil {
 		log.Warn().Err(err).Str("name", name).Msg("retire run sandbox failed")

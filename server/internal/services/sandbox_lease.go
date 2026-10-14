@@ -156,6 +156,8 @@ func (s *SandboxService) applyLease(row *models.Sandbox, l models.SandboxLease) 
 // AddLeaseByName attaches a lease to the run sandbox named name. Used by
 // set_preview while the node is still running.
 func (s *SandboxService) AddLeaseByName(name string, l models.SandboxLease) error {
+	s.leaseMu.Lock()
+	defer s.leaseMu.Unlock()
 	var row models.Sandbox
 	if err := s.db.Where("name = ?", name).First(&row).Error; err != nil {
 		return err
@@ -169,6 +171,8 @@ func (s *SandboxService) AddLeaseByName(name string, l models.SandboxLease) erro
 // ExtendLease is the operator extension from the sandbox UI: either a fixed
 // number of minutes from now or until the run ends (minutes <= 0).
 func (s *SandboxService) ExtendLease(id uint, minutes int, untilRunEnd bool, by string) (*models.Sandbox, error) {
+	s.leaseMu.Lock()
+	defer s.leaseMu.Unlock()
 	row, err := s.Get(id)
 	if err != nil {
 		return nil, err
@@ -215,6 +219,8 @@ func (s *SandboxService) TouchActivity(id uint) {
 	}
 	s.lastTouch[id] = now
 	s.mu.Unlock()
+	s.leaseMu.Lock()
+	defer s.leaseMu.Unlock()
 	var row models.Sandbox
 	if err := s.db.Where("id = ?", id).First(&row).Error; err != nil {
 		return

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -151,5 +152,42 @@ func TestExtendLeaseAndActivity(t *testing.T) {
 	}
 	if !kinds[models.LeaseDebug] || !kinds[models.LeaseManual] || !kinds[models.LeaseActivity] {
 		t.Fatalf("leases = %+v", row.Leases)
+	}
+}
+
+func TestConcurrentLeaseWritesKeepEachOther(t *testing.T) {
+	db := newTestDB(t)
+	ds := &dockerState{}
+	s := newSandboxService(t, db, ds)
+
+	name := "grasp-sb-race"
+	info := runtimeInfo(name)
+	db.Create(&models.Run{ID: info.RunID, Status: "completed", StartedAt: time.Now()})
+	s.RegisterRunSandbox(info)
+	s.RetireRunSandbox(name)
+	var row models.Sandbox
+	db.Where("name = ?", name).First(&row)
+
+	for i := 0; i < 20; i++ {
+		s.forgetTouch(row.ID)
+		var wg sync.WaitGroup
+		wg.Add(3)
+		go func() { defer wg.Done(); s.TouchActivity(row.ID) }()
+		go func() { defer wg.Done(); _, _ = s.ExtendLease(row.ID, 60, false, "admin") }()
+		go func() {
+			defer wg.Done()
+			_ = s.AddLeaseByName(name, models.SandboxLease{Kind: models.LeasePreview})
+		}()
+		wg.Wait()
+		db.Where("name = ?", name).First(&row)
+		kinds := map[string]bool{}
+		for _, l := range row.Leases {
+			kinds[l.Kind] = true
+		}
+		for _, k := range []string{models.LeaseDebug, models.LeaseActivity, models.LeaseManual, models.LeasePreview} {
+			if !kinds[k] {
+				t.Fatalf("iteration %d lost %s lease: %+v", i, k, row.Leases)
+			}
+		}
 	}
 }

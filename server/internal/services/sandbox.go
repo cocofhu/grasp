@@ -54,6 +54,9 @@ type SandboxService struct {
 	maxRetention atomic.Int64
 
 	mu sync.Mutex
+	// leaseMu serializes lease read-modify-write so concurrent renewals
+	// (activity, manual, preview, retire) can't drop each other's lease.
+	leaseMu sync.Mutex
 	// lastTouch throttles activity-lease writes per sandbox id.
 	lastTouch map[uint]time.Time
 	live      map[uint]*liveSandbox
