@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Grasp mark">
+  <title>Grasp</title>
+  <!-- Toy-box evolution of Grasp grips+core: ink outlines, pastel grips, purple diamond -->
+<!-- offset toy-box shadow -->
+  <rect x="46" y="46" width="40" height="40" rx="11" transform="rotate(45 66 66)" fill="#3b2f4a"/>
+  <!-- purple core (rotated rounded square) -->
+  <defs>
+    <linearGradient id="coreGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7B61FF"/>
+      <stop offset="100%" stop-color="#A78BFA"/>
+    </linearGradient>
+  </defs>
+  <rect x="42" y="42" width="40" height="40" rx="11" transform="rotate(45 62 62)"
+        fill="url(#coreGrad)" stroke="#3b2f4a" stroke-width="7"/>
+  <circle cx="56" cy="54" r="5.5" fill="#fff8ef" opacity=".92"/>
+  <!-- left grip (ink outline + pastel fill stroke) -->
+  <path d="M38 28 C16 40 14 68 26 92" fill="none" stroke="#3b2f4a"
+        stroke-width="9" stroke-linecap="round"/>
+  <path d="M38 28 C16 40 14 68 26 92" fill="none" stroke="#ff9db5"
+        stroke-width="5" stroke-linecap="round"/>
+  <!-- right grip -->
+  <path d="M90 100 C112 88 114 60 102 36" fill="none" stroke="#3b2f4a"
+        stroke-width="9" stroke-linecap="round"/>
+  <path d="M90 100 C112 88 114 60 102 36" fill="none" stroke="#9fe3ff"
+        stroke-width="5" stroke-linecap="round"/>
+</svg>

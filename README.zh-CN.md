@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="media/grasp-logo-banner.png" alt="Grasp" width="420" />
+<img src="media/logo-light.svg" alt="Grasp" width="420" />
 
 <h3>把 Coding Agent 编进可审批的工作流，一眼看懂它干了什么</h3>
 

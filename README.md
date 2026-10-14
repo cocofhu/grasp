@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="media/grasp-logo-banner.png" alt="Grasp" width="420" />
+<img src="media/logo-light.svg" alt="Grasp" width="420" />
 
 <h3>Put coding agents into workflows you can approve, and see what they did at a glance</h3>
 

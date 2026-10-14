@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import HomeParticleMeshBackground from '@/components/dashboard/HomeParticleMeshBackground.vue'
+import HomeLogoEasterEgg from '@/components/dashboard/HomeLogoEasterEgg.vue'
 import HomeWorkflowSelect from '@/components/dashboard/HomeWorkflowSelect.vue'
 import HomePrioritySelect from '@/components/dashboard/HomePrioritySelect.vue'
 import Icon from '@/components/ui/Icon.vue'
@@ -606,18 +607,12 @@ onBeforeUnmount(() => {
     <div
       class="home-shell__content relative z-[1] mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10"
     >
-      <h1 class="home-brand" data-testid="home-brand" :aria-label="productName">
-        <span class="home-brand__text" data-testid="home-brand-text">{{ brandVisible }}</span>
-        <span
-          class="home-brand__cursor"
-          :class="{
-            'home-brand__cursor--blink': brandCursorBlink,
-            'home-brand__cursor--gone': brandCursorGone,
-          }"
-          data-testid="home-brand-cursor"
-          aria-hidden="true"
-        />
-      </h1>
+      <HomeLogoEasterEgg
+        :product-name="productName"
+        :brand-visible="brandVisible"
+        :brand-cursor-blink="brandCursorBlink"
+        :brand-cursor-gone="brandCursorGone"
+      >
       <p class="home-hint mt-[18px] text-center" data-testid="home-title">
         {{ effectiveSubtitle }}
       </p>
@@ -935,6 +930,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
+      </HomeLogoEasterEgg>
     </div>
 
     <Teleport to="body">

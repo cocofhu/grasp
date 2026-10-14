@@ -1,10 +1,20 @@
-<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="32" height="32" role="img" aria-label="Grasp">
+  <title>Grasp</title>
+
   <defs>
-    <linearGradient id="fg" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="coreGrad" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#7B61FF"/>
-      <stop offset="50%" stop-color="#818CF8"/>
-      <stop offset="100%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#A78BFA"/>
     </linearGradient>
   </defs>
-  <text x="16" y="22" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="700" fill="url(#fg)">G</text>
+  <rect x="40" y="40" width="44" height="44" rx="12" transform="rotate(45 62 62)"
+        fill="url(#coreGrad)" stroke="#3b2f4a" stroke-width="8"/>
+  <path d="M36 26 C12 40 10 70 24 96" fill="none" stroke="#3b2f4a"
+        stroke-width="14" stroke-linecap="round"/>
+  <path d="M36 26 C12 40 10 70 24 96" fill="none" stroke="#ff9db5"
+        stroke-width="7" stroke-linecap="round"/>
+  <path d="M92 102 C116 88 118 58 104 32" fill="none" stroke="#3b2f4a"
+        stroke-width="14" stroke-linecap="round"/>
+  <path d="M92 102 C116 88 118 58 104 32" fill="none" stroke="#9fe3ff"
+        stroke-width="7" stroke-linecap="round"/>
 </svg>

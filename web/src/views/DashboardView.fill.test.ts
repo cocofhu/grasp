@@ -10,6 +10,10 @@ const particleBgSrc = readFileSync(
   join(dir, '../components/dashboard/HomeParticleMeshBackground.vue'),
   'utf8',
 )
+const logoEggSrc = readFileSync(
+  join(dir, '../components/dashboard/HomeLogoEasterEgg.vue'),
+  'utf8',
+)
 const workflowSelectSrc = readFileSync(
   join(dir, '../components/dashboard/HomeWorkflowSelect.vue'),
   'utf8',
@@ -54,11 +58,15 @@ describe('DashboardView home chat layout', () => {
     expect(particleBgSrc).toMatch(/pointer-events:\s*none/)
   })
 
-  // plan g1.2 / g1.3 — monospace Grasp, no gradient shimmer / staggered / serif accent
-  it('uses local monospace brand without banned brand effects', () => {
-    expect(src).toMatch(/data-testid="home-brand"/)
-    expect(src).toMatch(/ui-monospace/)
-    expect(src).toMatch(/home-brand__cursor/)
+  // plan g1.2 / g1.3 + logo easter egg — mark + monospace wordmark, no banned effects
+  it('uses HomeLogoEasterEgg mark with monospace wordmark without banned brand effects', () => {
+    expect(src).toMatch(/HomeLogoEasterEgg/)
+    expect(logoEggSrc).toMatch(/data-testid="home-brand"/)
+    expect(logoEggSrc).toMatch(/data-testid="home-logo-mark"/)
+    expect(logoEggSrc).toMatch(/data-testid="home-logo-easter-egg"/)
+    expect(logoEggSrc).toMatch(/ui-monospace/)
+    expect(logoEggSrc).toMatch(/home-brand__cursor/)
+    expect(logoEggSrc).toMatch(/prefers-reduced-motion/)
     expect(src).not.toMatch(/var\(--grad-logo\)/)
     expect(src).not.toMatch(/background-clip:\s*text/)
     expect(src).not.toMatch(/shimmer/)
@@ -107,7 +115,8 @@ describe('DashboardView home chat layout', () => {
   it('omits filter hint and keeps caret settle + placeholder typewriter', () => {
     expect(src).not.toMatch(/data-testid="home-filter-hint"/)
     expect(src).not.toMatch(/filterHint/)
-    expect(src).toMatch(/home-brand__cursor--gone/)
+    expect(logoEggSrc).toMatch(/home-brand__cursor--gone/)
+    expect(src).toMatch(/brandCursorGone/)
     expect(src).toMatch(/data-testid="home-composer-placeholder"/)
     expect(src).toMatch(/ctrlKey\s*\|\|\s*e\.metaKey|e\.metaKey\s*\|\|\s*e\.ctrlKey/)
     expect(src).toMatch(/sendShortcut/)
