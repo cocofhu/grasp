@@ -114,6 +114,10 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 		return NodeResult{Events: events, Usage: usage, UsageByModel: usageByModel}, fmt.Errorf("agent chat: %w", err)
 	}
 	absorbChat(&usage, &usageByModel, &turnEvents, chatRes)
+	if lerr := c.codexTurnLoginErr(chatRes); lerr != nil {
+		events := c.snapshotEvents(ctx, sb, turnEvents)
+		return NodeResult{OutputMd: chatRes.Narration, Events: events, Usage: usage, UsageByModel: usageByModel}, lerr
+	}
 	out := map[string]any{"content": chatRes.Narration, "narration_summary": firstLine(chatRes.Narration)}
 
 	if req.Caps.TracksPlanProgress() {

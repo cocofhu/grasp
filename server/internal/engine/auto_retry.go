@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/rs/zerolog/log"
 )
 
@@ -16,9 +17,16 @@ import (
 // MCP traffic but skipped the reserved product), structured-gate rejects, and
 // other deterministic faults leave the zero value false and are not
 // auto-retried. Note: "计划未全部完成" returned as a RunAgent error still goes
-// through execAgent and is therefore retryable.
+// through execAgent and is therefore retryable. A refused Codex login is never
+// retried: every attempt fails the same way until the user re-pastes the file.
 func isAutoRetryable(oc nodeOutcome) bool {
-	return oc.retryable
+	return oc.retryable && !codexLoginRejected(oc.err)
+}
+
+// codexLoginRejected reports a node failure caused by a refused or
+// unrefreshable Codex login (runtime sentinel or the gateway's re-paste text).
+func codexLoginRejected(msg string) bool {
+	return strings.Contains(msg, runtime.CodexLoginRepasteMessage)
 }
 
 // shortReason renders a failure message as a single trimmed line, capped in

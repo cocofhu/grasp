@@ -256,6 +256,14 @@ const runFailureReason = computed(() => {
   return (run.value.error || '').trim()
 })
 const showRunFailureBanner = computed(() => !!runFailureReason.value)
+// Server and sandbox gateway both rewrite a refused Codex login to a message containing this phrase.
+const CODEX_LOGIN_REPASTE_MARK = '请重新粘贴登录文件'
+/** Project credentials route when the run failed on a refused Codex login. */
+const runFailureCredentialsRoute = computed(() => {
+  const pid = wf.value.projectId
+  if (!pid || !runFailureReason.value.includes(CODEX_LOGIN_REPASTE_MARK)) return null
+  return { name: 'project-detail', params: { id: pid }, query: { tab: 'credentials' } }
+})
 const { draft: clarifyDraft, attachments: clarifyAttachments, annotations: clarifyAnnotations } = useClarifyDraft(() => runId.value, () => selected.value)
 
 /** VNC pick on the app-preview review stage → same ReAct annotation chips as structured ⤴. */
@@ -1378,6 +1386,7 @@ function locateExecution(nodeId: string, idx: number) {
   selection,
   runFailureReason,
   showRunFailureBanner,
+  runFailureCredentialsRoute,
   lastStagedAppPreviewPick,
   onAppPreviewStagedPick,
   onAppPreviewReviewPick,

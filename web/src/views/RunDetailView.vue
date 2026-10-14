@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import StatusPill from '@/components/ui/StatusPill.vue'
@@ -74,6 +75,7 @@ const {
   selection,
   runFailureReason,
   showRunFailureBanner,
+  runFailureCredentialsRoute,
   lastStagedAppPreviewPick,
   onAppPreviewStagedPick,
   onAppPreviewReviewPick,
@@ -397,6 +399,12 @@ onMounted(() => {
             {{ t('pages.runDetail.failureBanner.title') }}
           </strong>
           <p class="m-0 whitespace-pre-wrap break-words text-txt">{{ runFailureReason }}</p>
+          <RouterLink
+            v-if="runFailureCredentialsRoute"
+            :to="runFailureCredentialsRoute"
+            data-testid="run-failure-credentials-link"
+            class="mt-1 inline-block text-accent-2 underline underline-offset-[3px]"
+          >{{ t('pages.runDetail.failureBanner.codexLoginAction') }}</RouterLink>
         </div>
       </template>
     </header>

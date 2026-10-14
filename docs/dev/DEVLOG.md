@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-14（Codex 登录失效快速失败，不再误报 MCP 工具面为空）
+
+- 日期：2026-10-14
+- 范围：`server/internal/runtime/{codex_auth.go,acp_run_agent.go,acp_ensure.go,acp_sandbox.go,acp_provider.go}`、`server/internal/engine/{auto_retry.go,node_agent.go}`、`web/src/lib/run/useRunDetail.ts`、`web/src/views/RunDetailView.vue`、`web/src/locales/*/pages.json`、对应测试
+- 做了什么：Codex 回合以登录拒绝结束（`chatFailure` 文本命中 `IsCodexAuthRejectionText`）时，首轮与 `ensurePlanComplete` / `ensureStructured` / `ensureRootCauseConsistency` / `ensureOutcome` 催促轮都立即返回 `ErrCodexLoginRejected`；`settleCodexLogin` 用 `%w` 包装哨兵；沙箱级重试与引擎 auto-retry 都跳过该错误；节点错误统一为重新粘贴提示；Run 失败横幅附项目凭据链接。
+- 为什么：run-64490c06 中 auth.json 失效后每个回合都 401，但失败回合 `err == nil`，平台继续催促 6 次、判成 `errMCPSurfaceEmpty`（retryable）并自动重试 3 次，用户看到的是错误原因"MCP 工具面为空"。
+- 如何验证：新增 fake bridge 用例（Codex 401 只跑 1 回合、1 个沙箱；非 Codex 后端行为不变）、`asCodexLoginErr`/`settleCodexLogin` 单测、引擎不重试用例与前端横幅用例；回退修复后 fail-fast 用例失败。`go test ./...`、golangci-lint、`go vet`、configdoc、core 覆盖率 90.1%、web eslint / vue-tsc / vitest 通过。
+
 ### 2026-10-09（恢复 #629 的持续回归测试）
 
 - 日期：2026-10-09

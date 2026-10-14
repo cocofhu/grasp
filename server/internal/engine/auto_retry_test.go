@@ -5,7 +5,30 @@ import (
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/runtime"
 )
+
+// TestAutoRetrySkipsCodexLoginRejection: a refused Codex login fails the run
+// on the first attempt instead of burning the auto-retry budget.
+func TestAutoRetrySkipsCodexLoginRejection(t *testing.T) {
+	autoRetryBackoff = 0
+	eng, db, p := setupEngineGraphP(t, autoRetryGraph())
+	eng.SetAutoRetryMax(3)
+	p.failLeft = map[string]int{"risky": 99}
+	p.reason = runtime.CodexLoginRepasteMessage + ": agent chat: 401 Unauthorized"
+
+	run, _ := eng.StartRun("wf", nil, "test")
+	waitRunStatus(t, db, run.ID, "failed")
+
+	var rows []models.StateRun
+	db.Where("run_id = ? AND node_id = ?", run.ID, "risky").Find(&rows)
+	if len(rows) != 1 {
+		t.Fatalf("risky execution rows = %d, want 1 (no auto-retry)", len(rows))
+	}
+	if !strings.Contains(rows[0].Error, runtime.CodexLoginRepasteMessage) {
+		t.Fatalf("node error = %q, want the re-paste message", rows[0].Error)
+	}
+}
 
 // autoRetryGraph is a minimal input → risky(agent) → output graph used by the
 // auto-retry tests. The risky node is where the fake provider injects failures.
@@ -216,7 +239,8 @@ func TestStaleNodeCompleteNotReusedAfterRunAgentError(t *testing.T) {
 }
 
 // TestIsAutoRetryableOnlyReadsFlag: table-driven check that the decider ignores
-// err/outputMd content and returns only oc.retryable.
+// err/outputMd content and returns only oc.retryable, except for a refused
+// Codex login, which is never retried.
 func TestIsAutoRetryableOnlyReadsFlag(t *testing.T) {
 	cases := []struct {
 		name string
@@ -231,6 +255,9 @@ func TestIsAutoRetryableOnlyReadsFlag(t *testing.T) {
 			retryable: false, outputMd: "调研 执行失败:boom",
 		}, want: false},
 		{name: "zero value", oc: nodeOutcome{}, want: false},
+		{name: "codex login refused", oc: nodeOutcome{
+			retryable: true, err: "agent chat: " + runtime.CodexLoginRepasteMessage,
+		}, want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

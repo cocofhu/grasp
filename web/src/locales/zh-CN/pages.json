@@ -1578,7 +1578,8 @@
       "historicalReadonly": "历史执行(只读)",
       "nodeFailed": "该节点执行失败",
       "failureBanner": {
-        "title": "失败原因"
+        "title": "失败原因",
+        "codexLoginAction": "去项目凭据更新 Codex 登录文件"
       },
       "gateError": "提交失败,请重试",
       "resumeError": "续跑失败,请重试",

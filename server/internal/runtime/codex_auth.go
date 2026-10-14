@@ -3,6 +3,7 @@ package runtime
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
 const (
@@ -31,7 +33,46 @@ var (
 	// ErrCodexLoginFileMissing is returned before the CLI starts when the project
 	// has no Codex login file.
 	ErrCodexLoginFileMissing = errors.New("缺少 Codex 登录文件：请在项目凭据中粘贴 ChatGPT 登录文件（本机 ~/.codex/auth.json）")
+	// ErrCodexLoginRejected marks a node attempt whose Codex login was refused
+	// or could not be refreshed. Retrying cannot help until the user re-pastes
+	// the login file, so callers must not auto-retry it.
+	ErrCodexLoginRejected = errors.New(CodexLoginRepasteMessage)
 )
+
+// codexLoginErr keeps the original error text while matching
+// ErrCodexLoginRejected, for errors that already carry the re-paste message.
+type codexLoginErr struct{ err error }
+
+func (e *codexLoginErr) Error() string   { return e.err.Error() }
+func (e *codexLoginErr) Unwrap() []error { return []error{ErrCodexLoginRejected, e.err} }
+
+// asCodexLoginErr makes err match ErrCodexLoginRejected; nil becomes the bare
+// sentinel.
+func asCodexLoginErr(err error) error {
+	switch {
+	case err == nil:
+		return ErrCodexLoginRejected
+	case errors.Is(err, ErrCodexLoginRejected):
+		return err
+	case strings.Contains(err.Error(), CodexLoginRepasteMessage):
+		return &codexLoginErr{err: err}
+	default:
+		return fmt.Errorf("%w: %w", ErrCodexLoginRejected, err)
+	}
+}
+
+// codexTurnLoginErr returns ErrCodexLoginRejected when a finished Codex turn
+// failed because the CLI login was refused. Other turns return nil.
+func (c *acpProvider) codexTurnLoginErr(res *sandbox.ChatResult) error {
+	if c.backend != BackendCodex {
+		return nil
+	}
+	fail := chatFailure(res)
+	if fail == "" || !IsCodexAuthRejectionText(fail) {
+		return nil
+	}
+	return ErrCodexLoginRejected
+}
 
 // ValidateCodexLoginFile accepts a ChatGPT login file and rejects blank
 // content, a raw API key, and a file marked as API-key mode. Other non-empty

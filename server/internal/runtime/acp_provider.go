@@ -41,7 +41,7 @@ var errSandboxConfig = errors.New("sandbox setup failed")
 // (DeadlineExceeded), and contract misses are NOT retryable — re-running them
 // would just waste a sandbox and likely fail identically.
 func isRetryableSandboxErr(err error) bool {
-	if err == nil {
+	if err == nil || errors.Is(err, ErrCodexLoginRejected) {
 		return false
 	}
 	return errors.Is(err, errSandboxSetup) ||

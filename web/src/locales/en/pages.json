@@ -1578,7 +1578,8 @@
       "historicalReadonly": "Historical (read-only)",
       "nodeFailed": "This node failed",
       "failureBanner": {
-        "title": "Failure reason"
+        "title": "Failure reason",
+        "codexLoginAction": "Update the Codex login file in project credentials"
       },
       "gateError": "Submit failed; try again",
       "resumeError": "Resume failed; try again",

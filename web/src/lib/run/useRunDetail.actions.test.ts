@@ -869,6 +869,23 @@ describe('useRunDetail actions', () => {
     const { detail, app } = await withRunDetail()
     expect(detail.showRunFailureBanner.value).toBe(true)
     expect(detail.runFailureReason.value).toBe('sandbox boot failed')
+    expect(detail.runFailureCredentialsRoute.value).toBeNull()
+    app.unmount()
+  })
+
+  it('links the failure banner to project credentials on a refused Codex login', async () => {
+    mocks.getRun.mockResolvedValue(
+      sampleRun({
+        status: 'failed',
+        error: 'Codex 登录已失效或无法刷新，请重新粘贴登录文件（~/.codex/auth.json）',
+      } as Partial<Run>),
+    )
+    const { detail, app } = await withRunDetail()
+    expect(detail.runFailureCredentialsRoute.value).toEqual({
+      name: 'project-detail',
+      params: { id: 'proj-1' },
+      query: { tab: 'credentials' },
+    })
     app.unmount()
   })
 

@@ -4,6 +4,12 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Codex login failures:** when Codex rejects or cannot refresh the ChatGPT
+  login (CLI `401 Unauthorized` from `api.openai.com`), the Agent node now fails
+  on the first failed turn with "Codex 登录已失效或无法刷新，请重新粘贴登录文件"
+  instead of re-prompting, reporting "MCP 工具面为空", and auto-retrying. The
+  run failure banner links to the project credentials tab.
+
 ## 2.1.0 — 2026-10-12
 
 - **MCP tool-list refresh on confirmation:** run-scoped HTTP MCP sessions now

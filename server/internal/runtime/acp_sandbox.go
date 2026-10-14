@@ -464,8 +464,8 @@ func (c *acpProvider) settleCodexLogin(req NodeReq, sb *sandbox.Sandbox, runErr 
 	}
 	state, ok := c.takeCodexLogin(codexLoginKey(req))
 	rejected := CodexAuthRejected(runErr, events)
-	if rejected && runErr != nil && !strings.Contains(runErr.Error(), CodexLoginRepasteMessage) {
-		runErr = fmt.Errorf("%s: %w", CodexLoginRepasteMessage, runErr)
+	if rejected && runErr != nil {
+		runErr = asCodexLoginErr(runErr)
 	}
 	if !ok || sb == nil {
 		return runErr
