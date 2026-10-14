@@ -153,7 +153,7 @@ func (s *PreviewService) SandboxForRunNode(runID, nodeID string) (string, bool) 
 		Order("updated_at desc").First(&row).Error; err != nil {
 		// Shared run sandboxes are attributed to the currently active node. A
 		// completed node may therefore resolve the run-level binding instead.
-		if err := s.db.Where("run_id = ? AND purpose = ?", runID, "run").
+		if err := s.db.Where("run_id = ? AND purpose = ? AND scope = ?", runID, "run", runtimeScopeRun).
 			Order("updated_at desc").First(&row).Error; err != nil {
 			return "", false
 		}

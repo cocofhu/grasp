@@ -1,10 +1,68 @@
 package runtime
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/envauth"
+	"github.com/cocofhu/grasp/internal/sandbox"
 )
+
+// sharedSandboxFingerprint digests everything that is fixed when a container
+// is created: backend, image, layout, container env, ConfigHome inputs and the
+// selected credential ids. Secret values are reduced to presence so the digest
+// stays stable across token refresh and never encodes a secret. Keys applied
+// per bridge chat (model, node id) are excluded.
+func sharedSandboxFingerprint(backend AcpBackend, spec sandbox.Spec, home sandbox.ConfigHomeSpec, credentialIDs map[string]string) string {
+	env := make(map[string]string, len(spec.Env))
+	for k, v := range spec.Env {
+		switch {
+		case k == EnvACPBridgeModel || k == "GRASP_NODE_ID":
+			continue
+		case envauth.IsSecretEnvKey(k):
+			v = "<set>"
+		}
+		env[k] = v
+	}
+	payload := struct {
+		Backend      AcpBackend
+		Image        string
+		ConfigRoot   string
+		WorkspaceDir string
+		Env          map[string]string
+		Home         sandbox.ConfigHomeSpec
+		Credentials  map[string]string
+		SSHKey       bool
+		SSHHosts     bool
+	}{
+		Backend: backend, Image: spec.Image, ConfigRoot: spec.ConfigRoot, WorkspaceDir: spec.WorkspaceDir,
+		Env: env, Home: home, Credentials: credentialIDs,
+		SSHKey: strings.TrimSpace(spec.SSHPrivateKey) != "", SSHHosts: strings.TrimSpace(spec.SSHKnownHosts) != "",
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(b)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// sharedCredentialIDs lists the credential selections that land in the shared
+// container (git / SSH, and the Codex login file in ConfigHome). AI keys of
+// other backends ride the per-node overlay and do not split containers.
+func sharedCredentialIDs(backend AcpBackend, cfg agentFile) map[string]string {
+	ids := map[string]string{
+		"git":     strings.TrimSpace(cfg.GitCredentialID),
+		"gitType": strings.TrimSpace(cfg.GitCredentialType),
+		"ssh":     strings.TrimSpace(cfg.SshHostsCredentialID),
+	}
+	if backend == BackendCodex {
+		ids["ai"] = strings.TrimSpace(cfg.AiCredentialID)
+	}
+	return ids
+}
 
 // isNodeSessionEnvKey reports keys that must ride the ACP connect overlay for
 // a shared run sandbox instead of the durable container environment. AI/CLI

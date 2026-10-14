@@ -32,9 +32,21 @@ func (c *acpProvider) agentLayout(profile string, cfg agentFile) agentLayout {
 
 // buildConfigHome materializes the per-node config home (rules/skills + mcp.json).
 func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) string {
+	home, err := sandbox.BuildConfigHome(c.configHomeSpec(req, env))
+	if err != nil {
+		log.Warn().Err(err).Str("node", req.NodeID).Msg("build cursor home failed; running without /root/.cursor mount")
+		return ""
+	}
+	return home
+}
+
+// configHomeSpec is the full input of buildConfigHome; the shared-sandbox
+// fingerprint hashes it so nodes needing a different config home never reuse
+// a container mounted with another node's.
+func (c *acpProvider) configHomeSpec(req NodeReq, env map[string]string) sandbox.ConfigHomeSpec {
 	profile := models.AgentProfile(req.Config)
 	specs := c.resolvedMCPSpecs(req)
-	home, err := sandbox.BuildConfigHome(sandbox.ConfigHomeSpec{
+	return sandbox.ConfigHomeSpec{
 		BaseWorkDirSrc:       c.sharedWorkDir(req),
 		WorkDirSrc:           c.workDir(profile),
 		EmbeddedSkills:       liveVariantSkills(req),
@@ -47,12 +59,7 @@ func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) string
 		OpenCodeConfig: OpenCodeConfigForEnvWithCatalog(
 			context.Background(), c.backend, env, c.opts.OpenCodeCatalog,
 		),
-	})
-	if err != nil {
-		log.Warn().Err(err).Str("node", req.NodeID).Msg("build cursor home failed; running without /root/.cursor mount")
-		return ""
 	}
-	return home
 }
 
 // EnvEnabled recognizes the boolean spellings accepted by sandbox startup.

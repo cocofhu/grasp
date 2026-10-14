@@ -25,11 +25,12 @@ func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) {
 	if info.Name == "" {
 		return
 	}
+	scope := runSandboxScope(info.Scope)
 	fields := map[string]any{
 		"name":            info.Name,
 		"profile":         info.Profile,
 		"purpose":         "run",
-		"scope":           "run",
+		"scope":           scope,
 		"generation":      maxInt(info.Generation, 1),
 		"env_fingerprint": info.EnvFingerprint,
 		"status":          "creating",
@@ -47,11 +48,13 @@ func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) {
 		fields["token"] = info.Token
 	}
 	var row models.Sandbox
-	if err := s.db.Where(models.Sandbox{RunID: info.RunID, NodeID: info.NodeID, Purpose: "run"}).
+	if err := s.db.Where(models.Sandbox{RunID: info.RunID, NodeID: info.NodeID, Purpose: "run", Scope: scope}).
 		Assign(fields).FirstOrCreate(&row).Error; err != nil {
 		log.Warn().Err(err).Str("name", info.Name).Msg("begin run sandbox failed")
 	}
-	s.upsertRunBinding(info.RunID, row.ID, maxInt(info.Generation, 1), "creating", info.ReplacementReason)
+	if scope == runtimeScopeRun {
+		s.upsertRunBinding(info.RunID, row.ID, maxInt(info.Generation, 1), "creating", info.ReplacementReason)
+	}
 	s.mu.Lock()
 	s.runActive[info.Name] = true
 	s.mu.Unlock()
@@ -68,11 +71,12 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 	if info.Name == "" {
 		return
 	}
+	scope := runSandboxScope(info.Scope)
 	fields := map[string]any{
 		"name":               info.Name,
 		"profile":            info.Profile,
 		"purpose":            "run",
-		"scope":              "run",
+		"scope":              scope,
 		"generation":         maxInt(info.Generation, 1),
 		"env_fingerprint":    info.EnvFingerprint,
 		"replacement_reason": info.ReplacementReason,
@@ -97,8 +101,8 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 	// swapping its placeholder name for the gateway id. Falls back to an upsert
 	// by name when no placeholder exists (registry without RunSandboxBeginner).
 	var existing models.Sandbox
-	err := s.db.Where("run_id = ? AND node_id = ? AND purpose = ? AND status IN ?",
-		info.RunID, info.NodeID, "run", []string{"creating", "pulling"}).
+	err := s.db.Where("run_id = ? AND node_id = ? AND purpose = ? AND scope = ? AND status IN ?",
+		info.RunID, info.NodeID, "run", scope, []string{"creating", "pulling"}).
 		Order("updated_at desc").First(&existing).Error
 	if err == nil {
 		oldName := existing.Name
@@ -112,7 +116,9 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 		}
 		s.runActive[info.Name] = true
 		s.mu.Unlock()
-		s.upsertRunBinding(info.RunID, existing.ID, maxInt(info.Generation, 1), "running", info.ReplacementReason)
+		if scope == runtimeScopeRun {
+			s.upsertRunBinding(info.RunID, existing.ID, maxInt(info.Generation, 1), "running", info.ReplacementReason)
+		}
 		return
 	}
 	var row models.Sandbox
@@ -123,7 +129,20 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 	s.mu.Lock()
 	s.runActive[info.Name] = true
 	s.mu.Unlock()
-	s.upsertRunBinding(info.RunID, row.ID, maxInt(info.Generation, 1), "running", info.ReplacementReason)
+	if scope == runtimeScopeRun {
+		s.upsertRunBinding(info.RunID, row.ID, maxInt(info.Generation, 1), "running", info.ReplacementReason)
+	}
+}
+
+// runtimeScopeRun is the Sandbox.Scope of a run-level shared container; every
+// other run sandbox is node-private and never joins the run binding.
+const runtimeScopeRun = "run"
+
+func runSandboxScope(scope string) string {
+	if scope == runtimeScopeRun {
+		return runtimeScopeRun
+	}
+	return "node"
 }
 
 func maxInt(v, fallback int) int {
@@ -135,10 +154,10 @@ func maxInt(v, fallback int) int {
 
 // FindRunSandbox returns the current durable run-level sandbox binding for
 // restart recovery. The latest row is authoritative when a replacement was
-// recorded during the same run.
+// recorded during the same run. Node-private rows are never returned.
 func (s *SandboxService) FindRunSandbox(runID string) (runtime.RunSandboxInfo, bool) {
 	var row models.Sandbox
-	if strings.TrimSpace(runID) == "" || s.db.Where("run_id = ? AND purpose = ?", runID, "run").
+	if strings.TrimSpace(runID) == "" || s.db.Where("run_id = ? AND purpose = ? AND scope = ?", runID, "run", runtimeScopeRun).
 		Order("updated_at desc").First(&row).Error != nil || row.Name == "" {
 		return runtime.RunSandboxInfo{}, false
 	}
@@ -272,7 +291,7 @@ func (s *SandboxService) RetireRunSandbox(name string) {
 		log.Warn().Err(err).Str("name", name).Msg("retire run sandbox failed")
 		return
 	}
-	if row.RunID != "" {
+	if row.RunID != "" && row.Scope == runtimeScopeRun {
 		s.upsertRunBinding(row.RunID, row.ID, maxInt(row.Generation, 1), "retired", row.ReplacementReason)
 	}
 	log.Info().Str("name", name).Dur("ttl", s.RunTTL()).Int("leases", len(row.Leases)).
@@ -337,7 +356,7 @@ func (s *SandboxService) UnregisterRunSandbox(name string) {
 	if err := s.db.Where("name = ?", name).Delete(&models.Sandbox{}).Error; err != nil {
 		log.Warn().Err(err).Str("name", name).Msg("unregister run sandbox failed")
 	}
-	if row.RunID != "" {
+	if row.RunID != "" && row.Scope == runtimeScopeRun {
 		var binding models.RunSandboxBinding
 		if s.db.Where("run_id = ?", row.RunID).First(&binding).Error != nil || binding.Status != "replacing" {
 			s.upsertRunBinding(row.RunID, row.ID, maxInt(row.Generation, 1), "retired", row.ReplacementReason)
@@ -396,7 +415,7 @@ func (s *SandboxService) SandboxViewForRunNode(ctx context.Context, runID, nodeI
 	var row models.Sandbox
 	if err := s.db.Where("run_id = ? AND node_id = ? AND purpose = ?", runID, nodeID, "run").
 		Order("updated_at desc").First(&row).Error; err != nil {
-		if err := s.db.Where("run_id = ? AND purpose = ?", runID, "run").
+		if err := s.db.Where("run_id = ? AND purpose = ? AND scope = ?", runID, "run", runtimeScopeRun).
 			Order("updated_at desc").First(&row).Error; err != nil {
 			return nil, fmt.Errorf("not found")
 		}
@@ -423,7 +442,7 @@ func (s *SandboxService) NodeSandboxLog(ctx context.Context, runID, nodeID strin
 		q = q.Where("node_id = ?", nodeID)
 	}
 	if e := q.Order("updated_at desc").First(&row).Error; e != nil && nodeID != "" {
-		q = s.db.Where("run_id = ? AND purpose = ?", runID, "run")
+		q = s.db.Where("run_id = ? AND purpose = ? AND scope = ?", runID, "run", runtimeScopeRun)
 		_ = q.Order("updated_at desc").First(&row).Error
 	}
 	if row.Name != "" {

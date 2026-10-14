@@ -155,6 +155,9 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 		delete(c.inflightACP, key)
 		c.mu.Unlock()
 		parked = true
+		// The engine moves on while the session waits for review; holding the
+		// shared lease would block every later Agent node of the run.
+		c.nodeLeaseFor(acp).release(c.coordinator)
 		log.Info().Str("run", req.RunID).Str("node", req.NodeID).
 			Msg("parked live session for post-run ReAct review")
 	}
@@ -548,11 +551,24 @@ func (c *acpProvider) AbortRun(runID string) {
 		}
 	}
 	c.mu.Unlock()
+	var sharedSB *sandbox.Sandbox
+	if shared != nil {
+		sharedSB = shared.sb
+	}
 	for _, k := range sessionKeys {
-		c.closeSession(k)
+		c.closeSessionKeeping(k, sharedSB)
 	}
 	for i, acp := range agentACPs {
 		sb := agentSBs[i]
+		nl := c.takeNodeLease(acp)
+		if nl != nil || (sharedSB != nil && sb == sharedSB) {
+			// The run's shared container gets the one terminal teardown below.
+			if acp != nil {
+				acp.CloseOwnedChat(context.Background())
+				acp.Close()
+			}
+			continue
+		}
 		if agentKeepPreview[i] && sb != nil {
 
 			home := ""
@@ -563,32 +579,64 @@ func (c *acpProvider) AbortRun(runID string) {
 			acp.CloseOwnedChat(context.Background())
 			acp.Close()
 		}
-		if c.coordinator != nil {
-			// The run coordinator owns the one terminal teardown below.
-			continue
-		}
 		if sb != nil {
 
 			c.deregisterRunSandbox(sb.Name)
 			sb.Destroy(context.Background())
 		}
 	}
-	if shared != nil && shared.sb != nil {
-		if keepSharedPreview {
-			// Preview keepalive must survive AbortRun: Retire the shared
-			// container (idle-TTL) and leave ConfigHome mounted.
-			if r, ok := c.registry.(RunSandboxRetirer); ok {
-				r.RetireRunSandbox(shared.sb.Name)
-			}
-			return
-		}
-		c.deregisterRunSandbox(shared.sb.Name)
-		shared.sb.Destroy(context.Background())
-		removeHome(shared.home)
+	if sharedSB != nil {
+		c.teardownSharedSandbox(sharedSB.Name, sharedSB, shared.home, keepSharedPreview)
+		return
+	}
+	if shared == nil && c.coordinator != nil && !c.coordinator.managed(runID) {
+		c.teardownDetachedRunSandbox(runID, keepSharedPreview)
 	}
 }
 
+// teardownSharedSandbox is the terminal cleanup of a run's shared container.
+// Preview keepalive must survive AbortRun: the container is Retired (idle-TTL)
+// with its ConfigHome left in place instead of Destroyed.
+func (c *acpProvider) teardownSharedSandbox(name string, sb *sandbox.Sandbox, home string, keepPreview bool) {
+	if keepPreview {
+		if r, ok := c.registry.(RunSandboxRetirer); ok {
+			r.RetireRunSandbox(name)
+		}
+		return
+	}
+	c.deregisterRunSandbox(name)
+	if sb != nil {
+		sb.Destroy(context.Background())
+	}
+	removeHome(home)
+}
+
+// teardownDetachedRunSandbox cleans up a shared container whose binding was
+// left by a previous server process (restart before the run ended), which
+// the in-memory coordinator never saw.
+func (c *acpProvider) teardownDetachedRunSandbox(runID string, keepPreview bool) {
+	lookup, ok := c.registry.(RunSandboxLookup)
+	if !ok {
+		return
+	}
+	info, found := lookup.FindRunSandbox(runID)
+	if !found || info.Name == "" {
+		return
+	}
+	var sb *sandbox.Sandbox
+	if attacher, ok := c.mgr.(sandboxAttacher); ok {
+		sb, _ = attacher.Attach(context.Background(), info.Name)
+	}
+	c.teardownSharedSandbox(info.Name, sb, info.HomeDir, keepPreview)
+}
+
 func (c *acpProvider) closeSession(key string) {
+	c.closeSessionKeeping(key, nil)
+}
+
+// closeSessionKeeping closes a parked session; when its sandbox is keep (the
+// run's shared container under terminal teardown) only the ACP side is closed.
+func (c *acpProvider) closeSessionKeeping(key string, keep *sandbox.Sandbox) {
 	c.mu.Lock()
 	sess := c.sessions[key]
 	delete(c.sessions, key)
@@ -602,10 +650,18 @@ func (c *acpProvider) closeSession(key string) {
 		c.timeline.stop(runID, nodeID)
 	}
 	c.retireVisitorLanes(key + "|")
-	if sess != nil {
-
-		c.retireRunSandbox(sess.sb, sess.acp, sess.home)
+	if sess == nil {
+		return
 	}
+	if keep != nil && sess.sb == keep {
+		c.takeNodeLease(sess.acp)
+		if sess.acp != nil {
+			sess.acp.CloseOwnedChat(context.Background())
+			sess.acp.Close()
+		}
+		return
+	}
+	c.retireRunSandbox(sess.sb, sess.acp, sess.home)
 }
 
 // defaultNudgeRetries caps each kind of re-prompt (missing product,

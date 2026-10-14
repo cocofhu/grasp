@@ -8,15 +8,15 @@ import (
 
 func TestPartitionSharedSandboxEnvMovesNodeSecretsToOverlay(t *testing.T) {
 	full := map[string]string{
-		"AGENT_PROVIDER":     "cursor",
-		"CONFIG_ROOT":        "/root/.cursor",
+		"AGENT_PROVIDER":      "cursor",
+		"CONFIG_ROOT":         "/root/.cursor",
 		"ACP_BRIDGE_PASSWORD": "pw",
-		"GRASP_RUN_ID":       "run-1",
-		"GRASP_NODE_ID":      "node-a",
-		"CURSOR_API_KEY":     "secret-a",
-		"GITHUB_TOKEN":       "gh-tok",
-		"FEATURE_FLAG":       "from-agent",
-		"RUN_ONLY":           "run-snap",
+		"GRASP_RUN_ID":        "run-1",
+		"GRASP_NODE_ID":       "node-a",
+		"CURSOR_API_KEY":      "secret-a",
+		"GITHUB_TOKEN":        "gh-tok",
+		"FEATURE_FLAG":        "from-agent",
+		"RUN_ONLY":            "run-snap",
 	}
 	agentKeys := map[string]struct{}{"FEATURE_FLAG": {}}
 	container, overlay := partitionSharedSandboxEnv(full, agentKeys)
@@ -49,11 +49,11 @@ func TestPartitionSharedSandboxEnvMovesNodeSecretsToOverlay(t *testing.T) {
 
 func TestSanitizeNodeEnvOverlayDropsReserved(t *testing.T) {
 	got := sanitizeNodeEnvOverlay(map[string]string{
-		"CURSOR_API_KEY":      "k",
-		"ACP_BRIDGE_PASSWORD": "pw",
-		"AGENT_PROVIDER":      "evil",
-		"CONFIG_ROOT":         "/evil",
-		"GRASP_NODE_ID":       "n1",
+		"CURSOR_API_KEY":       "k",
+		"ACP_BRIDGE_PASSWORD":  "pw",
+		"AGENT_PROVIDER":       "evil",
+		"CONFIG_ROOT":          "/evil",
+		"GRASP_NODE_ID":        "n1",
 		envauth.EnvGitHubToken: "t",
 	})
 	if got["CURSOR_API_KEY"] != "k" || got["GRASP_NODE_ID"] != "n1" {

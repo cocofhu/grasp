@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sync"
 	"testing"
@@ -11,25 +12,37 @@ import (
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
+// createShared returns a create callback that counts invocations.
+func createShared(count *int, sb *sandbox.Sandbox, home string) func() (sharedCreateResult, error) {
+	return func() (sharedCreateResult, error) {
+		*count++
+		return sharedCreateResult{sb: sb, home: home}, nil
+	}
+}
+
+func mustNotCreate(t *testing.T) func() (sharedCreateResult, error) {
+	return func() (sharedCreateResult, error) {
+		t.Fatal("unexpected shared sandbox creation")
+		return sharedCreateResult{}, nil
+	}
+}
+
 func TestSharedSandboxCoordinatorCreatesOnceAndSerializesLeases(t *testing.T) {
 	c := newSharedSandboxCoordinator()
 	created := 0
-	create := func() (*sandbox.Sandbox, string, string, error) {
-		created++
-		return &sandbox.Sandbox{Name: "shared", WorkspaceDir: "/root/workspace"}, "/tmp/home", "model", nil
-	}
-	a, err := c.acquire(context.Background(), "run-1", create)
+	create := createShared(&created, &sandbox.Sandbox{Name: "shared", WorkspaceDir: "/root/workspace"}, "/tmp/home")
+	a, err := c.acquire(context.Background(), "run-1", "", create)
 	if err != nil {
 		t.Fatal(err)
 	}
 	secondDone := make(chan error, 1)
 	go func() {
-		b, err := c.acquire(context.Background(), "run-1", create)
-		if err == nil && b != a {
-			err = errDifferentEntry
+		b, err := c.acquire(context.Background(), "run-1", "", create)
+		if err == nil && b.sb != a.sb {
+			err = errors.New("different coordinator entry")
 		}
 		if err == nil {
-			c.release(b.sb)
+			c.release(b)
 		}
 		secondDone <- err
 	}()
@@ -38,7 +51,7 @@ func TestSharedSandboxCoordinatorCreatesOnceAndSerializesLeases(t *testing.T) {
 		t.Fatal("second node acquired a busy shared sandbox")
 	case <-time.After(20 * time.Millisecond):
 	}
-	c.release(a.sb)
+	c.release(a)
 	if err := <-secondDone; err != nil {
 		t.Fatal(err)
 	}
@@ -47,70 +60,56 @@ func TestSharedSandboxCoordinatorCreatesOnceAndSerializesLeases(t *testing.T) {
 	}
 }
 
-var errDifferentEntry = &coordinatorTestError{"different coordinator entry"}
-
-type coordinatorTestError struct{ msg string }
-
-func (e *coordinatorTestError) Error() string { return e.msg }
-
 func TestSharedSandboxCoordinatorFinalizeIsIdempotent(t *testing.T) {
 	c := newSharedSandboxCoordinator()
-	entry, err := c.acquire(context.Background(), "run-2", func() (*sandbox.Sandbox, string, string, error) {
-		return &sandbox.Sandbox{Name: "shared-2"}, "/tmp/home-2", "", nil
-	})
+	n := 0
+	lease, err := c.acquire(context.Background(), "run-2", "", createShared(&n, &sandbox.Sandbox{Name: "shared-2"}, "/tmp/home-2"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.release(entry.sb)
+	c.release(lease)
 	got, ok := c.finalize("run-2")
-	if !ok || got != entry {
+	if !ok || got != lease.sharedSandbox {
 		t.Fatalf("finalize=(%v,%v), want entry", got, ok)
 	}
 	if _, ok := c.finalize("run-2"); ok {
 		t.Fatal("second finalize must be a no-op")
 	}
 	c.reopen("run-2")
-	if _, err := c.acquire(context.Background(), "run-2", func() (*sandbox.Sandbox, string, string, error) {
-		return &sandbox.Sandbox{Name: "shared-2-reopened"}, "", "", nil
-	}); err != nil {
+	if _, err := c.acquire(context.Background(), "run-2", "", createShared(&n, &sandbox.Sandbox{Name: "shared-2-reopened"}, "")); err != nil {
 		t.Fatalf("reopen acquire: %v", err)
 	}
 }
 
 func TestSharedSandboxCoordinatorWaiterCancellation(t *testing.T) {
 	c := newSharedSandboxCoordinator()
-	first, err := c.acquire(context.Background(), "run-3", func() (*sandbox.Sandbox, string, string, error) {
-		return &sandbox.Sandbox{Name: "shared-3"}, "", "", nil
-	})
+	n := 0
+	first, err := c.acquire(context.Background(), "run-3", "", createShared(&n, &sandbox.Sandbox{Name: "shared-3"}, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
-	_, err = c.acquire(ctx, "run-3", func() (*sandbox.Sandbox, string, string, error) {
-		t.Fatal("waiter unexpectedly created a second generation")
-		return nil, "", "", nil
-	})
-	if err == nil {
+	if _, err = c.acquire(ctx, "run-3", "", mustNotCreate(t)); err == nil {
 		t.Fatal("expected waiter cancellation")
 	}
-	c.release(first.sb)
+	c.release(first)
 }
 
 func TestSharedSandboxCoordinatorDiscardWakesWaiterForReplacement(t *testing.T) {
 	c := newSharedSandboxCoordinator()
 	created := 0
-	create := func() (*sandbox.Sandbox, string, string, error) {
-		created++
-		return &sandbox.Sandbox{Name: "shared-replace"}, "", "", nil
-	}
-	first, err := c.acquire(context.Background(), "run-replace", create)
+	create := createShared(&created, &sandbox.Sandbox{Name: "shared-replace"}, "")
+	first, err := c.acquire(context.Background(), "run-replace", "", create)
 	if err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := c.acquire(context.Background(), "run-replace", create)
+		l, err := c.acquire(context.Background(), "run-replace", "", create)
+		if err == nil && l.generation != 2 {
+			err = errors.New("replacement must be generation 2")
+		}
 		done <- err
 	}()
 	time.Sleep(10 * time.Millisecond)
@@ -129,12 +128,12 @@ func TestSharedSandboxCoordinatorConcurrentCreation(t *testing.T) {
 	c := newSharedSandboxCoordinator()
 	var mu sync.Mutex
 	created := 0
-	create := func() (*sandbox.Sandbox, string, string, error) {
+	create := func() (sharedCreateResult, error) {
 		time.Sleep(20 * time.Millisecond) // widen the create window under contention
 		mu.Lock()
 		created++
 		mu.Unlock()
-		return &sandbox.Sandbox{Name: "shared-4", WorkspaceDir: "/ws"}, "", "", nil
+		return sharedCreateResult{sb: &sandbox.Sandbox{Name: "shared-4", WorkspaceDir: "/ws"}}, nil
 	}
 	const n = 8
 	var wg sync.WaitGroup
@@ -144,13 +143,13 @@ func TestSharedSandboxCoordinatorConcurrentCreation(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func() {
 			defer wg.Done()
-			entry, err := c.acquire(context.Background(), "run-4", create)
+			lease, err := c.acquire(context.Background(), "run-4", "", create)
 			if err != nil {
 				errs <- err
 				return
 			}
-			sbs <- entry.sb
-			c.release(entry.sb)
+			sbs <- lease.sb
+			c.release(lease)
 		}()
 	}
 	wg.Wait()
@@ -174,55 +173,27 @@ func TestSharedSandboxCoordinatorConcurrentCreation(t *testing.T) {
 	}
 }
 
-func TestSharedSandboxCoordinatorAllowsNodeEnvironmentSwitch(t *testing.T) {
-	c := newSharedSandboxCoordinator()
-	created := 0
-	create := func() (*sandbox.Sandbox, string, string, error) {
-		created++
-		return &sandbox.Sandbox{Name: "shared-env"}, "", "", nil
-	}
-	entry, err := c.acquire(context.Background(), "run-env", create)
-	if err != nil {
-		t.Fatal(err)
-	}
-	c.release(entry.sb)
-	second, err := c.acquire(context.Background(), "run-env", create)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer c.release(second.sb)
-	if created != 1 {
-		t.Fatalf("created=%d, different node env must reuse one container", created)
-	}
-	if second.sb != entry.sb {
-		t.Fatal("expected same shared sandbox across node env switch")
-	}
-}
-
 func TestSharedSandboxCoordinatorIsolatesRuns(t *testing.T) {
 	c := newSharedSandboxCoordinator()
 	created := map[string]int{}
-	makeCreate := func(runID string) func() (*sandbox.Sandbox, string, string, error) {
-		return func() (*sandbox.Sandbox, string, string, error) {
+	makeCreate := func(runID string) func() (sharedCreateResult, error) {
+		return func() (sharedCreateResult, error) {
 			created[runID]++
-			return &sandbox.Sandbox{Name: "sb-" + runID, WorkspaceDir: "/ws/" + runID}, "/home/" + runID, "", nil
+			return sharedCreateResult{sb: &sandbox.Sandbox{Name: "sb-" + runID, WorkspaceDir: "/ws/" + runID}, home: "/home/" + runID}, nil
 		}
 	}
-	a, err := c.acquire(context.Background(), "run-a", makeCreate("run-a"))
+	a, err := c.acquire(context.Background(), "run-a", "", makeCreate("run-a"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := c.acquire(context.Background(), "run-b", makeCreate("run-b"))
+	b, err := c.acquire(context.Background(), "run-b", "", makeCreate("run-b"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.release(a.sb)
-	defer c.release(b.sb)
-	if a.sb == b.sb || a.sb.Name == b.sb.Name {
-		t.Fatal("different runs must not share one sandbox")
-	}
-	if a.sb.WorkspaceDir == b.sb.WorkspaceDir {
-		t.Fatal("different runs must not share one workspace")
+	defer c.release(a)
+	defer c.release(b)
+	if a.sb == b.sb || a.sb.WorkspaceDir == b.sb.WorkspaceDir {
+		t.Fatal("different runs must not share one sandbox or workspace")
 	}
 	if created["run-a"] != 1 || created["run-b"] != 1 {
 		t.Fatalf("created=%v", created)
@@ -232,27 +203,80 @@ func TestSharedSandboxCoordinatorIsolatesRuns(t *testing.T) {
 func TestSharedSandboxCoordinatorSequentialNodesReuseOne(t *testing.T) {
 	c := newSharedSandboxCoordinator()
 	created := 0
-	create := func() (*sandbox.Sandbox, string, string, error) {
-		created++
-		return &sandbox.Sandbox{Name: "shared-seq", WorkspaceDir: "/ws/shared"}, "/home/shared", "", nil
-	}
+	create := createShared(&created, &sandbox.Sandbox{Name: "shared-seq", WorkspaceDir: "/ws/shared"}, "/home/shared")
 	var last *sandbox.Sandbox
 	for i := 0; i < 3; i++ {
-		entry, err := c.acquire(context.Background(), "run-seq", create)
+		lease, err := c.acquire(context.Background(), "run-seq", "fp", func() (sharedCreateResult, error) {
+			res, err := create()
+			res.fingerprint = "fp"
+			return res, err
+		})
 		if err != nil {
 			t.Fatalf("node %d: %v", i, err)
 		}
-		if last != nil && entry.sb != last {
+		if last != nil && lease.sb != last {
 			t.Fatalf("node %d got different sandbox", i)
 		}
-		last = entry.sb
-		c.release(entry.sb)
+		last = lease.sb
+		c.release(lease)
 	}
 	if created != 1 {
 		t.Fatalf("created=%d, want 1 for three sequential nodes", created)
 	}
 }
 
+// A node whose fingerprint differs must not join (or wait for) the run's
+// container, even while another node holds the lease.
+func TestSharedSandboxCoordinatorRejectsIncompatibleWithoutWaiting(t *testing.T) {
+	c := newSharedSandboxCoordinator()
+	n := 0
+	holder, err := c.acquire(context.Background(), "run-fp", "fp-a", func() (sharedCreateResult, error) {
+		n++
+		return sharedCreateResult{sb: &sandbox.Sandbox{Name: "shared-fp"}, fingerprint: "fp-a"}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.release(holder)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	start := time.Now()
+	if _, err := c.acquire(ctx, "run-fp", "fp-b", mustNotCreate(t)); !errors.Is(err, errSharedSandboxIncompatible) {
+		t.Fatalf("err=%v, want errSharedSandboxIncompatible", err)
+	}
+	if time.Since(start) > 500*time.Millisecond {
+		t.Fatal("incompatible node waited for the busy lease")
+	}
+	if n != 1 {
+		t.Fatalf("created=%d, want 1", n)
+	}
+}
+
+// A stale or repeated release must not free a lease held by another node.
+func TestSharedSandboxCoordinatorReleaseIsOwnerChecked(t *testing.T) {
+	c := newSharedSandboxCoordinator()
+	n := 0
+	create := createShared(&n, &sandbox.Sandbox{Name: "shared-owner"}, "")
+	a, err := c.acquire(context.Background(), "run-owner", "", create)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.release(a)
+	b, err := c.acquire(context.Background(), "run-owner", "", create)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.release(a) // stale: a no longer holds the lease
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if _, err := c.acquire(ctx, "run-owner", "", create); err == nil {
+		t.Fatal("stale release freed another node's lease")
+	}
+	c.release(b)
+	if _, err := c.acquire(context.Background(), "run-owner", "", create); err != nil {
+		t.Fatalf("acquire after owner release: %v", err)
+	}
+}
 
 // TestSharedSandboxCoordinatorReleaseKeepsGeneration documents the connect-fail
 // cleanup contract: after a successful create, a failed connectSandbox must
@@ -260,33 +284,22 @@ func TestSharedSandboxCoordinatorSequentialNodesReuseOne(t *testing.T) {
 func TestSharedSandboxCoordinatorReleaseKeepsGeneration(t *testing.T) {
 	c := newSharedSandboxCoordinator()
 	created := 0
-	create := func() (*sandbox.Sandbox, string, string, error) {
-		created++
-		return &sandbox.Sandbox{Name: "shared-connect"}, "/tmp/connect-home", "model", nil
-	}
-	first, err := c.acquire(context.Background(), "run-connect", create)
+	first, err := c.acquire(context.Background(), "run-connect", "", createShared(&created, &sandbox.Sandbox{Name: "shared-connect"}, "/tmp/connect-home"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Simulate openSandbox connectSandbox failure: release lease, keep binding.
-	c.release(first.sb)
+	c.release(first)
 
-	second, err := c.acquire(context.Background(), "run-connect", func() (*sandbox.Sandbox, string, string, error) {
-		t.Fatal("connect-fail cleanup must not create a replacement generation")
-		return nil, "", "", nil
-	})
+	second, err := c.acquire(context.Background(), "run-connect", "", mustNotCreate(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.release(second.sb)
+	defer c.release(second)
 	if second.sb != first.sb {
 		t.Fatal("expected same sandbox after release (no discard)")
 	}
 	if second.generation != first.generation || first.generation != 1 {
 		t.Fatalf("generation=%d/%d, want unchanged 1", first.generation, second.generation)
-	}
-	if created != 1 {
-		t.Fatalf("created=%d, want 1", created)
 	}
 }
 
@@ -315,8 +328,7 @@ func TestSharedSandboxOpenSandboxConnectFailReleasesNotDiscards(t *testing.T) {
 		Vars:   map[string]any{},
 	})
 
-	_, _, _, err := p.openSandbox(context.Background(), req)
-	if err == nil {
+	if _, _, _, err := p.openSandbox(context.Background(), req); err == nil {
 		t.Fatal("expected connect/create-chat failure from fake bridge")
 	}
 	if mgr.createCount() != 1 {
@@ -329,19 +341,17 @@ func TestSharedSandboxOpenSandboxConnectFailReleasesNotDiscards(t *testing.T) {
 		t.Fatalf("connect fail must not Unregister/Destroy, unregistered=%d", unregistered)
 	}
 
-	entry, err := p.coordinator.acquire(context.Background(), runID, func() (*sandbox.Sandbox, string, string, error) {
-		t.Fatal("must reuse existing shared sandbox after connect failure")
-		return nil, "", "", nil
-	})
+	ls, err := p.specLayered(req, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := p.coordinator.acquire(context.Background(), runID, ls.fingerprint, mustNotCreate(t))
 	if err != nil {
 		t.Fatalf("re-acquire after connect fail: %v", err)
 	}
-	defer p.coordinator.release(entry.sb)
-	if entry.generation != 1 {
-		t.Fatalf("generation=%d, want 1 (no discard)", entry.generation)
-	}
-	if mgr.createCount() != 1 {
-		t.Fatalf("createCount after re-acquire=%d, want 1", mgr.createCount())
+	defer p.coordinator.release(lease)
+	if lease.generation != 1 {
+		t.Fatalf("generation=%d, want 1 (no discard)", lease.generation)
 	}
 }
 
@@ -359,10 +369,10 @@ func TestSharedSandboxCoordinatorFinalizeDuringCreateCleansUp(t *testing.T) {
 	done := make(chan error, 1)
 
 	go func() {
-		_, err := c.acquire(context.Background(), "run-orphan", func() (*sandbox.Sandbox, string, string, error) {
+		_, err := c.acquire(context.Background(), "run-orphan", "", func() (sharedCreateResult, error) {
 			close(started)
 			<-finish
-			return &sandbox.Sandbox{Name: "orphan-sb"}, home, "", nil
+			return sharedCreateResult{sb: &sandbox.Sandbox{Name: "orphan-sb"}, home: home}, nil
 		})
 		done <- err
 	}()

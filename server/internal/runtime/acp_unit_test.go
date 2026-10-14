@@ -286,8 +286,8 @@ func TestAbortRunSharedKeepaliveRetiresNotDestroys(t *testing.T) {
 	cp.coordinator = newSharedSandboxCoordinator()
 
 	sb := &sandbox.Sandbox{Name: "shared-preview-sb"}
-	if _, err := cp.coordinator.acquire(context.Background(), "runSharedKeep", func() (*sandbox.Sandbox, string, string, error) {
-		return sb, "/tmp/shared-preview-home", "", nil
+	if _, err := cp.coordinator.acquire(context.Background(), "runSharedKeep", "", func() (sharedCreateResult, error) {
+		return sharedCreateResult{sb: sb, home: "/tmp/shared-preview-home"}, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -339,8 +339,8 @@ func TestAbortRunSharedParkedKeepaliveRetiresNotDestroys(t *testing.T) {
 	cp.coordinator = newSharedSandboxCoordinator()
 
 	sb := &sandbox.Sandbox{Name: "shared-parked-preview-sb"}
-	if _, err := cp.coordinator.acquire(context.Background(), "runParkedKeep", func() (*sandbox.Sandbox, string, string, error) {
-		return sb, "/tmp/shared-parked-preview-home", "", nil
+	if _, err := cp.coordinator.acquire(context.Background(), "runParkedKeep", "", func() (sharedCreateResult, error) {
+		return sharedCreateResult{sb: sb, home: "/tmp/shared-parked-preview-home"}, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -387,8 +387,8 @@ func TestAbortRunSharedWithoutKeepaliveDestroys(t *testing.T) {
 	cp.coordinator = newSharedSandboxCoordinator()
 
 	sb := &sandbox.Sandbox{Name: "shared-abort-sb"}
-	if _, err := cp.coordinator.acquire(context.Background(), "runSharedAbort", func() (*sandbox.Sandbox, string, string, error) {
-		return sb, "", "", nil
+	if _, err := cp.coordinator.acquire(context.Background(), "runSharedAbort", "", func() (sharedCreateResult, error) {
+		return sharedCreateResult{sb: sb}, nil
 	}); err != nil {
 		t.Fatal(err)
 	}

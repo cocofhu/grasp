@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -159,11 +160,21 @@ func (c *acpProvider) ArchiveRunSandboxLogs(ctx context.Context, runID string) (
 	return a.ArchiveRunSandboxLogs(ctx, runID)
 }
 
+const (
+	// sandboxScopeRun marks the run-level container shared by compatible nodes.
+	sandboxScopeRun = "run"
+	// sandboxScopeNode marks a node-private container (no coordinator, or a
+	// node whose configuration does not match the run's shared container).
+	sandboxScopeNode = "node"
+)
+
+const sharedReplacementReason = "共享沙箱不可恢复，创建替代代次"
+
 // beginRunSandbox records a "creating" placeholder row for a node sandbox before
 // the (slow) gateway provisioning, so it shows up in the sandbox list / node
 // live log as "starting" instead of a 404. No-op when the registry is absent or
 // does not implement RunSandboxBeginner (e.g. test fakes).
-func (c *acpProvider) beginRunSandbox(req NodeReq, name, home string) {
+func (c *acpProvider) beginRunSandbox(req NodeReq, name, home, scope string, generation int) {
 	if c.registry == nil || name == "" {
 		return
 	}
@@ -181,26 +192,17 @@ func (c *acpProvider) beginRunSandbox(req NodeReq, name, home string) {
 		RepoURL:      firstRepoURL(req),
 		HomeDir:      home,
 		Token:        req.Token,
-		Scope:        "run",
-		Generation:   1,
+		Scope:        scope,
+		Generation:   generation,
 	})
 }
 
-// registerRunSandbox records a freshly-created node sandbox in the platform
-// store. No-op when no registry is wired.
-func (c *acpProvider) registerRunSandbox(req NodeReq, sb *sandbox.Sandbox, home string) {
-	c.registerRunSandboxGenerationWithFingerprint(req, sb, home, 1, "", "")
-}
-
-func (c *acpProvider) registerRunSandboxGeneration(req NodeReq, sb *sandbox.Sandbox, home string, generation int, replacementReason string) {
-	c.registerRunSandboxGenerationWithFingerprint(req, sb, home, generation, replacementReason, "")
-}
-
-func (c *acpProvider) registerRunSandboxGenerationWithFingerprint(req NodeReq, sb *sandbox.Sandbox, home string, generation int, replacementReason, envFingerprint string) {
+// registerRunSandbox records a live sandbox in the platform store. No-op when
+// no registry is wired.
+func (c *acpProvider) registerRunSandbox(req NodeReq, sb *sandbox.Sandbox, home, scope string, generation int, replacementReason, fingerprint string) {
 	if c.registry == nil || sb == nil {
 		return
 	}
-	repo := firstRepoURL(req)
 	c.registry.RegisterRunSandbox(RunSandboxInfo{
 		Name:              sb.Name,
 		Profile:           models.AgentProfile(req.Config),
@@ -211,13 +213,13 @@ func (c *acpProvider) registerRunSandboxGenerationWithFingerprint(req NodeReq, s
 		Host:              sb.Host,
 		ACPPort:           sb.Port,
 		CodeServerPort:    sb.CodeServerPort,
-		RepoURL:           repo,
+		RepoURL:           firstRepoURL(req),
 		HomeDir:           home,
 		Token:             req.Token,
-		Scope:             "run",
+		Scope:             scope,
 		Generation:        generation,
 		ReplacementReason: replacementReason,
-		EnvFingerprint:    envFingerprint,
+		EnvFingerprint:    fingerprint,
 	})
 }
 
@@ -236,20 +238,20 @@ func (c *acpProvider) deregisterRunSandbox(name string) {
 // store's idle-TTL sweeper, so the sandbox can be inspected (terminal / IDE /
 // ACP / container logs) for debugging. When the store can't retire (no registry
 // or capability — e.g. tests), it falls back to an immediate destroy so nothing
-// is leaked.
+// is leaked. A node in the run's shared container only releases its lease;
+// AbortRun performs the single terminal teardown.
 func (c *acpProvider) retireRunSandbox(sb *sandbox.Sandbox, acp *sandbox.ACPClient, home string) {
+	nl := c.takeNodeLease(acp)
 	if acp != nil {
 		acp.CloseOwnedChat(context.Background())
 		acp.Close()
 	}
-	if sb == nil {
-		removeHome(home)
+	if nl != nil {
+		nl.release(c.coordinator)
 		return
 	}
-	// A run-level container survives node completion. Only its ACP lease is
-	// released here; AbortRun performs the single terminal teardown.
-	if c.coordinator != nil {
-		c.coordinator.release(sb)
+	if sb == nil {
+		removeHome(home)
 		return
 	}
 	if r, ok := c.registry.(RunSandboxRetirer); ok {
@@ -263,33 +265,55 @@ func (c *acpProvider) retireRunSandbox(sb *sandbox.Sandbox, acp *sandbox.ACPClie
 	removeHome(home)
 }
 
+// sharedSandboxHealthy probes a shared container before a node failure is
+// allowed to destroy it. Overridden in tests.
+var sharedSandboxHealthy = func(sb *sandbox.Sandbox) bool {
+	if sb == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 5*time.Second) == nil
+}
+
 // discardSandbox tears down a broken sandbox between retries: close the ACP
 // session, drop its registry/live bookkeeping, destroy the container, and
 // remove its cursor-home. Unlike retireRunSandbox it does NOT keep the
 // container for debugging — a faulted sandbox has no value and would leak.
 // Best-effort snapshotEvents runs before destroy so ACP events are not lost
 // when the container is recycled.
+//
+// In the run's shared container a node fault (idle, stuck, dropped socket) is
+// usually confined to that node's chat, while the workspace holds earlier
+// nodes' work. The container is therefore kept and only the lease released
+// unless the bridge no longer answers.
 func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandbox.Sandbox, acp *sandbox.ACPClient, home string, fallback []models.AcpEvent) []models.AcpEvent {
 	events := c.snapshotEvents(ctx, sb, fallback)
 	c.deregisterLive(req)
+	nl := c.takeNodeLease(acp)
 	if acp != nil {
 		acp.CloseOwnedChat(context.Background())
 		acp.Close()
 	}
-	if sb == nil {
-		removeHome(home)
-		return events
-	}
-	if c.coordinator != nil && strings.TrimSpace(req.RunID) != "" {
+	if nl != nil {
+		if sharedSandboxHealthy(sb) {
+			nl.release(c.coordinator)
+			return events
+		}
 		if lifecycle, ok := c.registry.(RunSandboxLifecycle); ok {
-			lifecycle.MarkRunSandboxReplacement(req.RunID, c.coordinator.nextGeneration(req.RunID), "共享沙箱不可恢复，创建替代代次")
+			lifecycle.MarkRunSandboxReplacement(req.RunID, c.coordinator.nextGeneration(req.RunID), sharedReplacementReason)
 		}
 		if sharedHome, removed := c.coordinator.discard(req.RunID, sb); removed {
 			c.deregisterRunSandbox(sb.Name)
 			sb.Destroy(context.Background())
 			removeHome(sharedHome)
-			return events
 		}
+		nl.release(c.coordinator)
+		return events
+	}
+	if sb == nil {
+		removeHome(home)
+		return events
 	}
 	c.deregisterRunSandbox(sb.Name)
 	sb.Destroy(context.Background())
@@ -300,47 +324,50 @@ func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandb
 // createSandbox provisions one container and leaves ACP session creation to the
 // caller. Keeping these phases separate lets a run-level coordinator reuse the
 // container while every node still receives a fresh ACP chat/tab.
-func (c *acpProvider) createSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, string, string, error) {
-	sb, home, model, _, err := c.createSandboxLayered(ctx, req, false)
-	return sb, home, model, err
-}
-
-func (c *acpProvider) createSandboxLayered(ctx context.Context, req NodeReq, shared bool) (*sandbox.Sandbox, string, string, map[string]string, error) {
-	spec, overlay, err := c.specLayered(req, shared)
+func (c *acpProvider) createSandbox(ctx context.Context, req NodeReq, shared bool, generation int) (*sandbox.Sandbox, layeredSpec, error) {
+	ls, err := c.specLayered(req, shared, true)
 	if err != nil {
 		c.forgetCodexLogin(codexLoginKey(req))
-		return nil, "", "", nil, fmt.Errorf("%w: %v", errSandboxConfig, err)
+		return nil, layeredSpec{}, fmt.Errorf("%w: %v", errSandboxConfig, err)
 	}
+	spec := ls.spec
 	home := spec.ConfigHome
+	scope := sandboxScopeNode
+	if shared {
+		scope = sandboxScopeRun
+	}
 
 	placeholder := sandbox.NewContainerName()
 	spec.Name = placeholder
-	c.beginRunSandbox(req, placeholder, home)
+	c.beginRunSandbox(req, placeholder, home, scope, generation)
 	sb, err := c.mgr.Create(ctx, spec)
 	if err != nil {
 		c.forgetCodexLogin(codexLoginKey(req))
 		c.deregisterRunSandbox(placeholder)
 		removeHome(home)
-		return nil, "", "", nil, fmt.Errorf("%w: create sandbox: %v", errSandboxSetup, err)
+		return nil, layeredSpec{}, fmt.Errorf("%w: create sandbox: %v", errSandboxSetup, err)
 	}
 	if err := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 120*time.Second); err != nil {
 		c.forgetCodexLogin(codexLoginKey(req))
 		c.deregisterRunSandbox(placeholder)
 		sb.Destroy(context.Background())
 		removeHome(home)
-		return nil, "", "", nil, fmt.Errorf("%w: acp not ready: %v", errSandboxSetup, err)
+		return nil, layeredSpec{}, fmt.Errorf("%w: acp not ready: %v", errSandboxSetup, err)
 	}
-	return sb, home, spec.Env["ACP_BRIDGE_MODEL"], overlay, nil
+	return sb, ls, nil
 }
 
-func (c *acpProvider) connectSandbox(ctx context.Context, req NodeReq, sb *sandbox.Sandbox, bridgeModel, chatID string, overlay map[string]string) (*sandbox.ACPClient, error) {
+// connectSandbox opens the node's ACP session. nodeChat allocates a dedicated
+// bridge chat (shared container) so transcripts and the per-chat model stay
+// node-scoped; otherwise the container's default chat is used.
+func (c *acpProvider) connectSandbox(ctx context.Context, req NodeReq, sb *sandbox.Sandbox, model string, nodeChat bool, overlay map[string]string) (*sandbox.ACPClient, error) {
 	acp := sb.ACP().
 		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
 		WithIdleTimeoutFunc(c.agentIdle).
-		WithBridgeModel(bridgeModel).
+		WithBridgeModel(model).
 		WithEnv(sanitizeNodeEnvOverlay(overlay))
-	if chatID != "" {
-		created, err := acp.CreateChat(ctx, "run/"+safeSessionPart(req.RunID)+"/"+safeSessionPart(req.NodeID), "")
+	if nodeChat {
+		created, err := acp.CreateChat(ctx, "run/"+safeSessionPart(req.RunID)+"/"+safeSessionPart(req.NodeID), model)
 		if err != nil {
 			acp.CloseOwnedChat(context.Background())
 			acp.Close()
@@ -356,82 +383,107 @@ func (c *acpProvider) connectSandbox(ctx context.Context, req NodeReq, sb *sandb
 	return acp, nil
 }
 
-// nodeSessionOverlay builds the per-node ACP env overlay. Spec construction
-// still materializes a temporary ConfigHome for auth/layout validation; that
-// home is removed here because the shared container already mounts the
-// run-level home from create/attach.
-func (c *acpProvider) nodeSessionOverlay(req NodeReq) (map[string]string, error) {
-	sp, overlay, err := c.specLayered(req, true)
-	if err != nil {
-		return nil, err
+func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, error) {
+	if c.coordinator != nil && strings.TrimSpace(req.RunID) != "" {
+		sb, acp, home, err := c.openSharedSandbox(ctx, req)
+		if !errors.Is(err, errSharedSandboxIncompatible) {
+			return sb, acp, home, err
+		}
+		log.Info().Str("run", req.RunID).Str("node", req.NodeID).
+			Msg("node backend/config differs from the run's shared sandbox; using a node-private sandbox")
 	}
-	c.forgetCodexLogin(codexLoginKey(req))
-	removeHome(sp.ConfigHome)
-	return overlay, nil
+	return c.openPrivateSandbox(ctx, req)
 }
 
-func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, error) {
-	// Run nodes share one container and acquire the exclusive workspace lease.
-	// The lease is released by retireRunSandbox/discardSandbox after the node's
-	// ACP client closes; a parked ReAct session keeps it until the dialogue ends.
-	if c.coordinator != nil && strings.TrimSpace(req.RunID) != "" {
-		overlay, overlayErr := c.nodeSessionOverlay(req)
-		if overlayErr != nil {
-			return nil, nil, "", fmt.Errorf("%w: %v", errSandboxConfig, overlayErr)
-		}
-		entry, err := c.coordinator.acquire(ctx, req.RunID, func() (*sandbox.Sandbox, string, string, error) {
-			// Rehydrate a durable binding left by a process restart before
-			// provisioning a replacement container.
-			if lookup, ok := c.registry.(RunSandboxLookup); ok {
-				if info, found := lookup.FindRunSandbox(req.RunID); found && info.Name != "" {
-					attacher, canAttach := c.mgr.(interface {
-						Attach(context.Context, string) (*sandbox.Sandbox, error)
-					})
-					if canAttach {
-						if sb, aerr := attacher.Attach(ctx, info.Name); aerr == nil {
-							if werr := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 120*time.Second); werr == nil {
-								model := ""
-								generation := info.Generation
-								if generation < 1 {
-									generation = 1
-								}
-								c.registerRunSandboxGeneration(req, sb, info.HomeDir, generation, info.ReplacementReason)
-								return sb, info.HomeDir, model, nil
-							}
-						}
-					}
-				}
-			}
-			sb, home, model, _, err := c.createSandboxLayered(ctx, req, true)
-			if err == nil {
-				c.registerRunSandbox(req, sb, home)
-			}
-			return sb, home, model, err
-		})
-		if err != nil {
-			return nil, nil, "", err
-		}
-		if entry.generation > 1 {
-			c.registerRunSandboxGeneration(req, entry.sb, entry.home, entry.generation, "共享沙箱不可恢复，创建替代代次")
-		} else {
-			c.registerRunSandboxGeneration(req, entry.sb, entry.home, entry.generation, "")
-		}
-		acp, err := c.connectSandbox(ctx, req, entry.sb, entry.bridgeModel, newNodeChatID(req.RunID, req.NodeID), overlay)
-		if err != nil {
-			// Connect/chat failures are node-scoped: release the lease so a
-			// retry or later node can reuse the healthy run-level container.
-			// Only Attach/create faults discard and replace a generation.
-			c.coordinator.release(entry.sb)
-			return nil, nil, "", err
-		}
-		return entry.sb, acp, entry.home, nil
+// openSharedSandbox runs the node in the run's shared container under an
+// exclusive lease. The lease is released by retireRunSandbox/discardSandbox
+// after the node's ACP client closes, when a KeepAliveForReview session parks,
+// or when a ReAct dialogue ends.
+func (c *acpProvider) openSharedSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, error) {
+	ls, err := c.specLayered(req, true, false)
+	if err != nil {
+		c.forgetCodexLogin(codexLoginKey(req))
+		return nil, nil, "", fmt.Errorf("%w: %v", errSandboxConfig, err)
 	}
+	lease, err := c.coordinator.acquire(ctx, req.RunID, ls.fingerprint, func() (sharedCreateResult, error) {
+		res, attached, generation := c.attachRunSandbox(ctx, req)
+		if attached {
+			return res, nil
+		}
+		if generation < 1 {
+			generation = c.coordinator.currentGeneration(req.RunID)
+		}
+		sb, created, err := c.createSandbox(ctx, req, true, generation)
+		if err != nil {
+			return sharedCreateResult{}, err
+		}
+		return sharedCreateResult{sb: sb, home: created.spec.ConfigHome, fingerprint: created.fingerprint, generation: generation}, nil
+	})
+	if err != nil {
+		if !errors.Is(err, errSharedSandboxIncompatible) {
+			c.forgetCodexLogin(codexLoginKey(req))
+		}
+		return nil, nil, "", err
+	}
+	reason := ""
+	if lease.generation > 1 {
+		reason = sharedReplacementReason
+	}
+	c.registerRunSandbox(req, lease.sb, lease.home, sandboxScopeRun, lease.generation, reason, lease.fingerprint)
+	acp, err := c.connectSandbox(ctx, req, lease.sb, ls.model, true, ls.overlay)
+	if err != nil {
+		// Connect/chat failures are node-scoped: release the lease so a
+		// retry or later node can reuse the healthy run-level container.
+		c.coordinator.release(lease)
+		c.forgetCodexLogin(codexLoginKey(req))
+		return nil, nil, "", err
+	}
+	c.trackNodeLease(acp, lease)
+	return lease.sb, acp, lease.home, nil
+}
 
-	sb, home, model, err := c.createSandbox(ctx, req)
+// attachRunSandbox rehydrates the run's durable shared container after a
+// server restart. An unrecoverable container is destroyed and its row dropped
+// so it cannot leak; generation then names the replacement's generation.
+func (c *acpProvider) attachRunSandbox(ctx context.Context, req NodeReq) (res sharedCreateResult, attached bool, generation int) {
+	lookup, ok := c.registry.(RunSandboxLookup)
+	if !ok {
+		return res, false, 0
+	}
+	info, found := lookup.FindRunSandbox(req.RunID)
+	if !found || info.Name == "" {
+		return res, false, 0
+	}
+	prev := max(info.Generation, 1)
+	if attacher, ok := c.mgr.(sandboxAttacher); ok {
+		if sb, err := attacher.Attach(ctx, info.Name); err == nil {
+			if werr := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 30*time.Second); werr == nil {
+				return sharedCreateResult{sb: sb, home: info.HomeDir, fingerprint: info.EnvFingerprint, generation: prev}, true, prev
+			}
+			sb.Destroy(context.Background())
+		}
+	}
+	if lifecycle, ok := c.registry.(RunSandboxLifecycle); ok {
+		lifecycle.MarkRunSandboxReplacement(req.RunID, prev+1, sharedReplacementReason)
+	}
+	c.deregisterRunSandbox(info.Name)
+	removeHome(info.HomeDir)
+	return res, false, prev + 1
+}
+
+// sandboxAttacher is the optional manager capability to re-open a container
+// by its gateway id.
+type sandboxAttacher interface {
+	Attach(context.Context, string) (*sandbox.Sandbox, error)
+}
+
+func (c *acpProvider) openPrivateSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, error) {
+	sb, ls, err := c.createSandbox(ctx, req, false, 1)
 	if err != nil {
 		return nil, nil, "", err
 	}
-	acp, err := c.connectSandbox(ctx, req, sb, model, "", nil)
+	home := ls.spec.ConfigHome
+	acp, err := c.connectSandbox(ctx, req, sb, ls.model, false, nil)
 	if err != nil {
 		c.forgetCodexLogin(codexLoginKey(req))
 		c.deregisterRunSandbox(sb.Name)
@@ -439,7 +491,7 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 		removeHome(home)
 		return nil, nil, "", err
 	}
-	c.registerRunSandbox(req, sb, home)
+	c.registerRunSandbox(req, sb, home, sandboxScopeNode, 1, "", "")
 	return sb, acp, home, nil
 }
 
@@ -450,15 +502,29 @@ func removeHome(home string) {
 }
 
 func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
-	sp, _, err := c.specLayered(req, false)
-	return sp, err
+	ls, err := c.specLayered(req, false, true)
+	return ls.spec, err
+}
+
+// layeredSpec is a node's sandbox Spec split for the shared-container path.
+type layeredSpec struct {
+	spec sandbox.Spec
+	// overlay carries node-scoped Agent env for the ACP connect (shared only).
+	overlay map[string]string
+	// model is the node's ACP_BRIDGE_MODEL, applied per bridge chat.
+	model string
+	// fingerprint digests every container-shaping input (shared only); nodes
+	// reuse a shared container only when fingerprints are equal.
+	fingerprint string
 }
 
 // specLayered builds the sandbox Spec. When shared is true, Spec.Env keeps only
-// run-level + platform-reserved keys; nodeOverlay carries node-scoped Agent
+// run-level + platform-reserved keys; overlay carries node-scoped Agent
 // credentials for ACP connect injection. When shared is false the container is
-// node-scoped so Spec.Env is the full merge and overlay is nil.
-func (c *acpProvider) specLayered(req NodeReq, shared bool) (sandbox.Spec, map[string]string, error) {
+// node-scoped so Spec.Env is the full merge and overlay is nil. materialize
+// false skips building the ConfigHome directory (Spec.ConfigHome stays empty)
+// for callers that only need the overlay / fingerprint of an existing container.
+func (c *acpProvider) specLayered(req NodeReq, shared, materialize bool) (layeredSpec, error) {
 
 	repos := resolveRepos(req)
 	env := map[string]string{}
@@ -535,13 +601,13 @@ func (c *acpProvider) specLayered(req NodeReq, shared bool) (sandbox.Spec, map[s
 	// Align auth gate with buildConfigHome BaseWorkDirSrc (project-shared workspace).
 	merged, err := PrepareAuthEnv(c.backend, env, c.workDir(profile), c.sharedWorkDir(req))
 	if err != nil {
-		return sandbox.Spec{}, nil, err
+		return layeredSpec{}, err
 	}
 	markChangedKeys(agentEnvKeys, env, merged)
 	env = merged
 	env["AGENT_PROVIDER"] = string(c.backend)
 	if err := RequireOpenCodePlaceholderKey(OpenCodeConfigForEnvWithCatalog(context.Background(), c.backend, env, c.opts.OpenCodeCatalog), env); err != nil {
-		return sandbox.Spec{}, nil, err
+		return layeredSpec{}, err
 	}
 	applyPreviewEnv(env, req.Caps)
 
@@ -579,21 +645,29 @@ func (c *acpProvider) specLayered(req NodeReq, shared bool) (sandbox.Spec, map[s
 	}
 
 	sandbox.ApplyPasswords(env, req.Token)
-	home := c.buildConfigHome(req, env)
-	if err := InstallCodexLoginFile(c.backend, home, codexLogin); err != nil {
-		return sandbox.Spec{}, nil, err
+	homeSpec := c.configHomeSpec(req, env)
+	home := ""
+	if materialize {
+		home = c.buildConfigHome(req, env)
+		if err := InstallCodexLoginFile(c.backend, home, codexLogin); err != nil {
+			return layeredSpec{}, err
+		}
+	} else if c.backend == BackendCodex && strings.TrimSpace(codexLogin) == "" {
+		return layeredSpec{}, ErrCodexLoginFileMissing
 	}
+	// Every node remembers its login, including nodes reusing a shared
+	// container, so settleCodexLogin can write back a refreshed auth.json.
 	if c.backend == BackendCodex && strings.TrimSpace(codexLogin) != "" {
 		c.rememberCodexLogin(codexLoginKey(req), codexLogin, CodexAuthPath(layout.ConfigRoot))
 	}
 
-	var overlay map[string]string
+	out := layeredSpec{model: strings.TrimSpace(env[EnvACPBridgeModel])}
 	specEnv := env
 	if shared {
-		specEnv, overlay = partitionSharedSandboxEnv(env, agentEnvKeys)
+		specEnv, out.overlay = partitionSharedSandboxEnv(env, agentEnvKeys)
 	}
 
-	spec := sandbox.Spec{
+	out.spec = sandbox.Spec{
 		Image:        resolveProviderImage(c.opts, c.backend),
 		Env:          specEnv,
 		ConfigHome:   home,
@@ -601,8 +675,11 @@ func (c *acpProvider) specLayered(req NodeReq, shared bool) (sandbox.Spec, map[s
 		WorkspaceDir: layout.WorkspaceDir,
 	}
 	// SSH comes only from project credentials.
-	sandbox.ApplySSHCredentials(&spec, projectCreds["GIT_SSH_PRIVATE_KEY"], projectCreds["GIT_SSH_KNOWN_HOSTS"])
-	return spec, overlay, nil
+	sandbox.ApplySSHCredentials(&out.spec, projectCreds["GIT_SSH_PRIVATE_KEY"], projectCreds["GIT_SSH_KNOWN_HOSTS"])
+	if shared {
+		out.fingerprint = sharedSandboxFingerprint(c.backend, out.spec, homeSpec, sharedCredentialIDs(c.backend, agentCfg))
+	}
+	return out, nil
 }
 
 func cloneStringMap(in map[string]string) map[string]string {

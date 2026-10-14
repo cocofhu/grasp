@@ -787,14 +787,16 @@ type Sandbox struct {
 	Name    string `gorm:"uniqueIndex" json:"name"` // docker container name
 	Profile string `json:"profile"`                 // bound Agent name
 	Purpose string `json:"purpose"`                 // "test" | "run" | "agent"
-	// Scope identifies the lifecycle owner. Run sandboxes use scope=run and
-	// remain bound to the workflow run across node changes.
-	Scope string `json:"scope,omitempty"` // run | test | agent | pm
+	// Scope identifies the lifecycle owner of a run sandbox: "run" is the
+	// container shared by compatible Agent nodes of the workflow run; "node" is
+	// a node-private container.
+	Scope string `json:"scope,omitempty"` // run | node
 	// Generation increments when an unrecoverable run sandbox is replaced.
 	Generation        int    `json:"generation,omitempty"`
 	ReplacementReason string `json:"replacementReason,omitempty"`
-	// EnvFingerprint is a non-reversible digest used to fail closed when a
-	// restarted run would otherwise reuse a container with another node's env.
+	// EnvFingerprint digests the container-shaping inputs of a shared run
+	// sandbox (backend, image, layout, ConfigHome, non-secret env, credential
+	// ids). Restart recovery only reuses the container for an equal digest.
 	EnvFingerprint string `json:"-"`
 	Status         string `json:"status"` // pulling|creating|running|stopped|error
 	Host           string `json:"-"`

@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-15（共享沙箱兼容性指纹、私有回退与故障恢复）
+
+- 日期：2026-10-15
+- 范围：`server/internal/runtime/{shared_sandbox,shared_sandbox_env,acp_sandbox,acp_config,acp_provider,acp_run_agent,provider}.go`、`server/internal/services/{sandbox_run,sandbox_test_pool,preview}.go`、`server/internal/models/models.go`、对应测试、`CHANGELOG.md`
+- 做了什么：共享沙箱按兼容性指纹（backend、镜像、ConfigRoot/WorkspaceDir、容器 env、完整 ConfigHomeSpec、凭据 ID；secret 只记"已设置"）准入，不兼容节点不等租约，直接退回 scope=node 的私有容器；scope=node 行不写 run 绑定、不参与 FindRunSandbox/重启恢复。bridge model 改为每个节点 `CreateChat` 时指定。回合故障先探活，健康则只释放租约保留工作区，不健康才登记替换代次。KeepAliveForReview 停靠即释放租约；release 校验持有者。复用容器的 Codex 节点也登记登录文件以便回写。重启 reconcile 只保留进行中运行的 scope=run 容器；AbortRun 在重启后按绑定 Attach 并清理；attach 失败销毁旧容器。
+- 为什么：评审发现共享容器只按首节点配置创建，后续节点的 backend/rules/skills/MCP/模型被静默忽略；单次 idle 会毁掉整个工作区；停靠节点持有租约导致门闸前节点死锁；Codex 复用节点刷新的 auth.json 丢失；重启后已结束运行的容器被保留。
+- 如何验证：新增 `shared_sandbox_flow_test.go`（同配置复用+节点级模型、backend/Agent 配置不兼容回退私有、idle 重试保留工作区、不健康替换代次、停靠释放租约、Codex 复用登记登录、重启后 AbortRun 清理）、coordinator 不兼容不等待/持有者校验单测、services scope 隔离与 reconcile 单测。server `go vet ./...`、`go test ./...`，sandbox-gateway `go vet ./...`、`go test ./...` 通过。
+
 ### 2026-10-14（Codex 登录失效快速失败，不再误报 MCP 工具面为空）
 
 - 日期：2026-10-14

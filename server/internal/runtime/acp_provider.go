@@ -101,6 +101,9 @@ type acpProvider struct {
 	// A nil coordinator preserves the lightweight per-node behavior used by
 	// standalone unit-test providers.
 	coordinator *sharedSandboxCoordinator
+	// nodeLeases maps a node's *sandbox.ACPClient to its *nodeLease while the
+	// node runs in the run's shared container.
+	nodeLeases sync.Map
 
 	// registry, when set, records the run-level shared sandbox in the platform
 	// sandbox store so it shows up in the sandbox UI while the run runs.
