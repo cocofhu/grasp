@@ -79,9 +79,13 @@ func TestOpenAgentSandboxMaxLimit(t *testing.T) {
 	// Mark first as active in DB so count hits max=2 from newSandboxService.
 	db.Model(&models.Sandbox{}).Where("id = ?", row1.ID).Update("status", "running")
 
-	row2 := &models.Sandbox{Name: "sb-other", Purpose: SandboxPurposeAgent, ThreadID: "t0", Status: "running"}
-	if err := db.Create(row2).Error; err != nil {
-		t.Fatal(err)
+	// row1's container start runs in a goroutine that may still rewrite its
+	// status, so seed enough independent rows to reach max=2 on their own.
+	for _, th := range []string{"t0", "t00"} {
+		other := &models.Sandbox{Name: "sb-other-" + th, Purpose: SandboxPurposeAgent, ThreadID: th, Status: "running"}
+		if err := db.Create(other).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 	_, _, err = s.OpenAgentSandbox(ctx, AgentSandboxOpenOpts{
 		Profile: "agentA", ProjectID: "p1", ThreadID: "t2", RunIDPrefix: "agent",
