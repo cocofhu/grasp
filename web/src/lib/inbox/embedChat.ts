@@ -10,6 +10,11 @@ export const EMBED_READY_MESSAGE = 'grasp-embed:ready'
 export const EMBED_THEME_MESSAGE = 'grasp-embed:theme'
 /** Drawer → page: Grasp UI language (`zh-CN` | `en`) so the page toolbar matches the app. */
 export const EMBED_LANG_MESSAGE = 'grasp-embed:lang'
+/**
+ * Drawer → page: open, replace, or close the page-level image window.
+ * The message carries the action and display name only — never the picture address.
+ */
+export const EMBED_IMAGE_MESSAGE = 'grasp-embed:image'
 /** Drawer → page: `{ok:false}` when the drawer session is invalid, expired or revoked. */
 export const EMBED_SESSION_MESSAGE = 'grasp-embed:session'
 /** Page ↔ drawer: capability announce / stop (page → drawer), toggle state (drawer → page). */
@@ -42,6 +47,23 @@ export function embedChatPath(runId: string, nodeId: string): string {
 /** Artifact modal page path; reuses the same drawer session as chat. */
 export function embedArtifactsPath(runId: string, nodeId: string): string {
   return `/embed/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/artifacts`
+}
+
+/** Picture frame inside the page-level image window. The address arrives later, same-origin, not in this URL. */
+export function embedImagePath(runId: string, nodeId: string): string {
+  return `/embed/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/image`
+}
+
+export type EmbedImageAction = 'open' | 'close'
+
+/** Host-bound image-window request. Drops any picture address that may have been attached. */
+export function parseEmbedImageMessage(data: unknown): { action: EmbedImageAction; label: string } | null {
+  if (!data || typeof data !== 'object') return null
+  const m = data as { type?: unknown; action?: unknown; label?: unknown }
+  if (m.type !== EMBED_IMAGE_MESSAGE) return null
+  if (m.action !== 'open' && m.action !== 'close') return null
+  const label = typeof m.label === 'string' ? m.label.replace(/[\r\n\t]/g, ' ').trim().slice(0, 180) : ''
+  return { action: m.action, label }
 }
 
 /** Direct preview URL carrying a drawer ticket for the in-page pick script (preview-pick.js). */

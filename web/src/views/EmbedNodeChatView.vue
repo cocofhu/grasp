@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
@@ -24,6 +24,7 @@ import {
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { setThemeOverride } from '@/lib/shared/theme'
 import { LOCALE_STORAGE_KEY, locale, setLocale } from '@/lib/shared/locale'
+import { createEmbedImagePreview, EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
 import { createEmbedLiveContext } from '@/lib/inbox/embedLiveContext'
 import { usePageControl } from '@/lib/inbox/embedPageControl'
 import {
@@ -82,6 +83,13 @@ const liveNotice = ref('')
 function postToPage(msg: Record<string, unknown>) {
   if (window.parent !== window) window.parent.postMessage(msg, parentOrigin())
 }
+
+const embedImagePreview = createEmbedImagePreview({
+  runId,
+  nodeId,
+  post: (msg) => postToPage(msg),
+})
+provide(EMBED_IMAGE_PREVIEW_KEY, embedImagePreview)
 
 const pageContext = createEmbedLiveContext(postToPage)
 
@@ -260,6 +268,7 @@ onUnmounted(() => {
   window.removeEventListener('storage', onStorage)
   pageContext.dispose()
   pageControl.dispose()
+  embedImagePreview.dispose()
   setThemeOverride(null)
 })
 </script>

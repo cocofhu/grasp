@@ -8,6 +8,9 @@ import {
   directPreviewEmbedUrl,
   embedChatPath,
   embedArtifactsPath,
+  embedImagePath,
+  EMBED_IMAGE_MESSAGE,
+  parseEmbedImageMessage,
   loadEmbedSession,
   parseEmbedPickMessage,
   parseEmbedThemeFromHash,
@@ -27,6 +30,13 @@ describe('embedChat', () => {
   it('builds the drawer path and reads the ticket from the fragment', () => {
     expect(embedChatPath('run-1', 'n/1')).toBe('/embed/runs/run-1/nodes/n%2F1/chat')
     expect(embedArtifactsPath('run-1', 'n/1')).toBe('/embed/runs/run-1/nodes/n%2F1/artifacts')
+    expect(embedImagePath('run-1', 'n/1')).toBe('/embed/runs/run-1/nodes/n%2F1/image')
+    expect(parseEmbedImageMessage({ type: EMBED_IMAGE_MESSAGE, action: 'open', label: 'image.png', src: 'blob:secret' })).toEqual({
+      action: 'open',
+      label: 'image.png',
+    })
+    expect(parseEmbedImageMessage({ type: EMBED_IMAGE_MESSAGE, action: 'close' })).toEqual({ action: 'close', label: '' })
+    expect(parseEmbedImageMessage({ type: 'other', action: 'open' })).toBeNull()
     expect(parseEmbedTicketFromHash('#ticket=abc')).toBe('abc')
     expect(parseEmbedTicketFromHash('#t=abc')).toBe('')
     expect(parseEmbedTicketFromHash('')).toBe('')
