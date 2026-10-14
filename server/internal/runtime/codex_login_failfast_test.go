@@ -18,12 +18,7 @@ func (b *fakeBridge) turnCount() int {
 }
 
 func TestRunAgentCodexLoginRejectedFailsFast(t *testing.T) {
-	p, _, _, mgr, _, req := setupProviderBackend(t, BackendCodex, func(int) chatFunc {
-		return func(int) turnAction { return turnAction{errorText: codex401, failed: true} }
-	})
-	p.opts.ProjectCredentialsForProject = func(string) map[string]string {
-		return map[string]string{envauth.EnvCodexAuthFile: chatgptLogin}
-	}
+	p, mgr, req := codexSetup(t, func(int) turnAction { return turnAction{errorText: codex401, failed: true} })
 	_, err := p.RunAgent(context.Background(), req)
 	if !errors.Is(err, ErrCodexLoginRejected) {
 		t.Fatalf("err = %v, want ErrCodexLoginRejected", err)
@@ -36,6 +31,52 @@ func TestRunAgentCodexLoginRejectedFailsFast(t *testing.T) {
 	}
 	if n := mgr.bridge(0).turnCount(); n != 1 {
 		t.Fatalf("turns = %d, want 1 (no re-prompt after a refused login)", n)
+	}
+}
+
+func codexSetup(t *testing.T, turn func(int) turnAction) (*acpProvider, *fakeManager, NodeReq) {
+	t.Helper()
+	p, _, _, mgr, _, req := setupProviderBackend(t, BackendCodex, func(int) chatFunc { return turn })
+	p.opts.ProjectCredentialsForProject = func(string) map[string]string {
+		return map[string]string{envauth.EnvCodexAuthFile: chatgptLogin}
+	}
+	return p, mgr, req
+}
+
+func TestRunAgentCodexLoginRejectedOnNudgeTurn(t *testing.T) {
+	p, mgr, req := codexSetup(t, func(turn int) turnAction {
+		if turn == 0 {
+			return turnAction{narration: "working"}
+		}
+		return turnAction{errorText: codex401, failed: true}
+	})
+	_, err := p.RunAgent(context.Background(), req)
+	if !errors.Is(err, ErrCodexLoginRejected) {
+		t.Fatalf("err = %v, want ErrCodexLoginRejected", err)
+	}
+	if !strings.Contains(err.Error(), "401 Unauthorized") {
+		t.Fatalf("CLI detail dropped: %q", err.Error())
+	}
+	if n := mgr.bridge(0).turnCount(); n != 2 {
+		t.Fatalf("turns = %d, want 2 (first turn + one failed re-prompt)", n)
+	}
+}
+
+func TestRunAgentCodex401InNarrationIsNotLoginFailure(t *testing.T) {
+	p, _, req := codexSetup(t, func(int) turnAction {
+		return turnAction{narration: "curl said: " + codex401, produces: map[string]string{"report.md": "ok"}, outcome: true}
+	})
+	if _, err := p.RunAgent(context.Background(), req); err != nil {
+		t.Fatalf("successful turn mentioning 401 must not fail: %v", err)
+	}
+}
+
+func TestCodexLoginRepasteMarkInMessage(t *testing.T) {
+	if !strings.Contains(CodexLoginRepasteMessage, CodexLoginRepasteMark) {
+		t.Fatal("CodexLoginRepasteMessage must contain CodexLoginRepasteMark (engine no-retry and web banner key on it)")
+	}
+	if !IsCodexAuthRejectionText("gateway: " + CodexLoginRepasteMark) {
+		t.Fatal("the mark alone must classify as a login rejection")
 	}
 }
 

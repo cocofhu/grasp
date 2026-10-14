@@ -256,7 +256,7 @@ const runFailureReason = computed(() => {
   return (run.value.error || '').trim()
 })
 const showRunFailureBanner = computed(() => !!runFailureReason.value)
-// Server and sandbox gateway both rewrite a refused Codex login to a message containing this phrase.
+// Same phrase as server runtime.CodexLoginRepasteMark; server and gateway tests pin their messages to it.
 const CODEX_LOGIN_REPASTE_MARK = '请重新粘贴登录文件'
 /** Project credentials route when the run failed on a refused Codex login. */
 const runFailureCredentialsRoute = computed(() => {

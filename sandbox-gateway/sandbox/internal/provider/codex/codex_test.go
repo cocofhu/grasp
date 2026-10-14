@@ -8,6 +8,14 @@ import (
 	"backend/internal/provider/oneshot"
 )
 
+// The server's engine (no auto-retry) and web failure banner key on this
+// phrase (server runtime.CodexLoginRepasteMark); copy changes must keep it.
+func TestLoginRepasteKeepsServerMark(t *testing.T) {
+	if !strings.Contains(codexLoginRepaste, "请重新粘贴登录文件") {
+		t.Fatalf("codexLoginRepaste lost the server mark: %q", codexLoginRepaste)
+	}
+}
+
 func TestParseAgentMessage(t *testing.T) {
 	var c codec
 	pr := c.ParseLine([]byte(`{"msg":{"type":"agent_message","message":"hello"}}`))

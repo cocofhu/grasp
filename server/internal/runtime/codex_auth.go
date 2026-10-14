@@ -23,6 +23,11 @@ const (
 	// CodexLoginRepasteMessage is the user-facing failure when Codex rejects
 	// or cannot refresh the login file. It must not include the file body.
 	CodexLoginRepasteMessage = "Codex 登录已失效或无法刷新，请重新粘贴登录文件（~/.codex/auth.json）"
+	// CodexLoginRepasteMark is the stable phrase that identifies the re-paste
+	// message. The engine (no auto-retry), the web failure banner (credentials
+	// link) and the sandbox gateway's rewritten message all key on it, so any
+	// copy change must keep it.
+	CodexLoginRepasteMark = "请重新粘贴登录文件"
 )
 
 var (
@@ -62,7 +67,9 @@ func asCodexLoginErr(err error) error {
 }
 
 // codexTurnLoginErr returns ErrCodexLoginRejected when a finished Codex turn
-// failed because the CLI login was refused. Other turns return nil.
+// failed because the CLI login was refused, keeping the CLI error body when it
+// says more than the re-paste message. Other turns return nil. Only the turn's
+// failure body is checked, never narration or tool output.
 func (c *acpProvider) codexTurnLoginErr(res *sandbox.ChatResult) error {
 	if c.backend != BackendCodex {
 		return nil
@@ -71,7 +78,10 @@ func (c *acpProvider) codexTurnLoginErr(res *sandbox.ChatResult) error {
 	if fail == "" || !IsCodexAuthRejectionText(fail) {
 		return nil
 	}
-	return ErrCodexLoginRejected
+	if fail == CodexLoginRepasteMessage {
+		return ErrCodexLoginRejected
+	}
+	return fmt.Errorf("%w: %s", ErrCodexLoginRejected, fail)
 }
 
 // ValidateCodexLoginFile accepts a ChatGPT login file and rejects blank
@@ -210,7 +220,7 @@ func IsCodexAuthRejectionText(text string) bool {
 	if s == "" {
 		return false
 	}
-	if strings.Contains(text, CodexLoginRepasteMessage) || strings.Contains(s, "请重新粘贴登录文件") {
+	if strings.Contains(text, CodexLoginRepasteMessage) || strings.Contains(s, CodexLoginRepasteMark) {
 		return true
 	}
 	phrases := []string{

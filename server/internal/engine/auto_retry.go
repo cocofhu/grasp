@@ -26,7 +26,7 @@ func isAutoRetryable(oc nodeOutcome) bool {
 // codexLoginRejected reports a node failure caused by a refused or
 // unrefreshable Codex login (runtime sentinel or the gateway's re-paste text).
 func codexLoginRejected(msg string) bool {
-	return strings.Contains(msg, runtime.CodexLoginRepasteMessage)
+	return strings.Contains(msg, runtime.CodexLoginRepasteMark)
 }
 
 // shortReason renders a failure message as a single trimmed line, capped in
