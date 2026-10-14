@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" class="cat cat--yume cat--bw" viewBox="48 46 132 124" width="200" height="200" role="img" aria-label="ghost cat yume mini black and white">
+<style><![CDATA[.k{stroke:#1a1a1a;stroke-width:4;stroke-linejoin:round;stroke-linecap:round}
+.c-float{animation:c-float 2.6s ease-in-out infinite;transform-origin:50% 100%}
+.c-squash{transform-origin:50% 100%}
+.cat--breathe .c-float{animation:c-breathe 2.8s ease-in-out infinite}
+.c-shadow{transform-origin:center;animation:c-shadow 2.6s ease-in-out infinite}
+.c-eye{transform-origin:center;animation:c-blink 4.2s infinite}
+.c-tail{transform-origin:0 100%;animation:c-wig 1.3s ease-in-out infinite}
+.c-swing{transform-origin:50% 0;animation:c-wig 2.2s ease-in-out infinite}
+.c-bow{transform-origin:center;animation:c-wig 1.6s ease-in-out infinite}
+.c-star{transform-origin:center;animation:c-pop 2.4s cubic-bezier(.34,1.7,.5,1) infinite}
+.c-star.s2{animation-delay:.8s}.c-star.s3{animation-delay:1.6s}
+.c-petal{animation:c-fall 3.2s linear infinite}.c-petal.p1{animation-delay:1.1s}.c-petal.p2{animation-delay:2.1s}
+.c-bub{animation:c-rise 2.4s ease-in infinite}.c-bub.b1{animation-delay:.8s}.c-bub.b2{animation-delay:1.6s}
+.c-zz{animation:c-zz 2.2s ease-out infinite}.c-zz.z2{animation-delay:1.1s}
+@keyframes c-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-9%)}}
+@keyframes c-breathe{0%,100%{transform:scale(1,1)}50%{transform:scale(1.05,.95)}}
+@keyframes c-shadow{0%,100%{transform:scaleX(1);opacity:.2}50%{transform:scaleX(.72);opacity:.1}}
+@keyframes c-blink{0%,93%,100%{transform:scaleY(1)}96%{transform:scaleY(.1)}}
+@keyframes c-wig{0%,100%{transform:rotate(-10deg)}50%{transform:rotate(10deg)}}
+@keyframes c-pop{0%,100%{transform:scale(0) rotate(0);opacity:0}25%,70%{transform:scale(1) rotate(72deg);opacity:1}}
+@keyframes c-fall{0%{transform:translate(0,0) rotate(0);opacity:0}10%{opacity:1}100%{transform:translate(-24px,170px) rotate(220deg);opacity:0}}
+@keyframes c-rise{0%{transform:translateY(0);opacity:0}20%{opacity:1}100%{transform:translateY(-150px);opacity:0}}
+@keyframes c-zz{0%{transform:translate(0,0);opacity:0}30%{opacity:1}100%{transform:translate(10px,-24px);opacity:0}}]]></style>
+<g class="c-float"><g class="c-squash">
+<path class="k c-tail" d="M140 140 Q172 132 166 104" fill="none"/>
+<path class="k" d="M58 160 L58 92 L66 58 L84 76 Q100 70 116 76 L134 58 L142 92 L142 160 Q131 150 121 162 Q110 150 100 162 Q90 150 79 162 Q69 150 58 160Z" fill="#FFFFFF"/>
+<g class="c-eyes">
+  <g class="c-eye"><ellipse cx="84" cy="110" rx="6" ry="8" fill="#1a1a1a"/></g>
+  <g class="c-eye"><ellipse cx="116" cy="110" rx="6" ry="8" fill="#1a1a1a"/></g>
+</g>
+<path class="k" d="M92 124 Q96 130 100 124 Q104 130 108 124" fill="none"/>
+<g class="c-blush">
+  <circle cx="74" cy="126" r="6" fill="#c8c8c8" opacity=".85"/>
+  <circle cx="126" cy="126" r="6" fill="#c8c8c8" opacity=".85"/>
+</g>
+</g></g>
+</svg>

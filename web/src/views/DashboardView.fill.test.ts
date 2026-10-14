@@ -54,9 +54,10 @@ describe('DashboardView home chat layout', () => {
     expect(particleBgSrc).toMatch(/pointer-events:\s*none/)
   })
 
-  // plan g1.2 / g1.3 — static brand mark + monospace wordmark, no easter egg / banned effects
-  it('uses static logo mark with monospace wordmark without banned brand effects', () => {
+  // plan g1.2 / g1.3 — yume character + logo mark + monospace wordmark; no game / banned effects
+  it('uses yume character with logo mark and monospace wordmark without banned brand effects', () => {
     expect(src).toMatch(/data-testid="home-brand"/)
+    expect(src).toMatch(/HomeYumeCharacter/)
     expect(src).toMatch(/data-testid="home-logo-mark"/)
     expect(src).toMatch(/logo-mark\.svg/)
     expect(src).not.toMatch(/HomeLogoEasterEgg|homeLogoJumpGame|home-logo-easter-egg/)

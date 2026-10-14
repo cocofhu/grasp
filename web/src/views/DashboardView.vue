@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import HomeParticleMeshBackground from '@/components/dashboard/HomeParticleMeshBackground.vue'
+import HomeYumeCharacter from '@/components/dashboard/HomeYumeCharacter.vue'
 import markUrl from '@/assets/brand/logo-mark.svg'
 import HomeWorkflowSelect from '@/components/dashboard/HomeWorkflowSelect.vue'
 import HomePrioritySelect from '@/components/dashboard/HomePrioritySelect.vue'
@@ -608,6 +609,7 @@ onBeforeUnmount(() => {
       class="home-shell__content relative z-[1] mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10"
     >
       <div class="home-brand-block" data-testid="home-brand-block">
+        <HomeYumeCharacter />
         <img
           class="home-logo-mark"
           data-testid="home-logo-mark"
@@ -1023,7 +1025,7 @@ onBeforeUnmount(() => {
   isolation: isolate;
 }
 
-/* brand mark — static; logo-mark works on light and dark */
+/* brand: yume character (interactive) + static logo-mark + wordmark */
 .home-brand-block {
   display: flex;
   flex-direction: column;
