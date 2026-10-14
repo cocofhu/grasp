@@ -31,6 +31,14 @@
 ### 2026-10-14（共享沙箱节点级环境 overlay）
 
 - 日期：2026-10-14
+- 范围：`server/internal/runtime/acp_run_agent.go`、`acp_unit_test.go`、`docs/dev/DEVLOG.md`
+- 做了什么：AbortRun 判断共享容器是否可 Destroy 时计入 parked `sessions`（KeepAliveForReview）上的 healthy preview/keepalive，不再只看 inflightACP；补 `TestAbortRunSharedParkedKeepaliveRetiresNotDestroys`。
+- 为什么：停靠后 Cancel 仍会 Destroy 共享容器，打掉 setsid preview 人工门闸。
+- 如何验证：`go test ./internal/runtime/ -run 'AbortRun|SharedKeepalive|Park|KeepAlive'`；`go test ./internal/runtime/ ./internal/services/ ./internal/sandbox/ -count=1`；`go vet ./internal/runtime/`。
+
+### 2026-10-14
+
+- 日期：2026-10-14
 - 范围：`server/internal/runtime/{acp_run_agent,acp_sandbox,shared_sandbox}.go`、对应单测、`docs/dev/DEVLOG.md`、`CHANGELOG.md`
 - 做了什么：修评审阻塞——AbortRun 在共享协调器下若有 preview keepalive 则 Retire 共享容器、不再 Destroy/removeHome；connectSandbox 失败只 release 租约不 discard 整代；create 窗口被 finalize 时由 creator 自行 Destroy+removeHome。补 coordinator AbortRun keepalive / connect 失败复用 / finalize-during-create 单测，并强化并发首次 acquire。
 - 为什么：共享路径会打掉 preview keepalive；connect 失败不应毁掉已有工作区；AbortRun 与 create 竞态会泄漏容器与 ConfigHome。

@@ -471,9 +471,10 @@ func mrBranches(req NodeReq) (source, target string) {
 // sandbox is retired (ACP closed, container kept) instead of Destroy'd so the
 // setsid-detached preview survives Cancel of the production turn. With a run-level
 // shared sandbox coordinator, Finalize still detaches the binding, but if any
-// inflight node keeps preview the shared container is Retire'd — never Destroy'd
-// or removeHome'd. Full Run / gate / sandbox reclaim still Destroy via the normal
-// lifecycle.
+// node in the run keeps preview — including KeepAliveForReview sessions parked
+// in sessions (no longer in inflightACP) — the shared container is Retire'd —
+// never Destroy'd or removeHome'd. Full Run / gate / sandbox reclaim still
+// Destroy via the normal lifecycle.
 func (c *acpProvider) AbortRun(runID string) {
 	c.dropRunTranscript(runID)
 	prefix := runID + "|"
@@ -489,10 +490,31 @@ func (c *acpProvider) AbortRun(runID string) {
 		lifecycle.FinalizeRunSandbox(runID, "retired")
 	}
 	c.mu.Lock()
+	keepSharedPreview := false
+	nodeKeepsPreview := func(nodeID string) bool {
+		if c.host == nil {
+			return false
+		}
+		pids := c.host.ListPreviewKeepalivePIDs(runID, nodeID)
+		return c.host.HasHealthyPreviewPorts(runID, nodeID) || len(pids) > 0
+	}
+	keyNodeID := func(k string) string {
+		if i := strings.IndexByte(k, '|'); i >= 0 {
+			return k[i+1:]
+		}
+		return k
+	}
 	var sessionKeys []string
 	for k := range c.sessions {
-		if strings.HasPrefix(k, prefix) {
-			sessionKeys = append(sessionKeys, k)
+		if !strings.HasPrefix(k, prefix) {
+			continue
+		}
+		sessionKeys = append(sessionKeys, k)
+		// Parked KeepAliveForReview sessions are closed via closeSession below,
+		// but their preview/keepalive still decides whether the shared container
+		// may be Destroy'd.
+		if nodeKeepsPreview(keyNodeID(k)) {
+			keepSharedPreview = true
 		}
 	}
 	var agentKeys []string
@@ -505,44 +527,29 @@ func (c *acpProvider) AbortRun(runID string) {
 		}
 
 		if _, parked := c.sessions[k]; parked {
+			// Teardown is via closeSession; keepalive already counted above.
 			continue
 		}
 		agentKeys = append(agentKeys, k)
 		agentACPs = append(agentACPs, acp)
 		agentSBs = append(agentSBs, c.live[k])
-		nodeID := k
-		if i := strings.IndexByte(k, '|'); i >= 0 {
-			nodeID = k[i+1:]
-		}
-
-		keep := false
-		if c.host != nil {
-			pids := c.host.ListPreviewKeepalivePIDs(runID, nodeID)
-			keep = c.host.HasHealthyPreviewPorts(runID, nodeID) || len(pids) > 0
-		}
+		nodeID := keyNodeID(k)
+		keep := nodeKeepsPreview(nodeID)
 		agentKeepPreview = append(agentKeepPreview, keep)
+		if keep {
+			keepSharedPreview = true
+		}
 	}
 	for _, k := range agentKeys {
 		delete(c.inflightACP, k)
 		delete(c.live, k)
 		if c.timeline != nil {
-			nodeID := k
-			if i := strings.IndexByte(k, '|'); i >= 0 {
-				nodeID = k[i+1:]
-			}
-			c.timeline.stop(runID, nodeID)
+			c.timeline.stop(runID, keyNodeID(k))
 		}
 	}
 	c.mu.Unlock()
 	for _, k := range sessionKeys {
 		c.closeSession(k)
-	}
-	keepSharedPreview := false
-	for _, keep := range agentKeepPreview {
-		if keep {
-			keepSharedPreview = true
-			break
-		}
 	}
 	for i, acp := range agentACPs {
 		sb := agentSBs[i]
