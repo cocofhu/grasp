@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import HomeParticleMeshBackground from '@/components/dashboard/HomeParticleMeshBackground.vue'
-import HomeLogoEasterEgg from '@/components/dashboard/HomeLogoEasterEgg.vue'
+import markUrl from '@/assets/brand/logo-mark.svg'
 import HomeWorkflowSelect from '@/components/dashboard/HomeWorkflowSelect.vue'
 import HomePrioritySelect from '@/components/dashboard/HomePrioritySelect.vue'
 import Icon from '@/components/ui/Icon.vue'
@@ -607,12 +607,29 @@ onBeforeUnmount(() => {
     <div
       class="home-shell__content relative z-[1] mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10"
     >
-      <HomeLogoEasterEgg
-        :product-name="productName"
-        :brand-visible="brandVisible"
-        :brand-cursor-blink="brandCursorBlink"
-        :brand-cursor-gone="brandCursorGone"
-      >
+      <div class="home-brand-block" data-testid="home-brand-block">
+        <img
+          class="home-logo-mark"
+          data-testid="home-logo-mark"
+          :src="markUrl"
+          width="72"
+          height="72"
+          alt=""
+          draggable="false"
+        />
+        <h1 class="home-brand" data-testid="home-brand" :aria-label="productName">
+          <span class="home-brand__text" data-testid="home-brand-text">{{ brandVisible }}</span>
+          <span
+            class="home-brand__cursor"
+            :class="{
+              'home-brand__cursor--blink': brandCursorBlink,
+              'home-brand__cursor--gone': brandCursorGone,
+            }"
+            data-testid="home-brand-cursor"
+            aria-hidden="true"
+          />
+        </h1>
+      </div>
       <p class="home-hint mt-[18px] text-center" data-testid="home-title">
         {{ effectiveSubtitle }}
       </p>
@@ -930,7 +947,6 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
-      </HomeLogoEasterEgg>
     </div>
 
     <Teleport to="body">
@@ -1005,6 +1021,24 @@ onBeforeUnmount(() => {
 /* g1 — clean shell aligned to page.html design tokens */
 .home-shell {
   isolation: isolate;
+}
+
+/* brand mark — static; logo-mark works on light and dark */
+.home-brand-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.home-logo-mark {
+  display: block;
+  width: 72px;
+  height: 72px;
+  margin: 0 0 12px;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
 }
 
 /* g1.1 — monospace brand; solid color; letter-spacing matches design */
