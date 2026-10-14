@@ -4,6 +4,7 @@ import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
+import enCommon from '@/locales/en/common.json'
 import enPages from '@/locales/en/pages.json'
 import type { Workflow } from '@/lib/shared/types'
 
@@ -90,11 +91,14 @@ const approveWf: Workflow = {
   edges: [{ id: 'e1', source: 'in', target: 'ap' }],
 }
 
-function mountDashboard() {
+function mountDashboard(locale: 'zh-CN' | 'en' = 'zh-CN') {
   const i18n = createI18n({
     legacy: false,
-    locale: 'zh-CN',
-    messages: { 'zh-CN': { ...common, ...pages } },
+    locale,
+    messages:
+      locale === 'en'
+        ? { en: { ...enCommon, ...enPages } }
+        : { 'zh-CN': { ...common, ...pages } },
   })
   return mount(DashboardView, {
     attachTo: document.body,
@@ -323,6 +327,7 @@ describe('DashboardView home composer', () => {
     expect(copy.text()).toContain('先说清')
     expect(copy.text()).toContain('再动手')
     expect(copy.find('.em').text()).toBe('先说清')
+    expect(copy.text().replace(/\s+/g, '')).toContain('先说清，再动手')
     expect(wrapper.find('[data-testid="home-brand"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-brand-text"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-brand-cursor"]').exists()).toBe(false)
@@ -332,6 +337,16 @@ describe('DashboardView home composer', () => {
     expect(wrapper.find('[data-testid="home-filter-hint"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('从一句话开始一次开发前澄清')
     expect(wrapper.text()).not.toContain('仅显示开始后是 Approve 的已发布工作流')
+    wrapper.unmount()
+  })
+
+  it('renders the English slogan without Chinese copy', async () => {
+    const wrapper = mountDashboard('en')
+    await flushPromises()
+    const copy = wrapper.get('[data-testid="home-hero-copy"]')
+    expect(copy.find('.em').text()).toBe('Clarify first')
+    expect(copy.text().replace(/\s+/g, ' ').trim()).toBe('Clarify first, then act')
+    expect(copy.text()).not.toMatch(/先说清|再动手/)
     wrapper.unmount()
   })
 

@@ -135,30 +135,6 @@ onBeforeUnmount(() => {
       focusable="false"
     >
       <ellipse class="c-shadow" cx="100" cy="186" rx="40" ry="7" fill="#1a1a1a" opacity=".22" />
-      <path
-        class="c-star s1"
-        transform="translate(30,50)"
-        d="M0 -9 l3 7 7 1 -5 5 1 7 -6 -4 -6 4 1 -7 -5 -5 7 -1z"
-        fill="#e8e8e8"
-        stroke="#1a1a1a"
-        stroke-width="3"
-      />
-      <path
-        class="c-star s2"
-        transform="translate(168,42)"
-        d="M0 -9 l3 7 7 1 -5 5 1 7 -6 -4 -6 4 1 -7 -5 -5 7 -1z"
-        fill="#ffffff"
-        stroke="#1a1a1a"
-        stroke-width="3"
-      />
-      <path
-        class="c-star s3"
-        transform="translate(172,128)"
-        d="M0 -9 l3 7 7 1 -5 5 1 7 -6 -4 -6 4 1 -7 -5 -5 7 -1z"
-        fill="#d0d0d0"
-        stroke="#1a1a1a"
-        stroke-width="3"
-      />
       <g class="c-float">
         <g class="c-squash">
           <path class="k c-tail" d="M140 140 Q172 132 166 104" fill="none" />
@@ -203,6 +179,10 @@ onBeforeUnmount(() => {
   overflow: hidden;
   filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.45));
   /* layout box fixed; float/squash/bounce use transform only */
+}
+
+html.light .home-yume {
+  filter: drop-shadow(0 6px 10px rgba(16, 24, 40, 0.08));
 }
 
 .home-yume:focus-visible {
@@ -251,19 +231,6 @@ onBeforeUnmount(() => {
   animation: yume-c-wig 1.3s ease-in-out infinite;
 }
 
-.home-yume :deep(.c-star) {
-  transform-origin: center;
-  animation: yume-c-pop 2.4s cubic-bezier(0.34, 1.7, 0.5, 1) infinite;
-}
-
-.home-yume :deep(.c-star.s2) {
-  animation-delay: 0.8s;
-}
-
-.home-yume :deep(.c-star.s3) {
-  animation-delay: 1.6s;
-}
-
 @keyframes yume-c-float {
   0%,
   100% {
@@ -307,19 +274,6 @@ onBeforeUnmount(() => {
   }
 }
 
-@keyframes yume-c-pop {
-  0%,
-  100% {
-    transform: scale(0) rotate(0);
-    opacity: 0;
-  }
-  25%,
-  70% {
-    transform: scale(1) rotate(72deg);
-    opacity: 1;
-  }
-}
-
 .home-yume.pressed :deep(.c-squash) {
   transform: scale(1.08, 0.82) !important;
   transition: transform 0.08s ease-out;
@@ -344,8 +298,7 @@ onBeforeUnmount(() => {
 .home-yume--static :deep(.c-float),
 .home-yume--static :deep(.c-shadow),
 .home-yume--static :deep(.c-eye),
-.home-yume--static :deep(.c-tail),
-.home-yume--static :deep(.c-star) {
+.home-yume--static :deep(.c-tail) {
   animation: none !important;
 }
 
@@ -360,8 +313,7 @@ onBeforeUnmount(() => {
   .home-yume :deep(.c-float),
   .home-yume :deep(.c-shadow),
   .home-yume :deep(.c-eye),
-  .home-yume :deep(.c-tail),
-  .home-yume :deep(.c-star) {
+  .home-yume :deep(.c-tail) {
     animation: none !important;
   }
 }

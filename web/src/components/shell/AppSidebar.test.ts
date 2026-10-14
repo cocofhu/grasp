@@ -78,6 +78,14 @@ describe('AppSidebar', () => {
     expect(hide.attributes('aria-label')).toBe('隐藏导航')
     expect(hide.attributes('aria-expanded')).toBe('true')
     expect(hide.attributes('aria-controls')).toBe('app-desktop-sidebar')
+    const lockup = wrapper.get('[data-testid="sidebar-brand-lockup"]')
+    expect(lockup.classes()).toEqual(expect.arrayContaining(['items-center', 'gap-2']))
+    const mark = lockup.get('[data-testid="brand-character-mark"]')
+    expect(mark.attributes('data-size')).toBe('28')
+    expect(mark.attributes('style')).toContain('28px')
+    const rowKids = [...row.element.children]
+    expect(rowKids[0]?.getAttribute('data-testid')).toBe('sidebar-brand-lockup')
+    expect(rowKids[rowKids.length - 1]?.getAttribute('data-testid')).toBe('desktop-nav-hide')
     wrapper.unmount()
   })
 

@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import HomeParticleMeshBackground from './HomeParticleMeshBackground.vue'
@@ -43,6 +46,14 @@ describe('HomeParticleMeshBackground', () => {
     expect(root.classes()).toContain('home-particle-mesh')
     const canvas = wrapper.find('canvas')
     expect(canvas.exists()).toBe(true)
+    const src = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'HomeParticleMeshBackground.vue'),
+      'utf8',
+    )
+    expect(src).toMatch(/pointer-events:\s*none/)
+    expect(src).toMatch(/window\.addEventListener\(\s*'pointermove'/)
+    expect(src).not.toMatch(/addEventListener\(\s*'mousemove'/)
+    expect(src).not.toMatch(/addEventListener\(\s*'mouseleave'/)
     wrapper.unmount()
   })
 

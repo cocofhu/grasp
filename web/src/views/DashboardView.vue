@@ -556,13 +556,11 @@ onBeforeUnmount(() => {
   <div data-testid="dashboard-view" class="home-shell relative flex h-full min-h-0 flex-col">
     <HomeParticleMeshBackground />
     <div
-      class="home-shell__content relative z-[1] mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col items-center justify-start overflow-y-auto px-4 py-10"
+      class="home-shell__content relative z-[1] mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col items-center justify-start overflow-y-auto px-4"
     >
       <div class="home-brand-block" data-testid="home-brand-block">
         <HomeYumeCharacter />
-        <p class="home-hero-copy" data-testid="home-hero-copy">
-          <span class="em">先说清</span>，再动手
-        </p>
+        <p class="home-hero-copy" data-testid="home-hero-copy"><span class="em">{{ t('pages.dashboard.heroEm') }}</span>{{ t('pages.dashboard.heroRest') }}</p>
       </div>
 
       <div class="home-composer-wrap w-full">
@@ -954,6 +952,12 @@ onBeforeUnmount(() => {
   isolation: isolate;
 }
 
+/* Desktop top inset is 120px; the 520px breakpoint below keeps 4.25rem. */
+.home-shell__content {
+  padding-top: 120px;
+  padding-bottom: 40px;
+}
+
 /* brand: fill LOCKED — cropped yume + copy; no wordmark / logo-mark */
 .home-brand-block {
   --yume-w: 240px;
@@ -982,11 +986,11 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
-:global(html.light) .home-hero-copy {
+html.light .home-hero-copy {
   color: #6b6b6b;
 }
 
-:global(html.light) .home-hero-copy .em {
+html.light .home-hero-copy .em {
   color: #1a1a1a;
 }
 
@@ -996,10 +1000,22 @@ onBeforeUnmount(() => {
   background: rgb(var(--c-surface));
   border-radius: 16px;
   overflow: hidden;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
-:global(html.light) .home-composer {
-  border-color: rgb(var(--c-line));
+.home-composer:hover {
+  border-color: rgb(var(--c-line-strong));
+}
+
+.home-composer:focus-within {
+  border-color: rgb(var(--c-accent));
+  box-shadow: 0 0 0 3px rgb(var(--c-accent) / 0.16);
+}
+
+/* Background only — a border-color here would beat :focus-within. */
+html.light .home-composer {
   background: rgb(var(--c-elevated));
 }
 
@@ -1049,9 +1065,18 @@ onBeforeUnmount(() => {
   background: rgb(var(--c-txt));
   color: rgb(var(--c-base));
   border-radius: 8px;
+  transition: transform 0.15s ease;
 }
 
-:global(html.light) .home-composer__send {
+.home-composer__send:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.home-composer__send:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+html.light .home-composer__send {
   background: rgb(var(--c-txt));
   color: #fff;
 }
@@ -1067,7 +1092,7 @@ onBeforeUnmount(() => {
   -webkit-touch-callout: none;
 }
 
-:global(html.light) .home-shell__card {
+html.light .home-shell__card:not(.home-shell__card--add) {
   background: rgb(var(--c-elevated));
 }
 
@@ -1168,8 +1193,8 @@ onBeforeUnmount(() => {
   color: rgb(var(--c-txt3));
 }
 
-:global(html.light) .home-shell__card-top {
-  background: rgb(244 244 245);
+html.light .home-shell__card-top {
+  background: rgb(244, 244, 245);
 }
 
 /* g2 — workflow rail: hidden scrollbar + edge arrows (aligned to page.html demo) */
@@ -1328,7 +1353,10 @@ onBeforeUnmount(() => {
   .home-shell__card--add:hover,
   .home-shell__card--add:active,
   .home-shell__card--add:hover .home-shell__card-plus,
-  .home-shell__card--add:active .home-shell__card-plus {
+  .home-shell__card--add:active .home-shell__card-plus,
+  .home-composer__send,
+  .home-composer__send:hover,
+  .home-composer__send:active {
     transform: none;
   }
 }

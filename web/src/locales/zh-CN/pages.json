@@ -21,6 +21,8 @@
       "pickWorkflow": "请先选择一个工作流",
       "noWorkflowShort": "未选择工作流",
       "needText": "请先描述目标或附加文件",
+      "heroEm": "先说清",
+      "heroRest": "，再动手",
       "send": "发送",
       "sendShortcut": "Ctrl/⌘ + Enter 发送",
       "missingRequired": "启动前还需填写必填项",
@@ -4143,6 +4145,8 @@
       "badCredentials": "用户名或密码错误",
       "username": "用户名",
       "password": "密码",
+      "usernamePlaceholder": "请输入用户名",
+      "passwordPlaceholder": "请输入密码",
       "submit": "登录",
       "submitting": "登录中…"
     },

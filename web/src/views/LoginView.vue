@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import BrandCharacterMark from '@/components/shell/BrandCharacterMark.vue'
 import BrandLogo from '@/components/shell/BrandLogo.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import Icon from '@/components/ui/Icon.vue'
@@ -49,8 +50,9 @@ async function onSubmit() {
 <template>
   <div class="flex min-h-full items-center justify-center bg-base px-4 py-8 [background:radial-gradient(ellipse_80%_60%_at_50%_0%,rgba(123,97,255,.08),transparent),rgb(var(--c-base))]">
     <div class="w-full max-w-[400px] overflow-hidden rounded-xl border border-line bg-surface p-7 shadow-card">
-      <div class="mb-7 flex flex-col items-center text-center">
-        <BrandLogo size="lg" align="center" />
+      <div class="mb-7 flex items-center justify-center gap-3" data-testid="login-brand">
+        <BrandCharacterMark :size="48" />
+        <BrandLogo size="lg" align="start" />
       </div>
 
       <template v-if="showLoginForm">
@@ -80,7 +82,7 @@ async function onSubmit() {
               v-model="username"
               type="text"
               autocomplete="username"
-              placeholder="admin"
+              :placeholder="t('pages.login.usernamePlaceholder')"
               class="w-full rounded border border-line bg-base px-3 py-2 text-sm text-txt outline-none transition focus:border-accent focus:shadow-[0_0_0_2px_rgba(123,97,255,.3)]"
               :class="fieldError ? 'border-err' : ''"
             />
@@ -92,7 +94,7 @@ async function onSubmit() {
               v-model="password"
               type="password"
               autocomplete="current-password"
-              placeholder="••••••••"
+              :placeholder="t('pages.login.passwordPlaceholder')"
               class="w-full rounded border border-line bg-base px-3 py-2 text-sm text-txt outline-none transition focus:border-accent focus:shadow-[0_0_0_2px_rgba(123,97,255,.3)]"
               :class="fieldError ? 'border-err' : ''"
             />

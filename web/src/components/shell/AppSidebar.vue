@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppSidebarNav from './AppSidebarNav.vue'
+import BrandCharacterMark from './BrandCharacterMark.vue'
 import BrandLogo from './BrandLogo.vue'
 import ShellChromeControls from './ShellChromeControls.vue'
 import Icon from '../ui/Icon.vue'
@@ -63,7 +64,10 @@ async function onHideNav() {
         class="app-sidebar-brand-row flex h-14 items-center justify-between gap-2 pl-3.5 pr-2"
         data-testid="sidebar-brand-row"
       >
-        <BrandLogo size="md" align="start" :show-tagline="false" use-custom-brand />
+        <div class="flex min-w-0 items-center gap-2" data-testid="sidebar-brand-lockup">
+          <BrandCharacterMark :size="28" />
+          <BrandLogo size="md" align="start" :show-tagline="false" use-custom-brand />
+        </div>
         <button
           type="button"
           class="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-txt3 hover:text-txt2"

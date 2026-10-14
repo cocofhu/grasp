@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import HomeYumeCharacter from './HomeYumeCharacter.vue'
@@ -39,7 +42,8 @@ describe('HomeYumeCharacter', () => {
     expect(wrapper.find('svg.cat--yume').exists()).toBe(true)
     expect(wrapper.find('.c-eyes').exists()).toBe(true)
     expect(wrapper.find('.c-tail').exists()).toBe(true)
-    expect(wrapper.find('.c-star').exists()).toBe(true)
+    expect(wrapper.find('.c-star').exists()).toBe(false)
+    expect(wrapper.html()).not.toMatch(/c-star|yume-c-pop/)
     // B&W tokens from INTERACTION.md
     expect(wrapper.html()).toMatch(/fill="#FFFFFF"|fill="#ffffff"/i)
     expect(wrapper.html()).toMatch(/#1a1a1a/)
@@ -88,6 +92,17 @@ describe('HomeYumeCharacter', () => {
     const eyes = wrapper.find('.c-eyes').element as SVGGElement
     expect(eyes.style.transform).toMatch(/translate\(/)
     wrapper.unmount()
+  })
+
+  it('keeps the dark drop-shadow and uses a lighter one in light theme', () => {
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'HomeYumeCharacter.vue'), 'utf8')
+    expect(src).toMatch(/filter:\s*drop-shadow\(0 12px 28px rgba\(0,\s*0,\s*0,\s*0\.45\)\)/)
+    const light = src.match(/html\.light\s+\.home-yume\s*\{([^}]+)\}/)?.[1] ?? ''
+    expect(light).toMatch(/drop-shadow/)
+    expect(light).not.toMatch(/0\.45/)
+    expect(light).not.toMatch(/28px/)
+    expect(src).not.toMatch(/c-star/)
+    expect(src).not.toMatch(/yume-c-pop/)
   })
 
   it('disables motion under prefers-reduced-motion', async () => {

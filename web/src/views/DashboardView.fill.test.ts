@@ -61,6 +61,9 @@ describe('DashboardView home chat layout', () => {
     expect(src).toMatch(/data-testid="home-hero-copy"/)
     expect(src).toMatch(/home-hero-copy/)
     expect(src).toMatch(/class="em"/)
+    expect(src).toContain("t('pages.dashboard.heroEm')")
+    expect(src).toContain("t('pages.dashboard.heroRest')")
+    expect(src).not.toContain('先说清')
     expect(src).not.toMatch(/data-testid="home-brand"/)
     expect(src).not.toMatch(/data-testid="home-brand-row"/)
     expect(src).not.toMatch(/data-testid="home-brand-copy"/)
@@ -171,9 +174,14 @@ describe('DashboardView home chat layout', () => {
     expect(shellSrc).toMatch(/min-h-0 flex-1/)
   })
 
-  // fill LOCKED — top-down shell (justify-start); mobile keeps ~4.25rem padding-top
-  it('uses moderate mobile top padding without vertical centering', () => {
+  // fill LOCKED — top-down shell (justify-start); desktop top inset is 120px
+  it('uses a 120px desktop top inset and keeps moderate mobile padding', () => {
     expect(src).toMatch(/home-shell__content[^"]*justify-start/)
+    expect(src).toMatch(/\.home-shell__content\s*\{[^}]*padding-top:\s*120px/)
+    expect(src).toMatch(/\.home-shell__content\s*\{[^}]*padding-bottom:\s*40px/)
+    expect(src).not.toMatch(/padding-top:\s*72px/)
+    expect(src).not.toMatch(/padding-top:\s*40px/)
+    expect(src).not.toMatch(/home-shell__content[^"]*\bpy-10\b/)
     expect(src).toMatch(
       /@media \(max-width: 520px\)[\s\S]*\.home-shell__content[\s\S]*padding-top:\s*4\.25rem/,
     )
@@ -215,5 +223,26 @@ describe('DashboardView home chat layout', () => {
     expect(src).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.home-workflow-enter[\s\S]*animation:\s*none/,
     )
+  })
+
+  it('loads slogan copy from locale files instead of a hardcoded Chinese line', () => {
+    const zh = JSON.parse(
+      readFileSync(join(dir, '../locales/zh-CN/pages.json'), 'utf8'),
+    ) as { pages: { dashboard: { heroEm: string; heroRest: string } } }
+    const en = JSON.parse(
+      readFileSync(join(dir, '../locales/en/pages.json'), 'utf8'),
+    ) as { pages: { dashboard: { heroEm: string; heroRest: string } } }
+    expect(zh.pages.dashboard.heroEm).toBe('先说清')
+    expect(zh.pages.dashboard.heroRest).toBe('，再动手')
+    expect(en.pages.dashboard.heroEm).toBe('Clarify first')
+    expect(en.pages.dashboard.heroRest).toBe(', then act')
+    expect(`${en.pages.dashboard.heroEm}${en.pages.dashboard.heroRest}`).toBe('Clarify first, then act')
+    expect(src).toMatch(/\.home-composer:focus-within\s*\{[^}]*rgb\(var\(--c-accent\)/)
+    expect(src).toMatch(/0 0 0 3px rgb\(var\(--c-accent\) \/ 0\.16\)/)
+    expect(src).toMatch(/\.home-composer__send:hover:not\(:disabled\)\s*\{[^}]*translateY\(-1px\)/)
+    expect(src).toMatch(/prefers-reduced-motion: reduce[\s\S]*\.home-composer__send[\s\S]*transform:\s*none/)
+    const lightComposer = src.match(/html\.light\s+\.home-composer\s*\{([^}]+)\}/)?.[1] ?? ''
+    expect(lightComposer).toMatch(/--c-elevated/)
+    expect(lightComposer).not.toMatch(/border-color/)
   })
 })

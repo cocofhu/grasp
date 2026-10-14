@@ -255,6 +255,7 @@ describe('AppShell (no topbar + floating ball)', () => {
     expect(aside!).toMatch(/\bmd:hidden\b/)
     expect(aside!).not.toMatch(/\binset-y-0\b/)
     expect(src).not.toMatch(/<AppTopbar/)
+    expect(src).not.toMatch(/BrandCharacterMark/)
   })
 
   it('desktop hide uses width 0 not a mobile drawer (g2.2 / g3.2)', async () => {

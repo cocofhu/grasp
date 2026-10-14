@@ -89,16 +89,29 @@ function stopLoop() {
   }
 }
 
-function onMouseMove(e: MouseEvent) {
+function trackPointer(e: PointerEvent) {
   if (!controller || !hostRef.value) return
   const rect = hostRef.value.getBoundingClientRect()
-  controller.setMouse(e.clientX - rect.left, e.clientY - rect.top)
+  const inside =
+    rect.width > 0 &&
+    rect.height > 0 &&
+    e.clientX >= rect.left &&
+    e.clientX <= rect.right &&
+    e.clientY >= rect.top &&
+    e.clientY <= rect.bottom
+  if (!inside) {
+    controller.resetMouseToCenter(rect.width, rect.height)
+  } else {
+    controller.setMouse(e.clientX - rect.left, e.clientY - rect.top)
+  }
+  if (reduceMotion) paintOnce()
 }
 
-function onMouseLeave() {
+function onPointerLeaveView() {
   if (!controller) return
   const { width, height } = layoutSize()
   controller.resetMouseToCenter(width, height)
+  if (reduceMotion) paintOnce()
 }
 
 function onMotionPrefChange() {
@@ -114,11 +127,8 @@ onMounted(() => {
   rebuild()
   startLoop()
 
-  const host = hostRef.value
-  if (host) {
-    host.addEventListener('mousemove', onMouseMove)
-    host.addEventListener('mouseleave', onMouseLeave)
-  }
+  window.addEventListener('pointermove', trackPointer, { passive: true })
+  document.documentElement.addEventListener('pointerleave', onPointerLeaveView)
 
   if (typeof ResizeObserver !== 'undefined' && hostRef.value) {
     resizeObserver = new ResizeObserver(() => rebuild())
@@ -140,11 +150,8 @@ watch(theme, () => {
 
 onBeforeUnmount(() => {
   stopLoop()
-  const host = hostRef.value
-  if (host) {
-    host.removeEventListener('mousemove', onMouseMove)
-    host.removeEventListener('mouseleave', onMouseLeave)
-  }
+  window.removeEventListener('pointermove', trackPointer)
+  document.documentElement.removeEventListener('pointerleave', onPointerLeaveView)
   resizeObserver?.disconnect()
   resizeObserver = null
   window.removeEventListener('resize', rebuild)
