@@ -469,8 +469,11 @@ func mrBranches(req NodeReq) (source, target string) {
 //
 // When a preview-capable Agent node already has a healthy keepalive registration, the
 // sandbox is retired (ACP closed, container kept) instead of Destroy'd so the
-// setsid-detached preview survives Cancel of the production turn. Full Run /
-// gate / sandbox reclaim still Destroy via the normal lifecycle.
+// setsid-detached preview survives Cancel of the production turn. With a run-level
+// shared sandbox coordinator, Finalize still detaches the binding, but if any
+// inflight node keeps preview the shared container is Retire'd — never Destroy'd
+// or removeHome'd. Full Run / gate / sandbox reclaim still Destroy via the normal
+// lifecycle.
 func (c *acpProvider) AbortRun(runID string) {
 	c.dropRunTranscript(runID)
 	prefix := runID + "|"
@@ -534,6 +537,13 @@ func (c *acpProvider) AbortRun(runID string) {
 	for _, k := range sessionKeys {
 		c.closeSession(k)
 	}
+	keepSharedPreview := false
+	for _, keep := range agentKeepPreview {
+		if keep {
+			keepSharedPreview = true
+			break
+		}
+	}
 	for i, acp := range agentACPs {
 		sb := agentSBs[i]
 		if agentKeepPreview[i] && sb != nil {
@@ -547,7 +557,7 @@ func (c *acpProvider) AbortRun(runID string) {
 			acp.Close()
 		}
 		if c.coordinator != nil {
-			// The run coordinator owns the one terminal destroy below.
+			// The run coordinator owns the one terminal teardown below.
 			continue
 		}
 		if sb != nil {
@@ -557,6 +567,14 @@ func (c *acpProvider) AbortRun(runID string) {
 		}
 	}
 	if shared != nil && shared.sb != nil {
+		if keepSharedPreview {
+			// Preview keepalive must survive AbortRun: Retire the shared
+			// container (idle-TTL) and leave ConfigHome mounted.
+			if r, ok := c.registry.(RunSandboxRetirer); ok {
+				r.RetireRunSandbox(shared.sb.Name)
+			}
+			return
+		}
 		c.deregisterRunSandbox(shared.sb.Name)
 		shared.sb.Destroy(context.Background())
 		removeHome(shared.home)

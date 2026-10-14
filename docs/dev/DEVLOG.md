@@ -31,6 +31,14 @@
 ### 2026-10-14（共享沙箱节点级环境 overlay）
 
 - 日期：2026-10-14
+- 范围：`server/internal/runtime/{acp_run_agent,acp_sandbox,shared_sandbox}.go`、对应单测、`docs/dev/DEVLOG.md`、`CHANGELOG.md`
+- 做了什么：修评审阻塞——AbortRun 在共享协调器下若有 preview keepalive 则 Retire 共享容器、不再 Destroy/removeHome；connectSandbox 失败只 release 租约不 discard 整代；create 窗口被 finalize 时由 creator 自行 Destroy+removeHome。补 coordinator AbortRun keepalive / connect 失败复用 / finalize-during-create 单测，并强化并发首次 acquire。
+- 为什么：共享路径会打掉 preview keepalive；connect 失败不应毁掉已有工作区；AbortRun 与 create 竞态会泄漏容器与 ConfigHome。
+- 如何验证：`go test ./internal/runtime/ -run 'AbortRun|SharedSandbox|…'`；`go test ./internal/runtime/ ./internal/services/ ./internal/sandbox/ -count=1`；`go vet ./internal/runtime/`。
+
+### 2026-10-14
+
+- 日期：2026-10-14
 - 范围：`server/internal/{runtime,sandbox}`、`sandbox-gateway/sandbox/internal/{provider,service,handler}`、`sandbox-gateway/sandbox/docs/PROTOCOL.md`、`docs/dev/DEVLOG.md`、`CHANGELOG.md`
 - 做了什么：共享沙箱改为「运行级容器环境 + 节点级 ACP 会话 overlay」。创建容器时只注入运行级快照与平台保留变量；节点凭据/Agent env 经 `connect.env` 注入 Agent 子进程，会话删除时清理。去掉因 env fingerprint 拒绝复用的 fail-closed 逻辑；节点 overlay 不可覆盖平台保留键。
 - 为什么：顺序多节点若 Agent 凭据不同，旧实现会拒绝共用同一沙箱；需求要求节点级环境可切换且不泄漏到后续节点。

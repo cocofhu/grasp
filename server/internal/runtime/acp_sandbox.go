@@ -418,12 +418,10 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 		}
 		acp, err := c.connectSandbox(ctx, req, entry.sb, entry.bridgeModel, newNodeChatID(req.RunID, req.NodeID), overlay)
 		if err != nil {
-			home, removed := c.coordinator.discard(req.RunID, entry.sb)
-			if removed {
-				c.deregisterRunSandbox(entry.sb.Name)
-				entry.sb.Destroy(context.Background())
-				removeHome(home)
-			}
+			// Connect/chat failures are node-scoped: release the lease so a
+			// retry or later node can reuse the healthy run-level container.
+			// Only Attach/create faults discard and replace a generation.
+			c.coordinator.release(entry.sb)
 			return nil, nil, "", err
 		}
 		return entry.sb, acp, entry.home, nil

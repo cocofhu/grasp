@@ -339,15 +339,25 @@ func (r *countingRegistry) balanced() bool {
 }
 
 // retiringRegistry additionally implements RunSandboxRetirer so retireRunSandbox
-// hands the container to the store instead of destroying it inline.
+// hands the container to the store instead of destroying it inline. It also
+// implements RunSandboxLifecycle so AbortRun's FinalizeRunSandbox is observable.
 type retiringRegistry struct {
 	countingRegistry
-	retired int
+	retired   int
+	finalized int
 }
 
 func (r *retiringRegistry) RetireRunSandbox(string) {
 	r.mu.Lock()
 	r.retired++
+	r.mu.Unlock()
+}
+
+func (r *retiringRegistry) MarkRunSandboxReplacement(string, int, string) {}
+
+func (r *retiringRegistry) FinalizeRunSandbox(string, string) {
+	r.mu.Lock()
+	r.finalized++
 	r.mu.Unlock()
 }
 

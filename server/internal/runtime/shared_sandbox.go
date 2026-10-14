@@ -86,12 +86,18 @@ func (c *sharedSandboxCoordinator) acquire(ctx context.Context, runID string, cr
 	if creator {
 		sb, home, bridgeModel, err := create()
 		c.mu.Lock()
-		if err == nil && sb != nil {
+		// AbortRun may finalize while create() is in flight: the entry is
+		// already detached with sb==nil, so the creator must tear down the
+		// orphaned container and ConfigHome itself.
+		orphaned := entry.finalized || c.terminal[runID] || c.runs[runID] != entry
+		if err == nil && sb != nil && !orphaned {
 			entry.sb, entry.home, entry.bridgeModel = sb, home, bridgeModel
 		}
 		close(entry.ready)
-		if err != nil || sb == nil {
-			delete(c.runs, runID)
+		if err != nil || sb == nil || orphaned {
+			if c.runs[runID] == entry {
+				delete(c.runs, runID)
+			}
 		}
 		c.mu.Unlock()
 		if err != nil {
@@ -99,6 +105,11 @@ func (c *sharedSandboxCoordinator) acquire(ctx context.Context, runID string, cr
 		}
 		if sb == nil {
 			return nil, errors.New("共享沙箱创建返回空容器")
+		}
+		if orphaned {
+			sb.Destroy(context.Background())
+			removeHome(home)
+			return nil, errors.New("运行已结束，共享沙箱不可用")
 		}
 	} else {
 		select {

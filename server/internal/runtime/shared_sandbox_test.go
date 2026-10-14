@@ -2,10 +2,12 @@ package runtime
 
 import (
 	"context"
+	"os"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
@@ -128,18 +130,47 @@ func TestSharedSandboxCoordinatorConcurrentCreation(t *testing.T) {
 	var mu sync.Mutex
 	created := 0
 	create := func() (*sandbox.Sandbox, string, string, error) {
+		time.Sleep(20 * time.Millisecond) // widen the create window under contention
 		mu.Lock()
 		created++
 		mu.Unlock()
-		return &sandbox.Sandbox{Name: "shared-4"}, "", "", nil
+		return &sandbox.Sandbox{Name: "shared-4", WorkspaceDir: "/ws"}, "", "", nil
 	}
-	a, err := c.acquire(context.Background(), "run-4", create)
-	if err != nil {
-		t.Fatal(err)
+	const n = 8
+	var wg sync.WaitGroup
+	errs := make(chan error, n)
+	sbs := make(chan *sandbox.Sandbox, n)
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			entry, err := c.acquire(context.Background(), "run-4", create)
+			if err != nil {
+				errs <- err
+				return
+			}
+			sbs <- entry.sb
+			c.release(entry.sb)
+		}()
 	}
-	c.release(a.sb)
+	wg.Wait()
+	close(errs)
+	close(sbs)
+	for err := range errs {
+		t.Fatalf("acquire: %v", err)
+	}
+	var first *sandbox.Sandbox
+	for sb := range sbs {
+		if first == nil {
+			first = sb
+			continue
+		}
+		if sb != first {
+			t.Fatal("concurrent acquire must reuse one container")
+		}
+	}
 	if created != 1 {
-		t.Fatalf("created=%d", created)
+		t.Fatalf("created=%d, want 1 under concurrent acquire", created)
 	}
 }
 
@@ -219,5 +250,150 @@ func TestSharedSandboxCoordinatorSequentialNodesReuseOne(t *testing.T) {
 	}
 	if created != 1 {
 		t.Fatalf("created=%d, want 1 for three sequential nodes", created)
+	}
+}
+
+
+// TestSharedSandboxCoordinatorReleaseKeepsGeneration documents the connect-fail
+// cleanup contract: after a successful create, a failed connectSandbox must
+// release (not discard) so the next acquire reuses the same generation.
+func TestSharedSandboxCoordinatorReleaseKeepsGeneration(t *testing.T) {
+	c := newSharedSandboxCoordinator()
+	created := 0
+	create := func() (*sandbox.Sandbox, string, string, error) {
+		created++
+		return &sandbox.Sandbox{Name: "shared-connect"}, "/tmp/connect-home", "model", nil
+	}
+	first, err := c.acquire(context.Background(), "run-connect", create)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Simulate openSandbox connectSandbox failure: release lease, keep binding.
+	c.release(first.sb)
+
+	second, err := c.acquire(context.Background(), "run-connect", func() (*sandbox.Sandbox, string, string, error) {
+		t.Fatal("connect-fail cleanup must not create a replacement generation")
+		return nil, "", "", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.release(second.sb)
+	if second.sb != first.sb {
+		t.Fatal("expected same sandbox after release (no discard)")
+	}
+	if second.generation != first.generation || first.generation != 1 {
+		t.Fatalf("generation=%d/%d, want unchanged 1", first.generation, second.generation)
+	}
+	if created != 1 {
+		t.Fatalf("created=%d, want 1", created)
+	}
+}
+
+// TestSharedSandboxOpenSandboxConnectFailReleasesNotDiscards drives openSandbox
+// with a fake bridge that cannot CreateChat (shared path always allocates a
+// node chat). Create succeeds once; connect fails; the coordinator must keep
+// the generation so a later acquire reuses the same container.
+func TestSharedSandboxOpenSandboxConnectFailReleasesNotDiscards(t *testing.T) {
+	store := newMemStore()
+	host := mcp.NewHost(store)
+	runID, nodeID := "run-conn-fail", "node-1"
+	tok := host.RegisterRun(runID)
+	t.Cleanup(func() { host.UnregisterRun(runID) })
+
+	mgr := newFakeManager(t, host, runID, nodeID, tok, func(int) chatFunc {
+		return func(int) turnAction { return turnAction{} }
+	})
+	opts := testOpts()
+	opts.ProfilesRoot = writeAgent(t, "test-agent", `{"acpBackend":"cursor","env":{"GRASP_CURSOR_API_KEY":"fake"}}`)
+	p, reg := newTestProvider(t, host, opts, mgr)
+	p.coordinator = newSharedSandboxCoordinator()
+
+	req := reqWithProfile(NodeReq{
+		RunID: runID, NodeID: nodeID, NodeType: "agent", Caps: testPlainCaps, Token: tok,
+		Config: map[string]any{"prompt": "x", "agent_profile": "test-agent"},
+		Vars:   map[string]any{},
+	})
+
+	_, _, _, err := p.openSandbox(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected connect/create-chat failure from fake bridge")
+	}
+	if mgr.createCount() != 1 {
+		t.Fatalf("createCount=%d, want 1", mgr.createCount())
+	}
+	reg.mu.Lock()
+	unregistered := reg.unregistered
+	reg.mu.Unlock()
+	if unregistered != 0 {
+		t.Fatalf("connect fail must not Unregister/Destroy, unregistered=%d", unregistered)
+	}
+
+	entry, err := p.coordinator.acquire(context.Background(), runID, func() (*sandbox.Sandbox, string, string, error) {
+		t.Fatal("must reuse existing shared sandbox after connect failure")
+		return nil, "", "", nil
+	})
+	if err != nil {
+		t.Fatalf("re-acquire after connect fail: %v", err)
+	}
+	defer p.coordinator.release(entry.sb)
+	if entry.generation != 1 {
+		t.Fatalf("generation=%d, want 1 (no discard)", entry.generation)
+	}
+	if mgr.createCount() != 1 {
+		t.Fatalf("createCount after re-acquire=%d, want 1", mgr.createCount())
+	}
+}
+
+// TestSharedSandboxCoordinatorFinalizeDuringCreateCleansUp covers the race
+// where AbortRun/finalize detaches a still-creating entry (sb==nil). The
+// creator must Destroy/removeHome the orphaned result itself.
+func TestSharedSandboxCoordinatorFinalizeDuringCreateCleansUp(t *testing.T) {
+	c := newSharedSandboxCoordinator()
+	home, err := os.MkdirTemp("", "shared-orphan-home-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	finish := make(chan struct{})
+	done := make(chan error, 1)
+
+	go func() {
+		_, err := c.acquire(context.Background(), "run-orphan", func() (*sandbox.Sandbox, string, string, error) {
+			close(started)
+			<-finish
+			return &sandbox.Sandbox{Name: "orphan-sb"}, home, "", nil
+		})
+		done <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("create did not start")
+	}
+	shared, ok := c.finalize("run-orphan")
+	if !ok {
+		t.Fatal("finalize during create should detach the creating entry")
+	}
+	if shared.sb != nil {
+		t.Fatal("finalize during create should see sb==nil")
+	}
+	close(finish)
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("creator should fail after finalize during create")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("creator did not return")
+	}
+
+	if _, err := os.Stat(home); !os.IsNotExist(err) {
+		t.Fatalf("orphaned ConfigHome should be removed, stat err=%v", err)
+	}
+	if _, ok := c.finalize("run-orphan"); ok {
+		t.Fatal("second finalize must be a no-op")
 	}
 }
