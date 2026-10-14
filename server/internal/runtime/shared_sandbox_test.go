@@ -167,3 +167,57 @@ func TestSharedSandboxCoordinatorAllowsNodeEnvironmentSwitch(t *testing.T) {
 		t.Fatal("expected same shared sandbox across node env switch")
 	}
 }
+
+func TestSharedSandboxCoordinatorIsolatesRuns(t *testing.T) {
+	c := newSharedSandboxCoordinator()
+	created := map[string]int{}
+	makeCreate := func(runID string) func() (*sandbox.Sandbox, string, string, error) {
+		return func() (*sandbox.Sandbox, string, string, error) {
+			created[runID]++
+			return &sandbox.Sandbox{Name: "sb-" + runID, WorkspaceDir: "/ws/" + runID}, "/home/" + runID, "", nil
+		}
+	}
+	a, err := c.acquire(context.Background(), "run-a", makeCreate("run-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := c.acquire(context.Background(), "run-b", makeCreate("run-b"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.release(a.sb)
+	defer c.release(b.sb)
+	if a.sb == b.sb || a.sb.Name == b.sb.Name {
+		t.Fatal("different runs must not share one sandbox")
+	}
+	if a.sb.WorkspaceDir == b.sb.WorkspaceDir {
+		t.Fatal("different runs must not share one workspace")
+	}
+	if created["run-a"] != 1 || created["run-b"] != 1 {
+		t.Fatalf("created=%v", created)
+	}
+}
+
+func TestSharedSandboxCoordinatorSequentialNodesReuseOne(t *testing.T) {
+	c := newSharedSandboxCoordinator()
+	created := 0
+	create := func() (*sandbox.Sandbox, string, string, error) {
+		created++
+		return &sandbox.Sandbox{Name: "shared-seq", WorkspaceDir: "/ws/shared"}, "/home/shared", "", nil
+	}
+	var last *sandbox.Sandbox
+	for i := 0; i < 3; i++ {
+		entry, err := c.acquire(context.Background(), "run-seq", create)
+		if err != nil {
+			t.Fatalf("node %d: %v", i, err)
+		}
+		if last != nil && entry.sb != last {
+			t.Fatalf("node %d got different sandbox", i)
+		}
+		last = entry.sb
+		c.release(entry.sb)
+	}
+	if created != 1 {
+		t.Fatalf("created=%d, want 1 for three sequential nodes", created)
+	}
+}
