@@ -3,12 +3,10 @@ package runtime
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 
 	"github.com/cocofhu/grasp/internal/sandbox"
-	"github.com/google/uuid"
 )
 
 // errSharedSandboxIncompatible means the run's shared container was built for
@@ -332,10 +330,6 @@ func (c *acpProvider) takeNodeLease(acp *sandbox.ACPClient) *nodeLease {
 		return nil
 	}
 	return v.(*nodeLease)
-}
-
-func newNodeChatID(runID, nodeID string) string {
-	return fmt.Sprintf("run-%s-node-%s-%s", safeSessionPart(runID), safeSessionPart(nodeID), uuid.NewString()[:8])
 }
 
 func safeSessionPart(v string) string {
