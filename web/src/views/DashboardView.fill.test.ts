@@ -54,14 +54,16 @@ describe('DashboardView home chat layout', () => {
     expect(particleBgSrc).toMatch(/pointer-events:\s*none/)
   })
 
-  // LAYOUT-A — centered yume only (no wordmark / logo-mark)
-  it('uses centered yume without wordmark, logo mark, or banned effects', () => {
+  // LAYOUT-A — centered yume only (no wordmark / logo-mark / hint)
+  it('uses centered yume without wordmark, logo mark, hint, or banned effects', () => {
     expect(src).toMatch(/data-testid="home-brand-block"/)
     expect(src).toMatch(/HomeYumeCharacter/)
     expect(src).not.toMatch(/data-testid="home-brand"/)
     expect(src).not.toMatch(/data-testid="home-brand-row"/)
     expect(src).not.toMatch(/data-testid="home-brand-copy"/)
     expect(src).not.toMatch(/data-testid="home-logo-mark"/)
+    expect(src).not.toMatch(/data-testid="home-title"/)
+    expect(src).not.toMatch(/class="home-hint"/)
     expect(src).not.toMatch(/logo-mark\.svg/)
     expect(src).not.toMatch(/HomeLogoEasterEgg|homeLogoJumpGame|home-logo-easter-egg/)
     expect(src).not.toMatch(/home-brand__cursor/)
@@ -69,7 +71,9 @@ describe('DashboardView home chat layout', () => {
     expect(src).toMatch(/--yume-size:\s*220px/)
     expect(src).toMatch(/--yume-size:\s*180px/)
     expect(src).toMatch(/--yume-size:\s*140px/)
-    expect(src).toMatch(/margin:\s*24px 0 0/)
+    // yume → composer: Desktop 28px / small 24px
+    expect(src).toMatch(/\.home-composer-wrap\s*\{[^}]*margin-top:\s*28px/s)
+    expect(src).toMatch(/max-width:\s*899px[\s\S]*?\.home-composer-wrap\s*\{[^}]*margin-top:\s*24px/s)
     expect(src).not.toMatch(/var\(--grad-logo\)/)
     expect(src).not.toMatch(/background-clip:\s*text/)
     expect(src).not.toMatch(/shimmer/)
@@ -98,8 +102,10 @@ describe('DashboardView home chat layout', () => {
   })
 
   // review — 无 subtitle；工作流卡片脱离全局 .card；圆角 Token 12px
-  it('omits home-subtitle and uses rounded workflow cards', () => {
+  it('omits home-subtitle/hint and uses rounded workflow cards', () => {
     expect(src).not.toMatch(/data-testid="home-subtitle"/)
+    expect(src).not.toMatch(/data-testid="home-title"/)
+    expect(src).not.toMatch(/home-hint/)
     expect(src).toMatch(/class="home-shell__card[^"]*border border-line/)
     expect(src).not.toMatch(/class="[^"]*\bcard\b[^"]*home-shell__card|class="home-shell__card[^"]*\bcard\b/)
     expect(src).toMatch(/\.home-shell__card\s*\{[^}]*border-radius:\s*12px/s)

@@ -186,7 +186,7 @@ test.describe('需求进度看板（项目级）', () => {
   test('Dashboard 有项目记忆：首页 Composer + Approve 工作流卡片', async ({ page }) => {
     await gotoBoardHarness(page, { width: 1280, start: 'dashboard', memory: '1', projectId: 'proj-1' })
     await expect(page.getByTestId('dashboard-view')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('home-title')).toBeVisible()
+    await expect(page.getByTestId('home-yume')).toBeVisible()
     await expect(page.getByTestId('home-composer')).toBeVisible()
     await expect(page.getByTestId('home-workflow-card-wf-approve')).toContainText('自我迭代PRO')
     await expect(page.getByTestId('home-no-project')).toHaveCount(0)

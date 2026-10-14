@@ -15,15 +15,12 @@ import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { useHomeApproveChat } from '@/lib/run/useHomeApproveChat'
 import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
 import { imgSrc } from '@/lib/shared/compositeText'
-import { useBrandSettings } from '@/lib/composables/useBrandSettings'
 import type { Workflow } from '@/lib/shared/types'
 
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
 
 const router = useRouter()
 const { t, tm } = useI18n()
-const { homeSubtitle } = useBrandSettings()
-const effectiveSubtitle = computed(() => homeSubtitle.value || String(t('pages.dashboard.title')))
 const {
   projectId,
   homeWorkflows,
@@ -563,9 +560,6 @@ onBeforeUnmount(() => {
     >
       <div class="home-brand-block" data-testid="home-brand-block">
         <HomeYumeCharacter />
-        <p class="home-hint" data-testid="home-title">
-          {{ effectiveSubtitle }}
-        </p>
       </div>
 
       <div class="home-composer-wrap w-full">
@@ -957,7 +951,7 @@ onBeforeUnmount(() => {
   isolation: isolate;
 }
 
-/* brand: centered yume only (LAYOUT-A); no wordmark / logo-mark */
+/* brand: centered yume only (LAYOUT-A); no wordmark / logo-mark / hint */
 .home-brand-block {
   --yume-size: 220px;
   display: flex;
@@ -965,24 +959,6 @@ onBeforeUnmount(() => {
   align-items: center;
   flex-shrink: 0;
   width: 100%;
-}
-
-.home-hint {
-  margin: 24px 0 0;
-  max-width: 36rem;
-  text-align: center;
-  font-size: 14px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  color: rgb(var(--c-txt2));
-  opacity: 0;
-  animation: home-hint-in 0.45s ease-out 0.15s forwards;
-}
-
-@keyframes home-hint-in {
-  to {
-    opacity: 1;
-  }
 }
 
 /* plan g1.1 — shell/hero composer 16px; overflow+bg+radius same layer */
@@ -1302,11 +1278,6 @@ onBeforeUnmount(() => {
 
 /* g1.3 / g2.3 — prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
-  .home-hint {
-    animation: none !important;
-    opacity: 1;
-  }
-
   .home-composer__ph-cursor {
     animation: none;
     opacity: 1;
@@ -1333,6 +1304,7 @@ onBeforeUnmount(() => {
   }
 }
 
+/* LAYOUT-A: yume → composer Desktop 28px / small 24px */
 .home-composer-wrap {
   margin-top: 28px;
 }
@@ -1340,10 +1312,6 @@ onBeforeUnmount(() => {
 @media (max-width: 899px) {
   .home-brand-block {
     --yume-size: 180px;
-  }
-
-  .home-hint {
-    margin-top: 20px;
   }
 
   .home-composer-wrap {
@@ -1354,10 +1322,6 @@ onBeforeUnmount(() => {
 @media (max-width: 640px) {
   .home-brand-block {
     --yume-size: 140px;
-  }
-
-  .home-hint {
-    margin-top: 16px;
   }
 
   .home-composer-wrap {

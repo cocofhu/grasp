@@ -243,7 +243,8 @@ describe('DashboardView home composer', () => {
     mocks.readStoredProjectId.mockReturnValue('')
     const wrapper = mountDashboard()
     await flushPromises()
-    expect(wrapper.get('[data-testid="home-title"]').text()).toContain('从一句话开始一次开发前澄清')
+    expect(wrapper.find('[data-testid="home-yume"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="home-title"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-composer"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="home-no-project"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="home-workflow-card-wf-ap"]').text()).toContain('自我迭代PRO')
@@ -313,8 +314,8 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
-  // LAYOUT-A — centered yume only + Chinese hint；无 Grasp 字标 / 筛选说明句
-  it('renders centered yume without Grasp wordmark and shows Chinese hint', async () => {
+  // LAYOUT-A — centered yume only；无 Grasp 字标 / hint / 筛选说明句
+  it('renders centered yume without Grasp wordmark or hint', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
     expect(wrapper.find('[data-testid="home-yume"]').exists()).toBe(true)
@@ -322,9 +323,10 @@ describe('DashboardView home composer', () => {
     expect(wrapper.find('[data-testid="home-brand-text"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-brand-cursor"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-logo-mark"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="home-title"]').text()).toBe('从一句话开始一次开发前澄清')
+    expect(wrapper.find('[data-testid="home-title"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-subtitle"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-filter-hint"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('从一句话开始一次开发前澄清')
     expect(wrapper.text()).not.toContain('仅显示开始后是 Approve 的已发布工作流')
     wrapper.unmount()
   })
@@ -447,20 +449,6 @@ describe('DashboardView home composer', () => {
     expect(wrapper.text()).not.toContain('Acme Flow')
     expect(wrapper.find('[data-testid="home-yume"]').exists()).toBe(true)
     wrapper.unmount()
-  })
-
-  it('uses a configured home subtitle and falls back to the locale message when blank', async () => {
-    setBrandSettings({ home_subtitle: 'Clarify together' })
-    const custom = mountDashboard()
-    await flushPromises()
-    expect(custom.get('[data-testid="home-title"]').text()).toBe('Clarify together')
-    custom.unmount()
-
-    setBrandSettings({ home_subtitle: '　 ' })
-    const fallback = mountDashboard()
-    await flushPromises()
-    expect(fallback.get('[data-testid="home-title"]').text()).toBe('从一句话开始一次开发前澄清')
-    fallback.unmount()
   })
 
   // plan g1.2 — placeholder typewriter when idle/empty
