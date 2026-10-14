@@ -1353,11 +1353,16 @@ html.light .home-shell__card-top {
   .home-shell__card--add:hover,
   .home-shell__card--add:active,
   .home-shell__card--add:hover .home-shell__card-plus,
-  .home-shell__card--add:active .home-shell__card-plus,
-  .home-composer__send,
-  .home-composer__send:hover,
-  .home-composer__send:active {
+  .home-shell__card--add:active .home-shell__card-plus {
     transform: none;
+  }
+
+  /* Match :hover/:active:not(:disabled) so none wins over the 1px lift and press scale. */
+  .home-composer__send,
+  .home-composer__send:hover:not(:disabled),
+  .home-composer__send:active:not(:disabled) {
+    transform: none;
+    transition: none;
   }
 }
 

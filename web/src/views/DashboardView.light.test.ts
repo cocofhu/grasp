@@ -8,15 +8,15 @@ import { describe, expect, it } from 'vitest'
 const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'DashboardView.vue'), 'utf8')
 const style = src.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
 
-type CssRule = { selector: string; body: string }
+type CssRule = { selector: string; body: string; media: string }
 
-function collectRules(css: string): CssRule[] {
+function collectRules(css: string, media = ''): CssRule[] {
   const rules: CssRule[] = []
   let i = 0
   while (i < css.length) {
     const open = css.indexOf('{', i)
     if (open < 0) break
-    const selector = css.slice(i, open).trim()
+    const selector = css.slice(i, open).replace(/\/\*[\s\S]*?\*\//g, '').trim()
     let depth = 1
     let j = open + 1
     while (j < css.length && depth > 0) {
@@ -25,11 +25,50 @@ function collectRules(css: string): CssRule[] {
       j += 1
     }
     const body = css.slice(open + 1, j - 1)
-    if (selector.startsWith('@media')) collectRules(body).forEach((rule) => rules.push(rule))
-    else if (selector && !selector.startsWith('@')) rules.push({ selector, body })
+    if (selector.startsWith('@media')) collectRules(body, selector).forEach((rule) => rules.push(rule))
+    else if (selector && !selector.startsWith('@')) rules.push({ selector, body, media })
     i = j
   }
   return rules
+}
+
+/** a-b-c specificity. :not/:is add the argument; :where adds nothing. */
+function specificity(selector: string): [number, number, number] {
+  let a = 0
+  let b = 0
+  let c = 0
+  let rest = selector.replace(/:(not|is)\(([^()]*)\)/g, (_, _kind, inner: string) => {
+    const [ia, ib, ic] = specificity(inner)
+    a += ia
+    b += ib
+    c += ic
+    return ''
+  })
+  rest = rest.replace(/:where\([^()]*\)/g, '')
+  a += rest.match(/#[\w-]+/g)?.length ?? 0
+  b += rest.match(/\.[\w-]+/g)?.length ?? 0
+  b += rest.match(/\[[^\]]+\]/g)?.length ?? 0
+  b += rest.match(/:(?!not\b|is\b|where\b|has\b)[\w-]+(?:\([^)]*\))?/g)?.length ?? 0
+  const elements = rest
+    .replace(/#[\w-]+/g, ' ')
+    .replace(/\.[\w-]+/g, ' ')
+    .replace(/\[[^\]]+\]/g, ' ')
+    .replace(/::?[\w-]+(?:\([^)]*\))?/g, ' ')
+  c += elements.match(/[a-zA-Z*][\w-]*/g)?.length ?? 0
+  return [a, b, c]
+}
+
+function beatsOrTies(winner: [number, number, number], other: [number, number, number]): boolean {
+  for (let i = 0; i < 3; i += 1) {
+    if (winner[i] !== other[i]) return winner[i] > other[i]
+  }
+  return true
+}
+
+function partMatching(selector: string, needle: RegExp): string {
+  const part = selector.split(',').map((item) => item.trim()).find((item) => needle.test(item))
+  if (!part) throw new Error(`no selector part matched ${needle} in ${selector}`)
+  return part
 }
 
 const compiled = compileStyle({
@@ -118,5 +157,57 @@ describe('DashboardView light selectors survive scoped compile', () => {
         /--c-surface|--c-txt|--c-elevated/.test(rule.body),
     )
     expect(darkSurfaces.length).toBeGreaterThan(0)
+  })
+
+  it('reduced-motion send button none beats the hover lift and press scale', () => {
+    expect(compiled.errors).toEqual([])
+    const rules = collectRules(compiled.code)
+    const lift = rules.find(
+      (rule) =>
+        !rule.media.includes('prefers-reduced-motion') &&
+        /translateY\(-1px\)/.test(rule.body) &&
+        rule.selector.includes('.home-composer__send') &&
+        rule.selector.includes(':hover'),
+    )
+    const press = rules.find(
+      (rule) =>
+        !rule.media.includes('prefers-reduced-motion') &&
+        /scale\(0\.96\)/.test(rule.body) &&
+        rule.selector.includes('.home-composer__send') &&
+        rule.selector.includes(':active'),
+    )
+    const reduced = rules.filter(
+      (rule) =>
+        rule.media.includes('prefers-reduced-motion') &&
+        /transform:\s*none/.test(rule.body) &&
+        rule.selector.includes('.home-composer__send'),
+    )
+    expect(lift).toBeTruthy()
+    expect(press).toBeTruthy()
+    expect(reduced.length).toBeGreaterThan(0)
+
+    const reducedHover = reduced
+      .map((rule) => partMatching(rule.selector, /\.home-composer__send[^{]*:hover/))
+      .find((selector) => selector.includes(':not(') && selector.includes(':disabled'))
+    const reducedActive = reduced
+      .map((rule) => partMatching(rule.selector, /\.home-composer__send[^{]*:active/))
+      .find((selector) => selector.includes(':not(') && selector.includes(':disabled'))
+    expect(reducedHover, 'reduced hover selector').toBeTruthy()
+    expect(reducedActive, 'reduced active selector').toBeTruthy()
+    expect(beatsOrTies(specificity(reducedHover!), specificity(lift!.selector))).toBe(true)
+    expect(beatsOrTies(specificity(reducedActive!), specificity(press!.selector))).toBe(true)
+
+    const reducedBase = reduced.some((rule) =>
+      rule.selector.split(',').some((part) => {
+        const trimmed = part.trim()
+        return (
+          trimmed.includes('.home-composer__send') &&
+          !trimmed.includes(':hover') &&
+          !trimmed.includes(':active') &&
+          /transition:\s*none/.test(rule.body)
+        )
+      }),
+    )
+    expect(reducedBase).toBe(true)
   })
 })
