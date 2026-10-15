@@ -952,9 +952,11 @@ onBeforeUnmount(() => {
   isolation: isolate;
 }
 
-/* Top inset shrinks before the column scrolls. Basis is 120px (floor 48px),
-   enough to absorb one image-chip row at a borderline window height.
-   The 520px breakpoint below uses a 4.25rem basis. */
+/* Top inset shrinks before the column scrolls. Basis 120px, floor 48px:
+   the 72px of slack absorbs exactly one image-chip row (56px thumb + 6px
+   pt-1.5 + 8px mb-2 = 70px). A second chip row or the attach notice still
+   scrolls; re-check this budget if the chip thumb size changes.
+   The 520px breakpoint below uses a 4.25rem basis (floor 0.5rem). */
 .home-shell__content {
   padding-bottom: 40px;
 }
@@ -1396,7 +1398,7 @@ html.light .home-shell__card-top {
 
   .home-shell__content::before {
     flex-basis: 4.25rem;
-    min-height: 0;
+    min-height: 0.5rem;
   }
 }
 

@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-15（首页加图片附件不再在临界高度带出滚动条）
+
+- 日期：2026-10-15
+- 范围：`web/src/views/DashboardView.vue`、`web/src/views/DashboardView.fill.test.ts`、`web/e2e/dashboard-home-chat.spec.ts`
+- 做了什么：首页内容列顶部固定 `padding-top: 120px` 改为可收缩的 `::before` 占位（`flex: 0 1 120px`，下限 48px；520px 以下基准 4.25rem、下限 0.5rem）；图片芯片行加 `w-full min-w-0 pr-1.5 pt-1.5` 给删除钮留位；内容列 `overflow-x-hidden`。
+- 为什么：窗口刚好一屏时加一张图片，芯片行（约 70px）把内容顶出可视区；删除钮 `-right-1.5` 还会造成横向溢出，横向滚动条再挤出纵向滚动条。72px 的可收缩余量正好吸收一行芯片，第二行或附件提示仍会正常滚动。
+- 如何验证：新增 Playwright 用例把视口设为内容自然高度，加一张图片后断言内容列无纵向/横向溢出、删除钮在视口内；换回 main 的 `DashboardView.vue` 时该用例失败（纵向溢出 63px）。web eslint / vue-tsc / vitest（含覆盖率）/ build 通过。
+
 ### 2026-10-14（Codex 登录失效快速失败，不再误报 MCP 工具面为空）
 
 - 日期：2026-10-14

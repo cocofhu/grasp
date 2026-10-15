@@ -4,6 +4,10 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Home attachments:** adding an image on the home composer at a window height
+  that just fits the page no longer brings up a scrollbar. The 120px top gap
+  shrinks first (down to 48px) and the column only scrolls after that (#800).
+
 - **Codex login failures:** when Codex rejects or cannot refresh the ChatGPT
   login (CLI `401 Unauthorized` from `api.openai.com`), the Agent node now fails
   on the first failed turn with "Codex 登录已失效或无法刷新，请重新粘贴登录文件"
