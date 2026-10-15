@@ -177,6 +177,10 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 
 	outcome := e.finalizeAgent(c, node, runtime.NodeResult{})
 	outcome = e.afterDefaultChecks(c, node, outcome)
+	// The rebuild above starts from an empty NodeResult, so carry the node's
+	// pre-review handoff forward (and platform-fallback when still missing)
+	// before saveState below replaces this StateRun's outputs.
+	e.retainHandoff(c, node, &outcome)
 	verdictFailed := outcome.status == "failed" && outcome.handle == handleFail
 	if outcome.status == "failed" && !verdictFailed {
 		// Keep paused/waiting_human so the reviewer can fix and retry.
@@ -327,6 +331,9 @@ func (e *Engine) refreshProducerOutputs(c *execCtx, producer *models.Node) {
 	if oc.status != "completed" || oc.outputs == nil {
 		return
 	}
+	// Revise refreshes rebuild the outputs from the product; keep the handoff
+	// the node left at node_complete so a refresh does not clear the交接.
+	e.retainHandoff(c, producer, &oc)
 	c.nodeOutputs[producer.ID] = oc.outputs
 	iter := c.iter[producer.ID]
 	var sr models.StateRun

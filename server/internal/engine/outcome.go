@@ -195,7 +195,11 @@ func (e *Engine) withOutcome(c *execCtx, node *models.Node, res runtime.NodeResu
 // finishAgentOutcome runs withOutcome then afterDefaultChecks (Default→RPC).
 func (e *Engine) finishAgentOutcome(c *execCtx, node *models.Node, res runtime.NodeResult, next func(runtime.NodeResult) nodeOutcome) nodeOutcome {
 	oc := e.withOutcome(c, node, res, next)
-	return e.afterDefaultChecks(c, node, oc)
+	oc = e.afterDefaultChecks(c, node, oc)
+	// Clarify/review resume paths rebuild the outcome here; keep the handoff the
+	// node left at node_complete so a resume cannot silently drop it.
+	e.retainHandoff(c, node, &oc)
+	return oc
 }
 
 // missingOutcomeErr (CAPA A7) picks the failure reason when no adoptable mark

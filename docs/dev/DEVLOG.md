@@ -28,6 +28,14 @@
 - 为什么：#794 首页改版移除了 `homeSubtitle` 接线，品牌设置「首页副标题」成为孤儿设置，管理员改完首页无变化。接线后该设置真正生效。
 - 如何验证：DashboardView / fill / light、SettingsView、locales 相关 vitest 全绿（新增读取设置、纯空白回退、英文回退用例）；`npm run lint` 0 error、`npx vue-tsc --noEmit` 通过。
 
+### 2026-10-15（复审确认后节点交接 handoff 不再丢失）
+
+- 日期：2026-10-15
+- 范围：`server/internal/engine/handoff.go`、`server/internal/engine/review.go`、`server/internal/engine/outcome.go`、`server/internal/engine/handoff_test.go`
+- 做了什么：新增统一 helper `retainHandoff`（及读当前 iteration StateRun 的 `priorHandoff`）：重建 outputs 前若新 outputs 缺 handoff，则把先前执行的 handoff/handoff_source 补回，再复用 `ensureHandoff` 做平台兜底。接入 review 强制确认（`reviewReply`）、复审修订刷新（`refreshProducerOutputs`）与 react/clarify resume 完成路径（`finishAgentOutcome`，覆盖 `resume.go` / `review_session.go` / `node_react.go`）。补 4 个回归用例（保留 agent 交接、平台兜底、无下游不写、回环 iteration>1）。
+- 为什么：review:true 的节点（默认工作流「实现」）在 `node_complete` 产生 handoff 后进入复审；人工「确认并流转」走 `reviewReply` 用空 `runtime.NodeResult{}` 重新 `finalizeAgent` 并 `saveState` 整体覆盖 outputs，丢掉了 handoff/handoff_source，且未走 `ensureHandoff`。结果运行画布「实现→测试评审」边无交接胶囊，下游「测试评审」提示词缺上游交接，回环重跑同样（#796 遗漏的 review 路径）。
+- 如何验证：`go test ./internal/engine/...`、`go test ./...`、`go vet ./...`、`golangci-lint run --config ../.golangci.yml ./...`（0 issues）、`./scripts/cover-check-server.sh 90`（90.1%）。新用例在未修复时会失败。
+
 ### 2026-10-15（应用预览「可能卡死」推迟到 60 秒，开发服务器代理 noVNC）
 
 - 日期：2026-10-15
