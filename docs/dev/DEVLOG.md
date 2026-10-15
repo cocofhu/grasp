@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-15（OpenCode 接口地址占位符随所选厂商变化）
+
+- 日期：2026-10-15
+- 范围：`web/src/components/agent/OpenCodeProviderFields.vue`、`web/src/locales/{zh-CN,en}/pages.json`、`web/src/components/agent/OpenCodeProviderFields.test.ts`、`web/src/locales/openCodeCopy.test.ts`
+- 做了什么：接口地址输入框的占位符改为 computed `basePlaceholder`：优先取所选厂商在模型目录中的默认地址（`OpenCodeCatalogProvider.api`），厂商无 api 或为 custom/自建时回退中性文案；移除 `basePlaceholder` 中硬编码的 `https://api.example.com/v1`，中英文新增 `basePlaceholderCustom`。字段仍选填、默认留空，切换厂商只更新占位符，不清空已输入地址，也不改必填判定与后端契约。
+- 为什么：占位符原先绑定静态 i18n 文案，对所有厂商恒为示例域名，无法反映所选厂商真实使用的接口地址；而目录接口早已返回 `api` 字段，前端从未读取。
+- 如何验证：单测覆盖目录有 api / 无 api / custom / 离线四场景与切换厂商占位符更新且输入值不变；文案锁断言 openCode 文案不含 example 且中英键一致。`npm run lint`、`npx vue-tsc --noEmit`、`npm test -- --coverage`、`npm run build` 全部通过。
+
 ### 2026-10-14（Codex 登录失效快速失败，不再误报 MCP 工具面为空）
 
 - 日期：2026-10-14

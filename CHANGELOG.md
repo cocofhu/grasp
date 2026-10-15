@@ -4,6 +4,11 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Agent wizard service address:** the OpenCode API Key step now hints the
+  picked vendor's real default base URL (from the model catalog) as the service
+  address placeholder, instead of a fixed `https://api.example.com/v1`. A vendor
+  with no published address, or a self-hosted gateway, falls back to neutral
+  copy. The field stays optional and blank by default.
 - **Codex login failures:** when Codex rejects or cannot refresh the ChatGPT
   login (CLI `401 Unauthorized` from `api.openai.com`), the Agent node now fails
   on the first failed turn with "Codex 登录已失效或无法刷新，请重新粘贴登录文件"
