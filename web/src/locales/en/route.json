@@ -20,6 +20,7 @@
     "login": "Login",
     "publicGateApproval": "One-time external decision",
     "embedChat": "Preview chat",
-    "embedArtifacts": "Preview artifacts"
+    "embedArtifacts": "Preview artifacts",
+    "embedImage": "Image preview"
   }
 }

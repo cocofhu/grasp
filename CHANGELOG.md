@@ -9,6 +9,25 @@ All notable public-release changes are documented here.
   address placeholder, instead of a fixed `https://api.example.com/v1`. A vendor
   with no published address, or a self-hosted gateway, falls back to neutral
   copy. The field stays optional and blank by default.
+- **Run canvas handoff:** a node with post-run review (e.g. the 实现 node) no
+  longer loses its handoff when the reviewer clicks「确认并流转」. The handoff
+  and its source are preserved through review confirm, revise refresh, and
+  clarify/react resume, and the platform fallback still writes one when a node
+  with a downstream left none. The「实现 → 测试评审」edge shows the handoff chip
+  again and the downstream prompt gets the upstream handoff, including after a
+  test-fail loop-back (#796 follow-up).
+- **App preview:** the "may be stuck" warning now appears after 60 seconds of
+  connecting instead of 20, matching the advertised 30–60 second first launch.
+  The "please wait" hint is hidden once the warning shows (#802).
+- **Run canvas handoff:** traversed-edge handoffs are now a compact "⇄ 交接"
+  icon chip instead of a truncated slice of the text. Opening it shows a card
+  above the nodes with the "source → target" route, the handoff rendered as
+  Markdown (headings, lists, inline code; sanitized), and a source footer.
+  Platform-written handoffs are dashed with a warning icon and a "平台代写 ·
+  上游未提供交接" tag. Empty handoffs show no chip.
+- **Home attachments:** adding an image on the home composer at a window height
+  that just fits the page no longer brings up a scrollbar. The 120px top gap
+  shrinks first (down to 48px) and the column only scrolls after that (#800).
 - **Codex login failures:** when Codex rejects or cannot refresh the ChatGPT
   login (CLI `401 Unauthorized` from `api.openai.com`), the Agent node now fails
   on the first failed turn with "Codex 登录已失效或无法刷新，请重新粘贴登录文件"

@@ -256,11 +256,12 @@ func New(h *handlers.Handlers) *gin.Engine {
 	r.DELETE("/mcp/runs/:runId", h.MCPRPC)
 	r.GET("/mcp/runs/:runId/embed-origin", h.MCPEmbedOrigin)
 
-	// Preview-page chat drawer + artifact modal (outside /api: no cf_session, which a
-	// cross-site iframe never carries). A ticket is redeemed for a run/node-bound bearer
-	// that the /public/gate-approvals chat endpoints accept.
+	// Preview-page chat drawer, artifact modal, and image preview frame (outside /api:
+	// no cf_session, which a cross-site iframe never carries). A ticket is redeemed for
+	// a run/node-bound bearer that the /public/gate-approvals chat endpoints accept.
 	r.GET("/embed/runs/:runId/nodes/:nodeId/chat", h.EmbedChatPage)
 	r.GET("/embed/runs/:runId/nodes/:nodeId/artifacts", h.EmbedChatPage)
+	r.GET("/embed/runs/:runId/nodes/:nodeId/image", h.EmbedChatPage)
 	r.POST("/embed-api/session", h.RedeemEmbedSession)
 
 	// Project-scoped PM MCP hosts (outside /api).

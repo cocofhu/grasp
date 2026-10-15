@@ -12,6 +12,7 @@ import AnnotationChip from './AnnotationChip.vue'
 import LiveVariantCard from './LiveVariantCard.vue'
 import PendingSendQueuePanel from './PendingSendQueuePanel.vue'
 import { computed, inject } from 'vue'
+import { EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
 import { LIVE_CARD_HOST, isLiveBusy } from '@/lib/inbox/liveVariants'
 import type {
   ClarifyTurn,
@@ -123,7 +124,6 @@ const {
   latestQuestionTurnIndex,
   hasHumanReplyAfter,
   imagePreviewLabel,
-  openImagePreview,
   turnsSemanticKey,
   addFiles,
   onPickFiles,
@@ -254,6 +254,19 @@ const {
   reorderQueuedItems,
   editQueuedItem,
 } = chat
+
+const embedImagePreview = inject(EMBED_IMAGE_PREVIEW_KEY, null)
+
+/** Page Harness keeps the preview on the host page. The main app still opens AppModal here. */
+function openImagePreview(images: ClarifyImage[], index: number) {
+  if (!embedImagePreview) {
+    chat.openImagePreview(images, index)
+    return
+  }
+  const im = images[index]
+  if (!im || !isImageAttachment(im)) return
+  embedImagePreview.open(imgSrc(im), imagePreviewLabel(images, index))
+}
 
 /** Clarify passes its own reply copy; review uses the shared send copy. */
 const clarifySendAria = computed(() => props.sendLabel || translate('pages.reviewComposer.send'))

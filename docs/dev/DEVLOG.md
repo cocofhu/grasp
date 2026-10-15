@@ -28,6 +28,46 @@
 - 为什么：占位符原先绑定静态 i18n 文案，对所有厂商恒为示例域名，无法反映所选厂商真实使用的接口地址；而目录接口早已返回 `api` 字段，前端从未读取。
 - 如何验证：单测覆盖目录有 api / 无 api / custom / 离线四场景与切换厂商占位符更新且输入值不变；文案锁断言 openCode 文案不含 example 且中英键一致。`npm run lint`、`npx vue-tsc --noEmit`、`npm test -- --coverage`、`npm run build` 全部通过。
 
+### 2026-10-15（复审确认后节点交接 handoff 不再丢失）
+
+- 日期：2026-10-15
+- 范围：`server/internal/engine/handoff.go`、`server/internal/engine/review.go`、`server/internal/engine/outcome.go`、`server/internal/engine/handoff_test.go`
+- 做了什么：新增统一 helper `retainHandoff`（及读当前 iteration StateRun 的 `priorHandoff`）：重建 outputs 前若新 outputs 缺 handoff，则把先前执行的 handoff/handoff_source 补回，再复用 `ensureHandoff` 做平台兜底。接入 review 强制确认（`reviewReply`）、复审修订刷新（`refreshProducerOutputs`）与 react/clarify resume 完成路径（`finishAgentOutcome`，覆盖 `resume.go` / `review_session.go` / `node_react.go`）。补 4 个回归用例（保留 agent 交接、平台兜底、无下游不写、回环 iteration>1）。
+- 为什么：review:true 的节点（默认工作流「实现」）在 `node_complete` 产生 handoff 后进入复审；人工「确认并流转」走 `reviewReply` 用空 `runtime.NodeResult{}` 重新 `finalizeAgent` 并 `saveState` 整体覆盖 outputs，丢掉了 handoff/handoff_source，且未走 `ensureHandoff`。结果运行画布「实现→测试评审」边无交接胶囊，下游「测试评审」提示词缺上游交接，回环重跑同样（#796 遗漏的 review 路径）。
+- 如何验证：`go test ./internal/engine/...`、`go test ./...`、`go vet ./...`、`golangci-lint run --config ../.golangci.yml ./...`（0 issues）、`./scripts/cover-check-server.sh 90`（90.1%）。新用例在未修复时会失败。
+
+### 2026-10-15（应用预览「可能卡死」推迟到 60 秒，开发服务器代理 noVNC）
+
+- 日期：2026-10-15
+- 范围：`web/src/components/run/NovncPreviewPanel.vue`、`web/src/components/run/NovncPreviewPanel.test.ts`、`web/vite.config.ts`
+- 做了什么：`PREVIEW_STUCK_MS` 从 20 秒改为 60 秒，警告出现后隐藏「请稍候」启动提示；Vite 开发服务器新增 `/sandbox-vnc/` 的 WebSocket 代理。
+- 为什么：启动提示写的是首次启动约 30–60 秒，20 秒就报「可能卡死」与之矛盾；服务端 `OpenInSandbox` 有 90 秒时限，超时会推送错误，60 秒警告正好落在两者之间。开发环境缺 `/sandbox-vnc/` 代理时 WebSocket 无法升级，预览一直停在「连接中」。生产由 Go 服务直接处理该路径，不受影响。
+- 如何验证：新增单测在连接一直未完成时断言 20 秒不出现警告、60 秒出现且启动提示隐藏；改回 20 秒时该用例失败。本地经 Vite `:5173` 访问 `/sandbox-vnc/:id/ws` 完成握手。web eslint / vue-tsc / vitest（含覆盖率）/ build 通过。
+
+### 2026-10-15（运行画布节点交接样式优化：图标胶囊 + Markdown 悬浮卡片）
+
+- 日期：2026-10-15
+- 范围：`web/src/components/canvas/edges/FlowEdge.vue`、`web/src/components/canvas/edges/FlowEdge.test.ts`（新增）、`web/src/components/canvas/canvas.css`、`web/src/components/ui/Icon.vue`、`web/src/locales/{zh-CN,en}/canvas.json`
+- 做了什么：运行画布走过边上的交接指示由「原文截断胶囊」改为「⇄ 交接」图标胶囊；点开为悬浮卡片（头部图标 +「交接说明」+「来源→目标」路线 + 关闭按钮、Markdown 正文、底部来源元信息）。正文改用 `renderMarkdown`（marked + DOMPurify）并套用 `.md` 样式，仅在展开时渲染以复用 LRU 缓存；空/纯空白交接不显示指示。抬升 `.cedge-mid.is-handoff-open` 的 z 序修复卡片被节点遮挡，卡片固定宽度、限高滚动、箭头指向胶囊。`source=platform` 用虚线边框 + 警示色图标 +「平台代写 · 上游未提供交接」。文案经 `canvas.handoff.*` 由 `t()` 取得，新增 `swap` / `arrow-right` 图标。
+- 为什么：原交接与条件标签外观无异、弹层被节点卡片压住且正文是 `white-space:pre-wrap` 的裸 Markdown，用户读不清、认不出这是交接。
+- 如何验证：新增 `FlowEdge.test.ts` 覆盖胶囊/展开收起/路线/Markdown 结构与缓存/平台态/空文本/aria；`npm run lint`、`npx vue-tsc --noEmit`、`npm test -- --coverage`（Lines 90.52% ≥ 85）、`npm run build` 全绿。未改后端交接生成逻辑与 `EdgeHandoff { text, source }` 契约，编辑态画布不受影响。
+
+### 2026-10-15（首页加图片附件不再在临界高度带出滚动条）
+
+- 日期：2026-10-15
+- 范围：`web/src/views/DashboardView.vue`、`web/src/views/DashboardView.fill.test.ts`、`web/e2e/dashboard-home-chat.spec.ts`
+- 做了什么：首页内容列顶部固定 `padding-top: 120px` 改为可收缩的 `::before` 占位（`flex: 0 1 120px`，下限 48px；520px 以下基准 4.25rem、下限 0.5rem）；图片芯片行加 `w-full min-w-0 pr-1.5 pt-1.5` 给删除钮留位；内容列 `overflow-x-hidden`。
+- 为什么：窗口刚好一屏时加一张图片，芯片行（约 70px）把内容顶出可视区；删除钮 `-right-1.5` 还会造成横向溢出，横向滚动条再挤出纵向滚动条。72px 的可收缩余量正好吸收一行芯片，第二行或附件提示仍会正常滚动。
+- 如何验证：新增 Playwright 用例把视口设为内容自然高度，加一张图片后断言内容列无纵向/横向溢出、删除钮在视口内；换回 main 的 `DashboardView.vue` 时该用例失败（纵向溢出 63px）。web eslint / vue-tsc / vitest（含覆盖率）/ build 通过。
+
+### 2026-10-15（dev 栈 web 依赖变更后自动补装 node_modules）
+
+- 日期：2026-10-15
+- 范围：`web/Dockerfile.dev`、`web/dev-entrypoint.sh`
+- 做了什么：dev 镜像在 `npm ci` 后写入 `package.json` + `package-lock.json` 的哈希戳；新增入口脚本在启动时比对 `node_modules/.grasp-deps-hash`，不一致就在卷里重新 `npm ci`。
+- 为什么：`docker-compose.yml` 用 named volume `web-node-modules` 挂 `/web/node_modules`，卷只在首次创建时从镜像填充；之后 `./start.sh dev` 的 `--build` 即使重装了依赖也被旧卷遮住，新增的 `elkjs` 导致 Vite 报 `Failed to resolve import "elkjs/lib/elk.bundled.js"`。
+- 如何验证：复制现有缺 `elkjs` 的 `grasp_web-node-modules` 卷，用新镜像启动后自动 `npm ci`，`node_modules/elkjs/lib/elk.bundled.js` 存在；再次启动跳过重装。shellcheck 0.11.0 无报错，`shellcheck-error.sh` 通过。
+
 ### 2026-10-14（Codex 登录失效快速失败，不再误报 MCP 工具面为空）
 
 - 日期：2026-10-14

@@ -1511,3 +1511,288 @@ describe('preview-pick.js Live overlay hook', () => {
     expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(true)
   })
 })
+
+describe('preview-pick.js image preview window', () => {
+  const body = '<main><h2>Plan</h2><button id="buy">Buy</button></main>'
+  const hash = '#__grasp_embed&run=run-1&node=ap1&ticket=tk1&lang=zh-CN'
+  const reply = { origin: GRASP, runId: 'run-1', nodeId: 'ap1' }
+  const secret = 'https://secret.example/pixel.png?token=s3cret'
+
+  function setView(p: Page, w: number, h: number) {
+    const de = p.win.document.documentElement
+    Object.defineProperty(de, 'clientWidth', { configurable: true, get: () => w })
+    Object.defineProperty(de, 'clientHeight', { configurable: true, get: () => h })
+    p.win.dispatchEvent(new p.win.Event('resize'))
+  }
+
+  function modalGeom(el: HTMLElement) {
+    return {
+      x: Number.parseInt(el.style.left, 10),
+      y: Number.parseInt(el.style.top, 10),
+      w: Number.parseInt(el.style.width, 10),
+      h: Number.parseInt(el.style.height, 10),
+    }
+  }
+
+  function imageCloseRect(g: { x: number; y: number; w: number; h: number }) {
+    return { x: g.x + g.w - 36, y: g.y + 6, w: 28, h: 28 }
+  }
+
+  function rectHits(
+    a: { x: number; y: number; w: number; h: number },
+    b: { x: number; y: number; w: number; h: number },
+  ) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+  }
+
+  function imageModal(p: Page) {
+    return p.shadow.querySelector('[data-role="image-modal"]') as HTMLElement
+  }
+
+  function imageShown(p: Page) {
+    return !imageModal(p).hidden
+  }
+
+  function imageGeom(p: Page) {
+    const el = imageModal(p)
+    return {
+      x: Number.parseInt(el.style.left, 10),
+      y: Number.parseInt(el.style.top, 10),
+      w: Number.parseInt(el.style.width, 10),
+      h: Number.parseInt(el.style.height, 10),
+    }
+  }
+
+  function fromChat(p: Page, data: Record<string, unknown>, origin = GRASP) {
+    const frame = p.frame()
+    if (!frame?.contentWindow) throw new Error('no drawer')
+    p.win.dispatchEvent(
+      new p.win.MessageEvent('message', { data, origin, source: frame.contentWindow as never }),
+    )
+  }
+
+  function openImage(p: Page, label: string, extra: Record<string, unknown> = {}) {
+    fromChat(p, { type: 'grasp-embed:image', action: 'open', label, ...extra })
+  }
+
+  async function ready(pHash = hash) {
+    const p = openPage(body, { hash: pHash, embedReply: reply })
+    await settle()
+    p.drawerReady()
+    return p
+  }
+
+  it('opens beside the chat card, not inside it, and ignores the picture address', async () => {
+    const p = await ready()
+    setView(p, 1600, 900)
+    expect(imageShown(p)).toBe(false)
+    openImage(p, 'image.png', { src: secret })
+    expect(imageShown(p)).toBe(true)
+    const drawer = p.shadow.querySelector('[data-role="drawer"]') as HTMLElement
+    const modal = imageModal(p)
+    expect(drawer.contains(modal)).toBe(false)
+    expect(modal.parentElement).toBe(p.artifactMask())
+    expect(p.shadow.querySelectorAll('[data-role="image-modal"]')).toHaveLength(1)
+    expect(p.shadow.querySelector('[data-role="image-title"]')?.textContent).toBe('图片预览 · image.png')
+    const frame = p.shadow.querySelector('[data-role="image-modal"] iframe') as HTMLIFrameElement
+    expect(frame.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/image#theme=dark`)
+    expect(frame.getAttribute('src')).not.toContain('secret')
+    expect(p.shadow.textContent || '').not.toContain('s3cret')
+    expect(p.shadow.textContent || '').not.toContain('secret.example')
+    const cs = (el: Element) => p.win.getComputedStyle(el as unknown as Element)
+    expect(Number(cs(p.artifactMask()).zIndex)).toBeLessThan(Number(cs(drawer).zIndex))
+    expect(p.drawerOpen()).toBe(true)
+    const g = imageGeom(p)
+    const drawerLeft = 1600 - 420 - 28
+    expect(g.x).toBe(28)
+    expect(g.y).toBe(28)
+    expect(g.w).toBe(920)
+    expect(g.h).toBe(640)
+    expect(g.x + g.w).toBeLessThanOrEqual(drawerLeft - 16)
+    expect(g.y + g.h).toBeLessThanOrEqual(900)
+  })
+
+  it('keeps the chat usable: mask clicks do nothing, close leaves the drawer, hiding chat leaves the picture', async () => {
+    const p = await ready()
+    openImage(p, 'image.png')
+    p.artifactMask().click()
+    expect(imageShown(p)).toBe(true)
+    expect(p.drawerOpen()).toBe(true)
+    p.chatButton().click()
+    expect(p.drawerOpen()).toBe(false)
+    expect(imageShown(p)).toBe(true)
+    p.chatButton().click()
+    expect(p.drawerOpen()).toBe(true)
+    ;(p.shadow.querySelector('[data-role="image-close"]') as HTMLButtonElement).click()
+    expect(imageShown(p)).toBe(false)
+    expect(p.drawerOpen()).toBe(true)
+    expect(p.artifactOpen()).toBe(false)
+  })
+
+  it('replaces the same window and leaves the artifact window alone', async () => {
+    const p = await ready()
+    setView(p, 1600, 900)
+    p.artifactButton().click()
+    expect(p.artifactOpen()).toBe(true)
+    const artifactSrc = p.artifactFrame()?.getAttribute('src')
+    openImage(p, 'image.png', { src: secret })
+    openImage(p, 'other.png', { src: secret })
+    expect(p.shadow.querySelectorAll('[data-role="image-modal"]')).toHaveLength(1)
+    expect(p.shadow.querySelector('[data-role="image-title"]')?.textContent).toBe('图片预览 · other.png')
+    expect(imageShown(p)).toBe(true)
+    expect(p.artifactOpen()).toBe(true)
+    expect((p.shadow.querySelector('[data-role="artifact-modal"]') as HTMLElement).hidden).toBe(false)
+    expect(p.artifactFrame()?.getAttribute('src')).toBe(artifactSrc)
+    expect(p.shadow.querySelector('[data-role="artifact-title"]')?.textContent).toBe('产物')
+    const imageFrame = p.shadow.querySelector('[data-role="image-modal"] iframe') as HTMLIFrameElement
+    expect(imageFrame.getAttribute('src')).toContain('/image#')
+    expect(imageFrame.getAttribute('src')).not.toContain('other.png')
+    const artifactModal = p.shadow.querySelector('[data-role="artifact-modal"]') as HTMLElement
+    expect(artifactModal.contains(imageModal(p))).toBe(false)
+    const g = imageGeom(p)
+    expect(g.x).toBe(64)
+    expect(g.y).toBe(64)
+    expect(modalGeom(artifactModal)).toMatchObject({ x: 28, y: 28, w: 920, h: 640 })
+    expect(Number(imageModal(p).style.zIndex)).toBeGreaterThan(Number(artifactModal.style.zIndex))
+    ;(p.shadow.querySelector('[data-role="image-close"]') as HTMLButtonElement).click()
+    expect(imageShown(p)).toBe(false)
+    expect(p.artifactOpen()).toBe(true)
+    expect(p.drawerOpen()).toBe(true)
+  })
+
+  it('clamps a narrow viewport and still shows the close button', async () => {
+    const p = await ready()
+    setView(p, 700, 400)
+    openImage(p, 'image.png')
+    const g = imageGeom(p)
+    expect(g.w).toBeLessThanOrEqual(700)
+    expect(g.h).toBeLessThanOrEqual(400)
+    expect(g.x).toBeGreaterThanOrEqual(0)
+    expect(g.y).toBeGreaterThanOrEqual(0)
+    expect(g.x + g.w).toBeLessThanOrEqual(700)
+    expect(g.y + g.h).toBeLessThanOrEqual(400)
+    const close = p.shadow.querySelector('[data-role="image-close"]') as HTMLButtonElement
+    expect(close.hidden).toBe(false)
+    expect(close.getAttribute('aria-label')).toBe('关闭')
+  })
+
+  it('drags and resizes inside the viewport', async () => {
+    const p = await ready()
+    setView(p, 1600, 900)
+    openImage(p, 'image.png')
+    const head = p.shadow.querySelector('[data-role="image-head"]') as HTMLElement
+    const se = p.shadow.querySelector('[data-role="image-modal"] .edge.se') as HTMLElement
+    const before = imageGeom(p)
+    const fire = (type: string, target: EventTarget, x: number, y: number) => {
+      const Ev = (p.win as unknown as { PointerEvent: typeof PointerEvent }).PointerEvent
+      target.dispatchEvent(new Ev(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, button: 0 }))
+    }
+    const drag = (target: EventTarget, from: { x: number; y: number }, to: { x: number; y: number }) => {
+      fire('pointerdown', target, from.x, from.y)
+      fire('pointermove', p.win, to.x, to.y)
+      fire('pointerup', p.win, to.x, to.y)
+    }
+    drag(head, { x: before.x + 40, y: before.y + 12 }, { x: before.x + 80, y: before.y + 42 })
+    const moved = imageGeom(p)
+    expect(moved.x).toBe(before.x + 40)
+    expect(moved.y).toBe(before.y + 30)
+    expect(moved.w).toBe(before.w)
+    drag(se, { x: moved.x + moved.w - 2, y: moved.y + moved.h - 2 }, { x: moved.x + moved.w + 40, y: moved.y + moved.h + 20 })
+    const resized = imageGeom(p)
+    expect(resized.w).toBe(moved.w + 42)
+    expect(resized.h).toBe(moved.h + 22)
+    expect(resized.x + resized.w).toBeLessThanOrEqual(1600)
+    expect(resized.y + resized.h).toBeLessThanOrEqual(900)
+  })
+
+  it('offsets the artifact window when the picture is already open', async () => {
+    const p = await ready()
+    setView(p, 1440, 900)
+    openImage(p, 'image.png')
+    const imageBefore = imageGeom(p)
+    expect(imageBefore).toEqual({ x: 28, y: 28, w: 920, h: 640 })
+    p.artifactButton().click()
+    const image = imageModal(p)
+    const artifact = p.shadow.querySelector('[data-role="artifact-modal"]') as HTMLElement
+    const artifactBox = modalGeom(artifact)
+    expect(artifact.hidden).toBe(false)
+    expect(image.hidden).toBe(false)
+    expect(artifactBox).toEqual({ x: 64, y: 64, w: 920, h: 640 })
+    expect(imageGeom(p)).toEqual(imageBefore)
+    expect(Number(artifact.style.zIndex)).toBeGreaterThan(Number(image.style.zIndex))
+    expect(artifactBox.y).toBeGreaterThan(imageBefore.y)
+    expect(imageBefore.y + 40).toBeGreaterThan(artifactBox.y)
+    expect(p.artifactFrame()?.getAttribute('src')).toContain('/artifacts')
+    expect(p.shadow.querySelector('[data-role="artifact-title"]')?.textContent).toBe('产物')
+    const drawer = p.shadow.querySelector('[data-role="drawer"]') as HTMLElement
+    const cs = (el: Element) => p.win.getComputedStyle(el as unknown as Element)
+    expect(Number(cs(drawer).zIndex)).toBeGreaterThan(Number(cs(p.artifactMask()).zIndex))
+  })
+
+  it('stops a drag before the close button slides under the chat card', async () => {
+    const p = await ready()
+    setView(p, 1440, 900)
+    openImage(p, 'image.png')
+    const drawer = modalGeom(p.shadow.querySelector('[data-role="drawer"]') as HTMLElement)
+    expect(drawer.x).toBe(1440 - 420 - 28)
+    const before = imageGeom(p)
+    const head = p.shadow.querySelector('[data-role="image-head"]') as HTMLElement
+    const fire = (type: string, target: EventTarget, x: number, y: number) => {
+      const Ev = (p.win as unknown as { PointerEvent: typeof PointerEvent }).PointerEvent
+      target.dispatchEvent(new Ev(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, button: 0 }))
+    }
+    const drag = (target: EventTarget, from: { x: number; y: number }, to: { x: number; y: number }) => {
+      fire('pointerdown', target, from.x, from.y)
+      fire('pointermove', p.win, to.x, to.y)
+      fire('pointerup', p.win, to.x, to.y)
+    }
+    drag(head, { x: before.x + 40, y: before.y + 12 }, { x: before.x + 800, y: before.y + 40 })
+    const moved = imageGeom(p)
+    const btn = imageCloseRect(moved)
+    expect(rectHits(btn, drawer)).toBe(false)
+    expect(btn.x + btn.w).toBe(drawer.x)
+    expect(moved.w).toBe(before.w)
+    expect(moved.h).toBe(before.h)
+    expect(moved.y).toBe(before.y + 28)
+    expect(moved.x).toBeGreaterThan(before.x)
+  })
+
+  it('follows the chat card theme and language without closing', async () => {
+    const p = await ready('#__grasp_embed&run=run-1&node=ap1&ticket=tk1&theme=light')
+    openImage(p, 'image.png')
+    const head = p.shadow.querySelector('[data-role="image-head"]') as HTMLElement
+    const cs = () => p.win.getComputedStyle(head as unknown as Element)
+    expect(p.artifactMask().className).toBe('mask light')
+    expect(cs().backgroundColor).toBe('#fff')
+    expect(p.shadow.querySelector('[data-role="image-title"]')?.textContent).toBe('Image preview · image.png')
+    ;(p.shadow.querySelector('[data-role="drawer-theme"]') as HTMLButtonElement).click()
+    expect(imageShown(p)).toBe(true)
+    expect(p.artifactMask().className).toBe('mask')
+    expect(cs().backgroundColor).toBe('#0b0b0c')
+    fromChat(p, { type: 'grasp-embed:lang', lang: 'zh-CN' })
+    expect(imageShown(p)).toBe(true)
+    expect(p.shadow.querySelector('[data-role="image-title"]')?.textContent).toBe('图片预览 · image.png')
+    expect(p.drawerOpen()).toBe(true)
+  })
+
+  it('ignores an image request until the chat session is ready, and closes with the session', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    const frame = p.frame()
+    expect(frame).toBeTruthy()
+    p.win.dispatchEvent(
+      new p.win.MessageEvent('message', {
+        data: { type: 'grasp-embed:image', action: 'open', label: 'image.png' },
+        origin: GRASP,
+        source: frame?.contentWindow as never,
+      }),
+    )
+    expect(imageShown(p)).toBe(false)
+    p.drawerReady()
+    openImage(p, 'image.png')
+    expect(imageShown(p)).toBe(true)
+    fromChat(p, { type: 'grasp-embed:session', ok: false })
+    expect(imageShown(p)).toBe(false)
+    expect(p.drawerOpen()).toBe(false)
+  })
+})

@@ -29,6 +29,9 @@ const paths: Record<string, string> = {
   'chevron-left': '<path d="M15 6l-6 6 6 6"/>',
   'chevron-right': '<path d="M9 6l6 6-6 6"/>',
   'arrow-left': '<path d="M19 12H5M11 6l-6 6 6 6"/>',
+  'arrow-right': '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  // ⇄ exchange: upstream ↔ downstream node handoff.
+  swap: '<path d="M7 4 3 8l4 4"/><path d="M3 8h13a5 5 0 0 1 5 5"/><path d="m17 20 4-4-4-4"/><path d="M21 16H8a5 5 0 0 1-5-5"/>',
   'arrow-up': '<path d="M12 19V5M5 12l7-7 7 7"/>',
   refresh: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
   copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',

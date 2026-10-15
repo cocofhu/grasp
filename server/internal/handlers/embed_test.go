@@ -167,6 +167,7 @@ func TestEmbedChatPageFrameAncestors(t *testing.T) {
 	for _, path := range []string{
 		"/embed/runs/run-emb-page/nodes/ap1/chat",
 		"/embed/runs/run-emb-page/nodes/ap1/artifacts",
+		"/embed/runs/run-emb-page/nodes/ap1/image",
 	} {
 		w := hn.doEmbed(http.MethodGet, path, nil, nil)
 		if w.Code != http.StatusOK {
