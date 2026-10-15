@@ -28,6 +28,14 @@
 - 为什么：#794 首页改版移除了 `homeSubtitle` 接线，品牌设置「首页副标题」成为孤儿设置，管理员改完首页无变化。接线后该设置真正生效。
 - 如何验证：DashboardView / fill / light、SettingsView、locales 相关 vitest 全绿（新增读取设置、纯空白回退、英文回退用例）；`npm run lint` 0 error、`npx vue-tsc --noEmit` 通过。
 
+### 2026-10-15（应用预览「可能卡死」推迟到 60 秒，开发服务器代理 noVNC）
+
+- 日期：2026-10-15
+- 范围：`web/src/components/run/NovncPreviewPanel.vue`、`web/src/components/run/NovncPreviewPanel.test.ts`、`web/vite.config.ts`
+- 做了什么：`PREVIEW_STUCK_MS` 从 20 秒改为 60 秒，警告出现后隐藏「请稍候」启动提示；Vite 开发服务器新增 `/sandbox-vnc/` 的 WebSocket 代理。
+- 为什么：启动提示写的是首次启动约 30–60 秒，20 秒就报「可能卡死」与之矛盾；服务端 `OpenInSandbox` 有 90 秒时限，超时会推送错误，60 秒警告正好落在两者之间。开发环境缺 `/sandbox-vnc/` 代理时 WebSocket 无法升级，预览一直停在「连接中」。生产由 Go 服务直接处理该路径，不受影响。
+- 如何验证：新增单测在连接一直未完成时断言 20 秒不出现警告、60 秒出现且启动提示隐藏；改回 20 秒时该用例失败。本地经 Vite `:5173` 访问 `/sandbox-vnc/:id/ws` 完成握手。web eslint / vue-tsc / vitest（含覆盖率）/ build 通过。
+
 ### 2026-10-15（运行画布节点交接样式优化：图标胶囊 + Markdown 悬浮卡片）
 
 - 日期：2026-10-15
