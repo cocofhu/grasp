@@ -104,28 +104,16 @@ describe('DashboardView light selectors survive scoped compile', () => {
       expect(hasClass(rule.selector, '.home-hero-copy')).toBe(true)
     }
 
-    const lightEm = rules.filter(
-      (rule) =>
-        rule.selector.includes('html.light') &&
-        hasClass(rule.selector, '.home-hero-copy') &&
-        hasClass(rule.selector, '.em') &&
-        rule.body.includes('#1a1a1a'),
+    const heroEm = rules.filter(
+      (rule) => hasClass(rule.selector, '.home-hero-copy') && hasClass(rule.selector, '.em'),
     )
-    expect(lightEm.length).toBeGreaterThan(0)
-    for (const rule of lightEm) {
-      expect(rule.selector.replace(/\s+/g, ' ').trim()).not.toBe('html.light')
-    }
+    expect(heroEm.length).toBe(0)
 
     const darkCopy = rules.filter(
       (rule) => hasClass(rule.selector, '.home-hero-copy') && rule.body.includes('#9a9a9a'),
     )
-    const darkEm = rules.filter(
-      (rule) => hasClass(rule.selector, '.em') && rule.body.includes('#f2f2f2'),
-    )
     expect(darkCopy.length).toBeGreaterThan(0)
-    expect(darkEm.length).toBeGreaterThan(0)
     expect(darkCopy.every((rule) => !rule.selector.includes('html.light'))).toBe(true)
-    expect(darkEm.every((rule) => !rule.selector.includes('html.light'))).toBe(true)
 
     const targets: { className: string; body: RegExp }[] = [
       { className: '.home-composer', body: /--c-elevated/ },

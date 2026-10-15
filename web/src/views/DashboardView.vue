@@ -560,7 +560,7 @@ onBeforeUnmount(() => {
     >
       <div class="home-brand-block" data-testid="home-brand-block">
         <HomeYumeCharacter />
-        <p class="home-hero-copy" data-testid="home-hero-copy"><span class="em">{{ t('pages.dashboard.heroEm') }}</span>{{ t('pages.dashboard.heroRest') }}</p>
+        <p class="home-hero-copy" data-testid="home-hero-copy">{{ t('pages.dashboard.heroEm') }}{{ t('pages.dashboard.heroRest') }}</p>
       </div>
 
       <div class="home-composer-wrap w-full">
@@ -971,8 +971,8 @@ onBeforeUnmount(() => {
 
 .home-hero-copy {
   margin-top: 6px; /* after crop; optical ~4-6px */
-  font-size: 17px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 400;
   letter-spacing: 0.04em;
   color: #9a9a9a;
   text-align: center;
@@ -981,17 +981,8 @@ onBeforeUnmount(() => {
   z-index: 1;
 }
 
-.home-hero-copy .em {
-  color: #f2f2f2;
-  font-weight: 600;
-}
-
 html.light .home-hero-copy {
   color: #6b6b6b;
-}
-
-html.light .home-hero-copy .em {
-  color: #1a1a1a;
 }
 
 /* plan g1.1 — shell/hero composer 16px; overflow+bg+radius same layer */
