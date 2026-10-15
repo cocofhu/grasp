@@ -79,6 +79,9 @@ export default defineConfig(({ command }) => {
         '/sandbox/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },
         // Sandbox acp-bridge native UI reverse-proxy lives at /sandbox-bridge/:id/*.
         '/sandbox-bridge/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },
+        // Desktop noVNC is /sandbox-vnc/:id/ws, outside /api. Without this proxy the
+        // dev server never upgrades the socket, so the preview stays on "connecting".
+        '/sandbox-vnc/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },
         // App preview reverse-proxy lives at /preview/:runId/:nodeId/:port/* (outside
         // /api). Without this, Vite dev swallows iframe requests and returns SPA HTML.
         '/preview/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },

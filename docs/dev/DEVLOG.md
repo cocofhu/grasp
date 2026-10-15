@@ -28,6 +28,14 @@
 - 为什么：review:true 的节点（默认工作流「实现」）在 `node_complete` 产生 handoff 后进入复审；人工「确认并流转」走 `reviewReply` 用空 `runtime.NodeResult{}` 重新 `finalizeAgent` 并 `saveState` 整体覆盖 outputs，丢掉了 handoff/handoff_source，且未走 `ensureHandoff`。结果运行画布「实现→测试评审」边无交接胶囊，下游「测试评审」提示词缺上游交接，回环重跑同样（#796 遗漏的 review 路径）。
 - 如何验证：`go test ./internal/engine/...`、`go test ./...`、`go vet ./...`、`golangci-lint run --config ../.golangci.yml ./...`（0 issues）、`./scripts/cover-check-server.sh 90`（90.1%）。新用例在未修复时会失败。
 
+### 2026-10-15（应用预览「可能卡死」推迟到 60 秒，开发服务器代理 noVNC）
+
+- 日期：2026-10-15
+- 范围：`web/src/components/run/NovncPreviewPanel.vue`、`web/src/components/run/NovncPreviewPanel.test.ts`、`web/vite.config.ts`
+- 做了什么：`PREVIEW_STUCK_MS` 从 20 秒改为 60 秒，警告出现后隐藏「请稍候」启动提示；Vite 开发服务器新增 `/sandbox-vnc/` 的 WebSocket 代理。
+- 为什么：启动提示写的是首次启动约 30–60 秒，20 秒就报「可能卡死」与之矛盾；服务端 `OpenInSandbox` 有 90 秒时限，超时会推送错误，60 秒警告正好落在两者之间。开发环境缺 `/sandbox-vnc/` 代理时 WebSocket 无法升级，预览一直停在「连接中」。生产由 Go 服务直接处理该路径，不受影响。
+- 如何验证：新增单测在连接一直未完成时断言 20 秒不出现警告、60 秒出现且启动提示隐藏；改回 20 秒时该用例失败。本地经 Vite `:5173` 访问 `/sandbox-vnc/:id/ws` 完成握手。web eslint / vue-tsc / vitest（含覆盖率）/ build 通过。
+
 ### 2026-10-15（运行画布节点交接样式优化：图标胶囊 + Markdown 悬浮卡片）
 
 - 日期：2026-10-15
