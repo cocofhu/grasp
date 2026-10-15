@@ -63,7 +63,9 @@ const status = ref<'connecting' | 'live' | 'closed' | 'error'>('connecting')
 const statusMsg = ref('')
 const previewStuck = ref(false)
 let previewWarnTimer: ReturnType<typeof setTimeout> | null = null
-const PREVIEW_STUCK_MS = 20_000
+// First launch is advertised as 30–60s. The server still has a 90s OpenInSandbox
+// budget, so a warning before 60s fires while the desktop is starting normally.
+const PREVIEW_STUCK_MS = 60_000
 const inspect = ref(false)
 const inspectToggleLabel = computed(() =>
   t(inspect.value ? 'pages.appPreview.novnc.cancelInspect' : 'pages.appPreview.novnc.inspect'),
@@ -1127,9 +1129,11 @@ onBeforeUnmount(() => {
           aria-hidden="true"
         />
         <span class="text-sm font-medium text-txt2">{{ t('pages.appPreview.novnc.connectingTitle') }}</span>
-        <span class="max-w-[320px] text-xs leading-snug text-txt3">{{
-          t('pages.appPreview.novnc.connectingHint')
-        }}</span>
+        <span
+          v-if="!previewStuck"
+          class="max-w-[320px] text-xs leading-snug text-txt3"
+          data-testid="novnc-connecting-hint"
+        >{{ t('pages.appPreview.novnc.connectingHint') }}</span>
         <div
           v-if="previewStuck"
           class="rounded-lg pointer-events-auto max-w-[360px] border border-warn/40 bg-warn/10 px-2.5 py-2 text-[12px] text-warn"
