@@ -357,8 +357,11 @@
       "doneNote": "API runs will use this version."
     },
     "handoff": {
-      "title": "Handoff from {source}",
+      "chip": "Handoff",
+      "title": "Handoff notes",
       "platformTitle": "Platform handoff (upstream left none)",
+      "platformNote": "Written by the platform · upstream left no handoff",
+      "fromNode": "From the \"{source}\" node",
       "aria": "Handoff from {source} to {target}",
       "close": "Close handoff"
     }
