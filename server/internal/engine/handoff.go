@@ -106,6 +106,52 @@ func (e *Engine) upstreamHandoff(c *execCtx, node *models.Node) *models.Upstream
 	}
 }
 
+// priorHandoff returns the handoff text/source recorded on the node's current
+// execution (latest iteration), so a rebuild can carry it forward.
+func (e *Engine) priorHandoff(c *execCtx, node *models.Node) (string, string) {
+	if e.db == nil || c == nil || node == nil {
+		return "", ""
+	}
+	q := e.db.Where("run_id = ? AND node_id = ?", c.run.ID, node.ID)
+	if iter := c.iter[node.ID]; iter > 0 {
+		q = q.Where("iteration = ?", iter)
+	} else {
+		q = q.Order("iteration desc, id desc")
+	}
+	var sr models.StateRun
+	if err := q.First(&sr).Error; err != nil {
+		return "", ""
+	}
+	text := strings.TrimSpace(str(sr.Outputs[models.OutputHandoff]))
+	if text == "" {
+		return "", ""
+	}
+	return text, str(sr.Outputs[models.OutputHandoffSource])
+}
+
+// retainHandoff keeps a node's node_complete handoff across a rebuild: when the
+// freshly derived outputs lost it (review confirm / revise refresh / react
+// resume), the previous execution's handoff is copied back before the platform
+// fallback runs. This mirrors execute.go's ensureHandoff so every review/resume
+// entry that reconstructs outputs preserves the handoff instead of dropping it.
+func (e *Engine) retainHandoff(c *execCtx, node *models.Node, oc *nodeOutcome) {
+	if node == nil || oc == nil {
+		return
+	}
+	if strings.TrimSpace(str(oc.outputs[models.OutputHandoff])) == "" {
+		if text, src := e.priorHandoff(c, node); text != "" {
+			if oc.outputs == nil {
+				oc.outputs = map[string]any{}
+			}
+			oc.outputs[models.OutputHandoff] = text
+			if src != "" {
+				oc.outputs[models.OutputHandoffSource] = src
+			}
+		}
+	}
+	ensureHandoff(c, node, oc)
+}
+
 // ensureHandoff guarantees an Agent node with a downstream leaves a handoff
 // even when the agent never reached node_complete (crash, timeout, failed
 // checks): the platform writes one from the failure so the next node and the

@@ -4,6 +4,14 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Run canvas handoff:** a node with post-run review (e.g. the 实现 node) no
+  longer loses its handoff when the reviewer clicks「确认并流转」. The handoff
+  and its source are preserved through review confirm, revise refresh, and
+  clarify/react resume, and the platform fallback still writes one when a node
+  with a downstream left none. The「实现 → 测试评审」edge shows the handoff chip
+  again and the downstream prompt gets the upstream handoff, including after a
+  test-fail loop-back (#796 follow-up).
+
 - **Home attachments:** adding an image on the home composer at a window height
   that just fits the page no longer brings up a scrollbar. The 120px top gap
   shrinks first (down to 48px) and the column only scrolls after that (#800).
