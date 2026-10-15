@@ -4,6 +4,10 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **App preview:** the "may be stuck" warning now appears after 60 seconds of
+  connecting instead of 20, matching the advertised 30–60 second first launch.
+  The "please wait" hint is hidden once the warning shows (#802).
+
 - **Home attachments:** adding an image on the home composer at a window height
   that just fits the page no longer brings up a scrollbar. The 120px top gap
   shrinks first (down to 48px) and the column only scrolls after that (#800).
