@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-15（首页文案接回品牌设置「首页副标题」）
+
+- 日期：2026-10-15
+- 范围：`web/src/views/DashboardView.vue`、`web/src/locales/zh-CN/pages.json`、`web/src/locales/en/pages.json`、`web/src/views/DashboardView.test.ts`、`web/src/views/DashboardView.fill.test.ts`、`web/src/views/DashboardView.light.test.ts`、`web/src/views/SettingsView.test.ts`
+- 做了什么：首页吉祥物下方文案改读 `useBrandSettings().homeSubtitle`，留空（含纯空白，经 composable trim 为空串）回退语言包默认句；`pages.dashboard.heroEm/heroRest` 合并为单一 `heroSubtitle`（zh「先说清，再动手」/ en「Clarify first, then act」）；文案整句统一配色（`rgb(var(--c-txt))` + 600），移除 `.em` 分段高亮与对应浅色规则，并补 `max-width`/换行兜底；设置页 `homeSubtitlePlaceholder` 同步为新默认句。
+- 为什么：#794 首页改版移除了 `homeSubtitle` 接线，品牌设置「首页副标题」成为孤儿设置，管理员改完首页无变化。接线后该设置真正生效。
+- 如何验证：DashboardView / fill / light、SettingsView、locales 相关 vitest 全绿（新增读取设置、纯空白回退、英文回退用例）；`npm run lint` 0 error、`npx vue-tsc --noEmit` 通过。
+
 ### 2026-10-15（首页加图片附件不再在临界高度带出滚动条）
 
 - 日期：2026-10-15

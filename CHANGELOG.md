@@ -4,6 +4,11 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Home subtitle:** the sentence under the home mascot now shows the brand
+  setting「首页副标题」(`home_subtitle`) and falls back to the locale default
+  (zh「先说清，再动手」/ en「Clarify first, then act」) when it is blank. The copy
+  is one uniform color and no longer highlights only its first half.
+
 - **Home attachments:** adding an image on the home composer at a window height
   that just fits the page no longer brings up a scrollbar. The 120px top gap
   shrinks first (down to 48px) and the column only scrolls after that (#800).

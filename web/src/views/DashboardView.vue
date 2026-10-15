@@ -13,6 +13,7 @@ import HomeCreateBaselineModal from '@/components/dashboard/HomeCreateBaselineMo
 import RunLaunchModal from '@/components/workflow/RunLaunchModal.vue'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { useHomeApproveChat } from '@/lib/run/useHomeApproveChat'
+import { useBrandSettings } from '@/lib/composables/useBrandSettings'
 import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
 import { imgSrc } from '@/lib/shared/compositeText'
 import type { Workflow } from '@/lib/shared/types'
@@ -57,6 +58,11 @@ const {
   closeLaunch,
   onLaunchStarted,
 } = useHomeApproveChat()
+
+// plan g1.1 — hero copy reads the brand「首页副标题」setting; blank/whitespace
+// (useBrandSettings trims to '') falls back to the locale default sentence.
+const { homeSubtitle } = useBrandSettings()
+const heroCopy = computed(() => homeSubtitle.value || t('pages.dashboard.heroSubtitle'))
 
 const composerFocused = ref(false)
 const composing = ref(false)
@@ -560,7 +566,7 @@ onBeforeUnmount(() => {
     >
       <div class="home-brand-block" data-testid="home-brand-block">
         <HomeYumeCharacter />
-        <p class="home-hero-copy" data-testid="home-hero-copy"><span class="em">{{ t('pages.dashboard.heroEm') }}</span>{{ t('pages.dashboard.heroRest') }}</p>
+        <p class="home-hero-copy" data-testid="home-hero-copy">{{ heroCopy }}</p>
       </div>
 
       <div class="home-composer-wrap w-full">
@@ -979,29 +985,20 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
+/* plan g1.3 — whole-sentence unified color/weight; no .em split highlight */
 .home-hero-copy {
   margin-top: 6px; /* after crop; optical ~4-6px */
+  max-width: 100%;
   font-size: 17px;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 0.04em;
-  color: #9a9a9a;
+  color: rgb(var(--c-txt));
   text-align: center;
   line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   position: relative;
   z-index: 1;
-}
-
-.home-hero-copy .em {
-  color: #f2f2f2;
-  font-weight: 600;
-}
-
-html.light .home-hero-copy {
-  color: #6b6b6b;
-}
-
-html.light .home-hero-copy .em {
-  color: #1a1a1a;
 }
 
 /* plan g1.1 — shell/hero composer 16px; overflow+bg+radius same layer */

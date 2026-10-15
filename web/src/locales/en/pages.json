@@ -21,8 +21,7 @@
       "pickWorkflow": "Select a workflow first",
       "noWorkflowShort": "No workflow",
       "needText": "Describe the goal or attach a file first",
-      "heroEm": "Clarify first",
-      "heroRest": ", then act",
+      "heroSubtitle": "Clarify first, then act",
       "send": "Send",
       "sendShortcut": "Ctrl/⌘ + Enter to send",
       "missingRequired": "Fill required launch fields before starting",
@@ -1900,7 +1899,7 @@
         "productNamePlaceholder": "Grasp",
         "productNameHint": "Shared by the sidebar and Home typewriter, up to 40 characters. Blank uses Grasp.",
         "homeSubtitle": "Home subtitle",
-        "homeSubtitlePlaceholder": "Start a pre-dev clarification in one sentence",
+        "homeSubtitlePlaceholder": "Clarify first, then act",
         "homeSubtitleHint": "Up to 80 characters. Blank uses the current locale default."
       },
       "groups": {
