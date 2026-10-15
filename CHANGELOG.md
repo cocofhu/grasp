@@ -4,6 +4,18 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+## 2.2.0 — 2026-10-15
+
+<img src="media/yume-mark.png" alt="Black-and-white ghost cat, the Grasp mascot" width="120" />
+
+- **Home mascot:** the home page, the desktop sidebar, and the login page now
+  use this black-and-white ghost cat (yume). White body, ink outline, grey
+  cheeks, a small tail. The home hero is the cropped cat (240×200) with no
+  wordmark and no logo-mark. It floats, blinks, and wags its tail; hovering
+  makes the eyes follow the pointer; pressing squishes it and it springs
+  back. Reduced motion keeps a still cat. Light theme drops the sparkles and
+  uses a light shadow. The sidebar shows it at 28px and the login page at
+  48px (#794, #798).
 - **Home subtitle:** the sentence under the home mascot now shows the brand
   setting「首页副标题」(`home_subtitle`) and falls back to the locale default
   (zh「先说清，再动手」/ en「Clarify first, then act」) when it is blank. The copy
@@ -32,6 +44,33 @@ All notable public-release changes are documented here.
   on the first failed turn with "Codex 登录已失效或无法刷新，请重新粘贴登录文件"
   instead of re-prompting, reporting "MCP 工具面为空", and auto-retrying. The
   run failure banner links to the project credentials tab.
+- **CLI models:** Agent settings, the project shared Agent config, the create
+  wizard, and the workflow node inspector pick a model from a dropdown
+  (vendor marks, recommended cards, search). Codex also picks a reasoning
+  effort. The lists are the CLI's real model IDs. A shared default applies
+  only to Agents on the same CLI; an Agent that has not picked its own model
+  says it follows the project model (#789, #790).
+- **Sandbox lifetime:** a run sandbox stays up by lease (debug after the node
+  ends, activity while the terminal, IDE, chat, or preview is in use, preview
+  after `set_preview`, and a manual extension) instead of a fixed 30 minutes.
+  The sandbox list and console show time left and offer +30 minutes, +2 hours,
+  and keep until the run ends. The cap is **Settings → Sandbox recycle →
+  Run sandbox max retention** (default 24 hours, 1–168) (#796).
+- **Test node:** destroying one node's sandbox no longer revokes MCP for the
+  rest of the run, and the test node follows the implement branch instead of
+  falling back to `main` (#796).
+- **Page Harness images:** an image opened from the Page Harness chat is a
+  floating window next to the artifact window, not inside the chat card.
+  Opening the artifact after the image offsets it by 36px so both title bars
+  stay visible (#795).
+- **Project agents:** a workflow created from the baseline binds Agents in
+  this project (reuse one with the same name, or create it from the shared
+  Agent config). Saving or starting a run rejects an Agent that belongs to
+  another project. If the clarify node's sandbox fails to start, the run is
+  marked failed. A sandbox config or credential error is not retried. The
+  start-run dialog accepts an optional first message (#787).
+- Default `./start.sh` / `.env.example` / `compose.release.yaml` pins GHCR
+  images to `*:2.2.0`.
 
 ## 2.1.0 — 2026-10-12
 
