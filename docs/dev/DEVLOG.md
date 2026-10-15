@@ -28,6 +28,14 @@
 - 为什么：窗口刚好一屏时加一张图片，芯片行（约 70px）把内容顶出可视区；删除钮 `-right-1.5` 还会造成横向溢出，横向滚动条再挤出纵向滚动条。72px 的可收缩余量正好吸收一行芯片，第二行或附件提示仍会正常滚动。
 - 如何验证：新增 Playwright 用例把视口设为内容自然高度，加一张图片后断言内容列无纵向/横向溢出、删除钮在视口内；换回 main 的 `DashboardView.vue` 时该用例失败（纵向溢出 63px）。web eslint / vue-tsc / vitest（含覆盖率）/ build 通过。
 
+### 2026-10-15（dev 栈 web 依赖变更后自动补装 node_modules）
+
+- 日期：2026-10-15
+- 范围：`web/Dockerfile.dev`、`web/dev-entrypoint.sh`
+- 做了什么：dev 镜像在 `npm ci` 后写入 `package.json` + `package-lock.json` 的哈希戳；新增入口脚本在启动时比对 `node_modules/.grasp-deps-hash`，不一致就在卷里重新 `npm ci`。
+- 为什么：`docker-compose.yml` 用 named volume `web-node-modules` 挂 `/web/node_modules`，卷只在首次创建时从镜像填充；之后 `./start.sh dev` 的 `--build` 即使重装了依赖也被旧卷遮住，新增的 `elkjs` 导致 Vite 报 `Failed to resolve import "elkjs/lib/elk.bundled.js"`。
+- 如何验证：复制现有缺 `elkjs` 的 `grasp_web-node-modules` 卷，用新镜像启动后自动 `npm ci`，`node_modules/elkjs/lib/elk.bundled.js` 存在；再次启动跳过重装。shellcheck 0.11.0 无报错，`shellcheck-error.sh` 通过。
+
 ### 2026-10-14（Codex 登录失效快速失败，不再误报 MCP 工具面为空）
 
 - 日期：2026-10-14
