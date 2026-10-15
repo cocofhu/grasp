@@ -122,4 +122,43 @@ test.describe('首页 Chat 启动 Approve 工作流', () => {
     await expect(page.getByTestId('gates-item-status')).toHaveText('waiting_human')
     await expect(page.getByTestId('run-detail-page')).toHaveCount(0)
   })
+
+  test('临界高度加一张图片：顶部间距收缩，不出现滚动条', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 1200 })
+    await mockHomeApis(page)
+    await page.goto('/dashboard-home-chat.html')
+    // The harness root wrapper has no height, so the view would never be height-bound.
+    await page.addStyleTag({ content: '#app > div { height: 100%; }' })
+    await expect(page.getByTestId('home-workflow-card-wf-approve')).toBeVisible({ timeout: 10_000 })
+
+    const content = page.locator('.home-shell__content')
+    const naturalHeight = await content.evaluate((el) => {
+      const top = el.getBoundingClientRect().top
+      const rail = el.querySelector('[data-testid="home-workflow-rail-wrap"]')!
+      return Math.ceil(rail.getBoundingClientRect().bottom - top + parseFloat(getComputedStyle(el).paddingBottom))
+    })
+    await page.setViewportSize({ width: 1280, height: naturalHeight + 1 })
+
+    const overflow = () =>
+      content.evaluate((el) => ({
+        y: el.scrollHeight - el.clientHeight,
+        x: el.scrollWidth - el.clientWidth,
+      }))
+    expect((await overflow()).y).toBeLessThanOrEqual(0)
+
+    await page.getByTestId('home-composer-file').setInputFiles({
+      name: 'shot.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64',
+      ),
+    })
+    await expect(page.getByTestId('home-draft-image-thumb')).toBeVisible()
+
+    const after = await overflow()
+    expect(after.y).toBeLessThanOrEqual(0)
+    expect(after.x).toBeLessThanOrEqual(0)
+    await expect(page.getByTestId('home-attach-remove')).toBeInViewport()
+  })
 })

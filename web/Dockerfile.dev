@@ -6,10 +6,15 @@ FROM node:24-alpine
 WORKDIR /web
 
 # 先单独装依赖,借助 Docker 层缓存;compose 用 named volume 保护 node_modules
-# 不被源码 bind mount 覆盖(见 docker-compose.yml)。
+# 不被源码 bind mount 覆盖(见 docker-compose.yml)。卷建好后不会再从镜像刷新,
+# 由 dev-entrypoint.sh 在启动时按锁文件哈希补装。
 COPY package.json package-lock.json .npmrc ./
-RUN npm ci --no-audit --no-fund
+RUN npm ci --no-audit --no-fund \
+  && cat package.json package-lock.json | sha256sum | cut -d' ' -f1 > node_modules/.grasp-deps-hash
+
+COPY dev-entrypoint.sh /usr/local/bin/dev-entrypoint.sh
 
 EXPOSE 5173
 
+ENTRYPOINT ["sh", "/usr/local/bin/dev-entrypoint.sh"]
 CMD ["npm", "run", "dev", "--", "--host", "--port", "5173"]
