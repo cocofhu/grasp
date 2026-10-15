@@ -34,16 +34,24 @@ type ProviderRegistry struct {
 	providers    map[AcpBackend]ExecProvider
 	profilesRoot string
 	emit         func(runID, nodeID string, events []models.AcpEvent, busy bool)
+	// coordinator is shared across backend providers so a run that switches
+	// Agent backends still has one workspace and one exclusive lease.
+	coordinator *sharedSandboxCoordinator
 }
 
 // NewProviderRegistry builds one provider per product backend and wires a shared event sink.
 func NewProviderRegistry(host *mcp.Host, opts Options) *ProviderRegistry {
 	backends := []AcpBackend{BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode, BackendCodex}
 	m := map[AcpBackend]ExecProvider{}
+	coordinator := newSharedSandboxCoordinator()
 	for _, b := range backends {
-		m[b] = newBaseACPProvider(host, opts, b)
+		p := newBaseACPProvider(host, opts, b)
+		if ap, ok := p.(*acpProvider); ok {
+			ap.coordinator = coordinator
+		}
+		m[b] = p
 	}
-	return &ProviderRegistry{providers: m, profilesRoot: opts.ProfilesRoot}
+	return &ProviderRegistry{providers: m, profilesRoot: opts.ProfilesRoot, coordinator: coordinator}
 }
 
 func (r *ProviderRegistry) Name() string { return "registry" }

@@ -681,6 +681,22 @@ func (s *SandboxService) sweepRows(ctx context.Context, rows []models.Sandbox) {
 // sandbox-gateway orphanGC.minAge (10m default).
 const reconcileCreatingGrace = 10 * time.Minute
 
+// runInProgress reports whether runID can still execute Agent nodes.
+func (s *SandboxService) runInProgress(runID string) bool {
+	if strings.TrimSpace(runID) == "" {
+		return false
+	}
+	var run models.Run
+	if err := s.db.Select("status").Where("id = ?", runID).First(&run).Error; err != nil {
+		return false
+	}
+	switch run.Status {
+	case "queued", "running", "waiting_human":
+		return true
+	}
+	return false
+}
+
 // ReconcileOnStartup syncs DB rows with live gateway state after a restart and
 // drops orphan managed sandboxes not tracked in the DB. Dropping a local row
 // always Destroy()s the gateway instance first so sandbox_gateway.sandboxes
@@ -698,11 +714,21 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context) {
 	protectedCorr := map[string]bool{}
 	for i := range rows {
 		row := &rows[i]
-		// Per-run node sandboxes are owned by the runtime provider; after a
-		// restart their driving goroutine is gone, so any surviving container
-		// is an orphan. Destroy it and drop the record.
+		// A run-level shared container of a run that is still in progress is
+		// kept so the runtime coordinator can rehydrate it. Node-private
+		// containers, missing containers and those of finished runs are orphans.
 		if row.Purpose == "run" {
-			s.destroyLocalSandbox(ctx, row)
+			if row.Scope == runtimeScopeRun && s.runInProgress(row.RunID) && s.mgr.Status(ctx, row.Name) == "running" {
+				tracked[row.Name] = true
+				if sb, err := s.mgr.Attach(ctx, row.Name); err == nil {
+					s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Updates(map[string]any{
+						"status": "running", "host": sb.Host, "acp_port": sb.Port,
+						"code_server_port": sb.CodeServerPort, "updated_at": time.Now(),
+					})
+				}
+			} else {
+				s.destroyLocalSandbox(ctx, row)
+			}
 			continue
 		}
 		// Young creating rows still use a placeholder Name; the gateway id is

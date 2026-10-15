@@ -180,8 +180,9 @@ func (p *Provider) Open(procCtx, _ context.Context, opts provider.OpenOptions,
 		cwd:     opts.Cwd,
 		fsRoot:  fsRoot,
 		// Seed from the parent environment so the child keeps HOME/PATH/etc.
-		// (needed to locate the CLI's login/config), then normalize auth vars.
-		env:      p.c.AuthEnv(os.Environ()),
+		// (needed to locate the CLI's login/config), then normalize auth vars
+		// and apply the per-session overlay (node credentials for shared sandboxes).
+		env:      provider.ApplyEnvOverlay(p.c.AuthEnv(os.Environ()), opts.Env),
 		onEvent:  onEvent,
 		done:     make(chan struct{}),
 		cumUsage: map[string]provider.TokenUsage{},

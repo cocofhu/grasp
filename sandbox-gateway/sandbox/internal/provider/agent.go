@@ -65,6 +65,10 @@ type OpenOptions struct {
 	ResumeSessionID string // one-shot resume pointer; empty for a fresh session
 	CustomArgs      []string
 	AutoPermission  bool
+	// Env is an optional per-session overlay applied to the Agent subprocess
+	// environment (oneshot cmd.Env / ACP panel env). Reserved platform keys are
+	// ignored; see ApplyEnvOverlay.
+	Env map[string]string
 }
 
 // Model is one entry of a provider's model catalog.

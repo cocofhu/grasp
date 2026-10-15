@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-15（共享沙箱兼容性指纹、私有回退与故障恢复）
+
+- 日期：2026-10-15
+- 范围：`server/internal/runtime/{shared_sandbox,shared_sandbox_env,acp_sandbox,acp_config,acp_provider,acp_run_agent,provider}.go`、`server/internal/services/{sandbox_run,sandbox_test_pool,preview}.go`、`server/internal/models/models.go`、对应测试、`CHANGELOG.md`
+- 做了什么：共享沙箱按兼容性指纹（backend、镜像、ConfigRoot/WorkspaceDir、容器 env、完整 ConfigHomeSpec、凭据 ID；secret 只记"已设置"）准入，不兼容节点不等租约，直接退回 scope=node 的私有容器；scope=node 行不写 run 绑定、不参与 FindRunSandbox/重启恢复。bridge model 改为每个节点 `CreateChat` 时指定。回合故障先探活，健康则只释放租约保留工作区，不健康才登记替换代次。KeepAliveForReview 停靠即释放租约；release 校验持有者。复用容器的 Codex 节点也登记登录文件以便回写。重启 reconcile 只保留进行中运行的 scope=run 容器；AbortRun 在重启后按绑定 Attach 并清理；attach 失败销毁旧容器。
+- 为什么：评审发现共享容器只按首节点配置创建，后续节点的 backend/rules/skills/MCP/模型被静默忽略；单次 idle 会毁掉整个工作区；停靠节点持有租约导致门闸前节点死锁；Codex 复用节点刷新的 auth.json 丢失；重启后已结束运行的容器被保留。
+- 如何验证：新增 `shared_sandbox_flow_test.go`（同配置复用+节点级模型、backend/Agent 配置不兼容回退私有、idle 重试保留工作区、不健康替换代次、停靠释放租约、Codex 复用登记登录、重启后 AbortRun 清理）、coordinator 不兼容不等待/持有者校验单测、services scope 隔离与 reconcile 单测。server `go vet ./...`、`go test ./...`，sandbox-gateway `go vet ./...`、`go test ./...` 通过。
+
 ### 2026-10-14（Codex 登录失效快速失败，不再误报 MCP 工具面为空）
 
 - 日期：2026-10-14
@@ -27,6 +35,38 @@
 - 做了什么：Codex 回合以登录拒绝结束（`chatFailure` 文本命中 `IsCodexAuthRejectionText`）时，首轮与 `ensurePlanComplete` / `ensureStructured` / `ensureRootCauseConsistency` / `ensureOutcome` 催促轮都立即返回 `ErrCodexLoginRejected`；`settleCodexLogin` 用 `%w` 包装哨兵；沙箱级重试与引擎 auto-retry 都跳过该错误；节点错误统一为重新粘贴提示；Run 失败横幅附项目凭据链接。
 - 为什么：run-64490c06 中 auth.json 失效后每个回合都 401，但失败回合 `err == nil`，平台继续催促 6 次、判成 `errMCPSurfaceEmpty`（retryable）并自动重试 3 次，用户看到的是错误原因"MCP 工具面为空"。
 - 如何验证：新增 fake bridge 用例（Codex 401 只跑 1 回合、1 个沙箱；非 Codex 后端行为不变）、`asCodexLoginErr`/`settleCodexLogin` 单测、引擎不重试用例与前端横幅用例；回退修复后 fail-fast 用例失败。`go test ./...`、golangci-lint、`go vet`、configdoc、core 覆盖率 90.1%、web eslint / vue-tsc / vitest 通过。
+
+### 2026-10-14（共享沙箱节点级环境 overlay）
+
+- 日期：2026-10-14
+- 范围：`server/internal/runtime/acp_run_agent.go`、`acp_unit_test.go`、`docs/dev/DEVLOG.md`
+- 做了什么：AbortRun 判断共享容器是否可 Destroy 时计入 parked `sessions`（KeepAliveForReview）上的 healthy preview/keepalive，不再只看 inflightACP；补 `TestAbortRunSharedParkedKeepaliveRetiresNotDestroys`。
+- 为什么：停靠后 Cancel 仍会 Destroy 共享容器，打掉 setsid preview 人工门闸。
+- 如何验证：`go test ./internal/runtime/ -run 'AbortRun|SharedKeepalive|Park|KeepAlive'`；`go test ./internal/runtime/ ./internal/services/ ./internal/sandbox/ -count=1`；`go vet ./internal/runtime/`。
+
+### 2026-10-14
+
+- 日期：2026-10-14
+- 范围：`server/internal/runtime/{acp_run_agent,acp_sandbox,shared_sandbox}.go`、对应单测、`docs/dev/DEVLOG.md`、`CHANGELOG.md`
+- 做了什么：修评审阻塞——AbortRun 在共享协调器下若有 preview keepalive 则 Retire 共享容器、不再 Destroy/removeHome；connectSandbox 失败只 release 租约不 discard 整代；create 窗口被 finalize 时由 creator 自行 Destroy+removeHome。补 coordinator AbortRun keepalive / connect 失败复用 / finalize-during-create 单测，并强化并发首次 acquire。
+- 为什么：共享路径会打掉 preview keepalive；connect 失败不应毁掉已有工作区；AbortRun 与 create 竞态会泄漏容器与 ConfigHome。
+- 如何验证：`go test ./internal/runtime/ -run 'AbortRun|SharedSandbox|…'`；`go test ./internal/runtime/ ./internal/services/ ./internal/sandbox/ -count=1`；`go vet ./internal/runtime/`。
+
+### 2026-10-14
+
+- 日期：2026-10-14
+- 范围：`server/internal/{runtime,sandbox}`、`sandbox-gateway/sandbox/internal/{provider,service,handler}`、`sandbox-gateway/sandbox/docs/PROTOCOL.md`、`docs/dev/DEVLOG.md`、`CHANGELOG.md`
+- 做了什么：共享沙箱改为「运行级容器环境 + 节点级 ACP 会话 overlay」。创建容器时只注入运行级快照与平台保留变量；节点凭据/Agent env 经 `connect.env` 注入 Agent 子进程，会话删除时清理。去掉因 env fingerprint 拒绝复用的 fail-closed 逻辑；节点 overlay 不可覆盖平台保留键。
+- 为什么：顺序多节点若 Agent 凭据不同，旧实现会拒绝共用同一沙箱；需求要求节点级环境可切换且不泄漏到后续节点。
+- 如何验证：`go test`/`go vet` 覆盖 runtime、services、sandbox 与 sandbox-gateway 相关包；新增分区/overlay/复用单测。
+
+### 2026-10-13
+
+- 日期：2026-10-13
+- 范围：`server/internal/{models,runtime,sandbox,services}`、`docs/dev/DEVLOG.md`、`CHANGELOG.md`
+- 做了什么：把工作流沙箱提升为 run 级共享绑定；同一运行的 Agent 节点复用一个工作区并通过独占租约串行执行。每个节点创建独立 bridge chat/ACP session，节点结束释放租约，运行完成、失败或取消时统一归档并销毁。新增代次、替换原因、持久绑定和服务器重启后的健康容器恢复，并保持测试/Agent/PM 沙箱作用域独立。
+- 为什么：让连续节点看到同一工作区，同时避免并行分支竞态、跨运行泄露和节点完整对话上下文串联。
+- 如何验证：`GOTOOLCHAIN=auto go test ./...`、`go vet ./...`、配置文档一致性检查通过；新增共享创建一次、租约互斥、等待取消、故障替换唤醒和终态幂等测试。
 
 ### 2026-10-09（恢复 #629 的持续回归测试）
 

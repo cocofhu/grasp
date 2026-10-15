@@ -300,6 +300,7 @@ func (b *Bridge) shutdown() {
 	b.closed = true
 	sess := b.sess
 	b.sess = nil
+	b.sessionEnv = nil
 	cancel := b.agentCancel
 	conns := make([]*wsClient, 0, len(b.clients))
 	for _, wc := range b.clients {

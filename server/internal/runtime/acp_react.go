@@ -18,6 +18,9 @@ import (
 // chatting: the first LLM turn is the user's first message, injected in
 // ReactReply together with the opening contract.
 func (c *acpProvider) ReactOpen(ctx context.Context, req NodeReq) (out ReactTurn) {
+	if c.coordinator != nil {
+		c.coordinator.reopen(req.RunID)
+	}
 	defer c.drainCarriedUsage(reactKey(req), &out)
 	c.resetNodeBudget(req)
 	n := c.sandboxAttempts()

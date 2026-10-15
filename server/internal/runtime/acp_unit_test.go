@@ -270,6 +270,148 @@ func TestAbortRunRetiresWhenPreviewKeepalivePID(t *testing.T) {
 	}
 }
 
+// TestAbortRunSharedKeepaliveRetiresNotDestroys ensures that with a run-level
+// coordinator, AbortRun Retire's the shared container when preview keepalive is
+// healthy instead of Destroy/Unregister/removeHome (which would kill preview).
+func TestAbortRunSharedKeepaliveRetiresNotDestroys(t *testing.T) {
+	host := mcp.NewHost(newMemStore())
+	host.PutPreviewPortForTest("runSharedKeep", "nodeP", 8080, "web")
+	if pids := host.ListPreviewKeepalivePIDs("runSharedKeep", "nodeP"); len(pids) == 0 {
+		t.Fatal("PutPreviewPortForTest must register keepalive pid")
+	}
+
+	cp := newACPProvider(host, Options{}).(*acpProvider)
+	reg := &retiringRegistry{}
+	cp.registry = reg
+	cp.coordinator = newSharedSandboxCoordinator()
+
+	sb := &sandbox.Sandbox{Name: "shared-preview-sb"}
+	if _, err := cp.coordinator.acquire(context.Background(), "runSharedKeep", "", func() (sharedCreateResult, error) {
+		return sharedCreateResult{sb: sb, home: "/tmp/shared-preview-home"}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Leave the lease held: the node is still inflight when AbortRun runs.
+
+	key := "runSharedKeep|nodeP"
+	cp.mu.Lock()
+	cp.inflightACP[key] = nil
+	cp.live[key] = sb
+	cp.mu.Unlock()
+
+	cp.AbortRun("runSharedKeep")
+
+	cp.mu.Lock()
+	_, stillACP := cp.inflightACP[key]
+	_, stillLive := cp.live[key]
+	cp.mu.Unlock()
+	if stillACP || stillLive {
+		t.Fatal("AbortRun should clear inflight agent maps")
+	}
+	reg.mu.Lock()
+	retired, unregistered, finalized := reg.retired, reg.unregistered, reg.finalized
+	reg.mu.Unlock()
+	if finalized < 1 {
+		t.Fatalf("expected FinalizeRunSandbox, finalized=%d", finalized)
+	}
+	if retired < 1 {
+		t.Fatalf("expected RetireRunSandbox for shared preview keepalive, retired=%d", retired)
+	}
+	if unregistered != 0 {
+		t.Fatalf("keepalive must not Unregister/Destroy shared sandbox, unregistered=%d", unregistered)
+	}
+}
+
+// TestAbortRunSharedParkedKeepaliveRetiresNotDestroys covers KeepAliveForReview:
+// the session is parked in sessions (removed from inflightACP). AbortRun must
+// still see preview keepalive on the parked node and Retire the shared
+// container instead of Destroy/Unregister.
+func TestAbortRunSharedParkedKeepaliveRetiresNotDestroys(t *testing.T) {
+	host := mcp.NewHost(newMemStore())
+	host.PutPreviewPortForTest("runParkedKeep", "nodeP", 8080, "web")
+	if pids := host.ListPreviewKeepalivePIDs("runParkedKeep", "nodeP"); len(pids) == 0 {
+		t.Fatal("PutPreviewPortForTest must register keepalive pid")
+	}
+
+	cp := newACPProvider(host, Options{}).(*acpProvider)
+	reg := &retiringRegistry{}
+	cp.registry = reg
+	cp.coordinator = newSharedSandboxCoordinator()
+
+	sb := &sandbox.Sandbox{Name: "shared-parked-preview-sb"}
+	if _, err := cp.coordinator.acquire(context.Background(), "runParkedKeep", "", func() (sharedCreateResult, error) {
+		return sharedCreateResult{sb: sb, home: "/tmp/shared-parked-preview-home"}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	key := "runParkedKeep|nodeP"
+	cp.mu.Lock()
+	// Mimic KeepAliveForReview: park in sessions, clear inflightACP.
+	cp.sessions[key] = &reactSession{sb: sb, acp: nil, home: "/tmp/shared-parked-preview-home"}
+	cp.live[key] = sb
+	delete(cp.inflightACP, key)
+	cp.mu.Unlock()
+
+	cp.AbortRun("runParkedKeep")
+
+	cp.mu.Lock()
+	_, stillSess := cp.sessions[key]
+	_, stillACP := cp.inflightACP[key]
+	_, stillLive := cp.live[key]
+	cp.mu.Unlock()
+	if stillSess || stillACP || stillLive {
+		t.Fatal("AbortRun should clear parked session and inflight maps")
+	}
+	reg.mu.Lock()
+	retired, unregistered, finalized := reg.retired, reg.unregistered, reg.finalized
+	reg.mu.Unlock()
+	if finalized < 1 {
+		t.Fatalf("expected FinalizeRunSandbox, finalized=%d", finalized)
+	}
+	if retired < 1 {
+		t.Fatalf("expected RetireRunSandbox for parked preview keepalive, retired=%d", retired)
+	}
+	if unregistered != 0 {
+		t.Fatalf("parked keepalive must not Unregister/Destroy shared sandbox, unregistered=%d", unregistered)
+	}
+}
+
+// TestAbortRunSharedWithoutKeepaliveDestroys ensures the non-keepalive shared
+// path still performs the terminal Destroy/Unregister.
+func TestAbortRunSharedWithoutKeepaliveDestroys(t *testing.T) {
+	host := mcp.NewHost(newMemStore())
+	cp := newACPProvider(host, Options{}).(*acpProvider)
+	reg := &retiringRegistry{}
+	cp.registry = reg
+	cp.coordinator = newSharedSandboxCoordinator()
+
+	sb := &sandbox.Sandbox{Name: "shared-abort-sb"}
+	if _, err := cp.coordinator.acquire(context.Background(), "runSharedAbort", "", func() (sharedCreateResult, error) {
+		return sharedCreateResult{sb: sb}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	key := "runSharedAbort|nodeA"
+	cp.mu.Lock()
+	cp.inflightACP[key] = nil
+	cp.live[key] = sb
+	cp.mu.Unlock()
+
+	cp.AbortRun("runSharedAbort")
+
+	reg.mu.Lock()
+	retired, unregistered := reg.retired, reg.unregistered
+	reg.mu.Unlock()
+	if retired != 0 {
+		t.Fatalf("no keepalive: Retire should not run, retired=%d", retired)
+	}
+	if unregistered != 1 {
+		t.Fatalf("no keepalive: expected Unregister+Destroy, unregistered=%d", unregistered)
+	}
+}
+
 func TestLiveNodeEvents(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{}).(*acpProvider)

@@ -25,8 +25,9 @@ func randID() string { return uuid.NewString()[:8] }
 // pool survives restarts; the live ACP WebSocket connection is re-established
 // lazily on the next chat after a restart.
 //
-// Per-run workflow node sandboxes are NOT managed here — they remain ephemeral
-// inside the runtime provider.
+// Per-run workflow sandboxes are recorded here as one run-level binding. The
+// runtime provider owns ACP leases and asks this service to archive/retire the
+// container at run termination.
 type SandboxService struct {
 	db     *gorm.DB
 	mgr    *sandbox.Manager

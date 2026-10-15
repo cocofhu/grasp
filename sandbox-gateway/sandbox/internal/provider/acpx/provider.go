@@ -89,7 +89,7 @@ func (p *Provider) ListModels(ctx context.Context) ([]provider.Model, error) {
 func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.OpenOptions,
 	onEvent func(json.RawMessage), perm provider.PermissionChooser) (provider.Session, error) {
 	argv := p.spec.ArgvFn(opts.Model)
-	env := p.AuthEnv(os.Environ())
+	env := provider.ApplyEnvOverlay(p.AuthEnv(os.Environ()), opts.Env)
 	fsRoot := opts.FSRoot
 	if fsRoot == "" {
 		fsRoot = opts.Cwd

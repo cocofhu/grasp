@@ -79,8 +79,9 @@ func isTurnTimeoutErr(err error) bool {
 	return isChatTimeoutErr(err) || errors.Is(err, sandbox.ErrChatIdle)
 }
 
-// acpProvider is the ACP + Docker sandbox backend. Each agent/react node runs
-// in a fresh container launched from the preset image
+// acpProvider is the ACP + Docker sandbox backend. Agent/react nodes in one
+// workflow run share a container launched from the preset image, while each
+// node gets an independent ACP chat/session
 // (universal-sandbox:local). The in-container ACP agent is
 // driven via the acp-bridge WebSocket bridge (ACP JSON-RPC). Declared produces
 // are harvested from the container workspace and written through the run-scoped
@@ -96,9 +97,16 @@ type acpProvider struct {
 	opts    Options
 	mgr     sandboxManager
 	backend AcpBackend
+	// coordinator is shared by all backend providers in a workflow registry.
+	// A nil coordinator preserves the lightweight per-node behavior used by
+	// standalone unit-test providers.
+	coordinator *sharedSandboxCoordinator
+	// nodeLeases maps a node's *sandbox.ACPClient to its *nodeLease while the
+	// node runs in the run's shared container.
+	nodeLeases sync.Map
 
-	// registry, when set, records each per-run node sandbox in the platform
-	// sandbox store so it shows up in the sandbox UI while the node runs.
+	// registry, when set, records the run-level shared sandbox in the platform
+	// sandbox store so it shows up in the sandbox UI while the run runs.
 	registry SandboxRegistry
 
 	// emit, when set by the engine, publishes a node's in-progress ACP events

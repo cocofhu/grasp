@@ -135,6 +135,9 @@ type ACPClient struct {
 	// ConnectOpts injected into the {op:connect} message.
 	cwd        string
 	mcpServers json.RawMessage // JSON array, may be nil
+	// env is an optional per-session Agent subprocess overlay (shared sandbox
+	// node credentials). Reserved platform keys must already be stripped.
+	env map[string]string
 
 	// blobs resolves blob:{id} attachments to base64 for the wire format.
 	blobs blob.Store
@@ -156,7 +159,8 @@ type ACPClient struct {
 	bridgeModel string
 
 	// chatID selects a bridge chat (/ws?chat=<id>); empty is the default chat.
-	chatID string
+	chatID    string
+	ownedChat bool
 
 	mu        sync.Mutex
 	conn      *websocket.Conn
@@ -203,6 +207,26 @@ func NewACPClient(host string, port int) *ACPClient {
 func (c *ACPClient) WithSession(cwd string, mcpServers json.RawMessage) *ACPClient {
 	c.cwd = cwd
 	c.mcpServers = mcpServers
+	return c
+}
+
+// WithEnv sets the optional per-session Agent environment overlay sent on
+// connect. Used by run-level shared sandboxes so node credentials are not
+// baked into the shared container environment.
+func (c *ACPClient) WithEnv(env map[string]string) *ACPClient {
+	if len(env) == 0 {
+		c.env = nil
+		return c
+	}
+	cp := make(map[string]string, len(env))
+	for k, v := range env {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		cp[k] = v
+	}
+	c.env = cp
 	return c
 }
 
@@ -277,6 +301,81 @@ func (c *ACPClient) setConnected(sessionID string) {
 func (c *ACPClient) WithChat(chatID string) *ACPClient {
 	c.chatID = strings.TrimSpace(chatID)
 	return c
+}
+
+// CreateChat allocates an isolated bridge tab for a workflow node. The
+// default chat is intentionally never reused across nodes because its event
+// queue and transcript would leak context between ACP sessions.
+func (c *ACPClient) CreateChat(ctx context.Context, title, model string) (string, error) {
+	if c == nil || c.password == "" {
+		return "", errBridgePasswordRequired
+	}
+	cookie, err := bridgeLogin(ctx, c.host, c.port, c.password)
+	if err != nil {
+		return "", fmt.Errorf("chat login: %w", err)
+	}
+	body, err := json.Marshal(map[string]string{"title": title, "model": model})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		fmt.Sprintf("http://%s:%d/api/chats", c.host, c.port), bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", cookie)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("create chat: %w", err)
+	}
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("create chat: HTTP %s", resp.Status)
+	}
+	var out struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&out); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(out.ID) == "" {
+		return "", errors.New("create chat returned empty id")
+	}
+	c.mu.Lock()
+	c.chatID, c.ownedChat = out.ID, true
+	c.mu.Unlock()
+	return out.ID, nil
+}
+
+// CloseOwnedChat removes a chat allocated by CreateChat after its WebSocket is
+// closed. User-created interactive tabs are never removed by this method.
+func (c *ACPClient) CloseOwnedChat(ctx context.Context) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	id, owned := c.chatID, c.ownedChat
+	c.ownedChat = false
+	c.mu.Unlock()
+	if !owned || strings.TrimSpace(id) == "" || c.password == "" {
+		return
+	}
+	cookie, err := bridgeLogin(ctx, c.host, c.port, c.password)
+	if err != nil {
+		return
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete,
+		fmt.Sprintf("http://%s:%d/api/chats/%s", c.host, c.port, url.PathEscape(id)), nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Cookie", cookie)
+	resp, err := http.DefaultClient.Do(req)
+	if err == nil {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}
 }
 
 func (c *ACPClient) wsURL() string {
@@ -410,6 +509,9 @@ func (c *ACPClient) connectOnce(ctx context.Context) error {
 	}
 	if len(c.mcpServers) > 0 {
 		connectMsg["mcpServers"] = c.mcpServers
+	}
+	if len(c.env) > 0 {
+		connectMsg["env"] = c.env
 	}
 	if err := c.send(connectMsg); err != nil {
 		return fmt.Errorf("send connect: %w", err)

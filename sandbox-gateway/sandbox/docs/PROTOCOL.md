@@ -94,7 +94,7 @@
 WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST /api/chats` 创建),
 缺省为 `default` 会话;工作流不带该参数即可,语义与单会话一致。`/api/events` 同样接受 `chat`。
 
-- `→ {op:"connect", cwd?, fsRoot?, mcpServers?, autoPermission?}`
+- `→ {op:"connect", cwd?, fsRoot?, mcpServers?, autoPermission?, env?}`（`env` 为可选的节点级 Agent 子进程环境覆盖；平台保留键会被忽略）
 - `← {op:"connected", sessionId, eventLog, totalTurns, hasMoreTurns, agent:{name,version}, ...}`
 - `→ {op:"chat", content, images?, opId?, deadlineSec?}` → 流式
   `← {op:"event", opId?, data:{type:"session_update"|...}}`,以轮次边界事件收尾(见下)。

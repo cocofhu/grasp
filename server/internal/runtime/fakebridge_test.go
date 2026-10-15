@@ -59,6 +59,39 @@ type fakeBridge struct {
 	turns   int
 	prompts []string // every chat prompt received (for rehydrate-prime assertions)
 	images  []int    // image attachment count per chat turn
+	// chatAPI enables POST/DELETE /api/chats (shared-sandbox node chats).
+	chatAPI      bool
+	chatModels   []string // model of every created chat
+	chatsDeleted int
+}
+
+func (b *fakeBridge) serveChats(w http.ResponseWriter, r *http.Request) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.chatAPI {
+		http.NotFound(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodPost:
+		var body struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		b.chatModels = append(b.chatModels, body.Model)
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": fmt.Sprintf("chat-%d", len(b.chatModels))})
+	case http.MethodDelete:
+		b.chatsDeleted++
+		w.WriteHeader(http.StatusOK)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (b *fakeBridge) chatStats() (models []string, deleted int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]string(nil), b.chatModels...), b.chatsDeleted
 }
 
 var fakeUpgrader = websocket.Upgrader{
@@ -73,6 +106,8 @@ func startFakeBridge(t *testing.T, host *mcp.Host, runID, nodeID, token string, 
 	mux := http.NewServeMux()
 	handleTestBridgeLogin(mux)
 	mux.HandleFunc("/ws", b.serveWS)
+	mux.HandleFunc("/api/chats", b.serveChats)
+	mux.HandleFunc("/api/chats/", b.serveChats)
 	b.srv = httptest.NewServer(mux)
 	t.Cleanup(b.srv.Close)
 	return b
@@ -267,6 +302,8 @@ type fakeManager struct {
 	chatFor   func(attempt int) chatFunc
 	createErr func(attempt int) error
 	blobs     blob.Store
+	// chatAPI makes created bridges serve /api/chats.
+	chatAPI bool
 
 	mu      sync.Mutex
 	bridges []*fakeBridge
@@ -289,6 +326,9 @@ func (m *fakeManager) Create(ctx context.Context, spec sandbox.Spec) (*sandbox.S
 	m.mu.Unlock()
 
 	b := startFakeBridge(m.t, m.host, m.runID, m.nodeID, m.token, m.chatFor(attempt))
+	b.mu.Lock()
+	b.chatAPI = m.chatAPI
+	b.mu.Unlock()
 	m.mu.Lock()
 	m.bridges = append(m.bridges, b)
 	m.mu.Unlock()
@@ -339,15 +379,25 @@ func (r *countingRegistry) balanced() bool {
 }
 
 // retiringRegistry additionally implements RunSandboxRetirer so retireRunSandbox
-// hands the container to the store instead of destroying it inline.
+// hands the container to the store instead of destroying it inline. It also
+// implements RunSandboxLifecycle so AbortRun's FinalizeRunSandbox is observable.
 type retiringRegistry struct {
 	countingRegistry
-	retired int
+	retired   int
+	finalized int
 }
 
 func (r *retiringRegistry) RetireRunSandbox(string) {
 	r.mu.Lock()
 	r.retired++
+	r.mu.Unlock()
+}
+
+func (r *retiringRegistry) MarkRunSandboxReplacement(string, int, string) {}
+
+func (r *retiringRegistry) FinalizeRunSandbox(string, string) {
+	r.mu.Lock()
+	r.finalized++
 	r.mu.Unlock()
 }
 

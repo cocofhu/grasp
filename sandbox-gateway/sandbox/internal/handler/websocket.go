@@ -146,14 +146,14 @@ func WebSocket(chats *service.ChatManager) gin.HandlerFunc {
 }
 
 func handleConnect(cid string, conn *websocket.Conn, bridge *service.Bridge, payload []byte) error {
-	cwd, fsRoot, mcp, auto, err := service.ParseConnect(payload)
+	cwd, fsRoot, mcp, auto, env, err := service.ParseConnect(payload)
 	if err != nil {
 		return err
 	}
 	// 全局单例：由 agents.Current() 决定 provider/argv，不使用浏览器 JSON 里的 argv。
-	// 始终走 EnsureAgent：已有会话且 MCP 无需升级时复用；空 MCP→非空时重建。
-	log.Printf("ws cid=%s: connect 将 EnsureAgent cwd=%q fsRoot=%q", cid, cwd, fsRoot)
-	sess, err := bridge.EnsureAgent(cwd, fsRoot, mcp, auto)
+	// 始终走 EnsureAgent：已有会话且 MCP/env 无需升级时复用；空 MCP→非空或节点 env 变化时重建。
+	log.Printf("ws cid=%s: connect 将 EnsureAgent cwd=%q fsRoot=%q env_keys=%d", cid, cwd, fsRoot, len(env))
+	sess, err := bridge.EnsureAgent(cwd, fsRoot, mcp, auto, env)
 	if err != nil {
 		log.Printf("ws cid=%s: EnsureAgent/握手失败: %v", cid, err)
 		return err

@@ -16,23 +16,26 @@ import (
 
 // ConnectPayload 与前端 WebSocket `op: connect` 对齐（argv 由服务端固定，仅解析目录与 MCP）。
 type ConnectPayload struct {
-	Op             string          `json:"op"`
-	Cwd            string          `json:"cwd"`
-	FsRoot         string          `json:"fsRoot"`
-	McpServers     json.RawMessage `json:"mcpServers"`
-	AutoPermission *bool           `json:"autoPermission"`
-	Params         json.RawMessage `json:"params"`
+	Op             string            `json:"op"`
+	Cwd            string            `json:"cwd"`
+	FsRoot         string            `json:"fsRoot"`
+	McpServers     json.RawMessage   `json:"mcpServers"`
+	AutoPermission *bool             `json:"autoPermission"`
+	Env            map[string]string `json:"env"`
+	Params         json.RawMessage   `json:"params"`
 }
 
 type connectInner struct {
-	Cwd            string          `json:"cwd"`
-	FsRoot         string          `json:"fsRoot"`
-	McpServers     json.RawMessage `json:"mcpServers"`
-	AutoPermission *bool           `json:"autoPermission"`
+	Cwd            string            `json:"cwd"`
+	FsRoot         string            `json:"fsRoot"`
+	McpServers     json.RawMessage   `json:"mcpServers"`
+	AutoPermission *bool             `json:"autoPermission"`
+	Env            map[string]string `json:"env"`
 }
 
 // ParseConnect 解析连接参数（支持扁平或 params 嵌套）。
-func ParseConnect(raw []byte) (cwd, fsRoot string, mcp json.RawMessage, auto *bool, err error) {
+// env 是可选的节点级 Agent 子进程环境覆盖（共享沙箱按节点注入凭据）。
+func ParseConnect(raw []byte) (cwd, fsRoot string, mcp json.RawMessage, auto *bool, env map[string]string, err error) {
 	var body ConnectPayload
 	if err = json.Unmarshal(raw, &body); err != nil {
 		return
@@ -42,9 +45,9 @@ func ParseConnect(raw []byte) (cwd, fsRoot string, mcp json.RawMessage, auto *bo
 		if err = json.Unmarshal(body.Params, &inner); err != nil {
 			return
 		}
-		return inner.Cwd, inner.FsRoot, inner.McpServers, inner.AutoPermission, nil
+		return inner.Cwd, inner.FsRoot, inner.McpServers, inner.AutoPermission, provider.SanitizeSessionEnv(inner.Env), nil
 	}
-	return body.Cwd, body.FsRoot, body.McpServers, body.AutoPermission, nil
+	return body.Cwd, body.FsRoot, body.McpServers, body.AutoPermission, provider.SanitizeSessionEnv(body.Env), nil
 }
 
 // ConnectedPayload 返回 op:connected 元数据 + PromptQueueSnapshot()（队列与 userTimeline 单一路径，避免重复字段与双算时间线）。
@@ -99,7 +102,7 @@ func (b *Bridge) ConnectedPayload(p provider.Session) map[string]any {
 func (b *Bridge) StartDefaultAgent() {
 	go func() {
 		t := true
-		_, err := b.EnsureAgent("", "", nil, &t)
+		_, err := b.EnsureAgent("", "", nil, &t, nil)
 		if err != nil {
 			log.Printf("acp: 启动时默认 Agent 未拉起（前端 connect 将重试）: %v", err)
 			return
@@ -111,8 +114,9 @@ func (b *Bridge) StartDefaultAgent() {
 // EnsureAgent 若已有会话则直接返回；否则用 agents.Current() 建连（忽略浏览器传入的 argv）。
 // 特例：启动时 StartDefaultAgent 常以空 MCP 建连，平台随后 connect 会带上
 // artifact-store 等 mcpServers——若仍复用空会话，ACP session/new 永远看不到工具。
-// 因此「空 → 非空」MCP 升级会重建会话。
-func (b *Bridge) EnsureAgent(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (provider.Session, error) {
+// 因此「空 → 非空」MCP 升级会重建会话。节点级 env overlay 变化同样触发重建，
+// 避免共享沙箱把上一节点的凭据留给下一节点。
+func (b *Bridge) EnsureAgent(cwd, fsRoot string, mcp json.RawMessage, auto *bool, env map[string]string) (provider.Session, error) {
 	b.ensureMu.Lock()
 	defer b.ensureMu.Unlock()
 
@@ -120,18 +124,28 @@ func (b *Bridge) EnsureAgent(cwd, fsRoot string, mcp json.RawMessage, auto *bool
 		t := true
 		auto = &t
 	}
+	env = provider.SanitizeSessionEnv(env)
 
 	b.mu.Lock()
 	if b.sess != nil {
-		if !mcpUpgradeNeeded(b.lastMCP, mcp) {
+		mcpUp := mcpUpgradeNeeded(b.lastMCP, mcp)
+		envUp := !provider.SessionEnvEqual(b.sessionEnv, env)
+		if !mcpUp && !envUp {
 			p := b.sess
 			b.mu.Unlock()
 			return p, nil
 		}
-		log.Printf("acp: connect 带来非空 MCP，重建此前空 MCP 会话")
+		if mcpUp {
+			log.Printf("acp: connect 带来非空 MCP，重建此前空 MCP 会话")
+		}
+		if envUp {
+			log.Printf("acp: connect 带来节点级环境覆盖，重建 Agent 会话")
+		}
+		b.sessionEnv = provider.CloneSessionEnv(env)
 		b.mu.Unlock()
 		return b.connectOrTest(cwd, fsRoot, mcp, auto)
 	}
+	b.sessionEnv = provider.CloneSessionEnv(env)
 	b.mu.Unlock()
 
 	return b.connectOrTest(cwd, fsRoot, mcp, auto)
@@ -234,12 +248,16 @@ func (b *Bridge) Connect(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (p
 		return b.permissionChooser(ctx, rpcID, raw)
 	}
 	autoPerm := auto != nil && *auto
+	b.mu.Lock()
+	sessionEnv := provider.CloneSessionEnv(b.sessionEnv)
+	b.mu.Unlock()
 	sess, err := agents.Current().Open(ctx, handshakeCtx, provider.OpenOptions{
 		Cwd:            cwd,
 		FSRoot:         fsEff,
 		Model:          m,
 		McpServers:     mcp,
 		AutoPermission: autoPerm,
+		Env:            sessionEnv,
 	}, onEvent, perm)
 	if err != nil {
 		return nil, err
@@ -349,7 +367,15 @@ func (b *Bridge) RestartAgent() (provider.Session, error) {
 	if len(mcp) == 0 {
 		mcp = json.RawMessage(`[]`)
 	}
+	b.mu.Lock()
+	// Keep the current node overlay across restart; chat delete clears it.
+	env := provider.CloneSessionEnv(b.sessionEnv)
+	b.mu.Unlock()
 	ap := auto
 	log.Printf("acp: 收到重启请求，将重建 Agent（cwd=%q fsRoot=%q）", cwd, fsRoot)
+	// Re-store env under ensureMu (caller holds it via RestartAgent→connectOrTest path).
+	b.mu.Lock()
+	b.sessionEnv = env
+	b.mu.Unlock()
 	return b.connectOrTest(cwd, fsRoot, mcp, &ap)
 }

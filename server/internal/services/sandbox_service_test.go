@@ -109,6 +109,20 @@ func TestRunSandboxLifecycle(t *testing.T) {
 	if row.Purpose != "run" || row.Status != "running" {
 		t.Fatalf("row: %+v", row)
 	}
+	var binding models.RunSandboxBinding
+	if err := db.Where("run_id = ?", "run-"+name).First(&binding).Error; err != nil {
+		t.Fatalf("run binding: %v", err)
+	}
+	if binding.SandboxID != row.ID {
+		t.Fatalf("binding sandbox_id=%d, want row id %d", binding.SandboxID, row.ID)
+	}
+	var history models.RunSandboxGeneration
+	if err := db.Where("run_id = ? AND generation = ?", "run-"+name, 1).First(&history).Error; err != nil {
+		t.Fatalf("generation history: %v", err)
+	}
+	if history.SandboxID != row.ID || history.Status != "running" {
+		t.Fatalf("generation history: %+v", history)
+	}
 	v := s.view(ctx, &row)
 	if !v.Busy {
 		t.Fatal("run sandbox should be busy while active")
@@ -137,7 +151,95 @@ func TestRunSandboxLifecycle(t *testing.T) {
 func runtimeInfo(name string) runtime.RunSandboxInfo {
 	return runtime.RunSandboxInfo{
 		Name: name, Profile: "agentA", RunID: "run-" + name, NodeID: "impl",
-		Host: "127.0.0.1", ACPPort: 8765,
+		Host: "127.0.0.1", ACPPort: 8765, Scope: "run",
+	}
+}
+
+// A node-private fallback sandbox must never become the run binding or be
+// returned for restart recovery.
+func TestNodeScopeRunSandboxStaysOutOfBinding(t *testing.T) {
+	db := newTestDB(t)
+	s := newSandboxService(t, db, &dockerState{})
+	shared := runtimeInfo("grasp-sb-shared")
+	shared.EnvFingerprint = "sha256:shared"
+	s.RegisterRunSandbox(shared)
+
+	private := runtimeInfo("grasp-sb-private")
+	private.RunID, private.NodeID, private.Scope = shared.RunID, "review", "node"
+	s.BeginRunSandbox(runtime.RunSandboxInfo{Name: "ph-private", RunID: private.RunID, NodeID: private.NodeID, Scope: "node"})
+	s.RegisterRunSandbox(private)
+
+	got, ok := s.FindRunSandbox(shared.RunID)
+	if !ok || got.Name != shared.Name || got.EnvFingerprint != "sha256:shared" {
+		t.Fatalf("FindRunSandbox=%+v ok=%v, want the shared container", got, ok)
+	}
+	var binding models.RunSandboxBinding
+	if err := db.Where("run_id = ?", shared.RunID).First(&binding).Error; err != nil {
+		t.Fatal(err)
+	}
+	var sharedRow models.Sandbox
+	if err := db.Where("name = ?", shared.Name).First(&sharedRow).Error; err != nil {
+		t.Fatal(err)
+	}
+	if binding.SandboxID != sharedRow.ID {
+		t.Fatalf("binding points at sandbox %d, want shared row %d", binding.SandboxID, sharedRow.ID)
+	}
+	var privateRow models.Sandbox
+	if err := db.Where("name = ?", private.Name).First(&privateRow).Error; err != nil || privateRow.Scope != "node" {
+		t.Fatalf("private row=%+v err=%v", privateRow, err)
+	}
+	s.UnregisterRunSandbox(private.Name)
+	if err := db.Where("run_id = ?", shared.RunID).First(&binding).Error; err != nil || binding.Status != "running" {
+		t.Fatalf("private teardown changed the binding: %+v err=%v", binding, err)
+	}
+}
+
+// After a restart only the shared container of a run still in progress is
+// kept for rehydration.
+func TestSandboxReconcileKeepsOnlyInProgressSharedRunSandbox(t *testing.T) {
+	db := newTestDB(t)
+	ds := &dockerState{}
+	s := newSandboxService(t, db, ds)
+	db.Create(&models.Run{ID: "run-live", Status: "running"})
+	db.Create(&models.Run{ID: "run-done", Status: "completed"})
+	for _, row := range []models.Sandbox{
+		{Name: "gw-shared-live", Purpose: "run", Scope: "run", Status: "running", RunID: "run-live"},
+		{Name: "gw-private-live", Purpose: "run", Scope: "node", Status: "running", RunID: "run-live"},
+		{Name: "gw-shared-done", Purpose: "run", Scope: "run", Status: "running", RunID: "run-done"},
+	} {
+		db.Create(&row)
+		ds.setStatus(row.Name, "running")
+	}
+
+	s.ReconcileOnStartup(context.Background())
+
+	if !ds.fg.Has("gw-shared-live") {
+		t.Fatal("in-progress run's shared container must survive restart")
+	}
+	for _, name := range []string{"gw-private-live", "gw-shared-done"} {
+		if ds.fg.Has(name) {
+			t.Fatalf("%s should be destroyed on restart", name)
+		}
+		if err := db.Where("name = ?", name).First(&models.Sandbox{}).Error; err != gorm.ErrRecordNotFound {
+			t.Fatalf("%s row should be gone", name)
+		}
+	}
+}
+
+func TestFindRunSandboxPreservesGenerationAndEnvironmentFingerprint(t *testing.T) {
+	db := newTestDB(t)
+	s := newSandboxService(t, db, &dockerState{})
+	info := runtimeInfo("grasp-sb-restart")
+	info.Generation = 2
+	info.ReplacementReason = "不可恢复"
+	info.EnvFingerprint = "sha256:restart"
+	s.RegisterRunSandbox(info)
+	got, ok := s.FindRunSandbox(info.RunID)
+	if !ok {
+		t.Fatal("expected run sandbox binding")
+	}
+	if got.Generation != 2 || got.ReplacementReason != info.ReplacementReason || got.EnvFingerprint != info.EnvFingerprint {
+		t.Fatalf("recovered info: %+v", got)
 	}
 }
 

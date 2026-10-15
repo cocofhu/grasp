@@ -20,6 +20,9 @@ import (
 // the engine's FSM handles them. Retries are logged/emitted but do not create a
 // separate execution record.
 func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, error) {
+	if c.coordinator != nil {
+		c.coordinator.reopen(req.RunID)
+	}
 	c.resetNodeBudget(req)
 	key := reactKey(req)
 	c.stuckNotes.Delete(key)
@@ -152,6 +155,9 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 		delete(c.inflightACP, key)
 		c.mu.Unlock()
 		parked = true
+		// The engine moves on while the session waits for review; holding the
+		// shared lease would block every later Agent node of the run.
+		c.nodeLeaseFor(acp).release(c.coordinator)
 		log.Info().Str("run", req.RunID).Str("node", req.NodeID).
 			Msg("parked live session for post-run ReAct review")
 	}
@@ -466,17 +472,52 @@ func mrBranches(req NodeReq) (source, target string) {
 //
 // When a preview-capable Agent node already has a healthy keepalive registration, the
 // sandbox is retired (ACP closed, container kept) instead of Destroy'd so the
-// setsid-detached preview survives Cancel of the production turn. Full Run /
-// gate / sandbox reclaim still Destroy via the normal lifecycle.
+// setsid-detached preview survives Cancel of the production turn. With a run-level
+// shared sandbox coordinator, Finalize still detaches the binding, but if any
+// node in the run keeps preview — including KeepAliveForReview sessions parked
+// in sessions (no longer in inflightACP) — the shared container is Retire'd —
+// never Destroy'd or removeHome'd. Full Run / gate / sandbox reclaim still
+// Destroy via the normal lifecycle.
 func (c *acpProvider) AbortRun(runID string) {
 	c.dropRunTranscript(runID)
 	prefix := runID + "|"
 	c.retireVisitorLanes(prefix)
+	// Detach the durable run-level binding before closing node sessions. This
+	// makes repeated finish/cancel callbacks idempotent and prevents one node's
+	// cleanup from destroying a container still referenced by another node.
+	var shared *sharedSandbox
+	if c.coordinator != nil {
+		shared, _ = c.coordinator.finalize(runID)
+	}
+	if lifecycle, ok := c.registry.(RunSandboxLifecycle); ok {
+		lifecycle.FinalizeRunSandbox(runID, "retired")
+	}
 	c.mu.Lock()
+	keepSharedPreview := false
+	nodeKeepsPreview := func(nodeID string) bool {
+		if c.host == nil {
+			return false
+		}
+		pids := c.host.ListPreviewKeepalivePIDs(runID, nodeID)
+		return c.host.HasHealthyPreviewPorts(runID, nodeID) || len(pids) > 0
+	}
+	keyNodeID := func(k string) string {
+		if i := strings.IndexByte(k, '|'); i >= 0 {
+			return k[i+1:]
+		}
+		return k
+	}
 	var sessionKeys []string
 	for k := range c.sessions {
-		if strings.HasPrefix(k, prefix) {
-			sessionKeys = append(sessionKeys, k)
+		if !strings.HasPrefix(k, prefix) {
+			continue
+		}
+		sessionKeys = append(sessionKeys, k)
+		// Parked KeepAliveForReview sessions are closed via closeSession below,
+		// but their preview/keepalive still decides whether the shared container
+		// may be Destroy'd.
+		if nodeKeepsPreview(keyNodeID(k)) {
+			keepSharedPreview = true
 		}
 	}
 	var agentKeys []string
@@ -489,40 +530,45 @@ func (c *acpProvider) AbortRun(runID string) {
 		}
 
 		if _, parked := c.sessions[k]; parked {
+			// Teardown is via closeSession; keepalive already counted above.
 			continue
 		}
 		agentKeys = append(agentKeys, k)
 		agentACPs = append(agentACPs, acp)
 		agentSBs = append(agentSBs, c.live[k])
-		nodeID := k
-		if i := strings.IndexByte(k, '|'); i >= 0 {
-			nodeID = k[i+1:]
-		}
-
-		keep := false
-		if c.host != nil {
-			pids := c.host.ListPreviewKeepalivePIDs(runID, nodeID)
-			keep = c.host.HasHealthyPreviewPorts(runID, nodeID) || len(pids) > 0
-		}
+		nodeID := keyNodeID(k)
+		keep := nodeKeepsPreview(nodeID)
 		agentKeepPreview = append(agentKeepPreview, keep)
+		if keep {
+			keepSharedPreview = true
+		}
 	}
 	for _, k := range agentKeys {
 		delete(c.inflightACP, k)
 		delete(c.live, k)
 		if c.timeline != nil {
-			nodeID := k
-			if i := strings.IndexByte(k, '|'); i >= 0 {
-				nodeID = k[i+1:]
-			}
-			c.timeline.stop(runID, nodeID)
+			c.timeline.stop(runID, keyNodeID(k))
 		}
 	}
 	c.mu.Unlock()
+	var sharedSB *sandbox.Sandbox
+	if shared != nil {
+		sharedSB = shared.sb
+	}
 	for _, k := range sessionKeys {
-		c.closeSession(k)
+		c.closeSessionKeeping(k, sharedSB)
 	}
 	for i, acp := range agentACPs {
 		sb := agentSBs[i]
+		nl := c.takeNodeLease(acp)
+		if nl != nil || (sharedSB != nil && sb == sharedSB) {
+			// The run's shared container gets the one terminal teardown below.
+			if acp != nil {
+				acp.CloseOwnedChat(context.Background())
+				acp.Close()
+			}
+			continue
+		}
 		if agentKeepPreview[i] && sb != nil {
 
 			home := ""
@@ -530,6 +576,7 @@ func (c *acpProvider) AbortRun(runID string) {
 			continue
 		}
 		if acp != nil {
+			acp.CloseOwnedChat(context.Background())
 			acp.Close()
 		}
 		if sb != nil {
@@ -538,9 +585,58 @@ func (c *acpProvider) AbortRun(runID string) {
 			sb.Destroy(context.Background())
 		}
 	}
+	if sharedSB != nil {
+		c.teardownSharedSandbox(sharedSB.Name, sharedSB, shared.home, keepSharedPreview)
+		return
+	}
+	if shared == nil && c.coordinator != nil && !c.coordinator.managed(runID) {
+		c.teardownDetachedRunSandbox(runID, keepSharedPreview)
+	}
+}
+
+// teardownSharedSandbox is the terminal cleanup of a run's shared container.
+// Preview keepalive must survive AbortRun: the container is Retired (idle-TTL)
+// with its ConfigHome left in place instead of Destroyed.
+func (c *acpProvider) teardownSharedSandbox(name string, sb *sandbox.Sandbox, home string, keepPreview bool) {
+	if keepPreview {
+		if r, ok := c.registry.(RunSandboxRetirer); ok {
+			r.RetireRunSandbox(name)
+		}
+		return
+	}
+	c.deregisterRunSandbox(name)
+	if sb != nil {
+		sb.Destroy(context.Background())
+	}
+	removeHome(home)
+}
+
+// teardownDetachedRunSandbox cleans up a shared container whose binding was
+// left by a previous server process (restart before the run ended), which
+// the in-memory coordinator never saw.
+func (c *acpProvider) teardownDetachedRunSandbox(runID string, keepPreview bool) {
+	lookup, ok := c.registry.(RunSandboxLookup)
+	if !ok {
+		return
+	}
+	info, found := lookup.FindRunSandbox(runID)
+	if !found || info.Name == "" {
+		return
+	}
+	var sb *sandbox.Sandbox
+	if attacher, ok := c.mgr.(sandboxAttacher); ok {
+		sb, _ = attacher.Attach(context.Background(), info.Name)
+	}
+	c.teardownSharedSandbox(info.Name, sb, info.HomeDir, keepPreview)
 }
 
 func (c *acpProvider) closeSession(key string) {
+	c.closeSessionKeeping(key, nil)
+}
+
+// closeSessionKeeping closes a parked session; when its sandbox is keep (the
+// run's shared container under terminal teardown) only the ACP side is closed.
+func (c *acpProvider) closeSessionKeeping(key string, keep *sandbox.Sandbox) {
 	c.mu.Lock()
 	sess := c.sessions[key]
 	delete(c.sessions, key)
@@ -554,10 +650,18 @@ func (c *acpProvider) closeSession(key string) {
 		c.timeline.stop(runID, nodeID)
 	}
 	c.retireVisitorLanes(key + "|")
-	if sess != nil {
-
-		c.retireRunSandbox(sess.sb, sess.acp, sess.home)
+	if sess == nil {
+		return
 	}
+	if keep != nil && sess.sb == keep {
+		c.takeNodeLease(sess.acp)
+		if sess.acp != nil {
+			sess.acp.CloseOwnedChat(context.Background())
+			sess.acp.Close()
+		}
+		return
+	}
+	c.retireRunSandbox(sess.sb, sess.acp, sess.home)
 }
 
 // defaultNudgeRetries caps each kind of re-prompt (missing product,

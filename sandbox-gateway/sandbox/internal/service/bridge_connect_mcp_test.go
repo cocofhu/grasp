@@ -95,7 +95,7 @@ func TestEnsureAgentRebuildsOnEmptyToNonEmptyMCP(t *testing.T) {
 	}
 
 	incoming := json.RawMessage(`[{"name":"artifact-store","type":"http","url":"http://x"}]`)
-	got, err := b.EnsureAgent("/tmp", "/tmp", incoming, nil)
+	got, err := b.EnsureAgent("/tmp", "/tmp", incoming, nil, nil)
 	if err != nil {
 		t.Fatalf("EnsureAgent: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestEnsureAgentRebuildsOnEmptyToNonEmptyMCP(t *testing.T) {
 	}
 
 	// Second EnsureAgent with same non-empty MCP must reuse (no second rebuild).
-	got2, err := b.EnsureAgent("/tmp", "/tmp", incoming, nil)
+	got2, err := b.EnsureAgent("/tmp", "/tmp", incoming, nil, nil)
 	if err != nil {
 		t.Fatalf("EnsureAgent reuse: %v", err)
 	}
@@ -117,4 +117,40 @@ func TestEnsureAgentRebuildsOnEmptyToNonEmptyMCP(t *testing.T) {
 	if got2.SessionID() != "sess-with-mcp" {
 		t.Fatalf("want reused session, got %q", got2.SessionID())
 	}
+}
+
+func TestEnsureAgentRebuildsOnSessionEnvChange(t *testing.T) {
+	b := &Bridge{}
+	old := &stubSess{id: "sess-env-a"}
+	b.mu.Lock()
+	b.sess = old
+	b.lastMCP = json.RawMessage(`[{"name":"a"}]`)
+	b.sessionEnv = map[string]string{"CURSOR_API_KEY": "a"}
+	b.mu.Unlock()
+
+	var rebuilds atomic.Int32
+	newSess := &stubSess{id: "sess-env-b"}
+	b.testConnect = func(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (provider.Session, error) {
+		rebuilds.Add(1)
+		b.mu.Lock()
+		b.sess = newSess
+		b.mu.Unlock()
+		return newSess, nil
+	}
+
+	got, err := b.EnsureAgent("/tmp", "/tmp", json.RawMessage(`[{"name":"a"}]`), nil, map[string]string{"CURSOR_API_KEY": "b"})
+	if err != nil {
+		t.Fatalf("EnsureAgent: %v", err)
+	}
+	if rebuilds.Load() != 1 {
+		t.Fatalf("want rebuild on env change, got %d", rebuilds.Load())
+	}
+	if got.SessionID() != "sess-env-b" {
+		t.Fatalf("got %q", got.SessionID())
+	}
+	b.mu.Lock()
+	if b.sessionEnv["CURSOR_API_KEY"] != "b" {
+		t.Fatalf("sessionEnv=%v", b.sessionEnv)
+	}
+	b.mu.Unlock()
 }

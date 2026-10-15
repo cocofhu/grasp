@@ -779,15 +779,26 @@ type PromptImage struct {
 
 // Sandbox is a tracked sandbox container. Purposes share this table:
 //   - "test":  long-lived interactive sandbox for Agent chat-testing.
-//   - "run":   per-run workflow node sandbox, recorded for its (short) lifetime
-//     so it shows in the sandbox UI; the runtime provider owns its lifecycle.
+//   - "run":   workflow run sandbox shared by all Agent nodes in that run;
+//     the runtime provider owns its lifecycle.
 //   - "agent": thread-bound agent session sandbox (consult / cron / future roles).
 type Sandbox struct {
-	ID             uint   `gorm:"primaryKey" json:"id"`
-	Name           string `gorm:"uniqueIndex" json:"name"` // docker container name
-	Profile        string `json:"profile"`                 // bound Agent name
-	Purpose        string `json:"purpose"`                 // "test" | "run" | "agent"
-	Status         string `json:"status"`                  // pulling|creating|running|stopped|error
+	ID      uint   `gorm:"primaryKey" json:"id"`
+	Name    string `gorm:"uniqueIndex" json:"name"` // docker container name
+	Profile string `json:"profile"`                 // bound Agent name
+	Purpose string `json:"purpose"`                 // "test" | "run" | "agent"
+	// Scope identifies the lifecycle owner of a run sandbox: "run" is the
+	// container shared by compatible Agent nodes of the workflow run; "node" is
+	// a node-private container.
+	Scope string `json:"scope,omitempty"` // run | node
+	// Generation increments when an unrecoverable run sandbox is replaced.
+	Generation        int    `json:"generation,omitempty"`
+	ReplacementReason string `json:"replacementReason,omitempty"`
+	// EnvFingerprint digests the container-shaping inputs of a shared run
+	// sandbox (backend, image, layout, ConfigHome, non-secret env, credential
+	// ids). Restart recovery only reuses the container for an equal digest.
+	EnvFingerprint string `json:"-"`
+	Status         string `json:"status"` // pulling|creating|running|stopped|error
 	Host           string `json:"-"`
 	ACPPort        int    `json:"-"`
 	CodeServerPort int    `json:"-"`
@@ -852,6 +863,34 @@ type SandboxLog struct {
 	Content   string    `json:"content"` // captured docker logs (tail-capped)
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// RunSandboxBinding is the durable run-level owner for a shared workflow
+// sandbox. A run has at most one current binding; replaced generations remain
+// represented by Sandbox rows and their archived logs.
+type RunSandboxBinding struct {
+	RunID             string     `gorm:"primaryKey;size:191" json:"runId"`
+	SandboxID         uint       `gorm:"index;not null" json:"sandboxId"`
+	Generation        int        `json:"generation"`
+	Status            string     `json:"status"` // creating|running|replacing|retired|failed
+	ReplacementReason string     `json:"replacementReason,omitempty"`
+	CreatedAt         time.Time  `json:"createdAt"`
+	RetiredAt         *time.Time `json:"retiredAt,omitempty"`
+	UpdatedAt         time.Time  `json:"updatedAt"`
+}
+
+// RunSandboxGeneration keeps the replacement chain queryable after the
+// current binding advances or the old Sandbox row is removed.
+type RunSandboxGeneration struct {
+	ID                uint       `gorm:"primaryKey" json:"id"`
+	RunID             string     `gorm:"uniqueIndex:idx_run_sandbox_generation;size:191" json:"runId"`
+	SandboxID         uint       `gorm:"index;not null" json:"sandboxId"`
+	Generation        int        `gorm:"uniqueIndex:idx_run_sandbox_generation" json:"generation"`
+	Status            string     `json:"status"`
+	ReplacementReason string     `json:"replacementReason,omitempty"`
+	CreatedAt         time.Time  `json:"createdAt"`
+	RetiredAt         *time.Time `json:"retiredAt,omitempty"`
+	UpdatedAt         time.Time  `json:"updatedAt"`
 }
 
 // Session is a server-side login session persisted in SQLite/MySQL.
@@ -936,7 +975,7 @@ func AllModels() []any {
 		&Project{},
 		&WorkflowDef{}, &WorkflowVersion{}, &Run{}, &StateRun{},
 		&RunVariable{}, &Artifact{}, &ArtifactVersion{}, &Gate{}, &ReactConversation{},
-		&Sandbox{}, &SandboxLog{}, &Setting{}, &Session{}, &WorkflowAPIKey{},
+		&Sandbox{}, &SandboxLog{}, &RunSandboxBinding{}, &RunSandboxGeneration{}, &Setting{}, &Session{}, &WorkflowAPIKey{},
 		&RunPreviewPort{}, &PreviewIssue{}, &FeedbackEvent{},
 		&ProjectMemoryItem{}, &ChatThread{}, &ChatMessage{}, &ChatTurnDraft{},
 		&AgentCronJob{}, &AgentCronRun{}, &ChannelConfig{},
