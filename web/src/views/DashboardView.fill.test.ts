@@ -174,19 +174,26 @@ describe('DashboardView home chat layout', () => {
     expect(shellSrc).toMatch(/min-h-0 flex-1/)
   })
 
-  // fill LOCKED — top-down shell (justify-start); desktop top inset is 120px
-  it('uses a 120px desktop top inset and keeps moderate mobile padding', () => {
+  // fill LOCKED — top-down shell (justify-start); desktop inset basis is 120px
+  // and shrinks (floor 48px) before the column scrolls. Mobile basis is 4.25rem.
+  it('uses a shrinkable 120px desktop top inset and keeps moderate mobile padding', () => {
     expect(src).toMatch(/home-shell__content[^"]*justify-start/)
-    expect(src).toMatch(/\.home-shell__content\s*\{[^}]*padding-top:\s*120px/)
+    expect(src).toMatch(/home-shell__content[^"]*overflow-x-hidden/)
+    expect(src).toMatch(/\.home-shell__content::before\s*\{[^}]*flex:\s*0 1 120px/)
+    expect(src).toMatch(/\.home-shell__content::before\s*\{[^}]*min-height:\s*48px/)
     expect(src).toMatch(/\.home-shell__content\s*\{[^}]*padding-bottom:\s*40px/)
+    expect(src).not.toMatch(/padding-top:\s*120px/)
     expect(src).not.toMatch(/padding-top:\s*72px/)
     expect(src).not.toMatch(/padding-top:\s*40px/)
     expect(src).not.toMatch(/home-shell__content[^"]*\bpy-10\b/)
     expect(src).toMatch(
-      /@media \(max-width: 520px\)[\s\S]*\.home-shell__content[\s\S]*padding-top:\s*4\.25rem/,
+      /w-full min-w-0 flex-wrap gap-2 pr-1\.5 pt-1\.5"[\s\S]{0,40}data-testid="home-attach-chips"/,
+    )
+    expect(src).toMatch(
+      /@media \(max-width: 520px\)[\s\S]*\.home-shell__content::before[\s\S]*flex-basis:\s*4\.25rem/,
     )
     expect(src).not.toMatch(
-      /@media \(max-width: 520px\)[\s\S]*\.home-shell__content[\s\S]*padding-top:\s*2rem/,
+      /@media \(max-width: 520px\)[\s\S]*padding-top:\s*2rem/,
     )
     expect(src).not.toMatch(
       /@media \(max-width: 520px\)[\s\S]*\.home-shell__content[\s\S]*justify-content:\s*center/,
