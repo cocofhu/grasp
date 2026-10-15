@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-15（dev 栈 web 依赖变更后自动补装 node_modules）
+
+- 日期：2026-10-15
+- 范围：`web/Dockerfile.dev`、`web/dev-entrypoint.sh`
+- 做了什么：dev 镜像在 `npm ci` 后写入 `package.json` + `package-lock.json` 的哈希戳；新增入口脚本在启动时比对 `node_modules/.grasp-deps-hash`，不一致就在卷里重新 `npm ci`。
+- 为什么：`docker-compose.yml` 用 named volume `web-node-modules` 挂 `/web/node_modules`，卷只在首次创建时从镜像填充；之后 `./start.sh dev` 的 `--build` 即使重装了依赖也被旧卷遮住，新增的 `elkjs` 导致 Vite 报 `Failed to resolve import "elkjs/lib/elk.bundled.js"`。
+- 如何验证：复制现有缺 `elkjs` 的 `grasp_web-node-modules` 卷，用新镜像启动后自动 `npm ci`，`node_modules/elkjs/lib/elk.bundled.js` 存在；再次启动跳过重装。shellcheck 0.11.0 无报错，`shellcheck-error.sh` 通过。
+
 ### 2026-10-14（Codex 登录失效快速失败，不再误报 MCP 工具面为空）
 
 - 日期：2026-10-14
