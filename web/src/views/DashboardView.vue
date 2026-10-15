@@ -556,7 +556,7 @@ onBeforeUnmount(() => {
   <div data-testid="dashboard-view" class="home-shell relative flex h-full min-h-0 flex-col">
     <HomeParticleMeshBackground />
     <div
-      class="home-shell__content relative z-[1] mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col items-center justify-start overflow-y-auto px-4"
+      class="home-shell__content relative z-[1] mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col items-center justify-start overflow-x-hidden overflow-y-auto px-4"
     >
       <div class="home-brand-block" data-testid="home-brand-block">
         <HomeYumeCharacter />
@@ -574,7 +574,7 @@ onBeforeUnmount(() => {
         </p>
         <div
           v-if="attachments.length"
-          class="mb-2 flex flex-wrap gap-2"
+          class="mb-2 flex w-full min-w-0 flex-wrap gap-2 pr-1.5 pt-1.5"
           data-testid="home-attach-chips"
         >
           <div v-for="(im, ii) in attachments" :key="ii" class="relative">
@@ -952,10 +952,20 @@ onBeforeUnmount(() => {
   isolation: isolate;
 }
 
-/* Desktop top inset is 120px; the 520px breakpoint below keeps 4.25rem. */
+/* Top inset shrinks before the column scrolls. Basis 120px, floor 48px:
+   the 72px of slack absorbs exactly one image-chip row (56px thumb + 6px
+   pt-1.5 + 8px mb-2 = 70px). A second chip row or the attach notice still
+   scrolls; re-check this budget if the chip thumb size changes.
+   The 520px breakpoint below uses a 4.25rem basis (floor 0.5rem). */
 .home-shell__content {
-  padding-top: 120px;
   padding-bottom: 40px;
+}
+
+.home-shell__content::before {
+  content: '';
+  width: 100%;
+  flex: 0 1 120px;
+  min-height: 48px;
 }
 
 /* brand: fill LOCKED — cropped yume + copy; no wordmark / logo-mark */
@@ -1374,8 +1384,12 @@ html.light .home-shell__card-top {
 
 @media (max-width: 520px) {
   .home-shell__content {
-    padding-top: 4.25rem;
     padding-bottom: 2.5rem;
+  }
+
+  .home-shell__content::before {
+    flex-basis: 4.25rem;
+    min-height: 0.5rem;
   }
 }
 
