@@ -1931,7 +1931,7 @@
       "settings": {
         "max_concurrent_runs": "Max workflows in running state. Read-only when locked by GRASP_MAX_RUNS.",
         "run_sandbox_ttl_minutes": "Minutes to keep run sandbox alive after a turn for follow-up artifacts.",
-        "run_sandbox_max_retention_hours": "A finished run sandbox is kept while any retention reason (debug window, in use, preview, manual extension) holds; this is the hard ceiling counted from when its node finished.",
+        "run_sandbox_max_retention_hours": "A finished run sandbox is kept while any retention reason (debug window, in use, preview, manual extension) holds; this is the hard ceiling counted from when its node finished. Run sandboxes are always cleaned up when the platform restarts; retention does not survive a restart.",
         "test_sandbox_ttl_minutes": "Idle TTL for test sandboxes.",
         "max_test_sandboxes": "Reject new test sandboxes when active count reaches this (min 1).",
         "sandbox_memory_mb": "Memory per sandbox, shared by dockerd, the browser and the agent's builds/tests; exceeding it OOM-kills the whole sandbox. The agent prompt states this limit. Applies to newly created sandboxes (min 1024, must not exceed the gateway maxMemoryMB). Read-only when locked by GRASP_SANDBOX_MEMORY_MB.",

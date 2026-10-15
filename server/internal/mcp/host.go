@@ -142,8 +142,10 @@ type Host struct {
 	toolsListGen map[string]int
 	toolSessions map[string]map[string]*toolSession // runID -> MCP session ID -> subscription
 	// closedSessions are session IDs the client explicitly DELETEd (runID ->
-	// set); they stay terminated instead of being re-adopted.
-	closedSessions map[string]map[string]struct{}
+	// sid -> close order); they stay terminated instead of being re-adopted.
+	// Bounded per run; the oldest is evicted first.
+	closedSessions map[string]map[string]uint64
+	closedSeq      uint64
 	// outcomeValidator is DefaultThenRPC (see ChainedOutcomeValidator). Nil
 	// means DefaultOutcomeValidator only.
 	outcomeValidator OutcomeValidator

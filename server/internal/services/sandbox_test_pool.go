@@ -653,12 +653,18 @@ func (s *SandboxService) sweepOnce(ctx context.Context) {
 	if err := s.db.Where("destroy_at IS NOT NULL AND destroy_at <= ?", time.Now()).Find(&rows).Error; err != nil {
 		return
 	}
+	s.sweepRows(ctx, rows)
+}
+
+// sweepRows destroys the due rows found by sweepOnce. Run sandboxes are
+// re-checked against their current leases first; rows is only a snapshot.
+func (s *SandboxService) sweepRows(ctx context.Context, rows []models.Sandbox) {
 	now := time.Now()
 	for i := range rows {
 		if s.isBusyRow(&rows[i]) {
 			continue
 		}
-		if len(rows[i].Leases) > 0 && s.leaseHolds(&rows[i], now) {
+		if rows[i].Purpose == "run" && !s.claimExpired(rows[i].ID, now) {
 			continue
 		}
 		if err := s.Destroy(ctx, rows[i].ID); err == nil {

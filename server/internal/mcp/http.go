@@ -200,14 +200,27 @@ func (h *Host) deleteToolSession(runID, sid string) {
 		}
 	}
 	if h.closedSessions == nil {
-		h.closedSessions = map[string]map[string]struct{}{}
+		h.closedSessions = map[string]map[string]uint64{}
 	}
-	if h.closedSessions[runID] == nil {
-		h.closedSessions[runID] = map[string]struct{}{}
+	closed := h.closedSessions[runID]
+	if closed == nil {
+		closed = map[string]uint64{}
+		h.closedSessions[runID] = closed
 	}
-	if len(h.closedSessions[runID]) < maxClosedToolSessions {
-		h.closedSessions[runID][sid] = struct{}{}
+	if _, ok := closed[sid]; !ok && len(closed) >= maxClosedToolSessions {
+		var oldest string
+		var oldestAt uint64
+		for id, at := range closed {
+			if oldest == "" || at < oldestAt {
+				oldest, oldestAt = id, at
+			}
+		}
+		delete(closed, oldest)
+		log.Warn().Str("run_id", runID).Str("evicted_session", oldest).Int("cap", maxClosedToolSessions).
+			Msg("mcp closed-session tombstones full; evicted oldest (it may be re-adopted)")
 	}
+	h.closedSeq++
+	closed[sid] = h.closedSeq
 }
 
 func (h *Host) closeToolSessionsLocked(runID string) {

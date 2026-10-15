@@ -13,6 +13,8 @@ func TestEncodeBranchesVar(t *testing.T) {
 		{"string map", map[string]string{"web": "b1"}, `{"web":"b1"}`},
 		{"drops blanks and non-strings", map[string]any{"web": "b1", "api": "", " ": "x", "n": 3}, `{"web":"b1"}`},
 		{"legacy sprint string is rejected", "map[grasp:feature/x]", ""},
+		{"trimmed key collision prefers the exact key", map[string]any{" web": "padded", "web": "exact", "web ": "padded2"}, `{"web":"exact"}`},
+		{"padded-only collision is deterministic", map[string]any{"web ": "b", " web": "a"}, `{"web":"a"}`},
 		{"empty", map[string]any{}, ""},
 		{"nil", nil, ""},
 	} {

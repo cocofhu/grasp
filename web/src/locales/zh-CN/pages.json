@@ -1931,7 +1931,7 @@
       "settings": {
         "max_concurrent_runs": "同时处于 running 状态的 workflow 运行数上限。由 GRASP_MAX_RUNS 环境变量锁定时页面只读。",
         "run_sandbox_ttl_minutes": "workflow 回合结束后，运行沙箱继续保活的分钟数，便于 agent 继续写产物。",
-        "run_sandbox_max_retention_hours": "节点结束后的运行沙箱由多种保留原因(调试窗口、使用中、预览、手动延长)共同决定回收时间，此值是从节点结束起算的总上限，超过后无论还有什么原因都会回收。",
+        "run_sandbox_max_retention_hours": "节点结束后的运行沙箱由多种保留原因(调试窗口、使用中、预览、手动延长)共同决定回收时间，此值是从节点结束起算的总上限，超过后无论还有什么原因都会回收。平台重启时所有运行沙箱都会被清理，保留不跨重启。",
         "test_sandbox_ttl_minutes": "测试沙箱在无活动后的空闲销毁时间，避免长期占用资源。",
         "max_test_sandboxes": "活跃测试沙箱数达到此上限时，新建测试沙箱请求将被后端拒绝（最小值 ≥ 1，不设最大值上限）。",
         "sandbox_memory_mb": "每个沙箱的内存上限，dockerd、浏览器与 Agent 的构建/测试共用；超出时整个沙箱会被 OOM 杀掉。Agent 提示词会告知该上限。对新建沙箱生效（最小 1024，不得超过网关 maxMemoryMB）。由 GRASP_SANDBOX_MEMORY_MB 环境变量锁定时页面只读。",

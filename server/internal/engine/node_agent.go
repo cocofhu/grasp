@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/mcp"
@@ -276,17 +277,28 @@ func encodeBranchesVar(v any) string {
 	default:
 		return ""
 	}
-	for k, b := range m {
-		k2, b2 := strings.TrimSpace(k), strings.TrimSpace(b)
-		delete(m, k)
-		if k2 != "" && b2 != "" {
-			m[k2] = b2
-		}
+	// Keys that collide once trimmed resolve deterministically: an already
+	// trimmed key wins, otherwise the first in sorted order.
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
 	}
-	if len(m) == 0 {
+	sort.Strings(keys)
+	clean := make(map[string]string, len(m))
+	for _, k := range keys {
+		k2, b2 := strings.TrimSpace(k), strings.TrimSpace(m[k])
+		if k2 == "" || b2 == "" {
+			continue
+		}
+		if _, taken := clean[k2]; taken && k != k2 {
+			continue
+		}
+		clean[k2] = b2
+	}
+	if len(clean) == 0 {
 		return ""
 	}
-	out, err := json.Marshal(m)
+	out, err := json.Marshal(clean)
 	if err != nil {
 		return ""
 	}

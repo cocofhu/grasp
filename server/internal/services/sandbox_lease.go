@@ -247,16 +247,32 @@ func (s *SandboxService) TouchActivityByName(name string) {
 	s.TouchActivity(row.ID)
 }
 
-// leaseHolds recomputes a due row's deadline from its leases. True (and the
-// cached DestroyAt refreshed) when a lease still holds it past now.
-func (s *SandboxService) leaseHolds(row *models.Sandbox, now time.Time) bool {
-	dl := computeDeadline(row.Leases, now, s.RunTTL(), s.MaxRetention(), s.runPhaseOf(row.RunID))
-	if dl == nil || !dl.After(now) {
+// claimExpired decides, under leaseMu and from the row's current leases (not
+// the sweeper's snapshot), whether a due run sandbox may be destroyed. A lease
+// that still holds refreshes DestroyAt and keeps the row. An expired row has
+// its leases cleared before returning true, so an extension or touch racing
+// the destroy is rejected (ErrSandboxNotRetained / no-op) instead of being
+// silently lost.
+func (s *SandboxService) claimExpired(id uint, now time.Time) bool {
+	s.leaseMu.Lock()
+	defer s.leaseMu.Unlock()
+	var row models.Sandbox
+	if err := s.db.Where("id = ?", id).First(&row).Error; err != nil {
 		return false
 	}
-	row.DestroyAt = dl
-	_ = s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Update("destroy_at", dl).Error
-	return true
+	if s.inUse(row.Name) {
+		return false
+	}
+	if len(row.Leases) == 0 {
+		return row.DestroyAt != nil && !row.DestroyAt.After(now)
+	}
+	dl := computeDeadline(row.Leases, now, s.RunTTL(), s.MaxRetention(), s.runPhaseOf(row.RunID))
+	if dl != nil && dl.After(now) {
+		_ = s.db.Model(&models.Sandbox{}).Where("id = ?", id).Update("destroy_at", dl).Error
+		return false
+	}
+	return s.db.Model(&models.Sandbox{ID: id}).Select("leases").
+		Updates(&models.Sandbox{Leases: []models.SandboxLease{}}).Error == nil
 }
 
 func (s *SandboxService) forgetTouch(id uint) {

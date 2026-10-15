@@ -191,3 +191,54 @@ func TestConcurrentLeaseWritesKeepEachOther(t *testing.T) {
 		}
 	}
 }
+
+// The sweeper's Find snapshot can predate an extension; the destroy decision
+// must use the leases as they are when it is made.
+func TestSweepUsesCurrentLeasesNotSnapshot(t *testing.T) {
+	db := newTestDB(t)
+	ds := &dockerState{}
+	s := newSandboxService(t, db, ds)
+	ctx := context.Background()
+
+	name := "grasp-sb-toctou"
+	info := runtimeInfo(name)
+	db.Create(&models.Run{ID: info.RunID, Status: "completed", StartedAt: time.Now().Add(-3 * time.Hour), DurationSec: 60})
+	s.RegisterRunSandbox(info)
+	s.RetireRunSandbox(name)
+	var row models.Sandbox
+	db.Where("name = ?", name).First(&row)
+	past := time.Now().Add(-time.Minute)
+	db.Model(&models.Sandbox{ID: row.ID}).Select("destroy_at", "leases").Updates(&models.Sandbox{
+		DestroyAt: &past,
+		Leases:    []models.SandboxLease{{Kind: models.LeaseDebug, Until: &past, CreatedAt: past}},
+	})
+
+	var due []models.Sandbox
+	db.Where("destroy_at IS NOT NULL AND destroy_at <= ?", time.Now()).Find(&due)
+	if len(due) != 1 {
+		t.Fatalf("due rows = %d", len(due))
+	}
+	if _, err := s.ExtendLease(row.ID, 60, false, "admin"); err != nil {
+		t.Fatalf("extend: %v", err)
+	}
+	s.sweepRows(ctx, due)
+	if err := db.Where("id = ?", row.ID).First(&row).Error; err != nil {
+		t.Fatal("swept a sandbox extended after the sweeper's snapshot")
+	}
+	if d := time.Until(*row.DestroyAt); d < 59*time.Minute {
+		t.Fatalf("sweeper overwrote the extended deadline: %v", d)
+	}
+
+	// Once the sweeper has claimed an expired row, a late extension is
+	// rejected rather than accepted and then lost to the destroy.
+	db.Model(&models.Sandbox{ID: row.ID}).Select("destroy_at", "leases").Updates(&models.Sandbox{
+		DestroyAt: &past,
+		Leases:    []models.SandboxLease{{Kind: models.LeaseDebug, Until: &past, CreatedAt: past}},
+	})
+	if !s.claimExpired(row.ID, time.Now()) {
+		t.Fatal("expired row not claimed")
+	}
+	if _, err := s.ExtendLease(row.ID, 60, false, "admin"); !errors.Is(err, ErrSandboxNotRetained) {
+		t.Fatalf("extend after claim = %v, want ErrSandboxNotRetained", err)
+	}
+}
