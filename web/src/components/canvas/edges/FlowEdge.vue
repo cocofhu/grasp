@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { EdgeLabelRenderer, useVueFlow, type GraphNode, type Position } from '@vue-flow/core'
 import Icon from '../../ui/Icon.vue'
+import { renderMarkdown } from '@/lib/shared/markdown'
 import { edgeGeometry, laneFloor, type EdgeEnds } from '../composables/edgePath'
 import { useCanvasContext, type CanvasEdgeData } from '../composables/canvasContext'
 
@@ -62,19 +63,18 @@ const geo = computed(() =>
   }),
 )
 
-const HANDOFF_CHIP_CHARS = 24
 const handoffOpen = ref(false)
-const handoffChip = computed(() => {
-  const text = (props.data.handoff?.text || '').replace(/\s+/g, ' ').trim()
-  const chars = Array.from(text)
-  return chars.length > HANDOFF_CHIP_CHARS ? chars.slice(0, HANDOFF_CHIP_CHARS).join('') + '…' : text
-})
-const handoffTitle = computed(() => {
-  const h = props.data.handoff
-  if (!h) return ''
-  const head = h.source === 'platform' ? t('canvas.handoff.platformTitle') : t('canvas.handoff.title', { source: props.data.sourceLabel })
-  return `${head}\n${h.text}`
-})
+const handoffText = computed(() => (props.data.handoff?.text ?? '').trim())
+const hasHandoff = computed(() => handoffText.value.length > 0)
+const handoffPlatform = computed(() => props.data.handoff?.source === 'platform')
+/** Parse Markdown only while the card is open so collapsed edges stay cheap (LRU-cached). */
+const handoffHtml = computed(() =>
+  handoffOpen.value && props.data.handoff ? renderMarkdown(props.data.handoff.text) : '',
+)
+
+function toggleHandoff() {
+  handoffOpen.value = !handoffOpen.value
+}
 
 const hovered = computed(() => ctx?.hoveredEdge.value === props.id)
 const showControls = computed(() => props.data.editable && (hovered.value || props.selected))
@@ -122,8 +122,9 @@ function leave() {
   />
   <EdgeLabelRenderer>
     <div
-      v-if="data.label || showControls || data.handoff"
+      v-if="data.label || showControls || hasHandoff"
       class="cedge-mid nodrag nopan"
+      :class="{ 'is-handoff-open': hasHandoff && handoffOpen }"
       :style="midStyle"
       :data-testid="`canvas-edge-mid-${id}`"
       @mouseenter="enter"
@@ -175,20 +176,20 @@ function leave() {
         <Icon name="close" :size="11" />
       </button>
       <button
-        v-if="data.handoff"
+        v-if="hasHandoff"
         type="button"
         class="cedge-handoff"
-        :class="{ 'is-platform': data.handoff.source === 'platform', 'is-open': handoffOpen }"
-        :title="handoffTitle"
+        :class="{ 'is-platform': handoffPlatform, 'is-open': handoffOpen }"
         :aria-expanded="handoffOpen"
         :aria-label="t('canvas.handoff.aria', { source: data.sourceLabel, target: data.targetLabel })"
         data-testid="canvas-edge-handoff"
-        @click.stop="handoffOpen = !handoffOpen"
+        @click.stop="toggleHandoff"
       >
-        {{ handoffChip }}
+        <Icon class="cedge-handoff-ico" name="swap" :size="12" />
+        <span>{{ t('canvas.handoff.chip') }}</span>
       </button>
       <div
-        v-if="data.handoff && handoffOpen"
+        v-if="hasHandoff && handoffOpen"
         class="cedge-handoff-pop"
         role="dialog"
         :aria-label="t('canvas.handoff.aria', { source: data.sourceLabel, target: data.targetLabel })"
@@ -197,12 +198,36 @@ function leave() {
         @wheel.stop
       >
         <div class="cedge-handoff-head">
-          <span>{{ data.handoff.source === 'platform' ? t('canvas.handoff.platformTitle') : t('canvas.handoff.title', { source: data.sourceLabel }) }}</span>
-          <button type="button" class="cedge-btn" :aria-label="t('canvas.handoff.close')" @click.stop="handoffOpen = false">
-            <Icon name="close" :size="11" />
+          <span class="cedge-handoff-badge" :class="{ 'is-platform': handoffPlatform }">
+            <Icon name="swap" :size="14" />
+          </span>
+          <div class="cedge-handoff-headtext">
+            <div class="cedge-handoff-title">{{ t('canvas.handoff.title') }}</div>
+            <div class="cedge-handoff-route">
+              <span class="cedge-handoff-node">{{ data.sourceLabel }}</span>
+              <Icon name="arrow-right" :size="11" />
+              <span class="cedge-handoff-node">{{ data.targetLabel }}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="cedge-handoff-x"
+            :aria-label="t('canvas.handoff.close')"
+            data-testid="canvas-edge-handoff-close"
+            @click.stop="handoffOpen = false"
+          >
+            <Icon name="close" :size="13" />
           </button>
         </div>
-        <div class="cedge-handoff-body">{{ data.handoff.text }}</div>
+        <div class="cedge-handoff-body md" data-testid="canvas-edge-handoff-body" v-html="handoffHtml" />
+        <div class="cedge-handoff-foot">
+          <span v-if="handoffPlatform" class="cedge-handoff-tag" data-testid="canvas-edge-handoff-platform">
+            {{ t('canvas.handoff.platformNote') }}
+          </span>
+          <span v-else data-testid="canvas-edge-handoff-source">
+            {{ t('canvas.handoff.fromNode', { source: data.sourceLabel }) }}
+          </span>
+        </div>
       </div>
     </div>
   </EdgeLabelRenderer>

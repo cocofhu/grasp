@@ -28,6 +28,14 @@
 - 为什么：review:true 的节点（默认工作流「实现」）在 `node_complete` 产生 handoff 后进入复审；人工「确认并流转」走 `reviewReply` 用空 `runtime.NodeResult{}` 重新 `finalizeAgent` 并 `saveState` 整体覆盖 outputs，丢掉了 handoff/handoff_source，且未走 `ensureHandoff`。结果运行画布「实现→测试评审」边无交接胶囊，下游「测试评审」提示词缺上游交接，回环重跑同样（#796 遗漏的 review 路径）。
 - 如何验证：`go test ./internal/engine/...`、`go test ./...`、`go vet ./...`、`golangci-lint run --config ../.golangci.yml ./...`（0 issues）、`./scripts/cover-check-server.sh 90`（90.1%）。新用例在未修复时会失败。
 
+### 2026-10-15（运行画布节点交接样式优化：图标胶囊 + Markdown 悬浮卡片）
+
+- 日期：2026-10-15
+- 范围：`web/src/components/canvas/edges/FlowEdge.vue`、`web/src/components/canvas/edges/FlowEdge.test.ts`（新增）、`web/src/components/canvas/canvas.css`、`web/src/components/ui/Icon.vue`、`web/src/locales/{zh-CN,en}/canvas.json`
+- 做了什么：运行画布走过边上的交接指示由「原文截断胶囊」改为「⇄ 交接」图标胶囊；点开为悬浮卡片（头部图标 +「交接说明」+「来源→目标」路线 + 关闭按钮、Markdown 正文、底部来源元信息）。正文改用 `renderMarkdown`（marked + DOMPurify）并套用 `.md` 样式，仅在展开时渲染以复用 LRU 缓存；空/纯空白交接不显示指示。抬升 `.cedge-mid.is-handoff-open` 的 z 序修复卡片被节点遮挡，卡片固定宽度、限高滚动、箭头指向胶囊。`source=platform` 用虚线边框 + 警示色图标 +「平台代写 · 上游未提供交接」。文案经 `canvas.handoff.*` 由 `t()` 取得，新增 `swap` / `arrow-right` 图标。
+- 为什么：原交接与条件标签外观无异、弹层被节点卡片压住且正文是 `white-space:pre-wrap` 的裸 Markdown，用户读不清、认不出这是交接。
+- 如何验证：新增 `FlowEdge.test.ts` 覆盖胶囊/展开收起/路线/Markdown 结构与缓存/平台态/空文本/aria；`npm run lint`、`npx vue-tsc --noEmit`、`npm test -- --coverage`（Lines 90.52% ≥ 85）、`npm run build` 全绿。未改后端交接生成逻辑与 `EdgeHandoff { text, source }` 契约，编辑态画布不受影响。
+
 ### 2026-10-15（首页加图片附件不再在临界高度带出滚动条）
 
 - 日期：2026-10-15
