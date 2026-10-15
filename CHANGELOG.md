@@ -4,6 +4,12 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Run canvas handoff:** traversed-edge handoffs are now a compact "⇄ 交接"
+  icon chip instead of a truncated slice of the text. Opening it shows a card
+  above the nodes with the "source → target" route, the handoff rendered as
+  Markdown (headings, lists, inline code; sanitized), and a source footer.
+  Platform-written handoffs are dashed with a warning icon and a "平台代写 ·
+  上游未提供交接" tag. Empty handoffs show no chip.
 - **Codex login failures:** when Codex rejects or cannot refresh the ChatGPT
   login (CLI `401 Unauthorized` from `api.openai.com`), the Agent node now fails
   on the first failed turn with "Codex 登录已失效或无法刷新，请重新粘贴登录文件"
