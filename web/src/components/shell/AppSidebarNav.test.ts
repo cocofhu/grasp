@@ -707,6 +707,86 @@ describe('AppSidebarNav', () => {
     vi.useRealTimers()
   })
 
+  it('left-aligns pending and record row titles, keeping the motion mark at the row end', async () => {
+    const longLabel = `需求澄清${'很长的节点名'.repeat(12)}`
+    gateMocks.displayedItems.value = [
+      { type: 'gate', runId: 'run-1', nodeId: 'g1', title: '发布前确认', workflowName: 'w' },
+      { type: 'clarify', runId: 'run-2', nodeId: 'c1', label: '需求澄清', kind: 'clarify', state: 'starting', workflowName: 'w' },
+      { type: 'clarify', runId: 'run-3', nodeId: 'long', label: longLabel, kind: 'clarify', state: 'starting', workflowName: 'w' },
+      { type: 'clarify', runId: 'run-4', nodeId: 'pulse', label: '回复中的澄清', kind: 'clarify', state: 'replying', workflowName: 'w' },
+    ]
+    gateMocks.recordItems.value = [
+      { type: 'gate', runId: 'run-9', nodeId: 'done', title: '已通过的门禁', workflowName: 'w' },
+    ]
+    const wrapper = mountNav()
+    await flushPromises()
+
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'AppSidebarNav.vue'), 'utf8')
+    const titleRule = src.match(/\.nav-row-title\s*\{[^}]*\}/)?.[0] ?? ''
+    expect(titleRule).toMatch(/text-align:\s*(?:start|left)/)
+    // happy-dom only resolves styles for connected nodes, and unit tests do not load Tailwind.
+    const style = document.createElement('style')
+    style.textContent = titleRule
+    document.head.appendChild(style)
+    document.body.appendChild(wrapper.element)
+
+    const pending = wrapper.get('[data-testid="nav-pending-approvals"]')
+    const records = wrapper.get('[data-testid="nav-inbox-records"]')
+    const rows = pending.findAll('[data-testid="nav-pending-row"]')
+    expect(rows).toHaveLength(4)
+
+    const expectRowStart = (row: ReturnType<typeof rows.find>, markTestId?: string) => {
+      const title = row!.get('.nav-row-title')
+      const align = getComputedStyle(title.element).textAlign
+      expect(['left', 'start']).toContain(align)
+      expect(title.classes()).toEqual(expect.arrayContaining(['min-w-0', 'flex-1', 'truncate', 'text-start']))
+      expect(row!.classes()).toContain('text-start')
+      expect(title.classes().some((name) => /^(pl|ml|indent)-/.test(name))).toBe(false)
+      if (markTestId) {
+        const mark = row!.get(`[data-testid="${markTestId}"]`)
+        expect(title.element.nextElementSibling).toBe(mark.element)
+      } else {
+        expect(title.element.nextElementSibling).toBeNull()
+      }
+    }
+
+    expectRowStart(rows[0])
+    expectRowStart(rows[1], 'inbox-motion-spin')
+    expectRowStart(rows[2], 'inbox-motion-spin')
+    expect(rows[2].get('.nav-row-title').text()).toBe(longLabel)
+    expectRowStart(rows[3], 'inbox-motion-pulse')
+
+    expect(rows[0].classes()).not.toContain('active')
+    gateMocks.activeInboxKey.value = 'run-1:g1'
+    routeState.path = '/gates'
+    await nextTick()
+    expect(rows[0].classes()).toContain('active')
+    expectRowStart(rows[0])
+
+    const record = records.get('[data-testid="nav-record-row"]')
+    expectRowStart(record)
+    expect(record.text()).toBe('已通过的门禁')
+
+    const heading = pending.get('div')
+    expect(heading.classes()).toContain('px-3')
+    expect(heading.classes()).not.toContain('nav-row-title')
+    expect(heading.classes()).not.toContain('text-start')
+    for (const link of wrapper.findAll('a.nav-item')) {
+      expect(link.classes()).not.toContain('text-start')
+      expect(link.find('.nav-row-title').exists()).toBe(false)
+    }
+
+    await rows[2].trigger('click')
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-3', node: 'long' } })
+
+    style.remove()
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
   it('hides pending and records on the settings nav even when items exist', async () => {
     routeState.path = '/settings'
     gateMocks.displayedItems.value = [

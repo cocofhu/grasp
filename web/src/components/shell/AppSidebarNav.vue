@@ -415,7 +415,7 @@ const settingsItems = settingsNavItems
         :key="itemKey(it)"
         v-hover-ink
         type="button"
-        class="nav-item mb-0.5 w-full min-w-0"
+        class="nav-item mb-0.5 w-full min-w-0 text-start"
         :class="{ active: isPendingActive(it) }"
         data-testid="nav-pending-row"
         :data-key="itemKey(it)"
@@ -424,7 +424,7 @@ const settingsItems = settingsNavItems
         :aria-current="isPendingActive(it) ? 'true' : undefined"
         @click="onPendingRow(it)"
       >
-        <span class="min-w-0 flex-1 truncate">{{ rowTitle(it) }}</span>
+        <span class="nav-row-title min-w-0 flex-1 truncate text-start">{{ rowTitle(it) }}</span>
         <InboxMotionMark v-if="rowMotion(it) === 'spin'" kind="spin" />
         <InboxMotionMark v-else-if="rowMotion(it) === 'pulse'" kind="pulse" />
       </button>
@@ -439,13 +439,13 @@ const settingsItems = settingsNavItems
         :key="'record-' + itemKey(it)"
         v-hover-ink
         type="button"
-        class="nav-item mb-0.5 w-full min-w-0"
+        class="nav-item mb-0.5 w-full min-w-0 text-start"
         data-testid="nav-record-row"
         :data-key="itemKey(it)"
         :title="rowTitle(it)"
         @click.prevent
       >
-        <span class="min-w-0 flex-1 truncate">{{ rowTitle(it) }}</span>
+        <span class="nav-row-title min-w-0 flex-1 truncate text-start">{{ rowTitle(it) }}</span>
       </button>
     </div>
     </div>
@@ -473,6 +473,11 @@ const settingsItems = settingsNavItems
 </template>
 
 <style scoped>
+/* Buttons default to centered text. Pending and record titles start at the row edge. */
+.nav-row-title {
+  text-align: start;
+}
+
 .nav-chrome-viewport {
   position: relative;
   overflow: hidden;
