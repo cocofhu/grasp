@@ -274,6 +274,12 @@ html.light .home-yume {
   }
 }
 
+/* Press and jump paint outside the 240×200 crop. Rest keeps overflow hidden. */
+.home-yume.jump,
+.home-yume.pressed {
+  overflow: visible;
+}
+
 .home-yume.pressed :deep(.c-squash) {
   transform: scale(1.08, 0.82) !important;
   transition: transform 0.08s ease-out;

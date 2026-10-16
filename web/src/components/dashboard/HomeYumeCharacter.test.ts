@@ -94,6 +94,18 @@ describe('HomeYumeCharacter', () => {
     wrapper.unmount()
   })
 
+  it('keeps a hidden 240×200 crop at rest and shows overflow while jumping or pressed', () => {
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'HomeYumeCharacter.vue'), 'utf8')
+    const root = src.match(/\.home-yume\s*\{([^}]+)\}/)?.[1] ?? ''
+    expect(root).toMatch(/width:\s*var\(--yume-w,\s*240px\)/)
+    expect(root).toMatch(/height:\s*var\(--yume-h,\s*200px\)/)
+    expect(root).toMatch(/overflow:\s*hidden/)
+    const shown = src.match(/\.home-yume\.jump\s*,\s*\.home-yume\.pressed\s*\{([^}]+)\}/)?.[1] ?? ''
+    expect(shown).toMatch(/overflow:\s*visible/)
+    expect(src).toMatch(/scale\(0\.92,\s*1\.08\)\s*translateY\(-14%\)/)
+    expect(src).toMatch(/translateY\(-9%\)/)
+  })
+
   it('keeps the dark drop-shadow and uses a lighter one in light theme', () => {
     const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'HomeYumeCharacter.vue'), 'utf8')
     expect(src).toMatch(/filter:\s*drop-shadow\(0 12px 28px rgba\(0,\s*0,\s*0,\s*0\.45\)\)/)

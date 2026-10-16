@@ -6,6 +6,7 @@ import {
   clearAllEmbedSessions,
   clearEmbedSession,
   directPreviewEmbedUrl,
+  directPreviewReachableUrl,
   embedChatPath,
   embedArtifactsPath,
   embedImagePath,
@@ -47,6 +48,9 @@ describe('embedChat', () => {
     expect(directPreviewEmbedUrl('http://10.0.0.5:18080/x', t, 'dark', 'zh-CN')).toBe(
       'http://10.0.0.5:18080/x#__grasp_embed&run=r&node=n&ticket=a+b&theme=dark&lang=zh-CN',
     )
+    expect(directPreviewReachableUrl('http://127.0.0.1:18081/', '21.130.250.101')).toBe('http://21.130.250.101:18081/')
+    expect(directPreviewReachableUrl('http://127.0.0.1:18081/', 'localhost')).toBe('http://127.0.0.1:18081/')
+    expect(directPreviewReachableUrl('http://10.0.0.5:18081/', '21.130.250.101')).toBe('http://10.0.0.5:18081/')
   })
 
   it('reads the host theme from the fragment and from messages', () => {

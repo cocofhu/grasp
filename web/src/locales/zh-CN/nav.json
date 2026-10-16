@@ -7,6 +7,7 @@
     "workflows": "工作流",
     "runs": "运行",
     "gates": "待办",
+    "pendingApprovals": "待审批",
     "artifacts": "产物",
     "notifications": "通知",
     "quickWorkflows": "快捷工作流",

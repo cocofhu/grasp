@@ -73,7 +73,7 @@ describe('ReviewComposer gate busy status (C-tier)', () => {
     expect(wrapper.find('[data-testid="gate-react-stream"]').exists()).toBe(true)
     expect(placeholder.exists()).toBe(true)
     expect(placeholder.text()).toContain('思考中')
-    expect(placeholder.find('.typing-dots').exists()).toBe(true)
+    expect(placeholder.find('[data-testid="inbox-motion-pulse"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

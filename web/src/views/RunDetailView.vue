@@ -8,7 +8,7 @@ import PriorityBadge from '@/components/ui/PriorityBadge.vue'
 import PrioritySegmented, { type RunPriority } from '@/components/ui/PrioritySegmented.vue'
 import TruncatedTextTooltip from '@/components/ui/TruncatedTextTooltip.vue'
 import WorkflowCanvas from '@/components/canvas/WorkflowCanvas.vue'
-import type { EdgeHandoff } from '@/components/canvas/composables/canvasContext'
+import { collectEdgeHandoffs } from '@/components/canvas/composables/edgeHandoffs'
 import RunGatePanel from '@/components/run/RunGatePanel.vue'
 import RunClarifyPanel from '@/components/run/RunClarifyPanel.vue'
 import RunReviewPanel from '@/components/run/RunReviewPanel.vue'
@@ -239,12 +239,12 @@ const canvasFailReasons = computed(() => {
   return m
 })
 const canvasHandoffs = computed(() => {
-  const m: Record<string, EdgeHandoff> = {}
-  for (const [id, nr] of Object.entries(run.value.nodeRuns)) {
-    const text = typeof nr.outputs?.handoff === 'string' ? nr.outputs.handoff.trim() : ''
-    if (text) m[id] = { text, source: nr.outputs?.handoff_source === 'platform' ? 'platform' : 'agent' }
-  }
-  return m
+  const history = run.value.nodeExecutions
+  const executions =
+    history && Object.keys(history).length
+      ? history
+      : Object.fromEntries(Object.entries(run.value.nodeRuns || {}).map(([id, nr]) => [id, [nr]]))
+  return collectEdgeHandoffs(wf.value.edges, run.value.trace, executions)
 })
 const canvasFollowNodeId = computed(() => {
   const s = statusMap.value

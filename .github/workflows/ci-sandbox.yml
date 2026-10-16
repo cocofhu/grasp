@@ -54,6 +54,7 @@ jobs:
           bash -n scripts/test-runtime-bootstrap.sh
           bash -n scripts/test-runtime-e2e.sh
           bash -n scripts/test-inject.sh
+          bash -n scripts/test-preview-inject-upstream.sh
           bash -n scripts/test-git-auth.sh
           bash -n scripts/test-agent-connect.sh
           node --check scripts/agent-ws-check.mjs
@@ -163,6 +164,10 @@ jobs:
       - name: go vet
         working-directory: sandbox-gateway/sandbox
         run: go vet ./...
+      # Real preview-inject binary + preview-inject.sh set-upstream, no iptables:
+      # switch, no-steal busy, stale fallback, denied ports, reset, saved env.
+      - name: preview-inject set-upstream smoke
+        run: ./scripts/test-preview-inject-upstream.sh
       - name: Sandbox Go coverage gate
         id: cover
         run: ./scripts/cover-check-sandbox.sh 90

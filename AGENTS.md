@@ -155,6 +155,7 @@ bash -n sandbox/scripts/services.sh
 bash -n scripts/test-runtime-bootstrap.sh
 bash -n scripts/test-runtime-e2e.sh
 bash -n scripts/test-inject.sh
+bash -n scripts/test-preview-inject-upstream.sh
 bash -n scripts/test-git-auth.sh
 bash -n scripts/test-agent-connect.sh
 bash -n scripts/cover-check-sandbox.sh
@@ -169,6 +170,7 @@ node --test scripts/mock-chat-model.test.mjs
 ROOT="$PWD/.."   # if cwd is sandbox-gateway; else set to repo root
 (cd sandbox && golangci-lint run --config "$ROOT/.golangci.yml" ./...)
 (cd sandbox && go vet ./...)
+./scripts/test-preview-inject-upstream.sh   # needs go, python3, curl, ss
 ./scripts/cover-check-sandbox.sh 90
 
 # Docker cli-tools stage (glab/gh) — as in ci-sandbox

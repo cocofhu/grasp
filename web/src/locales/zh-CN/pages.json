@@ -21,8 +21,7 @@
       "pickWorkflow": "请先选择一个工作流",
       "noWorkflowShort": "未选择工作流",
       "needText": "请先描述目标或附加文件",
-      "heroEm": "先说清",
-      "heroRest": "，再动手",
+      "heroSubtitle": "先说清，再动手",
       "send": "发送",
       "sendShortcut": "Ctrl/⌘ + Enter 发送",
       "missingRequired": "启动前还需填写必填项",
@@ -1900,7 +1899,7 @@
         "productNamePlaceholder": "Grasp",
         "productNameHint": "侧栏与首页打字机共用，最多 40 个字符；留空回退 Grasp。",
         "homeSubtitle": "首页副标题",
-        "homeSubtitlePlaceholder": "从一句话开始一次开发前澄清",
+        "homeSubtitlePlaceholder": "先说清，再动手",
         "homeSubtitleHint": "最多 80 个字符；留空回退当前语言包默认句。"
       },
       "groups": {

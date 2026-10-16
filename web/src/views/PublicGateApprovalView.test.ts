@@ -1783,7 +1783,9 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
     expect(w.text()).toContain('推荐')
     expect(w.find('[data-testid="clarify-other-input"]').exists()).toBe(true)
     expect(w.get('[data-testid="clarify-input"]').attributes('placeholder')).toContain('跳过本轮提问')
-    expect(w.html()).toContain('title-preview')
+    expect(w.get('[data-testid="clarify-scroller"]').element.querySelector('[data-testid="html-preview"]')).toBeNull()
+    expect(w.get('[data-testid="clarify-scroller"]').text()).not.toContain('title-preview')
+    expect(w.get('[data-testid="clarify-option-enlarge"]').text()).toContain('放大')
 
     const next = w.findAll('button').find((b) => b.text().includes('下一个'))
     expect(next).toBeTruthy()

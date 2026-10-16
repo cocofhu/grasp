@@ -2,6 +2,13 @@
 # In-sandbox HTML injector for IP-direct preview (PREVIEW_DIRECT=1).
 # Listens on 17980, then REDIRECTs inbound PREVIEW_PORT → 17980.
 # Idempotent: concurrent callers serialize on a flock; already-healthy exits 0.
+#
+# grasp:set-upstream (Grasp checks for this marker before calling it)
+#   preview-inject.sh set-upstream <port|reset>
+# Points the injector at an app on another port while PREVIEW_PORT stays the
+# public entry. Prints one line "result=<status> preview_port=<n> ...":
+#   ok · reset · busy (PREVIEW_PORT already serves another app) · nolisten ·
+#   denied (sandbox service port) · invalid · unavailable (no direct preview)
 set -eu
 
 truthy() {
@@ -16,6 +23,8 @@ CHAIN="${PREVIEW_INJECT_CHAIN:-APPROVING-PREVIEW}"
 PID_DIR="${PREVIEW_INJECT_PID_DIR:-/tmp/sandbox-preview-inject}"
 BIN="${PREVIEW_INJECT_BIN:-/usr/local/bin/preview-inject}"
 LOG="${PREVIEW_INJECT_LOG:-/tmp/preview-inject.log}"
+UPSTREAM_FILE="${PREVIEW_INJECT_UPSTREAM_FILE:-${PID_DIR}/upstream}"
+ENV_FILE="${GRASP_RUNTIME_RUN_DIR:-/run/grasp-runtime}/env"
 COMMENT="grasp-preview-inject"
 
 preview_inject_missing_env() {
@@ -89,6 +98,7 @@ start_bin() {
   "$BIN" \
     --listen "0.0.0.0:${LISTEN_PORT}" \
     --upstream "http://127.0.0.1:${PREVIEW_PORT}" \
+    --upstream-file "$UPSTREAM_FILE" \
     >>"$LOG" 2>&1 &
   echo $! >"${PID_DIR}/preview-inject.pid"
 }
@@ -192,6 +202,72 @@ preview_inject_main() {
   supervise_loop
 }
 
+reserved_port() {
+  local r
+  for r in 22 5900 6080 8744 8765 9222 "$LISTEN_PORT" "${CDP_PORT:-}" "${VNC_PORT:-}" \
+    "${WS_PORT:-}" "${CODE_SERVER_PORT:-}" "${ACP_BRIDGE_PORT:-}"; do
+    if [ -n "$r" ] && [ "$1" = "$r" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+port_listening() {
+  ss -tlnH 2>/dev/null | awk '{print $4}' | grep -qE ":$1\$"
+}
+
+preview_set_upstream() {
+  local want="${1:-}" pp tmp
+  if ! truthy "${PREVIEW_DIRECT:-}" || [ -z "${PREVIEW_PORT:-}" ]; then
+    echo "result=unavailable"
+    return 0
+  fi
+  pp="$PREVIEW_PORT"
+  if [ "$want" = reset ] || [ "$want" = "$pp" ]; then
+    rm -f "$UPSTREAM_FILE"
+    echo "result=reset preview_port=${pp}"
+    return 0
+  fi
+  case "$want" in
+    ''|*[!0-9]*) echo "result=invalid preview_port=${pp}"; return 2 ;;
+  esac
+  if [ "$want" -lt 1 ] || [ "$want" -gt 65535 ]; then
+    echo "result=invalid preview_port=${pp}"
+    return 2
+  fi
+  if reserved_port "$want"; then
+    echo "result=denied preview_port=${pp}"
+    return 0
+  fi
+  if ! port_listening "$want"; then
+    echo "result=nolisten preview_port=${pp}"
+    return 0
+  fi
+  if port_listening "$pp"; then
+    echo "result=busy preview_port=${pp}"
+    return 0
+  fi
+  mkdir -p "$(dirname "$UPSTREAM_FILE")"
+  tmp="${UPSTREAM_FILE}.$$"
+  printf '%s\n' "$want" >"$tmp"
+  mv -f "$tmp" "$UPSTREAM_FILE"
+  echo "result=ok preview_port=${pp} upstream=${want}"
+}
+
 if [ "${PREVIEW_INJECT_LIB:-}" != "1" ]; then
-  preview_inject_main
+  case "${1:-}" in
+    set-upstream)
+      # SSH sessions lack PID1's environment; source at top level so the
+      # saved `declare -x` lines stay global.
+      if [ -z "${PREVIEW_PORT:-}" ] && [ -r "$ENV_FILE" ]; then
+        # shellcheck disable=SC1090
+        . "$ENV_FILE"
+      fi
+      preview_set_upstream "${2:-}"
+      ;;
+    *)
+      preview_inject_main
+      ;;
+  esac
 fi

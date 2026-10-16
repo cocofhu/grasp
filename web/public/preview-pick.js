@@ -401,6 +401,8 @@
     '.light .artifact[aria-expanded="true"]{background:#eef2ff;border-color:#c7d2fe;color:#4f46e5}' +
     '.light .chat{background:linear-gradient(135deg,#6d5dfc,#8b5cf6);border-color:#8b5cf6;color:#fff}' +
     '.light .chat[aria-expanded="true"]{background:linear-gradient(135deg,#5b4bd6,#7c3aed)}' +
+    '.light .chat:hover{background:linear-gradient(135deg,#7c6cff,#9b6cff);border-color:#a78bfa;color:#fff}' +
+    '.light .chat[aria-expanded="true"]:hover{background:linear-gradient(135deg,#5b4bd6,#7c3aed);color:#fff}' +
     '.light .live{background:#f4f4f5;border-color:#e4e4e7;color:#52525b}' +
     '.light .live:hover{background:#fff;border-color:#c4b5fd;color:#5b21b6}' +
     '.light .live[aria-pressed="true"],.light .live[aria-expanded="true"]{background:#f3e8ff;border-color:#c4b5fd;color:#6d28d9}' +

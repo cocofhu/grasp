@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { directPreviewEmbedUrl, type EmbedTicket } from '@/lib/inbox/embedChat'
+import { directPreviewEmbedUrl, directPreviewReachableUrl, type EmbedTicket } from '@/lib/inbox/embedChat'
 import { theme } from '@/lib/shared/theme'
 import { locale } from '@/lib/shared/locale'
 
@@ -14,6 +14,7 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
+const shownUrl = computed(() => directPreviewReachableUrl(props.directUrl))
 const opening = ref(false)
 const tip = ref<'chat' | 'blocked' | null>(null)
 const blockedUrl = ref('')
@@ -26,9 +27,9 @@ async function open() {
   const win = window.open('about:blank', '_blank')
   if (win) win.opener = null
   opening.value = true
-  let url = props.directUrl
+  let url = shownUrl.value
   try {
-    if (props.issueTicket) url = directPreviewEmbedUrl(props.directUrl, await props.issueTicket(), theme.value, locale.value)
+    if (props.issueTicket) url = directPreviewEmbedUrl(shownUrl.value, await props.issueTicket(), theme.value, locale.value)
   } catch {
     tip.value = 'chat'
   } finally {
@@ -49,7 +50,7 @@ async function open() {
       type="button"
       class="rounded px-2 py-0.5 text-[11px] text-txt2 hover:bg-overlay hover:text-txt disabled:opacity-60"
       :disabled="opening"
-      :title="directUrl"
+      :title="shownUrl"
       data-testid="app-preview-direct-open"
       @click="open"
     >
@@ -84,7 +85,7 @@ async function open() {
       :disabled="opening"
       @click="open"
     >
-      {{ directUrl }}
+      {{ shownUrl }}
     </button>
     <button
       type="button"

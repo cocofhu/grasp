@@ -60,9 +60,12 @@ describe('DashboardView home chat layout', () => {
     expect(src).toMatch(/HomeYumeCharacter/)
     expect(src).toMatch(/data-testid="home-hero-copy"/)
     expect(src).toMatch(/home-hero-copy/)
-    expect(src).toMatch(/class="em"/)
-    expect(src).toContain("t('pages.dashboard.heroEm')")
-    expect(src).toContain("t('pages.dashboard.heroRest')")
+    expect(src).not.toMatch(/class="em"/)
+    expect(src).not.toContain('pages.dashboard.heroEm')
+    expect(src).not.toContain('pages.dashboard.heroRest')
+    expect(src).toContain('useBrandSettings')
+    expect(src).toContain('homeSubtitle')
+    expect(src).toContain("t('pages.dashboard.heroSubtitle')")
     expect(src).not.toContain('先说清')
     expect(src).not.toMatch(/data-testid="home-brand"/)
     expect(src).not.toMatch(/data-testid="home-brand-row"/)
@@ -175,8 +178,8 @@ describe('DashboardView home chat layout', () => {
   })
 
   // fill LOCKED — top-down shell (justify-start); desktop inset basis is 120px
-  // and shrinks (floor 48px) before the column scrolls. Mobile basis is 4.25rem
-  // (floor 0.5rem).
+  // and shrinks (floor 48px) before the column scrolls. Mobile basis is 4.25rem.
+  // Mobile floor is 36px so a float-high plus jump-high ear stays in the column.
   it('uses a shrinkable 120px desktop top inset and keeps moderate mobile padding', () => {
     expect(src).toMatch(/home-shell__content[^"]*justify-start/)
     expect(src).toMatch(/home-shell__content[^"]*overflow-x-hidden/)
@@ -191,7 +194,7 @@ describe('DashboardView home chat layout', () => {
       /w-full min-w-0 flex-wrap gap-2 pr-1\.5 pt-1\.5"[\s\S]{0,40}data-testid="home-attach-chips"/,
     )
     expect(src).toMatch(
-      /@media \(max-width: 520px\)[\s\S]*\.home-shell__content::before\s*\{[^}]*flex-basis:\s*4\.25rem[^}]*min-height:\s*0\.5rem/,
+      /@media \(max-width: 520px\)[\s\S]*\.home-shell__content::before\s*\{[^}]*flex-basis:\s*4\.25rem[^}]*min-height:\s*36px/,
     )
     expect(src).not.toMatch(
       /@media \(max-width: 520px\)[\s\S]*padding-top:\s*2rem/,
@@ -236,15 +239,12 @@ describe('DashboardView home chat layout', () => {
   it('loads slogan copy from locale files instead of a hardcoded Chinese line', () => {
     const zh = JSON.parse(
       readFileSync(join(dir, '../locales/zh-CN/pages.json'), 'utf8'),
-    ) as { pages: { dashboard: { heroEm: string; heroRest: string } } }
+    ) as { pages: { dashboard: { heroSubtitle: string } } }
     const en = JSON.parse(
       readFileSync(join(dir, '../locales/en/pages.json'), 'utf8'),
-    ) as { pages: { dashboard: { heroEm: string; heroRest: string } } }
-    expect(zh.pages.dashboard.heroEm).toBe('先说清')
-    expect(zh.pages.dashboard.heroRest).toBe('，再动手')
-    expect(en.pages.dashboard.heroEm).toBe('Clarify first')
-    expect(en.pages.dashboard.heroRest).toBe(', then act')
-    expect(`${en.pages.dashboard.heroEm}${en.pages.dashboard.heroRest}`).toBe('Clarify first, then act')
+    ) as { pages: { dashboard: { heroSubtitle: string } } }
+    expect(zh.pages.dashboard.heroSubtitle).toBe('先说清，再动手')
+    expect(en.pages.dashboard.heroSubtitle).toBe('Clarify first, then act')
     expect(src).toMatch(/\.home-composer:focus-within\s*\{[^}]*rgb\(var\(--c-accent\)/)
     expect(src).toMatch(/0 0 0 3px rgb\(var\(--c-accent\) \/ 0\.16\)/)
     expect(src).toMatch(/\.home-composer__send:hover:not\(:disabled\)\s*\{[^}]*translateY\(-1px\)/)

@@ -318,7 +318,7 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
-  // fill LOCKED — cropped yume + copy
+  // plan g1.1/g1.3 — default sentence from locale, whole sentence single color (no .em)
   it('renders fill hero with yume and locked copy', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
@@ -326,7 +326,7 @@ describe('DashboardView home composer', () => {
     const copy = wrapper.get('[data-testid="home-hero-copy"]')
     expect(copy.text()).toContain('先说清')
     expect(copy.text()).toContain('再动手')
-    expect(copy.find('.em').text()).toBe('先说清')
+    expect(copy.find('.em').exists()).toBe(false)
     expect(copy.text().replace(/\s+/g, '')).toContain('先说清，再动手')
     expect(wrapper.find('[data-testid="home-brand"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-brand-text"]').exists()).toBe(false)
@@ -340,13 +340,44 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
+  // plan g1.1 — brand「首页副标题」drives the hero copy when set
+  it('renders the configured home subtitle instead of the default sentence', async () => {
+    setBrandSettings({ product_name: '', home_subtitle: '先聊清楚，再开工' })
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const copy = wrapper.get('[data-testid="home-hero-copy"]')
+    expect(copy.text()).toBe('先聊清楚，再开工')
+    expect(copy.find('.em').exists()).toBe(false)
+    expect(copy.text()).not.toBe('先说清，再动手')
+    wrapper.unmount()
+  })
+
+  // plan g1.1 / f2 — blank or whitespace-only subtitle falls back to locale default
+  it('falls back to the default sentence when the subtitle is blank', async () => {
+    setBrandSettings({ product_name: '', home_subtitle: '   ' })
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const copy = wrapper.get('[data-testid="home-hero-copy"]')
+    expect(copy.text().replace(/\s+/g, '')).toBe('先说清，再动手')
+    wrapper.unmount()
+  })
+
   it('renders the English slogan without Chinese copy', async () => {
     const wrapper = mountDashboard('en')
     await flushPromises()
     const copy = wrapper.get('[data-testid="home-hero-copy"]')
-    expect(copy.find('.em').text()).toBe('Clarify first')
+    expect(copy.find('.em').exists()).toBe(false)
     expect(copy.text().replace(/\s+/g, ' ').trim()).toBe('Clarify first, then act')
     expect(copy.text()).not.toMatch(/先说清|再动手/)
+    wrapper.unmount()
+  })
+
+  it('falls back to the English default sentence when the subtitle is blank', async () => {
+    setBrandSettings({ product_name: '', home_subtitle: '' })
+    const wrapper = mountDashboard('en')
+    await flushPromises()
+    const copy = wrapper.get('[data-testid="home-hero-copy"]')
+    expect(copy.text().replace(/\s+/g, ' ').trim()).toBe('Clarify first, then act')
     wrapper.unmount()
   })
 

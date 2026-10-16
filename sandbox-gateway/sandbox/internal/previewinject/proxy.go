@@ -46,22 +46,37 @@ func NewHandler(upstream *url.URL, scriptURL string) http.Handler {
 
 // NewHandlerWithEmbed is NewHandler plus EmbedOriginPath for the chat drawer.
 func NewHandlerWithEmbed(upstream *url.URL, scriptURL string, embed EmbedLookup) http.Handler {
+	return NewSwitchableHandler(upstream, "", scriptURL, embed)
+}
+
+// NewSwitchableHandler is NewHandlerWithEmbed whose app port can be switched
+// at runtime: upstreamFile holds a port number (written by
+// `preview-inject.sh set-upstream`). Without a usable file the fixed upstream
+// serves. Every response names the port it came from in UpstreamHeader.
+func NewSwitchableHandler(upstream *url.URL, upstreamFile, scriptURL string, embed EmbedLookup) http.Handler {
 	if upstream == nil {
 		panic("previewinject: nil upstream")
 	}
 	scriptURL = ResolveScriptURL(scriptURL)
 	token := CSPToken(scriptURL)
+	sel := newUpstreamSelector(upstream, upstreamFile)
+	inject := modifyResponse(scriptURL, token)
 
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			inHost := r.In.Host
-			r.SetURL(upstream)
+			r.SetURL(sel.pick())
 			r.Out.Host = inHost
 			r.Out.Header.Set("Accept-Encoding", "identity")
 		},
-		ModifyResponse: modifyResponse(scriptURL, token),
-		FlushInterval:  flushInterval,
-		ErrorHandler:   closeOnUpstreamError,
+		ModifyResponse: func(resp *http.Response) error {
+			if resp.Request != nil {
+				resp.Header.Set(UpstreamHeader, resp.Request.URL.Port())
+			}
+			return inject(resp)
+		},
+		FlushInterval: flushInterval,
+		ErrorHandler:  closeOnUpstreamError,
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == ScriptPath {

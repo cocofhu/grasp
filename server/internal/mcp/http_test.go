@@ -236,3 +236,34 @@ func TestToolStreamCanceledRequestReleasesSubscription(t *testing.T) {
 		t.Fatal("canceled request leaked a subscription")
 	}
 }
+
+func TestCloseToolStreamsEndsStreamsKeepsSessions(t *testing.T) {
+	h := NewHost(&memOutcomeStore{})
+	token := h.RegisterRun("r")
+	sid := h.newToolSession("r", token)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.serveToolStream(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/mcp", nil), "r", sid)
+	}()
+	for i := 0; i < 100; i++ {
+		h.mu.Lock()
+		open := h.toolSessions["r"][sid].stream != nil
+		h.mu.Unlock()
+		if open {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	h.CloseToolStreams()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("CloseToolStreams did not end the stream")
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if s := h.toolSessions["r"][sid]; s == nil || s.stream != nil {
+		t.Fatalf("session = %+v, want kept without a stream", s)
+	}
+}

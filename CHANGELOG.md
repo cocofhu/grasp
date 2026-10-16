@@ -9,6 +9,52 @@ All notable public-release changes are documented here.
   address placeholder, instead of a fixed `https://api.example.com/v1`. A vendor
   with no published address, or a self-hosted gateway, falls back to neutral
   copy. The field stays optional and blank by default.
+- **Control-plane restarts no longer wait for agents:** on SIGTERM Grasp now
+  stops scheduling, finishes in-flight HTTP requests (at most 10s) and exits,
+  instead of draining agent runs for up to 10 minutes (which outlasted
+  `kubectl rollout status` timeouts). Sandboxes keep running. On startup, an
+  autonomous agent node whose sandbox is still alive is reattached and its
+  current visit continues: a turn still running is awaited, a finished one is
+  read back from the sandbox event log, and the main prompt is not resent.
+  Queued runs stay queued. Other in-flight nodes (clarify, human-facing,
+  non-agent) re-enter at the same node. If reattach fails, the node retries in
+  a fresh sandbox as before.
+- **Live request card while generating:** in the preview chat drawer, a Live
+  request (for example「趣味细节」from the element card) now shows its card
+  right away with a loading animation (skeleton rows and a sweep; static
+  under reduced motion) instead of an empty「我」bubble. The full card with
+  switch / adopt controls still appears under the agent reply once the
+  candidates are ready (#813).
+- **Candidate switcher clicks:** the in-page switcher no longer rebuilds its
+  buttons when nothing changed, so ‹ / › and「原版」clicks are no longer lost
+  on pages that keep changing (animated candidates, HMR), and switching no
+  longer cuts off the candidate fade (#813).
+- **Preview pick on any port:** with IP-direct preview, `set_preview(port=X)`
+  now gives the reviewer's new-tab link (`IP:$PREVIEW_PORT`) the page on port X
+  with pick injected, even when the app does not listen on `$PREVIEW_PORT`
+  (e.g. Vite on 5173). Only the last registered port per sandbox has pick;
+  if `$PREVIEW_PORT` already serves another app it keeps the entry. Sandbox
+  service ports (SSH, VNC, IDE, CDP, sandbox backend) are rejected. Agent
+  prompts now say not to register backends and to self-test on
+  `127.0.0.1:<app port>`. Sandboxes on an older runtime bundle keep the old
+  behavior until the bundle updates.
+
+## 2.2.0 — 2026-10-15
+
+<img src="media/yume-mark.png" alt="Black-and-white ghost cat, the Grasp mascot" width="120" />
+
+- **Home mascot:** the home page, the desktop sidebar, and the login page now
+  use this black-and-white ghost cat (yume). White body, ink outline, grey
+  cheeks, a small tail. The home hero is the cropped cat (240×200) with no
+  wordmark and no logo-mark. It floats, blinks, and wags its tail; hovering
+  makes the eyes follow the pointer; pressing squishes it and it springs
+  back. Reduced motion keeps a still cat. Light theme drops the sparkles and
+  uses a light shadow. The sidebar shows it at 28px and the login page at
+  48px (#794, #798).
+- **Home subtitle:** the sentence under the home mascot now shows the brand
+  setting「首页副标题」(`home_subtitle`) and falls back to the locale default
+  (zh「先说清，再动手」/ en「Clarify first, then act」) when it is blank. The copy
+  is one uniform color and no longer highlights only its first half.
 - **Run canvas handoff:** a node with post-run review (e.g. the 实现 node) no
   longer loses its handoff when the reviewer clicks「确认并流转」. The handoff
   and its source are preserved through review confirm, revise refresh, and
@@ -33,6 +79,33 @@ All notable public-release changes are documented here.
   on the first failed turn with "Codex 登录已失效或无法刷新，请重新粘贴登录文件"
   instead of re-prompting, reporting "MCP 工具面为空", and auto-retrying. The
   run failure banner links to the project credentials tab.
+- **CLI models:** Agent settings, the project shared Agent config, the create
+  wizard, and the workflow node inspector pick a model from a dropdown
+  (vendor marks, recommended cards, search). Codex also picks a reasoning
+  effort. The lists are the CLI's real model IDs. A shared default applies
+  only to Agents on the same CLI; an Agent that has not picked its own model
+  says it follows the project model (#789, #790).
+- **Sandbox lifetime:** a run sandbox stays up by lease (debug after the node
+  ends, activity while the terminal, IDE, chat, or preview is in use, preview
+  after `set_preview`, and a manual extension) instead of a fixed 30 minutes.
+  The sandbox list and console show time left and offer +30 minutes, +2 hours,
+  and keep until the run ends. The cap is **Settings → Sandbox recycle →
+  Run sandbox max retention** (default 24 hours, 1–168) (#796).
+- **Test node:** destroying one node's sandbox no longer revokes MCP for the
+  rest of the run, and the test node follows the implement branch instead of
+  falling back to `main` (#796).
+- **Page Harness images:** an image opened from the Page Harness chat is a
+  floating window next to the artifact window, not inside the chat card.
+  Opening the artifact after the image offsets it by 36px so both title bars
+  stay visible (#795).
+- **Project agents:** a workflow created from the baseline binds Agents in
+  this project (reuse one with the same name, or create it from the shared
+  Agent config). Saving or starting a run rejects an Agent that belongs to
+  another project. If the clarify node's sandbox fails to start, the run is
+  marked failed. A sandbox config or credential error is not retried. The
+  start-run dialog accepts an optional first message (#787).
+- Default `./start.sh` / `.env.example` / `compose.release.yaml` pins GHCR
+  images to `*:2.2.0`.
 
 ## 2.1.0 — 2026-10-12
 

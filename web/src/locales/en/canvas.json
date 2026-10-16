@@ -362,7 +362,10 @@
       "platformTitle": "Platform handoff (upstream left none)",
       "platformNote": "Written by the platform · upstream left no handoff",
       "fromNode": "From the \"{source}\" node",
+      "fromNodeVisit": "From the \"{source}\" node · viewing visit {n}",
+      "visit": "Visit {n}",
       "aria": "Handoff from {source} to {target}",
+      "ariaCount": "Handoff from {source} to {target}, {n} visits",
       "close": "Close handoff"
     }
   }

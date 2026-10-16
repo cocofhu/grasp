@@ -20,6 +20,30 @@
 
 ## 记录
 
+### 2026-10-16（Live 请求生成中显示加载卡片；切换栏不再吞点击）
+
+- 日期：2026-10-16
+- 范围：`web/src/components/run/ClarifyChat.vue`、`web/src/components/run/LiveVariantCard.vue`、`web/src/liveoverlay/overlay.ts`、`web/src/liveoverlay/scan.ts` 及对应测试；`npm run build:live-overlay` 同步的三份 `live-overlay.js`
+- 做了什么：抽屉里最新一条 Live 请求在 Agent 工作期间不再隐藏卡片，而是显示精简卡片（标题 + 状态）加骨架条和扫光的加载动画（`aria-busy`，减少动态效果时只留静态骨架），完成后照旧在 Agent 回复下方出现可操作卡片。页面切换栏 `renderSwitchers` 只在标记变化时才写 `innerHTML`；`showVariant` 跳过已处于目标显隐状态的根节点，重扫不再取消候选淡入。
+- 为什么：#813。#742 让最新请求的卡片等 Agent 做完才出现，而 Live 生成的请求文字本就不展示，生成期间只剩一个空的「我」气泡。切换栏每秒定时器和整页 `MutationObserver` 触发的重扫都会重建按钮，重建落在 mousedown 与 mouseup 之间时点击丢失；候选带 JS 动效（如「趣味细节」）时重扫持续发生，切换频繁失效且淡入被打断。
+- 如何验证：web `vitest run` 全绿（新增：生成中卡片带 `aria-busy` 与骨架、无控件；定时器与页面变动后 `next` 按钮仍是同一节点且可切换（去掉修复后该用例失败）；重复 `showVariant` 不取消淡入）；`live-variants.spec.ts` 16 条通过；`vue-tsc`、eslint 通过；server `go test ./internal/handlers/`、sandbox `go test ./internal/previewinject/` 通过。本地源码栈 + opencode/DeepSeek 真实跑通：取点标题选「趣味细节」生成，抽屉立即出现加载卡片、无空气泡，约 2 分钟后 3 个候选就绪、加载态消失；页面 DOM 每 30ms 变动时 8 次慢速点击（按住 250ms）全部切换成功，3 秒内切换栏重建 0 次。
+
+### 2026-10-16（set_preview 任意端口都带取点：注入代理自适应上游）
+
+- 日期：2026-10-16
+- 范围：`sandbox-gateway/sandbox/internal/previewinject/`（`upstream.go`、`proxy.go`）、`sandbox-gateway/sandbox/cmd/preview-inject/main.go`、`sandbox-gateway/sandbox/scripts/preview-inject.sh`、`server/internal/mcp/preview.go`、`server/internal/mcp/tools.go`、`server/internal/services/preview.go`、`server/internal/models/prompts.go`、`sandbox-gateway/scripts/test-preview-inject-upstream.sh`、`sandbox-gateway/scripts/test-runtime-e2e.sh`、`.github/workflows/ci-sandbox.yml`
+- 做了什么：注入代理新增 `--upstream-file`，文件里的端口在可连时覆盖默认上游（`$PREVIEW_PORT`），连不上自动回落；响应带 `X-Grasp-Upstream` 标明实际上游；沙箱自带服务端口（22/5900/6080/8744/8765/9222/17980）一律不作上游。`preview-inject.sh set-upstream <port|reset>` 写/删该文件，`$PREVIEW_PORT` 已有别的应用时返回 `busy` 不抢入口；SSH 调用时从 `/run/grasp-runtime/env` 读 `PREVIEW_PORT`；脚本头带 `# grasp:set-upstream` 标记，平台检测到才调用，旧运行时包走原路径。IP 直连下 `set_preview(port=X)`（X≠`PREVIEW_PORT`）按沙箱加锁后切换上游，只发布 `PREVIEW_PORT`，用响应头校验确实转到 X，失败则 reset 并回到原有登记；记录 `Port=X`、`Host=PREVIEW_PORT`，桌面浏览器仍打开 `127.0.0.1:X`；被挤掉的旧端口登记释放。服务端同样拒绝沙箱服务端口。`PreviewContract` 和 `set_preview` 说明改为：可用任意端口、同一时刻只有最后登记的端口带取点、不要登记后端、沙箱内自测用 `127.0.0.1:<应用端口>` 而不是 `$PREVIEW_PORT`。
+- 为什么：Agent 把 Vite 起在 5173 并登记，审批人直连 `IP:$PREVIEW_PORT` 拿不到页面，新标签页取点失效（run 60f19582）。之前只能靠提示词要求起在 `$PREVIEW_PORT`，不可靠。
+- 如何验证：sandbox `go test ./internal/previewinject/ ./cmd/preview-inject/`（选择器缓存/回落/拒绝端口、脚本各结果码）；server `go test ./...`（切换、探测失败 reset、busy 备注、旧版本回退、保留端口、非直连不切换、`ProbeInjectUpstream` 校验头）；新增 CI 冒烟 `scripts/test-preview-inject-upstream.sh`（真实二进制 + 脚本，无 iptables）；`test-runtime-e2e.sh` 新增 2b 在特权容器走真实 iptables 验证切换/busy/denied/reset。golangci-lint、vet、两侧覆盖率门槛（server 90.2%、sandbox 96.6%）、shellcheck-error、actionlint 通过。
+
+### 2026-10-15（首页文案接回品牌设置「首页副标题」）
+
+- 日期：2026-10-15
+- 范围：`web/src/views/DashboardView.vue`、`web/src/locales/zh-CN/pages.json`、`web/src/locales/en/pages.json`、`web/src/views/DashboardView.test.ts`、`web/src/views/DashboardView.fill.test.ts`、`web/src/views/DashboardView.light.test.ts`、`web/src/views/SettingsView.test.ts`
+- 做了什么：首页吉祥物下方文案改读 `useBrandSettings().homeSubtitle`，留空（含纯空白，经 composable trim 为空串）回退语言包默认句；`pages.dashboard.heroEm/heroRest` 合并为单一 `heroSubtitle`（zh「先说清，再动手」/ en「Clarify first, then act」）；文案整句统一配色（`rgb(var(--c-txt))` + 600），移除 `.em` 分段高亮与对应浅色规则，并补 `max-width`/换行兜底；设置页 `homeSubtitlePlaceholder` 同步为新默认句。
+- 为什么：#794 首页改版移除了 `homeSubtitle` 接线，品牌设置「首页副标题」成为孤儿设置，管理员改完首页无变化。接线后该设置真正生效。
+- 如何验证：DashboardView / fill / light、SettingsView、locales 相关 vitest 全绿（新增读取设置、纯空白回退、英文回退用例）；`npm run lint` 0 error、`npx vue-tsc --noEmit` 通过。
+
 ### 2026-10-15（OpenCode 接口地址占位符随所选厂商变化）
 
 - 日期：2026-10-15

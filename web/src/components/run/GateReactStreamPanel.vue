@@ -10,6 +10,7 @@ import { relTime } from '@/lib/shared/format'
 import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
 import type { AgentTool } from '@/lib/shared/types'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
+import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
 import AgentToolGroup from './AgentToolGroup.vue'
 import StreamMarkdown from './StreamMarkdown.vue'
 import { renderMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
@@ -140,15 +141,16 @@ function onThoughtToggle(e: Event) {
       class="inline-flex items-center gap-2 text-txt3"
       data-testid="gate-busy-placeholder"
     >
-      <span class="typing-dots" aria-hidden="true"><i /><i /><i /></span>
+      <InboxMotionMark kind="pulse" />
       <span>{{ t('pages.clarify.thinkingBusy') }}</span>
     </div>
     <div
       v-else-if="streaming && hasThought && !hasMessage"
-      class="text-txt3"
+      class="inline-flex items-center gap-2 text-txt3"
       data-testid="gate-busy-status"
     >
-      {{ t('pages.clarify.thinkingBusy') }}
+      <InboxMotionMark kind="pulse" />
+      <span>{{ t('pages.clarify.thinkingBusy') }}</span>
     </div>
     <div
       v-else-if="streaming && hasMessage"

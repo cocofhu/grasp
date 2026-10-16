@@ -3,21 +3,25 @@ import Icon from '../ui/Icon.vue'
 import ChatImageThumb from '../ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '../ui/ChatImagePreviewModal.vue'
 import ComposerShell from './ComposerShell.vue'
+import AppModal from '../ui/AppModal.vue'
 import ClarifyDemoFrame from './ClarifyDemoFrame.vue'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
+import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
 import AgentToolGroup from './AgentToolGroup.vue'
 import AgentTimeline from './AgentTimeline.vue'
 import StreamMarkdown from './StreamMarkdown.vue'
 import AnnotationChip from './AnnotationChip.vue'
 import LiveVariantCard from './LiveVariantCard.vue'
 import PendingSendQueuePanel from './PendingSendQueuePanel.vue'
-import { computed, inject } from 'vue'
+import { computed, inject, nextTick, ref, watch } from 'vue'
 import { EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
 import { LIVE_CARD_HOST, isLiveBusy } from '@/lib/inbox/liveVariants'
 import type {
   ClarifyTurn,
   ClarifyImage,
   ReactAnnotation,
+  ReactOption,
+  ReactQuestion,
 } from '@/lib/shared/types'
 import { isImageAttachment, attachmentDisplayName } from '@/lib/shared/attachments'
 import { imgSrc } from '@/lib/shared/compositeText'
@@ -154,7 +158,6 @@ const {
   formInputType,
   choiceRowsForAgentTurn,
   selectedLabelsForQuestion,
-  selectedDemoForInteractive,
   send,
   finishEarly,
   finishAbort,
@@ -245,8 +248,6 @@ const {
   relTime,
   demoGridColsClass,
   demoOptionsOf,
-  selectedDemoOption,
-  useSideBySide,
   queueNotice,
   queueToast,
   hasComposerDraft,
@@ -300,10 +301,74 @@ const liveSettled = (sid: string) => {
   const state = liveHost?.store.sessions[sid]?.state
   return !!state && !isLiveBusy(state)
 }
-/** Older requests keep a headline; the newest waits for the agent like the reply card. */
-function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
-  if (liveCards.value.newest.get(live.sid) !== i) return true
-  return live.op === 'accept' || live.op === 'discard' || liveSettled(live.sid)
+type PreviewWall = {
+  question: ReactQuestion
+  focusId: string
+  readonly: boolean
+  turnIndex: number
+}
+
+const previewWall = ref<PreviewWall | null>(null)
+
+function hasDemoHtml(o: { demoHtml?: string } | undefined): boolean {
+  return !!o?.demoHtml?.trim()
+}
+
+const wallDemos = computed(() => (previewWall.value ? demoOptionsOf(previewWall.value.question) : []))
+const wallGridClass = computed(() => demoGridColsClass(wallDemos.value.length || 1))
+
+function previewOptionSelector(optionId: string): string {
+  const escaped = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(optionId) : optionId
+  return `[data-preview-option="${escaped}"]`
+}
+
+function scrollPreviewIntoView(optionId: string) {
+  void nextTick(() => {
+    const node = document.querySelector(previewOptionSelector(optionId))
+    if (node instanceof HTMLElement && typeof node.scrollIntoView === 'function') {
+      node.scrollIntoView({ block: 'nearest' })
+    }
+  })
+}
+
+/** Open the shared enlarge window for one question. Does not change the selection. */
+function openPreviewWall(q: ReactQuestion, optionId: string, readonly: boolean, turnIndex: number) {
+  previewWall.value = { question: q, focusId: optionId, readonly, turnIndex }
+  scrollPreviewIntoView(optionId)
+}
+
+function closePreviewWall() {
+  previewWall.value = null
+}
+
+function wallSelected(o: ReactOption): boolean {
+  const wall = previewWall.value
+  if (!wall) return false
+  if (wall.readonly) {
+    return selectedLabelsForQuestion(wall.question, choiceRowsForAgentTurn(wall.turnIndex)).includes(o.label)
+  }
+  return isSelected(wall.question.id, o.id)
+}
+
+function onWallPick(o: ReactOption) {
+  const wall = previewWall.value
+  if (!wall || wall.readonly) return
+  if (!isActiveTurn(wall.turnIndex) || curQuestion.value?.id !== wall.question.id) return
+  pick(wall.question, o.id)
+}
+
+/** Leave the window when the deck moves, the round is submitted, or the live card goes away. */
+watch(
+  () => `${activeQuestions.value.map((q) => q.id).join('|')}@${step.value}@${thinking.value ? 1 : 0}`,
+  () => {
+    if (previewWall.value) closePreviewWall()
+  },
+)
+
+/** The newest request keeps only a loading headline until the agent stops working on it. */
+function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number) {
+  if (liveCards.value.newest.get(live.sid) !== i || live.op === 'accept' || live.op === 'discard') return false
+  return isLiveBusy(liveHost?.store.sessions[live.sid]?.state)
 }
 </script>
 
@@ -412,9 +477,10 @@ function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
           </div>
           <!-- Live variant request card (state from the preview drawer, if any) -->
           <LiveVariantCard
-            v-if="liveHost && t.role === 'human' && t.live && showHumanLiveCard(t.live, i)"
+            v-if="liveHost && t.role === 'human' && t.live"
             :live-ref="t.live"
-            :compact="liveCards.latest.get(t.live.sid) !== i"
+            :compact="liveCards.latest.get(t.live.sid) !== i || humanLiveCardLoading(t.live, i)"
+            :loading="humanLiveCardLoading(t.live, i)"
           />
           <!-- annotation chips attached to this human review turn -->
           <div v-if="t.role === 'human' && t.annotations && t.annotations.length" class="mb-1.5 flex flex-wrap gap-1.5 justify-end">
@@ -478,22 +544,23 @@ function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
           </div>
           <!-- Agent busy / thought / message (Demo: four-phase + restrained done) -->
           <template v-else-if="t.role === 'agent'">
-            <!-- Waiting first token: dots + 思考中… inside bubble -->
+            <!-- Waiting first token: pulse + 思考中… inside bubble -->
             <div
               v-if="t.streaming && !t.thought && !agentHasMessage(t)"
               class="inline-flex items-center gap-2.5 rounded-lg border border-line bg-elevated px-3 py-2 text-[13px] text-txt3"
               data-testid="clarify-busy-placeholder"
             >
-              <span class="typing-dots" aria-hidden="true"><i /><i /><i /></span>
+              <InboxMotionMark kind="pulse" />
               <span>{{ translate('pages.clarify.thinkingBusy') }}</span>
             </div>
             <!-- Status: 思考中… (has thought, no message yet) -->
             <div
               v-else-if="t.streaming && t.thought && !agentHasMessage(t)"
-              class="mb-1.5 text-[12px] font-normal text-txt3"
+              class="mb-1.5 inline-flex items-center gap-2 text-[12px] font-normal text-txt3"
               data-testid="clarify-busy-status"
             >
-              {{ translate('pages.clarify.thinkingBusy') }}
+              <InboxMotionMark kind="pulse" />
+              <span>{{ translate('pages.clarify.thinkingBusy') }}</span>
             </div>
             <!-- Status: 输出中 (shimmer) while streaming message -->
             <div
@@ -649,33 +716,42 @@ function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
                         <span class="ml-auto shrink-0 rounded border border-line px-1.5 py-0.5 text-[10px] font-normal text-txt3">{{ curQuestion.allowMultiple ? translate('pages.clarify.multiple') : translate('pages.clarify.single') }}</span>
                       </div>
                       <div class="space-y-1.5">
-                        <button
-                          v-for="o in curQuestion.options"
-                          :key="o.id"
-                          type="button"
-                          class="flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-[12px] transition-colors"
-                          :class="isSelected(curQuestion.id, o.id) ? 'border-accent bg-accent-dim/60 text-txt' : 'border-line bg-surface text-txt2 hover:border-line-strong'"
-                          data-testid="clarify-option-btn"
-                          @click="pick(curQuestion, o.id)"
-                        >
-                          <span
-                            class="rounded-lg flex h-4 w-4 shrink-0 items-center justify-center border"
-                            :class="[
-                              curQuestion.allowMultiple ? 'rounded' : 'rounded-full',
-                              isSelected(curQuestion.id, o.id) ? 'border-accent bg-accent text-white' : 'border-line-strong',
-                            ]"
+                        <div v-for="o in curQuestion.options" :key="o.id" class="flex w-full items-stretch gap-1.5">
+                          <button
+                            type="button"
+                            class="flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-[12px] transition-colors"
+                            :class="isSelected(curQuestion.id, o.id) ? 'border-accent bg-accent-dim/60 text-txt' : 'border-line bg-surface text-txt2 hover:border-line-strong'"
+                            data-testid="clarify-option-btn"
+                            @click="pick(curQuestion, o.id)"
                           >
-                            <Icon v-if="isSelected(curQuestion.id, o.id)" name="check" :size="10" />
-                          </span>
-                          <span
-                            class="min-w-0 flex-1 break-words [overflow-wrap:anywhere]"
-                            data-testid="clarify-option-label"
-                          >{{ o.label }}</span>
-                          <span
-                            v-if="o.recommended"
-                            class="ml-auto shrink-0 rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-2"
-                          >{{ translate('pages.clarify.recommended') }}</span>
-                        </button>
+                            <span
+                              class="rounded-lg flex h-4 w-4 shrink-0 items-center justify-center border"
+                              :class="[
+                                curQuestion.allowMultiple ? 'rounded' : 'rounded-full',
+                                isSelected(curQuestion.id, o.id) ? 'border-accent bg-accent text-white' : 'border-line-strong',
+                              ]"
+                            >
+                              <Icon v-if="isSelected(curQuestion.id, o.id)" name="check" :size="10" />
+                            </span>
+                            <span
+                              class="min-w-0 flex-1 break-words [overflow-wrap:anywhere]"
+                              data-testid="clarify-option-label"
+                            >{{ o.label }}</span>
+                            <span
+                              v-if="o.recommended"
+                              class="ml-auto shrink-0 rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-2"
+                            >{{ translate('pages.clarify.recommended') }}</span>
+                          </button>
+                          <button
+                            v-if="hasDemoHtml(o)"
+                            type="button"
+                            class="inline-flex shrink-0 items-center gap-0.5 self-center rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] text-txt2 transition-colors hover:text-txt"
+                            data-testid="clarify-option-enlarge"
+                            @click="openPreviewWall(curQuestion, o.id, false, i)"
+                          >
+                            <Icon name="expand" :size="11" />{{ translate('pages.clarify.demoEnlarge') }}
+                          </button>
+                        </div>
                       </div>
                       <div
                         class="mt-1.5 flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-[12px] transition-colors"
@@ -701,29 +777,6 @@ function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
                           class="input min-h-0 min-w-0 flex-1 border-0 bg-transparent p-0 text-[12px] shadow-none focus:border-transparent focus:ring-0 [overflow-wrap:anywhere]"
                           :placeholder="translate('pages.clarify.otherPlaceholder')"
                           data-testid="clarify-other-input"
-                        />
-                      </div>
-
-                      <!-- Demo previews (options with demoHtml) -->
-                      <div v-if="demoOptionsOf(curQuestion).length" class="mt-2.5">
-                        <div
-                          v-if="useSideBySide(demoOptionsOf(curQuestion))"
-                          class="grid gap-2.5"
-                          :class="demoGridColsClass(demoOptionsOf(curQuestion).length)"
-                        >
-                          <ClarifyDemoFrame
-                            v-for="o in demoOptionsOf(curQuestion)"
-                            :key="o.id"
-                            :label="o.label"
-                            :html="o.demoHtml!"
-                            :highlighted="isSelected(curQuestion.id, o.id)"
-                          />
-                        </div>
-                        <ClarifyDemoFrame
-                          v-else-if="selectedDemoForInteractive(curQuestion)"
-                          :label="selectedDemoForInteractive(curQuestion)!.label"
-                          :html="selectedDemoForInteractive(curQuestion)!.demoHtml!"
-                          highlighted
                         />
                       </div>
                     </div>
@@ -770,7 +823,7 @@ function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
               </div>
             </div>
 
-            <!-- read-only history: show demo previews when demoHtml present -->
+            <!-- read-only history: prompt, chosen labels, and enlarge — previews stay in the window -->
             <div v-else class="mt-2 rounded-lg border border-n-clarify/20 bg-n-clarify/5 px-3 py-2">
               <div class="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-txt3">
                 <Icon name="chat" :size="12" class="text-n-clarify" />
@@ -793,28 +846,27 @@ function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
                     data-testid="clarify-recommended-chip"
                   >{{ translate('pages.clarify.recommendedLabel', { label: o.label }) }}</span>
                 </div>
-                <div v-if="demoOptionsOf(q).length" class="mt-1.5">
+                <div v-if="demoOptionsOf(q).length" class="mt-1.5 space-y-1">
                   <div
-                    v-if="useSideBySide(demoOptionsOf(q))"
-                    class="grid gap-2.5"
-                    :class="demoGridColsClass(demoOptionsOf(q).length)"
+                    v-for="o in demoOptionsOf(q)"
+                    :key="o.id"
+                    class="flex items-center gap-2 text-[12px] text-txt2"
+                    data-testid="clarify-history-option"
                   >
-                    <ClarifyDemoFrame
-                      v-for="o in demoOptionsOf(q)"
-                      :key="o.id"
-                      :label="o.label"
-                      :html="o.demoHtml!"
-                      :highlighted="selectedLabelsForQuestion(q, choiceRowsForAgentTurn(i)).includes(o.label)"
-                      :selected="selectedLabelsForQuestion(q, choiceRowsForAgentTurn(i)).includes(o.label)"
-                    />
+                    <span class="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{{ o.label }}</span>
+                    <span
+                      v-if="selectedLabelsForQuestion(q, choiceRowsForAgentTurn(i)).includes(o.label)"
+                      class="shrink-0 text-accent"
+                    >✓ {{ translate('pages.clarify.demoSelected') }}</span>
+                    <button
+                      type="button"
+                      class="inline-flex shrink-0 items-center gap-0.5 rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] text-txt2 transition-colors hover:text-txt"
+                      data-testid="clarify-option-enlarge"
+                      @click="openPreviewWall(q, o.id, true, i)"
+                    >
+                      <Icon name="expand" :size="11" />{{ translate('pages.clarify.demoEnlarge') }}
+                    </button>
                   </div>
-                  <ClarifyDemoFrame
-                    v-else-if="selectedDemoOption(q, selectedLabelsForQuestion(q, choiceRowsForAgentTurn(i)))"
-                    :label="selectedDemoOption(q, selectedLabelsForQuestion(q, choiceRowsForAgentTurn(i)))!.label"
-                    :html="selectedDemoOption(q, selectedLabelsForQuestion(q, choiceRowsForAgentTurn(i)))!.demoHtml!"
-                    highlighted
-                    selected
-                  />
                 </div>
               </div>
             </div>
@@ -916,7 +968,7 @@ function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
       </div>
       </template>
       <div v-if="thinking && !validating && liveAgentIdx < 0" class="flex items-center gap-2 pl-9 text-[12px] text-txt3">
-        <span class="typing-dots"><i /><i /><i /></span>
+        <InboxMotionMark kind="pulse" />
         {{ translate('pages.clarify.thinking') }}
       </div>
     </div>
@@ -1117,6 +1169,46 @@ function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
       </button>
     </div>
   </div>
+
+  <AppModal
+    :open="!!previewWall"
+    :title="translate('common.htmlPreview.enlargeTitle')"
+    :width="900"
+    close-on-esc
+    @close="closePreviewWall"
+  >
+    <div
+      v-if="previewWall"
+      class="grid gap-2.5"
+      :class="wallGridClass"
+      data-testid="clarify-preview-wall"
+    >
+      <div
+        v-for="o in wallDemos"
+        :key="o.id"
+        class="relative min-w-0"
+        :data-preview-option="o.id"
+        data-testid="clarify-preview-card"
+      >
+        <div :class="previewWall.readonly ? '' : 'pointer-events-none'">
+          <ClarifyDemoFrame
+            :label="o.label"
+            :html="o.demoHtml || ''"
+            :highlighted="wallSelected(o)"
+            :selected="wallSelected(o)"
+          />
+        </div>
+        <button
+          v-if="!previewWall.readonly"
+          type="button"
+          class="absolute inset-0 rounded-lg"
+          :aria-label="o.label"
+          data-testid="clarify-preview-pick"
+          @click="onWallPick(o)"
+        />
+      </div>
+    </div>
+  </AppModal>
 
   <!-- Human history attachment image preview (single slot; no gallery / Esc) -->
   <ChatImagePreviewModal

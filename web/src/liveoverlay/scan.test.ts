@@ -122,6 +122,22 @@ describe('scan', () => {
     expect(firstAnimate).toHaveBeenCalledOnce()
   })
 
+  it('re-applying the current candidate leaves its fade running', () => {
+    document.body.innerHTML = '<div data-grasp-live="sid001"><section data-grasp-variant="1">one</section><section data-grasp-variant="2" hidden>two</section></div>'
+    vi.stubGlobal('matchMedia', () => ({ matches: false }))
+    const w = scanWrappers()[0]
+    const animation = { cancel: vi.fn(), onfinish: null } as unknown as Animation
+    Object.defineProperty(w.variants[1].el, 'animate', { value: vi.fn(() => animation) })
+    showVariant(w, 1)
+    showVariant(w, 2)
+    showVariant(w, 2)
+    showVariant(w, 2)
+    expect(animation.cancel).not.toHaveBeenCalled()
+    expect(w.variants[0].el.hidden).toBe(true)
+    expect(getComputedStyle(w.variants[0].el).display).toBe('none')
+    expect(w.variants[1].el.hidden).toBe(false)
+  })
+
   it('switches immediately when reduced motion is requested', () => {
     document.body.innerHTML = '<div data-grasp-live="sid001"><section data-grasp-variant="1">one</section><section data-grasp-variant="2" hidden>two</section></div>'
     vi.stubGlobal('matchMedia', () => ({ matches: true }))

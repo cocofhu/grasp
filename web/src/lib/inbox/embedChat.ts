@@ -1,3 +1,4 @@
+import { isLoopbackHostname } from '@/lib/inbox/gateShareLink'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import type { ThemeName } from '@/lib/shared/theme'
 
@@ -66,9 +67,30 @@ export function parseEmbedImageMessage(data: unknown): { action: EmbedImageActio
   return { action: m.action, label }
 }
 
+/**
+ * Host the reviewer's browser can open. Docker publishes the preview on every
+ * interface when bindIP is loopback, but the stored direct URL still says
+ * 127.0.0.1. A page opened at a real host must use that host and the same port.
+ */
+export function directPreviewReachableUrl(directUrl: string, pageHost?: string): string {
+  const raw = directUrl.trim()
+  if (!raw) return directUrl
+  let u: URL
+  try {
+    u = new URL(raw)
+  } catch {
+    return directUrl
+  }
+  if (!isLoopbackHostname(u.hostname)) return directUrl
+  const host = (pageHost ?? (typeof window !== 'undefined' ? window.location.hostname : '')).trim()
+  if (!host || isLoopbackHostname(host)) return directUrl
+  u.hostname = host
+  return u.toString()
+}
+
 /** Direct preview URL carrying a drawer ticket for the in-page pick script (preview-pick.js). */
 export function directPreviewEmbedUrl(directUrl: string, t: EmbedTicket, theme: ThemeName, lang?: string): string {
-  const base = directUrl.split('#')[0]
+  const base = directPreviewReachableUrl(directUrl).split('#')[0]
   const q = new URLSearchParams({ run: t.runId, node: t.nodeId, ticket: t.ticket, theme })
   if (lang) q.set('lang', lang)
   return `${base}#__grasp_embed&${q.toString()}`

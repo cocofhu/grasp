@@ -136,6 +136,19 @@ describe('preview-pick.js copies', () => {
     }
   })
 
+  it('keeps light chat hover purple with white text above the generic light button hover', () => {
+    expect(SCRIPT).toContain(
+      '.light .chat:hover{background:linear-gradient(135deg,#7c6cff,#9b6cff);border-color:#a78bfa;color:#fff}',
+    )
+    expect(SCRIPT).toContain(
+      '.light .chat[aria-expanded="true"]:hover{background:linear-gradient(135deg,#5b4bd6,#7c3aed);color:#fff}',
+    )
+    expect(SCRIPT).toContain('.light .chat{background:linear-gradient(135deg,#6d5dfc,#8b5cf6);border-color:#8b5cf6;color:#fff}')
+    expect(SCRIPT).toContain('.light button:hover{background:#f4f4f5}')
+    expect(SCRIPT).toContain('.chat:hover{background:linear-gradient(135deg,#7c6cff,#9b6cff);border-color:#a78bfa}')
+    expect(SCRIPT).toContain('.light .live:hover{background:#fff;border-color:#c4b5fd;color:#5b21b6}')
+  })
+
   it('puts the chat drawer above the live action card', () => {
     const drawer = SCRIPT.match(/\.drawer\{[^}]*z-index:(\d+)/)
     expect(drawer?.[1]).toBe('2147483647')
