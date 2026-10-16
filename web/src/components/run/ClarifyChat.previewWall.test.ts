@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { ClarifyTurn, ReactOption, ReactQuestion } from '@/lib/shared/types'
+import { CLARIFY_DEMO_ESCAPE } from '@/lib/inbox/clarifyDemoWindow'
 import { EMBED_DEMO_PREVIEW_KEY } from '@/lib/inbox/embedDemoPreview'
 import ClarifyChat from './ClarifyChat.vue'
 
@@ -211,6 +212,9 @@ describe('ClarifyChat option preview window', () => {
     const scroller = wrapper.get('[data-testid="clarify-scroller"]').element
     expect(scroller.contains(dialog())).toBe(false)
     expect(scrollerPreviews(wrapper)).toHaveLength(3)
+    expect(wallPreviews()[0]?.textContent).toContain(CLARIFY_DEMO_ESCAPE)
+    expect(scrollerPreviews(wrapper).some((el) => el.textContent?.includes(CLARIFY_DEMO_ESCAPE))).toBe(false)
+    expect(document.body.querySelector('.fixed.inset-0')).toBeNull()
 
     await wrapper.get('[data-testid="clarify-inline-demos"]').findAll('[data-testid="clarify-demo-enlarge"]')[1]!.trigger('click')
     await flushPromises()
@@ -329,11 +333,27 @@ describe('ClarifyChat option preview window', () => {
     wrapper.unmount()
   })
 
-  it('closes from the header, the backdrop, and Escape without clearing the choice', async () => {
+  it('closes from the header and Escape without clearing the choice or covering the chat', async () => {
     const wrapper = mountChat([agent([fourUp])])
     await flushPromises()
     await wrapper.findAll('[data-testid="clarify-option-btn"]')[0]!.trigger('click')
     await flushPromises()
+    const root = wrapper.get('[data-review-composer]').element
+    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
+      x: 860,
+      y: 0,
+      width: 420,
+      height: 900,
+      left: 860,
+      top: 0,
+      right: 1280,
+      bottom: 900,
+      toJSON() {
+        return {}
+      },
+    } as DOMRect)
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1280)
+    vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(900)
 
     async function open() {
       await wrapper.findAll('[data-testid="clarify-option-enlarge"]')[1]!.trigger('click')
@@ -342,20 +362,48 @@ describe('ClarifyChat option preview window', () => {
     }
 
     await open()
-    ;(document.body.querySelector('.fixed.inset-0.z-50 .h-14 button') as HTMLButtonElement).click()
+    const box = dialog()!
+    expect(box.className).not.toContain('inset-0')
+    expect(document.body.querySelector('.fixed.inset-0')).toBeNull()
+    const left = Number.parseFloat(box.style.left)
+    const width = Number.parseFloat(box.style.width)
+    expect(left + width).toBeLessThanOrEqual(860)
+    expect(box.contains(wrapper.get('[data-testid="clarify-inline-demos"]').element)).toBe(false)
+    ;(document.body.querySelector('[data-testid="clarify-demo-window-close"]') as HTMLButtonElement).click()
     await flushPromises()
     expect(dialog()).toBeNull()
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
     expect(scrollerPreviews(wrapper)).toHaveLength(1)
 
     await open()
-    ;(document.body.querySelector('.fixed.inset-0.z-50 > .absolute.inset-0') as HTMLElement).click()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await flushPromises()
     expect(dialog()).toBeNull()
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
 
     await open()
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    const frame = document.createElement('iframe')
+    dialog()!.appendChild(frame)
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: CLARIFY_DEMO_ESCAPE }, source: frame.contentWindow }),
+    )
+    await flushPromises()
+    expect(dialog()).toBeNull()
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
+
+    await open()
+    const owned = document.createElement('iframe')
+    dialog()!.appendChild(owned)
+    const stranger = document.createElement('iframe')
+    document.body.appendChild(stranger)
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: CLARIFY_DEMO_ESCAPE }, source: stranger.contentWindow }),
+    )
+    await flushPromises()
+    expect(dialog()).toBeTruthy()
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: CLARIFY_DEMO_ESCAPE }, source: owned.contentWindow }),
+    )
     await flushPromises()
     expect(dialog()).toBeNull()
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
@@ -363,11 +411,12 @@ describe('ClarifyChat option preview window', () => {
   })
 
   it('places the window above the drawer and outside the chat scroller', async () => {
-    const modalSrc = readFileSync(join(here, '../ui/AppModal.vue'), 'utf8')
+    const chatSrc = readFileSync(join(here, 'ClarifyChat.vue'), 'utf8')
     const drawerSrc = readFileSync(join(here, '../ui/AppDrawer.vue'), 'utf8')
-    const modalZ = Number(modalSrc.match(/\bz-(\d+)\b/)?.[1])
+    const windowZ = Number(chatSrc.match(/data-testid="clarify-demo-window"[\s\S]{0,240}\bz-(\d+)\b/)?.[1]
+      ?? chatSrc.match(/\bz-(\d+)\b[\s\S]{0,240}data-testid="clarify-demo-window"/)?.[1])
     const drawerZ = Number(drawerSrc.match(/\bz-(\d+)\b/)?.[1])
-    expect(modalZ).toBeGreaterThan(drawerZ)
+    expect(windowZ).toBeGreaterThan(drawerZ)
 
     const wrapper = mountChat([agent([fourUp])])
     await flushPromises()
@@ -375,6 +424,7 @@ describe('ClarifyChat option preview window', () => {
     await flushPromises()
     const box = dialog()
     expect(box?.closest('.z-50')).toBeTruthy()
+    expect(box?.closest('.fixed.inset-0')).toBeNull()
     const scroller = wrapper.get('[data-testid="clarify-scroller"]').element
     expect(scroller.contains(box)).toBe(false)
     expect(document.body.contains(box)).toBe(true)
