@@ -134,7 +134,7 @@ beforeEach(() => {
   vi.useFakeTimers()
 })
 
-function mountNav() {
+function mountNav(options?: { realIcon?: boolean }) {
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
@@ -143,7 +143,7 @@ function mountNav() {
   return mount(AppSidebarNav, {
     global: {
       plugins: [i18n],
-      stubs: { Icon: true },
+      stubs: options?.realIcon ? {} : { Icon: true },
       directives: { 'hover-ink': vHoverInk },
     },
   })
@@ -777,7 +777,7 @@ describe('AppSidebarNav', () => {
       }
     }
 
-    expectRowStart(rows[0])
+    expectRowStart(rows[0], 'nav-pending-type-icon')
     expectRowStart(rows[1], 'inbox-motion-spin')
     expectRowStart(rows[2], 'inbox-motion-spin')
     expect(rows[2].get('.nav-row-title').text()).toBe(longLabel)
@@ -788,7 +788,7 @@ describe('AppSidebarNav', () => {
     routeState.path = '/gates'
     await nextTick()
     expect(rows[0].classes()).toContain('active')
-    expectRowStart(rows[0])
+    expectRowStart(rows[0], 'nav-pending-type-icon')
 
     const heading = pending.get('div')
     expect(heading.classes()).toContain('px-3')
@@ -803,6 +803,137 @@ describe('AppSidebarNav', () => {
     expect(routerMocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-3', node: 'long' } })
 
     style.remove()
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('keeps a selected pending title at weight 400 and selected nav items at 600', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const dir = dirname(fileURLToPath(import.meta.url))
+    const css = readFileSync(join(dir, '../../styles/global.css'), 'utf8')
+    expect(css).toMatch(/\.nav-item\.active\s*\{[^}]*bg-elevated[^}]*font-semibold[^}]*text-txt/s)
+    const src = readFileSync(join(dir, 'AppSidebarNav.vue'), 'utf8')
+    const titleRule = src.match(/\.nav-row-title\s*\{[^}]*\}/)?.[0] ?? ''
+    expect(titleRule).toMatch(/font-weight:\s*400/)
+
+    gateMocks.displayedItems.value = [
+      { type: 'clarify', runId: 'run-1', nodeId: 'c1', label: '需求澄清', kind: 'clarify', state: 'starting', workflowName: 'w' },
+    ]
+    gateMocks.activeInboxKey.value = 'run-1:c1'
+    routeState.path = '/gates'
+    const wrapper = mountNav()
+    await flushPromises()
+
+    const style = document.createElement('style')
+    style.textContent = `${titleRule}\n.nav-item.active { font-weight: 600; }`
+    document.head.appendChild(style)
+    document.body.appendChild(wrapper.element)
+
+    const pendingRow = wrapper.get('[data-testid="nav-pending-row"]')
+    const pendingTitle = pendingRow.get('.nav-row-title')
+    expect(pendingRow.classes()).toContain('active')
+    expect(getComputedStyle(pendingTitle.element).fontWeight).toBe('400')
+    for (const link of wrapper.findAll('a.nav-item')) {
+      expect(link.find('.nav-row-title').exists()).toBe(false)
+    }
+
+    routeState.path = '/runs'
+    await nextTick()
+    const runs = wrapper.get('[data-to="/runs"]')
+    expect(runs.classes()).toContain('active')
+    expect(pendingRow.classes()).not.toContain('active')
+    expect(getComputedStyle(runs.element).fontWeight).toBe('600')
+    expect(getComputedStyle(pendingTitle.element).fontWeight).toBe('400')
+    for (const to of ['/dashboard', '/projects', '/runs', '/settings']) {
+      expect(wrapper.get(`[data-to="${to}"]`).find('.nav-row-title').exists()).toBe(false)
+    }
+
+    routeState.path = '/settings'
+    await flushPromises()
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(400)
+    await flushPromises()
+    const settingsChrome = wrapper.get('[data-testid="nav-settings-chrome"]')
+    const activeSettings = settingsChrome.findAll('a.nav-item').find((link) => link.classes().includes('active'))
+    expect(activeSettings).toBeTruthy()
+    expect(getComputedStyle(activeSettings!.element).fontWeight).toBe('600')
+    expect(settingsChrome.find('.nav-row-title').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
+
+    style.remove()
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('keeps executing row marks dynamic and shows a static type icon only while waiting', async () => {
+    gateMocks.displayedItems.value = [
+      { type: 'clarify', runId: 'run-s', nodeId: 's', label: '启动中', kind: 'clarify', state: 'starting', workflowName: 'w' },
+      { type: 'clarify', runId: 'run-p', nodeId: 'p', label: '正在回复', kind: 'review', state: 'replying', workflowName: 'w' },
+      { type: 'clarify', runId: 'run-f', nodeId: 'f', label: '启动失败', kind: 'clarify', state: 'starting', workflowName: 'w' },
+      { type: 'clarify', runId: 'run-c', nodeId: 'c', label: '需求澄清', kind: 'clarify', workflowName: 'w' },
+      { type: 'clarify', runId: 'run-r', nodeId: 'r', label: '复审', kind: 'review', workflowName: 'w' },
+      { type: 'gate', runId: 'run-g', nodeId: 'g', title: '人工门禁', workflowName: 'w' },
+    ]
+    gateMocks.startFailedKeys.value = ['run-f:f']
+    const wrapper = mountNav({ realIcon: true })
+    await flushPromises()
+
+    const rows = wrapper.get('[data-testid="nav-pending-approvals"]').findAll('[data-testid="nav-pending-row"]')
+    expect(rows).toHaveLength(6)
+
+    const expectOnlyMotion = (row: (typeof rows)[number], testId: 'inbox-motion-spin' | 'inbox-motion-pulse') => {
+      const mark = row.get(`[data-testid="${testId}"]`)
+      expect(row.findAll('svg')).toHaveLength(1)
+      expect(mark.element.tagName.toLowerCase()).toBe('svg')
+      expect(row.find('[data-testid="nav-pending-type-icon"]').exists()).toBe(false)
+      expect(row.get('.nav-row-title').element.nextElementSibling).toBe(mark.element)
+    }
+    expectOnlyMotion(rows[0], 'inbox-motion-spin')
+    expect(rows[0].attributes('data-motion')).toBe('spin')
+    expectOnlyMotion(rows[1], 'inbox-motion-pulse')
+    expect(rows[1].attributes('data-motion')).toBe('pulse')
+
+    expect(rows[2].attributes('data-motion')).toBeUndefined()
+    expect(rows[2].findAll('svg')).toHaveLength(0)
+    expect(rows[2].find('[data-testid="nav-pending-type-icon"]').exists()).toBe(false)
+    expect(rows[2].get('.nav-row-title').element.nextElementSibling).toBeNull()
+
+    const expectTypeIcon = (row: (typeof rows)[number], toneClass: string, glyph: string) => {
+      expect(row.find('[data-testid="inbox-motion-spin"]').exists()).toBe(false)
+      expect(row.find('[data-testid="inbox-motion-pulse"]').exists()).toBe(false)
+      expect(row.findAll('svg')).toHaveLength(1)
+      const icon = row.get('[data-testid="nav-pending-type-icon"]')
+      expect(icon.attributes('width')).toBe('14')
+      expect(icon.attributes('height')).toBe('14')
+      expect(icon.classes()).toContain('nav-row-type-icon')
+      expect(icon.classes()).toContain(toneClass)
+      expect(icon.html()).toContain(glyph)
+      expect(row.get('.nav-row-title').element.nextElementSibling).toBe(icon.element)
+    }
+    expectTypeIcon(rows[3], 'text-n-clarify', 'M21 12a8')
+    expect(rows[3].html()).not.toContain('M12 3l8 4')
+    expectTypeIcon(rows[4], 'text-n-review', 'M21 12a8')
+    expectTypeIcon(rows[5], 'text-warn', 'M12 3l8 4')
+    expect(rows[5].html()).not.toContain('M21 12a8')
+
+    gateMocks.activeInboxKey.value = 'run-c:c'
+    routeState.path = '/gates'
+    await nextTick()
+    expect(rows[3].classes()).toContain('active')
+    expectTypeIcon(rows[3], 'text-n-clarify', 'M21 12a8')
+
+    gateMocks.activeInboxKey.value = 'run-s:s'
+    await nextTick()
+    expect(rows[0].classes()).toContain('active')
+    expectOnlyMotion(rows[0], 'inbox-motion-spin')
+
+    gateMocks.activeInboxKey.value = 'run-p:p'
+    await nextTick()
+    expect(rows[1].classes()).toContain('active')
+    expectOnlyMotion(rows[1], 'inbox-motion-pulse')
+
     wrapper.unmount()
     vi.useRealTimers()
   })

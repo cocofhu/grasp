@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
 import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
 import { sidebarNavGroups } from '@/data/sidebarNav'
-import { isReplyingInboxItem, isStartingInboxItem } from '@/lib/inbox/inboxDisplay'
+import { inboxBadgeTone, isReplyingInboxItem, isStartingInboxItem } from '@/lib/inbox/inboxDisplay'
 import type { InboxItem } from '@/lib/shared/types'
 import {
   isSettingsChrome,
@@ -85,6 +85,16 @@ function rowMotion(it: InboxItem): 'spin' | 'pulse' | null {
   if (isStartingInboxItem(it)) return 'spin'
   if (isReplyingInboxItem(it)) return 'pulse'
   return null
+}
+
+/** Waiting on a person: static type mark. Executing rows keep motion; start-failed rows stay blank. */
+function pendingTypeMarks(it: InboxItem): Array<{ name: 'chat' | 'gate'; toneClass: string }> {
+  if (rowMotion(it) || startFailedKeys.value.includes(itemKey(it))) return []
+  const tone = inboxBadgeTone(it)
+  if (tone === 'replying') return []
+  if (tone === 'gate') return [{ name: 'gate', toneClass: 'text-warn' }]
+  if (tone === 'review') return [{ name: 'chat', toneClass: 'text-n-review' }]
+  return [{ name: 'chat', toneClass: 'text-n-clarify' }]
 }
 
 function isPendingActive(it: InboxItem): boolean {
@@ -426,6 +436,18 @@ const settingsItems = settingsNavItems
         <span class="nav-row-title min-w-0 flex-1 truncate text-start">{{ rowTitle(it) }}</span>
         <InboxMotionMark v-if="rowMotion(it) === 'spin'" kind="spin" />
         <InboxMotionMark v-else-if="rowMotion(it) === 'pulse'" kind="pulse" />
+        <template v-else>
+          <Icon
+            v-for="mark in pendingTypeMarks(it)"
+            :key="mark.name"
+            :name="mark.name"
+            :size="14"
+            class="nav-row-type-icon"
+            :class="mark.toneClass"
+            data-testid="nav-pending-type-icon"
+            aria-hidden="true"
+          />
+        </template>
       </button>
     </div>
     </div>
@@ -453,9 +475,15 @@ const settingsItems = settingsNavItems
 </template>
 
 <style scoped>
-/* Buttons default to centered text. Pending titles start at the row edge. */
+/* Buttons default to centered text. Pending titles start at the row edge.
+   Weight stays 400 so the active nav rule (600) does not bold this title. */
 .nav-row-title {
   text-align: start;
+  font-weight: 400;
+}
+
+.nav-row-type-icon {
+  flex: none;
 }
 
 .nav-chrome-viewport {
