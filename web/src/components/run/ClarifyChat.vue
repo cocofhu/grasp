@@ -300,10 +300,10 @@ const liveSettled = (sid: string) => {
   const state = liveHost?.store.sessions[sid]?.state
   return !!state && !isLiveBusy(state)
 }
-/** Older requests keep a headline; the newest waits for the agent like the reply card. */
-function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
-  if (liveCards.value.newest.get(live.sid) !== i) return true
-  return live.op === 'accept' || live.op === 'discard' || liveSettled(live.sid)
+/** The newest request keeps only a loading headline until the agent stops working on it. */
+function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number) {
+  if (liveCards.value.newest.get(live.sid) !== i || live.op === 'accept' || live.op === 'discard') return false
+  return isLiveBusy(liveHost?.store.sessions[live.sid]?.state)
 }
 </script>
 
@@ -412,9 +412,10 @@ function showHumanLiveCard(live: NonNullable<ClarifyTurn['live']>, i: number) {
           </div>
           <!-- Live variant request card (state from the preview drawer, if any) -->
           <LiveVariantCard
-            v-if="liveHost && t.role === 'human' && t.live && showHumanLiveCard(t.live, i)"
+            v-if="liveHost && t.role === 'human' && t.live"
             :live-ref="t.live"
-            :compact="liveCards.latest.get(t.live.sid) !== i"
+            :compact="liveCards.latest.get(t.live.sid) !== i || humanLiveCardLoading(t.live, i)"
+            :loading="humanLiveCardLoading(t.live, i)"
           />
           <!-- annotation chips attached to this human review turn -->
           <div v-if="t.role === 'human' && t.annotations && t.annotations.length" class="mb-1.5 flex flex-wrap gap-1.5 justify-end">

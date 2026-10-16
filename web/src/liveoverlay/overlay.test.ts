@@ -281,6 +281,27 @@ describe('Live overlay', () => {
     expect(posted.at(-1)).toMatchObject({ op: 'state', current: 1 })
   })
 
+  it('keeps the switcher buttons in place across timer ticks and page mutations', async () => {
+    document.body.innerHTML = wrapperHtml() + '<p id="ticker">0</p>'
+    vi.useFakeTimers()
+    try {
+      make()
+      sessions([{ sid: 'sid001', state: 'ready', mode: 'replace', url: 'http://localhost/pricing', variants: [{ n: 1 }, { n: 2 }] }])
+      const next = q('[data-act="next"]')
+      vi.advanceTimersByTime(3000)
+      for (let i = 1; i <= 5; i++) {
+        document.getElementById('ticker')!.textContent = String(i)
+        await vi.advanceTimersByTimeAsync(100)
+      }
+      expect(q('[data-act="next"]')).toBe(next)
+      ;(next as HTMLButtonElement).click()
+      expect(q('[data-sw="sid001"] .count')?.textContent).toBe('2 / 2')
+      expect(posted.at(-1)).toMatchObject({ op: 'state', current: 2 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps the params row off the switcher when the candidate sits near the viewport bottom', async () => {
     document.body.innerHTML = wrapperHtml()
     const v2 = document.querySelector<HTMLElement>('[data-grasp-variant="2"]')!

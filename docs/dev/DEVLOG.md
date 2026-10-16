@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-16（Live 请求生成中显示加载卡片；切换栏不再吞点击）
+
+- 日期：2026-10-16
+- 范围：`web/src/components/run/ClarifyChat.vue`、`web/src/components/run/LiveVariantCard.vue`、`web/src/liveoverlay/overlay.ts`、`web/src/liveoverlay/scan.ts` 及对应测试；`npm run build:live-overlay` 同步的三份 `live-overlay.js`
+- 做了什么：抽屉里最新一条 Live 请求在 Agent 工作期间不再隐藏卡片，而是显示精简卡片（标题 + 状态）加骨架条和扫光的加载动画（`aria-busy`，减少动态效果时只留静态骨架），完成后照旧在 Agent 回复下方出现可操作卡片。页面切换栏 `renderSwitchers` 只在标记变化时才写 `innerHTML`；`showVariant` 跳过已处于目标显隐状态的根节点，重扫不再取消候选淡入。
+- 为什么：#813。#742 让最新请求的卡片等 Agent 做完才出现，而 Live 生成的请求文字本就不展示，生成期间只剩一个空的「我」气泡。切换栏每秒定时器和整页 `MutationObserver` 触发的重扫都会重建按钮，重建落在 mousedown 与 mouseup 之间时点击丢失；候选带 JS 动效（如「趣味细节」）时重扫持续发生，切换频繁失效且淡入被打断。
+- 如何验证：web `vitest run` 全绿（新增：生成中卡片带 `aria-busy` 与骨架、无控件；定时器与页面变动后 `next` 按钮仍是同一节点且可切换（去掉修复后该用例失败）；重复 `showVariant` 不取消淡入）；`live-variants.spec.ts` 16 条通过；`vue-tsc`、eslint 通过；server `go test ./internal/handlers/`、sandbox `go test ./internal/previewinject/` 通过。本地源码栈 + opencode/DeepSeek 真实跑通：取点标题选「趣味细节」生成，抽屉立即出现加载卡片、无空气泡，约 2 分钟后 3 个候选就绪、加载态消失；页面 DOM 每 30ms 变动时 8 次慢速点击（按住 250ms）全部切换成功，3 秒内切换栏重建 0 次。
+
 ### 2026-10-16（set_preview 任意端口都带取点：注入代理自适应上游）
 
 - 日期：2026-10-16
