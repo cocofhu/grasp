@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-16（优化中英文 README，去 AI 腔并修正首次安装说明）
+
+- 日期：2026-10-16
+- 范围：`README.md`、`README.zh-CN.md`
+- 做了什么：重写中英文 README 文案与排版：去掉录屏下方的规格参数行、对偶式口号句与伪口语文案；将五处碎片化双列表格收拢为自然列表，截图表补齐 `workflow-canvas.webp` 组成 2×2 网格；把「跑通第一个工作流」修正为真实的首次安装向导与「项目凭据」配置流程（而非在 Agent Studio 填 API Key），并补充运行时凭据隔离说明。
+- 为什么：#788 改写后的 README 存在明显模板化表格堆砌、AI 口号腔与伪口语表达，且首次配置 API Key 的入口写成了已拒收密钥的 Agent Studio。
+- 如何验证：核对锚点与内部文档/图片相对路径存在且可达；执行 `node scripts/assert-no-approving-brand.mjs`、`./.github/scripts/actionlint.sh`、`./.github/scripts/shellcheck-error.sh` 全部通过。
+
 ### 2026-10-15（首页文案接回品牌设置「首页副标题」）
 
 - 日期：2026-10-15
