@@ -163,6 +163,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.POST("/runs/:id/cancel", h.CancelRun)
 		api.POST("/runs/:id/resume", h.ResumeRun)
 		api.PATCH("/runs/:id/priority", h.UpdateRunPriority)
+		api.PATCH("/runs/:id/title", h.UpdateRunTitle)
 		api.GET("/runs/:id/variables", h.RunVariables)
 		api.GET("/runs/:id/artifacts", h.RunArtifacts)
 		api.GET("/runs/:id/artifacts/pack", h.PackRunArtifacts)

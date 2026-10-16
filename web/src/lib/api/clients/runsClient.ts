@@ -124,6 +124,11 @@ export const runsClient = {
       method: 'PATCH',
       body: JSON.stringify({ priority }),
     }),
+  updateRunTitle: (id: string, title: string) =>
+    req<{ id: string; title: string }>(`/runs/${id}/title`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title }),
+    }),
   cancelRun: (id: string) => req<{ status: string }>(`/runs/${id}/cancel`, { method: 'POST' }),
   // Hard-delete a completed/failed run. Missing → 404; non-deletable status → 409.
   deleteRun: (id: string) => req<{ status: string }>(`/runs/${id}`, { method: 'DELETE' }),

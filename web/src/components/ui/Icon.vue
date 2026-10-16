@@ -77,6 +77,7 @@ const paths: Record<string, string> = {
   globe: '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
   crosshair: '<circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>',
   tag: '<path d="M20.6 13.4 12 22l-8.6-8.6a5 5 0 0 1 0-7.1l.7-.7a5 5 0 0 1 7.1 0L12 6l.8-.8a5 5 0 0 1 7.1 0l.7.7a5 5 0 0 1 0 7.1z"/><circle cx="7.5" cy="7.5" r="1.2"/>',
+  pin: '<path d="M14.4 2.8 21.2 9.6 16.8 14l1.2 4.4-3.2-2.4L9.6 21.2 8 15.2 2.8 12.8 12 6.4 14.4 2.8z"/>',
   star: '<path d="m12 3.6 2.5 5.1 5.6.8-4 3.9.9 5.6L12 16.3 7 19l.9-5.6-4-3.9 5.6-.8z"/>',
   'star-filled': '<path d="m12 3.6 2.5 5.1 5.6.8-4 3.9.9 5.6L12 16.3 7 19l.9-5.6-4-3.9 5.6-.8z"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.2 2.4c-.8.3-1.2.8-1.2 1.6V14"/><circle cx="12" cy="17" r="1"/>',
@@ -88,7 +89,7 @@ const paths: Record<string, string> = {
 }
 
 /** Icons that render with solid fill (favorited star). */
-const filledNames = new Set(['star-filled', 'stop'])
+const filledNames = new Set(['star-filled', 'stop', 'pin'])
 
 const size = props.size ?? 18
 const body = paths[props.name] ?? paths.dot

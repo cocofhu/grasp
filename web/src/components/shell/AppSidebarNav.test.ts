@@ -27,7 +27,7 @@ const routerMocks = vi.hoisted(() => ({
 const gateMocks = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ref } = require('vue') as typeof import('vue')
-  return {
+  const mocks = {
     peek: vi.fn(),
     refresh: vi.fn(),
     count: { value: 2 },
@@ -36,7 +36,14 @@ const gateMocks = vi.hoisted(() => {
     startFailedKeys: ref<string[]>([]),
     activeInboxKey: ref<string | null>(null),
     itemKey: (it: { runId: string; nodeId: string }) => `${it.runId}:${it.nodeId}`,
+    patchRunTitle: (runId: string, title: string) => {
+      const apply = (rows: Array<Record<string, unknown>>) =>
+        rows.map((row) => (row.runId === runId ? { ...row, runTitle: title } : row))
+      mocks.displayedItems.value = apply(mocks.displayedItems.value)
+      mocks.sidebarExtras.value = apply(mocks.sidebarExtras.value)
+    },
   }
+  return mocks
 })
 
 const notifMocks = vi.hoisted(() => ({
@@ -82,7 +89,18 @@ vi.mock('@/lib/inbox/usePendingGates', () => ({
     startFailedKeys: gateMocks.startFailedKeys,
     activeInboxKey: gateMocks.activeInboxKey,
     itemKey: gateMocks.itemKey,
+    patchRunTitle: gateMocks.patchRunTitle,
   }),
+}))
+
+const apiMocks = vi.hoisted(() => ({
+  updateRunTitle: vi.fn(),
+}))
+
+vi.mock('@/lib/api/api', () => ({
+  api: {
+    updateRunTitle: (...args: unknown[]) => apiMocks.updateRunTitle(...args),
+  },
 }))
 
 vi.mock('@/lib/run/useRunTerminalNotifications', () => ({
@@ -111,6 +129,9 @@ vi.mock('@/lib/run/useWorkflowRunLaunch', () => ({
   }),
 }))
 
+import enNav from '@/locales/en/nav.json'
+import { useAuth } from '@/lib/composables/useAuth'
+import { useToast } from '@/lib/composables/useToast'
 import AppSidebarNav from './AppSidebarNav.vue'
 
 beforeEach(() => {
@@ -131,16 +152,22 @@ beforeEach(() => {
   routeState.path = '/dashboard'
   routeState.query = {}
   routeState.meta = {}
+  localStorage.clear()
+  useAuth().clearUser()
+  apiMocks.updateRunTitle.mockReset()
+  const toast = useToast()
+  for (const item of [...toast.toasts.value]) toast.dismiss(item.id)
   vi.useFakeTimers()
 })
 
-function mountNav() {
+function mountNav(attach = false) {
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
     messages: { 'zh-CN': { ...common, ...pages, ...nav } },
   })
   return mount(AppSidebarNav, {
+    attachTo: attach ? document.body : undefined,
     global: {
       plugins: [i18n],
       stubs: { Icon: true },
@@ -672,9 +699,9 @@ describe('AppSidebarNav', () => {
 
   it('lists pending approvals under the nav and never shows processed records', async () => {
     gateMocks.displayedItems.value = [
-      { type: 'gate', runId: 'run-1', nodeId: 'g1', title: '发布前确认', workflowName: 'w' },
-      { type: 'clarify', runId: 'run-2', nodeId: 'c1', label: '需求规格', kind: 'clarify', state: 'starting', workflowName: 'w' },
-      { type: 'clarify', runId: 'run-3', nodeId: 'r1', label: '代码评审', kind: 'review', state: 'replying', workflowName: 'w' },
+      { type: 'gate', runId: 'run-1', nodeId: 'g1', title: '发布前确认', runTitle: '发布前确认', workflowName: 'w' },
+      { type: 'clarify', runId: 'run-2', nodeId: 'c1', label: '需求规格', runTitle: '需求规格', kind: 'clarify', state: 'starting', workflowName: 'w' },
+      { type: 'clarify', runId: 'run-3', nodeId: 'r1', label: '代码评审', runTitle: '代码评审', kind: 'review', state: 'replying', workflowName: 'w' },
     ]
     gateMocks.startFailedKeys.value = []
     favMocks.displayItems.value = [
@@ -737,10 +764,10 @@ describe('AppSidebarNav', () => {
   it('left-aligns pending row titles, keeping the motion mark at the row end', async () => {
     const longLabel = `需求澄清${'很长的节点名'.repeat(12)}`
     gateMocks.displayedItems.value = [
-      { type: 'gate', runId: 'run-1', nodeId: 'g1', title: '发布前确认', workflowName: 'w' },
-      { type: 'clarify', runId: 'run-2', nodeId: 'c1', label: '需求澄清', kind: 'clarify', state: 'starting', workflowName: 'w' },
-      { type: 'clarify', runId: 'run-3', nodeId: 'long', label: longLabel, kind: 'clarify', state: 'starting', workflowName: 'w' },
-      { type: 'clarify', runId: 'run-4', nodeId: 'pulse', label: '回复中的澄清', kind: 'clarify', state: 'replying', workflowName: 'w' },
+      { type: 'gate', runId: 'run-1', nodeId: 'g1', title: '发布前确认', runTitle: '发布前确认', workflowName: 'w' },
+      { type: 'clarify', runId: 'run-2', nodeId: 'c1', label: '需求澄清', runTitle: '需求澄清', kind: 'clarify', state: 'starting', workflowName: 'w' },
+      { type: 'clarify', runId: 'run-3', nodeId: 'long', label: longLabel, runTitle: longLabel, kind: 'clarify', state: 'starting', workflowName: 'w' },
+      { type: 'clarify', runId: 'run-4', nodeId: 'pulse', label: '回复中的澄清', runTitle: '回复中的澄清', kind: 'clarify', state: 'replying', workflowName: 'w' },
     ]
     const wrapper = mountNav()
     await flushPromises()
@@ -819,6 +846,344 @@ describe('AppSidebarNav', () => {
     expect(wrapper.find('[data-testid="nav-inbox-records"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('待审批')
     expect(wrapper.text()).not.toContain('发布前确认')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('shows run titles, tooltips, and keeps the row link and motion marks', async () => {
+    const repos = '[{"name":"approving","url":"https://git.example/approving.git"}]'
+    gateMocks.displayedItems.value = [
+      { type: 'clarify', runId: 'run-1', nodeId: 'clarify', label: '需求澄清', kind: 'clarify', state: 'starting', workflowName: 'w', runTitle: '把登录做清楚' },
+      { type: 'clarify', runId: 'run-2', nodeId: 'clarify', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '补充空状态文案' },
+      { type: 'clarify', runId: 'run-abc', nodeId: 'empty', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '  ' },
+      { type: 'clarify', runId: 'run-json', nodeId: 'raw', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '{"foo":1}' },
+      { type: 'gate', runId: 'run-repo', nodeId: 'g1', title: '人工门禁', workflowName: 'w', runTitle: repos },
+    ]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    const rows = wrapper.findAll('[data-testid="nav-pending-row"]')
+    expect(rows.map((row) => row.get('.nav-row-title').text())).toEqual([
+      '把登录做清楚',
+      '补充空状态文案',
+      'Run #abc',
+      'Run #json',
+      'approving',
+    ])
+    expect(rows[0].text()).not.toContain('需求澄清')
+    expect(rows[4].text()).not.toContain('[')
+    expect(rows[0].attributes('title')).toBe('把登录做清楚 · 需求澄清')
+    expect(rows[2].attributes('title')).toBe('Run #abc · 需求澄清')
+    expect(rows[4].attributes('title')).toBe('approving · 人工门禁')
+    expect(rows[0].attributes('data-motion')).toBe('spin')
+    expect(rows[0].find('[data-testid="inbox-motion-spin"]').exists()).toBe(true)
+    await rows[1].trigger('click')
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-2', node: 'clarify' } })
+    expect(enNav.nav.pendingPin).toBe('Pin')
+    expect(enNav.nav.pendingUnpin).toBe('Unpin')
+    expect(enNav.nav.pendingRename).toBe('Rename')
+    expect(enNav.nav.pendingNameEmpty).toBe('Name cannot be empty')
+    expect(enNav.nav.pendingNameTooLong).toBe('80 characters maximum')
+    expect(enNav.nav.pendingRenameFailed).toBe('Save failed')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('opens pin and rename from the row menu, and closes it without changing the row', async () => {
+    useAuth().setUser({ username: 'alice', expiresAt: '2099-01-01T00:00:00Z' })
+    gateMocks.sidebarExtras.value = [
+      { type: 'clarify', runId: 'run-e', nodeId: 'e', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '临时行' },
+    ]
+    gateMocks.displayedItems.value = [
+      { type: 'clarify', runId: 'run-b', nodeId: 'b', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '第二条' },
+      { type: 'clarify', runId: 'run-c', nodeId: 'c', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '第三条' },
+      { type: 'clarify', runId: 'run-b', nodeId: 'other', label: '代码评审', kind: 'review', workflowName: 'w', runTitle: '第二条' },
+    ]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    const sourceOrder = () => wrapper.findAll('[data-testid="nav-pending-row"]').map((row) => row.attributes('data-key'))
+    expect(sourceOrder()).toEqual(['run-e:e', 'run-b:b', 'run-c:c', 'run-b:other'])
+
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 30 })
+    wrapper.get('[data-key="run-c:c"]').element.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    await nextTick()
+    const menu = document.querySelector('[data-testid="nav-pending-menu"]')
+    expect(menu).toBeTruthy()
+    expect(menu?.textContent).toContain('置顶')
+    expect(menu?.textContent).toContain('重命名')
+    expect(wrapper.find('[data-testid="nav-pending-rename-input"]').exists()).toBe(false)
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await nextTick()
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    expect(sourceOrder()).toEqual(['run-e:e', 'run-b:b', 'run-c:c', 'run-b:other'])
+
+    wrapper.get('[data-key="run-c:c"]').element.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 30 }),
+    )
+    await nextTick()
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await nextTick()
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    expect(sourceOrder()).toEqual(['run-e:e', 'run-b:b', 'run-c:c', 'run-b:other'])
+
+    const stored = gateMocks.displayedItems.value.map((it) => `${it.runId}:${it.nodeId}`)
+    wrapper.get('[data-key="run-c:c"]').element.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 30 }),
+    )
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-pending-menu-pin"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    expect(sourceOrder()).toEqual(['run-c:c', 'run-e:e', 'run-b:b', 'run-b:other'])
+    expect(wrapper.get('[data-key="run-c:c"]').find('[data-testid="nav-pending-pin"]').exists()).toBe(true)
+    expect(wrapper.get('[data-key="run-b:other"]').find('[data-testid="nav-pending-pin"]').exists()).toBe(false)
+    expect(gateMocks.displayedItems.value.map((it) => `${it.runId}:${it.nodeId}`)).toEqual(stored)
+
+    wrapper.get('[data-key="run-b:b"]').element.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 30 }),
+    )
+    await nextTick()
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')?.textContent).toContain('置顶')
+    ;(document.querySelector('[data-testid="nav-pending-menu-pin"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(sourceOrder()).toEqual(['run-b:b', 'run-c:c', 'run-e:e', 'run-b:other'])
+
+    wrapper.get('[data-key="run-b:b"]').element.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 30 }),
+    )
+    await nextTick()
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')?.textContent).toContain('取消置顶')
+    ;(document.querySelector('[data-testid="nav-pending-menu-pin"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(sourceOrder()).toEqual(['run-c:c', 'run-e:e', 'run-b:b', 'run-b:other'])
+    expect(wrapper.get('[data-key="run-b:b"]').find('[data-testid="nav-pending-pin"]').exists()).toBe(false)
+
+    wrapper.unmount()
+    const again = mountNav(true)
+    await flushPromises()
+    expect(again.findAll('[data-testid="nav-pending-row"]').map((row) => row.attributes('data-key'))).toEqual([
+      'run-c:c',
+      'run-e:e',
+      'run-b:b',
+      'run-b:other',
+    ])
+    useAuth().setUser({ username: 'bob', expiresAt: '2099-01-01T00:00:00Z' })
+    await nextTick()
+    expect(again.findAll('[data-testid="nav-pending-row"]').map((row) => row.attributes('data-key'))).toEqual([
+      'run-e:e',
+      'run-b:b',
+      'run-c:c',
+      'run-b:other',
+    ])
+    useAuth().setUser({ username: 'alice', expiresAt: '2099-01-01T00:00:00Z' })
+    await nextTick()
+    gateMocks.displayedItems.value = [
+      { type: 'clarify', runId: 'run-d', nodeId: 'd', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '更新的一行' },
+      { type: 'clarify', runId: 'run-b', nodeId: 'b', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '第二条' },
+    ]
+    gateMocks.sidebarExtras.value = []
+    await nextTick()
+    expect(again.find('[data-testid="nav-pending-row"]').attributes('data-key')).not.toBe('run-c:c')
+    gateMocks.displayedItems.value = [
+      { type: 'clarify', runId: 'run-d', nodeId: 'd', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '更新的一行' },
+      { type: 'clarify', runId: 'run-b', nodeId: 'b', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '第二条' },
+      { type: 'clarify', runId: 'run-c', nodeId: 'c', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '第三条' },
+    ]
+    await nextTick()
+    expect(again.findAll('[data-testid="nav-pending-row"]').map((row) => row.attributes('data-key'))).toEqual([
+      'run-c:c',
+      'run-d:d',
+      'run-b:b',
+    ])
+    again.unmount()
+    vi.useRealTimers()
+  })
+
+  it('renames in place from the menu or F2 and keeps invalid drafts', async () => {
+    gateMocks.displayedItems.value = [
+      { type: 'clarify', runId: 'run-1', nodeId: 'a', label: '需求澄清', kind: 'clarify', state: 'starting', workflowName: 'w', runTitle: '把登录做清楚' },
+      { type: 'clarify', runId: 'run-1', nodeId: 'b', label: '代码评审', kind: 'review', workflowName: 'w', runTitle: '把登录做清楚' },
+      { type: 'clarify', runId: 'run-2', nodeId: 'a', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '补充空状态文案' },
+      { type: 'clarify', runId: 'run-empty', nodeId: 'e', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '' },
+    ]
+    const wrapper = mountNav(true)
+    await flushPromises()
+
+    await wrapper.get('[data-key="run-1:a"]').trigger('keydown', { key: 'F2' })
+    await nextTick()
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    let input = wrapper.get('[data-testid="nav-pending-rename-input"]')
+    expect((input.element as HTMLInputElement).value).toBe('把登录做清楚')
+    expect(wrapper.get('[data-key="run-1:a"]').find('[data-testid="inbox-motion-spin"]').exists()).toBe(true)
+    routerMocks.push.mockClear()
+    await wrapper.get('[data-editing="true"]').trigger('click')
+    expect(routerMocks.push).not.toHaveBeenCalled()
+    wrapper.get('[data-editing="true"]').element.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 8, clientY: 8 }),
+    )
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+
+    await input.trigger('keydown', { key: 'Escape' })
+    await nextTick()
+    expect(wrapper.find('[data-testid="nav-pending-rename-input"]').exists()).toBe(false)
+    expect(wrapper.get('[data-key="run-1:a"]').get('.nav-row-title').text()).toBe('把登录做清楚')
+    expect(apiMocks.updateRunTitle).not.toHaveBeenCalled()
+
+    await wrapper.get('[data-key="run-empty:e"]').trigger('keydown', { key: 'F2' })
+    await nextTick()
+    expect((wrapper.get('[data-testid="nav-pending-rename-input"]').element as HTMLInputElement).value).toBe('')
+    await wrapper.get('[data-testid="nav-pending-rename-input"]').trigger('keydown', { key: 'Escape' })
+
+    wrapper.get('[data-key="run-1:a"]').element.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 16, clientY: 16 }),
+    )
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-pending-menu-rename"]') as HTMLButtonElement).click()
+    await nextTick()
+    input = wrapper.get('[data-testid="nav-pending-rename-input"]')
+    expect((input.element as HTMLInputElement).value).toBe('把登录做清楚')
+
+    await input.setValue('   ')
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(apiMocks.updateRunTitle).not.toHaveBeenCalled()
+    expect((wrapper.get('[data-testid="nav-pending-rename-input"]').element as HTMLInputElement).value).toBe('   ')
+    expect(useToast().toasts.value.some((item) => item.message === '名字不能为空')).toBe(true)
+
+    const tooLong = '字'.repeat(81)
+    await wrapper.get('[data-testid="nav-pending-rename-input"]').setValue(tooLong)
+    await wrapper.get('[data-testid="nav-pending-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(apiMocks.updateRunTitle).not.toHaveBeenCalled()
+    expect((wrapper.get('[data-testid="nav-pending-rename-input"]').element as HTMLInputElement).value).toBe(tooLong)
+    expect(useToast().toasts.value.some((item) => item.message === '最长 80 字')).toBe(true)
+
+    await wrapper.get('[data-testid="nav-pending-rename-input"]').setValue(`  ${'字'.repeat(80)}  `)
+    apiMocks.updateRunTitle.mockResolvedValueOnce({ id: 'run-1', title: '字'.repeat(80) })
+    await wrapper.get('[data-testid="nav-pending-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(apiMocks.updateRunTitle).toHaveBeenCalledWith('run-1', '字'.repeat(80))
+    expect(wrapper.findAll('.nav-row-title').map((node) => node.text()).filter((text) => text === '字'.repeat(80))).toHaveLength(2)
+    expect(wrapper.get('[data-key="run-2:a"]').get('.nav-row-title').text()).toBe('补充空状态文案')
+
+    wrapper.get('[data-key="run-2:a"]').element.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 16, clientY: 16 }),
+    )
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-pending-menu-rename"]') as HTMLButtonElement).click()
+    await nextTick()
+    input = wrapper.get('[data-testid="nav-pending-rename-input"]')
+    await input.setValue('  补充空状态文案  ')
+    await input.trigger('blur')
+    document.body.tabIndex = -1
+    document.body.focus()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(apiMocks.updateRunTitle).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="nav-pending-rename-input"]').exists()).toBe(false)
+
+    wrapper.get('[data-key="run-2:a"]').element.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 16, clientY: 16 }),
+    )
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-pending-menu-rename"]') as HTMLButtonElement).click()
+    await nextTick()
+    input = wrapper.get('[data-testid="nav-pending-rename-input"]')
+    await input.setValue('空状态短名')
+    apiMocks.updateRunTitle.mockResolvedValueOnce({ id: 'run-2', title: '空状态短名' })
+    await input.trigger('blur')
+    document.body.focus()
+    await vi.advanceTimersByTimeAsync(0)
+    await flushPromises()
+    expect(apiMocks.updateRunTitle).toHaveBeenCalledWith('run-2', '空状态短名')
+    expect(wrapper.get('[data-key="run-2:a"]').get('.nav-row-title').text()).toBe('空状态短名')
+
+    wrapper.get('[data-key="run-2:a"]').element.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 16, clientY: 16 }),
+    )
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-pending-menu-rename"]') as HTMLButtonElement).click()
+    await nextTick()
+    input = wrapper.get('[data-testid="nav-pending-rename-input"]')
+    await input.setValue('保存失败的名字')
+    apiMocks.updateRunTitle.mockRejectedValueOnce(new Error('offline'))
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="nav-pending-rename-input"]').element).toBeTruthy()
+    expect((wrapper.get('[data-testid="nav-pending-rename-input"]').element as HTMLInputElement).value).toBe('保存失败的名字')
+    expect(useToast().toasts.value.some((item) => item.message === '保存失败')).toBe(true)
+    expect(routerMocks.push).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-key="run-2:a"]').find('.nav-row-title').exists()).toBe(false)
+
+    gateMocks.displayedItems.value = gateMocks.displayedItems.value.filter((it) => it.nodeId !== 'a' || it.runId !== 'run-2')
+    await nextTick()
+    expect(wrapper.find('[data-testid="nav-pending-rename-input"]').exists()).toBe(false)
+    expect(apiMocks.updateRunTitle).toHaveBeenCalledTimes(3)
+
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('ignores a second submit while the first rename is in flight', async () => {
+    gateMocks.displayedItems.value = [
+      { type: 'clarify', runId: 'run-1', nodeId: 'a', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '把登录做清楚' },
+    ]
+    let resolveSave: (value: { id: string; title: string }) => void = () => {}
+    apiMocks.updateRunTitle.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveSave = resolve
+      }),
+    )
+    const wrapper = mountNav(true)
+    await flushPromises()
+    await wrapper.get('[data-testid="nav-pending-row"]').trigger('keydown', { key: 'F2' })
+    await nextTick()
+    const input = wrapper.get('[data-testid="nav-pending-rename-input"]')
+    await input.setValue('新名字')
+    const pending = input.trigger('keydown', { key: 'Enter' })
+    await Promise.resolve()
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(apiMocks.updateRunTitle).toHaveBeenCalledTimes(1)
+    resolveSave({ id: 'run-1', title: '新名字' })
+    await pending
+    await flushPromises()
+    expect(wrapper.get('.nav-row-title').text()).toBe('新名字')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('opens the same menu on a touch long-press and skips it when the finger moves', async () => {
+    gateMocks.displayedItems.value = [
+      { type: 'clarify', runId: 'run-1', nodeId: 'a', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '把登录做清楚' },
+    ]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    const row = wrapper.get('[data-testid="nav-pending-row"]')
+    await row.trigger('pointerdown', { pointerType: 'touch', clientX: 10, clientY: 12 })
+    await vi.advanceTimersByTimeAsync(499)
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')?.textContent).toContain('重命名')
+    routerMocks.push.mockClear()
+    await row.trigger('click')
+    expect(routerMocks.push).not.toHaveBeenCalled()
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await nextTick()
+
+    await row.trigger('pointerdown', { pointerType: 'touch', clientX: 10, clientY: 12 })
+    await row.trigger('pointermove', { pointerType: 'touch', clientX: 30, clientY: 12 })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+
+    await row.trigger('pointerdown', { pointerType: 'touch', clientX: 10, clientY: 12 })
+    await vi.advanceTimersByTimeAsync(200)
+    await row.trigger('pointerup', { pointerType: 'touch', clientX: 10, clientY: 12 })
+    await vi.advanceTimersByTimeAsync(400)
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+
+    await row.trigger('pointerdown', { pointerType: 'mouse', clientX: 10, clientY: 12 })
+    await vi.advanceTimersByTimeAsync(600)
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
     wrapper.unmount()
     vi.useRealTimers()
   })

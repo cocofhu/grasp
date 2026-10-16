@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
 import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
 import { sidebarNavGroups } from '@/data/sidebarNav'
-import { isReplyingInboxItem, isStartingInboxItem } from '@/lib/inbox/inboxDisplay'
+import { isReplyingInboxItem, isStartingInboxItem, sidebarRunTitle } from '@/lib/inbox/inboxDisplay'
+import { orderWithPins, useSidebarPins } from '@/lib/inbox/sidebarPins'
+import { api } from '@/lib/api/api'
+import { displayRunTitle, RUN_TITLE_MAX } from '@/lib/run/runTitle'
 import type { InboxItem } from '@/lib/shared/types'
 import {
   isSettingsChrome,
@@ -38,7 +41,9 @@ const {
   peek,
   refresh,
   itemKey,
+  patchRunTitle,
 } = usePendingGates()
+const { pins, pin: pinRow, unpin: unpinRow, isPinned } = useSidebarPins()
 // Same unreadCount singleton as shell chrome bell — keep the settings notification badge in sync.
 const { unreadCount } = useRunTerminalNotifications()
 const { displayItems, hydrateDisplay, unfavorite, getFavoriteWorkflow, reorderFavorites } = useWorkflowFavorites()
@@ -70,14 +75,232 @@ function badgeFor(to: string): number {
   return 0
 }
 
-function rowTitle(it: InboxItem): string {
+function pendingNodeLabel(it: InboxItem): string {
   return it.type === 'gate' ? it.title : it.label
+}
+
+function pendingTooltip(it: InboxItem): string {
+  const name = sidebarRunTitle(it)
+  const node = pendingNodeLabel(it).trim()
+  return node ? `${name} · ${node}` : name
 }
 
 const pendingRows = computed(() => {
   const shown = new Set(displayedItems.value.map(itemKey))
   const extras = sidebarExtras.value.filter((it) => !shown.has(itemKey(it)))
   return [...extras, ...displayedItems.value]
+})
+
+const orderedPendingRows = computed(() => orderWithPins(pendingRows.value, itemKey, pins.value))
+
+const LONG_PRESS_MS = 500
+const LONG_PRESS_MOVE_PX = 8
+const MENU_WIDTH = 168
+const MENU_HEIGHT = 72
+const MENU_MARGIN = 8
+
+const editingKey = ref<string | null>(null)
+const renameDraft = ref('')
+const renameInput = ref<HTMLInputElement | null>(null)
+const saving = ref(false)
+const editEpoch = ref(0)
+const suppressPendingClick = ref(false)
+const menu = ref<{ key: string; x: number; y: number } | null>(null)
+const menuEl = ref<HTMLElement | null>(null)
+
+type RowPress = { key: string; x: number; y: number; timer: number }
+let rowPress: RowPress | null = null
+
+const menuItem = computed(() => {
+  const key = menu.value?.key
+  if (!key) return null
+  return pendingRows.value.find((it) => itemKey(it) === key) ?? null
+})
+
+function setRenameInput(el: unknown) {
+  renameInput.value = el instanceof HTMLInputElement ? el : null
+}
+
+function closeMenu() {
+  menu.value = null
+}
+
+function openMenu(it: InboxItem, x: number, y: number) {
+  if (editingKey.value) return
+  const left = Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - MENU_WIDTH))
+  const top = Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - MENU_HEIGHT))
+  menu.value = { key: itemKey(it), x: left, y: top }
+}
+
+function clearRowPress() {
+  if (!rowPress) return
+  window.clearTimeout(rowPress.timer)
+  window.removeEventListener('pointermove', onRowPressMove)
+  window.removeEventListener('pointerup', onRowPressEnd)
+  window.removeEventListener('pointercancel', onRowPressEnd)
+  rowPress = null
+}
+
+function onRowPressMove(event: PointerEvent) {
+  if (!rowPress) return
+  if (
+    Math.abs(event.clientX - rowPress.x) > LONG_PRESS_MOVE_PX ||
+    Math.abs(event.clientY - rowPress.y) > LONG_PRESS_MOVE_PX
+  ) {
+    clearRowPress()
+  }
+}
+
+function onRowPressEnd() {
+  clearRowPress()
+}
+
+function onPendingPointerDown(event: PointerEvent, it: InboxItem) {
+  if (event.pointerType === 'mouse' || editingKey.value) return
+  clearRowPress()
+  const key = itemKey(it)
+  const timer = window.setTimeout(() => {
+    if (!rowPress || rowPress.key !== key) return
+    const x = rowPress.x
+    const y = rowPress.y
+    suppressPendingClick.value = true
+    window.setTimeout(() => {
+      suppressPendingClick.value = false
+    }, 400)
+    clearRowPress()
+    const row = pendingRows.value.find((item) => itemKey(item) === key)
+    if (!row || editingKey.value) return
+    openMenu(row, x, y)
+  }, LONG_PRESS_MS)
+  rowPress = { key, x: event.clientX, y: event.clientY, timer }
+  window.addEventListener('pointermove', onRowPressMove)
+  window.addEventListener('pointerup', onRowPressEnd)
+  window.addEventListener('pointercancel', onRowPressEnd)
+}
+
+function onPendingContextMenu(event: MouseEvent, it: InboxItem) {
+  event.preventDefault()
+  event.stopPropagation()
+  if (editingKey.value) return
+  clearRowPress()
+  openMenu(it, event.clientX, event.clientY)
+}
+
+function onDocMouseDown(event: MouseEvent) {
+  if (!menu.value) return
+  const target = event.target
+  if (target instanceof Node && menuEl.value?.contains(target)) return
+  closeMenu()
+}
+
+function onDocKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || !menu.value) return
+  event.preventDefault()
+  closeMenu()
+}
+
+function cancelEdit() {
+  editingKey.value = null
+  renameDraft.value = ''
+}
+
+async function beginRename(it: InboxItem) {
+  if (saving.value) return
+  closeMenu()
+  editingKey.value = itemKey(it)
+  renameDraft.value = displayRunTitle(it.runTitle)
+  await nextTick()
+  const el = renameInput.value
+  if (!el) return
+  el.focus()
+  const end = el.value.length
+  el.setSelectionRange(end, end)
+}
+
+function refocusRename() {
+  void nextTick(() => {
+    renameInput.value?.focus()
+  })
+}
+
+async function commitRename(it: InboxItem) {
+  if (saving.value || editingKey.value !== itemKey(it)) return
+  if (!pendingRows.value.some((row) => itemKey(row) === itemKey(it))) {
+    cancelEdit()
+    return
+  }
+  const next = renameDraft.value.trim()
+  const prev = displayRunTitle(it.runTitle)
+  if (next === prev) {
+    cancelEdit()
+    return
+  }
+  if (!next) {
+    toast.error(t('nav.pendingNameEmpty'))
+    refocusRename()
+    return
+  }
+  if ([...next].length > RUN_TITLE_MAX) {
+    toast.error(t('nav.pendingNameTooLong'))
+    refocusRename()
+    return
+  }
+  const epoch = editEpoch.value
+  const runId = it.runId
+  saving.value = true
+  try {
+    const saved = await api.updateRunTitle(runId, next)
+    const title = saved.title?.trim() || next
+    patchRunTitle(runId, title)
+    if (epoch !== editEpoch.value) return
+    editingKey.value = null
+    renameDraft.value = ''
+  } catch {
+    if (epoch !== editEpoch.value) return
+    toast.error(t('nav.pendingRenameFailed'))
+    refocusRename()
+  } finally {
+    if (epoch === editEpoch.value) saving.value = false
+  }
+}
+
+function onRenameEscape() {
+  if (saving.value) return
+  cancelEdit()
+}
+
+function onRenameBlur(it: InboxItem) {
+  const key = itemKey(it)
+  window.setTimeout(() => {
+    if (saving.value || editingKey.value !== key) return
+    if (document.activeElement === renameInput.value) return
+    void commitRename(it)
+  }, 0)
+}
+
+function onMenuPin() {
+  const it = menuItem.value
+  if (!it) return
+  const key = itemKey(it)
+  if (isPinned(key)) unpinRow(key)
+  else pinRow(key)
+  closeMenu()
+}
+
+function onMenuRename() {
+  const it = menuItem.value
+  if (!it) return
+  void beginRename(it)
+}
+
+watch(pendingRows, (rows) => {
+  if (menu.value && !rows.some((it) => itemKey(it) === menu.value?.key)) closeMenu()
+  if (!editingKey.value) return
+  if (rows.some((it) => itemKey(it) === editingKey.value)) return
+  editEpoch.value++
+  editingKey.value = null
+  renameDraft.value = ''
+  saving.value = false
 })
 
 function rowMotion(it: InboxItem): 'spin' | 'pulse' | null {
@@ -93,6 +316,11 @@ function isPendingActive(it: InboxItem): boolean {
 }
 
 function onPendingRow(it: InboxItem) {
+  if (editingKey.value) return
+  if (suppressPendingClick.value) {
+    suppressPendingClick.value = false
+    return
+  }
   void router.push({ path: '/gates', query: { run: it.runId, node: it.nodeId } })
   onNavigate()
 }
@@ -104,9 +332,14 @@ onMounted(() => {
   void hydrateDisplay()
   timer = window.setInterval(pollRefresh, 15000)
   chromeHasMounted.value = true
+  document.addEventListener('mousedown', onDocMouseDown)
+  document.addEventListener('keydown', onDocKeydown)
 })
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
+  clearRowPress()
+  document.removeEventListener('mousedown', onDocMouseDown)
+  document.removeEventListener('keydown', onDocKeydown)
 })
 // Refresh promptly when navigating (e.g. right after approving a gate).
 watch(
@@ -122,6 +355,12 @@ function isActive(to: string) {
 }
 
 const settingsChrome = computed(() => isSettingsChrome(route.path, route.meta.full === true))
+
+watch(settingsChrome, (on) => {
+  if (!on) return
+  closeMenu()
+  if (editingKey.value && !saving.value) cancelEdit()
+})
 
 function prefersReducedMotion(): boolean {
   return (
@@ -409,30 +648,112 @@ const settingsItems = settingsNavItems
       <div class="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-txt3">
         {{ t('nav.pendingApprovals') }}
       </div>
-      <button
-        v-for="it in pendingRows"
-        :key="itemKey(it)"
-        v-hover-ink
-        type="button"
-        class="nav-item mb-0.5 w-full min-w-0 text-start"
-        :class="{ active: isPendingActive(it) }"
-        data-testid="nav-pending-row"
-        :data-key="itemKey(it)"
-        :data-motion="rowMotion(it) || undefined"
-        :title="rowTitle(it)"
-        :aria-current="isPendingActive(it) ? 'true' : undefined"
-        @click="onPendingRow(it)"
-      >
-        <span class="nav-row-title min-w-0 flex-1 truncate text-start">{{ rowTitle(it) }}</span>
-        <InboxMotionMark v-if="rowMotion(it) === 'spin'" kind="spin" />
-        <InboxMotionMark v-else-if="rowMotion(it) === 'pulse'" kind="pulse" />
-      </button>
+      <template v-for="it in orderedPendingRows" :key="itemKey(it)">
+        <div
+          v-if="editingKey === itemKey(it)"
+          class="nav-item mb-0.5 w-full min-w-0 cursor-text text-start"
+          :class="{ active: isPendingActive(it) }"
+          data-testid="nav-pending-row"
+          :data-key="itemKey(it)"
+          :data-motion="rowMotion(it) || undefined"
+          data-editing="true"
+          :aria-current="isPendingActive(it) ? 'true' : undefined"
+          @click.stop
+          @contextmenu.prevent
+        >
+          <span
+            v-if="isPinned(itemKey(it))"
+            class="flex shrink-0 text-accent"
+            data-testid="nav-pending-pin"
+            aria-hidden="true"
+          >
+            <Icon name="pin" :size="12" />
+          </span>
+          <input
+            :ref="setRenameInput"
+            v-model="renameDraft"
+            type="text"
+            class="h-[26px] min-w-0 flex-1 rounded-md border border-accent bg-base px-1.5 text-start text-sm font-normal text-txt outline-none"
+            data-testid="nav-pending-rename-input"
+            :aria-label="t('nav.pendingRenameLabel')"
+            :readonly="saving"
+            @click.stop
+            @keydown.enter.prevent="commitRename(it)"
+            @keydown.esc.prevent.stop="onRenameEscape"
+            @blur="onRenameBlur(it)"
+          />
+          <InboxMotionMark v-if="rowMotion(it) === 'spin'" kind="spin" />
+          <InboxMotionMark v-else-if="rowMotion(it) === 'pulse'" kind="pulse" />
+        </div>
+        <button
+          v-else
+          v-hover-ink
+          type="button"
+          class="nav-item mb-0.5 w-full min-w-0 text-start"
+          :class="{ active: isPendingActive(it) }"
+          data-testid="nav-pending-row"
+          :data-key="itemKey(it)"
+          :data-motion="rowMotion(it) || undefined"
+          :title="pendingTooltip(it)"
+          :aria-current="isPendingActive(it) ? 'true' : undefined"
+          @click="onPendingRow(it)"
+          @contextmenu="onPendingContextMenu($event, it)"
+          @pointerdown="onPendingPointerDown($event, it)"
+          @keydown.f2.prevent="beginRename(it)"
+        >
+          <span
+            v-if="isPinned(itemKey(it))"
+            class="flex shrink-0 text-accent"
+            data-testid="nav-pending-pin"
+            aria-hidden="true"
+          >
+            <Icon name="pin" :size="12" />
+          </span>
+          <span class="nav-row-title min-w-0 flex-1 truncate text-start">{{ sidebarRunTitle(it) }}</span>
+          <InboxMotionMark v-if="rowMotion(it) === 'spin'" kind="spin" />
+          <InboxMotionMark v-else-if="rowMotion(it) === 'pulse'" kind="pulse" />
+        </button>
+      </template>
     </div>
     </div>
     </Transition>
     </div>
 
   </nav>
+  <Teleport to="body">
+    <div
+      v-if="menu && menuItem"
+      ref="menuEl"
+      class="pending-row-menu fixed z-[9999] min-w-[148px] rounded-lg border border-line bg-elevated py-1 shadow-card"
+      role="menu"
+      data-testid="nav-pending-menu"
+      :style="{ left: `${menu.x}px`, top: `${menu.y}px` }"
+      @mousedown.stop
+      @click.stop
+      @contextmenu.prevent
+    >
+      <button
+        type="button"
+        role="menuitem"
+        class="pending-row-menu__item"
+        data-testid="nav-pending-menu-pin"
+        @click="onMenuPin"
+      >
+        <Icon :name="isPinned(itemKey(menuItem)) ? 'close' : 'pin'" :size="14" />
+        <span>{{ isPinned(itemKey(menuItem)) ? t('nav.pendingUnpin') : t('nav.pendingPin') }}</span>
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        class="pending-row-menu__item"
+        data-testid="nav-pending-menu-rename"
+        @click="onMenuRename"
+      >
+        <Icon name="edit" :size="14" />
+        <span>{{ t('nav.pendingRename') }}</span>
+      </button>
+    </div>
+  </Teleport>
   <div
     v-if="dragState"
     class="quick-workflow-drag-float grid grid-cols-[28px_1fr_28px] items-center gap-0.5 px-2 py-1.5"
@@ -456,6 +777,27 @@ const settingsItems = settingsNavItems
 /* Buttons default to centered text. Pending titles start at the row edge. */
 .nav-row-title {
   text-align: start;
+}
+
+.pending-row-menu__item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 6px 12px;
+  color: rgb(var(--c-txt2));
+  font-size: 12px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.pending-row-menu__item:hover,
+.pending-row-menu__item:focus-visible {
+  color: rgb(var(--c-txt));
+  background: rgb(var(--c-overlay));
+  outline: none;
 }
 
 .nav-chrome-viewport {

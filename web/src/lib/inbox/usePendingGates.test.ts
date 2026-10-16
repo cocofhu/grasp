@@ -448,4 +448,25 @@ describe('usePendingGates', () => {
     expect(pg.displayedItems.value.at(-1)?.nodeId).toBe('node-101')
     expect(api.listGates).toHaveBeenCalledTimes(2)
   })
+
+  it('patchRunTitle renames every row of that run and leaves node labels and other runs', () => {
+    const pg = usePendingGates()
+    pg.displayedItems.value = [
+      { ...clarify('1'), runId: 'run-shared', runTitle: '旧' },
+      { ...clarify('2'), runId: 'run-shared', nodeId: 'node-2', runTitle: '旧' },
+      { ...clarify('3'), runId: 'run-other', runTitle: '别的' },
+    ]
+    pg.remoteItems.value = [{ ...clarify('1'), runId: 'run-shared', runTitle: '旧' }]
+    pg.sidebarExtras.value = [{ ...clarify('4'), runId: 'run-shared', nodeId: 'node-extra', runTitle: '旧' }]
+    pg.patchRunTitle('run-shared', '新名字')
+    expect(pg.displayedItems.value.map((it) => it.runTitle)).toEqual(['新名字', '新名字', '别的'])
+    expect(pg.displayedItems.value.map((it) => (it.type === 'clarify' ? it.label : it.title))).toEqual([
+      'Clarify 1',
+      'Clarify 2',
+      'Clarify 3',
+    ])
+    expect(pg.displayedItems.value.map((it) => it.nodeId)).toEqual(['node-1', 'node-2', 'node-3'])
+    expect(pg.remoteItems.value[0]?.runTitle).toBe('新名字')
+    expect(pg.sidebarExtras.value[0]?.runTitle).toBe('新名字')
+  })
 })

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/models"
@@ -250,6 +251,29 @@ func (e *Engine) UpdateRunPriority(runID, priorityLabel string) (*models.Run, er
 	}
 	run.Priority = pri
 	log.Info().Str("run_id", runID).Str("status", run.Status).Int("priority", pri).Msg("run priority updated")
+	return &run, nil
+}
+
+// UpdateRunTitle replaces a run's display title. Unlike priority, terminal
+// runs stay writable. Blank and titles over 80 Unicode code points are
+// rejected without truncation and without writing.
+func (e *Engine) UpdateRunTitle(runID, title string) (*models.Run, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return nil, fmt.Errorf("title is required")
+	}
+	if utf8.RuneCountInString(title) > maxRunTitleRunes {
+		return nil, fmt.Errorf("title exceeds %d characters", maxRunTitleRunes)
+	}
+	var run models.Run
+	if err := e.db.First(&run, "id = ?", runID).Error; err != nil {
+		return nil, fmt.Errorf("run not found")
+	}
+	if err := e.db.Model(&models.Run{}).Where("id = ?", runID).Update("title", title).Error; err != nil {
+		return nil, err
+	}
+	run.Title = title
+	log.Info().Str("run_id", runID).Str("status", run.Status).Msg("run title updated")
 	return &run, nil
 }
 

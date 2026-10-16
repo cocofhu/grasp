@@ -66,6 +66,15 @@ describe('notifications client', () => {
 })
 
 describe('api req helpers', () => {
+  it('patches a run title', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'r1', title: '短名字' }))
+    await expect(api.updateRunTitle('r1', '短名字')).resolves.toEqual({ id: 'r1', title: '短名字' })
+    const call = fetchMock.mock.calls.at(-1)
+    expect(String(call?.[0])).toMatch(/\/runs\/r1\/title$/)
+    expect(call?.[1]).toMatchObject({ method: 'PATCH' })
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ title: '短名字' })
+  })
+
   it('lists and mutates projects/workflows/runs', async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse([{ id: 'p1' }]))

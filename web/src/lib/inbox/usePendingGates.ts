@@ -395,6 +395,24 @@ function setActiveInboxKey(key: string | null) {
   activeInboxKey.value = key
 }
 
+/** Write a saved run title onto every inbox row of that run (sidebar extras included). */
+function patchRunTitle(runId: string, title: string): void {
+  const id = runId.trim()
+  if (!id) return
+  const apply = (arr: InboxItem[]) => {
+    let changed = false
+    const next = arr.map((it) => {
+      if (it.runId !== id || it.runTitle === title) return it
+      changed = true
+      return { ...it, runTitle: title }
+    })
+    return changed ? next : arr
+  }
+  displayedItems.value = apply(displayedItems.value)
+  remoteItems.value = apply(remoteItems.value)
+  sidebarExtras.value = apply(sidebarExtras.value)
+}
+
 export function usePendingGates() {
   return {
     displayedItems,
@@ -419,6 +437,7 @@ export function usePendingGates() {
     markStartFailed,
     clearStartFailed,
     setActiveInboxKey,
+    patchRunTitle,
     patchItemReplying,
     syncDisplayedBaseline,
     clearVisibleMembership,

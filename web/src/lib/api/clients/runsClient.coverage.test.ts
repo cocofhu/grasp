@@ -96,6 +96,11 @@ describe('runsClient request coverage', () => {
     })
 
     await runsClient.updateRunPriority('r1', 'high')
+    await runsClient.updateRunTitle('r1', '短名字')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/runs/r1/title', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ title: '短名字' }),
+    }))
     await runsClient.cancelRun('r1')
     await runsClient.deleteRun('r1')
     await runsClient.resumeRun('r1')

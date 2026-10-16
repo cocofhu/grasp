@@ -264,6 +264,35 @@ func (h *Handlers) UpdateRunPriority(c *gin.Context) {
 	})
 }
 
+type updateRunTitleBody struct {
+	Title string `json:"title"`
+}
+
+// UpdateRunTitle writes a run's display title. Same session auth as priority.
+// Blank and over-long titles are rejected without truncation. Terminal runs
+// are allowed. Missing runs are 404.
+func (h *Handlers) UpdateRunTitle(c *gin.Context) {
+	runID := c.Param("id")
+	if _, ok := h.Runs.Get(runID); !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	var b updateRunTitleBody
+	if err := c.ShouldBindJSON(&b); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON: " + err.Error()})
+		return
+	}
+	run, err := h.Eng.UpdateRunTitle(runID, b.Title)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"id":    run.ID,
+		"title": run.Title,
+	})
+}
+
 type resumeRunBody struct {
 	// NodeID chooses where to continue; empty resumes from the node that failed.
 	NodeID string `json:"nodeId"`
