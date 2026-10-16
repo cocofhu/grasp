@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 const routeState = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- vi.hoisted runs before ESM imports
   const { reactive } = require('vue') as typeof import('vue')
   return reactive({ query: {} as Record<string, string> })
 })
