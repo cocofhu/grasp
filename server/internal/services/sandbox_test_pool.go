@@ -685,7 +685,12 @@ const reconcileCreatingGrace = 10 * time.Minute
 // drops orphan managed sandboxes not tracked in the DB. Dropping a local row
 // always Destroy()s the gateway instance first so sandbox_gateway.sandboxes
 // (and the workload it protects) cannot outlive the platform list.
-func (s *SandboxService) ReconcileOnStartup(ctx context.Context) {
+//
+// adopted names run sandboxes the engine will reattach: they stay in use with
+// no destroy deadline. Run sandboxes are never Attach()ed here, because Attach
+// pushes a newer runtime bundle and restarts an idle bridge, which would drop
+// the agent session the engine is about to reconnect to.
+func (s *SandboxService) ReconcileOnStartup(ctx context.Context, adopted map[string]bool) {
 	var rows []models.Sandbox
 	if err := s.db.Find(&rows).Error; err != nil {
 		return
@@ -698,11 +703,8 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context) {
 	protectedCorr := map[string]bool{}
 	for i := range rows {
 		row := &rows[i]
-		// Per-run node sandboxes are owned by the runtime provider; after a
-		// restart their driving goroutine is gone, so any surviving container
-		// is an orphan. Destroy it and drop the record.
 		if row.Purpose == "run" {
-			s.destroyLocalSandbox(ctx, row)
+			s.reconcileRunSandbox(ctx, row, adopted[row.Name], tracked)
 			continue
 		}
 		// Young creating rows still use a placeholder Name; the gateway id is
@@ -746,6 +748,28 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context) {
 		}
 		_ = s.mgr.DestroyByName(ctx, sb.ID)
 		log.Info().Str("name", sb.ID).Msg("destroyed orphan sandbox container")
+	}
+}
+
+// reconcileRunSandbox keeps a live per-run node sandbox across a restart. An
+// adopted one is marked in use for the reattaching driver; any other keeps its
+// persisted leases (debug window, preview) or is retired like a finished node.
+// Missing or stopped containers are dropped.
+func (s *SandboxService) reconcileRunSandbox(ctx context.Context, row *models.Sandbox, adopted bool, tracked map[string]bool) {
+	if s.mgr.Status(ctx, row.Name) != "running" {
+		s.destroyLocalSandbox(ctx, row)
+		return
+	}
+	tracked[row.Name] = true
+	if adopted {
+		s.mu.Lock()
+		s.runActive[row.Name] = true
+		s.mu.Unlock()
+		s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Update("destroy_at", nil)
+		return
+	}
+	if row.DestroyAt == nil {
+		s.RetireRunSandbox(row.Name)
 	}
 }
 

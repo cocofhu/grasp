@@ -8,12 +8,12 @@ export type SettingsNavItem = SidebarNavItem & {
 }
 
 /**
- * Settings-chrome subnav order (plan g1.2):
- * Projects, Notifications, Stats, Artifacts, Agents, Sandboxes, General, Integrations.
- * Global `/agents` Studio coexists with project detail `?tab=agents` (restored after #546).
+ * Settings-chrome subnav order:
+ * Notifications, Stats, Artifacts, Agents, Sandboxes, General, Integrations.
+ * Projects live on the workspace primary nav. Global `/agents` Studio coexists with
+ * project detail `?tab=agents` (restored after #546).
  */
 export const settingsNavItems: SettingsNavItem[] = [
-  { to: '/projects', icon: 'folder', labelKey: 'nav.projects' },
   { to: '/notifications', icon: 'bell', labelKey: 'nav.notifications' },
   { to: '/stats', icon: 'chart', labelKey: 'nav.stats' },
   { to: '/artifacts', icon: 'artifact', labelKey: 'nav.artifacts' },
@@ -30,7 +30,6 @@ export const settingsNavItems: SettingsNavItem[] = [
 ]
 
 export const SETTINGS_CHROME_PREFIXES = [
-  '/projects',
   '/notifications',
   '/stats',
   '/artifacts',

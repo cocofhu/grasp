@@ -49,8 +49,9 @@ import (
 )
 
 const (
-	// shutdownDrainTimeout bounds how long shutdown waits for in-flight work.
-	shutdownDrainTimeout = 600 * time.Second
+	// shutdownHTTPTimeout bounds how long shutdown waits for in-flight HTTP
+	// requests. It is also the grace shown on the draining banner.
+	shutdownHTTPTimeout = 10 * time.Second
 	// pmTurnDeadline caps one PM / channel / cron turn.
 	pmTurnDeadline = 630 * time.Second
 )
@@ -370,7 +371,7 @@ func main() {
 	}
 	// Reconcile DB ↔ gateway on boot and start the idle-TTL sweeper. The
 	// gateway owns image lifecycle now, so there is no local image pre-pull.
-	sbxSvc.ReconcileOnStartup(context.Background())
+	sbxSvc.ReconcileOnStartup(context.Background(), eng.AdoptedSandboxes())
 	sweeperCtx, stopSweeper := context.WithCancel(context.Background())
 	go sbxSvc.RunSweeper(sweeperCtx)
 
@@ -408,7 +409,7 @@ func main() {
 	requirementDraftSvc := services.NewRequirementDraftService(db)
 	notificationSvc := services.NewNotificationService(db, runSvc)
 
-	coord := shutdown.New(shutdownDrainTimeout)
+	coord := shutdown.New(shutdownHTTPTimeout)
 	authSvc := auth.NewService(db, config.GetConfig)
 
 	pmSvc := services.NewPmService(db, agentSvc)
@@ -548,6 +549,8 @@ func main() {
 		log.Fatal().Err(err).Str("addr", addr).Msg("listen failed")
 	}
 	srv := &http.Server{Handler: r}
+	// Agent MCP clients hold a tool-list SSE stream open for the whole run.
+	srv.RegisterOnShutdown(host.CloseToolStreams)
 
 	log.Info().Str("port", port).
 		Str("config_path", cfgPath).Msg("approving server starting")
@@ -557,6 +560,9 @@ func main() {
 			log.Fatal().Err(err).Msg("server exited")
 		}
 	}()
+	// Every provider hook is wired now; continue agent nodes whose sandboxes
+	// survived the previous process.
+	eng.ResumeInterrupted()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
@@ -566,36 +572,25 @@ func main() {
 	coord.BeginDraining()
 	log.Info().Msg("drain started")
 
-	// Stop admitting new work and drop anything still queued. The drain
-	// middleware already 503s new mutating /api requests; halting the scheduler
-	// prevents the dispatcher from promoting queued runs while we drain.
+	// Stop admitting new work. Queued runs stay queued and running drivers
+	// requeue at their next node boundary, so the next process picks both up.
 	eng.Halt()
-	eng.CancelQueuedRuns()
 
-	// Keep the HTTP server up while waiting for active agent/react nodes to
-	// finish: their in-container sandboxes still call back to /mcp/runs/:id on
-	// this same server, and the frontend keeps polling /api/health to render the
-	// draining banner. Waiting first (bounded by the grace deadline) is what
-	// lets rolling updates finish in-flight agent work instead of severing it.
-	timedOut := eng.WaitAgentReact(context.Background(), coord.Deadline())
-
-	// Now tear everything down: idle sweeper, interactive test sandboxes, then
-	// the HTTP server (which closes /api and /mcp for good).
+	// Sandboxes and ACP connections are left alone on purpose: closing an ACP
+	// client makes the in-flight turn fail and discard its sandbox, while the
+	// next process reattaches running agent sandboxes and resumes their nodes.
 	stopSweeper()
 	channelMgr.StopAll()
 	browserSvc.Stop()
-	sbxSvc.ShutdownAllTestSandboxes(context.Background(), true)
 
-	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 15*time.Second)
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownHTTPTimeout)
 	defer cancelShutdown()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Warn().Err(err).Msg("http server shutdown")
 	}
 
-	if timedOut {
-		log.Info().Msg("exit")
-		os.Exit(1)
-	}
+	// Exit without unwinding: node goroutines must not get a chance to record
+	// failures for work the next process is about to resume.
 	log.Info().Msg("exit")
 	os.Exit(0)
 }

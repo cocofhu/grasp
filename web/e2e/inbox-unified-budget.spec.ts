@@ -49,7 +49,8 @@ async function metrics(page: Page) {
     const confirm = form
       ? Array.from(form.querySelectorAll('button')).find((b) => b.textContent?.includes('确认并流转'))
       : null
-    const grid = document.querySelector('[data-testid="inbox-desktop-grid"]') as HTMLElement | null
+    const grid = document.querySelector('[data-testid="inbox-desktop-panel"]') as HTMLElement | null
+    const taskCol = document.querySelector('[data-testid="inbox-task-col"]')
 
     function box(el: Element | null | undefined) {
       if (!el) return null
@@ -83,24 +84,22 @@ async function metrics(page: Page) {
       confirmBox,
       gridBox,
       gridTemplateColumns,
+      hasTaskCol: !!taskCol,
       gapPreviewToUpstream,
       gapUpstreamToCardBottom,
       gapBudgetToCardBottom,
       viewportH: window.innerHeight,
+      viewportW: window.innerWidth,
       budgetCapPx: window.innerHeight * 0.6,
     }
   })
 }
 
-/** Assert production-like dual-column stretch geometry (review v2). */
-function expectDesktopDualColumn(m: Awaited<ReturnType<typeof metrics>>) {
-  const cols = m.gridTemplateColumns.trim().split(/\s+/)
-  expect(cols.length).toBe(2)
-  const first = parseFloat(cols[0]!)
-  const second = parseFloat(cols[1]!)
-  expect(first).toBeGreaterThan(250)
-  expect(first).toBeLessThan(400)
-  expect(second).toBeGreaterThan(first)
+/** Detail panel fills the main area. The 320px task column is gone. */
+function expectDesktopPanel(m: Awaited<ReturnType<typeof metrics>>) {
+  expect(m.hasTaskCol).toBe(false)
+  expect(m.cardBox).not.toBeNull()
+  expect(m.cardBox!.width).toBeGreaterThan(m.viewportW * 0.7)
   // Stretched detail card must be tall enough that a 60vh cap would leave a void.
   expect(m.cardBox!.height).toBeGreaterThan(m.budgetCapPx + 80)
 }
@@ -123,7 +122,7 @@ test.describe('Inbox unified preview budget layout', () => {
     })
     testInfo.annotations.push({ type: 'metrics', description: JSON.stringify(m) })
 
-    expectDesktopDualColumn(m)
+    expectDesktopPanel(m)
     expect(m.hasBudget).toBe(true)
     // Inbox path: no 60vh maxHeight on budget (review v1)
     expect(m.budgetMaxHeight).toBe('')
@@ -151,7 +150,7 @@ test.describe('Inbox unified preview budget layout', () => {
       path: path.join(shotDir, 'inbox-budget-short.png'),
       fullPage: false,
     })
-    expectDesktopDualColumn(m)
+    expectDesktopPanel(m)
     expect(m.gapPreviewToUpstream!).toBeLessThan(4)
     expect(m.gapUpstreamToCardBottom!).toBeLessThan(48)
     // Preview shell still occupies meaningful height inside budget (not collapsed short bar)
@@ -169,7 +168,7 @@ test.describe('Inbox unified preview budget layout', () => {
       path: path.join(shotDir, 'inbox-budget-expanded.png'),
       fullPage: false,
     })
-    expectDesktopDualColumn(m)
+    expectDesktopPanel(m)
     expect(m.budgetMaxHeight).toBe('')
     expect(m.gapUpstreamToCardBottom!).toBeLessThan(48)
     expect(m.gapBudgetToCardBottom!).toBeLessThan(48)
@@ -189,7 +188,7 @@ test.describe('Inbox unified preview budget layout', () => {
       path: path.join(shotDir, 'inbox-budget-no-upstream.png'),
       fullPage: false,
     })
-    expectDesktopDualColumn(m)
+    expectDesktopPanel(m)
     expect(m.cardBox!.height).toBeGreaterThan(m.viewportH * 0.7)
     expect(m.gapBudgetToCardBottom!).toBeLessThan(48)
   })

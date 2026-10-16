@@ -487,9 +487,14 @@ func TestSandboxReconcileOnStartup(t *testing.T) {
 	s := newSandboxService(t, db, ds)
 	ctx := context.Background()
 
-	// run-purpose row -> destroyed on startup.
+	// run-purpose rows: a gone one is dropped; a live one is kept and retired
+	// with a deadline; an adopted one is kept in use with no deadline.
 	db.Create(&models.Sandbox{Name: "grasp-sb-run", Purpose: "run", Status: "running", RunID: "rid"})
-	ds.setStatus("grasp-sb-run", "running")
+	db.Create(&models.Sandbox{Name: "grasp-sb-run-live", Purpose: "run", Status: "running", RunID: "rid3"})
+	ds.setStatus("grasp-sb-run-live", "running")
+	past := time.Now().Add(-time.Minute)
+	db.Create(&models.Sandbox{Name: "grasp-sb-run-adopted", Purpose: "run", Status: "running", RunID: "rid4", DestroyAt: &past})
+	ds.setStatus("grasp-sb-run-adopted", "running")
 	// test running -> attached and kept.
 	db.Create(&models.Sandbox{Name: "grasp-sb-live", Purpose: "test", Status: "running"})
 	ds.setStatus("grasp-sb-live", "running")
@@ -498,11 +503,24 @@ func TestSandboxReconcileOnStartup(t *testing.T) {
 	// orphan sandbox present on the gateway but with no DB row.
 	ds.setStatus("grasp-sb-orphan", "running")
 
-	s.ReconcileOnStartup(ctx)
+	s.ReconcileOnStartup(ctx, map[string]bool{"grasp-sb-run-adopted": true})
 
 	var live models.Sandbox
 	if err := db.Where("name = ?", "grasp-sb-live").First(&live).Error; err != nil {
 		t.Fatal("live row should survive")
+	}
+	var runLive, adopted models.Sandbox
+	if err := db.Where("name = ?", "grasp-sb-run-live").First(&runLive).Error; err != nil || runLive.DestroyAt == nil {
+		t.Fatalf("live run row should be kept and retired: err=%v destroyAt=%v", err, runLive.DestroyAt)
+	}
+	if err := db.Where("name = ?", "grasp-sb-run-adopted").First(&adopted).Error; err != nil || adopted.DestroyAt != nil {
+		t.Fatalf("adopted run row should be kept without deadline: err=%v destroyAt=%v", err, adopted.DestroyAt)
+	}
+	if !s.inUse("grasp-sb-run-adopted") {
+		t.Fatal("adopted run sandbox should be marked in use")
+	}
+	if !ds.fg.Has("grasp-sb-run-live") || !ds.fg.Has("grasp-sb-run-adopted") {
+		t.Fatal("live run gateway sandboxes must remain")
 	}
 	if live.ACPPort == 0 {
 		t.Fatal("live row should get refreshed port")
@@ -543,7 +561,7 @@ func TestSandboxReconcileDestroysNonRunningGateway(t *testing.T) {
 	db.Create(&models.Sandbox{Name: "gw-pm-dead", Purpose: "agent", Status: "error"})
 	ds.setStatus("gw-pm-dead", "error")
 
-	s.ReconcileOnStartup(ctx)
+	s.ReconcileOnStartup(ctx, nil)
 
 	for _, name := range []string{"gw-error", "gw-stopped", "gw-pm-dead"} {
 		if err := db.Where("name = ?", name).First(&models.Sandbox{}).Error; err != gorm.ErrRecordNotFound {
@@ -573,7 +591,7 @@ func TestSandboxReconcileCreatingGrace(t *testing.T) {
 	ds.setStatus(gwID, "pending")
 	ds.fg.SetLabel(gwID, sandbox.CorrelationNameKey(), placeholder)
 
-	s.ReconcileOnStartup(ctx)
+	s.ReconcileOnStartup(ctx, nil)
 
 	if err := db.Where("name = ?", placeholder).First(&models.Sandbox{}).Error; err != nil {
 		t.Fatal("young creating row should be kept")
@@ -600,7 +618,7 @@ func TestSandboxReconcileAbandonedCreating(t *testing.T) {
 	ds.setStatus(gwID, "running")
 	ds.fg.SetLabel(gwID, sandbox.CorrelationNameKey(), placeholder)
 
-	s.ReconcileOnStartup(ctx)
+	s.ReconcileOnStartup(ctx, nil)
 
 	if err := db.Where("name = ?", placeholder).First(&models.Sandbox{}).Error; err != gorm.ErrRecordNotFound {
 		t.Fatal("abandoned creating row should be gone")

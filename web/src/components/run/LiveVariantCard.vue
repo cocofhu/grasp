@@ -7,12 +7,14 @@ import { LIVE_CARD_HOST, isLiveBusy, isLiveOpen, type LiveCmd } from '@/lib/inbo
 /**
  * Chat card for a Live variant request. State comes from the host's Live
  * store (the preview drawer). `compact` keeps only the request headline;
- * `agent` places the card on the agent side, under the reply.
+ * `agent` places the card on the agent side, under the reply. `loading`
+ * shows skeleton rows while the agent works on the request.
  */
 const props = defineProps<{
   liveRef: { sid: string; op: string; variant?: number; prompt?: string }
   compact?: boolean
   agent?: boolean
+  loading?: boolean
 }>()
 
 /** Server summary for page-scope sessions (engine/live.go). */
@@ -90,11 +92,12 @@ const arrowBtn = 'flex h-6 w-6 shrink-0 items-center justify-center rounded-md b
 
 <template>
   <div
-    class="live-variant-card flex w-full flex-col gap-2 rounded-xl border border-accent/30 bg-accent-dim/40 px-3 py-2.5 text-left"
-    :class="agent ? 'mt-2' : 'mb-1.5 ml-auto max-w-[340px]'"
+    class="live-variant-card relative flex w-full flex-col gap-2 overflow-hidden rounded-xl border border-accent/30 bg-accent-dim/40 px-3 py-2.5 text-left"
+    :class="[agent ? 'mt-2' : 'mb-1.5 ml-auto max-w-[340px]', loading ? 'live-variant-card--loading min-w-[220px]' : '']"
     data-testid="live-variant-card"
     :data-state="stateKey"
     :data-side="agent ? 'agent' : 'human'"
+    :aria-busy="loading ? 'true' : undefined"
   >
     <div class="flex min-w-0 items-center gap-1.5 text-[12.5px] font-semibold text-txt">
       <Icon name="sparkles" :size="14" class="shrink-0 text-accent" aria-hidden="true" />
@@ -112,6 +115,10 @@ const arrowBtn = 'flex h-6 w-6 shrink-0 items-center justify-center rounded-md b
     </div>
 
     <p v-if="liveRef.prompt && !agent" class="m-0 whitespace-pre-wrap break-words text-[12px] leading-snug text-txt2" data-testid="live-variant-prompt">{{ liveRef.prompt }}</p>
+    <div v-if="loading" class="flex flex-col gap-1.5" aria-hidden="true" data-testid="live-variant-skeleton">
+      <span class="live-skeleton h-2 w-4/5 rounded-full" />
+      <span class="live-skeleton h-2 w-1/2 rounded-full" />
+    </div>
     <p v-if="showTarget" class="m-0 truncate text-[11px] text-txt3" :title="session?.selector">{{ target }}</p>
     <p v-if="session?.state === 'failed' && session.error" class="m-0 text-[11px] leading-snug text-err" data-testid="live-variant-error">
       {{ t('pages.embedChat.live.failed', { error: session.error }) }}
@@ -241,9 +248,40 @@ const arrowBtn = 'flex h-6 w-6 shrink-0 items-center justify-center rounded-md b
   }
 }
 
+.live-variant-card--loading::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent 30%, rgb(var(--c-accent) / 0.12) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: live-card-sweep 1.4s ease-in-out infinite;
+}
+
+.live-skeleton {
+  display: block;
+  background: linear-gradient(90deg, rgb(var(--c-line) / 0.5) 25%, rgb(var(--c-line)) 50%, rgb(var(--c-line) / 0.5) 75%);
+  background-size: 200% 100%;
+  animation: live-card-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes live-card-sweep {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .live-variant-card {
+  .live-variant-card,
+  .live-variant-card--loading::after,
+  .live-skeleton {
     animation: none;
+  }
+  .live-variant-card--loading::after {
+    display: none;
   }
 }
 </style>

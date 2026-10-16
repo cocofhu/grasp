@@ -8,6 +8,7 @@ import { adaptInboxContextToRun } from '@/lib/inbox/inboxContext'
 import { useWorkflowFilter } from '@/lib/composables/useWorkflowFilter'
 import { useTagFilter } from '@/lib/composables/useTagFilter'
 import { useProjectContext } from '@/lib/composables/useProjectContext'
+import { listAllPendingGates } from '@/lib/inbox/listAllPendingGates'
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { addClarifyAnnotation, useClarifyDraft } from '@/lib/inbox/useClarifyDraft'
 import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
@@ -78,6 +79,10 @@ const {
   applyPending,
   removeItemLocally,
   restoreItemLocally,
+  setSidebarExtras,
+  markStartFailed,
+  clearStartFailed,
+  setActiveInboxKey,
   patchItemReplying,
   syncDisplayedBaseline,
   clearVisibleMembership,
@@ -499,7 +504,7 @@ async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: 
     // and keep armed so later filtered loadList passes still merge it (g2.1).
     if (isClarifyAwaitingHuman(run, nodeId)) {
       try {
-        const data = await api.listGates({ page: 1, pageSize: 100 })
+        const data = await listAllPendingGates()
         if (!incomingArmed.value) return
         const curAfter = incomingTarget()
         if (!curAfter || `${curAfter.runId}:${curAfter.nodeId || INCOMING_GHOST_NODE_ID}` !== key) return
@@ -507,11 +512,15 @@ async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: 
         if (hit) {
           incomingGhost.value = hit
           const hitKey = itemKey(hit)
-          if (!listItems.value.some((it) => itemKey(it) === hitKey)) {
-            const withoutStartingGhost = listItems.value.filter(
-              (it) => !(it.runId === target.runId && isStartingInboxItem(it)),
+          // A starting ghost uses the same run:node key as the real row. Replace it.
+          const hasRealRow = listItems.value.some(
+            (it) => itemKey(it) === hitKey && !isStartingInboxItem(it),
+          )
+          if (!hasRealRow) {
+            const rest = listItems.value.filter(
+              (it) => itemKey(it) !== hitKey && !(it.runId === target.runId && isStartingInboxItem(it)),
             )
-            listItems.value = [hit, ...withoutStartingGhost]
+            listItems.value = [hit, ...rest]
             listTotal.value = Math.max(listTotal.value, listItems.value.length)
           }
           if (!processingLock.value) ensureValidActive()
@@ -559,7 +568,12 @@ function seedIncomingIfNeeded() {
 }
 
 function isIncomingContextPending(target: InboxItem): boolean {
-  return !!incomingGhost.value && itemKey(incomingGhost.value) === itemKey(target)
+  const ghost = incomingGhost.value
+  if (!ghost || itemKey(ghost) !== itemKey(target)) return false
+  // A real pending row pinned over the starting placeholder shares this key
+  // (gates past the inbox page of 20). That pin already has a panel — keeping
+  // the flag true leaves 「加载运行详情…」 up after inbox-context returns.
+  return isStartingInboxItem(ghost)
 }
 
 /**
@@ -1006,6 +1020,32 @@ watch(isEditing, (editing) => {
 watch(isMobile, (mobile) => {
   if (!mobile) mobileView.value = 'list'
 })
+
+watch(
+  [incomingGhost, startFailedItem],
+  () => {
+    const extras: InboxItem[] = []
+    const failed = startFailedItem.value
+    const ghost = incomingGhost.value
+    if (failed) extras.push(failed)
+    if (ghost && (!failed || itemKey(ghost) !== itemKey(failed))) extras.push(ghost)
+    setSidebarExtras(extras)
+    if (failed) markStartFailed(itemKey(failed))
+  },
+  { immediate: true },
+)
+
+watch(startFailedItem, (it, prev) => {
+  if (prev && (!it || itemKey(it) !== itemKey(prev))) clearStartFailed(itemKey(prev))
+})
+
+watch(
+  active,
+  (it) => {
+    setActiveInboxKey(it ? itemKey(it) : null)
+  },
+  { immediate: true },
+)
 
 watch(
   activeStarting,
@@ -1529,6 +1569,9 @@ async function loadActiveRun(hard = true) {
     if (isProcessedTriple(target)) return
     activeRun.value = adaptInboxContextToRun(ctx, target.runId)
     activeRunLoadError.value = false
+    // Context is in. Clear even when a same-key ghost was pending: the finally
+    // below used to leave the flag set, so a gate past page 1 never mounted.
+    if (hard) activeRunLoading.value = false
     // Must project AFTER loading flag clears so ReviewComposer / GateApproval can mount.
     projectAfterLoad = hard && (target.type === 'clarify' || target.type === 'gate')
   } catch (e) {
@@ -2007,6 +2050,8 @@ onUnmounted(() => {
   confirmFlowDeskHold.value = false
   inboxConfirmFlow.reset()
   clearVisibleMembership()
+  setSidebarExtras([])
+  setActiveInboxKey(null)
 })
 
 function itemTitle(it: InboxItem) {

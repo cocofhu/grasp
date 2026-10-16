@@ -51,8 +51,8 @@ const props = withDefaults(
     statusMap?: Record<string, NodeRunStatus>
     iterations?: Record<string, number>
     failReasons?: Record<string, string>
-    /** Run mode: each node's handoff to its downstream, shown on the edge the run took. */
-    handoffs?: Record<string, EdgeHandoff>
+    /** Run mode: handoffs for each edge the run has left through, oldest visit first. */
+    handoffs?: Record<string, EdgeHandoff[]>
     activePath?: string[]
     selectedNode?: string | null
     /** Run mode follow toggle; undefined hides it. */

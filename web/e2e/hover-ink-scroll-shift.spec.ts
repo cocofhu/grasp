@@ -113,8 +113,8 @@ test.describe('hover-ink scroll-shift fix', () => {
       fullPage: false,
     })
 
-    // plan g2.1: click 「运行」, pointerleave, icon left vs 「开始」 ≤ 1px (real geometry).
-    const runsLink = page.locator('[data-testid="nav-workspace-chrome"] a.nav-item').nth(2)
+    // Click 「运行」 itself. Index shifts when workspace items are inserted.
+    const runsLink = page.locator('[data-testid="nav-workspace-chrome"] a.nav-item').filter({ hasText: '运行' })
     const runsBox = await runsLink.boundingBox()
     expect(runsBox).toBeTruthy()
     await page.mouse.click(runsBox!.x + 2, runsBox!.y + runsBox!.height / 2)
@@ -138,46 +138,16 @@ test.describe('hover-ink scroll-shift fix', () => {
       fullPage: false,
     })
 
-    // Click through 待办 / 设置; leave after each click (sticky-shift contract).
-    const paths = ['/gates', '/settings'] as const
-    const pageIds = ['page-gates', 'page-settings'] as const
-    for (let i = 0; i < paths.length; i++) {
-      const link = page.locator(`[data-testid="nav-workspace-chrome"] a.nav-item[href="${paths[i]}"]`)
-      const target =
-        (await link.count()) > 0
-          ? link
-          : page.locator('[data-testid="nav-workspace-chrome"] a.nav-item').nth(paths[i] === '/gates' ? 1 : 3)
-      const b = await target.boundingBox()
-      expect(b).toBeTruthy()
-      await page.mouse.click(b!.x + 2, b!.y + b!.height / 2)
-      await expect(page.getByTestId(pageIds[i])).toBeVisible({ timeout: PAGE_READY_MS })
-      await page.waitForTimeout(100)
-
-      if (paths[i] === '/settings') {
-        // settings chrome replaces workspace nav — skip workspace measure
-        await page.screenshot({
-          path: path.join(shotDir, `hover-ink-after-${paths[i].slice(1)}.png`),
-          fullPage: false,
-        })
-        continue
-      }
-
-      await page.mouse.move(b!.x + b!.width + 40, b!.y + b!.height / 2)
-      await page.waitForTimeout(400)
-
-      const m = await measure()
-      expect(m).not.toBeNull()
-      expect(m!.every((x) => x.scrollLeft === 0)).toBe(true)
-      const act = m!.find((x) => x.active)
-      const idl = m!.find((x) => !x.active)
-      expect(act).toBeTruthy()
-      expect(idl).toBeTruthy()
-      expect(Math.abs(act!.iconLeft - idl!.iconLeft)).toBeLessThanOrEqual(1)
-      await page.screenshot({
-        path: path.join(shotDir, `hover-ink-after-${paths[i].slice(1)}.png`),
-        fullPage: false,
-      })
-    }
+    // 待办 is not a workspace item. Open 设置 by its label so a stale index cannot land on 项目.
+    const settingsLink = page.locator('[data-testid="nav-workspace-chrome"] a.nav-item').filter({ hasText: '设置' })
+    const settingsBox = await settingsLink.boundingBox()
+    expect(settingsBox).toBeTruthy()
+    await page.mouse.click(settingsBox!.x + 2, settingsBox!.y + settingsBox!.height / 2)
+    await expect(page.getByTestId('page-settings')).toBeVisible({ timeout: PAGE_READY_MS })
+    await page.screenshot({
+      path: path.join(shotDir, 'hover-ink-after-settings.png'),
+      fullPage: false,
+    })
 
     // plan g2.2: settings chrome — click General, leave, real icon offset ≤ 1px vs siblings / self.
     await expect(page.getByTestId('nav-settings-chrome')).toBeVisible()

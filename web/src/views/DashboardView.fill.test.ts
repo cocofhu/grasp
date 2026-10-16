@@ -178,8 +178,8 @@ describe('DashboardView home chat layout', () => {
   })
 
   // fill LOCKED — top-down shell (justify-start); desktop inset basis is 120px
-  // and shrinks (floor 48px) before the column scrolls. Mobile basis is 4.25rem
-  // (floor 0.5rem).
+  // and shrinks (floor 48px) before the column scrolls. Mobile basis is 4.25rem.
+  // Mobile floor is 36px so a float-high plus jump-high ear stays in the column.
   it('uses a shrinkable 120px desktop top inset and keeps moderate mobile padding', () => {
     expect(src).toMatch(/home-shell__content[^"]*justify-start/)
     expect(src).toMatch(/home-shell__content[^"]*overflow-x-hidden/)
@@ -194,7 +194,7 @@ describe('DashboardView home chat layout', () => {
       /w-full min-w-0 flex-wrap gap-2 pr-1\.5 pt-1\.5"[\s\S]{0,40}data-testid="home-attach-chips"/,
     )
     expect(src).toMatch(
-      /@media \(max-width: 520px\)[\s\S]*\.home-shell__content::before\s*\{[^}]*flex-basis:\s*4\.25rem[^}]*min-height:\s*0\.5rem/,
+      /@media \(max-width: 520px\)[\s\S]*\.home-shell__content::before\s*\{[^}]*flex-basis:\s*4\.25rem[^}]*min-height:\s*36px/,
     )
     expect(src).not.toMatch(
       /@media \(max-width: 520px\)[\s\S]*padding-top:\s*2rem/,

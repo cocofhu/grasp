@@ -153,15 +153,25 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
-  it('shows no Live card while the agent is still working on the session', () => {
+  it('shows a loading request card without controls while the agent is still working on the session', () => {
     const at = '2026-07-18T00:00:00Z'
-    const request: ClarifyTurn = { role: 'human', text: '首页加点动效', at, live: { sid: 'sid001', op: 'generate' } }
-    const generating = mountChat({ turns: [request, { role: 'agent', text: '我先看看结构', at }], liveHost: liveHost('generating') })
-    expect(generating.find('[data-testid="live-variant-card"]').exists()).toBe(false)
-    generating.unmount()
-    const waiting = mountChat({ turns: [request], liveHost: liveHost('generating') })
-    expect(waiting.find('[data-testid="live-variant-card"]').exists()).toBe(false)
-    waiting.unmount()
+    const request: ClarifyTurn = { role: 'human', text: 'Live · 趣味细节', at, live: { sid: 'sid001', op: 'generate', generated: true } }
+    for (const turns of [[request, { role: 'agent' as const, text: '我先看看结构', at }], [request]]) {
+      const wrapper = mountChat({ turns, liveHost: liveHost('generating') })
+      const cards = wrapper.findAll('[data-testid="live-variant-card"]')
+      expect(cards.map((c) => c.attributes('data-side'))).toEqual(['human'])
+      expect(cards[0].attributes('aria-busy')).toBe('true')
+      expect(cards[0].find('[data-testid="live-variant-skeleton"]').exists()).toBe(true)
+      expect(cards[0].find('[data-testid="live-variant-state"]').exists()).toBe(true)
+      expect(cards[0].find('[data-testid="live-variant-accept"]').exists()).toBe(false)
+      expect(cards[0].find('[data-testid="live-variant-chip"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('Live · ')
+      wrapper.unmount()
+    }
+    const ready = mountChat({ turns: [request], liveHost: liveHost() })
+    expect(ready.find('[data-testid="live-variant-card"]').attributes('aria-busy')).toBeUndefined()
+    expect(ready.find('[data-testid="live-variant-skeleton"]').exists()).toBe(false)
+    ready.unmount()
     const streaming = mountChat({ turns: [request, { role: 'agent', text: '已放上 2 个候选', at, streaming: true }], liveHost: liveHost() })
     expect(streaming.find('[data-testid="live-variant-card"][data-side="agent"]').exists()).toBe(false)
     streaming.unmount()
@@ -1345,7 +1355,7 @@ describe('ClarifyChat', () => {
   })
 
   describe('busy status C-tier (no air bubble)', () => {
-    it('turn_begin shows 思考中… + typing-dots placeholder (no air bubble)', async () => {
+    it('turn_begin shows 思考中… + pulse mark placeholder (no air bubble)', async () => {
       const wrapper = mountChat({ draft: '请复审' })
       await clickSend(wrapper)
       const vm = wrapper.vm as unknown as {
@@ -1361,7 +1371,7 @@ describe('ClarifyChat', () => {
       const placeholder = wrapper.find('[data-testid="clarify-busy-placeholder"]')
       expect(placeholder.exists()).toBe(true)
       expect(placeholder.text()).toContain('思考中')
-      expect(placeholder.find('.typing-dots').exists()).toBe(true)
+      expect(placeholder.find('[data-testid="inbox-motion-pulse"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="clarify-agent-message"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="clarify-thought"]').exists()).toBe(false)
       wrapper.unmount()

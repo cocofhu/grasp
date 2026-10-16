@@ -108,22 +108,11 @@ const Fixture = defineComponent({
           h(
             'div',
             {
-              // Match GatesInboxView production desktop grid (review v2/v3).
-              class: 'grid min-h-0 flex-1 grid-cols-[320px_1fr] items-stretch gap-4',
-              'data-testid': 'inbox-desktop-grid',
+              // Desktop inbox no longer reserves a 320px card column; the panel fills the main area.
+              class: 'flex min-h-0 flex-1 flex-col',
+              'data-testid': 'inbox-desktop-panel',
             },
             [
-              h(
-                'div',
-                {
-                  class: 'flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-surface',
-                  'data-testid': 'inbox-task-col',
-                },
-                [
-                  h('div', { class: 'border-b border-line px-3 py-2 text-xs text-txt3' }, '任务'),
-                  h('div', { class: 'p-2 text-sm' }, '人工评审'),
-                ],
-              ),
               h(
                 'div',
                 {

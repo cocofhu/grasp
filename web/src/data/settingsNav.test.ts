@@ -9,7 +9,6 @@ import { shellNavPaths } from './shellNavPaths'
 describe('settingsNav (plan g2.1 / g2.2 / g2.3)', () => {
   it('lists subnav in the confirmed order', () => {
     expect(settingsNavItems.map((i) => i.labelKey)).toEqual([
-      'nav.projects',
       'nav.notifications',
       'nav.stats',
       'nav.artifacts',
@@ -19,7 +18,6 @@ describe('settingsNav (plan g2.1 / g2.2 / g2.3)', () => {
       'nav.integrations',
     ])
     expect(settingsNavItems.map((i) => i.to)).toEqual([
-      '/projects',
       '/notifications',
       '/stats',
       '/artifacts',
@@ -28,13 +26,14 @@ describe('settingsNav (plan g2.1 / g2.2 / g2.3)', () => {
       '/settings',
       '/settings',
     ])
+    expect(settingsNavItems.some((i) => i.to === '/projects' || i.labelKey === 'nav.projects')).toBe(false)
   })
 
   it('treats settings-state routes as chrome and skips full pages (plan g3.1)', () => {
     expect(isSettingsChrome('/settings')).toBe(true)
     expect(isSettingsChrome('/settings/other')).toBe(true)
-    expect(isSettingsChrome('/projects')).toBe(true)
-    expect(isSettingsChrome('/projects/abc')).toBe(true)
+    expect(isSettingsChrome('/projects')).toBe(false)
+    expect(isSettingsChrome('/projects/abc')).toBe(false)
     expect(isSettingsChrome('/notifications')).toBe(true)
     expect(isSettingsChrome('/agents')).toBe(true)
     expect(isSettingsChrome('/dashboard')).toBe(false)
@@ -45,11 +44,12 @@ describe('settingsNav (plan g2.1 / g2.2 / g2.3)', () => {
   })
 
   it('highlights prefix routes and exact general vs integrations (plan g2.2 / g2.3)', () => {
-    const projects = settingsNavItems[0]
+    const notifications = settingsNavItems[0]
     const general = settingsNavItems.find((i) => i.labelKey === 'nav.general')!
     const integ = settingsNavItems.find((i) => i.labelKey === 'nav.integrations')!
-    expect(settingsItemActive(projects, '/projects/p1', {})).toBe(true)
-    expect(settingsItemActive(projects, '/runs', {})).toBe(false)
+    expect(notifications.labelKey).toBe('nav.notifications')
+    expect(settingsItemActive(notifications, '/notifications/n1', {})).toBe(true)
+    expect(settingsItemActive(notifications, '/runs', {})).toBe(false)
     expect(settingsItemActive(general, '/settings', {})).toBe(true)
     expect(settingsItemActive(general, '/settings/other', {})).toBe(false)
     expect(settingsItemActive(general, '/settings', { integrations: '1' })).toBe(false)

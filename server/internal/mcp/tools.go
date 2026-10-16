@@ -314,11 +314,11 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 		if err != nil {
 			return "set_preview failed: " + err.Error(), true
 		}
-		proxyURL, err := h.setPreviewPort(runID, nodeID, port, label)
+		reg, err := h.setPreviewPort(runID, nodeID, port, label)
 		if err != nil {
 			return "set_preview failed: " + err.Error(), true
 		}
-		return fmt.Sprintf("ok: 预览已注册,沙箱桌面浏览器已切到 http://127.0.0.1:%d/(用户在远程桌面里看到的就是这一页),代理 URL: %s", port, proxyURL), false
+		return previewPortResult(port, reg), false
 	case "set_artifact_preview":
 		if !h.authorize(runID, token) {
 			return "set_artifact_preview failed: " + ErrUnauthorized.Error(), true
@@ -1237,7 +1237,7 @@ func artifactTools() []map[string]any {
 		{
 			"name": "set_preview",
 			"description": "仅授予了 set_preview 的 Agent 可用(澄清对话中,或自动运行与复审阶段):注册沙箱内应用预览端口或外部 http(s) URL。" +
-				"参数 port? 与 url? 二选一(恰好其一);label(可选)用于 UI 标签。只登记审批人要看的前端页面;后端 API、数据库等端口不要登记(页面会自己调用),除非用户明确要求。确有多个前端(如用户端 + 管理端)时可多次调用分别登记;同 port 或同规范化 url 再次调用可更新 label。登记端口后平台把沙箱桌面浏览器(用户远程桌面里看到的那块屏幕,也是 chrome-devtools MCP 操作的浏览器)切到 http://127.0.0.1:<port>/。外部 URL 由浏览器 iframe 直连,不做服务端探测,取点可能降级。" +
+				"参数 port? 与 url? 二选一(恰好其一);label(可选)用于 UI 标签。只登记审批人要看的前端页面;后端 API、数据库等端口不要登记(页面会自己调用,登记后没有取点,还会让前端失去取点),除非用户明确要求。沙箱自带服务的端口会被拒绝。端口不必是 $PREVIEW_PORT:IP 直连时平台会把对外入口 $PREVIEW_PORT 接到该端口并注入取点脚本;每个沙箱同一时刻只有最后登记的端口带取点,多个前端时只登记当前要审的那个。同 port 或同规范化 url 再次调用可更新 label。登记端口后平台把沙箱桌面浏览器(用户远程桌面里看到的那块屏幕,也是 chrome-devtools MCP 操作的浏览器)切到 http://127.0.0.1:<port>/;自测用这个地址,不要用 $PREVIEW_PORT。外部 URL 由浏览器 iframe 直连,不做服务端探测,取点可能降级。" +
 				"这是可选预览,不是完成条件,成功后不会结束本节点。",
 			"inputSchema": map[string]any{
 				"type": "object",

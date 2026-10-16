@@ -4,6 +4,36 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Control-plane restarts no longer wait for agents:** on SIGTERM Grasp now
+  stops scheduling, finishes in-flight HTTP requests (at most 10s) and exits,
+  instead of draining agent runs for up to 10 minutes (which outlasted
+  `kubectl rollout status` timeouts). Sandboxes keep running. On startup, an
+  autonomous agent node whose sandbox is still alive is reattached and its
+  current visit continues: a turn still running is awaited, a finished one is
+  read back from the sandbox event log, and the main prompt is not resent.
+  Queued runs stay queued. Other in-flight nodes (clarify, human-facing,
+  non-agent) re-enter at the same node. If reattach fails, the node retries in
+  a fresh sandbox as before.
+- **Live request card while generating:** in the preview chat drawer, a Live
+  request (for example「趣味细节」from the element card) now shows its card
+  right away with a loading animation (skeleton rows and a sweep; static
+  under reduced motion) instead of an empty「我」bubble. The full card with
+  switch / adopt controls still appears under the agent reply once the
+  candidates are ready (#813).
+- **Candidate switcher clicks:** the in-page switcher no longer rebuilds its
+  buttons when nothing changed, so ‹ / › and「原版」clicks are no longer lost
+  on pages that keep changing (animated candidates, HMR), and switching no
+  longer cuts off the candidate fade (#813).
+- **Preview pick on any port:** with IP-direct preview, `set_preview(port=X)`
+  now gives the reviewer's new-tab link (`IP:$PREVIEW_PORT`) the page on port X
+  with pick injected, even when the app does not listen on `$PREVIEW_PORT`
+  (e.g. Vite on 5173). Only the last registered port per sandbox has pick;
+  if `$PREVIEW_PORT` already serves another app it keeps the entry. Sandbox
+  service ports (SSH, VNC, IDE, CDP, sandbox backend) are rejected. Agent
+  prompts now say not to register backends and to self-test on
+  `127.0.0.1:<app port>`. Sandboxes on an older runtime bundle keep the old
+  behavior until the bundle updates.
+
 ## 2.2.0 — 2026-10-15
 
 <img src="media/yume-mark.png" alt="Black-and-white ghost cat, the Grasp mascot" width="120" />

@@ -125,6 +125,9 @@ type execCtx struct {
 	// must not TakeOutcome (node_complete is keyed only by run+node) or the
 	// fresh visit loses its mark and fails with "未调用 node_complete".
 	execGen uint64
+	// reattachSandbox is the live sandbox the current node continues in after
+	// a control-plane restart; consumed by the first agent call.
+	reattachSandbox string
 }
 
 // lockResume serializes resume operations for a given key (runID:nodeID),
@@ -281,6 +284,13 @@ func (e *Engine) resumeAdmitted(runID, fromNodeID string) {
 // execute drives the FSM loop from the given node id. The caller must already
 // hold a concurrency slot (see runAdmitted / resumeAdmitted).
 func (e *Engine) execute(runID, fromNodeID string) {
+	e.executeFrom(runID, fromNodeID, nil)
+}
+
+// executeFrom is execute with an optional adopted visit: when re is set, the
+// first node continues re's in-flight StateRun in its still-running sandbox
+// instead of opening a new visit.
+func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 
 	gen, ok := e.acquireExecuteSlot(runID)
 	if !ok {
@@ -319,6 +329,11 @@ func (e *Engine) execute(runID, fromNodeID string) {
 				Msg("execute abandoned: lost exec ownership")
 			return
 		}
+		if re == nil && e.IsHalted() {
+			e.appendTrace(c, models.TraceEntry{NodeID: cur, Event: "pause", Detail: "控制面停机，重启后从此节点继续"})
+			e.requeueRun(runID, cur)
+			return
+		}
 		node := c.graph.FindNode(cur)
 		if node == nil {
 			e.appendTrace(c, models.TraceEntry{NodeID: cur, Event: "exit", Detail: "node not found"})
@@ -326,14 +341,22 @@ func (e *Engine) execute(runID, fromNodeID string) {
 			return
 		}
 
-		if node.Checkpoint {
-			e.snapshotCheckpoint(c, node.ID)
+		if re != nil && re.nodeID == node.ID {
+			c.iter[node.ID] = re.iteration
+			c.reattachSandbox = re.sandbox
+			e.refreshReviewFlag(c, node)
+			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "reattach", Iteration: re.iteration,
+				Detail: "控制面重启，已接管沙箱 " + re.sandbox})
+		} else {
+			if node.Checkpoint {
+				e.snapshotCheckpoint(c, node.ID)
+			}
+			c.iter[node.ID]++
+			e.refreshReviewFlag(c, node)
+			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "enter", Iteration: c.iter[node.ID]})
+			e.startNodeRun(c, node)
 		}
-
-		c.iter[node.ID]++
-		e.refreshReviewFlag(c, node)
-		e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "enter", Iteration: c.iter[node.ID]})
-		e.startNodeRun(c, node)
+		re = nil
 
 		outcome := e.executeNode(c, node)
 

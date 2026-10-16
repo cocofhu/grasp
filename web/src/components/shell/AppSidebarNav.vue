@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
+import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
 import { sidebarNavGroups } from '@/data/sidebarNav'
+import { isReplyingInboxItem, isStartingInboxItem } from '@/lib/inbox/inboxDisplay'
+import type { InboxItem } from '@/lib/shared/types'
 import {
   isSettingsChrome,
   settingsItemActive,
@@ -23,10 +26,19 @@ const emit = defineEmits<{ (e: 'navigate'): void }>()
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 const toast = useToast()
 
-// Shared singleton source so approving a gate elsewhere updates the badge immediately.
-const { count: gateCount, peek, refresh } = usePendingGates()
+// Shared singleton source so approving a gate elsewhere updates the lists immediately.
+const {
+  displayedItems,
+  sidebarExtras,
+  startFailedKeys,
+  activeInboxKey,
+  peek,
+  refresh,
+  itemKey,
+} = usePendingGates()
 // Same unreadCount singleton as shell chrome bell — keep the settings notification badge in sync.
 const { unreadCount } = useRunTerminalNotifications()
 const { displayItems, hydrateDisplay, unfavorite, getFavoriteWorkflow, reorderFavorites } = useWorkflowFavorites()
@@ -54,9 +66,35 @@ const dragItems = computed(() =>
 
 let timer: number | undefined
 function badgeFor(to: string): number {
-  if (to === '/gates') return gateCount.value
   if (to === '/notifications') return unreadCount.value
   return 0
+}
+
+function rowTitle(it: InboxItem): string {
+  return it.type === 'gate' ? it.title : it.label
+}
+
+const pendingRows = computed(() => {
+  const shown = new Set(displayedItems.value.map(itemKey))
+  const extras = sidebarExtras.value.filter((it) => !shown.has(itemKey(it)))
+  return [...extras, ...displayedItems.value]
+})
+
+function rowMotion(it: InboxItem): 'spin' | 'pulse' | null {
+  if (startFailedKeys.value.includes(itemKey(it))) return null
+  if (isStartingInboxItem(it)) return 'spin'
+  if (isReplyingInboxItem(it)) return 'pulse'
+  return null
+}
+
+function isPendingActive(it: InboxItem): boolean {
+  if (route.path !== '/gates' && !route.path.startsWith('/gates/')) return false
+  return activeInboxKey.value === itemKey(it)
+}
+
+function onPendingRow(it: InboxItem) {
+  void router.push({ path: '/gates', query: { run: it.runId, node: it.nodeId } })
+  onNavigate()
 }
 function pollRefresh() {
   return peek({ source: 'sidebar-poll' })
@@ -301,7 +339,6 @@ const settingsItems = settingsNavItems
         <span
           v-if="badgeFor(item.to)"
           class="force-radius-full flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[11px] font-semibold text-white"
-          :data-testid="item.to === '/gates' ? 'nav-gates-badge' : undefined"
         >{{ badgeFor(item.to) }}</span>
       </RouterLink>
     </div>
@@ -366,6 +403,30 @@ const settingsItems = settingsNavItems
           data-testid="nav-quick-workflow-placeholder"
         />
       </div>
+    </div>
+
+    <div v-if="pendingRows.length" class="mb-3" data-testid="nav-pending-approvals">
+      <div class="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-txt3">
+        {{ t('nav.pendingApprovals') }}
+      </div>
+      <button
+        v-for="it in pendingRows"
+        :key="itemKey(it)"
+        v-hover-ink
+        type="button"
+        class="nav-item mb-0.5 w-full min-w-0"
+        :class="{ active: isPendingActive(it) }"
+        data-testid="nav-pending-row"
+        :data-key="itemKey(it)"
+        :data-motion="rowMotion(it) || undefined"
+        :title="rowTitle(it)"
+        :aria-current="isPendingActive(it) ? 'true' : undefined"
+        @click="onPendingRow(it)"
+      >
+        <span class="min-w-0 flex-1 truncate">{{ rowTitle(it) }}</span>
+        <InboxMotionMark v-if="rowMotion(it) === 'spin'" kind="spin" />
+        <InboxMotionMark v-else-if="rowMotion(it) === 'pulse'" kind="pulse" />
+      </button>
     </div>
     </div>
     </Transition>

@@ -33,6 +33,9 @@ func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, er
 	var spentByModel models.TokenUsageByModel
 	for attempt := 1; ; attempt++ {
 		res, err := c.runAgentOnce(ctx, req)
+		// Only the first attempt continues a reattached sandbox; retries
+		// start over in a fresh one.
+		req.ReattachSandbox = ""
 		stuck := errors.Is(err, sandbox.ErrAgentStuck) && stuckRetries > 0 && ctx.Err() == nil
 		if !stuck && (err == nil || !isRetryableSandboxErr(err) || attempt >= n || ctx.Err() != nil) {
 			res.Usage = models.AddTokenUsage(spent, res.Usage)
@@ -61,12 +64,21 @@ func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, er
 // sandbox (kept for the debug TTL); on a retryable fault it discards (destroys)
 // the broken sandbox so the caller can retry cleanly.
 func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeResult, err error) {
-
-	c.host.ClearOutcome(req.RunID, req.NodeID)
-
-	sb, acp, home, err := c.openSandbox(ctx, req)
+	reattach := req.ReattachSandbox != ""
+	var (
+		sb   *sandbox.Sandbox
+		acp  *sandbox.ACPClient
+		home string
+	)
+	if reattach {
+		// Keep the visit's node_complete mark: the agent may have reported it
+		// before the restart (RestoreOutcomeFromArtifact recovers it).
+		sb, acp, err = c.attachSandbox(ctx, req)
+	} else {
+		c.host.ClearOutcome(req.RunID, req.NodeID)
+		sb, acp, home, err = c.openSandbox(ctx, req)
+	}
 	if err != nil {
-
 		return NodeResult{}, err
 	}
 
@@ -104,7 +116,12 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 	var usage *models.TokenUsage
 	var usageByModel models.TokenUsageByModel
 
-	chatRes, err = c.streamChat(chatCtx, acp, req, c.buildAgentPrompt(req, seeded), req.PromptImages)
+	if reattach {
+		chatRes, err = c.reattachTurn(chatCtx, sb, acp)
+	}
+	if !reattach || (err == nil && chatRes == nil) {
+		chatRes, err = c.streamChat(chatCtx, acp, req, c.buildAgentPrompt(req, seeded), req.PromptImages)
+	}
 	if err != nil {
 		if isRetryableSandboxErr(err) || errors.Is(err, sandbox.ErrAgentStuck) {
 			keepForDebug = false

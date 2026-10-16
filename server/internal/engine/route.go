@@ -10,11 +10,6 @@ import (
 // routeSuccess selects the next state after a node succeeds: the first edge
 // leaving through the outcome's handle whose when-guard passes.
 func (e *Engine) routeSuccess(c *execCtx, node *models.Node, outcome nodeOutcome) string {
-	if e.IsHalted() {
-		e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "exit", Detail: "shutdown: scheduler halted"})
-		e.finish(c.run.ID, "cancelled")
-		return ""
-	}
 	ec := e.evalContext(c, outcomeAction(outcome))
 	for _, ed := range c.graph.OutEdges(node.ID) {
 		if ed.SourceHandle != outcome.handle || ed.KindOrDefault() == models.EdgeFailure {

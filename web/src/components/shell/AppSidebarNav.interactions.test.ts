@@ -9,6 +9,7 @@ import nav from '@/locales/zh-CN/nav.json'
 const route = { path: '/dashboard', query: {} as any, meta: {} as any }
 vi.mock('vue-router', () => ({
   useRoute: () => route,
+  useRouter: () => ({ push: vi.fn() }),
   RouterLink: { props: ['to'], emits: ['click'], template: '<a :data-to="typeof to === \'string\' ? to : to.path" @click="$emit(\'click\')"><slot/></a>' },
 }))
 const mocks = vi.hoisted(() => {
@@ -18,9 +19,19 @@ const mocks = vi.hoisted(() => {
     count: ref(3), unread: ref(5), items: ref<any[]>([]), mobile: ref(false),
     peek: vi.fn(), refresh: vi.fn(), hydrate: vi.fn(), unfavorite: vi.fn(),
     getWorkflow: vi.fn(), reorder: vi.fn(), launch: vi.fn(), toastError: vi.fn(),
+    displayedItems: ref<any[]>([]),
+    sidebarExtras: ref<any[]>([]),
+    startFailedKeys: ref<string[]>([]),
+    activeInboxKey: ref<string | null>(null),
   }
 })
-vi.mock('@/lib/inbox/usePendingGates', () => ({ usePendingGates: () => ({ count: mocks.count, peek: mocks.peek, refresh: mocks.refresh }) }))
+vi.mock('@/lib/inbox/usePendingGates', () => ({ usePendingGates: () => ({
+  count: mocks.count, peek: mocks.peek, refresh: mocks.refresh,
+  displayedItems: mocks.displayedItems,
+  sidebarExtras: mocks.sidebarExtras, startFailedKeys: mocks.startFailedKeys,
+  activeInboxKey: mocks.activeInboxKey,
+  itemKey: (it: { runId: string; nodeId: string }) => `${it.runId}:${it.nodeId}`,
+}) }))
 vi.mock('@/lib/run/useRunTerminalNotifications', () => ({ useRunTerminalNotifications: () => ({ unreadCount: mocks.unread }) }))
 vi.mock('@/lib/run/useWorkflowFavorites', () => ({ useWorkflowFavorites: () => ({
   displayItems: mocks.items, hydrateDisplay: mocks.hydrate, unfavorite: mocks.unfavorite,

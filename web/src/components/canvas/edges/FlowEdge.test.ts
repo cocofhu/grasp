@@ -152,4 +152,88 @@ describe('FlowEdge · handoff', () => {
     const empty = mountEdge(edgeData({ handoff: { text: '', source: 'platform' } }))
     expect(empty.find('[data-testid="canvas-edge-handoff"]').exists()).toBe(false)
   })
+
+  it('keeps a single visit as the existing note, without a switcher', async () => {
+    const w = mountEdge(edgeData({ handoff: { text: MD, source: 'agent' } }))
+    await w.get('[data-testid="canvas-edge-handoff"]').trigger('click')
+    expect(w.find('[data-testid="canvas-edge-handoff-tabs"]').exists()).toBe(false)
+    expect(w.get('[data-testid="canvas-edge-handoff-source"]').text()).toBe(t('canvas.handoff.fromNode', { source: '需求澄清' }))
+    expect(w.get('[data-testid="canvas-edge-handoff"]').attributes('aria-label')).toBe(
+      t('canvas.handoff.aria', { source: '需求澄清', target: '实现' }),
+    )
+  })
+
+  it('opens on the latest visit and switches body and footnote', async () => {
+    const w = mountEdge(
+      edgeData({
+        sourceLabel: '实现',
+        targetLabel: '测试评审',
+        handoffs: [
+          { text: '第一次：已推送工作分支', source: 'agent' },
+          { text: '第二次：已按失败用例修复', source: 'agent' },
+        ],
+      }),
+    )
+    const chip = w.get('[data-testid="canvas-edge-handoff"]')
+    expect(chip.text()).toBe(t('canvas.handoff.chip'))
+    expect(chip.attributes('aria-label')).toBe(t('canvas.handoff.ariaCount', { source: '实现', target: '测试评审', n: 2 }))
+    expect(w.find('[data-testid="canvas-edge-handoff-pop"]').exists()).toBe(false)
+
+    await chip.trigger('click')
+    const tabs = w.findAll('[data-testid="canvas-edge-handoff-tab"]')
+    expect(tabs).toHaveLength(2)
+    expect(tabs[0]!.text()).toBe(t('canvas.handoff.visit', { n: 1 }))
+    expect(tabs[1]!.text()).toBe(t('canvas.handoff.visit', { n: 2 }))
+    expect(tabs[1]!.classes()).toContain('is-on')
+    expect(w.get('[data-testid="canvas-edge-handoff-body"]').text()).toContain('第二次')
+    expect(w.get('[data-testid="canvas-edge-handoff-source"]').text()).toBe(t('canvas.handoff.fromNodeVisit', { source: '实现', n: 2 }))
+    const route = w.get('[data-testid="canvas-edge-handoff-pop"]').text()
+    expect(route).toContain('实现')
+    expect(route).toContain('测试评审')
+
+    await tabs[0]!.trigger('click')
+    expect(w.findAll('[data-testid="canvas-edge-handoff-tab"]')[0]!.classes()).toContain('is-on')
+    expect(w.get('[data-testid="canvas-edge-handoff-body"]').text()).toContain('第一次')
+    expect(w.get('[data-testid="canvas-edge-handoff-body"]').text()).not.toContain('第二次')
+    expect(w.get('[data-testid="canvas-edge-handoff-source"]').text()).toBe(t('canvas.handoff.fromNodeVisit', { source: '实现', n: 1 }))
+    expect(w.find('[data-testid="canvas-edge-handoff-pop"]').exists()).toBe(true)
+  })
+
+  it('uses the platform footnote only for the visit that was written by the platform', async () => {
+    const w = mountEdge(
+      edgeData({
+        sourceLabel: '实现',
+        targetLabel: '测试评审',
+        handoffs: [
+          { text: '平台补写的第一次', source: 'platform' },
+          { text: '节点自己写的第二次', source: 'agent' },
+        ],
+      }),
+    )
+    const chip = w.get('[data-testid="canvas-edge-handoff"]')
+    expect(chip.classes()).not.toContain('is-platform')
+    await chip.trigger('click')
+    expect(w.find('[data-testid="canvas-edge-handoff-platform"]').exists()).toBe(false)
+    expect(w.get('[data-testid="canvas-edge-handoff-source"]').text()).toBe(t('canvas.handoff.fromNodeVisit', { source: '实现', n: 2 }))
+
+    await w.findAll('[data-testid="canvas-edge-handoff-tab"]')[0]!.trigger('click')
+    expect(w.find('[data-testid="canvas-edge-handoff-source"]').exists()).toBe(false)
+    expect(w.get('[data-testid="canvas-edge-handoff-platform"]').text()).toBe(t('canvas.handoff.platformNote'))
+    expect(w.get('[data-testid="canvas-edge-handoff"]').classes()).toContain('is-platform')
+    expect(w.get('[data-testid="canvas-edge-handoff-body"]').text()).toContain('平台补写')
+  })
+
+  it('drops a blank visit so one remaining note has no switcher', async () => {
+    const w = mountEdge(
+      edgeData({
+        handoffs: [
+          { text: MD, source: 'agent' },
+          { text: '  \n', source: 'agent' },
+        ],
+      }),
+    )
+    await w.get('[data-testid="canvas-edge-handoff"]').trigger('click')
+    expect(w.find('[data-testid="canvas-edge-handoff-tabs"]').exists()).toBe(false)
+    expect(w.get('[data-testid="canvas-edge-handoff-body"]').text()).toContain('关键变化')
+  })
 })

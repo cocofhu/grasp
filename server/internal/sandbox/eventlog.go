@@ -389,6 +389,22 @@ func SplitFramesByPromptBegin(frames []json.RawMessage) [][]json.RawMessage {
 	return turns
 }
 
+// FirstTurnFrames returns the first prompt_begin turn of an event log. ok is
+// false when the log has no prompt_begin (no turn was ever sent).
+func FirstTurnFrames(frames []json.RawMessage) ([]json.RawMessage, bool) {
+	if !hasPromptBegin(frames) {
+		return nil, false
+	}
+	turns := SplitFramesByPromptBegin(frames)
+	first := turns[0]
+	for i, raw := range first {
+		if frameIsPromptBegin(raw) {
+			return first[i:], true
+		}
+	}
+	return first, true
+}
+
 func hasPromptBegin(frames []json.RawMessage) bool {
 	for _, raw := range frames {
 		if frameIsPromptBegin(raw) {

@@ -180,6 +180,27 @@ export function isLoopbackShareHost(urlOrHost: string): boolean {
   }
 }
 
+/**
+ * Dev API proxy rewrites Host to localhost:8080, so the server mints a loopback
+ * share URL. When this page was opened on a reachable host, keep the path and
+ * token but use that page origin. A page that is itself loopback stays blocked.
+ */
+export function reachableShareUrl(url: string, pageOrigin?: string): string {
+  const raw = url.trim()
+  if (!raw || !isLoopbackShareHost(raw)) return url
+  const origin = (pageOrigin ?? (typeof window !== 'undefined' ? window.location.origin : '')).trim()
+  if (!origin || isLoopbackShareHost(origin)) return url
+  try {
+    const src = new URL(raw)
+    const page = new URL(origin)
+    src.protocol = page.protocol
+    src.host = page.host
+    return src.toString()
+  } catch {
+    return url
+  }
+}
+
 /** Read token from `#t=…` only — never from path/query. */
 export function parseShareTokenFromHash(hash: string): string {
   const raw = (hash || '').startsWith('#') ? hash.slice(1) : hash || ''
