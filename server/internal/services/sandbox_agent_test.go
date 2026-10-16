@@ -46,8 +46,11 @@ func TestOpenAgentSandboxValidationAndReuse(t *testing.T) {
 	}
 
 	threadID := "thr-reuse-1"
+	// SharedToken keeps the async start from failing immediately on a missing
+	// ACP_BRIDGE_PASSWORD and flipping the row to error before reuse is checked.
+	const token = "sandbox-token"
 	row1, reused, err := s.OpenAgentSandbox(ctx, AgentSandboxOpenOpts{
-		Profile: "agentA", ProjectID: "p1", ThreadID: threadID, RunIDPrefix: "agent",
+		Profile: "agentA", ProjectID: "p1", ThreadID: threadID, RunIDPrefix: "agent", SharedToken: token,
 	})
 	if err != nil || reused {
 		t.Fatalf("first open: row=%+v reused=%v err=%v", row1, reused, err)
@@ -55,7 +58,7 @@ func TestOpenAgentSandboxValidationAndReuse(t *testing.T) {
 	ds.setStatus(row1.Name, "running")
 
 	row2, reused2, err := s.OpenAgentSandbox(ctx, AgentSandboxOpenOpts{
-		Profile: "agentA", ProjectID: "p1", ThreadID: threadID, Reuse: true, RunIDPrefix: "agent",
+		Profile: "agentA", ProjectID: "p1", ThreadID: threadID, Reuse: true, RunIDPrefix: "agent", SharedToken: token,
 	})
 	if err != nil || !reused2 || row2.ID != row1.ID {
 		t.Fatalf("reuse: row2=%+v reused=%v err=%v", row2, reused2, err)
