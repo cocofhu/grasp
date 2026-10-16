@@ -848,6 +848,35 @@ func TestCreatePreviewDirectAllocateError(t *testing.T) {
 	}
 }
 
+func TestCreatePreviewDirectLoopbackPublishesAllInterfaces(t *testing.T) {
+	m := newMock()
+	m.on("run", "cid", nil)
+	m.on("inspect", "18081", nil)
+	d := New(Options{BindIP: "127.0.0.1", NamePrefix: "sbx-"})
+	d.run = m.run
+	d.pickPreviewPort = func() (int, error) { return 18081, nil }
+
+	_, err := d.Create(context.Background(), driver.Spec{
+		ID:    "p-loop",
+		Image: "img",
+		Ports: []int{8765},
+		Env:   map[string]string{driver.EnvPreviewDirect: "1"},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	args := m.callsWith("run")[0]
+	if !containsPair(args, "-p", "0.0.0.0:18081:18081") {
+		t.Fatalf("preview port must listen beyond loopback: %v", args)
+	}
+	if !containsPair(args, "-p", "127.0.0.1::8765") {
+		t.Fatalf("other ports stay on bindIP: %v", args)
+	}
+	if !containsPair(args, "-e", "PREVIEW_PUBLIC_URL=http://127.0.0.1:18081") {
+		t.Fatalf("in-sandbox URL stays on loopback: %v", args)
+	}
+}
+
 func TestCreatePreviewDirectOffKeepsEphemeralPublish(t *testing.T) {
 	m := newMock()
 	m.on("run", "cid", nil)
