@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>澄清预览窗口</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #e7e8ec; }
+      #mode-btn {
+        position: fixed; z-index: 2; top: 12px; left: 16px;
+        height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid #d4d4d8;
+        background: #fff;
+      }
+      #chat-col {
+        position: fixed; top: 0; right: 0; width: 420px; height: 100%;
+        background: #fff; border-left: 1px solid #e5e5e8;
+      }
+      #app { height: 100%; }
+    </style>
+  </head>
+  <body>
+    <button id="mode-btn" type="button">模式</button>
+    <div id="chat-col">
+      <div id="app"></div>
+    </div>
+    <script type="module" src="/src/clarify-window-harness.ts"></script>
+  </body>
+</html>
