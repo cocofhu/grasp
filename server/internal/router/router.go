@@ -262,6 +262,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 	r.GET("/embed/runs/:runId/nodes/:nodeId/chat", h.EmbedChatPage)
 	r.GET("/embed/runs/:runId/nodes/:nodeId/artifacts", h.EmbedChatPage)
 	r.GET("/embed/runs/:runId/nodes/:nodeId/image", h.EmbedChatPage)
+	r.GET("/embed/runs/:runId/nodes/:nodeId/demo", h.EmbedChatPage)
 	r.POST("/embed-api/session", h.RedeemEmbedSession)
 
 	// Project-scoped PM MCP hosts (outside /api).

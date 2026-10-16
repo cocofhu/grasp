@@ -29,7 +29,7 @@ function mountFrame(props: { label: string; html: string; highlighted?: boolean;
 }
 
 describe('ClarifyDemoFrame', () => {
-  it('uses card-radius (12px) demo frame without a nested enlarge control', () => {
+  it('uses card-radius (12px) and a card enlarge control, not a nested preview modal', () => {
     const wrapper = mountFrame({
       label: '方案 A',
       html: '<!doctype html><html><body>demo</body></html>',
@@ -37,10 +37,30 @@ describe('ClarifyDemoFrame', () => {
     const root = wrapper.get('[data-testid="clarify-demo-frame"]')
     expect(root.classes()).toContain('rounded-lg')
     expect(root.classes()).not.toContain('rounded-none')
-    expect(wrapper.find('button').exists()).toBe(false)
+    const enlarge = wrapper.get('[data-testid="clarify-demo-enlarge"]')
+    expect(enlarge.text()).toContain('放大')
     const preview = wrapper.get('[data-testid="html-preview"]')
     expect(preview.attributes('data-mode')).toBe('demo')
     expect(preview.attributes('data-enlargeable')).toBe('0')
+    wrapper.unmount()
+  })
+
+  it('hides the card enlarge control inside the page window', () => {
+    const wrapper = mount(ClarifyDemoFrame, {
+      props: { label: '方案 A', html: '<p>a</p>', enlargeable: false, expanded: true },
+      global: {
+        plugins: [
+          createI18n({
+            legacy: false,
+            locale: 'zh-CN',
+            messages: { 'zh-CN': { ...common, ...pages } },
+          }),
+        ],
+        stubs: { Icon: true, HtmlPreview: HtmlPreviewStub },
+      },
+    })
+    expect(wrapper.find('[data-testid="clarify-demo-enlarge"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="clarify-demo-frame"]').classes()).toContain('clarify-demo-expanded')
     wrapper.unmount()
   })
 

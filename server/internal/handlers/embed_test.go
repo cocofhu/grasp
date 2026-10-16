@@ -168,6 +168,7 @@ func TestEmbedChatPageFrameAncestors(t *testing.T) {
 		"/embed/runs/run-emb-page/nodes/ap1/chat",
 		"/embed/runs/run-emb-page/nodes/ap1/artifacts",
 		"/embed/runs/run-emb-page/nodes/ap1/image",
+		"/embed/runs/run-emb-page/nodes/ap1/demo",
 	} {
 		w := hn.doEmbed(http.MethodGet, path, nil, nil)
 		if w.Code != http.StatusOK {

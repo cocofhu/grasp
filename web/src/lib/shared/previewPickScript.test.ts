@@ -1808,4 +1808,56 @@ describe('preview-pick.js image preview window', () => {
     expect(imageShown(p)).toBe(false)
     expect(p.drawerOpen()).toBe(false)
   })
+
+  function demoModal(p: Page) {
+    return p.shadow.querySelector('[data-role="demo-modal"]') as HTMLElement
+  }
+
+  function openDemo(p: Page, label: string, extra: Record<string, unknown> = {}) {
+    fromChat(p, { type: 'grasp-embed:demo', action: 'open', label, ...extra })
+  }
+
+  it('opens one demo window outside the chat card and drops the HTML', async () => {
+    const p = await ready()
+    setView(p, 1600, 900)
+    expect(demoModal(p).hidden).toBe(true)
+    openDemo(p, '方案 B', { html: '<p>secret-demo</p>' })
+    const drawer = p.shadow.querySelector('[data-role="drawer"]') as HTMLElement
+    const modal = demoModal(p)
+    expect(modal.hidden).toBe(false)
+    expect(drawer.contains(modal)).toBe(false)
+    expect(modal.parentElement).toBe(p.artifactMask())
+    const box = modalGeom(modal)
+    const card = modalGeom(drawer)
+    expect(box.x + box.w).toBeLessThanOrEqual(card.x)
+    expect(rectHits(box, card)).toBe(false)
+    expect(p.shadow.querySelector('[data-role="demo-title"]')?.textContent).toBe('窗口放大查看 · 方案 B')
+    expect(p.shadow.textContent || '').not.toContain('secret-demo')
+    const frame = modal.querySelector('iframe') as HTMLIFrameElement
+    expect(frame.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/demo#theme=dark`)
+    expect(frame.getAttribute('src')).not.toContain('secret')
+    openDemo(p, '方案 C', { html: '<p>other-secret</p>' })
+    expect(p.shadow.querySelectorAll('[data-role="demo-modal"]')).toHaveLength(1)
+    expect(p.shadow.querySelector('[data-role="demo-title"]')?.textContent).toBe('窗口放大查看 · 方案 C')
+    expect(rectHits(modalGeom(demoModal(p)), modalGeom(drawer))).toBe(false)
+    expect(p.drawerOpen()).toBe(true)
+  })
+
+  it('closes the demo window with the chat card and leaves an image window open', async () => {
+    const p = await ready()
+    setView(p, 1600, 900)
+    openImage(p, 'image.png')
+    openDemo(p, '方案 A')
+    expect(imageShown(p)).toBe(true)
+    expect(demoModal(p).hidden).toBe(false)
+    ;(p.shadow.querySelector('[data-role="drawer-close"]') as HTMLButtonElement).click()
+    expect(p.drawerOpen()).toBe(false)
+    expect(demoModal(p).hidden).toBe(true)
+    expect(imageShown(p)).toBe(true)
+    p.chatButton().click()
+    expect(p.drawerOpen()).toBe(true)
+    expect(demoModal(p).hidden).toBe(true)
+    ;(p.shadow.querySelector('[data-role="demo-close"]') as HTMLButtonElement).click()
+    expect(p.drawerOpen()).toBe(true)
+  })
 })

@@ -16,6 +16,11 @@ export const EMBED_LANG_MESSAGE = 'grasp-embed:lang'
  * The message carries the action and display name only — never the picture address.
  */
 export const EMBED_IMAGE_MESSAGE = 'grasp-embed:image'
+/**
+ * Drawer → page: open, replace, or close the page-level single-demo window.
+ * The message carries the action and option label only — never the demo HTML.
+ */
+export const EMBED_DEMO_MESSAGE = 'grasp-embed:demo'
 /** Drawer → page: `{ok:false}` when the drawer session is invalid, expired or revoked. */
 export const EMBED_SESSION_MESSAGE = 'grasp-embed:session'
 /** Page ↔ drawer: capability announce / stop (page → drawer), toggle state (drawer → page). */
@@ -55,13 +60,30 @@ export function embedImagePath(runId: string, nodeId: string): string {
   return `/embed/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/image`
 }
 
+/** Demo frame inside the page-level enlarge window. The HTML arrives later, same-origin, not in this URL. */
+export function embedDemoPath(runId: string, nodeId: string): string {
+  return `/embed/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/demo`
+}
+
 export type EmbedImageAction = 'open' | 'close'
 
 /** Host-bound image-window request. Drops any picture address that may have been attached. */
 export function parseEmbedImageMessage(data: unknown): { action: EmbedImageAction; label: string } | null {
+  return parseEmbedShellMessage(data, EMBED_IMAGE_MESSAGE)
+}
+
+/** Host-bound demo-window request. Drops any HTML that may have been attached. */
+export function parseEmbedDemoMessage(data: unknown): { action: EmbedImageAction; label: string } | null {
+  return parseEmbedShellMessage(data, EMBED_DEMO_MESSAGE)
+}
+
+function parseEmbedShellMessage(
+  data: unknown,
+  type: typeof EMBED_IMAGE_MESSAGE | typeof EMBED_DEMO_MESSAGE,
+): { action: EmbedImageAction; label: string } | null {
   if (!data || typeof data !== 'object') return null
   const m = data as { type?: unknown; action?: unknown; label?: unknown }
-  if (m.type !== EMBED_IMAGE_MESSAGE) return null
+  if (m.type !== type) return null
   if (m.action !== 'open' && m.action !== 'close') return null
   const label = typeof m.label === 'string' ? m.label.replace(/[\r\n\t]/g, ' ').trim().slice(0, 180) : ''
   return { action: m.action, label }

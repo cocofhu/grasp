@@ -12,6 +12,8 @@
   var EMBED_LANG = 'grasp-embed:lang';
   // Drawer → page: open/replace/close the image shell. No picture address.
   var EMBED_IMAGE = 'grasp-embed:image';
+  // Drawer → page: open/replace/close the single-demo shell. No HTML.
+  var EMBED_DEMO = 'grasp-embed:demo';
   var EMBED_HASH = '__grasp_embed';
   var EMBED_ORIGIN_PATH = '/__grasp/embed-origin';
   var EMBED_STORE_KEY = '__grasp_embed';
@@ -73,6 +75,8 @@
       closeArtifact: '关闭产物',
       imagePreview: '图片预览',
       closeImage: '关闭',
+      demoPreview: '窗口放大查看',
+      closeDemo: '关闭',
       chat: '对话',
       chatTitle: 'Grasp · Agent 对话',
       needTicket: '需要从预览页跳转重新获得票据',
@@ -96,6 +100,8 @@
       closeArtifact: 'Close artifacts',
       imagePreview: 'Image preview',
       closeImage: 'Close',
+      demoPreview: 'Open enlarged preview',
+      closeDemo: 'Close',
       chat: 'Chat',
       chatTitle: 'Grasp · Agent chat',
       needTicket: 'Reopen from the preview page in Grasp to get a new ticket.',
@@ -158,6 +164,10 @@
   var imageOpen = false;
   var imageFrame = null;
   var imageLabel = '';
+  // Single-option demo enlarge, sibling of the image window. The HTML stays in Grasp.
+  var demoOpen = false;
+  var demoFrame = null;
+  var demoLabel = '';
   // The drawer reported its session invalid, expired or revoked.
   var sessionDead = false;
   // Custom no-ticket bubble: open only while the gate is hovered or focused.
@@ -305,6 +315,8 @@
   var artifactDrag = null;
   var imageBox = null;
   var imageDrag = null;
+  var demoBox = null;
+  var demoDrag = null;
 
   var BAR_CSS =
     ':host{all:initial}' +
@@ -598,7 +610,7 @@
   }
 
   function beginDrag(ev, kind, dir) {
-    if (!drawerOpen || drag || artifactDrag || imageDrag) return;
+    if (!drawerOpen || drag || artifactDrag || imageDrag || demoDrag) return;
     if (ev.button != null && ev.button !== 0) return;
     ev.preventDefault();
     ev.stopPropagation();
@@ -635,7 +647,7 @@
   }
 
   function onViewportResize() {
-    if (!ui || drag || artifactDrag || imageDrag) return;
+    if (!ui || drag || artifactDrag || imageDrag || demoDrag) return;
     // Pull the window into the current viewport for display only. The size
     // written on pointerup stays in the session, so a larger viewport can restore it.
     box = drawer ? boxFromEmbed(drawer.embed) : clampBox(box);
@@ -647,6 +659,10 @@
     if (imageOpen) {
       imageBox = clampArtifactBox(imageBox || imageDefaultBox());
       applyImageBox();
+    }
+    if (demoOpen) {
+      demoBox = clampArtifactBox(demoBox || demoDefaultBox());
+      applyDemoBox();
     }
   }
 
@@ -788,7 +804,7 @@
   }
 
   function beginArtifactDrag(ev, kind, dir) {
-    if (!artifactOpen || artifactDrag || drag || imageDrag) return;
+    if (!artifactOpen || artifactDrag || drag || imageDrag || demoDrag) return;
     if (ev.button != null && ev.button !== 0) return;
     ev.preventDefault();
     ev.stopPropagation();
@@ -863,6 +879,7 @@
     // Stay inside the mask, under the chat card. The later window paints on top.
     ui.artifactModal.style.zIndex = el === ui.artifactModal ? '2' : '1';
     ui.imageModal.style.zIndex = el === ui.imageModal ? '2' : '1';
+    if (ui.demoModal) ui.demoModal.style.zIndex = el === ui.demoModal ? '2' : '1';
   }
 
   // Opening the second window at the same origin would hide the first title bar.
@@ -954,7 +971,7 @@
   }
 
   function beginImageDrag(ev, kind, dir) {
-    if (!imageOpen || imageDrag || artifactDrag || drag) return;
+    if (!imageOpen || imageDrag || artifactDrag || drag || demoDrag) return;
     if (ev.button != null && ev.button !== 0) return;
     ev.preventDefault();
     ev.stopPropagation();
@@ -1010,6 +1027,144 @@
     setImageOpen(true);
   }
 
+  function demoTitleText() {
+    if (!demoLabel) return '';
+    return T.demoPreview + ' · ' + demoLabel;
+  }
+
+  function applyDemoTitle() {
+    if (!ui || !ui.demoTitle) return;
+    var title = demoTitleText();
+    ui.demoTitle.textContent = title;
+    if (demoFrame) demoFrame.title = title || T.demoPreview;
+  }
+
+  function demoDefaultBox() {
+    var v = viewport();
+    var drawerLeft = (v.vw || 0) - DEFAULT_W - DEFAULT_MARGIN_X;
+    var room = drawerLeft - 16 - ARTIFACT_MARGIN;
+    var w = ARTIFACT_DEFAULT_W;
+    if (room >= ARTIFACT_MIN_W) w = Math.min(ARTIFACT_DEFAULT_W, room);
+    var x = ARTIFACT_MARGIN;
+    var y = ARTIFACT_MARGIN;
+    if (artifactOpen || imageOpen) {
+      x += PEER_NUDGE;
+      y += PEER_NUDGE;
+    }
+    return clampArtifactBox({ x: x, y: y, w: w, h: ARTIFACT_DEFAULT_H });
+  }
+
+  function applyDemoBox() {
+    if (!ui || !ui.demoModal) return;
+    var b = clampArtifactBox(demoBox || demoDefaultBox());
+    ui.demoModal.style.left = b.x + 'px';
+    ui.demoModal.style.top = b.y + 'px';
+    ui.demoModal.style.width = b.w + 'px';
+    ui.demoModal.style.height = b.h + 'px';
+  }
+
+  function setDemoFramePassthrough(on) {
+    if (!demoFrame) return;
+    demoFrame.style.pointerEvents = on ? 'none' : '';
+  }
+
+  function keepDemoCloseReachable(b) {
+    if (!drawerOpen || !b) return b;
+    var btn = imageCloseRect(b);
+    if (!rectHits(btn, box)) return b;
+    var into = btn.x + btn.w - box.x;
+    if (into <= 0) return b;
+    var next = clampArtifactBox({ x: b.x - into, y: b.y, w: b.w, h: b.h });
+    if (!rectHits(imageCloseRect(next), box)) return next;
+    return b;
+  }
+
+  function onDemoPointerMove(ev) {
+    if (!demoDrag) return;
+    var dx = ev.clientX - demoDrag.sx;
+    var dy = ev.clientY - demoDrag.sy;
+    if (demoDrag.kind === 'move') {
+      demoBox = clampArtifactBox({
+        x: demoDrag.x + dx,
+        y: demoDrag.y + dy,
+        w: demoDrag.w,
+        h: demoDrag.h,
+      });
+      demoBox = keepDemoCloseReachable(demoBox);
+    } else {
+      demoBox = artifactResizeFrom(demoDrag, dx, dy);
+    }
+    applyDemoBox();
+  }
+
+  function endDemoDrag() {
+    if (!demoDrag) return;
+    demoDrag = null;
+    setDemoFramePassthrough(false);
+    window.removeEventListener('pointermove', onDemoPointerMove, true);
+    window.removeEventListener('pointerup', endDemoDrag, true);
+    window.removeEventListener('pointercancel', endDemoDrag, true);
+    if (ui && ui.demoModal) {
+      demoBox = {
+        x: Number.parseInt(ui.demoModal.style.left, 10) || 0,
+        y: Number.parseInt(ui.demoModal.style.top, 10) || 0,
+        w: Number.parseInt(ui.demoModal.style.width, 10) || 0,
+        h: Number.parseInt(ui.demoModal.style.height, 10) || 0,
+      };
+      demoBox = clampArtifactBox(demoBox);
+    }
+  }
+
+  function beginDemoDrag(ev, kind, dir) {
+    if (!demoOpen || demoDrag || imageDrag || artifactDrag || drag) return;
+    if (ev.button != null && ev.button !== 0) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    var cur = clampArtifactBox(demoBox || demoDefaultBox());
+    demoDrag = {
+      kind: kind,
+      dir: dir || '',
+      sx: ev.clientX,
+      sy: ev.clientY,
+      x: cur.x,
+      y: cur.y,
+      w: cur.w,
+      h: cur.h,
+    };
+    setDemoFramePassthrough(true);
+    try {
+      if (ev.currentTarget && ev.currentTarget.setPointerCapture && ev.pointerId != null) {
+        ev.currentTarget.setPointerCapture(ev.pointerId);
+      }
+    } catch (e) {}
+    window.addEventListener('pointermove', onDemoPointerMove, true);
+    window.addEventListener('pointerup', endDemoDrag, true);
+    window.addEventListener('pointercancel', endDemoDrag, true);
+  }
+
+  function onDemoHeadPointerDown(ev) {
+    var t = ev.target;
+    if (t && t.closest && t.closest('button')) return;
+    beginDemoDrag(ev, 'move', '');
+  }
+
+  function onDemoEdgePointerDown(ev) {
+    var dir = ev.currentTarget && ev.currentTarget.getAttribute ? ev.currentTarget.getAttribute('data-dir') : '';
+    beginDemoDrag(ev, 'resize', dir || '');
+  }
+
+  function onEmbedDemo(data) {
+    if (!usable() || !drawerReady) return;
+    if (data.action === 'close') {
+      setDemoOpen(false);
+      return;
+    }
+    if (data.action !== 'open') return;
+    // label only — data.html is intentionally ignored.
+    demoLabel = clipImageLabel(data.label);
+    setDemoOpen(true);
+  }
+
   function mountBar() {
     var root = document.body || document.documentElement;
     if (!root) return;
@@ -1041,6 +1196,17 @@
       '<span class="drag" data-role="image-grip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>' +
       '<span data-role="image-title"></span>' +
       '<button type="button" data-role="image-close" aria-label="">×</button>' +
+      '</div>' +
+      '<div class="edge n" data-dir="n"></div><div class="edge s" data-dir="s"></div>' +
+      '<div class="edge e" data-dir="e"></div><div class="edge w" data-dir="w"></div>' +
+      '<div class="edge nw" data-dir="nw"></div><div class="edge ne" data-dir="ne"></div>' +
+      '<div class="edge sw" data-dir="sw"></div><div class="edge se" data-dir="se"></div>' +
+      '</div>' +
+      '<div class="modal" data-role="demo-modal" role="dialog" aria-modal="true" hidden>' +
+      '<div class="mhead" data-role="demo-head">' +
+      '<span class="drag" data-role="demo-grip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>' +
+      '<span data-role="demo-title"></span>' +
+      '<button type="button" data-role="demo-close" aria-label="">×</button>' +
       '</div>' +
       '<div class="edge n" data-dir="n"></div><div class="edge s" data-dir="s"></div>' +
       '<div class="edge e" data-dir="e"></div><div class="edge w" data-dir="w"></div>' +
@@ -1099,6 +1265,9 @@
       imageModal: shadow.querySelector('[data-role="image-modal"]'),
       imageTitle: shadow.querySelector('[data-role="image-title"]'),
       imageClose: shadow.querySelector('[data-role="image-close"]'),
+      demoModal: shadow.querySelector('[data-role="demo-modal"]'),
+      demoTitle: shadow.querySelector('[data-role="demo-title"]'),
+      demoClose: shadow.querySelector('[data-role="demo-close"]'),
       drawerTitle: shadow.querySelector('[data-role="drawer-title"]'),
       drawerClose: shadow.querySelector('[data-role="drawer-close"]'),
     };
@@ -1127,6 +1296,16 @@
       ev.preventDefault();
       ev.stopPropagation();
       setImageOpen(false);
+    });
+    var demoHead = shadow.querySelector('[data-role="demo-head"]');
+    demoHead.addEventListener('pointerdown', onDemoHeadPointerDown);
+    Array.prototype.forEach.call(ui.demoModal.querySelectorAll('.edge'), function (edge) {
+      edge.addEventListener('pointerdown', onDemoEdgePointerDown);
+    });
+    ui.demoClose.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      setDemoOpen(false);
     });
     ui.toggle.addEventListener('click', function (ev) {
       ev.preventDefault();
@@ -1233,6 +1412,11 @@
     ui.imageClose.setAttribute('aria-label', T.closeImage);
     ui.imageClose.title = T.closeImage;
     applyImageTitle();
+    if (ui.demoClose) {
+      ui.demoClose.setAttribute('aria-label', T.closeDemo);
+      ui.demoClose.title = T.closeDemo;
+    }
+    applyDemoTitle();
     ui.drawerClose.setAttribute('aria-label', T.close);
     ui.drawerClose.title = T.close;
     if (drawer) drawer.frame.title = T.chatTitle;
@@ -1287,12 +1471,16 @@
     setButtonLabel(ui.artifact, ICON_LAYERS, T.artifact);
     ui.artifact.title = ok && drawerReady ? T.artifactTitle : '';
     ui.artifact.setAttribute('aria-expanded', artifactOpen ? 'true' : 'false');
-    ui.artifactMask.hidden = !(artifactOpen || imageOpen);
+    ui.artifactMask.hidden = !(artifactOpen || imageOpen || demoOpen);
     ui.artifactModal.hidden = !artifactOpen;
     if (artifactOpen) applyArtifactBox();
     if (ui.imageModal) {
       ui.imageModal.hidden = !imageOpen;
       if (imageOpen) applyImageBox();
+    }
+    if (ui.demoModal) {
+      ui.demoModal.hidden = !demoOpen;
+      if (demoOpen) applyDemoBox();
     }
     ui.chat.disabled = !ok;
     setButtonLabel(ui.chat, ICON_CHAT, T.chat);
@@ -1361,6 +1549,7 @@
 
   function setDrawerOpen(on) {
     drawerOpen = !!on && usable();
+    if (!drawerOpen && demoOpen) setDemoOpen(false);
     if (drawer) {
       drawer.embed.open = drawerOpen;
       saveEmbed(drawer.embed);
@@ -1383,6 +1572,13 @@
           ui.artifactModal,
           ui.imageModal,
         );
+      } else if (demoOpen && demoBox && ui.demoModal) {
+        artifactBox = placeAbovePeer(
+          artifactBox,
+          clampArtifactBox(demoBox),
+          ui.artifactModal,
+          ui.demoModal,
+        );
       }
     }
     render();
@@ -1401,10 +1597,45 @@
           ui.imageModal,
           ui.artifactModal,
         );
+      } else if (demoOpen && demoBox && ui.demoModal) {
+        imageBox = placeAbovePeer(
+          imageBox,
+          clampArtifactBox(demoBox),
+          ui.imageModal,
+          ui.demoModal,
+        );
       }
     }
     render();
     applyImageTitle();
+  }
+
+  function setDemoOpen(on) {
+    var next = !!on && usable() && drawerReady;
+    if (!next && !demoOpen) return;
+    demoOpen = next;
+    if (demoOpen) {
+      ensureDemoFrame();
+      if (!demoBox) demoBox = demoDefaultBox();
+      else demoBox = clampArtifactBox(demoBox);
+      if (imageOpen && imageBox) {
+        demoBox = placeAbovePeer(
+          demoBox,
+          clampArtifactBox(imageBox),
+          ui.demoModal,
+          ui.imageModal,
+        );
+      } else if (artifactOpen && artifactBox) {
+        demoBox = placeAbovePeer(
+          demoBox,
+          clampArtifactBox(artifactBox),
+          ui.demoModal,
+          ui.artifactModal,
+        );
+      }
+    }
+    render();
+    applyDemoTitle();
   }
 
   // ---- chat drawer ----
@@ -1432,6 +1663,11 @@
     if (imageFrame && imageFrame.contentWindow) {
       try {
         imageFrame.contentWindow.postMessage({ type: EMBED_THEME, theme: theme }, drawer.origin);
+      } catch (e) {}
+    }
+    if (demoFrame && demoFrame.contentWindow) {
+      try {
+        demoFrame.contentWindow.postMessage({ type: EMBED_THEME, theme: theme }, drawer.origin);
       } catch (e) {}
     }
   }
@@ -1596,6 +1832,45 @@
       ui.imageModal.appendChild(imageFrame);
     }
     pingImageFrame();
+  }
+
+  function demoSrc(e) {
+    var src =
+      e.origin +
+      '/embed/runs/' +
+      encodeURIComponent(e.run) +
+      '/nodes/' +
+      encodeURIComponent(e.node) +
+      '/demo';
+    var q = new URLSearchParams();
+    q.set('theme', e.theme === 'light' ? 'light' : 'dark');
+    return src + '#' + q.toString();
+  }
+
+  function pingDemoFrame() {
+    if (!drawer || !demoFrame || !demoFrame.contentWindow) return;
+    try {
+      // Ask the Grasp frame to say it is ready. The demo HTML is not included.
+      demoFrame.contentWindow.postMessage({ type: EMBED_DEMO, action: 'open' }, drawer.origin);
+    } catch (e) {}
+  }
+
+  function ensureDemoFrame() {
+    if (!ui || !drawer) return;
+    if (!demoFrame) {
+      demoFrame = document.createElement('iframe');
+      demoFrame.title = demoTitleText() || T.demoPreview;
+      demoFrame.setAttribute('referrerpolicy', 'no-referrer');
+      demoFrame.src = demoSrc(drawer.embed);
+      ui.demoModal.appendChild(demoFrame);
+      postTheme();
+      pingDemoFrame();
+      return;
+    }
+    if (demoFrame.parentNode !== ui.demoModal) {
+      ui.demoModal.appendChild(demoFrame);
+    }
+    pingDemoFrame();
   }
 
   function attachDrawer() {
@@ -2018,6 +2293,7 @@
       setDrawerOpen(false);
       setArtifactOpen(false);
       setImageOpen(false);
+      setDemoOpen(false);
       live.enabled = false;
       if (live.api) live.api.setEnabled(false);
       render();
@@ -2029,6 +2305,8 @@
       onCmd(data);
     } else if (data.type === EMBED_IMAGE) {
       onEmbedImage(data);
+    } else if (data.type === EMBED_DEMO) {
+      onEmbedDemo(data);
     }
   });
 

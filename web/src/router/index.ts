@@ -31,6 +31,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/EmbedNodeImageView.vue'),
     meta: { titleKey: 'route.embedImage', public: true, bare: true },
   },
+  {
+    path: '/embed/runs/:runId/nodes/:nodeId/demo',
+    name: 'embed-node-demo',
+    component: () => import('@/views/EmbedNodeDemoView.vue'),
+    meta: { titleKey: 'route.embedDemo', public: true, bare: true },
+  },
   { path: '/', redirect: '/dashboard' },
   { path: '/dashboard', name: 'dashboard', component: () => import('@/views/DashboardView.vue'), meta: { titleKey: 'route.dashboard' } },
   { path: '/stats', name: 'stats', component: () => import('@/views/TokenAnalyticsView.vue'), meta: { titleKey: 'route.stats' } },

@@ -21,6 +21,7 @@
     "publicGateApproval": "外部一次决策",
     "embedChat": "预览对话",
     "embedArtifacts": "预览产物",
-    "embedImage": "图片预览"
+    "embedImage": "图片预览",
+    "embedDemo": "预览放大"
   }
 }

@@ -21,6 +21,7 @@
     "publicGateApproval": "One-time external decision",
     "embedChat": "Preview chat",
     "embedArtifacts": "Preview artifacts",
-    "embedImage": "Image preview"
+    "embedImage": "Image preview",
+    "embedDemo": "Enlarged preview"
   }
 }

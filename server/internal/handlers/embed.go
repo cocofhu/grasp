@@ -246,6 +246,7 @@ func (h *Handlers) RedeemEmbedSession(c *gin.Context) {
 // GET /embed/runs/:runId/nodes/:nodeId/chat
 // GET /embed/runs/:runId/nodes/:nodeId/artifacts
 // GET /embed/runs/:runId/nodes/:nodeId/image
+// GET /embed/runs/:runId/nodes/:nodeId/demo
 func (h *Handlers) EmbedChatPage(c *gin.Context) {
 	ancestors := "'none'"
 	if origins := h.directPreviewOrigins(c.Param("runId"), c.Param("nodeId")); len(origins) > 0 {
