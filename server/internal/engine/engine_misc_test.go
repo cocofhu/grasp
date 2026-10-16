@@ -3,49 +3,12 @@ package engine
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/cocofhu/grasp/internal/database"
-	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/services"
 )
-
-func TestReconcileInterruptedOnStartup(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "t.db")
-	db, err := database.OpenSQLiteTest(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// A run + node caught mid-flight when the process died.
-	db.Create(&models.Run{ID: "orphan", WorkflowID: "w", WorkflowName: "w", Status: "running"})
-	db.Create(&models.StateRun{RunID: "orphan", NodeID: "n", NodeType: "agent", Iteration: 1, Status: "running"})
-	// A legitimately paused run must be left alone.
-	db.Create(&models.Run{ID: "paused", WorkflowID: "w", WorkflowName: "w", Status: "waiting_human"})
-
-	arts := services.NewArtifactService(db)
-	host := mcp.NewHost(arts)
-	eng := New(db, &fakeProvider{host: host}, host, arts, 5) // triggers reconcileInterrupted
-	cleanupEngineDB(t, eng, db)
-
-	var orphan, paused models.Run
-	db.First(&orphan, "id = ?", "orphan")
-	db.First(&paused, "id = ?", "paused")
-	if orphan.Status != "failed" {
-		t.Errorf("orphan run status = %q, want failed", orphan.Status)
-	}
-	if paused.Status != "waiting_human" {
-		t.Errorf("paused run must stay resumable, got %q", paused.Status)
-	}
-	var sr models.StateRun
-	db.First(&sr, "run_id = ?", "orphan")
-	if sr.Status != "failed" {
-		t.Errorf("mid-flight node state = %q, want failed", sr.Status)
-	}
-}
 
 func TestReactReplyErrorPaths(t *testing.T) {
 	eng, _ := setupEngine(t)

@@ -58,3 +58,7 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+
+# restart-reattach e2e (server/e2e)
+/.localdata-e2e/
+/e2e-artifacts/

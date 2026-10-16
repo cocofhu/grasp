@@ -615,6 +615,18 @@ func bundleIDFromURL(u string) string {
 
 // Attach rebuilds a Sandbox handle for an existing gateway sandbox by id.
 func (m *Manager) Attach(ctx context.Context, id string) (*Sandbox, error) {
+	out, err := m.AttachNoEnsure(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	m.ensureRuntimeAsync(out)
+	return out, nil
+}
+
+// AttachNoEnsure is Attach without the runtime bundle update. Use it for a
+// sandbox whose agent turn may still be running or awaiting collection: the
+// update restarts an idle bridge and drops its session and event log.
+func (m *Manager) AttachNoEnsure(ctx context.Context, id string) (*Sandbox, error) {
 	if m.gw == nil {
 		return nil, fmt.Errorf("no gateway client")
 	}
@@ -625,9 +637,7 @@ func (m *Manager) Attach(ctx context.Context, id string) (*Sandbox, error) {
 	if sb.Endpoint("session") == "" {
 		return nil, fmt.Errorf("sandbox %s has no session endpoint (status=%s)", id, sb.Status)
 	}
-	out := m.sandboxFromGW(sb, m.WorkspaceDir)
-	m.ensureRuntimeAsync(out)
-	return out, nil
+	return m.sandboxFromGW(sb, m.WorkspaceDir), nil
 }
 
 // DestroyByName removes a sandbox by gateway id (best effort).

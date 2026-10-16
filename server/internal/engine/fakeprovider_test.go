@@ -32,6 +32,8 @@ type fakeProvider struct {
 	seenUpstream map[string]*models.UpstreamHandoff
 	// promptImages records PromptImages from each node for integration tests.
 	promptImages map[string][]models.PromptImage
+	// reattached records the ReattachSandbox each node's RunAgent received.
+	reattached map[string]string
 
 	// clarify controls (test-only): reactPending keeps the dialogue open for N
 	// more replies (each returns Done:false with a follow-up question);
@@ -249,6 +251,12 @@ func (f *fakeProvider) recordAndMaybeFail(req runtime.NodeReq) error {
 		f.seenUpstream = map[string]*models.UpstreamHandoff{}
 	}
 	f.seenUpstream[req.NodeID] = req.UpstreamHandoff
+	if req.ReattachSandbox != "" {
+		if f.reattached == nil {
+			f.reattached = map[string]string{}
+		}
+		f.reattached[req.NodeID] = req.ReattachSandbox
+	}
 	if f.promptImages == nil {
 		f.promptImages = map[string][]models.PromptImage{}
 	}
