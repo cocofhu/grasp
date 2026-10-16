@@ -962,7 +962,9 @@ onBeforeUnmount(() => {
    the 72px of slack absorbs exactly one image-chip row (56px thumb + 6px
    pt-1.5 + 8px mb-2 = 70px). A second chip row or the attach notice still
    scrolls; re-check this budget if the chip thumb size changes.
-   The 520px breakpoint below uses a 4.25rem basis (floor 0.5rem). */
+   The 520px breakpoint below uses a 4.25rem basis. Its floor is 36px so the
+   ear that rises ~30px above the 240×200 crop at float-high plus jump-high
+   stays inside this scrolling column. */
 .home-shell__content {
   padding-bottom: 40px;
 }
@@ -1395,7 +1397,8 @@ html.light .home-shell__card-top {
 
   .home-shell__content::before {
     flex-basis: 4.25rem;
-    min-height: 0.5rem;
+    /* Covers the ~30px ear above the crop when float and jump both peak. */
+    min-height: 36px;
   }
 }
 
