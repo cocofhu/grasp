@@ -206,8 +206,15 @@ describe('AppSidebarNav', () => {
     expect(wrapper.find('[data-to="/dashboard"]').text()).toContain('开始')
     expect(wrapper.text()).not.toContain('待办')
     expect(wrapper.find('[data-to="/stats"]').exists()).toBe(false)
-    expect(wrapper.find('[data-to="/projects"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="nav-workspace-chrome"]').exists()).toBe(true)
+    const workspace = wrapper.find('[data-testid="nav-workspace-chrome"]')
+    expect(workspace.exists()).toBe(true)
+    expect(workspace.findAll('a.nav-item').map((l) => l.attributes('data-to'))).toEqual([
+      '/dashboard',
+      '/projects',
+      '/runs',
+      '/settings',
+    ])
+    expect(workspace.find('[data-to="/projects"]').text()).toContain('项目')
     expect(wrapper.text()).not.toContain('配置')
     wrapper.unmount()
     vi.useRealTimers()
@@ -297,8 +304,8 @@ describe('AppSidebarNav', () => {
     vi.useRealTimers()
   })
 
-  it('settings chrome replaces workspace four items and hides quick workflows (plan g2.1 / g1.2)', async () => {
-    routeState.path = '/projects'
+  it('settings chrome replaces workspace items and hides quick workflows (plan g2.1 / g1.2)', async () => {
+    routeState.path = '/notifications'
     favMocks.displayItems.value = [
       {
         workflowId: 'wf-1',
@@ -315,7 +322,14 @@ describe('AppSidebarNav', () => {
     expect(wrapper.find('[data-testid="nav-workspace-chrome"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="nav-back-home"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="nav-back-home"]').attributes('data-to')).toBe('/dashboard')
-    expect(wrapper.find('[data-to="/projects"]').exists()).toBe(true)
+    const categoryLinks = wrapper
+      .find('[data-testid="nav-settings-chrome"]')
+      .findAll('a.nav-item')
+      .filter((l) => l.attributes('data-testid') !== 'nav-back-home')
+    expect(categoryLinks[0].attributes('data-to')).toBe('/notifications')
+    expect(categoryLinks[0].text()).toContain('通知')
+    expect(categoryLinks.map((l) => l.attributes('data-to'))).not.toContain('/projects')
+    expect(wrapper.text()).not.toContain('项目')
     expect(wrapper.find('[data-to="/notifications"]').exists()).toBe(true)
     expect(wrapper.find('[data-to="/runs"]').exists()).toBe(false)
     expect(wrapper.find('[data-to="/stats"]').exists()).toBe(true)
@@ -329,14 +343,32 @@ describe('AppSidebarNav', () => {
     vi.useRealTimers()
   })
 
-  it('highlights projects for /projects/:id and general only on exact /settings (plan g2.2)', async () => {
+  it('keeps workspace chrome and highlights projects on project routes', async () => {
+    routeState.path = '/projects'
+    const list = mountNav()
+    await flushPromises()
+    expect(list.find('[data-testid="nav-workspace-chrome"]').exists()).toBe(true)
+    expect(list.find('[data-testid="nav-settings-chrome"]').exists()).toBe(false)
+    expect(list.find('[data-testid="nav-back-home"]').exists()).toBe(false)
+    expect(list.text()).not.toContain('返回首页')
+    expect(list.find('[data-to="/projects"]').classes()).toContain('active')
+    list.unmount()
+
     routeState.path = '/projects/abc'
+    routeState.query = { tab: 'agents' }
     const wrapper = mountNav()
     await flushPromises()
+    expect(wrapper.find('[data-testid="nav-workspace-chrome"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="nav-settings-chrome"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="nav-back-home"]').exists()).toBe(false)
     const projectLink = wrapper.find('[data-to="/projects"]')
     expect(projectLink.classes()).toContain('active')
+    expect(wrapper.find('[data-to="/runs"]').classes()).not.toContain('active')
     wrapper.unmount()
+    vi.useRealTimers()
+  })
 
+  it('highlights general only on exact /settings (plan g2.2)', async () => {
     routeState.path = '/settings'
     const general = mountNav()
     await flushPromises()
