@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { EdgeLabelRenderer, useVueFlow, type GraphNode, type Position } from '@vue-flow/core'
 import Icon from '../../ui/Icon.vue'
@@ -64,16 +64,55 @@ const geo = computed(() =>
 )
 
 const handoffOpen = ref(false)
-const handoffText = computed(() => (props.data.handoff?.text ?? '').trim())
-const hasHandoff = computed(() => handoffText.value.length > 0)
-const handoffPlatform = computed(() => props.data.handoff?.source === 'platform')
+const handoffIndex = ref(0)
+const handoffItems = computed(() => {
+  const list = props.data.handoffs?.length ? props.data.handoffs : props.data.handoff ? [props.data.handoff] : []
+  return list
+    .map((item) => ({
+      text: (item?.text ?? '').trim(),
+      source: item?.source === 'platform' ? ('platform' as const) : ('agent' as const),
+    }))
+    .filter((item) => item.text.length > 0)
+})
+const hasHandoff = computed(() => handoffItems.value.length > 0)
+const handoffMany = computed(() => handoffItems.value.length > 1)
+const activeHandoff = computed(() => handoffItems.value[handoffIndex.value] ?? handoffItems.value[handoffItems.value.length - 1])
+const handoffPlatform = computed(() => activeHandoff.value?.source === 'platform')
 /** Parse Markdown only while the card is open so collapsed edges stay cheap (LRU-cached). */
 const handoffHtml = computed(() =>
-  handoffOpen.value && props.data.handoff ? renderMarkdown(props.data.handoff.text) : '',
+  handoffOpen.value && activeHandoff.value ? renderMarkdown(activeHandoff.value.text) : '',
+)
+
+function lastHandoffIndex() {
+  return Math.max(0, handoffItems.value.length - 1)
+}
+
+watch(
+  handoffItems,
+  () => {
+    const last = lastHandoffIndex()
+    if (!handoffOpen.value || handoffIndex.value > last) handoffIndex.value = last
+  },
+  { immediate: true },
 )
 
 function toggleHandoff() {
-  handoffOpen.value = !handoffOpen.value
+  if (handoffOpen.value) {
+    handoffOpen.value = false
+    handoffIndex.value = lastHandoffIndex()
+    return
+  }
+  handoffIndex.value = lastHandoffIndex()
+  handoffOpen.value = true
+}
+
+function selectHandoff(index: number) {
+  handoffIndex.value = index
+}
+
+function closeHandoff() {
+  handoffOpen.value = false
+  handoffIndex.value = lastHandoffIndex()
 }
 
 const hovered = computed(() => ctx?.hoveredEdge.value === props.id)
@@ -181,7 +220,11 @@ function leave() {
         class="cedge-handoff"
         :class="{ 'is-platform': handoffPlatform, 'is-open': handoffOpen }"
         :aria-expanded="handoffOpen"
-        :aria-label="t('canvas.handoff.aria', { source: data.sourceLabel, target: data.targetLabel })"
+        :aria-label="
+          handoffMany
+            ? t('canvas.handoff.ariaCount', { source: data.sourceLabel, target: data.targetLabel, n: handoffItems.length })
+            : t('canvas.handoff.aria', { source: data.sourceLabel, target: data.targetLabel })
+        "
         data-testid="canvas-edge-handoff"
         @click.stop="toggleHandoff"
       >
@@ -214,9 +257,25 @@ function leave() {
             class="cedge-handoff-x"
             :aria-label="t('canvas.handoff.close')"
             data-testid="canvas-edge-handoff-close"
-            @click.stop="handoffOpen = false"
+            @click.stop="closeHandoff"
           >
             <Icon name="close" :size="13" />
+          </button>
+        </div>
+        <div v-if="handoffMany" class="cedge-handoff-tabs" role="tablist" data-testid="canvas-edge-handoff-tabs">
+          <button
+            v-for="(item, index) in handoffItems"
+            :key="index"
+            type="button"
+            class="cedge-handoff-tab"
+            :class="{ 'is-on': index === handoffIndex }"
+            role="tab"
+            :aria-selected="index === handoffIndex"
+            :data-visit="index + 1"
+            data-testid="canvas-edge-handoff-tab"
+            @click.stop="selectHandoff(index)"
+          >
+            {{ t('canvas.handoff.visit', { n: index + 1 }) }}
           </button>
         </div>
         <div class="cedge-handoff-body md" data-testid="canvas-edge-handoff-body" v-html="handoffHtml" />
@@ -225,7 +284,11 @@ function leave() {
             {{ t('canvas.handoff.platformNote') }}
           </span>
           <span v-else data-testid="canvas-edge-handoff-source">
-            {{ t('canvas.handoff.fromNode', { source: data.sourceLabel }) }}
+            {{
+              handoffMany
+                ? t('canvas.handoff.fromNodeVisit', { source: data.sourceLabel, n: handoffIndex + 1 })
+                : t('canvas.handoff.fromNode', { source: data.sourceLabel })
+            }}
           </span>
         </div>
       </div>
