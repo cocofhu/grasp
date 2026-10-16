@@ -232,14 +232,13 @@ describe('GatesInboxView starting approvals', () => {
     await nextTick()
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="inbox-item-card"]').attributes('data-starting')).toBe('true')
     expect(wrapper.find('[data-testid="inbox-boot-loader"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="react-connecting-stage"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="react-connecting-pill"]').text()).toContain('连接中')
     expect((wrapper.get('[data-testid="react-connecting-input"]').element as HTMLTextAreaElement).disabled).toBe(true)
     expect(wrapper.find('[data-testid="review-composer-stub"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="gate-share-row"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -266,7 +265,6 @@ describe('GatesInboxView starting approvals', () => {
     expect(composer.exists()).toBe(true)
     expect(composer.props('turns')).toHaveLength(1)
     expect(composer.props('seedHumanText')).toBe('把登录做清楚')
-    expect(wrapper.find('[data-testid="inbox-item-card"]').attributes('data-starting')).toBeUndefined()
     wrapper.unmount()
   })
 
@@ -287,14 +285,12 @@ describe('GatesInboxView starting approvals', () => {
     await flushPromises()
 
     expect(mocks.getRun).toHaveBeenCalledWith('run-boot')
-    expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="inbox-start-failed"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="inbox-boot-loader"]').exists()).toBe(false)
 
     await wrapper.get('[data-testid="inbox-start-failed-dismiss"]').trigger('click')
     await flushPromises()
     await nextTick()
-    expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="inbox-start-failed"]').exists()).toBe(false)
     wrapper.unmount()
   })
@@ -341,7 +337,7 @@ describe('GatesInboxView starting approvals', () => {
     await flushPromises()
     await nextTick()
     await flushPromises()
-    expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="review-composer-stub"]').exists()).toBe(true)
 
     // Answered: the row leaves pending. `?run=` and the consumed handoff both
     // still point at it, but that must not resurrect a "starting" ghost.
@@ -357,7 +353,7 @@ describe('GatesInboxView starting approvals', () => {
     await nextTick()
     await flushPromises()
     await vi.waitFor(() => {
-      expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="review-composer-stub"]').exists()).toBe(false)
     })
     expect(wrapper.find('[data-testid="inbox-boot-loader"]').exists()).toBe(false)
     wrapper.unmount()
@@ -388,7 +384,7 @@ describe('GatesInboxView starting approvals', () => {
     await flushPromises()
 
     expect(mocks.getRun).toHaveBeenCalledWith('run-f66f29e4')
-    expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="inbox-boot-loader"]').exists()).toBe(false)
     wrapper.unmount()
   })
@@ -414,7 +410,7 @@ describe('GatesInboxView starting approvals', () => {
     await nextTick()
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -431,7 +427,6 @@ describe('GatesInboxView starting approvals', () => {
     await nextTick()
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="inbox-item-card"]').attributes('data-starting')).toBe('true')
     expect(wrapper.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(true)
     wrapper.unmount()
   })
@@ -463,11 +458,9 @@ describe('GatesInboxView starting approvals', () => {
     await nextTick()
     await flushPromises()
     await vi.waitFor(() => {
-      expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="review-composer-stub"]').exists()).toBe(true)
     })
-    expect(wrapper.find('[data-testid="inbox-item-card"]').attributes('data-starting')).not.toBe(
-      'true',
-    )
+    expect(wrapper.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -490,18 +483,15 @@ describe('GatesInboxView starting approvals', () => {
     wrapper.unmount()
   })
 
-  it('status pill and refresh button share .toolbar-control sizing (g3.1 g3.2 g4.4)', async () => {
+  it('does not render the inbox top bar or the desktop card column', async () => {
     mocks.listGates.mockResolvedValue(paged([]))
     const wrapper = mountInbox()
     await flushPromises()
-    const pill = wrapper.get('[data-testid="gates-inbox-status-pill"]')
-    const refresh = wrapper.get('[data-testid="gates-inbox-refresh"]')
-    expect(pill.classes()).toContain('toolbar-control')
-    expect(refresh.classes()).toContain('toolbar-control')
-    expect(pill.classes().join(' ')).not.toMatch(/\brounded\b(?!-md)/)
-    expect(refresh.classes().join(' ')).not.toContain('px-2.5')
-    expect(refresh.classes().join(' ')).not.toContain('py-1.5')
-    expect(pill.classes().join(' ')).toContain('text-[11px]')
+    expect(wrapper.find('[data-testid="gates-inbox-status-pill"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="gates-inbox-refresh"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('运筹帷幄之中')
+    expect(wrapper.text()).not.toContain('决胜千里之外')
     wrapper.unmount()
   })
 })

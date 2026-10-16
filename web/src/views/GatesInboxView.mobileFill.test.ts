@@ -20,7 +20,7 @@ describe('GatesInboxView GateApproval isolation', () => {
     expect(src).toMatch(/:unified-preview-budget="true"/)
     // Desktop grid stretch (g1.1) — not items-start
     expect(src).toMatch(/items-stretch/)
-    expect(src).not.toMatch(/grid-cols-\[320px_1fr\] items-start/)
+    expect(src).not.toMatch(/grid-cols-\[320px_1fr\]/)
     // Mobile GateApproval block omits unified budget (only one binding, on desktop).
     const unifiedBindings = src.match(/:unified-preview-budget="true"/g) || []
     expect(unifiedBindings.length).toBe(1)
@@ -94,12 +94,13 @@ const EMPTY_CARD_CLASS =
   'card flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto'
 
 describe('GatesInboxView list-card-lift hover padding (plan g2.1)', () => {
-  it('mobile and desktop list scroll areas keep py-0.5 so hover top border is not clipped', () => {
+  it('mobile list scroll area keeps py-0.5 so hover top border is not clipped', () => {
     expect(vueSrc).toMatch(/ref="listEl" class="scroll-area flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto py-0\.5"/)
     const scrollMatches = vueSrc.match(
       /scroll-area flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto py-0\.5/g,
     )
-    expect(scrollMatches?.length).toBeGreaterThanOrEqual(2)
+    expect(scrollMatches?.length).toBe(1)
+    expect(vueSrc).not.toMatch(/grid-cols-\[320px_1fr\]/)
   })
 })
 
@@ -168,7 +169,7 @@ describe('GatesInboxView list first-load tri-state (plan g1 / g2 / g3.2)', () =>
       mobileList.indexOf('v-else-if="showListError"'),
     )
 
-    const desktop = src.slice(src.indexOf('<!-- Desktop three-zone'))
+    const desktop = src.slice(src.indexOf('<!-- Desktop: existing panel'))
     // Content with rows first; empty-path order is skeleton → error → EmptyState.
     expect(desktop.indexOf('v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold)"')).toBeGreaterThan(-1)
     expect(desktop.indexOf('v-else-if="!isMobile && showListSkeleton"')).toBeGreaterThan(
@@ -180,7 +181,8 @@ describe('GatesInboxView list first-load tri-state (plan g1 / g2 / g3.2)', () =>
     expect(desktop.indexOf('v-else-if="!isMobile" class="card flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto"')).toBeGreaterThan(
       desktop.indexOf('v-else-if="!isMobile && showListError"'),
     )
-    expect(desktop).toMatch(/grid-cols-\[320px_1fr\] items-stretch/)
+    expect(desktop).toMatch(/items-stretch/)
+    expect(desktop).not.toMatch(/grid-cols-\[320px_1fr\]/)
     expect(src).toMatch(/loadList\(\{ showLoading: listItems\.value\.length === 0 \}\)/)
     expect(src).toMatch(/void loadList\(\{ showLoading: true \}\)/)
   })
@@ -218,7 +220,7 @@ describe('GatesInboxView react artifact stage', () => {
   it('mounts the artifact stage for every clarify session, including visual/research review', () => {
     expect(src).toMatch(/inboxStageRemoteKind/)
     expect(src).not.toMatch(/v-else-if="inboxReactActive"/)
-    const desktop = src.slice(src.indexOf('<!-- Desktop three-zone'))
+    const desktop = src.slice(src.indexOf('<!-- Desktop: existing panel'))
     const shell = desktop.slice(
       desktop.indexOf('<ReviewShell'),
       desktop.indexOf('</ReviewShell>') + '</ReviewShell>'.length,

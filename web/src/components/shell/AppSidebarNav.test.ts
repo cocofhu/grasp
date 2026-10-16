@@ -12,6 +12,7 @@ const routeState = reactive({ path: '/dashboard', query: {} as Record<string, un
 
 vi.mock('vue-router', () => ({
   useRoute: () => routeState,
+  useRouter: () => ({ push: routerMocks.push }),
   RouterLink: {
     props: ['to'],
     template:
@@ -19,11 +20,25 @@ vi.mock('vue-router', () => ({
   },
 }))
 
-const gateMocks = vi.hoisted(() => ({
-  peek: vi.fn(),
-  refresh: vi.fn(),
-  count: { value: 2 },
+const routerMocks = vi.hoisted(() => ({
+  push: vi.fn(),
 }))
+
+const gateMocks = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { ref } = require('vue') as typeof import('vue')
+  return {
+    peek: vi.fn(),
+    refresh: vi.fn(),
+    count: { value: 2 },
+    displayedItems: ref<Array<Record<string, unknown>>>([]),
+    recordItems: ref<Array<Record<string, unknown>>>([]),
+    sidebarExtras: ref<Array<Record<string, unknown>>>([]),
+    startFailedKeys: ref<string[]>([]),
+    activeInboxKey: ref<string | null>(null),
+    itemKey: (it: { runId: string; nodeId: string }) => `${it.runId}:${it.nodeId}`,
+  }
+})
 
 const notifMocks = vi.hoisted(() => ({
   unreadCount: { value: 0 },
@@ -63,6 +78,12 @@ vi.mock('@/lib/inbox/usePendingGates', () => ({
     count: gateMocks.count,
     peek: gateMocks.peek,
     refresh: gateMocks.refresh,
+    displayedItems: gateMocks.displayedItems,
+    recordItems: gateMocks.recordItems,
+    sidebarExtras: gateMocks.sidebarExtras,
+    startFailedKeys: gateMocks.startFailedKeys,
+    activeInboxKey: gateMocks.activeInboxKey,
+    itemKey: gateMocks.itemKey,
   }),
 }))
 
@@ -100,6 +121,12 @@ beforeEach(() => {
   gateMocks.peek.mockResolvedValue(undefined)
   gateMocks.refresh.mockResolvedValue(undefined)
   gateMocks.count.value = 2
+  gateMocks.displayedItems.value = []
+  gateMocks.recordItems.value = []
+  gateMocks.sidebarExtras.value = []
+  gateMocks.startFailedKeys.value = []
+  gateMocks.activeInboxKey.value = null
+  routerMocks.push.mockReset()
   notifMocks.unreadCount.value = 0
   favMocks.displayItems.value = []
   favMocks.hydrateDisplay.mockResolvedValue(undefined)
@@ -135,11 +162,14 @@ describe('AppSidebarNav', () => {
     vi.useRealTimers()
   })
 
-  it('shows the gates badge without exposing notifications in workspace chrome', async () => {
+  it('does not show a gates nav item or badge in workspace chrome', async () => {
     notifMocks.unreadCount.value = 46
     const wrapper = mountNav()
     await flushPromises()
-    expect(wrapper.find('[data-testid="nav-gates-badge"]').text()).toBe('2')
+    expect(wrapper.find('[data-testid="nav-gates-badge"]').exists()).toBe(false)
+    expect(wrapper.find('[data-to="/gates"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('待办')
     expect(wrapper.find('[data-to="/notifications"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="nav-notifications-badge"]').exists()).toBe(false)
     wrapper.unmount()
@@ -157,6 +187,7 @@ describe('AppSidebarNav', () => {
     expect(wrapper.find('[data-to="/notifications"]').classes()).toContain('active')
     expect(wrapper.find('[data-testid="nav-settings-chrome"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="nav-gates-badge"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
     wrapper.unmount()
     vi.useRealTimers()
   })
@@ -171,9 +202,9 @@ describe('AppSidebarNav', () => {
     expect(wrapper.find('[data-to="/notifications"]').exists()).toBe(false)
     expect(wrapper.find('[data-to="/settings"]').exists()).toBe(true)
     expect(wrapper.find('[data-to="/dashboard"]').exists()).toBe(true)
-    expect(wrapper.find('[data-to="/gates"]').exists()).toBe(true)
+    expect(wrapper.find('[data-to="/gates"]').exists()).toBe(false)
     expect(wrapper.find('[data-to="/dashboard"]').text()).toContain('开始')
-    expect(wrapper.find('[data-to="/gates"]').text()).toContain('待办')
+    expect(wrapper.text()).not.toContain('待办')
     expect(wrapper.find('[data-to="/stats"]').exists()).toBe(false)
     expect(wrapper.find('[data-to="/projects"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="nav-workspace-chrome"]').exists()).toBe(true)
@@ -590,22 +621,107 @@ describe('AppSidebarNav', () => {
 
     const chrome = wrapper.find('[data-testid="nav-workspace-chrome"]')
     const dashboard = chrome.find('[data-to="/dashboard"]').element as HTMLElement
-    const gates = chrome.find('[data-to="/gates"]').element as HTMLElement
+    const runs = chrome.find('[data-to="/runs"]').element as HTMLElement
     expect(dashboard.classList.contains('hover-ink-host')).toBe(true)
     expect((dashboard.firstElementChild as HTMLElement | null)?.classList.contains('hover-ink')).toBe(true)
 
-    routeState.path = '/gates'
+    routeState.path = '/runs'
     await flushPromises()
     await nextTick()
 
     const nextActive = chrome.find('a.nav-item.active').element as HTMLElement
-    expect(nextActive).toBe(gates)
+    expect(nextActive).toBe(runs)
     expect(nextActive.classList.contains('active')).toBe(true)
     expect(nextActive.classList.contains('hover-ink-host')).toBe(true)
     expect((nextActive.firstElementChild as HTMLElement | null)?.classList.contains('hover-ink')).toBe(true)
     expect(dashboard.classList.contains('hover-ink-host')).toBe(true)
     expect((dashboard.firstElementChild as HTMLElement | null)?.classList.contains('hover-ink')).toBe(true)
 
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('lists pending approvals then records under the nav, and hides empty groups', async () => {
+    gateMocks.displayedItems.value = [
+      { type: 'gate', runId: 'run-1', nodeId: 'g1', title: '发布前确认', workflowName: 'w' },
+      { type: 'clarify', runId: 'run-2', nodeId: 'c1', label: '需求规格', kind: 'clarify', state: 'starting', workflowName: 'w' },
+      { type: 'clarify', runId: 'run-3', nodeId: 'r1', label: '代码评审', kind: 'review', state: 'replying', workflowName: 'w' },
+    ]
+    gateMocks.recordItems.value = [
+      { type: 'gate', runId: 'run-9', nodeId: 'done', title: '已通过的门禁', workflowName: 'w' },
+    ]
+    gateMocks.startFailedKeys.value = []
+    favMocks.displayItems.value = [
+      {
+        workflowId: 'wf-1',
+        favoritedAt: 1,
+        name: '夜间回归',
+        projectId: 'p1',
+        projectName: 'checkout',
+        status: 'published',
+      },
+    ]
+    const wrapper = mountNav()
+    await flushPromises()
+
+    const pending = wrapper.get('[data-testid="nav-pending-approvals"]')
+    const records = wrapper.get('[data-testid="nav-inbox-records"]')
+    expect(pending.text()).toContain('待审批')
+    expect(records.text()).toContain('记录')
+    expect(pending.element.compareDocumentPosition(records.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const quick = wrapper.get('[data-testid="nav-quick-workflows"]')
+    expect(quick.element.compareDocumentPosition(pending.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    const rows = pending.findAll('[data-testid="nav-pending-row"]')
+    expect(rows.map((row) => row.text())).toEqual(['发布前确认', '需求规格', '代码评审'])
+    expect(rows[0].find('[data-testid="inbox-motion-spin"]').exists()).toBe(false)
+    expect(rows[0].find('[data-testid="inbox-motion-pulse"]').exists()).toBe(false)
+    expect(rows[1].attributes('data-motion')).toBe('spin')
+    expect(rows[1].find('[data-testid="inbox-motion-spin"]').exists()).toBe(true)
+    expect(rows[2].attributes('data-motion')).toBe('pulse')
+    expect(rows[2].find('[data-testid="inbox-motion-pulse"]').exists()).toBe(true)
+    expect(rows[2].text()).not.toContain('正在回复')
+    expect(records.find('[data-testid="inbox-motion-spin"]').exists()).toBe(false)
+    expect(records.find('[data-testid="inbox-motion-pulse"]').exists()).toBe(false)
+
+    rows[0].element.classList.add('check')
+    expect(rows[0].classes()).toContain('nav-item')
+    expect(rows[0].classes()).not.toContain('active')
+
+    gateMocks.activeInboxKey.value = 'run-1:g1'
+    routeState.path = '/gates'
+    await nextTick()
+    expect(rows[0].classes()).toContain('active')
+
+    await rows[1].trigger('click')
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-2', node: 'c1' } })
+    await records.get('[data-testid="nav-record-row"]').trigger('click')
+    expect(routerMocks.push).toHaveBeenCalledTimes(1)
+
+    gateMocks.startFailedKeys.value = ['run-2:c1']
+    await nextTick()
+    expect(rows[1].attributes('data-motion')).toBeUndefined()
+    expect(rows[1].find('[data-testid="inbox-motion-spin"]').exists()).toBe(false)
+
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('hides pending and records on the settings nav even when items exist', async () => {
+    routeState.path = '/settings'
+    gateMocks.displayedItems.value = [
+      { type: 'gate', runId: 'run-1', nodeId: 'g1', title: '发布前确认', workflowName: 'w' },
+    ]
+    gateMocks.recordItems.value = [
+      { type: 'gate', runId: 'run-9', nodeId: 'done', title: '已通过的门禁', workflowName: 'w' },
+    ]
+    const wrapper = mountNav()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="nav-settings-chrome"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="nav-inbox-records"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('待审批')
+    expect(wrapper.text()).not.toContain('发布前确认')
     wrapper.unmount()
     vi.useRealTimers()
   })

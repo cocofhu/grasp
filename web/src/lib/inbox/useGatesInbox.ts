@@ -78,6 +78,10 @@ const {
   applyPending,
   removeItemLocally,
   restoreItemLocally,
+  setSidebarExtras,
+  markStartFailed,
+  clearStartFailed,
+  setActiveInboxKey,
   patchItemReplying,
   syncDisplayedBaseline,
   clearVisibleMembership,
@@ -1006,6 +1010,32 @@ watch(isEditing, (editing) => {
 watch(isMobile, (mobile) => {
   if (!mobile) mobileView.value = 'list'
 })
+
+watch(
+  [incomingGhost, startFailedItem],
+  () => {
+    const extras: InboxItem[] = []
+    const failed = startFailedItem.value
+    const ghost = incomingGhost.value
+    if (failed) extras.push(failed)
+    if (ghost && (!failed || itemKey(ghost) !== itemKey(failed))) extras.push(ghost)
+    setSidebarExtras(extras)
+    if (failed) markStartFailed(itemKey(failed))
+  },
+  { immediate: true },
+)
+
+watch(startFailedItem, (it, prev) => {
+  if (prev && (!it || itemKey(it) !== itemKey(prev))) clearStartFailed(itemKey(prev))
+})
+
+watch(
+  active,
+  (it) => {
+    setActiveInboxKey(it ? itemKey(it) : null)
+  },
+  { immediate: true },
+)
 
 watch(
   activeStarting,
@@ -2007,6 +2037,8 @@ onUnmounted(() => {
   confirmFlowDeskHold.value = false
   inboxConfirmFlow.reset()
   clearVisibleMembership()
+  setSidebarExtras([])
+  setActiveInboxKey(null)
 })
 
 function itemTitle(it: InboxItem) {

@@ -7,6 +7,8 @@
     "workflows": "Workflows",
     "runs": "Runs",
     "gates": "Needs attention",
+    "pendingApprovals": "Pending",
+    "inboxRecords": "History",
     "artifacts": "Artifacts",
     "notifications": "Notifications",
     "quickWorkflows": "Quick workflows",

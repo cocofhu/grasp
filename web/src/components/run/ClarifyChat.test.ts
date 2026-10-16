@@ -1355,7 +1355,7 @@ describe('ClarifyChat', () => {
   })
 
   describe('busy status C-tier (no air bubble)', () => {
-    it('turn_begin shows 思考中… + typing-dots placeholder (no air bubble)', async () => {
+    it('turn_begin shows 思考中… + pulse mark placeholder (no air bubble)', async () => {
       const wrapper = mountChat({ draft: '请复审' })
       await clickSend(wrapper)
       const vm = wrapper.vm as unknown as {
@@ -1371,7 +1371,7 @@ describe('ClarifyChat', () => {
       const placeholder = wrapper.find('[data-testid="clarify-busy-placeholder"]')
       expect(placeholder.exists()).toBe(true)
       expect(placeholder.text()).toContain('思考中')
-      expect(placeholder.find('.typing-dots').exists()).toBe(true)
+      expect(placeholder.find('[data-testid="inbox-motion-pulse"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="clarify-agent-message"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="clarify-thought"]').exists()).toBe(false)
       wrapper.unmount()

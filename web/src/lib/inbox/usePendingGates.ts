@@ -42,6 +42,17 @@ function errorMessage(err: unknown): string {
 // Module-level singleton
 const displayedItems = ref<InboxItem[]>([])
 const remoteItems = ref<InboxItem[]>([])
+/** Items that left the pending inbox because they were processed. Newest first. */
+const recordItems = ref<InboxItem[]>([])
+/**
+ * Rows the inbox page is holding locally (incoming ghost, start-failed) that
+ * the pending snapshot does not include yet. Shown above displayedItems.
+ */
+const sidebarExtras = ref<InboxItem[]>([])
+/** Clarify rows whose sandbox boot failed. They stay listed but do not animate. */
+const startFailedKeys = ref<string[]>([])
+/** Run:node of the inbox panel selection. Null when the inbox view is unmounted. */
+const activeInboxKey = ref<string | null>(null)
 const totalCount = ref(0)
 const hasPendingUpdate = ref(false)
 const pendingMeta = ref<PendingMeta | null>(null)
@@ -124,9 +135,28 @@ function readPeekFiltersFromLocation(): {
   }
 }
 
+function rememberRecord(it: InboxItem) {
+  const key = itemKey(it)
+  recordItems.value = [it, ...recordItems.value.filter((row) => itemKey(row) !== key)]
+}
+
+function dropRecord(key: string) {
+  if (!recordItems.value.some((row) => itemKey(row) === key)) return
+  recordItems.value = recordItems.value.filter((row) => itemKey(row) !== key)
+}
+
+/** A row that is pending again must not stay under 记录. */
+function forgetRecordsPresentIn(items: InboxItem[]) {
+  if (!recordItems.value.length || !items.length) return
+  const keys = new Set(items.map(itemKey))
+  const next = recordItems.value.filter((row) => !keys.has(itemKey(row)))
+  if (next.length !== recordItems.value.length) recordItems.value = next
+}
+
 function setPending(remote: InboxItem[], total: number) {
   remoteItems.value = remote
   totalCount.value = total
+  forgetRecordsPresentIn(remote)
   const meta = diffMembership(remote)
   if (meta.added > 0 || meta.removed > 0) {
     hasPendingUpdate.value = true
@@ -177,6 +207,7 @@ function applyRemoteToDisplayed(remote: InboxItem[], total: number) {
   displayedItems.value = remote
   hasPendingUpdate.value = false
   pendingMeta.value = null
+  forgetRecordsPresentIn(remote)
 }
 
 function syncPendingMetaFromDiff() {
@@ -241,12 +272,20 @@ function syncAriaBusy() {
  * aligned even when force refresh fails or a stale peek would otherwise linger.
  */
 function removeItemLocally(key: string): void {
+  const found =
+    displayedItems.value.find((it) => itemKey(it) === key) ||
+    remoteItems.value.find((it) => itemKey(it) === key) ||
+    sidebarExtras.value.find((it) => itemKey(it) === key)
   const inDisplayed = displayedItems.value.some((it) => itemKey(it) === key)
   const inRemote = remoteItems.value.some((it) => itemKey(it) === key)
-  if (!inDisplayed && !inRemote) return
+  const inExtras = sidebarExtras.value.some((it) => itemKey(it) === key)
+  if (!inDisplayed && !inRemote && !inExtras) return
 
+  if (found) rememberRecord(found)
   displayedItems.value = displayedItems.value.filter((it) => itemKey(it) !== key)
   remoteItems.value = remoteItems.value.filter((it) => itemKey(it) !== key)
+  sidebarExtras.value = sidebarExtras.value.filter((it) => itemKey(it) !== key)
+  startFailedKeys.value = startFailedKeys.value.filter((k) => k !== key)
   if (inDisplayed || inRemote) {
     totalCount.value = Math.max(0, totalCount.value - 1)
   }
@@ -259,6 +298,7 @@ function removeItemLocally(key: string): void {
  */
 function restoreItemLocally(item: InboxItem): void {
   const key = itemKey(item)
+  dropRecord(key)
   const hadDisplayed = displayedItems.value.some((it) => itemKey(it) === key)
   const hadRemote = remoteItems.value.some((it) => itemKey(it) === key)
   if (!hadDisplayed) {
@@ -367,10 +407,32 @@ async function refresh(opts?: RefreshOptions): Promise<void> {
   return holder.flight
 }
 
+function setSidebarExtras(items: InboxItem[]) {
+  sidebarExtras.value = items
+}
+
+function markStartFailed(key: string) {
+  if (startFailedKeys.value.includes(key)) return
+  startFailedKeys.value = [...startFailedKeys.value, key]
+}
+
+function clearStartFailed(key: string) {
+  if (!startFailedKeys.value.includes(key)) return
+  startFailedKeys.value = startFailedKeys.value.filter((k) => k !== key)
+}
+
+function setActiveInboxKey(key: string | null) {
+  activeInboxKey.value = key
+}
+
 export function usePendingGates() {
   return {
     displayedItems,
     remoteItems,
+    recordItems,
+    sidebarExtras,
+    startFailedKeys,
+    activeInboxKey,
     totalCount,
     count,
     hasPendingUpdate,
@@ -384,6 +446,10 @@ export function usePendingGates() {
     applyPending,
     removeItemLocally,
     restoreItemLocally,
+    setSidebarExtras,
+    markStartFailed,
+    clearStartFailed,
+    setActiveInboxKey,
     patchItemReplying,
     syncDisplayedBaseline,
     clearVisibleMembership,

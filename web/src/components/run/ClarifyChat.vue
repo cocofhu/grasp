@@ -5,6 +5,7 @@ import ChatImagePreviewModal from '../ui/ChatImagePreviewModal.vue'
 import ComposerShell from './ComposerShell.vue'
 import ClarifyDemoFrame from './ClarifyDemoFrame.vue'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
+import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
 import AgentToolGroup from './AgentToolGroup.vue'
 import AgentTimeline from './AgentTimeline.vue'
 import StreamMarkdown from './StreamMarkdown.vue'
@@ -479,22 +480,23 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           </div>
           <!-- Agent busy / thought / message (Demo: four-phase + restrained done) -->
           <template v-else-if="t.role === 'agent'">
-            <!-- Waiting first token: dots + 思考中… inside bubble -->
+            <!-- Waiting first token: pulse + 思考中… inside bubble -->
             <div
               v-if="t.streaming && !t.thought && !agentHasMessage(t)"
               class="inline-flex items-center gap-2.5 rounded-lg border border-line bg-elevated px-3 py-2 text-[13px] text-txt3"
               data-testid="clarify-busy-placeholder"
             >
-              <span class="typing-dots" aria-hidden="true"><i /><i /><i /></span>
+              <InboxMotionMark kind="pulse" />
               <span>{{ translate('pages.clarify.thinkingBusy') }}</span>
             </div>
             <!-- Status: 思考中… (has thought, no message yet) -->
             <div
               v-else-if="t.streaming && t.thought && !agentHasMessage(t)"
-              class="mb-1.5 text-[12px] font-normal text-txt3"
+              class="mb-1.5 inline-flex items-center gap-2 text-[12px] font-normal text-txt3"
               data-testid="clarify-busy-status"
             >
-              {{ translate('pages.clarify.thinkingBusy') }}
+              <InboxMotionMark kind="pulse" />
+              <span>{{ translate('pages.clarify.thinkingBusy') }}</span>
             </div>
             <!-- Status: 输出中 (shimmer) while streaming message -->
             <div
@@ -917,7 +919,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       </div>
       </template>
       <div v-if="thinking && !validating && liveAgentIdx < 0" class="flex items-center gap-2 pl-9 text-[12px] text-txt3">
-        <span class="typing-dots"><i /><i /><i /></span>
+        <InboxMotionMark kind="pulse" />
         {{ translate('pages.clarify.thinking') }}
       </div>
     </div>
