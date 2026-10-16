@@ -32,7 +32,6 @@ const gateMocks = vi.hoisted(() => {
     refresh: vi.fn(),
     count: { value: 2 },
     displayedItems: ref<Array<Record<string, unknown>>>([]),
-    recordItems: ref<Array<Record<string, unknown>>>([]),
     sidebarExtras: ref<Array<Record<string, unknown>>>([]),
     startFailedKeys: ref<string[]>([]),
     activeInboxKey: ref<string | null>(null),
@@ -79,7 +78,6 @@ vi.mock('@/lib/inbox/usePendingGates', () => ({
     peek: gateMocks.peek,
     refresh: gateMocks.refresh,
     displayedItems: gateMocks.displayedItems,
-    recordItems: gateMocks.recordItems,
     sidebarExtras: gateMocks.sidebarExtras,
     startFailedKeys: gateMocks.startFailedKeys,
     activeInboxKey: gateMocks.activeInboxKey,
@@ -122,7 +120,6 @@ beforeEach(() => {
   gateMocks.refresh.mockResolvedValue(undefined)
   gateMocks.count.value = 2
   gateMocks.displayedItems.value = []
-  gateMocks.recordItems.value = []
   gateMocks.sidebarExtras.value = []
   gateMocks.startFailedKeys.value = []
   gateMocks.activeInboxKey.value = null
@@ -641,14 +638,11 @@ describe('AppSidebarNav', () => {
     vi.useRealTimers()
   })
 
-  it('lists pending approvals then records under the nav, and hides empty groups', async () => {
+  it('lists pending approvals under the nav and never shows processed records', async () => {
     gateMocks.displayedItems.value = [
       { type: 'gate', runId: 'run-1', nodeId: 'g1', title: '发布前确认', workflowName: 'w' },
       { type: 'clarify', runId: 'run-2', nodeId: 'c1', label: '需求规格', kind: 'clarify', state: 'starting', workflowName: 'w' },
       { type: 'clarify', runId: 'run-3', nodeId: 'r1', label: '代码评审', kind: 'review', state: 'replying', workflowName: 'w' },
-    ]
-    gateMocks.recordItems.value = [
-      { type: 'gate', runId: 'run-9', nodeId: 'done', title: '已通过的门禁', workflowName: 'w' },
     ]
     gateMocks.startFailedKeys.value = []
     favMocks.displayItems.value = [
@@ -665,10 +659,9 @@ describe('AppSidebarNav', () => {
     await flushPromises()
 
     const pending = wrapper.get('[data-testid="nav-pending-approvals"]')
-    const records = wrapper.get('[data-testid="nav-inbox-records"]')
     expect(pending.text()).toContain('待审批')
-    expect(records.text()).toContain('记录')
-    expect(pending.element.compareDocumentPosition(records.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(wrapper.find('[data-testid="nav-inbox-records"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="nav-record-row"]').exists()).toBe(false)
     const quick = wrapper.get('[data-testid="nav-quick-workflows"]')
     expect(quick.element.compareDocumentPosition(pending.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
@@ -681,8 +674,6 @@ describe('AppSidebarNav', () => {
     expect(rows[2].attributes('data-motion')).toBe('pulse')
     expect(rows[2].find('[data-testid="inbox-motion-pulse"]').exists()).toBe(true)
     expect(rows[2].text()).not.toContain('正在回复')
-    expect(records.find('[data-testid="inbox-motion-spin"]').exists()).toBe(false)
-    expect(records.find('[data-testid="inbox-motion-pulse"]').exists()).toBe(false)
 
     rows[0].element.classList.add('check')
     expect(rows[0].classes()).toContain('nav-item')
@@ -695,7 +686,6 @@ describe('AppSidebarNav', () => {
 
     await rows[1].trigger('click')
     expect(routerMocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-2', node: 'c1' } })
-    await records.get('[data-testid="nav-record-row"]').trigger('click')
     expect(routerMocks.push).toHaveBeenCalledTimes(1)
 
     gateMocks.startFailedKeys.value = ['run-2:c1']
@@ -703,17 +693,19 @@ describe('AppSidebarNav', () => {
     expect(rows[1].attributes('data-motion')).toBeUndefined()
     expect(rows[1].find('[data-testid="inbox-motion-spin"]').exists()).toBe(false)
 
+    gateMocks.displayedItems.value = []
+    await nextTick()
+    expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="nav-inbox-records"]').exists()).toBe(false)
+
     wrapper.unmount()
     vi.useRealTimers()
   })
 
-  it('hides pending and records on the settings nav even when items exist', async () => {
+  it('hides pending approvals on the settings nav even when items exist', async () => {
     routeState.path = '/settings'
     gateMocks.displayedItems.value = [
       { type: 'gate', runId: 'run-1', nodeId: 'g1', title: '发布前确认', workflowName: 'w' },
-    ]
-    gateMocks.recordItems.value = [
-      { type: 'gate', runId: 'run-9', nodeId: 'done', title: '已通过的门禁', workflowName: 'w' },
     ]
     const wrapper = mountNav()
     await flushPromises()

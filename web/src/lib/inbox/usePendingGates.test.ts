@@ -47,7 +47,6 @@ describe('usePendingGates', () => {
     vi.mocked(api.listGates).mockReset()
     vi.mocked(api.listGates).mockResolvedValue(paged([]))
     usePendingGates().clearVisibleMembership()
-    usePendingGates().recordItems.value = []
     usePendingGates().sidebarExtras.value = []
     usePendingGates().startFailedKeys.value = []
     usePendingGates().setActiveInboxKey(null)
@@ -243,7 +242,8 @@ describe('usePendingGates', () => {
     expect(pg.remoteItems.value).toHaveLength(1)
     expect(pg.totalCount.value).toBe(1)
     expect(pg.displayedItems.value[0].nodeId).toBe('node-2')
-    expect(pg.recordItems.value.map((it) => it.nodeId)).toEqual(['node-1'])
+    expect(pg.displayedItems.value.some((it) => it.nodeId === 'node-1')).toBe(false)
+    expect(pg.remoteItems.value.some((it) => it.nodeId === 'node-1')).toBe(false)
   })
 
   it('restoreItemLocally reinserts after removeItemLocally', async () => {

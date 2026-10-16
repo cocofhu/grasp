@@ -32,7 +32,6 @@ const toast = useToast()
 // Shared singleton source so approving a gate elsewhere updates the lists immediately.
 const {
   displayedItems,
-  recordItems,
   sidebarExtras,
   startFailedKeys,
   activeInboxKey,
@@ -427,25 +426,6 @@ const settingsItems = settingsNavItems
         <span class="min-w-0 flex-1 truncate">{{ rowTitle(it) }}</span>
         <InboxMotionMark v-if="rowMotion(it) === 'spin'" kind="spin" />
         <InboxMotionMark v-else-if="rowMotion(it) === 'pulse'" kind="pulse" />
-      </button>
-    </div>
-
-    <div v-if="recordItems.length" class="mb-3" data-testid="nav-inbox-records">
-      <div class="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-txt3">
-        {{ t('nav.inboxRecords') }}
-      </div>
-      <button
-        v-for="it in recordItems"
-        :key="'record-' + itemKey(it)"
-        v-hover-ink
-        type="button"
-        class="nav-item mb-0.5 w-full min-w-0"
-        data-testid="nav-record-row"
-        :data-key="itemKey(it)"
-        :title="rowTitle(it)"
-        @click.prevent
-      >
-        <span class="min-w-0 flex-1 truncate">{{ rowTitle(it) }}</span>
       </button>
     </div>
     </div>
