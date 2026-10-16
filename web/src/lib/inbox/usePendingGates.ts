@@ -1,10 +1,10 @@
 import { ref, computed } from 'vue'
-import { api } from '@/lib/api/api'
 import { i18n } from '@/lib/shared/i18n'
 import { beginRefresh, endRefresh } from '@/lib/shared/refreshChrome'
 import { createTimeoutController, isAbortError } from '@/lib/shared/loadingRequest'
 import { DEFAULT_LOADING_TIMEOUT_MS } from '@/lib/shared/loadingTypes'
 import { applyInboxReplyingState, mergeInboxReplyingFromRemote } from '@/lib/inbox/inboxDisplay'
+import { listAllPendingGates } from '@/lib/inbox/listAllPendingGates'
 import type { InboxItem } from '@/lib/shared/types'
 
 export type RefreshSource =
@@ -105,16 +105,14 @@ let abortCtrl: AbortController | null = null
 async function fetchPeek(signal?: AbortSignal): Promise<{ items: InboxItem[]; total: number }> {
   // Align with GatesInbox loadList: use the live URL filter set (plan g2.2).
   // Do not hard-code project/wf/tag — read whatever is currently in the query.
+  // Page through the whole total: the desktop sidebar is the only entry now.
   const filters = readPeekFiltersFromLocation()
-  const data = await api.listGates({
-    page: 1,
-    pageSize: 20,
+  return listAllPendingGates({
     signal,
     wf: filters.wf,
     projectId: filters.projectId,
     tag: filters.tag,
   })
-  return { items: data.items, total: data.total }
 }
 
 /** URL `?wf=&projectId=&tag=` — same source of truth as the inbox page filters. */

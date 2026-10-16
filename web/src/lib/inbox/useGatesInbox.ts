@@ -8,6 +8,7 @@ import { adaptInboxContextToRun } from '@/lib/inbox/inboxContext'
 import { useWorkflowFilter } from '@/lib/composables/useWorkflowFilter'
 import { useTagFilter } from '@/lib/composables/useTagFilter'
 import { useProjectContext } from '@/lib/composables/useProjectContext'
+import { listAllPendingGates } from '@/lib/inbox/listAllPendingGates'
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { addClarifyAnnotation, useClarifyDraft } from '@/lib/inbox/useClarifyDraft'
 import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
@@ -503,7 +504,7 @@ async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: 
     // and keep armed so later filtered loadList passes still merge it (g2.1).
     if (isClarifyAwaitingHuman(run, nodeId)) {
       try {
-        const data = await api.listGates({ page: 1, pageSize: 100 })
+        const data = await listAllPendingGates()
         if (!incomingArmed.value) return
         const curAfter = incomingTarget()
         if (!curAfter || `${curAfter.runId}:${curAfter.nodeId || INCOMING_GHOST_NODE_ID}` !== key) return
@@ -511,11 +512,15 @@ async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: 
         if (hit) {
           incomingGhost.value = hit
           const hitKey = itemKey(hit)
-          if (!listItems.value.some((it) => itemKey(it) === hitKey)) {
-            const withoutStartingGhost = listItems.value.filter(
-              (it) => !(it.runId === target.runId && isStartingInboxItem(it)),
+          // A starting ghost uses the same run:node key as the real row. Replace it.
+          const hasRealRow = listItems.value.some(
+            (it) => itemKey(it) === hitKey && !isStartingInboxItem(it),
+          )
+          if (!hasRealRow) {
+            const rest = listItems.value.filter(
+              (it) => itemKey(it) !== hitKey && !(it.runId === target.runId && isStartingInboxItem(it)),
             )
-            listItems.value = [hit, ...withoutStartingGhost]
+            listItems.value = [hit, ...rest]
             listTotal.value = Math.max(listTotal.value, listItems.value.length)
           }
           if (!processingLock.value) ensureValidActive()

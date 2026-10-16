@@ -337,7 +337,7 @@ describe('usePendingGates', () => {
     expect(api.listGates).toHaveBeenCalledWith(
       expect.objectContaining({
         page: 1,
-        pageSize: 20,
+        pageSize: 100,
         wf: 'wf-1',
         projectId: 'proj-b',
         tag: 'urgent',
@@ -406,5 +406,46 @@ describe('usePendingGates', () => {
 
     expect(pg.hasPendingUpdate.value).toBe(false)
     expect(pg.pendingMeta.value).toBeNull()
+  })
+
+  it('pages through the full pending total so rows past 20 stay reachable', async () => {
+    const page1 = Array.from({ length: 20 }, (_, i) => gate(String(i + 1)))
+    const last = gate('21')
+    vi.mocked(api.listGates).mockImplementation(async (params?: { page?: number }) => {
+      if (params?.page === 2) {
+        return { items: [last], total: 21, page: 2, pageSize: 100, hasMore: false }
+      }
+      return { items: page1, total: 21, page: 1, pageSize: 100, hasMore: true }
+    })
+    const pg = usePendingGates()
+    await pg.refresh({ mode: 'force' })
+    expect(pg.displayedItems.value).toHaveLength(21)
+    expect(pg.count.value).toBe(21)
+    expect(pg.displayedItems.value.map((it) => it.nodeId)).toContain('node-21')
+    expect(api.listGates).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 100 }))
+    expect(api.listGates).toHaveBeenCalledWith(expect.objectContaining({ page: 2, pageSize: 100 }))
+  })
+
+  it('keeps paging after the server page cap of 100', async () => {
+    const all = Array.from({ length: 101 }, (_, i) => gate(String(i + 1)))
+    vi.mocked(api.listGates).mockClear()
+    vi.mocked(api.listGates).mockImplementation(async (params?: { page?: number; pageSize?: number }) => {
+      const page = params?.page ?? 1
+      const pageSize = params?.pageSize ?? 100
+      const start = (page - 1) * pageSize
+      const items = all.slice(start, start + pageSize)
+      return {
+        items,
+        total: all.length,
+        page,
+        pageSize,
+        hasMore: start + items.length < all.length,
+      }
+    })
+    const pg = usePendingGates()
+    await pg.refresh({ mode: 'force' })
+    expect(pg.displayedItems.value).toHaveLength(101)
+    expect(pg.displayedItems.value.at(-1)?.nodeId).toBe('node-101')
+    expect(api.listGates).toHaveBeenCalledTimes(2)
   })
 })
