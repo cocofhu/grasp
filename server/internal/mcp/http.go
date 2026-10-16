@@ -232,6 +232,22 @@ func (h *Host) closeToolSessionsLocked(runID string) {
 	delete(h.toolSessions, runID)
 }
 
+// CloseToolStreams ends every open tool-list SSE stream but keeps the
+// sessions, so http.Server.Shutdown is not held up by them. Clients reconnect
+// and re-read the tool list.
+func (h *Host) CloseToolStreams() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, sessions := range h.toolSessions {
+		for _, session := range sessions {
+			if session.stream != nil {
+				close(session.stream.done)
+				session.stream = nil
+			}
+		}
+	}
+}
+
 func (h *Host) notifyToolSessionsLocked(runID string) {
 	for _, session := range h.toolSessions[runID] {
 		if session.stream != nil {

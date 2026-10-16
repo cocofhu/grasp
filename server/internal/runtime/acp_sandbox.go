@@ -305,6 +305,75 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 	return sb, acp, home, nil
 }
 
+// sandboxAttacher is implemented by managers that can rebuild a handle for a
+// running sandbox without touching its runtime (see Manager.AttachNoEnsure).
+type sandboxAttacher interface {
+	AttachNoEnsure(ctx context.Context, id string) (*sandbox.Sandbox, error)
+}
+
+// reattachKnownWait bounds how long a reattached connection waits for the
+// bridge's first queue_state. A var so tests can shrink it.
+var reattachKnownWait = 15 * time.Second
+
+// attachSandbox reconnects to a node sandbox that kept running across a
+// control-plane restart. The bridge reuses the agent session already open in
+// the container. Failures are errSandboxSetup so RunAgent retries the node in
+// a fresh sandbox, and the unusable sandbox is torn down.
+func (c *acpProvider) attachSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, error) {
+	name := req.ReattachSandbox
+	att, ok := c.mgr.(sandboxAttacher)
+	if !ok {
+		c.deregisterRunSandbox(name)
+		return nil, nil, fmt.Errorf("%w: sandbox manager cannot reattach", errSandboxSetup)
+	}
+	sb, err := att.AttachNoEnsure(ctx, name)
+	if err != nil {
+		c.deregisterRunSandbox(name)
+		return nil, nil, fmt.Errorf("%w: reattach %s: %v", errSandboxSetup, name, err)
+	}
+	sb.Password = req.Token
+	sb.ConfigRoot = c.agentLayout(models.AgentProfile(req.Config), c.effectiveAgent(req)).ConfigRoot
+	model, _ := sb.ExecScript(ctx, 10*time.Second, "bash", "printenv "+EnvACPBridgeModel+" || true")
+	acp := sb.ACP().
+		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
+		WithIdleTimeoutFunc(c.agentIdle).
+		WithBridgeModel(strings.TrimSpace(model))
+	if err := acp.Connect(ctx); err != nil {
+		acp.Close()
+		c.deregisterRunSandbox(name)
+		sb.Destroy(context.Background())
+		return nil, nil, fmt.Errorf("%w: reattach acp connect: %v", errSandboxSetup, err)
+	}
+	log.Info().Str("run", req.RunID).Str("node", req.NodeID).Str("sandbox", name).
+		Msg("reattached node sandbox after restart")
+	return sb, acp, nil
+}
+
+// reattachTurn collects the main turn of a reattached sandbox: it waits out a
+// turn still running on the bridge, then rebuilds the node's first turn from
+// the event log. A nil result with nil error means no turn was ever sent and
+// the caller should send the main prompt.
+func (c *acpProvider) reattachTurn(ctx context.Context, sb *sandbox.Sandbox, acp *sandbox.ACPClient) (*sandbox.ChatResult, error) {
+	st, ok := acp.WaitBridgeKnown(ctx, reattachKnownWait)
+	if !ok {
+		return nil, fmt.Errorf("%w: bridge reported no queue state after reattach", errSandboxSetup)
+	}
+	if st.RunningOpID != "" {
+		if err := acp.AwaitTurn(ctx, st.RunningOpID); err != nil {
+			return nil, err
+		}
+	}
+	frames, _, err := sandbox.NewEventLogReader(sb.Host, sb.Port, sb.Password).Raw(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%w: read event log after reattach: %v", errSandboxSetup, err)
+	}
+	first, ok := sandbox.FirstTurnFrames(frames)
+	if !ok {
+		return nil, nil
+	}
+	return acp.ReplayTurn(first)
+}
+
 func removeHome(home string) {
 	if home != "" {
 		_ = os.RemoveAll(home)

@@ -51,6 +51,14 @@ func (s *sema) TryAcquire() bool {
 	return false
 }
 
+// ForceAcquire takes a slot even when the limit is reached. Runs that were
+// already executing before a restart must not wait behind the limit.
+func (s *sema) ForceAcquire() {
+	s.mu.Lock()
+	s.cur++
+	s.mu.Unlock()
+}
+
 // Release frees a previously acquired slot and wakes a waiter.
 func (s *sema) Release() {
 	s.mu.Lock()

@@ -2,20 +2,26 @@ import { describe, expect, it } from 'vitest'
 import { sidebarNavGroups } from './sidebarNav'
 
 describe('sidebarNav (plan g1.1)', () => {
-  it('workspace primary is exactly home / runs / settings', () => {
+  it('workspace primary is exactly home / projects / runs / settings', () => {
     expect(sidebarNavGroups).toHaveLength(1)
     expect(sidebarNavGroups[0].titleKey).toBeUndefined()
-    expect(sidebarNavGroups[0].items.map((i) => i.to)).toEqual([
+    const items = sidebarNavGroups[0].items
+    expect(items.map((i) => i.to)).toEqual([
       '/dashboard',
+      '/projects',
       '/runs',
       '/settings',
     ])
+    expect(items.find((i) => i.to === '/projects')).toEqual({
+      to: '/projects',
+      icon: 'folder',
+      labelKey: 'nav.projects',
+    })
   })
 
   it('does not expose collapsed pages or config group as workspace primary', () => {
     const allTos = sidebarNavGroups.flatMap((g) => g.items.map((i) => i.to))
     expect(allTos).not.toContain('/stats')
-    expect(allTos).not.toContain('/projects')
     expect(allTos).not.toContain('/notifications')
     expect(allTos).not.toContain('/artifacts')
     expect(allTos).not.toContain('/agents')

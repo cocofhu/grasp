@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-16（优化中英文 README，去 AI 腔并修正首次安装说明）
+
+- 日期：2026-10-16
+- 范围：`README.md`、`README.zh-CN.md`
+- 做了什么：重写中英文 README 文案与排版：去掉录屏下方的规格参数行、对偶式口号句与伪口语文案；将五处碎片化双列表格收拢为自然列表，截图表补齐 `workflow-canvas.webp` 组成 2×2 网格；把「跑通第一个工作流」修正为真实的首次安装向导与「项目凭据」配置流程（而非在 Agent Studio 填 API Key），并补充运行时凭据隔离说明。
+- 为什么：#788 改写后的 README 存在明显模板化表格堆砌、AI 口号腔与伪口语表达，且首次配置 API Key 的入口写成了已拒收密钥的 Agent Studio。
+- 如何验证：核对锚点与内部文档/图片相对路径存在且可达；执行 `node scripts/assert-no-approving-brand.mjs`、`./.github/scripts/actionlint.sh`、`./.github/scripts/shellcheck-error.sh` 全部通过。
+
 ### 2026-10-16（Live 请求生成中显示加载卡片；切换栏不再吞点击）
 
 - 日期：2026-10-16
@@ -43,6 +51,14 @@
 - 做了什么：首页吉祥物下方文案改读 `useBrandSettings().homeSubtitle`，留空（含纯空白，经 composable trim 为空串）回退语言包默认句；`pages.dashboard.heroEm/heroRest` 合并为单一 `heroSubtitle`（zh「先说清，再动手」/ en「Clarify first, then act」）；文案整句统一配色（`rgb(var(--c-txt))` + 600），移除 `.em` 分段高亮与对应浅色规则，并补 `max-width`/换行兜底；设置页 `homeSubtitlePlaceholder` 同步为新默认句。
 - 为什么：#794 首页改版移除了 `homeSubtitle` 接线，品牌设置「首页副标题」成为孤儿设置，管理员改完首页无变化。接线后该设置真正生效。
 - 如何验证：DashboardView / fill / light、SettingsView、locales 相关 vitest 全绿（新增读取设置、纯空白回退、英文回退用例）；`npm run lint` 0 error、`npx vue-tsc --noEmit` 通过。
+
+### 2026-10-15（OpenCode 接口地址占位符随所选厂商变化）
+
+- 日期：2026-10-15
+- 范围：`web/src/components/agent/OpenCodeProviderFields.vue`、`web/src/locales/{zh-CN,en}/pages.json`、`web/src/components/agent/OpenCodeProviderFields.test.ts`、`web/src/locales/openCodeCopy.test.ts`
+- 做了什么：接口地址输入框的占位符改为 computed `basePlaceholder`：优先取所选厂商在模型目录中的默认地址（`OpenCodeCatalogProvider.api`），厂商无 api 或为 custom/自建时回退中性文案；移除 `basePlaceholder` 中硬编码的 `https://api.example.com/v1`，中英文新增 `basePlaceholderCustom`。字段仍选填、默认留空，切换厂商只更新占位符，不清空已输入地址，也不改必填判定与后端契约。
+- 为什么：占位符原先绑定静态 i18n 文案，对所有厂商恒为示例域名，无法反映所选厂商真实使用的接口地址；而目录接口早已返回 `api` 字段，前端从未读取。
+- 如何验证：单测覆盖目录有 api / 无 api / custom / 离线四场景与切换厂商占位符更新且输入值不变；文案锁断言 openCode 文案不含 example 且中英键一致。`npm run lint`、`npx vue-tsc --noEmit`、`npm test -- --coverage`、`npm run build` 全部通过。
 
 ### 2026-10-15（复审确认后节点交接 handoff 不再丢失）
 

@@ -32,6 +32,7 @@ const VISIBLE_KEYS = [
   'modelRequired',
   'baseLabel',
   'basePlaceholder',
+  'basePlaceholderCustom',
   'baseHint',
   'baseRequired',
   'visionLabel',
@@ -58,6 +59,15 @@ describe('openCode copy', () => {
     }
     expect(String(zh.modelLabel)).toBe('模型')
     expect(String(en.modelLabel)).toBe('Model')
+  })
+
+  // plan g1.2: the service address placeholder no longer advertises the sample
+  // domain; the vendor's real default now comes from the catalog at runtime.
+  it('drops the sample domain from the openCode copy', () => {
+    for (const key of Object.keys(zh)) {
+      expect(String(zh[key]), `zh.${key}`).not.toContain('example')
+      expect(String(en[key]).toLowerCase(), `en.${key}`).not.toContain('example')
+    }
   })
 
   it('model hint is one plain sentence plus a concrete example', () => {

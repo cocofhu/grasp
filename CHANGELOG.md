@@ -4,6 +4,21 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Agent wizard service address:** the OpenCode API Key step now hints the
+  picked vendor's real default base URL (from the model catalog) as the service
+  address placeholder, instead of a fixed `https://api.example.com/v1`. A vendor
+  with no published address, or a self-hosted gateway, falls back to neutral
+  copy. The field stays optional and blank by default.
+- **Control-plane restarts no longer wait for agents:** on SIGTERM Grasp now
+  stops scheduling, finishes in-flight HTTP requests (at most 10s) and exits,
+  instead of draining agent runs for up to 10 minutes (which outlasted
+  `kubectl rollout status` timeouts). Sandboxes keep running. On startup, an
+  autonomous agent node whose sandbox is still alive is reattached and its
+  current visit continues: a turn still running is awaited, a finished one is
+  read back from the sandbox event log, and the main prompt is not resent.
+  Queued runs stay queued. Other in-flight nodes (clarify, human-facing,
+  non-agent) re-enter at the same node. If reattach fails, the node retries in
+  a fresh sandbox as before.
 - **Live request card while generating:** in the preview chat drawer, a Live
   request (for example「趣味细节」from the element card) now shows its card
   right away with a loading animation (skeleton rows and a sweep; static

@@ -20,7 +20,6 @@ const mocks = vi.hoisted(() => {
     peek: vi.fn(), refresh: vi.fn(), hydrate: vi.fn(), unfavorite: vi.fn(),
     getWorkflow: vi.fn(), reorder: vi.fn(), launch: vi.fn(), toastError: vi.fn(),
     displayedItems: ref<any[]>([]),
-    recordItems: ref<any[]>([]),
     sidebarExtras: ref<any[]>([]),
     startFailedKeys: ref<string[]>([]),
     activeInboxKey: ref<string | null>(null),
@@ -28,7 +27,7 @@ const mocks = vi.hoisted(() => {
 })
 vi.mock('@/lib/inbox/usePendingGates', () => ({ usePendingGates: () => ({
   count: mocks.count, peek: mocks.peek, refresh: mocks.refresh,
-  displayedItems: mocks.displayedItems, recordItems: mocks.recordItems,
+  displayedItems: mocks.displayedItems,
   sidebarExtras: mocks.sidebarExtras, startFailedKeys: mocks.startFailedKeys,
   activeInboxKey: mocks.activeInboxKey,
   itemKey: (it: { runId: string; nodeId: string }) => `${it.runId}:${it.nodeId}`,

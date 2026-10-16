@@ -91,6 +91,27 @@ const modelPlaceholder = computed(() =>
 )
 
 /**
+ * The vendor the catalog lists for the picked id, if any. The api field is the
+ * vendor's own default base URL, which the catalog may not publish.
+ */
+const catalogProvider = computed(() =>
+  catalog.value.find((p) => p.id.trim().toLowerCase() === props.provider.trim().toLowerCase()),
+)
+
+/**
+ * Hint the picked vendor's real default address, so the empty field says what
+ * OpenCode will call. A vendor without one, or our own gateway, falls back to
+ * neutral copy instead of a made-up sample address.
+ */
+const basePlaceholder = computed(() => {
+  const api = catalogProvider.value?.api?.trim()
+  if (api) return api
+  return ownEndpoint.value
+    ? t('pages.agentStudio.openCode.basePlaceholderCustom')
+    : t('pages.agentStudio.openCode.basePlaceholder')
+})
+
+/**
  * A model the vendor's catalog does not list is the one mistake that costs a whole
  * sandbox: OpenCode resolves it, fails, and `opencode run` exits 1 with no stderr.
  */
@@ -246,7 +267,7 @@ watch(
         spellcheck="false"
         class="w-full rounded-md border bg-base px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
         :class="requireBase ? 'border-err' : 'border-line'"
-        :placeholder="t('pages.agentStudio.openCode.basePlaceholder')"
+        :placeholder="basePlaceholder"
         data-test="opencode-base-url"
         @input="emit('update:baseUrl', ($event.target as HTMLInputElement).value)"
       />

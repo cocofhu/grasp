@@ -42,6 +42,7 @@ func (e *Engine) execAgent(c *execCtx, node *models.Node) nodeOutcome {
 
 func (e *Engine) runAutoAgent(c *execCtx, node *models.Node) nodeOutcome {
 	req := e.nodeReq(c, node)
+	req.ReattachSandbox, c.reattachSandbox = c.reattachSandbox, ""
 	res, err := e.provider.RunAgent(context.Background(), req)
 	if errors.Is(err, runtime.ErrCodexLoginRejected) {
 		return nodeOutcome{status: "failed", err: err.Error(), outputMd: "Agent 执行失败:" + err.Error(),
