@@ -568,7 +568,12 @@ function seedIncomingIfNeeded() {
 }
 
 function isIncomingContextPending(target: InboxItem): boolean {
-  return !!incomingGhost.value && itemKey(incomingGhost.value) === itemKey(target)
+  const ghost = incomingGhost.value
+  if (!ghost || itemKey(ghost) !== itemKey(target)) return false
+  // A real pending row pinned over the starting placeholder shares this key
+  // (gates past the inbox page of 20). That pin already has a panel — keeping
+  // the flag true leaves 「加载运行详情…」 up after inbox-context returns.
+  return isStartingInboxItem(ghost)
 }
 
 /**
@@ -1564,6 +1569,9 @@ async function loadActiveRun(hard = true) {
     if (isProcessedTriple(target)) return
     activeRun.value = adaptInboxContextToRun(ctx, target.runId)
     activeRunLoadError.value = false
+    // Context is in. Clear even when a same-key ghost was pending: the finally
+    // below used to leave the flag set, so a gate past page 1 never mounted.
+    if (hard) activeRunLoading.value = false
     // Must project AFTER loading flag clears so ReviewComposer / GateApproval can mount.
     projectAfterLoad = hard && (target.type === 'clarify' || target.type === 'gate')
   } catch (e) {

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   nodeEvents: vi.fn(),
   runArtifacts: vi.fn(),
   runEventsWsUrl: vi.fn((id: string) => `ws://test/runs/${id}/events`),
+  listGatePrimaryArtifacts: vi.fn(),
 }))
 
 const routeState = vi.hoisted(() => ({ query: {} as Record<string, string> }))
@@ -30,6 +31,7 @@ vi.mock('@/lib/api/api', async () => {
       nodeEvents: mocks.nodeEvents,
       runArtifacts: mocks.runArtifacts,
       runEventsWsUrl: mocks.runEventsWsUrl,
+      listGatePrimaryArtifacts: mocks.listGatePrimaryArtifacts,
     },
   }
 })
@@ -179,31 +181,36 @@ const ReviewComposerStub = defineComponent({
   template: '<div data-testid="review-composer-stub" />',
 })
 
-function mountInbox() {
+function mountInbox(opts?: { realGatePanel?: boolean }) {
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
     messages: { 'zh-CN': { ...common, ...pages } },
   })
+  const stubs: Record<string, unknown> = {
+    Icon: true,
+    EmptyState: true,
+    WorkflowFilter: true,
+    ProjectFilter: true,
+    TagFilter: true,
+    Pagination: true,
+    ArtifactLoadingPane: true,
+    GateApproval: true,
+    ReviewShell: defineComponent({
+      template: '<div><slot name="stage" /><slot name="sidebar" /></div>',
+    }),
+    ReviewComposer: ReviewComposerStub,
+    ClarifyProductStage: true,
+    ReactArtifactStage: true,
+  }
+  if (opts?.realGatePanel) {
+    delete stubs.ArtifactLoadingPane
+    delete stubs.GateApproval
+  }
   return mount(GatesInboxView, {
     global: {
       plugins: [i18n],
-      stubs: {
-        Icon: true,
-        EmptyState: true,
-        WorkflowFilter: true,
-        ProjectFilter: true,
-        TagFilter: true,
-        Pagination: true,
-        ArtifactLoadingPane: true,
-        GateApproval: true,
-        ReviewShell: defineComponent({
-          template: '<div><slot name="stage" /><slot name="sidebar" /></div>',
-        }),
-        ReviewComposer: ReviewComposerStub,
-        ClarifyProductStage: true,
-        ReactArtifactStage: true,
-      },
+      stubs,
     },
   })
 }
@@ -219,6 +226,7 @@ beforeEach(async () => {
   if (filterState.workflowSelected) filterState.workflowSelected.value = ''
   if (filterState.projectSelected) filterState.projectSelected.value = ''
   mocks.listGates.mockResolvedValue(paged([]))
+  mocks.listGatePrimaryArtifacts.mockResolvedValue({ items: [] })
   mocks.getRun.mockResolvedValue({ id: 'run-unknown', status: 'running' })
   await usePendingGates().refresh({ mode: 'force' })
 })
@@ -480,6 +488,62 @@ describe('GatesInboxView starting approvals', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="inbox-start-failed"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('opens a gate past the first inbox page without staying on the loading layer', async () => {
+    const now = new Date().toISOString()
+    const rows: InboxItem[] = Array.from({ length: 21 }, (_, i) => {
+      const n = i + 1
+      return {
+        type: 'gate',
+        runId: `run-${n}`,
+        nodeId: `g${n}`,
+        iteration: 1,
+        workflowName: 'wf',
+        title: `待审批项 ${n}`,
+        bodyMd: n === 21 ? '正文 21' : `正文 ${n}`,
+        actions: [{ id: 'approve', label: '批准' }],
+        requestedAt: now,
+      }
+    })
+    routeState.query = { run: 'run-21', node: 'g21' }
+    mocks.listGates.mockImplementation(async (params?: { page?: number; pageSize?: number }) => {
+      const page = params?.page ?? 1
+      const pageSize = params?.pageSize ?? 20
+      const start = (page - 1) * pageSize
+      const items = rows.slice(start, start + pageSize)
+      return {
+        items,
+        total: rows.length,
+        page,
+        pageSize,
+        hasMore: start + pageSize < rows.length,
+      }
+    })
+    mocks.getRun.mockResolvedValue({
+      id: 'run-21',
+      status: 'waiting_human',
+      nodes: [{ id: 'g21', type: 'human_gate', label: '门禁' }],
+      nodeRuns: { g21: { nodeId: 'g21', status: 'waiting_human' } },
+    })
+    mocks.inboxContext.mockResolvedValue({
+      type: 'gate',
+      nodes: [{ id: 'g21', type: 'human_gate', label: '门禁', position: { x: 0, y: 0 }, config: {} }],
+      artifacts: [],
+      nodeExecutions: {},
+    })
+    const wrapper = mountInbox({ realGatePanel: true })
+    await flushPromises()
+    await nextTick()
+    await flushPromises()
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('正文 21')
+      expect(wrapper.text()).toContain('确认并流转')
+    })
+    expect(wrapper.text()).not.toContain('加载运行详情')
+    expect(wrapper.findComponent({ name: 'ArtifactLoadingPane' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'GateApproval' }).exists()).toBe(true)
     wrapper.unmount()
   })
 
