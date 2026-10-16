@@ -391,6 +391,27 @@ describe('GateShareLinkPanel', () => {
     expect((w.get('[data-testid="gate-share-revoke"]').element as HTMLButtonElement).disabled).toBe(false)
   })
 
+  it('rewrites a loopback minted URL onto the page origin before copy', async () => {
+    const happy = (window as unknown as { happyDOM?: { setURL: (u: string) => void } }).happyDOM
+    const prev = window.location.href
+    happy?.setURL('http://21.130.250.101:5173/gates')
+    const token = 'pb'.repeat(32)
+    const url = `http://localhost:8080/public/gate-approvals#t=${token}`
+    const want = `http://21.130.250.101:5173/public/gate-approvals#t=${token}`
+    mocks.create.mockResolvedValue({ id: 'gsl-pb', url, ttlTier: '24h', expiresAt: '2026-08-10T00:00:00Z', state: 'active' })
+
+    const w = mount(GateShareLinkPanel, {
+      props: { open: true, target: item() },
+      global: { plugins: [i18n], stubs: { Teleport: true } },
+    })
+    await w.get('[data-testid="gate-share-create"]').trigger('click')
+    await flushPromises()
+    expect(mocks.copyToClipboard).toHaveBeenCalledWith(want)
+    expect(w.find('[data-testid="gate-share-loopback-warning"]').exists()).toBe(false)
+    happy?.setURL(prev)
+    forgetShareUrl('run-1', 'hg1', 1)
+  })
+
   it('shows origin-from-access hint and allows copy for non-loopback URLs', async () => {
     const token = 'pub'.repeat(32)
     const url = `https://approving.example.com/public/gate-approvals#t=${token}`
