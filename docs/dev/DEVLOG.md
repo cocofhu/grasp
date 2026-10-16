@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-16（set_preview 任意端口都带取点：注入代理自适应上游）
+
+- 日期：2026-10-16
+- 范围：`sandbox-gateway/sandbox/internal/previewinject/`（`upstream.go`、`proxy.go`）、`sandbox-gateway/sandbox/cmd/preview-inject/main.go`、`sandbox-gateway/sandbox/scripts/preview-inject.sh`、`server/internal/mcp/preview.go`、`server/internal/mcp/tools.go`、`server/internal/services/preview.go`、`server/internal/models/prompts.go`、`sandbox-gateway/scripts/test-preview-inject-upstream.sh`、`sandbox-gateway/scripts/test-runtime-e2e.sh`、`.github/workflows/ci-sandbox.yml`
+- 做了什么：注入代理新增 `--upstream-file`，文件里的端口在可连时覆盖默认上游（`$PREVIEW_PORT`），连不上自动回落；响应带 `X-Grasp-Upstream` 标明实际上游；沙箱自带服务端口（22/5900/6080/8744/8765/9222/17980）一律不作上游。`preview-inject.sh set-upstream <port|reset>` 写/删该文件，`$PREVIEW_PORT` 已有别的应用时返回 `busy` 不抢入口；SSH 调用时从 `/run/grasp-runtime/env` 读 `PREVIEW_PORT`；脚本头带 `# grasp:set-upstream` 标记，平台检测到才调用，旧运行时包走原路径。IP 直连下 `set_preview(port=X)`（X≠`PREVIEW_PORT`）按沙箱加锁后切换上游，只发布 `PREVIEW_PORT`，用响应头校验确实转到 X，失败则 reset 并回到原有登记；记录 `Port=X`、`Host=PREVIEW_PORT`，桌面浏览器仍打开 `127.0.0.1:X`；被挤掉的旧端口登记释放。服务端同样拒绝沙箱服务端口。`PreviewContract` 和 `set_preview` 说明改为：可用任意端口、同一时刻只有最后登记的端口带取点、不要登记后端、沙箱内自测用 `127.0.0.1:<应用端口>` 而不是 `$PREVIEW_PORT`。
+- 为什么：Agent 把 Vite 起在 5173 并登记，审批人直连 `IP:$PREVIEW_PORT` 拿不到页面，新标签页取点失效（run 60f19582）。之前只能靠提示词要求起在 `$PREVIEW_PORT`，不可靠。
+- 如何验证：sandbox `go test ./internal/previewinject/ ./cmd/preview-inject/`（选择器缓存/回落/拒绝端口、脚本各结果码）；server `go test ./...`（切换、探测失败 reset、busy 备注、旧版本回退、保留端口、非直连不切换、`ProbeInjectUpstream` 校验头）；新增 CI 冒烟 `scripts/test-preview-inject-upstream.sh`（真实二进制 + 脚本，无 iptables）；`test-runtime-e2e.sh` 新增 2b 在特权容器走真实 iptables 验证切换/busy/denied/reset。golangci-lint、vet、两侧覆盖率门槛（server 90.2%、sandbox 96.6%）、shellcheck-error、actionlint 通过。
+
 ### 2026-10-15（首页文案接回品牌设置「首页副标题」）
 
 - 日期：2026-10-15

@@ -16,9 +16,10 @@ import (
 )
 
 type options struct {
-	Listen    string
-	Upstream  string
-	ScriptURL string
+	Listen       string
+	Upstream     string
+	UpstreamFile string
+	ScriptURL    string
 }
 
 func main() {
@@ -32,8 +33,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "preview-inject: bad upstream %q\n", opt.Upstream)
 		os.Exit(2)
 	}
-	fmt.Fprintf(os.Stderr, "preview-inject: listen %s → %s script %s\n", opt.Listen, opt.Upstream, opt.ScriptURL)
-	h := previewinject.NewHandlerWithEmbed(upstream, opt.ScriptURL, previewinject.EmbedLookup{
+	fmt.Fprintf(os.Stderr, "preview-inject: listen %s → %s (switch file %q) script %s\n", opt.Listen, opt.Upstream, opt.UpstreamFile, opt.ScriptURL)
+	h := previewinject.NewSwitchableHandler(upstream, opt.UpstreamFile, opt.ScriptURL, previewinject.EmbedLookup{
 		RunURL: os.Getenv("GRASP_ARTIFACT_URL"),
 		Token:  os.Getenv("GRASP_ARTIFACT_TOKEN"),
 	})
@@ -48,14 +49,16 @@ func parseOptions(args []string, getenv func(string) string) (options, error) {
 	fs.SetOutput(os.Stderr)
 	listen := fs.String("listen", "", "listen address (default :17980)")
 	upstream := fs.String("upstream", "", "upstream URL or host:port (default http://127.0.0.1:$PREVIEW_PORT)")
+	upstreamFile := fs.String("upstream-file", "", "file holding a port that overrides the upstream port while it accepts connections")
 	script := fs.String("script-url", "", "script src to inject (default same-origin /__grasp/preview-pick.js)")
 	if err := fs.Parse(args); err != nil {
 		return options{}, err
 	}
 
 	opt := options{
-		Listen:   firstNonEmpty(*listen, getenv("PREVIEW_INJECT_LISTEN"), fmt.Sprintf(":%d", previewinject.ListenPort)),
-		Upstream: firstNonEmpty(*upstream, getenv("PREVIEW_INJECT_UPSTREAM")),
+		Listen:       firstNonEmpty(*listen, getenv("PREVIEW_INJECT_LISTEN"), fmt.Sprintf(":%d", previewinject.ListenPort)),
+		Upstream:     firstNonEmpty(*upstream, getenv("PREVIEW_INJECT_UPSTREAM")),
+		UpstreamFile: firstNonEmpty(*upstreamFile, getenv("PREVIEW_INJECT_UPSTREAM_FILE")),
 		// Always default to the same-origin path. PREVIEW_PICK_SCRIPT_URL is
 		// for the Agent HTML fallback; Grasp often sets it to
 		// http://localhost:8080/preview-pick.js, which the reviewer's

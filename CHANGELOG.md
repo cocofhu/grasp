@@ -4,6 +4,16 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Preview pick on any port:** with IP-direct preview, `set_preview(port=X)`
+  now gives the reviewer's new-tab link (`IP:$PREVIEW_PORT`) the page on port X
+  with pick injected, even when the app does not listen on `$PREVIEW_PORT`
+  (e.g. Vite on 5173). Only the last registered port per sandbox has pick;
+  if `$PREVIEW_PORT` already serves another app it keeps the entry. Sandbox
+  service ports (SSH, VNC, IDE, CDP, sandbox backend) are rejected. Agent
+  prompts now say not to register backends and to self-test on
+  `127.0.0.1:<app port>`. Sandboxes on an older runtime bundle keep the old
+  behavior until the bundle updates.
+
 ## 2.2.0 — 2026-10-15
 
 <img src="media/yume-mark.png" alt="Black-and-white ghost cat, the Grasp mascot" width="120" />

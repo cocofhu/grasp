@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -83,8 +84,12 @@ const previewProbeAttempts = 5
 var previewProbeInterval = 500 * time.Millisecond
 
 func probePreviewPort(ctx context.Context, ops PreviewSandboxOps, sandboxName string, port int) bool {
+	return retryProbe(ctx, func() bool { return ops.ProbeHTTPPort(ctx, sandboxName, port) })
+}
+
+func retryProbe(ctx context.Context, probe func() bool) bool {
 	for i := 0; i < previewProbeAttempts; i++ {
-		if ops.ProbeHTTPPort(ctx, sandboxName, port) {
+		if probe() {
 			return true
 		}
 		if i == previewProbeAttempts-1 {
@@ -136,6 +141,44 @@ func allLoopback(addrs []string) bool {
 		}
 	}
 	return true
+}
+
+// Results of `preview-inject.sh set-upstream` (see InjectSwitch).
+const (
+	InjectSwitched    = "ok"
+	InjectReset       = "reset"
+	InjectBusy        = "busy"
+	InjectNoListen    = "nolisten"
+	InjectDenied      = "denied"
+	InjectUnsupported = "unsupported"
+)
+
+// InjectSwitch is the outcome of pointing the sandbox's preview injector at
+// an app port. PreviewPort is the sandbox's public PREVIEW_PORT (0 = unknown).
+type InjectSwitch struct {
+	Result      string
+	PreviewPort int
+}
+
+// previewInjectSwitcher is optionally implemented by PreviewSandboxOps for
+// IP-direct sandboxes whose injector can serve an app on any port.
+type previewInjectSwitcher interface {
+	SwitchInjectUpstream(ctx context.Context, sandboxName string, port int) (InjectSwitch, error)
+	// ProbeInjectUpstream reports whether PREVIEW_PORT answers from want.
+	ProbeInjectUpstream(ctx context.Context, sandboxName string, previewPort, want int) bool
+}
+
+func probeInjectUpstream(ctx context.Context, sw previewInjectSwitcher, sandboxName string, previewPort, want int) bool {
+	return retryProbe(ctx, func() bool { return sw.ProbeInjectUpstream(ctx, sandboxName, previewPort, want) })
+}
+
+// reservedPreviewPorts are the sandbox's own services (sshd, VNC, noVNC,
+// code-server, backend, CDP, injector). Behind IP-direct preview they would be
+// public without auth, and keepalive would restart them.
+var reservedPreviewPorts = map[int]bool{22: true, 5900: true, 6080: true, 8744: true, 8765: true, 9222: true, 17980: true}
+
+func reservedPreviewPortError(port int) error {
+	return fmt.Errorf("端口 %d 是沙箱自带的服务（SSH、远程桌面、IDE、浏览器调试或沙箱后端），不能登记为预览；请登记你启动的前端页面端口", port)
 }
 
 // previewPortPublisher is optionally implemented to PATCH k8s Services for unpublished ports.
@@ -398,13 +441,62 @@ func (h *Host) upsertPreviewMem(runID, nodeID string, rec PreviewPort) {
 	h.previewMem[key] = ports
 }
 
-func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (string, error) {
+// PreviewRegistration is what a healthy set_preview(port) registered.
+type PreviewRegistration struct {
+	ProxyURL string
+	// PublicURL is the reviewer-facing http://IP:port/ (IP-direct only).
+	PublicURL string
+	// Picked is true when PublicURL goes through the in-sandbox injector, so
+	// the new-tab page carries the pick script.
+	Picked bool
+	// Note explains why PublicURL has no pick script, when Agent can fix it.
+	Note string
+}
+
+// previewPortResult is the set_preview(port) reply: the reviewer's entry and
+// the desktop address are different on purpose, so name both.
+func previewPortResult(port int, reg PreviewRegistration) string {
+	var b strings.Builder
+	b.WriteString("ok: 预览已注册")
+	if reg.PublicURL != "" {
+		fmt.Fprintf(&b, ";审批人入口 %s", reg.PublicURL)
+		if reg.Picked {
+			b.WriteString("(已注入取点脚本)")
+		}
+	}
+	fmt.Fprintf(&b, ";沙箱桌面浏览器已切到 http://127.0.0.1:%d/(用户在远程桌面里看到的就是这一页,你自测也用这个地址)", port)
+	fmt.Fprintf(&b, ";代理 URL: %s", reg.ProxyURL)
+	if reg.Note != "" {
+		b.WriteString(";注意:")
+		b.WriteString(reg.Note)
+	}
+	return b.String()
+}
+
+func (h *Host) lockPreviewSandbox(sandboxName string) func() {
+	h.mu.Lock()
+	if h.previewLocks == nil {
+		h.previewLocks = map[string]*sync.Mutex{}
+	}
+	l, ok := h.previewLocks[sandboxName]
+	if !ok {
+		l = &sync.Mutex{}
+		h.previewLocks[sandboxName] = l
+	}
+	h.mu.Unlock()
+	l.Lock()
+	return l.Unlock
+}
+
+func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (PreviewRegistration, error) {
 	if port <= 0 || port > 65535 {
-		return "", fmt.Errorf("port must be 1-65535")
+		return PreviewRegistration{}, fmt.Errorf("port must be 1-65535")
+	}
+	if reservedPreviewPorts[port] {
+		return PreviewRegistration{}, reservedPreviewPortError(port)
 	}
 	h.mu.RLock()
 	ops := h.previewOps
-	store := h.previewStore
 	h.mu.RUnlock()
 	sandboxName := ""
 	if ops != nil {
@@ -413,11 +505,33 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (str
 		}
 	}
 	if ops == nil || sandboxName == "" {
-		return "", fmt.Errorf("无法探测预览端口:沙箱未就绪")
+		return PreviewRegistration{}, fmt.Errorf("无法探测预览端口:沙箱未就绪")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+	defer h.lockPreviewSandbox(sandboxName)()
+
 	direct := h.previewDirect(runID, nodeID)
+	sw := InjectSwitch{}
+	switcher, canSwitch := ops.(previewInjectSwitcher)
+	if direct && canSwitch {
+		res, err := switcher.SwitchInjectUpstream(ctx, sandboxName, port)
+		if err != nil {
+			log.Warn().Err(err).Str("run_id", runID).Str("node_id", nodeID).
+				Int("port", port).Msg("preview inject switch failed")
+			res = InjectSwitch{Result: InjectUnsupported}
+		}
+		sw = res
+	}
+	switch sw.Result {
+	case InjectDenied:
+		return PreviewRegistration{}, reservedPreviewPortError(port)
+	case InjectNoListen:
+		return PreviewRegistration{}, fmt.Errorf("预览端口 %d 没有进程在监听：请先在沙箱里启动服务，然后重试 set_preview", port)
+	case InjectSwitched:
+		return h.registerSwitchedPreview(ctx, ops, switcher, runID, nodeID, sandboxName, port, sw.PreviewPort, label)
+	}
+
 	if direct {
 		if pub, ok := ops.(previewPortPublisher); ok {
 			_, _ = pub.EnsurePublishedPort(ctx, sandboxName, port)
@@ -425,22 +539,121 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (str
 	}
 	// Probe before keepalive: keepalive restarts the listener, which only makes
 	// sense once the port is known to serve the platform.
-	if !probePreviewPort(ctx, ops, sandboxName, port) {
-		return "", previewUnreachableError(ctx, ops, sandboxName, port)
+	probe := func() bool { return probePreviewPort(ctx, ops, sandboxName, port) }
+	unreachable := func() error { return previewUnreachableError(ctx, ops, sandboxName, port) }
+	if !probe() {
+		return PreviewRegistration{}, unreachable()
 	}
-	keepalivePID, err := ops.KeepalivePort(ctx, sandboxName, port)
+	keepalivePID, err := h.keepalivePreview(ctx, ops, runID, nodeID, sandboxName, port, probe, unreachable)
 	if err != nil {
-		log.Warn().Err(err).Str("run_id", runID).Str("node_id", nodeID).
-			Int("port", port).Msg("preview keepalive failed")
-		return "", fmt.Errorf("预览端口 %d 可以访问，但脱离 Agent 进程保活失败：%w；服务仍在运行，可稍后重试 set_preview", port, err)
-	}
-	if !probePreviewPort(ctx, ops, sandboxName, port) {
-		return "", fmt.Errorf("预览端口 %d 保活重启后不可达：%w", port, previewUnreachableError(ctx, ops, sandboxName, port))
+		return PreviewRegistration{}, err
 	}
 	host := ""
 	if base, ok := ops.PreviewUpstream(ctx, sandboxName, port); ok && base != "" {
 		host = base
 	}
+	reg, err := h.savePreviewPort(ops, runID, nodeID, sandboxName, port, label, host, keepalivePID)
+	if err != nil {
+		return PreviewRegistration{}, err
+	}
+	if direct {
+		reg.Picked = sw.Result == InjectReset
+		switch sw.Result {
+		case InjectBusy:
+			reg.Note = fmt.Sprintf("$PREVIEW_PORT(=%d) 已被另一个页面占用，端口 %d 的新标签页不会注入取点脚本；需要取点时只保留一个前端，或把它开在 $PREVIEW_PORT", sw.PreviewPort, port)
+		case InjectUnsupported:
+			reg.Note = fmt.Sprintf("沙箱的预览注入代理不支持切换端口（运行时较旧），端口 %d 的新标签页可能没有取点；需要取点请把服务开在 $PREVIEW_PORT", port)
+		}
+	}
+	return reg, nil
+}
+
+// registerSwitchedPreview finishes a set_preview whose port now sits behind
+// PREVIEW_PORT's injector: probe through PREVIEW_PORT, keep the app alive, and
+// record PREVIEW_PORT's address as the public one while Port stays the app's
+// own (the VNC desktop opens 127.0.0.1:<Port>, which bypasses the injector).
+func (h *Host) registerSwitchedPreview(ctx context.Context, ops PreviewSandboxOps, sw previewInjectSwitcher, runID, nodeID, sandboxName string, port, previewPort int, label string) (PreviewRegistration, error) {
+	if pub, ok := ops.(previewPortPublisher); ok {
+		_, _ = pub.EnsurePublishedPort(ctx, sandboxName, previewPort)
+	}
+	probe := func() bool { return probeInjectUpstream(ctx, sw, sandboxName, previewPort, port) }
+	unreachable := func() error {
+		return fmt.Errorf("预览端口 %d 已接到 $PREVIEW_PORT(=%d)，但平台经 $PREVIEW_PORT 访问不到它：确认服务能正常返回 HTTP 后重试 set_preview", port, previewPort)
+	}
+	if !probe() {
+		h.resetInjectUpstream(ctx, sw, sandboxName, previewPort)
+		return PreviewRegistration{}, unreachable()
+	}
+	keepalivePID, err := h.keepalivePreview(ctx, ops, runID, nodeID, sandboxName, port, probe, unreachable)
+	if err != nil {
+		h.resetInjectUpstream(ctx, sw, sandboxName, previewPort)
+		return PreviewRegistration{}, err
+	}
+	host := ""
+	if base, ok := ops.PreviewUpstream(ctx, sandboxName, previewPort); ok && base != "" {
+		host = base
+	}
+	if host != "" {
+		h.releaseDisplacedPreviews(ctx, ops, runID, nodeID, sandboxName, port, host)
+	}
+	reg, err := h.savePreviewPort(ops, runID, nodeID, sandboxName, port, label, host, keepalivePID)
+	if err != nil {
+		return PreviewRegistration{}, err
+	}
+	reg.Picked = true
+	return reg, nil
+}
+
+func (h *Host) resetInjectUpstream(ctx context.Context, sw previewInjectSwitcher, sandboxName string, previewPort int) {
+	if _, err := sw.SwitchInjectUpstream(ctx, sandboxName, previewPort); err != nil {
+		log.Warn().Err(err).Str("sandbox", sandboxName).Msg("preview inject reset failed")
+	}
+}
+
+// releaseDisplacedPreviews points earlier registrations that shared host
+// (PREVIEW_PORT's address) back at their own address: the injector now serves
+// port, so their new-tab link would open the wrong app.
+func (h *Host) releaseDisplacedPreviews(ctx context.Context, ops PreviewSandboxOps, runID, nodeID, sandboxName string, port int, host string) {
+	h.mu.RLock()
+	store := h.previewStore
+	h.mu.RUnlock()
+	for _, p := range h.ListPreviewPorts(runID, nodeID) {
+		if previewPortKind(p) != PreviewKindPort || p.Port == port || p.Host != host {
+			continue
+		}
+		p.Host = ""
+		if base, ok := ops.PreviewUpstream(ctx, sandboxName, p.Port); ok && base != host {
+			p.Host = base
+		}
+		p.Mode, p.DirectURL = "", ""
+		h.mu.Lock()
+		h.upsertPreviewMem(runID, nodeID, p)
+		h.mu.Unlock()
+		if store != nil {
+			if err := store.UpsertPreviewPort(p); err != nil {
+				log.Warn().Err(err).Str("run_id", runID).Int("port", p.Port).Msg("release displaced preview failed")
+			}
+		}
+	}
+}
+
+func (h *Host) keepalivePreview(ctx context.Context, ops PreviewSandboxOps, runID, nodeID, sandboxName string, port int, probe func() bool, unreachable func() error) (int, error) {
+	keepalivePID, err := ops.KeepalivePort(ctx, sandboxName, port)
+	if err != nil {
+		log.Warn().Err(err).Str("run_id", runID).Str("node_id", nodeID).
+			Int("port", port).Msg("preview keepalive failed")
+		return 0, fmt.Errorf("预览端口 %d 可以访问，但脱离 Agent 进程保活失败：%w；服务仍在运行，可稍后重试 set_preview", port, err)
+	}
+	if !probe() {
+		return 0, fmt.Errorf("预览端口 %d 保活重启后不可达：%w", port, unreachable())
+	}
+	return keepalivePID, nil
+}
+
+func (h *Host) savePreviewPort(ops PreviewSandboxOps, runID, nodeID, sandboxName string, port int, label, host string, keepalivePID int) (PreviewRegistration, error) {
+	h.mu.RLock()
+	store := h.previewStore
+	h.mu.RUnlock()
 	proxyURL := h.previewProxyURL(runID, nodeID, port)
 	rec := PreviewPort{
 		RunID: runID, NodeID: nodeID, Kind: PreviewKindPort,
@@ -454,7 +667,7 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (str
 	h.mu.Unlock()
 	if store != nil {
 		if err := store.UpsertPreviewPort(rec); err != nil {
-			return "", err
+			return PreviewRegistration{}, err
 		}
 	}
 	// IP-direct only adds a new-tab link; the VNC desktop shows the app either way.
@@ -465,7 +678,11 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (str
 		l.LeasePreviewSandbox(sandboxName)
 	}
 	h.SignalPreviewReady(runID, nodeID)
-	return proxyURL, nil
+	reg := PreviewRegistration{ProxyURL: proxyURL}
+	if h.previewDirect(runID, nodeID) && host != "" {
+		reg.PublicURL = strings.TrimRight(host, "/") + "/"
+	}
+	return reg, nil
 }
 
 func (h *Host) setPreviewURL(runID, nodeID, rawURL, label string) (string, error) {

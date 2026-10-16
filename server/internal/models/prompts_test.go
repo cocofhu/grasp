@@ -26,6 +26,24 @@ func TestOutcomeContractSeparatesVerdictFromFailure(t *testing.T) {
 	}
 }
 
+// The injector serves one app at a time and only HTML gets the pick script;
+// PREVIEW_PORT from inside the sandbox bypasses the injector.
+func TestPreviewContractSteersPortUse(t *testing.T) {
+	for _, want := range []string{
+		"set_preview(port=实际端口)",
+		"同一时刻只有一个端口带取点",
+		"只登记用户当前要看的那一个前端页面",
+		"非页面服务不要登记",
+		"会被拒绝",
+		"http://127.0.0.1:<应用实际端口>/",
+		"不要访问 `$PREVIEW_PORT`",
+	} {
+		if !strings.Contains(PreviewContract, want) {
+			t.Errorf("PreviewContract missing %q", want)
+		}
+	}
+}
+
 func TestPromptTemplates(t *testing.T) {
 	if got := FeedbackHeaderFor(3); !strings.Contains(got, "3") || strings.Contains(got, "{n}") {
 		t.Errorf("FeedbackHeaderFor=%q", got)
