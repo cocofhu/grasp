@@ -160,6 +160,10 @@ type NodeReq struct {
 	Downstream []models.HandoffTarget
 	// UpstreamHandoff is the handoff left by the node that routed here, if any.
 	UpstreamHandoff *models.UpstreamHandoff
+	// ReattachSandbox names the still-running sandbox of this visit after a
+	// control-plane restart. RunAgent's first attempt reconnects to it and
+	// waits for the agent's turn instead of creating a sandbox.
+	ReattachSandbox string
 }
 
 // GitInfo is the VCS-agnostic push detection result.

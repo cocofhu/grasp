@@ -32,7 +32,6 @@ const toast = useToast()
 // Shared singleton source so approving a gate elsewhere updates the lists immediately.
 const {
   displayedItems,
-  recordItems,
   sidebarExtras,
   startFailedKeys,
   activeInboxKey,
@@ -429,25 +428,6 @@ const settingsItems = settingsNavItems
         <InboxMotionMark v-else-if="rowMotion(it) === 'pulse'" kind="pulse" />
       </button>
     </div>
-
-    <div v-if="recordItems.length" class="mb-3" data-testid="nav-inbox-records">
-      <div class="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-txt3">
-        {{ t('nav.inboxRecords') }}
-      </div>
-      <button
-        v-for="it in recordItems"
-        :key="'record-' + itemKey(it)"
-        v-hover-ink
-        type="button"
-        class="nav-item mb-0.5 w-full min-w-0 text-start"
-        data-testid="nav-record-row"
-        :data-key="itemKey(it)"
-        :title="rowTitle(it)"
-        @click.prevent
-      >
-        <span class="nav-row-title min-w-0 flex-1 truncate text-start">{{ rowTitle(it) }}</span>
-      </button>
-    </div>
     </div>
     </Transition>
     </div>
@@ -473,7 +453,7 @@ const settingsItems = settingsNavItems
 </template>
 
 <style scoped>
-/* Buttons default to centered text. Pending and record titles start at the row edge. */
+/* Buttons default to centered text. Pending titles start at the row edge. */
 .nav-row-title {
   text-align: start;
 }
