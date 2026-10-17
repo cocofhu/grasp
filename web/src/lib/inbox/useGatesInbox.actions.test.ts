@@ -40,6 +40,8 @@ const mocks = vi.hoisted(() => ({
   reactQueueReorder: vi.fn(),
   nodeEvents: vi.fn(),
   runArtifacts: vi.fn(),
+  createGateShareLink: vi.fn(),
+  createReviewShareLink: vi.fn(),
   refresh: vi.fn(),
   peek: vi.fn(),
   applyPending: vi.fn(),
@@ -134,6 +136,8 @@ vi.mock('@/lib/api/api', async () => {
       reactQueueReorder: mocks.reactQueueReorder,
       nodeEvents: mocks.nodeEvents,
       runArtifacts: mocks.runArtifacts,
+      createGateShareLink: mocks.createGateShareLink,
+      createReviewShareLink: mocks.createReviewShareLink,
       runEventsWsUrl: (id: string) => `ws://events/${id}`,
     },
   }
@@ -950,5 +954,100 @@ describe('useGatesInbox actions', () => {
     expect(inbox.mergeFailedStarting([failed, gateItem()])[0]?.runId).toBe('failed-start')
     expect(inbox.startFailedItem.value).toBeNull()
     app.unmount()
+  })
+
+  it('opens the existing share panel once from the sidebar intent and does not create a link', async () => {
+    const { inbox, app, router } = await withInbox('/inbox?run=run-chat&node=react&share=1')
+    await flushPromises()
+    expect(inbox.sharePanelOpen.value).toBe(true)
+    expect(inbox.shareTarget.value?.runId).toBe('run-chat')
+    expect(inbox.shareTarget.value?.nodeId).toBe('react')
+    expect(router.currentRoute.value.query.share).toBeUndefined()
+    expect(router.currentRoute.value.query.run).toBe('run-chat')
+    expect(router.currentRoute.value.query.node).toBe('react')
+    expect(mocks.createGateShareLink).not.toHaveBeenCalled()
+    expect(mocks.createReviewShareLink).not.toHaveBeenCalled()
+    app.unmount()
+
+    const again = await withInbox('/inbox?run=run-chat&node=react')
+    await flushPromises()
+    expect(again.inbox.sharePanelOpen.value).toBe(false)
+    expect(mocks.createReviewShareLink).not.toHaveBeenCalled()
+    again.app.unmount()
+  })
+
+  it('does not open the share panel for a used link, a starting row, a lock, or a non-shareable row', async () => {
+    mocks.listGates.mockResolvedValue({
+      items: [
+        clarifyItem('run-used', { shareLink: { state: 'used', canCreate: false } }),
+        clarifyItem('run-start', { state: 'starting' }),
+        gateItem('run-other', { nodeType: 'agent' }),
+        clarifyItem('run-open'),
+      ],
+      total: 4,
+    })
+    const used = await withInbox('/inbox?run=run-used&node=react&share=1')
+    await flushPromises()
+    expect(used.inbox.sharePanelOpen.value).toBe(false)
+    expect(used.router.currentRoute.value.query.share).toBeUndefined()
+    used.app.unmount()
+
+    const starting = await withInbox('/inbox?run=run-start&node=react&share=1')
+    await flushPromises()
+    expect(starting.inbox.sharePanelOpen.value).toBe(false)
+    expect(starting.router.currentRoute.value.query.share).toBeUndefined()
+    starting.app.unmount()
+
+    const other = await withInbox('/inbox?run=run-other&node=gate&share=1')
+    await flushPromises()
+    expect(other.inbox.sharePanelOpen.value).toBe(false)
+    expect(other.router.currentRoute.value.query.share).toBeUndefined()
+    other.app.unmount()
+
+    const locked = await withInbox('/inbox?run=run-open&node=react')
+    await flushPromises()
+    const it = locked.inbox.listItems.value.find((row) => row.runId === 'run-open')!
+    locked.inbox.active.value = it
+    locked.inbox.beginProcessingIntent(it)
+    await locked.router.push({ path: '/inbox', query: { run: 'run-open', node: 'react', share: '1' } })
+    await flushPromises()
+    await nextTick()
+    expect(locked.inbox.sharePanelOpen.value).toBe(false)
+    expect(locked.router.currentRoute.value.query.share).toBeUndefined()
+    expect(mocks.createGateShareLink).not.toHaveBeenCalled()
+    expect(mocks.createReviewShareLink).not.toHaveBeenCalled()
+    locked.app.unmount()
+  })
+
+  it('still opens the share panel when share status is missing, expired, or revoked', async () => {
+    mocks.listGates.mockResolvedValue({
+      items: [gateItem('run-gate', { nodeType: 'human_gate' })],
+      total: 1,
+    })
+    const missing = await withInbox('/inbox?run=run-gate&node=gate&share=1')
+    await flushPromises()
+    expect(missing.inbox.sharePanelOpen.value).toBe(true)
+    expect(missing.router.currentRoute.value.query.share).toBeUndefined()
+    expect(mocks.createGateShareLink).not.toHaveBeenCalled()
+    missing.app.unmount()
+
+    mocks.listGates.mockResolvedValue({
+      items: [clarifyItem('run-chat', { shareLink: { state: 'expired', canCreate: true } })],
+      total: 1,
+    })
+    const expired = await withInbox('/inbox?run=run-chat&node=react&share=1')
+    await flushPromises()
+    expect(expired.inbox.sharePanelOpen.value).toBe(true)
+    expired.app.unmount()
+
+    mocks.listGates.mockResolvedValue({
+      items: [clarifyItem('run-chat', { kind: 'review', shareLink: { state: 'revoked', canCreate: true } })],
+      total: 1,
+    })
+    const revoked = await withInbox('/inbox?run=run-chat&node=react&share=1')
+    await flushPromises()
+    expect(revoked.inbox.sharePanelOpen.value).toBe(true)
+    expect(mocks.createReviewShareLink).not.toHaveBeenCalled()
+    revoked.app.unmount()
   })
 })

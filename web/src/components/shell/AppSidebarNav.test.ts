@@ -130,6 +130,7 @@ vi.mock('@/lib/run/useWorkflowRunLaunch', () => ({
 }))
 
 import enNav from '@/locales/en/nav.json'
+import { knownInboxProcessingLock } from '@/lib/inbox/inboxShareIntent'
 import { useAuth } from '@/lib/composables/useAuth'
 import { useToast } from '@/lib/composables/useToast'
 import AppSidebarNav from './AppSidebarNav.vue'
@@ -152,6 +153,7 @@ beforeEach(() => {
   routeState.path = '/dashboard'
   routeState.query = {}
   routeState.meta = {}
+  knownInboxProcessingLock.value = false
   localStorage.clear()
   useAuth().clearUser()
   apiMocks.updateRunTitle.mockReset()
@@ -1317,6 +1319,168 @@ describe('AppSidebarNav', () => {
     await row.trigger('pointerdown', { pointerType: 'mouse', clientX: 10, clientY: 12 })
     await vi.advanceTimersByTimeAsync(600)
     expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('adds share approval after pin and rename, and only navigates with a one-shot intent', async () => {
+    expect(enNav.nav.pendingShareStarting).toBe('Starting')
+    expect(enNav.nav.pendingShareLocked).toBe('Processing')
+    expect(enNav.nav.pendingShareUsed).toBe('Link already used')
+    gateMocks.displayedItems.value = [
+      {
+        type: 'gate',
+        nodeType: 'human_gate',
+        runId: 'run-g',
+        nodeId: 'g',
+        title: '人工门禁',
+        workflowName: 'w',
+        runTitle: '可分享门禁',
+      },
+      {
+        type: 'clarify',
+        kind: 'review',
+        runId: 'run-r',
+        nodeId: 'r',
+        label: '代码评审',
+        workflowName: 'w',
+        runTitle: '可分享复审',
+        shareLink: { state: 'revoked' },
+      },
+      {
+        type: 'clarify',
+        kind: 'clarify',
+        runId: 'run-c',
+        nodeId: 'c',
+        label: '需求澄清',
+        workflowName: 'w',
+        runTitle: '可分享澄清',
+        shareLink: { state: 'expired' },
+      },
+      {
+        type: 'gate',
+        nodeType: 'agent',
+        runId: 'run-x',
+        nodeId: 'x',
+        title: '其他',
+        workflowName: 'w',
+        runTitle: '不可分享',
+      },
+      {
+        type: 'clarify',
+        kind: 'clarify',
+        state: 'starting',
+        runId: 'run-s',
+        nodeId: 's',
+        label: '需求澄清',
+        workflowName: 'w',
+        runTitle: '启动中',
+      },
+      {
+        type: 'gate',
+        nodeType: 'human_gate',
+        runId: 'run-u',
+        nodeId: 'u',
+        title: '人工门禁',
+        workflowName: 'w',
+        runTitle: '已使用',
+        shareLink: { state: 'used' },
+      },
+    ]
+    const wrapper = mountNav(true)
+    await flushPromises()
+
+    const openRow = (key: string, y = 30) => {
+      wrapper.get(`[data-key="${key}"]`).element.dispatchEvent(
+        new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: y }),
+      )
+    }
+
+    openRow('run-g:g')
+    await nextTick()
+    const labels = [...document.querySelectorAll('[data-testid="nav-pending-menu"] [role="menuitem"]')].map(
+      (el) => el.getAttribute('data-testid'),
+    )
+    expect(labels).toEqual([
+      'nav-pending-menu-pin',
+      'nav-pending-menu-rename',
+      'nav-pending-menu-share',
+    ])
+    const share = document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement
+    expect(share.textContent).toContain('分享审批')
+    expect(share.disabled).toBe(false)
+    expect(share.title).toBe('分享审批')
+
+    routerMocks.push.mockClear()
+    await wrapper.get('[data-key="run-g:g"]').trigger('click')
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-g', node: 'g' } })
+
+    openRow('run-g:g')
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(routerMocks.push).toHaveBeenLastCalledWith({
+      path: '/gates',
+      query: { run: 'run-g', node: 'g', share: '1' },
+    })
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+
+    openRow('run-r:r')
+    await nextTick()
+    expect((document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement).disabled).toBe(false)
+    openRow('run-c:c')
+    await nextTick()
+    expect((document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement).disabled).toBe(false)
+
+    openRow('run-x:x')
+    await nextTick()
+    expect(document.querySelector('[data-testid="nav-pending-menu-share"]')).toBeNull()
+    expect(document.querySelector('[data-testid="nav-pending-menu-pin"]')).toBeTruthy()
+    expect(document.querySelector('[data-testid="nav-pending-menu-rename"]')).toBeTruthy()
+
+    routerMocks.push.mockClear()
+    openRow('run-s:s')
+    await nextTick()
+    const starting = document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement
+    expect(starting.disabled).toBe(true)
+    expect(starting.title).toBe('启动中')
+    expect(starting.getAttribute('data-reason')).toBe('starting')
+    starting.click()
+    expect(routerMocks.push).not.toHaveBeenCalled()
+
+    openRow('run-u:u')
+    await nextTick()
+    const used = document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement
+    expect(used.disabled).toBe(true)
+    expect(used.title).toBe('链接已使用')
+    used.click()
+    expect(routerMocks.push).not.toHaveBeenCalled()
+
+    knownInboxProcessingLock.value = true
+    openRow('run-g:g')
+    await nextTick()
+    const locked = document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement
+    expect(locked.disabled).toBe(true)
+    expect(locked.title).toBe('正在处理')
+    locked.click()
+    expect(routerMocks.push).not.toHaveBeenCalled()
+    knownInboxProcessingLock.value = false
+
+    const row = wrapper.get('[data-key="run-g:g"]')
+    await row.trigger('pointerdown', { pointerType: 'touch', clientX: 12, clientY: 40 })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(document.querySelector('[data-testid="nav-pending-menu-share"]')).toBeTruthy()
+
+    expect(window.innerHeight).toBeGreaterThan(200)
+    openRow('run-g:g', window.innerHeight - 4)
+    await nextTick()
+    const clamped = document.querySelector('[data-testid="nav-pending-menu"]') as HTMLElement
+    expect(clamped.style.top).toBe(`${window.innerHeight - 104}px`)
+    openRow('run-x:x', window.innerHeight - 4)
+    await nextTick()
+    const shortMenu = document.querySelector('[data-testid="nav-pending-menu"]') as HTMLElement
+    expect(shortMenu.style.top).toBe(`${window.innerHeight - 72}px`)
+
     wrapper.unmount()
     vi.useRealTimers()
   })
