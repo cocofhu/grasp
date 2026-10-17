@@ -6,6 +6,12 @@ import Icon from '../ui/Icon.vue'
 import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
 import { sidebarNavGroups } from '@/data/sidebarNav'
 import { inboxBadgeTone, isReplyingInboxItem, isStartingInboxItem, sidebarRunTitle } from '@/lib/inbox/inboxDisplay'
+import { isShareableInboxItem } from '@/lib/inbox/gateShareLink'
+import {
+  INBOX_SHARE_INTENT_QUERY,
+  INBOX_SHARE_INTENT_VALUE,
+  knownInboxProcessingLock,
+} from '@/lib/inbox/inboxShareIntent'
 import { orderWithPins, useSidebarPins } from '@/lib/inbox/sidebarPins'
 import { api } from '@/lib/api/api'
 import { displayRunTitle, RUN_TITLE_MAX } from '@/lib/run/runTitle'
@@ -96,7 +102,11 @@ const orderedPendingRows = computed(() => orderWithPins(pendingRows.value, itemK
 const LONG_PRESS_MS = 500
 const LONG_PRESS_MOVE_PX = 8
 const MENU_WIDTH = 168
-const MENU_HEIGHT = 72
+/** Blocked share copy is longer than the two-item menu, so the clamp must follow it. */
+const MENU_WIDTH_BLOCKED = 280
+/** Two items used to be a flat 72: 8px of menu padding plus 32px per row. */
+const MENU_CHROME = 8
+const MENU_ROW_HEIGHT = 32
 const MENU_MARGIN = 8
 
 const editingKey = ref<string | null>(null)
@@ -125,12 +135,49 @@ function closeMenu() {
   menu.value = null
 }
 
+function shareLinkState(it: InboxItem): string | undefined {
+  if (!('shareLink' in it) || !it.shareLink) return undefined
+  return it.shareLink.state
+}
+
+/** Missing shareLink is not "used". A missing lock is not a lock. */
+function shareBlockReason(it: InboxItem): 'starting' | 'locked' | 'used' | null {
+  if (!isShareableInboxItem(it)) return null
+  if (isStartingInboxItem(it)) return 'starting'
+  if (knownInboxProcessingLock.value) return 'locked'
+  if (shareLinkState(it) === 'used') return 'used'
+  return null
+}
+
+function pendingMenuHeight(it: InboxItem): number {
+  const rows = isShareableInboxItem(it) ? 3 : 2
+  return MENU_CHROME + rows * MENU_ROW_HEIGHT
+}
+
 function openMenu(it: InboxItem, x: number, y: number) {
   if (editingKey.value) return
-  const left = Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - MENU_WIDTH))
-  const top = Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - MENU_HEIGHT))
+  const height = pendingMenuHeight(it)
+  const width = shareBlockReason(it) ? MENU_WIDTH_BLOCKED : MENU_WIDTH
+  const left = Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - width))
+  const top = Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - height))
   menu.value = { key: itemKey(it), x: left, y: top }
 }
+
+const menuShareVisible = computed(() => !!menuItem.value && isShareableInboxItem(menuItem.value))
+const menuShareReason = computed(() => (menuItem.value ? shareBlockReason(menuItem.value) : null))
+const menuShareDisabled = computed(() => menuShareReason.value !== null)
+const menuShareLabel = computed(() => {
+  if (menuShareReason.value === 'starting') {
+    return t('nav.pendingShareBlocked', { reason: t('nav.pendingShareStarting') })
+  }
+  if (menuShareReason.value === 'locked') {
+    return t('nav.pendingShareBlocked', { reason: t('nav.pendingShareLocked') })
+  }
+  if (menuShareReason.value === 'used') {
+    return t('nav.pendingShareBlocked', { reason: t('nav.pendingShareUsed') })
+  }
+  return t('pages.gatesInbox.share.shareApproval')
+})
 
 function clearRowPress() {
   if (!rowPress) return
@@ -291,6 +338,21 @@ function onMenuRename() {
   const it = menuItem.value
   if (!it) return
   void beginRename(it)
+}
+
+function onMenuShare() {
+  const it = menuItem.value
+  if (!it || !isShareableInboxItem(it) || shareBlockReason(it)) return
+  closeMenu()
+  void router.push({
+    path: '/gates',
+    query: {
+      run: it.runId,
+      node: it.nodeId,
+      [INBOX_SHARE_INTENT_QUERY]: INBOX_SHARE_INTENT_VALUE,
+    },
+  })
+  onNavigate()
 }
 
 watch(pendingRows, (rows) => {
@@ -786,6 +848,21 @@ const settingsItems = settingsNavItems
         <Icon name="edit" :size="14" />
         <span>{{ t('nav.pendingRename') }}</span>
       </button>
+      <button
+        v-if="menuShareVisible && menuItem"
+        type="button"
+        role="menuitem"
+        class="pending-row-menu__item"
+        data-testid="nav-pending-menu-share"
+        :data-reason="menuShareReason || undefined"
+        :disabled="menuShareDisabled"
+        :title="menuShareLabel"
+        :aria-label="menuShareLabel"
+        @click="onMenuShare"
+      >
+        <Icon name="copy" :size="14" />
+        <span>{{ menuShareLabel }}</span>
+      </button>
     </div>
   </Teleport>
   <div
@@ -830,6 +907,7 @@ const settingsItems = settingsNavItems
   color: rgb(var(--c-txt2));
   font-size: 12px;
   text-align: start;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -838,6 +916,17 @@ const settingsItems = settingsNavItems
   color: rgb(var(--c-txt));
   background: rgb(var(--c-overlay));
   outline: none;
+}
+
+.pending-row-menu__item:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.pending-row-menu__item:disabled:hover,
+.pending-row-menu__item:disabled:focus-visible {
+  color: rgb(var(--c-txt2));
+  background: transparent;
 }
 
 .nav-chrome-viewport {

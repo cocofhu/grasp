@@ -53,6 +53,11 @@ import { isNodeEventsUnavailable } from '@/lib/run/nodeEventsResponse'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { useToast } from '@/lib/composables/useToast'
 import { inboxShareKind, isHumanGateInboxItem, isShareableInboxItem } from '@/lib/inbox/gateShareLink'
+import {
+  INBOX_SHARE_INTENT_QUERY,
+  INBOX_SHARE_INTENT_VALUE,
+  knownInboxProcessingLock,
+} from '@/lib/inbox/inboxShareIntent'
 import { createConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import {
   consumeHomeApproveHandoff,
@@ -1819,6 +1824,83 @@ function openSharePanel(it: InboxItem, alsoOpenDetail = false) {
   if (alsoOpenDetail) openDetail(it)
 }
 
+function queryText(value: unknown): string {
+  if (Array.isArray(value)) return String(value[0] ?? '').trim()
+  return String(value ?? '').trim()
+}
+
+function shareIntentPending(): boolean {
+  return queryText(route.query[INBOX_SHARE_INTENT_QUERY]) === INBOX_SHARE_INTENT_VALUE
+}
+
+function activeMatchesShareQuery(it: InboxItem): boolean {
+  const run = queryText(route.query.run)
+  const node = queryText(route.query.node)
+  return !!run && !!node && it.runId === run && it.nodeId === node
+}
+
+function shareIntentBlocked(it: InboxItem): boolean {
+  if (isStartingInboxItem(it) || processingLock.value || !isShareableInboxItem(it)) return true
+  return 'shareLink' in it && it.shareLink?.state === 'used'
+}
+
+function clearShareIntent() {
+  if (!(INBOX_SHARE_INTENT_QUERY in route.query)) return
+  const query: Record<string, string | string[]> = {}
+  for (const [key, value] of Object.entries(route.query)) {
+    if (key === INBOX_SHARE_INTENT_QUERY || value == null) continue
+    query[key] = value as string | string[]
+  }
+  void router.replace({ path: route.path, query })
+}
+
+/**
+ * Identity of the share query currently being consumed.
+ * Cleared once `share` leaves the URL, so the next menu click can open again.
+ * A refresh without the query does not reopen the panel.
+ */
+let settledShareKey = ''
+function shareIntentKey(): string {
+  if (!shareIntentPending()) return ''
+  return `${queryText(route.query.run)}\0${queryText(route.query.node)}`
+}
+
+function consumeShareIntent() {
+  const key = shareIntentKey()
+  if (!key) {
+    settledShareKey = ''
+    return
+  }
+  if (settledShareKey === key || !active.value) return
+  if (!activeMatchesShareQuery(active.value)) return
+  // Deep-link placeholder uses the same run and node while it is still booting.
+  // Settling here would drop the intent before the real row can open the panel.
+  if (isIncomingContextPending(active.value)) return
+  settledShareKey = key
+  const it = active.value
+  if (!shareIntentBlocked(it)) openSharePanel(it)
+  clearShareIntent()
+}
+
+watch(processingLock, (locked) => {
+  knownInboxProcessingLock.value = locked
+}, { immediate: true })
+
+watch(
+  () => [
+    active.value ? itemKey(active.value) : '',
+    active.value && isStartingInboxItem(active.value) ? 'starting' : '',
+    incomingGhost.value ? itemKey(incomingGhost.value) : '',
+    route.query.run,
+    route.query.node,
+    route.query[INBOX_SHARE_INTENT_QUERY],
+    processingLock.value,
+  ],
+  () => {
+    consumeShareIntent()
+  },
+)
+
 function selectItem(it: InboxItem) {
   if (isItemCardDisabled(it)) return
   showProcessedBanner.value = false
@@ -2052,6 +2134,7 @@ onUnmounted(() => {
   clearVisibleMembership()
   setSidebarExtras([])
   setActiveInboxKey(null)
+  knownInboxProcessingLock.value = false
 })
 
 function itemTitle(it: InboxItem) {
