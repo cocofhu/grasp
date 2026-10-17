@@ -1327,6 +1327,7 @@ describe('AppSidebarNav', () => {
     expect(enNav.nav.pendingShareStarting).toBe('Starting')
     expect(enNav.nav.pendingShareLocked).toBe('Processing')
     expect(enNav.nav.pendingShareUsed).toBe('Link already used')
+    expect(enNav.nav.pendingShareBlocked).toBe('Share approval ({reason})')
     gateMocks.displayedItems.value = [
       {
         type: 'gate',
@@ -1443,7 +1444,9 @@ describe('AppSidebarNav', () => {
     await nextTick()
     const starting = document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement
     expect(starting.disabled).toBe(true)
-    expect(starting.title).toBe('启动中')
+    expect(starting.textContent).toContain('分享审批（启动中）')
+    expect(starting.title).toBe('分享审批（启动中）')
+    expect(starting.getAttribute('aria-label')).toBe('分享审批（启动中）')
     expect(starting.getAttribute('data-reason')).toBe('starting')
     starting.click()
     expect(routerMocks.push).not.toHaveBeenCalled()
@@ -1452,16 +1455,28 @@ describe('AppSidebarNav', () => {
     await nextTick()
     const used = document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement
     expect(used.disabled).toBe(true)
-    expect(used.title).toBe('链接已使用')
+    expect(used.textContent).toContain('分享审批（链接已使用）')
+    expect(used.title).toBe('分享审批（链接已使用）')
     used.click()
     expect(routerMocks.push).not.toHaveBeenCalled()
+
+    const previousWidth = window.innerWidth
+    window.innerWidth = 360
+    wrapper.get('[data-key="run-u:u"]').element.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 340, clientY: 40 }),
+    )
+    await nextTick()
+    const wideMenu = document.querySelector('[data-testid="nav-pending-menu"]') as HTMLElement
+    expect(wideMenu.style.left).toBe('80px')
+    window.innerWidth = previousWidth
 
     knownInboxProcessingLock.value = true
     openRow('run-g:g')
     await nextTick()
     const locked = document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement
     expect(locked.disabled).toBe(true)
-    expect(locked.title).toBe('正在处理')
+    expect(locked.textContent).toContain('分享审批（正在处理）')
+    expect(locked.title).toBe('分享审批（正在处理）')
     locked.click()
     expect(routerMocks.push).not.toHaveBeenCalled()
     knownInboxProcessingLock.value = false

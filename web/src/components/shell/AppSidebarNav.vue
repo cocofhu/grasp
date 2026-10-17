@@ -102,6 +102,8 @@ const orderedPendingRows = computed(() => orderWithPins(pendingRows.value, itemK
 const LONG_PRESS_MS = 500
 const LONG_PRESS_MOVE_PX = 8
 const MENU_WIDTH = 168
+/** Blocked share copy is longer than the two-item menu, so the clamp must follow it. */
+const MENU_WIDTH_BLOCKED = 280
 /** Two items used to be a flat 72: 8px of menu padding plus 32px per row. */
 const MENU_CHROME = 8
 const MENU_ROW_HEIGHT = 32
@@ -155,7 +157,8 @@ function pendingMenuHeight(it: InboxItem): number {
 function openMenu(it: InboxItem, x: number, y: number) {
   if (editingKey.value) return
   const height = pendingMenuHeight(it)
-  const left = Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - MENU_WIDTH))
+  const width = shareBlockReason(it) ? MENU_WIDTH_BLOCKED : MENU_WIDTH
+  const left = Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - width))
   const top = Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - height))
   menu.value = { key: itemKey(it), x: left, y: top }
 }
@@ -163,10 +166,16 @@ function openMenu(it: InboxItem, x: number, y: number) {
 const menuShareVisible = computed(() => !!menuItem.value && isShareableInboxItem(menuItem.value))
 const menuShareReason = computed(() => (menuItem.value ? shareBlockReason(menuItem.value) : null))
 const menuShareDisabled = computed(() => menuShareReason.value !== null)
-const menuShareTitle = computed(() => {
-  if (menuShareReason.value === 'starting') return t('nav.pendingShareStarting')
-  if (menuShareReason.value === 'locked') return t('nav.pendingShareLocked')
-  if (menuShareReason.value === 'used') return t('nav.pendingShareUsed')
+const menuShareLabel = computed(() => {
+  if (menuShareReason.value === 'starting') {
+    return t('nav.pendingShareBlocked', { reason: t('nav.pendingShareStarting') })
+  }
+  if (menuShareReason.value === 'locked') {
+    return t('nav.pendingShareBlocked', { reason: t('nav.pendingShareLocked') })
+  }
+  if (menuShareReason.value === 'used') {
+    return t('nav.pendingShareBlocked', { reason: t('nav.pendingShareUsed') })
+  }
   return t('pages.gatesInbox.share.shareApproval')
 })
 
@@ -847,12 +856,12 @@ const settingsItems = settingsNavItems
         data-testid="nav-pending-menu-share"
         :data-reason="menuShareReason || undefined"
         :disabled="menuShareDisabled"
-        :title="menuShareTitle"
-        :aria-label="menuShareTitle"
+        :title="menuShareLabel"
+        :aria-label="menuShareLabel"
         @click="onMenuShare"
       >
         <Icon name="copy" :size="14" />
-        <span>{{ t('pages.gatesInbox.share.shareApproval') }}</span>
+        <span>{{ menuShareLabel }}</span>
       </button>
     </div>
   </Teleport>
@@ -898,6 +907,7 @@ const settingsItems = settingsNavItems
   color: rgb(var(--c-txt2));
   font-size: 12px;
   text-align: start;
+  white-space: nowrap;
   cursor: pointer;
 }
 

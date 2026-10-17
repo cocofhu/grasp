@@ -1854,15 +1854,29 @@ function clearShareIntent() {
   void router.replace({ path: route.path, query })
 }
 
-/** Open the existing panel once, then drop the flag so a refresh does not reopen it. */
-let shareIntentSettled = false
+/**
+ * Identity of the share query currently being consumed.
+ * Cleared once `share` leaves the URL, so the next menu click can open again.
+ * A refresh without the query does not reopen the panel.
+ */
+let settledShareKey = ''
+function shareIntentKey(): string {
+  if (!shareIntentPending()) return ''
+  return `${queryText(route.query.run)}\0${queryText(route.query.node)}`
+}
+
 function consumeShareIntent() {
-  if (shareIntentSettled || !shareIntentPending() || !active.value) return
+  const key = shareIntentKey()
+  if (!key) {
+    settledShareKey = ''
+    return
+  }
+  if (settledShareKey === key || !active.value) return
   if (!activeMatchesShareQuery(active.value)) return
   // Deep-link placeholder uses the same run and node while it is still booting.
   // Settling here would drop the intent before the real row can open the panel.
   if (isIncomingContextPending(active.value)) return
-  shareIntentSettled = true
+  settledShareKey = key
   const it = active.value
   if (!shareIntentBlocked(it)) openSharePanel(it)
   clearShareIntent()

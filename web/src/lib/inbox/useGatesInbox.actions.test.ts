@@ -976,6 +976,50 @@ describe('useGatesInbox actions', () => {
     again.app.unmount()
   })
 
+  it('opens the share panel for each new share intent on the same inbox instance', async () => {
+    mocks.listGates.mockResolvedValue({
+      items: [
+        gateItem('run-gate', { nodeType: 'human_gate' }),
+        clarifyItem('run-chat'),
+      ],
+      total: 2,
+    })
+    const { inbox, app, router } = await withInbox('/inbox?run=run-chat&node=react')
+    await flushPromises()
+    expect(inbox.sharePanelOpen.value).toBe(false)
+    expect(inbox.active.value?.runId).toBe('run-chat')
+
+    await router.push({ path: '/inbox', query: { run: 'run-chat', node: 'react', share: '1' } })
+    await flushPromises()
+    expect(inbox.sharePanelOpen.value).toBe(true)
+    expect(inbox.shareTarget.value?.runId).toBe('run-chat')
+    expect(router.currentRoute.value.query.share).toBeUndefined()
+    expect(mocks.createGateShareLink).not.toHaveBeenCalled()
+    expect(mocks.createReviewShareLink).not.toHaveBeenCalled()
+
+    inbox.sharePanelOpen.value = false
+    inbox.shareTarget.value = null
+
+    await router.push({ path: '/inbox', query: { run: 'run-gate', node: 'gate', share: '1' } })
+    await flushPromises()
+    expect(inbox.active.value?.runId).toBe('run-gate')
+    expect(inbox.sharePanelOpen.value).toBe(true)
+    expect(inbox.shareTarget.value?.runId).toBe('run-gate')
+    expect(inbox.shareTarget.value?.nodeId).toBe('gate')
+    expect(router.currentRoute.value.query.share).toBeUndefined()
+    expect(router.currentRoute.value.query.run).toBe('run-gate')
+    expect(router.currentRoute.value.query.node).toBe('gate')
+    expect(mocks.createGateShareLink).not.toHaveBeenCalled()
+    expect(mocks.createReviewShareLink).not.toHaveBeenCalled()
+
+    inbox.sharePanelOpen.value = false
+    await router.push({ path: '/inbox', query: { run: 'run-gate', node: 'gate' } })
+    await flushPromises()
+    expect(inbox.sharePanelOpen.value).toBe(false)
+    expect(router.currentRoute.value.query.share).toBeUndefined()
+    app.unmount()
+  })
+
   it('does not open the share panel for a used link, a starting row, a lock, or a non-shareable row', async () => {
     mocks.listGates.mockResolvedValue({
       items: [

@@ -14,6 +14,7 @@
     "pendingShareStarting": "Starting",
     "pendingShareLocked": "Processing",
     "pendingShareUsed": "Link already used",
+    "pendingShareBlocked": "Share approval ({reason})",
     "pendingRenameLabel": "Run name",
     "pendingNameEmpty": "Name cannot be empty",
     "pendingNameTooLong": "80 characters maximum",
