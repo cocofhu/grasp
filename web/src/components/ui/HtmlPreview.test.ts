@@ -540,3 +540,64 @@ describe('HtmlPreview comment pin overlay', () => {
     wrapper.unmount()
   })
 })
+
+describe('HtmlPreview toolbar actions slot', () => {
+  it('does not render copy or download unless a caller supplies them', async () => {
+    const wrapper = mountPreview({
+      mode: 'default',
+      fitContent: false,
+      fillParent: true,
+      enlargeable: true,
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="artifact-preview-copy"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="artifact-preview-download-raw"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="html-preview-canvas-overlay"]').exists()).toBe(false)
+    const end = wrapper.get('[data-testid="html-preview-toolbar-end"]')
+    expect(end.get('[data-testid="html-preview-enlarge"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('places toolbar-actions on the same row, after 窗口放大查看', async () => {
+    const i18n = createI18n({
+      legacy: false,
+      locale: 'zh-CN',
+      messages: { 'zh-CN': { ...common, ...pages } },
+    })
+    const wrapper = mount(HtmlPreview, {
+      props: {
+        html: '<!doctype html><html><body><p>hi</p></body></html>',
+        mode: 'default',
+        fitContent: false,
+        fillParent: true,
+        enlargeable: true,
+      },
+      slots: {
+        'toolbar-actions':
+          '<button type="button" data-testid="artifact-preview-copy">copy</button><button type="button" data-testid="artifact-preview-download-raw">dl</button>',
+      },
+      global: {
+        plugins: [i18n],
+        stubs: {
+          AppModal: AppModalStub,
+          Icon: { template: '<span />' },
+        },
+      },
+    })
+    await flushPromises()
+    const toolbar = wrapper.get('[data-testid="html-preview-toolbar"]')
+    const end = toolbar.get('[data-testid="html-preview-toolbar-end"]')
+    const order = [...end.element.children].map((el) => el.getAttribute('data-testid'))
+    expect(order).toEqual([
+      'html-preview-enlarge',
+      'artifact-preview-copy',
+      'artifact-preview-download-raw',
+    ])
+    const host = wrapper.get('[data-testid="html-preview-pin-host"]')
+    expect(host.element.contains(end.element)).toBe(false)
+    expect(
+      host.element.compareDocumentPosition(end.element) & Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBeTruthy()
+    wrapper.unmount()
+  })
+})

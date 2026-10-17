@@ -656,24 +656,38 @@ watch(needsMessageListener, (enabled, wasEnabled) => {
       >
         <Icon name="copy" :size="13" />{{ t('pages.gatesInbox.share.copyLink') }}
       </button>
-      <button
-        v-if="enlargeable"
-        type="button"
-        class="ml-auto flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-txt2 transition-colors hover:text-txt"
-        :title="t('common.htmlPreview.enlargeTitle')"
-        data-testid="html-preview-enlarge"
-        @click="openEnlarge"
+      <div
+        v-if="enlargeable || $slots['toolbar-actions']"
+        class="ml-auto flex shrink-0 items-center gap-2"
+        data-testid="html-preview-toolbar-end"
       >
-        <Icon name="expand" :size="13" />{{ t('common.htmlPreview.enlargeTitle') }}
-      </button>
+        <button
+          v-if="enlargeable"
+          type="button"
+          class="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-txt2 transition-colors hover:text-txt"
+          :title="t('common.htmlPreview.enlargeTitle')"
+          data-testid="html-preview-enlarge"
+          @click="openEnlarge"
+        >
+          <Icon name="expand" :size="13" />{{ t('common.htmlPreview.enlargeTitle') }}
+        </button>
+        <slot name="toolbar-actions" />
+      </div>
     </div>
     <div
-      class="bg-elevated"
+      class="relative bg-elevated"
       :class="[
         fitContent && !fillParent ? 'shrink-0' : 'min-h-0 flex-1 overflow-hidden',
         device === 'mobile' ? 'flex justify-center p-4' : '',
       ]"
     >
+      <div
+        v-if="$slots['canvas-overlay']"
+        class="absolute inset-0 z-20"
+        data-testid="html-preview-canvas-overlay"
+      >
+        <slot name="canvas-overlay" />
+      </div>
       <div
         ref="pinHostRef"
         class="relative overflow-hidden"
