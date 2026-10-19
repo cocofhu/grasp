@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch, type CSSProperties } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
@@ -52,6 +52,13 @@ const stepPane = ref<HTMLElement | null>(null)
 const paneHeight = ref(0)
 const STEP_LOCK_MS = 200
 let stepTimer = 0
+let paneResizeObserver: ResizeObserver | null = null
+
+/** Prefer min-height so async form growth can expand the shell into AppModal's scroll area. */
+const stepShellStyle = computed((): CSSProperties | undefined => {
+  if (!paneHeight.value) return undefined
+  return { minHeight: `${paneHeight.value}px` }
+})
 const modelForm = reactive({
   provider: DEFAULT_OPENCODE_PROVIDER as OpenCodeProviderId,
   baseUrl: '',
@@ -225,6 +232,23 @@ async function measurePane() {
   if (stepPane.value) paneHeight.value = stepPane.value.offsetHeight
 }
 
+function disconnectPaneObserver() {
+  paneResizeObserver?.disconnect()
+  paneResizeObserver = null
+}
+
+function observePane() {
+  disconnectPaneObserver()
+  if (typeof ResizeObserver === 'undefined' || !stepPane.value) return
+  paneResizeObserver = new ResizeObserver(() => {
+    if (!stepPane.value) return
+    // Keep the animated floor in sync when OpenCode fields / validation grow the pane.
+    const next = stepPane.value.offsetHeight
+    if (next > 0) paneHeight.value = next
+  })
+  paneResizeObserver.observe(stepPane.value)
+}
+
 function openCreate() {
   releaseStepLock()
   createStep.value = 1
@@ -236,7 +260,7 @@ function openCreate() {
   paneHeight.value = 0
   clearSecrets()
   showCreate.value = true
-  void measurePane()
+  void measurePane().then(observePane)
 }
 
 function selectKind(id: CredentialKindId) {
@@ -251,7 +275,7 @@ function goNext() {
   createAttempted.value = false
   createStep.value = 2
   lockStep()
-  void measurePane()
+  void measurePane().then(observePane)
 }
 
 function goBack() {
@@ -260,7 +284,7 @@ function goBack() {
   aliasError.value = ''
   createStep.value = 1
   lockStep()
-  void measurePane()
+  void measurePane().then(observePane)
 }
 
 function secretLabel(kindId: CredentialKindId): string {
@@ -393,6 +417,14 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.clearTimeout(stepTimer)
+  disconnectPaneObserver()
+})
+
+watch(showCreate, (open) => {
+  if (!open) {
+    disconnectPaneObserver()
+    paneHeight.value = 0
+  }
 })
 </script>
 
@@ -632,9 +664,12 @@ onUnmounted(() => {
         :data-credential-step="createStep"
         :data-step-motion="stepMotion"
         :data-step-locked="stepLock ? 'true' : 'false'"
-        :style="paneHeight ? { height: `${paneHeight}px` } : undefined"
+        :style="stepShellStyle"
       >
-        <Transition :name="stepMotion === 'forward' ? 'step-forward' : 'step-back'" @enter="measurePane">
+        <Transition
+          :name="stepMotion === 'forward' ? 'step-forward' : 'step-back'"
+          @enter="() => { void measurePane().then(observePane) }"
+        >
           <div v-if="createStep === 1" key="kind" ref="stepPane" class="credential-step-pane">
             <p class="m-0 text-[12px] leading-5 text-txt3">{{ t('pages.projectDetail.projectCredentials.stepKindHint') }}</p>
             <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -749,9 +784,11 @@ onUnmounted(() => {
   -webkit-text-security: disc;
 }
 .credential-step-shell {
+  /* Clip leave panes during the step slide; min-height (not height) lets the
+     active pane grow so overflow reaches AppModal's modal-scroll-area. */
   position: relative;
   overflow: hidden;
-  transition: height 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: min-height 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .credential-step-pane {
   width: 100%;

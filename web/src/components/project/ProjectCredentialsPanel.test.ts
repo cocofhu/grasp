@@ -393,4 +393,40 @@ describe('ProjectCredentialsPanel', () => {
     expect(wrapper.find('[data-testid="project-credential-row"]').exists()).toBe(true)
     wrapper.unmount()
   })
+
+  it('sizes the create step shell with min-height so tall step-two forms stay reachable', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="project-credential-create"]').trigger('click')
+    await wrapper.get('[data-testid="credential-kind-opencode"]').trigger('click')
+    await wrapper.get('[data-testid="project-credential-create-next"]').trigger('click')
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 220))
+
+    const shell = wrapper.get('[data-testid="project-credential-create-form"]')
+    const shellEl = shell.element as HTMLElement
+    const styleAttr = shell.attributes('style') || ''
+    // Fixed height + overflow:hidden clipped the secret after async growth; floor only.
+    expect(shellEl.style.height).toBe('')
+    expect(styleAttr).not.toMatch(/(?:^|;)\s*height\s*:/)
+    if (shellEl.style.minHeight) {
+      expect(shellEl.style.minHeight).toMatch(/^\d+(\.\d+)?px$/)
+    }
+
+    const pane = shell.get('.credential-step-pane').element as HTMLElement
+    pane.style.minHeight = '1600px'
+    await flushPromises()
+
+    const secret = wrapper.get('[data-testid="project-credential-create-value"]')
+    expect(secret.exists()).toBe(true)
+    await secret.setValue('sk-reachable')
+    expect((secret.element as HTMLInputElement).value).toBe('sk-reachable')
+    expect(shellEl.style.height).toBe('')
+
+    await wrapper.get('[data-testid="project-credential-create-back"]').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 220))
+    expect(shell.attributes('data-credential-step')).toBe('1')
+    expect(shell.attributes('data-step-motion')).toBe('back')
+    wrapper.unmount()
+  })
 })
