@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_AGENT_TOOLS, partsFromAcp, sameParts, sameTools, timelineBlocks, toolsFromAcp } from './acpTools'
+import { MAX_AGENT_TOOLS, partsFromAcp, sameParts, sameTools, timelineBlocks, timelineFolds, toolsFromAcp } from './acpTools'
 
 describe('toolsFromAcp', () => {
   it('keeps tool_call rows in order with name and status only', () => {
@@ -86,6 +86,16 @@ describe('timelineBlocks', () => {
     expect(blocks.map((b) => b.last)).toEqual([false, false, false, true])
     expect(new Set(blocks.map((b) => b.key)).size).toBe(4)
     expect(timelineBlocks(undefined)).toEqual([])
+  })
+})
+
+describe('timelineFolds', () => {
+  it('folds thoughts, tools, and extra messages, and leaves a single message bare', () => {
+    expect(timelineFolds([{ kind: 'message', text: 'only' }])).toBe(false)
+    expect(timelineFolds([{ kind: 'thought', text: 'hmm' }])).toBe(true)
+    expect(timelineFolds([{ kind: 'tool', title: 'Read' }])).toBe(true)
+    expect(timelineFolds([{ kind: 'message', text: 'a' }, { kind: 'message', text: 'b' }])).toBe(true)
+    expect(timelineFolds(undefined)).toBe(false)
   })
 })
 

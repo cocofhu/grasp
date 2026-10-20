@@ -6,7 +6,8 @@ import { renderMarkdown, renderMarkdownBlocks, type MarkdownBlockCache } from '@
 import AgentToolGroup from '../AgentToolGroup.vue'
 import AgentTimeline from '../AgentTimeline.vue'
 import StreamMarkdown from '../StreamMarkdown.vue'
-import { fmtDuration } from '@/lib/shared/format'
+import { fmtTurnElapsed } from '@/lib/shared/format'
+import { timelineFolds } from '@/lib/run/acpTools'
 import { fmtTokenCount, tokenUsageTotal } from '@/lib/run/tokenUsage'
 import type { LlmTurn } from '@/lib/run/llmTranscript'
 
@@ -66,6 +67,14 @@ const durationSec = computed(() => {
   const d = (Date.parse(b) - Date.parse(a)) / 1000
   return Number.isFinite(d) && d >= 0 ? d : null
 })
+const elapsedLabel = computed(() => {
+  if (durationSec.value == null) return ''
+  const compact = fmtTurnElapsed(durationSec.value)
+  return compact ? t('pages.llmTranscript.duration', { time: compact }) : ''
+})
+const timelineShowsElapsed = computed(
+  () => !props.turn.live && props.turn.answers.some((a) => timelineFolds(a.parts)),
+)
 
 const hasReply = computed(() => props.turn.answers.some((a) => a.text || a.tools.length || a.plan || a.thought || a.parts?.length))
 </script>
@@ -76,7 +85,7 @@ const hasReply = computed(() => props.turn.answers.some((a) => a.text || a.tools
       <div class="chat-meta mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
         <span class="font-medium text-txt2">{{ nodeLabel }}</span>
         <span v-for="m in models" :key="m" class="rounded border border-line bg-elevated px-1 py-px font-mono text-[10px]">{{ m }}</span>
-        <span v-if="durationSec != null" class="tabular-nums">{{ t('pages.llmTranscript.duration', { time: fmtDuration(durationSec) }) }}</span>
+        <span v-if="elapsedLabel && !timelineShowsElapsed" class="tabular-nums" data-testid="llm-turn-elapsed">{{ elapsedLabel }}</span>
         <span v-if="turn.usage" class="font-mono tabular-nums" data-testid="llm-turn-tokens">
           {{ t('pages.llmTranscript.tokens', { n: fmtTokenCount(tokenUsageTotal(turn.usage)) }) }}
           <span class="text-txt3">({{ fmtTokenCount(turn.usage.inputTokens || 0) }} / {{ fmtTokenCount(turn.usage.outputTokens || 0) }})</span>
@@ -94,6 +103,8 @@ const hasReply = computed(() => props.turn.answers.some((a) => a.text || a.tools
             :interrupted="!turn.live && turn.failed"
             :hide-thought="!showThought"
             :expanded="expandAll"
+            :started-at="turn.prompt?.at"
+            :ended-at="turn.endedAt"
             :run-id="runId"
             bare
             message-test-id="llm-answer-text"

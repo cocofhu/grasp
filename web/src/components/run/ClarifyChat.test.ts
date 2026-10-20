@@ -217,7 +217,7 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
-  it('renders a stored reply as its ordered timeline instead of merged rails', () => {
+  it('renders a stored reply as its ordered timeline instead of merged rails', async () => {
     const wrapper = mountChat({
       done: true,
       turns: [{
@@ -237,11 +237,62 @@ describe('ClarifyChat', () => {
     })
     const tl = wrapper.get('[data-testid="agent-timeline"]')
     expect(Array.from(tl.element.children).map((el) => el.getAttribute('data-testid'))).toEqual([
-      'agent-timeline-thought', 'agent-tool-group', 'clarify-agent-message', 'agent-tool-group', 'clarify-agent-message',
+      'agent-timeline-elapsed', 'agent-timeline-rule', 'clarify-agent-message',
     ])
+    expect(wrapper.findAll('[data-testid="clarify-agent-message"]').map((m) => m.text())).toEqual(['done'])
+    expect(wrapper.find('[data-testid="clarify-turn-completed"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
     expect(wrapper.findAll('[data-testid="clarify-agent-message"]').map((m) => m.text())).toEqual(['found it', 'done'])
     expect(wrapper.findAll('[data-testid="agent-tool-group"]')).toHaveLength(2)
+    expect(wrapper.find('[data-testid="agent-timeline-elapsed"]').text()).not.toContain('使用了')
+    expect(wrapper.find('[data-testid="thought-summary-state"]').exists()).toBe(false)
     wrapper.unmount()
+  })
+
+  it('keeps the question under the elapsed line and skips the line for a body-only reply', async () => {
+    const folded = mountChat({
+      turns: [{
+        role: 'agent',
+        text: '正文',
+        at: '2026-10-20T00:03:34Z',
+        startedAt: '2026-10-20T00:00:00Z',
+        endedAt: '2026-10-20T00:03:34Z',
+        parts: [
+          { kind: 'thought', text: '先看' },
+          { kind: 'message', text: '过程说明' },
+          { kind: 'message', text: '正文' },
+        ],
+        questions: [{ id: 'q1', prompt: '选一个', options: [{ id: 'a', label: '甲' }] }],
+      }],
+    })
+    const elapsed = folded.get('[data-testid="agent-timeline-elapsed"]')
+    expect(elapsed.text()).toContain('用时 3m 34s')
+    expect(folded.find('[data-testid="clarify-turn-completed"]').exists()).toBe(false)
+    expect(folded.find('[data-testid="agent-timeline-thought"]').exists()).toBe(false)
+    expect(folded.findAll('[data-testid="clarify-agent-message"]').map((m) => m.text())).toEqual(['正文'])
+    const rule = folded.get('[data-testid="agent-timeline-rule"]').element
+    const msg = folded.get('[data-testid="clarify-agent-message"]').element
+    const q = folded.get('[data-testid="clarify-question-prompt"]').element
+    expect(rule.compareDocumentPosition(msg) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(msg.compareDocumentPosition(q) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await folded.get('[data-testid="clarify-option-btn"]').trigger('click')
+    folded.unmount()
+
+    const bare = mountChat({
+      turns: [{
+        role: 'agent',
+        text: '只有正文',
+        at: '2026-10-20T00:00:00Z',
+        startedAt: '2026-10-20T00:00:00Z',
+        endedAt: '2026-10-20T00:00:42Z',
+        parts: [{ kind: 'message', text: '只有正文' }],
+      }],
+    })
+    expect(bare.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(false)
+    expect(bare.find('[data-testid="agent-timeline-rule"]').exists()).toBe(false)
+    expect(bare.get('[data-testid="clarify-agent-message"]').text()).toBe('只有正文')
+    expect(bare.find('[data-testid="clarify-turn-completed"]').exists()).toBe(false)
+    bare.unmount()
   })
 
   it('shows closed hint when inactive', () => {
@@ -420,7 +471,7 @@ describe('ClarifyChat', () => {
     })
     await flushPromises()
     expect(wrapper.find('[data-testid="clarify-sandbox-orphan"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('已完成')
+    expect(wrapper.find('[data-testid="clarify-turn-completed"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('最新回复已落盘')
     expect(wrapper.text()).not.toContain('平台已把它视为中断')
     wrapper.unmount()
@@ -449,7 +500,7 @@ describe('ClarifyChat', () => {
     expect(banner.text()).toContain('不再跟踪')
     expect(banner.text()).not.toContain('视为中断')
     expect(wrapper.find('[data-testid="clarify-sandbox-orphan-cancel"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('已完成')
+    expect(wrapper.find('[data-testid="clarify-turn-completed"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('最新回复已落盘')
     wrapper.unmount()
   })
@@ -697,8 +748,11 @@ describe('ClarifyChat', () => {
     // Same opening hint only as placeholder — not copied into empty-hint / scroller (g2.2).
     expect(wrapper.find('[data-testid="clarify-approve-empty-hint"]').text()).toContain('先说明本次要做的目标')
     expect(wrapper.find('[data-testid="clarify-approve-empty-hint"]').text()).not.toContain(openingHint)
-    expect(wrapper.find('[data-testid="clarify-scroller"]').text()).toContain('共 0 条')
-    expect(wrapper.find('[data-testid="clarify-scroller"]').text()).not.toContain(openingHint)
+    const scroller = wrapper.find('[data-testid="clarify-scroller"]').text()
+    expect(scroller).not.toContain('多轮 ReAct')
+    expect(scroller).not.toContain('共 0 条')
+    expect(scroller).not.toContain('Agent交互')
+    expect(scroller).not.toContain(openingHint)
     wrapper.unmount()
   })
 
@@ -1710,7 +1764,7 @@ describe('ClarifyChat', () => {
     })
 
     // plan coverage: g2.2 — timeline parts render the step text, not a second cut.
-    it('renders full long timeline parts without truncated suffix (g2.2)', () => {
+    it('renders full long timeline parts without truncated suffix (g2.2)', async () => {
       const longThought = `${'思'.repeat(3000)}思考结尾END`
       const longMessage = `${'回'.repeat(3000)}结尾标记END`
       expect(new TextEncoder().encode(longThought).length).toBeGreaterThan(8000)
@@ -1728,7 +1782,8 @@ describe('ClarifyChat', () => {
           at: '2026-07-18T00:00:00Z',
         }],
       })
-      const thought = wrapper.get('[data-testid="agent-timeline-thought"] .whitespace-pre-wrap')
+      await wrapper.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
+      const thought = wrapper.get('[data-testid="agent-timeline-thought"]')
       expect(thought.text()).toBe(longThought)
       expect(thought.text()).not.toContain('…(truncated)')
       const bubble = wrapper.get('[data-testid="clarify-agent-message"]')
@@ -1767,13 +1822,8 @@ describe('ClarifyChat', () => {
       expect(wrapper.find('[data-testid="clarify-stream-caret"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="clarify-thought"]').text()).toContain('思考内容')
       expect(wrapper.find('[data-testid="clarify-agent-message"]').text()).toContain('正文内容')
-      const completed = wrapper.find('[data-testid="clarify-turn-completed"]')
-      expect(completed.exists()).toBe(true)
-      expect(completed.text()).toContain('已完成')
-      // keep_footer_hide_bottom: footer keeps one relTime; completed agent has no bottom time row
-      expect(completed.text()).toContain('刚刚')
-      expect(completed.text().match(/刚刚/g)?.length).toBe(1)
-      // human turn still has bottom time; completed agent turn must not
+      expect(wrapper.find('[data-testid="clarify-turn-completed"]').exists()).toBe(false)
+      // Completed agent keeps no bottom time; the human turn still has one.
       expect(wrapper.findAll('[data-testid="clarify-turn-bottom-time"]').length).toBe(1)
       expect(wrapper.find('[data-testid="thought-summary-state"]').attributes('data-state')).toBe(
         'done',
@@ -1786,13 +1836,10 @@ describe('ClarifyChat', () => {
       const wrapper = mountChat({
         turns: [{ role: 'agent', text: '历史已完成正文', at: new Date().toISOString() }],
       })
-      const completed = wrapper.find('[data-testid="clarify-turn-completed"]')
-      expect(completed.exists()).toBe(true)
-      expect(completed.text()).toContain('已完成')
-      expect(completed.text()).toContain('刚刚')
-      expect(completed.text().match(/刚刚/g)?.length).toBe(1)
+      expect(wrapper.find('[data-testid="clarify-turn-completed"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="clarify-turn-bottom-time"]').exists()).toBe(false)
-      expect(wrapper.text().match(/刚刚/g)?.length).toBe(1)
+      expect(wrapper.text()).toContain('历史已完成正文')
+      expect(wrapper.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(false)
       wrapper.unmount()
     })
 
@@ -2765,7 +2812,9 @@ describe('ClarifyChat', () => {
         ],
       })
       expect(wrapper.find('[data-testid="clarify-empty-fail"]').exists()).toBe(false)
-      expect(wrapper.find('[data-testid="clarify-turn-completed"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="clarify-turn-completed"]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('好的，开始对齐。')
+      expect(wrapper.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="clarify-empty-fail-retry"]').exists()).toBe(false)
       wrapper.unmount()
     })
@@ -2807,7 +2856,8 @@ describe('ClarifyChat', () => {
       })
       expect(wrapper.findAll('[data-testid="clarify-empty-fail"]')).toHaveLength(1)
       expect(wrapper.find('[data-testid="clarify-empty-fail-retry"]').exists()).toBe(false)
-      expect(wrapper.find('[data-testid="clarify-turn-completed"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="clarify-turn-completed"]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('好的，开始对齐。')
       wrapper.unmount()
     })
 

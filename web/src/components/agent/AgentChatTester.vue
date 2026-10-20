@@ -67,6 +67,10 @@ type Turn = {
   streaming: boolean
   images?: ImageAtt[]
   error?: string
+  /** Wall clock when this reply started outputting. */
+  startedAt?: string
+  /** Wall clock when this reply stopped. */
+  endedAt?: string
 }
 
 const sandbox = ref<SandboxView | null>(null)
@@ -437,7 +441,10 @@ function applyQueueState(frame: any) {
   if (!frame.busy && activeIdx >= 0) {
     // The turn ended while we were away.
     const turn = turns.value[activeIdx]
-    if (turn) turn.streaming = false
+    if (turn) {
+      turn.streaming = false
+      if (!turn.endedAt) turn.endedAt = new Date().toISOString()
+    }
     activeIdx = -1
     activeItemId = ''
   }
@@ -450,13 +457,17 @@ function beginTurn(frame: any) {
   queued.value = queued.value.filter((q) => q.id !== item.id)
   if (item.id && item.id === activeItemId && activeIdx >= 0) {
     // Replay of the turn we were already showing: rebuild its reply.
-    turns.value[activeIdx] = { id: turns.value[activeIdx]!.id, role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true }
+    const replayStarted = new Date().toISOString()
+    turns.value[activeIdx] = { id: turns.value[activeIdx]!.id, role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true, startedAt: replayStarted }
     status.value = 'thinking'
     return
   }
   if (activeIdx >= 0) {
     const prev = turns.value[activeIdx]
-    if (prev) prev.streaming = false
+    if (prev) {
+      prev.streaming = false
+      if (!prev.endedAt) prev.endedAt = new Date().toISOString()
+    }
   }
   const questionId = `question:${item.id || newItemId()}`
   turns.value.push({
@@ -469,8 +480,9 @@ function beginTurn(frame: any) {
     streaming: false,
     images: item.images.length ? item.images : undefined,
   })
+  const started = new Date().toISOString()
   activeIdx =
-    turns.value.push({ id: `${questionId}:reply`, role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true }) - 1
+    turns.value.push({ id: `${questionId}:reply`, role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true, startedAt: started }) - 1
   activeItemId = item.id
   status.value = 'thinking'
 }
@@ -479,6 +491,7 @@ function endTurn(error?: string) {
   const turn = activeIdx >= 0 ? turns.value[activeIdx] : null
   if (turn) {
     turn.streaming = false
+    if (!turn.endedAt) turn.endedAt = new Date().toISOString()
     if (error !== undefined) turn.error = error
   } else if (error !== undefined) {
     errorMsg.value = error
@@ -552,12 +565,18 @@ function historyFrameId(frame: object, opId: unknown): string {
   return id
 }
 
+function isoStamp(v: unknown): string {
+  if (typeof v !== 'string' || !v.trim()) return ''
+  return Number.isFinite(Date.parse(v)) ? v : ''
+}
+
 function rebuildTurnsFromFrames(events: any[]): Turn[] {
   const rebuilt: Turn[] = []
   let agent: Turn | null = null
-  const newAgent = (id: string) => {
-    agent = { id, role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: false }
-    rebuilt.push(agent)
+  const newAgent = (id: string): Turn => {
+    const turn: Turn = { id, role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: false }
+    rebuilt.push(turn)
+    return turn
   }
   for (const raw of events) {
     const frame = typeof raw === 'string' ? parseFrame(raw) : raw
@@ -580,11 +599,16 @@ function rebuildTurnsFromFrames(events: any[]): Turn[] {
             ? urls.map((u) => ({ url: u, data: '', mimeType: inferImageMimeFromUrl(u) }))
             : undefined,
         })
-        newAgent(`${id}:reply`)
+        agent = newAgent(`${id}:reply`)
+        const started = isoStamp(ev.at)
+        if (started) agent.startedAt = started
       }
+    } else if (ev.type === 'turn_end' || ev.type === 'prompt_end') {
+      const ended = isoStamp(ev.at)
+      if (ended && agent) agent.endedAt = ended
     } else if (ev.type === 'session_update' && ev.update) {
-      if (!agent) newAgent(`${historyFrameId(ev, ev.opId ?? frame.opId)}:reply`)
-      applyAcp(ev, agent!)
+      if (!agent) agent = newAgent(`${historyFrameId(ev, ev.opId ?? frame.opId)}:reply`)
+      applyAcp(ev, agent)
     }
   }
   const last = rebuilt[rebuilt.length - 1]
@@ -1032,6 +1056,8 @@ onBeforeUnmount(() => {
             :streaming="turn.streaming"
             :completed="!turn.streaming && !turn.error"
             :interrupted="!turn.streaming && !!turn.error"
+            :started-at="turn.startedAt"
+            :ended-at="turn.endedAt"
             message-test-id="tester-agent-message"
           />
           <!-- thought -->

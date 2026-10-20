@@ -2902,7 +2902,15 @@
         "switched": "Switched to {cli}; model reset to auto",
         "undo": "Undo",
         "managedBy": "Managed in Runtime · Model",
-        "inherited": "Not set here; using the workspace shared config:",
+        "follow": "Follow config",
+        "followDefault": "Default",
+        "specify": "Set separately",
+        "sharedKicker": "Workspace shared config",
+        "followNote": "Following this config by default. This Agent has no model of its own, and it follows later changes to the workspace default.",
+        "fromShared": "From the workspace shared config",
+        "pickOne": "Choose a model",
+        "specifySub": "Only this Agent",
+        "backToFollow": "Back to shared config",
         "goEdit": "Edit",
         "inspectorLabel": "Model",
         "inspectorEdit": "Change in Agent settings",
@@ -2989,7 +2997,6 @@
       "nameExists": "Workflow name already exists"
     },
     "clarify": {
-      "header": "Agent Interaction · Multi-turn ReAct · {n} messages",
       "me": "Me",
       "myChoice": "My choices",
       "choicePrefix": "My choices:",
@@ -3081,6 +3088,8 @@
         }
       },
       "turnCompleted": "Done",
+      "turnElapsed": "Took {time}",
+      "turnProcess": "This turn",
       "emptyFailTitle": "No output this turn",
       "emptyFailDesc": "The assistant returned no message. You can retry the last turn.",
       "retry": "Retry",

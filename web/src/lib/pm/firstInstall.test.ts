@@ -12,9 +12,11 @@ vi.mock('@/lib/api/api', () => ({
 vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ ensureLoaded: () => import('@/lib/api/api').then(({ api }) => api.getWorkspace()) }) }))
 
 import { api } from '@/lib/api/api'
+import { workflowCatalogRevision } from '@/lib/api/workflowCatalogEvents'
 import { ONBOARDING_WORKFLOW_NAMES, suppressOnboarding } from './onboardingWizard'
 import {
   closeFirstInstall,
+  closeOnboarding,
   firstInstallCompletedAt,
   onboardingMode,
   onboardingOpen,
@@ -125,5 +127,21 @@ describe('firstInstall', () => {
     markFirstInstallCompleted()
     expect(firstInstallCompletedAt.value).toBeGreaterThanOrEqual(before)
     expect(firstInstallCompletedAt.value).toBeGreaterThan(0)
+  })
+
+  it('advances the workflow catalog only when onboarding succeeds', () => {
+    const before = workflowCatalogRevision.value
+    openFirstInstall()
+    closeFirstInstall()
+    openRetryOnboarding()
+    closeOnboarding()
+    expect(onboardingOpen.value).toBe(false)
+    expect(workflowCatalogRevision.value).toBe(before)
+
+    markFirstInstallCompleted()
+    expect(workflowCatalogRevision.value).toBe(before + 1)
+    // Retry shares the same success event.
+    markFirstInstallCompleted()
+    expect(workflowCatalogRevision.value).toBe(before + 2)
   })
 })

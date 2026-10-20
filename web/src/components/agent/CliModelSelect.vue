@@ -23,7 +23,7 @@ import { ACP_BACKENDS } from '@/lib/shared/regionPolicy'
 
 const props = withDefaults(
   defineProps<{
-    /** Model id passed as `--model`; empty means the CLI's own default. */
+    /** Model id passed as `--model`. Empty means the CLI default, unless emptyMode is required. */
     modelValue: string
     backend: string
     /** full: list plus a detail pane. compact: list only, details inline. */
@@ -35,12 +35,15 @@ const props = withDefaults(
      * Agent studio and runtime config leave it off and keep the subtitle.
      */
     hideAutoSub?: boolean
+    /** auto: empty is the CLI default. required: empty is not a choice — hide Auto until a model is picked. */
+    emptyMode?: 'auto' | 'required'
   }>(),
-  { variant: 'full', disabled: false, hideAutoSub: false },
+  { variant: 'full', disabled: false, hideAutoSub: false, emptyMode: 'auto' },
 )
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
 const { t } = useI18n()
+const allowAuto = computed(() => props.emptyMode !== 'required')
 
 const TAG_ICON: Record<CliModelTag, string> = { vision: 'eye', reasoning: 'brain', fast: 'trigger' }
 const FULL_WIDTH = 600
@@ -95,7 +98,7 @@ const typed = computed(() => {
 type Row = { kind: 'auto' } | { kind: 'model'; model: CliCatalogModel } | { kind: 'typed'; id: string }
 const rows = computed<Row[]>(() => {
   const out: Row[] = []
-  if (!query.value.trim()) out.push({ kind: 'auto' })
+  if (allowAuto.value && !query.value.trim()) out.push({ kind: 'auto' })
   for (const m of view.value.flat) out.push({ kind: 'model', model: m })
   if (typed.value) out.push({ kind: 'typed', id: typed.value })
   return out
@@ -306,12 +309,17 @@ defineExpose({ focus: () => trigger.value?.focus() })
       @click="toggle"
       @keydown="onTriggerKey"
     >
-      <VendorMark v-if="!modelValue" :vendor="backend" backend auto :size="32" />
+      <VendorMark v-if="!modelValue && !allowAuto" :vendor="backend" backend unknown :size="32" />
+      <VendorMark v-else-if="!modelValue" :vendor="backend" backend auto :size="32" />
       <VendorMark v-else-if="unlisted" :vendor="backend" backend unknown :size="32" />
       <VendorMark v-else :vendor="current?.vendor || ''" :size="32" />
 
       <span class="min-w-0 flex-1">
-        <template v-if="!modelValue">
+        <template v-if="!modelValue && !allowAuto">
+          <span class="block truncate text-[13px] font-medium text-txt3">{{ t('pages.agentStudio.cliModel.pickOne') }}</span>
+          <span class="block truncate text-[11px] text-txt3">{{ t('pages.agentStudio.cliModel.specifySub') }}</span>
+        </template>
+        <template v-else-if="!modelValue">
           <span class="block truncate text-[13px] font-medium text-txt">{{ t('pages.agentStudio.cliModel.auto') }}</span>
           <span v-if="!hideAutoSub" class="block truncate text-[11px] text-txt3">{{ t('pages.agentStudio.cliModel.autoSub', { cli: cliLabel }) }}</span>
         </template>
@@ -342,16 +350,17 @@ defineExpose({ focus: () => trigger.value?.focus() })
     </button>
 
     <!-- What the CLI will be launched with -->
-    <div class="mt-1.5 flex min-h-[20px] items-center gap-2 px-0.5 text-[11px] text-txt3">
+    <div v-if="allowAuto || modelValue" class="mt-1.5 flex min-h-[20px] items-center gap-2 px-0.5 text-[11px] text-txt3">
       <Transition name="ui-fade" mode="out-in">
         <span :key="command" class="flex min-w-0 flex-1 items-center gap-1.5" data-testid="cli-model-command">
           <Icon name="terminal" :size="12" class="shrink-0" />
           <code class="truncate rounded bg-elevated px-1.5 py-0.5 font-mono text-[10.5px] text-txt2">{{ command }}</code>
           <span v-if="!modelValue" class="hidden truncate sm:inline">{{ t('pages.agentStudio.cliModel.commandAutoNote') }}</span>
+          <span v-else-if="!allowAuto" class="hidden truncate sm:inline">{{ t('pages.agentStudio.cliModel.specifySub') }}</span>
         </span>
       </Transition>
       <button
-        v-if="modelValue && !disabled"
+        v-if="modelValue && !disabled && allowAuto"
         type="button"
         class="shrink-0 font-medium text-accent-2 transition hover:underline"
         data-testid="cli-model-reset"
@@ -653,7 +662,7 @@ defineExpose({ focus: () => trigger.value?.focus() })
                   <code class="mt-3 block break-all rounded-md border border-line bg-surface px-2 py-1 font-mono text-[11px] text-txt">--model {{ query.trim() }}</code>
                 </div>
 
-                <div v-else key="auto" class="flex flex-col">
+                <div v-else-if="allowAuto" key="auto" class="flex flex-col">
                   <div class="flex items-center gap-3">
                     <VendorMark :vendor="backend" backend auto :size="40" />
                     <div class="min-w-0">
